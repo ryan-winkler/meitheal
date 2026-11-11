@@ -836,7 +836,7 @@ test("ingress Auto follows device preference when its parent is cross-origin", a
   }
 })
 
-test("verified members receive durable receipts and queue APIs fail closed", async ({ playwright }) => {
+coreTest("verified members receive durable receipts and queue APIs fail closed", async ({ playwright }) => {
   const api = await playwright.request.newContext()
   const at = (route: string) => origin + prefix + route
   const member = { cookie: "feedback-fixture=member" }
@@ -850,7 +850,8 @@ test("verified members receive durable receipts and queue APIs fail closed", asy
     const anonymous = await api.get(at("/api/feedback"), { headers: fake })
     const sibling = await api.get(origin + "/api/feedback", { headers: fake })
     const old = await api.get(at("/api/feedback"), { headers: { cookie: "feedback-fixture=old" } })
-    expect([anonymous.status(), sibling.status(), old.status()]).toEqual([403, 403, 403])
+    expect([anonymous.status(), sibling.status(), old.status()]).toEqual([403, 401, 403])
+    expect(sibling.headers()["www-authenticate"]).toBe("Bearer")
     expect((await post(body, fake)).status()).toBe(403)
     expect((await api.post(at("/api/feedback"), { headers: member, data: body })).status()).toBe(403)
     expect((await post(body, { ...member, "sec-fetch-site": "same-site" })).status()).toBe(403)
@@ -900,7 +901,7 @@ test("verified members receive durable receipts and queue APIs fail closed", asy
     expect(memberReads.map(response => response.status())).toEqual([403, 403, 403, 403, 403, 403])
 
     await stopServer()
-    await startServer()
+    await startServer(true)
     const persisted = await post(body)
     expect(await persisted.json()).toEqual(receipt)
     const list = await api.get(at("/api/feedback?state=open"), { headers: admin })
@@ -939,7 +940,7 @@ test("verified members receive durable receipts and queue APIs fail closed", asy
   }
 })
 
-test("Settings saves and retries feedback, then reviews, downloads and deletes it", async ({ browser }) => {
+coreTest("Settings saves and retries feedback, then reviews, downloads and deletes it", async ({ browser }) => {
   const member = await browser.newContext({ extraHTTPHeaders: {} })
   const admin = await browser.newContext({ extraHTTPHeaders: {}, viewport: { width: 390, height: 844 }, acceptDownloads: true })
   const settings = origin + prefix + "/settings#local-feedback"
@@ -966,7 +967,7 @@ test("Settings saves and retries feedback, then reviews, downloads and deletes i
     expect(denied.contentType).toContain("json")
     await expect(userPage.getByText("Local feedback queue")).toHaveCount(0)
     await expect(userPage.locator("#export-db-btn")).toHaveCount(0)
-    await userPage.getByLabel("Category", { exact: true }).selectOption("problem")
+    await userPage.locator("[data-feedback-form]").getByLabel("Category", { exact: true }).selectOption("problem")
     await userPage.getByLabel("Message", { exact: true }).fill(message)
     await userPage.getByRole("button", { name: "Save feedback" }).click()
     await expect(userPage.locator("[data-feedback-status]")).toContainText("Could not reach")
