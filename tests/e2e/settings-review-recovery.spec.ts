@@ -1,3 +1,4 @@
+import { request as httpRequest } from "node:http"
 import { expect, test } from "@playwright/test"
 
 test.skip(!process.env.E2E_BASE_URL, "Requires a disposable App server")
@@ -113,5 +114,27 @@ test("Saturday week starts apply immediately after a regional Settings save", as
     await expect(page.locator("#tasks-view-calendar .cal-header").first()).toHaveText("Sat")
   } finally {
     expect((await request.put("/api/settings", { data: { key: "week_start", value: previous } })).status()).toBe(200)
+  }
+})
+
+
+test("standalone handoff settings reject untrusted peers and forged household identity", async ({ request, baseURL }) => {
+  for (const key of ["ai-provider", "ai-custom-url"]) {
+    expect((await request.get(`/api/settings?key=${key}`)).status()).toBe(200)
+    for (const identity of [{}, { "x-ingress-path": "/forged", "x-remote-user-id": "fake-household", "x-remote-user-groups": "system-admin" }]) {
+      const status = await new Promise<number>((resolve, reject) => {
+        // A second loopback address exercises an actual peer outside the local-admin allowlist.
+        const probe = httpRequest(new URL(`/api/settings?key=${key}`, baseURL!), {
+          localAddress: "127.0.0.2", headers: { host: "untrusted.example", ...identity },
+        }, response => {
+          response.resume()
+          response.on("end", () => resolve(response.statusCode ?? 0))
+        })
+        probe.on("error", reject)
+        probe.setTimeout(3000, () => probe.destroy(new Error("Standalone probe timed out")))
+        probe.end()
+      })
+      expect(status).toBe(403)
+    }
   }
 })

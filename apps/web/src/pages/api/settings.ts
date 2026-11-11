@@ -36,7 +36,7 @@ export const GET: APIRoute = async ({ request, url, locals }) => {
     const key = url.searchParams.get("key")
     if (key) {
       // Household AI actions need these two non-secret destinations; writes and all other system reads stay admin-only.
-      const handoffSetting = !locals.agentToken && (key === "ai-provider" || key === "ai-custom-url")
+      const handoffSetting = !locals.agentToken && locals.behindIngress && Boolean(locals.hassUserId) && (key === "ai-provider" || key === "ai-custom-url")
       if (!admin && isSystemSetting(key) && !handoffSetting) return requireSystemSettingsAdmin(request, locals)!
       const values = await repo.getByKeys([key])
       const value = Object.hasOwn(values, key) ? values[key] : null
