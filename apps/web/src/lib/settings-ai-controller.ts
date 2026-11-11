@@ -14,6 +14,58 @@ import { notifyWebMcpPreferenceChanged, refreshWebMcpPreference } from "@lib/web
 import { WEBMCP_SETTING } from "@lib/webmcp-protocol"
 import { getClientLocale, t } from "../i18n/client"
 
+let discoveryProbe: AbortController | undefined
+
+/** Count checked discovery documents, never saved preferences or token tools. */
+async function refreshProtocolDiscovery(): Promise<void> {
+  const badge = document.getElementById("agent-protocols-status")
+  if (!badge) return
+  discoveryProbe?.abort()
+  const controller = new AbortController()
+  discoveryProbe = controller
+  const pageSignal = pageLifecycle.signal
+  const signal = AbortSignal.any([pageSignal, controller.signal, AbortSignal.timeout(8_000)])
+  const probe = String(Number(badge.dataset.probe || 0) + 1)
+  badge.dataset.probe = probe
+  const current = () => !pageSignal.aborted && !controller.signal.aborted &&
+    document.getElementById("agent-protocols-status") === badge && badge.dataset.probe === probe
+  badge.textContent = badge.dataset.checking ?? ""
+  badge.className = "badge badge-pending"
+  let available = 0
+  await Promise.all((["a2a", "mcp"] as const).map(async protocol => {
+    const status = document.getElementById(`agent-${protocol}-runtime-status`)
+    const link = document.querySelector<HTMLAnchorElement>(`[data-protocol-link="${protocol}"]`)
+    if (!status || !link) return
+    link.hidden = true
+    status.dataset.state = "checking"
+    status.textContent = status.dataset.checking ?? ""
+    let state = "unavailable"
+    try {
+      const response = await fetch(link.dataset.path!, { signal, cache: "no-store", redirect: "error" })
+      const data = await response.json()
+      if (response.status === 404 && data?.detail === `${protocol.toUpperCase()} is disabled.`) state = "disabled"
+      else if (response.ok && typeof data?.name === "string" && data.name.trim()) {
+        const valid = protocol === "mcp"
+          ? data.protocol === "mcp" && data.transport === "streamable-http" &&
+            data.endpoint === `${window.__ingress_path || ""}/api/mcp` &&
+            data.authentication?.type === "bearer" && data.authentication.requiredScope === "mcp:execute"
+          : Array.isArray(data.skills) && data.skills.length === 0 &&
+            Array.isArray(data.supportedInterfaces) && data.supportedInterfaces.length === 0
+        if (valid) state = "available"
+      }
+    } catch { /* A failed probe cannot establish discovery availability. */ }
+    if (!current()) return
+    status.dataset.state = state
+    status.textContent = status.dataset[state] ?? ""
+    link.hidden = state !== "available"
+    if (state === "available") available++
+  }))
+  if (current()) {
+    badge.textContent = (badge.dataset.count ?? "").replace("{count}", String(available))
+    badge.className = available ? "badge badge-active" : "badge badge-pending"
+  }
+}
+
 function renderAgentBadge(select: HTMLSelectElement, label?: string) {
   const badge = document.getElementById("ha-agent-status")
   if (badge) badge.textContent = label ?? select.selectedOptions[0]?.text ?? select.dataset.default ?? "Default"
@@ -114,6 +166,10 @@ async function restoreHaAgent(savedAgent: unknown) {
 
 export function initAISettings(): void {
   initHaAgentSettings()
+  const checkDiscovery = document.querySelector<HTMLButtonElement>("#refresh-agent-discovery")
+  if (checkDiscovery) pageLifecycle.on(checkDiscovery, "click", withAsyncButton(checkDiscovery, refreshProtocolDiscovery, {
+    loadingText: checkDiscovery.dataset.checking ?? "",
+  }))
   // AI provider custom URL toggle
   const aiProviderEl = document.getElementById("ai-provider")
   if (aiProviderEl) {
@@ -165,14 +221,7 @@ export function initAISettings(): void {
       // A later key may fail after WebMCP was saved. Recheck actual persistence
       // rather than granting tools from an unsaved checkbox or stale cache.
       notifyWebMcpPreferenceChanged()
-    }
-
-    // Update status badge
-    const statusEl = document.getElementById("agent-protocols-status")
-    if (statusEl) {
-      const anyEnabled = a2a || webmcp || mcp
-      statusEl.textContent = anyEnabled ? "Active" : "Disabled"
-      statusEl.className = anyEnabled ? "badge badge-active" : "badge badge-pending"
+      void refreshProtocolDiscovery()
     }
 
     showToast("settings.agent_protocols_saved")
@@ -211,14 +260,5 @@ export function restoreAISettings(s: Record<string, unknown>): void {
     (document.getElementById("agent-mcp-enabled") as HTMLInputElement).checked =
       mcpEnabled === true || mcpEnabled === "true"
 
-  const anyConfigured = a2aEnabled !== undefined || webmcpEnabled !== undefined || mcpEnabled !== undefined
-  const anyActive =
-    a2aEnabled === true || a2aEnabled === "true" ||
-    webmcpEnabled === true || webmcpEnabled === "true" ||
-    mcpEnabled === true || mcpEnabled === "true"
-  const statusEl = document.getElementById("agent-protocols-status")
-  if (statusEl && anyConfigured) {
-    statusEl.textContent = anyActive ? "Active" : "Disabled"
-    statusEl.className = anyActive ? "badge badge-active" : "badge badge-pending"
-  }
+  void refreshProtocolDiscovery()
 }

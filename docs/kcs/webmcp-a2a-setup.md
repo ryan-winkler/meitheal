@@ -17,6 +17,14 @@ Saving the toggle off makes discovery and the MCP endpoint return HTTP 404 on th
 
 The endpoint returns a JSON reply per request. Legacy clients that check for a standalone SSE stream receive HTTP 405 on an authenticated GET.
 
+## Check discovery in Settings
+
+**Settings → Automation & AI → Agent Protocols** checks the installed App's MCP manifest and A2A card. The badge counts available **discovery documents out of two**. It does not count saved switches, browser tools, token-authorized MCP tools or executable A2A skills. WebMCP has its own browser registration status below its switch.
+
+Each discovery link appears only after a successful response with the current public contract. A disabled endpoint is reported separately from a failed or malformed response. MCP discovery still requires a scoped token for tool access. A2A discovery advertises no executable interfaces or skills; message execution remains unavailable.
+
+Use **Check discovery** to retry without saving preferences. Checks use the current browser session and ingress path, bypass cached responses, and stop after eight seconds or page cancellation. Saving protocol settings refreshes these checks even after a partial save, so an unsaved checkbox cannot claim availability. Older probe results cannot overwrite a newer check or a disabled result. The saved preferences and administrator policy are unchanged.
+
 ## Experimental protocols
 
 The A2A setting in **Settings → Automation & AI → Agent Protocols** controls the experimental discovery card at `GET /api/a2a/agent-card`, `/.well-known/agent-card.json`, and `/.well-known/agent.json`. The card links to the installed App's OpenAPI contract and lists no executable skills or bindings.
