@@ -8,6 +8,10 @@ description: "Diagnose common connection, search, and sync problems."
 
 ## Common Issues
 
+### Database temporarily unavailable
+
+The task list and completed-task cleanup return HTTP 503 when local storage is busy or unavailable. Their uncached `application/problem+json` response includes `retry_after` in seconds, matching the `Retry-After` header; the default is ten seconds. The existing `error` message remains available to clients. Wait for that interval, then reload the list or review the cleanup preview before confirming a deletion again.
+
 ### Universal Search Hub
 
 **Symptoms**: `Cmd/Ctrl+K` does nothing, the topbar launcher feels empty, or search is missing settings/views/actions results.
