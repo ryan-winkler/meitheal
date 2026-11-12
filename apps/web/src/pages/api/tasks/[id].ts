@@ -3,6 +3,7 @@ import type { InValue } from "@libsql/client"
 import { hasBoardSelection, rejectBoardSelectionInJson, unavailableBoardResponse } from "@domains/tasks/board-availability"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import { TaskRepository } from "@domains/tasks/persistence/task-repository"
+import { taskLabelsJson } from "@domains/tasks/task-creation-service"
 import { formatTicketKey } from "../../../lib/ticket-key"
 import { dispatchTaskEvent, taskEventAuthorityHeaders } from "../../../lib/webhook-dispatcher"
 import { logApiError } from "../../../lib/api-logger"
@@ -140,16 +141,11 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
     sanitized.due_date = typeof body.due_date === "string" ? body.due_date : null
   }
   if (body.labels !== undefined) {
-    if (typeof body.labels !== "string") {
-      return new Response(JSON.stringify({ error: "labels must be a JSON string array" }), { status: 400, headers: { "content-type": "application/json" } })
+    const labels = taskLabelsJson(body.labels)
+    if (labels === null) {
+      return new Response(JSON.stringify({ error: "labels must be an array of strings or a JSON string array" }), { status: 400, headers: { "content-type": "application/json" } })
     }
-    try {
-      const parsed = JSON.parse(body.labels)
-      if (!Array.isArray(parsed) || !parsed.every(item => typeof item === "string")) throw new Error()
-      sanitized.labels = body.labels
-    } catch {
-      return new Response(JSON.stringify({ error: "labels must be a valid JSON string array" }), { status: 400, headers: { "content-type": "application/json" } })
-    }
+    sanitized.labels = labels
   }
   if (body.framework_payload !== undefined) {
     if (typeof body.framework_payload !== "string") {
