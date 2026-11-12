@@ -49,11 +49,13 @@ jobs:
           project-token: ${{ secrets.CODACY_PROJECT_TOKEN }}
           format: sarif
           output: codacy-results.sarif
+          parallel: 4
+          tool-timeout: 10minutes
           gh-code-scanning-compat: true
           max-allowed-issues: 2147483647
 
       - name: Upload Codacy SARIF results to GitHub Code Scanning
-        if: always() && hashFiles('codacy-results.sarif') != ''
+        if: success() && hashFiles('codacy-results.sarif') != ''
         uses: github/codeql-action/upload-sarif@52cf1852265d99e9bea071b03366fc777a602909 # codeql-bundle-v2.27.4
         with:
           sarif_file: codacy-results.sarif
