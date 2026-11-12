@@ -129,15 +129,21 @@ async function createTask(baseUrl, title) {
   return performance.now() - start;
 }
 
-async function measureGetTasks(baseUrl) {
+async function measureGetTasks(baseUrl, taskPath = "/tasks") {
   const start = performance.now();
-  const response = await fetch(`${baseUrl}/tasks`, {
+  const url = new URL(taskPath, baseUrl);
+  const response = await fetch(url, {
     signal: AbortSignal.timeout(10_000),
   });
+  const body = await response.text();
   if (response.status !== 200) {
-    throw new Error(`GET /tasks failed (${response.status}): ${await response.text()}`);
+    throw new Error(`GET /tasks failed (${response.status}): ${body}`);
   }
-  await response.text();
+  const rendersKanban = !["table", "calendar", "timeline"].includes(url.searchParams.get("view"));
+  if (rendersKanban &&
+      !/<div\b(?=[^>]*\bid="kanban-board")(?=[^>]*\bdata-available="true")[^>]*>/.test(body)) {
+    throw new Error("GET /tasks returned an unavailable Kanban board");
+  }
   return performance.now() - start;
 }
 
@@ -234,9 +240,9 @@ async function main() {
         hasTasks = true;
       }
     } catch (error) {
-      // Stub servers in the lifecycle tests have no SQLite tasks table, so the
-      // measurement is skipped. A real seeding failure is reported, not measured.
-      if (db) kanbanWarm2000 = { skipped: `seed failed: ${error instanceof Error ? error.message : String(error)}` };
+      // Opening or seeding failures are reported; stub servers without a tasks
+      // table continue to omit the measurement.
+      kanbanWarm2000 = { skipped: `seed failed: ${error instanceof Error ? error.message : String(error)}` };
     } finally {
       db?.close();
     }
