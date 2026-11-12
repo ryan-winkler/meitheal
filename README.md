@@ -2,6 +2,13 @@
 
 Meitheal is a local task planner for Home Assistant. Use it to share a household checklist, schedule regular maintenance, or create a task when a sensor triggers an automation. It runs in the Home Assistant sidebar and keeps task data in SQLite on your own device.
 
+[![Docker Hub](https://img.shields.io/docker/v/coolockvillage/meitheal-amd64?label=Docker%20Hub&logo=docker)](https://hub.docker.com/r/coolockvillage/meitheal-amd64)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/ryan-winkler/meitheal/badge)](https://scorecard.dev/viewer/?push=main&repo=github.com/ryan-winkler/meitheal)
+[![codecov](https://codecov.io/gh/ryan-winkler/meitheal/graph/badge.svg)](https://codecov.io/gh/ryan-winkler/meitheal)
+[![GitHub Sponsors](https://img.shields.io/badge/Sponsor-GitHub-ea4aaa?logo=github&logoColor=white)](https://github.com/sponsors/ryan-winkler)
+[![Ko-fi](https://img.shields.io/badge/Support-Ko--fi-ff5e5b?logo=ko-fi&logoColor=white)](https://ko-fi.com/ryanw_eu)
+[![Polar Funding](https://polar.sh/embed/bounties.svg?org=Coolock-Village)](https://polar.sh/Coolock-Village)
+
 [Install status](https://github.com/ryan-winkler/meitheal-ha-addon/issues/1) · [Create your first task](docs/first-task.md) · [Get help](SUPPORT.md)
 
 ## Plan and follow through
@@ -101,6 +108,15 @@ On Home Assistant Core 2026.11 or later, an active administrator can enable **Me
 - [Community conduct](CODE_OF_CONDUCT.md)
 - [Support](SUPPORT.md)
 - [Report a security problem privately](SECURITY.md)
+
+## Supporting Meitheal
+
+Meitheal is independent and community-driven. Financial support helps fund infrastructure, accessibility testing, hardware qualification, and continuous development:
+
+- [GitHub Sponsors](https://github.com/sponsors/ryan-winkler)
+- [Ko-fi](https://ko-fi.com/ryanw_eu)
+- [Revolut](https://revolut.me/ryanwi)
+- [Polar](https://polar.sh/Coolock-Village)
 
 ## Legal and Licensing
 

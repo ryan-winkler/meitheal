@@ -1,22 +1,111 @@
-name: Publish Stable App
+name: Publish Add-on Images
 
 on:
   push:
+    branches:
+      - release
     tags:
       - "v*"
+      - "[0-9]+.[0-9]+.[0-9]+"
+    paths-ignore:
+      - "meitheal-hub-canary/**"
+      - "*.md"
+      - ".planning/**"
+      - "docs/**"
   workflow_dispatch:
+    inputs:
+      tag_override:
+        description: "Tag override (e.g. 'dev' for pre-release)"
+        required: false
+        default: ""
 
-permissions:
-  contents: read
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  release:
-    if: github.repository == 'ryan-winkler/meitheal' && startsWith(github.ref, 'refs/tags/v')
-    uses: ./.github/workflows/publish-app.yml
-    with:
-      channel: stable
+  publish:
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
-    secrets:
-      ADDON_REPO_TOKEN: ${{ secrets.ADDON_REPO_TOKEN }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            platform: linux/amd64
+          - arch: aarch64
+            platform: linux/arm64
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log in to Docker Hub
+        continue-on-error: true
+        uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Resolve image metadata
+        id: meta
+        run: |
+          owner_lc="$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')"
+          version="$(awk -F'"' '/^version:/{print $2}' meitheal-hub/config.yaml)"
+          build_from="$(jq -r ".build_from[\"${{ matrix.arch }}\"]" meitheal-hub/build.json)"
+
+          tag="${{ inputs.tag_override }}"
+          if [ -z "${tag}" ]; then
+            tag="${version}"
+          fi
+
+          echo "owner_lc=${owner_lc}" >> "$GITHUB_OUTPUT"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "build_from=${build_from}" >> "$GITHUB_OUTPUT"
+
+      - name: Validate release tag matches add-on version
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          CONFIG_VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          expected_tag="v${CONFIG_VERSION}"
+          expected_tag_bare="${CONFIG_VERSION}"
+          if [ "${RELEASE_TAG}" != "${expected_tag}" ] && [ "${RELEASE_TAG}" != "${expected_tag_bare}" ]; then
+            echo "::error::Release tag ${RELEASE_TAG} does not match meitheal-hub/config.yaml version ${CONFIG_VERSION} (expected ${expected_tag} or ${expected_tag_bare})."
+            exit 1
+          fi
+
+      - name: Build and publish add-on image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: meitheal-hub/Dockerfile
+          build-args: |
+            BUILD_FROM=${{ steps.meta.outputs.build_from }}
+            MEITHEAL_VERSION=${{ steps.meta.outputs.version }}
+          push: true
+          platforms: ${{ matrix.platform }}
+          cache-from: type=gha,scope=${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.arch }},ignore-error=true
+          tags: |
+            ghcr.io/${{ steps.meta.outputs.owner_lc }}/meitheal-${{ matrix.arch }}:${{ steps.meta.outputs.tag }}
+            ghcr.io/${{ steps.meta.outputs.owner_lc }}/meitheal-${{ matrix.arch }}:latest
+            ghcr.io/ryan-winkler/meitheal-${{ matrix.arch }}:${{ steps.meta.outputs.tag }}
+            ghcr.io/ryan-winkler/meitheal-${{ matrix.arch }}:latest
+            coolockvillage/meitheal-${{ matrix.arch }}:${{ steps.meta.outputs.tag }}
+            coolockvillage/meitheal-${{ matrix.arch }}:latest

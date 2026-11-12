@@ -16,12 +16,18 @@ WORKDIR /build
 # Layer 1: Dependency manifests + config (changes rarely → cached most builds)
 COPY pnpm-workspace.yaml pnpm-lock.yaml package.json tsconfig.base.json ./
 COPY apps/web/package.json apps/web/package.json
-COPY packages/ packages/
+COPY packages/domain-auth/package.json packages/domain-auth/
+COPY packages/domain-observability/package.json packages/domain-observability/
+COPY packages/domain-strategy/package.json packages/domain-strategy/
+COPY packages/domain-tasks/package.json packages/domain-tasks/
+COPY packages/integration-core/package.json packages/integration-core/
 
 # Layer 2: Install all deps (cached when lockfile + manifests unchanged)
-RUN pnpm install --frozen-lockfile --ignore-scripts
+RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
+    pnpm install --frozen-lockfile --ignore-scripts
 
 # Layer 3: Source code (changes every build, but deps are already cached above)
+COPY packages/ packages/
 COPY apps/web/ apps/web/
 COPY meitheal-hub/ meitheal-hub/
 
@@ -41,7 +47,8 @@ COPY --from=builder /build/pnpm-workspace.yaml /build/pnpm-lock.yaml /build/pack
 COPY --from=builder /build/packages/ packages/
 COPY --from=builder /build/apps/web/package.json apps/web/package.json
 
-RUN pnpm --filter @meitheal/web... install --frozen-lockfile --ignore-scripts --prod
+RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
+    pnpm --filter @meitheal/web... install --frozen-lockfile --ignore-scripts --prod
 
 # ── Stage 3: Runtime ──
 FROM ${BUILD_FROM}

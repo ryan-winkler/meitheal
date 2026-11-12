@@ -3,9 +3,9 @@ set -euo pipefail
 
 mode=${1:-}
 case "$mode:${CHANNEL:-}" in
-  build-only:canary|publish:stable) ;;
+  build-only:canary|publish:canary|publish:stable) ;;
   *)
-    printf '%s\n' 'Expected build-only for Canary or publish for Stable' >&2
+    printf '%s\n' 'Expected build-only or publish for Canary, or publish for Stable' >&2
     exit 1
     ;;
 esac

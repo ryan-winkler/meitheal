@@ -4,9 +4,22 @@ on:
   push:
     branches:
       - main
+      - dev
+      - release
     paths-ignore:
       - "meitheal-hub-canary/config.yaml"
+      - "*.md"
+      - ".planning/**"
+      - "docs/**"
   pull_request:
+    branches:
+      - main
+      - dev
+      - release
+    paths-ignore:
+      - "*.md"
+      - ".planning/**"
+      - "docs/**"
 
 permissions:
   contents: read
@@ -65,6 +78,9 @@ jobs:
 
   typecheck-and-tests:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     # The isolated spec loop reached spec 211 of 215 at the 25-minute limit.
     timeout-minutes: 35
     steps:
@@ -102,6 +118,13 @@ jobs:
           test_tmp=$(mktemp -d)
           trap 'rm -rf -- "$test_tmp"' EXIT
           TMPDIR="$test_tmp" pnpm --filter @meitheal/tests test:ci
+      - name: Upload test coverage to Codecov
+        uses: codecov/codecov-action@v5
+        if: always()
+        with:
+          use_oidc: true
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
 
   ha-harness:
     runs-on: ubuntu-latest

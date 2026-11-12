@@ -24,8 +24,8 @@ Keep at most one Canary installed during the transition: uninstall the legacy Ca
 
 | Channel | Source ref | App version | GHCR image |
 | --- | --- | --- | --- |
-| Stable | A matching `vX.Y.Z` tag on a commit in `main` | `X.Y.Z` | `ghcr.io/ryan-winkler/meitheal-{arch}:X.Y.Z` |
-| Canary | The current `main` commit | The first 12 hexadecimal characters of its commit ID | `ghcr.io/coolock-village/meitheal-canary-{arch}:{version}` |
+| Stable | `release` branch or matching `vX.Y.Z` tag | `X.Y.Z` (currently `0.0.1`) | `ghcr.io/ryan-winkler/meitheal-{arch}:X.Y.Z` |
+| Canary | `dev` branch or `main` branch | The first 12 characters of its commit ID or `0.0.2-canary` | `ghcr.io/coolock-village/meitheal-canary-{arch}:{version}` |
 
 ## Qualify the release
 

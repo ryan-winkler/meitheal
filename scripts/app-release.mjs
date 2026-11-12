@@ -60,12 +60,15 @@ function releaseVersion(channel, manifest, event, ref, revision) {
   if (event !== "push" && event !== "workflow_dispatch") fail("Unexpected publication event")
   if (!/^[a-f0-9]{40}$/.test(revision)) fail("Expected a full source commit")
   if (channel === "canary") {
-    if (ref !== "refs/heads/main") fail("Canary must build from main")
+    if (ref !== "refs/heads/main" && ref !== "refs/heads/dev") fail("Canary must build from main or dev")
     return revision.slice(0, 12)
   }
 
   const version = versionOf(manifest)
-  if (!stableVersion.test(version) || ref !== `refs/tags/v${version}`) fail("Stable tag must match the App version")
+  if (!stableVersion.test(version)) fail("Invalid stable version in manifest")
+  if (ref !== "refs/heads/release" && ref !== `refs/tags/v${version}` && ref !== `refs/tags/${version}`) {
+    fail("Stable tag or release branch must match the App version")
+  }
   return version
 }
 
