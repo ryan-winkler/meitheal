@@ -1119,8 +1119,8 @@ function renderGantt(
     const name = document.createElement("span")
     name.style.cssText = `
       flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;color:var(--text-primary);
-      ${bar.isComplete ? "text-decoration:line-through;opacity:0.5;" : ""}
-      ${bar.isOverdue ? "color:var(--accent-danger, #ef4444);" : ""}
+      ${bar.isComplete ? "text-decoration:line-through;color:var(--text-muted);" : ""}
+      ${bar.isOverdue ? "color:var(--danger-text);" : ""}
       ${bar.hasChildren ? "font-weight:600;" : ""}
     `
     name.textContent = bar.name
