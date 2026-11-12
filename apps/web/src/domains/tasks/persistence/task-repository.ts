@@ -27,7 +27,17 @@ import { nextTaskTimestampMs, taskTimestampMs } from "./task-timestamp"
 import { inactivityRuleActor, inactivityWriteGuard } from "./task-inactivity-query"
 import { openTaskDependencies } from "./task-dependencies"
 
-const OVERDUE_TASK_PREDICATE = "due_date IS NOT NULL AND due_date < ? AND status != ?"
+/**
+ * A date-only due date is a calendar day: it is overdue once that day has passed, not at UTC midnight.
+ * A due date with a time is overdue once that instant has passed.
+ * Arguments: today (YYYY-MM-DD in the user's timezone), now (ISO instant), complete status.
+ */
+const OVERDUE_TASK_PREDICATE = "due_date IS NOT NULL AND due_date <> '' AND (due_date < ? OR (length(due_date) > 10 AND due_date < ?)) AND status != ?"
+
+function overdueArgs(today?: string): [string, string] {
+  const now = new Date().toISOString()
+  return [today ?? now.slice(0, 10), now]
+}
 const taskHistoryPredicate = "(feed_action IS NULL OR field <> 'activity')"
 
 type RecurrenceSuccessor = {
@@ -363,11 +373,12 @@ export class TaskRepository {
   }
 
   /** Count overdue tasks (past due, not complete) */
-  async getOverdueCount(): Promise<number> {
+  /** Count open tasks past due. Pass today's YYYY-MM-DD in the user's timezone. */
+  async getOverdueCount(today?: string): Promise<number> {
     const result = await this.client.execute({
       sql: `SELECT COUNT(*) as cnt FROM tasks
             WHERE ${OVERDUE_TASK_PREDICATE} AND deferred_at IS NULL`,
-      args: [new Date().toISOString(), STATUS.COMPLETE],
+      args: [...overdueArgs(today), STATUS.COMPLETE],
     });
     return Number((result.rows[0] as Record<string, unknown>)?.cnt ?? 0);
   }
@@ -404,7 +415,7 @@ export class TaskRepository {
   async getKanbanIndex(
     statuses: string[],
     cutoff: number,
-    { matchText, matchOverdue }: { matchText: boolean; matchOverdue: boolean },
+    { matchText, matchOverdue, today }: { matchText: boolean; matchOverdue: boolean; today?: string },
     reader: Pick<Client, "execute">,
   ): Promise<KanbanIndexRow[]> {
     if (!statuses.length) return []
@@ -418,7 +429,7 @@ export class TaskRepository {
               AND (? = 0 OR lower(status) != 'complete' OR updated_at >= ?)
             ORDER BY is_promoted DESC, kanban_position ASC NULLS LAST, priority ASC, created_at DESC, id ASC`,
       args: [
-        ...(matchOverdue ? [new Date().toISOString(), STATUS.COMPLETE] : []),
+        ...(matchOverdue ? [...overdueArgs(today), STATUS.COMPLETE] : []),
         JSON.stringify(statuses), cutoff, cutoff,
       ],
     })

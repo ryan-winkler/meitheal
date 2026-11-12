@@ -68,13 +68,13 @@ try {
     }
   }
 
-  // Project counts per area (via goals)
+  // Project counts per area: direct area link first, then via the project's goal
   const goalToArea = new Map<string, string>()
   for (const g of goals) {
     if (g.area_id) goalToArea.set(String(g.id), String(g.area_id))
   }
   for (const p of projects) {
-    const areaId = p.goal_id ? goalToArea.get(String(p.goal_id)) : null
+    const areaId = p.area_id ? String(p.area_id) : p.goal_id ? goalToArea.get(String(p.goal_id)) : null
     if (areaId) {
       projectCountByArea.set(areaId, (projectCountByArea.get(areaId) ?? 0) + 1)
     }

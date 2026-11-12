@@ -270,7 +270,7 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
           }
           var theme = stored("meitheal-theme");
           var root = doc.documentElement;
-          root.dataset.theme = ["light", "auto"].includes(theme) ? theme : "dark";
+          root.dataset.theme = theme === "custom" ? "dark" : ["light", "dark"].includes(theme) ? theme : "auto";
           var appearance;
           try {
             appearance = JSON.parse(stored(APPEARANCE_STORAGE_KEY) ?? "{}");
