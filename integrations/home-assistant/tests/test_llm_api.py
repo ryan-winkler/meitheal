@@ -30,6 +30,8 @@ from custom_components.meitheal.llm_api import async_register_llm_api
 NATIVE_ADMIN = hasattr(llm.API, "requires_admin")
 SEARCH = "meitheal_search_tasks"
 GET_TASK = "meitheal_get_task"
+CREATE_TASK = "meitheal_create_task"
+COMPLETE_TASK = "meitheal_complete_task"
 
 
 def llm_context(user_id: str | None) -> llm.LLMContext:
@@ -115,10 +117,11 @@ async def test_read_tools_use_the_selected_entry(
         instance = await llm.async_get_api(
             hass, f"meitheal_tasks-{entry.entry_id}", llm_context(hass_admin_user.id)
         )
-        assert {tool.name for tool in instance.tools} == {SEARCH, GET_TASK}
+        assert {tool.name for tool in instance.tools} == {SEARCH, GET_TASK, CREATE_TASK, COMPLETE_TASK}
         for tool in instance.tools:
             assert tool.integration == DOMAIN
-            assert tool.annotations.read_only
+            if tool.name in (SEARCH, GET_TASK):
+                assert tool.annotations.read_only
             assert not tool.annotations.destructive
             assert probatio.to_openapi(tool.parameters)["type"] == "object"
 

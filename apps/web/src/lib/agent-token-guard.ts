@@ -18,6 +18,7 @@ export interface ResolvedAgent {
   tokenId: string
   tokenName: string
   scopes: AgentScope[]
+  assigneeId?: string | null
 }
 
 let schemaReady: Promise<void> | undefined
@@ -60,5 +61,5 @@ export async function resolveAgentAuth(request: Request): Promise<ResolvedAgent 
     updateAgentTokenLastUsed(record.id).catch(() => {})
   }
 
-  return { tokenId: record.id, tokenName: record.name, scopes: record.scopes }
+  return { tokenId: record.id, tokenName: record.name, scopes: record.scopes, assigneeId: record.assigneeId ?? null }
 }

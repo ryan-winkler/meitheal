@@ -341,7 +341,7 @@ body:has(dialog[open], #meitheal-confirm-overlay, #meitheal-prompt-overlay) .sho
    The 8px padding keeps the focus ring and a clear gap inside the header when it is stuck. */
 .shortcut-modal-header {
   position: sticky;
-  top: -24px;
+  top: 0;
   z-index: 1;
   display: flex;
   justify-content: space-between;
@@ -405,7 +405,7 @@ body:has(dialog[open], #meitheal-confirm-overlay, #meitheal-prompt-overlay) .sho
   }
 
   .shortcut-modal-header {
-    top: -16px;
+    top: 0;
   }
 }
 

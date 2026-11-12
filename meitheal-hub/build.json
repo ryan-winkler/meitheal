@@ -10,6 +10,6 @@
     "org.opencontainers.image.title": "Meitheal",
     "org.opencontainers.image.description": "Cooperative task and life engine with HA calendar sync",
     "org.opencontainers.image.source": "https://github.com/ryan-winkler/meitheal-ha-addon",
-    "org.opencontainers.image.licenses": "LicenseRef-Meitheal-Source-Available-1.0"
+    "org.opencontainers.image.licenses": "LicenseRef-Proprietary"
   }
 }

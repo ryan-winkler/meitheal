@@ -69,6 +69,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
 
   const name = typeof body.name === "string" ? body.name.trim() : ""
   const rawScopes = Array.isArray(body.scopes) ? body.scopes : []
+  const assigneeId = typeof body.assignee_id === "string" ? body.assignee_id.trim() : (typeof body.assigneeId === "string" ? body.assigneeId.trim() : null)
   const expiration = typeof body.expiresAt === "string" ? Date.parse(body.expiresAt) : Number.NaN
   if (body.expiresAt != null && !(expiration > Date.now())) {
     return validationError("Token expiration must be a future date", [
@@ -112,6 +113,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
     tokenHash,
     tokenPrefix,
     scopes,
+    assigneeId,
     expiresAt,
   })
 
@@ -122,6 +124,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
     token,  // Show once!
     tokenPrefix: record.tokenPrefix,
     scopes: record.scopes,
+    assigneeId: record.assigneeId,
     createdAt: record.createdAt,
     expiresAt: record.expiresAt,
   }, 201)
@@ -184,7 +187,12 @@ export const PATCH: APIRoute = async ({ request, locals }) => {
     ])
   }
 
-  const updates: { name?: string; scopes?: AgentScope[] } = {}
+  const updates: { name?: string; scopes?: AgentScope[]; assigneeId?: string | null } = {}
+
+  if (body.assignee_id !== undefined || body.assigneeId !== undefined) {
+    const val = body.assignee_id !== undefined ? body.assignee_id : body.assigneeId
+    updates.assigneeId = typeof val === "string" && val.trim() ? val.trim() : null
+  }
 
   if (typeof body.name === "string") {
     const name = body.name.trim()

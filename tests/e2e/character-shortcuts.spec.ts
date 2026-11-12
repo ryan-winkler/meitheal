@@ -17,7 +17,7 @@ async function openSettings(page: Page) {
   await expect(preference(page)).toBeVisible()
 }
 
-const GLOBAL_SHORTCUT_KEYS = ["/", "n", "d", "k", "t", "y", "u", "c", "Ctrl + K", "Ctrl + B", "?", "Esc"]
+const GLOBAL_SHORTCUT_KEYS = ["/", "n", "d", "k", "t", "y", "u", "c", "Ctrl/Cmd + K", "Ctrl/Cmd + B", "?", "Esc"]
 const GLOBAL_SHORTCUT_LABELS = [
   "Search", /^\s*New task\s*\.\s*Adds to that column when a board card has focus\s*$/, "Dashboard",
   /^\s*Kanban view\s*\.\s*Moves up on Today and Timeline\s*$/, "Table view", "Today view", "Upcoming view",
@@ -192,6 +192,10 @@ test("shortcut help keeps Close visible on a landscape phone", async ({ page }) 
   await expect.poll(() => panel.evaluate(element => element.scrollTop)).toBeGreaterThan(0)
   await expect(dialog.getByText("Timeline view")).toBeInViewport()
   await expect(close).toBeInViewport({ ratio: 1 })
+  const panelBox = (await panel.boundingBox())!
+  const closeBox = (await close.boundingBox())!
+  expect(closeBox.y).toBeGreaterThanOrEqual(panelBox.y)
+  expect(closeBox.y + closeBox.height).toBeLessThanOrEqual(panelBox.y + panelBox.height)
   const covered = await close.evaluate(button => {
     const { x, y, width, height } = button.getBoundingClientRect()
     return !button.contains(document.elementFromPoint(x + width / 2, y + height / 2))
@@ -483,15 +487,24 @@ datedShortcutTest("Today and Timeline keep arrows and Enter while letter and pun
 })
 
 test("pressing lowercase c on a grouped board collapses and expands swimlanes without navigating to Calendar", async ({ page, request, baseURL }) => {
+  // Earlier cases in this file share one server and its 300/min API budget.
+  test.setTimeout(100_000)
   const headers = { origin: new URL(baseURL!).origin }
+  const createTask = async (data: Record<string, string>) => {
+    const response = await request.post("/api/tasks", { headers, data })
+    if (response.status() !== 429) return response
+    const retryAfter = Number(response.headers()["retry-after"] ?? 60)
+    await page.waitForTimeout(Math.min(Math.max(retryAfter, 1), 61) * 1000)
+    return request.post("/api/tasks", { headers, data })
+  }
   let firstId: string | undefined
   let secondId: string | undefined
   try {
-    const firstTask = await request.post("/api/tasks", { headers, data: { title: "Grouped board task", task_type: "task" } })
+    const firstTask = await createTask({ title: "Grouped board task", task_type: "task" })
     expect(firstTask.status()).toBe(201)
     firstId = (await firstTask.json()).id
 
-    const secondTask = await request.post("/api/tasks", { headers, data: { title: "Grouped board epic", task_type: "epic" } })
+    const secondTask = await createTask({ title: "Grouped board epic", task_type: "epic" })
     expect(secondTask.status()).toBe(201)
     secondId = (await secondTask.json()).id
 

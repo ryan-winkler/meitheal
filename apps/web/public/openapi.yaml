@@ -90,16 +90,16 @@ components:
         - author
         - created_at
       properties:
-        id:
+        id: &a1
           type: integer
-        task_id:
+        task_id: &a2
           type: string
-        content:
+        content: &a3
           type: string
-        author:
+        author: &a4
           type: string
           description: Display author recorded when the comment was added.
-        created_at:
+        created_at: &a5
           type: string
           description: SQLite UTC timestamp.
       additionalProperties: false
@@ -121,19 +121,19 @@ components:
           type: string
           format: uuid
           description: Client-generated UUIDv4. Reuse it for identical retries.
-        category: &a1
+        category: &a6
           type: string
           enum:
             - problem
             - accessibility
             - suggestion
             - other
-        message: &a2
+        message: &a7
           type: string
           minLength: 1
           maxLength: 4096
           description: Plain text, at most 4 KiB in UTF-8.
-        appVersion: &a3
+        appVersion: &a8
           type: string
           maxLength: 50
           pattern: ^(?:\d{1,5}\.\d{1,5}\.\d{1,5}(?:[-+][0-9a-zA-Z][0-9a-zA-Z.-]{0,31})?|[0-9a-f]{12})(?![\s\S])
@@ -154,10 +154,10 @@ components:
     FeedbackReceipt:
       type: object
       properties:
-        id: &a5
+        id: &a10
           type: string
           format: uuid
-        receivedAt: &a6
+        receivedAt: &a11
           type: integer
           description: Epoch milliseconds.
       required:
@@ -167,15 +167,15 @@ components:
     FeedbackExport:
       type: object
       properties:
-        category: *a1
-        message: *a2
+        category: *a6
+        message: *a7
         appVersion:
           anyOf:
-            - *a3
+            - *a8
             - type: "null"
         routeFamily:
           anyOf:
-            - *a4
+            - *a9
             - type: "null"
       required:
         - category
@@ -186,19 +186,19 @@ components:
     FeedbackReport:
       type: object
       properties:
-        id: *a5
-        receivedAt: *a6
-        category: *a1
-        message: *a2
+        id: *a10
+        receivedAt: *a11
+        category: *a6
+        message: *a7
         appVersion:
           anyOf:
-            - *a3
+            - *a8
             - type: "null"
         routeFamily:
           anyOf:
-            - *a4
+            - *a9
             - type: "null"
-        state: &a9
+        state: &a14
           type: string
           enum:
             - open
@@ -327,7 +327,7 @@ components:
         labels:
           type: string
           nullable: true
-          description: Comma-separated label names
+          description: JSON-encoded array of label names
         checklists:
           type:
             - string
@@ -858,7 +858,7 @@ paths:
   /api/feedback:
     post:
       operationId: submitLocalFeedback
-      tags: &a7
+      tags: &a12
         - Local feedback
       summary: Save local feedback and return a durable receipt
       description: Available to verified Home Assistant ingress users. An identical retry returns the same receipt.
@@ -866,7 +866,7 @@ paths:
         - &a37
           haIngressSession: []
       parameters:
-        - &a14
+        - &a19
           in: header
           name: X-Meitheal-Feedback
           required: true
@@ -887,13 +887,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/FeedbackReceipt"
-        "400": &a10
+        "400": &a15
           description: Validation error (RFC 9457 — read invalidParams to self-correct)
           content:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetail"
-        "403": &a11
+        "403": &a16
           description: A verified Home Assistant ingress user with the required role is needed.
           content:
             application/problem+json:
@@ -944,20 +944,20 @@ paths:
                 $ref: "#/components/schemas/ProblemDetail"
     get:
       operationId: listLocalFeedback
-      tags: *a7
+      tags: *a12
       summary: List local feedback for a verified Home Assistant administrator
       description: Returns up to 50 reports. Pass both parts of nextCursor for the next page.
-      security: *a8
+      security: *a13
       parameters:
         - in: query
           name: state
-          schema: *a9
+          schema: *a14
         - in: query
           name: before
-          schema: *a6
+          schema: *a11
         - in: query
           name: beforeId
-          schema: *a5
+          schema: *a10
       responses:
         "200":
           description: Local reports and cursor
@@ -978,16 +978,16 @@ paths:
                   - reports
                   - nextCursor
                 additionalProperties: false
-        "400": *a10
-        "403": *a11
-        "500": *a12
-        "503": *a13
+        "400": *a15
+        "403": *a16
+        "500": *a17
+        "503": *a18
   /api/feedback/{id}:
     patch:
       operationId: reviewLocalFeedback
-      tags: *a7
+      tags: *a12
       summary: Claim or close a report as a verified Home Assistant administrator
-      security: *a8
+      security: *a13
       parameters:
         - &a19
           in: path
@@ -996,7 +996,7 @@ paths:
           schema:
             type: string
             format: uuid
-        - *a14
+        - *a19
       requestBody:
         required: true
         content:
@@ -1024,8 +1024,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/FeedbackReport"
-        "400": *a10
-        "403": *a11
+        "400": *a15
+        "403": *a16
         "404":
           description: Report no longer exists.
           content:
@@ -1046,17 +1046,17 @@ paths:
         "503": *a13
     delete:
       operationId: deleteLocalFeedback
-      tags: *a7
+      tags: *a12
       summary: Permanently delete a closed report as a verified Home Assistant administrator
-      security: *a8
+      security: *a13
       parameters:
         - *a19
         - *a14
       responses:
         "204":
           description: Report removed
-        "400": *a10
-        "403": *a11
+        "400": *a15
+        "403": *a16
         "404":
           description: Report no longer exists.
           content:
@@ -1069,14 +1069,14 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetail"
-        "500": *a12
-        "503": *a13
+        "500": *a17
+        "503": *a18
   /api/feedback/{id}/export:
     post:
       operationId: prepareLocalFeedbackExport
-      tags: *a7
+      tags: *a12
       summary: Preview a reviewed report as a verified Home Assistant administrator
-      security: *a8
+      security: *a13
       parameters:
         - *a19
         - *a14
@@ -1087,7 +1087,7 @@ paths:
             schema:
               type: object
               properties:
-                reviewedMessage: *a2
+                reviewedMessage: *a7
               required:
                 - reviewedMessage
               additionalProperties: false
@@ -1098,8 +1098,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/FeedbackExport"
-        "400": *a10
-        "403": *a11
+        "400": *a15
+        "403": *a16
         "404":
           description: Report no longer exists.
           content:
@@ -1620,9 +1620,16 @@ paths:
                 area_id:
                   type: string
                 labels:
-                  type: string
-                  description: JSON-encoded array of label names
-                  example: '["repair","garage"]'
+                  oneOf:
+                    - type: array
+                      items:
+                        type: string
+                    - type: string
+                      description: JSON-encoded array of label names
+                  description: Label names, as an array or as a JSON-encoded array.
+                  example:
+                    - repair
+                    - garage
                 checklists:
                   type: string
                   description: Replacement JSON-encoded checklist array
@@ -1663,7 +1670,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Task"
-        "400": *a10
+        "400": *a15
         "404":
           description: Not found
           content:
@@ -2878,7 +2885,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/TaskComment"
-        "400": *a10
+        "400": *a15
         "403":
           description: An active, nonsystem Home Assistant account or an automation token with task-write permission is required.
           content:
@@ -2978,7 +2985,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/TaskComment"
-        "400": *a10
+        "400": *a15
         "403":
           description: An active, nonsystem Home Assistant account or an automation token with task-write permission is required.
           content:
@@ -5690,10 +5697,10 @@ paths:
       operationId: getA2AAgentCard
       tags:
         - Agents
-      summary: Get the experimental A2A discovery card
+      summary: Get the A2A agent card for read-only task search
       responses:
         "200":
-          description: Discovery card with no executable bindings
+          description: Agent card with the JSON-RPC task search interface
         "404":
           description: A2A disabled
   /api/a2a/message:
@@ -5701,12 +5708,22 @@ paths:
       operationId: sendA2AMessage
       tags:
         - Agents
-      summary: Check A2A message execution availability
+      summary: Search active task titles through A2A JSON-RPC 1.0
+      description: "Requires a token with a2a:execute and search:read and the A2A-Version: 1.0 header. SendMessage returns up
+        to eight active task titles and links. Results are read-only."
       responses:
+        "200":
+          description: JSON-RPC result or error
+        "401":
+          description: Missing or invalid agent token
+        "403":
+          description: Token lacks a2a:execute or search:read
         "404":
           description: A2A disabled
-        "501":
-          description: A2A execution is unavailable
+        "413":
+          description: Request exceeds 16 KiB
+        "415":
+          description: Request is not application/json
   /api/agent-tokens:
     post:
       operationId: createAgentToken
@@ -5739,7 +5756,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CreateAgentTokenResponse"
-        "400": *a10
+        "400": *a15
         "403":
           description: Admin access required
           content:
@@ -5806,7 +5823,7 @@ paths:
                   id:
                     type: string
                 additionalProperties: false
-        "400": *a10
+        "400": *a15
         "403":
           description: Admin access required
           content:

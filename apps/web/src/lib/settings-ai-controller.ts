@@ -54,8 +54,12 @@ async function refreshProtocolDiscovery(): Promise<void> {
           ? data.protocol === "mcp" && data.transport === "streamable-http" &&
             data.endpoint === `${window.__ingress_path || ""}/api/mcp` &&
             data.authentication?.type === "bearer" && data.authentication.requiredScope === "mcp:execute"
-          : Array.isArray(data.skills) && data.skills.length === 0 &&
-            Array.isArray(data.supportedInterfaces) && data.supportedInterfaces.length === 0
+          : Array.isArray(data.skills) && data.skills.length === 1 && data.skills[0]?.id === "task-search" &&
+            Array.isArray(data.supportedInterfaces) && data.supportedInterfaces.length === 1 &&
+            data.supportedInterfaces[0]?.protocolBinding === "JSONRPC" &&
+            data.supportedInterfaces[0]?.protocolVersion === "1.0" &&
+            typeof data.supportedInterfaces[0]?.url === "string" &&
+            data.supportedInterfaces[0].url.endsWith(`${window.__ingress_path || ""}/api/a2a/message`)
         if (valid) state = "available"
       }
     } catch { /* A failed probe cannot establish discovery availability. */ }
@@ -160,7 +164,11 @@ async function restoreHaAgent(savedAgent: unknown) {
   } catch (error) {
     if (signal.aborted || version !== agentDiscoveryVersion) return
     renderAgentBadge(select, t("settings.ha_agent_discovery_unavailable", getClientLocale()))
-    if (status) status.textContent = t("settings.ha_agent_discovery_retry", getClientLocale(), { error: error instanceof Error ? error.message : t("settings.ha_agent_discovery_failed", getClientLocale()) })
+    // The template adds its own full stop, so drop one that ends the server detail.
+    const detail = error instanceof Error && error.message.trim()
+      ? error.message.trim().replace(/[.。]+$/u, "")
+      : t("settings.ha_agent_discovery_failed", getClientLocale())
+    if (status) status.textContent = t("settings.ha_agent_discovery_retry", getClientLocale(), { error: detail })
   } finally {
     if (!signal.aborted && version === agentDiscoveryVersion && refresh) {
       refresh.setAttribute("aria-disabled", "false")

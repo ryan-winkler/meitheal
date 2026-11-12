@@ -185,12 +185,9 @@ export function startDueDateReminders(): void {
   intervalHandle = setInterval(() => {
     checkDueDates().catch(() => {});
   }, CHECK_INTERVAL_MS);
-
-  // Ensure cleanup on process exit
-  const cleanup = () => stopDueDateReminders();
-  process.once("SIGTERM", cleanup);
-  process.once("SIGINT", cleanup);
-  process.once("beforeExit", cleanup);
+  // The scheduler must not keep the process alive. Signal listeners would also
+  // replace Node's default exit, so Supervisor would have to kill the App on stop.
+  intervalHandle.unref?.();
 }
 
 /**

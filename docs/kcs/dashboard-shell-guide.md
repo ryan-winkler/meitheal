@@ -46,6 +46,7 @@ The URL hash updates as you move, so the current section can be reloaded or shar
 
 1. Go to `Capture`.
 2. Use the inline quick-add form for the fastest path.
+   The Dashboard quick-add reads the same shorthand as Today: a date such as `tomorrow`, a priority such as `p1` or `!!`, `#labels`, `@assignees`, and `shopping:` or `errand:` lists. A Dashboard task gets no due date unless you type one. `Smart Task Parsing` in Settings controls both forms.
 3. Use the `New Task` button in the shell when you need the full modal.
 
 Both paths keep the dashboard context intact.
@@ -118,3 +119,21 @@ responsive state or native Home Assistant appearance bridge.
 Focused placeholders, enabled status choices, native widgets and primary-button
 contrast also require the shared form/theme checks. A local Dashboard pass does
 not establish that an installed App has the same source or loaded assets.
+
+## Overdue counts and due labels
+
+A date-only due date is a calendar day in the timezone from Settings. A task
+due today is not overdue. It becomes overdue on the next calendar day. A due
+date with a time becomes overdue when that time passes. The Dashboard counter,
+the Overdue Kanban filter and the Focus Queue labels ("Due today", "Due
+tomorrow", "Overdue by 2 days") use the same rule.
+
+If the counter disagrees with Today, check the timezone in Settings → Personal.
+`e2e/launch-layout-regressions.spec.ts` covers the counter with tasks due
+yesterday, today and tomorrow.
+
+## First visit appearance
+
+A browser with no saved theme uses Auto. Auto follows the Home Assistant theme
+inside ingress and the system appearance outside it. An explicit Light, Dark or
+Custom choice in Settings still takes priority.

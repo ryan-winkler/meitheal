@@ -48,7 +48,7 @@ export const GET: APIRoute = async ({ params }) => {
 /**
  * POST /api/tasks/:id/links — Create a link between two tasks.
  */
-export const POST: APIRoute = async ({ params, request }) => {
+export const POST: APIRoute = async ({ params, request, locals }) => {
   try {
     const body = await request.json()
     if (hasBoardSelection(body)) return unavailableBoardResponse()
@@ -56,6 +56,17 @@ export const POST: APIRoute = async ({ params, request }) => {
     await ensureSchema()
     const repo = new TaskRepository(getPersistenceClient())
     const sourceTaskId = params.id!
+
+    const agentToken = locals.agentToken
+    if (agentToken && agentToken.scopes.includes("tasks:write:assigned") && !agentToken.scopes.includes("tasks:write")) {
+      const task = await repo.findById(sourceTaskId)
+      if (!task || !agentToken.assigneeId || task.assigned_to !== agentToken.assigneeId) {
+        return new Response(JSON.stringify({ error: "Agent can only modify links for tasks assigned to it" }), {
+          status: 403,
+          headers: { "content-type": "application/json" },
+        })
+      }
+    }
 
     const { target_task_id, link_type } = body as { target_task_id: string; link_type: string }
 
@@ -95,7 +106,7 @@ export const POST: APIRoute = async ({ params, request }) => {
 /**
  * DELETE /api/tasks/:id/links?link_id=xxx — Remove a link.
  */
-export const DELETE: APIRoute = async ({ params, request, url }) => {
+export const DELETE: APIRoute = async ({ params, request, url, locals }) => {
   try {
     const link_id = url.searchParams.get("link_id")
     if (!link_id) {
@@ -108,6 +119,17 @@ export const DELETE: APIRoute = async ({ params, request, url }) => {
     await ensureSchema()
     const repo = new TaskRepository(getPersistenceClient())
     const taskId = params.id!
+
+    const agentToken = locals.agentToken
+    if (agentToken && agentToken.scopes.includes("tasks:write:assigned") && !agentToken.scopes.includes("tasks:write")) {
+      const task = await repo.findById(taskId)
+      if (!task || !agentToken.assigneeId || task.assigned_to !== agentToken.assigneeId) {
+        return new Response(JSON.stringify({ error: "Agent can only modify links for tasks assigned to it" }), {
+          status: 403,
+          headers: { "content-type": "application/json" },
+        })
+      }
+    }
     const rowsAffected = await repo.deleteLink(link_id, taskId)
     if (rowsAffected === 0) {
       return apiError("Link not found or does not belong to this task", 404)

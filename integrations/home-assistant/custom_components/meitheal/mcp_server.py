@@ -44,6 +44,7 @@ MCP_TOOLS = [
                 "description": {"type": "string", "description": "Task description"},
                 "priority": {"type": "integer", "minimum": 1, "maximum": 5, "description": "Priority 1-5 (1=urgent)"},
                 "due_date": {"type": "string", "format": "date", "description": "Due date YYYY-MM-DD"},
+                "assigned_to": {"type": "string", "description": "Assignee identifier (user ID or agent ID)"},
             },
         },
     },
@@ -306,6 +307,9 @@ async def _execute_tool(
         await coordinator.async_create_task(
             title=args["title"],
             description=args.get("description"),
+            priority=args.get("priority"),
+            due_date=args.get("due_date"),
+            assigned_to=args.get("assigned_to"),
         )
         return {"status": "created", "title": args["title"]}
 
@@ -522,3 +526,39 @@ async def _execute_tool(
 
     else:
         raise ValueError(f"Unknown tool: {tool_name}")
+
+
+try:
+    from aiohttp import web
+    from homeassistant.components.http import HomeAssistantView
+except ImportError:
+    HomeAssistantView = object
+    web = None
+
+
+class MeithealMcpView(HomeAssistantView):
+    """View to handle MCP requests over Home Assistant HTTP."""
+
+    url = "/api/meitheal/mcp"
+    name = "api:meitheal:mcp"
+    requires_auth = True
+
+    def __init__(self, coordinator: MeithealCoordinator) -> None:
+        self.coordinator = coordinator
+
+    async def post(self, request: web.Request) -> web.Response:
+        """Handle incoming MCP JSON-RPC call."""
+        try:
+            body = await request.json()
+        except Exception:
+            return web.json_response(
+                {
+                    "jsonrpc": "2.0",
+                    "id": "1",
+                    "error": {"code": -32700, "message": "Parse error: invalid JSON"},
+                },
+                status=400,
+            )
+
+        response = await handle_mcp_request(self.coordinator, body)
+        return web.json_response(response)

@@ -81,7 +81,8 @@
   }
 
   .filter-summary-bar .summary-overdue {
-    @apply font-semibold text-danger;
+    @apply font-semibold;
+    color: var(--danger-text);
   }
 
   /* Hover-reveal action buttons on task list items */

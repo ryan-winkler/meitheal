@@ -16,6 +16,14 @@ import { stringify } from "yaml"
 const OUTPUT = resolve(dirname(new URL(import.meta.url).pathname), "../public/openapi.yaml")
 const JSON_OUTPUT = resolve(dirname(OUTPUT), ".well-known/jsondoc.json")
 
+const taskCommentProperties = {
+  id: { type: "integer" },
+  task_id: { type: "string" },
+  content: { type: "string" },
+  author: { type: "string", description: "Display author recorded when the comment was added." },
+  created_at: { type: "string", description: "SQLite UTC timestamp." },
+}
+
 // ─── Reusable Schema Components ───────────────────────────────────────────────
 
 const feedbackCategory = { type: "string", enum: ["problem", "accessibility", "suggestion", "other"] }
@@ -80,12 +88,14 @@ const schemas = {
   TaskComment: {
     type: "object",
     required: ["id", "task_id", "content", "author", "created_at"],
+    properties: taskCommentProperties,
+  },
+  TaskCommentListItem: {
+    type: "object",
+    required: ["id", "task_id", "content", "author", "created_at", "can_manage"],
     properties: {
-      id: { type: "integer" },
-      task_id: { type: "string" },
-      content: { type: "string" },
-      author: { type: "string", description: "Display author recorded when the comment was added." },
-      created_at: { type: "string", description: "SQLite UTC timestamp." },
+      ...taskCommentProperties,
+      can_manage: { type: "boolean", description: "Whether the caller can edit and delete this comment." },
     },
   },
   TaskCommentListItem: {
@@ -164,7 +174,7 @@ const schemas = {
       project_id: { type: "string", nullable: true },
       parent_id: { type: "string", nullable: true, description: "Parent task ID for subtask hierarchy" },
       task_kind: { type: "string", enum: ["standard_action", "shopping_item", "checklist", "routine_instance", "calendar_event", "quick_capture"], description: "Behavioral kind — determines UI rendering and lifecycle rules" },
-      labels: { type: "string", nullable: true, description: "Comma-separated label names" },
+      labels: { type: "string", nullable: true, description: "JSON-encoded array of label names" },
       checklists: { type: ["string", "null"], description: "A JSON-encoded array of checklist items with text, done, and an optional id. Historical tasks may have null." },
       ticket_key: { type: "string", nullable: true, description: "Human-readable key like MTH-42" },
       created_at: { type: "integer", description: "Unix timestamp (ms)" },
@@ -812,7 +822,11 @@ const paths = {
           project_id: { type: ["string", "null"] },
           parent_id: { type: ["string", "null"] },
           area_id: { type: "string" },
-          labels: { type: "string", description: "JSON-encoded array of label names", example: '["repair","garage"]' },
+          labels: {
+            oneOf: [{ type: "array", items: { type: "string" } }, { type: "string", description: "JSON-encoded array of label names" }],
+            description: "Label names, as an array or as a JSON-encoded array.",
+            example: ["repair", "garage"],
+          },
           checklists: { type: "string", description: "Replacement JSON-encoded checklist array" },
           expected_checklists: { type: ["string", "null"], description: "Exact previous checklist value returned by GET" },
           updated_at: { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER, description: "Observed task version as epoch milliseconds. Send the exact observed value with expected_status backlog." },
@@ -1763,8 +1777,8 @@ const paths = {
   },
 
   // ── A2A ──
-  "/api/a2a/agent-card": { get: { operationId: "getA2AAgentCard", tags: ["Agents"], summary: "Get the experimental A2A discovery card", responses: { 200: { description: "Discovery card with no executable bindings" }, 404: { description: "A2A disabled" } } } },
-  "/api/a2a/message": { post: { operationId: "sendA2AMessage", tags: ["Agents"], summary: "Check A2A message execution availability", responses: { 501: { description: "A2A execution is unavailable" }, 404: { description: "A2A disabled" } } } },
+  "/api/a2a/agent-card": { get: { operationId: "getA2AAgentCard", tags: ["Agents"], summary: "Get the A2A agent card for read-only task search", responses: { 200: { description: "Agent card with the JSON-RPC task search interface" }, 404: { description: "A2A disabled" } } } },
+  "/api/a2a/message": { post: { operationId: "sendA2AMessage", tags: ["Agents"], summary: "Search active task titles through A2A JSON-RPC 1.0", description: "Requires a token with a2a:execute and search:read and the A2A-Version: 1.0 header. SendMessage returns up to eight active task titles and links. Results are read-only.", responses: { 200: { description: "JSON-RPC result or error" }, 401: { description: "Missing or invalid agent token" }, 403: { description: "Token lacks a2a:execute or search:read" }, 404: { description: "A2A disabled" }, 413: { description: "Request exceeds 16 KiB" }, 415: { description: "Request is not application/json" } } } },
 
   // ── Agent Tokens (Zero-Trust Auth) ──
   "/api/agent-tokens": {

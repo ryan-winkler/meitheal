@@ -138,7 +138,21 @@ export const POST: APIRoute = async ({ request, locals }) => {
   await ensureSchema()
   const client = getPersistenceClient()
   const repo = new TaskRepository(client)
-  const prepared = await prepareTaskCreation(repo, body)
+  const autoSource = request.headers.get("X-Automation-Source")
+  const agentId = request.headers.get("X-Agent-Id")
+  const effectiveSource = locals.agentToken
+    ? "agent"
+    : (autoSource ?? (typeof body.source === "string" ? body.source : "user"))
+  const effectiveCreatedBy = locals.agentToken
+    ? locals.agentToken.tokenName
+    : (agentId ?? (typeof body.created_by === "string" ? body.created_by : null))
+
+  const taskBody = {
+    ...body,
+    source: effectiveSource,
+    created_by: effectiveCreatedBy,
+  }
+  const prepared = await prepareTaskCreation(repo, taskBody)
   if (!prepared.ok) return Response.json({ error: prepared.error }, { status: 400 })
 
   const now = Date.now()

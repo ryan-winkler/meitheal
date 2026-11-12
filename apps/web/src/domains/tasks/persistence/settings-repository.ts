@@ -80,6 +80,9 @@ export function saveLegacyAiHandoffUrl(client: Client, value: unknown): Promise<
   })
 }
 
+let settingsRevision = 0
+export function getSettingsRevision(): number { return settingsRevision }
+
 export class SettingsRepository {
   constructor(private client: Pick<Client, "execute" | "batch">) {}
 
@@ -116,11 +119,13 @@ export class SettingsRepository {
   /** Upsert a setting (insert or update on conflict) */
   async upsert(key: string, value: string): Promise<void> {
     await this.client.execute(upsertSettingStatement(key, value, Date.now()))
+    settingsRevision++
   }
 
   /** Delete all settings (factory reset) */
   async deleteAll(): Promise<void> {
     await this.client.execute("DELETE FROM settings")
+    settingsRevision++
   }
 
   /** Get multiple settings by keys (batch read) */
@@ -135,6 +140,7 @@ export class SettingsRepository {
     const now = Date.now()
     const statements = entries.map(({ key, value }) => upsertSettingStatement(key, value, now))
     await this.client.batch(statements)
+    settingsRevision++
     return entries.length
   }
 
@@ -146,6 +152,7 @@ export class SettingsRepository {
       args: [key] as InValue[],
     }))
     await this.client.batch(statements)
+    settingsRevision++
   }
 
   // ── Reminders ──────────────────────────────────────────────────────

@@ -37,8 +37,8 @@ export const KEYBOARD_SHORTCUTS: readonly KeyboardShortcut[] = [
   { keys: ["y"], labelKey: "settings.shortcut_today", scope: "global" },
   { keys: ["u"], labelKey: "settings.shortcut_upcoming", scope: "global" },
   { keys: ["c"], labelKey: "settings.shortcut_calendar", noteKey: "settings.shortcut_calendar_note", scope: "global" },
-  { keys: ["Ctrl", "K"], labelKey: "settings.shortcut_cmd_palette", scope: "global" },
-  { keys: ["Ctrl", "B"], labelKey: "settings.shortcut_toggle_sidebar", noteKey: "settings.shortcut_toggle_sidebar_note", scope: "global" },
+  { keys: ["Ctrl/Cmd", "K"], labelKey: "settings.shortcut_cmd_palette", scope: "global" },
+  { keys: ["Ctrl/Cmd", "B"], labelKey: "settings.shortcut_toggle_sidebar", noteKey: "settings.shortcut_toggle_sidebar_note", scope: "global" },
   { keys: ["?"], labelKey: "settings.shortcut_help", scope: "global" },
   { keys: ["Esc"], labelKey: "settings.shortcut_close", scope: "global" },
   ...TASK_VIEWS.map((view, index): KeyboardShortcut => ({

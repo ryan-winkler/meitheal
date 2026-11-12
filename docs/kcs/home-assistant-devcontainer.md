@@ -27,6 +27,8 @@ The workspace is mounted at `/workspaces/meitheal`. On current Supervisor versio
 
 The privileged development container masks `getty@tty1.service`, `getty@.service` and `serial-getty@.service` before starting init, so a guest login prompt cannot claim a host console. Preserve the checked-in command when overriding startup. It uses the real `/usr/bin/systemctl --root=/` before init and exits if masking fails; a PATH-resolved systemctl shim may require systemd to be running already.
 
+The privileged development container masks `getty@tty1.service`, `getty@.service` and `serial-getty@.service` before starting init, so a guest login prompt cannot claim a host console. Preserve the checked-in command when overriding startup. It uses the real `/usr/bin/systemctl --root=/` before init and exits if masking fails; a PATH-resolved systemctl shim may require systemd to be running already.
+
 ## Local configuration and recovery
 
 The Compose file supplies the development ports and service defaults. Copy [.env.example](../../.devcontainer/.env.example) to `.devcontainer/.env` if you need to set them explicitly, including to reuse the `meitheal-dev` project name. Keep any environment-specific credentials in the ignored local file. Current supervised Core defaults to port 80, so Compose forwards `HA_UI_PORT` to `HA_CORE_PORT=80`. For an existing Core configuration that still listens on 8123, set `HA_CORE_PORT=8123` before recreating its outer container. Check `ha core info` rather than assuming the port.

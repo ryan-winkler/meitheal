@@ -6,6 +6,8 @@ import {
   getTotalTimeForTask,
 } from "@domains/pomodoro"
 import { hasBoardSelection, unavailableBoardResponse } from "@domains/tasks/board-availability"
+import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
+import { TaskRepository } from "@domains/tasks/persistence/task-repository"
 import { apiJson, apiError } from "../../../../lib/api-response"
 
 /**
@@ -34,10 +36,23 @@ export const GET: APIRoute = async ({ params }) => {
   }
 }
 
-export const POST: APIRoute = async ({ params, request }) => {
+export const POST: APIRoute = async ({ params, request, locals }) => {
   try {
     const taskId = params.id
     if (!taskId) return apiError("Task ID required", 400)
+
+    const agentToken = locals.agentToken
+    if (agentToken && agentToken.scopes.includes("tasks:write:assigned") && !agentToken.scopes.includes("tasks:write")) {
+      await ensureSchema()
+      const repo = new TaskRepository(getPersistenceClient())
+      const task = await repo.findById(taskId)
+      if (!task || !agentToken.assigneeId || task.assigned_to !== agentToken.assigneeId) {
+        return new Response(JSON.stringify({ error: "Agent can only track time on tasks assigned to it" }), {
+          status: 403,
+          headers: { "content-type": "application/json" },
+        })
+      }
+    }
 
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
     if (hasBoardSelection(body)) return unavailableBoardResponse()

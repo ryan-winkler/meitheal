@@ -17,15 +17,15 @@ export class UserRepository {
   /** List all custom users ordered by name */
   async listCustomUsers() {
     const result = await this.client.execute(
-      "SELECT id, name, color, created_at, updated_at FROM custom_users ORDER BY name ASC"
+      "SELECT id, name, color, kind, created_at, updated_at FROM custom_users ORDER BY name ASC"
     )
     return result.rows
   }
 
-  /** List custom users (minimal: id, name, color) for merge with HA users */
+  /** List custom users (minimal: id, name, color, kind) for merge with HA users */
   async listCustomUsersMinimal() {
     const result = await this.client.execute(
-      "SELECT id, name, color FROM custom_users ORDER BY name ASC"
+      "SELECT id, name, color, kind FROM custom_users ORDER BY name ASC"
     )
     return result.rows
   }
@@ -46,11 +46,11 @@ export class UserRepository {
   }
 
   /** Create a new custom user */
-  async createCustomUser(id: string, name: string, color: string): Promise<number> {
+  async createCustomUser(id: string, name: string, color: string, kind: "human" | "agent" = "human"): Promise<number> {
     const now = Date.now()
     await this.client.execute({
-      sql: "INSERT INTO custom_users (id, name, color, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-      args: [id, name, color, now, now],
+      sql: "INSERT INTO custom_users (id, name, color, kind, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+      args: [id, name, color, kind, now, now],
     })
     return now
   }
@@ -62,6 +62,15 @@ export class UserRepository {
       args: [id],
     })
     return result.rows.length > 0
+  }
+
+  /** Get a custom user by id */
+  async getCustomUser(id: string) {
+    const result = await this.client.execute({
+      sql: "SELECT id, name, color, kind, created_at, updated_at FROM custom_users WHERE id = ? LIMIT 1",
+      args: [id],
+    })
+    return (result.rows[0] as unknown as { id: string; name: string; color: string; kind?: "human" | "agent"; created_at: number; updated_at: number }) ?? null
   }
 
   /** Delete a custom user and unassign their tasks */

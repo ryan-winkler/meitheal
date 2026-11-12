@@ -486,16 +486,28 @@ async function initializeSchema(): Promise<void> {
   await client.execute("CREATE INDEX IF NOT EXISTS tasks_is_favorite_idx ON tasks(is_favorite)");
   await client.execute("CREATE INDEX IF NOT EXISTS tasks_reminder_at_idx ON tasks(reminder_at)");
 
+  if (!(await hasColumn(client, "tasks", "source"))) {
+    await client.execute("ALTER TABLE tasks ADD COLUMN source TEXT NOT NULL DEFAULT 'user'");
+  }
+  if (!(await hasColumn(client, "tasks", "created_by"))) {
+    await client.execute("ALTER TABLE tasks ADD COLUMN created_by TEXT");
+  }
+
   // Custom (non-HA) users — for families sharing one HA instance
   await client.execute(`
     CREATE TABLE IF NOT EXISTS custom_users (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
       color TEXT NOT NULL DEFAULT '#6366f1',
+      kind TEXT NOT NULL DEFAULT 'human',
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
     )
   `);
+
+  if (!(await hasColumn(client, "custom_users", "kind"))) {
+    await client.execute("ALTER TABLE custom_users ADD COLUMN kind TEXT NOT NULL DEFAULT 'human'");
+  }
 
   // Jira-style task linking — relationship types beyond parent/children
   await client.execute(`
