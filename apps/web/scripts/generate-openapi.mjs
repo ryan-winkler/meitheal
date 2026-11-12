@@ -29,7 +29,11 @@ const taskCommentProperties = {
 const feedbackCategory = { type: "string", enum: ["problem", "accessibility", "suggestion", "other"] }
 const feedbackState = { type: "string", enum: ["open", "in_progress", "resolved", "declined"] }
 const feedbackMessage = { type: "string", minLength: 1, maxLength: 4096, description: "Plain text, at most 4 KiB in UTF-8." }
-const feedbackVersion = { type: "string", description: "App version, when the sender chose to include it." }
+const feedbackVersion = {
+  type: "string", maxLength: 50,
+  pattern: "^(?:\\d{1,5}\\.\\d{1,5}\\.\\d{1,5}(?:[-+][0-9a-zA-Z][0-9a-zA-Z.-]{0,31})?|[0-9a-f]{12})(?![\\s\\S])",
+  description: "Optional bounded release version or exactly 12 lowercase hexadecimal characters for Canary.",
+}
 const feedbackRouteFamily = { type: "string", enum: ["home", "tasks", "calendar", "settings", "other"] }
 const feedbackReceipt = {
   id: { type: "string", format: "uuid" },
@@ -94,6 +98,18 @@ const schemas = {
       can_manage: { type: "boolean", description: "Whether the caller can edit and delete this comment." },
     },
   },
+  TaskCommentListItem: {
+    allOf: [
+      { $ref: "#/components/schemas/TaskComment" },
+      {
+        type: "object",
+        required: ["can_manage"],
+        properties: {
+          can_manage: { type: "boolean", description: "Whether the caller can edit and delete this comment." },
+        },
+      },
+    ],
+  },
   FeedbackSubmission: {
     type: "object",
     properties: {
@@ -139,12 +155,20 @@ const schemas = {
     properties: {
       id: { $ref: "#/components/schemas/TaskId" },
       title: { type: "string", description: "Task title — the primary human-readable label" },
-      description: { type: "string", nullable: true, description: "Rich text task description" },
+      description: { type: "string", nullable: true, maxLength: 10000, description: "Rich text task description. Oversized create or update requests are rejected without truncation." },
       status: { type: "string", description: "Current workflow status. Also supports custom workflow statuses.", example: "pending" },
       priority: { type: "integer", minimum: 0, maximum: 5, description: "Priority level: 0=none, 1=lowest, 5=critical" },
       is_promoted: { type: "boolean", description: "Shared Kanban promotion, returned for task detail and updates." },
       due_date: { type: "string", format: "date-time", nullable: true },
       assigned_to: { type: "string", nullable: true, description: "User ID prefixed with 'ha_' or 'custom_'" },
+      kanban_position: { type: "number", nullable: true, description: "Persisted shared board position; unranked tasks have null." },
+      nfc_tag_id: { type: "string", nullable: true },
+      urgency: { type: "integer", minimum: 0, maximum: 5 },
+      importance: { type: "integer", minimum: 0, maximum: 5 },
+      eisenhower_override: { type: "integer", enum: [0, 1] },
+      effort_minutes: { type: "integer", nullable: true, minimum: 1, maximum: 480 },
+      effort_type: { type: "string", nullable: true },
+      blocked_by: { type: "string", nullable: true },
       area_id: { type: "string", nullable: true },
       goal_id: { type: "string", nullable: true },
       project_id: { type: "string", nullable: true },
@@ -152,7 +176,6 @@ const schemas = {
       task_kind: { type: "string", enum: ["standard_action", "shopping_item", "checklist", "routine_instance", "calendar_event", "quick_capture"], description: "Behavioral kind — determines UI rendering and lifecycle rules" },
       labels: { type: "string", nullable: true, description: "Comma-separated label names" },
       checklists: { type: ["string", "null"], description: "A JSON-encoded array of checklist items with text, done, and an optional id. Historical tasks may have null." },
-      board_name: { type: "string", nullable: true },
       ticket_key: { type: "string", nullable: true, description: "Human-readable key like MTH-42" },
       created_at: { type: "integer", description: "Unix timestamp (ms)" },
       updated_at: { oneOf: [{ type: "integer" }, { type: "string" }], description: "Stored Unix milliseconds or legacy ISO timestamp" },
@@ -184,6 +207,7 @@ const schemas = {
       metric_type: { type: "string", nullable: true },
       metric_target: { type: "number", nullable: true },
       metric_current: { type: "number", nullable: true },
+      progress: { type: "number", minimum: 0, maximum: 100, description: "Percentage derived from the stored metric. An update maps this percentage to the goal's metric target, or initializes a percentage target of 100." },
     },
     required: ["id", "title"],
   },
@@ -358,6 +382,26 @@ const jsonContent = (schema, desc) => ({
   content: { "application/json": { schema } },
 })
 
+const labelCleanupError = (description, codes) => jsonContent({
+  type: "object", additionalProperties: false, required: ["ok", "errorCode", "detail"],
+  properties: { ok: { const: false }, errorCode: { type: "string", enum: codes }, detail: { type: "string" } },
+}, description)
+
+const labelMutationErrors = Object.fromEntries(Object.entries({
+  400: labelCleanupError("Invalid ID, label change or unexpected deletion body", ["invalid"]),
+  403: labelCleanupError("Current HA administrator or local standalone operator required; agent tokens denied", ["denied"]),
+  404: labelCleanupError("Label no longer available", ["missing"]),
+  409: labelCleanupError("No change committed: ambiguous/conflicting names or malformed stored selections", ["conflict", "blocked"]),
+  413: labelCleanupError("Body exceeds 4 KiB", ["tooLarge"]),
+  415: labelCleanupError("PUT requires application/json", ["media"]),
+  499: labelCleanupError("Request cancelled before repository work", ["cancelled"]),
+  503: labelCleanupError("Current administrator verification, bounded body read or storage unavailable", ["unavailable"]),
+}).map(([status, response]) => [status, { ...response,
+  headers: { "Cache-Control": { schema: { type: "string", const: "private, no-store" } } },
+}]))
+const labelMutationId = [{ name: "id", in: "path", required: true, schema: { type: "integer", minimum: 1, maximum: 9007199254740991 } }]
+const labelDeletionErrors = Object.fromEntries(Object.entries(labelMutationErrors).filter(([status]) => !["413", "415"].includes(status)))
+
 const ref = (name) => ({ $ref: `#/components/schemas/${name}` })
 const arrOf = (name) => ({ type: "array", items: ref(name) })
 
@@ -380,9 +424,11 @@ const feedbackHeader = {
 }
 const feedbackId = { in: "path", name: "id", required: true, schema: { type: "string", format: "uuid" } }
 const feedbackForbidden = problemContent("A verified Home Assistant ingress user with the required role is needed.")
-const feedbackUnavailable = problemContent("The local feedback database is busy or the queue is full.")
+const feedbackUnavailable = problemContent("Current Home Assistant authority could not be verified, the local feedback database is busy, or the queue is full.")
 const feedbackJsonErrors = {
   400: err400,
+  408: problemContent("The feedback body did not arrive within five seconds."),
+  499: problemContent("The feedback request was cancelled."),
   403: feedbackForbidden,
   413: problemContent("The request body exceeds 8 KiB."),
   415: problemContent("The request body must be application/json."),
@@ -587,20 +633,20 @@ const paths = {
     get: {
       operationId: "listTasks",
       tags: ["Tasks"],
-      summary: "List all tasks with optional filters",
-      description: "Retrieve tasks filtered by status, area, project, labels, priority, assignee, board, or due date. Use sort and limit parameters for pagination. This is the primary read endpoint for task management automations.",
+      summary: "List Household tasks with optional filters",
+      description: "Retrieve Household tasks filtered by status, area, project, labels, priority, assignee, or due date. Use sort and limit parameters for pagination. This is the primary read endpoint for task management automations.",
       parameters: [
         { name: "status", in: "query", schema: { type: "string" }, description: "Filter: todo, in_progress, complete, archived" },
         { name: "deferred", in: "query", schema: { type: "string", enum: ["0", "1"] }, description: "Use 1 for deferred work and 0 for other work. Omission returns both." },
         { name: "area_id", in: "query", schema: { type: "string" } },
         { name: "project_id", in: "query", schema: { type: "string" } },
-        { name: "board_name", in: "query", schema: { type: "string" } },
         { name: "assigned_to", in: "query", schema: { type: "string" } },
         { name: "priority", in: "query", schema: { type: "integer" } },
         { name: "due_date", in: "query", schema: { type: "string", format: "date" }, description: "Match the stored calendar day, either a date-only value or the date written in a stored ISO timestamp. Invalid dates return 400." },
         { name: "parent_id", in: "query", schema: { type: "string" }, description: "Get subtasks of a parent" },
-        { name: "sort", in: "query", schema: { type: "string", enum: ["created", "updated", "priority", "due_date"] } },
-        { name: "limit", in: "query", schema: { type: "integer", default: 50 } },
+        { name: "sort", in: "query", schema: { type: "string", enum: ["created_at", "updated_at", "title", "status", "priority", "due_date", "kanban_position"] }, description: "Equal values use task ID ascending; null values sort last." },
+        { name: "order", in: "query", schema: { type: "string", enum: ["asc", "desc"], default: "desc" } },
+        { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 500, default: 100 } },
         { name: "offset", in: "query", schema: { type: "integer", default: 0 } },
       ],
       responses: {
@@ -610,6 +656,7 @@ const paths = {
           required: ["tasks", "total", "limit", "offset"],
         }, "Task page and matching total"),
         400: problemContent("Invalid task filter"),
+        404: problemContent("Requested Board unavailable"),
         500: err500,
       },
     },
@@ -663,7 +710,6 @@ const paths = {
                 project_id: { type: "string" },
                 parent_id: { type: "string" },
                 labels: { type: "string" },
-                board_name: { type: "string" },
                 task_kind: { type: "string" },
                 frameworkPayload: { type: "object" },
                 calendar: {
@@ -684,7 +730,67 @@ const paths = {
         201: jsonContent(ref("Task"), "Task created"),
         200: jsonContent(ref("Task"), "Idempotent replay — task already existed"),
         400: err400,
+        404: problemContent("Requested Board unavailable"),
         500: err500,
+      },
+    },
+  },
+  "/api/nfc/complete": {
+    post: { operationId: "completeTaskByNfcTag", tags: ["Tasks"], summary: "Complete the uniquely assigned incomplete task for an NFC tag",
+      requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["tag_id"], properties: { tag_id: { type: "string" } } } } } },
+      responses: { 200: { description: "Task completed (or already complete on retry)" }, 400: err400, 404: { description: "No matching task" }, 409: { description: "Tag is assigned ambiguously" }, 500: err500 },
+    },
+  },
+  "/api/tasks/{id}/handoff": {
+    post: {
+      operationId: "manageTaskHandoff",
+      tags: ["Tasks"],
+      summary: "Claim, release, or propose edits to a task",
+      description: "Requires tasks:propose. Claim returns a five-minute lease. Release and propose require that lease and the issuing token. Propose sends title or description changes to the administrator review queue without changing the task.",
+      security: [{ bearerAuth: [] }],
+      parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" }, description: "Task ID or ticket key" }],
+      requestBody: { required: true, content: { "application/json": { schema: {
+        type: "object",
+        required: ["action"],
+        properties: {
+          action: { type: "string", enum: ["claim", "release", "propose"] },
+          lease: { type: "string", format: "uuid", description: "Required for release and propose" },
+          summary: { type: "string", maxLength: 500, description: "Required for propose" },
+          updates: { type: "object", description: "Required for propose. Include at least one field.", properties: {
+            title: { type: "string", minLength: 1, maxLength: 500 },
+            description: { type: "string", maxLength: 10000 },
+          }, additionalProperties: false },
+        },
+        additionalProperties: false,
+      } } } },
+      responses: {
+        200: { description: "Claim returns lease and expiresAt. Proposal returns hash and reviewUntil. Times are Unix milliseconds." },
+        400: { description: "Invalid handoff request" },
+        401: { description: "An active agent token is required" },
+        403: { description: "The agent token lacks tasks:propose" },
+        404: { description: "Task not found" },
+        409: { description: "The task, claim, or proposal is unavailable or changed" },
+        422: { description: "The proposal does not change the task" },
+      },
+    },
+  },
+  "/api/tasks/{id}/accept-proposal": {
+    post: {
+      operationId: "reviewTaskProposal",
+      tags: ["Tasks"],
+      summary: "Approve or reject a pending task proposal",
+      description: "Home Assistant administrator session and same-site request required. A proposal hash ties the decision to the reviewed content. Agent tokens cannot review proposals.",
+      parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+      requestBody: { required: true, content: { "application/json": { schema: {
+        type: "object",
+        required: ["action", "proposal_hash"],
+        properties: { action: { type: "string", enum: ["accept", "reject"] }, proposal_hash: { type: "string", pattern: "^[a-f0-9]{64}$" } },
+        additionalProperties: false,
+      } } } },
+      responses: {
+        200: { description: "Review decision applied" },
+        403: { description: "A same-site Home Assistant administrator session is required" },
+        409: { description: "The proposal expired, was already reviewed, or its task changed" },
       },
     },
   },
@@ -701,7 +807,7 @@ const paths = {
       operationId: "updateTask",
       tags: ["Tasks"],
       summary: "Update a task",
-      description: "Send only the fields you want to change. PATCH accepts the same fields as PUT. Set project_id to an existing project ID to move the task, or null to clear the assignment. Changing the project preserves task area and status. Setting status to 'complete' triggers webhook events and optional calendar cleanup. With expected_status 'backlog', send the exact updated_at from the current task and a target status of 'pending' or 'active'. To guard a checklist write, include checklists and expected_checklists. Set expected_checklists to the exact checklist string or null returned by GET.",
+      description: "Send only the fields you want to change. PATCH accepts the same fields as PUT. Set project_id to an existing project ID to move the task, or null to clear the assignment. Changing the project preserves task area and status. When a task transitions to 'complete', the update also saves the next occurrence if its recurrence rule yields one. Events are dispatched after the write. With expected_status 'backlog', send the exact updated_at from the current task and a target status of 'pending' or 'active'. To guard a checklist write, include checklists and expected_checklists. Set expected_checklists to the exact checklist string or null returned by GET.",
       parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
       requestBody: { content: { "application/json": { schema: {
         type: "object",
@@ -769,6 +875,11 @@ const paths = {
             ] } },
             "application/problem+json": { schema: ref("ProblemDetail") },
           },
+        },
+        500: problemContent("Could not save task completion"),
+        503: {
+          ...problemContent("Database unavailable. Retry after the interval in Retry-After."),
+          headers: { "Retry-After": { schema: { type: "integer" }, description: "Seconds before retrying" } },
         },
       },
     },
@@ -893,7 +1004,7 @@ const paths = {
           if: { properties: { areaId: { type: "null" } } },
           then: { properties: { days: { minimum: 0 } } }, properties: {
           action: { const: "preview" }, areaId: inactivityArea,
-          page: { type: "integer", minimum: 1, maximum: 100000 }, filter: { enum: ["all", "ready", "upcoming"] },
+          page: { type: "integer", minimum: 1, maximum: 100000 }, filter: { enum: ["all", "ready", "upcoming", "stalled"] },
           days: inactivityDays,
         } },
         { type: "object", required: ["action", "areaId", "days", "expectedRevision", "expectedDefaultRevision", "areaGeneration", "expectedAreaCatalogRevision"],
@@ -924,12 +1035,17 @@ const paths = {
             tasks: { type: "array", maxItems: 25, items: inactivityObject({
               id: inactivityId, title: { type: "string" }, area_id: inactivityId,
               status: { type: "string" }, ticket_number: { type: ["integer", "null"] },
-              last_activity: inactivityEpoch, deadline: inactivityEpoch,
+              last_activity: inactivityEpoch, deadline: { ...inactivityEpoch, type: ["integer", "null"] },
+              stall_since: { ...inactivityEpoch, type: ["integer", "null"] },
             }) },
             now: inactivityEpoch, canSave: { type: "boolean" },
           }),
           inactivityObject({ policy: inactivityPolicy }),
-          inactivityObject({ now: inactivityEpoch, cues: { type: "object", additionalProperties: inactivityEpoch } }),
+          inactivityObject({
+            now: inactivityEpoch,
+            cues: { type: "object", additionalProperties: inactivityEpoch },
+            stalled: { type: "object", additionalProperties: inactivityEpoch },
+          }),
         ] }, "Policy preview, saved revision, or current cues for requested cards"),
         400: problemContent("Invalid action or scope"), 403: problemContent("Active browser access or administrator role required"),
         404: problemContent("Area unavailable"), 409: problemContent("Scope, revision, or Area generation changed"),
@@ -1284,9 +1400,72 @@ const paths = {
     get: { operationId: "listLabels", tags: ["Labels"], summary: "List all labels", responses: { 200: jsonContent(arrOf("Label"), "Labels") } },
     post: { operationId: "createLabel", tags: ["Labels"], summary: "Create a label", requestBody: { content: { "application/json": { schema: ref("Label") } } }, responses: { 201: jsonContent(ref("Label"), "Created") } },
   },
+  "/api/labels/cleanup": {
+    post: {
+      operationId: "useLabelCleanup", tags: ["Labels"], summary: "Review and remove selected unused label definitions",
+      description: "Online-only same-origin administrator browser action. Home Assistant requires a fresh administrator check. Preview includes at most 25 definitions unused across all task states, legacy links, saved drafts and templates. Remove rechecks every selected revision and current usage in one transaction. A blocked or stale result deletes nothing. The 8 KiB request body contains filters and selections. Responses are private and no-store.",
+      requestBody: { required: true, content: { "application/json": { schema: { oneOf: [
+        { type: "object", additionalProperties: false, required: ["action", "afterId"], properties: {
+          action: { const: "preview" }, afterId: { type: ["integer", "null"], minimum: 1, maximum: 9007199254740991 },
+        } },
+        { type: "object", additionalProperties: false, required: ["action", "labels"], properties: {
+          action: { const: "remove" }, labels: { type: "array", minItems: 1, maxItems: 25, uniqueItems: true,
+            items: { type: "object", additionalProperties: false, required: ["id", "revision"], properties: {
+              id: { type: "integer", minimum: 1, maximum: 9007199254740991 }, revision: { type: "string", pattern: "^[a-f0-9]{64}$" },
+            } },
+          },
+        } },
+      ] } } } },
+      responses: {
+        200: jsonContent({ oneOf: [
+          { type: "object", required: ["ok", "labels", "nextAfter"], properties: {
+            ok: { const: true }, nextAfter: { type: ["integer", "null"] }, labels: { type: "array", maxItems: 25,
+              items: { type: "object", required: ["id", "title", "hexColor", "revision"], properties: {
+                id: { type: "integer" }, title: { type: "string" }, hexColor: { type: "string", pattern: "^#[a-fA-F0-9]{6}$" },
+                revision: { type: "string", pattern: "^[a-f0-9]{64}$" },
+              } },
+            },
+          } },
+          { type: "object", required: ["ok", "removed"], properties: { ok: { const: true },
+            removed: { type: "array", minItems: 1, maxItems: 25, items: { type: "integer" } },
+          } },
+        ] }),
+        400: labelCleanupError("Invalid cleanup action or query parameters", ["invalid"]),
+        401: labelCleanupError("Authenticated browser session required", ["denied"]),
+        403: labelCleanupError("Current administrator browser required", ["denied"]),
+        404: labelCleanupError("Noncanonical path alias rejected without redirect", ["invalid"]),
+        405: { ...labelCleanupError("POST required", ["method"]), headers: { Allow: { schema: { type: "string", const: "POST" } } } },
+        409: labelCleanupError("No selected definition was removed", ["stale", "blocked"]),
+        413: labelCleanupError("Body exceeds 8 KiB", ["tooLarge"]), 415: labelCleanupError("Expected JSON", ["media"]),
+        429: { ...labelCleanupError("Rate limited; retry after the indicated delay", ["busy"]),
+          headers: { "Retry-After": { schema: { type: "string" } } } },
+        499: labelCleanupError("Request cancelled", ["cancelled"]),
+        503: labelCleanupError("Administrator verification, body read or storage unavailable", ["unavailable"]),
+      },
+    },
+  },
   "/api/labels/{id}": {
-    put: { operationId: "updateLabel", tags: ["Labels"], summary: "Update a label", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: jsonContent(ref("Label"), "Updated") } },
-    delete: { operationId: "deleteLabel", tags: ["Labels"], summary: "Delete a label", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: { description: "Deleted" } } },
+    put: {
+      operationId: "updateLabel", tags: ["Labels"], summary: "Update a shared label and its current references atomically",
+      description: "Requires fresh Home Assistant administrator verification, or the existing local standalone operator boundary. Agent tokens are denied and this operation is excluded from MCP discovery. Renaming rewrites current task, saved-draft and template selections in one writer transaction. Ambiguous equivalent definitions or malformed selections commit nothing. Color-only edits do not scan private selections. Body limit is 4 KiB with a five-second read bound. Responses are private and no-store. Existing middleware authentication, CSRF and rate limits still apply.",
+      parameters: labelMutationId,
+      requestBody: { required: true, content: { "application/json": { schema: {
+        type: "object", additionalProperties: false, minProperties: 1,
+        properties: { title: { type: "string", description: "HTML is stripped, then the title is trimmed and validated as 1–100 UTF-16 code units with well-formed Unicode. The complete UTF-8 request must fit within 4 KiB." },
+          hex_color: { type: "string", pattern: "^#?[a-fA-F0-9]{6}$" } },
+      } } } },
+      responses: { ...labelMutationErrors, 200: { ...jsonContent({ type: "object", required: ["id", "title", "hex_color"], properties: {
+        id: { type: "integer", minimum: 1 }, title: { type: "string" }, hex_color: { type: "string", pattern: "^#[a-fA-F0-9]{6}$" },
+      } }, "Committed label"), headers: { "Cache-Control": { schema: { type: "string", const: "private, no-store" } } } } },
+    },
+    delete: {
+      operationId: "deleteLabel", tags: ["Labels"], summary: "Delete a shared label and its current references atomically",
+      description: "Requires a current HA administrator or local standalone operator; agent tokens are denied and MCP excludes this operation. Send no body. The final equivalent definition removes matching current task, draft and template selections; deleting one duplicate retains their shared name references. The selected ID's legacy junctions and definition are removed in the same writer transaction. Private no-store responses contain no draft/template bodies. Middleware authentication, CSRF and rate limits still apply.",
+      parameters: labelMutationId,
+      responses: { ...labelDeletionErrors, 200: { ...jsonContent({ type: "object", required: ["ok", "deleted"], properties: {
+        ok: { const: true }, deleted: { type: "integer", minimum: 1 },
+      } }, "Committed deletion"), headers: { "Cache-Control": { schema: { type: "string", const: "private, no-store" } } } } },
+    },
   },
 
   // ── Habits ──
@@ -1301,17 +1480,45 @@ const paths = {
   "/api/settings": {
     get: {
       operationId: "getSettings", tags: ["Settings"], summary: "Read application settings",
-      description: "Without key, returns a flat settings map. With key, returns a single { key, value } object; secret settings also include configured. System settings require administrator access and credential values are masked. Verified household ingress sessions may individually read ai-provider. Reading ai-custom-url also requires administrator approval of that exact URL through ai-custom-url-approved; legacy URLs remain private until reviewed. Standalone system reads and all system writes remain administrator-only.",
-      parameters: [{ name: "key", in: "query", required: false, description: "Read one setting instead of the settings map", schema: { type: "string", minLength: 1 } }],
+      description: "Without key, returns a flat settings map. An administrator's map includes the read-only ai-handoff-editable flag. With key, returns a single { key, value } object; secret settings also include configured. System settings require administrator access and credential values are masked. Use key=ai-provider&handoff=1 for the saved provider and permitted destination in one snapshot. This view requires current Home Assistant household access or a local standalone operator. Members can read a custom URL after a current administrator explicitly shares that exact URL. Agent credentials cannot use the handoff view.",
+      parameters: [
+        { name: "key", in: "query", required: false, description: "Read one setting instead of the settings map", schema: { type: "string", minLength: 1 } },
+        { name: "handoff", in: "query", required: false, description: "Request the current AI handoff snapshot with key=ai-provider", schema: { type: "string", const: "1" } },
+      ],
       responses: {
         200: jsonContent({ anyOf: [
           { type: "object", additionalProperties: true, description: "Flat settings map when key is absent" },
           { type: "object", required: ["key", "value"], properties: { key: { type: "string" }, value: {}, configured: { type: "boolean", description: "Present for masked credential settings" } }, additionalProperties: false, description: "Single setting when key is supplied; value is null when unset" },
+          { type: "object", required: ["key", "value", "canUseAssist"], properties: {
+            key: { const: "ai-provider" }, value: { enum: [null, "chatgpt", "claude", "gemini", "ollama", "ha_llm", "custom"] },
+            url: { type: "string", format: "uri", description: "Permitted HTTP(S) custom or Ollama destination" },
+            urlProblem: { const: "invalid", description: "A current administrator can still use Assist when the secondary URL is invalid" },
+            canUseAssist: { type: "boolean", description: "Current administrator or local standalone operator can use App-managed Assist" },
+          }, additionalProperties: false, description: "AI handoff snapshot" },
         ] }, "Settings map or single setting"),
-        403: { description: "Administrator access or explicit custom URL review required" },
+        403: { description: "Current access or explicit custom URL review required" },
+        409: { description: "Saved AI provider or URL is invalid" },
+        503: { description: "Home Assistant could not verify current access" },
       },
     },
-    put: { operationId: "updateSettings", tags: ["Settings"], summary: "Update a setting", description: "Send a key and value. Changing system settings requires administrator access.", requestBody: { required: true, content: { "application/json": { schema: { type: "object", properties: { key: { type: "string" }, value: {} }, required: ["key"] } } } }, responses: { 200: { description: "Updated" }, 403: { description: "Administrator required" } } },
+    put: {
+      operationId: "updateSettings", tags: ["Settings"], summary: "Update a setting",
+      description: "Send a key and value. System settings and activating Custom mode require administrator access. With custom_theme_css, send name to save the CSS, filename and mode together. Send both strings empty to remove the theme. For a Settings editor save of ai-provider, include the previously saved provider, URL and sharing state. Custom and Ollama additionally require the new destination and sharing choice, which commit together with the provider. A legacy ai-custom-url write revokes approval if it changes the destination. Read ai-custom-url-approved as an administrator to inspect the approval; set it through the grouped save.",
+      requestBody: { required: true, content: { "application/json": { schema: {
+        type: "object", required: ["key"],
+        properties: {
+          key: { type: "string" }, value: {}, name: { type: "string", maxLength: 255 },
+          custom_url: { type: "string", format: "uri" }, share_custom_url: { type: "boolean" },
+          previous_provider: { type: ["string", "null"] }, previous_custom_url: { type: ["string", "null"] },
+          previously_shared: { type: "boolean" },
+        },
+      } } } },
+      responses: {
+        200: { description: "Updated" }, 400: { description: "Invalid setting or AI handoff input" },
+        403: { description: "Administrator required" }, 409: { description: "Saved AI provider, URL or sharing choice changed" },
+        503: { description: "Home Assistant could not verify current access" },
+      },
+    },
   },
 
   // ── Lanes (Kanban) ──
@@ -1327,7 +1534,27 @@ const paths = {
   // ── Saved Filters ──
   "/api/saved-filters": {
     get: { operationId: "listSavedFilters", tags: ["Views"], summary: "List saved filter presets", responses: { 200: { description: "Saved filters" } } },
-    post: { operationId: "createSavedFilter", tags: ["Views"], summary: "Create a saved filter", responses: { 201: { description: "Created" } } },
+    post: {
+      operationId: "createSavedFilter", tags: ["Views"], summary: "Create a saved filter",
+      requestBody: { required: true, content: { "application/json": { schema: {
+        type: "object", required: ["name"], additionalProperties: true, properties: {
+          name: { type: "string", description: "Must contain 1–100 characters after trimming." },
+          icon: { type: ["string", "null"], description: "Null or omission uses the default icon." },
+          query_json: { type: ["object", "null"], properties: {
+            createdFrom: { type: "string", description: "Inclusive lower creation date, YYYY-MM-DD. Empty omits the bound." },
+            createdThrough: { type: "string", description: "Inclusive upper creation date, YYYY-MM-DD. Empty omits the bound." },
+          } },
+        },
+      } } } },
+      responses: {
+        201: jsonContent({
+          type: "object", required: ["id", "name", "position"], properties: {
+            id: { type: "string" }, name: { type: "string" }, position: { type: "integer" },
+          },
+        }, "Created"),
+        400: { description: "Invalid name, icon, query object or creation date range" },
+      },
+    },
     put: { operationId: "updateSavedFilter", tags: ["Views"], summary: "Update a saved filter", responses: { 200: { description: "Updated" } } },
     delete: { operationId: "deleteSavedFilter", tags: ["Views"], summary: "Delete a saved filter", responses: { 200: { description: "Deleted" } } },
   },
@@ -1395,13 +1622,24 @@ const paths = {
   "/api/rules": {
     get: { operationId: "listRules", tags: ["Automation"], summary: "List automation rules", description: "Rules engine for automatic task mutations (e.g., auto-assign, auto-label, auto-prioritize).", responses: { 200: { description: "Rules" } } },
     post: { operationId: "createRule", tags: ["Automation"], summary: "Create an automation rule", responses: { 201: { description: "Created" } } },
+    put: {
+      operationId: "replaceRules", tags: ["Automation"], summary: "Replace validated task context rules atomically",
+      description: "Omit replaceIds to replace the complete list. Supply replaceIds to replace only the displayed rules and preserve other custom rules. Invalid input or a failed insert preserves the previous configuration.",
+      requestBody: { required: true, content: { "application/json": { schema: {
+        type: "object", required: ["rules"], properties: {
+          rules: { type: "array", maxItems: 1000, items: { type: "object", required: ["name"], properties: { name: { type: "string", minLength: 1, maxLength: 500 } } } },
+          replaceIds: { type: "array", maxItems: 1000, items: { type: "string", maxLength: 128 } },
+        },
+      } } } },
+      responses: { 200: { description: "Rules replaced" }, 400: { description: "Invalid rules or replacement IDs" }, 500: { description: "Replacement failed; previous rules unchanged" } },
+    },
   },
   "/api/rules/{id}": {
     put: { operationId: "updateRule", tags: ["Automation"], summary: "Update a rule", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: { description: "Updated" } } },
     delete: { operationId: "deleteRule", tags: ["Automation"], summary: "Delete a rule", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: { description: "Deleted" } } },
   },
   "/api/rules/defaults": {
-    get: { operationId: "getRuleDefaults", tags: ["Automation"], summary: "Get default rule configuration", responses: { 200: { description: "Defaults" } } },
+    post: { operationId: "restoreRuleDefaults", tags: ["Automation"], summary: "Atomically restore Strategic rules and clear framework overrides", responses: { 200: { description: "Defaults restored" }, 500: { description: "Reset failed; previous configuration unchanged" } } },
   },
   "/api/rules/resolve": {
     post: { operationId: "resolveRules", tags: ["Automation"], summary: "Test rule resolution against a task payload", description: "Dry-run: shows what rules would fire for a given task payload without applying changes.", responses: { 200: { description: "Resolution result" } } },
@@ -1444,8 +1682,8 @@ const paths = {
       },
     },
   },
-  "/api/export/settings.json": { get: { operationId: "exportSettings", tags: ["Export"], summary: "Export settings as JSON", responses: { 200: { description: "Settings JSON" } } } },
-  "/api/import/settings": { post: { operationId: "importSettings", tags: ["Export"], summary: "Import settings from JSON", responses: { 200: { description: "Imported" } } } },
+  "/api/export/settings.json": { get: { operationId: "exportSettings", tags: ["Export"], summary: "Export settings as JSON", description: "Requires a current Home Assistant administrator. Exports a version-2 configuration bundle with decoded JSON values marked _settingsEncoding: json-values. Credential settings and household AI URL approval are omitted. A saved destination can still contain sensitive values. This is not an App database backup.", responses: { 200: { description: "Settings JSON" }, 403: { description: "Current administrator required" }, 503: { description: "Home Assistant could not verify current access" } } } },
+  "/api/import/settings": { post: { operationId: "importSettings", tags: ["Export"], summary: "Import settings from JSON", description: "Requires a current Home Assistant administrator. Imports known non-secret settings. Version-2 payloads can replace rules and built-in framework overrides and restore custom definitions in the same transaction. Unrelated custom frameworks are kept. Accepts typed values and historical native version-2 exports containing serialized values. An imported AI provider or URL requires fresh household sharing approval.", responses: { 200: { description: "Imported" }, 403: { description: "Current administrator required" }, 503: { description: "Home Assistant could not verify current access" } } } },
 
   // ── License ──
   "/api/license/status": {

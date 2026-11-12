@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto"
 
 import { expect, test } from "@playwright/test"
-import { shouldSkipBrowserSpecs } from "./_helpers"
+import { deferred, shouldSkipBrowserSpecs } from "./_helpers"
 
 test.describe("Saved Table filters", () => {
   test.skip(shouldSkipBrowserSpecs(), "Set E2E_BASE_URL to run browser specs")
@@ -326,4 +326,344 @@ test.describe("Saved Table filters", () => {
       for (const id of areas) await request.delete(`/api/areas/${id}`, { headers })
     }
   })
+})
+
+test("Table workflow columns and Unassigned combine and survive a shared preset link", async ({ page, request, baseURL }) => {
+  test.skip(shouldSkipBrowserSpecs(), "Set E2E_BASE_URL to run browser specs")
+  const name = `Workflow columns ${randomUUID()}`
+  const headers = { origin: new URL(baseURL!).origin }
+  const ids: string[] = []
+  let presetId: string | undefined
+  const finishRefresh = deferred<void>()
+  try {
+    for (const [status, suffix] of [["pending", "A"], ["active", "B"], ["active", "C"], ["complete", "D"]]) {
+      const created = await request.post("/api/tasks", { headers, data: { title: `${name} ${suffix}`, status } })
+      expect(created.status(), await created.text()).toBe(201)
+      const { id } = await created.json()
+      ids.push(id)
+      const assigned = await request.put(`/api/tasks/${id}`, {
+        headers, data: { assigned_to: suffix === "C" ? "fixture-member" : null },
+      })
+      expect(assigned.status(), await assigned.text()).toBe(200)
+    }
+
+    await page.setViewportSize({ width: 320, height: 900 })
+    const params = new URLSearchParams({ area: "", search: name, sort: "title-asc" })
+    await page.goto(`/table?${params}`)
+    await page.waitForFunction(() =>
+      !("serviceWorker" in navigator) || navigator.serviceWorker.controller?.state === "activated",
+    )
+    const rows = page.locator("#task-table .table-row")
+    const expectRows = async (expected: string[]) => {
+      await expect.poll(() => rows.evaluateAll(items => items.map(item => (item as HTMLElement).dataset.id))).toEqual(expected)
+    }
+    await expectRows(ids)
+    const toolbar = page.getByRole("toolbar", { name: "Filter tasks" })
+    const columns = toolbar.locator("summary").filter({ hasText: "Workflow columns" })
+    await columns.press("Enter")
+    const todo = toolbar.getByRole("checkbox", { name: "Todo", exact: true })
+    const refreshStarted = deferred<void>()
+    await page.route(url => url.pathname === "/tasks" && url.searchParams.has("tableRefresh"), async route => {
+      refreshStarted.resolve()
+      await finishRefresh.promise
+      await route.continue()
+    }, { times: 1 })
+    await todo.press("Space")
+    await refreshStarted.promise
+    const presetToggle = page.getByRole("button", { name: "Saved filter presets" })
+    const panel = page.getByRole("region", { name: "Saved Filter Presets" })
+    const save = panel.getByRole("button", { name: "Save Current Filters" })
+    await presetToggle.press("Enter")
+    await expect(save).toBeEnabled()
+    await save.press("Enter")
+    await expect(panel).toContainText("Apply the Table filters before saving a preset.")
+    await expect(page.getByRole("dialog", { name: "Save Filter Preset" })).toHaveCount(0)
+    finishRefresh.resolve()
+    await expectRows([ids[0]!])
+    await panel.getByRole("button", { name: "Close panel" }).click()
+    const active = toolbar.getByRole("checkbox", { name: "In Progress", exact: true })
+    await active.press("Space")
+    await expectRows(ids.slice(0, 3))
+    await expect(active).toBeFocused()
+    await active.press("Escape")
+    await expect(columns).toBeFocused()
+    await expect(active).toBeHidden()
+    await expectRows(ids.slice(0, 3))
+    await toolbar.getByRole("checkbox", { name: "Unassigned" }).press("Space")
+    await expectRows(ids.slice(0, 2))
+    expect(await toolbar.evaluate(el => el.getBoundingClientRect().right)).toBeLessThanOrEqual(321)
+    const bookmark = new URL(page.url())
+    expect(bookmark.searchParams.getAll("lane")).toEqual(["lane-pending", "lane-active"])
+    expect(bookmark.searchParams.get("user")).toBe("__unassigned__")
+    await page.reload()
+    await expectRows(ids.slice(0, 2))
+    await expect(toolbar.getByRole("checkbox", { name: "Unassigned" })).toBeChecked()
+
+    await presetToggle.press("Enter")
+    await expect(save).toBeEnabled()
+    await save.press("Enter")
+    const dialog = page.getByRole("dialog", { name: "Save Filter Preset" })
+    await dialog.getByRole("textbox").fill(name)
+    const savedResponse = page.waitForResponse(response =>
+      new URL(response.url()).pathname === "/api/saved-filters" && response.request().method() === "POST",
+    )
+    await dialog.getByRole("button", { name: "OK" }).press("Enter")
+    const saved = await savedResponse
+    expect(saved.status(), await saved.text()).toBe(201)
+    const savedFilters = await request.get("/api/saved-filters").then(response => response.json())
+    presetId = savedFilters.filters.find((preset: { id: string; name: string }) => preset.name === name)?.id
+    expect(presetId).toBeDefined()
+    const result = await request.get("/api/search", { params: { q: name, scope: "views" } })
+    expect(result.status(), await result.text()).toBe(200)
+    const { sections } = await result.json()
+    const item = sections.find((section: { id: string }) => section.id === "saved_filters")
+      ?.items.find((candidate: { id: string }) => candidate.id === presetId)
+    expect(item?.href).toBeDefined()
+    await page.goto(item.href)
+    await expectRows(ids.slice(0, 2))
+
+    bookmark.searchParams.delete("lane")
+    bookmark.searchParams.append("lane", "removed-".padEnd(470, "x"))
+    await page.goto(bookmark.href)
+    await expectRows([])
+    await columns.press("Enter")
+    await expect(toolbar.getByRole("checkbox", { name: /^Unavailable workflow column/ })).toBeChecked()
+    expect(await toolbar.evaluate(el => el.getBoundingClientRect().right)).toBeLessThanOrEqual(321)
+    await toolbar.getByRole("button", { name: "Clear all active filters" }).press("Enter")
+    await expect(page).toHaveURL(url => !url.searchParams.has("lane") && !url.searchParams.has("user"))
+    await expect(toolbar.getByRole("textbox", { name: "Filter by text" })).toBeFocused()
+
+    bookmark.searchParams.delete("lane")
+    const requested = ["removed\u0000column", ...Array.from({ length: 49 }, (_, index) => `removed-${index}`)]
+    for (const id of [...requested, "lane-pending"]) bookmark.searchParams.append("lane", id)
+    await page.goto(bookmark.href)
+    await columns.press("Enter")
+    const missing = toolbar.getByRole("checkbox", { name: /^Unavailable workflow column/ })
+    await expect(missing).toHaveCount(50)
+    await expect(missing.first()).toBeChecked()
+    await expect(todo).toBeDisabled()
+    await expect(toolbar.getByText("You can select up to 50 workflow columns.")).toBeVisible()
+    await toolbar.getByRole("checkbox", { name: "Unassigned" }).press("Space")
+    await expect(page).toHaveURL(url => !url.searchParams.has("user") &&
+      JSON.stringify(url.searchParams.getAll("lane")) === JSON.stringify(requested))
+    await missing.last().press("Space")
+    await expect(todo).toBeEnabled()
+    await expect(toolbar.getByText("You can select up to 50 workflow columns.")).toBeHidden()
+  } finally {
+    finishRefresh.resolve()
+    if (presetId) await request.delete("/api/saved-filters", { headers, params: { id: presetId } })
+    for (const id of ids) await request.delete(`/api/tasks/${id}`, { headers })
+  }
+})
+
+test("Save Current Filters keeps the applied view when another tab changes preferences", async ({ page, request, baseURL }) => {
+  test.skip(shouldSkipBrowserSpecs(), "Set E2E_BASE_URL to run browser specs")
+  const name = `Applied Table ${randomUUID()}`
+  const headers = { origin: new URL(baseURL!).origin }
+  let presetId: string | undefined
+  const other = await page.context().newPage()
+  try {
+    await page.goto("/tasks?view=table")
+    await page.waitForFunction(() =>
+      !("serviceWorker" in navigator) || navigator.serviceWorker.controller?.state === "activated",
+    )
+    const shell = page.locator("#table-shell")
+    await expect(shell).toHaveAttribute("data-table-ready", "true")
+    await expect(page).toHaveURL(url => url.search === "?view=table")
+    const initial = JSON.parse((await shell.getAttribute("data-table-filters"))!)
+    await page.getByRole("button", { name: "Saved filter presets" }).press("Enter")
+    const save = page.getByRole("button", { name: "Save Current Filters" })
+    await expect(save).toBeEnabled()
+    await save.press("Enter")
+    const dialog = page.getByRole("dialog", { name: "Save Filter Preset" })
+    await expect(dialog).toBeVisible()
+    await other.goto("/tasks?view=table")
+    await other.evaluate(() => {
+      localStorage.setItem("meitheal-task-view-filters", JSON.stringify({ search: "Other tab only" }))
+      localStorage.setItem("meitheal-selected-area", JSON.stringify({ areaId: "other-area", areaName: "Other Area" }))
+      localStorage.setItem("meitheal-column-preferences", JSON.stringify({ status: false }))
+    })
+    await dialog.getByRole("textbox").fill(name)
+    const savedResponse = page.waitForResponse(response =>
+      new URL(response.url()).pathname === "/api/saved-filters" && response.request().method() === "POST",
+    )
+    await dialog.getByRole("button", { name: "OK" }).press("Enter")
+    const saved = await savedResponse
+    expect(saved.status(), await saved.text()).toBe(201)
+    presetId = (await saved.json()).id
+    expect(presetId).toBeDefined()
+    expect(saved.request().postDataJSON().query_json).toMatchObject({ area: "", columns: initial.columns })
+    expect(saved.request().postDataJSON().query_json.search ?? "").toBe("")
+  } finally {
+    await other.close()
+    if (presetId) await request.delete("/api/saved-filters", { headers, params: { id: presetId } })
+  }
+})
+
+test("Table creation date drafts stay separate from applied filters and saved links", async ({ page, request, baseURL }) => {
+  test.skip(shouldSkipBrowserSpecs(), "Set E2E_BASE_URL to run browser specs")
+  const name = `Created date ${randomUUID()}`
+  const headers = { origin: new URL(baseURL!).origin }
+  let taskId: string | undefined
+  let presetId: string | undefined
+  try {
+    const task = await request.post("/api/tasks", { headers, data: { title: name } })
+    expect(task.status(), await task.text()).toBe(201)
+    const created = await task.json()
+    taskId = created.id
+    const day = new Intl.DateTimeFormat("sv-SE", {
+      timeZone: "Europe/Dublin", year: "numeric", month: "2-digit", day: "2-digit",
+    }).format(new Date(created.created_at))
+    const invalid = await request.post("/api/saved-filters", {
+      headers, data: { name, query_json: { createdFrom: "2023-02-29", createdThrough: day } },
+    })
+    expect(invalid.status()).toBe(400)
+    const invalidRoot = await request.post("/api/saved-filters", {
+      headers, data: { name, query_json: JSON.stringify({ createdFrom: "invalid" }) },
+    })
+    expect(invalidRoot.status()).toBe(400)
+    await page.setViewportSize({ width: 320, height: 900 })
+    const bookmark = new URLSearchParams({ search: name, area: "", createdFrom: "2023-02-29", createdThrough: day })
+    await page.goto("/table?" + bookmark)
+    await page.waitForFunction(() =>
+      !("serviceWorker" in navigator) || navigator.serviceWorker.controller?.state === "activated",
+    )
+    const toolbar = page.getByRole("toolbar", { name: "Filter tasks" })
+    const row = page.locator("#task-table .table-row")
+    const summary = toolbar.locator("[data-table-created-summary]")
+    const from = toolbar.getByLabel("On or after", { exact: true })
+    const through = toolbar.getByLabel("On or before", { exact: true })
+    const apply = toolbar.getByRole("button", { name: "Apply dates" })
+    const clear = toolbar.getByRole("button", { name: "Clear dates" })
+    await expect(row).toHaveCount(1)
+    await summary.press("Enter")
+    await expect(from).toHaveValue("")
+    await expect(through).toHaveValue("")
+    await expect(through).not.toHaveAccessibleDescription(/end date/)
+    await from.fill(day)
+    await through.fill("2000-01-01")
+    await apply.press("Enter")
+    await expect(through).toBeFocused()
+    await expect(through).toHaveAttribute("aria-invalid", "true")
+    await expect(through).toHaveAccessibleDescription("The end date must be on or after the start date.")
+    await expect(toolbar.getByRole("alert")).toContainText("The end date must be on or after the start date.")
+    await through.press("Escape")
+    await expect(summary).toBeFocused()
+    await expect(from).toBeHidden()
+    await expect(row).toHaveCount(1)
+    await summary.press("Enter")
+    await expect(from).toHaveValue("")
+    await from.fill(day)
+    await through.fill(day)
+    const sizes = await page.locator("[data-table-created-date]").evaluate(el => ({
+      right: el.getBoundingClientRect().right,
+      controls: Array.from(el.querySelectorAll("input, button")).map(control => control.getBoundingClientRect().height),
+    }))
+    expect(sizes.right).toBeLessThanOrEqual(321)
+    expect(Math.min(...sizes.controls)).toBeGreaterThanOrEqual(44)
+    await apply.press("Enter")
+    await expect(page).toHaveURL(url => url.searchParams.get("createdFrom") === day && url.searchParams.get("createdThrough") === day)
+    await expect(summary).toBeFocused()
+    await expect(row).toHaveAttribute("data-id", taskId!)
+    const calendarTab = page.locator('[data-view-tab="calendar"]')
+    const tabHref = await calendarTab.getAttribute("href")
+    expect(new URL(tabHref!, baseURL).searchParams.get("createdFrom")).toBe(day)
+    await page.goto(tabHref!)
+    await expect(page.locator("#tasks-view-calendar")).toBeVisible()
+    await expect(summary).toHaveCount(0)
+    await page.goto((await page.locator('[data-view-tab="table"]').getAttribute("href"))!)
+    await expect(row).toHaveAttribute("data-id", taskId!)
+    await expect(summary).toContainText(day)
+
+    await summary.press("Enter")
+    await from.fill("")
+    await through.fill("2000-01-01")
+    await page.route(url => url.searchParams.has("tableRefresh") && url.searchParams.get("createdThrough") === "2000-01-01",
+      route => route.fulfill({ status: 503 }), { times: 1 })
+    await apply.press("Enter")
+    const retry = page.locator("[data-table-retry]")
+    await expect(retry).toBeVisible()
+    await expect(row).toHaveAttribute("data-id", taskId!)
+    await expect(summary).toContainText(day)
+    await expect(page).toHaveURL(url => url.searchParams.get("createdThrough") === day)
+    await retry.press("Enter")
+    await expect(row).toHaveCount(0)
+    await expect(summary).toContainText("≤ 2000-01-01")
+    await expect(retry).toBeHidden()
+
+    await summary.press("Enter")
+    await from.fill(day)
+    await through.fill(day)
+    await apply.press("Enter")
+    await expect(row).toHaveAttribute("data-id", taskId!)
+
+    await summary.press("Enter")
+    await through.fill("2000-01-01")
+    await page.getByRole("button", { name: "Saved filter presets" }).press("Enter")
+    const save = page.getByRole("button", { name: "Save Current Filters" })
+    await expect(save).toBeEnabled()
+    await save.press("Enter")
+    const dialog = page.getByRole("dialog", { name: "Save Filter Preset" })
+    await dialog.getByRole("textbox").fill(name)
+    const savedResponse = page.waitForResponse(response =>
+      new URL(response.url()).pathname === "/api/saved-filters" && response.request().method() === "POST",
+    )
+    await dialog.getByRole("button", { name: "OK" }).press("Enter")
+    const saved = await savedResponse
+    expect(saved.status(), await saved.text()).toBe(201)
+    presetId = (await saved.json()).id
+    expect(saved.request().postDataJSON().query_json).toMatchObject({ createdFrom: day, createdThrough: day })
+
+    const search = await request.get("/api/search", { params: { q: name, scope: "views" } })
+    expect(search.status(), await search.text()).toBe(200)
+    const { sections } = await search.json()
+    const item = sections.find((section: { id: string }) => section.id === "saved_filters")
+      ?.items.find((candidate: { id: string }) => candidate.id === presetId)
+    expect(item?.href).toBeDefined()
+    await page.goto(item.href)
+    await expect(row).toHaveAttribute("data-id", taskId!)
+    await page.reload()
+    await expect(row).toHaveAttribute("data-id", taskId!)
+    await summary.press("Enter")
+    await expect(through).toHaveValue(day)
+    await from.fill("")
+    await toolbar.getByRole("button", { name: "Clear all active filters" }).press("Escape")
+    await expect(from).toBeHidden()
+    await expect(summary).toBeFocused()
+    await expect(page).toHaveURL(url => url.searchParams.get("search") === name && url.searchParams.get("createdFrom") === day)
+    await summary.press("Enter")
+    await expect(from).toHaveValue(day)
+    await clear.press("Enter")
+    await expect(page).toHaveURL(url => !url.searchParams.has("createdFrom") &&
+      !url.searchParams.has("createdThrough") && url.searchParams.get("search") === name)
+    await expect(summary).toBeFocused()
+    const clearedTabHref = await calendarTab.getAttribute("href")
+    expect(new URL(clearedTabHref!, baseURL).searchParams.has("createdFrom")).toBe(false)
+
+    await page.goto("/table?" + new URLSearchParams({ area: "", createdFrom: day }))
+    const clearAll = toolbar.getByRole("button", { name: "Clear all active filters" })
+    await expect(clearAll).toBeVisible()
+    await page.route(url => url.searchParams.has("tableRefresh") && !url.searchParams.has("createdFrom"),
+      route => route.fulfill({ status: 503 }), { times: 1 })
+    await summary.press("Enter")
+    await clear.press("Enter")
+    await expect(retry).toBeVisible()
+    await expect(clearAll).toBeVisible()
+    await expect(summary).toContainText(day)
+    await retry.press("Enter")
+    await expect(page).toHaveURL(url => !url.searchParams.has("createdFrom"))
+    await expect(clearAll).toBeHidden()
+
+    await page.context().addCookies([{ name: "meitheal-locale", value: "ga", url: new URL(baseURL!).origin }])
+    await page.reload()
+    const irish = page.locator("[data-table-created-summary]")
+    await expect(irish).toContainText("Dáta cruthaithe")
+    await irish.press("Enter")
+    await expect(page.getByLabel("Ar an dáta nó ina dhiaidh", { exact: true })).toBeVisible()
+    await expect(page.getByRole("button", { name: "Cuir dátaí i bhfeidhm" })).toBeVisible()
+    expect(await page.locator("[data-table-created-date]").evaluate(el => el.getBoundingClientRect().right)).toBeLessThanOrEqual(321)
+  } finally {
+    if (presetId) await request.delete("/api/saved-filters", { headers, params: { id: presetId } })
+    if (taskId) await request.delete("/api/tasks/" + taskId, { headers })
+  }
 })

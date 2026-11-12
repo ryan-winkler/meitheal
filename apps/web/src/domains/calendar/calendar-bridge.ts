@@ -49,6 +49,13 @@ function stripMeithealAttribution(desc: string | null | undefined): string | nul
 
 /** Sync direction — matches Grocy bridge pattern */
 export type CalendarSyncMode = "import" | "export" | "bidirectional";
+export interface CalendarSyncCounts {
+  created: number
+  updated: number
+  total: number
+  skipped?: string
+  failed?: string
+}
 
 export interface CalendarSyncConfig {
   entityId: string;
@@ -196,7 +203,14 @@ function startSingleEntitySync(config: CalendarSyncConfig): void {
         event: "calendar.sync.entity_changed", domain: "calendar", component: "calendar-bridge",
         request_id: SYS_REQ, message: `Calendar entity ${config.entityId} changed — syncing (debounced)`,
       });
-      await syncEntityFromHA(config.entityId);
+      try {
+        await syncEntityFromHA(config.entityId)
+      } catch (err) {
+        logger.log("error", {
+          event: "calendar.sync.entity_change_failed", domain: "calendar", component: "calendar-bridge",
+          request_id: SYS_REQ, message: `Calendar change sync failed for ${config.entityId}: ${err}`,
+        })
+      }
     }, 10_000, `entity-change-${config.entityId}`);
     const unsub = onEntityChange(config.entityId, debouncedSync);
     // Store cancel function so stopSingleEntitySync can clean up the pending timer
@@ -237,12 +251,13 @@ function startSingleEntitySync(config: CalendarSyncConfig): void {
 
 /**
  * Sync events FROM all configured HA calendars TO Meitheal.
- * Returns aggregated results across all entities.
+ * Manual retry resets failure backoff; background triggers retain it.
+ * Returns aggregated results across all entities, including committed partial work.
  */
-export async function syncFromHA(overrideEntityId?: string): Promise<{ created: number; updated: number; total: number }> {
+export async function syncFromHA(overrideEntityId?: string): Promise<CalendarSyncCounts> {
   // If a specific entity is requested, sync just that one
   if (overrideEntityId) {
-    return syncEntityFromHA(overrideEntityId);
+    return syncEntityFromHA(overrideEntityId, true);
   }
 
   // If no entities configured, return empty
@@ -251,27 +266,32 @@ export async function syncFromHA(overrideEntityId?: string): Promise<{ created: 
       event: "calendar.sync.no_entities", domain: "calendar", component: "calendar-bridge",
       request_id: SYS_REQ, message: "syncFromHA called with no entities configured",
     });
-    return { created: 0, updated: 0, total: 0 };
+    throw new Error("No active calendar sync is configured");
   }
 
   // Sync ALL configured entities in parallel
   const results = await Promise.allSettled(
-    Array.from(activeSyncs.keys()).map((entityId) => syncEntityFromHA(entityId)),
+    Array.from(activeSyncs.keys()).map((entityId) => syncEntityFromHA(entityId, true)),
   );
 
-  const aggregated = { created: 0, updated: 0, total: 0 };
+  const aggregated: CalendarSyncCounts = { created: 0, updated: 0, total: 0 };
+  let failures = 0
   for (const result of results) {
     if (result.status === "fulfilled") {
       aggregated.created += result.value.created;
       aggregated.updated += result.value.updated;
       aggregated.total += result.value.total;
+      if (result.value.failed || result.value.skipped) failures++
+    } else {
+      failures++
     }
   }
+  if (failures > 0) aggregated.failed = `${failures} calendar(s) failed or skipped`
 
-  logger.log("info", {
-    event: "calendar.sync.multi_complete", domain: "calendar", component: "calendar-bridge",
+  logger.log(failures > 0 ? "warn" : "info", {
+    event: failures > 0 ? "calendar.sync.multi_incomplete" : "calendar.sync.multi_complete", domain: "calendar", component: "calendar-bridge",
     request_id: SYS_REQ,
-    message: `Multi-calendar sync: ${aggregated.created} created, ${aggregated.updated} updated from ${aggregated.total} events across ${activeSyncs.size} calendars`,
+    message: `Multi-calendar sync: ${aggregated.created} created, ${aggregated.updated} updated from ${aggregated.total} events across ${activeSyncs.size} calendars; ${failures} failed or skipped`,
   });
 
   return aggregated;
@@ -282,7 +302,7 @@ export async function syncFromHA(overrideEntityId?: string): Promise<{ created: 
  * Merges calendar events into the tasks table with deduplication
  * via the calendar_confirmations table (keyed by provider_event_id).
  */
-async function syncEntityFromHA(entityId: string): Promise<{ created: number; updated: number; total: number }> {
+async function syncEntityFromHA(entityId: string, manualRetry = false): Promise<CalendarSyncCounts> {
   // Mode guard — export-only calendars skip inbound sync
   const state = activeSyncs.get(entityId);
   if (state?.config.syncMode === "export") {
@@ -291,7 +311,7 @@ async function syncEntityFromHA(entityId: string): Promise<{ created: number; up
       request_id: SYS_REQ, message: `Inbound sync skipped for ${entityId} — export-only mode`,
       metadata: { sync_mode: "export" },
     });
-    return { created: 0, updated: 0, total: 0 };
+    return { created: 0, updated: 0, total: 0, skipped: "export-only calendar" };
   }
 
   // Concurrency guard — skip if already syncing this entity
@@ -300,18 +320,27 @@ async function syncEntityFromHA(entityId: string): Promise<{ created: number; up
       event: "calendar.sync.skipped_concurrent", domain: "calendar", component: "calendar-bridge",
       request_id: SYS_REQ, message: `Sync already in progress for ${entityId} — skipping`,
     });
-    return { created: 0, updated: 0, total: 0 };
+    return { created: 0, updated: 0, total: 0, skipped: "sync already running" };
   }
+  if (state && manualRetry) state.consecutiveFailures = 0
   syncingEntities.add(entityId);
+  let timeout: ReturnType<typeof setTimeout> | undefined
 
   try {
     // Wrap in timeout to prevent hung syncs from blocking indefinitely
     const result = await Promise.race([
       _syncEntityFromHAInner(entityId, state ?? null),
-      new Promise<{ created: number; updated: number; total: number }>((_, reject) =>
-        setTimeout(() => reject(new Error(`Sync timeout after ${SYNC_TIMEOUT_MS}ms`)), SYNC_TIMEOUT_MS)
+      new Promise<CalendarSyncCounts>((_, reject) =>
+        timeout = setTimeout(() => reject(new Error(`Sync timeout after ${SYNC_TIMEOUT_MS}ms`)), SYNC_TIMEOUT_MS)
       ),
     ]);
+    // This wrapper is the single owner of failure accounting, including partial merges.
+    if (state && !result.skipped) {
+      state.lastSyncAt = Date.now()
+      state.lastSyncEventCount = result.total
+      state.lastSyncError = result.failed ?? null
+      state.consecutiveFailures = result.failed ? state.consecutiveFailures + 1 : 0
+    }
     return result;
   } catch (err) {
     // Timeout or unexpected error — still update state
@@ -324,14 +353,15 @@ async function syncEntityFromHA(entityId: string): Promise<{ created: number; up
       event: "calendar.sync.timeout_or_error", domain: "calendar", component: "calendar-bridge",
       request_id: SYS_REQ, message: `Sync failed for ${entityId}: ${err}`,
     });
-    return { created: 0, updated: 0, total: 0 };
+    throw err;
   } finally {
+    clearTimeout(timeout)
     syncingEntities.delete(entityId);
   }
 }
 
 /** Inner sync logic — always called within concurrency guard */
-async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState | null): Promise<{ created: number; updated: number; total: number }> {
+async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState | null): Promise<CalendarSyncCounts> {
 
   // Backoff: skip sync after 5 consecutive failures (reset via stopSingleEntitySync or manual)
   if (state && state.consecutiveFailures >= 5) {
@@ -340,7 +370,7 @@ async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState |
       request_id: SYS_REQ,
       message: `Sync backoff for ${entityId} — ${state.consecutiveFailures} consecutive failures (last: ${state.lastSyncError})`,
     });
-    return { created: 0, updated: 0, total: 0 };
+    return { created: 0, updated: 0, total: 0, skipped: "calendar sync is in failure backoff" };
   }
 
   const now = new Date();
@@ -354,11 +384,6 @@ async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState |
       event: "calendar.sync.from_ha", domain: "calendar", component: "calendar-bridge",
       request_id: SYS_REQ, message: `No events to sync from ${entityId}`,
     });
-    if (state) {
-      state.lastSyncAt = Date.now();
-      state.lastSyncEventCount = 0;
-      state.lastSyncError = null;
-    }
     return { created: 0, updated: 0, total: 0 };
   }
 
@@ -534,6 +559,7 @@ async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState |
           }
         }
       } catch (staleErr) {
+        errors++
         logger.log("warn", {
           event: "calendar.sync.stale_check_failed", domain: "calendar", component: "calendar-bridge",
           request_id: SYS_REQ, message: `Stale event check failed for ${entityId}: ${staleErr}`,
@@ -541,11 +567,8 @@ async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState |
       }
     }
 
-    if (state) {
-      state.lastSyncAt = Date.now();
-      state.lastSyncEventCount = events.length;
-      state.lastSyncError = errors > 0 ? `${errors} event(s) failed` : null;
-      state.consecutiveFailures = errors > 0 ? state.consecutiveFailures + 1 : 0;
+    if (errors > 0) {
+      return { created, updated, total: events.length, failed: `${errors} calendar merge or reconciliation operation(s) failed` }
     }
 
     logger.log("info", {
@@ -568,16 +591,11 @@ async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState |
 
     return { created, updated, total: events.length };
   } catch (err) {
-    if (state) {
-      state.lastSyncError = String(err);
-      state.lastSyncAt = Date.now();
-      state.consecutiveFailures++;
-    }
     logger.log("error", {
       event: "calendar.sync.merge_failed", domain: "calendar", component: "calendar-bridge",
       request_id: SYS_REQ, message: `Failed to merge calendar events from ${entityId}: ${err}`,
     });
-    return { created: 0, updated: 0, total: 0 };
+    throw err;
   }
 }
 
@@ -868,7 +886,7 @@ export function getCalendarSyncStatus() {
   // Include CalDAV sync status
   if (caldavSyncState) {
     entities.push({
-      entityId: "caldav:" + (caldavSyncState.url || "external"),
+      entityId: "caldav",
       source: "caldav" as const,
       syncMode: caldavSyncState.syncMode,
       writeBack: false,
@@ -924,6 +942,7 @@ interface CalDAVSyncState {
 }
 
 let caldavSyncState: CalDAVSyncState | null = null;
+let syncingCalDAV = false
 
 /**
  * Start periodic CalDAV sync. Independent error boundary — CalDAV
@@ -944,12 +963,12 @@ export function startCalDAVSync(url: string, intervalMs: number): void {
   };
 
   // Run initial sync
-  syncCalDAVEvents().catch(() => { /* logged inside */ });
+  syncCalDAVFromServer().catch(() => { /* logged inside */ });
 
   // Set up periodic sync if interval > 0
   if (intervalMs > 0) {
     caldavSyncState.timer = setInterval(() => {
-      syncCalDAVEvents().catch(() => { /* logged inside */ });
+      syncCalDAVFromServer().catch(() => { /* logged inside */ });
     }, intervalMs);
   }
 
@@ -970,24 +989,46 @@ export function stopCalDAVSync(): void {
 }
 
 /**
- * Sync events from CalDAV server into Meitheal.
- * Independent of HA calendar sync — uses separate error boundary.
+ * Manually retry the configured CalDAV import, resetting its failure backoff.
+ * Background callbacks retain backoff and use a separate error boundary from HA.
  */
-export async function syncCalDAVEvents(): Promise<{ created: number; updated: number; total: number }> {
-  if (!caldavSyncState) {
-    return { created: 0, updated: 0, total: 0 };
-  }
+export async function syncCalDAVEvents(): Promise<CalendarSyncCounts> {
+  return syncCalDAVFromServer(true)
+}
+
+async function syncCalDAVFromServer(manualRetry = false): Promise<CalendarSyncCounts> {
+  const state = caldavSyncState
+  if (!state) return { created: 0, updated: 0, total: 0, skipped: "CalDAV sync is not configured" }
+  if (syncingCalDAV) return { created: 0, updated: 0, total: 0, skipped: "CalDAV sync already running" }
+  if (manualRetry) state.consecutiveFailures = 0
 
   // Backoff: skip sync after 5 consecutive failures
-  if (caldavSyncState.consecutiveFailures >= 5) {
+  if (state.consecutiveFailures >= 5) {
     logger.log("warn", {
       event: "calendar.caldav.backoff", domain: "calendar", component: "calendar-bridge",
       request_id: SYS_REQ,
-      message: `CalDAV backoff — ${caldavSyncState.consecutiveFailures} consecutive failures (last: ${caldavSyncState.lastSyncError})`,
+      message: `CalDAV backoff — ${state.consecutiveFailures} consecutive failures`,
     });
-    return { created: 0, updated: 0, total: 0 };
+    return { created: 0, updated: 0, total: 0, skipped: "CalDAV sync is in failure backoff" };
   }
 
+  syncingCalDAV = true
+  try {
+    const result = await importCalDAVEvents()
+    state.lastSyncAt = Date.now()
+    state.lastSyncEventCount = result.total
+    state.lastSyncError = result.failed ?? null
+    state.consecutiveFailures = result.failed ? state.consecutiveFailures + 1 : 0
+    return result
+  } finally {
+    syncingCalDAV = false
+  }
+}
+
+async function importCalDAVEvents(): Promise<CalendarSyncCounts> {
+  let totalCreated = 0
+  let totalUpdated = 0
+  let totalEvents = 0
   try {
     // Dynamic import to avoid loading crypto at module level
     const { decryptCalDAVPassword } = await import("../../pages/api/integrations/calendar/caldav-credentials");
@@ -1006,10 +1047,17 @@ export async function syncCalDAVEvents(): Promise<{ created: number; updated: nu
     for (const row of credRes.rows) {
       creds[String(row.key)] = String(row.value);
     }
+    // Credential setup historically stores raw URLs; Settings restores store JSON
+    // values. Decode only this preference, leaving credential bytes untouched.
+    if (creds.caldav_url) {
+      try {
+        const restored: unknown = JSON.parse(creds.caldav_url)
+        creds.caldav_url = typeof restored === "string" ? restored : ""
+      } catch { /* Existing raw URL. */ }
+    }
 
     if (!creds.caldav_url || !creds.caldav_username || !creds.caldav_password_enc) {
-      caldavSyncState.lastSyncError = "CalDAV credentials not configured";
-      return { created: 0, updated: 0, total: 0 };
+      return { created: 0, updated: 0, total: 0, failed: "CalDAV credentials not configured" };
     }
 
     const config = {
@@ -1021,8 +1069,7 @@ export async function syncCalDAVEvents(): Promise<{ created: number; updated: nu
     // Discover calendars
     const calendars = await discoverCalendars(config);
     if (calendars.length === 0) {
-      caldavSyncState.lastSyncError = "No calendars found on server";
-      return { created: 0, updated: 0, total: 0 };
+      return { created: 0, updated: 0, total: 0, failed: "No CalDAV calendars found on server" };
     }
 
     // Fetch events from all discovered calendars — same range as HA sync
@@ -1030,9 +1077,7 @@ export async function syncCalDAVEvents(): Promise<{ created: number; updated: nu
     const start = new Date(now.getTime() - 7 * 86400000);  // -7 days
     const end = new Date(now.getTime() + 30 * 86400000);    // +30 days
 
-    let totalCreated = 0;
-    let totalUpdated = 0;
-    let totalEvents = 0;
+    let failures = 0
 
     for (const cal of calendars) {
       try {
@@ -1059,8 +1104,8 @@ export async function syncCalDAVEvents(): Promise<{ created: number; updated: nu
           const reqId = crypto.randomUUID();
           const nowMs = Date.now();
 
-          // Atomic INSERT...SELECT to prevent ticket_number race under concurrent sync
-          await client.execute({
+          // Commit each task and its dedup confirmation together so a failed import can be retried.
+          await client.batch([{
             sql: `INSERT INTO tasks (id, title, description, status, priority, due_date,
                     labels, framework_payload, calendar_sync_state, area_id,
                     custom_fields, task_type, idempotency_key, request_id,
@@ -1080,29 +1125,25 @@ export async function syncCalDAVEvents(): Promise<{ created: number; updated: nu
               nowMs,
               nowMs,
             ],
-          });
-
-          // Record confirmation for dedup
-          await client.execute({
+          }, {
             sql: `INSERT INTO calendar_confirmations (confirmation_id, task_id, request_id, provider_event_id, source, payload, created_at)
                   VALUES (?, ?, ?, ?, 'caldav', ?, ?)`,
             args: [crypto.randomUUID(), taskId, reqId, evt.uid, JSON.stringify({ summary: evt.summary, dtstart: evt.dtstart, calendar: cal.displayName }), nowMs],
-          });
-
+          }], "write");
           totalCreated++;
         }
-      } catch (calErr) {
+      } catch {
+        failures++
         logger.log("warn", {
           event: "calendar.caldav.calendar_error", domain: "calendar", component: "calendar-bridge",
-          request_id: SYS_REQ, message: `Failed to sync CalDAV calendar ${cal.displayName}: ${calErr}`,
+          request_id: SYS_REQ, message: "Failed to fetch or import a CalDAV calendar; check server access and database health",
         });
       }
     }
 
-    caldavSyncState.lastSyncAt = Date.now();
-    caldavSyncState.lastSyncEventCount = totalEvents;
-    caldavSyncState.lastSyncError = null;
-    caldavSyncState.consecutiveFailures = 0; // Reset on success
+    if (failures > 0) {
+      return { created: totalCreated, updated: totalUpdated, total: totalEvents, failed: `${failures} CalDAV calendar(s) failed to fetch or import` }
+    }
 
     logger.log("info", {
       event: "calendar.caldav.synced", domain: "calendar", component: "calendar-bridge",
@@ -1111,18 +1152,14 @@ export async function syncCalDAVEvents(): Promise<{ created: number; updated: nu
     });
 
     return { created: totalCreated, updated: totalUpdated, total: totalEvents };
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "CalDAV sync failed";
-    if (caldavSyncState) {
-      caldavSyncState.lastSyncError = message;
-      caldavSyncState.consecutiveFailures++;
-    }
+  } catch {
+    const message = "CalDAV sync failed; check credentials, server access and database health";
 
     logger.log("error", {
       event: "calendar.caldav.error", domain: "calendar", component: "calendar-bridge",
       request_id: SYS_REQ, message: `CalDAV sync error: ${message}`,
     });
 
-    return { created: 0, updated: 0, total: 0 };
+    return { created: totalCreated, updated: totalUpdated, total: totalEvents, failed: message };
   }
 }

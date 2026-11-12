@@ -27,6 +27,32 @@ KCS article defining Meitheal's ubiquitous language for task lifecycle operation
 
 ## Operations
 
+### Description limits and integration reads
+
+Task descriptions support up to 10,000 characters. A longer create or update request returns 400 instead of saving a shortened description. Shorten the text and retry; a rejected update preserves the saved task and description.
+
+Task detail and list reads retain saved urgency, importance, effort, NFC tag and board position fields. Integrations can read board order with `GET /api/tasks?sort=kanban_position&order=asc&limit=100&offset=0`. Equal positions use task ID ascending, and tasks without a position sort last. Continue pagination with `offset` when the matching total exceeds the requested limit.
+
+### Find and page shared labels
+
+**Settings → Workflow → Labels** shows up to 25 editable definitions at a time. **Search labels** searches saved names across all definitions, ignoring letter case and treating canonically equivalent Unicode alike. The range distinguishes matching definitions from the total. Clear search to return to the full list. Search becomes available after the complete list loads; use **Retry** if loading fails.
+
+Changing pages or search retains unsaved names, colours, row messages and pending writes for this page visit. Search uses the saved name until a rename succeeds. A save may finish while its row is on another page; its result is announced and appears when you return. Creation keeps the current page and search. Reloading or leaving Settings clears unsaved edits.
+
+### Rename or delete a shared label
+
+In **Settings → Workflow → Labels**, edit the name or colour and choose **Save**. The label badge changes only after the write succeeds. If saving fails, the previous badge and your unsaved input remain so you can correct or retry the change. **Delete** asks for confirmation before removing the selected definition.
+
+Renaming updates matching current task, saved-draft and template label selections together. Matching ignores surrounding whitespace and letter case and treats canonically equivalent Unicode names alike. An ambiguous rename changes nothing: use a distinct name or remove the duplicate definition first. Deleting one equivalent definition retains shared name selections while another definition survives; deleting the final definition removes those selections. It preserves the tasks, drafts, templates and unrelated fields.
+
+These shared changes require a currently verified Home Assistant administrator, or the local standalone operator. Agent credentials cannot rename or delete shared definitions. Colour-only edits leave task, draft and template selections untouched. An interrupted request may have committed: reload Labels and inspect the current badge before repeating it.
+
+### Review unused labels
+
+Open **Settings → Workflow → Labels**, then choose **Review unused labels** with a current Home Assistant administrator account. Select labels on the displayed page and choose **Remove selected labels**. The confirmation names every selected label. Changing pages clears the selection.
+
+An unused label definition has no remaining task association or matching saved label name. Cleanup checks tasks in every Area, including deferred and completed work, plus private draft and template selections. It removes selected definitions only. Tasks, drafts and templates are preserved. A label that becomes used or changes after the preview requires another review before removal. Planned labels remain available until deliberately selected.
+
 ### Link to another task
 
 In Details, type `#` in the description, a new comment, or a comment you can edit. Choose a recent task, or type a ticket number or a word from its title immediately after `#` to narrow the list. Tap a result or use the arrow keys and Enter. Escape closes the list and keeps your text. A space after `#` lets you continue typing a Markdown heading in a description.
@@ -131,8 +157,10 @@ Complete → Archive → Delete (selective) → Purge (everything)
 
 Open **Tasks → Inactivity** to see open work that is ready to move to Deferred or within seven elapsed days of its cutoff. The rule starts Off. An administrator can set a shared interval and give an Area its own interval, turn the Area Off, or let it inherit. Preview the proposed policy before saving. If an Area or rule changes while you review, preview again before saving. Existing work that is already past the new cutoff can move at the next sweep.
 
-The cutoff uses the most recent task activity, including comments and a real Resume. Scheduled work, reminders, recurring work, confirmed calendar links and active work with open prerequisites are protected. Automatic moves keep the task's workflow status. The Deferred queue identifies automatic moves and offers **Resume**, which starts a fresh inactivity window.
+The cutoff uses the most recent task activity, including comments and a real Resume. Scheduled work, reminders, recurring work, and confirmed calendar links, and active work with open prerequisites are protected. Automatic moves keep the task's workflow status. The Deferred queue identifies automatic moves and offers **Resume**, which starts a fresh inactivity window.
 
 ## Task participation
 
 Comments record shared task context. Reactions add a short acknowledgment to a task or comment. Home Assistant ingress checks current membership for writes and keyed comment retries. Existing comments remain visible to callers with task access. Edit and delete still belong to the original author. For account recovery and API behavior, see the [operations runbook](operations-runbook.md).
+
+**Stalled** identifies open work after a burst of collaboration, a new assignment or a reopen. The cue appears after 14 elapsed days without qualifying activity and clears after a new update. Use the Stalled filter under **Tasks → Inactivity** to review it. Closing soon tracks the separate automatic deferral deadline.

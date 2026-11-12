@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import date, datetime
 from typing import Any
 
 from homeassistant.components.todo import (
@@ -13,6 +14,7 @@ from homeassistant.components.todo import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -83,16 +85,26 @@ class MeithealTodoListEntity(CoordinatorEntity[MeithealCoordinator], TodoListEnt
         """Return todo items from coordinator data."""
         if not self.coordinator.data:
             return None
-        return [self._task_to_item(t) for t in self.coordinator.data.tasks]
+        return [self._task_to_item(t) for t in self.coordinator.data.todo_tasks]
 
     @staticmethod
     def _task_to_item(task: MeithealTask) -> TodoItem:
         """Convert MeithealTask to HA TodoItem."""
+        due: date | datetime | None = None
+        if task.due_date:
+            try:
+                due = (
+                    date.fromisoformat(task.due_date)
+                    if len(task.due_date) == 10
+                    else datetime.fromisoformat(task.due_date)
+                )
+            except ValueError:
+                _LOGGER.debug("Ignoring invalid task due date")
         return TodoItem(
             uid=task.id,
             summary=task.title,
             status=_status_to_ha(task.status),
-            due=task.due_date,
+            due=due,
             description=task.description,
         )
 
@@ -101,6 +113,7 @@ class MeithealTodoListEntity(CoordinatorEntity[MeithealCoordinator], TodoListEnt
         await self.coordinator.async_create_task(
             title=item.summary or "Untitled",
             description=item.description,
+            due_date=item.due.isoformat() if item.due else None,
         )
 
     async def async_update_todo_item(self, item: TodoItem) -> None:
@@ -128,14 +141,16 @@ class MeithealTodoListEntity(CoordinatorEntity[MeithealCoordinator], TodoListEnt
         self, uid: str, previous_uid: str | None = None
     ) -> None:
         """Reorder a task in the list."""
-        # Calculate new position based on previous_uid
         if not self.coordinator.data:
-            return
-        tasks = self.coordinator.data.tasks
+            raise HomeAssistantError("No task data available")
+        ordered_ids = [task.id for task in self.coordinator.data.todo_tasks]
+        if uid not in ordered_ids:
+            raise HomeAssistantError("Task not found")
+        ordered_ids.remove(uid)
         target_pos = 0
         if previous_uid:
-            for i, t in enumerate(tasks):
-                if t.id == previous_uid:
-                    target_pos = i + 1
-                    break
-        await self.coordinator.async_update_task(uid, {"position": target_pos})
+            if previous_uid not in ordered_ids:
+                raise HomeAssistantError("Previous task not found")
+            target_pos = ordered_ids.index(previous_uid) + 1
+        ordered_ids.insert(target_pos, uid)
+        await self.coordinator.async_reorder_tasks(ordered_ids)

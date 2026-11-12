@@ -68,16 +68,16 @@ export class CommentMentionRepository {
     return readAttempt(this.client, taskId, owner, key, commentDigest(rawContent))
   }
 
-  async create(taskId: string, content: string, author: string, owner: string, recipients: string[], attempt: CommentAttempt) {
+  async create(taskId: string, content: string, author: string, owner: string, recipients: string[], attempt: CommentAttempt, verifiedHuman = false) {
     const digest = commentDigest(attempt.rawContent)
     const tx = await this.client.transaction("write")
     try {
       const prior = await readAttempt(tx, taskId, owner, attempt.key, digest)
       if (prior) return prior
       const comment = (await tx.execute({
-        sql: `INSERT INTO comments (task_id, content, author, owner_key)
-              SELECT id, ?, ?, ? FROM tasks WHERE id = ? RETURNING ${commentColumns}`,
-        args: [content, author, owner, taskId],
+        sql: `INSERT INTO comments (task_id, content, author, owner_key, inactivity_spike_human)
+              SELECT id, ?, ?, ?, ? FROM tasks WHERE id = ? RETURNING ${commentColumns}`,
+        args: [content, author, owner, verifiedHuman ? 1 : 0, taskId],
       })).rows[0]
       if (!comment) return { state: "missing" } as const
       const commentId = Number(comment.id)

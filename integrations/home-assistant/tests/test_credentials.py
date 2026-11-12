@@ -1,6 +1,7 @@
 """Exercise config entry, transport and entity behavior on Home Assistant Core."""
 
 from types import SimpleNamespace
+import traceback
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -23,10 +24,12 @@ except ModuleNotFoundError as error:
 
 from custom_components.meitheal.api import (
     MeithealApi,
+    MeithealConnectionError,
     MeithealResponseError,
     connection_origin,
 )
 from custom_components.meitheal.const import CONF_API_TOKEN, DOMAIN
+from custom_components.meitheal.coordinator import MeithealCoordinator
 from custom_components.meitheal.diagnostics import async_get_config_entry_diagnostics
 
 TOKEN = "mth_" + "a" * 64
@@ -36,6 +39,42 @@ ORIGIN = f"https://{HOST}"
 CONNECTION = {CONF_HOST: HOST, CONF_PORT: 443, CONF_SSL: True}
 PROBE = f"{ORIGIN}/api/tasks?limit=1"
 TASKS = f"{ORIGIN}/api/tasks"
+
+
+@pytest.mark.usefixtures("socket_enabled")
+async def test_malformed_json_http_success_is_sanitized_without_announcing_creation(hass, aiohttp_server, caplog):
+    """Use the real native HTTP/JSON client and coordinator, not a canned API mock."""
+    private_body = '{"private-malformed-response-fixture":'
+    requests = []
+
+    async def malformed(request):
+        requests.append((request.method, request.path, request.headers.get("Authorization")))
+        return web.Response(status=200, text=private_body, content_type="application/json")
+
+    app = web.Application()
+    app.router.add_post("/api/tasks", malformed)
+    server = await aiohttp_server(app)
+    events = []
+    remove_created = hass.bus.async_listen("meitheal_task_created", events.append)
+    remove_logbook = hass.bus.async_listen("logbook_entry", events.append)
+    try:
+        async with ClientSession() as session:
+            api = MeithealApi(session, server.make_url("").origin(), TOKEN)
+            coordinator = MeithealCoordinator(hass, api)
+            coordinator.async_request_refresh = AsyncMock()
+            with pytest.raises(MeithealConnectionError) as failure:
+                await coordinator.async_create_task("Malformed receipt fixture")
+            assert str(failure.value) == "Cannot read a response from Meitheal"
+            assert failure.value.__cause__ is None
+            rendered = "".join(traceback.format_exception(failure.value)) + caplog.text
+            assert private_body not in rendered and TOKEN not in rendered
+            coordinator.async_request_refresh.assert_not_awaited()
+            await hass.async_block_till_done()
+            assert events == []
+        assert requests == [("POST", "/api/tasks", f"Bearer {TOKEN}")]
+    finally:
+        remove_created()
+        remove_logbook()
 
 
 def mock_entry(
@@ -59,7 +98,9 @@ async def test_existing_entry_keeps_entity_after_enrollment(
     """Legacy use, credential enrollment, and authenticated polling share one entry."""
     entry = mock_entry(hass, CONNECTION)
     aioclient_mock.get(TASKS, json={"tasks": [{"id": "one", "status": "complete"}]})
+    aioclient_mock.get("https://tasks.example.test/api/gamification", status=403)
     aioclient_mock.get(PROBE, json={"tasks": []})
+    aioclient_mock.get("https://tasks.example.test/api/gamification", status=403)
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
     assert "Authorization" not in aioclient_mock.mock_calls[0][3]
@@ -91,8 +132,9 @@ async def test_protected_actions_share_bearer_and_never_log_error_body(
     """All action requests use the configured origin and sanitize failures."""
     entry = mock_entry(hass, {**CONNECTION, CONF_API_TOKEN: TOKEN})
     aioclient_mock.get(TASKS, json={"tasks": []})
-    aioclient_mock.post(f"{TASKS}/create", json={"id": "one"}, status=201)
-    aioclient_mock.put(f"{TASKS}/one", json={"id": "one"})
+    aioclient_mock.get("https://tasks.example.test/api/gamification", status=403)
+    aioclient_mock.post(TASKS, json={"id": "one"}, status=201)
+    aioclient_mock.put(f"{TASKS}/one", json={"id": "one", "status": "complete"})
     aioclient_mock.get(
         f"{ORIGIN}/api/search",
         json={"sections": [{"id": "tasks", "items": [{"id": "one"}]}]},
@@ -146,7 +188,9 @@ async def test_rejected_poll_opens_reauth_on_existing_entry(
     await hass.async_block_till_done()
     aioclient_mock.clear_requests()
     aioclient_mock.get(PROBE, json={"tasks": []})
+    aioclient_mock.get("https://tasks.example.test/api/gamification", status=403)
     aioclient_mock.get(TASKS, json={"tasks": []})
+    aioclient_mock.get("https://tasks.example.test/api/gamification", status=403)
     (flow,) = hass.config_entries.flow.async_progress_by_handler(DOMAIN)
     assert flow["context"]["source"] == config_entries.SOURCE_REAUTH
     assert flow["step_id"] == "reauth_confirm"
@@ -216,7 +260,9 @@ async def test_supervisor_discovery_only_uses_operator_token_for_installed_app(
     reported_host = "2e8c4a3f_meitheal_canary"
     origin = "http://2e8c4a3f-meitheal-canary:3000"
     aioclient_mock.get(f"{origin}/api/tasks?limit=1", json={"tasks": []})
+    aioclient_mock.get(f"{origin}/api/gamification", status=403)
     aioclient_mock.get(f"{origin}/api/tasks", json={"tasks": []})
+    aioclient_mock.get(f"{origin}/api/gamification", status=403)
     addon_info = AsyncMock(return_value=SimpleNamespace(hostname="other-meitheal"))
     hass.config.components.add("hassio")
     flow = await hass.config_entries.flow.async_init(

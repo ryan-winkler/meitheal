@@ -73,6 +73,7 @@ import {
 import StatusBadge from "../components/ui/StatusBadge.astro";
 import { STATUS_LABELS, normalizeStatus } from "../lib/status-config";
 import { UPCOMING_SECTIONS } from "../lib/upcoming-registry";
+import { buildTaskPath } from "../lib/task-detail-handoff"
 
 const typeIcons: Record<string, string> = {
   epic: "🎯",
@@ -83,6 +84,22 @@ const typeIcons: Record<string, string> = {
 const totalTasks = days.reduce((sum, d) => sum + d.tasks.length, 0);
 const nextDays = days.slice(0, 2)
 const weekDays = days.slice(2)
+const daySections = [
+  {
+    id: "upcoming-next",
+    eyebrow: "Next 48h",
+    title: "Prioritize the immediate commitment window",
+    description: "Today and tomorrow stay grouped here for fast completion and fast task-detail handoff.",
+    days: nextDays,
+  },
+  {
+    id: "upcoming-week",
+    eyebrow: "Week Ahead",
+    title: "Keep the rest of the week visible but lightweight",
+    description: "The remaining grouped days stay collapsible so future work feels scannable, not overwhelming.",
+    days: weekDays,
+  },
+]
 const nextWindowCount = nextDays.reduce((sum, day) => sum + day.tasks.length, 0)
 const weekAheadCount = weekDays.reduce((sum, day) => sum + day.tasks.length, 0)
 const upcomingSignal =
@@ -90,10 +107,6 @@ const upcomingSignal =
     ? "No tasks scheduled in the next 7 days"
     : `${nextWindowCount} tasks due in the next 48 hours`
 
-/**
- * Renders a list of day groups with collapsible task lists.
- * Extracted to avoid duplicating 120 lines of identical markup.
- */
 function renderDayClass(day: DayGroup): string {
   const classes = ["card"]
   if (day.tasks.length === 0) classes.push("day-empty")
@@ -189,247 +202,134 @@ function dayLabelClass(day: DayGroup): string {
       }
     </section>
 
-    <section id="upcoming-next" class="page-shell__section" data-upcoming-section>
-      <div class="page-shell__intro">
-        <div>
-          <div class="page-shell__eyebrow">Next 48h</div>
-          <h2 class="page-shell__title">Prioritize the immediate commitment window</h2>
-          <p class="page-shell__description">
-            Today and tomorrow stay grouped here for fast completion and fast task-detail handoff.
-          </p>
+    {daySections.map((section) => (
+      <section id={section.id} class="page-shell__section" data-upcoming-section>
+        <div class="page-shell__intro">
+          <div>
+            <div class="page-shell__eyebrow">{section.eyebrow}</div>
+            <h2 class="page-shell__title">{section.title}</h2>
+            <p class="page-shell__description">{section.description}</p>
+          </div>
         </div>
-      </div>
 
-      <div class="upcoming-grid">
-        {
-          nextDays.map((day) => (
-            <div class={renderDayClass(day)}>
-              <div
-                class={`day-header ${day.tasks.length > 0 ? "day-header--populated" : ""}`}
-                role="button"
-                tabindex="0"
-                aria-expanded="true"
-              >
-                <div class="day-header__left">
-                  <svg class="chevron-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
-                  <span class={dayLabelClass(day)}>
-                    {day.label}
-                  </span>
+        <div class="upcoming-grid">
+          {
+            section.days.map((day) => (
+              <div class={renderDayClass(day)}>
+                <div
+                  class={`day-header ${day.tasks.length > 0 ? "day-header--populated" : ""}`}
+                  role="button"
+                  tabindex="0"
+                  aria-expanded="true"
+                >
+                  <div class="day-header__left">
+                    <svg class="chevron-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                    <span class={dayLabelClass(day)}>
+                      {day.label}
+                    </span>
+                  </div>
+                  {day.tasks.length > 0 && (
+                    <span class="day-count-badge">{day.tasks.length}</span>
+                  )}
+                  {day.tasks.length === 0 && (
+                    <span class="day-count-empty">—</span>
+                  )}
                 </div>
                 {day.tasks.length > 0 && (
-                  <span class="day-count-badge">{day.tasks.length}</span>
-                )}
-                {day.tasks.length === 0 && (
-                  <span class="day-count-empty">—</span>
+                  <div class="task-list">
+                    {day.tasks.map((task) => {
+                      const id = String(task.id)
+                      const title = String(task.title)
+                      const p = Number(task.priority ?? 3)
+                      const tt = String(task.task_type ?? "task")
+                      const descriptionId = `upcoming-task-description-${id}`
+                      return (
+                        <div class="task-item" data-id={id}>
+                          <input
+                            type="checkbox"
+                            class="task-checkbox"
+                            data-id={id}
+                            aria-label={`Complete ${title}`}
+                          />
+                          <span
+                            class="priority-dot"
+                            style={`color: ${priorityColors[p] ?? "#3b82f6"};`}
+                            title={`Priority: ${priorityLabels[p] ?? "Medium"}`}
+                          >
+                            ●
+                          </span>
+                          <div class="task-content">
+                            <div class="task-title">
+                              <a
+                                class="task-detail-link"
+                                href={buildTaskPath(id)}
+                                data-task-detail-link={id}
+                                aria-describedby={descriptionId}
+                              >
+                                <span class="task-type-icon" aria-hidden="true">
+                                  {typeIcons[tt] ?? ""}
+                                </span>
+                                {title}
+                              </a>
+                              <span class="sr-only" id={descriptionId}>
+                                Priority {priorityLabels[p] ?? "Medium"}, due {day.label}
+                              </span>
+                            </div>
+                            <div class="task-labels">
+                              <LabelBadges labels={task.labels as string} compact max={3} />
+                            </div>
+                          </div>
+                          <StatusBadge status={String(task.status)} />
+                          {task.color && (
+                            <span
+                              class="task-color-swatch"
+                              style={`background: ${String(task.color)};`}
+                            />
+                          )}
+                          {task.recurrence_rule && (
+                            <span class="task-meta-icon" title="Recurring">🔁</span>
+                          )}
+                          {(() => {
+                            try {
+                              const cl = task.checklists ? (typeof task.checklists === "string" ? JSON.parse(String(task.checklists)) : task.checklists) : [];
+                              if (Array.isArray(cl) && cl.length > 0) {
+                                const done = cl.filter((i: {done: boolean}) => i.done).length;
+                                return (
+                                  <span
+                                    class={`task-checklist-count ${done === cl.length ? "task-checklist-count--complete" : ""}`}
+                                    title={`Checklist: ${done}/${cl.length}`}
+                                  >
+                                    ✓ {done}/{cl.length}
+                                  </span>
+                                );
+                              }
+                            } catch { /* skip */ }
+                            return null;
+                          })()}
+                          {task.assigned_to && (
+                            <span
+                              class="avatar avatar--sm"
+                              role="img"
+                              title={`Assigned to ${String(task.assigned_to)}`}
+                              aria-label={`Assigned to ${String(task.assigned_to)}`}
+                            >
+                              {String(task.assigned_to)
+                                .replace(/^(ha_|custom_)/, "")
+                                .slice(0, 2)
+                                .toUpperCase()}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
                 )}
               </div>
-              {day.tasks.length > 0 && (
-                <div class="task-list">
-                  {day.tasks.map((task) => {
-                    const p = Number(task.priority ?? 3);
-                    const tt = String(task.task_type ?? "task");
-                    return (
-                      <div
-                        class="task-item"
-                        data-id={String(task.id)}
-                        role="button"
-                        tabindex="0"
-                        aria-label={`${String(task.title)}, priority ${priorityLabels[p] ?? "Medium"}, due ${day.label}`}
-                      >
-                        <input
-                          type="checkbox"
-                          class="task-checkbox"
-                          data-id={String(task.id)}
-                          aria-label={`Complete ${String(task.title)}`}
-                        />
-                        <span
-                          class="priority-dot"
-                          style={`color: ${priorityColors[p] ?? "#3b82f6"};`}
-                          title={`Priority: ${priorityLabels[p] ?? "Medium"}`}
-                        >
-                          ●
-                        </span>
-                        <div class="task-content">
-                          <div class="task-title">
-                            <span class="task-type-icon">
-                              {typeIcons[tt] ?? ""}
-                            </span>
-                            {String(task.title)}
-                          </div>
-                          <div class="task-labels">
-                            <LabelBadges labels={task.labels as string} compact max={3} />
-                          </div>
-                        </div>
-                        <StatusBadge status={String(task.status)} />
-                        {task.color && (
-                          <span
-                            class="task-color-swatch"
-                            style={`background: ${String(task.color)};`}
-                          />
-                        )}
-                        {task.recurrence_rule && (
-                          <span class="task-meta-icon" title="Recurring">🔁</span>
-                        )}
-                        {(() => {
-                          try {
-                            const cl = task.checklists ? (typeof task.checklists === "string" ? JSON.parse(String(task.checklists)) : task.checklists) : [];
-                            if (Array.isArray(cl) && cl.length > 0) {
-                              const done = cl.filter((i: {done: boolean}) => i.done).length;
-                              return (
-                                <span
-                                  class={`task-checklist-count ${done === cl.length ? "task-checklist-count--complete" : ""}`}
-                                  title={`Checklist: ${done}/${cl.length}`}
-                                >
-                                  ✓ {done}/{cl.length}
-                                </span>
-                              );
-                            }
-                          } catch { /* skip */ }
-                          return null;
-                        })()}
-                        {task.assigned_to && (
-                          <span
-                            class="avatar avatar--sm"
-                            title={`Assigned to ${String(task.assigned_to)}`}
-                            aria-label={`Assigned to ${String(task.assigned_to)}`}
-                          >
-                            {String(task.assigned_to)
-                              .replace(/^(ha_|custom_)/, "")
-                              .slice(0, 2)
-                              .toUpperCase()}
-                          </span>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          ))
-        }
-      </div>
-    </section>
-
-    <section id="upcoming-week" class="page-shell__section" data-upcoming-section>
-      <div class="page-shell__intro">
-        <div>
-          <div class="page-shell__eyebrow">Week Ahead</div>
-          <h2 class="page-shell__title">Keep the rest of the week visible but lightweight</h2>
-          <p class="page-shell__description">
-            The remaining grouped days stay collapsible so future work feels scannable, not overwhelming.
-          </p>
+            ))
+          }
         </div>
-      </div>
-
-      <div class="upcoming-grid">
-        {
-          weekDays.map((day) => (
-            <div class={renderDayClass(day)}>
-              <div
-                class={`day-header ${day.tasks.length > 0 ? "day-header--populated" : ""}`}
-                role="button"
-                tabindex="0"
-                aria-expanded="true"
-              >
-                <div class="day-header__left">
-                  <svg class="chevron-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
-                  <span class={dayLabelClass(day)}>
-                    {day.label}
-                  </span>
-                </div>
-                {day.tasks.length > 0 && (
-                  <span class="day-count-badge">{day.tasks.length}</span>
-                )}
-                {day.tasks.length === 0 && (
-                  <span class="day-count-empty">—</span>
-                )}
-              </div>
-              {day.tasks.length > 0 && (
-                <div class="task-list">
-                  {day.tasks.map((task) => {
-                    const p = Number(task.priority ?? 3);
-                    const tt = String(task.task_type ?? "task");
-                    return (
-                      <div
-                        class="task-item"
-                        data-id={String(task.id)}
-                        role="button"
-                        tabindex="0"
-                        aria-label={`${String(task.title)}, priority ${priorityLabels[p] ?? "Medium"}, due ${day.label}`}
-                      >
-                        <input
-                          type="checkbox"
-                          class="task-checkbox"
-                          data-id={String(task.id)}
-                          aria-label={`Complete ${String(task.title)}`}
-                        />
-                        <span
-                          class="priority-dot"
-                          style={`color: ${priorityColors[p] ?? "#3b82f6"};`}
-                          title={`Priority: ${priorityLabels[p] ?? "Medium"}`}
-                        >
-                          ●
-                        </span>
-                        <div class="task-content">
-                          <div class="task-title">
-                            <span class="task-type-icon">
-                              {typeIcons[tt] ?? ""}
-                            </span>
-                            {String(task.title)}
-                          </div>
-                          <div class="task-labels">
-                            <LabelBadges labels={task.labels as string} compact max={3} />
-                          </div>
-                        </div>
-                        <StatusBadge status={String(task.status)} />
-                        {task.color && (
-                          <span
-                            class="task-color-swatch"
-                            style={`background: ${String(task.color)};`}
-                          />
-                        )}
-                        {task.recurrence_rule && (
-                          <span class="task-meta-icon" title="Recurring">🔁</span>
-                        )}
-                        {(() => {
-                          try {
-                            const cl = task.checklists ? (typeof task.checklists === "string" ? JSON.parse(String(task.checklists)) : task.checklists) : [];
-                            if (Array.isArray(cl) && cl.length > 0) {
-                              const done = cl.filter((i: {done: boolean}) => i.done).length;
-                              return (
-                                <span
-                                  class={`task-checklist-count ${done === cl.length ? "task-checklist-count--complete" : ""}`}
-                                  title={`Checklist: ${done}/${cl.length}`}
-                                >
-                                  ✓ {done}/{cl.length}
-                                </span>
-                              );
-                            }
-                          } catch { /* skip */ }
-                          return null;
-                        })()}
-                        {task.assigned_to && (
-                          <span
-                            class="avatar avatar--sm"
-                            title={`Assigned to ${String(task.assigned_to)}`}
-                            aria-label={`Assigned to ${String(task.assigned_to)}`}
-                          >
-                            {String(task.assigned_to)
-                              .replace(/^(ha_|custom_)/, "")
-                              .slice(0, 2)
-                              .toUpperCase()}
-                          </span>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          ))
-        }
-      </div>
-    </section>
+      </section>
+    ))}
 
     <section id="upcoming-flow" class="page-shell__section" data-upcoming-section>
       <div class="page-shell__intro">
@@ -457,6 +357,11 @@ function dayLabelClass(day: DayGroup): string {
 </Layout>
 
 <style>
+  #upcoming-shell,
+  [data-upcoming-section] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   /* ── Day card ── */
   .day-card--populated {
     margin-bottom: 12px;
@@ -505,14 +410,14 @@ function dayLabelClass(day: DayGroup): string {
     font-weight: 600;
   }
   .day-label--today {
-    color: var(--accent);
+    color: var(--accent-text);
   }
 
   /* ── Count badges ── */
   .day-count-badge {
     font-size: 11px;
-    background: var(--accent);
-    color: white;
+    background: var(--personal-accent, var(--palette-accent-hover));
+    color: var(--personal-accent-foreground, #fff);
     padding: 1px 6px;
     border-radius: 8px;
     font-weight: 600;
@@ -524,16 +429,8 @@ function dayLabelClass(day: DayGroup): string {
   }
 
   /* ── Task list collapse ── */
-  .task-list {
-    transition: max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    max-height: 2000px;
-    opacity: 1;
-    overflow: hidden;
-  }
   .task-list.collapsed {
-    max-height: 0;
-    opacity: 0;
-    pointer-events: none;
+    display: none;
   }
 
   /* ── Day empty state ── */
@@ -553,14 +450,16 @@ function dayLabelClass(day: DayGroup): string {
     align-items: center;
     gap: 10px;
     border-top: 1px solid var(--border);
-    transition: background 0.15s;
+    transition: background 0.15s, opacity 0.3s;
   }
   .task-item:hover {
     background: var(--bg-hover);
   }
-  .task-item:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: -2px;
+  .task-checkbox {
+    width: 44px;
+    height: 44px;
+    appearance: auto;
+    accent-color: var(--accent);
   }
 
   /* ── Priority dot ── */
@@ -572,17 +471,27 @@ function dayLabelClass(day: DayGroup): string {
   /* ── Task content ── */
   .task-content {
     flex: 1;
-    min-width: 0;
+    min-width: 44px;
   }
   .task-title {
     font-size: 13px;
     font-weight: 500;
+  }
+  .task-detail-link {
+    display: block;
+    line-height: 44px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    color: inherit;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  .task-detail-link:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
   }
   .task-type-icon {
-    margin-right: 3px;
     font-size: 11px;
   }
   .task-labels {
@@ -646,7 +555,6 @@ function dayLabelClass(day: DayGroup): string {
 
   /* ── Accessibility: reduced motion ── */
   @media (prefers-reduced-motion: reduce) {
-    .task-list { transition: none; }
     .task-item { transition: none; }
     .day-header { transition: none; }
     .chevron-icon { transition: none; }

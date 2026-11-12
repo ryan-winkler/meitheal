@@ -49,7 +49,7 @@ test.describe("Settings Shell", () => {
   test("agent handoff shows its current status and links to Review", async ({ page }) => {
     await openSettings(page, "#automation-ai-settings")
     await expect(page.getByRole("heading", { name: "Agent handoff", exact: true })).toBeVisible()
-    await expect(page.getByText("Agent proposals and approval are planned.", { exact: false })).toBeVisible()
+    await expect(page.getByText("A current Home Assistant administrator reviews agent proposals before their changes apply.", { exact: true })).toBeVisible()
     await expect(page.getByRole("link", { name: "Open Review" })).toHaveAttribute("href", "/review")
     await expect(page.getByRole("checkbox", { name: "Allow Bot Proposals" })).toHaveCount(0)
   })

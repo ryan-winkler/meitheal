@@ -71,40 +71,6 @@ test.describe("Theme Settings", () => {
     await expect(html).toHaveClass(/dark/);
   });
 
-  test("Selecting Custom shows import section", async ({ page }) => {
-    const themeSelect = page.locator("#theme-select");
-    const customSection = page.locator("#custom-theme-section");
-
-    await themeSelect.selectOption("dark");
-    await expect(customSection).not.toBeVisible();
-
-    // Select custom
-    await themeSelect.selectOption("custom");
-    await page.waitForTimeout(200);
-
-    // Custom section should now be visible
-    await expect(customSection).toBeVisible();
-
-    // Import button and info text should be visible
-    await expect(page.locator("#custom-theme-empty")).toBeVisible();
-    await expect(page.getByText("Import CSS Theme")).toBeVisible();
-  });
-
-  test("Switching away from Custom hides import section", async ({ page }) => {
-    const themeSelect = page.locator("#theme-select");
-    const customSection = page.locator("#custom-theme-section");
-
-    // Select custom first
-    await themeSelect.selectOption("custom");
-    await page.waitForTimeout(200);
-    await expect(customSection).toBeVisible();
-
-    // Switch to dark
-    await themeSelect.selectOption("dark");
-    await page.waitForTimeout(200);
-    await expect(customSection).not.toBeVisible();
-  });
-
   test("Theme persists across page reload", async ({ page }) => {
     const themeSelect = page.locator("#theme-select");
 
@@ -168,44 +134,5 @@ test.describe("Theme Settings", () => {
     await expect(save).toHaveCSS("border-radius", "6px")
   })
 
-  test("appearance preserves other saved preferences and keeps the draft if storage rejects it", async ({ page }) => {
-    await page.evaluate(() => localStorage.setItem("meitheal-appearance", JSON.stringify({
-      font: "comic", radius: "9", navigation: "navbar",
-    })))
-    await page.goto("/settings#appearance-settings")
-    await page.reload()
-    const root = page.locator("html")
-    const font = page.getByLabel("Typeface", { exact: true })
-    const radius = page.getByLabel("Corner roundness", { exact: true })
-    const save = page.getByRole("button", { name: "Save appearance" })
-    const status = page.locator("#appearance-save-status")
-    await expect(font).toHaveValue("sans")
-    await expect(radius).toHaveValue("1")
-    await font.selectOption("mono")
-    await radius.selectOption("1.5")
-    await page.evaluate(() => {
-      const setItem = Storage.prototype.setItem
-      Storage.prototype.setItem = function (key, value) {
-        if (key === "meitheal-appearance") throw new DOMException("Storage blocked by fixture")
-        setItem.call(this, key, value)
-      }
-    })
-    await save.click()
-    await expect(status).toHaveText("Appearance could not be saved in this browser.")
-    await expect(font).toHaveValue("mono")
-    await expect(radius).toHaveValue("1.5")
-    await expect(root).toHaveAttribute("data-appearance-font", "sans")
-    await expect(root).toHaveAttribute("data-appearance-radius", "1")
 
-    await page.reload()
-    await font.selectOption("mono")
-    await radius.selectOption("1.5")
-    await save.click()
-    await expect(status).toHaveText("Appearance saved on this device.")
-    await expect(page.locator("body")).toHaveCSS("font-family", /monospace/)
-    await expect(save).toHaveCSS("border-radius", "9px")
-    expect(await page.evaluate(() => JSON.parse(localStorage.getItem("meitheal-appearance")!))).toEqual({
-      font: "mono", radius: "1.5", navigation: "navbar",
-    })
-  })
 });

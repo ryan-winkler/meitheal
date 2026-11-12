@@ -9,7 +9,9 @@ import { confirmDialog } from "@lib/confirm-dialog"
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { escapeHtml } from "@lib/safe-html"
 import { settingsStore } from "@lib/settings-store"
+import { exportFilename } from "@lib/export-filename"
 import { showToast } from "@lib/toast"
+import { flushRulesSave, withConfigurationMutation, withRulesReplacement } from "@lib/settings-rules-controller"
 import { saveSetting, log } from "@lib/settings-utils"
 
 type CustomField = { name: string; type: string; options?: string[] }
@@ -52,6 +54,32 @@ export function initDataSettings(): void {
     })
   }
 
+  const exportSettings = document.getElementById("export-settings-btn")
+  if (exportSettings) pageLifecycle.on(exportSettings, "click", async event => {
+    event.preventDefault()
+    if (exportSettings.getAttribute("aria-busy") === "true") return
+    exportSettings.setAttribute("aria-busy", "true")
+    const signal = pageLifecycle.signal
+    try {
+      await flushRulesSave()
+      await withConfigurationMutation(async () => {
+        const response = await fetch("/api/export/settings.json", { signal, cache: "no-store" })
+        const payload = await response.json()
+        if (!response.ok || !payload || payload._version !== 2 || !Array.isArray(payload.rules) || !Array.isArray(payload.frameworkOverrides)) throw new Error("Settings export failed")
+        const url = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" }))
+        const link = document.createElement("a")
+        link.href = url
+        link.download = exportFilename("Settings", "json")
+        document.body.append(link)
+        link.click()
+        link.remove()
+        URL.revokeObjectURL(url)
+      })
+      showToast("settings.export_success")
+    } catch { showToast("settings.export_failed", "error") }
+    finally { exportSettings.removeAttribute("aria-busy") }
+  })
+
   // Raw DB download with confirmation dialog
   const exportDbBtn = document.getElementById("export-db-btn")
   const exportDbForm = document.querySelector<HTMLFormElement>("#export-db-form")
@@ -76,11 +104,14 @@ export function initDataSettings(): void {
       const file = (e.target as HTMLInputElement).files?.[0]
       if (!file) return
 
+      const signal = pageLifecycle.signal
       try {
+        if (file.size > 204800) throw new Error("Settings import exceeds 200 KiB")
         const text = await file.text()
         const payload = JSON.parse(text)
+        await withRulesReplacement(async () => {
         const response = await fetch(
-          (window.__ingress_path || "") + "/api/import/settings",
+          "/api/import/settings",
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -88,16 +119,18 @@ export function initDataSettings(): void {
             signal: pageLifecycle.signal,
           },
         )
-        if (!response.ok) {
-          throw new Error(await response.text())
+        const result = await response.json()
+        if (!response.ok || result.success !== true) {
+          throw new Error(result.error || "Settings import failed")
         }
         showToast("settings.import_success")
         settingsStore.invalidate()
         // Full reload required — imported settings replace everything (theme, locale, integrations)
         setTimeout(() => {
-          if (pageLifecycle.signal.aborted) return
+          if (signal.aborted) return
           window.location.reload()
         }, 1500)
+        })
       } catch (error) {
         log.error("Failed to import settings", error)
         showToast("settings.import_failed", "error")
@@ -131,7 +164,7 @@ export function initDataSettings(): void {
 
     const typeSelect = row.querySelector(".cf-type-select") as HTMLSelectElement
     const optionsInput = row.querySelector(".cf-options-input") as HTMLInputElement
-    typeSelect?.addEventListener("change", () => {
+    pageLifecycle.on(typeSelect, "change", () => {
       optionsInput.style.display = typeSelect.value === "select" ? "block" : "none"
     })
 

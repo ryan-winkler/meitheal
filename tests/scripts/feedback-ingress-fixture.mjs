@@ -12,11 +12,10 @@ const heldBodies = new AsyncLocalStorage()
 if (activeMemberFixture) {
   // Only the marked fixture requests are observed. Wait for the real parser to
   // ask for another chunk, rather than just acknowledging HTTP arrival.
-  // Match the parser module, since production minification renames its function.
   const originalRead = ReadableStreamDefaultReader.prototype.read
   ReadableStreamDefaultReader.prototype.read = function (...args) {
     const held = heldBodies.getStore()
-    if (held && !held.acknowledged && new Error().stack?.split("\n").some(frame => /\/bounded-body(?:[_-][^/\s:]+)?\.(?:mjs|ts):/.test(frame))) {
+    if (held && !held.acknowledged && new Error().stack?.includes("at readWithinLimit")) {
       if (held.reader === this) {
         held.acknowledged = true
         process.send({ participantBodyStarted: true })
@@ -305,7 +304,11 @@ if (process.env.MEITHEAL_TEST_CORE_USER_LOOKUP === "1") {
         const result = role === "missing" ? []
           : role === "oversized" ? [{ ...admin, name: "x".repeat(256 * 1024) }]
           : role === "malformed" ? [{ ...admin, system_generated: undefined }]
-          : [admin]
+          : [admin, ...["member", "member-two"].map(member => ({
+            id: `fixture-${member}`, name: `Fixture ${member}`,
+            is_active: true, system_generated: false, is_owner: false,
+            group_ids: ["system-users"],
+          }))]
         send({ type: "result", id: message.id, success: true, result })
       } else if (message.type === "conversation/agent/list" || message.type === "conversation/process") {
         assistCalls.push(message)
@@ -328,4 +331,11 @@ server.listen(Number(process.env.MEITHEAL_INGRESS_FIXTURE_PORT ?? 0), "127.0.0.1
   const { port } = server.address()
   process.env.PORT = String(port)
   process.send({ port, configuredPath })
+})
+
+// Astro's signal handler does not own this fixture's HTTP server. Core modes
+// already close their sockets above; plain fixtures must also end on teardown.
+process.once("SIGTERM", () => {
+  server.closeAllConnections()
+  server.close(() => process.exit(0))
 })

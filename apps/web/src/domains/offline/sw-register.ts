@@ -16,14 +16,15 @@
  */
 
 import { createClientLogger } from "@lib/client-logger"
+import { buildIngressPagePath } from "@lib/page-shell-links"
 
 const log = createClientLogger("offline", "sw-register")
 
 // --- Types ---
 
-export interface SwUpdateEventDetail {
-  type: "update-available" | "update-activated"
-}
+export type SwUpdateEventDetail =
+  | { type: "update-available"; worker: ServiceWorker }
+  | { type: "update-activated" }
 
 /**
  * Check whether the current context supports PWA features.
@@ -32,6 +33,21 @@ export interface SwUpdateEventDetail {
 export function isPwaSupported(): boolean {
   if (typeof window === "undefined") return false
   return window.isSecureContext && "serviceWorker" in navigator
+}
+
+function appWorkerScope(): URL {
+  return new URL(buildIngressPagePath("/"), location.origin)
+}
+
+/** A broader Home Assistant registration can also match the App URL. */
+export async function getAppServiceWorkerRegistration(): Promise<ServiceWorkerRegistration | null> {
+  if (!isPwaSupported()) return null
+  const scope = appWorkerScope()
+  const registration = await navigator.serviceWorker.getRegistration(scope.href)
+  if (registration?.scope !== scope.href) return null
+  const script = new URL("sw.js", scope).href
+  const workers = [registration.installing, registration.waiting, registration.active]
+  return workers.some(Boolean) && workers.every(worker => !worker || worker.scriptURL === script) ? registration : null
 }
 
 // --- Registration ---
@@ -66,13 +82,12 @@ export async function registerServiceWorker(): Promise<ServiceWorkerRegistration
         if (sw) sw.postMessage({ type: "SET_INGRESS_PATH", path: ip })
       }
 
-      // Send to currently installing/waiting SW immediately (covers first registration)
-      sendIngressPath(registration.installing)
+      // A waiting worker may predate this page's registration call.
       sendIngressPath(registration.waiting)
 
       // Also send via .ready to guarantee delivery to the active SW
       navigator.serviceWorker.ready.then((ready) => {
-        sendIngressPath(ready.active)
+        if (ready.scope === registration.scope) sendIngressPath(ready.active)
       }).catch(() => { /* SW not yet active — non-fatal */ })
     }
 
@@ -91,10 +106,18 @@ export async function registerServiceWorker(): Promise<ServiceWorkerRegistration
       clearInterval(updateCheckInterval)
     }, { once: true })
 
-    // Listen for new SW waiting (update available)
-    registration.addEventListener("updatefound", () => {
+    const offerUpdate = (worker: ServiceWorker) => {
+      if (!navigator.serviceWorker.controller) return
+      window.dispatchEvent(new CustomEvent<SwUpdateEventDetail>("meitheal-sw-update", {
+        detail: { type: "update-available", worker },
+      }))
+    }
+
+    let observedWorker: ServiceWorker | null = null
+    function observeInstallingWorker() {
       const newWorker = registration.installing
-      if (!newWorker) return
+      if (!newWorker || observedWorker === newWorker) return
+      observedWorker = newWorker
 
       // Send ingress path to the new SW as soon as it's installing
       if (ip) {
@@ -102,16 +125,12 @@ export async function registerServiceWorker(): Promise<ServiceWorkerRegistration
       }
 
       newWorker.addEventListener("statechange", () => {
-        if (newWorker.state === "installed" && navigator.serviceWorker.controller) {
-          // New version available — prompt user (FR-308: don't auto-skipWaiting)
-          window.dispatchEvent(
-            new CustomEvent<SwUpdateEventDetail>("meitheal-sw-update", {
-              detail: { type: "update-available" },
-            })
-          )
-        }
+        if (newWorker.state === "installed") offerUpdate(newWorker)
       })
-    })
+    }
+    registration.addEventListener("updatefound", observeInstallingWorker)
+    observeInstallingWorker()
+    if (registration.waiting) offerUpdate(registration.waiting)
 
     // Listen for controller change (activation complete)
     navigator.serviceWorker.addEventListener("controllerchange", () => {
@@ -130,11 +149,45 @@ export async function registerServiceWorker(): Promise<ServiceWorkerRegistration
 }
 
 /**
- * Send skipWaiting message to waiting SW — only call on user confirmation.
+ * Start the selected update and wait for it to finish activating and control this page.
  */
-export async function activateWaitingSw(): Promise<void> {
-  const registration = await navigator.serviceWorker?.getRegistration()
-  if (registration?.waiting) {
-    registration.waiting.postMessage({ type: "SKIP_WAITING" })
-  }
+export function activateServiceWorker(
+  selected: ServiceWorker | Promise<ServiceWorker | null>,
+  signal: AbortSignal,
+): Promise<boolean> {
+  if (signal.aborted) return Promise.resolve(false)
+  const workers = navigator.serviceWorker
+  return new Promise(resolve => {
+    const listeners = new AbortController()
+    const timer = window.setTimeout(() => finish(false), 15_000)
+
+    function finish(ready: boolean) {
+      window.clearTimeout(timer)
+      listeners.abort()
+      resolve(ready)
+    }
+
+    signal.addEventListener("abort", () => finish(false), { once: true, signal: listeners.signal })
+    void Promise.resolve(selected).then(worker => {
+      if (listeners.signal.aborted) return
+      if (!worker || worker.scriptURL !== new URL("sw.js", appWorkerScope()).href) return finish(false)
+      let requested = false
+
+      const check = () => {
+        if (worker.state === "redundant") return finish(false)
+        if (worker.state === "activated" && workers.controller === worker) return finish(true)
+        if (worker.state !== "installed" || requested) return
+        requested = true
+        try {
+          worker.postMessage({ type: "SKIP_WAITING" })
+        } catch {
+          finish(false)
+        }
+      }
+
+      worker.addEventListener("statechange", check, { signal: listeners.signal })
+      workers.addEventListener("controllerchange", check, { signal: listeners.signal })
+      check()
+    }, () => finish(false))
+  })
 }

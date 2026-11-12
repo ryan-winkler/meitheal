@@ -4,8 +4,11 @@
 
 import {
   registerServiceWorker,
-  activateWaitingSw,
+  activateServiceWorker,
+  type SwUpdateEventDetail,
 } from "@domains/offline/sw-register"
+import { pageLifecycle } from "@lib/page-lifecycle"
+import { showToast } from "@lib/toast"
 
 // Register service worker on page load
 document.addEventListener("DOMContentLoaded", () => {
@@ -26,10 +29,16 @@ window.addEventListener("appinstalled", () => {
 })
 
 // SW update toast — show when new version available
-window.addEventListener("meitheal-sw-update", ((e: CustomEvent) => {
-  if (e.detail?.type !== "update-available") return
-  const tc = document.querySelector(".toast-container")
-  if (!tc) return
+let offeredWorker: ServiceWorker | undefined
+function showUpdateToast() {
+  if (!offeredWorker || offeredWorker.state === "redundant" || document.getElementById("sw-update-btn")) return
+  let container = document.querySelector(".toast-container")
+  if (!container) {
+    container = document.createElement("div")
+    container.id = "toast-container"
+    container.className = "toast-container"
+    document.body.append(container)
+  }
   const toast = document.createElement("div")
   toast.className = "toast info"
   toast.setAttribute("role", "alert")
@@ -39,11 +48,29 @@ window.addEventListener("meitheal-sw-update", ((e: CustomEvent) => {
       style="margin-left:12px;padding:4px 12px;font-size:12px;font-weight:600;color:#fff;background:var(--accent,#6366F1);border:none;border-radius:6px;cursor:pointer;"
     >Refresh</button>
   `
-  tc.appendChild(toast)
-  document
-    .getElementById("sw-update-btn")
-    ?.addEventListener("click", async () => {
-      await activateWaitingSw()
+  container.appendChild(toast)
+  const refresh = toast.querySelector<HTMLButtonElement>("#sw-update-btn")
+  const signal = pageLifecycle.signal
+  refresh?.addEventListener("click", async () => {
+    if (!offeredWorker || refresh.getAttribute("aria-disabled") === "true") return
+    const label = refresh.textContent
+    refresh.setAttribute("aria-disabled", "true")
+    refresh.textContent = window.mI18n?.get("settings.pwa_refresh_pending") ?? "Updating…"
+    const ready = await activateServiceWorker(offeredWorker, signal)
+    if (signal.aborted) return
+    if (ready) {
       window.location.reload()
-    })
+      return
+    }
+    refresh.removeAttribute("aria-disabled")
+    refresh.textContent = label
+    showToast("settings.pwa_refresh_failed", "error")
+  }, { signal })
+}
+
+window.addEventListener("meitheal-sw-update", ((e: CustomEvent<SwUpdateEventDetail>) => {
+  if (e.detail?.type !== "update-available") return
+  offeredWorker = e.detail.worker
+  showUpdateToast()
 }) as EventListener)
+pageLifecycle.onPageLoad(showUpdateToast)

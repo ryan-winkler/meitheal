@@ -6,6 +6,26 @@ description: "Diagnose and recover from operating problems."
 
 # Operations Runbook
 
+## Local build inputs and sign-in support
+
+Working-tree image builds exclude local `.keys` signing material, `.data` directories, `.db` databases and sidecars, and Python caches through `.dockerignore`. Keep these files outside the build inputs even when preparing a build from a working checkout. These exclusions do not replace backups or remove files from the checkout.
+
+Passkey sign-in is unavailable. The checked-in auth configuration leaves it disabled; there is no registration or authentication verifier to enable. Use the existing Home Assistant ingress or scoped API credential paths. The offline license signature verifier remains separate from sign-in.
+
+## Eisenhower scoring saves
+
+Triage reads the task's existing framework values before adding delay impact or interest metadata. A failed or malformed read leaves the wizard and its inputs open, reports the failed update and sends no replacement payload. Retry after the connection recovers. Null and empty objects are valid for an unscored task. Missing fields, arrays, scalar values and responses for another task reject the save.
+
+A review action saves its primary change first. The optional review timestamp does not block a successful action. If its metadata read fails, no timestamp update is sent. Deleted tasks receive no metadata update. Closing or replacing either wizard retires its pending metadata continuation.
+
+After building the App, run `MEITHEAL_TEST_BROWSER=1 pnpm --filter @meitheal/tests test e2e/eisenhower-payload.spec.ts` to verify failure, preservation and retry against disposable task data. Client changes also require the local Astro dev check.
+
+For matrix changes, run `e2e/eisenhower-shell.spec.ts` against a disposable Astro instance. Move the last task into an empty quadrant and check that the destination exposes a task list, the source shows its localized empty message, and the moved task link still takes keyboard focus. Check the empty message, Growth Zone label and drag hint in both themes.
+
+Run `e2e/eisenhower-lifecycle.spec.ts` to check mixed batch results. Not Now removes confirmed completions and keeps unconfirmed tasks visible. Moving a task to Backlog updates its status badge and keeps it available for matrix triage. Retrying either action skips the tasks already changed. Check the remaining tasks before retrying. The date and assignment actions report the number of confirmed saves and leave their tasks in their quadrants.
+
+At mobile widths, the quadrant tabs show one panel. Use Left and Right to cycle through tabs, Home and End to reach either end, and Tab to enter the selected panel. At desktop widths the matrix shows all four quadrants until you turn on Focus mode. With JavaScript disabled the matrix keeps all quadrants available.
+
 ## Custom icon uploads
 
 The icon picker accepts SVG and PNG files up to 64 KiB. SVG uploads use DOMPurify's SVG profile before application code reads their DOM. Scripts, event handlers, embedded HTML, styles and external links are removed, including attributes on the SVG root. Local fragment references remain supported. Unicode text is encoded as UTF-8 in the saved image. PNG icons must be no larger than 128 × 128 pixels.
@@ -28,6 +48,14 @@ Calendar and to-do updates use the Home Assistant entity subscription. Event-bus
 The app retains the entity snapshot for discovery. It checks state and timestamps only for entities with registered listeners, so updates from other household devices do not generate Calendar or Todo events.
 
 Meitheal closes a stream when a frame would put more than 64 KiB in its application queue. The packaged server also counts pending Node HTTP output toward that budget and terminates a backed-up socket. HTTP framing and one frame being written by the adapter can add to the observed buffer size. EventSource can reconnect. If the browser repeatedly reconnects, check the proxy's stream buffering and the size and frequency of the entity updates.
+
+## Home Assistant connection heartbeat
+
+The App checks its Home Assistant WebSocket every 30 seconds and allows 10 seconds for a pong. Credential rotation or removal, manual close and reconnect retire both the old heartbeat interval and any pending deadline. A delayed pong, rejected ping or retired callback cannot close a replacement connection or clear its heartbeat deadline. Independently opened Core connections keep their own lifecycle.
+
+A genuine timeout closes only the connection whose ping expired and reports a heartbeat error. Check Core availability and the configured credentials, then retry the operation; the App opens a fresh connection on demand. Credential and entity-subscription generation guards remain in place.
+
+Run `pnpm --filter @meitheal/tests test e2e/ha-connection-generation.spec.ts` for the deterministic loopback regression, including a real stalled close handshake and late ping settlement. This source fixture does not replace Supervisor verification in the [Home Assistant devcontainer](home-assistant-devcontainer.md).
 
 ## Dashboard Shell Verification
 
@@ -78,11 +106,15 @@ Use this after changing the Today shell, Today controller, or task-detail handof
 3. Confirm the shell search launcher opens SearchHub and `#ask-ha-btn` is still present.
 4. Confirm the shell `New Task` button opens the shared task modal.
 5. Confirm clicking a Today task still opens the shared task detail surface.
-6. With single-key shortcuts enabled, two tasks visible, and focus on a blank page area, press `j`, `j`, then `k`. The highlighted row moves down and back up without leaving Today. The global `k` shortcut still opens Tasks on other pages.
+6. Confirm section buttons announce the visible section title, the item count and their expanded or collapsed state.
 
 ### Check page entry contrast
 
 Today and Settings keep text and controls at full opacity during their entry motion. When changing shared page or card styles, run `MEITHEAL_TEST_BROWSER=1 pnpm --filter @meitheal/tests test e2e/shared-shell-ux.spec.ts` after building the web app. Check both routes with default motion and with reduced motion enabled. Verify readable content from the first frame and a visible outline when tabbing to controls.
+
+For shared task rows, check that Today and the Eisenhower matrix show all five priority labels at 4.5:1 contrast or higher in light and dark themes. The task type icon exposes a name in the row, and filter icons leave the adjacent button text as its name.
+
+Check the plain links back from Deferred, Inactivity and Triage in both themes, including pointer hover. In Planning, Progress and Habits, each visible section link is reachable with Tab. Enter opens the destination, and the current link announces its location. Verify arrow navigation and Planning history with `e2e/parent-page-shell.spec.ts` and `e2e/habits-shell.spec.ts`.
 
 ## Task Link Verification
 
@@ -139,6 +171,23 @@ Use this after changing the Kanban shell or `kanban-controller.ts`.
 5. Confirm SearchHub, Assist, lane management, and the task view tabs still open. See the [Kanban guide](kanban-shell-guide.md) for the user workflows.
 6. Run `tests/e2e/kanban-pagination.spec.ts` against a disposable server. Inspect the raw Tasks response and confirm it contains only the requested view. Check page navigation, full-board filtering, the retry state and relative card order.
 7. For render changes, compare the packaged server with the same 1,000- and 2,000-card fixture. Record uncompressed HTML bytes, warm request latency and rendered card count. Use an isolated Home Assistant fixture for native performance qualification.
+8. For a Household-only release, verify an unavailable Board URL returns 404 through the App panel. Use a disposable fixture to verify an explicit Board selector on bulk purge returns 400. Activate the updated service worker and check that cached Board-selected URLs are unavailable offline while ordinary Household cache entries still work.
+
+A task write that returns `TASK_VERSION_CONFLICT` should be checked by reloading the task before retrying. A `TASK_BLOCKED` response identifies the open dependencies preventing activation. Native clients can pass the observed epoch-millisecond `updated_at` to reject stale writes. Intake decisions also pass `expected_status: "backlog"` and require an exact version and status match in SQLite.
+
+The timestamp returned when creating a task is its initial stored version. Use it for an immediate guarded intake decision, or read the latest task version if another client may have edited the task.
+
+In a disposable ingress session, open **Planning → Triage**. Confirm the queue is paged, then open Details and accept a card using the keyboard. Reload the queue in Hidden mode and check that it displays the Table handoff. If an older service worker controls the browser, use **Reload Triage** before verifying the live queue. See [Triage household tasks](triage-workflow.md).
+
+## Planning RICE Verification
+
+In a disposable ingress session, open **Planning → RICE**. Edit an open task, check the live estimate, and save it. Confirm the task appears in Ranked work with the new score. Open the editor in two sessions and save in one. Verify the other offers **Reload score** and the first score is retained. See [Rank work with RICE](planning-rice.md).
+
+## Deferred Work Verification
+
+In a disposable ingress session, defer an open card from the Kanban menu. Confirm the lane count and active sidebar update, and find the task through search or Table. Open **Tasks → Deferred**, resume the card, and confirm focus moves to the next row or queue heading. Complete a deferred task in Details and verify that its badge and queue row disappear. Use **Reload Deferred** to activate a waiting service worker before opening the live queue.
+
+Use the most recent `task_version` and `deferral_revision` from task Details for `PATCH /api/tasks/{id}/deferral`. On `TASK_VERSION_CONFLICT` or an interrupted response, refresh the task and inspect its current state before making another decision. `TASK_BLOCKED` includes the open prerequisites and leaves the task deferred.
 
 A task write that returns `TASK_VERSION_CONFLICT` should be checked by reloading the task before retrying. A `TASK_BLOCKED` response identifies the open dependencies preventing activation. Native clients can pass the observed epoch-millisecond `updated_at` to reject stale writes. Intake decisions also pass `expected_status: "backlog"` and require an exact version and status match in SQLite.
 
@@ -165,6 +214,14 @@ Use this after changing the Table shell or `table-controller.ts`.
 3. Use the Table filter builder and verify matching rows and the no-results state.
 4. Open SearchHub, Ask Home Assistant and New Task from the Tasks header.
 5. Use the task key to open detail with a keyboard. Close the dialog and confirm focus returns to that key.
+
+Run `e2e/character-shortcuts.spec.ts` against a disposable Astro instance after changing Tasks keyboard navigation or help. Open Table before pressing `K` and confirm that Kanban stays open. On Tasks, `1` opens Kanban, `2` Table, `3` Calendar, and `4` Timeline. Open help with `?` from a focused control. Confirm that Tab stays inside help and that Escape and **Close shortcuts** return focus to the opener.
+
+Check that `K` still moves to the previous task after navigating to Today and after changing Timeline zoom. Use at least two dated tasks to verify the selection moves within the current view.
+
+Open a Timeline bar popup and press `?` with **View Details** focused. Help covers the popup until Escape or **Close shortcuts** returns focus to **View Details**. Native dialogs, popovers and blocking prompts keep keyboard control while open, including when you press `K`.
+
+With a Today AI handoff request pending, open Help and hold the pointer down on its text before the confirmation arrives. When the confirmation appears, release the pointer and use Tab and Escape in the confirmation. Escape returns focus to **Close shortcuts**, and a second Escape returns to **Ask AI**.
 
 ## Cross-Page Shell Program Verification
 
@@ -193,11 +250,17 @@ Use `request_id` or `task_id` to follow lifecycle records:
 4. `calendar_confirmations` stores confirmation IDs and provider event IDs.
 5. `audit_trail` captures human-readable audit entries.
 
-Recommended Loki filter sequence:
+For the native sender, select the actual static service/environment labels,
+then parse the event JSON and filter its `domain` field. For the web App in
+production, start with:
 
-1. `{service=\"meitheal\",domain=\"tasks\"}` for creation lifecycle.
-2. `{service=\"meitheal\",domain=\"integrations\"}` for calendar handoff.
-3. `{service=\"meitheal\",domain=\"audit\"}` for final operator-facing trace.
+1. `{service="meitheal-web",env="production"} | json | domain="tasks"` for creation.
+2. `{service="meitheal-web",env="production"} | json | domain="integrations"` for handoff.
+3. `{service="meitheal-web",env="production"} | json | domain="audit"` for the operator trace.
+
+Use the values emitted by your configured logger. An external Alloy collector
+that explicitly adds a `domain` stream label can instead use selectors such as
+`{service="meitheal",domain="tasks"}`. The native sender does not add that label.
 
 ## HA Ingress Login Failure
 
@@ -217,6 +280,12 @@ Recommended Loki filter sequence:
 
 - verify `MEITHEAL_DB_URL` and add-on write permissions.
 - for a manual migration check in the add-on shell, use `s6-setuidgid meitheal node scripts/migrate.mjs --check` from `/opt/meitheal/apps/web` with the configured database URL.
+
+The check reports pending migrations without creating the database or migration ledger. SQLite can create WAL support files when it opens an existing database for a read-only check. If startup reports that the stored schema version requires a newer App, use an App that supports that version, or restore the older App and its matching cold backup together. Startup checks the stored version before App schema changes, backup rotation or authentication writes. SQLite may still need to recover its own journal after an interrupted process.
+
+Stop App writers before replacing or upgrading their database, including Apps sharing a remote libSQL database. This startup check uses `app_settings.schema_version`. A migration that introduces an incompatible schema must commit its new version marker with the schema changes, even when the migration is run separately from the App.
+
+The migration command and web startup reconcile the same existing task prerequisites. These include Areas, Goals, Projects, comments, Household Kanban lanes, and task ordering fields such as priority and promotion. Both install the inactivity and stall triggers in a transaction. A failure rolls back the activity transaction. Earlier numbered migrations retain their ledger entries. The read-only check validates the triggers and Area generation values. If `--check` reports missing prerequisites on a database created by an older CLI, stop App writers, retain the matching backup, run `node scripts/migrate.mjs`, and check again. The CLI's `No migrations to apply` message refers to the numbered ledger. Existing ticket numbers and unnumbered rows are preserved when the ticket column already exists. Web startup records the full runtime schema version after its remaining initialization.
 
 The add-on defaults to `file:/data/meitheal.db`. Startup and migrations open file and in-memory databases with Node’s built-in SQLite. Verify the SQLite version in the actual runtime with `node -e 'console.log(new (require("node:sqlite").DatabaseSync)(":memory:").prepare("SELECT sqlite_version() AS version").get().version)'`. The app requires 3.51.3 or newer for safe WAL writes. An explicit remote database URL still selects the standard libSQL network client. [SQLite WAL fix](https://sqlite.org/wal.html#the_wal_reset_bug).
 
@@ -267,6 +336,10 @@ Task activity and timeline reads return `Cache-Control: private, no-store`. They
 
 When a recurring task is completed, the next occurrence starts with every readable step unchecked. The completed task retains its checklist and completion marks. The new occurrence keeps existing unique step IDs and assigns IDs where older data lacks one.
 
+Recurrence uses the date written in the due field, including dates supplied in Home Assistant timestamps. Weekday, day and month changes use that calendar date across time zones and daylight-saving transitions. A rolling recurrence or a task without a due date starts from the UTC date of completion.
+
+If Meitheal cannot save the next occurrence, it rolls back the completion and any checklist edits submitted with it. Reload the task and retry the completion. If the response includes a retry interval, wait for it before trying again.
+
 If two people edit the same step differently or an older occurrence has steps without IDs, Details can ask you to **Load latest checklist**. Review your draft against the saved checklist, then reapply the changes that still belong. See [Edit a checklist in two sessions](task-lifecycle-glossary.md#edit-a-checklist-in-two-sessions).
 
 ## Public link previews
@@ -291,7 +364,7 @@ Every retention delete is logged to `audit_trail` with event `retention-delete`,
 **Investigation:**
 
 1. Query `audit_trail` for `request_id = 'retention-delete'` to see deletion history.
-2. Check structured logs: `{service="meitheal",domain="tasks"} |= "retention-delete.success"`.
+2. Check structured logs: `{service="meitheal-web",env="production"} | json | domain="tasks" | event="retention-delete.success"`.
 3. Cascaded data: each deletion removes associated `task_activity_log`, `comments`, and `task_links` rows inside a transaction.
 
 **Safety:** Only tasks with `status IN ('complete', 'archived')` and `updated_at < cutoff` are affected. Active work is never touched.
@@ -320,17 +393,20 @@ The first source release serves the native task and label APIs. An installation 
 
 The `schema-drift` CI job validates migration SQL against runtime schema expectations.
 
-The `perf-budgets` job and local `pnpm --filter @meitheal/web perf:budget` command read [the same thresholds](../../apps/web/scripts/perf-budget-baseline.json). Run the web build first. The check measures:
+The `perf-budgets` job and local `pnpm --filter @meitheal/web perf:budget` command read [the same thresholds](../../apps/web/scripts/perf-budget-baseline.json). Run the web build first. The check starts its own production web process on an available loopback port assigned by the operating system. The check measures:
 
 - Up to 1.5 MiB for Astro build assets and the service worker. The full public directory, including install screenshots and API specifications, is reported separately.
 - Up to 256 MiB of web process RSS after five warmup writes. This is a single process measurement on the CI host.
 - Up to 250 ms at p95 across 100 consecutive requests to `POST /api/tasks` against a fresh local SQLite database. Each timed sample includes reading and validating the response body. The nearest-rank p95 is observation 95 of 100 after sorting. Read it alongside p50, p99, maximum and the number of requests over the threshold. A p95 pass permits up to five requests above the threshold. The job fails on an unexpected response or readback.
+- A report-only `kanbanWarm2000` result. The check inserts 2,000 undated tasks directly into the same SQLite database, then times five warmup and 25 measured `GET /tasks` page loads. It reports the seeded and total task counts, every sample, p50, p95 and maximum. No threshold applies, but an unexpected response still fails the job. If seeding fails, the result names the reason under `skipped` instead of reporting a smaller board. Compare it with the Green 2,000-card board timings; it does not replace them.
 
 Use the [Home Assistant publishing checklist](ha-publishing-checklist.md) for image size and actual Green qualification. Use Green route timings, raw App cgroup memory, and host coexistence observations as separate release evidence. The CI smoke measures a local production build.
 
 The ingress HTML parser loads on the first HTML response above 5 MiB. Smaller pages use the existing buffered rewrite. Check a fresh process if measuring parser startup, since the first large page loads the parser for the life of that process.
 
 Task list and detail reads do not load the task text sanitizer. It loads when a task is created or its title or description changes. Use a fresh process to distinguish the read-only footprint from a process that already handled a text write.
+
+Successful native task lists send a Content-Length measured in UTF-8 bytes. When diagnosing list latency, compare time to first byte with time to read the complete body and record the framing headers on the app connection.
 
 For calibration, the check accepts these overrides.
 
@@ -343,6 +419,26 @@ For calibration, the check accepts these overrides.
 
 The native Labels API and task views use the original label tables. Updates keep existing IDs, names, colours, and task links. After an upgrade, open a task that has a coloured label. Confirm the label still appears in the task and in the label picker.
 
+The Settings editor mounts at most 25 definitions. Search covers the complete loaded list of saved names; the range shows matching and total definitions. Names are compared without letter case and with NFC Unicode normalization. Search is disabled until the full list validates, so a failed load cannot display a partial count as complete. Use **Retry** on a load failure. Verify a definition beyond the first page can be found, then clear search and move between pages.
+
+Paging, search and unused-label cleanup preserve other rows’ unsaved names, colours and write results during the current visit. An off-page Save still completes; return to its page to inspect its badge and row message. Cleanup removes only acknowledged IDs and prevents late responses from restoring them. Unsaved edits are held in memory, and leaving or reloading Settings discards them. After a rename, the row can leave the current search because matching uses committed names. A create result may be on another page or outside the search; the creation status confirms the result without changing your position.
+
+Settings uses an explicit **Save** for shared names and colours. The badge represents the committed definition. A failed write retains the previous badge and unsaved input; inspect the row message before retrying. Confirm **Delete** deliberately. A successful rename atomically rewrites current task labels, private draft selections and template labels along with the definition. Deleting the final equivalent definition removes those references; deleting one duplicate keeps shared name references while another definition survives. Unrelated draft/template content and completed publication receipts are preserved. Current private drafts advance their revision and clear stale save-attempt metadata, so another tab must reload before overwriting an older revision.
+
+Historical label-object metadata retains exact JSON numeric values, including identifiers larger than JavaScript's safe integer range. The packaged Node runtime must support JSON parse source context and JSON.rawJSON. A runtime missing that capability blocks affected metadata rather than rounding it. Include a large numeric reference in package and restore checks; inspecting the stored JSON text avoids accidentally rounding the value in the verification client.
+
+Renames and final deletions scan bounded label selections inside one writer transaction. Invalid, ambiguous or oversized selections return `409 blocked` without a partial change. A rename that would expand either rewritten label array beyond 64 KiB of UTF-8 also rolls back; choose a shorter name or reduce the affected task/template selection through its supported workflow. Equivalent old/new definitions return `409 conflict` for a rename. A colour-only change does not scan selections. Follow the backup-based repair procedure below; do not erase private drafts to bypass the guard. Affected task modification timestamps advance by one millisecond without changing their human-activity timestamp, so label maintenance does not restart inactivity policy. Existing task compare-and-set writes must reload the changed timestamp.
+
+`PUT /api/labels/{id}` accepts a strict JSON object containing `title`, `hex_color`, or both; the UTF-8 body is limited to 4 KiB and five seconds. HTML is stripped from titles before trimming and validating well-formed Unicode of 1–100 UTF-16 code units. Colours use six hexadecimal digits, with an optional leading `#`. `DELETE` accepts no body. Both retain their existing success response shapes and use private, no-store errors. A fresh Home Assistant administrator roster check occurs after body parsing immediately before repository work. Agent tokens are denied; unavailable verification returns `503` and makes no change. A demoted member must not be able to save from a retained page.
+
+For upgrade and recovery, retain a task, a private saved draft and a template with the same label in a disposable copy. Rename and verify all three, restart, then restore the candidate App backup and check the new name and draft revision. Include an emoji in the new name to verify valid UTF-16 pairs survive the round trip. Restore the exact predecessor image and data backup and verify the old name, revision and links. A data-only restore against a different image is not predecessor rollback proof. After any uncertain network response, reload Labels before retrying.
+
+Administrators can review unused definitions in **Settings → Workflow → Labels**. Review shows up to 25 eligible labels per page. Selection clears on pagination, refresh, disconnection or account verification failure. Removal rechecks current usage and metadata together before committing the complete selection. A changed or newly used label leaves the selection intact in storage and asks for a new preview.
+
+If cleanup reports that stored label selections need attention, inspect a verified backup in a disposable installation. Check task label JSON arrays, version-1 draft label selections and template label arrays for malformed or oversized data. Cleanup preserves all definitions when it cannot determine usage safely. Repair through the corresponding supported task, draft or template workflow, or restore a known-good App backup, then review again. Do not erase private draft data to make cleanup pass. Large unrelated descriptions do not prevent cleanup; each label selection is limited to 64 KiB.
+
+Use HTTPS Home Assistant ingress and a current administrator session. An unavailable Home Assistant verification asks for retry and removes the preview from view. An interrupted removal may already have committed: **Review unused labels** again before selecting another removal. Cleanup previews are not retained in offline storage. App-only database backup and restore retain definitions and their task links. After restoration, repeat the still-used-label check and confirm an unused label can be reviewed and deliberately removed.
+
 ### Inactivity Verification
 
 Use a disposable dataset. Confirm the shared policy starts Off and a specific Area can remain Off under an enabled default. Preview a change, verify the ready and upcoming counts, and confirm a stale preview cannot save after another administrator changes the policy. A stale or denied browser session should show a retry state with no preview rows.
@@ -350,6 +446,10 @@ Use a disposable dataset. Confirm the shared policy starts Off and a specific Ar
 After enabling a policy, restart the App and allow one five-minute sweep. Verify up to 25 eligible cards move and protected or recently edited cards stay in place. Confirm each move has one system audit event and appears in **Deferred** with the inactivity label. Resume one card and confirm its status is preserved and its next inactivity deadline uses the new activity window. App-only SQLite backups retain the policy, including explicit Area inheritance and its revision.
 
 Use HTTPS for Home Assistant ingress so the browser can send same-origin request metadata. If preview stays unavailable and the database integrity check reports a malformed inactivity policy, restore a verified App backup with a valid policy before re-enabling the rule.
+
+For the Stalled cue, check the applicable Inactivity policy first. A qualifying assignment, reopen or at least three recent comments from two verified Home Assistant members creates the marker. The comment window is 33% of the configured inactivity period. Existing cards keep their original activity history and begin recording markers when qualifying events occur. On a disposable dataset, verify the Stalled filter, clear a cue by editing its card, and confirm a protected scheduled task stays out of automatic deferral.
+
+Card quick-action menus use viewport-bounded positions and 44-pixel color targets. Check a color change at a 320-pixel viewport when verifying board cues. The menu styles cover elements created by the client controller.
 
 ## Checklist edits from multiple sessions
 
@@ -361,36 +461,69 @@ Ticket drawers retain the background queue URL in history state. Match an in-fli
 
 Ticket drawers keep their canonical URL while editing. On standalone pages, Layout registers the drawer history guard before Astro ClientRouter so Back and Forward restore the existing drawer and queue rather than replacing the page. The guard only handles history entries owned by the currently mounted drawer. Home Assistant ingress retains its native navigation path. If Triage receives a decision acknowledgement while a ticket is open, its background route remains the comparison target; the saved status stays visible after closing the drawer.
 
-### Held-body revocation fixture in production builds
+Label removal confirmations render the count and each selected name as plain text in a bounded list. Markup in a stored label name must be visible as text and never create elements. Successful card-color changes refresh the board after acknowledgement; inactivity cues must revalidate without navigating away or clearing peer cues.
 
-The ingress fixture observes the bounded body-parser module when it waits for the next request chunk. Production builds minify function names, so the fixture matches the parser module filename rather than a function name in the stack. Keep the same held-body, revocation, replay and disconnect assertions when checking a minified release image.
+## Database readiness
 
-### Framework evaluation validation
+`GET /api/health` reports HTTP 503 and `status: degraded` when the database is reachable but its startup integrity check failed. A successful connection alone does not establish healthy storage. Inspect `db_status` and `db_integrity` separately. Keep a copy of the database and its WAL together before recovery, and restore a verified backup in a disposable installation before replacing live data. `HEAD /api/health` remains a lightweight process/schema liveness check; its 200 response does not override degraded readiness.
 
-Framework creation accepts finite numeric bounds and formulas using declared fields, numbers, parentheses and the four arithmetic operators. Unsupported stored formulas display an explicit framework error; edit the definition before scoring. Framework field bounds render as text attributes, including records retained from older versions. Evaluation saves use the normalized task version and retain estimates after a conflict. Assist suggestions preserve fields they do not replace and do not redraw a different framework selected during the request.
+MCP tool inputs resolve local OpenAPI component references with bounded expansion. Search uses native `q`, keeps `query` as an alias and remains task-scoped. Native operation responses must contain a valid JSON object without a rejection flag; HTTP204/205 are acknowledged empty success. A malformed or rejected completion response must produce a tool error, including completion by title. Human-only rule and framework settings mutations are not advertised as token tools. Use scoped disposable credentials when checking these paths.
 
-The OpenAPI comment-list schema includes comment fields and `can_manage` in one object so schema validation accepts actual API responses.
 
-Keep CommonJS dependencies such as `sanitize-html` and `yaml` external in the Astro dev server; bundle them only in the production server build. Forcing them through the development ESM runner causes `require is not defined` and returns HTTP 500. Kanban refreshes while a ticket is open retain the background view URL and do not carry comment anchors into the board URL.
+## Application logging and optional Loki forwarding
 
-Assist scoring ignores undeclared fields and non-primitive suggestions. Malformed framework field arrays return validation errors. Regional preferences retain Saturday week starts and validate saved date formats. Custom/Ollama handoff never substitutes another provider when its URL is missing or unavailable; recovery messages follow the chosen language.
+The App's `log_level` and `log_categories` options configure newly created
+loggers. Changing App options requires a restart. An absent global option keeps
+the logger's own defaults. `audit_enabled: false` disables audit events even
+when an individual logger enables them; an individual logger can still opt out.
+Audit events are independent of application-category filtering but follow the
+configured level. The legacy `MEITHEAL_AUDIT_LOGS` environment option is used
+only when `MEITHEAL_AUDIT_ENABLED` is absent.
 
-Built-in catalog and field descriptions survive packaged discovery and YAML export. The Settings link exposes the current readiness tooltip while retaining its full click target. Switching tickets resets an aborted Assist action. Both Supervisor build metadata files use the same Proprietary image license label as the Dockerfile.
+Default credential/PII patterns and nested sensitive metadata keys are always
+redacted before output. Caller patterns add protection. The retained
+`log_redaction` option cannot disable this minimum protection. Stdout emits one
+JSON event per line and remains the authoritative troubleshooting stream.
+To verify email redaction in a disposable environment, use a synthetic address
+with a plus tag. The address is redacted and surrounding punctuation remains visible.
 
-Search keeps one persistent live announcement region; retry controls remain outside it. Task table controls use the shared table stylesheet, including dynamically created rows. Label names are trimmed after HTML stripping so task creation and the labels API share a stable normalized name. CI action revisions are pinned to verified release commits.
+An optional `loki_url` must be an HTTP(S) push endpoint without embedded
+credentials. The native sender does not follow redirects. It forwards the same
+redacted lines with only static service/environment labels. It queues at most
+200 waiting lines, sends batches of 50, omits remote lines larger than 16 KiB,
+and uses a 250 ms flush delay with a one-second request timeout. Overflow,
+invalid endpoints, non-success responses and timeouts drop remote logs with a
+generic stderr warning at most once per process per 60 seconds. Changing the
+trimmed `LOKI_URL` clears pending lines on the next enqueue. There are no
+retries, durable queues or guaranteed
+shutdown drains. Stdout continues; remote loss does not imply successful Loki
+ingestion. Check receiver ingestion separately using synthetic data.
 
-To-do discovery preserves an explicitly disabled sync setting. AI handoff stops when provider settings cannot be read or are invalid; only a successful unset preference defaults to ChatGPT.
+## Local image builds
 
-When Home Assistant-only AI is selected, an unavailable Assist connection reports that state and never opens an external provider.
+From the repository root, run:
 
-Today and task-detail AI handoffs use the same authoritative server preference and URL validation. Today opens the HA Assist dialog for HA-only preferences, including with absent or stale browser preferences. Framework YAML re-import preserves field descriptions.
+```sh
+npm run build:image -- --tag localhost/meitheal:dev
+```
 
-AI handoff reads expose only the saved provider and approved custom destination to household sessions. Other system settings and all system-setting writes remain administrator-only. After resolving an external destination, Today and task detail show an Open provider link with its host. This native click preserves browser activation after slow reads and uses `noopener noreferrer`. HA-only still opens Assist directly.
+The pnpm equivalent is `pnpm run build:image --tag localhost/meitheal:dev`.
+Both use the add-on Dockerfile and repository context, and forward extra
+arguments to `podman build`. This builds an image without publishing or replacing
+a running App. If the host provides `meitheal-build`, it selects that host's
+guarded build store; failure stops the command without trying another store.
+Without that launcher, normal Podman configuration applies. Keep existing
+container lifecycle commands on the store where those containers were created.
 
-The two handoff-setting read exceptions require a verified Home Assistant ingress identity. Unauthenticated standalone callers, including forged ingress headers, retain the administrator restriction. `GET /api/settings?key=...` returns `{ key, value }` (plus `configured` for masked credentials); omitting `key` returns the flat settings map.
+The performance checker has a separate temporary server. It waits for that
+server to close on both passing and failing measurements and uses SIGKILL after
+two seconds if SIGTERM does not close it. A printed result is complete only
+when the command exits; failures retain a nonzero status. Its version/integrity
+health check, five warmups, 100 validated task writes and existing budgets are
+unchanged by this build-entry command.
 
-An approved custom AI URL is a household-visible destination, not a credential store. Keep secrets and access tokens out of its path and query; administrators should review existing saved URLs. Settings explains this beside the URL input. Invalid dialog destinations cancel cleanly before mounting.
+MCP completion acknowledgements require the expected task ID or exact ticket key and a completed native status. A JSON object alone does not prove completion. Empty acknowledgements remain valid for native operations such as deletion that deliberately return204/205; they do not fabricate a completed task result.
 
-Existing custom AI URLs stay administrator-only after upgrade. To enable household handoff, review the URL, select **Share this reviewed URL with household members**, and save AI Settings. The approval is bound to the exact URL in `ai-custom-url-approved`; missing approval defaults to pending review. Editing the URL clears the checkbox, and a different saved URL cannot inherit approval. Unchecking and saving revokes sharing. Built-in providers and HA-only policy remain available without URL approval.
+### Local Feedback access and request failures
 
-Table title editing keeps the active row in place while a server refresh finishes. Ending the edit resumes a fresh row load. Escape restores the last saved title without sending the discarded draft. To verify the race, hold the refresh after a rename, start another edit, release the refresh, then cancel and reload; only the committed rename should persist.
+For Feedback 503, check the Home Assistant Core connection and current account availability before investigating local storage/quota.403 requires an active nonsystem account for submission and a current administrator for queue access. Reopen Settings after correcting permissions.408 indicates the 8KiB JSON body did not arrive within five seconds; retry the unchanged form to retain its submission receipt.499 indicates cancellation. Optional app-version context accepts the published 12-character lowercase Canary version or the existing bounded release-context format; source hash abbreviations/full hashes are rejected. Administrator review drafts remain local to the current Settings lifecycle and export previews must be prepared again after refresh.

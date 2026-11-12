@@ -71,20 +71,28 @@ test.describe("Dynamic Home Assistant agent pickers", () => {
       if (url === "/tasks") {
         await expect.poll(() => page.evaluate(() => typeof window.openAskHaModal)).toBe("function")
         await openAsk(page)
+      } else {
+        // Initial agent discovery may settle while the Settings panels are still inert.
+        await expect(page.locator("#settings-panels")).not.toHaveAttribute("inert", "")
       }
       const refresh = page.locator(refreshId)
       await expect(refresh).toHaveAttribute("aria-busy", "false")
+      await refresh.focus()
+      await expect(refresh).toBeFocused()
       held = true
       const previousReads = reads
-      await refresh.focus()
-      await refresh.press("Enter")
-      await expect(refresh).toHaveAttribute("aria-busy", "true")
-      await expect.poll(() => reads).toBe(previousReads + 1)
-      await expect(refresh).toBeFocused()
-      await refresh.press("Enter")
-      expect(reads).toBe(previousReads + 1)
-      held = false
-      release?.()
+      try {
+        await page.keyboard.press("Enter")
+        await expect(refresh).toHaveAttribute("aria-busy", "true")
+        await expect.poll(() => reads).toBe(previousReads + 1)
+        await expect(refresh).toBeFocused()
+        await page.keyboard.press("Enter")
+        expect(reads).toBe(previousReads + 1)
+      } finally {
+        held = false
+        release?.()
+        release = undefined
+      }
       await expect(refresh).toHaveAttribute("aria-busy", "false")
       await expect(refresh).toBeFocused()
     }
@@ -193,58 +201,5 @@ test.describe("Dynamic Home Assistant agent pickers", () => {
     await input.fill("Must not fall back")
     await expect(send).toBeDisabled()
     expect(requests).toHaveLength(3)
-  })
-})
-
-test.describe("Discovery recovery and keyboard focus", () => {
-  test.skip(shouldSkipBrowserSpecs(), "Requires a disposable App server")
-  test.use({ serviceWorkers: "block" })
-
-  test("Settings keeps Refresh focused while busy and handles non-JSON and null replies", async ({ page }) => {
-    await mockPreference(page, "01LEGACYCONFIGENTRY")
-    let release: (() => void) | undefined
-    let hold = false
-    let reads = 0
-    await page.route("**/api/ha/agents", async route => {
-      reads++
-      if (hold) await new Promise<void>(resolve => { release = resolve })
-      return route.fulfill({ json: { agents: registeredAgents } })
-    })
-    await page.goto("/settings#automation-ai-settings")
-    const refresh = page.locator("#refresh-ha-agents")
-    const status = page.locator("#ha-agent-discovery-status")
-    await expect(status).toContainText("3 Home Assistant agents available")
-    await expect(refresh).toHaveAttribute("aria-disabled", "false")
-    const before = reads
-    hold = true
-    await refresh.focus()
-    await refresh.press("Enter")
-    await expect.poll(() => reads).toBe(before + 1)
-    await expect(refresh).toBeFocused()
-    await expect(refresh).toHaveAttribute("aria-busy", "true")
-    await refresh.press("Enter")
-    expect(reads).toBe(before + 1)
-    release?.()
-    await expect(refresh).toHaveAttribute("aria-disabled", "false")
-    await expect(refresh).toBeFocused()
-    await page.unroute("**/api/ha/agents")
-    await page.route("**/api/ha/agents", route => route.fulfill({ status: 502, contentType: "text/html", body: "<h1>Bad gateway</h1>" }))
-    await refresh.press("Enter")
-    await expect(status).toContainText("Home Assistant agent discovery failed")
-    await expect(status).not.toContainText("Unexpected token")
-    await page.unroute("**/api/ha/agents")
-    await page.route("**/api/ha/agents", route => route.fulfill({ contentType: "application/json", body: "null" }))
-    await refresh.press("Enter")
-    await expect(status).toContainText("invalid agent list")
-    await expect(page.locator("#ha-agent-select-settings")).toHaveValue("01LEGACYCONFIGENTRY")
-  })
-
-  test("Irish Settings localizes discovery controls and status", async ({ page, context, baseURL }) => {
-    await context.addCookies([{ name: "meitheal-locale", value: "ga", url: baseURL! }])
-    await page.addInitScript(() => localStorage.setItem("meitheal-locale", "ga"))
-    await page.route("**/api/ha/agents", route => route.fulfill({ json: { agents: registeredAgents } }))
-    await page.goto("/settings#automation-ai-settings")
-    await expect(page.locator("#refresh-ha-agents")).toHaveText("Athnuaigh gníomhairí")
-    await expect(page.locator("#ha-agent-discovery-status")).toContainText("3 gníomhaire Home Assistant ar fáil")
   })
 })

@@ -141,39 +141,103 @@ coreTest("Assist only sends verified administrator requests to Home Assistant", 
   }
 })
 
-coreTest("household members read only AI handoff destinations and cannot change system settings", async ({ playwright }) => {
+coreTest("household AI handoff requires current membership and preserves URL consent atomically", async ({ playwright }) => {
   const api = await playwright.request.newContext({ baseURL: origin })
   const admin = { cookie: "feedback-fixture=admin", origin }
   const member = { cookie: "feedback-fixture=member", origin }
+  const settings = prefix + "/api/settings"
+  const handoff = settings + "?key=ai-provider&handoff=1"
+  const original = "https://assistant.example/chat"
+  const changed = "https://assistant.example/changed"
+  const save = (url: string, shared: boolean, previous: string, previouslyShared: boolean, headers = admin) =>
+    api.put(settings, { headers, data: {
+      key: "ai-provider", value: "custom", custom_url: url, share_custom_url: shared,
+      previous_provider: "custom", previous_custom_url: previous, previously_shared: previouslyShared,
+    } })
+  const readAsMember = () => api.get(handoff, { headers: member })
+  const writeSetting = (key: string, value: unknown, headers = admin) => api.put(settings, { headers, data: { key, value } })
   try {
-    for (const [key, value] of [["ai-provider", "custom"], ["ai-custom-url", "https://assistant.example/chat"], ["ha_api_key", "private-fixture"]]) {
-      expect((await api.put(prefix + "/api/settings", { headers: admin, data: { key, value } })).status()).toBe(200)
-    }
-    const custom = prefix + "/api/settings?key=ai-custom-url"
-    const approval = (value: string | null, headers = admin) => api.put(prefix + "/api/settings", { headers, data: { key: "ai-custom-url-approved", value } })
-    const pending = await api.get(custom, { headers: member })
+    await setDatabaseCoreRole("demoted")
+    expect((await (await api.get(settings, { headers: admin })).json())["ai-handoff-editable"]).toBe(false)
+    expect((await api.get(prefix + "/api/export/settings.json", { headers: admin })).status()).toBe(403)
+    expect((await api.post(prefix + "/api/import/settings", { headers: admin, data: { _version: 2, rules: [] } })).status()).toBe(403)
+    await setDatabaseCoreRole("stalled")
+    expect((await (await api.get(settings, { headers: admin })).json())["ai-handoff-editable"]).toBe(false)
+    await setDatabaseCoreRole("allowed")
+    expect((await (await api.get(settings, { headers: admin })).json())["ai-handoff-editable"]).toBe(true)
+    expect((await writeSetting("ai-provider", "custom")).status()).toBe(200)
+    expect((await writeSetting("ai-custom-url", original)).status()).toBe(200)
+    expect((await writeSetting("ha_api_key", "private-fixture")).status()).toBe(200)
+    const pending = await readAsMember()
     expect(pending.status()).toBe(403)
-    expect(await pending.text()).not.toContain("https://assistant.example/chat")
-    expect((await approval("https://other.example/")).status()).toBe(400)
-    expect((await approval("https://assistant.example/chat", member)).status()).toBe(403)
-    expect((await approval("https://assistant.example/chat")).status()).toBe(200)
-    for (const key of ["ai-provider", "ai-custom-url"]) {
-      const read = await api.get(prefix + "/api/settings?key=" + key, { headers: member })
-      expect(read.status()).toBe(200)
-      expect((await read.json()).value).toBe(key === "ai-provider" ? "custom" : "https://assistant.example/chat")
-      expect((await api.put(prefix + "/api/settings", { headers: member, data: { key, value: "blocked" } })).status()).toBe(403)
+    expect(pending.headers()["cache-control"]).toBe("private, no-store")
+    const pendingBody = await pending.json()
+    expect(pendingBody.title).toBe("URL review required")
+    expect(JSON.stringify(pendingBody)).not.toContain(original)
+    expect((await api.get(handoff, { headers: admin })).status()).toBe(200)
+    expect((await writeSetting("ai-custom-url", "not-a-url")).status()).toBe(200)
+    expect(await (await api.get(handoff, { headers: admin })).json()).toEqual({
+      key: "ai-provider", value: "custom", canUseAssist: true, urlProblem: "invalid",
+    })
+    expect((await writeSetting("ai-custom-url", original)).status()).toBe(200)
+    expect((await writeSetting("ai-custom-url-approved", original)).status()).toBe(400)
+    expect((await save(original, true, original, false, member)).status()).toBe(403)
+    expect((await save(original, true, original, false)).status()).toBe(200)
+    expect(await (await readAsMember()).json()).toEqual({ key: "ai-provider", value: "custom", url: original, canUseAssist: false })
+    for (const key of ["ai-provider", "ai-custom-url", "ai-custom-url-approved", "ha_api_key"]) {
+      expect((await api.get(settings + "?key=" + key, { headers: member })).status()).toBe(403)
+      expect((await writeSetting(key, "blocked", member)).status()).toBe(403)
     }
-    expect((await api.get(prefix + "/api/settings?key=ha_api_key", { headers: member })).status()).toBe(403)
-    const all = await (await api.get(prefix + "/api/settings", { headers: member })).json()
+    const all = await (await api.get(settings, { headers: member })).json()
     expect(all).not.toHaveProperty("ha_api_key")
     expect(all).not.toHaveProperty("ai-provider")
     expect(all).not.toHaveProperty("ai-custom-url-approved")
-    expect((await api.put(prefix + "/api/settings", { headers: admin, data: { key: "ai-custom-url", value: "https://assistant.example/changed" } })).status()).toBe(200)
-    expect((await api.get(custom, { headers: member })).status()).toBe(403)
-    expect((await approval("https://assistant.example/changed")).status()).toBe(200)
-    expect((await api.get(custom, { headers: member })).status()).toBe(200)
-    expect((await approval(null)).status()).toBe(200)
-    expect((await api.get(custom, { headers: member })).status()).toBe(403)
+    const competing = "https://assistant.example/competing"
+    const [first, second] = await Promise.all([
+      save(changed, true, original, true),
+      save(competing, true, original, true),
+    ])
+    expect([first.status(), second.status()].sort()).toEqual([200, 409])
+    const winner = first.status() === 200 ? changed : competing
+    expect((await (await readAsMember()).json()).url).toBe(winner)
+    expect((await writeSetting("ai-custom-url", original)).status()).toBe(200)
+    expect((await writeSetting("ai-custom-url", winner)).status()).toBe(200)
+    expect((await readAsMember()).status()).toBe(403)
+    expect((await save(winner, true, winner, true)).status()).toBe(409)
+    expect((await save(winner, true, winner, false)).status()).toBe(200)
+    expect((await writeSetting("ai-provider", "ha_llm")).status()).toBe(200)
+    expect((await save(winner, true, winner, true)).status()).toBe(409)
+    expect(await (await readAsMember()).json()).toEqual({ key: "ai-provider", value: "ha_llm", canUseAssist: false })
+    const staleBuiltIn = await api.put(settings, { headers: admin, data: {
+      key: "ai-provider", value: "chatgpt", previous_provider: "custom", previous_custom_url: winner, previously_shared: true,
+    } })
+    expect(staleBuiltIn.status()).toBe(409)
+    expect((await writeSetting("ai-provider", "custom")).status()).toBe(200)
+
+    const exported = await api.get(prefix + "/api/export/settings.json", { headers: admin })
+    expect(exported.status()).toBe(200)
+    expect((await exported.json()).settings).not.toHaveProperty("ai-custom-url-approved")
+    const restored = await api.post(prefix + "/api/import/settings", { headers: admin, data: {
+      "ai-custom-url": winner, "ai-custom-url-approved": winner,
+    } })
+    expect(restored.status()).toBe(200)
+    expect((await readAsMember()).status()).toBe(403)
+
+    expect((await save(winner, true, winner, false)).status()).toBe(200)
+    await setDatabaseCoreRole("demoted")
+    expect((await save(winner, true, winner, true)).status()).toBe(403)
+    const demotedHandoff = await api.get(handoff, { headers: admin })
+    expect(demotedHandoff.status()).toBe(200)
+    expect(await demotedHandoff.json()).toEqual({ key: "ai-provider", value: "custom", url: winner, canUseAssist: false })
+    const demotedSettings = await (await api.get(settings, { headers: admin })).json()
+    expect(demotedSettings).not.toHaveProperty("ai-custom-url")
+    expect(demotedSettings).not.toHaveProperty("ai-custom-url-approved")
+    expect(demotedSettings["ai-handoff-editable"]).toBe(false)
+    expect((await api.get(prefix + "/api/export/settings.json", { headers: admin })).status()).toBe(403)
+    expect((await api.delete(settings + "?reset=all", { headers: admin, data: {} })).status()).toBe(403)
+    expect(await (await readAsMember()).json()).toEqual({ key: "ai-provider", value: "custom", url: winner, canUseAssist: false })
+    await setDatabaseCoreRole("stalled")
+    expect((await readAsMember()).status()).toBe(503)
   } finally { await api.dispose() }
 })
 
@@ -218,6 +282,32 @@ coreTest("Today lets a verified administrator review an Assist prompt before sen
   ])
   await dialog.getByRole("button", { name: "Close" }).click()
   await expect(ask).toBeFocused()
+})
+
+coreTest("a household member opens only an approved destination from Today through ingress", async ({ page }) => {
+  const destination = "https://assistant.example/household"
+  const settings = origin + prefix + "/api/settings"
+  const admin = { cookie: "feedback-fixture=admin", origin }
+  const saved = await page.request.put(settings, { headers: admin, data: {
+    key: "ai-provider", value: "custom", custom_url: destination, share_custom_url: true,
+    previous_provider: null, previous_custom_url: null, previously_shared: false,
+  } })
+  expect(saved.status(), await saved.text()).toBe(200)
+  const created = await page.request.post(origin + prefix + "/api/tasks", { headers: admin, data: {
+    title: "Household handoff fixture", description: "This task text stays out of a custom URL.",
+    due_date: new Date().toISOString().slice(0, 10),
+  } })
+  expect(created.status()).toBe(201)
+  const { id } = await created.json()
+  await page.context().setExtraHTTPHeaders({})
+  await page.context().addCookies([{ name: "feedback-fixture", value: "member", url: origin }])
+  await page.goto(origin + prefix + "/today")
+  const row = page.locator(`#section-today .tli[data-id="${id}"]`)
+  await row.hover()
+  await row.getByRole("button", { name: "Ask AI" }).click()
+  const link = page.getByRole("link", { name: "Open provider", exact: true })
+  await expect(link).toHaveAttribute("href", destination)
+  await expect(link).toHaveAttribute("rel", "noopener noreferrer")
 })
 
 coreTest("database download checks current Core role without reusing a stale administrator grant", async ({ playwright }) => {
@@ -519,6 +609,42 @@ test("Deferred and cross-page Details wait for the new worker through ingress", 
   }
 })
 
+test("task list frames the same UTF-8 JSON through standalone and ingress", async ({ playwright }) => {
+  const api = await playwright.request.newContext({ baseURL: origin })
+  const title = "Nótaí 🧪"
+  const description = "Cuir ceist ar an bhfoireann."
+  try {
+    const created = await api.post("/api/tasks", { headers: { origin }, data: { title, description } })
+    expect(created.status()).toBe(201)
+    const { id } = await created.json()
+    const path = "/api/tasks?limit=50"
+    const direct = await api.get(path)
+    expect(direct.status()).toBe(200)
+    const body = await direct.body()
+    expect(JSON.parse(body.toString("utf8"))).toMatchObject({
+      tasks: [{ id, title, description }], total: 1, limit: 50, offset: 0,
+    })
+    expect(body.length).toBeGreaterThan(body.toString("utf8").length)
+    const framed = { "content-type": "application/json", "content-length": String(body.length) }
+    expect(direct.headers()).toMatchObject(framed)
+    expect(direct.headers()["transfer-encoding"]).toBeUndefined()
+
+    const member = { cookie: "feedback-fixture=member" }
+    const scoped = await api.get(prefix + path, { headers: member })
+    expect(scoped.status()).toBe(200)
+    expect(scoped.headers()).toMatchObject({ ...framed, "x-ingress-path": prefix })
+    expect(scoped.headers()["transfer-encoding"]).toBeUndefined()
+    expect(await scoped.body()).toEqual(body)
+
+    const head = await api.head(prefix + path, { headers: member })
+    expect(head.status()).toBe(200)
+    expect(head.headers()).toMatchObject(framed)
+    expect(await head.body()).toHaveLength(0)
+  } finally {
+    await api.dispose()
+  }
+})
+
 test("ingress loads board dependencies from the app path", async ({ page, context }) => {
   await context.setExtraHTTPHeaders({})
   await context.addCookies([{ name: "feedback-fixture", value: "member", url: origin }])
@@ -528,18 +654,22 @@ test("ingress loads board dependencies from the app path", async ({ page, contex
     escapedAssets.push(new URL(route.request().url()).pathname)
     return route.fulfill({ status: 404 })
   })
-  const [controller] = await Promise.all([
+  const [controller, headingFont] = await Promise.all([
     page.waitForResponse(response => response.url().startsWith(origin + prefix + "/_astro/kanban-page-controller.")),
+    page.waitForResponse(response => response.url().startsWith(origin + prefix + "/_astro/outfit-latin-wght-normal.")),
     page.goto(origin + prefix + "/tasks"),
   ])
   expect(controller.ok()).toBe(true)
+  expect(headingFont.ok()).toBe(true)
+  await expect(page.locator('link[rel="preload"][as="font"][href*="outfit-"]')).toHaveCount(1)
+  expect(await page.evaluate(() => document.fonts.load("600 16px Outfit").then(faces => faces.length))).toBe(1)
   await expect(page.locator("#kanban-shell")).toHaveAttribute("data-kanban-booted", "true")
   expect(escapedAssets).toEqual([])
 })
 
 test("a 2,000-task Table keeps its paged results, assets and views inside ingress", async ({ page, context }) => {
   test.setTimeout(45000)
-  const db = new DatabaseSync(path.join(work, "meitheal.db"))
+  const db = new DatabaseSync(path.join(work, "meitheal.db"), { timeout: 5000 })
   try {
     const task = db.prepare(`INSERT INTO tasks
       (id, title, description, status, request_id, idempotency_key, created_at, updated_at)
@@ -587,6 +717,15 @@ test("a 2,000-task Table keeps its paged results, assets and views inside ingres
   const calendar = page.getByRole("navigation", { name: "Task views" }).getByRole("link", { name: "Calendar" })
   await expect(calendar).toHaveAttribute("href", prefix + "/tasks?view=calendar#calendar")
   await calendar.click()
+  await expect(page.locator("#tasks-view-calendar")).toBeVisible()
+  expect(new URL(page.url()).pathname).toBe(prefix + "/tasks")
+  expect(escaped).toEqual([])
+
+  await page.goto(origin + prefix + "/tasks?view=table#table")
+  await expect(page.locator("#task-table tbody tr[data-id]")).toHaveCount(50)
+  await expect(page.locator("[data-view-tabs]")).toHaveAttribute("data-switcher-ready", "true")
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
+  await page.keyboard.press("3")
   await expect(page.locator("#tasks-view-calendar")).toBeVisible()
   expect(new URL(page.url()).pathname).toBe(prefix + "/tasks")
   expect(escaped).toEqual([])
@@ -840,7 +979,7 @@ test("ingress Auto follows device preference when its parent is cross-origin", a
   }
 })
 
-test("verified members receive durable receipts and queue APIs fail closed", async ({ playwright }) => {
+coreTest("verified members receive durable receipts and queue APIs fail closed", async ({ playwright }) => {
   const api = await playwright.request.newContext()
   const at = (route: string) => origin + prefix + route
   const member = { cookie: "feedback-fixture=member" }
@@ -854,7 +993,8 @@ test("verified members receive durable receipts and queue APIs fail closed", asy
     const anonymous = await api.get(at("/api/feedback"), { headers: fake })
     const sibling = await api.get(origin + "/api/feedback", { headers: fake })
     const old = await api.get(at("/api/feedback"), { headers: { cookie: "feedback-fixture=old" } })
-    expect([anonymous.status(), sibling.status(), old.status()]).toEqual([403, 403, 403])
+    expect([anonymous.status(), sibling.status(), old.status()]).toEqual([403, 401, 403])
+    expect(sibling.headers()["www-authenticate"]).toBe("Bearer")
     expect((await post(body, fake)).status()).toBe(403)
     expect((await api.post(at("/api/feedback"), { headers: member, data: body })).status()).toBe(403)
     expect((await post(body, { ...member, "sec-fetch-site": "same-site" })).status()).toBe(403)
@@ -904,7 +1044,7 @@ test("verified members receive durable receipts and queue APIs fail closed", asy
     expect(memberReads.map(response => response.status())).toEqual([403, 403, 403, 403, 403, 403])
 
     await stopServer()
-    await startServer()
+    await startServer(true)
     const persisted = await post(body)
     expect(await persisted.json()).toEqual(receipt)
     const list = await api.get(at("/api/feedback?state=open"), { headers: admin })
@@ -943,9 +1083,75 @@ test("verified members receive durable receipts and queue APIs fail closed", asy
   }
 })
 
-test("Settings saves and retries feedback, then reviews, downloads and deletes it", async ({ browser }) => {
-  const member = await browser.newContext({ extraHTTPHeaders: {} })
+coreTest("a live ingress role change prevents reuse of an administrator's Custom CSS", async ({ browser }) => {
+  const context = await browser.newContext({ extraHTTPHeaders: {}, serviceWorkers: "block" })
+  const settings = origin + prefix + "/settings#personal-settings"
+  const settingsApi = origin + prefix + "/api/settings"
+  const css = ":root { --fixture-theme-probe: administrator; }"
+  const name = "admin-fixture.css"
+  try {
+    await context.addCookies([{ name: "feedback-fixture", value: "admin", url: origin }])
+    const page = await context.newPage()
+    const root = page.locator("html")
+    const themeSelect = page.locator("#theme-select")
+    const applied = () => root.evaluate(element => getComputedStyle(element).getPropertyValue("--fixture-theme-probe").trim())
+    expect((await page.goto(settings))?.status()).toBe(200)
+    await expect(page.locator("#settings-panels")).not.toHaveAttribute("inert", "")
+    await themeSelect.selectOption("custom")
+    await page.locator("#custom-theme-input").setInputFiles({ name, mimeType: "text/css", buffer: Buffer.from(css) })
+    await expect.poll(applied).toBe("administrator")
+    expect(await page.evaluate(() => localStorage.getItem("meitheal-custom-theme-css"))).toBe(css)
+
+    await context.addInitScript(() => {
+      const selector = "#meitheal-custom-theme"
+      new MutationObserver(records => {
+        if (records.some(record => Array.from(record.addedNodes).some(node =>
+          node instanceof Element && (node.matches(selector) || node.querySelector(selector))))) {
+          document.documentElement.dataset.fixtureCustomCssSeen = "true"
+        }
+      }).observe(document, { childList: true, subtree: true })
+    })
+    await context.addCookies([{ name: "feedback-fixture", value: "member", url: origin }])
+    expect((await page.goto(origin + prefix + "/today"))?.status()).toBe(200)
+    expect(await applied()).toBe("")
+    expect(await root.getAttribute("data-fixture-custom-css-seen")).toBeNull()
+    await expect(page.locator("#meitheal-custom-theme")).toHaveCount(0)
+
+    const bulk = await page.request.get(settingsApi)
+    expect(bulk.ok()).toBe(true)
+    const memberSettings = await bulk.json()
+    expect(memberSettings).not.toHaveProperty("custom_theme_css")
+    expect(memberSettings).not.toHaveProperty("custom_theme_name")
+    for (const key of ["custom_theme_css", "custom_theme_name"]) {
+      expect((await page.request.get(settingsApi, { params: { key } })).status()).toBe(403)
+    }
+    for (const data of [
+      { key: "theme", value: "custom" },
+      { key: "custom_theme_css", value: css },
+      { key: "custom_theme_css", value: css, name },
+      { key: "custom_theme_name", value: name },
+    ]) {
+      expect((await page.request.put(settingsApi, { headers: { origin }, data })).status()).toBe(403)
+    }
+    expect((await page.request.put(settingsApi, {
+      headers: { origin }, data: { key: "theme", value: ["custom"] },
+    })).status()).toBe(400)
+
+    await page.goto(settings)
+    await expect(page.locator("#settings-panels")).not.toHaveAttribute("inert", "")
+    await expect(themeSelect.locator('option[value="custom"]')).toHaveCount(0)
+    await expect(page.locator("#custom-theme-section")).toHaveCount(0)
+    await themeSelect.selectOption("light")
+    await expect(root).toHaveAttribute("data-theme", "light")
+  } finally {
+    await context.close()
+  }
+})
+
+coreTest("Settings saves and retries feedback, then reviews, downloads and deletes it", async ({ browser }) => {
+  const member = await browser.newContext({ extraHTTPHeaders: {}, viewport: { width: 320, height: 812 } })
   const admin = await browser.newContext({ extraHTTPHeaders: {}, viewport: { width: 390, height: 844 }, acceptDownloads: true })
+  const personal = origin + prefix + "/settings#personal-settings"
   const settings = origin + prefix + "/settings#local-feedback"
   const message = 'Synthetic <img src=x onerror="window.feedbackExecuted=true"> report'
   try {
@@ -961,7 +1167,23 @@ test("Settings saves and retries feedback, then reviews, downloads and deletes i
       expect(saved.status()).toBe(201)
       await route.abort()
     })
-    await userPage.goto(settings)
+    await userPage.goto(personal)
+    const personalPanel = userPage.locator("#personal-settings")
+    const localFeedback = personalPanel.getByRole("link", { name: "Share local feedback", exact: true })
+    await personalPanel.getByRole("link", { name: /Changelog/ }).focus()
+    await userPage.keyboard.press("Tab")
+    await expect(localFeedback).toBeFocused()
+    const guides = personalPanel.getByRole("link", { name: "Guides", exact: true })
+    await expect(guides).toHaveAttribute("href", "https://github.com/ryan-winkler/meitheal/blob/main/docs/index.md")
+    await expect(guides).toHaveAttribute("target", "_blank")
+    await expect(localFeedback).toHaveAttribute("href", "#local-feedback")
+    await userPage.keyboard.press("Enter")
+    await expect(userPage).toHaveURL(settings)
+    const feedbackCard = userPage.locator("#local-feedback")
+    await expect(feedbackCard).toBeFocused()
+    await expect(feedbackCard.getByRole("link", { name: "Report a security vulnerability privately" }))
+      .toHaveAttribute("href", "mailto:info@coolockvillage.ie")
+    expect(submissionIds).toHaveLength(0)
     const denied = await userPage.evaluate(async () => {
       const response = await fetch("/api/settings?key=ha-token")
       return { status: response.status, contentType: response.headers.get("content-type") }
@@ -970,7 +1192,7 @@ test("Settings saves and retries feedback, then reviews, downloads and deletes i
     expect(denied.contentType).toContain("json")
     await expect(userPage.getByText("Local feedback queue")).toHaveCount(0)
     await expect(userPage.locator("#export-db-btn")).toHaveCount(0)
-    await userPage.getByLabel("Category", { exact: true }).selectOption("problem")
+    await userPage.locator("[data-feedback-form]").getByLabel("Category", { exact: true }).selectOption("problem")
     await userPage.getByLabel("Message", { exact: true }).fill(message)
     await userPage.getByRole("button", { name: "Save feedback" }).click()
     await expect(userPage.locator("[data-feedback-status]")).toContainText("Could not reach")
@@ -1010,6 +1232,18 @@ test("Settings saves and retries feedback, then reviews, downloads and deletes i
     await adminPage.getByRole("alertdialog").getByRole("button", { name: "Delete report" }).click()
     await expect(entry).toHaveCount(0)
     await expect(adminPage.locator("[data-queue-status]")).toHaveText("Report deleted.")
+
+    await member.addCookies([{ name: "meitheal-locale", value: "ga", url: origin }])
+    const irishPage = await member.newPage()
+    await irishPage.goto(personal)
+    const irishPanel = irishPage.locator("#personal-settings")
+    await expect(irishPanel.getByRole("link", { name: "Treoracha", exact: true })).toBeVisible()
+    const irishFeedback = irishPanel.getByRole("link", { name: "Roinn aiseolas áitiúil", exact: true })
+    await expect(irishFeedback).toHaveAttribute("href", "#local-feedback")
+    const bounds = await irishFeedback.boundingBox()
+    expect(bounds).not.toBeNull()
+    expect(bounds!.x).toBeGreaterThanOrEqual(0)
+    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(320)
   } finally {
     await member.close()
     await admin.close()

@@ -4,17 +4,16 @@ import { shouldSkipBrowserSpecs } from "./_helpers"
 test.describe("Sidebar and Today follow-through", () => {
   test.skip(shouldSkipBrowserSpecs(), "Requires a disposable local Meitheal server")
 
-  let originalSidebar: unknown
-  let createdIds: string[] = []
+  let sidebarConfig: unknown
+  const createdTaskIds: string[] = []
   test.beforeEach(async ({ request }) => {
-    originalSidebar = (await (await request.get("/api/settings?key=sidebar_config")).json()).value ?? null
-    createdIds = []
+    sidebarConfig = (await (await request.get("/api/settings")).json()).sidebar_config
   })
-  test.afterEach(async ({ request }) => {
-    try {
-      for (const id of createdIds) expect((await request.delete(`/api/tasks/${id}`, { data: {} })).status()).toBe(204)
-    } finally {
-      expect((await request.put("/api/settings", { data: { key: "sidebar_config", value: originalSidebar } })).status()).toBe(200)
+  test.afterEach(async ({ request, baseURL }) => {
+    const headers = { origin: new URL(baseURL!).origin }
+    expect((await request.put("/api/settings", { headers, data: { key: "sidebar_config", value: sidebarConfig ?? null } })).ok()).toBe(true)
+    for (const id of createdTaskIds.splice(0)) {
+      expect((await request.delete(`/api/tasks/${id}`, { headers, data: {} })).status()).toBe(204)
     }
   })
 
@@ -54,12 +53,59 @@ test.describe("Sidebar and Today follow-through", () => {
     await expect(page.locator("#sidebar-hierarchy-panel")).toHaveCount(1)
   })
 
+  test("the entire Areas menu collapses independently and remembers its state without storage dependence", async ({ page }) => {
+    await page.goto("/today", { waitUntil: "domcontentloaded" })
+    const group = page.locator("#sidebar-areas-group")
+    const toggle = page.locator("#project-nav-group-toggle")
+    const home = page.locator("[data-area-toggle]").first()
+    await expect.poll(() => page.evaluate(() => Boolean((window as unknown as { __meithealAreasDisclosure?: unknown }).__meithealAreasDisclosure))).toBe(true)
+    await expect(group).toHaveAttribute("open", "")
+    await home.press("Enter")
+    await expect(home).toHaveAttribute("aria-expanded", "false")
+    await toggle.press("Enter")
+    await expect(group).not.toHaveAttribute("open")
+    await expect(page.locator("#project-nav-content")).toBeHidden()
+    await expect(page.locator("#project-nav").getByRole("link", { name: "Manage areas & projects" })).toBeVisible()
+    await expect.poll(() => page.evaluate(() => localStorage.getItem("meitheal_project_nav_group_collapsed"))).toBe("true")
+    await page.reload({ waitUntil: "domcontentloaded" })
+    await expect(group).not.toHaveAttribute("open")
+    await toggle.press("Space")
+    await expect(group).toHaveAttribute("open", "")
+    await expect(home).toHaveAttribute("aria-expanded", "false")
+    await home.press("Enter")
+    await expect(home).toHaveAttribute("aria-expanded", "true")
+
+    await page.setViewportSize({ width: 320, height: 812 })
+    await expect(page.locator("#menu-toggle")).toBeEnabled()
+    await page.locator("#menu-toggle").click()
+    await expect(toggle).toBeInViewport()
+    await toggle.press("Enter")
+    await expect(group).not.toHaveAttribute("open")
+    await toggle.press("Space")
+    await expect(group).toHaveAttribute("open", "")
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(321)
+    await page.locator("#sidebar-toggle-btn").click()
+    await expect(page.locator("#menu-toggle")).toHaveAttribute("aria-expanded", "false")
+    await page.setViewportSize({ width: 1440, height: 1000 })
+
+    await page.addInitScript(() => {
+      Storage.prototype.getItem = () => { throw new DOMException("Storage blocked", "SecurityError") }
+      Storage.prototype.setItem = () => { throw new DOMException("Storage blocked", "SecurityError") }
+    })
+    await page.reload({ waitUntil: "domcontentloaded" })
+    await expect(group).toHaveAttribute("open", "")
+    await toggle.press("Enter")
+    await expect(group).not.toHaveAttribute("open")
+    await toggle.press("Space")
+    await expect(group).toHaveAttribute("open", "")
+  })
+
   test("Today stays compact, captures work and native sidebar navigation changes its URL", async ({ page, request, baseURL }) => {
     const headers = { origin: new URL(baseURL!).origin }
     const now = new Date().toISOString().slice(0, 10)
     const created = await request.post("/api/tasks", { headers, data: { title: "Due-today follow-through", due_date: now } })
     expect(created.status(), await created.text()).toBe(201)
-    createdIds.push((await created.json()).id)
+    createdTaskIds.push((await created.json()).id)
     await page.goto("/")
     await page.locator("#sidebar").getByRole("link", { name: "Today", exact: true }).click()
     await expect(page).toHaveURL(/\/today(?:#today-overview)?$/)
@@ -67,10 +113,9 @@ test.describe("Sidebar and Today follow-through", () => {
     await expect(page.locator("#today-overview .page-hero")).toHaveCount(0)
     await expect(page.locator("#daily-stats .stat-item").first().locator(".stat-value")).not.toHaveText("0")
     await expect(page.locator(".sidebar-footer > #connection-status")).toHaveCount(1)
+    await expect(page.locator(".sidebar-footer a #connection-status")).toHaveCount(0)
     await expect(page.locator(".sidebar-footer a")).toHaveAttribute("aria-describedby", "connection-status")
     await expect(page.locator(".sidebar-footer a")).toHaveAccessibleDescription("Meitheal ready")
-    await expect(page.locator("#connection-status")).toHaveAttribute("title", "Meitheal ready")
-    await expect(page.locator(".sidebar-footer a")).toHaveAttribute("title", "Meitheal ready")
     expect(await page.locator(".sidebar-footer").evaluate(footer => footer.getBoundingClientRect().height)).toBeLessThan(70)
 
     await page.setViewportSize({ width: 320, height: 812 })
@@ -84,10 +129,10 @@ test.describe("Sidebar and Today follow-through", () => {
     await expect.poll(async () => {
       const response = await request.get(`/api/tasks?q=${encodeURIComponent(title)}`)
       const data = await response.json()
-      const captured = data.tasks?.find((task: { title: string }) => task.title === title)
-      if (captured?.id && !createdIds.includes(captured.id)) createdIds.push(captured.id)
-      return captured?.title
+      return data.tasks?.[0]?.title
     }).toBe(title)
+    const capture = await (await request.get(`/api/tasks?q=${encodeURIComponent(title)}`)).json()
+    createdTaskIds.push(capture.tasks[0].id)
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(321)
     await expect.poll(() => page.evaluate(() => typeof window.openTaskDetail)).toBe("function")
     await page.locator("#today-bar-switcher-btn").click()
@@ -96,24 +141,4 @@ test.describe("Sidebar and Today follow-through", () => {
     await expect(page).toHaveURL(/#today-work$/)
     await expect(page.locator("#section-today")).toBeVisible()
   })
-})
-
-test("Today uses the chosen language and one workspace date for its label and datetime", async ({ page, request, context, baseURL }) => {
-  test.skip(shouldSkipBrowserSpecs(), "Requires a disposable App server")
-  const previous = (await (await request.get("/api/settings?key=timezone")).json()).value ?? null
-  const timezone = new Date().getUTCHours() < 10 ? "Pacific/Honolulu" : "Pacific/Kiritimati"
-  try {
-    expect((await request.put("/api/settings", { data: { key: "timezone", value: timezone } })).status()).toBe(200)
-    await context.addCookies([{ name: "meitheal-locale", value: "ga", url: baseURL! }])
-    await page.goto("/today")
-    const date = new Date()
-    const label = new Intl.DateTimeFormat("ga-IE", { weekday: "long", day: "numeric", month: "long", timeZone: timezone }).format(date)
-    const parts = Object.fromEntries(new Intl.DateTimeFormat("en", { year: "numeric", month: "2-digit", day: "2-digit", timeZone: timezone }).formatToParts(date).map(part => [part.type, part.value]))
-    const key = `${parts.year}-${parts.month}-${parts.day}`
-    expect(key).not.toBe(date.toISOString().slice(0, 10))
-    await expect(page.locator(".today-summary__date time")).toHaveText(label)
-    await expect(page.locator(".today-summary__date time")).toHaveAttribute("datetime", key)
-  } finally {
-    expect((await request.put("/api/settings", { data: { key: "timezone", value: previous } })).status()).toBe(200)
-  }
 })

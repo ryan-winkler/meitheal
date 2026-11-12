@@ -1,22 +1,14 @@
-type HaAgent = { id: string; name: string }
-
-function isHaAgent(value: unknown): value is HaAgent {
-  if (!value || typeof value !== "object") return false
-  const agent = value as Record<string, unknown>
-  return typeof agent.id === "string" && agent.id.length > 0 && typeof agent.name === "string"
-}
-
 /** Shared discovery UI. Never replace a saved agent with the implicit default. */
-export async function fetchHaAgents(signal: AbortSignal): Promise<HaAgent[]> {
+export async function fetchHaAgents(signal: AbortSignal): Promise<Array<{ id: string; name: string }>> {
   const response = await fetch("/api/ha/agents", { signal, cache: "no-store" })
-  const data: unknown = await response.json().catch(() => null)
-  const body = data && typeof data === "object" ? data as Record<string, unknown> : {}
-  if (!response.ok) throw new Error(typeof body.error === "string" ? body.error : typeof body.detail === "string" ? body.detail : response.status === 403 ? "Assist requires an active Home Assistant administrator" : "Home Assistant agent discovery failed")
-  const agents = body.agents
-  if (!Array.isArray(agents) || !agents.every(isHaAgent)) {
+  const data = await response.json().catch(() => null)
+  if (!response.ok) throw new Error(typeof data?.error === "string" ? data.error : typeof data?.detail === "string" ? data.detail : response.status === 403 ? "Assist requires an active Home Assistant administrator" : "Home Assistant agent discovery failed")
+  if (!Array.isArray(data?.agents) || data.agents.some((agent: unknown) => !agent || typeof agent !== "object"
+    || typeof (agent as { id?: unknown }).id !== "string" || !(agent as { id: string }).id
+    || typeof (agent as { name?: unknown }).name !== "string")) {
     throw new Error("Home Assistant returned an invalid agent list")
   }
-  return [...new Map<string, HaAgent>(agents.map(agent => [agent.id, agent])).values()]
+  return [...new Map<string, { id: string; name: string }>(data.agents.map((agent: { id: string; name: string }) => [agent.id, agent])).values()]
 }
 
 export function renderHaAgentOptions(select: HTMLSelectElement, agents: Array<{ id: string; name: string }>, selected: string): boolean {

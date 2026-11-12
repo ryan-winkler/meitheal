@@ -1,6 +1,7 @@
 import type { APIContext, APIRoute } from "astro"
 import { hasScope } from "@meitheal/domain-auth"
 import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability"
+import { hasBoardSelection, rejectBoardSelectionInJson, unavailableBoardResponse } from "@domains/tasks/board-availability"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import { TaskReactionRepository, type ReactionTarget } from "@domains/tasks/persistence/task-reaction-repository"
 import { apiJson, apiProblem } from "./api-response"
@@ -71,6 +72,7 @@ async function readContent(request: Request): Promise<string | Response> {
     return reactionProblem(400, "Send a valid UTF-8 JSON request body")
   }
 
+  if (hasBoardSelection(payload)) return unavailableBoardResponse()
   const content = payload && typeof payload === "object" && "content" in payload
     && typeof payload.content === "string" ? payload.content.trim().normalize("NFC") : ""
   if (!content || [...content].length > 16 || forbiddenContent.test(content)) {
@@ -142,6 +144,8 @@ export const removeReaction = reactionRoute("tasks:write", async ({ params, requ
   const target = targetFrom(params)
   const reactionId = parsePositiveId(params.reactionId ?? "")
   if (!target || reactionId === null) return reactionProblem(404, "Reaction not found")
+  const boardSelection = await rejectBoardSelectionInJson(request)
+  if (boardSelection) return boardSelection
   if (!await hasCurrentTaskParticipant(locals, request.signal, true)) return activeParticipantRequired()
   if (!await repo.remove(target, reactionId, actor.owner)) {
     return reactionProblem(404, "Reaction not found")

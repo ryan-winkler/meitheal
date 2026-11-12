@@ -1,6 +1,7 @@
 import type { APIRoute } from "astro"
 import { deriveEisenhowerQuadrant, VALID_TASK_TYPES, type TaskType } from "@meitheal/domain-tasks"
 import { normalizeLabelTitle, taskLabelInsert } from "@domains/labels"
+import { hasBoardSelection, rejectBoardSelectionInJson, unavailableBoardResponse } from "@domains/tasks/board-availability"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import { taskAddedActivity } from "@domains/tasks/persistence/recent-activity"
 import { taskInsertStatement, TaskRepository } from "@domains/tasks/persistence/task-repository"
@@ -11,6 +12,7 @@ import { isDbUnavailable, db503Response } from "../../../lib/db-fallback"
 import { apiError } from "../../../lib/api-response"
 import { normalizeStatus } from "../../../lib/status-config"
 import { resolveRecentActivityActor } from "../../../lib/recent-activity-actor"
+import { taskEventAuthorityHeaders } from "../../../lib/webhook-dispatcher"
 
 /** GET /api/tasks — list all tasks, POST /api/tasks — create a task */
 
@@ -95,10 +97,15 @@ export const GET: APIRoute = async ({ url }) => {
       task_type: r.task_type ?? "task",
       task_kind: r.task_kind ?? "standard_action",
       assigned_to: r.assigned_to ?? null,
+      kanban_position: r.kanban_position != null ? Number(r.kanban_position) : null,
+      nfc_tag_id: r.nfc_tag_id ?? null,
       urgency: Number(r.urgency ?? 0),
       importance: Number(r.importance ?? 0),
       eisenhower_quadrant: deriveEisenhowerQuadrant(Number(r.urgency ?? 0), Number(r.importance ?? 0)),
       eisenhower_override: Number(r.eisenhower_override ?? 0),
+      effort_minutes: r.effort_minutes != null ? Number(r.effort_minutes) : null,
+      effort_type: r.effort_type ?? null,
+      blocked_by: r.blocked_by ?? null,
       created_at: r.created_at,
       updated_at: r.updated_at,
       task_version: r.task_version,
@@ -107,9 +114,13 @@ export const GET: APIRoute = async ({ url }) => {
     }
   })
 
-  return new Response(JSON.stringify({ tasks, total, limit, offset }), {
+  const body = JSON.stringify({ tasks, total, limit, offset })
+  return new Response(body, {
     status: 200,
-    headers: { "content-type": "application/json" },
+    headers: {
+      "content-type": "application/json",
+      "content-length": String(Buffer.byteLength(body, "utf8")),
+    },
   })
   } catch (err) {
     if (isDbUnavailable(err)) return db503Response("tasks-get", err)
@@ -122,10 +133,11 @@ export const GET: APIRoute = async ({ url }) => {
 }
 
 export const POST: APIRoute = async ({ request, locals }) => {
+  const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
+  if (hasBoardSelection(body)) return unavailableBoardResponse()
   await ensureSchema()
   const client = getPersistenceClient()
   const repo = new TaskRepository(client)
-  const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
   const prepared = await prepareTaskCreation(repo, body)
   if (!prepared.ok) return Response.json({ error: prepared.error }, { status: 400 })
 
@@ -147,11 +159,12 @@ export const POST: APIRoute = async ({ request, locals }) => {
   const [inserted] = await client.batch(statements, "write")
   const ticketNumber = Number(inserted!.rows[0]!.ticket_number)
   const payload = taskCreationPayload(prepared.task, ticketNumber, now)
-  dispatchTaskCreation(payload, typeof body.request_id === "string" ? body.request_id : undefined)
-  return Response.json(payload, { status: 201 })
+  const authority = await taskEventAuthorityHeaders(["task.created"])
+  dispatchTaskCreation(payload, typeof body.request_id === "string" ? body.request_id : undefined, undefined, authority)
+  return Response.json(payload, { status: 201, headers: authority })
 }
 
-export const DELETE: APIRoute = async ({ url }) => {
+export const DELETE: APIRoute = async ({ request, url }) => {
   try {
     const purge = url.searchParams.get("purge")
     if (purge !== "all") {
@@ -160,6 +173,8 @@ export const DELETE: APIRoute = async ({ url }) => {
         headers: { "content-type": "application/json" },
       })
     }
+    const boardSelection = await rejectBoardSelectionInJson(request, 400)
+    if (boardSelection) return boardSelection
     await ensureSchema()
     const repo = new TaskRepository(getPersistenceClient())
     await repo.purgeAll()

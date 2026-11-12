@@ -11,7 +11,7 @@ import FilterToolbar from "../components/ui/FilterToolbar.astro";
 import CardCustomizer from "../components/ui/CardCustomizer.astro";
 import { t } from "../i18n/translations";
 import type { Locale } from "../lib/locale";
-import { formatRegionalDate } from "../lib/date";
+import { calendarDaysFromToday, formatRegionalDate } from "../lib/date";
 import { formatTicketKey } from "../lib/ticket-key";
 import { buildTaskPath } from "../lib/task-detail-handoff"
 import {
@@ -20,10 +20,13 @@ import {
 } from "@domains/tasks/persistence/store";
 import { TaskInactivityRepository } from "@domains/tasks/persistence/task-inactivity-repository"
 import { TaskRepository } from "@domains/tasks/persistence/task-repository";
+import { SettingsRepository } from "@domains/tasks/persistence/settings-repository"
 import StatusBadge from "../components/ui/StatusBadge.astro";
 import TaskTypeIcon from "../components/ui/TaskTypeIcon.astro";
 import BotBadge from "../components/ui/BotBadge.astro";
 import TasksTableView from "../components/views/TasksTableView.astro";
+import { readTableFilterParams } from "../lib/filter-state"
+import { getTasksForView, type TaskViewItem } from "../lib/task-queries"
 import TasksCalendarView from "../components/views/TasksCalendarView.astro";
 import TasksTimelineView from "../components/views/TasksTimelineView.astro";
 import AreaSelector from "../components/layout/AreaSelector.astro";
@@ -95,10 +98,43 @@ let columns: {
   wipLimit: number;
   id: string;
 }[] = [];
+let workflowColumnsUnavailable = false
 try {
-  if (renderedView === "kanban") columns = await repo.getKanbanLanes();
+  if (renderedView === "kanban" || renderedView === "table") columns = await repo.getKanbanLanes()
 } catch {
-  /* fallback to defaults */
+  workflowColumnsUnavailable = true
+}
+
+if (renderedView === "table" && workflowColumnsUnavailable) {
+  Astro.response.headers.set("Cache-Control", "no-store")
+}
+
+// Keep the last applied results when a requested workflow lookup fails during a refresh.
+if (renderedView === "table" && workflowColumnsUnavailable &&
+    Astro.url.searchParams.has("tableRefresh") && readTableFilterParams(Astro.url.searchParams).laneIds?.length) {
+  return new Response("Workflow columns could not load.", { status: 503, headers: { "Cache-Control": "no-store" } })
+}
+
+let tableTasks: TaskViewItem[] = []
+let tableCreationTimezone: string | undefined
+let tableReadFailed = false
+if (renderedView === "table") {
+  const filters = readTableFilterParams(Astro.url.searchParams)
+  try {
+    tableTasks = (await getTasksForView({ requireAvailable: true })).tasks
+    if (filters.createdFrom || filters.createdThrough) {
+      const { timezone } = await new SettingsRepository(db).getByKeys(["timezone"])
+      if (typeof timezone === "string") tableCreationTimezone = timezone
+    }
+  } catch {
+    const headers = { "Cache-Control": "no-store" }
+    if (Astro.url.searchParams.has("tableRefresh")) {
+      return new Response(t("table.refresh_failed", locale), { status: 503, headers })
+    }
+    tableReadFailed = true
+    Astro.response.status = 503
+    Astro.response.headers.set("Cache-Control", headers["Cache-Control"])
+  }
 }
 
 // Fallback if no lanes in DB
@@ -368,6 +404,7 @@ try {
     data-inactivity-enabled={String(inactivityEnabled)}
     data-inactivity-ready={t("inactivity.ready", locale)}
     data-inactivity-upcoming={t("inactivity.upcoming", locale)}
+    data-inactivity-stalled={t("inactivity.stalled", locale)}
     data-group-by={kanbanFilters.groupBy}
     data-backlog-mode={backlogMode}
     data-reaction-count-label={t("reactions.card_count", locale)}
@@ -476,12 +513,18 @@ try {
                   : null;
                 const today = new Date();
                 today.setHours(0, 0, 0, 0);
+                // Compare date-only due dates as calendar days in the user's timezone.
+                const dueDays = task.due_date
+                  ? calendarDaysFromToday(String(task.due_date), timezone || "Europe/Dublin")
+                  : null;
                 const dueStatus = dueDate
-                  ? dueDate < today
-                    ? "overdue"
-                    : dueDate.toDateString() === new Date().toDateString()
-                      ? "today"
-                      : "upcoming"
+                  ? dueDays !== null
+                    ? dueDays < 0 ? "overdue" : dueDays === 0 ? "today" : "upcoming"
+                    : dueDate < today
+                      ? "overdue"
+                      : dueDate.toDateString() === new Date().toDateString()
+                        ? "today"
+                        : "upcoming"
                   : null;
                 return (
                   <div
@@ -581,8 +624,9 @@ try {
                             : dueStatus === "today"
                               ? "🟡"
                               : "📅"}{" "}
-                          {formatRegionalDate(dueDate, {
+                          {formatRegionalDate(String(task.due_date), {
                             format: dateFormat,
+                            timezone,
                           })}
                         </span>
                       ) : null}
@@ -844,7 +888,13 @@ try {
 
   </div><!-- /tasks-view-kanban -->
   </>}
-  {renderedView === "table" && <TasksTableView />}
+  {renderedView === "table" && <TasksTableView
+    tasks={tableTasks}
+    creationTimezone={tableCreationTimezone}
+    tableReadFailed={tableReadFailed}
+    workflowColumns={workflowColumnsUnavailable ? [] : columns}
+    workflowColumnsUnavailable={workflowColumnsUnavailable}
+  />}
   {renderedView === "calendar" && <TasksCalendarView />}
   {renderedView === "timeline" && <TasksTimelineView />}
 
@@ -1120,6 +1170,11 @@ try {
   /* kanban-column-header, kanban-count, kanban-header-right, kanban-cards, kanban-card
      are defined in _kanban.css @layer components — removed duplicates here */
   [data-inactivity-slot]:empty { display: none; }
+  [data-inactivity-slot]:not(:empty) {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .125rem .5rem;
+  }
   :global(.kanban-inactivity-cue) {
     color: var(--text-secondary);
     font-size: var(--font-size-xs, .75rem);

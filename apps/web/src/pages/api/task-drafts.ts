@@ -1,5 +1,6 @@
 import type { APIRoute } from "astro"
 import { isCurrentActiveHAUser } from "@domains/ha/ha-users"
+import { boardDraftHeader, hasBoardSelection, unavailableBoardResponse } from "@domains/tasks/board-availability"
 import { SettingsRepository } from "@domains/tasks/persistence/settings-repository"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import { isDraftWriterBusy, TaskDraftRepository } from "@domains/tasks/persistence/task-draft-repository"
@@ -75,6 +76,7 @@ export const ALL: APIRoute = () => new Response(null, {
 
 export const HEAD: APIRoute = async ({ locals, request }) => {
   const ownerId = await authorize(locals, request)
+  if (ownerId && request.headers.has(boardDraftHeader)) return unavailableBoardResponse(404, true)
   return new Response(null, {
     status: !ownerId ? 403 : matchesTaskDraftContext(ownerId, request.headers.get(taskDraftContextHeader)) ? 204 : 409,
     headers: noStore,
@@ -84,8 +86,10 @@ export const HEAD: APIRoute = async ({ locals, request }) => {
 export const POST: APIRoute = async ({ locals, request }) => {
   const ownerId = await authorize(locals, request)
   if (!ownerId) return denied()
+  if (request.headers.has(boardDraftHeader)) return unavailableBoardResponse()
   const body = await readBody(request)
   if (body instanceof Response) return body
+  if (hasBoardSelection(body.data)) return unavailableBoardResponse()
   const action = readTaskDraftRequest.safeParse(body.data)
   if (!action.success) return problem(400, "Choose a valid draft read or recovery action.")
 
@@ -101,9 +105,11 @@ export const POST: APIRoute = async ({ locals, request }) => {
 export const PUT: APIRoute = async ({ locals, request }) => {
   const ownerId = await authorize(locals, request)
   if (!ownerId) return denied()
+  if (request.headers.has(boardDraftHeader)) return unavailableBoardResponse()
   if (!matchesTaskDraftContext(ownerId, request.headers.get(taskDraftContextHeader))) return contextChanged()
   const body = await readBody(request)
   if (body instanceof Response) return body
+  if (hasBoardSelection(body.data)) return unavailableBoardResponse()
   const parsed = writeTaskDraftRequest.safeParse(body.data)
   if (!parsed.success) return problem(400, "Choose a valid draft action and check the form limits.")
   const action = parsed.data

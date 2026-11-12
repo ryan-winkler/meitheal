@@ -7,7 +7,7 @@ test.describe("Tasks Shell (Kanban)", () => {
 
   test.beforeEach(async ({ page }) => {
     await page.goto("/tasks")
-    await page.waitForLoadState("networkidle")
+    await expect(page.locator("#kanban-shell")).toHaveAttribute("data-kanban-booted", "true")
     await expect(page).toHaveURL(/\/tasks#kanban$/)
   })
 
@@ -61,23 +61,44 @@ test.describe("Tasks Shell (Kanban)", () => {
     expect(created.status()).toBe(201)
     const { id } = await created.json()
     let release: (() => void) | undefined
+    const writes: unknown[] = []
     try {
       await page.reload()
       await expect(page.locator("#kanban-shell")).toHaveAttribute("data-kanban-booted", "true")
       const card = page.locator(`.kanban-card[data-id="${id}"]`)
       const more = card.locator(".card-more-btn")
       await page.route(`**/api/tasks/${id}`, async route => {
-        if (route.request().method() === "PUT") await new Promise<void>(resolve => { release = resolve })
+        if (route.request().method() === "PUT") {
+          writes.push(route.request().postDataJSON())
+          await new Promise<void>(resolve => { release = resolve })
+        }
         await route.continue()
       })
       await card.hover()
-      await card.locator(".card-color-btn").click()
-      await page.getByRole("radio", { name: "Set color: Blue", exact: true }).press("Enter")
+      await card.locator(".card-color-btn").evaluate(trigger => {
+        if (!(trigger instanceof HTMLButtonElement)) throw new Error("Expected the card color button")
+        const callbacks: FrameRequestCallback[] = []
+        const requestFrame = window.requestAnimationFrame
+        // Focus a swatch before the opening frame runs.
+        window.requestAnimationFrame = callback => callbacks.push(callback)
+        try {
+          trigger.focus()
+          trigger.click()
+        } finally {
+          window.requestAnimationFrame = requestFrame
+        }
+        const blue = document.querySelector<HTMLElement>('.quick-action-popover [aria-label="Set color: Blue"]')
+        if (!blue) throw new Error("Expected the Blue swatch")
+        blue.focus()
+        for (const callback of callbacks) callback(performance.now())
+      })
+      await page.keyboard.press("Enter")
       await expect(card.locator(".card-color-btn")).toBeDisabled()
       await expect(more).toBeFocused()
       await expect.poll(() => Boolean(release)).toBe(true)
       release?.()
       await expect(card.locator(".card-color-btn")).toHaveAttribute("data-color", "#3b82f6")
+      expect(writes).toEqual([{ color: "#3b82f6" }])
       await expect(more).toBeFocused()
     } finally {
       release?.()
@@ -143,20 +164,18 @@ test.describe("Tasks Shell (Kanban)", () => {
   test("mobile keeps task sub-view pills reachable by touch", async ({ page }) => {
     await page.setViewportSize({ width: 430, height: 932 })
     await page.goto("/tasks")
-    await page.waitForLoadState("networkidle")
+    await expect(page.locator("#kanban-shell")).toHaveAttribute("data-kanban-booted", "true")
 
     const viewPills = page.locator(".unified-bar__view-pills")
     await expect(viewPills).toBeVisible()
     await expect(viewPills.locator(".unified-bar__view-pill")).toHaveCount(4)
 
-    const boxes = await viewPills.locator(".unified-bar__view-pill").evaluateAll((items) =>
+    await expect.poll(() => viewPills.locator(".unified-bar__view-pill").evaluateAll((items) =>
       items.map((item) => {
-        const rect = item.getBoundingClientRect()
-        return { width: rect.width, height: rect.height }
+        const { width, height } = item.getBoundingClientRect()
+        return width >= 44 && height >= 44
       }),
-    )
-
-    expect(boxes.every((box) => box.width >= 44 && box.height >= 44)).toBe(true)
+    )).toEqual([true, true, true, true])
   })
 
   test("narrow screens keep all task type filters inside the toolbar", async ({ page }) => {
@@ -234,7 +253,7 @@ test.describe("Tasks Shell (Kanban)", () => {
 
   test("view pills preserve query string when switching routes", async ({ page }) => {
     await page.goto("/tasks?status=active&priority=1")
-    await page.waitForLoadState("networkidle")
+    await expect(page.locator("#kanban-shell")).toHaveAttribute("data-kanban-booted", "true")
     await expect(page).toHaveURL(/\/tasks\?status=active&priority=1#kanban$/)
 
     await page.locator('.unified-bar__view-pill[data-view-tab="calendar"]').click()
@@ -243,10 +262,34 @@ test.describe("Tasks Shell (Kanban)", () => {
   })
 
   test("/kanban redirects to /tasks", async ({ page }) => {
-    const response = await page.goto("/kanban")
-    await page.waitForLoadState("networkidle")
-
+    await page.goto("/kanban")
     await expect(page).toHaveURL(/\/tasks/)
+  })
+
+  test("a denied optional reaction count releases its response body", async ({ page, request, baseURL }) => {
+    const headers = { origin: new URL(baseURL!).origin }
+    const created = await request.post("/api/tasks", { headers, data: { title: "Reaction count cancellation fixture" } })
+    expect(created.status()).toBe(201)
+    const { id } = await created.json()
+    try {
+      await page.addInitScript(() => {
+        const originalFetch = window.fetch.bind(window)
+        window.fetch = (input, init) => {
+          if (typeof input !== "string" || !new URL(input, location.origin).pathname.endsWith("/api/tasks/reaction-counts")) {
+            return originalFetch(input, init)
+          }
+          const body = new ReadableStream({
+            cancel() { document.documentElement.dataset.reactionCountClosed = "true" },
+          })
+          return Promise.resolve(new Response(body, { status: 403 }))
+        }
+      })
+      await page.reload()
+      await expect(page.locator("#kanban-shell")).toHaveAttribute("data-kanban-booted", "true")
+      await expect(page.locator("html")).toHaveAttribute("data-reaction-count-closed", "true")
+    } finally {
+      await request.delete(`/api/tasks/${id}`, { headers })
+    }
   })
 })
 

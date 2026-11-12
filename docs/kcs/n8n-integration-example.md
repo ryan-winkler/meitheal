@@ -32,7 +32,7 @@ Every event payload includes the full task context:
 {
   "task_id": "uuid",
   "title": "Fix the roof",
-  "board_id": "default",
+  "area_id": "default",
   "priority": "1",
   "status": "in_progress",
   "ticket_key": "MTH-42",
@@ -48,7 +48,7 @@ Every event payload includes the full task context:
 |-------|------|-------------|
 | `task_id` | string | UUID of the task |
 | `title` | string | Task title |
-| `board_id` | string | Board the task belongs to |
+| `area_id` | string | Area ID the task belongs to (e.g. "default") |
 | `priority` | string | Priority level (1 = highest) |
 | `status` | string | Current task status |
 | `ticket_key` | string | Human-readable ticket key (e.g. MTH-42) |

@@ -1,3 +1,5 @@
+import { reconcileActivityTriggerDefinitions } from "../task-activity-sql.mjs"
+
 const policyTable = "task_inactivity_policy"
 const policySql = `CREATE TABLE task_inactivity_policy (
   scope TEXT NOT NULL PRIMARY KEY,
@@ -11,7 +13,7 @@ const columnName = "inactivity_touched_at"
 const touch = "CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)"
 const setClock = `${columnName} = MAX(COALESCE(${columnName}, 0), ${touch})`
 const generationColumn = "inactivity_generation"
-const triggers = [
+export const taskInactivityTriggerDefinitions = [
   ["areas_inactivity_generation", "areas", `CREATE TRIGGER areas_inactivity_generation
     AFTER INSERT ON areas
     BEGIN
@@ -74,29 +76,29 @@ export async function validateTaskInactivitySchema(db) {
   await reconcilePolicy(db, false)
 }
 
-/** Runtime schema initialization owns the Areas and historical comments tables. */
-export async function installTaskInactivityTriggers(tx) {
-  const { rows } = await tx.execute("PRAGMA table_info(areas)")
+async function reconcileInactivityTriggers(db, createMissing) {
+  const { rows } = await db.execute("PRAGMA table_info(areas)")
   const generation = rows.find(row => row.name === generationColumn)
-  if (!generation) {
-    await tx.execute(`ALTER TABLE areas ADD COLUMN ${generationColumn} TEXT`)
-  } else if (String(generation.type).toUpperCase() !== "TEXT" || generation.notnull !== 0 ||
+  if (!generation && createMissing) {
+    await db.execute(`ALTER TABLE areas ADD COLUMN ${generationColumn} TEXT`)
+  } else if (!generation || String(generation.type).toUpperCase() !== "TEXT" || generation.notnull !== 0 ||
       generation.dflt_value !== null || generation.pk !== 0) {
     throw new Error("Unexpected Area inactivity generation column")
   }
-  await tx.execute(`UPDATE areas SET ${generationColumn} = lower(hex(randomblob(16))) WHERE ${generationColumn} IS NULL`)
-  const { rows: invalid } = await tx.execute(`SELECT 1 FROM areas
-    WHERE length(CAST(${generationColumn} AS BLOB)) <> 32 OR ${generationColumn} GLOB '*[^0-9a-f]*' LIMIT 1`)
-  if (invalid.length) throw new Error("Unexpected Area inactivity generation")
-  for (const [name, table, sql] of triggers) {
-    const { rows: [object] } = await tx.execute({
-      sql: "SELECT type, tbl_name, sql FROM sqlite_schema WHERE name = ?", args: [name],
-    })
-    if (!object) {
-      await tx.execute(sql)
-    } else if (object.type !== "trigger" || object.tbl_name !== table ||
-      typeof object.sql !== "string" || object.sql.trim() !== sql.trim()) {
-      throw new Error(`Unexpected task inactivity trigger: ${name}`)
-    }
+  if (createMissing) {
+    await db.execute(`UPDATE areas SET ${generationColumn} = lower(hex(randomblob(16))) WHERE ${generationColumn} IS NULL`)
   }
+  const { rows: invalid } = await db.execute(`SELECT 1 FROM areas
+    WHERE ${generationColumn} IS NULL OR length(CAST(${generationColumn} AS BLOB)) <> 32
+      OR ${generationColumn} GLOB '*[^0-9a-f]*' LIMIT 1`)
+  if (invalid.length) throw new Error("Unexpected Area inactivity generation")
+  await reconcileActivityTriggerDefinitions(db, taskInactivityTriggerDefinitions, "inactivity", createMissing)
+}
+
+export async function installTaskInactivityTriggers(tx) {
+  await reconcileInactivityTriggers(tx, true)
+}
+
+export async function validateTaskInactivityTriggers(db) {
+  await reconcileInactivityTriggers(db, false)
 }

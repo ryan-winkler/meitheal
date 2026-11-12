@@ -100,12 +100,13 @@ const mentionUser = verifiedIngressUser(Astro.locals)
         <div id="td-loaded-content" class="flex-1 overflow-y-auto flex-col md:flex-row relative hidden">
           
           <!-- MAIN CONTENT COLUMN -->
-          <main class="flex-none w-full md:flex-1 md:w-auto overflow-visible px-6 py-6 lg:px-10 space-y-8 bg-transparent min-w-0">
+          <div class="flex-none w-full md:flex-1 md:w-auto overflow-visible px-6 py-6 lg:px-10 space-y-8 bg-transparent min-w-0">
             
             <!-- Title -->
             <div class="relative group">
               <textarea
                 id="td-title"
+                aria-label={t("tasks.title_label", locale)}
                 class="w-full bg-transparent border border-transparent hover:bg-bg-hover focus:bg-bg-input focus:border-border focus:ring-1 focus:ring-accent text-3xl font-bold py-2 px-3 -ml-3 rounded-lg transition-colors leading-tight resize-none text-text-primary overflow-hidden min-h-[56px]"
                 rows="1"
                 placeholder="Task title"
@@ -173,6 +174,7 @@ const mentionUser = verifiedIngressUser(Astro.locals)
                     <option value="2">High</option>
                     <option value="3">Medium</option>
                     <option value="4">Low</option>
+                    <option value="5">Minimal</option>
                  </select>
                </div>
 
@@ -492,7 +494,7 @@ const mentionUser = verifiedIngressUser(Astro.locals)
 
 
 
-          </main>
+          </div>
 
           <!-- SIDEBAR (PROPERTIES) COLUMN -->
           <aside class="w-full md:w-[320px] bg-bg-card/30 backdrop-blur-md border-t md:border-t-0 md:border-l border-white/5 px-6 py-6 flex-none flex flex-col gap-6">

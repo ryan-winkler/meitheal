@@ -13,6 +13,7 @@
 
 import { VALID_TASK_KINDS, VALID_TASK_TYPES } from "@meitheal/domain-tasks"
 
+import { parseCalendarDay } from "./calendar-day"
 import { evaluateFilterGroup, extractDataFromElement, type FilterGroup, type FilterOperator } from "./filter-engine"
 import { normalizeStatus } from "./status-config"
 import { TABLE_COLUMNS } from "./table-registry"
@@ -37,6 +38,10 @@ export interface FilterState {
   groupBy: string
   /** Secondary group-by (nested grouping within primary groups) */
   subGroupBy: string
+  /** Table workflow columns, selected by their stable IDs. */
+  laneIds?: string[]
+  createdFrom?: string | undefined
+  createdThrough?: string | undefined
   /** Active label filters — multi-select (empty = all labels visible) */
   labels: string[]
   /** Advanced compound AND/OR filter conditions */
@@ -112,7 +117,8 @@ const ARRAY_KEYS = ["types", "labels"] as const
 const JSON_KEYS = ["advancedFilter", "columns"] as const
 const ALL_KEYS = [...SCALAR_KEYS, ...ARRAY_KEYS, ...JSON_KEYS] as const
 
-const TABLE_KEYS = [...ALL_KEYS, "task_type", "label", "area_id", "board"] as const
+const TABLE_DATE_KEYS = ["createdFrom", "createdThrough"] as const
+const TABLE_KEYS = [...ALL_KEYS, "task_type", "label", "area_id", "board", "lane", ...TABLE_DATE_KEYS] as const
 const SORT_COLUMNS = ["key", "title", "type", "status", "priority", "due_date", "rice"]
 const LEGACY_SORTS = new Map([
   ["due_asc", "due_date-asc"],
@@ -144,12 +150,14 @@ function decodeFilterJson(value: unknown): unknown {
   }
 }
 
+export const FILTER_LIST_LIMIT = 50
+
 function stringList(value: unknown): string[] {
   const decoded = typeof value === "string" && value.startsWith("[") ? decodeFilterJson(value) : value
   const list = Array.isArray(decoded) ? decoded : typeof value === "string" ? value.split(",") : []
   return [...new Set(list.filter((item): item is string =>
     typeof item === "string" && item.length > 0 && item.length <= 500,
-  ))].slice(0, 50)
+  ))].slice(0, FILTER_LIST_LIMIT)
 }
 
 export function readFilterLabels(params: URLSearchParams): string[] {
@@ -226,8 +234,21 @@ function tableGroup(value: unknown): string | undefined {
   return GROUP_BY_OPTIONS.find(option => option !== "none" && option === group)
 }
 
+export function normalizeTableCreationRange(from: unknown, through: unknown): Pick<FilterState, typeof TABLE_DATE_KEYS[number]> | null {
+  const valid = (value: unknown): value is string | undefined =>
+    value === undefined || (typeof value === "string" && (!value || (value >= "0001-01-01" && Boolean(parseCalendarDay(value)))))
+  if (!valid(from) || !valid(through) || (from && through && from > through)) return null
+  return { ...(from ? { createdFrom: from } : {}), ...(through ? { createdThrough: through } : {}) }
+}
+
+export function tableCreationRangeLabel(from: string | undefined, through: string | undefined): string {
+  if (from && through) return from === through ? from : `${from} – ${through}`
+  if (from) return `≥ ${from}`
+  return through ? `≤ ${through}` : ""
+}
+
 function normalizeTableValues(input: Record<string, unknown>): Partial<FilterState> {
-  const result: Partial<FilterState> = {}
+  const result: Partial<FilterState> = normalizeTableCreationRange(input.createdFrom, input.createdThrough) ?? {}
   for (const key of ["search", "status", "priority", "rice", "user"] as const) {
     const value = input[key]
     if (typeof value === "string" && value && value.length <= 500) {
@@ -240,6 +261,10 @@ function normalizeTableValues(input: Record<string, unknown>): Partial<FilterSta
 
   const area = [input.area, input.area_id, input.board].find(value => typeof value === "string" && value.length <= 500)
   if (typeof area === "string") result.area = area
+  if (Array.isArray(input.laneIds)) {
+    const laneIds = stringList(input.laneIds)
+    if (laneIds.length) result.laneIds = laneIds
+  }
   const kindValues = stringList(input.types)
   const types = kindValues.filter(kind => VALID_TASK_KINDS.some(valid => valid === kind))
   if (types.length) result.types = types
@@ -278,6 +303,7 @@ export function normalizeSavedFilter(raw: unknown): Partial<FilterState> | null 
     }
   }
   if (!isPlainRecord(input)) return null
+  if (!normalizeTableCreationRange(input.createdFrom, input.createdThrough)) return null
   const state = normalizeTableValues(input)
   if (input.advancedFilter && !state.advancedFilter) {
     const group = decodeFilterJson(input.advancedFilter)
@@ -294,18 +320,22 @@ export function readTableFilterParams(params: URLSearchParams): Partial<FilterSt
     area_id: undefined,
     board: undefined,
     labels: readFilterLabels(params),
+    laneIds: params.getAll("lane"),
+    createdFrom: params.getAll("createdFrom").length > 1 ? null : params.get("createdFrom") ?? undefined,
+    createdThrough: params.getAll("createdThrough").length > 1 ? null : params.get("createdThrough") ?? undefined,
   })
 }
 
 export function writeTableFilterParams(params: URLSearchParams, state: Partial<FilterState>): void {
   const normalized = normalizeTableValues({ ...state })
   for (const key of TABLE_KEYS) params.delete(key)
-  for (const key of [...SCALAR_KEYS, "task_type"] as const) {
+  for (const key of [...SCALAR_KEYS, "task_type", ...TABLE_DATE_KEYS] as const) {
     const value = normalized[key]
     if (value !== undefined) params.set(key, value)
   }
   if (normalized.types?.length) params.set("types", normalized.types.join(","))
   writeFilterLabels(params, normalized.labels ?? [])
+  for (const id of normalized.laneIds ?? []) params.append("lane", id)
   for (const key of JSON_KEYS) {
     if (normalized[key]) params.set(key, JSON.stringify(normalized[key]))
   }
@@ -316,12 +346,15 @@ export function loadTableFilterState(): Partial<FilterState> {
   if (TABLE_KEYS.some(key => params.has(key))) return readTableFilterParams(params)
   const state = normalizeTableValues({ ...loadFilterState() })
   delete state.area
+  delete state.laneIds
+  for (const key of TABLE_DATE_KEYS) delete state[key]
   return state
 }
 
 export function saveTableFilterState(state: Partial<FilterState>, page?: number): void {
   try {
-    localStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(state))
+    const { laneIds: _laneIds, createdFrom: _createdFrom, createdThrough: _createdThrough, ...sharedState } = state
+    localStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(sharedState))
   } catch { /* storage unavailable */ }
   const url = new URL(window.location.href)
   writeTableFilterParams(url.searchParams, state)

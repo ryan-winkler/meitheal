@@ -10,6 +10,8 @@ description: "Maintain the API, event, and automation contracts."
 
 Agent handoff status is shown in Settings. Review displays saved proposals and fetches them live. Service workers purge previously cached Review pages during activation.
 
+App events sent to the Home Assistant event bus carry `domain: "meitheal"` and `source: "meitheal"` with an ISO timestamp. Native device triggers filter by the domain marker. When diagnosing a trigger, inspect the event on Core's event bus and confirm that marker and the expected task ID; events from other domains must not activate a Meitheal trigger.
+
 ## Build Pipeline
 
 ```bash

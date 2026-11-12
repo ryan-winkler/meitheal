@@ -63,6 +63,7 @@ async def test_custom_intents_require_current_active_admin(
             async_create_task=AsyncMock(),
             async_complete_task=AsyncMock(),
             async_delete_task=AsyncMock(),
+            resolve_task_title=lambda title: task.id,
             data=SimpleNamespace(tasks=[task]),
         )
         context = Context(user_id=admin.id)
@@ -96,6 +97,7 @@ async def test_reload_keeps_home_assistant_exposure_choice_and_todo_service(
     tasks_url = f"{origin}/api/tasks"
     token = "mth_" + "a" * 64
     aioclient_mock.get(tasks_url, json={"tasks": [{"id": "task-1", "title": "Check the garden"}]})
+    aioclient_mock.get(f"{origin}/api/gamification", status=403)
     aioclient_mock.delete(f"{tasks_url}/task-1", status=204)
     entry = MockConfigEntry(
         domain=DOMAIN,

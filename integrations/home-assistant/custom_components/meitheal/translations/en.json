@@ -113,6 +113,22 @@
         "description": {
           "name": "Description",
           "description": "Optional description or notes for the task"
+        },
+        "priority": {
+          "name": "Priority",
+          "description": "Priority from 1 (urgent) to 5 (lowest)"
+        },
+        "due_date": {
+          "name": "Due date",
+          "description": "ISO date or date-time"
+        },
+        "urgency": {
+          "name": "Urgency",
+          "description": "Eisenhower urgency from 0 to 5"
+        },
+        "importance": {
+          "name": "Importance",
+          "description": "Eisenhower importance from 0 to 5"
         }
       }
     },
@@ -155,6 +171,16 @@
     "notify_overdue": {
       "name": "Notify Overdue",
       "description": "Push a notification about overdue tasks to HA persistent notifications."
+    },
+    "complete_task_by_tag": {
+      "name": "Complete Task by NFC Tag",
+      "description": "Complete the unique task assigned to this NFC tag.",
+      "fields": {
+        "tag_id": {
+          "name": "Tag ID",
+          "description": "The NFC tag ID assigned through the task API"
+        }
+      }
     }
   },
   "exceptions": {
@@ -175,6 +201,9 @@
     },
     "delete_failed": {
       "message": "Failed to delete task: {error}"
+    },
+    "nfc_complete_failed": {
+      "message": "Failed to complete task by NFC tag: {error}. Check that the tag is assigned to one task."
     }
   },
   "device_automation": {

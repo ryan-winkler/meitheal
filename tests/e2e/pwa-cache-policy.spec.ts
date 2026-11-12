@@ -8,6 +8,7 @@ const unscheduledPath = "/today?unscheduledPage=1"
 
 async function fixture(prefix: string) {
   const worker = await readFile(new URL("../../apps/web/public/sw.js", import.meta.url), "utf8")
+  let boardRequests = 0
   const server = createServer((request, response) => {
     const url = new URL(request.url ?? "/", "http://localhost")
     const path = url.pathname.slice(prefix.length)
@@ -18,6 +19,10 @@ async function fixture(prefix: string) {
     if (path === "/version.json") {
       response.writeHead(200, { "content-type": "application/json" })
       return response.end('{"version":"0.0.1"}')
+    }
+    if (path === "/api/tasks" && url.searchParams.get("board_id") === "fixture") {
+      response.writeHead(200, { "content-type": "text/html", "cache-control": "max-age=600" })
+      return response.end(`<h1>Origin Board response ${++boardRequests}</h1>`)
     }
 
     const isPrivate = path === "/settings" || path === "/review" || path.startsWith(privatePath) ||
@@ -133,6 +138,94 @@ for (const [route, label] of [[unscheduledPath, "Unscheduled Today"], ["/review"
 }
 
 for (const prefix of ["", "/api/hassio_ingress/synthetic-worker"]) {
+  test(`unavailable Board URLs cannot replay Household data in ${prefix ? "ingress" : "standalone"}`, async ({ browser }) => {
+    const server = await fixture(prefix)
+    const context = await browser.newContext({ serviceWorkers: "allow", extraHTTPHeaders: {} })
+    try {
+      const page = await context.newPage()
+      const scoped = [
+        "/api/tasks?board_id=fixture",
+        "/api/tasks?board_name=fixture",
+        "/api/tasks/card?board_id=",
+        "/api/tasks/card/links?board_id=fixture",
+        "/api/lanes?board_id=fixture",
+        "/api/lanes/fixture?board_id=fixture",
+        "/api/search?board_id=fixture",
+        "/tasks?board=fixture",
+        "/tasks?board_id=fixture",
+        "/tickets/MTH-1?board_id=fixture",
+        "/tickets/MTH-1?board=fixture",
+        "//api/%2574asks/card?%62oard_id=fixture",
+        "/api%2Flanes/fixture?board_id=fixture",
+        "/t%61sks?%62oard=fixture",
+      ].map(path => server.base + path)
+      const retired = new URL("/api/hassio_ingress/retired-worker/tasks?board=fixture", server.base).href
+      scoped.push(retired)
+      const householdApi = server.base + "/api/tasks?limit=2"
+      const householdPage = server.base + "/tasks?view=kanban"
+      const retained = [
+        householdApi, householdPage,
+        server.base + "/planning?board=fixture",
+        server.base + "/api/tasks-archive?board_id=fixture",
+      ]
+      const cacheNames = ["api", "nav", "precache", "static"].map(bucket => `meitheal-${bucket}-v0.0.1`)
+      const candidateUrls = [...scoped, ...retained]
+      const seed = (urls: string[], body: string) => page.evaluate(async ({ urls, body, cacheNames }) => {
+        const headers = { date: new Date().toUTCString(), "content-type": "text/html" }
+        for (const name of cacheNames) {
+          const cache = await caches.open(name)
+          for (const url of urls) await cache.put(url, new Response(body, { headers }))
+        }
+      }, { urls, body, cacheNames })
+      const storedCandidates = () => page.evaluate(async ({ candidateUrls, cacheNames }) => {
+        return Promise.all(cacheNames.map(async name => (await (await caches.open(name)).keys())
+          .map(request => request.url).filter(url => candidateUrls.includes(url))))
+      }, { candidateUrls, cacheNames })
+
+      const scopedApi = server.base + "/api/tasks?board_id=fixture"
+      const scopedPage = server.base + "/tasks?board=fixture"
+      await page.goto(server.base + "/fixture")
+      expect(await page.evaluate(url => fetch(url).then(response => response.text()), scopedApi))
+        .toContain("Origin Board response 1")
+      expect(await page.evaluate(url => fetch(url).then(response => response.text()), scopedApi))
+        .toContain("Origin Board response 1")
+      await seed(scoped, "<h1>Stale Household data for a Board URL</h1>")
+      await seed(retained, "<h1>Keep Household and unrelated entries</h1>")
+      expect(await storedCandidates()).toEqual(cacheNames.map(() => candidateUrls))
+      await register(page, server.base + "/sw.js")
+      expect(await storedCandidates()).toEqual(cacheNames.map(() => retained))
+
+      expect((await page.goto(scopedPage))?.fromServiceWorker()).toBe(true)
+      expect(await page.evaluate(url => fetch(url).then(response => response.text()), scopedApi))
+        .toContain("Origin Board response 2")
+      for (const url of scoped) {
+        expect(await page.evaluate(url => fetch(url).then(response => response.status), url)).toBe(200)
+      }
+      expect(await storedCandidates()).toEqual(cacheNames.map(() => retained))
+
+      await seed(scoped, "<h1>Late Household data for a Board URL</h1>")
+      await context.setOffline(true)
+      for (const url of scoped) {
+        const offline = await page.evaluate(async url => {
+          const response = await fetch(url)
+          return { status: response.status, cacheControl: response.headers.get("cache-control"), body: await response.text() }
+        }, url)
+        expect(offline).toMatchObject({ status: 503, cacheControl: "private, no-store" })
+        expect(offline.body).not.toContain("Household")
+      }
+      expect(await page.evaluate(url => fetch(url).then(response => response.text()), householdApi))
+        .toContain("Keep Household and unrelated entries")
+      expect((await page.goto(householdPage))?.fromServiceWorker()).toBe(true)
+      await expect(page.getByRole("heading")).toHaveText("Keep Household and unrelated entries")
+      const offlinePage = await page.goto(scopedPage)
+      expect(offlinePage?.status()).toBe(503)
+      expect(await offlinePage?.text()).toBe("Offline")
+    } finally {
+      await context.close()
+      await server.close()
+    }
+  })
+
   test(`private database export aliases are purged and never replayed in ${prefix ? "ingress" : "standalone"}`, async ({ browser }) => {
     const server = await fixture(prefix)
     const context = await browser.newContext({ serviceWorkers: "allow", extraHTTPHeaders: {} })

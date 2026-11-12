@@ -25,9 +25,9 @@ Scroll sideways within the table to reach more columns. With a keyboard, focus t
 ### Save a working view
 
 1. Set the filters, grouping, sort and visible columns you want. Use **Labels** for label selection, **Columns** to choose fields and a column header to sort. **Title** is always visible.
-2. Open **Presets**, choose **Save Current Filters** and name the view.
+2. Once the Table has applied your filters, open **Presets**, choose **Save Current Filters** and name the view. If a refresh fails, choose **Retry** in the Table before saving.
 3. Apply the preset from **Presets** or find it in Search Meitheal under **Views**. Both open Table with the same filters and columns, even if the receiving browser remembers a different Area.
-4. Remove an individual saved filter using its chip, or choose **Clear all active filters**. For a preset with nested rules, use **Clear Rules** before replacing the group with new rules.
+4. Remove a filter using its chip or uncheck it under **Workflow columns** or **Unassigned**. Choose **Clear all active filters** to reset the view. For a preset with nested rules, use **Clear Rules** before replacing the group with new rules.
 
 ### Open task detail from the dense table
 
@@ -37,14 +37,22 @@ Scroll sideways within the table to reach more columns. With a keyboard, focus t
 
 ### Edit a title or select a row
 
-1. Focus the row's **Title** field and edit the text. Press **Tab** to leave the field and save, or **Escape** to discard the edit.
+1. Focus the row's **Title** field and edit the text. Press **Tab** or **Enter** to leave the field and save, or **Escape** to restore the last saved title.
 2. Select the row's checkbox. The bulk action bar shows how many rows are selected.
 
 The type icon in each row has a text equivalent. Completed rows stay readable and use the status and strikethrough to indicate completion.
 
+When a table refresh keeps the edited row visible, the title draft and focus move to the refreshed field. The normal save and discard keys still apply.
+
 ## Table query contract
 
 Table reads filters and presentation with `readTableFilterParams`. An explicit `area_id` takes priority over `area` and the legacy `board` query key. An empty Area explicitly shows all Areas. Only a URL that omits Area uses the browser's remembered Area. Presets and Search write the normalized `area` key.
+
+Select **Workflow columns** to include tasks in any selected column. Other filters still apply, including status, text, Area, and **Unassigned**. Use the repeated `lane` query parameter to share this selection. Presets retain the same column IDs when opened from Table or Search. A removed column is shown as unavailable. If none of the selected columns exist, there are no matches. Clear the selection to search across all columns. Table uses the saved workflow catalog, including Backlog when it is hidden from Kanban. A successfully loaded empty catalog uses the four default columns. If a selected column cannot be checked because the catalog fails to load, use **Retry**. A filter that does not select a column can still show its results while the catalog is unavailable.
+
+Open **Created date** and enter either or both dates, then choose **Apply dates**. The range includes both selected days in the app's configured timezone. It combines with the other Table filters and starts at page one. Use **Clear dates** to remove the range while keeping the other filters. Escape discards a draft. A failed refresh leaves the previous rows and address in place, and **Retry** applies the requested dates again.
+
+Table shares these dates as `createdFrom` and `createdThrough` in YYYY-MM-DD format. Presets and their Search links use the same date range. Other task views ignore these parameters and carry them back to Table when using the view tabs. An invalid bookmarked range is ignored and the other URL filters still apply.
 
 The server applies normalized filters, grouping, and sorting to the complete eligible task set before taking a page. Older status values such as `todo` appear with their current status. Custom statuses keep their names. Filter, group, and sort changes reset `tp`. Columns preserve the page and take effect without a network request. An initial link with no explicit filters can reconcile browser preferences once the page loads.
 

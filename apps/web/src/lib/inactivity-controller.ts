@@ -40,8 +40,9 @@ pageLifecycle.onPageLoad(signal => {
   const params = new URLSearchParams(location.search)
   let scope = params.get("area") || null
   let page = Math.min(100_000, Math.max(1, Number.parseInt(params.get("page") ?? "", 10) || 1))
-  let currentFilter: InactivityFilter = params.get("filter") === "ready" ? "ready"
-    : params.get("filter") === "upcoming" ? "upcoming" : "all"
+  const requestedFilter = params.get("filter")
+  let currentFilter: InactivityFilter = requestedFilter === "ready" || requestedFilter === "upcoming" || requestedFilter === "stalled"
+    ? requestedFilter : "all"
   let pending: AbortController | undefined
   let reviewed: { preview: InactivityPreview; proposed: number } | undefined
   let snapshot: InactivityPreview | undefined
@@ -121,10 +122,17 @@ pageLifecycle.onPageLoad(signal => {
       title.dir = "auto"
       title.textContent = task.title
       const summary = document.createElement("p")
-      const time = document.createElement("time")
-      time.dateTime = new Date(task.deadline).toISOString()
-      time.textContent = dateFormat.format(task.deadline)
-      summary.append(label(task.deadline <= preview.now ? "ready" : "upcoming"), " · ", time)
+      const appendCue = (key: string, timestamp: number) => {
+        const time = document.createElement("time")
+        time.dateTime = new Date(timestamp).toISOString()
+        time.textContent = dateFormat.format(timestamp)
+        if (summary.childNodes.length) summary.append(" · ")
+        summary.append(label(key), " · ", time)
+      }
+      if (typeof task.stall_since === "number") appendCue("stalled", task.stall_since)
+      if (typeof task.deadline === "number" && task.deadline <= preview.now + 7 * 86_400_000) {
+        appendCue(task.deadline <= preview.now ? "ready" : "upcoming", task.deadline)
+      }
       const details = document.createElement("a")
       const target = new URL(back.href)
       target.searchParams.set("area", task.area_id)
@@ -173,6 +181,12 @@ pageLifecycle.onPageLoad(signal => {
     } catch (error) {
       if (request.signal.aborted || signal.aborted) return
       const code = error instanceof InactivityRequestError ? error.status : 0
+      if (code === 400 && currentFilter === "stalled") {
+        currentFilter = "all"
+        page = 1
+        void load(proposed, { ...options, notice: label("stalled_unavailable") })
+        return
+      }
       if (code === 404 && scope !== null) {
         scope = null
         page = 1

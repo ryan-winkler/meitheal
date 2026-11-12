@@ -17,6 +17,7 @@ function parseFormula(formula: string, values: Record<string, unknown>, syntaxOn
     if (/^(?:\d+(?:\.\d*)?|\.\d+)$/.test(token)) return Number(token)
     if (!/^[a-z_][a-z_0-9]*$/i.test(token)) throw new Error("Invalid formula")
     const value = values[token]
+    if (typeof value === "boolean") return Number(value)
     if ((typeof value !== "number" && typeof value !== "string") || String(value).trim() === "") {
       throw new Error("Missing field")
     }
@@ -52,7 +53,6 @@ function parseFormula(formula: string, values: Record<string, unknown>, syntaxOn
     return null
   }
 }
-
 
 export function evaluateFrameworkFormula(formula: string, values: Record<string, unknown>): number | null {
   return parseFormula(formula, values)

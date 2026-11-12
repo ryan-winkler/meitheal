@@ -9,8 +9,67 @@ import { parseAiHandoffUrl } from "@lib/ai-handoff-url"
  */
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { showToast } from "@lib/toast"
+import { settingsStore } from "@lib/settings-store"
 import { saveSetting, saveSettings, showSettingsSaveError } from "@lib/settings-utils"
+import { notifyWebMcpPreferenceChanged, refreshWebMcpPreference } from "@lib/webmcp-controller"
+import { WEBMCP_SETTING } from "@lib/webmcp-protocol"
 import { getClientLocale, t } from "../i18n/client"
+
+let discoveryProbe: AbortController | undefined
+let savedAiProvider: string | null = null
+let savedAiUrl: string | null = null
+let savedAiUrlShared = false
+let aiHandoffEditable = false
+
+/** Count checked discovery documents, never saved preferences or token tools. */
+async function refreshProtocolDiscovery(): Promise<void> {
+  const badge = document.getElementById("agent-protocols-status")
+  if (!badge) return
+  discoveryProbe?.abort()
+  const controller = new AbortController()
+  discoveryProbe = controller
+  const pageSignal = pageLifecycle.signal
+  const signal = AbortSignal.any([pageSignal, controller.signal, AbortSignal.timeout(8_000)])
+  const probe = String(Number(badge.dataset.probe || 0) + 1)
+  badge.dataset.probe = probe
+  const current = () => !pageSignal.aborted && !controller.signal.aborted &&
+    document.getElementById("agent-protocols-status") === badge && badge.dataset.probe === probe
+  badge.textContent = badge.dataset.checking ?? ""
+  badge.className = "badge badge-pending"
+  let available = 0
+  await Promise.all((["a2a", "mcp"] as const).map(async protocol => {
+    const status = document.getElementById(`agent-${protocol}-runtime-status`)
+    const link = document.querySelector<HTMLAnchorElement>(`[data-protocol-link="${protocol}"]`)
+    if (!status || !link) return
+    link.hidden = true
+    status.dataset.state = "checking"
+    status.textContent = status.dataset.checking ?? ""
+    let state = "unavailable"
+    try {
+      const response = await fetch(link.dataset.path!, { signal, cache: "no-store", redirect: "error" })
+      const data = await response.json()
+      if (response.status === 404 && data?.detail === `${protocol.toUpperCase()} is disabled.`) state = "disabled"
+      else if (response.ok && typeof data?.name === "string" && data.name.trim()) {
+        const valid = protocol === "mcp"
+          ? data.protocol === "mcp" && data.transport === "streamable-http" &&
+            data.endpoint === `${window.__ingress_path || ""}/api/mcp` &&
+            data.authentication?.type === "bearer" && data.authentication.requiredScope === "mcp:execute"
+          : Array.isArray(data.skills) && data.skills.length === 0 &&
+            Array.isArray(data.supportedInterfaces) && data.supportedInterfaces.length === 0
+        if (valid) state = "available"
+      }
+    } catch { /* A failed probe cannot establish discovery availability. */ }
+    if (!current()) return
+    status.dataset.state = state
+    status.textContent = status.dataset[state] ?? ""
+    link.hidden = state !== "available"
+    if (state === "available") available++
+  }))
+  if (current()) {
+    badge.textContent = (badge.dataset.count ?? "").replace("{count}", String(available))
+    badge.className = available ? "badge badge-active" : "badge badge-pending"
+  }
+}
 
 function renderAgentBadge(select: HTMLSelectElement, label?: string) {
   const badge = document.getElementById("ha-agent-status")
@@ -112,13 +171,17 @@ async function restoreHaAgent(savedAgent: unknown) {
 
 export function initAISettings(): void {
   initHaAgentSettings()
+  const checkDiscovery = document.querySelector<HTMLButtonElement>("#refresh-agent-discovery")
+  if (checkDiscovery) pageLifecycle.on(checkDiscovery, "click", withAsyncButton(checkDiscovery, refreshProtocolDiscovery, {
+    loadingText: checkDiscovery.dataset.checking ?? "",
+  }))
   // AI provider custom URL toggle
-  const aiProviderEl = document.getElementById("ai-provider")
+  const aiProviderEl = document.querySelector<HTMLSelectElement>("#ai-provider")
   if (aiProviderEl) {
     pageLifecycle.on(aiProviderEl, "change", () => {
       const group = document.getElementById("ai-custom-url-group")
       if (group) {
-        group.style.display = ["custom", "ollama"].includes((aiProviderEl as HTMLSelectElement).value) ? "" : "none"
+        group.style.display = ["custom", "ollama"].includes(aiProviderEl.value) ? "" : "none"
       }
     })
   }
@@ -128,28 +191,52 @@ export function initAISettings(): void {
   if (customUrlInput && shareUrl) pageLifecycle.on(customUrlInput, "input", () => { shareUrl.checked = false })
 
   // Save AI settings
-  const saveAiBtn = document.getElementById("save-ai") as HTMLButtonElement | null
-  if (saveAiBtn) {
+  const saveAiBtn = document.querySelector<HTMLButtonElement>("#save-ai")
+  if (saveAiBtn && aiProviderEl && customUrlInput && shareUrl) {
     pageLifecycle.on(saveAiBtn, "click", withAsyncButton(saveAiBtn, async () => {
-      const provider = (document.getElementById("ai-provider") as HTMLSelectElement).value
-      const customUrl = (document.getElementById("ai-custom-url") as HTMLInputElement).value.trim()
+      if (!aiHandoffEditable) return
+      const provider = aiProviderEl.value
+      const customUrl = customUrlInput.value.trim()
       const usesUrl = provider === "custom" || provider === "ollama"
       const url = usesUrl ? parseAiHandoffUrl(customUrl || (provider === "ollama" ? "http://localhost:11434" : "")) : null
-      if (usesUrl && (!url || (shareUrl?.checked && !customUrl))) {
+      const share = shareUrl.checked
+      if (usesUrl && (!url || (share && !customUrl))) {
         showToast("settings.ext_ai_invalid_url", "error")
         return
       }
-
-      // Approval checks the persisted URL; saveSettings must preserve this write order.
-      await saveSettings(url ? {
-        "ai-custom-url": url.href,
-        "ai-custom-url-approved": shareUrl?.checked ? url.href : null,
-        "ai-provider": provider,
-      } : { "ai-provider": provider })
-      if (url && customUrlInput?.value.trim() === customUrl) customUrlInput.value = url.href
-      localStorage.setItem("meitheal-ai-provider", provider)
-      if (url) localStorage.setItem("meitheal-ai-custom-url", url.href)
-
+      const signal = pageLifecycle.signal
+      const response = await fetch("/api/settings", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        signal,
+        body: JSON.stringify({
+          key: "ai-provider",
+          value: provider,
+          ...(url ? { custom_url: url.href, share_custom_url: share } : {}),
+          previous_provider: savedAiProvider,
+          previous_custom_url: savedAiUrl,
+          previously_shared: savedAiUrlShared,
+        }),
+      })
+      if (response.status === 409) {
+        settingsStore.invalidate()
+        if (!signal.aborted) showToast("settings.ai_custom_url_conflict", "error")
+        return
+      }
+      if (!response.ok) throw new Error(`AI provider settings save failed: ${response.status}`)
+      settingsStore.invalidate()
+      const saved = await response.json()
+      if (saved.key !== "ai-provider" || saved.value !== provider ||
+        (url && (saved.custom_url !== url.href || saved.share_custom_url !== share))) {
+        throw new Error("Invalid AI provider settings receipt")
+      }
+      if (signal.aborted) return
+      savedAiProvider = provider
+      if (url) {
+        savedAiUrl = url.href
+        savedAiUrlShared = share
+        if (customUrlInput.value.trim() === customUrl) customUrlInput.value = url.href
+      }
       showToast("settings.ai_saved")
     }, { loadingText: "Saving…", onError: showSettingsSaveError }))
   }
@@ -163,18 +250,17 @@ export function initAISettings(): void {
     const mcp = (document.getElementById("agent-mcp-enabled") as HTMLInputElement)?.checked ?? true
 
 
-    await saveSettings({
-      "agent-protocols-a2a-enabled": a2a,
-      "agent-protocols-webmcp-enabled": webmcp,
-      "agent-protocols-mcp-enabled": mcp,
-    })
-
-    // Update status badge
-    const statusEl = document.getElementById("agent-protocols-status")
-    if (statusEl) {
-      const anyEnabled = a2a || webmcp || mcp
-      statusEl.textContent = anyEnabled ? "Active" : "Disabled"
-      statusEl.className = anyEnabled ? "badge badge-active" : "badge badge-pending"
+    try {
+      await saveSettings({
+        "agent-protocols-a2a-enabled": a2a,
+        [WEBMCP_SETTING]: webmcp,
+        "agent-protocols-mcp-enabled": mcp,
+      })
+    } finally {
+      // A later key may fail after WebMCP was saved. Recheck actual persistence
+      // rather than granting tools from an unsaved checkbox or stale cache.
+      notifyWebMcpPreferenceChanged()
+      void refreshProtocolDiscovery()
     }
 
     showToast("settings.agent_protocols_saved")
@@ -186,23 +272,47 @@ export function initAISettings(): void {
 export function restoreAISettings(s: Record<string, unknown>): void {
   void restoreHaAgent(s["ha-assist-agent"])
   // AI provider
-  if (s["ai-provider"]) {
-    const el = document.getElementById("ai-provider") as HTMLSelectElement | null
-    if (el) el.value = String(s["ai-provider"])
-    const group = document.getElementById("ai-custom-url-group")
-    if (group) group.style.display = s["ai-provider"] === "custom" || s["ai-provider"] === "ollama" ? "" : "none"
+  aiHandoffEditable = s["ai-handoff-editable"] === true
+  savedAiProvider = typeof s["ai-provider"] === "string" ? s["ai-provider"] : null
+  const provider = document.querySelector<HTMLSelectElement>("#ai-provider")
+  if (provider) {
+    provider.disabled = !aiHandoffEditable
+    provider.value = savedAiProvider ?? "chatgpt"
   }
-  if (s["ai-custom-url"]) {
-    const el = document.getElementById("ai-custom-url") as HTMLInputElement | null
-    if (el) el.value = String(s["ai-custom-url"])
+  const editor = document.getElementById("ai-provider-editor")
+  if (editor) editor.hidden = !aiHandoffEditable
+  const badge = document.getElementById("ext-ai-badge")
+  if (badge) {
+    badge.textContent = aiHandoffEditable ? provider?.selectedOptions[0]?.textContent ?? "" : ""
+    badge.hidden = !badge.textContent
   }
+  const group = document.getElementById("ai-custom-url-group")
+  if (group) group.style.display = savedAiProvider === "custom" || savedAiProvider === "ollama" ? "" : "none"
+  savedAiUrl = typeof s["ai-custom-url"] === "string" ? s["ai-custom-url"] : null
+  savedAiUrlShared = Boolean(savedAiUrl) && s["ai-custom-url-approved"] === savedAiUrl
+  const urlInput = document.querySelector<HTMLInputElement>("#ai-custom-url")
+  if (urlInput) {
+    urlInput.disabled = !aiHandoffEditable
+    urlInput.value = savedAiUrl ?? ""
+  }
+  const shareUrl = document.querySelector<HTMLInputElement>("#ai-custom-url-share")
+  if (shareUrl) {
+    shareUrl.disabled = !aiHandoffEditable
+    shareUrl.checked = savedAiUrlShared
+  }
+  const save = document.querySelector<HTMLButtonElement>("#save-ai")
+  if (save) save.disabled = !aiHandoffEditable
+  const unavailable = document.getElementById("ai-provider-unavailable")
+  if (unavailable) unavailable.hidden = aiHandoffEditable
 
   const shareUrl = document.querySelector<HTMLInputElement>("#ai-custom-url-share")
   if (shareUrl) shareUrl.checked = typeof s["ai-custom-url"] === "string" && Boolean(s["ai-custom-url"]) && s["ai-custom-url-approved"] === s["ai-custom-url"]
 
   // Agent Protocols
   const a2aEnabled = s["agent-protocols-a2a-enabled"]
-  const webmcpEnabled = s["agent-protocols-webmcp-enabled"]
+  const webmcpEnabled = s[WEBMCP_SETTING]
+  // Bootstrap may predate an opt-out in another tab. Do not grant from its snapshot.
+  refreshWebMcpPreference()
   const mcpEnabled = s["agent-protocols-mcp-enabled"]
   if (a2aEnabled !== undefined)
     (document.getElementById("agent-a2a-enabled") as HTMLInputElement).checked =
@@ -214,14 +324,5 @@ export function restoreAISettings(s: Record<string, unknown>): void {
     (document.getElementById("agent-mcp-enabled") as HTMLInputElement).checked =
       mcpEnabled === true || mcpEnabled === "true"
 
-  const anyConfigured = a2aEnabled !== undefined || webmcpEnabled !== undefined || mcpEnabled !== undefined
-  const anyActive =
-    a2aEnabled === true || a2aEnabled === "true" ||
-    webmcpEnabled === true || webmcpEnabled === "true" ||
-    mcpEnabled === true || mcpEnabled === "true"
-  const statusEl = document.getElementById("agent-protocols-status")
-  if (statusEl && anyConfigured) {
-    statusEl.textContent = anyActive ? "Active" : "Disabled"
-    statusEl.className = anyActive ? "badge badge-active" : "badge badge-pending"
-  }
+  void refreshProtocolDiscovery()
 }

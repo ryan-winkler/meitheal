@@ -574,16 +574,9 @@
     grid-template-columns: repeat(2, 1fr) !important;
   }
 
-  .sidebar {
-    width: 200px;
-  }
-
-  .main-content {
-    margin-left: 200px;
-  }
-
-  body.sidebar-collapsed .main-content {
-    margin-left: 48px;
+  /* Sidebar and content both read --sidebar-width, so they stay aligned. */
+  :root {
+    --sidebar-width: 200px;
   }
 }
 

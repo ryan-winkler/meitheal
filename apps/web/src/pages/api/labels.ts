@@ -1,5 +1,5 @@
 import type { APIRoute } from "astro";
-import { createLabel, listLabels } from "@domains/labels"
+import { createLabel, isWellFormedLabelName, listLabels } from "@domains/labels"
 import { stripHtml } from "../../lib/strip-html";
 import { apiError, apiJson } from "../../lib/api-response";
 import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability";
@@ -45,8 +45,8 @@ export const POST: APIRoute = async ({ request }) => {
     const input = typeof body.title === "string" ? body.title : ""
     const title = stripHtml(input).trim()
 
-    if (!title) {
-      return apiError("title is required", 400);
+    if (!title || !isWellFormedLabelName(title)) {
+      return apiError("A non-empty, well-formed label title is required", 400)
     }
     if (title.length > 100) {
       return apiError("title must be 100 characters or less", 400);

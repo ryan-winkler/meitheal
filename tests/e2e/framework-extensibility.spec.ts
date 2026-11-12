@@ -289,7 +289,7 @@ test("balanced rules resolve RICE lens for story", () => {
 })
 
 test("framework bounds and formula grammar are validated before persistence", () => {
-  for (const value of ['0" autofocus onfocus="alert(1)', Infinity, NaN]) {
+  for (const value of ['0" data-fixture="invalid-bound', Infinity, NaN]) {
     const config = { ...validFormulaConfig, fields: [{ ...validFormulaConfig.fields![0]!, min: value as number }] }
     expect(validateFrameworkConfig(config)).toContain('Field "reach" min must be a finite number')
   }

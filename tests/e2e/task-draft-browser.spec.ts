@@ -5,6 +5,7 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { chromium, expect, test, type Browser, type Page } from "@playwright/test"
+import type { TaskDraftSnapshot } from "../../apps/web/src/lib/task-draft-state"
 import { launchPinBrowser, startCoreFixture } from "../scripts/task-pins-fixture"
 
 test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the built App and the HTTPS ingress fixture")
@@ -44,10 +45,11 @@ async function withBrowser(
   }
 }
 
-async function ownerPage(browser: Browser, origin: string, owner: string) {
+async function ownerPage(browser: Browser, origin: string, owner: string, timezoneId?: string) {
   const context = await browser.newContext({
     extraHTTPHeaders: {}, reducedMotion: "reduce", serviceWorkers: "block",
     viewport: { width: 320, height: 700 }, hasTouch: true, isMobile: true,
+    ...(timezoneId ? { timezoneId } : {}),
   })
   await context.addCookies([{ name: "feedback-fixture", value: owner, url: origin }])
   const page = await context.newPage()
@@ -88,6 +90,7 @@ test("save, resume, edit and publish a private capture with keyboard and a narro
     await title.fill(sentinel)
     await page.locator("#new-task-desc-input").fill("<b>Supplies</b> and a long note")
     await page.locator("#nt-checklist-builder-input").fill("Pack raincoat\nFill flask")
+    await page.locator("#nt-options > summary").click()
     await page.locator("#new-task-label-picker-input").fill(label)
     await page.locator("#new-task-label-picker-input").press("Enter")
     await expect(page.locator("#new-task-label-picker-selected")).toContainText(label)
@@ -203,20 +206,29 @@ test("shopping, custom fields and files respect the saved snapshot boundary", as
       await page.locator("#nt-add-custom-field-btn").click()
       await page.locator(`[data-field-type="${type}"].nt-add-field-type`).click()
     }
+    await page.locator("#nt-options > summary").click()
     await addField("url")
     await page.locator('.nt-custom-field-entry[data-field-type="url"] input').fill("https://example.test/supplies")
     await addField("checkbox")
     const checkbox = page.locator('.nt-custom-field-entry[data-field-type="checkbox"]')
     await checkbox.locator('[type="text"]').fill("Bring bags")
     await checkbox.locator('[type="checkbox"]').check()
-    await addField("attachment")
-    await page.locator('.nt-custom-field-entry[data-field-type="attachment"] input').setInputFiles({
+    await expect(page.locator('.nt-add-field-type[data-field-type="attachment"]')).toHaveCount(0)
+    // Keep the defensive file boundary covered even though creation no longer offers an unsupported attachment action.
+    await page.evaluate(() => {
+      const file = document.createElement("input")
+      file.id = "draft-file-boundary-probe"
+      file.type = "file"
+      file.className = "sr-only"
+      document.getElementById("new-task-form")!.append(file)
+    })
+    await page.locator("#draft-file-boundary-probe").setInputFiles({
       name: "draft-file-must-not-persist.txt", mimeType: "text/plain", buffer: Buffer.from("fixture only"),
     })
     await draftAction(page, "Draft").click()
     await draftAction(page, "Save draft").click()
     await expect(page.locator("#nt-draft-status")).toContainText("Remove the selected file")
-    await page.getByRole("button", { name: "Remove attachment field" }).click()
+    await page.locator("#draft-file-boundary-probe").evaluate(element => element.remove())
     await draftAction(page, "Save draft").click()
     await expect(page.locator("#nt-draft-status")).toHaveText("Draft saved.")
 
@@ -390,3 +402,83 @@ test("account switch during a simulated focus change clears the old draft before
     await expect(title).toBeFocused()
   })
 })
+
+
+for (const due of ["2026-12-13T15:26:32.456+05:30", "2026-12-13"]) {
+  test(`legacy draft preserves ${due.includes("T") ? "timed" : "date-only"} due, priority 5 and custom recurrence through save and publication`, async () => {
+    await withBrowser(async (browser, origin, prefix) => {
+      const page = await ownerPage(browser, origin, "member", "America/New_York")
+      await page.goto(origin + prefix + "/fixture")
+      const snapshot: TaskDraftSnapshot = {
+        version: 1, title: "Legacy title\nSecond line", description: "Original description", taskKind: "calendar_event",
+        status: "active", priority: 5, due, labels: [], newLabels: [], assignedTo: "", goal: "",
+        recurrence: "FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,WE", isRoutine: false,
+        checklist: { items: [], input: "" }, shopping: { items: [], input: "", quantity: "1", category: "" },
+        event: { start: "2026-12-12T14:25:31.123+05:30", end: "2026-12-12T15:25:31.987+05:30", location: "", allDay: false, calendar: "" },
+        fields: [],
+      }
+      // Seed a prior valid snapshot through the real guarded API, independently of current form choices.
+      const seeded = await page.evaluate(async ({ prefix, snapshot }) => {
+        const path = prefix + "/api/task-drafts"
+        const transport = { mode: "same-origin", referrerPolicy: "same-origin", cache: "no-store", redirect: "error" } as const
+        const read = await fetch(path, { ...transport, method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "read" }) })
+        if (read.status !== 200) throw new Error(`Draft read failed: ${read.status}`)
+        const state = await read.json()
+        const verified = await fetch(path, { ...transport, method: "HEAD", headers: { "X-Meitheal-Draft-Context": state.context } })
+        if (verified.status !== 204) throw new Error(`Draft lease verification failed: ${verified.status}`)
+        const saved = await fetch(path, {
+          ...transport, method: "PUT", headers: { "content-type": "application/json", "X-Meitheal-Draft-Context": state.context },
+          body: JSON.stringify({ action: "save", expected: null, attemptId: crypto.randomUUID(), snapshot }),
+        })
+        return { status: saved.status, body: await saved.json() }
+      }, { prefix, snapshot })
+      expect(seeded.status).toBe(200)
+      expect(seeded.body.draft.snapshot).toEqual(snapshot)
+      await page.goto(origin + prefix + "/today")
+      await openCapture(page)
+      await draftAction(page, "Draft").click()
+      await draftAction(page, "Resume draft").click()
+      await expect(page.locator("#new-task-title-input")).toHaveValue(snapshot.title)
+      expect(await page.locator("#new-task-title-input").evaluate(element => element.scrollHeight <= element.clientHeight)).toBe(true)
+      await expect(page.locator("#new-task-priority")).toHaveValue("5")
+      await expect(page.locator("#new-task-recurrence")).toHaveValue(snapshot.recurrence)
+      await expect(page.locator("#nt-contextual-due")).toHaveValue(snapshot.due)
+      await expect(page.locator("#nt-event-start")).toHaveValue("2026-12-12T03:55:31.123")
+      await expect(page.locator("#nt-event-end")).toHaveValue("2026-12-12T04:55:31.987")
+      const edited = { ...snapshot, description: "Edited unrelated description" }
+      await page.locator("#new-task-desc-input").fill(edited.description)
+      await draftAction(page, "Save draft").click()
+      await expect(page.locator("#nt-draft-status")).toHaveText("Draft saved.")
+      const persisted = await page.evaluate(async prefix => {
+        const response = await fetch(prefix + "/api/task-drafts", {
+          mode: "same-origin", referrerPolicy: "same-origin", cache: "no-store", redirect: "error",
+          method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "read" }),
+        })
+        if (response.status !== 200) throw new Error(`Draft readback failed: ${response.status}`)
+        return (await response.json()).draft.snapshot
+      }, prefix)
+      expect(persisted).toEqual(edited)
+      await page.reload()
+      await openCapture(page)
+      await draftAction(page, "Draft").click()
+      await draftAction(page, "Resume draft").click()
+      await expect(page.locator("#new-task-title-input")).toHaveValue(snapshot.title)
+      await expect(page.locator("#new-task-priority")).toHaveValue("5")
+      await expect(page.locator("#new-task-recurrence")).toHaveValue(snapshot.recurrence)
+      const sent = page.waitForResponse(response => response.url() === origin + prefix + "/api/task-drafts"
+        && response.request().method() === "PUT" && response.request().postDataJSON()?.action === "publish")
+      await draftAction(page, "Publish draft").click()
+      const published = await sent
+      expect(published.status()).toBe(201)
+      const publication = published.request().postDataJSON().task
+      const expectedDue = due.includes("T") ? due : due + "T00:00:00.000Z"
+      expect(publication).toMatchObject({
+        title: snapshot.title, description: edited.description, priority: 5, recurrence_rule: snapshot.recurrence,
+        due_date: expectedDue, start_date: snapshot.event.start, end_date: snapshot.event.end,
+      })
+      const task = await page.evaluate(async prefix => await (await fetch(prefix + "/api/tasks/MTH-1")).json(), prefix)
+      expect(task).toMatchObject({ title: snapshot.title, description: edited.description, priority: 5,
+        recurrence_rule: snapshot.recurrence, due_date: expectedDue, start_date: snapshot.event.start, end_date: snapshot.event.end })
+    })
+  })
+}

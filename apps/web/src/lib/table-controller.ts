@@ -22,12 +22,15 @@ import { pageLifecycle } from "@lib/page-lifecycle"
 import { initPageShellNavigation } from "@lib/page-shell-controller"
 import { escapeHtml, sanitizeCssColor } from "@lib/safe-html"
 import { openTaskDetailHandoff } from "@lib/task-detail-handoff"
+import { taskBackgroundUrl } from "@lib/task-page-url"
+import { parseTaskView, taskViewUrl } from "@lib/task-view-route"
 import { loadTableColumnPreferences, TABLE_COLUMNS, TABLE_SECTIONS } from "@lib/table-registry"
 import { getRememberedAreaId } from "@lib/area-selector-controller"
 import {
   saveTableFilterState,
   loadTableFilterState,
   normalizeTableColumns,
+  tableCreationRangeLabel,
   writeTableFilterParams,
   getGroupKey,
   getGroupDisplay,
@@ -95,7 +98,6 @@ function setupPagerFocus(shell: HTMLElement, signal: AbortSignal) {
   } catch { /* storage unavailable or marker malformed */ }
 }
 
-/** Wire Table refresh and editing without replacing an active title draft. */
 function init(signal: AbortSignal) {
   const shell = document.getElementById("table-shell")
   if (!shell || shell.dataset.tableReady === "true") return
@@ -132,7 +134,7 @@ function init(signal: AbortSignal) {
   let requestNumber = 0
   let pending: AbortController | undefined
   let resetPageOnRetry = false
-  let refreshAfterEditing = false
+  const replacedTitleEditors = new WeakSet<HTMLElement>()
 
   const renderRows = () => {
     const stats = JSON.parse(table.dataset.tableStats ?? "{}") as TablePageStats
@@ -140,6 +142,15 @@ function init(signal: AbortSignal) {
     applyGrouping(currentGroupBy, applied.subGroupBy ?? "none", stats)
     applyColumns(applied.columns)
     updateTableSort(applied.sort)
+    shell.dataset.tableFilters = JSON.stringify(applied)
+    const createdRange = tableCreationRangeLabel(applied.createdFrom, applied.createdThrough)
+    shell.querySelector("[data-table-created-summary]")?.classList.toggle("filter-pill--active", Boolean(createdRange))
+    const createdDateIndicator = shell.querySelector<HTMLElement>("[data-table-created-active]")
+    if (createdDateIndicator) {
+      createdDateIndicator.textContent = createdRange
+      createdDateIndicator.hidden = !createdRange
+    }
+    document.dispatchEvent(new Event("meitheal:table-filters-applied"))
     const selectAll = table.querySelector<HTMLInputElement>("#select-all")
     if (selectAll) selectAll.checked = false
     updateBulkBar()
@@ -175,23 +186,22 @@ function init(signal: AbortSignal) {
       const html = new DOMParser().parseFromString(await response.text(), "text/html")
       if (request.signal.aborted || signal.aborted || pending !== request) return
       const replacement = html.querySelector<HTMLTableElement>("#task-table")
-      const fragments = ["#task-summary", "#table-pagination", "#table-empty", ".table-container"].map(selector =>
+      const fragments = ["#task-summary", "#table-pagination", "#table-empty", ".table-container", "#table-workflow-notice"].map(selector =>
         [shell.querySelector<HTMLElement>(selector), html.querySelector<HTMLElement>(selector)] as const)
       if (!replacement?.tBodies[0] || fragments.some(([current, fresh]) => !current || !fresh)) {
         throw new Error("Table refresh missing content")
       }
 
       const focused = document.activeElement
-      if (focused?.matches(".editable-cell") && table.contains(focused)) {
-        refreshAfterEditing = true
-        return
-      }
-      refreshAfterEditing = false
       const row = focused?.closest<HTMLElement>(".table-row")
       const id = row?.dataset.id
       const control = ["[data-open-table-task]", ".row-check", ".editable-cell", "select[data-field=status]",
         "select[data-field=priority]", ".delete-row", ".subtree-toggle", "[data-open-table-parent]"]
         .find(selector => focused?.matches(selector))
+      const titleEditor = control === ".editable-cell" && focused instanceof HTMLElement ? focused : null
+      const titleDraft = titleEditor?.textContent
+      // Removing the focused editor can dispatch focusout before it is disconnected.
+      if (titleEditor) replacedTitleEditors.add(titleEditor)
       const pagerLink = focused?.closest<HTMLAnchorElement>("#table-pagination [data-table-page-link]")
       const group = focused?.closest<HTMLElement>(".group-header-row")
       const groupControl = [".group-toggle", ".group-select-all"].find(selector => focused?.matches(selector))
@@ -202,9 +212,26 @@ function init(signal: AbortSignal) {
         current!.hidden = fresh!.hidden
         if (current!.matches("#task-summary, #table-pagination")) current!.replaceChildren(...fresh!.childNodes)
       }
+      const workflowOptions = shell.querySelector("[data-table-workflow-options]")
+      const freshWorkflowOptions = html.querySelector('[data-table-workflow-options="ready"]')
+      if (workflowOptions && freshWorkflowOptions) {
+        const lane = focused instanceof HTMLInputElement && workflowOptions.contains(focused) ? focused.value : null
+        workflowOptions.replaceChildren(...freshWorkflowOptions.childNodes)
+        if (lane !== null) {
+          const control = workflowOptions.querySelector<HTMLInputElement>(`[data-table-lane][value="${CSS.escape(lane)}"]`)
+          const summary = workflowOptions.parentElement?.querySelector("summary")
+          const target = control && !control.disabled ? control : summary
+          target?.focus({ preventScroll: true })
+        }
+      }
       // Column visibility can change while the rows are loading.
       applied = { ...nextState, columns: desired.columns ?? initialColumns }
       saveTableFilterState(applied, Number(table.dataset.tablePage))
+      const background = taskBackgroundUrl(new URL(location.href))
+      for (const link of document.querySelectorAll<HTMLAnchorElement>("[data-view-tab]")) {
+        const view = parseTaskView(link.dataset.viewTab ?? null)
+        if (view) link.href = taskViewUrl(background, view).href
+      }
       const count = renderRows()
       resetPageOnRetry = false
 
@@ -219,6 +246,9 @@ function init(signal: AbortSignal) {
           header.dataset.groupKey === group.dataset.groupKey && header.dataset.parentGroupKey === group.dataset.parentGroupKey)
         const target = (control && replacementRow && replacementRow.querySelector<HTMLElement>(control))
           || (groupControl && replacementGroup && replacementGroup.querySelector<HTMLElement>(groupControl))
+        if (target && titleEditor && titleDraft != null && titleDraft.trim() !== titleEditor.dataset.original) {
+          target.textContent = titleDraft
+        }
         ;(target || (container.hidden ? shell.querySelector<HTMLElement>("#table-search") : container))?.focus()
       }
     } catch {
@@ -238,9 +268,7 @@ function init(signal: AbortSignal) {
   setupPagerFocus(shell, signal)
   setupGroupHeaderListeners(tbody, signal)
   setupSubtaskToggles(tbody, signal)
-  setupInlineEditing(table, signal, () => void refresh(), () => {
-    if (refreshAfterEditing) void refresh()
-  })
+  setupInlineEditing(table, signal, () => void refresh(), replacedTitleEditors)
   setupRowClicks(table, signal, () => void refresh())
   setupBulkActions({ signal, onTasksChanged: () => void refresh() })
   setupSortableHeaders(signal, (column, direction) => void refresh({ ...desired, sort: `${column}-${direction}` }, true), () => desired.sort)
@@ -258,8 +286,8 @@ function init(signal: AbortSignal) {
     params.delete("columns")
     return params.toString()
   }
-  if (rowParams(initial) !== rowParams(applied)) void refresh(initial)
-  else if (new URLSearchParams(location.search).has("tp")) {
+  if (retry.hidden && rowParams(initial) !== rowParams(applied)) void refresh(initial)
+  else if (retry.hidden && new URLSearchParams(location.search).has("tp")) {
     const url = new URL(location.href)
     const page = Number(table.dataset.tablePage)
     if (page > 1) url.searchParams.set("tp", String(page))
@@ -278,6 +306,9 @@ function init(signal: AbortSignal) {
       rice: detail.rice ?? "",
       user: detail.user ?? "",
       task_type: detail.task_type ?? "",
+      laneIds: detail.laneIds ?? [],
+      createdFrom: detail.createdFrom,
+      createdThrough: detail.createdThrough,
       types: detail.types ?? [],
       labels: detail.labels ?? desired.labels ?? [],
       advancedFilter: detail.advancedFilter ?? null,
@@ -308,6 +339,7 @@ function init(signal: AbortSignal) {
     desired.columns = applied.columns = columns
     saveTableFilterState(applied)
     applyColumns(columns)
+    shell.dataset.tableFilters = JSON.stringify(applied)
   }, { signal })
 }
 
@@ -689,16 +721,14 @@ function toggleChildRows(parentId: string, show: boolean) {
 // Inline Editing
 // =============================================================================
 
-/** Save title commits on blur; resume pending rows after an unchanged or cancelled edit. */
-function setupInlineEditing(table: HTMLTableElement, signal: AbortSignal, refresh: () => void, resumeRefresh: () => void) {
+function setupInlineEditing(table: HTMLTableElement, signal: AbortSignal, refresh: () => void, replacedTitleEditors: WeakSet<HTMLElement>) {
   table.addEventListener("focusout", async event => {
     const cell = (event.target as Element).closest<HTMLElement>(".editable-cell")
-    if (!cell || !cell.isConnected) return
+    if (!cell || !cell.isConnected || replacedTitleEditors.has(cell)) return
     const title = cell.textContent?.trim() ?? ""
     const original = cell.dataset.original ?? ""
     if (!title || title === original) {
       cell.textContent = original
-      resumeRefresh()
       return
     }
     const id = cell.dataset.id
@@ -718,7 +748,6 @@ function setupInlineEditing(table: HTMLTableElement, signal: AbortSignal, refres
       if (signal.aborted) return
       cell.textContent = original
       showToast("Failed to update", "error")
-      resumeRefresh()
     }
   }, { signal })
 
@@ -750,7 +779,7 @@ function setupInlineEditing(table: HTMLTableElement, signal: AbortSignal, refres
         row.dataset.status = value
         row.classList.toggle("row-done", value === "complete")
         void reconcileTableDeferral(row, value, signal)
-        if (value === "complete") onTaskCompleted(Number(row.dataset.priority ?? 3))
+        if (value === "complete") onTaskCompleted(await response.json())
       }
       refresh()
     } catch {

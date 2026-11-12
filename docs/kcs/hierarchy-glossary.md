@@ -84,6 +84,14 @@ Area (areas table)
 - `tasks.routine_template_id` → Task → Routine link
 - `tasks.spawned_for_date` → Unique constraint for routine deduplication
 
+## Goal progress
+
+Goal detail and list responses return progress as a percentage from 0 to 100, calculated from the stored current metric and its positive target. A missing or invalid target reports zero progress. Saving a percentage through `PUT /api/goals/{id}` updates the current metric on the existing target's scale. A goal without a positive target becomes a percentage goal with a target of 100. Fractional percentages are supported; invalid values return 400 and leave the goal unchanged.
+
+## Project custom fields
+
+The Project **Custom Fields** section reports that project-specific field configuration is unavailable. Supported custom field values can still be added when creating a task; this does not create project-level field definitions.
+
 ## Move a task to another project
 
 Open the task, then choose its **Project** in the details panel. Choose **No project** to clear the assignment. The task keeps its existing area, status and ticket key. If the destination was deleted, reopen the task to refresh the project list and choose another destination.
@@ -103,3 +111,7 @@ and restorable via the <kbd>?</kbd> keyboard shortcut.
 ## Edit a Pillar or save a Principle
 
 Open **Progress & Growth → Pillars**. Choose **Edit** on the card or in Details to change the Pillar's identity and weight. **Add principle** opens a form for a boundary. Select **Non-Negotiable** when it should guide supported automation prompts. **Save principle** updates the detail list and card count after the App confirms the write. If saving fails, the form keeps the statement and checkbox for retry.
+
+## Collapsing the sidebar Areas menu
+
+The Areas heading collapses the whole hierarchy independently of each area's project disclosure. Use Enter or Space on the heading. The choice is remembered in this browser and does not change sidebar visibility, order, saved labels, projects or tasks. The Manage areas link is a separate keyboard target and remains available when the group is closed. Browser storage restrictions do not prevent expanding or collapsing it. A folded main sidebar keeps its compact Planning link.

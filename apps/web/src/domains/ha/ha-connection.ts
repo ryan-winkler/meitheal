@@ -10,6 +10,7 @@
  * @domain ha
  * @bounded-context integration
  */
+import { createHash } from "node:crypto"
 import {
   createConnection,
   createLongLivedTokenAuth,
@@ -23,6 +24,8 @@ import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observa
 // Polyfill WebSocket for Node.js server-side usage
 import WebSocket, { type ClientOptions } from "ws";
 import { supervisorFetch } from "../../lib/supervisor-fetch";
+import { resolveHAConfiguration, type HAConfiguration } from "./ha-configuration"
+import { initEntitySubscription, resetEntityConnection } from "./ha-entities"
 (globalThis as Record<string, unknown>).WebSocket = WebSocket;
 const CORE_PROXY = "http://supervisor/core"
 
@@ -46,11 +49,30 @@ const SYS_REQ = "ha-system"; // sentinel request_id for background operations
 // ── State ──
 
 let connection: Connection | null = null;
+let configurationFingerprint: string | null = null
+
+export async function getHAConfiguration(): Promise<HAConfiguration | null> {
+  if (process.env.SUPERVISOR_TOKEN) return resolveHAConfiguration(process.env)
+  const { ensureSchema, getPersistenceClient } = await import("../tasks/persistence/store")
+  const { SettingsRepository } = await import("../tasks/persistence/settings-repository")
+  await ensureSchema()
+  const repo = new SettingsRepository(getPersistenceClient())
+  await repo.ensureSettingsTable()
+  return resolveHAConfiguration(process.env, await repo.getByKeys(["ha_url", "ha_token"]))
+}
 let connecting = false;
+let connectingFingerprint: string | null = null
+let connectionGeneration = 0
 let lastError: string | null = null;
 let reconnectAttempts = 0;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null; // Guard against rapid reconnect races
-let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
+interface HeartbeatState {
+  readonly connection: Connection
+  readonly generation: number
+  interval: ReturnType<typeof setInterval> | null
+  timeout: ReturnType<typeof setTimeout> | null
+}
+let heartbeat: HeartbeatState | null = null
 const MAX_RECONNECT_DELAY_MS = 30_000;
 const HEARTBEAT_INTERVAL_MS = 30_000;
 const HEARTBEAT_TIMEOUT_MS = 10_000;
@@ -77,38 +99,64 @@ function emitStatus(state: HAConnectionState, detail?: string): void {
 // ── Public API ──
 
 export async function getHAConnection(): Promise<Connection | null> {
+  let config: HAConfiguration | null
+  try { config = await getHAConfiguration() } catch {
+    lastError = "HA_CONFIGURATION_UNAVAILABLE"
+    closeHAConnection()
+    return null
+  }
+  const fingerprint = config ? createHash("sha256").update(JSON.stringify(config)).digest("hex") : null
+  if ((connection && configurationFingerprint !== fingerprint) ||
+    (connecting && connectingFingerprint !== fingerprint)) {
+    closeHAConnection()
+    invalidateBaseUrlCache()
+    cachedIngressEntry = null
+  }
+  if (!config) {
+    closeHAConnection()
+    lastError = "HA_NOT_CONFIGURED"
+    return null
+  }
   if (connection) return connection;
   if (connecting) {
-    // Wait for in-flight connection with timeout — both branches clear both timers
-    return new Promise((resolve) => {
-      let check: ReturnType<typeof setInterval> | null = null;
+    const waitingGeneration = connectionGeneration
+    const completed = await new Promise<boolean>((resolve) => {
+      let check: ReturnType<typeof setInterval> | null = null
       const timeout = setTimeout(() => {
-        if (check) clearInterval(check);
-        resolve(connection);
-      }, 15_000);
+        if (check) clearInterval(check)
+        resolve(false)
+      }, 15_000)
       check = setInterval(() => {
-        if (!connecting) {
-          clearInterval(check!);
-          clearTimeout(timeout);
-          resolve(connection);
+        if (!connecting || connectionGeneration !== waitingGeneration) {
+          clearInterval(check!)
+          clearTimeout(timeout)
+          resolve(true)
         }
-      }, 100);
-    });
-  }
-
-  const token = process.env.SUPERVISOR_TOKEN;
-  if (!token) {
-    logger.log("info", {
-      event: "ha.connection.skipped", domain: "ha", component: "ha-connection",
-      request_id: SYS_REQ, message: "SUPERVISOR_TOKEN not set — standalone mode",
-    });
-    return null;
+      }, 100)
+    })
+    // Re-read credentials before handing a waiter the newly established socket.
+    return completed && (connection || connecting) ? getHAConnection() : null
   }
 
   connecting = true;
+  connectingFingerprint = fingerprint
+  const attemptGeneration = ++connectionGeneration
+  let candidate: Connection | null = null
   try {
-    const auth = createLongLivedTokenAuth(CORE_PROXY, token);
-    connection = await createConnection({ auth });
+    const auth = createLongLivedTokenAuth(config.baseUrl, config.token);
+    candidate = await createConnection({ auth });
+    const currentConfig = await getHAConfiguration()
+    const currentFingerprint = currentConfig ? createHash("sha256").update(JSON.stringify(currentConfig)).digest("hex") : null
+    if (attemptGeneration !== connectionGeneration || currentFingerprint !== fingerprint) {
+      candidate.close()
+      candidate = null
+      if (attemptGeneration === connectionGeneration) closeHAConnection()
+      return null
+    }
+    connection = candidate
+    const establishedConnection = connection
+    configurationFingerprint = fingerprint
+    if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null }
     reconnectAttempts = 0;
     lastError = null;
 
@@ -118,6 +166,8 @@ export async function getHAConnection(): Promise<Connection | null> {
     });
 
     connection.addEventListener("disconnected", () => {
+      if (connection !== establishedConnection) return
+      resetEntityConnection()
       stopHeartbeat();
       emitStatus("disconnected");
       logger.log("warn", {
@@ -127,6 +177,8 @@ export async function getHAConnection(): Promise<Connection | null> {
     });
 
     connection.addEventListener("ready", () => {
+      if (connection !== establishedConnection) return
+      void initEntitySubscription(establishedConnection)
       reconnectAttempts = 0;
       startHeartbeat();
       emitStatus("connected", `HA ${connection?.haVersion}`);
@@ -140,8 +192,19 @@ export async function getHAConnection(): Promise<Connection | null> {
     startHeartbeat();
     emitStatus("connected", `HA ${connection.haVersion}`);
 
+    const subscribeEvent = (listener: (event: unknown) => void, eventType: string) => {
+      void establishedConnection.subscribeEvents(listener, eventType).catch(() => {
+        // Closing a replaced connection rejects its pending subscriptions.
+        if (connection !== establishedConnection || !establishedConnection.connected) return
+        logger.log("warn", {
+          event: "ha.subscription.failed", domain: "ha", component: "ha-connection",
+          request_id: SYS_REQ, message: "Home Assistant event subscription failed",
+        })
+      })
+    }
+
     // Phase 52: Subscribe to actionable notifications from Companion Apps
-    connection.subscribeEvents((event: unknown) => {
+    subscribeEvent((event: unknown) => {
       const ev = event as { data?: { action?: string } };
       const action: string | undefined = ev?.data?.action;
       if (action && action.startsWith("MEITHEAL_TASK_DONE_")) {
@@ -164,6 +227,13 @@ export async function getHAConnection(): Promise<Connection | null> {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ status: "complete" })
+        }).then(response => {
+          void response.body?.cancel().catch(() => {})
+          if (!response.ok) {
+            const retryAfter = response.headers.get("retry-after")
+            const retry = retryAfter ? ` (Retry-After: ${retryAfter})` : ""
+            throw new Error(`Task completion returned HTTP ${response.status}${retry}`)
+          }
         }).catch((err: unknown) => {
           logger.log("error", {
             event: "ha.notification.action_failed", domain: "ha", component: "ha-connection",
@@ -181,7 +251,7 @@ export async function getHAConnection(): Promise<Connection | null> {
       "meitheal_task_updated", "meitheal_task_deleted",
       "meitheal_area_updated",
     ]) {
-      connection.subscribeEvents((event: unknown) => {
+      subscribeEvent((event: unknown) => {
         try {
           const ev = event as { data?: { source?: string; title?: string; task_id?: string } };
           if (ev?.data?.source === "meitheal") return;
@@ -195,8 +265,16 @@ export async function getHAConnection(): Promise<Connection | null> {
       }, eventType);
     }
 
+    await initEntitySubscription(establishedConnection)
     return connection;
   } catch (err) {
+    candidate?.close()
+    if (attemptGeneration !== connectionGeneration) return null
+    if (connection === candidate) {
+      connection = null
+      configurationFingerprint = null
+      resetEntityConnection()
+    }
     const errorCode = err === ERR_CANNOT_CONNECT ? "CANNOT_CONNECT"
       : err === ERR_INVALID_AUTH ? "INVALID_AUTH" : "UNKNOWN";
     lastError = errorCode;
@@ -215,43 +293,65 @@ export async function getHAConnection(): Promise<Connection | null> {
     reconnectTimer = setTimeout(() => { reconnectTimer = null; connection = null; connecting = false; getHAConnection().catch(() => {}); }, delay);
     return null;
   } finally {
-    connecting = false;
+    if (connectionGeneration === attemptGeneration) {
+      connecting = false
+      connectingFingerprint = null
+    }
   }
 }
 
 // ── Heartbeat ──
 
 function startHeartbeat(): void {
-  stopHeartbeat();
-  heartbeatInterval = setInterval(() => {
-    if (!connection) { stopHeartbeat(); return }
+  stopHeartbeat()
+  if (!connection) return
+  const state: HeartbeatState = { connection, generation: connectionGeneration, interval: null, timeout: null }
+  heartbeat = state
+  const current = () => heartbeat === state && connection === state.connection && connectionGeneration === state.generation
+  state.interval = setInterval(() => {
+    if (!current()) {
+      if (heartbeat === state) stopHeartbeat()
+      return
+    }
     const timeout = setTimeout(() => {
+      if (!current()) return
+      stopHeartbeat()
       logger.log("warn", {
         event: "ha.heartbeat.timeout", domain: "ha", component: "ha-connection",
         request_id: SYS_REQ, message: "Heartbeat pong not received within 10s — closing stale connection",
-      });
-      emitStatus("error", "heartbeat timeout");
-      // Force close — the library will trigger reconnect
-      connection?.close();
-      connection = null;
-    }, HEARTBEAT_TIMEOUT_MS);
-
-    connection.sendMessagePromise({ type: "ping" })
-      .then(() => { clearTimeout(timeout) })
+      })
+      emitStatus("error", "heartbeat timeout")
+      // Close only the connection whose ping timed out. Status listeners may
+      // themselves retire its generation before this callback finishes.
+      state.connection.close()
+      if (connection === state.connection && connectionGeneration === state.generation) connection = null
+    }, HEARTBEAT_TIMEOUT_MS)
+    state.timeout = timeout
+    const clearDeadline = () => {
+      clearTimeout(timeout)
+      if (state.timeout === timeout) state.timeout = null
+    }
+    state.connection.sendMessagePromise({ type: "ping" })
+      .then(clearDeadline)
       .catch(() => {
-        clearTimeout(timeout);
+        clearDeadline()
+        if (!current()) return
         logger.log("warn", {
           event: "ha.heartbeat.failed", domain: "ha", component: "ha-connection",
           request_id: SYS_REQ, message: "Heartbeat ping failed",
-        });
-      });
-  }, HEARTBEAT_INTERVAL_MS);
+        })
+      })
+  }, HEARTBEAT_INTERVAL_MS)
 }
 
 function stopHeartbeat(): void {
-  if (heartbeatInterval) {
-    clearInterval(heartbeatInterval);
-    heartbeatInterval = null;
+  const retired = heartbeat
+  heartbeat = null
+  if (retired) {
+    if (retired.interval) clearInterval(retired.interval)
+    if (retired.timeout) clearTimeout(retired.timeout)
+    retired.interval = null
+    retired.timeout = null
   }
 }
 
@@ -279,7 +379,15 @@ export async function getHAConfig(): Promise<HassConfig | null> {
 }
 
 export function closeHAConnection(): void {
+  connectionGeneration++
+  connecting = false
+  connectingFingerprint = null
+  resetEntityConnection()
+  invalidateBaseUrlCache()
+  cachedIngressEntry = null
   stopHeartbeat();
+  if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null }
+  configurationFingerprint = null
   if (connection) {
     connection.close();
     connection = null;

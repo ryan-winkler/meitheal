@@ -25,7 +25,7 @@ const logger = createLogger({
   service: "meitheal-web",
   env: process.env.NODE_ENV ?? "development",
   minLevel: "info",
-  enabledCategories: ["notifications"],
+  enabledCategories: ["notifications", "tasks"],
   redactPatterns: defaultRedactionPatterns,
   auditEnabled: false,
 });
@@ -214,7 +214,7 @@ export function stopDueDateReminders(): void {
  * Core check: query tasks with due dates in the upcoming window,
  * send notifications for any not yet reminded.
  */
-async function checkDueDates(): Promise<void> {
+export async function checkDueDates(now = Date.now()): Promise<void> {
   // Guard: prevent concurrent runs (F15: processing flag always reset in finally)
   if (processing) return;
   processing = true;
@@ -227,14 +227,26 @@ async function checkDueDates(): Promise<void> {
       schemaEnsured = true;
     }
 
-    // Load cached settings (F3)
-    const settings = await getCachedSettings();
-    if (!settings.enabled || !settings.reminderEnabled) return;
-
     const { getPersistenceClient } = await import("@domains/tasks/persistence/store");
     const client = getPersistenceClient();
 
-    const now = Date.now();
+    // Domain transitions are independent of notification preferences and HA
+    // connectivity. Reuse this timer rather than creating a second scheduler.
+    const { checkOverdueTaskEvents } = await import("@domains/tasks/overdue-task-events");
+    const { dispatchTaskEvent } = await import("../../lib/webhook-dispatcher");
+    const overdue = await checkOverdueTaskEvents(client, dispatchTaskEvent, now);
+    if (overdue.observed > 0) {
+      logger.log(overdue.dispatchFailed > 0 ? "warn" : "info", {
+        event: "tasks.overdue.observed", domain: "tasks", component: "due-date-reminders",
+        request_id: SYS_REQ, message: "Recorded overdue transitions for best-effort routing",
+        metadata: { observed: overdue.observed, dispatch_failed: overdue.dispatchFailed },
+      });
+    }
+
+    // Load cached settings (F3); only reminder delivery is opted out here.
+    const settings = await getCachedSettings();
+    if (!settings.enabled || !settings.reminderEnabled) return;
+
     const windowEnd = now + settings.reminderWindowMs;
 
     // F6: Use ISO date strings for SQL comparison instead of fetching ALL tasks

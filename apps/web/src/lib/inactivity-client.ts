@@ -7,12 +7,19 @@ export type InactivityPreview = PreviewData & { now: number; canSave: boolean }
 interface BoardCues {
   now: number
   cues: Record<string, number>
+  stalled?: Record<string, number>
 }
 
 type PreviewRequest = { action: "preview"; areaId: InactivityScope; page: number; filter: InactivityFilter; days?: number }
 type SaveRequest = { action: "save"; areaId: InactivityScope; days: number; expectedRevision: string | null;
   expectedDefaultRevision: string | null; areaGeneration: string | null; expectedAreaCatalogRevision: string | null }
 type BoardRequest = { action: "board"; ids: string[] }
+
+export const INACTIVITY_TASK_CHANGED = "meitheal:inactivity-task-changed"
+
+export function notifyInactivityTaskChanged(taskId?: string) {
+  window.dispatchEvent(new CustomEvent(INACTIVITY_TASK_CHANGED, { detail: taskId }))
+}
 
 export class InactivityRequestError extends Error {
   constructor(readonly status: number) {

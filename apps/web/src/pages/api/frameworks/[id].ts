@@ -10,11 +10,12 @@
  *      Custom frameworks can be fully deleted.
  */
 import type { APIRoute } from "astro"
+import { requireSystemSettingsAdmin } from "@lib/settings-security"
 import { getBuiltInFramework } from "@domains/strategy/framework-catalog"
 import { getOverrides, saveOverrides, resetOverrides } from "@domains/strategy/framework-repository"
 import { getCustomFramework, updateCustomFramework, deleteCustomFramework } from "@domains/strategy/custom-framework-repository"
-import { mergeFrameworkConfig, validateFrameworkConfig } from "@meitheal/domain-strategy"
-import type { FrameworkConfig, FrameworkOverrides } from "@meitheal/domain-strategy"
+import { mergeFrameworkConfig, validateFrameworkConfig, validateFrameworkOverrides } from "@meitheal/domain-strategy"
+import type { FrameworkConfig } from "@meitheal/domain-strategy"
 import { logApiError } from "@lib/api-logger"
 import { validateSafeId } from "@lib/sanitize-id"
 
@@ -62,7 +63,9 @@ export const GET: APIRoute = async ({ params }) => {
   }
 }
 
-export const PUT: APIRoute = async ({ params, request }) => {
+export const PUT: APIRoute = async ({ params, request, locals }) => {
+  const denied = requireSystemSettingsAdmin(request, locals)
+  if (denied) return denied
   try {
     const frameworkId = params.id
     const idErr = validateSafeId(frameworkId, "framework_id")
@@ -73,9 +76,13 @@ export const PUT: APIRoute = async ({ params, request }) => {
       )
     }
 
-    if (await getBuiltInFramework(frameworkId!)) {
-      // Built-in: save as overrides
-      const body = (await request.json()) as FrameworkOverrides
+    const base = await getBuiltInFramework(frameworkId!)
+    if (base) {
+      const body = await request.json()
+      const errors = validateFrameworkOverrides(body, base.fields.map((field) => field.key))
+      if (errors) return new Response(JSON.stringify({ ok: false, errorCode: "VALIDATION_FAILED", errors, message: errors.join(". ") }), {
+        status: 400, headers: { "Content-Type": "application/json" },
+      })
       const record = await saveOverrides(frameworkId!, body)
       return new Response(JSON.stringify({ ok: true, data: record }), {
         status: 200,
@@ -85,6 +92,11 @@ export const PUT: APIRoute = async ({ params, request }) => {
 
     // Custom: update full config
     const body = (await request.json()) as Partial<FrameworkConfig>
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return new Response(JSON.stringify({ ok: false, errorCode: "VALIDATION_FAILED", errors: ["Framework must be an object"] }), {
+        status: 400, headers: { "Content-Type": "application/json" },
+      })
+    }
     const existing = await getCustomFramework(frameworkId!)
     if (!existing) {
       return new Response(
@@ -94,7 +106,8 @@ export const PUT: APIRoute = async ({ params, request }) => {
     }
 
     const updated: FrameworkConfig = { ...existing, ...body, id: frameworkId!, source: existing.source }
-    const errors = validateFrameworkConfig(updated)
+    const editsScoring = "formula" in body || "archetype" in body || "fields" in body
+    const errors = validateFrameworkConfig(updated, { preserveLegacyScoring: !editsScoring })
     if (errors) {
       return new Response(
         JSON.stringify({ ok: false, errorCode: "VALIDATION_FAILED", errors }),
@@ -116,7 +129,9 @@ export const PUT: APIRoute = async ({ params, request }) => {
   }
 }
 
-export const DELETE: APIRoute = async ({ params }) => {
+export const DELETE: APIRoute = async ({ params, request, locals }) => {
+  const denied = requireSystemSettingsAdmin(request, locals)
+  if (denied) return denied
   try {
     const frameworkId = params.id
     const idErr = validateSafeId(frameworkId, "framework_id")

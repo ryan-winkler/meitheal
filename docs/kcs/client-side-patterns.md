@@ -53,6 +53,12 @@ if (form) {
 }
 ```
 
+Eisenhower keeps one window-scoped controller owner for the current page and lifecycle signal. Repeated `astro:page-load` events reuse that owner. Replacing the owner aborts its listeners, including the delegated triage and weekly review listeners. The page signal also retires that owner on navigation. Keep drag, capture, focus, tabs and action handlers on the same owned signal.
+
+Weekly review uses the current `eisenhower-shell` task list and its button in the separate `eisenhower-bar`. Both action surfaces share the same listener lifetime. Triage filters non-deferred task responses through the canonical open-status definitions before selecting unclassified tasks.
+
+If one Q4 or weekly review action sends multiple task updates, run `e2e/eisenhower-lifecycle.spec.ts` against a disposable Astro instance. It repeats page-load setup and checks one canonical completion request per click; weekly review still records its separate review metadata update.
+
 ## Shared navigation and theme checks
 
 Page-shell section labels use `--accent-text` on populated and empty pages. Run `e2e/theme-accent-focus.spec.ts` to check those labels with a surface-matching custom accent in Light and Dark, and to verify keyboard focus after navigation.
@@ -60,6 +66,8 @@ Page-shell section labels use `--accent-text` on populated and empty pages. Run 
 The sidebar area button controls the project list named by its `aria-controls` attribute. Keep the action buttons alongside the disclosure. Update `aria-expanded` and the list's `inert` state together so collapsed project links stay out of keyboard navigation. Sidebar area actions are delegated to the persisted navigation. Dispose that listener on hot reload so Astro page swaps can keep using the existing navigation element.
 
 Use `--accent-text` for accent-colored labels on surfaces and keep the accent fill token for backgrounds. Keep the CSS and Tailwind text color channels aligned across themes. Use `--floating-action-bottom` for the Dashboard, Settings, and Habits scroll-to-top buttons. The mobile offset includes the tab bar and device safe area. Keyboard shortcut help is available through **Settings → Personal → Keyboard Shortcuts**. Turn off **Enable letter, number and symbol shortcuts on this device** to disable shortcuts such as `/`, `?`, and the numbered Tasks views. The choice is stored in this browser. Tab, arrow keys, Enter, Space, and shortcuts such as Ctrl or Cmd + K still work.
+
+Tailwind scans `apps/web/src` for complete utility class names. Keep new utility names in application templates or client code. Outfit headings use one self-hosted Latin variable font across weights 400 to 700. The preload and font-face must resolve to the same file. Check both standalone and Home Assistant ingress when changing font assets.
 
 Run `pnpm --filter @meitheal/tests test e2e/shared-shell-ux.spec.ts` against a disposable Meitheal instance. The check samples desktop and mobile in light and dark themes. It exercises Dashboard, Tasks, and the Settings navigation, rule labels, integration badges, and protocol links. The keyboard check creates and removes a synthetic sidebar area and project.
 

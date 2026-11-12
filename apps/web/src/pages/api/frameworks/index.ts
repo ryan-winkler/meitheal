@@ -9,6 +9,8 @@
  *      and merges built-in configs with user overrides stored in framework_configs table.
  */
 import type { APIRoute } from "astro"
+import { requireSystemSettingsAdmin } from "@lib/settings-security"
+import { validateSafeId } from "@lib/sanitize-id"
 import { listBuiltInFrameworks } from "@domains/strategy/framework-catalog"
 import { readFrameworkImport } from "@domains/strategy/framework-import"
 import { getAllOverrides } from "@domains/strategy/framework-repository"
@@ -16,7 +18,6 @@ import { getAllCustomFrameworks, createCustomFramework, isFrameworkIdTaken } fro
 import { mergeFrameworkConfig, validateFrameworkConfig } from "@meitheal/domain-strategy"
 import type { FrameworkConfig } from "@meitheal/domain-strategy"
 import { logApiError } from "@lib/api-logger"
-import { validateSafeId } from "@lib/sanitize-id"
 
 export const GET: APIRoute = async () => {
   try {
@@ -49,7 +50,9 @@ export const GET: APIRoute = async () => {
   }
 }
 
-export const POST: APIRoute = async ({ request }) => {
+export const POST: APIRoute = async ({ request, locals }) => {
+  const denied = requireSystemSettingsAdmin(request, locals)
+  if (denied) return denied
   try {
     const media = request.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase()
     let body: Partial<FrameworkConfig>
@@ -72,6 +75,12 @@ export const POST: APIRoute = async ({ request }) => {
         JSON.stringify({ ok: false, errorCode: "VALIDATION_FAILED", errors }),
         { status: 400, headers: { "Content-Type": "application/json" } },
       )
+    }
+    const idError = validateSafeId(body.id, "framework_id")
+    if (idError) {
+      return new Response(JSON.stringify({ ok: false, errorCode: "INVALID_ID", message: idError }), {
+        status: 400, headers: { "Content-Type": "application/json" },
+      })
     }
 
     // Check ID collision with built-in frameworks

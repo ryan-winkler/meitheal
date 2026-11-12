@@ -123,7 +123,7 @@ const customEntries = Object.entries(task.custom_fields).filter(
       {ticketKey && (
         <span class="tli__ticket">{ticketKey}</span>
       )}
-      <TaskTypeIcon type={task.task_type} size={14} />
+      <TaskTypeIcon type={task.task_type} size={14} role="img" />
       <a class="tli__title-text" href={buildTaskPath(task.id)} data-task-detail-link={task.id}>{task.title}</a>
     </div>
 
@@ -518,7 +518,8 @@ const customEntries = Object.entries(task.custom_fields).filter(
     transition: opacity 0.15s;
     flex-shrink: 0;
   }
-  .tli:hover .tli__actions {
+  .tli:hover .tli__actions,
+  .tli:focus-within .tli__actions {
     opacity: 1;
   }
   .tli__action {

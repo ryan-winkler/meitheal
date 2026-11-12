@@ -1,4 +1,5 @@
 import type { APIRoute } from "astro"
+import { rejectBoardSelectionInJson } from "@domains/tasks/board-availability"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import { CommentMentionRepository } from "@domains/tasks/persistence/comment-mention-repository"
 import { TaskRepository } from "@domains/tasks/persistence/task-repository"
@@ -70,6 +71,8 @@ export const DELETE: APIRoute = async ({ params, request, locals }) => {
 
   try {
     await ensureSchema()
+    const boardSelection = await rejectBoardSelectionInJson(request)
+    if (boardSelection) return boardSelection
     if (!await hasCurrentTaskParticipant(locals, request.signal, true)) return activeParticipantRequired()
     const deleted = await new TaskRepository(getPersistenceClient()).deleteComment(params.id!, id, owner)
     return deleted ? new Response(null, { status: 204 }) : apiError("Comment not found", 404)

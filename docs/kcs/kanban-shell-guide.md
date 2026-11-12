@@ -8,6 +8,8 @@ description: "Understand the board layout and task controls."
 
 Open **Tasks** and select **Kanban** to see the board. The area picker, task filters, SearchHub, Assist, lane management, and new-task controls sit above it.
 
+The Tasks view uses the Household board. A bookmark for an unavailable Board shows a 404 and keeps Household task data out of the response. If a task automation receives that response, check its Board selector and use an Area or Project filter when the intended scope is within Household. The legacy bulk purge returns 400 for an explicit Board selector.
+
 ## Common Jobs
 
 ### Work in an area
@@ -38,6 +40,8 @@ Open a task and select **Task reactions**, or use **Comment reactions** beside a
 
 A card's reaction count covers the task itself. Open the task to see who reacted or to read reactions on its comments.
 
+The board remains usable when reaction counts are unavailable. A denied request clears the displayed count until it can be read again.
+
 ### Manage lanes without leaving the board
 
 1. Open `Kanban`.
@@ -59,7 +63,7 @@ Open **Overdue** from Dashboard to filter tasks across every Kanban page. The bo
 
 The work-in-progress count uses all eligible cards in the lane. Reordering a card preserves the relative order of all other cards across area filters and overlapping custom lanes. After a move, the destination lane may show a different page from the one containing the moved card.
 
-Dates due today appear in amber. The light palette uses a darker shade on white cards, including when Auto selects light.
+Dates due today appear in amber. The light palette uses a darker shade on white cards, including when Auto selects light. A due date without a time is a calendar day in the timezone set in **Personal** settings. The relative format shows it as today, tomorrow, yesterday or a number of days, weeks or months. Absolute formats keep the same day in every timezone.
 
 ### Switch task views and keep the current query
 
@@ -72,6 +76,8 @@ On mobile, the view pills remain as a horizontal touch strip below the unified b
 On narrow screens the task type filters use two rows. Board cards and table rows appear as soon as the view renders, including when the device requests reduced motion.
 
 ### Filter and group Timeline
+
+Use Tab to move between visible task views. If a view moves into **More**, open that control and use the arrow keys to choose it.
 
 Open **Timeline** to narrow the chart by text, status, priority, task type, or area. Use **Group by** to organize dated tasks. The URL keeps these choices when you reload or move between task views.
 
@@ -102,3 +108,10 @@ The form keeps the title. Check the area selection and destination lane. If you 
 ## Card colors
 
 Use **Set card color** to choose the card edge accent. Saving and reloading the board retain that choice. **Clear color** restores the task type accent. Rejected writes retain the saved color and report an error so you can retry.
+
+In the color picker, use the arrow keys to choose a swatch and Enter to save. Focus returns to the card’s **More actions** button during the save and after the board refreshes.
+
+Cards keep their full height in a busy lane. The lane scrolls instead of
+compressing the cards. At widths from 769 to 1024 CSS px the sidebar narrows to
+200 px, and the page content starts at the sidebar edge. Both read
+`--sidebar-width`, so a change to one width moves the other.

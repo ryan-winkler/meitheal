@@ -4,19 +4,16 @@
  * Handles theme selection, custom theme import/export/delete,
  * locale, timezone, week start, and date format preferences.
  */
-import { APPEARANCE_PREFERENCES, APPEARANCE_STORAGE_KEY } from "@lib/appearance-preferences"
+import { APPEARANCE_PREFERENCES, APPEARANCE_STORAGE_KEY, appearanceAttribute, applyAppearancePreferences, type AppearancePreferences } from "@lib/appearance-preferences"
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { DEFAULT_ACCENT } from "@lib/design-tokens"
+import { applyPersonalAccent } from "@lib/accent-colors"
 import { showToast } from "@lib/toast"
-import {
-  setTheme as importedSetTheme,
-  applyCustomTheme as importedApplyCustomTheme,
-} from "@lib/theme-watcher"
+import { setTheme, type ThemeMode } from "@lib/theme-watcher"
 import { attachShortcutTooltips } from "@lib/shortcut-tooltip"
 import { SINGLE_KEY_SHORTCUTS_STORAGE_KEY, setSingleKeyShortcuts, singleKeyShortcutsEnabled } from "@lib/single-key-shortcuts"
 import { settingsStore } from "@lib/settings-store"
-import type { ThemeMode } from "@lib/theme-watcher"
-import { saveSetting, saveSettings, showSettingsSaveError, sanitizeCSS, MAX_THEME_SIZE, log } from "@lib/settings-utils"
+import { saveSetting, showSettingsSaveError, sanitizeCSS, MAX_THEME_SIZE, log } from "@lib/settings-utils"
 
 // ───── UI helpers ─────
 
@@ -51,7 +48,7 @@ function initAccentSettings(): void {
   const swatches = document.querySelectorAll<HTMLButtonElement>(".accent-swatch")
   const picker = document.querySelector<HTMLInputElement>("#accent-color-custom")
   const reset = document.getElementById("accent-reset")
-  const root = document.documentElement.style
+  const root = document.documentElement
 
   function updateSelection(color: string): void {
     const normalized = color.toLowerCase()
@@ -65,7 +62,7 @@ function initAccentSettings(): void {
 
   function setAccent(color: string): void {
     if (!/^#[0-9a-f]{6}$/i.test(color)) return
-    root.setProperty("--personal-accent", color)
+    applyPersonalAccent(root, color)
     localStorage.setItem(ACCENT_KEY, color)
     updateSelection(color)
   }
@@ -78,7 +75,7 @@ function initAccentSettings(): void {
   if (picker) pageLifecycle.on(picker, "input", () => setAccent(picker.value))
   if (reset) {
     pageLifecycle.on(reset, "click", () => {
-      root.removeProperty("--personal-accent")
+      applyPersonalAccent(root, null)
       localStorage.removeItem(ACCENT_KEY)
       updateSelection(DEFAULT_ACCENT)
     })
@@ -93,7 +90,7 @@ function initAppearanceSettings(): void {
   const root = document.documentElement
   const fields = Object.entries(APPEARANCE_PREFERENCES).map(([name, preference]) => ({
     name,
-    attribute: `data-appearance-${name}`,
+    attribute: appearanceAttribute(name),
     select: form.elements.namedItem(name) as HTMLSelectElement,
     ...preference,
   }))
@@ -125,7 +122,7 @@ function initAppearanceSettings(): void {
       status.textContent = status.dataset.error ?? ""
       return
     }
-    for (const { attribute, value } of selected) root.setAttribute(attribute, value)
+    applyAppearancePreferences(Object.fromEntries(selected.map(({ name, value }) => [name, value])) as AppearancePreferences)
     status.textContent = status.dataset.saved ?? ""
   })
 }
@@ -167,6 +164,10 @@ export function initThemeSettings(): void {
 
     pageLifecycle.on(select, "change", async () => {
       const value = select.value
+      if (key === "theme") {
+        showCustomThemeSection(value === "custom")
+        if (value === "custom" && !localStorage.getItem("meitheal-custom-theme-css")) return
+      }
       select.disabled = true
       select.setAttribute("aria-busy", "true")
       try {
@@ -184,10 +185,7 @@ export function initThemeSettings(): void {
     })
   }
 
-  bindPreference("theme-select", "theme", (theme) => {
-    importedSetTheme(theme as ThemeMode)
-    showCustomThemeSection(theme === "custom")
-  })
+  bindPreference("theme-select", "theme", mode => setTheme(mode as ThemeMode))
   bindPreference("locale-select", "locale", (locale) => {
     localStorage.setItem("meitheal-locale", locale)
     document.cookie = `meitheal-locale=${locale};path=/;max-age=31536000;SameSite=Lax`
@@ -198,110 +196,97 @@ export function initThemeSettings(): void {
   bindPreference("week-start-select", "week_start", (value) => localStorage.setItem("meitheal-week-start", value))
   bindPreference("date-format-select", "date_format", (value) => localStorage.setItem("meitheal-date-format", value))
 
-  // Custom theme file import handler
-  const customThemeInput = document.getElementById("custom-theme-input")
-  if (customThemeInput) {
-    pageLifecycle.on(customThemeInput, "change", async (e) => {
-    const file = (e.target as HTMLInputElement).files?.[0]
-    if (!file) return
+  const input = document.querySelector<HTMLInputElement>("#custom-theme-input")
+  const remove = document.querySelector<HTMLButtonElement>("#custom-theme-delete")
+  const filename = document.getElementById("custom-theme-filename")
+  if (!input || !remove || !filename || !themeSelect) return
 
-    if (!file.name.endsWith(".css")) {
-      showToast("Only .css files are allowed", "error")
-      ;(e.target as HTMLInputElement).value = ""
-      return
-    }
-
-    if (file.type && file.type !== "text/css" && !file.type.startsWith("text/")) {
-      showToast("Invalid file type — must be a CSS file", "error")
-      ;(e.target as HTMLInputElement).value = ""
-      return
-    }
-
-    if (file.size > MAX_THEME_SIZE) {
-      showToast(`File too large (${Math.round(file.size / 1024)}KB) — max 50KB`, "error")
-      ;(e.target as HTMLInputElement).value = ""
-      return
-    }
-
+  const saveFile = async (css: string, name: string) => {
+    if (themeSelect.disabled) return
+    themeSelect.disabled = input.disabled = remove.disabled = true
     try {
-      const rawCSS = await file.text()
-      const cleanCSS = sanitizeCSS(rawCSS)
-      await saveSettings({ custom_theme_css: cleanCSS, custom_theme_name: file.name, theme: "custom" })
-      localStorage.setItem("meitheal-custom-theme-css", cleanCSS)
-      importedSetTheme("custom")
-      importedApplyCustomTheme(cleanCSS)
-      updateCustomThemeDisplay(file.name)
-      const themeEl = document.getElementById("theme-select") as HTMLSelectElement
-      if (themeEl) themeEl.value = "custom"
-      showToast(`Theme imported: ${file.name}`)
-    } catch (err) {
-      showSettingsSaveError(err)
+      await settingsStore.saveSetting("custom_theme_css", css, name)
+      if (!restoreTheme({ theme: css ? "custom" : "dark", custom_theme_css: css, custom_theme_name: name })) {
+        showToast("settings.appearance_save_error", "error")
+        return
+      }
+      showToast("common.updated")
+      return true
+    } catch (error) {
+      showSettingsSaveError(error)
+    } finally {
+      themeSelect.disabled = input.disabled = remove.disabled = false
     }
-
-    ;(e.target as HTMLInputElement).value = ""
-    })
   }
 
-  // Custom theme delete handler
-  const deleteThemeBtn = document.getElementById("custom-theme-delete")
-  if (deleteThemeBtn) {
-    pageLifecycle.on(deleteThemeBtn, "click", async () => {
-    const { confirmDialog } = await import("@lib/confirm-dialog")
-    const ok = await confirmDialog({
-      message: "Remove custom theme? The app will revert to Dark mode.",
-      variant: "warning",
-    })
-    if (!ok) return
-
+  pageLifecycle.on(input, "change", async () => {
+    const file = input.files?.[0]
+    input.value = ""
+    if (!file) return
+    if (!file.name.toLowerCase().endsWith(".css") || file.size > MAX_THEME_SIZE ||
+        (file.type && !file.type.startsWith("text/"))) {
+      showToast("Choose a CSS file no larger than 50 KB.", "error")
+      return
+    }
     try {
-      await saveSettings({ theme: "dark", custom_theme_css: "", custom_theme_name: "" })
-      localStorage.removeItem("meitheal-custom-theme-css")
-      importedApplyCustomTheme(null)
-      restoreThemeSettings({ theme: "dark" })
-      showToast("Custom theme removed. Dark mode is active.")
+      const css = sanitizeCSS(await file.text())
+      if (!css.trim()) {
+        showToast("The CSS file is empty.", "error")
+        return
+      }
+      await saveFile(css, file.name)
     } catch (error) {
       showSettingsSaveError(error)
     }
-    })
-  }
+  })
 
-  // Custom theme filename click — download the stored CSS
-  const filenameEl = document.getElementById("custom-theme-filename")
-  if (filenameEl) {
-    pageLifecycle.on(filenameEl, "click", (e) => {
-    e.preventDefault()
+  pageLifecycle.on(remove, "click", async () => {
+    const { confirmDialog } = await import("@lib/confirm-dialog")
+    if (await confirmDialog({ message: "Remove custom theme? The app will revert to Dark mode.", variant: "warning" })) {
+      if (await saveFile("", "")) themeSelect.focus()
+    }
+  })
+
+  pageLifecycle.on(filename, "click", event => {
+    event.preventDefault()
     const css = localStorage.getItem("meitheal-custom-theme-css")
     if (!css) return
-    const blob = new Blob([css], { type: "text/css" })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement("a")
-    a.href = url
-    a.download = document.getElementById("custom-theme-filename")?.textContent || "custom-theme.css"
-    a.click()
-    URL.revokeObjectURL(url)
-    })
-  }
-
+    const url = URL.createObjectURL(new Blob([css], { type: "text/css" }))
+    const link = document.createElement("a")
+    link.href = url
+    link.download = filename.textContent || "custom-theme.css"
+    link.click()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+  })
 }
 
 // ───── Restore ─────
 
-/** Restore theme/locale/timezone settings from loaded settings object */
-export function restoreThemeSettings(settings: Record<string, unknown>): void {
+function restoreTheme(settings: Record<string, unknown>): boolean {
   try {
-    const savedTheme = (settings.theme as string) || localStorage.getItem("meitheal-theme") || "dark"
-    const themeEl = document.getElementById("theme-select") as HTMLSelectElement
-    if (themeEl) themeEl.value = String(savedTheme)
-    importedSetTheme(String(savedTheme) as ThemeMode)
-    if (savedTheme === "custom" && settings.custom_theme_css) {
-      localStorage.setItem("meitheal-custom-theme-css", String(settings.custom_theme_css))
-      importedApplyCustomTheme(String(settings.custom_theme_css))
-    }
-    showCustomThemeSection(String(savedTheme) === "custom")
-    updateCustomThemeDisplay(settings.custom_theme_name ? String(settings.custom_theme_name) : null)
+    const savedTheme = settings.theme ?? localStorage.getItem("meitheal-theme")
+    const themeEl = document.querySelector<HTMLSelectElement>("#theme-select")
+    const css = document.getElementById("custom-theme-input") && typeof settings.custom_theme_css === "string"
+      ? sanitizeCSS(settings.custom_theme_css) : ""
+    const hasCSS = Boolean(css.trim())
+    if (hasCSS) localStorage.setItem("meitheal-custom-theme-css", css)
+    else localStorage.removeItem("meitheal-custom-theme-css")
+    const mode = savedTheme === "light" || savedTheme === "auto" || (savedTheme === "custom" && hasCSS)
+      ? savedTheme : "dark"
+    if (themeEl) themeEl.value = mode
+    setTheme(mode)
+    showCustomThemeSection(mode === "custom")
+    updateCustomThemeDisplay(hasCSS ? String(settings.custom_theme_name || "custom-theme.css") : null)
+    return true
   } catch (e) {
     log.error("Theme restore error", e)
+    return false
   }
+}
+
+/** Restore theme and regional preferences from loaded settings. */
+export function restoreThemeSettings(settings: Record<string, unknown>): void {
+  restoreTheme(settings)
 
   try {
     // Restore locale

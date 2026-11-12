@@ -1,3 +1,4 @@
+import { calendarSyncResult } from "@domains/calendar/calendar-sync-result"
 /**
  * HA Calendar API Endpoints
  *
@@ -73,23 +74,10 @@ export const POST: APIRoute = async ({ request }) => {
     const results = await Promise.allSettled(
       resolvedEntities.map((eid) => syncFromHA(eid)),
     );
-    const aggregated = { created: 0, updated: 0, total: 0 };
-    for (const r of results) {
-      if (r.status === "fulfilled") {
-        aggregated.created += r.value.created;
-        aggregated.updated += r.value.updated;
-        aggregated.total += r.value.total;
-      }
-    }
-
-    return new Response(JSON.stringify({
-      ok: true,
-      message: `Synced ${aggregated.total} events (${aggregated.created} new, ${aggregated.updated} updated) across ${resolvedEntities.length} calendar(s)`,
-      ...aggregated,
-      entities: resolvedEntities,
-    }), {
-      status: 200, headers: { "content-type": "application/json" },
-    });
+    const outcome = calendarSyncResult(resolvedEntities, results)
+    return new Response(JSON.stringify(outcome), {
+      status: outcome.ok ? 200 : 502, headers: { "Content-Type": "application/json" },
+    })
   } catch (err) {
     const message = err instanceof Error ? err.message : "Calendar sync failed";
     return new Response(JSON.stringify({ ok: false, error: message }), {

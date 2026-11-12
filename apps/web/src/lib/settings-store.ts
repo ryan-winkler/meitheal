@@ -2,7 +2,7 @@ import { pageLifecycle } from "@lib/page-lifecycle"
 
 export interface SettingsStore {
   load(): Promise<Record<string, unknown>>
-  saveSetting(key: string, value: unknown): Promise<void>
+  saveSetting(key: string, value: unknown, name?: string): Promise<void>
   invalidate(): void
 }
 
@@ -33,19 +33,22 @@ export function createSettingsStore(): SettingsStore {
       return pendingLoad
     },
 
-    async saveSetting(key: string, value: unknown): Promise<void> {
+    async saveSetting(key: string, value: unknown, name?: string): Promise<void> {
       const response = await fetch("/api/settings", {
         signal: pageLifecycle.signal,
         method: "PUT",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ key, value }),
+        body: JSON.stringify({ key, value, name }),
       })
 
       if (!response.ok) {
         throw new Error(`Settings save failed: ${response.status}`)
       }
 
-      if (cachedSettings) cachedSettings = { ...cachedSettings, [key]: value }
+      if (cachedSettings) {
+        cachedSettings = name === undefined ? { ...cachedSettings, [key]: value } :
+          { ...cachedSettings, [key]: value, custom_theme_name: name, theme: value ? "custom" : "dark" }
+      }
     },
 
     invalidate(): void {

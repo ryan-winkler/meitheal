@@ -8,6 +8,7 @@ export NODE_ENV="production"
 STARTUP_TS=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 echo "{\"event\":\"addon.startup\",\"version\":\"${MEITHEAL_VERSION}\",\"time\":\"${STARTUP_TS}\"}"
 
+export MEITHEAL_LOG_CATEGORIES="$(bashio::config 'log_categories | join(",")')"
 export MEITHEAL_LOG_LEVEL="$(bashio::config 'log_level')"
 export MEITHEAL_LOG_REDACTION="$(bashio::config 'log_redaction')"
 export MEITHEAL_AUDIT_ENABLED="$(bashio::config 'audit_enabled')"

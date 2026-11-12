@@ -1,4 +1,5 @@
 import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability"
+import { hasBoardSelection, unavailableBoardResponse } from "@domains/tasks/board-availability"
 import { apiError, apiJson } from "./api-response"
 import { hasCommentMentionSelector, isIndentedCommentCode } from "./comment-mentions"
 import { readWithinLimit } from "./bounded-body"
@@ -27,6 +28,7 @@ export async function readComment(request: Request): Promise<string | Response> 
     if (signal.aborted) return taskParticipantBodyTimeout()
     return apiError("Send a valid UTF-8 JSON request body", 400)
   }
+  if (hasBoardSelection(payload)) return unavailableBoardResponse()
   const rawContent = payload && typeof payload === "object" && "content" in payload
     && typeof payload.content === "string" ? payload.content : ""
   const trimmed = rawContent.trim()

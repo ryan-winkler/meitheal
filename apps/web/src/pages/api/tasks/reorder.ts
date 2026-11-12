@@ -9,6 +9,7 @@
  * neighbor in the same lane and promotion group, including rows outside the visible page.
  */
 import type { APIRoute } from "astro"
+import { hasBoardSelection, unavailableBoardResponse } from "@domains/tasks/board-availability"
 import {
   ensureSchema,
   getPersistenceClient,
@@ -20,6 +21,7 @@ import { apiJson } from "../../../lib/api-response"
 export const POST: APIRoute = async ({ request }) => {
   try {
     const body = await request.json() as Record<string, unknown>
+    if (hasBoardSelection(body)) return unavailableBoardResponse()
     if (body && "task_id" in body) {
       const { task_id, anchor_id, lane, before } = body
       if (typeof task_id !== "string" || typeof anchor_id !== "string" || task_id === anchor_id ||

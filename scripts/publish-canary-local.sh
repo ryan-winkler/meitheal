@@ -113,7 +113,8 @@ local_image="localhost/${image#ghcr.io/}"
 
 if [[ "$1" == build ]]; then
   mkdir "$scratch/source"
-  git archive HEAD | tar -x -C "$scratch/source"
+  # The rootfs overlay is copied into the image and must be readable by the App user.
+  (umask 022; git archive HEAD | tar -x -C "$scratch/source")
   base="$(jq -er .base <<< "$metadata")"
   podman build --format docker --iidfile "$scratch/image-id" --platform "$platform" --file "$scratch/source/meitheal-hub/Dockerfile" \
     --build-arg "BUILD_FROM=$base" --build-arg "MEITHEAL_VERSION=$version" \

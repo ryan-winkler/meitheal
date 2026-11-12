@@ -5,11 +5,11 @@ import { createServer } from "node:http"
 import { createRequire } from "node:module"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { pathToFileURL } from "node:url"
+import { fileURLToPath, pathToFileURL } from "node:url"
 import { promisify } from "node:util"
 import { expect, test } from "@playwright/test"
 import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core"
-import { openDatabase } from "../../apps/web/scripts/database-client.mjs"
+import { DATABASE_SCHEMA_VERSION, openDatabase, runWriteTransaction } from "../../apps/web/scripts/database-client.mjs"
 
 const webRequire = createRequire(new URL("../../apps/web/package.json", import.meta.url))
 const execFileAsync = promisify(execFile)
@@ -107,7 +107,9 @@ test("opens an existing libSQL file, keeps transactions isolated and rolls back 
 })
 
 test("starts with remote transports unloaded and sends remote requests through libSQL", async () => {
-  const requests: unknown[] = []
+  type Command = { type: string; stmt?: { sql: string } }
+  const requests: Command[] = []
+  let version = DATABASE_SCHEMA_VERSION + 1
   const server = createServer(async (request, response) => {
     if (request.url !== "/v2/pipeline") {
       response.writeHead(404).end()
@@ -115,15 +117,21 @@ test("starts with remote transports unloaded and sends remote requests through l
     }
     const chunks: Uint8Array[] = []
     for await (const chunk of request) chunks.push(chunk)
-    const { requests: commands } = JSON.parse(Buffer.concat(chunks).toString())
+    const { requests: commands } = JSON.parse(Buffer.concat(chunks).toString()) as { requests: Command[] }
     requests.push(...commands)
-    const results = commands.map((command: { type: string }) => ({
-      type: "ok",
-      response: command.type === "execute" ? {
-        type: "execute",
-        result: { cols: [{ name: "answer" }], rows: [[{ type: "integer", value: "42" }]], affected_row_count: 0 },
-      } : { type: "close" },
-    }))
+    const results = commands.map(command => {
+      if (command.type !== "execute") return { type: "ok", response: { type: "close" } }
+      const marker = command.stmt?.sql.startsWith("SELECT value AS value FROM app_settings")
+      const missingLedger = command.stmt?.sql.includes("name = '__meitheal_migrations'")
+      const cell = marker ? { type: "text", value: String(version) } : { type: "integer", value: "42" }
+      return {
+        type: "ok",
+        response: {
+          type: "execute",
+          result: { cols: [{ name: marker ? "value" : "answer" }], rows: missingLedger ? [] : [[cell]], affected_row_count: 0 },
+        },
+      }
+    })
     response.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ results }))
   })
   server.listen(0, "127.0.0.1")
@@ -131,20 +139,22 @@ test("starts with remote transports unloaded and sends remote requests through l
   try {
     const address = server.address()
     if (!address || typeof address === "string") throw new Error("No fixture port")
+    const url = `libsql://127.0.0.1:${address.port}?tls=0`
     const modulePath = new URL("../../apps/web/scripts/database-client.mjs", import.meta.url).href
     await execFileAsync(process.execPath, ["--input-type=module", "--eval", `
       import assert from "node:assert/strict"
       import { createRequire } from "node:module"
-      import { openDatabase } from ${JSON.stringify(modulePath)}
+      import { assertSupportedDatabaseSchema, openDatabase } from ${JSON.stringify(modulePath)}
       const require = createRequire(${JSON.stringify(modulePath)})
       const loaded = () => Object.keys(require.cache)
       const local = openDatabase(":memory:")
       assert.equal((await local.execute("SELECT 1")).rows[0][0], 1)
       local.close()
       assert.ok(loaded().every(path => !path.includes("@libsql/client")))
-      const remote = openDatabase(${JSON.stringify(`libsql://127.0.0.1:${address.port}?tls=0`)})
+      const remote = openDatabase(${JSON.stringify(url)})
       assert.equal(remote.protocol, "http")
       assert.equal((await remote.execute("SELECT ? AS answer", [42n])).rows[0][0], 42)
+      await assert.rejects(assertSupportedDatabaseSchema(remote), /requires a newer App/)
       remote.close()
       assert.ok(loaded().every(path => !path.endsWith("sqlite3.js") && !path.endsWith(".node")))
     `], { timeout: 10_000 })
@@ -152,7 +162,116 @@ test("starts with remote transports unloaded and sends remote requests through l
       type: "execute",
       stmt: expect.objectContaining({ sql: "SELECT ? AS answer", args: [{ type: "integer", value: "42" }] }),
     }))
+    expect(requests).toContainEqual(expect.objectContaining({
+      type: "execute",
+      stmt: expect.objectContaining({ sql: expect.stringMatching(/^SELECT value AS value FROM app_settings/) }),
+    }))
+
+    const script = fileURLToPath(new URL("../../apps/web/scripts/migrate.mjs", import.meta.url))
+    const migrate = (...args: string[]) => execFileAsync(process.execPath, [script, ...args], {
+      env: { PATH: process.env.PATH, MEITHEAL_DB_URL: url }, timeout: 10_000,
+    })
+    const markerReads = [
+      expect.stringMatching(/^SELECT 1 FROM sqlite_schema .*name = 'app_settings' COLLATE NOCASE$/),
+      expect.stringMatching(/^SELECT value AS value FROM app_settings/),
+    ]
+    const takeStatements = () => requests.splice(0).filter(command => command.type !== "close").map(command => command.stmt?.sql)
+    requests.length = 0
+    for (const args of [[], ["--check"]]) {
+      await expect(migrate(...args)).rejects.toMatchObject({ code: 1, stderr: expect.stringMatching(/requires a newer App/) })
+      expect(takeStatements()).toEqual(markerReads)
+    }
+    version = DATABASE_SCHEMA_VERSION
+    await expect(migrate("--check")).rejects.toMatchObject({ code: 1, stderr: expect.stringMatching(/Pending migrations/) })
+    expect(takeStatements()).toEqual([
+      ...markerReads,
+      expect.stringMatching(/^SELECT 1 FROM sqlite_schema .*name = '__meitheal_migrations' COLLATE NOCASE$/),
+    ])
   } finally {
     await new Promise<void>(resolve => server.close(() => resolve()))
   }
 })
+
+for (const refused of [false, true]) {
+  test(`remote dependent batches share a writer and ${refused ? "close after a refused statement" : "commit"}`, async () => {
+    const select = "SELECT 42 AS answer"
+    const insert = "INSERT INTO items (id) VALUES (?)"
+    const baton = "fixture-transaction"
+    const storedSql = new Map<number, string>()
+    const traffic: Array<{ baton: string | undefined; command: string; args?: unknown[] | undefined }> = []
+    const emptyResult = { cols: [], rows: [], affected_row_count: 0 }
+    const selectResult = { cols: [{ name: "answer" }], rows: [[{ type: "integer", value: "42" }]], affected_row_count: 0 }
+    type Statement = { sql?: string; sql_id?: number; args?: unknown[] }
+    type Command = { type: "batch"; batch: { steps: Array<{ stmt: Statement }> } }
+      | { type: "execute"; stmt: Statement }
+      | { type: "store_sql"; sql_id: number; sql: string }
+      | { type: "close" }
+    const server = createServer(async (request, response) => {
+      if (request.url !== "/v2/pipeline") {
+        response.writeHead(404).end()
+        return
+      }
+      const chunks: Uint8Array[] = []
+      for await (const chunk of request) chunks.push(chunk)
+      const incoming = JSON.parse(Buffer.concat(chunks).toString()) as { baton?: string; requests: Command[] }
+      const record = (stmt: Statement) => {
+        const sql = stmt.sql ?? storedSql.get(stmt.sql_id!)
+        if (!sql) throw new Error("Missing fixture SQL")
+        traffic.push({ baton: incoming.baton, command: sql, args: stmt.args })
+        return sql
+      }
+      const results = incoming.requests.map(command => {
+        if (command.type === "store_sql") {
+          storedSql.set(command.sql_id, command.sql)
+          return { type: "ok", response: { type: "store_sql" } }
+        }
+        if (command.type === "batch") {
+          const statements = command.batch.steps.map(step => record(step.stmt))
+          const failed = (sql: string) => refused && sql === insert
+          const stepResults = statements.map(sql => failed(sql) ? null : sql === select ? selectResult : emptyResult)
+          const stepErrors = statements.map(sql => failed(sql)
+            ? { message: "Fixture refused the insert", code: "SQLITE_CONSTRAINT" }
+            : null)
+          return { type: "ok", response: { type: "batch", result: { step_results: stepResults, step_errors: stepErrors } } }
+        }
+        if (command.type === "execute") {
+          record(command.stmt)
+          return { type: "ok", response: { type: "execute", result: emptyResult } }
+        }
+        traffic.push({ baton: incoming.baton, command: "close" })
+        return { type: "ok", response: { type: "close" } }
+      })
+      const closed = incoming.requests.some(command => command.type === "close")
+      response.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ baton: closed ? undefined : baton, results }))
+    })
+    server.listen(0, "127.0.0.1")
+    await once(server, "listening")
+    const address = server.address()
+    if (!address || typeof address === "string") throw new Error("No fixture port")
+    const client = openDatabase(`libsql://127.0.0.1:${address.port}?tls=0`)
+    try {
+      const transaction = runWriteTransaction(client, function* () {
+        const [selected] = yield [select]
+        const answer = Number(selected?.rows[0]?.answer)
+        yield [{ sql: insert, args: [answer] }]
+        return answer
+      })
+      if (refused) {
+        await expect(transaction).rejects.toMatchObject({ code: "SQLITE_CONSTRAINT", message: expect.stringContaining("Fixture refused the insert") })
+      } else {
+        await expect(transaction).resolves.toBe(42)
+      }
+      await expect.poll(() => traffic.map(({ baton, command }) => [baton, command])).toEqual([
+        [undefined, "BEGIN IMMEDIATE"],
+        [undefined, select],
+        [baton, insert],
+        ...(refused ? [] : [[baton, "COMMIT"]]),
+        [baton, "close"],
+      ])
+      expect(traffic.find(entry => entry.command === insert)?.args).toEqual([{ type: "float", value: 42 }])
+    } finally {
+      client.close()
+      await new Promise<void>(resolve => server.close(() => resolve()))
+    }
+  })
+}

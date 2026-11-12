@@ -13,12 +13,12 @@ async function setMode(request: APIRequestContext, value: unknown) {
   expect((await request.put("/api/settings", { data: { key: "backlog_mode", value } })).status()).toBe(200)
 }
 
-let originalBacklogMode: unknown
+let previousMode: unknown
 test.beforeEach(async ({ request }) => {
-  originalBacklogMode = (await (await request.get("/api/settings?key=backlog_mode")).json()).value ?? null
+  previousMode = (await (await request.get("/api/settings")).json()).backlog_mode
   await setMode(request, "visible")
 })
-test.afterEach(async ({ request }) => { await setMode(request, originalBacklogMode ?? "visible") })
+test.afterEach(async ({ request }) => { await setMode(request, previousMode ?? "visible") })
 
 test("Planning opens the bounded queue and keyboard decisions preserve context", async ({ page, request }) => {
   const ids: string[] = []

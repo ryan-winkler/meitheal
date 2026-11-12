@@ -1,6 +1,6 @@
 auth:
   passkey:
-    enabled: true
+    enabled: false
     rp_id: "meitheal.local"
   ingress:
     required_headers:

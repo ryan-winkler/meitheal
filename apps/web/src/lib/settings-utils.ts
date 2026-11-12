@@ -38,6 +38,29 @@ export function showSettingsSaveError(error: unknown): void {
   showToast(error instanceof PartialSettingsSave ? "settings.save_partial" : "settings.save_error", "error")
 }
 
+/** Keep failed settings actions editable and restore their original button. */
+export function settingsAction(handler: (event: Event) => unknown): (event: Event) => Promise<void> {
+  return async event => {
+    const button = event.currentTarget instanceof HTMLButtonElement ? event.currentTarget : null
+    if (button?.disabled) return
+    const label = button?.innerHTML
+    if (button) button.disabled = true
+    try { await handler(event) } catch (error) { showSettingsSaveError(error) }
+    finally {
+      if (button) {
+        button.disabled = false
+        if (label !== undefined) button.innerHTML = label
+      }
+    }
+  }
+}
+
+export function showSettingsSaveError(error: unknown): void {
+  if (error instanceof DOMException && error.name === "AbortError") return
+  log.warn("Settings action failed", error)
+  showToast(error instanceof PartialSettingsSave ? "settings.save_partial" : "settings.save_error", "error")
+}
+
 /** Load all settings from the API */
 export async function loadAllSettings(): Promise<Record<string, unknown>> {
   try {

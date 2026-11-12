@@ -1,13 +1,14 @@
 ---
 import Icon from "../ui/Icon.astro"
+import NavOverflowMore from "./NavOverflowMore.astro"
 import { t } from "../../i18n/translations"
 
 /**
  * UnifiedBar — Reusable top navigation bar with tab pills and title-based section switcher.
  *
  * The page title acts as a dropdown trigger (with chevron) showing all sections.
- * Tab pills fill remaining space for quick switching. Overflow is handled by the
- * title dropdown — no separate hamburger or overflow button needed.
+ * Route-level view links share a More disclosure when space is limited.
+ * Section controls retain their title dropdown.
  *
  * Search is a **launcher** — clicking or pressing `/` opens the global SearchHub
  * modal (Cmd+K), optionally pre-scoped to the current page context.
@@ -140,7 +141,8 @@ const locale = Astro.cookies.get("meitheal-locale")?.value === "ga" ? "ga" : "en
 
     <!-- View pills (route-level view switching — visually distinct from section tabs) -->
     {viewTabs.length > 0 && (
-      <nav class="unified-bar__view-pills" aria-label="Task views" data-view-tabs>
+      <nav class="unified-bar__view-pills nav-overflow" aria-label="Task views" data-view-tabs data-nav-overflow="views">
+        <div class="nav-overflow__primary" data-nav-overflow-primary>
         {viewTabs.map((vt) => {
           const viewId = vt.id ?? (vt.href.startsWith('#') ? vt.href.slice(1) : vt.href)
           return (
@@ -156,6 +158,8 @@ const locale = Astro.cookies.get("meitheal-locale")?.value === "ga" ? "ga" : "en
             </a>
           )
         })}
+        </div>
+        <NavOverflowMore id={`${barId}-more-views`} locale={locale} />
       </nav>
     )}
 
@@ -561,9 +565,11 @@ const locale = Astro.cookies.get("meitheal-locale")?.value === "ga" ? "ga" : "en
 
   /* ─── View pill buttons (route-level switching) ─── */
   .unified-bar__view-pills {
+    --nav-overflow-enabled: 1;
     display: flex;
     gap: 2px;
-    flex-shrink: 0;
+    flex: 1 1 22rem;
+    min-width: 0;
     align-items: center;
     background: var(--bg-secondary);
     border: 1px solid var(--border);
@@ -621,18 +627,11 @@ const locale = Astro.cookies.get("meitheal-locale")?.value === "ga" ? "ga" : "en
       order: 20;
       display: flex;
       flex: 0 0 100%;
-      overflow-x: auto;
-      overscroll-behavior-x: contain;
-      scrollbar-width: none;
       margin-top: 4px;
-    }
-    .unified-bar__view-pills::-webkit-scrollbar {
-      display: none;
     }
     .unified-bar__view-pill {
       min-height: 44px;
       flex: 0 0 auto;
-      scroll-snap-align: start;
     }
     .unified-bar__divider { display: none; }
   }

@@ -3,11 +3,12 @@ import { isTaskReactionRoute, resolveAgentRouteScope } from "@meitheal/domain-au
 import { apiProblem } from "./api-response"
 import { readWithinLimit } from "./bounded-body"
 import { idempotencyCache } from "./idempotency-cache"
-import { taskParticipantBodyTimeout } from "./task-participant"
+import { taskParticipantBodySignal, taskParticipantBodyTimeout } from "./task-participant"
 
 const MAX_KEY_LENGTH = 255
 const MAX_REQUEST_BYTES = 64 * 1024
 const MAX_RESPONSE_BYTES = 16 * 1024
+const noStore = { "cache-control": "private, no-store" }
 
 /** Replay keys apply only to authenticated task mutations. */
 export async function taskRetryKey(request: Request, url: URL, principal: string | undefined, bodySignal?: AbortSignal): Promise<string | Response | undefined> {
@@ -24,17 +25,21 @@ export async function taskRetryKey(request: Request, url: URL, principal: string
   if (!compatCreate && scope !== "tasks:write" && scope !== "tasks:delete") return
 
   if (!clientKey || clientKey.length > MAX_KEY_LENGTH || /[\u0000-\u001f\u007f]/.test(clientKey)) {
-    return apiProblem({ status: 400, detail: "Idempotency-Key must contain 1 to 255 characters without control characters." })
+    return apiProblem({ status: 400, detail: "Idempotency-Key must contain 1 to 255 characters without control characters.", extraHeaders: noStore })
   }
 
   let body: Buffer | null
+  const signal = bodySignal ?? taskParticipantBodySignal(request)
   try {
-    body = await readWithinLimit(request.clone().body, MAX_REQUEST_BYTES, bodySignal)
+    body = await readWithinLimit(request.clone().body, MAX_REQUEST_BYTES, signal)
   } catch (error) {
-    if (bodySignal?.aborted) return taskParticipantBodyTimeout()
+    if (signal.aborted) return taskParticipantBodyTimeout()
     throw error
   }
-  if (!body) return apiProblem({ status: 413, detail: "A retryable task request body cannot exceed 64 KiB." })
+  if (!body) return apiProblem({
+    status: 413, detail: "A retryable task request body cannot exceed 64 KiB.",
+    extraHeaders: noStore,
+  })
 
   const namespace = JSON.stringify([
     "task-v2", principal, request.method, url.pathname, url.search, request.headers.get("content-type"), clientKey,

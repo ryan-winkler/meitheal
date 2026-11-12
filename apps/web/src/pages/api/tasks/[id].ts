@@ -1,11 +1,13 @@
 import type { APIRoute } from "astro"
 import type { InValue } from "@libsql/client"
+import { hasBoardSelection, rejectBoardSelectionInJson, unavailableBoardResponse } from "@domains/tasks/board-availability"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import { TaskRepository } from "@domains/tasks/persistence/task-repository"
 import { formatTicketKey } from "../../../lib/ticket-key"
-import { dispatchTaskEvent } from "../../../lib/webhook-dispatcher"
+import { dispatchTaskEvent, taskEventAuthorityHeaders } from "../../../lib/webhook-dispatcher"
 import { logApiError } from "../../../lib/api-logger"
 import { apiError } from "../../../lib/api-response"
+import { db503Response, isDbUnavailable } from "../../../lib/db-fallback"
 import { resolveRecentActivityActor } from "../../../lib/recent-activity-actor"
 import { STATUS, normalizeStatus, isDoneStatus } from "../../../lib/status-config"
 import { VALID_TASK_TYPES } from "@meitheal/domain-tasks"
@@ -59,9 +61,10 @@ export const GET: APIRoute = async ({ params, url }) => {
 }
 
 export const PUT: APIRoute = async ({ params, request, locals }) => {
+  const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
+  if (hasBoardSelection(body)) return unavailableBoardResponse()
   await ensureSchema()
   const repo = new TaskRepository(getPersistenceClient())
-  const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
 
   // Resolve task ID (supports UUID and MTH-N format)
   const resolved = await repo.resolveTaskId(params.id!)
@@ -91,8 +94,14 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
     return taskVersionConflict(storedVersion, clientVersion)
   }
 
+  if ("nfc_tag_id" in body && body.nfc_tag_id !== null &&
+      (typeof body.nfc_tag_id !== "string" || !body.nfc_tag_id.trim() || body.nfc_tag_id.trim().length > 255)) {
+    return apiError("nfc_tag_id must be null or 1-255 characters", 400)
+  }
+
   // Input sanitization — same rules as POST
   const sanitized: Record<string, InValue> = {}
+  if ("nfc_tag_id" in body) sanitized.nfc_tag_id = typeof body.nfc_tag_id === "string" ? body.nfc_tag_id.trim() : null
 
   if (typeof body.title === "string" || typeof body.description === "string") {
     const { sanitize } = await import("../../../lib/sanitize")
@@ -111,7 +120,8 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
       sanitized.title = t
     }
     if (typeof body.description === "string") {
-      sanitized.description = sanitize(body.description.slice(0, 10000))
+      if (body.description.length > 10000) return apiError("description must be 10000 characters or less", 400)
+      sanitized.description = sanitize(body.description)
     }
   }
   if (typeof body.status === "string") {
@@ -323,11 +333,23 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
     updatedAt: clientVersion,
     ...(body.expected_status === STATUS.BACKLOG ? { expectedStatus: STATUS.BACKLOG } : {}),
   }
-  const update = await repo.updateTask(resolvedId, sanitized, {
-    activity: resolveRecentActivityActor(locals),
-    ...(version ? { version } : {}),
-    ...(expectedChecklists !== undefined ? { expectedChecklists } : {}),
-  })
+  const completionIntent = typeof sanitized.status === "string" && isDoneStatus(sanitized.status)
+  let update
+  try {
+    update = await repo.updateTask(resolvedId, sanitized, {
+      activity: resolveRecentActivityActor(locals),
+      ...(version ? { version } : {}),
+      ...(expectedChecklists !== undefined ? { expectedChecklists } : {}),
+    })
+  } catch (err) {
+    if (!completionIntent) throw err
+    const code = err && typeof err === "object" && "code" in err ? err.code : undefined
+    if (code === "TRANSACTION_ACTIVE" || code === "SQLITE_BUSY" || isDbUnavailable(err)) {
+      return db503Response("task-completion", err)
+    }
+    logApiError("task-completion", "Failed to save task completion", err)
+    return apiError("Could not save task completion. Try again.", 500)
+  }
   if (!update.ok) {
     if (update.errorCode === "conflict") {
       return taskVersionConflict(update.updatedAt, clientVersion!)
@@ -359,6 +381,7 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
       : apiError("Task not found", 404)
   }
   const updatedRow = update.task
+  const newlyCompleted = completionIntent && !isDoneStatus(update.previousStatus ?? "")
 
   // Record activity log entries for each changed field
   if (oldTask) {
@@ -375,13 +398,18 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
   }
 
   const updTicketNum = updatedRow.ticket_number != null ? Number(updatedRow.ticket_number) : null
-  const taskPayload = {
+  const taskPayload: Record<string, unknown> = {
     ...updatedRow,
     is_promoted: Boolean(updatedRow.is_promoted),
     ticket_key: formatTicketKey(updTicketNum),
   }
 
-  dispatchTaskEvent("task.updated", taskPayload, typeof body.request_id === "string" ? body.request_id : undefined).catch(() => {})
+  const authority = await taskEventAuthorityHeaders([
+    "task.updated",
+    // The App also owns the decision not to re-emit an acknowledged completion.
+    ...(completionIntent ? ["task.completed"] : []),
+  ])
+  dispatchTaskEvent("task.updated", taskPayload, typeof body.request_id === "string" ? body.request_id : undefined, undefined, undefined, authority).catch(() => {})
 
   // Notification preference guard
   const notifPrefs = await repo.getNotificationPreferences()
@@ -524,59 +552,41 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
   }
 
   // Auto-dismiss all notifications when task is marked done/complete
-  if (notifPrefs.enabled && sanitized.status !== undefined) {
-    if (isDoneStatus(String(sanitized.status)) && !isDoneStatus(String(oldTask?.status ?? ""))) {
-      dismissMobileNotification(`meitheal_urgent_${resolvedId}`)
-      dismissMobileNotification(`meitheal_assigned_${resolvedId}`)
-      dismissMobileNotification(`meitheal_due_${resolvedId}`)
-      if (notifPrefs.channels.sidebar !== false) {
-        haServicesImport.then(({ callHAService }) => {
-          callHAService("persistent_notification", "dismiss", { notification_id: `meitheal_urgent_${resolvedId}` }).catch(() => {})
-          callHAService("persistent_notification", "dismiss", { notification_id: `meitheal_assigned_${resolvedId}` }).catch(() => {})
-          callHAService("persistent_notification", "dismiss", { notification_id: `meitheal_due_${resolvedId}` }).catch(() => {})
-        }).catch(() => {})
-      }
+  if (notifPrefs.enabled && newlyCompleted) {
+    dismissMobileNotification(`meitheal_urgent_${resolvedId}`)
+    dismissMobileNotification(`meitheal_assigned_${resolvedId}`)
+    dismissMobileNotification(`meitheal_due_${resolvedId}`)
+    if (notifPrefs.channels.sidebar !== false) {
+      haServicesImport.then(({ callHAService }) => {
+        callHAService("persistent_notification", "dismiss", { notification_id: `meitheal_urgent_${resolvedId}` }).catch(() => {})
+        callHAService("persistent_notification", "dismiss", { notification_id: `meitheal_assigned_${resolvedId}` }).catch(() => {})
+        callHAService("persistent_notification", "dismiss", { notification_id: `meitheal_due_${resolvedId}` }).catch(() => {})
+      }).catch(() => {})
     }
   }
 
-  // Phase 1 + Phase 6: Recurrence auto-create — clone task with next due date on completion
-  // Rolling recurrence: uses completion date (today) as base instead of original due date
-  if (sanitized.status !== undefined && isDoneStatus(String(sanitized.status)) && !isDoneStatus(String(oldTask?.status ?? ""))) {
+  if (newlyCompleted) {
+    dispatchTaskEvent("task.completed", { ...taskPayload, completed_at: new Date().toISOString() }, typeof body.request_id === "string" ? body.request_id : undefined, undefined, undefined, authority).catch(() => {})
     try {
-      const recTask = await repo.getRecurrenceData(resolvedId)
-      if (recTask?.recurrence_rule && typeof recTask.recurrence_rule === "string" && recTask.recurrence_rule.length > 0) {
-        const { parseRRule, getNextOccurrence } = await import("../../../domains/tasks/recurrence")
-        const rule = parseRRule(String(recTask.recurrence_rule))
-        if (!rule) throw new Error(`Cannot parse recurrence rule: ${recTask.recurrence_rule}`)
-
-        // Rolling vs fixed: determine base date for next occurrence
-        const anchor = String(recTask.recurrence_anchor ?? "due_date")
-        let baseDateStr: string
-        if (anchor === "completion_date") {
-          // Rolling recurrence: interval starts from today (completion date)
-          baseDateStr = new Date().toISOString().split("T")[0]!
-        } else {
-          // Fixed recurrence: interval starts from the original due date
-          baseDateStr = recTask.due_date ? String(recTask.due_date) : new Date().toISOString().split("T")[0]!
-        }
-        const baseDate = new Date(baseDateStr)
-        const nextDate = getNextOccurrence(rule, baseDate)
-        if (nextDate) {
-          const nextDueDate = nextDate.toISOString().split("T")[0]!
-          const { id: newId, ticketNumber: nextTicketNum } = await repo.cloneForRecurrence(
-            recTask,
-            nextDueDate,
-            String(recTask.recurrence_rule),
-          )
-          dispatchTaskEvent("task.created", {
-            id: newId, title: recTask.title, status: STATUS.PENDING,
-            due_date: nextDueDate, recurrence_rule: recTask.recurrence_rule,
-            ticket_key: formatTicketKey(nextTicketNum),
-          }).catch(() => {})
-        }
+      const { isFeatureEnabled } = await import("../../../lib/feature-flags")
+      if (await isFeatureEnabled("gamification")) {
+        const { recordTaskCompletion, getXpForPriority, checkAchievements, getLevel } = await import("@domains/gamification")
+        const xp = getXpForPriority(Number(updatedRow.priority ?? 3))
+        const stats = await recordTaskCompletion(xp)
+        const achievements = await checkAchievements(stats)
+        taskPayload.gamification = { stats, xp, newAchievements: achievements.newlyUnlocked, level: getLevel(stats.totalPoints), confetti: await isFeatureEnabled("confetti") }
       }
-    } catch (err) {
-      logApiError("recurrence-auto-create", "Failed to create next recurring occurrence", err)
+    } catch {
+      // The task write succeeded. Optional statistics must not invent a failed mutation.
+      taskPayload.gamification = { error: "Task saved; completion statistics unavailable" }
+    }
+    if (update.successor) {
+      const { id, title, dueDate, rule, ticketNumber } = update.successor
+      dispatchTaskEvent("task.created", {
+        id, title, status: STATUS.PENDING,
+        due_date: dueDate, recurrence_rule: rule,
+        ticket_key: formatTicketKey(ticketNumber),
+      }).catch(() => {})
     }
 
     // Phase 6: Cascade completion — complete all subtasks when parent is completed
@@ -596,11 +606,16 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
 
   return new Response(JSON.stringify(taskPayload), {
     status: 200,
-    headers: { "content-type": "application/json" },
+    headers: {
+      "content-type": "application/json",
+      ...authority,
+    },
   })
 }
 
-export const DELETE: APIRoute = async ({ params }) => {
+export const DELETE: APIRoute = async ({ params, request }) => {
+  const boardSelection = await rejectBoardSelectionInJson(request)
+  if (boardSelection) return boardSelection
   await ensureSchema()
   const repo = new TaskRepository(getPersistenceClient())
 
@@ -615,7 +630,8 @@ export const DELETE: APIRoute = async ({ params }) => {
   const resolvedId = resolved.id
   await repo.deleteTask(resolvedId)
 
-  dispatchTaskEvent("task.deleted", { id: resolvedId }).catch(() => {})
+  const authority = await taskEventAuthorityHeaders(["task.deleted"])
+  dispatchTaskEvent("task.deleted", { id: resolvedId }, undefined, undefined, undefined, authority).catch(() => {})
 
   // Clean up any associated calendar events (fire-and-forget)
   import("../../../domains/calendar/calendar-bridge").then(({ removeTaskCalendarEvent }) => {
@@ -627,7 +643,7 @@ export const DELETE: APIRoute = async ({ params }) => {
     removeTaskFromTodoList(resolvedId).catch(() => {})
   }).catch(() => {})
 
-  return new Response(null, { status: 204 })
+  return new Response(null, { status: 204, headers: authority })
 }
 
 /** PATCH is an alias for PUT — some client-side callers use PATCH for partial updates */

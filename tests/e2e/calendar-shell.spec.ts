@@ -1,3 +1,4 @@
+import AxeBuilder from "@axe-core/playwright"
 import { expect, test } from "@playwright/test"
 import { shouldSkipBrowserSpecs } from "./_helpers"
 
@@ -18,6 +19,31 @@ test.describe("Calendar Shell", () => {
     await page.locator('.cal-cell[data-date]:not(.cal-other)').first().press("Enter")
 
     await expect(page.locator("#day-drawer")).toHaveAttribute("aria-hidden", "false")
+  })
+
+  test("day controls announce the visible number and retain contrast in both themes", async ({ page }) => {
+    const firstDay = page.locator('.cal-cell[data-date$="-01"]')
+    const monthStart = new Date(`${await firstDay.getAttribute("data-date")}T12:00:00Z`)
+    const month = monthStart.toLocaleDateString("en-US", {
+      month: "long", year: "numeric", timeZone: "UTC",
+    })
+    await expect(firstDay).toHaveAccessibleName(new RegExp(`^1 ${month}`))
+    await expect(page.locator(".cal-cell.cal-today")).toHaveAttribute("aria-current", "date")
+
+    for (const theme of ["light", "dark"]) {
+      await page.evaluate(value => localStorage.setItem("meitheal-theme", value), theme)
+      await page.reload()
+      await expect(page.locator("html")).toHaveAttribute("data-theme", theme)
+      for (const width of [320, 1440]) {
+        await page.setViewportSize({ width, height: 860 })
+        const { violations } = await new AxeBuilder({ page })
+          .include(".calendar-grid")
+          .include(".cal-today-btn")
+          .withRules(["color-contrast", "label-content-name-mismatch"])
+          .analyze()
+        expect(violations.map(({ id, nodes }) => [id, nodes.map(({ target }) => target)]), `${width}px ${theme}`).toEqual([])
+      }
+    }
   })
 
   test("day drawer shows only tasks due that day with their shared status labels", async ({ page, request }) => {
@@ -42,6 +68,9 @@ test.describe("Calendar Shell", () => {
     })
     expect(other.status(), await other.text()).toBe(201)
 
+    await page.reload()
+    await expect(cells.first()).toHaveAccessibleName(/1 task$/)
+    await expect(cells.nth(1)).toHaveAccessibleName(/1 task$/)
     await cells.first().press("Enter")
 
     const drawer = page.locator("#day-drawer-tasks")

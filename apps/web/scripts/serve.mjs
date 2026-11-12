@@ -1,5 +1,6 @@
 /** Normalize Supervisor ingress requests before passing them to Astro. */
 import http from "node:http"
+import { boardRouteSelection } from "./board-route-selection.mjs"
 import { runWithIngressTransport, waitForDownloadDrain } from "./ingress-transport.mjs"
 
 // Home Assistant's documented ingress transport peer. Forwarding headers and
@@ -13,6 +14,7 @@ const taskHistoryPath = /^\/api\/tasks\/[^/]+\/(?:activity|timeline)$/
 const pinApiPath = "/api/task-pins"
 const draftApiPath = "/api/task-drafts"
 const inactivityApiPath = "/api/task-inactivity"
+const labelCleanupPath = "/api/labels/cleanup"
 const inactivityPagePath = "/inactivity"
 const pinnedPagePath = "/pinned"
 
@@ -87,18 +89,33 @@ const server = http.createServer((req, res) => {
     const isOnlineRead = onlineReadPaths.has(canonical)
     const isDraft = canonical === draftApiPath
     const isInactivity = canonical === inactivityApiPath || canonical === inactivityPagePath
+    const isLabelCleanup = canonical === labelCleanupPath
+    if (isLabelCleanup && (path !== canonical || query !== -1)) {
+      res.writeHead(path !== canonical ? 404 : 400, {
+        "cache-control": "private, no-store",
+        "content-type": "application/json",
+      }).end(JSON.stringify({ ok: false, errorCode: "invalid", detail: "Use the canonical label cleanup path without query parameters." }))
+      return
+    }
     const hasTaskHistoryPath = taskHistoryPath.test(path)
     const isTaskHistoryAlias = !hasTaskHistoryPath && taskHistoryPath.test(canonical ?? "")
     if (isTaskHistoryAlias || ((isPins || isOnlineRead || isDraft || isInactivity || canonical === databaseExportPath) && path !== canonical)) {
       res.writeHead(404, { "cache-control": "private, no-store" }).end()
       return
     }
-    if (isPins || isOnlineRead || isDraft || isInactivity || hasTaskHistoryPath) res.setHeader("cache-control", "private, no-store")
+    if (isPins || isOnlineRead || isDraft || isInactivity || isLabelCleanup || hasTaskHistoryPath) res.setHeader("cache-control", "private, no-store")
     if ((canonical === pinApiPath || isDraft || canonical === inactivityApiPath) && query !== -1) {
       res.writeHead(400).end()
       return
     }
-    req.url = normalizedPath + (query === -1 ? "" : req.url.slice(query))
+    const search = query === -1 ? "" : req.url.slice(query)
+    // Keep scoped aliases inside ingress and let the normal middleware authorize them.
+    let routedPath = normalizedPath
+    if (search && canonical && boardRouteSelection(canonical, new URLSearchParams(search))) {
+      const parsedPath = new URL("http://localhost" + normalizedPath).pathname
+      if (parsedPath.endsWith("/")) routedPath = parsedPath.slice(0, -1)
+    }
+    req.url = routedPath + search
     if (req.method === "GET" && normalizedPath === "/api/sse") sseSocket = res
     if (req.method === "POST" && normalizedPath === "/api/export/database.sqlite") {
       waitForDatabaseDownloadDrain = waitForDrain

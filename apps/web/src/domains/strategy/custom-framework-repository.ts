@@ -9,8 +9,9 @@
  * @kcs Framework extensibility — users can create, import, and delete custom frameworks
  */
 
-import { getPersistenceClient } from "../tasks/persistence/store"
+import type { Client } from "@libsql/client"
 import type { FrameworkConfig, FrameworkSource } from "@meitheal/domain-strategy"
+import { getPersistenceClient } from "../tasks/persistence/store"
 
 /**
  * Safely parse a JSON string, returning fallback on failure.
@@ -78,6 +79,17 @@ export async function createCustomFramework(config: FrameworkConfig): Promise<Fr
   })
 
   return config
+}
+
+/** Restore a portable definition without replacing unrelated custom frameworks. */
+export async function restoreCustomFramework(client: Pick<Client, "execute">, config: FrameworkConfig): Promise<void> {
+  const now = new Date().toISOString()
+  await client.execute({
+    sql: `INSERT INTO custom_frameworks (id, name, source, config_json, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE
+          SET name = excluded.name, config_json = excluded.config_json, updated_at = excluded.updated_at`,
+    args: [config.id, config.name, config.source, JSON.stringify(config), now, now],
+  })
 }
 
 /** Update an existing custom framework */

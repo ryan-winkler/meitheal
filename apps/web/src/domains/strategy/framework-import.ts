@@ -42,6 +42,7 @@ export async function readFrameworkImport(request: Request): Promise<
         weight: field.weight ?? 1,
         min: field.min,
         max: field.max,
+        options: field.options,
         helpText: field.help_text ?? "",
       })) : [],
       badgeThresholds: Array.isArray(parsed.badge_thresholds) ? parsed.badge_thresholds.map((badge: Record<string, unknown>) => ({

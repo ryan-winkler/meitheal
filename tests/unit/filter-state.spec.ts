@@ -79,6 +79,26 @@ test("Table URLs resolve one explicit Area and rewrite aliases canonically", () 
   expect(readTableFilterParams(new URLSearchParams()).area).toBeUndefined()
 })
 
+test("Table creation dates preserve valid bounds and reject malformed ranges", () => {
+  const dates = { createdFrom: "2024-02-29", createdThrough: "2024-03-31" }
+  const saved = normalizeSavedFilter({ ...dates, search: "renovation" })!
+  expect(saved).toMatchObject(dates)
+  const params = new URLSearchParams({ view: "table", tp: "2", createdFrom: "invalid" })
+  writeTableFilterParams(params, saved)
+  expect(params.getAll("createdFrom")).toEqual(["2024-02-29"])
+  expect(params.get("tp")).toBe("2")
+  expect(readTableFilterParams(params)).toEqual(saved)
+  params.append("createdFrom", "2024-02-28")
+  expect(readTableFilterParams(params)).toEqual({ search: "renovation", area: "" })
+  expect(readTableFilterParams(new URLSearchParams({ createdFrom: "", createdThrough: "2024-10-27" })))
+    .toEqual({ createdThrough: "2024-10-27" })
+  expect(normalizeSavedFilter({ createdFrom: "2023-02-29" })).toBeNull()
+  expect(normalizeSavedFilter({ createdFrom: "0000-12-31" })).toBeNull()
+  expect(normalizeSavedFilter({ createdThrough: null })).toBeNull()
+  expect(normalizeSavedFilter({ createdFrom: dates.createdThrough, createdThrough: dates.createdFrom })).toBeNull()
+  expect(normalizeSavedFilter({ search: "legacy" })).toEqual({ search: "legacy", area: "" })
+})
+
 test("hierarchy and kind intersect and compound rules see real label arrays", () => {
   const epic = { dataset: { taskType: "epic", taskKind: "quick_capture", labels: '[{"name":"fruit, veg"}]' } }
   const state = normalizeSavedFilter({

@@ -77,11 +77,19 @@ If the URL does not change to `#automation-ai-settings`, capture the browser con
 2. Change the theme once and wait for the UI to update.
 3. Re-open Settings.
 
-Select **Light** or **Dark** to keep that Meitheal palette. **Auto** follows the appearance of a same-origin Home Assistant panel as it changes. A direct ingress page and a panel whose appearance cannot be read follow the device preference. Use **Custom** to import your own Meitheal colors.
+Select **Light** or **Dark** to keep that Meitheal palette. **Auto** follows the appearance of a same-origin Home Assistant panel as it changes. A direct ingress page and a panel whose appearance cannot be read follow the device preference.
 
-An accent chosen in **Personal** stays in this browser. The keyboard focus color comes from the current palette and stays visible even if the accent matches the page background. Use **Reset** beside the color swatches to return to the palette's default accent.
+In an administrator session, choose **Custom** to import a CSS file up to 50 KB. The imported palette becomes active after the file, filename and theme mode save together. Select the displayed filename to download the saved CSS. Light, Dark and Auto update the installation's saved mode and keep the file available for later use. Choose **Remove custom theme** to clear the file and switch to Dark. A regular Home Assistant member gets the built-in modes. After an account change, a live navigation applies the current session's theme permissions.
 
-Open **Personal → Customize appearance** to choose a typeface and corner roundness. Use **Save appearance** to apply the choices in this browser. **Reset to defaults** selects the original typeface and corners. Save to apply them.
+An accent chosen in **Personal** stays in this browser. The keyboard focus color comes from the current palette and stays visible even if the accent matches the page background. Use **Reset** beside the color swatches to return to the palette's default accent. Filled primary buttons choose readable dark or light text for a custom accent, including its hover state. Native date and select controls follow the same effective Light or Dark mode as the app. Form hints stay readable when the input receives focus.
+
+Open **Personal → Customize appearance** to choose all ten layout preferences: navigation layout, navigation color, typeface (including Comic), neutral palette, corner roundness, content width, page headers, navigation edges, panel style, and sidebar behavior. Use **Save appearance** to apply the choices in this browser. **Reset to defaults** stages the original choices; save to apply them. Theme, custom CSS, accent, language, and regional settings keep their existing controls and storage.
+
+Top navigation replaces the desktop sidebar with horizontal destination lists and one **More** disclosure for destinations that do not fit. Crowded Tasks view links use the same disclosure. The current destination stays visible when it fits. The links retain their URLs, so opening them in a new tab and Home Assistant ingress navigation continue to work. Use arrow keys or Home/End to move through the open disclosure; Escape closes it and returns focus to More. Resizing keeps the focused link reachable, including opening More if that link moves into it. The Areas disclosure opens its existing hierarchy; Escape closes it and returns focus to its summary. Phones retain their mobile navigation in either layout. Floating navigation adds inset edges; floating panels affect task detail, search and the day drawer. **Fluid** removes the Settings reading-width limit; **Boxed** centers content within a reading width.
+
+Sidebar behavior applies to desktop sidebar navigation. **Remember last state** uses the existing collapse toggle preference. **Start expanded** and **Start folded** set the state each time a page opens; the toggle remains available. **Expand on hover or focus** temporarily opens the rail for pointer or keyboard navigation without moving the page content. These choices do not change per-Area or whole-Areas-group disclosures.
+
+If an appearance save reports a browser storage error, the current appearance and your edited choices stay intact. Retry after allowing site storage. Invalid or old stored choice values use defaults; valid saved and unrelated fields are retained when saving. Appearance preferences are local under `meitheal-appearance`; the remembered sidebar state stays under `meitheal_sidebar_collapsed`. They do not add or rename `/api/settings` fields.
 
 If the theme still resets:
 
@@ -148,7 +156,12 @@ entries in this response. No provider list or language filter is applied. A
 configured integration without a loaded conversation agent is not runnable and
 will not appear until Home Assistant loads it.
 
-Both pickers refresh when opened and offer **Refresh agents**. Keyboard focus stays on Refresh while discovery runs; repeated activation is ignored. Refresh and discovery status use the selected language. Proxy failures with HTML or empty responses show a stable discovery error instead of a JSON parser exception. Discovery bypasses
+Both pickers refresh when opened and offer **Refresh agents**. Settings controls
+become available after saved preferences load, even if initial agent discovery
+has already finished. Once the refresh button has keyboard focus, it keeps focus
+during discovery and ignores repeat activation. Refresh and discovery status use
+the selected language. Proxy failures with HTML or empty responses show a stable
+discovery error instead of a JSON parser exception. Discovery bypasses
 browser caching. A saved agent ID stays selected if the agent is removed or HA
 cannot be reached; it is never silently replaced by the default. An unavailable
 agent is labelled in the picker. Ask Home Assistant prevents sending to an agent
@@ -173,7 +186,11 @@ and [registered-agent manager](https://github.com/home-assistant/core/blob/maste
 
 ## Verify a Settings change
 
+For rejected rule saves, framework overrides or Settings imports, see [Recovering rules and framework settings](settings-configuration-recovery.md). Validation and write failures preserve the previous configuration; resolve the reported input or storage error before retrying.
+
 Run the Astro dev server against a disposable database. Run the Settings, Theme and Search Hub browser specs with `E2E_BASE_URL` pointed to that server. Check compact viewports, both palettes and keyboard focus with integration cards open and closed.
+
+The Auto/HA contrast cases in `task-theme-contrast.spec.ts` load the real theme bridge through Vite in a synthetic same-origin frontend frame. Run that spec against the Astro dev server; a production server does not expose `/src` modules. The frame checks frontend theme selection, not Supervisor authentication. Keep separate production coverage for Dark/Light controls, saved accents, tags and the Dashboard. Run production browser specs with a fresh fixture per spec, as `test:ci` does, so their shared request volume does not exhaust the unchanged rate limit. Settings' Agent handoff card describes the current administrator review flow and links to Review.
 
 Use the Home Assistant devcontainer to check the ingress page, Companion URL construction in that scope and Calendar or To-do service changes. Use test entities. A loopback ingress proxy is useful for checking URL construction and browser requests. Supervisor behavior and mobile app handoff require their own checks.
 
@@ -183,4 +200,10 @@ Ticket links retain the background view when changing board pages or using keybo
 
 Today formats its visible and machine-readable dates in the workspace timezone, using the selected language. Evening dismissal and snoozing use the browser's local calendar date; blocked browser storage does not stop the review controls.
 
-Regional preferences decode persisted JSON and apply on the next page after a successful Settings save. Invalid stored time zones fall back to Europe/Dublin. Saved To-do selections support JSON arrays and legacy single entity IDs. Invalid custom AI URLs explain how to correct Automation & AI settings without opening a provider window.
+## Home Assistant connection changes
+
+The App uses the Supervisor connection when available. Standalone installations use a complete saved URL/token pair, then an environment pair. Saving changed credentials replaces the authenticated WebSocket and entity subscription; incomplete saved pairs do not mix credentials with environment settings. Connection status never includes tokens. If setup began before Home Assistant was configured, retry after saving the pair.
+
+Calendar sync distinguishes an empty successful response from a missing or failed response. A partial or skipped manual sync reports failure with per-calendar outcomes, so existing tasks are not presented as a successful empty import. Use a disposable calendar to check empty success, disconnected failure and partial failure after changing connection settings. Assist uses the current selected agent; an explicit empty selection uses built-in Assist.
+
+Credential changes during initial authentication retire the pending attempt; it cannot publish an old connection after a newer configuration takes over. Removing or rejecting credentials clears the previous entity snapshot immediately. Registered application listeners remain available for the next successful connection. A populated-cache rotation check covers these cases separately from the ordinary empty-snapshot connection check.

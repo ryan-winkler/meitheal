@@ -8,6 +8,10 @@ description: "Diagnose common connection, search, and sync problems."
 
 ## Common Issues
 
+### Database temporarily unavailable
+
+The task list and completed-task cleanup return HTTP 503 when local storage is busy or unavailable. Their uncached `application/problem+json` response includes `retry_after` in seconds, matching the `Retry-After` header; the default is ten seconds. The existing `error` message remains available to clients. Wait for that interval, then reload the list or review the cleanup preview before confirming a deletion again.
+
 ### Universal Search Hub
 
 **Symptoms**: `Cmd/Ctrl+K` does nothing, the topbar launcher feels empty, or search is missing settings/views/actions results.
@@ -31,7 +35,7 @@ description: "Diagnose common connection, search, and sync problems."
 
 ### Restore an inline helper
 
-Dismissed helpers stay hidden on reload. When letter, number and symbol shortcuts are enabled, press `?` outside a text field to restore dismissed helpers. Press it again to open **Keyboard Shortcuts**, then press `Esc` to close the dialog. Use **Toggle helper** to expand or collapse the explanation without dismissing it.
+Dismissed helpers stay hidden on reload. When letter, number and symbol shortcuts are enabled, press `?` outside a text field to restore dismissed helpers. Press it again to open **Keyboard Shortcuts**. Focus moves to **Close shortcuts** and stays in the dialog while you tab. Press Escape or activate **Close shortcuts** to return focus to the control you were using. Use **Toggle helper** to expand or collapse the explanation without dismissing it.
 
 ### IDB Quota Exceeded
 

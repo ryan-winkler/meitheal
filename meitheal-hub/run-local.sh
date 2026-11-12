@@ -21,12 +21,9 @@ cd /opt/meitheal/apps/web
 # Ensure data dir is writable
 mkdir -p /data 2>/dev/null || true
 
-# Run migrations (non-fatal)
-if node scripts/migrate.mjs 2>&1; then
-  export MEITHEAL_STARTUP_BACKUP_HANDLED=1
-else
-  echo "⚠ Migrations skipped (no DB yet — will create on first write)"
-fi
+# Run migrations before starting the web server.
+node scripts/migrate.mjs
+export MEITHEAL_STARTUP_BACKUP_HANDLED=1
 
 # Verify build output exists
 if [ ! -f dist/server/entry.mjs ]; then

@@ -2,11 +2,12 @@ import { createHash } from "node:crypto"
 import type { Client, InValue, Row } from "@libsql/client"
 import {
   inactivityClockSql, inactivityDayMs, inactivityDaysSql, inactivityPageSize,
+  inactivityOpenTaskSql, inactivityProtectionSql, inactivitySpikeSql, inactivityStallSinceSql,
   inactivityTaskSql, inactivityUpcomingMs, validInactivityRevisionSql,
 } from "./task-inactivity-query"
 import { taskTimestampMs } from "./task-timestamp"
 
-export type InactivityFilter = "all" | "ready" | "upcoming"
+export type InactivityFilter = "all" | "ready" | "upcoming" | "stalled"
 export type InactivityScope = string | null
 
 function readPolicy(row: Row | undefined, fallback: number) {
@@ -33,19 +34,28 @@ const selectedScope = (areaId: InactivityScope) => areaId === null ? "default" :
 const enabledPolicySql = (simulate = false) => `WITH input(area_id, proposed) AS (VALUES (?, ?))
   SELECT 1 FROM areas, input WHERE (input.area_id IS NULL OR areas.id = input.area_id)
     AND (${inactivityDaysSql(simulate, "areas.id")}) > 0 LIMIT 1`
-const rowsCte = `WITH input(area_id, proposed, now_ms) AS (VALUES (?, ?, ?)),
-  eligible AS MATERIALIZED (
-    SELECT tasks.id, tasks.title, tasks.area_id, tasks.ticket_number, tasks.status,
-      ${taskTimestampMs("tasks.updated_at")} AS updated_at, tasks.deferral_revision,
-      ${inactivityClockSql} AS last_activity, ${inactivityDaysSql(true)} AS days
-    FROM tasks CROSS JOIN input
-    WHERE ${inactivityTaskSql} AND (input.area_id IS NULL OR tasks.area_id = input.area_id)
-  ), dated AS (
-    SELECT *, last_activity + days * ${inactivityDayMs} AS deadline
-    FROM eligible, input WHERE days BETWEEN 1 AND 365 AND last_activity <= input.now_ms
-  )`
+const deadline = `CASE WHEN can_defer THEN last_activity + days * ${inactivityDayMs} END`
+
+function rowsCte(preview = false, stalledOnly = false) {
+  return `WITH input(area_id, proposed, now_ms) AS (VALUES (?, ?, ?)),
+    eligible AS MATERIALIZED (
+      SELECT tasks.id, tasks.title, tasks.area_id, tasks.ticket_number, tasks.status,
+        ${taskTimestampMs("tasks.updated_at")} AS updated_at, tasks.deferral_revision,
+        ${inactivityClockSql} AS last_activity, ${inactivityDaysSql(true)} AS days,
+        ${stalledOnly ? `(${inactivityProtectionSql})` : "1"} AS can_defer
+        ${preview ? `, ${inactivitySpikeSql} AS spike_at` : ""}
+      FROM tasks CROSS JOIN input
+      WHERE ${stalledOnly ? inactivityOpenTaskSql : inactivityTaskSql}
+        AND (input.area_id IS NULL OR tasks.area_id = input.area_id)
+    ), dated AS (
+      SELECT eligible.*, input.now_ms, ${deadline} AS deadline
+        ${preview ? `, ${inactivityStallSinceSql("input.now_ms")} AS stall_since` : ""}
+      FROM eligible, input WHERE days BETWEEN 1 AND 365 AND last_activity <= input.now_ms
+    )`
+}
 
 function filterSql(filter: InactivityFilter) {
+  if (filter === "stalled") return "stall_since IS NOT NULL"
   if (filter === "ready") return "deadline <= now_ms"
   if (filter === "upcoming") return `deadline > now_ms AND deadline <= now_ms + ${inactivityUpcomingMs}`
   return `deadline <= now_ms + ${inactivityUpcomingMs}`
@@ -63,19 +73,20 @@ export class TaskInactivityRepository {
   }) {
     const args = [areaId, proposed ?? null, now]
     const where = filterSql(filter)
+    const sort = filter === "stalled" ? "stall_since" : "deadline"
     const [policies, areas, result, enabled] = await this.client.batch([
       { sql: `SELECT scope, days, CASE WHEN ${validInactivityRevisionSql} THEN revision END AS revision
           FROM task_inactivity_policy WHERE scope IN ('default', ?)`,
         args: [selectedScope(areaId)] },
       areaCatalogSql,
-      { sql: `${rowsCte}, filtered AS MATERIALIZED (SELECT * FROM dated WHERE ${where}),
+      { sql: `${rowsCte(true, filter === "stalled")}, filtered AS MATERIALIZED (SELECT * FROM dated WHERE ${where}),
           bounds AS (SELECT COUNT(*) AS total, MAX(1, MIN(?, (COUNT(*) + 24) / 25)) AS page FROM filtered),
           items AS (
-            SELECT id, title, area_id, ticket_number, status, last_activity, deadline
-            FROM filtered ORDER BY deadline, id
+            SELECT id, title, area_id, ticket_number, status, last_activity, deadline, stall_since
+            FROM filtered ORDER BY ${sort}, id
             LIMIT 25 OFFSET (SELECT (page - 1) * 25 FROM bounds)
           )
-          SELECT bounds.total, bounds.page, items.* FROM bounds LEFT JOIN items ON TRUE ORDER BY items.deadline, items.id`,
+          SELECT bounds.total, bounds.page, items.* FROM bounds LEFT JOIN items ON TRUE ORDER BY items.${sort}, items.id`,
         args: [...args, page] },
       { sql: enabledPolicySql(true), args: [areaId, proposed ?? null] },
     ], "read")
@@ -93,11 +104,12 @@ export class TaskInactivityRepository {
       defaultPolicy: readPolicy(defaultPolicy, 0),
       page: Number(result!.rows[0]?.page ?? 1),
       total: Number(result!.rows[0]?.total ?? 0),
-      tasks: result!.rows.filter(row => row.id !== null).map(({ id, title, area_id, ticket_number, status, last_activity, deadline }) =>
+      tasks: result!.rows.filter(row => row.id !== null).map(({ id, title, area_id, ticket_number, status, last_activity, deadline, stall_since }) =>
         ({
           id: String(id), title: String(title), area_id: String(area_id), status: String(status),
           ticket_number: ticket_number === null ? null : Number(ticket_number),
-          last_activity: Number(last_activity), deadline: Number(deadline),
+          last_activity: Number(last_activity), deadline: deadline === null ? null : Number(deadline),
+          stall_since: stall_since === null ? null : Number(stall_since),
         })),
     }
   }
@@ -153,7 +165,7 @@ export class TaskInactivityRepository {
 
   async candidates(now: number) {
     const { rows } = await this.client.execute({
-      sql: `${rowsCte} SELECT id, updated_at, deferral_revision
+      sql: `${rowsCte()} SELECT id, updated_at, deferral_revision
         FROM dated WHERE deadline <= now_ms ORDER BY deadline, id LIMIT ?`,
       args: [null, null, now, inactivityPageSize],
     })
@@ -165,18 +177,30 @@ export class TaskInactivityRepository {
   }
 
   async boardCues(ids: string[], now: number) {
-    if (!ids.length || !await this.hasEnabledPolicy()) return new Map<string, number>()
-    const args: InValue[] = [JSON.stringify(ids), now, now + inactivityUpcomingMs]
+    const cues = new Map<string, number>()
+    const stalled = new Map<string, number>()
+    if (!ids.length || !await this.hasEnabledPolicy()) return { cues, stalled }
+
+    const args: InValue[] = [now, JSON.stringify(ids)]
     const days = inactivityDaysSql()
     const { rows } = await this.client.execute({
-      sql: `WITH visible AS MATERIALIZED (
-        SELECT tasks.id, ${inactivityClockSql} AS last_activity, (${days}) AS days
-        FROM tasks JOIN json_each(?) card ON tasks.id = card.value WHERE ${inactivityTaskSql}
+      sql: `WITH input(now_ms, ids) AS (VALUES (?, ?)), visible AS MATERIALIZED (
+        SELECT tasks.id, ${inactivityClockSql} AS last_activity, (${days}) AS days,
+          ${inactivitySpikeSql} AS spike_at, (${inactivityProtectionSql}) AS can_defer
+        FROM input JOIN json_each(input.ids) card JOIN tasks ON tasks.id = card.value
+        WHERE ${inactivityOpenTaskSql}
+      ), dated AS (
+        SELECT id, input.now_ms, ${deadline} AS deadline, ${inactivityStallSinceSql("input.now_ms")} AS stall_since
+        FROM visible, input WHERE days BETWEEN 1 AND 365 AND last_activity <= input.now_ms
       )
-      SELECT id, last_activity + days * ${inactivityDayMs} AS deadline
-      FROM visible WHERE days BETWEEN 1 AND 365 AND last_activity <= ? AND deadline <= ?`,
+      SELECT id, CASE WHEN deadline <= now_ms + ${inactivityUpcomingMs} THEN deadline END AS deadline, stall_since
+      FROM dated WHERE deadline <= now_ms + ${inactivityUpcomingMs} OR stall_since IS NOT NULL`,
       args,
     })
-    return new Map(rows.map(row => [String(row.id), Number(row.deadline)]))
+    for (const row of rows) {
+      if (typeof row.deadline === "number") cues.set(String(row.id), row.deadline)
+      if (typeof row.stall_since === "number") stalled.set(String(row.id), row.stall_since)
+    }
+    return { cues, stalled }
   }
 }

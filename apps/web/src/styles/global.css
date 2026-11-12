@@ -7,8 +7,8 @@
  * Design tokens defined via @theme in _tokens.css.
  * ============================================= */
 
-/* Tailwind v4 — single import replaces @tailwind directives */
-@import "tailwindcss";
+/* Generate utilities from the application source directory. */
+@import "tailwindcss" source("../");
 
 /* 1. Design tokens: fonts, CSS vars, themes, @theme overrides */
 @import './_tokens.css';

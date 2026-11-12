@@ -3,8 +3,11 @@ import { resolve } from "node:path"
 import type { APIRoute } from "astro"
 import { parse } from "yaml"
 import { hasScope, resolveAgentRouteScope, type AgentScope } from "@meitheal/domain-auth"
+import { hasBoardSelection, isBoardTaskApiPath, unavailableBoardResponse } from "@domains/tasks/board-availability"
 import { apiJson, apiError, apiProblem } from "../../lib/api-response"
 import { readWithinLimit } from "@lib/bounded-body"
+import { resolveMcpSchema } from "@lib/mcp-schema"
+import { isDoneStatus } from "@lib/status-config"
 import { checkMcpAvailability } from "@lib/mcp-availability"
 import { MCP_LEGACY_VERSION, MCP_PROTOCOL_VERSION, MCP_SUPPORTED_VERSIONS } from "@lib/mcp-versions"
 
@@ -53,6 +56,11 @@ type CustomToolHandler = (
 
 /** Operations to exclude from MCP tools (internal/system endpoints) */
 const EXCLUDED_OPS = new Set([
+  "reviewTaskProposal", "acceptTaskProposal", // Human-only proposal decisions
+  "createRule", "replaceRules", "updateRule", "deleteRule", "restoreRuleDefaults",
+  "createFramework", "updateFramework", "deleteFramework", // Human administrator settings mutations
+  "useLabelCleanup",
+  "updateLabel", "deleteLabel", // Shared vocabulary requires a current administrator, never an agent token
   "taskInactivity",
   "mcpEndpoint",       // Self-reference
   "healthPing",        // HEAD-only liveness
@@ -152,7 +160,7 @@ function loadOpenAPISpec(): { tools: McpTool[], routes: Map<string, RouteMapping
       if (op.parameters) {
         for (const param of op.parameters) {
           if (param.in === "header") continue // Skip headers
-          const paramSchema = param.schema ?? { type: "string" }
+          const paramSchema = resolveMcpSchema(param.schema ?? { type: "string" }, spec)
           properties[param.name] = {
             ...paramSchema,
             description: param.description ?? `${param.name} parameter`,
@@ -166,7 +174,7 @@ function loadOpenAPISpec(): { tools: McpTool[], routes: Map<string, RouteMapping
       // Extract request body properties
       const hasBody = method === "post" || method === "put" || method === "patch"
       if (hasBody && op.requestBody?.content?.["application/json"]?.schema) {
-        const bodySchema = op.requestBody.content["application/json"].schema
+        const bodySchema = resolveMcpSchema(op.requestBody.content["application/json"].schema, spec)
         if (bodySchema.properties) {
           for (const [propName, propSchema] of Object.entries(bodySchema.properties as Record<string, Record<string, unknown>>)) {
             properties[propName] = propSchema
@@ -178,6 +186,8 @@ function loadOpenAPISpec(): { tools: McpTool[], routes: Map<string, RouteMapping
           }
         }
       }
+
+      if (toolName === "searchTasks") properties.scope = { type: "string", enum: ["tasks"], default: "tasks" }
 
       tools.push({
         name: toolName,
@@ -240,11 +250,11 @@ customHandlers.set("completeTask", async (args, requestApi) => {
       method: "PUT",
       body: JSON.stringify({ status: "complete" }),
     })
-    return { status: "completed", ...(await res.json().catch(() => ({}))) }
+    return acknowledgedCompletion(res, String(args.id))
   }
   if (args.title) {
     const searchRes = await requestApi(`/api/search?q=${encodeURIComponent(String(args.title))}&scope=tasks`)
-    const data = (await searchRes.json().catch(() => ({ sections: [] }))) as {
+    const data = (await checkedJson(searchRes)) as {
       sections?: Array<{ id?: string, items?: Array<Record<string, unknown>> }>
     }
     const taskSection = data.sections?.find((s) => s.id === "tasks")
@@ -257,8 +267,7 @@ customHandlers.set("completeTask", async (args, requestApi) => {
         method: "PUT",
         body: JSON.stringify({ status: "complete" }),
       })
-      await response.body?.cancel()
-      return { status: "completed", id: taskId, title: match.title }
+      return acknowledgedCompletion(response, String(taskId))
     }
     return { status: "not_found", title: args.title }
   }
@@ -268,15 +277,17 @@ customHandlers.set("completeTask", async (args, requestApi) => {
 // searchTasks: reshape search response for cleaner AI consumption
 customHandlers.set("searchTasks", async (args, requestApi) => {
   const params = new URLSearchParams()
-  const query = args.query ?? args.q
-  if (query) params.set("q", String(query))
-  if (args.status) params.set("status", String(args.status))
-  if (args.priority) params.set("priority", String(args.priority))
-  if (args.assigned_to) params.set("assigned_to", String(args.assigned_to))
-  if (args.include_completed) params.set("include_completed", "1")
+  const query = args.q ?? args.query
+  if (query !== undefined) params.set("q", String(query))
+  for (const key of ["status", "priority", "assigned_to", "limit", "sort", "task_fields"]) {
+    if (args[key] !== undefined) params.set(key, String(args[key]))
+  }
+  for (const key of ["include_completed", "include_archived"]) {
+    if (args[key] === true) params.set(key, "1")
+  }
   params.set("scope", "tasks")
   const res = await requestApi(`/api/search?${params}`)
-  const data = (await res.json().catch(() => ({ sections: [] }))) as {
+  const data = (await checkedJson(res)) as {
     sections?: Array<{ id?: string, items?: Array<Record<string, unknown>> }>
   }
   const taskSection = data.sections?.find((s) => s.id === "tasks")
@@ -309,15 +320,15 @@ async function executeTool(
   args: Record<string, unknown>,
   authorization: string
 ): Promise<Record<string, unknown>> {
-  const requestApi = scopedApi(authorization)
-
-  // Check custom handlers first
-  const custom = customHandlers.get(toolName)
-  if (custom) return custom(args, requestApi)
-
-  // Dynamic dispatch from OpenAPI routes
   const { routes } = loadOpenAPISpec()
   const route = routes.get(toolName)
+  const custom = customHandlers.get(toolName)
+  if ((custom || (route && isBoardTaskApiPath(route.path))) && hasBoardSelection(args)) {
+    return checkedJson(unavailableBoardResponse())
+  }
+  const requestApi = scopedApi(authorization)
+  if (custom) return custom(args, requestApi)
+
   if (!route) {
     return { error: `Unknown tool: ${toolName}`, available: routes.size }
   }
@@ -359,8 +370,29 @@ async function executeTool(
   }
 
   const res = await requestApi(fullUrl, fetchOpts)
-  const data = await res.json().catch(() => ({}))
-  return { status: res.status, ...data }
+  return { ...await checkedJson(res), status: res.status }
+}
+
+async function acknowledgedCompletion(response: Response, expectedId: string): Promise<Record<string, unknown>> {
+  const task = await checkedJson(response)
+  const exactId = task.id === expectedId
+  const exactTicket = /^MTH-\d+$/i.test(expectedId) && typeof task.ticket_key === "string" &&
+    task.ticket_key.toUpperCase() === expectedId.toUpperCase()
+  if (typeof task.id !== "string" || !task.id || (!exactId && !exactTicket) ||
+    typeof task.status !== "string" || !isDoneStatus(task.status)) {
+    throw new Error("Task completion returned an invalid acknowledgement")
+  }
+  return { ...task, status: "completed" }
+}
+
+async function checkedJson(response: Response): Promise<Record<string, unknown>> {
+  if (!response.ok) throw new Error(`Operation failed (HTTP ${response.status})`)
+  if (response.status === 204 || response.status === 205) return { ok: true }
+  let data: unknown
+  try { data = await response.json() } catch { throw new Error("Operation returned invalid JSON") }
+  if (!isRecord(data)) throw new Error("Operation returned an invalid response")
+  if (data.ok === false || data.success === false || data.error) throw new Error("Operation was rejected")
+  return data
 }
 
 // ─── JSON-RPC 2.0 Handler ────────────────────────────────────────────────────

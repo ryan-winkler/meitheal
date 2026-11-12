@@ -33,6 +33,7 @@ const test = base.extend<{ tableTasks: [TableTask, TableTask] }>({
 
 test.describe("Table Shell", () => {
   test.skip(shouldSkipBrowserSpecs(), "Set E2E_BASE_URL to run browser specs")
+  test.use({ serviceWorkers: "block" })
 
   test("the legacy route opens Table and keyboard-applied filter rules survive reload", async ({ page, tableTasks }) => {
     const [matching, other] = tableTasks
@@ -133,7 +134,7 @@ test.describe("Table Shell", () => {
     const [task] = tableTasks
     await page.goto("/table")
     const row = page.getByRole("row").filter({ hasText: task.title })
-    const opener = row.getByRole("link", { name: new RegExp(`\\b${task.ticket_key}\\b`) })
+    const opener = row.getByRole("link", { name: new RegExp(task.ticket_key) })
     await opener.press("Enter")
 
     const detail = page.getByRole("dialog", { name: `Task detail: ${task.title}` })
@@ -230,12 +231,15 @@ test.describe("Table Shell", () => {
     }
   })
 
-  test("a completed row exposes its title and type and remains editable by keyboard", async ({ page, tableTasks }) => {
+  test("a completed row stays editable by keyboard during a refresh and Escape discards its draft", async ({ page, request, tableTasks }) => {
     const [, task] = tableTasks
     await page.goto("/tasks?view=table")
     await expect(page.getByRole("navigation", { name: "Task views" })).toHaveAttribute("data-switcher-ready", "true")
+    const table = page.locator("#task-table")
+    await expect(page.locator("#table-shell")).toHaveAttribute("data-table-ready", "true")
+    await expect(table).not.toHaveAttribute("aria-busy", "true")
     const row = page.getByRole("row").filter({
-      has: page.getByRole("link", { name: new RegExp(`\\b${task.ticket_key}\\b`) }),
+      has: page.getByRole("link", { name: new RegExp(task.ticket_key) }),
     })
     const title = row.getByRole("textbox", { name: "Title", exact: true })
     await expect(title).toHaveText(task.title)
@@ -249,40 +253,46 @@ test.describe("Table Shell", () => {
     await expect(selection).not.toBeChecked()
 
     const renamed = `${task.title} renamed`
-    const refreshStarted = deferred<void>()
-    const releaseRefresh = deferred<void>()
-    let held = false
+    const draft = "Discard this edit"
+    const path = `/api/tasks/${task.id}`
     const savedTitles: string[] = []
-    page.on("request", request => {
-      if (request.method() === "PATCH" && new URL(request.url()).pathname === `/api/tasks/${task.id}`) savedTitles.push(request.postDataJSON().title)
+    await page.route(url => url.pathname === path, async route => {
+      const outbound = route.request()
+      if (outbound.method() === "PATCH") {
+        savedTitles.push(outbound.postDataJSON().title)
+      }
+      await route.continue()
     })
-    const isRefresh = (url: URL) => url.pathname === "/tasks" && url.searchParams.has("tableRefresh")
-    await page.route(isRefresh, async route => {
-      if (held) return route.continue()
-      held = true
-      const response = await route.fetch()
-      refreshStarted.resolve()
-      await releaseRefresh.promise
-      await route.fulfill({ response }).catch(() => {})
-    })
+    const refreshEntered = deferred<void>()
+    const release = deferred<void>()
+    await page.route(url => url.pathname === "/tasks" && url.searchParams.has("tableRefresh"), async route => {
+      refreshEntered.resolve()
+      await release.promise
+      await route.continue()
+    }, { times: 1 })
+
     try {
       await title.fill(renamed)
       await title.press("Tab")
       await expect(title).toHaveAttribute("data-original", renamed)
-      await refreshStarted.promise
-      await title.fill("Discard this edit")
-      releaseRefresh.resolve()
-      await expect(page.locator("#task-table")).not.toHaveAttribute("aria-busy", "true")
+      await refreshEntered.promise
+      await expect(table).toHaveAttribute("aria-busy", "true")
+      await title.fill(draft)
       await expect(title).toBeFocused()
-      await expect(title).toHaveText("Discard this edit")
-      const refreshed = page.waitForResponse(response => isRefresh(new URL(response.url())))
+
+      release.resolve()
+      await expect(table).not.toHaveAttribute("aria-busy", "true")
+      await expect(title).toBeFocused()
+      await expect(title).toHaveAttribute("data-original", renamed)
+      await expect(title).toHaveText(draft)
       await title.press("Escape")
-      expect((await refreshed).status()).toBe(200)
-      await expect(page.locator("#task-table")).not.toHaveAttribute("aria-busy", "true")
       await expect(title).toHaveText(renamed)
-      expect(savedTitles).toEqual([renamed])
       await page.reload()
       await expect(title).toHaveText(renamed)
-    } finally { releaseRefresh.resolve() }
+      expect((await (await request.get(path)).json()).title).toBe(renamed)
+      expect(savedTitles).toEqual([renamed])
+    } finally {
+      release.resolve()
+    }
   })
 })

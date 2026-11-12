@@ -1,6 +1,7 @@
 import type { APIRoute } from "astro";
 import { getCollection } from "astro:content";
 import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability";
+import { hasBoardSelection, unavailableBoardResponse } from "@domains/tasks/board-availability"
 import {
   HomeAssistantCalendarAdapter,
   type CalendarIntegrationAdapter,
@@ -95,6 +96,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
       timezone?: string;
     };
   };
+  if (hasBoardSelection(body)) return unavailableBoardResponse()
 
   const rawTitle = typeof body.title === "string" ? body.title : "";
   const title = sanitize(rawTitle).trim();

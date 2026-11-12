@@ -22,6 +22,9 @@ test.describe("Branding — Typography", () => {
 });
 
 test.describe("Branding — Color Tokens", () => {
+  // A first visit follows the system appearance, so name the dark palette these tokens belong to.
+  test.use({ colorScheme: "dark" });
+
   test("--bg-primary uses Slate 900 (#0F172A = rgb 15,23,42)", async ({
     page,
   }) => {

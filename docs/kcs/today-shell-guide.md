@@ -44,6 +44,8 @@ These anchors stay on the same route, which keeps the page ingress-safe in Home 
 3. Add a date or shopping list when needed, such as “call dentist tomorrow” or “shopping: milk, eggs”.
 4. Stay on the same route so the current Today context is preserved.
 
+`Smart Task Parsing` in Settings controls natural-language dates, priorities, `#labels` and `@assignees` in Today’s inline quick-add. With it off, these tokens stay in the ordinary task title and the preview shows the existing default due date of Today. Turning it on restores extraction in both the preview and the submitted task.
+
 ### Triage overdue work without losing the daily view
 
 1. Jump to `Triage`.
@@ -54,7 +56,13 @@ These anchors stay on the same route, which keeps the page ingress-safe in Home 
 
 **Due Today** and **Carried Fwd** reflect their respective sections. **Remaining** includes both sections and shared favorites. **Completed** counts tasks marked complete and updated on the current UTC date, including older records with ISO timestamps. Open **Pinned tasks** from the sidebar to see your personal pins.
 
+Task rows label their current status. When changing status badge colors, verify the labels in light and dark themes on Today, Upcoming, Eisenhower, and the Tasks tab of a project, both at rest and on hover. Completed project tasks keep a struck-through title and a readable **Done** badge. Run `MEITHEAL_TEST_BROWSER=1 pnpm --filter @meitheal/tests test e2e/status-badge-contrast.spec.ts` after building the app.
+
 While Today is open, the counters and progress bar refresh every 30 seconds. The refresh reads aggregate counts across the full task store. Reload the page to refresh the task rows after an external change.
+
+### Update several tasks
+
+Turn on multi-select in **Focus**, select the task checkboxes, then choose **Complete**, **Snooze** or **Delete**. If only some changes are confirmed, Today refreshes the task rows and counters and keeps the remaining tasks selected. Check those tasks before retrying. If Today cannot confirm any of the changes, the current selection stays available for review.
 
 ### Browse a large unscheduled queue
 

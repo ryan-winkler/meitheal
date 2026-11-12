@@ -19,3 +19,11 @@ docs
 *.md
 !apps/web/README.md
 !packages/*/README.md
+
+# Keep local signing material, runtime data and Python caches out of contexts.
+**/.keys
+**/.data
+**/*.db
+**/*.db-*
+**/__pycache__
+**/*.pyc

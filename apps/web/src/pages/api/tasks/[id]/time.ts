@@ -5,6 +5,7 @@ import {
   getTimeEntries,
   getTotalTimeForTask,
 } from "@domains/pomodoro"
+import { hasBoardSelection, unavailableBoardResponse } from "@domains/tasks/board-availability"
 import { apiJson, apiError } from "../../../../lib/api-response"
 
 /**
@@ -39,6 +40,7 @@ export const POST: APIRoute = async ({ params, request }) => {
     if (!taskId) return apiError("Task ID required", 400)
 
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
+    if (hasBoardSelection(body)) return unavailableBoardResponse()
     const action = String(body.action || "start")
 
     if (action === "start") {

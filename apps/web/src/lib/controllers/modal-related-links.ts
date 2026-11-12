@@ -6,6 +6,8 @@
  *      Manages link CRUD, search, inbound/outbound rendering with accessibility.
  */
 
+import { notifyInactivityTaskChanged } from "@lib/inactivity-client"
+
 export interface RelatedLinksDeps {
   getCurrentTaskId: () => string | null
   openTaskDetail: (id: string) => void
@@ -182,10 +184,12 @@ export function initRelatedLinks({ getCurrentTaskId, openTaskDetail, saveTD, sig
           const linkId = (btn as HTMLElement).dataset.linkId
           if (!linkId) return
           try {
-            await fetch(
+            const response = await fetch(
               `${window.__ingress_path || ""}/api/tasks/${capturedTaskId}/links?link_id=${encodeURIComponent(linkId)}`,
               { method: "DELETE" },
             )
+            if (!response.ok) throw new Error("Link removal failed")
+            notifyInactivityTaskChanged()
             // ARIA announcement (#30)
             if (liveRegion) liveRegion.textContent = "Link removed"
             loadRelatedLinks(capturedTaskId)
@@ -286,7 +290,7 @@ export function initRelatedLinks({ getCurrentTaskId, openTaskDetail, saveTD, sig
                 const currentId = getCurrentTaskId()
                 if (targetId && currentId) {
                   try {
-                    await fetch(
+                    const response = await fetch(
                       `${window.__ingress_path || ""}/api/tasks/${currentId}/links`,
                       {
                         method: "POST",
@@ -297,6 +301,8 @@ export function initRelatedLinks({ getCurrentTaskId, openTaskDetail, saveTD, sig
                         }),
                       },
                     )
+                    if (!response.ok) throw new Error("Link creation failed")
+                    if (linkType === "blocks" || linkType === "blocked_by") notifyInactivityTaskChanged()
                     linkSearchInput.value = ""
                     linkSearchResults.style.display = "none"
                     linkSearchInput.setAttribute(

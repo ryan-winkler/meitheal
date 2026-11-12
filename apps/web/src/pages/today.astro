@@ -318,6 +318,7 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
                   class="focus-card__complete btn btn-sm"
                   data-id={task.id}
                   title="Complete this task"
+                  aria-label={`Complete ${task.title}`}
                 >
                   ✓
                 </button>
@@ -373,6 +374,7 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
         <button type="button" id="today-clear-filters" class="btn btn-sm" title="Clear filters">
           ✕
         </button>
+        <button type="button" id="batch-mode-toggle" class="btn btn-sm" title="Toggle multi-select mode" aria-pressed="false" hidden>☑</button>
       </div>
     </section>
 
@@ -389,10 +391,10 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
       {carriedForwardTasks.length > 0 ? (
         <div class="today-section" id="section-carried">
           <button type="button" class="today-section__header today-section__toggle"
-            aria-label="Toggle Carried Forward section" aria-controls="today-carried-list" aria-describedby="today-carried-list-count" aria-expanded="true">
+            aria-controls="today-carried-list" aria-expanded="true">
             <span class="today-section__icon" aria-hidden="true">▶</span>
             <span class="today-section__title" style="color: var(--warning-text, var(--warning));">
-              🔄 Carried Forward
+              <span aria-hidden="true">🔄</span> Carried Forward
             </span>
             <span class="today-section__count" id="today-carried-list-count">{carriedForwardTasks.length}</span>
           </button>
@@ -409,10 +411,10 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
       {suggestedTasks.length > 0 && (
         <div class="today-section" id="section-suggested">
           <button type="button" class="today-section__header today-section__toggle"
-            aria-label="Toggle Suggested section" aria-controls="today-suggested-list" aria-describedby="today-suggested-list-count" aria-expanded="true">
+            aria-controls="today-suggested-list" aria-expanded="true">
             <span class="today-section__icon" aria-hidden="true">▶</span>
             <span class="today-section__title" style="color: var(--accent-text);">
-              💡 Suggested
+              <span aria-hidden="true">💡</span> Suggested
             </span>
             <span class="today-section__count" id="today-suggested-list-count">{suggestedTasks.length}</span>
           </button>
@@ -438,10 +440,10 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
 
       <div class="today-section" id="section-calendar-events" style="display: none;">
         <button type="button" class="today-section__header today-section__toggle"
-          aria-label="Toggle Calendar Events section" aria-controls="calendar-events-list" aria-describedby="calendar-events-count" aria-expanded="true">
+          aria-controls="calendar-events-list" aria-expanded="true">
           <span class="today-section__icon" aria-hidden="true">▶</span>
           <span class="today-section__title" style="color: var(--info, #60a5fa);">
-            📅 Calendar Events
+            <span aria-hidden="true">📅</span> Calendar Events
           </span>
           <span class="today-section__count" id="calendar-events-count">0</span>
         </button>
@@ -455,10 +457,10 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
       {pinnedTasks.length > 0 && (
         <div class="today-section" id="section-pinned">
           <button type="button" class="today-section__header today-section__toggle"
-            aria-label="Toggle Shared favorites section" aria-controls="today-pinned-list" aria-describedby="today-pinned-list-count" aria-expanded="true">
+            aria-controls="today-pinned-list" aria-expanded="true">
             <span class="today-section__icon" aria-hidden="true">▶</span>
             <span class="today-section__title">
-              ⭐ Shared favorites
+              <span aria-hidden="true">⭐</span> Shared favorites
             </span>
             <span class="today-section__count" id="today-pinned-list-count">{pinnedTasks.length}</span>
           </button>
@@ -472,10 +474,10 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
 
       <div class="today-section" id="section-today">
         <button type="button" class="today-section__header today-section__toggle"
-          aria-label="Toggle Due Today section" aria-controls="today-due-list" aria-describedby="today-due-list-count" aria-expanded="true">
+          aria-controls="today-due-list" aria-expanded="true">
           <span class="today-section__icon" aria-hidden="true">▶</span>
           <span class="today-section__title">
-            ☀️ Due Today
+            <span aria-hidden="true">☀️</span> Due Today
           </span>
           <span class="today-section__count" id="today-due-list-count">{todayTasks.length}</span>
         </button>
@@ -496,10 +498,10 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
       {(unscheduledCount > 0 || unscheduled) && (
         <div class:list={["today-section", { "today-section--collapsed": !unscheduled }]} id="section-unscheduled">
           <button type="button" class="today-section__header today-section__toggle"
-            aria-label="Toggle Unscheduled section" aria-controls="today-unscheduled-list" aria-describedby="today-unscheduled-list-count" aria-expanded={Boolean(unscheduled)}>
+            aria-controls="today-unscheduled-list" aria-expanded={Boolean(unscheduled)}>
             <span class="today-section__icon" aria-hidden="true">▶</span>
             <span class="today-section__title">
-              📌 Unscheduled
+              <span aria-hidden="true">📌</span> Unscheduled
             </span>
             <span class="today-section__count" id="today-unscheduled-list-count">{unscheduledCount}</span>
           </button>
@@ -541,10 +543,10 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
 
       <div class="today-section" id="section-habits">
         <button type="button" class="today-section__header today-section__toggle"
-          aria-label="Toggle Habits / Routines section" aria-controls="today-habits-list" aria-describedby="today-habits-list-count" aria-expanded="true">
+          aria-controls="today-habits-list" aria-expanded="true">
           <span class="today-section__icon" aria-hidden="true">▶</span>
           <span class="today-section__title" style="color: var(--accent-text);">
-            🔄 Habits / Routines
+            <span aria-hidden="true">🔄</span> Habits / Routines
           </span>
           <span class="today-section__count" id="today-habits-list-count">{habits.length}</span>
         </button>
@@ -619,6 +621,13 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
         </a>
       </div>
     </section>
+  </div>
+  <div id="batch-action-bar" hidden>
+    <span></span>
+    <button type="button" class="btn btn-sm" value="complete">✓ Complete</button>
+    <button type="button" class="btn btn-sm" value="snooze" title="Snooze selected +1 day">⏰ Snooze</button>
+    <button type="button" class="btn btn-sm" value="delete">🗑 Delete</button>
+    <button type="button" class="btn btn-sm" value="deselect">Deselect all</button>
   </div>
 </Layout>
 
@@ -927,12 +936,44 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
   }
 
   /* ── G30: Batch mode ────────────────────────────────── */
-  :global(.batch-toggle-btn.active) {
+  :global(#batch-mode-toggle) {
+    flex-shrink: 0;
+    font-size: 14px;
+  }
+  :global(#batch-mode-toggle[aria-pressed="true"]) {
     background: var(--accent);
     color: var(--bg);
   }
   :global(.batch-mode .tli) {
     padding-left: 8px;
+  }
+  :global(.tli__batch-cb) {
+    margin-right: 6px;
+    accent-color: var(--accent);
+  }
+  :global(#batch-action-bar:not([hidden])) {
+    display: flex;
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 100;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 16px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    box-shadow: 0 8px 32px rgb(0 0 0 / 0.4);
+    backdrop-filter: blur(12px);
+  }
+  :global(#batch-action-bar span) {
+    font-size: 13px;
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+  :global(#batch-action-bar [value="delete"]) {
+    color: var(--danger);
   }
 
   /* ── G31: Drag reorder — premium drag feedback ──────── */

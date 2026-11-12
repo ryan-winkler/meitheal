@@ -136,6 +136,19 @@ test.describe("browser notification test in Settings", () => {
     await send.click()
     await expect(result).toHaveText(/could not send a notification/)
     expect(await notifications(page)).toEqual([])
+
+    const oldDocument = await page.evaluate(() => {
+      ServiceWorkerRegistration.prototype.update = function () {
+        sessionStorage.setItem("fixture-host-worker-updated", "yes")
+        return Promise.resolve(this)
+      }
+      return performance.timeOrigin
+    })
+    await expect(page.locator("#pwa-update-settings-btn")).toBeHidden()
+    await page.locator("#pwa-force-update-btn").click()
+    await expect(page.getByRole("alert").filter({ hasText: "The app update didn’t finish. Try again." })).toBeVisible()
+    expect(await page.evaluate(() => sessionStorage.getItem("fixture-host-worker-updated"))).toBeNull()
+    expect(await page.evaluate(() => performance.timeOrigin)).toBe(oldDocument)
   })
 })
 

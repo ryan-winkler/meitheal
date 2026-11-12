@@ -30,6 +30,95 @@ test("Today and Settings content stays opaque during entry motion", async ({ pag
   }
 })
 
+test("work queue links and Pillar actions retain contrast through hover", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 960 })
+  await page.emulateMedia({ reducedMotion: "reduce" })
+  const targets = [
+    ["/deferred", "[data-deferred-root] > header > a"],
+    ["/inactivity", "a[data-inactivity-back]"],
+    ["/triage", 'a[href$="planning#triage"]'],
+    ["/pillars", "#pillar-add-btn, #pillar-add-btn-empty"],
+  ] as const
+  await page.goto("/deferred")
+  for (const theme of ["light", "dark"]) {
+    await page.evaluate(value => localStorage.setItem("meitheal-theme", value), theme)
+    for (const [path, selector] of targets) {
+      await page.goto(path)
+      await expect(page.locator("html")).toHaveAttribute("data-theme", theme)
+      await page.mouse.move(0, 0)
+      const check = async (state: string) => {
+        const { violations, passes } = await new AxeBuilder({ page }).include(selector).withRules(["color-contrast"]).analyze()
+        const sample = `${path} in ${theme}, ${state}`
+        expect.soft(violations, sample).toEqual([])
+        expect.soft(passes.some(({ id }) => id === "color-contrast"), sample).toBe(true)
+      }
+      await check("normal")
+      for (const [index, control] of (await page.locator(selector).all()).entries()) {
+        await expect(control).toBeVisible()
+        await control.hover()
+        await control.evaluate(element => Promise.allSettled(element.getAnimations().map(animation => animation.finished)))
+        await check(`hover ${index + 1}`)
+      }
+    }
+  }
+})
+
+for (const theme of ["light", "dark"] as const) {
+  for (const width of [320, 1440]) {
+    test(`shared task rows announce types and keep five readable priorities at ${width}px in ${theme} theme`, async ({ page, request, baseURL }) => {
+      const headers = { origin: new URL(baseURL!).origin }
+      const dueDate = new Date().toISOString().slice(0, 10)
+      const priorities = ["Critical", "High", "Medium", "Low", "Minimal"]
+      const tasks: Array<{ id: string; priority: string }> = []
+
+      try {
+        for (const [index, label] of priorities.entries()) {
+          const created = await request.post("/api/tasks", {
+            headers,
+            data: {
+              title: `Task row contrast fixture: ${label}`,
+              due_date: dueDate,
+              priority: index + 1,
+              urgency: 5,
+              importance: 5,
+            },
+          })
+          expect(created.status()).toBe(201)
+          tasks.push({ id: (await created.json()).id, priority: label })
+        }
+
+        await page.setViewportSize({ width, height: 960 })
+        await page.emulateMedia({ reducedMotion: "reduce" })
+        await page.addInitScript(value => localStorage.setItem("meitheal-theme", value), theme)
+
+        for (const [path, section] of [["/today", "#today-work"], ["/eisenhower", "#eisenhower-matrix"]] as const) {
+          await page.goto(path)
+          await expect(page.locator("html")).toHaveAttribute("data-theme", theme)
+          await page.evaluate(() => document.fonts.ready)
+          const scan = new AxeBuilder({ page }).withRules(["aria-prohibited-attr", "color-contrast"])
+
+          for (const { id, priority } of tasks) {
+            const row = `${section} .tli[data-id="${id}"]`
+            const label = `${row} .tli__meta > span:first-child`
+            await expect(page.locator(label)).toHaveText(priority)
+            await expect(page.locator(label)).toBeVisible()
+            expect.soft(await page.locator(row).getByRole("img", { name: "Task Type: task" }).count(), path).toBe(1)
+            scan.include(label).include(`${row} .task-type-icon`)
+          }
+
+          const { violations, passes } = await scan.analyze()
+          expect.soft(violations.map(({ id, nodes }) => [id, nodes.map(({ target }) => target)]), path).toEqual([])
+          expect.soft(passes.find(({ id }) => id === "color-contrast")?.nodes, path).toHaveLength(priorities.length)
+        }
+      } finally {
+        for (const { id } of tasks) {
+          await request.delete(`/api/tasks/${id}`, { headers })
+        }
+      }
+    })
+  }
+}
+
 for (const theme of ["light", "dark"]) {
   for (const viewport of [{ width: 1440, height: 960 }, { width: 390, height: 844 }]) {
     test(`shared shell and work surfaces at ${viewport.width}px in ${theme} theme`, async ({ page }) => {

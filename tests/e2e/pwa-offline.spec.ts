@@ -2,6 +2,51 @@ import { readFile } from "node:fs/promises"
 import { expect, test } from "@playwright/test"
 import { GET as getManifest } from "../../apps/web/src/pages/manifest.webmanifest"
 
+test("standalone navigation keeps the update offer and rebinds Settings update controls", async ({ page }) => {
+  test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the built standalone App")
+  await page.goto("/settings#app-pwa-settings")
+  await expect(page.locator("#app-pwa-settings")).toBeVisible()
+  await page.waitForFunction(() => navigator.serviceWorker.controller?.state === "activated")
+  const oldDocument = await page.evaluate(() => {
+    window.dispatchEvent(new CustomEvent("meitheal-sw-update", {
+      detail: { type: "update-available", worker: navigator.serviceWorker.controller },
+    }))
+    return performance.timeOrigin
+  })
+  await expect(page.locator("#sw-update-btn")).toBeVisible()
+  await page.locator('a[href="/today"]:visible').first().click()
+  await expect(page).toHaveURL(/\/today$/)
+  await expect(page.locator("#sw-update-btn")).toBeVisible()
+  await page.locator('a[href="/settings"]:visible').first().click()
+  await expect(page).toHaveURL(/\/settings(?:#.*)?$/)
+  await page.evaluate(() => { window.location.hash = "app-pwa-settings" })
+  await expect(page.locator("#app-pwa-settings")).toBeVisible()
+  expect(await page.evaluate(() => performance.timeOrigin)).toBe(oldDocument)
+  await expect(page.locator("#sw-update-btn")).toBeVisible()
+  await page.locator("#pwa-troubleshoot summary").click()
+  const force = page.locator("#pwa-force-update-btn")
+  await page.clock.install()
+  await page.evaluate(() => {
+    const original = ServiceWorkerRegistration.prototype.update
+    Reflect.set(window, "restoreWorkerUpdate", () => { ServiceWorkerRegistration.prototype.update = original })
+    ServiceWorkerRegistration.prototype.update = () => {
+      Reflect.set(window, "workerUpdateCheckStarted", true)
+      return new Promise<ServiceWorkerRegistration>(() => {})
+    }
+  })
+  await force.click()
+  await expect.poll(() => page.evaluate(() => Reflect.get(window, "workerUpdateCheckStarted"))).toBe(true)
+  await expect(force).toHaveText("Updating…")
+  await page.clock.fastForward(15_001)
+  await expect(page.getByRole("alert").filter({ hasText: "The app update didn’t finish. Try again." })).toBeVisible()
+  await expect(force).toBeEnabled()
+  await page.evaluate(() => Reflect.get(window, "restoreWorkerUpdate")())
+  const reloaded = page.waitForEvent("domcontentloaded")
+  await force.click({ noWaitAfter: true })
+  await reloaded
+  await expect(page).toHaveURL(/\/settings#app-pwa-settings$/)
+})
+
 // Note: These tests validate offline domain logic at the unit level.
 // IndexedDB tests use Node.js polyfills or test the API shape contracts.
 

@@ -144,7 +144,7 @@ class MeithealDoneTaskHandler(_MeithealAdminIntent):
         except Exception as err:
             _LOGGER.error("Failed to complete task via intent: %s", err)
             response = intent_obj.create_response()
-            response.async_set_speech(f"Sorry, I couldn't find a task called '{item}'.")
+            response.async_set_speech(f"Sorry, I couldn't complete that task. {err}")
             return response
 
 
@@ -327,20 +327,8 @@ class MeithealDeleteTaskHandler(_MeithealAdminIntent):
             response.async_set_speech("Sorry, Meitheal is not available right now.")
             return response
 
-        # Find by title
-        task_id = None
-        if coordinator.data:
-            for task in coordinator.data.tasks:
-                if task.title.lower() == item.lower():
-                    task_id = task.id
-                    break
-
-        if not task_id:
-            response = intent_obj.create_response()
-            response.async_set_speech(f"Sorry, I couldn't find a task called '{item}'.")
-            return response
-
         try:
+            task_id = coordinator.resolve_task_title(item)
             await coordinator.async_delete_task(task_id)
             response = intent_obj.create_response()
             response.async_set_speech(f"Deleted '{item}' from your tasks.")

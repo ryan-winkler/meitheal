@@ -74,7 +74,7 @@ The pronunciation, Areas heading, and New Area button use the theme’s secondar
 
 The **No projects** hint uses the theme’s muted text color at full opacity. Indentation and italic text distinguish it from project links.
 
-The dashboard uses translate-only entry motion at full opacity. The accessibility scan uses normal motion and waits for font loading before checking contrast.
+The dashboard’s 300 ms page-entry fade can lower text contrast while it runs. The full dashboard accessibility scan uses normal motion and checks the rendered page after the fade and font loading complete.
 
 Completed cards use a status label and a struck-through title. Their area names and other text retain full opacity. Area colors still tint the labels, while the theme controls the text color.
 
@@ -94,3 +94,45 @@ Completed cards use a status label and a struck-through title. Their area names 
 
 1. Wait a moment and try again; the modal boot script may still be initializing on first load.
 2. If the quick-add form works but the shell button does not, capture the browser console and check for `openNewTaskModal` errors.
+
+
+### Greeting or metric values have poor contrast
+
+Keep the hero/card surface and foreground in the same effective theme. The
+hero gradient uses the current card surface, while its greeting and metric
+values use the corresponding primary text. Light surfaces need dark text;
+dark surfaces need light text. Check both the hexadecimal tokens used by page
+styles and RGB tokens used by utilities before adding a page-specific override.
+Preserve the existing card, native-control and outline-icon patterns when
+correcting color pairs.
+
+Run `E2E_BASE_URL=<isolated-server> pnpm --filter @meitheal/tests test e2e/dashboard-contrast.spec.ts`
+against an isolated browser fixture. The desktop regression checks explicit
+Light/Dark with opposite system appearance and Auto with both system
+appearances. It samples the actual painted gradient/translucent-card background
+beneath temporarily hidden glyphs, restores original inline styles, and checks
+text using [WCAG contrast thresholds](https://www.w3.org/WAI/WCAG22/Understanding/contrast-minimum.html).
+This covers the selected hero/metric text, not every pixel, personalized palette,
+responsive state or native Home Assistant appearance bridge.
+
+Focused placeholders, enabled status choices, native widgets and primary-button
+contrast also require the shared form/theme checks. A local Dashboard pass does
+not establish that an installed App has the same source or loaded assets.
+
+## Overdue counts and due labels
+
+A date-only due date is a calendar day in the timezone from Settings. A task
+due today is not overdue. It becomes overdue on the next calendar day. A due
+date with a time becomes overdue when that time passes. The Dashboard counter,
+the Overdue Kanban filter and the Focus Queue labels ("Due today", "Due
+tomorrow", "Overdue by 2 days") use the same rule.
+
+If the counter disagrees with Today, check the timezone in Settings → Personal.
+`e2e/launch-layout-regressions.spec.ts` covers the counter with tasks due
+yesterday, today and tomorrow.
+
+## First visit appearance
+
+A browser with no saved theme uses Auto. Auto follows the Home Assistant theme
+inside ingress and the system appearance outside it. An explicit Light, Dark or
+Custom choice in Settings still takes priority.

@@ -5,9 +5,11 @@
  * AI scopes, and constraints apply to tasks based on type and tags.
  */
 
+import type { Client } from "@libsql/client"
 import { getPersistenceClient } from "../tasks/persistence/store"
 import type { AIScope, TaskRule, TaskType } from "@meitheal/domain-strategy"
 import { DEFAULT_AI_SCOPE } from "@meitheal/domain-strategy"
+import { parseRuleInput } from "./rule-input"
 
 /**
  * Safely parse a JSON string, returning fallback on failure.
@@ -78,11 +80,8 @@ export async function findRuleById(id: string): Promise<TaskRule | null> {
   return toTaskRule(row)
 }
 
-/** Create a new rule */
-export async function createRule(rule: TaskRule): Promise<TaskRule> {
-  const client = getPersistenceClient()
-  const now = new Date().toISOString()
-  await client.execute({
+function ruleInsert(rule: TaskRule, now: string) {
+  return {
     sql: `INSERT INTO rules (id, name, description, rule_type, task_types, tags, lens_ids, ai_scope, constraints, priority, enabled, created_at, updated_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     args: [
@@ -100,7 +99,28 @@ export async function createRule(rule: TaskRule): Promise<TaskRule> {
       now,
       now,
     ],
-  })
+  }
+}
+
+/** Replace rules atomically; failed inserts preserve the previous configuration. */
+export async function replaceRules(rules: TaskRule[], replaceIds?: string[], resetFrameworks = false, client: Pick<Client, "batch"> = getPersistenceClient()): Promise<TaskRule[]> {
+  const now = new Date().toISOString()
+  const deletion = replaceIds === undefined
+    ? { sql: "DELETE FROM rules", args: [] }
+    : { sql: `DELETE FROM rules WHERE id IN (${replaceIds.map(() => "?").join(",") || "NULL"})`, args: replaceIds }
+  await client.batch([
+    deletion,
+    ...rules.map((rule) => ruleInsert(rule, now)),
+    ...(resetFrameworks ? [{ sql: "DELETE FROM framework_configs", args: [] }] : []),
+  ], "write")
+  return rules.map((rule) => ({ ...rule, createdAt: now, updatedAt: now }))
+}
+
+/** Create a new rule */
+export async function createRule(rule: TaskRule): Promise<TaskRule> {
+  const client = getPersistenceClient()
+  const now = new Date().toISOString()
+  await client.execute(ruleInsert(rule, now))
   return { ...rule, createdAt: now, updatedAt: now }
 }
 
@@ -114,7 +134,9 @@ export async function updateRule(
 
   const merged: TaskRule = {
     ...existing,
-    ...updates,
+    ...parseRuleInput({ ...existing, ...updates }),
+    id: existing.id,
+    createdAt: existing.createdAt,
     updatedAt: new Date().toISOString(),
   }
 

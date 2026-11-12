@@ -1,6 +1,6 @@
 import { expect, test, type APIRequestContext } from "@playwright/test"
 import { parseRiceInputs, readRiceInputs, riceLensScore } from "../../apps/web/src/lib/rice-lens"
-import { evaluateFrameworkFormula } from "../../apps/web/src/lib/framework-score"
+import { evaluateFrameworkFormula } from "@meitheal/domain-strategy"
 import { taskDetailPath, ticketIdFromPath } from "../../apps/web/src/lib/task-page-url"
 
 test("ticket paths preserve comment targets and scoring uses the existing lens scale", () => {

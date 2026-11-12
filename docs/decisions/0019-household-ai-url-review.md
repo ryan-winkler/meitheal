@@ -11,10 +11,10 @@ Status: Accepted
 
 A custom AI URL may have been saved while system settings were administrator-only. Its path or query can contain a credential. An upgrade must preserve that privacy until an administrator reviews the destination.
 
-Verified Home Assistant household sessions may read the selected provider. A custom destination additionally requires `ai-custom-url-approved` to equal the exact current `ai-custom-url`. Both values are read in one repository query. Missing approval leaves all existing URLs private, without a schema migration. Standalone system reads, agent-token authority, bulk maps and all system-setting writes retain their existing restrictions.
+The handoff view checks current membership in Home Assistant and reads the provider, destination and approval in one query. The local standalone operator retains access. A household member can use a custom destination after a current administrator approves the exact URL. An existing URL stays private until approval.
 
-The administrator reviews the URL and explicitly selects household sharing in Settings. Approval can be written only for the current valid HTTP(S) URL. Editing the field clears the sharing checkbox; changing the saved URL cannot reuse an approval for a different URL. Saving without sharing revokes approval. Administrators must keep secrets out of shared URLs.
+The administrator reviews the URL and selects household sharing in Settings. The provider, valid HTTP(S) destination and approval commit together. Every provider save from the editor requires the previous values, so concurrent changes and an incomplete Settings load cannot overwrite a saved choice. Editing the URL clears the sharing checkbox. A legacy API write that changes the URL also revokes approval. A portable Settings import that includes the provider or URL requires fresh approval on that installation. Administrators must keep secrets out of shared URLs.
 
-Members receive an actionable review-required response until approval. Approved destinations use a native link gesture with `noopener noreferrer`. Built-in providers and the HA-only policy do not require custom URL approval.
+Members receive a review-required response until approval. The handoff asks before opening an external provider, and its native link uses `noopener noreferrer`. Home Assistant-only mode uses Assist for current administrators and explains the role requirement to members.
 
-The regressions cover legacy privacy, administrator approval, invalid and unauthorized approval attempts, changed URLs, revocation, standalone peer rejection and browser handoff. See the [operations runbook](../kcs/operations-runbook.md).
+The regressions cover legacy privacy, current administrator and member access, concurrent saves, URL replacement and restore, and browser handoff. [Operations runbook](../kcs/settings-configuration-recovery.md)

@@ -8,23 +8,28 @@
  */
 
 import { mountDialogOverlay } from "./dialog-overlay"
+import { copyToClipboard } from "./clipboard"
 
 export interface ConfirmOptions {
   title?: string;
   message: string;
+  details?: readonly string[];
   confirmText?: string;
   /** A validated HTTP(S) destination opened by a native link click. */
   confirmUrl?: URL;
+  copyPrompt?: { text: string; label: string; success: string; failure: string }
   cancelText?: string;
   variant?: "danger" | "warning" | "default";
   signal?: AbortSignal;
 }
 
+let dismissCurrent: (() => void) | undefined
+
 export function confirmDialog(options: ConfirmOptions): Promise<boolean> {
   if (options.signal?.aborted) return Promise.resolve(false);
+  if (options.confirmUrl && !["http:", "https:"].includes(options.confirmUrl.protocol)) return Promise.resolve(false)
   return new Promise((resolve) => {
-    // Remove any existing confirm dialog
-    document.getElementById("meitheal-confirm-overlay")?.remove();
+    dismissCurrent?.()
 
     const variant = options.variant ?? "default";
     const accentColor =
@@ -66,9 +71,14 @@ export function confirmDialog(options: ConfirmOptions): Promise<boolean> {
       "></h3>
       <p id="confirm-message" style="
         margin: 0 0 24px; font-size: 14px; line-height: 1.5;
-        color: var(--text-secondary, #94a3b8); text-align: center;
+        color: var(--text-secondary, #94a3b8); text-align: center; overflow-wrap: anywhere;
       "></p>
-      <div style="display: flex; gap: 12px; justify-content: center;">
+      <ul id="confirm-details" hidden style="
+        margin: 0 0 24px; padding-inline-start: 20px; max-block-size: 40vh;
+        overflow: auto; overflow-wrap: anywhere; color: var(--text-secondary, #94a3b8);
+      "></ul>
+      <p id="confirm-copy-status" role="status" hidden style="margin: 0 0 12px; color: var(--text-secondary);"></p>
+      <div style="display: flex; flex-wrap: wrap; gap: 12px; justify-content: center;">
         <button type="button" id="confirm-cancel" style="
           padding: 8px 20px; border-radius: 8px; font-size: 14px; cursor: pointer;
           background: transparent; border: 1px solid var(--border, #334155);
@@ -88,10 +98,28 @@ export function confirmDialog(options: ConfirmOptions): Promise<boolean> {
     dialog.querySelector<HTMLElement>("[data-confirm-icon]")!.textContent = icon
     dialog.querySelector<HTMLElement>("#confirm-title")!.textContent = options.title ?? "Confirm"
     dialog.querySelector<HTMLElement>("#confirm-message")!.textContent = options.message
+    const details = dialog.querySelector<HTMLElement>("#confirm-details")!
+    for (const text of options.details ?? []) {
+      const item = document.createElement("li")
+      item.textContent = text
+      details.appendChild(item)
+    }
+    if (details.childElementCount) {
+      details.hidden = false
+      overlay.setAttribute("aria-describedby", "confirm-message confirm-details")
+    }
     const cancelBtn = dialog.querySelector<HTMLButtonElement>("#confirm-cancel")!
     let okBtn: HTMLButtonElement | HTMLAnchorElement = dialog.querySelector<HTMLButtonElement>("#confirm-ok")!
+    const copyPrompt = options.copyPrompt
+    const copyStatus = dialog.querySelector<HTMLElement>("#confirm-copy-status")!
+    const copyBtn = copyPrompt ? document.createElement("button") : undefined
+    if (copyBtn && copyPrompt) {
+      copyBtn.type = "button"
+      copyBtn.style.cssText = cancelBtn.style.cssText
+      copyBtn.textContent = copyPrompt.label
+      cancelBtn.after(copyBtn)
+    }
     if (options.confirmUrl) {
-      if (!["http:", "https:"].includes(options.confirmUrl.protocol)) { resolve(false); return }
       const link = document.createElement("a")
       link.id = okBtn.id
       link.style.cssText = okBtn.style.cssText
@@ -118,13 +146,18 @@ export function confirmDialog(options: ConfirmOptions): Promise<boolean> {
     cancelBtn?.focus();
 
     let settled = false
+    let removeTimer: number | undefined
+    const listeners = new AbortController()
     const abort = () => cleanup(false, true)
-    function cleanup(result: boolean, immediate = false) {
+    const dismiss = () => cleanup(false, true, false)
+    dismissCurrent = dismiss
+    function cleanup(result: boolean, immediate = false, restoreFocus = true) {
       function remove() {
-        document.removeEventListener("keydown", onKey, true)
-        options.signal?.removeEventListener("abort", abort)
+        window.clearTimeout(removeTimer)
+        listeners.abort()
         overlay.remove()
-        if (!options.signal?.aborted && previouslyFocused?.isConnected) previouslyFocused.focus()
+        if (dismissCurrent === dismiss) dismissCurrent = undefined
+        if (restoreFocus && !options.signal?.aborted && previouslyFocused?.isConnected) previouslyFocused.focus()
       }
       if (settled) {
         if (immediate) remove()
@@ -132,25 +165,44 @@ export function confirmDialog(options: ConfirmOptions): Promise<boolean> {
       }
       settled = true
       overlay.style.opacity = "0"
+      overlay.style.pointerEvents = "none"
+      if (!result && okBtn instanceof HTMLAnchorElement) okBtn.removeAttribute("href")
       if (immediate) remove()
-      else setTimeout(remove, 100)
+      else removeTimer = window.setTimeout(remove, 100)
       resolve(result)
     }
 
-    cancelBtn?.addEventListener("click", () => cleanup(false));
-    okBtn?.addEventListener("click", () => cleanup(true));
+    cancelBtn?.addEventListener("click", () => cleanup(false), { signal: listeners.signal })
+    okBtn?.addEventListener("click", (event) => {
+      if (settled || options.signal?.aborted) {
+        event.preventDefault()
+        return
+      }
+      cleanup(true)
+    }, { signal: listeners.signal })
+    if (copyBtn && copyPrompt) {
+      copyBtn.addEventListener("click", async () => {
+        if (settled || options.signal?.aborted || copyBtn.getAttribute("aria-busy") === "true") return
+        copyBtn.setAttribute("aria-busy", "true")
+        const copied = await copyToClipboard(copyPrompt.text)
+        if (settled || options.signal?.aborted) return
+        copyStatus.hidden = false
+        copyStatus.textContent = copied ? copyPrompt.success : copyPrompt.failure
+        copyBtn.removeAttribute("aria-busy")
+      }, { signal: listeners.signal })
+    }
     overlay.addEventListener("click", (e) => {
       if (e.target === overlay) cleanup(false);
-    });
+    }, { signal: listeners.signal })
     // Let the buttons handle native activation while keeping app shortcuts outside.
     overlay.addEventListener(
       "keydown",
       (event) => event.stopPropagation(),
-      options.signal ? { signal: options.signal } : undefined,
+      { signal: listeners.signal },
     );
 
     // Escape cancels and Tab keeps focus in the dialog.
-    const focusable = [cancelBtn, okBtn].filter(Boolean);
+    const focusable = copyBtn ? [cancelBtn, copyBtn, okBtn] : [cancelBtn, okBtn]
     function onKey(e: KeyboardEvent) {
       if (settled) {
         if (e.key === "Escape") {
@@ -175,8 +227,8 @@ export function confirmDialog(options: ConfirmOptions): Promise<boolean> {
         }
       }
     }
-    document.addEventListener("keydown", onKey, true);
-    options.signal?.addEventListener("abort", abort, { once: true });
+    document.addEventListener("keydown", onKey, { capture: true, signal: listeners.signal })
+    options.signal?.addEventListener("abort", abort, { once: true, signal: listeners.signal })
   });
 }
 

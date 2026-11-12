@@ -205,6 +205,15 @@ function appRoutePath(pathname) {
 const meithealCacheName = /^meitheal-(?:precache|static|api|nav)-v/
 const taskHistoryPath = /^\/api\/tasks\/[^/]+\/(?:activity|timeline)$/
 
+function isBoardRequest(path, params) {
+  if (path === "/tasks" || /^\/tickets\/[^/]+$/.test(path)) {
+    return params.has("board") || params.has("board_id")
+  }
+  return (path === "/api/tasks" && params.has("board_name")) ||
+    (params.has("board_id") &&
+      (path === "/api/search" || /^\/api\/(?:tasks|lanes)(?:\/|$)/.test(path)))
+}
+
 function privateResourcePath(url) {
   const privatePath = pathname => {
     const path = appRoutePath(pathname)
@@ -212,8 +221,8 @@ function privateResourcePath(url) {
         path === "/pinned" || path === "/activity" || path === "/api/search" ||
         path === "/api/comment-people" || path === "/api/mention-inbox" || path === "/mention-inbox" ||
         path === "/api/saved-filters" || path === "/api/task-drafts" ||
-        path === "/inactivity" || path === "/api/task-inactivity" ||
-        taskHistoryPath.test(path) ||
+        path === "/inactivity" || path === "/api/task-inactivity" || path === "/api/labels/cleanup" ||
+        taskHistoryPath.test(path) || (url.search && isBoardRequest(path, url.searchParams)) ||
         /^\/api\/tasks\/(?:reaction-counts|[^/]+\/(?:comments(?:\/[^/]+(?:\/reactions(?:\/[^/]+)?)?)?|reactions(?:\/[^/]+)?))$/.test(path)) return path
   }
 
@@ -312,9 +321,12 @@ self.addEventListener("fetch", (event) => {
   // Keep sensitive API routes out of Cache Storage, even before the worker receives an ingress path.
   const apiPath = url.pathname.replace(/^\/api\/hassio_ingress\/[^/]+/, "");
   const privatePath = privateResourcePath(url)
-  if (privatePath && taskHistoryPath.test(privatePath)) {
+  if (privatePath && (taskHistoryPath.test(privatePath) || (url.search && isBoardRequest(privatePath, url.searchParams)))) {
+    const headers = { "cache-control": "private, no-store" }
     event.respondWith(fetch(event.request, { cache: "no-store" })
-      .catch(() => offlineApiResponse({ "cache-control": "private, no-store" })))
+      .catch(() => privatePath.startsWith("/api/")
+        ? offlineApiResponse(headers)
+        : new Response("Offline", { status: 503, headers })))
     return
   }
   if (privatePath || /^\/api\/(?:settings|ha\/connection|feedback|agent-tokens|export\/database\.sqlite)(?:\/|$)/.test(apiPath)) return;

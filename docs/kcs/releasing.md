@@ -49,7 +49,7 @@ For stable, a fresh runner with an empty Docker configuration pulls both version
 
 The [Canary workflow](../../.github/workflows/publish-canary-images.yml) runs the same build and smoke test on both native architectures. It uses local image tags and has no package permissions or App repository credential. Build results are recorded in Actions. Use the release-host procedure below for retained images, hardware qualification and publication.
 
-Check system library versions in the built images before promotion. The runtime Dockerfile requires zlib 1.4 or later so a cached Home Assistant base cannot retain an older version. [Alpine security tracker](https://security.alpinelinux.org/vuln/CVE-2026-4738)
+Before Green qualification, verify that both exact images have Alpine zlib version `1.4-r0` or later installed. The runtime Dockerfile enforces that minimum even when the Home Assistant base is cached. [Alpine security tracker](https://security.alpinelinux.org/vuln/CVE-2026-4738)
 
 Both App directories receive the same profile from `meitheal-hub/apparmor.txt`. Supervisor loads it under each installed App ID. Check the effective profile on a host with AppArmor enforcement and keep Protection mode enabled during qualification. [AppArmor in Home Assistant](https://contributors.home-assistant.io/apps/guides/security/#apparmor).
 
@@ -61,7 +61,7 @@ Both workflows use standard GitHub-hosted Linux runners on both architectures. G
 
 Run this from a clean source checkout on a trusted Linux host with Git, Node, Python 3.10 or later, jq, GitHub CLI and rootless Podman. Build ARM64 natively or with configured ARM64 emulation, then qualify it on the physical Green. Coordinate a single publisher before any registry writes and keep other publishers idle. The tag check and push are separate operations.
 
-1. Run `bash scripts/publish-canary-local.sh build amd64` and `bash scripts/publish-canary-local.sh build aarch64`. Each build uses committed source, the same Home Assistant base and the same smoke test as CI. Retain both images and record their full `sha256:` config IDs. To transport the ARM64 image, use `podman save --format docker-archive IMAGE_ID` and `podman load`. Verify the ID after loading and save the raw fixed 2,000-task Green benchmark log as a regular file. Keep the log with the private release evidence.
+1. Run `bash scripts/publish-canary-local.sh build amd64` and `bash scripts/publish-canary-local.sh build aarch64`. Each build extracts committed source with readable container file modes inside a private build directory, then uses the same Home Assistant base and the same smoke test as CI. Retain both images and record their full `sha256:` config IDs. To transport the ARM64 image, use `podman save --format docker-archive IMAGE_ID` and `podman load`. Verify the ID after loading and save the raw fixed 2,000-task Green benchmark log as a regular file. Keep the log with the private release evidence.
 2. After qualification and review, check out current source `main`. If the reviewed commit has a different SHA, build and qualify that exact revision. Use a classic PAT with `write:packages` and access to both canonical per-architecture packages. Pipe it from an approved credential store for each command. Publish ARM64 first, then publish the AMD64 sibling from the same source revision. Supply the same Green receipt and ARM64 ID to both commands.
 
    ```sh

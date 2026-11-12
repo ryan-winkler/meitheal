@@ -4,11 +4,12 @@ import { resolveIngressContext } from "@domains/auth/ingress";
 import { getIngressTransport } from "../scripts/ingress-transport.mjs";
 import { buildSecurityHeaders, isCsrfAllowed } from "@domains/auth/ingress-policy";
 import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability";
-import { getPersistenceClient, ensureSchema } from "@domains/tasks/persistence/store";
+import { getPersistenceClient, ensureDatabaseSchemaSupported, ensureSchema } from "@domains/tasks/persistence/store";
 import { initHAIntegrations } from "@domains/ha";
 import { startInactivityScheduler } from "@domains/tasks/task-inactivity-scheduler"
 import type { DateFormat } from "./lib/date";
 import { replayTaskRequest, taskRetryKey } from "./lib/idempotent-task-request"
+import { rejectBoardSelectionInUrl } from "./domains/tasks/board-availability"
 import { hasScope, resolveAgentRouteScope } from "@meitheal/domain-auth"
 import { resolveAgentAuth, type ResolvedAgent } from "./lib/agent-token-guard"
 import { rewriteIngressHtml } from "./lib/rewrite-ingress-html"
@@ -149,6 +150,7 @@ const taskHistoryPath = /^\/api\/tasks\/[^/]+\/(?:activity|timeline)$/
 const draftPath = "/api/task-drafts"
 const inactivityApiPath = "/api/task-inactivity"
 const inactivityPagePath = "/inactivity"
+const labelCleanupPath = "/api/labels/cleanup"
 const commentPaths = new Set(["/api/tasks/[id]/comments", "/api/tasks/[id]/comments/[commentId]"])
 const reactionPaths = new Set([
   "/api/tasks/reaction-counts",
@@ -168,15 +170,21 @@ export const onRequest: MiddlewareHandler = async (context, next) => {
   const draftRoute = routePattern === draftPath || url.pathname === draftPath
   const inactivityApi = routePattern === inactivityApiPath || url.pathname === inactivityApiPath
   const inactivityPage = routePattern === inactivityPagePath || url.pathname === inactivityPagePath
+  const labelCleanup = routePattern === labelCleanupPath || url.pathname === labelCleanupPath
   const hasTaskHistoryPath = taskHistoryPath.test(requestPath)
   const taskHistoryRoute = hasTaskHistoryPath || taskHistoryPath.test(routePattern) || taskHistoryPath.test(url.pathname)
   const participantRoute = commentPaths.has(routePattern) || reactionPaths.has(routePattern)
-  const privateTaskRoute = pinRoute || draftRoute || inactivityApi || inactivityPage || mentionRoute
+  const privateTaskRoute = pinRoute || draftRoute || inactivityApi || inactivityPage || mentionRoute || labelCleanup
   if (!privateTaskRoute && !onlineReadRoute && !taskHistoryRoute && !participantRoute) {
     return handleRequest(context, next, requestUrl)
   }
   if (draftRoute && (requestPath !== draftPath || requestUrl.search)) {
     return new Response(null, { status: requestPath !== draftPath ? 404 : 400, headers: { "cache-control": "private, no-store" } })
+  }
+  if (labelCleanup && (requestPath !== labelCleanupPath || requestUrl.search)) {
+    return Response.json({ ok: false, errorCode: "invalid", detail: "Use the canonical label cleanup path without query parameters." }, {
+      status: requestPath !== labelCleanupPath ? 404 : 400, headers: { "cache-control": "private, no-store" },
+    })
   }
   if ((inactivityApi && requestPath !== inactivityApiPath) || (inactivityPage && requestPath !== inactivityPagePath)) {
     return new Response(null, { status: 404, headers: { "cache-control": "private, no-store" } })
@@ -190,7 +198,33 @@ export const onRequest: MiddlewareHandler = async (context, next) => {
       (isPinRoute(routePattern) && routePattern !== url.pathname)) {
     return new Response(null, { status: 404, headers: { "cache-control": "private, no-store" } })
   }
-  const response = await handleRequest(context, next, requestUrl, privateTaskRoute)
+  let response: Response
+  try {
+    response = await handleRequest(context, next, requestUrl, privateTaskRoute)
+  } catch (error) {
+    if (!labelCleanup) throw error
+    return Response.json({ ok: false, errorCode: "unavailable", detail: "Could not verify label cleanup. Try again." }, {
+      status: 503, headers: { "cache-control": "private, no-store" },
+    })
+  }
+  if (labelCleanup && response.status >= 400) {
+    const codes: Record<number, string> = {
+      400: "invalid", 401: "denied", 403: "denied", 405: "method", 413: "tooLarge", 415: "media",
+      429: "busy", 499: "cancelled", 503: "unavailable",
+    }
+    let errorCode = codes[response.status] ?? "unavailable"
+    if (response.status === 409) {
+      const payload = await response.clone().json().catch(() => null)
+      if (payload?.errorCode === "stale" || payload?.errorCode === "blocked") errorCode = payload.errorCode
+    }
+    const headers = new Headers(response.headers)
+    headers.set("cache-control", "private, no-store")
+    headers.set("content-type", "application/json")
+    headers.delete("content-length")
+    return Response.json({ ok: false, errorCode, detail: "Review unused labels again with a current administrator session." }, {
+      status: response.status, headers,
+    })
+  }
   if (!participantRoute || !response.headers.has("cache-control")) {
     const commentSuccess = commentPaths.has(routePattern) && response.ok
     response.headers.set("cache-control", commentSuccess ? "no-store" : "private, no-store")
@@ -320,9 +354,6 @@ async function handleRequest({ request, locals, routePattern }: Parameters<Middl
     });
   }
 
-  // Lazy-init only after accepting the caller. Do not block on the HA connection.
-  initHAIntegrations().catch(() => {});
-
   // Browser requests without verified transport still require same-origin proof.
   if (["POST", "PUT", "DELETE", "PATCH"].includes(method) && url.pathname.startsWith("/api/")) {
     const origin = request.headers.get("origin");
@@ -347,7 +378,29 @@ async function handleRequest({ request, locals, routePattern }: Parameters<Middl
     }
   }
 
-  if (method === "GET" && (!isHealthCheck || !supervisorMode || trustedLocalCaller)) startInactivityScheduler()
+  const unavailableBoard = rejectBoardSelectionInUrl(url, routePattern, method)
+  if (unavailableBoard) return unavailableBoard
+
+  let databaseAvailable = true
+  try {
+    const schemaCheck = ensureDatabaseSchemaSupported()
+    if (schemaCheck) await schemaCheck
+  } catch {
+    if (!isHealthCheck) {
+      return apiProblem({
+        status: 503,
+        detail: "The database is unavailable. Check the Meitheal startup log or the health endpoint.",
+        extraHeaders: { "cache-control": "private, no-store" },
+      })
+    }
+    databaseAvailable = false
+  }
+
+  // Lazy-init only after accepting the caller. Do not block on the HA connection.
+  if (databaseAvailable) {
+    initHAIntegrations().catch(() => {})
+    if (method === "GET" && (!isHealthCheck || !supervisorMode || trustedLocalCaller)) startInactivityScheduler()
+  }
 
   // Load regional settings for SSR (cached for 60s to avoid DB per-request)
   locals.timezone = "Europe/Dublin";
@@ -358,7 +411,7 @@ async function handleRequest({ request, locals, routePattern }: Parameters<Middl
     locals.timezone = _settingsCache.timezone;
     locals.weekStart = _settingsCache.weekStart;
     locals.dateFormat = _settingsCache.dateFormat as DateFormat;
-  } else {
+  } else if (databaseAvailable) {
     try {
       await ensureSchema();
       const db = getPersistenceClient();
@@ -404,12 +457,6 @@ async function handleRequest({ request, locals, routePattern }: Parameters<Middl
     response = activeParticipantRequired()
   } else {
     response = retryKey ? await replayTaskRequest(retryKey, next) : await next()
-  }
-
-  // Regional preferences must apply on the next page after a successful save.
-  if (url.pathname === "/api/settings" && (method === "PUT" || method === "DELETE") && response.ok) {
-    _settingsCache = null
-    _settingsCacheExpiry = 0
   }
 
   // Rewrite HTML paths when behind HA ingress

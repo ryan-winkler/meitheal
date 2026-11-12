@@ -19,6 +19,7 @@ export interface SettingsSectionDescriptor {
   id: SettingsSectionId
   label: string
   icon: string
+  outlineIcon: "person" | "kanban" | "sliders" | "automation" | "plug" | "phone" | "warning"
   description: string
   navDetail: string
   statusLabel: string
@@ -45,6 +46,7 @@ export const SETTINGS_SECTIONS: SettingsSectionDescriptor[] = [
     id: "personal-settings",
     label: "Personal",
     icon: "🎨",
+    outlineIcon: "person",
     description: "Set up appearance, language, dates and keyboard shortcuts.",
     navDetail: "Appearance, locale, shortcuts, and date defaults",
     statusLabel: "Theme",
@@ -61,6 +63,7 @@ export const SETTINGS_SECTIONS: SettingsSectionDescriptor[] = [
     id: "workflow-settings",
     label: "Workflow",
     icon: "🧭",
+    outlineIcon: "kanban",
     description: "Manage your sidebar, labels, task defaults and notifications.",
     navDetail: "Sidebar, labels, custom fields, defaults, and notifications",
     statusLabel: "Labels",
@@ -77,6 +80,7 @@ export const SETTINGS_SECTIONS: SettingsSectionDescriptor[] = [
     id: "rules-lenses-settings",
     label: "Rules & Lenses",
     icon: "📏",
+    outlineIcon: "sliders",
     description: "Choose task rules, scoring frameworks and AI permissions.",
     navDetail: "Per-type lens assignment, AI guardrails, framework configuration",
     statusLabel: "Rules",
@@ -93,6 +97,7 @@ export const SETTINGS_SECTIONS: SettingsSectionDescriptor[] = [
     id: "automation-ai-settings",
     label: "Automation & AI",
     icon: "🤖",
+    outlineIcon: "automation",
     description: "Set up conversation agents, AI providers and access for other tools.",
     navDetail: "Assist agents, providers, and protocol exposure",
     statusLabel: "Protocols",
@@ -109,6 +114,7 @@ export const SETTINGS_SECTIONS: SettingsSectionDescriptor[] = [
     id: "integrations-settings",
     label: "Integrations",
     icon: "🔌",
+    outlineIcon: "plug",
     description: "Connect Home Assistant, calendars, to-do lists and other services.",
     navDetail: "Home Assistant, calendars, todo lists, Grocy, n8n, and webhooks",
     statusLabel: "HA",
@@ -125,6 +131,7 @@ export const SETTINGS_SECTIONS: SettingsSectionDescriptor[] = [
     id: "app-pwa-settings",
     label: "App & PWA",
     icon: "📲",
+    outlineIcon: "phone",
     description: "Install Meitheal, open it in the Home Assistant app, or move your data.",
     navDetail: "Installability, companion handoff, exports, and recovery",
     statusLabel: "PWA",
@@ -141,6 +148,7 @@ export const SETTINGS_SECTIONS: SettingsSectionDescriptor[] = [
     id: "danger-zone-settings",
     label: "Danger Zone",
     icon: "⚠",
+    outlineIcon: "warning",
     description: "Preview and delete old tasks, purge all tasks or reset settings.",
     navDetail: "Data retention, protected reset, and purge operations",
     statusLabel: "Protected",

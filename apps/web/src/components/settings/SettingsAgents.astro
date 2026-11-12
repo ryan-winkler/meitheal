@@ -1,6 +1,7 @@
 ---
 import { t } from "../../i18n/translations";
 import type { Locale } from "../../lib/locale"
+import { canManageSystemSettings } from "../../lib/settings-security"
 import SettingsPanelCard from "./SettingsPanelCard.astro";
 
 /**
@@ -16,6 +17,7 @@ interface Props {
   locale: Locale;
 }
 const { locale } = Astro.props;
+const canManageAi = canManageSystemSettings(Astro.request, Astro.locals)
 ---
 
 <div class="settings-shell-panel">
@@ -82,54 +84,58 @@ const { locale } = Astro.props;
           <div>
             <strong>{t("settings.ext_ai_title", locale)}</strong>
             <div class="integration-desc">
-              {t("settings.ext_ai_desc", locale)}
+              {t(canManageAi ? "settings.ext_ai_desc" : "settings.ext_ai_admin_only", locale)}
             </div>
           </div>
-          <span class="badge badge-active" id="ext-ai-badge">ChatGPT</span>
+          {canManageAi && <span class="badge badge-active" id="ext-ai-badge" hidden></span>}
         </div>
-        <div class="integration-config">
-          <div class="form-group">
-            <label class="form-label" for="ai-provider">{t("settings.ext_ai_provider", locale)}</label>
-            <select class="form-select" id="ai-provider"
-              data-name-chatgpt={t("settings.ext_ai_chatgpt", locale)}
-              data-name-claude={t("settings.ext_ai_claude", locale)}
-              data-name-gemini={t("settings.ext_ai_gemini", locale)}
-              data-name-ollama={t("settings.ext_ai_ollama", locale)}
-              data-name-ha-llm={t("settings.ext_ai_ha_llm", locale)}
-              data-name-custom={t("settings.ext_ai_custom", locale)}
+        {canManageAi && <div class="integration-config">
+          <p id="ai-provider-unavailable" class="settings-hint" role="status" hidden>{t("settings.ai_provider_edit_unavailable", locale)}</p>
+          <div id="ai-provider-editor" hidden>
+            <div class="form-group">
+              <label class="form-label" for="ai-provider">{t("settings.ext_ai_provider", locale)}</label>
+              <select class="form-select" id="ai-provider" disabled
+                data-name-chatgpt={t("settings.ext_ai_chatgpt", locale)}
+                data-name-claude={t("settings.ext_ai_claude", locale)}
+                data-name-gemini={t("settings.ext_ai_gemini", locale)}
+                data-name-ollama={t("settings.ext_ai_ollama", locale)}
+                data-name-ha-llm={t("settings.ext_ai_ha_llm", locale)}
+                data-name-custom={t("settings.ext_ai_custom", locale)}
+              >
+                <option value="chatgpt" selected>{t("settings.ext_ai_chatgpt", locale)}</option>
+                <option value="claude">{t("settings.ext_ai_claude", locale)}</option>
+                <option value="gemini">{t("settings.ext_ai_gemini", locale)}</option>
+                <option value="ollama">{t("settings.ext_ai_ollama", locale)}</option>
+                <option value="ha_llm">{t("settings.ext_ai_ha_llm", locale)}</option>
+                <option value="custom">{t("settings.ext_ai_custom", locale)}</option>
+              </select>
+            </div>
+            <div
+              class="form-group"
+              id="ai-custom-url-group"
+              style="display: none;"
             >
-              <option value="chatgpt" selected>{t("settings.ext_ai_chatgpt", locale)}</option>
-              <option value="claude">{t("settings.ext_ai_claude", locale)}</option>
-              <option value="gemini">{t("settings.ext_ai_gemini", locale)}</option>
-              <option value="ollama">{t("settings.ext_ai_ollama", locale)}</option>
-              <option value="ha_llm">{t("settings.ext_ai_ha_llm", locale)}</option>
-              <option value="custom">{t("settings.ext_ai_custom", locale)}</option>
-            </select>
+              <label class="form-label" for="ai-custom-url">{t("settings.ext_ai_custom_url", locale)}</label>
+              <input
+                type="url"
+                class="form-input"
+                id="ai-custom-url"
+                aria-describedby="ai-custom-url-help"
+                placeholder="http://localhost:11434/api/chat"
+                disabled
+              />
+              <p class="settings-hint" id="ai-custom-url-help">{t("settings.ai_custom_url_visibility", locale)}</p>
+              <label class="settings-text-sm">
+                <input type="checkbox" id="ai-custom-url-share" aria-describedby="ai-custom-url-help" disabled />
+                {t("settings.ai_custom_url_share", locale)}
+              </label>
+            </div>
+            <button
+              type="button"
+              class="btn btn-primary settings-text-sm"
+              id="save-ai" disabled>{t("settings.save_ai_settings", locale)}</button>
           </div>
-          <div
-            class="form-group"
-            id="ai-custom-url-group"
-            style="display: none;"
-          >
-            <label class="form-label" for="ai-custom-url">{t("settings.ext_ai_custom_url", locale)}</label>
-            <input
-              type="url"
-              class="form-input"
-              id="ai-custom-url"
-              aria-describedby="ai-custom-url-help"
-              placeholder="http://localhost:11434/api/chat"
-            />
-            <p class="settings-hint" id="ai-custom-url-help">{t("settings.ai_custom_url_visibility", locale)}</p>
-            <label class="settings-text-sm">
-              <input type="checkbox" id="ai-custom-url-share" aria-describedby="ai-custom-url-help" />
-              {t("settings.ai_custom_url_share", locale)}
-            </label>
-          </div>
-          <button
-            type="button"
-            class="btn btn-primary settings-text-sm"
-            id="save-ai">{t("settings.save_ai_settings", locale)}</button>
-        </div>
+        </div>}
       </div>
 
       <hr style="border-color: var(--border); margin: 16px 0;" />
@@ -143,9 +149,10 @@ const { locale } = Astro.props;
               {t("settings.agent_protocols_desc", locale)}
             </div>
           </div>
-          <span class="badge badge-active" id="agent-protocols-status"
-            >{t("settings.active", locale)}</span
-          >
+          <span class="badge badge-pending" id="agent-protocols-status" role="status" aria-live="polite"
+            style="white-space: normal;"
+            data-checking={t("settings.protocol_discovery_checking", locale)}
+            data-count={t("settings.protocol_discovery_count", locale)}>{t("settings.protocol_discovery_not_checked", locale)}</span>
         </div>
         <div class="integration-config">
           <!-- A2A -->
@@ -166,12 +173,17 @@ const { locale } = Astro.props;
                   class="settings-caption"
                 >
                   <span set:html={t("settings.a2a_desc", locale)} />
+                  <p id="agent-a2a-runtime-status" role="status" aria-live="polite"
+                    data-checking={t("settings.protocol_discovery_checking", locale)}
+                    data-disabled={t("settings.protocol_discovery_disabled", locale)}
+                    data-unavailable={t("settings.protocol_discovery_unavailable", locale)}
+                    data-available={t("settings.protocol_discovery_a2a", locale)}>{t("settings.protocol_discovery_not_checked", locale)}</p>
                   <a
                     href="/api/a2a/agent-card"
                     target="_blank"
                     rel="noopener noreferrer"
                     class="protocol-link"
-                    data-path="/api/a2a/agent-card"
+                    data-path="/api/a2a/agent-card" data-protocol-link="a2a" hidden
                   >
                     {t("settings.view_agent_card", locale)}
                   </a>
@@ -200,6 +212,13 @@ const { locale } = Astro.props;
                 >
                   {t("settings.webmcp_desc", locale)}
                 </div>
+                <p id="webmcp-runtime-status" class="settings-hint" role="status" aria-live="polite"
+                  data-state="disabled"
+                  data-disabled={t("settings.webmcp_disabled", locale)}
+                  data-unavailable={t("settings.webmcp_unavailable", locale)}
+                  data-starting={t("settings.webmcp_starting", locale)}
+                  data-registered={t("settings.webmcp_registered", locale)}
+                  data-failed={t("settings.webmcp_failed", locale)}>{t("settings.webmcp_disabled", locale)}</p>
               </div>
             </div>
           </div>
@@ -219,12 +238,17 @@ const { locale } = Astro.props;
                   class="settings-caption"
                 >
                   <span set:html={t("settings.mcp_discovery_desc", locale)} />
+                  <p id="agent-mcp-runtime-status" role="status" aria-live="polite"
+                    data-checking={t("settings.protocol_discovery_checking", locale)}
+                    data-disabled={t("settings.protocol_discovery_disabled", locale)}
+                    data-unavailable={t("settings.protocol_discovery_unavailable", locale)}
+                    data-available={t("settings.protocol_discovery_mcp", locale)}>{t("settings.protocol_discovery_not_checked", locale)}</p>
                   <a
                     href="/.well-known/mcp.json"
                     target="_blank"
                     rel="noopener noreferrer"
                     class="protocol-link"
-                    data-path="/.well-known/mcp.json"
+                    data-path="/.well-known/mcp.json" data-protocol-link="mcp" hidden
                   >
                     {t("settings.view_mcp_manifest", locale)}
                   </a>
@@ -233,6 +257,8 @@ const { locale } = Astro.props;
             </div>
           </div>
 
+          <button type="button" class="btn btn-secondary settings-text-sm" id="refresh-agent-discovery"
+            data-checking={t("settings.protocol_discovery_checking", locale)}>{t("settings.protocol_discovery_retry", locale)}</button>
           <button
             class="btn btn-primary settings-text-sm"
             id="save-agent-protocols">{t("settings.save_protocol_settings", locale)}</button
@@ -246,7 +272,7 @@ const { locale } = Astro.props;
   <div class="settings-grid mt-4">
     <SettingsPanelCard
       title={t("settings.bot_handoff_title", locale)}
-      subtitle={t("settings.bot_handoff_subtitle", locale)}
+      subtitle={locale === "ga" ? "Déanann riarthóir reatha Home Assistant athruithe a mholann gníomhairí a athbhreithniú sula gcuirtear i bhfeidhm iad." : "A current Home Assistant administrator reviews agent proposals before their changes apply."}
     >
       <a id="bot-allow-proposals" class="btn btn-secondary" href="/review">{t("settings.bot_handoff_review", locale)}</a>
     </SettingsPanelCard>
@@ -296,6 +322,9 @@ const { locale } = Astro.props;
   .integration-config .form-group + .form-group {
     margin-top: 12px;
   }
+  #ext-ai-badge[hidden] {
+    display: none;
+  }
 </style>
 
 <script>
@@ -336,7 +365,7 @@ const { locale } = Astro.props;
   // ── Fix ingress-aware links ──
   // Agent Card + MCP manifest links need the ingress base path prepended
   function fixProtocolLinks() {
-    const base = window.__meitheal_base || "";
+    const base = window.__ingress_path || "";
     document.querySelectorAll(".protocol-link[data-path]").forEach((el) => {
       const path = (el as HTMLAnchorElement).dataset.path;
       if (path) (el as HTMLAnchorElement).href = base + path;

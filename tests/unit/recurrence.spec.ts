@@ -123,131 +123,130 @@ test.describe("parseRRule", () => {
 // ── getNextOccurrence ──────────────────────────────────────────────────
 
 test.describe("getNextOccurrence", () => {
-  // Helper — create date at midnight local time (recurrence.ts uses local-time Date methods)
-  function localDate(year: number, month: number, day: number): Date {
-    return new Date(year, month - 1, day)
+  function utcDate(year: number, month: number, day: number): Date {
+    return new Date(Date.UTC(year, month - 1, day))
   }
 
   test.describe("DAILY", () => {
     test("advances by 1 day", () => {
       const rule: RecurrenceRule = { freq: "DAILY", interval: 1 }
-      const next = getNextOccurrence(rule, localDate(2026, 3, 20))!
-      expect(next.getDate()).toBe(21)
-      expect(next.getMonth()).toBe(2) // March = 2
+      const next = getNextOccurrence(rule, utcDate(2026, 3, 20))!
+      expect(next.getUTCDate()).toBe(21)
+      expect(next.getUTCMonth()).toBe(2) // March = 2
     })
 
     test("advances by custom interval", () => {
       const rule: RecurrenceRule = { freq: "DAILY", interval: 3 }
-      const next = getNextOccurrence(rule, localDate(2026, 3, 20))!
-      expect(next.getDate()).toBe(23)
+      const next = getNextOccurrence(rule, utcDate(2026, 3, 20))!
+      expect(next.getUTCDate()).toBe(23)
     })
 
     test("crosses month boundary", () => {
       const rule: RecurrenceRule = { freq: "DAILY", interval: 1 }
-      const next = getNextOccurrence(rule, localDate(2026, 3, 31))!
-      expect(next.getMonth()).toBe(3) // April = 3
-      expect(next.getDate()).toBe(1)
+      const next = getNextOccurrence(rule, utcDate(2026, 3, 31))!
+      expect(next.getUTCMonth()).toBe(3) // April = 3
+      expect(next.getUTCDate()).toBe(1)
     })
   })
 
   test.describe("WEEKLY", () => {
     test("advances by 1 week", () => {
       const rule: RecurrenceRule = { freq: "WEEKLY", interval: 1 }
-      const next = getNextOccurrence(rule, localDate(2026, 3, 20))!
-      expect(next.getDate()).toBe(27)
+      const next = getNextOccurrence(rule, utcDate(2026, 3, 20))!
+      expect(next.getUTCDate()).toBe(27)
     })
 
     test("advances by custom interval", () => {
       const rule: RecurrenceRule = { freq: "WEEKLY", interval: 2 }
-      const next = getNextOccurrence(rule, localDate(2026, 3, 20))!
+      const next = getNextOccurrence(rule, utcDate(2026, 3, 20))!
       // 20 + 14 = April 3 (crosses month boundary)
-      expect(next.getDate()).toBe(3)
-      expect(next.getMonth()).toBe(3) // April
+      expect(next.getUTCDate()).toBe(3)
+      expect(next.getUTCMonth()).toBe(3) // April
     })
 
     test("BYDAY finds next matching day in same week", () => {
       // March 23, 2026 is a Monday (day 1)
       const rule: RecurrenceRule = { freq: "WEEKLY", interval: 1, byDay: ["WE", "FR"] }
-      const next = getNextOccurrence(rule, localDate(2026, 3, 23))!
+      const next = getNextOccurrence(rule, utcDate(2026, 3, 23))!
       // Should jump to Wednesday March 25
-      expect(next.getDate()).toBe(25)
-      expect(next.getDay()).toBe(3) // Wednesday
+      expect(next.getUTCDate()).toBe(25)
+      expect(next.getUTCDay()).toBe(3) // Wednesday
     })
 
     test("BYDAY wraps to next week when past all target days", () => {
       // March 21, 2026 is a Saturday (day 6)
       const rule: RecurrenceRule = { freq: "WEEKLY", interval: 1, byDay: ["MO", "WE"] }
-      const next = getNextOccurrence(rule, localDate(2026, 3, 21))!
+      const next = getNextOccurrence(rule, utcDate(2026, 3, 21))!
       // Should jump to Monday March 23
-      expect(next.getDay()).toBe(1) // Monday
+      expect(next.getUTCDay()).toBe(1) // Monday
     })
   })
 
   test.describe("MONTHLY", () => {
     test("advances by 1 month", () => {
       const rule: RecurrenceRule = { freq: "MONTHLY", interval: 1 }
-      const next = getNextOccurrence(rule, localDate(2026, 3, 15))!
-      expect(next.getMonth()).toBe(3) // April
-      expect(next.getDate()).toBe(15)
+      const next = getNextOccurrence(rule, utcDate(2026, 3, 15))!
+      expect(next.getUTCMonth()).toBe(3) // April
+      expect(next.getUTCDate()).toBe(15)
     })
 
     test("month-end overflow: Jan 31 → Feb 28 (non-leap)", () => {
       const rule: RecurrenceRule = { freq: "MONTHLY", interval: 1 }
-      const next = getNextOccurrence(rule, localDate(2026, 1, 31))!
-      expect(next.getMonth()).toBe(1) // February
-      expect(next.getDate()).toBe(28)
+      const next = getNextOccurrence(rule, utcDate(2026, 1, 31))!
+      expect(next.getUTCMonth()).toBe(1) // February
+      expect(next.getUTCDate()).toBe(28)
     })
 
     test("month-end overflow: Jan 31 → Feb 29 (leap year)", () => {
       const rule: RecurrenceRule = { freq: "MONTHLY", interval: 1 }
-      const next = getNextOccurrence(rule, localDate(2028, 1, 31))!
-      expect(next.getMonth()).toBe(1) // February
-      expect(next.getDate()).toBe(29)
+      const next = getNextOccurrence(rule, utcDate(2028, 1, 31))!
+      expect(next.getUTCMonth()).toBe(1) // February
+      expect(next.getUTCDate()).toBe(29)
     })
 
     test("advances by custom interval", () => {
       const rule: RecurrenceRule = { freq: "MONTHLY", interval: 3 }
-      const next = getNextOccurrence(rule, localDate(2026, 1, 15))!
-      expect(next.getMonth()).toBe(3) // April
-      expect(next.getDate()).toBe(15)
+      const next = getNextOccurrence(rule, utcDate(2026, 1, 15))!
+      expect(next.getUTCMonth()).toBe(3) // April
+      expect(next.getUTCDate()).toBe(15)
     })
   })
 
   test.describe("YEARLY", () => {
     test("advances by 1 year", () => {
       const rule: RecurrenceRule = { freq: "YEARLY", interval: 1 }
-      const next = getNextOccurrence(rule, localDate(2026, 6, 15))!
-      expect(next.getFullYear()).toBe(2027)
-      expect(next.getMonth()).toBe(5) // June
-      expect(next.getDate()).toBe(15)
+      const next = getNextOccurrence(rule, utcDate(2026, 6, 15))!
+      expect(next.getUTCFullYear()).toBe(2027)
+      expect(next.getUTCMonth()).toBe(5) // June
+      expect(next.getUTCDate()).toBe(15)
     })
 
     test("leap year: Feb 29 → Mar 1 next year", () => {
       // 2028 is a leap year with Feb 29
       const rule: RecurrenceRule = { freq: "YEARLY", interval: 1 }
-      const next = getNextOccurrence(rule, localDate(2028, 2, 29))!
+      const next = getNextOccurrence(rule, utcDate(2028, 2, 29))!
       // 2029 has no Feb 29 — Date auto-rolls to March 1
-      expect(next.getFullYear()).toBe(2029)
-      // JS Date rolls Feb 29 → Mar 1 when target year lacks Feb 29
-      expect(next.getMonth() === 2 || next.getMonth() === 1).toBeTruthy()
+      expect(next.getUTCFullYear()).toBe(2029)
+      expect(next.getUTCMonth()).toBe(2)
+      expect(next.getUTCDate()).toBe(1)
     })
 
     test("advances by custom interval", () => {
       const rule: RecurrenceRule = { freq: "YEARLY", interval: 2 }
-      const next = getNextOccurrence(rule, localDate(2026, 1, 1))!
-      expect(next.getFullYear()).toBe(2028)
+      const next = getNextOccurrence(rule, utcDate(2026, 1, 1))!
+      expect(next.getUTCFullYear()).toBe(2028)
     })
   })
 
   test.describe("COUNT exhaustion", () => {
     test("returns null when completionCount >= count", () => {
       const rule: RecurrenceRule = { freq: "DAILY", interval: 1, count: 5 }
-      expect(getNextOccurrence(rule, localDate(2026, 3, 20), 5)).toBeNull()
+      expect(getNextOccurrence(rule, utcDate(2026, 3, 20), 5)).toBeNull()
     })
 
     test("returns date when completionCount < count", () => {
       const rule: RecurrenceRule = { freq: "DAILY", interval: 1, count: 5 }
-      expect(getNextOccurrence(rule, localDate(2026, 3, 20), 4)).not.toBeNull()
+      expect(getNextOccurrence(rule, utcDate(2026, 3, 20), 4)).not.toBeNull()
     })
   })
 
@@ -255,12 +254,12 @@ test.describe("getNextOccurrence", () => {
     test("returns null when next occurrence exceeds UNTIL", () => {
       const rule: RecurrenceRule = { freq: "DAILY", interval: 1, until: "2026-03-21" }
       // From March 21, next would be March 22 → past UNTIL
-      expect(getNextOccurrence(rule, localDate(2026, 3, 21))).toBeNull()
+      expect(getNextOccurrence(rule, utcDate(2026, 3, 21))).toBeNull()
     })
 
     test("returns date when next occurrence is within UNTIL", () => {
       const rule: RecurrenceRule = { freq: "DAILY", interval: 1, until: "2026-03-25" }
-      const next = getNextOccurrence(rule, localDate(2026, 3, 20))
+      const next = getNextOccurrence(rule, utcDate(2026, 3, 20))
       expect(next).not.toBeNull()
     })
   })

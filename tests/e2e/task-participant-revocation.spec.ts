@@ -9,11 +9,11 @@ import { deferred } from "./_helpers"
 
 const activeParticipantProblem = "https://meitheal.local/problems/active-task-participant-required"
 
-function holdComment(url: string, headers: Record<string, string>, body: { content: string }) {
+function holdParticipantBody(url: string, headers: Record<string, string>, body: object, method = "POST") {
   const pending = deferred<{ status: number; cache: string | undefined; type: string | undefined; replay: string | undefined } | Error>()
   const request = httpRequest(url, {
-    method: "POST",
-    headers: { ...headers, "content-type": "application/json", "x-meitheal-fixture-held-body": "1" },
+    method,
+    headers: { ...headers, "content-type": "application/json", "transfer-encoding": "chunked", "x-meitheal-fixture-held-body": "1" },
   }, response => {
     let body = ""
     response.setEncoding("utf8")
@@ -29,8 +29,9 @@ function holdComment(url: string, headers: Record<string, string>, body: { conte
   request.once("error", error => pending.resolve(error))
   request.setTimeout(8_000, () => request.destroy(new Error("Timed out waiting for a participant response")))
   const data = JSON.stringify(body)
-  request.write(data.slice(0, 12))
-  return { finish: () => request.end(data.slice(12)), abort: () => request.destroy(), response: pending.promise.then(result => {
+  const split = Math.min(12, data.length - 1)
+  request.write(data.slice(0, split))
+  return { finish: () => request.end(data.slice(split)), abort: () => request.destroy(), response: pending.promise.then(result => {
     if (result instanceof Error) throw result
     return result
   }) }
@@ -88,9 +89,10 @@ test("revoking a Core member fences comment replay and participant writes", asyn
       const [measurement] = await metrics
       return measurement as { membershipQueries: number; lookupStillHeld: boolean }
     }
-    async function startHeld(headers: Record<string, string>, body = { content: "Delayed revoked comment" }) {
+    async function startHeld(headers: Record<string, string>, body: object = { content: "Delayed revoked comment" },
+      url = comments, method = "POST") {
       const arrived = once(child, "message", { signal: AbortSignal.timeout(4_000) })
-      const held = holdComment(comments, headers, body)
+      const held = holdParticipantBody(url, headers, body, method)
       void held.response.catch(() => {})
       expect((await arrived)[0]).toEqual({ participantBodyStarted: true })
       return held
@@ -126,6 +128,16 @@ test("revoking a Core member fences comment replay and participant writes", asyn
     held.finish()
     heldKeyed.finish()
     for (const result of await Promise.all([held.response, heldKeyed.response])) {
+      expect(result).toEqual({ status: 403, type: activeParticipantProblem, cache: "private, no-store", replay: undefined })
+    }
+    await setCore({ user: "member", active: true })
+    const heldDeletes = []
+    for (const url of [`${comments}/${commentId}`, `${reactions}/${reactionId}`, `${card}/${cardReactionId}`]) {
+      heldDeletes.push(await startHeld(member, {}, url, "DELETE"))
+    }
+    await setCore({ user: "member", active: false })
+    for (const deletion of heldDeletes) deletion.finish()
+    for (const result of await Promise.all(heldDeletes.map(deletion => deletion.response))) {
       expect(result).toEqual({ status: 403, type: activeParticipantProblem, cache: "private, no-store", replay: undefined })
     }
     const invalidBody = { headers: { ...member, "content-type": "application/json" }, data: "{" }

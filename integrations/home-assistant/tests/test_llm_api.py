@@ -68,6 +68,7 @@ async def test_optional_registry_follows_entry_lifecycle(
     )
     entry.add_to_hass(hass)
     aioclient_mock.get("https://tasks.example.test/api/tasks", json={"tasks": []})
+    aioclient_mock.get("https://tasks.example.test/api/gamification", status=403)
     assert await hass.config_entries.async_setup(entry.entry_id)
     assert hass.services.has_service(DOMAIN, "create_task")
 

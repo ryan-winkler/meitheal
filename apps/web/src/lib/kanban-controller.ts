@@ -1,3 +1,4 @@
+import { onTaskCompleted, type TaskCompletionResponse } from "@lib/gamification-hook"
 // Extracted from kanban.astro is:inline script (PGD-01).
 // DOM-heavy code uses eslint-disable for any casts on DOM Element access.
 import { createClientLogger } from "@lib/client-logger";
@@ -103,7 +104,7 @@ export function initKanbanArea(
 
         const moved = window.mI18n?.get("kanban.moved_to") ?? "Moved to {lane}"
         showToast(moved.replace("{lane}", laneName))
-        if (!wasDone && isDoneStatus(status)) recordCompletion(card, restoreFocus)
+        if (!wasDone && isDoneStatus(status)) recordCompletion(card, restoreFocus, await res.json())
         await refreshBoard(restoreFocus ? { taskId, lane: status } : undefined)
       } catch (error) {
         if (__signal.aborted) return
@@ -115,22 +116,18 @@ export function initKanbanArea(
       }
     }
 
-    function recordCompletion(card: HTMLElement, keyboardOrMenu: boolean) {
+    function recordCompletion(card: HTMLElement, keyboardOrMenu: boolean, completed: TaskCompletionResponse) {
+      if (!completed.gamification) return
+      onTaskCompleted({ gamification: { ...completed.gamification, confetti: false } })
       const flags = window.__featureFlags || {}
       const priority = Number(card.dataset.priority) || 3
-      if (!keyboardOrMenu && flags.confetti !== false && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      if (completed.gamification.confetti && !completed.gamification.error && !keyboardOrMenu && flags.confetti !== false && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
         import("@lib/celebrations").then(({ celebrateHighPriorityComplete, fireConfetti }) => {
           if (priority <= 1) celebrateHighPriorityComplete(card.dataset.title || "Task")
           else fireConfetti({ particleCount: 32, duration: 1200 })
         }).catch(() => window.triggerConfetti?.())
       }
-      if (flags.gamification !== false) {
-        fetch("/api/gamification", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ priority }),
-        }).catch(() => {})
-      }
+
     }
 
     function handleDrop(event: DragEvent) {

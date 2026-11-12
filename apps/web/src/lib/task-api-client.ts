@@ -211,9 +211,12 @@ export const taskApi = {
 
   /** DELETE /api/tasks/:id — delete a task */
   async deleteTask(id: string): Promise<void> {
-    await safeFetch(`/api/tasks/${enc(id)}`, {
+    const res = await safeFetch(`/api/tasks/${enc(id)}`, {
       method: "DELETE",
     })
+    if (res.ok) return
+    void res.body?.cancel().catch(() => {})
+    throw new Error(`API ${res.status}`)
   },
 
   /** POST /api/tasks/:id/duplicate — clone a task */

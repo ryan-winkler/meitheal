@@ -48,7 +48,7 @@ test("runtime-first and CLI-first paths reconcile the schema and preserve task d
   expect(migrate()).toContain("Applied migration: 0005_task_pins.mjs")
   await ensureSchema()
   await seed(db, "retained")
-  expect(getSchemaVersion()).toBe(17)
+  expect(getSchemaVersion()).toBe(18)
 
   // Recreate the state just before the pin migration on an existing database.
   await db.batch([
@@ -59,7 +59,7 @@ test("runtime-first and CLI-first paths reconcile the schema and preserve task d
   db.close()
   resetPersistenceForTests()
   await ensureSchema()
-  expect(getSchemaVersion()).toBe(17)
+  expect(getSchemaVersion()).toBe(18)
   expect(() => migrate("--check")).toThrow(/Pending migrations: 0005_task_pins.mjs/)
   expect(migrate()).toContain("Applied migration: 0005_task_pins.mjs")
   expect(migrate("--check")).toContain("Migration check passed")

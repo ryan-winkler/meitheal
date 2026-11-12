@@ -40,7 +40,7 @@ const hasActions = Astro.slots.has("actions")
 <style>
   .settings-panel-card {
     min-width: 0;
-    padding: clamp(14px, 2.4vw, 24px);
+    padding: var(--settings-inset, 16px);
     border-radius: 12px;
   }
 
@@ -87,23 +87,13 @@ const hasActions = Astro.slots.has("actions")
 
   .settings-panel-card--accent {
     border-color: color-mix(in srgb, var(--border) 68%, var(--accent));
-    background:
-      linear-gradient(
-        180deg,
-        color-mix(in srgb, var(--bg-card) 94%, var(--accent) 5%),
-        var(--bg-card)
-      );
+    background: color-mix(in srgb, var(--bg-card) 96%, var(--accent));
   }
 
   .settings-panel-card--danger {
     border-width: 2px;
     border-color: color-mix(in srgb, var(--danger) 75%, var(--border));
-    background:
-      linear-gradient(
-        180deg,
-        color-mix(in srgb, var(--bg-card) 94%, var(--danger) 5%),
-        var(--bg-card)
-      );
+    background: color-mix(in srgb, var(--bg-card) 96%, var(--danger));
   }
 
   .settings-panel-card--danger .settings-panel-card__title {

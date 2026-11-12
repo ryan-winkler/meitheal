@@ -6,6 +6,7 @@
  *      Manages the shared popover system and all quick-action card buttons.
  */
 import { createClientLogger } from "@lib/client-logger"
+import { notifyInactivityTaskChanged } from "@lib/inactivity-client"
 import { sanitizeCssColor } from "@lib/safe-html"
 import { showToast } from "@lib/toast"
 import type { KanbanRefreshFocus } from "./kanban-page-controller"
@@ -73,6 +74,7 @@ export function initQuickActions(
         body: JSON.stringify({ color }),
       })
       if (!response.ok) throw new Error("Color write rejected")
+      notifyInactivityTaskChanged(taskId)
       await refreshBoard({ taskId })
       toast(color ? "Color updated" : "Color cleared", "success")
     } catch {
@@ -121,10 +123,10 @@ export function initQuickActions(
     window.addEventListener("scroll", position, { capture: true, passive: true, signal: __signal })
     _scrollCleanup = () => window.removeEventListener("scroll", position, true)
 
-    // Focus first interactive element (P1-1)
+    const focusAtOpen = document.activeElement
     requestAnimationFrame(() => {
-      const first = popover.querySelector("button, [tabindex]")
-      if (activePopover === popover && first instanceof HTMLElement) first.focus({ preventScroll: true })
+      if (activePopover !== popover || document.activeElement !== focusAtOpen) return
+      popover.querySelector<HTMLElement>("button, [tabindex]")?.focus({ preventScroll: true })
     })
 
     return popover

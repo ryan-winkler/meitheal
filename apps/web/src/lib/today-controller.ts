@@ -27,7 +27,7 @@ import { taskApi, type TaskCreatePayload } from "./task-api-client"
 import { showToast } from "./toast"
 import { confirmDialog } from "./confirm-dialog"
 import { onTaskCompleted } from "./gamification-hook"
-import { parseTaskInput } from "./nl-task-parser"
+import { parseTaskInput, type ParsedTask } from "./nl-task-parser"
 import {
   saveFilterState,
   loadFilterState,
@@ -89,6 +89,8 @@ export function initTodayPage(options?: Partial<TodayControllerOptions>) {
 
   const container = options?.container ?? document.body
   focusedIndex = -1
+  // Restore the batch selection before restoring filters rewrites history state.
+  const addBatchCheckboxes = setupBatchUI(container, lm)
 
   initPageShellNavigation({
     barId: "today-bar",
@@ -111,8 +113,7 @@ export function initTodayPage(options?: Partial<TodayControllerOptions>) {
   setupAutoRefresh(container)     // G33
   setupEveningReview(container, lm)   // G34
   renderEffortIndicators(container) // G35
-  setupBatchUI(container, lm)         // G30
-  const refreshUnscheduled = setupUnscheduledSection(container, lm)
+  const refreshUnscheduled = setupUnscheduledSection(container, lm, addBatchCheckboxes)
   setupFilters(container, refreshUnscheduled)
   if (window.location.search !== initialSearch) refreshUnscheduled()
   setupHabitsSection(container, lm)    // G38
@@ -160,9 +161,9 @@ function setupEventDelegation(container: HTMLElement) {
       }
 
       try {
-        await taskApi.updateTask(id, { status: newStatus })
+        const completed = await taskApi.updateTask(id, { status: newStatus })
         showToast(cb.checked ? "common.task_completed" : "common.task_reopened")
-        if (cb.checked) onTaskCompleted()
+        if (cb.checked) onTaskCompleted(completed)
       } catch {
         cb.checked = !cb.checked
         item?.classList.toggle("tli--done", cb.checked)
@@ -401,9 +402,14 @@ function closeSnoozePopover() {
 
 // ── Ask AI ────────────────────────────────────────────────────────────────
 
+let activeAiHandoff: AbortController | undefined
+
 async function handleAskAi(el: HTMLElement) {
   if (el.dataset.aiBusy === "true") return
-  const signal = lm.signal
+  activeAiHandoff?.abort()
+  const request = new AbortController()
+  activeAiHandoff = request
+  const signal = AbortSignal.any([lm.signal, request.signal])
   const title = el.dataset.title ?? ""
   const desc = el.dataset.description ?? ""
   const status = el.dataset.status ?? "pending"
@@ -418,22 +424,33 @@ async function handleAskAi(el: HTMLElement) {
     const target = await resolveAiHandoffTarget(signal)
     if (!target || signal.aborted) return
     if (target.provider === "ha_llm") {
-      if (window.openAskHaModal) window.openAskHaModal(prompt)
+      if (!target.canUseAssist) showToast("settings.ai_handoff_ha_denied", "error")
+      else if (window.openAskHaModal) window.openAskHaModal(prompt)
       else showToast("settings.ai_handoff_ha_unavailable", "error")
       return
     }
-    const url = new URL(target.url)
-    if (target.provider !== "custom" && target.provider !== "ollama") {
-      if (target.provider === "gemini") url.pathname = "/app"
-      url.searchParams.set("q", prompt)
+    if (!target.url) {
+      showToast("settings.ai_handoff_url_invalid", "error")
+      return
     }
-    await offerAiHandoff(url, signal)
+    const url = new URL(target.url)
+    const sendsTaskDetails = target.provider !== "custom" && target.provider !== "ollama"
+    if (sendsTaskDetails) url.searchParams.set("q", prompt)
+    await offerAiHandoff(url, sendsTaskDetails, signal)
   } catch {
     if (!signal.aborted) showToast("settings.ai_handoff_provider_unavailable", "error")
   } finally {
+    if (activeAiHandoff === request) activeAiHandoff = undefined
     delete el.dataset.aiBusy
     el.removeAttribute("aria-busy")
   }
+}
+
+function parseQuickTask(input: string): ParsedTask {
+  if (window.__featureFlags?.nlp_parser === false) {
+    return { title: input.trim(), dueDate: null, priority: null, labels: [], assignee: null, hasExtractions: false }
+  }
+  return parseTaskInput(input)
 }
 
 // ── Quick Add ─────────────────────────────────────────────────────────────
@@ -451,7 +468,7 @@ function setupQuickAdd(container: HTMLElement) {
     if (!text) return
 
     // Parse NL input
-    const parsed = parseTaskInput(text)
+    const parsed = parseQuickTask(text)
     const todayStr = new Date().toISOString().split("T")[0]!
 
     // Detect shopping list: "shopping: item1, item2"
@@ -512,7 +529,7 @@ function setupQuickAdd(container: HTMLElement) {
         return
       }
 
-      const parsed = parseTaskInput(val)
+      const parsed = parseQuickTask(val)
       const parts: string[] = []
 
       if (parsed.dueDate) parts.push(`📅 Due: ${parsed.dueDate}`)
