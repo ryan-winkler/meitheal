@@ -56,6 +56,7 @@ Cross-context imports must occur through public package APIs, not deep path impo
 
 The source repository contains the application, tests, and CI. The [public add-on repository](https://github.com/ryan-winkler/meitheal-ha-addon) contains the Store manifests, setup guides, and support issues.
 
+- Keeping `meitheal-ha-addon` manifest-only ensures Home Assistant Supervisor clones and refreshes quickly (~2 MB) on low-power devices without pulling monorepo history and tests.
 - The release workflow verifies both image digests before stable promotion.
 - Stable promotion uses `ADDON_REPO_TOKEN` scoped to the add-on repository.
 - A separate reviewed change promotes Canary discovery after hardware and rollback checks.

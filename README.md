@@ -56,6 +56,18 @@ Check [installation availability](https://github.com/ryan-winkler/meitheal-ha-ad
 
 Earlier Home Assistant versions call Apps **Add-ons**. See the [Canary setup guide](meitheal-hub-canary/DOCS.md) for more detail.
 
+## Two-Repository Architecture
+
+Meitheal uses two linked repositories so Home Assistant appliances stay fast and lightweight during Store refreshes:
+
+| Repository | Purpose | Contents | Who Uses It |
+|---|---|---|---|
+| **[meitheal](https://github.com/ryan-winkler/meitheal)** (this repo) | Application source & CI | Astro SSR web app, DDD domain packages, E2E test suites, Dockerfiles, and release pipelines (`dev` is the default branch). | Contributors, reviewers, and CI/CD pipelines. |
+| **[meitheal-ha-addon](https://github.com/ryan-winkler/meitheal-ha-addon)** | Home Assistant App Store catalog | Lightweight Store manifests (`config.yaml`), icons, translations, and setup guides (~2 MB). | Home Assistant Supervisor & users installing Meitheal. |
+
+**Why retain `meitheal-ha-addon` separately?**  
+Home Assistant Supervisor clones the full Git repository onto user hardware when adding a store URL and runs `git pull` on every Store refresh. Keeping `meitheal-ha-addon` manifest-only stops low-memory devices (such as Home Assistant Green or Raspberry Pi) from downloading full monorepo history, packages, and test suites just to check for add-on updates.
+
 ## Try Meitheal from Source
 
 Follow the [local setup](CONTRIBUTING.md#run-and-verify-locally) to open Meitheal in your browser and create a task with a disposable database. Use Home Assistant for voice, companion app, and automation features.
