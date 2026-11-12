@@ -15,8 +15,13 @@ test.describe("A2A Agent Card Discovery", () => {
     expect(response.ok()).toBeTruthy()
     const card = await response.json()
     expect(card).toMatchObject({
-      name: "Meitheal", skills: [], supportedInterfaces: [], defaultInputModes: [], defaultOutputModes: [],
+      name: "Meitheal",
+      skills: [{ id: "task-search" }],
+      supportedInterfaces: [{ protocolBinding: "JSONRPC", protocolVersion: "1.0" }],
+      defaultInputModes: ["text/plain", "application/json"],
+      defaultOutputModes: ["application/json", "text/plain"],
     })
+    expect(card.supportedInterfaces[0].url).toMatch(/\/api\/a2a\/message$/)
     expect(response.headers()["cache-control"]).toBe("private, no-store")
     for (const alias of ["/.well-known/agent.json", "/.well-known/agent-card.json"]) {
       const discovery = await request.get(alias, { maxRedirects: 0 })
@@ -26,7 +31,7 @@ test.describe("A2A Agent Card Discovery", () => {
     }
   })
 
-  test("the experimental card retains the discovery fields", async ({
+  test("the card retains the discovery fields", async ({
     request,
     baseURL,
   }) => {
@@ -38,35 +43,35 @@ test.describe("A2A Agent Card Discovery", () => {
     expect(card.description).toBeTruthy();
     expect(card.supportedInterfaces).toBeDefined();
     expect(Array.isArray(card.supportedInterfaces)).toBe(true);
-    expect(card.supportedInterfaces).toEqual([])
+    expect(card.supportedInterfaces).toHaveLength(1)
     expect(card.provider).toBeDefined();
     expect(card.capabilities).toBeDefined();
     expect(card.skills).toBeDefined();
   });
 
-  test("the experimental card documents its routes and disables push", async ({
+  test("the card documents its routes and disables push", async ({
     request,
     baseURL,
   }) => {
     const response = await request.get(`${baseURL}/api/a2a/agent-card`);
     const card = await response.json();
 
-    expect(card.description).toMatch(/Experimental/)
+    expect(card.description).toMatch(/read-only/)
     expect(card.capabilities).toMatchObject({ pushNotifications: false, streaming: false })
-    expect(card.documentationUrl).toBe("/openapi.yaml")
-    expect((await request.get(card.documentationUrl)).ok()).toBe(true)
+    expect(card.documentationUrl).toMatch(/\/openapi\.yaml$/)
+    expect((await request.get(new URL(card.documentationUrl).pathname)).ok()).toBe(true)
   });
 });
 
 test.describe("A2A Route Availability", () => {
-  test("reports unavailable execution and never fabricates A2A tasks", async ({ request }) => {
+  test("requires an agent token and never fabricates A2A tasks", async ({ request }) => {
     const message = await request.post("/api/a2a/message", {
       data: { message: { role: "user", parts: [{ text: "Create a task" }] } },
     })
-    expect(message.status()).toBe(501)
+    expect(message.status()).toBe(401)
     expect(message.headers()["cache-control"]).toBe("private, no-store")
     const body = await message.json()
-    expect(body).toMatchObject({ detail: expect.stringContaining("unavailable") })
+    expect(body).toMatchObject({ detail: expect.stringContaining("agent token") })
     expect(body).not.toHaveProperty("task")
 
     for (const response of [
@@ -105,16 +110,16 @@ test.describe("A2A Route Availability", () => {
       const origin = `http://127.0.0.1:${info.port}`
       const ingress = origin + info.configuredPath
       const cards = ["/.well-known/agent-card.json", "/.well-known/agent.json", "/api/a2a/agent-card"] as const
-      const enroll = async (scope: string) => {
+      const enroll = async (...scopes: string[]) => {
         const response = await api.post(ingress + "/api/agent-tokens", {
           headers: { origin, cookie: "feedback-fixture=admin" },
-          data: { name: "A2A availability fixture", scopes: [scope] },
+          data: { name: "A2A availability fixture", scopes },
         })
         expect(response.status()).toBe(201)
         const { token } = await response.json()
         return { origin, authorization: `Bearer ${token}` }
       }
-      const authorized = await enroll("a2a:execute")
+      const authorized = await enroll("a2a:execute", "search:read")
       const unrelated = await enroll("search:read")
       const call = (path: string, method: string, headers: Record<string, string> = authorized) =>
         api.fetch(ingress + path, { method, headers, ...(method === "POST" ? { data: {} } : {}) })
@@ -136,11 +141,12 @@ test.describe("A2A Route Availability", () => {
         const response = await call(path, "GET")
         expect(response.status()).toBe(200)
         expect(response.headers()["cache-control"]).toBe("private, no-store")
-        expect(await response.json()).toMatchObject({
-          skills: [], supportedInterfaces: [], documentationUrl: info.configuredPath + "/openapi.yaml",
-        })
+        const card = await response.json()
+        expect(card).toMatchObject({ skills: [{ id: "task-search" }] })
+        expect(card.supportedInterfaces[0].url).toBe(origin + info.configuredPath + "/api/a2a/message")
+        expect(card.documentationUrl).toBe(origin + info.configuredPath + "/openapi.yaml")
       }
-      expect((await call("/api/a2a/message", "POST")).status()).toBe(501)
+      expect(await (await call("/api/a2a/message", "POST")).json()).toMatchObject({ jsonrpc: "2.0", error: { code: -32600 } })
       expect((await save("member", false)).status()).toBe(403)
       expect((await save("admin", false)).status()).toBe(200)
 
@@ -158,7 +164,7 @@ test.describe("A2A Route Availability", () => {
       expect((await call("/api/a2a/message", "POST", unrelated)).status()).toBe(403)
       expect((await save("admin", "true")).status()).toBe(200)
       expect((await call(cards[0], "GET")).status()).toBe(200)
-      expect((await call("/api/a2a/message", "POST")).status()).toBe(501)
+      expect(await (await call("/api/a2a/message", "POST")).json()).toMatchObject({ jsonrpc: "2.0", error: { code: -32600 } })
       const unknown = await call("/api/a2a/tasks/unknown", "GET")
       expect(await unknown.json()).toMatchObject({ status: 404, detail: "A2A task not found." })
     } finally {
@@ -224,8 +230,8 @@ test.describe("MCP Discovery", () => {
       const discovery = await api.get(origin + info.configuredPath + "/.well-known/agent-card.json", { maxRedirects: 0 })
       expect(discovery.status()).toBe(200)
       const card = await discovery.json()
-      expect(card.documentationUrl).toBe(info.configuredPath + "/openapi.yaml")
-      expect((await api.get(origin + card.documentationUrl)).ok()).toBe(true)
+      expect(card.documentationUrl).toBe(origin + info.configuredPath + "/openapi.yaml")
+      expect((await api.get(card.documentationUrl)).ok()).toBe(true)
       const adminPath = origin + info.configuredPath + "/api/agent-tokens"
       const issueToken = async (scopes: string[]) => {
         const enrollment = await api.post(adminPath, {

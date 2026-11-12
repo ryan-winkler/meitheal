@@ -19,17 +19,19 @@ The endpoint returns a JSON reply per request. Legacy clients that check for a s
 
 ## Check discovery in Settings
 
-**Settings → Automation & AI → Agent Protocols** checks the installed App's MCP manifest and A2A card. The badge counts available **discovery documents out of two**. It does not count saved switches, browser tools, token-authorized MCP tools or executable A2A skills. WebMCP has its own browser registration status below its switch.
+**Settings → Automation & AI → Agent Protocols** checks the installed App's MCP manifest and A2A card. The badge counts available **discovery documents out of two**. It does not count saved switches, browser tools or token-authorized MCP tools. WebMCP has its own browser registration status below its switch.
 
-Each discovery link appears only after a successful response with the current public contract. A disabled endpoint is reported separately from a failed or malformed response. MCP discovery still requires a scoped token for tool access. A2A discovery advertises no executable interfaces or skills; message execution remains unavailable.
+Each discovery link appears only after a successful response with the current public contract. A disabled endpoint is reported separately from a failed or malformed response. MCP discovery still requires a scoped token for tool access. The A2A card advertises one JSON-RPC interface and the read-only `task-search` skill.
 
 Use **Check discovery** to retry without saving preferences. Checks use the current browser session and ingress path, bypass cached responses, and stop after eight seconds or page cancellation. Saving protocol settings refreshes these checks even after a partial save, so an unsaved checkbox cannot claim availability. Older probe results cannot overwrite a newer check or a disabled result. The saved preferences and administrator policy are unchanged.
 
 ## Experimental protocols
 
-The A2A setting in **Settings → Automation & AI → Agent Protocols** controls the experimental discovery card at `GET /api/a2a/agent-card`, `/.well-known/agent-card.json`, and `/.well-known/agent.json`. The card links to the installed App's OpenAPI contract and lists no executable skills or bindings.
+The A2A setting in **Settings → Automation & AI → Agent Protocols** controls the A2A 1.0 agent card at `GET /api/a2a/agent-card`, `/.well-known/agent-card.json`, and `/.well-known/agent.json`. The card gives the absolute `POST /api/a2a/message` URL inside Home Assistant ingress, the Bearer token requirement, the installed App's OpenAPI contract and one skill, `task-search`.
 
-When enabled, `POST /api/a2a/message` returns HTTP 501 and legacy task lookups or cancellation return HTTP 404. When disabled, discovery and authorized A2A requests return HTTP 404. A2A API calls using an agent token still require `a2a:execute`. Browser WebMCP registration is separate from A2A execution.
+`POST /api/a2a/message` accepts JSON-RPC 2.0 with the `A2A-Version: 1.0` header and a token with both `a2a:execute` and `search:read`. `SendMessage` takes one text part with a search term, or one JSON part such as `{"query":"heating"}`. It returns up to eight active task titles with their task links, as JSON or plain text. Results never include descriptions. A2A creates no tasks: `GetTask` and `CancelTask` return task not found, `ListTasks` returns an empty list, and streaming and push notifications report unsupported operations. The request body limit is 16 KiB.
+
+When A2A is disabled, discovery and authorized A2A requests return HTTP 404. A missing token returns HTTP 401 and a token without both scopes returns HTTP 403. Browser WebMCP registration is separate from A2A.
 
 For the Home Assistant conversation LLM API, see [Core credential enrollment](home-assistant-core-credentials.md).
 
