@@ -34,7 +34,7 @@ async function fixture(count: number, run: (f: { page: Page, origin: string, pre
     page.on("pageerror", error => errors.push(String(error)))
     await page.goto(origin + info.configuredPath + "/settings#workflow-settings")
     await expect(page.locator("[data-label-editor]")).toHaveAttribute("data-labels-ready", "true")
-    const db = new DatabaseSync(join(work, "pins.db"))
+    const db = new DatabaseSync(join(work, "pins.db"), { timeout: 5000 })
     try {
       const insert = db.prepare("INSERT INTO vikunja_labels (id,title,hex_color) VALUES (?,?,?)")
       db.exec("BEGIN")

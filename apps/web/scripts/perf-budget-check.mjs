@@ -6,6 +6,7 @@ import { once } from "node:events";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { performance } from "node:perf_hooks";
+import { DatabaseSync } from "node:sqlite";
 
 const execFileAsync = promisify(execFile);
 
@@ -128,6 +129,18 @@ async function createTask(baseUrl, title) {
   return performance.now() - start;
 }
 
+async function measureGetTasks(baseUrl) {
+  const start = performance.now();
+  const response = await fetch(`${baseUrl}/tasks`, {
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (response.status !== 200) {
+    throw new Error(`GET /tasks failed (${response.status}): ${await response.text()}`);
+  }
+  await response.text();
+  return performance.now() - start;
+}
+
 async function main() {
   const scriptDir = path.dirname(fileURLToPath(import.meta.url));
   const budgets = await loadBudgets(scriptDir);
@@ -194,6 +207,67 @@ async function main() {
       latenciesMs.push(await createTask(baseUrl, `perf-check-${index}`));
     }
 
+    let kanbanWarm2000;
+    let hasTasks = false;
+    let totalTasks = 0;
+    let db;
+    try {
+      db = new DatabaseSync(dbPath, { timeout: 5000 });
+      const hasTasksTable = db.prepare("SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = 'tasks'").get();
+      if (hasTasksTable) {
+        const task = db.prepare(`INSERT INTO tasks
+          (id, title, description, status, request_id, idempotency_key, created_at, updated_at)
+          VALUES (?, ?, ?, 'pending', ?, ?, ?, ?)`);
+        const stamp = Date.now();
+        db.exec("BEGIN IMMEDIATE");
+        try {
+          for (let index = 1; index <= 2000; index++) {
+            const id = `perf-kanban-${index}`;
+            task.run(id, `Perf task ${index}`, "Performance test card", id, id, stamp + index, stamp + index);
+          }
+          db.exec("COMMIT");
+        } catch (error) {
+          db.exec("ROLLBACK");
+          throw error;
+        }
+        totalTasks = Number(db.prepare("SELECT COUNT(*) AS count FROM tasks").get().count);
+        hasTasks = true;
+      }
+    } catch (error) {
+      // Stub servers in the lifecycle tests have no SQLite tasks table, so the
+      // measurement is skipped. A real seeding failure is reported, not measured.
+      if (db) kanbanWarm2000 = { skipped: `seed failed: ${error instanceof Error ? error.message : String(error)}` };
+    } finally {
+      db?.close();
+    }
+
+    if (hasTasks) {
+      const kanbanWarmups = 5;
+      const kanbanRequests = 25;
+      for (let index = 0; index < kanbanWarmups; index += 1) {
+        await measureGetTasks(baseUrl);
+      }
+      const kanbanSamplesMs = [];
+      for (let index = 0; index < kanbanRequests; index += 1) {
+        kanbanSamplesMs.push(await measureGetTasks(baseUrl));
+      }
+      const sortedKanbanSamples = [...kanbanSamplesMs].sort((a, b) => a - b);
+      const kanbanP50Ms = percentile(sortedKanbanSamples, 0.50);
+      const kanbanP95Ms = percentile(sortedKanbanSamples, 0.95);
+      const kanbanMaxMs = sortedKanbanSamples.at(-1);
+
+      kanbanWarm2000 = {
+        seededTasks: 2000,
+        totalTasks,
+        warmups: kanbanWarmups,
+        requests: kanbanRequests,
+        samplesMs: kanbanSamplesMs.map((value) => Number(value.toFixed(1))),
+        p50Ms: Number(kanbanP50Ms.toFixed(1)),
+        p95Ms: Number(kanbanP95Ms.toFixed(1)),
+        maxMs: Number(kanbanMaxMs.toFixed(1)),
+      };
+    }
+
     latenciesMs.sort((a, b) => a - b);
     const p95Ms = percentile(latenciesMs, 0.95);
     const failures = [];
@@ -230,7 +304,8 @@ async function main() {
             p99Ms: Number(percentile(latenciesMs, 0.99).toFixed(1)),
             maxMs: Number(latenciesMs.at(-1).toFixed(1)),
             overBudgetRequests: latenciesMs.filter(value => value > budgets.p95MsMax).length,
-          }
+          },
+          ...(kanbanWarm2000 ? { kanbanWarm2000 } : {})
         },
         null,
         2

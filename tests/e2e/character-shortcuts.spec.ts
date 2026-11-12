@@ -430,3 +430,55 @@ datedShortcutTest("Today and Timeline keep arrows and Enter while letter and pun
   await page.keyboard.press("ArrowDown")
   await expect(bars.last()).toBeFocused()
 })
+
+test("pressing lowercase c on a grouped board collapses and expands swimlanes without navigating to Calendar", async ({ page, request, baseURL }) => {
+  const headers = { origin: new URL(baseURL!).origin }
+  let firstId: string | undefined
+  let secondId: string | undefined
+  try {
+    const firstTask = await request.post("/api/tasks", { headers, data: { title: "Grouped board task", task_type: "task" } })
+    expect(firstTask.status()).toBe(201)
+    firstId = (await firstTask.json()).id
+
+    const secondTask = await request.post("/api/tasks", { headers, data: { title: "Grouped board epic", task_type: "epic" } })
+    expect(secondTask.status()).toBe(201)
+    secondId = (await secondTask.json()).id
+
+    await page.goto("/tasks?groupBy=type#kanban")
+    const visibleLanes = page.locator(".swimlane-group:not([hidden])")
+    await expect(visibleLanes.first()).toBeVisible()
+    const laneCount = await visibleLanes.count()
+    expect(laneCount).toBeGreaterThan(1)
+    await expect(page.locator(".swimlane-group.swimlane-collapsed")).toHaveCount(0)
+
+    // location.href navigation is asynchronous, so count navigation attempts
+    // at the moment the key is handled instead of reading the URL afterwards.
+    await page.evaluate(() => {
+      const state = window as typeof window & { __cNavigations?: number }
+      state.__cNavigations = 0
+      ;(window as typeof window & { navigation: EventTarget }).navigation
+        .addEventListener("navigate", () => { state.__cNavigations = (state.__cNavigations ?? 0) + 1 })
+    })
+    const navigations = () => page.evaluate(() => (window as typeof window & { __cNavigations?: number }).__cNavigations)
+
+    await page.locator(`[data-task-id="${firstId}"] .card-open-btn`).focus()
+    await page.keyboard.press("c")
+    expect(await navigations()).toBe(0)
+    await expect(page.locator(".swimlane-group:not([hidden]):not(.swimlane-collapsed)")).toHaveCount(0)
+
+    await page.keyboard.press("c")
+    expect(await navigations()).toBe(0)
+    await expect(page.locator(".swimlane-group.swimlane-collapsed")).toHaveCount(0)
+    await expect(visibleLanes).toHaveCount(laneCount)
+    expect(new URL(page.url()).pathname).toBe("/tasks")
+
+    // Outside the board the global shortcut still opens Calendar, whose legacy
+    // route redirects to the Tasks Calendar view.
+    await blurActive(page)
+    await page.keyboard.press("c")
+    await expect(page).toHaveURL(/\/tasks\?view=calendar#calendar$/)
+  } finally {
+    if (firstId) await request.delete(`/api/tasks/${firstId}`, { headers })
+    if (secondId) await request.delete(`/api/tasks/${secondId}`, { headers })
+  }
+})
