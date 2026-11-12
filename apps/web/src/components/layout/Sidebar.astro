@@ -316,7 +316,7 @@ const remainingItems = areaPosition < 0 ? [] : navItems.slice(areaPosition + 1)
     backdrop-filter: blur(12px);
     border-right: 1px solid var(--border);
     transition: transform 300ms ease;
-    width: 240px;
+    width: var(--sidebar-width, 240px);
     position: fixed;
     z-index: 40;
     padding: 1rem;

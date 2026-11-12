@@ -136,6 +136,8 @@
 
 .kanban-card {
   @apply bg-bg-card/90 backdrop-blur-sm border border-border rounded-md p-3 cursor-grab shadow-sm relative;
+  /* Cards keep their content height; the lane scrolls instead of squeezing them. */
+  flex-shrink: 0;
   transition:
     transform 0.15s ease,
     box-shadow 0.15s ease,

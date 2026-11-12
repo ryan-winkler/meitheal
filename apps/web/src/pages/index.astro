@@ -16,6 +16,9 @@ import type { Locale } from "../lib/locale"
 import { getPriorityColor } from "../lib/priority-config"
 import { STATUS_LABELS as statusLabels } from "../lib/status-config"
 import { DASHBOARD_SECTIONS } from "../lib/dashboard-registry"
+import { calendarDaysFromToday, calendarToday } from "../lib/date"
+
+const dashboardTimeZone = Astro.locals.timezone || "Europe/Dublin"
 
 const cookieLocale = Astro.cookies.get("meitheal-locale")?.value
 const locale: Locale = cookieLocale === "ga" ? "ga" : "en"
@@ -48,7 +51,7 @@ try {
   favorites = await repo.getFavoriteTasks(5)
   openTasks = await repo.getOpenTasks(15)
   stats = await repo.getStatusCounts()
-  stats.overdue = await repo.getOverdueCount()
+  stats.overdue = await repo.getOverdueCount(calendarToday(dashboardTimeZone))
   const areas = await repo.getAreas()
   areaMap = Object.fromEntries(
     Object.entries(areas).map(([key, value]) => [
@@ -79,6 +82,14 @@ const greeting =
       : t("dashboard.greeting_evening", locale)
 
 function relativeTime(dueDate: string): string {
+  // A date-only due date is a calendar day in the user's timezone, not UTC midnight.
+  const calendarDays = calendarDaysFromToday(dueDate, dashboardTimeZone)
+  if (calendarDays !== null) {
+    if (calendarDays === 0) return "Due today"
+    if (calendarDays === 1) return "Due tomorrow"
+    if (calendarDays < 0) return `Overdue by ${-calendarDays} day${calendarDays === -1 ? "" : "s"}`
+    return `Due in ${calendarDays} days`
+  }
   const due = new Date(dueDate)
   const now = new Date()
   const diffMs = due.getTime() - now.getTime()
