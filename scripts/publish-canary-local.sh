@@ -162,7 +162,7 @@ if isolated_podman publisher manifest inspect --tls-verify=true --authfile "$scr
   digest="$(repo_digest publisher "$image")"
 elif grep -Eq ': (manifest|name) unknown$' "$scratch/manifest-error"; then
   require_current_source
-  release_podman push --tls-verify=true --authfile "$scratch/publisher.json" --digestfile "$scratch/digest" "$image_id" "docker://$image"
+  release_podman push --format v2s2 --tls-verify=true --authfile "$scratch/publisher.json" --digestfile "$scratch/digest" "$image_id" "docker://$image"
   digest="$(cat "$scratch/digest")"
 else
   cat "$scratch/manifest-error" >&2

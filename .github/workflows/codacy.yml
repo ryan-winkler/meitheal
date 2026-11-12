@@ -1,0 +1,62 @@
+name: Codacy
+
+on:
+  push:
+    branches:
+      - main
+      - dev
+      - release
+    paths-ignore:
+      - "meitheal-hub-canary/config.yaml"
+      - "*.md"
+      - ".planning/**"
+      - "docs/**"
+  pull_request:
+    branches:
+      - main
+      - dev
+      - release
+    paths-ignore:
+      - "*.md"
+      - ".planning/**"
+      - "docs/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codacy-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  codacy-analysis:
+    name: Codacy Static Analysis
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Run Codacy Analysis CLI
+        uses: codacy/codacy-analysis-cli-action@562ee3e92b8e92df8b67e0a5ff8aa8e261919c08 # v4.4.7
+        with:
+          project-token: ${{ secrets.CODACY_PROJECT_TOKEN }}
+          format: sarif
+          output: codacy-results.sarif
+          parallel: 4
+          tool-timeout: 10minutes
+          gh-code-scanning-compat: true
+          max-allowed-issues: 2147483647
+
+      - name: Upload Codacy SARIF results to GitHub Code Scanning
+        if: success() && hashFiles('codacy-results.sarif') != ''
+        uses: github/codeql-action/upload-sarif@52cf1852265d99e9bea071b03366fc777a602909 # codeql-bundle-v2.27.4
+        with:
+          sarif_file: codacy-results.sarif
+          category: codacy
