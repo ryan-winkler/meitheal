@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 /**
- * check-version-sync.mjs — VER-01: Validate version consistency
+ * check-version-sync.mjs — VER-01: Validate version consistency & SemVer line
  *
  * @domain versioning
- * @kcs Ensures config.yaml, run.sh, package.json, and sw.js share the same version.
+ * @kcs Ensures root package.json, config.yaml, run.sh, apps/web/package.json, and sw.js share one valid version.
  *
- * Exits 0 if all versions match, 1 if mismatch detected.
+ * Exits 0 if all versions match, 1 if mismatch or unauthorized SemVer jump detected.
  * Designed for CI pipeline integration (VER-02).
  *
  * Usage: node scripts/check-version-sync.mjs
@@ -17,6 +17,12 @@ import { fileURLToPath } from "node:url"
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const root = resolve(__dirname, "..")
+
+/** Extract version from a JSON package manifest */
+function getJsonVersion(relativePath) {
+  const pkg = JSON.parse(readFileSync(resolve(root, relativePath), "utf8"))
+  return pkg.version ?? null
+}
 
 /** Extract version from config.yaml */
 function getConfigVersion() {
@@ -32,12 +38,6 @@ function getRunShVersion() {
   return match?.[1] ?? null
 }
 
-/** Extract version from apps/web/package.json */
-function getPackageVersion() {
-  const pkg = JSON.parse(readFileSync(resolve(root, "apps/web/package.json"), "utf8"))
-  return pkg.version ?? null
-}
-
 /** Extract CACHE_VERSION fallback from service worker */
 function getServiceWorkerVersion() {
   const sw = readFileSync(resolve(root, "apps/web/public/sw.js"), "utf8")
@@ -48,9 +48,10 @@ function getServiceWorkerVersion() {
 // ── Main ────────────────────────────────────────────────────────────────
 
 const sources = [
+  { name: "package.json", version: getJsonVersion("package.json") },
   { name: "meitheal-hub/config.yaml", version: getConfigVersion() },
   { name: "meitheal-hub/run.sh", version: getRunShVersion() },
-  { name: "apps/web/package.json", version: getPackageVersion() },
+  { name: "apps/web/package.json", version: getJsonVersion("apps/web/package.json") },
   { name: "apps/web/public/sw.js", version: getServiceWorkerVersion() },
 ]
 
@@ -69,17 +70,25 @@ console.log("─".repeat(50))
 const versions = sources.map(s => s.version).filter(Boolean)
 const unique = [...new Set(versions)]
 
-if (unique.length === 0) {
-  console.error("❌ No versions found in any source file")
+if (sources.some(s => !s.version) || unique.length === 0) {
+  console.error("❌ Missing version in one or more tracked files")
   process.exit(1)
 }
 
-if (unique.length === 1) {
-  console.log(`✅ All versions in sync: v${unique[0]}`)
-  process.exit(0)
-} else {
+if (unique.length !== 1) {
   console.error(`❌ Version mismatch detected!`)
   console.error(`   Found: ${unique.map(v => `v${v}`).join(", ")}`)
-  console.error(`   Run: node scripts/bump-version.mjs <version>`)
+  console.error(`   Run: node scripts/bump-version.mjs patch`)
   process.exit(1)
 }
+
+const current = unique[0]
+const allowOverride = process.env.MEITHEAL_ALLOW_SEMVER_OVERRIDE === "1"
+if (!allowOverride && !/^0\.0\.[1-9]$/.test(current)) {
+  console.error(`❌ Version v${current} violates the 0.0.{1..9} SemVer policy!`)
+  console.error(`   Keep releases in 0.0.<single-digit> unless explicitly overridden (MEITHEAL_ALLOW_SEMVER_OVERRIDE=1).`)
+  process.exit(1)
+}
+
+console.log(`✅ All versions in sync: v${current}`)
+process.exit(0)

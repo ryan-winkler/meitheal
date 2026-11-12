@@ -36,7 +36,7 @@ Source of truth:
 
 1. Publish architecture-specific images to GHCR.
 2. Tag images with add-on `version`.
-3. Run `node scripts/check-version-sync.mjs` before cutting a release tag so `meitheal-hub/config.yaml`, `meitheal-hub/run.sh`, `apps/web/package.json`, and `apps/web/public/sw.js` agree.
+3. Run `node scripts/check-version-sync.mjs` before cutting a release tag so root `package.json`, `meitheal-hub/config.yaml`, `meitheal-hub/run.sh`, `apps/web/package.json`, and `apps/web/public/sw.js` agree on the `0.0.{digit}` version (`+0.0.1` per release unless explicitly overridden).
 4. Keep CI checks green before release (`governance`, typechecks/tests, migration, drift, perf budgets).
 5. Run optional live-HA verification workflow before publishing stable tags.
 6. Before publishing a canary, record a passing fixed 2,000-task benchmark for the exact ARM64 image on Home Assistant Green. Follow the [release-host runbook](releasing.md#qualify-and-promote-a-canary-from-a-release-host) to verify both published images before staging discovery.

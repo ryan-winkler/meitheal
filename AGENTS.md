@@ -186,26 +186,28 @@ Both are logged in structured API request logs (`metadata.automation_source`, `m
 ## Git Commit Policy
 
 - Commit under the contributor's Git identity with descriptive messages. Omit `Co-authored-by` trailers.
-- A human maintainer squash-merges automated contributions. Do not push force-authored bot commits directly to `main`.
+- **Branch Push Rule (Mandatory)**: Only automatically push to `dev` (the primary/default branch). Never automatically push to `main` (beta channel, mostly unused) or `release` (full production release); promote to `main` or `release` only when explicitly directed by the maintainer.
+- A human maintainer squash-merges automated contributions. Do not push force-authored bot commits directly to `dev`, `main`, or `release`.
 - Follow the review process in [Contributing](CONTRIBUTING.md).
 
 ## Deploy Rules
 
 Use the single Canary App entry for feature work and validation. Its directory is `meitheal-hub-canary`, slug is `meitheal_canary`, and image family is `meitheal-canary-{arch}`. Settings and other feature changes belong to that same entry. Release commands enforce the canonical manifests in the source and destination repositories.
 
-Meitheal uses a **two-channel release strategy** (see `docs/kcs/releasing.md` for the full runbook):
+Meitheal uses a **three-branch, two-channel release strategy** (see `docs/kcs/releasing.md` for the full runbook):
 
-| Channel | Dir | Trigger | Version | Stage |
-|---------|-----|---------|---------|-------|
-| Stable | `meitheal-hub/` | Push to `release` or `v*` tag | Semver (`0.0.1`) | `stable` |
-| Canary | `meitheal-hub-canary/` | Push to `dev` (or `main`) | Commit SHA / Semver (`0.0.2-canary`) | `experimental` |
+| Branch | Role | Auto-Push Allowed | Version / Stage |
+|--------|------|-------------------|-----------------|
+| `dev` | Primary default branch (Canary) | **Yes** (automated pushes/PRs target here only) | Commit SHA / `0.0.2-canary` (`experimental`) |
+| `main` | Beta channel (mostly unused) | **No** (explicit maintainer promotion only) | Staging / Beta |
+| `release` | Full production release (`meitheal-hub/`) | **No** (explicit maintainer release promotion only) | Strict SemVer `0.0.{digit}` (`stable`) |
 
-- **Canary**: Merging to `dev` triggers `publish-canary-images.yml`. The system builds multi-arch images (`amd64`, `aarch64`), updates `meitheal-hub-canary/config.yaml`, and automatically updates the `release` branch.
-- **Stable**: Pushing/promoting to `release` or pushing a `v*` tag triggers `publish-addon-images.yml`. The system validates version sync across manifests and builds multi-arch release images. Use `node scripts/bump-version.mjs patch` to bump versions.
-- **CI & Quality Gates**: Every PR runs `ci.yml` (governance, tests, Codecov coverage upload), `dependency-review.yml`, and CodeRabbit AI review across `main`, `dev`, and `release`. The OpenSSF Scorecard analyzes repository security weekly.
+- **Canary (`dev`)**: Pushes to `dev` trigger `publish-canary-images.yml` (`build-only` multi-arch smoke checks). It must never automatically push to `main` or `release`.
+- **Beta (`main`)**: Kept mostly unused; reserved for explicit maintainer beta promotion before full release.
+- **Stable (`release`)**: Only explicit maintainer promotions to `release` or matching `v*` tags trigger `publish-addon-images.yml`. The system validates version sync across manifests and builds multi-arch release images.
+- **SemVer Policy (Mandatory)**: Do not boost versions without explicit reason and maintainer approval. Keep versions on the `0.0.{one digit}` line (for example `0.0.1`) and increment strictly by `+0.0.1` via `node scripts/bump-version.mjs patch` unless explicitly told otherwise (`--force-semver`).
+- **CI & Quality Gates**: Every PR runs `ci.yml` (governance, tests, Codecov coverage upload), `dependency-review.yml`, and CodeRabbit AI review across `dev`, `main`, and `release`. The OpenSSF Scorecard analyzes repository security on `dev` weekly.
 - **Caching**: Docker builds use BuildKit cache mounts (`--mount=type=cache,id=pnpm-store`) and GitHub Actions cache (`type=gha`).
-- Unless explicitly requested, keep version bumps within the current release line and prefer the next patch release (e.g. `0.0.1` for Main, `0.0.2-canary` for Canary)
-- Do not move to a new version line such as `0.0.x` → `0.1.x` without explicit user direction
 
 ## Verification Tiers (Mandatory)
 

@@ -24,18 +24,19 @@ Keep at most one Canary installed during the transition: uninstall the legacy Ca
 
 | Channel | Source ref | App version | GHCR image |
 | --- | --- | --- | --- |
-| Stable | `release` branch or matching `vX.Y.Z` tag | `X.Y.Z` (currently `0.0.1`) | `ghcr.io/ryan-winkler/meitheal-{arch}:X.Y.Z` |
-| Canary | `dev` branch or `main` branch | The first 12 characters of its commit ID or `0.0.2-canary` | `ghcr.io/coolock-village/meitheal-canary-{arch}:{version}` |
+| Canary (primary dev) | `dev` branch (default) | The first 12 characters of its commit ID or `0.0.2-canary` | `ghcr.io/coolock-village/meitheal-canary-{arch}:{version}` |
+| Beta (mostly unused) | `main` branch (explicit promotion) | Prerelease / qualification | — |
+| Stable (full release) | `release` branch or matching `vX.Y.Z` tag (explicit promotion) | `0.0.{digit}` (currently `0.0.1`) | `ghcr.io/ryan-winkler/meitheal-{arch}:X.Y.Z` |
 
 ## Qualify the release
 
-The [CI workflow](../../.github/workflows/ci.yml) runs on pull requests and pushes to `main`. Feature branch updates use the pull request run to avoid duplicate push and pull request checks for the same update. Push checks on `main` verify the merged source; pushes changing only `meitheal-hub-canary/config.yaml` remain excluded.
+The [CI workflow](../../.github/workflows/ci.yml) runs on pull requests and pushes across `dev`, `main`, and `release`. Feature work targets `dev` (the primary branch and only branch that accepts automated pushes); `main` stays reserved as a mostly unused beta channel, and `release` stays reserved for full releases. Feature branch updates use the pull request run to avoid duplicate push and pull request checks for the same update.
 
 1. Run the required checks and review findings for the intended source commit.
 2. Follow the [Supervisor devcontainer runbook](home-assistant-devcontainer.md) for ingress, permissions, install, update and restart. Exercise [backup and restore](home-assistant-backup-and-restore.md) with disposable data.
 3. Verify the intended Home Assistant version, supported architectures, and the resource budget on the target hardware. Record the tested source commit and image digest.
-4. For stable, run `node scripts/bump-version.mjs patch` and update the App changelog. Check the edited files with `node scripts/check-version-sync.mjs`. Merge through the normal review process, then push the exact matching version tag after the reviewed commit reaches `main`.
-5. For canary, use the hosted smoke workflow to check native builds from `main`. Build and retain the candidate images on the release host. Qualify those exact images before publication.
+4. Only when cutting a new full release, bump by `+0.0.1` within `0.0.{1..9}` with `node scripts/bump-version.mjs patch` (never bump without maintainer direction; major/minor/skips require `--force-semver`). Check the edited files with `node scripts/check-version-sync.mjs`. Merge through review to `release` (or push the exact matching tag after promotion).
+5. For canary, use the hosted smoke workflow to check native builds from `dev`. Build and retain the candidate images on the release host. Qualify those exact images before publication.
 
 ## Pull-request image checks
 
