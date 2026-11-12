@@ -3,7 +3,7 @@
 Meitheal is a local task planner for Home Assistant. Use it to share a household checklist, schedule regular maintenance, or create a task when a sensor triggers an automation. It runs in the Home Assistant sidebar and keeps task data in SQLite on your own device.
 
 [![Docker Hub](https://img.shields.io/docker/v/coolockvillage/meitheal-amd64?label=Docker%20Hub&logo=docker)](https://hub.docker.com/r/coolockvillage/meitheal-amd64)
-[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/ryan-winkler/meitheal/badge)](https://scorecard.dev/viewer/?push=main&repo=github.com/ryan-winkler/meitheal)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/ryan-winkler/meitheal/badge)](https://scorecard.dev/viewer/?push=dev&repo=github.com/ryan-winkler/meitheal)
 [![codecov](https://codecov.io/gh/ryan-winkler/meitheal/graph/badge.svg)](https://codecov.io/gh/ryan-winkler/meitheal)
 [![GitHub Sponsors](https://img.shields.io/badge/Sponsor-GitHub-ea4aaa?logo=github&logoColor=white)](https://github.com/sponsors/ryan-winkler)
 [![Ko-fi](https://img.shields.io/badge/Support-Ko--fi-ff5e5b?logo=ko-fi&logoColor=white)](https://ko-fi.com/ryanw_eu)
