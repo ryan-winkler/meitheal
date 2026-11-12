@@ -72,10 +72,28 @@ jobs:
             tag="${version}"
           fi
 
+          tags="ghcr.io/${owner_lc}/meitheal-${{ matrix.arch }}:${tag}
+ghcr.io/${owner_lc}/meitheal-${{ matrix.arch }}:latest"
+
+          if [ "${owner_lc}" != "ryan-winkler" ]; then
+            tags="${tags}
+ghcr.io/ryan-winkler/meitheal-${{ matrix.arch }}:${tag}
+ghcr.io/ryan-winkler/meitheal-${{ matrix.arch }}:latest"
+          fi
+
+          if [ -n "${{ secrets.DOCKERHUB_TOKEN }}" ]; then
+            tags="${tags}
+coolockvillage/meitheal-${{ matrix.arch }}:${tag}
+coolockvillage/meitheal-${{ matrix.arch }}:latest"
+          fi
+
           echo "owner_lc=${owner_lc}" >> "$GITHUB_OUTPUT"
           echo "version=${version}" >> "$GITHUB_OUTPUT"
           echo "tag=${tag}" >> "$GITHUB_OUTPUT"
           echo "build_from=${build_from}" >> "$GITHUB_OUTPUT"
+          echo "tags<<EOF" >> "$GITHUB_OUTPUT"
+          echo "${tags}" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
 
       - name: Validate release tag matches add-on version
         if: startsWith(github.ref, 'refs/tags/')
@@ -102,10 +120,4 @@ jobs:
           platforms: ${{ matrix.platform }}
           cache-from: type=gha,scope=${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=${{ matrix.arch }},ignore-error=true
-          tags: |
-            ghcr.io/${{ steps.meta.outputs.owner_lc }}/meitheal-${{ matrix.arch }}:${{ steps.meta.outputs.tag }}
-            ghcr.io/${{ steps.meta.outputs.owner_lc }}/meitheal-${{ matrix.arch }}:latest
-            ghcr.io/ryan-winkler/meitheal-${{ matrix.arch }}:${{ steps.meta.outputs.tag }}
-            ghcr.io/ryan-winkler/meitheal-${{ matrix.arch }}:latest
-            coolockvillage/meitheal-${{ matrix.arch }}:${{ steps.meta.outputs.tag }}
-            coolockvillage/meitheal-${{ matrix.arch }}:latest
+          tags: ${{ steps.meta.outputs.tags }}

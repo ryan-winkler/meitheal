@@ -68,9 +68,21 @@ jobs:
           sha_short="$(git rev-parse --short HEAD)"
           build_from="$(jq -r ".build_from[\"${{ matrix.arch }}\"]" meitheal-hub-canary/build.json)"
 
+          tags="ghcr.io/${owner_lc}/meitheal-canary-${{ matrix.arch }}:${sha_short}
+ghcr.io/${owner_lc}/meitheal-canary-${{ matrix.arch }}:canary"
+
+          if [ "${owner_lc}" != "coolock-village" ] && [ -n "${{ secrets.ADDON_REPO_TOKEN }}" ]; then
+            tags="${tags}
+ghcr.io/coolock-village/meitheal-canary-${{ matrix.arch }}:${sha_short}
+ghcr.io/coolock-village/meitheal-canary-${{ matrix.arch }}:canary"
+          fi
+
           echo "owner_lc=${owner_lc}" >> "$GITHUB_OUTPUT"
           echo "sha_short=${sha_short}" >> "$GITHUB_OUTPUT"
           echo "build_from=${build_from}" >> "$GITHUB_OUTPUT"
+          echo "tags<<EOF" >> "$GITHUB_OUTPUT"
+          echo "${tags}" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
 
       - name: Build and publish canary image
         uses: docker/build-push-action@v7
@@ -83,11 +95,7 @@ jobs:
           platforms: ${{ matrix.platform }}
           cache-from: type=gha,scope=canary-${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=canary-${{ matrix.arch }},ignore-error=true
-          tags: |
-            ghcr.io/${{ steps.meta.outputs.owner_lc }}/meitheal-canary-${{ matrix.arch }}:${{ steps.meta.outputs.sha_short }}
-            ghcr.io/${{ steps.meta.outputs.owner_lc }}/meitheal-canary-${{ matrix.arch }}:canary
-            ghcr.io/coolock-village/meitheal-canary-${{ matrix.arch }}:${{ steps.meta.outputs.sha_short }}
-            ghcr.io/coolock-village/meitheal-canary-${{ matrix.arch }}:canary
+          tags: ${{ steps.meta.outputs.tags }}
 
   update-version:
     needs: canary
@@ -120,10 +128,9 @@ jobs:
             -f "committer[email]=41898282+github-actions[bot]@users.noreply.github.com"
 
       - name: Sync canary config to public add-on repo
-        if: env.HAS_ADDON_TOKEN == 'true'
+        if: ${{ secrets.ADDON_REPO_TOKEN != '' }}
         env:
           GH_TOKEN: ${{ secrets.ADDON_REPO_TOKEN }}
-          HAS_ADDON_TOKEN: ${{ secrets.ADDON_REPO_TOKEN != '' }}
         run: |
           sha_short="$(git rev-parse --short HEAD)"
           node scripts/update-canary-version.mjs "$sha_short"
