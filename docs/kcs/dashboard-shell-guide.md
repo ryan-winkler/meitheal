@@ -46,6 +46,7 @@ The URL hash updates as you move, so the current section can be reloaded or shar
 
 1. Go to `Capture`.
 2. Use the inline quick-add form for the fastest path.
+   The Dashboard quick-add reads the same shorthand as Today: a date such as `tomorrow`, a priority such as `p1` or `!!`, `#labels`, `@assignees`, and `shopping:` or `errand:` lists. A Dashboard task gets no due date unless you type one. `Smart Task Parsing` in Settings controls both forms.
 3. Use the `New Task` button in the shell when you need the full modal.
 
 Both paths keep the dashboard context intact.

@@ -23,11 +23,11 @@
  */
 
 import { isDisabledCharacterShortcut } from "@lib/single-key-shortcuts"
-import { taskApi, type TaskCreatePayload } from "./task-api-client"
+import { taskApi } from "./task-api-client"
 import { showToast } from "./toast"
 import { confirmDialog } from "./confirm-dialog"
 import { onTaskCompleted } from "./gamification-hook"
-import { parseTaskInput, type ParsedTask } from "./nl-task-parser"
+import { householdDayFromToday, householdToday, parseQuickTask, quickAddPayload } from "./quick-add"
 import {
   saveFilterState,
   loadFilterState,
@@ -208,8 +208,7 @@ function setupEventDelegation(container: HTMLElement) {
       btn.disabled = true
       btn.textContent = "..."
       try {
-        const todayStr = new Date().toISOString().split("T")[0]!
-        await taskApi.updateTask(id, { due_date: todayStr })
+        await taskApi.updateTask(id, { due_date: householdToday() })
         showToast("common.task_updated")
         document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "today-focus" } }))
       } catch {
@@ -315,9 +314,7 @@ function setupEventDelegation(container: HTMLElement) {
       const days = parseInt(target.dataset.snooze, 10)
       if (!id || isNaN(days)) return
 
-      const newDate = new Date()
-      newDate.setDate(newDate.getDate() + days)
-      const dateStr = newDate.toISOString().split("T")[0]!
+      const dateStr = householdDayFromToday(days)
 
       try {
         await taskApi.updateTask(id, { due_date: dateStr })
@@ -446,13 +443,6 @@ async function handleAskAi(el: HTMLElement) {
   }
 }
 
-function parseQuickTask(input: string): ParsedTask {
-  if (window.__featureFlags?.nlp_parser === false) {
-    return { title: input.trim(), dueDate: null, priority: null, labels: [], assignee: null, hasExtractions: false }
-  }
-  return parseTaskInput(input)
-}
-
 // ── Quick Add ─────────────────────────────────────────────────────────────
 
 function setupQuickAdd(container: HTMLElement) {
@@ -467,45 +457,10 @@ function setupQuickAdd(container: HTMLElement) {
     const text = quickInput.value.trim()
     if (!text) return
 
-    // Parse NL input
-    const parsed = parseQuickTask(text)
-    const todayStr = new Date().toISOString().split("T")[0]!
-
-    // Detect shopping list: "shopping: item1, item2"
-    const shoppingMatch = text.match(/^shopping:\s*(.+)/i)
-    const errandMatch = text.match(/^errand:\s*(.+)/i)
-
-    const payload: Record<string, unknown> = {
-      title: parsed.title,
-      due_date: parsed.dueDate ?? todayStr, // Default to today
-      priority: parsed.priority ?? undefined,
-    }
-
-    if (parsed.labels.length > 0) {
-      payload.labels = JSON.stringify(parsed.labels)
-    }
-    if (parsed.assignee) {
-      payload.assigned_to = parsed.assignee
-    }
-
-    // Shopping list → create checklist items
-    if (shoppingMatch) {
-      const items = shoppingMatch[1]!.split(",").map(s => s.trim()).filter(Boolean)
-      payload.title = "Shopping"
-      payload.labels = JSON.stringify(["shopping"])
-      payload.checklists = JSON.stringify(items.map(item => ({ title: item, done: false })))
-    }
-
-    // Errand list → similar
-    if (errandMatch) {
-      const items = errandMatch[1]!.split(",").map(s => s.trim()).filter(Boolean)
-      payload.title = "Errands"
-      payload.labels = JSON.stringify(["errands"])
-      payload.checklists = JSON.stringify(items.map(item => ({ title: item, done: false })))
-    }
+    const { payload } = quickAddPayload(text, householdToday())
 
     try {
-      const result = await taskApi.createTask(payload as TaskCreatePayload)
+      const result = await taskApi.createTask(payload)
       if (result) {
         quickInput.value = ""
         if (quickFeedback) quickFeedback.style.display = "none"

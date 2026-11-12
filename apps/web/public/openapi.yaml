@@ -327,7 +327,7 @@ components:
         labels:
           type: string
           nullable: true
-          description: Comma-separated label names
+          description: JSON-encoded array of label names
         checklists:
           type:
             - string
@@ -1620,9 +1620,16 @@ paths:
                 area_id:
                   type: string
                 labels:
-                  type: string
-                  description: JSON-encoded array of label names
-                  example: '["repair","garage"]'
+                  oneOf:
+                    - type: array
+                      items:
+                        type: string
+                    - type: string
+                      description: JSON-encoded array of label names
+                  description: Label names, as an array or as a JSON-encoded array.
+                  example:
+                    - repair
+                    - garage
                 checklists:
                   type: string
                   description: Replacement JSON-encoded checklist array

@@ -1,5 +1,6 @@
 import { DASHBOARD_SECTIONS, type DashboardSectionId } from "@lib/dashboard-registry"
 import { pageLifecycle } from "@lib/page-lifecycle"
+import { quickAddPayload } from "@lib/quick-add"
 import { taskApi } from "@lib/task-api-client"
 import { showToast } from "@lib/toast"
 import {
@@ -215,8 +216,10 @@ function initQuickAddForm(): void {
   pageLifecycle.on(form, "submit", async (event) => {
     event.preventDefault()
 
-    const title = input.value.trim()
-    if (!title) return
+    const text = input.value.trim()
+    if (!text) return
+    const { payload } = quickAddPayload(text)
+    const title = payload.title
 
     const emptyState = taskList.querySelector(".bento-empty-state")
     if (emptyState) emptyState.remove()
@@ -253,7 +256,7 @@ function initQuickAddForm(): void {
     try {
       const areaId = window.__activeArea ?? "default"
       await taskApi.createTask({
-        title,
+        ...payload,
         area_id: areaId === "all" ? "default" : areaId,
       })
       showToast("common.task_created")
@@ -262,6 +265,7 @@ function initQuickAddForm(): void {
     } catch (error) {
       showToast((error as Error).message || "common.failed_create", "error")
       newCard.remove()
+      if (!input.value) input.value = text
       if (openCount) {
         openCount.textContent = String(Math.max(0, Number(openCount.textContent ?? "1") - 1))
       }

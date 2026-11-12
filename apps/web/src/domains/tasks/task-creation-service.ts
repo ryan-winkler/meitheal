@@ -10,6 +10,20 @@ import {
 } from "@meitheal/domain-tasks"
 import { logApiError } from "../../lib/api-logger"
 import { normalizeStatus, STATUS } from "../../lib/status-config"
+
+/**
+ * Accept labels as an array of strings or as a JSON-encoded string array.
+ * Automation callers (n8n, MCP) send arrays; the browser sends JSON strings.
+ * Returns the JSON string to store, or null when the value is not a string array.
+ */
+export function taskLabelsJson(value: unknown): string | null {
+  let parsed: unknown = value
+  if (typeof value === "string") {
+    try { parsed = JSON.parse(value) } catch { return null }
+  }
+  if (!Array.isArray(parsed) || !parsed.every(item => typeof item === "string")) return null
+  return JSON.stringify(parsed)
+}
 import { formatTicketKey } from "../../lib/ticket-key"
 import { dispatchTaskEvent } from "../../lib/webhook-dispatcher"
 import type { TaskCreationData, TaskRepository } from "./persistence/task-repository"
@@ -42,19 +56,11 @@ export async function prepareTaskCreation(
   const status = rawStatus && rawStatus.length <= 50 ? normalizeStatus(rawStatus) : STATUS.PENDING
 
   const due_date = typeof body.due_date === "string" ? body.due_date : null
-  // Validate labels is valid JSON array of strings
   let labels = "[]"
   if (body.labels !== undefined) {
-    if (typeof body.labels !== "string") {
-      return { ok: false, error: "labels must be a JSON string array" }
-    }
-    try {
-      const parsed = JSON.parse(body.labels)
-      if (!Array.isArray(parsed) || !parsed.every(item => typeof item === "string")) throw new Error()
-      labels = body.labels
-    } catch {
-      return { ok: false, error: "labels must be a valid JSON string array" }
-    }
+    const parsed = taskLabelsJson(body.labels)
+    if (parsed === null) return { ok: false, error: "labels must be an array of strings or a JSON string array" }
+    labels = parsed
   }
 
   // Validate framework_payload is valid JSON object
