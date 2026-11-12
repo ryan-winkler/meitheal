@@ -305,9 +305,6 @@ export function restoreAISettings(s: Record<string, unknown>): void {
   const unavailable = document.getElementById("ai-provider-unavailable")
   if (unavailable) unavailable.hidden = aiHandoffEditable
 
-  const shareUrl = document.querySelector<HTMLInputElement>("#ai-custom-url-share")
-  if (shareUrl) shareUrl.checked = typeof s["ai-custom-url"] === "string" && Boolean(s["ai-custom-url"]) && s["ai-custom-url-approved"] === s["ai-custom-url"]
-
   // Agent Protocols
   const a2aEnabled = s["agent-protocols-a2a-enabled"]
   const webmcpEnabled = s[WEBMCP_SETTING]

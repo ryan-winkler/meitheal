@@ -55,11 +55,7 @@ export function settingsAction(handler: (event: Event) => unknown): (event: Even
   }
 }
 
-export function showSettingsSaveError(error: unknown): void {
-  if (error instanceof DOMException && error.name === "AbortError") return
-  log.warn("Settings action failed", error)
-  showToast(error instanceof PartialSettingsSave ? "settings.save_partial" : "settings.save_error", "error")
-}
+
 
 /** Load all settings from the API */
 export async function loadAllSettings(): Promise<Record<string, unknown>> {
