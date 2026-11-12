@@ -1,6 +1,7 @@
 import type { APIRoute } from "astro"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import { TaskRepository } from "@domains/tasks/persistence/task-repository"
+import { requireAssignedTaskWriteAccess, restrictedAssigneeId } from "../../../../lib/agent-token-guard"
 import { apiError } from "../../../../lib/api-response"
 import { logApiError } from "../../../../lib/api-logger"
 import { readWithinLimit } from "../../../../lib/bounded-body"
@@ -31,16 +32,24 @@ export const PATCH: APIRoute = async ({ params, request, locals }) => {
     const repo = new TaskRepository(getPersistenceClient())
     const resolved = await repo.resolveTaskId(params.id!)
     if (!resolved) return apiError("Task not found", 404)
+    const denied = await requireAssignedTaskWriteAccess(
+      locals.agentToken,
+      (id) => repo.findById(id),
+      [resolved.id],
+      "Agent can only defer tasks assigned to it",
+    )
+    if (denied) return denied
     const result = await repo.setDeferral(resolved.id, body.deferred, {
       updatedAt: body.updated_at, revision: body.deferral_revision,
     }, {
       id: locals.agentToken?.tokenId ?? locals.hassUserId ?? "user",
       type: locals.agentToken ? "agent" : "human",
       requestId: locals.requestId,
-    })
+    }, restrictedAssigneeId(locals.agentToken))
     if (result.ok) {
       return new Response(JSON.stringify({ ...result.task, status: normalizeStatus(result.task.status) }), { headers })
     }
+    if (result.errorCode === "assignee_mismatch") return apiError("Agent can only defer tasks assigned to it", 403)
     if (result.errorCode === "unavailable") return apiError("Task not found", 404)
     if (result.errorCode === "conflict") {
       return new Response(JSON.stringify({

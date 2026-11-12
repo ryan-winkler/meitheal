@@ -1,8 +1,8 @@
 ---
 import { AVAILABLE_SCOPES } from "@meitheal/domain-auth"
-import { t } from "../../i18n/translations";
-import type { Locale } from "../../lib/locale";
-import SettingsPanelCard from "./SettingsPanelCard.astro";
+import { t } from "../../i18n/translations"
+import type { Locale } from "../../lib/locale"
+import SettingsPanelCard from "./SettingsPanelCard.astro"
 
 /**
  * SettingsAgentTokens — Manage scoped agent API tokens.
@@ -16,9 +16,9 @@ import SettingsPanelCard from "./SettingsPanelCard.astro";
  */
 
 interface Props {
-  locale: Locale;
+  locale: Locale
 }
-const { locale } = Astro.props;
+const { locale } = Astro.props
 
 const scopeGroups = [
   { label: "Tasks", category: "tasks" },
@@ -300,15 +300,31 @@ const scopeGroups = [
     revoked?: boolean
   }
 
+  function clearTokenStatus() {
+    listEl.querySelectorAll(".agent-tokens__status").forEach(el => el.remove())
+  }
+
+  function showTokenStatus(html: string) {
+    clearTokenStatus()
+    listEl.querySelectorAll(".agent-tokens__row").forEach(el => el.remove())
+    const statusEl = document.createElement("div")
+    statusEl.className = "agent-tokens__status"
+    statusEl.style.cssText = "padding: 16px; text-align: center; color: var(--text-muted); font-size: 13px;"
+    statusEl.innerHTML = html
+    listEl.appendChild(statusEl)
+    emptyEl.hidden = true
+  }
+
+  function showTokenAdminNotice() {
+    showTokenStatus("Home Assistant administrator access is required to view or issue agent tokens.")
+    if (createBtn instanceof HTMLButtonElement) createBtn.disabled = true
+  }
+
   // ── T7: Error state with retry ──
   function showTokenError() {
-    listEl.innerHTML = `
-      <div style="padding: 16px; text-align: center; color: var(--text-muted); font-size: 13px;">
-        Failed to load tokens.
-        <button type="button" class="btn btn-ghost btn-sm" id="tokens-retry" style="margin-left: 8px;">Retry</button>
-      </div>
-    `
-    emptyEl.hidden = true
+    showTokenStatus(
+      `Failed to load tokens.\n<button type="button" class="btn btn-ghost btn-sm" id="tokens-retry" style="margin-left: 8px;">Retry</button>`,
+    )
     const retryBtn = document.getElementById("tokens-retry")
     if (retryBtn) pageLifecycle.on(retryBtn, "click", () => loadTokens())
   }
@@ -317,6 +333,10 @@ const scopeGroups = [
   async function loadTokens() {
     try {
       const res = await fetch("/api/agent-tokens")
+      if (res.status === 403) {
+        showTokenAdminNotice()
+        return
+      }
       if (!res.ok) {
         showTokenError()
         return
@@ -329,8 +349,10 @@ const scopeGroups = [
   }
 
   function renderTokens(tokens: TokenInfo[]) {
-    // Remove old rows (keep empty placeholder)
+    // Clear any stale status banner and old rows while keeping #agent-tokens-empty attached
+    clearTokenStatus()
     listEl.querySelectorAll(".agent-tokens__row").forEach(el => el.remove())
+    if (createBtn instanceof HTMLButtonElement) createBtn.disabled = false
 
     if (tokens.length === 0) {
       emptyEl.hidden = false

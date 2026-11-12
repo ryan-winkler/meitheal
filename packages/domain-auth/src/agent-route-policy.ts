@@ -14,6 +14,7 @@ const routes = new Map<string, MethodScopes>([
   ["/api/tasks/reorder", taskCreate],
   ["/api/tasks/today-counts", taskRead],
   ["/api/tasks/reaction-counts", taskRead],
+  ["/api/users", { GET: "tasks:read" }],
   ["/api/projects", { GET: "projects:read", POST: "projects:write" }],
   ["/api/search", { GET: "search:read" }],
   ["/api/mcp", { GET: "mcp:execute", POST: "mcp:execute" }],

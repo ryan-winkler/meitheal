@@ -2,15 +2,15 @@ import { readFileSync, existsSync } from "node:fs"
 import { resolve } from "node:path"
 import type { APIRoute } from "astro"
 import { parse } from "yaml"
-import { hasScope, resolveAgentRouteScope, type AgentScope } from "@meitheal/domain-auth"
+import { hasScope, isAssignedTaskScopedRoute, resolveAgentRouteScope, type AgentScope } from "@meitheal/domain-auth"
 import { hasBoardSelection, isBoardTaskApiPath, unavailableBoardResponse } from "@domains/tasks/board-availability"
-import { apiJson, apiError, apiProblem } from "../../lib/api-response"
+import { apiJson, apiError, apiProblem } from "@lib/api-response"
 import { readWithinLimit } from "@lib/bounded-body"
 import { resolveMcpSchema } from "@lib/mcp-schema"
 import { isDoneStatus } from "@lib/status-config"
 import { checkMcpAvailability } from "@lib/mcp-availability"
 import { MCP_LEGACY_VERSION, MCP_PROTOCOL_VERSION, MCP_SUPPORTED_VERSIONS } from "@lib/mcp-versions"
-import type { ResolvedAgent } from "../../lib/agent-token-guard"
+import type { ResolvedAgent } from "@lib/agent-token-guard"
 
 /**
  * POST /api/mcp — MCP (Model Context Protocol) Server Endpoint
@@ -232,8 +232,13 @@ function scopedApi(authorization: string) {
       signal: AbortSignal.timeout(10_000),
     })
     if (!response.ok) {
-      await response.body?.cancel()
-      throw new Error(`Tool request failed with HTTP ${response.status}`)
+      const errBody = (await response.json().catch(() => null)) as Record<string, unknown> | null
+      const detail = typeof errBody?.detail === "string"
+        ? errBody.detail
+        : typeof errBody?.error === "string"
+          ? errBody.error
+          : null
+      throw new Error(detail ? `Tool request failed with HTTP ${response.status}: ${detail}` : `Tool request failed with HTTP ${response.status}`)
     }
     return response
   }
@@ -328,35 +333,37 @@ customHandlers.set("listMyTasks", async (args, requestApi, agent) => {
   const params = new URLSearchParams()
   params.set("assigned_to", agent.assigneeId)
   if (args.status) params.set("status", String(args.status))
-  if (args.limit) params.set("limit", String(args.limit))
+  params.set("limit", String(args.limit ?? 50))
   const res = await requestApi(`/api/tasks?${params}`)
-  const tasks = await checkedJson(res)
+  const body = (await checkedJson(res)) as { tasks?: unknown }
+  const tasks = Array.isArray(body.tasks) ? body.tasks : []
   return {
     tasks,
     assignee_id: agent.assigneeId,
-    count: Array.isArray(tasks) ? tasks.length : 0,
+    count: tasks.length,
   }
 })
 
-// handBackTask: unassigns or reassigns task, adds handoff comment
+// handBackTask: adds handoff comment while still assigned, then unassigns or reassigns task
 customHandlers.set("handBackTask", async (args, requestApi) => {
   if (!args.id) return { error: "Task id is required" }
   const safeId = encodeURIComponent(String(args.id))
   const to = typeof args.to === "string" && args.to.trim() ? args.to.trim() : null
   const note = typeof args.note === "string" ? args.note.trim() : ""
 
+  if (note) {
+    const commentRes = await requestApi(`/api/tasks/${safeId}/comments`, {
+      method: "POST",
+      body: JSON.stringify({ content: `[Agent Handoff]: ${note}` }),
+    })
+    await checkedJson(commentRes)
+  }
+
   const updateRes = await requestApi(`/api/tasks/${safeId}`, {
     method: "PUT",
     body: JSON.stringify({ assigned_to: to }),
   })
   const updatedTask = await checkedJson(updateRes)
-
-  if (note) {
-    await requestApi(`/api/tasks/${safeId}/comments`, {
-      method: "POST",
-      body: JSON.stringify({ content: `[Agent Handoff]: ${note}` }),
-    }).catch(() => {})
-  }
 
   return {
     ok: true,
@@ -375,9 +382,19 @@ const customToolScopes: ReadonlyMap<string, AgentScope> = new Map([
   ["handBackTask", "tasks:write"],
 ])
 
+const assignedCustomTools = new Set(["completeTask", "handBackTask"])
+
 function toolScope(toolName: string, route?: RouteMapping): AgentScope | undefined {
   return customToolScopes.get(toolName) ??
     (route && resolveAgentRouteScope(route.path.replace(/\{[^}]+\}/g, "resource-id"), route.method))
+}
+
+function isToolAuthorized(agent: ResolvedAgent, toolName: string, route?: RouteMapping): boolean {
+  const scope = toolScope(toolName, route)
+  if (!scope) return false
+  const isAssignedTaskRoute = assignedCustomTools.has(toolName) ||
+    Boolean(route && isAssignedTaskScopedRoute(route.path.replace(/\{[^}]+\}/g, "resource-id"), route.method))
+  return hasScope(agent.scopes, scope, { isAssignedTaskRoute })
 }
 
 // ─── Dynamic Tool Executor ────────────────────────────────────────────────────
@@ -619,10 +636,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
     // List tools — dynamically from OpenAPI + custom handlers
     if (method === "tools/list") {
       const { tools, routes } = loadOpenAPISpec()
-      const allowed = (name: string) => {
-        const scope = toolScope(name, routes.get(name))
-        return scope && hasScope(agent.scopes, scope, { isAssignedTaskRoute: true })
-      }
+      const allowed = (name: string) => isToolAuthorized(agent, name, routes.get(name))
 
       // Include scoped custom tools that do not have an OpenAPI operation.
       const customOnlyTools: McpTool[] = []
@@ -649,8 +663,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
       if (!toolName || !isRecord(args)) return rpcError(reqId, -32602, "Expected a tool name and arguments object")
 
       try {
-        const scope = toolScope(toolName, loadOpenAPISpec().routes.get(toolName))
-        if (!scope || !hasScope(agent.scopes, scope, { isAssignedTaskRoute: true })) {
+        if (!isToolAuthorized(agent, toolName, loadOpenAPISpec().routes.get(toolName))) {
           return rpcError(reqId, modern ? -32602 : -32603, "Tool is unavailable to this token")
         }
         const output = await executeTool(toolName, args, authorization, agent)
@@ -660,7 +673,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
           isError: "error" in output || (modern && (output.status === "not_found" || output.status === "error")),
         })
       } catch (toolError) {
-        const message = toolError instanceof Error && /^Tool request failed with HTTP \d{3}$/.test(toolError.message)
+        const message = toolError instanceof Error && /^Tool request failed with HTTP \d{3}(?:: [\s\S]+)?$/.test(toolError.message)
           ? toolError.message : "Tool execution failed"
         if (modern) return result({ content: [{ type: "text", text: message }], isError: true })
         return rpcError(reqId, -32603, message)
@@ -680,7 +693,7 @@ function getCustomToolDescription(name: string): string {
     completeTask: "Mark a task as complete by ID or title. Title lookup requires search:read and matches the full title.",
     searchTasks: "Search tasks by query text, status, priority, or assignee. Returns a clean list of matching tasks.",
     whoAmI: "Returns the authenticated agent identity, token prefix, authorized scopes, and linked assignee ID.",
-    listMyTasks: "List active tasks assigned to this agent token's linked assignee.",
+    listMyTasks: "List tasks assigned to this agent token's linked assignee (defaults to 50; filter by status if needed).",
     handBackTask: "Hand back a task to humans or reassign it with an optional explanation note.",
   }
   return descriptions[name] ?? `Custom tool: ${name}`

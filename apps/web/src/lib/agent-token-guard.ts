@@ -12,13 +12,50 @@
 import { hashToken, type AgentScope, type AgentTokenRecord } from "@meitheal/domain-auth"
 import { ensureAgentTokenSchema, getAgentTokenByHash, updateAgentTokenLastUsed } from "@domains/auth/agent-token-store"
 import { ensureDatabaseSchemaSupported } from "@domains/tasks/persistence/store"
-import { apiProblem } from "./api-response"
+import { apiError, apiProblem } from "./api-response"
 
 export interface ResolvedAgent {
   tokenId: string
   tokenName: string
   scopes: AgentScope[]
   assigneeId?: string | null
+}
+
+/** Whether a credential is restricted to editing only tasks assigned to its linked identity. */
+export function isAssignedWriteOnly(agentToken?: ResolvedAgent | null): boolean {
+  return Boolean(
+    agentToken &&
+    agentToken.scopes.includes("tasks:write:assigned") &&
+    !agentToken.scopes.includes("tasks:write"),
+  )
+}
+
+/** Return the enforcing assignee ID when restricted to assigned-only writes, else undefined. */
+export function restrictedAssigneeId(agentToken?: ResolvedAgent | null): string | undefined {
+  if (!isAssignedWriteOnly(agentToken)) return undefined
+  return agentToken?.assigneeId ?? undefined
+}
+
+/**
+ * Enforce assigned-only write authorization across one or more task IDs.
+ * Returns a 403 Response when restricted and any target task is absent or assigned elsewhere.
+ */
+export async function requireAssignedTaskWriteAccess(
+  agentToken: ResolvedAgent | undefined,
+  findTask: (taskId: string) => Promise<{ assigned_to?: string | null } | null>,
+  taskIds: string[],
+  errorMessage: string,
+): Promise<Response | null> {
+  if (!isAssignedWriteOnly(agentToken)) return null
+  if (!agentToken?.assigneeId) {
+    return apiError(errorMessage, 403)
+  }
+  const uniqueIds = [...new Set(taskIds)]
+  const tasks = await Promise.all(uniqueIds.map((id) => findTask(id)))
+  if (tasks.some((task) => !task || task.assigned_to !== agentToken.assigneeId)) {
+    return apiError(errorMessage, 403)
+  }
+  return null
 }
 
 let schemaReady: Promise<void> | undefined
@@ -32,7 +69,7 @@ export async function resolveAgentAuth(request: Request): Promise<ResolvedAgent 
   const unauthorized = () => apiProblem({
     status: 401,
     detail: "Use a valid, active Meitheal agent token.",
-    extraHeaders: { "WWW-Authenticate": 'Bearer error="invalid_token"', "Cache-Control": "no-store" },
+    extraHeaders: { "WWW-Authenticate": "Bearer error=\"invalid_token\"", "Cache-Control": "no-store" },
   })
   if (!plaintext) throw unauthorized()
 
