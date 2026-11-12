@@ -467,15 +467,21 @@ const categories = [
     padding: 0.875rem;
     background: var(--bg-hover, #1e293b);
     border-radius: 10px;
-    border: 1px solid transparent;
+    border: 1px dashed var(--border, #334155);
+    transition: border-color 0.2s, transform 0.15s;
+  }
+
+  .gam-achievement-card:not(.gam-achievement-card--unlocked) .gam-achievement-card__icon {
     opacity: 0.45;
     filter: grayscale(0.8);
-    transition: opacity 0.2s, filter 0.2s, border-color 0.2s, transform 0.15s;
+  }
+
+  .gam-achievement-card:not(.gam-achievement-card--unlocked) .gam-achievement-card__name {
+    color: var(--text-secondary, #cbd5e1);
   }
 
   .gam-achievement-card--unlocked {
-    opacity: 1;
-    filter: none;
+    border-style: solid;
     border-color: var(--border, #334155);
   }
 
@@ -505,7 +511,7 @@ const categories = [
 
   .gam-achievement-card__desc {
     font-size: 0.6875rem;
-    color: var(--text-muted, #888);
+    color: var(--text-secondary, #cbd5e1);
     line-height: 1.3;
   }
 

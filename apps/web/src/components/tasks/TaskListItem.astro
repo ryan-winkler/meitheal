@@ -391,13 +391,13 @@ const customEntries = Object.entries(task.custom_fields).filter(
   }
 
   .tli__overdue-date {
-    color: var(--danger);
+    color: var(--danger-text);
   }
   .tli__overdue-tag {
     font-size: 10px;
     padding: 1px 6px;
     border-radius: 8px;
-    background: var(--danger);
+    background: color-mix(in srgb, var(--danger) 78%, #000);
     color: white;
     margin-left: 4px;
     font-weight: 600;
@@ -481,7 +481,7 @@ const customEntries = Object.entries(task.custom_fields).filter(
     padding: 3px 8px;
     border-radius: var(--radius-sm, 4px);
     background: rgba(59, 130, 246, 0.1);
-    color: var(--accent);
+    color: var(--accent-text);
     border: 1px solid rgba(59, 130, 246, 0.2);
     cursor: pointer;
     white-space: nowrap;
