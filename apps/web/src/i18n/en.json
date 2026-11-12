@@ -829,6 +829,8 @@
     "shortcut_today": "Today view",
     "shortcut_upcoming": "Upcoming view",
     "shortcut_calendar": "Calendar view",
+    "shortcut_timeline": "Timeline view",
+    "shortcut_task_views": "On the Tasks page",
     "language_title": "🌐 Language",
     "language_subtitle": "Interface language — content stays in its original language",
     "language_label": "Display Language",

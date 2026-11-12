@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test"
-import { shouldSkipBrowserSpecs } from "./_helpers"
+import { deferred, shouldSkipBrowserSpecs } from "./_helpers"
 
 test.skip(shouldSkipBrowserSpecs(), "Requires a disposable App server")
 test.use({ serviceWorkers: "block" })
@@ -122,6 +122,60 @@ test("a delayed default snapshot offers a keyboard handoff with task disclosure 
   expect(new URL(provider.url()).searchParams.get("q")).toContain("Today provider privacy fixture")
   expect(await provider.evaluate(() => ({ opener: window.opener, referrer: document.referrer }))).toEqual({ opener: null, referrer: "" })
   await provider.close()
+})
+
+test("a delayed handoff takes priority over open shortcut help and returns focus in order", async ({ page, context }) => {
+  const requested = deferred<void>()
+  const release = deferred<void>()
+  await context.route("https://chatgpt.com/**", route => route.abort())
+  await page.route(snapshot, async route => {
+    requested.resolve()
+    await release.promise
+    await route.fulfill({ json: settings(null, true) })
+  })
+
+  try {
+    await page.goto("/today")
+    const ask = askToday(page)
+    await ask.press("Enter")
+    await requested.promise
+    const help = page.getByRole("dialog", { name: "Keyboard shortcuts" })
+    const close = help.getByRole("button", { name: "Close shortcuts" })
+    await ask.press("Shift+Slash")
+    await expect(close).toBeFocused()
+
+    const confirmation = page.getByRole("alertdialog", { name: "Open provider" })
+    const cancel = confirmation.getByRole("button", { name: "Cancel" })
+    const text = help.getByRole("heading", { name: "On the Tasks page" })
+    const bounds = await text.boundingBox()
+    expect(bounds).not.toBeNull()
+    await page.mouse.move(bounds!.x + bounds!.width / 2, bounds!.y + bounds!.height / 2)
+    await page.mouse.down()
+    try {
+      await expect(close).toBeFocused()
+      release.resolve()
+      await expect(cancel).toBeFocused()
+      await expect(help).toBeHidden()
+      const message = await confirmation.locator("#confirm-message").boundingBox()
+      expect(message).not.toBeNull()
+      await page.mouse.move(message!.x + message!.width / 2, message!.y + message!.height / 2)
+    } finally {
+      await page.mouse.up()
+    }
+    await expect(cancel).toBeFocused()
+    await page.keyboard.press("Tab")
+    await expect(confirmation.getByRole("link", { name: "Open provider" })).toBeFocused()
+    await page.keyboard.press("Escape")
+    await expect(confirmation).toBeHidden()
+    await expect(close).toBeFocused()
+
+    await page.keyboard.press("Escape")
+    await expect(help).toBeHidden()
+    await expect(ask).toBeFocused()
+    expect(context.pages()).toEqual([page])
+  } finally {
+    release.resolve()
+  }
 })
 
 test("a newer Today handoff aborts the older request and releases both buttons", async ({ page, request }) => {
