@@ -118,7 +118,7 @@ test.describe("Dynamic Home Assistant agent pickers", () => {
     await page.route("**/api/ha/agents", route => {
       reads += 1
       return route.fulfill(failure
-        ? { status: 503, json: { agents: [], error: "Home Assistant WebSocket disconnected" } }
+        ? { status: 503, json: { agents: [], error: "Home Assistant WebSocket disconnected." } }
         : { json: { agents: [...agents, agents[0]] } })
     })
     await page.goto("/settings#automation-ai-settings")
@@ -138,7 +138,8 @@ test.describe("Dynamic Home Assistant agent pickers", () => {
     await expect(page.locator("#refresh-ha-agents")).toHaveAttribute("aria-busy", "false")
     failure = true
     await page.locator("#refresh-ha-agents").click()
-    await expect(status).toContainText("WebSocket disconnected")
+    await expect(status).toContainText("WebSocket disconnected. Refresh")
+    await expect(status).not.toContainText("..")
     await expect(picker).toHaveValue("01LEGACYCONFIGENTRY")
     failure = false
     agents = agents.filter(agent => agent.id !== "01LEGACYCONFIGENTRY")

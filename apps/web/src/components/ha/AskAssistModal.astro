@@ -215,7 +215,8 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
         : agents.length ? `${agents.length} Home Assistant agents available.` : "No registered conversation agents were returned. Check your Home Assistant Assist configuration."
     } catch (error) {
       if (signal.aborted || version !== discoveryVersion) return
-      if (agentStatus) agentStatus.textContent = `${error instanceof Error ? error.message : "Agent discovery failed"}. Refresh to retry; your selection is unchanged.`
+      const detail = error instanceof Error && error.message.trim() ? error.message.trim().replace(/[.。]+$/u, "") : "Agent discovery failed"
+      if (agentStatus) agentStatus.textContent = `${detail}. Refresh to retry; your selection is unchanged.`
     } finally {
       if (!signal.aborted && version === discoveryVersion) {
         loadingAgents = false

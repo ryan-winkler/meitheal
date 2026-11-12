@@ -160,7 +160,11 @@ async function restoreHaAgent(savedAgent: unknown) {
   } catch (error) {
     if (signal.aborted || version !== agentDiscoveryVersion) return
     renderAgentBadge(select, t("settings.ha_agent_discovery_unavailable", getClientLocale()))
-    if (status) status.textContent = t("settings.ha_agent_discovery_retry", getClientLocale(), { error: error instanceof Error ? error.message : t("settings.ha_agent_discovery_failed", getClientLocale()) })
+    // The template adds its own full stop, so drop one that ends the server detail.
+    const detail = error instanceof Error && error.message.trim()
+      ? error.message.trim().replace(/[.。]+$/u, "")
+      : t("settings.ha_agent_discovery_failed", getClientLocale())
+    if (status) status.textContent = t("settings.ha_agent_discovery_retry", getClientLocale(), { error: detail })
   } finally {
     if (!signal.aborted && version === agentDiscoveryVersion && refresh) {
       refresh.setAttribute("aria-disabled", "false")
