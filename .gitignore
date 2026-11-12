@@ -4,6 +4,9 @@ node_modules
 .env.*
 dist
 coverage
+coverage-python.xml
+.coverage
+codacy-results.sarif
 playwright-report
 test-results
 .DS_Store
