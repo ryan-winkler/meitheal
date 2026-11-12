@@ -654,8 +654,8 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
         const users = data.users || []
         const selected = select.value
         const unassigned = select.options[0] ?? new Option("Unassigned", "")
-        select.replaceChildren(unassigned, ...users.map((user: { id: string; name: string; source: string }) =>
-          new Option(user.name + (user.source === "home_assistant" ? " (HA)" : ""), user.id)))
+        select.replaceChildren(unassigned, ...users.map((user: { id: string; name: string; source: string; kind?: string }) =>
+          new Option(user.name + (user.kind === "agent" ? " (AI agent)" : user.source === "home_assistant" ? " (HA)" : ""), user.id)))
         // Only the assignee field can hide; goals stay independently available.
         if (select.parentElement) select.parentElement.style.display = users.length || selected ? "" : "none"
         hint?.classList.toggle("hidden", users.length < 2)

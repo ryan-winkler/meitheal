@@ -3,7 +3,7 @@
  *
  * POST   /api/agent-tokens    — Create a new agent token
  * GET    /api/agent-tokens    — List all tokens (metadata only)
- * PATCH  /api/agent-tokens    — Update a token by ID (body: { id, name?, scopes? })
+ * PATCH  /api/agent-tokens    — Update a token by ID (body: { id, name?, scopes?, assigneeId? })
  * DELETE /api/agent-tokens    — Revoke/delete a token by ID (body: { id, hard? })
  *
  * @domain auth
@@ -22,6 +22,8 @@ import {
   revokeAgentToken,
   ensureAgentTokenSchema,
 } from "@domains/auth/agent-token-store"
+import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
+import { UserRepository } from "@domains/tasks/persistence/user-repository"
 
 /** Only an authenticated Home Assistant administrator can manage credentials. */
 function isAdmin(locals: App.Locals): boolean {
@@ -35,6 +37,34 @@ function validationError(detail: string, invalidParams: Array<{ name: string; re
     detail,
     invalidParams,
   })
+}
+
+type AssigneeChoice = { assigneeId: string | null } | Response
+
+/**
+ * A token may act only as an agent assignee. Linking it to a person would let
+ * automation answer for a household member.
+ */
+async function readAssignee(value: unknown, scopes: AgentScope[] | undefined): Promise<AssigneeChoice> {
+  if (value === null || value === undefined || value === "") {
+    if (scopes?.includes("tasks:write:assigned")) {
+      return validationError("Working on assigned tasks needs an agent assignee", [
+        { name: "assigneeId", reason: "choose the agent assignee this token acts as" },
+      ])
+    }
+    return { assigneeId: null }
+  }
+  if (typeof value !== "string") {
+    return validationError("Invalid assignee", [{ name: "assigneeId", reason: "must be an agent assignee ID or null" }])
+  }
+  await ensureSchema()
+  const assignee = await new UserRepository(getPersistenceClient()).getCustomUser(value)
+  if (assignee?.kind !== "agent") {
+    return validationError("Invalid assignee", [
+      { name: "assigneeId", reason: "must be the ID of an agent assignee" },
+    ])
+  }
+  return { assigneeId: assignee.id }
 }
 
 // ── POST: Create Token ───────────────────────────────────────────────────────
@@ -69,7 +99,6 @@ export const POST: APIRoute = async ({ request, locals }) => {
 
   const name = typeof body.name === "string" ? body.name.trim() : ""
   const rawScopes = Array.isArray(body.scopes) ? body.scopes : []
-  const assigneeId = typeof body.assignee_id === "string" ? body.assignee_id.trim() : (typeof body.assigneeId === "string" ? body.assigneeId.trim() : null)
   const expiration = typeof body.expiresAt === "string" ? Date.parse(body.expiresAt) : Number.NaN
   if (body.expiresAt != null && !(expiration > Date.now())) {
     return validationError("Token expiration must be a future date", [
@@ -104,6 +133,9 @@ export const POST: APIRoute = async ({ request, locals }) => {
     ])
   }
 
+  const assignee = await readAssignee(body.assigneeId !== undefined ? body.assigneeId : body.assignee_id, scopes)
+  if (assignee instanceof Response) return assignee
+
   const { token, tokenHash, tokenPrefix } = generateAgentToken()
   const id = crypto.randomUUID()
 
@@ -113,7 +145,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
     tokenHash,
     tokenPrefix,
     scopes,
-    assigneeId,
+    assigneeId: assignee.assigneeId,
     expiresAt,
   })
 
@@ -187,12 +219,8 @@ export const PATCH: APIRoute = async ({ request, locals }) => {
     ])
   }
 
+  if (!("assigneeId" in body) && "assignee_id" in body) body.assigneeId = body.assignee_id
   const updates: { name?: string; scopes?: AgentScope[]; assigneeId?: string | null } = {}
-
-  if (body.assignee_id !== undefined || body.assigneeId !== undefined) {
-    const val = body.assignee_id !== undefined ? body.assignee_id : body.assigneeId
-    updates.assigneeId = typeof val === "string" && val.trim() ? val.trim() : null
-  }
 
   if (typeof body.name === "string") {
     const name = body.name.trim()
@@ -218,6 +246,16 @@ export const PATCH: APIRoute = async ({ request, locals }) => {
       ])
     }
     updates.scopes = valid
+  }
+
+  if ("assigneeId" in body || updates.scopes?.includes("tasks:write:assigned")) {
+    const current = (await listAgentTokens(true)).find(token => token.id === id)
+    const assignee = await readAssignee(
+      "assigneeId" in body ? body.assigneeId : current?.assigneeId,
+      updates.scopes ?? current?.scopes,
+    )
+    if (assignee instanceof Response) return assignee
+    if ("assigneeId" in body) updates.assigneeId = assignee.assigneeId
   }
 
   const updated = await updateAgentToken(id, updates)

@@ -331,8 +331,8 @@ const schemas = {
   },
   AgentScope: {
     type: "string",
-    enum: ["tasks:read", "tasks:write", "projects:read", "projects:write", "pillars:read", "pillars:write", "search:read", "settings:read", "settings:write", "webhooks:manage", "admin:*"],
-    description: "Fine-grained permission scope for agent tokens. Use least-privilege: grant only what the agent needs.",
+    enum: ["tasks:read", "tasks:write:assigned", "tasks:write", "tasks:propose", "tasks:delete", "projects:read", "projects:write", "search:read", "mcp:execute", "a2a:execute"],
+    description: "Fine-grained permission scope for agent tokens. Use least-privilege: grant only what the agent needs. tasks:write:assigned limits changes to tasks assigned to the token's agent assignee.",
   },
   AgentToken: {
     type: "object",
@@ -342,6 +342,7 @@ const schemas = {
       name: { type: "string", description: "Human label (e.g., 'n8n-prod', 'claude-agent')" },
       tokenPrefix: { type: "string", description: "First 8 chars of the token for identification (e.g., 'mth_a1b2')" },
       scopes: { type: "array", items: { $ref: "#/components/schemas/AgentScope" } },
+      assigneeId: { type: "string", nullable: true, description: "Agent assignee this token acts as. Tasks assigned to it are the token's own tasks." },
       createdAt: { type: "string", format: "date-time" },
       expiresAt: { type: "string", format: "date-time", nullable: true },
       lastUsedAt: { type: "string", format: "date-time", nullable: true },
@@ -355,6 +356,7 @@ const schemas = {
     properties: {
       name: { type: "string", description: "Human label for the token" },
       scopes: { type: "array", items: { $ref: "#/components/schemas/AgentScope" }, minItems: 1 },
+      assigneeId: { type: "string", nullable: true, description: "ID of an agent assignee (a custom user with kind agent). Required with tasks:write:assigned." },
       expiresAt: { type: "string", format: "date-time", nullable: true, description: "Optional expiry. Null = no expiry." },
     },
     required: ["name", "scopes"],
@@ -368,6 +370,7 @@ const schemas = {
       token: { type: "string", description: "⚠️ Show-once. The Bearer token the agent must use. Never stored or retrievable again." },
       tokenPrefix: { type: "string" },
       scopes: { type: "array", items: { $ref: "#/components/schemas/AgentScope" } },
+      assigneeId: { type: "string", nullable: true },
       createdAt: { type: "string", format: "date-time" },
       expiresAt: { type: "string", format: "date-time", nullable: true },
     },
@@ -1574,7 +1577,18 @@ const paths = {
     get: { operationId: "listUsers", tags: ["Users"], summary: "List all users (HA + custom)", description: "Returns users from Home Assistant integration combined with any custom-defined users.", responses: { 200: { description: "User list" } } },
   },
   "/api/users/custom": {
-    post: { operationId: "createCustomUser", tags: ["Users"], summary: "Create a custom user", responses: { 201: { description: "Created" } } },
+    post: {
+      operationId: "createCustomUser", tags: ["Users"], summary: "Create a custom user or agent assignee",
+      description: "A custom user is an assignee without a Home Assistant account. Set kind to agent for an AI agent that works its tasks through a linked agent token.",
+      requestBody: { required: true, content: { "application/json": { schema: {
+        type: "object", required: ["name"], properties: {
+          name: { type: "string", maxLength: 100 },
+          color: { type: "string", description: "Hex colour, for example #6366f1" },
+          kind: { type: "string", enum: ["human", "agent"], default: "human" },
+        },
+      } } } },
+      responses: { 201: { description: "Created" }, 400: { description: "Invalid name or kind" }, 409: { description: "Name already used or limit reached" } },
+    },
   },
 
   // ── Gamification ──
@@ -1810,11 +1824,11 @@ const paths = {
     patch: {
       operationId: "updateAgentToken",
       tags: ["Auth"],
-      summary: "Update a token's name or scopes",
+      summary: "Update a token's name, scopes or assignee",
       description: "Modify the display name or permission scopes of an existing token. The token value itself cannot be changed — revoke and recreate if compromised.",
       requestBody: {
         required: true,
-        content: { "application/json": { schema: { type: "object", properties: { id: { type: "string" }, name: { type: "string" }, scopes: { type: "array", items: ref("AgentScope") } }, required: ["id"] } } },
+        content: { "application/json": { schema: { type: "object", properties: { id: { type: "string" }, name: { type: "string" }, scopes: { type: "array", items: ref("AgentScope") }, assigneeId: { type: "string", nullable: true } }, required: ["id"] } } },
       },
       responses: {
         200: jsonContent({ type: "object", properties: { ok: { type: "boolean" }, id: { type: "string" } } }, "Updated"),

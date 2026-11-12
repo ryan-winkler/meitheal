@@ -11,14 +11,15 @@
  */
 import { hashToken, type AgentScope, type AgentTokenRecord } from "@meitheal/domain-auth"
 import { ensureAgentTokenSchema, getAgentTokenByHash, updateAgentTokenLastUsed } from "@domains/auth/agent-token-store"
-import { ensureDatabaseSchemaSupported } from "@domains/tasks/persistence/store"
+import { ensureDatabaseSchemaSupported, ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import { apiProblem } from "./api-response"
 
 export interface ResolvedAgent {
   tokenId: string
   tokenName: string
   scopes: AgentScope[]
-  assigneeId?: string | null
+  /** Assignee this credential acts as. Null when the token has no task identity. */
+  assigneeId: string | null
 }
 
 let schemaReady: Promise<void> | undefined
@@ -61,5 +62,39 @@ export async function resolveAgentAuth(request: Request): Promise<ResolvedAgent 
     updateAgentTokenLastUsed(record.id).catch(() => {})
   }
 
-  return { tokenId: record.id, tokenName: record.name, scopes: record.scopes, assigneeId: record.assigneeId ?? null }
+  return { tokenId: record.id, tokenName: record.name, scopes: record.scopes, assigneeId: record.assigneeId }
+}
+
+/**
+ * Enforce the assigned-only write grant: the task must exist and be assigned to
+ * the assignee this token acts as. Returns a problem response to send, or null.
+ */
+export async function checkAssignedTask(taskIdOrKey: string, agent: ResolvedAgent): Promise<Response | null> {
+  const denied = (detail: string) => apiProblem({
+    status: 403,
+    detail,
+    type: "https://meitheal.local/problems/task-not-assigned",
+    extraHeaders: { "Cache-Control": "no-store" },
+  })
+  if (!agent.assigneeId) return denied("This token is not linked to an agent assignee.")
+
+  let assignedTo: unknown
+  try {
+    await ensureSchema()
+    const ticket = /^MTH-\d+$/i.test(taskIdOrKey) ? Number(taskIdOrKey.slice(4)) : null
+    const result = await getPersistenceClient().execute({
+      sql: "SELECT assigned_to FROM tasks WHERE id = ? OR ticket_number = ? LIMIT 1",
+      args: [taskIdOrKey, ticket],
+    })
+    // Let the route answer for a missing task so it reports the usual 404.
+    if (result.rows.length === 0) return null
+    assignedTo = result.rows[0]!.assigned_to
+  } catch {
+    return apiProblem({
+      status: 503,
+      detail: "Task assignment could not be checked. Try again.",
+      extraHeaders: { "Cache-Control": "no-store" },
+    })
+  }
+  return assignedTo === agent.assigneeId ? null : denied("This token may only change tasks assigned to its agent.")
 }

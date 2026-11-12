@@ -54,8 +54,8 @@ Keep tokens out of examples, logs, and reports. Use sample tasks to test a conne
 |-----------|-------|
 | List tasks, read a task, or read its links | `tasks:read` |
 | Read task or comment reactions and board reaction counts | `tasks:read` |
-| Create or update tasks, or add and remove their links | `tasks:write` |
-| Update tasks assigned specifically to this agent | `tasks:write:assigned` |
+| Update, comment on, log time on, complete, or hand back a task assigned to the token's agent | `tasks:write:assigned` |
+| Create or update any task, or add and remove their links | `tasks:write` |
 | Add or remove your own task or comment reactions | `tasks:write` |
 | Delete tasks, including bulk removal of completed tasks | `tasks:delete` |
 | Query universal search | `search:read` |
@@ -73,9 +73,33 @@ Use the literal `/api/` prefix in API URLs. Encoded spellings of that prefix tha
 
 The Home Assistant `meitheal.create_task` action stores its optional instructions in the task’s Description. The calendar-aware `POST /api/tasks/create` endpoint accepts a top-level `description` and falls back to `frameworkPayload.description` for existing integrations.
 
-### Read saved agent proposals and manage task handoffs
+### Hand a task to an AI agent
 
-Open `/review` through the installed App to read saved proposals and their proposed changes. Tasks can be assigned to human members or AI agents. Scoped agents can query their assigned work using `listMyTasks`, inspect caller metadata with `whoAmI`, and return tasks to human triage with `handBackTask`. Use the existing scoped task APIs for supported automation.
+An agent assignee is an AI agent, such as Claude or Codex, that appears in the assignee list beside the people in your household. It works through one agent token, so the tasks assigned to it are that token's own tasks.
+
+1. Open **Settings → Automation & AI → Agent Tokens** as a Home Assistant administrator and choose **New Token**.
+2. Under **Acts as**, choose **New agent assignee…** and name the agent. Meitheal selects the scopes an agent needs: `mcp:execute`, `tasks:read`, `tasks:write:assigned` and `search:read`.
+3. Create the token and store it in the agent's MCP client. See [MCP and A2A setup](webmcp-a2a-setup.md).
+4. Assign a task to the agent from any assignee menu. Agents are marked **AI agent**.
+
+Over MCP the agent uses these tools. Its identity always comes from the token, never from an argument.
+
+| Tool | Result |
+| --- | --- |
+| `whoAmI` | The token name, its scopes, the agent assignee it acts as, and whether it may change any task or only assigned tasks. |
+| `listMyTasks` | The open tasks assigned to the agent. Pass `include_completed` or a `status` to widen the list. |
+| `getTask`, `getTaskComments` | A task and its discussion. |
+| `addTaskComment` | The agent's answer, shown as **Automation: _token name_**. |
+| `updateTask`, `completeTask` | A change to a task assigned to the agent. |
+| `handBackTask` | Posts an optional note, then returns the task to whoever held it before the agent. Pass `to` to name another assignee, or `null` to leave it unassigned. |
+
+With `tasks:write:assigned`, a request to change a task assigned to someone else returns HTTP 403 with the problem type `task-not-assigned`. The agent cannot create or delete tasks. Grant `tasks:write` only to automation that must change any task. A token can act as an agent assignee only, never as a person. Deleting an agent assignee unassigns its tasks and detaches its tokens.
+
+Task history records the token name and the actor type `agent` for each field an agent changes. When an agent comments or hands a task back, Meitheal sends a notification through the channels enabled in **Settings → Notifications** and emits a `task.commented` webhook event for agent comments.
+
+### Read saved agent proposals
+
+Open `/review` through the installed App to read saved proposals and their proposed changes. See [Agent task approvals](agent-task-approvals.md) for a token that may only suggest changes for a person to accept.
 
 ### Read or change reactions
 

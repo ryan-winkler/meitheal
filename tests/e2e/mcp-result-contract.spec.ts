@@ -106,7 +106,7 @@ test("scoped MCP resolves native schemas and rejects false mutation successes", 
     await setResult({ status: 204 })
     const deleted = (await rpc("tools/call", { name: "deleteTask", arguments: { id: "result-fixture" } })).result
     expect(deleted.isError).toBe(false)
-    expect(JSON.parse(deleted.content[0].text)).toEqual({ ok: true, status: 204 })
+    expect(JSON.parse(deleted.content[0].text)).toEqual({ ok: true })
     await setResult({ status: 200, body: '{"id":"result-fixture","title":"Fixture title","status":"complete"}' })
     for (const modern of [false, true]) {
       for (const args of [{ id: "result-fixture" }, { title: "Fixture title" }]) {

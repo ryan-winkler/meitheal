@@ -4,8 +4,10 @@ Exposes Meitheal's task management as a live MCP server, allowing
 any MCP-compatible agent (Claude, Antigravity, Codex, etc.) to
 create, search, complete, and manage tasks programmatically.
 
-Endpoint: POST /api/mcp (via custom_component HTTP endpoint)
-Discovery: GET /.well-known/mcp.json (static file in webapp)
+Endpoint: POST /api/meitheal/mcp on Home Assistant's HTTP server, for a
+Home Assistant administrator. The Meitheal App serves its own endpoint at
+/api/mcp for agent tokens; this one lets a client that already signs in to
+Home Assistant reach the same household without a second credential.
 
 The MCP spec is tool-based: client sends a tool call, server executes
 and returns the result. This module processes incoming tool calls and
@@ -535,30 +537,92 @@ except ImportError:
     HomeAssistantView = object
     web = None
 
+MCP_VIEW_URL = "/api/meitheal/mcp"
+# Largest request body the view reads; a tool call is a few hundred bytes.
+_MAX_BODY_BYTES = 256 * 1024
+
+
+def _rpc_error(req_id: Any, code: int, message: str) -> dict[str, Any]:
+    return {"jsonrpc": "2.0", "id": req_id, "error": {"code": code, "message": message}}
+
+
+async def async_handle_mcp_http(
+    hass: Any, user: Any, body: Any
+) -> tuple[int, dict[str, Any] | None]:
+    """Answer one MCP message sent through Home Assistant's HTTP server.
+
+    Home Assistant has already authenticated the caller. These tools can change
+    and delete any task, so they are limited to administrators, the same rule as
+    the Meitheal LLM APIs. The coordinator is looked up on each call so a
+    reloaded or removed entry is never served from a stale object.
+    """
+    if user is None or not getattr(user, "is_active", False) or not getattr(user, "is_admin", False):
+        return 403, _rpc_error(None, -32001, "Meitheal tools need a Home Assistant administrator")
+    if not isinstance(body, dict) or not isinstance(body.get("method"), str):
+        return 400, _rpc_error(None, -32600, "Invalid request")
+    if "id" not in body:
+        # A notification such as notifications/initialized expects no reply.
+        return 202, None
+    if body["method"] == "ping":
+        return 200, {"jsonrpc": "2.0", "id": body["id"], "result": {}}
+    params = body.get("params", {})
+    if not isinstance(params, dict) or not isinstance(params.get("arguments", {}), dict):
+        return 400, _rpc_error(body["id"], -32602, "Invalid params")
+
+    from .const import DOMAIN
+
+    coordinator = next(
+        (
+            entry.runtime_data
+            for entry in hass.config_entries.async_loaded_entries(DOMAIN)
+            if isinstance(getattr(entry, "runtime_data", None), MeithealCoordinator)
+        ),
+        None,
+    )
+    if coordinator is None:
+        return 503, _rpc_error(body["id"], -32002, "Meitheal is not loaded")
+    return 200, await handle_mcp_request(coordinator, {**body, "params": params})
+
 
 class MeithealMcpView(HomeAssistantView):
-    """View to handle MCP requests over Home Assistant HTTP."""
+    """Meitheal's MCP tools on Home Assistant's own HTTP server.
 
-    url = "/api/meitheal/mcp"
+    An MCP client that is signed in to Home Assistant (a long-lived access token
+    or Home Assistant's OAuth) reaches Meitheal here, with no second address or
+    credential. Registered once and kept across config entry reloads.
+    """
+
+    url = MCP_VIEW_URL
     name = "api:meitheal:mcp"
     requires_auth = True
 
-    def __init__(self, coordinator: MeithealCoordinator) -> None:
-        self.coordinator = coordinator
+    def __init__(self, hass: Any) -> None:
+        self.hass = hass
 
     async def post(self, request: web.Request) -> web.Response:
-        """Handle incoming MCP JSON-RPC call."""
+        """Handle one MCP JSON-RPC message."""
+        if (request.content_length or 0) > _MAX_BODY_BYTES:
+            return web.json_response(_rpc_error(None, -32600, "Request too large"), status=413)
         try:
-            body = await request.json()
-        except Exception:
-            return web.json_response(
-                {
-                    "jsonrpc": "2.0",
-                    "id": "1",
-                    "error": {"code": -32700, "message": "Parse error: invalid JSON"},
-                },
-                status=400,
-            )
+            raw = await request.content.read(_MAX_BODY_BYTES + 1)
+            if len(raw) > _MAX_BODY_BYTES:
+                return web.json_response(_rpc_error(None, -32600, "Request too large"), status=413)
+            body = json.loads(raw)
+        except ValueError:
+            return web.json_response(_rpc_error(None, -32700, "Parse error: invalid JSON"), status=400)
 
-        response = await handle_mcp_request(self.coordinator, body)
-        return web.json_response(response)
+        status, response = await async_handle_mcp_http(self.hass, request.get("hass_user"), body)
+        if response is None:
+            return web.Response(status=status)
+        return web.json_response(response, status=status)
+
+
+def async_register_mcp_view(hass: Any) -> None:
+    """Register the view once per Home Assistant run; views cannot be removed."""
+    from .const import DOMAIN
+
+    flag = f"{DOMAIN}_mcp_view"
+    if hass.data.get(flag):
+        return
+    hass.http.register_view(MeithealMcpView(hass))
+    hass.data[flag] = True

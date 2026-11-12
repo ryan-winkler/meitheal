@@ -504,10 +504,11 @@ async function initializeSchema(): Promise<void> {
       updated_at INTEGER NOT NULL
     )
   `);
-
+  // An agent assignee is an AI agent that works its tasks through a linked token.
   if (!(await hasColumn(client, "custom_users", "kind"))) {
     await client.execute("ALTER TABLE custom_users ADD COLUMN kind TEXT NOT NULL DEFAULT 'human'");
   }
+
 
   // Jira-style task linking — relationship types beyond parent/children
   await client.execute(`
@@ -612,6 +613,19 @@ async function initializeSchema(): Promise<void> {
   if (!(await hasColumn(client, "tasks", "owner"))) {
     await client.execute("ALTER TABLE tasks ADD COLUMN owner TEXT NOT NULL DEFAULT 'human'")
   }
+  // A task assigned to an agent assignee is owned by that agent ('bot:<name>');
+  // every other task is 'human'. Triggers keep this true on every write path,
+  // including Home Assistant, bulk edits and imports that never set the column.
+  const ownerForNew = "COALESCE((SELECT 'bot:' || name FROM custom_users WHERE id = NEW.assigned_to AND kind = 'agent'), 'human')"
+  await client.execute(`CREATE TRIGGER IF NOT EXISTS tasks_owner_on_insert AFTER INSERT ON tasks
+    WHEN NEW.owner = 'human' AND NEW.assigned_to IS NOT NULL AND ${ownerForNew} IS NOT 'human'
+    BEGIN UPDATE tasks SET owner = ${ownerForNew} WHERE id = NEW.id; END`)
+  await client.execute(`CREATE TRIGGER IF NOT EXISTS tasks_owner_on_assign AFTER UPDATE OF assigned_to ON tasks
+    WHEN NEW.assigned_to IS NOT OLD.assigned_to AND NEW.owner IS NOT ${ownerForNew}
+    BEGIN UPDATE tasks SET owner = ${ownerForNew} WHERE id = NEW.id; END`)
+  // Tasks assigned before these triggers existed.
+  await client.execute(`UPDATE tasks SET owner = (SELECT 'bot:' || name FROM custom_users WHERE id = tasks.assigned_to)
+    WHERE owner NOT LIKE 'bot%' AND assigned_to IN (SELECT id FROM custom_users WHERE kind = 'agent')`)
   // lock_holder: bot agent name holding the lock (null = unlocked)
   if (!(await hasColumn(client, "tasks", "lock_holder"))) {
     await client.execute("ALTER TABLE tasks ADD COLUMN lock_holder TEXT")

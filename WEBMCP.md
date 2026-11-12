@@ -13,6 +13,8 @@ Meitheal exposes a scoped MCP endpoint for external clients. The optional Home A
 
 Create a dedicated token in Meitheal Settings as a verified Home Assistant administrator. Grant `mcp:execute` and the scopes required by each tool. For example, reading a task also requires `tasks:read`. Title-based completion requires `search:read` and `tasks:write`.
 
+To hand tasks to an agent, link its token to an agent assignee under **Acts as**. The agent then calls `whoAmI`, `listMyTasks` and `handBackTask`, and with `tasks:write:assigned` it can change only the tasks assigned to it. See [Hand a task to an AI agent](docs/kcs/agent-automation-guide.md#hand-a-task-to-an-ai-agent).
+
 Send an `Authorization: Bearer` header on each MCP request. Use `server/discover` with MCP 2026-07-28 or `initialize` with an older client, followed by `tools/list` and `tools/call`. The App serves live discovery metadata at `/.well-known/mcp.json` and its API contract at `/openapi.yaml`. The installed App’s `tools/list` response is authoritative for the caller. Saving the MCP toggle off disables discovery and tool calls.
 
 ## Home Assistant Core

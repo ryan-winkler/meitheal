@@ -247,7 +247,10 @@ class MeithealCoordinator(DataUpdateCoordinator[MeithealCoordinatorData]):
         urgency: int | None = None, importance: int | None = None,
         assigned_to: str | None = None,
     ) -> None:
-        """Create a task through the authenticated native flat-response API."""
+        """Create a task through the authenticated native flat-response API.
+
+        Without assigned_to, Meitheal applies the household's default assignee.
+        """
         payload: dict[str, Any] = {"title": title}
         for key, value in {"description": description, "priority": priority,
                            "due_date": due_date, "urgency": urgency, "importance": importance,

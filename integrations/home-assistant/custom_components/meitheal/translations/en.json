@@ -130,13 +130,21 @@
           "name": "Importance",
           "description": "Eisenhower importance from 0 to 5"
         },
-        "assigned_to": {
+        "assignee": {
+          "name": "Assignee",
+          "description": "The person the task is for. They need a Home Assistant account. Leave empty to use Meitheal's default assignee."
+        },
+        "assignee_id": {
           "name": "Assignee ID",
-          "description": "User ID or agent assignee ID to assign the task to"
+          "description": "A Meitheal assignee ID, for an assignee who is not a Home Assistant person, such as an AI agent. Use this or Assignee, not both."
+        },
+        "assigned_to": {
+          "name": "Assignee ID (earlier name)",
+          "description": "Same as Assignee ID. Kept so existing automations keep working."
         },
         "assignee_user": {
-          "name": "Assignee User",
-          "description": "Alternative name or ID for the assigned user"
+          "name": "Assignee user (earlier name)",
+          "description": "Same as Assignee ID. Kept so existing automations keep working."
         }
       }
     },
@@ -209,6 +217,12 @@
     },
     "delete_failed": {
       "message": "Failed to delete task: {error}"
+    },
+    "invalid_assignee_id": {
+      "message": "Assignee ID must be a Meitheal assignee ID, such as ha_… or custom_…. Copy it from Meitheal, or choose a person in Assignee."
+    },
+    "person_without_user": {
+      "message": "{person} has no Home Assistant account, so Meitheal cannot assign tasks to them. Choose another person or use Assignee ID."
     },
     "nfc_complete_failed": {
       "message": "Failed to complete task by NFC tag: {error}. Check that the tag is assigned to one task."

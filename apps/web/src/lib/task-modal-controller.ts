@@ -853,7 +853,7 @@
                   for (const u of users) {
                     const opt = document.createElement("option");
                     opt.value = u.id;
-                    opt.textContent = u.display_name ?? u.name ?? u.id;
+                    opt.textContent = (u.display_name ?? u.name ?? u.id) + (u.kind === "agent" ? " (AI agent)" : "");
                     assignSelect.appendChild(opt);
                   }
                 }

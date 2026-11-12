@@ -13,9 +13,38 @@ description: "Connect to the scoped App MCP endpoint and identify the status of 
 3. Configure a Streamable HTTP client to send the token in the `Authorization: Bearer` header on every request. The installed App serves the current manifest at `/.well-known/mcp.json`. Open it through Home Assistant for the ingress-prefixed endpoint, or directly when running standalone.
 4. Use `server/discover` with a client supporting MCP 2026-07-28, or `initialize` with an older client. Then call `tools/list` and use the returned input schemas. The catalog contains only tools allowed by the token.
 
-Saving the toggle off makes discovery and the MCP endpoint return HTTP 404 on the next authorized request. Existing tokens keep their scopes when you re-enable MCP. HTTP 401 indicates a missing or invalid token. HTTP 403 indicates a blocked operation or browser origin. See the [API setup guide](agent-automation-guide.md) for credentials and scopes.
+To hand tasks to the client as an assignee, link its token to an agent assignee. See [Hand a task to an AI agent](agent-automation-guide.md#hand-a-task-to-an-ai-agent). Call `whoAmI` first to confirm the identity, then `listMyTasks`.
+
+Claude Code and Codex CLI send a static bearer token. Replace the address with one that reaches your installation over HTTPS, and keep the token in an environment variable:
+
+```bash
+claude mcp add --transport http meitheal https://meitheal.example/api/mcp \
+  --header "Authorization: Bearer $MEITHEAL_TOKEN"
+```
+
+```toml
+# ~/.codex/config.toml
+[mcp_servers.meitheal]
+url = "https://meitheal.example/api/mcp"
+bearer_token_env_var = "MEITHEAL_TOKEN"
+```
+
+The Home Assistant App is reachable through ingress and on the internal App network. A client outside Home Assistant needs your own HTTPS reverse proxy or tunnel to the App. Clients that only support OAuth sign-in, such as ChatGPT connectors, cannot connect with a bearer token.
+
+Saving the toggle off makes discovery and the MCP endpoint return HTTP 404 on the next authorized request. Existing tokens keep their scopes when you re-enable MCP. HTTP 401 with a `WWW-Authenticate: Bearer` challenge indicates a missing or invalid token. HTTP 403 indicates a blocked operation or browser origin. See the [API setup guide](agent-automation-guide.md) for credentials and scopes.
 
 The endpoint returns a JSON reply per request. Legacy clients that check for a standalone SSE stream receive HTTP 405 on an authenticated GET.
+
+## Connect through Home Assistant
+
+With the Meitheal integration installed, a client that already signs in to Home Assistant can reach Meitheal without an agent token or a second address. Both routes are limited to Home Assistant administrators.
+
+| Route | Use it for |
+| --- | --- |
+| Home Assistant's **Model Context Protocol Server** integration | Add the integration, then expose **Meitheal Tasks** (read and change tasks) or **Meitheal Tasks (read only)** as its LLM API. Clients that use Home Assistant's OAuth sign-in connect this way. |
+| `POST /api/meitheal/mcp` on your Home Assistant address | A JSON-RPC MCP endpoint served by the integration. Send a Home Assistant long-lived access token in the `Authorization: Bearer` header. |
+
+Through Home Assistant the caller is the signed-in administrator, not an agent assignee, so `whoAmI`, `listMyTasks` and `handBackTask` are available only on the App endpoint with an agent token.
 
 ## Check discovery in Settings
 

@@ -90,16 +90,16 @@ components:
         - author
         - created_at
       properties:
-        id: &a1
+        id:
           type: integer
-        task_id: &a2
+        task_id:
           type: string
-        content: &a3
+        content:
           type: string
-        author: &a4
+        author:
           type: string
           description: Display author recorded when the comment was added.
-        created_at: &a5
+        created_at:
           type: string
           description: SQLite UTC timestamp.
       additionalProperties: false
@@ -121,19 +121,19 @@ components:
           type: string
           format: uuid
           description: Client-generated UUIDv4. Reuse it for identical retries.
-        category: &a6
+        category: &a1
           type: string
           enum:
             - problem
             - accessibility
             - suggestion
             - other
-        message: &a7
+        message: &a2
           type: string
           minLength: 1
           maxLength: 4096
           description: Plain text, at most 4 KiB in UTF-8.
-        appVersion: &a8
+        appVersion: &a3
           type: string
           maxLength: 50
           pattern: ^(?:\d{1,5}\.\d{1,5}\.\d{1,5}(?:[-+][0-9a-zA-Z][0-9a-zA-Z.-]{0,31})?|[0-9a-f]{12})(?![\s\S])
@@ -154,10 +154,10 @@ components:
     FeedbackReceipt:
       type: object
       properties:
-        id: &a10
+        id: &a5
           type: string
           format: uuid
-        receivedAt: &a11
+        receivedAt: &a6
           type: integer
           description: Epoch milliseconds.
       required:
@@ -167,15 +167,15 @@ components:
     FeedbackExport:
       type: object
       properties:
-        category: *a6
-        message: *a7
+        category: *a1
+        message: *a2
         appVersion:
           anyOf:
-            - *a8
+            - *a3
             - type: "null"
         routeFamily:
           anyOf:
-            - *a9
+            - *a4
             - type: "null"
       required:
         - category
@@ -186,19 +186,19 @@ components:
     FeedbackReport:
       type: object
       properties:
-        id: *a10
-        receivedAt: *a11
-        category: *a6
-        message: *a7
+        id: *a5
+        receivedAt: *a6
+        category: *a1
+        message: *a2
         appVersion:
           anyOf:
-            - *a8
+            - *a3
             - type: "null"
         routeFamily:
           anyOf:
-            - *a9
+            - *a4
             - type: "null"
-        state: &a14
+        state: &a9
           type: string
           enum:
             - open
@@ -689,17 +689,17 @@ components:
       type: string
       enum:
         - tasks:read
+        - tasks:write:assigned
         - tasks:write
+        - tasks:propose
+        - tasks:delete
         - projects:read
         - projects:write
-        - pillars:read
-        - pillars:write
         - search:read
-        - settings:read
-        - settings:write
-        - webhooks:manage
-        - admin:*
-      description: "Fine-grained permission scope for agent tokens. Use least-privilege: grant only what the agent needs."
+        - mcp:execute
+        - a2a:execute
+      description: "Fine-grained permission scope for agent tokens. Use least-privilege: grant only what the agent needs.
+        tasks:write:assigned limits changes to tasks assigned to the token's agent assignee."
     AgentToken:
       type: object
       description: Public metadata for an agent token. The plaintext token is only returned once on creation.
@@ -717,6 +717,10 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/AgentScope"
+        assigneeId:
+          type: string
+          nullable: true
+          description: Agent assignee this token acts as. Tasks assigned to it are the token's own tasks.
         createdAt:
           type: string
           format: date-time
@@ -749,6 +753,10 @@ components:
           items:
             $ref: "#/components/schemas/AgentScope"
           minItems: 1
+        assigneeId:
+          type: string
+          nullable: true
+          description: ID of an agent assignee (a custom user with kind agent). Required with tasks:write:assigned.
         expiresAt:
           type: string
           format: date-time
@@ -776,6 +784,9 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/AgentScope"
+        assigneeId:
+          type: string
+          nullable: true
         createdAt:
           type: string
           format: date-time
@@ -858,7 +869,7 @@ paths:
   /api/feedback:
     post:
       operationId: submitLocalFeedback
-      tags: &a12
+      tags: &a7
         - Local feedback
       summary: Save local feedback and return a durable receipt
       description: Available to verified Home Assistant ingress users. An identical retry returns the same receipt.
@@ -866,7 +877,7 @@ paths:
         - &a37
           haIngressSession: []
       parameters:
-        - &a19
+        - &a14
           in: header
           name: X-Meitheal-Feedback
           required: true
@@ -887,13 +898,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/FeedbackReceipt"
-        "400": &a15
+        "400": &a10
           description: Validation error (RFC 9457 — read invalidParams to self-correct)
           content:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetail"
-        "403": &a16
+        "403": &a11
           description: A verified Home Assistant ingress user with the required role is needed.
           content:
             application/problem+json:
@@ -944,20 +955,20 @@ paths:
                 $ref: "#/components/schemas/ProblemDetail"
     get:
       operationId: listLocalFeedback
-      tags: *a12
+      tags: *a7
       summary: List local feedback for a verified Home Assistant administrator
       description: Returns up to 50 reports. Pass both parts of nextCursor for the next page.
-      security: *a13
+      security: *a8
       parameters:
         - in: query
           name: state
-          schema: *a14
+          schema: *a9
         - in: query
           name: before
-          schema: *a11
+          schema: *a6
         - in: query
           name: beforeId
-          schema: *a10
+          schema: *a5
       responses:
         "200":
           description: Local reports and cursor
@@ -978,16 +989,16 @@ paths:
                   - reports
                   - nextCursor
                 additionalProperties: false
-        "400": *a15
-        "403": *a16
-        "500": *a17
-        "503": *a18
+        "400": *a10
+        "403": *a11
+        "500": *a12
+        "503": *a13
   /api/feedback/{id}:
     patch:
       operationId: reviewLocalFeedback
-      tags: *a12
+      tags: *a7
       summary: Claim or close a report as a verified Home Assistant administrator
-      security: *a13
+      security: *a8
       parameters:
         - &a19
           in: path
@@ -996,7 +1007,7 @@ paths:
           schema:
             type: string
             format: uuid
-        - *a19
+        - *a14
       requestBody:
         required: true
         content:
@@ -1024,8 +1035,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/FeedbackReport"
-        "400": *a15
-        "403": *a16
+        "400": *a10
+        "403": *a11
         "404":
           description: Report no longer exists.
           content:
@@ -1046,17 +1057,17 @@ paths:
         "503": *a13
     delete:
       operationId: deleteLocalFeedback
-      tags: *a12
+      tags: *a7
       summary: Permanently delete a closed report as a verified Home Assistant administrator
-      security: *a13
+      security: *a8
       parameters:
         - *a19
         - *a14
       responses:
         "204":
           description: Report removed
-        "400": *a15
-        "403": *a16
+        "400": *a10
+        "403": *a11
         "404":
           description: Report no longer exists.
           content:
@@ -1069,14 +1080,14 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetail"
-        "500": *a17
-        "503": *a18
+        "500": *a12
+        "503": *a13
   /api/feedback/{id}/export:
     post:
       operationId: prepareLocalFeedbackExport
-      tags: *a12
+      tags: *a7
       summary: Preview a reviewed report as a verified Home Assistant administrator
-      security: *a13
+      security: *a8
       parameters:
         - *a19
         - *a14
@@ -1087,7 +1098,7 @@ paths:
             schema:
               type: object
               properties:
-                reviewedMessage: *a7
+                reviewedMessage: *a2
               required:
                 - reviewedMessage
               additionalProperties: false
@@ -1098,8 +1109,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/FeedbackExport"
-        "400": *a15
-        "403": *a16
+        "400": *a10
+        "403": *a11
         "404":
           description: Report no longer exists.
           content:
@@ -1670,7 +1681,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Task"
-        "400": *a15
+        "400": *a10
         "404":
           description: Not found
           content:
@@ -2885,7 +2896,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/TaskComment"
-        "400": *a15
+        "400": *a10
         "403":
           description: An active, nonsystem Home Assistant account or an automation token with task-write permission is required.
           content:
@@ -2985,7 +2996,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/TaskComment"
-        "400": *a15
+        "400": *a10
         "403":
           description: An active, nonsystem Home Assistant account or an automation token with task-write permission is required.
           content:
@@ -5003,10 +5014,38 @@ paths:
       operationId: createCustomUser
       tags:
         - Users
-      summary: Create a custom user
+      summary: Create a custom user or agent assignee
+      description: A custom user is an assignee without a Home Assistant account. Set kind to agent for an AI agent that works
+        its tasks through a linked agent token.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+              properties:
+                name:
+                  type: string
+                  maxLength: 100
+                color:
+                  type: string
+                  description: "Hex colour, for example #6366f1"
+                kind:
+                  type: string
+                  enum:
+                    - human
+                    - agent
+                  default: human
+              additionalProperties: false
       responses:
         "201":
           description: Created
+        "400":
+          description: Invalid name or kind
+        "409":
+          description: Name already used or limit reached
   /api/gamification:
     get:
       operationId: getGamificationStats
@@ -5756,7 +5795,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CreateAgentTokenResponse"
-        "400": *a15
+        "400": *a10
         "403":
           description: Admin access required
           content:
@@ -5789,7 +5828,7 @@ paths:
       operationId: updateAgentToken
       tags:
         - Auth
-      summary: Update a token's name or scopes
+      summary: Update a token's name, scopes or assignee
       description: Modify the display name or permission scopes of an existing token. The token value itself cannot be changed
         — revoke and recreate if compromised.
       requestBody:
@@ -5807,6 +5846,9 @@ paths:
                   type: array
                   items:
                     $ref: "#/components/schemas/AgentScope"
+                assigneeId:
+                  type: string
+                  nullable: true
               required:
                 - id
               additionalProperties: false
@@ -5823,7 +5865,7 @@ paths:
                   id:
                     type: string
                 additionalProperties: false
-        "400": *a15
+        "400": *a10
         "403":
           description: Admin access required
           content:

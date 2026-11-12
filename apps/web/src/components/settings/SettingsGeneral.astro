@@ -476,7 +476,7 @@ const { locale } = Astro.props
           opt.value = u.id;
           opt.textContent =
             (u.display_name || u.name || u.id) +
-            (u.source === "home_assistant" ? " (HA)" : " (Custom)");
+            (u.kind === "agent" ? " (AI agent)" : u.source === "home_assistant" ? " (HA)" : " (Custom)");
           select.appendChild(opt);
         });
         if (defaultAssignee) {
@@ -556,6 +556,15 @@ const { locale } = Astro.props
               u.display_name || u.name || u.id,
             ),
           );
+          if (u.kind === "agent") {
+            row.appendChild(
+              makeEl(
+                "span",
+                "font-size: 11px; padding: 1px 6px; border: 1px solid var(--border); border-radius: 4px; color: var(--text-secondary);",
+                "AI agent",
+              ),
+            );
+          }
 
           var delBtn = document.createElement("button");
           delBtn.type = "button";
@@ -828,7 +837,7 @@ const { locale } = Astro.props
         nameEl.style.cssText = "font-size: 13px; font-weight: 500; flex: 1;";
         nameEl.textContent =
           (u.display_name || u.name || u.id) +
-          (u.source === "home_assistant" ? " (HA)" : " (Custom)");
+          (u.kind === "agent" ? " (AI agent)" : u.source === "home_assistant" ? " (HA)" : " (Custom)");
         row.appendChild(nameEl);
 
         var label = document.createElement("label");

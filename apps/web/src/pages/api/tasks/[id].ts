@@ -12,6 +12,8 @@ import { apiError } from "../../../lib/api-response"
 import { db503Response, isDbUnavailable } from "../../../lib/db-fallback"
 import { resolveRecentActivityActor } from "../../../lib/recent-activity-actor"
 import { STATUS, normalizeStatus, isDoneStatus } from "../../../lib/status-config"
+import { sendTaskNotification } from "@domains/notifications/task-notifications"
+import { agentActivityActor } from "../../../lib/agent-activity-actor"
 import { VALID_TASK_TYPES } from "@meitheal/domain-tasks"
 import type { TaskType } from "@meitheal/domain-tasks"
 
@@ -416,9 +418,10 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
       }
     }
     if (changes.length > 0) {
-      const activityActor = agentToken ? `agent:${agentToken.tokenName}` : (request.headers.get("X-Automation-Source") ? `ha:${request.headers.get("X-Automation-Source")}` : "user")
-      const actorType = agentToken ? "agent" : (request.headers.get("X-Automation-Source") ? "ha" : "user")
-      repo.logActivity(resolvedId, changes, { actor: activityActor, actor_type: actorType }).catch(() => { })
+      const automationSource = request.headers.get("X-Automation-Source")?.replace(/[^\w .:-]/g, "").slice(0, 60)
+      const activityActor = agentActivityActor(locals) ??
+        (automationSource ? { actor: `ha:${automationSource}`, actor_type: "ha" as const } : undefined)
+      repo.logActivity(resolvedId, changes, activityActor).catch(() => { })
     }
   }
 
@@ -444,67 +447,14 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
 
   // Helper: dispatch notification to configured channels
   interface DispatchOpts { isUrgent?: boolean; badgeCount?: number }
-  async function dispatchNotification(
+  function dispatchNotification(
     title: string, message: string, notifId: string,
     ingress: string | null, taskId?: string, opts: DispatchOpts = {},
   ) {
-    const { callHAService } = await haServicesImport
-    const promises: Promise<unknown>[] = []
-
-    if (notifPrefs.channels.sidebar !== false) {
-      promises.push(
-        callHAService("persistent_notification", "create", {
-          title,
-          message,
-          notification_id: notifId,
-        }).catch(err => logApiError("ha-notify", "Failed to send sidebar notification", err))
-      )
-    }
-
-    if (notifPrefs.channels.mobile_push && notifPrefs.mobileTargets.length > 0) {
-      const plainMessage = message.replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
-      const ingressPath = ingress ? ingress + "/kanban" : null
-
-      for (const target of notifPrefs.mobileTargets) {
-        const [domain, ...rest] = target.split(".")
-        const service = rest.join(".")
-        if (domain && service) {
-          const pushData: Record<string, unknown> = {
-            title,
-            message: plainMessage,
-            data: {
-              ...(ingressPath ? { clickAction: ingressPath, url: ingressPath } : {}),
-              tag: notifId,
-              group: "meitheal",
-              channel: opts.isUrgent ? "meitheal_urgent" : "meitheal_tasks",
-              color: "#6366F1",
-              ...(opts.isUrgent ? { importance: "high" } : {}),
-              push: {
-                "interruption-level": opts.isUrgent ? "time-sensitive" : "active",
-                ...(opts.badgeCount !== undefined ? { badge: opts.badgeCount } : {}),
-              },
-              actions: [
-                ...(ingressPath ? [{
-                  action: "URI",
-                  title: "Open Task",
-                  uri: ingressPath,
-                }] : []),
-                ...(taskId ? [{
-                  action: `MEITHEAL_TASK_DONE_${taskId}`,
-                  title: "✅ Mark Done",
-                }] : []),
-              ],
-            },
-          }
-          promises.push(
-            callHAService(domain, service, pushData)
-              .catch(err => logApiError("ha-notify", `Failed to send mobile push to ${target}`, err))
-          )
-        }
-      }
-    }
-
-    return Promise.all(promises)
+    return sendTaskNotification(notifPrefs, {
+      title, message, notificationId: notifId, ingress,
+      ...(taskId ? { taskId } : {}), ...opts,
+    })
   }
 
   // Helper: dismiss mobile notifications
@@ -564,13 +514,32 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
           }
         } catch { /* fallback to stripped ID */ }
         const badge = await repo.getOpenTaskCount()
+        const agentName = agentActivityActor(locals)?.actor
         dispatchNotification(
-          `📋 Task assigned: ${titleStr}`,
-          `${ticketKey} has been assigned to ${displayName}.${link}`,
+          agentName ? `↩️ Handed back by ${agentName}: ${titleStr}` : `📋 Task assigned: ${titleStr}`,
+          agentName
+            ? `${agentName} handed ${ticketKey} back to ${displayName}.${link}`
+            : `${ticketKey} has been assigned to ${displayName}.${link}`,
           `meitheal_assigned_${resolvedId}`,
           ingress,
           resolvedId,
           { badgeCount: badge },
+        ).catch(() => {})
+      }).catch(() => {})
+    } else if (!assignee && agentActivityActor(locals)) {
+      // An agent gave the task up without naming anyone, so someone has to pick it up.
+      const agentName = agentActivityActor(locals)!.actor
+      import("../../../domains/ha/ha-connection").then(async ({ getIngressEntry }) => {
+        const ingress = await getIngressEntry()
+        const titleStr = typeof sanitized.title === "string" ? sanitized.title : String(oldTask?.title ?? "Task")
+        const ticketKey = taskPayload.ticket_key ?? "A task"
+        const link = ingress ? `\n\n[Open ${ticketKey} in Meitheal →](${ingress}/kanban)` : ""
+        dispatchNotification(
+          `↩️ Handed back by ${agentName}: ${titleStr}`,
+          `${agentName} handed ${ticketKey} back. It is now unassigned.${link}`,
+          `meitheal_assigned_${resolvedId}`,
+          ingress,
+          resolvedId,
         ).catch(() => {})
       }).catch(() => {})
     }

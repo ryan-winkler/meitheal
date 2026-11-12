@@ -11,8 +11,8 @@ import { startInactivityScheduler } from "@domains/tasks/task-inactivity-schedul
 import type { DateFormat } from "./lib/date";
 import { replayTaskRequest, taskRetryKey } from "./lib/idempotent-task-request"
 import { rejectBoardSelectionInUrl } from "./domains/tasks/board-availability"
-import { hasScope, isAssignedTaskScopedRoute, resolveAgentRouteScope } from "@meitheal/domain-auth"
-import { resolveAgentAuth, type ResolvedAgent } from "./lib/agent-token-guard"
+import { resolveAgentRouteAccess } from "@meitheal/domain-auth"
+import { checkAssignedTask, resolveAgentAuth, type ResolvedAgent } from "./lib/agent-token-guard"
 import { rewriteIngressHtml } from "./lib/rewrite-ingress-html"
 import { commentAttemptHeader, commentMentionContextHeader } from "./lib/comment-mentions"
 import { activeParticipantRequired, hasCurrentTaskParticipant, taskParticipantBodySignal } from "./lib/task-participant"
@@ -331,14 +331,17 @@ async function handleRequest({ request, locals, routePattern }: Parameters<Middl
     }
 
     if (resolvedAgent) {
-      const scope = resolveAgentRouteScope(url.pathname, method)
-      const isAssignedRoute = isAssignedTaskScopedRoute(url.pathname, method)
-      if (!scope || !hasScope(resolvedAgent.scopes, scope, { isAssignedTaskRoute: isAssignedRoute })) {
+      const access = resolveAgentRouteAccess(url.pathname, method, resolvedAgent.scopes)
+      if (!access.allowed) {
         return apiProblem({
           status: 403,
-          detail: scope ? `This operation requires the ${scope} scope.` : "This operation is unavailable to agent credentials.",
+          detail: access.scope ? `This operation requires the ${access.scope} scope.` : "This operation is unavailable to agent credentials.",
           type: "https://meitheal.local/problems/insufficient-scope",
         })
+      }
+      if (access.assignedTaskId) {
+        const denied = await checkAssignedTask(access.assignedTaskId, resolvedAgent)
+        if (denied) return denied
       }
     }
   }
@@ -364,39 +367,23 @@ async function handleRequest({ request, locals, routePattern }: Parameters<Middl
     const host = request.headers.get("host") ?? url.host;
     const isDev = import.meta.env.DEV;
 
-    if (!authenticatedTransport) {
-      if (url.pathname === "/api/mcp") {
-        return new Response(
-          JSON.stringify({
-            status: 401,
-            title: "Unauthorized",
-            detail: "Use a valid, active Meitheal agent token.",
-          }),
-          {
-            status: 401,
-            headers: {
-              "Content-Type": "application/problem+json",
-              "WWW-Authenticate": 'Bearer realm="Meitheal"',
-              "Cache-Control": "no-store",
-            },
-          }
-        )
-      }
-      if (!isCsrfAllowed({ behindIngress, isDev, origin, referer, host })) {
-        logger.log("warn", {
-          event: "http.csrf_blocked",
-          domain: "security",
-          component: "middleware",
-          request_id: requestId,
-          message: privatePersonalRoute ? "Private task origin check failed" :
-            participantRoute ? `Origin check failed for ${logPath}` :
-            `CSRF blocked: ${method} ${url.pathname} origin=${origin} host=${host} behindIngress=${behindIngress}`,
-        });
-        return new Response(
-          JSON.stringify({ error: "CSRF origin mismatch" }),
-          { status: 403, headers: { "content-type": "application/json" } }
-        );
-      }
+    // MCP clients probe without credentials and need the endpoint's own 401 and
+    // WWW-Authenticate challenge to start authorising. The route accepts nothing without a token.
+    const mcpChallenge = url.pathname === "/api/mcp" && !resolvedAgent
+    if (!authenticatedTransport && !mcpChallenge && !isCsrfAllowed({ behindIngress, isDev, origin, referer, host })) {
+      logger.log("warn", {
+        event: "http.csrf_blocked",
+        domain: "security",
+        component: "middleware",
+        request_id: requestId,
+        message: privatePersonalRoute ? "Private task origin check failed" :
+          participantRoute ? `Origin check failed for ${logPath}` :
+          `CSRF blocked: ${method} ${url.pathname} origin=${origin} host=${host} behindIngress=${behindIngress}`,
+      });
+      return new Response(
+        JSON.stringify({ error: "CSRF origin mismatch" }),
+        { status: 403, headers: { "content-type": "application/json" } }
+      );
     }
   }
 

@@ -7,6 +7,7 @@ import { apiError } from "@lib/api-response"
 import { checkCommentMentionWriteContext, commentAttempt, commentMentionProblem, prepareCommentMentions } from "@lib/comment-mention-request"
 import { commentAttemptHorizonMs, commentMentions, hasCommentMentionSelector, redactCommentMentionSelectors } from "@lib/comment-mentions"
 import { verifiedIngressUser } from "@lib/verified-ingress-user"
+import { notifyAgentComment } from "@domains/notifications/agent-comment"
 import { activeParticipantRequired, commentFailure, commentJson, hasCurrentTaskParticipant, readComment, resolveCommentAuthor } from "@lib/task-comment-request"
 import { dispatchTaskEvent } from "@lib/webhook-dispatcher"
 
@@ -83,9 +84,7 @@ export const POST: APIRoute = async ({ params, request, locals }) => {
         { ...attempt, rawContent: content, cutoff: Date.now() - commentAttemptHorizonMs }, prepared.verifiedHuman))
     }
     const comment = await new TaskRepository(client).addComment(params.id!, prepared.content, actor.author, actor.owner, prepared.verifiedHuman)
-    if (comment && agentToken) {
-      dispatchTaskEvent("task.commented", { id: taskId, comment_id: (comment as Record<string, unknown>).id, author: actor.author, content: prepared.content }).catch(() => {})
-    }
+    if (comment && locals.agentToken) notifyAgentComment(params.id!, actor.author, prepared.content).catch(() => {})
     return comment ? commentJson(comment, 201) : apiError("Task not found", 404)
   } catch {
     return commentFailure("post", "Failed to create comment")

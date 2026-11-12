@@ -74,7 +74,9 @@ async def test_custom_intents_require_current_active_admin(
             hass, platform, intents.INTENT_SHOW_TASKS, context=context
         )
         assert task.title in result.speech["plain"]["speech"]
-        coordinator.return_value.async_create_task.assert_awaited_once_with(title=task.title)
+        coordinator.return_value.async_create_task.assert_awaited_once_with(
+            title=task.title, assigned_to=f"ha_{admin.id}"
+        )
         coordinator.return_value.async_complete_task.assert_awaited_once_with(title=task.title)
         coordinator.return_value.async_delete_task.assert_awaited_once_with(task.id)
 

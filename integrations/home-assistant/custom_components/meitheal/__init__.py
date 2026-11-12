@@ -47,6 +47,7 @@ from .const import (
     SERVICE_SYNC_TODO,
 )
 from .coordinator import MeithealCoordinator
+from .helpers import resolve_assignee
 
 # The optional native LLM registry requires Core's admin-aware API.
 try:
@@ -64,6 +65,11 @@ CREATE_TASK_SCHEMA = vol.Schema(
         vol.Optional("due_date"): cv.string,
         vol.Optional("urgency"): vol.All(vol.Coerce(int), vol.Range(min=0, max=5)),
         vol.Optional("importance"): vol.All(vol.Coerce(int), vol.Range(min=0, max=5)),
+        # Who the task is for: a person with a Home Assistant account, or any
+        # Meitheal assignee ID such as an AI agent. Omit both for the default assignee.
+        vol.Exclusive("assignee", "task_assignee"): cv.entity_domain("person"),
+        vol.Exclusive("assignee_id", "task_assignee"): cv.string,
+        # Earlier field names, still accepted: both carry a Meitheal assignee ID.
         vol.Optional("assigned_to"): cv.string,
         vol.Optional("assignee_user"): cv.string,
     }
@@ -93,6 +99,36 @@ COMPLETE_TASK_BY_TAG_SCHEMA = vol.Schema(
 
 
 type MeithealConfigEntry = ConfigEntry[MeithealCoordinator]
+
+
+
+def _install_custom_sentences(dst_base: str) -> bool:
+    """Copy the packaged sentence files, replacing an older packaged copy.
+
+    Returns whether any file changed, so the caller reloads Assist only then.
+    """
+    import filecmp
+    import os
+    import shutil
+
+    src_base = os.path.join(os.path.dirname(__file__), "custom_sentences")
+    changed = False
+    if not os.path.isdir(src_base):
+        return changed
+    for lang in os.listdir(src_base):
+        lang_src = os.path.join(src_base, lang)
+        if not os.path.isdir(lang_src):
+            continue
+        lang_dst = os.path.join(dst_base, lang)
+        os.makedirs(lang_dst, exist_ok=True)
+        for name in os.listdir(lang_src):
+            if not name.endswith(".yaml"):
+                continue
+            src, dst = os.path.join(lang_src, name), os.path.join(lang_dst, name)
+            if not os.path.exists(dst) or not filecmp.cmp(src, dst, shallow=False):
+                shutil.copy2(src, dst)
+                changed = True
+    return changed
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: MeithealConfigEntry) -> bool:
@@ -138,8 +174,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: MeithealConfigEntry) -> 
 
     async def handle_create_task(call: ServiceCall) -> None:
         """Handle meitheal.create_task service call."""
+        # Raised outside the generic handler so the caller sees which field to correct.
+        assigned_to = resolve_assignee(
+            hass,
+            call.data.get("assignee"),
+            call.data.get("assignee_id")
+            or call.data.get("assigned_to")
+            or call.data.get("assignee_user"),
+        )
         try:
-            assigned_to = call.data.get("assigned_to") or call.data.get("assignee_user")
             await coordinator.async_create_task(
                 title=call.data["title"],
                 description=call.data.get("description"),
@@ -147,7 +190,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: MeithealConfigEntry) -> 
                 due_date=call.data.get("due_date"),
                 urgency=call.data.get("urgency"),
                 importance=call.data.get("importance"),
-                assigned_to=assigned_to,
+                **({"assigned_to": assigned_to} if assigned_to else {}),
             )
         except Exception as err:
             raise HomeAssistantError(
@@ -256,33 +299,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: MeithealConfigEntry) -> 
         schema=COMPLETE_TASK_BY_TAG_SCHEMA,
     )
 
-    # Register live MCP HTTP view on Home Assistant HTTP server
+    # Meitheal's MCP tools on Home Assistant's own HTTP server, for administrators.
     try:
-        from .mcp_server import MeithealMcpView
-        hass.http.register_view(MeithealMcpView(coordinator))
-    except Exception as exc:
-        _LOGGER.debug("Could not register Meitheal MCP HTTP view: %s", exc)
+        from .mcp_server import async_register_mcp_view
+        async_register_mcp_view(hass)
+    except Exception as exc:  # noqa: BLE001 - the http component may be absent
+        _LOGGER.warning("Could not register the Meitheal MCP view: %s", exc)
 
-    # Ensure custom sentences are copied to <config>/custom_sentences/ so HA conversation loads them
+    # Home Assistant loads sentences only from <config>/custom_sentences, so the
+    # packaged ones are copied there. File work stays off the event loop.
     try:
-        import os
-        import shutil
-        src_base = os.path.join(os.path.dirname(__file__), "custom_sentences")
-        dst_base = hass.config.path("custom_sentences")
-        if os.path.isdir(src_base):
-            for lang in os.listdir(src_base):
-                lang_src = os.path.join(src_base, lang)
-                if os.path.isdir(lang_src):
-                    lang_dst = os.path.join(dst_base, lang)
-                    os.makedirs(lang_dst, exist_ok=True)
-                    for fn in os.listdir(lang_src):
-                        if fn.endswith(".yaml"):
-                            dst_file = os.path.join(lang_dst, fn)
-                            if not os.path.exists(dst_file):
-                                shutil.copy2(os.path.join(lang_src, fn), dst_file)
-    except Exception as exc:
-        _LOGGER.debug("Could not copy custom sentences to config dir: %s", exc)
-
+        if await hass.async_add_executor_job(
+            _install_custom_sentences, hass.config.path("custom_sentences")
+        ) and hass.services.has_service("conversation", "reload"):
+            # Assist reads sentence files once; a new or changed file needs a reload.
+            await hass.services.async_call("conversation", "reload", blocking=False)
+    except OSError as exc:
+        _LOGGER.warning("Could not install Meitheal's voice sentences: %s", exc)
 
     if async_register_llm_api is not None:
         try:
