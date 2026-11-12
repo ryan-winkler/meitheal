@@ -64,6 +64,15 @@ export class UserRepository {
     return result.rows.length > 0
   }
 
+  /** Get a custom user by id */
+  async getCustomUser(id: string) {
+    const result = await this.client.execute({
+      sql: "SELECT id, name, color, kind, created_at, updated_at FROM custom_users WHERE id = ? LIMIT 1",
+      args: [id],
+    })
+    return (result.rows[0] as unknown as { id: string; name: string; color: string; kind?: "human" | "agent"; created_at: number; updated_at: number }) ?? null
+  }
+
   /** Delete a custom user and unassign their tasks */
   async deleteCustomUser(id: string): Promise<void> {
     await this.client.execute({ sql: "DELETE FROM custom_users WHERE id = ?", args: [id] })

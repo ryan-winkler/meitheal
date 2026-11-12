@@ -3,6 +3,7 @@ import type { InValue } from "@libsql/client"
 import { hasBoardSelection, rejectBoardSelectionInJson, unavailableBoardResponse } from "@domains/tasks/board-availability"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import { TaskRepository } from "@domains/tasks/persistence/task-repository"
+import { UserRepository } from "@domains/tasks/persistence/user-repository"
 import { formatTicketKey } from "../../../lib/ticket-key"
 import { dispatchTaskEvent, taskEventAuthorityHeaders } from "../../../lib/webhook-dispatcher"
 import { logApiError } from "../../../lib/api-logger"
@@ -254,6 +255,21 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
   if (body.assigned_to !== undefined) {
     sanitized.assigned_to = typeof body.assigned_to === "string" && body.assigned_to.trim().length > 0 && body.assigned_to.length <= 255
       ? body.assigned_to.trim() : null
+  }
+  if (body.owner !== undefined && typeof body.owner === "string") {
+    sanitized.owner = body.owner.slice(0, 100)
+  } else if (sanitized.assigned_to !== undefined) {
+    if (sanitized.assigned_to === null) {
+      sanitized.owner = "human"
+    } else if (sanitized.assigned_to.startsWith("custom_")) {
+      const userRepo = new UserRepository(getPersistenceClient())
+      const customUser = await userRepo.getCustomUser(sanitized.assigned_to)
+      if (customUser?.kind === "agent") {
+        sanitized.owner = `bot:${customUser.name}`
+      } else {
+        sanitized.owner = "human"
+      }
+    }
   }
   // Guard the same raw checklist returned by GET. Legacy clients may omit the guard.
   const expectedChecklists = body.expected_checklists

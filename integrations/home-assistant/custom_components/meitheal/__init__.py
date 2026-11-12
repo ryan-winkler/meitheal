@@ -256,6 +256,34 @@ async def async_setup_entry(hass: HomeAssistant, entry: MeithealConfigEntry) -> 
         schema=COMPLETE_TASK_BY_TAG_SCHEMA,
     )
 
+    # Register live MCP HTTP view on Home Assistant HTTP server
+    try:
+        from .mcp_server import MeithealMcpView
+        hass.http.register_view(MeithealMcpView(coordinator))
+    except Exception as exc:
+        _LOGGER.debug("Could not register Meitheal MCP HTTP view: %s", exc)
+
+    # Ensure custom sentences are copied to <config>/custom_sentences/ so HA conversation loads them
+    try:
+        import os
+        import shutil
+        src_base = os.path.join(os.path.dirname(__file__), "custom_sentences")
+        dst_base = hass.config.path("custom_sentences")
+        if os.path.isdir(src_base):
+            for lang in os.listdir(src_base):
+                lang_src = os.path.join(src_base, lang)
+                if os.path.isdir(lang_src):
+                    lang_dst = os.path.join(dst_base, lang)
+                    os.makedirs(lang_dst, exist_ok=True)
+                    for fn in os.listdir(lang_src):
+                        if fn.endswith(".yaml"):
+                            dst_file = os.path.join(lang_dst, fn)
+                            if not os.path.exists(dst_file):
+                                shutil.copy2(os.path.join(lang_src, fn), dst_file)
+    except Exception as exc:
+        _LOGGER.debug("Could not copy custom sentences to config dir: %s", exc)
+
+
     if async_register_llm_api is not None:
         try:
             if unregister_llm := async_register_llm_api(hass, entry):
