@@ -273,6 +273,15 @@ test("the numbered shortcut labels remain reachable in Irish on a short screen",
   await expect(close).toBeFocused()
   await expect(dialog.getByRole("heading", { name: "I ngach áit" })).toBeVisible()
   await expect(dialog.getByRole("heading", { name: "Ar leathanach na dtascanna" })).toBeVisible()
+  await expect(dialog.locator("[data-shortcut-scope=global]")).toHaveText([
+    "Cuardaigh", "Tasc nua . Cuireann sé leis an gcolún sin nuair atá fócas ar chárta boird", "Deais",
+    "Amharc Kanban . Bogann sé suas ar Inniu agus ar an Amlíne", "Amharc tábla", "Amharc Inniu", "Amharc Ag Teacht",
+    "Amharc féilire . Laghdaíonn sé na lánaí snámha nuair atá fócas ar chárta boird grúpáilte", "Pailéad orduithe",
+    "Taispeáin nó folaigh an barra taoibh . Scáileáin leathana le nascleanúint taoibh", "Taispeáin aicearraí", "Dún an bosca dialóige",
+  ])
+  await expect(dialog.locator("[data-shortcut-scope=tasks]")).toHaveText([
+    "Amharc Kanban", "Amharc tábla", "Amharc féilire", "Amharc amlíne",
+  ])
   const bounds = await panel.boundingBox()
   expect(bounds).not.toBeNull()
   await page.mouse.move(bounds!.x + 5, bounds!.y + 5)

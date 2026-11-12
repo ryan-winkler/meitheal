@@ -261,7 +261,7 @@
           // Today and Timeline can consume K in document listeners, including after rerenders.
           if (bindKeyboard) {
             window.addEventListener("keydown", event => {
-              if (event.key !== "k" || event.defaultPrevented || event.ctrlKey || event.metaKey || !singleKeyShortcutsEnabled()) return
+              if (event.key !== "k" || event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey || !singleKeyShortcutsEnabled()) return
               const target = event.target
               if (target instanceof HTMLElement && (target.matches("input, textarea, select") || target.isContentEditable)) return
               if (hasPriorityOverlay() || document.getElementById("task-detail-overlay")?.classList.contains("active")) return
