@@ -432,15 +432,24 @@ datedShortcutTest("Today and Timeline keep arrows and Enter while letter and pun
 })
 
 test("pressing lowercase c on a grouped board collapses and expands swimlanes without navigating to Calendar", async ({ page, request, baseURL }) => {
+  // Earlier cases in this file share one server and its 300/min API budget.
+  test.setTimeout(100_000)
   const headers = { origin: new URL(baseURL!).origin }
+  const createTask = async (data: Record<string, string>) => {
+    const response = await request.post("/api/tasks", { headers, data })
+    if (response.status() !== 429) return response
+    const retryAfter = Number(response.headers()["retry-after"] ?? 60)
+    await page.waitForTimeout(Math.min(Math.max(retryAfter, 1), 61) * 1000)
+    return request.post("/api/tasks", { headers, data })
+  }
   let firstId: string | undefined
   let secondId: string | undefined
   try {
-    const firstTask = await request.post("/api/tasks", { headers, data: { title: "Grouped board task", task_type: "task" } })
+    const firstTask = await createTask({ title: "Grouped board task", task_type: "task" })
     expect(firstTask.status()).toBe(201)
     firstId = (await firstTask.json()).id
 
-    const secondTask = await request.post("/api/tasks", { headers, data: { title: "Grouped board epic", task_type: "epic" } })
+    const secondTask = await createTask({ title: "Grouped board epic", task_type: "epic" })
     expect(secondTask.status()).toBe(201)
     secondId = (await secondTask.json()).id
 
