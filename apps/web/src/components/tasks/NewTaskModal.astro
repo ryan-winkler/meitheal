@@ -209,26 +209,6 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
       </div>
     </div>
 
-    <div id="nt-draft-panel" class="nt-draft-panel" hidden>
-      <p id="nt-draft-status" role="status" aria-live="polite"></p>
-      <div class="nt-draft-actions">
-        <button type="button" id="nt-draft-save" class="btn btn-ghost" hidden>{t("task_draft.save", locale)}</button>
-        <button type="button" id="nt-draft-resume" class="btn btn-ghost" hidden>{t("task_draft.resume", locale)}</button>
-        <button type="button" id="nt-draft-discard" class="btn btn-ghost" hidden>{t("task_draft.discard", locale)}</button>
-        <button type="button" id="nt-draft-recover" class="btn btn-ghost" hidden>{t("task_draft.check", locale)}</button>
-        <button type="button" id="nt-draft-retry" class="btn btn-ghost" hidden>{t("task_draft.retry", locale)}</button>
-        <button type="button" id="nt-draft-abandon" class="btn btn-ghost" hidden>{t("task_draft.keep", locale)}</button>
-        <button type="button" id="nt-draft-clear" class="btn btn-ghost" hidden>{t("task_draft.new_task", locale)}</button>
-        <button type="button" id="nt-draft-update" class="btn btn-ghost" hidden>{t("task_draft.activate", locale)}</button>
-        <button type="button" id="nt-draft-open-task" class="btn btn-ghost" hidden>{t("task_draft.open_task", locale)}</button>
-      </div>
-      <div id="nt-draft-confirm" class="nt-draft-confirm" hidden>
-        <p id="nt-draft-confirm-message"></p>
-        <button type="button" id="nt-draft-confirm-no" class="btn btn-ghost">{t("task_draft.keep_editing", locale)}</button>
-        <button type="button" id="nt-draft-confirm-yes" class="btn btn-ghost">{t("task_draft.confirm", locale)}</button>
-      </div>
-    </div>
-
     <!-- Pinned footer — outside scrollable form -->
     <div
       class="modal-actions nt-footer"

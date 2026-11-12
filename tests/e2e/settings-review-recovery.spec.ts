@@ -52,9 +52,8 @@ test("Task AI handoff explains an invalid saved URL without opening a provider",
     window.open = url => { state.handoffUrls.push(String(url)); return null }
   })
   const handoffs = () => page.evaluate(() => (window as unknown as { handoffUrls: string[] }).handoffUrls)
-  await page.route("**/api/settings?key=ai-provider", route => route.fulfill(providerFailure ? { status: 503, json: { error: "Fixture unavailable" } } : { json: { value: provider } }))
   let configured: unknown = "javascript:alert(1)"
-  await page.route("**/api/settings?key=ai-custom-url", route => route.fulfill({ json: { value: configured } }))
+  await page.route(url => url.pathname.endsWith("/api/settings") && url.searchParams.get("key") === "ai-provider" && url.searchParams.get("handoff") === "1", route => route.fulfill(providerFailure ? { status: 503, json: { error: "Fixture unavailable" } } : { json: { key: "ai-provider", value: provider, canUseAssist: provider === "ha_llm", url: provider === "custom" ? configured : "https://chatgpt.com/" } }))
   try {
     await page.goto(`/tickets/${id}`)
     await expect(page.locator("#td-title")).toHaveValue("Invalid AI URL fixture")
@@ -68,6 +67,7 @@ test("Task AI handoff explains an invalid saved URL without opening a provider",
       await expect(page.locator(".toast")).toHaveCount(0)
     }
     configured = ""
+    await page.evaluate(() => localStorage.setItem("meitheal-locale", "ga"))
     await context.addCookies([{ name: "meitheal-locale", value: "ga", url: baseURL! }])
     await page.goto(`/tickets/${id}`)
     await page.locator("#td-ask-ai").click()

@@ -89,16 +89,6 @@ function prefixIngress(href: string): string {
   return `${window.__ingress_path || ""}${href}`
 }
 
-function createEmptyState(message: string): HTMLElement {
-  const empty = document.createElement("div")
-  empty.className = "search-hub-empty"
-  const announcement = document.createElement("span")
-  announcement.setAttribute("role", "status")
-  announcement.textContent = message
-  empty.appendChild(announcement)
-  return empty
-}
-
 function renderResultItem(
   item: SearchResultItem,
   index: number,
@@ -193,7 +183,8 @@ pageLifecycle.onPageLoad((signal) => {
   const panel = overlay?.querySelector(".search-hub-panel") as HTMLElement | null
   const input = document.getElementById("search-hub-input") as HTMLInputElement | null
   const results = document.getElementById("search-hub-results") as HTMLDivElement | null
-  const status = document.getElementById("search-hub-status")
+  const status = document.getElementById("search-hub-announcement")
+  const recovery = document.getElementById("search-hub-recovery")
   const closeButton = document.getElementById("search-hub-close") as HTMLButtonElement | null
   const scopeButtons = Array.from(document.querySelectorAll<HTMLButtonElement>(".search-hub-scope"))
   const taskOptions = document.getElementById("search-task-options") as HTMLDivElement | null
@@ -205,7 +196,7 @@ pageLifecycle.onPageLoad((signal) => {
   // The SearchHub modal must initialize even without a launcher input.
   // Pages using custom-header slot (e.g. settings) don't render TopNavigation,
   // so #global-search doesn't exist — but window.openSearchHub must still work.
-  if (!overlay || !panel || !input || !results || !status || !closeButton || overlay.dataset.searchController === "ready") {
+  if (!overlay || !panel || !input || !results || !status || !recovery || !closeButton || overlay.dataset.searchController === "ready") {
     return
   }
   overlay.dataset.searchController = "ready"
@@ -215,6 +206,7 @@ pageLifecycle.onPageLoad((signal) => {
   const panelEl = panel
   const inputEl = input
   const resultsEl = results
+  const recoveryEl = recovery
   const statusEl = status
   const closeButtonEl = closeButton
 
@@ -274,7 +266,8 @@ pageLifecycle.onPageLoad((signal) => {
     searchRequest = null
     renderedItems = []
     resultsEl.replaceChildren()
-    statusEl.replaceChildren()
+    statusEl.textContent = ""
+    recoveryEl.replaceChildren()
     setSelectedIndex(-1)
   }
 
@@ -346,12 +339,13 @@ pageLifecycle.onPageLoad((signal) => {
 
   function renderSections(sections: SearchResultSection[], exactFirst = false, restoredTaskId?: string): void {
     resultsEl.replaceChildren()
-    statusEl.replaceChildren()
+    statusEl.textContent = ""
+    recoveryEl.replaceChildren()
     renderedItems = []
 
     if (sections.length === 0 || sections.every((section) => section.items.length === 0)) {
       setSelectedIndex(-1)
-      statusEl.appendChild(createEmptyState("No matching results yet"))
+      statusEl.textContent = "No matching results yet"
       return
     }
 
@@ -414,16 +408,16 @@ pageLifecycle.onPageLoad((signal) => {
   }
 
   function showSearchStatus(message: string, label?: string, action?: () => void): void {
-    const state = createEmptyState(message)
+    statusEl.textContent = message
+    recoveryEl.replaceChildren()
     if (label && action) {
       const button = document.createElement("button")
       button.type = "button"
       button.className = "search-hub-close"
       button.textContent = label
       button.addEventListener("click", action, { signal })
-      state.appendChild(button)
+      recoveryEl.appendChild(button)
     }
-    statusEl.replaceChildren(state)
   }
 
   async function refreshResults(): Promise<void> {

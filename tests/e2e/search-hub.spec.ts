@@ -108,7 +108,7 @@ test.describe("Search announcements", () => {
       expect(await original!.evaluate(element => element === document.getElementById("search-hub-announcement"))).toBe(true)
       await page.locator('[data-scope="settings"]').click()
       await page.locator("#search-hub-input").fill("theme")
-      await expect(page.getByRole("option").filter({ hasText: "Theme" }).first()).toBeVisible()
+      await expect(page.locator("#search-hub-results").getByRole("option").filter({ hasText: "Theme" }).first()).toBeVisible()
       await expect(region).toHaveText("")
     } finally { release.resolve() }
   })
