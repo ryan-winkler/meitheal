@@ -1195,11 +1195,12 @@ export class TaskRepository {
     id: string,
     deferred: boolean,
     guard: { updatedAt: number; revision: string | null; inactivityNow?: number },
-    actor: { id: string; type: "agent" | "human" | "system"; requestId: string },
+    actor: { id: string; type: "agent" | "human" | "system"; requestId?: string | null },
     expectedAssignedTo?: string,
   ): Promise<DeferralResult> {
     const now = guard.inactivityNow ?? Date.now()
     const marker = deferred ? now : null
+    const correlationId = actor.requestId ?? null
     const version = taskTimestampMs("updated_at")
     const columns = `id, status, deferred_at, deferral_revision, ${version} AS updated_at`
     if (deferred && guard.inactivityNow !== undefined) {
@@ -1218,14 +1219,14 @@ export class TaskRepository {
                 (task_id, field, old_value, new_value, actor, actor_type, event_type, summary, correlation_id, created_at)
               SELECT id, 'deferred_at', NULL, CAST(deferred_at AS TEXT), ?, 'system', 'field_change', ?, ?, ?
               FROM tasks WHERE changes() = 1 AND id = ? AND deferred_at = ?`,
-            args: [inactivityRuleActor, "Automatically deferred after inactivity", actor.requestId, now, id, now],
+            args: [inactivityRuleActor, "Automatically deferred after inactivity", correlationId, now, id, now],
           },
           {
             sql: `SELECT 1 FROM task_activity_log WHERE id = last_insert_rowid() AND task_id = ?
               AND field = 'deferred_at' AND old_value IS NULL AND new_value = ?
               AND actor = ? AND actor_type = 'system' AND event_type = 'field_change'
-              AND correlation_id = ? AND created_at = ?`,
-            args: [id, String(now), inactivityRuleActor, actor.requestId, now],
+              AND correlation_id IS ? AND created_at = ?`,
+            args: [id, String(now), inactivityRuleActor, correlationId, now],
           },
         ])
         const task = changed?.rows[0] as unknown as DeferralState | undefined
@@ -1256,7 +1257,7 @@ export class TaskRepository {
                 (task_id, field, old_value, new_value, actor, actor_type, event_type, correlation_id, created_at)
               SELECT id, 'deferred_at', CAST(deferred_at AS TEXT), ?, ?, ?, 'field_change', ?, ?
               FROM tasks WHERE ${eligible}`,
-        args: [marker === null ? null : String(marker), actor.id, actor.type, actor.requestId, now, ...args],
+        args: [marker === null ? null : String(marker), actor.id, actor.type, correlationId, now, ...args],
       },
       {
         sql: `UPDATE tasks SET deferred_at = ?, deferral_revision = lower(hex(randomblob(16)))

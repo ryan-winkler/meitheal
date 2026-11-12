@@ -18,21 +18,32 @@ fi
 cd "$(git rev-parse --show-toplevel)"
 [[ -z "$(git status --porcelain)" ]] || fail 'Use a clean source checkout'
 revision="$(git rev-parse HEAD)"
-version="$(node scripts/app-release.mjs prepare canary workflow_dispatch refs/heads/main "$revision")"
+source_ref="${CANARY_SOURCE_REF:-}"
+if [[ -z "$source_ref" ]]; then
+  branch="$(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+  case "$branch" in
+    dev|main) source_ref="refs/heads/$branch" ;;
+    *) source_ref="refs/heads/dev" ;;
+  esac
+fi
+[[ "$source_ref" == refs/heads/dev || "$source_ref" == refs/heads/main ]] ||
+  fail 'Canary source ref must be refs/heads/dev or refs/heads/main'
+source_branch="${source_ref#refs/heads/}"
+version="$(node scripts/app-release.mjs prepare canary workflow_dispatch "$source_ref" "$revision")"
 version="${version#version=}"
 
-current_main() {
-  gh api --hostname github.com repos/ryan-winkler/meitheal/git/ref/heads/main --jq .object.sha
+current_source_ref() {
+  gh api --hostname github.com "repos/ryan-winkler/meitheal/git/ref/heads/${source_branch}" --jq .object.sha
 }
 
-require_current_main() {
+require_current_source() {
   local current
-  current="$(current_main)"
-  [[ "$revision" == "$current" ]] || fail 'Source must match current reviewed main'
+  current="$(current_source_ref)"
+  [[ "$revision" == "$current" ]] || fail "Source must match current reviewed ${source_branch}"
 }
 
 image_metadata() {
-  GITHUB_EVENT_NAME=workflow_dispatch GITHUB_REF=refs/heads/main \
+  GITHUB_EVENT_NAME=workflow_dispatch GITHUB_REF="$source_ref" \
     node scripts/app-release.mjs image canary "$1" "$version" "$revision"
 }
 
@@ -87,7 +98,7 @@ verify_public_pull() {
 }
 
 if [[ "$1" == stage ]]; then
-  require_current_main
+  require_current_source
   for digest_or_id in "$2" "$3" "$4" "$5"; do
     [[ "$digest_or_id" =~ ^sha256:[a-f0-9]{64}$ ]] || fail 'Expected both published digests and qualified image IDs'
   done
@@ -99,7 +110,7 @@ if [[ "$1" == stage ]]; then
 
   verify_public_pull amd64 "$2" "$3"
   verify_public_pull aarch64 "$4" "$5"
-  require_current_main
+  require_current_source
   node scripts/app-release.mjs stage canary "$version" "$destination"
   printf 'Version: %s\nSource: %s\namd64: %s (%s)\naarch64: %s (%s)\n' "$version" "$revision" "$2" "$3" "$4" "$5"
   exit
@@ -131,7 +142,7 @@ if [[ "$1" == build ]]; then
   exit
 fi
 
-require_current_main
+require_current_source
 [[ "$3" =~ ^sha256:[a-f0-9]{64}$ ]] || fail 'Expected the qualified local image ID'
 image_id="${3#sha256:}"
 if [[ "$arch" == aarch64 ]]; then
@@ -150,7 +161,7 @@ if isolated_podman publisher manifest inspect --tls-verify=true --authfile "$scr
   [[ "$existing_id" == "$image_id" ]] || fail 'Published version already points to a different image'
   digest="$(repo_digest publisher "$image")"
 elif grep -Eq ': (manifest|name) unknown$' "$scratch/manifest-error"; then
-  require_current_main
+  require_current_source
   release_podman push --tls-verify=true --authfile "$scratch/publisher.json" --digestfile "$scratch/digest" "$image_id" "docker://$image"
   digest="$(cat "$scratch/digest")"
 else

@@ -44,7 +44,7 @@ export const PATCH: APIRoute = async ({ params, request, locals }) => {
     }, {
       id: locals.agentToken?.tokenId ?? locals.hassUserId ?? "user",
       type: locals.agentToken ? "agent" : "human",
-      requestId: locals.requestId,
+      requestId: locals.requestId ?? crypto.randomUUID(),
     }, restrictedAssigneeId(locals.agentToken))
     if (result.ok) {
       return new Response(JSON.stringify({ ...result.task, status: normalizeStatus(result.task.status) }), { headers })

@@ -63,12 +63,19 @@ const app = process.env.FIXTURE_APP
 if (tool === "git") {
   if (args[0] === "-C") args.splice(0, 2)
   if (args[0] === "status") process.exit(0)
+  if (args[0] === "symbolic-ref") {
+    const branch = process.env.FIXTURE_BRANCH
+    if (branch === "__detached__") process.exit(1)
+    console.log(branch || "dev")
+    process.exit(0)
+  }
   if (args[0] !== "rev-parse") process.exit(98)
   console.log(args[1] === "HEAD" ? revision : (process.argv.includes("-C") ? app : root))
   process.exit(0)
 }
 if (tool === "gh") {
-  appendFileSync(process.env.FIXTURE_TRACE, "main\\n")
+  const refArg = args.find(arg => arg.includes("/git/ref/heads/")) || ""
+  appendFileSync(process.env.FIXTURE_TRACE, (refArg.endsWith("/heads/dev") ? "dev" : "main") + "\\n")
   console.log(process.env.FIXTURE_MAIN || revision)
   process.exit(0)
 }
@@ -287,13 +294,22 @@ test("an older receipt or sibling image cannot authorize a different source revi
   expect(readFileSync(harness.trace, "utf8")).toBe("")
   writeFileSync(harness.receipt, passingReceipt())
   expect(harness.run(publish("aarch64", amd, harness.receipt)).stderr).toContain("must use the Green-qualified image")
-  expect(readFileSync(harness.trace, "utf8")).toBe("main\n")
+  expect(readFileSync(harness.trace, "utf8")).toBe("dev\n")
   expect(harness.run(publish("amd64", amd, harness.receipt), { FIXTURE_ARM_REVISION: revision.slice(0, -1) + "3" })
     .stderr).toContain("ARM64 image does not match the source revision")
-  expect(readFileSync(harness.trace, "utf8")).toBe("main\nimage\n")
+  expect(readFileSync(harness.trace, "utf8")).toBe("dev\nimage\n")
   expect(harness.run(publish("aarch64", arm, harness.receipt), { FIXTURE_MAIN: "d".repeat(40) })
+    .stderr).toContain("current reviewed dev")
+  expect(readFileSync(harness.trace, "utf8")).toBe("dev\n")
+  expect(harness.run(publish("aarch64", arm, harness.receipt), { CANARY_SOURCE_REF: "refs/heads/main", FIXTURE_MAIN: "d".repeat(40) })
     .stderr).toContain("current reviewed main")
   expect(readFileSync(harness.trace, "utf8")).toBe("main\n")
+  expect(harness.run(publish("aarch64", arm, harness.receipt), { FIXTURE_BRANCH: "__detached__", FIXTURE_MAIN: "d".repeat(40) })
+    .stderr).toContain("current reviewed dev")
+  expect(readFileSync(harness.trace, "utf8")).toBe("dev\n")
+  expect(harness.run(publish("aarch64", arm, harness.receipt), { CANARY_SOURCE_REF: "refs/heads/feature" })
+    .stderr).toContain("refs/heads/dev or refs/heads/main")
+  expect(readFileSync(harness.trace, "utf8")).toBe("")
 })
 
 test("a passing receipt permits both publications and stage only after anonymous readback", ({ harness }) => {
@@ -301,7 +317,7 @@ test("a passing receipt permits both publications and stage only after anonymous
     const result = harness.run(publish(arch, id, harness.receipt))
     expect(result.status, result.stderr).toBe(0)
     expect(result.stdout).toContain(`digest=${digest}`)
-    expect(readFileSync(harness.trace, "utf8")).toContain("login\nmanifest\nmain\npush\npull\nimage\nimage\n")
+    expect(readFileSync(harness.trace, "utf8")).toContain("login\nmanifest\ndev\npush\npull\nimage\nimage\n")
   }
   const badDigest = harness.run(stage(harness), { FIXTURE_PUBLIC_DIGEST: amd })
   expect(badDigest.stderr).toContain("Unexpected published digest")
@@ -309,7 +325,7 @@ test("a passing receipt permits both publications and stage only after anonymous
   const result = harness.run(stage(harness))
   expect(result.status, result.stderr).toBe(0)
   expect(readFileSync(join(harness.app, "meitheal-hub-canary/config.yaml"), "utf8")).toContain(`version: "${version}"`)
-  expect(readFileSync(harness.trace, "utf8")).toBe("main\nmain\npull\nimage\nimage\npull\nimage\nimage\nmain\n")
+  expect(readFileSync(harness.trace, "utf8")).toBe("dev\nmain\npull\nimage\nimage\npull\nimage\nimage\ndev\n")
 })
 
 test("a passing receipt cannot overwrite an existing tag", ({ harness }) => {
@@ -329,7 +345,7 @@ test("first publication accepts a missing package and rejects registry failures"
   const args = publish("aarch64", arm, harness.receipt)
   const missing = harness.run(args, { FIXTURE_MANIFEST_ERROR: "name unknown" })
   expect(missing.status, missing.stderr).toBe(0)
-  expect(readFileSync(harness.trace, "utf8")).toContain("login\nmanifest\nmain\npush\npull\n")
+  expect(readFileSync(harness.trace, "utf8")).toContain("login\nmanifest\ndev\npush\npull\n")
 
   for (const error of ["unauthorized", "denied", "too many requests", "service unavailable"]) {
     const failed = harness.run(args, { FIXTURE_MANIFEST_ERROR: error })

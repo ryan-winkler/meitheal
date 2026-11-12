@@ -3,10 +3,10 @@
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
-from aiohttp.web_exceptions import HTTPUnauthorized
 from homeassistant.components.http import KEY_HASS, KEY_HASS_USER
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import Unauthorized
 from homeassistant.helpers.update_coordinator import UpdateFailed
 import pytest
 
@@ -26,17 +26,17 @@ from custom_components.meitheal.mcp_server import (
 )
 
 
-def _mock_coordinator(async_request: AsyncMock | None = None) -> MeithealCoordinator:
+def _mock_coordinator(hass: HomeAssistant, async_request: AsyncMock | None = None) -> MeithealCoordinator:
     api = SimpleNamespace(
         async_request=async_request or AsyncMock(),
         origin="https://tasks.example.test",
     )
-    return MeithealCoordinator(SimpleNamespace(data={}), api)  # type: ignore[arg-type]
+    return MeithealCoordinator(hass, api)  # type: ignore[arg-type]
 
 
-async def test_mcp_notifications_return_none() -> None:
+async def test_mcp_notifications_return_none(hass: HomeAssistant) -> None:
     """JSON-RPC notifications without an id return None (mapped to HTTP 202)."""
-    coordinator = _mock_coordinator()
+    coordinator = _mock_coordinator(hass)
 
     assert (
         await handle_mcp_request(
@@ -54,9 +54,9 @@ async def test_mcp_notifications_return_none() -> None:
     )
 
 
-async def test_mcp_rejects_malformed_requests_and_params() -> None:
+async def test_mcp_rejects_malformed_requests_and_params(hass: HomeAssistant) -> None:
     """Non-dict JSON-RPC payloads and malformed tools/call params return standard JSON-RPC errors."""
-    coordinator = _mock_coordinator()
+    coordinator = _mock_coordinator(hass)
 
     bad_payload = await handle_mcp_request(coordinator, ["not", "an", "object"])
     assert bad_payload is not None
@@ -84,7 +84,7 @@ async def test_mcp_rejects_malformed_requests_and_params() -> None:
 
 async def test_resolve_loaded_coordinator_uses_runtime_data(hass: HomeAssistant) -> None:
     """Only LOADED entries with runtime_data resolve cleanly across reloads."""
-    coordinator = _mock_coordinator()
+    coordinator = _mock_coordinator(hass)
     entry = MockConfigEntry(domain=DOMAIN, title="Meitheal", data={}, unique_id=DOMAIN)
     entry.add_to_hass(hass)
 
@@ -106,7 +106,7 @@ async def test_mcp_view_requires_admin(hass: HomeAssistant) -> None:
     req = _Req({KEY_HASS_USER: SimpleNamespace(is_admin=False)})
     req.app = {KEY_HASS: hass}  # type: ignore[attr-defined]
 
-    with pytest.raises(HTTPUnauthorized):
+    with pytest.raises(Unauthorized):
         await view.post(req)  # type: ignore[arg-type]
 
     admin_req = _Req({KEY_HASS_USER: SimpleNamespace(is_admin=True)})
@@ -115,7 +115,7 @@ async def test_mcp_view_requires_admin(hass: HomeAssistant) -> None:
     assert res.status == 503
 
 
-async def test_resolve_assignee_handles_exact_id_unique_name_ambiguous_and_missing() -> None:
+async def test_resolve_assignee_handles_exact_id_unique_name_ambiguous_and_missing(hass: HomeAssistant) -> None:
     """Assignee resolution preserves canonical IDs and guards ambiguous display names."""
     async_request = AsyncMock(
         return_value={
@@ -126,7 +126,7 @@ async def test_resolve_assignee_handles_exact_id_unique_name_ambiguous_and_missi
             ]
         }
     )
-    coordinator = _mock_coordinator(async_request=async_request)
+    coordinator = _mock_coordinator(hass, async_request=async_request)
 
     assert await coordinator.async_resolve_assignee("custom_agent_1") == "custom_agent_1"
     assert await coordinator.async_resolve_assignee("ha_person_alice") == "ha_person_alice"
