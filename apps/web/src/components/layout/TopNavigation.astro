@@ -7,9 +7,12 @@ interface Props {
   locale: Locale;
   /** Suppress the legacy #global-search input when a page has its own search surface (UnifiedBar/ParentPageShell) */
   hideGlobalSearch?: boolean;
+  /** Render the title as the page heading only when the page supplies one. */
+  hasPageTitle?: boolean;
 }
 
-const { locale, hideGlobalSearch = false } = Astro.props;
+const { locale, hideGlobalSearch = false, hasPageTitle = true } = Astro.props;
+const Title = hasPageTitle ? "h1" : "div";
 ---
 
 <header
@@ -27,11 +30,11 @@ const { locale, hideGlobalSearch = false } = Astro.props;
     >
       <Icon name="menu" size={20} />
     </button>
-    <h1
+    <Title
       class="page-title text-xl font-semibold tracking-tight text-text-primary m-0 truncate max-w-[200px] sm:max-w-none"
     >
       <slot name="page-title" />
-    </h1>
+    </Title>
   </div>
 
   {!hideGlobalSearch && (

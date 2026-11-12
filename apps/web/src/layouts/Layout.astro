@@ -486,7 +486,7 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
       {Astro.slots.has('custom-header') ? (
         <slot name="custom-header" />
       ) : !privatePageShell && (
-        <TopNavigation locale={locale} hideGlobalSearch={hideGlobalSearch}>
+        <TopNavigation locale={locale} hideGlobalSearch={hideGlobalSearch} hasPageTitle={Astro.slots.has("page-title")}>
           <Fragment slot="page-title"><slot name="page-title" /></Fragment>
           <Fragment slot="actions"><slot name="actions" /></Fragment>
         </TopNavigation>
