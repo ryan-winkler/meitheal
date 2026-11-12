@@ -63,6 +63,8 @@ jobs:
 
       - name: Resolve canary metadata
         id: meta
+        env:
+          ADDON_REPO_TOKEN: ${{ secrets.ADDON_REPO_TOKEN }}
         run: |
           owner_lc="$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')"
           sha_short="$(git rev-parse --short HEAD)"
@@ -71,7 +73,7 @@ jobs:
           tags="ghcr.io/${owner_lc}/meitheal-canary-${{ matrix.arch }}:${sha_short}
 ghcr.io/${owner_lc}/meitheal-canary-${{ matrix.arch }}:canary"
 
-          if [ "${owner_lc}" != "coolock-village" ] && [ -n "${{ secrets.ADDON_REPO_TOKEN }}" ]; then
+          if [ "${owner_lc}" != "coolock-village" ] && [ -n "${ADDON_REPO_TOKEN}" ]; then
             tags="${tags}
 ghcr.io/coolock-village/meitheal-canary-${{ matrix.arch }}:${sha_short}
 ghcr.io/coolock-village/meitheal-canary-${{ matrix.arch }}:canary"
@@ -128,7 +130,7 @@ ghcr.io/coolock-village/meitheal-canary-${{ matrix.arch }}:canary"
             -f "committer[email]=41898282+github-actions[bot]@users.noreply.github.com"
 
       - name: Sync canary config to public add-on repo
-        if: ${{ secrets.ADDON_REPO_TOKEN != '' }}
+        if: secrets.ADDON_REPO_TOKEN != ''
         env:
           GH_TOKEN: ${{ secrets.ADDON_REPO_TOKEN }}
         run: |

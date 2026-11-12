@@ -62,6 +62,8 @@ jobs:
 
       - name: Resolve image metadata
         id: meta
+        env:
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         run: |
           owner_lc="$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')"
           version="$(awk -F'"' '/^version:/{print $2}' meitheal-hub/config.yaml)"
@@ -81,7 +83,7 @@ ghcr.io/ryan-winkler/meitheal-${{ matrix.arch }}:${tag}
 ghcr.io/ryan-winkler/meitheal-${{ matrix.arch }}:latest"
           fi
 
-          if [ -n "${{ secrets.DOCKERHUB_TOKEN }}" ]; then
+          if [ -n "${DOCKERHUB_TOKEN}" ]; then
             tags="${tags}
 coolockvillage/meitheal-${{ matrix.arch }}:${tag}
 coolockvillage/meitheal-${{ matrix.arch }}:latest"
