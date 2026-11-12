@@ -12,6 +12,7 @@
 import { hashToken, type AgentScope, type AgentTokenRecord } from "@meitheal/domain-auth"
 import { ensureAgentTokenSchema, getAgentTokenByHash, updateAgentTokenLastUsed } from "@domains/auth/agent-token-store"
 import { ensureDatabaseSchemaSupported, ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
+import { TaskRepository } from "@domains/tasks/persistence/task-repository"
 import { apiProblem } from "./api-response"
 
 export interface ResolvedAgent {
@@ -81,11 +82,12 @@ export async function checkAssignedTask(taskIdOrKey: string, agent: ResolvedAgen
   let assignedTo: unknown
   try {
     await ensureSchema()
-    const ticket = /^MTH-\d+$/i.test(taskIdOrKey) ? Number(taskIdOrKey.slice(4)) : null
-    const result = await getPersistenceClient().execute({
-      sql: "SELECT assigned_to FROM tasks WHERE id = ? OR ticket_number = ? LIMIT 1",
-      args: [taskIdOrKey, ticket],
-    })
+    // Resolve the task exactly as the task routes do, so both agree on which task is named.
+    const client = getPersistenceClient()
+    const resolved = await new TaskRepository(client).resolveTaskId(taskIdOrKey)
+    const result = resolved
+      ? await client.execute({ sql: "SELECT assigned_to FROM tasks WHERE id = ?", args: [resolved.id] })
+      : { rows: [] }
     // Let the route answer for a missing task so it reports the usual 404.
     if (result.rows.length === 0) return null
     assignedTo = result.rows[0]!.assigned_to
