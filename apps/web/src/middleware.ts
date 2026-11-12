@@ -447,7 +447,28 @@ async function handleRequest({ request, locals, routePattern }: Parameters<Middl
   } else if (retryKey && commentRoute && !await hasCurrentTaskParticipant(locals, request.signal, true)) {
     response = activeParticipantRequired()
   } else {
-    response = retryKey ? await replayTaskRequest(retryKey, next) : await next()
+    // API callers parse JSON, so an error that would render the HTML error page answers with a problem document instead.
+    const apiRoute = url.pathname.startsWith("/api/")
+    try {
+      response = retryKey ? await replayTaskRequest(retryKey, next) : await next()
+    } catch (error) {
+      if (!apiRoute) throw error
+      logger.log("error", {
+        event: "http.unhandled_error",
+        domain: "observability",
+        component: "middleware",
+        request_id: requestId,
+        message: `${request.method} ${logPath} failed: ${error instanceof Error ? error.name : "unknown error"}`,
+      })
+      response = apiProblem({ status: 500, detail: "The server could not finish this request. Try again.", traceId: requestId })
+    }
+    if (apiRoute && response.status >= 400 && (response.headers.get("content-type") ?? "").includes("text/html")) {
+      response = apiProblem({
+        status: response.status,
+        detail: response.status === 404 ? "No API endpoint matches this path." : "The server could not finish this request.",
+        traceId: requestId,
+      })
+    }
   }
 
   // Rewrite HTML paths when behind HA ingress

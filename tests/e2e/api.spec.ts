@@ -61,3 +61,10 @@ test("task labels are accepted as an array or as a JSON string", async ({ reques
     await request.delete(path, { headers })
   }
 })
+
+test("an unknown API path answers with JSON, not the HTML page", async ({ request }) => {
+  const response = await request.get("/api/this-route-does-not-exist")
+  expect(response.status()).toBe(404)
+  expect(response.headers()["content-type"]).toContain("application/problem+json")
+  expect(await response.json()).toMatchObject({ status: 404, error: expect.any(String) })
+})
