@@ -3,12 +3,12 @@ import { test } from "../scripts/settings-persistence-fixture"
 
 test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the built App and disposable authenticated fixture")
 
-test("Settings counts actual discovery documents without implying A2A execution or token tool access", async ({ page, request }) => {
+test("Settings counts actual discovery documents and describes only the read-only A2A search", async ({ page, request }) => {
   const cardResponse = await request.get("/api/a2a/agent-card")
   expect(cardResponse.status()).toBe(200)
   const card = await cardResponse.json()
-  expect(card.skills).toEqual([])
-  expect(card.supportedInterfaces).toEqual([])
+  expect(card.skills.map((skill: { id: string }) => skill.id)).toEqual(["task-search"])
+  expect(card.supportedInterfaces).toHaveLength(1)
   const manifestResponse = await request.get("/.well-known/mcp.json")
   expect(manifestResponse.status()).toBe(200)
   const manifest = await manifestResponse.json()
@@ -20,7 +20,7 @@ test("Settings counts actual discovery documents without implying A2A execution 
   await page.setViewportSize({ width: 320, height: 740 })
   await page.goto("/settings#automation-ai-settings")
   await expect(page.locator("#agent-protocols-status")).toHaveText("2 of 2 discovery documents available")
-  await expect(page.locator("#agent-a2a-runtime-status")).toContainText("Message execution is unavailable")
+  await expect(page.locator("#agent-a2a-runtime-status")).toContainText("search active task titles")
   await expect(page.locator("#agent-mcp-runtime-status")).toContainText("token scopes")
   await expect(page.locator('[data-protocol-link="a2a"]')).toBeVisible()
   await expect(page.locator('[data-protocol-link="mcp"]')).toBeVisible()
