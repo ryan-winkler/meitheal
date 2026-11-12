@@ -7,6 +7,7 @@ on:
   push:
     branches:
       - main
+      - release
     paths:
       - "repository.yaml"
       - "meitheal-hub/config.yaml"

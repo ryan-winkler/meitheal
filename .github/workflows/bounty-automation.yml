@@ -1,0 +1,35 @@
+name: Community Bounty Automation
+
+on:
+  issues:
+    types:
+      - labeled
+
+permissions:
+  issues: write
+
+jobs:
+  bounty-guide:
+    if: github.event.label.name == 'bounty' || github.event.label.name == 'fund'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Post Bounty Guidance Comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issueNumber = context.issue.number;
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const body = `### 💰 Community Bounty Available
+
+            This issue is eligible for community funding and bounties via [Polar.sh](https://polar.sh/${owner}/${repo}/issues/${issueNumber})!
+
+            - **To claim**: Submit a pull request linked to this issue.
+            - **Requirements**: All CI tests must pass and code must follow repository DDD boundaries.`;
+
+            await github.rest.issues.createComment({
+              owner,
+              repo,
+              issue_number: issueNumber,
+              body
+            });

@@ -1,0 +1,23 @@
+codecov:
+  require_ci_to_pass: true
+
+coverage:
+  status:
+    project:
+      default:
+        target: auto
+        threshold: 1%
+    patch:
+      default:
+        target: 80%
+
+flag_management:
+  default_rules:
+    carryforward: true
+
+ignore:
+  - ".planning/**/*"
+  - "docs/**/*"
+  - "tests/**/*"
+  - "**/*.spec.ts"
+  - "**/*.d.ts"

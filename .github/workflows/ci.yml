@@ -4,7 +4,18 @@ on:
   push:
     paths-ignore:
       - "meitheal-hub-canary/config.yaml"
+      - "*.md"
+      - ".planning/**"
+      - "docs/**"
   pull_request:
+    paths-ignore:
+      - "*.md"
+      - ".planning/**"
+      - "docs/**"
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -47,6 +58,9 @@ jobs:
 
   typecheck-and-tests:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v4
@@ -68,6 +82,13 @@ jobs:
       - name: Build web app (validates TS + Astro compilation)
         run: pnpm --filter @meitheal/web build
       - run: pnpm --filter @meitheal/tests test
+      - name: Upload test coverage to Codecov
+        uses: codecov/codecov-action@v5
+        if: always()
+        with:
+          use_oidc: true
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
 
   ha-harness:
     runs-on: ubuntu-latest

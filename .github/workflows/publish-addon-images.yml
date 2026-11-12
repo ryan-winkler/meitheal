@@ -1,17 +1,26 @@
 name: Publish Add-on Images
 
 on:
+  push:
+    branches:
+      - release
+    tags:
+      - "v*"
+    paths-ignore:
+      - "meitheal-hub-canary/**"
+      - "*.md"
+      - ".planning/**"
+      - "docs/**"
   workflow_dispatch:
     inputs:
       tag_override:
         description: "Tag override (e.g. 'dev' for pre-release)"
         required: false
         default: ""
-  push:
-    tags:
-      - "v*"
-    paths-ignore:
-      - "meitheal-hub-canary/**"
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   publish:

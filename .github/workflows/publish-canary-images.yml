@@ -3,6 +3,7 @@ name: Publish Canary Images
 on:
   push:
     branches:
+      - dev
       - main
     paths-ignore:
       - "meitheal-hub-canary/config.yaml"
@@ -11,6 +12,10 @@ on:
       - "docs/**"
 
   workflow_dispatch:
+
+concurrency:
+  group: canary-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   canary:
@@ -106,7 +111,7 @@ jobs:
             -f message="🐤 canary: bump version to ${sha_short}" \
             -f content="${content_b64}" \
             -f sha="${file_sha}" \
-            -f branch="main" \
+            -f branch="${{ github.ref_name }}" \
             -f "committer[name]=github-actions[bot]" \
             -f "committer[email]=41898282+github-actions[bot]@users.noreply.github.com"
 

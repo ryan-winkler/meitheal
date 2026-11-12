@@ -265,6 +265,24 @@ The upgrade runs automatically when the browser opens the database with a higher
 
 6. Home Assistant publishing readiness checklist: `docs/kcs/ha-publishing-checklist.md`.
 
+## Local image builds
+
+From the repository root, run:
+
+```bash
+npm run build:image -- --tag localhost/meitheal:dev
+```
+
+The equivalent pnpm command is `pnpm run build:image --tag localhost/meitheal:dev`.
+Both use the add-on Dockerfile and repository build context. Additional arguments
+are passed to `podman build`. This builds a local image; it does not publish or
+replace a running add-on.
+
+When the host provides `meitheal-build`, the command selects that host's guarded
+build storage automatically. A launcher failure stops the build. Otherwise it
+uses the host's normal Podman configuration. Keep existing container lifecycle
+commands on the store where those containers were created.
+
 ## Privileged development-container console
 
 Mask the guest getty units before starting init in a privileged development

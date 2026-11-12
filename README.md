@@ -3,6 +3,11 @@
 > The Home Assistant-native execution hub for your house, your homelab, and the plans that keep both moving.
 
 [![Docker Hub](https://img.shields.io/docker/v/coolockvillage/meitheal-amd64?label=Docker%20Hub&logo=docker)](https://hub.docker.com/r/coolockvillage/meitheal-amd64)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/Coolock-Village/meitheal/badge)](https://scorecard.dev/viewer/?push=main&repo=github.com/Coolock-Village/meitheal)
+[![codecov](https://codecov.io/gh/Coolock-Village/meitheal/graph/badge.svg)](https://codecov.io/gh/Coolock-Village/meitheal)
+[![GitHub Sponsors](https://img.shields.io/badge/Sponsor-GitHub-ea4aaa?logo=github&logoColor=white)](https://github.com/sponsors/ryan-winkler)
+[![Ko-fi](https://img.shields.io/badge/Support-Ko--fi-ff5e5b?logo=ko-fi&logoColor=white)](https://ko-fi.com/ryanw_eu)
+[![Polar Funding](https://polar.sh/embed/bounties.svg?org=Coolock-Village)](https://polar.sh/Coolock-Village)
 
 ## What Meitheal Is
 
@@ -112,6 +117,15 @@ Built-in Assist commands work even without an LLM. The LLM API adds a richer tas
 | Frontend | Astro-first UI with client controllers, PWA support, and ingress-safe behavior |
 | Integrations | Home Assistant, calendars, todo, Grocy, webhooks, companion, MCP/HA LLM API |
 | Principles | Local-first, Home Assistant-native, Astro-first, KCS-aware |
+
+## Supporting Meitheal
+
+Meitheal is independent and community-driven. Financial support helps fund infrastructure, accessibility testing, hardware qualification, and continuous development:
+
+- [GitHub Sponsors](https://github.com/sponsors/ryan-winkler)
+- [Ko-fi](https://ko-fi.com/ryanw_eu)
+- [Revolut](https://revolut.me/ryanwi)
+- [Polar](https://polar.sh/Coolock-Village)
 
 ## Documentation Map
 

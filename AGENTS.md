@@ -211,13 +211,15 @@ Meitheal uses a **two-channel release strategy** (see `docs/kcs/releasing.md` fo
 
 | Channel | Dir | Trigger | Version | Stage |
 |---------|-----|---------|---------|-------|
-| Stable | `meitheal-hub/` | vtag push (`v*`) | Semver (`0.0.1`) | `stable` |
-| Canary | `meitheal-hub-canary/` | Push to `main` | Commit SHA | `experimental` |
+| Stable | `meitheal-hub/` | Push to `release` or `v*` tag | Semver (`0.1.x`) | `stable` |
+| Canary | `meitheal-hub-canary/` | Push to `dev` (or `main`) | Commit SHA | `experimental` |
 
-- **Stable**: Push a version tag (`v*`) to trigger CI Docker build. Version in `config.yaml` must match the tag (e.g. `version: "0.0.1"` ↔ `v0.0.1`). Also bump `MEITHEAL_VERSION` in `run.sh` to match. Use `node scripts/bump-version.mjs patch` for atomic bumps.
-- **Canary**: Auto-publishes on every push to `main`. Do NOT manually edit `meitheal-hub-canary/config.yaml` version — it is CI-managed by `scripts/update-canary-version.mjs`.
-- Unless explicitly requested, keep version bumps within the current release line and prefer the next patch release
-- Do not move to a new version line such as `0.0.x` → `0.1.x` without explicit user direction
+- **Canary**: Merging to `dev` triggers `publish-canary-images.yml`. The system builds multi-arch images (`amd64`, `aarch64`) and updates `meitheal-hub-canary/config.yaml`. The job syncs manifests to `Coolock-Village/meitheal-ha-addon`. Do not edit the canary version manually.
+- **Stable**: Promoting to `release` or pushing a `v*` tag triggers `publish-addon-images.yml`. The system validates version sync across all manifests and builds multi-arch release images. Use `node scripts/bump-version.mjs patch` to bump versions.
+- **CI & Quality Gates**: Every PR runs `ci.yml` (governance, tests, Codecov coverage upload), `dependency-review.yml`, and CodeRabbit AI review. The OpenSSF Scorecard analyzes repository security weekly.
+- **Caching**: Docker builds use BuildKit cache mounts (`--mount=type=cache,id=pnpm-store`) and GitHub Actions cache (`type=gha`). Do not copy application source before `pnpm install` in Dockerfiles.
+- Unless explicitly requested, keep version bumps within the current release line and prefer the next patch release.
+- Do not move to a new version line such as `0.1.x` → `0.2.x` without explicit user direction.
 
 ## Verification Tiers (Mandatory)
 

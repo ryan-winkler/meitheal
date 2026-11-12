@@ -1,36 +1,61 @@
 # Releasing Meitheal
 
 > KCS runbook for the Meitheal two-channel release strategy.
-> Last updated: 2026-03-20
+> Last updated: 2026-11-12
 
 ## Channel Architecture
 
 ```
-main branch
+dev branch
     │
-    ├─ push ──→ 🐤 Canary (auto-build, SHA version)
-    │            ghcr.io/coolock-village/meitheal-canary-{arch}:{sha}
+    └─ push (merge) ──→ 🐤 Canary (auto-build, SHA version)
+                         ghcr.io/coolock-village/meitheal-canary-{arch}:{sha}
+                         meitheal-hub-canary/config.yaml updated & synced
+
+release branch (or v* tag)
     │
-    └─ vtag ──→ 📦 Stable (manual release, semver)
-                 ghcr.io/coolock-village/meitheal-{arch}:{version}
+    └─ push (promotion) → 📦 Stable (auto-build, semver)
+                         ghcr.io/coolock-village/meitheal-{arch}:{version}
+                         meitheal-hub/config.yaml synced
 ```
 
 | Channel | Addon Name | Version Format | Trigger | Stage |
 |---------|-----------|---------------|---------|-------|
-| Stable | Meitheal | Semver (`0.0.1`) | vtag push (`v*`) | `stable` |
-| Canary | Meitheal Canary | Commit SHA (`abc1234`) | Push to `main` | `experimental` |
+| Stable | Meitheal | Semver (`0.1.x`) | Push to `release` or `v*` tag | `stable` |
+| Canary | Meitheal Canary | Commit SHA (`abc1234`) | Push to `dev` (or `main`) | `experimental` |
+
+## How Canary Works
+
+1. Developers merge code into the `dev` branch.
+2. The `publish-canary-images.yml` workflow starts automatically.
+3. Docker Buildx compiles multi-arch images (`linux/amd64`, `linux/arm64`).
+4. BuildKit cache mounts (`--mount=type=cache,id=pnpm-store`) accelerate package installation.
+5. GitHub Actions caches image layers via `type=gha,scope=canary-${{ matrix.arch }}`.
+6. The action pushes images to GHCR as `meitheal-canary-{arch}:{sha}` and `:canary`.
+7. CI commits the updated SHA version into `meitheal-hub-canary/config.yaml` on the triggered branch.
+8. CI syncs the updated configuration to `Coolock-Village/meitheal-ha-addon` on GitHub.
+9. Home Assistant Supervisor discovers the new version and displays an update notice.
+
+### Guard against infinite loops
+
+- The canary workflow skips runs from `github-actions[bot]`.
+- The `ci.yml` workflow ignores edits in `meitheal-hub-canary/config.yaml`.
+- The commit uses GitHub API with `[skip ci]` semantics.
+- Concurrency control cancels older in-progress builds when a new commit lands.
 
 ## Cutting a Stable Release
 
 ### 1. Bump version
 
+Run the version update script:
+
 ```bash
-node scripts/bump-version.mjs patch   # 0.0.1 → 0.0.2
-# or: node scripts/bump-version.mjs minor  # 0.0.2 → 0.1.0
+node scripts/bump-version.mjs patch   # 0.1.80 → 0.1.81
+# or: node scripts/bump-version.mjs minor  # 0.1.80 → 0.2.0
 # or: node scripts/bump-version.mjs 1.0.0  # explicit version
 ```
 
-This updates 4 files atomically:
+This script updates four files together:
 - `meitheal-hub/config.yaml`
 - `meitheal-hub/run.sh`
 - `apps/web/package.json`
@@ -38,45 +63,29 @@ This updates 4 files atomically:
 
 ### 2. Update CHANGELOG.md
 
-Add an entry under the new version number.
+Add notes for user changes under the new version number.
 
-### 3. Commit and tag
+### 3. Merge to release branch or push tag
 
+Option A: Merge `dev` into `release` and push:
 ```bash
-git add -A
-git commit -m "🔖 release v0.0.2"
-git tag v0.0.2
-git push origin main --tags
+git checkout release
+git merge dev
+git push origin release
 ```
 
-### 4. Verify
+Option B: Create and push a semver tag:
+```bash
+git tag v0.1.81
+git push origin v0.1.81
+```
 
-- Check [GitHub Actions](https://github.com/Coolock-Village/meitheal/actions/workflows/publish-addon-images.yml) for the publish workflow
-- Verify images appear on [GHCR](https://github.com/orgs/Coolock-Village/packages)
-- Test update on a HA instance
+### 4. Verify Release Build
 
-## How Canary Works
-
-1. Developer pushes code to `main`
-2. `publish-canary-images.yml` triggers (if not a bot commit)
-3. CI builds Docker images using the same `meitheal-hub/Dockerfile`
-4. Images pushed as `meitheal-canary-{arch}:{sha}` + `:canary`
-5. CI updates `meitheal-hub-canary/config.yaml` version and commits back
-6. HA Supervisor sees new version on next repo refresh → offers update
-
-### Guard against infinite loops
-
-- The canary workflow skips runs from `github-actions[bot]`
-- The `ci.yml` ignores changes to `meitheal-hub-canary/config.yaml`
-- The canary commit message includes `[skip ci]`
-
-## Promoting Canary to Stable
-
-There's no automated promotion. To promote:
-
-1. Verify the canary build you want to promote works on HA
-2. Run `node scripts/bump-version.mjs patch` (or minor/major)
-3. Follow the "Cutting a Stable Release" steps above
+- Check [GitHub Actions](https://github.com/Coolock-Village/meitheal/actions/workflows/publish-addon-images.yml) for the publish workflow.
+- Verify images exist on [GHCR](https://github.com/orgs/Coolock-Village/packages) and Docker Hub.
+- The `sync-addon-repo.yml` workflow copies manifests to the public repository.
+- Test the new version on a Home Assistant instance.
 
 ## Troubleshooting
 
