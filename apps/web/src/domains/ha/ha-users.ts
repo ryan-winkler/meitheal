@@ -34,6 +34,7 @@ export interface MeithealUser {
   source: "home_assistant" | "custom";
   is_owner?: boolean;
   color?: string;
+  kind?: "human" | "agent";
 }
 
 // ── Cache ──

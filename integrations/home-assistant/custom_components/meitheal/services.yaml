@@ -45,6 +45,18 @@ create_task:
           min: 0
           max: 5
           step: 1
+    assigned_to:
+      name: Assignee ID
+      description: User ID or agent assignee ID to assign the task to
+      example: "custom_claude"
+      selector:
+        text:
+    assignee_user:
+      name: Assignee User
+      description: Alternative name or ID for the assigned user
+      example: "Claude"
+      selector:
+        text:
 
 complete_task:
   name: Complete Task

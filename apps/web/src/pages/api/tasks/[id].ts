@@ -77,6 +77,17 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
 
   const resolvedId = resolved.id
 
+  const agentToken = locals.agentToken
+  if (agentToken && agentToken.scopes.includes("tasks:write:assigned") && !agentToken.scopes.includes("tasks:write")) {
+    const task = await repo.findById(resolvedId)
+    if (!task || !agentToken.assigneeId || task.assigned_to !== agentToken.assigneeId) {
+      return new Response(JSON.stringify({ error: "Agent can only update tasks assigned to it" }), {
+        status: 403,
+        headers: { "content-type": "application/json" },
+      })
+    }
+  }
+
   const clientVersion = typeof body.updated_at === "number" ? body.updated_at : undefined
   if (clientVersion !== undefined && (!Number.isSafeInteger(clientVersion) || clientVersion < 0)) {
     return apiError("updated_at must be a non-negative safe integer", 400)
@@ -393,7 +404,9 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
       }
     }
     if (changes.length > 0) {
-      repo.logActivity(resolvedId, changes).catch(() => { })
+      const activityActor = agentToken ? `agent:${agentToken.tokenName}` : (request.headers.get("X-Automation-Source") ? `ha:${request.headers.get("X-Automation-Source")}` : "user")
+      const actorType = agentToken ? "agent" : (request.headers.get("X-Automation-Source") ? "ha" : "user")
+      repo.logActivity(resolvedId, changes, { actor: activityActor, actor_type: actorType }).catch(() => { })
     }
   }
 

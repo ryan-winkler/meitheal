@@ -8,6 +8,7 @@ import { checkCommentMentionWriteContext, commentAttempt, commentMentionProblem,
 import { commentAttemptHorizonMs, commentMentions, hasCommentMentionSelector, redactCommentMentionSelectors } from "@lib/comment-mentions"
 import { verifiedIngressUser } from "@lib/verified-ingress-user"
 import { activeParticipantRequired, commentFailure, commentJson, hasCurrentTaskParticipant, readComment, resolveCommentAuthor } from "@lib/task-comment-request"
+import { dispatchTaskEvent } from "@lib/webhook-dispatcher"
 
 export const GET: APIRoute = async ({ locals, params, request }) => {
   try {
@@ -55,6 +56,18 @@ export const POST: APIRoute = async ({ params, request, locals }) => {
     const client = getPersistenceClient()
     const mentions = new CommentMentionRepository(client)
     const taskId = params.id!
+
+    const agentToken = locals.agentToken
+    if (agentToken && agentToken.scopes.includes("tasks:write:assigned") && !agentToken.scopes.includes("tasks:write")) {
+      const taskRepo = new TaskRepository(client)
+      const task = await taskRepo.findById(taskId)
+      if (!task || !agentToken.assigneeId || task.assigned_to !== agentToken.assigneeId) {
+        return new Response(JSON.stringify({ error: "Agent can only comment on tasks assigned to it" }), {
+          status: 403,
+          headers: { "content-type": "application/json" },
+        })
+      }
+    }
     if (attempt && actor.owner) {
       if (await mentions.replay(taskId, actor.owner, attempt.key, content)) {
         if (!await hasCurrentTaskParticipant(locals, request.signal, true)) return activeParticipantRequired()
@@ -70,6 +83,9 @@ export const POST: APIRoute = async ({ params, request, locals }) => {
         { ...attempt, rawContent: content, cutoff: Date.now() - commentAttemptHorizonMs }, prepared.verifiedHuman))
     }
     const comment = await new TaskRepository(client).addComment(params.id!, prepared.content, actor.author, actor.owner, prepared.verifiedHuman)
+    if (comment && agentToken) {
+      dispatchTaskEvent("task.commented", { id: taskId, comment_id: (comment as Record<string, unknown>).id, author: actor.author, content: prepared.content }).catch(() => {})
+    }
     return comment ? commentJson(comment, 201) : apiError("Task not found", 404)
   } catch {
     return commentFailure("post", "Failed to create comment")

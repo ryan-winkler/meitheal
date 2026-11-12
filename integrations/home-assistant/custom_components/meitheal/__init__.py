@@ -64,6 +64,8 @@ CREATE_TASK_SCHEMA = vol.Schema(
         vol.Optional("due_date"): cv.string,
         vol.Optional("urgency"): vol.All(vol.Coerce(int), vol.Range(min=0, max=5)),
         vol.Optional("importance"): vol.All(vol.Coerce(int), vol.Range(min=0, max=5)),
+        vol.Optional("assigned_to"): cv.string,
+        vol.Optional("assignee_user"): cv.string,
     }
 )
 
@@ -137,6 +139,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: MeithealConfigEntry) -> 
     async def handle_create_task(call: ServiceCall) -> None:
         """Handle meitheal.create_task service call."""
         try:
+            assigned_to = call.data.get("assigned_to") or call.data.get("assignee_user")
             await coordinator.async_create_task(
                 title=call.data["title"],
                 description=call.data.get("description"),
@@ -144,6 +147,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: MeithealConfigEntry) -> 
                 due_date=call.data.get("due_date"),
                 urgency=call.data.get("urgency"),
                 importance=call.data.get("importance"),
+                assigned_to=assigned_to,
             )
         except Exception as err:
             raise HomeAssistantError(

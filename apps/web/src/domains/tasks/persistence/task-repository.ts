@@ -267,6 +267,7 @@ export type TaskCreationData = {
   recurrence_rule?: string | null;
   urgency?: number; importance?: number;
   effort_minutes?: number | null; effort_type?: string | null; blocked_by?: string | null;
+  source?: string; created_by?: string | null;
 }
 
 /** Use one statement for an ordinary insert or a conditional insert in a write batch. */
@@ -285,9 +286,12 @@ export function taskInsertStatement(data: TaskCreationData, createdAt: number, {
                              area_id, custom_fields, start_date, end_date, progress, color, is_favorite,
                              task_type, task_kind, ticket_number, assigned_to, checklists, recurrence_rule,
                              urgency, importance, effort_minutes, effort_type, blocked_by,
+                             source, created_by,
                              idempotency_key, request_id, created_at, updated_at)
           SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                  (SELECT COALESCE(MAX(ticket_number), 0) + 1 FROM tasks), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                  (SELECT COALESCE(MAX(ticket_number), 0) + 1 FROM tasks), ?, ?, ?, ?, ?, ?, ?, ?,
+                  ?, ?,
+                  ?, ?, ?, ?
           ${guard ? `WHERE ${guard.sql}` : ""}
           RETURNING ticket_number`,
     args: [
@@ -299,6 +303,7 @@ export function taskInsertStatement(data: TaskCreationData, createdAt: number, {
       data.checklists ?? "[]", data.recurrence_rule ?? null,
       data.urgency ?? 0, data.importance ?? 0,
       data.effort_minutes ?? null, data.effort_type ?? null, data.blocked_by ?? null,
+      data.source ?? "user", data.created_by ?? null,
       idempotencyKey, requestId, createdAt, createdAt,
       ...(guard?.args ?? []),
     ] as InValue[],

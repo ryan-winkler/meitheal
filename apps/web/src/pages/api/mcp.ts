@@ -49,7 +49,8 @@ interface RouteMapping {
 
 type CustomToolHandler = (
   args: Record<string, unknown>,
-  requestApi: (path: string, init?: RequestInit) => Promise<Response>
+  requestApi: (path: string, init?: RequestInit) => Promise<Response>,
+  agent?: ResolvedAgent
 ) => Promise<Record<string, unknown>>
 
 // ─── OpenAPI → MCP Tool Discovery ────────────────────────────────────────────
@@ -303,9 +304,74 @@ customHandlers.set("searchTasks", async (args, requestApi) => {
   }
 })
 
+// whoAmI: returns the authenticated agent identity
+customHandlers.set("whoAmI", async (_args, _requestApi, agent) => {
+  if (!agent) return { error: "No authenticated agent" }
+  return {
+    ok: true,
+    agent_id: agent.tokenId,
+    name: agent.tokenName,
+    scopes: agent.scopes,
+    assignee_id: agent.assigneeId ?? null,
+  }
+})
+
+// listMyTasks: lists tasks assigned to this agent's linked assignee_id
+customHandlers.set("listMyTasks", async (args, requestApi, agent) => {
+  if (!agent) return { error: "No authenticated agent" }
+  if (!agent.assigneeId) {
+    return {
+      error: "No assignee_id configured for this agent token. Link an assignee in Settings > Agent Tokens, or use searchTasks/listTasks.",
+    }
+  }
+  const params = new URLSearchParams()
+  params.set("assigned_to", agent.assigneeId)
+  if (args.status) params.set("status", String(args.status))
+  if (args.limit) params.set("limit", String(args.limit))
+  const res = await requestApi(`/api/tasks?${params}`)
+  const tasks = await checkedJson(res)
+  return {
+    tasks,
+    assignee_id: agent.assigneeId,
+    count: Array.isArray(tasks) ? tasks.length : 0,
+  }
+})
+
+// handBackTask: unassigns or reassigns task, adds handoff comment
+customHandlers.set("handBackTask", async (args, requestApi) => {
+  if (!args.id) return { error: "Task id is required" }
+  const safeId = encodeURIComponent(String(args.id))
+  const to = typeof args.to === "string" && args.to.trim() ? args.to.trim() : null
+  const note = typeof args.note === "string" ? args.note.trim() : ""
+
+  const updateRes = await requestApi(`/api/tasks/${safeId}`, {
+    method: "PUT",
+    body: JSON.stringify({ assigned_to: to }),
+  })
+  const updatedTask = await checkedJson(updateRes)
+
+  if (note) {
+    await requestApi(`/api/tasks/${safeId}/comments`, {
+      method: "POST",
+      body: JSON.stringify({ content: `[Agent Handoff]: ${note}` }),
+    }).catch(() => {})
+  }
+
+  return {
+    ok: true,
+    id: String(args.id),
+    assigned_to: to,
+    handoff_note: note || null,
+    task: updatedTask,
+  }
+})
+
 const customToolScopes: ReadonlyMap<string, AgentScope> = new Map([
   ["completeTask", "tasks:write"],
   ["searchTasks", "search:read"],
+  ["whoAmI", "mcp:execute"],
+  ["listMyTasks", "tasks:read"],
+  ["handBackTask", "tasks:write"],
 ])
 
 function toolScope(toolName: string, route?: RouteMapping): AgentScope | undefined {
@@ -318,7 +384,8 @@ function toolScope(toolName: string, route?: RouteMapping): AgentScope | undefin
 async function executeTool(
   toolName: string,
   args: Record<string, unknown>,
-  authorization: string
+  authorization: string,
+  agent?: ResolvedAgent
 ): Promise<Record<string, unknown>> {
   const { routes } = loadOpenAPISpec()
   const route = routes.get(toolName)
@@ -327,7 +394,7 @@ async function executeTool(
     return checkedJson(unavailableBoardResponse())
   }
   const requestApi = scopedApi(authorization)
-  if (custom) return custom(args, requestApi)
+  if (custom) return custom(args, requestApi, agent)
 
   if (!route) {
     return { error: `Unknown tool: ${toolName}`, available: routes.size }
@@ -370,7 +437,11 @@ async function executeTool(
   }
 
   const res = await requestApi(fullUrl, fetchOpts)
-  return { ...await checkedJson(res), status: res.status }
+  const json = await checkedJson(res)
+  if (typeof json.status === "string") {
+    return { ...json, _http_status: res.status }
+  }
+  return { ...json, status: res.status }
 }
 
 async function acknowledgedCompletion(response: Response, expectedId: string): Promise<Record<string, unknown>> {
@@ -549,7 +620,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
       const { tools, routes } = loadOpenAPISpec()
       const allowed = (name: string) => {
         const scope = toolScope(name, routes.get(name))
-        return scope && hasScope(agent.scopes, scope)
+        return scope && hasScope(agent.scopes, scope, { isAssignedTaskRoute: true })
       }
 
       // Include scoped custom tools that do not have an OpenAPI operation.
@@ -578,10 +649,10 @@ export const POST: APIRoute = async ({ request, locals }) => {
 
       try {
         const scope = toolScope(toolName, loadOpenAPISpec().routes.get(toolName))
-        if (!scope || !hasScope(agent.scopes, scope)) {
+        if (!scope || !hasScope(agent.scopes, scope, { isAssignedTaskRoute: true })) {
           return rpcError(reqId, modern ? -32602 : -32603, "Tool is unavailable to this token")
         }
-        const output = await executeTool(toolName, args, authorization)
+        const output = await executeTool(toolName, args, authorization, agent)
         return result({
           content: [{ type: "text", text: JSON.stringify(output) }],
           ...(modern ? { structuredContent: output } : {}),
@@ -607,6 +678,9 @@ function getCustomToolDescription(name: string): string {
   const descriptions: Record<string, string> = {
     completeTask: "Mark a task as complete by ID or title. Title lookup requires search:read and matches the full title.",
     searchTasks: "Search tasks by query text, status, priority, or assignee. Returns a clean list of matching tasks.",
+    whoAmI: "Returns the authenticated agent identity, token prefix, authorized scopes, and linked assignee ID.",
+    listMyTasks: "List active tasks assigned to this agent token's linked assignee.",
+    handBackTask: "Hand back a task to humans or reassign it with an optional explanation note.",
   }
   return descriptions[name] ?? `Custom tool: ${name}`
 }
@@ -631,7 +705,26 @@ function getCustomToolSchema(name: string): McpTool["inputSchema"] {
       },
       required: ["query"],
     },
-
+    whoAmI: {
+      type: "object",
+      properties: {},
+    },
+    listMyTasks: {
+      type: "object",
+      properties: {
+        status: { type: "string", description: "Filter by status (pending, in_progress, completed, etc.)" },
+        limit: { type: "integer", description: "Maximum tasks to return (default 50)" },
+      },
+    },
+    handBackTask: {
+      type: "object",
+      required: ["id"],
+      properties: {
+        id: { type: "string", description: "Task ID to hand back or reassign" },
+        note: { type: "string", description: "Explanation or progress note attached to the handoff" },
+        to: { type: "string", description: "Optional user ID to reassign to (defaults to unassigned/null)" },
+      },
+    },
   }
   return schemas[name] ?? { type: "object", properties: {} }
 }
