@@ -323,12 +323,13 @@ const remainingItems = areaPosition < 0 ? [] : navItems.slice(areaPosition + 1)
     overflow: hidden;
   }
 
-  .sidebar-compact-areas {
+  /* Scope through .sidebar so this outranks the global .nav-link display. */
+  .sidebar .sidebar-compact-areas {
     display: none;
   }
 
   @media (min-width: 769px) {
-    :global(body.sidebar-collapsed) .sidebar-compact-areas {
+    :global(body.sidebar-collapsed) .sidebar .sidebar-compact-areas {
       display: flex;
     }
 
