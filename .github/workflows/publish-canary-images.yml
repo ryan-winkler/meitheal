@@ -70,21 +70,19 @@ jobs:
           sha_short="$(git rev-parse --short HEAD)"
           build_from="$(jq -r ".build_from[\"${{ matrix.arch }}\"]" meitheal-hub-canary/build.json)"
 
-          tags="ghcr.io/${owner_lc}/meitheal-canary-${{ matrix.arch }}:${sha_short}
-ghcr.io/${owner_lc}/meitheal-canary-${{ matrix.arch }}:canary"
-
-          if [ "${owner_lc}" != "coolock-village" ] && [ -n "${ADDON_REPO_TOKEN}" ]; then
-            tags="${tags}
-ghcr.io/coolock-village/meitheal-canary-${{ matrix.arch }}:${sha_short}
-ghcr.io/coolock-village/meitheal-canary-${{ matrix.arch }}:canary"
-          fi
-
           echo "owner_lc=${owner_lc}" >> "$GITHUB_OUTPUT"
           echo "sha_short=${sha_short}" >> "$GITHUB_OUTPUT"
           echo "build_from=${build_from}" >> "$GITHUB_OUTPUT"
-          echo "tags<<EOF" >> "$GITHUB_OUTPUT"
-          echo "${tags}" >> "$GITHUB_OUTPUT"
-          echo "EOF" >> "$GITHUB_OUTPUT"
+          {
+            echo "tags<<EOF"
+            echo "ghcr.io/${owner_lc}/meitheal-canary-${{ matrix.arch }}:${sha_short}"
+            echo "ghcr.io/${owner_lc}/meitheal-canary-${{ matrix.arch }}:canary"
+            if [ "${owner_lc}" != "coolock-village" ] && [ -n "${ADDON_REPO_TOKEN}" ]; then
+              echo "ghcr.io/coolock-village/meitheal-canary-${{ matrix.arch }}:${sha_short}"
+              echo "ghcr.io/coolock-village/meitheal-canary-${{ matrix.arch }}:canary"
+            fi
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Build and publish canary image
         uses: docker/build-push-action@v7
@@ -105,6 +103,8 @@ ghcr.io/coolock-village/meitheal-canary-${{ matrix.arch }}:canary"
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    env:
+      HAS_ADDON_TOKEN: ${{ secrets.ADDON_REPO_TOKEN != '' }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -130,7 +130,7 @@ ghcr.io/coolock-village/meitheal-canary-${{ matrix.arch }}:canary"
             -f "committer[email]=41898282+github-actions[bot]@users.noreply.github.com"
 
       - name: Sync canary config to public add-on repo
-        if: secrets.ADDON_REPO_TOKEN != ''
+        if: env.HAS_ADDON_TOKEN == 'true'
         env:
           GH_TOKEN: ${{ secrets.ADDON_REPO_TOKEN }}
         run: |
