@@ -10,6 +10,7 @@ import { resolveMcpSchema } from "@lib/mcp-schema"
 import { isDoneStatus } from "@lib/status-config"
 import { checkMcpAvailability } from "@lib/mcp-availability"
 import { MCP_LEGACY_VERSION, MCP_PROTOCOL_VERSION, MCP_SUPPORTED_VERSIONS } from "@lib/mcp-versions"
+import type { ResolvedAgent } from "../../lib/agent-token-guard"
 
 /**
  * POST /api/mcp — MCP (Model Context Protocol) Server Endpoint

@@ -261,7 +261,7 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
   } else if (sanitized.assigned_to !== undefined) {
     if (sanitized.assigned_to === null) {
       sanitized.owner = "human"
-    } else if (sanitized.assigned_to.startsWith("custom_")) {
+    } else if (typeof sanitized.assigned_to === "string" && sanitized.assigned_to.startsWith("custom_")) {
       const userRepo = new UserRepository(getPersistenceClient())
       const customUser = await userRepo.getCustomUser(sanitized.assigned_to)
       if (customUser?.kind === "agent") {
