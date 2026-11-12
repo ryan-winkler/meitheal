@@ -85,6 +85,8 @@ const addedColumns = {
     is_promoted: "INTEGER NOT NULL DEFAULT 0 CHECK (is_promoted IN (0, 1))",
     kanban_position: "INTEGER",
     ticket_number: "INTEGER",
+    source: "TEXT NOT NULL DEFAULT 'user'",
+    created_by: "TEXT",
   },
   comments: {
     // Legacy display names cannot establish comment ownership.

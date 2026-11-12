@@ -245,11 +245,13 @@ class MeithealCoordinator(DataUpdateCoordinator[MeithealCoordinatorData]):
         self, title: str, description: str | None = None, *,
         priority: int | None = None, due_date: str | None = None,
         urgency: int | None = None, importance: int | None = None,
+        assigned_to: str | None = None,
     ) -> None:
         """Create a task through the authenticated native flat-response API."""
         payload: dict[str, Any] = {"title": title}
         for key, value in {"description": description, "priority": priority,
-                           "due_date": due_date, "urgency": urgency, "importance": importance}.items():
+                           "due_date": due_date, "urgency": urgency, "importance": importance,
+                           "assigned_to": assigned_to}.items():
             if value is not None:
                 payload[key] = value
         authority: set[str] = set()

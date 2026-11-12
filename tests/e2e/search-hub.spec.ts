@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test"
-import { shouldSkipBrowserSpecs } from "./_helpers"
+import { deferred, shouldSkipBrowserSpecs } from "./_helpers"
 
 function getSearchShortcut(): string {
   return process.platform === "darwin" ? "Meta+K" : "Control+K"
@@ -73,5 +73,43 @@ test.describe("Search Hub", () => {
     await assistAction.click()
 
     await expect(page.locator("#ask-ha-overlay")).toBeVisible()
+  })
+})
+
+
+test.describe("Search announcements", () => {
+  test.skip(shouldSkipBrowserSpecs(), "Requires a disposable App server")
+  test.use({ serviceWorkers: "block" })
+
+  test("one exposed live region survives loading, failure and empty results with retry outside it", async ({ page }) => {
+    const started = deferred<void>()
+    const release = deferred<void>()
+    let fail = true
+    await page.route("**/api/search?**", async route => {
+      if (new URL(route.request().url()).searchParams.get("q") !== "live-region-fixture") return route.continue()
+      if (fail) { started.resolve(); await release.promise }
+      await route.fulfill(fail ? { status: 503, body: "Fixture unavailable" } : { headers: { "cache-control": "no-store" }, json: { sections: [] } }).catch(() => {})
+    })
+    try {
+      await page.goto("/settings")
+      const region = page.locator("#search-hub-announcement")
+      const original = await region.elementHandle()
+      await expect(region).toHaveAttribute("role", "status")
+      await page.locator("#settings-bar-search-launcher").click()
+      await page.locator("#search-hub-input").fill("live-region-fixture")
+      await started.promise
+      await expect(region).toHaveText("Searching…")
+      release.resolve()
+      await expect(region).toHaveText("Search is unavailable right now.")
+      await expect(region.getByRole("button")).toHaveCount(0)
+      fail = false
+      await page.getByRole("button", { name: "Retry", exact: true }).click()
+      await expect(region).toHaveText("No matching results yet")
+      expect(await original!.evaluate(element => element === document.getElementById("search-hub-announcement"))).toBe(true)
+      await page.locator('[data-scope="settings"]').click()
+      await page.locator("#search-hub-input").fill("theme")
+      await expect(page.locator("#search-hub-results").getByRole("option").filter({ hasText: "Theme" }).first()).toBeVisible()
+      await expect(region).toHaveText("")
+    } finally { release.resolve() }
   })
 })

@@ -59,6 +59,7 @@ const { class: className } = Astro.props
 </div>
 
 <script>
+  import { getRememberedAreaId } from "@lib/area-selector-controller"
   import { confirmDialog } from "@lib/confirm-dialog"
   import { normalizeSavedFilter, writeTableFilterParams } from "@lib/filter-state"
   import { workerAllowsNetworkOnly } from "@lib/network-only-worker"

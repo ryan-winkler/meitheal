@@ -28,6 +28,7 @@ export async function ensureAgentTokenSchema(): Promise<void> {
       token_hash TEXT NOT NULL UNIQUE,
       token_prefix TEXT NOT NULL,
       scopes TEXT NOT NULL DEFAULT '[]',
+      assignee_id TEXT,
       created_at TEXT NOT NULL,
       expires_at TEXT,
       last_used_at TEXT,
@@ -39,6 +40,13 @@ export async function ensureAgentTokenSchema(): Promise<void> {
     sql: `CREATE INDEX IF NOT EXISTS idx_agent_tokens_hash ON agent_tokens(token_hash)`,
     args: [],
   })
+
+  // Migration for existing tables missing assignee_id
+  const info = await db.execute("PRAGMA table_info(agent_tokens)")
+  const cols = new Set(info.rows.map(r => String(r.name)))
+  if (!cols.has("assignee_id")) {
+    await db.execute("ALTER TABLE agent_tokens ADD COLUMN assignee_id TEXT")
+  }
 }
 
 // ── CRUD Operations ──────────────────────────────────────────────────────────
@@ -49,6 +57,7 @@ interface CreateTokenInput {
   tokenHash: string
   tokenPrefix: string
   scopes: AgentScope[]
+  assigneeId?: string | null
   expiresAt?: string | null
 }
 
@@ -61,14 +70,15 @@ export async function createAgentToken(input: CreateTokenInput): Promise<AgentTo
   const now = new Date().toISOString()
 
   await db.execute({
-    sql: `INSERT INTO agent_tokens (id, name, token_hash, token_prefix, scopes, created_at, expires_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    sql: `INSERT INTO agent_tokens (id, name, token_hash, token_prefix, scopes, assignee_id, created_at, expires_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     args: [
       input.id,
       input.name,
       input.tokenHash,
       input.tokenPrefix,
       JSON.stringify(input.scopes),
+      input.assigneeId ?? null,
       now,
       input.expiresAt ?? null,
     ],
@@ -80,6 +90,7 @@ export async function createAgentToken(input: CreateTokenInput): Promise<AgentTo
     tokenHash: input.tokenHash,
     tokenPrefix: input.tokenPrefix,
     scopes: input.scopes,
+    assigneeId: input.assigneeId ?? null,
     createdAt: now,
     expiresAt: input.expiresAt ?? null,
     lastUsedAt: null,
@@ -92,7 +103,7 @@ export async function listAgentTokens(includeRevoked = false): Promise<AgentToke
   const db = getPersistenceClient()
   const whereClause = includeRevoked ? "" : "WHERE revoked = 0"
   const result = await db.execute({
-    sql: `SELECT id, name, token_hash, token_prefix, scopes, created_at, expires_at, last_used_at, revoked
+    sql: `SELECT id, name, token_hash, token_prefix, scopes, assignee_id, created_at, expires_at, last_used_at, revoked
           FROM agent_tokens ${whereClause}
           ORDER BY created_at DESC`,
     args: [],
@@ -105,7 +116,7 @@ export async function listAgentTokens(includeRevoked = false): Promise<AgentToke
 export async function getAgentTokenByHash(tokenHash: string): Promise<AgentTokenRecord | null> {
   const db = getPersistenceClient()
   const result = await db.execute({
-    sql: `SELECT id, name, token_hash, token_prefix, scopes, created_at, expires_at, last_used_at, revoked
+    sql: `SELECT id, name, token_hash, token_prefix, scopes, assignee_id, created_at, expires_at, last_used_at, revoked
           FROM agent_tokens
           WHERE token_hash = ?`,
     args: [tokenHash],
@@ -138,7 +149,7 @@ export async function deleteAgentToken(id: string): Promise<boolean> {
 /** Update token name and/or scopes */
 export async function updateAgentToken(
   id: string,
-  updates: { name?: string; scopes?: AgentScope[] },
+  updates: { name?: string; scopes?: AgentScope[]; assigneeId?: string | null },
 ): Promise<boolean> {
   const db = getPersistenceClient()
   const setClauses: string[] = []
@@ -151,6 +162,10 @@ export async function updateAgentToken(
   if (updates.scopes !== undefined) {
     setClauses.push("scopes = ?")
     args.push(JSON.stringify(updates.scopes))
+  }
+  if (updates.assigneeId !== undefined) {
+    setClauses.push("assignee_id = ?")
+    args.push(updates.assigneeId ?? null)
   }
 
   if (setClauses.length === 0) return false
@@ -187,6 +202,7 @@ function rowToRecord(row: Record<string, unknown>): AgentTokenRecord {
     tokenHash: String(row.token_hash),
     tokenPrefix: String(row.token_prefix),
     scopes,
+    assigneeId: row.assignee_id ? String(row.assignee_id) : null,
     createdAt: String(row.created_at),
     expiresAt: row.expires_at ? String(row.expires_at) : null,
     lastUsedAt: row.last_used_at ? String(row.last_used_at) : null,

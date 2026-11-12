@@ -29,6 +29,7 @@ export const GET: APIRoute = async () => {
       name: String(r.name),
       source: "custom" as const,
       color: typeof r.color === "string" ? r.color : "#6366f1",
+      kind: (r.kind === "agent" ? "agent" : "human") as "agent" | "human",
     }
   })
 

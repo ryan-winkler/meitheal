@@ -3,6 +3,7 @@ import type { InValue } from "@libsql/client"
 import { hasBoardSelection, rejectBoardSelectionInJson, unavailableBoardResponse } from "@domains/tasks/board-availability"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import { TaskRepository } from "@domains/tasks/persistence/task-repository"
+import { UserRepository } from "@domains/tasks/persistence/user-repository"
 import { taskLabelsJson } from "@domains/tasks/task-creation-service"
 import { formatTicketKey } from "../../../lib/ticket-key"
 import { dispatchTaskEvent, taskEventAuthorityHeaders } from "../../../lib/webhook-dispatcher"
@@ -77,6 +78,17 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
   }
 
   const resolvedId = resolved.id
+
+  const agentToken = locals.agentToken
+  if (agentToken && agentToken.scopes.includes("tasks:write:assigned") && !agentToken.scopes.includes("tasks:write")) {
+    const task = await repo.findById(resolvedId)
+    if (!task || !agentToken.assigneeId || task.assigned_to !== agentToken.assigneeId) {
+      return new Response(JSON.stringify({ error: "Agent can only update tasks assigned to it" }), {
+        status: 403,
+        headers: { "content-type": "application/json" },
+      })
+    }
+  }
 
   const clientVersion = typeof body.updated_at === "number" ? body.updated_at : undefined
   if (clientVersion !== undefined && (!Number.isSafeInteger(clientVersion) || clientVersion < 0)) {
@@ -240,6 +252,21 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
     sanitized.assigned_to = typeof body.assigned_to === "string" && body.assigned_to.trim().length > 0 && body.assigned_to.length <= 255
       ? body.assigned_to.trim() : null
   }
+  if (body.owner !== undefined && typeof body.owner === "string") {
+    sanitized.owner = body.owner.slice(0, 100)
+  } else if (sanitized.assigned_to !== undefined) {
+    if (sanitized.assigned_to === null) {
+      sanitized.owner = "human"
+    } else if (typeof sanitized.assigned_to === "string" && sanitized.assigned_to.startsWith("custom_")) {
+      const userRepo = new UserRepository(getPersistenceClient())
+      const customUser = await userRepo.getCustomUser(sanitized.assigned_to)
+      if (customUser?.kind === "agent") {
+        sanitized.owner = `bot:${customUser.name}`
+      } else {
+        sanitized.owner = "human"
+      }
+    }
+  }
   // Guard the same raw checklist returned by GET. Legacy clients may omit the guard.
   const expectedChecklists = body.expected_checklists
   if (expectedChecklists !== undefined &&
@@ -389,7 +416,9 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
       }
     }
     if (changes.length > 0) {
-      repo.logActivity(resolvedId, changes).catch(() => { })
+      const activityActor = agentToken ? `agent:${agentToken.tokenName}` : (request.headers.get("X-Automation-Source") ? `ha:${request.headers.get("X-Automation-Source")}` : "user")
+      const actorType = agentToken ? "agent" : (request.headers.get("X-Automation-Source") ? "ha" : "user")
+      repo.logActivity(resolvedId, changes, { actor: activityActor, actor_type: actorType }).catch(() => { })
     }
   }
 

@@ -18,6 +18,7 @@ export const GET: APIRoute = async () => {
       id: String(r.id),
       name: String(r.name),
       color: String(r.color ?? "#6366f1"),
+      kind: (r.kind === "agent" ? "agent" : "human") as "agent" | "human",
       created_at: Number(r.created_at),
       updated_at: Number(r.updated_at),
     }
@@ -60,9 +61,10 @@ export const POST: APIRoute = async ({ request }) => {
   }
 
   const id = `custom_${crypto.randomUUID().slice(0, 8)}`
-  const now = await repo.createCustomUser(id, name, color)
+  const kind = body.kind === "agent" ? "agent" : "human"
+  const now = await repo.createCustomUser(id, name, color, kind)
 
-  return new Response(JSON.stringify({ id, name, color, created_at: now, updated_at: now }), {
+  return new Response(JSON.stringify({ id, name, color, kind, created_at: now, updated_at: now }), {
     status: 201, headers: { "content-type": "application/json" },
   })
 }

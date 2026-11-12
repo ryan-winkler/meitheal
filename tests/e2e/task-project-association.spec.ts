@@ -6,6 +6,7 @@
  *
  * @domain domain-tasks (project association)
  */
+import { execFileSync } from "node:child_process"
 import { test, expect } from "@playwright/test"
 import { tmpdir } from "node:os"
 import { join } from "node:path"

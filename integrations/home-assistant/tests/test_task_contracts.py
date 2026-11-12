@@ -206,7 +206,16 @@ def test_real_hassil_yaml_sentences(language, phrase, title):
 
 
 def test_runtime_schemas_metadata_and_auth_translations_agree():
-    create = {"title": "Plan", "description": "Notes", "priority": 2, "due_date": "2026-12-01", "urgency": 0, "importance": 5}
+    create = {
+        "title": "Plan",
+        "description": "Notes",
+        "priority": 2,
+        "due_date": "2026-12-01",
+        "urgency": 0,
+        "importance": 5,
+        "assigned_to": "custom_agent",
+        "assignee_user": "custom_agent",
+    }
     fields = {"query": "milk", "priority": 2, "include_completed": True, "status": "done"}
     assert CREATE_TASK_SCHEMA(create) == create and SEARCH_TASKS_SCHEMA(fields) == fields
     with pytest.raises(vol.Invalid):

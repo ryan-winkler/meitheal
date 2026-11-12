@@ -37,4 +37,17 @@ The security header tests check that the deprecated browser XSS filter stays off
 
 Treat a failed assertion as a product or test-contract finding. Inspect the failing request and fixture state before changing the expectation. A CI fixture covers standalone behavior. Supervisor, ingress, and Home Assistant acceptance still use the project's dedicated verification environments.
 
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:1143f82af125b69f37f941558f7a5a2438270f6a4ff4c1a2ccefe86e52283eee -->
+
 Set `MEITHEAL_TEST_PORT` to an unused unprivileged port when running the disposable browser fixture alongside another local test run. The default is 4611.
+
+## CI recovery contracts
+
+Search keeps one existing status region while loading, failing and recovering; Retry lives outside that live region. Capture renders one draft panel so status messages and actions have unique IDs. To-do hydration accepts JSON arrays and legacy single IDs, distinguishes an empty selection from missing settings, and preserves disabled sync.
+
+Framework backup imports retain legacy scoring payloads for round trips; new framework edits still validate bounds, options and supported formulas. AI handoff tests mock the atomic `handoff=1` policy snapshot, including Assist authority and the saved URL. Regional setting writes, imports and resets invalidate the process-local SSR cache for the next page request; changes from other processes retain the existing 60-second refresh bound.
+
+
+<!-- /coderabbit-ai-generated:v1 -->

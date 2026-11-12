@@ -41,6 +41,7 @@ function initPwaNotificationTest(): void {
   })
 }
 
+
 function bootSettingsPage(): void {
   const shell = document.getElementById("settings-shell")
   if (!shell) return

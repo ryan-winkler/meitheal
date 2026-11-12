@@ -1,3 +1,4 @@
+import { getSettingsRevision } from "./domains/tasks/persistence/settings-repository"
 import type { MiddlewareHandler } from "astro";
 import { apiProblem, apiRateLimited } from "./lib/api-response";
 import { resolveIngressContext } from "@domains/auth/ingress";
@@ -10,7 +11,7 @@ import { startInactivityScheduler } from "@domains/tasks/task-inactivity-schedul
 import type { DateFormat } from "./lib/date";
 import { replayTaskRequest, taskRetryKey } from "./lib/idempotent-task-request"
 import { rejectBoardSelectionInUrl } from "./domains/tasks/board-availability"
-import { hasScope, resolveAgentRouteScope } from "@meitheal/domain-auth"
+import { hasScope, isAssignedTaskScopedRoute, resolveAgentRouteScope } from "@meitheal/domain-auth"
 import { resolveAgentAuth, type ResolvedAgent } from "./lib/agent-token-guard"
 import { rewriteIngressHtml } from "./lib/rewrite-ingress-html"
 import { commentAttemptHeader, commentMentionContextHeader } from "./lib/comment-mentions"
@@ -125,6 +126,7 @@ function getBotRateLimit(ip: string): { remaining: number; resetAt: number; exce
 
 // ── Settings cache (avoids DB query on every request) ──
 // TTL: 60s — settings change rarely, no need to hit SQLite every request.
+let _settingsCacheRevision = -1
 let _settingsCache: { timezone: string; weekStart: string; dateFormat: string } | null = null;
 let _settingsCacheExpiry = 0;
 const SETTINGS_CACHE_TTL_MS = 60_000;
@@ -330,7 +332,8 @@ async function handleRequest({ request, locals, routePattern }: Parameters<Middl
 
     if (resolvedAgent) {
       const scope = resolveAgentRouteScope(url.pathname, method)
-      if (!scope || !hasScope(resolvedAgent.scopes, scope)) {
+      const isAssignedRoute = isAssignedTaskScopedRoute(url.pathname, method)
+      if (!scope || !hasScope(resolvedAgent.scopes, scope, { isAssignedTaskRoute: isAssignedRoute })) {
         return apiProblem({
           status: 403,
           detail: scope ? `This operation requires the ${scope} scope.` : "This operation is unavailable to agent credentials.",
@@ -361,20 +364,39 @@ async function handleRequest({ request, locals, routePattern }: Parameters<Middl
     const host = request.headers.get("host") ?? url.host;
     const isDev = import.meta.env.DEV;
 
-    if (!authenticatedTransport && !isCsrfAllowed({ behindIngress, isDev, origin, referer, host })) {
-      logger.log("warn", {
-        event: "http.csrf_blocked",
-        domain: "security",
-        component: "middleware",
-        request_id: requestId,
-        message: privatePersonalRoute ? "Private task origin check failed" :
-          participantRoute ? `Origin check failed for ${logPath}` :
-          `CSRF blocked: ${method} ${url.pathname} origin=${origin} host=${host} behindIngress=${behindIngress}`,
-      });
-      return new Response(
-        JSON.stringify({ error: "CSRF origin mismatch" }),
-        { status: 403, headers: { "content-type": "application/json" } }
-      );
+    if (!authenticatedTransport) {
+      if (url.pathname === "/api/mcp") {
+        return new Response(
+          JSON.stringify({
+            status: 401,
+            title: "Unauthorized",
+            detail: "Use a valid, active Meitheal agent token.",
+          }),
+          {
+            status: 401,
+            headers: {
+              "Content-Type": "application/problem+json",
+              "WWW-Authenticate": 'Bearer realm="Meitheal"',
+              "Cache-Control": "no-store",
+            },
+          }
+        )
+      }
+      if (!isCsrfAllowed({ behindIngress, isDev, origin, referer, host })) {
+        logger.log("warn", {
+          event: "http.csrf_blocked",
+          domain: "security",
+          component: "middleware",
+          request_id: requestId,
+          message: privatePersonalRoute ? "Private task origin check failed" :
+            participantRoute ? `Origin check failed for ${logPath}` :
+            `CSRF blocked: ${method} ${url.pathname} origin=${origin} host=${host} behindIngress=${behindIngress}`,
+        });
+        return new Response(
+          JSON.stringify({ error: "CSRF origin mismatch" }),
+          { status: 403, headers: { "content-type": "application/json" } }
+        );
+      }
     }
   }
 
@@ -407,22 +429,33 @@ async function handleRequest({ request, locals, routePattern }: Parameters<Middl
   locals.weekStart = "monday";
   locals.dateFormat = "relative";
   const now = Date.now();
-  if (_settingsCache && now < _settingsCacheExpiry) {
+  if (_settingsCache && now < _settingsCacheExpiry && _settingsCacheRevision === getSettingsRevision()) {
     locals.timezone = _settingsCache.timezone;
     locals.weekStart = _settingsCache.weekStart;
     locals.dateFormat = _settingsCache.dateFormat as DateFormat;
   } else if (databaseAvailable) {
     try {
+      const settingsRevision = getSettingsRevision()
       await ensureSchema();
       const db = getPersistenceClient();
       const res = await db.execute("SELECT key, value FROM settings WHERE key IN ('timezone', 'week_start', 'date_format')");
       for (const row of res.rows) {
-        if (row.key === "timezone" && typeof row.value === "string") locals.timezone = row.value;
-        if (row.key === "week_start" && typeof row.value === "string") locals.weekStart = row.value;
-        if (row.key === "date_format" && typeof row.value === "string") locals.dateFormat = row.value as DateFormat;
+        let value: unknown = row.value
+        if (typeof value === "string") {
+          try { value = JSON.parse(value) } catch { /* legacy plain-text settings */ }
+        }
+        if (row.key === "timezone" && typeof value === "string") {
+          try {
+            new Intl.DateTimeFormat("en", { timeZone: value })
+            locals.timezone = value
+          } catch { /* retain the default for invalid stored zones */ }
+        }
+        if (row.key === "week_start" && (value === "monday" || value === "sunday" || value === "saturday")) locals.weekStart = value
+        if (row.key === "date_format" && typeof value === "string" && ["relative", "absolute-iso", "absolute-eu", "absolute-us"].includes(value)) locals.dateFormat = value as DateFormat
       }
       _settingsCache = { timezone: locals.timezone, weekStart: locals.weekStart, dateFormat: locals.dateFormat };
       _settingsCacheExpiry = now + SETTINGS_CACHE_TTL_MS;
+      _settingsCacheRevision = settingsRevision
     } catch {
       /* ignore db errors, defaults used */
     }

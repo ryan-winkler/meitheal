@@ -16,6 +16,7 @@ import { createHash, randomBytes } from "node:crypto"
 export type AgentScope =
   | "tasks:read"
   | "tasks:write"
+  | "tasks:write:assigned"
   | "tasks:propose"
   | "tasks:delete"
   | "projects:read"
@@ -41,6 +42,7 @@ export const AVAILABLE_SCOPES: readonly AgentScopeDescriptor[] = [
   { scope: "tasks:read", label: "Read Tasks", description: "List and view tasks, statuses, and metadata", category: "tasks" },
   { scope: "tasks:propose", label: "Propose Task Changes", description: "Claim tasks and propose title or description changes for human review", category: "tasks" },
   { scope: "tasks:write", label: "Create & Update Tasks", description: "Create new tasks and update existing ones", category: "tasks" },
+  { scope: "tasks:write:assigned", label: "Update Assigned Tasks Only", description: "Update and comment only on tasks assigned to this agent", category: "tasks" },
   { scope: "tasks:delete", label: "Delete Tasks", description: "Permanently delete tasks", category: "tasks" },
   { scope: "projects:read", label: "Read Projects", description: "List and view projects and hierarchies", category: "projects" },
   { scope: "projects:write", label: "Manage Projects", description: "Create and update projects", category: "projects" },
@@ -61,6 +63,7 @@ export interface AgentTokenRecord {
   tokenHash: string
   tokenPrefix: string
   scopes: AgentScope[]
+  assigneeId?: string | null
   createdAt: string
   expiresAt: string | null
   lastUsedAt: string | null
@@ -74,6 +77,7 @@ export interface AgentTokenCreated {
   token: string        // plaintext — show once, never store
   tokenPrefix: string
   scopes: AgentScope[]
+  assigneeId?: string | null
   createdAt: string
   expiresAt: string | null
 }
@@ -84,6 +88,7 @@ export interface AgentTokenPublic {
   name: string
   tokenPrefix: string
   scopes: AgentScope[]
+  assigneeId?: string | null
   createdAt: string
   expiresAt: string | null
   lastUsedAt: string | null
@@ -133,9 +138,13 @@ export function validateScopes(scopes: string[]): { valid: AgentScope[]; invalid
   return { valid, invalid }
 }
 
-/** Check that a token has the exact required scope. */
-export function hasScope(tokenScopes: AgentScope[], required: AgentScope): boolean {
-  return tokenScopes.includes(required)
+/** Check that a token has the exact required scope or an authorized assigned-only scope for the route. */
+export function hasScope(tokenScopes: AgentScope[], required: AgentScope, options?: { isAssignedTaskRoute?: boolean }): boolean {
+  if (tokenScopes.includes(required)) return true
+  if (required === "tasks:write" && options?.isAssignedTaskRoute && tokenScopes.includes("tasks:write:assigned")) {
+    return true
+  }
+  return false
 }
 
 /**
@@ -148,6 +157,7 @@ export function toPublicToken(record: AgentTokenRecord): AgentTokenPublic {
     name: record.name,
     tokenPrefix: record.tokenPrefix,
     scopes: record.scopes,
+    assigneeId: record.assigneeId ?? null,
     createdAt: record.createdAt,
     expiresAt: record.expiresAt,
     lastUsedAt: record.lastUsedAt,

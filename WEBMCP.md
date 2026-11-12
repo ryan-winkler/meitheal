@@ -6,7 +6,7 @@ Meitheal exposes a scoped MCP endpoint for external clients. The optional Home A
 | --- | --- |
 | App MCP | Send JSON-RPC to `POST /api/mcp` with a Meitheal bearer token. Run `tools/list` to see which tools the token can call. |
 | Core LLM API | Install the Core integration, then select **Meitheal Tasks** in the Home Assistant conversation agent’s LLM API settings. |
-| A2A | The experimental agent card describes discovery. Message execution and task management are unavailable. |
+| A2A | The A2A 1.0 agent card describes one read-only skill. A token with `a2a:execute` and `search:read` can search active task titles. A2A cannot create or change tasks. |
 | WebMCP | Opt in to experimental read-only browser tools in Settings: search task titles and open a Tasks view. A compatible browser is required. |
 
 ## App MCP
@@ -21,4 +21,4 @@ Core calls the Meitheal API using the token enrolled in its integration entry. T
 
 - [API setup and scopes](docs/kcs/agent-automation-guide.md)
 - [Core credential enrollment](docs/kcs/home-assistant-core-credentials.md)
-- [A2A route status](docs/kcs/webmcp-a2a-setup.md)
+- [A2A task search](docs/kcs/webmcp-a2a-setup.md)

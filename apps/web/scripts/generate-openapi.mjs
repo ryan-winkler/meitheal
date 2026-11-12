@@ -16,6 +16,14 @@ import { stringify } from "yaml"
 const OUTPUT = resolve(dirname(new URL(import.meta.url).pathname), "../public/openapi.yaml")
 const JSON_OUTPUT = resolve(dirname(OUTPUT), ".well-known/jsondoc.json")
 
+const taskCommentProperties = {
+  id: { type: "integer" },
+  task_id: { type: "string" },
+  content: { type: "string" },
+  author: { type: "string", description: "Display author recorded when the comment was added." },
+  created_at: { type: "string", description: "SQLite UTC timestamp." },
+}
+
 // ─── Reusable Schema Components ───────────────────────────────────────────────
 
 const feedbackCategory = { type: "string", enum: ["problem", "accessibility", "suggestion", "other"] }
@@ -80,12 +88,14 @@ const schemas = {
   TaskComment: {
     type: "object",
     required: ["id", "task_id", "content", "author", "created_at"],
+    properties: taskCommentProperties,
+  },
+  TaskCommentListItem: {
+    type: "object",
+    required: ["id", "task_id", "content", "author", "created_at", "can_manage"],
     properties: {
-      id: { type: "integer" },
-      task_id: { type: "string" },
-      content: { type: "string" },
-      author: { type: "string", description: "Display author recorded when the comment was added." },
-      created_at: { type: "string", description: "SQLite UTC timestamp." },
+      ...taskCommentProperties,
+      can_manage: { type: "boolean", description: "Whether the caller can edit and delete this comment." },
     },
   },
   TaskCommentListItem: {
@@ -1767,8 +1777,8 @@ const paths = {
   },
 
   // ── A2A ──
-  "/api/a2a/agent-card": { get: { operationId: "getA2AAgentCard", tags: ["Agents"], summary: "Get the experimental A2A discovery card", responses: { 200: { description: "Discovery card with no executable bindings" }, 404: { description: "A2A disabled" } } } },
-  "/api/a2a/message": { post: { operationId: "sendA2AMessage", tags: ["Agents"], summary: "Check A2A message execution availability", responses: { 501: { description: "A2A execution is unavailable" }, 404: { description: "A2A disabled" } } } },
+  "/api/a2a/agent-card": { get: { operationId: "getA2AAgentCard", tags: ["Agents"], summary: "Get the A2A agent card for read-only task search", responses: { 200: { description: "Agent card with the JSON-RPC task search interface" }, 404: { description: "A2A disabled" } } } },
+  "/api/a2a/message": { post: { operationId: "sendA2AMessage", tags: ["Agents"], summary: "Search active task titles through A2A JSON-RPC 1.0", description: "Requires a token with a2a:execute and search:read and the A2A-Version: 1.0 header. SendMessage returns up to eight active task titles and links. Results are read-only.", responses: { 200: { description: "JSON-RPC result or error" }, 401: { description: "Missing or invalid agent token" }, 403: { description: "Token lacks a2a:execute or search:read" }, 404: { description: "A2A disabled" }, 413: { description: "Request exceeds 16 KiB" }, 415: { description: "Request is not application/json" } } } },
 
   // ── Agent Tokens (Zero-Trust Auth) ──
   "/api/agent-tokens": {
