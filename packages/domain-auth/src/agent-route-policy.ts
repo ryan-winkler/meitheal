@@ -39,6 +39,25 @@ export function isTaskReactionRoute(pathname: string): boolean {
   return taskReactionPath.test(pathname)
 }
 
+/** Check if route targets a specific existing task and can be permitted by tasks:write:assigned */
+export function isAssignedTaskScopedRoute(pathname: string, method: string): boolean {
+  const verb = method === "HEAD" ? "GET" : method
+  if (verb !== "PUT" && verb !== "PATCH" && verb !== "POST" && verb !== "DELETE") return false
+
+  // Direct task update: /api/tasks/[id]
+  if (/^\/api\/tasks\/[\w-]+$/.test(pathname)) return verb === "PUT" || verb === "PATCH"
+  // Task comments: /api/tasks/[id]/comments or /api/tasks/[id]/comments/[commentId]
+  if (/^\/api\/tasks\/[\w-]+\/comments(?:\/[\w-]+)?$/.test(pathname)) return verb === "POST" || verb === "PATCH"
+  // Task links: /api/tasks/[id]/links
+  if (/^\/api\/tasks\/[\w-]+\/links$/.test(pathname)) return verb === "POST" || verb === "DELETE"
+  // Task time: /api/tasks/[id]/time
+  if (/^\/api\/tasks\/[\w-]+\/time$/.test(pathname)) return verb === "POST"
+  // Task deferral: /api/tasks/[id]/deferral
+  if (/^\/api\/tasks\/[\w-]+\/deferral$/.test(pathname)) return verb === "PATCH"
+
+  return false
+}
+
 const comment: MethodScopes = { ...taskRead, PATCH: "tasks:write", DELETE: "tasks:write" }
 const project: MethodScopes = { GET: "projects:read", PUT: "projects:write", DELETE: "projects:write" }
 const a2aTask: MethodScopes = { GET: "a2a:execute", POST: "a2a:execute" }

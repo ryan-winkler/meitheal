@@ -10,7 +10,7 @@ export interface Props {
 }
 const { owner, handoffState, class: className = "" } = Astro.props;
 
-const isBot = owner === "bot";
+const isBot = owner === "bot" || (typeof owner === "string" && (owner.startsWith("bot") || owner.startsWith("agent")));
 const showBadge = isBot || (handoffState && handoffState !== "idle");
 
 let icon = "";

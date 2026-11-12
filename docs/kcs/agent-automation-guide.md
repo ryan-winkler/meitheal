@@ -55,6 +55,7 @@ Keep tokens out of examples, logs, and reports. Use sample tasks to test a conne
 | List tasks, read a task, or read its links | `tasks:read` |
 | Read task or comment reactions and board reaction counts | `tasks:read` |
 | Create or update tasks, or add and remove their links | `tasks:write` |
+| Update tasks assigned specifically to this agent | `tasks:write:assigned` |
 | Add or remove your own task or comment reactions | `tasks:write` |
 | Delete tasks, including bulk removal of completed tasks | `tasks:delete` |
 | Query universal search | `search:read` |
@@ -72,9 +73,9 @@ Use the literal `/api/` prefix in API URLs. Encoded spellings of that prefix tha
 
 The Home Assistant `meitheal.create_task` action stores its optional instructions in the task’s Description. The calendar-aware `POST /api/tasks/create` endpoint accepts a top-level `description` and falls back to `frameworkPayload.description` for existing integrations.
 
-### Read saved agent proposals
+### Read saved agent proposals and manage task handoffs
 
-Open `/review` through the installed App to read saved proposals and their proposed changes. New Task agent assignment, proposal approval, and rejection are unavailable. Use the existing scoped task APIs for supported automation.
+Open `/review` through the installed App to read saved proposals and their proposed changes. Tasks can be assigned to human members or AI agents. Scoped agents can query their assigned work using `listMyTasks`, inspect caller metadata with `whoAmI`, and return tasks to human triage with `handBackTask`. Use the existing scoped task APIs for supported automation.
 
 ### Read or change reactions
 
