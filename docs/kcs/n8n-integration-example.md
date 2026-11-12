@@ -26,7 +26,13 @@ Meitheal supports two integration modes for n8n and Node-RED:
 
 ### Event Data Payload
 
-Every event payload includes the full task context:
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:97b6b7659c0eca1c511c43eaafa686545482f9d007cf7ee5c52aae1e5d3fa4fb -->
+
+Event payloads normally include the full task context; the coordinator fallback described below may send fewer fields:
+
+<!-- /coderabbit-ai-generated:v1 -->
 
 ```json
 {
@@ -44,11 +50,15 @@ Every event payload includes the full task context:
 }
 ```
 
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:7758ce736bfd13810b58e92c23eef57149de7c27fb856c5bd0a1950188b12885 -->
+
 | Field | Type | Description |
 |-------|------|-------------|
 | `task_id` | string | UUID of the task |
 | `title` | string | Task title |
-| `area_id` | string | Area ID the task belongs to (e.g. "default") |
+| `area_id` | string (optional) | Area ID the task belongs to (e.g. "default") |
 | `priority` | string | Priority level (1 = highest) |
 | `status` | string | Current task status |
 | `ticket_key` | string | Human-readable ticket key (e.g. MTH-42) |
@@ -58,9 +68,15 @@ Every event payload includes the full task context:
 | `due_date` | string | ISO date or null |
 | `completed_at` | string | ISO timestamp or null |
 
+The coordinator fallback may emit `meitheal_task_created` with only `task_id` and `title`. Consumers should tolerate absent optional fields.
+
 ## HA Addon Mode — Node-RED
 
 When Node-RED runs as an HA addon, it connects to HA Core via WebSocket automatically. Use the `events: all` node to listen for Meitheal events.
+
+<!-- /coderabbit-ai-generated:v1 -->
+
+With the output property set to **event data**, `msg.payload` holds the whole Home Assistant event (`event_type`, `event`, `origin`, `time_fired`, `context`). The Meitheal fields such as `title`, `priority` and `ticket_key` sit under `msg.payload.event`, so a mustache template uses `{{payload.event.title}}`. The bundled `integrations/nodered/meitheal-flows.json` follows this path. If a notification shows blank fields, check that the template does not read `{{payload.title}}`.
 
 ### Node-RED Flow: Task Created → Notification
 

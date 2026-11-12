@@ -330,33 +330,47 @@ body:has(dialog[open], #meitheal-confirm-overlay, #meitheal-prompt-overlay) .sho
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 24px 32px;
-  max-width: 360px;
+  max-width: 420px;
   max-height: 100%;
   width: 90%;
   overflow-y: auto;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
 }
 
-.shortcut-modal-grid {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 8px 16px;
-  font-size: 13px;
+/* Sticky so Close stays reachable while the list scrolls; top cancels the content padding.
+   The 8px padding keeps the focus ring and a clear gap inside the header when it is stuck. */
+.shortcut-modal-header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin: -8px 0 4px;
+  padding: 8px 0;
+  background: var(--bg-card);
+  box-shadow: 0 1px 0 var(--border);
 }
 
-.shortcut-modal-grid kbd {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 2px 8px;
-  font-family: monospace;
-  font-size: 12px;
-}
-
-.shortcut-modal-grid h4 {
-  grid-column: 1 / -1;
-  margin: 4px 0 0;
+.shortcut-modal-header h3 {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 16px;
   font-weight: 600;
+  word-spacing: 0.12em;
+  color: var(--text-primary);
+}
+
+.shortcut-modal-close {
+  flex-shrink: 0;
+  min-width: 44px;
+  min-height: 44px;
+  margin-right: -10px;
+  font-size: 18px;
+  line-height: 1;
 }
 
 /* ===== Mobile modal overrides ===== */
@@ -384,10 +398,14 @@ body:has(dialog[open], #meitheal-confirm-overlay, #meitheal-prompt-overlay) .sho
     padding-right: 16px !important;
   }
 
-  /* Shortcut modal — near-fullscreen on mobile */
+  /* Shortcut modal — two columns need no more than 420px, even on a landscape phone */
   .shortcut-modal-content {
-    max-width: 95vw;
+    max-width: min(95vw, 420px);
     padding: 16px 20px;
+  }
+
+  .shortcut-modal-header {
+    top: 0;
   }
 }
 

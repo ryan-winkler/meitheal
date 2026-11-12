@@ -690,7 +690,7 @@ test("a 2,000-task Table keeps its paged results, assets and views inside ingres
   const escaped: string[] = []
   page.on("request", request => {
     const url = new URL(request.url())
-    if (url.origin === origin && (/^\/(?:tasks(?:\/|$)|_astro\/)/).test(url.pathname)) escaped.push(url.pathname)
+    if (url.origin === origin && !url.pathname.startsWith(prefix)) escaped.push(url.pathname)
   })
   const table = await page.goto(origin + prefix + "/tasks?view=table#table")
   expect(table?.status()).toBe(200)

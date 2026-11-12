@@ -17,12 +17,28 @@ async function openSettings(page: Page) {
   await expect(preference(page)).toBeVisible()
 }
 
+const GLOBAL_SHORTCUT_KEYS = ["/", "n", "d", "k", "t", "y", "u", "c", "Ctrl/Cmd + K", "Ctrl/Cmd + B", "?", "Esc"]
+const GLOBAL_SHORTCUT_LABELS = [
+  "Search", /^\s*New task\s*\.\s*Adds to that column when a board card has focus\s*$/, "Dashboard",
+  /^\s*Kanban view\s*\.\s*Moves up on Today and Timeline\s*$/, "Table view", "Today view", "Upcoming view",
+  /^\s*Calendar view\s*\.\s*Collapses swimlanes when a grouped board card has focus\s*$/, "Command palette",
+  /^\s*Toggle sidebar\s*\.\s*Wide screens with side navigation\s*$/, "Show shortcuts", "Close modal",
+]
+const TASK_VIEW_LABELS = ["Kanban view", "Table view", "Calendar view", "Timeline view"]
+
 async function blurActive(page: Page) {
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
 }
 
 test("the Settings preference persists and preserves search with a modifier or a button", async ({ page, context }) => {
   await openSettings(page)
+  const settingsList = page.locator("#personal-settings")
+  await expect(settingsList.getByRole("heading", { name: "Everywhere" })).toBeVisible()
+  await expect(settingsList.getByRole("heading", { name: "On the Tasks page" })).toBeVisible()
+  await expect(settingsList.locator("[data-shortcut-scope=global]")).toHaveText(GLOBAL_SHORTCUT_LABELS)
+  await expect(settingsList.locator("[data-shortcut-scope=tasks]")).toHaveText(TASK_VIEW_LABELS)
+  await expect(settingsList.locator(".shortcut-keys")).toHaveText([...GLOBAL_SHORTCUT_KEYS, "1", "2", "3", "4", "Home"])
+  await expect(settingsList).not.toContainText("List view")
   const enabled = preference(page)
   const search = page.locator("#settings-bar-search-launcher")
   const hub = page.locator("#search-hub-overlay")
@@ -71,6 +87,8 @@ test("the Settings preference persists and preserves search with a modifier or a
   await blurActive(page)
   await page.keyboard.press("Shift+Slash")
   await expect(shortcuts).toBeVisible()
+  // Help renders from the same list as Settings.
+  await expect(shortcuts.locator("[data-shortcut-scope=global]")).toHaveText(GLOBAL_SHORTCUT_LABELS)
 })
 
 test("K selects Kanban after Table and the numbered keys select each Tasks view", async ({ page }) => {
@@ -104,8 +122,19 @@ test("shortcut help contains focus and restores its opener after Escape and afte
 
   await kanban.press("Shift+Slash")
   await expect(close).toBeFocused()
-  await expect(dialog.locator("kbd").filter({ hasText: /^[1-4]$/ })).toHaveText(["1", "2", "3", "4"])
-  await expect(dialog.locator("h4 ~ span")).toHaveText(["Kanban view", "Table view", "Calendar view", "Timeline view"])
+  // The accessible name comes from the visible title, without the keyboard glyph.
+  await expect(dialog).toHaveAttribute("aria-labelledby", "shortcut-modal-title")
+  await expect(dialog).not.toHaveAttribute("aria-label")
+  await expect(page.getByRole("dialog", { name: "Keyboard shortcuts", exact: true })).toBeVisible()
+  await expect(dialog.getByRole("heading", { name: "Everywhere" })).toBeVisible()
+  await expect(dialog.locator(".shortcut-keys")).toHaveText([...GLOBAL_SHORTCUT_KEYS, "1", "2", "3", "4"])
+  await expect(dialog.locator("[data-shortcut-scope=global]")).toHaveText(GLOBAL_SHORTCUT_LABELS)
+  await expect(dialog.locator("[data-shortcut-scope=tasks]")).toHaveText(TASK_VIEW_LABELS)
+  await expect(dialog).not.toContainText("⌘")
+  const target = await close.boundingBox()
+  expect(target).not.toBeNull()
+  expect(target!.width).toBeGreaterThanOrEqual(44)
+  expect(target!.height).toBeGreaterThanOrEqual(44)
   await page.keyboard.press("Tab")
   await expect(close).toBeFocused()
   await page.keyboard.press("Shift+Tab")
@@ -147,6 +176,31 @@ test("shortcut help contains focus and restores its opener after Escape and afte
   }
   await expect(dialog).toBeHidden()
   await expect(table).toBeFocused()
+})
+
+test("shortcut help keeps Close visible on a landscape phone", async ({ page }) => {
+  await page.setViewportSize({ width: 667, height: 375 })
+  await page.goto("/tasks#kanban")
+  await expect(page.locator("[data-view-tabs]")).toHaveAttribute("data-switcher-ready", "true")
+  await page.keyboard.press("?")
+  const dialog = page.getByRole("dialog", { name: "Keyboard shortcuts", exact: true })
+  const close = dialog.getByRole("button", { name: "Close shortcuts" })
+  const panel = dialog.locator(".shortcut-modal-content")
+  await expect(close).toBeFocused()
+  expect((await panel.boundingBox())!.width).toBeLessThanOrEqual(420)
+  await panel.evaluate(element => { element.scrollTop = element.scrollHeight })
+  await expect.poll(() => panel.evaluate(element => element.scrollTop)).toBeGreaterThan(0)
+  await expect(dialog.getByText("Timeline view")).toBeInViewport()
+  await expect(close).toBeInViewport({ ratio: 1 })
+  const panelBox = (await panel.boundingBox())!
+  const closeBox = (await close.boundingBox())!
+  expect(closeBox.y).toBeGreaterThanOrEqual(panelBox.y)
+  expect(closeBox.y + closeBox.height).toBeLessThanOrEqual(panelBox.y + panelBox.height)
+  const covered = await close.evaluate(button => {
+    const { x, y, width, height } = button.getBoundingClientRect()
+    return !button.contains(document.elementFromPoint(x + width / 2, y + height / 2))
+  })
+  expect(covered).toBe(false)
 })
 
 test("shortcut help waits until the native Settings wizard is closed", async ({ page }) => {
@@ -213,11 +267,21 @@ test("the numbered shortcut labels remain reachable in Irish on a short screen",
   await page.goto("/tasks#kanban")
   await expect(page.locator("[data-view-tabs]")).toHaveAttribute("data-switcher-ready", "true")
   await page.keyboard.press("?")
-  const dialog = page.getByRole("dialog", { name: "Keyboard shortcuts" })
-  const close = dialog.getByRole("button", { name: "Close shortcuts" })
+  const dialog = page.getByRole("dialog", { name: "Aicearraí méarchláir", exact: true })
+  const close = dialog.getByRole("button", { name: "Dún na haicearraí" })
   const panel = dialog.locator(".shortcut-modal-content")
   await expect(close).toBeFocused()
+  await expect(dialog.getByRole("heading", { name: "I ngach áit" })).toBeVisible()
   await expect(dialog.getByRole("heading", { name: "Ar leathanach na dtascanna" })).toBeVisible()
+  await expect(dialog.locator("[data-shortcut-scope=global]")).toHaveText([
+    "Cuardaigh", "Tasc nua . Cuireann sé leis an gcolún sin nuair atá fócas ar chárta boird", "Deais",
+    "Amharc Kanban . Bogann sé suas ar Inniu agus ar an Amlíne", "Amharc tábla", "Amharc Inniu", "Amharc Ag Teacht",
+    "Amharc féilire . Laghdaíonn sé na lánaí snámha nuair atá fócas ar chárta boird grúpáilte", "Pailéad orduithe",
+    "Taispeáin nó folaigh an barra taoibh . Scáileáin leathana le nascleanúint taoibh", "Taispeáin aicearraí", "Dún an bosca dialóige",
+  ])
+  await expect(dialog.locator("[data-shortcut-scope=tasks]")).toHaveText([
+    "Amharc Kanban", "Amharc tábla", "Amharc féilire", "Amharc amlíne",
+  ])
   const bounds = await panel.boundingBox()
   expect(bounds).not.toBeNull()
   await page.mouse.move(bounds!.x + 5, bounds!.y + 5)
@@ -235,7 +299,7 @@ test("the numbered shortcut labels remain reachable in Irish on a short screen",
   await expect.poll(() => panel.evaluate(element => element.scrollTop)).toBe(0)
   await expect(timeline).not.toBeInViewport()
   await panel.hover()
-  await page.mouse.wheel(0, 500)
+  await page.mouse.wheel(0, 2000)
   await expect(timeline).toBeInViewport()
 })
 

@@ -1,0 +1,169 @@
+---
+import { t } from "../../i18n/translations"
+import type { Locale } from "../../lib/locale"
+import { keyboardShortcutGroups, type KeyboardShortcutScope } from "../../lib/keyboard-shortcuts"
+
+interface Props {
+  locale: Locale
+  /** "dialog" is the compact `?` Help list; "settings" is the Settings card list. */
+  variant: "dialog" | "settings"
+  scopes?: readonly KeyboardShortcutScope[]
+}
+
+const { locale, variant, scopes } = Astro.props
+const groups = keyboardShortcutGroups(scopes)
+---
+
+{variant === "dialog" ? (
+  <div class="shortcut-modal-grid">
+    {groups.map(group => (
+      <>
+        <h4>{t(group.headingKey, locale)}</h4>
+        {group.shortcuts.map(shortcut => (
+          <>
+            <span class="shortcut-keys">
+              {shortcut.keys.map((key, index) => <>{index > 0 && " + "}<kbd>{key}</kbd></>)}
+            </span>
+            <span class="shortcut-label" data-shortcut-scope={group.scope}>
+              {t(shortcut.labelKey, locale)}
+              {shortcut.noteKey && <><span class="sr-only">. </span><span class="shortcut-note">{t(shortcut.noteKey, locale)}</span></>}
+            </span>
+          </>
+        ))}
+      </>
+    ))}
+  </div>
+) : (
+  <div class="shortcut-groups">
+    {groups.map(group => (
+      <section class="shortcut-group" aria-labelledby={`settings-shortcuts-${group.scope}`}>
+        <h4 id={`settings-shortcuts-${group.scope}`}>{t(group.headingKey, locale)}</h4>
+        <div class="shortcut-grid">
+          {group.shortcuts.map(shortcut => (
+            <div class="shortcut-row">
+              <span class="shortcut-keys">
+                {shortcut.keys.map((key, index) => <>{index > 0 && " + "}<kbd>{key}</kbd></>)}
+              </span>
+              <span class="shortcut-label" data-shortcut-scope={group.scope}>
+                {t(shortcut.labelKey, locale)}
+                {shortcut.noteKey && <><span class="sr-only">. </span><span class="shortcut-note">{t(shortcut.noteKey, locale)}</span></>}
+              </span>
+            </div>
+          ))}
+        </div>
+      </section>
+    ))}
+  </div>
+)}
+
+<style>
+  .shortcut-keys {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    white-space: nowrap;
+  }
+
+  /* 12px Outfit closes up word spaces, so small section labels use the body font. */
+  .shortcut-modal-grid h4,
+  .shortcut-group h4 {
+    font-family: inherit;
+    letter-spacing: normal;
+  }
+
+  .shortcut-note {
+    display: block;
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
+
+  /* Help dialog: one grid so keycaps align across both groups. */
+  .shortcut-modal-grid {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    align-items: baseline;
+    gap: 8px 16px;
+    font-size: 13px;
+    color: var(--text-primary);
+  }
+
+  .shortcut-modal-grid h4 {
+    grid-column: 1 / -1;
+    margin: 8px 0 0;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+  }
+
+  .shortcut-modal-grid h4:first-child {
+    margin-top: 0;
+  }
+
+  .shortcut-modal-grid .shortcut-keys {
+    justify-self: end;
+    white-space: nowrap;
+  }
+
+  .shortcut-modal-grid kbd {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 2px 8px;
+    font-family: monospace;
+    font-size: 12px;
+  }
+
+  /* Settings card */
+  .shortcut-groups {
+    display: grid;
+    gap: 14px;
+    margin-top: 14px;
+  }
+
+  .shortcut-group h4 {
+    margin: 0 0 4px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+  }
+
+  .shortcut-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr));
+    gap: 2px 16px;
+  }
+
+  .shortcut-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    padding: 6px 0;
+    font-size: 13px;
+    color: var(--text-secondary);
+  }
+
+  .shortcut-row .shortcut-label {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .shortcut-row kbd {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 28px;
+    height: 26px;
+    padding: 0 8px;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-primary);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-bottom-width: 2px;
+    border-radius: 6px;
+    box-shadow: 0 1px 0 rgba(0, 0, 0, 0.2);
+    white-space: nowrap;
+  }
+</style>
