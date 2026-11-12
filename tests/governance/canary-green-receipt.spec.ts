@@ -106,6 +106,7 @@ if (command === "image" && args.includes("--format")) {
   console.error("fixture: " + (process.env.FIXTURE_MANIFEST_ERROR || "manifest unknown"))
   process.exit(1)
 } else if (command === "push") {
+  if (option("--format") !== "v2s2") process.exit(98)
   writeFileSync(option("--digestfile"), digest + "\\n")
 } else if (command === "pull") {
   if (store.endsWith("/publisher/storage")) {
