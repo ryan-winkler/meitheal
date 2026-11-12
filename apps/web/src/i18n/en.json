@@ -480,7 +480,7 @@
     "protocol_discovery_disabled": "Discovery is disabled.",
     "protocol_discovery_unavailable": "Discovery is unavailable. Check the connection, then use Check discovery to retry.",
     "protocol_discovery_mcp": "MCP discovery is available. Tool access depends on the client’s token scopes.",
-    "protocol_discovery_a2a": "A2A discovery is available. Scoped tokens can search active task titles.",
+    "protocol_discovery_a2a": "A2A discovery is available. Scoped tokens can search active task titles and read their agent's assigned tasks.",
     "protocol_discovery_retry": "Check discovery",
     "active": "Active",
     "a2a_title": "A2A (Agent-to-Agent)",

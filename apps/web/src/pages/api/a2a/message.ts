@@ -6,6 +6,7 @@ import { searchMeithealCatalog } from "@domains/search/search-service"
 import { ensureSchema } from "@domains/tasks/persistence/store"
 import { A2A_RESPONSE_HEADERS, checkA2aAvailability } from "@lib/a2a-availability"
 import { getA2ALinkOrigin } from "@lib/a2a-urls"
+import { getA2aTask, listA2aTasks } from "@lib/a2a-tasks"
 import { apiProblem } from "@lib/api-response"
 import { readWithinLimit } from "@lib/bounded-body"
 import { logApiError } from "@lib/api-logger"
@@ -18,10 +19,10 @@ const rpcRequest = z.object({
   id: z.union([z.string(), z.number().int(), z.null()]).optional(),
   params: z.unknown().optional(),
 })
-const taskRequest = z.object({ id: z.string().min(1) })
+const taskRequest = z.object({ id: z.string().min(1), historyLength: z.number().int().nonnegative().optional() })
 const listRequest = z.object({
   pageSize: z.number().int().min(1).max(100).optional(),
-  pageToken: z.literal("").optional(),
+  pageToken: z.string().regex(/^\d{0,6}$/).optional(),
   historyLength: z.number().int().nonnegative().optional(),
   includeArtifacts: z.boolean().optional(),
   contextId: z.string().optional(),
@@ -106,16 +107,28 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
       return rpcError(id, A2A_ERRORS.VERSION_NOT_SUPPORTED, `Use A2A-Version: ${A2A_PROTOCOL_VERSION}.`)
     }
 
+    const linkBase = getA2ALinkOrigin(request, url) + (locals.ingressPath ?? "")
     switch (rpc.data.method) {
       case "GetTask":
-      case "CancelTask":
-        return taskRequest.safeParse(rpc.data.params).success
-          ? rpcError(id, A2A_ERRORS.TASK_NOT_FOUND, taskNotFound)
-          : rpcError(id, A2A_ERRORS.INVALID_PARAMS, "Provide an A2A task id.")
+      case "CancelTask": {
+        const wanted = taskRequest.safeParse(rpc.data.params)
+        if (!wanted.success) return rpcError(id, A2A_ERRORS.INVALID_PARAMS, "Provide an A2A task id.")
+        const task = await getA2aTask(token, wanted.data.id, linkBase)
+        if (!task) return rpcError(id, A2A_ERRORS.TASK_NOT_FOUND, taskNotFound)
+        // A household task is finished or handed back in Meitheal, never cancelled by a remote agent.
+        return rpc.data.method === "GetTask" ? rpcResult(id, task)
+          : rpcError(id, A2A_ERRORS.TASK_NOT_CANCELABLE, "Meitheal tasks cannot be cancelled over A2A.")
+      }
       case "ListTasks": {
         const list = listRequest.safeParse(rpc.data.params ?? {})
         if (!list.success) return rpcError(id, A2A_ERRORS.INVALID_PARAMS, "Invalid task list parameters.")
-        return rpcResult(id, { tasks: [], nextPageToken: "", pageSize: list.data.pageSize ?? 50, totalSize: 0 })
+        return rpcResult(id, await listA2aTasks(token, linkBase, {
+          pageSize: list.data.pageSize ?? 50,
+          offset: Number(list.data.pageToken || 0),
+          includeArtifacts: list.data.includeArtifacts ?? false,
+          state: list.data.status,
+          contextId: list.data.contextId,
+        }))
       }
       case "SendStreamingMessage":
       case "SubscribeToTask":
@@ -127,7 +140,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
       case "DeleteTaskPushNotificationConfig":
         return rpcError(id, A2A_ERRORS.PUSH_NOT_SUPPORTED, "A2A push notifications are unavailable.")
       case "SendMessage":
-        return await searchTasks(id, rpc.data.params, getA2ALinkOrigin(request, url) + (locals.ingressPath ?? ""))
+        return await searchTasks(id, rpc.data.params, linkBase)
       default:
         return rpcError(id, A2A_ERRORS.METHOD_NOT_FOUND, "Method not found.")
     }
