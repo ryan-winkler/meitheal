@@ -30,15 +30,15 @@ const SCOPE_HEADINGS: Record<KeyboardShortcutScope, string> = {
 
 export const KEYBOARD_SHORTCUTS: readonly KeyboardShortcut[] = [
   { keys: ["/"], labelKey: "settings.shortcut_search", scope: "global" },
-  { keys: ["n"], labelKey: "settings.shortcut_new_task", scope: "global" },
+  { keys: ["n"], labelKey: "settings.shortcut_new_task", noteKey: "settings.shortcut_new_task_note", scope: "global" },
   { keys: ["d"], labelKey: "settings.shortcut_dashboard", scope: "global" },
   { keys: ["k"], labelKey: "settings.shortcut_kanban", noteKey: "settings.shortcut_kanban_note", scope: "global" },
   { keys: ["t"], labelKey: "settings.shortcut_table", scope: "global" },
   { keys: ["y"], labelKey: "settings.shortcut_today", scope: "global" },
   { keys: ["u"], labelKey: "settings.shortcut_upcoming", scope: "global" },
-  { keys: ["c"], labelKey: "settings.shortcut_calendar", scope: "global" },
+  { keys: ["c"], labelKey: "settings.shortcut_calendar", noteKey: "settings.shortcut_calendar_note", scope: "global" },
   { keys: ["Ctrl", "K"], labelKey: "settings.shortcut_cmd_palette", scope: "global" },
-  { keys: ["Ctrl", "B"], labelKey: "settings.shortcut_toggle_sidebar", scope: "global" },
+  { keys: ["Ctrl", "B"], labelKey: "settings.shortcut_toggle_sidebar", noteKey: "settings.shortcut_toggle_sidebar_note", scope: "global" },
   { keys: ["?"], labelKey: "settings.shortcut_help", scope: "global" },
   { keys: ["Esc"], labelKey: "settings.shortcut_close", scope: "global" },
   ...TASK_VIEWS.map((view, index): KeyboardShortcut => ({

@@ -26,7 +26,7 @@ const groups = keyboardShortcutGroups(scopes)
             </span>
             <span class="shortcut-label" data-shortcut-scope={group.scope}>
               {t(shortcut.labelKey, locale)}
-              {shortcut.noteKey && <span class="shortcut-note">{t(shortcut.noteKey, locale)}</span>}
+              {shortcut.noteKey && <><span class="sr-only">. </span><span class="shortcut-note">{t(shortcut.noteKey, locale)}</span></>}
             </span>
           </>
         ))}
@@ -46,7 +46,7 @@ const groups = keyboardShortcutGroups(scopes)
               </span>
               <span class="shortcut-label" data-shortcut-scope={group.scope}>
                 {t(shortcut.labelKey, locale)}
-                {shortcut.noteKey && <span class="shortcut-note">{t(shortcut.noteKey, locale)}</span>}
+                {shortcut.noteKey && <><span class="sr-only">. </span><span class="shortcut-note">{t(shortcut.noteKey, locale)}</span></>}
               </span>
             </div>
           ))}
@@ -99,6 +99,11 @@ const groups = keyboardShortcutGroups(scopes)
     margin-top: 0;
   }
 
+  .shortcut-modal-grid .shortcut-keys {
+    justify-self: end;
+    white-space: nowrap;
+  }
+
   .shortcut-modal-grid kbd {
     background: var(--bg-secondary);
     border: 1px solid var(--border);
@@ -125,7 +130,7 @@ const groups = keyboardShortcutGroups(scopes)
   .shortcut-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr));
-    gap: 0;
+    gap: 2px 16px;
   }
 
   .shortcut-row {
@@ -133,19 +138,9 @@ const groups = keyboardShortcutGroups(scopes)
     align-items: center;
     gap: 8px;
     min-width: 0;
-    padding: 8px;
-    border-bottom: 1px solid var(--border);
+    padding: 6px 0;
     font-size: 13px;
     color: var(--text-secondary);
-  }
-
-  .shortcut-row:nth-child(odd) {
-    background: rgba(255, 255, 255, 0.02);
-  }
-
-  .shortcut-row:last-child,
-  .shortcut-row:nth-last-child(2):nth-child(odd) {
-    border-bottom: none;
   }
 
   .shortcut-row .shortcut-label {

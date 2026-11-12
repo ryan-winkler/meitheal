@@ -19,8 +19,10 @@ async function openSettings(page: Page) {
 
 const GLOBAL_SHORTCUT_KEYS = ["/", "n", "d", "k", "t", "y", "u", "c", "Ctrl + K", "Ctrl + B", "?", "Esc"]
 const GLOBAL_SHORTCUT_LABELS = [
-  "Search", "New task", "Dashboard", /^\s*Kanban view\s+Moves up on Today and Timeline\s*$/, "Table view", "Today view",
-  "Upcoming view", "Calendar view", "Command palette", "Toggle sidebar", "Show shortcuts", "Close modal",
+  "Search", /^\s*New task\s*\.\s*Adds to that column when a board card has focus\s*$/, "Dashboard",
+  /^\s*Kanban view\s*\.\s*Moves up on Today and Timeline\s*$/, "Table view", "Today view", "Upcoming view",
+  /^\s*Calendar view\s*\.\s*Collapses swimlanes when a grouped board card has focus\s*$/, "Command palette",
+  /^\s*Toggle sidebar\s*\.\s*Wide screens with side navigation\s*$/, "Show shortcuts", "Close modal",
 ]
 const TASK_VIEW_LABELS = ["Kanban view", "Table view", "Calendar view", "Timeline view"]
 
@@ -284,7 +286,7 @@ test("the numbered shortcut labels remain reachable in Irish on a short screen",
   await expect.poll(() => panel.evaluate(element => element.scrollTop)).toBe(0)
   await expect(timeline).not.toBeInViewport()
   await panel.hover()
-  await page.mouse.wheel(0, 500)
+  await page.mouse.wheel(0, 2000)
   await expect(timeline).toBeInViewport()
 })
 

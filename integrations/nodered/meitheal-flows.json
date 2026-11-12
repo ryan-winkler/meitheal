@@ -38,7 +38,7 @@
     "complete": "payload",
     "targetType": "msg",
     "statusVal": "payload.event.title",
-    "statusType": "auto",
+    "statusType": "msg",
     "x": 420,
     "y": 60,
     "wires": []
@@ -97,7 +97,7 @@
     "complete": "payload",
     "targetType": "msg",
     "statusVal": "payload.event.title",
-    "statusType": "auto",
+    "statusType": "msg",
     "x": 420,
     "y": 180,
     "wires": []
@@ -133,7 +133,7 @@
     "complete": "payload",
     "targetType": "msg",
     "statusVal": "payload.event.title",
-    "statusType": "auto",
+    "statusType": "msg",
     "x": 430,
     "y": 280,
     "wires": []
@@ -169,7 +169,7 @@
     "complete": "payload",
     "targetType": "msg",
     "statusVal": "payload.event.title",
-    "statusType": "auto",
+    "statusType": "msg",
     "x": 420,
     "y": 380,
     "wires": []
@@ -283,7 +283,7 @@
     "complete": "payload",
     "targetType": "msg",
     "statusVal": "payload.event.title",
-    "statusType": "auto",
+    "statusType": "msg",
     "x": 410,
     "y": 680,
     "wires": []
