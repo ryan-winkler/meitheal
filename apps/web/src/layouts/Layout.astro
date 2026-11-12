@@ -54,7 +54,7 @@ export interface Props {
 
 const {
   title = "Meitheal",
-  description = "The cooperative task and life engine for your home.",
+  description = "Keep track of the work your home needs — household tasks, recurring routines, and projects inside Home Assistant.",
   hideSearchHub = false,
   hideGlobalSearch = false,
   suppressTaskUrlOpen = false,
@@ -334,7 +334,7 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
         width: 100%;
         height: 3px;
         z-index: 9999;
-        background: var(--accent, #6366f1);
+        background: var(--accent, #69e3b2);
         transform: translateX(-100%);
         animation: meitheal-loading-slide 1.2s ease-in-out infinite;
         pointer-events: none;
@@ -367,7 +367,7 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
       crossorigin="use-credentials"
     />
     <link rel="apple-touch-icon" href="/icon-192.png" />
-    <meta name="theme-color" content="#0f172a" />
+    <meta name="theme-color" content="#10231b" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta
       name="apple-mobile-web-app-status-bar-style"
@@ -626,7 +626,7 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
 
     <!-- Graceful fallback when JavaScript is disabled -->
     <noscript>
-      <div style="position:fixed;inset:0;z-index:9999;background:var(--bg-primary,#0f0f23);color:var(--text-primary,#e2e8f0);display:flex;align-items:center;justify-content:center;padding:2rem;text-align:center;">
+      <div style="position:fixed;inset:0;z-index:9999;background:var(--bg-primary,#101210);color:var(--text-primary,#f1efe8);display:flex;align-items:center;justify-content:center;padding:2rem;text-align:center;">
         <div>
           <h1 style="font-size:1.5rem;margin-bottom:1rem;">JavaScript Required</h1>
           <p>Meitheal requires JavaScript to function. Please enable JavaScript in your browser settings and reload this page.</p>

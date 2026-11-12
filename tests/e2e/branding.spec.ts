@@ -4,20 +4,28 @@ import { shouldSkipBrowserSpecs } from "./_helpers";
 test.skip(shouldSkipBrowserSpecs(), "Set E2E_BASE_URL to run browser specs");
 
 test.describe("Branding — Typography", () => {
-  test("Outfit font is loaded for headings", async ({ page }) => {
+  test("Geist Variable font is loaded for headings and body text", async ({
+    page,
+  }) => {
     await page.goto("/");
-    const outfitLoaded = await page.evaluate(() =>
-      document.fonts.check("700 12px Outfit")
+    const geistHeadingLoaded = await page.evaluate(() =>
+      document.fonts.check('500 16px "Geist Variable"')
     );
-    expect(outfitLoaded).toBe(true);
-  });
-
-  test("Geist Variable font is loaded for body text", async ({ page }) => {
-    await page.goto("/");
-    const geistLoaded = await page.evaluate(() =>
+    const geistBodyLoaded = await page.evaluate(() =>
       document.fonts.check('400 12px "Geist Variable"')
     );
-    expect(geistLoaded).toBe(true);
+    expect(geistHeadingLoaded).toBe(true);
+    expect(geistBodyLoaded).toBe(true);
+  });
+
+  test("JetBrains Mono font is loaded for phonetic mark and code", async ({
+    page,
+  }) => {
+    await page.goto("/");
+    const monoLoaded = await page.evaluate(() =>
+      document.fonts.check('400 10px "JetBrains Mono"')
+    );
+    expect(monoLoaded).toBe(true);
   });
 });
 
@@ -25,7 +33,7 @@ test.describe("Branding — Color Tokens", () => {
   // A first visit follows the system appearance, so name the dark palette these tokens belong to.
   test.use({ colorScheme: "dark" });
 
-  test("--bg-primary uses Slate 900 (#0F172A = rgb 15,23,42)", async ({
+  test("--bg-primary uses Evergreen Carbon (#101210 = rgb 16,18,16)", async ({
     page,
   }) => {
     await page.goto("/");
@@ -34,10 +42,10 @@ test.describe("Branding — Color Tokens", () => {
         .getPropertyValue("--bg-primary")
         .trim()
     );
-    expect(bgPrimary.toLowerCase()).toBe("#0f172a");
+    expect(bgPrimary.toLowerCase()).toBe("#101210");
   });
 
-  test("--accent uses Indigo 500 (#6366F1 = rgb 99,102,241)", async ({
+  test("--accent uses Living Mint (#69E3B2 = rgb 105,227,178)", async ({
     page,
   }) => {
     await page.goto("/");
@@ -46,26 +54,30 @@ test.describe("Branding — Color Tokens", () => {
         .getPropertyValue("--accent")
         .trim()
     );
-    expect(accent.toLowerCase()).toBe("#6366f1");
+    expect(accent.toLowerCase()).toBe("#69e3b2");
   });
 });
 
 test.describe("Branding — Logo", () => {
-  test("Village Hub SVG logo is visible in sidebar", async ({ page }) => {
+  test("meitheal.io SVG mark and wordmark lockup are visible in sidebar", async ({
+    page,
+  }) => {
     await page.goto("/");
-    const logo = page.locator(
-      '.sidebar-brand svg[viewBox="0 0 100 100"]'
-    );
+    const logo = page.locator('.sidebar-brand svg[viewBox="0 0 64 64"]');
     await expect(logo).toBeVisible();
+    await expect(page.locator(".sidebar-brand-text")).toHaveText("meitheal.");
+    await expect(page.locator(".sidebar-ipa")).toHaveText("/meh·hal/");
   });
 
-  test("Sidebar SVG uses theme-aware CSS vars", async ({ page }) => {
+  test("Sidebar SVG completion dot uses theme-aware --accent CSS var", async ({
+    page,
+  }) => {
     await page.goto("/");
-    const accentStroke = await page.evaluate(() => {
-      const path = document.querySelector('.sidebar-brand svg path');
-      return path?.getAttribute("stroke") ?? "";
+    const accentFill = await page.evaluate(() => {
+      const circle = document.querySelector(".sidebar-brand svg circle");
+      return circle?.getAttribute("fill") ?? "";
     });
-    expect(accentStroke).toContain("var(--accent");
+    expect(accentFill).toContain("var(--accent");
   });
 });
 
