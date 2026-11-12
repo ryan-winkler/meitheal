@@ -44,7 +44,7 @@ These anchors stay on the same route, which keeps the page ingress-safe in Home 
 3. Add a date or shopping list when needed, such as “call dentist tomorrow” or “shopping: milk, eggs”.
 4. Stay on the same route so the current Today context is preserved.
 
-`Smart Task Parsing` in Settings controls natural-language dates, priorities, `#labels` and `@assignees` in Today’s inline quick-add. With it off, these tokens stay in the ordinary task title and the preview shows the existing default due date of Today. Turning it on restores extraction in both the preview and the submitted task.
+`Smart Task Parsing` in Settings controls natural-language dates, priorities, `#labels` and `@assignees` in Today’s and the Dashboard’s inline quick-add. Today’s default due date is the current day in the household timezone from Settings, not in UTC. With it off, these tokens stay in the ordinary task title and the preview shows the existing default due date of Today. Turning it on restores extraction in both the preview and the submitted task.
 
 ### Triage overdue work without losing the daily view
 
