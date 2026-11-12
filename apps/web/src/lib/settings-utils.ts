@@ -55,6 +55,8 @@ export function settingsAction(handler: (event: Event) => unknown): (event: Even
   }
 }
 
+
+
 /** Load all settings from the API */
 export async function loadAllSettings(): Promise<Record<string, unknown>> {
   try {

@@ -1,3 +1,4 @@
+import { getSettingsRevision } from "./domains/tasks/persistence/settings-repository"
 import type { MiddlewareHandler } from "astro";
 import { apiProblem, apiRateLimited } from "./lib/api-response";
 import { resolveIngressContext } from "@domains/auth/ingress";
@@ -125,6 +126,7 @@ function getBotRateLimit(ip: string): { remaining: number; resetAt: number; exce
 
 // ── Settings cache (avoids DB query on every request) ──
 // TTL: 60s — settings change rarely, no need to hit SQLite every request.
+let _settingsCacheRevision = -1
 let _settingsCache: { timezone: string; weekStart: string; dateFormat: string } | null = null;
 let _settingsCacheExpiry = 0;
 const SETTINGS_CACHE_TTL_MS = 60_000;
@@ -407,22 +409,33 @@ async function handleRequest({ request, locals, routePattern }: Parameters<Middl
   locals.weekStart = "monday";
   locals.dateFormat = "relative";
   const now = Date.now();
-  if (_settingsCache && now < _settingsCacheExpiry) {
+  if (_settingsCache && now < _settingsCacheExpiry && _settingsCacheRevision === getSettingsRevision()) {
     locals.timezone = _settingsCache.timezone;
     locals.weekStart = _settingsCache.weekStart;
     locals.dateFormat = _settingsCache.dateFormat as DateFormat;
   } else if (databaseAvailable) {
     try {
+      const settingsRevision = getSettingsRevision()
       await ensureSchema();
       const db = getPersistenceClient();
       const res = await db.execute("SELECT key, value FROM settings WHERE key IN ('timezone', 'week_start', 'date_format')");
       for (const row of res.rows) {
-        if (row.key === "timezone" && typeof row.value === "string") locals.timezone = row.value;
-        if (row.key === "week_start" && typeof row.value === "string") locals.weekStart = row.value;
-        if (row.key === "date_format" && typeof row.value === "string") locals.dateFormat = row.value as DateFormat;
+        let value: unknown = row.value
+        if (typeof value === "string") {
+          try { value = JSON.parse(value) } catch { /* legacy plain-text settings */ }
+        }
+        if (row.key === "timezone" && typeof value === "string") {
+          try {
+            new Intl.DateTimeFormat("en", { timeZone: value })
+            locals.timezone = value
+          } catch { /* retain the default for invalid stored zones */ }
+        }
+        if (row.key === "week_start" && (value === "monday" || value === "sunday" || value === "saturday")) locals.weekStart = value
+        if (row.key === "date_format" && typeof value === "string" && ["relative", "absolute-iso", "absolute-eu", "absolute-us"].includes(value)) locals.dateFormat = value as DateFormat
       }
       _settingsCache = { timezone: locals.timezone, weekStart: locals.weekStart, dateFormat: locals.dateFormat };
       _settingsCacheExpiry = now + SETTINGS_CACHE_TTL_MS;
+      _settingsCacheRevision = settingsRevision
     } catch {
       /* ignore db errors, defaults used */
     }

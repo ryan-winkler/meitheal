@@ -10,11 +10,11 @@ import { navigate } from "astro:transitions/client"
  * @domain strategy / settings
  */
 
+import { frameworkImportBytesMax } from "@lib/framework-import-limit"
 import { confirmDialog } from "@lib/confirm-dialog"
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { escapeHtml } from "@lib/safe-html"
 import { showToast } from "@lib/toast"
-import { frameworkImportBytesMax } from "@lib/framework-import-limit"
 import { exportFilename } from "@lib/export-filename"
 import { isFrameworkFieldOptions, validateFrameworkOverrides, type FrameworkConfig, type FrameworkOverrides } from "@meitheal/domain-strategy"
 import { initFrameworkWizard, openWizard } from "@lib/framework-wizard-controller"

@@ -70,6 +70,9 @@ export const GET: APIRoute = async ({ request, url, locals }) => {
       }
       const values = await repo.getByKeys([key])
       const value = Object.hasOwn(values, key) ? values[key] : null
+      if (!admin && key === "ai-custom-url" && (typeof value !== "string" || !value || values["ai-custom-url-approved"] !== value)) {
+        return apiProblem({ status: 403, title: "URL review required", detail: "Ask an administrator to review and share this custom AI URL in Settings.", extraHeaders: { "Cache-Control": "no-store" } })
+      }
       if (isSecretSetting(key)) {
         return settingsJson({ key, value: value ? REDACTED_SETTING_VALUE : null, configured: Boolean(value) })
       }

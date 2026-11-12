@@ -1,11 +1,20 @@
 import { spawnSync } from "node:child_process"
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import { accessSync, constants, copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { delimiter, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { expect, test } from "@playwright/test"
 
 const root = fileURLToPath(new URL("../..", import.meta.url))
+
+/** Resolve real prerequisites before replacing PATH with the isolated fixture. */
+function executable(name: string): string {
+  for (const directory of (process.env.PATH ?? "").split(delimiter)) {
+    const path = join(directory, name)
+    try { accessSync(path, constants.X_OK); return path } catch { /* try the next PATH entry */ }
+  }
+  throw new Error(`Lifecycle tests require ${name} on PATH`)
+}
 
 /** Isolated engine/CLI fixtures never access real containers. */
 function launch(command: string, existing: boolean, cli = false, tools = true, backend = "docker", listFail = false, project?: string, aliasMode = "", workspaceRoot?: string) {
@@ -23,7 +32,7 @@ function launch(command: string, existing: boolean, cli = false, tools = true, b
       writeFileSync(launcher, readFileSync(launcher, "utf8").replace(/^PROJECT_ROOT=.*$/m, `PROJECT_ROOT=${JSON.stringify(workspaceRoot)}`))
     }
     symlinkSync(process.execPath, join(bin, "node"))
-    symlinkSync("/usr/bin/dirname", join(bin, "dirname"))
+    symlinkSync(executable("dirname"), join(bin, "dirname"))
     const calls = join(fixture, "calls.jsonl")
     writeFileSync(calls, "")
     for (const tool of ["docker", ...(backend === "docker" ? [] : ["podman"]), ...(backend === "distrobox" ? ["flatpak-spawn"] : []), ...(backend === "podman" ? ["podman-compose"] : []), ...(cli ? ["devcontainer"] : [])]) {
@@ -45,7 +54,7 @@ if (args[0] === "inspect") console.log(process.env.COMPOSE_PROJECT_NAME || "work
 if (args.includes("exec") && process.env.LAUNCH_TOOLS !== "1") process.exit(1)
 `, { mode: 0o700 })
     }
-    const result = spawnSync("/bin/bash", [join(fixture, "scripts/devcontainer-up.sh"), command], {
+    const result = spawnSync(executable("bash"), [join(fixture, "scripts/devcontainer-up.sh"), command], {
       encoding: "utf8",
       env: { PATH: bin, LAUNCH_ALIAS_MODE: aliasMode, LAUNCH_ALTERNATE: workspaceRoot?.startsWith("/var/home/") ? workspaceRoot.replace("/var/home/", "/home/") : workspaceRoot?.replace("/home/", "/var/home/"), ...(backend === "distrobox" ? { DISTROBOX_ENTER_PATH: "/usr/bin/distrobox-enter" } : {}), LAUNCH_BACKEND: backend, LAUNCH_LIST_FAIL: listFail ? "1" : "0", LAUNCH_CALLS: calls, LAUNCH_EXISTING: existing ? "1" : "0", LAUNCH_TOOLS: tools ? "1" : "0", ...(project ? { COMPOSE_PROJECT_NAME: project } : {}) },
     })
