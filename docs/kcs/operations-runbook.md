@@ -201,6 +201,8 @@ Use this after changing the Table shell or `table-controller.ts`.
 
 Run `e2e/character-shortcuts.spec.ts` against a disposable Astro instance after changing Tasks keyboard navigation or help. Open Table before pressing `K` and confirm that Kanban stays open. On Tasks, `1` opens Kanban, `2` Table, `3` Calendar, and `4` Timeline. Open help with `?` from a focused control. Confirm that Tab stays inside help and that Escape and **Close shortcuts** return focus to the opener.
 
+Help and **Settings → Personal → Keyboard Shortcuts** render the same list from `apps/web/src/lib/keyboard-shortcuts.ts`. Add a key there only when its handler ships, with an `en` and `ga` label. Help shows **Everywhere** (`/`, `n`, `d`, `k`, `t`, `y`, `u`, `c`, Ctrl + K, Ctrl + B, `?`, Esc) and **On the Tasks page** (`1` to `4`). Settings adds **On the Settings page** (Home). Each destination has one label: `k` and `1` both say **Kanban view**, and the `k` row notes that it moves up on Today and Timeline. The dialog takes its accessible name from the visible title (**Keyboard shortcuts**, or **Aicearraí méarchláir** in Irish). Close is a 44 px `.btn-icon`. At 667 × 375 the header stays visible while the list scrolls, and the dialog is at most 420 px wide.
+
 Check that `K` still moves to the previous task after navigating to Today and after changing Timeline zoom. Use at least two dated tasks to verify the selection moves within the current view.
 
 Open a Timeline bar popup and press `?` with **View Details** focused. Help covers the popup until Escape or **Close shortcuts** returns focus to **View Details**. Native dialogs, popovers and blocking prompts keep keyboard control while open, including when you press `K`.

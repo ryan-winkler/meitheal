@@ -62,6 +62,8 @@ Every event payload includes the full task context:
 
 When Node-RED runs as an HA addon, it connects to HA Core via WebSocket automatically. Use the `events: all` node to listen for Meitheal events.
 
+With the output property set to **event data**, `msg.payload` holds the whole Home Assistant event (`event_type`, `event`, `origin`, `time_fired`, `context`). The Meitheal fields such as `title`, `priority` and `ticket_key` sit under `msg.payload.event`, so a mustache template uses `{{payload.event.title}}`. The bundled `integrations/nodered/meitheal-flows.json` follows this path. If a notification shows blank fields, check that the template does not read `{{payload.title}}`.
+
 ### Node-RED Flow: Task Created → Notification
 
 1. **events: all** node — Filter: `meitheal_task_created`

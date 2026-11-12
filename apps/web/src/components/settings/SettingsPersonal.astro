@@ -3,6 +3,7 @@ import { t } from "../../i18n/translations"
 import type { Locale } from "../../lib/locale"
 import { SETTINGS_SECTIONS } from "../../lib/settings-registry"
 import { canManageSystemSettings } from "../../lib/settings-security"
+import KeyboardShortcutList from "../layout/KeyboardShortcutList.astro"
 import SettingsActionRow from "./SettingsActionRow.astro"
 import SettingsAppearance from "./SettingsAppearance.astro"
 import SettingsDisclosure from "./SettingsDisclosure.astro"
@@ -217,47 +218,7 @@ const personalSection = SETTINGS_SECTIONS.find((section) => section.id === "pers
       <input id="single-key-shortcuts" type="checkbox" checked />
       {t("settings.shortcut_single_keys", locale)}
     </label>
-    <div class="shortcut-grid" style="margin-top: 14px;">
-      <div class="shortcut-row">
-        <kbd>n</kbd><span>{t("settings.shortcut_new_task", locale)}</span>
-      </div>
-      <div class="shortcut-row">
-        <kbd>/</kbd><span>{t("settings.shortcut_search", locale)}</span>
-      </div>
-      <div class="shortcut-row">
-        <kbd>Ctrl</kbd> + <kbd>B</kbd><span>{t("settings.shortcut_toggle_sidebar", locale)}</span>
-      </div>
-      <div class="shortcut-row">
-        <kbd>Ctrl</kbd> + <kbd>K</kbd><span>{t("settings.shortcut_cmd_palette", locale)}</span>
-      </div>
-      <div class="shortcut-row">
-        <kbd>l</kbd><span>{t("settings.shortcut_list", locale)}</span>
-      </div>
-      <div class="shortcut-row">
-        <kbd>k</kbd><span>{t("settings.shortcut_kanban", locale)}</span>
-      </div>
-      <div class="shortcut-row">
-        <kbd>t</kbd><span>{t("settings.shortcut_table", locale)}</span>
-      </div>
-      <div class="shortcut-row">
-        <kbd>y</kbd><span>{t("settings.shortcut_today", locale)}</span>
-      </div>
-      <div class="shortcut-row">
-        <kbd>u</kbd><span>{t("settings.shortcut_upcoming", locale)}</span>
-      </div>
-      <div class="shortcut-row">
-        <kbd>c</kbd><span>{t("settings.shortcut_calendar", locale)}</span>
-      </div>
-      <div class="shortcut-row">
-        <kbd>Esc</kbd><span>{t("settings.shortcut_close", locale)}</span>
-      </div>
-      <div class="shortcut-row">
-        <kbd>?</kbd><span>{t("settings.shortcut_help", locale)}</span>
-      </div>
-      <div class="shortcut-row">
-        <kbd>Home</kbd><span>{t("settings.shortcut_scroll_top", locale)}</span>
-      </div>
-    </div>
+    <KeyboardShortcutList locale={locale} variant="settings" />
   </SettingsPanelCard>
 
   <!-- Help & Support -->
@@ -333,49 +294,6 @@ const personalSection = SETTINGS_SECTIONS.find((section) => section.id === "pers
     display: grid;
     gap: 16px;
     min-width: 0;
-  }
-
-  /* Keyboard Shortcuts */
-  .shortcut-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr));
-    gap: 0;
-  }
-  .shortcut-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    min-width: 0;
-    flex-wrap: wrap;
-    padding: 8px;
-    border-bottom: 1px solid var(--border);
-    font-size: 13px;
-    color: var(--text-secondary);
-  }
-  .shortcut-row:nth-child(odd) {
-    background: rgba(255, 255, 255, 0.02);
-  }
-  .shortcut-row:last-child,
-  .shortcut-row:nth-last-child(2):nth-child(odd) {
-    border-bottom: none;
-  }
-  kbd {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 28px;
-    height: 26px;
-    padding: 0 8px;
-    font-family: "JetBrains Mono", monospace;
-    font-size: 12px;
-    font-weight: 500;
-    color: var(--text-primary);
-    background: var(--bg-secondary);
-    border: 1px solid var(--border);
-    border-bottom-width: 2px;
-    border-radius: 6px;
-    box-shadow: 0 1px 0 rgba(0, 0, 0, 0.2);
-    white-space: nowrap;
   }
 
   /* Accent color swatches */
