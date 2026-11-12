@@ -365,7 +365,7 @@ async function handleRequest({ request, locals, routePattern }: Parameters<Middl
     const isDev = import.meta.env.DEV;
 
     if (!authenticatedTransport) {
-      if (url.pathname === "/api/mcp" || url.pathname.startsWith("/api/a2a")) {
+      if (url.pathname === "/api/mcp") {
         return new Response(
           JSON.stringify({
             status: 401,
