@@ -10,8 +10,8 @@
  * @kcs Token auth is opt-in. System functions without any tokens.
  */
 import { hashToken, type AgentScope, type AgentTokenRecord } from "@meitheal/domain-auth"
-import { ensureAgentTokenSchema, getAgentTokenByHash, updateAgentTokenLastUsed } from "@domains/auth/agent-token-store"
-import { ensureDatabaseSchemaSupported } from "@domains/tasks/persistence/store"
+import { ensureAgentTokenSchema, getAgentTokenByHash, updateAgentTokenLastUsed } from "@domains/auth"
+import { ensureDatabaseSchemaSupported } from "@domains/tasks"
 import { apiError, apiProblem } from "./api-response"
 
 export interface ResolvedAgent {

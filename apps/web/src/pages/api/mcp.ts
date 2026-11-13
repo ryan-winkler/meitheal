@@ -3,13 +3,17 @@ import { resolve } from "node:path"
 import type { APIRoute } from "astro"
 import { parse } from "yaml"
 import { hasScope, isAssignedTaskScopedRoute, resolveAgentRouteScope, type AgentScope } from "@meitheal/domain-auth"
-import { hasBoardSelection, isBoardTaskApiPath, unavailableBoardResponse } from "@domains/tasks/board-availability"
+import {
+  checkMcpAvailability,
+  MCP_LEGACY_VERSION,
+  MCP_PROTOCOL_VERSION,
+  MCP_SUPPORTED_VERSIONS,
+  resolveMcpSchema,
+} from "@domains/agents"
+import { hasBoardSelection, isBoardTaskApiPath, unavailableBoardResponse } from "@domains/tasks"
 import { apiJson, apiError, apiProblem } from "@lib/api-response"
 import { readWithinLimit } from "@lib/bounded-body"
-import { resolveMcpSchema } from "@lib/mcp-schema"
 import { isDoneStatus } from "@lib/status-config"
-import { checkMcpAvailability } from "@lib/mcp-availability"
-import { MCP_LEGACY_VERSION, MCP_PROTOCOL_VERSION, MCP_SUPPORTED_VERSIONS } from "@lib/mcp-versions"
 import type { ResolvedAgent } from "@lib/agent-token-guard"
 
 /**
@@ -65,6 +69,7 @@ const EXCLUDED_OPS = new Set([
   "updateLabel", "deleteLabel", // Shared vocabulary requires a current administrator, never an agent token
   "taskInactivity",
   "mcpEndpoint",       // Self-reference
+  "getA2AAgentCard", "sendA2AMessage", // Separate A2A protocol boundary
   "healthPing",        // HEAD-only liveness
   "subscribeSSE",      // SSE streaming, not callable
   "exportDatabase",    // Large binary download
@@ -189,11 +194,20 @@ function loadOpenAPISpec(): { tools: McpTool[], routes: Map<string, RouteMapping
         }
       }
 
-      if (toolName === "searchTasks") properties.scope = { type: "string", enum: ["tasks"], default: "tasks" }
+      if (toolName === "searchTasks") {
+        properties.scope = { type: "string", enum: ["tasks"], default: "tasks" }
+        properties.query = { type: "string", description: "Search text (alias for q)." }
+        properties.status = {
+          type: "string",
+          description: "Filter by status (backlog, pending, active, complete, todo, in_progress, done).",
+        }
+      }
 
       tools.push({
         name: toolName,
-        description: op.description ?? op.summary ?? `${method.toUpperCase()} ${path}`,
+        description: toolName === "searchTasks"
+          ? getCustomToolDescription(toolName)
+          : (op.description ?? op.summary ?? `${method.toUpperCase()} ${path}`),
         inputSchema: {
           type: "object",
           properties,
@@ -227,7 +241,7 @@ function scopedApi(authorization: string) {
 
     const response = await fetch(url, {
       ...init,
-      headers: { "content-type": "application/json", authorization },
+      headers: { "content-type": "application/json", authorization, "x-automation-source": "mcp" },
       redirect: "error",
       signal: AbortSignal.timeout(10_000),
     })
@@ -250,33 +264,42 @@ function scopedApi(authorization: string) {
 const customHandlers = new Map<string, CustomToolHandler>()
 
 // completeTask: supports both ID and title-based completion
-customHandlers.set("completeTask", async (args, requestApi) => {
-  if (args.id) {
-    const safeId = encodeURIComponent(String(args.id))
+customHandlers.set("completeTask", async (args, requestApi, agent) => {
+  const id = typeof args.id === "string" ? args.id.trim() : args.id != null ? String(args.id).trim() : ""
+  if (id) {
+    const safeId = encodeURIComponent(id)
     const res = await requestApi(`/api/tasks/${safeId}`, {
       method: "PUT",
       body: JSON.stringify({ status: "complete" }),
     })
-    return acknowledgedCompletion(res, String(args.id))
+    return acknowledgedCompletion(res, id)
   }
-  if (args.title) {
-    const searchRes = await requestApi(`/api/search?q=${encodeURIComponent(String(args.title))}&scope=tasks`)
+  const title = typeof args.title === "string" ? args.title.trim() : args.title != null ? String(args.title).trim() : ""
+  if (title) {
+    const searchParams = new URLSearchParams({ q: title, scope: "tasks", task_fields: "title", limit: "12" })
+    if (agent?.scopes.includes("tasks:write:assigned") && !agent.scopes.includes("tasks:write") && agent.assigneeId) {
+      searchParams.set("assigned_to", agent.assigneeId)
+    }
+    const searchRes = await requestApi(`/api/search?${searchParams}`)
     const data = (await checkedJson(searchRes)) as {
       sections?: Array<{ id?: string, items?: Array<Record<string, unknown>> }>
     }
     const taskSection = data.sections?.find((s) => s.id === "tasks")
-    const match = taskSection?.items?.find(
-      (t) => String(t.title).toLowerCase() === String(args.title).toLowerCase()
+    const matches = (taskSection?.items ?? []).filter(
+      (t) => String(t.title ?? "").trim().toLowerCase() === title.toLowerCase(),
     )
-    if (match) {
-      const taskId = match.taskId ?? match.id
+    if (matches.length > 1) {
+      return { error: "Multiple tasks have that title; provide a task ID" }
+    }
+    if (matches.length === 1) {
+      const taskId = matches[0]!.taskId ?? matches[0]!.id
       const response = await requestApi(`/api/tasks/${encodeURIComponent(String(taskId))}`, {
         method: "PUT",
         body: JSON.stringify({ status: "complete" }),
       })
       return acknowledgedCompletion(response, String(taskId))
     }
-    return { status: "not_found", title: args.title }
+    return { status: "not_found", title }
   }
   return { status: "error", message: "Provide id or title" }
 })
@@ -284,14 +307,15 @@ customHandlers.set("completeTask", async (args, requestApi) => {
 // searchTasks: reshape search response for cleaner AI consumption
 customHandlers.set("searchTasks", async (args, requestApi) => {
   const params = new URLSearchParams()
-  const query = args.q ?? args.query
-  if (query !== undefined) params.set("q", String(query))
+  const query = args.q != null ? args.q : args.query
+  if (query != null) params.set("q", String(query))
   for (const key of ["status", "priority", "assigned_to", "limit", "sort", "task_fields"]) {
-    if (args[key] !== undefined) params.set(key, String(args[key]))
+    if (args[key] != null) params.set(key, String(args[key]))
   }
-  for (const key of ["include_completed", "include_archived"]) {
-    if (args[key] === true) params.set(key, "1")
-  }
+  const includeCompleted = args.include_completed === true ||
+    (args.include_completed == null && typeof args.status === "string" && isDoneStatus(args.status.trim()))
+  if (includeCompleted) params.set("include_completed", "1")
+  if (args.include_archived === true) params.set("include_archived", "1")
   params.set("scope", "tasks")
   const res = await requestApi(`/api/search?${params}`)
   const data = (await checkedJson(res)) as {
@@ -559,6 +583,17 @@ export const POST: APIRoute = async ({ request, locals }) => {
   if (access instanceof Response) return access
   const { agent, authorization } = access
 
+  const mediaType = request.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase()
+  if (mediaType !== "application/json") {
+    if (!request.body?.locked) void request.body?.cancel().catch(() => undefined)
+    return apiProblem({
+      status: 415,
+      title: "Unsupported Media Type",
+      detail: "Send MCP JSON-RPC requests as application/json.",
+      extraHeaders: { "Cache-Control": "no-store" },
+    })
+  }
+
   const tooLarge = () => apiProblem({
     status: 413, detail: "MCP requests may be at most 1 MiB.",
     extraHeaders: { "Cache-Control": "no-store", Connection: "close" },
@@ -606,7 +641,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
     return new Response(null, { status: 202, headers: { "Cache-Control": "no-store" } })
   }
 
-  const serverInfo = { name: "meitheal", version: process.env.MEITHEAL_VERSION || "0.3.0" }
+  const serverInfo = { name: "meitheal", version: process.env.MEITHEAL_VERSION || "0.0.1" }
   const result = (value: Record<string, unknown>) => mcpJson({
     jsonrpc: "2.0",
     id: reqId,
@@ -670,7 +705,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
         return result({
           content: [{ type: "text", text: JSON.stringify(output) }],
           ...(modern ? { structuredContent: output } : {}),
-          isError: "error" in output || (modern && (output.status === "not_found" || output.status === "error")),
+          isError: "error" in output || output.status === "not_found" || output.status === "error",
         })
       } catch (toolError) {
         const message = toolError instanceof Error && /^Tool request failed with HTTP \d{3}(?:: [\s\S]+)?$/.test(toolError.message)
@@ -692,7 +727,7 @@ function getCustomToolDescription(name: string): string {
   const descriptions: Record<string, string> = {
     completeTask: "Mark a task as complete by ID or title. Title lookup requires search:read and matches the full title.",
     searchTasks: "Search tasks by query text, status, priority, or assignee. Returns a clean list of matching tasks.",
-    whoAmI: "Returns the authenticated agent identity, token prefix, authorized scopes, and linked assignee ID.",
+    whoAmI: "Returns the authenticated agent ID, display name, authorized scopes, and linked assignee ID.",
     listMyTasks: "List tasks assigned to this agent token's linked assignee (defaults to 50; filter by status if needed).",
     handBackTask: "Hand back a task to humans or reassign it with an optional explanation note.",
   }
@@ -711,13 +746,13 @@ function getCustomToolSchema(name: string): McpTool["inputSchema"] {
     searchTasks: {
       type: "object",
       properties: {
-        query: { type: "string", description: "Search query text" },
-        status: { type: "string", description: "Filter by status" },
+        q: { type: "string", description: "Search query text" },
+        query: { type: "string", description: "Search query text (alias for q)" },
+        status: { type: "string", description: "Filter by status (backlog, pending, active, complete, todo, in_progress, done)" },
         priority: { type: "integer", description: "Filter by priority (1-5)" },
         assigned_to: { type: "string", description: "Filter by assignee" },
         include_completed: { type: "boolean", description: "Include completed tasks" },
       },
-      required: ["query"],
     },
     whoAmI: {
       type: "object",
@@ -726,7 +761,7 @@ function getCustomToolSchema(name: string): McpTool["inputSchema"] {
     listMyTasks: {
       type: "object",
       properties: {
-        status: { type: "string", description: "Filter by status (pending, in_progress, completed, etc.)" },
+        status: { type: "string", description: "Filter by status (backlog, pending, active, complete, todo, in_progress, done)" },
         limit: { type: "integer", description: "Maximum tasks to return (default 50)" },
       },
     },
