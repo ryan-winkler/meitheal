@@ -60,6 +60,35 @@ export async function getHAConfiguration(): Promise<HAConfiguration | null> {
   await repo.ensureSettingsTable()
   return resolveHAConfiguration(process.env, await repo.getByKeys(["ha_url", "ha_token"]))
 }
+
+/**
+ * Perform an authenticated single-resource REST call against Home Assistant Core.
+ * Returns null if Home Assistant is unconfigured or unreachable.
+ */
+export async function haRestFetch(path: string, options: RequestInit = {}): Promise<Response | null> {
+  let config: HAConfiguration | null
+  try {
+    config = await getHAConfiguration()
+  } catch {
+    return null
+  }
+  if (!config) return null
+  const cleanPath = path.startsWith("/") ? path : `/${path}`
+  try {
+    return await fetch(`${config.baseUrl.replace(/\/+$/, "")}${cleanPath}`, {
+      ...options,
+      headers: {
+        "content-type": "application/json",
+        ...(options.headers as Record<string, string> | undefined),
+        authorization: `Bearer ${config.token}`,
+      },
+      redirect: "error",
+      signal: options.signal ?? AbortSignal.timeout(5_000),
+    })
+  } catch {
+    return null
+  }
+}
 let connecting = false;
 let connectingFingerprint: string | null = null
 let connectionGeneration = 0

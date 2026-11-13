@@ -30,7 +30,14 @@ import type { Locale } from "../lib/locale"
 const cookieLocale = Astro.cookies.get("meitheal-locale")?.value
 const locale: Locale = cookieLocale === "ga" ? "ga" : "en"
 
-const { tasks } = await getTasksForView()
+const todayStr = new Date().toISOString().slice(0, 10)
+const todayStartMs = Date.parse(`${todayStr}T00:00:00.000Z`)
+const { tasks } = await getTasksForView({
+  slim: true,
+  descriptionPreviewChars: 240,
+  includeDeferred: false,
+  excludeCompletedBeforeMs: todayStartMs,
+})
 const openTasks = tasks.filter((t) => !t.is_done && t.deferred_at === null)
 
 // ── Schema-driven quadrant partitioning ────────────────────────
@@ -53,8 +60,13 @@ for (const t of openTasks) {
 const unclassifiedCount = openTasks.filter((t) => t.urgency === 0 && t.importance === 0).length
 
 // Completed today count (for dopamine feedback)
-const todayStr = new Date().toISOString().slice(0, 10)
-const completedToday = tasks.filter((t) => t.is_done && t.updated_at?.startsWith(todayStr)).length
+const completedToday = tasks.filter((t) => {
+  if (!t.is_done) return false
+  if (typeof t.updated_at === "number") return t.updated_at >= todayStartMs
+  const raw = String(t.updated_at ?? "")
+  const ms = /^\d+$/.test(raw) ? Number(raw) : Date.parse(raw)
+  return Number.isFinite(ms) && ms >= todayStartMs
+}).length
 
 // WIP limit threshold for Q1 (Dan Ariely / Kelly McGonigal audit)
 const Q1_WIP_LIMIT = 5

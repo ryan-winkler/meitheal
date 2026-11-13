@@ -45,25 +45,29 @@ const {
 } = Astro.props
 
 const ticketKey = formatTicketKey(task.ticket_number ?? 0)
-const searchText = [task.title, task.description ?? "", ...task.labels]
+const boundedDescription = (task.description ?? "").slice(0, 1024)
+const searchText = [task.title, boundedDescription, ...task.labels]
   .join(" ")
   .toLowerCase()
 
-// Parse checklists for count display
+// Parse checklists for count display (or use precomputed slim scalars)
 let checklistDone = 0
 let checklistTotal = 0
-try {
-  const cl = task.checklists
-    ? typeof task.checklists === "string"
+if (task.checklists === null) {
+  checklistTotal = task.checklist_total ?? 0
+  checklistDone = task.checklist_done ?? 0
+} else {
+  try {
+    const cl = typeof task.checklists === "string"
       ? JSON.parse(task.checklists)
       : task.checklists
-    : []
-  if (Array.isArray(cl) && cl.length > 0) {
-    checklistTotal = cl.length
-    checklistDone = cl.filter((i: { done: boolean }) => i.done).length
+    if (Array.isArray(cl) && cl.length > 0) {
+      checklistTotal = cl.length
+      checklistDone = cl.filter((i: { done: boolean }) => i.done).length
+    }
+  } catch {
+    /* skip */
   }
-} catch {
-  /* skip */
 }
 
 // Custom fields
@@ -246,7 +250,7 @@ const customEntries = Object.entries(task.custom_fields).filter(
         type="button"
         class="tli__action tli__ask-ai"
         data-title={task.title}
-        data-description={task.description ?? ""}
+        data-description={boundedDescription}
         data-status={task.status}
         data-priority={String(task.priority)}
         title="Ask AI"

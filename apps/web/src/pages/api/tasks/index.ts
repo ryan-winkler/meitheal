@@ -1,4 +1,5 @@
 import type { APIRoute } from "astro"
+import type { ResultSet } from "@libsql/client"
 import { deriveEisenhowerQuadrant, VALID_TASK_TYPES, type TaskType } from "@meitheal/domain-tasks"
 import { normalizeLabelTitle, taskLabelInsert } from "@domains/labels"
 import { hasBoardSelection, rejectBoardSelectionInJson, unavailableBoardResponse } from "@domains/tasks/board-availability"
@@ -6,6 +7,7 @@ import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/s
 import { taskAddedActivity } from "@domains/tasks/persistence/recent-activity"
 import { taskInsertStatement, TaskRepository } from "@domains/tasks/persistence/task-repository"
 import { dispatchTaskCreation, prepareTaskCreation, taskCreationPayload } from "@domains/tasks/task-creation-service"
+import { runWriteTransaction } from "../../../../scripts/database-client.mjs"
 import { formatTicketKey } from "../../../lib/ticket-key"
 import { logApiError } from "../../../lib/api-logger"
 import { isDbUnavailable, db503Response } from "../../../lib/db-fallback"
@@ -170,7 +172,14 @@ export const POST: APIRoute = async ({ request, locals }) => {
     statements[0] = taskInsertStatement(prepared.task, now, { requestId })
     statements.push(...[...new Set<string>(labels)].map(name => taskLabelInsert(name, prepared.task.id, requestId)))
   }
-  const [inserted] = await client.batch(statements, "write")
+  const [inserted] = await runWriteTransaction(
+    client,
+    function* () {
+      const results: ResultSet[] = yield statements
+      return results
+    },
+    { signal: locals.writeAbortSignal },
+  )
   const ticketNumber = Number(inserted!.rows[0]!.ticket_number)
   const payload = taskCreationPayload(prepared.task, ticketNumber, now)
   const authority = await taskEventAuthorityHeaders(["task.created"])

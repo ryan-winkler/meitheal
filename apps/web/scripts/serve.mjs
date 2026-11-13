@@ -2,6 +2,7 @@
 import http from "node:http"
 import { boardRouteSelection } from "./board-route-selection.mjs"
 import { runWithIngressTransport, waitForDownloadDrain } from "./ingress-transport.mjs"
+import { recordIngressStreamAbort } from "./runtime-counters.mjs"
 
 // Home Assistant's documented ingress transport peer. Forwarding headers and
 // Astro's clientAddress can describe the client, so neither establishes this.
@@ -78,12 +79,14 @@ const server = http.createServer((req, res) => {
   // Normalize only the path. Preserve the query string exactly.
   let sseSocket
   let waitForDatabaseDownloadDrain
+  let rawPath
   const waitForDrain = signal => waitForDownloadDrain(res, signal)
   const waitForHtmlDrain = fromSupervisor ? waitForDrain : undefined
   if (req.url) {
     const query = req.url.indexOf("?")
     const path = query === -1 ? req.url : req.url.slice(0, query)
     const normalizedPath = path.replace(/\/+/g, "/")
+    rawPath = normalizedPath
     const canonical = privateRoutePath(normalizedPath)
     const isPins = canonical === pinApiPath || canonical === pinnedPagePath
     const isOnlineRead = onlineReadPaths.has(canonical)
@@ -126,7 +129,35 @@ const server = http.createServer((req, res) => {
     }
   }
 
-  runWithIngressTransport({ peer, fromSupervisor, identityHeadersSafe, configuredPath, sseSocket, waitForDatabaseDownloadDrain, waitForHtmlDrain }, () => handler(req, res))
+  const transportContext = {
+    peer,
+    fromSupervisor,
+    identityHeadersSafe,
+    configuredPath,
+    sseSocket,
+    waitForDatabaseDownloadDrain,
+    waitForHtmlDrain,
+    behindIngress: false,
+    streamingIngressHtml: false,
+    abortRecorded: false,
+    rawPath,
+  }
+  res.once("close", () => {
+    if (
+      Boolean(transportContext.behindIngress) &&
+      !res.writableEnded &&
+      !transportContext.abortRecorded &&
+      (
+        Boolean(transportContext.streamingIngressHtml) ||
+        String(res.getHeader("content-type") ?? res._header ?? "").toLowerCase().includes("text/html")
+      )
+    ) {
+      transportContext.abortRecorded = true
+      recordIngressStreamAbort()
+    }
+  })
+
+  runWithIngressTransport(transportContext, () => handler(req, res))
 })
 
 server.listen(port, host, () => {

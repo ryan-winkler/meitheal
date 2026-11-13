@@ -3,9 +3,10 @@
  * @domain ha
  * @bounded-context integration
  */
-export { getHAConnection, getHAConnectionStatus, getHAConfig, closeHAConnection, getIngressEntry, onHAConnectionStatus } from "./ha-connection";
+export { getHAConnection, getHAConnectionStatus, getHAConfig, closeHAConnection, getIngressEntry, onHAConnectionStatus, haRestFetch } from "./ha-connection";
 export type { HAConnectionState } from "./ha-connection";
-export { initEntitySubscription, getAllEntities, getEntity, getEntitiesByDomain, getCalendarEntities, getTodoEntities, onEntityChange, stopEntitySubscription } from "./ha-entities";
+export { initEntitySubscription, waitForInitialEntityHydration, getEntityCacheDiagnostics, getAllEntities, getEntity, getEntitiesByDomain, getCalendarEntities, getTodoEntities, onEntityChange, stopEntitySubscription, resetEntityConnection } from "./ha-entities";
+export type { SlimHassEntity } from "./ha-entities";
 export { initHAIntegrations } from "./ha-startup";
 export { listCalendarEvents, createCalendarEvent, updateCalendarEvent, deleteCalendarEvent, getCalendarEntityFeatures, CalendarFeature, addTodoItem, getTodoItems, updateTodoItem, removeTodoItem, removeTodoCompletedItems, moveTodoItem, subscribeTodoItems, sendNotification, callHAService } from "./ha-services";
 export type { CalendarEvent, TodoItem } from "./ha-services";

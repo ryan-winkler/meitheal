@@ -1,11 +1,36 @@
 import { Readable, Transform, pipeline } from "node:stream"
-import type { RewritingStream } from "parse5-html-rewriting-stream"
+import { RewritingStream } from "parse5-html-rewriting-stream"
 import type { WaitForResponseDrain } from "../../scripts/ingress-transport.mjs"
 import { paceResponseBody } from "./response-backpressure"
 
 const scopedAttributes = new Set(["href", "src", "action"])
-const bufferedLimit = 5 * 1024 * 1024
 const outputBatchSize = 16 * 1024
+
+function shouldPrefixUrl(val: string, prefix: string): boolean {
+  return (
+    val.startsWith("/") &&
+    !val.startsWith("//") &&
+    val !== prefix &&
+    !val.startsWith(prefix + "/") &&
+    !val.startsWith(prefix + "?") &&
+    !val.startsWith(prefix + "#")
+  )
+}
+
+function rewriteSrcset(rawSrcset: string, prefix: string): { value: string; changed: boolean } {
+  let changed = false
+  const parts = rawSrcset.split(",").map((candidate) => {
+    const match = candidate.match(/^(\s*)(\S+)([\s\S]*)$/)
+    if (!match) return candidate
+    const [, leading, urlToken, descriptor] = match
+    if (urlToken && shouldPrefixUrl(urlToken, prefix)) {
+      changed = true
+      return `${leading}${prefix}${urlToken}${descriptor}`
+    }
+    return candidate
+  })
+  return { value: changed ? parts.join(",") : rawSrcset, changed }
+}
 
 export async function rewriteIngressHtml(
   response: Response,
@@ -13,18 +38,33 @@ export async function rewriteIngressHtml(
   options?: { wait?: WaitForResponseDrain | undefined; signal: AbortSignal },
 ): Promise<Response> {
   if (!response.body || !response.headers.get("content-type")?.includes("text/html")) return response
+  const prefix = ingressPath.replace(/\/+$/, "")
+  if (prefix === "") return response
 
   const reader = response.body.getReader()
   const signal = options?.signal
-  const cancelInput = () => { void reader.cancel().catch(() => {}) }
+  let readerReleased = false
+  const cancelInput = () => {
+    if (!readerReleased) void reader.cancel().catch(() => {})
+  }
   const releaseInput = () => {
+    if (readerReleased) return
+    readerReleased = true
     signal?.removeEventListener("abort", cancelInput)
-    reader.releaseLock()
+    try {
+      reader.releaseLock()
+    } catch {
+      /* already released */
+    }
   }
   signal?.addEventListener("abort", cancelInput, { once: true })
-  if (signal?.aborted) cancelInput()
-  const buffered: Uint8Array[] = []
-  const script = `<script>window.__ingress_path=${JSON.stringify(ingressPath)};</script>`
+  if (signal?.aborted) {
+    cancelInput()
+    releaseInput()
+    signal.throwIfAborted()
+  }
+
+  const script = `<script>window.__ingress_path=${JSON.stringify(prefix)};</script>`
   const headers = new Headers(response.headers)
   headers.delete("content-length")
   const result = (body: BodyInit) => new Response(body, {
@@ -33,57 +73,50 @@ export async function rewriteIngressHtml(
     headers,
   })
 
-  let size = 0
-  let rewriter: RewritingStream | undefined
-  try {
-    while (size <= bufferedLimit) {
-      const next = await reader.read()
-      signal?.throwIfAborted()
-      if (next.done) break
-      buffered.push(next.value)
-      size += next.value.byteLength
-    }
-    if (size > bufferedLimit) {
-      const { RewritingStream } = await import("parse5-html-rewriting-stream")
-      signal?.throwIfAborted()
-      rewriter = new RewritingStream()
-    }
-  } catch (error) {
-    cancelInput()
-    releaseInput()
-    throw error
-  }
-  if (!rewriter) {
-    releaseInput()
-    const html = Buffer.concat(buffered, size).toString("utf8")
-    return result(html.replace("<head>", `<head>${script}`)
-      .replace(/((?:href|src|action)=["'])\/(?!\/)/g, `$1${ingressPath}/`))
-  }
+  const rewriter = new RewritingStream()
+  let headInjected = false
 
-  // Ordinary pages take the existing fast path. Large pages stay scoped
-  // without joining their whole bodies into a single HTML string.
   rewriter.on("startTag", (tag, raw) => {
     let changed = false
     for (const attr of tag.attrs) {
-      if (scopedAttributes.has(attr.name) && attr.value.startsWith("/") && !attr.value.startsWith("//") &&
-          attr.value !== ingressPath && !attr.value.startsWith(ingressPath + "/")) {
-        attr.value = ingressPath + attr.value
-        changed = true
+      if (scopedAttributes.has(attr.name)) {
+        if (shouldPrefixUrl(attr.value, prefix)) {
+          attr.value = prefix + attr.value
+          changed = true
+        }
+      } else if (attr.name === "srcset") {
+        const nextSrcset = rewriteSrcset(attr.value, prefix)
+        if (nextSrcset.changed) {
+          attr.value = nextSrcset.value
+          changed = true
+        }
       }
     }
     if (changed) rewriter.emitStartTag(tag)
     else rewriter.emitRaw(raw)
 
-    if (tag.tagName === "head") rewriter.emitRaw(script)
+    if (!headInjected && tag.tagName === "head") {
+      headInjected = true
+      rewriter.emitRaw(script)
+    }
   })
 
   async function* readBody() {
+    const decoder = new TextDecoder("utf-8")
     try {
-      yield* buffered.splice(0)
       while (true) {
         const next = await reader.read()
-        if (next.done) return
-        yield next.value
+        signal?.throwIfAborted()
+        if (next.done) {
+          const tail = decoder.decode()
+          if (tail) yield tail
+          return
+        }
+        const value = next.value
+        for (let offset = 0; offset < value.byteLength; offset += outputBatchSize) {
+          const decoded = decoder.decode(value.subarray(offset, offset + outputBatchSize), { stream: true })
+          if (decoded) yield decoded
+        }
       }
     } finally {
       cancelInput()
@@ -94,9 +127,10 @@ export async function rewriteIngressHtml(
   let outputBatch: Buffer[] = []
   let outputSize = 0
   const output = new Transform({
-    transform(chunk: Buffer, _encoding, done) {
-      outputBatch.push(chunk)
-      outputSize += chunk.byteLength
+    transform(chunk: Buffer | string, _encoding, done) {
+      const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk), "utf8")
+      outputBatch.push(buf)
+      outputSize += buf.byteLength
       if (outputSize < outputBatchSize) return done()
       const batch = Buffer.concat(outputBatch, outputSize)
       outputBatch = []
@@ -104,13 +138,62 @@ export async function rewriteIngressHtml(
       done(null, batch)
     },
     flush(done) {
-      done(null, Buffer.concat(outputBatch, outputSize))
+      if (outputSize > 0) {
+        const batch = Buffer.concat(outputBatch, outputSize)
+        outputBatch = []
+        outputSize = 0
+        done(null, batch)
+      } else {
+        done()
+      }
     },
   })
+
   const body = Readable.from(readBody(), { encoding: "utf8", objectMode: false })
-  // A generator blocked on read cannot reach its finally block on its own.
-  output.once("close", cancelInput)
+  output.once("close", () => {
+    cancelInput()
+    releaseInput()
+  })
   pipeline(body, rewriter, output, () => { /* Stream failures propagate to the response consumer. */ })
+
+  await new Promise<void>((resolve, reject) => {
+    const onReady = () => {
+      cleanupWait()
+      resolve()
+    }
+    const onError = (err: unknown) => {
+      cleanupWait()
+      reject(err)
+    }
+    const onAbort = () => {
+      cleanupWait()
+      cancelInput()
+      output.destroy()
+      releaseInput()
+      reject(signal?.reason ?? new DOMException("The operation was aborted.", "AbortError"))
+    }
+    function cleanupWait() {
+      output.off("readable", onReady)
+      output.off("end", onReady)
+      output.off("close", onReady)
+      output.off("error", onError)
+      signal?.removeEventListener("abort", onAbort)
+    }
+    if (signal?.aborted) {
+      onAbort()
+      return
+    }
+    if (output.readableLength > 0 || output.readableEnded) {
+      resolve()
+      return
+    }
+    output.once("readable", onReady)
+    output.once("end", onReady)
+    output.once("close", onReady)
+    output.once("error", onError)
+    signal?.addEventListener("abort", onAbort, { once: true })
+  })
+
   const stream = Readable.toWeb(output, { strategy: { highWaterMark: 0 } }) as ReadableStream<Uint8Array>
   return result(options?.wait ? paceResponseBody(stream, options.wait, options.signal, outputBatchSize) : stream)
 }
