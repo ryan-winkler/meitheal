@@ -7,7 +7,6 @@
 import { withAsyncButton } from "@lib/async-button"
 import { confirmDialog } from "@lib/confirm-dialog"
 import { pageLifecycle } from "@lib/page-lifecycle"
-import { escapeHtml } from "@lib/safe-html"
 import { showToast } from "@lib/toast"
 
 interface TokenInfo {
@@ -100,11 +99,11 @@ export function initAgentTokensSettings(): void {
     statusEl!.replaceChildren()
   }
 
-  function showTokenStatus(html: string) {
+  function showTokenStatus(...nodes: Array<Node | string>) {
     listEl!.querySelectorAll(".agent-tokens__row").forEach(el => el.remove())
     emptyEl!.hidden = true
     statusEl!.hidden = false
-    statusEl!.innerHTML = html
+    statusEl!.replaceChildren(...nodes)
   }
 
   function showTokenAdminNotice() {
@@ -115,11 +114,15 @@ export function initAgentTokensSettings(): void {
   }
 
   function showTokenError(focusRetry = false) {
-    showTokenStatus(
-      `Failed to load tokens.\n<button type="button" class="btn btn-ghost btn-sm" id="tokens-retry" style="margin-left: 8px;">Retry</button>`,
-    )
+    const retryBtn = document.createElement("button")
+    retryBtn.type = "button"
+    retryBtn.className = "btn btn-ghost btn-sm"
+    retryBtn.id = "tokens-retry"
+    retryBtn.style.marginLeft = "8px"
+    retryBtn.textContent = "Retry"
+    showTokenStatus("Failed to load tokens.\n", retryBtn)
     if (focusRetry) {
-      document.getElementById("tokens-retry")?.focus()
+      retryBtn.focus()
     }
   }
 
@@ -198,37 +201,78 @@ export function initAgentTokensSettings(): void {
       row.className = `agent-tokens__row${token.revoked ? " agent-tokens__revoked" : ""}`
       row.dataset.tokenId = token.id
 
-      const scopeBadges = token.scopes
-        .map(s => `<span class="agent-tokens__scope-badge">${escapeHtml(s)}</span>`)
-        .join("")
-      const assigneeBadge = token.assigneeId
-        ? `<span class="agent-tokens__scope-badge">assignee:${escapeHtml(token.assigneeId)}</span>`
-        : ""
+      const info = document.createElement("div")
+      info.className = "agent-tokens__row-info"
 
-      const created = new Date(token.createdAt).toLocaleDateString()
-      const expires = token.expiresAt
-        ? `Expires ${new Date(token.expiresAt).toLocaleDateString()}`
-        : "No expiry"
+      const nameEl = document.createElement("div")
+      nameEl.className = "agent-tokens__row-name"
+      nameEl.textContent = token.name
 
-      row.innerHTML = `
-        <div class="agent-tokens__row-info">
-          <div class="agent-tokens__row-name">${escapeHtml(token.name)}</div>
-          <div class="agent-tokens__row-meta">
-            <span class="agent-tokens__row-prefix">${escapeHtml(token.tokenPrefix)}${token.tokenPrefix.includes("...") ? "" : "…"}</span>
-            ${scopeBadges}
-            ${assigneeBadge}
-            <span>Created ${created}</span>
-            <span>· ${expires}</span>
-          </div>
-        </div>
-        <div class="agent-tokens__row-actions">
-          ${token.revoked
-            ? '<span class="badge badge-pending">Revoked</span>'
-            : `<button type="button" class="btn btn-ghost btn-sm" data-revoke="${escapeHtml(token.id)}" title="Revoke" aria-label="Revoke token ${escapeHtml(token.name)}">🚫</button>`
-          }
-          <button type="button" class="btn btn-ghost btn-sm" data-delete="${escapeHtml(token.id)}" title="Delete permanently" aria-label="Delete token ${escapeHtml(token.name)} permanently">🗑</button>
-        </div>
-      `
+      const meta = document.createElement("div")
+      meta.className = "agent-tokens__row-meta"
+
+      const prefixEl = document.createElement("span")
+      prefixEl.className = "agent-tokens__row-prefix"
+      prefixEl.textContent = `${token.tokenPrefix}${token.tokenPrefix.includes("...") ? "" : "…"}`
+      meta.appendChild(prefixEl)
+
+      for (const s of token.scopes) {
+        const badge = document.createElement("span")
+        badge.className = "agent-tokens__scope-badge"
+        badge.textContent = s
+        meta.appendChild(badge)
+      }
+
+      if (token.assigneeId) {
+        const assigneeBadge = document.createElement("span")
+        assigneeBadge.className = "agent-tokens__scope-badge"
+        assigneeBadge.textContent = `assignee:${token.assigneeId}`
+        meta.appendChild(assigneeBadge)
+      }
+
+      const createdEl = document.createElement("span")
+      createdEl.textContent = `Created ${new Date(token.createdAt).toLocaleDateString()}`
+      meta.appendChild(createdEl)
+
+      const expiresEl = document.createElement("span")
+      expiresEl.textContent = `· ${
+        token.expiresAt
+          ? `Expires ${new Date(token.expiresAt).toLocaleDateString()}`
+          : "No expiry"
+      }`
+      meta.appendChild(expiresEl)
+
+      info.append(nameEl, meta)
+
+      const actions = document.createElement("div")
+      actions.className = "agent-tokens__row-actions"
+
+      if (token.revoked) {
+        const revokedBadge = document.createElement("span")
+        revokedBadge.className = "badge badge-pending"
+        revokedBadge.textContent = "Revoked"
+        actions.appendChild(revokedBadge)
+      } else {
+        const revokeBtn = document.createElement("button")
+        revokeBtn.type = "button"
+        revokeBtn.className = "btn btn-ghost btn-sm"
+        revokeBtn.dataset.revoke = token.id
+        revokeBtn.title = "Revoke"
+        revokeBtn.setAttribute("aria-label", `Revoke token ${token.name}`)
+        revokeBtn.textContent = "🚫"
+        actions.appendChild(revokeBtn)
+      }
+
+      const deleteBtn = document.createElement("button")
+      deleteBtn.type = "button"
+      deleteBtn.className = "btn btn-ghost btn-sm"
+      deleteBtn.dataset.delete = token.id
+      deleteBtn.title = "Delete permanently"
+      deleteBtn.setAttribute("aria-label", `Delete token ${token.name} permanently`)
+      deleteBtn.textContent = "🗑"
+      actions.appendChild(deleteBtn)
+
+      row.append(info, actions)
       listEl!.appendChild(row)
     }
 
