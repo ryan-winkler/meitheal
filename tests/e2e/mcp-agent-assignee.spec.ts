@@ -129,6 +129,8 @@ test("an agent assignee reads, answers, updates and hands back only its own task
     // A task's own status survives the MCP wrapper.
     const read = await call(claudeToken, "getTask", { id: mine })
     expect(read.data).toMatchObject({ id: mine, status: "pending", assigned_to: claude.id })
+    // The task was created already assigned, by a route that never sets the owner.
+    expect(read.data.owner).toBe("bot:Claude")
 
     // The agent may change its own task and nobody else's.
     const updated = await call(claudeToken, "updateTask", { id: mine, status: "active" })
@@ -164,6 +166,7 @@ test("an agent assignee reads, answers, updates and hands back only its own task
     expect(returned.data).toMatchObject({ id: household, handed_back_to: person.id, note_posted: true })
     const after = await (await api.get(base + `/api/tasks/${household}`, { headers: automation })).json()
     expect(after.assigned_to).toBe(person.id)
+    expect(after.owner).toBe("human")
     const notes = await (await api.get(base + `/api/tasks/${household}/comments`, { headers: automation })).json()
     expect(notes.comments.at(-1)).toMatchObject({ author: "Automation: Claude", content: expect.stringContaining("needs a person") })
     // Once handed back it is no longer the agent's to change.

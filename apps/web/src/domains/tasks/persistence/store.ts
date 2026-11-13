@@ -616,13 +616,15 @@ async function initializeSchema(): Promise<void> {
   // A task assigned to an agent assignee is owned by that agent ('bot:<name>');
   // every other task is 'human'. Triggers keep this true on every write path,
   // including Home Assistant, bulk edits and imports that never set the column.
-  const ownerForNew = "COALESCE((SELECT 'bot:' || name FROM custom_users WHERE id = NEW.assigned_to AND kind = 'agent'), 'human')"
+  // Static SQL only: the owner expression is repeated so no statement is assembled at run time.
   await client.execute(`CREATE TRIGGER IF NOT EXISTS tasks_owner_on_insert AFTER INSERT ON tasks
-    WHEN NEW.owner = 'human' AND NEW.assigned_to IS NOT NULL AND ${ownerForNew} IS NOT 'human'
-    BEGIN UPDATE tasks SET owner = ${ownerForNew} WHERE id = NEW.id; END`)
+    WHEN NEW.owner = 'human' AND NEW.assigned_to IS NOT NULL
+      AND COALESCE((SELECT 'bot:' || name FROM custom_users WHERE id = NEW.assigned_to AND kind = 'agent'), 'human') IS NOT 'human'
+    BEGIN UPDATE tasks SET owner = COALESCE((SELECT 'bot:' || name FROM custom_users WHERE id = NEW.assigned_to AND kind = 'agent'), 'human') WHERE id = NEW.id; END`)
   await client.execute(`CREATE TRIGGER IF NOT EXISTS tasks_owner_on_assign AFTER UPDATE OF assigned_to ON tasks
-    WHEN NEW.assigned_to IS NOT OLD.assigned_to AND NEW.owner IS NOT ${ownerForNew}
-    BEGIN UPDATE tasks SET owner = ${ownerForNew} WHERE id = NEW.id; END`)
+    WHEN NEW.assigned_to IS NOT OLD.assigned_to
+      AND NEW.owner IS NOT COALESCE((SELECT 'bot:' || name FROM custom_users WHERE id = NEW.assigned_to AND kind = 'agent'), 'human')
+    BEGIN UPDATE tasks SET owner = COALESCE((SELECT 'bot:' || name FROM custom_users WHERE id = NEW.assigned_to AND kind = 'agent'), 'human') WHERE id = NEW.id; END`)
   // Tasks assigned before these triggers existed.
   await client.execute(`UPDATE tasks SET owner = (SELECT 'bot:' || name FROM custom_users WHERE id = tasks.assigned_to)
     WHERE owner NOT LIKE 'bot%' AND assigned_to IN (SELECT id FROM custom_users WHERE kind = 'agent')`)
