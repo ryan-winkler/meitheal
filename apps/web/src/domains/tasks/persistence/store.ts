@@ -16,6 +16,24 @@ import {
 } from "../../../../drizzle/migrations/task-activity-schema.mjs"
 import { reconcileTaskSchemaPrerequisites } from "../../../../drizzle/migrations/task-schema-prerequisites.mjs"
 import { STATUS } from "../../../lib/status-config"
+import {
+  TaskRepository,
+  type ExternalSyncLookup,
+  type ExternalSyncMatch,
+  type SyncChunkCommitResult,
+  type SyncChunkItemError,
+  type SyncConfirmationTarget,
+  type SyncTaskMutation,
+} from "./task-repository"
+
+export type {
+  ExternalSyncLookup,
+  ExternalSyncMatch,
+  SyncChunkCommitResult,
+  SyncChunkItemError,
+  SyncConfirmationTarget,
+  SyncTaskMutation,
+}
 
 export interface PersistedTask {
   id: string;
@@ -1108,6 +1126,17 @@ export async function persistManualCalendarConfirmation(params: {
   }
 
   return { confirmationId: params.confirmationId, alreadyExisted: false };
+}
+
+export function findTasksByExternalSyncIds(lookup: ExternalSyncLookup): Promise<Map<string, ExternalSyncMatch>> {
+  return new TaskRepository(getClient()).findTasksByExternalSyncIds(lookup)
+}
+
+export function commitSyncMutationChunks(
+  mutations: SyncTaskMutation[],
+  options?: { chunkSize?: number | undefined; signal?: AbortSignal | undefined },
+): Promise<SyncChunkCommitResult> {
+  return new TaskRepository(getClient()).commitSyncMutationChunks(mutations, options)
 }
 
 export function resetPersistenceForTests(): void {

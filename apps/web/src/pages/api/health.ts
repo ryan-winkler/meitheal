@@ -30,6 +30,12 @@ function getAddonVersion(): string {
 }
 
 const VERSION = getAddonVersion();
+const SUPERVISOR_INFO_TTL_MS = 60_000;
+let _supervisorInfoCache: { token: string; addonSlug: string; expiresAt: number } | null = null;
+
+export function resetHealthSupervisorCacheForTests(): void {
+  _supervisorInfoCache = null;
+}
 
 /**
  * GET /api/health — Readiness & liveness probe.
@@ -46,19 +52,34 @@ export const GET: APIRoute = async () => {
     // Simple connectivity check
     await client.execute("SELECT 1");
 
-    // PRA-14: Supervisor API connectivity probe
-    const haMode = process.env.SUPERVISOR_TOKEN ? "ha-addon" : "standalone";
+    // PRA-14: Supervisor API connectivity probe (cached 60s on HTTP 200 only)
+    const supervisorToken = process.env.SUPERVISOR_TOKEN;
+    const haMode = supervisorToken ? "ha-addon" : "standalone";
     let supervisorReachable = false;
     let addonSlug = "unknown";
-    if (process.env.SUPERVISOR_TOKEN) {
-      try {
-        const res = await supervisorFetch("/addons/self/info", {}, 3_000);
-        if (res && res.ok) {
-          supervisorReachable = true;
-          const data = await res.json() as { data?: { slug?: string } };
-          addonSlug = data?.data?.slug ?? "unknown";
-        }
-      } catch { /* Supervisor unreachable — non-fatal */ }
+    if (supervisorToken) {
+      if (
+        _supervisorInfoCache &&
+        _supervisorInfoCache.token === supervisorToken &&
+        _supervisorInfoCache.expiresAt > now
+      ) {
+        supervisorReachable = true;
+        addonSlug = _supervisorInfoCache.addonSlug;
+      } else {
+        try {
+          const res = await supervisorFetch("/addons/self/info", {}, 3_000);
+          if (res && res.ok) {
+            supervisorReachable = true;
+            const data = await res.json() as { data?: { slug?: string } };
+            addonSlug = data?.data?.slug ?? "unknown";
+            _supervisorInfoCache = {
+              token: supervisorToken,
+              addonSlug,
+              expiresAt: now + SUPERVISOR_INFO_TTL_MS,
+            };
+          }
+        } catch { /* Supervisor unreachable — non-fatal */ }
+      }
     }
 
     // HA WebSocket connection status

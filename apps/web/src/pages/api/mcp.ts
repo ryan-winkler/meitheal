@@ -3,6 +3,7 @@ import { resolve } from "node:path"
 import type { APIRoute } from "astro"
 import { parse } from "yaml"
 import { hasScope, isAssignedTaskScopedRoute, resolveAgentRouteScope, type AgentScope } from "@meitheal/domain-auth"
+import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability"
 import { hasBoardSelection, isBoardTaskApiPath, unavailableBoardResponse } from "@domains/tasks/board-availability"
 import { apiJson, apiError, apiProblem } from "@lib/api-response"
 import { readWithinLimit } from "@lib/bounded-body"
@@ -11,6 +12,16 @@ import { isDoneStatus } from "@lib/status-config"
 import { checkMcpAvailability } from "@lib/mcp-availability"
 import { MCP_LEGACY_VERSION, MCP_PROTOCOL_VERSION, MCP_SUPPORTED_VERSIONS } from "@lib/mcp-versions"
 import type { ResolvedAgent } from "@lib/agent-token-guard"
+import precompiledMcpCatalog from "../../generated/mcp-tools.json"
+
+const mcpLogger = createLogger({
+  service: "meitheal-web",
+  env: process.env.NODE_ENV ?? "development",
+  minLevel: "info",
+  enabledCategories: ["api"],
+  redactPatterns: defaultRedactionPatterns,
+  auditEnabled: false,
+})
 
 /**
  * POST /api/mcp — MCP (Model Context Protocol) Server Endpoint
@@ -66,6 +77,7 @@ const EXCLUDED_OPS = new Set([
   "taskInactivity",
   "mcpEndpoint",       // Self-reference
   "healthPing",        // HEAD-only liveness
+  "getRuntimeDiagnostics", // Administrator-only runtime diagnostics
   "subscribeSSE",      // SSE streaming, not callable
   "exportDatabase",    // Large binary download
   "exportSettings",    // File downloads
@@ -90,9 +102,21 @@ let _cacheTime = 0
 const CACHE_TTL_MS = process.env.NODE_ENV === "development" ? 30_000 : Infinity
 
 function loadOpenAPISpec(): { tools: McpTool[], routes: Map<string, RouteMapping> } {
+  const usePrecompiled = process.env.NODE_ENV === "production" && process.env.MEITHEAL_MCP_DYNAMIC_OPENAPI !== "1"
   const now = Date.now()
-  if (_toolCache && _routeCache && (now - _cacheTime) < CACHE_TTL_MS) {
+  if (_toolCache && _routeCache && (usePrecompiled || (now - _cacheTime) < CACHE_TTL_MS)) {
     return { tools: _toolCache, routes: _routeCache }
+  }
+
+  if (usePrecompiled) {
+    const tools = (precompiledMcpCatalog.tools ?? []) as McpTool[]
+    const routes = new Map<string, RouteMapping>(
+      Object.entries((precompiledMcpCatalog.routes ?? {}) as Record<string, RouteMapping>)
+    )
+    _toolCache = tools
+    _routeCache = routes
+    _cacheTime = now
+    return { tools, routes }
   }
 
   const tools: McpTool[] = []
@@ -218,16 +242,49 @@ function loadOpenAPISpec(): { tools: McpTool[], routes: Map<string, RouteMapping
   return { tools, routes }
 }
 
-function scopedApi(authorization: string) {
+export class McpInvalidParamsError extends Error {
+  constructor(message = "Invalid params") {
+    super(message)
+    this.name = "McpInvalidParamsError"
+  }
+}
+
+export function validateMcpPathSegment(
+  rawVal: unknown
+): { ok: true; encoded: string } | { ok: false } {
+  if (typeof rawVal !== "string" && typeof rawVal !== "number") {
+    return { ok: false }
+  }
+  const str = String(rawVal)
+  if (str.length === 0 || str === "." || str === ".." || /[\/\\\0]/.test(str)) {
+    return { ok: false }
+  }
+  return { ok: true, encoded: encodeURIComponent(str) }
+}
+
+interface McpLoopbackContext {
+  requestId?: string | undefined
+  traceparent?: string | null | undefined
+}
+
+function scopedApi(authorization: string, traceContext?: McpLoopbackContext) {
   const port = process.env.PORT ?? (import.meta.env.DEV ? "4321" : "3000")
   const origin = `http://127.0.0.1:${port}`
   return async (path: string, init?: RequestInit): Promise<Response> => {
     const url = new URL(path, origin)
     if (url.origin !== origin || !url.pathname.startsWith("/api/")) throw new Error("Invalid tool route")
 
+    const headers: Record<string, string> = {
+      "content-type": "application/json",
+      authorization,
+      "x-automation-source": "mcp",
+    }
+    if (traceContext?.requestId) headers["x-request-id"] = traceContext.requestId
+    if (traceContext?.traceparent) headers["traceparent"] = traceContext.traceparent
+
     const response = await fetch(url, {
       ...init,
-      headers: { "content-type": "application/json", authorization },
+      headers,
       redirect: "error",
       signal: AbortSignal.timeout(10_000),
     })
@@ -251,9 +308,10 @@ const customHandlers = new Map<string, CustomToolHandler>()
 
 // completeTask: supports both ID and title-based completion
 customHandlers.set("completeTask", async (args, requestApi) => {
-  if (args.id) {
-    const safeId = encodeURIComponent(String(args.id))
-    const res = await requestApi(`/api/tasks/${safeId}`, {
+  if (args.id !== undefined && args.id !== null) {
+    const seg = validateMcpPathSegment(args.id)
+    if (!seg.ok) throw new McpInvalidParamsError("Invalid params: unsafe task id")
+    const res = await requestApi(`/api/tasks/${seg.encoded}`, {
       method: "PUT",
       body: JSON.stringify({ status: "complete" }),
     })
@@ -270,7 +328,9 @@ customHandlers.set("completeTask", async (args, requestApi) => {
     )
     if (match) {
       const taskId = match.taskId ?? match.id
-      const response = await requestApi(`/api/tasks/${encodeURIComponent(String(taskId))}`, {
+      const seg = validateMcpPathSegment(taskId)
+      if (!seg.ok) throw new McpInvalidParamsError("Invalid params: unsafe matched task id")
+      const response = await requestApi(`/api/tasks/${seg.encoded}`, {
         method: "PUT",
         body: JSON.stringify({ status: "complete" }),
       })
@@ -346,8 +406,12 @@ customHandlers.set("listMyTasks", async (args, requestApi, agent) => {
 
 // handBackTask: adds handoff comment while still assigned, then unassigns or reassigns task
 customHandlers.set("handBackTask", async (args, requestApi) => {
-  if (!args.id) return { error: "Task id is required" }
-  const safeId = encodeURIComponent(String(args.id))
+  if (args.id === undefined || args.id === null) {
+    throw new McpInvalidParamsError("Invalid params: Task id is required")
+  }
+  const seg = validateMcpPathSegment(args.id)
+  if (!seg.ok) throw new McpInvalidParamsError("Invalid params: unsafe task id")
+  const safeId = seg.encoded
   const to = typeof args.to === "string" && args.to.trim() ? args.to.trim() : null
   const note = typeof args.note === "string" ? args.note.trim() : ""
 
@@ -403,7 +467,8 @@ async function executeTool(
   toolName: string,
   args: Record<string, unknown>,
   authorization: string,
-  agent?: ResolvedAgent
+  agent?: ResolvedAgent,
+  traceContext?: McpLoopbackContext,
 ): Promise<Record<string, unknown>> {
   const { routes } = loadOpenAPISpec()
   const route = routes.get(toolName)
@@ -411,24 +476,24 @@ async function executeTool(
   if ((custom || (route && isBoardTaskApiPath(route.path))) && hasBoardSelection(args)) {
     return checkedJson(unavailableBoardResponse())
   }
-  const requestApi = scopedApi(authorization)
+  const requestApi = scopedApi(authorization, traceContext)
   if (custom) return custom(args, requestApi, agent)
 
   if (!route) {
     return { error: `Unknown tool: ${toolName}`, available: routes.size }
   }
 
-  // Validate required path params before dispatch
-  for (const param of route.pathParams) {
-    if (args[param] == null) {
-      return { error: `Missing required path parameter: ${param}`, tool: toolName }
-    }
-  }
-
-  // Build URL with path params
+  // Validate required path params and path segment safety before dispatch
   let url = route.path
   for (const param of route.pathParams) {
-    url = url.replace(`{${param}}`, encodeURIComponent(String(args[param])))
+    if (args[param] == null) {
+      throw new McpInvalidParamsError(`Invalid params: missing required path parameter '${param}'`)
+    }
+    const seg = validateMcpPathSegment(args[param])
+    if (!seg.ok) {
+      throw new McpInvalidParamsError(`Invalid params: unsafe path parameter '${param}'`)
+    }
+    url = url.replace(`{${param}}`, seg.encoded)
   }
 
   // Add query params
@@ -662,17 +727,55 @@ export const POST: APIRoute = async ({ request, locals }) => {
       const args = params.arguments ?? {}
       if (!toolName || !isRecord(args)) return rpcError(reqId, -32602, "Expected a tool name and arguments object")
 
+      const callStartedAt = Date.now()
+      const requestId = locals.requestId || request.headers.get("x-request-id") || "mcp"
+      const traceContext: McpLoopbackContext = {
+        requestId,
+        traceparent: request.headers.get("traceparent"),
+      }
       try {
         if (!isToolAuthorized(agent, toolName, loadOpenAPISpec().routes.get(toolName))) {
           return rpcError(reqId, modern ? -32602 : -32603, "Tool is unavailable to this token")
         }
-        const output = await executeTool(toolName, args, authorization, agent)
+        const output = await executeTool(toolName, args, authorization, agent, traceContext)
+        const durationMs = Date.now() - callStartedAt
+        mcpLogger.log("info", {
+          event: "mcp.tool_call",
+          domain: "api",
+          component: "mcp",
+          request_id: requestId,
+          duration_ms: durationMs,
+          message: `MCP tool ${toolName} completed`,
+          metadata: {
+            tool_name: toolName,
+            duration_ms: durationMs,
+            agent_id: agent.tokenId,
+          },
+        })
         return result({
           content: [{ type: "text", text: JSON.stringify(output) }],
           ...(modern ? { structuredContent: output } : {}),
           isError: "error" in output || (modern && (output.status === "not_found" || output.status === "error")),
         })
       } catch (toolError) {
+        const durationMs = Date.now() - callStartedAt
+        mcpLogger.log("warn", {
+          event: "mcp.tool_call",
+          domain: "api",
+          component: "mcp",
+          request_id: requestId,
+          duration_ms: durationMs,
+          message: `MCP tool ${toolName} failed`,
+          metadata: {
+            tool_name: toolName,
+            duration_ms: durationMs,
+            agent_id: agent.tokenId,
+            error: toolError instanceof Error ? toolError.name : "error",
+          },
+        })
+        if (toolError instanceof McpInvalidParamsError) {
+          return rpcError(reqId, -32602, toolError.message)
+        }
         const message = toolError instanceof Error && /^Tool request failed with HTTP \d{3}(?:: [\s\S]+)?$/.test(toolError.message)
           ? toolError.message : "Tool execution failed"
         if (modern) return result({ content: [{ type: "text", text: message }], isError: true })

@@ -14,7 +14,7 @@
  */
 
 import type { Client, InStatement, InValue, ResultSet } from "@libsql/client"
-import { runWriteTransaction } from "../../../../scripts/database-client.mjs"
+import { executeWriteWithRetry, runWriteTransaction } from "../../../../scripts/database-client.mjs"
 import { getStatusDef, isDoneStatus, normalizeStatus, STATUS } from "../../../lib/status-config"
 import { logApiError, logApiWarn } from "../../../lib/api-logger"
 import { EXACT_TASK_IDENTIFIER_SCORE } from "../../../lib/task-search-score"
@@ -311,6 +311,144 @@ export function taskInsertStatement(data: TaskCreationData, createdAt: number, {
   }
 }
 
+export type ExternalSyncLookup =
+  | { source: "todo"; entityId: string; externalIds: string[] }
+  | { source: "calendar"; entityId: string; externalIds: string[] }
+  | { source: "grocy"; grocyEntityType: "chore" | "task" | "shopping"; externalIds: string[] }
+
+export interface ExternalSyncMatch {
+  confirmationId: string
+  taskId: string
+  externalId: string
+  syncUpdatedAt: number
+  taskUpdatedAt: number
+}
+
+export type SyncConfirmationTarget =
+  | {
+      source: "todo"
+      entityId: string
+      externalId: string
+      confirmationId?: string | undefined
+      syncDirection?: "inbound" | "outbound" | undefined
+      payload: string
+    }
+  | {
+      source: "calendar"
+      entityId: string
+      externalId: string
+      confirmationId?: string | undefined
+      confirmationSource?: string | undefined
+      payload: string
+    }
+  | {
+      source: "grocy"
+      grocyEntityType: "chore" | "task" | "shopping"
+      externalId: string
+      confirmationId?: string | undefined
+      syncDirection?: "inbound" | "outbound" | undefined
+      payload: string
+    }
+
+export type SyncTaskMutation =
+  | {
+      kind: "create"
+      taskId?: string | undefined
+      requestId?: string | undefined
+      idempotencyKey: string
+      title: string
+      description?: string | null | undefined
+      status?: string | undefined
+      priority?: number | undefined
+      dueDate?: string | null | undefined
+      labels?: string[] | string | undefined
+      areaId?: string | undefined
+      taskType?: string | undefined
+      taskKind?: string | undefined
+      createdAt?: number | undefined
+      confirmation: SyncConfirmationTarget
+    }
+  | {
+      kind: "update"
+      taskId: string
+      title?: string | undefined
+      description?: string | null | undefined
+      replaceDescription?: boolean | undefined
+      status?: string | undefined
+      openEcho?: boolean | undefined
+      dueDate?: string | null | undefined
+      updateDueDate?: boolean | undefined
+      areaId?: string | undefined
+      ensureCalendarSyncLabel?: boolean | undefined
+      updatedAt?: number | undefined
+      confirmation?: (SyncConfirmationTarget & { requireUnmodifiedSinceSync?: boolean | undefined }) | undefined
+    }
+  | {
+      kind: "link"
+      taskId: string
+      requestId?: string | undefined
+      createdAt?: number | undefined
+      confirmation: SyncConfirmationTarget
+    }
+
+export interface SyncChunkItemError {
+  index: number
+  message: string
+}
+
+export interface SyncChunkCommitResult {
+  created: number
+  updated: number
+  linked: number
+  skipped: number
+  chunksCommitted: number
+  ticketNumbers: number[]
+  errors: SyncChunkItemError[]
+}
+
+const ensuredTodoSyncClients = new WeakSet<Client>()
+const ensuredGrocySyncClients = new WeakSet<Client>()
+
+async function ensureTodoSyncConfirmationTable(client: Client): Promise<void> {
+  if (ensuredTodoSyncClients.has(client)) return
+  await client.execute(`
+    CREATE TABLE IF NOT EXISTS todo_sync_confirmations (
+      confirmation_id TEXT PRIMARY KEY,
+      task_id TEXT NOT NULL,
+      request_id TEXT NOT NULL,
+      ha_entity_id TEXT NOT NULL,
+      ha_todo_uid TEXT NOT NULL,
+      source TEXT NOT NULL DEFAULT 'ha.todo_sync',
+      sync_direction TEXT NOT NULL DEFAULT 'inbound',
+      payload TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    )
+  `)
+  await client.execute("CREATE INDEX IF NOT EXISTS idx_todo_sync_entity_uid ON todo_sync_confirmations(ha_entity_id, ha_todo_uid)")
+  await client.execute("CREATE INDEX IF NOT EXISTS idx_todo_sync_task ON todo_sync_confirmations(task_id)")
+  ensuredTodoSyncClients.add(client)
+}
+
+async function ensureGrocySyncConfirmationTable(client: Client): Promise<void> {
+  if (ensuredGrocySyncClients.has(client)) return
+  await client.execute(`
+    CREATE TABLE IF NOT EXISTS grocy_sync_confirmations (
+      confirmation_id TEXT PRIMARY KEY,
+      task_id TEXT NOT NULL,
+      grocy_entity_type TEXT NOT NULL,
+      grocy_entity_id TEXT NOT NULL,
+      sync_direction TEXT NOT NULL DEFAULT 'inbound',
+      payload TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    )
+  `)
+  await client.execute("CREATE INDEX IF NOT EXISTS idx_grocy_sync_entity ON grocy_sync_confirmations(grocy_entity_type, grocy_entity_id)")
+  await client.execute("CREATE INDEX IF NOT EXISTS idx_grocy_sync_task ON grocy_sync_confirmations(task_id)")
+  ensuredGrocySyncClients.add(client)
+}
+
 export class TaskRepository {
   constructor(private readonly client: Client) {}
 
@@ -334,6 +472,29 @@ export class TaskRepository {
       args: [projectId],
     });
     return sanitizeRows(result.rows as unknown as TaskRow[]);
+  }
+
+  /** Aggregate total and completed task counts grouped by project_id (replaces N+1 findByProjectId loops). */
+  async getProjectTaskCounts(): Promise<Map<string, { total: number; completed: number }>> {
+    const result = await this.client.execute(
+      `SELECT project_id,
+              COUNT(*) AS total,
+              COUNT(*) FILTER (WHERE status = 'complete') AS completed
+       FROM tasks
+       WHERE project_id IS NOT NULL
+       GROUP BY project_id`,
+    )
+    const counts = new Map<string, { total: number; completed: number }>()
+    for (const row of result.rows) {
+      const r = row as Record<string, unknown>
+      if (r.project_id != null) {
+        counts.set(String(r.project_id), {
+          total: Number(r.total ?? 0),
+          completed: Number(r.completed ?? 0),
+        })
+      }
+    }
+    return counts
   }
 
   /** Favorited, non-complete tasks */
@@ -659,8 +820,9 @@ export class TaskRepository {
    */
   async resolveTaskId(idOrKey: string): Promise<{ id: string; updated_at: unknown } | null> {
     let parsedTicketNum: number | null = null;
-    if (idOrKey.toUpperCase().startsWith("MTH-")) {
-      parsedTicketNum = parseInt(idOrKey.slice(4), 10);
+    if (/^MTH-\d+$/i.test(idOrKey)) {
+      const n = Number(idOrKey.slice(4));
+      parsedTicketNum = Number.isSafeInteger(n) && n > 0 ? n : null;
     }
     const result = await this.client.execute({
       sql: `SELECT id, ${taskTimestampMs("updated_at")} AS updated_at FROM tasks
@@ -675,8 +837,9 @@ export class TaskRepository {
   /** Retrieve a single task by ID/ticket key, with parent info JOINed */
   async findById(idOrKey: string): Promise<TaskRow | null> {
     let parsedTicketNum: number | null = null;
-    if (idOrKey.toUpperCase().startsWith("MTH-")) {
-      parsedTicketNum = parseInt(idOrKey.slice(4), 10);
+    if (/^MTH-\d+$/i.test(idOrKey)) {
+      const n = Number(idOrKey.slice(4));
+      parsedTicketNum = Number.isSafeInteger(n) && n > 0 ? n : null;
     }
     const result = await this.client.execute({
       sql: `SELECT t.id, t.title, t.description, t.status, t.priority, t.due_date, t.labels,
@@ -1026,11 +1189,12 @@ export class TaskRepository {
   async updateTask(
     id: string,
     fields: Record<string, InValue>,
-    { version, expectedChecklists, expectedAssignedTo, activity }: {
+    { version, expectedChecklists, expectedAssignedTo, activity, signal }: {
       version?: { updatedAt: number; expectedStatus?: "backlog" }
       expectedChecklists?: string | null
       expectedAssignedTo?: string
       activity?: RecentTaskActor
+      signal?: AbortSignal | undefined
     } = {},
   ): Promise<
     { ok: true; task: TaskRow; previousStatus?: string; successor?: RecurrenceSuccessor }
@@ -1145,13 +1309,13 @@ export class TaskRepository {
           ? yield* repo.createRecurrenceSuccessor(id, String(prior?.completion_day ?? ""))
           : undefined
         return { results: writeResults, recurrence: next }
-      })
+      }, { signal })
       results = completion.results
       recurrence = completion.recurrence
     } else {
       results = statements.length > 1
-        ? await this.client.batch(statements, "write")
-        : [await this.client.execute(update)]
+        ? await executeWriteWithRetry(this.client, statements, { signal })
+        : [await executeWriteWithRetry(this.client, update, { signal })]
     }
     if (recurrence === "invalid") logApiWarn("recurrence-auto-create", "Invalid saved recurrence rule or date")
     const successor = recurrence === "invalid" ? undefined : recurrence
@@ -1367,15 +1531,26 @@ export class TaskRepository {
   }
 
   /** Delete a single task and cascade-clean related data */
-  async deleteTask(id: string): Promise<void> {
-    await this.client.execute({ sql: "DELETE FROM tasks WHERE id = ?", args: [id] });
+  async deleteTask(id: string, options?: { signal?: AbortSignal | undefined }): Promise<void> {
+    await executeWriteWithRetry(
+      this.client,
+      { sql: "DELETE FROM tasks WHERE id = ?", args: [id] },
+      { signal: options?.signal },
+    )
     // Orphan link cleanup
     try {
-      await this.client.execute({
-        sql: "DELETE FROM task_links WHERE source_task_id = ? OR target_task_id = ?",
-        args: [id, id],
-      });
-    } catch { /* task_links table may not exist yet */ }
+      await executeWriteWithRetry(
+        this.client,
+        {
+          sql: "DELETE FROM task_links WHERE source_task_id = ? OR target_task_id = ?",
+          args: [id, id],
+        },
+        { signal: options?.signal },
+      )
+    } catch (err) {
+      if ((err as { name?: string })?.name === "AbortError") throw err
+      /* task_links table may not exist yet */
+    }
   }
 
   /** Purge ALL tasks (cascade: activity log, comments, tasks) */
@@ -2056,5 +2231,438 @@ export class TaskRepository {
   /** Delete a task link (scoped to a specific task for authorization) */
   async deleteLink(linkId: string, taskId: string): Promise<number> {
     return (await this.deleteLinkChecked(linkId, taskId)).deleted
+  }
+
+  // ── Inbound Sync Batch Persistence (Track B3) ─────────────────────────
+
+  /**
+   * Batch-load existing external sync confirmation links and task timestamps in chunks of <= 200 bind parameters.
+   */
+  async findTasksByExternalSyncIds(lookup: ExternalSyncLookup): Promise<Map<string, ExternalSyncMatch>> {
+    const matches = new Map<string, ExternalSyncMatch>()
+    if (lookup.externalIds.length === 0) return matches
+    const uniqueIds = [...new Set(lookup.externalIds)]
+    const maxIdsPerChunk = 199
+    const taskUpdatedExpr = taskTimestampMs("t.updated_at")
+
+    for (let offset = 0; offset < uniqueIds.length; offset += maxIdsPerChunk) {
+      const chunk = uniqueIds.slice(offset, offset + maxIdsPerChunk)
+      const placeholders = chunk.map(() => "?").join(", ")
+      let stmt: InStatement
+      if (lookup.source === "todo") {
+        stmt = {
+          sql: `SELECT c.confirmation_id, c.task_id, c.ha_todo_uid AS external_id,
+                       COALESCE(c.updated_at, c.created_at, 0) AS sync_updated_at,
+                       COALESCE(${taskUpdatedExpr}, 0) AS task_updated_at
+                FROM todo_sync_confirmations c
+                LEFT JOIN tasks t ON t.id = c.task_id
+                WHERE c.ha_entity_id = ? AND c.ha_todo_uid IN (${placeholders})`,
+          args: [lookup.entityId, ...chunk],
+        }
+      } else if (lookup.source === "calendar") {
+        stmt = {
+          sql: `SELECT c.confirmation_id, c.task_id, c.provider_event_id AS external_id,
+                       COALESCE(c.created_at, 0) AS sync_updated_at,
+                       COALESCE(${taskUpdatedExpr}, 0) AS task_updated_at
+                FROM calendar_confirmations c
+                LEFT JOIN tasks t ON t.id = c.task_id
+                WHERE c.provider_event_id IN (${placeholders})
+                  AND CASE WHEN json_valid(c.payload) THEN json_extract(c.payload, '$.entity_id') ELSE NULL END = ?`,
+          args: [...chunk, lookup.entityId],
+        }
+      } else {
+        stmt = {
+          sql: `SELECT c.confirmation_id, c.task_id, c.grocy_entity_id AS external_id,
+                       COALESCE(c.updated_at, c.created_at, 0) AS sync_updated_at,
+                       COALESCE(${taskUpdatedExpr}, 0) AS task_updated_at
+                FROM grocy_sync_confirmations c
+                LEFT JOIN tasks t ON t.id = c.task_id
+                WHERE c.grocy_entity_type = ? AND c.grocy_entity_id IN (${placeholders})`,
+          args: [lookup.grocyEntityType, ...chunk],
+        }
+      }
+
+      try {
+        const result = await this.client.execute(stmt)
+        for (const row of result.rows) {
+          const r = row as Record<string, unknown>
+          const externalId = String(r.external_id)
+          matches.set(externalId, {
+            confirmationId: String(r.confirmation_id),
+            taskId: String(r.task_id),
+            externalId,
+            syncUpdatedAt: Number(r.sync_updated_at ?? 0),
+            taskUpdatedAt: Number(r.task_updated_at ?? 0),
+          })
+        }
+      } catch (err) {
+        if (String(err).includes("no such table")) return matches
+        throw err
+      }
+    }
+
+    return matches
+  }
+
+  /**
+   * Commit inbound sync create/update/link mutations in bounded <= 25-item transactions
+   * with per-item SQLite SAVEPOINT isolation and cooperative setImmediate() yielding between chunks.
+   */
+  async commitSyncMutationChunks(
+    mutations: SyncTaskMutation[],
+    options?: { chunkSize?: number | undefined; signal?: AbortSignal | undefined },
+  ): Promise<SyncChunkCommitResult> {
+    const aggregate: SyncChunkCommitResult = {
+      created: 0,
+      updated: 0,
+      linked: 0,
+      skipped: 0,
+      chunksCommitted: 0,
+      ticketNumbers: [],
+      errors: [],
+    }
+    if (mutations.length === 0) return aggregate
+
+    if (mutations.some(m => m.confirmation?.source === "todo")) {
+      await ensureTodoSyncConfirmationTable(this.client)
+    }
+    if (mutations.some(m => m.confirmation?.source === "grocy")) {
+      await ensureGrocySyncConfirmationTable(this.client)
+    }
+
+    const chunkSize = Math.max(1, Math.min(25, Math.floor(options?.chunkSize ?? 25)))
+    const buildConfirmationInsert = (
+      conf: SyncConfirmationTarget,
+      taskId: string,
+      reqId: string,
+      nowMs: number,
+      orIgnore: boolean,
+    ): InStatement => {
+      const confirmationId = conf.confirmationId ?? crypto.randomUUID()
+      const insertVerb = orIgnore ? "INSERT OR IGNORE" : "INSERT"
+      if (conf.source === "todo") {
+        return {
+          sql: `${insertVerb} INTO todo_sync_confirmations (
+                  confirmation_id, task_id, request_id, ha_entity_id, ha_todo_uid,
+                  source, sync_direction, payload, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, 'ha.todo_sync', ?, ?, ?, ?)`,
+          args: [
+            confirmationId,
+            taskId,
+            reqId,
+            conf.entityId,
+            conf.externalId,
+            conf.syncDirection ?? "inbound",
+            conf.payload,
+            nowMs,
+            nowMs,
+          ],
+        }
+      }
+      if (conf.source === "calendar") {
+        return {
+          sql: `${insertVerb} INTO calendar_confirmations (
+                  confirmation_id, task_id, request_id, provider_event_id,
+                  source, payload, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          args: [
+            confirmationId,
+            taskId,
+            reqId,
+            conf.externalId,
+            conf.confirmationSource ?? "ha.calendar_sync",
+            conf.payload,
+            nowMs,
+          ],
+        }
+      }
+      return {
+        sql: `${insertVerb} INTO grocy_sync_confirmations (
+                confirmation_id, task_id, grocy_entity_type, grocy_entity_id,
+                sync_direction, payload, created_at, updated_at
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        args: [
+          confirmationId,
+          taskId,
+          conf.grocyEntityType,
+          conf.externalId,
+          conf.syncDirection ?? "inbound",
+          conf.payload,
+          nowMs,
+          nowMs,
+        ],
+      }
+    }
+
+    for (let offset = 0; offset < mutations.length; offset += chunkSize) {
+      if (offset > 0) {
+        options?.signal?.throwIfAborted()
+        await new Promise<void>(resolve => setImmediate(resolve))
+      }
+      const chunk = mutations.slice(offset, offset + chunkSize)
+      const chunkOutcome = await runWriteTransaction(
+        this.client,
+        function* (): Generator<
+          InStatement[],
+          {
+            created: number
+            updated: number
+            linked: number
+            skipped: number
+            ticketNumbers: number[]
+            errors: SyncChunkItemError[]
+          },
+          ResultSet[]
+        > {
+          let created = 0
+          let updated = 0
+          let linked = 0
+          let skipped = 0
+          const ticketNumbers: number[] = []
+          const errors: SyncChunkItemError[] = []
+
+          for (let localIdx = 0; localIdx < chunk.length; localIdx++) {
+            const globalIdx = offset + localIdx
+            const mutation = chunk[localIdx]!
+            const sp = `sync_item_${localIdx}`
+            yield [`SAVEPOINT ${sp}`]
+            let step = "init"
+            let candidateTaskId: string | null = null
+
+            try {
+              if (mutation.kind === "create") {
+                const taskId = mutation.taskId ?? crypto.randomUUID()
+                candidateTaskId = taskId
+                const reqId = mutation.requestId ?? crypto.randomUUID()
+                const nowMs = mutation.createdAt ?? Date.now()
+                const labelsJson = typeof mutation.labels === "string"
+                  ? mutation.labels
+                  : JSON.stringify(mutation.labels ?? [])
+
+                step = "task_insert"
+                const [inserted] = yield [{
+                  sql: `INSERT INTO tasks (
+                          id, title, description, status, priority, due_date,
+                          labels, framework_payload, calendar_sync_state, area_id,
+                          custom_fields, task_type, task_kind, ticket_number,
+                          idempotency_key, request_id, created_at, updated_at
+                        ) VALUES (
+                          ?, ?, ?, ?, ?, ?,
+                          ?, '{}', 'synced', ?,
+                          '{}', ?, ?, (SELECT COALESCE(MAX(ticket_number), 0) + 1 FROM tasks),
+                          ?, ?, ?, ?
+                        ) RETURNING ticket_number`,
+                  args: [
+                    taskId,
+                    mutation.title,
+                    mutation.description ?? "",
+                    normalizeStatus(mutation.status ?? STATUS.PENDING),
+                    mutation.priority ?? 3,
+                    mutation.dueDate ?? null,
+                    labelsJson,
+                    mutation.areaId ?? "default",
+                    mutation.taskType ?? "task",
+                    mutation.taskKind ?? "standard_action",
+                    mutation.idempotencyKey,
+                    reqId,
+                    nowMs,
+                    nowMs,
+                  ],
+                }]
+
+                step = "confirmation_insert"
+                yield [buildConfirmationInsert(mutation.confirmation, taskId, reqId, nowMs, false)]
+                yield [`RELEASE SAVEPOINT ${sp}`]
+                created++
+                const ticketNum = Number(inserted?.rows[0]?.ticket_number)
+                if (Number.isFinite(ticketNum)) ticketNumbers.push(ticketNum)
+              } else if (mutation.kind === "link") {
+                const reqId = mutation.requestId ?? crypto.randomUUID()
+                const nowMs = mutation.createdAt ?? Date.now()
+                step = "confirmation_link"
+                yield [buildConfirmationInsert(mutation.confirmation, mutation.taskId, reqId, nowMs, true)]
+                yield [`RELEASE SAVEPOINT ${sp}`]
+                linked++
+              } else {
+                const nowMs = mutation.updatedAt ?? Date.now()
+                step = "task_update"
+
+                if (mutation.confirmation?.source === "todo" && mutation.confirmation.requireUnmodifiedSinceSync) {
+                  const taskVersion = taskTimestampMs("tasks.updated_at")
+                  const linkArgs: InValue[] = [
+                    mutation.confirmation.confirmationId ?? "",
+                    mutation.taskId,
+                    mutation.confirmation.entityId,
+                    mutation.confirmation.externalId,
+                  ]
+                  const matchingLink = "confirmation_id = ? AND task_id = ? AND ha_entity_id = ? AND ha_todo_uid = ?"
+                  const [taskUpdateRes] = yield [{
+                    sql: `UPDATE tasks SET
+                            title = ?,
+                            status = CASE WHEN ? AND deferred_at IS NOT NULL AND lower(status) NOT IN ${deferralTerminalStatusesSql}
+                              THEN status ELSE ? END,
+                            due_date = ?,
+                            description = COALESCE(?, description),
+                            deferral_revision = CASE WHEN ${taskVersion} = 9007199254740991
+                              THEN lower(hex(randomblob(16))) ELSE deferral_revision END,
+                            updated_at = ${nextTaskTimestampMs("tasks.updated_at")}
+                          WHERE id = ?
+                            AND EXISTS (
+                              SELECT 1 FROM todo_sync_confirmations confirmation
+                              WHERE ${matchingLink} AND ${taskVersion} <= ${taskTimestampMs("confirmation.updated_at")}
+                            )`,
+                    args: [
+                      mutation.title ?? "",
+                      mutation.openEcho ? 1 : 0,
+                      normalizeStatus(mutation.status ?? STATUS.PENDING),
+                      mutation.dueDate ?? null,
+                      mutation.description ?? null,
+                      nowMs,
+                      mutation.taskId,
+                      ...linkArgs,
+                    ],
+                  }]
+
+                  if ((taskUpdateRes?.rowsAffected ?? 0) === 1) {
+                    step = "confirmation_update"
+                    yield [{
+                      sql: `UPDATE todo_sync_confirmations
+                            SET payload = ?, updated_at = (SELECT updated_at FROM tasks WHERE id = ?)
+                            WHERE ${matchingLink}`,
+                      args: [mutation.confirmation.payload, mutation.taskId, ...linkArgs],
+                    }]
+                    yield [`RELEASE SAVEPOINT ${sp}`]
+                    updated++
+                  } else {
+                    yield [`RELEASE SAVEPOINT ${sp}`]
+                    skipped++
+                  }
+                } else {
+                  const sets: string[] = []
+                  const args: InValue[] = []
+                  if (mutation.title !== undefined) {
+                    sets.push("title = ?")
+                    args.push(mutation.title)
+                  }
+                  if (mutation.status !== undefined) {
+                    sets.push("status = ?")
+                    args.push(normalizeStatus(mutation.status))
+                  }
+                  if (mutation.updateDueDate === true || mutation.dueDate !== undefined) {
+                    sets.push("due_date = ?")
+                    args.push(mutation.dueDate ?? null)
+                  }
+                  if (mutation.description !== undefined) {
+                    if (mutation.replaceDescription) {
+                      sets.push("description = ?")
+                      args.push(mutation.description)
+                    } else {
+                      sets.push("description = COALESCE(?, description)")
+                      args.push(mutation.description)
+                    }
+                  }
+                  if (mutation.areaId !== undefined) {
+                    sets.push("area_id = ?")
+                    args.push(mutation.areaId)
+                  }
+                  if (mutation.ensureCalendarSyncLabel) {
+                    sets.push(
+                      `labels = CASE
+                        WHEN labels IS NULL OR labels = '' OR labels = '[]' THEN '["calendar-sync"]'
+                        WHEN json_valid(labels) AND labels NOT LIKE '%calendar-sync%'
+                        THEN json_insert(labels, '$[#]', 'calendar-sync')
+                        ELSE COALESCE(labels, '[]')
+                      END`,
+                    )
+                  }
+                  sets.push("updated_at = ?")
+                  args.push(nowMs, mutation.taskId)
+
+                  yield [{
+                    sql: `UPDATE tasks SET ${sets.join(", ")} WHERE id = ?`,
+                    args,
+                  }]
+
+                  if (mutation.confirmation) {
+                    step = "confirmation_update"
+                    if (mutation.confirmation.source === "grocy") {
+                      yield [{
+                        sql: "UPDATE grocy_sync_confirmations SET payload = ?, updated_at = ? WHERE grocy_entity_type = ? AND grocy_entity_id = ?",
+                        args: [
+                          mutation.confirmation.payload,
+                          nowMs,
+                          mutation.confirmation.grocyEntityType,
+                          mutation.confirmation.externalId,
+                        ],
+                      }]
+                    } else if (mutation.confirmation.source === "todo") {
+                      yield [{
+                        sql: "UPDATE todo_sync_confirmations SET payload = ?, updated_at = ? WHERE ha_entity_id = ? AND ha_todo_uid = ?",
+                        args: [
+                          mutation.confirmation.payload,
+                          nowMs,
+                          mutation.confirmation.entityId,
+                          mutation.confirmation.externalId,
+                        ],
+                      }]
+                    } else {
+                      yield [{
+                        sql: `UPDATE calendar_confirmations SET payload = ?
+                              WHERE provider_event_id = ?
+                                AND CASE WHEN json_valid(payload) THEN json_extract(payload, '$.entity_id') ELSE NULL END = ?`,
+                        args: [
+                          mutation.confirmation.payload,
+                          mutation.confirmation.externalId,
+                          mutation.confirmation.entityId,
+                        ],
+                      }]
+                    }
+                  }
+                  yield [`RELEASE SAVEPOINT ${sp}`]
+                  updated++
+                }
+              }
+            } catch (stepErr) {
+              if ((stepErr as { name?: string } | null)?.name === "AbortError") {
+                throw stepErr
+              }
+              const extCode = (stepErr as { extendedCode?: string } | null)?.extendedCode
+              if (
+                mutation.kind === "create" &&
+                step === "task_insert" &&
+                extCode === "SQLITE_CONSTRAINT_TRIGGER" &&
+                candidateTaskId !== null
+              ) {
+                const [probe] = yield [{ sql: "SELECT 1 FROM tasks WHERE id = ?", args: [candidateTaskId] }]
+                if ((probe?.rows.length ?? 0) === 0) {
+                  yield [`RELEASE SAVEPOINT ${sp}`]
+                } else {
+                  yield [`ROLLBACK TO SAVEPOINT ${sp}`, `RELEASE SAVEPOINT ${sp}`]
+                }
+              } else {
+                yield [`ROLLBACK TO SAVEPOINT ${sp}`, `RELEASE SAVEPOINT ${sp}`]
+              }
+              errors.push({
+                index: globalIdx,
+                message: stepErr instanceof Error ? stepErr.message : String(stepErr),
+              })
+            }
+          }
+
+          return { created, updated, linked, skipped, ticketNumbers, errors }
+        },
+        { signal: options?.signal },
+      )
+
+      aggregate.created += chunkOutcome.created
+      aggregate.updated += chunkOutcome.updated
+      aggregate.linked += chunkOutcome.linked
+      aggregate.skipped += chunkOutcome.skipped
+      aggregate.chunksCommitted++
+      aggregate.ticketNumbers.push(...chunkOutcome.ticketNumbers)
+      aggregate.errors.push(...chunkOutcome.errors)
+    }
+
+    return aggregate
   }
 }

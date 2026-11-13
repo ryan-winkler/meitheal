@@ -121,7 +121,7 @@ let tableReadFailed = false
 if (renderedView === "table") {
   const filters = readTableFilterParams(Astro.url.searchParams)
   try {
-    tableTasks = (await getTasksForView({ requireAvailable: true })).tasks
+    tableTasks = (await getTasksForView({ requireAvailable: true, slim: true })).tasks
     if (filters.createdFrom || filters.createdThrough) {
       const { timezone } = await new SettingsRepository(db).getByKeys(["timezone"])
       if (typeof timezone === "string") tableCreationTimezone = timezone
