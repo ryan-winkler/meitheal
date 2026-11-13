@@ -121,6 +121,7 @@ On Home Assistant Core 2026.11 or later, an active administrator can also enable
 - [Open Meitheal in the Home Assistant Companion app](docs/companion-app-setup.md)
 - [Install the web app and use it offline](docs/kcs/pwa-offline-guide.md)
 - [Find tasks, views, and settings with Search Hub](docs/kcs/search-hub-guide.md)
+- [Design system, brand tokens, and appearance](DESIGN.md)
 - [Browse all operational and KCS guides](docs/index.md)
 
 ## Non-Negotiables

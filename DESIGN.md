@@ -21,7 +21,7 @@ colors:
     text_muted: "#A9B7B0"
     border: "#344039"
     warning: "#F0B86D"
-    danger: "#FF7D7D"
+    danger: "#EF4444"
   light:
     background: "#F6F5F0"
     surface_low: "#ECEBE4"
@@ -41,7 +41,7 @@ typography:
   heading: "'Geist Variable', 'Inter Variable', -apple-system, sans-serif"
   sans: "'Geist Variable', 'Inter Variable', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif"
   mono: "'JetBrains Mono', ui-monospace, monospace"
-  wordmark: "meitheal. (Geist Variable 500, -0.05em tracking) + /meh·hal/ (JetBrains Mono 400, 0.1em tracking)"
+  wordmark: "meitheal. (Geist Variable 500, -0.05em tracking) + /meh·hal/ (JetBrains Mono 400, 0.09em tracking)"
 rounded:
   xs: "4px"
   sm: "6px"
@@ -63,7 +63,7 @@ spacing:
 ### Canonical Mark & Wordmark Lockup
 
 - **App Mark (`64×64` geometry)**: Rounded evergreen tile (`#10231B`, `rx="13"`), warm off-white continuous double-arch `m` (`#EDF5EF`, `stroke-width="5"`, `stroke-linecap="round"`), and a living mint completion dot (`#75E9BE`, `cx="52" cy="40" r="3.5"`).
-- **Wordmark**: Lowercase `meitheal.` in `Geist Variable` (`font-weight: 500`, `letter-spacing: -0.05em`) paired with `/meh·hal/` in `JetBrains Mono` (`letter-spacing: 0.1em`).
+- **Wordmark**: Lowercase `meitheal.` in `Geist Variable` (`font-weight: 500`, `letter-spacing: -0.05em`) paired with `/meh·hal/` in `JetBrains Mono` (`letter-spacing: 0.09em`).
 - **Home Assistant Storefront Assets**:
   - `icon.png`: `256×256` 8-bit RGBA PNG with transparent outer corners around the `#10231B` rounded-square mark (Canary adds a crisp `#F0B86D` warm amber corner pip).
   - `logo.png`: `500×200` (2.5:1 Retina) 8-bit RGBA PNG rendered as a self-contained `#10231B` rounded architectural badge (`#344039` border, transparent exterior) so the lockup maintains >12:1 contrast on both Home Assistant Light and Dark themes without white bars or checkerboard artifacts.
