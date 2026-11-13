@@ -6,7 +6,7 @@
 
 Meitheal helps people keep track of household tasks and routines in Home Assistant. It stores task data locally. The app connects tasks to calendars, to-do lists, and automations that users set up.
 
-The Home Assistant add-on runs an Astro server and uses SQLite with Drizzle repositories. Keep the app and its optional integration distinct. See the [README](README.md) for the product overview and the [automation guide](docs/kcs/agent-automation-guide.md) for use by tools and agents.
+The Home Assistant add-on runs an Astro server and uses Node.js built-in SQLite (`node:sqlite` `DatabaseSync`) repositories. Keep the app and its optional integration distinct. See the [README](README.md) for the product overview and the [automation guide](docs/kcs/agent-automation-guide.md) for use by tools and agents.
 
 ## Hard Requirements
 
@@ -157,16 +157,18 @@ Build-time generators produce zero-drift documentation served as static files.
 | Artifact | Generator | Output |
 |----------|-----------|--------|
 | OpenAPI 3.1 spec | `apps/web/scripts/generate-openapi.mjs` | `public/openapi.yaml` |
+| Precompiled MCP catalog | `apps/web/scripts/generate-mcp-tools.mjs` | `src/generated/mcp-tools.json` |
+| Typed Tabler icon registry | `apps/web/scripts/generate-icons.mjs` | `src/generated/icon-registry.ts` |
 | AsyncAPI 2.6 spec | `apps/web/scripts/generate-asyncapi.mjs` | `public/asyncapi.yaml` |
 
-- `prebuild` runs `generate:openapi` and `generate:asyncapi` before `astro build`
-- Adding a new API route? Add its entry to the `paths` object in `generate-openapi.mjs`
+- `prebuild` runs `generate:openapi` -> `generate:mcp` -> `generate:icons` -> `generate:asyncapi` before `astro build`
+- Adding a new API route? Add its entry to the `paths` object in `generate-openapi.mjs` and regenerate `src/generated/mcp-tools.json`
 - Adding a new domain concept? Add its schema to the `schemas` object in `generate-openapi.mjs`
 - Adding a new SSE/webhook event? Add its channel to `generate-asyncapi.mjs`
 
 ### MCP Dynamic Tools
 
-- `apps/web/src/pages/api/mcp.ts` reads `openapi.yaml` at startup, caches tool list
+- Production `apps/web/src/pages/api/mcp.ts` loads the precompiled `src/generated/mcp-tools.json` catalog (with dynamic `openapi.yaml` fallback in dev/tests or when `MEITHEAL_MCP_DYNAMIC_OPENAPI=1`)
 - OpenAPI operations become tools when the caller has the mapped API scope as well as `mcp:execute`
 - Custom handlers in `customHandlers` Map override specific tools (e.g., `completeTask` and `searchTasks`)
 - `EXCLUDED_OPS` set prevents internal endpoints from becoming tools

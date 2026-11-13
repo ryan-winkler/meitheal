@@ -108,7 +108,7 @@ On Home Assistant Core 2026.11 or later, an active administrator can also enable
 | Layer | Stack |
 |-------|-------|
 | Runtime | Astro SSR web application running as a Home Assistant add-on behind Supervisor Ingress |
-| Persistence | Local SQLite storage (`/data/meitheal.db`) via Drizzle repositories |
+| Persistence | Local SQLite storage (`/data/meitheal.db`) via Node.js built-in SQLite (`node:sqlite` `DatabaseSync`) repositories |
 | Domain Model | Bounded DDD packages (`domain-auth`, `domain-tasks`, `domain-strategy`, `domain-observability`, `integration-core`) |
 | Interface | Accessible dark & light themes (`Geist Variable` + `JetBrains Mono`), installable PWA, and keyboard-first navigation |
 | Integrations | Home Assistant WebSocket/REST, calendars, `todo.meitheal_tasks`, Grocy, webhooks, A2A, and OpenAPI-driven MCP tools |

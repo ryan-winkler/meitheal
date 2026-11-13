@@ -18,3 +18,4 @@
 - [ADR-016: Recurrence Engine vs Habit Cadence — Deliberate Separation](adr-016-recurrence-vs-habits.md) - Explains the distinction between recurring tasks and habits.
 - [ADR-017: Pillars Domain — Identity-Based Motivational Anchors](adr-017-pillars-domain.md) - Defines pillars, principles, and their relationships to planning work.
 - [Review custom AI URLs before household sharing](0019-household-ai-url-review.md) - Keeps legacy destinations private until an administrator explicitly reviews them.
+- [ADR 0020: Hardware, Memory, and UI Surface Architecture](0020-hardware-memory-and-ui-architecture.md) - Scopes Home Assistant entity state, streams Ingress HTML, bounds SQLite concurrency, standardizes Evergreen Carbon surfaces and Tabler sprites, and virtualizes the timeline.
