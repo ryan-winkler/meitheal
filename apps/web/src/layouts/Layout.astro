@@ -21,7 +21,6 @@ import { applyPersonalAccent } from "../lib/accent-colors"
 import { canManageSystemSettings } from "../lib/settings-security"
 
 import geistWoff2 from '@fontsource-variable/geist/files/geist-latin-wght-normal.woff2?url';
-import outfitWoff2 from '@fontsource-variable/outfit/files/outfit-latin-wght-normal.woff2?url';
 
 // i18n: resolve locale from cookie for SSR
 const cookieLocale = Astro.cookies.get("meitheal-locale")?.value;
@@ -376,7 +375,6 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
     
     <!-- Resource Hints: Preload critical fonts to prevent layout shift -->
     <link rel="preload" href={geistWoff2} as="font" type="font/woff2" crossorigin="anonymous" />
-    <link rel="preload" href={outfitWoff2} as="font" type="font/woff2" crossorigin="anonymous" />
     
     <!-- Inter font self-hosted via @fontsource-variable/inter (imported in global.css) -->
     {!behindIngress && <script is:inline>

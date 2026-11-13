@@ -11,6 +11,7 @@
  * before install runs, so precache and fetch routing stay inside ingress.
  *
  * @kcs Ingress token is permanent per-installation (HA issue #6605).
+ * @brand-revision evergreen-living-mint-2026-11
  */
 
 /**

@@ -138,6 +138,7 @@
     --accent-hover: var(--personal-accent-hover, var(--personal-accent, var(--palette-accent-hover)));
     --accent-light: var(--personal-accent-light, var(--personal-accent, var(--palette-accent-light)));
     --warning: #F0B86D;
+    --on-warning: #161108;
     --danger: #EF4444;
     --danger-text: color-mix(in srgb, var(--danger) 60%, var(--text-primary));
     --info: #38BDF8;
@@ -212,6 +213,7 @@
     --palette-on-accent: #FFFFFF;
     --palette-accent-light: rgba(20, 108, 78, 0.1);
     --warning: #B45309;
+    --on-warning: #FFFFFF;
     --warning-text: #92400E;
     --danger: #DC2626;
     --info: #0369A1;
@@ -272,6 +274,7 @@
       --palette-on-accent: #FFFFFF;
       --palette-accent-light: rgba(20, 108, 78, 0.1);
       --warning: #B45309;
+      --on-warning: #FFFFFF;
       --warning-text: #92400E;
       --danger: #DC2626;
       --info: #0369A1;
@@ -326,18 +329,34 @@
   @media (prefers-contrast: more) {
     :root {
       --text-muted: #C2CBC3;
+      --text-muted-rgb: 194 203 195;
       --border: #53665C;
+      --border-rgb: 83 102 92;
       --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.5);
       --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.6);
       --palette-accent-light: rgba(105, 227, 178, 0.25);
     }
 
-    [data-theme="light"] {
+    :is([data-theme="light"], [data-theme="auto"][data-ha-theme="light"]) {
       --text-muted: #34473F;
       --text-muted-rgb: 52 71 63;
       --border: #7A8B82;
+      --border-rgb: 122 139 130;
       --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.15);
       --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.2);
+      --palette-accent-light: rgba(20, 108, 78, 0.2);
+    }
+  }
+
+  @media (prefers-contrast: more) and (prefers-color-scheme: light) {
+    [data-theme="auto"]:not([data-ha-theme]) {
+      --text-muted: #34473F;
+      --text-muted-rgb: 52 71 63;
+      --border: #7A8B82;
+      --border-rgb: 122 139 130;
+      --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.15);
+      --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.2);
+      --palette-accent-light: rgba(20, 108, 78, 0.2);
     }
   }
 }
