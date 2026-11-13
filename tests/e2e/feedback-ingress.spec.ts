@@ -656,13 +656,13 @@ test("ingress loads board dependencies from the app path", async ({ page, contex
   })
   const [controller, headingFont] = await Promise.all([
     page.waitForResponse(response => response.url().startsWith(origin + prefix + "/_astro/kanban-page-controller.")),
-    page.waitForResponse(response => response.url().startsWith(origin + prefix + "/_astro/outfit-latin-wght-normal.")),
+    page.waitForResponse(response => response.url().startsWith(origin + prefix + "/_astro/geist-latin-wght-normal.")),
     page.goto(origin + prefix + "/tasks"),
   ])
   expect(controller.ok()).toBe(true)
   expect(headingFont.ok()).toBe(true)
-  await expect(page.locator('link[rel="preload"][as="font"][href*="outfit-"]')).toHaveCount(1)
-  expect(await page.evaluate(() => document.fonts.load("600 16px Outfit").then(faces => faces.length))).toBe(1)
+  await expect(page.locator('link[rel="preload"][as="font"][href*="geist-"]')).toHaveCount(1)
+  expect(await page.evaluate(() => document.fonts.load('500 16px "Geist Variable"').then(faces => faces.length))).toBe(1)
   await expect(page.locator("#kanban-shell")).toHaveAttribute("data-kanban-booted", "true")
   expect(escapedAssets).toEqual([])
 })
@@ -814,7 +814,7 @@ test("ingress Settings keeps readable palettes and resolves Auto from the panel 
       const light = theme === "light" || (theme === "auto" && location === panel)
       await expect.poll(() => body.evaluate(element =>
         getComputedStyle(element).getPropertyValue("--bg-secondary").trim().toLowerCase(),
-      )).toBe(light ? "#f1f5f9" : "#1e293b")
+      )).toBe(light ? "#ecebe4" : "#171a18")
 
       const { violations } = await new AxeBuilder({ page }).withRules(["color-contrast"]).analyze()
       expect(violations.flatMap(violation => violation.nodes.map(node => node.target))).toEqual([])
@@ -845,7 +845,7 @@ test("ingress Settings keeps readable palettes and resolves Auto from the panel 
       await expect(root).toHaveAttribute("data-theme", "auto")
       expect(await body.evaluate(element =>
         getComputedStyle(element).getPropertyValue("--bg-secondary").trim().toLowerCase(),
-      )).toBe("#1e293b")
+      )).toBe("#171a18")
     }
   }
 })
@@ -902,22 +902,22 @@ test("ingress Auto updates with its parent and restores one observer across ifra
   await expect(content.locator("#settings-panels")).not.toHaveAttribute("inert", "")
   await expect(root).toHaveAttribute("data-theme", "auto")
   await expect(root).toHaveAttribute("data-ha-theme", "light")
-  await expect.poll(palette).toBe("#f1f5f9")
+  await expect.poll(palette).toBe("#ecebe4")
   await expect.poll(observerCounts).toEqual({ active: 1, registrations: 1 })
 
   await setParentBackground("#16202a")
   await expect(root).toHaveAttribute("data-ha-theme", "dark")
-  await expect.poll(palette).toBe("#1e293b")
+  await expect.poll(palette).toBe("#171a18")
   await selectedTheme.selectOption("light")
   await expect(root).toHaveAttribute("data-theme", "light")
   await setParentBackground("#fafafa")
   await expect(root).toHaveAttribute("data-ha-theme", "light")
   await setParentBackground("#16202a")
   await expect(root).toHaveAttribute("data-ha-theme", "dark")
-  await expect.poll(palette).toBe("#f1f5f9")
+  await expect.poll(palette).toBe("#ecebe4")
   await selectedTheme.selectOption("auto")
   await expect(root).toHaveAttribute("data-theme", "auto")
-  await expect.poll(palette).toBe("#1e293b")
+  await expect.poll(palette).toBe("#171a18")
 
   await root.evaluate(() => window.dispatchEvent(new PageTransitionEvent("pagehide", { persisted: true })))
   await expect.poll(observerCounts).toEqual({ active: 0, registrations: 1 })
@@ -926,7 +926,7 @@ test("ingress Auto updates with its parent and restores one observer across ifra
   await expect.poll(observerCounts).toEqual({ active: 1, registrations: 2 })
   await expect(root).not.toHaveAttribute("data-ha-theme", /.+/)
   await page.emulateMedia({ colorScheme: "light" })
-  await expect.poll(palette).toBe("#f1f5f9")
+  await expect.poll(palette).toBe("#ecebe4")
 
   await page.locator("iframe").evaluate((frame: HTMLIFrameElement) => {
     const next = new URL(frame.src)
@@ -936,7 +936,7 @@ test("ingress Auto updates with its parent and restores one observer across ifra
   await expect.poll(observerCounts).toEqual({ active: 1, registrations: 3 })
   await setParentBackground("#16202a")
   await expect(root).toHaveAttribute("data-ha-theme", "dark")
-  await expect.poll(palette).toBe("#1e293b")
+  await expect.poll(palette).toBe("#171a18")
 })
 
 test("ingress Auto follows device preference when its parent is cross-origin", async ({ page, context }) => {
@@ -964,13 +964,13 @@ test("ingress Auto follows device preference when its parent is cross-origin", a
     const palette = () => root.evaluate(element => getComputedStyle(element).getPropertyValue("--bg-secondary").trim().toLowerCase())
     await expect(root).toHaveAttribute("data-theme", "auto")
     await expect(root).not.toHaveAttribute("data-ha-theme", /.+/)
-    await expect.poll(palette).toBe("#1e293b")
+    await expect.poll(palette).toBe("#171a18")
     await page.evaluate(appOrigin => {
       document.querySelector("iframe")?.contentWindow?.postMessage({ type: "theme-changed" }, appOrigin)
     }, origin)
     await page.emulateMedia({ colorScheme: "light" })
     await expect(root).not.toHaveAttribute("data-ha-theme", /.+/)
-    await expect.poll(palette).toBe("#f1f5f9")
+    await expect.poll(palette).toBe("#ecebe4")
   } finally {
     const closed = once(panel, "close")
     panel.close()
