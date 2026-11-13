@@ -10,25 +10,28 @@
 .filter-toolbar {
   display: flex !important;
   flex-direction: row !important;
-  flex-wrap: nowrap !important;
-  gap: 16px !important;
+  flex-wrap: wrap !important;
+  gap: 6px 8px !important;
   align-items: center !important;
-  flex: 1; /* allow it to grow if needed */
-  width: 100%;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
 }
 
 /* ---- Search input ---- */
 .filter-toolbar__search {
-  min-width: 140px;
-  max-width: 240px;
-  flex: 0 1 200px;
+  min-width: 120px;
+  max-width: 190px;
+  flex: 0 1 150px;
 }
 
 /* ---- Type toggle & User Pills buttons ---- */
 .filter-toolbar__type-toggles,
 .filter-toolbar__user-pills {
   display: flex;
+  flex-wrap: wrap;
   gap: 4px;
+  max-width: 100%;
   border: 1px solid var(--border);
   border-radius: var(--radius-md, 6px);
   padding: 2px;
@@ -39,13 +42,13 @@
 .filter-toolbar__user-btn {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
+  gap: 5px;
+  padding: 5px 10px;
   border: none;
   border-radius: var(--radius-sm, 4px);
   background: transparent;
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 500;
   cursor: pointer;
   transition: background 0.15s, color 0.15s, opacity 0.15s;
@@ -134,21 +137,24 @@ details.filter-dropdown summary::-webkit-details-marker {
   min-width: 140px;
 }
 
-/* ---- Filter Pills (Glassmorphic) ---- */
+/* ---- Filter Pills ---- */
 .filter-pill {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   padding: 4px 10px;
   background: var(--bg-secondary);
-  border: 1px dashed var(--border);
+  border: 1px solid var(--border);
   border-radius: var(--radius-full, 9999px);
   color: var(--text-muted);
   font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  flex-shrink: 0;
   cursor: pointer;
   transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
   user-select: none;
-  height: 28px;
+  height: 32px;
 }
 
 .filter-pill:hover {

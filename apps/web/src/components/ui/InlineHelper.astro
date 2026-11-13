@@ -21,6 +21,9 @@
  *   </InlineHelper>
  */
 
+import Icon from "./Icon.astro"
+import { mapEntityEmojiToTabler } from "../../lib/tabler-svg"
+
 interface Props {
   /** Unique stable identifier for this helper (used for dismissal persistence) */
   helperId: string
@@ -33,6 +36,7 @@ interface Props {
 }
 
 const { helperId, title, icon = "💡", variant = "info" } = Astro.props
+const resolvedIcon = mapEntityEmojiToTabler(icon) ?? "bulb"
 ---
 
 <aside
@@ -49,9 +53,9 @@ const { helperId, title, icon = "💡", variant = "info" } = Astro.props
       aria-label="Toggle helper"
       aria-expanded="true"
     >
-      <span class="inline-helper__chevron">▶</span>
+      <span class="inline-helper__chevron"><Icon name="chevron-right" size={14} /></span>
     </button>
-    <span class="inline-helper__icon">{icon}</span>
+    <span class="inline-helper__icon" aria-hidden="true"><Icon name={resolvedIcon} size={16} /></span>
     <span class="inline-helper__title">{title}</span>
     <button
       type="button"
@@ -60,7 +64,7 @@ const { helperId, title, icon = "💡", variant = "info" } = Astro.props
       aria-label="Dismiss helper"
       title="Dismiss (press ? to restore all)"
     >
-      ✕
+      <Icon name="x" size={14} />
     </button>
   </div>
   <div class="inline-helper__body">
@@ -112,8 +116,9 @@ const { helperId, title, icon = "💡", variant = "info" } = Astro.props
   }
 
   .inline-helper__chevron {
-    font-size: 0.625rem;
-    display: inline-block;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     transform: rotate(90deg);
     transition: transform 200ms cubic-bezier(0.175, 0.885, 0.32, 1.275);
   }
@@ -123,7 +128,10 @@ const { helperId, title, icon = "💡", variant = "info" } = Astro.props
   }
 
   .inline-helper__icon {
-    font-size: 1rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--helper-accent);
     line-height: 1;
     flex-shrink: 0;
   }

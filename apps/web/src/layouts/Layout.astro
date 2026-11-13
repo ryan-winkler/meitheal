@@ -10,6 +10,7 @@ import Sidebar from "../components/layout/Sidebar.astro";
 import SearchHub from "../components/layout/SearchHub.astro";
 import KeyboardShortcutList from "../components/layout/KeyboardShortcutList.astro";
 import TopNavigation from "../components/layout/TopNavigation.astro";
+import Icon from "../components/ui/Icon.astro";
 
 import NewTaskModal from "../components/tasks/NewTaskModal.astro";
 import TaskDetailModal from "../components/tasks/TaskDetailModal.astro";
@@ -547,23 +548,23 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
     <!-- PRA-16: Mobile bottom tab bar — thumb-zone navigation for HA Companion App -->
     <nav class="mobile-tab-bar" id="mobile-tab-bar" aria-label="Mobile navigation">
       <a href="/" class="mobile-tab-bar__item" data-page="dashboard">
-        <span class="mobile-tab-bar__icon">⌂</span>
+        <span class="mobile-tab-bar__icon" aria-hidden="true"><Icon name="home" size={20} /></span>
         <span class="mobile-tab-bar__label">Home</span>
       </a>
       <a href="/today" class="mobile-tab-bar__item" data-page="today">
-        <span class="mobile-tab-bar__icon">☀️</span>
+        <span class="mobile-tab-bar__icon" aria-hidden="true"><Icon name="sun" size={20} /></span>
         <span class="mobile-tab-bar__label">Today</span>
       </a>
       <a href="/tasks" class="mobile-tab-bar__item" data-page="tasks">
-        <span class="mobile-tab-bar__icon">📋</span>
+        <span class="mobile-tab-bar__icon" aria-hidden="true"><Icon name="kanban" size={20} /></span>
         <span class="mobile-tab-bar__label">Tasks</span>
       </a>
       <a href="/tasks?view=calendar#calendar" data-astro-prefetch="false" class="mobile-tab-bar__item" data-page="calendar">
-        <span class="mobile-tab-bar__icon">📅</span>
+        <span class="mobile-tab-bar__icon" aria-hidden="true"><Icon name="calendar" size={20} /></span>
         <span class="mobile-tab-bar__label">Calendar</span>
       </a>
       <a href="/settings" class="mobile-tab-bar__item" data-page="settings">
-        <span class="mobile-tab-bar__icon">⚙️</span>
+        <span class="mobile-tab-bar__icon" aria-hidden="true"><Icon name="settings" size={20} /></span>
         <span class="mobile-tab-bar__label">Settings</span>
       </a>
     </nav>

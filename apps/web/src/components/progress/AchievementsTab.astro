@@ -9,6 +9,8 @@
  * @phase 18 — Progress & Growth Unification
  */
 import GamificationWidget from "../gamification/GamificationWidget.astro"
+import Icon from "../ui/Icon.astro"
+import { resolveAchievementTablerIcon } from "../../lib/tabler-svg"
 import {
   getStats,
   getWeeklyData,
@@ -288,7 +290,9 @@ const categories = [
                     class={`achievements-tab__achievement-card ${a.unlockedAt ? "achievements-tab__achievement-card--unlocked" : ""}`}
                     title={tooltip}
                   >
-                    <span class="achievements-tab__achievement-icon" aria-hidden="true">{a.icon}</span>
+                    <span class="achievements-tab__achievement-icon inline-flex items-center justify-center" aria-hidden="true">
+                      <Icon name={resolveAchievementTablerIcon(a.id || a.icon)} size={20} />
+                    </span>
                     <div class="achievements-tab__achievement-info">
                       <span class="achievements-tab__achievement-name">{a.name}</span>
                       <span class="achievements-tab__achievement-desc">{a.description}</span>

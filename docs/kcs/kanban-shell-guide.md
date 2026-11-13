@@ -73,7 +73,7 @@ Dates due today appear in amber. The light palette uses a darker shade on white 
 
 On mobile, the view pills remain as a horizontal touch strip below the unified bar actions. The bottom app navigation opens Tasks, while the in-page strip switches between Kanban, Calendar, Table, and Timeline.
 
-On narrow screens the task type filters use two rows. Board cards and table rows appear as soon as the view renders, including when the device requests reduced motion.
+On narrow screens the filter toolbar wraps its type toggles and right-aligned action capsule (`Deferred`, `Inactivity`, `Fields`, and `Lanes`) cleanly across rows inside `.tasks-filter-row` so controls never overlap. Board cards and table rows appear as soon as the view renders, including when the device requests reduced motion.
 
 ### Filter and group Timeline
 

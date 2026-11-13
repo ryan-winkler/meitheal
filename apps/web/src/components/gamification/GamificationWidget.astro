@@ -15,6 +15,8 @@
  * @prop dailyGoal - Configurable daily task completion goal (default: 5)
  */
 import { calendarToday } from "../../lib/date"
+import Icon from "../ui/Icon.astro"
+import { resolveAchievementTablerIcon } from "../../lib/tabler-svg"
 
 interface WidgetAchievement {
   id: string
@@ -223,7 +225,9 @@ const streakLinkTitle = stats.currentStreak > 0
               class={`gam-achievement-badge ${a.unlockedAt ? "gam-achievement-badge--unlocked" : "gam-achievement-badge--locked"}`}
               title={badgeTitle}
             >
-              <span class="gam-achievement-badge__icon" aria-hidden="true">{a.icon}</span>
+              <span class="gam-achievement-badge__icon inline-flex items-center" aria-hidden="true">
+                <Icon name={resolveAchievementTablerIcon(a.id || a.icon)} size={15} />
+              </span>
               <span class="gam-achievement-badge__name">{a.name}</span>
             </a>
           )

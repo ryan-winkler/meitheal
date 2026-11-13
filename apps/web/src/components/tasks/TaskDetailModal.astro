@@ -117,23 +117,23 @@ const mentionUser = verifiedIngressUser(Astro.locals)
               ></textarea>
             </div>
 
-            <div class="space-y-2">
+            <div class="flex flex-wrap items-center gap-2">
               <button id="td-pin-action" type="button" aria-pressed="false"
-                class="min-h-11 rounded px-3 text-sm font-medium text-text-primary hover:bg-bg-hover aria-pressed:bg-accent/10 aria-pressed:text-accent" hidden>
+                class="min-h-11 rounded border border-border bg-bg-card px-3 text-sm font-medium text-text-primary hover:bg-bg-hover aria-pressed:border-accent aria-pressed:bg-accent/10 aria-pressed:text-accent" hidden>
                 {t("pins.pin", locale)}
               </button>
-              <button id="td-pin-refresh" type="button" class="min-h-11 rounded px-3 text-sm font-medium text-text-primary hover:bg-bg-hover" hidden>
+              <button id="td-pin-refresh" type="button" class="min-h-11 rounded border border-border bg-bg-card px-3 text-sm font-medium text-text-primary hover:bg-bg-hover" hidden>
                 {t("pins.refresh", locale)}
               </button>
               <p id="td-pin-status" role="status" aria-atomic="true" class="text-sm text-text-secondary" hidden></p>
               <span id="td-deferred-badge" class="rounded bg-accent/10 px-2 py-1 text-sm text-accent" hidden>{t("deferral.title", locale)}</span>
-              <button id="td-deferral-action" type="button" class="min-h-11 rounded px-3 text-sm font-medium text-text-primary hover:bg-bg-hover"
+              <button id="td-deferral-action" type="button" class="min-h-11 rounded border border-border bg-bg-card px-3 text-sm font-medium text-text-primary hover:bg-bg-hover"
                 data-defer-label={t("deferral.defer", locale)} data-resume-label={t("deferral.resume", locale)} hidden></button>
-              <button id="td-deferral-refresh" type="button" class="min-h-11 rounded px-3 text-sm font-medium text-text-primary hover:bg-bg-hover" hidden>
+              <button id="td-deferral-refresh" type="button" class="min-h-11 rounded border border-border bg-bg-card px-3 text-sm font-medium text-text-primary hover:bg-bg-hover" hidden>
                 {t("deferral.refresh_task", locale)}
               </button>
               <p id="td-deferral-status" role="status" aria-atomic="true" class="text-sm text-text-secondary" hidden></p>
-              <label id="td-copy-link-fallback" hidden class="space-y-2 text-sm text-text-primary">
+              <label id="td-copy-link-fallback" hidden class="w-full space-y-2 text-sm text-text-primary">
                 <span class="block">{t("task_modal.copy_link_manually", locale)}</span>
                 <input type="url" id="td-copy-link-value" class="form-input w-full" readonly />
               </label>

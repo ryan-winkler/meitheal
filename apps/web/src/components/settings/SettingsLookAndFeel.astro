@@ -7,6 +7,7 @@ import { canManageSystemSettings } from "../../lib/settings-security"
 import SettingsDisclosure from "./SettingsDisclosure.astro"
 import SettingsPanelCard from "./SettingsPanelCard.astro"
 import SettingsSectionIntro from "./SettingsSectionIntro.astro"
+import Icon from "../ui/Icon.astro"
 
 interface Props {
   locale: Locale
@@ -148,7 +149,7 @@ const VISUAL_PREFERENCE_KEYS: readonly AppearancePreferenceName[] = [
             id="custom-theme-loaded"
             style="display: none; align-items: center; gap: 8px; margin-top: 8px; padding: 8px 12px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: var(--radius-sm);"
           >
-            <span style="font-size: 14px;">🎨</span>
+            <span class="inline-flex items-center text-accent" aria-hidden="true"><Icon name="palette" size={15} /></span>
             <a
               id="custom-theme-filename"
               href="#"
@@ -158,9 +159,9 @@ const VISUAL_PREFERENCE_KEYS: readonly AppearancePreferenceName[] = [
               type="button"
               id="custom-theme-delete"
               class="btn-icon"
-              style="color: var(--danger); font-size: 14px; padding: 2px 6px;"
+              style="color: var(--danger); padding: 4px;"
               title={t("settings.theme_remove", locale)}
-              aria-label={t("settings.theme_remove", locale)}>×</button
+              aria-label={t("settings.theme_remove", locale)}><Icon name="x" size={14} /></button
             >
           </div>
         </div>

@@ -3,6 +3,7 @@ import { AVAILABLE_SCOPES } from "@meitheal/domain-auth"
 import { t } from "../../i18n/translations"
 import type { Locale } from "../../lib/locale"
 import SettingsPanelCard from "./SettingsPanelCard.astro"
+import Icon from "../ui/Icon.astro"
 
 /**
  * SettingsAgentTokens — Manage scoped agent API tokens.
@@ -32,7 +33,7 @@ const scopeGroups = [
 <div class="settings-grid mt-4">
   <SettingsPanelCard
     id="agent-tokens-card"
-    title="🔑 Agent Tokens"
+    title="Agent Tokens"
     subtitle="Issue scoped API tokens for n8n, Node-RED, LLM agents, and automations. Tokens use zero-trust principles — each gets only the permissions it needs."
   >
     <button
@@ -46,7 +47,7 @@ const scopeGroups = [
     <!-- Token List -->
     <div id="agent-tokens-list" class="agent-tokens__list">
       <div class="agent-tokens__empty" id="agent-tokens-empty">
-        <span style="font-size: 24px;">🔒</span>
+        <span class="inline-flex items-center justify-center text-text-muted" aria-hidden="true"><Icon name="lock" size={24} /></span>
         <p>No agent tokens yet</p>
         <p class="agent-tokens__empty-hint">Create a token to let external tools access your API securely.</p>
       </div>
@@ -107,12 +108,16 @@ const scopeGroups = [
 
     <!-- Show-Once Token Display (hidden by default) -->
     <div id="agent-token-reveal" class="agent-tokens__reveal" hidden>
-      <div class="agent-tokens__reveal-warning">
-        ⚠️ Copy this token now — it will not be shown again.
+      <div class="agent-tokens__reveal-warning inline-flex items-center gap-2">
+        <Icon name="alert-triangle" size={16} />
+        <span>Copy this token now — it will not be shown again.</span>
       </div>
       <div class="agent-tokens__reveal-token">
         <code id="agent-token-plaintext"></code>
-        <button type="button" class="btn btn-ghost btn-sm" id="agent-token-copy">📋 Copy</button>
+        <button type="button" class="btn btn-ghost btn-sm" id="agent-token-copy">
+          <Icon name="copy" size={14} />
+          <span>Copy</span>
+        </button>
       </div>
       <button type="button" class="btn btn-primary" id="agent-token-reveal-done">Done</button>
     </div>
@@ -275,6 +280,7 @@ const scopeGroups = [
   import { confirmDialog } from "@lib/confirm-dialog"
   import { showToast } from "@lib/toast"
   import { pageLifecycle } from "@lib/page-lifecycle"
+  import { createTablerSvgElement } from "@lib/tabler-svg"
 
   const listEl = document.getElementById("agent-tokens-list")!
   const emptyEl = document.getElementById("agent-tokens-empty")!
@@ -304,13 +310,23 @@ const scopeGroups = [
     listEl.querySelectorAll(".agent-tokens__status").forEach(el => el.remove())
   }
 
-  function showTokenStatus(html: string) {
+  function showTokenStatus(message: string, withRetry = false) {
     clearTokenStatus()
     listEl.querySelectorAll(".agent-tokens__row").forEach(el => el.remove())
     const statusEl = document.createElement("div")
     statusEl.className = "agent-tokens__status"
     statusEl.style.cssText = "padding: 16px; text-align: center; color: var(--text-muted); font-size: 13px;"
-    statusEl.innerHTML = html
+    statusEl.appendChild(document.createTextNode(message))
+    if (withRetry) {
+      const retryBtn = document.createElement("button")
+      retryBtn.type = "button"
+      retryBtn.className = "btn btn-ghost btn-sm"
+      retryBtn.id = "tokens-retry"
+      retryBtn.style.marginLeft = "8px"
+      retryBtn.textContent = "Retry"
+      pageLifecycle.on(retryBtn, "click", () => loadTokens())
+      statusEl.appendChild(retryBtn)
+    }
     listEl.appendChild(statusEl)
     emptyEl.hidden = true
   }
@@ -322,11 +338,7 @@ const scopeGroups = [
 
   // ── T7: Error state with retry ──
   function showTokenError() {
-    showTokenStatus(
-      `Failed to load tokens.\n<button type="button" class="btn btn-ghost btn-sm" id="tokens-retry" style="margin-left: 8px;">Retry</button>`,
-    )
-    const retryBtn = document.getElementById("tokens-retry")
-    if (retryBtn) pageLifecycle.on(retryBtn, "click", () => loadTokens())
+    showTokenStatus("Failed to load tokens.", true)
   }
 
   // ── Load tokens ──
@@ -366,44 +378,74 @@ const scopeGroups = [
       row.className = `agent-tokens__row${token.revoked ? " agent-tokens__revoked" : ""}`
       row.dataset.tokenId = token.id
 
-      // T2: Escape scope strings to prevent XSS
-      const scopeBadges = token.scopes
-        .map(s => `<span class="agent-tokens__scope-badge">${escapeHtml(s)}</span>`)
-        .join("")
+      const info = document.createElement("div")
+      info.className = "agent-tokens__row-info"
+
+      const nameEl = document.createElement("div")
+      nameEl.className = "agent-tokens__row-name"
+      nameEl.textContent = token.name
+
+      const meta = document.createElement("div")
+      meta.className = "agent-tokens__row-meta"
+
+      const prefix = document.createElement("span")
+      prefix.className = "agent-tokens__row-prefix"
+      prefix.textContent = `${token.tokenPrefix}…`
+      meta.appendChild(prefix)
+
+      for (const scope of token.scopes) {
+        const badge = document.createElement("span")
+        badge.className = "agent-tokens__scope-badge"
+        badge.textContent = scope
+        meta.appendChild(badge)
+      }
 
       const created = new Date(token.createdAt).toLocaleDateString()
       const expires = token.expiresAt
         ? `Expires ${new Date(token.expiresAt).toLocaleDateString()}`
         : "No expiry"
 
-      row.innerHTML = `
-        <div class="agent-tokens__row-info">
-          <div class="agent-tokens__row-name">${escapeHtml(token.name)}</div>
-          <div class="agent-tokens__row-meta">
-            <span class="agent-tokens__row-prefix">${escapeHtml(token.tokenPrefix)}…</span>
-            ${scopeBadges}
-            <span>Created ${created}</span>
-            <span>· ${expires}</span>
-          </div>
-        </div>
-        <div class="agent-tokens__row-actions">
-          ${token.revoked
-            ? '<span class="badge badge-pending">Revoked</span>'
-            : `<button type="button" class="btn btn-ghost btn-sm" data-revoke="${escapeHtml(token.id)}" title="Revoke">🚫</button>`
-          }
-          <button type="button" class="btn btn-ghost btn-sm" data-delete="${escapeHtml(token.id)}" title="Delete permanently">🗑</button>
-        </div>
-      `
+      const createdSpan = document.createElement("span")
+      createdSpan.textContent = `Created ${created}`
+      const expiresSpan = document.createElement("span")
+      expiresSpan.textContent = `· ${expires}`
+      meta.append(createdSpan, expiresSpan)
+
+      info.append(nameEl, meta)
+
+      const actions = document.createElement("div")
+      actions.className = "agent-tokens__row-actions"
+
+      if (token.revoked) {
+        const revokedBadge = document.createElement("span")
+        revokedBadge.className = "badge badge-pending"
+        revokedBadge.textContent = "Revoked"
+        actions.appendChild(revokedBadge)
+      } else {
+        const revokeBtn = document.createElement("button")
+        revokeBtn.type = "button"
+        revokeBtn.className = "btn btn-ghost btn-sm"
+        revokeBtn.dataset.revoke = token.id
+        revokeBtn.title = "Revoke"
+        revokeBtn.setAttribute("aria-label", `Revoke ${token.name}`)
+        revokeBtn.appendChild(createTablerSvgElement("ban", 14))
+        pageLifecycle.on(revokeBtn, "click", () => revokeToken(token.id))
+        actions.appendChild(revokeBtn)
+      }
+
+      const deleteBtn = document.createElement("button")
+      deleteBtn.type = "button"
+      deleteBtn.className = "btn btn-ghost btn-sm"
+      deleteBtn.dataset.delete = token.id
+      deleteBtn.title = "Delete permanently"
+      deleteBtn.setAttribute("aria-label", `Delete ${token.name}`)
+      deleteBtn.appendChild(createTablerSvgElement("trash", 14))
+      pageLifecycle.on(deleteBtn, "click", () => deleteToken(token.id))
+      actions.appendChild(deleteBtn)
+
+      row.append(info, actions)
       listEl.appendChild(row)
     }
-
-    // T1: Bind action buttons with pageLifecycle for auto-cleanup
-    listEl.querySelectorAll("[data-revoke]").forEach(btn => {
-      pageLifecycle.on(btn, "click", () => revokeToken(btn.getAttribute("data-revoke")!))
-    })
-    listEl.querySelectorAll("[data-delete]").forEach(btn => {
-      pageLifecycle.on(btn, "click", () => deleteToken(btn.getAttribute("data-delete")!))
-    })
   }
 
   // ── Create flow ──
@@ -481,13 +523,20 @@ const scopeGroups = [
     }
   })
 
+  function setCopyButtonState(copied: boolean) {
+    copyBtn.replaceChildren(
+      createTablerSvgElement(copied ? "check" : "copy", 14),
+      document.createTextNode(copied ? " Copied" : " Copy"),
+    )
+  }
+
   // ── Copy token ──
   pageLifecycle.on(copyBtn, "click", async () => {
     try {
       await navigator.clipboard.writeText(plaintextEl.textContent || "")
       showToast("Token copied to clipboard", "success")
-      copyBtn.textContent = "✅ Copied"
-      setTimeout(() => { copyBtn.textContent = "📋 Copy" }, 2000)
+      setCopyButtonState(true)
+      setTimeout(() => { setCopyButtonState(false) }, 2000)
     } catch {
       showToast("Failed to copy — select and copy manually", "error")
     }
@@ -537,12 +586,6 @@ const scopeGroups = [
     } catch {
       showToast("Failed to delete token", "error")
     }
-  }
-
-  function escapeHtml(str: string): string {
-    const el = document.createElement("span")
-    el.textContent = str
-    return el.innerHTML
   }
 
   // ── Boot on section visibility ──

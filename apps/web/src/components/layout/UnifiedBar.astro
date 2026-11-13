@@ -103,6 +103,7 @@ type StandardIconName =
   | "plug"
   | "sparkles"
   | "home"
+  | "inbox"
 
 const ICON_MAP: Record<string, StandardIconName | "timeline" | "pillars"> = {
   gear: "settings",
@@ -119,17 +120,20 @@ const ICON_MAP: Record<string, StandardIconName | "timeline" | "pillars"> = {
   "📅": "calendar",
   timeline: "timeline",
   "📊": "timeline",
+  "📈": "timeline",
   dashboard: "dashboard",
   "🏠": "dashboard",
   today: "today",
   upcoming: "upcoming",
   tasks: "tasks",
+  "📋": "tasks",
   pillars: "pillars",
   "🏛️": "pillars",
   "🏛": "pillars",
   routines: "habit",
   habit: "habit",
   "🔁": "habit",
+  "🔄": "habit",
   goals: "target",
   target: "target",
   "🎯": "target",
@@ -137,7 +141,13 @@ const ICON_MAP: Record<string, StandardIconName | "timeline" | "pillars"> = {
   trophy: "trophy",
   "🏆": "trophy",
   folder: "folder",
+  "🗂️": "folder",
+  "🗂": "folder",
+  "📁": "folder",
   eisenhower: "eisenhower",
+  "⚖️": "eisenhower",
+  inbox: "inbox",
+  "📥": "inbox",
   sliders: "sliders",
   plug: "plug",
   sparkles: "sparkles",
@@ -186,7 +196,7 @@ function resolveUnifiedIcon(raw?: string): StandardIconName | "timeline" | "pill
             )
           }
           if (resolved) {
-            return <Icon name={resolved} size={18} class="unified-bar__title-icon" />
+            return <span class="unified-bar__title-icon inline-flex items-center" aria-hidden="true"><Icon name={resolved} size={18} /></span>
           }
           return titleIcon ? (
             <span class="unified-bar__title-icon-emoji" aria-hidden="true">{titleIcon}</span>

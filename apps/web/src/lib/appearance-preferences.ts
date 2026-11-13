@@ -37,6 +37,17 @@ export function readAppearancePreferences(): AppearancePreferences {
   })) as AppearancePreferences
 }
 
+function syncSidebarButtons(collapsed: boolean): void {
+  const label = collapsed ? "Expand sidebar (Ctrl+B)" : "Collapse sidebar (Ctrl+B)"
+  for (const id of ["sidebar-toggle-btn", "sidebar-edge-toggle"]) {
+    const btn = document.getElementById(id)
+    if (!btn) continue
+    btn.setAttribute("aria-expanded", String(!collapsed))
+    btn.setAttribute("aria-label", label)
+    btn.setAttribute("title", label)
+  }
+}
+
 function syncSidebarState(): void {
   const root = document.documentElement.dataset
   const desktopSidebar = innerWidth > 768 && root.appearanceNavigation !== "navbar"
@@ -45,7 +56,7 @@ function syncSidebarState(): void {
     try { collapsed = localStorage.getItem("meitheal_sidebar_collapsed") === "true" } catch { /* Open without storage. */ }
   }
   document.body.classList.toggle("sidebar-collapsed", collapsed)
-  document.getElementById("sidebar-toggle-btn")?.setAttribute("aria-expanded", String(!collapsed))
+  syncSidebarButtons(collapsed)
 }
 
 export function applyAppearancePreferences(preferences: AppearancePreferences): void {
@@ -82,7 +93,8 @@ export function bindAppearanceNavigation(signal: AbortSignal): void {
   signal = AbortSignal.any([signal, controller.signal])
   syncNavbarAreas()
   let wasNavbar = innerWidth > 768 && document.documentElement.dataset.appearanceNavigation === "navbar"
-  const button = document.getElementById("sidebar-toggle-btn")
+  const topButton = document.getElementById("sidebar-toggle-btn")
+  const edgeButton = document.getElementById("sidebar-edge-toggle")
   const toggle = () => {
     const root = document.documentElement.dataset
     if (innerWidth <= 768) {
@@ -91,12 +103,13 @@ export function bindAppearanceNavigation(signal: AbortSignal): void {
     }
     if (root.appearanceNavigation === "navbar") return
     const collapsed = document.body.classList.toggle("sidebar-collapsed")
-    button?.setAttribute("aria-expanded", String(!collapsed))
+    syncSidebarButtons(collapsed)
     if (root.appearanceSidebar === "remember") {
       try { localStorage.setItem("meitheal_sidebar_collapsed", String(collapsed)) } catch { /* Still usable without storage. */ }
     }
   }
-  button?.addEventListener("click", toggle, { signal })
+  topButton?.addEventListener("click", toggle, { signal })
+  edgeButton?.addEventListener("click", toggle, { signal })
   document.addEventListener("keydown", event => {
     if (event.defaultPrevented || !(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== "b") return
     if ((event.target as HTMLElement)?.closest("input, textarea, select, [contenteditable=true]")) return
@@ -110,7 +123,7 @@ export function bindAppearanceNavigation(signal: AbortSignal): void {
     const hovered = matchMedia("(any-hover: hover)").matches && sidebar.matches(":hover")
     const collapsed = !hovered && !sidebar.contains(document.activeElement)
     document.body.classList.toggle("sidebar-collapsed", collapsed)
-    button?.setAttribute("aria-expanded", String(!collapsed))
+    syncSidebarButtons(collapsed)
   }
   sidebar?.addEventListener("pointerenter", syncHover, { signal })
   sidebar?.addEventListener("pointerleave", syncHover, { signal })

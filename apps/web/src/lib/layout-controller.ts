@@ -117,10 +117,36 @@
             }
           }, { signal })
 
-          function navigateWithIngress(appPath: string) {
-            syncIngressDestination(appPath);
-            window.location.href = (window.__ingress_path || "") + appPath;
-          }
+          const SHORTCUT_NAV = {
+            dashboard: () => {
+              syncIngressDestination("/");
+              window.location.assign(`${window.__ingress_path || ""}/`);
+            },
+            tasks: () => {
+              syncIngressDestination("/tasks");
+              window.location.assign(`${window.__ingress_path || ""}/tasks`);
+            },
+            kanban: () => {
+              syncIngressDestination("/tasks#kanban");
+              window.location.assign(`${window.__ingress_path || ""}/tasks#kanban`);
+            },
+            table: () => {
+              syncIngressDestination("/table");
+              window.location.assign(`${window.__ingress_path || ""}/table`);
+            },
+            today: () => {
+              syncIngressDestination("/today");
+              window.location.assign(`${window.__ingress_path || ""}/today`);
+            },
+            upcoming: () => {
+              syncIngressDestination("/upcoming");
+              window.location.assign(`${window.__ingress_path || ""}/upcoming`);
+            },
+            calendar: () => {
+              syncIngressDestination("/calendar");
+              window.location.assign(`${window.__ingress_path || ""}/calendar`);
+            },
+          } as const;
 
           function openNewTaskAction() {
             const btn =
@@ -135,7 +161,7 @@
               modalFn();
               return;
             }
-            navigateWithIngress("/tasks");
+            SHORTCUT_NAV.tasks();
           }
 
           // Active nav link — strip ingress prefix so path comparison works behind HA ingress
@@ -167,30 +193,7 @@
             }
           });
 
-          // Sidebar edge toggle + collapsed-rail quick action + floating tooltips
-          const edgeToggle = document.getElementById("sidebar-edge-toggle");
-          const topToggle = document.getElementById("sidebar-toggle-btn");
-          const syncEdgeToggle = () => {
-            if (!edgeToggle) return;
-            const collapsed = document.body.classList.contains("sidebar-collapsed");
-            edgeToggle.setAttribute("aria-expanded", String(!collapsed));
-            edgeToggle.setAttribute(
-              "aria-label",
-              collapsed ? "Expand sidebar (Ctrl+B)" : "Collapse sidebar (Ctrl+B)",
-            );
-            edgeToggle.setAttribute(
-              "title",
-              collapsed ? "Expand sidebar (Ctrl+B)" : "Collapse sidebar (Ctrl+B)",
-            );
-          };
-          syncEdgeToggle();
-          if (bindKeyboard && edgeToggle && topToggle) {
-            edgeToggle.addEventListener("click", () => topToggle.click(), { signal });
-            const observer = new MutationObserver(syncEdgeToggle);
-            observer.observe(document.body, { attributes: true, attributeFilter: ["class"] });
-            signal.addEventListener("abort", () => observer.disconnect(), { once: true });
-          }
-
+          // Collapsed-rail quick action + floating tooltips
           const railNewTaskBtn = document.getElementById("sidebar-rail-new-task");
           if (bindKeyboard) railNewTaskBtn?.addEventListener("click", openNewTaskAction, { signal });
 
@@ -299,23 +302,23 @@
                 if (createBtn) {
                   createBtn.click();
                 } else {
-                  navigateWithIngress("/tasks");
+                  SHORTCUT_NAV.tasks();
                 }
               }
               if (e.key === "t") {
-                navigateWithIngress("/table");
+                SHORTCUT_NAV.table();
               }
               if (e.key === "d") {
-                navigateWithIngress("/");
+                SHORTCUT_NAV.dashboard();
               }
               if (e.key === "y") {
-                navigateWithIngress("/today");
+                SHORTCUT_NAV.today();
               }
               if (e.key === "u") {
-                navigateWithIngress("/upcoming");
+                SHORTCUT_NAV.upcoming();
               }
               if (e.key === "c") {
-                navigateWithIngress("/calendar");
+                SHORTCUT_NAV.calendar();
               }
               if (e.key === "?" && !e.repeat && !e.altKey && openShortcutModal?.()) {
                 e.preventDefault()
@@ -358,7 +361,7 @@
               const target = event.target
               if (target instanceof HTMLElement && (target.matches("input, textarea, select") || target.isContentEditable)) return
               if (hasPriorityOverlay() || document.getElementById("task-detail-overlay")?.classList.contains("active")) return
-              navigateWithIngress("/tasks#kanban")
+              SHORTCUT_NAV.kanban()
             }, { signal })
           }
 
@@ -382,13 +385,13 @@
                 // "All Areas" option first
                 const allOpt = document.createElement("option");
                 allOpt.value = "all";
-                allOpt.textContent = "🗂 All Areas";
+                allOpt.textContent = "All Areas";
                 select.appendChild(allOpt);
                 boards.forEach(
                   (b: { id: string; name: string; icon: string }) => {
                     const opt = document.createElement("option");
                     opt.value = b.id;
-                    opt.textContent = `${b.icon} ${b.name}`;
+                    opt.textContent = b.name;
                     select.appendChild(opt);
                   },
                 );

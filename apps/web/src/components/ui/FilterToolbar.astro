@@ -24,7 +24,7 @@
 import { t } from "../../i18n/translations"
 import type { Locale } from "../../lib/locale"
 import LabelFilterBar from "./LabelFilterBar.astro"
-import TaskTypeIcon from "./TaskTypeIcon.astro"
+import Icon from "./Icon.astro"
 import { FILTER_LIST_LIMIT, readTableFilterParams, tableCreationRangeLabel } from "../../lib/filter-state"
 import type { TableWorkflowColumn } from "../../lib/table-page"
 
@@ -151,7 +151,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
       aria-pressed="true"
       title="Toggle Standard Tasks"
     >
-      <TaskTypeIcon type="task" size={14} />
+      <Icon name="checkbox" size={14} />
       Task
     </button>
     <button
@@ -161,7 +161,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
       aria-pressed="true"
       title="Toggle Shopping Items"
     >
-      <TaskTypeIcon type="task" size={14} />
+      <Icon name="shopping-cart" size={14} />
       Shopping
     </button>
     <button
@@ -171,7 +171,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
       aria-pressed="true"
       title="Toggle Checklists"
     >
-      <TaskTypeIcon type="task" size={14} />
+      <Icon name="checklist" size={14} />
       Checklist
     </button>
     <button
@@ -181,7 +181,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
       aria-pressed="true"
       title="Toggle Routines"
     >
-      <TaskTypeIcon type="task" size={14} />
+      <Icon name="repeat" size={14} />
       Routine
     </button>
     <button
@@ -191,12 +191,12 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
       aria-pressed="true"
       title="Toggle Events"
     >
-      <TaskTypeIcon type="task" size={14} />
+      <Icon name="calendar-event" size={14} />
       Events
     </button>
     {view === "table" && (
       <button type="button" class="filter-toolbar__type-btn active" data-type="quick_capture" aria-pressed="true">
-        <TaskTypeIcon type="task" size={14} />
+        <Icon name="bolt" size={14} />
         Quick capture
       </button>
     )}
@@ -1088,7 +1088,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
         boards.forEach((b) => {
           const opt = document.createElement("option")
           opt.value = b.id
-          opt.textContent = `${b.icon ?? "📋"} ${b.name}`
+          opt.textContent = b.name
           areaSel.appendChild(opt)
         })
       } catch { /* offline fallback */ }

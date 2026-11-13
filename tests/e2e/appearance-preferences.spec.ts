@@ -109,7 +109,7 @@ test.describe("Appearance preferences", () => {
     await form.locator('[name="sidebar"]').selectOption("expanded")
     await form.getByRole("button", { name: "Save navigation layout" }).click()
     await expect(body).not.toHaveClass(/sidebar-collapsed/)
-    await page.locator("#sidebar-toggle-btn").click()
+    await page.locator("#sidebar-edge-toggle").click()
     await expect(body).toHaveClass(/sidebar-collapsed/)
     expect(await page.evaluate(() => localStorage.getItem("meitheal_sidebar_collapsed"))).toBe("false")
     await page.reload()

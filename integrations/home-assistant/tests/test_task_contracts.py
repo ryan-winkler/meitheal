@@ -18,7 +18,12 @@ from homeassistant.components.todo import TodoItem
 from homeassistant.exceptions import ConfigEntryAuthFailed, HomeAssistantError
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
-from custom_components.meitheal import CREATE_TASK_SCHEMA, SEARCH_TASKS_SCHEMA, COMPLETE_TASK_BY_TAG_SCHEMA
+from custom_components.meitheal import (
+    CREATE_TASK_SCHEMA,
+    SEARCH_TASKS_SCHEMA,
+    COMPLETE_TASK_BY_TAG_SCHEMA,
+    _resolve_service_origin,
+)
 from custom_components.meitheal.api import MeithealConnectionError, MeithealResponseError
 from custom_components.meitheal.coordinator import MeithealCoordinator, MeithealCoordinatorData, MeithealTask
 from custom_components.meitheal.device_trigger import async_attach_trigger
@@ -397,3 +402,71 @@ async def test_actual_core_device_trigger_consumes_namespaced_app_overdue_event(
     hass.bus.async_fire(contract["event_type"], contract["event_data"])
     await hass.async_block_till_done()
     assert len(delivered) == 1
+
+
+def test_resolve_service_origin_variants(hass):
+    from homeassistant.core import Context
+
+    assert _resolve_service_origin(hass, SimpleNamespace(context=None)) == (None, None, None)
+
+    hass.states.async_set(
+        "automation.nightly_reset",
+        "on",
+        {"friendly_name": "Nightly Reset", "id": "nightly_reset"},
+        context=Context(id="ctx-auto-state"),
+    )
+    hass.states.async_set(
+        "script.morning_prep",
+        "off",
+        {"friendly_name": "Morning Prep"},
+        context=Context(id="ctx-script-state"),
+    )
+
+    # origin_event automation with matching entity state
+    auto_origin = SimpleNamespace(
+        event_type="automation_triggered",
+        data={"name": "Nightly Reset", "entity_id": "automation.nightly_reset"},
+    )
+    assert _resolve_service_origin(
+        hass,
+        SimpleNamespace(
+            context=SimpleNamespace(id="ctx-1", parent_id=None, origin_event=auto_origin)
+        ),
+    ) == ("ha_automation", "Nightly Reset", "/config/automation/edit/nightly_reset")
+
+    # origin_event automation without state fallback -> dashboard target
+    missing_auto_origin = SimpleNamespace(
+        event_type="automation_triggered",
+        data={"entity_id": "automation.missing"},
+    )
+    assert _resolve_service_origin(
+        hass,
+        SimpleNamespace(
+            context=SimpleNamespace(id="ctx-2", parent_id=None, origin_event=missing_auto_origin)
+        ),
+    ) == ("ha_automation", "automation.missing", "/config/automation/dashboard")
+
+    # origin_event script -> edit target
+    script_origin = SimpleNamespace(
+        event_type="script_started",
+        data={"name": "Morning Prep", "entity_id": "script.morning_prep"},
+    )
+    assert _resolve_service_origin(
+        hass,
+        SimpleNamespace(
+            context=SimpleNamespace(id="ctx-3", parent_id=None, origin_event=script_origin)
+        ),
+    ) == ("ha_script", "Morning Prep", "/config/script/edit/morning_prep")
+
+    # state-context parent_id fallback for automation and script
+    assert _resolve_service_origin(
+        hass, SimpleNamespace(context=Context(id="child-1", parent_id="ctx-auto-state"))
+    ) == ("ha_automation", "Nightly Reset", "/config/automation/edit/nightly_reset")
+    assert _resolve_service_origin(
+        hass, SimpleNamespace(context=Context(id="child-2", parent_id="ctx-script-state"))
+    ) == ("ha_script", "Morning Prep", "/config/script/edit/morning_prep")
+
+    # unmatched context -> no provenance
+    assert _resolve_service_origin(
+        hass, SimpleNamespace(context=Context(id="unmatched"))
+    ) == (None, None, None)

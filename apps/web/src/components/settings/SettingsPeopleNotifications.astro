@@ -4,6 +4,7 @@ import { SETTINGS_SECTIONS } from "../../lib/settings-registry"
 import SettingsActionRow from "./SettingsActionRow.astro"
 import SettingsPanelCard from "./SettingsPanelCard.astro"
 import SettingsSectionIntro from "./SettingsSectionIntro.astro"
+import Icon from "../ui/Icon.astro"
 
 interface Props {
   locale: Locale
@@ -24,7 +25,7 @@ const peopleNotificationsSection = SETTINGS_SECTIONS.find((section) => section.i
   <div class="settings-grid">
     <!-- Users & Assignment -->
     <SettingsPanelCard
-      title="👤 Users & Assignment"
+      title="Users & Assignment"
       subtitle="Manage task assignees. Home Assistant users are discovered automatically. Add custom users for non-HA household members."
     >
       <div class="settings-stack">
@@ -102,7 +103,7 @@ const peopleNotificationsSection = SETTINGS_SECTIONS.find((section) => section.i
 
     <!-- Notifications -->
     <SettingsPanelCard
-      title="🔔 Notifications"
+      title="Notifications"
       subtitle="Control how Meitheal sends notifications to Home Assistant. Toggle globally or per user."
     >
       <div class="settings-stack">
@@ -136,8 +137,8 @@ const peopleNotificationsSection = SETTINGS_SECTIONS.find((section) => section.i
                 <span class="toggle-slider"></span>
               </label>
               <div class="flex-1">
-                <div id="notif-channel-sidebar-label" class="settings-label--inline">
-                  🔔 HA Sidebar Bell
+                <div id="notif-channel-sidebar-label" class="settings-label--inline inline-flex items-center gap-1.5">
+                  <Icon name="bell" size={14} /> HA Sidebar Bell
                 </div>
                 <div class="settings-hint--sm">
                   Appears in the Home Assistant notification bell. Silent — no
@@ -152,8 +153,8 @@ const peopleNotificationsSection = SETTINGS_SECTIONS.find((section) => section.i
                 <span class="toggle-slider"></span>
               </label>
               <div class="flex-1">
-                <div id="notif-channel-mobile-label" class="settings-label--inline">
-                  📱 Mobile Push
+                <div id="notif-channel-mobile-label" class="settings-label--inline inline-flex items-center gap-1.5">
+                  <Icon name="phone" size={14} /> Mobile Push
                 </div>
                 <div class="settings-hint--sm">
                   Push notification to HA Companion App with sound and vibration.
@@ -184,8 +185,8 @@ const peopleNotificationsSection = SETTINGS_SECTIONS.find((section) => section.i
                 <span class="toggle-slider"></span>
               </label>
               <div class="flex-1">
-                <div id="notif-channel-reminders-label" class="settings-label--inline">
-                  ⏰ Due-Date Reminders
+                <div id="notif-channel-reminders-label" class="settings-label--inline inline-flex items-center gap-1.5">
+                  <Icon name="clock-pause" size={14} /> Due-Date Reminders
                 </div>
                 <div class="settings-hint--sm">
                   Sends reminder notifications for tasks due within the configured
@@ -271,7 +272,7 @@ const peopleNotificationsSection = SETTINGS_SECTIONS.find((section) => section.i
       renderNotificationUsers?.(users ?? customUsers)
     }
 
-    /** Create a styled element without innerHTML */
+    /** Create a styled element via safe DOM APIs */
     function makeEl(tag, styles, text) {
       var el = document.createElement(tag);
       if (styles) el.style.cssText = styles;
@@ -299,7 +300,7 @@ const peopleNotificationsSection = SETTINGS_SECTIONS.find((section) => section.i
 
       function render(allUsers, defaultAssignee, customUsers, mergedUnavailable) {
         // Populate default-assignee dropdown (safe: option textContent)
-        select.innerHTML = "";
+        select.replaceChildren();
         var noneOpt = document.createElement("option");
         noneOpt.value = "";
         noneOpt.textContent = "None (unassigned)";
@@ -322,7 +323,7 @@ const peopleNotificationsSection = SETTINGS_SECTIONS.find((section) => section.i
           return u.source === "home_assistant";
         });
         if (discoveredList) {
-          discoveredList.innerHTML = "";
+          discoveredList.replaceChildren();
           if (haUsers.length === 0) {
             discoveredList.appendChild(
               makeEl(
@@ -364,7 +365,7 @@ const peopleNotificationsSection = SETTINGS_SECTIONS.find((section) => section.i
 
       function renderCustomUsers(users) {
         if (!customList) return;
-        customList.innerHTML = "";
+        customList.replaceChildren();
         if (users.length === 0) {
           customList.appendChild(
             makeEl(
@@ -548,7 +549,7 @@ const peopleNotificationsSection = SETTINGS_SECTIONS.find((section) => section.i
             });
           }
 
-          mobileTargetList.innerHTML = "";
+          mobileTargetList.replaceChildren();
           if (mobileServices.length === 0) {
             var empty = document.createElement("span");
             empty.style.cssText =
@@ -574,7 +575,7 @@ const peopleNotificationsSection = SETTINGS_SECTIONS.find((section) => section.i
 
             var label = document.createElement("span");
             label.style.cssText = "font-size: 13px;";
-            label.textContent = "📱 " + svc.name;
+            label.textContent = svc.name;
             row.appendChild(label);
 
             var svcLabel = document.createElement("span");
@@ -620,7 +621,7 @@ const peopleNotificationsSection = SETTINGS_SECTIONS.find((section) => section.i
       ))
       var disabledSet = new Set(prefs.disabled_users || []);
 
-      userTogglesContainer.innerHTML = "";
+      userTogglesContainer.replaceChildren();
       var heading = document.createElement("div");
       heading.style.cssText =
         "font-weight: 600; font-size: 13px; margin-bottom: 4px;";

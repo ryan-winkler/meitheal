@@ -2,6 +2,7 @@
 import { t } from "../../i18n/translations";
 import type { Locale } from "../../lib/locale";
 import LabelPicker from "../ui/LabelPicker.astro";
+import Icon from "../ui/Icon.astro";
 
 const cookieLocale = Astro.cookies.get("meitheal-locale")?.value;
 const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
@@ -11,7 +12,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
   <div class="modal-content nt-modal">
     <header class="nt-header">
       <h2 id="new-task-title">{t("tasks.new_task_modal", locale)}</h2>
-      <button type="button" class="btn btn-ghost nt-icon-button" id="close-new-task-modal" aria-label="Close">×</button>
+      <button type="button" class="btn btn-ghost nt-icon-button" id="close-new-task-modal" aria-label="Close" title="Close"><Icon name="x" size={18} /></button>
     </header>
     <form id="new-task-form" class="nt-form"
       data-toast-created={t("task_modal.toast_created", locale)}
@@ -23,10 +24,10 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
       <fieldset class="nt-group">
         <legend>{t("task_modal.type_label", locale)}</legend>
         <div class="nt-kind-grid" id="nt-kind-tabs">
-          <button type="button" class="nt-kind-pill active" data-kind="standard_action" aria-pressed="true">{t("task_modal.kind_task", locale)}</button>
-          <button type="button" class="nt-kind-pill" data-kind="shopping_item" aria-pressed="false">{t("task_modal.kind_shopping_list", locale)}</button>
-          <button type="button" class="nt-kind-pill" data-kind="checklist" aria-pressed="false">{t("task_modal.kind_checklist", locale)}</button>
-          <button type="button" class="nt-kind-pill" data-kind="calendar_event" aria-pressed="false">{t("task_modal.kind_event", locale)}</button>
+          <button type="button" class="nt-kind-pill active inline-flex items-center justify-center gap-1.5" data-kind="standard_action" aria-pressed="true"><Icon name="checkbox" size={15} /><span>{t("task_modal.kind_task", locale)}</span></button>
+          <button type="button" class="nt-kind-pill inline-flex items-center justify-center gap-1.5" data-kind="shopping_item" aria-pressed="false"><Icon name="shopping-cart" size={15} /><span>{t("task_modal.kind_shopping_list", locale)}</span></button>
+          <button type="button" class="nt-kind-pill inline-flex items-center justify-center gap-1.5" data-kind="checklist" aria-pressed="false"><Icon name="checklist" size={15} /><span>{t("task_modal.kind_checklist", locale)}</span></button>
+          <button type="button" class="nt-kind-pill inline-flex items-center justify-center gap-1.5" data-kind="calendar_event" aria-pressed="false"><Icon name="calendar-event" size={15} /><span>{t("task_modal.kind_event", locale)}</span></button>
         </div>
       </fieldset>
       <div class="nt-field">
@@ -108,7 +109,10 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
         <div class="nt-field">
           <input type="hidden" id="new-task-status" name="status" value="pending" />
           <div id="nt-status-pills" class="filter-toolbar__type-toggles" role="radiogroup" aria-label="Task status">
-            <button type="button" class="filter-toolbar__type-btn active" data-status="pending" role="radio" aria-checked="true">{t("task_modal.status_todo", locale)}</button>
+            <button type="button" class="filter-toolbar__type-btn active" data-status="pending" role="radio" aria-checked="true">
+              <span class="nt-status-pill-icon inline-flex items-center" aria-hidden="true"><Icon name="circle-dashed" size={14} /></span>
+              <span>{t("task_modal.status_todo", locale)}</span>
+            </button>
           </div>
         </div>
         <div class="nt-form-grid">
@@ -251,6 +255,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
 <script>
   import { showToast } from "@lib/toast";
   import { InlineDatePicker } from "../shared/InlineDatePicker"
+  import { createTablerSvgElement, renderIconOrCustomEmoji, type TablerIconName } from "@lib/tabler-svg";
   import { checklistLines, createChecklistItem } from "@lib/checklist-items"
   import { createClientLogger } from "@lib/client-logger";
   import { pageLifecycle } from "@lib/page-lifecycle";
@@ -533,12 +538,12 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
       entry.dataset.fieldType = type
 
       const fieldLabel = form?.querySelector<HTMLElement>(`[data-field-type="${type}"].nt-add-field-type`)?.textContent?.trim() || type
-      const svgMap: Record<string, string> = {
-        url: `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 15l6 -6" /><path d="M11 6l.463 -.536a5 5 0 0 1 7.071 7.072l-.534 .464" /><path d="M13 18l-.397 .534a5.068 5.068 0 0 1 -7.127 0a4.972 4.972 0 0 1 0 -7.071l.524 -.463" /></svg>`,
-        number: `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 9l14 0" /><path d="M5 15l14 0" /><path d="M11 4l-4 16" /><path d="M17 4l-4 16" /></svg>`,
-        date: `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2v-12" /><path d="M16 3v4" /><path d="M8 3v4" /><path d="M4 11h16" /></svg>`,
-        attachment: `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 7l-6.5 6.5a1.5 1.5 0 0 0 3 3l6.5 -6.5a3 3 0 0 0 -6 -6l-6.5 6.5a4.5 4.5 0 0 0 9 9l6.5 -6.5" /></svg>`,
-        text: `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16" /><path d="M4 12h16" /><path d="M4 18h10" /></svg>`,
+      const iconMap: Record<string, TablerIconName> = {
+        url: "link",
+        number: "hash",
+        date: "calendar",
+        attachment: "paperclip",
+        text: "align-left",
       }
 
       if (type === "checkbox") {
@@ -550,7 +555,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
       } else {
         const icon = document.createElement("span")
         icon.className = "inline-flex items-center text-xs text-text-muted"
-        icon.innerHTML = svgMap[type] || svgMap.text!
+        icon.appendChild(createTablerSvgElement(iconMap[type] ?? "align-left", 13))
         entry.appendChild(icon)
       }
 
@@ -719,8 +724,15 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
           pill.dataset.status = lane.key
           pill.setAttribute("role", "radio")
           const icon = document.createElement("span")
-          icon.className = "nt-status-pill-icon"
-          icon.textContent = lane.icon
+          icon.className = "nt-status-pill-icon inline-flex items-center"
+          icon.setAttribute("aria-hidden", "true")
+          const laneFallbackIcon: Record<string, TablerIconName> = {
+            backlog: "inbox",
+            pending: "circle-dashed",
+            active: "bolt",
+            complete: "circle-check",
+          }
+          renderIconOrCustomEmoji(icon, lane.icon, laneFallbackIcon[lane.key] ?? "circle-dashed", 14)
           const label = document.createElement("span")
           label.textContent = lane.label
           pill.append(icon, label)

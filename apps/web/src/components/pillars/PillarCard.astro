@@ -19,6 +19,9 @@
  * @kcs North Star page uses PillarCard in a masonry layout, not a task list
  */
 
+import Icon from "../ui/Icon.astro"
+import { mapEntityEmojiToTabler } from "../../lib/tabler-svg"
+
 interface Principle {
   id: string
   pillarId: string
@@ -76,9 +79,12 @@ const principlesListId = `pillar-principles-${id}`
     <div class="pillar-card__heading">
       <button type="button" class="pillar-card__header" data-action="open-detail" disabled aria-label={`View ${name} details`}>
         <span class="pillar-card__icon" aria-hidden="true">
-          {icon && icon !== "🏛️" ? icon : (
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18" /><path d="M3 10h18" /><path d="M5 6l7 -3l7 3" /><path d="M4 10v11" /><path d="M20 10v11" /><path d="M8 14v3" /><path d="M12 14v3" /><path d="M16 14v3" /></svg>
-          )}
+          {(() => {
+            const tablerIcon = mapEntityEmojiToTabler(icon)
+            if (tablerIcon) return <Icon name={tablerIcon} size={22} />
+            if (icon) return icon
+            return <Icon name="pillars" size={22} />
+          })()}
         </span>
         <div class="pillar-card__meta">
           <h3 class="pillar-card__name">{name}</h3>

@@ -25,7 +25,7 @@ const tasksBoardsSection = SETTINGS_SECTIONS.find((section) => section.id === "t
   <div class="settings-grid">
     <!-- Kanban Area -->
     <SettingsPanelCard
-      title="📊 Kanban Area"
+      title="Kanban Area"
       subtitle="Configure Kanban board behaviour, including backlog visibility and completed task retention."
     >
       <div class="settings-stack">
@@ -42,9 +42,9 @@ const tasksBoardsSection = SETTINGS_SECTIONS.find((section) => section.id === "t
               class="form-select settings-input-narrow"
               aria-label="Backlog lane mode"
             >
-              <option value="visible">📥 Visible (default)</option>
-              <option value="hidden">🙈 Hidden from Kanban</option>
-              <option value="disabled">🚫 Disabled</option>
+              <option value="visible">Visible (default)</option>
+              <option value="hidden">Hidden from Kanban</option>
+              <option value="disabled">Disabled</option>
             </select>
             <button
               type="button"
@@ -146,7 +146,7 @@ const tasksBoardsSection = SETTINGS_SECTIONS.find((section) => section.id === "t
 
     <!-- Optional Features -->
     <SettingsPanelCard
-      title="⚡ Optional Features"
+      title="Optional Features"
       subtitle="Enable or disable optional features. Disabled features are hidden from the UI and their APIs return 404. Core task management is never affected."
     >
       <div id="feature-toggles-container" class="settings-stack--sm" style="gap: 10px;">
@@ -260,16 +260,16 @@ const tasksBoardsSection = SETTINGS_SECTIONS.find((section) => section.id === "t
     if (!container) return;
 
     const CATEGORIES = {
-      productivity: { label: "Productivity", icon: "🎯" },
-      integrations: { label: "Integrations", icon: "🔌" },
-      visual: { label: "Visual", icon: "✨" },
+      productivity: { label: "Productivity" },
+      integrations: { label: "Integrations" },
+      visual: { label: "Visual" },
     };
 
     fetch((window.__ingress_path || "") + "/api/features")
       .then(function (r) { return r.json(); })
       .then(function (data) {
         if (!data.features) return;
-        container.innerHTML = "";
+        container.replaceChildren();
 
         var grouped = {};
         data.features.forEach(function (f) {
@@ -287,25 +287,42 @@ const tasksBoardsSection = SETTINGS_SECTIONS.find((section) => section.id === "t
 
           var heading = document.createElement("div");
           heading.style.cssText = "font-weight: 600; font-size: 12px; color: var(--text-secondary); margin-bottom: 8px; padding-top: 4px;";
-          heading.textContent = catInfo.icon + " " + catInfo.label;
+          heading.textContent = catInfo.label;
           section.appendChild(heading);
 
           features.forEach(function (f) {
             var row = document.createElement("div");
             row.style.cssText = "display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px;";
 
-            row.innerHTML =
-              '<label class="toggle-switch" style="flex-shrink: 0;">' +
-              '<input type="checkbox" id="feature-toggle-' + f.name + '" data-feature="' + f.name + '" ' + (f.enabled ? 'checked' : '') + ' />' +
-              '<span class="toggle-slider"></span>' +
-              '</label>' +
-              '<div style="flex: 1;">' +
-              '<div style="font-weight: 500; font-size: 13px;">' + f.icon + ' ' + f.label + '</div>' +
-              '<div style="font-size: 12px; color: var(--text-secondary);">' + f.description + '</div>' +
-              '</div>';
+            var toggleLabel = document.createElement("label");
+            toggleLabel.className = "toggle-switch";
+            toggleLabel.style.flexShrink = "0";
 
-            var checkbox = row.querySelector('input[type="checkbox"]');
+            var checkbox = document.createElement("input");
+            checkbox.type = "checkbox";
+            checkbox.id = "feature-toggle-" + f.name;
+            checkbox.dataset.feature = f.name;
+            checkbox.checked = Boolean(f.enabled);
             checkbox.setAttribute("aria-label", f.label);
+
+            var slider = document.createElement("span");
+            slider.className = "toggle-slider";
+            toggleLabel.append(checkbox, slider);
+
+            var body = document.createElement("div");
+            body.style.flex = "1";
+
+            var titleEl = document.createElement("div");
+            titleEl.style.cssText = "font-weight: 500; font-size: 13px;";
+            titleEl.textContent = f.label;
+
+            var descEl = document.createElement("div");
+            descEl.style.cssText = "font-size: 12px; color: var(--text-secondary);";
+            descEl.textContent = f.description;
+
+            body.append(titleEl, descEl);
+            row.append(toggleLabel, body);
+
             checkbox.addEventListener("change", function () {
               var featureName = this.dataset.feature;
               var enabled = this.checked;
@@ -339,11 +356,16 @@ const tasksBoardsSection = SETTINGS_SECTIONS.find((section) => section.id === "t
 
         var hint = document.createElement("div");
         hint.style.cssText = "font-size: 12px; color: var(--text-secondary); margin-top: 4px; padding: 8px 12px; background: var(--bg-secondary); border-radius: 6px; border: 1px dashed var(--border);";
-        hint.innerHTML = '💡 <strong>Note:</strong> Some changes take effect on the next page load.';
+        var noteStrong = document.createElement("strong");
+        noteStrong.textContent = "Note:";
+        hint.append(noteStrong, document.createTextNode(" Some changes take effect on the next page load."));
         container.appendChild(hint);
       })
       .catch(function () {
-        container.innerHTML = '<span style="color: var(--danger); font-size: 12px;">Failed to load features</span>';
+        var errorSpan = document.createElement("span");
+        errorSpan.style.cssText = "color: var(--danger); font-size: 12px;";
+        errorSpan.textContent = "Failed to load features";
+        container.replaceChildren(errorSpan);
       });
   })();
 </script>

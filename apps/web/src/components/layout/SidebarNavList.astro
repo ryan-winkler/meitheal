@@ -61,10 +61,12 @@ function isExternal(href: string): boolean {
                     id="tasks-submenu-toggle"
                     aria-expanded="false"
                     aria-controls="tasks-nav-submenu"
-                    aria-label="Toggle task type filters"
+                    aria-label="Expand task types"
                     title="Expand task types"
                   >
-                    <Icon name="chevron-right" size={14} class="nav-disclosure-chevron" />
+                    <span class="nav-disclosure-chevron inline-flex items-center justify-center" aria-hidden="true">
+                      <Icon name="chevron-right" size={13} />
+                    </span>
                   </button>
                   <button
                     type="button"
@@ -73,7 +75,7 @@ function isExternal(href: string): boolean {
                     aria-expanded="false"
                     aria-controls="tasks-nav-config-popover"
                     aria-label="Configure task type links"
-                    title="Configure task types"
+                    title="Configure pinned & visible task types"
                   >
                     <Icon name="sliders" size={14} />
                   </button>
@@ -117,8 +119,8 @@ function isExternal(href: string): boolean {
                         aria-label={`Pin ${type.label} to primary navigation`}
                         title={`Pin ${type.label}`}
                       >
-                        <Icon name="pin" size={13} class="pin-icon" />
-                        <Icon name="pinned-off" size={13} class="unpin-icon" />
+                        <span class="pin-icon inline-flex items-center" aria-hidden="true"><Icon name="pin" size={13} /></span>
+                        <span class="unpin-icon inline-flex items-center" aria-hidden="true"><Icon name="pinned-off" size={13} /></span>
                       </button>
                     </li>
                   ))}
@@ -152,8 +154,8 @@ function isExternal(href: string): boolean {
                       aria-label={`Pin ${type.label} to primary navigation`}
                       title={`Pin ${type.label}`}
                     >
-                      <Icon name="pin" size={13} class="pin-icon" />
-                      <Icon name="pinned-off" size={13} class="unpin-icon" />
+                      <span class="pin-icon inline-flex items-center" aria-hidden="true"><Icon name="pin" size={13} /></span>
+                      <span class="unpin-icon inline-flex items-center" aria-hidden="true"><Icon name="pinned-off" size={13} /></span>
                     </button>
                   </li>
                 ))}
@@ -274,6 +276,21 @@ function isExternal(href: string): boolean {
   .nav-inline-btn:active,
   .task-nav-pin-btn:active {
     transform: scale(0.97);
+  }
+
+  .nav-disclosure-btn {
+    width: 24px;
+    height: 24px;
+    min-width: 24px;
+    min-height: 24px;
+    border-radius: 6px;
+    border: 1px solid rgba(var(--border-rgb), 0.55);
+    background: rgba(var(--bg-primary-rgb), 0.45);
+  }
+
+  .nav-disclosure-btn:hover,
+  .nav-disclosure-btn:focus-visible {
+    border-color: rgba(var(--accent-rgb), 0.6);
   }
 
   .nav-disclosure-chevron {
@@ -592,9 +609,11 @@ function isExternal(href: string): boolean {
     const expanded = prefs.expanded && anyChildVisible;
 
     if (toggleBtn) {
+      const label = expanded ? "Collapse task types" : "Expand task types";
       toggleBtn.setAttribute("aria-expanded", String(expanded));
       toggleBtn.hidden = prefs.mode === "none" && !anyChildVisible;
-      toggleBtn.title = expanded ? "Collapse task types" : "Expand task types";
+      toggleBtn.title = label;
+      toggleBtn.setAttribute("aria-label", label);
     }
 
     syncMountedSubmenu(expanded, isNavbar);

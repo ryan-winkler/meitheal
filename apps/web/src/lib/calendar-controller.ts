@@ -351,18 +351,26 @@ async function loadInlineEventPreviews(): Promise<void> {
     if (!container) continue
 
     const shown = events.slice(0, 2)
-    container.innerHTML = shown.map((event) => {
+    const nodes: HTMLElement[] = shown.map((event) => {
       const time = event.start.includes("T")
         ? new Date(event.start).toLocaleTimeString("en-US", {
           hour: "numeric",
           minute: "2-digit",
         })
         : "☀"
-      return `<div class="cal-inline-event cal-inline-ha" title="${escapeHtml(event.summary)}">${time} ${escapeHtml(event.summary)}</div>`
-    }).join("")
+      const row = document.createElement("div")
+      row.className = "cal-inline-event cal-inline-ha"
+      row.title = event.summary
+      row.textContent = `${time} ${event.summary}`
+      return row
+    })
 
     if (events.length > shown.length) {
-      container.innerHTML += `<span class="cal-inline-more">+${events.length - shown.length} more</span>`
+      const more = document.createElement("span")
+      more.className = "cal-inline-more"
+      more.textContent = `+${events.length - shown.length} more`
+      nodes.push(more)
     }
+    container.replaceChildren(...nodes)
   }
 }

@@ -47,8 +47,8 @@ const NAV_ITEMS: Record<string, NavItemDef> = {
     i18nKey: "nav.tasks",
     icon: "kanban",
   },
-  mentionInbox: { href: "/mention-inbox", i18nKey: "mention_inbox.title", icon: "today", matchExact: true },
-  activity: { href: "/activity", i18nKey: "recent_activity.title", icon: "today", matchExact: true },
+  mentionInbox: { href: "/mention-inbox", i18nKey: "mention_inbox.title", icon: "inbox", matchExact: true },
+  activity: { href: "/activity", i18nKey: "recent_activity.title", icon: "activity", matchExact: true },
   progress: {
     href: "/progress",
     i18nKey: "nav.progress",
@@ -231,7 +231,9 @@ const remainingItems = areaPosition < 0 ? [] : navItems.slice(areaPosition + 1)
     title="Collapse sidebar (Ctrl+B)"
   >
     <span class="sidebar-edge-toggle__circle" aria-hidden="true">
-      <Icon name="chevron-right" size={14} class="sidebar-edge-toggle__icon" />
+      <span class="sidebar-edge-toggle__icon">
+        <Icon name="chevron-left" size={14} />
+      </span>
     </span>
   </button>
 
@@ -383,12 +385,21 @@ const remainingItems = areaPosition < 0 ? [] : navItems.slice(areaPosition + 1)
   }
 
   .sidebar-edge-toggle__icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     transition: transform 200ms cubic-bezier(0.23, 1, 0.32, 1);
-    transform: rotate(180deg);
+    transform: rotate(0deg);
   }
 
   :global(body.sidebar-collapsed) .sidebar-edge-toggle__icon {
-    transform: rotate(0deg);
+    transform: rotate(180deg);
+  }
+
+  @media (min-width: 769px) {
+    .sidebar-toggle-top {
+      display: none !important;
+    }
   }
 
   .sidebar-cta-wrap {
@@ -635,5 +646,13 @@ const remainingItems = areaPosition < 0 ? [] : navItems.slice(areaPosition + 1)
   .sidebar-gamification-wrapper {
     padding: 0.5rem 0.75rem;
     border-top: 1px solid var(--border, #334155);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .sidebar-rail-cta:active,
+    :global(.sidebar .nav-link:active),
+    :global(.sidebar .nav-link:hover) {
+      transform: none;
+    }
   }
 </style>

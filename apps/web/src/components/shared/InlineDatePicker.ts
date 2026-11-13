@@ -16,6 +16,8 @@
  * @usage new InlineDatePicker(container, { value, onChange, onClear })
  */
 
+import { createTablerSvgElement } from "../../lib/tabler-svg"
+
 export interface InlineDatePickerOptions {
   /** Current date value (null = no date set) */
   value: Date | null
@@ -154,7 +156,7 @@ export class InlineDatePicker {
     clear.className = "idp-clear-btn"
     clear.title = "Remove date"
     clear.setAttribute("aria-label", "Remove scheduled date")
-    clear.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>`
+    clear.replaceChildren(createTablerSvgElement("x", 14))
     clear.addEventListener("click", (e) => {
       e.stopPropagation()
       this.options.onClear()
@@ -176,28 +178,7 @@ export class InlineDatePicker {
     btn.className = "idp-trigger idp-placeholder"
     btn.title = "Set date"
 
-    // Calendar icon (SVG)
-    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg")
-    svg.setAttribute("width", "14")
-    svg.setAttribute("height", "14")
-    svg.setAttribute("viewBox", "0 0 14 14")
-    svg.setAttribute("fill", "none")
-    const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect")
-    rect.setAttribute("x", "1"); rect.setAttribute("y", "2")
-    rect.setAttribute("width", "12"); rect.setAttribute("height", "10")
-    rect.setAttribute("rx", "2")
-    rect.setAttribute("stroke", "currentColor"); rect.setAttribute("stroke-width", "1.2")
-    svg.appendChild(rect)
-    const line = document.createElementNS("http://www.w3.org/2000/svg", "line")
-    line.setAttribute("x1", "1"); line.setAttribute("y1", "5")
-    line.setAttribute("x2", "13"); line.setAttribute("y2", "5")
-    line.setAttribute("stroke", "currentColor"); line.setAttribute("stroke-width", "1.2")
-    svg.appendChild(line)
-    const dot = document.createElementNS("http://www.w3.org/2000/svg", "circle")
-    dot.setAttribute("cx", "7"); dot.setAttribute("cy", "9")
-    dot.setAttribute("r", "1.5"); dot.setAttribute("fill", "currentColor")
-    svg.appendChild(dot)
-    btn.appendChild(svg)
+    btn.appendChild(createTablerSvgElement("calendar", 14))
 
     btn.addEventListener("click", (e) => {
       e.stopPropagation()
