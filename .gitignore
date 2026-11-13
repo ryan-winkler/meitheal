@@ -44,3 +44,6 @@ egm_*.md
 *.review-receipt*
 /.claude/
 /.codex/
+
+__pycache__/
+*.pyc
