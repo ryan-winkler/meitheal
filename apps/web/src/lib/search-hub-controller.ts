@@ -106,7 +106,7 @@ function renderResultItem(
   icon.className = "search-hub-item-icon"
   icon.setAttribute("aria-hidden", "true")
   if (item.color) {
-    icon.style.boxShadow = `inset 0 0 0 1px rgba(var(--border-rgb), 0.4), 0 0 0 1px ${item.color}`
+    icon.style.boxShadow = `inset 0 0 0 1px rgb(var(--border-rgb) / 0.4), 0 0 0 1px ${item.color}`
   }
   icon.textContent = getIconForItem(item)
 

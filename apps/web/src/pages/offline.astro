@@ -15,7 +15,13 @@ const dashboardUrl = "/";
       role="alert"
       aria-live="assertive"
     >
-      <div class="offline-icon">📡</div>
+      <div class="offline-icon" aria-hidden="true">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="56" height="56">
+          <rect width="64" height="64" rx="13" fill="#10231b"></rect>
+          <path d="M15 41V25m0 6c0-5 3-8 7-8s7 3 7 8v10m0-10c0-5 3-8 7-8s7 3 7 8v10" fill="none" stroke="#edf5ef" stroke-linecap="round" stroke-width="5"></path>
+          <circle cx="52" cy="40" r="3.5" fill="var(--accent, #69e3b2)"></circle>
+        </svg>
+      </div>
       <h1 class="page-title offline-title">You're Offline</h1>
       <p class="offline-desc">
         Meitheal works best with an internet connection. Your local data is safe

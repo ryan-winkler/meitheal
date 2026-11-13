@@ -237,48 +237,30 @@ const remainingItems = areaPosition < 0 ? [] : navItems.slice(areaPosition + 1)
       <a
         href="/"
         data-astro-prefetch="viewport"
-        class="sidebar-brand text-xl font-bold tracking-tight text-text-primary hover:text-accent transition-colors flex items-center gap-2 no-underline overflow-hidden shrink min-w-0"
+        class="sidebar-brand text-xl font-medium tracking-[-0.05em] text-text-primary hover:text-accent transition-colors flex items-center gap-2 no-underline overflow-hidden shrink min-w-0"
         aria-label="Meitheal Home"
-        title="Ag Obair le Chéile — Working Together"
+        title="meitheal. — Keep track of the work your home needs"
       >
         <svg
           xmlns="http://www.w3.org/2000/svg"
-          viewBox="0 0 100 100"
-          width="24"
-          height="24"
+          viewBox="0 0 64 64"
+          width="26"
+          height="26"
           aria-hidden="true"
           class="sidebar-logo-svg shrink-0"
         >
-          <rect width="100" height="100" rx="22" fill="var(--bg-primary, #0F172A)"
-          ></rect>
+          <rect width="64" height="64" rx="13" fill="#10231b"></rect>
           <path
-            d="M25 65 L50 30 L75 65"
+            d="M15 41V25m0 6c0-5 3-8 7-8s7 3 7 8v10m0-10c0-5 3-8 7-8s7 3 7 8v10"
             fill="none"
-            stroke="var(--accent, #6366F1)"
-            stroke-width="6"
+            stroke="#edf5ef"
             stroke-linecap="round"
-            stroke-linejoin="round"></path>
-          <path
-            d="M35 65 L65 65"
-            fill="none"
-            stroke="var(--border, #334155)"
-            stroke-width="4"
-            stroke-dasharray="4 4"
-            stroke-linecap="round"></path>
-          <path
-            d="M50 35 L50 65"
-            fill="none"
-            stroke="var(--border, #334155)"
-            stroke-width="4"
-            stroke-dasharray="4 4"
-            stroke-linecap="round"></path>
-          <circle cx="50" cy="30" r="7" fill="#F59E0B"></circle>
-          <circle cx="25" cy="65" r="7" fill="var(--accent, #6366F1)"></circle>
-          <circle cx="75" cy="65" r="7" fill="var(--accent, #6366F1)"></circle>
+            stroke-width="5"></path>
+          <circle cx="52" cy="40" r="3.8" fill="var(--accent, #75e9be)"></circle>
         </svg>
-        <span class="sidebar-brand-text truncate">Meitheal</span>
+        <span class="sidebar-brand-text truncate">meitheal.</span>
       </a>
-      <span class="sidebar-ipa font-medium" aria-hidden="true">/ˈmʲɛhəlˠ/</span>
+      <span class="sidebar-ipa" aria-hidden="true">/meh·hal/</span>
     </div>
   </div>
 
@@ -312,7 +294,7 @@ const remainingItems = areaPosition < 0 ? [] : navItems.slice(areaPosition + 1)
     display: flex;
     flex-direction: column;
     height: 100%;
-    background: rgba(var(--bg-secondary-rgb), 0.9);
+    background: rgb(var(--bg-secondary-rgb) / 0.9);
     backdrop-filter: blur(12px);
     border-right: 1px solid var(--border);
     transition: transform 300ms ease;
@@ -363,15 +345,15 @@ const remainingItems = areaPosition < 0 ? [] : navItems.slice(areaPosition + 1)
 
   .sidebar-ipa {
     display: block;
-    font-size: 10px;
-    font-style: italic;
-    color: var(--text-secondary);
-    letter-spacing: 0.3px;
-    padding-inline-start: 2rem;
-    margin-top: 1px;
+    font-size: 9.5px;
+    font-style: normal;
+    color: var(--text-muted);
+    letter-spacing: 0.09em;
+    padding-inline-start: 2.125rem;
+    margin-top: 2px;
     line-height: 1;
     user-select: none;
-    font-family: "Noto Sans", system-ui, sans-serif;
+    font-family: "JetBrains Mono", ui-monospace, monospace;
   }
 
   .sidebar-tooltip {
@@ -412,18 +394,10 @@ const remainingItems = areaPosition < 0 ? [] : navItems.slice(areaPosition + 1)
     }
   }
 
-  /* Subtle amber pulse on the logo apex node when hovering the brand link */
-  .sidebar-brand:hover .sidebar-logo-svg circle[fill="#F59E0B"] {
-    animation: amber-pulse 1.5s ease-in-out infinite;
-  }
-
-  @keyframes amber-pulse {
-    0%,
-    100% {
-      filter: drop-shadow(0 0 0 transparent);
-    }
-    50% {
-      filter: drop-shadow(0 0 6px rgba(245, 158, 11, 0.5));
+  /* Subtle mint glow on the brand completion dot when hovering the brand link */
+  @media (hover: hover) and (pointer: fine) {
+    .sidebar-brand:hover .sidebar-logo-svg circle {
+      filter: drop-shadow(0 0 5px rgb(var(--accent-rgb) / 0.55));
     }
   }
 
@@ -446,18 +420,20 @@ const remainingItems = areaPosition < 0 ? [] : navItems.slice(areaPosition + 1)
     font-size: 0.875rem;
     font-weight: 500;
     color: var(--text-secondary);
-    transition: background 200ms ease, color 200ms ease, border-color 200ms ease, opacity 200ms ease, transform 200ms ease;
+    transition: background 160ms var(--ease-out, ease), color 160ms var(--ease-out, ease), border-color 160ms var(--ease-out, ease), opacity 160ms var(--ease-out, ease), transform 160ms var(--ease-out, ease);
     text-decoration: none;
   }
 
-  :global(.sidebar .nav-link:hover) {
-    background: var(--bg-hover);
-    color: var(--text-primary);
-    transform: translateX(0.25rem);
+  @media (hover: hover) and (pointer: fine) {
+    :global(.sidebar .nav-link:hover) {
+      background: var(--bg-hover);
+      color: var(--text-primary);
+      transform: translateX(2px);
+    }
   }
 
   :global(.sidebar .nav-link.active) {
-    background: rgba(var(--accent-rgb), 0.1);
+    background: rgb(var(--accent-rgb) / 0.1);
     color: var(--accent-text);
   }
 
@@ -484,7 +460,7 @@ const remainingItems = areaPosition < 0 ? [] : navItems.slice(areaPosition + 1)
     font-weight: 700;
     padding: 0.125rem 0.5rem;
     border-radius: 9999px;
-    border: 1px solid rgba(var(--border-rgb), 0.5);
+    border: 1px solid rgb(var(--border-rgb) / 0.5);
     min-width: 20px;
     text-align: center;
   }
