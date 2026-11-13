@@ -167,7 +167,7 @@
   /* Active indicator: bottom border instead of right border */
   body.sidebar-collapsed .nav-link.active {
     border-right: none;
-    background: rgba(var(--accent-rgb), 0.15);
+    background: rgb(var(--accent-rgb) / 0.15);
   }
   /* Hide board switcher, hierarchy tree, streak badge, and footer text when collapsed */
   body.sidebar-collapsed .board-switcher,

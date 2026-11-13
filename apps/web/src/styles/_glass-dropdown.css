@@ -9,7 +9,7 @@
   left: 0;
   z-index: 50;
   min-width: 200px;
-  background-color: var(--glass-bg, rgba(var(--bg-card-rgb), 0.92));
+  background-color: var(--glass-bg, rgb(var(--bg-card-rgb) / 0.92));
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   border: 1px solid var(--border);
@@ -68,7 +68,7 @@
 }
 
 .glass-dropdown__item.is-active {
-  background-color: rgba(var(--accent-rgb), 0.14);
+  background-color: rgb(var(--accent-rgb) / 0.14);
   color: var(--accent-text);
   font-weight: 500;
 }

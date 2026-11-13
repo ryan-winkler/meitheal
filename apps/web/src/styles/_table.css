@@ -598,7 +598,7 @@ tr.filtered-out {
 
   .column-customizer__toggle[aria-expanded="true"] {
     background: var(--accent);
-    color: #fff;
+    color: var(--personal-accent-foreground, var(--palette-on-accent, #07140f));
     border-color: var(--accent);
   }
 
@@ -738,7 +738,7 @@ tr.filtered-out {
 
   .saved-presets__toggle[aria-expanded="true"] {
     background: var(--accent);
-    color: #fff;
+    color: var(--personal-accent-foreground, var(--palette-on-accent, #07140f));
     border-color: var(--accent);
   }
 
