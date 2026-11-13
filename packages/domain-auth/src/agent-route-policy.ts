@@ -14,6 +14,7 @@ const routes = new Map<string, MethodScopes>([
   ["/api/tasks/reorder", taskCreate],
   ["/api/tasks/today-counts", taskRead],
   ["/api/tasks/reaction-counts", taskRead],
+  ["/api/users", { GET: "tasks:read" }],
   ["/api/projects", { GET: "projects:read", POST: "projects:write" }],
   ["/api/search", { GET: "search:read" }],
   ["/api/mcp", { GET: "mcp:execute", POST: "mcp:execute" }],
@@ -77,16 +78,6 @@ export function resolveAgentRouteScope(pathname: string, method: string): AgentS
   if (/^\/api\/a2a\/tasks\/[\w-]+$/.test(pathname)) return a2aTask[verb]
 }
 
-/**
- * Operations a `tasks:write:assigned` token may use in place of `tasks:write`.
- * Each one names a single existing task, so the caller can check its assignee.
- */
-const assignedTaskRoutes = new Map<string, ReadonlySet<string>>([
-  ["", new Set(["PUT", "PATCH"])],
-  ["comments", new Set(["POST"])],
-  ["time", new Set(["POST"])],
-])
-
 export interface AgentRouteAccess {
   /** Scope the route requires. Absent when agent credentials may never use it. */
   scope: AgentScope | undefined
@@ -102,7 +93,8 @@ export function resolveAgentRouteAccess(pathname: string, method: string, scopes
   if (hasScope(scopes, scope)) return { scope, allowed: true }
   if (scope !== "tasks:write" || !hasScope(scopes, "tasks:write:assigned")) return { scope, allowed: false }
 
-  const task = pathname.match(/^\/api\/tasks\/([\w-]+)(?:\/([\w-]+))?$/)
-  if (!task || !assignedTaskRoutes.get(task[2] ?? "")?.has(method)) return { scope, allowed: false }
+  // Each of these names one existing task, so its assignee can be checked.
+  const task = pathname.match(/^\/api\/tasks\/([\w-]+)(?:\/|$)/)
+  if (!task || !isAssignedTaskScopedRoute(pathname, method)) return { scope, allowed: false }
   return { scope, allowed: true, assignedTaskId: task[1]! }
 }

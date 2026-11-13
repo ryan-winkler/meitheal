@@ -13,14 +13,15 @@ test("the assigned-only grant covers single-task changes and nothing wider", () 
   for (const [path, method] of [
     ["/api/tasks/abc-123", "PUT"], ["/api/tasks/MTH-7", "PATCH"],
     ["/api/tasks/abc-123/comments", "POST"], ["/api/tasks/abc-123/time", "POST"],
+    ["/api/tasks/abc-123/links", "POST"], ["/api/tasks/abc-123/links", "DELETE"],
+    ["/api/tasks/abc-123/deferral", "PATCH"], ["/api/tasks/abc-123/comments/4", "PATCH"],
   ] as const) {
     expect(access(path, method), `${method} ${path}`).toMatchObject({ allowed: true, assignedTaskId: path.split("/")[3] })
   }
   for (const [path, method] of [
     ["/api/tasks", "POST"], ["/api/tasks/create", "POST"], ["/api/tasks/reorder", "POST"],
     ["/api/tasks/abc-123", "DELETE"], ["/api/tasks/abc-123/duplicate", "POST"],
-    ["/api/tasks/abc-123/links", "POST"], ["/api/tasks/abc-123/links", "DELETE"],
-    ["/api/tasks/abc-123/deferral", "PATCH"], ["/api/tasks/abc-123/comments/4", "PATCH"],
+    ["/api/tasks/abc-123/comments/4", "DELETE"],
     ["/api/tasks/abc-123/reactions", "POST"], ["/api/nfc/complete", "POST"],
     ["/api/projects", "POST"], ["/api/settings", "PUT"], ["/api/agent-tokens", "POST"],
   ] as const) {

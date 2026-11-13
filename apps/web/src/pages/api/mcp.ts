@@ -234,8 +234,11 @@ function scopedApi(authorization: string) {
       signal: AbortSignal.timeout(10_000),
     })
     if (!response.ok) {
-      await response.body?.cancel()
-      throw new Error(`Tool request failed with HTTP ${response.status}`)
+      // Pass on the API's own reason so the agent can correct the call.
+      const errBody = (await response.json().catch(() => null)) as Record<string, unknown> | null
+      const detail = typeof errBody?.detail === "string" ? errBody.detail
+        : typeof errBody?.error === "string" ? errBody.error : null
+      throw new Error(detail ? `Tool request failed with HTTP ${response.status}: ${detail.slice(0, 300)}` : `Tool request failed with HTTP ${response.status}`)
     }
     return response
   }
@@ -370,7 +373,7 @@ customHandlers.set("listMyTasks", async (args, requestApi, agent) => {
     }
     if (rows.length < 200 || offset + rows.length >= total) break
   }
-  return { assignee, tasks, count: tasks.length }
+  return { assignee, assignee_id: assignee.id, tasks, count: tasks.length }
 })
 
 customHandlers.set("handBackTask", async (args, requestApi, agent) => {
@@ -702,7 +705,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
           isError: "error" in output || (modern && (output.status === "not_found" || output.status === "error")),
         })
       } catch (toolError) {
-        const message = toolError instanceof Error && /^Tool request failed with HTTP \d{3}$/.test(toolError.message)
+        const message = toolError instanceof Error && /^Tool request failed with HTTP \d{3}(?:: [\s\S]+)?$/.test(toolError.message)
           ? toolError.message : "Tool execution failed"
         if (modern) return result({ content: [{ type: "text", text: message }], isError: true })
         return rpcError(reqId, -32603, message)

@@ -1,4 +1,4 @@
-name: Publish Add-on Images
+name: Publish Stable App
 
 on:
   push:
@@ -6,116 +6,19 @@ on:
       - release
     tags:
       - "v*"
-      - "[0-9]+.[0-9]+.[0-9]+"
-    paths-ignore:
-      - "meitheal-hub-canary/**"
-      - "*.md"
-      - ".planning/**"
-      - "docs/**"
   workflow_dispatch:
-    inputs:
-      tag_override:
-        description: "Tag override (e.g. 'dev' for pre-release)"
-        required: false
-        default: ""
 
-concurrency:
-  group: release-${{ github.ref }}
-  cancel-in-progress: false
+permissions:
+  contents: read
 
 jobs:
-  publish:
-    runs-on: ubuntu-latest
+  release:
+    if: github.repository == 'ryan-winkler/meitheal' && (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/release')
+    uses: ./.github/workflows/publish-app.yml
+    with:
+      channel: stable
     permissions:
       contents: read
       packages: write
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - arch: amd64
-            platform: linux/amd64
-          - arch: aarch64
-            platform: linux/arm64
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v4
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Log in to Docker Hub
-        continue-on-error: true
-        uses: docker/login-action@v4
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Resolve image metadata
-        id: meta
-        env:
-          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
-        run: |
-          owner_lc="$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')"
-          version="$(awk -F'"' '/^version:/{print $2}' meitheal-hub/config.yaml)"
-          build_from="$(jq -r ".build_from[\"${{ matrix.arch }}\"]" meitheal-hub/build.json)"
-
-          tag="${{ inputs.tag_override }}"
-          if [ -z "${tag}" ]; then
-            tag="${version}"
-          fi
-
-          echo "owner_lc=${owner_lc}" >> "$GITHUB_OUTPUT"
-          echo "version=${version}" >> "$GITHUB_OUTPUT"
-          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
-          echo "build_from=${build_from}" >> "$GITHUB_OUTPUT"
-          {
-            echo "tags<<EOF"
-            echo "ghcr.io/${owner_lc}/meitheal-${{ matrix.arch }}:${tag}"
-            echo "ghcr.io/${owner_lc}/meitheal-${{ matrix.arch }}:latest"
-            if [ "${owner_lc}" != "ryan-winkler" ]; then
-              echo "ghcr.io/ryan-winkler/meitheal-${{ matrix.arch }}:${tag}"
-              echo "ghcr.io/ryan-winkler/meitheal-${{ matrix.arch }}:latest"
-            fi
-            if [ -n "${DOCKERHUB_TOKEN}" ]; then
-              echo "coolockvillage/meitheal-${{ matrix.arch }}:${tag}"
-              echo "coolockvillage/meitheal-${{ matrix.arch }}:latest"
-            fi
-            echo "EOF"
-          } >> "$GITHUB_OUTPUT"
-
-      - name: Validate release tag matches add-on version
-        if: startsWith(github.ref, 'refs/tags/')
-        env:
-          RELEASE_TAG: ${{ github.ref_name }}
-          CONFIG_VERSION: ${{ steps.meta.outputs.version }}
-        run: |
-          expected_tag="v${CONFIG_VERSION}"
-          expected_tag_bare="${CONFIG_VERSION}"
-          if [ "${RELEASE_TAG}" != "${expected_tag}" ] && [ "${RELEASE_TAG}" != "${expected_tag_bare}" ]; then
-            echo "::error::Release tag ${RELEASE_TAG} does not match meitheal-hub/config.yaml version ${CONFIG_VERSION} (expected ${expected_tag} or ${expected_tag_bare})."
-            exit 1
-          fi
-
-      - name: Build and publish add-on image
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: meitheal-hub/Dockerfile
-          build-args: |
-            BUILD_FROM=${{ steps.meta.outputs.build_from }}
-            MEITHEAL_VERSION=${{ steps.meta.outputs.version }}
-          push: true
-          platforms: ${{ matrix.platform }}
-          cache-from: type=gha,scope=${{ matrix.arch }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.arch }},ignore-error=true
-          tags: ${{ steps.meta.outputs.tags }}
+    secrets:
+      ADDON_REPO_TOKEN: ${{ secrets.ADDON_REPO_TOKEN }}

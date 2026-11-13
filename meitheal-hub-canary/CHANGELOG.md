@@ -1,5 +1,3 @@
-# Meitheal Canary changes
+# Canary Changelog
 
-The version in the store identifies the source commit used to build Canary.
-
-See the [stable changelog](https://github.com/ryan-winkler/meitheal-ha-addon/blob/main/meitheal-hub/CHANGELOG.md) for versioned release notes.
+Canary builds are continuous development snapshots built from `dev`. For release notes and version history, see [Meitheal Releases](https://github.com/ryan-winkler/meitheal/releases).

@@ -40,6 +40,7 @@ class MeithealTask:
     """Representation of a Meitheal task."""
 
     def __init__(self, data: dict[str, Any]) -> None:
+        """Initialize a Meitheal task from raw API payload data."""
         self.id: str = str(data.get("id", ""))
         self.title: str = data.get("title", "")
         status = data.get("status", STATUS_TODO)
@@ -84,6 +85,7 @@ class MeithealCoordinatorData:
     """Structured data from coordinator update."""
 
     def __init__(self, tasks: list[MeithealTask]) -> None:
+        """Compute active, overdue, and daily task summaries from fetched tasks."""
         self.tasks = tasks
         self.todo_tasks = [task for task in tasks if task.deferred_at is None]
         self.active_count = sum(1 for t in tasks if t.status != "done")
@@ -106,6 +108,7 @@ class MeithealCoordinator(DataUpdateCoordinator[MeithealCoordinatorData]):
     """Coordinator to poll Meitheal addon REST API for tasks."""
 
     def __init__(self, hass: HomeAssistant, api: MeithealApi) -> None:
+        """Initialize the coordinator with Home Assistant and a Meitheal API client."""
         super().__init__(
             hass,
             _LOGGER,
@@ -241,6 +244,40 @@ class MeithealCoordinator(DataUpdateCoordinator[MeithealCoordinatorData]):
         self._previous_data = new_data
         return new_data
 
+    async def async_resolve_assignee(self, candidate: str) -> str:
+        """Resolve a user name or canonical ID to a single canonical assignee ID."""
+        cleaned = candidate.strip()
+        if not cleaned:
+            raise UpdateFailed("Assignee identifier cannot be empty")
+        if cleaned.startswith(("custom_", "ha_")):
+            return cleaned
+
+        payload = await self.api.async_request("GET", "/api/users", read_json=True)
+        users = payload.get("users") if isinstance(payload, dict) else None
+        if not isinstance(users, list):
+            raise UpdateFailed("Meitheal did not return an assignee directory")
+
+        exact_id = [u for u in users if isinstance(u, dict) and u.get("id") == cleaned]
+        if len(exact_id) == 1:
+            return str(exact_id[0]["id"])
+
+        needle = cleaned.casefold()
+        matches = [
+            str(u["id"])
+            for u in users
+            if isinstance(u, dict)
+            and isinstance(u.get("id"), str)
+            and isinstance(u.get("name"), str)
+            and u["name"].strip().casefold() == needle
+        ]
+        if len(matches) == 1:
+            return matches[0]
+        if len(matches) > 1:
+            raise UpdateFailed(
+                f"Multiple assignees match '{cleaned}'; provide an exact assignee ID"
+            )
+        raise UpdateFailed(f"No assignee found matching '{cleaned}'")
+
     async def async_create_task(
         self, title: str, description: str | None = None, *,
         priority: int | None = None, due_date: str | None = None,
@@ -251,10 +288,15 @@ class MeithealCoordinator(DataUpdateCoordinator[MeithealCoordinatorData]):
 
         Without assigned_to, Meitheal applies the household's default assignee.
         """
+        resolved_assignee = (
+            await self.async_resolve_assignee(assigned_to)
+            if isinstance(assigned_to, str) and assigned_to.strip()
+            else None
+        )
         payload: dict[str, Any] = {"title": title}
         for key, value in {"description": description, "priority": priority,
                            "due_date": due_date, "urgency": urgency, "importance": importance,
-                           "assigned_to": assigned_to}.items():
+                           "assigned_to": resolved_assignee}.items():
             if value is not None:
                 payload[key] = value
         authority: set[str] = set()
@@ -417,7 +459,7 @@ class MeithealCoordinator(DataUpdateCoordinator[MeithealCoordinatorData]):
     async def async_update_task(self, task_id: str, updates: dict[str, Any]) -> None:
         """Update task fields."""
         path = task_path(task_id)
-        completing = updates.get("status") in (STATUS_DONE, "complete")
+        completing = str(updates.get("status") or "").lower() in (STATUS_DONE, "complete")
         was_done = False
         payload = updates
         if completing:

@@ -4,10 +4,8 @@ Exposes Meitheal's task management as a live MCP server, allowing
 any MCP-compatible agent (Claude, Antigravity, Codex, etc.) to
 create, search, complete, and manage tasks programmatically.
 
-Endpoint: POST /api/meitheal/mcp on Home Assistant's HTTP server, for a
-Home Assistant administrator. The Meitheal App serves its own endpoint at
-/api/mcp for agent tokens; this one lets a client that already signs in to
-Home Assistant reach the same household without a second credential.
+Endpoint: POST /api/meitheal/mcp (via Home Assistant HTTP view)
+Discovery: GET /.well-known/mcp.json (webapp discovery endpoint)
 
 The MCP spec is tool-based: client sends a tool call, server executes
 and returns the result. This module processes incoming tool calls and
@@ -19,16 +17,18 @@ Tools (16 — separate from the HA LLM API surface):
   - getCalendarEvents, getUpcoming, batchComplete
   - linkTask, unlinkTask, getTaskLinks
 
-@see https://modelcontextprotocol.io/
+See: https://modelcontextprotocol.io/
 """
 
 from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timedelta, timezone
+from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from .const import DOMAIN
 from .coordinator import MeithealCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -218,28 +218,44 @@ MCP_TOOLS = [
 
 async def handle_mcp_request(
     coordinator: MeithealCoordinator,
-    request_body: dict[str, Any],
-) -> dict[str, Any]:
+    request_body: Any,
+) -> dict[str, Any] | None:
     """Process an MCP tool call request.
 
-    Expected request format:
-    {
-        "jsonrpc": "2.0",
-        "id": "req-1",
-        "method": "tools/call",
-        "params": {
-            "name": "createTask",
-            "arguments": { "title": "Buy groceries" }
-        }
-    }
-
-    Also supports:
-    - "tools/list" — list available tools
-    - "initialize" — handshake
+    Returns a JSON-RPC response dict, or None for notifications that must not
+    receive a response per the JSON-RPC 2.0 / MCP lifecycle specification.
     """
-    method = request_body.get("method", "")
+    if not isinstance(request_body, dict):
+        return {
+            "jsonrpc": "2.0",
+            "id": None,
+            "error": {"code": -32600, "message": "Invalid Request: expected JSON object"},
+        }
+
+    method = request_body.get("method")
+    if not isinstance(method, str) or not method:
+        return {
+            "jsonrpc": "2.0",
+            "id": request_body.get("id"),
+            "error": {"code": -32600, "message": "Invalid Request: method must be a string"},
+        }
+
+    if "id" not in request_body or method.startswith("notifications/"):
+        if "id" not in request_body:
+            return None
+
     req_id = request_body.get("id", "1")
-    params = request_body.get("params", {})
+    raw_params = request_body.get("params")
+    if raw_params is None:
+        params: dict[str, Any] = {}
+    elif isinstance(raw_params, dict):
+        params = raw_params
+    else:
+        return {
+            "jsonrpc": "2.0",
+            "id": req_id,
+            "error": {"code": -32602, "message": "Invalid params: expected object"},
+        }
 
     # Handshake
     if method == "initialize":
@@ -256,6 +272,13 @@ async def handle_mcp_request(
             },
         }
 
+    if method == "ping":
+        return {
+            "jsonrpc": "2.0",
+            "id": req_id,
+            "result": {},
+        }
+
     # List tools
     if method == "tools/list":
         return {
@@ -267,7 +290,23 @@ async def handle_mcp_request(
     # Execute tool
     if method == "tools/call":
         tool_name = params.get("name", "")
-        arguments = params.get("arguments", {})
+        raw_arguments = params.get("arguments")
+        if raw_arguments is None:
+            arguments: dict[str, Any] = {}
+        elif isinstance(raw_arguments, dict):
+            arguments = raw_arguments
+        else:
+            return {
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "error": {"code": -32602, "message": "Invalid params: arguments must be an object"},
+            }
+        if not isinstance(tool_name, str) or not tool_name:
+            return {
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "error": {"code": -32602, "message": "Invalid params: tool name is required"},
+            }
 
         try:
             result = await _execute_tool(coordinator, tool_name, arguments)
@@ -306,14 +345,17 @@ async def _execute_tool(
     """Execute an MCP tool and return the result."""
 
     if tool_name == "createTask":
+        title = args.get("title")
+        if not isinstance(title, str) or not title.strip():
+            raise ValueError("createTask requires a non-empty string title")
         await coordinator.async_create_task(
-            title=args["title"],
+            title=title,
             description=args.get("description"),
             priority=args.get("priority"),
             due_date=args.get("due_date"),
             assigned_to=args.get("assigned_to"),
         )
-        return {"status": "created", "title": args["title"]}
+        return {"status": "created", "title": title}
 
     elif tool_name == "completeTask":
         await coordinator.async_complete_task(
@@ -323,11 +365,16 @@ async def _execute_tool(
         return {"status": "completed"}
 
     elif tool_name == "deleteTask":
-        await coordinator.async_delete_task(task_id=args["id"])
+        task_id = args.get("id")
+        if not isinstance(task_id, str) or not task_id.strip():
+            raise ValueError("deleteTask requires a non-empty string id")
+        await coordinator.async_delete_task(task_id=task_id)
         return {"status": "deleted"}
 
     elif tool_name == "updateTask":
-        task_id = args["id"]
+        task_id = args.get("id")
+        if not isinstance(task_id, str) or not task_id.strip():
+            raise ValueError("updateTask requires a non-empty string id")
         updates = {k: v for k, v in args.items() if k != "id"}
         await coordinator.async_update_task(task_id, updates)
         return {"status": "updated", "id": task_id}
@@ -368,7 +415,7 @@ async def _execute_tool(
     elif tool_name == "getTodaysTasks":
         if not coordinator.data:
             return {"tasks": [], "count": 0}
-        today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        today_str = datetime.now().astimezone().strftime("%Y-%m-%d")
         results = []
         for t in coordinator.data.tasks:
             if t.status == "done":
@@ -393,7 +440,7 @@ async def _execute_tool(
     elif tool_name == "dailyBriefing":
         if not coordinator.data:
             return {"greeting": "Hello", "tasks": {"active": 0, "overdue": 0, "total": 0}}
-        now = datetime.now(timezone.utc)
+        now = datetime.now().astimezone()
         today_str = now.strftime("%Y-%m-%d")
         hour = now.hour
         greeting = "Good morning" if hour < 12 else ("Good afternoon" if hour < 17 else "Good evening")
@@ -424,7 +471,7 @@ async def _execute_tool(
         if not coordinator.data:
             return {"events": [], "count": 0}
         days_ahead = args.get("days_ahead", 7)
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         cutoff = now + timedelta(days=days_ahead)
         today_str = now.strftime("%Y-%m-%d")
         cutoff_str = cutoff.strftime("%Y-%m-%d")
@@ -445,7 +492,7 @@ async def _execute_tool(
         if not coordinator.data:
             return {"items": [], "count": 0}
         days_ahead = args.get("days_ahead", 7)
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         cutoff = now + timedelta(days=days_ahead)
         today_str = now.strftime("%Y-%m-%d")
         cutoff_str = cutoff.strftime("%Y-%m-%d")
@@ -503,8 +550,8 @@ async def _execute_tool(
             try:
                 await coordinator.async_complete_task(task_id=t.id)
                 completed.append(t.title)
-            except Exception:
-                pass
+            except Exception as err:
+                _LOGGER.debug("batchComplete failed for task %s: %s", t.id, err)
         return {"completed": completed, "count": len(completed)}
 
     elif tool_name == "linkTask":
@@ -532,97 +579,87 @@ async def _execute_tool(
 
 try:
     from aiohttp import web
-    from homeassistant.components.http import HomeAssistantView
+    from homeassistant.components.http import (
+        KEY_HASS,
+        HomeAssistantView,
+        require_admin,
+    )
+    from homeassistant.config_entries import ConfigEntryState
 except ImportError:
     HomeAssistantView = object
+    KEY_HASS = "hass"
+    ConfigEntryState = None
     web = None
 
-MCP_VIEW_URL = "/api/meitheal/mcp"
-# Largest request body the view reads; a tool call is a few hundred bytes.
-_MAX_BODY_BYTES = 256 * 1024
+    def require_admin(func: Callable[..., Any]) -> Callable[..., Any]:  # type: ignore[no-redef]
+        """No-op fallback when Home Assistant HTTP helpers are unavailable."""
+        return func
 
 
-def _rpc_error(req_id: Any, code: int, message: str) -> dict[str, Any]:
-    return {"jsonrpc": "2.0", "id": req_id, "error": {"code": code, "message": message}}
-
-
-async def async_handle_mcp_http(
-    hass: Any, user: Any, body: Any
-) -> tuple[int, dict[str, Any] | None]:
-    """Answer one MCP message sent through Home Assistant's HTTP server.
-
-    Home Assistant has already authenticated the caller. These tools can change
-    and delete any task, so they are limited to administrators, the same rule as
-    the Meitheal LLM APIs. The coordinator is looked up on each call so a
-    reloaded or removed entry is never served from a stale object.
-    """
-    if user is None or not getattr(user, "is_active", False) or not getattr(user, "is_admin", False):
-        return 403, _rpc_error(None, -32001, "Meitheal tools need a Home Assistant administrator")
-    if not isinstance(body, dict) or not isinstance(body.get("method"), str):
-        return 400, _rpc_error(None, -32600, "Invalid request")
-    if "id" not in body:
-        # A notification such as notifications/initialized expects no reply.
-        return 202, None
-    if body["method"] == "ping":
-        return 200, {"jsonrpc": "2.0", "id": body["id"], "result": {}}
-    params = body.get("params", {})
-    if not isinstance(params, dict) or not isinstance(params.get("arguments", {}), dict):
-        return 400, _rpc_error(body["id"], -32602, "Invalid params")
-
-    from .const import DOMAIN
-
-    coordinator = next(
-        (
-            entry.runtime_data
-            for entry in hass.config_entries.async_loaded_entries(DOMAIN)
-            if isinstance(getattr(entry, "runtime_data", None), MeithealCoordinator)
-        ),
-        None,
-    )
-    if coordinator is None:
-        return 503, _rpc_error(body["id"], -32002, "Meitheal is not loaded")
-    return 200, await handle_mcp_request(coordinator, {**body, "params": params})
+def _resolve_loaded_coordinator(hass: Any) -> MeithealCoordinator | None:
+    """Resolve the active Meitheal coordinator from ConfigEntry.runtime_data."""
+    if hass is None:
+        return None
+    for entry in hass.config_entries.async_entries(DOMAIN):
+        is_loaded = (
+            ConfigEntryState is None or entry.state is ConfigEntryState.LOADED
+        )
+        coordinator = getattr(entry, "runtime_data", None)
+        if is_loaded and coordinator is not None:
+            return coordinator
+    return None
 
 
 class MeithealMcpView(HomeAssistantView):
-    """Meitheal's MCP tools on Home Assistant's own HTTP server.
+    """Administrator-only view for MCP JSON-RPC requests over Home Assistant HTTP."""
 
-    An MCP client that is signed in to Home Assistant (a long-lived access token
-    or Home Assistant's OAuth) reaches Meitheal here, with no second address or
-    credential. Registered once and kept across config entry reloads.
-    """
-
-    url = MCP_VIEW_URL
+    url = "/api/meitheal/mcp"
     name = "api:meitheal:mcp"
     requires_auth = True
 
-    def __init__(self, hass: Any) -> None:
-        self.hass = hass
-
+    @require_admin
     async def post(self, request: web.Request) -> web.Response:
-        """Handle one MCP JSON-RPC message."""
-        if (request.content_length or 0) > _MAX_BODY_BYTES:
-            return web.json_response(_rpc_error(None, -32600, "Request too large"), status=413)
+        """Handle incoming MCP JSON-RPC call."""
         try:
-            raw = await request.content.read(_MAX_BODY_BYTES + 1)
-            if len(raw) > _MAX_BODY_BYTES:
-                return web.json_response(_rpc_error(None, -32600, "Request too large"), status=413)
-            body = json.loads(raw)
-        except ValueError:
-            return web.json_response(_rpc_error(None, -32700, "Parse error: invalid JSON"), status=400)
+            body = await request.json()
+        except Exception:
+            return web.json_response(
+                {
+                    "jsonrpc": "2.0",
+                    "id": None,
+                    "error": {"code": -32700, "message": "Parse error: invalid JSON"},
+                },
+                status=400,
+            )
 
-        status, response = await async_handle_mcp_http(self.hass, request.get("hass_user"), body)
+        if not isinstance(body, dict):
+            return web.json_response(
+                {
+                    "jsonrpc": "2.0",
+                    "id": None,
+                    "error": {
+                        "code": -32600,
+                        "message": "Invalid Request: expected JSON object",
+                    },
+                },
+                status=400,
+            )
+
+        coordinator = _resolve_loaded_coordinator(request.app.get(KEY_HASS))
+        if coordinator is None:
+            return web.json_response(
+                {
+                    "jsonrpc": "2.0",
+                    "id": body.get("id"),
+                    "error": {
+                        "code": -32000,
+                        "message": "Meitheal integration is not loaded",
+                    },
+                },
+                status=503,
+            )
+
+        response = await handle_mcp_request(coordinator, body)
         if response is None:
-            return web.Response(status=status)
-        return web.json_response(response, status=status)
-
-
-def async_register_mcp_view(hass: Any) -> None:
-    """Register the view once per Home Assistant run; views cannot be removed."""
-    from .const import DOMAIN
-
-    flag = f"{DOMAIN}_mcp_view"
-    if hass.data.get(flag):
-        return
-    hass.http.register_view(MeithealMcpView(hass))
-    hass.data[flag] = True
+            return web.Response(status=202)
+        return web.json_response(response)

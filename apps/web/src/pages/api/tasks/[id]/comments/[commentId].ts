@@ -4,6 +4,7 @@ import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/s
 import { CommentMentionRepository } from "@domains/tasks/persistence/comment-mention-repository"
 import { TaskRepository } from "@domains/tasks/persistence/task-repository"
 import { apiError } from "@lib/api-response"
+import { requireAssignedTaskWriteAccess, restrictedAssigneeId } from "@lib/agent-token-guard"
 import { checkCommentMentionWriteContext, prepareCommentMentions } from "@lib/comment-mention-request"
 import { commentMentions, hasCommentMentionSelector, redactCommentMentionSelectors } from "@lib/comment-mentions"
 import { activeParticipantRequired, commentFailure, commentJson, hasCurrentTaskParticipant, readComment, resolveCommentAuthor } from "@lib/task-comment-request"
@@ -53,8 +54,23 @@ export const PATCH: APIRoute = async ({ params, request, locals }) => {
     const prepared = await prepareCommentMentions(content, parsedMentions, locals, request.signal)
     if (prepared instanceof Response) return prepared
     await ensureSchema()
-    const comment = await new CommentMentionRepository(getPersistenceClient()).edit(params.id!, id, owner, prepared.content, prepared.recipients)
-    return comment ? commentJson(comment) : apiError("Comment not found", 404)
+    const client = getPersistenceClient()
+    const repo = new TaskRepository(client)
+    const resolved = await repo.resolveTaskId(params.id!)
+    const taskId = resolved?.id ?? params.id!
+    const denied = await requireAssignedTaskWriteAccess(
+      locals.agentToken,
+      (targetId) => repo.findById(targetId),
+      [taskId],
+      "Agent can only comment on tasks assigned to it",
+    )
+    if (denied) return denied
+    if (!resolved) return apiError("Task not found", 404)
+    const edited = await new CommentMentionRepository(client).editChecked(
+      taskId, id, owner, prepared.content, prepared.recipients, restrictedAssigneeId(locals.agentToken),
+    )
+    if (edited.state === "assignee_mismatch") return apiError("Agent can only comment on tasks assigned to it", 403)
+    return edited.state === "ok" ? commentJson(edited.comment) : apiError("Comment not found", 404)
   } catch {
     return commentFailure("patch", "Failed to update comment")
   }
@@ -74,7 +90,10 @@ export const DELETE: APIRoute = async ({ params, request, locals }) => {
     const boardSelection = await rejectBoardSelectionInJson(request)
     if (boardSelection) return boardSelection
     if (!await hasCurrentTaskParticipant(locals, request.signal, true)) return activeParticipantRequired()
-    const deleted = await new TaskRepository(getPersistenceClient()).deleteComment(params.id!, id, owner)
+    const repo = new TaskRepository(getPersistenceClient())
+    const resolved = await repo.resolveTaskId(params.id!)
+    if (!resolved) return apiError("Comment not found", 404)
+    const deleted = await repo.deleteComment(resolved.id, id, owner)
     return deleted ? new Response(null, { status: 204 }) : apiError("Comment not found", 404)
   } catch {
     return commentFailure("delete", "Failed to delete comment")

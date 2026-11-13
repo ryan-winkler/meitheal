@@ -4,6 +4,7 @@ import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/s
 import { CommentMentionRepository } from "@domains/tasks/persistence/comment-mention-repository"
 import { TaskRepository } from "@domains/tasks/persistence/task-repository"
 import { apiError } from "@lib/api-response"
+import { requireAssignedTaskWriteAccess, restrictedAssigneeId } from "@lib/agent-token-guard"
 import { checkCommentMentionWriteContext, commentAttempt, commentMentionProblem, prepareCommentMentions } from "@lib/comment-mention-request"
 import { commentAttemptHorizonMs, commentMentions, hasCommentMentionSelector, redactCommentMentionSelectors } from "@lib/comment-mentions"
 import { verifiedIngressUser } from "@lib/verified-ingress-user"
@@ -55,20 +56,20 @@ export const POST: APIRoute = async ({ params, request, locals }) => {
   try {
     await ensureSchema()
     const client = getPersistenceClient()
+    const repo = new TaskRepository(client)
     const mentions = new CommentMentionRepository(client)
-    const taskId = params.id!
+    const resolved = await repo.resolveTaskId(params.id!)
+    const taskId = resolved?.id ?? params.id!
 
     const agentToken = locals.agentToken
-    if (agentToken && agentToken.scopes.includes("tasks:write:assigned") && !agentToken.scopes.includes("tasks:write")) {
-      const taskRepo = new TaskRepository(client)
-      const task = await taskRepo.findById(taskId)
-      if (!task || !agentToken.assigneeId || task.assigned_to !== agentToken.assigneeId) {
-        return new Response(JSON.stringify({ error: "Agent can only comment on tasks assigned to it" }), {
-          status: 403,
-          headers: { "content-type": "application/json" },
-        })
-      }
-    }
+    const denied = await requireAssignedTaskWriteAccess(
+      agentToken,
+      (id) => repo.findById(id),
+      [taskId],
+      "Agent can only comment on tasks assigned to it",
+    )
+    if (denied) return denied
+    if (!resolved) return apiError("Task not found", 404)
     if (attempt && actor.owner) {
       if (await mentions.replay(taskId, actor.owner, attempt.key, content)) {
         if (!await hasCurrentTaskParticipant(locals, request.signal, true)) return activeParticipantRequired()
@@ -80,12 +81,23 @@ export const POST: APIRoute = async ({ params, request, locals }) => {
     if (prepared instanceof Response) return prepared
     if (prepared.recipients.length && !attempt) return commentMentionProblem("Start this comment again to send its mentions.", 400)
     if (attempt && actor.owner) {
-      return attemptResponse(await mentions.create(taskId, prepared.content, actor.author, actor.owner, prepared.recipients,
-        { ...attempt, rawContent: content, cutoff: Date.now() - commentAttemptHorizonMs }, prepared.verifiedHuman))
+      const created = await mentions.create(taskId, prepared.content, actor.author, actor.owner, prepared.recipients,
+        { ...attempt, rawContent: content, cutoff: Date.now() - commentAttemptHorizonMs }, prepared.verifiedHuman)
+      return attemptResponse(created)
     }
-    const comment = await new TaskRepository(client).addComment(params.id!, prepared.content, actor.author, actor.owner, prepared.verifiedHuman)
-    if (comment && locals.agentToken) notifyAgentComment(params.id!, actor.author, prepared.content).catch(() => {})
-    return comment ? commentJson(comment, 201) : apiError("Task not found", 404)
+    const commentResult = await repo.addCommentChecked(
+      taskId,
+      prepared.content,
+      actor.author,
+      actor.owner,
+      prepared.verifiedHuman,
+      restrictedAssigneeId(agentToken),
+    )
+    if (commentResult.state === "assignee_mismatch") return apiError("Agent can only comment on tasks assigned to it", 403)
+    if (commentResult.state === "not_found") return apiError("Task not found", 404)
+    // Tells the household and emits task.commented for the agent's answer.
+    if (agentToken) notifyAgentComment(taskId, actor.author, prepared.content).catch(() => {})
+    return commentJson(commentResult.comment, 201)
   } catch {
     return commentFailure("post", "Failed to create comment")
   }

@@ -30,7 +30,8 @@ const expectedSchema = {
     "deferred_at",
     "deferral_revision",
     "inactivity_touched_at", "last_activity_spike_at",
-    "source"
+    "source",
+    "created_by"
   ],
   domain_events: ["event_id", "event_type", "task_id", "request_id", "idempotency_key", "payload", "created_at"],
   integration_attempts: [

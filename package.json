@@ -1,7 +1,7 @@
 {
   "name": "meitheal-monorepo",
   "private": true,
-  "version": "0.1.80",
+  "version": "0.0.1",
   "description": "Home Assistant-native household and homelab execution hub for tasks, routines, planning, and AI-assisted coordination.",
   "homepage": "https://github.com/ryan-winkler/meitheal",
   "repository": {

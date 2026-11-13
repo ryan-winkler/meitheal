@@ -64,7 +64,7 @@ export interface AgentTokenRecord {
   tokenPrefix: string
   scopes: AgentScope[]
   /** Assignee this token acts as. Null for automation with no task identity. */
-  assigneeId: string | null
+  assigneeId?: string | null
   createdAt: string
   expiresAt: string | null
   lastUsedAt: string | null
@@ -89,7 +89,7 @@ export interface AgentTokenPublic {
   name: string
   tokenPrefix: string
   scopes: AgentScope[]
-  assigneeId: string | null
+  assigneeId?: string | null
   createdAt: string
   expiresAt: string | null
   lastUsedAt: string | null
@@ -158,7 +158,7 @@ export function toPublicToken(record: AgentTokenRecord): AgentTokenPublic {
     name: record.name,
     tokenPrefix: record.tokenPrefix,
     scopes: record.scopes,
-    assigneeId: record.assigneeId,
+    assigneeId: record.assigneeId ?? null,
     createdAt: record.createdAt,
     expiresAt: record.expiresAt,
     lastUsedAt: record.lastUsedAt,

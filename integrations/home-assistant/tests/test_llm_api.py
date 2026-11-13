@@ -117,11 +117,15 @@ async def test_read_tools_use_the_selected_entry(
         instance = await llm.async_get_api(
             hass, f"meitheal_tasks-{entry.entry_id}", llm_context(hass_admin_user.id)
         )
-        assert {tool.name for tool in instance.tools} == {SEARCH, GET_TASK, CREATE_TASK, COMPLETE_TASK}
+        assert {tool.name for tool in instance.tools} == {SEARCH, GET_TASK}
+        # Creating and completing live in the separate manage API, so this one stays read-only.
+        manage = await llm.async_get_api(
+            hass, f"meitheal_tasks_manage-{entry.entry_id}", llm_context(hass_admin_user.id)
+        )
+        assert {SEARCH, GET_TASK, CREATE_TASK, COMPLETE_TASK} <= {tool.name for tool in manage.tools}
         for tool in instance.tools:
             assert tool.integration == DOMAIN
-            if tool.name in (SEARCH, GET_TASK):
-                assert tool.annotations.read_only
+            assert tool.annotations.read_only
             assert not tool.annotations.destructive
             assert probatio.to_openapi(tool.parameters)["type"] == "object"
 

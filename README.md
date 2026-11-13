@@ -3,7 +3,7 @@
 Meitheal is a local task planner for Home Assistant. Use it to share a household checklist, schedule regular maintenance, or create a task when a sensor triggers an automation. It runs in the Home Assistant sidebar and keeps task data in SQLite on your own device.
 
 [![Docker Hub](https://img.shields.io/docker/v/coolockvillage/meitheal-amd64?label=Docker%20Hub&logo=docker)](https://hub.docker.com/r/coolockvillage/meitheal-amd64)
-[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/ryan-winkler/meitheal/badge)](https://scorecard.dev/viewer/?push=main&repo=github.com/ryan-winkler/meitheal)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/ryan-winkler/meitheal/badge)](https://scorecard.dev/viewer/?push=dev&repo=github.com/ryan-winkler/meitheal)
 [![codecov](https://codecov.io/gh/ryan-winkler/meitheal/graph/badge.svg)](https://codecov.io/gh/ryan-winkler/meitheal)
 [![GitHub Sponsors](https://img.shields.io/badge/Sponsor-GitHub-ea4aaa?logo=github&logoColor=white)](https://github.com/sponsors/ryan-winkler)
 [![Ko-fi](https://img.shields.io/badge/Support-Ko--fi-ff5e5b?logo=ko-fi&logoColor=white)](https://ko-fi.com/ryanw_eu)
@@ -55,6 +55,18 @@ Check [installation availability](https://github.com/ryan-winkler/meitheal-ha-ad
 8. Select **Open web UI**.
 
 Earlier Home Assistant versions call Apps **Add-ons**. See the [Canary setup guide](meitheal-hub-canary/DOCS.md) for more detail.
+
+## Two-Repository Architecture
+
+Meitheal uses two linked repositories so Home Assistant appliances stay fast and lightweight during Store refreshes:
+
+| Repository | Purpose | Contents | Who Uses It |
+|---|---|---|---|
+| **[meitheal](https://github.com/ryan-winkler/meitheal)** (this repo) | Application source & CI | Astro SSR web app, DDD domain packages, E2E test suites, Dockerfiles, and release pipelines (`dev` is the default branch). | Contributors, reviewers, and CI/CD pipelines. |
+| **[meitheal-ha-addon](https://github.com/ryan-winkler/meitheal-ha-addon)** | Home Assistant App Store catalog | Lightweight Store manifests (`config.yaml`), icons, translations, and setup guides (~2 MB). | Home Assistant Supervisor & users installing Meitheal. |
+
+**Why retain `meitheal-ha-addon` separately?**  
+Home Assistant Supervisor clones the full Git repository onto user hardware when adding a store URL and runs `git pull` on every Store refresh. Keeping `meitheal-ha-addon` manifest-only stops low-memory devices (such as Home Assistant Green or Raspberry Pi) from downloading full monorepo history, packages, and test suites just to check for add-on updates.
 
 ## Try Meitheal from Source
 

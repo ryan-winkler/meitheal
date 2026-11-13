@@ -36,7 +36,7 @@ jobs:
         run: |
           set -euo pipefail
           if [[ "$CHANNEL" == stable ]]; then
-            git merge-base --is-ancestor HEAD origin/main
+            git merge-base --is-ancestor HEAD origin/dev || git merge-base --is-ancestor HEAD origin/main
             node scripts/check-version-sync.mjs
           fi
           node scripts/app-release.mjs prepare "$CHANNEL" "$GITHUB_EVENT_NAME" "$GITHUB_REF" "$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"

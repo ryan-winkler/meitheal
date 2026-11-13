@@ -15,10 +15,13 @@ export {
   getTodayStats,
   startTimeEntry,
   stopTimeEntry,
+  startTimeEntryForTask,
+  stopTimeEntryForTask,
   getTimeEntries,
   getTotalTimeForTask,
   ensurePomodoroSchema,
   resetPomodoroForTests,
+  type TimeEntryMutationResult,
 } from "./pomodoro-service"
 
 export {

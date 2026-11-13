@@ -226,6 +226,12 @@
     },
     "nfc_complete_failed": {
       "message": "Failed to complete task by NFC tag: {error}. Check that the tag is assigned to one task."
+    },
+    "invalid_tool_arguments": {
+      "message": "Invalid Meitheal tool arguments"
+    },
+    "missing_task_identifier": {
+      "message": "Provide task_id or title to complete a task."
     }
   },
   "device_automation": {
