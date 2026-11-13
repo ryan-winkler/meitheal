@@ -3,8 +3,8 @@
   inset: 0;
   z-index: 70;
   background:
-    radial-gradient(circle at top, rgba(var(--accent-rgb, 99 102 241), 0.18), transparent 35%),
-    rgba(9, 13, 24, 0.72);
+    radial-gradient(circle at top, rgba(var(--accent-rgb, 105 227 178), 0.16), transparent 35%),
+    rgba(10, 14, 12, 0.74);
   backdrop-filter: blur(16px);
 }
 
@@ -18,10 +18,10 @@
 
 .search-hub-panel {
   width: min(960px, 100%);
-  background: color-mix(in srgb, var(--bg-card) 92%, #09111d 8%);
+  background: color-mix(in srgb, var(--bg-card) 94%, #0b120e 6%);
   border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--border) 78%);
   border-radius: 24px;
-  box-shadow: 0 32px 80px rgba(0, 0, 0, 0.32);
+  box-shadow: 0 32px 80px rgba(0, 0, 0, 0.36);
   overflow: hidden;
 }
 

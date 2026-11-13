@@ -1,7 +1,7 @@
 name: "Meitheal"
 version: "0.0.1"
 slug: "meitheal"
-description: "Your homelab's execution layer — centralize tasks, automate coordination, get out of the way of life"
+description: "Keep track of the work your home needs — local-first household tasks, recurring routines, projects, and automations inside Home Assistant."
 url: "https://github.com/ryan-winkler/meitheal-ha-addon"
 github: "ryan-winkler/meitheal-ha-addon"
 docs_url: "https://github.com/ryan-winkler/meitheal-ha-addon/tree/main/meitheal-hub/DOCS.md"

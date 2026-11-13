@@ -34,10 +34,16 @@ export function confirmDialog(options: ConfirmOptions): Promise<boolean> {
     const variant = options.variant ?? "default";
     const accentColor =
       variant === "danger"
-        ? "var(--danger, #ef4444)"
+        ? "#dc2626"
         : variant === "warning"
-          ? "var(--warning, #f59e0b)"
-          : "var(--accent, #6366f1)";
+          ? "var(--warning, #f0b86d)"
+          : "var(--accent, #69e3b2)";
+    const accentTextColor =
+      variant === "danger"
+        ? "#ffffff"
+        : variant === "warning"
+          ? "#161108"
+          : "var(--personal-accent-foreground, var(--palette-on-accent, #07140f))";
 
     const overlay = document.createElement("div");
     overlay.id = "meitheal-confirm-overlay";
@@ -134,6 +140,7 @@ export function confirmDialog(options: ConfirmOptions): Promise<boolean> {
     okBtn.textContent = options.confirmText ?? "Confirm"
     okBtn.style.background = accentColor
     okBtn.style.borderColor = accentColor
+    okBtn.style.color = accentTextColor
 
     overlay.appendChild(dialog);
 

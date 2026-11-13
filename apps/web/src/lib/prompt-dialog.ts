@@ -92,8 +92,8 @@ export function promptDialog(options: PromptOptions): Promise<string | null> {
         "></button>
         <button type="button" id="prompt-ok" style="
           padding: 8px 20px; border-radius: 8px; font-size: 14px; cursor: pointer;
-          background: var(--accent, #6366f1); border: 1px solid var(--accent, #6366f1);
-          color: #fff; font-weight: 500;
+          background: var(--accent, #69e3b2); border: 1px solid var(--accent, #69e3b2);
+          color: var(--personal-accent-foreground, var(--palette-on-accent, #07140f)); font-weight: 500;
           transition: opacity 0.15s;
         "></button>
       </div>

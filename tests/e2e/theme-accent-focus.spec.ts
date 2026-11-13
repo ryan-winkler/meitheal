@@ -14,7 +14,7 @@ test.describe("Theme accent and keyboard focus", () => {
     );
   });
 
-  for (const [theme, surface] of [["light", "#f8fafc"], ["dark", "#0f172a"]] as const) {
+  for (const [theme, surface] of [["light", "#f6f5f0"], ["dark", "#101210"]] as const) {
     test(`keeps keyboard focus visible with a ${theme} surface accent`, async ({ page }) => {
       await page.locator("#theme-select").selectOption(theme)
       await expect(page.locator("html")).toHaveAttribute("data-theme", theme)
@@ -31,7 +31,7 @@ test.describe("Theme accent and keyboard focus", () => {
       expect(focusRgb).toHaveLength(3)
       await picker.fill(surface)
       await expect.poll(tokens).toEqual({ accent: surface, focus: baseline.focus })
-      await expect(page.getByRole("button", { name: "Indigo (Default)" })).toHaveAttribute("aria-pressed", "false")
+      await expect(page.getByRole("button", { name: "Mint (Default)" })).toHaveAttribute("aria-pressed", "false")
 
       await page.getByRole("link", { name: "Today", exact: true }).first().click()
       await expect(page).toHaveURL(/\/today$/)
@@ -66,7 +66,7 @@ test.describe("Theme accent and keyboard focus", () => {
       await expect(reset).toHaveCSS("outline-width", "2px")
       await page.keyboard.press("Enter")
       await expect.poll(tokens).toEqual(baseline)
-      await expect(page.getByRole("button", { name: "Indigo (Default)" })).toHaveAttribute("aria-pressed", "true")
+      await expect(page.getByRole("button", { name: "Mint (Default)" })).toHaveAttribute("aria-pressed", "true")
     })
   }
 });

@@ -103,7 +103,7 @@ dialog::backdrop {
 
 dialog[open] .modal-content,
 .modal-overlay.active .modal-content {
-  animation: modalFadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: modalFadeIn 0.22s var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1)) forwards;
 }
 
 /* --- Animations --- */
@@ -516,14 +516,14 @@ body:has(dialog[open], #meitheal-confirm-overlay, #meitheal-prompt-overlay) .sho
 }
 
 .nt-kind-pill.active {
-  background: color-mix(in srgb, var(--color-accent, #7c3aed) 16%, transparent);
-  border-color: color-mix(in srgb, var(--color-accent, #7c3aed) 30%, transparent);
-  color: var(--color-accent, #7c3aed);
+  background: color-mix(in srgb, var(--color-accent, #69e3b2) 14%, transparent);
+  border-color: color-mix(in srgb, var(--color-accent, #69e3b2) 32%, transparent);
+  color: var(--accent-text);
   font-weight: 600;
 }
 .nt-kind-pill.active svg {
   opacity: 1;
-  stroke: var(--color-accent, #7c3aed);
+  stroke: var(--accent-text);
 }
 
 /* --- NewTask Section Labels --- */
@@ -562,9 +562,9 @@ body:has(dialog[open], #meitheal-confirm-overlay, #meitheal-prompt-overlay) .sho
 }
 
 .nt-status-pill.active {
-  background: var(--accent-transparent, rgba(138, 180, 248, 0.15));
-  border: 1px solid var(--accent-transparent, rgba(138, 180, 248, 0.3));
-  color: var(--accent, #8ab4f8);
+  background: rgba(var(--accent-rgb), 0.14);
+  border: 1px solid rgba(var(--accent-rgb), 0.34);
+  color: var(--accent-text);
 }
 
 .nt-status-pill-icon {
