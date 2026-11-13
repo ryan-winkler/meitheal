@@ -231,6 +231,7 @@ export const VALID_EVENT_TYPE_SET: ReadonlySet<string> = new Set(VALID_EVENT_TYP
 
 export const defaultRedactionPatterns: RegExp[] = [
   /\b(?:password|secret|api[_-]?key|(?:access[_-]?)?token)\s*[=:]\s*(?:"[^"]*"|'[^']*'|[^\s&,;]+)/gi,
+  /\bmth_[a-f0-9]{64}\b/gi,
   /(bearer\s+)[a-z0-9\-._~+/]+=*/gi,
   /(authorization:\s*)[^\s]+/gi,
   /(hassio_token=)[^&\s]+/gi,

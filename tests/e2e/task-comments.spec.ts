@@ -83,19 +83,19 @@ test("verified comment owners can edit and delete without claiming other comment
     }])
 
     const tokenResponse = await request.post(ingress + "/api/agent-tokens", {
-      headers: headers("admin"),
+      headers: { ...headers("admin"), origin },
       data: { name: "Test automation", scopes: ["tasks:write"] },
     })
     expect(tokenResponse.status()).toBe(201)
     const { token, id: automationTokenId } = await tokenResponse.json()
     const replacement = await request.post(ingress + "/api/agent-tokens", {
-      headers: headers("admin"),
+      headers: { ...headers("admin"), origin },
       data: { name: "Test automation", scopes: ["tasks:write"] },
     })
     expect(replacement.status()).toBe(201)
     const { token: replacementToken } = await replacement.json()
     const reader = await request.post(ingress + "/api/agent-tokens", {
-      headers: headers("admin"),
+      headers: { ...headers("admin"), origin },
       data: { name: "Comment reader", scopes: ["tasks:read"] },
     })
     expect(reader.status()).toBe(201)
@@ -204,7 +204,7 @@ test("verified comment owners can edit and delete without claiming other comment
     expect((await request.get(automationItem, { headers: automationHeaders })).status()).toBe(403)
     const changeAutomationScopes = async (scopes: string[]) => {
       const response = await request.patch(ingress + "/api/agent-tokens", {
-        headers: headers("admin"),
+        headers: { ...headers("admin"), origin },
         data: { id: automationTokenId, scopes },
       })
       expect(response.status()).toBe(200)

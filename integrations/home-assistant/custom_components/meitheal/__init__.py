@@ -81,9 +81,11 @@ COMPLETE_TASK_SCHEMA = vol.Schema(
 SEARCH_TASKS_SCHEMA = vol.Schema(
     {
         vol.Required("query"): cv.string,
-        vol.Optional("status"): vol.In(["backlog", "todo", "in_progress", "done"]),
+        vol.Optional("status"): vol.In(
+            ["backlog", "pending", "active", "complete", "todo", "in_progress", "done"]
+        ),
         vol.Optional("priority"): vol.All(vol.Coerce(int), vol.Range(min=1, max=5)),
-        vol.Optional("include_completed", default=False): cv.boolean,
+        vol.Optional("include_completed"): cv.boolean,
     }
 )
 
@@ -208,7 +210,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: MeithealConfigEntry) -> 
             query=str(call.data.get("query", "")),
             status=call.data.get("status"),
             priority=call.data.get("priority"),
-            include_completed=bool(call.data.get("include_completed", False)),
+            include_completed=call.data.get("include_completed"),
         )
 
     async def handle_get_overdue_tasks(call: ServiceCall) -> ServiceResponse:

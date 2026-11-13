@@ -1,8 +1,8 @@
 ---
-import { t } from "../../i18n/translations";
+import { t } from "../../i18n/translations"
 import type { Locale } from "../../lib/locale"
 import { canManageSystemSettings } from "../../lib/settings-security"
-import SettingsPanelCard from "./SettingsPanelCard.astro";
+import SettingsPanelCard from "./SettingsPanelCard.astro"
 
 /**
  * SettingsAgents — AI provider and agent protocol configuration.
@@ -14,9 +14,9 @@ import SettingsPanelCard from "./SettingsPanelCard.astro";
  */
 
 interface Props {
-  locale: Locale;
+  locale: Locale
 }
-const { locale } = Astro.props;
+const { locale } = Astro.props
 const canManageAi = canManageSystemSettings(Astro.request, Astro.locals)
 ---
 
@@ -43,7 +43,7 @@ const canManageAi = canManageSystemSettings(Astro.request, Astro.locals)
             <label class="form-label" for="ha-agent-select-settings"
               >{t("settings.ha_agent_label", locale)}</label
             >
-            <select class="form-select" id="ha-agent-select-settings" data-default={t("settings.ha_agent_default", locale)}>
+            <select class="form-select" id="ha-agent-select-settings" data-default={t("settings.ha_agent_default", locale)} disabled={!canManageAi}>
               <option value="" selected>{t("settings.ha_agent_default", locale)}</option>
             </select>
             <p id="ha-agent-discovery-status" class="settings-hint" role="status" aria-live="polite"></p>
@@ -59,18 +59,22 @@ const canManageAi = canManageSystemSettings(Astro.request, Astro.locals)
               type="button"
               class="btn btn-primary settings-text-sm"
               id="save-ha-agent"
+              disabled={!canManageAi}
               data-text-saved={t("settings.agent_setting_saved", locale)}
               data-text-failed={t("settings.agent_setting_failed", locale)}>{t("settings.save_ha_agent", locale)}</button>
             <button
               type="button"
               class="btn btn-ghost settings-text-sm"
               id="test-ha-agent"
+              disabled={!canManageAi}
               data-text-testing={t("settings.testing", locale)}
               data-text-unavailable={t("settings.agent_unavailable", locale)}
               data-text-failed={t("settings.connection_failed", locale)}>{t("settings.test", locale)}</button>
-            <button type="button" class="btn btn-ghost settings-text-sm" id="refresh-ha-agents">{t("settings.refresh_ha_agents", locale)}</button>
+            <button type="button" class="btn btn-ghost settings-text-sm" id="refresh-ha-agents" disabled={!canManageAi}>{t("settings.refresh_ha_agents", locale)}</button>
             <span
               id="ha-agent-test-result"
+              role="status"
+              aria-live="polite"
               style="font-size: 12px; color: var(--text-muted);"></span>
           </div>
         </div>
@@ -94,14 +98,7 @@ const canManageAi = canManageSystemSettings(Astro.request, Astro.locals)
           <div id="ai-provider-editor" hidden>
             <div class="form-group">
               <label class="form-label" for="ai-provider">{t("settings.ext_ai_provider", locale)}</label>
-              <select class="form-select" id="ai-provider" disabled
-                data-name-chatgpt={t("settings.ext_ai_chatgpt", locale)}
-                data-name-claude={t("settings.ext_ai_claude", locale)}
-                data-name-gemini={t("settings.ext_ai_gemini", locale)}
-                data-name-ollama={t("settings.ext_ai_ollama", locale)}
-                data-name-ha-llm={t("settings.ext_ai_ha_llm", locale)}
-                data-name-custom={t("settings.ext_ai_custom", locale)}
-              >
+              <select class="form-select" id="ai-provider" disabled>
                 <option value="chatgpt" selected>{t("settings.ext_ai_chatgpt", locale)}</option>
                 <option value="claude">{t("settings.ext_ai_claude", locale)}</option>
                 <option value="gemini">{t("settings.ext_ai_gemini", locale)}</option>
@@ -164,7 +161,7 @@ const canManageAi = canManageSystemSettings(Astro.request, Astro.locals)
               class="settings-row--simple"
             >
               <label class="toggle-label">
-                <input type="checkbox" id="agent-a2a-enabled" aria-labelledby="agent-a2a-enabled-label" checked />
+                <input type="checkbox" id="agent-a2a-enabled" aria-labelledby="agent-a2a-enabled-label" checked={canManageAi} disabled={!canManageAi} />
                 <span class="toggle-slider"></span>
               </label>
               <div>
@@ -201,7 +198,7 @@ const canManageAi = canManageSystemSettings(Astro.request, Astro.locals)
               class="settings-row--simple"
             >
               <label class="toggle-label">
-                <input type="checkbox" id="agent-webmcp-enabled" aria-labelledby="agent-webmcp-enabled-label" />
+                <input type="checkbox" id="agent-webmcp-enabled" aria-labelledby="agent-webmcp-enabled-label" disabled={!canManageAi} />
                 <span class="toggle-slider"></span>
               </label>
               <div>
@@ -229,7 +226,7 @@ const canManageAi = canManageSystemSettings(Astro.request, Astro.locals)
               class="settings-row--simple"
             >
               <label class="toggle-label">
-                <input type="checkbox" id="agent-mcp-enabled" aria-labelledby="agent-mcp-enabled-label" checked />
+                <input type="checkbox" id="agent-mcp-enabled" aria-labelledby="agent-mcp-enabled-label" checked={canManageAi} disabled={!canManageAi} />
                 <span class="toggle-slider"></span>
               </label>
               <div>
@@ -257,11 +254,14 @@ const canManageAi = canManageSystemSettings(Astro.request, Astro.locals)
             </div>
           </div>
 
+          {!canManageAi && <p class="settings-hint" id="agent-protocols-admin-only">{t("settings.agent_protocols_admin_only", locale)}</p>}
           <button type="button" class="btn btn-secondary settings-text-sm" id="refresh-agent-discovery"
             data-checking={t("settings.protocol_discovery_checking", locale)}>{t("settings.protocol_discovery_retry", locale)}</button>
           <button
+            type="button"
             class="btn btn-primary settings-text-sm"
-            id="save-agent-protocols">{t("settings.save_protocol_settings", locale)}</button
+            id="save-agent-protocols"
+            disabled={!canManageAi}>{t("settings.save_protocol_settings", locale)}</button
           >
         </div>
       </div>
@@ -272,7 +272,7 @@ const canManageAi = canManageSystemSettings(Astro.request, Astro.locals)
   <div class="settings-grid mt-4">
     <SettingsPanelCard
       title={t("settings.bot_handoff_title", locale)}
-      subtitle={locale === "ga" ? "Déanann riarthóir reatha Home Assistant athruithe a mholann gníomhairí a athbhreithniú sula gcuirtear i bhfeidhm iad." : "A current Home Assistant administrator reviews agent proposals before their changes apply."}
+      subtitle={t("settings.bot_handoff_subtitle", locale)}
     >
       <a id="bot-allow-proposals" class="btn btn-secondary" href="/review">{t("settings.bot_handoff_review", locale)}</a>
     </SettingsPanelCard>
@@ -283,9 +283,6 @@ const canManageAi = canManageSystemSettings(Astro.request, Astro.locals)
   /* ── Agents & AI — integration section styling ── */
   .integration-section {
     padding: 16px 0;
-  }
-  .integration-section + hr + .integration-section {
-    /* already separated by hr */
   }
   .integration-header {
     display: flex;
@@ -325,71 +322,8 @@ const canManageAi = canManageSystemSettings(Astro.request, Astro.locals)
   #ext-ai-badge[hidden] {
     display: none;
   }
+  .toggle-label:has(input:disabled) {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
 </style>
-
-<script>
-  import { pageLifecycle } from "@lib/page-lifecycle";
-
-  // ── External AI Provider — UI reactivity only ──
-  // Save/restore is handled by settings.astro's restoreIntegrationSettings()
-  const extBadge = document.getElementById("ext-ai-badge");
-  const aiProvider = document.getElementById(
-    "ai-provider",
-  ) as HTMLSelectElement;
-  const customUrlGroup = document.getElementById("ai-custom-url-group");
-
-  function updateExtAiBadge() {
-    if (extBadge && aiProvider) {
-      const AI_NAMES: Record<string, string> = {
-        chatgpt: aiProvider.dataset.nameChatgpt || "ChatGPT",
-        claude: aiProvider.dataset.nameClaude || "Claude",
-        gemini: aiProvider.dataset.nameGemini || "Gemini",
-        ollama: aiProvider.dataset.nameOllama || "Ollama",
-        ha_llm: aiProvider.dataset.nameHaLlm || "HA LLM",
-        custom: aiProvider.dataset.nameCustom || "Custom",
-      };
-      extBadge.textContent = AI_NAMES[aiProvider.value] || aiProvider.value;
-    }
-  }
-
-  if (aiProvider) pageLifecycle.on(aiProvider, "change", () => {
-    if (customUrlGroup) {
-      customUrlGroup.style.display =
-        aiProvider.value === "custom" || aiProvider.value === "ollama"
-          ? ""
-          : "none";
-    }
-    updateExtAiBadge();
-  });
-
-  // ── Fix ingress-aware links ──
-  // Agent Card + MCP manifest links need the ingress base path prepended
-  function fixProtocolLinks() {
-    const base = window.__ingress_path || "";
-    document.querySelectorAll(".protocol-link[data-path]").forEach((el) => {
-      const path = (el as HTMLAnchorElement).dataset.path;
-      if (path) (el as HTMLAnchorElement).href = base + path;
-    });
-  }
-
-  function bootAgentsPanel() {
-    fixProtocolLinks();
-    updateExtAiBadge();
-  }
-
-  const section = document.getElementById("automation-ai-settings");
-  if (!section) {
-    bootAgentsPanel();
-  } else {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (!entries.some((entry) => entry.isIntersecting)) return;
-        observer.disconnect();
-        bootAgentsPanel();
-      },
-      { rootMargin: "0px 0px -35% 0px", threshold: 0.15 },
-    );
-
-    observer.observe(section);
-  }
-</script>

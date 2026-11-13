@@ -1,8 +1,8 @@
-import type { SearchResponse } from "@domains/search/search-types"
+import { WEBMCP_SETTING, webMcpEnabled } from "@domains/agents/webmcp-protocol"
+import type { SearchResponse } from "@domains/search"
 import { buildIngressPagePath } from "@lib/page-shell-links"
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { parseTaskView, TASK_VIEWS, taskViewUrl } from "@lib/task-view-route"
-import { WEBMCP_SETTING, webMcpEnabled } from "@lib/webmcp-protocol"
 
 interface BrowserTool {
   name: string
@@ -122,7 +122,11 @@ export async function configureWebMcp(enabled: boolean): Promise<void> {
           const callSignal = requestSignal(options?.signal)
           if (!await canExecute(callSignal)) return { error: "Browser tools are unavailable." }
           const params = new URLSearchParams({ q: query, scope: "tasks", task_fields: "title", limit: "8" })
-          const response = await fetch(`/api/search?${params}`, { signal: callSignal, cache: "no-store" })
+          const response = await fetch(`/api/search?${params}`, {
+            signal: callSignal,
+            cache: "no-store",
+            headers: { "X-Automation-Source": "webmcp" },
+          })
           if (!response.ok) return { error: "Meitheal task search is unavailable." }
           const data = await response.json() as SearchResponse
           if (!Array.isArray(data.sections) || data.sections.some(section => !Array.isArray(section?.items))) throw new Error("Invalid search response")

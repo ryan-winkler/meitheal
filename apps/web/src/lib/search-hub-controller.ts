@@ -11,7 +11,7 @@ import type {
   SearchResultSection,
   SearchScope,
   TaskSearchField,
-} from "@domains/search/search-types"
+} from "@domains/search"
 
 const waitingSearchCapability = "MEITHEAL_SEARCH_WAITING_CAPABLE"
 
