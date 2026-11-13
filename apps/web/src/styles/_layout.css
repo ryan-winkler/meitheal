@@ -6,17 +6,22 @@
  * Does NOT own: cards (_cards.css), tasks (_tasks.css), modals (_modal.css)
  * ============================================= */
 /* --- Layout --- */
+:root {
+  --sidebar-width: 248px;
+}
+
 .sidebar {
   @apply bg-bg-secondary/90 backdrop-blur-md flex flex-col border-r border-border fixed h-screen z-40;
-  width: var(--sidebar-width, 240px);
-  transition: width 250ms cubic-bezier(0.4, 0, 0.2, 1);
-  overflow: hidden;
+  width: var(--sidebar-width, 248px);
+  transition: width 220ms cubic-bezier(0.23, 1, 0.32, 1);
+  overflow: visible;
   }
 
-  /* Collapsed sidebar: icon-only — NOT off-screen */
+  /* Collapsed sidebar: Google AI Studio-style 64px icon rail */
   body.sidebar-collapsed .sidebar {
-    width: 60px; /* Make sidebar slightly wider than just 48px to look like a proper rail */
-    overflow: visible !important; /* Prevent tooltips from clipping */
+    width: 64px;
+    padding-inline: 0.5rem;
+    overflow: visible !important;
   }
 
 
@@ -103,7 +108,7 @@
   /* P0-2: Enable native touch scrolling in HA WebView iframe */
   touch-action: pan-y;
   -webkit-overflow-scrolling: touch;
-  transition: margin-left 250ms cubic-bezier(0.4, 0, 0.2, 1);
+  transition: margin-left 220ms cubic-bezier(0.23, 1, 0.32, 1);
   /* P0-3: Style containment only — `contain: layout` was removed because
      it creates an independent formatting context that blocks wheel-event
      scroll propagation to the body scroll container. With layout containment,
@@ -116,13 +121,13 @@
 /* Desktop: offset main content by sidebar width (md+ only, mobile has no sidebar) */
 @media (min-width: 769px) {
   .main-content {
-    margin-left: var(--sidebar-width, 240px);
+    margin-left: var(--sidebar-width, 248px);
   }
 }
 
   /* When sidebar is collapsed, shrink main content offset */
   body.sidebar-collapsed .main-content {
-    margin-left: 60px;
+    margin-left: 64px;
   }
 
   /* — Collapsed sidebar: hide text, center icons — */
@@ -181,20 +186,40 @@
   body.sidebar-collapsed .sidebar-footer a {
     justify-content: center;
   }
-  body.sidebar-collapsed .sidebar-scroll {
-    padding-top: 4px;
-    overflow: visible; /* Prevent clipping of nav tooltips */
+  body.sidebar-collapsed .sidebar-cta-wrap {
+    padding: 0 0 0.625rem;
+    display: flex;
+    justify-content: center;
+  }
+  body.sidebar-collapsed .sidebar-rail-cta {
+    width: 40px;
+    height: 40px;
+    min-height: 40px;
+    padding: 0;
+    border-radius: 12px;
+    justify-content: center;
+    gap: 0;
+  }
+  body.sidebar-collapsed .sidebar-rail-cta__label {
+    display: none !important;
   }
 
-  /* Collapsed nav tooltip — appears on hover for icon-only items */
+  body.sidebar-collapsed .sidebar-scroll {
+    padding-top: 4px;
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+
+  /* Collapsed nav tooltip — floating outside .sidebar-scroll overflow clipping */
   body.sidebar-collapsed .nav-link {
     position: relative;
   }
   body.sidebar-collapsed .nav-link::after {
-    content: attr(data-tooltip);
-    position: absolute;
-    left: calc(100% + 8px);
-    top: 50%;
+    display: none;
+  }
+
+  .sidebar-rail-tooltip {
+    position: fixed;
     transform: translateY(-50%);
     white-space: nowrap;
     font-size: 12px;
@@ -205,13 +230,8 @@
     border-radius: 6px;
     padding: 4px 10px;
     pointer-events: none;
-    z-index: 100;
+    z-index: 90;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-    opacity: 0;
-    transition: opacity 150ms ease;
-  }
-  body.sidebar-collapsed .nav-link:hover::after {
-    opacity: 1;
   }
 
 .page-header {

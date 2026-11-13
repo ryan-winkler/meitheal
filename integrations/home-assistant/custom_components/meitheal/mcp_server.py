@@ -219,6 +219,10 @@ MCP_TOOLS = [
 async def handle_mcp_request(
     coordinator: MeithealCoordinator,
     request_body: Any,
+    *,
+    origin_kind: str | None = None,
+    origin_name: str | None = None,
+    origin_target: str | None = None,
 ) -> dict[str, Any] | None:
     """Process an MCP tool call request.
 
@@ -308,8 +312,27 @@ async def handle_mcp_request(
                 "error": {"code": -32602, "message": "Invalid params: tool name is required"},
             }
 
+        meta = params.get("_meta")
+        meta_dict = meta if isinstance(meta, dict) else {}
+        effective_kind = (
+            meta_dict.get("origin_kind") if isinstance(meta_dict.get("origin_kind"), str) else None
+        ) or origin_kind or "mcp"
+        effective_name = (
+            meta_dict.get("origin_name") if isinstance(meta_dict.get("origin_name"), str) else None
+        ) or origin_name or "Home Assistant MCP"
+        effective_target = (
+            meta_dict.get("origin_target") if isinstance(meta_dict.get("origin_target"), str) else None
+        ) or origin_target
+
         try:
-            result = await _execute_tool(coordinator, tool_name, arguments)
+            result = await _execute_tool(
+                coordinator,
+                tool_name,
+                arguments,
+                origin_kind=effective_kind,
+                origin_name=effective_name,
+                origin_target=effective_target,
+            )
             return {
                 "jsonrpc": "2.0",
                 "id": req_id,
@@ -341,8 +364,20 @@ async def _execute_tool(
     coordinator: MeithealCoordinator,
     tool_name: str,
     args: dict[str, Any],
+    *,
+    origin_kind: str = "mcp",
+    origin_name: str = "Home Assistant MCP",
+    origin_target: str | None = None,
 ) -> Any:
     """Execute an MCP tool and return the result."""
+    eff_kind = args.get("origin_kind") if isinstance(args.get("origin_kind"), str) else origin_kind
+    eff_name = args.get("origin_name") if isinstance(args.get("origin_name"), str) else origin_name
+    eff_target = args.get("origin_target") if isinstance(args.get("origin_target"), str) else origin_target
+    origin_kwargs = {
+        "origin_kind": eff_kind,
+        "origin_name": eff_name,
+        "origin_target": eff_target,
+    }
 
     if tool_name == "createTask":
         title = args.get("title")
@@ -354,6 +389,7 @@ async def _execute_tool(
             priority=args.get("priority"),
             due_date=args.get("due_date"),
             assigned_to=args.get("assigned_to"),
+            **origin_kwargs,
         )
         return {"status": "created", "title": title}
 
@@ -361,6 +397,7 @@ async def _execute_tool(
         await coordinator.async_complete_task(
             task_id=args.get("id"),
             title=args.get("title"),
+            **origin_kwargs,
         )
         return {"status": "completed"}
 
@@ -368,15 +405,18 @@ async def _execute_tool(
         task_id = args.get("id")
         if not isinstance(task_id, str) or not task_id.strip():
             raise ValueError("deleteTask requires a non-empty string id")
-        await coordinator.async_delete_task(task_id=task_id)
+        await coordinator.async_delete_task(task_id=task_id, **origin_kwargs)
         return {"status": "deleted"}
 
     elif tool_name == "updateTask":
         task_id = args.get("id")
         if not isinstance(task_id, str) or not task_id.strip():
             raise ValueError("updateTask requires a non-empty string id")
-        updates = {k: v for k, v in args.items() if k != "id"}
-        await coordinator.async_update_task(task_id, updates)
+        updates = {
+            k: v for k, v in args.items()
+            if k not in ("id", "origin_kind", "origin_name", "origin_target")
+        }
+        await coordinator.async_update_task(task_id, updates, **origin_kwargs)
         return {"status": "updated", "id": task_id}
 
     elif tool_name == "searchTasks":
@@ -548,7 +588,7 @@ async def _execute_tool(
         completed = []
         for t in targets:
             try:
-                await coordinator.async_complete_task(task_id=t.id)
+                await coordinator.async_complete_task(task_id=t.id, **origin_kwargs)
                 completed.append(t.title)
             except Exception as err:
                 _LOGGER.debug("batchComplete failed for task %s: %s", t.id, err)
@@ -659,7 +699,13 @@ class MeithealMcpView(HomeAssistantView):
                 status=503,
             )
 
-        response = await handle_mcp_request(coordinator, body)
+        response = await handle_mcp_request(
+            coordinator,
+            body,
+            origin_kind=request.headers.get("X-Meitheal-Origin-Kind") or "mcp",
+            origin_name=request.headers.get("X-Meitheal-Origin-Name") or "Home Assistant MCP",
+            origin_target=request.headers.get("X-Meitheal-Origin-Target"),
+        )
         if response is None:
             return web.Response(status=202)
         return web.json_response(response)

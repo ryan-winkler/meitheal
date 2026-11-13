@@ -84,6 +84,69 @@ const {
 const hasSections = tabs.length > 0
 const TitleControl = hasSections ? "button" : "h1"
 const locale = Astro.cookies.get("meitheal-locale")?.value === "ga" ? "ga" : "en"
+
+type StandardIconName =
+  | "dashboard"
+  | "kanban"
+  | "tasks"
+  | "table"
+  | "today"
+  | "upcoming"
+  | "calendar"
+  | "settings"
+  | "trophy"
+  | "habit"
+  | "folder"
+  | "target"
+  | "eisenhower"
+  | "sliders"
+  | "plug"
+  | "sparkles"
+  | "home"
+
+const ICON_MAP: Record<string, StandardIconName | "timeline" | "pillars"> = {
+  gear: "settings",
+  settings: "settings",
+  "⚙️": "settings",
+  "⚙": "settings",
+  kanban: "kanban",
+  "▦": "kanban",
+  table: "table",
+  "⊞": "table",
+  calendar: "calendar",
+  "🗓️": "calendar",
+  "🗓": "calendar",
+  "📅": "calendar",
+  timeline: "timeline",
+  "📊": "timeline",
+  dashboard: "dashboard",
+  "🏠": "dashboard",
+  today: "today",
+  upcoming: "upcoming",
+  tasks: "tasks",
+  pillars: "pillars",
+  "🏛️": "pillars",
+  "🏛": "pillars",
+  routines: "habit",
+  habit: "habit",
+  "🔁": "habit",
+  goals: "target",
+  target: "target",
+  "🎯": "target",
+  achievements: "trophy",
+  trophy: "trophy",
+  "🏆": "trophy",
+  folder: "folder",
+  eisenhower: "eisenhower",
+  sliders: "sliders",
+  plug: "plug",
+  sparkles: "sparkles",
+}
+
+function resolveUnifiedIcon(raw?: string): StandardIconName | "timeline" | "pillars" | null {
+  if (!raw) return null
+  return ICON_MAP[raw] ?? null
+}
 ---
 
 <header
@@ -106,14 +169,29 @@ const locale = Astro.cookies.get("meitheal-locale")?.value === "ga" ? "ga" : "en
         aria-haspopup={hasSections ? "true" : undefined}
         aria-label={hasSections ? `${title} — switch section` : undefined}
       >
-        {titleIcon === "gear" ? (
-          <svg class="unified-bar__title-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M12.22 2h-.44a2 2 0 00-2 2v.18a2 2 0 01-1 1.73l-.43.25a2 2 0 01-2 0l-.15-.08a2 2 0 00-2.73.73l-.22.38a2 2 0 00.73 2.73l.15.1a2 2 0 011 1.72v.51a2 2 0 01-1 1.74l-.15.09a2 2 0 00-.73 2.73l.22.38a2 2 0 002.73.73l.15-.08a2 2 0 012 0l.43.25a2 2 0 011 1.73V20a2 2 0 002 2h.44a2 2 0 002-2v-.18a2 2 0 011-1.73l.43-.25a2 2 0 012 0l.15.08a2 2 0 002.73-.73l.22-.39a2 2 0 00-.73-2.73l-.15-.08a2 2 0 01-1-1.74v-.5a2 2 0 011-1.74l.15-.09a2 2 0 00.73-2.73l-.22-.38a2 2 0 00-2.73-.73l-.15.08a2 2 0 01-2 0l-.43-.25a2 2 0 01-1-1.73V4a2 2 0 00-2-2z"/>
-            <circle cx="12" cy="12" r="3"/>
-          </svg>
-        ) : titleIcon && (
-          <span class="unified-bar__title-icon-emoji" aria-hidden="true">{titleIcon}</span>
-        )}
+        {(() => {
+          const resolved = resolveUnifiedIcon(titleIcon)
+          if (resolved === "timeline") {
+            return (
+              <svg class="unified-bar__title-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M4 19l16 0" /><path d="M4 15l4 -6l4 2l4 -5l4 4" />
+              </svg>
+            )
+          }
+          if (resolved === "pillars") {
+            return (
+              <svg class="unified-bar__title-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M3 21h18" /><path d="M3 10h18" /><path d="M5 6l7 -3l7 3" /><path d="M4 10v11" /><path d="M20 10v11" /><path d="M8 14v3" /><path d="M12 14v3" /><path d="M16 14v3" />
+              </svg>
+            )
+          }
+          if (resolved) {
+            return <Icon name={resolved} size={18} class="unified-bar__title-icon" />
+          }
+          return titleIcon ? (
+            <span class="unified-bar__title-icon-emoji" aria-hidden="true">{titleIcon}</span>
+          ) : null
+        })()}
         <span class="unified-bar__switcher-label">{title}</span>
         {hasSections && (
           <svg class="unified-bar__switcher-chevron" width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
@@ -122,17 +200,34 @@ const locale = Astro.cookies.get("meitheal-locale")?.value === "ga" ? "ga" : "en
         )}
       </TitleControl>
       {hasSections && <div class="unified-bar__switcher-dropdown" id={`${barId}-switcher-dropdown`} role="menu" aria-label={`${title} sections`}>
-        {tabs.map((tab) => (
-          <button
-            type="button"
-            class="unified-bar__switcher-item"
-            role="menuitem"
-            data-section-id={tab.id}
-          >
-            {tab.icon && <span class="unified-bar__switcher-item-icon" aria-hidden="true">{tab.icon}</span>}
-            <span class="unified-bar__switcher-item-label">{tab.label}</span>
-          </button>
-        ))}
+        {tabs.map((tab) => {
+          const tabIcon = resolveUnifiedIcon(tab.icon)
+          return (
+            <button
+              type="button"
+              class="unified-bar__switcher-item"
+              role="menuitem"
+              data-section-id={tab.id}
+            >
+              {tabIcon === "timeline" ? (
+                <span class="unified-bar__switcher-item-icon inline-flex items-center" aria-hidden="true">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19l16 0" /><path d="M4 15l4 -6l4 2l4 -5l4 4" /></svg>
+                </span>
+              ) : tabIcon === "pillars" ? (
+                <span class="unified-bar__switcher-item-icon inline-flex items-center" aria-hidden="true">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18" /><path d="M3 10h18" /><path d="M5 6l7 -3l7 3" /><path d="M4 10v11" /><path d="M20 10v11" /><path d="M8 14v3" /><path d="M12 14v3" /><path d="M16 14v3" /></svg>
+                </span>
+              ) : tabIcon ? (
+                <span class="unified-bar__switcher-item-icon inline-flex items-center" aria-hidden="true">
+                  <Icon name={tabIcon} size={16} />
+                </span>
+              ) : tab.icon ? (
+                <span class="unified-bar__switcher-item-icon" aria-hidden="true">{tab.icon}</span>
+              ) : null}
+              <span class="unified-bar__switcher-item-label">{tab.label}</span>
+            </button>
+          )
+        })}
       </div>}
     </div>
 
@@ -145,6 +240,7 @@ const locale = Astro.cookies.get("meitheal-locale")?.value === "ga" ? "ga" : "en
         <div class="nav-overflow__primary" data-nav-overflow-primary>
         {viewTabs.map((vt) => {
           const viewId = vt.id ?? (vt.href.startsWith('#') ? vt.href.slice(1) : vt.href)
+          const vtIcon = resolveUnifiedIcon(vt.icon)
           return (
             <a
               class={`unified-bar__view-pill ${vt.active ? 'is-active' : ''}`}
@@ -153,7 +249,21 @@ const locale = Astro.cookies.get("meitheal-locale")?.value === "ga" ? "ga" : "en
               data-view-tab={viewId}
               data-astro-prefetch="false"
             >
-              {vt.icon && <span class="unified-bar__view-pill-icon" aria-hidden="true">{vt.icon}</span>}
+              {vtIcon === "timeline" ? (
+                <span class="unified-bar__view-pill-icon inline-flex items-center" aria-hidden="true">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19l16 0" /><path d="M4 15l4 -6l4 2l4 -5l4 4" /></svg>
+                </span>
+              ) : vtIcon === "pillars" ? (
+                <span class="unified-bar__view-pill-icon inline-flex items-center" aria-hidden="true">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18" /><path d="M3 10h18" /><path d="M5 6l7 -3l7 3" /><path d="M4 10v11" /><path d="M20 10v11" /><path d="M8 14v3" /><path d="M12 14v3" /><path d="M16 14v3" /></svg>
+                </span>
+              ) : vtIcon ? (
+                <span class="unified-bar__view-pill-icon inline-flex items-center" aria-hidden="true">
+                  <Icon name={vtIcon} size={15} />
+                </span>
+              ) : vt.icon ? (
+                <span class="unified-bar__view-pill-icon" aria-hidden="true">{vt.icon}</span>
+              ) : null}
               <span class="unified-bar__view-pill-label">{vt.label}</span>
             </a>
           )
@@ -169,22 +279,39 @@ const locale = Astro.cookies.get("meitheal-locale")?.value === "ga" ? "ga" : "en
 
     <!-- Center: tab pills (fill available space, quick switching) -->
     {hasSections ? <nav class="unified-bar__tabs" id={`${barId}-tabs`} aria-label={`${title} quick navigation`}>
-      {tabs.map((tab) => (
-        <a
-          class="unified-bar__tab"
-          href={`#${tab.id}`}
-          data-unified-bar-section-link
-          data-unified-bar-section={tab.id}
-          data-settings-section-link
-          data-settings-summary={tab.id}
-          data-section-id={tab.id}
-          data-unified-bar-tab
-        >
-          {tab.icon && <span class="unified-bar__tab-icon" aria-hidden="true">{tab.icon}</span>}
-          <span class="unified-bar__tab-label">{tab.label}</span>
-        </a>
-      ))}
-    </nav> : <div class="unified-bar__tabs" aria-hidden="true"></div>}
+      {tabs.map((tab) => {
+        const tabIcon = resolveUnifiedIcon(tab.icon)
+        return (
+          <a
+            class="unified-bar__tab"
+            href={`#${tab.id}`}
+            data-unified-bar-section-link
+            data-unified-bar-section={tab.id}
+            data-settings-section-link
+            data-settings-summary={tab.id}
+            data-section-id={tab.id}
+            data-unified-bar-tab
+          >
+            {tabIcon === "timeline" ? (
+              <span class="unified-bar__tab-icon inline-flex items-center" aria-hidden="true">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19l16 0" /><path d="M4 15l4 -6l4 2l4 -5l4 4" /></svg>
+              </span>
+            ) : tabIcon === "pillars" ? (
+              <span class="unified-bar__tab-icon inline-flex items-center" aria-hidden="true">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18" /><path d="M3 10h18" /><path d="M5 6l7 -3l7 3" /><path d="M4 10v11" /><path d="M20 10v11" /><path d="M8 14v3" /><path d="M12 14v3" /><path d="M16 14v3" /></svg>
+              </span>
+            ) : tabIcon ? (
+              <span class="unified-bar__tab-icon inline-flex items-center" aria-hidden="true">
+                <Icon name={tabIcon} size={15} />
+              </span>
+            ) : tab.icon ? (
+              <span class="unified-bar__tab-icon" aria-hidden="true">{tab.icon}</span>
+            ) : null}
+            <span class="unified-bar__tab-label">{tab.label}</span>
+          </a>
+        )
+      })}
+    </nav> : <div class="unified-bar__tabs unified-bar__tabs--spacer" aria-hidden="true"></div>}
 
     <!-- Right actions — order matches HA: +, Search, Assist -->
 
@@ -250,7 +377,7 @@ const locale = Astro.cookies.get("meitheal-locale")?.value === "ga" ? "ga" : "en
     z-index: 35;
     display: flex;
     align-items: center;
-    padding: 0 24px;
+    padding: 0 16px;
     min-height: 56px;
     background: color-mix(in srgb, var(--bg-primary) 95%, transparent);
     backdrop-filter: blur(12px);
@@ -266,7 +393,7 @@ const locale = Astro.cookies.get("meitheal-locale")?.value === "ga" ? "ga" : "en
   .unified-bar__inner {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
     width: 100%;
     min-height: 56px;
   }
@@ -391,6 +518,11 @@ const locale = Astro.cookies.get("meitheal-locale")?.value === "ga" ? "ga" : "en
     overflow: hidden;
     align-items: center;
     margin: 0 4px;
+  }
+  .unified-bar__tabs--spacer {
+    flex: 1 0 0px;
+    min-width: 0;
+    margin: 0;
   }
   .unified-bar__tab {
     display: inline-flex;
@@ -537,8 +669,8 @@ const locale = Astro.cookies.get("meitheal-locale")?.value === "ga" ? "ga" : "en
   .unified-bar__new-task-label {
     display: none;
   }
-  /* Only show label text on wide monitors (1100px+) */
-  @media (min-width: 1100px) {
+  /* Only show label text on wide monitors (1360px+) */
+  @media (min-width: 1360px) {
     .unified-bar__new-task-label {
       display: inline;
     }
@@ -568,7 +700,7 @@ const locale = Astro.cookies.get("meitheal-locale")?.value === "ga" ? "ga" : "en
     --nav-overflow-enabled: 1;
     display: flex;
     gap: 2px;
-    flex: 1 1 22rem;
+    flex: 0 1 auto;
     min-width: 0;
     align-items: center;
     background: var(--bg-secondary);
@@ -580,7 +712,7 @@ const locale = Astro.cookies.get("meitheal-locale")?.value === "ga" ? "ga" : "en
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    padding: 5px 12px;
+    padding: 5px 10px;
     border-radius: 7px;
     background: transparent;
     color: var(--text-secondary);

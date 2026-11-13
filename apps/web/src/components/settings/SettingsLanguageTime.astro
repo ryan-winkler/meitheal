@@ -1,0 +1,86 @@
+---
+import { t } from "../../i18n/translations"
+import type { Locale } from "../../lib/locale"
+import { SETTINGS_SECTIONS } from "../../lib/settings-registry"
+import SettingsPanelCard from "./SettingsPanelCard.astro"
+import SettingsSectionIntro from "./SettingsSectionIntro.astro"
+
+interface Props {
+  locale: Locale
+}
+const { locale } = Astro.props
+
+const languageTimeSection = SETTINGS_SECTIONS.find((section) => section.id === "language-time-settings")!
+---
+
+<section
+  id="language-time-settings"
+  class="settings-shell__section"
+  data-settings-shell-section
+  hidden
+>
+  <SettingsSectionIntro section={languageTimeSection} />
+  <div class="settings-grid">
+    <SettingsPanelCard
+      title={t("settings.language_time_card_title", locale)}
+      subtitle={t("settings.language_time_card_subtitle", locale)}
+    >
+      <div class="form-group mt-3">
+        <label class="form-label" for="locale-select">{t("settings.language_label", locale)}</label>
+        <select
+          class="form-select settings-input-compact"
+          id="locale-select"
+        >
+          <option value="en">{t("settings.language_en", locale)}</option>
+          <option value="ga">{t("settings.language_ga", locale)}</option>
+        </select>
+      </div>
+
+      <div class="form-group mt-3">
+        <label class="form-label" for="timezone-select">{t("settings.timezone_title", locale)}</label>
+        <select
+          class="form-select settings-input-narrow"
+          id="timezone-select"
+        >
+          <option value="Europe/Dublin">Europe/Dublin</option>
+          <option value="Europe/London">Europe/London</option>
+          <option value="Europe/Berlin">Europe/Berlin</option>
+          <option value="Europe/Paris">Europe/Paris</option>
+          <option value="America/New_York">America/New_York</option>
+          <option value="America/Chicago">America/Chicago</option>
+          <option value="America/Denver">America/Denver</option>
+          <option value="America/Los_Angeles">America/Los_Angeles</option>
+          <option value="Asia/Tokyo">Asia/Tokyo</option>
+          <option value="Asia/Shanghai">Asia/Shanghai</option>
+          <option value="Australia/Sydney">Australia/Sydney</option>
+          <option value="UTC">UTC</option>
+        </select>
+      </div>
+
+      <div class="form-group mt-3">
+        <label class="form-label" for="week-start-select">{t("settings.week_start_title", locale)}</label>
+        <select
+          class="form-select settings-input-compact"
+          id="week-start-select"
+        >
+          <option value="monday">{t("settings.week_start_monday", locale)}</option>
+          <option value="sunday">{t("settings.week_start_sunday", locale)}</option>
+          <option value="saturday">{t("settings.week_start_saturday", locale)}</option>
+        </select>
+      </div>
+
+      <div class="form-group mt-3">
+        <label class="form-label" for="date-format-select">{t("settings.date_format_title", locale)}</label>
+        <select
+          class="form-select settings-input-narrow"
+          id="date-format-select"
+        >
+          <option value="relative">{t("settings.date_format_relative", locale)}</option>
+          <option value="absolute-iso">{t("settings.date_format_absolute_iso", locale)}</option>
+          <option value="absolute-eu">{t("settings.date_format_absolute_eu", locale)}</option>
+          <option value="absolute-us">{t("settings.date_format_absolute_us", locale)}</option>
+        </select>
+      </div>
+    </SettingsPanelCard>
+  </div>
+</section>

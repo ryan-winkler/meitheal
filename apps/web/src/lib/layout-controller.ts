@@ -6,10 +6,12 @@
         import { createClientLogger, registerGlobalLogger } from "@lib/client-logger";
         import { containTabFocus } from "@lib/focus-trap"
         import { applyAppearancePreferences, bindAppearanceNavigation, readAppearancePreferences } from "@lib/appearance-preferences"
+        import { syncIngressDestination } from "@lib/ingress-navigation"
         import { hasPriorityOverlay, initShortcutModal } from "@lib/layout-shortcuts-controller"
         import { pageLifecycle } from "@lib/page-lifecycle";
         import { SINGLE_KEY_SHORTCUTS_STORAGE_KEY, singleKeyShortcutsEnabled } from "@lib/single-key-shortcuts"
         import { attachShortcutTooltips, injectShortcutStyles } from "@lib/shortcut-tooltip";
+        import { normalizeTaskTypeFilterValue } from "@lib/task-nav-types";
 
         const log = createClientLogger("app", "layout");
 
@@ -115,18 +117,49 @@
             }
           }, { signal })
 
+          function navigateWithIngress(appPath: string) {
+            syncIngressDestination(appPath);
+            window.location.href = (window.__ingress_path || "") + appPath;
+          }
+
+          function openNewTaskAction() {
+            const btn =
+              document.getElementById("create-task-btn") ||
+              document.querySelector<HTMLElement>("[id$='-new-task']:not(#sidebar-rail-new-task)");
+            if (btn) {
+              btn.click();
+              return;
+            }
+            const modalFn = (window as { openNewTaskModal?: () => void }).openNewTaskModal;
+            if (typeof modalFn === "function") {
+              modalFn();
+              return;
+            }
+            navigateWithIngress("/tasks");
+          }
+
           // Active nav link — strip ingress prefix so path comparison works behind HA ingress
           const rawPath = window.location.pathname;
           const ip = window.__ingress_path || "";
           const currentPath =
-            ip && rawPath.startsWith(ip)
-              ? rawPath.slice(ip.length) || "/"
-              : rawPath;
+            ip && (rawPath === ip || rawPath === ip + "/")
+              ? "/"
+              : ip && rawPath.startsWith(ip + "/")
+                ? rawPath.slice(ip.length) || "/"
+                : rawPath;
+          const currentTypes = normalizeTaskTypeFilterValue(
+            new URLSearchParams(window.location.search).get("types"),
+          );
           document.querySelectorAll(".nav-link").forEach((link) => {
             const href = link.getAttribute("href") || "";
+            if (!href || href.startsWith("http")) return;
+            const linkUrl = new URL(href, window.location.origin);
+            const linkPath = linkUrl.pathname;
+            const linkTypes = normalizeTaskTypeFilterValue(linkUrl.searchParams.get("types"));
+            const typesMatch = linkTypes ? linkTypes === currentTypes : currentTypes === "";
             if (
-              href === currentPath ||
-              currentPath.startsWith(href + "/") ||
+              (linkPath === currentPath && typesMatch) ||
+              (linkPath !== "/" && currentPath.startsWith(linkPath + "/") && !linkTypes) ||
               (currentPath === "/" &&
                 link.getAttribute("data-page") === "dashboard")
             ) {
@@ -134,13 +167,76 @@
             }
           });
 
+          // Sidebar edge toggle + collapsed-rail quick action + floating tooltips
+          const edgeToggle = document.getElementById("sidebar-edge-toggle");
+          const topToggle = document.getElementById("sidebar-toggle-btn");
+          const syncEdgeToggle = () => {
+            if (!edgeToggle) return;
+            const collapsed = document.body.classList.contains("sidebar-collapsed");
+            edgeToggle.setAttribute("aria-expanded", String(!collapsed));
+            edgeToggle.setAttribute(
+              "aria-label",
+              collapsed ? "Expand sidebar (Ctrl+B)" : "Collapse sidebar (Ctrl+B)",
+            );
+            edgeToggle.setAttribute(
+              "title",
+              collapsed ? "Expand sidebar (Ctrl+B)" : "Collapse sidebar (Ctrl+B)",
+            );
+          };
+          syncEdgeToggle();
+          if (bindKeyboard && edgeToggle && topToggle) {
+            edgeToggle.addEventListener("click", () => topToggle.click(), { signal });
+            const observer = new MutationObserver(syncEdgeToggle);
+            observer.observe(document.body, { attributes: true, attributeFilter: ["class"] });
+            signal.addEventListener("abort", () => observer.disconnect(), { once: true });
+          }
+
+          const railNewTaskBtn = document.getElementById("sidebar-rail-new-task");
+          if (bindKeyboard) railNewTaskBtn?.addEventListener("click", openNewTaskAction, { signal });
+
+          // Floating collapsed-rail tooltips rendered outside .sidebar-scroll overflow clipping
+          let railTooltip = document.getElementById("sidebar-rail-tooltip");
+          if (!railTooltip) {
+            railTooltip = document.createElement("div");
+            railTooltip.id = "sidebar-rail-tooltip";
+            railTooltip.className = "sidebar-rail-tooltip";
+            railTooltip.setAttribute("role", "tooltip");
+            railTooltip.hidden = true;
+            document.body.appendChild(railTooltip);
+          }
+          const sidebarEl = document.getElementById("sidebar");
+          const hideRailTooltip = () => {
+            if (railTooltip) railTooltip.hidden = true;
+          };
+          if (bindKeyboard && sidebarEl) {
+            const showRailTooltip = (target: EventTarget | null) => {
+              if (!railTooltip || !document.body.classList.contains("sidebar-collapsed")) return;
+              if (document.documentElement.dataset.appearanceSidebar === "hover" && sidebarEl.matches(":hover")) {
+                hideRailTooltip();
+                return;
+              }
+              const el = target instanceof Element ? target.closest<HTMLElement>("[data-tooltip]") : null;
+              const text = el?.dataset.tooltip?.trim();
+              if (!el || !text) {
+                hideRailTooltip();
+                return;
+              }
+              const rect = el.getBoundingClientRect();
+              railTooltip.textContent = text;
+              railTooltip.hidden = false;
+              railTooltip.style.top = `${Math.round(rect.top + rect.height / 2)}px`;
+              railTooltip.style.left = `${Math.round(rect.right + 10)}px`;
+            };
+            sidebarEl.addEventListener("pointerover", (event) => showRailTooltip(event.target), { signal });
+            sidebarEl.addEventListener("pointerleave", hideRailTooltip, { signal });
+            sidebarEl.addEventListener("focusin", (event) => showRailTooltip(event.target), { signal });
+            sidebarEl.addEventListener("focusout", hideRailTooltip, { signal });
+          }
+
           // EmptyState "New Task" buttons dispatch this event to open the modal
-          document.addEventListener(
+          if (bindKeyboard) document.addEventListener(
             "meitheal:new-task",
-            () => {
-              const btn = document.getElementById("create-task-btn");
-              if (btn) btn.click();
-            },
+            openNewTaskAction,
             { signal } as AddEventListenerOptions,
           );
 
@@ -203,26 +299,23 @@
                 if (createBtn) {
                   createBtn.click();
                 } else {
-                  window.location.href =
-                    (window.__ingress_path || "") + "/tasks";
+                  navigateWithIngress("/tasks");
                 }
               }
               if (e.key === "t") {
-                window.location.href = (window.__ingress_path || "") + "/table";
+                navigateWithIngress("/table");
               }
               if (e.key === "d") {
-                window.location.href = (window.__ingress_path || "") + "/";
+                navigateWithIngress("/");
               }
               if (e.key === "y") {
-                window.location.href = (window.__ingress_path || "") + "/today";
+                navigateWithIngress("/today");
               }
               if (e.key === "u") {
-                window.location.href =
-                  (window.__ingress_path || "") + "/upcoming";
+                navigateWithIngress("/upcoming");
               }
               if (e.key === "c") {
-                window.location.href =
-                  (window.__ingress_path || "") + "/calendar";
+                navigateWithIngress("/calendar");
               }
               if (e.key === "?" && !e.repeat && !e.altKey && openShortcutModal?.()) {
                 e.preventDefault()
@@ -265,7 +358,7 @@
               const target = event.target
               if (target instanceof HTMLElement && (target.matches("input, textarea, select") || target.isContentEditable)) return
               if (hasPriorityOverlay() || document.getElementById("task-detail-overlay")?.classList.contains("active")) return
-              window.location.href = (window.__ingress_path || "") + "/tasks#kanban"
+              navigateWithIngress("/tasks#kanban")
             }, { signal })
           }
 

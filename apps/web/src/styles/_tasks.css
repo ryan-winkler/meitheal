@@ -150,7 +150,8 @@
 
   /* --- Tasks Filter Row --- */
   .tasks-filter-row {
-    @apply flex items-center justify-between w-full px-6 py-2 border-b border-border/50 bg-bg-card/40 backdrop-blur-md z-10 sticky top-[60px];
+    @apply flex items-center justify-between w-full px-6 py-2 border-b border-border/50 bg-bg-card/90 backdrop-blur-md sticky top-[60px];
+    z-index: 25;
     min-height: 48px;
   }
   

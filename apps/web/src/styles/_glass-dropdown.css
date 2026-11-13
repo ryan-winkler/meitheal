@@ -94,12 +94,12 @@
   padding: 8px 12px;
 }
 .nt-tags-content .label-picker__input {
-  background: var(--bg-input, rgba(255,255,255,0.06));
-  border: 1px solid var(--border-dim);
+  background: var(--bg-input, var(--bg-secondary));
+  border: 1px solid var(--border);
   border-radius: var(--radius-md, 8px);
   padding: 6px 10px;
   font-size: 13px;
-  color: var(--text);
+  color: var(--text-primary);
   width: 100%;
   margin-top: 4px;
 }

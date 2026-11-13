@@ -103,7 +103,9 @@ try {
 
         {enrichedPillars.length === 0 ? (
           <div class="pillars-page__empty">
-            <div class="pillars-page__empty-icon" aria-hidden="true">🏛️</div>
+            <div class="pillars-page__empty-icon" aria-hidden="true">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21l18 0"/><path d="M5 21v-14l8 -4v18"/><path d="M19 21v-10l-6 -4"/><path d="M9 9l0 .01"/><path d="M9 12l0 .01"/><path d="M9 15l0 .01"/><path d="M9 18l0 .01"/></svg>
+            </div>
             <h2 class="pillars-page__empty-title">No Pillars yet</h2>
             <p class="pillars-page__empty-desc">
               Start by defining the 3-5 core pillars that anchor your identity.
@@ -179,6 +181,36 @@ try {
 <script>
   import "@lib/pillar-card-controller"
   import "@lib/pillar-detail-controller"
+  import { pageLifecycle } from "@lib/page-lifecycle"
+
+  pageLifecycle.onPageLoad((signal) => {
+    const focusAchievementsFromHash = () => {
+      if (window.location.hash !== "#achievements") return
+      const section = document.getElementById("progress-section-achievements")
+      if (!section) return
+
+      // Ensure Achievements section is visible even before/alongside ParentPageShell sync
+      if (section.hasAttribute("hidden")) {
+        const achievementsTab = document.querySelector<HTMLElement>('[data-unified-bar-section="achievements"]')
+        achievementsTab?.click()
+        section.hidden = false
+        section.classList.add("is-active")
+      }
+
+      const prefersReducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
+      requestAnimationFrame(() => {
+        section.scrollIntoView({ behavior: prefersReducedMotion ? "auto" : "smooth", block: "start" })
+        section.classList.add("is-hash-highlighted")
+        const timer = window.setTimeout(() => {
+          section.classList.remove("is-hash-highlighted")
+        }, 1600)
+        signal.addEventListener("abort", () => window.clearTimeout(timer), { once: true })
+      })
+    }
+
+    focusAchievementsFromHash()
+    window.addEventListener("hashchange", focusAchievementsFromHash, { signal })
+  })
 </script>
 
 <style>
@@ -221,7 +253,7 @@ try {
   .pillars-page__add-btn:hover,
   .pillars-page__empty-action:hover {
     background: color-mix(in srgb, var(--accent-hover) 95%, black);
-    color: var(--personal-accent-hover-foreground, #fff);
+    color: var(--personal-accent-hover-foreground, var(--palette-on-accent, #07140f));
     transform: translateY(-1px);
   }
 
@@ -260,7 +292,7 @@ try {
     margin: 0 0 0.5rem;
     font-size: 1.25rem;
     font-weight: 600;
-    color: var(--text);
+    color: var(--text-primary);
   }
 
   .pillars-page__empty-desc {
@@ -274,5 +306,15 @@ try {
   .pillars-page__empty-action {
     padding: 0.625rem 1.5rem;
     font-size: 0.9375rem;
+  }
+
+  #progress-section-achievements {
+    scroll-margin-top: calc(var(--unified-bar-height, 56px) + 16px);
+    border-radius: 16px;
+    transition: box-shadow 300ms ease;
+  }
+
+  #progress-section-achievements.is-hash-highlighted {
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 55%, transparent);
   }
 </style>

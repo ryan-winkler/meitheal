@@ -11,7 +11,7 @@ export type AppearancePreferences = Record<AppearancePreferenceName, string>
 export const APPEARANCE_PREFERENCES: Record<AppearancePreferenceName, Preference> = {
   navigation: { options: ["sidebar", "navbar"], defaultValue: "sidebar" },
   navTone: { options: ["match", "dark", "accent"], defaultValue: "match" },
-  font: { options: ["sans", "serif", "mono", "comic"], defaultValue: "sans" },
+  font: { options: ["sans", "serif", "mono", "comic", "outfit"], defaultValue: "sans" },
   base: { options: ["slate", "gray", "zinc", "neutral", "stone", "mist"], defaultValue: "slate" },
   radius: { options: ["0", "0.5", "1", "1.5", "2"], defaultValue: "1" },
   width: { options: ["default", "fluid", "boxed"], defaultValue: "default" },

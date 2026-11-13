@@ -12,14 +12,27 @@ import { launchPinBrowser, startCoreFixture } from "../scripts/task-pins-fixture
 
 test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the built App and disposable HTTPS ingress")
 
-async function mutate(page: Page, path: string, method: string, body: object, token?: string) {
-  return page.evaluate(async ({ path, method, body, token }) => {
+async function mutate(
+  page: Page,
+  path: string,
+  method: string,
+  body: object,
+  token?: string,
+  extraHeaders?: Record<string, string>,
+) {
+  return page.evaluate(async ({ path, method, body, token, extraHeaders }) => {
     const response = await fetch(path, {
-      method, headers: { "content-type": "application/json", "x-agent-id": "spoofed-person-name", ...(token ? { authorization: `Bearer ${token}` } : {}) },
+      method,
+      headers: {
+        "content-type": "application/json",
+        "x-agent-id": "spoofed-person-name",
+        ...extraHeaders,
+        ...(token ? { authorization: `Bearer ${token}` } : {}),
+      },
       body: JSON.stringify(body),
     })
     return { status: response.status, body: await response.json().catch(() => ({})) }
-  }, { path, method, body, token })
+  }, { path, method, body, token, extraHeaders })
 }
 
 test("verified members see committed task activity and can filter it by current area and person", async () => {
@@ -59,7 +72,11 @@ test("verified members see committed task activity and can filter it by current 
 
     const first = await mutate(a, prefix + "/api/tasks", "POST", {
       title: "Old title sentinel", description: "Old description sentinel", area_id: garden.body.id,
-      author: "supplied-person-sentinel",
+      author: "supplied-person-sentinel", created_by: "spoofed-body-creator", source: "agent",
+    }, undefined, {
+      "x-meitheal-origin-kind": "conversation_agent",
+      "x-meitheal-origin-name": "Spoofed Origin Sentinel",
+      "x-meitheal-origin-target": "/config/voice-assistants/assistants",
     })
     const second = await mutate(b, prefix + "/api/tasks", "POST", {
       title: "Service the boiler", area_id: house.body.id, labels: '["Boiler label"]', new_labels: ["Boiler label"],
@@ -74,7 +91,10 @@ test("verified members see committed task activity and can filter it by current 
     expect((await mutate(b, task, "PATCH", { status: "complete" })).status).toBe(200)
     expect((await mutate(a, task, "PATCH", { status: "todo" })).status).toBe(200)
 
-    db = new DatabaseSync(join(work, "pins.db"))
+        db = new DatabaseSync(join(work, "pins.db"))
+    // Unauthenticated X-Agent-Id, body created_by/source, and X-Meitheal-Origin-* headers must not become stored attribution.
+    expect({ ...db.prepare("SELECT source, created_by FROM tasks WHERE id = ?").get(first.body.id) })
+      .toEqual({ source: "user", created_by: null })
     db.prepare(`INSERT INTO task_activity_log (task_id, field, old_value, new_value, actor, created_at)
       VALUES (?, 'description', 'legacy-old-sentinel', 'legacy-new-sentinel', 'legacy-actor-sentinel', ?)`)
       .run(first.body.id, Date.now())
@@ -103,8 +123,9 @@ test("verified members see committed task activity and can filter it by current 
     await expect(events.filter({ hasText: "Repair the fence" })).toHaveCount(4)
     const markup = await a.locator(".recent-activity").innerHTML()
     for (const sentinel of ["Old title sentinel", "Old description sentinel", "Current description sentinel",
-      "supplied-person-sentinel", "spoofed-person-name", "legacy-old-sentinel", "legacy-new-sentinel",
-      "legacy-actor-sentinel", "fixture-member", "Rolled back edit", "Ignored write"]) {
+      "supplied-person-sentinel", "spoofed-person-name", "spoofed-body-creator", "Spoofed Origin Sentinel",
+      "legacy-old-sentinel", "legacy-new-sentinel", "legacy-actor-sentinel", "fixture-member",
+      "Rolled back edit", "Ignored write"]) {
       expect(markup).not.toContain(sentinel)
     }
     const token = "mth_" + "b".repeat(64)
@@ -115,9 +136,60 @@ test("verified members see committed task activity and can filter it by current 
       token.slice(0, 8), new Date().toISOString(),
     )
     expect((await mutate(b, prefix + "/api/tasks", "POST", { title: "Automated capture", actor: "spoofed actor" }, token)).status).toBe(201)
+    const geminiTask = await mutate(b, prefix + "/api/tasks", "POST", {
+      title: "Gemini capture", actor: "spoofed actor",
+    }, token, {
+      "x-meitheal-origin-kind": "conversation_agent",
+      "x-meitheal-origin-name": "Gemini Conversation",
+      "x-meitheal-origin-target": "/config/voice-assistants/assistants",
+    })
+    expect(geminiTask.status).toBe(201)
+    const bedtimeTask = await mutate(b, prefix + "/api/tasks", "POST", {
+      title: "Bedtime capture",
+    }, token, {
+      "x-meitheal-origin-kind": "ha_automation",
+      "x-meitheal-origin-name": "Bedtime Routine",
+      "x-meitheal-origin-target": "/config/automation/edit/bedtime_routine",
+    })
+    expect(bedtimeTask.status).toBe(201)
+    expect((await mutate(b, prefix + "/api/tasks/" + bedtimeTask.body.id, "PATCH", {
+      status: "done",
+    }, token, {
+      "x-meitheal-origin-kind": "ha_automation",
+      "x-meitheal-origin-name": "Bedtime Routine",
+      "x-meitheal-origin-target": "/config/automation/edit/bedtime_routine",
+    })).status).toBe(200)
+    expect((await mutate(b, prefix + "/api/tasks", "POST", {
+      title: "Unsafe target capture",
+    }, token, {
+      "x-meitheal-origin-kind": "ha_automation",
+      "x-meitheal-origin-name": "Safe Label",
+      "x-meitheal-origin-target": "javascript:alert(1)",
+    })).status).toBe(201)
+
     const automation = await a.reload()
-    await expect(events.filter({ hasText: "Automated capture" })).toContainText("Automation added a task")
-    expect(await automation?.text()).not.toMatch(/synthetic-token-(id|name)|spoofed actor/)
+    const tokenEvent = events.filter({ hasText: "Automated capture" })
+    await expect(tokenEvent).toContainText('Token "synthetic-token-name" added a task')
+    await expect(tokenEvent.locator('a[href$="/settings#agent-tokens-card"]')).toHaveCount(1)
+
+    const geminiEvent = events.filter({ hasText: "Gemini capture" })
+    await expect(geminiEvent).toContainText('Gemini Conversation (via token "synthetic-token-name") added a task')
+    await expect(geminiEvent.locator('a[href="/config/voice-assistants/assistants"]')).toHaveCount(1)
+
+    const bedtimeClosedEvent = events.filter({ hasText: "Bedtime capture" }).filter({ hasText: "closed a task" })
+    await expect(bedtimeClosedEvent).toContainText('Automation "Bedtime Routine" (via token "synthetic-token-name") closed a task')
+    await expect(bedtimeClosedEvent.locator('a[href="/config/automation/edit/bedtime_routine"]')).toHaveCount(1)
+
+    const unsafeTargetEvent = events.filter({ hasText: "Unsafe target capture" })
+    await expect(unsafeTargetEvent.locator('a[href^="javascript:"]')).toHaveCount(0)
+    await expect(unsafeTargetEvent.locator('a[href$="/settings#agent-tokens-card"]')).toHaveCount(1)
+
+    const feedText = await automation?.text()
+    expect(feedText).not.toMatch(/synthetic-token-id|spoofed actor|spoofed-person-name/)
+    const taskActivityRes = await a.evaluate(async path => (await fetch(path)).json(), prefix + "/api/tasks/" + bedtimeTask.body.id + "/activity")
+    const taskActivityJson = JSON.stringify(taskActivityRes)
+    expect(taskActivityJson).toContain("agent:synthetic-token-name")
+    expect(taskActivityJson).not.toMatch(/synthetic-token-id|spoofed/)
     await a.setViewportSize({ width: 320, height: 740 })
     await expect.poll(() => a.locator(".recent-activity").evaluate(element =>
       element.scrollWidth <= element.clientWidth)).toBe(true)

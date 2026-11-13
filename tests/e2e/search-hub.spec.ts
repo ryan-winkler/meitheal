@@ -112,4 +112,22 @@ test.describe("Search announcements", () => {
       await expect(region).toHaveText("")
     } finally { release.resolve() }
   })
+
+  test("SearchHub stacks cleanly above the tasks filter row and uses SVG icon", async ({ page }) => {
+    await page.goto("/tasks")
+    await page.waitForLoadState("networkidle")
+    await page.keyboard.press("Control+k")
+    const overlay = page.locator("#search-hub-overlay")
+    await expect(overlay).toBeVisible()
+    await expect(page.locator(".search-hub-input-icon svg")).toHaveCount(1)
+
+    const layers = await page.evaluate(() => {
+      const hub = document.getElementById("search-hub-overlay")
+      const filterRow = document.querySelector(".tasks-filter-row")
+      const hubZ = hub ? Number(getComputedStyle(hub).zIndex || 0) : 0
+      const filterZ = filterRow ? Number(getComputedStyle(filterRow).zIndex || 0) : 0
+      return { hubZ, filterZ }
+    })
+    expect(layers.hubZ).toBeGreaterThan(layers.filterZ)
+  })
 })

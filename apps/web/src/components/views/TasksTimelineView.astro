@@ -192,7 +192,9 @@ const totalTasks = tasks.length;
 
   <!-- Empty state -->
   <div id="timeline-empty" class="timeline-empty-state" style="display:none">
-    <div class="empty-icon">📊</div>
+    <div class="empty-icon" aria-hidden="true">
+      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19l16 0" /><path d="M4 15l4 -6l4 2l4 -5l4 4" /></svg>
+    </div>
     <div class="empty-title">No tasks on the timeline yet</div>
     <div class="empty-desc">
       Add <strong>start dates</strong> and <strong>due dates</strong> to your tasks
@@ -215,7 +217,9 @@ const totalTasks = tasks.length;
   <!-- Error state -->
   {fetchError && (
     <div class="timeline-empty-state">
-      <div class="empty-icon">⚠️</div>
+      <div class="empty-icon" aria-hidden="true">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4" /><path d="M10.363 3.591l-8.106 13.534a1.914 1.914 0 0 0 1.636 2.871h16.214a1.914 1.914 0 0 0 1.636 -2.87l-8.106 -13.536a1.914 1.914 0 0 0 -3.274 0z" /><path d="M12 16h.01" /></svg>
+      </div>
       <div class="empty-title">Could not load tasks</div>
       <div class="empty-desc">
         The database may not be available. Try reloading the page.
@@ -226,7 +230,6 @@ const totalTasks = tasks.length;
 
 <style is:global>
   @import "../../styles/timeline-gantt.css";
-  @import "../../styles/inline-date-picker.css";
   @import "../../styles/field-picker-panel.css";
 </style>
 

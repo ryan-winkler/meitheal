@@ -224,7 +224,15 @@ details.filter-dropdown summary::-webkit-details-marker {
   display: none;
 }
 
-/* ---- Responsive: narrow HA ingress iframe ---- */
+/* ---- Responsive: tablet & narrow HA ingress iframe ---- */
+@media (max-width: 1120px) {
+  .filter-toolbar {
+    flex-wrap: wrap !important;
+    gap: 8px 12px !important;
+    min-width: 0;
+  }
+}
+
 @media (max-width: 640px) {
   .filter-toolbar {
     flex-basis: 100%;

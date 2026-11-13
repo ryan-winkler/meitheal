@@ -12,6 +12,7 @@ import {
   getPersistenceClient,
 } from "@domains/tasks/persistence/store";
 import { deriveEisenhowerQuadrant } from "@meitheal/domain-tasks";
+import { calendarDayFromInput, calendarToday } from "./date";
 import { frameworkPayloadObject, readRiceInputs, riceLensScore } from "./rice-lens"
 
 // =============================================================================
@@ -93,13 +94,11 @@ function safeParseLabels(value: unknown): string[] {
 // Overdue Detection
 // =============================================================================
 
-function isOverdue(dueDate: string | null, isDone: boolean): boolean {
+function isOverdue(dueDate: string | null, isDone: boolean, timezone = "Europe/Dublin"): boolean {
   if (!dueDate || isDone) return false;
-  const now = new Date();
-  now.setHours(0, 0, 0, 0);
-  const due = new Date(dueDate);
-  due.setHours(0, 0, 0, 0);
-  return due < now;
+  const dueDay = calendarDayFromInput(dueDate, timezone);
+  if (!dueDay) return false;
+  return dueDay < calendarToday(timezone);
 }
 
 // =============================================================================
@@ -119,7 +118,7 @@ const TASK_VIEW_COLUMNS = `
  * Load all tasks with computed fields for any task view page.
  * Returns structured task items with RICE scores, overdue flags, and counts.
  */
-export async function getTasksForView({ requireAvailable = false } = {}): Promise<TaskViewResult> {
+export async function getTasksForView({ requireAvailable = false, timezone = "Europe/Dublin" } = {}): Promise<TaskViewResult> {
   const emptyResult: TaskViewResult = {
     tasks: [],
     counts: { total: 0, open: 0, active: 0, pending: 0, complete: 0, overdue: 0 },
@@ -148,7 +147,7 @@ export async function getTasksForView({ requireAvailable = false } = {}): Promis
     const counts = { total: 0, open: 0, active: 0, pending: 0, complete: 0, overdue: 0 };
 
     const tasks = rows.map((row) => {
-      const task = toTaskViewItem(row);
+      const task = toTaskViewItem(row, timezone);
       counts.total++;
       if (task.is_done) counts.complete++;
       else if (task.deferred_at === null) {
@@ -167,7 +166,7 @@ export async function getTasksForView({ requireAvailable = false } = {}): Promis
   }
 }
 
-function toTaskViewItem(row: Record<string, unknown>): TaskViewItem {
+function toTaskViewItem(row: Record<string, unknown>, timezone = "Europe/Dublin"): TaskViewItem {
   const status = String(row.status ?? "pending");
   const priority = Number(row.priority ?? 3);
   const isDone = status === "complete";
@@ -176,7 +175,7 @@ function toTaskViewItem(row: Record<string, unknown>): TaskViewItem {
   const riceInputs = readRiceInputs(fp)
   const rice = riceInputs ? riceLensScore(riceInputs) : null
   const deferredAt = row.deferred_at == null ? null : Number(row.deferred_at)
-  const overdue = deferredAt === null && isOverdue(dueDate, isDone);
+  const overdue = deferredAt === null && isOverdue(dueDate, isDone, timezone);
 
   return {
     id: String(row.id),
@@ -230,11 +229,16 @@ function todayCompletionArgs(today: string): [number, number, string] {
   return [dayStart, dayStart + 86_400_000, today]
 }
 
-export function todayDueSection(dueDate: string, today: string, localDayStart: Date) {
-  const due = new Date(dueDate)
-  due.setHours(0, 0, 0, 0)
-  if (due < localDayStart) return "carried"
-  return dueDate === today ? "due" : null
+export function todayDueSection(
+  dueDate: string,
+  today: string,
+  timezoneOrLocalDayStart?: string | Date,
+): "due" | "carried" | null {
+  const timezone = typeof timezoneOrLocalDayStart === "string" ? timezoneOrLocalDayStart : "Europe/Dublin"
+  const dueDay = calendarDayFromInput(dueDate, timezone)
+  if (!dueDay) return null
+  if (dueDay < today) return "carried"
+  return dueDay === today ? "due" : null
 }
 
 export function todayCompletionPercent(completed: number, remaining: number): number {
@@ -253,7 +257,11 @@ export interface TodayTaskCounts {
  * Keep nonempty framework data eligible so the existing JavaScript RICE calculation
  * can handle imported values.
  */
-export async function getTodayTaskRows(today: string, includeUnscheduled: boolean) {
+export async function getTodayTaskRows(
+  today: string,
+  includeUnscheduled: boolean,
+  timezone = "Europe/Dublin",
+) {
   try {
     await ensureSchema()
     const { rows } = await getPersistenceClient().execute({
@@ -284,7 +292,7 @@ export async function getTodayTaskRows(today: string, includeUnscheduled: boolea
     return {
       completedTodayCount: Number(rows[0]?.completed_today ?? 0),
       openUnscheduledCount: Number(rows[0]?.open_unscheduled ?? 0),
-      tasks: rows.filter(row => row.id !== null).map(toTaskViewItem),
+      tasks: rows.filter(row => row.id !== null).map(row => toTaskViewItem(row, timezone)),
     }
   } catch {
     return { completedTodayCount: 0, openUnscheduledCount: 0, tasks: [] }
@@ -292,10 +300,8 @@ export async function getTodayTaskRows(today: string, includeUnscheduled: boolea
 }
 
 /** Refresh the visible counters without reading or serializing individual tasks. */
-export async function getTodayTaskCounts(now = new Date()): Promise<TodayTaskCounts> {
-  const today = now.toISOString().slice(0, 10)
-  const localDayStart = new Date(now)
-  localDayStart.setHours(0, 0, 0, 0)
+export async function getTodayTaskCounts(now = new Date(), timezone = "Europe/Dublin"): Promise<TodayTaskCounts> {
+  const today = calendarToday(timezone, now)
 
   await ensureSchema()
   const { rows } = await getPersistenceClient().execute({
@@ -325,7 +331,7 @@ export async function getTodayTaskCounts(now = new Date()): Promise<TodayTaskCou
       continue
     }
 
-    const section = todayDueSection(String(row.due_date), today, localDayStart)
+    const section = todayDueSection(String(row.due_date), today, timezone)
     if (section === "due") dueToday += Number(row.dated_count)
     if (section === "carried") carriedForward += Number(row.dated_count)
   }

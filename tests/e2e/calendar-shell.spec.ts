@@ -111,4 +111,15 @@ test.describe("Calendar Shell", () => {
     await expect(page).toHaveURL(/\/tasks\?status=active&priority=1&view=table#table$/)
     await expect(table).toHaveAttribute("aria-current", "page")
   })
+
+  test("calendar summary avoids singular/plural grammar mismatches", async ({ page, request }) => {
+    const today = new Date().toISOString().slice(0, 10)
+    await request.post("/api/tasks", { data: { title: "Single calendar summary task", due_date: today } })
+    await page.goto("/calendar")
+    await page.waitForLoadState("networkidle")
+    const summaryText = await page.locator("#calendar-signal-summary").innerText()
+    expect(summaryText).not.toMatch(/\b1 items\b/)
+    expect(summaryText).not.toMatch(/\b1 days\b/)
+    expect(summaryText).not.toMatch(/\b1 HA events\b/)
+  })
 })

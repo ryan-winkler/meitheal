@@ -75,7 +75,11 @@ const principlesListId = `pillar-principles-${id}`
   <div class="pillar-card__content">
     <div class="pillar-card__heading">
       <button type="button" class="pillar-card__header" data-action="open-detail" disabled aria-label={`View ${name} details`}>
-        <span class="pillar-card__icon" aria-hidden="true">{icon || "🏛️"}</span>
+        <span class="pillar-card__icon" aria-hidden="true">
+          {icon && icon !== "🏛️" ? icon : (
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18" /><path d="M3 10h18" /><path d="M5 6l7 -3l7 3" /><path d="M4 10v11" /><path d="M20 10v11" /><path d="M8 14v3" /><path d="M12 14v3" /><path d="M16 14v3" /></svg>
+          )}
+        </span>
         <div class="pillar-card__meta">
           <h3 class="pillar-card__name">{name}</h3>
           <div class="pillar-card__weight" title={`Weight: ${weight}/10`} aria-label={`Weight ${weight} of 10`}>
@@ -105,7 +109,9 @@ const principlesListId = `pillar-principles-${id}`
       <div class="pillar-card__principles-header">
         <button type="button" class="pillar-card__principles-toggle" data-principles-toggle
           aria-expanded="false" aria-controls={principlesListId} disabled={principles.length === 0}>
-          <span class="pillar-card__principles-chevron" aria-hidden="true">▶</span>
+          <span class="pillar-card__principles-chevron" aria-hidden="true">
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6l-6 6" /></svg>
+          </span>
           <span class="pillar-card__principles-label">
             Principles <span class="pillar-card__principles-count" data-principles-count>{principles.length}</span>
           </span>
@@ -117,13 +123,21 @@ const principlesListId = `pillar-principles-${id}`
       <ul class="pillar-card__principles-list" id={principlesListId} data-principles-list aria-hidden="true">
         {displayPrinciples.map((p) => (
           <li class:list={["pillar-card__principle", { "pillar-card__principle--non-negotiable": p.isNonNegotiable }]}>
-            {p.isNonNegotiable && <span class="pillar-card__principle-shield" title="Non-Negotiable — injected into AI prompts" aria-label="Non-Negotiable">🛡️</span>}
+            {p.isNonNegotiable && (
+              <span class="pillar-card__principle-shield" title="Non-Negotiable — injected into AI prompts" aria-label="Non-Negotiable">
+                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a12 12 0 0 0 8.5 3a12 12 0 0 1 -8.5 15a12 12 0 0 1 -8.5 -15a12 12 0 0 0 8.5 -3" /></svg>
+              </span>
+            )}
             <span class="pillar-card__principle-text">{p.statement}</span>
           </li>
         ))}
         {hiddenPrinciples.map((p) => (
           <li class:list={["pillar-card__principle pillar-card__principle--overflow", { "pillar-card__principle--non-negotiable": p.isNonNegotiable }]} data-overflow-principle aria-hidden="true">
-            {p.isNonNegotiable && <span class="pillar-card__principle-shield" title="Non-Negotiable — injected into AI prompts" aria-label="Non-Negotiable">🛡️</span>}
+            {p.isNonNegotiable && (
+              <span class="pillar-card__principle-shield" title="Non-Negotiable — injected into AI prompts" aria-label="Non-Negotiable">
+                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a12 12 0 0 0 8.5 3a12 12 0 0 1 -8.5 15a12 12 0 0 1 -8.5 -15a12 12 0 0 0 8.5 -3" /></svg>
+              </span>
+            )}
             <span class="pillar-card__principle-text">{p.statement}</span>
           </li>
         ))}
@@ -140,7 +154,9 @@ const principlesListId = `pillar-principles-${id}`
       </button>
       <template data-principle-row>
         <li class="pillar-card__principle">
-          <span class="pillar-card__principle-shield" aria-label="Non-Negotiable">🛡️</span>
+          <span class="pillar-card__principle-shield" aria-label="Non-Negotiable">
+            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a12 12 0 0 0 8.5 3a12 12 0 0 1 -8.5 15a12 12 0 0 1 -8.5 -15a12 12 0 0 0 8.5 -3" /></svg>
+          </span>
           <span class="pillar-card__principle-text"></span>
         </li>
       </template>
@@ -163,8 +179,8 @@ const principlesListId = `pillar-principles-${id}`
   position: relative;
   display: block;
   text-decoration: none;
-  color: inherit;
-  background: var(--surface);
+  color: var(--text-primary);
+  background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg, 12px);
   overflow: hidden;
@@ -196,7 +212,19 @@ const principlesListId = `pillar-principles-${id}`
 }
 
 .pillar-card__heading { display: flex; align-items: flex-start; gap: .5rem; }
-.pillar-card__edit, .pillar-card__add-principle-btn { min-height: 44px; white-space: nowrap; }
+.pillar-card__edit,
+.pillar-card__add-principle-btn {
+  min-height: 44px;
+  white-space: nowrap;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border-color: var(--border);
+}
+.pillar-card__edit:hover:not(:disabled),
+.pillar-card__add-principle-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
 
 .pillar-card__header {
   display: flex;
@@ -244,7 +272,7 @@ const principlesListId = `pillar-principles-${id}`
   margin: 0;
   font-size: 1rem;
   font-weight: 700;
-  color: var(--text);
+  color: var(--text-primary);
   line-height: 1.3;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -278,11 +306,11 @@ const principlesListId = `pillar-principles-${id}`
   margin: 0;
   padding: 0.75rem 1rem;
   border-left: 3px solid var(--pillar-accent);
-  background: color-mix(in srgb, var(--pillar-accent) 6%, transparent);
+  background: var(--bg-secondary);
   border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
   font-size: 0.9375rem;
   line-height: 1.5;
-  color: var(--text);
+  color: var(--text-primary);
   font-style: italic;
 }
 
@@ -292,13 +320,13 @@ const principlesListId = `pillar-principles-${id}`
   padding: 0.75rem 1rem;
   border-left: 3px dashed var(--border);
   font-size: 0.875rem;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   font-style: italic;
   text-decoration: none;
 }
 
 .pillar-card__manifesto-empty:hover {
-  color: var(--text);
+  color: var(--text-primary);
   border-left-color: var(--pillar-accent);
 }
 
@@ -420,19 +448,21 @@ const principlesListId = `pillar-principles-${id}`
 }
 
 .pillar-card__principle--non-negotiable .pillar-card__principle-text {
-  color: var(--text);
+  color: var(--text-primary);
 }
 
 .pillar-card__principle-shield {
   flex-shrink: 0;
-  font-size: 0.75rem;
+  display: inline-flex;
+  align-items: center;
+  color: var(--pillar-accent);
   line-height: 1.4;
 }
 
 .pillar-card__principle-text {
   flex: 1;
   overflow-wrap: anywhere;
-  color: var(--text-secondary, var(--text));
+  color: var(--text-secondary);
 }
 
 .pillar-card__principle--overflow {
@@ -481,10 +511,10 @@ const principlesListId = `pillar-principles-${id}`
   gap: 0.25rem;
   padding: 0.125rem 0.5rem;
   border-radius: var(--radius-full, 9999px);
-  background: var(--surface-raised, var(--surface));
+  background: var(--bg-secondary);
   border: 1px solid var(--border);
   font-size: 0.75rem;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   white-space: nowrap;
 }
 </style>

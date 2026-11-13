@@ -42,7 +42,7 @@ export function confirmDialog(options: ConfirmOptions): Promise<boolean> {
       variant === "danger"
         ? "#ffffff"
         : variant === "warning"
-          ? "#161108"
+          ? "var(--on-warning, #161108)"
           : "var(--personal-accent-foreground, var(--palette-on-accent, #07140f))";
 
     const overlay = document.createElement("div");

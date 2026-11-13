@@ -166,7 +166,7 @@ test.describe("framework import API and Settings", () => {
       page.on("request", req => { if (req.method() === "POST" && new URL(req.url()).pathname.endsWith("/api/frameworks")) requests.push(new URL(req.url()).pathname) })
       await page.goto(origin + prefix + "/settings", { waitUntil: "domcontentloaded" })
       await expect(page.locator("#settings-panels")).not.toHaveAttribute("inert", "")
-      await page.locator('[data-settings-nav="rules-lenses-settings"]').click()
+      await page.locator('[data-settings-nav="scoring-settings"]').click()
       await expect(page.locator("#fw-import-btn")).toBeVisible()
       const open = async () => { await page.locator("#fw-import-btn").click() }
       const submit = async (text: string) => {

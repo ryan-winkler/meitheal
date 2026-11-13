@@ -28,6 +28,7 @@ import { getPersistenceClient } from "@domains/tasks/persistence/store"
 import { TemplateRepository } from "@domains/tasks/persistence/template-repository"
 import type { HabitWithStats } from "@domains/tasks/persistence/template-repository"
 import { getTodayTaskRows, todayCompletionPercent, todayDueSection, type TaskViewItem } from "../lib/task-queries"
+import { calendarDayFromInput, calendarToday, formatRelativeDue, shiftCalendarDay } from "../lib/date"
 import { isFeatureEnabled } from "../lib/feature-flags"
 import { TODAY_SECTIONS } from "../lib/today-registry"
 import { getUnscheduledPage, requestedUnscheduledPage, setUnscheduledPage } from "../lib/today-list"
@@ -45,14 +46,13 @@ let currentStreak = 0
 let todayXP = 0
 let habits: HabitWithStats[] = []
 let habitsEnabled = false
+const todayTimeZone = Astro.locals.timezone || "Europe/Dublin"
 
 try {
-  const today = new Date()
-  const todayStr = today.toISOString().split("T")[0] ?? ""
+  const todayStr = calendarToday(todayTimeZone)
   const includeUnscheduled = requestedUnscheduledPage(Astro.url.searchParams) !== null
-  const { tasks, completedTodayCount: completed, openUnscheduledCount } = await getTodayTaskRows(todayStr, includeUnscheduled)
+  const { tasks, completedTodayCount: completed, openUnscheduledCount } = await getTodayTaskRows(todayStr, includeUnscheduled, todayTimeZone)
   completedTodayCount = completed
-  today.setHours(0, 0, 0, 0)
 
   // Partition tasks into sections
   for (const task of tasks) {
@@ -62,7 +62,7 @@ try {
     }
 
     if (task.due_date) {
-      const section = todayDueSection(task.due_date, todayStr, today)
+      const section = todayDueSection(task.due_date, todayStr, todayTimeZone)
 
       if (section === "carried") {
         // Carried forward (overdue)
@@ -79,17 +79,16 @@ try {
   }
 
   // Suggested: high-priority tasks due within 3 days + top-RICE unscheduled
-  const threeDaysOut = new Date(today)
-  threeDaysOut.setDate(threeDaysOut.getDate() + 3)
-  const threeDaysStr = threeDaysOut.toISOString().split("T")[0]!
+  const threeDaysStr = shiftCalendarDay(todayStr, 3)
 
   suggestedTasks = tasks.filter(t => {
     if (t.is_done) return false
+    const dueDay = t.due_date ? calendarDayFromInput(t.due_date, todayTimeZone) : null
     // Already in today or carried forward
-    if (t.due_date === todayStr) return false
+    if (dueDay === todayStr) return false
     if (t.is_overdue) return false
     // High priority due within 3 days
-    if (t.due_date && t.due_date <= threeDaysStr && t.priority <= 2) return true
+    if (dueDay && dueDay <= threeDaysStr && t.priority <= 2) return true
     // Top RICE unscheduled (not already in unscheduled section to avoid double)
     if (!t.due_date && t.rice !== null && t.rice >= 15) return true
     return false
@@ -102,10 +101,16 @@ try {
   // Focus Stack — top 3 actionable tasks ranked by urgency for ADHD decision support
   // Ranking: overdue first → highest priority → nearest due date
   const focusCandidates = tasks
-    .filter(t => !t.is_done && (t.due_date === todayStr || (t.due_date && new Date(t.due_date) < today)))
+    .filter(t => {
+      if (t.is_done || !t.due_date) return false
+      const dueDay = calendarDayFromInput(t.due_date, todayTimeZone)
+      return dueDay !== null && dueDay <= todayStr
+    })
     .sort((a, b) => {
-      const aOverdue = a.due_date && a.due_date < todayStr ? 1 : 0
-      const bOverdue = b.due_date && b.due_date < todayStr ? 1 : 0
+      const aDay = a.due_date ? calendarDayFromInput(a.due_date, todayTimeZone) : null
+      const bDay = b.due_date ? calendarDayFromInput(b.due_date, todayTimeZone) : null
+      const aOverdue = aDay && aDay < todayStr ? 1 : 0
+      const bOverdue = bDay && bDay < todayStr ? 1 : 0
       if (aOverdue !== bOverdue) return bOverdue - aOverdue
       const aPri = Number(a.priority ?? 3)
       const bPri = Number(b.priority ?? 3)
@@ -158,16 +163,12 @@ function unscheduledLink(page: number): string {
 const remainingCount = carriedForwardTasks.length + todayTasks.length + pinnedTasks.length
 const todayHeroSignal = `${todayTasks.length} due today · ${carriedForwardTasks.length} carried forward`
 const todayDate = new Date()
-const todayTimeZone = Astro.locals.timezone || "Europe/Dublin"
 const locale = Astro.cookies.get("meitheal-locale")?.value === "ga" ? "ga-IE" : "en-IE"
 const todayDateLabel = new Intl.DateTimeFormat(locale, {
   weekday: "long", day: "numeric", month: "long",
   timeZone: todayTimeZone,
 }).format(todayDate)
-const todayDateParts = new Intl.DateTimeFormat("en-IE", {
-  year: "numeric", month: "2-digit", day: "2-digit", timeZone: todayTimeZone,
-}).formatToParts(todayDate)
-const todayIsoDate = ["year", "month", "day"].map(type => todayDateParts.find(part => part.type === type)?.value).join("-")
+const todayIsoDate = calendarToday(todayTimeZone, todayDate)
 const completionPercent = todayCompletionPercent(completedTodayCount, remainingCount)
 ---
 
@@ -308,7 +309,7 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
                       <span
                         class={`focus-card__due ${task.is_overdue ? "focus-card__due--overdue" : ""}`}
                       >
-                        {task.is_overdue ? `⚠ Overdue` : `📅 ${task.due_date}`}
+                        {task.is_overdue ? "⚠ Overdue" : `📅 ${formatRelativeDue(task.due_date, todayTimeZone)}`}
                       </span>
                     )}
                   </div>

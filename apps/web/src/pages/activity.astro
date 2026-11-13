@@ -1,8 +1,10 @@
 ---
+import { getHABaseUrl } from "@domains/ha/ha-connection"
 import { getCurrentHAUserRoster } from "@domains/ha/ha-users"
 import { HierarchyRepository } from "@domains/tasks/persistence/hierarchy-repository"
 import { readRecentActivity, recentActivityPersonKey } from "@domains/tasks/persistence/recent-activity"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
+import { formatVerifiedAgentAuthor, resolveVerifiedProvenanceLink } from "@lib/recent-activity-actor"
 import { buildTaskPath } from "@lib/task-detail-handoff"
 import { formatTicketKey } from "@lib/ticket-key"
 import { verifiedIngressUser } from "@lib/verified-ingress-user"
@@ -29,6 +31,7 @@ let invalid = Boolean((areaId && areaId.length > 128) || (personKey && !/^[a-f0-
 let areas: Awaited<ReturnType<HierarchyRepository["findAllAreas"]>> = []
 let people = new Map<string, string>()
 let page: Awaited<ReturnType<typeof readRecentActivity>> = { items: [], next: null }
+let haBaseUrl: string | null = null
 let unavailable = false
 
 if (!invalid) {
@@ -43,7 +46,12 @@ if (!invalid) {
       people.set(key, (names.get(name) ?? 0) > 1 ? `${name} · ${key.slice(-6)}` : name)
     }
     invalid = Boolean((areaId && !areas.some(area => area.id === areaId)) || (personKey && !people.has(personKey)))
-    if (!invalid) page = await readRecentActivity(client, { areaId, personKey, before })
+    if (!invalid) {
+      page = await readRecentActivity(client, { areaId, personKey, before })
+      if (page.items.some(item => item.kind === "agent" && item.provenance?.originTarget && !item.provenance.originTarget.startsWith("/settings"))) {
+        haBaseUrl = await getHABaseUrl().catch(() => null)
+      }
+    }
   } catch {
     unavailable = true
   }
@@ -102,7 +110,12 @@ const date = new Intl.DateTimeFormat(locale === "ga" ? "ga-IE" : "en-IE", { date
             {page.items.map(item => {
               const author = item.personKey
                 ? people.get(item.personKey) ?? t("recent_activity.member", locale)
-                : t(item.kind === "agent" ? "recent_activity.automation" : "recent_activity.local", locale)
+                : item.kind === "agent" && item.provenance
+                  ? formatVerifiedAgentAuthor(item.provenance)
+                  : t(item.kind === "agent" ? "recent_activity.automation" : "recent_activity.local", locale)
+              const provenanceLink = item.kind === "agent" && item.provenance
+                ? resolveVerifiedProvenanceLink(item.provenance, haBaseUrl, locale)
+                : null
               return (
                 <li class="activity-entry" data-activity-event={item.id}>
                   <div>
@@ -110,6 +123,20 @@ const date = new Intl.DateTimeFormat(locale === "ga" ? "ga-IE" : "en-IE", { date
                     <a href={buildTaskPath(item.taskId)} data-astro-prefetch="false">
                       {item.ticketNumber && <span>{formatTicketKey(item.ticketNumber)} </span>}{item.title}
                     </a>
+                    {provenanceLink && (
+                      <p class="activity-provenance">
+                        <a
+                          href={provenanceLink.href}
+                          class="activity-provenance-link"
+                          data-astro-prefetch={provenanceLink.isInternal ? "false" : undefined}
+                          data-ha-target={provenanceLink.haTarget}
+                          target={provenanceLink.isExternalHa ? "_top" : undefined}
+                          rel={provenanceLink.isExternalHa ? "noopener noreferrer" : undefined}
+                        >
+                          {provenanceLink.label}
+                        </a>
+                      </p>
+                    )}
                   </div>
                   <div class="activity-meta">
                     <span>{item.areaName ?? t("recent_activity.no_area", locale)}</span>
@@ -134,7 +161,14 @@ const date = new Intl.DateTimeFormat(locale === "ga" ? "ga-IE" : "en-IE", { date
 
   pageLifecycle.onPageLoad(signal => {
     const section = document.querySelector<HTMLElement>("[data-recent-activity]")
-    if (!section || section.dataset.historyGuard) return
+    if (!section) return
+    section.querySelectorAll<HTMLAnchorElement>("a[data-ha-target]").forEach(link => {
+      const targetPath = link.dataset.haTarget
+      if (targetPath && targetPath.startsWith("/") && !targetPath.startsWith("//") && !targetPath.startsWith("/\\")) {
+        link.setAttribute("href", targetPath)
+      }
+    })
+    if (section.dataset.historyGuard) return
     section.dataset.historyGuard = "true"
 
     window.addEventListener("pagehide", event => {
@@ -205,6 +239,8 @@ const date = new Intl.DateTimeFormat(locale === "ga" ? "ga-IE" : "en-IE", { date
   .activity-entry a { color: var(--accent-text); font-weight: 600; text-decoration: underline; }
   .activity-entry a:hover { text-decoration-thickness: 2px; }
   .activity-action { margin-block: 0 .25rem; }
+  .activity-provenance { margin-block: .25rem 0; font-size: .875rem; }
+  .activity-provenance-link { font-weight: 500; }
   .activity-meta { display: grid; gap: .25rem; font-size: .875rem; text-align: end; }
 
   @media (max-width: 520px) {

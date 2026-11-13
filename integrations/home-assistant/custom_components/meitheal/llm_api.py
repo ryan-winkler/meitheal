@@ -18,6 +18,26 @@ from .const import DOMAIN
 from .coordinator import MeithealCoordinator, MeithealTask
 
 
+def resolve_llm_origin(llm_context: llm.LLMContext) -> tuple[str, str, str]:
+    """Derive verified conversation-agent provenance from HA LLMContext."""
+    platform = str(getattr(llm_context, "platform", "") or "").strip()
+    assistant = str(getattr(llm_context, "assistant", "") or "").strip()
+    combined = f"{assistant} {platform}".lower()
+    if "gemini" in combined or "google_generative_ai" in combined:
+        origin_name = "Gemini Conversation"
+    elif "openai" in combined or "chatgpt" in combined:
+        origin_name = "OpenAI Conversation"
+    elif "anthropic" in combined or "claude" in combined:
+        origin_name = "Claude Conversation"
+    elif assistant and assistant.lower() not in ("conversation", "home assistant"):
+        origin_name = f"Home Assistant Assist ({assistant})"
+    elif platform and platform.lower() not in ("conversation", "homeassistant", "test"):
+        origin_name = f"Home Assistant Assist ({platform.replace('_', ' ').strip().title()})"
+    else:
+        origin_name = "Home Assistant Conversation"
+    return ("conversation_agent", origin_name, "/config/voice-assistants/assistants")
+
+
 class MeithealLLMAPI(llm.API):
     """Expose task management tools bound to one loaded Meitheal config entry."""
 
@@ -200,12 +220,16 @@ class CreateTaskTool(_MeithealBaseTool):
     ) -> llm.ToolResult:
         """Create a Meitheal task for an authorized administrator."""
         coordinator, args = await self._async_prepare(tool_input, llm_context)
+        origin_kind, origin_name, origin_target = resolve_llm_origin(llm_context)
         await coordinator.async_create_task(
             title=args["title"],
             description=args.get("description"),
             priority=args.get("priority"),
             due_date=args.get("due_date"),
             assigned_to=args.get("assigned_to"),
+            origin_kind=origin_kind,
+            origin_name=origin_name,
+            origin_target=origin_target,
         )
         return llm.ToolResult({"status": "created", "title": args["title"]})
 
@@ -243,7 +267,14 @@ class CompleteTaskTool(_MeithealBaseTool):
                 translation_domain=DOMAIN,
                 translation_key="missing_task_identifier",
             )
-        await coordinator.async_complete_task(task_id=task_id, title=title)
+        origin_kind, origin_name, origin_target = resolve_llm_origin(llm_context)
+        await coordinator.async_complete_task(
+            task_id=task_id,
+            title=title,
+            origin_kind=origin_kind,
+            origin_name=origin_name,
+            origin_target=origin_target,
+        )
         return llm.ToolResult({"status": "completed", "task_id": task_id, "title": title})
 
 

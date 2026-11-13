@@ -476,22 +476,38 @@ const taskKinds = [
     100% { transform: scale(1); }
   }
 
-  /* ── ⋯ + action pair — P1-6: delayed fade reveal, P0-3: bigger touch targets ── */
+  /* ── ⋯ + action pair — collapsed in layout until hover/focus-within (keeps Tab order intact) ── */
   .stree__actions {
     display: flex;
     align-items: center;
     gap: 2px;
     flex-shrink: 0;
+    max-width: 0;
     opacity: 0;
-    transition: opacity 120ms 50ms ease;
+    overflow: hidden;
+    transition:
+      max-width 180ms cubic-bezier(0.23, 1, 0.32, 1),
+      opacity 150ms cubic-bezier(0.23, 1, 0.32, 1);
   }
   .stree__area-row:hover .stree__actions,
+  .stree__area-row:focus-within .stree__actions,
   .stree__project:hover > .stree__actions,
+  .stree__project:focus-within > .stree__actions,
   .stree__actions:focus-within {
+    max-width: 68px;
     opacity: 1;
+    overflow: visible;
   }
   .stree__area-row:hover .stree__count,
-  .stree__project:hover > .stree__count { opacity: 0; }
+  .stree__area-row:focus-within .stree__count,
+  .stree__project:hover > .stree__count,
+  .stree__project:focus-within > .stree__count {
+    opacity: 0;
+    max-width: 0;
+    min-width: 0;
+    padding: 0;
+    overflow: hidden;
+  }
 
   .stree__action-btn {
     background: none;
@@ -524,11 +540,11 @@ const taskKinds = [
   .stree__children {
     display: flex;
     flex-direction: column;
-    padding-left: 10px;
+    padding-left: 6px;
     overflow: hidden;
     max-height: 600px;
     opacity: 1;
-    transition: max-height 200ms ease-out, opacity 150ms ease-out;
+    transition: max-height 200ms cubic-bezier(0.23, 1, 0.32, 1), opacity 150ms cubic-bezier(0.23, 1, 0.32, 1);
   }
   .stree__children[data-collapsed="true"] {
     max-height: 0;
@@ -543,19 +559,20 @@ const taskKinds = [
     gap: 0;
     position: relative;
     min-height: 32px;
+    padding-right: 4px;
   }
 
   /* ── Tree connector lines — P0-2: softer, rounded bend ── */
   .stree__connector {
     position: relative;
-    width: 16px;
+    width: 12px;
     height: 100%;
     flex-shrink: 0;
     align-self: stretch;
   }
   .stree__line-v {
     position: absolute;
-    left: 6px;
+    left: 4px;
     top: 0;
     bottom: 0;
     width: 1px;
@@ -564,9 +581,9 @@ const taskKinds = [
   .stree__project--last .stree__line-v { bottom: 50%; }
   .stree__line-h {
     position: absolute;
-    left: 6px;
+    left: 4px;
     top: 50%;
-    width: 9px;
+    width: 7px;
     height: 1px;
     background: rgba(var(--border-rgb), 0.18);
   }
@@ -574,7 +591,7 @@ const taskKinds = [
   .stree__project--last .stree__connector::after {
     content: '';
     position: absolute;
-    left: 6px;
+    left: 4px;
     top: 50%;
     width: 4px;
     height: 4px;
@@ -627,6 +644,8 @@ const taskKinds = [
   }
   .stree__project-icon { font-size: 13px; flex-shrink: 0; line-height: 1; }
   .stree__project-name {
+    flex: 1;
+    min-width: 0;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -912,7 +931,9 @@ const taskKinds = [
 
     .stree__actions {
       gap: 4px;
+      max-width: none;
       opacity: 1;
+      overflow: visible;
     }
 
     .stree__count {

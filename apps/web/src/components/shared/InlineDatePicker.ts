@@ -216,28 +216,42 @@ export class InlineDatePicker {
     }
   }
 
+  private clampPanelPosition(panel: HTMLElement) {
+    const triggerRect = this.trigger?.getBoundingClientRect()
+    if (!triggerRect) return
+
+    const margin = 8
+    const panelRect = panel.getBoundingClientRect()
+    const panelWidth = panelRect.width || 420
+    const panelHeight = panelRect.height || 320
+
+    const preferredLeft = triggerRect.left
+    const maxLeft = Math.max(margin, window.innerWidth - panelWidth - margin)
+    const left = Math.max(margin, Math.min(preferredLeft, maxLeft))
+
+    const spaceBelow = window.innerHeight - triggerRect.bottom - margin
+    const spaceAbove = triggerRect.top - margin
+    let preferredTop = triggerRect.bottom + 4
+    if (spaceBelow < panelHeight && spaceAbove >= panelHeight) {
+      preferredTop = triggerRect.top - panelHeight - 4
+    }
+    const maxTop = Math.max(margin, window.innerHeight - panelHeight - margin)
+    const top = Math.max(margin, Math.min(preferredTop, maxTop))
+
+    panel.style.position = "fixed"
+    panel.style.left = `${left}px`
+    panel.style.top = `${top}px`
+    panel.style.bottom = ""
+    panel.style.zIndex = "10000"
+  }
+
   private openPanel() {
     this.closePanel()
 
     const panel = document.createElement("div")
     panel.className = "idp-panel"
-
-    // Position relative to trigger
-    const triggerRect = this.trigger?.getBoundingClientRect()
-    if (triggerRect) {
-      const spaceBelow = window.innerHeight - triggerRect.bottom
-      const panelHeight = 320
-
-      panel.style.position = "fixed"
-      panel.style.left = `${Math.max(8, triggerRect.left - 100)}px`
-      panel.style.zIndex = "10000"
-
-      if (spaceBelow >= panelHeight) {
-        panel.style.top = `${triggerRect.bottom + 4}px`
-      } else {
-        panel.style.bottom = `${window.innerHeight - triggerRect.top + 4}px`
-      }
-    }
+    panel.setAttribute("role", "dialog")
+    panel.setAttribute("aria-label", "Choose date")
 
     // Left side: Quick options
     const quickSide = document.createElement("div")
@@ -276,6 +290,10 @@ export class InlineDatePicker {
 
     this.panel = panel
     document.body.appendChild(panel)
+    this.clampPanelPosition(panel)
+    requestAnimationFrame(() => {
+      if (this.panel === panel) this.clampPanelPosition(panel)
+    })
 
     // Close on outside click
     const closeHandler = (e: MouseEvent) => {
@@ -404,6 +422,11 @@ export class InlineDatePicker {
     }
 
     container.appendChild(grid)
+    if (this.panel && this.panel.isConnected) {
+      requestAnimationFrame(() => {
+        if (this.panel && this.panel.isConnected) this.clampPanelPosition(this.panel)
+      })
+    }
   }
 
   private createDayCell(

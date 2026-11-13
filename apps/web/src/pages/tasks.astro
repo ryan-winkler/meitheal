@@ -46,7 +46,7 @@ const cookieLocale = Astro.cookies.get("meitheal-locale")?.value;
 const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
 const renderedView = parseTaskView(Astro.url.searchParams.get("view")) ?? "kanban"
 const viewLabels = { kanban: "Kanban", table: "Table", calendar: "Calendar", timeline: "Timeline" }
-const viewIcons = { kanban: "▦", table: "⊞", calendar: "🗓️", timeline: "📊" }
+const viewIcons = { kanban: "kanban", table: "table", calendar: "calendar", timeline: "timeline" }
 const heading = renderedView === "kanban" ? t("kanban.title", locale)
   : renderedView === "table" ? "Table View" : viewLabels[renderedView]
 const currentUrl = new URL(Astro.url)
@@ -1064,7 +1064,7 @@ try {
     padding: 12px 16px;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
     position: relative;
-    z-index: 100;
+    z-index: 25;
   }
   
   /* View-specific toolbar actions: see <style is:global> block above */
@@ -1112,7 +1112,7 @@ try {
 
   /* The open area picker overlays the filter row, which has its own stacking context. */
   :global(#kanban-bar:has(#area-selector-trigger[aria-expanded="true"])) {
-    z-index: 110;
+    z-index: 35;
   }
 
   /* Tablet: horizontal scroll with minimum column widths */

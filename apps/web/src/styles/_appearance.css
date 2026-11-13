@@ -258,7 +258,7 @@
     border-right: 0;
     border-bottom: 1px solid var(--border);
   }
-  :root[data-appearance-navigation="navbar"] #sidebar :is(.sidebar-toggle-top, .sidebar-ipa, .sidebar-compact-areas, .sidebar-gamification-wrapper) { display: none; }
+  :root[data-appearance-navigation="navbar"] #sidebar :is(.sidebar-toggle-top, .sidebar-edge-toggle, .sidebar-cta-wrap, .sidebar-rail-cta, .sidebar-ipa, .sidebar-compact-areas, .sidebar-gamification-wrapper) { display: none; }
   :root[data-appearance-navigation="navbar"] #sidebar .sidebar-header {
     flex: none;
     margin: 0;
@@ -348,7 +348,11 @@
   }
   :root[data-appearance-navigation="navbar"]:not([data-appearance-header="default"]) #settings-directory { top: calc(78px + var(--appearance-navbar-offset)); }
   :root[data-appearance-header="default"] #settings-directory { top: 16px; }
-  :root[data-appearance-navigation="sidebar"][data-appearance-sidebar="hover"] .main-content { margin-left: 60px; }
+  :root[data-appearance-navigation="sidebar"][data-appearance-sidebar="hover"] .main-content { margin-left: 64px; }
+  :root[data-appearance-navigation="sidebar"][data-appearance-sidebar="hover"] body:not(.sidebar-collapsed) #sidebar {
+    z-index: 50;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.24);
+  }
   :root[data-appearance-nav-style="floating"][data-appearance-navigation="sidebar"] #sidebar {
     inset-block: 8px;
     inset-inline-start: 8px;
@@ -357,7 +361,8 @@
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-lg);
   }
-  :root[data-appearance-nav-style="floating"][data-appearance-navigation="sidebar"] body:not(.sidebar-collapsed) .main-content { margin-left: calc(var(--sidebar-width, 240px) + 16px); }
+  :root[data-appearance-nav-style="floating"][data-appearance-navigation="sidebar"] body:not(.sidebar-collapsed) .main-content { margin-left: calc(var(--sidebar-width, 248px) + 16px); }
+  :root[data-appearance-nav-style="floating"][data-appearance-navigation="sidebar"] body.sidebar-collapsed #sidebar { inset-inline-start: 6px; }
   :root[data-appearance-nav-style="floating"][data-appearance-navigation="sidebar"] body.sidebar-collapsed .main-content { margin-left: 76px; }
   :root[data-appearance-navigation="sidebar"][data-appearance-sidebar="hover"][data-appearance-nav-style="floating"] body .main-content { margin-left: 76px; }
   :root[data-appearance-nav-style="floating"][data-appearance-navigation="navbar"] { --appearance-navbar-offset: 80px; }

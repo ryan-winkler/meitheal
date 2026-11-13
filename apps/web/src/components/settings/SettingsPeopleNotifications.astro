@@ -1,0 +1,751 @@
+---
+import type { Locale } from "../../lib/locale"
+import { SETTINGS_SECTIONS } from "../../lib/settings-registry"
+import SettingsActionRow from "./SettingsActionRow.astro"
+import SettingsPanelCard from "./SettingsPanelCard.astro"
+import SettingsSectionIntro from "./SettingsSectionIntro.astro"
+
+interface Props {
+  locale: Locale
+}
+const { locale } = Astro.props
+void locale
+
+const peopleNotificationsSection = SETTINGS_SECTIONS.find((section) => section.id === "people-notifications-settings")!
+---
+
+<section
+  id="people-notifications-settings"
+  class="settings-shell__section"
+  data-settings-shell-section
+  hidden
+>
+  <SettingsSectionIntro section={peopleNotificationsSection} />
+  <div class="settings-grid">
+    <!-- Users & Assignment -->
+    <SettingsPanelCard
+      title="👤 Users & Assignment"
+      subtitle="Manage task assignees. Home Assistant users are discovered automatically. Add custom users for non-HA household members."
+    >
+      <div class="settings-stack">
+        <!-- Default Assignee -->
+        <div>
+          <label
+            for="default-assignee-select"
+            class="settings-label"
+            >Default Assignee</label
+          >
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <select
+              id="default-assignee-select"
+              class="form-select settings-input-narrow"
+              aria-label="Default task assignee"
+            >
+              <option value="">None (unassigned)</option>
+            </select>
+            <button
+              type="button"
+              class="btn btn-primary settings-text-sm"
+              id="save-default-assignee"
+              >Save</button
+            >
+          </div>
+          <p class="settings-hint">
+            New tasks will be assigned to this user by default.
+          </p>
+        </div>
+
+        <!-- Discovered Users -->
+        <div>
+          <div style="font-weight: 600; font-size: 13px; margin-bottom: 6px;">
+            Discovered Users
+          </div>
+          <div
+            id="discovered-users-list"
+            class="settings-stack--xs"
+          >
+            <span class="settings-description">Loading…</span>
+          </div>
+        </div>
+
+        <!-- Custom Users -->
+        <div class="settings-section-divider">
+          <div
+            style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;"
+          >
+            <div style="font-weight: 600; font-size: 13px;">Custom Users</div>
+          </div>
+          <div
+            id="custom-users-list"
+            style="display: flex; flex-direction: column; gap: 6px;"
+          >
+          </div>
+          <SettingsActionRow style="margin-top: 10px;">
+            <input
+              type="text"
+              id="new-custom-user-name"
+              class="form-input"
+              placeholder="Name (e.g. Emma)"
+              style="flex: 1; max-width: 200px;"
+              aria-label="New custom user name"
+            />
+            <button
+              type="button"
+              class="btn btn-ghost settings-text-sm"
+              id="add-custom-user-btn"
+              >+ Add User</button
+            >
+          </SettingsActionRow>
+        </div>
+      </div>
+    </SettingsPanelCard>
+
+    <!-- Notifications -->
+    <SettingsPanelCard
+      title="🔔 Notifications"
+      subtitle="Control how Meitheal sends notifications to Home Assistant. Toggle globally or per user."
+    >
+      <div class="settings-stack">
+        <!-- Global toggle -->
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <label class="toggle-switch shrink-0">
+            <input type="checkbox" id="notif-global-toggle" aria-labelledby="notif-global-toggle-label" checked />
+            <span class="toggle-slider"></span>
+          </label>
+          <div>
+            <div id="notif-global-toggle-label" style="font-weight: 600; font-size: 13px;">
+              Enable notifications
+            </div>
+            <div class="settings-hint--sm">
+              Task assignments, urgent escalations, and due-date reminders trigger
+              notifications.
+            </div>
+          </div>
+        </div>
+
+        <!-- Notification Channels -->
+        <div style="border-top: 1px solid var(--border); padding-top: 12px;">
+          <div style="font-weight: 600; font-size: 13px; margin-bottom: 8px;">
+            Notification channels
+          </div>
+          <div class="settings-stack--sm">
+            <!-- Sidebar Bell -->
+            <div class="settings-row">
+              <label class="toggle-switch shrink-0">
+                <input type="checkbox" id="notif-channel-sidebar" aria-labelledby="notif-channel-sidebar-label" checked />
+                <span class="toggle-slider"></span>
+              </label>
+              <div class="flex-1">
+                <div id="notif-channel-sidebar-label" class="settings-label--inline">
+                  🔔 HA Sidebar Bell
+                </div>
+                <div class="settings-hint--sm">
+                  Appears in the Home Assistant notification bell. Silent — no
+                  sound or vibration.
+                </div>
+              </div>
+            </div>
+            <!-- Mobile Push -->
+            <div class="settings-row">
+              <label class="toggle-switch shrink-0">
+                <input type="checkbox" id="notif-channel-mobile" aria-labelledby="notif-channel-mobile-label" />
+                <span class="toggle-slider"></span>
+              </label>
+              <div class="flex-1">
+                <div id="notif-channel-mobile-label" class="settings-label--inline">
+                  📱 Mobile Push
+                </div>
+                <div class="settings-hint--sm">
+                  Push notification to HA Companion App with sound and vibration.
+                </div>
+              </div>
+            </div>
+            <!-- Mobile push target selector (shown when mobile push enabled) -->
+            <div
+              id="notif-mobile-targets"
+              style="display: none; padding: 8px 12px 12px 48px;"
+            >
+              <div
+                style="font-size: 12px; color: var(--text-secondary); margin-bottom: 6px;"
+              >
+                Select which devices receive push notifications:
+              </div>
+              <div
+                id="notif-mobile-target-list"
+                class="settings-stack--xs"
+              >
+                <span class="settings-description">Discovering devices…</span>
+              </div>
+            </div>
+            <!-- Due-Date Reminders toggle (F12) -->
+            <div class="settings-row">
+              <label class="toggle-switch shrink-0">
+                <input type="checkbox" id="notif-channel-reminders" aria-labelledby="notif-channel-reminders-label" checked />
+                <span class="toggle-slider"></span>
+              </label>
+              <div class="flex-1">
+                <div id="notif-channel-reminders-label" class="settings-label--inline">
+                  ⏰ Due-Date Reminders
+                </div>
+                <div class="settings-hint--sm">
+                  Sends reminder notifications for tasks due within the configured
+                  window.
+                </div>
+              </div>
+            </div>
+            <!-- Reminder window config -->
+            <div id="reminder-window-config" style="padding: 4px 12px 4px 48px;">
+              <label
+                style="font-size: 12px; color: var(--text-secondary); display: flex; align-items: center; gap: 8px;"
+              >
+                Remind
+                <input
+                  type="number"
+                  id="notif-reminder-minutes"
+                  min="5"
+                  max="1440"
+                  value="60"
+                  style="width: 60px; padding: 3px 6px; border: 1px solid var(--border); border-radius: 4px; font-size: 12px; background: var(--bg-primary);"
+                />
+                minutes before due
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <!-- Per-user toggles (populated by JS) -->
+        <div
+          id="notif-user-toggles"
+          style="display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--border); padding-top: 12px;"
+        >
+          <div style="font-weight: 600; font-size: 13px; margin-bottom: 4px;">
+            Per-user overrides
+          </div>
+          <span class="settings-description">Loading users…</span>
+        </div>
+
+        <button
+          type="button"
+          class="btn btn-primary"
+          id="save-notif-prefs"
+          style="font-size: 13px; align-self: flex-start; min-width: 200px;"
+        >
+          Save notification preferences
+        </button>
+      </div>
+    </SettingsPanelCard>
+  </div>
+</section>
+
+<script is:inline>
+  (function (initNotifications) {
+    var bp = window.__ingress_path || "";
+
+    let usersRead = 0
+
+    async function readUsersJson(path) {
+      try {
+        const response = await fetch(bp + path)
+        return response.ok ? await response.json() : null
+      } catch {
+        return null
+      }
+    }
+
+    async function refreshUsers() {
+      const read = ++usersRead
+      const merged = await readUsersJson("/api/users")
+      const users = Array.isArray(merged?.users) ? merged.users : null
+      const [defaultAssignee, customUsers] = await Promise.all([
+        merged && Object.hasOwn(merged, "default_assignee")
+          ? merged.default_assignee
+          : readUsersJson("/api/users/default").then(data => data?.default_assignee),
+        users
+          ? users.filter(user => user.source === "custom")
+          : readUsersJson("/api/users/custom").then(data => data?.users ?? []),
+      ])
+
+      // A successful mutation may start a newer read while an older one is pending.
+      if (read !== usersRead) return
+      renderPeople?.(users ?? customUsers, defaultAssignee, customUsers, users === null)
+      renderNotificationUsers?.(users ?? customUsers)
+    }
+
+    /** Create a styled element without innerHTML */
+    function makeEl(tag, styles, text) {
+      var el = document.createElement(tag);
+      if (styles) el.style.cssText = styles;
+      if (text !== undefined) el.textContent = text;
+      return el;
+    }
+
+    /** Build an avatar initials badge (safe — textContent only) */
+    function makeAvatar(name, bg) {
+      var initials = (name || "??").slice(0, 2).toUpperCase();
+      var el = makeEl(
+        "span",
+        "display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%; color: #fff; font-size: 11px; font-weight: 700; background: " +
+          (bg || "var(--accent)"),
+        initials,
+      );
+      return el;
+    }
+
+    function initUsersCard() {
+      var select = document.getElementById("default-assignee-select");
+      var discoveredList = document.getElementById("discovered-users-list");
+      var customList = document.getElementById("custom-users-list");
+      if (!select) return;
+
+      function render(allUsers, defaultAssignee, customUsers, mergedUnavailable) {
+        // Populate default-assignee dropdown (safe: option textContent)
+        select.innerHTML = "";
+        var noneOpt = document.createElement("option");
+        noneOpt.value = "";
+        noneOpt.textContent = "None (unassigned)";
+        select.appendChild(noneOpt);
+
+        allUsers.forEach(function (u) {
+          var opt = document.createElement("option");
+          opt.value = u.id;
+          opt.textContent =
+            (u.display_name || u.name || u.id) +
+            (u.source === "home_assistant" ? " (HA)" : " (Custom)");
+          select.appendChild(opt);
+        });
+        if (defaultAssignee) {
+          select.value = defaultAssignee;
+        }
+
+        // Discovered (HA) users list — safe DOM only
+        var haUsers = allUsers.filter(function (u) {
+          return u.source === "home_assistant";
+        });
+        if (discoveredList) {
+          discoveredList.innerHTML = "";
+          if (haUsers.length === 0) {
+            discoveredList.appendChild(
+              makeEl(
+                "span",
+                "color: var(--text-secondary); font-size: 12px; font-style: italic;",
+                mergedUnavailable ? "Could not load Home Assistant users" : "No HA users found (standalone mode?)",
+              ),
+            );
+          } else {
+            haUsers.forEach(function (u) {
+              var row = makeEl(
+                "div",
+                "display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 6px;",
+              );
+              row.appendChild(
+                makeAvatar(u.display_name || u.name, "var(--accent)"),
+              );
+              row.appendChild(
+                makeEl(
+                  "span",
+                  "font-size: 13px; font-weight: 500;",
+                  u.display_name || u.name || u.id,
+                ),
+              );
+              row.appendChild(
+                makeEl(
+                  "span",
+                  "font-size: 12px; color: var(--text-secondary); font-family: var(--font-mono);",
+                  u.id,
+                ),
+              );
+              discoveredList.appendChild(row);
+            });
+          }
+        }
+
+        renderCustomUsers(customUsers);
+      }
+
+      function renderCustomUsers(users) {
+        if (!customList) return;
+        customList.innerHTML = "";
+        if (users.length === 0) {
+          customList.appendChild(
+            makeEl(
+              "span",
+              "color: var(--text-secondary); font-size: 12px; font-style: italic;",
+              "No custom users added yet",
+            ),
+          );
+          return;
+        }
+        users.forEach(function (u) {
+          var row = makeEl(
+            "div",
+            "display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 6px;",
+          );
+          row.appendChild(
+            makeAvatar(u.display_name || u.name, "var(--warning, #f59e0b)"),
+          );
+          row.appendChild(
+            makeEl(
+              "span",
+              "font-size: 13px; font-weight: 500; flex: 1;",
+              u.display_name || u.name || u.id,
+            ),
+          );
+
+          var delBtn = document.createElement("button");
+          delBtn.type = "button";
+          delBtn.className = "btn-icon text-danger";
+          delBtn.style.cssText = "font-size: 16px; cursor: pointer;";
+          delBtn.textContent = "×";
+          delBtn.title = "Remove user";
+          delBtn.setAttribute(
+            "aria-label",
+            "Remove " + (u.display_name || u.name || "user"),
+          );
+          delBtn.setAttribute("data-user-id", u.id);
+          delBtn.addEventListener("click", function () {
+            fetch(bp + "/api/users/custom?id=" + encodeURIComponent(u.id), {
+              method: "DELETE",
+            })
+              .then(function (response) {
+                if (!response.ok) throw new Error("Delete custom user failed: " + response.status)
+                return refreshUsers()
+              })
+              .catch(function (err) {
+                ;(window.__mLog ? window.__mLog("settings", "people") : console).error("Delete custom user error:", err);
+              });
+          });
+          row.appendChild(delBtn);
+
+          customList.appendChild(row);
+        });
+      }
+
+      // Save default assignee
+      document
+        .getElementById("save-default-assignee")
+        ?.addEventListener("click", function () {
+          var val = select.value;
+          fetch(bp + "/api/users/default", {
+            method: "PUT",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ user_id: val || null }),
+          })
+            .then(function (response) {
+              if (!response.ok) throw new Error("Save default assignee failed: " + response.status)
+              if (typeof window.showToast === "function")
+                window.showToast("Default assignee saved");
+            })
+            .catch(function (err) {
+              ;(window.__mLog ? window.__mLog("settings", "people") : console).error("Save default assignee error:", err);
+            });
+        });
+
+      // Add custom user
+      document
+        .getElementById("add-custom-user-btn")
+        ?.addEventListener("click", function () {
+          var input = document.getElementById("new-custom-user-name");
+          var name = (input?.value || "").trim();
+          if (!name) {
+            input?.focus();
+            return;
+          }
+          fetch(bp + "/api/users/custom", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ name: name }),
+          })
+            .then(function (res) {
+              if (res.ok) {
+                input.value = "";
+                return refreshUsers()
+              }
+            })
+            .catch(function (err) {
+              ;(window.__mLog ? window.__mLog("settings", "people") : console).error("Add custom user error:", err);
+            });
+        });
+      return render
+    }
+
+    const renderPeople = initUsersCard()
+    const renderNotificationUsers = initNotifications(bp)
+    void refreshUsers()
+  })(function initNotifications(bp) {
+    var globalToggle = document.getElementById("notif-global-toggle");
+    var sidebarCb = document.getElementById("notif-channel-sidebar");
+    var mobileCb = document.getElementById("notif-channel-mobile");
+    var remindersCb = document.getElementById("notif-channel-reminders");
+    var reminderMinutesInput = document.getElementById(
+      "notif-reminder-minutes",
+    );
+    var reminderWindowConfig = document.getElementById(
+      "reminder-window-config",
+    );
+    var mobileTargetsPanel = document.getElementById("notif-mobile-targets");
+    var mobileTargetList = document.getElementById("notif-mobile-target-list");
+    var userTogglesContainer = document.getElementById("notif-user-toggles");
+    var saveBtn = document.getElementById("save-notif-prefs");
+    if (!globalToggle || !userTogglesContainer) return;
+
+    var prefs = {
+      enabled: true,
+      disabled_users: [],
+      channels: { sidebar: true, mobile_push: false },
+      mobile_targets: [],
+      due_date_reminders: true,
+      reminder_window_minutes: 60,
+    };
+
+    // Toggle mobile target panel visibility
+    function updateMobilePanel() {
+      if (mobileTargetsPanel) {
+        mobileTargetsPanel.style.display =
+          mobileCb && mobileCb.checked ? "block" : "none";
+      }
+    }
+    if (mobileCb) mobileCb.addEventListener("change", updateMobilePanel);
+
+    // Toggle reminder window config visibility
+    function updateReminderPanel() {
+      if (reminderWindowConfig) {
+        reminderWindowConfig.style.display =
+          remindersCb && remindersCb.checked ? "block" : "none";
+      }
+    }
+    if (remindersCb)
+      remindersCb.addEventListener("change", updateReminderPanel);
+
+    // Discover notify.mobile_app_* services from HA
+    function discoverMobileTargets(savedTargets) {
+      if (!mobileTargetList) return;
+      fetch(bp + "/api/ha/services")
+        .then(function (r) {
+          return r.ok ? r.json() : { services: [] };
+        })
+        .catch(function () {
+          return { services: [] };
+        })
+        .then(function (data) {
+          var services = data.services || data || [];
+          var mobileServices = [];
+          if (Array.isArray(services)) {
+            services.forEach(function (domainObj) {
+              if (domainObj.domain === "notify") {
+                var svcNames = Object.keys(domainObj.services || {});
+                svcNames.forEach(function (name) {
+                  if (name.startsWith("mobile_app_")) {
+                    var friendlyName = name
+                      .replace("mobile_app_", "")
+                      .replace(/_/g, " ");
+                    mobileServices.push({
+                      service: "notify." + name,
+                      name: friendlyName,
+                    });
+                  }
+                });
+              }
+            });
+          }
+
+          mobileTargetList.innerHTML = "";
+          if (mobileServices.length === 0) {
+            var empty = document.createElement("span");
+            empty.style.cssText =
+              "color: var(--text-secondary); font-size: 12px; font-style: italic;";
+            empty.textContent =
+              "No HA Companion App devices found. Install the HA Companion App on your phone to enable mobile push.";
+            mobileTargetList.appendChild(empty);
+            return;
+          }
+
+          var savedSet = new Set(savedTargets || []);
+          mobileServices.forEach(function (svc) {
+            var row = document.createElement("div");
+            row.style.cssText =
+              "display: flex; align-items: center; gap: 8px; padding: 4px 0;";
+
+            var cb = document.createElement("input");
+            cb.type = "checkbox";
+            cb.checked = savedTargets.length === 0 || savedSet.has(svc.service);
+            cb.dataset.mobileTarget = svc.service;
+            cb.style.cssText = "accent-color: var(--accent);";
+            row.appendChild(cb);
+
+            var label = document.createElement("span");
+            label.style.cssText = "font-size: 13px;";
+            label.textContent = "📱 " + svc.name;
+            row.appendChild(label);
+
+            var svcLabel = document.createElement("span");
+            svcLabel.style.cssText =
+              "font-size: 12px; color: var(--text-secondary); font-family: var(--font-mono);";
+            svcLabel.textContent = svc.service;
+            row.appendChild(svcLabel);
+
+            mobileTargetList.appendChild(row);
+          });
+        });
+    }
+
+    function restorePrefs(savedPrefs) {
+      if (savedPrefs.value && typeof savedPrefs.value === "object") {
+        prefs = savedPrefs.value;
+      }
+
+      globalToggle.checked = prefs.enabled !== false;
+
+      var channels = prefs.channels || { sidebar: true, mobile_push: false };
+      if (sidebarCb) sidebarCb.checked = channels.sidebar !== false;
+      if (mobileCb) mobileCb.checked = channels.mobile_push === true;
+      updateMobilePanel();
+
+      if (remindersCb) remindersCb.checked = prefs.due_date_reminders !== false;
+      if (reminderMinutesInput)
+        reminderMinutesInput.value = prefs.reminder_window_minutes || 60;
+      updateReminderPanel();
+
+      discoverMobileTargets(prefs.mobile_targets || []);
+    }
+
+    const prefsReady = fetch(bp + "/api/settings?key=notification_preferences")
+      .then(response => response.ok ? response.json() : {})
+      .catch(() => ({}))
+      .then(restorePrefs)
+
+    function renderUsers(users) {
+      const current = new Map(Array.from(
+        userTogglesContainer.querySelectorAll("input[data-user-id]"),
+        input => [input.dataset.userId, input.checked],
+      ))
+      var disabledSet = new Set(prefs.disabled_users || []);
+
+      userTogglesContainer.innerHTML = "";
+      var heading = document.createElement("div");
+      heading.style.cssText =
+        "font-weight: 600; font-size: 13px; margin-bottom: 4px;";
+      heading.textContent = "Per-user overrides";
+      userTogglesContainer.appendChild(heading);
+
+      if (users.length === 0) {
+        var empty = document.createElement("span");
+        empty.style.cssText =
+          "color: var(--text-secondary); font-size: 12px; font-style: italic;";
+        empty.textContent =
+          "No users found — notifications will apply globally.";
+        userTogglesContainer.appendChild(empty);
+        return;
+      }
+
+      users.forEach(function (u) {
+        var row = document.createElement("div");
+        row.style.cssText =
+          "display: flex; align-items: center; gap: 10px; padding: 6px 10px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 6px;";
+
+        var avatar = document.createElement("span");
+        avatar.style.cssText =
+          "display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%; color: #fff; font-size: 11px; font-weight: 700; background: " +
+          (u.source === "home_assistant"
+            ? "var(--accent)"
+            : "var(--warning, #f59e0b)");
+        avatar.textContent = (u.display_name || u.name || "?")
+          .slice(0, 2)
+          .toUpperCase();
+        row.appendChild(avatar);
+
+        var nameEl = document.createElement("span");
+        nameEl.style.cssText = "font-size: 13px; font-weight: 500; flex: 1;";
+        nameEl.textContent =
+          (u.display_name || u.name || u.id) +
+          (u.source === "home_assistant" ? " (HA)" : " (Custom)");
+        row.appendChild(nameEl);
+
+        var label = document.createElement("label");
+        label.className = "toggle-switch";
+        label.style.cssText = "flex-shrink: 0;";
+
+        var checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.checked = current.get(u.id) ?? !disabledSet.has(u.id);
+        checkbox.dataset.userId = u.id;
+
+        var slider = document.createElement("span");
+        slider.className = "toggle-slider";
+
+        label.appendChild(checkbox);
+        label.appendChild(slider);
+        row.appendChild(label);
+
+        userTogglesContainer.appendChild(row);
+      });
+    }
+
+    saveBtn?.addEventListener("click", function () {
+      var disabled = [];
+      userTogglesContainer
+        .querySelectorAll("input[data-user-id]")
+        .forEach(function (cb) {
+          if (!cb.checked) disabled.push(cb.dataset.userId);
+        });
+      var mobileTargets = [];
+      if (mobileTargetList) {
+        mobileTargetList
+          .querySelectorAll("input[data-mobile-target]")
+          .forEach(function (cb) {
+            if (cb.checked) mobileTargets.push(cb.dataset.mobileTarget);
+          });
+      }
+      var payload = {
+        enabled: globalToggle.checked,
+        disabled_users: disabled,
+        channels: {
+          sidebar: sidebarCb ? sidebarCb.checked : true,
+          mobile_push: mobileCb ? mobileCb.checked : false,
+        },
+        mobile_targets: mobileTargets,
+        due_date_reminders: remindersCb ? remindersCb.checked : true,
+        reminder_window_minutes: reminderMinutesInput
+          ? Math.max(
+              5,
+              Math.min(1440, parseInt(reminderMinutesInput.value, 10) || 60),
+            )
+          : 60,
+      };
+
+      var origText = saveBtn.textContent;
+      saveBtn.textContent = "Saving…";
+      saveBtn.disabled = true;
+      saveBtn.style.opacity = "0.7";
+
+      fetch(bp + "/api/settings", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          key: "notification_preferences",
+          value: payload,
+        }),
+      })
+        .then(function (response) {
+          if (!response.ok) throw new Error("Settings save failed: " + response.status);
+          saveBtn.textContent = "✓ Saved";
+          if (typeof window.showToast === "function")
+            window.showToast("Notification preferences saved");
+          setTimeout(function () {
+            saveBtn.textContent = origText;
+            saveBtn.disabled = false;
+            saveBtn.style.opacity = "1";
+          }, 1500);
+        })
+        .catch(function (err) {
+          ;(window.__mLog ? window.__mLog("settings", "people") : console).error("Save notification prefs error:", err);
+          saveBtn.textContent = "✗ Failed";
+          setTimeout(function () {
+            saveBtn.textContent = origText;
+            saveBtn.disabled = false;
+            saveBtn.style.opacity = "1";
+          }, 2000);
+        });
+    });
+    return users => prefsReady.then(() => renderUsers(users))
+  });
+</script>

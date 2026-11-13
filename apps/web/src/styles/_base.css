@@ -21,7 +21,12 @@
   }
 
   body {
-    @apply font-sans bg-bg-primary text-text-primary leading-relaxed flex min-h-screen;
+    @apply font-sans bg-bg-primary text-text-primary flex min-h-screen;
+    font-family: var(--font-sans);
+    line-height: 1.55;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
     overflow-x: hidden;
     overflow-y: auto;
     max-width: 100vw;
@@ -37,8 +42,15 @@
     h5,
     h6 {
       font-family: var(--font-heading);
-      letter-spacing: -0.01em;
+      letter-spacing: -0.015em;
     }
+
+  code,
+  kbd,
+  pre,
+  samp {
+    font-family: var(--font-mono);
+  }
   a {
     color: var(--accent-text);
     @apply no-underline transition-colors;
@@ -102,6 +114,12 @@
     scrollbar-width: thin;
     scrollbar-color: var(--border) var(--bg-primary);
   }
+}
+
+/* Optional Outfit display typeface retained for appearance presets */
+:root[data-appearance-font="outfit"] {
+  --font-sans: "Outfit", "Inter Variable", -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-heading: "Outfit", "Geist Variable", sans-serif;
 }
 
 /* A11Y-01: Disable animations for motion-sensitive users */

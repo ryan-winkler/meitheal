@@ -1,0 +1,349 @@
+---
+import { t } from "../../i18n/translations"
+import type { Locale } from "../../lib/locale"
+import { SETTINGS_SECTIONS } from "../../lib/settings-registry"
+import SettingsActionRow from "./SettingsActionRow.astro"
+import SettingsLabels from "./SettingsLabels.astro"
+import SettingsPanelCard from "./SettingsPanelCard.astro"
+import SettingsSectionIntro from "./SettingsSectionIntro.astro"
+
+interface Props {
+  locale: Locale
+}
+const { locale } = Astro.props
+
+const tasksBoardsSection = SETTINGS_SECTIONS.find((section) => section.id === "tasks-boards-settings")!
+---
+
+<section
+  id="tasks-boards-settings"
+  class="settings-shell__section"
+  data-settings-shell-section
+  hidden
+>
+  <SettingsSectionIntro section={tasksBoardsSection} />
+  <div class="settings-grid">
+    <!-- Kanban Area -->
+    <SettingsPanelCard
+      title="📊 Kanban Area"
+      subtitle="Configure Kanban board behaviour, including backlog visibility and completed task retention."
+    >
+      <div class="settings-stack">
+        <!-- Backlog Mode -->
+        <div>
+          <label
+            for="backlog-mode-select"
+            class="settings-label"
+            >Backlog lane</label
+          >
+          <SettingsActionRow>
+            <select
+              id="backlog-mode-select"
+              class="form-select settings-input-narrow"
+              aria-label="Backlog lane mode"
+            >
+              <option value="visible">📥 Visible (default)</option>
+              <option value="hidden">🙈 Hidden from Kanban</option>
+              <option value="disabled">🚫 Disabled</option>
+            </select>
+            <button
+              type="button"
+              class="btn btn-primary settings-text-sm"
+              id="save-backlog-mode"
+              >Save</button
+            >
+          </SettingsActionRow>
+          <div
+            id="backlog-mode-help"
+            class="settings-hint"
+            data-mode-visible={t("triage.setting_visible", locale)}
+            data-mode-hidden={t("triage.setting_hidden", locale)}
+            data-mode-disabled={t("triage.setting_disabled", locale)}
+          >
+            {t("triage.setting_visible", locale)}
+          </div>
+        </div>
+
+        <div class="settings-section-divider"></div>
+
+        <div>
+          <label
+            for="completed-retention-select"
+            class="settings-label"
+            >Completed task retention</label
+          >
+          <SettingsActionRow>
+            <select
+              id="completed-retention-select"
+              class="form-select settings-input-narrow"
+              aria-label="Completed task retention period"
+            >
+              <option value="7">7 days</option>
+              <option value="14">14 days</option>
+              <option value="30" selected>30 days</option>
+              <option value="0">Never hide</option>
+            </select>
+            <button
+              type="button"
+              class="btn btn-primary settings-text-sm"
+              id="save-completed-retention"
+              >Save</button
+            >
+          </SettingsActionRow>
+          <p class="settings-hint">
+            Done tasks older than this will be hidden from the Kanban board but
+            remain in Table view.
+          </p>
+        </div>
+      </div>
+    </SettingsPanelCard>
+
+    <!-- Custom Fields -->
+    <SettingsPanelCard
+      title={t("settings.custom_fields_title", locale)}
+      subtitle={t("settings.custom_fields_subtitle", locale)}
+      padded={false}
+    >
+      <button type="button" class="btn btn-ghost" id="add-custom-field" slot="actions"
+        >+ Add Field</button
+      >
+      <div id="custom-fields-list">
+        <div class="custom-field-row">
+          <input
+            type="text"
+            class="form-input"
+            placeholder="Field name"
+            value="sprint"
+            disabled
+          />
+          <select class="form-select" aria-label="Sprint field type" disabled>
+            <option value="text" selected>Text</option>
+            <option value="number">Number</option>
+            <option value="select">Select</option>
+            <option value="date">Date</option>
+            <option value="checkbox">Checkbox</option>
+          </select>
+          <span class="settings-text-xs text-muted">Built-in</span>
+        </div>
+        <div class="custom-field-row">
+          <input
+            type="text"
+            class="form-input"
+            placeholder="Field name"
+            value="story_points"
+            disabled
+          />
+          <select class="form-select" aria-label="Story points field type" disabled>
+            <option value="number" selected>Number</option>
+          </select>
+          <span class="settings-text-xs text-muted">Built-in</span>
+        </div>
+      </div>
+    </SettingsPanelCard>
+
+    <!-- Labels -->
+    <SettingsLabels locale={locale} />
+
+    <!-- Optional Features -->
+    <SettingsPanelCard
+      title="⚡ Optional Features"
+      subtitle="Enable or disable optional features. Disabled features are hidden from the UI and their APIs return 404. Core task management is never affected."
+    >
+      <div id="feature-toggles-container" class="settings-stack--sm" style="gap: 10px;">
+        <span class="settings-description">Loading features…</span>
+      </div>
+    </SettingsPanelCard>
+  </div>
+</section>
+
+<script is:inline>
+  (function () {
+    var bp = window.__ingress_path || "";
+    var select = document.getElementById("backlog-mode-select");
+    var saveBtn = document.getElementById("save-backlog-mode");
+    var helpDiv = document.getElementById("backlog-mode-help");
+    if (!select) return;
+
+    var helpTexts = {
+      visible: helpDiv?.dataset.modeVisible,
+      hidden: helpDiv?.dataset.modeHidden,
+      disabled: helpDiv?.dataset.modeDisabled,
+    }
+
+    function updateHelp() {
+      if (helpDiv) helpDiv.textContent = helpTexts[select.value] || "";
+    }
+    select.addEventListener("change", updateHelp);
+
+    fetch(bp + "/api/settings?key=backlog_mode")
+      .then(function (r) {
+        return r.ok ? r.json() : {};
+      })
+      .then(function (data) {
+        if (data.value !== null && data.value !== undefined) {
+          select.value = String(data.value);
+          updateHelp();
+        }
+        window.__backlog_mode = select.value;
+      })
+      .catch(function () {
+        /* use default */
+      });
+
+    saveBtn?.addEventListener("click", function () {
+      var val = select.value;
+      fetch(bp + "/api/settings", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ key: "backlog_mode", value: val }),
+      })
+        .then(function (response) {
+          if (!response.ok) throw new Error("Settings save failed: " + response.status);
+          window.__backlog_mode = val;
+          if (typeof window.showToast === "function")
+            window.showToast("Backlog mode saved — reload Kanban to apply");
+        })
+        .catch(function (err) {
+          ;(window.__mLog ? window.__mLog("settings", "tasks-boards") : console).error("Save backlog mode error:", err);
+          window.showToast?.("settings.save_error", "error");
+        });
+    });
+  })();
+</script>
+
+<script is:inline>
+  (function () {
+    var bp = window.__ingress_path || "";
+    var select = document.getElementById("completed-retention-select");
+    var saveBtn = document.getElementById("save-completed-retention");
+    if (!select) return;
+
+    fetch(bp + "/api/settings?key=completed_auto_hide_days")
+      .then(function (r) {
+        return r.ok ? r.json() : {};
+      })
+      .then(function (data) {
+        if (data.value !== null && data.value !== undefined) {
+          select.value = String(data.value);
+        }
+      })
+      .catch(function () {
+        /* use default */
+      });
+
+    saveBtn?.addEventListener("click", function () {
+      var val = Number(select.value);
+      fetch(bp + "/api/settings", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ key: "completed_auto_hide_days", value: val }),
+      })
+        .then(function (response) {
+          if (!response.ok) throw new Error("Settings save failed: " + response.status);
+          if (typeof window.showToast === "function")
+            window.showToast(
+              "Retention setting saved — reload Kanban to apply",
+            );
+        })
+        .catch(function (err) {
+          ;(window.__mLog ? window.__mLog("settings", "tasks-boards") : console).error("Save retention error:", err);
+          window.showToast?.("settings.save_error", "error");
+        });
+    });
+  })();
+</script>
+
+<script is:inline>
+  // Feature toggles
+  (function () {
+    const container = document.getElementById("feature-toggles-container");
+    if (!container) return;
+
+    const CATEGORIES = {
+      productivity: { label: "Productivity", icon: "🎯" },
+      integrations: { label: "Integrations", icon: "🔌" },
+      visual: { label: "Visual", icon: "✨" },
+    };
+
+    fetch((window.__ingress_path || "") + "/api/features")
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (!data.features) return;
+        container.innerHTML = "";
+
+        var grouped = {};
+        data.features.forEach(function (f) {
+          if (!grouped[f.category]) grouped[f.category] = [];
+          grouped[f.category].push(f);
+        });
+
+        Object.keys(CATEGORIES).forEach(function (cat) {
+          var features = grouped[cat];
+          if (!features || features.length === 0) return;
+
+          var catInfo = CATEGORIES[cat];
+          var section = document.createElement("div");
+          section.style.cssText = "margin-bottom: 8px;";
+
+          var heading = document.createElement("div");
+          heading.style.cssText = "font-weight: 600; font-size: 12px; color: var(--text-secondary); margin-bottom: 8px; padding-top: 4px;";
+          heading.textContent = catInfo.icon + " " + catInfo.label;
+          section.appendChild(heading);
+
+          features.forEach(function (f) {
+            var row = document.createElement("div");
+            row.style.cssText = "display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px;";
+
+            row.innerHTML =
+              '<label class="toggle-switch" style="flex-shrink: 0;">' +
+              '<input type="checkbox" id="feature-toggle-' + f.name + '" data-feature="' + f.name + '" ' + (f.enabled ? 'checked' : '') + ' />' +
+              '<span class="toggle-slider"></span>' +
+              '</label>' +
+              '<div style="flex: 1;">' +
+              '<div style="font-weight: 500; font-size: 13px;">' + f.icon + ' ' + f.label + '</div>' +
+              '<div style="font-size: 12px; color: var(--text-secondary);">' + f.description + '</div>' +
+              '</div>';
+
+            var checkbox = row.querySelector('input[type="checkbox"]');
+            checkbox.setAttribute("aria-label", f.label);
+            checkbox.addEventListener("change", function () {
+              var featureName = this.dataset.feature;
+              var enabled = this.checked;
+
+              fetch((window.__ingress_path || "") + "/api/features", {
+                method: "PUT",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ feature: featureName, enabled: enabled }),
+              })
+                .then(function (r) { return r.json(); })
+                .then(function () {
+                  if (typeof window.showToast === "function") {
+                    window.showToast((enabled ? "Enabled" : "Disabled") + ": " + f.label);
+                  }
+                  if (window.__featureFlags) {
+                    window.__featureFlags[featureName] = enabled;
+                  }
+                })
+                .catch(function () {
+                  if (typeof window.showToast === "function") {
+                    window.showToast("Failed to update feature", "error");
+                  }
+                });
+            });
+
+            section.appendChild(row);
+          });
+
+          container.appendChild(section);
+        });
+
+        var hint = document.createElement("div");
+        hint.style.cssText = "font-size: 12px; color: var(--text-secondary); margin-top: 4px; padding: 8px 12px; background: var(--bg-secondary); border-radius: 6px; border: 1px dashed var(--border);";
+        hint.innerHTML = '💡 <strong>Note:</strong> Some changes take effect on the next page load.';
+        container.appendChild(hint);
+      })
+      .catch(function () {
+        container.innerHTML = '<span style="color: var(--danger); font-size: 12px;">Failed to load features</span>';
+      });
+  })();
+</script>

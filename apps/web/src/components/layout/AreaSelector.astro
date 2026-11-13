@@ -94,10 +94,10 @@ const { areas = [] } = Astro.props
     align-items: center;
     gap: 6px;
     padding: 5px 10px;
-    border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
+    border: 1px solid var(--border);
     border-radius: 8px;
-    background: var(--surface-card, rgba(255, 255, 255, 0.04));
-    color: var(--text-primary, #e4e4e7);
+    background: var(--bg-secondary);
+    color: var(--text-primary);
     font-size: 0.8125rem;
     font-weight: 500;
     cursor: pointer;
@@ -107,14 +107,14 @@ const { areas = [] } = Astro.props
   }
 
   .area-selector__trigger:hover {
-    background: var(--surface-card-hover, rgba(255, 255, 255, 0.08));
-    border-color: var(--border-default, rgba(255, 255, 255, 0.12));
+    background: var(--bg-hover);
+    border-color: var(--border-focus);
   }
 
   .area-selector__trigger[aria-expanded="true"] {
-    background: var(--surface-card-hover, rgba(255, 255, 255, 0.08));
-    border-color: var(--accent, #818cf8);
-    box-shadow: 0 0 0 1px var(--accent, #818cf8);
+    background: var(--bg-hover);
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent);
   }
 
   .area-selector__icon {
@@ -149,12 +149,12 @@ const { areas = [] } = Astro.props
     max-width: 280px;
     max-height: 300px;
     overflow-y: auto;
-    background: var(--surface-elevated, #1e1e2e);
-    border: 1px solid var(--border-default, rgba(255, 255, 255, 0.1));
+    background: var(--bg-card);
+    border: 1px solid var(--border);
     border-radius: 10px;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.2);
+    box-shadow: var(--shadow-lg, 0 8px 24px rgba(0, 0, 0, 0.4));
     padding: 4px;
-    z-index: 1000;
+    z-index: 40;
   }
 
   .area-selector__dropdown.is-open {
@@ -183,7 +183,7 @@ const { areas = [] } = Astro.props
     border: none;
     border-radius: 6px;
     background: transparent;
-    color: var(--text-secondary, #a1a1aa);
+    color: var(--text-secondary);
     font-size: 0.8125rem;
     font-weight: 400;
     cursor: pointer;
@@ -193,12 +193,12 @@ const { areas = [] } = Astro.props
   }
 
   .area-selector__option:hover {
-    background: var(--surface-card-hover, rgba(255, 255, 255, 0.06));
-    color: var(--text-primary, #e4e4e7);
+    background: var(--bg-hover);
+    color: var(--text-primary);
   }
 
   .area-selector__option.is-selected {
-    color: var(--text-primary, #e4e4e7);
+    color: var(--text-primary);
     font-weight: 500;
   }
 

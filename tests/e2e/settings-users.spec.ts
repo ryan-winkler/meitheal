@@ -24,7 +24,7 @@ test.describe("Settings users", () => {
     const original = await addUser(request, "Shared settings user")
     const calls = userRequests(page)
 
-    await page.goto("/settings#workflow-settings")
+    await page.goto("/settings#people-notifications-settings")
     await expect(page.locator("#settings-panels")).not.toHaveAttribute("inert", "")
     const select = page.getByRole("combobox", { name: "Default task assignee" })
     const notifications = page.locator("#notif-user-toggles")
@@ -92,7 +92,7 @@ test.describe("Settings users", () => {
     const calls = userRequests(page)
     await page.route("**/api/users", route => route.fulfill({ status: 503, json: {} }))
 
-    await page.goto("/settings#workflow-settings")
+    await page.goto("/settings#people-notifications-settings")
     await expect(page.locator("#settings-panels")).not.toHaveAttribute("inert", "")
     await expect(page.getByRole("combobox", { name: "Default task assignee" })).toHaveValue(user)
     await expect(page.locator("#custom-users-list")).toContainText("Fallback settings user")

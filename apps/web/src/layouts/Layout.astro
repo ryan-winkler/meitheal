@@ -21,7 +21,6 @@ import { applyPersonalAccent } from "../lib/accent-colors"
 import { canManageSystemSettings } from "../lib/settings-security"
 
 import geistWoff2 from '@fontsource-variable/geist/files/geist-latin-wght-normal.woff2?url';
-import outfitWoff2 from '@fontsource-variable/outfit/files/outfit-latin-wght-normal.woff2?url';
 
 // i18n: resolve locale from cookie for SSR
 const cookieLocale = Astro.cookies.get("meitheal-locale")?.value;
@@ -222,13 +221,57 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
       })();
     </script>
 
-    <!-- Ingress state persistence: restore last route after iframe recreation -->
+    <!-- Ingress state persistence: restore last route only on initial cold/standalone boot -->
     <!-- Runs pre-paint so the user never sees a flash of the wrong page -->
     <script is:inline>
       (function () {
         if (!window.__ingress_path) return;
-        if (window.location.pathname !== "/") return;
         try {
+          var alreadyBooted = sessionStorage.getItem("meitheal-session-booted") === "1";
+          sessionStorage.setItem("meitheal-session-booted", "1");
+          if (alreadyBooted) return;
+
+          var cleanIp = String(window.__ingress_path).replace(/\/+$/, "");
+          var currentPath = window.location.pathname;
+          var isRoot =
+            currentPath === "/" ||
+            (cleanIp && (currentPath === cleanIp || currentPath === cleanIp + "/"));
+          if (!isRoot) return;
+
+          if (document.referrer) {
+            try {
+              var refUrl = new URL(document.referrer);
+              if (refUrl.origin === window.location.origin) {
+                var appReferrerPrefixes = [
+                  "/settings",
+                  "/tasks",
+                  "/today",
+                  "/upcoming",
+                  "/calendar",
+                  "/table",
+                  "/planning",
+                  "/automations",
+                  "/activity",
+                  "/mentions",
+                  "/tickets",
+                  "/habits",
+                  "/pillars",
+                ];
+                var isInternalAppReferrer =
+                  (cleanIp &&
+                    (refUrl.pathname === cleanIp ||
+                      refUrl.pathname.startsWith(cleanIp + "/"))) ||
+                  appReferrerPrefixes.some(function (prefix) {
+                    return (
+                      refUrl.pathname === prefix ||
+                      refUrl.pathname.startsWith(prefix + "/")
+                    );
+                  });
+                if (isInternalAppReferrer) return;
+              }
+            } catch (e) {}
+          }
+
           var raw = sessionStorage.getItem("meitheal-navigation-state");
           if (!raw) return;
           var state = JSON.parse(raw);
@@ -245,7 +288,7 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
           // Don't redirect to root (no-op)
           if (state.path === "/") return;
           // Redirect to saved path — prepend ingress path for proper routing
-          var target = window.__ingress_path + state.path;
+          var target = cleanIp + state.path;
           // Save scroll position to restore after redirect
           if (state.scrollY) {
             sessionStorage.setItem(
@@ -376,7 +419,6 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
     
     <!-- Resource Hints: Preload critical fonts to prevent layout shift -->
     <link rel="preload" href={geistWoff2} as="font" type="font/woff2" crossorigin="anonymous" />
-    <link rel="preload" href={outfitWoff2} as="font" type="font/woff2" crossorigin="anonymous" />
     
     <!-- Inter font self-hosted via @fontsource-variable/inter (imported in global.css) -->
     {!behindIngress && <script is:inline>

@@ -44,7 +44,7 @@ test("a current admin reviews labels across pages, safely confirms and clears on
       viewport: { width: 320, height: 740 }, reducedMotion: "reduce", serviceWorkers: "block" })
     await context.addCookies([{ name: "feedback-fixture", value: "admin", url: origin }])
     const page = await context.newPage()
-    await page.goto(origin + prefix + "/settings#workflow-settings")
+    await page.goto(origin + prefix + "/settings#tasks-boards-settings")
     await expect(page.locator("#settings-panels")).not.toHaveAttribute("inert", "")
     const response = await pinRequest(page, prefix + "/api/labels", "POST", { title: "Shared maintenance", hex_color: "#317c61" })
     expect(response.status).toBe(201)
@@ -72,7 +72,7 @@ test("a current admin reviews labels across pages, safely confirms and clears on
     await expect(page.locator(".kanban-card[data-task-id]")).toHaveCount(2)
     await expect(page.locator(`.kanban-card[data-task-id="${firstTask.body.id}"]`)).toBeVisible()
     await expect(page.locator(`.kanban-card[data-task-id="${secondTask.body.id}"]`)).toBeVisible()
-    await page.goto(origin + prefix + "/settings#workflow-settings")
+    await page.goto(origin + prefix + "/settings#tasks-boards-settings")
     await expect(page.locator("#settings-panels")).not.toHaveAttribute("inert", "")
     const cleanup = page.locator("[data-label-cleanup]")
     const review = cleanup.getByRole("button", { name: "Review unused labels", exact: true })
@@ -267,7 +267,7 @@ async function verifyWorkerUpdate(control: "toast" | "settings" | "force", timeO
     context.setDefaultTimeout(workerTimeout)
     await context.addCookies([{ name: "feedback-fixture", value: "admin", url: origin }])
     const page = await context.newPage()
-    const settingsUrl = origin + prefix + "/settings#workflow-settings"
+    const settingsUrl = origin + prefix + "/settings#tasks-boards-settings"
     expect((await page.goto(origin + prefix + "/fixture", { waitUntil: "domcontentloaded" }))?.status()).toBe(200)
     await test.step("Install and claim the older worker", async () => {
       await page.evaluate(async prefix => {

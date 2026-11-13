@@ -58,7 +58,17 @@ export interface Props {
     | "home"
     | "bell"
     | "cart"
-    | "info";
+    | "info"
+    | "panel-left-close"
+    | "panel-left-open"
+    | "pinned-off"
+    | "chevron-right"
+    | "checklist"
+    | "shopping-cart"
+    | "calendar-event"
+    | "inbox"
+    | "x"
+    | "check";
   class?: string;
   size?: number;
 }
@@ -363,4 +373,65 @@ const { name, class: className = "", size = 20 } = Astro.props;
       <path d="M11 12h1v4h1" />
     </>
   )}
+  {name === "panel-left-close" && (
+    <>
+      <path d="M4 6a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2z" />
+      <path d="M9 4v16" />
+      <path d="M15 10l-2 2l2 2" />
+    </>
+  )}
+  {name === "panel-left-open" && (
+    <>
+      <path d="M4 6a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2z" />
+      <path d="M9 4v16" />
+      <path d="M14 10l2 2l-2 2" />
+    </>
+  )}
+  {name === "pinned-off" && (
+    <>
+      <path d="M3 3l18 18" />
+      <path d="M15 4.5l-3.249 3.249m-2.57 1.433l-2.181 .818l-1.5 1.5l7 7l1.5 -1.5l.82 -2.186m1.43 -2.563l3.25 -3.251" />
+      <path d="M9 15l-4.5 4.5" />
+      <path d="M14.5 4l5.5 5.5" />
+    </>
+  )}
+  {name === "chevron-right" && <path d="M9 6l6 6l-6 6" />}
+  {name === "checklist" && (
+    <>
+      <path d="M9.615 20h-2.615a2 2 0 0 1 -2 -2v-12a2 2 0 0 1 2 -2h8a2 2 0 0 1 2 2v8" />
+      <path d="M14 19l2 2l4 -4" />
+      <path d="M9 8h4" />
+      <path d="M9 12h2" />
+    </>
+  )}
+  {name === "shopping-cart" && (
+    <>
+      <path d="M6 19m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" />
+      <path d="M17 19m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" />
+      <path d="M17 17h-11v-14h-2" />
+      <path d="M6 5l14 1l-1 7h-13" />
+    </>
+  )}
+  {name === "calendar-event" && (
+    <>
+      <path d="M4 5m0 2a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2z" />
+      <path d="M16 3l0 4" />
+      <path d="M8 3l0 4" />
+      <path d="M4 11l16 0" />
+      <path d="M8 15h2v2h-2z" />
+    </>
+  )}
+  {name === "inbox" && (
+    <>
+      <path d="M4 4m0 2a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2z" />
+      <path d="M4 13h3l3 3h4l3 -3h3" />
+    </>
+  )}
+  {name === "x" && (
+    <>
+      <path d="M18 6l-12 12" />
+      <path d="M6 6l12 12" />
+    </>
+  )}
+  {name === "check" && <path d="M5 12l5 5l10 -10" />}
 </svg>

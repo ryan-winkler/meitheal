@@ -15,7 +15,7 @@ if (activeMemberFixture) {
   const originalRead = ReadableStreamDefaultReader.prototype.read
   ReadableStreamDefaultReader.prototype.read = function (...args) {
     const held = heldBodies.getStore()
-    if (held && !held.acknowledged && new Error().stack?.includes("at readWithinLimit")) {
+    if (held && !held.acknowledged && new Error().stack?.split("\n")[2]?.includes("at readWithinLimit")) {
       if (held.reader === this) {
         held.acknowledged = true
         process.send({ participantBodyStarted: true })

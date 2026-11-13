@@ -184,15 +184,22 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
       <TaskTypeIcon type="task" size={14} />
       Routine
     </button>
-    {view === "table" && [
-      { id: "quick_capture", label: "Quick capture" },
-      { id: "calendar_event", label: "Calendar event" },
-    ].map(kind => (
-      <button type="button" class="filter-toolbar__type-btn active" data-type={kind.id} aria-pressed="true">
+    <button
+      type="button"
+      class="filter-toolbar__type-btn active"
+      data-type="calendar_event"
+      aria-pressed="true"
+      title="Toggle Events"
+    >
+      <TaskTypeIcon type="task" size={14} />
+      Events
+    </button>
+    {view === "table" && (
+      <button type="button" class="filter-toolbar__type-btn active" data-type="quick_capture" aria-pressed="true">
         <TaskTypeIcon type="task" size={14} />
-        {kind.label}
+        Quick capture
       </button>
-    ))}
+    )}
   </div>
 
   {/* Area filter — populated client-side from /api/areas (hidden when AreaSelector is used) */}
@@ -460,6 +467,13 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
     const params = new URLSearchParams(location.search)
     const initial = prefix === "kanban" ? readKanbanFilters(params)
       : prefix === "table" ? loadTableFilterState() : loadFilterState()
+    const rawUrlTypes = (params.get("types") ?? "")
+      .split(",")
+      .filter(Boolean)
+      .map(type => (type === "standard" ? "standard_action" : type))
+    const initialTypes = rawUrlTypes.length > 0 && (!initial.types || initial.types.length === 0)
+      ? rawUrlTypes
+      : (initial.types ?? [])
     if (prefix === "kanban" && !params.has("groupBy")) initial.groupBy = storedKanbanGroup()
     if (prefix === "timeline" && initial.groupBy === "assigned") initial.groupBy = "assignee"
     // Internal state for advanced filters
@@ -550,7 +564,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
       if (groupBySel) groupBySel.value = initial.groupBy ?? "none"
       if (subGroupBySel) subGroupBySel.value = initial.subGroupBy ?? "none"
       typeToggles.forEach(btn => {
-        const active = !initial.types?.length || initial.types.includes(btn.dataset.type ?? "")
+        const active = !initialTypes.length || initialTypes.includes(btn.dataset.type ?? "")
         btn.classList.toggle("active", active)
         btn.setAttribute("aria-pressed", String(active))
       })
