@@ -1,24 +1,26 @@
 # Meitheal automation protocols
 
-Meitheal exposes a scoped MCP endpoint for external clients. The optional Home Assistant Core integration exposes a separate LLM API for Assist.
+Meitheal exposes five separated automation interfaces across four protocol boundaries. Each interface enforces its own authorization and scope rules.
 
 | Interface | How to use it |
 | --- | --- |
-| App MCP | Send JSON-RPC to `POST /api/mcp` with a Meitheal bearer token. Run `tools/list` to see which tools the token can call. |
-| Core LLM API | Install the Core integration, then select **Meitheal Tasks** in the Home Assistant conversation agent’s LLM API settings. |
-| A2A | The A2A 1.0 agent card describes one read-only skill. A token with `a2a:execute` and `search:read` can search active task titles. A2A cannot create or change tasks. |
-| WebMCP | Opt in to experimental read-only browser tools in Settings: search task titles and open a Tasks view. A compatible browser is required. |
+| App MCP | Send JSON-RPC 2.0 requests to `POST /api/mcp` with a Meitheal bearer token (`mcp:execute` plus tool scopes). Run `tools/list` to inspect permitted tools. |
+| Core LLM API | Install the Home Assistant Core integration. Select **Meitheal Tasks** in the Home Assistant conversation agent settings. |
+| Core MCP | Send JSON-RPC 2.0 requests to `POST /api/meitheal/mcp` as a verified Home Assistant administrator when the Core integration is loaded. |
+| A2A | Read the A2A `1.0` agent card at `GET /api/a2a/agent-card`. Send `SendMessage` to `POST /api/a2a/message` with `a2a:execute` and `search:read` to search active task titles. |
+| WebMCP | Enable **WebMCP (Browser Agent)** in **Settings → Automation & AI → Agent Protocols**. Select **Save Agent Protocol Settings** in an administrator browser session. Compatible browsers register `meitheal_search_tasks` and `meitheal_open_tasks`. |
 
 ## App MCP
 
-Create a dedicated token in Meitheal Settings as a verified Home Assistant administrator. Grant `mcp:execute` and the scopes required by each tool. For example, reading a task also requires `tasks:read`. Title-based completion requires `search:read` and `tasks:write`.
+Create a dedicated token in Meitheal Settings as a verified Home Assistant administrator. Grant `mcp:execute` and the scopes required by each tool. Reading tasks requires `tasks:read`. Completing a task by title requires `search:read` and `tasks:write`.
 
-Send an `Authorization: Bearer` header on each MCP request. Use `server/discover` with MCP 2026-07-28 or `initialize` with an older client, followed by `tools/list` and `tools/call`. The App serves live discovery metadata at `/.well-known/mcp.json` and its API contract at `/openapi.yaml`. The installed App’s `tools/list` response is authoritative for the caller. Saving the MCP toggle off disables discovery and tool calls.
+Send `Authorization: Bearer mth_<token>` on each MCP request. Send `server/discover` on MCP `2026-07-28` clients, or send `initialize` on legacy clients (`2025-03-26` to `2025-11-25`). Next, call `tools/list` and `tools/call`. The App serves discovery metadata at `/.well-known/mcp.json` and the OpenAPI contract at `/openapi.yaml`. Clear the MCP toggle in Settings to turn off App MCP. Select **Save Agent Protocol Settings** to apply the change.
 
 ## Home Assistant Core
 
-Core calls the Meitheal API using the token enrolled in its integration entry. The Python integration contains an MCP adapter for development, while the App MCP endpoint is the published MCP interface.
+Home Assistant Core calls the Meitheal API over HTTP with the token stored in its integration entry. Core MCP (`POST /api/meitheal/mcp`) and App MCP (`POST /api/mcp`) accept canonical statuses (`backlog`, `pending`, `active`, `complete`) and Home Assistant aliases (`todo`, `in_progress`, `done`). External `mth_*` tokens never access Home Assistant Supervisor endpoints (`/api/ha/*`).
 
 - [API setup and scopes](docs/kcs/agent-automation-guide.md)
 - [Core credential enrollment](docs/kcs/home-assistant-core-credentials.md)
-- [A2A task search](docs/kcs/webmcp-a2a-setup.md)
+- [MCP, WebMCP, and A2A setup](docs/kcs/webmcp-a2a-setup.md)
+- [Protocol boundary decision](docs/decisions/0020-agent-protocol-boundaries.md)
