@@ -471,7 +471,7 @@
                       // Color coding: green if all done, yellow if partial, default if none
                       if (pct === 100) progressBar.className = "h-full bg-green-500 rounded-full transition-all duration-300";
                       else if (pct > 0) progressBar.className = "h-full bg-amber-500 rounded-full transition-all duration-300";
-                      else progressBar.className = "h-full bg-accent rounded-full transition-all duration-300";
+                      else progressBar.className = "h-full bg-accent rounded-full transition-[width,background-color] duration-300";
                     }
                   }
                 }

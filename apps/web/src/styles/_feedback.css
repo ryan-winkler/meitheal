@@ -124,7 +124,14 @@
   font-weight: 500;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
   pointer-events: auto;
-    /* Individual toasts remain tappable */
+  transition: opacity 180ms var(--ease-out, ease), transform 180ms var(--ease-out, ease);
+}
+
+@starting-style {
+  .toast {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
 }
 
 .toast span {
@@ -215,7 +222,7 @@
 }
 
 .main-content {
-  animation: page-content-enter 0.3s ease-out;
+  animation: page-content-enter 180ms var(--ease-out, ease-out);
 }
 
 
@@ -229,17 +236,19 @@
   }
 
   50% {
-    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+    box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.18);
   }
 }
 
 .cal-day.today {
-  animation: today-pulse 2s ease-in-out 1;
+  animation: today-pulse 1.8s var(--ease-out, ease-in-out) 1;
   border-color: var(--accent);
 }
 
-.cal-day:hover {
-  background: var(--bg-hover);
-  cursor: pointer;
-  transition: background 0.15s ease;
+@media (hover: hover) and (pointer: fine) {
+  .cal-day:hover {
+    background: var(--bg-hover);
+    cursor: pointer;
+    transition: background 150ms var(--ease-out, ease);
+  }
 }

@@ -1,7 +1,7 @@
-# Meitheal add-on
+# Meitheal Home Assistant Add-on (`meitheal-hub`)
 
-This folder contains the stable Meitheal add-on.
+This directory packages **Meitheal** (`/meh·hal/`) as the stable Home Assistant App (`slug: meitheal`), keeping household tasks, recurring routines, projects, and Home Assistant automations local on user hardware.
 
-- To install the add-on or connect a calendar, follow the [setup guide](DOCS.md).
-- To build or test a change, follow the [contributor guide](../CONTRIBUTING.md).
-- To prepare an image for release, follow the [release guide](../docs/kcs/releasing.md).
+- **Install & configure in Home Assistant**: Read the [add-on setup guide](DOCS.md).
+- **Develop & verify locally**: Follow the [contributor guide](../CONTRIBUTING.md) and `.devcontainer` workflow.
+- **Publish & stage releases**: Follow the [release runbook](../docs/kcs/releasing.md).
