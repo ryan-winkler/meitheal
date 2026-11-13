@@ -6,13 +6,17 @@ import { createTaskAndSyncCalendar } from "../../apps/web/src/domains/tasks/task
 import { TaskRepository } from "../../apps/web/src/domains/tasks/persistence/task-repository";
 import {
   ensureSchema,
-  getDb,
   getPersistenceClient,
   persistManualCalendarConfirmation,
   resetPersistenceForTests
 } from "../../apps/web/src/domains/tasks/persistence/store";
 import { calendarConfirmations, integrationAttempts, tasks } from "../../apps/web/drizzle/schema";
 import { eq } from "drizzle-orm";
+import { drizzle } from "drizzle-orm/libsql";
+
+function getDb() {
+  return drizzle(getPersistenceClient());
+}
 
 function makeDbUrl(label: string): string {
   return `file:${path.join(os.tmpdir(), `meitheal-${label}-${Date.now()}-${Math.random()}.db`)}`;

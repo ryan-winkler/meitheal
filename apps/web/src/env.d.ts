@@ -93,5 +93,9 @@ declare namespace App {
     taskRetryKey?: string | undefined;
     /** Resolved agent token info (present when authenticated via Bearer token) */
     agentToken?: import("./lib/agent-token-guard").ResolvedAgent | undefined;
+    /** Cooperative 25s abort signal for mutating /api/* requests */
+    writeAbortSignal?: AbortSignal | undefined;
+    /** Per-request set of sprited Tabler icon names registered during SSR */
+    usedIcons?: Set<string> | undefined;
   }
 }

@@ -1,8 +1,6 @@
 import { mkdirSync } from "node:fs"
-import { createRequire } from "node:module"
 import path from "node:path";
 import type { Client } from "@libsql/client"
-import type { LibSQLDatabase } from "drizzle-orm/libsql"
 import type { CalendarResult } from "@meitheal/integration-core";
 import type { CalendarSyncState, CreateTaskPlan, IntegrationOutcome } from "@meitheal/domain-tasks";
 import { assertSupportedDatabaseSchema, DATABASE_SCHEMA_VERSION, openDatabase } from "../../../../scripts/database-client.mjs"
@@ -38,7 +36,6 @@ export interface PersistedTaskResponse {
 }
 
 let clientSingleton: Client | null = null;
-let dbSingleton: LibSQLDatabase | null = null
 let schemaInitialization: Promise<void> | undefined
 let remoteSchemaCheck: Promise<void> | undefined
 let startupBackupAttempted = false
@@ -81,17 +78,7 @@ function getClient(): Client {
   return clientSingleton;
 }
 
-/** Drizzle ORM client — lazy-initialized singleton. Use for typed queries. */
-export function getDb() {
-  if (!dbSingleton) {
-    const require = createRequire(import.meta.url)
-    const { drizzle } = require("drizzle-orm/libsql") as typeof import("drizzle-orm/libsql")
-    dbSingleton = drizzle(getClient())
-  }
-  return dbSingleton;
-}
-
-/** Low-level libSQL client — use for raw SQL when Drizzle isn't needed. */
+/** Low-level SQLite client — use for raw SQL queries. */
 export function getPersistenceClient(): Client {
   return getClient();
 }
@@ -1125,7 +1112,6 @@ export async function persistManualCalendarConfirmation(params: {
 
 export function resetPersistenceForTests(): void {
   clientSingleton = null;
-  dbSingleton = null;
   schemaInitialization = undefined
   remoteSchemaCheck = undefined
   startupBackupAttempted = false
