@@ -421,8 +421,9 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
       }
     }
     if (changes.length > 0) {
-      const activityActor = agentToken ? `agent:${agentToken.tokenName}` : (request.headers.get("X-Automation-Source") ? `ha:${request.headers.get("X-Automation-Source")}` : "user")
-      const actorType = agentToken ? "agent" : (request.headers.get("X-Automation-Source") ? "ha" : "user")
+      const automation = request.headers.has("X-Automation-Source") ? locals.automationSource : null
+      const activityActor = agentToken ? `agent:${agentToken.tokenName}` : (automation ? `ha:${automation}` : "user")
+      const actorType = agentToken ? "agent" : (automation ? "ha" : "user")
       repo.logActivity(resolvedId, changes, { actor: activityActor, actor_type: actorType }).catch(() => { })
     }
   }
