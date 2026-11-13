@@ -47,13 +47,18 @@ jobs:
         uses: codacy/codacy-analysis-cli-action@562ee3e92b8e92df8b67e0a5ff8aa8e261919c08 # v4.4.7
         with:
           project-token: ${{ secrets.CODACY_PROJECT_TOKEN }}
-          format: sarif
-          output: codacy-results.sarif
-          gh-code-scanning-compat: true
+          format: json
+          output: codacy-results.json
+          parallel: 4
+          tool-timeout: 10minutes
           max-allowed-issues: 2147483647
 
+      - name: Convert Codacy JSON results to SARIF 2.1.0
+        if: hashFiles('codacy-results.json') != ''
+        run: node scripts/codacy-json-to-sarif.mjs codacy-results.json codacy-results.sarif
+
       - name: Upload Codacy SARIF results to GitHub Code Scanning
-        if: always() && hashFiles('codacy-results.sarif') != ''
+        if: hashFiles('codacy-results.sarif') != ''
         uses: github/codeql-action/upload-sarif@52cf1852265d99e9bea071b03366fc777a602909 # codeql-bundle-v2.27.4
         with:
           sarif_file: codacy-results.sarif

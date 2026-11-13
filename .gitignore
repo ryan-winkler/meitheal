@@ -6,6 +6,7 @@ dist
 coverage
 coverage-python.xml
 .coverage
+codacy-results.json
 codacy-results.sarif
 playwright-report
 test-results

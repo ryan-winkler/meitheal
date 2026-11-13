@@ -121,7 +121,7 @@ jobs:
           TMPDIR="$test_tmp" pnpm --filter @meitheal/tests test:ci
       - name: Upload TypeScript coverage to Codecov
         if: always() && hashFiles('coverage/lcov.info') != '' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
-        uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac # v5
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: coverage/lcov.info
@@ -198,7 +198,7 @@ jobs:
           fi
       - name: Upload Home Assistant Python coverage to Codecov
         if: matrix.core == '2026.11.1' && hashFiles('integrations/home-assistant/coverage-python.xml') != '' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
-        uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac # v5
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: integrations/home-assistant/coverage-python.xml
