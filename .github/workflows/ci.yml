@@ -221,6 +221,7 @@ jobs:
           # The lock files are complete, so --no-deps installs exactly what they list, including overrides.
           python -m pip install --require-hashes --no-deps -r "$TEST_REQUIREMENTS"
           if [ "$HA_CORE_VERSION" = "2026.11.1" ]; then
+            python -m ruff check .
             python -m pytest -q --cov=custom_components.meitheal --cov-report=xml:coverage-python.xml --cov-report=term-missing:skip-covered
           else
             python -m pytest -q
