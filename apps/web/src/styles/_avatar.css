@@ -7,7 +7,9 @@
   --avatar-size-sm: 18px;
   --avatar-size-md: 22px;
   --avatar-size-lg: 28px;
-  --avatar-bg-ha: var(--accent);
+  /* Same surface and text pair as the primary button, so initials keep AA contrast with any accent. */
+  --avatar-bg-ha: var(--personal-accent, var(--palette-accent-hover));
+  --avatar-text-ha: var(--personal-accent-foreground, #fff);
   --avatar-bg-custom: var(--warning-dark, #b45309);
   --avatar-text: #fff;
 }
@@ -18,7 +20,7 @@
   justify-content: center;
   border-radius: 50%;
   background: var(--avatar-bg-ha);
-  color: var(--avatar-text);
+  color: var(--avatar-text-ha);
   font-weight: 700;
   flex-shrink: 0;
   line-height: 1;
@@ -45,6 +47,7 @@
 
 .avatar--custom {
   background: var(--avatar-bg-custom);
+  color: var(--avatar-text);
 }
 
 /* Focus ring for parent interactive elements */

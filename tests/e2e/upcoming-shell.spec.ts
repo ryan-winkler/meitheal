@@ -304,4 +304,24 @@ test.describe("Upcoming Shell", () => {
       await request.delete(`/api/tasks/${id}`, { headers })
     }
   })
+  test("day labels and assignee initials keep AA contrast in both themes", async ({ page, request, baseURL }) => {
+    const headers = { origin: new URL(baseURL!).origin }
+    const tomorrow = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10)
+    const created = await request.post("/api/tasks", { headers, data: { title: "Upcoming contrast fixture", due_date: tomorrow, assigned_to: "ha_household" } })
+    expect(created.status(), await created.text()).toBe(201)
+    const { id } = await created.json()
+    try {
+      for (const theme of ["light", "dark"]) {
+        await page.evaluate(value => localStorage.setItem("meitheal-theme", value), theme)
+        await page.reload()
+        await expect(page.locator("html")).toHaveAttribute("data-theme", theme)
+        await expect(page.locator(".day-empty").first()).toBeVisible()
+        await expect(page.locator(".avatar").first()).toBeVisible()
+        const { violations } = await new AxeBuilder({ page }).include(".upcoming-grid").withRules(["color-contrast"]).analyze()
+        expect(violations.flatMap(({ nodes }) => nodes.map(({ target }) => target.join(" "))), theme).toEqual([])
+      }
+    } finally {
+      await request.delete(`/api/tasks/${id}`, { headers })
+    }
+  })
 })
