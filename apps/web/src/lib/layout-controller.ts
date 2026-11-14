@@ -6,7 +6,7 @@
         import { createClientLogger, registerGlobalLogger } from "@lib/client-logger";
         import { containTabFocus } from "@lib/focus-trap"
         import { applyAppearancePreferences, bindAppearanceNavigation, readAppearancePreferences } from "@lib/appearance-preferences"
-        import { syncIngressDestination } from "@lib/ingress-navigation"
+        import { initIngressNavigation, safeIngressHref, syncIngressDestination } from "@lib/ingress-navigation"
         import { hasPriorityOverlay, initShortcutModal } from "@lib/layout-shortcuts-controller"
         import { pageLifecycle } from "@lib/page-lifecycle";
         import { SINGLE_KEY_SHORTCUTS_STORAGE_KEY, singleKeyShortcutsEnabled } from "@lib/single-key-shortcuts"
@@ -120,31 +120,31 @@
           const SHORTCUT_NAV = {
             dashboard: () => {
               syncIngressDestination("/");
-              window.location.assign(`${window.__ingress_path || ""}/`);
+              window.location.assign(safeIngressHref("/"));
             },
             tasks: () => {
               syncIngressDestination("/tasks");
-              window.location.assign(`${window.__ingress_path || ""}/tasks`);
+              window.location.assign(safeIngressHref("/tasks"));
             },
             kanban: () => {
               syncIngressDestination("/tasks#kanban");
-              window.location.assign(`${window.__ingress_path || ""}/tasks#kanban`);
+              window.location.assign(safeIngressHref("/tasks#kanban"));
             },
             table: () => {
               syncIngressDestination("/table");
-              window.location.assign(`${window.__ingress_path || ""}/table`);
+              window.location.assign(safeIngressHref("/table"));
             },
             today: () => {
               syncIngressDestination("/today");
-              window.location.assign(`${window.__ingress_path || ""}/today`);
+              window.location.assign(safeIngressHref("/today"));
             },
             upcoming: () => {
               syncIngressDestination("/upcoming");
-              window.location.assign(`${window.__ingress_path || ""}/upcoming`);
+              window.location.assign(safeIngressHref("/upcoming"));
             },
             calendar: () => {
               syncIngressDestination("/calendar");
-              window.location.assign(`${window.__ingress_path || ""}/calendar`);
+              window.location.assign(safeIngressHref("/calendar"));
             },
           } as const;
 

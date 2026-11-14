@@ -36,7 +36,7 @@ interface Props {
 }
 
 const { helperId, title, icon = "💡", variant = "info" } = Astro.props
-const resolvedIcon = mapEntityEmojiToTabler(icon) ?? "bulb"
+const resolvedIcon = mapEntityEmojiToTabler(icon) ?? "sparkles"
 ---
 
 <aside
@@ -53,7 +53,7 @@ const resolvedIcon = mapEntityEmojiToTabler(icon) ?? "bulb"
       aria-label="Toggle helper"
       aria-expanded="true"
     >
-      <span class="inline-helper__chevron"><Icon name="chevron-right" size={14} /></span>
+      <span class="inline-helper__chevron"><Icon name="chevron-down" size={14} /></span>
     </button>
     <span class="inline-helper__icon" aria-hidden="true"><Icon name={resolvedIcon} size={16} /></span>
     <span class="inline-helper__title">{title}</span>

@@ -5,6 +5,31 @@ function ingressPrefix(): string {
   return (window.__ingress_path ?? "").replace(/\/+$/, "")
 }
 
+/**
+ * Normalize an app route + optional ingress prefix into a safe same-origin path.
+ * Blocks scheme-relative (`//`), backslash (`\`), and cross-origin/scripted URLs.
+ */
+export function safeIngressHref(rawPath: string, prefix = ingressPrefix()): string {
+  const cleanPrefix = prefix.replace(/\/+$/, "")
+  const safePrefix =
+    cleanPrefix.startsWith("/") && !cleanPrefix.startsWith("//") && !cleanPrefix.includes("\\")
+      ? cleanPrefix
+      : ""
+  const trimmed = (rawPath || "/").trim()
+  if (!trimmed || /^[\w.+-]+:/i.test(trimmed) || trimmed.startsWith("//") || trimmed.includes("\\")) {
+    return `${safePrefix}/`
+  }
+  const route = trimmed.startsWith("/") ? trimmed : `/${trimmed}`
+  const stripped =
+    safePrefix && (route === safePrefix || route.startsWith(`${safePrefix}/`))
+      ? route.slice(safePrefix.length) || "/"
+      : route
+  if (!stripped.startsWith("/") || stripped.startsWith("//") || stripped.includes("\\")) {
+    return `${safePrefix}/`
+  }
+  return `${safePrefix}${stripped}`
+}
+
 function appRouteFromUrl(url: URL, prefix: string): string | null {
   if (url.origin !== location.origin) return null
   if (url.pathname === prefix || url.pathname === prefix + "/") {
@@ -113,7 +138,7 @@ export function initIngressNavigation(signal: AbortSignal): void {
   const saved = hostRoute()
   const current = appRoute(new URL(location.href))
   if (saved && current === "/" && saved !== "/") {
-    location.replace(prefix + saved)
+    location.replace(safeIngressHref(saved, prefix))
     return
   }
   reflect()

@@ -1,5 +1,5 @@
 import { createFocusTrap } from "@lib/focus-trap"
-import { syncIngressDestination } from "@lib/ingress-navigation"
+import { safeIngressHref, syncIngressDestination } from "@lib/ingress-navigation"
 import { hasPriorityOverlay } from "@lib/layout-shortcuts-controller"
 import { workerAllowsNetworkOnly } from "@lib/network-only-worker"
 import { fetchOnlineSearch, searchRegistration, searchWorkerReady, searchWorkerScope } from "@lib/online-search-client"
@@ -95,7 +95,7 @@ function isSafeUrl(url: string): boolean {
 
 function prefixIngress(href: string): string {
   if (!href.startsWith("/")) return href
-  return `${window.__ingress_path || ""}${href}`
+  return safeIngressHref(href)
 }
 
 function renderResultItem(

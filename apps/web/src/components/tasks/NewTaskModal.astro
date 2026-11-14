@@ -711,11 +711,11 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
           icon.setAttribute("aria-hidden", "true")
           const laneFallbackIcon: Record<string, TablerIconName> = {
             backlog: "inbox",
-            pending: "circle-dashed",
+            pending: "clock",
             active: "bolt",
-            complete: "circle-check",
+            complete: "check",
           }
-          renderIconOrCustomEmoji(icon, lane.icon, laneFallbackIcon[lane.key] ?? "circle-dashed", 14)
+          renderIconOrCustomEmoji(icon, lane.icon, laneFallbackIcon[lane.key] ?? "clock", 14)
           const label = document.createElement("span")
           label.textContent = lane.label
           pill.append(icon, label)
