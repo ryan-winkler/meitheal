@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock
 from homeassistant.components.http import KEY_HASS, KEY_HASS_USER
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import Unauthorized
+from homeassistant.exceptions import HomeAssistantError, Unauthorized
 from homeassistant.helpers.update_coordinator import UpdateFailed
 import pytest
 
@@ -367,5 +367,97 @@ async def test_mcp_strips_required_and_optional_strings(hass: HomeAssistant) -> 
             "description": "",
         },
     )
+
+
+async def test_mcp_create_complete_batch_and_boundary_errors(hass: HomeAssistant) -> None:
+    """Exercise createTask, completeTask, batchComplete partial failure, unexpected tool error, and invalid JSON."""
+    coordinator = _mock_coordinator(hass)
+    coordinator.async_create_task = AsyncMock(return_value={"id": "created-1"})  # type: ignore[method-assign]
+    coordinator.async_complete_task = AsyncMock(  # type: ignore[method-assign]
+        side_effect=[None, HomeAssistantError("boom"), None]
+    )
+    coordinator.data = MeithealCoordinatorData(
+        [
+            MeithealTask({"id": "t-1", "title": "First", "status": "pending", "priority": 1, "labels": ["Home"]}),
+            MeithealTask({"id": "t-2", "title": "Second", "status": "pending", "priority": 2, "labels": ["Home"]}),
+            MeithealTask({"id": "t-done", "title": "Already", "status": "done", "priority": 1, "labels": ["Home"]}),
+        ]
+    )
+
+    created = await handle_mcp_request(
+        coordinator,
+        {
+            "jsonrpc": "2.0",
+            "id": 30,
+            "method": "tools/call",
+            "params": {
+                "name": "createTask",
+                "arguments": {"title": "Wash car", "priority": 2, "assigned_to": "alice"},
+            },
+        },
+    )
+    assert created is not None and created["result"]["isError"] is False
+    coordinator.async_create_task.assert_awaited_once_with(
+        title="Wash car",
+        description=None,
+        priority=2,
+        due_date=None,
+        assigned_to="alice",
+    )
+
+    batch = await handle_mcp_request(
+        coordinator,
+        {
+            "jsonrpc": "2.0",
+            "id": 31,
+            "method": "tools/call",
+            "params": {"name": "batchComplete", "arguments": {"label": "home", "max_priority": 2}},
+        },
+    )
+    assert batch is not None and batch["result"]["isError"] is False
+    import json
+
+    batch_payload = json.loads(batch["result"]["content"][0]["text"])
+    assert batch_payload == {
+        "completed": ["First"],
+        "count": 1,
+        "failed": [{"id": "t-2", "title": "Second", "error": "boom"}],
+    }
+
+    completed = await handle_mcp_request(
+        coordinator,
+        {
+            "jsonrpc": "2.0",
+            "id": 32,
+            "method": "tools/call",
+            "params": {"name": "completeTask", "arguments": {"id": "t-1"}},
+        },
+    )
+    assert completed is not None and completed["result"]["isError"] is False
+
+    coordinator.async_delete_task = AsyncMock(side_effect=RuntimeError("unexpected failure"))  # type: ignore[method-assign]
+    boundary = await handle_mcp_request(
+        coordinator,
+        {
+            "jsonrpc": "2.0",
+            "id": 33,
+            "method": "tools/call",
+            "params": {"name": "deleteTask", "arguments": {"id": "t-1"}},
+        },
+    )
+    assert boundary is not None
+    assert boundary["result"]["isError"] is True
+    assert "unexpected failure" in boundary["result"]["content"][0]["text"]
+
+    class _BadJsonReq(dict):
+        async def json(self):
+            raise ValueError("invalid json")
+
+    bad_json_request = _BadJsonReq({KEY_HASS_USER: SimpleNamespace(is_admin=True)})
+    bad_json_request.app = {KEY_HASS: hass}  # type: ignore[attr-defined]
+    response = await MeithealMcpView().post(bad_json_request)  # type: ignore[arg-type]
+    assert response.status == 400
+    assert json.loads(response.body or b"{}")["error"]["code"] == -32700
+
 
 

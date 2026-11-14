@@ -11,6 +11,7 @@ from homeassistant.components.homeassistant.exposed_entities import (
 )
 from homeassistant.const import CONF_HOST, CONF_PORT, CONF_SSL
 from homeassistant.core import Context, HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_registry as er, intent
 from homeassistant.setup import async_setup_component
 
@@ -127,3 +128,27 @@ async def test_reload_keeps_home_assistant_exposure_choice_and_todo_service(
         and headers["Authorization"] == f"Bearer {token}"
         for method, url, _, headers in aioclient_mock.mock_calls
     )
+
+
+async def test_intent_add_and_done_return_failure_speech_on_error(
+    hass: HomeAssistant, hass_owner_user
+) -> None:
+    """Add and Done intents turn coordinator failures into spoken error responses."""
+    admin = await hass.auth.async_create_user("AdminErr", group_ids=[GROUP_ID_ADMIN])
+    intents.async_register_intents(hass)
+    context = Context(user_id=admin.id)
+    slots = {"item": {"value": "Clean chimney"}}
+    mock_coord = SimpleNamespace(
+        async_create_task=AsyncMock(side_effect=HomeAssistantError("add failed")),
+        async_complete_task=AsyncMock(side_effect=ValueError("done failed")),
+    )
+    with patch.object(intents, "_get_coordinator", return_value=mock_coord):
+        add_res = await intent.async_handle(
+            hass, "conversation", intents.INTENT_ADD_TASK, slots, context=context
+        )
+        done_res = await intent.async_handle(
+            hass, "conversation", intents.INTENT_DONE_TASK, slots, context=context
+        )
+    assert "add failed" in add_res.speech["plain"]["speech"]
+    assert "done failed" in done_res.speech["plain"]["speech"]
+

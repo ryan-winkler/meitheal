@@ -392,7 +392,7 @@ async def handle_mcp_request(
                     "isError": True,
                 },
             }
-        except Exception as err:  # noqa: BLE001 - JSON-RPC boundary reports every tool failure
+        except Exception as err:  # JSON-RPC boundary reports every tool failure
             _LOGGER.exception("MCP tool %s failed", tool_name)
             return {
                 "jsonrpc": "2.0",

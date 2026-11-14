@@ -69,9 +69,12 @@ test("well-formed formulas match a reference evaluation", () => {
 })
 
 test("deeply nested input is bounded rather than overflowing the stack", () => {
+  expect(evaluateFrameworkFormula("(".repeat(255) + "impact" + ")".repeat(255), { impact: 3 })).toBe(3)
+  expect(evaluateFrameworkFormula("(".repeat(256) + "impact" + ")".repeat(256), { impact: 3 })).toBeNull()
+
   fc.assert(fc.property(fc.integer({ min: 1, max: 5_000 }), depth => {
     const formula = "(".repeat(depth) + "impact" + ")".repeat(depth)
     const result = evaluateFrameworkFormula(formula, { impact: 3 })
-    expect(result === null || result === 3).toBe(true)
+    expect(result).toBe(depth <= 255 ? 3 : null)
   }), { numRuns: 200 })
 })

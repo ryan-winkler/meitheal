@@ -319,7 +319,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: MeithealConfigEntry) -> 
     try:
         from .intents import async_register_intents
         async_register_intents(hass)
-    except Exception:  # noqa: BLE001 - optional voice triggers must never block setup
+    except Exception:  # Optional voice triggers must never block setup
         _LOGGER.warning(
             "Could not register Meitheal intents; voice triggers disabled", exc_info=True
         )

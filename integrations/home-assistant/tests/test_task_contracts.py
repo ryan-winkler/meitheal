@@ -4,7 +4,7 @@ The credential suite exercises the managed authenticated HTTP client; these
 cases isolate adapter contracts without a device or a replacement HA runtime.
 """
 
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -15,14 +15,23 @@ import voluptuous as vol
 import yaml
 from hassil import Intents, recognize
 from homeassistant.components.todo import TodoItem
+from homeassistant.const import CONF_HOST, CONF_PORT, CONF_SSL
 from homeassistant.exceptions import ConfigEntryAuthFailed, HomeAssistantError
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
+try:
+    from pytest_homeassistant.common import MockConfigEntry
+except ModuleNotFoundError as error:
+    if error.name != "pytest_homeassistant":
+        raise
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
 from custom_components.meitheal import CREATE_TASK_SCHEMA, SEARCH_TASKS_SCHEMA, COMPLETE_TASK_BY_TAG_SCHEMA
 from custom_components.meitheal.api import MeithealConnectionError, MeithealResponseError
+from custom_components.meitheal.const import CONF_API_TOKEN, DOMAIN
 from custom_components.meitheal.coordinator import MeithealCoordinator, MeithealCoordinatorData, MeithealTask
 from custom_components.meitheal.device_trigger import async_attach_trigger
-from custom_components.meitheal.sensor import MeithealCompletedTodaySensor, MeithealStreakSensor
+from custom_components.meitheal.sensor import MeithealCompletedTodaySensor, MeithealDueTodaySensor, MeithealStreakSensor
 from custom_components.meitheal.todo import MeithealTodoListEntity
 
 COMPONENT = Path(__file__).resolve().parents[1] / "custom_components/meitheal"
@@ -397,3 +406,57 @@ async def test_actual_core_device_trigger_consumes_namespaced_app_overdue_event(
     hass.bus.async_fire(contract["event_type"], contract["event_data"])
     await hass.async_block_till_done()
     assert len(delivered) == 1
+
+
+async def test_due_today_sensor_extra_attributes_and_empty_state(coordinator):
+    """MeithealDueTodaySensor returns None without data and filters due-today open tasks with data."""
+    sensor = MeithealDueTodaySensor(coordinator, SimpleNamespace(entry_id="test"))
+    assert sensor.extra_state_attributes is None
+
+    today = datetime.now(UTC).strftime("%Y-%m-%d")
+    coordinator.data = MeithealCoordinatorData(
+        [
+            MeithealTask(task("due-now", due_date=f"{today}T09:00:00Z", priority=4)),
+            MeithealTask(task("due-done", due_date=today, status="done", priority=1)),
+            MeithealTask(task("other-day", due_date="2099-01-01", priority=2)),
+        ]
+    )
+    assert sensor.extra_state_attributes == {
+        "task_titles": ["due-now"],
+        "priorities": [4],
+    }
+
+
+async def test_setup_service_errors_and_optional_bootstrap_warnings(hass):
+    """Service calls translate domain errors and optional sentence/intent/LLM setup warnings do not block setup."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="Meitheal",
+        data={CONF_HOST: "tasks.example.test", CONF_PORT: 443, CONF_SSL: True, CONF_API_TOKEN: "mth_" + "a" * 64},
+    )
+    entry.add_to_hass(hass)
+
+    with (
+        patch("custom_components.meitheal._install_custom_sentences", side_effect=OSError("disk full")),
+        patch("custom_components.meitheal.intents.async_register_intents", side_effect=RuntimeError("intent fail")),
+        patch("custom_components.meitheal.async_register_llm_api", side_effect=HomeAssistantError("llm fail")),
+        patch.object(MeithealCoordinator, "async_config_entry_first_refresh", AsyncMock()),
+        patch.object(hass.config_entries, "async_forward_entry_setups", AsyncMock()),
+    ):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+
+    coord = entry.runtime_data
+    coord.async_create_task = AsyncMock(side_effect=ValueError("bad create"))
+    coord.async_complete_task = AsyncMock(side_effect=HomeAssistantError("bad complete"))
+    coord.async_request_refresh = AsyncMock(side_effect=HomeAssistantError("offline"))
+    coord.async_complete_task_by_tag = AsyncMock(side_effect=ValueError("bad tag"))
+
+    with pytest.raises(HomeAssistantError):
+        await hass.services.async_call(DOMAIN, "create_task", {"title": "Test"}, blocking=True)
+    with pytest.raises(HomeAssistantError):
+        await hass.services.async_call(DOMAIN, "complete_task", {"title": "Test"}, blocking=True)
+    with pytest.raises(HomeAssistantError):
+        await hass.services.async_call(DOMAIN, "sync_todo", {}, blocking=True)
+    with pytest.raises(HomeAssistantError):
+        await hass.services.async_call(DOMAIN, "complete_task_by_tag", {"tag_id": "tag-1"}, blocking=True)
+
