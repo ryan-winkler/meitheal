@@ -252,39 +252,70 @@ test("both Core CI profiles build this checkout before required App/native proto
   expect(coreRun).toContain(
     "python -m pip install --require-hashes --no-deps -r \"$TEST_REQUIREMENTS\"",
   )
-  expect(coreRun).toMatch(
-    /HA_CORE_VERSION"\s*=\s*"2026\.11\.1"[\s\S]*?python -m pip check[\s\S]*?HA_CORE_VERSION"\s*=\s*"2026\.10\.4"[\s\S]*?python -m pip check[\s\S]*?else[\s\S]*?python -m pip check/,
-  )
+  const idx202611 = coreRun.indexOf("\"$HA_CORE_VERSION\" = \"2026.11.1\"")
+  const idxCheck11 = coreRun.indexOf("python -m pip check", idx202611)
+  const idx202610 = coreRun.indexOf("\"$HA_CORE_VERSION\" = \"2026.10.4\"", idxCheck11)
+  const idxCheck10 = coreRun.indexOf("python -m pip check", idx202610)
+  const idxElse = coreRun.indexOf("\nelse\n", idxCheck10)
+  const idxCheckElse = coreRun.indexOf("python -m pip check", idxElse)
+  expect(idx202611).toBeGreaterThan(-1)
+  expect(idxCheck11).toBeGreaterThan(idx202611)
+  expect(idx202610).toBeGreaterThan(idxCheck11)
+  expect(idxCheck10).toBeGreaterThan(idx202610)
+  expect(idxElse).toBeGreaterThan(idxCheck10)
+  expect(idxCheckElse).toBeGreaterThan(idxElse)
 })
+
+/** Extract PEP 440 version tokens for `pillow==...` pins with major version >= 13 using linear checks. */
+function extractPillowGe13Pins(content: string): string[] {
+  const pins: string[] = []
+  for (const rawLine of content.split(/\r?\n/)) {
+    const trimmed = rawLine.trimStart()
+    if (!trimmed.toLowerCase().startsWith("pillow==")) continue
+    const rest = trimmed.slice("pillow==".length)
+    let end = 0
+    while (end < rest.length && !" \t\\;#".includes(rest[end]!)) {
+      end += 1
+    }
+    const ver = rest.slice(0, end)
+    const dotIdx = ver.indexOf(".")
+    if (dotIdx <= 0) continue
+    const majorStr = ver.slice(0, dotIdx)
+    const tail = ver.slice(dotIdx + 1)
+    if (!/^[1-9]\d*$/.test(majorStr) || Number(majorStr) < 13) continue
+    if (!/^\d[0-9a-z._+-]*$/i.test(tail)) continue
+    pins.push(ver)
+  }
+  return pins
+}
 
 test("Core test lockfiles pin Pillow >= 13 and match the 2026.10 override", () => {
   const haDir = path.join(repoRoot, "integrations/home-assistant")
   const overridePath = path.join(haDir, "overrides-2026.10.txt")
   expect(fs.existsSync(overridePath)).toBe(true)
 
-  const pillowGe13Line = /^[ \t]*pillow==((?:[1-9]\d{2,}|[2-9]\d|1[3-9])\.\d+(?:\.\d+)*(?:[._+-]?[a-z0-9.]+)?)(?=$|[\s\\;#])/gim
   const pillowLe12Line = /^[ \t]*pillow==(?:[0-9]|1[0-2])\./im
   const allPillowLines = (content: string) => [...content.matchAll(/^[ \t]*pillow(?=[=<>!~;\s\[]|$)/gim)]
 
   const overrideContent = fs.readFileSync(overridePath, "utf8")
   expect(overrideContent, "overrides-2026.10.txt must not pin Pillow <= 12.x").not.toMatch(pillowLe12Line)
   expect(allPillowLines(overrideContent), "overrides-2026.10.txt must declare exactly one Pillow requirement").toHaveLength(1)
-  const overrideMatches = [...overrideContent.matchAll(pillowGe13Line)]
-  expect(overrideMatches, "overrides-2026.10.txt must pin Pillow >= 13").toHaveLength(1)
-  const overridePillowVersion = overrideMatches[0]![1]!
+  const overridePins = extractPillowGe13Pins(overrideContent)
+  expect(overridePins, "overrides-2026.10.txt must pin Pillow >= 13").toHaveLength(1)
+  const overridePillowVersion = overridePins[0]!
 
   const lock202610 = fs.readFileSync(path.join(haDir, "requirements-test-2026.10.txt"), "utf8")
   const headerLines = lock202610.split(/\r?\n/).slice(0, 5).join("\n")
   expect(headerLines).toMatch(/--overrides?\s+overrides-2026\.10\.txt/)
 
-  const lock202610Matches = [...lock202610.matchAll(pillowGe13Line)]
-  expect(lock202610Matches, "requirements-test-2026.10.txt must pin Pillow >= 13").toHaveLength(1)
-  expect(lock202610Matches[0]![1]).toBe(overridePillowVersion)
+  const lock202610Pins = extractPillowGe13Pins(lock202610)
+  expect(lock202610Pins, "requirements-test-2026.10.txt must pin Pillow >= 13").toHaveLength(1)
+  expect(lock202610Pins[0]).toBe(overridePillowVersion)
 
   for (const lockfile of ["requirements-test-2026.10.txt", "requirements-test.txt"]) {
     const content = fs.readFileSync(path.join(haDir, lockfile), "utf8")
     expect(content, `${lockfile} must not pin Pillow <= 12.x`).not.toMatch(pillowLe12Line)
     expect(allPillowLines(content), `${lockfile} must declare exactly one Pillow requirement`).toHaveLength(1)
-    expect([...content.matchAll(pillowGe13Line)], `${lockfile} must pin Pillow >= 13.x`).toHaveLength(1)
+    expect(extractPillowGe13Pins(content), `${lockfile} must pin Pillow >= 13.x`).toHaveLength(1)
   }
 })
