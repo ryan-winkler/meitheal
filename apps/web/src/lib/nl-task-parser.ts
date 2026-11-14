@@ -107,9 +107,10 @@ export function parseTaskInput(input: string, referenceDate?: Date): ParsedTask 
 
   // ── Extract assignee (@name) ──────────────────────────────
 
-  const assigneeMatch = remaining.match(/@([a-zA-Z][\w.-]*)/)
+  // Only a word that starts with "@" names an assignee, so "joe@example.com" stays in the title.
+  const assigneeMatch = remaining.match(/(?<![\w.@])@([a-zA-Z][\w.-]*)/)
   if (assigneeMatch) {
-    result.assignee = assigneeMatch[1]!
+    result.assignee = assigneeMatch[1]!.replace(/[.-]+$/, "")
     remaining = remaining.replace(assigneeMatch[0], " ")
     result.hasExtractions = true
   }

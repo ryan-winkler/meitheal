@@ -68,3 +68,30 @@ test("an unknown API path answers with JSON, not the HTML page", async ({ reques
   expect(response.headers()["content-type"]).toContain("application/problem+json")
   expect(await response.json()).toMatchObject({ status: 404, error: expect.any(String) })
 })
+
+test("time, comments and links read back with the ticket key they were written with", async ({ request, baseURL }) => {
+  const headers = { origin: new URL(baseURL!).origin }
+  const ids: string[] = []
+  try {
+    for (const title of ["Ticket key reader", "Ticket key link target"]) {
+      const created = await request.post("/api/tasks", { headers, data: { title } })
+      expect(created.status()).toBe(201)
+      ids.push((await created.json()).id)
+    }
+    const key = (await (await request.get(`/api/tasks/${ids[0]}`)).json()).ticket_key as string
+    expect(key).toMatch(/^[A-Z]+-\d+$/)
+
+    expect((await request.post(`/api/tasks/${key}/time`, { headers, data: { action: "start" } })).ok()).toBe(true)
+    expect((await (await request.get(`/api/tasks/${key}/time`)).json()).entries).toHaveLength(1)
+
+    expect((await request.post(`/api/tasks/${key}/comments`, { headers, data: { content: "Written with the ticket key" } })).ok()).toBe(true)
+    const { comments } = await (await request.get(`/api/tasks/${key}/comments`)).json()
+    expect(comments.map((comment: { content: string }) => comment.content)).toContain("Written with the ticket key")
+
+    const linked = await request.post(`/api/tasks/${key}/links`, { headers, data: { target_task_id: ids[1], link_type: "related_to" } })
+    expect(linked.ok(), await linked.text()).toBe(true)
+    expect((await (await request.get(`/api/tasks/${key}/links`)).json()).outbound).toHaveLength(1)
+  } finally {
+    for (const id of ids) await request.delete(`/api/tasks/${id}`, { headers })
+  }
+})
