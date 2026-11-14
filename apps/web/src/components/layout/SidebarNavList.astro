@@ -65,7 +65,7 @@ function isExternal(href: string): boolean {
                     title="Expand task types"
                   >
                     <span class="nav-disclosure-chevron inline-flex items-center justify-center" aria-hidden="true">
-                      <Icon name="chevron-right" size={13} />
+                      <Icon name="chevron-down" size={13} class="-rotate-90" />
                     </span>
                   </button>
                   <button
@@ -120,7 +120,7 @@ function isExternal(href: string): boolean {
                         title={`Pin ${type.label}`}
                       >
                         <span class="pin-icon inline-flex items-center" aria-hidden="true"><Icon name="pin" size={13} /></span>
-                        <span class="unpin-icon inline-flex items-center" aria-hidden="true"><Icon name="pinned-off" size={13} /></span>
+                        <span class="unpin-icon inline-flex items-center" aria-hidden="true"><Icon name="x" size={13} /></span>
                       </button>
                     </li>
                   ))}
@@ -155,7 +155,7 @@ function isExternal(href: string): boolean {
                       title={`Pin ${type.label}`}
                     >
                       <span class="pin-icon inline-flex items-center" aria-hidden="true"><Icon name="pin" size={13} /></span>
-                      <span class="unpin-icon inline-flex items-center" aria-hidden="true"><Icon name="pinned-off" size={13} /></span>
+                      <span class="unpin-icon inline-flex items-center" aria-hidden="true"><Icon name="x" size={13} /></span>
                     </button>
                   </li>
                 ))}
@@ -187,7 +187,7 @@ function isExternal(href: string): boolean {
                         aria-label={`Unpin ${type.label} from navigation`}
                         title={`Unpin ${type.label}`}
                       >
-                        <Icon name="pinned-off" size={14} />
+                        <Icon name="x" size={14} />
                       </button>
                     </div>
                   </li>

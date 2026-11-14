@@ -267,12 +267,12 @@ try {
     <!-- Kanban-specific toolbar buttons (Fields, Lanes) — shown/hidden by view controller -->
     <div class="kanban-toolbar-right" id="kanban-toolbar-actions" role="toolbar" aria-label="Kanban view actions">
       <a href="/deferred" class="kanban-toolbar-btn" title="View deferred tasks" data-astro-prefetch="false">
-        <Icon name="clock-pause" size={14} />
+        <Icon name="clock" size={14} />
         <span>{t("deferral.title", locale)}</span>
       </a>
       <a href={kanbanFilters.area ? `/inactivity?area=${encodeURIComponent(kanbanFilters.area)}` : "/inactivity"}
         class="kanban-toolbar-btn" title="View inactivity rules and stalled tasks" data-inactivity-link data-astro-prefetch="false">
-        <Icon name="hourglass" size={14} />
+        <Icon name="clock" size={14} />
         <span>{t("inactivity.title", locale)}</span>
       </a>
       <button
@@ -649,7 +649,7 @@ try {
                           class="kanban-sync-badge"
                           title={t("kanban.calendar_synced", locale)}
                         >
-                          <Icon name="calendar-check" size={13} />
+                          <Icon name="calendar-event" size={13} />
                         </span>
                       )}
                       {task.recurrence_rule && (
@@ -690,7 +690,7 @@ try {
                           class="kanban-meta-comments"
                           title={`${Number(task.comment_count ?? 0)} comments`}
                         >
-                          <Icon name="message" size={12} /> {Number(task.comment_count ?? 0)}
+                          <Icon name="message-circle" size={12} /> {Number(task.comment_count ?? 0)}
                         </span>
                       )}
                       {task.assigned_to && (
@@ -805,7 +805,7 @@ try {
                         title={t("kanban.duplicate", locale)}
                         aria-label={`Duplicate task: ${String(task.title ?? "").slice(0, 50)}`}
                       >
-                        <Icon name="copy" size={14} />
+                        <Icon name="clipboard-list" size={14} />
                       </button>
                       <button
                         class="card-action-btn card-child-btn"

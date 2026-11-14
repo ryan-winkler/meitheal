@@ -232,7 +232,7 @@ const remainingItems = areaPosition < 0 ? [] : navItems.slice(areaPosition + 1)
   >
     <span class="sidebar-edge-toggle__circle" aria-hidden="true">
       <span class="sidebar-edge-toggle__icon">
-        <Icon name="chevron-left" size={14} />
+        <Icon name="chevron-down" size={14} class="rotate-90" />
       </span>
     </span>
   </button>
@@ -274,8 +274,8 @@ const remainingItems = areaPosition < 0 ? [] : navItems.slice(areaPosition + 1)
       aria-label="Toggle sidebar (Ctrl+B)"
       title="Toggle sidebar (Ctrl+B)"
     >
-      <Icon name="panel-left-close" class="sidebar-icon-expanded w-5 h-5 shrink-0 absolute" />
-      <Icon name="panel-left-open" class="sidebar-icon-collapsed w-5 h-5 shrink-0 absolute hidden" />
+      <Icon name="layout-sidebar-left-collapse" class="sidebar-icon-expanded w-5 h-5 shrink-0 absolute" />
+      <Icon name="menu-2" class="sidebar-icon-collapsed w-5 h-5 shrink-0 absolute hidden" />
     </button>
   </div>
 

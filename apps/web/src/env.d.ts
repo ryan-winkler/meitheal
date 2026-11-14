@@ -38,7 +38,7 @@ interface Window {
   /** Filter visibility function exposed for cross-component use */
   __isTaskVisible?: (el: HTMLElement, state?: any) => boolean
   /** Backlog mode toggle */
-  __backlog_mode?: boolean
+  __backlog_mode?: string
 
   // ── Tasks ──
   /** Pre-fill date for task creation from calendar */

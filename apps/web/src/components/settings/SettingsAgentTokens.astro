@@ -47,7 +47,7 @@ const scopeGroups = [
         {!canManageTokens && "Home Assistant administrator access is required to view or issue agent tokens."}
       </div>
       <div class="agent-tokens__empty" id="agent-tokens-empty" hidden>
-        <span class="inline-flex items-center justify-center text-text-muted" aria-hidden="true"><Icon name="lock" size={24} /></span>
+        <span class="inline-flex items-center justify-center text-text-muted" aria-hidden="true"><Icon name="settings" size={24} /></span>
         <p>No agent tokens yet</p>
         <p class="agent-tokens__empty-hint">Create a token to let external tools access your API securely.</p>
       </div>
@@ -140,7 +140,7 @@ const scopeGroups = [
       <div class="agent-tokens__reveal-token">
         <code id="agent-token-plaintext"></code>
         <button type="button" class="btn btn-ghost btn-sm" id="agent-token-copy">
-          <Icon name="copy" size={14} />
+          <Icon name="clipboard-list" size={14} />
           <span>Copy</span>
         </button>
       </div>

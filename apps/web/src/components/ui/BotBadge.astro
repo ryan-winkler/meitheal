@@ -15,7 +15,7 @@ const { owner, handoffState, class: className = "" } = Astro.props;
 const isBot = owner === "bot" || (typeof owner === "string" && (owner.startsWith("bot") || owner.startsWith("agent")));
 const showBadge = isBot || (handoffState && handoffState !== "idle");
 
-let iconName: "automation" | "bulb" | "robot" = "robot";
+let iconName: "automation" | "sparkles" | "message-chatbot" = "message-chatbot";
 let label = "";
 let variant = "";
 
@@ -24,11 +24,11 @@ if (handoffState === "claimed") {
   label = "Bot working";
   variant = "bot-working";
 } else if (handoffState === "proposed") {
-  iconName = "bulb";
+  iconName = "sparkles";
   label = "Review proposal";
   variant = "bot-proposed";
 } else if (isBot) {
-  iconName = "robot";
+  iconName = "message-chatbot";
   label = "Bot owned";
   variant = "bot-owned";
 }

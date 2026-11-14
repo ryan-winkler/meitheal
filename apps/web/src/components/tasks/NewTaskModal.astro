@@ -28,7 +28,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
         <div class="nt-kind-grid" id="nt-kind-tabs">
           <button type="button" class="nt-kind-pill active inline-flex items-center justify-center gap-1.5" data-kind="standard_action" aria-pressed="true"><Icon name="checkbox" size={15} /><span>{t("task_modal.kind_task", locale)}</span></button>
           <button type="button" class="nt-kind-pill inline-flex items-center justify-center gap-1.5" data-kind="shopping_item" aria-pressed="false"><Icon name="shopping-cart" size={15} /><span>{t("task_modal.kind_shopping_list", locale)}</span></button>
-          <button type="button" class="nt-kind-pill inline-flex items-center justify-center gap-1.5" data-kind="checklist" aria-pressed="false"><Icon name="checklist" size={15} /><span>{t("task_modal.kind_checklist", locale)}</span></button>
+          <button type="button" class="nt-kind-pill inline-flex items-center justify-center gap-1.5" data-kind="checklist" aria-pressed="false"><Icon name="list-check" size={15} /><span>{t("task_modal.kind_checklist", locale)}</span></button>
           <button type="button" class="nt-kind-pill inline-flex items-center justify-center gap-1.5" data-kind="calendar_event" aria-pressed="false"><Icon name="calendar-event" size={15} /><span>{t("task_modal.kind_event", locale)}</span></button>
         </div>
       </fieldset>
@@ -112,7 +112,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
           <input type="hidden" id="new-task-status" name="status" value="pending" />
           <div id="nt-status-pills" class="filter-toolbar__type-toggles" role="radiogroup" aria-label="Task status">
             <button type="button" class="filter-toolbar__type-btn active" data-status="pending" role="radio" aria-checked="true">
-              <span class="nt-status-pill-icon inline-flex items-center" aria-hidden="true"><Icon name="circle-dashed" size={14} /></span>
+              <span class="nt-status-pill-icon inline-flex items-center" aria-hidden="true"><Icon name="clock" size={14} /></span>
               <span>{t("task_modal.status_todo", locale)}</span>
             </button>
           </div>

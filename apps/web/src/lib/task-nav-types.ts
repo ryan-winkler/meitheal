@@ -8,7 +8,7 @@ export interface TaskNavTypeEntry {
   label: string
   shortLabel: string
   href: string
-  icon: "inbox" | "shopping-cart" | "checklist" | "calendar-event"
+  icon: "inbox" | "shopping-cart" | "list-check" | "calendar-event"
 }
 
 export interface TaskNavPrefs {
@@ -44,7 +44,7 @@ export const TASK_NAV_TYPES: readonly TaskNavTypeEntry[] = [
     label: "Checklists",
     shortLabel: "Checklists",
     href: "/tasks?types=checklist",
-    icon: "checklist",
+    icon: "list-check",
   },
   {
     id: "calendar_event",

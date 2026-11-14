@@ -28,7 +28,8 @@ import type { Locale } from "../../lib/locale"
 import Icon from "../ui/Icon.astro"
 import { EMOJI_CATEGORIES } from "../../lib/emoji-picker-data"
 import { DEFAULT_ACCENT, DEFAULT_ICON, HOME_ICON, COLOR_SWATCHES } from "../../lib/design-tokens"
-import { mapEntityEmojiToTabler, type TablerIconName } from "../../lib/tabler-svg"
+import { mapEntityEmojiToTabler } from "../../lib/tabler-svg"
+import type { IconName } from "../../generated/icon-registry"
 
 export interface Props {
   locale: Locale
@@ -87,10 +88,10 @@ const visibleAreas = areas
 const areasLabel = label || t("sidebar.areas_header", locale) || "Areas"
 
 // Task kinds for per-project add
-const taskKinds: { kind: string; icon: TablerIconName; labelKey: string }[] = [
+const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
   { kind: "standard_action", icon: "checkbox", labelKey: "sidebar.task_kind_standard_action" },
   { kind: "shopping_item", icon: "shopping-cart", labelKey: "sidebar.task_kind_shopping_item" },
-  { kind: "checklist", icon: "checklist", labelKey: "sidebar.task_kind_checklist" },
+  { kind: "checklist", icon: "list-check", labelKey: "sidebar.task_kind_checklist" },
   { kind: "calendar_event", icon: "calendar-event", labelKey: "sidebar.task_kind_calendar_event" },
   { kind: "quick_capture", icon: "bolt", labelKey: "sidebar.task_kind_quick_capture" },
 ]
@@ -131,7 +132,7 @@ const taskKinds: { kind: string; icon: TablerIconName; labelKey: string }[] = [
                 aria-label={area.name}
                 title={`Collapse ${area.name}`}
               >
-                <span class="stree__toggle" aria-hidden="true"><Icon name="chevron-right" size={11} /></span>
+                <span class="stree__toggle" aria-hidden="true"><Icon name="chevron-down" size={11} class="-rotate-90" /></span>
                 <span class="stree__area-icon inline-flex items-center justify-center" style={`color: ${area.color}`} aria-hidden="true">
                   {areaIconName ? <Icon name={areaIconName} size={15} /> : area.icon}
                 </span>
@@ -148,7 +149,7 @@ const taskKinds: { kind: string; icon: TablerIconName; labelKey: string }[] = [
                   data-area-icon={area.icon}
                   title={t("sidebar.area_options", locale)}
                   aria-label={`${t("sidebar.area_options", locale)} - ${area.name}`}
-                ><Icon name="dots" size={13} /></button>
+                ><Icon name="adjustments-horizontal" size={13} /></button>
                 <button
                   type="button"
                   class="stree__action-btn stree__action-btn--add"
@@ -193,7 +194,7 @@ const taskKinds: { kind: string; icon: TablerIconName; labelKey: string }[] = [
                       data-project-icon-value={proj.icon}
                       title={t("sidebar.project_options", locale)}
                       aria-label={`${t("sidebar.project_options", locale)} - ${proj.title}`}
-                    ><Icon name="dots" size={13} /></button>
+                    ><Icon name="adjustments-horizontal" size={13} /></button>
                     <button
                       type="button"
                       class="stree__action-btn stree__action-btn--add"
@@ -287,7 +288,7 @@ const taskKinds: { kind: string; icon: TablerIconName; labelKey: string }[] = [
     <div class="stree__popover-section">
       <label class="stree__popover-label">{t("sidebar.icon_label", locale)}</label>
       <div class="stree__emoji-preview">
-        <span id="entity-icon-preview" class="stree__emoji-selected inline-flex items-center justify-center"><Icon name="checklist" size={18} /></span>
+        <span id="entity-icon-preview" class="stree__emoji-selected inline-flex items-center justify-center"><Icon name="clipboard-list" size={18} /></span>
         <input type="hidden" id="entity-icon-input" value="📋" />
       </div>
       <div class="stree__emoji-tabs">

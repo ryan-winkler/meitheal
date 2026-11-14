@@ -162,7 +162,7 @@ function initFeatureToggles(signal: AbortSignal): void {
         const heading = document.createElement("div")
         heading.style.cssText =
           "font-weight: 600; font-size: 12px; color: var(--text-secondary); margin-bottom: 8px; padding-top: 4px;"
-        heading.textContent = catInfo.label
+        heading.textContent = catInfo?.label ?? cat
         section.appendChild(heading)
 
         for (const f of features) {
