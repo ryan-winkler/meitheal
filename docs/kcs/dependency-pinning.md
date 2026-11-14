@@ -30,7 +30,9 @@ The Home Assistant base images (`ghcr.io/home-assistant/{arch}-base`) stay on th
   uv pip compile --generate-hashes --python-version 3.14.2 --python-platform x86_64-manylinux_2_28 requirements-test.in -o requirements-test.txt
   ```
 
-  Install it with `python -m pip install --require-hashes -r requirements-test.txt`.
+  Install it with `python -m pip install --require-hashes --no-deps -r requirements-test.txt`. The lock file already lists every package, and `--no-deps` lets an override replace a version that Home Assistant pins.
+
+- **Overriding a package that Home Assistant pins:** when an older Home Assistant release pins a package with a published advisory, list the fixed version in the matching `.overrides.txt` file with a comment, and pass `--override <file>` to `uv pip compile`. `requirements-test-2026.10.overrides.txt` does this for Pillow. Run the pytest suite for that Core release before committing.
 
 ## Reviewing code scanning alerts
 
