@@ -51,8 +51,9 @@ function generateKeypair() {
     privateKeyEncoding: { type: "pkcs8", format: "pem" }
   })
 
-  writeFileSync(PRIVATE_KEY_PATH, privateKey, { mode: 0o600 })
-  writeFileSync(PUBLIC_KEY_PATH, publicKey, { mode: 0o644 })
+  // "wx" fails if another process created a key after the check above, so an existing key is never replaced.
+  writeFileSync(PRIVATE_KEY_PATH, privateKey, { mode: 0o600, flag: "wx" })
+  writeFileSync(PUBLIC_KEY_PATH, publicKey, { mode: 0o644, flag: "wx" })
 
   console.log("✅ Ed25519 keypair generated")
   console.log(`   Private key: ${PRIVATE_KEY_PATH}`)

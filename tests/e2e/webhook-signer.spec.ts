@@ -67,6 +67,28 @@ test.describe("Private URL Guard", () => {
     expect(isPrivateUrl("http://172.31.255.255/hook")).toBe(true)
   })
 
+  test("rejects IPv6 loopback, private ranges and IPv4-mapped addresses written as URLs", () => {
+    for (const url of [
+      "http://[::1]:8123/hook",
+      "http://[::]/hook",
+      "http://[::ffff:127.0.0.1]/hook",
+      "http://[::ffff:c0a8:101]/hook",
+      "http://[fd12:3456::1]/hook",
+      "http://[fc00::1]/hook",
+      "http://[fe80::1]/hook",
+      "http://[FE90::1]/hook",
+      "http://homeassistant.localhost/hook",
+      "http://localhost./hook",
+    ]) {
+      expect(isPrivateUrl(url), url).toBe(true)
+    }
+  })
+
+  test("allows public IPv6 and names that only resemble private ranges", () => {
+    expect(isPrivateUrl("https://[2606:4700::1111]/hook")).toBe(false)
+    expect(isPrivateUrl("https://fdroid.example/hook")).toBe(false)
+  })
+
   test("allows public IPs", () => {
     expect(isPrivateUrl("https://example.com/webhook")).toBe(false)
     expect(isPrivateUrl("https://93.184.216.34/hook")).toBe(false)
