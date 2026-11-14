@@ -9,7 +9,10 @@ async function checkContrast(page: Page, selectors: string[], state: string) {
   const { violations, passes } = await audit.analyze()
   const failures = violations.flatMap(({ nodes }) => nodes.map(({ target, failureSummary }) => ({ target, failureSummary })))
   expect.soft(failures, state).toEqual([])
-  expect.soft(passes.find(({ id }) => id === "color-contrast")?.nodes ?? [], state).toHaveLength(selectors.length)
+  // One passing node per visible match, so a selector that matches several elements is still fully counted.
+  let expected = 0
+  for (const selector of selectors) expected += await page.locator(selector).filter({ visible: true }).count()
+  expect.soft(passes.find(({ id }) => id === "color-contrast")?.nodes ?? [], state).toHaveLength(expected)
 }
 
 for (const theme of ["light", "dark"] as const) {

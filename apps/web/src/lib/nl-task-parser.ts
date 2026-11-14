@@ -111,7 +111,8 @@ export function parseTaskInput(input: string, referenceDate?: Date): ParsedTask 
   const assigneeMatch = remaining.match(/(?<![\w.@])@([a-zA-Z][\w.-]*)/)
   if (assigneeMatch) {
     result.assignee = assigneeMatch[1]!.replace(/[.-]+$/, "")
-    remaining = remaining.replace(assigneeMatch[0], " ")
+    // Cut at the match itself, because the same text can also sit inside an email address earlier on.
+    remaining = `${remaining.slice(0, assigneeMatch.index)} ${remaining.slice(assigneeMatch.index! + assigneeMatch[0].length)}`
     result.hasExtractions = true
   }
 

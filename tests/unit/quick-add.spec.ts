@@ -19,5 +19,6 @@ test("shopping and errand lists save checklist items the task detail can show", 
 test("an email address stays in the title instead of becoming an assignee", () => {
   expect(parseTaskInput("Reply to joe@example.com")).toMatchObject({ title: "Reply to joe@example.com", assignee: null })
   expect(parseTaskInput("Call @ryan.")).toMatchObject({ assignee: "ryan" })
+  expect(parseTaskInput("Email joe@ryan.com @ryan")).toMatchObject({ title: "Email joe@ryan.com", assignee: "ryan" })
   expect(parseTaskInput("Fix bug #frontend @ryan p2")).toMatchObject({ title: "Fix bug", assignee: "ryan", priority: 2, labels: ["frontend"] })
 })

@@ -319,6 +319,15 @@ test.describe("Upcoming Shell", () => {
         await expect(page.locator(".avatar").first()).toBeVisible()
         const { violations } = await new AxeBuilder({ page }).include(".upcoming-grid").withRules(["color-contrast"]).analyze()
         expect(violations.flatMap(({ nodes }) => nodes.map(({ target }) => target.join(" "))), theme).toEqual([])
+        // Hovering an empty day lightens its background, so check its label again in that state.
+        // Not Today: its label keeps the accent colour, and axe skips the "—" placeholder.
+        const emptyHeader = page.locator(".day-empty:not(.day-card--today) .day-header").first()
+        await emptyHeader.hover()
+        await emptyHeader.evaluate(el => Promise.all(el.getAnimations().map(animation => animation.finished)))
+        const hovered = await new AxeBuilder({ page }).include(".day-empty .day-header:hover").withRules(["color-contrast"]).analyze()
+        expect(hovered.violations.flatMap(({ nodes }) => nodes.map(({ target }) => target.join(" "))), `${theme} hover`).toEqual([])
+        expect(hovered.passes.find(({ id }) => id === "color-contrast")?.nodes.length ?? 0, `${theme} hover`).toBeGreaterThan(0)
+        await page.mouse.move(0, 0)
       }
     } finally {
       await request.delete(`/api/tasks/${id}`, { headers })
