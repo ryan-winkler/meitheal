@@ -485,9 +485,11 @@ async function isValidHandbackTarget(
 }
 
 customHandlers.set("handBackTask", async (args, requestApi, agent) => {
+  if (typeof args.id !== "string" || !args.id.trim()) return { error: "Provide the task id" }
+  const idSeg = validateMcpPathSegment(args.id.trim())
+  if (!idSeg.ok) throw new McpInvalidParamsError("Invalid params: unsafe task id")
   const assignee = await agentAssignee(agent)
   if (!assignee) return { error: NO_ASSIGNEE }
-  if (typeof args.id !== "string" || !args.id.trim()) return { error: "Provide the task id" }
   if (args.note !== undefined && (typeof args.note !== "string" || !args.note.trim() || args.note.length > 10000)) {
     return { error: "note must be 1 to 10000 characters" }
   }
@@ -498,14 +500,16 @@ customHandlers.set("handBackTask", async (args, requestApi, agent) => {
     return { error: "request_id must be a non-empty string (max 128 characters)" }
   }
   const requestId = typeof args.request_id === "string" ? args.request_id.trim() : null
-  const task = await checkedJson(await requestApi(`/api/tasks/${encodeURIComponent(args.id.trim())}`))
+  const task = await checkedJson(await requestApi(`/api/tasks/${idSeg.encoded}`))
   // Later calls use the stored ID: the history is keyed by it, not by the ticket key.
   const taskId = String(task.id)
+  const taskSeg = validateMcpPathSegment(taskId)
+  if (!taskSeg.ok) throw new McpInvalidParamsError("Invalid params: unsafe task id")
   const taskVersion = typeof task.task_version === "number" ? task.task_version : task.updated_at
   const expectedVersion = typeof taskVersion === "number" && Number.isSafeInteger(taskVersion) && taskVersion >= 0
     ? taskVersion
     : undefined
-  const path = `/api/tasks/${encodeURIComponent(taskId)}`
+  const path = `/api/tasks/${taskSeg.encoded}`
   const db = getPersistenceClient()
   const receiptKey = requestId ? `${agent.tokenId}:${taskId}:${requestId}` : null
   let existingAttempt: { status: string; response_payload: string | null } | null = null
