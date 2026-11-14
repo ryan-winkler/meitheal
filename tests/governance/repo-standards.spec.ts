@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join, relative } from "node:path";
 import { test, expect } from "@playwright/test";
 
 const repoRoot = join(process.cwd(), "..");
@@ -93,12 +94,205 @@ test("branching and SemVer guardrails require dev-only auto-push and 0.0.{digit}
   });
   expect(syncResult.status, syncResult.stderr).toBe(0);
 
-  for (const rejected of ["minor", "major", "0.0.5", "0.0.10"]) {
-    const bumpResult = spawnSync(process.execPath, ["scripts/bump-version.mjs", rejected], {
-      cwd: repoRoot,
-      encoding: "utf8",
-    });
-    expect(bumpResult.status, `Expected rejection for ${rejected}`).toBe(1);
-    expect(bumpResult.stderr).toContain("--force-semver");
+  // Run the bump script against a copy of the versioned files, so a version the
+  // policy happens to accept can never rewrite the real manifests.
+  const sandbox = mkdtempSync(join(tmpdir(), "meitheal-bump-"));
+  try {
+    const versionedManifests = [
+      "package.json",
+      "meitheal-hub/config.yaml",
+      "meitheal-hub/run.sh",
+      "apps/web/package.json",
+      "apps/web/public/sw.js",
+    ]
+    for (const file of ["scripts/bump-version.mjs", ...versionedManifests]) {
+      mkdirSync(dirname(join(sandbox, file)), { recursive: true });
+      copyFileSync(join(repoRoot, file), join(sandbox, file));
+    }
+    const current = readFileSync(join(repoRoot, "meitheal-hub/config.yaml"), "utf8")
+      .match(/^version:\s*["']?(\d+)\.(\d+)\.(\d+)/m)!;
+    const twoStepPatch = `${current[1]}.${current[2]}.${Number(current[3]) + 2}`;
+    const versionedFiles = () => versionedManifests
+      .map(file => readFileSync(join(sandbox, file), "utf8"));
+    const before = versionedFiles();
+
+    for (const rejected of ["minor", "major", twoStepPatch]) {
+      const bumpResult = spawnSync(process.execPath, ["scripts/bump-version.mjs", rejected], {
+        cwd: sandbox,
+        encoding: "utf8",
+      });
+      expect(bumpResult.status, `Expected rejection for ${rejected}`).toBe(1);
+      expect(bumpResult.stderr).toContain("--force-semver");
+    }
+    expect(versionedFiles()).toEqual(before);
+  } finally {
+    rmSync(sandbox, { recursive: true, force: true });
   }
+});
+
+function listFilesRecursive(dir: string, exts: string[]): string[] {
+  return readdirSync(dir, { recursive: true, withFileTypes: true })
+    .filter(entry => entry.isFile() && exts.some(ext => entry.name.endsWith(ext)))
+    .map(entry => join(entry.parentPath, entry.name))
+    .sort();
+}
+
+test("DDD domain packages remain free of runtime dependencies and adapter imports", () => {
+  const packagesDir = join(repoRoot, "packages");
+  const domainDirs = readdirSync(packagesDir, { withFileTypes: true })
+    .filter(entry => entry.isDirectory() && entry.name.startsWith("domain-"))
+    .map(entry => join(packagesDir, entry.name))
+    .sort();
+
+  expect(domainDirs.length).toBeGreaterThanOrEqual(4);
+
+  for (const domainDir of domainDirs) {
+    const pkgJson = JSON.parse(readFileSync(join(domainDir, "package.json"), "utf8")) as {
+      name: string;
+      dependencies?: Record<string, string>;
+    };
+    expect(Object.keys(pkgJson.dependencies ?? {}), `${pkgJson.name} runtime dependencies`).toEqual([]);
+
+    const srcDir = join(domainDir, "src");
+    for (const file of listFilesRecursive(srcDir, [".ts"])) {
+      const content = readFileSync(file, "utf8");
+      const rel = relative(repoRoot, file).replace(/\\/g, "/");
+      expect(content, `${rel} must not import apps/web`).not.toMatch(
+        /(?:from\s+|import\s*\(|require\s*\()[^"'\n]*["'][^"']*apps\/web\//,
+      );
+      expect(content, `${rel} must not import node:sqlite`).not.toMatch(/["']node:sqlite["']/);
+      expect(content, `${rel} must not import @libsql/*`).not.toMatch(/["']@libsql\//);
+      expect(content, `${rel} must not import home-assistant-js-websocket`).not.toMatch(
+        /["']home-assistant-js-websocket["']/,
+      );
+    }
+  }
+});
+
+test("cross-domain tasks persistence imports stay within the frozen 20-file legacy allowlist", () => {
+  const allowlist = new Set([
+    "auth/agent-token-store.ts",
+    "calendar/calendar-bridge.ts",
+    "calendar/resolve-calendar-entities.ts",
+    "gamification/achievement-engine.ts",
+    "gamification/streak-tracker.ts",
+    "grocy/grocy-bridge.ts",
+    "ha/ha-connection.ts",
+    "ha/ha-startup.ts",
+    "habits/habit-service.ts",
+    "notifications/due-date-reminders.ts",
+    "pillars/pillar-association-service.ts",
+    "pillars/pillar-service.ts",
+    "pillars/principle-service.ts",
+    "pomodoro/pomodoro-service.ts",
+    "search/search-service.ts",
+    "strategy/custom-framework-repository.ts",
+    "strategy/framework-repository.ts",
+    "strategy/rule-repository.ts",
+    "todo/todo-bridge.ts",
+    "todo/todo-inbound-update.ts",
+  ]);
+  expect(allowlist.size).toBe(20);
+
+  const domainsRoot = join(repoRoot, "apps/web/src/domains");
+  const unauthorized: string[] = [];
+
+  for (const file of listFilesRecursive(domainsRoot, [".ts"])) {
+    const rel = relative(domainsRoot, file).replace(/\\/g, "/");
+    if (rel.startsWith("tasks/")) continue;
+    const content = readFileSync(file, "utf8");
+    const importsTaskPersistence =
+      /@domains\/tasks\/persistence/.test(content) ||
+      /(?:from|import)\s*["'](?:\.\.\/)+tasks\/persistence/.test(content);
+    if (importsTaskPersistence && !allowlist.has(rel)) {
+      unauthorized.push(rel);
+    }
+  }
+
+  expect(unauthorized).toEqual([]);
+});
+
+test("precompiled MCP catalog and 64-icon Tabler registry match build generators with zero drift", () => {
+  const verifyResult = spawnSync(
+    process.execPath,
+    [
+      "--input-type=module",
+      "-e",
+      `
+        import { readFileSync } from "node:fs";
+        import { buildMcpCatalogFromYaml } from "./apps/web/scripts/generate-mcp-tools.mjs";
+        import { CANONICAL_TABLER_ICONS, generateIconRegistrySource } from "./apps/web/scripts/generate-icons.mjs";
+
+        const openapi = readFileSync("./apps/web/public/openapi.yaml", "utf8");
+        const expectedMcp = JSON.stringify(buildMcpCatalogFromYaml(openapi), null, 2) + "\\n";
+        const actualMcp = readFileSync("./apps/web/src/generated/mcp-tools.json", "utf8");
+        if (expectedMcp !== actualMcp) {
+          console.error("MCP catalog drift detected");
+          process.exit(2);
+        }
+
+        if (CANONICAL_TABLER_ICONS.length !== 64 || new Set(CANONICAL_TABLER_ICONS).size !== 64) {
+          console.error("Expected 64 canonical Tabler icons");
+          process.exit(3);
+        }
+        const expectedIcons = generateIconRegistrySource();
+        const actualIcons = readFileSync("./apps/web/src/generated/icon-registry.ts", "utf8");
+        if (expectedIcons !== actualIcons) {
+          console.error("Icon registry drift detected");
+          process.exit(4);
+        }
+      `,
+    ],
+    { cwd: repoRoot, encoding: "utf8" },
+  );
+  expect(verifyResult.status, verifyResult.stderr).toBe(0);
+});
+
+test("Evergreen Carbon surface rules, indigo chrome allowlist, and Bucket 2 option strings hold", () => {
+  const webSrcRoot = join(repoRoot, "apps/web/src");
+  const indigoAllowlist = new Set([
+    "lib/design-tokens.ts",
+    "components/ui/ColorPicker.astro",
+    "domains/labels/label-color-resolver.ts",
+    "domains/habits/habit-service.ts",
+    "domains/pillars/pillar-service.ts",
+    "domains/tasks/persistence/hierarchy-repository.ts",
+    "domains/tasks/persistence/store.ts",
+    "domains/tasks/persistence/task-repository.ts",
+    "pages/api/areas/index.ts",
+    "pages/api/projects/index.ts",
+    "pages/api/tasks/[id].ts",
+    "pages/api/users/custom.ts",
+    "pages/api/users/index.ts",
+  ]);
+  expect(indigoAllowlist.size).toBe(13);
+
+  const blurViolations: string[] = [];
+  const indigoViolations: string[] = [];
+
+  for (const file of listFilesRecursive(webSrcRoot, [".css", ".astro", ".ts", ".tsx", ".mjs"])) {
+    const rel = relative(webSrcRoot, file).replace(/\\/g, "/");
+    const content = readFileSync(file, "utf8");
+
+    if (/backdrop-filter|backdrop-blur-/.test(content)) {
+      blurViolations.push(rel);
+    }
+    if (!indigoAllowlist.has(rel) && /#6366f1|#7c3aed/i.test(content)) {
+      indigoViolations.push(rel);
+    }
+  }
+
+  expect(blurViolations, "files with backdrop-filter or backdrop-blur-*").toEqual([]);
+  expect(indigoViolations, "files with unauthorized #6366f1/#7c3aed chrome literals").toEqual([]);
+
+  const enRaw = readFileSync(join(webSrcRoot, "i18n/en.json"), "utf8");
+  const gaRaw = readFileSync(join(webSrcRoot, "i18n/ga.json"), "utf8");
+  expect(enRaw).toContain('"settings.cal_sync_bidirectional": "↔');
+  expect(gaRaw).toContain('"settings.cal_sync_bidirectional": "↔');
+
+  const fwWizard = readFileSync(join(webSrcRoot, "components/settings/FrameworkWizard.astro"), "utf8");
+  expect(fwWizard).toContain('<option value="danger">🔴 Red (Urgent)</option>');
+  expect(fwWizard).toContain('<option value="accent">🟡 Accent</option>');
+  expect(fwWizard).toContain('<option value="bg-secondary">⚪ Neutral</option>');
+  expect(fwWizard).toContain('<option value="bg-primary">🔵 Primary</option>');
 });

@@ -3,7 +3,8 @@
  * n8n / Node-RED integration card sub-component.
  * @domain integrations/n8n
  */
-import HelpTooltip from "../../ui/HelpTooltip.astro";
+import HelpTooltip from "../../ui/HelpTooltip.astro"
+import Icon from "../../ui/Icon.astro"
 import IntegrationCardHeader from "./IntegrationCardHeader.astro"
 import { t } from "../../../i18n/translations"
 import type { Locale } from "../../../lib/locale"
@@ -28,7 +29,7 @@ const locale = Astro.props.locale || "en"
   <div class="integration-card__body" id="integration-n8n-body" inert>
     <!-- HA addon auto-detect callout -->
     <div id="n8n-auto-info" class="integration-callout integration-callout--success" style="display: none;">
-      <strong>{t("settings.n8n_auto_detected", locale)}</strong>
+      <strong class="inline-flex items-center gap-1.5"><Icon name="check" size={14} sprite={true} /> {t("settings.n8n_auto_detected", locale)}</strong>
       <div class="integration-callout__detail" id="n8n-auto-detail">
         {t("settings.n8n_auto_desc", locale)}
       </div>
@@ -41,10 +42,12 @@ const locale = Astro.props.locale || "en"
         {t("settings.n8n_mode_desc", locale)}
       </div>
       <div class="mode-tabs" role="group" aria-labelledby="n8n-mode-label">
-        <button type="button" class="mode-tab mode-tab--active" id="n8n-mode-auto" aria-pressed="true" aria-controls="n8n-auto-content">
+        <button type="button" class="mode-tab mode-tab--active inline-flex items-center justify-center gap-1.5" id="n8n-mode-auto" aria-pressed="true" aria-controls="n8n-auto-content">
+          <Icon name="home" size={14} sprite={true} />
           {t("settings.n8n_mode_addon", locale)}
         </button>
-        <button type="button" class="mode-tab" id="n8n-mode-standalone" aria-pressed="false" aria-controls="n8n-standalone-content">
+        <button type="button" class="mode-tab inline-flex items-center justify-center gap-1.5" id="n8n-mode-standalone" aria-pressed="false" aria-controls="n8n-standalone-content">
+          <Icon name="world" size={14} sprite={true} />
           {t("settings.n8n_mode_standalone", locale)}
         </button>
       </div>
@@ -53,13 +56,13 @@ const locale = Astro.props.locale || "en"
     <!-- HA Addon mode content -->
     <div id="n8n-auto-content" class="integration-card__config" aria-live="polite">
       <div class="integration-callout integration-callout--info">
-        <strong>{t("settings.n8n_ws_title", locale)}</strong>
+        <strong class="inline-flex items-center gap-1.5"><Icon name="link" size={14} sprite={true} /> {t("settings.n8n_ws_title", locale)}</strong>
         <div class="integration-callout__detail">
           {t("settings.n8n_ws_desc", locale)}
         </div>
       </div>
       <div id="n8n-auto-detect-info" class="integration-callout integration-callout--success" style="display: none;" aria-live="polite">
-        <strong>{t("settings.n8n_nr_detected", locale)}</strong>
+        <strong class="inline-flex items-center gap-1.5"><Icon name="check" size={14} sprite={true} /> {t("settings.n8n_nr_detected", locale)}</strong>
         <div class="integration-callout__detail">
           {t("settings.n8n_nr_detected_desc", locale)}
         </div>
@@ -96,7 +99,7 @@ const locale = Astro.props.locale || "en"
       </div>
       <div class="integration-card__actions integration-action-row">
         <button type="button" class="btn btn-primary" id="save-n8n">{t("settings.save_n8n_events", locale)}</button>
-        <button type="button" class="btn btn-ghost" id="test-event-bus">{t("settings.n8n_test_bus", locale)}</button>
+        <button type="button" class="btn btn-ghost" id="test-event-bus"><Icon name="flask" size={14} sprite={true} /> {t("settings.n8n_test_bus", locale)}</button>
       </div>
       <div id="test-event-result" class="integration-callout integration-callout--info" style="display: none; margin-top: 8px;" aria-live="polite">
         <span id="test-event-message"></span>
@@ -119,7 +122,7 @@ const locale = Astro.props.locale || "en"
       <!-- ═══ Node-RED Flow Deployment ═══ -->
       <hr class="settings-section-divider--spaced" style="border: none; margin: 20px 0 16px;" />
       <div class="integration-callout integration-callout--info" style="margin-top: 0;">
-        <strong>{t("settings.n8n_flows_title", locale)}</strong>
+        <strong class="inline-flex items-center gap-1.5"><Icon name="package" size={14} sprite={true} /> {t("settings.n8n_flows_title", locale)}</strong>
         <div class="integration-callout__detail">
           {t("settings.n8n_flows_desc", locale)}
         </div>
@@ -127,7 +130,7 @@ const locale = Astro.props.locale || "en"
         <!-- Deployment status -->
         <div id="nodered-deploy-status" style="margin: 8px 0; display: none;">
           <span id="nodered-deploy-badge" class="badge badge-disabled">{t("settings.status_checking", locale)}</span>
-          <a id="nodered-open-link" href="#" target="_blank" rel="noopener noreferrer" class="btn btn-ghost settings-btn-sm" style="display: none; margin-left: 8px;">{t("settings.n8n_open_nr", locale)}</a>
+          <a id="nodered-open-link" href="#" target="_blank" rel="noopener noreferrer" class="btn btn-ghost settings-btn-sm" style="display: none; margin-left: 8px;"><Icon name="link" size={13} sprite={true} /> {t("settings.n8n_open_nr", locale)}</a>
         </div>
 
         <!-- Deploy result message -->
@@ -136,8 +139,8 @@ const locale = Astro.props.locale || "en"
         </div>
 
         <div class="integration-action-row" style="margin-top: 8px; flex-wrap: wrap;">
-          <button type="button" class="btn btn-primary" id="deploy-nodered-flows">{t("settings.n8n_deploy_nr", locale)}</button>
-          <button type="button" class="btn btn-ghost" id="copy-nodered-flows">{t("settings.n8n_copy_flow", locale)}</button>
+          <button type="button" class="btn btn-primary" id="deploy-nodered-flows"><Icon name="rocket" size={14} sprite={true} /> {t("settings.n8n_deploy_nr", locale)}</button>
+          <button type="button" class="btn btn-ghost" id="copy-nodered-flows"><Icon name="clipboard-list" size={14} sprite={true} /> {t("settings.n8n_copy_flow", locale)}</button>
         </div>
       </div>
     </div>
@@ -206,8 +209,8 @@ const locale = Astro.props.locale || "en"
       </div>
       <div class="integration-card__actions">
         <button type="button" class="btn btn-primary" id="save-n8n-standalone">{t("settings.save_n8n_standalone", locale)}</button>
-        <button type="button" class="btn btn-ghost" id="test-webhook-standalone">{t("settings.n8n_test_webhook", locale)}</button>
-        <button type="button" class="btn btn-ghost" id="refresh-n8n-standalone">{t("settings.n8n_refresh", locale)}</button>
+        <button type="button" class="btn btn-ghost" id="test-webhook-standalone"><Icon name="plug" size={14} sprite={true} /> {t("settings.n8n_test_webhook", locale)}</button>
+        <button type="button" class="btn btn-ghost" id="refresh-n8n-standalone"><Icon name="refresh" size={14} sprite={true} /> {t("settings.n8n_refresh", locale)}</button>
       </div>
       <div id="test-webhook-result" class="integration-callout integration-callout--info" style="display: none; margin-top: 8px;" aria-live="polite">
         <span id="test-webhook-message"></span>
@@ -232,7 +235,7 @@ const locale = Astro.props.locale || "en"
         <label class="form-label mb-2">{t("settings.n8n_workflow_discovery", locale)}</label>
         <div id="n8n-workflows-list" class="cal-toggle-list" style="max-height: 240px; overflow-y: auto;">
           <div class="cal-empty-state">
-            <span class="cal-empty-icon">📭</span>
+            <span class="cal-empty-icon"><Icon name="empty" size={20} sprite={true} /></span>
             <span>{t("settings.n8n_workflow_empty", locale)}</span>
           </div>
         </div>

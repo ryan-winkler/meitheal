@@ -1,0 +1,5 @@
+pytest-homeassistant-custom-component==0.13.375
+# Parser used by both supported Core conversation manifests.
+hassil==3.12.1
+# Coverage plugin for the CI pytest run.
+pytest-cov==7.1.0

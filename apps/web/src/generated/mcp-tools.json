@@ -1,0 +1,3330 @@
+{
+  "tools": [
+    {
+      "name": "getSystemHealth",
+      "description": "Use this to verify Meitheal is running before making other API calls. Returns version, uptime, database status, and Home Assistant connectivity. Call this first in any automation workflow.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "listTasks",
+      "description": "Retrieve Household tasks filtered by status, area, project, labels, priority, assignee, or due date. Use sort and limit parameters for pagination. This is the primary read endpoint for task management automations.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "Filter: todo, in_progress, complete, archived"
+          },
+          "deferred": {
+            "type": "string",
+            "enum": [
+              "0",
+              "1"
+            ],
+            "description": "Use 1 for deferred work and 0 for other work. Omission returns both."
+          },
+          "area_id": {
+            "type": "string",
+            "description": "area_id parameter"
+          },
+          "project_id": {
+            "type": "string",
+            "description": "project_id parameter"
+          },
+          "assigned_to": {
+            "type": "string",
+            "description": "assigned_to parameter"
+          },
+          "priority": {
+            "type": "integer",
+            "description": "priority parameter"
+          },
+          "due_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Match the stored calendar day, either a date-only value or the date written in a stored ISO timestamp. Invalid dates return 400."
+          },
+          "parent_id": {
+            "type": "string",
+            "description": "Get subtasks of a parent"
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "created_at",
+              "updated_at",
+              "title",
+              "status",
+              "priority",
+              "due_date",
+              "kanban_position"
+            ],
+            "description": "Equal values use task ID ascending; null values sort last."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "default": "desc",
+            "description": "order parameter"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 100,
+            "description": "limit parameter"
+          },
+          "offset": {
+            "type": "integer",
+            "default": 0,
+            "description": "offset parameter"
+          }
+        }
+      }
+    },
+    {
+      "name": "getTodayTaskCounts",
+      "description": "Returns counts over the full task database using the Today page rules. No task rows are returned.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "createTask",
+      "description": "Create a task with optional calendar sync, assignment, and framework payload. Authenticated callers can retry an identical request with the Idempotency-Key header. Use this when a user or agent wants to capture a new action item.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Task title (required)"
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 10000
+          },
+          "assigned_to": {
+            "type": "string",
+            "maxLength": 255,
+            "nullable": true,
+            "description": "Must start with 'ha_' or 'custom_'"
+          },
+          "frameworkPayload": {
+            "type": "object"
+          },
+          "calendar": {
+            "type": "object",
+            "properties": {
+              "entityId": {
+                "type": "string"
+              },
+              "startDateTime": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "endDateTime": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "durationMinutes": {
+                "type": "integer"
+              },
+              "timezone": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "title"
+        ]
+      }
+    },
+    {
+      "name": "completeTaskByNfcTag",
+      "description": "Complete the uniquely assigned incomplete task for an NFC tag",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "tag_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "tag_id"
+        ]
+      }
+    },
+    {
+      "name": "manageTaskHandoff",
+      "description": "Requires tasks:propose. Claim returns a five-minute lease. Release and propose require that lease and the issuing token. Propose sends title or description changes to the administrator review queue without changing the task.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Task ID or ticket key"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "claim",
+              "release",
+              "propose"
+            ]
+          },
+          "lease": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Required for release and propose"
+          },
+          "summary": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Required for propose"
+          },
+          "updates": {
+            "type": "object",
+            "description": "Required for propose. Include at least one field.",
+            "properties": {
+              "title": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500
+              },
+              "description": {
+                "type": "string",
+                "maxLength": 10000
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "id",
+          "action"
+        ]
+      }
+    },
+    {
+      "name": "getTask",
+      "description": "Retrieve full task details including subtasks, checklists, comments count, and framework payload. Use this before updating a task to get its current state.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "id parameter"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "updateTask",
+      "description": "Send only the fields you want to change. PATCH accepts the same fields as PUT. Set project_id to an existing project ID to move the task, or null to clear the assignment. Changing the project preserves task area and status. When a task transitions to 'complete', the update also saves the next occurrence if its recurrence rule yields one. Events are dispatched after the write. With expected_status 'backlog', send the exact updated_at from the current task and a target status of 'pending' or 'active'. To guard a checklist write, include checklists and expected_checklists. Set expected_checklists to the exact checklist string or null returned by GET.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "id parameter"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          },
+          "description": {
+            "type": "string",
+            "description": "Task text. The server keeps the first 10,000 characters."
+          },
+          "status": {
+            "type": "string",
+            "description": "Canonical task status, a supported alias, or a custom status. Backlog decisions require exactly pending or active."
+          },
+          "priority": {
+            "type": "number",
+            "description": "The server rounds and clamps this to 1 through 5."
+          },
+          "is_promoted": {
+            "type": "boolean",
+            "description": "Show the task above regular cards in its Kanban lane."
+          },
+          "due_date": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "assigned_to": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "project_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "parent_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "area_id": {
+            "type": "string"
+          },
+          "labels": {
+            "oneOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              {
+                "type": "string",
+                "description": "JSON-encoded array of label names"
+              }
+            ],
+            "description": "Label names, as an array or as a JSON-encoded array.",
+            "example": [
+              "repair",
+              "garage"
+            ]
+          },
+          "checklists": {
+            "type": "string",
+            "description": "Replacement JSON-encoded checklist array"
+          },
+          "expected_checklists": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Exact previous checklist value returned by GET"
+          },
+          "updated_at": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Observed task version as epoch milliseconds. Send the exact observed value with expected_status backlog."
+          },
+          "expected_status": {
+            "type": "string",
+            "const": "backlog",
+            "description": "Requires exact updated_at and status pending or active. The task must still be in Backlog."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "deleteTask",
+      "description": "Permanently removes a task and its domain events. Consider setting status to 'archived' instead if you want recoverability.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "id parameter"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "clearCompletedTasks",
+      "description": "Moves all tasks with status 'complete' to 'archived'. Use this in daily/weekly cleanup automations.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "previewDeleteCompletedTasks",
+      "description": "Dry-run preview returning the count of completed and archived tasks older than 3, 6, 12, or 24 months.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "months": {
+            "type": "integer",
+            "enum": [
+              3,
+              6,
+              12,
+              24
+            ],
+            "description": "Retention threshold in months (3, 6, 12, or 24)"
+          }
+        },
+        "required": [
+          "months"
+        ]
+      }
+    },
+    {
+      "name": "deleteCompletedTasks",
+      "description": "⚠️ Destructive. Permanently removes completed and archived tasks older than 3, 6, 12, or 24 months when confirm=true. Cannot be undone. Prefer clearCompletedTasks for safe archival.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "months": {
+            "type": "integer",
+            "enum": [
+              3,
+              6,
+              12,
+              24
+            ],
+            "description": "Retention threshold in months (3, 6, 12, or 24)"
+          },
+          "confirm": {
+            "type": "boolean",
+            "const": true,
+            "description": "Must be true to execute permanent deletion"
+          }
+        },
+        "required": [
+          "months",
+          "confirm"
+        ]
+      }
+    },
+    {
+      "name": "reorderTasks",
+      "description": "Reorder the supplied tasks across their shared rank slots, or move one card relative to another card in the same Kanban lane and promotion group.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "ordered_ids": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string"
+            }
+          },
+          "task_id": {
+            "type": "string"
+          },
+          "anchor_id": {
+            "type": "string"
+          },
+          "lane": {
+            "type": "string"
+          },
+          "before": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    {
+      "name": "getTaskComments",
+      "description": "Historical comments remain readable with task access. If Home Assistant cannot verify current membership, mention selectors are hidden and can_manage is false.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "id parameter"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "addTaskComment",
+      "description": "Add a status update or handoff note. Home Assistant comment mentions require a current member, a rendered-account context, and a durable attempt header. Retry with the same text and attempt header for 48 hours under the original account. The JSON body is limited to 32 KiB.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "id parameter"
+          },
+          "content": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 5000
+          }
+        },
+        "required": [
+          "id",
+          "content"
+        ]
+      }
+    },
+    {
+      "name": "getTaskComment",
+      "description": "If Home Assistant cannot verify current membership, mention selectors are hidden.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "id parameter"
+          },
+          "commentId": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "commentId parameter"
+          }
+        },
+        "required": [
+          "id",
+          "commentId"
+        ]
+      }
+    },
+    {
+      "name": "updateTaskComment",
+      "description": "The same currently active Home Assistant user or automation credential that created the comment may edit it. A display name does not grant ownership. Home Assistant edits containing mentions require the rendered-account context.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "id parameter"
+          },
+          "commentId": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "commentId parameter"
+          },
+          "content": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 5000
+          }
+        },
+        "required": [
+          "id",
+          "commentId",
+          "content"
+        ]
+      }
+    },
+    {
+      "name": "deleteTaskComment",
+      "description": "Permanently remove a comment created by the same currently active Home Assistant user or automation credential.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "id parameter"
+          },
+          "commentId": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "commentId parameter"
+          }
+        },
+        "required": [
+          "id",
+          "commentId"
+        ]
+      }
+    },
+    {
+      "name": "getTaskReactions",
+      "description": "Returns up to 50 reactions, newest first. Home Assistant ingress requires current membership. Automation tokens need tasks:read.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "id parameter"
+          },
+          "cursor": {
+            "type": "string",
+            "pattern": "^[1-9][0-9]*$",
+            "description": "cursor parameter"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "addTaskReaction",
+      "description": "The same reaction by the same caller on the same target returns the existing reaction. The JSON body is limited to 1 KiB. Home Assistant ingress requires a fresh membership check before writing. Automation tokens need tasks:write.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "id parameter"
+          },
+          "content": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 16,
+            "description": "One line of emoji or plain text. Surrounding whitespace is trimmed and the text is normalized to NFC."
+          }
+        },
+        "required": [
+          "id",
+          "content"
+        ]
+      }
+    },
+    {
+      "name": "deleteTaskReaction",
+      "description": "Only the creator can remove a reaction. Home Assistant ingress requires a fresh membership check. Automation tokens need tasks:write.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "id parameter"
+          },
+          "reactionId": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "reactionId parameter"
+          }
+        },
+        "required": [
+          "id",
+          "reactionId"
+        ]
+      }
+    },
+    {
+      "name": "getTaskCommentReactions",
+      "description": "Returns up to 50 reactions, newest first. Home Assistant ingress requires current membership. Automation tokens need tasks:read.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "id parameter"
+          },
+          "commentId": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "commentId parameter"
+          },
+          "cursor": {
+            "type": "string",
+            "pattern": "^[1-9][0-9]*$",
+            "description": "cursor parameter"
+          }
+        },
+        "required": [
+          "id",
+          "commentId"
+        ]
+      }
+    },
+    {
+      "name": "addTaskCommentReaction",
+      "description": "The same reaction by the same caller on the same target returns the existing reaction. The JSON body is limited to 1 KiB. Home Assistant ingress requires a fresh membership check before writing. Automation tokens need tasks:write.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "id parameter"
+          },
+          "commentId": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "commentId parameter"
+          },
+          "content": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 16,
+            "description": "One line of emoji or plain text. Surrounding whitespace is trimmed and the text is normalized to NFC."
+          }
+        },
+        "required": [
+          "id",
+          "commentId",
+          "content"
+        ]
+      }
+    },
+    {
+      "name": "deleteTaskCommentReaction",
+      "description": "Only the creator can remove a reaction. Home Assistant ingress requires a fresh membership check. Automation tokens need tasks:write.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "id parameter"
+          },
+          "commentId": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "commentId parameter"
+          },
+          "reactionId": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "reactionId parameter"
+          }
+        },
+        "required": [
+          "id",
+          "commentId",
+          "reactionId"
+        ]
+      }
+    },
+    {
+      "name": "getTaskReactionCounts",
+      "description": "Returns positive counts keyed by task ID. Comment reactions are excluded. Home Assistant ingress requires current membership. Automation tokens need tasks:read.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "ids": {
+            "type": "string",
+            "maxLength": 12899,
+            "description": "1 to 100 comma-separated task IDs."
+          }
+        },
+        "required": [
+          "ids"
+        ]
+      }
+    },
+    {
+      "name": "getTaskLinks",
+      "description": "Get linked tasks",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "id parameter"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "linkTask",
+      "description": "Link two tasks",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Source task ID or ticket key"
+          },
+          "target_task_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Target task UUID"
+          },
+          "link_type": {
+            "type": "string",
+            "enum": [
+              "related_to",
+              "blocked_by",
+              "blocks",
+              "duplicates",
+              "duplicated_by"
+            ],
+            "description": "Relationship type"
+          }
+        },
+        "required": [
+          "id",
+          "target_task_id",
+          "link_type"
+        ]
+      }
+    },
+    {
+      "name": "unlinkTask",
+      "description": "Remove a task link",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Task ID or ticket key"
+          },
+          "link_id": {
+            "type": "string",
+            "description": "Link UUID to remove"
+          }
+        },
+        "required": [
+          "id",
+          "link_id"
+        ]
+      }
+    },
+    {
+      "name": "getTaskActivity",
+      "description": "Returns the audit trail for a specific task — useful for understanding what changed and when.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "id parameter"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "getTaskTimeline",
+      "description": "Get task timeline entries",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "id parameter"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "getTaskTimeEntries",
+      "description": "Get time tracking entries",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "id parameter"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "addTaskTimeEntry",
+      "description": "Start or stop a time tracking entry on a task",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "id parameter"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "start",
+              "stop"
+            ],
+            "default": "start"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "duplicateTask",
+      "description": "Creates a copy of the task with a new ID. Useful for creating recurring instances or templates.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "id parameter"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "searchTasks",
+      "description": "Search tasks by query text, status, priority, or assignee. Returns a clean list of matching tasks.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string",
+            "description": "Search text. Omit for recent tasks."
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "tasks"
+            ],
+            "default": "tasks"
+          },
+          "limit": {
+            "type": "integer",
+            "default": 8,
+            "minimum": 1,
+            "maximum": 9007199254740991,
+            "description": "Positive decimal integer. The effective per-section limit is capped at 12."
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "relevance",
+              "updated"
+            ],
+            "default": "relevance",
+            "description": "sort parameter"
+          },
+          "include_completed": {
+            "type": "boolean",
+            "description": "include_completed parameter"
+          },
+          "include_archived": {
+            "type": "boolean",
+            "description": "include_archived parameter"
+          },
+          "status": {
+            "type": "string",
+            "description": "Filter by status (backlog, pending, active, complete, todo, in_progress, done)."
+          },
+          "assigned_to": {
+            "type": "string",
+            "description": "assigned_to parameter"
+          },
+          "priority": {
+            "type": "integer",
+            "description": "priority parameter"
+          },
+          "task_fields": {
+            "type": "string",
+            "description": "Comma-separated: id,title,description,labels,custom_fields,comments"
+          },
+          "query": {
+            "type": "string",
+            "description": "Search text (alias for q)."
+          }
+        }
+      }
+    },
+    {
+      "name": "listAreas",
+      "description": "Areas are the top-level organizational containers (WHERE things happen). Every goal and project belongs to an area.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "createArea",
+      "description": "Create an area",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "icon": {
+            "type": "string",
+            "nullable": true
+          },
+          "color": {
+            "type": "string",
+            "nullable": true
+          },
+          "sort_order": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ]
+      }
+    },
+    {
+      "name": "getArea",
+      "description": "Get area details",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "id parameter"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "updateArea",
+      "description": "Update an area",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "icon": {
+            "type": "string",
+            "nullable": true
+          },
+          "color": {
+            "type": "string",
+            "nullable": true
+          },
+          "sort_order": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ]
+      }
+    },
+    {
+      "name": "deleteArea",
+      "description": "Delete an area",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "id parameter"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "listGoals",
+      "description": "Goals define WHAT you want to achieve. They belong to areas and can have metric tracking (percentage, count, boolean).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "createGoal",
+      "description": "Create a goal",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "area_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "paused",
+              "completed",
+              "abandoned"
+            ]
+          },
+          "metric_type": {
+            "type": "string",
+            "nullable": true
+          },
+          "metric_target": {
+            "type": "number",
+            "nullable": true
+          },
+          "metric_current": {
+            "type": "number",
+            "nullable": true
+          },
+          "progress": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100,
+            "description": "Percentage derived from the stored metric. An update maps this percentage to the goal's metric target, or initializes a percentage target of 100."
+          }
+        },
+        "required": [
+          "id",
+          "title"
+        ]
+      }
+    },
+    {
+      "name": "getGoal",
+      "description": "Get goal details",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "id parameter"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "updateGoal",
+      "description": "Update a goal, including progress metrics",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "area_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "paused",
+              "completed",
+              "abandoned"
+            ]
+          },
+          "metric_type": {
+            "type": "string",
+            "nullable": true
+          },
+          "metric_target": {
+            "type": "number",
+            "nullable": true
+          },
+          "metric_current": {
+            "type": "number",
+            "nullable": true
+          },
+          "progress": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100,
+            "description": "Percentage derived from the stored metric. An update maps this percentage to the goal's metric target, or initializes a percentage target of 100."
+          }
+        },
+        "required": [
+          "id",
+          "title"
+        ]
+      }
+    },
+    {
+      "name": "deleteGoal",
+      "description": "Delete a goal",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "id parameter"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "listProjects",
+      "description": "Projects are containers for tasks within an area. They can be linked to goals for progress tracking.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "goal_id": {
+            "type": "string",
+            "description": "goal_id parameter"
+          },
+          "area_id": {
+            "type": "string",
+            "description": "area_id parameter"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "completed",
+              "paused",
+              "archived"
+            ],
+            "description": "status parameter"
+          }
+        }
+      }
+    },
+    {
+      "name": "createProject",
+      "description": "Create a project",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 2000,
+            "nullable": true
+          },
+          "area_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "goal_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "completed",
+              "paused",
+              "archived"
+            ],
+            "default": "active"
+          },
+          "icon": {
+            "type": "string",
+            "maxLength": 10
+          },
+          "color": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ]
+      }
+    },
+    {
+      "name": "getProject",
+      "description": "Get project details",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "id parameter"
+          },
+          "task_counts": {
+            "type": "string",
+            "enum": [
+              "1"
+            ],
+            "description": "Include full-project active, total and completed task counts."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "updateProject",
+      "description": "Update a project",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "id parameter"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 2000,
+            "nullable": true
+          },
+          "area_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "goal_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "completed",
+              "paused",
+              "archived"
+            ]
+          },
+          "icon": {
+            "type": "string",
+            "maxLength": 10
+          },
+          "color": {
+            "type": "string"
+          },
+          "position": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "deleteProject",
+      "description": "Delete a project",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "id parameter"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "listPillars",
+      "description": "Pillars are the WHY layer — permanent motivational anchors representing who the user wants to be. Soft limit of 5-6 pillars.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "createPillar",
+      "description": "Create a pillar",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "identity_statement": {
+            "type": "string",
+            "nullable": true
+          },
+          "icon": {
+            "type": "string",
+            "nullable": true
+          },
+          "color": {
+            "type": "string",
+            "nullable": true
+          },
+          "sort_order": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ]
+      }
+    },
+    {
+      "name": "getPillar",
+      "description": "Get pillar details",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "id parameter"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "updatePillar",
+      "description": "Update a pillar",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "identity_statement": {
+            "type": "string",
+            "nullable": true
+          },
+          "icon": {
+            "type": "string",
+            "nullable": true
+          },
+          "color": {
+            "type": "string",
+            "nullable": true
+          },
+          "sort_order": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ]
+      }
+    },
+    {
+      "name": "deletePillar",
+      "description": "Delete a pillar",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "id parameter"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "listPillarPrinciples",
+      "description": "List principles for a pillar",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "id parameter"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "addPillarPrinciple",
+      "description": "Add a principle to a pillar",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "id parameter"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "listPillarAssociations",
+      "description": "List goals/habits associated with a pillar",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "id parameter"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "addPillarAssociation",
+      "description": "Associate a goal or habit with a pillar",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "id parameter"
+          },
+          "entity_type": {
+            "type": "string",
+            "enum": [
+              "goal",
+              "habit"
+            ]
+          },
+          "entity_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "listLabels",
+      "description": "List all labels",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "createLabel",
+      "description": "Create a label",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "title": {
+            "type": "string"
+          },
+          "color": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title"
+        ]
+      }
+    },
+    {
+      "name": "listHabits",
+      "description": "Returns habit templates with current streak data, schedule, and completion history.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "createHabit",
+      "description": "Create a habit template",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "updateHabit",
+      "description": "Send { complete: true } to record today's completion. Send other fields to update the template.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "deleteHabit",
+      "description": "Delete a habit",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "getSettings",
+      "description": "Without key, returns a flat settings map. An administrator's map includes the read-only ai-handoff-editable flag. With key, returns a single { key, value } object; secret settings also include configured. System settings require administrator access and credential values are masked. Use key=ai-provider&handoff=1 for the saved provider and permitted destination in one snapshot. This view requires current Home Assistant household access or a local standalone operator. Members can read a custom URL after a current administrator explicitly shares that exact URL. Agent credentials cannot use the handoff view.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Read one setting instead of the settings map"
+          },
+          "handoff": {
+            "type": "string",
+            "const": "1",
+            "description": "Request the current AI handoff snapshot with key=ai-provider"
+          }
+        }
+      }
+    },
+    {
+      "name": "updateSettings",
+      "description": "Send a key and value. System settings and activating Custom mode require administrator access. With custom_theme_css, send name to save the CSS, filename and mode together. Send both strings empty to remove the theme. For a Settings editor save of ai-provider, include the previously saved provider, URL and sharing state. Custom and Ollama additionally require the new destination and sharing choice, which commit together with the provider. A legacy ai-custom-url write revokes approval if it changes the destination. Read ai-custom-url-approved as an administrator to inspect the approval; set it through the grouped save.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "value": {},
+          "name": {
+            "type": "string",
+            "maxLength": 255
+          },
+          "custom_url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "share_custom_url": {
+            "type": "boolean"
+          },
+          "previous_provider": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "previous_custom_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "previously_shared": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "key"
+        ]
+      }
+    },
+    {
+      "name": "listLanes",
+      "description": "List kanban board lanes",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "createLane",
+      "description": "Create a kanban lane",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "updateLane",
+      "description": "Update a kanban lane",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "id parameter"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "deleteLane",
+      "description": "Delete a kanban lane",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "id parameter"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "listSavedFilters",
+      "description": "List saved filter presets",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "createSavedFilter",
+      "description": "Create a saved filter",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Must contain 1–100 characters after trimming."
+          },
+          "icon": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Null or omission uses the default icon."
+          },
+          "query_json": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "createdFrom": {
+                "type": "string",
+                "description": "Inclusive lower creation date, YYYY-MM-DD. Empty omits the bound."
+              },
+              "createdThrough": {
+                "type": "string",
+                "description": "Inclusive upper creation date, YYYY-MM-DD. Empty omits the bound."
+              }
+            }
+          }
+        },
+        "required": [
+          "name"
+        ]
+      }
+    },
+    {
+      "name": "updateSavedFilter",
+      "description": "Update a saved filter",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "deleteSavedFilter",
+      "description": "Delete a saved filter",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "listTemplates",
+      "description": "List task templates",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "createTemplate",
+      "description": "Create a task template",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "listUsers",
+      "description": "Returns users from Home Assistant integration combined with any custom-defined users.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "createCustomUser",
+      "description": "A custom user is an assignee without a Home Assistant account. Set kind to agent for an AI agent that works its tasks through a linked agent token.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "color": {
+            "type": "string",
+            "description": "Hex colour, for example #6366f1"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "human",
+              "agent"
+            ],
+            "default": "human"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      }
+    },
+    {
+      "name": "getGamificationStats",
+      "description": "Returns XP, level, streaks, and unlocked achievements. Useful for motivation dashboards and daily briefings.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "getPomodoroState",
+      "description": "Get current pomodoro timer state",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "startPomodoro",
+      "description": "Start or control a pomodoro session",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "listReminders",
+      "description": "List all active reminders",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "createReminder",
+      "description": "Create a reminder",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "getWeeklyReview",
+      "description": "Returns completed tasks, velocity trends, focus areas, and suggestions for the current or specified week. Perfect for weekly automation digests.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "getVelocity",
+      "description": "Get task completion velocity",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "listFrameworks",
+      "description": "List available strategic frameworks",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "getFramework",
+      "description": "Get framework details",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "id parameter"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "exportFramework",
+      "description": "Export framework data",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "id parameter"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "listRules",
+      "description": "Rules engine for automatic task mutations (e.g., auto-assign, auto-label, auto-prioritize).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "resolveRules",
+      "description": "Dry-run: shows what rules would fire for a given task payload without applying changes.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "getFeatureFlags",
+      "description": "Get runtime feature flags",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "exportTasksJson",
+      "description": "Export all tasks as JSON",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "exportTasksCsv",
+      "description": "Export all tasks as CSV",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "exportTasksIcs",
+      "description": "Export tasks as iCalendar feed",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "getLicenseStatus",
+      "description": "Returns plan type, expiry, and validation state. Grace mode: app is fully functional without a license.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "getHAConnection",
+      "description": "Get HA WebSocket connection status",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "getHACalendars",
+      "description": "List HA calendar entities",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "getHAEvents",
+      "description": "List recent HA events",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "getHAServices",
+      "description": "List HA services",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "getHAAddons",
+      "description": "List HA add-ons",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "getHAAgents",
+      "description": "List HA Assist agents",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "sendHAAssist",
+      "description": "Send a message to HA Assist",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "name": "getIntegrationsStatus",
+      "description": "Get status of all integrations",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "testWebhook",
+      "description": "Sends a test event to configured webhook endpoints. Use this to verify webhook connectivity.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "testEvent",
+      "description": "Fire a test HA event bus event",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "syncCalendar",
+      "description": "Trigger calendar sync",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "getCalendarSyncStatus",
+      "description": "Get calendar sync status",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "getN8nHealth",
+      "description": "Check n8n connectivity",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "listN8nWorkflows",
+      "description": "List n8n workflows",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "getNodeRedStatus",
+      "description": "Check Node-RED connectivity",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "listNodeRedFlows",
+      "description": "List Node-RED flows",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "syncGrocy",
+      "description": "Sync shopping list with Grocy",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "getGrocySettings",
+      "description": "Get Grocy integration settings",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "testGrocy",
+      "description": "Test Grocy connectivity",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "listTodoLists",
+      "description": "List HA todo list entities",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "getTodoItems",
+      "description": "Get items from a HA todo list",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "syncTodo",
+      "description": "Sync tasks with HA todo lists",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "unfurlUrl",
+      "description": "Send the final public HTTP or HTTPS URL without embedded credentials. The App reads up to 256 KiB of decoded HTML within the request deadline.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "maxLength": 2048
+          }
+        },
+        "required": [
+          "url"
+        ]
+      }
+    },
+    {
+      "name": "getA2ATask",
+      "description": "Requires a token with a2a:execute, search:read, and tasks:read, plus A2A-Version: 1.0.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "Task UUID or ticket key (e.g., MTH-42)"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "createAgentToken",
+      "description": "Issue a zero-trust agent token with fine-grained scopes. The plaintext token is returned ONCE in the response — store it securely. Requires Home Assistant admin access.\n\n**For n8n/Node-RED**: Create a token with only the scopes your workflow needs, then set it as Bearer token in your HTTP Request node.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100,
+            "description": "Human label for the token"
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "tasks:read",
+                "tasks:propose",
+                "tasks:write:assigned",
+                "tasks:write",
+                "tasks:delete",
+                "projects:read",
+                "projects:write",
+                "search:read",
+                "mcp:execute",
+                "a2a:execute"
+              ],
+              "description": "Fine-grained permission scope for agent tokens. Grant only the scopes each client needs; tasks:write:assigned limits changes to tasks assigned to the token's agent assignee."
+            },
+            "minItems": 1
+          },
+          "assigneeId": {
+            "type": "string",
+            "maxLength": 128,
+            "nullable": true,
+            "description": "ID of an agent assignee (custom user with kind agent). Required when tasks:write:assigned is granted without tasks:write."
+          },
+          "assignee_id": {
+            "type": "string",
+            "maxLength": 128,
+            "nullable": true,
+            "description": "Snake-case alias for assigneeId"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Optional expiry. Null = no expiry."
+          }
+        },
+        "required": [
+          "name",
+          "scopes"
+        ]
+      }
+    },
+    {
+      "name": "listAgentTokens",
+      "description": "Returns public metadata for active tokens, or active and soft-revoked tokens when `include_revoked=1`. Token hashes and plaintexts are never exposed. Requires Home Assistant admin access.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "include_revoked": {
+            "type": "string",
+            "enum": [
+              "0",
+              "1"
+            ],
+            "description": "Set to `1` to include soft-revoked tokens in the list"
+          }
+        }
+      }
+    },
+    {
+      "name": "updateAgentToken",
+      "description": "Modify the display name, permission scopes, or linked agent assignee of an existing token. The token value itself cannot be changed — revoke and recreate if compromised.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "tasks:read",
+                "tasks:propose",
+                "tasks:write:assigned",
+                "tasks:write",
+                "tasks:delete",
+                "projects:read",
+                "projects:write",
+                "search:read",
+                "mcp:execute",
+                "a2a:execute"
+              ],
+              "description": "Fine-grained permission scope for agent tokens. Grant only the scopes each client needs; tasks:write:assigned limits changes to tasks assigned to the token's agent assignee."
+            },
+            "minItems": 1
+          },
+          "assigneeId": {
+            "type": "string",
+            "maxLength": 128,
+            "nullable": true
+          },
+          "assignee_id": {
+            "type": "string",
+            "maxLength": 128,
+            "nullable": true
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "deleteAgentToken",
+      "description": "By default, soft-revokes the token (keeps record for audit trail). Set `hard: true` to permanently delete. Revoked tokens immediately stop working.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    }
+  ],
+  "routes": {
+    "getSystemHealth": {
+      "method": "GET",
+      "path": "/api/health",
+      "hasBody": false,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "listTasks": {
+      "method": "GET",
+      "path": "/api/tasks",
+      "hasBody": false,
+      "pathParams": [],
+      "queryParams": [
+        "status",
+        "deferred",
+        "area_id",
+        "project_id",
+        "assigned_to",
+        "priority",
+        "due_date",
+        "parent_id",
+        "sort",
+        "order",
+        "limit",
+        "offset"
+      ]
+    },
+    "getTodayTaskCounts": {
+      "method": "GET",
+      "path": "/api/tasks/today-counts",
+      "hasBody": false,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "createTask": {
+      "method": "POST",
+      "path": "/api/tasks/create",
+      "hasBody": true,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "completeTaskByNfcTag": {
+      "method": "POST",
+      "path": "/api/nfc/complete",
+      "hasBody": true,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "manageTaskHandoff": {
+      "method": "POST",
+      "path": "/api/tasks/{id}/handoff",
+      "hasBody": true,
+      "pathParams": [
+        "id"
+      ],
+      "queryParams": []
+    },
+    "getTask": {
+      "method": "GET",
+      "path": "/api/tasks/{id}",
+      "hasBody": false,
+      "pathParams": [
+        "id"
+      ],
+      "queryParams": []
+    },
+    "updateTask": {
+      "method": "PUT",
+      "path": "/api/tasks/{id}",
+      "hasBody": true,
+      "pathParams": [
+        "id"
+      ],
+      "queryParams": []
+    },
+    "deleteTask": {
+      "method": "DELETE",
+      "path": "/api/tasks/{id}",
+      "hasBody": false,
+      "pathParams": [
+        "id"
+      ],
+      "queryParams": []
+    },
+    "clearCompletedTasks": {
+      "method": "POST",
+      "path": "/api/tasks/clear-completed",
+      "hasBody": true,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "previewDeleteCompletedTasks": {
+      "method": "GET",
+      "path": "/api/tasks/delete-completed",
+      "hasBody": false,
+      "pathParams": [],
+      "queryParams": [
+        "months"
+      ]
+    },
+    "deleteCompletedTasks": {
+      "method": "DELETE",
+      "path": "/api/tasks/delete-completed",
+      "hasBody": false,
+      "pathParams": [],
+      "queryParams": [
+        "months",
+        "confirm"
+      ]
+    },
+    "reorderTasks": {
+      "method": "POST",
+      "path": "/api/tasks/reorder",
+      "hasBody": true,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "getTaskComments": {
+      "method": "GET",
+      "path": "/api/tasks/{id}/comments",
+      "hasBody": false,
+      "pathParams": [
+        "id"
+      ],
+      "queryParams": []
+    },
+    "addTaskComment": {
+      "method": "POST",
+      "path": "/api/tasks/{id}/comments",
+      "hasBody": true,
+      "pathParams": [
+        "id"
+      ],
+      "queryParams": []
+    },
+    "getTaskComment": {
+      "method": "GET",
+      "path": "/api/tasks/{id}/comments/{commentId}",
+      "hasBody": false,
+      "pathParams": [
+        "id",
+        "commentId"
+      ],
+      "queryParams": []
+    },
+    "updateTaskComment": {
+      "method": "PATCH",
+      "path": "/api/tasks/{id}/comments/{commentId}",
+      "hasBody": true,
+      "pathParams": [
+        "id",
+        "commentId"
+      ],
+      "queryParams": []
+    },
+    "deleteTaskComment": {
+      "method": "DELETE",
+      "path": "/api/tasks/{id}/comments/{commentId}",
+      "hasBody": false,
+      "pathParams": [
+        "id",
+        "commentId"
+      ],
+      "queryParams": []
+    },
+    "getTaskReactions": {
+      "method": "GET",
+      "path": "/api/tasks/{id}/reactions",
+      "hasBody": false,
+      "pathParams": [
+        "id"
+      ],
+      "queryParams": [
+        "cursor"
+      ]
+    },
+    "addTaskReaction": {
+      "method": "POST",
+      "path": "/api/tasks/{id}/reactions",
+      "hasBody": true,
+      "pathParams": [
+        "id"
+      ],
+      "queryParams": []
+    },
+    "deleteTaskReaction": {
+      "method": "DELETE",
+      "path": "/api/tasks/{id}/reactions/{reactionId}",
+      "hasBody": false,
+      "pathParams": [
+        "id",
+        "reactionId"
+      ],
+      "queryParams": []
+    },
+    "getTaskCommentReactions": {
+      "method": "GET",
+      "path": "/api/tasks/{id}/comments/{commentId}/reactions",
+      "hasBody": false,
+      "pathParams": [
+        "id",
+        "commentId"
+      ],
+      "queryParams": [
+        "cursor"
+      ]
+    },
+    "addTaskCommentReaction": {
+      "method": "POST",
+      "path": "/api/tasks/{id}/comments/{commentId}/reactions",
+      "hasBody": true,
+      "pathParams": [
+        "id",
+        "commentId"
+      ],
+      "queryParams": []
+    },
+    "deleteTaskCommentReaction": {
+      "method": "DELETE",
+      "path": "/api/tasks/{id}/comments/{commentId}/reactions/{reactionId}",
+      "hasBody": false,
+      "pathParams": [
+        "id",
+        "commentId",
+        "reactionId"
+      ],
+      "queryParams": []
+    },
+    "getTaskReactionCounts": {
+      "method": "GET",
+      "path": "/api/tasks/reaction-counts",
+      "hasBody": false,
+      "pathParams": [],
+      "queryParams": [
+        "ids"
+      ]
+    },
+    "getTaskLinks": {
+      "method": "GET",
+      "path": "/api/tasks/{id}/links",
+      "hasBody": false,
+      "pathParams": [
+        "id"
+      ],
+      "queryParams": []
+    },
+    "linkTask": {
+      "method": "POST",
+      "path": "/api/tasks/{id}/links",
+      "hasBody": true,
+      "pathParams": [
+        "id"
+      ],
+      "queryParams": []
+    },
+    "unlinkTask": {
+      "method": "DELETE",
+      "path": "/api/tasks/{id}/links",
+      "hasBody": false,
+      "pathParams": [
+        "id"
+      ],
+      "queryParams": [
+        "link_id"
+      ]
+    },
+    "getTaskActivity": {
+      "method": "GET",
+      "path": "/api/tasks/{id}/activity",
+      "hasBody": false,
+      "pathParams": [
+        "id"
+      ],
+      "queryParams": []
+    },
+    "getTaskTimeline": {
+      "method": "GET",
+      "path": "/api/tasks/{id}/timeline",
+      "hasBody": false,
+      "pathParams": [
+        "id"
+      ],
+      "queryParams": []
+    },
+    "getTaskTimeEntries": {
+      "method": "GET",
+      "path": "/api/tasks/{id}/time",
+      "hasBody": false,
+      "pathParams": [
+        "id"
+      ],
+      "queryParams": []
+    },
+    "addTaskTimeEntry": {
+      "method": "POST",
+      "path": "/api/tasks/{id}/time",
+      "hasBody": true,
+      "pathParams": [
+        "id"
+      ],
+      "queryParams": []
+    },
+    "duplicateTask": {
+      "method": "POST",
+      "path": "/api/tasks/{id}/duplicate",
+      "hasBody": true,
+      "pathParams": [
+        "id"
+      ],
+      "queryParams": []
+    },
+    "searchTasks": {
+      "method": "GET",
+      "path": "/api/search",
+      "hasBody": false,
+      "pathParams": [],
+      "queryParams": [
+        "q",
+        "scope",
+        "limit",
+        "sort",
+        "include_completed",
+        "include_archived",
+        "status",
+        "assigned_to",
+        "priority",
+        "task_fields"
+      ]
+    },
+    "listAreas": {
+      "method": "GET",
+      "path": "/api/areas",
+      "hasBody": false,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "createArea": {
+      "method": "POST",
+      "path": "/api/areas",
+      "hasBody": true,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "getArea": {
+      "method": "GET",
+      "path": "/api/areas/{id}",
+      "hasBody": false,
+      "pathParams": [
+        "id"
+      ],
+      "queryParams": []
+    },
+    "updateArea": {
+      "method": "PUT",
+      "path": "/api/areas/{id}",
+      "hasBody": true,
+      "pathParams": [
+        "id"
+      ],
+      "queryParams": []
+    },
+    "deleteArea": {
+      "method": "DELETE",
+      "path": "/api/areas/{id}",
+      "hasBody": false,
+      "pathParams": [
+        "id"
+      ],
+      "queryParams": []
+    },
+    "listGoals": {
+      "method": "GET",
+      "path": "/api/goals",
+      "hasBody": false,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "createGoal": {
+      "method": "POST",
+      "path": "/api/goals",
+      "hasBody": true,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "getGoal": {
+      "method": "GET",
+      "path": "/api/goals/{id}",
+      "hasBody": false,
+      "pathParams": [
+        "id"
+      ],
+      "queryParams": []
+    },
+    "updateGoal": {
+      "method": "PUT",
+      "path": "/api/goals/{id}",
+      "hasBody": true,
+      "pathParams": [
+        "id"
+      ],
+      "queryParams": []
+    },
+    "deleteGoal": {
+      "method": "DELETE",
+      "path": "/api/goals/{id}",
+      "hasBody": false,
+      "pathParams": [
+        "id"
+      ],
+      "queryParams": []
+    },
+    "listProjects": {
+      "method": "GET",
+      "path": "/api/projects",
+      "hasBody": false,
+      "pathParams": [],
+      "queryParams": [
+        "goal_id",
+        "area_id",
+        "status"
+      ]
+    },
+    "createProject": {
+      "method": "POST",
+      "path": "/api/projects",
+      "hasBody": true,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "getProject": {
+      "method": "GET",
+      "path": "/api/projects/{id}",
+      "hasBody": false,
+      "pathParams": [
+        "id"
+      ],
+      "queryParams": [
+        "task_counts"
+      ]
+    },
+    "updateProject": {
+      "method": "PUT",
+      "path": "/api/projects/{id}",
+      "hasBody": true,
+      "pathParams": [
+        "id"
+      ],
+      "queryParams": []
+    },
+    "deleteProject": {
+      "method": "DELETE",
+      "path": "/api/projects/{id}",
+      "hasBody": false,
+      "pathParams": [
+        "id"
+      ],
+      "queryParams": []
+    },
+    "listPillars": {
+      "method": "GET",
+      "path": "/api/pillars",
+      "hasBody": false,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "createPillar": {
+      "method": "POST",
+      "path": "/api/pillars",
+      "hasBody": true,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "getPillar": {
+      "method": "GET",
+      "path": "/api/pillars/{id}",
+      "hasBody": false,
+      "pathParams": [
+        "id"
+      ],
+      "queryParams": []
+    },
+    "updatePillar": {
+      "method": "PUT",
+      "path": "/api/pillars/{id}",
+      "hasBody": true,
+      "pathParams": [
+        "id"
+      ],
+      "queryParams": []
+    },
+    "deletePillar": {
+      "method": "DELETE",
+      "path": "/api/pillars/{id}",
+      "hasBody": false,
+      "pathParams": [
+        "id"
+      ],
+      "queryParams": []
+    },
+    "listPillarPrinciples": {
+      "method": "GET",
+      "path": "/api/pillars/{id}/principles",
+      "hasBody": false,
+      "pathParams": [
+        "id"
+      ],
+      "queryParams": []
+    },
+    "addPillarPrinciple": {
+      "method": "POST",
+      "path": "/api/pillars/{id}/principles",
+      "hasBody": true,
+      "pathParams": [
+        "id"
+      ],
+      "queryParams": []
+    },
+    "listPillarAssociations": {
+      "method": "GET",
+      "path": "/api/pillars/{id}/associations",
+      "hasBody": false,
+      "pathParams": [
+        "id"
+      ],
+      "queryParams": []
+    },
+    "addPillarAssociation": {
+      "method": "POST",
+      "path": "/api/pillars/{id}/associations",
+      "hasBody": true,
+      "pathParams": [
+        "id"
+      ],
+      "queryParams": []
+    },
+    "listLabels": {
+      "method": "GET",
+      "path": "/api/labels",
+      "hasBody": false,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "createLabel": {
+      "method": "POST",
+      "path": "/api/labels",
+      "hasBody": true,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "listHabits": {
+      "method": "GET",
+      "path": "/api/habits",
+      "hasBody": false,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "createHabit": {
+      "method": "POST",
+      "path": "/api/habits",
+      "hasBody": true,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "updateHabit": {
+      "method": "PUT",
+      "path": "/api/habits",
+      "hasBody": true,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "deleteHabit": {
+      "method": "DELETE",
+      "path": "/api/habits",
+      "hasBody": false,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "getSettings": {
+      "method": "GET",
+      "path": "/api/settings",
+      "hasBody": false,
+      "pathParams": [],
+      "queryParams": [
+        "key",
+        "handoff"
+      ]
+    },
+    "updateSettings": {
+      "method": "PUT",
+      "path": "/api/settings",
+      "hasBody": true,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "listLanes": {
+      "method": "GET",
+      "path": "/api/lanes",
+      "hasBody": false,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "createLane": {
+      "method": "POST",
+      "path": "/api/lanes",
+      "hasBody": true,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "updateLane": {
+      "method": "PUT",
+      "path": "/api/lanes/{id}",
+      "hasBody": true,
+      "pathParams": [
+        "id"
+      ],
+      "queryParams": []
+    },
+    "deleteLane": {
+      "method": "DELETE",
+      "path": "/api/lanes/{id}",
+      "hasBody": false,
+      "pathParams": [
+        "id"
+      ],
+      "queryParams": []
+    },
+    "listSavedFilters": {
+      "method": "GET",
+      "path": "/api/saved-filters",
+      "hasBody": false,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "createSavedFilter": {
+      "method": "POST",
+      "path": "/api/saved-filters",
+      "hasBody": true,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "updateSavedFilter": {
+      "method": "PUT",
+      "path": "/api/saved-filters",
+      "hasBody": true,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "deleteSavedFilter": {
+      "method": "DELETE",
+      "path": "/api/saved-filters",
+      "hasBody": false,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "listTemplates": {
+      "method": "GET",
+      "path": "/api/templates",
+      "hasBody": false,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "createTemplate": {
+      "method": "POST",
+      "path": "/api/templates",
+      "hasBody": true,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "listUsers": {
+      "method": "GET",
+      "path": "/api/users",
+      "hasBody": false,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "createCustomUser": {
+      "method": "POST",
+      "path": "/api/users/custom",
+      "hasBody": true,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "getGamificationStats": {
+      "method": "GET",
+      "path": "/api/gamification",
+      "hasBody": false,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "getPomodoroState": {
+      "method": "GET",
+      "path": "/api/pomodoro",
+      "hasBody": false,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "startPomodoro": {
+      "method": "POST",
+      "path": "/api/pomodoro",
+      "hasBody": true,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "listReminders": {
+      "method": "GET",
+      "path": "/api/reminders",
+      "hasBody": false,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "createReminder": {
+      "method": "POST",
+      "path": "/api/reminders",
+      "hasBody": true,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "getWeeklyReview": {
+      "method": "GET",
+      "path": "/api/review/weekly",
+      "hasBody": false,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "getVelocity": {
+      "method": "GET",
+      "path": "/api/review/velocity",
+      "hasBody": false,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "listFrameworks": {
+      "method": "GET",
+      "path": "/api/frameworks",
+      "hasBody": false,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "getFramework": {
+      "method": "GET",
+      "path": "/api/frameworks/{id}",
+      "hasBody": false,
+      "pathParams": [
+        "id"
+      ],
+      "queryParams": []
+    },
+    "exportFramework": {
+      "method": "GET",
+      "path": "/api/frameworks/{id}/export",
+      "hasBody": false,
+      "pathParams": [
+        "id"
+      ],
+      "queryParams": []
+    },
+    "listRules": {
+      "method": "GET",
+      "path": "/api/rules",
+      "hasBody": false,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "resolveRules": {
+      "method": "POST",
+      "path": "/api/rules/resolve",
+      "hasBody": true,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "getFeatureFlags": {
+      "method": "GET",
+      "path": "/api/features",
+      "hasBody": false,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "exportTasksJson": {
+      "method": "GET",
+      "path": "/api/export/tasks.json",
+      "hasBody": false,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "exportTasksCsv": {
+      "method": "GET",
+      "path": "/api/export/tasks.csv",
+      "hasBody": false,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "exportTasksIcs": {
+      "method": "GET",
+      "path": "/api/export/tasks.ics",
+      "hasBody": false,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "getLicenseStatus": {
+      "method": "GET",
+      "path": "/api/license/status",
+      "hasBody": false,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "getHAConnection": {
+      "method": "GET",
+      "path": "/api/ha/connection",
+      "hasBody": false,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "getHACalendars": {
+      "method": "GET",
+      "path": "/api/ha/calendars",
+      "hasBody": false,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "getHAEvents": {
+      "method": "GET",
+      "path": "/api/ha/events",
+      "hasBody": false,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "getHAServices": {
+      "method": "GET",
+      "path": "/api/ha/services",
+      "hasBody": false,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "getHAAddons": {
+      "method": "GET",
+      "path": "/api/ha/addons",
+      "hasBody": false,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "getHAAgents": {
+      "method": "GET",
+      "path": "/api/ha/agents",
+      "hasBody": false,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "sendHAAssist": {
+      "method": "POST",
+      "path": "/api/ha/assist",
+      "hasBody": true,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "getIntegrationsStatus": {
+      "method": "GET",
+      "path": "/api/integrations/status",
+      "hasBody": false,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "testWebhook": {
+      "method": "POST",
+      "path": "/api/integrations/test-webhook",
+      "hasBody": true,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "testEvent": {
+      "method": "POST",
+      "path": "/api/integrations/test-event",
+      "hasBody": true,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "syncCalendar": {
+      "method": "POST",
+      "path": "/api/integrations/calendar/sync",
+      "hasBody": true,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "getCalendarSyncStatus": {
+      "method": "GET",
+      "path": "/api/integrations/calendar/status",
+      "hasBody": false,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "getN8nHealth": {
+      "method": "GET",
+      "path": "/api/integrations/n8n/health",
+      "hasBody": false,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "listN8nWorkflows": {
+      "method": "GET",
+      "path": "/api/integrations/n8n/workflows",
+      "hasBody": false,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "getNodeRedStatus": {
+      "method": "GET",
+      "path": "/api/integrations/nodered/status",
+      "hasBody": false,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "listNodeRedFlows": {
+      "method": "GET",
+      "path": "/api/integrations/nodered/flows",
+      "hasBody": false,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "syncGrocy": {
+      "method": "POST",
+      "path": "/api/grocy/sync",
+      "hasBody": true,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "getGrocySettings": {
+      "method": "GET",
+      "path": "/api/grocy/settings",
+      "hasBody": false,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "testGrocy": {
+      "method": "POST",
+      "path": "/api/grocy/test",
+      "hasBody": true,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "listTodoLists": {
+      "method": "GET",
+      "path": "/api/todo",
+      "hasBody": false,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "getTodoItems": {
+      "method": "GET",
+      "path": "/api/todo/items",
+      "hasBody": false,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "syncTodo": {
+      "method": "POST",
+      "path": "/api/todo/sync",
+      "hasBody": true,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "unfurlUrl": {
+      "method": "POST",
+      "path": "/api/unfurl",
+      "hasBody": true,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "getA2ATask": {
+      "method": "GET",
+      "path": "/api/a2a/tasks/{id}",
+      "hasBody": false,
+      "pathParams": [
+        "id"
+      ],
+      "queryParams": []
+    },
+    "createAgentToken": {
+      "method": "POST",
+      "path": "/api/agent-tokens",
+      "hasBody": true,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "listAgentTokens": {
+      "method": "GET",
+      "path": "/api/agent-tokens",
+      "hasBody": false,
+      "pathParams": [],
+      "queryParams": [
+        "include_revoked"
+      ]
+    },
+    "updateAgentToken": {
+      "method": "PATCH",
+      "path": "/api/agent-tokens",
+      "hasBody": true,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "deleteAgentToken": {
+      "method": "DELETE",
+      "path": "/api/agent-tokens",
+      "hasBody": false,
+      "pathParams": [],
+      "queryParams": []
+    }
+  }
+}

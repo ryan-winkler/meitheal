@@ -117,95 +117,91 @@ export async function recordTaskCompletion(points = 0): Promise<GamificationStat
 }
 
 /**
- * Get current gamification stats.
+ * Get current gamification stats via a single aggregate query.
  */
 export async function getStats(): Promise<GamificationStats> {
   await ensureGamificationSchema()
   const client = getPersistenceClient()
   const today = new Date().toISOString().split("T")[0]!
+  const yesterday = new Date()
+  yesterday.setDate(yesterday.getDate() - 1)
+  const yesterdayStr = yesterday.toISOString().split("T")[0]!
 
-  // Today's record
-  const todayResult = await client.execute({
-    sql: "SELECT completed_count, streak_count, points FROM gamification_stats WHERE date = ? LIMIT 1",
-    args: [today],
+  const agg = await client.execute({
+    sql: `SELECT
+            COALESCE(MAX(CASE WHEN date = ? THEN completed_count END), 0) AS today_completed,
+            MAX(CASE WHEN date = ? THEN streak_count END) AS today_streak,
+            MAX(CASE WHEN date = ? THEN streak_count END) AS yesterday_streak,
+            COALESCE(MAX(streak_count), 0) AS max_streak,
+            COALESCE(SUM(completed_count), 0) AS total_completed,
+            COALESCE(SUM(points), 0) AS total_points
+          FROM gamification_stats`,
+    args: [today, today, yesterdayStr],
   })
 
-  let currentStreak = 0
-  let todayCompleted = 0
-
-  if (todayResult.rows.length > 0) {
-    const row = todayResult.rows[0] as Record<string, unknown>
-    todayCompleted = Number(row.completed_count)
-    currentStreak = Number(row.streak_count)
-  } else {
-    // No record today — check if yesterday had a streak (not yet broken until midnight)
-    const yesterday = new Date()
-    yesterday.setDate(yesterday.getDate() - 1)
-    const yesterdayStr = yesterday.toISOString().split("T")[0]!
-    const prevResult = await client.execute({
-      sql: "SELECT streak_count FROM gamification_stats WHERE date = ? LIMIT 1",
-      args: [yesterdayStr],
-    })
-    if (prevResult.rows.length > 0) {
-      currentStreak = Number((prevResult.rows[0] as Record<string, unknown>).streak_count)
-    }
-  }
-
-  // Longest streak
-  const maxResult = await client.execute(
-    "SELECT MAX(streak_count) as max_streak FROM gamification_stats",
-  )
-  const longestStreak = maxResult.rows.length > 0
-    ? Number((maxResult.rows[0] as Record<string, unknown>).max_streak ?? 0)
-    : 0
-
-  // Totals
-  const totals = await client.execute(
-    "SELECT COALESCE(SUM(completed_count), 0) as total_completed, COALESCE(SUM(points), 0) as total_points FROM gamification_stats",
-  )
-  const totRow = totals.rows[0] as Record<string, unknown>
+  const row = (agg.rows[0] ?? {}) as Record<string, unknown>
+  const todayCompleted = row.today_streak != null ? Number(row.today_completed ?? 0) : 0
+  const currentStreak = row.today_streak != null
+    ? Number(row.today_streak)
+    : row.yesterday_streak != null
+      ? Number(row.yesterday_streak)
+      : 0
+  const longestStreak = Number(row.max_streak ?? 0)
 
   return {
     currentStreak: Math.max(currentStreak, longestStreak === 0 ? 0 : currentStreak),
     longestStreak,
     todayCompleted,
-    totalCompleted: Number(totRow.total_completed),
-    totalPoints: Number(totRow.total_points),
+    totalCompleted: Number(row.total_completed ?? 0),
+    totalPoints: Number(row.total_points ?? 0),
   }
 }
 
 /**
- * Get weekly data for the last 7 days.
+ * Get weekly data for the last 7 days via a single GROUP BY date query.
  */
 export async function getWeeklyData(): Promise<DailyRecord[]> {
   await ensureGamificationSchema()
   const client = getPersistenceClient()
 
-  const days: DailyRecord[] = []
+  const dateKeys: string[] = []
   for (let i = 6; i >= 0; i--) {
     const d = new Date()
     d.setDate(d.getDate() - i)
-    const dateStr = d.toISOString().split("T")[0]!
-
-    const result = await client.execute({
-      sql: "SELECT completed_count, streak_count, points FROM gamification_stats WHERE date = ? LIMIT 1",
-      args: [dateStr],
-    })
-
-    if (result.rows.length > 0) {
-      const row = result.rows[0] as Record<string, unknown>
-      days.push({
-        date: dateStr,
-        completedCount: Number(row.completed_count),
-        streakCount: Number(row.streak_count),
-        points: Number(row.points),
-      })
-    } else {
-      days.push({ date: dateStr, completedCount: 0, streakCount: 0, points: 0 })
-    }
+    dateKeys.push(d.toISOString().split("T")[0]!)
   }
 
-  return days
+  const startStr = dateKeys[0]!
+  const endStr = dateKeys[dateKeys.length - 1]!
+  const result = await client.execute({
+    sql: `SELECT date,
+                 COALESCE(SUM(completed_count), 0) AS completed_count,
+                 COALESCE(MAX(streak_count), 0) AS streak_count,
+                 COALESCE(SUM(points), 0) AS points
+          FROM gamification_stats
+          WHERE date >= ? AND date <= ?
+          GROUP BY date`,
+    args: [startStr, endStr],
+  })
+
+  const byDate = new Map<string, DailyRecord>()
+  for (const raw of result.rows) {
+    const r = raw as Record<string, unknown>
+    const d = String(r.date)
+    byDate.set(d, {
+      date: d,
+      completedCount: Number(r.completed_count ?? 0),
+      streakCount: Number(r.streak_count ?? 0),
+      points: Number(r.points ?? 0),
+    })
+  }
+
+  return dateKeys.map(dateStr => byDate.get(dateStr) ?? {
+    date: dateStr,
+    completedCount: 0,
+    streakCount: 0,
+    points: 0,
+  })
 }
 
 /** Reset for tests */

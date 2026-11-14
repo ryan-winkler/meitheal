@@ -3,7 +3,8 @@
  * Calendar Sync integration card sub-component.
  * @domain integrations/calendar
  */
-import HelpTooltip from "../../ui/HelpTooltip.astro";
+import HelpTooltip from "../../ui/HelpTooltip.astro"
+import Icon from "../../ui/Icon.astro"
 import IntegrationCardHeader from "./IntegrationCardHeader.astro"
 import { t } from "../../../i18n/translations"
 import type { Locale } from "../../../lib/locale"
@@ -28,7 +29,7 @@ const locale = Astro.props.locale || "en"
   <div class="integration-card__body" id="integration-calendar-body" inert>
     <!-- HA auto-sync info callout -->
     <div id="cal-auto-info" class="integration-callout integration-callout--success" style="display: none;">
-      <strong>{t("settings.cal_auto_sync_active", locale)}</strong>
+      <strong class="inline-flex items-center gap-1.5"><Icon name="check" size={14} sprite={true} /> {t("settings.cal_auto_sync_active", locale)}</strong>
       <span id="cal-auto-entity" class="mono-text"></span>
       <div class="integration-callout__detail">
         {t("settings.cal_auto_sync_desc", locale)}
@@ -52,7 +53,7 @@ const locale = Astro.props.locale || "en"
       </p>
       <div id="cal-entities-container" class="cal-toggle-list"></div>
       <div id="cal-no-entities" class="cal-empty-state" style="display: none;">
-        <span class="cal-empty-icon">📭</span>
+        <span class="cal-empty-icon"><Icon name="empty" size={20} sprite={true} /></span>
         <span>{t("settings.cal_no_entities", locale)}</span>
       </div>
     </div>
@@ -61,7 +62,7 @@ const locale = Astro.props.locale || "en"
       <!-- Manual entity input for advanced users -->
       <details class="caldav-section" style="margin-bottom: 10px;">
         <summary class="caldav-toggle">
-          <span>{t("settings.cal_manual_entity_title", locale)}</span>
+          <span class="inline-flex items-center gap-1.5"><Icon name="keyboard" size={14} sprite={true} /> {t("settings.cal_manual_entity_title", locale)}</span>
           <small>{t("settings.cal_manual_entity_desc", locale)}</small>
         </summary>
         <div class="form-group form-group--spaced">
@@ -82,7 +83,7 @@ const locale = Astro.props.locale || "en"
       <!-- External CalDAV — collapsible -->
       <details class="caldav-section" id="caldav-details">
         <summary class="caldav-toggle">
-          <span>{t("settings.caldav_title", locale)}</span>
+          <span class="inline-flex items-center gap-1.5"><Icon name="world" size={14} sprite={true} /> {t("settings.caldav_title", locale)}</span>
           <small>{t("settings.caldav_desc", locale)}</small>
         </summary>
 
@@ -117,7 +118,7 @@ const locale = Astro.props.locale || "en"
         </div>
 
         <div id="caldav-active-indicator" class="integration-callout integration-callout--success" style="display: none; margin-top: 12px;">
-          <strong>{t("settings.caldav_configured", locale)}</strong>
+          <strong class="inline-flex items-center gap-1.5"><Icon name="check" size={14} sprite={true} /> {t("settings.caldav_configured", locale)}</strong>
           <div class="integration-callout__detail">
             {t("settings.caldav_configured_desc", locale)}
           </div>

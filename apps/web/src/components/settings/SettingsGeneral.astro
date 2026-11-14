@@ -1,6 +1,7 @@
 ---
 import { t } from "../../i18n/translations"
 import type { Locale } from "../../lib/locale"
+import Icon from "../ui/Icon.astro"
 import SettingsActionRow from "./SettingsActionRow.astro"
 import SettingsPanelCard from "./SettingsPanelCard.astro"
 
@@ -56,6 +57,7 @@ const { locale } = Astro.props
     <SettingsPanelCard
       title={t("settings.custom_fields_title", locale)}
       subtitle={t("settings.custom_fields_subtitle", locale)}
+      icon="clipboard-list"
       padded={false}
     >
       <button type="button" class="btn btn-ghost" id="add-custom-field" slot="actions"
@@ -103,7 +105,8 @@ const { locale } = Astro.props
 
     <!-- Users & Assignment -->
     <SettingsPanelCard
-      title="👤 Users & Assignment"
+      title="Users & Assignment"
+      icon="users"
       subtitle="Manage task assignees. Home Assistant users are discovered automatically. Add custom users for non-HA household members."
     >
       <div class="settings-stack">
@@ -182,7 +185,8 @@ const { locale } = Astro.props
 
   <!-- Kanban Area -->
   <SettingsPanelCard
-    title="📊 Kanban Area"
+    title="Kanban Area"
+    icon="kanban"
     subtitle="Configure Kanban board behaviour, including backlog visibility and completed task retention."
   >
     <div class="settings-stack">
@@ -258,7 +262,8 @@ const { locale } = Astro.props
 
   <!-- Notifications -->
   <SettingsPanelCard
-    title="🔔 Notifications"
+    title="Notifications"
+    icon="bell"
     subtitle="Control how Meitheal sends notifications to Home Assistant. Toggle globally or per user."
   >
     <div class="settings-stack">
@@ -292,8 +297,8 @@ const { locale } = Astro.props
               <span class="toggle-slider"></span>
             </label>
             <div class="flex-1">
-              <div id="notif-channel-sidebar-label" class="settings-label--inline">
-                🔔 HA Sidebar Bell
+              <div id="notif-channel-sidebar-label" class="settings-label--inline inline-flex items-center gap-1.5">
+                <Icon name="bell" size={14} sprite={true} /> HA Sidebar Bell
               </div>
               <div class="settings-hint--sm">
                 Appears in the Home Assistant notification bell. Silent — no
@@ -308,8 +313,8 @@ const { locale } = Astro.props
               <span class="toggle-slider"></span>
             </label>
             <div class="flex-1">
-              <div id="notif-channel-mobile-label" class="settings-label--inline">
-                📱 Mobile Push
+              <div id="notif-channel-mobile-label" class="settings-label--inline inline-flex items-center gap-1.5">
+                <Icon name="phone" size={14} sprite={true} /> Mobile Push
               </div>
               <div class="settings-hint--sm">
                 Push notification to HA Companion App with sound and vibration.
@@ -340,8 +345,8 @@ const { locale } = Astro.props
               <span class="toggle-slider"></span>
             </label>
             <div class="flex-1">
-              <div id="notif-channel-reminders-label" class="settings-label--inline">
-                ⏰ Due-Date Reminders
+              <div id="notif-channel-reminders-label" class="settings-label--inline inline-flex items-center gap-1.5">
+                <Icon name="today" size={14} sprite={true} /> Due-Date Reminders
               </div>
               <div class="settings-hint--sm">
                 Sends reminder notifications for tasks due within the configured
@@ -393,7 +398,8 @@ const { locale } = Astro.props
 
   <!-- Optional Features -->
   <SettingsPanelCard
-    title="⚡ Optional Features"
+    title="Optional Features"
+    icon="automation"
     subtitle="Enable or disable optional features. Disabled features are hidden from the UI and their APIs return 404. Core task management is never affected."
   >
     <div id="feature-toggles-container" class="settings-stack--sm" style="gap: 10px;">
@@ -750,7 +756,7 @@ const { locale } = Astro.props
 
             var label = document.createElement("span");
             label.style.cssText = "font-size: 13px;";
-            label.textContent = "📱 " + svc.name;
+            label.textContent = svc.name;
             row.appendChild(label);
 
             var svcLabel = document.createElement("span");
@@ -1042,9 +1048,9 @@ const { locale } = Astro.props
     if (!container) return;
 
     const CATEGORIES = {
-      productivity: { label: "Productivity", icon: "🎯" },
-      integrations: { label: "Integrations", icon: "🔌" },
-      visual: { label: "Visual", icon: "✨" },
+      productivity: { label: "Productivity" },
+      integrations: { label: "Integrations" },
+      visual: { label: "Visual" },
     };
 
     fetch((window.__ingress_path || "") + "/api/features")
@@ -1070,7 +1076,7 @@ const { locale } = Astro.props
 
           var heading = document.createElement("div");
           heading.style.cssText = "font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); margin-bottom: 8px; padding-top: 4px;";
-          heading.textContent = catInfo.icon + " " + catInfo.label;
+          heading.textContent = catInfo.label;
           section.appendChild(heading);
 
           features.forEach(function (f) {
@@ -1083,7 +1089,7 @@ const { locale } = Astro.props
               '<span class="toggle-slider"></span>' +
               '</label>' +
               '<div style="flex: 1;">' +
-              '<div style="font-weight: 500; font-size: 13px;">' + f.icon + ' ' + f.label + '</div>' +
+              '<div style="font-weight: 500; font-size: 13px;">' + f.label + '</div>' +
               '<div style="font-size: 11px; color: var(--text-muted);">' + f.description + '</div>' +
               '</div>';
 
@@ -1124,7 +1130,7 @@ const { locale } = Astro.props
         // Reload hint
         var hint = document.createElement("div");
         hint.style.cssText = "font-size: 11px; color: var(--text-muted); margin-top: 4px; padding: 8px 12px; background: var(--bg-secondary); border-radius: 6px; border: 1px dashed var(--border);";
-        hint.innerHTML = '💡 <strong>Note:</strong> Some changes take effect on the next page load.';
+        hint.innerHTML = '<strong>Note:</strong> Some changes take effect on the next page load.';
         container.appendChild(hint);
       })
       .catch(function () {

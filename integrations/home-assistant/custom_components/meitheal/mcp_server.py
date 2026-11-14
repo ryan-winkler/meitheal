@@ -35,6 +35,7 @@ from homeassistant.components.http import (
     require_admin,
 )
 from homeassistant.config_entries import ConfigEntryState
+from homeassistant.exceptions import HomeAssistantError
 
 from .const import DOMAIN
 from .coordinator import MeithealCoordinator
@@ -201,7 +202,7 @@ MCP_TOOLS = [
     },
     {
         "name": "batchComplete",
-        "description": "Complete multiple tasks at once by label or priority filter",
+        "description": "Complete multiple tasks at once by label or priority filter. Returns the completed titles and any tasks that failed, with the reason.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -391,8 +392,8 @@ async def handle_mcp_request(
                     "isError": True,
                 },
             }
-        except Exception as err:
-            _LOGGER.error("MCP tool %s failed: %s", tool_name, err)
+        except Exception as err:  # JSON-RPC boundary reports every tool failure
+            _LOGGER.exception("MCP tool %s failed", tool_name)
             return {
                 "jsonrpc": "2.0",
                 "id": req_id,
@@ -707,13 +708,18 @@ async def _execute_tool(
             targets.append(t)
 
         completed = []
+        failed = []
         for t in targets:
             try:
                 await coordinator.async_complete_task(task_id=t.id)
                 completed.append(t.title)
+            except (HomeAssistantError, ValueError) as err:
+                _LOGGER.warning("batchComplete failed for task %s: %s", t.id, err)
+                failed.append({"id": t.id, "title": t.title, "error": str(err)})
             except Exception as err:
-                _LOGGER.debug("batchComplete failed for task %s: %s", t.id, err)
-        return {"completed": completed, "count": len(completed)}
+                _LOGGER.exception("batchComplete hit unexpected error for task %s", t.id)
+                failed.append({"id": t.id, "title": t.title, "error": str(err)})
+        return {"completed": completed, "count": len(completed), "failed": failed}
 
     elif tool_name == "linkTask":
         source_task_id = _require_str(args, "source_task_id", "linkTask")
@@ -766,7 +772,7 @@ class MeithealMcpView(HomeAssistantView):
         """Handle incoming MCP JSON-RPC call."""
         try:
             body = await request.json()
-        except Exception:
+        except ValueError:
             return web.json_response(
                 {
                     "jsonrpc": "2.0",

@@ -41,7 +41,15 @@ export const GET: APIRoute = async ({ params, url }) => {
     ...(url.searchParams.has("deferralRead") ? { "cache-control": "no-store" } : {}),
   }
 
-  const row = await repo.findById(params.id!)
+  const resolved = await repo.resolveTaskId(params.id!)
+  if (!resolved) {
+    return new Response(JSON.stringify({ error: "Task not found" }), {
+      status: 404,
+      headers,
+    })
+  }
+
+  const row = await repo.findById(resolved.id)
   if (!row) {
     return new Response(JSON.stringify({ error: "Task not found" }), {
       status: 404,
@@ -395,9 +403,11 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
       ...(version ? { version } : {}),
       ...(expectedChecklists !== undefined ? { expectedChecklists } : {}),
       ...(expectedAssignedTo !== undefined ? { expectedAssignedTo } : {}),
+      ...(locals.writeAbortSignal ? { signal: locals.writeAbortSignal } : {}),
     })
   } catch (err) {
     if (!completionIntent) throw err
+    if ((err as { name?: string } | null)?.name === "AbortError") throw err
     const code = err && typeof err === "object" && "code" in err ? err.code : undefined
     if (code === "TRANSACTION_ACTIVE" || code === "SQLITE_BUSY" || isDbUnavailable(err)) {
       return db503Response("task-completion", err)
@@ -640,7 +650,7 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
   })
 }
 
-export const DELETE: APIRoute = async ({ params, request }) => {
+export const DELETE: APIRoute = async ({ params, request, locals }) => {
   const boardSelection = await rejectBoardSelectionInJson(request)
   if (boardSelection) return boardSelection
   await ensureSchema()
@@ -655,7 +665,7 @@ export const DELETE: APIRoute = async ({ params, request }) => {
   }
 
   const resolvedId = resolved.id
-  await repo.deleteTask(resolvedId)
+  await repo.deleteTask(resolvedId, locals.writeAbortSignal ? { signal: locals.writeAbortSignal } : undefined)
 
   const authority = await taskEventAuthorityHeaders(["task.deleted"])
   dispatchTaskEvent("task.deleted", { id: resolvedId }, undefined, undefined, undefined, authority).catch(() => {})

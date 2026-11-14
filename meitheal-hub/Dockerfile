@@ -7,9 +7,13 @@ ARG BUILD_FROM=ghcr.io/home-assistant/amd64-base:3.23
 # Pinned to $BUILDPLATFORM (host arch) to avoid QEMU crashes on aarch64 cross-builds.
 # Output is pure JS — no native addons — so build artifacts are arch-independent.
 # Layer order is optimised for Docker cache: deps change less often than source.
-FROM --platform=$BUILDPLATFORM node:26-alpine3.23 AS builder
+# Dependabot keeps the tag and digest current together.
+FROM --platform=$BUILDPLATFORM node:26-alpine3.23@sha256:39d8c143e60e99ae98f014bebea1e72fc96d3c9bdf9504bc3a27af5c05bfa39f AS builder
 
-RUN npm install -g pnpm@10.34.9
+# pnpm comes from a lockfile with an integrity hash, not a floating npm install.
+COPY meitheal-hub/toolchain/package.json meitheal-hub/toolchain/package-lock.json /opt/toolchain/
+RUN npm ci --prefix /opt/toolchain --ignore-scripts --no-audit --no-fund \
+    && ln -s /opt/toolchain/node_modules/.bin/pnpm /usr/local/bin/pnpm
 
 WORKDIR /build
 
@@ -38,8 +42,9 @@ RUN pnpm --filter @meitheal/web build
 # ── Stage 2: Production dependencies for the target platform ──
 FROM ${BUILD_FROM} AS runtime-deps
 
-RUN apk add --no-cache nodejs npm
-RUN npm install -g pnpm@10.34.9
+RUN apk add --no-cache nodejs
+COPY --from=builder /opt/toolchain/ /opt/toolchain/
+RUN ln -s /opt/toolchain/node_modules/.bin/pnpm /usr/local/bin/pnpm
 
 WORKDIR /opt/meitheal
 
@@ -82,7 +87,7 @@ RUN addgroup -S -g 10001 meitheal \
     && adduser -S -D -H -h /data -s /sbin/nologin -u 10001 -G meitheal meitheal \
     && mkdir -p /data
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=5s --start-period=45s --retries=3 \
   CMD curl -fsS http://127.0.0.1:3000/api/health || exit 1
 
 # NOTE: No CMD — s6-overlay (PID 1 in HA base images) discovers

@@ -8,6 +8,7 @@
  * @bounded-context task-notifications
  */
 import { logApiError } from "@lib/api-logger"
+import { DEFAULT_ACCENT } from "@lib/design-tokens"
 
 export interface TaskNotificationPreferences {
   enabled: boolean
@@ -59,7 +60,7 @@ export async function sendTaskNotification(prefs: TaskNotificationPreferences, n
             tag: notificationId,
             group: "meitheal",
             channel: isUrgent ? "meitheal_urgent" : "meitheal_tasks",
-            color: "#6366F1",
+            color: DEFAULT_ACCENT,
             ...(isUrgent ? { importance: "high" } : {}),
             push: {
               "interruption-level": isUrgent ? "time-sensitive" : "active",

@@ -183,6 +183,8 @@ test("keeps calendar, todo and mobile notification delivery on scoped HA subscri
     }
     expect(unrelatedFrames).toBe(0)
     expect([...socket!.eventSubscriptions.keys()].sort()).toEqual([
+      "component_loaded",
+      "entity_registry_updated",
       "meitheal_area_updated",
       "meitheal_task_completed",
       "meitheal_task_created",
@@ -201,6 +203,13 @@ test("keeps calendar, todo and mobile notification delivery on scoped HA subscri
     expect(completions.at(-1)).toEqual(
       { method: "PUT", url: "/api/tasks/busy-task", body: '{"status":"complete"}' },
     )
+    const delivered: string[] = []
+    const unsubscribe = onEntityChange("sensor.resubscribe", entity => {
+      delivered.push(entity.state)
+      unsubscribe()
+      onEntityChange("sensor.resubscribe", next => { delivered.push(next.state) })
+    })
+
     socket!.receive({
       type: "event",
       id: socket!.entitySubscription,
@@ -213,14 +222,9 @@ test("keeps calendar, todo and mobile notification delivery on scoped HA subscri
     })
     expect(getCalendarEntities()).toHaveLength(1)
     expect(getTodoEntities()).toHaveLength(1)
-    expect(getEntity("sensor.unwatched")?.state).toBe("off")
-
-    const delivered: string[] = []
-    const unsubscribe = onEntityChange("sensor.resubscribe", entity => {
-      delivered.push(entity.state)
-      unsubscribe()
-      onEntityChange("sensor.resubscribe", next => { delivered.push(next.state) })
-    })
+    expect(getEntity("sensor.unwatched")).toBeUndefined()
+    expect(delivered).toEqual(["off"])
+    delivered.length = 0
 
     const { reader: first } = await open()
     const { reader: second } = await open()
@@ -237,7 +241,7 @@ test("keeps calendar, todo and mobile notification delivery on scoped HA subscri
         } },
       })
       expect(delivered).toEqual(["on"])
-      expect(getEntity("sensor.unwatched")?.state).toBe("on")
+      expect(getEntity("sensor.unwatched")).toBeUndefined()
       emitSSE("probe", {})
       for (const reader of [first, second]) {
         expect(decoder.decode((await reader.read()).value)).toMatch(/^event: ha:entity_changed\ndata: .*"entity_id":"calendar.test","state":"on"/)

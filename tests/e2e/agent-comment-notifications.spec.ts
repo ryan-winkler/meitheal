@@ -153,7 +153,7 @@ test("agent comments and task notifications are delivered through Home Assistant
       tag: "meitheal_assigned_task-notify-1",
       group: "meitheal",
       channel: "meitheal_urgent",
-      color: "#6366F1",
+      color: "#69E3B2",
       importance: "high",
       push: { "interruption-level": "time-sensitive", badge: 3 },
       actions: [

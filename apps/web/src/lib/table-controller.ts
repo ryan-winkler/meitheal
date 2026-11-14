@@ -606,7 +606,7 @@ function applyGrouping(groupBy: string, subGroupBy: string, stats: TablePageStat
 function getGroupDisplayForKey(groupBy: string, key: string): { label: string, icon: string, color: string } {
   if (groupBy === "area" && areaMap[key]) {
     const b = areaMap[key]
-    return { label: b.name, icon: b.icon ?? "📋", color: (b.color ?? getComputedStyle(document.documentElement).getPropertyValue("--accent").trim()) || "#6366F1" }
+    return { label: b.name, icon: b.icon ?? "📋", color: (b.color ?? getComputedStyle(document.documentElement).getPropertyValue("--accent").trim()) || "#146C4E" }
   }
   return getGroupDisplay(groupBy, key)
 }
@@ -734,7 +734,7 @@ function updateGroupHeaderLabels() {
       header.querySelector(".group-toggle")?.setAttribute("aria-label", `Toggle ${subgroup ? "sub-group" : "group"} ${areaMap[key].name}`)
       header.querySelector(".group-select-all")?.setAttribute("aria-label", `Select visible tasks in ${areaMap[key].name} on this page`)
       if (icon) icon.textContent = areaMap[key].icon ?? "📋"
-      if (dot) dot.style.background = (areaMap[key].color ?? getComputedStyle(document.documentElement).getPropertyValue("--accent").trim()) || "#6366F1"
+      if (dot) dot.style.background = (areaMap[key].color ?? getComputedStyle(document.documentElement).getPropertyValue("--accent").trim()) || "#146C4E"
     }
   })
 }

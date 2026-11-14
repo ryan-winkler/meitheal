@@ -8,7 +8,7 @@
 /* --- Search --- */
 /* --- Topbar / Layout chrome --- */
 .topbar {
-  @apply flex items-center justify-between px-6 py-3 bg-bg-secondary/60 border-b border-border backdrop-blur-sm sticky top-0 z-30;
+  @apply flex items-center justify-between px-6 py-3 bg-bg-secondary border-b border-border sticky top-0 z-30;
 }
 
 .logo {

@@ -17,6 +17,8 @@
  */
 
 import Layout from "../layouts/Layout.astro";
+import Icon from "../components/ui/Icon.astro";
+import { type IconName } from "../generated/icon-registry";
 
 import GamificationWidget from "../components/gamification/GamificationWidget.astro";
 import {
@@ -81,26 +83,26 @@ const currentYear = today.getFullYear();
 const maxCount = Math.max(...heatmapData.map((d) => d.count), 1);
 
 function heatmapColor(count: number): string {
-  if (count === 0) return "var(--bg-hover, #1e293b)";
+  if (count === 0) return "var(--bg-hover, #1d211f)";
   const intensity = Math.min(count / maxCount, 1);
-  if (intensity < 0.25) return "hsl(250 60% 30%)";
-  if (intensity < 0.5) return "hsl(250 70% 40%)";
-  if (intensity < 0.75) return "hsl(250 80% 50%)";
-  return "hsl(250 90% 60%)";
+  if (intensity < 0.25) return "color-mix(in srgb, var(--accent) 28%, var(--bg-card))";
+  if (intensity < 0.5) return "color-mix(in srgb, var(--accent) 50%, var(--bg-card))";
+  if (intensity < 0.75) return "color-mix(in srgb, var(--accent) 75%, var(--bg-card))";
+  return "var(--accent)";
 }
 
 // Group categories for display
-const categories = [
-  { key: "milestone", label: "Milestones", icon: "🎯" },
-  { key: "streak", label: "Streaks", icon: "🔥" },
-  { key: "xp", label: "XP Earned", icon: "⭐" },
-  { key: "special", label: "Special", icon: "✨" },
-] as const;
+const categories: readonly { key: string; label: string; icon: IconName }[] = [
+  { key: "milestone", label: "Milestones", icon: "target" },
+  { key: "streak", label: "Streaks", icon: "flame" },
+  { key: "xp", label: "XP Earned", icon: "star" },
+  { key: "special", label: "Special", icon: "sparkles" },
+];
 ---
 
 <Layout title="Gamification — Meitheal" description="Track your progress, earn achievements, and level up">
 
-  <Fragment slot="page-title">🏆 Gamification</Fragment>
+  <Fragment slot="page-title"><span class="inline-flex items-center gap-2"><Icon name="trophy" size={20} sprite={true} /> Gamification</span></Fragment>
 
   <div class="gam-page">
     <!-- Level Card -->
@@ -133,32 +135,32 @@ const categories = [
     <!-- Stats Grid -->
     <section class="gam-stats-grid">
       <div class="gam-stat-card">
-        <span class="gam-stat-card__icon">⭐</span>
+        <span class="gam-stat-card__icon"><Icon name="star" size={20} sprite={true} /></span>
         <span class="gam-stat-card__value">{stats.totalPoints.toLocaleString()}</span>
         <span class="gam-stat-card__label">Total XP</span>
       </div>
       <div class="gam-stat-card">
-        <span class="gam-stat-card__icon">✅</span>
+        <span class="gam-stat-card__icon"><Icon name="checkbox" size={20} sprite={true} /></span>
         <span class="gam-stat-card__value">{stats.totalCompleted.toLocaleString()}</span>
         <span class="gam-stat-card__label">Tasks Completed</span>
       </div>
       <div class="gam-stat-card">
-        <span class="gam-stat-card__icon">🔥</span>
+        <span class="gam-stat-card__icon"><Icon name="flame" size={20} sprite={true} /></span>
         <span class="gam-stat-card__value">{stats.currentStreak}</span>
         <span class="gam-stat-card__label">Current Streak</span>
       </div>
       <div class="gam-stat-card">
-        <span class="gam-stat-card__icon">🏆</span>
+        <span class="gam-stat-card__icon"><Icon name="trophy" size={20} sprite={true} /></span>
         <span class="gam-stat-card__value">{stats.longestStreak}</span>
         <span class="gam-stat-card__label">Best Streak</span>
       </div>
       <div class="gam-stat-card">
-        <span class="gam-stat-card__icon">🎖️</span>
+        <span class="gam-stat-card__icon"><Icon name="star" size={20} sprite={true} /></span>
         <span class="gam-stat-card__value">{achievementData.unlocked} / {achievementData.total}</span>
         <span class="gam-stat-card__label">Achievements</span>
       </div>
       <div class="gam-stat-card">
-        <span class="gam-stat-card__icon">📅</span>
+        <span class="gam-stat-card__icon"><Icon name="calendar" size={20} sprite={true} /></span>
         <span class="gam-stat-card__value">{stats.todayCompleted}</span>
         <span class="gam-stat-card__label">Today</span>
       </div>
@@ -172,7 +174,7 @@ const categories = [
     <!-- Activity Heatmap -->
     {heatmapData.length > 0 && (
       <section class="gam-section">
-        <h2 class="gam-section__title">📊 Activity Heatmap — {currentYear}</h2>
+        <h2 class="gam-section__title"><Icon name="chart-bar" size={18} sprite={true} /> Activity Heatmap — {currentYear}</h2>
         <div class="gam-heatmap-container">
           <div class="gam-heatmap">
             {heatmapData.map((day) => (
@@ -185,11 +187,11 @@ const categories = [
           </div>
           <div class="gam-heatmap-legend">
             <span class="text-text-muted text-xs">Less</span>
-            <div class="gam-heatmap__cell" style="background: var(--bg-hover, #1e293b);" />
-            <div class="gam-heatmap__cell" style="background: hsl(250 60% 30%);" />
-            <div class="gam-heatmap__cell" style="background: hsl(250 70% 40%);" />
-            <div class="gam-heatmap__cell" style="background: hsl(250 80% 50%);" />
-            <div class="gam-heatmap__cell" style="background: hsl(250 90% 60%);" />
+            <div class="gam-heatmap__cell" style="background: var(--bg-hover, #1d211f);" />
+            <div class="gam-heatmap__cell" style="background: color-mix(in srgb, var(--accent) 28%, var(--bg-card));" />
+            <div class="gam-heatmap__cell" style="background: color-mix(in srgb, var(--accent) 50%, var(--bg-card));" />
+            <div class="gam-heatmap__cell" style="background: color-mix(in srgb, var(--accent) 75%, var(--bg-card));" />
+            <div class="gam-heatmap__cell" style="background: var(--accent);" />
             <span class="text-text-muted text-xs">More</span>
           </div>
         </div>
@@ -199,7 +201,7 @@ const categories = [
     <!-- Achievement Gallery -->
     <section class="gam-section">
       <h2 class="gam-section__title">
-        🏅 Achievements
+        <Icon name="trophy" size={18} sprite={true} /> Achievements
         <span class="gam-section__count">{achievementData.unlocked} / {achievementData.total}</span>
       </h2>
       {categories.map(({ key, label, icon }) => {
@@ -209,7 +211,7 @@ const categories = [
         if (categoryAchievements.length === 0) return null;
         return (
           <div class="gam-achievement-category">
-            <h3 class="gam-achievement-category__title">{icon} {label}</h3>
+            <h3 class="gam-achievement-category__title"><Icon name={icon} size={14} sprite={true} /> {label}</h3>
             <div class="gam-achievement-grid">
               {categoryAchievements.map((a: any) => (
                 <div class={`gam-achievement-card ${a.unlockedAt ? "gam-achievement-card--unlocked" : ""}`}>
@@ -219,7 +221,7 @@ const categories = [
                     <span class="gam-achievement-card__desc">{a.description}</span>
                     {a.unlockedAt && (
                       <span class="gam-achievement-card__date">
-                        ✓ {new Date(a.unlockedAt).toLocaleDateString("en", { month: "short", day: "numeric", year: "numeric" })}
+                        <Icon name="check" size={12} sprite={true} /> {new Date(a.unlockedAt).toLocaleDateString("en", { month: "short", day: "numeric", year: "numeric" })}
                       </span>
                     )}
                   </div>
@@ -248,9 +250,9 @@ const categories = [
     align-items: center;
     gap: 2rem;
     padding: 1.5rem 2rem;
-    background: linear-gradient(135deg, var(--bg-card, #1a1a2e) 0%, hsl(250 30% 15%) 100%);
+    background: var(--bg-card);
     border-radius: 16px;
-    border: 1px solid var(--border, #334155);
+    border: 1px solid var(--border);
   }
 
   .gam-level-ring-wrapper {
@@ -268,17 +270,16 @@ const categories = [
 
   .gam-level-ring__bg {
     fill: none;
-    stroke: var(--border, #334155);
+    stroke: var(--border);
     stroke-width: 6;
   }
 
   .gam-level-ring__fill {
     fill: none;
-    stroke: var(--accent, #6366f1);
+    stroke: var(--accent);
     stroke-width: 6;
     stroke-linecap: round;
     transition: stroke-dashoffset 0.8s ease;
-    filter: drop-shadow(0 0 6px var(--accent, #6366f1));
   }
 
   .gam-level-ring__content {
@@ -293,14 +294,14 @@ const categories = [
   .gam-level-number {
     font-size: 2.5rem;
     font-weight: 800;
-    color: var(--text-primary, #e0e0e0);
+    color: var(--text-primary);
     font-variant-numeric: tabular-nums;
     display: block;
   }
 
   .gam-level-label {
     font-size: 0.75rem;
-    color: var(--text-muted, #888);
+    color: var(--text-muted);
     text-transform: uppercase;
     letter-spacing: 0.1em;
     margin-top: 0.125rem;
@@ -313,7 +314,7 @@ const categories = [
 
   .gam-level-xp-bar {
     height: 8px;
-    background: var(--bg-hover, #1e293b);
+    background: var(--bg-hover);
     border-radius: 4px;
     overflow: hidden;
     margin-bottom: 0.5rem;
@@ -321,7 +322,7 @@ const categories = [
 
   .gam-level-xp-bar__fill {
     height: 100%;
-    background: linear-gradient(90deg, var(--accent, #6366f1), hsl(250 80% 70%));
+    background: var(--accent);
     border-radius: 4px;
     transition: width 0.6s ease;
     min-width: 2px;
@@ -331,7 +332,7 @@ const categories = [
     display: flex;
     justify-content: space-between;
     font-size: 0.8125rem;
-    color: var(--text-secondary, #a0a0a0);
+    color: var(--text-secondary);
   }
 
   /* Stats Grid */
@@ -347,32 +348,33 @@ const categories = [
     align-items: center;
     gap: 0.25rem;
     padding: 1rem;
-    background: var(--bg-card, #1a1a2e);
+    background: var(--bg-card);
     border-radius: 12px;
-    border: 1px solid var(--border, #334155);
+    border: 1px solid var(--border);
     text-align: center;
     transition: transform 0.15s, border-color 0.15s;
   }
 
   .gam-stat-card:hover {
     transform: translateY(-2px);
-    border-color: var(--accent, #6366f1);
+    border-color: var(--accent);
   }
 
   .gam-stat-card__icon {
-    font-size: 1.25rem;
+    display: inline-flex;
+    color: var(--accent);
   }
 
   .gam-stat-card__value {
     font-size: 1.5rem;
     font-weight: 700;
-    color: var(--text-primary, #e0e0e0);
+    color: var(--text-primary);
     font-variant-numeric: tabular-nums;
   }
 
   .gam-stat-card__label {
     font-size: 0.6875rem;
-    color: var(--text-muted, #888);
+    color: var(--text-muted);
     text-transform: uppercase;
     letter-spacing: 0.03em;
   }
@@ -380,15 +382,15 @@ const categories = [
   /* Sections */
   .gam-section {
     padding: 1.25rem;
-    background: var(--bg-card, #1a1a2e);
+    background: var(--bg-card);
     border-radius: 12px;
-    border: 1px solid var(--border, #334155);
+    border: 1px solid var(--border);
   }
 
   .gam-section__title {
     font-size: 1rem;
     font-weight: 600;
-    color: var(--text-primary, #e0e0e0);
+    color: var(--text-primary);
     margin: 0 0 1rem 0;
     display: flex;
     align-items: center;
@@ -398,7 +400,7 @@ const categories = [
   .gam-section__count {
     font-size: 0.75rem;
     font-weight: 400;
-    color: var(--text-muted, #888);
+    color: var(--text-muted);
     margin-left: auto;
   }
 
@@ -425,7 +427,7 @@ const categories = [
 
   .gam-heatmap__cell:hover {
     transform: scale(1.3);
-    outline: 1px solid var(--accent, #6366f1);
+    outline: 1px solid var(--accent);
   }
 
   .gam-heatmap-legend {
@@ -446,9 +448,12 @@ const categories = [
   }
 
   .gam-achievement-category__title {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
     font-size: 0.8125rem;
     font-weight: 600;
-    color: var(--text-secondary, #a0a0a0);
+    color: var(--text-secondary);
     margin: 0 0 0.75rem 0;
     text-transform: uppercase;
     letter-spacing: 0.05em;
@@ -465,9 +470,9 @@ const categories = [
     align-items: flex-start;
     gap: 0.75rem;
     padding: 0.875rem;
-    background: var(--bg-hover, #1e293b);
+    background: var(--bg-hover);
     border-radius: 10px;
-    border: 1px dashed var(--border, #334155);
+    border: 1px dashed var(--border);
     transition: border-color 0.2s, transform 0.15s;
   }
 
@@ -477,16 +482,16 @@ const categories = [
   }
 
   .gam-achievement-card:not(.gam-achievement-card--unlocked) .gam-achievement-card__name {
-    color: var(--text-secondary, #cbd5e1);
+    color: var(--text-secondary);
   }
 
   .gam-achievement-card--unlocked {
     border-style: solid;
-    border-color: var(--border, #334155);
+    border-color: var(--border);
   }
 
   .gam-achievement-card--unlocked:hover {
-    border-color: var(--accent, #6366f1);
+    border-color: var(--accent);
     transform: translateY(-1px);
   }
 
@@ -506,16 +511,19 @@ const categories = [
   .gam-achievement-card__name {
     font-size: 0.8125rem;
     font-weight: 600;
-    color: var(--text-primary, #e0e0e0);
+    color: var(--text-primary);
   }
 
   .gam-achievement-card__desc {
     font-size: 0.6875rem;
-    color: var(--text-secondary, #cbd5e1);
+    color: var(--text-secondary);
     line-height: 1.3;
   }
 
   .gam-achievement-card__date {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
     font-size: 0.625rem;
     color: var(--accent-text);
     margin-top: 0.125rem;

@@ -41,7 +41,7 @@ export function promptDialog(options: PromptOptions): Promise<string | null> {
     overlay.style.cssText = `
       position: fixed; inset: 0; z-index: 9999;
       display: flex; align-items: center; justify-content: center;
-      background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(4px);
+      background: rgba(0, 0, 0, 0.62);
       animation: confirmFadeIn 0.15s ease-out;
     `
 
@@ -176,7 +176,7 @@ export function promptDialog(options: PromptOptions): Promise<string | null> {
 
     // Focus border effect
     input.addEventListener("focus", () => {
-      input.style.borderColor = "var(--accent, #6366f1)"
+      input.style.borderColor = "var(--accent)"
     })
     input.addEventListener("blur", () => {
       input.style.borderColor = "var(--border, #334155)"

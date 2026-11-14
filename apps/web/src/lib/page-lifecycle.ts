@@ -68,23 +68,33 @@ export const pageLifecycle = {
    * Previous listeners from the callback are auto-cleaned on next navigation.
    */
   onPageLoad(callback: (signal: AbortSignal) => void): void {
-    // Some modules may load after the first astro:page-load event has already fired.
-    // Use a 0ms fallback so initial page setup still runs once on first render,
-    // while future ViewTransition navigations continue to use astro:page-load.
+    // Some modules may load after the first astro:page-load event has already fired,
+    // and Home Assistant Ingress disables ClientRouter (so astro:page-load never fires).
+    // Guarantee initial setup completes by window load (and via 0ms fallback if late).
     let initialPending = true
-    const fallbackId = globalThis.setTimeout(() => {
+    const runInitial = () => {
       if (!initialPending) return
       initialPending = false
+      clearTimeout(fallbackId)
+      window.removeEventListener("load", runInitial)
       callback(controller.signal)
-    }, 0)
+    }
+    const fallbackId = globalThis.setTimeout(runInitial, 0)
+    if (
+      document.readyState !== "complete" &&
+      !document.querySelector('meta[name="astro-view-transitions-enabled"]')
+    ) {
+      window.addEventListener("load", runInitial, { once: true })
+    }
 
     document.addEventListener("astro:page-load", () => {
       if (initialPending) {
         clearTimeout(fallbackId)
+        window.removeEventListener("load", runInitial)
         initialPending = false
       }
-      callback(controller.signal);
-    });
+      callback(controller.signal)
+    })
   },
 
   /**
@@ -97,11 +107,14 @@ export const pageLifecycle = {
     intervalMs: number,
   ): ReturnType<typeof globalThis.setInterval> {
     const windowKey = `__meitheal_interval_${key}` as const
-    if (window[windowKey]) {
-      clearInterval(window[windowKey])
+    const existing = Reflect.get(window, windowKey) as
+      | ReturnType<typeof globalThis.setInterval>
+      | undefined
+    if (existing !== undefined) {
+      clearInterval(existing)
     }
-    const id = globalThis.setInterval(handler, intervalMs);
-    window[windowKey] = id;
-    return id;
+    const id = globalThis.setInterval(handler, intervalMs)
+    Reflect.set(window, windowKey, id)
+    return id
   },
-};
+}

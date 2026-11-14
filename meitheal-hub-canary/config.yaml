@@ -38,6 +38,12 @@ options:
     - tasks
     - integrations
     - observability
+    - ha
+    - calendar
+    - todo
+    - api
+    - security
+    - search
   log_redaction: true
   audit_enabled: true
   loki_url: ""

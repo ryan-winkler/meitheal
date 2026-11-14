@@ -83,6 +83,9 @@ export const POST: APIRoute = async ({ params, request, locals }) => {
     if (attempt && actor.owner) {
       const created = await mentions.create(taskId, prepared.content, actor.author, actor.owner, prepared.recipients,
         { ...attempt, rawContent: content, cutoff: Date.now() - commentAttemptHorizonMs }, prepared.verifiedHuman)
+      if (agentToken && created.state === "created") {
+        notifyAgentComment(taskId, { id: created.comment.id, author: actor.author, content: prepared.content }).catch(() => {})
+      }
       return attemptResponse(created)
     }
     const commentResult = await repo.addCommentChecked(

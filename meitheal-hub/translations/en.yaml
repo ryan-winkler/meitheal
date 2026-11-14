@@ -7,8 +7,9 @@ configuration:
   log_categories:
     name: Log Categories
     description: >-
-      Categories to include in log output (e.g. auth, tasks, integrations,
-      observability). Only events matching these categories are emitted.
+      Categories to include for debug and info log output (default: auth, tasks,
+      integrations, observability, ha, calendar, todo, api, security, search).
+      Warning and error events are always emitted.
   log_redaction:
     name: Log Redaction
     description: >-

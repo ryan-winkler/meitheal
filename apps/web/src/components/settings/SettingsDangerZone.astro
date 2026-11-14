@@ -2,6 +2,7 @@
 import { t } from "../../i18n/translations"
 import type { Locale } from "../../lib/locale"
 import { SETTINGS_SECTIONS } from "../../lib/settings-registry"
+import Icon from "../ui/Icon.astro"
 import SettingsActionRow from "./SettingsActionRow.astro"
 import SettingsCallout from "./SettingsCallout.astro"
 import SettingsPanelCard from "./SettingsPanelCard.astro"
@@ -26,11 +27,12 @@ const dangerZoneSection = SETTINGS_SECTIONS.find((section) => section.id === "da
 
   <!-- Archiving & Data Retention -->
   <SettingsPanelCard
+    icon="package"
     title={t("settings.danger_archive_title", locale)}
     subtitle={t("settings.danger_archive_subtitle", locale)}
     tone="default"
   >
-    <SettingsCallout title={t("settings.danger_archive_callout_title", locale)} icon="ℹ" tone="warning">
+    <SettingsCallout title={t("settings.danger_archive_callout_title", locale)} icon="info" tone="warning">
       <span set:html={t("settings.danger_archive_callout_desc", locale)}></span>
     </SettingsCallout>
 
@@ -53,7 +55,7 @@ const dangerZoneSection = SETTINGS_SECTIONS.find((section) => section.id === "da
           class="btn btn-warning-outline"
           id="retention-preview-btn"
           disabled
-        >{t("settings.danger_archive_preview", locale)}</button>
+        ><Icon name="search" size={14} sprite={true} /> <span>{t("settings.danger_archive_preview", locale)}</span></button>
       </div>
 
       <div
@@ -73,29 +75,30 @@ const dangerZoneSection = SETTINGS_SECTIONS.find((section) => section.id === "da
         id="retention-delete-btn"
         disabled
         aria-describedby="retention-preview-result"
-      >{t("settings.danger_archive_delete", locale)}</button>
+      ><Icon name="trash" size={14} sprite={true} /> <span>{t("settings.danger_archive_delete", locale)}</span></button>
     </SettingsActionRow>
   </SettingsPanelCard>
 
   <!-- Danger Zone -->
   <SettingsPanelCard
+    icon="warning"
     title={t("settings.danger_title", locale)}
     subtitle={t("settings.danger_subtitle", locale)}
     tone="danger"
   >
-    <SettingsCallout title={t("settings.danger_zone_callout_title", locale)} icon="⚠" tone="danger">
+    <SettingsCallout title={t("settings.danger_zone_callout_title", locale)} icon="warning" tone="danger">
       {t("settings.danger_zone_callout_desc", locale)}
     </SettingsCallout>
     <SettingsActionRow class="mt-4">
       <button
         class="btn btn-danger-outline"
         id="purge-tasks"
-        >{t("settings.danger_purge_tasks", locale)}</button
+        ><Icon name="trash" size={14} sprite={true} /> <span>{t("settings.danger_purge_tasks", locale)}</span></button
       >
       <button
         class="btn btn-danger-outline"
         id="reset-settings"
-        >{t("settings.danger_reset_settings", locale)}</button
+        ><Icon name="refresh" size={14} sprite={true} /> <span>{t("settings.danger_reset_settings", locale)}</span></button
       >
     </SettingsActionRow>
   </SettingsPanelCard>

@@ -9,9 +9,7 @@
   left: 0;
   z-index: 50;
   min-width: 200px;
-  background-color: var(--glass-bg, rgb(var(--bg-card-rgb) / 0.92));
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  background-color: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg, 12px);
   box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.2);

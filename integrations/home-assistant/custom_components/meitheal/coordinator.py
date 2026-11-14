@@ -12,9 +12,18 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .api import MeithealApi, MeithealConnectionError, MeithealResponseError, task_matches_identifier, task_path
+from .api import (
+    MeithealApi,
+    MeithealConnectionError,
+    MeithealResponseError,
+    task_matches_identifier,
+    task_path,
+)
 from .const import DOMAIN, SCAN_INTERVAL, STATUS_DONE, STATUS_IN_PROGRESS, STATUS_TODO
-from .repairs import async_create_addon_unreachable_issue, async_delete_addon_unreachable_issue
+from .repairs import (
+    async_create_addon_unreachable_issue,
+    async_delete_addon_unreachable_issue,
+)
 
 _LOGGER = logging.getLogger(__name__)
 

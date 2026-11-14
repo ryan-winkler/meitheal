@@ -83,8 +83,11 @@ try {
   console.log(`CI specs: ${passed} passed, ${failures.length} failed, ${files.length - next} not run`)
   if (v8CoverageDir && coverageOutput && !process.exitCode && !failures.length) {
     const summary = await generateLcovCoverage(v8CoverageDir, coverageOutput, repoRoot)
+    // Name the variable rather than echoing its value: nothing read from the
+    // environment reaches the CI log.
+    const { coveredFiles, linesPct, branchesPct } = summary
     console.log(
-      `Coverage LCOV written to ${summary.file} (${summary.coveredFiles} files, ${summary.linesPct}% lines, ${summary.branchesPct}% branches)`,
+      `Coverage LCOV written to $MEITHEAL_COVERAGE_FILE (${coveredFiles} files, ${linesPct}% lines, ${branchesPct}% branches)`,
     )
   }
   if (failures.length) console.error(failures.join("\n"))
