@@ -10,7 +10,6 @@ import { pageLifecycle } from "@lib/page-lifecycle"
 import { showToast } from "@lib/toast"
 import { saveSetting, showSettingsSaveError, log } from "@lib/settings-utils"
 import { settingsStore } from "@lib/settings-store"
-import { escapeHtml } from "@lib/safe-html"
 
 // ───── Constants ─────
 
@@ -362,16 +361,32 @@ export function restoreSidebarSettings(settings: Record<string, unknown>): void 
         const row = document.createElement("div")
         row.className = "sidebar-custom-link"
         row.dataset.customId = item.id
-        row.innerHTML = `
-          <input type="text" class="form-input custom-item-label" aria-label="Custom link label" placeholder="Label" value="${escapeHtml(item.label)}" />
-          <input type="text" class="form-input custom-item-href" aria-label="Custom link URL" placeholder="URL (e.g. /notes)" value="${escapeHtml(item.href)}" />
-          <button type="button" class="btn btn-ghost text-danger remove-custom-link" aria-label="Remove custom link ${escapeHtml(item.label)}" data-index="${index}">×</button>
-        `
-        row.querySelector<HTMLInputElement>(".custom-item-label")?.addEventListener("input", event => {
-          item.label = (event.currentTarget as HTMLInputElement).value
+        // Build with DOM properties so stored labels and URLs never pass through an HTML parser.
+        const labelInput = document.createElement("input")
+        labelInput.type = "text"
+        labelInput.className = "form-input custom-item-label"
+        labelInput.setAttribute("aria-label", "Custom link label")
+        labelInput.placeholder = "Label"
+        labelInput.value = item.label
+        const hrefInput = document.createElement("input")
+        hrefInput.type = "text"
+        hrefInput.className = "form-input custom-item-href"
+        hrefInput.setAttribute("aria-label", "Custom link URL")
+        hrefInput.placeholder = "URL (e.g. /notes)"
+        hrefInput.value = item.href
+        const removeButton = document.createElement("button")
+        removeButton.type = "button"
+        removeButton.className = "btn btn-ghost text-danger remove-custom-link"
+        removeButton.setAttribute("aria-label", `Remove custom link ${item.label}`)
+        removeButton.dataset.index = String(index)
+        removeButton.textContent = "×"
+        row.append(labelInput, hrefInput, removeButton)
+        labelInput.addEventListener("input", () => {
+          item.label = labelInput.value
+          removeButton.setAttribute("aria-label", `Remove custom link ${item.label}`)
         }, { signal })
-        row.querySelector<HTMLInputElement>(".custom-item-href")?.addEventListener("input", event => {
-          item.href = (event.currentTarget as HTMLInputElement).value
+        hrefInput.addEventListener("input", () => {
+          item.href = hrefInput.value
         }, { signal })
         customList.appendChild(row)
       })
