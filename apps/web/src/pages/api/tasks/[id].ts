@@ -99,7 +99,7 @@ async function replayedAgentReassignment(
   const receiptKey = `${agentToken.tokenId}:${agentToken.assigneeId}:${taskId}:${requestId}`
   const [receiptRes, latestActivityRes] = await Promise.all([
     client.execute({
-      sql: "SELECT status FROM integration_attempts WHERE integration = 'task.reassignment' AND idempotency_key = ? LIMIT 1",
+      sql: "SELECT status, response_payload FROM integration_attempts WHERE integration = 'task.reassignment' AND idempotency_key = ? LIMIT 1",
       args: [receiptKey],
     }),
     client.execute({
@@ -107,8 +107,23 @@ async function replayedAgentReassignment(
       args: [taskId],
     }),
   ])
-  const hasReceipt = receiptRes.rows[0]?.status === "completed"
+  const receipt = receiptRes.rows[0] as Record<string, unknown> | undefined
   const lastReassignment = latestActivityRes.rows[0] as Record<string, unknown> | undefined
+  // The receipt commits with the hand-off itself, so it alone proves this agent made
+  // this request. The activity log is written afterwards and may be missing or stale.
+  let receiptMatches = false
+  if (receipt?.status === "completed") {
+    let destination: unknown
+    try {
+      destination = typeof receipt.response_payload === "string"
+        ? (JSON.parse(receipt.response_payload) as { assigned_to?: unknown }).assigned_to
+        : undefined
+    } catch { /* unreadable payload: treat as a receipt saved before destinations were recorded */ }
+    receiptMatches = destination === undefined
+      // Receipts saved before destinations were recorded lean on the activity log.
+      ? !lastReassignment || String(lastReassignment.new_value ?? "") === requested
+      : String(destination ?? "") === requested
+  }
   const activityMatches = Boolean(
     lastReassignment &&
     lastReassignment.actor_type === "agent" &&
@@ -116,10 +131,7 @@ async function replayedAgentReassignment(
     String(lastReassignment.new_value ?? "") === requested &&
     lastReassignment.correlation_id === requestId,
   )
-  // If a newer assignment event exists on the task, ensure it wasn't rewritten after our handoff.
-  if (!activityMatches && (!hasReceipt || (lastReassignment && String(lastReassignment.new_value ?? "") !== requested))) {
-    return null
-  }
+  if (!receiptMatches && !activityMatches) return null
   const ticketNum = row.ticket_number != null ? Number(row.ticket_number) : null
   const ticketKey = formatTicketKey(ticketNum)
   if (!agentToken.scopes.includes("tasks:read")) {
@@ -420,6 +432,15 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
   }
   const completionIntent = typeof sanitized.status === "string" && isDoneStatus(sanitized.status)
   const expectedAssignedTo = restrictedAssigneeId(agentToken)
+  const requestId = typeof body.request_id === "string" ? body.request_id.trim().slice(0, 128) : ""
+  const reassignmentReceipt = requestId && agentToken && isAssignedWriteOnly(agentToken) &&
+    sanitized.assigned_to !== undefined && String(sanitized.assigned_to ?? "") !== agentToken.assigneeId
+    ? {
+      key: `${agentToken.tokenId}:${agentToken.assigneeId}:${resolvedId}:${requestId}`,
+      requestId,
+      assignedTo: sanitized.assigned_to == null ? null : String(sanitized.assigned_to),
+    }
+    : undefined
   let update
   try {
     update = await repo.updateTask(resolvedId, sanitized, {
@@ -427,6 +448,7 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
       ...(version ? { version } : {}),
       ...(expectedChecklists !== undefined ? { expectedChecklists } : {}),
       ...(expectedAssignedTo !== undefined ? { expectedAssignedTo } : {}),
+      ...(reassignmentReceipt ? { reassignmentReceipt } : {}),
       ...(locals.writeAbortSignal ? { signal: locals.writeAbortSignal } : {}),
     })
   } catch (err) {
@@ -490,27 +512,10 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
       const automation = request.headers.has("X-Automation-Source") ? locals.automationSource : null
       const activityActor = agentActivityActor(locals) ??
         { actor: automation ? `ha:${automation}` : "user", actor_type: (automation ? "ha" : "user") as "ha" | "user" }
-      const requestId = typeof body.request_id === "string" ? body.request_id.trim().slice(0, 128) : ""
       await repo.logActivity(resolvedId, changes, {
         ...activityActor,
         ...(requestId ? { correlation_id: requestId } : {}),
       }).catch(() => { })
-      if (
-        requestId &&
-        agentToken &&
-        isAssignedWriteOnly(agentToken) &&
-        sanitized.assigned_to !== undefined &&
-        String(sanitized.assigned_to ?? "") !== agentToken.assigneeId
-      ) {
-        const now = Date.now()
-        const receiptKey = `${agentToken.tokenId}:${agentToken.assigneeId}:${resolvedId}:${requestId}`
-        await getPersistenceClient().execute({
-          sql: `INSERT INTO integration_attempts (attempt_id, task_id, integration, request_id, idempotency_key, status, created_at, updated_at)
-                VALUES (?, ?, 'task.reassignment', ?, ?, 'completed', ?, ?)
-                ON CONFLICT(idempotency_key, integration) DO NOTHING`,
-          args: [crypto.randomUUID(), resolvedId, requestId, receiptKey, now, now],
-        }).catch(() => {})
-      }
     }
   }
 

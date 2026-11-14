@@ -281,6 +281,89 @@ dbTest.describe("Assigned-Agent Authorization & Repository Guards", () => {
     expect(strangerRetry.status).toBe(403)
   })
 
+  dbTest("PUT /api/tasks/[id] acknowledges a retried reassignment when its activity log entry was never written", async ({ repo }) => {
+    const client = getPersistenceClient()
+    const id = crypto.randomUUID()
+    await repo.createTask(makeTaskData({ id, assigned_to: "custom_agent_a" }))
+    // An earlier hand-off to someone else is the newest assignment entry the log will ever hold.
+    await repo.logActivity(id, [{ field: "assigned_to", oldValue: "ha_person_2", newValue: "custom_agent_a" }], {
+      actor: "user", actor_type: "user",
+    })
+    const reassign = (requestId: string, agent = "custom_agent_a") => putTask({
+      params: { id },
+      request: new Request(`http://localhost/api/tasks/${id}`, {
+        method: "PUT",
+        body: JSON.stringify({ assigned_to: "ha_person_1", request_id: requestId }),
+      }),
+      locals: agentLocals(agent),
+    } as unknown as Parameters<typeof putTask>[0])
+    const receipts = async () => (await client.execute({
+      sql: "SELECT request_id, response_payload FROM integration_attempts WHERE integration = 'task.reassignment' AND task_id = ?",
+      args: [id],
+    })).rows
+
+    // A refused hand-off leaves no receipt behind.
+    expect((await reassign("db-atomic-1", "custom_agent_b")).status).toBe(403)
+    expect(await receipts()).toHaveLength(0)
+
+    await client.execute(`CREATE TRIGGER fail_assignment_activity BEFORE INSERT ON task_activity_log
+      WHEN NEW.field = 'assigned_to' BEGIN SELECT RAISE(ABORT, 'activity log unavailable'); END`)
+    try {
+      const first = await reassign("db-atomic-1")
+      expect(first.status).toBe(200)
+      expect((await first.json()).assigned_to).toBe("ha_person_1")
+    } finally {
+      await client.execute("DROP TRIGGER fail_assignment_activity")
+    }
+
+    // The receipt was committed with the update even though the activity entry was lost.
+    expect((await repo.getActivityLog(id, 10, 0)).activity
+      .some((entry) => entry.field === "assigned_to" && entry.new_value === "ha_person_1")).toBe(false)
+    expect((await receipts()).map((row) => ({ ...row }))).toEqual([
+      { request_id: "db-atomic-1", response_payload: JSON.stringify({ assigned_to: "ha_person_1" }) },
+    ])
+
+    const retry = await reassign("db-atomic-1")
+    expect(retry.status).toBe(200)
+    expect((await retry.json()).assigned_to).toBe("ha_person_1")
+
+    expect((await reassign("db-atomic-2")).status).toBe(403)
+    expect((await reassign("db-atomic-1", "custom_agent_b")).status).toBe(403)
+
+    // Once the task moves on, the old receipt no longer describes it.
+    await repo.updateTask(id, { assigned_to: "ha_person_2" })
+    expect((await reassign("db-atomic-1")).status).toBe(403)
+  })
+
+  dbTest("updateTask saves a reassignment receipt only when the update applies, and keeps the activity event on a repeat", async ({ repo }) => {
+    const client = getPersistenceClient()
+    const id = crypto.randomUUID()
+    await repo.createTask(makeTaskData({ id, assigned_to: "custom_agent_a" }))
+    const receipt = { key: `token:custom_agent_a:${id}:repeat-1`, requestId: "repeat-1", assignedTo: "ha_person_1" }
+    const activity = { kind: "agent" as const, personKey: "custom_agent_a" }
+    const count = async (sql: string) => Number((await client.execute({ sql, args: [id] })).rows[0]!.n)
+    const receiptCount = () => count("SELECT count(*) AS n FROM integration_attempts WHERE integration = 'task.reassignment' AND task_id = ?")
+    const eventCount = () => count("SELECT count(*) AS n FROM task_activity_log WHERE task_id = ? AND field = 'activity'")
+
+    const refused = await repo.updateTask(id, { assigned_to: "ha_person_1" }, {
+      expectedAssignedTo: "custom_agent_b", reassignmentReceipt: receipt, activity,
+    })
+    expect(refused).toEqual({ ok: false, errorCode: "assignee_mismatch" })
+    expect(await receiptCount()).toBe(0)
+    expect(await eventCount()).toBe(0)
+
+    for (const round of [1, 2]) {
+      const applied = await repo.updateTask(id, { assigned_to: "ha_person_1" }, {
+        expectedAssignedTo: "custom_agent_a", reassignmentReceipt: receipt, activity,
+      })
+      expect(applied.ok).toBe(true)
+      expect(await receiptCount()).toBe(1)
+      // Reusing a receipt key must not make the batch discard its own activity event.
+      expect(await eventCount()).toBe(round)
+      await repo.updateTask(id, { assigned_to: "custom_agent_a" })
+    }
+  })
+
   dbTest("atomic sub-route guards reject mismatched assignees in SQL without TOCTOU", async ({ repo }) => {
     const id = crypto.randomUUID()
     await repo.createTask(makeTaskData({ id, assigned_to: "custom_agent_a" }))

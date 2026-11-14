@@ -1181,11 +1181,13 @@ export class TaskRepository {
   async updateTask(
     id: string,
     fields: Record<string, InValue>,
-    { version, expectedChecklists, expectedAssignedTo, activity, signal }: {
+    { version, expectedChecklists, expectedAssignedTo, activity, reassignmentReceipt, signal }: {
       version?: { updatedAt: number; expectedStatus?: "backlog" }
       expectedChecklists?: string | null
       expectedAssignedTo?: string
       activity?: RecentTaskActor
+      /** Saved with the update, or not at all, so a retry of a hand-off can always be recognised. */
+      reassignmentReceipt?: { key: string; requestId: string; assignedTo: string | null }
       signal?: AbortSignal | undefined
     } = {},
   ): Promise<
@@ -1286,6 +1288,22 @@ export class TaskRepository {
     if (activity && eventId) statements.push(taskChangedActivity(fields, where, whereArgs, activity, now, eventId))
     const writeIndex = statements.length
     statements.push(update)
+    // Runs straight after the update so changes() still describes it. The upsert
+    // always counts as a change when the update applied, which keeps the discard
+    // below from mistaking a repeated receipt for an ignored update.
+    if (reassignmentReceipt) {
+      statements.push({
+        sql: `INSERT INTO integration_attempts
+                (attempt_id, task_id, integration, request_id, idempotency_key, status, response_payload, created_at, updated_at)
+              SELECT ?, ?, 'task.reassignment', ?, ?, 'completed', ?, ?, ? WHERE changes() = 1
+              ON CONFLICT(idempotency_key, integration) DO UPDATE SET
+                status = excluded.status, response_payload = excluded.response_payload, updated_at = excluded.updated_at`,
+        args: [
+          crypto.randomUUID(), id, reassignmentReceipt.requestId, reassignmentReceipt.key,
+          JSON.stringify({ assigned_to: reassignmentReceipt.assignedTo }), now, now,
+        ],
+      })
+    }
     if (eventId) statements.push(discardUnappliedTaskActivity(eventId))
     let results: ResultSet[]
     let recurrence: RecurrenceOutcome
