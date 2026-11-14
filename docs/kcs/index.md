@@ -45,6 +45,7 @@
 - [Home Assistant Marketplace packaging](home-assistant-marketplace.md) - Stage and verify the standalone Core integration package.
 - [Home Assistant Publishing Checklist](ha-publishing-checklist.md) - Check App packaging, discovery, and installation.
 - [Releasing Meitheal](releasing.md) - Understand release channels and how to verify builds.
+- [Dependency pinning and code scanning](dependency-pinning.md) - Update pinned build inputs and review security alerts.
 - [Green Canary benchmark](green-canary-benchmark.md) - Qualify the fixed workload, memory limits and driver telemetry.
 - [Licensing & Distribution — KCS Runbook](licensing.md) - Find the license boundaries for source, integrations, and distribution.
 

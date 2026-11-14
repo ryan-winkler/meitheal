@@ -15,6 +15,15 @@ updates:
     labels:
       - "dependencies"
 
+  # Hash-pinned pnpm used by the App image and the devcontainer.
+  # Keep it on the same version as packageManager in the root package.json.
+  - package-ecosystem: "npm"
+    directory: "/meitheal-hub/toolchain"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"
+
   # GitHub Actions
   - package-ecosystem: "github-actions"
     directory: "/"

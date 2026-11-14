@@ -22,7 +22,10 @@ log "Installing pnpm dependencies..."
 if command -v pnpm &>/dev/null; then
   pnpm install --frozen-lockfile 2>&1 || pnpm install 2>&1
 else
-  npm install -g pnpm@10.34.9
+  # Same hash-pinned pnpm the App image uses.
+  toolchain="$(cd "$(dirname "${BASH_SOURCE[0]}")/../meitheal-hub/toolchain" && pwd)"
+  npm ci --prefix "$toolchain" --ignore-scripts --no-audit --no-fund
+  export PATH="$toolchain/node_modules/.bin:$PATH"
   pnpm install --frozen-lockfile 2>&1 || pnpm install 2>&1
 fi
 log "Dependencies installed."
