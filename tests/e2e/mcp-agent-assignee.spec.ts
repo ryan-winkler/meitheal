@@ -189,6 +189,13 @@ test("an agent assignee reads, answers, updates and hands back only its own task
     expect((await api.put(base + "/api/users/default", { headers: { ...admin, "content-type": "application/json" }, data: { user_id: person.id } })).status()).toBe(200)
     expect((await call(claudeToken, "handBackTask", { id: fresh })).data).toMatchObject({ handed_back_to: person.id })
 
+    // A task cannot be handed to someone who does not exist, and the note is not posted for nothing.
+    const nobody = await call(claudeToken, "handBackTask", { id: mine, note: "Over to you.", to: "custom_nobody" })
+    expect(nobody.failed).toBe(true)
+    expect((await call(claudeToken, "getTask", { id: mine })).data.assigned_to).toBe(claude.id)
+    const kept = await (await api.get(base + `/api/tasks/${mine}/comments`, { headers: automation })).json()
+    expect(kept.comments.map((entry: { content: string }) => entry.content).join(" ")).not.toContain("Over to you.")
+
     const unassigned = await call(claudeToken, "handBackTask", { id: mine, to: null })
     expect(unassigned.data).toMatchObject({ id: mine, handed_back_to: null, note_posted: false })
     expect((await call(claudeToken, "listMyTasks")).data.tasks).toEqual([])

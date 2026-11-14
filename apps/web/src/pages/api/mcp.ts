@@ -434,15 +434,37 @@ customHandlers.set("handBackTask", async (args, requestApi, agent) => {
       if (fallback && fallback !== assignee.id) to = fallback
     }
   }
+  if (typeof args.to === "string" && args.to !== assignee.id) {
+    // A named person must be real: someone this task has been assigned to, or a custom assignee.
+    const users = new UserRepository(getPersistenceClient())
+    const history = await checkedJson(await requestApi(`${path}/activity?limit=200`))
+    const known = (Array.isArray(history.activity) ? history.activity.filter(isRecord) : [])
+      .some(entry => entry.field === "assigned_to" && (entry.old_value === args.to || entry.new_value === args.to))
+    if (!known && args.to !== await users.getDefaultAssigneeSetting() && !await users.getCustomUser(args.to)) {
+      return { error: "to must be an assignee ID from the task history, or omitted" }
+    }
+  }
   if (to === assignee.id) return { error: "Choose someone else to hand the task back to" }
 
   // The note goes first: once the task is reassigned an assigned-only token can no longer comment on it.
   if (typeof args.note === "string") {
     await checkedJson(await requestApi(`${path}/comments`, { method: "POST", body: JSON.stringify({ content: args.note.trim() }) }))
   }
-  const updated = await checkedJson(await requestApi(path, { method: "PUT", body: JSON.stringify({ assigned_to: to }) }))
-  if ((updated.assigned_to ?? null) !== to) throw new Error("Task hand back returned an invalid acknowledgement")
-  return { id: updated.id, ticket_key: updated.ticket_key ?? null, handed_back_to: to, note_posted: typeof args.note === "string" }
+  const notePosted = typeof args.note === "string"
+  let updated: Record<string, unknown>
+  try {
+    updated = await checkedJson(await requestApi(path, { method: "PUT", body: JSON.stringify({ assigned_to: to }) }))
+    if ((updated.assigned_to ?? null) !== to) throw new Error("Task hand back returned an invalid acknowledgement")
+  } catch (error) {
+    if (!notePosted) throw error
+    // The note is already on the task. Say so, or a retry with the same note posts it twice.
+    return {
+      error: "Your note was posted, but the task could not be reassigned. Call handBackTask again without a note.",
+      note_posted: true,
+      still_assigned_to: assignee.id,
+    }
+  }
+  return { id: updated.id, ticket_key: updated.ticket_key ?? null, handed_back_to: to, note_posted: notePosted }
 })
 
 /** Custom tools are granted by scope. "write" accepts either task write grant. */
