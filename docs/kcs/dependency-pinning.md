@@ -31,7 +31,15 @@ The Home Assistant base images (`ghcr.io/home-assistant/{arch}-base`) stay on th
   uv pip compile --generate-hashes --python-version 3.14.2 --python-platform x86_64-manylinux_2_28 --overrides overrides-2026.10.txt requirements-test-2026.10.in -o requirements-test-2026.10.txt
   ```
 
-  Install either lockfile with `python -m pip install --require-hashes --no-deps -r <file>` (`requirements-test.txt` or `requirements-test-2026.10.txt`). Passing `--no-deps` is required for `requirements-test-2026.10.txt` because `overrides-2026.10.txt` pins `pillow` above `homeassistant==2026.10.4`'s `Pillow==12.3.0` wheel metadata; `python -m pip check` reports that single intentional mismatch on `2026.10.4` and passes on `2026.11.1`. Because Dependabot (`pip`) runs without `overrides-2026.10.txt` and opens no override PRs against `2026.10.4`, bump `overrides-2026.10.txt` manually upon `pillow` security alerts (or alongside `requirements-test.txt` Core updates) and recompile `requirements-test-2026.10.txt` with `--overrides overrides-2026.10.txt`. Likewise, whenever an unrelated weekly Dependabot `pip` PR touches `integrations/home-assistant`, check whether Dependabot failed resolution or reverted `pillow` to `12.3.0` in `requirements-test-2026.10.txt` and recompile with `--overrides overrides-2026.10.txt` before merging.
+  Create an isolated virtual environment and install either lockfile (`requirements-test.txt` or `requirements-test-2026.10.txt`) with Rust-based `uv` (installed in CI via SHA-pinned `astral-sh/setup-uv` `0.13.6`):
+
+  ```sh
+  uv venv --python 3.14 .venv
+  VIRTUAL_ENV="$PWD/.venv" uv pip install --require-hashes --no-deps -r <file>
+  VIRTUAL_ENV="$PWD/.venv" uv pip check -q
+  ```
+
+  Passing `--no-deps` is required for `requirements-test-2026.10.txt` because `overrides-2026.10.txt` pins `pillow` above `homeassistant==2026.10.4`'s `Pillow==12.3.0` wheel metadata; `uv pip check -q` reports that single intentional mismatch (`Found 1 incompatibility` / ``The package `homeassistant` requires `pillow==12.3.0`, but `13.0.0` is installed``) on `2026.10.4` and exits `0` on `2026.11.1`. Because Dependabot (`pip`) runs without `overrides-2026.10.txt` and opens no override PRs against `2026.10.4`, bump `overrides-2026.10.txt` manually upon `pillow` security alerts (or alongside `requirements-test.txt` Core updates) and recompile `requirements-test-2026.10.txt` with `--overrides overrides-2026.10.txt`. Likewise, whenever an unrelated weekly Dependabot `pip` PR touches `integrations/home-assistant`, check whether Dependabot failed resolution or reverted `pillow` to `12.3.0` in `requirements-test-2026.10.txt` and recompile with `--overrides overrides-2026.10.txt` before merging.
 
 ## Reviewing code scanning alerts
 

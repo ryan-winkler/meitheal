@@ -209,35 +209,41 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
         with:
           python-version: "3.14"
-          cache: pip
-          cache-dependency-path: integrations/home-assistant/${{ matrix.requirements }}
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.13.6"
+          enable-cache: true
+          cache-dependency-glob: integrations/home-assistant/${{ matrix.requirements }}
       - name: Test Core integration enrollment and actions
         working-directory: integrations/home-assistant
         env:
           TEST_REQUIREMENTS: ${{ matrix.requirements }}
           MEITHEAL_REQUIRE_APP_PROTOCOL: "1"
           HA_CORE_VERSION: ${{ matrix.core }}
-          PIP_DISABLE_PIP_VERSION_CHECK: "1"
         run: |
-          python -m pip install --require-hashes --no-deps -r "$TEST_REQUIREMENTS"
+          uv venv --python 3.14 "$RUNNER_TEMP/ha-venv"
+          export VIRTUAL_ENV="$RUNNER_TEMP/ha-venv"
+          export PATH="$VIRTUAL_ENV/bin:$PATH"
+          uv pip install --require-hashes --no-deps -r "$TEST_REQUIREMENTS"
           if [ "$HA_CORE_VERSION" = "2026.11.1" ]; then
-            python -m pip check
+            uv pip check -q
             python -m pytest -q --cov=custom_components.meitheal --cov-report=xml:coverage-python.xml --cov-report=term-missing:skip-covered
           elif [ "$HA_CORE_VERSION" = "2026.10.4" ]; then
             EXPECTED_PILLOW=$(grep -iE '^[[:space:]]*pillow==' overrides-2026.10.txt | sed -nE 's/^[[:space:]]*[^=]+==([^[:space:]#;\\]+).*/\1/p' | head -n 1)
             [ -n "$EXPECTED_PILLOW" ]
-            PIP_CHECK_OUT=""
-            PIP_CHECK_STATUS=0
-            PIP_CHECK_OUT=$(python -m pip check 2>&1) || PIP_CHECK_STATUS=$?
-            ALLOWED_LINE="homeassistant 2026.10.4 has requirement Pillow==12.3.0, but you have pillow ${EXPECTED_PILLOW}."
-            UNEXPECTED=$(printf '%s\n' "$PIP_CHECK_OUT" | grep -v '^[[:space:]]*$' | grep -Fvxi "$ALLOWED_LINE" || true)
-            if [ "$PIP_CHECK_STATUS" -eq 0 ] || ! printf '%s\n' "$PIP_CHECK_OUT" | grep -Fxi "$ALLOWED_LINE" >/dev/null || [ -n "$UNEXPECTED" ]; then
-              printf '%s\n' "$PIP_CHECK_OUT" >&2
+            UV_CHECK_OUT=""
+            UV_CHECK_STATUS=0
+            UV_CHECK_OUT=$(uv pip check -q 2>&1) || UV_CHECK_STATUS=$?
+            ALLOWED_SUMMARY="Found 1 incompatibility"
+            ALLOWED_LINE='The package `homeassistant` requires `pillow==12.3.0`, but `'"${EXPECTED_PILLOW}"'` is installed'
+            UNEXPECTED=$(printf '%s\n' "$UV_CHECK_OUT" | grep -v '^[[:space:]]*$' | grep -Fvxi "$ALLOWED_SUMMARY" | grep -Fvxi "$ALLOWED_LINE" || true)
+            if [ "$UV_CHECK_STATUS" -eq 0 ] || ! printf '%s\n' "$UV_CHECK_OUT" | grep -Fxi "$ALLOWED_LINE" >/dev/null || [ -n "$UNEXPECTED" ]; then
+              printf '%s\n' "$UV_CHECK_OUT" >&2
               exit 1
             fi
             python -m pytest -q
           else
-            python -m pip check
+            uv pip check -q
             python -m pytest -q
           fi
       - name: Upload Home Assistant Python coverage to Codecov

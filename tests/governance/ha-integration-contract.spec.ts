@@ -240,24 +240,33 @@ test("both Core CI profiles build this checkout before required App/native proto
   )
   const install = core.steps.findIndex(step => step.run?.trim() === "pnpm install --frozen-lockfile")
   const build = core.steps.findIndex(step => step.run?.trim() === "pnpm --filter @meitheal/web build")
+  const uvSetup = core.steps.findIndex(
+    step =>
+      step.uses === "astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2" &&
+      /^astral-sh\/setup-uv@[0-9a-f]{40}$/.test(step.uses ?? "") &&
+      step.with?.version === "0.13.6" &&
+      step.with?.["enable-cache"] === true,
+  )
   const native = core.steps.findIndex(step => step.run?.includes("python -m pytest"))
   expect(pnpm).toBeGreaterThan(-1)
   expect(node).toBeGreaterThan(pnpm)
   expect(install).toBeGreaterThan(node)
   expect(build).toBeGreaterThan(install)
-  expect(native).toBeGreaterThan(build)
+  expect(uvSetup).toBeGreaterThan(build)
+  expect(native).toBeGreaterThan(uvSetup)
   expect(core.steps[native]!.env?.MEITHEAL_REQUIRE_APP_PROTOCOL).toBe("1")
-  expect(core.steps[native]!.env?.PIP_DISABLE_PIP_VERSION_CHECK).toBe("1")
   const coreRun = core.steps[native]?.run ?? ""
+  expect(coreRun).not.toContain("python -m pip")
+  expect(coreRun).toContain("uv venv --python 3.14 \"$RUNNER_TEMP/ha-venv\"")
   expect(coreRun).toContain(
-    "python -m pip install --require-hashes --no-deps -r \"$TEST_REQUIREMENTS\"",
+    "uv pip install --require-hashes --no-deps -r \"$TEST_REQUIREMENTS\"",
   )
   const idx202611 = coreRun.indexOf("\"$HA_CORE_VERSION\" = \"2026.11.1\"")
-  const idxCheck11 = coreRun.indexOf("python -m pip check", idx202611)
+  const idxCheck11 = coreRun.indexOf("uv pip check -q", idx202611)
   const idx202610 = coreRun.indexOf("\"$HA_CORE_VERSION\" = \"2026.10.4\"", idxCheck11)
-  const idxCheck10 = coreRun.indexOf("python -m pip check", idx202610)
+  const idxCheck10 = coreRun.indexOf("uv pip check -q", idx202610)
   const idxElse = coreRun.indexOf("\nelse\n", idxCheck10)
-  const idxCheckElse = coreRun.indexOf("python -m pip check", idxElse)
+  const idxCheckElse = coreRun.indexOf("uv pip check -q", idxElse)
   expect(idx202611).toBeGreaterThan(-1)
   expect(idxCheck11).toBeGreaterThan(idx202611)
   expect(idx202610).toBeGreaterThan(idxCheck11)
