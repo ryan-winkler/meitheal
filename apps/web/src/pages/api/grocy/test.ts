@@ -9,7 +9,7 @@
  */
 import type { APIRoute } from "astro";
 import { requireSystemSettingsAdmin } from "../../../lib/settings-security"
-import { GrocyAdapter } from "@meitheal/integration-core";
+import { GrocyAdapter, isBlockedTestHost } from "@meitheal/integration-core";
 import { logApiError } from "../../../lib/api-logger";
 import { supervisorFetch } from "../../../lib/supervisor-fetch";
 
@@ -47,14 +47,11 @@ export const POST: APIRoute = async ({ locals, request }) => {
             status: 400, headers: { "Content-Type": "application/json" },
           })
         }
-        const host = parsed.hostname.toLowerCase()
-        const BLOCKED_HOSTS = ["localhost", "127.0.0.1", "0.0.0.0", "[::1]", "169.254.169.254", "metadata.google.internal"]
-        if (BLOCKED_HOSTS.some(b => host === b) || host.startsWith("10.") || host.startsWith("192.168.") || /^172\.(1[6-9]|2\d|3[01])\./.test(host)) {
-          if (!host.endsWith(".internal")) {
-            return new Response(JSON.stringify({ ok: false, error: "URL points to a private/internal network address" }), {
-              status: 400, headers: { "Content-Type": "application/json" },
-            })
-          }
+        // Block private, loopback, IPv4-mapped and metadata addresses. App host names stay allowed.
+        if (isBlockedTestHost(parsed.hostname)) {
+          return new Response(JSON.stringify({ ok: false, error: "URL points to a private/internal network address" }), {
+            status: 400, headers: { "Content-Type": "application/json" },
+          })
         }
       } catch {
         return new Response(JSON.stringify({ ok: false, error: "Invalid URL format" }), {

@@ -4,6 +4,7 @@ import {
   verifySignature,
   isPrivateUrl,
   isPrivateHost,
+  isBlockedTestHost,
   parseWebhookConfig,
 } from "../../packages/integration-core/src/webhook-config"
 
@@ -102,6 +103,22 @@ test.describe("Private URL Guard", () => {
 
   test("rejects invalid URLs", () => {
     expect(isPrivateUrl("not-a-url")).toBe(true)
+  })
+
+  test("blocks private, mapped and metadata hosts for integration test URLs but allows App host names", () => {
+    for (const url of [
+      "http://[::ffff:127.0.0.1]:8080/mapped",
+      "http://127.0.0.2/hook",
+      "http://[fd00::1]/hook",
+      "http://169.254.169.254/latest",
+      "http://metadata.google.internal/computeMetadata",
+      "http://METADATA.google.internal./computeMetadata",
+    ]) {
+      expect(isBlockedTestHost(new URL(url).hostname), url).toBe(true)
+    }
+    for (const url of ["http://a0d7b954-grocy/api", "https://grocy.home.internal/api", "https://example.com/hook"]) {
+      expect(isBlockedTestHost(new URL(url).hostname), url).toBe(false)
+    }
   })
 })
 

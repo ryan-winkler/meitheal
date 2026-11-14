@@ -37,6 +37,19 @@ export function isPrivateHost(hostname: string): boolean {
   return PRIVATE_IP_RANGES.some((re) => re.test(host))
 }
 
+// Cloud metadata services answer on names as well as on 169.254.169.254.
+const METADATA_HOSTS = new Set(["metadata.google.internal", "metadata.goog", "metadata"])
+
+/**
+ * Whether an administrator's ad-hoc integration test URL points somewhere it must not reach:
+ * loopback, private, link-local, unique-local or IPv4-mapped addresses, or a cloud metadata service.
+ * Host names such as Home Assistant App names (`a0d7b954-grocy`) and other `.internal` names stay allowed.
+ */
+export function isBlockedTestHost(hostname: string): boolean {
+  const host = hostname.trim().toLowerCase().replace(/\.+$/, "")
+  return METADATA_HOSTS.has(host) || isPrivateHost(host)
+}
+
 export function isPrivateUrl(urlString: string): boolean {
   try {
     const parsed = new URL(urlString)

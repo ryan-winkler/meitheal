@@ -113,6 +113,21 @@ test.describe("Integration Webhooks", () => {
     expect(req.headers["x-meitheal-event"]).toBe("task.updated");
   });
 
+  test("test-webhook API endpoint refuses an IPv4-mapped loopback override without delivering", async () => {
+    const { POST } = await import("../../apps/web/src/pages/api/integrations/test-webhook");
+    const request = new Request(`http://127.0.0.1:${port}/api/integrations/test-webhook`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url: `http://[::ffff:127.0.0.1]:${port}/mapped` }),
+    });
+
+    const res = await POST({ request, locals: { hassIsAdmin: true } } as Parameters<typeof POST>[0]);
+
+    expect(res.status).toBe(400);
+    expect((await res.json()).success).toBe(false);
+    expect(receivedRequests).toHaveLength(0);
+  });
+
   test("test-webhook API endpoint sends test payload and returns success", async () => {
     const client = getPersistenceClient();
     const now = Date.now();

@@ -64,7 +64,7 @@ Use descriptive commit messages. Keep release commands in the [release runbook](
 
 ## Coding standards
 
-Contributions must follow these style guides. CI and Codacy check them on every push and pull request, and reviewers ask for fixes before merging.
+Contributions must follow these style guides. CI checks the compiler settings on every push and pull request and fails on errors. Codacy reports findings on pushes and on pull requests from this repository; it does not block a merge, and the reviewer reads its findings and asks for fixes.
 
 | Language | Standard | How it is checked |
 | --- | --- | --- |
@@ -75,14 +75,14 @@ Contributions must follow these style guides. CI and Codacy check them on every 
 
 ## Test policy
 
-Every change that adds major new functionality must add automated tests for that functionality in the same pull request. Every bug fix must add a regression test that fails without the fix, unless the pull request explains why one cannot be written. Pull requests without the required tests are not merged.
+Every change in the *new capability, public API, default interaction, or migration* row of [Choose a starting point](#choose-a-starting-point) must add automated tests for that functionality in the same pull request. Every bug fix must add a regression test that fails without the fix, unless the pull request explains why one cannot be written. Pull requests without the required tests are not merged.
 
 - Web and API behavior: Playwright specs in [tests/e2e](tests/e2e), run in CI against a fresh server and database for each spec.
 - Pure functions and parsers: Playwright unit specs in [tests/unit](tests/unit).
 - Repository rules and release contracts: specs in [tests/governance](tests/governance).
 - Home Assistant integration: pytest in [integrations/home-assistant/tests](integrations/home-assistant/tests).
 
-Coverage is reported to [Codecov](https://codecov.io/gh/ryan-winkler/meitheal) for TypeScript and Python. New and changed lines should reach at least 80% coverage.
+Coverage is reported to [Codecov](https://codecov.io/gh/ryan-winkler/meitheal) for TypeScript and Python. Codecov flags pull requests whose new and changed lines fall below 80% coverage ([codecov.yml](codecov.yml)). Coverage is not reported for pull requests from forks. The reviewer decides whether a gap is acceptable.
 
 ## Code review standard
 
@@ -91,14 +91,14 @@ Every pull request is reviewed before it is merged. The maintainer reviews pull 
 The reviewer checks that:
 
 1. The change solves the stated problem and fits the [roadmap](ROADMAP.md) and the owning domain.
-2. The required checks pass, including CI, CodeQL, dependency review and the CLA check.
+2. CI, CodeQL code scanning, dependency review and the CLA check pass.
 3. Tests follow the [test policy](#test-policy) and the commands listed in the pull request were actually run.
 4. Inputs from users, Home Assistant, integrations and agents are validated, access checks cover every new endpoint, and no secrets or household data appear in code, logs or fixtures.
 5. Existing installations keep working: migrations are tested, settings survive upgrades, and nothing is removed without a replacement and a migration path.
 6. User-facing changes work by keyboard, meet contrast requirements, and update the owning documentation.
 7. New dependencies are necessary, maintained, and licensed compatibly.
 
-A change is acceptable when every point is met or the pull request explains why a point does not apply. The reviewer records approval as a GitHub review whenever the reviewer is not the author, then the maintainer merges the pull request.
+A change is acceptable when every point is met or the pull request explains why a point does not apply. A reviewer who is not the author records approval as a GitHub review. When the maintainer merges their own pull request, they first post a comment confirming the checklist above. The maintainer then merges.
 
 ## Find a first task
 

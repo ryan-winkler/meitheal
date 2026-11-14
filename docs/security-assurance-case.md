@@ -12,7 +12,7 @@ This page explains what you can and cannot expect from Meitheal's security, and 
 
 ### What you can expect
 
-1. **Only people Home Assistant has signed in can use Meitheal through Ingress.** In App mode, every page and API request must arrive through the Home Assistant Supervisor Ingress proxy, come from the App's own loopback address, or carry a valid Meitheal agent token. Other requests receive 401 or 403.
+1. **Only people Home Assistant has signed in can use Meitheal through Ingress.** In App mode, every page and API request must arrive through the Home Assistant Supervisor Ingress proxy, come from the App's own loopback address, or carry a valid Meitheal agent token. Other requests receive 401 or 403. The one exception is `GET /api/health`, which answers without authentication so the Supervisor watchdog can check the App; it returns only status, version, uptime and schema version.
 2. **Identity comes only from the trusted route.** Meitheal reads the Home Assistant user ID and admin group from forwarded headers only when the request came through the Supervisor, and it validates their format. Task attribution uses that verified identity.
 3. **Agent tokens grant only their scopes.** Tokens for automations and AI agents are random 256-bit values with an `mth_` prefix. Meitheal stores only their SHA-256 hash, shows the plaintext once, and checks the required scope on every request. Tokens can be revoked.
 4. **Household data stays local.** Tasks and settings live in SQLite on the App's data volume and are included in Home Assistant backups. Meitheal sends data elsewhere only to destinations an administrator configured, such as webhooks, calendars, Grocy, or a Loki endpoint.
@@ -50,7 +50,7 @@ The assets are household task data, people's identities and activity, integratio
 3. **Automations and agents to the App.** Callers outside Ingress must present an agent token (`apps/web/src/lib/agent-token-guard.ts`, `packages/domain-auth/src/agent-tokens.ts`).
 4. **The App to Home Assistant Core and the Supervisor.** The App uses the Supervisor token that Home Assistant provides. It never exposes that token to the browser.
 5. **The App to external services.** Webhooks, calendars, Grocy, and other integrations cross this boundary. Outbound requests verify TLS certificates by default; webhook payloads are signed with HMAC-SHA256.
-6. **The custom integration inside Home Assistant Core.** It talks to the App with a scoped token. Its Home Assistant LLM API is read-only, and an active administrator must enable it for a conversation agent.
+6. **The custom integration inside Home Assistant Core.** It talks to the App over the internal Supervisor network (`local-meitheal:3000`) with a scoped token. It registers two Home Assistant LLM APIs, a read-only lookup and a task-management API. Both require an active administrator, and an administrator must enable them for a conversation agent.
 
 ## Secure design principles applied
 
@@ -64,7 +64,7 @@ The assets are household task data, people's identities and activity, integratio
 | Least privilege | Workflows declare minimal `permissions`. The App runs under an AppArmor profile. Agent tokens carry only the scopes chosen for them. |
 | Least common mechanism | Each agent gets its own token, and logs and activity record which token acted. |
 | Psychological acceptability | Security is mostly invisible: people sign in to Home Assistant once, and tokens are created from Settings with plain descriptions of each scope. |
-| Limited attack surface | The App listens only for Ingress. It exposes no other ports by default. |
+| Limited attack surface | The App publishes no host ports. It listens on port 3000 inside the internal Supervisor network, where Ingress and the custom integration reach it; requests there still need Ingress identity or an agent token. |
 | Input validation with allowlists | Identity headers, IDs, enum values, URLs, and file uploads are validated against expected formats and sizes. |
 
 ## Common weaknesses and how they are countered
@@ -80,8 +80,20 @@ The assets are household task data, people's identities and activity, integratio
 | Identification and authentication failures (CWE-287) | No local passwords. Home Assistant authenticates people; tokens are random, hashed, and revocable. |
 | Software and data integrity failures (CWE-494) | Actions pinned to commit SHAs, signed build provenance, image digests verified with an anonymous pull before App Store promotion. |
 | Logging and monitoring failures (CWE-532) | Structured, redacted JSON logs; audit events for changes; optional Loki and Grafana dashboards. |
-| Server-side request forgery (CWE-918) | `parseWebhookConfig` checks subscriber URLs against loopback, private, link-local, unique-local, and IPv4-mapped addresses, and integration test endpoints block loopback and cloud-metadata hosts on ad-hoc test URLs. Saved task webhooks dispatched from administrator settings (`dispatchTaskEvent` / `emitWebhook`) deliver directly so homelab automations can reach configured local receivers. |
+| Server-side request forgery (CWE-918) | `parseWebhookConfig` checks subscriber URLs against loopback, private, link-local, unique-local, and IPv4-mapped addresses, and the webhook and Grocy test endpoints check ad-hoc test URLs with `isBlockedTestHost`, which adds cloud metadata names to the same address list. Saved task webhooks dispatched from administrator settings (`dispatchTaskEvent` / `emitWebhook`) deliver directly so homelab automations can reach configured local receivers. |
 | Resource exhaustion (CWE-400) | Per-IP rate limits, a stricter limit for agent mutation endpoints, bounded request bodies, import size limits, and capped in-memory maps. |
+
+## Accepted risks
+
+These choices weaken a control on purpose. Each one is reviewed with the Stable release.
+
+| Choice | Why it is accepted | What limits it |
+| --- | --- | --- |
+| The CSP allows `'unsafe-inline'` scripts and styles. | Astro islands and the Home Assistant Ingress shell use inline bootstrap scripts. | Output is escaped by default, client code builds markup through `escape-html`, and `data:` script sources are not allowed. |
+| Behind Ingress, `frame-ancestors` is `*`. | Home Assistant embeds Ingress pages in its own frontend, whose origin differs for each installation. | Ingress requests already require a Home Assistant session, and state-changing calls outside Ingress need same-origin proof. |
+| Saved task webhooks may point at local network receivers. | Household automations such as n8n, Node-RED or Home Assistant itself usually run on the local network. | Only an administrator can save a destination, and ad-hoc test URLs are still checked against private and metadata addresses. |
+| Supervisor mode trusts loopback callers inside the container. | Startup scripts and the watchdog call the App from inside its own container. | Nothing outside the container can use the loopback address. |
+| The App runs with `hassio_role: manager` and Home Assistant API access. | It discovers companion Apps such as Grocy and Node-RED through the Supervisor, and reads users, entities and calendars through Home Assistant Core. | The Supervisor token stays on the server, and the AppArmor profile limits the container. |
 
 ## Evidence
 
