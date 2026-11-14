@@ -94,15 +94,32 @@ async function replayedAgentReassignment(
   const requested = typeof body.assigned_to === "string" ? body.assigned_to.trim() : ""
   const row = await repo.findById(taskId)
   if (!row || String(row.assigned_to ?? "") !== requested) return null
-  const { activity } = await repo.getActivityLog(taskId, 50, 0)
-  const lastReassignment = activity.find((entry) => entry.field === "assigned_to")
-  if (
-    !lastReassignment ||
-    lastReassignment.actor_type !== "agent" ||
-    lastReassignment.old_value !== agentToken.assigneeId ||
-    String(lastReassignment.new_value ?? "") !== requested ||
-    lastReassignment.correlation_id !== requestId
-  ) return null
+
+  const client = getPersistenceClient()
+  const receiptKey = `${agentToken.tokenId}:${agentToken.assigneeId}:${taskId}:${requestId}`
+  const [receiptRes, latestActivityRes] = await Promise.all([
+    client.execute({
+      sql: "SELECT status FROM integration_attempts WHERE integration = 'task.reassignment' AND idempotency_key = ? LIMIT 1",
+      args: [receiptKey],
+    }),
+    client.execute({
+      sql: "SELECT old_value, new_value, actor_type, correlation_id FROM task_activity_log WHERE task_id = ? AND field = 'assigned_to' ORDER BY created_at DESC, id DESC LIMIT 1",
+      args: [taskId],
+    }),
+  ])
+  const hasReceipt = receiptRes.rows[0]?.status === "completed"
+  const lastReassignment = latestActivityRes.rows[0] as Record<string, unknown> | undefined
+  const activityMatches = Boolean(
+    lastReassignment &&
+    lastReassignment.actor_type === "agent" &&
+    lastReassignment.old_value === agentToken.assigneeId &&
+    String(lastReassignment.new_value ?? "") === requested &&
+    lastReassignment.correlation_id === requestId,
+  )
+  // If a newer assignment event exists on the task, ensure it wasn't rewritten after our handoff.
+  if (!activityMatches && (!hasReceipt || (lastReassignment && String(lastReassignment.new_value ?? "") !== requested))) {
+    return null
+  }
   const ticketNum = row.ticket_number != null ? Number(row.ticket_number) : null
   const ticketKey = formatTicketKey(ticketNum)
   if (!agentToken.scopes.includes("tasks:read")) {
@@ -478,6 +495,22 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
         ...activityActor,
         ...(requestId ? { correlation_id: requestId } : {}),
       }).catch(() => { })
+      if (
+        requestId &&
+        agentToken &&
+        isAssignedWriteOnly(agentToken) &&
+        sanitized.assigned_to !== undefined &&
+        String(sanitized.assigned_to ?? "") !== agentToken.assigneeId
+      ) {
+        const now = Date.now()
+        const receiptKey = `${agentToken.tokenId}:${agentToken.assigneeId}:${resolvedId}:${requestId}`
+        await getPersistenceClient().execute({
+          sql: `INSERT INTO integration_attempts (attempt_id, task_id, integration, request_id, idempotency_key, status, created_at, updated_at)
+                VALUES (?, ?, 'task.reassignment', ?, ?, 'completed', ?, ?)
+                ON CONFLICT(idempotency_key, integration) DO NOTHING`,
+          args: [crypto.randomUUID(), resolvedId, requestId, receiptKey, now, now],
+        }).catch(() => {})
+      }
     }
   }
 

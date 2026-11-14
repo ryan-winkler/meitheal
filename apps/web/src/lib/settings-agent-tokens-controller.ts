@@ -364,7 +364,13 @@ export function initAgentTokensSettings(): void {
     }
   })
 
+  let formGeneration = 0
+  let activeCreateController: AbortController | null = null
+
   pageLifecycle.on(createBtn, "click", () => {
+    formGeneration++
+    activeCreateController?.abort()
+    activeCreateController = null
     clearReveal()
     formEl.hidden = false
     nameInput.value = ""
@@ -378,6 +384,9 @@ export function initAgentTokensSettings(): void {
   })
 
   pageLifecycle.on(cancelBtn, "click", () => {
+    formGeneration++
+    activeCreateController?.abort()
+    activeCreateController = null
     assigneeSelect.value = ""
     toggleNewAssignee()
     formEl.hidden = true
@@ -426,15 +435,22 @@ export function initAgentTokensSettings(): void {
       if (ms) expiresAt = new Date(now + ms).toISOString()
     }
 
+    const generation = formGeneration
+    activeCreateController?.abort()
+    const createController = new AbortController()
+    activeCreateController = createController
+    const reqSignal = AbortSignal.any([signal, createController.signal])
+    const stale = () => signal.aborted || createController.signal.aborted || generation !== formGeneration
+
     try {
       if (creatingNewAgent) {
         const createdUserRes = await fetch("/api/users/custom", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ name: newAgentLabel, kind: "agent" }),
-          signal,
+          signal: reqSignal,
         })
-        if (signal.aborted) return
+        if (stale()) return
         if (!createdUserRes.ok) {
           const err = await createdUserRes.json().catch(() => ({}))
           showToast(err.error || err.detail || "Failed to create agent assignee", "error")
@@ -447,28 +463,30 @@ export function initAgentTokensSettings(): void {
         const opt = new Option(createdUser.name, createdUser.id)
         opt.dataset.agentOption = "1"
         assigneeSelect.insertBefore(opt, createOption ?? null)
-        assigneeSelect.value = createdUser.id
+        if (!stale()) {
+          assigneeSelect.value = createdUser.id
+          toggleNewAssignee()
+        }
         assigneeId = createdUser.id
-        toggleNewAssignee()
       }
 
       const res = await fetch("/api/agent-tokens", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, scopes, assigneeId, expiresAt }),
-        signal,
+        signal: reqSignal,
       })
 
-      if (signal.aborted) return
+      if (stale()) return
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
         showToast(err.detail || "Failed to create token", "error")
-        setTimeout(() => { if (!signal.aborted) saveBtn.focus() }, 0)
+        setTimeout(() => { if (!stale()) saveBtn.focus() }, 0)
         return
       }
 
       const data = await res.json()
-      if (signal.aborted) return
+      if (stale()) return
 
       formEl.hidden = true
       revealEl.hidden = false
@@ -478,10 +496,12 @@ export function initAgentTokensSettings(): void {
       showToast("Token created — copy it now!", "success")
       void loadTokens()
     } catch {
-      if (!signal.aborted) {
+      if (!stale()) {
         showToast("Failed to create token", "error")
-        setTimeout(() => { if (!signal.aborted) saveBtn.focus() }, 0)
+        setTimeout(() => { if (!stale()) saveBtn.focus() }, 0)
       }
+    } finally {
+      if (activeCreateController === createController) activeCreateController = null
     }
   }, { loadingText: "Creating…" }))
 

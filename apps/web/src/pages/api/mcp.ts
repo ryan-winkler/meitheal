@@ -501,6 +501,10 @@ customHandlers.set("handBackTask", async (args, requestApi, agent) => {
   const task = await checkedJson(await requestApi(`/api/tasks/${encodeURIComponent(args.id.trim())}`))
   // Later calls use the stored ID: the history is keyed by it, not by the ticket key.
   const taskId = String(task.id)
+  const taskVersion = typeof task.task_version === "number" ? task.task_version : task.updated_at
+  const expectedVersion = typeof taskVersion === "number" && Number.isSafeInteger(taskVersion) && taskVersion >= 0
+    ? taskVersion
+    : undefined
   const path = `/api/tasks/${encodeURIComponent(taskId)}`
   const db = getPersistenceClient()
   const receiptKey = requestId ? `${agent.tokenId}:${taskId}:${requestId}` : null
@@ -570,7 +574,11 @@ customHandlers.set("handBackTask", async (args, requestApi, agent) => {
   try {
     updated = await checkedJson(await requestApi(path, {
       method: "PUT",
-      body: JSON.stringify({ assigned_to: to, ...(requestId ? { request_id: requestId } : {}) }),
+      body: JSON.stringify({
+        assigned_to: to,
+        ...(expectedVersion !== undefined ? { updated_at: expectedVersion } : {}),
+        ...(requestId ? { request_id: requestId } : {}),
+      }),
     }))
     if ((updated.assigned_to ?? null) !== to) throw new Error("Task hand back returned an invalid acknowledgement")
   } catch (error) {

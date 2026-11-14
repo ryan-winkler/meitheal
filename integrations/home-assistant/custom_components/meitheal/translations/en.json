@@ -232,6 +232,24 @@
     },
     "missing_task_identifier": {
       "message": "Provide task_id or title to complete a task."
+    },
+    "invalid_task_details": {
+      "message": "Meitheal returned invalid task details"
+    },
+    "invalid_task_list": {
+      "message": "Meitheal returned an invalid task list"
+    },
+    "inconsistent_task_list": {
+      "message": "Meitheal task list changed while paging; try again"
+    },
+    "invalid_comments": {
+      "message": "Meitheal returned invalid comments"
+    },
+    "change_not_acknowledged": {
+      "message": "Meitheal did not acknowledge the change"
+    },
+    "comment_not_acknowledged": {
+      "message": "Meitheal did not acknowledge the comment"
     }
   },
   "device_automation": {

@@ -106,7 +106,11 @@ export async function resolveAgentAuth(request: Request): Promise<ResolvedAgent 
       const assignee = await new UserRepository(getPersistenceClient()).getCustomUser(assigneeId)
       if (assignee?.kind !== "agent") assigneeId = null
     } catch {
-      assigneeId = null
+      throw apiProblem({
+        status: 503,
+        detail: "Agent assignee verification is temporarily unavailable.",
+        extraHeaders: { "cache-control": "private, no-store" },
+      })
     }
   }
 

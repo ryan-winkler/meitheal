@@ -170,7 +170,7 @@ async def test_cached_tools_recheck_user_entry_and_arguments(
         (SEARCH, {"query": "fixture", "status": "invented"}),
         (GET_TASK, {"task_id": ".."}),
     ):
-        with pytest.raises(HomeAssistantError, match="Invalid Meitheal tool arguments"):
+        with pytest.raises(HomeAssistantError, match="invalid_tool_arguments"):
             await async_call(instance, name, arguments)
 
     original_coordinator = entry.runtime_data
@@ -289,6 +289,17 @@ async def test_manage_api_reads_and_changes_tasks_for_the_caller(
         assert [t["id"] for t in second_page.data["tasks"]] == [f"m-{i}" for i in range(50, 60)]
         assert second_page.data["has_more"] is False
 
+        # Inconsistent pagination (repeated ID across pages) retries and succeeds when scan stabilizes.
+        client.async_request.side_effect = [
+            {"tasks": [{"id": f"r-{i}", "title": f"R {i}", "status": "pending", "assigned_to": me} for i in range(200)], "total": 201},
+            {"tasks": [{"id": "r-199", "title": "R 199", "status": "pending", "assigned_to": me}], "total": 201},
+            {"tasks": [{"id": f"s-{i}", "title": f"S {i}", "status": "pending", "assigned_to": me} for i in range(200)], "total": 201},
+            {"tasks": [{"id": "s-200", "title": "S 200", "status": "pending", "assigned_to": me}], "total": 201},
+        ]
+        stabilized = await async_call(instance, "meitheal_list_tasks", {})
+        assert stabilized.data["count"] == 201
+        client.async_request.side_effect = None
+
         client.async_request.return_value = {"id": "new", "title": "Plan", "assigned_to": me}
         created = await async_call(
             instance, "meitheal_create_task", {"title": "Plan", "priority": 2, "assignee": "me"}
@@ -360,10 +371,10 @@ async def test_manage_api_reads_and_changes_tasks_for_the_caller(
         # A rejected or mismatched receipt is never reported as a successful change.
         for receipt in (None, {}, {"id": "other"}, {"id": "open", "error": "Rejected"}):
             client.async_request.return_value = receipt
-            with pytest.raises(HomeAssistantError, match="did not acknowledge"):
+            with pytest.raises(HomeAssistantError, match="change_not_acknowledged"):
                 await async_call(instance, "meitheal_update_task", {"task_id": "open", "title": "New"})
         client.async_request.return_value = {"error": "Rejected"}
-        with pytest.raises(HomeAssistantError, match="did not acknowledge"):
+        with pytest.raises(HomeAssistantError, match="comment_not_acknowledged"):
             await async_call(instance, "meitheal_add_comment", {"task_id": "open", "comment": "x"})
 
         awaited = client.async_request.await_count
@@ -377,7 +388,7 @@ async def test_manage_api_reads_and_changes_tasks_for_the_caller(
             ("meitheal_add_comment", {"task_id": "open", "comment": ""}),
             ("meitheal_complete_task", {}),
         ):
-            with pytest.raises(HomeAssistantError, match="Invalid Meitheal tool arguments"):
+            with pytest.raises(HomeAssistantError, match="invalid_tool_arguments"):
                 await async_call(instance, name, arguments)
 
         member = await hass.auth.async_create_user("Fixture member", group_ids=[GROUP_ID_USER])

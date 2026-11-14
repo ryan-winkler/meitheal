@@ -630,9 +630,12 @@ async function initializeSchema(): Promise<void> {
     WHEN NEW.assigned_to IS NOT OLD.assigned_to
       AND NEW.owner IS NOT COALESCE((SELECT 'bot:' || name FROM custom_users WHERE id = NEW.assigned_to AND kind = 'agent'), 'human')
     BEGIN UPDATE tasks SET owner = COALESCE((SELECT 'bot:' || name FROM custom_users WHERE id = NEW.assigned_to AND kind = 'agent'), 'human') WHERE id = NEW.id; END`)
-  // Tasks assigned before these triggers existed.
-  await client.execute(`UPDATE tasks SET owner = (SELECT 'bot:' || name FROM custom_users WHERE id = tasks.assigned_to)
-    WHERE owner NOT LIKE 'bot%' AND assigned_to IN (SELECT id FROM custom_users WHERE kind = 'agent')`)
+  // Tasks assigned before these triggers existed, or with a mismatched bot owner.
+  await client.execute(`UPDATE tasks
+    SET owner = (SELECT 'bot:' || name FROM custom_users WHERE id = tasks.assigned_to AND kind = 'agent')
+    WHERE assigned_to IS NOT NULL
+      AND EXISTS (SELECT 1 FROM custom_users WHERE id = tasks.assigned_to AND kind = 'agent')
+      AND owner IS NOT (SELECT 'bot:' || name FROM custom_users WHERE id = tasks.assigned_to AND kind = 'agent')`)
   // lock_holder: bot agent name holding the lock (null = unlocked)
   if (!(await hasColumn(client, "tasks", "lock_holder"))) {
     await client.execute("ALTER TABLE tasks ADD COLUMN lock_holder TEXT")

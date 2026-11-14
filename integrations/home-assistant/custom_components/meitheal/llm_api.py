@@ -128,7 +128,10 @@ class MeithealReadTool(llm.Tool):
         try:
             args = self.parameters(tool_input.tool_args)
         except probatio.Invalid:
-            raise HomeAssistantError("Invalid Meitheal tool arguments") from None
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="invalid_tool_arguments",
+            ) from None
         # Authorization above proved this user exists; "me" resolves to them.
         # Kept per call, not on the tool, which concurrent conversations share.
         caller = assignee_for_user(llm_context.context.user_id)
@@ -175,7 +178,10 @@ class GetTaskDetailsTool(MeithealReadTool):
             "GET", task_path(args["task_id"]), read_json=True
         )
         if not isinstance(data, dict) or not data.get("id"):
-            raise HomeAssistantError("Meitheal returned invalid task details")
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="invalid_task_details",
+            )
         task = MeithealTask(data)
         return {
             "id": task.id,
@@ -219,7 +225,10 @@ def _task_summary(data: dict[str, Any]) -> JsonObjectType:
 def _acknowledged(data: Any, task_id: str | None = None) -> dict[str, Any]:
     """Accept only a task receipt, so a rejected write is never reported as done."""
     if not isinstance(data, dict) or not task_matches_identifier(data, task_id):
-        raise HomeAssistantError("Meitheal did not acknowledge the change")
+        raise HomeAssistantError(
+            translation_domain=DOMAIN,
+            translation_key="change_not_acknowledged",
+        )
     return data
 
 
@@ -256,27 +265,58 @@ class ListTasksTool(MeithealReadTool):
         page_limit = int(args["limit"])
         page_offset = int(args["offset"])
         tasks: list[JsonObjectType] = []
-        offset = 0
-        while True:
-            params: dict[str, str] = {"assigned_to": assignee, "limit": "200", "sort": "updated_at"}
-            if offset > 0:
-                params["offset"] = str(offset)
-            data = await coordinator.api.async_request(
-                "GET",
-                "/api/tasks",
-                params=params,
-                read_json=True,
-            )
-            rows = data.get("tasks") if isinstance(data, dict) else None
-            if not isinstance(rows, list):
-                raise HomeAssistantError("Meitheal returned an invalid task list")
-            for row in rows:
-                if isinstance(row, dict) and (include_completed or str(row.get("status") or "").lower() not in _DONE_STATUSES):
-                    tasks.append(_task_summary(row))
-            offset += len(rows)
-            total = data.get("total") if isinstance(data, dict) else None
-            if not rows or (isinstance(total, int) and offset >= total) or (not isinstance(total, int) and len(rows) < 200):
+        for _attempt in range(3):
+            tasks = []
+            seen_ids: set[str] = set()
+            expected_total: int | None = None
+            offset = 0
+            inconsistent = False
+            while True:
+                params: dict[str, str] = {"assigned_to": assignee, "limit": "200", "sort": "updated_at"}
+                if offset > 0:
+                    params["offset"] = str(offset)
+                data = await coordinator.api.async_request(
+                    "GET",
+                    "/api/tasks",
+                    params=params,
+                    read_json=True,
+                )
+                rows = data.get("tasks") if isinstance(data, dict) else None
+                if not isinstance(rows, list):
+                    raise HomeAssistantError(
+                        translation_domain=DOMAIN,
+                        translation_key="invalid_task_list",
+                    )
+                total = data.get("total") if isinstance(data, dict) else None
+                if isinstance(total, int):
+                    if expected_total is None:
+                        expected_total = total
+                    elif total != expected_total:
+                        inconsistent = True
+                        break
+                for row in rows:
+                    if not isinstance(row, dict):
+                        continue
+                    row_id = row.get("id")
+                    if isinstance(row_id, str):
+                        if row_id in seen_ids:
+                            inconsistent = True
+                            break
+                        seen_ids.add(row_id)
+                    if include_completed or str(row.get("status") or "").lower() not in _DONE_STATUSES:
+                        tasks.append(_task_summary(row))
+                if inconsistent:
+                    break
+                offset += len(rows)
+                if not rows or (isinstance(total, int) and offset >= total) or (not isinstance(total, int) and len(rows) < 200):
+                    break
+            if not inconsistent:
                 break
+        else:
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="inconsistent_task_list",
+            )
         page = tasks[page_offset : page_offset + page_limit]
         has_more = page_offset + len(page) < len(tasks)
         result: JsonObjectType = {
@@ -305,7 +345,10 @@ class GetTaskCommentsTool(MeithealReadTool):
         )
         rows = data.get("comments") if isinstance(data, dict) else None
         if not isinstance(rows, list):
-            raise HomeAssistantError("Meitheal returned invalid comments")
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="invalid_comments",
+            )
         return {
             "comments": [
                 {
@@ -394,7 +437,10 @@ class UpdateTaskTool(MeithealWriteTool):
                 None if args["assignee"] == "unassigned" else _assignee(args)
             )
         if not payload:
-            raise HomeAssistantError("Invalid Meitheal tool arguments")
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="invalid_tool_arguments",
+            )
         authority: set[str] = set()
         updated = _acknowledged(
             await coordinator.api.async_request(
@@ -467,7 +513,10 @@ class AddCommentTool(MeithealWriteTool):
             read_json=True,
         )
         if not isinstance(created, dict) or created.get("id") is None or created.get("error"):
-            raise HomeAssistantError("Meitheal did not acknowledge the comment")
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="comment_not_acknowledged",
+            )
         return {"id": created["id"], "author": created.get("author")}
 
 
