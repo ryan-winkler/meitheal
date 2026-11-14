@@ -9,7 +9,7 @@
 
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { formatCalendarDay } from "@lib/calendar-day"
-import { renderIconSvg, type IconName } from "../../generated/icon-registry"
+import { renderSpriteIconSvg, type IconName } from "../../generated/icon-registry"
 
 export interface HabitChecklistItem {
   text: string
@@ -78,7 +78,7 @@ function createIconButton(
   button.dataset.id = habitId
   button.setAttribute("aria-label", label)
   button.title = label
-  button.innerHTML = renderIconSvg(iconName, { size: 16 })
+  button.innerHTML = renderSpriteIconSvg(iconName, { size: 16 })
   return button
 }
 
@@ -95,7 +95,7 @@ function createChecklistList(habit: HabitData): HTMLUListElement {
     marker.className = "habit-card__checklist-marker"
     marker.setAttribute("aria-hidden", "true")
     if (item.done) {
-      marker.innerHTML = renderIconSvg("check", { size: 14 })
+      marker.innerHTML = renderSpriteIconSvg("check", { size: 14 })
     } else {
       marker.textContent = "•"
     }
@@ -125,7 +125,7 @@ function createHabitCard(habit: HabitData): HTMLElement {
   completeButton.dataset.id = habit.id
   completeButton.setAttribute("aria-label", `Complete ${habit.name} today`)
   if (habit.todayCompleted) {
-    completeButton.innerHTML = renderIconSvg("check", { size: 16 })
+    completeButton.innerHTML = renderSpriteIconSvg("check", { size: 16 })
   }
 
   const icon = document.createElement("span")
@@ -155,7 +155,7 @@ function createHabitCard(habit: HabitData): HTMLElement {
     streakItem.style.display = "inline-flex"
     streakItem.style.alignItems = "center"
     streakItem.style.gap = "4px"
-    streakItem.innerHTML = renderIconSvg("flame", { size: 14 })
+    streakItem.innerHTML = renderSpriteIconSvg("flame", { size: 14 })
     streakItem.append(document.createTextNode(`${habit.currentStreak} day streak`))
     meta.prepend(streakItem)
   }
@@ -292,7 +292,7 @@ export function createChecklistBuilderItem(text = ""): HTMLDivElement {
   removeButton.type = "button"
   removeButton.className = "btn-remove"
   removeButton.setAttribute("aria-label", "Remove item")
-  removeButton.innerHTML = renderIconSvg("x", { size: 14 })
+  removeButton.innerHTML = renderSpriteIconSvg("x", { size: 14 })
 
   pageLifecycle.on(removeButton, "click", () => {
     row.remove()

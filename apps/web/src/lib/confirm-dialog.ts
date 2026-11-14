@@ -9,7 +9,7 @@
 
 import { mountDialogOverlay } from "./dialog-overlay"
 import { copyToClipboard } from "./clipboard"
-import { renderIconSvg } from "../generated/icon-registry"
+import { renderSpriteIconSvg } from "../generated/icon-registry"
 
 export interface ConfirmOptions {
   title?: string;
@@ -102,7 +102,7 @@ export function confirmDialog(options: ConfirmOptions): Promise<boolean> {
     `;
 
     // Dialog options are plain text, including values read back from DOM labels.
-    dialog.querySelector<HTMLElement>("[data-confirm-icon]")!.innerHTML = renderIconSvg(iconName, { size: 28 })
+    dialog.querySelector<HTMLElement>("[data-confirm-icon]")!.innerHTML = renderSpriteIconSvg(iconName, { size: 28 })
     dialog.querySelector<HTMLElement>("#confirm-title")!.textContent = options.title ?? "Confirm"
     dialog.querySelector<HTMLElement>("#confirm-message")!.textContent = options.message
     const details = dialog.querySelector<HTMLElement>("#confirm-details")!

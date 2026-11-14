@@ -133,7 +133,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
   import { createClientLogger } from "@lib/client-logger";
   import { pageLifecycle } from "@lib/page-lifecycle"
   import { fetchHaAgents, renderHaAgentOptions } from "@lib/ha-agent-picker"
-  import { renderIconSvg, type IconName } from "../../generated/icon-registry"
+  import { renderSpriteIconSvg, type IconName } from "../../generated/icon-registry"
 
   pageLifecycle.onPageLoad((pageSignal) => {
   const runtime = window as unknown as { __meithealAskAssist?: AbortController }
@@ -296,7 +296,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
     if (!isUser && responseType) {
       const icon = document.createElement("span");
       icon.className = "ask-bubble__icon inline-flex items-center";
-      icon.innerHTML = renderIconSvg(getResponseIcon(responseType), { size: 15 });
+      icon.innerHTML = renderSpriteIconSvg(getResponseIcon(responseType), { size: 15 });
       icon.setAttribute("aria-hidden", "true");
       bubble.appendChild(icon);
     }

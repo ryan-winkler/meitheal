@@ -298,7 +298,7 @@ const { enabled = true } = Astro.props
 </style>
 
 <script>
-  import { renderIconSvg } from "../../generated/icon-registry"
+  import { renderSpriteIconSvg } from "../../generated/icon-registry"
 
   // Pomodoro Timer Client Controller
   const CIRCUMFERENCE = 2 * Math.PI * 52
@@ -363,7 +363,7 @@ const { enabled = true } = Astro.props
       pill.classList.toggle("pomodoro-pill--active", localPhase === "focus")
       pill.classList.toggle("pomodoro-pill--break", localPhase.includes("break"))
       if (pillIcon) {
-        pillIcon.innerHTML = renderIconSvg(localPhase.includes("break") ? "mug" : "today", { size: 16 })
+        pillIcon.innerHTML = renderSpriteIconSvg(localPhase.includes("break") ? "mug" : "today", { size: 16 })
       }
     }
 

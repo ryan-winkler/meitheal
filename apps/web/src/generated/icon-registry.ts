@@ -77,6 +77,29 @@ export const CANONICAL_ICON_NAMES = [
 
 export type CanonicalIconName = (typeof CANONICAL_ICON_NAMES)[number]
 
+export const CLIENT_DYNAMIC_ICON_NAMES = [
+  "alert-triangle",
+  "bolt",
+  "book",
+  "bug",
+  "calendar",
+  "check",
+  "checkbox",
+  "clock",
+  "file-text",
+  "flame",
+  "hash",
+  "info-circle",
+  "link",
+  "message-chatbot",
+  "message-circle",
+  "mug",
+  "paperclip",
+  "pencil",
+  "trash",
+  "x",
+] as const satisfies readonly CanonicalIconName[]
+
 export const LEGACY_ICON_ALIASES = {
   "automation": "bolt",
   "cart": "shopping-cart",
@@ -99,6 +122,8 @@ export const LEGACY_ICON_ALIASES = {
 
 export type LegacyIconAlias = keyof typeof LEGACY_ICON_ALIASES
 export type IconName = CanonicalIconName | LegacyIconAlias
+
+const CANONICAL_ICON_SET: ReadonlySet<string> = new Set(CANONICAL_ICON_NAMES)
 
 export const ICON_INNER_SVG: Record<IconName, string> = {
   "adjustments-horizontal": "<path vector-effect=\"non-scaling-stroke\" d=\"M12 6a2 2 0 1 0 4 0a2 2 0 1 0 -4 0\" /><path vector-effect=\"non-scaling-stroke\" d=\"M4 6l8 0\" /><path vector-effect=\"non-scaling-stroke\" d=\"M16 6l4 0\" /><path vector-effect=\"non-scaling-stroke\" d=\"M6 12a2 2 0 1 0 4 0a2 2 0 1 0 -4 0\" /><path vector-effect=\"non-scaling-stroke\" d=\"M4 12l2 0\" /><path vector-effect=\"non-scaling-stroke\" d=\"M10 12l10 0\" /><path vector-effect=\"non-scaling-stroke\" d=\"M15 18a2 2 0 1 0 4 0a2 2 0 1 0 -4 0\" /><path vector-effect=\"non-scaling-stroke\" d=\"M4 18l11 0\" /><path vector-effect=\"non-scaling-stroke\" d=\"M19 18l1 0\" />",
@@ -185,7 +210,7 @@ export const ICON_INNER_SVG: Record<IconName, string> = {
 }
 
 export function isIconName(value: string): value is IconName {
-  return Object.hasOwn(ICON_INNER_SVG, value)
+  return CANONICAL_ICON_SET.has(value) || Object.hasOwn(LEGACY_ICON_ALIASES, value)
 }
 
 export function resolveCanonicalIconName(name: IconName): CanonicalIconName {
@@ -196,6 +221,23 @@ export function resolveCanonicalIconName(name: IconName): CanonicalIconName {
 
 function escapeAttr(value: string): string {
   return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+}
+
+export function renderSpriteIconSvg(
+  name: IconName,
+  options?: {
+    size?: number | undefined
+    className?: string | undefined
+    strokeWidth?: number | undefined
+    style?: string | undefined
+  },
+): string {
+  const size = options?.size ?? 20
+  const strokeWidth = options?.strokeWidth ?? 1.75
+  const cls = options?.className ? ` class="${escapeAttr(options.className)}"` : ""
+  const styleAttr = options?.style ? ` style="${escapeAttr(options.style)}"` : ""
+  const canonical = resolveCanonicalIconName(name)
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${strokeWidth}" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"${cls}${styleAttr} aria-hidden="true" role="img"><use href="#mt-icon-${canonical}" /></svg>`
 }
 
 export function renderIconSvg(

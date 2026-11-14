@@ -115,6 +115,34 @@ export const CANONICAL_TABLER_ICONS = [
   "confetti",
 ]
 
+/**
+ * Canonical Tabler icons rendered dynamically by client-side controllers via
+ * `<use href="#mt-icon-..." />` so `ICON_INNER_SVG` stays server-only and is
+ * tree-shaken out of client JavaScript bundles.
+ */
+export const CLIENT_DYNAMIC_TABLER_ICONS = [
+  "alert-triangle",
+  "bolt",
+  "book",
+  "bug",
+  "calendar",
+  "check",
+  "checkbox",
+  "clock",
+  "file-text",
+  "flame",
+  "hash",
+  "info-circle",
+  "link",
+  "message-chatbot",
+  "message-circle",
+  "mug",
+  "paperclip",
+  "pencil",
+  "trash",
+  "x",
+]
+
 function resolveTablerOutlineDir() {
   const localDir = resolve(SCRIPT_DIR, "../node_modules/@tabler/icons/icons/outline")
   try {
@@ -177,6 +205,12 @@ export function generateIconRegistrySource() {
   const sortedCanonical = [...CANONICAL_TABLER_ICONS].sort()
   const sortedAliases = Object.keys(LEGACY_ICON_ALIASES).sort()
   const sortedAllKeys = Object.keys(allEntries).sort()
+  const sortedClientDynamic = [...CLIENT_DYNAMIC_TABLER_ICONS].sort()
+  for (const dynamicIcon of sortedClientDynamic) {
+    if (!canonicalEntries[dynamicIcon]) {
+      throw new Error(`[generate-icons] Client dynamic icon ${dynamicIcon} is not in CANONICAL_TABLER_ICONS`)
+    }
+  }
 
   const lines = [
     "/*",
@@ -195,6 +229,10 @@ export function generateIconRegistrySource() {
     "",
     "export type CanonicalIconName = (typeof CANONICAL_ICON_NAMES)[number]",
     "",
+    "export const CLIENT_DYNAMIC_ICON_NAMES = [",
+    ...sortedClientDynamic.map(k => `  ${JSON.stringify(k)},`),
+    "] as const satisfies readonly CanonicalIconName[]",
+    "",
     "export const LEGACY_ICON_ALIASES = {",
     ...sortedAliases.map(k => `  ${JSON.stringify(k)}: ${JSON.stringify(LEGACY_ICON_ALIASES[k])},`),
     "} as const satisfies Record<string, CanonicalIconName>",
@@ -202,12 +240,14 @@ export function generateIconRegistrySource() {
     "export type LegacyIconAlias = keyof typeof LEGACY_ICON_ALIASES",
     "export type IconName = CanonicalIconName | LegacyIconAlias",
     "",
+    "const CANONICAL_ICON_SET: ReadonlySet<string> = new Set(CANONICAL_ICON_NAMES)",
+    "",
     "export const ICON_INNER_SVG: Record<IconName, string> = {",
     ...sortedAllKeys.map(k => `  ${JSON.stringify(k)}: ${JSON.stringify(allEntries[k])},`),
     "}",
     "",
     "export function isIconName(value: string): value is IconName {",
-    "  return Object.hasOwn(ICON_INNER_SVG, value)",
+    "  return CANONICAL_ICON_SET.has(value) || Object.hasOwn(LEGACY_ICON_ALIASES, value)",
     "}",
     "",
     "export function resolveCanonicalIconName(name: IconName): CanonicalIconName {",
@@ -218,6 +258,23 @@ export function generateIconRegistrySource() {
     "",
     "function escapeAttr(value: string): string {",
     '  return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;")',
+    "}",
+    "",
+    "export function renderSpriteIconSvg(",
+    "  name: IconName,",
+    "  options?: {",
+    "    size?: number | undefined",
+    "    className?: string | undefined",
+    "    strokeWidth?: number | undefined",
+    "    style?: string | undefined",
+    "  },",
+    "): string {",
+    "  const size = options?.size ?? 20",
+    "  const strokeWidth = options?.strokeWidth ?? 1.75",
+    '  const cls = options?.className ? ` class="${escapeAttr(options.className)}"` : ""',
+    '  const styleAttr = options?.style ? ` style="${escapeAttr(options.style)}"` : ""',
+    "  const canonical = resolveCanonicalIconName(name)",
+    '  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${strokeWidth}" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"${cls}${styleAttr} aria-hidden="true" role="img"><use href="#mt-icon-${canonical}" /></svg>`',
     "}",
     "",
     "export function renderIconSvg(",

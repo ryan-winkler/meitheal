@@ -238,7 +238,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
 </div>
 <script>
   import { showToast } from "@lib/toast";
-  import { renderIconSvg, type IconName } from "../../generated/icon-registry";
+  import { renderSpriteIconSvg, type IconName } from "../../generated/icon-registry";
   import { InlineDatePicker } from "../shared/InlineDatePicker"
   import { checklistLines, createChecklistItem } from "@lib/checklist-items"
   import { createClientLogger } from "@lib/client-logger";
@@ -402,7 +402,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
       const remove = document.createElement("button")
       remove.type = "button"
       remove.className = "btn btn-ghost inline-flex items-center justify-center"
-      remove.innerHTML = renderIconSvg("x", { size: 14 })
+      remove.innerHTML = renderSpriteIconSvg("x", { size: 14 })
       remove.setAttribute("aria-label", `Remove ${item.text}`)
       remove.addEventListener("click", () => {
         checklistItems.delete(row)
@@ -463,7 +463,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
       const remove = document.createElement("button")
       remove.type = "button"
       remove.className = "btn btn-ghost text-text-muted inline-flex items-center justify-center"
-      remove.innerHTML = renderIconSvg("x", { size: 14 })
+      remove.innerHTML = renderSpriteIconSvg("x", { size: 14 })
       remove.setAttribute("aria-label", `Remove ${name}${suffix}`)
       remove.addEventListener("click", () => {
         shoppingListItems.splice(shoppingListItems.indexOf(item), 1)
@@ -533,7 +533,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
       } else {
         const icon = document.createElement("span")
         icon.className = "text-xs text-text-muted inline-flex items-center"
-        icon.innerHTML = renderIconSvg(iconMap[type] ?? "file-text", { size: 14 })
+        icon.innerHTML = renderSpriteIconSvg(iconMap[type] ?? "file-text", { size: 14 })
         entry.appendChild(icon)
       }
 
@@ -549,7 +549,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
       const removeBtn = document.createElement("button")
       removeBtn.type = "button"
       removeBtn.className = "text-text-muted hover:text-red-400 text-xs inline-flex items-center justify-center"
-      removeBtn.innerHTML = renderIconSvg("x", { size: 14 })
+      removeBtn.innerHTML = renderSpriteIconSvg("x", { size: 14 })
       removeBtn.addEventListener("click", () => { entry.remove(); markEdited() }, { signal })
       removeBtn.setAttribute("aria-label", `Remove ${type} field`)
       entry.appendChild(removeBtn)
