@@ -5,7 +5,13 @@ import UnifiedBar from "../components/layout/UnifiedBar.astro"
 import EmptyState from "../components/ui/EmptyState.astro"
 import LabelBadges from "../components/ui/LabelBadges.astro"
 import Layout from "../layouts/Layout.astro"
-import { getStats as getGamificationStats, getWeeklyData as getGamificationWeekly, getLevel, getProgressToNextLevel } from "@domains/gamification"
+import {
+  getStats as getGamificationStats,
+  getWeeklyData as getGamificationWeekly,
+  getAllAchievements,
+  getLevel,
+  getProgressToNextLevel,
+} from "@domains/gamification"
 import { TaskRepository } from "@domains/tasks/persistence/task-repository"
 import {
   ensureSchema,
@@ -40,6 +46,18 @@ let gamificationWeekly: Array<{
   streakCount: number
   points: number
 }> = []
+let achievementData: {
+  achievements: Array<{
+    id: string
+    name: string
+    description: string
+    icon: string
+    category: string
+    unlockedAt: string | null
+  }>
+  total: number
+  unlocked: number
+} = { achievements: [], total: 0, unlocked: 0 }
 let areaMap: Record<string, { name: string; color: string }> = {
   default: { name: "Default", color: "#146C4E" },
 }
@@ -66,6 +84,7 @@ try {
 try {
   gamificationStats = await getGamificationStats()
   gamificationWeekly = await getGamificationWeekly()
+  achievementData = await getAllAchievements()
 } catch {
   // Gamification is optional - keep the dashboard available without it.
 }
@@ -82,8 +101,9 @@ const greeting =
       : t("dashboard.greeting_evening", locale)
 
 function relativeTime(dueDate: string): string {
-  // A date-only due date is a calendar day in the user's timezone, not UTC midnight.
-  const calendarDays = calendarDaysFromToday(dueDate, dashboardTimeZone)
+  // Normalize timed ISO due_date values (YYYY-MM-DDTHH:mm...) to YYYY-MM-DD so calendar-day checks match in dashboardTimeZone.
+  const dueDay = /^\d{4}-\d{2}-\d{2}/.test(dueDate) ? dueDate.slice(0, 10) : dueDate
+  const calendarDays = calendarDaysFromToday(dueDay, dashboardTimeZone)
   if (calendarDays !== null) {
     if (calendarDays === 0) return "Due today"
     if (calendarDays === 1) return "Due tomorrow"
@@ -120,7 +140,7 @@ const heroHintHref =
 <Layout title={`Meitheal — ${greeting}!`}>
   <UnifiedBar
     title="Dashboard"
-    titleIcon="✦"
+    titleIcon="dashboard"
     tabs={DASHBOARD_SECTIONS.map((section) => ({
       id: section.id,
       label: section.label,
@@ -177,13 +197,18 @@ const heroHintHref =
 
       <div class="stats-grid">
         {gamificationStats.currentStreak > 0 && (
-          <div class="stat-card" title="Your current daily completion streak">
+          <a
+            href="/progress#achievements"
+            class="stat-card stat-card-link"
+            title={`Current streak: ${gamificationStats.currentStreak} day${gamificationStats.currentStreak === 1 ? "" : "s"} — view achievements`}
+            aria-label={`Current streak: ${gamificationStats.currentStreak} day${gamificationStats.currentStreak === 1 ? "" : "s"} — view achievements`}
+          >
             <StreakBadge streak={gamificationStats.currentStreak} />
             <div>
               <span class="stat-value">{gamificationStats.todayCompleted}</span>
               <span class="stat-label">today</span>
             </div>
-          </div>
+          </a>
         )}
 
         <a
@@ -191,7 +216,9 @@ const heroHintHref =
           class="stat-card stat-card-link"
           title="Open tasks - not yet completed"
         >
-          <span class="stat-icon">📋</span>
+          <span class="stat-icon" aria-hidden="true">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5h-2a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-12a2 2 0 0 0 -2 -2h-2"/><path d="M9 3m0 2a2 2 0 0 1 2 -2h2a2 2 0 0 1 2 2v0a2 2 0 0 1 -2 2h-2a2 2 0 0 1 -2 -2z"/><path d="M9 12h6"/><path d="M9 16h6"/></svg>
+          </span>
           <div>
             <div class="stat-value" id="dashboard-stat-open-count">{stats.open}</div>
             <div class="stat-label">Open</div>
@@ -204,7 +231,9 @@ const heroHintHref =
           id="stat-active"
           title="Tasks currently in progress or active"
         >
-          <span class="stat-icon">⚡</span>
+          <span class="stat-icon" aria-hidden="true">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M13 3l0 7l6 0l-8 11l0 -7l-6 0l8 -11"/></svg>
+          </span>
           <div>
             <div class="stat-value">{stats.active}</div>
             <div class="stat-label">{t("dashboard.active", locale)}</div>
@@ -216,7 +245,9 @@ const heroHintHref =
           class="stat-card stat-card-link"
           title="Tasks marked as done"
         >
-          <span class="stat-icon">✅</span>
+          <span class="stat-icon" aria-hidden="true">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12l2 2l4 -4"/><path d="M12 3a9 9 0 1 0 9 9a9 9 0 0 0 -9 -9"/></svg>
+          </span>
           <div>
             <div class="stat-value">{stats.completed}</div>
             <div class="stat-label">{t("dashboard.completed", locale)}</div>
@@ -229,7 +260,9 @@ const heroHintHref =
           class={`stat-card stat-card-link stat-card-entrance ${stats.overdue > 0 ? "stat-card-danger" : ""}`}
           title="Tasks past their due date across all areas"
         >
-          <span class="stat-icon">⏰</span>
+          <span class="stat-icon" aria-hidden="true">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 13m-7 0a7 7 0 1 0 14 0a7 7 0 1 0 -14 0"/><path d="M12 10l0 3l2 0"/><path d="M7 4l-2.75 2"/><path d="M17 4l2.75 2"/></svg>
+          </span>
           <div>
             <div
               class="stat-value"
@@ -262,6 +295,8 @@ const heroHintHref =
             weekly={gamificationWeekly}
             level={gamLevel}
             progressToNext={gamProgress}
+            achievements={achievementData.achievements}
+            timezone={dashboardTimeZone}
           />
         </div>
 
@@ -560,8 +595,9 @@ const heroHintHref =
                         class="card-action-btn card-edit-btn"
                         data-id={String(task.id)}
                         title="Edit task"
+                        aria-label="Edit task"
                       >
-                        ✏️
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4l10.5 -10.5a2.828 2.828 0 1 0 -4 -4l-10.5 10.5v4"/><path d="M13.5 6.5l4 4"/></svg>
                       </button>
                       <button
                         class="card-action-btn card-ai-btn"
@@ -570,8 +606,9 @@ const heroHintHref =
                         data-status={String(task.status ?? "pending")}
                         data-priority={String(priority)}
                         title="Ask AI"
+                        aria-label="Ask AI"
                       >
-                        🤖
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 18a2 2 0 0 1 2 2a2 2 0 0 1 2 -2a2 2 0 0 1 -2 -2a2 2 0 0 1 -2 2zm0 -12a2 2 0 0 1 2 2a2 2 0 0 1 2 -2a2 2 0 0 1 -2 -2a2 2 0 0 1 -2 2zm-7 12a6 6 0 0 1 6 -6a6 6 0 0 1 -6 -6a6 6 0 0 1 -6 6a6 6 0 0 1 6 6z"/></svg>
                       </button>
                     </div>
                   </div>

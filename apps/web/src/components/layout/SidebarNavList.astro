@@ -1,5 +1,6 @@
 ---
 import Icon from "../ui/Icon.astro";
+import { TASK_NAV_TYPES } from "../../lib/task-nav-types";
 
 export interface Props {
   navItems: {
@@ -28,6 +29,175 @@ function isExternal(href: string): boolean {
   {
     navItems.map((item) => {
       const external = isExternal(item.href);
+      if (item.key === "tasks") {
+        return (
+          <>
+            <li class="nav-item nav-item--tasks relative">
+              <div class="nav-row flex items-center gap-1 min-w-0">
+                <a
+                  href={item.href}
+                  class={`nav-link flex-1 min-w-0 ${item.isActive ? "active" : ""}`}
+                  data-page={item.key}
+                  title={item.label}
+                  data-tooltip={item.label}
+                  data-astro-prefetch="viewport"
+                  aria-current={item.isActive ? "page" : undefined}
+                  aria-label={item.label}
+                >
+                  <span class="nav-icon">
+                    <Icon name={item.icon as any} />
+                  </span>
+                  <span class="nav-label">{item.label}</span>
+                  {item.showBadge && taskCounts.active > 0 && (
+                    <span class="nav-badge" aria-label={`${taskCounts.active} active`}>
+                      {taskCounts.active}
+                    </span>
+                  )}
+                </a>
+                <div class="nav-row-controls flex items-center gap-0.5 shrink-0">
+                  <button
+                    type="button"
+                    class="nav-inline-btn nav-disclosure-btn"
+                    id="tasks-submenu-toggle"
+                    aria-expanded="false"
+                    aria-controls="tasks-nav-submenu"
+                    aria-label="Expand task types"
+                    title="Expand task types"
+                  >
+                    <span class="nav-disclosure-chevron inline-flex items-center justify-center" aria-hidden="true">
+                      <Icon name="chevron-down" size={13} class="-rotate-90" />
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    class="nav-inline-btn nav-configure-btn"
+                    id="tasks-submenu-config-btn"
+                    aria-expanded="false"
+                    aria-controls="tasks-nav-config-popover"
+                    aria-label="Configure task type links"
+                    title="Configure pinned & visible task types"
+                  >
+                    <Icon name="sliders" size={14} />
+                  </button>
+                </div>
+              </div>
+
+              <div
+                id="tasks-nav-config-popover"
+                class="task-nav-popover"
+                role="dialog"
+                aria-label="Configure task type links"
+                hidden
+              >
+                <div class="task-nav-popover__header">
+                  <span class="task-nav-popover__title">Task types</span>
+                  <div class="task-nav-popover__modes">
+                    <button type="button" class="task-nav-mode-btn" data-task-nav-mode="all">Show all</button>
+                    <button type="button" class="task-nav-mode-btn" data-task-nav-mode="none">Hide all</button>
+                  </div>
+                </div>
+                <ul class="task-nav-popover__list">
+                  {TASK_NAV_TYPES.map((type) => (
+                    <li class="task-nav-popover__row">
+                      <button
+                        type="button"
+                        class="task-nav-vis-btn"
+                        role="switch"
+                        aria-checked="true"
+                        data-task-nav-toggle={type.id}
+                      >
+                        <span class="task-nav-vis-check" aria-hidden="true">
+                          <Icon name="check" size={12} />
+                        </span>
+                        <span class="task-nav-vis-label">{type.label}</span>
+                      </button>
+                      <button
+                        type="button"
+                        class="task-nav-pin-btn"
+                        data-task-nav-pin={type.id}
+                        aria-pressed="false"
+                        aria-label={`Pin ${type.label} to primary navigation`}
+                        title={`Pin ${type.label}`}
+                      >
+                        <span class="pin-icon inline-flex items-center" aria-hidden="true"><Icon name="pin" size={13} /></span>
+                        <span class="unpin-icon inline-flex items-center" aria-hidden="true"><Icon name="x" size={13} /></span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              <ul id="tasks-nav-submenu" class="task-nav-submenu" hidden></ul>
+
+              <template id="tasks-nav-submenu-tpl">
+                {TASK_NAV_TYPES.map((type) => (
+                  <li class="task-nav-subitem" data-task-nav-item={type.id}>
+                    <a
+                      href={type.href}
+                      class="nav-link task-nav-sublink flex-1 min-w-0"
+                      data-task-nav-link={type.id}
+                      data-tooltip={type.label}
+                      title={type.label}
+                      aria-label={type.label}
+                      data-astro-prefetch="viewport"
+                    >
+                      <span class="nav-icon">
+                        <Icon name={type.icon} size={16} />
+                      </span>
+                      <span class="nav-label">{type.label}</span>
+                    </a>
+                    <button
+                      type="button"
+                      class="task-nav-pin-btn task-nav-sub-pin"
+                      data-task-nav-pin={type.id}
+                      aria-pressed="false"
+                      aria-label={`Pin ${type.label} to primary navigation`}
+                      title={`Pin ${type.label}`}
+                    >
+                      <span class="pin-icon inline-flex items-center" aria-hidden="true"><Icon name="pin" size={13} /></span>
+                      <span class="unpin-icon inline-flex items-center" aria-hidden="true"><Icon name="x" size={13} /></span>
+                    </button>
+                  </li>
+                ))}
+              </template>
+
+              <template id="tasks-nav-pinned-tpl">
+                {TASK_NAV_TYPES.map((type) => (
+                  <li class="nav-item nav-item--pinned-type" data-task-nav-pinned-item={type.id}>
+                    <div class="nav-row flex items-center gap-1 min-w-0">
+                      <a
+                        href={type.href}
+                        class="nav-link nav-link--pinned-type flex-1 min-w-0"
+                        data-task-nav-pinned-link={type.id}
+                        data-tooltip={type.label}
+                        title={type.label}
+                        aria-label={type.label}
+                        data-astro-prefetch="viewport"
+                      >
+                        <span class="nav-icon">
+                          <Icon name={type.icon} />
+                        </span>
+                        <span class="nav-label">{type.label}</span>
+                      </a>
+                      <button
+                        type="button"
+                        class="nav-inline-btn task-nav-unpin-btn"
+                        data-task-nav-pin={type.id}
+                        aria-pressed="true"
+                        aria-label={`Unpin ${type.label} from navigation`}
+                        title={`Unpin ${type.label}`}
+                      >
+                        <Icon name="x" size={14} />
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </template>
+            </li>
+          </>
+        );
+      }
+
       return (
         <li>
           <a
@@ -47,23 +217,13 @@ function isExternal(href: string): boolean {
               <Icon name={item.icon as any} />
             </span>
             <span class="nav-label">{item.label}</span>
-            {external && (
-              <span
-                class="nav-external-icon"
-                aria-hidden="true"
-                title="Opens in new tab"
-              >
-                ↗
+            {item.showBadge && item.key === "today" && taskCounts.pending > 0 && (
+              <span class="nav-badge" aria-label={`${taskCounts.pending} pending`}>
+                {taskCounts.pending}
               </span>
             )}
-            {item.showBadge && (
-              <span
-                class="nav-badge"
-                id={`nav-count-${item.key}`}
-                aria-hidden="true"
-              >
-                {taskCounts.active}
-              </span>
+            {external && (
+              <span class="nav-external-icon" aria-hidden="true">↗</span>
             )}
           </a>
         </li>
@@ -82,31 +242,516 @@ function isExternal(href: string): boolean {
   .nav-link--external:hover .nav-external-icon {
     opacity: 1;
   }
+
+  .nav-inline-btn,
+  .task-nav-pin-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 26px;
+    min-height: 26px;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: background-color 180ms cubic-bezier(0.23, 1, 0.32, 1),
+      color 180ms cubic-bezier(0.23, 1, 0.32, 1),
+      transform 140ms cubic-bezier(0.23, 1, 0.32, 1),
+      opacity 180ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+
+  .nav-inline-btn:hover,
+  .nav-inline-btn:focus-visible,
+  .task-nav-pin-btn:hover,
+  .task-nav-pin-btn:focus-visible {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+  }
+
+  .nav-inline-btn:active,
+  .task-nav-pin-btn:active {
+    transform: scale(0.97);
+  }
+
+  .nav-disclosure-btn {
+    width: 24px;
+    height: 24px;
+    min-width: 24px;
+    min-height: 24px;
+    border-radius: 6px;
+    border: 1px solid rgba(var(--border-rgb), 0.55);
+    background: rgba(var(--bg-primary-rgb), 0.45);
+  }
+
+  .nav-disclosure-btn:hover,
+  .nav-disclosure-btn:focus-visible {
+    border-color: rgba(var(--accent-rgb), 0.6);
+  }
+
+  .nav-disclosure-chevron {
+    transition: transform 200ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+
+  .nav-disclosure-btn[aria-expanded="true"] .nav-disclosure-chevron {
+    transform: rotate(90deg);
+  }
+
+  .task-nav-submenu {
+    list-style: none;
+    margin: 4px 0 6px 14px;
+    padding: 2px 0 2px 10px;
+    border-left: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .task-nav-submenu[hidden],
+  .task-nav-popover[hidden],
+  .task-nav-subitem[hidden],
+  .nav-item--pinned-type[hidden] {
+    display: none !important;
+  }
+
+  .task-nav-subitem {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  :global(.sidebar .task-nav-sublink) {
+    padding: 0.375rem 0.5rem;
+    font-size: 0.8125rem;
+  }
+
+  .task-nav-pin-btn .unpin-icon {
+    display: none;
+  }
+
+  .task-nav-pin-btn[aria-pressed="true"] {
+    color: var(--accent);
+  }
+
+  .task-nav-pin-btn[aria-pressed="true"]:hover .pin-icon,
+  .task-nav-pin-btn[aria-pressed="true"]:focus-visible .pin-icon {
+    display: none;
+  }
+
+  .task-nav-pin-btn[aria-pressed="true"]:hover .unpin-icon,
+  .task-nav-pin-btn[aria-pressed="true"]:focus-visible .unpin-icon {
+    display: inline-flex;
+  }
+
+  .task-nav-sub-pin,
+  .task-nav-unpin-btn {
+    opacity: 0;
+  }
+
+  .task-nav-subitem:hover .task-nav-sub-pin,
+  .task-nav-subitem:focus-within .task-nav-sub-pin,
+  .nav-item--pinned-type:hover .task-nav-unpin-btn,
+  .nav-item--pinned-type:focus-within .task-nav-unpin-btn,
+  .task-nav-pin-btn[aria-pressed="true"] {
+    opacity: 1;
+  }
+
+  .task-nav-popover {
+    margin: 6px 0 8px 0;
+    padding: 8px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md, 8px);
+    background: var(--bg-card);
+    box-shadow: var(--shadow-md, 0 8px 20px rgba(0, 0, 0, 0.2));
+  }
+
+  .task-nav-popover__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    margin-bottom: 6px;
+  }
+
+  .task-nav-popover__title {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-secondary);
+  }
+
+  .task-nav-popover__modes {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .task-nav-mode-btn {
+    padding: 4px 6px;
+    min-height: 26px;
+    border-radius: 5px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-primary);
+    font-size: 11px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background-color 160ms cubic-bezier(0.23, 1, 0.32, 1),
+      transform 140ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+
+  .task-nav-mode-btn:hover,
+  .task-nav-mode-btn:focus-visible {
+    background: var(--bg-hover);
+  }
+
+  .task-nav-mode-btn.is-selected {
+    border-color: var(--accent);
+    background: rgba(var(--accent-rgb), 0.14);
+    color: var(--accent);
+  }
+
+  .task-nav-mode-btn:active {
+    transform: scale(0.97);
+  }
+
+  .task-nav-popover__list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  .task-nav-popover__row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .task-nav-vis-btn {
+    flex: 1;
+    min-width: 0;
+    min-height: 28px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 6px;
+    border-radius: 6px;
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--text-primary);
+    font-size: 12px;
+    text-align: left;
+    cursor: pointer;
+    transition: background-color 160ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+
+  .task-nav-vis-btn:hover,
+  .task-nav-vis-btn:focus-visible {
+    background: var(--bg-hover);
+  }
+
+  .task-nav-vis-check {
+    width: 15px;
+    height: 15px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    color: transparent;
+    background: transparent;
+  }
+
+  .task-nav-vis-btn[aria-checked="true"] .task-nav-vis-check {
+    border-color: var(--accent);
+    background: rgba(var(--accent-rgb), 0.18);
+    color: var(--accent);
+  }
+
+  .task-nav-vis-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  :global(body.sidebar-collapsed .nav-row-controls),
+  :global(body.sidebar-collapsed .task-nav-submenu),
+  :global(body.sidebar-collapsed .task-nav-popover),
+  :global(body.sidebar-collapsed .task-nav-unpin-btn) {
+    display: none !important;
+  }
+
+  :global(:root[data-appearance-navigation="navbar"] .nav-row-controls),
+  :global(:root[data-appearance-navigation="navbar"] .task-nav-submenu),
+  :global(:root[data-appearance-navigation="navbar"] .task-nav-popover),
+  :global(:root[data-appearance-navigation="navbar"] .task-nav-unpin-btn) {
+    display: none !important;
+  }
 </style>
 
 <script>
+  import {
+    TASK_NAV_PREFS_EVENT,
+    TASK_NAV_PREFS_KEY,
+    TASK_NAV_TYPES,
+    isTaskNavTypeVisible,
+    normalizeTaskTypeFilterValue,
+    readTaskNavPrefs,
+    setTaskNavMode,
+    toggleTaskNavChild,
+    toggleTaskNavExpanded,
+    toggleTaskNavPin,
+    type TaskNavTypeId,
+  } from "../../lib/task-nav-types";
+
   // The sidebar can persist across Astro swaps; update the original links in either list.
-  const runtime = window as unknown as { __meithealSidebarActive?: AbortController }
-  runtime.__meithealSidebarActive?.abort()
-  const controller = new AbortController()
-  runtime.__meithealSidebarActive = controller
+  const runtime = window as unknown as { __meithealSidebarActive?: AbortController };
+  runtime.__meithealSidebarActive?.abort();
+  const controller = new AbortController();
+  runtime.__meithealSidebarActive = controller;
+
   function updateActiveNavLink() {
-    const ip = window.__ingress_path || ""
-    const stripIngress = (path: string) => ip && (path === ip || path.startsWith(ip + "/")) ? path.slice(ip.length) || "/" : path
-    const currentPath = stripIngress(location.pathname).replace(/\/$/, "") || "/"
-    document.querySelectorAll<HTMLAnchorElement>(".sidebar .nav-link").forEach(link => {
-      if (link.classList.contains("nav-link--external")) return
-      const target = new URL(link.getAttribute("href") || "/", location.href)
-      const href = stripIngress(target.pathname).replace(/\/$/, "") || "/"
-      const active = (href === currentPath && (!target.hash || target.hash === location.hash))
-        || (href !== "/" && currentPath.startsWith(href + "/"))
-        || (link.dataset.page === "tasks" && currentPath.startsWith("/tickets/"))
-      link.classList.toggle("active", active)
-      if (active) link.setAttribute("aria-current", "page")
-      else link.removeAttribute("aria-current")
-    })
+    const ip = window.__ingress_path || "";
+    const stripIngress = (path: string) =>
+      ip && (path === ip || path.startsWith(ip + "/")) ? path.slice(ip.length) || "/" : path;
+    const currentPath = stripIngress(location.pathname).replace(/\/$/, "") || "/";
+    const currentTypes = normalizeTaskTypeFilterValue(new URLSearchParams(location.search).get("types"));
+
+    document.querySelectorAll<HTMLAnchorElement>(".sidebar .nav-link").forEach((link) => {
+      if (link.classList.contains("nav-link--external")) return;
+      const target = new URL(link.getAttribute("href") || "/", location.href);
+      const href = stripIngress(target.pathname).replace(/\/$/, "") || "/";
+      const targetTypes = normalizeTaskTypeFilterValue(target.searchParams.get("types"));
+
+      const pathMatches =
+        (href === currentPath && (!target.hash || target.hash === location.hash)) ||
+        (href !== "/" && currentPath.startsWith(href + "/") && !targetTypes) ||
+        (link.dataset.page === "tasks" && currentPath.startsWith("/tickets/"));
+
+      const typesMatch = targetTypes
+        ? targetTypes === currentTypes
+        : currentTypes === "" || link.dataset.page !== "tasks";
+
+      const active = pathMatches && typesMatch;
+      link.classList.toggle("active", active);
+      if (active) link.setAttribute("aria-current", "page");
+      else link.removeAttribute("aria-current");
+    });
   }
-  updateActiveNavLink()
-  document.addEventListener("astro:after-swap", updateActiveNavLink, { signal: controller.signal })
-  window.addEventListener("hashchange", updateActiveNavLink, { signal: controller.signal })
+
+  function syncMountedSubmenu(expanded: boolean, isNavbar: boolean) {
+    const submenu = document.getElementById("tasks-nav-submenu");
+    const tpl = document.getElementById("tasks-nav-submenu-tpl") as HTMLTemplateElement | null;
+    if (!submenu || !tpl) return;
+
+    if (!expanded || isNavbar) {
+      submenu.hidden = true;
+      if (submenu.childElementCount > 0) submenu.replaceChildren();
+      return;
+    }
+
+    if (submenu.childElementCount === 0) {
+      submenu.appendChild(tpl.content.cloneNode(true));
+    }
+    submenu.hidden = false;
+  }
+
+  function syncMountedPinnedItems(pinned: TaskNavTypeId[], isNavbar: boolean) {
+    const tasksItem = document.querySelector<HTMLElement>(".nav-item--tasks");
+    const list = tasksItem?.parentElement;
+    const tpl = document.getElementById("tasks-nav-pinned-tpl") as HTMLTemplateElement | null;
+    if (!tasksItem || !list || !tpl) return;
+
+    const existing = new Map<string, HTMLElement>();
+    list.querySelectorAll<HTMLElement>("[data-task-nav-pinned-item]").forEach((el) => {
+      const id = el.dataset.taskNavPinnedItem;
+      if (!id || isNavbar || !pinned.includes(id as TaskNavTypeId)) {
+        el.remove();
+      } else {
+        existing.set(id, el);
+      }
+    });
+
+    if (isNavbar || pinned.length === 0) return;
+
+    let anchor: HTMLElement = tasksItem;
+    for (const id of pinned) {
+      let node = existing.get(id);
+      if (!node) {
+        const source = tpl.content.querySelector<HTMLElement>(`[data-task-nav-pinned-item="${id}"]`);
+        if (!source) continue;
+        node = source.cloneNode(true) as HTMLElement;
+      }
+      if (anchor.nextElementSibling !== node) {
+        anchor.after(node);
+      }
+      anchor = node;
+    }
+  }
+
+  function renderTaskNavState() {
+    const prefs = readTaskNavPrefs();
+    const isNavbar =
+      window.innerWidth > 768 && document.documentElement.dataset.appearanceNavigation === "navbar";
+    const toggleBtn = document.getElementById("tasks-submenu-toggle");
+    const configBtn = document.getElementById("tasks-submenu-config-btn");
+    const anyChildVisible = TASK_NAV_TYPES.some((type) => isTaskNavTypeVisible(prefs, type.id));
+    const expanded = prefs.expanded && anyChildVisible;
+
+    if (toggleBtn) {
+      const label = expanded ? "Collapse task types" : "Expand task types";
+      toggleBtn.setAttribute("aria-expanded", String(expanded));
+      toggleBtn.hidden = prefs.mode === "none" && !anyChildVisible;
+      toggleBtn.title = label;
+      toggleBtn.setAttribute("aria-label", label);
+    }
+
+    syncMountedSubmenu(expanded, isNavbar);
+    syncMountedPinnedItems(prefs.pinned, isNavbar);
+
+    for (const type of TASK_NAV_TYPES) {
+      const visible = isTaskNavTypeVisible(prefs, type.id);
+      const pinned = prefs.pinned.includes(type.id);
+
+      const subitem = document.querySelector<HTMLElement>(`[data-task-nav-item="${type.id}"]`);
+      if (subitem) subitem.hidden = !visible;
+
+      const switchBtn = document.querySelector<HTMLElement>(`[data-task-nav-toggle="${type.id}"]`);
+      switchBtn?.setAttribute("aria-checked", String(visible));
+
+      document.querySelectorAll<HTMLElement>(`[data-task-nav-pin="${type.id}"]`).forEach((btn) => {
+        btn.setAttribute("aria-pressed", String(pinned));
+        const nextLabel = pinned
+          ? `Unpin ${type.label} from primary navigation`
+          : `Pin ${type.label} to primary navigation`;
+        btn.setAttribute("aria-label", nextLabel);
+        btn.setAttribute("title", pinned ? `Unpin ${type.label}` : `Pin ${type.label}`);
+      });
+    }
+
+    document.querySelectorAll<HTMLElement>("[data-task-nav-mode]").forEach((btn) => {
+      const mode = btn.dataset.taskNavMode;
+      btn.classList.toggle("is-selected", mode === prefs.mode);
+    });
+
+    if (configBtn) {
+      const popover = document.getElementById("tasks-nav-config-popover");
+      configBtn.setAttribute("aria-expanded", String(Boolean(popover && !popover.hidden)));
+    }
+
+    updateActiveNavLink();
+  }
+
+  function bindTaskNavEvents(signal: AbortSignal) {
+    const toggleBtn = document.getElementById("tasks-submenu-toggle");
+    const configBtn = document.getElementById("tasks-submenu-config-btn");
+    const popover = document.getElementById("tasks-nav-config-popover");
+
+    toggleBtn?.addEventListener(
+      "click",
+      () => {
+        const prefs = readTaskNavPrefs();
+        const anyVisible = TASK_NAV_TYPES.some((type) => isTaskNavTypeVisible(prefs, type.id));
+        if (!anyVisible) {
+          setTaskNavMode(prefs, "all");
+        } else {
+          toggleTaskNavExpanded(prefs);
+        }
+        renderTaskNavState();
+      },
+      { signal },
+    );
+
+    configBtn?.addEventListener(
+      "click",
+      () => {
+        if (!popover) return;
+        popover.hidden = !popover.hidden;
+        configBtn.setAttribute("aria-expanded", String(!popover.hidden));
+      },
+      { signal },
+    );
+
+    document.addEventListener(
+      "click",
+      (event) => {
+        const target = event.target;
+        if (!(target instanceof Element)) return;
+
+        const modeBtn = target.closest<HTMLElement>("[data-task-nav-mode]");
+        if (modeBtn) {
+          const mode = modeBtn.dataset.taskNavMode;
+          if (mode === "all" || mode === "none") {
+            setTaskNavMode(readTaskNavPrefs(), mode);
+            renderTaskNavState();
+          }
+          return;
+        }
+
+        const visBtn = target.closest<HTMLElement>("[data-task-nav-toggle]");
+        if (visBtn) {
+          const typeId = visBtn.dataset.taskNavToggle as TaskNavTypeId | undefined;
+          if (typeId) {
+            toggleTaskNavChild(readTaskNavPrefs(), typeId);
+            renderTaskNavState();
+          }
+          return;
+        }
+
+        const pinBtn = target.closest<HTMLElement>("[data-task-nav-pin]");
+        if (pinBtn) {
+          const typeId = pinBtn.dataset.taskNavPin as TaskNavTypeId | undefined;
+          if (typeId) {
+            toggleTaskNavPin(readTaskNavPrefs(), typeId);
+            renderTaskNavState();
+          }
+          return;
+        }
+
+        if (popover && !popover.hidden && !target.closest("#tasks-nav-config-popover") && !target.closest("#tasks-submenu-config-btn")) {
+          popover.hidden = true;
+          configBtn?.setAttribute("aria-expanded", "false");
+        }
+      },
+      { signal },
+    );
+
+    document.addEventListener(
+      "keydown",
+      (event) => {
+        if (event.key === "Escape" && popover && !popover.hidden) {
+          popover.hidden = true;
+          configBtn?.setAttribute("aria-expanded", "false");
+          configBtn?.focus();
+        }
+      },
+      { signal },
+    );
+
+    window.addEventListener(TASK_NAV_PREFS_EVENT, renderTaskNavState, { signal });
+    window.addEventListener(
+      "storage",
+      (event) => {
+        if (event.key === TASK_NAV_PREFS_KEY || event.key === null) renderTaskNavState();
+      },
+      { signal },
+    );
+  }
+
+  renderTaskNavState();
+  bindTaskNavEvents(controller.signal);
+  document.addEventListener("astro:after-swap", updateActiveNavLink, { signal: controller.signal });
+  document.addEventListener("astro:page-load", updateActiveNavLink, { signal: controller.signal });
+  window.addEventListener("popstate", updateActiveNavLink, { signal: controller.signal });
+  window.addEventListener("hashchange", updateActiveNavLink, { signal: controller.signal });
 </script>

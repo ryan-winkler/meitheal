@@ -423,7 +423,7 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
   let update
   try {
     update = await repo.updateTask(resolvedId, sanitized, {
-      activity: resolveRecentActivityActor(locals),
+      activity: resolveRecentActivityActor(locals, request),
       ...(version ? { version } : {}),
       ...(expectedChecklists !== undefined ? { expectedChecklists } : {}),
       ...(expectedAssignedTo !== undefined ? { expectedAssignedTo } : {}),

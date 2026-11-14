@@ -37,8 +37,8 @@ function formatKey(key: string): string {
 }
 
 /** Create tooltip badge element */
-function createBadge(key: string): HTMLSpanElement {
-  const badge = document.createElement("span")
+function createBadge(key: string): HTMLElement {
+  const badge = document.createElement("kbd")
   badge.className = "shortcut-badge"
   badge.textContent = formatKey(key)
   badge.setAttribute("aria-hidden", "true")
@@ -47,20 +47,23 @@ function createBadge(key: string): HTMLSpanElement {
 
 /**
  * Scan a container for elements with `data-shortcut` and attach
- * tooltip badges that appear on hover.
+ * tooltip badges that appear inline on hover or focus.
  *
  * Safe to call multiple times to update existing shortcut hints.
  */
 export function attachShortcutTooltips(container: HTMLElement): void {
   const singleKeysEnabled = singleKeyShortcutsEnabled()
+  for (const stale of container.querySelectorAll("#mobile-tab-bar .shortcut-badge")) {
+    stale.remove()
+  }
   for (const el of container.querySelectorAll<HTMLElement>("[data-shortcut]")) {
+    if (el.closest("#mobile-tab-bar")) continue
     const key = el.dataset.shortcut
     if (!key) continue
 
     const enabled = key.length !== 1 || singleKeysEnabled
-    let badge = el.querySelector(".shortcut-badge")
+    let badge = el.querySelector<HTMLElement>(":scope > .shortcut-badge")
     if (enabled && !badge) {
-      if (getComputedStyle(el).position === "static") el.style.position = "relative"
       badge = createBadge(key)
       el.appendChild(badge)
     }
@@ -92,27 +95,29 @@ export function injectShortcutStyles(): void {
   style.id = "shortcut-badge-styles"
   style.textContent = `
     .shortcut-badge {
-      position: absolute;
-      top: -6px;
-      right: -6px;
+      position: static;
+      margin-left: auto;
+      flex-shrink: 0;
       display: none;
       align-items: center;
       justify-content: center;
-      min-width: 18px;
-      height: 18px;
-      padding: 0 4px;
-      font-size: 10px;
-      font-weight: 700;
-      font-family: system-ui, -apple-system, sans-serif;
+      min-width: 20px;
+      height: 20px;
+      padding: 0 6px;
+      font-size: 11px;
+      font-weight: 600;
+      font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
       line-height: 1;
-      color: var(--text-muted, #888);
-      background: var(--bg-surface, #1e1e2e);
+      color: var(--text-secondary, #94a3b8);
+      background: var(--bg-surface, rgba(148, 163, 184, 0.12));
       border: 1px solid var(--border, #334155);
-      border-radius: 4px;
+      border-radius: 5px;
       pointer-events: none;
       white-space: nowrap;
-      z-index: 10;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+    }
+
+    .nav-badge + .shortcut-badge {
+      margin-left: 4px;
     }
 
     .unified-bar__search-launcher kbd[hidden] {
@@ -124,12 +129,23 @@ export function injectShortcutStyles(): void {
       display: inline-flex;
     }
 
+    body.sidebar-collapsed .sidebar .shortcut-badge,
+    :root[data-appearance-navigation="navbar"] .sidebar .shortcut-badge,
+    #mobile-tab-bar .shortcut-badge {
+      display: none !important;
+    }
+
+    :root[data-appearance-navigation="sidebar"][data-appearance-sidebar="hover"] .sidebar:hover *:hover > .shortcut-badge:not([hidden]),
+    :root[data-appearance-navigation="sidebar"][data-appearance-sidebar="hover"] .sidebar:hover *:focus-visible > .shortcut-badge:not([hidden]) {
+      display: inline-flex !important;
+    }
+
     @media (prefers-reduced-motion: reduce) {
       .shortcut-badge { transition: none; }
     }
 
-    /* Hide on touch devices — keyboard shortcuts aren't relevant */
-    @media (hover: none) {
+    /* Hide on touch devices and narrow screens — keyboard shortcuts aren't relevant */
+    @media (hover: none), (max-width: 768px) {
       .shortcut-badge { display: none !important; }
     }
   `

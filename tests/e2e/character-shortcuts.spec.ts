@@ -3,7 +3,7 @@ import { shouldSkipBrowserSpecs } from "./_helpers"
 
 test.skip(shouldSkipBrowserSpecs(), "Set E2E_BASE_URL to run browser specs")
 
-const settingsPath = "/settings#personal-settings"
+const settingsPath = "/settings#navigation-settings"
 function timelinePath(search: string) {
   return `/tasks?${new URLSearchParams({ view: "timeline", search })}#timeline`
 }
@@ -32,7 +32,7 @@ async function blurActive(page: Page) {
 
 test("the Settings preference persists and preserves search with a modifier or a button", async ({ page, context }) => {
   await openSettings(page)
-  const settingsList = page.locator("#personal-settings")
+  const settingsList = page.locator("#navigation-settings")
   await expect(settingsList.getByRole("heading", { name: "Everywhere" })).toBeVisible()
   await expect(settingsList.getByRole("heading", { name: "On the Tasks page" })).toBeVisible()
   await expect(settingsList.locator("[data-shortcut-scope=global]")).toHaveText(GLOBAL_SHORTCUT_LABELS)
@@ -63,7 +63,7 @@ test("the Settings preference persists and preserves search with a modifier or a
   await page.keyboard.press("k")
   await expect(hub).toBeHidden()
   await expect(shortcuts).toBeHidden()
-  await expect(page).toHaveURL(/\/settings#personal-settings$/)
+  await expect(page).toHaveURL(/\/settings#navigation-settings$/)
 
   await page.keyboard.press("Control+k")
   await expect(page.locator("#search-hub-input")).toBeFocused()
@@ -204,7 +204,7 @@ test("shortcut help keeps Close visible on a landscape phone", async ({ page }) 
 })
 
 test("shortcut help waits until the native Settings wizard is closed", async ({ page }) => {
-  await page.goto("/settings#rules-lenses-settings")
+  await page.goto("/settings#scoring-settings")
   const launcher = page.locator("#fw-create-btn")
   const wizard = page.locator("#framework-wizard-dialog")
   const wizardClose = wizard.getByRole("button", { name: "Close", exact: true })

@@ -8,6 +8,8 @@ description: "See recent task changes across the shared task list."
 
 Open **Recent activity** from the Meitheal navigation while signed into Home Assistant. The view shows ordinary task additions, edits, closures and reopenings recorded after the update. Publishing a draft appears once as a task addition.
 
+Human actions show the matching Home Assistant member. Authenticated agent-token actions show verified provenance: the token name and, when supplied by a verified integration such as Home Assistant Assist, an LLM conversation agent, or a Home Assistant automation or script, the verified origin label with a link to its Home Assistant configuration target or Meitheal's Agent Tokens settings (`#agent-tokens-card`). Internal token IDs, unauthenticated `X-Agent-Id` or `X-Meitheal-Origin-*` headers, and spoofed request body actor fields are never trusted or displayed, and origin target links accept only safe relative paths.
+
 Choose a **Current area** or **Person** and apply the filters. When a task moves, its activity appears in the new area. Deleting a task removes it from the view. Person filters use the current Home Assistant roster that also verifies access to the page. The page shortens unusually long display names. Events without a current person match have a general attribution and remain visible under **Everyone**.
 
 Select a task title to open its details. Use **Older activity** to continue or **Refresh activity** to see new changes.

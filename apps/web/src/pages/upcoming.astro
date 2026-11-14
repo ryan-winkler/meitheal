@@ -8,6 +8,7 @@ import {
   getPersistenceClient,
 } from "@domains/tasks/persistence/store";
 import { TaskRepository } from "@domains/tasks/persistence/task-repository";
+import { calendarDayFromInput, calendarToday, shiftCalendarDay } from "../lib/date";
 
 interface DayGroup {
   date: string;
@@ -18,36 +19,35 @@ interface DayGroup {
 }
 
 const days: DayGroup[] = [];
+const upcomingTimeZone = Astro.locals.timezone || "Europe/Dublin";
 
 try {
   await ensureSchema();
   const repo = new TaskRepository(getPersistenceClient());
-  const today = new Date();
-  const todayStr = today.toISOString().split("T")[0] ?? "";
+  const todayStr = calendarToday(upcomingTimeZone);
 
   // Persona 9: Single query for all 7 days instead of 7 sequential queries
-  const endDate = new Date(today);
-  endDate.setDate(endDate.getDate() + 6);
-  const endStr = endDate.toISOString().split("T")[0] ?? "";
+  const endStr = shiftCalendarDay(todayStr, 6);
 
-  const allTasks = await repo.getTasksInRange(todayStr, endStr);
+  const allTasks = await repo.getTasksInRange(todayStr, endStr, upcomingTimeZone);
 
   const tasksByDate = new Map<string, Record<string, unknown>[]>();
   for (const row of allTasks) {
-    const d = String(row.due_date);
+    const d = calendarDayFromInput(row.due_date == null ? null : String(row.due_date), upcomingTimeZone);
+    if (!d) continue;
     if (!tasksByDate.has(d)) tasksByDate.set(d, []);
     tasksByDate.get(d)!.push(row);
   }
 
   for (let i = 0; i < 7; i++) {
-    const d = new Date(today);
-    d.setDate(d.getDate() + i);
-    const dateStr = d.toISOString().split("T")[0] ?? "";
+    const dateStr = shiftCalendarDay(todayStr, i);
+    const d = new Date(`${dateStr}T12:00:00Z`);
 
-    const weekday = d.toLocaleDateString("en-US", { weekday: "long" });
+    const weekday = d.toLocaleDateString("en-US", { weekday: "long", timeZone: "UTC" });
     const monthDay = d.toLocaleDateString("en-US", {
       month: "short",
       day: "numeric",
+      timeZone: "UTC",
     });
 
     let label = `${weekday}, ${monthDay}`;

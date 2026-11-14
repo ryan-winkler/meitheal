@@ -58,7 +58,7 @@ test.describe("Settings Controls", () => {
       await page.route("**/api/settings", (route) => route.request().method() === "PUT"
         ? route.fulfill({ status, json: {} })
         : route.fulfill({ json: { timezone: "Europe/Dublin" } }))
-      await openSettings(page)
+      await openSettings(page, "#language-time-settings")
       await page.locator("#timezone-select").selectOption("UTC")
       await expect(page.locator("#toast-container .toast.error")).toContainText(/could not be saved/i)
       await expect(page.locator("#toast-container .toast.success")).toHaveCount(0)

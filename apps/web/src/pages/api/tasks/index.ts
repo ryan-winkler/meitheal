@@ -156,7 +156,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
   if (!prepared.ok) return Response.json({ error: prepared.error }, { status: 400 })
 
   const now = Date.now()
-  const activity = taskAddedActivity(prepared.task.id, resolveRecentActivityActor(locals), now)
+  const activity = taskAddedActivity(prepared.task.id, resolveRecentActivityActor(locals, request), now)
   const statements = [taskInsertStatement(prepared.task, now), activity]
   if (body.new_labels !== undefined) {
     if (locals.agentToken) return apiError("Creating labels with a task requires a browser session.", 403)

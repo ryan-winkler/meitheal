@@ -19,6 +19,7 @@ import { getStatusDef, isDoneStatus, normalizeStatus, STATUS } from "../../../li
 import { logApiError, logApiWarn } from "../../../lib/api-logger"
 import { EXACT_TASK_IDENTIFIER_SCORE } from "../../../lib/task-search-score"
 import { readStoredCalendarDay } from "../../../lib/calendar-day"
+import { calendarDayFromInput, calendarToday, shiftCalendarDay } from "../../../lib/date"
 import { parseTicketKey } from "../../../lib/ticket-key"
 import { getNextOccurrence, parseRRule } from "../recurrence"
 import { deferralTerminalStatusesSql, isDeferralTerminalStatus } from "./task-deferral-status"
@@ -28,15 +29,14 @@ import { inactivityRuleActor, inactivityWriteGuard } from "./task-inactivity-que
 import { openTaskDependencies } from "./task-dependencies"
 
 /**
- * A date-only due date is a calendar day: it is overdue once that day has passed, not at UTC midnight.
- * A due date with a time is overdue once that instant has passed.
- * Arguments: today (YYYY-MM-DD in the user's timezone), now (ISO instant), complete status.
+ * Both date-only (`YYYY-MM-DD`) and timed ISO (`YYYY-MM-DDTHH:MM...`) due dates
+ * are evaluated against the household calendar day so events occurring today are never overdue.
+ * Arguments: today (YYYY-MM-DD in the user's timezone), complete status.
  */
-const OVERDUE_TASK_PREDICATE = "due_date IS NOT NULL AND due_date <> '' AND (due_date < ? OR (length(due_date) > 10 AND due_date < ?)) AND status != ?"
+const OVERDUE_TASK_PREDICATE = "due_date IS NOT NULL AND due_date <> '' AND substr(due_date, 1, 10) < ? AND status != ?"
 
-function overdueArgs(today?: string): [string, string] {
-  const now = new Date().toISOString()
-  return [today ?? now.slice(0, 10), now]
+function overdueArgs(today?: string): [string] {
+  return [today ?? calendarToday()]
 }
 const taskHistoryPredicate = "(feed_action IS NULL OR field <> 'activity')"
 
@@ -337,6 +337,7 @@ export type SyncConfirmationTarget =
       source: "calendar"
       entityId: string
       externalId: string
+      previousExternalId?: string | undefined
       confirmationId?: string | undefined
       confirmationSource?: string | undefined
       payload: string
@@ -361,6 +362,9 @@ export type SyncTaskMutation =
       status?: string | undefined
       priority?: number | undefined
       dueDate?: string | null | undefined
+      startDate?: string | null | undefined
+      endDate?: string | null | undefined
+      recurrenceRule?: string | null | undefined
       labels?: string[] | string | undefined
       areaId?: string | undefined
       taskType?: string | undefined
@@ -378,6 +382,10 @@ export type SyncTaskMutation =
       openEcho?: boolean | undefined
       dueDate?: string | null | undefined
       updateDueDate?: boolean | undefined
+      startDate?: string | null | undefined
+      endDate?: string | null | undefined
+      recurrenceRule?: string | null | undefined
+      taskKind?: string | undefined
       areaId?: string | undefined
       ensureCalendarSyncLabel?: boolean | undefined
       updatedAt?: number | undefined
@@ -541,13 +549,23 @@ export class TaskRepository {
 
   /** Count overdue tasks (past due, not complete) */
   /** Count open tasks past due. Pass today's YYYY-MM-DD in the user's timezone. */
-  async getOverdueCount(today?: string): Promise<number> {
+  async getOverdueCount(today?: string, timezone = "Europe/Dublin"): Promise<number> {
+    const resolvedToday = today ?? calendarToday(timezone);
+    const upperBound = shiftCalendarDay(resolvedToday, 2);
     const result = await this.client.execute({
-      sql: `SELECT COUNT(*) as cnt FROM tasks
-            WHERE ${OVERDUE_TASK_PREDICATE} AND deferred_at IS NULL`,
-      args: [...overdueArgs(today), STATUS.COMPLETE],
+      sql: `SELECT due_date FROM tasks
+            WHERE due_date IS NOT NULL AND due_date <> ''
+              AND substr(due_date, 1, 10) < ?
+              AND status != ?
+              AND deferred_at IS NULL`,
+      args: [upperBound, STATUS.COMPLETE],
     });
-    return Number((result.rows[0] as Record<string, unknown>)?.cnt ?? 0);
+    let count = 0;
+    for (const row of result.rows) {
+      const day = calendarDayFromInput(String((row as Record<string, unknown>).due_date ?? ""), timezone);
+      if (day && day < resolvedToday) count++;
+    }
+    return count;
   }
 
   /** All boards (for card badges on dashboard) */
@@ -662,48 +680,144 @@ export class TaskRepository {
   async getCalendarTaskCounts(
     monthStart: string,
     monthEnd: string,
+    timezone = "Europe/Dublin",
   ): Promise<Record<string, CalendarDayInfo>> {
+    const lowerBound = shiftCalendarDay(monthStart, -1);
+    const upperBound = shiftCalendarDay(monthEnd, 1);
     const result = await this.client.execute({
-      sql: `SELECT due_date, COUNT(*) as cnt, GROUP_CONCAT(COALESCE(color, ''), ',') as colors
+      sql: `SELECT due_date, color
             FROM tasks
-            WHERE due_date >= ? AND due_date <= ? AND status NOT IN (?)
-            GROUP BY due_date`,
-      args: [monthStart, monthEnd, STATUS.COMPLETE],
+            WHERE due_date IS NOT NULL AND due_date <> ''
+              AND substr(due_date, 1, 10) >= ? AND substr(due_date, 1, 10) <= ?
+              AND status NOT IN (?)`,
+      args: [lowerBound, upperBound, STATUS.COMPLETE],
     });
 
     const tasksByDay: Record<string, CalendarDayInfo> = {};
     for (const row of result.rows) {
       const r = row as Record<string, unknown>;
-      const dateStr = String(r.due_date);
-      tasksByDay[dateStr] = {
-        dueDate: dateStr,
-        count: Number(r.cnt),
-        colors: String(r.colors ?? "")
-          .split(",")
-          .filter((c) => c.length > 0)
-          .slice(0, 3),
+      const day = calendarDayFromInput(String(r.due_date ?? ""), timezone);
+      if (!day || day < monthStart || day > monthEnd) continue;
+      const existing = tasksByDay[day] ?? {
+        dueDate: day,
+        count: 0,
+        colors: [],
         haEvents: 0,
       };
+      existing.count += 1;
+      const color = typeof r.color === "string" ? r.color.trim() : "";
+      if (color && existing.colors.length < 3) {
+        existing.colors.push(color);
+      }
+      tasksByDay[day] = existing;
     }
     return tasksByDay;
   }
 
-  /** HA-synced event counts per day for calendar view */
+  /** HA & CalDAV synced event counts per day for calendar view (expands recurring series occurrences) */
   async getCalendarHAEventCounts(
     monthStart: string,
     monthEnd: string,
+    timezone = "Europe/Dublin",
   ): Promise<Record<string, number>> {
-    const result = await this.client.execute({
-      sql: `SELECT due_date, COUNT(*) as cnt
-            FROM tasks
-            WHERE due_date >= ? AND due_date <= ? AND calendar_sync_state = 'synced'
-            GROUP BY due_date`,
-      args: [monthStart, monthEnd],
+    const taskDays = new Map<string, Set<string>>();
+
+    const addSpan = (taskId: string, startRaw: unknown, endRaw?: unknown, effectiveEndRaw?: unknown) => {
+      if (typeof startRaw !== "string" || !startRaw.trim()) return;
+      const startDay = calendarDayFromInput(startRaw, timezone);
+      if (!startDay) return;
+
+      let endDay = startDay;
+      if (typeof effectiveEndRaw === "string" && /^\d{4}-\d{2}-\d{2}$/.test(effectiveEndRaw.trim())) {
+        endDay = effectiveEndRaw.trim();
+      } else if (typeof endRaw === "string" && endRaw.trim()) {
+        const sTrim = startRaw.trim();
+        const eTrim = endRaw.trim();
+        if (/^\d{4}-\d{2}-\d{2}$/.test(sTrim) && /^\d{4}-\d{2}-\d{2}$/.test(eTrim) && eTrim > sTrim) {
+          endDay = shiftCalendarDay(eTrim, -1);
+        } else {
+          endDay = calendarDayFromInput(eTrim, timezone) ?? startDay;
+        }
+      }
+      if (endDay < startDay) endDay = startDay;
+
+      const from = startDay > monthStart ? startDay : monthStart;
+      const to = endDay < monthEnd ? endDay : monthEnd;
+      if (from > to) return;
+
+      let set = taskDays.get(taskId);
+      if (!set) {
+        set = new Set<string>();
+        taskDays.set(taskId, set);
+      }
+      let cur = from;
+      for (let guard = 0; guard < 62 && cur <= to; guard++) {
+        set.add(cur);
+        const next = shiftCalendarDay(cur, 1);
+        if (next === cur) break;
+        cur = next;
+      }
+    };
+
+    const confirmationsRes = await this.client.execute({
+      sql: `SELECT cc.task_id, cc.payload, t.due_date, t.start_date, t.end_date
+            FROM calendar_confirmations cc
+            INNER JOIN tasks t ON t.id = cc.task_id
+            WHERE cc.source IN ('ha.calendar_sync', 'caldav')
+              AND t.calendar_sync_state = 'synced'`,
+      args: [],
     });
-    const counts: Record<string, number> = {};
-    for (const row of result.rows) {
+
+    const confirmedTaskIds = new Set<string>();
+    for (const row of confirmationsRes.rows) {
       const r = row as Record<string, unknown>;
-      counts[String(r.due_date)] = Number(r.cnt);
+      const taskId = String(r.task_id ?? "");
+      if (!taskId) continue;
+      confirmedTaskIds.add(taskId);
+
+      let expandedFromPayload = false;
+      if (typeof r.payload === "string" && r.payload.trim()) {
+        try {
+          const parsed = JSON.parse(r.payload) as {
+            occurrences?: Array<{ start?: unknown; end?: unknown; effective_end?: unknown }>;
+          };
+          if (Array.isArray(parsed.occurrences) && parsed.occurrences.length > 0) {
+            expandedFromPayload = true;
+            for (const occ of parsed.occurrences) {
+              addSpan(taskId, occ?.start, occ?.end, occ?.effective_end);
+            }
+          }
+        } catch {
+          // Malformed confirmation payload falls back to task dates below
+        }
+      }
+
+      if (!expandedFromPayload) {
+        const startVal = r.start_date ?? r.due_date;
+        addSpan(taskId, startVal, undefined, typeof r.end_date === "string" ? calendarDayFromInput(r.end_date, timezone) : undefined);
+      }
+    }
+
+    const syncedTasksRes = await this.client.execute({
+      sql: `SELECT id, due_date, start_date, end_date
+            FROM tasks
+            WHERE calendar_sync_state = 'synced'`,
+      args: [],
+    });
+    for (const row of syncedTasksRes.rows) {
+      const r = row as Record<string, unknown>;
+      const taskId = String(r.id ?? "");
+      if (!taskId || confirmedTaskIds.has(taskId)) continue;
+      const startVal = r.start_date ?? r.due_date;
+      const endDay = typeof r.end_date === "string" ? calendarDayFromInput(r.end_date, timezone) : undefined;
+      addSpan(taskId, startVal, undefined, endDay ?? undefined);
+    }
+
+    const counts: Record<string, number> = {};
+    for (const days of taskDays.values()) {
+      for (const day of days) {
+        counts[day] = (counts[day] ?? 0) + 1;
+      }
     }
     return counts;
   }
@@ -722,27 +836,37 @@ export class TaskRepository {
   // ── Today (today.astro) ─────────────────────────────────────────────
 
   /** Overdue tasks (past due date, non-complete) */
-  async getOverdueTasks(todayStr: string): Promise<TaskRow[]> {
+  async getOverdueTasks(todayStr: string, timezone = "Europe/Dublin"): Promise<TaskRow[]> {
+    const upperBound = shiftCalendarDay(todayStr, 2);
     const result = await this.client.execute({
       sql: `SELECT * FROM tasks
-            WHERE due_date IS NOT NULL AND due_date < ?
+            WHERE due_date IS NOT NULL AND due_date <> '' AND substr(due_date, 1, 10) < ?
               AND status NOT IN (?)
               AND deferred_at IS NULL
             ORDER BY due_date ASC`,
-      args: [todayStr, STATUS.COMPLETE],
+      args: [upperBound, STATUS.COMPLETE],
     });
-    return sanitizeRows(result.rows as unknown as TaskRow[]);
+    const rows = sanitizeRows(result.rows as unknown as TaskRow[]);
+    return rows.filter((row) => {
+      const day = calendarDayFromInput(row.due_date, timezone);
+      return day !== null && day < todayStr;
+    });
   }
 
   /** Tasks due on a specific date (non-complete) */
-  async getTasksDueOn(dateStr: string): Promise<TaskRow[]> {
+  async getTasksDueOn(dateStr: string, timezone = "Europe/Dublin"): Promise<TaskRow[]> {
+    const lowerBound = shiftCalendarDay(dateStr, -1);
+    const upperBound = shiftCalendarDay(dateStr, 1);
     const result = await this.client.execute({
       sql: `SELECT * FROM tasks
-            WHERE due_date = ? AND status NOT IN (?) AND deferred_at IS NULL
+            WHERE due_date IS NOT NULL AND due_date <> ''
+              AND substr(due_date, 1, 10) >= ? AND substr(due_date, 1, 10) <= ?
+              AND status NOT IN (?) AND deferred_at IS NULL
             ORDER BY priority DESC, created_at ASC`,
-      args: [dateStr, STATUS.COMPLETE],
+      args: [lowerBound, upperBound, STATUS.COMPLETE],
     });
-    return sanitizeRows(result.rows as unknown as TaskRow[]);
+    const rows = sanitizeRows(result.rows as unknown as TaskRow[]);
+    return rows.filter((row) => calendarDayFromInput(row.due_date, timezone) === dateStr);
   }
 
   /** Unscheduled tasks (no due date, non-complete) */
@@ -763,25 +887,31 @@ export class TaskRepository {
    * and already shown in overdue section.
    * Used by Smart Today (SMT-01).
    */
-  async getSuggestedTasks(todayStr: string, limit = 10): Promise<TaskRow[]> {
+  async getSuggestedTasks(todayStr: string, limit = 10, timezone = "Europe/Dublin"): Promise<TaskRow[]> {
     // Calculate end date (3 days from today)
-    const endDate = new Date(todayStr)
-    endDate.setDate(endDate.getDate() + 3)
-    const endStr = endDate.toISOString().split("T")[0]!
+    const endStr = shiftCalendarDay(todayStr, 3);
+    const upperBound = shiftCalendarDay(endStr, 1);
 
     const result = await this.client.execute({
       sql: `SELECT * FROM tasks
             WHERE status NOT IN (?)
               AND deferred_at IS NULL
               AND (
-                (due_date > ? AND due_date <= ? AND priority <= 2)
+                (due_date IS NOT NULL AND due_date <> '' AND substr(due_date, 1, 10) >= ? AND substr(due_date, 1, 10) <= ? AND priority <= 2)
                 OR (due_date IS NULL AND priority <= 2)
               )
             ORDER BY priority ASC, due_date ASC NULLS LAST
-            LIMIT ${limit}`,
-      args: [STATUS.COMPLETE, todayStr, endStr],
+            LIMIT ${limit * 3}`,
+      args: [STATUS.COMPLETE, todayStr, upperBound],
     });
-    return sanitizeRows(result.rows as unknown as TaskRow[]);
+    const rows = sanitizeRows(result.rows as unknown as TaskRow[]);
+    return rows
+      .filter((row) => {
+        if (!row.due_date) return true;
+        const day = calendarDayFromInput(row.due_date, timezone);
+        return day !== null && day > todayStr && day <= endStr;
+      })
+      .slice(0, limit);
   }
 
   /** Count tasks completed today (status=complete AND updated_at today) — SMT-03 */
@@ -800,16 +930,23 @@ export class TaskRepository {
   // ── Upcoming (upcoming.astro) ───────────────────────────────────────
 
   /** Tasks within a date range (non-complete) for upcoming view */
-  async getTasksInRange(startDate: string, endDate: string): Promise<TaskRow[]> {
+  async getTasksInRange(startDate: string, endDate: string, timezone = "Europe/Dublin"): Promise<TaskRow[]> {
+    const lowerBound = shiftCalendarDay(startDate, -1);
+    const upperBound = shiftCalendarDay(endDate, 1);
     const result = await this.client.execute({
       sql: `SELECT * FROM tasks
-            WHERE due_date >= ? AND due_date <= ?
+            WHERE due_date IS NOT NULL AND due_date <> ''
+              AND substr(due_date, 1, 10) >= ? AND substr(due_date, 1, 10) <= ?
               AND status NOT IN (?)
               AND deferred_at IS NULL
             ORDER BY due_date ASC, priority DESC, created_at ASC`,
-      args: [startDate, endDate, STATUS.COMPLETE],
+      args: [lowerBound, upperBound, STATUS.COMPLETE],
     });
-    return sanitizeRows(result.rows as unknown as TaskRow[]);
+    const rows = sanitizeRows(result.rows as unknown as TaskRow[]);
+    return rows.filter((row) => {
+      const day = calendarDayFromInput(row.due_date, timezone);
+      return day !== null && day >= startDate && day <= endDate;
+    });
   }
 
   // ── Write Methods (API routes) ────────────────────────────────────────
@@ -2433,11 +2570,13 @@ export class TaskRepository {
                 const [inserted] = yield [{
                   sql: `INSERT INTO tasks (
                           id, title, description, status, priority, due_date,
+                          start_date, end_date, recurrence_rule,
                           labels, framework_payload, calendar_sync_state, area_id,
                           custom_fields, task_type, task_kind, ticket_number,
                           idempotency_key, request_id, created_at, updated_at
                         ) VALUES (
                           ?, ?, ?, ?, ?, ?,
+                          ?, ?, ?,
                           ?, '{}', 'synced', ?,
                           '{}', ?, ?, (SELECT COALESCE(MAX(ticket_number), 0) + 1 FROM tasks),
                           ?, ?, ?, ?
@@ -2449,6 +2588,9 @@ export class TaskRepository {
                     normalizeStatus(mutation.status ?? STATUS.PENDING),
                     mutation.priority ?? 3,
                     mutation.dueDate ?? null,
+                    mutation.startDate ?? null,
+                    mutation.endDate ?? null,
+                    mutation.recurrenceRule ?? null,
                     labelsJson,
                     mutation.areaId ?? "default",
                     mutation.taskType ?? "task",
@@ -2542,6 +2684,22 @@ export class TaskRepository {
                     sets.push("due_date = ?")
                     args.push(mutation.dueDate ?? null)
                   }
+                  if (mutation.startDate !== undefined) {
+                    sets.push("start_date = ?")
+                    args.push(mutation.startDate ?? null)
+                  }
+                  if (mutation.endDate !== undefined) {
+                    sets.push("end_date = ?")
+                    args.push(mutation.endDate ?? null)
+                  }
+                  if (mutation.recurrenceRule !== undefined) {
+                    sets.push("recurrence_rule = COALESCE(?, recurrence_rule)")
+                    args.push(mutation.recurrenceRule)
+                  }
+                  if (mutation.taskKind !== undefined) {
+                    sets.push("task_kind = ?")
+                    args.push(mutation.taskKind)
+                  }
                   if (mutation.description !== undefined) {
                     if (mutation.replaceDescription) {
                       sets.push("description = ?")
@@ -2596,16 +2754,30 @@ export class TaskRepository {
                         ],
                       }]
                     } else {
-                      yield [{
-                        sql: `UPDATE calendar_confirmations SET payload = ?
-                              WHERE provider_event_id = ?
-                                AND CASE WHEN json_valid(payload) THEN json_extract(payload, '$.entity_id') ELSE NULL END = ?`,
-                        args: [
-                          mutation.confirmation.payload,
-                          mutation.confirmation.externalId,
-                          mutation.confirmation.entityId,
-                        ],
-                      }]
+                      const prevId = mutation.confirmation.previousExternalId ?? mutation.confirmation.externalId
+                      if (mutation.confirmation.confirmationSource === "caldav") {
+                        yield [{
+                          sql: `UPDATE calendar_confirmations SET payload = ?
+                                WHERE task_id = ? AND provider_event_id = ? AND source = 'caldav'`,
+                          args: [
+                            mutation.confirmation.payload,
+                            mutation.taskId,
+                            mutation.confirmation.externalId,
+                          ],
+                        }]
+                      } else {
+                        yield [{
+                          sql: `UPDATE calendar_confirmations SET provider_event_id = ?, payload = ?
+                                WHERE task_id = ? AND provider_event_id = ? AND source = ?`,
+                          args: [
+                            mutation.confirmation.externalId,
+                            mutation.confirmation.payload,
+                            mutation.taskId,
+                            prevId,
+                            mutation.confirmation.confirmationSource ?? "ha.calendar_sync",
+                          ],
+                        }]
+                      }
                     }
                   }
                   yield [`RELEASE SAVEPOINT ${sp}`]

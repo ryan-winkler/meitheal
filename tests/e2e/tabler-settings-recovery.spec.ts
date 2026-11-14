@@ -2,7 +2,7 @@ import { expect, test, type Locator, type Page } from "@playwright/test"
 import { SETTINGS_SECTIONS } from "../../apps/web/src/lib/settings-registry"
 import { shouldSkipBrowserSpecs } from "./_helpers"
 
-async function openSettings(page: Page, fragment = "personal-settings") {
+async function openSettings(page: Page, fragment = "look-and-feel-settings") {
   await page.goto(`/settings#${fragment}`)
   await expect(page.locator("#settings-panels")).not.toHaveAttribute("inert", "")
 }
@@ -50,8 +50,8 @@ test.describe("Tabler Settings recovery", () => {
     await page.setViewportSize({ width: 320, height: 740 })
     await page.locator("#settings-sections-toggle").press("Enter")
     await expect(directory).toBeVisible()
-    await directory.getByRole("link", { name: "Integrations", exact: true }).press("Enter")
-    await expect(page.getByRole("heading", { name: "Integrations", exact: true, level: 2 })).toBeFocused()
+    await directory.getByRole("link", { name: "Connected Services", exact: true }).press("Enter")
+    await expect(page.getByRole("heading", { name: "Connected Services", exact: true, level: 2 })).toBeFocused()
     await expect(directory).toBeHidden()
   })
 
@@ -59,7 +59,7 @@ test.describe("Tabler Settings recovery", () => {
     await openSettings(page)
     for (const theme of ["light", "dark"]) {
       await page.locator("#theme-select").selectOption(theme)
-      await page.locator('[data-settings-nav="integrations-settings"]').press("Enter")
+      await page.locator('[data-settings-nav="connections-settings"]').press("Enter")
       for (const id of ["ha", "calendar", "todo", "grocy", "n8n", "webhooks"]) {
         const card = page.locator(`#integration-${id}`)
         const heading = card.locator(".integration-card__header")
@@ -92,12 +92,12 @@ test.describe("Tabler Settings recovery", () => {
       await expect(security).toHaveAttribute("href", "mailto:info@coolockvillage.ie")
       expect(await security.evaluate(element => getComputedStyle(element).textDecorationLine)).toContain("underline")
       expect(await contrastAgainst(security, "#local-feedback")).toBeGreaterThanOrEqual(4.5)
-      await page.locator('[data-settings-nav="personal-settings"]').press("Enter")
+      await page.locator('[data-settings-nav="look-and-feel-settings"]').press("Enter")
     }
   })
 
   test("disclosures announce their subtitle once and cards use the shared inset", async ({ page }) => {
-    await openSettings(page, "rules-lenses-settings")
+    await openSettings(page, "scoring-settings")
     const disclosure = page.locator("#ai-scope-disclosure")
     const summary = disclosure.locator(":scope > summary")
     const subtitle = await summary.locator("small").innerText()

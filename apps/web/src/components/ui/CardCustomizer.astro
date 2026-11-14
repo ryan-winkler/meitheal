@@ -63,7 +63,8 @@ const { class: className } = Astro.props
 }
 
 .card-customizer__panel {
-  background: var(--surface);
+  background: var(--bg-card);
+  color: var(--text-primary);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-lg);
@@ -100,12 +101,12 @@ const { class: className } = Astro.props
   font-size: 0.875rem;
   cursor: pointer;
   user-select: none;
-  color: var(--text);
+  color: var(--text-primary);
   padding: 0.25rem;
   border-radius: var(--radius-sm);
 }
 .card-customizer__label:hover {
-  background: var(--surface-hover);
+  background: var(--bg-hover);
 }
 .card-customizer__label input:disabled ~ span {
   opacity: 0.5;
@@ -115,7 +116,7 @@ const { class: className } = Astro.props
   border-top: 1px solid var(--border);
   display: flex;
   justify-content: center;
-  background: var(--surface-raised);
+  background: var(--bg-secondary);
   border-bottom-left-radius: var(--radius-md);
   border-bottom-right-radius: var(--radius-md);
 }
@@ -160,8 +161,8 @@ const { class: className } = Astro.props
   white-space: nowrap;
 }
 .card-density-btn:hover {
-  color: var(--text);
-  background: var(--surface-hover);
+  color: var(--text-primary);
+  background: var(--bg-hover);
 }
 .card-density-btn.active {
   background: var(--accent);

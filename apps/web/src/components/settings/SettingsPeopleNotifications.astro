@@ -1,0 +1,240 @@
+---
+import type { Locale } from "../../lib/locale"
+import { SETTINGS_SECTIONS } from "../../lib/settings-registry"
+import SettingsActionRow from "./SettingsActionRow.astro"
+import SettingsPanelCard from "./SettingsPanelCard.astro"
+import SettingsSectionIntro from "./SettingsSectionIntro.astro"
+import Icon from "../ui/Icon.astro"
+
+interface Props {
+  locale: Locale
+}
+const { locale } = Astro.props
+void locale
+
+const peopleNotificationsSection = SETTINGS_SECTIONS.find((section) => section.id === "people-notifications-settings")!
+---
+
+<section
+  id="people-notifications-settings"
+  class="settings-shell__section"
+  data-settings-shell-section
+  hidden
+>
+  <SettingsSectionIntro section={peopleNotificationsSection} />
+  <div class="settings-grid">
+    <!-- Users & Assignment -->
+    <SettingsPanelCard
+      title="Users & Assignment"
+      subtitle="Manage task assignees. Home Assistant users are discovered automatically. Add custom users for non-HA household members."
+    >
+      <div class="settings-stack">
+        <!-- Default Assignee -->
+        <div>
+          <label
+            for="default-assignee-select"
+            class="settings-label"
+            >Default Assignee</label
+          >
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <select
+              id="default-assignee-select"
+              class="form-select settings-input-narrow"
+              aria-label="Default task assignee"
+            >
+              <option value="">None (unassigned)</option>
+            </select>
+            <button
+              type="button"
+              class="btn btn-primary settings-text-sm"
+              id="save-default-assignee"
+              >Save</button
+            >
+          </div>
+          <p class="settings-hint">
+            New tasks will be assigned to this user by default.
+          </p>
+        </div>
+
+        <!-- Discovered Users -->
+        <div>
+          <div style="font-weight: 600; font-size: 13px; margin-bottom: 6px;">
+            Discovered Users
+          </div>
+          <div
+            id="discovered-users-list"
+            class="settings-stack--xs"
+          >
+            <span class="settings-description">Loading…</span>
+          </div>
+        </div>
+
+        <!-- Custom Users -->
+        <div class="settings-section-divider">
+          <div
+            style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;"
+          >
+            <div style="font-weight: 600; font-size: 13px;">Custom Users</div>
+          </div>
+          <div
+            id="custom-users-list"
+            style="display: flex; flex-direction: column; gap: 6px;"
+          >
+          </div>
+          <SettingsActionRow style="margin-top: 10px;">
+            <input
+              type="text"
+              id="new-custom-user-name"
+              class="form-input"
+              placeholder="Name (e.g. Emma)"
+              style="flex: 1; max-width: 200px;"
+              aria-label="New custom user name"
+            />
+            <button
+              type="button"
+              class="btn btn-ghost settings-text-sm"
+              id="add-custom-user-btn"
+              >+ Add User</button
+            >
+          </SettingsActionRow>
+        </div>
+      </div>
+    </SettingsPanelCard>
+
+    <!-- Notifications -->
+    <SettingsPanelCard
+      title="Notifications"
+      subtitle="Control how Meitheal sends notifications to Home Assistant. Toggle globally or per user."
+    >
+      <div class="settings-stack">
+        <!-- Global toggle -->
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <label class="toggle-switch shrink-0">
+            <input type="checkbox" id="notif-global-toggle" aria-labelledby="notif-global-toggle-label" checked />
+            <span class="toggle-slider"></span>
+          </label>
+          <div>
+            <div id="notif-global-toggle-label" style="font-weight: 600; font-size: 13px;">
+              Enable notifications
+            </div>
+            <div class="settings-hint--sm">
+              Task assignments, urgent escalations, and due-date reminders trigger
+              notifications.
+            </div>
+          </div>
+        </div>
+
+        <!-- Notification Channels -->
+        <div style="border-top: 1px solid var(--border); padding-top: 12px;">
+          <div style="font-weight: 600; font-size: 13px; margin-bottom: 8px;">
+            Notification channels
+          </div>
+          <div class="settings-stack--sm">
+            <!-- Sidebar Bell -->
+            <div class="settings-row">
+              <label class="toggle-switch shrink-0">
+                <input type="checkbox" id="notif-channel-sidebar" aria-labelledby="notif-channel-sidebar-label" checked />
+                <span class="toggle-slider"></span>
+              </label>
+              <div class="flex-1">
+                <div id="notif-channel-sidebar-label" class="settings-label--inline inline-flex items-center gap-1.5">
+                  <Icon name="bell" size={14} /> HA Sidebar Bell
+                </div>
+                <div class="settings-hint--sm">
+                  Appears in the Home Assistant notification bell. Silent — no
+                  sound or vibration.
+                </div>
+              </div>
+            </div>
+            <!-- Mobile Push -->
+            <div class="settings-row">
+              <label class="toggle-switch shrink-0">
+                <input type="checkbox" id="notif-channel-mobile" aria-labelledby="notif-channel-mobile-label" />
+                <span class="toggle-slider"></span>
+              </label>
+              <div class="flex-1">
+                <div id="notif-channel-mobile-label" class="settings-label--inline inline-flex items-center gap-1.5">
+                  <Icon name="phone" size={14} /> Mobile Push
+                </div>
+                <div class="settings-hint--sm">
+                  Push notification to HA Companion App with sound and vibration.
+                </div>
+              </div>
+            </div>
+            <!-- Mobile push target selector (shown when mobile push enabled) -->
+            <div
+              id="notif-mobile-targets"
+              style="display: none; padding: 8px 12px 12px 48px;"
+            >
+              <div
+                style="font-size: 12px; color: var(--text-secondary); margin-bottom: 6px;"
+              >
+                Select which devices receive push notifications:
+              </div>
+              <div
+                id="notif-mobile-target-list"
+                class="settings-stack--xs"
+              >
+                <span class="settings-description">Discovering devices…</span>
+              </div>
+            </div>
+            <!-- Due-Date Reminders toggle (F12) -->
+            <div class="settings-row">
+              <label class="toggle-switch shrink-0">
+                <input type="checkbox" id="notif-channel-reminders" aria-labelledby="notif-channel-reminders-label" checked />
+                <span class="toggle-slider"></span>
+              </label>
+              <div class="flex-1">
+                <div id="notif-channel-reminders-label" class="settings-label--inline inline-flex items-center gap-1.5">
+                  <Icon name="clock" size={14} /> Due-Date Reminders
+                </div>
+                <div class="settings-hint--sm">
+                  Sends reminder notifications for tasks due within the configured
+                  window.
+                </div>
+              </div>
+            </div>
+            <!-- Reminder window config -->
+            <div id="reminder-window-config" style="padding: 4px 12px 4px 48px;">
+              <label
+                style="font-size: 12px; color: var(--text-secondary); display: flex; align-items: center; gap: 8px;"
+              >
+                Remind
+                <input
+                  type="number"
+                  id="notif-reminder-minutes"
+                  min="5"
+                  max="1440"
+                  value="60"
+                  style="width: 60px; padding: 3px 6px; border: 1px solid var(--border); border-radius: 4px; font-size: 12px; background: var(--bg-primary);"
+                />
+                minutes before due
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <!-- Per-user toggles (populated by JS) -->
+        <div
+          id="notif-user-toggles"
+          style="display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--border); padding-top: 12px;"
+        >
+          <div style="font-weight: 600; font-size: 13px; margin-bottom: 4px;">
+            Per-user overrides
+          </div>
+          <span class="settings-description">Loading users…</span>
+        </div>
+
+        <button
+          type="button"
+          class="btn btn-primary"
+          id="save-notif-prefs"
+          style="font-size: 13px; align-self: flex-start; min-width: 200px;"
+        >
+          Save notification preferences
+        </button>
+      </div>
+    </SettingsPanelCard>
+  </div>
+</section>
+

@@ -28,6 +28,8 @@ import type { Locale } from "../../lib/locale"
 import Icon from "../ui/Icon.astro"
 import { EMOJI_CATEGORIES } from "../../lib/emoji-picker-data"
 import { DEFAULT_ACCENT, DEFAULT_ICON, HOME_ICON, COLOR_SWATCHES } from "../../lib/design-tokens"
+import { mapEntityEmojiToTabler } from "../../lib/tabler-svg"
+import type { IconName } from "../../generated/icon-registry"
 
 export interface Props {
   locale: Locale
@@ -86,27 +88,27 @@ const visibleAreas = areas
 const areasLabel = label || t("sidebar.areas_header", locale) || "Areas"
 
 // Task kinds for per-project add
-const taskKinds = [
-  { kind: "standard_action", icon: "✅", labelKey: "sidebar.task_kind_standard_action" },
-  { kind: "shopping_item", icon: "🛒", labelKey: "sidebar.task_kind_shopping_item" },
-  { kind: "checklist", icon: "☑️", labelKey: "sidebar.task_kind_checklist" },
-  { kind: "calendar_event", icon: "📅", labelKey: "sidebar.task_kind_calendar_event" },
-  { kind: "quick_capture", icon: "⚡", labelKey: "sidebar.task_kind_quick_capture" },
+const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
+  { kind: "standard_action", icon: "checkbox", labelKey: "sidebar.task_kind_standard_action" },
+  { kind: "shopping_item", icon: "shopping-cart", labelKey: "sidebar.task_kind_shopping_item" },
+  { kind: "checklist", icon: "list-check", labelKey: "sidebar.task_kind_checklist" },
+  { kind: "calendar_event", icon: "calendar-event", labelKey: "sidebar.task_kind_calendar_event" },
+  { kind: "quick_capture", icon: "bolt", labelKey: "sidebar.task_kind_quick_capture" },
 ]
 ---
 
 {hasContent && (
   <div class="stree" id="project-nav" role="navigation" aria-label="Area navigation">
     <details id="sidebar-areas-group" open>
-    <summary class="stree__header" id="project-nav-group-toggle" aria-label={areasLabel}>
-      <span class="stree__group-heading"><span class="stree__group-chevron" aria-hidden="true">▾</span><span class="stree__label">{areasLabel}</span></span>
+    <summary class="stree__header" id="project-nav-group-toggle" aria-label={areasLabel} title="Collapse Areas">
+      <span class="stree__group-heading"><span class="stree__group-chevron" aria-hidden="true"><Icon name="chevron-down" size={12} /></span><span class="stree__label">{areasLabel}</span></span>
     </summary>
     <div id="project-nav-content">
 
     {/* ── Pinned ── */}
     <div class="stree__pinned" id="project-nav-pinned" hidden>
       <div class="stree__pinned-header">
-        <span class="stree__section-label">📌 {t("sidebar.pinned", locale)}</span>
+        <span class="stree__section-label inline-flex items-center gap-1"><Icon name="pin" size={11} /> {t("sidebar.pinned", locale)}</span>
         <span class="stree__pin-help" title={t("sidebar.pin_help", locale)}>?</span>
       </div>
       <div class="stree__pinned-list" id="project-nav-pinned-list"></div>
@@ -116,12 +118,24 @@ const taskKinds = [
     <div class="stree__list" id="project-nav-list">
       {visibleAreas.map((area) => {
         const areaProjects = projectsByArea.get(String(area.id)) ?? []
+        const areaIconName = mapEntityEmojiToTabler(area.icon)
         return (
           <div class="stree__area" data-area-group={area.id}>
             <div class="stree__area-row">
-              <button type="button" class="stree__area-toggle" data-area-toggle={area.id} aria-expanded="true" aria-controls={`stree-area-projects-${area.id}`}>
-                <span class="stree__toggle" aria-hidden="true">▸</span>
-                <span class="stree__area-icon" style={`color: ${area.color}`} aria-hidden="true">{area.icon}</span>
+              <button
+                type="button"
+                class="stree__area-toggle"
+                data-area-toggle={area.id}
+                data-area-name-label={area.name}
+                aria-expanded="true"
+                aria-controls={`stree-area-projects-${area.id}`}
+                aria-label={area.name}
+                title={`Collapse ${area.name}`}
+              >
+                <span class="stree__toggle" aria-hidden="true"><Icon name="chevron-down" size={11} class="-rotate-90" /></span>
+                <span class="stree__area-icon inline-flex items-center justify-center" style={`color: ${area.color}`} aria-hidden="true">
+                  {areaIconName ? <Icon name={areaIconName} size={15} /> : area.icon}
+                </span>
                 <span class="stree__area-name">{area.name}</span>
               </button>
               {/* ── Area ⋯ + actions ── */}
@@ -135,20 +149,22 @@ const taskKinds = [
                   data-area-icon={area.icon}
                   title={t("sidebar.area_options", locale)}
                   aria-label={`${t("sidebar.area_options", locale)} - ${area.name}`}
-                >⋯</button>
+                ><Icon name="adjustments-horizontal" size={13} /></button>
                 <button
                   type="button"
                   class="stree__action-btn stree__action-btn--add"
                   data-area-add={area.id}
                   title={`New project in ${area.name}`}
                   aria-label={`New project in ${area.name}`}
-                >+</button>
+                ><Icon name="plus" size={13} /></button>
               </div>
             </div>
 
             {/* ── Projects under area ── */}
             <div class="stree__children" id={`stree-area-projects-${area.id}`} data-area-projects={area.id}>
-              {areaProjects.map((proj, i) => (
+              {areaProjects.map((proj, i) => {
+                const projIconName = mapEntityEmojiToTabler(proj.icon)
+                return (
                 <div class={`stree__project ${i === areaProjects.length - 1 ? "stree__project--last" : ""}`}>
                   <div class="stree__connector">
                     <span class="stree__line-v"></span>
@@ -161,7 +177,9 @@ const taskKinds = [
                     data-project-name={proj.title}
                     title={proj.title}
                   >
-                    <span class="stree__project-icon" style={`color: ${proj.color}`}>{proj.icon}</span>
+                    <span class="stree__project-icon inline-flex items-center justify-center" style={`color: ${proj.color}`}>
+                      {projIconName ? <Icon name={projIconName} size={14} /> : proj.icon}
+                    </span>
                     <span class="stree__project-name">{proj.title}</span>
                   </a>
                   <span class="stree__count" data-project-task-count={proj.id}>·</span>
@@ -176,7 +194,7 @@ const taskKinds = [
                       data-project-icon-value={proj.icon}
                       title={t("sidebar.project_options", locale)}
                       aria-label={`${t("sidebar.project_options", locale)} - ${proj.title}`}
-                    >⋯</button>
+                    ><Icon name="adjustments-horizontal" size={13} /></button>
                     <button
                       type="button"
                       class="stree__action-btn stree__action-btn--add"
@@ -184,10 +202,11 @@ const taskKinds = [
                       data-task-add-name={proj.title}
                       title={t("sidebar.add_task", locale)}
                       aria-label={`Add task to ${proj.title}`}
-                    >+</button>
+                    ><Icon name="plus" size={13} /></button>
                   </div>
                 </div>
-              ))}
+                )
+              })}
               {areaProjects.length === 0 && (
                 <span class="stree__empty-hint">{t("sidebar.no_projects", locale)}</span>
               )}
@@ -197,8 +216,8 @@ const taskKinds = [
       })}
 
       {/* ── New Area ── */}
-      <button type="button" class="stree__new-area" id="new-area-btn" aria-label="Create new area">
-        <span class="stree__new-area-icon">＋</span>
+      <button type="button" class="stree__new-area" id="new-area-btn" aria-label="Create new area" title={t("sidebar.new_area", locale)}>
+        <span class="stree__new-area-icon inline-flex items-center justify-center" aria-hidden="true"><Icon name="plus" size={13} /></span>
         <span>{t("sidebar.new_area", locale)}</span>
       </button>
     </div>
@@ -220,17 +239,17 @@ const taskKinds = [
 <template id="tmpl-area-menu">
   <div class="stree__dropdown" id="area-menu-dropdown">
     <a data-action="manage" class="stree__dropdown-item">
-      <span class="stree__dropdown-icon">⚙️</span><span>{t("sidebar.manage_space", locale)}</span>
+      <span class="stree__dropdown-icon inline-flex items-center justify-center"><Icon name="settings" size={14} /></span><span>{t("sidebar.manage_space", locale)}</span>
     </a>
     <button type="button" data-action="rename" class="stree__dropdown-item">
-      <span class="stree__dropdown-icon">✏️</span><span>{t("sidebar.rename", locale)}</span>
+      <span class="stree__dropdown-icon inline-flex items-center justify-center"><Icon name="pencil" size={14} /></span><span>{t("sidebar.rename", locale)}</span>
     </button>
     <button type="button" data-action="color-icon" class="stree__dropdown-item">
-      <span class="stree__dropdown-icon">🎨</span><span>{t("sidebar.color_icon", locale)}</span>
+      <span class="stree__dropdown-icon inline-flex items-center justify-center"><Icon name="palette" size={14} /></span><span>{t("sidebar.color_icon", locale)}</span>
     </button>
     <hr class="stree__dropdown-divider" />
     <button type="button" data-action="delete" class="stree__dropdown-item stree__dropdown-item--danger">
-      <span class="stree__dropdown-icon">🗑️</span><span>{t("sidebar.delete_area", locale)}</span>
+      <span class="stree__dropdown-icon inline-flex items-center justify-center"><Icon name="trash" size={14} /></span><span>{t("sidebar.delete_area", locale)}</span>
     </button>
   </div>
 </template>
@@ -238,17 +257,17 @@ const taskKinds = [
 <template id="tmpl-project-menu">
   <div class="stree__dropdown" id="project-menu-dropdown">
     <a data-action="manage" class="stree__dropdown-item">
-      <span class="stree__dropdown-icon">⚙️</span><span>{t("sidebar.manage_project", locale)}</span>
+      <span class="stree__dropdown-icon inline-flex items-center justify-center"><Icon name="settings" size={14} /></span><span>{t("sidebar.manage_project", locale)}</span>
     </a>
     <button type="button" data-action="rename" class="stree__dropdown-item">
-      <span class="stree__dropdown-icon">✏️</span><span>{t("sidebar.rename", locale)}</span>
+      <span class="stree__dropdown-icon inline-flex items-center justify-center"><Icon name="pencil" size={14} /></span><span>{t("sidebar.rename", locale)}</span>
     </button>
     <button type="button" data-action="color-icon" class="stree__dropdown-item">
-      <span class="stree__dropdown-icon">🎨</span><span>{t("sidebar.color_icon", locale)}</span>
+      <span class="stree__dropdown-icon inline-flex items-center justify-center"><Icon name="palette" size={14} /></span><span>{t("sidebar.color_icon", locale)}</span>
     </button>
     <hr class="stree__dropdown-divider" />
     <button type="button" data-action="delete" class="stree__dropdown-item stree__dropdown-item--danger">
-      <span class="stree__dropdown-icon">🗑️</span><span>{t("sidebar.delete_project", locale)}</span>
+      <span class="stree__dropdown-icon inline-flex items-center justify-center"><Icon name="trash" size={14} /></span><span>{t("sidebar.delete_project", locale)}</span>
     </button>
   </div>
 </template>
@@ -257,7 +276,7 @@ const taskKinds = [
   <div class="stree__dropdown" id="task-kind-dropdown">
     {taskKinds.map((tk) => (
       <button type="button" data-task-kind={tk.kind} class="stree__dropdown-item">
-        <span class="stree__dropdown-icon">{tk.icon}</span>
+        <span class="stree__dropdown-icon inline-flex items-center justify-center"><Icon name={tk.icon} size={14} /></span>
         <span>{t(tk.labelKey, locale)}</span>
       </button>
     ))}
@@ -269,7 +288,7 @@ const taskKinds = [
     <div class="stree__popover-section">
       <label class="stree__popover-label">{t("sidebar.icon_label", locale)}</label>
       <div class="stree__emoji-preview">
-        <span id="entity-icon-preview" class="stree__emoji-selected">📋</span>
+        <span id="entity-icon-preview" class="stree__emoji-selected inline-flex items-center justify-center"><Icon name="clipboard-list" size={18} /></span>
         <input type="hidden" id="entity-icon-input" value="📋" />
       </div>
       <div class="stree__emoji-tabs">
@@ -345,7 +364,23 @@ const taskKinds = [
   }
   .stree__header::-webkit-details-marker { display: none; }
   .stree__group-heading { display: flex; align-items: center; gap: 6px; min-width: 0; }
-  .stree__group-chevron { color: var(--text-secondary); flex: none; }
+  .stree__group-chevron {
+    color: var(--text-secondary);
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 5px;
+    border: 1px solid rgba(var(--border-rgb), 0.5);
+    background: rgba(var(--bg-primary-rgb), 0.4);
+    transition: transform 180ms cubic-bezier(0.23, 1, 0.32, 1), border-color 150ms ease, color 150ms ease;
+  }
+  .stree__header:hover .stree__group-chevron {
+    border-color: rgba(var(--accent-rgb), 0.55);
+    color: var(--text-primary);
+  }
   #sidebar-areas-group:not([open]) .stree__group-chevron { transform: rotate(-90deg); }
   .stree__label {
     min-width: 0;
@@ -424,17 +459,20 @@ const taskKinds = [
   }
 
   .stree__toggle {
-    font-size: 10px;
     flex-shrink: 0;
     color: var(--text-muted);
-    opacity: 0.5;
-    transition: transform 200ms ease, opacity 150ms;
     display: inline-flex;
-    width: 12px;
-    text-align: center;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 4px;
+    border: 1px solid rgba(var(--border-rgb), 0.45);
+    background: rgba(var(--bg-primary-rgb), 0.35);
+    transition: transform 180ms cubic-bezier(0.23, 1, 0.32, 1), color 150ms ease, border-color 150ms ease;
   }
-  .stree__area-toggle[aria-expanded="true"] .stree__toggle { transform: rotate(90deg); opacity: 0.7; }
-  .stree__area-row:hover .stree__toggle { opacity: 1; }
+  .stree__area-toggle[aria-expanded="true"] .stree__toggle { transform: rotate(90deg); color: var(--text-secondary); }
+  .stree__area-row:hover .stree__toggle { color: var(--text-primary); border-color: rgba(var(--accent-rgb), 0.5); }
 
   .stree__area-icon { font-size: 15px; flex-shrink: 0; line-height: 1; }
   .stree__area-name {
@@ -476,22 +514,38 @@ const taskKinds = [
     100% { transform: scale(1); }
   }
 
-  /* ── ⋯ + action pair — P1-6: delayed fade reveal, P0-3: bigger touch targets ── */
+  /* ── ⋯ + action pair — collapsed in layout until hover/focus-within (keeps Tab order intact) ── */
   .stree__actions {
     display: flex;
     align-items: center;
     gap: 2px;
     flex-shrink: 0;
+    max-width: 0;
     opacity: 0;
-    transition: opacity 120ms 50ms ease;
+    overflow: hidden;
+    transition:
+      max-width 180ms cubic-bezier(0.23, 1, 0.32, 1),
+      opacity 150ms cubic-bezier(0.23, 1, 0.32, 1);
   }
   .stree__area-row:hover .stree__actions,
+  .stree__area-row:focus-within .stree__actions,
   .stree__project:hover > .stree__actions,
+  .stree__project:focus-within > .stree__actions,
   .stree__actions:focus-within {
+    max-width: 68px;
     opacity: 1;
+    overflow: visible;
   }
   .stree__area-row:hover .stree__count,
-  .stree__project:hover > .stree__count { opacity: 0; }
+  .stree__area-row:focus-within .stree__count,
+  .stree__project:hover > .stree__count,
+  .stree__project:focus-within > .stree__count {
+    opacity: 0;
+    max-width: 0;
+    min-width: 0;
+    padding: 0;
+    overflow: hidden;
+  }
 
   .stree__action-btn {
     background: none;
@@ -524,11 +578,11 @@ const taskKinds = [
   .stree__children {
     display: flex;
     flex-direction: column;
-    padding-left: 10px;
+    padding-left: 6px;
     overflow: hidden;
     max-height: 600px;
     opacity: 1;
-    transition: max-height 200ms ease-out, opacity 150ms ease-out;
+    transition: max-height 200ms cubic-bezier(0.23, 1, 0.32, 1), opacity 150ms cubic-bezier(0.23, 1, 0.32, 1);
   }
   .stree__children[data-collapsed="true"] {
     max-height: 0;
@@ -543,19 +597,20 @@ const taskKinds = [
     gap: 0;
     position: relative;
     min-height: 32px;
+    padding-right: 4px;
   }
 
   /* ── Tree connector lines — P0-2: softer, rounded bend ── */
   .stree__connector {
     position: relative;
-    width: 16px;
+    width: 12px;
     height: 100%;
     flex-shrink: 0;
     align-self: stretch;
   }
   .stree__line-v {
     position: absolute;
-    left: 6px;
+    left: 4px;
     top: 0;
     bottom: 0;
     width: 1px;
@@ -564,9 +619,9 @@ const taskKinds = [
   .stree__project--last .stree__line-v { bottom: 50%; }
   .stree__line-h {
     position: absolute;
-    left: 6px;
+    left: 4px;
     top: 50%;
-    width: 9px;
+    width: 7px;
     height: 1px;
     background: rgb(var(--border-rgb) / 0.18);
   }
@@ -574,7 +629,7 @@ const taskKinds = [
   .stree__project--last .stree__connector::after {
     content: '';
     position: absolute;
-    left: 6px;
+    left: 4px;
     top: 50%;
     width: 4px;
     height: 4px;
@@ -627,6 +682,8 @@ const taskKinds = [
   }
   .stree__project-icon { font-size: 13px; flex-shrink: 0; line-height: 1; }
   .stree__project-name {
+    flex: 1;
+    min-width: 0;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -912,7 +969,9 @@ const taskKinds = [
 
     .stree__actions {
       gap: 4px;
+      max-width: none;
       opacity: 1;
+      overflow: visible;
     }
 
     .stree__count {
@@ -939,7 +998,8 @@ const taskKinds = [
 <script>
   import { singleKeyShortcutsEnabled } from "@lib/single-key-shortcuts"
   import { DropdownController } from "../../lib/dropdown-controller"
-  import { escapeHtml, sanitizeCssColor } from "../../lib/safe-html"
+  import { sanitizeCssColor } from "../../lib/safe-html"
+  import { createTablerSvgElement, renderIconOrCustomEmoji } from "../../lib/tabler-svg"
   import { showToast } from "../../lib/toast"
   import { TASK_COUNTS_CHANGED } from "../../lib/deferral-client"
   import { pageLifecycle } from "../../lib/page-lifecycle"
@@ -1026,30 +1086,63 @@ const taskKinds = [
     ): void {
       const div = document.createElement("div")
       div.className = "stree__project"
-      const safeProjectId = escapeHtml(projectId)
-      const safeTitle = escapeHtml(title)
-      const safeIcon = escapeHtml(icon)
-      const safeColor = escapeHtml(sanitizeCssColor(color))
-      div.innerHTML = `
-        <div class="stree__connector">
-          <span class="stree__line-v"></span>
-          <span class="stree__line-h"></span>
-        </div>
-        <a href="/projects/${safeProjectId}" class="stree__project-link"
-           data-project-id="${safeProjectId}" data-project-name="${safeTitle}" title="${safeTitle}">
-          <span class="stree__project-icon" style="color: ${safeColor}">${safeIcon}</span>
-          <span class="stree__project-name">${safeTitle}</span>
-        </a>
-        <span class="stree__count" data-project-task-count="${safeProjectId}">0</span>
-        <div class="stree__actions">
-          <button type="button" class="stree__action-btn" data-project-menu="${safeProjectId}"
-            data-project-title="${safeTitle}" data-project-color="${safeColor}" data-project-icon-value="${safeIcon}"
-            title="Project options" aria-label="Project options - ${safeTitle}">⋯</button>
-          <button type="button" class="stree__action-btn stree__action-btn--add"
-            data-task-add-project="${safeProjectId}" data-task-add-name="${safeTitle}"
-            title="Add task" aria-label="Add task to ${safeTitle}">+</button>
-        </div>
-      `
+      const safeColor = sanitizeCssColor(color)
+
+      const connector = document.createElement("div")
+      connector.className = "stree__connector"
+      const lineV = document.createElement("span")
+      lineV.className = "stree__line-v"
+      const lineH = document.createElement("span")
+      lineH.className = "stree__line-h"
+      connector.append(lineV, lineH)
+
+      const link = document.createElement("a")
+      link.href = `/projects/${encodeURIComponent(projectId)}`
+      link.className = "stree__project-link"
+      link.dataset.projectId = projectId
+      link.dataset.projectName = title
+      link.title = title
+
+      const iconSpan = document.createElement("span")
+      iconSpan.className = "stree__project-icon inline-flex items-center justify-center"
+      iconSpan.style.color = safeColor
+      renderIconOrCustomEmoji(iconSpan, icon, "checklist", 14)
+
+      const nameSpan = document.createElement("span")
+      nameSpan.className = "stree__project-name"
+      nameSpan.textContent = title
+      link.append(iconSpan, nameSpan)
+
+      const countSpan = document.createElement("span")
+      countSpan.className = "stree__count"
+      countSpan.dataset.projectTaskCount = projectId
+      countSpan.textContent = "0"
+
+      const actions = document.createElement("div")
+      actions.className = "stree__actions"
+
+      const menuBtn = document.createElement("button")
+      menuBtn.type = "button"
+      menuBtn.className = "stree__action-btn"
+      menuBtn.dataset.projectMenu = projectId
+      menuBtn.dataset.projectTitle = title
+      menuBtn.dataset.projectColor = safeColor
+      menuBtn.dataset.projectIconValue = icon
+      menuBtn.title = "Project options"
+      menuBtn.setAttribute("aria-label", `Project options - ${title}`)
+      menuBtn.appendChild(createTablerSvgElement("dots", 13))
+
+      const addBtn = document.createElement("button")
+      addBtn.type = "button"
+      addBtn.className = "stree__action-btn stree__action-btn--add"
+      addBtn.dataset.taskAddProject = projectId
+      addBtn.dataset.taskAddName = title
+      addBtn.title = "Add task"
+      addBtn.setAttribute("aria-label", `Add task to ${title}`)
+      addBtn.appendChild(createTablerSvgElement("plus", 13))
+
+      actions.append(menuBtn, addBtn)
+      div.append(connector, link, countSpan, actions)
       // Mark previous last project as no longer last
       const existingLast = container.querySelector(".stree__project--last")
       if (existingLast) existingLast.classList.remove("stree__project--last")
@@ -1077,30 +1170,72 @@ const taskKinds = [
       const div = document.createElement("div")
       div.className = "stree__area"
       div.dataset.areaGroup = areaId
-      const safeId = escapeHtml(areaId)
-      const safeName = escapeHtml(name)
-      const safeIcon = escapeHtml(icon)
-      const safeColor = escapeHtml(sanitizeCssColor(color))
-      div.innerHTML = `
-        <div class="stree__area-row">
-          <button type="button" class="stree__area-toggle" data-area-toggle="${safeId}" aria-expanded="true" aria-controls="stree-area-projects-${safeId}">
-            <span class="stree__toggle" aria-hidden="true">▸</span>
-            <span class="stree__area-icon" style="color: ${safeColor}" aria-hidden="true">${safeIcon}</span>
-            <span class="stree__area-name">${safeName}</span>
-          </button>
-          <div class="stree__actions">
-            <button type="button" class="stree__action-btn" data-area-menu="${safeId}"
-              data-area-name="${safeName}" data-area-color="${safeColor}" data-area-icon="${safeIcon}"
-              title="Area options" aria-label="Area options - ${safeName}">⋯</button>
-            <button type="button" class="stree__action-btn stree__action-btn--add"
-              data-area-add="${safeId}"
-              title="New project" aria-label="New project in ${safeName}">+</button>
-          </div>
-        </div>
-        <div class="stree__children" id="stree-area-projects-${safeId}" data-area-projects="${safeId}">
-          <span class="stree__empty-hint">${i18n("sidebar.no_projects", "No projects")}</span>
-        </div>
-      `
+      const safeColor = sanitizeCssColor(color)
+
+      const row = document.createElement("div")
+      row.className = "stree__area-row"
+
+      const toggleBtn = document.createElement("button")
+      toggleBtn.type = "button"
+      toggleBtn.className = "stree__area-toggle"
+      toggleBtn.dataset.areaToggle = areaId
+      toggleBtn.dataset.areaNameLabel = name
+      toggleBtn.setAttribute("aria-expanded", "true")
+      toggleBtn.setAttribute("aria-controls", `stree-area-projects-${areaId}`)
+      toggleBtn.setAttribute("aria-label", name)
+      toggleBtn.title = `Collapse ${name}`
+
+      const chevronSpan = document.createElement("span")
+      chevronSpan.className = "stree__toggle"
+      chevronSpan.setAttribute("aria-hidden", "true")
+      chevronSpan.appendChild(createTablerSvgElement("chevron-right", 11))
+
+      const areaIcon = document.createElement("span")
+      areaIcon.className = "stree__area-icon inline-flex items-center justify-center"
+      areaIcon.style.color = safeColor
+      areaIcon.setAttribute("aria-hidden", "true")
+      renderIconOrCustomEmoji(areaIcon, icon, "folders", 15)
+
+      const areaName = document.createElement("span")
+      areaName.className = "stree__area-name"
+      areaName.textContent = name
+      toggleBtn.append(chevronSpan, areaIcon, areaName)
+
+      const actions = document.createElement("div")
+      actions.className = "stree__actions"
+
+      const menuBtn = document.createElement("button")
+      menuBtn.type = "button"
+      menuBtn.className = "stree__action-btn"
+      menuBtn.dataset.areaMenu = areaId
+      menuBtn.dataset.areaName = name
+      menuBtn.dataset.areaColor = safeColor
+      menuBtn.dataset.areaIcon = icon
+      menuBtn.title = "Area options"
+      menuBtn.setAttribute("aria-label", `Area options - ${name}`)
+      menuBtn.appendChild(createTablerSvgElement("dots", 13))
+
+      const addBtn = document.createElement("button")
+      addBtn.type = "button"
+      addBtn.className = "stree__action-btn stree__action-btn--add"
+      addBtn.dataset.areaAdd = areaId
+      addBtn.title = `New project in ${name}`
+      addBtn.setAttribute("aria-label", `New project in ${name}`)
+      addBtn.appendChild(createTablerSvgElement("plus", 13))
+
+      actions.append(menuBtn, addBtn)
+      row.append(toggleBtn, actions)
+
+      const children = document.createElement("div")
+      children.className = "stree__children"
+      children.id = `stree-area-projects-${areaId}`
+      children.dataset.areaProjects = areaId
+      const emptyHint = document.createElement("span")
+      emptyHint.className = "stree__empty-hint"
+      emptyHint.textContent = i18n("sidebar.no_projects", "No projects")
+      children.appendChild(emptyHint)
+
+      div.append(row, children)
       // Insert before the "New Area" button
       const newAreaBtn = list.querySelector("#new-area-btn")
       if (newAreaBtn) list.insertBefore(div, newAreaBtn)
@@ -1141,11 +1276,14 @@ const taskKinds = [
 
     function setAreaCollapsed(toggle: HTMLButtonElement, isCollapsed: boolean) {
       const areaId = toggle.dataset.areaToggle!
+      const areaName = toggle.dataset.areaNameLabel || toggle.querySelector(".stree__area-name")?.textContent?.trim() || "area"
       const children = document.getElementById(toggle.getAttribute("aria-controls") ?? "")
       if (!children) return
       children.dataset.collapsed = String(isCollapsed)
       children.inert = isCollapsed
       toggle.setAttribute("aria-expanded", String(!isCollapsed))
+      const label = isCollapsed ? `Expand ${areaName}` : `Collapse ${areaName}`
+      toggle.title = label
       if (isCollapsed) collapsed.add(areaId)
       else collapsed.delete(areaId)
     }
@@ -1166,7 +1304,7 @@ const taskKinds = [
       if (!container || !list) return
       if (pinnedIds.size === 0) { container.hidden = true; return }
       container.hidden = false
-      list.innerHTML = ""
+      list.replaceChildren()
       pinnedIds.forEach((id) => {
         const src = nav!.querySelector<HTMLAnchorElement>(`[data-project-id="${id}"]`)
         if (!src) return
@@ -1174,9 +1312,10 @@ const taskKinds = [
         clone.classList.add("pinned-item")
         const unpinBtn = document.createElement("button")
         unpinBtn.type = "button"
-        unpinBtn.className = "stree__unpin-btn"
+        unpinBtn.className = "stree__unpin-btn inline-flex items-center justify-center"
         unpinBtn.title = "Unpin"
-        unpinBtn.textContent = "📌"
+        unpinBtn.setAttribute("aria-label", "Unpin project")
+        unpinBtn.appendChild(createTablerSvgElement("pinned-off", 12))
         unpinBtn.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); pinnedIds.delete(id); savePinned(); renderPinned() })
         clone.appendChild(unpinBtn)
         list.appendChild(clone)
@@ -1305,7 +1444,7 @@ const taskKinds = [
         const iconInput = colorIconPopover.querySelector<HTMLInputElement>("#entity-icon-input")
         const iconPreview = colorIconPopover.querySelector<HTMLSpanElement>("#entity-icon-preview")
         if (iconInput) iconInput.value = currentIcon
-        if (iconPreview) iconPreview.textContent = currentIcon
+        if (iconPreview) renderIconOrCustomEmoji(iconPreview, currentIcon, "folders", 18)
         // Sync swatch selection
         colorIconPopover.querySelectorAll<HTMLButtonElement>("[data-swatch-color]").forEach((s) => s.classList.toggle("selected", s.dataset.swatchColor === currentColor))
         // Reset emoji tab to first
@@ -1392,7 +1531,7 @@ const taskKinds = [
         const iconInput = colorIconPopover.querySelector<HTMLInputElement>("#entity-icon-input")
         const iconPreview = colorIconPopover.querySelector<HTMLSpanElement>("#entity-icon-preview")
         if (iconInput) iconInput.value = currentIcon
-        if (iconPreview) iconPreview.textContent = currentIcon
+        if (iconPreview) renderIconOrCustomEmoji(iconPreview, currentIcon, "folders", 18)
         // Sync swatch selection
         colorIconPopover.querySelectorAll<HTMLButtonElement>("[data-swatch-color]").forEach((s) => s.classList.toggle("selected", s.dataset.swatchColor === currentColor))
         // Reset emoji tab to first
@@ -1454,7 +1593,7 @@ const taskKinds = [
       btn.addEventListener("click", () => {
         const preview = colorIconPopover!.querySelector<HTMLSpanElement>("#entity-icon-preview")
         const input = colorIconPopover!.querySelector<HTMLInputElement>("#entity-icon-input")
-        if (preview) preview.textContent = btn.dataset.emojiValue!
+        if (preview) renderIconOrCustomEmoji(preview, btn.dataset.emojiValue, "checklist", 18)
         if (input) input.value = btn.dataset.emojiValue!
         colorIconPopover!.querySelectorAll<HTMLButtonElement>("[data-emoji-value]").forEach((b) => b.classList.remove("selected"))
         btn.classList.add("selected")
@@ -1480,12 +1619,12 @@ const taskKinds = [
           if (activeEntityType === "area") {
             const iconEl = document.querySelector(`[data-area-toggle="${entityId}"] .stree__area-icon`) as HTMLElement | null
             const menuBtn = document.querySelector(`[data-area-menu="${entityId}"]`) as HTMLElement | null
-            if (iconEl) { iconEl.textContent = icon; iconEl.style.color = color }
+            if (iconEl) { renderIconOrCustomEmoji(iconEl, icon, "folders", 15); iconEl.style.color = color }
             if (menuBtn) { menuBtn.dataset.areaIcon = icon; menuBtn.dataset.areaColor = color }
           } else {
             const iconEl = document.querySelector(`[data-project-id="${entityId}"] .stree__project-icon`) as HTMLElement | null
             const menuBtn = document.querySelector(`[data-project-menu="${entityId}"]`) as HTMLElement | null
-            if (iconEl) { iconEl.textContent = icon; iconEl.style.color = color }
+            if (iconEl) { renderIconOrCustomEmoji(iconEl, icon, "checklist", 14); iconEl.style.color = color }
             if (menuBtn) { menuBtn.dataset.projectIconValue = icon; menuBtn.dataset.projectColor = color }
           }
           showToast(i18n("sidebar.updated", "Updated"), "success")

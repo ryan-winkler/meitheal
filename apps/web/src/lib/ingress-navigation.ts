@@ -1,8 +1,100 @@
 const ROUTE_PARAM = "meitheal"
+const NAVIGATION_STATE_KEY = "meitheal-navigation-state"
+
+function ingressPrefix(): string {
+  return (window.__ingress_path ?? "").replace(/\/+$/, "")
+}
+
+/**
+ * Normalize an app route + optional ingress prefix into a safe same-origin path.
+ * Blocks scheme-relative (`//`), backslash (`\`), and cross-origin/scripted URLs.
+ */
+export function safeIngressHref(rawPath: string, prefix = ingressPrefix()): string {
+  const cleanPrefix = prefix.replace(/\/+$/, "")
+  const safePrefix =
+    cleanPrefix.startsWith("/") && !cleanPrefix.startsWith("//") && !cleanPrefix.includes("\\")
+      ? cleanPrefix
+      : ""
+  const trimmed = (rawPath || "/").trim()
+  if (!trimmed || /^[\w.+-]+:/i.test(trimmed) || trimmed.startsWith("//") || trimmed.includes("\\")) {
+    return `${safePrefix}/`
+  }
+  const route = trimmed.startsWith("/") ? trimmed : `/${trimmed}`
+  const stripped =
+    safePrefix && (route === safePrefix || route.startsWith(`${safePrefix}/`))
+      ? route.slice(safePrefix.length) || "/"
+      : route
+  if (!stripped.startsWith("/") || stripped.startsWith("//") || stripped.includes("\\")) {
+    return `${safePrefix}/`
+  }
+  return `${safePrefix}${stripped}`
+}
+
+function appRouteFromUrl(url: URL, prefix: string): string | null {
+  if (url.origin !== location.origin) return null
+  if (url.pathname === prefix || url.pathname === prefix + "/") {
+    return "/" + url.search + url.hash
+  }
+  if (!url.pathname.startsWith(prefix + "/")) return null
+  return url.pathname.slice(prefix.length).replace(/^\/+/, "/") + url.search + url.hash
+}
+
+function normalizeDestinationRoute(appPath: string, prefix: string): string {
+  const trimmed = (appPath || "/").trim()
+  if (!trimmed) return "/"
+  try {
+    const base = prefix ? prefix + "/" : "/"
+    const url = new URL(trimmed, location.origin + base)
+    const stripped = prefix ? appRouteFromUrl(url, prefix) : null
+    if (stripped) return stripped
+    const rawPath = url.pathname || "/"
+    return (rawPath.startsWith("/") ? rawPath : "/" + rawPath) + url.search + url.hash
+  } catch {
+    return trimmed.startsWith("/") ? trimmed : "/" + trimmed
+  }
+}
+
+function reflectHostRoute(route: string): void {
+  if (window.parent === window) return
+  const host = window.parent
+  try {
+    if (host.location.origin !== location.origin || !host.document.querySelector("home-assistant")) return
+    const url = new URL(host.location.href)
+    if (url.searchParams.get(ROUTE_PARAM) === route) return
+    url.searchParams.set(ROUTE_PARAM, route)
+    host.history.replaceState(host.history.state, "", url)
+  } catch {
+    // Cross-origin or sandboxed hosts keep using native iframe navigation.
+  }
+}
+
+/** Persist and sync programmatic navigation destinations before window.location changes. */
+export function syncIngressDestination(appPath: string): void {
+  const prefix = ingressPrefix()
+  const route = normalizeDestinationRoute(appPath, prefix)
+  const routePath = route.split(/[?#]/)[0] || "/"
+
+  if (prefix) {
+    try {
+      sessionStorage.setItem(
+        NAVIGATION_STATE_KEY,
+        JSON.stringify({
+          path: routePath,
+          scrollY: 0,
+          timestamp: Date.now(),
+        }),
+      )
+    } catch {
+      // sessionStorage may be disabled in sandboxed contexts
+    }
+  }
+
+  reflectHostRoute(route)
+}
 
 /** Keep the embedded app's route in the same-origin Home Assistant panel URL. */
 export function initIngressNavigation(signal: AbortSignal): void {
-  const prefix = (window.__ingress_path ?? "").replace(/\/+$/, "")
+  const prefix = ingressPrefix()
   if (!prefix || window.parent === window) return
 
   const host = window.parent
@@ -15,8 +107,7 @@ export function initIngressNavigation(signal: AbortSignal): void {
   }
 
   function appRoute(url: URL): string | null {
-    if (url.origin !== location.origin || !url.pathname.startsWith(prefix + "/")) return null
-    return url.pathname.slice(prefix.length).replace(/^\/+/, "/") + url.search + url.hash
+    return appRouteFromUrl(url, prefix)
   }
 
   function hostRoute(): string | null {
@@ -47,7 +138,10 @@ export function initIngressNavigation(signal: AbortSignal): void {
   const saved = hostRoute()
   const current = appRoute(new URL(location.href))
   if (saved && current === "/" && saved !== "/") {
-    location.replace(prefix + saved)
+    const nextUrl = new URL(safeIngressHref(saved, prefix), location.origin)
+    if (nextUrl.origin === location.origin) {
+      location.replace(nextUrl.pathname + nextUrl.search + nextUrl.hash) // nosemgrep: javascript.browser.security.open-redirect.js-open-redirect, javascript.browser.security.open-redirect-from-function.js-open-redirect-from-function
+    }
     return
   }
   reflect()
@@ -70,9 +164,11 @@ export function initIngressNavigation(signal: AbortSignal): void {
     const target = event.target
     const link = target instanceof Element ? target.closest<HTMLAnchorElement>("a[href]") : null
     if (!link || link.download || (link.target && link.target !== "_self")) return
+    const route = appRoute(new URL(link.href, location.href))
+    if (!route) return
     // Reflect native navigation before a root link can reload the iframe.
-    reflect(appRoute(new URL(link.href)))
-  }, { signal })
+    reflect(route)
+  }, { capture: true, signal })
 
   window.addEventListener("hashchange", () => reflect(), { signal })
   window.addEventListener("popstate", () => reflect(), { signal })

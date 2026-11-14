@@ -379,7 +379,7 @@
                   // Add the main key as an option
                   const opt = document.createElement("option");
                   opt.value = lane.key;
-                  opt.textContent = `${lane.icon} ${lane.label}`;
+                  opt.textContent = lane.label;
                   statusSelect.appendChild(opt);
                 }
               }
@@ -774,7 +774,7 @@
                   (b: { id: string; name: string; icon: string }) => {
                     const opt = document.createElement("option");
                     opt.value = b.id;
-                    opt.textContent = `${b.icon} ${b.name}`;
+                    opt.textContent = b.name;
                     areaSelect.appendChild(opt);
                   },
                 );
@@ -793,7 +793,7 @@
                 const projects = (data.projects ?? data) as Array<{ id: string, title: string, icon?: string }>
                 projectField.replaceChildren(new Option("No project", ""))
                 for (const project of projects) {
-                  projectField.add(new Option(`${project.icon ?? "📋"} ${project.title}`, project.id))
+                  projectField.add(new Option(project.title, project.id))
                 }
                 if (savedProject && !projects.some(project => project.id === savedProject)) {
                   const unavailable = new Option("Unavailable project", savedProject)
@@ -823,11 +823,11 @@
               if (pilRes.ok) {
                 const pilData = await pilRes.json();
                 const pillars = pilData.pillars ?? pilData ?? [];
-                pillarSelect.innerHTML = '<option value="">No pillar</option>';
+                pillarSelect.replaceChildren(new Option("No pillar", ""));
                 (pillars as Array<{ id: string; name: string; icon?: string }>).forEach((p) => {
                   const opt = document.createElement("option");
                   opt.value = p.id;
-                  opt.textContent = `${p.icon ?? "🏛️"} ${p.name}`;
+                  opt.textContent = p.name;
                   pillarSelect.appendChild(opt);
                 });
                 pillarSelect.value = currentPillarId;
@@ -850,17 +850,17 @@
                 if (prinRes.ok) {
                   const prinData = await prinRes.json();
                   const principles = prinData.principles ?? prinData ?? [];
-                  principleSelect.innerHTML = '<option value="">No principle</option>';
+                  principleSelect.replaceChildren(new Option("No principle", ""));
                   (principles as Array<{ id: string; description: string }>).forEach((p) => {
                     const opt = document.createElement("option");
                     opt.value = p.id;
-                    opt.textContent = `⚖️ ${p.description.substring(0, 30)}${p.description.length > 30 ? '...' : ''}`;
+                    opt.textContent = `${p.description.substring(0, 30)}${p.description.length > 30 ? '...' : ''}`;
                     principleSelect.appendChild(opt);
                   });
                   principleSelect.value = currentPrincipleId;
                 }
               } else {
-                 principleSelect.innerHTML = '<option value="">No principle</option>';
+                 principleSelect.replaceChildren(new Option("No principle", ""));
               }
             } catch {
               principleSelect.replaceChildren(new Option(currentPrincipleId, currentPrincipleId));
@@ -1313,7 +1313,7 @@
           saveTD("principle_id", null);
           const principleSelect = document.getElementById("td-principle") as HTMLSelectElement | null;
           if (principleSelect) {
-            principleSelect.innerHTML = '<option value="">No principle</option>';
+            principleSelect.replaceChildren(new Option("No principle", ""));
             if (pillarId) {
               try {
                 const prinRes = await fetch(
@@ -1325,7 +1325,7 @@
                   principles.forEach((p: any) => {
                     const opt = document.createElement("option");
                     opt.value = p.id;
-                    opt.textContent = `⚖️ ${p.description.substring(0, 30)}${p.description.length > 30 ? '...' : ''}`;
+                    opt.textContent = `${p.description.substring(0, 30)}${p.description.length > 30 ? '...' : ''}`;
                     principleSelect.appendChild(opt);
                   });
                 }

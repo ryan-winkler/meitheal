@@ -33,10 +33,16 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import intent
 
+from .api import origin_scope
 from .coordinator import MeithealCoordinator
 from .helpers import assignee_for_user
 
 _LOGGER = logging.getLogger(__name__)
+_ASSIST_ORIGIN = (
+    "conversation_agent",
+    "Home Assistant Assist",
+    "/config/voice-assistants/assistants",
+)
 
 # ── Intent names ──
 INTENT_ADD_TASK = "MeithealAddTask"
@@ -106,10 +112,11 @@ class MeithealAddTaskHandler(_MeithealAdminIntent):
             return response
 
         try:
-            # "My tasks" means the speaker's: the base class has verified this user.
-            user_id = intent_obj.context.user_id
-            assigned_to = assignee_for_user(user_id) if user_id else None
-            await coordinator.async_create_task(title=item, assigned_to=assigned_to)
+            with origin_scope(*_ASSIST_ORIGIN):
+                # "My tasks" means the speaker's: the base class has verified this user.
+                user_id = intent_obj.context.user_id
+                assigned_to = assignee_for_user(user_id) if user_id else None
+                await coordinator.async_create_task(title=item, assigned_to=assigned_to)
             response = intent_obj.create_response()
             response.async_set_speech(f"Added '{item}' to your tasks.")
             return response
@@ -142,7 +149,8 @@ class MeithealDoneTaskHandler(_MeithealAdminIntent):
             return response
 
         try:
-            await coordinator.async_complete_task(title=item)
+            with origin_scope(*_ASSIST_ORIGIN):
+                await coordinator.async_complete_task(title=item)
             response = intent_obj.create_response()
             response.async_set_speech(f"Done! Marked '{item}' as complete.")
             return response
@@ -334,7 +342,8 @@ class MeithealDeleteTaskHandler(_MeithealAdminIntent):
 
         try:
             task_id = coordinator.resolve_task_title(item)
-            await coordinator.async_delete_task(task_id)
+            with origin_scope(*_ASSIST_ORIGIN):
+                await coordinator.async_delete_task(task_id)
             response = intent_obj.create_response()
             response.async_set_speech(f"Deleted '{item}' from your tasks.")
             return response

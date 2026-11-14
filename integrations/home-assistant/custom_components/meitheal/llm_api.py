@@ -19,10 +19,35 @@ from homeassistant.exceptions import HomeAssistantError, Unauthorized
 from homeassistant.helpers import llm
 from homeassistant.util.json import JsonObjectType
 
-from .api import task_matches_identifier, task_path
+from .api import (
+    origin_scope,
+    resolve_origin_headers,
+    task_matches_identifier,
+    task_path,
+)
 from .const import DOMAIN
 from .coordinator import MeithealCoordinator, MeithealTask
 from .helpers import ASSIGNEE_ID, assignee_for_user
+
+
+def resolve_llm_origin(llm_context: llm.LLMContext) -> tuple[str, str, str]:
+    """Derive verified conversation-agent provenance from HA LLMContext."""
+    platform = str(getattr(llm_context, "platform", "") or "").strip()
+    assistant = str(getattr(llm_context, "assistant", "") or "").strip()
+    combined = f"{assistant} {platform}".lower()
+    if "gemini" in combined or "google_generative_ai" in combined:
+        origin_name = "Gemini Conversation"
+    elif "openai" in combined or "chatgpt" in combined:
+        origin_name = "OpenAI Conversation"
+    elif "anthropic" in combined or "claude" in combined:
+        origin_name = "Claude Conversation"
+    elif assistant and assistant.lower() not in ("conversation", "home assistant"):
+        origin_name = f"Home Assistant Assist ({assistant})"
+    elif platform and platform.lower() not in ("conversation", "homeassistant", "test"):
+        origin_name = f"Home Assistant Assist ({platform.replace('_', ' ').strip().title()})"
+    else:
+        origin_name = "Home Assistant Conversation"
+    return ("conversation_agent", origin_name, "/config/voice-assistants/assistants")
 
 
 class MeithealLLMAPI(llm.API):
@@ -239,6 +264,16 @@ class MeithealWriteTool(MeithealReadTool):
         read_only=False, destructive=False, idempotent=False
     )
 
+    async def async_call(
+        self,
+        hass: HomeAssistant,
+        tool_input: llm.ToolInput,
+        llm_context: llm.LLMContext,
+    ) -> llm.ToolResult:
+        """Bind verified conversation-agent provenance around write tool execution."""
+        with origin_scope(*resolve_llm_origin(llm_context)):
+            return await super().async_call(hass, tool_input, llm_context)
+
 
 class ListTasksTool(MeithealReadTool):
     """List the tasks assigned to one assignee."""
@@ -387,6 +422,8 @@ class CreateTaskTool(MeithealWriteTool):
         if "assignee" in args:
             payload["assigned_to"] = _assignee(args)
         authority: set[str] = set()
+        origin_headers = resolve_origin_headers()
+        extra = {"extra_headers": origin_headers} if origin_headers else {}
         created = _acknowledged(
             await coordinator.api.async_request(
                 "POST",
@@ -394,6 +431,7 @@ class CreateTaskTool(MeithealWriteTool):
                 payload=payload,
                 read_json=True,
                 event_authority=authority,
+                **extra,
             )
         )
         if "meitheal_task_created" not in authority:
@@ -442,6 +480,8 @@ class UpdateTaskTool(MeithealWriteTool):
                 translation_key="invalid_tool_arguments",
             )
         authority: set[str] = set()
+        origin_headers = resolve_origin_headers()
+        extra = {"extra_headers": origin_headers} if origin_headers else {}
         updated = _acknowledged(
             await coordinator.api.async_request(
                 "PUT",
@@ -449,6 +489,7 @@ class UpdateTaskTool(MeithealWriteTool):
                 payload=payload,
                 read_json=True,
                 event_authority=authority,
+                **extra,
             ),
             args["task_id"],
         )
@@ -506,11 +547,14 @@ class AddCommentTool(MeithealWriteTool):
     async def _async_read(
         self, coordinator: MeithealCoordinator, args: dict[str, Any]
     ) -> JsonObjectType:
+        origin_headers = resolve_origin_headers()
+        extra = {"extra_headers": origin_headers} if origin_headers else {}
         created = await coordinator.api.async_request(
             "POST",
             f"{task_path(args['task_id'])}/comments",
             payload={"content": args["comment"]},
             read_json=True,
+            **extra,
         )
         if not isinstance(created, dict) or created.get("id") is None or created.get("error"):
             raise HomeAssistantError(

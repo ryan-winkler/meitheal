@@ -190,7 +190,7 @@ test.describe("Shopping theme contrast", () => {
     await mkdir(dir, { recursive: true })
     try {
       for (const color of ["#ffffff", "#ffff00"]) {
-        await page.goto("/settings#personal-settings")
+        await page.goto("/settings#look-and-feel-settings")
         await expect(page.locator("#settings-panels")).not.toHaveAttribute("inert", "")
         await page.locator("#accent-color-custom").fill(color)
         await expect.poll(() => page.evaluate(() => localStorage.getItem("meitheal-accent-color"))).toBe(color)
@@ -208,7 +208,7 @@ test.describe("Shopping theme contrast", () => {
         await page.waitForTimeout(300)
         await inspectAction(`${color}:reload-bootstrap`)
       }
-      await page.goto("/settings#personal-settings")
+      await page.goto("/settings#look-and-feel-settings")
       await expect(page.locator("#settings-panels")).not.toHaveAttribute("inert", "")
       await page.locator("#accent-reset").click()
       await expect.poll(() => page.evaluate(() => localStorage.getItem("meitheal-accent-color"))).toBeNull()

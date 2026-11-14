@@ -1,6 +1,7 @@
 ---
 import { AVAILABLE_SCOPES } from "@meitheal/domain-auth"
 import SettingsPanelCard from "./SettingsPanelCard.astro"
+import Icon from "../ui/Icon.astro"
 
 /**
  * SettingsAgentTokens — Manage scoped agent API tokens.
@@ -27,7 +28,7 @@ const scopeGroups = [
 <div class="settings-grid mt-4">
   <SettingsPanelCard
     id="agent-tokens-card"
-    title="🔑 Agent Tokens"
+    title="Agent Tokens"
     subtitle="Issue scoped API tokens for n8n, Node-RED, LLM agents, and automations. Tokens use zero-trust principles — each gets only the permissions it needs."
   >
     <button
@@ -46,7 +47,7 @@ const scopeGroups = [
         {!canManageTokens && "Home Assistant administrator access is required to view or issue agent tokens."}
       </div>
       <div class="agent-tokens__empty" id="agent-tokens-empty" hidden>
-        <span style="font-size: 24px;">🔒</span>
+        <span class="inline-flex items-center justify-center text-text-muted" aria-hidden="true"><Icon name="settings" size={24} /></span>
         <p>No agent tokens yet</p>
         <p class="agent-tokens__empty-hint">Create a token to let external tools access your API securely.</p>
       </div>
@@ -132,12 +133,16 @@ const scopeGroups = [
 
     <!-- Show-Once Token Display (hidden by default) -->
     <div id="agent-token-reveal" class="agent-tokens__reveal" hidden>
-      <div class="agent-tokens__reveal-warning">
-        ⚠️ Copy this token now — it will not be shown again.
+      <div class="agent-tokens__reveal-warning inline-flex items-center gap-2">
+        <Icon name="alert-triangle" size={16} />
+        <span>Copy this token now — it will not be shown again.</span>
       </div>
       <div class="agent-tokens__reveal-token">
         <code id="agent-token-plaintext"></code>
-        <button type="button" class="btn btn-ghost btn-sm" id="agent-token-copy">📋 Copy</button>
+        <button type="button" class="btn btn-ghost btn-sm" id="agent-token-copy">
+          <Icon name="clipboard-list" size={14} />
+          <span>Copy</span>
+        </button>
       </div>
       <button type="button" class="btn btn-primary" id="agent-token-reveal-done">Done</button>
     </div>

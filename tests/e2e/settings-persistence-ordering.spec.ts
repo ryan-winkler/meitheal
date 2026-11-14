@@ -110,7 +110,7 @@ test("a committed rule save with a lost response reconciles its new IDs before r
 
 for (const failure of [403, 500, "network", "application"] as const) {
   test(`rejected native Settings import (${failure}) retains Settings and never reloads or reports success`, async ({ page }) => {
-    await page.goto("/settings#app-pwa-settings")
+    await page.goto("/settings#backups-reset-settings")
     let requests = 0
     await page.route("**/api/import/settings", route => {
       ++requests

@@ -1,0 +1,399 @@
+---
+import { t } from "../../i18n/translations"
+import { APPEARANCE_PREFERENCES, type AppearancePreferenceName } from "../../lib/appearance-preferences"
+import type { Locale } from "../../lib/locale"
+import { SETTINGS_SECTIONS } from "../../lib/settings-registry"
+import { TASK_NAV_TYPES } from "../../lib/task-nav-types"
+import KeyboardShortcutList from "../layout/KeyboardShortcutList.astro"
+import SettingsActionRow from "./SettingsActionRow.astro"
+import SettingsPanelCard from "./SettingsPanelCard.astro"
+import SettingsSectionIntro from "./SettingsSectionIntro.astro"
+
+interface Props {
+  locale: Locale
+}
+const { locale } = Astro.props
+
+const navigationSection = SETTINGS_SECTIONS.find((section) => section.id === "navigation-settings")!
+
+const NAV_PREFERENCE_KEYS: readonly AppearancePreferenceName[] = [
+  "navigation",
+  "navTone",
+  "navStyle",
+  "sidebar",
+]
+---
+
+<section
+  id="navigation-settings"
+  class="settings-shell__section"
+  data-settings-shell-section
+  hidden
+>
+  <SettingsSectionIntro section={navigationSection} />
+  <div class="settings-grid">
+    <!-- Navigation Layout & Hover Behavior -->
+    <SettingsPanelCard
+      title={t("settings.nav_layout_card_title", locale)}
+      subtitle={t("settings.nav_layout_card_subtitle", locale)}
+    >
+      <form id="navigation-appearance-form" data-appearance-form class="appearance-preferences-form" aria-describedby="navigation-appearance-scope">
+        <p id="navigation-appearance-scope" class="settings-hint">{t("settings.appearance_scope", locale)}</p>
+        <div class="appearance-preferences-grid">
+          {NAV_PREFERENCE_KEYS.map((name) => {
+            const preference = APPEARANCE_PREFERENCES[name]
+            return (
+              <div class="form-group">
+                <label class="form-label" for={`appearance-${name}`}>{t(`settings.appearance_${name}`, locale)}</label>
+                <select class="form-select" id={`appearance-${name}`} name={name} aria-describedby={`appearance-${name}-help`}>
+                  {preference.options.map((value) => (
+                    <option value={value} selected={value === preference.defaultValue}>
+                      {t(`settings.appearance_${name}_${value.replace(".", "_")}`, locale)}
+                    </option>
+                  ))}
+                </select>
+                <p id={`appearance-${name}-help`} class="settings-hint">{t(`settings.appearance_${name}_help`, locale)}</p>
+              </div>
+            )
+          })}
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <button type="reset" class="btn btn-secondary">{t("settings.appearance_reset", locale)}</button>
+          <button type="submit" class="btn btn-primary">{t("settings.nav_layout_save", locale)}</button>
+        </div>
+        <p
+          id="navigation-appearance-save-status"
+          data-appearance-status
+          class="settings-hint"
+          role="status"
+          data-saved={t("settings.appearance_saved", locale)}
+          data-reset={t("settings.appearance_reset_staged", locale)}
+          data-error={t("settings.appearance_save_error", locale)}
+        ></p>
+      </form>
+    </SettingsPanelCard>
+
+    <!-- Tasks Menu & Pinned Task Types -->
+    <SettingsPanelCard
+      title={t("settings.task_nav_prefs_title", locale)}
+      subtitle={t("settings.task_nav_prefs_subtitle", locale)}
+    >
+      <div id="task-nav-prefs-card" class="settings-stack">
+        <div>
+          <span class="settings-label">{t("settings.task_nav_mode_label", locale)}</span>
+          <div class="task-nav-mode-group" role="group" aria-label={t("settings.task_nav_mode_label", locale)}>
+            <button type="button" class="btn btn-secondary settings-text-sm" data-task-nav-mode="all">
+              {t("settings.task_nav_mode_all", locale)}
+            </button>
+            <button type="button" class="btn btn-secondary settings-text-sm" data-task-nav-mode="custom">
+              {t("settings.task_nav_mode_custom", locale)}
+            </button>
+            <button type="button" class="btn btn-secondary settings-text-sm" data-task-nav-mode="none">
+              {t("settings.task_nav_mode_none", locale)}
+            </button>
+          </div>
+        </div>
+
+        <div class="settings-stack--xs" id="task-nav-type-rows">
+          {TASK_NAV_TYPES.map((entry) => (
+            <div class="task-nav-pref-row" data-task-nav-row={entry.id}>
+              <label class="task-nav-pref-row__check">
+                <input
+                  type="checkbox"
+                  data-task-nav-visible={entry.id}
+                  checked
+                />
+                <span>{entry.label}</span>
+              </label>
+              <button
+                type="button"
+                class="btn btn-ghost settings-text-sm task-nav-pin-btn"
+                data-task-nav-pin={entry.id}
+                aria-pressed="false"
+              >
+                {t("settings.task_nav_pin", locale)}
+              </button>
+            </div>
+          ))}
+        </div>
+        <p class="settings-hint">{t("settings.task_nav_prefs_hint", locale)}</p>
+      </div>
+    </SettingsPanelCard>
+
+    <!-- Sidebar Configuration -->
+    <SettingsPanelCard
+      title="Sidebar Configuration"
+      subtitle="Configure visibility, order, and custom labels for navigation items."
+    >
+      <div>
+        <div
+          id="sidebar-item-list"
+          class="settings-stack--sm"
+        >
+          <!-- Populated by JS -->
+        </div>
+        <div class="settings-section-divider--spaced">
+          <div style="margin-bottom: 8px; font-weight: 500;">Custom Links</div>
+          <div
+            id="custom-links-list"
+            style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px;"
+          >
+          </div>
+          <button type="button" class="btn btn-ghost" id="add-custom-link-btn"
+            >+ Add Custom Link</button
+          >
+        </div>
+        <SettingsActionRow class="mt-4">
+          <button
+            type="button"
+            class="btn btn-primary settings-text-sm"
+            id="save-sidebar"
+            >Save Sidebar Config</button
+          >
+          <button
+            type="button"
+            class="btn btn-ghost settings-text-sm"
+            id="reset-sidebar"
+            >Reset to Default</button
+          >
+        </SettingsActionRow>
+      </div>
+    </SettingsPanelCard>
+
+    <!-- Keyboard Shortcuts -->
+    <SettingsPanelCard
+      title={t("settings.shortcuts_title", locale)}
+      subtitle={t("settings.shortcuts_subtitle", locale)}
+    >
+      <label class="flex items-center gap-2">
+        <input id="single-key-shortcuts" type="checkbox" checked />
+        {t("settings.shortcut_single_keys", locale)}
+      </label>
+      <KeyboardShortcutList locale={locale} variant="settings" />
+    </SettingsPanelCard>
+  </div>
+</section>
+
+<script>
+  import { pageLifecycle } from "../../lib/page-lifecycle"
+  import {
+    TASK_NAV_PREFS_EVENT,
+    TASK_NAV_PREFS_KEY,
+    TASK_NAV_TYPES,
+    isTaskNavTypeVisible,
+    readTaskNavPrefs,
+    setTaskNavMode,
+    toggleTaskNavChild,
+    toggleTaskNavPin,
+    type TaskNavDisplayMode,
+    type TaskNavPrefs,
+    type TaskNavTypeId,
+  } from "../../lib/task-nav-types"
+
+  function syncTaskNavUi(root: HTMLElement, prefs: TaskNavPrefs): void {
+    root.querySelectorAll<HTMLButtonElement>("[data-task-nav-mode]").forEach((btn) => {
+      const active = btn.dataset.taskNavMode === prefs.mode
+      btn.setAttribute("aria-pressed", String(active))
+      btn.classList.toggle("btn-primary", active)
+      btn.classList.toggle("btn-secondary", !active)
+    })
+
+    for (const entry of TASK_NAV_TYPES) {
+      const checkbox = root.querySelector<HTMLInputElement>(`[data-task-nav-visible="${entry.id}"]`)
+      if (checkbox) checkbox.checked = isTaskNavTypeVisible(prefs, entry.id)
+
+      const pinBtn = root.querySelector<HTMLButtonElement>(`[data-task-nav-pin="${entry.id}"]`)
+      if (pinBtn) {
+        const pinned = prefs.pinned.includes(entry.id)
+        pinBtn.setAttribute("aria-pressed", String(pinned))
+        pinBtn.classList.toggle("btn-primary", pinned)
+        pinBtn.classList.toggle("btn-ghost", !pinned)
+        pinBtn.textContent = pinned
+          ? (window.mI18n?.get("settings.task_nav_pinned") ?? "Pinned")
+          : (window.mI18n?.get("settings.task_nav_pin") ?? "Pin to nav")
+      }
+    }
+  }
+
+  function initTaskNavSettings(signal: AbortSignal): void {
+    const root = document.getElementById("task-nav-prefs-card")
+    if (!root) return
+
+    syncTaskNavUi(root, readTaskNavPrefs())
+
+    root.addEventListener("click", (event) => {
+      const target = event.target as Element | null
+      const modeBtn = target?.closest<HTMLButtonElement>("[data-task-nav-mode]")
+      if (modeBtn) {
+        const mode = modeBtn.dataset.taskNavMode as TaskNavDisplayMode | undefined
+        if (mode === "all" || mode === "custom" || mode === "none") {
+          syncTaskNavUi(root, setTaskNavMode(readTaskNavPrefs(), mode))
+        }
+        return
+      }
+
+      const pinBtn = target?.closest<HTMLButtonElement>("[data-task-nav-pin]")
+      if (pinBtn) {
+        const id = pinBtn.dataset.taskNavPin as TaskNavTypeId | undefined
+        if (id) syncTaskNavUi(root, toggleTaskNavPin(readTaskNavPrefs(), id))
+      }
+    }, { signal })
+
+    root.addEventListener("change", (event) => {
+      const input = (event.target as Element | null)?.closest<HTMLInputElement>("[data-task-nav-visible]")
+      if (!input) return
+      const id = input.dataset.taskNavVisible as TaskNavTypeId | undefined
+      if (id) syncTaskNavUi(root, toggleTaskNavChild(readTaskNavPrefs(), id))
+    }, { signal })
+
+    window.addEventListener(TASK_NAV_PREFS_EVENT, (event) => {
+      const detail = (event as CustomEvent<TaskNavPrefs>).detail ?? readTaskNavPrefs()
+      syncTaskNavUi(root, detail)
+    }, { signal })
+
+    window.addEventListener("storage", (event) => {
+      if (event.key === TASK_NAV_PREFS_KEY || event.key === null) {
+        syncTaskNavUi(root, readTaskNavPrefs())
+      }
+    }, { signal })
+  }
+
+  pageLifecycle.onPageLoad((signal) => {
+    initTaskNavSettings(signal)
+  })
+</script>
+
+<style>
+  .appearance-preferences-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+    gap: 8px 24px;
+  }
+  .appearance-preferences-grid .form-group { min-width: 0; }
+  .appearance-preferences-grid .form-select { min-height: 44px; width: 100%; }
+  .appearance-preferences-form > .flex { padding-top: 12px; border-top: 1px solid var(--border); }
+  .appearance-preferences-form .btn { min-height: 44px; }
+
+  .task-nav-mode-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 6px;
+  }
+
+  .task-nav-pref-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--bg-secondary);
+  }
+
+  .task-nav-pref-row__check {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 36px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+  }
+
+  .task-nav-pin-btn {
+    min-height: 36px;
+  }
+
+  :global(.sidebar-config-row) {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--bg-secondary);
+  }
+
+  :global(.sidebar-config-row .drag-handle) {
+    grid-row: span 2;
+    padding: 0.5rem;
+    cursor: grab;
+    color: var(--text-secondary);
+    user-select: none;
+  }
+
+  :global(.sidebar-config-row__visibility) {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: 44px;
+    min-width: 0;
+    font-weight: 500;
+    overflow-wrap: anywhere;
+  }
+
+  :global(.sidebar-config-row__moves) {
+    display: flex;
+    grid-column: 3;
+    grid-row: 1 / span 2;
+  }
+
+  :global(.sidebar-config-row__moves .btn),
+  :global(.sidebar-custom-link .btn) {
+    min-width: 44px;
+    min-height: 44px;
+    padding-inline: 0.5rem;
+  }
+
+  :global(.sidebar-config-row .sidebar-label-input) {
+    grid-column: 2;
+    min-width: 0;
+    width: 100%;
+  }
+
+  :global(.sidebar-custom-link) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.5rem;
+    padding: 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--bg-secondary);
+  }
+
+  :global(.sidebar-custom-link .form-input) {
+    width: 100%;
+    min-width: 0;
+  }
+
+  :global(.sidebar-custom-link .custom-item-href) {
+    grid-column: 1;
+  }
+
+  :global(.sidebar-custom-link .remove-custom-link) {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    align-self: center;
+  }
+
+  @media (max-width: 480px) {
+    :global(.sidebar-config-row) {
+      grid-template-columns: minmax(0, 1fr) auto;
+    }
+
+    :global(.sidebar-config-row .drag-handle) {
+      display: none;
+    }
+
+    :global(.sidebar-config-row__moves) {
+      grid-column: 2;
+    }
+
+    :global(.sidebar-config-row .sidebar-label-input) {
+      grid-column: 1;
+    }
+  }
+</style>

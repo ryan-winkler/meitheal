@@ -103,10 +103,10 @@ Offline JWT license validation using Ed25519 — no phone-home, homelab-friendly
 ## Settings Shell Patterns (Critical)
 
 - `apps/web/src/lib/settings-registry.ts` is the canonical source for settings section ids, labels, and settings-search metadata
-- Keep Settings navigation hash-based (`#personal-settings`, `#app-pwa-settings`, etc.) so the page stays ingress-safe inside HA and PWA scopes
+- Keep Settings navigation hash-based (`#look-and-feel-settings`, `#app-pwa-settings`, `#backups-reset-settings`, etc.; legacy hashes like `#personal-settings` resolve via `LEGACY_SETTINGS_SECTION_ALIASES`) so the page stays ingress-safe inside HA and PWA scopes
 - Bootstrap Settings via `apps/web/src/lib/settings-page.ts` and `pageLifecycle`; do not add long-lived component-owned `astro:page-load` listeners back into settings panels
 - `apps/web/src/lib/settings-store.ts` preserves the flat `/api/settings` contract; do not change persisted setting keys in UI refactors
-- Companion handoff links live in `apps/web/src/lib/settings-shell-controller.ts` / `apps/web/src/components/settings/SettingsSystem.astro` and must preserve ingress-scoped paths
+- Companion handoff links live in `apps/web/src/lib/settings-shell-controller.ts` / `apps/web/src/components/settings/SettingsAppPwa.astro` and must preserve ingress-scoped paths
 
 ## Search Patterns
 

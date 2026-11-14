@@ -26,10 +26,25 @@ export interface CalendarEvent {
   summary: string;
   start: string;
   end: string;
-  description?: string;
-  location?: string;
-  uid?: string;
-  recurrence_id?: string;
+  description?: string | undefined;
+  location?: string | undefined;
+  uid?: string | undefined;
+  recurrence_id?: string | undefined;
+  rrule?: string | undefined;
+}
+
+function readCalendarBound(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (value && typeof value === "object") {
+    const obj = value as { dateTime?: unknown; date?: unknown };
+    if (typeof obj.dateTime === "string") return obj.dateTime;
+    if (typeof obj.date === "string") return obj.date;
+  }
+  return "";
+}
+
+function optionalNonEmptyString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0 ? value : undefined;
 }
 
 /** HA CalendarEntityFeature bitmask values */
@@ -136,8 +151,28 @@ export async function listCalendarEvents(
     const respObj = (result as { response?: Record<string, { events?: CalendarEvent[] }> });
     // Direct access supports older HA versions or websocket-library unwrapping.
     const direct = result as Record<string, { events?: CalendarEvent[] }>;
-    const events = respObj?.response?.[entityId]?.events ?? direct?.[entityId]?.events
-    if (!Array.isArray(events)) throw new Error("Home Assistant returned no calendar event response")
+    const rawEvents = respObj?.response?.[entityId]?.events ?? direct?.[entityId]?.events
+    if (!Array.isArray(rawEvents)) throw new Error("Home Assistant returned no calendar event response")
+
+    const events: CalendarEvent[] = rawEvents.map((raw) => {
+      const record = raw as unknown as Record<string, unknown>;
+      const mapped: CalendarEvent = {
+        summary: typeof record.summary === "string" ? record.summary : "",
+        start: readCalendarBound(record.start),
+        end: readCalendarBound(record.end),
+      };
+      const description = optionalNonEmptyString(record.description);
+      const location = optionalNonEmptyString(record.location);
+      const uid = optionalNonEmptyString(record.uid);
+      const recurrenceId = optionalNonEmptyString(record.recurrence_id);
+      const rrule = optionalNonEmptyString(record.rrule);
+      if (description !== undefined) mapped.description = description;
+      if (location !== undefined) mapped.location = location;
+      if (uid !== undefined) mapped.uid = uid;
+      if (recurrenceId !== undefined) mapped.recurrence_id = recurrenceId;
+      if (rrule !== undefined) mapped.rrule = rrule;
+      return mapped;
+    });
 
     logger.log("debug", {
       event: "ha.calendar.list_events", domain: "ha", component: "ha-services",

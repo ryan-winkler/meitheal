@@ -181,7 +181,7 @@ test.describe("Tasks Shell (Kanban)", () => {
   test("narrow screens keep all task type filters inside the toolbar", async ({ page }) => {
     const toolbar = page.locator("#kanban-filter-bar")
     const types = toolbar.locator(".filter-toolbar__type-btn")
-    await expect(types).toHaveCount(4)
+    await expect(types).toHaveCount(5)
     for (const width of [320, 390]) {
       await page.setViewportSize({ width, height: 844 })
       await expect.poll(() => toolbar.evaluate(element => {

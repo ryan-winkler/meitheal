@@ -10,6 +10,9 @@
  * @see implementation_plan.md Phase 16.2
  */
 
+import Icon from "../ui/Icon.astro"
+import { mapEntityEmojiToTabler } from "../../lib/tabler-svg"
+
 export interface AreaOption {
   id: string
   name: string
@@ -33,7 +36,9 @@ const { areas = [] } = Astro.props
     aria-haspopup="listbox"
     aria-controls="area-selector-dropdown"
   >
-    <span class="area-selector__icon" data-area-icon aria-hidden="true">🗂</span>
+    <span class="area-selector__icon inline-flex items-center" data-area-icon aria-hidden="true">
+      <Icon name="folder" size={15} />
+    </span>
     <span class="area-selector__label" data-area-label>All Areas</span>
     <svg class="area-selector__chevron" width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
       <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
@@ -53,33 +58,40 @@ const { areas = [] } = Astro.props
       aria-selected="true"
       data-area-id=""
       data-area-name="All Areas"
-      data-area-icon="🗂"
+      data-area-icon="folder"
     >
-      <span class="area-selector__option-icon" aria-hidden="true">🗂</span>
+      <span class="area-selector__option-icon inline-flex items-center" aria-hidden="true">
+        <Icon name="folder" size={15} />
+      </span>
       <span class="area-selector__option-label">All Areas</span>
       <svg class="area-selector__check" width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
         <path d="M3 7L6 10L11 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
       </svg>
     </button>
 
-    {areas.map((area) => (
-      <button
-        type="button"
-        class="area-selector__option"
-        role="option"
-        aria-selected="false"
-        data-area-id={area.id}
-        data-area-name={area.name}
-        data-area-icon={area.icon}
-        data-area-color={area.color}
-      >
-        <span class="area-selector__option-icon" aria-hidden="true" style={`color: ${area.color}`}>{area.icon}</span>
-        <span class="area-selector__option-label">{area.name}</span>
-        <svg class="area-selector__check" width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-          <path d="M3 7L6 10L11 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-      </button>
-    ))}
+    {areas.map((area) => {
+      const areaTabler = mapEntityEmojiToTabler(area.icon)
+      return (
+        <button
+          type="button"
+          class="area-selector__option"
+          role="option"
+          aria-selected="false"
+          data-area-id={area.id}
+          data-area-name={area.name}
+          data-area-icon={area.icon}
+          data-area-color={area.color}
+        >
+          <span class="area-selector__option-icon inline-flex items-center" aria-hidden="true" style={`color: ${area.color}`}>
+            {areaTabler ? <Icon name={areaTabler} size={15} /> : area.icon}
+          </span>
+          <span class="area-selector__option-label">{area.name}</span>
+          <svg class="area-selector__check" width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+            <path d="M3 7L6 10L11 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
+      )
+    })}
   </div>
 </div>
 
@@ -94,10 +106,10 @@ const { areas = [] } = Astro.props
     align-items: center;
     gap: 6px;
     padding: 5px 10px;
-    border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
+    border: 1px solid var(--border);
     border-radius: 8px;
-    background: var(--surface-card, rgba(255, 255, 255, 0.04));
-    color: var(--text-primary, #e4e4e7);
+    background: var(--bg-secondary);
+    color: var(--text-primary);
     font-size: 0.8125rem;
     font-weight: 500;
     cursor: pointer;
@@ -107,14 +119,14 @@ const { areas = [] } = Astro.props
   }
 
   .area-selector__trigger:hover {
-    background: var(--surface-card-hover, rgba(255, 255, 255, 0.08));
-    border-color: var(--border-default, rgba(255, 255, 255, 0.12));
+    background: var(--bg-hover);
+    border-color: var(--border-focus);
   }
 
   .area-selector__trigger[aria-expanded="true"] {
-    background: var(--surface-card-hover, rgba(255, 255, 255, 0.08));
-    border-color: var(--accent, #818cf8);
-    box-shadow: 0 0 0 1px var(--accent, #818cf8);
+    background: var(--bg-hover);
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent);
   }
 
   .area-selector__icon {
@@ -149,12 +161,12 @@ const { areas = [] } = Astro.props
     max-width: 280px;
     max-height: 300px;
     overflow-y: auto;
-    background: var(--surface-elevated, #1e1e2e);
-    border: 1px solid var(--border-default, rgba(255, 255, 255, 0.1));
+    background: var(--bg-card);
+    border: 1px solid var(--border);
     border-radius: 10px;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.2);
+    box-shadow: var(--shadow-lg, 0 8px 24px rgba(0, 0, 0, 0.4));
     padding: 4px;
-    z-index: 1000;
+    z-index: 40;
   }
 
   .area-selector__dropdown.is-open {
@@ -183,7 +195,7 @@ const { areas = [] } = Astro.props
     border: none;
     border-radius: 6px;
     background: transparent;
-    color: var(--text-secondary, #a1a1aa);
+    color: var(--text-secondary);
     font-size: 0.8125rem;
     font-weight: 400;
     cursor: pointer;
@@ -193,12 +205,12 @@ const { areas = [] } = Astro.props
   }
 
   .area-selector__option:hover {
-    background: var(--surface-card-hover, rgba(255, 255, 255, 0.06));
-    color: var(--text-primary, #e4e4e7);
+    background: var(--bg-hover);
+    color: var(--text-primary);
   }
 
   .area-selector__option.is-selected {
-    color: var(--text-primary, #e4e4e7);
+    color: var(--text-primary);
     font-weight: 500;
   }
 

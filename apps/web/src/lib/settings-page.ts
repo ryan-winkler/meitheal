@@ -6,6 +6,7 @@ import { initSettingsController } from "@lib/settings-controller"
 import { initSettingsShell } from "@lib/settings-shell-controller"
 import { initSettingsLabels } from "@lib/settings-labels-controller"
 import { initSettingsLabelCleanup } from "@lib/settings-label-cleanup-controller"
+import { initSettingsWorkspace } from "@lib/settings-workspace-controller"
 
 function initPwaNotificationTest(): void {
   const button = document.querySelector<HTMLButtonElement>("#pwa-test-notification")
@@ -54,6 +55,7 @@ function bootSettingsPage(): void {
   initSettingsFeedback()
   initSettingsLabels(pageLifecycle.signal)
   initSettingsLabelCleanup()
+  initSettingsWorkspace(pageLifecycle.signal)
   initPwaNotificationTest()
 }
 

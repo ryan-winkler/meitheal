@@ -1,9 +1,11 @@
 import { createFocusTrap } from "@lib/focus-trap"
+import { safeIngressHref, syncIngressDestination } from "@lib/ingress-navigation"
 import { hasPriorityOverlay } from "@lib/layout-shortcuts-controller"
 import { workerAllowsNetworkOnly } from "@lib/network-only-worker"
 import { fetchOnlineSearch, searchRegistration, searchWorkerReady, searchWorkerScope } from "@lib/online-search-client"
 import { singleKeyShortcutsEnabled } from "@lib/single-key-shortcuts"
 import { pageLifecycle } from "@lib/page-lifecycle"
+import { createTablerSvgElement, type TablerIconName } from "@lib/tabler-svg"
 import { openTaskDetailHandoff } from "@lib/task-detail-handoff"
 import { EXACT_TASK_IDENTIFIER_SCORE } from "@lib/task-search-score"
 import type {
@@ -55,23 +57,29 @@ function itemMatchesQuery(item: SearchResultItem, query: string): boolean {
     .includes(needle)
 }
 
-function getIconForItem(item: SearchResultItem): string {
-  if (item.icon) return item.icon
+function resolveSearchIconName(item: SearchResultItem): TablerIconName {
+  if (item.id === "page-dashboard") return "dashboard"
+  if (item.id === "page-today") return "today"
+  if (item.id === "page-calendar") return "calendar"
+  if (item.id === "page-table") return "table"
+  if (item.id === "page-tasks") return "kanban"
+  if (item.id === "page-settings") return "settings"
+  if (item.id === "action-new-task") return "plus"
   switch (item.kind) {
     case "task":
-      return "✓"
+      return "checkbox"
     case "area":
-      return "▦"
+      return "folder"
     case "saved_filter":
-      return "⌘"
+      return "filter"
     case "setting":
-      return "⚙"
+      return "settings"
     case "action":
-      return "✦"
+      return "sparkles"
     case "page":
-      return "→"
+      return "arrow-right"
     default:
-      return "•"
+      return "search"
   }
 }
 
@@ -87,7 +95,7 @@ function isSafeUrl(url: string): boolean {
 
 function prefixIngress(href: string): string {
   if (!href.startsWith("/")) return href
-  return `${window.__ingress_path || ""}${href}`
+  return safeIngressHref(href)
 }
 
 function renderResultItem(
@@ -109,7 +117,7 @@ function renderResultItem(
   if (item.color) {
     icon.style.boxShadow = `inset 0 0 0 1px rgb(var(--border-rgb) / 0.4), 0 0 0 1px ${item.color}`
   }
-  icon.textContent = getIconForItem(item)
+  icon.replaceChildren(createTablerSvgElement(resolveSearchIconName(item), 16))
 
   const body = document.createElement("div")
   const title = document.createElement("p")
@@ -255,6 +263,13 @@ pageLifecycle.onPageLoad((signal) => {
     if (selected) {
       inputEl.setAttribute("aria-activedescendant", selected.id)
       selected.scrollIntoView({ block: "nearest" })
+      const optionRect = selected.getBoundingClientRect()
+      const listRect = resultsEl.getBoundingClientRect()
+      if (optionRect.bottom > listRect.bottom) {
+        resultsEl.scrollTop += optionRect.bottom - listRect.bottom + 8
+      } else if (optionRect.top < listRect.top) {
+        resultsEl.scrollTop -= listRect.top - optionRect.top + 8
+      }
     } else {
       inputEl.removeAttribute("aria-activedescendant")
     }
@@ -333,6 +348,7 @@ pageLifecycle.onPageLoad((signal) => {
           settingsShell.dispatchEvent(new Event("meitheal:settings-jump"))
           return
         }
+        syncIngressDestination(item.href)
         window.location.href = target
       }
     }

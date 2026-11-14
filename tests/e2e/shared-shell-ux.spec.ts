@@ -258,3 +258,39 @@ test("area disclosure keeps keyboard focus and actions separate", async ({ page,
     await request.delete(`/api/areas/${areaId}`, { headers })
   }
 })
+
+test("sidebar edge toggle, 64px collapsed rail, and unclipped controls", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 960 })
+  await page.goto("/", { waitUntil: "networkidle" })
+
+  await expect(page.locator(".shortcut-hint")).toHaveCount(0)
+
+  const sidebar = page.locator("#sidebar")
+  const edgeToggle = page.locator("#sidebar-edge-toggle")
+  const railCta = page.locator("#sidebar-rail-new-task")
+
+  await expect(sidebar).toHaveCSS("overflow", "visible")
+  await expect(edgeToggle).toBeVisible()
+  await expect(railCta).toBeVisible()
+
+  const expandedBox = (await sidebar.boundingBox())!
+  const edgeBox = (await edgeToggle.boundingBox())!
+  expect(Math.round(expandedBox.width)).toBe(248)
+  expect(Math.abs((edgeBox.x + edgeBox.width / 2) - (expandedBox.x + expandedBox.width))).toBeLessThanOrEqual(4)
+  expect(edgeBox.width).toBeGreaterThanOrEqual(24)
+  expect(edgeBox.height).toBeGreaterThanOrEqual(24)
+
+  await edgeToggle.click()
+  await expect(page.locator("body")).toHaveClass(/sidebar-collapsed/)
+  await expect.poll(async () => Math.round(((await sidebar.boundingBox())!).width)).toBe(64)
+
+  const railCtaBox = (await railCta.boundingBox())!
+  expect(Math.round(railCtaBox.width)).toBe(40)
+  expect(Math.round(railCtaBox.height)).toBe(40)
+
+  await edgeToggle.click()
+  await expect(page.locator("body")).not.toHaveClass(/sidebar-collapsed/)
+
+  await page.setViewportSize({ width: 375, height: 812 })
+  await expect(edgeToggle).toBeHidden()
+})

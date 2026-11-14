@@ -6,9 +6,9 @@ test.describe("Theme Settings", () => {
 
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => localStorage.setItem("meitheal-theme", localStorage.getItem("meitheal-theme") || "dark"));
-    await page.goto("/settings#personal-settings");
+    await page.goto("/settings#look-and-feel-settings");
     await expect(page.locator("#settings-panels")).not.toHaveAttribute("inert", "");
-    await expect(page.locator('[data-settings-nav="personal-settings"]').first()).toHaveAttribute(
+    await expect(page.locator('[data-settings-nav="look-and-feel-settings"]').first()).toHaveAttribute(
       "aria-current",
       "location",
     );
@@ -34,11 +34,14 @@ test.describe("Theme Settings", () => {
     await expect(html).toHaveAttribute("lang", "en")
     expect(await lookup()).toBe("Today")
 
+    await page.goto("/settings#language-time-settings")
     await page.locator("#locale-select").selectOption("ga")
     await expect(html).toHaveAttribute("lang", "ga")
     expect(await lookup()).toBe("Inniu")
+    await page.goto("/settings#look-and-feel-settings")
     await expect(page.locator("#appearance-settings > summary")).toHaveText("Saincheap an chuma")
 
+    await page.goto("/settings#language-time-settings")
     await page.locator("#locale-select").selectOption("en")
     await expect(html).toHaveAttribute("lang", "en")
     expect(await lookup()).toBe("Today")
@@ -79,7 +82,7 @@ test.describe("Theme Settings", () => {
     await page.waitForTimeout(500);
 
     // Re-open the page to verify persistence across a fresh navigation
-    await page.goto("/settings#personal-settings");
+    await page.goto("/settings#look-and-feel-settings");
     await expect(page.locator("#settings-panels")).not.toHaveAttribute("inert", "");
 
     // Theme should still be light

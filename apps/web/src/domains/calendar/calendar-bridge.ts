@@ -14,11 +14,13 @@
  * @domain calendar
  * @bounded-context integration
  */
-import { onEntityChange, listCalendarEvents, createCalendarEvent, updateCalendarEvent, deleteCalendarEvent } from "../ha";
+import { onEntityChange, listCalendarEvents, createCalendarEvent, updateCalendarEvent, deleteCalendarEvent, type CalendarEvent } from "../ha";
 import { emitCalendarSynced } from "../ha";
 import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability";
 import type { SyncTaskMutation } from "@domains/tasks";
 import { STATUS } from "../../lib/status-config";
+import { calendarDayFromInput, calendarToday, formatTimeInZone, shiftCalendarDay } from "../../lib/date";
+import { inferRRuleFromDates, normalizeRRule } from "./recurrence";
 
 const logger = createLogger({
   service: "meitheal-web", env: process.env.NODE_ENV ?? "development",
@@ -403,6 +405,214 @@ async function syncEntityFromHA(entityId: string, manualRetry = false): Promise<
   }
 }
 
+const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+async function readHouseholdTimezone(
+  client: ReturnType<Awaited<ReturnType<typeof getStoreModule>>["getPersistenceClient"]>,
+): Promise<string> {
+  try {
+    const res = await client.execute({
+      sql: "SELECT value FROM settings WHERE key = 'timezone' LIMIT 1",
+      args: [],
+    });
+    if (res.rows.length > 0) {
+      let raw: unknown = res.rows[0]?.value;
+      if (typeof raw === "string") {
+        try {
+          raw = JSON.parse(raw);
+        } catch {
+          /* legacy plain string */
+        }
+        if (typeof raw === "string" && raw.trim()) {
+          new Intl.DateTimeFormat("en", { timeZone: raw.trim() });
+          return raw.trim();
+        }
+      }
+    }
+  } catch {
+    /* ignore invalid/missing timezone setting */
+  }
+  return "Europe/Dublin";
+}
+
+function resolveEffectiveEndDay(
+  start: string,
+  end: string | undefined,
+  timezone: string,
+): string | null {
+  const startDay = calendarDayFromInput(start, timezone);
+  if (!startDay) return null;
+  if (!end) return startDay;
+
+  if (DATE_ONLY_PATTERN.test(end.trim())) {
+    const exclusiveEnd = end.trim();
+    return exclusiveEnd > startDay ? shiftCalendarDay(exclusiveEnd, -1) : startDay;
+  }
+
+  const endDay = calendarDayFromInput(end, timezone);
+  if (!endDay) return startDay;
+  if (endDay > startDay && formatTimeInZone(end, timezone) === "00:00") {
+    return shiftCalendarDay(endDay, -1);
+  }
+  return endDay >= startDay ? endDay : startDay;
+}
+
+export interface SeriesOccurrenceEntry {
+  start: string;
+  end?: string | undefined;
+  effectiveEndDay: string;
+}
+
+export interface GroupedCalendarSeries<T> {
+  seriesUid: string;
+  legacyCandidateUids: string[];
+  representative: T;
+  representativeStartDay: string;
+  representativeEndDate: string | null;
+  recurrenceRule: string | null;
+  occurrences: SeriesOccurrenceEntry[];
+}
+
+function compareTimestampAsc(a: string, b: string): number {
+  const aMs = Date.parse(a);
+  const bMs = Date.parse(b);
+  if (!Number.isNaN(aMs) && !Number.isNaN(bMs) && aMs !== bMs) return aMs - bMs;
+  return a.localeCompare(b);
+}
+
+/**
+ * Select the single active representative occurrence for a series in priority order:
+ * 1. Ongoing or starting today (startDay <= todayStr && effectiveEndDay >= todayStr)
+ * 2. Earliest upcoming occurrence (startDay > todayStr)
+ * 3. Most recent past occurrence
+ */
+export function selectRepresentativeOccurrence<T extends { start: string; end?: string | undefined }>(
+  items: T[],
+  todayStr: string,
+  timezone: string,
+): {
+  representative: T;
+  startDay: string;
+  effectiveEndDay: string;
+  occurrences: SeriesOccurrenceEntry[];
+} {
+  const enriched = items.map((item) => {
+    const startDay = calendarDayFromInput(item.start, timezone) ?? item.start.slice(0, 10);
+    const effectiveEndDay = resolveEffectiveEndDay(item.start, item.end, timezone) ?? startDay;
+    return { item, startDay, effectiveEndDay };
+  });
+
+  const activeToday = enriched
+    .filter((e) => e.startDay <= todayStr && e.effectiveEndDay >= todayStr)
+    .sort((a, b) => {
+      const aStartsToday = a.startDay === todayStr ? 0 : 1;
+      const bStartsToday = b.startDay === todayStr ? 0 : 1;
+      if (aStartsToday !== bStartsToday) return aStartsToday - bStartsToday;
+      return compareTimestampAsc(a.item.start, b.item.start);
+    });
+
+  const upcoming = enriched
+    .filter((e) => e.startDay > todayStr)
+    .sort((a, b) => compareTimestampAsc(a.item.start, b.item.start));
+
+  const past = enriched
+    .filter((e) => e.effectiveEndDay < todayStr)
+    .sort((a, b) => compareTimestampAsc(b.item.start, a.item.start));
+
+  const chosen = activeToday[0] ?? upcoming[0] ?? past[0] ?? enriched[0]!;
+
+  const dedupedOccurrences = new Map<string, SeriesOccurrenceEntry>();
+  for (const entry of enriched.sort((a, b) => compareTimestampAsc(a.item.start, b.item.start))) {
+    const key = `${entry.item.start}::${entry.item.end ?? ""}`;
+    if (!dedupedOccurrences.has(key)) {
+      dedupedOccurrences.set(key, {
+        start: entry.item.start,
+        end: entry.item.end,
+        effectiveEndDay: entry.effectiveEndDay,
+      });
+    }
+  }
+
+  return {
+    representative: chosen.item,
+    startDay: chosen.startDay,
+    effectiveEndDay: chosen.effectiveEndDay,
+    occurrences: Array.from(dedupedOccurrences.values()),
+  };
+}
+
+function groupHAEventsIntoSeries(
+  entityId: string,
+  events: CalendarEvent[],
+  todayStr: string,
+  timezone: string,
+): GroupedCalendarSeries<CalendarEvent>[] {
+  const withUid = new Map<string, CalendarEvent[]>();
+  const withoutUid = new Map<string, CalendarEvent[]>();
+
+  for (const evt of events) {
+    const explicitUid = evt.uid?.trim();
+    if (explicitUid) {
+      const group = withUid.get(explicitUid) ?? [];
+      group.push(evt);
+      withUid.set(explicitUid, group);
+      continue;
+    }
+
+    const normSummary = (evt.summary ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+    const isAllDay = DATE_ONLY_PATTERN.test(evt.start.trim());
+    const timeKey = isAllDay ? "all-day" : (formatTimeInZone(evt.start, timezone) ?? evt.start);
+    const key = `${normSummary}::${timeKey}`;
+    const group = withoutUid.get(key) ?? [];
+    group.push(evt);
+    withoutUid.set(key, group);
+  }
+
+  const seriesList: GroupedCalendarSeries<CalendarEvent>[] = [];
+
+  const finalizeGroup = (seriesUid: string, legacyCandidateUids: string[], group: CalendarEvent[]) => {
+    const selected = selectRepresentativeOccurrence(group, todayStr, timezone);
+    const explicitRRule = group
+      .map((evt) => normalizeRRule(evt.rrule))
+      .find((r): r is string => r !== null) ?? null;
+    const recurrenceRule = explicitRRule ?? (
+      selected.occurrences.length >= 2
+        ? inferRRuleFromDates(selected.occurrences.map((o) => o.start), timezone)
+        : null
+    );
+    const repEnd = DATE_ONLY_PATTERN.test(selected.representative.start.trim())
+      ? selected.effectiveEndDay
+      : (selected.representative.end || selected.effectiveEndDay);
+
+    seriesList.push({
+      seriesUid,
+      legacyCandidateUids,
+      representative: selected.representative,
+      representativeStartDay: selected.startDay,
+      representativeEndDate: repEnd,
+      recurrenceRule,
+      occurrences: selected.occurrences,
+    });
+  };
+
+  for (const [uid, group] of withUid) {
+    finalizeGroup(uid, [uid], group);
+  }
+
+  for (const [key, group] of withoutUid) {
+    const legacyPerOcc = group.map((evt) => `ha-cal-${entityId}-${evt.summary}-${evt.start}`);
+    const seriesKeyUid = `ha-cal-series-${entityId}-${key}`;
+    if (group.length > 1) {
+      finalizeGroup(seriesKeyUid, [seriesKeyUid, ...legacyPerOcc], group);
+    } else {
+      const singleUid = legacyPerOcc[0]!;
+      finalizeGroup(singleUid, [singleUid, seriesKeyUid], group);
+    }
+  }
+
+  return seriesList;
+}
+
 /** Inner sync logic — always called within concurrency guard */
 async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState | null): Promise<CalendarSyncCounts> {
 
@@ -434,17 +644,31 @@ async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState |
     await ensureSchemaOnce();
     const mod = await getStoreModule();
     const client = mod.getPersistenceClient();
+    const timezone = await readHouseholdTimezone(client);
+    const todayStr = calendarToday(timezone, now);
 
     let created = 0;
     let updated = 0;
     let skipped = 0;
 
+    // ── Loop prevention: skip events that Meitheal pushed outbound ──
+    const inboundEvents: CalendarEvent[] = [];
+    for (const evt of events) {
+      if (evt.description && /Added from Meitheal/i.test(evt.description)) {
+        skipped++;
+      } else {
+        inboundEvents.push(evt);
+      }
+    }
+
+    const seriesList = groupHAEventsIntoSeries(entityId, inboundEvents, todayStr, timezone);
+
     // Batch dedup: pre-fetch existing provider_event_ids scoped to entityId in <= 200-param chunks
-    const eventUids = events.map((evt) => evt.uid ?? `ha-cal-${entityId}-${evt.summary}-${evt.start}`);
+    const lookupUids = Array.from(new Set(seriesList.flatMap((s) => s.legacyCandidateUids)));
     const existingLookup = await mod.findTasksByExternalSyncIds({
       source: "calendar",
       entityId,
-      externalIds: eventUids,
+      externalIds: lookupUids,
     });
     const existingMap = new Map<string, string>();
     for (const [uid, match] of existingLookup.entries()) {
@@ -453,10 +677,12 @@ async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState |
 
     const unmatchedSummaries = [
       ...new Set(
-        events
-          .map((evt, idx) => ({ evt, uid: eventUids[idx]! }))
-          .filter(({ evt, uid }) => !existingMap.has(uid) && Boolean(evt.summary) && !(evt.description && /Added from Meitheal/i.test(evt.description)))
-          .map(({ evt }) => evt.summary),
+        seriesList
+          .filter((series) =>
+            !series.legacyCandidateUids.some((candidate) => existingMap.has(candidate)) &&
+            Boolean(series.representative.summary),
+          )
+          .map((series) => series.representative.summary),
       ),
     ];
     const openTitleToTaskId = new Map<string, string>();
@@ -480,22 +706,23 @@ async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState |
     const mutationSummaries: string[] = [];
     const nowMs = Date.now();
 
-    for (let i = 0; i < events.length; i++) {
-      const evt = events[i]!;
-      const uid = eventUids[i]!;
-      let existingTaskId = existingMap.get(uid);
-
-      // ── Loop prevention: skip events that Meitheal pushed outbound ──
-      if (evt.description && /Added from Meitheal/i.test(evt.description)) {
-        skipped++;
-        continue;
-      }
-
+    for (const series of seriesList) {
+      const evt = series.representative;
+      const uid = series.seriesUid;
+      const matchedCandidateUid = series.legacyCandidateUids.find((candidate) => existingMap.has(candidate));
+      let existingTaskId = matchedCandidateUid ? existingMap.get(matchedCandidateUid) : undefined;
       const confirmationPayload = JSON.stringify({
         summary: evt.summary,
         start: evt.start,
         end: evt.end,
+        effective_end: series.representativeEndDate,
         entity_id: entityId,
+        rrule: series.recurrenceRule,
+        occurrences: series.occurrences.map((o) => ({
+          start: o.start,
+          end: o.end,
+          effective_end: o.effectiveEndDay,
+        })),
       });
 
       // Fallback dedup: if UID lookup fails, check if an open task with this title exists.
@@ -529,11 +756,24 @@ async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState |
         mutations.push({
           kind: "update",
           taskId: existingTaskId,
+          title: evt.summary,
           dueDate: evt.start,
+          startDate: evt.start,
+          endDate: series.representativeEndDate,
+          recurrenceRule: series.recurrenceRule,
+          taskKind: "calendar_event",
           updateDueDate: true,
           description: inboundDesc,
           ensureCalendarSyncLabel: true,
           updatedAt: nowMs,
+          confirmation: {
+            source: "calendar",
+            entityId,
+            externalId: uid,
+            previousExternalId: matchedCandidateUid ?? uid,
+            confirmationSource: "ha.calendar_sync",
+            payload: confirmationPayload,
+          },
         });
         mutationSummaries.push(evt.summary);
       } else {
@@ -555,9 +795,13 @@ async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState |
           status: "pending",
           priority: 3,
           dueDate: evt.start,
+          startDate: evt.start,
+          endDate: series.representativeEndDate,
+          recurrenceRule: series.recurrenceRule,
           labels: ["calendar-sync"],
           areaId: "default",
           taskType: "task",
+          taskKind: "calendar_event",
           createdAt: nowMs,
           confirmation: {
             source: "calendar",
@@ -599,7 +843,7 @@ async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState |
                   AND json_extract(c.payload, '$.entity_id') = ?`,
           args: [entityId],
         });
-        const currentUids = new Set(eventUids);
+        const currentUids = new Set(seriesList.map((s) => s.seriesUid));
         for (const row of allConfirmations.rows) {
           const eventUid = String(row.provider_event_id);
           if (!currentUids.has(eventUid)) {
@@ -624,15 +868,16 @@ async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState |
       }
     }
 
+    const totalSeries = seriesList.length + skipped;
     if (errors > 0) {
-      return { created, updated, total: events.length, failed: `${errors} calendar merge or reconciliation operation(s) failed` }
+      return { created, updated, total: totalSeries, failed: `${errors} calendar merge or reconciliation operation(s) failed` }
     }
 
     logger.log("info", {
       event: "calendar.sync.from_ha", domain: "calendar", component: "calendar-bridge",
       request_id: SYS_REQ,
-      message: `Calendar sync complete for ${entityId}: ${created} created, ${updated} updated, ${skipped} skipped from ${events.length} events`,
-      metadata: { entity_id: entityId, sync_mode: state?.config.syncMode ?? "bidirectional", event_count: events.length, created, updated, skipped },
+      message: `Calendar sync complete for ${entityId}: ${created} created, ${updated} updated, ${skipped} skipped from ${totalSeries} series (${events.length} instances)`,
+      metadata: { entity_id: entityId, sync_mode: state?.config.syncMode ?? "bidirectional", event_count: totalSeries, instance_count: events.length, created, updated, skipped },
     });
 
     // Emit HA event for Node-RED/n8n automation
@@ -643,10 +888,10 @@ async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState |
       sync_direction: directionMap[syncMode] ?? "bidirectional",
       events_created: created,
       events_updated: updated,
-      total_events: events.length,
+      total_events: totalSeries,
     }).catch(() => { /* fire-and-forget */ });
 
-    return { created, updated, total: events.length };
+    return { created, updated, total: totalSeries };
   } catch (err) {
     logger.log("error", {
       event: "calendar.sync.merge_failed", domain: "calendar", component: "calendar-bridge",
@@ -1133,68 +1378,134 @@ async function importCalDAVEvents(): Promise<CalendarSyncCounts> {
     const now = new Date();
     const start = new Date(now.getTime() - 7 * 86400000);  // -7 days
     const end = new Date(now.getTime() + 30 * 86400000);    // +30 days
+    const timezone = await readHouseholdTimezone(client);
+    const todayStr = calendarToday(timezone, now);
 
     let failures = 0
 
     for (const cal of calendars) {
       try {
         const events = await listCalDAVEvents(config, cal.href, start, end);
-        totalEvents += events.length;
+        const groupedByUid = new Map<string, typeof events>();
+        for (const evt of events) {
+          const group = groupedByUid.get(evt.uid) ?? [];
+          group.push(evt);
+          groupedByUid.set(evt.uid, group);
+        }
+        totalEvents += groupedByUid.size;
 
         // Batch dedup: pre-fetch existing UIDs for this calendar in <= 200-param chunks
-        const calUids = events.map((evt) => evt.uid);
-        const existingCalUids = new Set<string>();
+        const calUids = Array.from(groupedByUid.keys());
+        const existingCalMap = new Map<string, string>();
         for (let offset = 0; offset < calUids.length; offset += 200) {
           const chunk = calUids.slice(offset, offset + 200);
           const uidPlaceholders = chunk.map(() => "?").join(", ");
           const existingCalRes = await client.execute({
-            sql: `SELECT provider_event_id FROM calendar_confirmations WHERE provider_event_id IN (${uidPlaceholders}) AND source = 'caldav'`,
+            sql: `SELECT provider_event_id, task_id FROM calendar_confirmations WHERE provider_event_id IN (${uidPlaceholders}) AND source = 'caldav'`,
             args: chunk,
           });
-          for (const r of existingCalRes.rows) {
-            existingCalUids.add(String(r.provider_event_id));
+          for (const row of existingCalRes.rows) {
+            existingCalMap.set(String(row.provider_event_id), String(row.task_id));
           }
         }
 
         const nowMs = Date.now();
         const calMutations: SyncTaskMutation[] = [];
-        for (const evt of events) {
-          if (existingCalUids.has(evt.uid)) {
-            totalUpdated++;
-            continue;
-          }
-          existingCalUids.add(evt.uid);
-          calMutations.push({
-            kind: "create",
-            taskId: crypto.randomUUID(),
-            idempotencyKey: `caldav-sync-${evt.uid}`,
-            title: evt.summary,
-            description: evt.description || `📡 CalDAV event from ${cal.displayName}`,
-            status: "backlog",
-            priority: 3,
-            dueDate: evt.dtstart,
-            labels: ["calendar-sync"],
-            areaId: "default",
-            taskType: "task",
-            createdAt: nowMs,
-            confirmation: {
-              source: "calendar",
-              entityId: cal.displayName,
-              externalId: evt.uid,
-              confirmationSource: "caldav",
-              payload: JSON.stringify({
-                summary: evt.summary,
-                dtstart: evt.dtstart,
-                calendar: cal.displayName,
-                entity_id: cal.displayName,
-              }),
-            },
+        for (const [uid, group] of groupedByUid) {
+          const wrapped = group.map((evt) => ({
+            evt,
+            start: evt.dtstart,
+            end: evt.dtend,
+          }));
+          const selected = selectRepresentativeOccurrence(wrapped, todayStr, timezone);
+          const repEvt = selected.representative.evt;
+          const explicitRRule = group
+            .map((evt) => normalizeRRule(evt.rrule))
+            .find((r): r is string => r !== null) ?? null;
+          const recurrenceRule = explicitRRule ?? (
+            selected.occurrences.length >= 2
+              ? inferRRuleFromDates(selected.occurrences.map((o) => o.start), timezone)
+              : null
+          );
+          const repEnd = DATE_ONLY_PATTERN.test(repEvt.dtstart.trim())
+            ? selected.effectiveEndDay
+            : (repEvt.dtend || selected.effectiveEndDay);
+
+          const calDescParts: string[] = [];
+          if (repEvt.location) calDescParts.push(`📍 ${repEvt.location}`);
+          if (repEvt.description) calDescParts.push(repEvt.description);
+          const inboundCalDesc = calDescParts.length > 0 ? calDescParts.join("\n\n") : null;
+
+          const payload = JSON.stringify({
+            summary: repEvt.summary,
+            dtstart: repEvt.dtstart,
+            dtend: repEvt.dtend,
+            effective_end: repEnd,
+            calendar: cal.displayName,
+            entity_id: cal.displayName,
+            rrule: recurrenceRule,
+            occurrences: selected.occurrences.map((o) => ({
+              start: o.start,
+              end: o.end,
+              effective_end: o.effectiveEndDay,
+            })),
           });
+
+          const existingTaskId = existingCalMap.get(uid);
+          if (existingTaskId) {
+            calMutations.push({
+              kind: "update",
+              taskId: existingTaskId,
+              title: repEvt.summary,
+              description: inboundCalDesc,
+              dueDate: repEvt.dtstart,
+              startDate: repEvt.dtstart,
+              endDate: repEnd,
+              recurrenceRule,
+              taskKind: "calendar_event",
+              updatedAt: nowMs,
+              confirmation: {
+                source: "calendar",
+                entityId: cal.displayName,
+                externalId: uid,
+                confirmationSource: "caldav",
+                payload,
+              },
+            });
+          } else {
+            existingCalMap.set(uid, uid);
+            calMutations.push({
+              kind: "create",
+              taskId: crypto.randomUUID(),
+              idempotencyKey: `caldav-sync-${uid}`,
+              title: repEvt.summary,
+              description: inboundCalDesc ?? `📡 CalDAV event from ${cal.displayName}`,
+              status: "backlog",
+              priority: 3,
+              dueDate: repEvt.dtstart,
+              startDate: repEvt.dtstart,
+              endDate: repEnd,
+              recurrenceRule,
+              labels: ["calendar-sync"],
+              areaId: "default",
+              taskType: "task",
+              taskKind: "calendar_event",
+              createdAt: nowMs,
+              confirmation: {
+                source: "calendar",
+                entityId: cal.displayName,
+                externalId: uid,
+                confirmationSource: "caldav",
+                payload,
+              },
+            });
+          }
         }
 
         if (calMutations.length > 0) {
           const commitRes = await mod.commitSyncMutationChunks(calMutations);
           totalCreated += commitRes.created;
+          totalUpdated += commitRes.updated;
           if (commitRes.errors.length > 0) {
             failures++;
             logger.log("warn", {

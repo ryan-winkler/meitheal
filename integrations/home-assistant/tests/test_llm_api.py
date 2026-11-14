@@ -4,7 +4,6 @@ from unittest.mock import ANY, AsyncMock, MagicMock
 
 import probatio
 import pytest
-
 from homeassistant.auth.const import GROUP_ID_USER
 from homeassistant.auth.models import User
 from homeassistant.config_entries import ConfigEntryState
@@ -20,7 +19,9 @@ except ModuleNotFoundError as error:
     if error.name != "pytest_homeassistant":
         raise
     from pytest_homeassistant_custom_component.common import MockConfigEntry
-    from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMocker
+    from pytest_homeassistant_custom_component.test_util.aiohttp import (
+        AiohttpClientMocker,
+    )
 
 from custom_components.meitheal.api import MeithealApi
 from custom_components.meitheal.const import DOMAIN
@@ -187,6 +188,101 @@ async def test_cached_tools_recheck_user_entry_and_arguments(
 
 
 @pytest.mark.skipif(not NATIVE_ADMIN, reason="Core does not provide an admin-aware registry")
+@pytest.mark.parametrize(
+    "platform,assistant,expected_name",
+    [
+        ("google_generative_ai_conversation", "conversation", "Gemini Conversation"),
+        ("test", "Gemini", "Gemini Conversation"),
+        ("conversation", "Kitchen", "Home Assistant Assist (Kitchen)"),
+        ("conversation", "conversation", "Home Assistant Conversation"),
+    ],
+)
+async def test_llm_write_tools_send_verified_origin_headers(
+    hass: HomeAssistant,
+    hass_admin_user: User,
+    platform: str,
+    assistant: str,
+    expected_name: str,
+) -> None:
+    """Create and complete LLM tools attach verified conversation-agent provenance headers."""
+    entry = MockConfigEntry(domain=DOMAIN, title="llm-origin", state=ConfigEntryState.LOADED)
+    entry.add_to_hass(hass)
+    client = AsyncMock(spec=MeithealApi)
+    client.async_request.side_effect = [
+        {"id": "task-created"},
+        {"id": "task-created", "status": "done"},
+    ]
+    entry.runtime_data = MeithealCoordinator(hass, client)
+    entry.runtime_data.async_request_refresh = AsyncMock()
+    unregister = async_register_llm_api(hass, entry)
+    assert unregister is not None
+    try:
+        ctx = llm.LLMContext(
+            platform=platform,
+            context=Context(user_id=hass_admin_user.id),
+            language="en",
+            assistant=assistant,
+            device_id=None,
+        )
+        instance = await llm.async_get_api(hass, f"meitheal_tasks-{entry.entry_id}", ctx)
+        await async_call(instance, CREATE_TASK, {"title": "Water plants"})
+        await async_call(instance, COMPLETE_TASK, {"task_id": "task-created"})
+    finally:
+        unregister()
+
+    expected_headers = {
+        "X-Meitheal-Origin-Kind": "conversation_agent",
+        "X-Meitheal-Origin-Name": expected_name,
+        "X-Meitheal-Origin-Target": "/config/voice-assistants/assistants",
+    }
+    assert client.async_request.await_count == 2
+    assert client.async_request.await_args_list[0].kwargs["extra_headers"] == expected_headers
+    assert client.async_request.await_args_list[1].kwargs["extra_headers"] == expected_headers
+
+
+async def test_intent_origin_scope_attaches_assist_headers_over_http(
+    hass: HomeAssistant,
+    hass_admin_user: User,
+    aioclient_mock: AiohttpClientMocker,
+) -> None:
+    """Custom intents attach Home Assistant Assist origin headers via MeithealApi without changing coordinator args."""
+    from custom_components.meitheal import intents
+    from homeassistant.helpers import intent
+
+    origin = "https://tasks.example.test"
+    token = "mth_" + "c" * 64
+    aioclient_mock.get(f"{origin}/api/tasks", json={"tasks": []})
+    aioclient_mock.get(f"{origin}/api/gamification", status=403)
+    aioclient_mock.post(f"{origin}/api/tasks", json={"id": "assist-task-1"})
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={CONF_HOST: "tasks.example.test", CONF_PORT: 443, CONF_SSL: True, "api_token": token},
+    )
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    try:
+        await intent.async_handle(
+            hass,
+            "conversation",
+            intents.INTENT_ADD_TASK,
+            {"item": {"value": "Buy tea"}},
+            context=Context(user_id=hass_admin_user.id),
+        )
+    finally:
+        await hass.config_entries.async_unload(entry.entry_id)
+
+    post_calls = [
+        headers
+        for method, url, _, headers in aioclient_mock.mock_calls
+        if method == "POST" and str(url) == f"{origin}/api/tasks"
+    ]
+    assert len(post_calls) == 1
+    assert post_calls[0]["X-Meitheal-Origin-Kind"] == "conversation_agent"
+    assert post_calls[0]["X-Meitheal-Origin-Name"] == "Home Assistant Assist"
+    assert post_calls[0]["X-Meitheal-Origin-Target"] == "/config/voice-assistants/assistants"
+
+
+@pytest.mark.skipif(not NATIVE_ADMIN, reason="Core does not provide an admin-aware registry")
 async def test_manage_api_reads_and_changes_tasks_for_the_caller(
     hass: HomeAssistant, hass_admin_user: User
 ) -> None:
@@ -300,6 +396,11 @@ async def test_manage_api_reads_and_changes_tasks_for_the_caller(
         assert stabilized.data["count"] == 201
         client.async_request.side_effect = None
 
+        expected_origin_headers = {
+            "X-Meitheal-Origin-Kind": "conversation_agent",
+            "X-Meitheal-Origin-Name": "Home Assistant Conversation",
+            "X-Meitheal-Origin-Target": "/config/voice-assistants/assistants",
+        }
         client.async_request.return_value = {"id": "new", "title": "Plan", "assigned_to": me}
         created = await async_call(
             instance, "meitheal_create_task", {"title": "Plan", "priority": 2, "assignee": "me"}
@@ -311,6 +412,7 @@ async def test_manage_api_reads_and_changes_tasks_for_the_caller(
             payload={"title": "Plan", "priority": 2, "assigned_to": me},
             read_json=True,
             event_authority=ANY,
+            extra_headers=expected_origin_headers,
         )
 
         client.async_request.return_value = {"id": "open", "title": "Open", "status": "active", "assigned_to": None}
@@ -322,6 +424,7 @@ async def test_manage_api_reads_and_changes_tasks_for_the_caller(
         client.async_request.assert_awaited_with(
             "PUT", "/api/tasks/open",
             payload={"status": "active", "assigned_to": None}, read_json=True, event_authority=ANY,
+            extra_headers=expected_origin_headers,
         )
         coordinator.fire_event.assert_called_with(
             "meitheal_task_updated",
@@ -350,6 +453,7 @@ async def test_manage_api_reads_and_changes_tasks_for_the_caller(
         assert keyed.data["ticket_key"] == "MTH-42"
         client.async_request.assert_awaited_with(
             "PUT", "/api/tasks/mth-42", payload={"title": "Via key"}, read_json=True, event_authority=ANY,
+            extra_headers=expected_origin_headers,
         )
 
         client.async_request.return_value = {"id": 7, "author": "Automation: Home Assistant"}
@@ -359,6 +463,7 @@ async def test_manage_api_reads_and_changes_tasks_for_the_caller(
         assert comment.data == {"id": 7, "author": "Automation: Home Assistant"}
         client.async_request.assert_awaited_with(
             "POST", "/api/tasks/open/comments", payload={"content": "Done, see notes."}, read_json=True,
+            extra_headers=expected_origin_headers,
         )
 
         client.async_request.return_value = {"comments": [{"author": "Aoife", "content": "Thanks", "created_at": 1, "owner": "omit"}]}

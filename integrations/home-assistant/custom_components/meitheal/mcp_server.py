@@ -269,6 +269,10 @@ def _is_valid_jsonrpc_id(raw_id: Any) -> bool:
 async def handle_mcp_request(
     coordinator: MeithealCoordinator,
     request_body: Any,
+    *,
+    origin_kind: str | None = None,
+    origin_name: str | None = None,
+    origin_target: str | None = None,
 ) -> dict[str, Any] | None:
     """Process an MCP tool call request.
 
@@ -372,8 +376,27 @@ async def handle_mcp_request(
                 "error": {"code": -32602, "message": "Invalid params: tool name is required"},
             }
 
+        meta = params.get("_meta")
+        meta_dict = meta if isinstance(meta, dict) else {}
+        # An MCP caller can name its client, but cannot claim to be an HA automation,
+        # script or voice agent: those kinds are set only by the integration itself.
+        effective_kind = origin_kind or "mcp"
+        effective_name = (
+            meta_dict.get("origin_name") if isinstance(meta_dict.get("origin_name"), str) else None
+        ) or origin_name or "Home Assistant MCP"
+        effective_target = (
+            meta_dict.get("origin_target") if isinstance(meta_dict.get("origin_target"), str) else None
+        ) or origin_target
+
         try:
-            result = await _execute_tool(coordinator, tool_name, arguments)
+            result = await _execute_tool(
+                coordinator,
+                tool_name,
+                arguments,
+                origin_kind=effective_kind,
+                origin_name=effective_name,
+                origin_target=effective_target,
+            )
             return {
                 "jsonrpc": "2.0",
                 "id": req_id,
@@ -454,8 +477,18 @@ async def _execute_tool(
     coordinator: MeithealCoordinator,
     tool_name: str,
     args: dict[str, Any],
+    *,
+    origin_kind: str = "mcp",
+    origin_name: str = "Home Assistant MCP",
+    origin_target: str | None = None,
 ) -> Any:
     """Execute an MCP tool and return the result."""
+    # Provenance comes from the call context, never from tool arguments.
+    origin_kwargs = {
+        "origin_kind": origin_kind,
+        "origin_name": origin_name,
+        "origin_target": origin_target,
+    }
     allowed_fields = _TOOL_ALLOWED_FIELDS.get(tool_name)
     if allowed_fields is not None:
         unknown_fields = sorted(set(args) - allowed_fields)
@@ -474,6 +507,7 @@ async def _execute_tool(
             priority=priority,
             due_date=due_date,
             assigned_to=assigned_to,
+            **origin_kwargs,
         )
         return {"status": "created", "title": title}
 
@@ -485,12 +519,13 @@ async def _execute_tool(
         await coordinator.async_complete_task(
             task_id=task_id,
             title=title,
+            **origin_kwargs,
         )
         return {"status": "completed"}
 
     elif tool_name == "deleteTask":
         task_id = _require_str(args, "id", "deleteTask")
-        await coordinator.async_delete_task(task_id=task_id)
+        await coordinator.async_delete_task(task_id=task_id, **origin_kwargs)
         return {"status": "deleted"}
 
     elif tool_name == "updateTask":
@@ -518,7 +553,7 @@ async def _execute_tool(
             updates["description"] = description
         if not updates:
             raise ValueError("updateTask requires at least one updatable field")
-        await coordinator.async_update_task(task_id, updates)
+        await coordinator.async_update_task(task_id, updates, **origin_kwargs)
         return {"status": "updated", "id": task_id}
 
     elif tool_name == "searchTasks":
@@ -711,7 +746,7 @@ async def _execute_tool(
         failed = []
         for t in targets:
             try:
-                await coordinator.async_complete_task(task_id=t.id)
+                await coordinator.async_complete_task(task_id=t.id, **origin_kwargs)
                 completed.append(t.title)
             except (HomeAssistantError, ValueError) as err:
                 _LOGGER.warning("batchComplete failed for task %s: %s", t.id, err)
@@ -811,7 +846,13 @@ class MeithealMcpView(HomeAssistantView):
                 status=503,
             )
 
-        response = await handle_mcp_request(coordinator, body)
+        response = await handle_mcp_request(
+            coordinator,
+            body,
+            origin_kind="mcp",
+            origin_name=request.headers.get("X-Meitheal-Origin-Name") or "Home Assistant MCP",
+            origin_target=request.headers.get("X-Meitheal-Origin-Target"),
+        )
         if response is None:
             return web.Response(status=202)
         return web.json_response(response)

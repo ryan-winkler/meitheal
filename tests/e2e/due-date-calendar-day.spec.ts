@@ -16,7 +16,9 @@ test("date-only due dates count whole calendar days in the user's timezone", () 
   expect(calendarDaysFromToday("2031-03-08", "Europe/Dublin", now)).toBe(-1)
   expect(calendarDaysFromToday("2031-03-10", "Europe/Dublin", now)).toBe(1)
   expect(calendarDaysFromToday("2031-02-30", "Europe/Dublin", now)).toBeNull()
-  expect(calendarDaysFromToday("2031-03-08T10:00:00Z", "Europe/Dublin", now)).toBeNull()
+  expect(calendarDaysFromToday("not-a-date", "Europe/Dublin", now)).toBeNull()
+  expect(calendarDaysFromToday("2031-03-08T10:00:00Z", "Europe/Dublin", now)).toBe(-1)
+  expect(calendarDaysFromToday("2031-03-09T06:00:00Z", "America/Los_Angeles", now)).toBe(0)
 })
 
 test("date-only due dates keep their day in absolute formats west of UTC", () => {

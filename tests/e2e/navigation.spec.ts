@@ -141,4 +141,174 @@ test.describe("Responsive Navigation", () => {
     await expect(views.locator('[aria-current="page"]')).toHaveCount(1)
     await expect(table).toHaveAttribute("aria-current", "page")
   })
+
+  test("Settings -> Dashboard under HA ingress does not bounce back to /settings", async ({ page, baseURL }) => {
+    const ingressPrefix = "/api/hassio_ingress/test-token";
+    const origin = new URL(baseURL!).origin;
+
+    await page.route(`${origin}${ingressPrefix}**`, async (route) => {
+      const reqUrl = new URL(route.request().url());
+      const strippedPath = reqUrl.pathname.slice(ingressPrefix.length) || "/";
+      const targetUrl = `${origin}${strippedPath}${reqUrl.search}`;
+      const response = await page.request.fetch(targetUrl, {
+        method: route.request().method(),
+        headers: {
+          ...route.request().headers(),
+          "x-ingress-path": ingressPrefix,
+          origin,
+        },
+      });
+      const contentType = response.headers()["content-type"] || "";
+      if (contentType.includes("text/html")) {
+        const rawHtml = await response.text();
+        const rewritten = rawHtml
+          .replace("<head>", `<head><script>window.__ingress_path=${JSON.stringify(ingressPrefix)};</script>`)
+          .replace(/href="\/(?!\/)/g, `href="${ingressPrefix}/`);
+        await route.fulfill({
+          status: response.status(),
+          headers: response.headers(),
+          body: rewritten,
+        });
+        return;
+      }
+      await route.fulfill({ response });
+    });
+
+    await page.setViewportSize({ width: 1440, height: 960 });
+    await page.goto(`${ingressPrefix}/settings`, { waitUntil: "networkidle" });
+    await expect(page.locator("#settings-shell")).toBeVisible();
+
+    await page.locator('.sidebar .nav-link[data-page="dashboard"]').click();
+    await expect(page).toHaveURL(new RegExp(`${ingressPrefix}/?$`));
+    await expect(page.locator("#main-content")).toBeVisible();
+
+    // Wait past any delayed restore scripts and ensure we did not bounce back to /settings
+    await page.waitForTimeout(400);
+    await expect(page).toHaveURL(new RegExp(`${ingressPrefix}/?$`));
+    const storedPath = await page.evaluate(() => {
+      const raw = sessionStorage.getItem("meitheal-navigation-state");
+      return raw ? JSON.parse(raw).path : null;
+    });
+    expect(storedPath).toBe("/");
+    await page.unrouteAll({ behavior: "ignoreErrors" });
+  });
+
+  test('Desktop: "Every Day" project label in Areas tree is not prematurely truncated', async ({ page, request, baseURL }) => {
+    const headers = { origin: new URL(baseURL!).origin };
+    const areaRes = await request.post("/api/areas", {
+      headers,
+      data: { name: `Routine Area ${crypto.randomUUID().slice(0, 8)}` },
+    });
+    expect(areaRes.status()).toBe(201);
+    const { id: areaId } = await areaRes.json();
+    let projectId: string | undefined;
+
+    try {
+      const projectRes = await request.post("/api/projects", {
+        headers,
+        data: { title: "Every Day", area_id: areaId },
+      });
+      expect(projectRes.status()).toBe(201);
+      projectId = (await projectRes.json()).id;
+
+      await page.setViewportSize({ width: 1440, height: 960 });
+      await page.goto("/", { waitUntil: "networkidle" });
+
+      const area = page.locator(`[data-area-group="${areaId}"]`);
+      const toggle = area.locator(".stree__area-toggle");
+      if ((await toggle.getAttribute("aria-expanded")) === "false") {
+        await toggle.click();
+      }
+
+      const label = area.locator(`.stree__project-link[href="/projects/${projectId}"] .stree__project-name`);
+      await expect(label).toHaveText("Every Day");
+      const metrics = await label.evaluate((el) => ({
+        scrollWidth: el.scrollWidth,
+        clientWidth: el.clientWidth,
+        textWidth: el.getBoundingClientRect().width,
+      }));
+      expect(metrics.textWidth).toBeGreaterThan(50);
+      expect(metrics.scrollWidth).toBeLessThanOrEqual(metrics.clientWidth + 1);
+    } finally {
+      if (projectId) await request.delete(`/api/projects/${projectId}`, { headers });
+      await request.delete(`/api/areas/${areaId}`, { headers });
+    }
+  });
+
+  test("Desktop: shortcut badges render inline inside nav row bounds without clipping", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 960 });
+    await page.goto("/", { waitUntil: "networkidle" });
+
+    const todayLink = page.locator('.sidebar .nav-link[data-page="today"]');
+    await expect(todayLink).toBeVisible();
+    await todayLink.hover();
+
+    const badge = todayLink.locator(".shortcut-badge");
+    await expect(badge).toBeVisible();
+    const layout = await todayLink.evaluate((link) => {
+      const badgeEl = link.querySelector<HTMLElement>(".shortcut-badge");
+      if (!badgeEl) return null;
+      const l = link.getBoundingClientRect();
+      const b = badgeEl.getBoundingClientRect();
+      return {
+        position: getComputedStyle(badgeEl).position,
+        insideX: b.left >= l.left - 0.5 && b.right <= l.right + 0.5,
+        insideY: b.top >= l.top - 0.5 && b.bottom <= l.bottom + 0.5,
+      };
+    });
+    expect(layout).not.toBeNull();
+    expect(layout!.position).toBe("static");
+    expect(layout!.insideX).toBe(true);
+    expect(layout!.insideY).toBe(true);
+
+    await page.locator("#sidebar-edge-toggle").click();
+    await expect(page.locator("body")).toHaveClass(/sidebar-collapsed/);
+    await todayLink.hover();
+    await expect(badge).toBeHidden();
+  });
+
+  test("Task Types submenu toggle, visibility config, pinning, and Events filter work end-to-end", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 960 });
+    await page.addInitScript(() => localStorage.removeItem("meitheal-task-nav-prefs"));
+    await page.goto("/", { waitUntil: "networkidle" });
+
+    await page.locator("#tasks-submenu-toggle").click();
+    const submenu = page.locator("#tasks-nav-submenu");
+    await expect(submenu).toBeVisible();
+    await expect(submenu.locator('[data-task-nav-item="standard"]')).toBeVisible();
+    await expect(submenu.locator('[data-task-nav-item="shopping_item"]')).toBeVisible();
+    await expect(submenu.locator('[data-task-nav-item="checklist"]')).toBeVisible();
+    await expect(submenu.locator('[data-task-nav-item="calendar_event"]')).toBeVisible();
+
+    await page.locator("#tasks-submenu-config-btn").click();
+    const popover = page.locator("#tasks-nav-config-popover");
+    await expect(popover).toBeVisible();
+    await popover.locator('[data-task-nav-mode="none"]').click();
+    await expect(submenu).toBeHidden();
+
+    await popover.locator('[data-task-nav-mode="all"]').click();
+    await expect(submenu).toBeVisible();
+
+    await popover.locator('[data-task-nav-toggle="shopping_item"]').click();
+    await expect(submenu.locator('[data-task-nav-item="shopping_item"]')).toBeHidden();
+    await popover.locator('[data-task-nav-toggle="shopping_item"]').click();
+    await expect(submenu.locator('[data-task-nav-item="shopping_item"]')).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(popover).toBeHidden();
+
+    await submenu.locator('[data-task-nav-item="calendar_event"] [data-task-nav-pin="calendar_event"]').click();
+    const pinnedRow = page.locator('[data-task-nav-pinned-item="calendar_event"]');
+    await expect(pinnedRow).toBeVisible();
+
+    await pinnedRow.locator('[data-task-nav-pinned-link="calendar_event"]').click();
+    await expect(page).toHaveURL(/\/tasks\?types=calendar_event/);
+
+    await expect(pinnedRow.locator('[data-task-nav-pinned-link="calendar_event"]')).toHaveClass(/active/);
+    await expect(page.locator('.sidebar .nav-link[data-page="tasks"]')).not.toHaveClass(/active/);
+    await expect(page.locator('.filter-toolbar__type-btn[data-type="calendar_event"]').first()).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator('.filter-toolbar__type-btn[data-type="shopping_item"]').first()).toHaveAttribute("aria-pressed", "false");
+
+    await pinnedRow.locator(".task-nav-unpin-btn").click();
+    await expect(pinnedRow).toBeHidden();
+  });
 });

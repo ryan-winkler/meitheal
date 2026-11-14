@@ -6,10 +6,12 @@
         import { createClientLogger, registerGlobalLogger } from "@lib/client-logger";
         import { containTabFocus } from "@lib/focus-trap"
         import { applyAppearancePreferences, bindAppearanceNavigation, readAppearancePreferences } from "@lib/appearance-preferences"
+        import { initIngressNavigation, safeIngressHref, syncIngressDestination } from "@lib/ingress-navigation"
         import { hasPriorityOverlay, initShortcutModal } from "@lib/layout-shortcuts-controller"
         import { pageLifecycle } from "@lib/page-lifecycle";
         import { SINGLE_KEY_SHORTCUTS_STORAGE_KEY, singleKeyShortcutsEnabled } from "@lib/single-key-shortcuts"
         import { attachShortcutTooltips, injectShortcutStyles } from "@lib/shortcut-tooltip";
+        import { normalizeTaskTypeFilterValue } from "@lib/task-nav-types";
 
         const log = createClientLogger("app", "layout");
 
@@ -115,18 +117,75 @@
             }
           }, { signal })
 
+          const SHORTCUT_NAV = {
+            dashboard: () => {
+              syncIngressDestination("/");
+              window.location.assign(safeIngressHref("/"));
+            },
+            tasks: () => {
+              syncIngressDestination("/tasks");
+              window.location.assign(safeIngressHref("/tasks"));
+            },
+            kanban: () => {
+              syncIngressDestination("/tasks#kanban");
+              window.location.assign(safeIngressHref("/tasks#kanban"));
+            },
+            table: () => {
+              syncIngressDestination("/table");
+              window.location.assign(safeIngressHref("/table"));
+            },
+            today: () => {
+              syncIngressDestination("/today");
+              window.location.assign(safeIngressHref("/today"));
+            },
+            upcoming: () => {
+              syncIngressDestination("/upcoming");
+              window.location.assign(safeIngressHref("/upcoming"));
+            },
+            calendar: () => {
+              syncIngressDestination("/calendar");
+              window.location.assign(safeIngressHref("/calendar"));
+            },
+          } as const;
+
+          function openNewTaskAction() {
+            const btn =
+              document.getElementById("create-task-btn") ||
+              document.querySelector<HTMLElement>("[id$='-new-task']:not(#sidebar-rail-new-task)");
+            if (btn) {
+              btn.click();
+              return;
+            }
+            const modalFn = (window as { openNewTaskModal?: () => void }).openNewTaskModal;
+            if (typeof modalFn === "function") {
+              modalFn();
+              return;
+            }
+            SHORTCUT_NAV.tasks();
+          }
+
           // Active nav link — strip ingress prefix so path comparison works behind HA ingress
           const rawPath = window.location.pathname;
           const ip = window.__ingress_path || "";
           const currentPath =
-            ip && rawPath.startsWith(ip)
-              ? rawPath.slice(ip.length) || "/"
-              : rawPath;
+            ip && (rawPath === ip || rawPath === ip + "/")
+              ? "/"
+              : ip && rawPath.startsWith(ip + "/")
+                ? rawPath.slice(ip.length) || "/"
+                : rawPath;
+          const currentTypes = normalizeTaskTypeFilterValue(
+            new URLSearchParams(window.location.search).get("types"),
+          );
           document.querySelectorAll(".nav-link").forEach((link) => {
             const href = link.getAttribute("href") || "";
+            if (!href || href.startsWith("http")) return;
+            const linkUrl = new URL(href, window.location.origin);
+            const linkPath = linkUrl.pathname;
+            const linkTypes = normalizeTaskTypeFilterValue(linkUrl.searchParams.get("types"));
+            const typesMatch = linkTypes ? linkTypes === currentTypes : currentTypes === "";
             if (
-              href === currentPath ||
-              currentPath.startsWith(href + "/") ||
+              (linkPath === currentPath && typesMatch) ||
+              (linkPath !== "/" && currentPath.startsWith(linkPath + "/") && !linkTypes) ||
               (currentPath === "/" &&
                 link.getAttribute("data-page") === "dashboard")
             ) {
@@ -134,13 +193,53 @@
             }
           });
 
+          // Collapsed-rail quick action + floating tooltips
+          const railNewTaskBtn = document.getElementById("sidebar-rail-new-task");
+          if (bindKeyboard) railNewTaskBtn?.addEventListener("click", openNewTaskAction, { signal });
+
+          // Floating collapsed-rail tooltips rendered outside .sidebar-scroll overflow clipping
+          let railTooltip = document.getElementById("sidebar-rail-tooltip");
+          if (!railTooltip) {
+            railTooltip = document.createElement("div");
+            railTooltip.id = "sidebar-rail-tooltip";
+            railTooltip.className = "sidebar-rail-tooltip";
+            railTooltip.setAttribute("role", "tooltip");
+            railTooltip.hidden = true;
+            document.body.appendChild(railTooltip);
+          }
+          const sidebarEl = document.getElementById("sidebar");
+          const hideRailTooltip = () => {
+            if (railTooltip) railTooltip.hidden = true;
+          };
+          if (bindKeyboard && sidebarEl) {
+            const showRailTooltip = (target: EventTarget | null) => {
+              if (!railTooltip || !document.body.classList.contains("sidebar-collapsed")) return;
+              if (document.documentElement.dataset.appearanceSidebar === "hover" && sidebarEl.matches(":hover")) {
+                hideRailTooltip();
+                return;
+              }
+              const el = target instanceof Element ? target.closest<HTMLElement>("[data-tooltip]") : null;
+              const text = el?.dataset.tooltip?.trim();
+              if (!el || !text) {
+                hideRailTooltip();
+                return;
+              }
+              const rect = el.getBoundingClientRect();
+              railTooltip.textContent = text;
+              railTooltip.hidden = false;
+              railTooltip.style.top = `${Math.round(rect.top + rect.height / 2)}px`;
+              railTooltip.style.left = `${Math.round(rect.right + 10)}px`;
+            };
+            sidebarEl.addEventListener("pointerover", (event) => showRailTooltip(event.target), { signal });
+            sidebarEl.addEventListener("pointerleave", hideRailTooltip, { signal });
+            sidebarEl.addEventListener("focusin", (event) => showRailTooltip(event.target), { signal });
+            sidebarEl.addEventListener("focusout", hideRailTooltip, { signal });
+          }
+
           // EmptyState "New Task" buttons dispatch this event to open the modal
-          document.addEventListener(
+          if (bindKeyboard) document.addEventListener(
             "meitheal:new-task",
-            () => {
-              const btn = document.getElementById("create-task-btn");
-              if (btn) btn.click();
-            },
+            openNewTaskAction,
             { signal } as AddEventListenerOptions,
           );
 
@@ -215,26 +314,23 @@
                 if (createBtn) {
                   createBtn.click();
                 } else {
-                  window.location.href =
-                    (window.__ingress_path || "") + "/tasks";
+                  SHORTCUT_NAV.tasks();
                 }
               }
               if (e.key === "t" && !(isDockedInspector && document.getElementById("task-detail-panel")?.contains(document.activeElement))) {
-                window.location.href = (window.__ingress_path || "") + "/table";
+                SHORTCUT_NAV.table();
               }
               if (e.key === "d") {
-                window.location.href = (window.__ingress_path || "") + "/";
+                SHORTCUT_NAV.dashboard();
               }
               if (e.key === "y") {
-                window.location.href = (window.__ingress_path || "") + "/today";
+                SHORTCUT_NAV.today();
               }
               if (e.key === "u") {
-                window.location.href =
-                  (window.__ingress_path || "") + "/upcoming";
+                SHORTCUT_NAV.upcoming();
               }
               if (e.key === "c") {
-                window.location.href =
-                  (window.__ingress_path || "") + "/calendar";
+                SHORTCUT_NAV.calendar();
               }
               if (e.key === "?" && !e.repeat && !e.altKey && openShortcutModal?.()) {
                 e.preventDefault()
@@ -279,7 +375,7 @@
               const modalTdOpen = (document.getElementById("task-detail-overlay")?.classList.contains("active") ?? false) &&
                 !document.body.classList.contains("has-docked-inspector")
               if (hasPriorityOverlay() || modalTdOpen) return
-              window.location.href = (window.__ingress_path || "") + "/tasks#kanban"
+              SHORTCUT_NAV.kanban()
             }, { signal })
           }
 
@@ -303,13 +399,13 @@
                 // "All Areas" option first
                 const allOpt = document.createElement("option");
                 allOpt.value = "all";
-                allOpt.textContent = "🗂 All Areas";
+                allOpt.textContent = "All Areas";
                 select.appendChild(allOpt);
                 boards.forEach(
                   (b: { id: string; name: string; icon: string }) => {
                     const opt = document.createElement("option");
                     opt.value = b.id;
-                    opt.textContent = `${b.icon} ${b.name}`;
+                    opt.textContent = b.name;
                     select.appendChild(opt);
                   },
                 );

@@ -203,6 +203,7 @@ export async function getHAConnection(): Promise<Connection | null> {
     return completed && (connection || connecting) ? getHAConnection() : null
   }
 
+  if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null }
   connecting = true;
   connectingFingerprint = fingerprint
   const attemptGeneration = ++connectionGeneration
@@ -353,9 +354,14 @@ export async function getHAConnection(): Promise<Connection | null> {
     });
 
     const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), MAX_RECONNECT_DELAY_MS);
+    const scheduledGeneration = attemptGeneration
     // Cancel any pending reconnect to prevent timer accumulation on rapid failures
     if (reconnectTimer) clearTimeout(reconnectTimer);
-    reconnectTimer = setTimeout(() => { reconnectTimer = null; connection = null; connecting = false; getHAConnection().catch(() => {}); }, delay);
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = null
+      if (connectionGeneration !== scheduledGeneration || connecting || connection) return
+      getHAConnection().catch(() => {})
+    }, delay);
     return null;
   } finally {
     if (connectionGeneration === attemptGeneration) {
