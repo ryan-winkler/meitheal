@@ -462,7 +462,7 @@ export const PATCH: APIRoute = async ({ request, locals }) => {
 
   const effectiveScopes = updates.scopes ?? existing.scopes
   const effectiveAssigneeId = updates.assigneeId !== undefined ? updates.assigneeId : (existing.assigneeId ?? null)
-  if (hasAssigneeField || effectiveAssigneeId !== null || requiresAssigneeForScopes(effectiveScopes, effectiveAssigneeId)) {
+  if (hasAssigneeField || requiresAssigneeForScopes(effectiveScopes, effectiveAssigneeId)) {
     const assignee = await readAssignee(effectiveAssigneeId, effectiveScopes)
     if (assignee instanceof Response) return assignee
     if (hasAssigneeField) updates.assigneeId = assignee.assigneeId

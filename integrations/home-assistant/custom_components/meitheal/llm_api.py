@@ -12,12 +12,12 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+import probatio
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError, Unauthorized
 from homeassistant.helpers import llm
 from homeassistant.util.json import JsonObjectType
-import probatio
 
 from .api import task_matches_identifier, task_path
 from .const import DOMAIN
@@ -243,6 +243,8 @@ class ListTasksTool(MeithealReadTool):
         {
             probatio.Optional("assignee", default="me"): _ASSIGNEE,
             probatio.Optional("include_completed", default=False): bool,
+            probatio.Optional("limit", default=50): probatio.All(int, probatio.Range(min=1, max=100)),
+            probatio.Optional("offset", default=0): probatio.All(int, probatio.Range(min=0)),
         }
     )
 
@@ -251,6 +253,8 @@ class ListTasksTool(MeithealReadTool):
     ) -> JsonObjectType:
         assignee = _assignee(args)
         include_completed = bool(args["include_completed"])
+        page_limit = int(args["limit"])
+        page_offset = int(args["offset"])
         tasks: list[JsonObjectType] = []
         offset = 0
         while True:
@@ -273,7 +277,17 @@ class ListTasksTool(MeithealReadTool):
             total = data.get("total") if isinstance(data, dict) else None
             if not rows or (isinstance(total, int) and offset >= total) or (not isinstance(total, int) and len(rows) < 200):
                 break
-        return {"assignee": assignee, "tasks": tasks[:50], "count": len(tasks)}
+        page = tasks[page_offset : page_offset + page_limit]
+        has_more = page_offset + len(page) < len(tasks)
+        result: JsonObjectType = {
+            "assignee": assignee,
+            "tasks": page,
+            "count": len(tasks),
+            "has_more": has_more,
+        }
+        if has_more:
+            result["next_offset"] = page_offset + len(page)
+        return result
 
 
 class GetTaskCommentsTool(MeithealReadTool):
@@ -340,11 +354,11 @@ class CreateTaskTool(MeithealWriteTool):
             )
         )
         if "meitheal_task_created" not in authority:
-            coordinator._fire_event(
+            coordinator.fire_event(
                 "meitheal_task_created",
                 {"task_id": created["id"], "title": payload["title"]},
             )
-        coordinator._fire_logbook("Meitheal", f"created task: {payload['title']}")
+        coordinator.fire_logbook("Meitheal", f"created task: {payload['title']}")
         await coordinator.async_request_refresh()
         return _task_summary(created)
 

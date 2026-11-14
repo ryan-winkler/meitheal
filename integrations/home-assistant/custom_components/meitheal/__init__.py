@@ -23,14 +23,24 @@ import logging
 import os
 import shutil
 import tempfile
+from weakref import WeakSet
 
+import voluptuous as vol
 from aiohttp import DummyCookieJar
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse, SupportsResponse
-from homeassistant.exceptions import ConfigEntryError, ConfigEntryNotReady, HomeAssistantError
+from homeassistant.core import (
+    HomeAssistant,
+    ServiceCall,
+    ServiceResponse,
+    SupportsResponse,
+)
+from homeassistant.exceptions import (
+    ConfigEntryError,
+    ConfigEntryNotReady,
+    HomeAssistantError,
+)
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_create_clientsession
-import voluptuous as vol
 
 from .api import (
     MeithealApi,
@@ -130,6 +140,9 @@ def _read_sentence_manifest(manifest_path: str) -> dict[str, str]:
     return {
         k: v for k, v in loaded.items() if isinstance(k, str) and isinstance(v, str)
     }
+
+
+_MCP_VIEW_REGISTERED: WeakSet[HomeAssistant] = WeakSet()
 
 
 def _install_custom_sentences(src_base: str, dst_base: str) -> bool:
@@ -362,14 +375,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: MeithealConfigEntry) -> 
         schema=COMPLETE_TASK_BY_TAG_SCHEMA,
     )
 
-    # Register live MCP HTTP view once; each request resolves runtime_data dynamically
+    # Register live MCP HTTP view once per HomeAssistant instance; each request resolves runtime_data dynamically
     try:
-        domain_state = hass.data.setdefault(DOMAIN, {})
-        if not domain_state.get("mcp_view_registered"):
+        if hass not in _MCP_VIEW_REGISTERED:
             from .mcp_server import MeithealMcpView
 
             hass.http.register_view(MeithealMcpView())
-            domain_state["mcp_view_registered"] = True
+            _MCP_VIEW_REGISTERED.add(hass)
     except Exception as exc:
         _LOGGER.debug("Could not register Meitheal MCP HTTP view: %s", exc)
 

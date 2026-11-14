@@ -10,6 +10,7 @@ import {
   MCP_SUPPORTED_VERSIONS,
   resolveMcpSchema,
 } from "@domains/agents"
+import { listHAUsers } from "@domains/ha"
 import {
   ensureSchema,
   getPersistenceClient,
@@ -405,6 +406,24 @@ customHandlers.set("listMyTasks", async (args, requestApi, agent) => {
   return { assignee, assignee_id: assignee.id, tasks, count: tasks.length }
 })
 
+async function isValidHandbackTarget(
+  target: string,
+  history: Record<string, unknown>[],
+  users: UserRepository,
+): Promise<boolean> {
+  if (target.startsWith("custom_")) {
+    return Boolean(await users.getCustomUser(target))
+  }
+  const haUsers = await listHAUsers()
+  if (haUsers.length > 0) {
+    return haUsers.some(u => `ha_${u.id}` === target)
+  }
+  const knownInHistory = history.some(
+    entry => entry.field === "assigned_to" && (entry.old_value === target || entry.new_value === target),
+  )
+  return knownInHistory || target === await users.getDefaultAssigneeSetting()
+}
+
 customHandlers.set("handBackTask", async (args, requestApi, agent) => {
   const assignee = await agentAssignee(agent)
   if (!assignee) return { error: NO_ASSIGNEE }
@@ -420,27 +439,27 @@ customHandlers.set("handBackTask", async (args, requestApi, agent) => {
   const path = `/api/tasks/${encodeURIComponent(String(task.id))}`
   if (task.assigned_to !== assignee.id) return { error: "This task is not assigned to you", assigned_to: task.assigned_to ?? null }
 
+  const users = new UserRepository(getPersistenceClient())
   let to = typeof args.to === "string" ? args.to : null
   if (args.to === undefined) {
-    // Default to whoever held the task before it was given to this agent.
-    const history = await checkedJson(await requestApi(`${path}/activity?limit=200`))
-    const handoff = (Array.isArray(history.activity) ? history.activity.filter(isRecord) : [])
-      .find(entry => entry.field === "assigned_to" && entry.new_value === assignee.id)
+    const historyRes = await checkedJson(await requestApi(`${path}/activity?limit=200`))
+    const history = Array.isArray(historyRes.activity) ? historyRes.activity.filter(isRecord) : []
+    // Default to whoever held the task before it was given to this agent, if they still exist.
+    const handoff = history.find(entry => entry.field === "assigned_to" && entry.new_value === assignee.id)
     const previous = typeof handoff?.old_value === "string" ? handoff.old_value : ""
-    if (/^(ha|custom)_[\w-]{1,128}$/.test(previous) && previous !== assignee.id) to = previous
-    // A task created for the agent has no earlier holder, so it goes to the household's default assignee.
+    if (/^(ha|custom)_[\w-]{1,128}$/.test(previous) && previous !== assignee.id && await isValidHandbackTarget(previous, history, users)) {
+      to = previous
+    }
+    // A task created for the agent (or whose prior holder was removed) goes to the household's default assignee.
     if (!to) {
-      const fallback = await new UserRepository(getPersistenceClient()).getDefaultAssigneeSetting()
-      if (fallback && fallback !== assignee.id) to = fallback
+      const fallback = await users.getDefaultAssigneeSetting()
+      if (fallback && fallback !== assignee.id && await isValidHandbackTarget(fallback, history, users)) to = fallback
     }
   }
   if (typeof args.to === "string" && args.to !== assignee.id) {
-    // A named person must be real: someone this task has been assigned to, or a custom assignee.
-    const users = new UserRepository(getPersistenceClient())
-    const history = await checkedJson(await requestApi(`${path}/activity?limit=200`))
-    const known = (Array.isArray(history.activity) ? history.activity.filter(isRecord) : [])
-      .some(entry => entry.field === "assigned_to" && (entry.old_value === args.to || entry.new_value === args.to))
-    if (!known && args.to !== await users.getDefaultAssigneeSetting() && !await users.getCustomUser(args.to)) {
+    const historyRes = await checkedJson(await requestApi(`${path}/activity?limit=200`))
+    const history = Array.isArray(historyRes.activity) ? historyRes.activity.filter(isRecord) : []
+    if (!await isValidHandbackTarget(args.to, history, users)) {
       return { error: "to must be an assignee ID from the task history, or omitted" }
     }
   }
@@ -717,7 +736,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
     // Initialize handshake
     if (!modern && method === "initialize") {
       const requested = params.protocolVersion
-      const protocolVersion = MCP_SUPPORTED_VERSIONS.slice(1).find(version => version === requested) ?? MCP_LEGACY_VERSION
+      const protocolVersion = MCP_SUPPORTED_VERSIONS.slice(1).find(supported => supported === requested) ?? MCP_LEGACY_VERSION
       return result({
         protocolVersion,
         capabilities: CAPABILITIES,

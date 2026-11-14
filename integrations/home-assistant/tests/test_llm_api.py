@@ -274,6 +274,20 @@ async def test_manage_api_reads_and_changes_tasks_for_the_caller(
         }
         closed_filtered = await async_call(instance, "meitheal_list_tasks", {})
         assert [t["id"] for t in closed_filtered.data["tasks"]] == ["open-1"]
+        assert closed_filtered.data["has_more"] is False
+
+        client.async_request.return_value = {
+            "tasks": [{"id": f"m-{i}", "title": f"M {i}", "status": "pending", "assigned_to": me} for i in range(60)],
+            "total": 60,
+        }
+        first_page = await async_call(instance, "meitheal_list_tasks", {})
+        assert first_page.data["count"] == 60
+        assert len(first_page.data["tasks"]) == 50
+        assert first_page.data["has_more"] is True
+        assert first_page.data["next_offset"] == 50
+        second_page = await async_call(instance, "meitheal_list_tasks", {"offset": 50, "limit": 20})
+        assert [t["id"] for t in second_page.data["tasks"]] == [f"m-{i}" for i in range(50, 60)]
+        assert second_page.data["has_more"] is False
 
         client.async_request.return_value = {"id": "new", "title": "Plan", "assigned_to": me}
         created = await async_call(

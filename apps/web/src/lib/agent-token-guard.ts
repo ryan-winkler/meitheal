@@ -11,7 +11,7 @@
  */
 import { hashToken, type AgentScope, type AgentTokenRecord } from "@meitheal/domain-auth"
 import { ensureAgentTokenSchema, getAgentTokenByHash, updateAgentTokenLastUsed } from "@domains/auth"
-import { ensureDatabaseSchemaSupported, ensureSchema, getPersistenceClient, TaskRepository } from "@domains/tasks"
+import { ensureDatabaseSchemaSupported, ensureSchema, getPersistenceClient, TaskRepository, UserRepository } from "@domains/tasks"
 import { apiError, apiProblem } from "./api-response"
 
 export interface ResolvedAgent {
@@ -99,7 +99,18 @@ export async function resolveAgentAuth(request: Request): Promise<ResolvedAgent 
     updateAgentTokenLastUsed(record.id).catch(() => {})
   }
 
-  return { tokenId: record.id, tokenName: record.name, scopes: record.scopes, assigneeId: record.assigneeId ?? null }
+  let assigneeId = record.assigneeId ?? null
+  if (assigneeId) {
+    try {
+      await ensureSchema()
+      const assignee = await new UserRepository(getPersistenceClient()).getCustomUser(assigneeId)
+      if (assignee?.kind !== "agent") assigneeId = null
+    } catch {
+      assigneeId = null
+    }
+  }
+
+  return { tokenId: record.id, tokenName: record.name, scopes: record.scopes, assigneeId }
 }
 
 /**

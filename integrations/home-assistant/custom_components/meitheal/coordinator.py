@@ -122,6 +122,14 @@ class MeithealCoordinator(DataUpdateCoordinator[MeithealCoordinatorData]):
 
     # ── Event Bus Helpers ─────────────────────────────────────────────
 
+    def fire_event(self, event_type: str, data: dict[str, Any]) -> None:
+        """Fire a Meitheal event on the HA event bus."""
+        self._fire_event(event_type, data)
+
+    def fire_logbook(self, name: str, message: str, entity_id: str | None = None) -> None:
+        """Fire a logbook entry so Meitheal actions appear in HA history."""
+        self._fire_logbook(name, message, entity_id)
+
     def _fire_event(self, event_type: str, data: dict[str, Any]) -> None:
         """Fire a Meitheal event on the HA event bus.
 

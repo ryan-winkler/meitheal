@@ -462,6 +462,24 @@ test.describe("Live Built HTTP & MCP Assigned-Agent Contract", () => {
       expect(ownChild2After.status).toBe("complete")
       const foreignAfter = await (await adminCtx.get(p(`/api/tasks/${foreignChild.id}`))).json()
       expect(foreignAfter.status).toBe("pending")
+
+      // Idempotent HTTP retry of agent reassignment succeeds even though middleware checks assignment
+      const reassignRes = await agentCtx.put(p(`/api/tasks/${parentTask.id}`), {
+        data: { assigned_to: null },
+      })
+      expect(reassignRes.status()).toBe(200)
+      expect((await reassignRes.json()).assigned_to).toBeNull()
+
+      const retryReassignRes = await agentCtx.put(p(`/api/tasks/${parentTask.id}`), {
+        data: { assigned_to: null },
+      })
+      expect(retryReassignRes.status()).toBe(200)
+      expect((await retryReassignRes.json()).assigned_to).toBeNull()
+
+      const nonReplayRes = await agentCtx.put(p(`/api/tasks/${parentTask.id}`), {
+        data: { title: "Tampered after handoff" },
+      })
+      expect(nonReplayRes.status()).toBe(403)
     } finally {
       await agentCtx?.dispose()
       await adminCtx?.dispose()

@@ -346,7 +346,8 @@ async function handleRequest({ request, locals, routePattern }: Parameters<Middl
           type: "https://meitheal.local/problems/insufficient-scope",
         })
       }
-      if (access.assignedTaskId) {
+      const isTaskRootPut = method === "PUT" && /^\/api\/tasks\/[^/]+$/.test(url.pathname)
+      if (access.assignedTaskId && !isTaskRootPut) {
         const denied = await checkAssignedTask(access.assignedTaskId, resolvedAgent)
         if (denied) return denied
       }

@@ -28,9 +28,9 @@ from __future__ import annotations
 import logging
 from typing import ClassVar
 
+import voluptuous as vol
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import intent
-import voluptuous as vol
 
 from .coordinator import MeithealCoordinator
 from .helpers import assignee_for_user
@@ -106,9 +106,9 @@ class MeithealAddTaskHandler(_MeithealAdminIntent):
 
         try:
             # "My tasks" means the speaker's: the base class has verified this user.
-            await coordinator.async_create_task(
-                title=item, assigned_to=assignee_for_user(intent_obj.context.user_id)
-            )
+            user_id = intent_obj.context.user_id
+            assigned_to = assignee_for_user(user_id) if user_id else None
+            await coordinator.async_create_task(title=item, assigned_to=assigned_to)
             response = intent_obj.create_response()
             response.async_set_speech(f"Added '{item}' to your tasks.")
             return response

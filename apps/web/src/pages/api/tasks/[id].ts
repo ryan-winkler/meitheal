@@ -5,13 +5,13 @@ import type { TaskType } from "@meitheal/domain-tasks"
 import { hasBoardSelection, rejectBoardSelectionInJson, unavailableBoardResponse } from "@domains/tasks/board-availability"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import { TaskRepository } from "@domains/tasks/persistence/task-repository"
-import { UserRepository } from "@domains/tasks/persistence/user-repository"
+import { UserRepository } from "@domains/tasks"
 import { taskLabelsJson } from "@domains/tasks/task-creation-service"
 import { formatTicketKey } from "../../../lib/ticket-key"
 import { dispatchTaskEvent, taskEventAuthorityHeaders } from "../../../lib/webhook-dispatcher"
 import { logApiError } from "../../../lib/api-logger"
 import { apiError } from "../../../lib/api-response"
-import { isAssignedWriteOnly, requireAssignedTaskWriteAccess, restrictedAssigneeId } from "../../../lib/agent-token-guard"
+import { checkAssignedTask, isAssignedWriteOnly, restrictedAssigneeId } from "../../../lib/agent-token-guard"
 import { db503Response, isDbUnavailable } from "../../../lib/db-fallback"
 import { resolveRecentActivityActor } from "../../../lib/recent-activity-actor"
 import { STATUS, normalizeStatus, isDoneStatus } from "../../../lib/status-config"
@@ -78,6 +78,7 @@ async function replayedAgentReassignment(
   body: Record<string, unknown>,
 ): Promise<Response | null> {
   if (!isAssignedWriteOnly(agentToken) || !agentToken?.assigneeId) return null
+  if (body.assigned_to !== null && typeof body.assigned_to !== "string") return null
   const fields = Object.keys(body).filter((key) => key !== "updated_at" && key !== "request_id")
   if (fields.length !== 1 || fields[0] !== "assigned_to") return null
   const requested = typeof body.assigned_to === "string" ? body.assigned_to.trim() : ""
@@ -112,12 +113,7 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
 
   const resolvedId = resolved.id
   const agentToken = locals.agentToken
-  const denied = await requireAssignedTaskWriteAccess(
-    agentToken,
-    (id) => repo.findById(id),
-    [resolvedId],
-    "Agent can only update tasks assigned to it",
-  )
+  const denied = isAssignedWriteOnly(agentToken) ? await checkAssignedTask(resolvedId, agentToken!) : null
   if (denied) return (await replayedAgentReassignment(repo, agentToken, resolvedId, body)) ?? denied
 
   const clientVersion = typeof body.updated_at === "number" ? body.updated_at : undefined
@@ -279,8 +275,10 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
     }
   }
   if (body.assigned_to !== undefined) {
-    sanitized.assigned_to = typeof body.assigned_to === "string" && body.assigned_to.trim().length > 0 && body.assigned_to.length <= 255
-      ? body.assigned_to.trim() : null
+    if (body.assigned_to !== null && (typeof body.assigned_to !== "string" || !body.assigned_to.trim() || body.assigned_to.trim().length > 255)) {
+      return apiError("assigned_to must be a non-empty string (max 255 chars) or null", 400)
+    }
+    sanitized.assigned_to = typeof body.assigned_to === "string" ? body.assigned_to.trim() : null
   }
   if (body.owner !== undefined && typeof body.owner === "string" && !isAssignedWriteOnly(agentToken)) {
     sanitized.owner = body.owner.slice(0, 100)
@@ -458,7 +456,7 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
       const automation = request.headers.has("X-Automation-Source") ? locals.automationSource : null
       const activityActor = agentActivityActor(locals) ??
         { actor: automation ? `ha:${automation}` : "user", actor_type: (automation ? "ha" : "user") as "ha" | "user" }
-      repo.logActivity(resolvedId, changes, activityActor).catch(() => { })
+      await repo.logActivity(resolvedId, changes, activityActor).catch(() => { })
     }
   }
 
