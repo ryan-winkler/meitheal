@@ -956,11 +956,7 @@ export class TaskRepository {
    * Accepts UUID or MTH-N ticket key format.
    */
   async resolveTaskId(idOrKey: string): Promise<{ id: string; updated_at: unknown } | null> {
-    let parsedTicketNum: number | null = null;
-    if (/^MTH-\d+$/i.test(idOrKey)) {
-      const n = Number(idOrKey.slice(4));
-      parsedTicketNum = Number.isSafeInteger(n) && n > 0 ? n : null;
-    }
+    const parsedTicketNum = parseTicketKey(idOrKey);
     const result = await this.client.execute({
       sql: `SELECT id, ${taskTimestampMs("updated_at")} AS updated_at FROM tasks
             WHERE id = ? OR ticket_number = ? LIMIT 1`,
@@ -973,11 +969,7 @@ export class TaskRepository {
 
   /** Retrieve a single task by ID/ticket key, with parent info JOINed */
   async findById(idOrKey: string): Promise<TaskRow | null> {
-    let parsedTicketNum: number | null = null;
-    if (/^MTH-\d+$/i.test(idOrKey)) {
-      const n = Number(idOrKey.slice(4));
-      parsedTicketNum = Number.isSafeInteger(n) && n > 0 ? n : null;
-    }
+    const parsedTicketNum = parseTicketKey(idOrKey);
     const result = await this.client.execute({
       sql: `SELECT t.id, t.title, t.description, t.status, t.priority, t.due_date, t.labels,
                    t.framework_payload, t.calendar_sync_state, t.area_id, t.custom_fields,
@@ -2110,7 +2102,7 @@ export class TaskRepository {
       {
         sql: `SELECT id, task_id, field, old_value, new_value, actor, actor_type, event_type, summary, correlation_id, created_at
               FROM task_activity_log ${where}
-              ORDER BY created_at DESC
+              ORDER BY created_at DESC, id DESC
               LIMIT ? OFFSET ?`,
         args: [taskId, limit, offset],
       },
@@ -2278,20 +2270,18 @@ export class TaskRepository {
     const now = new Date().toISOString()
     const tx = await this.client.transaction("write")
     try {
-      if (expectedAssignedTo !== undefined) {
-        const res = await tx.execute({
-          sql: "SELECT id, assigned_to FROM tasks WHERE id IN (?, ?)",
-          args: [sourceTaskId, targetTaskId],
-        })
-        const byId = new Map(res.rows.map(r => [String((r as Record<string, unknown>).id), (r as Record<string, unknown>).assigned_to]))
-        if (!byId.has(sourceTaskId) || !byId.has(targetTaskId)) {
-          await tx.commit()
-          return { ok: false, errorCode: "not_found" }
-        }
-        if (byId.get(sourceTaskId) !== expectedAssignedTo || byId.get(targetTaskId) !== expectedAssignedTo) {
-          await tx.commit()
-          return { ok: false, errorCode: "assignee_mismatch" }
-        }
+      const res = await tx.execute({
+        sql: "SELECT id, assigned_to FROM tasks WHERE id IN (?, ?)",
+        args: [sourceTaskId, targetTaskId],
+      })
+      const byId = new Map(res.rows.map(r => [String((r as Record<string, unknown>).id), (r as Record<string, unknown>).assigned_to]))
+      if (!byId.has(sourceTaskId) || !byId.has(targetTaskId)) {
+        await tx.commit()
+        return { ok: false, errorCode: "not_found" }
+      }
+      if (expectedAssignedTo !== undefined && (byId.get(sourceTaskId) !== expectedAssignedTo || byId.get(targetTaskId) !== expectedAssignedTo)) {
+        await tx.commit()
+        return { ok: false, errorCode: "assignee_mismatch" }
       }
       await tx.execute({
         sql: "INSERT INTO task_links (id, source_task_id, target_task_id, link_type, created_at) VALUES (?, ?, ?, ?, ?)",

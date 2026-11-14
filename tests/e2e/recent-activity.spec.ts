@@ -188,7 +188,8 @@ test("verified members see committed task activity and can filter it by current 
     expect(feedText).not.toMatch(/synthetic-token-id|spoofed actor|spoofed-person-name/)
     const taskActivityRes = await a.evaluate(async path => (await fetch(path)).json(), prefix + "/api/tasks/" + bedtimeTask.body.id + "/activity")
     const taskActivityJson = JSON.stringify(taskActivityRes)
-    expect(taskActivityJson).toContain("agent:synthetic-token-name")
+    const statusChange = taskActivityRes.activity.find((item: { event_type?: string }) => item.event_type === "status_change")
+    expect(statusChange).toMatchObject({ actor: "synthetic-token-name", actor_type: "agent" })
     expect(taskActivityJson).not.toMatch(/synthetic-token-id|spoofed/)
     await a.setViewportSize({ width: 320, height: 740 })
     await expect.poll(() => a.locator(".recent-activity").evaluate(element =>

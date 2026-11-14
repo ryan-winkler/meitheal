@@ -20,5 +20,7 @@ export function formatTicketKey(
 /** Extract the numeric portion from a ticket key string (e.g. "MTH-42" → 42) */
 export function parseTicketKey(key: string): number | null {
   const match = key.match(new RegExp(`^${TICKET_PREFIX}-(\\d+)$`, "i"));
-  return match ? parseInt(match[1]!, 10) : null;
+  if (!match) return null;
+  const num = Number(match[1]);
+  return Number.isSafeInteger(num) && num > 0 ? num : null;
 }

@@ -9,6 +9,12 @@
  */
 import type { Client } from "@libsql/client"
 
+export type CustomUserKind = "human" | "agent"
+
+export function customUserKind(value: unknown): CustomUserKind {
+  return value === "agent" ? "agent" : "human"
+}
+
 export class UserRepository {
   constructor(private client: Client) {}
 
@@ -46,7 +52,7 @@ export class UserRepository {
   }
 
   /** Create a new custom user */
-  async createCustomUser(id: string, name: string, color: string, kind: "human" | "agent" = "human"): Promise<number> {
+  async createCustomUser(id: string, name: string, color: string, kind: CustomUserKind = "human"): Promise<number> {
     const now = Date.now()
     await this.client.execute({
       sql: "INSERT INTO custom_users (id, name, color, kind, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
@@ -64,18 +70,22 @@ export class UserRepository {
     return result.rows.length > 0
   }
 
-  /** Get a custom user by id */
-  async getCustomUser(id: string) {
+  /** Read one custom user, or null when the ID is unknown */
+  async getCustomUser(id: string): Promise<{ id: string; name: string; kind: CustomUserKind } | null> {
     const result = await this.client.execute({
-      sql: "SELECT id, name, color, kind, created_at, updated_at FROM custom_users WHERE id = ? LIMIT 1",
+      sql: "SELECT id, name, kind FROM custom_users WHERE id = ? LIMIT 1",
       args: [id],
     })
-    return (result.rows[0] as unknown as { id: string; name: string; color: string; kind?: "human" | "agent"; created_at: number; updated_at: number }) ?? null
+    const row = result.rows[0] as Record<string, unknown> | undefined
+    return row ? { id: String(row.id), name: String(row.name), kind: customUserKind(row.kind) } : null
   }
 
-  /** Delete a custom user and unassign their tasks */
+  /** Delete a custom user, unassign their tasks and detach any agent tokens */
   async deleteCustomUser(id: string): Promise<void> {
     await this.client.execute({ sql: "DELETE FROM custom_users WHERE id = ?", args: [id] })
+    // The token table is created on first use, so it may not exist yet.
+    await this.client.execute({ sql: "UPDATE agent_tokens SET assignee_id = NULL WHERE assignee_id = ?", args: [id] })
+      .catch(() => {})
     await this.client.execute({
       sql: "UPDATE tasks SET assigned_to = NULL, updated_at = ? WHERE assigned_to = ?",
       args: [Date.now(), id],

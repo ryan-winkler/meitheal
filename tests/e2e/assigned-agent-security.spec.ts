@@ -163,6 +163,17 @@ dbTest.describe("Assigned-Agent Authorization & Repository Guards", () => {
     } as unknown as Parameters<typeof postLink>[0])
     expect(crossCreate.status).toBe(403)
 
+    // Non-existent target returns 404 for an assigned-only token owning the source task
+    const missingRes = await postLink({
+      params: { id: ownA },
+      request: new Request(`http://localhost/api/tasks/${ownA}/links`, {
+        method: "POST",
+        body: JSON.stringify({ target_task_id: crypto.randomUUID(), link_type: "related_to" }),
+      }),
+      locals: agentLocals("custom_agent_a"),
+    } as unknown as Parameters<typeof postLink>[0])
+    expect(missingRes.status).toBe(404)
+
     // Agent A can link two tasks both assigned to Agent A
     const ownCreate = await postLink({
       params: { id: ownA },
@@ -207,6 +218,67 @@ dbTest.describe("Assigned-Agent Authorization & Repository Guards", () => {
     const body = await res.json()
     expect(body.assigned_to).toBe("ha_person_1")
     expect(body.owner).toBe("human")
+  })
+
+  dbTest("PUT /api/tasks/[id] acknowledges an agent's retried reassignment and still refuses other writes", async ({ repo }) => {
+    const id = crypto.randomUUID()
+    await repo.createTask(makeTaskData({ id, assigned_to: "custom_agent_a" }))
+    const reassign = (requestId?: string) => putTask({
+      params: { id },
+      request: new Request(`http://localhost/api/tasks/${id}`, {
+        method: "PUT",
+        body: JSON.stringify({ assigned_to: "ha_person_1", ...(requestId ? { request_id: requestId } : {}) }),
+      }),
+      locals: agentLocals("custom_agent_a"),
+    } as unknown as Parameters<typeof putTask>[0])
+
+    const first = await reassign("db-reassign-1")
+    expect(first.status).toBe(200)
+    await expect.poll(async () => (await repo.getActivityLog(id, 10, 0)).activity
+      .some((entry) => entry.field === "assigned_to" && entry.new_value === "ha_person_1" && entry.correlation_id === "db-reassign-1")).toBe(true)
+
+    const retry = await reassign("db-reassign-1")
+    expect(retry.status).toBe(200)
+    expect((await retry.json()).assigned_to).toBe("ha_person_1")
+
+    const unboundRetry = await reassign()
+    expect(unboundRetry.status).toBe(403)
+
+    const mismatchedRetry = await reassign("db-reassign-2")
+    expect(mismatchedRetry.status).toBe(403)
+
+    const writeOnlyRetry = await putTask({
+      params: { id },
+      request: new Request(`http://localhost/api/tasks/${id}`, {
+        method: "PUT",
+        body: JSON.stringify({ assigned_to: "ha_person_1", request_id: "db-reassign-1" }),
+      }),
+      locals: agentLocals("custom_agent_a", ["tasks:write:assigned"]),
+    } as unknown as Parameters<typeof putTask>[0])
+    expect(writeOnlyRetry.status).toBe(200)
+    const writeOnlyBody = await writeOnlyRetry.json()
+    expect(writeOnlyBody).toEqual({ id, ticket_key: "MTH-1", assigned_to: "ha_person_1" })
+    expect(writeOnlyBody.title).toBeUndefined()
+
+    const otherWrite = await putTask({
+      params: { id },
+      request: new Request(`http://localhost/api/tasks/${id}`, {
+        method: "PUT",
+        body: JSON.stringify({ title: "Agent edit after giving the task away" }),
+      }),
+      locals: agentLocals("custom_agent_a"),
+    } as unknown as Parameters<typeof putTask>[0])
+    expect(otherWrite.status).toBe(403)
+
+    const strangerRetry = await putTask({
+      params: { id },
+      request: new Request(`http://localhost/api/tasks/${id}`, {
+        method: "PUT",
+        body: JSON.stringify({ assigned_to: "ha_person_1", request_id: "db-reassign-1" }),
+      }),
+      locals: agentLocals("custom_agent_b"),
+    } as unknown as Parameters<typeof putTask>[0])
+    expect(strangerRetry.status).toBe(403)
   })
 
   dbTest("atomic sub-route guards reject mismatched assignees in SQL without TOCTOU", async ({ repo }) => {
@@ -372,6 +444,20 @@ test.describe("Live Built HTTP & MCP Assigned-Agent Contract", () => {
       })
       expect(badLink.status()).toBe(403)
 
+      // Missing tasks must still return 404 (not 403) for assigned-only tokens
+      const missingComment = await agentCtx.post(p("/api/tasks/missing-task-id/comments"), {
+        data: { content: "Should return 404" },
+      })
+      expect(missingComment.status()).toBe(404)
+
+      // Assigned agent cannot spoof human provenance via PUT owner field
+      const spoofOwner = await agentCtx.put(p(`/api/tasks/${parentTask.id}`), {
+        data: { title: parentTask.title, owner: "human" },
+      })
+      expect(spoofOwner.status()).toBe(200)
+      const parentAfterSpoof = await (await adminCtx.get(p(`/api/tasks/${parentTask.id}`))).json()
+      expect(parentAfterSpoof.owner).toBe("bot:Agent Alpha")
+
       // Assigned agent cannot defer foreignTask
       const badDefer = await agentCtx.patch(p(`/api/tasks/${foreignTask.id}/deferral`), {
         data: { deferred: true, updated_at: foreignTask.updated_at, deferral_revision: foreignTask.deferral_revision ?? null },
@@ -395,6 +481,70 @@ test.describe("Live Built HTTP & MCP Assigned-Agent Contract", () => {
       expect(ownChild2After.status).toBe("complete")
       const foreignAfter = await (await adminCtx.get(p(`/api/tasks/${foreignChild.id}`))).json()
       expect(foreignAfter.status).toBe("pending")
+
+      // Idempotent HTTP retry of agent reassignment succeeds only when bound to the original request_id
+      const reassignRes = await agentCtx.put(p(`/api/tasks/${parentTask.id}`), {
+        data: { assigned_to: null, request_id: "reassign-retry-1" },
+      })
+      expect(reassignRes.status()).toBe(200)
+      expect((await reassignRes.json()).assigned_to).toBeNull()
+
+      const retryReassignRes = await agentCtx.put(p(`/api/tasks/${parentTask.id}`), {
+        data: { assigned_to: null, request_id: "reassign-retry-1" },
+      })
+      expect(retryReassignRes.status()).toBe(200)
+      expect((await retryReassignRes.json()).assigned_to).toBeNull()
+
+      const unboundRetryRes = await agentCtx.put(p(`/api/tasks/${parentTask.id}`), {
+        data: { assigned_to: null },
+      })
+      expect(unboundRetryRes.status()).toBe(403)
+
+      const wrongRequestRetryRes = await agentCtx.put(p(`/api/tasks/${parentTask.id}`), {
+        data: { assigned_to: null, request_id: "reassign-retry-other" },
+      })
+      expect(wrongRequestRetryRes.status()).toBe(403)
+
+      const nonReplayRes = await agentCtx.put(p(`/api/tasks/${parentTask.id}`), {
+        data: { title: "Tampered after handoff" },
+      })
+      expect(nonReplayRes.status()).toBe(403)
+
+      // A write-only token without tasks:read receives only a minimal ack on replay (no title/description leak)
+      const writeOnlyTokenRes = await adminCtx.post(p("/api/agent-tokens"), {
+        data: { name: "Alpha Write-Only", scopes: ["tasks:write:assigned"], assignee_id: agentA.id },
+      })
+      expect(writeOnlyTokenRes.status()).toBe(201)
+      const { token: writeOnlyToken } = await writeOnlyTokenRes.json()
+      const writeOnlyTaskRes = await adminCtx.post(p("/api/tasks"), {
+        data: { title: "Confidential Handoff Secret", description: "Sensitive body", assigned_to: agentA.id },
+      })
+      expect(writeOnlyTaskRes.status()).toBe(201)
+      const writeOnlyTask = await writeOnlyTaskRes.json()
+      const writeOnlyCtx = await playwright.request.newContext({
+        baseURL: origin,
+        extraHTTPHeaders: { authorization: `Bearer ${writeOnlyToken}`, origin, "content-type": "application/json" },
+      })
+      try {
+        const firstHandoff = await writeOnlyCtx.put(p(`/api/tasks/${writeOnlyTask.id}`), {
+          data: { assigned_to: null, request_id: "write-only-handoff-1" },
+        })
+        expect(firstHandoff.status()).toBe(200)
+        const replayHandoff = await writeOnlyCtx.put(p(`/api/tasks/${writeOnlyTask.id}`), {
+          data: { assigned_to: null, request_id: "write-only-handoff-1" },
+        })
+        expect(replayHandoff.status()).toBe(200)
+        const replayBody = await replayHandoff.json()
+        expect(replayBody).toEqual({
+          id: writeOnlyTask.id,
+          ticket_key: writeOnlyTask.ticket_key ?? null,
+          assigned_to: null,
+        })
+        expect(replayBody.title).toBeUndefined()
+        expect(replayBody.description).toBeUndefined()
+      } finally {
+        await writeOnlyCtx.dispose()
+      }
     } finally {
       await agentCtx?.dispose()
       await adminCtx?.dispose()

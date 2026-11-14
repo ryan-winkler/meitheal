@@ -1,4 +1,4 @@
-import type { AgentScope } from "./agent-tokens"
+import { hasScope, type AgentScope } from "./agent-tokens"
 
 type MethodScopes = Partial<Record<string, AgentScope>>
 
@@ -80,4 +80,25 @@ export function resolveAgentRouteScope(pathname: string, method: string): AgentS
   if (/^\/api\/projects\/[\w-]+$/.test(pathname)) return project[verb]
   if (/^\/api\/a2a\/tasks\/[\w-]+$/.test(pathname)) return a2aTask[verb]
   if (verb === "POST" && /^\/api\/a2a\/tasks\/[\w-]+:cancel$/.test(pathname)) return "a2a:execute"
+}
+
+export interface AgentRouteAccess {
+  /** Scope the route requires. Absent when agent credentials may never use it. */
+  scope: AgentScope | undefined
+  allowed: boolean
+  /** Task whose assignee must match the token before the request may continue. */
+  assignedTaskId?: string
+}
+
+/** Decide whether a token may use a route, including the assigned-only write grant. */
+export function resolveAgentRouteAccess(pathname: string, method: string, scopes: AgentScope[]): AgentRouteAccess {
+  const scope = resolveAgentRouteScope(pathname, method)
+  if (!scope) return { scope, allowed: false }
+  if (hasScope(scopes, scope)) return { scope, allowed: true }
+  if (scope !== "tasks:write" || !hasScope(scopes, "tasks:write:assigned")) return { scope, allowed: false }
+
+  // Each of these names one existing task, so its assignee can be checked.
+  const task = pathname.match(/^\/api\/tasks\/([\w-]+)(?:\/|$)/)
+  if (!task || !isAssignedTaskScopedRoute(pathname, method)) return { scope, allowed: false }
+  return { scope, allowed: true, assignedTaskId: task[1]! }
 }

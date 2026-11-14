@@ -56,7 +56,7 @@ async function refreshProtocolDiscovery(): Promise<void> {
           ? data.protocol === "mcp" && data.transport === "streamable-http" &&
             data.endpoint === `${window.__ingress_path || ""}/api/mcp` &&
             data.authentication?.type === "bearer" && data.authentication.requiredScope === "mcp:execute"
-          : Array.isArray(data.skills) && data.skills.length === 1 && data.skills[0]?.id === "task-search" &&
+          : Array.isArray(data.skills) && data.skills.some((skill: { id?: unknown }) => skill?.id === "task-search") &&
             Array.isArray(data.supportedInterfaces) && data.supportedInterfaces.length === 1 &&
             data.supportedInterfaces[0]?.protocolBinding === "JSONRPC" &&
             data.supportedInterfaces[0]?.protocolVersion === "1.0" &&

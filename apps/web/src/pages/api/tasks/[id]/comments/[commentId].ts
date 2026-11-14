@@ -57,7 +57,8 @@ export const PATCH: APIRoute = async ({ params, request, locals }) => {
     const client = getPersistenceClient()
     const repo = new TaskRepository(client)
     const resolved = await repo.resolveTaskId(params.id!)
-    const taskId = resolved?.id ?? params.id!
+    if (!resolved) return apiError("Task not found", 404)
+    const taskId = resolved.id
     const denied = await requireAssignedTaskWriteAccess(
       locals.agentToken,
       (targetId) => repo.findById(targetId),
@@ -65,7 +66,6 @@ export const PATCH: APIRoute = async ({ params, request, locals }) => {
       "Agent can only comment on tasks assigned to it",
     )
     if (denied) return denied
-    if (!resolved) return apiError("Task not found", 404)
     const edited = await new CommentMentionRepository(client).editChecked(
       taskId, id, owner, prepared.content, prepared.recipients, restrictedAssigneeId(locals.agentToken),
     )

@@ -13,7 +13,8 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .coordinator import MeithealCoordinator
-from .helpers import PARALLEL_UPDATES as _PARALLEL_UPDATES, device_info
+from .helpers import PARALLEL_UPDATES as _PARALLEL_UPDATES
+from .helpers import device_info
 
 PARALLEL_UPDATES = _PARALLEL_UPDATES
 
@@ -192,7 +193,8 @@ class MeithealDueTodaySensor(
         """Expose today's task details."""
         if not self.coordinator.data:
             return None
-        from datetime import UTC, datetime as dt
+        from datetime import UTC
+        from datetime import datetime as dt
         today = dt.now(UTC).strftime("%Y-%m-%d")
         due = [
             t for t in self.coordinator.data.tasks

@@ -15,6 +15,13 @@ interface WorkspaceUser {
   name?: string
   display_name?: string
   source?: string
+  kind?: string
+}
+
+function formatWorkspaceUserLabel(u: WorkspaceUser): string {
+  const baseName = u.display_name || u.name || u.id
+  if (u.kind === "agent") return `${baseName} (AI agent)`
+  return `${baseName}${u.source === "home_assistant" ? " (HA)" : " (Custom)"}`
 }
 
 interface NotificationPrefs {
@@ -418,7 +425,7 @@ function initNotificationsPanel(signal: AbortSignal): ((users: WorkspaceUser[]) 
 
       const nameEl = document.createElement("span")
       nameEl.style.cssText = "font-size: 13px; font-weight: 500; flex: 1;"
-      nameEl.textContent = `${u.display_name || u.name || u.id}${u.source === "home_assistant" ? " (HA)" : " (Custom)"}`
+      nameEl.textContent = formatWorkspaceUserLabel(u)
       row.appendChild(nameEl)
 
       const label = document.createElement("label")
@@ -545,6 +552,15 @@ function initPeopleAndNotifications(signal: AbortSignal): void {
       row.appendChild(
         makeStyledEl("span", "font-size: 13px; font-weight: 500; flex: 1;", u.display_name || u.name || u.id),
       )
+      if (u.kind === "agent") {
+        row.appendChild(
+          makeStyledEl(
+            "span",
+            "font-size: 11px; padding: 1px 6px; border: 1px solid var(--border); border-radius: 4px; color: var(--text-secondary);",
+            "AI agent",
+          ),
+        )
+      }
 
       const delBtn = document.createElement("button")
       delBtn.type = "button"
@@ -589,7 +605,7 @@ function initPeopleAndNotifications(signal: AbortSignal): void {
     for (const u of allUsers) {
       const opt = document.createElement("option")
       opt.value = u.id
-      opt.textContent = `${u.display_name || u.name || u.id}${u.source === "home_assistant" ? " (HA)" : " (Custom)"}`
+      opt.textContent = formatWorkspaceUserLabel(u)
       select.appendChild(opt)
     }
     if (defaultAssignee) {

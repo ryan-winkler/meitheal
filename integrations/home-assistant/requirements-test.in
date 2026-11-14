@@ -1,0 +1,7 @@
+pytest-homeassistant==2026.11.1
+# Supervisor client exercised by the Core integration enrollment tests.
+aiohasupervisor==0.10.0
+# Parser used by both supported Core conversation manifests.
+hassil==3.12.1
+# Coverage plugin for the CI pytest run.
+pytest-cov==7.1.0
