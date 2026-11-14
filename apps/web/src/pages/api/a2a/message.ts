@@ -18,6 +18,7 @@ const rpcRequest = z.object({
   id: z.union([z.string(), z.number().int(), z.null()]).optional(),
   params: z.unknown().optional(),
 })
+const rfc3339Timestamp = z.string().datetime({ offset: true })
 const taskRequest = z.object({ id: z.string().min(1), historyLength: z.number().int().nonnegative().optional() })
 const listRequest = z.object({
   pageSize: z.number().int().min(1).max(100).optional(),
@@ -123,10 +124,11 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
         if (!list.success) return rpcError(id, A2A_ERRORS.INVALID_PARAMS, "Invalid task list parameters.")
         let statusTimestampAfterMs: number | undefined
         if (list.data.statusTimestampAfter !== undefined) {
-          statusTimestampAfterMs = Date.parse(list.data.statusTimestampAfter)
-          if (!Number.isFinite(statusTimestampAfterMs)) {
+          const ts = rfc3339Timestamp.safeParse(list.data.statusTimestampAfter)
+          if (!ts.success) {
             return rpcError(id, A2A_ERRORS.INVALID_PARAMS, "Invalid statusTimestampAfter timestamp.")
           }
+          statusTimestampAfterMs = Date.parse(ts.data)
         }
         return rpcResult(id, await listA2aTasks(token, linkBase, {
           pageSize: list.data.pageSize ?? 50,

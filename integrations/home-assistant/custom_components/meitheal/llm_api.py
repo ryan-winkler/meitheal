@@ -257,21 +257,29 @@ class ListTasksTool(MeithealReadTool):
         self, coordinator: MeithealCoordinator, args: dict[str, Any]
     ) -> JsonObjectType:
         assignee = _assignee(args)
-        data = await coordinator.api.async_request(
-            "GET",
-            "/api/tasks",
-            params={"assigned_to": assignee, "limit": "200", "sort": "updated_at"},
-            read_json=True,
-        )
-        rows = data.get("tasks") if isinstance(data, dict) else None
-        if not isinstance(rows, list):
-            raise HomeAssistantError("Meitheal returned an invalid task list")
-        tasks = [
-            _task_summary(row)
-            for row in rows
-            if isinstance(row, dict)
-            and (args["include_completed"] or row.get("status") not in _DONE_STATUSES)
-        ]
+        include_completed = bool(args["include_completed"])
+        tasks: list[JsonObjectType] = []
+        offset = 0
+        while True:
+            params: dict[str, str] = {"assigned_to": assignee, "limit": "200", "sort": "updated_at"}
+            if offset > 0:
+                params["offset"] = str(offset)
+            data = await coordinator.api.async_request(
+                "GET",
+                "/api/tasks",
+                params=params,
+                read_json=True,
+            )
+            rows = data.get("tasks") if isinstance(data, dict) else None
+            if not isinstance(rows, list):
+                raise HomeAssistantError("Meitheal returned an invalid task list")
+            for row in rows:
+                if isinstance(row, dict) and (include_completed or row.get("status") not in _DONE_STATUSES):
+                    tasks.append(_task_summary(row))
+            offset += len(rows)
+            total = data.get("total") if isinstance(data, dict) else None
+            if not rows or (isinstance(total, int) and offset >= total) or (not isinstance(total, int) and len(rows) < 200):
+                break
         return {"assignee": assignee, "tasks": tasks[:50], "count": len(tasks)}
 
 

@@ -1957,13 +1957,13 @@ const paths = {
   },
 
   // ── A2A ──
-  "/api/a2a/agent-card": { get: { operationId: "getA2AAgentCard", tags: ["Agents"], summary: "Get the A2A agent card for read-only task search", responses: { 200: { description: "Agent card with the JSON-RPC task search interface" }, 401: { description: "Ingress or agent token required in managed-ingress mode" }, 403: { description: "Token lacks a2a:execute" }, 404: { description: "A2A disabled" }, 503: { description: "Protocol setting unavailable" } } } },
+  "/api/a2a/agent-card": { get: { operationId: "getA2AAgentCard", tags: ["Agents"], summary: "Get the A2A agent card for task search and assigned tasks", responses: { 200: { description: "Agent card with the JSON-RPC A2A interface" }, 401: { description: "Ingress or agent token required in managed-ingress mode" }, 403: { description: "Token lacks a2a:execute" }, 404: { description: "A2A disabled" }, 503: { description: "Protocol setting unavailable" } } } },
   "/api/a2a/message": {
     post: {
       operationId: "sendA2AMessage",
       tags: ["Agents"],
-      summary: "Search active task titles through A2A JSON-RPC 1.0",
-      description: "Requires a token with a2a:execute and search:read and the A2A-Version: 1.0 header. SendMessage returns up to eight active task titles and links. Results are read-only.",
+      summary: "Call A2A JSON-RPC 1.0 methods (SendMessage, GetTask, ListTasks, CancelTask)",
+      description: "Requires a token with a2a:execute and search:read (plus tasks:read for GetTask and ListTasks) and the A2A-Version: 1.0 header. SendMessage returns up to eight active task titles and links; ListTasks returns open tasks assigned to the linked agent assignee; GetTask returns a single task by ID or ticket key.",
       parameters: [
         { name: "A2A-Version", in: "header", required: true, schema: { type: "string", enum: ["1.0"] } },
       ],
@@ -1984,7 +1984,27 @@ const paths = {
           },
         },
       },
-      responses: { 200: { description: "JSON-RPC result or error" }, 401: { description: "Missing or invalid agent token" }, 403: { description: "Token lacks a2a:execute or search:read" }, 404: { description: "A2A disabled" }, 413: { description: "Request exceeds 16 KiB" }, 415: { description: "Request is not application/json" }, 503: { description: "Protocol setting unavailable" } },
+      responses: { 200: { description: "JSON-RPC result or error" }, 401: { description: "Missing or invalid agent token" }, 403: { description: "Token lacks required A2A/search/read scopes" }, 404: { description: "A2A disabled" }, 413: { description: "Request exceeds 16 KiB" }, 415: { description: "Request is not application/json" }, 503: { description: "Protocol setting unavailable" } },
+    },
+  },
+  "/api/a2a/tasks/{id}": {
+    get: {
+      operationId: "getA2ATask",
+      tags: ["Agents"],
+      summary: "Get a single household task in A2A task representation",
+      description: "Requires a token with a2a:execute, search:read, and tasks:read, plus A2A-Version: 1.0.",
+      parameters: [
+        { name: "id", in: "path", required: true, schema: { type: "string", maxLength: 128 }, description: "Task UUID or ticket key (e.g., MTH-42)" },
+        { name: "A2A-Version", in: "header", required: true, schema: { type: "string", enum: ["1.0"] } },
+      ],
+      responses: {
+        200: { description: "A2A Task object" },
+        401: { description: "Missing or invalid agent token" },
+        403: { description: "Token lacks a2a:execute, search:read, or tasks:read" },
+        404: { description: "Task not found or A2A disabled" },
+        400: { description: "Unsupported A2A version" },
+        503: { description: "Protocol setting unavailable" },
+      },
     },
   },
 

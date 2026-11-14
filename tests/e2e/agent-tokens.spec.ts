@@ -557,6 +557,14 @@ settingsBrowserTest("Settings Agent Tokens UI handles deferred load, retry, focu
   await expect(assignedRow).toHaveCount(0)
 
   await page.locator("#agent-token-create-btn").click()
+  await page.locator("#agent-token-assignee").selectOption("__new__")
+  await expect(page.locator("#agent-token-new-assignee")).toBeVisible()
+  for (const scope of ["mcp:execute", "tasks:read", "tasks:write:assigned", "search:read"]) {
+    await expect(page.locator(`input[name="agent-token-scopes"][value="${scope}"]`)).toBeChecked()
+  }
+  await page.locator("#agent-token-form-cancel").click()
+
+  await page.locator("#agent-token-create-btn").click()
   await page.locator("#agent-token-name").fill("UI QA Token")
   await page.locator('input[name="agent-token-scopes"][value="tasks:read"]').check()
   await page.locator("#agent-token-save").click()

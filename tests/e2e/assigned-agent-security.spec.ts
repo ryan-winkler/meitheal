@@ -372,6 +372,20 @@ test.describe("Live Built HTTP & MCP Assigned-Agent Contract", () => {
       })
       expect(badLink.status()).toBe(403)
 
+      // Missing tasks must still return 404 (not 403) for assigned-only tokens
+      const missingComment = await agentCtx.post(p("/api/tasks/missing-task-id/comments"), {
+        data: { content: "Should return 404" },
+      })
+      expect(missingComment.status()).toBe(404)
+
+      // Assigned agent cannot spoof human provenance via PUT owner field
+      const spoofOwner = await agentCtx.put(p(`/api/tasks/${parentTask.id}`), {
+        data: { title: parentTask.title, owner: "human" },
+      })
+      expect(spoofOwner.status()).toBe(200)
+      const parentAfterSpoof = await (await adminCtx.get(p(`/api/tasks/${parentTask.id}`))).json()
+      expect(parentAfterSpoof.owner).toBe("bot:Agent Alpha")
+
       // Assigned agent cannot defer foreignTask
       const badDefer = await agentCtx.patch(p(`/api/tasks/${foreignTask.id}/deferral`), {
         data: { deferred: true, updated_at: foreignTask.updated_at, deferral_revision: foreignTask.deferral_revision ?? null },

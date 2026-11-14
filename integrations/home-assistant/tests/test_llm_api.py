@@ -241,6 +241,29 @@ async def test_manage_api_reads_and_changes_tasks_for_the_caller(
         assert everything.data["count"] == 2
         assert client.async_request.await_args.kwargs["params"]["assigned_to"] == "custom_1a2b3c4d"
 
+        page1 = [
+            {"id": "p-0", "title": "Task 0", "status": "pending", "assigned_to": me},
+            *[
+                {"id": f"p-{i}", "title": f"Task {i}", "status": "complete", "assigned_to": me}
+                for i in range(1, 200)
+            ],
+        ]
+        page2 = [
+            {"id": "p-200", "title": "Task 200", "status": "pending", "assigned_to": me},
+            {"id": "p-201", "title": "Task 201", "status": "pending", "assigned_to": me},
+        ]
+        client.async_request.side_effect = [
+            {"tasks": page1, "total": 202},
+            {"tasks": page2, "total": 202},
+        ]
+        paginated = await async_call(instance, "meitheal_list_tasks", {})
+        assert paginated.data["count"] == 3
+        assert [t["id"] for t in paginated.data["tasks"]] == ["p-0", "p-200", "p-201"]
+        last_two_calls = client.async_request.await_args_list[-2:]
+        assert "offset" not in last_two_calls[0].kwargs["params"]
+        assert last_two_calls[1].kwargs["params"]["offset"] == "200"
+        client.async_request.side_effect = None
+
         client.async_request.return_value = {"id": "new", "title": "Plan", "assigned_to": me}
         created = await async_call(
             instance, "meitheal_create_task", {"title": "Plan", "priority": 2, "assignee": "me"}

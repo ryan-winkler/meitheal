@@ -47,7 +47,8 @@ export const POST: APIRoute = async ({ params, request, locals }) => {
     await ensureSchema()
     const repo = new TaskRepository(getPersistenceClient())
     const resolved = await repo.resolveTaskId(taskId)
-    const resolvedTaskId = resolved?.id ?? taskId
+    if (!resolved) return apiError("Task not found", 404)
+    const resolvedTaskId = resolved.id
     const denied = await requireAssignedTaskWriteAccess(
       locals.agentToken,
       (id) => repo.findById(id),
@@ -55,7 +56,6 @@ export const POST: APIRoute = async ({ params, request, locals }) => {
       "Agent can only track time on tasks assigned to it",
     )
     if (denied) return denied
-    if (!resolved) return apiError("Task not found", 404)
 
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
     if (hasBoardSelection(body)) return unavailableBoardResponse()

@@ -658,10 +658,7 @@ export class TaskRepository {
    * Accepts UUID or MTH-N ticket key format.
    */
   async resolveTaskId(idOrKey: string): Promise<{ id: string; updated_at: unknown } | null> {
-    let parsedTicketNum: number | null = null;
-    if (idOrKey.toUpperCase().startsWith("MTH-")) {
-      parsedTicketNum = parseInt(idOrKey.slice(4), 10);
-    }
+    const parsedTicketNum = parseTicketKey(idOrKey);
     const result = await this.client.execute({
       sql: `SELECT id, ${taskTimestampMs("updated_at")} AS updated_at FROM tasks
             WHERE id = ? OR ticket_number = ? LIMIT 1`,
@@ -674,10 +671,7 @@ export class TaskRepository {
 
   /** Retrieve a single task by ID/ticket key, with parent info JOINed */
   async findById(idOrKey: string): Promise<TaskRow | null> {
-    let parsedTicketNum: number | null = null;
-    if (idOrKey.toUpperCase().startsWith("MTH-")) {
-      parsedTicketNum = parseInt(idOrKey.slice(4), 10);
-    }
+    const parsedTicketNum = parseTicketKey(idOrKey);
     const result = await this.client.execute({
       sql: `SELECT t.id, t.title, t.description, t.status, t.priority, t.due_date, t.labels,
                    t.framework_payload, t.calendar_sync_state, t.area_id, t.custom_fields,

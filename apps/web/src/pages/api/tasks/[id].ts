@@ -11,7 +11,7 @@ import { formatTicketKey } from "../../../lib/ticket-key"
 import { dispatchTaskEvent, taskEventAuthorityHeaders } from "../../../lib/webhook-dispatcher"
 import { logApiError } from "../../../lib/api-logger"
 import { apiError } from "../../../lib/api-response"
-import { requireAssignedTaskWriteAccess, restrictedAssigneeId } from "../../../lib/agent-token-guard"
+import { isAssignedWriteOnly, requireAssignedTaskWriteAccess, restrictedAssigneeId } from "../../../lib/agent-token-guard"
 import { db503Response, isDbUnavailable } from "../../../lib/db-fallback"
 import { resolveRecentActivityActor } from "../../../lib/recent-activity-actor"
 import { STATUS, normalizeStatus, isDoneStatus } from "../../../lib/status-config"
@@ -252,7 +252,7 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
     sanitized.assigned_to = typeof body.assigned_to === "string" && body.assigned_to.trim().length > 0 && body.assigned_to.length <= 255
       ? body.assigned_to.trim() : null
   }
-  if (body.owner !== undefined && typeof body.owner === "string") {
+  if (body.owner !== undefined && typeof body.owner === "string" && !isAssignedWriteOnly(agentToken)) {
     sanitized.owner = body.owner.slice(0, 100)
   } else if (sanitized.assigned_to !== undefined) {
     if (sanitized.assigned_to === null) {

@@ -24,6 +24,7 @@ import json
 import logging
 import os
 import shutil
+import tempfile
 from typing import Any
 
 import voluptuous as vol
@@ -183,8 +184,15 @@ def _install_custom_sentences(src_base: str, dst_base: str) -> bool:
                 )
     if manifest_dirty:
         os.makedirs(dst_base, exist_ok=True)
-        with open(manifest_path, "w", encoding="utf-8") as handle:
-            json.dump(manifest, handle, sort_keys=True)
+        fd, tmp_path = tempfile.mkstemp(prefix=".meitheal_sentences.", dir=dst_base)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                json.dump(manifest, handle, sort_keys=True)
+            os.replace(tmp_path, manifest_path)
+        except Exception:
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
+            raise
     return changed
 
 

@@ -8,7 +8,9 @@ import { notifyAgentComment } from "../../apps/web/src/domains/notifications/age
 import { SettingsRepository } from "../../apps/web/src/domains/tasks/persistence/settings-repository"
 import { ensureSchema, getPersistenceClient, resetPersistenceForTests } from "../../apps/web/src/domains/tasks/persistence/store"
 import { UserRepository } from "../../apps/web/src/domains/tasks/persistence/user-repository"
+import { checkAssignedTask } from "../../apps/web/src/lib/agent-token-guard"
 import { getA2aTask, listA2aTasks } from "../../apps/web/src/lib/a2a-tasks"
+import { parseTicketKey } from "../../apps/web/src/lib/ticket-key"
 import { resetWebhookCacheForTests } from "../../apps/web/src/lib/webhook-dispatcher"
 import { POST as a2aMessagePost } from "../../apps/web/src/pages/api/a2a/message"
 
@@ -140,9 +142,33 @@ test("A2A task helpers resolve ticket keys, paginate past 200 rows, and enforce 
       assigneeId: "custom_agent_a2a",
     }
 
+    expect(parseTicketKey("MTH-abc")).toBeNull()
+    expect(parseTicketKey(`MTH-${"9".repeat(320)}`)).toBeNull()
+
     const byKey = await getA2aTask(agent, "MTH-17", "http://127.0.0.1")
     expect(byKey).toMatchObject({ id: "a2a-task-17", metadata: { ticket_key: "MTH-17" } })
     expect(await getA2aTask(agent, "missing-task", "http://127.0.0.1")).toBeNull()
+    expect(await getA2aTask(agent, "MTH-abc", "http://127.0.0.1")).toBeNull()
+    expect(await getA2aTask(agent, `MTH-${"9".repeat(320)}`, "http://127.0.0.1")).toBeNull()
+    expect(await checkAssignedTask("MTH-abc", agent)).toBeNull()
+    expect(await checkAssignedTask(`MTH-${"9".repeat(320)}`, agent)).toBeNull()
+
+    const badKeyGetRes = await a2aMessagePost({
+      request: new Request("http://127.0.0.1/api/a2a/message", {
+        method: "POST",
+        headers: { "content-type": "application/json", "A2A-Version": "1.0" },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 99,
+          method: "GetTask",
+          params: { id: "MTH-abc" },
+        }),
+      }),
+      locals: { agentToken: agent, ingressPath: "" },
+      url: new URL("http://127.0.0.1/api/a2a/message"),
+    } as unknown as Parameters<typeof a2aMessagePost>[0])
+    const badKeyGetJson = await badKeyGetRes.json()
+    expect(badKeyGetJson.error.code).toBe(-32001)
 
     const page1 = await listA2aTasks(agent, "http://127.0.0.1", { pageSize: 50, offset: 0, includeArtifacts: false })
     expect(page1.totalSize).toBe(205)
@@ -169,22 +195,24 @@ test("A2A task helpers resolve ticket keys, paginate past 200 rows, and enforce 
     expect(filteredJson.result.nextPageToken).toBe("")
     expect(filteredJson.result.tasks.map((t: { id: string }) => t.id)).toEqual(["a2a-task-204", "a2a-task-203"])
 
-    const badTsRes = await a2aMessagePost({
-      request: new Request("http://127.0.0.1/api/a2a/message", {
-        method: "POST",
-        headers: { "content-type": "application/json", "A2A-Version": "1.0" },
-        body: JSON.stringify({
-          jsonrpc: "2.0",
-          id: 2,
-          method: "ListTasks",
-          params: { statusTimestampAfter: "not-a-timestamp" },
+    for (const invalidTimestamp of ["not-a-timestamp", "1", "2026-02-30T00:00:00Z"]) {
+      const badTsRes = await a2aMessagePost({
+        request: new Request("http://127.0.0.1/api/a2a/message", {
+          method: "POST",
+          headers: { "content-type": "application/json", "A2A-Version": "1.0" },
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: 2,
+            method: "ListTasks",
+            params: { statusTimestampAfter: invalidTimestamp },
+          }),
         }),
-      }),
-      locals: { agentToken: agent, ingressPath: "" },
-      url: new URL("http://127.0.0.1/api/a2a/message"),
-    } as unknown as Parameters<typeof a2aMessagePost>[0])
-    const badTsJson = await badTsRes.json()
-    expect(badTsJson.error.code).toBe(-32602)
+        locals: { agentToken: agent, ingressPath: "" },
+        url: new URL("http://127.0.0.1/api/a2a/message"),
+      } as unknown as Parameters<typeof a2aMessagePost>[0])
+      const badTsJson = await badTsRes.json()
+      expect(badTsJson.error.code).toBe(-32602)
+    }
   } finally {
     getPersistenceClient().close()
     resetPersistenceForTests()

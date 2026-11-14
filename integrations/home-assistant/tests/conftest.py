@@ -2,6 +2,7 @@
 
 from collections.abc import Iterator
 from pathlib import Path
+import shutil
 
 import pytest
 
@@ -12,5 +13,4 @@ def enable_legacy_custom_integrations(request: pytest.FixtureRequest) -> Iterato
     if request.config.pluginmanager.has_plugin("homeassistant"):
         request.getfixturevalue("enable_custom_integrations")
     yield
-    manifest = Path(__file__).parent / "testing_config" / "custom_sentences" / ".meitheal_sentences.json"
-    manifest.unlink(missing_ok=True)
+    shutil.rmtree(Path(__file__).parent / "testing_config" / "custom_sentences", ignore_errors=True)

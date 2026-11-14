@@ -10,13 +10,18 @@ import {
   MCP_SUPPORTED_VERSIONS,
   resolveMcpSchema,
 } from "@domains/agents"
-import { hasBoardSelection, isBoardTaskApiPath, unavailableBoardResponse } from "@domains/tasks"
+import {
+  ensureSchema,
+  getPersistenceClient,
+  hasBoardSelection,
+  isBoardTaskApiPath,
+  unavailableBoardResponse,
+  UserRepository,
+} from "@domains/tasks"
 import { apiJson, apiError, apiProblem } from "@lib/api-response"
 import { readWithinLimit } from "@lib/bounded-body"
 import { isDoneStatus } from "@lib/status-config"
 import type { ResolvedAgent } from "@lib/agent-token-guard"
-import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
-import { UserRepository } from "@domains/tasks/persistence/user-repository"
 
 /**
  * POST /api/mcp — MCP (Model Context Protocol) Server Endpoint
@@ -71,7 +76,7 @@ const EXCLUDED_OPS = new Set([
   "updateLabel", "deleteLabel", // Shared vocabulary requires a current administrator, never an agent token
   "taskInactivity",
   "mcpEndpoint",       // Self-reference
-  "getA2AAgentCard", "sendA2AMessage", // Separate A2A protocol boundary
+  "getA2AAgentCard", "sendA2AMessage", "getA2ATask", // Separate A2A protocol boundary
   "healthPing",        // HEAD-only liveness
   "subscribeSSE",      // SSE streaming, not callable
   "exportDatabase",    // Large binary download

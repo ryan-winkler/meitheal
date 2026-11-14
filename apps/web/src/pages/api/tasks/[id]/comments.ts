@@ -59,7 +59,8 @@ export const POST: APIRoute = async ({ params, request, locals }) => {
     const repo = new TaskRepository(client)
     const mentions = new CommentMentionRepository(client)
     const resolved = await repo.resolveTaskId(params.id!)
-    const taskId = resolved?.id ?? params.id!
+    if (!resolved) return apiError("Task not found", 404)
+    const taskId = resolved.id
 
     const agentToken = locals.agentToken
     const denied = await requireAssignedTaskWriteAccess(
@@ -69,7 +70,6 @@ export const POST: APIRoute = async ({ params, request, locals }) => {
       "Agent can only comment on tasks assigned to it",
     )
     if (denied) return denied
-    if (!resolved) return apiError("Task not found", 404)
     if (attempt && actor.owner) {
       if (await mentions.replay(taskId, actor.owner, attempt.key, content)) {
         if (!await hasCurrentTaskParticipant(locals, request.signal, true)) return activeParticipantRequired()

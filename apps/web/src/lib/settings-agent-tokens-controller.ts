@@ -354,7 +354,14 @@ export function initAgentTokensSettings(): void {
 
   pageLifecycle.on(assigneeSelect, "change", () => {
     toggleNewAssignee()
-    if (assigneeSelect.value === "__new__") newAssigneeName?.focus()
+    if (assigneeSelect.value === "__new__") {
+      const checkboxes = Array.from(document.querySelectorAll<HTMLInputElement>('[name="agent-token-scopes"]'))
+      if (checkboxes.every(cb => !cb.checked)) {
+        const defaults = new Set(["mcp:execute", "tasks:read", "tasks:write:assigned", "search:read"])
+        checkboxes.forEach(cb => { cb.checked = defaults.has(cb.value) })
+      }
+      newAssigneeName?.focus()
+    }
   })
 
   pageLifecycle.on(createBtn, "click", () => {

@@ -47,4 +47,4 @@ egm_*.md
 
 __pycache__/
 *.pyc
-integrations/home-assistant/tests/testing_config/custom_sentences/.meitheal_sentences.json
+integrations/home-assistant/tests/testing_config/custom_sentences/
