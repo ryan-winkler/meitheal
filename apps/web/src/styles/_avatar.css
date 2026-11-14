@@ -9,7 +9,7 @@
   --avatar-size-lg: 28px;
   /* Same surface and text pair as the primary button, so initials keep AA contrast with any accent. */
   --avatar-bg-ha: var(--personal-accent, var(--palette-accent-hover));
-  --avatar-text-ha: var(--personal-accent-foreground, #fff);
+  --avatar-text-ha: var(--personal-accent-foreground, var(--palette-on-accent, #07140f));
   --avatar-bg-custom: var(--warning-dark, #b45309);
   --avatar-text: #fff;
 }

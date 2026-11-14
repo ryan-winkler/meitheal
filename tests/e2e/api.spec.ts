@@ -88,9 +88,11 @@ test("time, comments and links read back with the ticket key they were written w
     const { comments } = await (await request.get(`/api/tasks/${key}/comments`)).json()
     expect(comments.map((comment: { content: string }) => comment.content)).toContain("Written with the ticket key")
 
+    const targetKey = (await (await request.get(`/api/tasks/${ids[1]}`)).json()).ticket_key as string
     const linked = await request.post(`/api/tasks/${key}/links`, { headers, data: { target_task_id: ids[1], link_type: "related_to" } })
     expect(linked.ok(), await linked.text()).toBe(true)
     expect((await (await request.get(`/api/tasks/${key}/links`)).json()).outbound).toHaveLength(1)
+    expect((await (await request.get(`/api/tasks/${targetKey}/links`)).json()).inbound).toHaveLength(1)
   } finally {
     for (const id of ids) await request.delete(`/api/tasks/${id}`, { headers })
   }
