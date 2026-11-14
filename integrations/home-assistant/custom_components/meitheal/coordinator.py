@@ -98,7 +98,7 @@ class MeithealCoordinatorData:
         self.overdue_count = sum(1 for t in tasks if t.is_overdue)
         self.total_count = len(tasks)
         # Phase 8: additional computed stats
-        today_str = datetime.now().strftime("%Y-%m-%d")
+        today_str = datetime.now(UTC).strftime("%Y-%m-%d")
         self.due_today_count = sum(
             1 for t in tasks
             if t.due_date and t.due_date.startswith(today_str) and t.status != "done"
@@ -418,7 +418,7 @@ class MeithealCoordinator(DataUpdateCoordinator[MeithealCoordinatorData]):
         query: str = "",
         status: str | None = None,
         priority: int | None = None,
-        include_completed: bool = False,
+        include_completed: bool | None = None,
     ) -> dict[str, Any]:
         """Search tasks using Meitheal's universal search contract."""
         params: dict[str, str] = {
@@ -431,7 +431,11 @@ class MeithealCoordinator(DataUpdateCoordinator[MeithealCoordinatorData]):
             params["status"] = status
         if priority is not None:
             params["priority"] = str(priority)
-        if include_completed:
+        if include_completed is True or (
+            include_completed is None
+            and status is not None
+            and status.strip().lower() in (STATUS_DONE, "complete")
+        ):
             params["include_completed"] = "1"
 
         payload = await self.api.async_request(

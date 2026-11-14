@@ -45,27 +45,45 @@ async function getDB() {
 let initialized = false;
 let initializing = false;
 
+function withStartupCap(task: Promise<unknown>, timeoutMs: number): Promise<void> {
+  return new Promise<void>((resolve) => {
+    const timer = setTimeout(() => resolve(), timeoutMs);
+    timer.unref?.();
+    task.then(
+      () => {
+        clearTimeout(timer);
+        resolve();
+      },
+      () => {
+        clearTimeout(timer);
+        resolve();
+      },
+    );
+  });
+}
+
 /**
  * Initialize all HA integrations. Idempotent — safe to call on every request.
  *
  * Flow:
- *   1. Establish WebSocket connection to HA Core
- *   2. Subscribe to entity state changes (populates entity cache)
- *   3. Auto-start Todo sync from persisted settings
- *   4. Auto-start Calendar sync from persisted settings
- *   5. Validate Grocy connectivity
- *   6. Validate n8n/webhook endpoint reachability
+ *   0. Verify/ensure local SQLite schema once
+ *   1. Start local due-date reminder scheduler & establish WebSocket connection to HA Core
+ *   2. Subscribe to scoped entity state changes
+ *   3. Auto-start Todo sync -> title cleanup -> Calendar sync -> Grocy sync -> Webhook validation sequentially
  */
 export async function initHAIntegrations(): Promise<void> {
   if (initialized || initializing) return;
   initializing = true;
 
   try {
+    // Ensure schema verification completes once before background schedulers or WS frames run.
+    await getDB();
+
     // Task deadlines are local domain transitions, including in standalone
     // mode or while HA is unavailable. The scheduler itself is idempotent.
     await autoStartDueDateReminders();
 
-    // Only initialize when running as HA addon (SUPERVISOR_TOKEN present)
+    // Only initialize when running as HA addon or configured standalone HA
     if (!(await getHAConfiguration())) {
       logger.log("info", {
         event: "ha.startup.skipped",
@@ -91,8 +109,8 @@ export async function initHAIntegrations(): Promise<void> {
       return; // Don't mark initialized — retry next request
     }
 
-    // Step 2: Subscribe to entity states (populates the in-memory cache)
-    await initEntitySubscription();
+    // Step 2: Subscribe to entity states (populates the scoped in-memory cache)
+    await initEntitySubscription(conn);
     logger.log("info", {
       event: "ha.startup.entities_subscribed",
       domain: "ha",
@@ -198,15 +216,18 @@ async function autoStartTodoSync(): Promise<void> {
       return;
     }
 
-    // Import and start todo sync for ALL enabled entities
+    // Import and start todo sync for ALL enabled entities (bounded by 5s non-fatal cap)
     const { startTodoSync } = await import("@domains/todo");
-    startTodoSync(
-      entityIds.map((entityId) => ({
-        entityId,
-        syncEnabled: true,
-        writeBack: direction === "outbound" || direction === "bidirectional",
-        syncDirection: direction,
-      })),
+    await withStartupCap(
+      startTodoSync(
+        entityIds.map((entityId) => ({
+          entityId,
+          syncEnabled: true,
+          writeBack: direction === "outbound" || direction === "bidirectional",
+          syncDirection: direction,
+        })),
+      ),
+      5_000,
     );
 
     logger.log("info", {
@@ -349,7 +370,7 @@ async function autoStartCalendarSync(): Promise<void> {
     });
 
     if (configs.length > 0) {
-      startMultiCalendarSync(configs);
+      await withStartupCap(startMultiCalendarSync(configs), 5_000);
     }
 
     if (settings.caldav_url) {
@@ -542,7 +563,7 @@ async function autoStartDueDateReminders(): Promise<void> {
     const { startDueDateReminders } = await import(
       "@domains/notifications/due-date-reminders"
     );
-    startDueDateReminders();
+    await startDueDateReminders();
     logger.log("info", {
       event: "ha.startup.due_date_reminders.started",
       domain: "notifications",

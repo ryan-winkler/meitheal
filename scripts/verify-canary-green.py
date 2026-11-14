@@ -5,6 +5,7 @@ import csv
 import json
 import re
 from decimal import Decimal
+from itertools import pairwise
 
 
 MIB = 1024**2
@@ -123,7 +124,7 @@ def evaluate_receipt(lines, config_id, version):
     if len(idle) != 12 or len(active) < 50 or idle + active != ordered or any(
         not MIN_SAMPLE_GAP_SECONDS <= newer["epoch"] - older["epoch"] <= MAX_SAMPLE_GAP_SECONDS
         or newer["cpu_usec"] < older["cpu_usec"]
-        for older, newer in zip(ordered, ordered[1:])
+        for older, newer in pairwise(ordered)
     ):
         raise ValueError("Expected ordered idle and active samples 5–8 seconds apart with monotonic counters")
     active_seconds = active[-1]["epoch"] - active[0]["epoch"]
@@ -172,7 +173,7 @@ def evaluate_receipt(lines, config_id, version):
                                 for positions in prerequisite_positions)
     last_measurement = max(measurements)
     terminal_ordered = all(len(positions) == 1 for positions in terminal_positions) and all(
-        left[0] < right[0] for left, right in zip(terminal_positions, terminal_positions[1:])
+        left[0] < right[0] for left, right in pairwise(terminal_positions)
     ) and last_measurement < terminal_positions[0][0]
     conditions = {
         "exact ARM64 config ID": len(images) == 1 and re.fullmatch(
@@ -228,7 +229,7 @@ def evaluate_receipt(lines, config_id, version):
             "inclusive_mean_limit": CPU_LIMIT_PERCENT,
             "intervals": summarize([
                 Decimal(newer["cpu_usec"] - older["cpu_usec"]) / ((newer["epoch"] - older["epoch"]) * 10_000)
-                for older, newer in zip(active, active[1:])
+                for older, newer in pairwise(active)
             ]),
             "throttle_count_delta": active[-1]["throttle_count"] - active[0]["throttle_count"]
             if "throttle_count" in header else None,

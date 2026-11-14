@@ -162,8 +162,13 @@ async function caldavFetch(
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
+  const parsed = new URL(url);
+  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+    throw new Error(`Unsupported CalDAV protocol: ${parsed.protocol}`);
+  }
+
   try {
-    const res = await fetch(url, {
+    const res = await fetch(parsed.href, {
       method,
       headers: {
         "Content-Type": "application/xml; charset=utf-8",

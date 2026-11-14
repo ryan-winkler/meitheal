@@ -45,9 +45,12 @@ test.describe("browser notification test in Settings", () => {
   async function openTroubleshooting(page: Page) {
     await page.context().addCookies([{ name: "feedback-fixture", value: "admin", url: origin }])
     await page.goto(scope + "settings")
+    await expect(page.locator("#settings-shell")).toHaveAttribute("data-settings-booted", "true")
     await expect(page.locator("#settings-panels")).not.toHaveAttribute("inert", "")
     await page.locator('[data-settings-nav="app-pwa-settings"]').click({ timeout: 5_000 })
+    await expect(page.locator("#app-pwa-settings")).toBeVisible()
     await page.getByText("troubleshooting", { exact: true }).click({ timeout: 5_000 })
+    await expect(page.locator("#pwa-troubleshoot")).toHaveAttribute("open", "")
     return page.getByRole("button", { name: "Send a test notification" })
   }
 
@@ -63,11 +66,16 @@ test.describe("browser notification test in Settings", () => {
   async function allowNotifications(page: Page) {
     await page.context().grantPermissions(["notifications"], { origin })
     await page.addInitScript(() => {
-      if (Notification.permission === "granted") return
-      // The headless shell used in CI has no notification service even with a permission override.
+      // The headless shell used in CI has no notification service even with a permission override, so always stub showNotification.
       const notifications: FixtureNotification[] = []
       ;(window as FixtureWindow).meithealFixtureNotifications = notifications
-      Object.defineProperty(Notification, "permission", { value: "granted" })
+      if (Notification.permission !== "granted") {
+        try {
+          Object.defineProperty(Notification, "permission", { configurable: true, value: "granted" })
+        } catch {
+          // Ignore if browser permission is locked to native state.
+        }
+      }
       ServiceWorkerRegistration.prototype.showNotification = async function (title, options) {
         notifications.push({
           title, body: options?.body ?? "", icon: options?.icon ?? "",

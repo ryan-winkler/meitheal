@@ -555,3 +555,27 @@ test("pressing lowercase c on a grouped board collapses and expands swimlanes wi
     if (secondId) await request.delete(`/api/tasks/${secondId}`, { headers })
   }
 })
+
+test("pressing c on an ungrouped board opens Calendar like everywhere else", async ({ page, request, baseURL }) => {
+  // Earlier cases in this file share one server and its 300/min API budget.
+  test.setTimeout(100_000)
+  const headers = { origin: new URL(baseURL!).origin }
+  const data = { title: "Ungrouped board task" }
+  let created = await request.post("/api/tasks", { headers, data })
+  if (created.status() === 429) {
+    const retryAfter = Number(created.headers()["retry-after"] ?? 60)
+    await page.waitForTimeout(Math.min(Math.max(retryAfter, 1), 61) * 1000)
+    created = await request.post("/api/tasks", { headers, data })
+  }
+  expect(created.status()).toBe(201)
+  const { id } = await created.json()
+  try {
+    await page.goto("/tasks?view=kanban#kanban")
+    await expect(page.locator(".swimlane-group:not([hidden]) .swimlane-toggle")).toHaveCount(0)
+    await page.locator(`[data-task-id="${id}"] .card-open-btn`).focus()
+    await page.keyboard.press("c")
+    await expect(page).toHaveURL(/\/tasks\?view=calendar#calendar$/)
+  } finally {
+    await request.delete(`/api/tasks/${id}`, { headers })
+  }
+})

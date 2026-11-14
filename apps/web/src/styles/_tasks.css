@@ -6,7 +6,7 @@
 }
 
 .task-item {
-  @apply flex items-center gap-3 bg-bg-card/60 backdrop-blur-[2px] border border-border rounded-lg px-4 py-1.5 transition-all cursor-pointer;
+  @apply flex items-center gap-3 bg-bg-card border border-border rounded-lg px-4 py-1.5 transition-all cursor-pointer;
 }
 
 .task-item:hover {
@@ -40,7 +40,8 @@
 }
 
 .task-checkbox:checked {
-  @apply bg-accent border-accent;
+  background-color: var(--accent);
+  border-color: var(--accent);
 }
 
 .task-labels {
@@ -221,15 +222,15 @@
 
 @keyframes flash-success {
   0% {
-    box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.4);
+    box-shadow: 0 0 0 0 rgb(var(--accent-rgb) / 0.4);
   }
 
   50% {
-    box-shadow: 0 0 12px 4px rgba(99, 102, 241, 0.25);
+    box-shadow: 0 0 12px 4px rgb(var(--accent-rgb) / 0.25);
   }
 
   100% {
-    box-shadow: 0 0 0 0 rgba(99, 102, 241, 0);
+    box-shadow: 0 0 0 0 rgb(var(--accent-rgb) / 0);
   }
 }
 
@@ -302,7 +303,7 @@
   .bento-card:hover {
     transform: translateY(-3px) scale(1.01);
     border-color: var(--accent);
-    box-shadow: 0 8px 24px rgba(99, 102, 241, 0.12),
+    box-shadow: 0 8px 24px rgb(var(--accent-rgb) / 0.12),
       0 2px 8px rgba(0, 0, 0, 0.2);
   }
 
@@ -442,7 +443,8 @@
 }
 
 .checklist-item input[type="checkbox"]:checked {
-  @apply bg-accent border-accent;
+  background-color: var(--accent);
+  border-color: var(--accent);
 }
 
 .checklist-item input[type="checkbox"]:checked + span {
@@ -451,7 +453,7 @@
 
 /* Quick-add focus glow */
 #quick-add-input:focus {
-  box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.16);
+  box-shadow: 0 0 0 3px rgb(var(--accent-rgb) / 0.16);
 }
 
 /* Calendar today pulse */
@@ -462,10 +464,10 @@
 @keyframes today-pulse {
   0%,
   100% {
-    box-shadow: 0 0 0 0 rgba(var(--accent-rgb), 0.28);
+    box-shadow: 0 0 0 0 rgb(var(--accent-rgb) / 0.28);
   }
   50% {
-    box-shadow: 0 0 0 4px rgba(var(--accent-rgb), 0.1);
+    box-shadow: 0 0 0 4px rgb(var(--accent-rgb) / 0.1);
   }
 }
 

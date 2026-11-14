@@ -9,9 +9,7 @@
   left: 0;
   z-index: 50;
   min-width: 200px;
-  background-color: var(--glass-bg, rgba(var(--bg-card-rgb), 0.92));
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  background-color: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg, 12px);
   box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.2);
@@ -68,7 +66,7 @@
 }
 
 .glass-dropdown__item.is-active {
-  background-color: rgba(var(--accent-rgb), 0.14);
+  background-color: rgb(var(--accent-rgb) / 0.14);
   color: var(--accent-text);
   font-weight: 500;
 }
@@ -94,12 +92,12 @@
   padding: 8px 12px;
 }
 .nt-tags-content .label-picker__input {
-  background: var(--bg-input, var(--bg-secondary));
-  border: 1px solid var(--border);
+  background: var(--bg-input, rgba(255,255,255,0.06));
+  border: 1px solid var(--border-dim);
   border-radius: var(--radius-md, 8px);
   padding: 6px 10px;
   font-size: 13px;
-  color: var(--text-primary);
+  color: var(--text);
   width: 100%;
   margin-top: 4px;
 }

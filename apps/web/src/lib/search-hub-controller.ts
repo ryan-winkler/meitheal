@@ -1,5 +1,6 @@
 import { createFocusTrap } from "@lib/focus-trap"
 import { syncIngressDestination } from "@lib/ingress-navigation"
+import { hasPriorityOverlay } from "@lib/layout-shortcuts-controller"
 import { workerAllowsNetworkOnly } from "@lib/network-only-worker"
 import { fetchOnlineSearch, searchRegistration, searchWorkerReady, searchWorkerScope } from "@lib/online-search-client"
 import { singleKeyShortcutsEnabled } from "@lib/single-key-shortcuts"
@@ -13,7 +14,7 @@ import type {
   SearchResultSection,
   SearchScope,
   TaskSearchField,
-} from "@domains/search/search-types"
+} from "@domains/search"
 
 const waitingSearchCapability = "MEITHEAL_SEARCH_WAITING_CAPABLE"
 
@@ -114,7 +115,7 @@ function renderResultItem(
   icon.className = "search-hub-item-icon"
   icon.setAttribute("aria-hidden", "true")
   if (item.color) {
-    icon.style.boxShadow = `inset 0 0 0 1px rgba(var(--border-rgb), 0.4), 0 0 0 1px ${item.color}`
+    icon.style.boxShadow = `inset 0 0 0 1px rgb(var(--border-rgb) / 0.4), 0 0 0 1px ${item.color}`
   }
   icon.replaceChildren(createTablerSvgElement(resolveSearchIconName(item), 16))
 
@@ -481,6 +482,12 @@ pageLifecycle.onPageLoad((signal) => {
               })
             })
           } else {
+            void searchRegistration(scope).then(current => {
+              const installing = current?.installing
+              installing?.addEventListener("statechange", () => {
+                if (installing.state === "installed" && isCurrent()) void refreshResults()
+              }, { signal: request.signal })
+            }).catch(() => {})
             showSearchStatus("Online search is unavailable until the app updates.", "Retry", () => {
               void searchRegistration(scope).then(current => current?.update()).catch(() => {})
               void refreshResults()
@@ -550,7 +557,9 @@ pageLifecycle.onPageLoad((signal) => {
     if (event.defaultPrevented) return
     const target = event.target
     if (target instanceof HTMLElement && (target.matches("input, textarea, select") || target.isContentEditable)) return
-    if (document.getElementById("task-detail-overlay")?.classList.contains("active")) return
+    const tdOverlay = document.getElementById("task-detail-overlay")
+    if (tdOverlay?.classList.contains("active") && !document.body.classList.contains("has-docked-inspector")) return
+    if (hasPriorityOverlay()) return
 
     if (event.key === "/" && !event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey
       && singleKeyShortcutsEnabled()) {
@@ -624,6 +633,9 @@ pageLifecycle.onPageLoad((signal) => {
 
   navigator.serviceWorker?.addEventListener("controllerchange", () => {
     if (isOpen) void refreshResults()
+  }, { signal })
+  window.addEventListener("meitheal-sw-update", (event) => {
+    if ((event as CustomEvent<{ type?: string }>).detail?.type === "update-available" && isOpen) void refreshResults()
   }, { signal })
   window.addEventListener("pagehide", () => {
     detailReturn = undefined

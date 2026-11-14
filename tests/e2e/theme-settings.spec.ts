@@ -133,7 +133,7 @@ test.describe("Theme Settings", () => {
     await save.click()
     await expect(root).toHaveAttribute("data-appearance-font", "sans")
     await expect(root).toHaveAttribute("data-appearance-radius", "1")
-    await expect(page.locator("#settings-bar h1")).toHaveCSS("font-family", /Inter|Geist/)
+    await expect(page.locator("#settings-bar h1")).toHaveCSS("font-family", /Geist Variable/)
     await expect(save).toHaveCSS("border-radius", "6px")
   })
 

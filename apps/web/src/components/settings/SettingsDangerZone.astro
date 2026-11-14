@@ -2,6 +2,7 @@
 import { t } from "../../i18n/translations"
 import type { Locale } from "../../lib/locale"
 import { SETTINGS_SECTIONS } from "../../lib/settings-registry"
+import Icon from "../ui/Icon.astro"
 import SettingsActionRow from "./SettingsActionRow.astro"
 import SettingsCallout from "./SettingsCallout.astro"
 import SettingsPanelCard from "./SettingsPanelCard.astro"
@@ -27,10 +28,11 @@ const backupsResetSection = SETTINGS_SECTIONS.find((section) => section.id === "
 
   <!-- Backups & Data Portability -->
   <SettingsPanelCard
+    icon="database"
     title={t("settings.data_title", locale)}
     subtitle={t("settings.data_subtitle", locale)}
   >
-    <SettingsCallout title={t("settings.callout_data_title", locale)} icon="🗂">
+    <SettingsCallout title={t("settings.callout_data_title", locale)} icon="database">
       {t("settings.callout_data_desc", locale)}
     </SettingsCallout>
     <div class="form-group mt-3">
@@ -43,7 +45,7 @@ const backupsResetSection = SETTINGS_SECTIONS.find((section) => section.id === "
           class="btn btn-primary"
           id="export-json-btn"
           style="flex: 1; text-align: center; text-decoration: none;"
-          >{t("settings.download_json", locale)}</a
+          ><Icon name="download" size={14} sprite={true} /> <span>{t("settings.download_json", locale)}</span></a
         >
         <a
           href="/api/export/tasks.csv"
@@ -51,7 +53,7 @@ const backupsResetSection = SETTINGS_SECTIONS.find((section) => section.id === "
           class="btn btn-secondary"
           id="export-csv-btn"
           style="flex: 1; text-align: center; text-decoration: none;"
-          >{t("settings.download_csv", locale)}</a
+          ><Icon name="chart-bar" size={14} sprite={true} /> <span>{t("settings.download_csv", locale)}</span></a
         >
         {databaseDownloadToken && (
           <>
@@ -59,7 +61,7 @@ const backupsResetSection = SETTINGS_SECTIONS.find((section) => section.id === "
               <input type="hidden" name="token" value={databaseDownloadToken} />
             </form>
             <button type="button" class="btn btn-secondary" id="export-db-btn"
-              style="flex: 1; text-align: center;">{t("settings.raw_db", locale)}</button>
+              style="flex: 1; text-align: center;"><Icon name="database" size={14} sprite={true} /> <span>{t("settings.raw_db", locale)}</span></button>
           </>
         )}
       </SettingsActionRow>
@@ -81,13 +83,14 @@ const backupsResetSection = SETTINGS_SECTIONS.find((section) => section.id === "
           download
           class="btn btn-secondary flex-1 text-center no-underline"
           id="export-settings-btn"
-          >{t("settings.export_config", locale)}</a
+          ><Icon name="settings" size={14} sprite={true} /> <span>{t("settings.export_config", locale)}</span></a
         >
         <label
           class="settings-file-picker btn btn-secondary flex-1 text-center no-underline"
-          style="cursor: pointer; margin: 0; padding: 6px 16px; display: inline-flex; justify-content: center; align-items: center;"
+          style="cursor: pointer; margin: 0; padding: 6px 16px; display: inline-flex; justify-content: center; align-items: center; gap: 6px;"
         >
-          {t("settings.import_config", locale)}
+          <Icon name="refresh" size={14} sprite={true} />
+          <span>{t("settings.import_config", locale)}</span>
           <input
             type="file"
             id="import-settings-input"
@@ -103,11 +106,12 @@ const backupsResetSection = SETTINGS_SECTIONS.find((section) => section.id === "
 
   <!-- Archiving & Data Retention -->
   <SettingsPanelCard
+    icon="package"
     title={t("settings.danger_archive_title", locale)}
     subtitle={t("settings.danger_archive_subtitle", locale)}
     tone="default"
   >
-    <SettingsCallout title={t("settings.danger_archive_callout_title", locale)} icon="ℹ" tone="warning">
+    <SettingsCallout title={t("settings.danger_archive_callout_title", locale)} icon="info" tone="warning">
       <span set:html={t("settings.danger_archive_callout_desc", locale)}></span>
     </SettingsCallout>
 
@@ -130,7 +134,7 @@ const backupsResetSection = SETTINGS_SECTIONS.find((section) => section.id === "
           class="btn btn-warning-outline"
           id="retention-preview-btn"
           disabled
-        >{t("settings.danger_archive_preview", locale)}</button>
+        ><Icon name="search" size={14} sprite={true} /> <span>{t("settings.danger_archive_preview", locale)}</span></button>
       </div>
 
       <div
@@ -150,29 +154,30 @@ const backupsResetSection = SETTINGS_SECTIONS.find((section) => section.id === "
         id="retention-delete-btn"
         disabled
         aria-describedby="retention-preview-result"
-      >{t("settings.danger_archive_delete", locale)}</button>
+      ><Icon name="trash" size={14} sprite={true} /> <span>{t("settings.danger_archive_delete", locale)}</span></button>
     </SettingsActionRow>
   </SettingsPanelCard>
 
   <!-- Danger Zone -->
   <SettingsPanelCard
+    icon="warning"
     title={t("settings.danger_title", locale)}
     subtitle={t("settings.danger_subtitle", locale)}
     tone="danger"
   >
-    <SettingsCallout title={t("settings.danger_zone_callout_title", locale)} icon="⚠" tone="danger">
+    <SettingsCallout title={t("settings.danger_zone_callout_title", locale)} icon="warning" tone="danger">
       {t("settings.danger_zone_callout_desc", locale)}
     </SettingsCallout>
     <SettingsActionRow class="mt-4">
       <button
         class="btn btn-danger-outline"
         id="purge-tasks"
-        >{t("settings.danger_purge_tasks", locale)}</button
+        ><Icon name="trash" size={14} sprite={true} /> <span>{t("settings.danger_purge_tasks", locale)}</span></button
       >
       <button
         class="btn btn-danger-outline"
         id="reset-settings"
-        >{t("settings.danger_reset_settings", locale)}</button
+        ><Icon name="refresh" size={14} sprite={true} /> <span>{t("settings.danger_reset_settings", locale)}</span></button
       >
     </SettingsActionRow>
   </SettingsPanelCard>

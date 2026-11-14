@@ -17,10 +17,9 @@
  * Danger:          #EF4444 (dark) / #DC2626 (light)
  *
  * Typography:
- * Body / UI: Inter Variable (humanist legibility, fallback Geist Variable)
- * Headings: Geist Variable (fallback Inter Variable)
+ * Headings/Body: Geist Variable (fallback Inter Variable)
  * Optional Display: Outfit (self-hosted, retained for appearance presets)
- * Mono / Phonetic: JetBrains Mono
+ * Mono/Phonetic: JetBrains Mono
  *
  * CSP audit: All url() references point to local @fontsource bundles.
  * No external CDN URLs — complies with strict font-src 'self' CSP.
@@ -61,7 +60,7 @@
   --shadow-lg: var(--shadow-lg);
 
   /* --- Typography --- */
-  --font-sans: 'Inter Variable', 'Geist Variable', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-sans: 'Geist Variable', 'Inter Variable', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
   --font-heading: 'Geist Variable', 'Inter Variable', -apple-system, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
 
@@ -143,6 +142,7 @@
     --on-warning: #161108;
     --danger: #EF4444;
     --danger-text: color-mix(in srgb, var(--danger) 60%, var(--text-primary));
+    --success-text: color-mix(in srgb, var(--success) 60%, var(--text-primary));
     --info: #38BDF8;
     --border: #344039;
     --border-focus: #ADF8D7;
@@ -198,7 +198,7 @@
     --success-rgb: 105 227 178;
 
     /* Typography & Surface safety fallbacks */
-    --font-sans: 'Inter Variable', 'Geist Variable', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-sans: 'Geist Variable', 'Inter Variable', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
     --font-heading: 'Geist Variable', 'Inter Variable', -apple-system, sans-serif;
     --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
     --surface: var(--bg-card);
@@ -341,18 +341,34 @@
   @media (prefers-contrast: more) {
     :root {
       --text-muted: #C2CBC3;
+      --text-muted-rgb: 194 203 195;
       --border: #53665C;
+      --border-rgb: 83 102 92;
       --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.5);
       --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.6);
       --palette-accent-light: rgba(105, 227, 178, 0.25);
     }
 
-    [data-theme="light"] {
+    :is([data-theme="light"], [data-theme="auto"][data-ha-theme="light"]) {
       --text-muted: #34473F;
       --text-muted-rgb: 52 71 63;
       --border: #7A8B82;
+      --border-rgb: 122 139 130;
       --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.15);
       --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.2);
+      --palette-accent-light: rgba(20, 108, 78, 0.2);
+    }
+  }
+
+  @media (prefers-contrast: more) and (prefers-color-scheme: light) {
+    [data-theme="auto"]:not([data-ha-theme]) {
+      --text-muted: #34473F;
+      --text-muted-rgb: 52 71 63;
+      --border: #7A8B82;
+      --border-rgb: 122 139 130;
+      --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.15);
+      --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.2);
+      --palette-accent-light: rgba(20, 108, 78, 0.2);
     }
   }
 }

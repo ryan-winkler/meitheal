@@ -1,10 +1,10 @@
 """Meitheal REST transport for the configured origin."""
 
+import re
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
 from ipaddress import IPv6Address
-import re
 from typing import Any
 from urllib.parse import quote
 
@@ -14,7 +14,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from yarl import URL
 
-from .const import CONF_API_TOKEN, DEFAULT_HOST, DEFAULT_PORT
+from .const import DEFAULT_HOST, DEFAULT_PORT
 
 _APP_HOST = re.compile(r"(local|[a-f0-9]{8})-(meitheal(?:-canary|-hub)?)")
 _TOKEN = re.compile(r"mth_[a-f0-9]{64}")

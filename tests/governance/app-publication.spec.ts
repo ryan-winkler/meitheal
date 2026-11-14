@@ -3,6 +3,7 @@ import { copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync,
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
+import { inflateSync } from "node:zlib"
 import { expect, test } from "@playwright/test"
 
 const root = fileURLToPath(new URL("../..", import.meta.url))
@@ -296,5 +297,40 @@ test("all release entrypoints retain one canonical Canary and reject extra App m
     }
   } finally {
     rmSync(fixture, { recursive: true, force: true })
+  }
+})
+
+test("Home Assistant storefront and integration brand PNGs are 8-bit RGBA with transparent outer corners", () => {
+  const expectedAssets: Array<[string, number, number]> = [
+    ["meitheal-hub/icon.png", 256, 256],
+    ["meitheal-hub/logo.png", 500, 200],
+    ["meitheal-hub-canary/icon.png", 256, 256],
+    ["meitheal-hub-canary/logo.png", 500, 200],
+    ["integrations/home-assistant/custom_components/meitheal/brand/icon.png", 256, 256],
+    ["integrations/home-assistant/custom_components/meitheal/brand/icon@2x.png", 512, 512],
+  ]
+
+  for (const [relativePath, expectedWidth, expectedHeight] of expectedAssets) {
+    const buf = readFileSync(join(root, relativePath))
+    expect(buf.subarray(0, 8).toString("hex"), relativePath).toBe("89504e470d0a1a0a")
+    expect(buf.subarray(12, 16).toString("ascii"), relativePath).toBe("IHDR")
+    expect(buf.readUInt32BE(16), `${relativePath} width`).toBe(expectedWidth)
+    expect(buf.readUInt32BE(20), `${relativePath} height`).toBe(expectedHeight)
+    expect(buf[24], `${relativePath} bitDepth`).toBe(8)
+    expect(buf[25], `${relativePath} colorType (RGBA=6)`).toBe(6)
+
+    const idatChunks: Buffer[] = []
+    let offset = 8
+    while (offset + 8 <= buf.length) {
+      const length = buf.readUInt32BE(offset)
+      const type = buf.subarray(offset + 4, offset + 8).toString("ascii")
+      if (type === "IDAT") idatChunks.push(buf.subarray(offset + 8, offset + 8 + length))
+      if (type === "IEND") break
+      offset += 12 + length
+    }
+    const scanlines = inflateSync(Buffer.concat(idatChunks))
+    // Row 0 pixel (0,0) has zero left/up/upLeft predictors across all 5 PNG filter modes.
+    const cornerAlpha = scanlines[4]
+    expect(cornerAlpha, `${relativePath} top-left corner alpha must be transparent`).toBe(0)
   }
 })

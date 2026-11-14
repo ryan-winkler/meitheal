@@ -201,13 +201,13 @@
   box-shadow: var(--shadow-lg);
 }
 
-[data-appearance-panel-style="floating"] #task-detail-overlay {
+[data-appearance-panel-style="floating"] body:not(.has-docked-inspector) #task-detail-overlay {
   align-items: stretch;
   justify-content: flex-end;
   padding: 8px;
 }
 
-[data-appearance-panel-style="floating"] #task-detail-panel {
+[data-appearance-panel-style="floating"] body:not(.has-docked-inspector) #task-detail-panel {
   width: min(58rem, 100%);
   height: auto;
   max-height: none;

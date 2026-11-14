@@ -91,14 +91,6 @@ const schemas = {
     properties: taskCommentProperties,
   },
   TaskCommentListItem: {
-    type: "object",
-    required: ["id", "task_id", "content", "author", "created_at", "can_manage"],
-    properties: {
-      ...taskCommentProperties,
-      can_manage: { type: "boolean", description: "Whether the caller can edit and delete this comment." },
-    },
-  },
-  TaskCommentListItem: {
     allOf: [
       { $ref: "#/components/schemas/TaskComment" },
       {
@@ -215,17 +207,24 @@ const schemas = {
     type: "object",
     properties: {
       id: { type: "string" },
-      name: { type: "string" },
+      title: { type: "string", minLength: 1, maxLength: 200 },
+      description: { type: "string", maxLength: 2000, nullable: true },
       area_id: { type: "string", nullable: true },
       goal_id: { type: "string", nullable: true },
-      status: { type: "string" },
+      status: { type: "string", enum: ["active", "completed", "paused", "archived"] },
+      icon: { type: "string", maxLength: 10 },
+      color: { type: "string" },
+      position: { type: "integer" },
+      is_default: { type: "boolean" },
+      created_at: { type: "integer", format: "int64" },
+      updated_at: { type: "integer", format: "int64" },
       task_counts: {
         type: "object",
         properties: { active_open: { type: "integer" }, total: { type: "integer" }, complete: { type: "integer" } },
         required: ["active_open", "total", "complete"],
       },
     },
-    required: ["id", "name"],
+    required: ["id", "title"],
   },
   Pillar: {
     type: "object",
@@ -302,6 +301,55 @@ const schemas = {
       supervisor_reachable: { type: "boolean" },
     },
   },
+  RuntimeVitalsResponse: {
+    type: "object",
+    required: [
+      "ts",
+      "rss_bytes",
+      "heap_used_bytes",
+      "heap_total_bytes",
+      "heap_limit_bytes",
+      "old_space_used_bytes",
+      "external_bytes",
+      "cgroup_current_bytes",
+      "cgroup_max_bytes",
+      "cgroup_oom_kill_count",
+      "ha_tracked_entities",
+      "ha_cached_entities",
+      "ha_cache_approx_bytes",
+      "sse_clients_active",
+      "sse_backpressure_drops_total",
+      "ingress_stream_aborts_total",
+      "sqlite_busy_retries_total",
+      "sqlite_busy_exhausted_total",
+      "sqlite_read_pool_hits_total",
+      "sqlite_read_pool_overflow_total",
+      "sqlite_read_lease_slow_warnings_total",
+    ],
+    properties: {
+      ts: { type: "string", format: "date-time" },
+      rss_bytes: { type: "integer" },
+      heap_used_bytes: { type: "integer" },
+      heap_total_bytes: { type: "integer" },
+      heap_limit_bytes: { type: "integer" },
+      old_space_used_bytes: { type: "integer" },
+      external_bytes: { type: "integer" },
+      cgroup_current_bytes: { type: ["integer", "null"] },
+      cgroup_max_bytes: { type: ["integer", "null"] },
+      cgroup_oom_kill_count: { type: ["integer", "null"] },
+      ha_tracked_entities: { type: "integer" },
+      ha_cached_entities: { type: "integer" },
+      ha_cache_approx_bytes: { type: "integer" },
+      sse_clients_active: { type: "integer" },
+      sse_backpressure_drops_total: { type: "integer" },
+      ingress_stream_aborts_total: { type: "integer" },
+      sqlite_busy_retries_total: { type: "integer" },
+      sqlite_busy_exhausted_total: { type: "integer" },
+      sqlite_read_pool_hits_total: { type: "integer" },
+      sqlite_read_pool_overflow_total: { type: "integer" },
+      sqlite_read_lease_slow_warnings_total: { type: "integer" },
+    },
+  },
   SearchResult: {
     type: "object",
     required: ["query", "sections", "meta"],
@@ -331,17 +379,18 @@ const schemas = {
   },
   AgentScope: {
     type: "string",
-    enum: ["tasks:read", "tasks:write", "projects:read", "projects:write", "pillars:read", "pillars:write", "search:read", "settings:read", "settings:write", "webhooks:manage", "admin:*"],
-    description: "Fine-grained permission scope for agent tokens. Use least-privilege: grant only what the agent needs.",
+    enum: ["tasks:read", "tasks:propose", "tasks:write", "tasks:write:assigned", "tasks:delete", "projects:read", "projects:write", "search:read", "mcp:execute", "a2a:execute"],
+    description: "Fine-grained permission scope for agent tokens. Grant only the scopes each client needs.",
   },
   AgentToken: {
     type: "object",
     description: "Public metadata for an agent token. The plaintext token is only returned once on creation.",
     properties: {
       id: { type: "string", format: "uuid" },
-      name: { type: "string", description: "Human label (e.g., 'n8n-prod', 'claude-agent')" },
-      tokenPrefix: { type: "string", description: "First 8 chars of the token for identification (e.g., 'mth_a1b2')" },
+      name: { type: "string", minLength: 1, maxLength: 100, description: "Human label (e.g., 'n8n-prod', 'claude-agent')" },
+      tokenPrefix: { type: "string", description: "Token prefix and suffix for identification" },
       scopes: { type: "array", items: { $ref: "#/components/schemas/AgentScope" } },
+      assigneeId: { type: "string", maxLength: 128, nullable: true, description: "Optional user or agent ID for tasks:write:assigned and listMyTasks" },
       createdAt: { type: "string", format: "date-time" },
       expiresAt: { type: "string", format: "date-time", nullable: true },
       lastUsedAt: { type: "string", format: "date-time", nullable: true },
@@ -353,8 +402,10 @@ const schemas = {
     type: "object",
     description: "Payload for creating a new agent token. Scopes determine API access.",
     properties: {
-      name: { type: "string", description: "Human label for the token" },
+      name: { type: "string", minLength: 1, maxLength: 100, description: "Human label for the token" },
       scopes: { type: "array", items: { $ref: "#/components/schemas/AgentScope" }, minItems: 1 },
+      assigneeId: { type: "string", maxLength: 128, nullable: true, description: "Optional user or agent ID linked to tasks:write:assigned" },
+      assignee_id: { type: "string", maxLength: 128, nullable: true, description: "Snake-case alias for assigneeId" },
       expiresAt: { type: "string", format: "date-time", nullable: true, description: "Optional expiry. Null = no expiry." },
     },
     required: ["name", "scopes"],
@@ -364,10 +415,11 @@ const schemas = {
     description: "Response from token creation — includes the plaintext token (shown ONCE).",
     properties: {
       id: { type: "string", format: "uuid" },
-      name: { type: "string" },
+      name: { type: "string", minLength: 1, maxLength: 100 },
       token: { type: "string", description: "⚠️ Show-once. The Bearer token the agent must use. Never stored or retrievable again." },
       tokenPrefix: { type: "string" },
       scopes: { type: "array", items: { $ref: "#/components/schemas/AgentScope" } },
+      assigneeId: { type: "string", maxLength: 128, nullable: true },
       createdAt: { type: "string", format: "date-time" },
       expiresAt: { type: "string", format: "date-time", nullable: true },
     },
@@ -627,6 +679,21 @@ const paths = {
       responses: { 200: { description: "Alive" }, 503: { description: "Down" } },
     },
   },
+  "/api/diagnostics": {
+    get: {
+      operationId: "getRuntimeDiagnostics",
+      tags: ["System"],
+      summary: "Administrator runtime memory, SQLite, Home Assistant cache, and SSE vitals snapshot",
+      description: "Returns V8 heap spaces, Linux cgroup limits, Home Assistant scoped entity cache statistics, SSE backpressure drops, Ingress stream aborts, and SQLite contention counters. Restricted to verified Home Assistant administrators or standalone local operator sessions.",
+      security: ingressSession,
+      responses: {
+        200: jsonContent(ref("RuntimeVitalsResponse"), "Current runtime vitals snapshot"),
+        401: problemContent("Authentication required."),
+        403: problemContent("Administrator privileges required."),
+        503: problemContent("Home Assistant administrator verification unavailable."),
+      },
+    },
+  },
 
   // ── Tasks CRUD ──
   "/api/tasks": {
@@ -701,16 +768,8 @@ const paths = {
               required: ["title"],
               properties: {
                 title: { type: "string", description: "Task title (required)" },
-                description: { type: "string" },
-                status: { type: "string", default: "todo" },
-                priority: { type: "integer" },
-                due_date: { type: "string", format: "date-time" },
-                assigned_to: { type: "string", description: "Must start with 'ha_' or 'custom_'" },
-                area_id: { type: "string" },
-                project_id: { type: "string" },
-                parent_id: { type: "string" },
-                labels: { type: "string" },
-                task_kind: { type: "string" },
+                description: { type: "string", maxLength: 10000 },
+                assigned_to: { type: "string", maxLength: 255, nullable: true, description: "Must start with 'ha_' or 'custom_'" },
                 frameworkPayload: { type: "object" },
                 calendar: {
                   type: "object",
@@ -719,6 +778,7 @@ const paths = {
                     startDateTime: { type: "string", format: "date-time" },
                     endDateTime: { type: "string", format: "date-time" },
                     durationMinutes: { type: "integer" },
+                    timezone: { type: "string" },
                   },
                 },
               },
@@ -727,8 +787,46 @@ const paths = {
         },
       },
       responses: {
-        201: jsonContent(ref("Task"), "Task created"),
-        200: jsonContent(ref("Task"), "Idempotent replay — task already existed"),
+        201: jsonContent({
+          type: "object",
+          required: ["task", "events", "integration", "requestId"],
+          properties: {
+            task: ref("Task"),
+            events: { type: "array", items: { type: "object" } },
+            integration: {
+              type: "object",
+              properties: {
+                calendarSyncState: { type: "string" },
+                confirmationId: { type: ["string", "null"] },
+                errorCode: { type: ["string", "null"] },
+                retryAfterSeconds: { type: ["integer", "null"] },
+              },
+            },
+            requestId: { type: "string" },
+            idempotencyKey: { type: ["string", "null"] },
+            idempotentReplay: { type: "boolean" },
+          },
+        }, "Task created"),
+        200: jsonContent({
+          type: "object",
+          required: ["task", "events", "integration", "requestId"],
+          properties: {
+            task: ref("Task"),
+            events: { type: "array", items: { type: "object" } },
+            integration: {
+              type: "object",
+              properties: {
+                calendarSyncState: { type: "string" },
+                confirmationId: { type: ["string", "null"] },
+                errorCode: { type: ["string", "null"] },
+                retryAfterSeconds: { type: ["integer", "null"] },
+              },
+            },
+            requestId: { type: "string" },
+            idempotencyKey: { type: ["string", "null"] },
+            idempotentReplay: { type: "boolean" },
+          },
+        }, "Idempotent replay — task already existed"),
         400: err400,
         404: problemContent("Requested Board unavailable"),
         500: err500,
@@ -906,12 +1004,51 @@ const paths = {
     },
   },
   "/api/tasks/delete-completed": {
+    get: {
+      operationId: "previewDeleteCompletedTasks",
+      tags: ["Tasks"],
+      summary: "Preview age-based deletion of completed tasks",
+      description: "Dry-run preview returning the count of completed and archived tasks older than 3, 6, 12, or 24 months.",
+      parameters: [
+        { name: "months", in: "query", required: true, schema: { type: "integer", enum: [3, 6, 12, 24] }, description: "Retention threshold in months (3, 6, 12, or 24)" },
+      ],
+      responses: {
+        200: jsonContent({
+          type: "object",
+          required: ["count", "months", "cutoffDate"],
+          properties: {
+            count: { type: "integer" },
+            months: { type: "integer", enum: [3, 6, 12, 24] },
+            cutoffDate: { type: "string", format: "date" },
+          },
+        }, "Preview count and cutoff date"),
+        400: err400,
+        500: err500,
+      },
+    },
     delete: {
       operationId: "deleteCompletedTasks",
       tags: ["Tasks"],
-      summary: "Permanently delete all completed tasks",
-      description: "⚠️ Destructive. Permanently removes all tasks with status 'complete'. Cannot be undone. Prefer clearCompletedTasks for safe cleanup.",
-      responses: { 200: jsonContent({ type: "object", properties: { deleted: { type: "integer" } } }, "Count of deleted tasks") },
+      summary: "Permanently delete completed tasks older than a retention threshold",
+      description: "⚠️ Destructive. Permanently removes completed and archived tasks older than 3, 6, 12, or 24 months when confirm=true. Cannot be undone. Prefer clearCompletedTasks for safe archival.",
+      parameters: [
+        { name: "months", in: "query", required: true, schema: { type: "integer", enum: [3, 6, 12, 24] }, description: "Retention threshold in months (3, 6, 12, or 24)" },
+        { name: "confirm", in: "query", required: true, schema: { type: "boolean", const: true }, description: "Must be true to execute permanent deletion" },
+      ],
+      responses: {
+        200: jsonContent({
+          type: "object",
+          required: ["ok", "deleted", "months", "cutoffDate"],
+          properties: {
+            ok: { type: "boolean", const: true },
+            deleted: { type: "integer" },
+            months: { type: "integer", enum: [3, 6, 12, 24] },
+            cutoffDate: { type: "string", format: "date" },
+          },
+        }, "Count of deleted tasks and cutoff date"),
+        400: err400,
+        500: err500,
+      },
     },
   },
   "/api/tasks/reorder": {
@@ -1299,8 +1436,38 @@ const paths = {
   },
   "/api/tasks/{id}/links": {
     get: { operationId: "getTaskLinks", tags: ["Tasks"], summary: "Get linked tasks", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: { description: "Links" } } },
-    post: { operationId: "linkTask", tags: ["Tasks"], summary: "Link two tasks", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], requestBody: { content: { "application/json": { schema: { type: "object", properties: { target_id: { type: "string" }, link_type: { type: "string" } } } } } }, responses: { 200: { description: "Linked" } } },
-    delete: { operationId: "unlinkTask", tags: ["Tasks"], summary: "Remove a task link", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: { description: "Unlinked" } } },
+    post: {
+      operationId: "linkTask",
+      tags: ["Tasks"],
+      summary: "Link two tasks",
+      parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" }, description: "Source task ID or ticket key" }],
+      requestBody: {
+        required: true,
+        content: {
+          "application/json": {
+            schema: {
+              type: "object",
+              required: ["target_task_id", "link_type"],
+              properties: {
+                target_task_id: { type: "string", format: "uuid", description: "Target task UUID" },
+                link_type: { type: "string", enum: ["related_to", "blocked_by", "blocks", "duplicates", "duplicated_by"], description: "Relationship type" },
+              },
+            },
+          },
+        },
+      },
+      responses: { 200: { description: "Link already exists" }, 201: { description: "Linked" }, 400: err400, 403: { description: "Forbidden" }, 404: { description: "Not found" } },
+    },
+    delete: {
+      operationId: "unlinkTask",
+      tags: ["Tasks"],
+      summary: "Remove a task link",
+      parameters: [
+        { name: "id", in: "path", required: true, schema: { type: "string" }, description: "Task ID or ticket key" },
+        { name: "link_id", in: "query", required: true, schema: { type: "string" }, description: "Link UUID to remove" },
+      ],
+      responses: { 200: { description: "Unlinked" }, 400: err400, 403: { description: "Forbidden" }, 404: { description: "Not found" } },
+    },
   },
   "/api/tasks/{id}/activity": {
     get: { operationId: "getTaskActivity", tags: ["Tasks"], summary: "Get task activity timeline", description: "Returns the audit trail for a specific task — useful for understanding what changed and when.", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: { description: "Activity log" } } },
@@ -1310,7 +1477,7 @@ const paths = {
   },
   "/api/tasks/{id}/time": {
     get: { operationId: "getTaskTimeEntries", tags: ["Tasks"], summary: "Get time tracking entries", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: { description: "Time entries" } } },
-    post: { operationId: "addTaskTimeEntry", tags: ["Tasks"], summary: "Log time against a task", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], requestBody: { content: { "application/json": { schema: { type: "object", properties: { duration_minutes: { type: "integer" }, note: { type: "string" } } } } } }, responses: { 201: { description: "Logged" } } },
+    post: { operationId: "addTaskTimeEntry", tags: ["Tasks"], summary: "Start or stop a time tracking entry on a task", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], requestBody: { content: { "application/json": { schema: { type: "object", properties: { action: { type: "string", enum: ["start", "stop"], default: "start" } } } } } }, responses: { 200: { description: "Time entry started or stopped" }, 400: { description: "Invalid action" }, 403: { description: "Task not assigned to caller" }, 404: { description: "Task not found" } } },
   },
   "/api/tasks/{id}/duplicate": {
     post: { operationId: "duplicateTask", tags: ["Tasks"], summary: "Duplicate a task", description: "Creates a copy of the task with a new ID. Useful for creating recurring instances or templates.", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 201: jsonContent(ref("Task"), "Duplicated task") } },
@@ -1330,7 +1497,7 @@ const paths = {
         { name: "sort", in: "query", schema: { type: "string", enum: ["relevance", "updated"], default: "relevance" } },
         { name: "include_completed", in: "query", schema: { type: "boolean" } },
         { name: "include_archived", in: "query", schema: { type: "boolean" } },
-        { name: "status", in: "query", schema: { type: "string" } },
+        { name: "status", in: "query", schema: { type: "string" }, description: "Filter by status (backlog, pending, active, complete, todo, in_progress, done). Direct /api/search callers must also set include_completed=true to include done or complete tasks." },
         { name: "assigned_to", in: "query", schema: { type: "string" } },
         { name: "priority", in: "query", schema: { type: "integer" } },
         { name: "task_fields", in: "query", schema: { type: "string" }, description: "Comma-separated: id,title,description,labels,custom_fields,comments" },
@@ -1368,16 +1535,78 @@ const paths = {
 
   // ── Projects ──
   "/api/projects": {
-    get: { operationId: "listProjects", tags: ["Hierarchy"], summary: "List all projects", description: "Projects are containers for tasks within an area. They can be linked to goals for progress tracking.", responses: { 200: jsonContent(arrOf("Project"), "Projects") } },
-    post: { operationId: "createProject", tags: ["Hierarchy"], summary: "Create a project", requestBody: { content: { "application/json": { schema: ref("Project") } } }, responses: { 201: jsonContent(ref("Project"), "Created") } },
+    get: {
+      operationId: "listProjects",
+      tags: ["Hierarchy"],
+      summary: "List all projects",
+      description: "Projects are containers for tasks within an area. They can be linked to goals for progress tracking.",
+      parameters: [
+        { name: "goal_id", in: "query", schema: { type: "string" } },
+        { name: "area_id", in: "query", schema: { type: "string" } },
+        { name: "status", in: "query", schema: { type: "string", enum: ["active", "completed", "paused", "archived"] } },
+      ],
+      responses: { 200: jsonContent({ type: "object", required: ["projects"], properties: { projects: arrOf("Project") } }, "Projects") },
+    },
+    post: {
+      operationId: "createProject",
+      tags: ["Hierarchy"],
+      summary: "Create a project",
+      requestBody: {
+        required: true,
+        content: {
+          "application/json": {
+            schema: {
+              type: "object",
+              required: ["title"],
+              properties: {
+                title: { type: "string", minLength: 1, maxLength: 200 },
+                description: { type: "string", maxLength: 2000, nullable: true },
+                area_id: { type: "string", nullable: true },
+                goal_id: { type: "string", nullable: true },
+                status: { type: "string", enum: ["active", "completed", "paused", "archived"], default: "active" },
+                icon: { type: "string", maxLength: 10 },
+                color: { type: "string" },
+              },
+            },
+          },
+        },
+      },
+      responses: { 201: jsonContent(ref("Project"), "Created"), 400: { description: "Invalid title" }, 429: { description: "Project limit reached" } },
+    },
   },
   "/api/projects/{id}": {
     get: { operationId: "getProject", tags: ["Hierarchy"], summary: "Get project details", parameters: [
       { name: "id", in: "path", required: true, schema: { type: "string" } },
       { name: "task_counts", in: "query", schema: { type: "string", enum: ["1"] }, description: "Include full-project active, total and completed task counts." },
-    ], responses: { 200: jsonContent(ref("Project"), "Project") } },
-    put: { operationId: "updateProject", tags: ["Hierarchy"], summary: "Update a project", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], requestBody: { content: { "application/json": { schema: ref("Project") } } }, responses: { 200: jsonContent(ref("Project"), "Updated") } },
-    delete: { operationId: "deleteProject", tags: ["Hierarchy"], summary: "Delete a project", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: { description: "Deleted" } } },
+    ], responses: { 200: jsonContent(ref("Project"), "Project"), 404: { description: "Project not found" } } },
+    put: {
+      operationId: "updateProject",
+      tags: ["Hierarchy"],
+      summary: "Update a project",
+      parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+      requestBody: {
+        required: true,
+        content: {
+          "application/json": {
+            schema: {
+              type: "object",
+              properties: {
+                title: { type: "string", minLength: 1, maxLength: 200 },
+                description: { type: "string", maxLength: 2000, nullable: true },
+                area_id: { type: "string", nullable: true },
+                goal_id: { type: "string", nullable: true },
+                status: { type: "string", enum: ["active", "completed", "paused", "archived"] },
+                icon: { type: "string", maxLength: 10 },
+                color: { type: "string" },
+                position: { type: "integer" },
+              },
+            },
+          },
+        },
+      },
+      responses: { 200: jsonContent(ref("Project"), "Updated"), 400: { description: "Invalid title" }, 404: { description: "Project not found or no changes" } },
+    },
+    delete: { operationId: "deleteProject", tags: ["Hierarchy"], summary: "Delete a project", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: { description: "Deleted" }, 403: { description: "Cannot delete the default project" }, 404: { description: "Project not found" } } },
   },
 
   // ── Pillars ──
@@ -1770,15 +1999,47 @@ const paths = {
         200: { description: "JSON-RPC response" },
         202: { description: "Legacy notification accepted" },
         400: { description: "Invalid request, protocol version or metadata" },
+        401: { description: "Missing or invalid agent token" },
+        403: { description: "Token lacks mcp:execute or origin is not allowed" },
         404: { description: "MCP disabled or method unavailable" },
         413: { description: "Request exceeds 1 MiB" },
+        415: { description: "Request is not application/json" },
+        503: { description: "Protocol setting unavailable" },
       },
     },
   },
 
   // ── A2A ──
-  "/api/a2a/agent-card": { get: { operationId: "getA2AAgentCard", tags: ["Agents"], summary: "Get the A2A agent card for read-only task search", responses: { 200: { description: "Agent card with the JSON-RPC task search interface" }, 404: { description: "A2A disabled" } } } },
-  "/api/a2a/message": { post: { operationId: "sendA2AMessage", tags: ["Agents"], summary: "Search active task titles through A2A JSON-RPC 1.0", description: "Requires a token with a2a:execute and search:read and the A2A-Version: 1.0 header. SendMessage returns up to eight active task titles and links. Results are read-only.", responses: { 200: { description: "JSON-RPC result or error" }, 401: { description: "Missing or invalid agent token" }, 403: { description: "Token lacks a2a:execute or search:read" }, 404: { description: "A2A disabled" }, 413: { description: "Request exceeds 16 KiB" }, 415: { description: "Request is not application/json" } } } },
+  "/api/a2a/agent-card": { get: { operationId: "getA2AAgentCard", tags: ["Agents"], summary: "Get the A2A agent card for read-only task search", responses: { 200: { description: "Agent card with the JSON-RPC task search interface" }, 401: { description: "Ingress or agent token required in managed-ingress mode" }, 403: { description: "Token lacks a2a:execute" }, 404: { description: "A2A disabled" }, 503: { description: "Protocol setting unavailable" } } } },
+  "/api/a2a/message": {
+    post: {
+      operationId: "sendA2AMessage",
+      tags: ["Agents"],
+      summary: "Search active task titles through A2A JSON-RPC 1.0",
+      description: "Requires a token with a2a:execute and search:read and the A2A-Version: 1.0 header. SendMessage returns up to eight active task titles and links. Results are read-only.",
+      parameters: [
+        { name: "A2A-Version", in: "header", required: true, schema: { type: "string", enum: ["1.0"] } },
+      ],
+      requestBody: {
+        required: true,
+        content: {
+          "application/json": {
+            schema: {
+              type: "object",
+              required: ["jsonrpc", "method"],
+              properties: {
+                jsonrpc: { type: "string", const: "2.0" },
+                id: { type: ["string", "integer", "null"] },
+                method: { type: "string", enum: ["SendMessage", "GetTask", "ListTasks", "CancelTask"] },
+                params: { type: "object" },
+              },
+            },
+          },
+        },
+      },
+      responses: { 200: { description: "JSON-RPC result or error" }, 401: { description: "Missing or invalid agent token" }, 403: { description: "Token lacks a2a:execute or search:read" }, 404: { description: "A2A disabled" }, 413: { description: "Request exceeds 16 KiB" }, 415: { description: "Request is not application/json" }, 503: { description: "Protocol setting unavailable" } },
+    },
+  },
 
   // ── Agent Tokens (Zero-Trust Auth) ──
   "/api/agent-tokens": {
@@ -1786,41 +2047,48 @@ const paths = {
       operationId: "createAgentToken",
       tags: ["Auth"],
       summary: "Create a scoped API token for an agent or automation",
-      description: "Issue a zero-trust agent token with fine-grained scopes. The plaintext token is returned ONCE in the response — store it securely. Requires admin access (HA admin or settings:write scope).\n\n**For n8n/Node-RED**: Create a token with only the scopes your workflow needs, then set it as Bearer token in your HTTP Request node.",
-      parameters: [
-        { name: "Idempotency-Key", in: "header", schema: { type: "string" }, description: "Prevents duplicate token creation on retry" },
-      ],
+      description: "Issue a zero-trust agent token with fine-grained scopes. The plaintext token is returned ONCE in the response — store it securely. Requires Home Assistant admin access.\n\n**For n8n/Node-RED**: Create a token with only the scopes your workflow needs, then set it as Bearer token in your HTTP Request node.",
       requestBody: { required: true, content: { "application/json": { schema: ref("CreateAgentTokenRequest") } } },
       responses: {
         201: jsonContent(ref("CreateAgentTokenResponse"), "Token created — copy the plaintext token immediately"),
         400: err400,
-        403: problemContent("Admin access required"),
+        403: problemContent("Admin access required or cross-origin request denied"),
+        413: problemContent("Request exceeds 16 KiB"),
+        415: problemContent("Request body must be application/json"),
+        503: problemContent("Home Assistant Core could not verify administrator access"),
       },
     },
     get: {
       operationId: "listAgentTokens",
       tags: ["Auth"],
-      summary: "List all agent tokens (metadata only)",
-      description: "Returns public metadata for all active tokens. Token hashes and plaintexts are never exposed. Requires admin access.",
+      summary: "List agent tokens (metadata only)",
+      description: "Returns public metadata for active tokens, or active and soft-revoked tokens when `include_revoked=1`. Token hashes and plaintexts are never exposed. Requires Home Assistant admin access.",
+      parameters: [
+        { name: "include_revoked", in: "query", schema: { type: "string", enum: ["0", "1"] }, description: "Set to `1` to include soft-revoked tokens in the list" },
+      ],
       responses: {
         200: jsonContent(arrOf("AgentToken"), "Token list"),
         403: problemContent("Admin access required"),
+        503: problemContent("Home Assistant Core could not verify administrator access"),
       },
     },
     patch: {
       operationId: "updateAgentToken",
       tags: ["Auth"],
-      summary: "Update a token's name or scopes",
-      description: "Modify the display name or permission scopes of an existing token. The token value itself cannot be changed — revoke and recreate if compromised.",
+      summary: "Update a token's name, scopes, or assignee",
+      description: "Modify the display name, permission scopes, or linked assignee of an existing token. The token value itself cannot be changed — revoke and recreate if compromised.",
       requestBody: {
         required: true,
-        content: { "application/json": { schema: { type: "object", properties: { id: { type: "string" }, name: { type: "string" }, scopes: { type: "array", items: ref("AgentScope") } }, required: ["id"] } } },
+        content: { "application/json": { schema: { type: "object", properties: { id: { type: "string" }, name: { type: "string", minLength: 1, maxLength: 100 }, scopes: { type: "array", items: ref("AgentScope"), minItems: 1 }, assigneeId: { type: "string", maxLength: 128, nullable: true }, assignee_id: { type: "string", maxLength: 128, nullable: true } }, required: ["id"] } } },
       },
       responses: {
         200: jsonContent({ type: "object", properties: { ok: { type: "boolean" }, id: { type: "string" } } }, "Updated"),
         400: err400,
-        403: problemContent("Admin access required"),
+        403: problemContent("Admin access required or cross-origin request denied"),
         404: problemContent("Token not found"),
+        413: problemContent("Request exceeds 16 KiB"),
+        415: problemContent("Request body must be application/json"),
+        503: problemContent("Home Assistant Core could not verify administrator access"),
       },
     },
     delete: {
@@ -1834,8 +2102,12 @@ const paths = {
       },
       responses: {
         200: jsonContent({ type: "object", properties: { ok: { type: "boolean" }, id: { type: "string" }, action: { type: "string", enum: ["revoked", "deleted"] } } }, "Token revoked or deleted"),
-        403: problemContent("Admin access required"),
+        400: err400,
+        403: problemContent("Admin access required or cross-origin request denied"),
         404: problemContent("Token not found"),
+        413: problemContent("Request exceeds 16 KiB"),
+        415: problemContent("Request body must be application/json"),
+        503: problemContent("Home Assistant Core could not verify administrator access"),
       },
     },
   },

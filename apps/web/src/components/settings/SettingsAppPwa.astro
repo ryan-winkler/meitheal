@@ -2,6 +2,7 @@
 import { t } from "../../i18n/translations"
 import type { Locale } from "../../lib/locale"
 import { SETTINGS_SECTIONS } from "../../lib/settings-registry"
+import Icon from "../ui/Icon.astro"
 import SettingsActionRow from "./SettingsActionRow.astro"
 import SettingsCallout from "./SettingsCallout.astro"
 import SettingsDisclosure from "./SettingsDisclosure.astro"
@@ -45,7 +46,7 @@ const appPwaSection = SETTINGS_SECTIONS.find((section) => section.id === "app-pw
     <div
       style="font-size: 13px; color: var(--text-secondary); line-height: 1.8;"
     >
-      <SettingsCallout title={t("settings.app_readiness_callout_title", locale)} icon="📲" tone="info">
+      <SettingsCallout title={t("settings.app_readiness_callout_title", locale)} icon="phone" tone="info">
         {t("settings.app_readiness_callout_desc", locale)}
       </SettingsCallout>
       <p set:html={t("settings.pwa_about_p1", locale)}></p>
@@ -102,7 +103,7 @@ const appPwaSection = SETTINGS_SECTIONS.find((section) => section.id === "app-pw
           <span
             id="pwa-installed-badge"
             class="badge badge-active"
-            style="font-size: 12px; display: none;">{t("settings.pwa_installed", locale)}</span
+            style="font-size: 11px; display: none;"><Icon name="check" size={12} sprite={true} /> <span>{t("settings.pwa_installed", locale)}</span></span
           >
           <span class="pwa-link-separator" aria-hidden="true">·</span>
           <a
@@ -163,19 +164,19 @@ const appPwaSection = SETTINGS_SECTIONS.find((section) => section.id === "app-pw
                 type="button"
                 id="pwa-clear-cache-btn"
                 class="btn btn-ghost pwa-troubleshoot-btn"
-                >{t("settings.pwa_clear_cache", locale)}</button
+                ><Icon name="trash" size={13} sprite={true} /> <span>{t("settings.pwa_clear_cache", locale)}</span></button
               >
               <button
                 type="button"
                 id="pwa-force-update-btn"
                 class="btn btn-ghost pwa-troubleshoot-btn"
-                >{t("settings.pwa_force_update", locale)}</button
+                ><Icon name="refresh" size={13} sprite={true} /> <span>{t("settings.pwa_force_update", locale)}</span></button
               >
               <button
                 type="button"
                 id="pwa-clear-offline-btn"
                 class="btn btn-ghost pwa-troubleshoot-btn"
-                >{t("settings.pwa_clear_offline", locale)}</button
+                ><Icon name="database" size={13} sprite={true} /> <span>{t("settings.pwa_clear_offline", locale)}</span></button
               >
             </div>
             <div
@@ -192,7 +193,7 @@ const appPwaSection = SETTINGS_SECTIONS.find((section) => section.id === "app-pw
                 type="button"
                 id="pwa-reset-hints-btn"
                 class="btn btn-ghost pwa-troubleshoot-btn"
-                >{t("settings.pwa_reset_hints", locale)}</button
+                ><Icon name="refresh" size={13} sprite={true} /> <span>{t("settings.pwa_reset_hints", locale)}</span></button
               >
             </div>
             <p id="pwa-notification-help" class="settings-companion-card__hint">{t("settings.pwa_notification_help", locale)}</p>
@@ -264,34 +265,35 @@ const appPwaSection = SETTINGS_SECTIONS.find((section) => section.id === "app-pw
         target="_blank"
         rel="noopener noreferrer"
         class="btn btn-secondary settings-link"
-        >{t("settings.pwa_report_issue", locale)}</a
+        ><Icon name="bug" size={14} sprite={true} /> <span>{t("settings.pwa_report_issue", locale)}</span></a
       >
       <a
         href="https://github.com/ryan-winkler/meitheal/discussions"
         target="_blank"
         rel="noopener noreferrer"
         class="btn btn-secondary settings-link"
-        >{t("settings.pwa_discussions", locale)}</a
+        ><Icon name="message-circle" size={14} sprite={true} /> <span>{t("settings.pwa_discussions", locale)}</span></a
       >
       <a
         href="https://github.com/ryan-winkler/meitheal"
         target="_blank"
         rel="noopener noreferrer"
         class="btn btn-secondary settings-link"
-        >{t("settings.pwa_star_github", locale)}</a
+        ><Icon name="star" size={14} sprite={true} /> <span>{t("settings.pwa_star_github", locale)}</span></a
       >
     </SettingsActionRow>
   </SettingsPanelCard>
 
   <!-- Help & Support -->
   <SettingsPanelCard
+    icon="book"
     title={t("settings.help_support_title", locale)}
     subtitle={t("settings.help_support_subtitle", locale)}
   >
     <div
       style="font-size: 13px; color: var(--text-secondary); line-height: 1.8;"
     >
-      <SettingsDisclosure title={t("settings.help_getting_started", locale)} open={true}>
+      <SettingsDisclosure icon="book" title={t("settings.help_getting_started", locale)} open={true}>
           <p style="margin: 0 0 8px 0;" set:html={t("settings.help_started_p1", locale)}></p>
           <ul style="margin: 0; padding-left: 20px; line-height: 2;">
             <li set:html={t("settings.help_started_li1", locale)}></li>
@@ -301,7 +303,7 @@ const appPwaSection = SETTINGS_SECTIONS.find((section) => section.id === "app-pw
             <li set:html={t("settings.help_started_li5", locale)}></li>
           </ul>
       </SettingsDisclosure>
-      <SettingsDisclosure title={t("settings.help_architecture", locale)}>
+      <SettingsDisclosure icon="sliders" title={t("settings.help_architecture", locale)}>
           <p style="margin: 0 0 8px 0;" set:html={t("settings.help_arch_p1", locale)}></p>
           <ul style="margin: 0; padding-left: 20px; line-height: 2;">
             <li set:html={t("settings.help_arch_li1", locale)}></li>
@@ -320,21 +322,21 @@ const appPwaSection = SETTINGS_SECTIONS.find((section) => section.id === "app-pw
         target="_blank"
         rel="noopener noreferrer"
         class="btn btn-secondary settings-link"
-        >{t("settings.help_readme", locale)}</a
+        ><Icon name="file-text" size={14} sprite={true} /> <span>{t("settings.help_readme", locale)}</span></a
       >
       <a
         href="https://github.com/ryan-winkler/meitheal/blob/main/docs/index.md"
         target="_blank"
         rel="noopener noreferrer"
         class="btn btn-secondary settings-link"
-        >{t("settings.help_guides", locale)}</a
+        ><Icon name="book" size={14} sprite={true} /> <span>{t("settings.help_guides", locale)}</span></a
       >
       <a
         href="https://github.com/ryan-winkler/meitheal/blob/main/CHANGELOG.md"
         target="_blank"
         rel="noopener noreferrer"
         class="btn btn-secondary settings-link"
-        >{t("settings.help_changelog", locale)}</a
+        ><Icon name="clipboard-list" size={14} sprite={true} /> <span>{t("settings.help_changelog", locale)}</span></a
       >
     </SettingsActionRow>
     <SettingsActionRow class="mt-2">
@@ -367,7 +369,7 @@ const appPwaSection = SETTINGS_SECTIONS.find((section) => section.id === "app-pw
   }
   .pwa-compact-dot--active {
     background: var(--accent);
-    box-shadow: 0 0 6px rgba(99, 102, 241, 0.4);
+    box-shadow: 0 0 6px rgb(var(--accent-rgb) / 0.4);
   }
   .pwa-compact-dot--unavailable {
     background: #f59e0b;

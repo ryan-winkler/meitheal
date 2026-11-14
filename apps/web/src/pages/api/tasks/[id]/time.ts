@@ -23,8 +23,10 @@ import { apiJson, apiError } from "../../../../lib/api-response"
 
 export const GET: APIRoute = async ({ params }) => {
   try {
-    const taskId = params.id
-    if (!taskId) return apiError("Task ID required", 400)
+    if (!params.id) return apiError("Task ID required", 400)
+    await ensureSchema()
+    // Read with the same task ID that POST writes to, so a ticket key such as MTH-12 works both ways.
+    const taskId = (await new TaskRepository(getPersistenceClient()).resolveTaskId(params.id))?.id ?? params.id
 
     const [entries, total] = await Promise.all([
       getTimeEntries(taskId),

@@ -1,8 +1,11 @@
 ---
+import { isIconName } from "../../generated/icon-registry"
+import Icon from "../ui/Icon.astro"
+
 interface Props {
   title: string
-  icon?: string
-  tone?: "info" | "success" | "warning" | "danger"
+  icon?: string | undefined
+  tone?: "info" | "success" | "warning" | "danger" | undefined
 }
 
 const {
@@ -14,7 +17,11 @@ const {
 
 <div class:list={["settings-callout", `settings-callout--${tone}`]}>
   <div class="settings-callout__title-row">
-    {icon && <span class="settings-callout__icon" aria-hidden="true">{icon}</span>}
+    {icon && (
+      <span class="settings-callout__icon" aria-hidden="true">
+        {isIconName(icon) ? <Icon name={icon} size={16} sprite={true} /> : icon}
+      </span>
+    )}
     <strong>{title}</strong>
   </div>
 

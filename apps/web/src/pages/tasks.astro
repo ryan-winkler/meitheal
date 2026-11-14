@@ -122,7 +122,7 @@ let tableReadFailed = false
 if (renderedView === "table") {
   const filters = readTableFilterParams(Astro.url.searchParams)
   try {
-    tableTasks = (await getTasksForView({ requireAvailable: true })).tasks
+    tableTasks = (await getTasksForView({ requireAvailable: true, slim: true })).tasks
     if (filters.createdFrom || filters.createdThrough) {
       const { timezone } = await new SettingsRepository(db).getByKeys(["timezone"])
       if (typeof timezone === "string") tableCreationTimezone = timezone
@@ -202,8 +202,8 @@ const priorityLabels: Record<number, string> = {
 // Phase 20: Agile type metadata
 const typeConfig: Record<string, { label: string; color: string }> = {
   epic: { label: "Epic", color: "#8b5cf6" },
-  story: { label: "Story", color: "#3b82f6" },
-  task: { label: "Task", color: "#6366F1" },
+  story: { label: "Story", color: "#22c55e" },
+  task: { label: "Task", color: "#3b82f6" },
   bug: { label: "Bug", color: "#ef4444" },
 };
 const kanbanFilters = readKanbanFilters(currentUrl.searchParams)
@@ -228,7 +228,7 @@ try {
     id: String(a.id ?? ""),
     name: String(a.name ?? ""),
     icon: String(a.icon ?? "📁"),
-    color: String(a.color ?? "#6366F1"),
+    color: String(a.color ?? "var(--accent)"),
   }));
 } catch {
   /* areas table may not exist yet */
@@ -1056,7 +1056,7 @@ try {
   .kanban-toolbar-btn[aria-pressed="true"] {
     color: var(--accent-text, var(--accent));
     border-color: var(--accent);
-    background: rgba(var(--accent-rgb, 99, 102, 241), 0.1);
+    background: rgb(var(--accent-rgb, 105 227 178) / 0.08);
   }
   .kanban-toolbar-btn__label {
     display: none;
@@ -1253,7 +1253,7 @@ try {
   .kanban-card:focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: 2px;
-    box-shadow: 0 0 0 4px rgba(var(--accent-rgb, 99, 102, 241), 0.15);
+    box-shadow: 0 0 0 4px rgb(var(--accent-rgb, 105 227 178) / 0.15);
   }
 
   .kanban-card:active {
@@ -1420,8 +1420,8 @@ try {
     width: 22px;
     height: 22px;
     border-radius: 50%;
-    background: var(--accent, #6366f1);
-    color: #fff;
+    background: var(--accent);
+    color: var(--personal-accent-foreground, var(--palette-on-accent, #07140f));
     font-size: 9px;
     font-weight: 700;
     letter-spacing: 0.5px;

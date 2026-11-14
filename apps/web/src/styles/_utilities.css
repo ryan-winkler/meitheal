@@ -9,7 +9,8 @@
 /* Skip-to-content (a11y) */
 /* ===== Skip-to-content (a11y) ===== */
 .skip-to-content {
-  @apply sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-[100] focus:bg-accent focus:px-4 focus:py-2 focus:rounded-md focus:shadow-lg;
+  @apply sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-[100] focus:px-4 focus:py-2 focus:rounded-md focus:shadow-lg;
+  background-color: var(--accent);
   color: var(--personal-accent-foreground, var(--palette-on-accent, #07140f));
 }
 
@@ -51,7 +52,7 @@
 .filter-bar .form-select:not([value=""]),
 .filter-bar select:not(:invalid) {
   border-color: var(--accent);
-  background-color: rgba(var(--accent-rgb), 0.06);
+  background-color: rgb(var(--accent-rgb) / 0.06);
 }
 
 .filter-clear-btn {

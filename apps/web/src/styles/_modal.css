@@ -12,15 +12,13 @@
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(8, 12, 10, 0.72);
-  backdrop-filter: blur(4px);
-    -webkit-backdrop-filter: blur(4px);
-  z-index: 240;
+  background: rgba(0, 0, 0, 0.62);
+  z-index: 200;
   display: none;
   align-items: center;
   justify-content: center;
   opacity: 0;
-    transition: opacity 0.2s ease;
+  transition: opacity 0.16s ease;
 }
 
 .modal-overlay.active {
@@ -40,9 +38,8 @@ dialog {
 }
 
 dialog::backdrop {
-  background: rgba(0, 0, 0, 0.4);
-  backdrop-filter: blur(4px);
-  animation: modalBackdropFadeIn 0.2s ease-out forwards;
+  background: rgba(0, 0, 0, 0.62);
+  animation: modalBackdropFadeIn 0.16s ease-out forwards;
 }
 
 .checklist-editor {
@@ -108,8 +105,8 @@ dialog[open] .modal-content,
 
 /* --- Animations --- */
 @keyframes modalBackdropFadeIn {
-  from { opacity: 0; backdrop-filter: blur(0px); }
-  to { opacity: 1; backdrop-filter: blur(4px); }
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 @keyframes modalFadeIn {
@@ -305,8 +302,7 @@ dialog[open] .modal-content,
   display: flex;
   align-items: center;
   justify-content: center;
-  background-color: rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(4px);
+  background-color: rgba(0, 0, 0, 0.62);
   padding: 1rem;
 }
 
@@ -427,11 +423,45 @@ body:has(dialog[open], #meitheal-confirm-overlay, #meitheal-prompt-overlay) .sho
   background: var(--bg-card);
   border: 1px solid var(--border);
   box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+  container-type: inline-size;
+  container-name: task-inspector;
 }
 
 #task-detail-panel header {
   background: var(--bg-card);
   border-bottom: 1px solid var(--border);
+}
+
+/* Docked Task Inspector (>= 1440px right workspace rail) */
+body.has-docked-inspector #task-detail-overlay {
+  position: fixed;
+  inset: auto;
+  top: var(--topbar-height, 0px);
+  right: 0;
+  bottom: 0;
+  left: auto;
+  width: 420px;
+  z-index: 35;
+  overflow-y: auto;
+  border-left: 1px solid var(--border);
+  background: var(--bg-card);
+  padding: 0;
+  align-items: stretch;
+  justify-content: stretch;
+}
+
+body.has-docked-inspector #task-detail-panel {
+  width: 100%;
+  max-width: 100%;
+  height: 100%;
+  max-height: none;
+  margin: 0 !important;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  transform: none;
+  opacity: 1;
+  animation: none;
 }
 
 /* --- Loading Skeleton Shimmer --- */
@@ -561,8 +591,8 @@ body:has(dialog[open], #meitheal-confirm-overlay, #meitheal-prompt-overlay) .sho
 }
 
 .nt-status-pill.active {
-  background: rgba(var(--accent-rgb), 0.14);
-  border: 1px solid rgba(var(--accent-rgb), 0.34);
+  background: rgb(var(--accent-rgb) / 0.14);
+  border: 1px solid rgb(var(--accent-rgb) / 0.34);
   color: var(--accent-text);
 }
 
@@ -617,20 +647,20 @@ body:has(dialog[open], #meitheal-confirm-overlay, #meitheal-prompt-overlay) .sho
   text-shadow: 0 0 10px currentColor;
 }
 
-/* --- Mobile sidebar disclosure (F10) --- */
-@media (max-width: 767px) {
+/* --- Container-adaptive sidebar disclosure (F10 + Track D1) --- */
+@container task-inspector (max-width: 671px) {
   .td-sidebar-props {
     display: none;
   }
   .td-sidebar-props.td-sidebar-expanded {
     display: flex;
-    animation: sidebarSlideDown 0.22s ease-out forwards;
+    animation: sidebarSlideDown 0.16s ease-out forwards;
   }
   #td-sidebar-chevron.td-chevron-open {
     transform: rotate(180deg);
   }
 }
-@media (min-width: 768px) {
+@container task-inspector (min-width: 672px) {
   #td-sidebar-toggle { display: none !important; }
   .td-sidebar-props { display: flex !important; }
 }
@@ -647,7 +677,7 @@ body:has(dialog[open], #meitheal-confirm-overlay, #meitheal-prompt-overlay) .sho
 }
 
 /* Noscript fallback: show sidebar props when JS is unavailable */
-@media (max-width: 767px) {
+@container task-inspector (max-width: 671px) {
   noscript ~ .td-sidebar-props { display: flex !important; }
 }
 

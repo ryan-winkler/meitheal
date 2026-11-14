@@ -65,14 +65,12 @@ async def async_get_config_entry_diagnostics(
     }
 
     # Registered services
-    services = []
-    for service_name in hass.services.async_services_for_domain(DOMAIN):
-        services.append(service_name)
+    services = list(hass.services.async_services_for_domain(DOMAIN))
 
     # Entity info
     entities = []
     for state in hass.states.async_all():
-        if state.entity_id.startswith(f"sensor.meitheal_") or state.entity_id.startswith(f"todo.meitheal"):
+        if state.entity_id.startswith("sensor.meitheal_") or state.entity_id.startswith("todo.meitheal"):
             entities.append({
                 "entity_id": state.entity_id,
                 "state": state.state,

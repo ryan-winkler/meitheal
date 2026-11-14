@@ -1,7 +1,7 @@
 name: "Meitheal Canary"
 version: "309575d"
 slug: "meitheal_canary"
-description: "Preview channel for Meitheal — test upcoming household task, routine, project, and Home Assistant automation features before stable release."
+description: "⚠️ Preview channel for Meitheal — test upcoming household task, routine, project, and Home Assistant automation features before stable release. May be unstable, break, or lose data. For testing and development only."
 url: "https://github.com/ryan-winkler/meitheal-ha-addon"
 github: "ryan-winkler/meitheal-ha-addon"
 docs_url: "https://github.com/ryan-winkler/meitheal-ha-addon/tree/main/meitheal-hub-canary/DOCS.md"
@@ -38,6 +38,12 @@ options:
     - tasks
     - integrations
     - observability
+    - ha
+    - calendar
+    - todo
+    - api
+    - security
+    - search
   log_redaction: true
   audit_enabled: true
   loki_url: ""

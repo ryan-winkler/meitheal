@@ -10,7 +10,7 @@ PLATFORMS = [Platform.TODO, Platform.SENSOR, Platform.BINARY_SENSOR]
 # Supervisor App bridge defaults. Discovery provides the installed hostname.
 DEFAULT_HOST = "local-meitheal"
 DEFAULT_PORT = 3000
-CONF_API_TOKEN = "api_token"
+CONF_API_TOKEN = "api_token"  # nosec B105
 
 # Polling interval for DataUpdateCoordinator
 SCAN_INTERVAL = timedelta(seconds=30)

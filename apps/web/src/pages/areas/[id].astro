@@ -61,7 +61,7 @@ try {
 const areaName = String(area?.name ?? "Area");
 const areaDesc = area?.description ? String(area.description) : null;
 const areaIcon = String(area?.icon ?? "🏠");
-const areaColor = String(area?.color ?? "#6366F1");
+const areaColor = String(area?.color ?? "#146C4E");
 
 const tabs = [
   { id: "overview", label: "Overview", icon: "📊" },
@@ -200,7 +200,7 @@ const tabs = [
         {projects.map((proj) => {
           const counts = taskCountByProject.get(String(proj.id)) ?? { total: 0, completed: 0 };
           const progress = counts.total > 0 ? Math.round((counts.completed / counts.total) * 100) : 0;
-          const projColor = String(proj.color ?? "#6366F1");
+          const projColor = String(proj.color ?? "#146C4E");
           const projIcon = String(proj.icon ?? "📋");
           return (
             <a href={`/projects/${String(proj.id)}`} class="project-card" style={`--project-accent: ${projColor};`}>
@@ -378,7 +378,7 @@ const tabs = [
     align-items: center;
     gap: 8px;
     padding: 0.625rem 1rem;
-    border-bottom: 1px solid rgba(var(--border-rgb), 0.3);
+    border-bottom: 1px solid rgb(var(--border-rgb) / 0.3);
     font-size: 0.875rem;
   }
   .overview-goal-item:last-child { border-bottom: none; }
@@ -391,9 +391,9 @@ const tabs = [
     border-radius: 9999px;
     text-transform: capitalize;
   }
-  .status-active { background: rgba(var(--success-rgb), 0.1); color: var(--success); }
-  .status-completed { background: rgba(var(--accent-rgb), 0.1); color: var(--accent); }
-  .status-archived { background: rgba(var(--text-muted-rgb), 0.1); color: var(--text-muted); }
+  .status-active { background: rgb(var(--success-rgb) / 0.1); color: var(--success); }
+  .status-completed { background: rgb(var(--accent-rgb) / 0.1); color: var(--accent); }
+  .status-archived { background: rgb(var(--text-muted-rgb) / 0.1); color: var(--text-muted); }
 
   .overview-more {
     display: inline-block;
@@ -469,7 +469,7 @@ const tabs = [
   .goal-projects {
     margin-top: 0.5rem;
     padding-top: 0.5rem;
-    border-top: 1px solid rgba(var(--border-rgb), 0.3);
+    border-top: 1px solid rgb(var(--border-rgb) / 0.3);
   }
   .goal-projects-label {
     font-size: 0.75rem;
@@ -582,7 +582,7 @@ const tabs = [
   .form-group input:focus,
   .form-group textarea:focus {
     border-color: var(--accent);
-    box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.15);
+    box-shadow: 0 0 0 2px rgb(var(--accent-rgb) / 0.15);
   }
   .form-row { display: flex; gap: 1rem; }
   .form-group-sm { flex: 0 0 80px; }
@@ -695,7 +695,7 @@ const tabs = [
           name,
           description: descInput?.value?.trim() || null,
           icon: iconInput?.value?.trim() || "🏠",
-          color: colorInput?.value || "#6366F1",
+          color: colorInput?.value || "#146C4E",
         }),
       });
 

@@ -1,7 +1,5 @@
 ---
 import { AVAILABLE_SCOPES } from "@meitheal/domain-auth"
-import { t } from "../../i18n/translations"
-import type { Locale } from "../../lib/locale"
 import SettingsPanelCard from "./SettingsPanelCard.astro"
 import Icon from "../ui/Icon.astro"
 
@@ -10,16 +8,14 @@ import Icon from "../ui/Icon.astro"
  *
  * Shows existing tokens with scope badges, lets admins create
  * new tokens (show-once plaintext), revoke, and delete.
+ * Client interactivity is wired via settings-agent-tokens-controller.ts.
  *
  * @domain settings
  * @bounded-context agent-authorization
  * @kcs Agent tokens enable zero-trust API access for n8n, Node-RED, and LLM agents.
  */
 
-interface Props {
-  locale: Locale
-}
-const { locale } = Astro.props
+const canManageTokens = Astro.locals.hassIsAdmin === true && !Astro.locals.agentToken
 
 const scopeGroups = [
   { label: "Tasks", category: "tasks" },
@@ -27,7 +23,6 @@ const scopeGroups = [
   { label: "Search", category: "search" },
   { label: "Protocols", category: "protocols" },
 ] as const
-
 ---
 
 <div class="settings-grid mt-4">
@@ -41,12 +36,17 @@ const scopeGroups = [
       type="button"
       class="btn btn-primary"
       id="agent-token-create-btn"
+      disabled={!canManageTokens}
+      data-can-manage-tokens={canManageTokens ? "true" : "false"}
       style="font-size: 13px; white-space: nowrap;"
     >+ New Token</button>
 
     <!-- Token List -->
     <div id="agent-tokens-list" class="agent-tokens__list">
-      <div class="agent-tokens__empty" id="agent-tokens-empty">
+      <div class="agent-tokens__status" id="agent-tokens-status" role="status" aria-live="polite" hidden={canManageTokens}>
+        {!canManageTokens && "Home Assistant administrator access is required to view or issue agent tokens."}
+      </div>
+      <div class="agent-tokens__empty" id="agent-tokens-empty" hidden>
         <span class="inline-flex items-center justify-center text-text-muted" aria-hidden="true"><Icon name="lock" size={24} /></span>
         <p>No agent tokens yet</p>
         <p class="agent-tokens__empty-hint">Create a token to let external tools access your API securely.</p>
@@ -73,8 +73,8 @@ const scopeGroups = [
         />
       </div>
 
-      <div class="form-group">
-        <label class="form-label">Scopes</label>
+      <fieldset class="form-group" style="border: 0; padding: 0; margin: 0;">
+        <legend class="form-label">Scopes</legend>
         <div class="agent-tokens__scope-grid">
           {scopeGroups.map((group) => (
             <div class="agent-tokens__scope-group">
@@ -88,6 +88,13 @@ const scopeGroups = [
             </div>
           ))}
         </div>
+      </fieldset>
+
+      <div class="form-group">
+        <label class="form-label" for="agent-token-assignee">Assigned User or Agent (required for <code>tasks:write:assigned</code>)</label>
+        <select class="form-select" id="agent-token-assignee">
+          <option value="">None (unassigned)</option>
+        </select>
       </div>
 
       <div class="form-group">
@@ -124,7 +131,10 @@ const scopeGroups = [
   </SettingsPanelCard>
 </div>
 
-<style>
+<style is:inline>
+  #agent-tokens-card [hidden] {
+    display: none;
+  }
   .agent-tokens__list {
     display: flex;
     flex-direction: column;
@@ -132,12 +142,11 @@ const scopeGroups = [
     background: var(--border);
     border-top: 1px solid var(--border);
   }
-  .agent-tokens__list:empty,
-  .agent-tokens__list:has(> #agent-tokens-empty:only-child) {
+  .agent-tokens__list:not(:has(> .agent-tokens__row, > #agent-tokens-status:not([hidden]))) {
     background: transparent;
     border-top: none;
   }
-  .agent-tokens__empty {
+  .agent-tokens__empty:not([hidden]) {
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -151,6 +160,13 @@ const scopeGroups = [
   .agent-tokens__empty-hint {
     font-size: 12px;
     color: var(--text-secondary);
+  }
+  .agent-tokens__status {
+    padding: 16px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 13px;
+    background: var(--bg-card);
   }
   .agent-tokens__row {
     display: flex;
@@ -182,7 +198,7 @@ const scopeGroups = [
     padding: 1px 6px;
     border-radius: 4px;
     background: color-mix(in srgb, var(--accent) 12%, transparent);
-    color: var(--accent);
+    color: var(--accent-text);
     font-size: 10px;
     font-family: "JetBrains Mono", monospace;
   }
@@ -190,14 +206,13 @@ const scopeGroups = [
     font-family: "JetBrains Mono", monospace;
     font-size: 11px;
     color: var(--text-muted);
-    opacity: 0.7;
   }
   .agent-tokens__row-actions {
     display: flex;
     gap: 4px;
     flex-shrink: 0;
   }
-  .agent-tokens__form {
+  .agent-tokens__form:not([hidden]) {
     padding: 16px;
     border-top: 1px solid var(--border);
     display: flex;
@@ -237,7 +252,7 @@ const scopeGroups = [
     font-size: 11px;
     font-family: "JetBrains Mono", monospace;
   }
-  .agent-tokens__reveal {
+  .agent-tokens__reveal:not([hidden]) {
     padding: 16px;
     border-top: 1px solid var(--border);
     display: flex;
@@ -247,7 +262,7 @@ const scopeGroups = [
   .agent-tokens__reveal-warning {
     font-size: 13px;
     font-weight: 600;
-    color: var(--warning, #f59e0b);
+    color: var(--warning-text, var(--warning, #f59e0b));
     padding: 8px 12px;
     border-radius: 8px;
     background: color-mix(in srgb, var(--warning, #f59e0b) 10%, var(--bg-card));
@@ -270,337 +285,8 @@ const scopeGroups = [
     min-width: 0;
     color: var(--text-primary);
   }
-  .agent-tokens__revoked {
+  .agent-tokens__revoked .agent-tokens__row-name {
     text-decoration: line-through;
-    opacity: 0.5;
+    color: var(--text-muted);
   }
 </style>
-
-<script>
-  import { confirmDialog } from "@lib/confirm-dialog"
-  import { showToast } from "@lib/toast"
-  import { pageLifecycle } from "@lib/page-lifecycle"
-  import { createTablerSvgElement } from "@lib/tabler-svg"
-
-  const listEl = document.getElementById("agent-tokens-list")!
-  const emptyEl = document.getElementById("agent-tokens-empty")!
-  const createBtn = document.getElementById("agent-token-create-btn")!
-  const formEl = document.getElementById("agent-token-form")!
-  const cancelBtn = document.getElementById("agent-token-form-cancel")!
-  const saveBtn = document.getElementById("agent-token-save")!
-  const revealEl = document.getElementById("agent-token-reveal")!
-  const plaintextEl = document.getElementById("agent-token-plaintext")!
-  const copyBtn = document.getElementById("agent-token-copy")!
-  const doneBtn = document.getElementById("agent-token-reveal-done")!
-  const nameInput = document.getElementById("agent-token-name") as HTMLInputElement
-  const expiresSelect = document.getElementById("agent-token-expires") as HTMLSelectElement
-
-  interface TokenInfo {
-    id: string
-    name: string
-    tokenPrefix: string
-    scopes: string[]
-    createdAt: string
-    expiresAt: string | null
-    lastUsedAt?: string | null
-    revoked?: boolean
-  }
-
-  function clearTokenStatus() {
-    listEl.querySelectorAll(".agent-tokens__status").forEach(el => el.remove())
-  }
-
-  function showTokenStatus(message: string, withRetry = false) {
-    clearTokenStatus()
-    listEl.querySelectorAll(".agent-tokens__row").forEach(el => el.remove())
-    const statusEl = document.createElement("div")
-    statusEl.className = "agent-tokens__status"
-    statusEl.style.cssText = "padding: 16px; text-align: center; color: var(--text-muted); font-size: 13px;"
-    statusEl.appendChild(document.createTextNode(message))
-    if (withRetry) {
-      const retryBtn = document.createElement("button")
-      retryBtn.type = "button"
-      retryBtn.className = "btn btn-ghost btn-sm"
-      retryBtn.id = "tokens-retry"
-      retryBtn.style.marginLeft = "8px"
-      retryBtn.textContent = "Retry"
-      pageLifecycle.on(retryBtn, "click", () => loadTokens())
-      statusEl.appendChild(retryBtn)
-    }
-    listEl.appendChild(statusEl)
-    emptyEl.hidden = true
-  }
-
-  function showTokenAdminNotice() {
-    showTokenStatus("Home Assistant administrator access is required to view or issue agent tokens.")
-    if (createBtn instanceof HTMLButtonElement) createBtn.disabled = true
-  }
-
-  // ── T7: Error state with retry ──
-  function showTokenError() {
-    showTokenStatus("Failed to load tokens.", true)
-  }
-
-  // ── Load tokens ──
-  async function loadTokens() {
-    try {
-      const res = await fetch("/api/agent-tokens")
-      if (res.status === 403) {
-        showTokenAdminNotice()
-        return
-      }
-      if (!res.ok) {
-        showTokenError()
-        return
-      }
-      const tokens: TokenInfo[] = await res.json()
-      renderTokens(tokens)
-    } catch {
-      showTokenError()
-    }
-  }
-
-  function renderTokens(tokens: TokenInfo[]) {
-    // Clear any stale status banner and old rows while keeping #agent-tokens-empty attached
-    clearTokenStatus()
-    listEl.querySelectorAll(".agent-tokens__row").forEach(el => el.remove())
-    if (createBtn instanceof HTMLButtonElement) createBtn.disabled = false
-
-    if (tokens.length === 0) {
-      emptyEl.hidden = false
-      return
-    }
-
-    emptyEl.hidden = true
-
-    for (const token of tokens) {
-      const row = document.createElement("div")
-      row.className = `agent-tokens__row${token.revoked ? " agent-tokens__revoked" : ""}`
-      row.dataset.tokenId = token.id
-
-      const info = document.createElement("div")
-      info.className = "agent-tokens__row-info"
-
-      const nameEl = document.createElement("div")
-      nameEl.className = "agent-tokens__row-name"
-      nameEl.textContent = token.name
-
-      const meta = document.createElement("div")
-      meta.className = "agent-tokens__row-meta"
-
-      const prefix = document.createElement("span")
-      prefix.className = "agent-tokens__row-prefix"
-      prefix.textContent = `${token.tokenPrefix}…`
-      meta.appendChild(prefix)
-
-      for (const scope of token.scopes) {
-        const badge = document.createElement("span")
-        badge.className = "agent-tokens__scope-badge"
-        badge.textContent = scope
-        meta.appendChild(badge)
-      }
-
-      const created = new Date(token.createdAt).toLocaleDateString()
-      const expires = token.expiresAt
-        ? `Expires ${new Date(token.expiresAt).toLocaleDateString()}`
-        : "No expiry"
-
-      const createdSpan = document.createElement("span")
-      createdSpan.textContent = `Created ${created}`
-      const expiresSpan = document.createElement("span")
-      expiresSpan.textContent = `· ${expires}`
-      meta.append(createdSpan, expiresSpan)
-
-      info.append(nameEl, meta)
-
-      const actions = document.createElement("div")
-      actions.className = "agent-tokens__row-actions"
-
-      if (token.revoked) {
-        const revokedBadge = document.createElement("span")
-        revokedBadge.className = "badge badge-pending"
-        revokedBadge.textContent = "Revoked"
-        actions.appendChild(revokedBadge)
-      } else {
-        const revokeBtn = document.createElement("button")
-        revokeBtn.type = "button"
-        revokeBtn.className = "btn btn-ghost btn-sm"
-        revokeBtn.dataset.revoke = token.id
-        revokeBtn.title = "Revoke"
-        revokeBtn.setAttribute("aria-label", `Revoke ${token.name}`)
-        revokeBtn.appendChild(createTablerSvgElement("ban", 14))
-        pageLifecycle.on(revokeBtn, "click", () => revokeToken(token.id))
-        actions.appendChild(revokeBtn)
-      }
-
-      const deleteBtn = document.createElement("button")
-      deleteBtn.type = "button"
-      deleteBtn.className = "btn btn-ghost btn-sm"
-      deleteBtn.dataset.delete = token.id
-      deleteBtn.title = "Delete permanently"
-      deleteBtn.setAttribute("aria-label", `Delete ${token.name}`)
-      deleteBtn.appendChild(createTablerSvgElement("trash", 14))
-      pageLifecycle.on(deleteBtn, "click", () => deleteToken(token.id))
-      actions.appendChild(deleteBtn)
-
-      row.append(info, actions)
-      listEl.appendChild(row)
-    }
-  }
-
-  // ── Create flow ──
-  pageLifecycle.on(createBtn, "click", () => {
-    formEl.hidden = false
-    revealEl.hidden = true
-    nameInput.value = ""
-    nameInput.focus()
-    document.querySelectorAll<HTMLInputElement>('[name="agent-token-scopes"]')
-      .forEach(cb => { cb.checked = false })
-    expiresSelect.value = ""
-  })
-
-  pageLifecycle.on(cancelBtn, "click", () => {
-    formEl.hidden = true
-  })
-
-  pageLifecycle.on(saveBtn, "click", async () => {
-    const name = nameInput.value.trim()
-    if (!name) {
-      showToast("Token name is required", "error")
-      nameInput.focus()
-      return
-    }
-
-    const scopes: string[] = []
-    document.querySelectorAll<HTMLInputElement>('[name="agent-token-scopes"]:checked')
-      .forEach(cb => scopes.push(cb.value))
-
-    if (scopes.length === 0) {
-      showToast("Select at least one scope", "error")
-      return
-    }
-
-    // Calculate expiry
-    let expiresAt: string | null = null
-    const exp = expiresSelect.value
-    if (exp) {
-      const now = Date.now()
-      const ms = exp === "7d" ? 7*86400000 : exp === "30d" ? 30*86400000
-        : exp === "90d" ? 90*86400000 : exp === "1y" ? 365*86400000 : 0
-      if (ms) expiresAt = new Date(now + ms).toISOString()
-    }
-
-    saveBtn.setAttribute("disabled", "true")
-    saveBtn.textContent = "Creating…"
-
-    try {
-      const res = await fetch("/api/agent-tokens", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, scopes, expiresAt }),
-      })
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}))
-        showToast(err.detail || "Failed to create token", "error")
-        return
-      }
-
-      const data = await res.json()
-
-      // Show plaintext token (one time only)
-      formEl.hidden = true
-      revealEl.hidden = false
-      plaintextEl.textContent = data.token
-
-      showToast("Token created — copy it now!", "success")
-      loadTokens()
-    } catch {
-      showToast("Failed to create token", "error")
-    } finally {
-      saveBtn.removeAttribute("disabled")
-      saveBtn.textContent = "Create Token"
-    }
-  })
-
-  function setCopyButtonState(copied: boolean) {
-    copyBtn.replaceChildren(
-      createTablerSvgElement(copied ? "check" : "copy", 14),
-      document.createTextNode(copied ? " Copied" : " Copy"),
-    )
-  }
-
-  // ── Copy token ──
-  pageLifecycle.on(copyBtn, "click", async () => {
-    try {
-      await navigator.clipboard.writeText(plaintextEl.textContent || "")
-      showToast("Token copied to clipboard", "success")
-      setCopyButtonState(true)
-      setTimeout(() => { setCopyButtonState(false) }, 2000)
-    } catch {
-      showToast("Failed to copy — select and copy manually", "error")
-    }
-  })
-
-  pageLifecycle.on(doneBtn, "click", () => {
-    revealEl.hidden = true
-    plaintextEl.textContent = ""
-  })
-
-  // ── Revoke & Delete ──
-  async function revokeToken(id: string) {
-    const confirmed = await confirmDialog({ message: "Revoke this token? It will immediately stop working.", variant: "warning", confirmText: "Revoke" })
-    if (!confirmed) return
-    try {
-      const res = await fetch("/api/agent-tokens", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id }),
-      })
-      if (res.ok) {
-        showToast("Token revoked", "success")
-        loadTokens()
-      } else {
-        showToast("Failed to revoke token", "error")
-      }
-    } catch {
-      showToast("Failed to revoke token", "error")
-    }
-  }
-
-  async function deleteToken(id: string) {
-    const deleteConfirmed = await confirmDialog({ message: "Permanently delete this token? This cannot be undone.", variant: "danger", confirmText: "Delete" })
-    if (!deleteConfirmed) return
-    try {
-      const res = await fetch("/api/agent-tokens", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id, hard: true }),
-      })
-      if (res.ok) {
-        showToast("Token deleted", "success")
-        loadTokens()
-      } else {
-        showToast("Failed to delete token", "error")
-      }
-    } catch {
-      showToast("Failed to delete token", "error")
-    }
-  }
-
-  // ── Boot on section visibility ──
-  const section = document.getElementById("automation-ai-settings")
-  if (!section) {
-    loadTokens()
-  } else {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (!entries.some(e => e.isIntersecting)) return
-        observer.disconnect()
-        loadTokens()
-      },
-      { rootMargin: "0px 0px -35% 0px", threshold: 0.15 },
-    )
-    observer.observe(section)
-  }
-</script>

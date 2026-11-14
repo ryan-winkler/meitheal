@@ -1,21 +1,25 @@
-import { getSettingsRevision } from "./domains/tasks/persistence/settings-repository"
-import type { MiddlewareHandler } from "astro";
-import { apiProblem, apiRateLimited } from "./lib/api-response";
-import { resolveIngressContext } from "@domains/auth/ingress";
-import { getIngressTransport } from "../scripts/ingress-transport.mjs";
-import { buildSecurityHeaders, isCsrfAllowed } from "@domains/auth/ingress-policy";
-import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability";
-import { getPersistenceClient, ensureDatabaseSchemaSupported, ensureSchema } from "@domains/tasks/persistence/store";
-import { initHAIntegrations } from "@domains/ha";
-import { startInactivityScheduler } from "@domains/tasks/task-inactivity-scheduler"
-import type { DateFormat } from "./lib/date";
-import { replayTaskRequest, taskRetryKey } from "./lib/idempotent-task-request"
-import { rejectBoardSelectionInUrl } from "./domains/tasks/board-availability"
+import type { MiddlewareHandler } from "astro"
 import { hasScope, isAssignedTaskScopedRoute, resolveAgentRouteScope } from "@meitheal/domain-auth"
+import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability"
+import { buildSecurityHeaders, isCsrfAllowed, resolveIngressContext } from "@domains/auth"
+import { initHAIntegrations } from "@domains/ha"
+import {
+  ensureDatabaseSchemaSupported,
+  ensureSchema,
+  getPersistenceClient,
+  getSettingsRevision,
+  rejectBoardSelectionInUrl,
+  startInactivityScheduler,
+} from "@domains/tasks"
+import { getIngressTransport } from "../scripts/ingress-transport.mjs"
+import { apiProblem, apiRateLimited } from "./lib/api-response"
+import type { DateFormat } from "./lib/date"
+import { replayTaskRequest, taskRetryKey } from "./lib/idempotent-task-request"
 import { resolveAgentAuth, type ResolvedAgent } from "./lib/agent-token-guard"
 import { rewriteIngressHtml } from "./lib/rewrite-ingress-html"
 import { commentAttemptHeader, commentMentionContextHeader } from "./lib/comment-mentions"
 import { activeParticipantRequired, hasCurrentTaskParticipant, taskParticipantBodySignal } from "./lib/task-participant"
+import { startRuntimeVitalsMonitor } from "./lib/runtime-vitals"
 
 const logger = createLogger({
   service: "meitheal-web",
@@ -28,7 +32,9 @@ const logger = createLogger({
 
 
 // ── Known automation source identifiers (validated against for log safety) ──
-const KNOWN_AUTOMATION_SOURCES = new Set(["browser", "n8n", "nodered", "mcp", "agent", "a2a", "ha", "api", "webhook", "cron"])
+const KNOWN_AUTOMATION_SOURCES = new Set(["browser", "webmcp", "n8n", "nodered", "mcp", "agent", "a2a", "ha", "api", "webhook", "cron"])
+const AGENT_DISCOVERY_PATHS = new Set(["/.well-known/mcp.json", "/.well-known/agent-card.json", "/.well-known/agent.json"])
+const isAgentDiscoveryPath = (pathname: string) => AGENT_DISCOVERY_PATHS.has(pathname)
 
 // ── W3C Traceparent Parsing (OTel-compatible, zero-dep) ──
 // Format: {version}-{trace-id}-{parent-id}-{trace-flags}
@@ -87,6 +93,25 @@ const _rateLimitCleanup = setInterval(() => {
   }
 }, 5 * 60_000);
 if (typeof _rateLimitCleanup?.unref === "function") _rateLimitCleanup.unref();
+
+startRuntimeVitalsMonitor();
+
+export function resetRateLimitsForTests(): void {
+  rateLimitMap.clear();
+  botRateLimitMap.clear();
+}
+
+function extractRawPath(rawUrl: string): string {
+  const qIdx = rawUrl.indexOf("?")
+  const hIdx = rawUrl.indexOf("#")
+  const endIdx = qIdx === -1 ? hIdx : (hIdx === -1 ? qIdx : Math.min(qIdx, hIdx))
+  const withoutQuery = endIdx === -1 ? rawUrl : rawUrl.slice(0, endIdx)
+  return withoutQuery.replace(/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\/[^/]+/, "") || "/"
+}
+
+function hasDisallowedApiRawPath(rawPath: string): boolean {
+  return /%2f|%5c|%00/i.test(rawPath) || /(?:^|\/)\.\.?(?:\/|$)/.test(rawPath)
+}
 
 // ── Bot-specific rate limiter (PRA-08) ──
 // Stricter 60/min limit for bot mutation endpoints to prevent runaway agents
@@ -164,6 +189,24 @@ const reactionPaths = new Set([
 
 export const onRequest: MiddlewareHandler = async (context, next) => {
   const { request, routePattern, url } = context
+  const rawRequestPath = extractRawPath(request.url)
+  const wireRawPath = getIngressTransport()?.rawPath
+  if (
+    url.pathname.startsWith("/api/") ||
+    rawRequestPath.startsWith("/api/") ||
+    (wireRawPath?.startsWith("/api/") ?? false)
+  ) {
+    if (
+      hasDisallowedApiRawPath(rawRequestPath) ||
+      (wireRawPath !== undefined && hasDisallowedApiRawPath(wireRawPath))
+    ) {
+      return apiProblem({
+        status: 400,
+        detail: "API paths cannot contain encoded path separators, null bytes, or dot segments.",
+        extraHeaders: { "cache-control": "private, no-store" },
+      })
+    }
+  }
   const requestUrl = new URL(request.url)
   const requestPath = requestUrl.pathname
   const pinRoute = isPinRoute(routePattern) || isPinRoute(url.pathname)
@@ -246,6 +289,7 @@ async function handleRequest({ request, locals, routePattern }: Parameters<Middl
   const supervisorMode = Boolean(process.env.SUPERVISOR_TOKEN);
   const transport = getIngressTransport();
   const { ingressPath, behindIngress, hassUserId, hassIsAdmin } = resolveIngressContext(request.headers, transport);
+  if (transport) transport.behindIngress = behindIngress;
   const trustedLocalCaller = supervisorMode && (transport?.peer === "127.0.0.1" || transport?.peer === "::1");
   const databaseExportPath = "/api/export/database.sqlite"
   // Older workers bypass caching only for the canonical export path.
@@ -257,7 +301,8 @@ async function handleRequest({ request, locals, routePattern }: Parameters<Middl
     })
   }
   // Astro can route a decoded API namespace that the raw-path scope checks would miss.
-  if (routePattern.startsWith("/api/") && !url.pathname.startsWith("/api/")) {
+  if ((routePattern.startsWith("/api/") && !url.pathname.startsWith("/api/")) ||
+      (isAgentDiscoveryPath(routePattern) && !isAgentDiscoveryPath(url.pathname))) {
     return new Response(null, { status: 404, headers: { "cache-control": "private, no-store" } })
   }
   const method = request.method.toUpperCase();
@@ -283,54 +328,90 @@ async function handleRequest({ request, locals, routePattern }: Parameters<Middl
   locals.spanId = traceCtx.spanId
   locals.traceFlags = traceCtx.traceFlags
 
-  // Rate limit by the trusted identity or actual transport peer. Caller-supplied
-  // forwarded addresses must not create new rate-limit buckets.
-  const ip = hassUserId ? `ha:${hassUserId}` : transport?.peer || "127.0.0.1";
-  const rateInfo = url.pathname.startsWith("/api/") ? getRateLimit(ip) : null
+  const isApiRoute = url.pathname.startsWith("/api/")
+  const agentDiscoveryRoute = isAgentDiscoveryPath(url.pathname)
+  const isRateLimitedRoute = isApiRoute || agentDiscoveryRoute
+  if (isApiRoute && (method === "POST" || method === "PUT" || method === "PATCH" || method === "DELETE")) {
+    locals.writeAbortSignal = AbortSignal.any([request.signal, AbortSignal.timeout(25_000)])
+  }
 
-  if (rateInfo?.exceeded) {
-    const retryAfter = Math.ceil((rateInfo.resetAt - Date.now()) / 1000)
+  // Rate limit by the trusted identity, verified token, or actual transport peer.
+  // Caller-supplied forwarded addresses must not create new rate-limit buckets.
+  const isLoopbackPeer = transport?.peer === "127.0.0.1" || transport?.peer === "::1"
+  const ip = hassUserId ? `ha:${hassUserId}` : transport?.peer || "127.0.0.1";
+
+  const buildApiRateLimitedResponse = (resetAt: number) => {
+    const retryAfter = Math.ceil((resetAt - Date.now()) / 1000)
     return apiRateLimited(retryAfter, `Rate limit exceeded (${RATE_LIMIT}/min). Retry after ${retryAfter}s.`, {
       "x-ratelimit-limit": String(RATE_LIMIT),
       "x-ratelimit-remaining": "0",
-      "x-ratelimit-reset": String(Math.ceil(rateInfo.resetAt / 1000)),
+      "x-ratelimit-reset": String(Math.ceil(resetAt / 1000)),
       "RateLimit": `limit=${RATE_LIMIT}, remaining=0, reset=${retryAfter}`,
       "RateLimit-Policy": `${RATE_LIMIT};w=${RATE_WINDOW_MS / 1000}`,
     })
   }
 
-  // Bot-specific rate limiting (PRA-08) — stricter 60/min for bot mutation endpoints
-  if (rateInfo && isBotEndpoint(url.pathname)) {
-    const botRate = getBotRateLimit(ip);
-    if (botRate.exceeded) {
-      logger.log("warn", {
-        event: "http.bot_rate_limited",
-        domain: "security",
-        component: "middleware",
-        request_id: requestId,
-        message: `Bot rate limit exceeded: ${request.method} ${url.pathname} from ${ip}`,
-      });
-      const retryAfter = Math.ceil((botRate.resetAt - Date.now()) / 1000)
-      return apiRateLimited(retryAfter, `Bot rate limit exceeded (${BOT_RATE_LIMIT}/min). Retry after ${retryAfter}s.`, {
-        "x-ratelimit-limit": String(BOT_RATE_LIMIT),
-        "x-ratelimit-remaining": "0",
-        "x-ratelimit-reset": String(Math.ceil(botRate.resetAt / 1000)),
-        "RateLimit": `limit=${BOT_RATE_LIMIT}, remaining=0, reset=${retryAfter}`,
-        "RateLimit-Policy": `${BOT_RATE_LIMIT};w=${BOT_RATE_WINDOW_MS / 1000}`,
-      })
+  const buildBotRateLimitedResponse = (resetAt: number, bucketLabel: string) => {
+    logger.log("warn", {
+      event: "http.bot_rate_limited",
+      domain: "security",
+      component: "middleware",
+      request_id: requestId,
+      message: `Bot rate limit exceeded: ${request.method} ${url.pathname} from ${bucketLabel}`,
+    });
+    const retryAfter = Math.ceil((resetAt - Date.now()) / 1000)
+    return apiRateLimited(retryAfter, `Bot rate limit exceeded (${BOT_RATE_LIMIT}/min). Retry after ${retryAfter}s.`, {
+      "x-ratelimit-limit": String(BOT_RATE_LIMIT),
+      "x-ratelimit-remaining": "0",
+      "x-ratelimit-reset": String(Math.ceil(resetAt / 1000)),
+      "RateLimit": `limit=${BOT_RATE_LIMIT}, remaining=0, reset=${retryAfter}`,
+      "RateLimit-Policy": `${BOT_RATE_LIMIT};w=${BOT_RATE_WINDOW_MS / 1000}`,
+    })
+  }
+
+  let rateInfo: { remaining: number; resetAt: number; exceeded: boolean } | null = null
+  const botEndpoint = isRateLimitedRoute && (isBotEndpoint(url.pathname) || isBotEndpoint(routePattern))
+
+  // Enforce in-memory IP rate limits BEFORE resolveAgentAuth for all non-loopback peers
+  // so unauthenticated invalid-token floods never hit synchronous SQLite.
+  if (isRateLimitedRoute && !isLoopbackPeer) {
+    rateInfo = getRateLimit(ip)
+    if (rateInfo.exceeded) return buildApiRateLimitedResponse(rateInfo.resetAt)
+    if (botEndpoint) {
+      const botRate = getBotRateLimit(ip)
+      if (botRate.exceeded) return buildBotRateLimitedResponse(botRate.resetAt, ip)
     }
   }
 
   let resolvedAgent: ResolvedAgent | null = null
-  if (url.pathname.startsWith("/api/") && !isHealthCheck) {
+  if (isRateLimitedRoute && !isHealthCheck) {
     try {
       resolvedAgent = await resolveAgentAuth(request)
     } catch (error) {
-      if (error instanceof Response) return error
+      if (error instanceof Response) {
+        if (isLoopbackPeer) {
+          const invalidRate = getRateLimit(ip)
+          if (invalidRate.exceeded) return buildApiRateLimitedResponse(invalidRate.resetAt)
+          if (botEndpoint) {
+            const invalidBotRate = getBotRateLimit(ip)
+            if (invalidBotRate.exceeded) return buildBotRateLimitedResponse(invalidBotRate.resetAt, ip)
+          }
+        }
+        return error
+      }
       throw error
     }
 
     if (resolvedAgent) {
+      const tokenBucket = `token:${resolvedAgent.tokenId}`
+      const tokenRate = getRateLimit(tokenBucket)
+      rateInfo = tokenRate
+      if (tokenRate.exceeded) return buildApiRateLimitedResponse(tokenRate.resetAt)
+      if (botEndpoint) {
+        const tokenBotRate = getBotRateLimit(tokenBucket)
+        if (tokenBotRate.exceeded) return buildBotRateLimitedResponse(tokenBotRate.resetAt, tokenBucket)
+      }
+
       const scope = resolveAgentRouteScope(url.pathname, method)
       const isAssignedRoute = isAssignedTaskScopedRoute(url.pathname, method)
       if (!scope || !hasScope(resolvedAgent.scopes, scope, { isAssignedTaskRoute: isAssignedRoute })) {
@@ -340,7 +421,17 @@ async function handleRequest({ request, locals, routePattern }: Parameters<Middl
           type: "https://meitheal.local/problems/insufficient-scope",
         })
       }
+    } else if (isLoopbackPeer) {
+      rateInfo = getRateLimit(ip)
+      if (rateInfo.exceeded) return buildApiRateLimitedResponse(rateInfo.resetAt)
+      if (botEndpoint) {
+        const botRate = getBotRateLimit(ip)
+        if (botRate.exceeded) return buildBotRateLimitedResponse(botRate.resetAt, ip)
+      }
     }
+  } else if (isRateLimitedRoute && isLoopbackPeer) {
+    rateInfo = getRateLimit(ip)
+    if (rateInfo.exceeded) return buildApiRateLimitedResponse(rateInfo.resetAt)
   }
 
   // Attach agent info to locals for downstream route access
@@ -483,7 +574,7 @@ async function handleRequest({ request, locals, routePattern }: Parameters<Middl
     // API callers parse JSON, so an error that would render the HTML error page answers with a problem document instead.
     const apiRoute = url.pathname.startsWith("/api/")
     try {
-      response = retryKey ? await replayTaskRequest(retryKey, next) : await next()
+      response = retryKey ? await replayTaskRequest(retryKey, next, locals.writeAbortSignal) : await next()
     } catch (error) {
       if (!apiRoute) throw error
       logger.log("error", {
@@ -506,6 +597,9 @@ async function handleRequest({ request, locals, routePattern }: Parameters<Middl
 
   // Rewrite HTML paths when behind HA ingress
   if (ingressPath) {
+    if (behindIngress && transport && (response.headers.get("content-type") ?? "").includes("text/html")) {
+      transport.streamingIngressHtml = true
+    }
     response = await rewriteIngressHtml(response, ingressPath, {
       wait: transport?.waitForHtmlDrain,
       signal: request.signal,
@@ -541,6 +635,7 @@ async function handleRequest({ request, locals, routePattern }: Parameters<Middl
         domain: "observability",
         component: "middleware",
         request_id: requestId,
+        duration_ms: elapsed,
         ...(!privateLog ? { trace_id: locals.traceId, span_id: locals.spanId } : {}),
         message: `${request.method} ${logPath} → ${response.status} (${elapsed}ms)`,
         metadata: {
@@ -562,6 +657,7 @@ async function handleRequest({ request, locals, routePattern }: Parameters<Middl
         domain: "observability",
         component: "middleware",
         request_id: requestId,
+        duration_ms: elapsed,
         message: `Slow health check: ${elapsed}ms`,
       })
     }

@@ -1,7 +1,10 @@
-import { AreaRepository } from "@domains/tasks/persistence/area-repository"
-import { SettingsRepository } from "@domains/tasks/persistence/settings-repository"
-import { TaskRepository, type TaskCatalogRow } from "@domains/tasks/persistence/task-repository"
-import { getPersistenceClient } from "@domains/tasks/persistence/store"
+import {
+  AreaRepository,
+  getPersistenceClient,
+  SettingsRepository,
+  TaskRepository,
+  type TaskCatalogRow,
+} from "@domains/tasks"
 import { normalizeSavedFilter, writeTableFilterParams } from "@lib/filter-state"
 import {
   SETTINGS_SECTIONS,

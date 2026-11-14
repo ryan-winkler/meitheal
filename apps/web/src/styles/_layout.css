@@ -6,22 +6,17 @@
  * Does NOT own: cards (_cards.css), tasks (_tasks.css), modals (_modal.css)
  * ============================================= */
 /* --- Layout --- */
-:root {
-  --sidebar-width: 248px;
+.sidebar {
+  @apply bg-bg-secondary flex flex-col border-r border-border fixed h-screen z-40;
+  width: var(--sidebar-width, 240px);
+  transition: width 250ms cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
 }
 
-.sidebar {
-  @apply bg-bg-secondary/90 backdrop-blur-md flex flex-col border-r border-border fixed h-screen z-40;
-  width: var(--sidebar-width, 248px);
-  transition: width 220ms cubic-bezier(0.23, 1, 0.32, 1);
-  overflow: visible;
-  }
-
-  /* Collapsed sidebar: Google AI Studio-style 64px icon rail */
+  /* Collapsed sidebar: icon-only — NOT off-screen */
   body.sidebar-collapsed .sidebar {
-    width: 64px;
-    padding-inline: 0.5rem;
-    overflow: visible !important;
+    width: 60px; /* Make sidebar slightly wider than just 48px to look like a proper rail */
+    overflow: visible !important; /* Prevent tooltips from clipping */
   }
 
 
@@ -108,7 +103,7 @@
   /* P0-2: Enable native touch scrolling in HA WebView iframe */
   touch-action: pan-y;
   -webkit-overflow-scrolling: touch;
-  transition: margin-left 220ms cubic-bezier(0.23, 1, 0.32, 1);
+  transition: margin-left 250ms cubic-bezier(0.4, 0, 0.2, 1);
   /* P0-3: Style containment only — `contain: layout` was removed because
      it creates an independent formatting context that blocks wheel-event
      scroll propagation to the body scroll container. With layout containment,
@@ -121,41 +116,41 @@
 /* Desktop: offset main content by sidebar width (md+ only, mobile has no sidebar) */
 @media (min-width: 769px) {
   .main-content {
-    margin-left: var(--sidebar-width, 248px);
+    margin-left: var(--sidebar-width, 240px);
   }
 }
 
   /* When sidebar is collapsed, shrink main content offset */
   body.sidebar-collapsed .main-content {
-    margin-left: 64px;
+    margin-left: 60px;
   }
 
-  /* — Collapsed sidebar: center brand mark cleanly, hide wordmark/IPA — */
+  /* Docked Task Inspector (>= 1440px): reserve 420px right workspace rail */
+  body.has-docked-inspector .main-content {
+    margin-right: 420px;
+  }
+
+  /* — Collapsed sidebar: hide text, center icons — */
   body.sidebar-collapsed .sidebar-header {
     justify-content: center;
     padding-left: 0 !important;
     padding-right: 0 !important;
   }
-
+  
   body.sidebar-collapsed .sidebar-header .sidebar-brand-group {
-    display: flex !important;
-    align-items: center;
-    justify-content: center;
-    width: 100%;
-  }
-
-  body.sidebar-collapsed .sidebar-header .sidebar-brand {
-    justify-content: center;
-    gap: 0 !important;
-  }
-
-  body.sidebar-collapsed .sidebar-header .sidebar-brand-text,
-  body.sidebar-collapsed .sidebar-header .sidebar-ipa {
     display: none !important;
   }
 
   body.sidebar-collapsed .sidebar-header .sidebar-toggle-top {
+    margin: 0 auto;
+  }
+
+  body.sidebar-collapsed .sidebar-header .sidebar-toggle-top .sidebar-icon-expanded {
     display: none !important;
+  }
+  
+  body.sidebar-collapsed .sidebar-header .sidebar-toggle-top .sidebar-icon-collapsed {
+    display: block !important;
   }
 
   /* Nav links: icon-only, centered */
@@ -170,14 +165,14 @@
     display: flex !important;
     justify-content: center !important;
   }
-  body.sidebar-collapsed .nav-link span:not(.nav-icon):not(.nav-badge),
+  body.sidebar-collapsed .nav-link span:not(.nav-icon, .nav-badge),
   body.sidebar-collapsed .nav-badge {
     display: none;
   }
   /* Active indicator: bottom border instead of right border */
   body.sidebar-collapsed .nav-link.active {
     border-right: none;
-    background: rgba(var(--accent-rgb), 0.15);
+    background: rgb(var(--accent-rgb) / 0.15);
   }
   /* Hide board switcher, hierarchy tree, streak badge, and footer text when collapsed */
   body.sidebar-collapsed .board-switcher,
@@ -191,40 +186,20 @@
   body.sidebar-collapsed .sidebar-footer a {
     justify-content: center;
   }
-  body.sidebar-collapsed .sidebar-cta-wrap {
-    padding: 0 0 0.625rem;
-    display: flex;
-    justify-content: center;
-  }
-  body.sidebar-collapsed .sidebar-rail-cta {
-    width: 40px;
-    height: 40px;
-    min-height: 40px;
-    padding: 0;
-    border-radius: 12px;
-    justify-content: center;
-    gap: 0;
-  }
-  body.sidebar-collapsed .sidebar-rail-cta__label {
-    display: none !important;
-  }
-
   body.sidebar-collapsed .sidebar-scroll {
     padding-top: 4px;
-    overflow-y: auto;
-    overflow-x: hidden;
+    overflow: visible; /* Prevent clipping of nav tooltips */
   }
 
-  /* Collapsed nav tooltip — floating outside .sidebar-scroll overflow clipping */
+  /* Collapsed nav tooltip — appears on hover for icon-only items */
   body.sidebar-collapsed .nav-link {
     position: relative;
   }
   body.sidebar-collapsed .nav-link::after {
-    display: none;
-  }
-
-  .sidebar-rail-tooltip {
-    position: fixed;
+    content: attr(data-tooltip);
+    position: absolute;
+    left: calc(100% + 8px);
+    top: 50%;
     transform: translateY(-50%);
     white-space: nowrap;
     font-size: 12px;
@@ -235,8 +210,13 @@
     border-radius: 6px;
     padding: 4px 10px;
     pointer-events: none;
-    z-index: 90;
+    z-index: 100;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    opacity: 0;
+    transition: opacity 150ms ease;
+  }
+  body.sidebar-collapsed .nav-link:hover::after {
+    opacity: 1;
   }
 
 .page-header {
@@ -251,7 +231,7 @@
   }
 
   .stat-card {
-    @apply bg-bg-card/80 backdrop-blur-md border border-border rounded-xl p-5 flex items-center shadow-sm;
+    @apply bg-bg-card border border-border rounded-xl p-5 flex items-center shadow-sm;
     gap: 14px;
     min-height: 88px;
     transition:
@@ -262,17 +242,18 @@
     cursor: default;
   }
 
-      /* Clickable stat cards — navigational links to filtered views */
-      a.stat-card-link {
-        cursor: pointer;
-        text-decoration: none;
-        color: inherit;
-      }
+  /* Clickable stat cards — navigational links to filtered views */
+  a.stat-card-link {
+    cursor: pointer;
+    text-decoration: none;
+    color: inherit;
+  }
+
   .stat-card:hover {
-    @apply bg-bg-card/95;
+    @apply bg-bg-card;
     transform: translateY(-2px) scale(1.02);
     box-shadow:
-      0 4px 20px rgba(99, 102, 241, 0.12),
+      0 4px 20px rgb(var(--accent-rgb) / 0.12),
       var(--shadow-md);
     border-color: var(--accent);
   }
@@ -308,41 +289,16 @@
   /* --- Empty State --- */
   .empty-state {
     @apply flex flex-col items-center justify-center p-14 text-center rounded-2xl border border-dashed border-border/60 my-8 mx-auto w-full max-w-2xl relative overflow-hidden;
-    background: linear-gradient(135deg, rgba(255,255,255,0.01) 0%, rgba(99, 102, 241, 0.03) 100%);
-    box-shadow: inset 0 2px 10px rgba(0, 0, 0, 0.05);
-    animation: fade-in-up 0.4s ease-out forwards;
-    transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+    background: var(--bg-card);
+    transition: border-color 0.16s ease;
   }
 
   .empty-state:hover {
     @apply border-accent/30;
-    transform: translateY(-1px);
-    box-shadow: inset 0 2px 10px rgba(0, 0, 0, 0.05), 0 8px 24px -8px rgba(99, 102, 241, 0.1);
-  }
-
-  /* Decorative glow orb behind empty state */
-  .empty-state::before {
-    content: '';
-    position: absolute;
-    top: -50%;
-    left: 50%;
-    width: 200px;
-    height: 200px;
-    background: radial-gradient(circle, rgba(99, 102, 241, 0.15) 0%, transparent 70%);
-    transform: translateX(-50%);
-    pointer-events: none;
-    z-index: 0;
   }
 
   .empty-state-icon {
-    @apply mb-5 flex items-center justify-center relative z-10;
-    filter: drop-shadow(0 4px 12px rgba(99, 102, 241, 0.2));
-    animation: icon-float 3s ease-in-out infinite;
-  }
-
-  @keyframes icon-float {
-    0%, 100% { transform: translateY(0); }
-    50% { transform: translateY(-4px); }
+    @apply mb-5 flex items-center justify-center relative z-10 text-text-muted;
   }
 
   .empty-state-title {
@@ -358,10 +314,9 @@
     @apply flex items-center justify-center gap-3 mt-2;
   }
 
-      .empty-state-actions .btn-primary {
-        @apply shadow-md;
-        box-shadow: 0 4px 14px rgba(99, 102, 241, 0.3);
-      }
+  .empty-state-actions .btn-primary {
+    @apply shadow-sm;
+  }
 .content-area {
   @apply flex-1 p-6;
 }

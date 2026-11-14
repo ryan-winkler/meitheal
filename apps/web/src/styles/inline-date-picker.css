@@ -30,7 +30,7 @@
 }
 
 .idp-has-date:hover {
-  color: var(--accent, #7c3aed);
+  color: var(--accent);
 }
 
 .idp-placeholder {
@@ -41,7 +41,7 @@
 
 .idp-placeholder:hover {
   opacity: 1;
-  color: var(--accent, #7c3aed);
+  color: var(--accent);
 }
 
 .idp-date-text {
@@ -67,7 +67,7 @@
 
 .idp-clear-btn:hover {
   opacity: 1;
-  color: var(--danger, #ef4444);
+  color: var(--accent-danger, #ef4444);
 }
 
 /* ── Panel (floating picker) ─────────────────────────────────────────── */
@@ -75,42 +75,22 @@
 .idp-panel {
   display: flex;
   background: var(--bg-card);
-  color: var(--text-primary);
   border: 1px solid var(--border);
   border-radius: var(--radius-md, 8px);
   box-shadow: var(--shadow-lg, 0 8px 32px rgba(0, 0, 0, 0.3));
   overflow: hidden;
   font-size: 13px;
   min-width: 420px;
-  max-width: calc(100vw - 16px);
-}
-
-@media (max-width: 520px) {
-  .idp-panel {
-    flex-direction: column;
-    min-width: 0;
-    width: min(340px, calc(100vw - 16px));
-  }
 }
 
 /* ── Quick Options (left side) ───────────────────────────────────────── */
 
 .idp-quick-options {
   flex: 0 0 180px;
-  background: var(--bg-secondary);
   border-right: 1px solid var(--border);
   padding: 6px 0;
   overflow-y: auto;
   max-height: 320px;
-}
-
-@media (max-width: 520px) {
-  .idp-quick-options {
-    flex: none;
-    border-right: none;
-    border-bottom: 1px solid var(--border);
-    max-height: 150px;
-  }
 }
 
 .idp-quick-option {
@@ -244,7 +224,7 @@
 }
 
 .idp-cal-day:hover {
-  background: var(--bg-hover, var(--bg-secondary));
+  background: var(--bg-secondary, rgba(255, 255, 255, 0.08));
 }
 
 .idp-cal-day--outside {
@@ -253,20 +233,20 @@
 }
 
 .idp-cal-day--today {
-  background: var(--danger, #ef4444);
+  background: var(--accent-danger, #ef4444);
   color: #fff;
   font-weight: 700;
   border-radius: 50%;
 }
 
 .idp-cal-day--today:hover {
-  background: var(--danger, #ef4444);
+  background: var(--accent-danger, #ef4444);
   opacity: 0.85;
 }
 
 .idp-cal-day--selected {
   background: var(--accent);
-  color: var(--palette-on-accent, #07140f);
+  color: var(--personal-accent-foreground, var(--palette-on-accent, #07140f));
   font-weight: 600;
 }
 

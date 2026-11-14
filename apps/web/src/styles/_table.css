@@ -61,15 +61,12 @@
 }
 
 .data-table thead th {
-  @apply text-left text-[11px] text-text-muted font-bold px-3 py-3 bg-bg-secondary/50 border-b border-border;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    /* B8: Sticky header with backdrop blur */
-      position: sticky;
-      top: 0;
-      z-index: 3;
-      backdrop-filter: blur(8px);
-      -webkit-backdrop-filter: blur(8px);
+  @apply text-left text-[11px] text-text-muted font-bold px-3 py-3 bg-bg-secondary border-b border-border;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  position: sticky;
+  top: 0;
+  z-index: 3;
 }
 
 .data-table td {
@@ -138,7 +135,8 @@
 }
 
 .row-check:checked {
-  @apply bg-accent border-accent;
+  background-color: var(--accent);
+  border-color: var(--accent);
 }
 
 .delete-row {
@@ -598,7 +596,7 @@ tr.filtered-out {
 
   .column-customizer__toggle[aria-expanded="true"] {
     background: var(--accent);
-    color: #fff;
+    color: var(--personal-accent-foreground, var(--palette-on-accent, #07140f));
     border-color: var(--accent);
   }
 
@@ -738,7 +736,7 @@ tr.filtered-out {
 
   .saved-presets__toggle[aria-expanded="true"] {
     background: var(--accent);
-    color: #fff;
+    color: var(--personal-accent-foreground, var(--palette-on-accent, #07140f));
     border-color: var(--accent);
   }
 
@@ -885,7 +883,7 @@ tr.filtered-out {
   .saved-presets__save-btn:hover {
     color: var(--accent);
     border-color: var(--accent);
-    background: rgba(99, 102, 241, 0.05);
+    background: rgb(var(--accent-rgb) / 0.06);
   }
   @media (max-width: 540px) {
     .saved-presets__panel {

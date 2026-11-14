@@ -1,5 +1,61 @@
 #!/usr/bin/with-contenv bashio
-set -euo pipefail
+set -eu
+if (set -o pipefail) 2>/dev/null; then
+  set -o pipefail
+fi
+
+is_uint() {
+  case "${1:-}" in
+    ""|*[!0-9]*) return 1 ;;
+    *) return 0 ;;
+  esac
+}
+
+resolve_max_old_space_mb() {
+  if is_uint "${MEITHEAL_MAX_OLD_SPACE_MB:-}" && [ "${MEITHEAL_MAX_OLD_SPACE_MB}" -ge 96 ]; then
+    printf '%s\n' "${MEITHEAL_MAX_OLD_SPACE_MB}"
+    return 0
+  fi
+
+  _cg_v2="${MEITHEAL_CGROUP_V2_MAX_FILE:-/sys/fs/cgroup/memory.max}"
+  _cg_v1="${MEITHEAL_CGROUP_V1_LIMIT_FILE:-/sys/fs/cgroup/memory/memory.limit_in_bytes}"
+  _raw=""
+  if [ -r "${_cg_v2}" ]; then
+    _raw="$(tr -d '[:space:]' < "${_cg_v2}" 2>/dev/null || true)"
+  elif [ -r "${_cg_v1}" ]; then
+    _raw="$(tr -d '[:space:]' < "${_cg_v1}" 2>/dev/null || true)"
+  fi
+
+  if is_uint "${_raw}" && [ "${_raw}" -gt 0 ] && [ "${_raw}" -lt 1099511627776 ]; then
+    _total_mb=$(( _raw / 1048576 ))
+    _target_mb=$(( _total_mb * 55 / 100 ))
+    if [ "${_target_mb}" -lt 96 ]; then
+      _target_mb=96
+    elif [ "${_target_mb}" -gt 160 ]; then
+      _target_mb=160
+    fi
+    printf '%s\n' "${_target_mb}"
+    return 0
+  fi
+
+  printf '128\n'
+}
+
+apply_resolved_node_options() {
+  _resolved_mb="$(resolve_max_old_space_mb)"
+  case " ${NODE_OPTIONS:-} " in
+    *" --max-old-space-size="*)
+      export NODE_OPTIONS
+      ;;
+    *)
+      export NODE_OPTIONS="${NODE_OPTIONS:+${NODE_OPTIONS} }--max-old-space-size=${_resolved_mb}"
+      ;;
+  esac
+}
+
+if [ "${MEITHEAL_SOURCE_LIB_ONLY:-0}" = "1" ]; then
+  return 0 2>/dev/null || exit 0
+fi
 
 if [ -z "${MEITHEAL_VERSION:-}" ]; then
   export MEITHEAL_VERSION="0.0.1"
@@ -82,7 +138,7 @@ fi
 
 export HOST="${HOST:-0.0.0.0}"
 export PORT="${PORT:-3000}"
-export NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=128}"
+apply_resolved_node_options
 HEALTHCHECK_URL="http://127.0.0.1:${PORT}/api/health"
 
 if [ -f /opt/meitheal/apps/web/package.json ]; then
@@ -110,16 +166,20 @@ if [ -f /opt/meitheal/apps/web/package.json ]; then
   ) &
   WEB_PID=$!
 
-  for attempt in $(seq 1 15); do
+  for attempt in $(seq 1 45); do
+    if ! kill -0 "${WEB_PID}" 2>/dev/null; then
+      echo "Meitheal web process (${WEB_PID}) exited prematurely during startup (attempt ${attempt})" >&2
+      exit 1
+    fi
     if curl -fsS "${HEALTHCHECK_URL}" >/dev/null 2>&1; then
       echo "{\"event\":\"healthcheck.passed\",\"attempt\":${attempt},\"time\":\"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\"}"
       break
     fi
-    sleep 1
-    if [ "${attempt}" -eq 15 ]; then
+    if [ "${attempt}" -eq 45 ]; then
       echo "Meitheal startup healthcheck did not pass after ${attempt} attempts" >&2
       exit 1
     fi
+    sleep 1
   done
 
   # ── Auto-register integration via Supervisor Discovery ──
@@ -170,7 +230,7 @@ graceful_shutdown() {
   if [ -n "${WEB_PID:-}" ] && kill -0 "${WEB_PID}" 2>/dev/null; then
     kill -TERM "${WEB_PID}" 2>/dev/null || true
     # Wait up to 10s for graceful exit
-    for i in $(seq 1 10); do
+    for _ in $(seq 1 10); do
       if ! kill -0 "${WEB_PID}" 2>/dev/null; then
         echo "{\"event\":\"addon.stopped\",\"graceful\":true,\"time\":\"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\"}"
         exit 0

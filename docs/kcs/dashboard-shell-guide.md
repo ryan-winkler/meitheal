@@ -137,3 +137,9 @@ yesterday, today and tomorrow.
 A browser with no saved theme uses Auto. Auto follows the Home Assistant theme
 inside ingress and the system appearance outside it. An explicit Light, Dark or
 Custom choice in Settings still takes priority.
+
+## Docked Task Inspector and Ingress Reload Persistence
+
+At inner widths of `1440px` or wider (including `1920x1080` monitors with the Home Assistant sidebar expanded), opening a task docks `#task-detail-overlay` as a `420px` right workspace pane (`body.has-docked-inspector`) styled via CSS `@container` queries (`container-name: task-inspector`). While docked, `body` scroll stays unlocked, `#task-detail-panel` uses `role="region"` and `aria-modal="false"`, and SearchHub plus single-key shortcuts remain active whenever focus is outside editable panel inputs. Below `1440px`, the inspector switches back to a modal dialog (`role="dialog"`, `aria-modal="true"`) without discarding unsaved title, description, or checklist edits.
+
+Inside Home Assistant Supervisor Ingress, `layout-body-controller.ts` and `task-modal-controller.ts` persist the Ingress-stripped internal route (`pathname + search + hash`, including `/tickets/MTH-142` and filtered sub-views) in `ingress-state-persistence.ts`. Reloading the Home Assistant browser tab within 60 seconds restores `prefix + state.path` in `Layout.astro` without double-prefixing the Ingress URL.

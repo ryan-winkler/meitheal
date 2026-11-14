@@ -6,7 +6,7 @@
 
 Meitheal helps people keep track of household tasks and routines in Home Assistant. It stores task data locally. The app connects tasks to calendars, to-do lists, and automations that users set up.
 
-The Home Assistant add-on runs an Astro server and uses SQLite with Drizzle repositories. Keep the app and its optional integration distinct. See the [README](README.md) for the product overview and the [automation guide](docs/kcs/agent-automation-guide.md) for use by tools and agents.
+The Home Assistant add-on runs an Astro server and uses Node.js built-in SQLite (`node:sqlite` `DatabaseSync`) repositories. Keep the app and its optional integration distinct. See the [README](README.md) for the product overview and the [automation guide](docs/kcs/agent-automation-guide.md) for use by tools and agents.
 
 ## Hard Requirements
 
@@ -30,7 +30,7 @@ The Home Assistant add-on runs an Astro server and uses SQLite with Drizzle repo
 |-------|----------|---------|
 | Web Runtime | `apps/web/` | Astro SSR app — pages, API routes, middleware |
 | Domain Packages | `packages/domain-*/` | Pure domain logic — `auth`, `tasks`, `strategy`, `observability` |
-| In-App Domains | `apps/web/src/domains/` | `auth/`, `ha/`, `pillars/`, `todo/`, `tasks/`, `integrations/`, `search/` |
+| In-App Domains | `apps/web/src/domains/` | Domain modules such as `agents/`, `auth/`, `ha/`, `pillars/`, `todo/`, `tasks/`, and `search/` |
 | Integration Core | `packages/integration-core/` | Calendar adapter interface + HA implementation |
 | API Layer | `apps/web/src/pages/api/` | Native routes |
 | Middleware | `apps/web/src/middleware.ts` | Ingress rewriting, CSP, CSRF, rate limiting |
@@ -45,12 +45,13 @@ The Home Assistant add-on runs an Astro server and uses SQLite with Drizzle repo
 | `domain-strategy` | `packages/domain-strategy/` | RICE scoring, strategic lenses |
 | `domain-observability` | `packages/domain-observability/` | Structured logging, audit trail |
 | `integration-core` | `packages/integration-core/` | Calendar/todo adapters, HA bridge |
+| `domains/agents/` | `apps/web/src/domains/agents/` | MCP, WebMCP, and A2A protocol contracts, schema expansion, and availability gates (`@domains/agents` on server; `@domains/agents/webmcp-protocol` for pure browser contracts) |
 | `domains/ha/` | `apps/web/src/domains/ha/` | HA events, WebSocket, connection status |
 | `domains/search/` | `apps/web/src/domains/search/` | Universal search orchestration and catalog shaping |
 | `domains/todo/` | `apps/web/src/domains/todo/` | HA todo list sync, status mapping |
 | `domains/pillars/` | `apps/web/src/domains/pillars/` | Pillar CRUD, Principles/Non-Negotiables, associations, inheritance |
 
-Cross-context imports must occur through public package APIs, not deep path imports.
+Cross-context imports must use public package APIs (`@domains/*`), not deep internal paths. Browser scripts import `@domains/agents/webmcp-protocol` so SQLite modules never enter client bundles.
 
 ## Dual-Repo Architecture
 
@@ -157,16 +158,18 @@ Build-time generators produce zero-drift documentation served as static files.
 | Artifact | Generator | Output |
 |----------|-----------|--------|
 | OpenAPI 3.1 spec | `apps/web/scripts/generate-openapi.mjs` | `public/openapi.yaml` |
+| Precompiled MCP catalog | `apps/web/scripts/generate-mcp-tools.mjs` | `src/generated/mcp-tools.json` |
+| Typed Tabler icon registry | `apps/web/scripts/generate-icons.mjs` | `src/generated/icon-registry.ts` |
 | AsyncAPI 2.6 spec | `apps/web/scripts/generate-asyncapi.mjs` | `public/asyncapi.yaml` |
 
-- `prebuild` runs `generate:openapi` and `generate:asyncapi` before `astro build`
-- Adding a new API route? Add its entry to the `paths` object in `generate-openapi.mjs`
+- `prebuild` runs `generate:codegen` (`generate:openapi` -> `generate:mcp` -> `generate:icons`) -> `generate:asyncapi` before `astro build`
+- Adding a new API route? Add its entry to the `paths` object in `generate-openapi.mjs` and run `pnpm --filter @meitheal/web run generate:codegen`
 - Adding a new domain concept? Add its schema to the `schemas` object in `generate-openapi.mjs`
 - Adding a new SSE/webhook event? Add its channel to `generate-asyncapi.mjs`
 
 ### MCP Dynamic Tools
 
-- `apps/web/src/pages/api/mcp.ts` reads `openapi.yaml` at startup, caches tool list
+- Production `apps/web/src/pages/api/mcp.ts` loads the precompiled `src/generated/mcp-tools.json` catalog (with dynamic `openapi.yaml` fallback in dev/tests or when `MEITHEAL_MCP_DYNAMIC_OPENAPI=1`)
 - OpenAPI operations become tools when the caller has the mapped API scope as well as `mcp:execute`
 - Custom handlers in `customHandlers` Map override specific tools (e.g., `completeTask` and `searchTasks`)
 - `EXCLUDED_OPS` set prevents internal endpoints from becoming tools
@@ -174,12 +177,12 @@ Build-time generators produce zero-drift documentation served as static files.
 
 ### Agent Traceability Headers
 
-External callers (n8n, Node-RED, AI agents) should send:
+Send these headers from external callers (n8n, Node-RED, AI agents):
 
 | Header | Purpose | Validation |
 |--------|---------|------------|
-| `X-Automation-Source` | Caller identity | Allowlisted: `browser`, `n8n`, `nodered`, `mcp`, `agent`, `a2a`, `ha`, `api`, `webhook`, `cron` |
-| `X-Agent-Id` | Specific agent ID | Truncated to 128 chars, alphanumeric + dots + hyphens only |
+| `X-Automation-Source` | Caller identity | Allowlisted: `browser`, `webmcp`, `n8n`, `nodered`, `mcp`, `agent`, `a2a`, `ha`, `api`, `webhook`, `cron` |
+| `X-Agent-Id` | Specific agent ID | Truncated to 128 chars, alphanumeric + underscores + dots + hyphens only |
 
 Both are logged in structured API request logs (`metadata.automation_source`, `metadata.agent_id`).
 

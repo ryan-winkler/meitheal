@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test"
-import { resolveMcpSchema } from "../../apps/web/src/lib/mcp-schema"
+import { resolveMcpSchema } from "@domains/agents"
 
 test("MCP local references expand nested objects and arrays and reject unsafe references", () => {
   const document = { components: { schemas: {

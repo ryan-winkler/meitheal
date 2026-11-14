@@ -45,7 +45,7 @@ Open `GET /api/sse` through an authorized Home Assistant ingress session or the 
 
 Calendar and to-do updates use the Home Assistant entity subscription. Event-bus subscriptions are limited to Companion notification actions and Meitheal-specific events. To check the notification path, complete a disposable task from a configured notification and confirm its status in Meitheal. Use Home Assistant's automation traces for service call diagnostics.
 
-The app retains the entity snapshot for discovery. It checks state and timestamps only for entities with registered listeners, so updates from other household devices do not generate Calendar or Todo events.
+The app retains a scoped entity snapshot limited to enabled `calendar.*`, `todo.*`, and explicit `onEntityChange` listener entity IDs (`< 1.5 MiB`), seeded from the Home Assistant entity registry plus a one-time startup domain scan for YAML entities without `unique_id`. Dynamic entity additions, renames, and reloads update the subscription through `entity_registry_updated`, `component_loaded`, WebSocket reconnects, and listener registration without subscribing to unfiltered `state_changed` events.
 
 Meitheal closes a stream when a frame would put more than 64 KiB in its application queue. The packaged server also counts pending Node HTTP output toward that budget and terminates a backed-up socket. HTTP framing and one frame being written by the adapter can add to the observed buffer size. EventSource can reconnect. If the browser repeatedly reconnects, check the proxy's stream buffering and the size and frequency of the entity updates.
 
@@ -113,6 +113,8 @@ Use this after changing the Today shell, Today controller, or task-detail handof
 Today and Settings keep text and controls at full opacity during their entry motion. When changing shared page or card styles, run `MEITHEAL_TEST_BROWSER=1 pnpm --filter @meitheal/tests test e2e/shared-shell-ux.spec.ts` after building the web app. Check both routes with default motion and with reduced motion enabled. Verify readable content from the first frame and a visible outline when tabbing to controls.
 
 For shared task rows, check that Today and the Eisenhower matrix show all five priority labels at 4.5:1 contrast or higher in light and dark themes. The task type icon exposes a name in the row, and filter icons leave the adjacent button text as its name.
+
+When changing translucent theme colors, check dropdown selection, task focus and filters in both light and dark themes. RGB token fallbacks should also render when the token is absent.
 
 Check the plain links back from Deferred, Inactivity and Triage in both themes, including pointer hover. In Planning, Progress and Habits, each visible section link is reachable with Tab. Enter opens the destination, and the current link announces its location. Verify arrow navigation and Planning history with `e2e/parent-page-shell.spec.ts` and `e2e/habits-shell.spec.ts`.
 
@@ -252,17 +254,14 @@ Use `request_id` or `task_id` to follow lifecycle records:
 4. `calendar_confirmations` stores confirmation IDs and provider event IDs.
 5. `audit_trail` captures human-readable audit entries.
 
-For the native sender, select the actual static service/environment labels,
-then parse the event JSON and filter its `domain` field. For the web App in
-production, start with:
+Both the reference Grafana Alloy collector (`meitheal-hub/rootfs/etc/alloy/config.river`) and the optional native `LOKI_URL` sender standardize on five fixed low-cardinality Loki stream labels (`{addon="meitheal", service, env, level, domain}`) while preserving the complete single-line JSON log payload:
 
-1. `{service="meitheal-web",env="production"} | json | domain="tasks"` for creation.
-2. `{service="meitheal-web",env="production"} | json | domain="integrations"` for handoff.
-3. `{service="meitheal-web",env="production"} | json | domain="audit"` for the operator trace.
+1. `{addon="meitheal", domain="tasks"} | json` for task creation and mutations.
+2. `{addon="meitheal", domain="integrations"} | json` for calendar/todo/Grocy handoff.
+3. `{addon="meitheal", domain="audit"} | json` for the operator trace.
+4. `{addon="meitheal", domain="observability"} | json | unwrap metadata_rss_bytes` for the 60-second `runtime.vitals` memory and SQLite contention heartbeat.
 
-Use the values emitted by your configured logger. An external Alloy collector
-that explicitly adds a `domain` stream label can instead use selectors such as
-`{service="meitheal",domain="tasks"}`. The native sender does not add that label.
+Leave `LOKI_URL` unset whenever an external Alloy collector scrapes container stdout via `config.river` so log lines are ingested once.
 
 ## HA Ingress Login Failure
 
@@ -398,13 +397,22 @@ The `schema-drift` CI job validates migration SQL against runtime schema expecta
 The `perf-budgets` job and local `pnpm --filter @meitheal/web perf:budget` command read [the same thresholds](../../apps/web/scripts/perf-budget-baseline.json). Run the web build first. The check starts its own production web process on an available loopback port assigned by the operating system. The check measures:
 
 - Up to 1.5 MiB for Astro build assets and the service worker. The full public directory, including install screenshots and API specifications, is reported separately.
-- Up to 256 MiB of web process RSS after five warmup writes. This is a single process measurement on the CI host.
+- Up to 224 MiB (`229,376 KiB`) of web process RSS after five warmup writes. This is a single process measurement on the CI host.
 - Up to 250 ms at p95 across 100 consecutive requests to `POST /api/tasks` against a fresh local SQLite database. Each timed sample includes reading and validating the response body. The nearest-rank p95 is observation 95 of 100 after sorting. Read it alongside p50, p99, maximum and the number of requests over the threshold. A p95 pass permits up to five requests above the threshold. The job fails on an unexpected response or readback.
 - A report-only `kanbanWarm2000` result. The check inserts 2,000 undated tasks directly into the same SQLite database, then times five warmup and 25 measured `GET /tasks` page loads. It reports the seeded and total task counts, every sample, p50, p95 and maximum. No threshold applies, but an unexpected response still fails the job. If seeding fails, the result names the reason under `skipped` instead of reporting a smaller board. Compare it with the Green 2,000-card board timings; it does not replace them.
 
 Use the [Home Assistant publishing checklist](ha-publishing-checklist.md) for image size and actual Green qualification. Use Green route timings, raw App cgroup memory, and host coexistence observations as separate release evidence. The CI smoke measures a local production build.
 
-The ingress HTML parser loads on the first HTML response above 5 MiB. Smaller pages use the existing buffered rewrite. Check a fresh process if measuring parser startup, since the first large page loads the parser for the life of that process.
+Behind Home Assistant Supervisor Ingress, every `text/html` response streams directly through `parse5-html-rewriting-stream` without full-document pre-buffering, rewriting `href`, `src`, `action`, and `srcset` URLs while leaving `<script>`, `<style>`, `<textarea>`, and `data-*` untouched. Mid-stream client disconnects increment `ingress_stream_aborts_total`.
+
+## Runtime Vitals, Heap Sizing, and Administrator Diagnostics
+
+Verified Home Assistant Ingress administrators (and standalone local operator sessions) can query `GET /api/diagnostics` (`Cache-Control: private, no-store`) to inspect a live `RuntimeVitals` JSON snapshot covering RSS, V8 heap spaces (`old_space_used_bytes`, `heap_limit_bytes`), Linux cgroup memory (`cgroup_current_bytes`, `cgroup_max_bytes`, `cgroup_oom_kill_count`), Home Assistant scoped entity cache counts, active SSE clients and backpressure drops, Ingress stream aborts, and SQLite busy/read-pool counters. Unauthenticated LAN callers receive `401`/`403`, and `Bearer mth_...` agent tokens fail closed with `403`.
+
+Container startup sizes V8 Old Space via `resolve_max_old_space_mb()` in `run.sh` and `run-local.sh`:
+- Set `MEITHEAL_MAX_OLD_SPACE_MB` (`>= 96`) to force an explicit Old Space ceiling while preserving other `NODE_OPTIONS` flags.
+- Otherwise, bounded cgroups (`< 1 TiB`) use `55%` of the cgroup byte limit clamped to `[96, 160]` (`105 MiB` inside a `192 MiB` Green Canary cgroup, `140 MiB` at `256 MiB`, `160 MiB` at `>= 291 MiB`).
+- Unbounded hosts (`memory.max = "max"`) default to `128 MiB`.
 
 Task list and detail reads do not load the task text sanitizer. It loads when a task is created or its title or description changes. Use a fresh process to distinguish the read-only footprint from a process that already handled a text write.
 
@@ -474,13 +482,17 @@ MCP tool inputs resolve local OpenAPI component references with bounded expansio
 
 ## Application logging and optional Loki forwarding
 
-The App's `log_level` and `log_categories` options configure newly created
-loggers. Changing App options requires a restart. An absent global option keeps
-the logger's own defaults. `audit_enabled: false` disables audit events even
-when an individual logger enables them; an individual logger can still opt out.
-Audit events are independent of application-category filtering but follow the
-configured level. The legacy `MEITHEAL_AUDIT_LOGS` environment option is used
-only when `MEITHEAL_AUDIT_ENABLED` is absent.
+The App's `log_level` and `log_categories` options (defaulting to `auth`,
+`tasks`, `integrations`, `observability`, `ha`, `calendar`, `todo`, `api`,
+`security`, and `search`) configure newly created
+loggers, while `warn` and `error` events always bypass `log_categories`
+filtering so operational failures are never dropped. Changing App options
+requires a restart. An absent global option keeps the logger's own defaults.
+`audit_enabled: false` disables audit events even when an individual logger
+enables them; an individual logger can still opt out. Audit events are
+independent of application-category filtering but follow the configured level.
+The legacy `MEITHEAL_AUDIT_LOGS` environment option is used only when
+`MEITHEAL_AUDIT_ENABLED` is absent.
 
 Default credential/PII patterns and nested sensitive metadata keys are always
 redacted before output. Caller patterns add protection. The retained
@@ -491,7 +503,8 @@ with a plus tag. The address is redacted and surrounding punctuation remains vis
 
 An optional `loki_url` must be an HTTP(S) push endpoint without embedded
 credentials. The native sender does not follow redirects. It forwards the same
-redacted lines with only static service/environment labels. It queues at most
+redacted lines under the five fixed low-cardinality labels (`addon`, `service`,
+`env`, `level`, `domain`). It queues at most
 200 waiting lines, sends batches of 50, omits remote lines larger than 16 KiB,
 and uses a 250 ms flush delay with a one-second request timeout. Overflow,
 invalid endpoints, non-success responses and timeouts drop remote logs with a

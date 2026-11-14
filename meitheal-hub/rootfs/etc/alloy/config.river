@@ -16,29 +16,23 @@ loki.process "meitheal" {
       message = "message",
       request_id = "request_id",
       event = "event",
-      actor_type = "actor_type",
       entity_type = "entity_type"
     }
   }
 
   stage.labels {
     values = {
-      level = "level",
-      domain = "domain",
-      actor_type = "actor_type",
-      service = "service",
       addon = "addon",
-      env = "env"
+      service = "service",
+      env = "env",
+      level = "level",
+      domain = "domain"
     }
-  }
-
-  stage.output {
-    source = "message"
   }
 
   // Retention hints: audit events kept 365d, errors 90d, debug 14d
   stage.label_allow {
-    values = ["level", "domain", "actor_type", "service", "addon", "env"]
+    values = ["addon", "service", "env", "level", "domain"]
   }
 
   stage.tenant {

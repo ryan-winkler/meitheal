@@ -1,16 +1,33 @@
 ---
 import { getTypeIconConfig } from "@lib/type-icon-config"
+import {
+  isIconName,
+  resolveCanonicalIconName,
+  type CanonicalIconName,
+} from "../../generated/icon-registry"
 
 interface Props {
   type: string | null | undefined
-  size?: number
-  class?: string
-  role?: "img"
+  size?: number | undefined
+  class?: string | undefined
+  role?: "img" | undefined
+  icon?: string | null | undefined
 }
 
-const { type, size = 16, class: className = "", role } = Astro.props
+const { type, size = 16, class: className = "", role, icon } = Astro.props
 const typeStr = String(type || "task").toLowerCase()
 const config = getTypeIconConfig(type)
+
+const customRaw = typeof icon === "string" ? icon.trim() : ""
+const spriteIconName: CanonicalIconName | null = customRaw
+  ? isIconName(customRaw)
+    ? resolveCanonicalIconName(customRaw)
+    : null
+  : resolveCanonicalIconName(config.iconName)
+
+if (spriteIconName) {
+  ;(Astro.locals.usedIcons ??= new Set()).add(spriteIconName)
+}
 ---
 
 <span
@@ -21,18 +38,25 @@ const config = getTypeIconConfig(type)
   aria-label={role === "img" ? `Task Type: ${typeStr}` : undefined}
   aria-hidden={role === "img" ? undefined : "true"}
 >
-  <svg
-    aria-hidden="true"
-    xmlns="http://www.w3.org/2000/svg"
-    width={size}
-    height={size}
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    stroke-width="2"
-    stroke-linecap="round"
-    stroke-linejoin="round"
-  >
-    <Fragment set:html={config.svg} />
-  </svg>
+  {spriteIconName ? (
+    <svg
+      aria-hidden="true"
+      xmlns="http://www.w3.org/2000/svg"
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.75"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      vector-effect="non-scaling-stroke"
+    >
+      <use href={"#mt-icon-" + spriteIconName} />
+    </svg>
+  ) : (
+    <span aria-hidden="true" style={`font-size: ${Math.max(12, size - 2)}px; line-height: 1;`}>
+      {customRaw}
+    </span>
+  )}
 </span>

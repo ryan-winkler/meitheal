@@ -236,7 +236,7 @@
   }
 
   50% {
-    box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.18);
+    box-shadow: 0 0 0 3px rgb(var(--accent-rgb) / 0.18);
   }
 }
 

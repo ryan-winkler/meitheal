@@ -1,6 +1,7 @@
 ---
 import { t } from "../../i18n/translations"
 import type { Locale } from "../../lib/locale"
+import Icon from "../ui/Icon.astro"
 import SettingsCallout from "./SettingsCallout.astro"
 import IntegrationHA from "./integrations/IntegrationHA.astro"
 import IntegrationCalendar from "./integrations/IntegrationCalendar.astro"
@@ -17,7 +18,7 @@ const { locale } = Astro.props
 
 <div class="settings-shell-panel">
   <div class="integrations-layout">
-    <SettingsCallout title={t("settings.integrations_recommended_title", locale)} icon="🔌">
+    <SettingsCallout title={t("settings.integrations_recommended_title", locale)} icon="plug">
       {t("settings.integrations_recommended_desc", locale)}
     </SettingsCallout>
 
@@ -40,7 +41,7 @@ const { locale } = Astro.props
       <div class="explainer-dialog__header">
         <h3 class="explainer-dialog__title" id="explainer-title"></h3>
         <button type="button" class="explainer-dialog__close" aria-label="Close"
-          >&times;</button
+          ><Icon name="x" size={18} sprite={true} /></button
         >
       </div>
       <div class="explainer-dialog__body" id="explainer-body"></div>
@@ -230,8 +231,8 @@ const { locale } = Astro.props
   }
 
   .integration-callout--success {
-    background: rgba(99, 102, 241, 0.08);
-    border: 1px solid rgba(99, 102, 241, 0.2);
+    background: color-mix(in srgb, var(--accent) 8%, var(--bg-secondary));
+    border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--border));
     color: var(--text-secondary);
   }
 
@@ -543,7 +544,7 @@ const { locale } = Astro.props
 
   .ha-status-indicator--connected .ha-status-indicator__dot {
     background: var(--accent);
-    box-shadow: 0 0 8px rgba(99, 102, 241, 0.4);
+    box-shadow: 0 0 8px rgb(var(--accent-rgb) / 0.4);
   }
 
   .ha-status-indicator--checking .ha-status-indicator__dot {
@@ -743,8 +744,7 @@ const { locale } = Astro.props
   }
 
   .explainer-dialog::backdrop {
-    background: rgba(0, 0, 0, 0.5);
-    backdrop-filter: blur(4px);
+    background: rgba(0, 0, 0, 0.62);
   }
 
   .explainer-dialog__content {
@@ -819,13 +819,13 @@ const { locale } = Astro.props
    */
   const EXPLAINER_CONTENT: Record<string, { title: string; body: string }> = {
     ha: {
-      title: "🏠 Home Assistant",
+      title: "Home Assistant",
       body: `<p>Meitheal connects to Home Assistant via <strong>WebSocket</strong>, allowing it to consume and provide data automatically.</p>
              <p>When running as an HA addon, no configuration is needed — the connection is established through the Supervisor API with a built-in token.</p>
              <p>The connection test checks the Supervisor connection. The Advanced section stores standalone settings separately.</p>`,
     },
     calendar: {
-      title: "📅 Calendar Sync",
+      title: "Calendar Sync",
       body: `<p>Directional sync between Meitheal tasks and HA calendar events. Choose per calendar:</p>
              <p><strong>↔ Bidirectional</strong> — tasks ↔ events flow both ways. Duplicates prevented via confirmation tracking.<br>
              <strong>↓ Import only</strong> — HA calendar events create Meitheal tasks. No write-back.<br>
@@ -834,25 +834,25 @@ const { locale } = Astro.props
              <p>Sync window: past 7 days → next 30 days.</p>`,
     },
     todo: {
-      title: "✅ Todo Sync",
+      title: "Todo Sync",
       body: `<p>Bridges Home Assistant's built-in todo lists (<code>todo.*</code> entities) with Meitheal.</p>
              <p>This ensures your HA dashboards, automations, and voice assistants that use <code>todo.*</code> entities stay in sync with tasks managed here.</p>
              <p>Enable only for lists you actively use — disabled by default to save power.</p>`,
     },
     grocy: {
-      title: "🛒 Grocy",
+      title: "Grocy",
       body: `<p>Grocy is a household inventory and chore management system. This integration syncs Grocy chores and products with Meitheal tasks.</p>
              <p>When Grocy is running as an HA addon, Meitheal auto-detects it and fills in the URL automatically. For standalone Grocy servers, enter the URL and API key manually.</p>
              <p>Generate an API key in Grocy → Settings → API Keys.</p>`,
     },
     n8n: {
-      title: "⚙ n8n / Node-RED",
+      title: "n8n / Node-RED",
       body: `<p>Trigger automation workflows when task events occur (created, updated, completed, deleted).</p>
              <p><strong>HA Addon mode:</strong> Node-RED and n8n addons communicate automatically through the HA WebSocket — no webhook URL needed.</p>
              <p><strong>Standalone mode:</strong> Enter the webhook URL from your n8n/Node-RED flow, plus optional API key and signing secret for authentication.</p>`,
     },
     webhooks: {
-      title: "🔔 Webhooks",
+      title: "Webhooks",
       body: `<p>Generic outgoing HTTP webhooks that send task event payloads to any URL you specify (e.g., Zapier, IFTTT, custom APIs).</p>
              <p>Each event is POSTed as JSON with an optional HMAC-SHA256 signature for verification.</p>
              <p><strong>Not the same as Agents & AI</strong> — webhooks are for data pipelines and automations. For AI agent protocols (A2A, MCP, WebMCP), use the Agents & AI tab.</p>`,
@@ -1089,7 +1089,7 @@ const { locale } = Astro.props
         const name = nodeRed ? "Node-RED" : "n8n";
         const strongEl = callout.querySelector("strong");
         const detailEl = callout.querySelector(".integration-callout__detail");
-        if (strongEl) strongEl.textContent = `✓ ${name} detected via HA`;
+        if (strongEl) strongEl.textContent = `${name} detected via HA`;
         if (detailEl)
           detailEl.textContent = `${name} addon found and connected automatically.`;
 

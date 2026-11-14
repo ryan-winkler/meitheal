@@ -1,18 +1,19 @@
-import { fetchHaAgents, renderHaAgentOptions } from "@lib/ha-agent-picker"
-import { withAsyncButton } from "@lib/async-button"
-import { parseAiHandoffUrl } from "@lib/ai-handoff-url"
 /**
  * AI & Agent settings controller.
  *
  * Handles AI provider selection, custom URL toggle, save,
- * and agent protocol (A2A / WebMCP / MCP) toggles.
+ * agent protocol (A2A / WebMCP / MCP) toggles, and agent token management.
  */
+import { WEBMCP_SETTING } from "@domains/agents/webmcp-protocol"
+import { parseAiHandoffUrl } from "@lib/ai-handoff-url"
+import { withAsyncButton } from "@lib/async-button"
+import { fetchHaAgents, renderHaAgentOptions } from "@lib/ha-agent-picker"
 import { pageLifecycle } from "@lib/page-lifecycle"
-import { showToast } from "@lib/toast"
+import { initAgentTokensSettings } from "@lib/settings-agent-tokens-controller"
 import { settingsStore } from "@lib/settings-store"
 import { saveSetting, saveSettings, showSettingsSaveError } from "@lib/settings-utils"
+import { showToast } from "@lib/toast"
 import { notifyWebMcpPreferenceChanged, refreshWebMcpPreference } from "@lib/webmcp-controller"
-import { WEBMCP_SETTING } from "@lib/webmcp-protocol"
 import { getClientLocale, t } from "../i18n/client"
 
 let discoveryProbe: AbortController | undefined
@@ -67,6 +68,8 @@ async function refreshProtocolDiscovery(): Promise<void> {
     status.dataset.state = state
     status.textContent = status.dataset[state] ?? ""
     link.hidden = state !== "available"
+    const toggle = document.querySelector<HTMLInputElement>(`#agent-${protocol}-enabled`)
+    if (toggle?.disabled) toggle.checked = state === "available"
     if (state === "available") available++
   }))
   if (current()) {
@@ -143,6 +146,10 @@ async function restoreHaAgent(savedAgent: unknown) {
     select.add(new Option(selected, selected))
   }
   select.value = selected
+  if (select.disabled) {
+    renderAgentBadge(select)
+    return
+  }
   const version = ++agentDiscoveryVersion
   const signal = pageLifecycle.signal
   const status = document.getElementById("ha-agent-discovery-status")
@@ -177,8 +184,25 @@ async function restoreHaAgent(savedAgent: unknown) {
   }
 }
 
+function fixProtocolLinks(): void {
+  const base = window.__ingress_path || ""
+  document.querySelectorAll<HTMLAnchorElement>(".protocol-link[data-path]").forEach(el => {
+    const path = el.dataset.path
+    if (path) el.href = base + path
+  })
+}
+
+function updateExtAiBadge(select: HTMLSelectElement | null): void {
+  const badge = document.getElementById("ext-ai-badge")
+  if (!badge) return
+  badge.textContent = aiHandoffEditable ? select?.selectedOptions[0]?.textContent ?? "" : ""
+  badge.hidden = !badge.textContent
+}
+
 export function initAISettings(): void {
   initHaAgentSettings()
+  initAgentTokensSettings()
+  fixProtocolLinks()
   const checkDiscovery = document.querySelector<HTMLButtonElement>("#refresh-agent-discovery")
   if (checkDiscovery) pageLifecycle.on(checkDiscovery, "click", withAsyncButton(checkDiscovery, refreshProtocolDiscovery, {
     loadingText: checkDiscovery.dataset.checking ?? "",
@@ -191,6 +215,7 @@ export function initAISettings(): void {
       if (group) {
         group.style.display = ["custom", "ollama"].includes(aiProviderEl.value) ? "" : "none"
       }
+      updateExtAiBadge(aiProviderEl)
     })
   }
 
@@ -257,7 +282,6 @@ export function initAISettings(): void {
     const webmcp = (document.getElementById("agent-webmcp-enabled") as HTMLInputElement)?.checked ?? false
     const mcp = (document.getElementById("agent-mcp-enabled") as HTMLInputElement)?.checked ?? true
 
-
     try {
       await saveSettings({
         "agent-protocols-a2a-enabled": a2a,
@@ -289,11 +313,7 @@ export function restoreAISettings(s: Record<string, unknown>): void {
   }
   const editor = document.getElementById("ai-provider-editor")
   if (editor) editor.hidden = !aiHandoffEditable
-  const badge = document.getElementById("ext-ai-badge")
-  if (badge) {
-    badge.textContent = aiHandoffEditable ? provider?.selectedOptions[0]?.textContent ?? "" : ""
-    badge.hidden = !badge.textContent
-  }
+  updateExtAiBadge(provider)
   const group = document.getElementById("ai-custom-url-group")
   if (group) group.style.display = savedAiProvider === "custom" || savedAiProvider === "ollama" ? "" : "none"
   savedAiUrl = typeof s["ai-custom-url"] === "string" ? s["ai-custom-url"] : null

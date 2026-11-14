@@ -1,8 +1,8 @@
 ---
 import { t } from "../../i18n/translations";
 import type { Locale } from "../../lib/locale";
-import LabelPicker from "../ui/LabelPicker.astro";
 import Icon from "../ui/Icon.astro";
+import LabelPicker from "../ui/LabelPicker.astro";
 
 const cookieLocale = Astro.cookies.get("meitheal-locale")?.value;
 const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
@@ -12,7 +12,9 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
   <div class="modal-content nt-modal">
     <header class="nt-header">
       <h2 id="new-task-title">{t("tasks.new_task_modal", locale)}</h2>
-      <button type="button" class="btn btn-ghost nt-icon-button" id="close-new-task-modal" aria-label="Close" title="Close"><Icon name="x" size={18} /></button>
+      <button type="button" class="btn btn-ghost nt-icon-button" id="close-new-task-modal" aria-label="Close" title="Close">
+        <Icon name="x" size={18} sprite={true} />
+      </button>
     </header>
     <form id="new-task-form" class="nt-form"
       data-toast-created={t("task_modal.toast_created", locale)}
@@ -177,27 +179,12 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
         </div>
         <div id="nt-custom-fields-container" class="hidden space-y-2 mt-2 p-3 nt-feature-card">
           <div id="nt-custom-fields-list" class="space-y-2"></div>
-          <div id="nt-add-field-dropdown" class="hidden flex-wrap gap-1.5 pt-2 border-t border-border/40">
-            <button type="button" class="nt-add-field-type text-xs px-2.5 py-1 bg-bg-input/50 border border-border rounded-lg hover:bg-bg-hover transition-colors flex items-center gap-1" data-field-type="url">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 15l6 -6" /><path d="M11 6l.463 -.536a5 5 0 0 1 7.071 7.072l-.534 .464" /><path d="M13 18l-.397 .534a5.068 5.068 0 0 1 -7.127 0a4.972 4.972 0 0 1 0 -7.071l.524 -.463" /></svg>
-              {t("task_modal.custom_field_url", locale)}
-            </button>
-            <button type="button" class="nt-add-field-type text-xs px-2.5 py-1 bg-bg-input/50 border border-border rounded-lg hover:bg-bg-hover transition-colors flex items-center gap-1" data-field-type="text">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16" /><path d="M4 12h16" /><path d="M4 18h10" /></svg>
-              {t("task_modal.custom_field_text", locale)}
-            </button>
-            <button type="button" class="nt-add-field-type text-xs px-2.5 py-1 bg-bg-input/50 border border-border rounded-lg hover:bg-bg-hover transition-colors flex items-center gap-1" data-field-type="number">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 9l14 0" /><path d="M5 15l14 0" /><path d="M11 4l-4 16" /><path d="M17 4l-4 16" /></svg>
-              {t("task_modal.custom_field_number", locale)}
-            </button>
-            <button type="button" class="nt-add-field-type text-xs px-2.5 py-1 bg-bg-input/50 border border-border rounded-lg hover:bg-bg-hover transition-colors flex items-center gap-1" data-field-type="date">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2v-12" /><path d="M16 3v4" /><path d="M8 3v4" /><path d="M4 11h16" /></svg>
-              {t("task_modal.custom_field_date", locale)}
-            </button>
-            <button type="button" class="nt-add-field-type text-xs px-2.5 py-1 bg-bg-input/50 border border-border rounded-lg hover:bg-bg-hover transition-colors flex items-center gap-1" data-field-type="checkbox">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 11l3 3l8 -8" /><path d="M20 12v6a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2v-12a2 2 0 0 1 2 -2h9" /></svg>
-              {t("task_modal.custom_field_checkbox", locale)}
-            </button>
+          <div id="nt-add-field-dropdown" class="hidden flex-wrap gap-1.5 pt-2 border-t border-border-dim/30">
+            <button type="button" class="nt-add-field-type text-xs px-2.5 py-1 bg-bg-input/50 border border-border-dim rounded-lg hover:bg-border-dim/30 transition-colors flex items-center gap-1" data-field-type="url"><Icon name="link" size={14} sprite={true} /> {t("task_modal.custom_field_url", locale)}</button>
+            <button type="button" class="nt-add-field-type text-xs px-2.5 py-1 bg-bg-input/50 border border-border-dim rounded-lg hover:bg-border-dim/30 transition-colors flex items-center gap-1" data-field-type="text"><Icon name="file-text" size={14} sprite={true} /> {t("task_modal.custom_field_text", locale)}</button>
+            <button type="button" class="nt-add-field-type text-xs px-2.5 py-1 bg-bg-input/50 border border-border-dim rounded-lg hover:bg-border-dim/30 transition-colors flex items-center gap-1" data-field-type="number"><Icon name="hash" size={14} sprite={true} /> {t("task_modal.custom_field_number", locale)}</button>
+            <button type="button" class="nt-add-field-type text-xs px-2.5 py-1 bg-bg-input/50 border border-border-dim rounded-lg hover:bg-border-dim/30 transition-colors flex items-center gap-1" data-field-type="date"><Icon name="calendar" size={14} sprite={true} /> {t("task_modal.custom_field_date", locale)}</button>
+            <button type="button" class="nt-add-field-type text-xs px-2.5 py-1 bg-bg-input/50 border border-border-dim rounded-lg hover:bg-border-dim/30 transition-colors flex items-center gap-1" data-field-type="checkbox"><Icon name="checkbox" size={14} sprite={true} /> {t("task_modal.custom_field_checkbox", locale)}</button>
           </div>
         </div>
       </div>
@@ -254,6 +241,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
 </div>
 <script>
   import { showToast } from "@lib/toast";
+  import { renderSpriteIconSvg, type IconName } from "../../generated/icon-registry";
   import { InlineDatePicker } from "../shared/InlineDatePicker"
   import { createTablerSvgElement, renderIconOrCustomEmoji, type TablerIconName } from "@lib/tabler-svg";
   import { checklistLines, createChecklistItem } from "@lib/checklist-items"
@@ -417,8 +405,8 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
       label.textContent = item.text
       const remove = document.createElement("button")
       remove.type = "button"
-      remove.className = "btn btn-ghost"
-      remove.textContent = "×"
+      remove.className = "btn btn-ghost inline-flex items-center justify-center"
+      remove.innerHTML = renderSpriteIconSvg("x", { size: 14 })
       remove.setAttribute("aria-label", `Remove ${item.text}`)
       remove.addEventListener("click", () => {
         checklistItems.delete(row)
@@ -478,8 +466,8 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
 
       const remove = document.createElement("button")
       remove.type = "button"
-      remove.className = "btn btn-ghost text-text-muted"
-      remove.textContent = "✕"
+      remove.className = "btn btn-ghost text-text-muted inline-flex items-center justify-center"
+      remove.innerHTML = renderSpriteIconSvg("x", { size: 14 })
       remove.setAttribute("aria-label", `Remove ${name}${suffix}`)
       remove.addEventListener("click", () => {
         shoppingListItems.splice(shoppingListItems.indexOf(item), 1)
@@ -538,13 +526,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
       entry.dataset.fieldType = type
 
       const fieldLabel = form?.querySelector<HTMLElement>(`[data-field-type="${type}"].nt-add-field-type`)?.textContent?.trim() || type
-      const iconMap: Record<string, TablerIconName> = {
-        url: "link",
-        number: "hash",
-        date: "calendar",
-        attachment: "paperclip",
-        text: "align-left",
-      }
+      const iconMap: Record<string, IconName> = { url: "link", number: "hash", date: "calendar", attachment: "paperclip", text: "file-text" }
 
       if (type === "checkbox") {
         const cb = document.createElement("input")
@@ -554,8 +536,8 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
         entry.appendChild(cb)
       } else {
         const icon = document.createElement("span")
-        icon.className = "inline-flex items-center text-xs text-text-muted"
-        icon.appendChild(createTablerSvgElement(iconMap[type] ?? "align-left", 13))
+        icon.className = "text-xs text-text-muted inline-flex items-center"
+        icon.innerHTML = renderSpriteIconSvg(iconMap[type] ?? "file-text", { size: 14 })
         entry.appendChild(icon)
       }
 
@@ -570,8 +552,8 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
 
       const removeBtn = document.createElement("button")
       removeBtn.type = "button"
-      removeBtn.className = "text-text-muted hover:text-red-400 text-xs"
-      removeBtn.textContent = "✕"
+      removeBtn.className = "text-text-muted hover:text-red-400 text-xs inline-flex items-center justify-center"
+      removeBtn.innerHTML = renderSpriteIconSvg("x", { size: 14 })
       removeBtn.addEventListener("click", () => { entry.remove(); markEdited() }, { signal })
       removeBtn.setAttribute("aria-label", `Remove ${type} field`)
       entry.appendChild(removeBtn)
@@ -648,6 +630,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
       // If the detail panel is open, close it to avoid dual modal
       document.getElementById("task-detail-panel")?.classList.remove("open");
       document.getElementById("task-detail-overlay")?.classList.remove("active");
+      document.body.classList.remove("has-docked-inspector");
 
       clearCapture()
       const contextualDate = window.__prefillTaskDate
