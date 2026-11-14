@@ -20,13 +20,22 @@ import logging
 import os
 import shutil
 
+import voluptuous as vol
 from aiohttp import DummyCookieJar
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse, SupportsResponse
-from homeassistant.exceptions import ConfigEntryError, ConfigEntryNotReady, HomeAssistantError
+from homeassistant.core import (
+    HomeAssistant,
+    ServiceCall,
+    ServiceResponse,
+    SupportsResponse,
+)
+from homeassistant.exceptions import (
+    ConfigEntryError,
+    ConfigEntryNotReady,
+    HomeAssistantError,
+)
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_create_clientsession
-import voluptuous as vol
 
 from .api import (
     MeithealApi,
@@ -167,7 +176,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: MeithealConfigEntry) -> 
                 importance=call.data.get("importance"),
                 assigned_to=assigned_to,
             )
-        except Exception as err:
+        except (HomeAssistantError, ValueError) as err:
             raise HomeAssistantError(
                 translation_domain=DOMAIN,
                 translation_key="create_failed",
@@ -181,7 +190,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: MeithealConfigEntry) -> 
                 task_id=call.data.get("task_id"),
                 title=call.data.get("title"),
             )
-        except Exception as err:
+        except (HomeAssistantError, ValueError) as err:
             raise HomeAssistantError(
                 translation_domain=DOMAIN,
                 translation_key="complete_failed",
@@ -192,7 +201,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: MeithealConfigEntry) -> 
         """Handle meitheal.sync_todo service call."""
         try:
             await coordinator.async_request_refresh()
-        except Exception as err:
+        except (HomeAssistantError, ValueError) as err:
             raise HomeAssistantError(
                 translation_domain=DOMAIN,
                 translation_key="addon_unavailable",
@@ -260,7 +269,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: MeithealConfigEntry) -> 
             await coordinator.async_complete_task_by_tag(
                 tag_id=call.data["tag_id"],
             )
-        except Exception as err:
+        except (HomeAssistantError, ValueError) as err:
             raise HomeAssistantError(
                 translation_domain=DOMAIN,
                 translation_key="nfc_complete_failed",
@@ -282,16 +291,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: MeithealConfigEntry) -> 
 
             hass.http.register_view(MeithealMcpView())
             domain_state["mcp_view_registered"] = True
-    except Exception as exc:
-        _LOGGER.debug("Could not register Meitheal MCP HTTP view: %s", exc)
+    except (AttributeError, RuntimeError, ValueError) as exc:
+        # No http component, a frozen router or a duplicate route: the
+        # integration still works without its MCP endpoint.
+        _LOGGER.warning("Could not register Meitheal MCP HTTP view: %s", exc)
 
     # Ensure custom sentences are copied to <config>/custom_sentences/ off the event loop
     try:
         src_base = os.path.join(os.path.dirname(__file__), "custom_sentences")
         dst_base = hass.config.path("custom_sentences")
         await hass.async_add_executor_job(_install_custom_sentences, src_base, dst_base)
-    except Exception as exc:
-        _LOGGER.debug("Could not copy custom sentences to config dir: %s", exc)
+    except OSError as exc:
+        _LOGGER.warning("Could not copy custom sentences to config dir: %s", exc)
 
     if async_register_llm_api is not None:
         try:
@@ -308,8 +319,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: MeithealConfigEntry) -> 
     try:
         from .intents import async_register_intents
         async_register_intents(hass)
-    except Exception:
-        _LOGGER.warning("Could not register Meitheal intents — voice triggers disabled")
+    except Exception:  # Optional voice triggers must never block setup
+        _LOGGER.warning(
+            "Could not register Meitheal intents; voice triggers disabled", exc_info=True
+        )
 
     # Register proactive notification service
     # meitheal.notify_overdue — pushes overdue task alerts through HA notify

@@ -5,6 +5,7 @@ on:
   pull_request:
     paths:
       - "meitheal-hub/Dockerfile"
+      - "meitheal-hub/toolchain/**"
       - "meitheal-hub/build.json"
       - "meitheal-hub-canary/build.json"
       - "pnpm-lock.yaml"
