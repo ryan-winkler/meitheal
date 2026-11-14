@@ -17,8 +17,17 @@ const PRIVATE_IP_RANGES = [
 
 export function isPrivateHost(hostname: string): boolean {
   // URL keeps IPv6 literals in brackets ("[::1]") and may end a name with the root dot.
-  const lowered = hostname.trim().toLowerCase()
-  let host = lowered.startsWith("[") && lowered.endsWith("]") ? lowered.slice(1, -1) : lowered
+  // Canonicalize IPv4/IPv6 shorthand literals (such as "127.1" or "0:0:0:0:0:0:0:1") through URL first.
+  const trimmed = hostname.trim().toLowerCase()
+  if (!trimmed) return true
+  let canonical = trimmed
+  try {
+    const candidate = trimmed.includes(":") && !trimmed.startsWith("[") ? `[${trimmed}]` : trimmed
+    canonical = new URL(`http://${candidate}`).hostname.toLowerCase()
+  } catch {
+    return true
+  }
+  let host = canonical.startsWith("[") && canonical.endsWith("]") ? canonical.slice(1, -1) : canonical
   while (host.endsWith(".")) {
     host = host.slice(0, -1)
   }

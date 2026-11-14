@@ -16,9 +16,9 @@ This page explains what you can and cannot expect from Meitheal's security, and 
 2. **Identity comes only from the trusted route.** Meitheal reads the Home Assistant user ID and admin group from forwarded headers only when the request came through the Supervisor, and it validates their format. Task attribution uses that verified identity.
 3. **Agent tokens grant only their scopes.** Tokens for automations and AI agents are random 256-bit values with an `mth_` prefix. Meitheal stores only their SHA-256 hash, shows the plaintext once, and checks the required scope on every request. Tokens can be revoked.
 4. **Household data stays local.** Tasks and settings live in SQLite on the App's data volume and are included in Home Assistant backups. Meitheal sends data elsewhere only to destinations an administrator configured, such as webhooks, calendars, Grocy, or a Loki endpoint.
-5. **Browsers are protected from common web attacks.** Responses carry a Content Security Policy without `data:` scripts, `object-src 'none'`, `base-uri 'self'`, `form-action 'self'`, `X-Content-Type-Options: nosniff`, a strict referrer policy, and a permissions policy that denies camera, microphone and location. State-changing API calls outside Ingress need same-origin proof.
-6. **Logs do not reveal secrets.** The structured logger redacts tokens, passwords, API keys, bearer and Supervisor credentials, and email addresses before writing.
-7. **Releases can be traced to source.** Stable images are built by GitHub Actions from a tagged commit, smoke-tested, and published with a signed build provenance attestation. See [verify a release image](../SECURITY.md#verify-a-release-image).
+5. **Browsers are protected from common web attacks.** Responses carry a Content Security Policy without `data:` scripts, `object-src 'none'`, `base-uri 'self'`, `form-action 'self'`, `X-Content-Type-Options: nosniff`, a strict referrer policy, and a permissions policy that denies camera, microphone and location. Outside Ingress, browser state-changing API calls normally require same-origin proof; in App mode, middleware skips this CSRF check for authenticated loopback callers and requests carrying valid agent tokens.
+6. **Logs do not reveal secrets.** The structured logger redacts sensitive field names and values matching its configured patterns for tokens, passwords, API keys, bearer and Supervisor credentials, and email addresses; unlabeled secrets embedded in free-text messages may remain, so logs should not be assumed safe to share unreviewed.
+7. **Releases can be traced to source.** Stable images after version `0.0.1` are built by GitHub Actions from pushes to the `release` branch or matching `v*` tags, smoke-tested, and published with a signed build provenance attestation that records the exact source commit and workflow ref; version `0.0.1` and earlier predate attestations and are verified by image digest. See [verify a release image](../SECURITY.md#verify-a-release-image).
 
 ### What Meitheal does not protect against
 
@@ -37,7 +37,7 @@ The assets are household task data, people's identities and activity, integratio
 | Someone on the local network without a Home Assistant login | Read or change tasks by calling the App directly | Ingress-only access in App mode, token authentication, rate limits |
 | A malicious web page visited by a household member | Make the browser change tasks (CSRF) or run script in Meitheal's origin (XSS) | Same-origin checks, CSP, output escaping, `frame-ancestors` policy |
 | A leaked or over-scoped automation token | Do more than the automation needs | Hashed tokens, per-route scope checks, assigned-only scopes, revocation, bot rate limit |
-| An attacker controlling an integration response or imported file | Inject markup, exhaust memory, or reach internal services | Input validation, bounded request bodies, import size limits, private-address guard for outbound URLs |
+| An attacker controlling an integration response or imported file | Inject markup, exhaust memory, or reach internal services | Input validation, bounded request bodies, import size limits, private-address checks on `parseWebhookConfig` and ad-hoc integration test URLs |
 | Someone reading logs or diagnostics | Collect credentials or personal data | Log redaction, private log mode, no secrets in diagnostics |
 | A supply-chain attacker | Ship modified code or dependencies | Pinned actions, frozen lockfile, Dependabot, dependency review, CodeQL, signed provenance |
 
@@ -46,7 +46,7 @@ The assets are household task data, people's identities and activity, integratio
 ## Trust boundaries
 
 1. **Browser to Supervisor Ingress.** Home Assistant authenticates the person. Meitheal does not see their password.
-2. **Supervisor to the App.** The App accepts identity headers only from the Supervisor's address and only in the expected format (`apps/web/src/domains/auth/ingress.ts`, `scripts/ingress-transport.mjs`).
+2. **Supervisor to the App.** The App accepts identity headers only from the Supervisor's address and only in the expected format (`apps/web/src/domains/auth/ingress.ts`, `apps/web/scripts/ingress-transport.mjs`).
 3. **Automations and agents to the App.** Callers outside Ingress must present an agent token (`apps/web/src/lib/agent-token-guard.ts`, `packages/domain-auth/src/agent-tokens.ts`).
 4. **The App to Home Assistant Core and the Supervisor.** The App uses the Supervisor token that Home Assistant provides. It never exposes that token to the browser.
 5. **The App to external services.** Webhooks, calendars, Grocy, and other integrations cross this boundary. Outbound requests verify TLS certificates by default; webhook payloads are signed with HMAC-SHA256.
@@ -80,7 +80,7 @@ The assets are household task data, people's identities and activity, integratio
 | Identification and authentication failures (CWE-287) | No local passwords. Home Assistant authenticates people; tokens are random, hashed, and revocable. |
 | Software and data integrity failures (CWE-494) | Actions pinned to commit SHAs, signed build provenance, image digests verified with an anonymous pull before App Store promotion. |
 | Logging and monitoring failures (CWE-532) | Structured, redacted JSON logs; audit events for changes; optional Loki and Grafana dashboards. |
-| Server-side request forgery (CWE-918) | Webhook and integration test URLs are checked against loopback, private, link-local, unique-local, and IPv4-mapped addresses. |
+| Server-side request forgery (CWE-918) | `parseWebhookConfig` checks subscriber URLs against loopback, private, link-local, unique-local, and IPv4-mapped addresses, and integration test endpoints block loopback and cloud-metadata hosts on ad-hoc test URLs. Saved task webhooks dispatched from administrator settings (`dispatchTaskEvent` / `emitWebhook`) deliver directly so homelab automations can reach configured local receivers. |
 | Resource exhaustion (CWE-400) | Per-IP rate limits, a stricter limit for agent mutation endpoints, bounded request bodies, import size limits, and capped in-memory maps. |
 
 ## Evidence

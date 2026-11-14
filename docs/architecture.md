@@ -53,9 +53,9 @@ Meitheal is one server-rendered web application that runs as a Home Assistant Ap
 ## Request flow
 
 1. A person opens Meitheal from the Home Assistant sidebar. Home Assistant authenticates them and the Supervisor proxies the request through Ingress.
-2. The middleware confirms the request came from the Supervisor, reads the validated user ID and admin flag, and applies rate limits.
+2. The middleware confirms the request came from the Supervisor, reads the validated user ID and admin flag, and applies rate limits on API and agent-discovery routes.
 3. The page or API route calls a domain service, which reads or writes SQLite inside a transaction and records an activity or audit event.
-4. Changes that other systems care about become events (for example `task.created`). Event handlers update the Home Assistant `todo` entity and calendars, and deliver signed webhooks, using idempotency keys so retries do not duplicate work.
+4. Changes that other systems care about become events (for example `task.created`). Event handlers update configured Home Assistant sync targets and calendars and deliver signed webhooks, using idempotency keys so retries do not duplicate work; inside Home Assistant Core, the custom integration's `todo.meitheal_tasks` entity reads coordinator data polled from `/api/tasks`.
 5. The response carries security headers and a request ID that also appears in the logs.
 
 Automations and agents follow the same path without Ingress: they send an agent token, and the middleware checks its scope before the route runs.
@@ -69,7 +69,7 @@ Automations and agents follow the same path without Ingress: they send an agent 
 
 ## Releases
 
-GitHub Actions builds the App image for `amd64` and `aarch64`, smoke-tests it against the Home Assistant base image, publishes it to the GitHub Container Registry with a signed build provenance attestation, and updates the [App repository](https://github.com/ryan-winkler/meitheal-ha-addon) that Home Assistant reads. The [release runbook](kcs/releasing.md) has the details.
+For new Stable releases (after `0.0.1`), GitHub Actions builds the App image for `amd64` and `aarch64`, smoke-tests it against the Home Assistant base image, publishes it to the GitHub Container Registry with a signed build provenance attestation (verified with `gh attestation verify`), and updates the [App repository](https://github.com/ryan-winkler/meitheal-ha-addon) that Home Assistant reads. Stable `0.0.1` predates attestations and is verified by comparing the pulled image digest against the App repository commit. Canary images are smoke-tested as local builds in GitHub Actions and published from a qualified release host. The [release runbook](kcs/releasing.md) has the details.
 
 ## Related pages
 

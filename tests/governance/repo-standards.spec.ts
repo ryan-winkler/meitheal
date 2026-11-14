@@ -16,6 +16,8 @@ const requiredFiles = [
   "CODE_OF_CONDUCT.md",
   "SUPPORT.md",
   "COMMERCIAL.md",
+  "GOVERNANCE.md",
+  "ROADMAP.md",
   "repository.yaml",
   ".coderabbit.yaml",
   "meitheal-hub/README.md",

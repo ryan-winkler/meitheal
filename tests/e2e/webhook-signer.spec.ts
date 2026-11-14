@@ -50,6 +50,9 @@ test.describe("Private URL Guard", () => {
     expect(isPrivateUrl("http://localhost:3000/webhook")).toBe(true)
     expect(isPrivateHost("localhost")).toBe(true)
     expect(isPrivateHost("localhost...")).toBe(true)
+    expect(isPrivateHost("0:0:0:0:0:0:0:1")).toBe(true)
+    expect(isPrivateHost("127.1")).toBe(true)
+    expect(isPrivateHost("bad host name")).toBe(true)
     expect(isPrivateHost("")).toBe(true)
   })
 

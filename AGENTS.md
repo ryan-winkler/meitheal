@@ -247,7 +247,7 @@ Use [LICENSE](LICENSE) for Meitheal-owned material and [NOTICE](NOTICE) for sepa
 
 ## Required Files (CI Enforced)
 
-- `README.md`, `AGENTS.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SUPPORT.md`, `SECURITY.md`, `COMMERCIAL.md`
+- `README.md`, `AGENTS.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SUPPORT.md`, `SECURITY.md`, `COMMERCIAL.md`, `GOVERNANCE.md`, `ROADMAP.md`
 - `WEBMCP.md` and the discovery files `public/.well-known/mcp.json` and `public/.well-known/jsondoc.json`
 - `.coderabbit.yaml`, `repository.yaml`, and the stable App manifest and docs
 - `docs/index.md`, the Home Assistant devcontainer and operations runbooks, and the architecture and licensing decisions

@@ -9,6 +9,8 @@ on:
     paths-ignore:
       - "meitheal-hub-canary/config.yaml"
       - "*.md"
+      - "!GOVERNANCE.md"
+      - "!ROADMAP.md"
       - ".planning/**"
       - "docs/**"
   pull_request:
@@ -18,6 +20,8 @@ on:
       - release
     paths-ignore:
       - "*.md"
+      - "!GOVERNANCE.md"
+      - "!ROADMAP.md"
       - ".planning/**"
       - "docs/**"
 

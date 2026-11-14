@@ -71,7 +71,7 @@ Contributions must follow these style guides. CI and Codacy check them on every 
 | TypeScript and Astro | The strict compiler settings in [tsconfig.base.json](tsconfig.base.json) (`strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`), the [Astro project structure](https://docs.astro.build/en/basics/project-structure/), and the patterns in [client-side patterns](docs/kcs/client-side-patterns.md) and [DESIGN.md](DESIGN.md) | `tsc --noEmit` for each package and `astro check` in [CI](.github/workflows/ci.yml); ESLint and Semgrep rules in [Codacy](.github/workflows/codacy.yml) |
 | Python (Home Assistant integration) | [PEP 8](https://peps.python.org/pep-0008/), type hints, and the [Home Assistant development guidelines](https://developers.home-assistant.io/docs/development_guidelines) | Pylint, Prospector and Bandit in Codacy; pytest against two Home Assistant Core releases in CI |
 | GitHub Actions | Actions pinned to a full commit SHA, least-privilege `permissions`, and no untrusted input in `run:` steps | CodeQL and OpenSSF Scorecard |
-| Documentation | Plain, short sentences. Pages under `docs/` carry front matter and appear in an index | The docs bundle test in [tests/governance](tests/governance) |
+| Documentation | Plain, short sentences. Pages under `docs/` carry front matter and appear in an index, except `log.md` files and non-root `index.md` files, which must not have front matter | The docs bundle test in [tests/governance](tests/governance) |
 
 ## Test policy
 
