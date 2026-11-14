@@ -26,7 +26,7 @@ Intents:
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import ClassVar
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import intent
@@ -65,7 +65,7 @@ def _get_coordinator(hass: HomeAssistant) -> MeithealCoordinator | None:
 class _MeithealAdminIntent(intent.IntentHandler):
     """Check the Core caller before using the shared integration credential."""
 
-    platforms = set()
+    platforms: ClassVar[set[str]] = set()
 
     async def async_handle(self, intent_obj: intent.Intent) -> intent.IntentResponse:
         """Require a current active administrator for Meitheal's custom intents."""
@@ -87,7 +87,7 @@ class MeithealAddTaskHandler(_MeithealAdminIntent):
     """Handle 'add X to my tasks' intent."""
 
     intent_type = INTENT_ADD_TASK
-    slot_schema = {
+    slot_schema: ClassVar[dict[vol.Required, type]] = {
         vol.Required("item"): str,
     }
 
@@ -123,7 +123,7 @@ class MeithealDoneTaskHandler(_MeithealAdminIntent):
     """Handle 'mark X done' / 'done with X' intent."""
 
     intent_type = INTENT_DONE_TASK
-    slot_schema = {
+    slot_schema: ClassVar[dict[vol.Required, type]] = {
         vol.Required("item"): str,
     }
 
@@ -314,7 +314,7 @@ class MeithealDeleteTaskHandler(_MeithealAdminIntent):
     """Handle 'delete X' / 'remove X from my list' intent."""
 
     intent_type = INTENT_DELETE_TASK
-    slot_schema = {
+    slot_schema: ClassVar[dict[vol.Required, type]] = {
         vol.Required("item"): str,
     }
 

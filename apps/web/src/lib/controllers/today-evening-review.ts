@@ -48,19 +48,36 @@ export function setupEveningReview(
     border-radius: var(--radius-md, 8px); padding: 12px;
     display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 14px;
   `
-  banner.innerHTML = `
-    <span style="font-size: 20px;" aria-hidden="true">🌙</span>
-    <div style="flex: 1 1 12rem; min-width: 0;">
-      <strong>Evening Review</strong>
-      <div style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">
-        ${incompleteTasks.length} task${incompleteTasks.length === 1 ? "" : "s"} still open. Snooze them until tomorrow if needed.
-      </div>
-    </div>
-    <button type="button" class="btn btn-sm evening-snooze-all" title="Snooze all to tomorrow"
-      style="font-size: 12px; min-height: 44px;">Snooze All</button>
-    <button type="button" class="btn btn-sm evening-dismiss" title="Dismiss"
-      aria-label="Dismiss evening review" style="font-size: 12px; padding: 4px 8px; min-height: 44px; min-width: 44px;">✕</button>
-  `
+  const iconSpan = document.createElement("span")
+  iconSpan.style.fontSize = "20px"
+  iconSpan.setAttribute("aria-hidden", "true")
+  iconSpan.textContent = "🌙"
+
+  const bodyDiv = document.createElement("div")
+  bodyDiv.style.cssText = "flex: 1 1 12rem; min-width: 0;"
+  const strong = document.createElement("strong")
+  strong.textContent = "Evening Review"
+  const subDiv = document.createElement("div")
+  subDiv.style.cssText = "font-size: 12px; color: var(--text-muted); margin-top: 2px;"
+  subDiv.textContent = `${incompleteTasks.length} task${incompleteTasks.length === 1 ? "" : "s"} still open. Snooze them until tomorrow if needed.`
+  bodyDiv.append(strong, subDiv)
+
+  const snoozeBtn = document.createElement("button")
+  snoozeBtn.type = "button"
+  snoozeBtn.className = "btn btn-sm evening-snooze-all"
+  snoozeBtn.title = "Snooze all to tomorrow"
+  snoozeBtn.style.cssText = "font-size: 12px; min-height: 44px;"
+  snoozeBtn.textContent = "Snooze All"
+
+  const dismissBtn = document.createElement("button")
+  dismissBtn.type = "button"
+  dismissBtn.className = "btn btn-sm evening-dismiss"
+  dismissBtn.title = "Dismiss"
+  dismissBtn.setAttribute("aria-label", "Dismiss evening review")
+  dismissBtn.style.cssText = "font-size: 12px; padding: 4px 8px; min-height: 44px; min-width: 44px;"
+  dismissBtn.textContent = "✕"
+
+  banner.replaceChildren(iconSpan, bodyDiv, snoozeBtn, dismissBtn)
 
   const statsContainer = container.querySelector("#daily-stats-container")
   if (statsContainer) {

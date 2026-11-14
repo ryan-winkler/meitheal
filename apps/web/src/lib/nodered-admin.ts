@@ -69,9 +69,13 @@ export async function nodeRedFetch(
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), timeoutMs)
   const baseUrl = getNodeRedInternalUrl()
+  const url = new URL(path, baseUrl)
+  if (url.origin !== baseUrl) {
+    throw new Error(`Invalid Node-RED API path: ${path}`)
+  }
 
   try {
-    const response = await fetch(`${baseUrl}${path}`, {
+    const response = await fetch(url.href, {
       ...fetchOptions,
       headers: {
         "Content-Type": "application/json",

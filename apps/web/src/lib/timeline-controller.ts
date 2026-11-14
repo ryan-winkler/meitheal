@@ -2524,7 +2524,18 @@ export function initTimelineController(signal: AbortSignal) {
   /** Update the zoom dropdown label and active state */
   function updateZoomLabel(z: ZoomLevel) {
     if (zoomLabel) {
-      zoomLabel.innerHTML = `${z} <svg width="10" height="6" viewBox="0 0 10 6" fill="none"><path d="M1 1l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`
+      const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg")
+      svg.setAttribute("width", "10")
+      svg.setAttribute("height", "6")
+      svg.setAttribute("viewBox", "0 0 10 6")
+      svg.setAttribute("fill", "none")
+      const path = document.createElementNS("http://www.w3.org/2000/svg", "path")
+      path.setAttribute("d", "M1 1l4 4 4-4")
+      path.setAttribute("stroke", "currentColor")
+      path.setAttribute("stroke-width", "1.5")
+      path.setAttribute("stroke-linecap", "round")
+      svg.appendChild(path)
+      zoomLabel.replaceChildren(document.createTextNode(`${z} `), svg)
     }
     // Update active option styling
     document.querySelectorAll(".timeline-zoom-option").forEach((btn) => {

@@ -16,6 +16,7 @@
  * @see docs/decisions/ADR-017-pillars-domain.md
  */
 
+import { randomUUID } from "node:crypto"
 import { getPersistenceClient } from "../tasks/persistence/store"
 import { ensurePillarSchema, type Pillar } from "./pillar-service"
 
@@ -74,7 +75,7 @@ export interface PillarAssociation {
 // ── M2M Association CRUD ────────────────────────────────────────
 
 function generateId(): string {
-  return `pa_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+  return `pa_${Date.now()}_${randomUUID().slice(0, 8)}`
 }
 
 export async function linkEntity(

@@ -135,19 +135,31 @@ export function initGrocySettings(): void {
       const data = await res.json()
       if (resultEl) {
         resultEl.style.display = "block"
+        const title = document.createElement("strong")
+        const detail = document.createElement("div")
+        detail.className = "integration-callout__detail"
         if (data.ok) {
           resultEl.className = "integration-callout integration-callout--success"
-          resultEl.innerHTML = `<strong>✓ Connected to Grocy ${escapeHtml(data.version)}</strong><div class="integration-callout__detail">${escapeHtml(data.counts.chores)} chore${data.counts.chores !== 1 ? "s" : ""} · ${escapeHtml(data.counts.tasks)} task${data.counts.tasks !== 1 ? "s" : ""} · ${escapeHtml(data.counts.shoppingItems)} shopping item${data.counts.shoppingItems !== 1 ? "s" : ""}</div>`
+          title.textContent = `✓ Connected to Grocy ${String(data.version ?? "")}`
+          const c = data.counts ?? {}
+          detail.textContent = `${c.chores ?? 0} chore${c.chores !== 1 ? "s" : ""} · ${c.tasks ?? 0} task${c.tasks !== 1 ? "s" : ""} · ${c.shoppingItems ?? 0} shopping item${c.shoppingItems !== 1 ? "s" : ""}`
         } else {
           resultEl.className = "integration-callout integration-callout--warning"
-          resultEl.innerHTML = `<strong>✗ Connection failed</strong><div class="integration-callout__detail">${escapeHtml(data.error || "Unknown error")}</div>`
+          title.textContent = "✗ Connection failed"
+          detail.textContent = String(data.error || "Unknown error")
         }
+        resultEl.replaceChildren(title, detail)
       }
     } catch (err) {
       if (resultEl) {
         resultEl.style.display = "block"
         resultEl.className = "integration-callout integration-callout--warning"
-        resultEl.innerHTML = `<strong>✗ Network error</strong><div class="integration-callout__detail">${escapeHtml(err instanceof Error ? err.message : "Unknown")}</div>`
+        const title = document.createElement("strong")
+        title.textContent = "✗ Network error"
+        const detail = document.createElement("div")
+        detail.className = "integration-callout__detail"
+        detail.textContent = err instanceof Error ? err.message : "Unknown"
+        resultEl.replaceChildren(title, detail)
       }
     }
     btn.textContent = "Test Connection"

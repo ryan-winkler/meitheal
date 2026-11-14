@@ -2,13 +2,14 @@
 """Create a deterministic local Marketplace repository tree from a Meitheal commit."""
 
 import argparse
+import json
+import re
+import shutil
+import subprocess  # nosec B404
+import tarfile
 from hashlib import sha256
 from io import BytesIO
-import json
 from pathlib import Path, PurePosixPath
-import re
-import subprocess
-import tarfile
 from zipfile import ZipFile, ZipInfo
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -26,13 +27,16 @@ REQUIRED_FILES = {
 
 
 def read_files(ref: str) -> dict[str, bytes]:
-    commit = subprocess.check_output(
-        ["git", "rev-parse", "--verify", "--end-of-options", f"{ref}^{{commit}}"],
+    git_bin = shutil.which("git")
+    if git_bin is None:
+        raise FileNotFoundError("git executable not found in PATH")
+    commit = subprocess.check_output(  # nosec B603
+        [git_bin, "rev-parse", "--verify", "--end-of-options", f"{ref}^{{commit}}"],
         cwd=REPO_ROOT,
         text=True,
     ).strip()
-    archive = subprocess.check_output(
-        ["git", "archive", "--format=tar", f"{commit}:{SOURCE}", *REPOSITORY_FILES, COMPONENT],
+    archive = subprocess.check_output(  # nosec B603
+        [git_bin, "archive", "--format=tar", f"{commit}:{SOURCE}", *REPOSITORY_FILES, COMPONENT],
         cwd=REPO_ROOT,
     )
     files = {}
@@ -49,7 +53,8 @@ def read_files(ref: str) -> dict[str, bytes]:
                 if any(part.startswith(".") for part in path.parts):
                     continue
             stream = source.extractfile(entry)
-            assert stream is not None
+            if stream is None:
+                raise ValueError(f"Unable to read archive entry: {entry.name}")
             files[entry.name] = stream.read()
 
     missing = REQUIRED_FILES.difference(files)

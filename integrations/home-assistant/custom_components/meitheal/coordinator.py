@@ -92,7 +92,7 @@ class MeithealCoordinatorData:
         self.overdue_count = sum(1 for t in tasks if t.is_overdue)
         self.total_count = len(tasks)
         # Phase 8: additional computed stats
-        today_str = datetime.now().strftime("%Y-%m-%d")
+        today_str = datetime.now(UTC).strftime("%Y-%m-%d")
         self.due_today_count = sum(
             1 for t in tasks
             if t.due_date and t.due_date.startswith(today_str) and t.status != "done"

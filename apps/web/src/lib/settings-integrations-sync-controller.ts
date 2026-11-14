@@ -383,12 +383,66 @@ async function hydrateCalendarStatus(s: Record<string, unknown>) {
       const dirSelect = document.getElementById("cal-sync-direction") as HTMLSelectElement | null
       if (dirSelect && savedGlobalMode) dirSelect.value = savedGlobalMode
 
-      entitiesContainer.innerHTML = calendars.map((c) => {
-        const isEnabled = savedEntities.includes(c.entity_id)
-        const stateLabel = c.state === "off" ? "no active event" : c.state
-        const entityMode = savedSyncModes[c.entity_id] ?? savedGlobalMode
-        return `<div class="cal-toggle-card${isEnabled ? " cal-toggle-card--active" : ""}" data-entity="${escapeHtml(c.entity_id)}"><div class="cal-toggle-card__info"><span class="cal-toggle-card__name">${escapeHtml(c.friendly_name)}</span><span class="cal-toggle-card__entity">${escapeHtml(c.entity_id)}</span><div class="cal-toggle-card__direction"${!isEnabled ? ' style="display:none"' : ""}><select class="cal-direction-select" data-entity-dir="${escapeHtml(c.entity_id)}" aria-label="Sync direction for ${escapeHtml(c.friendly_name)}"><option value="bidirectional"${entityMode === "bidirectional" ? " selected" : ""}>↔ Bidirectional</option><option value="import"${entityMode === "import" ? " selected" : ""}>↓ Import only</option><option value="export"${entityMode === "export" ? " selected" : ""}>↑ Export only</option></select></div><span class="cal-toggle-card__state">${escapeHtml(stateLabel)}</span></div><label class="toggle-label"><input type="checkbox" class="cal-entity-toggle" aria-label="Sync ${escapeHtml(c.friendly_name)}" value="${escapeHtml(c.entity_id)}" ${isEnabled ? "checked" : ""} /><span class="toggle-slider"></span></label></div>`
-      }).join("")
+      entitiesContainer.replaceChildren(
+        ...calendars.map((c) => {
+          const isEnabled = savedEntities.includes(c.entity_id)
+          const stateLabel = c.state === "off" ? "no active event" : c.state
+          const entityMode = savedSyncModes[c.entity_id] ?? savedGlobalMode
+
+          const card = document.createElement("div")
+          card.className = `cal-toggle-card${isEnabled ? " cal-toggle-card--active" : ""}`
+          card.dataset.entity = c.entity_id
+
+          const info = document.createElement("div")
+          info.className = "cal-toggle-card__info"
+          const nameSpan = document.createElement("span")
+          nameSpan.className = "cal-toggle-card__name"
+          nameSpan.textContent = c.friendly_name
+          const entitySpan = document.createElement("span")
+          entitySpan.className = "cal-toggle-card__entity"
+          entitySpan.textContent = c.entity_id
+
+          const dirDiv = document.createElement("div")
+          dirDiv.className = "cal-toggle-card__direction"
+          if (!isEnabled) dirDiv.style.display = "none"
+          const dirSelectEl = document.createElement("select")
+          dirSelectEl.className = "cal-direction-select"
+          dirSelectEl.dataset.entityDir = c.entity_id
+          dirSelectEl.setAttribute("aria-label", `Sync direction for ${c.friendly_name}`)
+          for (const [val, label] of [
+            ["bidirectional", "↔ Bidirectional"],
+            ["import", "↓ Import only"],
+            ["export", "↑ Export only"],
+          ] as const) {
+            const opt = document.createElement("option")
+            opt.value = val
+            opt.textContent = label
+            opt.selected = entityMode === val
+            dirSelectEl.appendChild(opt)
+          }
+          dirDiv.appendChild(dirSelectEl)
+
+          const stateSpan = document.createElement("span")
+          stateSpan.className = "cal-toggle-card__state"
+          stateSpan.textContent = stateLabel
+          info.append(nameSpan, entitySpan, dirDiv, stateSpan)
+
+          const toggleLabel = document.createElement("label")
+          toggleLabel.className = "toggle-label"
+          const cb = document.createElement("input")
+          cb.type = "checkbox"
+          cb.className = "cal-entity-toggle"
+          cb.setAttribute("aria-label", `Sync ${c.friendly_name}`)
+          cb.value = c.entity_id
+          cb.checked = isEnabled
+          const slider = document.createElement("span")
+          slider.className = "toggle-slider"
+          toggleLabel.append(cb, slider)
+
+          card.append(info, toggleLabel)
+          return card
+        }),
+      )
 
       // Wire toggle cards
       entitiesContainer.querySelectorAll<HTMLInputElement>(".cal-entity-toggle").forEach((cb) => {
@@ -493,7 +547,16 @@ async function hydrateTodoStatus(settings: Record<string, unknown>) {
 
     if (entities.length > 0 && autoInfo && autoEntities) {
       autoInfo.style.display = "block"
-      autoEntities.innerHTML = entities.map((e) => `• <code style="font-family: 'JetBrains Mono', monospace; font-size: 11px;">${escapeHtml(e.entity_id)}</code> (${escapeHtml(e.friendly_name)})`).join("<br>")
+      const nodes: Node[] = []
+      entities.forEach((e, idx) => {
+        if (idx > 0) nodes.push(document.createElement("br"))
+        const code = document.createElement("code")
+        code.style.fontFamily = "'JetBrains Mono', monospace"
+        code.style.fontSize = "11px"
+        code.textContent = e.entity_id
+        nodes.push(document.createTextNode("• "), code, document.createTextNode(` (${e.friendly_name})`))
+      })
+      autoEntities.replaceChildren(...nodes)
     }
 
     if (entitiesList && entitiesContainer) {
@@ -504,11 +567,44 @@ async function hydrateTodoStatus(settings: Record<string, unknown>) {
       } else {
         if (noEntities) noEntities.style.display = "none"
         const autoSelect = selection == null
-        entitiesContainer.innerHTML = entities.map((e) => {
-          const isEnabled = autoSelect ? e === entities[0] : savedEnabled.includes(e.entity_id)
-          const stateLabel = e.sync?.active ? `${e.state} · syncing${e.sync.itemCount ? ` · ${e.sync.itemCount} items` : ""}` : e.state
-          return `<div class="cal-toggle-card${isEnabled ? " cal-toggle-card--active" : ""}" data-entity="${escapeHtml(e.entity_id)}"><div class="cal-toggle-card__info"><span class="cal-toggle-card__name">${escapeHtml(e.friendly_name)}</span><span class="cal-toggle-card__entity">${escapeHtml(e.entity_id)}</span><span class="cal-toggle-card__state">${escapeHtml(stateLabel)}</span></div><label class="toggle-label"><input type="checkbox" class="todo-entity-toggle" aria-label="Sync ${escapeHtml(e.friendly_name)}" value="${escapeHtml(e.entity_id)}" ${isEnabled ? "checked" : ""} /><span class="toggle-slider"></span></label></div>`
-        }).join("")
+        entitiesContainer.replaceChildren(
+          ...entities.map((e) => {
+            const isEnabled = autoSelect ? e === entities[0] : savedEnabled.includes(e.entity_id)
+            const stateLabel = e.sync?.active ? `${e.state} · syncing${e.sync.itemCount ? ` · ${e.sync.itemCount} items` : ""}` : e.state
+
+            const card = document.createElement("div")
+            card.className = `cal-toggle-card${isEnabled ? " cal-toggle-card--active" : ""}`
+            card.dataset.entity = e.entity_id
+
+            const info = document.createElement("div")
+            info.className = "cal-toggle-card__info"
+            const nameSpan = document.createElement("span")
+            nameSpan.className = "cal-toggle-card__name"
+            nameSpan.textContent = e.friendly_name
+            const entitySpan = document.createElement("span")
+            entitySpan.className = "cal-toggle-card__entity"
+            entitySpan.textContent = e.entity_id
+            const stateSpan = document.createElement("span")
+            stateSpan.className = "cal-toggle-card__state"
+            stateSpan.textContent = stateLabel
+            info.append(nameSpan, entitySpan, stateSpan)
+
+            const toggleLabel = document.createElement("label")
+            toggleLabel.className = "toggle-label"
+            const cb = document.createElement("input")
+            cb.type = "checkbox"
+            cb.className = "todo-entity-toggle"
+            cb.setAttribute("aria-label", `Sync ${e.friendly_name}`)
+            cb.value = e.entity_id
+            cb.checked = isEnabled
+            const slider = document.createElement("span")
+            slider.className = "toggle-slider"
+            toggleLabel.append(cb, slider)
+
+            card.append(info, toggleLabel)
+            return card
+          }),
+        )
 
         entitiesContainer.querySelectorAll<HTMLInputElement>(".todo-entity-toggle").forEach((cb) => {
           cb.addEventListener("change", () => { cb.closest(".cal-toggle-card")?.classList.toggle("cal-toggle-card--active", cb.checked); updateTodoCount() })

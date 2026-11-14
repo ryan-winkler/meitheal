@@ -43,13 +43,13 @@ export function settingsAction(handler: (event: Event) => unknown): (event: Even
   return async event => {
     const button = event.currentTarget instanceof HTMLButtonElement ? event.currentTarget : null
     if (button?.disabled) return
-    const label = button?.innerHTML
+    const savedNodes = button ? Array.from(button.childNodes).map(n => n.cloneNode(true)) : null
     if (button) button.disabled = true
     try { await handler(event) } catch (error) { showSettingsSaveError(error) }
     finally {
       if (button) {
         button.disabled = false
-        if (label !== undefined) button.innerHTML = label
+        if (savedNodes) button.replaceChildren(...savedNodes)
       }
     }
   }

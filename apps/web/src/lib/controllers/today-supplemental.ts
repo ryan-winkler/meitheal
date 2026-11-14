@@ -38,20 +38,33 @@ export function setupMigrationPrompt(container: HTMLElement): void {
   if (carriedCount === 0) return
 
   promptEl.style.display = ""
-  promptEl.innerHTML = `
-    <div class="migration-banner">
-      <span class="migration-banner__text">
-        ☀️ Good morning! You have <strong>${carriedCount}</strong> carried forward task${carriedCount === 1 ? "" : "s"}.
-        Triage them to keep your day focused.
-      </span>
-      <button type="button" class="btn btn-sm btn-primary migration-banner__action" id="migration-triage-btn">
-        Triage Now
-      </button>
-      <button type="button" class="btn btn-sm migration-banner__action" id="migration-dismiss-btn">
-        Dismiss
-      </button>
-    </div>
-  `
+  const banner = document.createElement("div")
+  banner.className = "migration-banner"
+
+  const textSpan = document.createElement("span")
+  textSpan.className = "migration-banner__text"
+  const countStrong = document.createElement("strong")
+  countStrong.textContent = String(carriedCount)
+  textSpan.append(
+    document.createTextNode("☀️ Good morning! You have "),
+    countStrong,
+    document.createTextNode(` carried forward task${carriedCount === 1 ? "" : "s"}. Triage them to keep your day focused.`),
+  )
+
+  const triageBtn = document.createElement("button")
+  triageBtn.type = "button"
+  triageBtn.className = "btn btn-sm btn-primary migration-banner__action"
+  triageBtn.id = "migration-triage-btn"
+  triageBtn.textContent = "Triage Now"
+
+  const dismissBtn = document.createElement("button")
+  dismissBtn.type = "button"
+  dismissBtn.className = "btn btn-sm migration-banner__action"
+  dismissBtn.id = "migration-dismiss-btn"
+  dismissBtn.textContent = "Dismiss"
+
+  banner.append(textSpan, triageBtn, dismissBtn)
+  promptEl.replaceChildren(banner)
 
   promptEl.querySelector("#migration-dismiss-btn")?.addEventListener("click", () => {
     localStorage.setItem(MIGRATION_PROMPT_KEY, todayStr)
