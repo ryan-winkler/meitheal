@@ -153,38 +153,123 @@ function resolveTablerOutlineDir() {
   }
 }
 
-const ALLOWED_SHAPE_LINE_RE =
-  /^<(path|rect|circle|ellipse|line|polyline|polygon)\s+([a-z][a-z0-9-]*="[^"<>&]*"(?:\s+[a-z][a-z0-9-]*="[^"<>&]*")*)\s*\/?>$/i
-const BOUNDING_BOX_PATH_RE =
-  /^<path\s+stroke="none"\s+d="M0 0h24v24H0z"\s+fill="none"\s*\/?>$/i
+const ALLOWED_SHAPE_TAGS = new Set([
+  "path",
+  "rect",
+  "circle",
+  "ellipse",
+  "line",
+  "polyline",
+  "polygon",
+])
+
+function isAsciiAttrStart(ch) {
+  const code = ch.charCodeAt(0)
+  return (code >= 97 && code <= 122) || (code >= 65 && code <= 90)
+}
+
+function isAsciiAttrChar(ch) {
+  const code = ch.charCodeAt(0)
+  return (
+    (code >= 97 && code <= 122) ||
+    (code >= 65 && code <= 90) ||
+    (code >= 48 && code <= 57) ||
+    code === 45
+  )
+}
+
+function parseAllowedShapeLine(line) {
+  if (!line.startsWith("<") || !line.endsWith(">")) return null
+  const bodyEnd = line.endsWith("/>") ? line.length - 2 : line.length - 1
+  const rawBody = line.slice(1, bodyEnd).trim()
+  let spaceIdx = -1
+  for (let i = 0; i < rawBody.length; i++) {
+    const ch = rawBody[i]
+    if (ch === " " || ch === "\t") {
+      spaceIdx = i
+      break
+    }
+  }
+  if (spaceIdx <= 0) return null
+  const tag = rawBody.slice(0, spaceIdx).toLowerCase()
+  if (!ALLOWED_SHAPE_TAGS.has(tag)) return null
+
+  const rawAttrs = rawBody.slice(spaceIdx + 1).trim()
+  if (!rawAttrs) return null
+
+  const attrPairs = []
+  let hasVectorEffect = false
+  let cursor = 0
+  while (cursor < rawAttrs.length) {
+    while (cursor < rawAttrs.length && (rawAttrs[cursor] === " " || rawAttrs[cursor] === "\t")) {
+      cursor++
+    }
+    if (cursor >= rawAttrs.length) break
+    if (!isAsciiAttrStart(rawAttrs[cursor])) return null
+    const nameStart = cursor
+    cursor++
+    while (cursor < rawAttrs.length && isAsciiAttrChar(rawAttrs[cursor])) {
+      cursor++
+    }
+    const attrName = rawAttrs.slice(nameStart, cursor)
+    if (rawAttrs.slice(cursor, cursor + 2) !== '="') return null
+    cursor += 2
+    const closeQuote = rawAttrs.indexOf('"', cursor)
+    if (closeQuote === -1) return null
+    const attrVal = rawAttrs.slice(cursor, closeQuote)
+    if (attrVal.includes("<") || attrVal.includes(">") || attrVal.includes("&")) return null
+    cursor = closeQuote + 1
+    if (cursor < rawAttrs.length && rawAttrs[cursor] !== " " && rawAttrs[cursor] !== "\t") {
+      return null
+    }
+    if (attrName.toLowerCase() === "vector-effect") hasVectorEffect = true
+    attrPairs.push([attrName.toLowerCase(), attrVal])
+  }
+
+  if (attrPairs.length === 0) return null
+  const attrMap = new Map(attrPairs)
+  const isBoundingBox =
+    tag === "path" &&
+    attrPairs.length === 3 &&
+    attrMap.get("stroke") === "none" &&
+    attrMap.get("d") === "M0 0h24v24H0z" &&
+    attrMap.get("fill") === "none"
+
+  return { tag, attrs: rawAttrs, hasVectorEffect, isBoundingBox }
+}
 
 function extractInnerSvg(rawSvg, iconFile) {
   const trimmed = rawSvg.trim()
-  if ((trimmed.match(/<svg\b/gi) ?? []).length !== 1 || (trimmed.match(/<\/svg>/gi) ?? []).length !== 1) {
+  const lower = trimmed.toLowerCase()
+  if (!lower.startsWith("<svg") || !lower.endsWith("</svg>")) {
     throw new Error(`[generate-icons] Expected a single <svg> root in ${iconFile}`)
   }
-  const match = trimmed.match(/^<svg\b[^>]*>([\s\S]*?)<\/svg>$/i)
-  if (!match) {
+  const openTagEnd = trimmed.indexOf(">")
+  if (openTagEnd === -1 || lower.indexOf("<svg", 4) !== -1) {
     throw new Error(`[generate-icons] Unexpected <svg> wrapper in ${iconFile}`)
   }
-  const inner = match[1]
-    .split("\n")
-    .map(line => line.trim())
-    .filter(Boolean)
-    .filter(line => !BOUNDING_BOX_PATH_RE.test(line))
-    .map(line => {
-      const shapeMatch = line.match(ALLOWED_SHAPE_LINE_RE)
-      if (!shapeMatch) {
-        throw new Error(`[generate-icons] Disallowed SVG child element in ${iconFile}: ${line}`)
-      }
-      const [, tag, attrs] = shapeMatch
-      if (/vector-effect=/i.test(attrs)) {
-        return `<${tag} ${attrs} />`
-      }
-      return `<${tag} vector-effect="non-scaling-stroke" ${attrs} />`
-    })
-    .join("")
+  const innerContent = trimmed.slice(openTagEnd + 1, trimmed.length - "</svg>".length)
+  if (innerContent.toLowerCase().includes("</svg>")) {
+    throw new Error(`[generate-icons] Multiple </svg> tags in ${iconFile}`)
+  }
 
+  const renderedShapes = []
+  for (const rawLine of innerContent.split("\n")) {
+    const line = rawLine.trim()
+    if (!line) continue
+    const parsed = parseAllowedShapeLine(line)
+    if (!parsed) {
+      throw new Error(`[generate-icons] Disallowed SVG child element in ${iconFile}: ${line}`)
+    }
+    if (parsed.isBoundingBox) continue
+    if (parsed.hasVectorEffect) {
+      renderedShapes.push(`<${parsed.tag} ${parsed.attrs} />`)
+    } else {
+      renderedShapes.push(`<${parsed.tag} vector-effect="non-scaling-stroke" ${parsed.attrs} />`)
+    }
+  }
+
+  const inner = renderedShapes.join("")
   if (!inner) {
     throw new Error(`[generate-icons] Empty inner SVG extracted from ${iconFile}`)
   }

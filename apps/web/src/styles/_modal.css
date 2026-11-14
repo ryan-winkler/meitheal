@@ -676,10 +676,8 @@ body.has-docked-inspector #task-detail-panel {
 }
 
 /* Noscript fallback: show sidebar props when JS is unavailable */
-@media (scripting: none) {
-  @container task-inspector (max-width: 671px) {
-    noscript ~ .td-sidebar-props { display: flex !important; }
-  }
+@container task-inspector (max-width: 671px) {
+  noscript ~ .td-sidebar-props { display: flex !important; }
 }
 
 /* New-ticket capture: labeled controls, grouped details and compact list rows. */
