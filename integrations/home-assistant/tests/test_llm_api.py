@@ -1,6 +1,6 @@
 """Verify the optional LLM registry and its tool-call boundaries."""
 
-from unittest.mock import ANY, AsyncMock
+from unittest.mock import ANY, AsyncMock, MagicMock
 
 import probatio
 import pytest
@@ -302,25 +302,43 @@ async def test_manage_api_reads_and_changes_tasks_for_the_caller(
             event_authority=ANY,
         )
 
-        client.async_request.return_value = {"id": "open", "status": "active", "assigned_to": None}
+        client.async_request.return_value = {"id": "open", "title": "Open", "status": "active", "assigned_to": None}
+        coordinator.fire_event = MagicMock(wraps=coordinator.fire_event)
         await async_call(
             instance, "meitheal_update_task",
             {"task_id": "open", "status": "active", "assignee": "unassigned"},
         )
         client.async_request.assert_awaited_with(
             "PUT", "/api/tasks/open",
-            payload={"status": "active", "assigned_to": None}, read_json=True,
+            payload={"status": "active", "assigned_to": None}, read_json=True, event_authority=ANY,
+        )
+        coordinator.fire_event.assert_called_with(
+            "meitheal_task_updated",
+            {"task_id": "open", "title": "Open", "fields": "status, assigned_to"},
         )
         await async_call(
             instance, "meitheal_update_task", {"task_id": "open", "assignee": "custom_1a2b3c4d"}
         )
         assert client.async_request.await_args.kwargs["payload"] == {"assigned_to": "custom_1a2b3c4d"}
 
+        # Webhook authority suppresses the fallback event so HA receives only one update event.
+        coordinator.fire_event.reset_mock()
+
+        async def _authoritative_update(*args, event_authority=None, **kwargs):
+            if event_authority is not None:
+                event_authority.add("meitheal_task_updated")
+            return {"id": "open", "title": "Open", "status": "active"}
+
+        client.async_request.side_effect = _authoritative_update
+        await async_call(instance, "meitheal_update_task", {"task_id": "open", "title": "Authoritative"})
+        coordinator.fire_event.assert_not_called()
+        client.async_request.side_effect = None
+
         client.async_request.return_value = {"id": "uuid-42", "ticket_key": "MTH-42", "title": "Via key"}
         keyed = await async_call(instance, "meitheal_update_task", {"task_id": "mth-42", "title": "Via key"})
         assert keyed.data["ticket_key"] == "MTH-42"
         client.async_request.assert_awaited_with(
-            "PUT", "/api/tasks/mth-42", payload={"title": "Via key"}, read_json=True,
+            "PUT", "/api/tasks/mth-42", payload={"title": "Via key"}, read_json=True, event_authority=ANY,
         )
 
         client.async_request.return_value = {"id": 7, "author": "Automation: Home Assistant"}

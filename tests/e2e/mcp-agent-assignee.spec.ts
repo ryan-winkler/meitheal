@@ -173,13 +173,26 @@ test("an agent assignee reads, answers, updates and hands back only its own task
     // Handing back returns the task to whoever held it before, with the note attached.
     expect((await api.put(base + `/api/tasks/${household}`, { headers: automation, data: { assigned_to: claude.id } })).status()).toBe(200)
     expect((await call(claudeToken, "handBackTask", { id: theirs })).failed).toBe(true)
-    const returned = await call(claudeToken, "handBackTask", { id: household, note: "This needs a person at the shop." })
+    const returned = await call(claudeToken, "handBackTask", {
+      id: household,
+      note: "This needs a person at the shop.",
+      request_id: "handback-household-1",
+    })
     expect(returned.failed).toBe(false)
     expect(returned.data).toMatchObject({ id: household, handed_back_to: person.id, note_posted: true })
+    // Retrying handBackTask with the same request_id replays the original receipt without duplicating the comment.
+    const retried = await call(claudeToken, "handBackTask", {
+      id: household,
+      note: "This needs a person at the shop.",
+      request_id: "handback-household-1",
+    })
+    expect(retried.failed).toBe(false)
+    expect(retried.data).toEqual(returned.data)
     const after = await (await api.get(base + `/api/tasks/${household}`, { headers: automation })).json()
     expect(after.assigned_to).toBe(person.id)
     expect(after.owner).toBe("human")
     const notes = await (await api.get(base + `/api/tasks/${household}/comments`, { headers: automation })).json()
+    expect(notes.comments.filter((c: { content: string }) => c.content.includes("needs a person"))).toHaveLength(1)
     expect(notes.comments.at(-1)).toMatchObject({ author: "Automation: Claude", content: expect.stringContaining("needs a person") })
     // Once handed back it is no longer the agent's to change.
     expect((await call(claudeToken, "completeTask", { id: household })).failed).toBe(true)

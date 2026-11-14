@@ -494,12 +494,37 @@ customHandlers.set("handBackTask", async (args, requestApi, agent) => {
   if (args.to !== undefined && args.to !== null && (typeof args.to !== "string" || !/^(ha|custom)_[\w-]{1,128}$/.test(args.to))) {
     return { error: "to must be an assignee ID from the task history, or omitted" }
   }
+  if (args.request_id !== undefined && (typeof args.request_id !== "string" || !args.request_id.trim() || args.request_id.trim().length > 128)) {
+    return { error: "request_id must be a non-empty string (max 128 characters)" }
+  }
+  const requestId = typeof args.request_id === "string" ? args.request_id.trim() : null
   const task = await checkedJson(await requestApi(`/api/tasks/${encodeURIComponent(args.id.trim())}`))
   // Later calls use the stored ID: the history is keyed by it, not by the ticket key.
-  const path = `/api/tasks/${encodeURIComponent(String(task.id))}`
+  const taskId = String(task.id)
+  const path = `/api/tasks/${encodeURIComponent(taskId)}`
+  const db = getPersistenceClient()
+  const receiptKey = requestId ? `${agent.tokenId}:${taskId}:${requestId}` : null
+  let existingAttempt: { status: string; response_payload: string | null } | null = null
+  if (receiptKey) {
+    await ensureSchema()
+    const lookup = await db.execute({
+      sql: "SELECT status, response_payload FROM integration_attempts WHERE integration = 'mcp.handback' AND idempotency_key = ? LIMIT 1",
+      args: [receiptKey],
+    })
+    const row = lookup.rows[0]
+    if (row) {
+      existingAttempt = {
+        status: String(row.status),
+        response_payload: row.response_payload != null ? String(row.response_payload) : null,
+      }
+      if (existingAttempt.status === "completed" && existingAttempt.response_payload) {
+        return JSON.parse(existingAttempt.response_payload) as Record<string, unknown>
+      }
+    }
+  }
   if (task.assigned_to !== assignee.id) return { error: "This task is not assigned to you", assigned_to: task.assigned_to ?? null }
 
-  const users = new UserRepository(getPersistenceClient())
+  const users = new UserRepository(db)
   let to = typeof args.to === "string" ? args.to : null
   if (args.to === undefined) {
     const historyRes = await checkedJson(await requestApi(`${path}/activity?limit=200`))
@@ -526,24 +551,48 @@ customHandlers.set("handBackTask", async (args, requestApi, agent) => {
   if (to === assignee.id) return { error: "Choose someone else to hand the task back to" }
 
   // The note goes first: once the task is reassigned an assigned-only token can no longer comment on it.
-  if (typeof args.note === "string") {
-    await checkedJson(await requestApi(`${path}/comments`, { method: "POST", body: JSON.stringify({ content: args.note.trim() }) }))
+  const hasNote = typeof args.note === "string"
+  let notePosted = existingAttempt?.status === "note_posted"
+  if (hasNote && !notePosted) {
+    await checkedJson(await requestApi(`${path}/comments`, { method: "POST", body: JSON.stringify({ content: String(args.note).trim() }) }))
+    notePosted = true
+    if (receiptKey && requestId) {
+      const now = Date.now()
+      await db.execute({
+        sql: `INSERT INTO integration_attempts (attempt_id, task_id, integration, request_id, idempotency_key, status, created_at, updated_at)
+              VALUES (?, ?, 'mcp.handback', ?, ?, 'note_posted', ?, ?)
+              ON CONFLICT(idempotency_key, integration) DO NOTHING`,
+        args: [crypto.randomUUID(), taskId, requestId, receiptKey, now, now],
+      }).catch(() => {})
+    }
   }
-  const notePosted = typeof args.note === "string"
   let updated: Record<string, unknown>
   try {
-    updated = await checkedJson(await requestApi(path, { method: "PUT", body: JSON.stringify({ assigned_to: to }) }))
+    updated = await checkedJson(await requestApi(path, {
+      method: "PUT",
+      body: JSON.stringify({ assigned_to: to, ...(requestId ? { request_id: requestId } : {}) }),
+    }))
     if ((updated.assigned_to ?? null) !== to) throw new Error("Task hand back returned an invalid acknowledgement")
   } catch (error) {
     if (!notePosted) throw error
-    // The note is already on the task. Say so, or a retry with the same note posts it twice.
+    // The note is already on the task. Say so, or a retry without the same request_id posts it twice.
     return {
       error: "Your note was posted, but the task could not be reassigned. Call handBackTask again without a note.",
       note_posted: true,
       still_assigned_to: assignee.id,
     }
   }
-  return { id: updated.id, ticket_key: updated.ticket_key ?? null, handed_back_to: to, note_posted: notePosted }
+  const receipt = { id: updated.id, ticket_key: updated.ticket_key ?? null, handed_back_to: to, note_posted: hasNote || notePosted }
+  if (receiptKey && requestId) {
+    const now = Date.now()
+    await db.execute({
+      sql: `INSERT INTO integration_attempts (attempt_id, task_id, integration, request_id, idempotency_key, status, response_payload, created_at, updated_at)
+            VALUES (?, ?, 'mcp.handback', ?, ?, 'completed', ?, ?, ?)
+            ON CONFLICT(idempotency_key, integration) DO UPDATE SET status = 'completed', response_payload = excluded.response_payload, updated_at = excluded.updated_at`,
+      args: [crypto.randomUUID(), taskId, requestId, receiptKey, JSON.stringify(receipt), now, now],
+    }).catch(() => {})
+  }
+  return receipt
 })
 
 /** Custom tools are granted by scope. "write" accepts either task write grant. */
@@ -948,6 +997,7 @@ function getCustomToolSchema(name: string): McpTool["inputSchema"] {
         id: { type: "string", description: "Task ID or ticket key (MTH-12)" },
         note: { type: "string", description: "What you did, what is left, or what you need. Posted as a comment." },
         to: { type: ["string", "null"], description: "Assignee ID to hand back to. Omit to return it to the previous assignee; null leaves it unassigned." },
+        request_id: { type: "string", description: "Optional idempotency key so retrying the same hand back returns the original receipt without duplicating your note." },
       },
       required: ["id"],
     },

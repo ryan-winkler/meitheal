@@ -395,11 +395,30 @@ class UpdateTaskTool(MeithealWriteTool):
             )
         if not payload:
             raise HomeAssistantError("Invalid Meitheal tool arguments")
+        authority: set[str] = set()
         updated = _acknowledged(
             await coordinator.api.async_request(
-                "PUT", task_path(args["task_id"]), payload=payload, read_json=True
+                "PUT",
+                task_path(args["task_id"]),
+                payload=payload,
+                read_json=True,
+                event_authority=authority,
             ),
             args["task_id"],
+        )
+        changed_fields = ", ".join(payload.keys())
+        task_title = str(updated.get("title") or updated["id"])
+        if "meitheal_task_updated" not in authority:
+            coordinator.fire_event(
+                "meitheal_task_updated",
+                {
+                    "task_id": updated["id"],
+                    "title": task_title,
+                    "fields": changed_fields,
+                },
+            )
+        coordinator.fire_logbook(
+            "Meitheal", f"updated task: {task_title} ({changed_fields})"
         )
         await coordinator.async_request_refresh()
         return _task_summary(updated)

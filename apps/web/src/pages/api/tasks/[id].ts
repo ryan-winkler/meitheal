@@ -76,8 +76,8 @@ export const GET: APIRoute = async ({ params, url }) => {
 /**
  * An assigned-only agent loses write access to a task once it reassigns it, so a
  * client retry of that same PUT would be refused even though it succeeded. When
- * the retry asks only for the reassignment this agent already made, answer with
- * the current task instead of 403.
+ * a retry carries the original request_id for the reassignment this agent made,
+ * acknowledge it (returning only minimal confirmation unless the token has tasks:read).
  */
 async function replayedAgentReassignment(
   repo: TaskRepository,
@@ -86,6 +86,8 @@ async function replayedAgentReassignment(
   body: Record<string, unknown>,
 ): Promise<Response | null> {
   if (!isAssignedWriteOnly(agentToken) || !agentToken?.assigneeId) return null
+  const requestId = typeof body.request_id === "string" ? body.request_id.trim().slice(0, 128) : ""
+  if (!requestId) return null
   if (body.assigned_to !== null && typeof body.assigned_to !== "string") return null
   const fields = Object.keys(body).filter((key) => key !== "updated_at" && key !== "request_id")
   if (fields.length !== 1 || fields[0] !== "assigned_to") return null
@@ -98,10 +100,15 @@ async function replayedAgentReassignment(
     !lastReassignment ||
     lastReassignment.actor_type !== "agent" ||
     lastReassignment.old_value !== agentToken.assigneeId ||
-    String(lastReassignment.new_value ?? "") !== requested
+    String(lastReassignment.new_value ?? "") !== requested ||
+    lastReassignment.correlation_id !== requestId
   ) return null
   const ticketNum = row.ticket_number != null ? Number(row.ticket_number) : null
-  return Response.json({ ...row, is_promoted: Boolean(row.is_promoted), ticket_key: formatTicketKey(ticketNum) })
+  const ticketKey = formatTicketKey(ticketNum)
+  if (!agentToken.scopes.includes("tasks:read")) {
+    return Response.json({ id: row.id, ticket_key: ticketKey, assigned_to: row.assigned_to ?? null })
+  }
+  return Response.json({ ...row, is_promoted: Boolean(row.is_promoted), ticket_key: ticketKey })
 }
 
 export const PUT: APIRoute = async ({ params, request, locals }) => {
@@ -466,7 +473,11 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
       const automation = request.headers.has("X-Automation-Source") ? locals.automationSource : null
       const activityActor = agentActivityActor(locals) ??
         { actor: automation ? `ha:${automation}` : "user", actor_type: (automation ? "ha" : "user") as "ha" | "user" }
-      await repo.logActivity(resolvedId, changes, activityActor).catch(() => { })
+      const requestId = typeof body.request_id === "string" ? body.request_id.trim().slice(0, 128) : ""
+      await repo.logActivity(resolvedId, changes, {
+        ...activityActor,
+        ...(requestId ? { correlation_id: requestId } : {}),
+      }).catch(() => { })
     }
   }
 
