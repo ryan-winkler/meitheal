@@ -206,3 +206,40 @@ test("notification clicks focus or open only within the worker's App scope", asy
   await click("https://home.example.test/api/hassio_ingress/meitheal-sibling/settings")
   expect(opened).toEqual([target, scope, scope])
 })
+
+test("service worker message handler accepts only same-origin senders and rejects malformed source URLs", async () => {
+  const script = await readFile(new URL("../../apps/web/public/sw.js", import.meta.url), "utf8")
+  const origin = "https://home.example.test"
+  const handlers = new Map<string, (event: unknown) => void>()
+  let skippedWaiting = 0
+  runInNewContext(script, {
+    URL,
+    self: {
+      location: { origin },
+      registration: { scope: `${origin}/` },
+      skipWaiting: async () => { skippedWaiting++ },
+      addEventListener: (name: string, handler: (event: unknown) => void) => handlers.set(name, handler),
+    },
+  })
+  const onMessage = handlers.get("message")!
+  expect(onMessage).toBeDefined()
+
+  const replies: unknown[] = []
+  const port = { postMessage: (val: unknown) => { replies.push(val) } }
+
+  // Cross-origin, null source, and malformed relative source.url are ignored without throwing
+  onMessage({ origin: "https://evil.example.test", data: { type: "SKIP_WAITING" }, ports: [port], waitUntil: () => {} })
+  onMessage({ origin: "", source: null, data: { type: "TASK_PINS_IMPLEMENTED" }, ports: [port], waitUntil: () => {} })
+  onMessage({ origin: "", source: { url: "::not-a-valid-url" }, data: { type: "TASK_PINS_IMPLEMENTED" }, ports: [port], waitUntil: () => {} })
+  expect(skippedWaiting).toBe(0)
+  expect(replies).toEqual([])
+
+  // Same-origin via event.origin or valid event.source.url succeeds
+  let pending: Promise<unknown> | undefined
+  onMessage({ origin, data: { type: "SKIP_WAITING" }, ports: [], waitUntil: (work: Promise<unknown>) => { pending = work } })
+  await pending
+  expect(skippedWaiting).toBe(1)
+
+  onMessage({ origin: "", source: { url: `${origin}/settings` }, data: { type: "TASK_PINS_IMPLEMENTED" }, ports: [port], waitUntil: () => {} })
+  expect(replies).toEqual([true])
+})

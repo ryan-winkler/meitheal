@@ -136,6 +136,8 @@ On Home Assistant Core 2026.11 or later, an active administrator can also enable
 ## Contribute and Get Help
 
 - [Contribute a change](CONTRIBUTING.md)
+- [Project governance](GOVERNANCE.md) and [roadmap](ROADMAP.md)
+- [Architecture overview](docs/architecture.md) and [security assurance case](docs/security-assurance-case.md)
 - [Use automations and agents with Meitheal](docs/kcs/agent-automation-guide.md)
 - [Community conduct](CODE_OF_CONDUCT.md)
 - [Support](SUPPORT.md)
