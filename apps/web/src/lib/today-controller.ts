@@ -838,7 +838,7 @@ function setupWipLimit(container: HTMLElement) {
   dismissBtn.className = "btn btn-sm"
   dismissBtn.style.cssText = "margin-left: auto; font-size: 11px; padding: 2px 8px;"
   dismissBtn.textContent = "Dismiss"
-  dismissBtn.addEventListener("click", () => banner.remove(), { signal: pageLifecycle.signal })
+  dismissBtn.addEventListener("click", () => banner.remove(), { once: true })
   banner.replaceChildren(iconSpan, textSpan, dismissBtn)
 
   const statsContainer = container.querySelector("#daily-stats-container")
