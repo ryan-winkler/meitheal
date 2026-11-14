@@ -16,21 +16,22 @@ Meitheal hash-pins its JavaScript workspace, GitHub Actions, container toolchain
 | App builder image | `node:<tag>@sha256:<digest>` in `meitheal-hub/Dockerfile` | Dependabot (`docker`) |
 | pnpm in the App image and devcontainer | `meitheal-hub/toolchain/package-lock.json`, installed with `npm ci` | Dependabot (`npm`, `/meitheal-hub/toolchain`) |
 | Workspace packages | `pnpm-lock.yaml`, installed with `--frozen-lockfile` | Dependabot (`npm`, `/`) |
-| Home Assistant test environments | `integrations/home-assistant/requirements-test*.txt`, compiled with hashes from the matching `.in` file (Dependabot `pip` updates require regenerating the matching `.txt` via `uv pip compile --generate-hashes`) | Dependabot (`pip`) |
+| Home Assistant test environments | `integrations/home-assistant/requirements-test*.txt`, compiled with hashes from the matching `.in` file and `overrides-2026.10.txt` for Core `2026.10.4` (Dependabot `pip` updates require regenerating the matching `.txt` via `uv pip compile --generate-hashes`, passing `--overrides overrides-2026.10.txt` for `requirements-test-2026.10.txt`) | Dependabot (`pip`) |
 
 The Home Assistant base images (`ghcr.io/home-assistant/{arch}-base`) stay on their tag. Supervisor passes them through `build.json` per architecture, Dependabot cannot update digests there, and a digest that never moves would stop base-image security fixes from reaching the App.
 
 ## Changing a pinned dependency
 
 - **pnpm version:** change `packageManager` in the root `package.json`, every `version:` under `pnpm/action-setup` in the workflows, `meitheal-hub/toolchain/package.json`, `.devcontainer/devcontainer.json`, and `tests/governance/ha-integration-contract.spec.ts`. Then run `npm install --package-lock-only --ignore-scripts` in `meitheal-hub/toolchain`.
-- **Home Assistant test requirements:** edit the `.in` file, then regenerate the `.txt` file with the command in its header, for example:
+- **Home Assistant test requirements:** edit the `.in` file (and `integrations/home-assistant/overrides-2026.10.txt` if changing an overridden pin such as `pillow` on Core `2026.10.4`), then regenerate the `.txt` lockfile with the command in its header:
 
   ```sh
   cd integrations/home-assistant
   uv pip compile --generate-hashes --python-version 3.14.2 --python-platform x86_64-manylinux_2_28 requirements-test.in -o requirements-test.txt
+  uv pip compile --generate-hashes --python-version 3.14.2 --python-platform x86_64-manylinux_2_28 --overrides overrides-2026.10.txt requirements-test-2026.10.in -o requirements-test-2026.10.txt
   ```
 
-  Install it with `python -m pip install --require-hashes -r requirements-test.txt`.
+  Install either lockfile with `python -m pip install --require-hashes --no-deps -r <file>` (`requirements-test.txt` or `requirements-test-2026.10.txt`). Passing `--no-deps` is required for `requirements-test-2026.10.txt` because `overrides-2026.10.txt` pins `pillow` above `homeassistant==2026.10.4`'s `Pillow==12.3.0` wheel metadata; `python -m pip check` reports that single intentional mismatch on `2026.10.4` and passes on `2026.11.1`. Because Dependabot (`pip`) runs without `overrides-2026.10.txt` and opens no override PRs against `2026.10.4`, bump `overrides-2026.10.txt` manually upon `pillow` security alerts (or alongside `requirements-test.txt` Core updates) and recompile `requirements-test-2026.10.txt` with `--overrides overrides-2026.10.txt`. Likewise, whenever an unrelated weekly Dependabot `pip` PR touches `integrations/home-assistant`, check whether Dependabot failed resolution or reverted `pillow` to `12.3.0` in `requirements-test-2026.10.txt` and recompile with `--overrides overrides-2026.10.txt` before merging.
 
 ## Reviewing code scanning alerts
 

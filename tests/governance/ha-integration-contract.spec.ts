@@ -247,4 +247,44 @@ test("both Core CI profiles build this checkout before required App/native proto
   expect(build).toBeGreaterThan(install)
   expect(native).toBeGreaterThan(build)
   expect(core.steps[native]!.env?.MEITHEAL_REQUIRE_APP_PROTOCOL).toBe("1")
+  expect(core.steps[native]!.env?.PIP_DISABLE_PIP_VERSION_CHECK).toBe("1")
+  const coreRun = core.steps[native]?.run ?? ""
+  expect(coreRun).toContain(
+    "python -m pip install --require-hashes --no-deps -r \"$TEST_REQUIREMENTS\"",
+  )
+  expect(coreRun).toMatch(
+    /HA_CORE_VERSION"\s*=\s*"2026\.11\.1"[\s\S]*?python -m pip check[\s\S]*?HA_CORE_VERSION"\s*=\s*"2026\.10\.4"[\s\S]*?python -m pip check[\s\S]*?else[\s\S]*?python -m pip check/,
+  )
+})
+
+test("Core test lockfiles pin Pillow >= 13 and match the 2026.10 override", () => {
+  const haDir = path.join(repoRoot, "integrations/home-assistant")
+  const overridePath = path.join(haDir, "overrides-2026.10.txt")
+  expect(fs.existsSync(overridePath)).toBe(true)
+
+  const pillowGe13Line = /^[ \t]*pillow==((?:[1-9]\d{2,}|[2-9]\d|1[3-9])\.\d+(?:\.\d+)*(?:[._+-]?[a-z0-9.]+)?)(?=$|[\s\\;#])/gim
+  const pillowLe12Line = /^[ \t]*pillow==(?:[0-9]|1[0-2])\./im
+  const allPillowLines = (content: string) => [...content.matchAll(/^[ \t]*pillow(?=[=<>!~;\s\[]|$)/gim)]
+
+  const overrideContent = fs.readFileSync(overridePath, "utf8")
+  expect(overrideContent, "overrides-2026.10.txt must not pin Pillow <= 12.x").not.toMatch(pillowLe12Line)
+  expect(allPillowLines(overrideContent), "overrides-2026.10.txt must declare exactly one Pillow requirement").toHaveLength(1)
+  const overrideMatches = [...overrideContent.matchAll(pillowGe13Line)]
+  expect(overrideMatches, "overrides-2026.10.txt must pin Pillow >= 13").toHaveLength(1)
+  const overridePillowVersion = overrideMatches[0]![1]!
+
+  const lock202610 = fs.readFileSync(path.join(haDir, "requirements-test-2026.10.txt"), "utf8")
+  const headerLines = lock202610.split(/\r?\n/).slice(0, 5).join("\n")
+  expect(headerLines).toMatch(/--overrides?\s+overrides-2026\.10\.txt/)
+
+  const lock202610Matches = [...lock202610.matchAll(pillowGe13Line)]
+  expect(lock202610Matches, "requirements-test-2026.10.txt must pin Pillow >= 13").toHaveLength(1)
+  expect(lock202610Matches[0]![1]).toBe(overridePillowVersion)
+
+  for (const lockfile of ["requirements-test-2026.10.txt", "requirements-test.txt"]) {
+    const content = fs.readFileSync(path.join(haDir, lockfile), "utf8")
+    expect(content, `${lockfile} must not pin Pillow <= 12.x`).not.toMatch(pillowLe12Line)
+    expect(allPillowLines(content), `${lockfile} must declare exactly one Pillow requirement`).toHaveLength(1)
+    expect([...content.matchAll(pillowGe13Line)], `${lockfile} must pin Pillow >= 13.x`).toHaveLength(1)
+  }
 })
