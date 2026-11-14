@@ -294,7 +294,7 @@ export function initQuickActions(
         } else {
           item.appendChild(document.createTextNode("👤 "))
         }
-        item.appendChild(document.createTextNode(user.name || user.id))
+        item.appendChild(document.createTextNode((user.name || user.id) + (user.kind === "agent" ? " (AI agent)" : "")))
         item.addEventListener("click", async () => {
           // P3-4: Optimistic update
           btn.dataset.assigned = userId

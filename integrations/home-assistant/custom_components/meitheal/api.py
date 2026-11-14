@@ -57,6 +57,23 @@ def task_path(task_id: str) -> str:
     return f"/api/tasks/{quote(task_id, safe='')}"
 
 
+def task_matches_identifier(data: object, task_id: str | None = None) -> bool:
+    """Return True when a task receipt has an ID matching the requested UUID or ticket key."""
+    if not isinstance(data, dict) or data.get("error"):
+        return False
+    resolved_id = data.get("id")
+    if not isinstance(resolved_id, str) or not resolved_id:
+        return False
+    if task_id is None:
+        return True
+    if not task_id:
+        return False
+    if resolved_id == task_id:
+        return True
+    ticket_key = data.get("ticket_key")
+    return isinstance(ticket_key, str) and bool(ticket_key) and ticket_key.upper() == task_id.upper()
+
+
 async def async_validate_transport(
     hass: HomeAssistant, origin: URL, token: str | None
 ) -> None:

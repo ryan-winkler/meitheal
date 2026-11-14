@@ -45,16 +45,29 @@ create_task:
           min: 0
           max: 5
           step: 1
-    assigned_to:
+    assignee:
+      name: Assignee
+      description: The person the task is for. They need a Home Assistant account. Leave empty to use Meitheal's default assignee.
+      example: person.aoife
+      selector:
+        entity:
+          domain: person
+    assignee_id:
       name: Assignee ID
-      description: User ID or agent assignee ID to assign the task to
-      example: "custom_claude"
+      description: A Meitheal assignee ID, for an assignee who is not a Home Assistant person, such as an AI agent. Use this or Assignee, not both.
+      example: custom_1a2b3c4d
+      selector:
+        text:
+    assigned_to:
+      name: Assignee ID (earlier name)
+      description: Same as Assignee ID. Kept so existing automations keep working.
+      example: custom_1a2b3c4d
       selector:
         text:
     assignee_user:
-      name: Assignee User
-      description: Alternative name or ID for the assigned user
-      example: "Claude"
+      name: Assignee user (earlier name)
+      description: Same as Assignee ID. Kept so existing automations keep working.
+      example: custom_1a2b3c4d
       selector:
         text:
 

@@ -123,6 +123,39 @@ async def test_native_creation_fields_and_flat_receipt(coordinator):
     coordinator.async_request_refresh.assert_awaited_once()
 
 
+async def test_creation_sends_the_assignee_only_when_given(coordinator):
+    coordinator.async_request_refresh = AsyncMock()
+    coordinator.api.async_request.return_value = {"id": "created"}
+    with patch.object(coordinator, "_fire_event"):
+        await coordinator.async_create_task("For the agent", assigned_to="custom_1a2b3c4d")
+    assert coordinator.api.async_request.await_args.kwargs["payload"] == {
+        "title": "For the agent", "assigned_to": "custom_1a2b3c4d"}
+
+
+def test_create_task_assignee_fields_resolve_to_meitheal_ids(hass):
+    from homeassistant.exceptions import ServiceValidationError
+
+    from custom_components.meitheal import CREATE_TASK_SCHEMA
+    from custom_components.meitheal.helpers import resolve_assignee
+
+    hass.states.async_set("person.aoife", "home", {"user_id": "abc123"})
+    hass.states.async_set("person.visitor", "home", {"user_id": None})
+
+    # Neither field leaves the choice to Meitheal's default assignee.
+    assert resolve_assignee(hass, None, None) is None
+    assert resolve_assignee(hass, "person.aoife", None) == "ha_abc123"
+    assert resolve_assignee(hass, None, "custom_1a2b3c4d") == "custom_1a2b3c4d"
+    for person, assignee_id in (("person.visitor", None), ("person.missing", None),
+                                (None, "Claude"), (None, "custom_"), (None, "ha_../x")):
+        with pytest.raises(ServiceValidationError):
+            resolve_assignee(hass, person, assignee_id)
+
+    assert CREATE_TASK_SCHEMA({"title": "Plan", "assignee": "person.aoife"})["assignee"] == "person.aoife"
+    for invalid in ({"assignee": "light.kitchen"}, {"assignee": "person.aoife", "assignee_id": "custom_1a2b3c4d"}):
+        with pytest.raises(vol.Invalid):
+            CREATE_TASK_SCHEMA({"title": "Plan", **invalid})
+
+
 @pytest.mark.parametrize("result", [None, {}, {"task": {"id": "nested"}}, {"id": ""}, {"id": "one", "error": "Rejected"}])
 async def test_bad_create_receipt_emits_no_success(coordinator, result):
     coordinator.api.async_request.return_value = result
@@ -230,7 +263,7 @@ def test_runtime_schemas_metadata_and_auth_translations_agree():
     with pytest.raises(vol.Invalid):
         CREATE_TASK_SCHEMA({"title": "Bad priority", "priority": 6})
     services = yaml.safe_load((COMPONENT / "services.yaml").read_text())
-    assert set(services["create_task"]["fields"]) == set(create)
+    assert set(services["create_task"]["fields"]) == {*create, "assignee", "assignee_id"}
     assert set(services["search_tasks"]["fields"]) == set(fields)
     strings = json.loads((COMPONENT / "strings.json").read_text())
     assert strings == json.loads((COMPONENT / "translations/en.json").read_text())
@@ -284,6 +317,24 @@ async def test_completion_rejects_bad_receipt_without_success_event(coordinator,
     with patch.object(coordinator, "_fire_event") as event, pytest.raises(UpdateFailed):
         await coordinator.async_complete_task(task_id="a")
     event.assert_not_called()
+
+
+async def test_completion_and_update_accept_ticket_key_case_insensitively(coordinator):
+    coordinator.api.async_request.return_value = {"id": "uuid-42", "ticket_key": "MTH-42", "status": "done"}
+    coordinator.async_request_refresh = AsyncMock()
+    await coordinator.async_complete_task(task_id="MTH-42")
+    assert coordinator.api.async_request.call_args.args[:2] == ("PUT", "/api/tasks/MTH-42")
+
+    coordinator.api.async_request.reset_mock()
+    coordinator.api.async_request.side_effect = [
+        {"id": "uuid-42", "ticket_key": "MTH-42", "status": "pending", "task_version": 7},
+        {"id": "uuid-42", "ticket_key": "MTH-42", "status": "done"},
+    ]
+    await coordinator.async_update_task("mth-42", {"status": "done"})
+    assert [call.args[:2] for call in coordinator.api.async_request.call_args_list] == [
+        ("GET", "/api/tasks/mth-42"),
+        ("PUT", "/api/tasks/mth-42"),
+    ]
 
 
 @pytest.mark.parametrize("repeated", [False, True])

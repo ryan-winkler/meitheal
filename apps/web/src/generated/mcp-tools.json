@@ -1796,10 +1796,30 @@
     },
     {
       "name": "createCustomUser",
-      "description": "Create a custom user",
+      "description": "A custom user is an assignee without a Home Assistant account. Set kind to agent for an AI agent that works its tasks through a linked agent token.",
       "inputSchema": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "color": {
+            "type": "string",
+            "description": "Hex colour, for example #6366f1"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "human",
+              "agent"
+            ],
+            "default": "human"
+          }
+        },
+        "required": [
+          "name"
+        ]
       }
     },
     {
@@ -2151,6 +2171,23 @@
       }
     },
     {
+      "name": "getA2ATask",
+      "description": "Requires a token with a2a:execute, search:read, and tasks:read, plus A2A-Version: 1.0.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "Task UUID or ticket key (e.g., MTH-42)"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
       "name": "createAgentToken",
       "description": "Issue a zero-trust agent token with fine-grained scopes. The plaintext token is returned ONCE in the response — store it securely. Requires Home Assistant admin access.\n\n**For n8n/Node-RED**: Create a token with only the scopes your workflow needs, then set it as Bearer token in your HTTP Request node.",
       "inputSchema": {
@@ -2169,8 +2206,8 @@
               "enum": [
                 "tasks:read",
                 "tasks:propose",
-                "tasks:write",
                 "tasks:write:assigned",
+                "tasks:write",
                 "tasks:delete",
                 "projects:read",
                 "projects:write",
@@ -2178,7 +2215,7 @@
                 "mcp:execute",
                 "a2a:execute"
               ],
-              "description": "Fine-grained permission scope for agent tokens. Grant only the scopes each client needs."
+              "description": "Fine-grained permission scope for agent tokens. Grant only the scopes each client needs; tasks:write:assigned limits changes to tasks assigned to the token's agent assignee."
             },
             "minItems": 1
           },
@@ -2186,7 +2223,7 @@
             "type": "string",
             "maxLength": 128,
             "nullable": true,
-            "description": "Optional user or agent ID linked to tasks:write:assigned"
+            "description": "ID of an agent assignee (custom user with kind agent). Required when tasks:write:assigned is granted without tasks:write."
           },
           "assignee_id": {
             "type": "string",
@@ -2226,7 +2263,7 @@
     },
     {
       "name": "updateAgentToken",
-      "description": "Modify the display name, permission scopes, or linked assignee of an existing token. The token value itself cannot be changed — revoke and recreate if compromised.",
+      "description": "Modify the display name, permission scopes, or linked agent assignee of an existing token. The token value itself cannot be changed — revoke and recreate if compromised.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -2245,8 +2282,8 @@
               "enum": [
                 "tasks:read",
                 "tasks:propose",
-                "tasks:write",
                 "tasks:write:assigned",
+                "tasks:write",
                 "tasks:delete",
                 "projects:read",
                 "projects:write",
@@ -2254,7 +2291,7 @@
                 "mcp:execute",
                 "a2a:execute"
               ],
-              "description": "Fine-grained permission scope for agent tokens. Grant only the scopes each client needs."
+              "description": "Fine-grained permission scope for agent tokens. Grant only the scopes each client needs; tasks:write:assigned limits changes to tasks assigned to the token's agent assignee."
             },
             "minItems": 1
           },
@@ -3248,6 +3285,15 @@
       "path": "/api/unfurl",
       "hasBody": true,
       "pathParams": [],
+      "queryParams": []
+    },
+    "getA2ATask": {
+      "method": "GET",
+      "path": "/api/a2a/tasks/{id}",
+      "hasBody": false,
+      "pathParams": [
+        "id"
+      ],
       "queryParams": []
     },
     "createAgentToken": {

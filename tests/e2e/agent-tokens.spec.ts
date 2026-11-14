@@ -17,7 +17,8 @@ import {
   type AgentTokenRecord,
 } from "../../packages/domain-auth/src/agent-tokens"
 import { GET, POST, PATCH, DELETE } from "../../apps/web/src/pages/api/agent-tokens/index"
-import { getPersistenceClient, resetPersistenceForTests } from "../../apps/web/src/domains/tasks/persistence/store"
+import { ensureSchema, getPersistenceClient, resetPersistenceForTests } from "../../apps/web/src/domains/tasks/persistence/store"
+import { UserRepository } from "../../apps/web/src/domains/tasks/persistence/user-repository"
 
 /**
  * Agent Token E2E Tests — Phase 24 T10
@@ -140,6 +141,12 @@ const handlerTest = test.extend<{ invoke: InvokeAgentRoute }>({
     resetPersistenceForTests()
 
     try {
+      await ensureSchema()
+      const users = new UserRepository(getPersistenceClient())
+      await users.createCustomUser("custom_agent_1", "Claude", "#6366f1", "agent")
+      await users.createCustomUser("custom_agent_2", "Codex", "#10b981", "agent")
+      await users.createCustomUser("custom_human_1", "Aoife", "#f59e0b", "human")
+
       await use((method, data, search = "") => {
         const request = new Request(`http://localhost/api/agent-tokens${search}`, {
           method,
@@ -231,6 +238,8 @@ handlerTest.describe("Agent Token — Authorized Handler", () => {
   handlerTest("PATCH /api/agent-tokens updates token name and enforces assignee and empty-body rules", async ({ invoke }) => {
     const missingAssignee = await invoke("POST", { name: "assigned-no-id", scopes: ["tasks:write:assigned"] })
     expect(missingAssignee.status).toBe(400)
+    const humanAssignee = await invoke("POST", { name: "human-assignee", scopes: ["tasks:read"], assigneeId: "custom_human_1" })
+    expect(humanAssignee.status).toBe(400)
 
     // Create a token first
     const createRes = await invoke("POST", {
@@ -472,16 +481,12 @@ handlerTest("token creation validates expiration, body limits, CSRF origin, and 
   expect(response.headers.get("cache-control")).toBe("no-store")
 })
 
-settingsBrowserTest("Settings Agent Tokens UI handles deferred load, retry, focus, secret wipe, assignee scope, revoke, and delete", async ({ page }) => {
+settingsBrowserTest("Settings Agent Tokens UI handles deferred load, retry, focus, secret wipe, assignee scope, revoke, and delete", async ({ page, request }) => {
   settingsBrowserTest.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the built App and disposable authenticated fixture")
 
-  await page.route("**/api/users", route =>
-    route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({ users: [{ id: "custom_agent_1", name: "Claude" }] }),
-    }),
-  )
+  const createdAgent = await request.post("/api/users/custom", { data: { name: "Claude", kind: "agent" } })
+  expect(createdAgent.status(), await createdAgent.text()).toBe(201)
+  const claude = await createdAgent.json() as { id: string; name: string }
 
   let failOnce = true
   await page.route("**/api/agent-tokens?include_revoked=1", async route => {
@@ -531,11 +536,14 @@ settingsBrowserTest("Settings Agent Tokens UI handles deferred load, retry, focu
   await page.locator("#agent-token-create-btn").click()
   await page.locator("#agent-token-name").fill("Assigned Scoped Token")
   await page.locator('input[name="agent-token-scopes"][value="tasks:write:assigned"]').check()
-  await expect(page.locator('#agent-token-assignee option[value="custom_agent_1"]')).toBeAttached()
+  await expect(page.locator(`#agent-token-assignee option[value="${claude.id}"]`)).toBeAttached()
   await page.locator("#agent-token-save").click()
   await expect(page.locator("#agent-token-form")).toBeVisible()
   await expect(page.locator("#agent-token-assignee")).toBeFocused()
-  await page.locator("#agent-token-assignee").selectOption("custom_agent_1")
+  await page.locator("#agent-token-assignee").selectOption("__new__")
+  await expect(page.locator("#agent-token-new-assignee")).toBeVisible()
+  await page.locator("#agent-token-assignee").selectOption(claude.id)
+  await expect(page.locator("#agent-token-new-assignee")).toBeHidden()
   await page.locator("#agent-token-save").click()
   await expect(page.locator("#agent-token-form")).toBeVisible()
   await expect(page.locator("#agent-token-save")).toBeFocused()
@@ -543,10 +551,18 @@ settingsBrowserTest("Settings Agent Tokens UI handles deferred load, retry, focu
   await expect(page.locator("#agent-token-reveal")).toBeVisible()
   await page.locator("#agent-token-reveal-done").click()
   const assignedRow = page.locator(".agent-tokens__row", { hasText: "Assigned Scoped Token" })
-  await expect(assignedRow).toContainText("assignee:custom_agent_1")
+  await expect(assignedRow).toContainText("Acts as Claude")
   await assignedRow.locator("[data-delete]").click()
   await page.locator("#confirm-ok").click()
   await expect(assignedRow).toHaveCount(0)
+
+  await page.locator("#agent-token-create-btn").click()
+  await page.locator("#agent-token-assignee").selectOption("__new__")
+  await expect(page.locator("#agent-token-new-assignee")).toBeVisible()
+  for (const scope of ["mcp:execute", "tasks:read", "tasks:write:assigned", "search:read"]) {
+    await expect(page.locator(`input[name="agent-token-scopes"][value="${scope}"]`)).toBeChecked()
+  }
+  await page.locator("#agent-token-form-cancel").click()
 
   await page.locator("#agent-token-create-btn").click()
   await page.locator("#agent-token-name").fill("UI QA Token")

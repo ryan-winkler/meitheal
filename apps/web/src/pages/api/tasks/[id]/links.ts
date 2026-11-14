@@ -77,14 +77,23 @@ export const POST: APIRoute = async ({ params, request, locals }) => {
       return apiError("Cannot link a task to itself", 400)
     }
 
-    const denied = await requireAssignedTaskWriteAccess(
+    if (!resolved) return apiError("Task not found", 404)
+    const sourceDenied = await requireAssignedTaskWriteAccess(
       locals.agentToken,
       (id) => repo.findById(id),
-      [sourceTaskId, target_task_id],
+      [sourceTaskId],
       "Agent can only modify links for tasks assigned to it",
     )
-    if (denied) return denied
-    if (!resolved) return apiError("Task not found", 404)
+    if (sourceDenied) return sourceDenied
+    const targetTask = await repo.findById(target_task_id)
+    if (!targetTask) return apiError("Target task not found", 404)
+    const targetDenied = await requireAssignedTaskWriteAccess(
+      locals.agentToken,
+      async () => targetTask,
+      [target_task_id],
+      "Agent can only modify links for tasks assigned to it",
+    )
+    if (targetDenied) return targetDenied
 
     // Idempotency check
     if (await repo.linkExists(sourceTaskId, target_task_id, link_type)) {
@@ -128,9 +137,10 @@ export const DELETE: APIRoute = async ({ params, request, url, locals }) => {
     await ensureSchema()
     const repo = new TaskRepository(getPersistenceClient())
     const resolved = await repo.resolveTaskId(params.id!)
-    const taskId = resolved?.id ?? params.id!
+    if (!resolved) return apiError("Task not found", 404)
+    const taskId = resolved.id
 
-    const endpoints = resolved ? await repo.getLinkEndpoints(link_id, taskId) : null
+    const endpoints = await repo.getLinkEndpoints(link_id, taskId)
     if (!endpoints) {
       const denied = await requireAssignedTaskWriteAccess(
         locals.agentToken,

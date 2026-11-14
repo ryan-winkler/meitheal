@@ -7,7 +7,7 @@ test("Settings counts actual discovery documents and describes only the read-onl
   const cardResponse = await request.get("/api/a2a/agent-card")
   expect(cardResponse.status()).toBe(200)
   const card = await cardResponse.json()
-  expect(card.skills.map((skill: { id: string }) => skill.id)).toEqual(["task-search"])
+  expect(card.skills.map((skill: { id: string }) => skill.id)).toEqual(["task-search", "assigned-tasks"])
   expect(card.supportedInterfaces).toHaveLength(1)
   const manifestResponse = await request.get("/.well-known/mcp.json")
   expect(manifestResponse.status()).toBe(200)

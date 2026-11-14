@@ -478,7 +478,7 @@
     "protocol_discovery_disabled": "Tá fionnachtain díchumasaithe.",
     "protocol_discovery_unavailable": "Níl fionnachtain ar fáil. Seiceáil an nasc, ansin roghnaigh Seiceáil fionnachtain chun atriail a dhéanamh.",
     "protocol_discovery_mcp": "Tá fionnachtain MCP ar fáil. Braitheann rochtain ar uirlisí ar scóip chomhartha an chliaint.",
-    "protocol_discovery_a2a": "Tá fionnachtain A2A ar fáil. Is féidir le comharthaí raonaithe teidil tascanna gníomhacha a chuardach.",
+    "protocol_discovery_a2a": "Tá fionnachtain A2A ar fáil. Is féidir le comharthaí raonaithe teidil tascanna gníomhacha a chuardach agus tascanna sannta a ngníomhaire a léamh.",
     "protocol_discovery_retry": "Seiceáil fionnachtain",
     "active": "Active",
     "a2a_title": "A2A (Agent-to-Agent)",

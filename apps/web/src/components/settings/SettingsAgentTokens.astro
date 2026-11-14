@@ -72,6 +72,31 @@ const scopeGroups = [
         />
       </div>
 
+      <div class="form-group">
+        <label class="form-label" for="agent-token-assignee">Acts as</label>
+        <select class="form-select" id="agent-token-assignee" aria-describedby="agent-token-assignee-hint">
+          <option value="">No assignee (automation only)</option>
+          <option value="__new__">New agent assignee…</option>
+        </select>
+        <p class="agent-tokens__hint" id="agent-token-assignee-hint">
+          Choose an agent assignee to hand tasks to this agent. It then sees the tasks assigned to it and can answer, update and hand them back.
+        </p>
+      </div>
+
+      <div class="form-group" id="agent-token-new-assignee" hidden>
+        <label class="form-label" for="agent-token-new-assignee-name">Agent name</label>
+        <input
+          type="text"
+          class="form-input"
+          id="agent-token-new-assignee-name"
+          placeholder="e.g., Claude, Codex"
+          maxlength="100"
+          autocomplete="off"
+          data-lpignore="true"
+        />
+        <p class="agent-tokens__hint">This name appears in the assignee list on every task.</p>
+      </div>
+
       <fieldset class="form-group" style="border: 0; padding: 0; margin: 0;">
         <legend class="form-label">Scopes</legend>
         <div class="agent-tokens__scope-grid">
@@ -88,13 +113,6 @@ const scopeGroups = [
           ))}
         </div>
       </fieldset>
-
-      <div class="form-group">
-        <label class="form-label" for="agent-token-assignee">Assigned User or Agent (required for <code>tasks:write:assigned</code>)</label>
-        <select class="form-select" id="agent-token-assignee">
-          <option value="">None (unassigned)</option>
-        </select>
-      </div>
 
       <div class="form-group">
         <label class="form-label" for="agent-token-expires">Expiry (optional)</label>
@@ -279,6 +297,20 @@ const scopeGroups = [
     flex: 1;
     min-width: 0;
     color: var(--text-primary);
+  }
+  .agent-tokens__hint {
+    margin: 4px 0 0;
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
+  .agent-tokens__assignee-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 1px 6px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    color: var(--text-primary);
+    font-size: 11px;
   }
   .agent-tokens__revoked .agent-tokens__row-name {
     text-decoration: line-through;

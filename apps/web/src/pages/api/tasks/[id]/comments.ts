@@ -8,8 +8,8 @@ import { requireAssignedTaskWriteAccess, restrictedAssigneeId } from "@lib/agent
 import { checkCommentMentionWriteContext, commentAttempt, commentMentionProblem, prepareCommentMentions } from "@lib/comment-mention-request"
 import { commentAttemptHorizonMs, commentMentions, hasCommentMentionSelector, redactCommentMentionSelectors } from "@lib/comment-mentions"
 import { verifiedIngressUser } from "@lib/verified-ingress-user"
+import { notifyAgentComment } from "@domains/notifications"
 import { activeParticipantRequired, commentFailure, commentJson, hasCurrentTaskParticipant, readComment, resolveCommentAuthor } from "@lib/task-comment-request"
-import { dispatchTaskEvent } from "@lib/webhook-dispatcher"
 
 export const GET: APIRoute = async ({ locals, params, request }) => {
   try {
@@ -59,7 +59,8 @@ export const POST: APIRoute = async ({ params, request, locals }) => {
     const repo = new TaskRepository(client)
     const mentions = new CommentMentionRepository(client)
     const resolved = await repo.resolveTaskId(params.id!)
-    const taskId = resolved?.id ?? params.id!
+    if (!resolved) return apiError("Task not found", 404)
+    const taskId = resolved.id
 
     const agentToken = locals.agentToken
     const denied = await requireAssignedTaskWriteAccess(
@@ -69,7 +70,6 @@ export const POST: APIRoute = async ({ params, request, locals }) => {
       "Agent can only comment on tasks assigned to it",
     )
     if (denied) return denied
-    if (!resolved) return apiError("Task not found", 404)
     if (attempt && actor.owner) {
       if (await mentions.replay(taskId, actor.owner, attempt.key, content)) {
         if (!await hasCurrentTaskParticipant(locals, request.signal, true)) return activeParticipantRequired()
@@ -83,6 +83,9 @@ export const POST: APIRoute = async ({ params, request, locals }) => {
     if (attempt && actor.owner) {
       const created = await mentions.create(taskId, prepared.content, actor.author, actor.owner, prepared.recipients,
         { ...attempt, rawContent: content, cutoff: Date.now() - commentAttemptHorizonMs }, prepared.verifiedHuman)
+      if (agentToken && created.state === "created") {
+        notifyAgentComment(taskId, { id: created.comment.id, author: actor.author, content: prepared.content }).catch(() => {})
+      }
       return attemptResponse(created)
     }
     const commentResult = await repo.addCommentChecked(
@@ -95,9 +98,8 @@ export const POST: APIRoute = async ({ params, request, locals }) => {
     )
     if (commentResult.state === "assignee_mismatch") return apiError("Agent can only comment on tasks assigned to it", 403)
     if (commentResult.state === "not_found") return apiError("Task not found", 404)
-    if (agentToken) {
-      dispatchTaskEvent("task.commented", { id: taskId, comment_id: commentResult.comment.id, author: actor.author, content: prepared.content }).catch(() => {})
-    }
+    // Tells the household and emits task.commented for the agent's answer.
+    if (agentToken) notifyAgentComment(taskId, { id: commentResult.comment.id, author: actor.author, content: prepared.content }).catch(() => {})
     return commentJson(commentResult.comment, 201)
   } catch {
     return commentFailure("post", "Failed to create comment")
