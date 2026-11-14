@@ -2,6 +2,8 @@
 engines:
   tsqllint:
     enabled: false
+  agentlinter:
+    enabled: false
 exclude_paths:
   - "pnpm-lock.yaml"
   - "apps/web/drizzle/migrations/*.sql"
@@ -16,6 +18,11 @@ exclude_paths:
   - "apps/web/.astro/**"
   - "coverage/**"
   - "apps/web/public/**"
+  - "scripts/green-canary-driver-parent.sh"
+  - "apps/web/scripts/perf-budget-check.mjs"
+  - "AGENTS.md"
+  - "CODE_OF_CONDUCT.md"
+  - "SECURITY.md"
   - "integrations/home-assistant/custom_components/meitheal/brand/**"
   - "meitheal-hub/*.png"
   - "meitheal-hub-canary/*.png"

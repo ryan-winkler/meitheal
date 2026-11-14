@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Remove tokens, private addresses, and household details. Use the [security policy](https://github.com/ryan-winkler/meitheal/blob/main/SECURITY.md) for a suspected vulnerability.
+        Remove tokens, private addresses, and household details. Use the [security policy](https://github.com/ryan-winkler/meitheal/blob/dev/SECURITY.md) for a suspected vulnerability.
 
   - type: markdown
     attributes:
@@ -73,7 +73,7 @@ body:
     id: meitheal-version
     attributes:
       label: Meitheal Hub version
-      placeholder: "0.1.32"
+      placeholder: "0.0.1"
     validations:
       required: true
 

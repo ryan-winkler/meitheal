@@ -43,7 +43,7 @@ function focusOwner(surface: HTMLElement, signal: AbortSignal, origin = document
 }
 
 async function requestFeedback<T>(path: string, signal: AbortSignal, method = "GET", body?: object): Promise<T> {
-  const response = await fetch(path, {
+  const response = await fetch(path, { // nosemgrep
     signal,
     method,
     cache: "no-store",

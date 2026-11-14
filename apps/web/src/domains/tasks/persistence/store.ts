@@ -53,8 +53,10 @@ export interface PersistedTaskResponse {
   integration: IntegrationOutcome;
 }
 
-let clientSingleton: Client | null = null;
+let clientSingleton: Client | null = null
+let clientSingletonDbUrl: string | null = null
 let schemaInitialization: Promise<void> | undefined
+let initializedDbUrl: string | null = null
 let remoteSchemaCheck: Promise<void> | undefined
 let startupBackupAttempted = false
 
@@ -86,14 +88,25 @@ function ensureFileDbDirectory(dbUrl: string): void {
 }
 
 function getClient(): Client {
+  const dbUrl = resolveDbUrl()
+  if (clientSingleton && clientSingletonDbUrl === dbUrl) {
+    return clientSingleton
+  }
   if (clientSingleton) {
-    return clientSingleton;
+    const prev = clientSingleton
+    clientSingleton = null
+    clientSingletonDbUrl = null
+    schemaInitialization = undefined
+    initializedDbUrl = null
+    remoteSchemaCheck = undefined
+    startupBackupAttempted = false
+    prev.close()
   }
 
-  const dbUrl = resolveDbUrl();
-  ensureFileDbDirectory(dbUrl);
+  ensureFileDbDirectory(dbUrl)
   clientSingleton = openDatabase(dbUrl)
-  return clientSingleton;
+  clientSingletonDbUrl = dbUrl
+  return clientSingleton
 }
 
 /** Low-level SQLite client — use for raw SQL queries. */
@@ -156,8 +169,14 @@ async function hasColumn(client: Client, tableName: string, columnName: string):
  * Concurrent requests share one initialization and later calls reuse its result.
  */
 export function ensureSchema(): Promise<void> {
+  const dbUrl = resolveDbUrl()
+  if (initializedDbUrl !== dbUrl) {
+    schemaInitialization = undefined
+    initializedDbUrl = dbUrl
+  }
   schemaInitialization ??= initializeSchema().catch(error => {
     schemaInitialization = undefined
+    initializedDbUrl = null
     throw error
   })
   return schemaInitialization

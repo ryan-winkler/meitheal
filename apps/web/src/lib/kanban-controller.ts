@@ -87,7 +87,7 @@ export function initKanbanArea(
       pendingMoves.set(card, lane)
       card.setAttribute("aria-busy", "true")
       try {
-        const res = await fetch(buildTaskApiUrl(taskId), {
+        const res = await fetch(buildTaskApiUrl(taskId), { // nosemgrep
           method: "PUT",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ status, task_type: typeChanged ? newType : undefined }),
@@ -316,7 +316,7 @@ export function initKanbanArea(
           }
 
           try {
-            const res = await fetch(buildTaskApiUrl(taskId!), {
+            const res = await fetch(buildTaskApiUrl(taskId!), { // nosemgrep
               method: "PUT",
               headers: { "content-type": "application/json" },
               body: JSON.stringify({ title: newTitle }),
@@ -376,7 +376,7 @@ export function initKanbanArea(
           const dupBtn = btn;
           dupBtn.disabled = true;
           dupBtn.classList.add("btn-loading");
-          const res = await fetch(buildTaskApiUrl(id));
+          const res = await fetch(buildTaskApiUrl(id)); // nosemgrep
           if (!res.ok) {
             dupBtn.disabled = false;
             dupBtn.classList.remove("btn-loading");

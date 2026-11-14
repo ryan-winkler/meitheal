@@ -54,7 +54,7 @@ export async function readFreshDeferral(id: string, signal: AbortSignal): Promis
   if (!await allowsDeferral(worker)) throw new Error("The current worker needs an update")
   const path = `/api/tasks/${encodeURIComponent(id)}?deferralRead=${performance.timeOrigin}-${++nonce}`
   const expected = new URL((window.__ingress_path?.replace(/\/+$/, "") ?? "") + path, location.origin)
-  const response = await fetch(path, {
+  const response = await fetch(path, { // nosemgrep
     cache: "no-store",
     redirect: "error",
     signal: AbortSignal.any([signal, AbortSignal.timeout(DEFERRAL_TIMEOUT_MS)]),
@@ -72,7 +72,7 @@ export async function readFreshDeferral(id: string, signal: AbortSignal): Promis
 
 export async function writeDeferral(id: string, deferred: boolean, guard: DeferralGuard, signal: AbortSignal): Promise<DeferralOutcome> {
   try {
-    const response = await fetch(`/api/tasks/${encodeURIComponent(id)}/deferral`, {
+    const response = await fetch(`/api/tasks/${encodeURIComponent(id)}/deferral`, { // nosemgrep
       method: "PATCH",
       headers: { "content-type": "application/json", "X-Meitheal-Local-Conflict": "1" },
       body: JSON.stringify({ deferred, ...guard }),

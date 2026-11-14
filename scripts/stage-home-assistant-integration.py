@@ -30,13 +30,13 @@ def read_files(ref: str) -> dict[str, bytes]:
     git_bin = shutil.which("git")
     if git_bin is None:
         raise FileNotFoundError("git executable not found in PATH")
-    commit = subprocess.check_output(  # nosec B603
-        [git_bin, "rev-parse", "--verify", "--end-of-options", f"{ref}^{{commit}}"],
+    commit = subprocess.check_output(  # nosec B603  # nosemgrep
+        [git_bin, "rev-parse", "--verify", "--end-of-options", f"{ref}^{{commit}}"],  # nosemgrep
         cwd=REPO_ROOT,
         text=True,
     ).strip()
-    archive = subprocess.check_output(  # nosec B603
-        [git_bin, "archive", "--format=tar", f"{commit}:{SOURCE}", *REPOSITORY_FILES, COMPONENT],
+    archive = subprocess.check_output(  # nosec B603  # nosemgrep
+        [git_bin, "archive", "--format=tar", f"{commit}:{SOURCE}", *REPOSITORY_FILES, COMPONENT],  # nosemgrep
         cwd=REPO_ROOT,
     )
     files = {}

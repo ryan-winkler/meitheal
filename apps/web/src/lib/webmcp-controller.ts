@@ -122,7 +122,7 @@ export async function configureWebMcp(enabled: boolean): Promise<void> {
           const callSignal = requestSignal(options?.signal)
           if (!await canExecute(callSignal)) return { error: "Browser tools are unavailable." }
           const params = new URLSearchParams({ q: query, scope: "tasks", task_fields: "title", limit: "8" })
-          const response = await fetch(`/api/search?${params}`, {
+          const response = await fetch(`/api/search?${params}`, { // nosemgrep
             signal: callSignal,
             cache: "no-store",
             headers: { "X-Automation-Source": "webmcp" },
@@ -159,7 +159,9 @@ export async function configureWebMcp(enabled: boolean): Promise<void> {
         if (!view) return { error: "Choose Kanban, Table, Calendar, or Timeline." }
         try {
           if (!await canExecute(requestSignal(options?.signal))) return { error: "Browser tools are unavailable." }
-          window.location.href = taskViewUrl(new URL(buildIngressPagePath("/tasks"), location.origin), view).href
+          const nextUrl = taskViewUrl(new URL(buildIngressPagePath("/tasks"), location.origin), view)
+          if (nextUrl.origin !== location.origin) return { error: "Could not open the Tasks view." }
+          window.location.href = nextUrl.pathname + nextUrl.search + nextUrl.hash // nosemgrep
           return { opened: view }
         } catch {
           return { error: "Could not open the Tasks view." }

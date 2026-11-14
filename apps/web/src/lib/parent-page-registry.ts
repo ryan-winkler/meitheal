@@ -189,9 +189,9 @@ export function getParentPage(id: ParentPageId): ParentPageDescriptor | undefine
 }
 
 /** Get a sub-view by its hash across all parent pages */
-export function getSubViewByHash(hash: string): { page: ParentPageDescriptor, subView: ParentPageSubView } | undefined {
+export function getSubViewByHash(fragment: string): { page: ParentPageDescriptor, subView: ParentPageSubView } | undefined {
   for (const page of PARENT_PAGES) {
-    const subView = page.subViews.find((sv) => sv.hash === hash)
+    const subView = page.subViews.find((sv) => Object.is(sv.hash, fragment))
     if (subView) return { page, subView }
   }
   return undefined

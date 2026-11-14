@@ -1,11 +1,13 @@
 {
   "extends": "../tsconfig.base.json",
   "compilerOptions": {
+    "allowJs": true,
     "types": ["node"],
     "paths": {
       "@domains/*": ["../apps/web/src/domains/*"],
-      "@lib/*": ["../apps/web/src/lib/*"]
+      "@lib/*": ["../apps/web/src/lib/*"],
+      "@i18n/*": ["../apps/web/src/i18n/*"]
     }
   },
-  "include": ["e2e", "governance", "types", "playwright.config.ts", "../apps/web/src/env.d.ts"]
+  "include": ["e2e", "governance", "unit", "types", "playwright.config.ts", "../apps/web/src/env.d.ts"]
 }

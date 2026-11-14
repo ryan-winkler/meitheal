@@ -23,6 +23,7 @@
  * @bounded-context integration
  */
 import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability";
+import { classifyNetworkHost } from "@meitheal/integration-core";
 
 const logger = createLogger({
   service: "meitheal-web", env: process.env.NODE_ENV ?? "development",
@@ -61,17 +62,6 @@ export interface CalDAVEvent {
 
 // ─── SSRF Protection ────────────────────────────────────────────────
 
-/** Private/reserved IP ranges that MUST be rejected */
-const PRIVATE_RANGES = [
-  /^127\./, /^10\./, /^172\.(1[6-9]|2\d|3[01])\./, /^192\.168\./,
-  /^169\.254\./, /^0\./, /^fc00:/i, /^fd/i, /^fe80:/i, /^::1$/,
-];
-
-const BLOCKED_HOSTNAMES = [
-  "localhost", "metadata.google.internal", "instance-data",
-  "metadata.internal", "169.254.169.254",
-];
-
 /**
  * Validate a CalDAV URL for SSRF safety.
  * Rejects private IPs, localhost, metadata endpoints, and non-HTTPS in production.
@@ -85,17 +75,17 @@ export function validateCalDAVUrl(rawUrl: string): { valid: boolean; error?: str
       return { valid: false, error: "Only HTTP/HTTPS protocols are allowed" };
     }
 
-    // Block known dangerous hostnames
-    const hostname = url.hostname.toLowerCase();
-    if (BLOCKED_HOSTNAMES.some((h) => hostname === h || hostname.endsWith(`.${h}`))) {
+    const rawHostname = url.hostname.toLowerCase();
+    const unbracketed = rawHostname.startsWith("[") && rawHostname.endsWith("]")
+      ? rawHostname.slice(1, -1)
+      : rawHostname;
+    const hostname = unbracketed.replace(/\.+$/, "");
+    const hostSafety = classifyNetworkHost(hostname);
+    if (hostSafety === "unconditional") {
       return { valid: false, error: `Hostname "${hostname}" is blocked for security` };
     }
-
-    // Block private IP ranges
-    for (const range of PRIVATE_RANGES) {
-      if (range.test(hostname)) {
-        return { valid: false, error: "Private/internal IP addresses are not allowed" };
-      }
+    if (hostSafety === "private") {
+      return { valid: false, error: "Private/internal IP addresses are not allowed" };
     }
 
     // Warn on HTTP (but allow for local testing)
@@ -125,17 +115,19 @@ async function caldavFetch(
   username: string, password: string,
   extraHeaders: Record<string, string> = {},
 ): Promise<{ status: number; text: string }> {
+  const urlCheck = validateCalDAVUrl(url);
+  if (!urlCheck.valid) {
+    throw new Error(urlCheck.error);
+  }
+  const parsed = new URL(url);
+
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
-  const parsed = new URL(url);
-  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
-    throw new Error(`Unsupported CalDAV protocol: ${parsed.protocol}`);
-  }
-
   try {
-    const res = await fetch(parsed.href, {
+    const res = await fetch(parsed.href, { // nosemgrep
       method,
+      redirect: "error",
       headers: {
         "Content-Type": "application/xml; charset=utf-8",
         Authorization: basicAuthHeader(username, password),
@@ -385,7 +377,15 @@ export async function listCalDAVEvents(
 
   // Build absolute URL for the calendar
   const baseUrl = new URL(config.url);
-  const calUrl = new URL(calendarHref, baseUrl).toString();
+  const parsedCalUrl = new URL(calendarHref, baseUrl);
+  if (parsedCalUrl.origin !== baseUrl.origin) {
+    throw new Error(`CalDAV calendar href escaped configured origin: ${parsedCalUrl.origin}`);
+  }
+  const calUrlCheck = validateCalDAVUrl(parsedCalUrl.toString());
+  if (!calUrlCheck.valid) {
+    throw new Error(calUrlCheck.error);
+  }
+  const calUrl = parsedCalUrl.toString();
 
   const startStr = toICalUTC(start);
   const endStr = toICalUTC(end);

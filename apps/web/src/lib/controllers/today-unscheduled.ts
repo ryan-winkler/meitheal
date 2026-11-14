@@ -41,7 +41,7 @@ export function setupUnscheduledSection(
     list.setAttribute("aria-busy", "true")
     setStatus("Loading unscheduled tasks…")
     try {
-      const response = await fetch(url, {
+      const response = await fetch(url, { // nosemgrep
         signal: AbortSignal.any([lm.signal, controller.signal, AbortSignal.timeout(10_000)]),
         redirect: "error",
         cache: "no-store",

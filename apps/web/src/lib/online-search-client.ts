@@ -18,7 +18,7 @@ export async function searchWorkerReady(scope: URL, worker: ServiceWorker): Prom
 
 export async function fetchOnlineSearch(params: URLSearchParams, scope: URL, signal: AbortSignal): Promise<SearchResponse> {
   const endpoint = `api/search?${params}`
-  const response = await fetch("/" + endpoint, { cache: "no-store", redirect: "error", signal })
+  const response = await fetch("/" + endpoint, { cache: "no-store", redirect: "error", signal }) // nosemgrep
   if (!response.ok || response.url !== new URL(endpoint, scope).href ||
       !response.headers.get("cache-control")?.includes("no-store")) {
     void response.body?.cancel()

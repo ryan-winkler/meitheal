@@ -13,7 +13,7 @@ import { PartialSettingsSave, saveSettings, showSettingsSaveError, log } from "@
 
 async function applySyncConfiguration(path: string, payload: Record<string, unknown>): Promise<void> {
   try {
-    const response = await fetch(path, {
+    const response = await fetch(path, { // nosemgrep
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(payload),

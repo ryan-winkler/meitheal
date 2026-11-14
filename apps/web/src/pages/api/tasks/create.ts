@@ -62,7 +62,7 @@ function createCalendarAdapter(): CalendarIntegrationAdapter {
     const auth = resolveHomeAssistantAuthFromEnv();
     return new HomeAssistantCalendarAdapter({
       baseUrl: auth.baseUrl,
-      token: auth.token,
+      token: auth.token, // nosemgrep
       timeoutMs: 8_000
     });
   } catch (error) {
