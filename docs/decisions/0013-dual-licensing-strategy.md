@@ -2,14 +2,14 @@
 type: "Decision"
 title: "ADR 0013: Dual-Licensing Strategy (AGPLv3 + Commercial)"
 description: "Records the earlier decision to document separate licensing scopes."
-status: deprecated
+status: superseded
 ---
 
 # ADR 0013: Dual-Licensing Strategy (AGPLv3 + Commercial)
 
 ## Status
 
-Historical decision from 2 March 2026. See [LICENSE](../../LICENSE), [Commercial licensing](../../COMMERCIAL.md), and the [licensing runbook](../kcs/licensing.md) for the terms and workflow that apply.
+Historical decision from 2 March 2026, superseded by [ADR 0022](0022-agpl-source-license.md). See [LICENSE](../../LICENSE), [Commercial licensing](../../COMMERCIAL.md), and the [licensing runbook](../kcs/licensing.md) for the terms and workflow that apply.
 
 ## Context
 
