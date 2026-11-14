@@ -482,7 +482,9 @@ MCP tool inputs resolve local OpenAPI component references with bounded expansio
 
 ## Application logging and optional Loki forwarding
 
-The App's `log_level` and `log_categories` options configure newly created
+The App's `log_level` and `log_categories` options (defaulting to `auth`,
+`tasks`, `integrations`, `observability`, `ha`, `calendar`, `todo`, `api`,
+`security`, and `search`) configure newly created
 loggers, while `warn` and `error` events always bypass `log_categories`
 filtering so operational failures are never dropped. Changing App options
 requires a restart. An absent global option keeps the logger's own defaults.
@@ -501,7 +503,8 @@ with a plus tag. The address is redacted and surrounding punctuation remains vis
 
 An optional `loki_url` must be an HTTP(S) push endpoint without embedded
 credentials. The native sender does not follow redirects. It forwards the same
-redacted lines with only static service/environment labels. It queues at most
+redacted lines under the five fixed low-cardinality labels (`addon`, `service`,
+`env`, `level`, `domain`). It queues at most
 200 waiting lines, sends batches of 50, omits remote lines larger than 16 KiB,
 and uses a 250 ms flush delay with a one-second request timeout. Overflow,
 invalid endpoints, non-success responses and timeouts drop remote logs with a

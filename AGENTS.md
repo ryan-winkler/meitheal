@@ -162,8 +162,8 @@ Build-time generators produce zero-drift documentation served as static files.
 | Typed Tabler icon registry | `apps/web/scripts/generate-icons.mjs` | `src/generated/icon-registry.ts` |
 | AsyncAPI 2.6 spec | `apps/web/scripts/generate-asyncapi.mjs` | `public/asyncapi.yaml` |
 
-- `prebuild` runs `generate:openapi` -> `generate:mcp` -> `generate:icons` -> `generate:asyncapi` before `astro build`
-- Adding a new API route? Add its entry to the `paths` object in `generate-openapi.mjs` and regenerate `src/generated/mcp-tools.json`
+- `prebuild` runs `generate:codegen` (`generate:openapi` -> `generate:mcp` -> `generate:icons`) -> `generate:asyncapi` before `astro build`
+- Adding a new API route? Add its entry to the `paths` object in `generate-openapi.mjs` and run `pnpm --filter @meitheal/web run generate:codegen`
 - Adding a new domain concept? Add its schema to the `schemas` object in `generate-openapi.mjs`
 - Adding a new SSE/webhook event? Add its channel to `generate-asyncapi.mjs`
 

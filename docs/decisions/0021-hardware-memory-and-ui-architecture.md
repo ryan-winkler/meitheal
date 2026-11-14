@@ -4,7 +4,7 @@ title: "Hardware, Memory, and UI Surface Architecture"
 description: "Scopes Home Assistant entity state, streams Ingress HTML, bounds SQLite read/write concurrency, standardizes Evergreen Carbon surfaces and 64-icon Tabler sprites, and virtualizes the SVG timeline without changing schema 18."
 ---
 
-# ADR 0020: Hardware, Memory, and UI Surface Architecture
+# ADR 0021: Hardware, Memory, and UI Surface Architecture
 
 Date: 2026-11-13
 Status: Accepted
@@ -28,7 +28,7 @@ We adopt a four-track architecture while keeping `DATABASE_SCHEMA_VERSION = 18` 
    - Scope `domains/ha/ha-entities.ts` to enabled `calendar.*`, `todo.*`, and explicit `onEntityChange` listener IDs seeded via `config/entity_registry/list` plus a one-time startup `get_states` scan (capturing YAML entities without `unique_id`), refreshed dynamically via `entity_registry_updated`, `component_loaded`, WebSocket reconnect, and listener registration without subscribing to unfiltered `state_changed` events (`< 1.5 MiB` retained cache).
    - Stream every `text/html` Ingress response directly through `parse5-html-rewriting-stream` using streaming UTF-8 decoding and idempotent URL prefixing across `href`, `src`, `action`, and `srcset` attributes while leaving `<script>`, `<style>`, `<textarea>`, and `data-*` untouched.
    - Precompile MCP OpenAPI tool schemas (`src/generated/mcp-tools.json`) and remove `sharp` and `drizzle-orm` from production dependencies. Size V8 Old Space via `resolve_max_old_space_mb()` (`MEITHEAL_MAX_OLD_SPACE_MB >= 96` override; `55%` clamped to `[96, 160]` on bounded cgroups such as `105 MiB` under the `192 MiB` Green Canary cap; `128 MiB` default on unbounded hosts) and extend `/api/health` startup polling to 45 seconds with PID liveness checks.
-   - Bypass category filters on `warn` and `error` logs, preserve intact JSON lines in `config.river` under 5 fixed Loki labels (`addon`, `service`, `env`, `level`, `domain`), emit a 60-second `runtime.vitals` heartbeat, and expose `GET /api/diagnostics` exclusively to verified Home Assistant administrators or standalone local operators.
+   - Bypass category filters on `warn` and `error` logs, expand default `log_categories` to all 10 runtime domains (`auth`, `tasks`, `integrations`, `observability`, `ha`, `calendar`, `todo`, `api`, `security`, `search`), preserve intact JSON lines in `config.river` under 5 fixed Loki labels (`addon`, `service`, `env`, `level`, `domain`), emit a 60-second `runtime.vitals` heartbeat, and expose `GET /api/diagnostics` exclusively to verified Home Assistant administrators or standalone local operators.
 
 2. **Track B (SQLite Read Reuse, View SQL Pushdown, Chunked Savepoint Syncs & Route Hardening)**:
    - Keep `node:sqlite` `DatabaseSync` non-blocking (`{ timeout: 0 }`, `PRAGMA synchronous = FULL`, `2 MiB` writer cache), cache one `SELECT total_changes()` statement per handle, reuse at most one auto-closing (`30 s` idle TTL, `512 KiB` cache) read-only handle for `BEGIN DEFERRED` snapshots, and apply `AbortSignal`-aware async JS retry backoff (`[5, 15, 30, 60, 120]` ms).

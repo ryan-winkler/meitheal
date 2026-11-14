@@ -70,7 +70,7 @@ Once paired, Home Assistant exposes:
 | Option | Default | Purpose |
 |---|---|---|
 | `log_level` | `info` | Structured log verbosity (`debug`, `info`, `warn`, `error`) |
-| `log_categories` | `auth, tasks, integrations, observability` | Active structured log domains |
+| `log_categories` | `auth, tasks, integrations, observability, ha, calendar, todo, api, security, search` | Active structured log domains for `debug`/`info` events (`warn`/`error` always emit) |
 | `log_redaction` | `true` | Redacts tokens, secrets, and credentials from logs by default |
 | `audit_enabled` | `true` | Records local audit events for task and token actions |
 | `loki_url` | `""` | Optional Grafana Loki push endpoint for homelab observability |
