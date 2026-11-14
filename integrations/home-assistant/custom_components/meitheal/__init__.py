@@ -14,20 +14,17 @@ Registers Meitheal as a first-class HA integration with:
 
 """
 
-# ruff: noqa: TRY003
-
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 from aiohttp import DummyCookieJar
-import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse, SupportsResponse
 from homeassistant.exceptions import ConfigEntryError, ConfigEntryNotReady, HomeAssistantError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_create_clientsession
+import voluptuous as vol
 
 from .api import (
     MeithealApi,

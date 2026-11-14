@@ -17,8 +17,12 @@ function hasColumnDefinition(sql, definition) {
   // Ignore comments and quoted names/literals. Retain the only literal used in these declarations.
   const declarations = sql.replace(/--[^\r\n]*|\/\*[\s\S]*?\*\/|'(?:''|[^'])*'|"(?:""|[^"])*"|`(?:``|[^`])*`|\[[^\]]*\]/g,
     token => token === "'integer'" ? token : token.startsWith("-") || token.startsWith("/") ? " " : "#")
-  const escaped = definition.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
-  return new RegExp(`[(,]\\s*${escaped}\\s*(?=[,)])`).test(declarations)
+  const normalized = declarations.replace(/\s+/g, " ")
+  const idx = normalized.indexOf(definition)
+  if (idx === -1) return false
+  const before = normalized.slice(0, idx).trimEnd()
+  const after = normalized.slice(idx + definition.length).trimStart()
+  return (before.endsWith("(") || before.endsWith(",")) && (after.startsWith(",") || after.startsWith(")"))
 }
 
 async function reconcileColumn(db, table, name, definition, notNull, defaultValue, createMissing) {

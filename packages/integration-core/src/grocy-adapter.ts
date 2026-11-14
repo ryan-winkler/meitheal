@@ -444,8 +444,14 @@ export class GrocyAdapter {
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs)
 
+    const baseOrigin = new URL(this.baseUrl).origin
+    const url = new URL(path, this.baseUrl)
+    if (url.origin !== baseOrigin) {
+      throw new Error(`Invalid Grocy API path: ${path}`)
+    }
+
     try {
-      const response = await fetch(`${this.baseUrl}${path}`, {
+      const response = await fetch(url.href, {
         method,
         signal: controller.signal,
         headers: {

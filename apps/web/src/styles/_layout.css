@@ -160,7 +160,7 @@
     display: flex !important;
     justify-content: center !important;
   }
-  body.sidebar-collapsed .nav-link span:not(.nav-icon):not(.nav-badge),
+  body.sidebar-collapsed .nav-link span:not(.nav-icon, .nav-badge),
   body.sidebar-collapsed .nav-badge {
     display: none;
   }

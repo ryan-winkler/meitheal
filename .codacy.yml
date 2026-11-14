@@ -1,0 +1,9 @@
+---
+engines:
+  tsqllint:
+    enabled: false
+exclude_paths:
+  - "pnpm-lock.yaml"
+  - "apps/web/drizzle/migrations/*.sql"
+  - "apps/web/public/openapi.yaml"
+  - "apps/web/public/asyncapi.yaml"

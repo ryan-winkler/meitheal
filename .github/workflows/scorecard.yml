@@ -1,11 +1,13 @@
 name: OpenSSF Scorecard Supply-Chain Security
 
 on:
+  branch_protection_rule:
   schedule:
     - cron: '30 3 * * 1'
   push:
     branches:
       - main
+      - dev
   workflow_dispatch:
 
 permissions: read-all
@@ -14,6 +16,7 @@ jobs:
   analysis:
     name: Scorecard Analysis
     runs-on: ubuntu-latest
+    if: github.ref_name == github.event.repository.default_branch
     permissions:
       security-events: write
       id-token: write
@@ -22,18 +25,18 @@ jobs:
 
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: Run Scorecard Analysis
-        uses: ossf/scorecard-action@v2.5.0
+        uses: ossf/scorecard-action@fa7117db83c52d787ae5a89f350999701505d78e # v2.5.0
         with:
           results_file: results.sarif
           results_format: sarif
-          publish_results: false
+          publish_results: ${{ github.event.repository.visibility == 'public' }}
 
       - name: Upload SARIF to GitHub Code Scanning
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4
         with:
           sarif_file: results.sarif

@@ -54,26 +54,59 @@ function suggestedValue(field: Field, value: unknown, frameworkId: string): stri
 }
 
 /** Render the existing YAML field types in the ticket's main editing pane. */
-function renderField(field: Field, value: unknown, frameworkId: string): string {
+function renderField(field: Field, value: unknown, frameworkId: string): HTMLElement {
   const id = `se-${frameworkId}-${field.key}`
+  const helpId = `${id}-help`
   const val = value ?? field.min ?? ""
-  const label = `<label for="${escapeHtml(id)}">${escapeHtml(field.label)}</label>`
-  const help = `<small id="${escapeHtml(id)}-help">${escapeHtml(field.help_text ?? field.description ?? "")}</small>`
-  const attrs = `id="${escapeHtml(id)}" name="${escapeHtml(field.key)}" aria-describedby="${escapeHtml(id)}-help" class="form-input se-input"`
-  let control: string
+
+  const wrapper = document.createElement("div")
+  const label = document.createElement("label")
+  label.htmlFor = id
+  label.textContent = field.label
+
+  let control: HTMLInputElement | HTMLSelectElement
   if (isCheckbox(field)) {
-    control = `<input type="checkbox" ${attrs} ${[true, 1, "true", "1"].includes(val as string | number | boolean) ? "checked" : ""} />`
+    const input = document.createElement("input")
+    input.type = "checkbox"
+    input.checked = [true, 1, "true", "1"].includes(val as string | number | boolean)
+    control = input
   } else if (isFrameworkFieldOptions(field.options) && field.options.length) {
-    control = `<select ${attrs}>${field.options.map(option =>
-      `<option value="${escapeHtml(String(option.value))}" ${String(val) === String(option.value) ? "selected" : ""}>${escapeHtml(option.label)}</option>`).join("")}</select>`
+    const select = document.createElement("select")
+    for (const option of field.options) {
+      const opt = document.createElement("option")
+      opt.value = String(option.value)
+      opt.textContent = option.label
+      opt.selected = String(val) === String(option.value)
+      select.appendChild(opt)
+    }
+    control = select
   } else if (field.type === "number") {
-    const bounds = [["min", minimum(field, frameworkId)], ["max", field.max]].flatMap(([name, bound]) =>
-      typeof bound === "number" && Number.isFinite(bound) ? [`${name}="${bound}"`] : []).join(" ")
-    control = `<input type="number" ${attrs} required step="any" ${bounds} value="${escapeHtml(String(val))}" />`
+    const input = document.createElement("input")
+    input.type = "number"
+    input.required = true
+    input.step = "any"
+    const min = minimum(field, frameworkId)
+    if (typeof min === "number" && Number.isFinite(min)) input.min = String(min)
+    if (typeof field.max === "number" && Number.isFinite(field.max)) input.max = String(field.max)
+    input.value = String(val)
+    control = input
   } else {
-    control = `<input type="text" ${attrs} value="${escapeHtml(String(val))}" />`
+    const input = document.createElement("input")
+    input.type = "text"
+    input.value = String(val)
+    control = input
   }
-  return `<div>${label}${control}${help}</div>`
+  control.id = id
+  control.name = field.key
+  control.setAttribute("aria-describedby", helpId)
+  control.className = "form-input se-input"
+
+  const help = document.createElement("small")
+  help.id = helpId
+  help.textContent = field.help_text ?? field.description ?? ""
+
+  wrapper.append(label, control, help)
+  return wrapper
 }
 
 function parsePayload(value: unknown): Record<string, unknown> {
@@ -154,7 +187,7 @@ pageLifecycle.onPageLoad(signal => {
     if (!selected) return
     const values = asFrameworkPayload(payload[selected.id])
     renderedFrameworkId = selected.id
-    content!.innerHTML = selected.data.fields.map(field => renderField(field, values[field.key], selected.id)).join("")
+    content!.replaceChildren(...selected.data.fields.map(field => renderField(field, values[field.key], selected.id)))
     preview()
   }
 

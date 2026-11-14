@@ -15,6 +15,7 @@
  * @see docs/kcs/hierarchy-glossary.md
  */
 
+import { randomUUID } from "node:crypto"
 import {
   ensureSchema,
   getPersistenceClient,
@@ -96,7 +97,7 @@ export interface Pillar {
 // ── Helpers ─────────────────────────────────────────────────────
 
 function generateId(): string {
-  return `pillar_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+  return `pillar_${Date.now()}_${randomUUID().slice(0, 8)}`
 }
 
 /**

@@ -1,7 +1,6 @@
 import type { Principle } from "@domains/pillars/principle-service"
 import { confirmDialog } from "@lib/confirm-dialog"
 import { pageLifecycle } from "@lib/page-lifecycle"
-import { escapeHtml } from "@lib/safe-html"
 
 interface PillarDetail {
   id: string
@@ -21,22 +20,66 @@ function element<T extends HTMLElement = HTMLElement>(id: string) {
   return document.getElementById(id) as T | null
 }
 
-const shield = `<svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>`
+function createShieldIcon(): SVGSVGElement {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg")
+  svg.setAttribute("aria-hidden", "true")
+  svg.setAttribute("width", "12")
+  svg.setAttribute("height", "12")
+  svg.setAttribute("viewBox", "0 0 24 24")
+  svg.setAttribute("fill", "currentColor")
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path")
+  path.setAttribute("d", "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z")
+  svg.appendChild(path)
+  return svg
+}
 
 function renderPrinciples(list: HTMLElement, principles: Principle[]) {
   const sorted = [...principles].sort((a, b) => Number(b.isNonNegotiable) - Number(a.isNonNegotiable) || a.position - b.position)
-  list.innerHTML = sorted.map(p => `
-    <li class="pillar-detail-modal__principle-item" data-principle-id="${escapeHtml(p.id)}">
-      <div class="pillar-detail-modal__principle-copy">
-        <span class="pillar-detail-modal__principle-text">${escapeHtml(p.statement)}</span>
-        ${p.isNonNegotiable ? `<span class="pillar-detail-modal__principle-nn-badge">${shield} Non-Negotiable</span>` : ""}
-      </div>
-      <div class="pillar-detail-modal__principle-actions">
-        <button type="button" class="btn btn-secondary btn-sm" data-action="toggle-nn" aria-pressed="${p.isNonNegotiable}">Non-Negotiable</button>
-        <button type="button" class="btn btn-secondary btn-sm" data-action="delete-principle">Remove</button>
-      </div>
-    </li>
-  `).join("") || '<li class="pillar-detail-modal__principles-empty">No principles yet. Add a boundary for this pillar.</li>'
+  if (sorted.length === 0) {
+    const empty = document.createElement("li")
+    empty.className = "pillar-detail-modal__principles-empty"
+    empty.textContent = "No principles yet. Add a boundary for this pillar."
+    list.replaceChildren(empty)
+    return
+  }
+  const items = sorted.map(p => {
+    const li = document.createElement("li")
+    li.className = "pillar-detail-modal__principle-item"
+    li.dataset.principleId = p.id
+
+    const copy = document.createElement("div")
+    copy.className = "pillar-detail-modal__principle-copy"
+    const text = document.createElement("span")
+    text.className = "pillar-detail-modal__principle-text"
+    text.textContent = p.statement
+    copy.appendChild(text)
+    if (p.isNonNegotiable) {
+      const badge = document.createElement("span")
+      badge.className = "pillar-detail-modal__principle-nn-badge"
+      badge.append(createShieldIcon(), document.createTextNode(" Non-Negotiable"))
+      copy.appendChild(badge)
+    }
+
+    const actions = document.createElement("div")
+    actions.className = "pillar-detail-modal__principle-actions"
+    const toggleBtn = document.createElement("button")
+    toggleBtn.type = "button"
+    toggleBtn.className = "btn btn-secondary btn-sm"
+    toggleBtn.dataset.action = "toggle-nn"
+    toggleBtn.setAttribute("aria-pressed", String(p.isNonNegotiable))
+    toggleBtn.textContent = "Non-Negotiable"
+
+    const deleteBtn = document.createElement("button")
+    deleteBtn.type = "button"
+    deleteBtn.className = "btn btn-secondary btn-sm"
+    deleteBtn.dataset.action = "delete-principle"
+    deleteBtn.textContent = "Remove"
+
+    actions.append(toggleBtn, deleteBtn)
+    li.append(copy, actions)
+    return li
+  })
+  list.replaceChildren(...items)
 }
 
 pageLifecycle.onPageLoad(signal => {

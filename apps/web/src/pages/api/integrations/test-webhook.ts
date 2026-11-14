@@ -30,8 +30,8 @@ export const POST: APIRoute = async ({ locals, request }) => {
     const targetUrlOverride = typeof body.url === "string" ? body.url : null
 
     let targetUrl = targetUrlOverride
-    let apiKey = ""
-    let signingSecret = ""
+    let apiKey: string | undefined
+    let signingSecret: string | undefined
     let source = "override"
 
     // SSRF protection: validate user-supplied URL override
@@ -74,12 +74,12 @@ export const POST: APIRoute = async ({ locals, request }) => {
 
       if (n8nUrl?.value) {
         targetUrl = String(n8nUrl.value)
-        apiKey = n8nKey?.value ? String(n8nKey.value) : ""
-        signingSecret = n8nSecret?.value ? String(n8nSecret.value) : ""
+        apiKey = n8nKey?.value ? String(n8nKey.value) : undefined
+        signingSecret = n8nSecret?.value ? String(n8nSecret.value) : undefined
         source = "n8n"
       } else if (genericUrl?.value) {
         targetUrl = String(genericUrl.value)
-        signingSecret = webhookSecret?.value ? String(webhookSecret.value) : ""
+        signingSecret = webhookSecret?.value ? String(webhookSecret.value) : undefined
         source = "generic"
       }
     }

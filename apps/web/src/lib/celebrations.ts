@@ -38,18 +38,23 @@ export function fireConfetti(opts?: { duration?: number; particleCount?: number 
   // Spawn particles from center-top
   const startX = canvas.width / 2
   const startY = canvas.height * 0.3
+  const randomUnit = () => {
+    const buf = new Uint32Array(1)
+    crypto.getRandomValues(buf)
+    return buf[0]! / 0x100000000
+  }
   for (let i = 0; i < count; i++) {
-    const angle = (Math.random() * Math.PI * 2)
-    const speed = 3 + Math.random() * 6
+    const angle = (randomUnit() * Math.PI * 2)
+    const speed = 3 + randomUnit() * 6
     particles.push({
-      x: startX + (Math.random() - 0.5) * 100,
-      y: startY + (Math.random() - 0.5) * 50,
+      x: startX + (randomUnit() - 0.5) * 100,
+      y: startY + (randomUnit() - 0.5) * 50,
       vx: Math.cos(angle) * speed,
       vy: Math.sin(angle) * speed - 3,
-      size: 4 + Math.random() * 6,
-      color: colors[Math.floor(Math.random() * colors.length)]!,
-      rotation: Math.random() * 360,
-      spin: (Math.random() - 0.5) * 10,
+      size: 4 + randomUnit() * 6,
+      color: colors[Math.floor(randomUnit() * colors.length)]!,
+      rotation: randomUnit() * 360,
+      spin: (randomUnit() - 0.5) * 10,
       opacity: 1,
     })
   }
