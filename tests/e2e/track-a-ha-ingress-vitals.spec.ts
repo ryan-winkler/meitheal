@@ -311,7 +311,6 @@ test("A4/A5/A8: live serve.mjs leaves Ingress HTML uncompressed, keeps attribute
 
   const work = await mkdtemp(join(tmpdir(), "meitheal-serve-ingress-"))
   const preloadPath = join(work, "supervisor-preload.mjs")
-  const port = 4460 + Math.floor(Math.random() * 400)
 
   // Preload lets unmodified scripts/serve.mjs simulate Supervisor peer 172.30.32.2 + HA Core config/auth/list
   await writeFile(preloadPath, `
@@ -372,7 +371,7 @@ test("A4/A5/A8: live serve.mjs leaves Ingress HTML uncompressed, keeps attribute
     }
     const origCreateServer = http.createServer
     http.createServer = function (listener) {
-      return origCreateServer.call(this, (req, res) => {
+      const srv = origCreateServer.call(this, (req, res) => {
         if (req.headers["x-test-peer"] === "supervisor") {
           Object.defineProperty(req.socket, "remoteAddress", { value: "172.30.32.2", configurable: true })
         } else if (req.headers["x-test-peer"] === "lan") {
@@ -391,6 +390,11 @@ test("A4/A5/A8: live serve.mjs leaves Ingress HTML uncompressed, keeps attribute
         }
         return listener(req, res)
       })
+      srv.once("listening", () => {
+        const addr = srv.address()
+        if (addr && typeof addr === "object") process.send?.({ type: "listening", port: addr.port })
+      })
+      return srv
     }
   `)
 
@@ -398,7 +402,7 @@ test("A4/A5/A8: live serve.mjs leaves Ingress HTML uncompressed, keeps attribute
     PATH: process.env.PATH ?? "",
     NODE_ENV: "production",
     HOST: "127.0.0.1",
-    PORT: String(port),
+    PORT: "0",
     SUPERVISOR_TOKEN: "test-sup-token",
     INGRESS_PATH: "/api/hassio_ingress/live_tok",
     MEITHEAL_DB_URL: `file:${join(work, "live.db")}`,
@@ -408,7 +412,7 @@ test("A4/A5/A8: live serve.mjs leaves Ingress HTML uncompressed, keeps attribute
   const child = spawn(process.execPath, ["--import", preloadPath, "scripts/serve.mjs"], {
     cwd: webDir,
     env,
-    stdio: ["ignore", "pipe", "pipe"],
+    stdio: ["ignore", "pipe", "pipe", "ipc"],
   })
   child.stdout?.resume()
   let childStderr = ""
@@ -417,14 +421,31 @@ test("A4/A5/A8: live serve.mjs leaves Ingress HTML uncompressed, keeps attribute
   })
 
   try {
-    await expect.poll(async () => {
-      try {
-        const r = await fetch(`http://127.0.0.1:${port}/api/health`)
-        return r.status
-      } catch {
-        return 0
+    const port = await new Promise<number>((resolve, reject) => {
+      const onMessage = (msg: unknown) => {
+        cleanup()
+        const boundPort = (msg as { port?: number } | null)?.port
+        if (typeof boundPort === "number" && boundPort > 0) resolve(boundPort)
+        else reject(new Error(`Unexpected IPC message: ${JSON.stringify(msg)}`))
       }
-    }, { timeout: 10_000 }).toBe(200)
+      const onExit = (code: number | null, sig: NodeJS.Signals | null) => {
+        cleanup()
+        reject(new Error(`serve.mjs exited before listening (code=${String(code)}, sig=${String(sig)}): ${childStderr}`))
+      }
+      const timer = setTimeout(() => {
+        cleanup()
+        reject(new Error(`serve.mjs listen timeout: ${childStderr}`))
+      }, 10_000)
+      function cleanup() {
+        clearTimeout(timer)
+        child.off("message", onMessage)
+        child.off("exit", onExit)
+      }
+      child.once("message", onMessage)
+      child.once("exit", onExit)
+    })
+    const healthRes = await fetch(`http://127.0.0.1:${port}/api/health`)
+    expect(healthRes.status, childStderr).toBe(200)
 
     const adminIngressHeaders = {
       "x-test-peer": "supervisor",

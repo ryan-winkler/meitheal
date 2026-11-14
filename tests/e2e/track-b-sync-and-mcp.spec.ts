@@ -189,7 +189,6 @@ test("B2/B4/D1: slim SQL projections, deep description search, /planning active 
 
   const work = await mkdtemp(join(tmpdir(), "meitheal-track-b-live-"))
   const preloadPath = join(work, "preload.mjs")
-  const port = 4910 + Math.floor(Math.random() * 400)
 
   await writeFile(preloadPath, `
     import { once } from "node:events"
@@ -248,7 +247,7 @@ test("B2/B4/D1: slim SQL projections, deep description search, /planning active 
     }
     const origCreateServer = http.createServer
     http.createServer = function (listener) {
-      return origCreateServer.call(this, (req, res) => {
+      const srv = origCreateServer.call(this, (req, res) => {
         if (req.headers["x-test-peer"] === "supervisor") {
           Object.defineProperty(req.socket, "remoteAddress", { value: "172.30.32.2", configurable: true })
         } else {
@@ -256,6 +255,11 @@ test("B2/B4/D1: slim SQL projections, deep description search, /planning active 
         }
         return listener(req, res)
       })
+      srv.once("listening", () => {
+        const addr = srv.address()
+        if (addr && typeof addr === "object") process.send?.({ type: "listening", port: addr.port })
+      })
+      return srv
     }
   `)
 
@@ -264,7 +268,7 @@ test("B2/B4/D1: slim SQL projections, deep description search, /planning active 
     PATH: process.env.PATH ?? "",
     NODE_ENV: "production",
     HOST: "127.0.0.1",
-    PORT: String(port),
+    PORT: "0",
     SUPERVISOR_TOKEN: "test-sup-token-b",
     INGRESS_PATH: "/api/hassio_ingress/tok_b",
     MEITHEAL_DB_URL: `file:${dbFile}`,
@@ -274,17 +278,40 @@ test("B2/B4/D1: slim SQL projections, deep description search, /planning active 
   const child = spawn(process.execPath, ["--import", preloadPath, "scripts/serve.mjs"], {
     cwd: webDir,
     env,
-    stdio: ["ignore", "pipe", "pipe"],
+    stdio: ["ignore", "pipe", "pipe", "ipc"],
+  })
+  child.stdout?.resume()
+  let childStderr = ""
+  child.stderr?.on("data", chunk => {
+    if (childStderr.length < 16_384) childStderr += String(chunk)
   })
 
   try {
-    await expect.poll(async () => {
-      try {
-        return (await fetch(`http://127.0.0.1:${port}/api/health`)).status
-      } catch {
-        return 0
+    const port = await new Promise<number>((resolve, reject) => {
+      const onMessage = (msg: unknown) => {
+        cleanup()
+        const boundPort = (msg as { port?: number } | null)?.port
+        if (typeof boundPort === "number" && boundPort > 0) resolve(boundPort)
+        else reject(new Error(`Unexpected IPC message: ${JSON.stringify(msg)}`))
       }
-    }, { timeout: 10_000 }).toBe(200)
+      const onExit = (code: number | null, sig: NodeJS.Signals | null) => {
+        cleanup()
+        reject(new Error(`serve.mjs exited before listening (code=${String(code)}, sig=${String(sig)}): ${childStderr}`))
+      }
+      const timer = setTimeout(() => {
+        cleanup()
+        reject(new Error(`serve.mjs listen timeout: ${childStderr}`))
+      }, 10_000)
+      function cleanup() {
+        clearTimeout(timer)
+        child.off("message", onMessage)
+        child.off("exit", onExit)
+      }
+      child.once("message", onMessage)
+      child.once("exit", onExit)
+    })
+    const healthRes = await fetch(`http://127.0.0.1:${port}/api/health`)
+    expect(healthRes.status, childStderr).toBe(200)
 
     const origin = `http://127.0.0.1:${port}`
     const adminHeaders = {
