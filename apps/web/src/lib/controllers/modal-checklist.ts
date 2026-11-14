@@ -124,21 +124,32 @@ export function showTaskChecklist(taskId: string, rawChecklist: unknown, signal:
       const row = document.createElement("div")
       row.className = "flex items-center gap-2 group"
       row.dataset.checklistRow = String(index)
-      row.innerHTML = `
-        <input type="checkbox" class="form-checkbox h-4 w-4 bg-transparent border-border rounded"
-          aria-label="${escapeHtml(item.text || "Checklist item " + (index + 1))}" ${item.done ? "checked" : ""} />
-        <div class="checklist-editor">
-          <textarea class="form-input bg-transparent border-transparent focus:bg-(--bg-input) focus:border-(--border-focus) hover:bg-(--bg-hover)"
-            rows="1" aria-label="Checklist item ${index + 1}" placeholder="Checklist item..."></textarea>
-        </div>
-        <button type="button" class="text-danger opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity text-xs p-1"
-          aria-label="Delete checklist item ${index + 1}" title="Delete item">×</button>
-      `
-      const checkbox = row.querySelector<HTMLInputElement>('input[type="checkbox"]')!
-      const editor = row.querySelector<HTMLElement>(".checklist-editor")!
-      const text = editor.querySelector("textarea")!
+
+      const checkbox = document.createElement("input")
+      checkbox.type = "checkbox"
+      checkbox.className = "form-checkbox h-4 w-4 bg-transparent border-border rounded"
+      checkbox.setAttribute("aria-label", item.text || `Checklist item ${index + 1}`)
+      checkbox.checked = Boolean(item.done)
+
+      const editor = document.createElement("div")
+      editor.className = "checklist-editor"
+      const text = document.createElement("textarea")
+      text.className = "form-input bg-transparent border-transparent focus:bg-(--bg-input) focus:border-(--border-focus) hover:bg-(--bg-hover)"
+      text.rows = 1
+      text.setAttribute("aria-label", `Checklist item ${index + 1}`)
+      text.placeholder = "Checklist item..."
       text.value = item.text
       editor.dataset.content = item.text
+      editor.appendChild(text)
+
+      const delBtn = document.createElement("button")
+      delBtn.type = "button"
+      delBtn.className = "text-danger opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity text-xs p-1"
+      delBtn.setAttribute("aria-label", `Delete checklist item ${index + 1}`)
+      delBtn.title = "Delete item"
+      delBtn.textContent = "×"
+
+      row.append(checkbox, editor, delBtn)
       text.addEventListener("input", () => { editor.dataset.content = text.value }, { signal })
       checkbox.addEventListener("change", () => {
         const current = items[index]

@@ -128,8 +128,13 @@ async function caldavFetch(
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
+  const parsed = new URL(url);
+  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+    throw new Error(`Unsupported CalDAV protocol: ${parsed.protocol}`);
+  }
+
   try {
-    const res = await fetch(url, {
+    const res = await fetch(parsed.href, {
       method,
       headers: {
         "Content-Type": "application/xml; charset=utf-8",
@@ -236,11 +241,14 @@ function parseVEvents(ical: string, eventHref: string): CalDAVEvent[] {
 
     const getField = (name: string): string | undefined => {
       // Handle fields with params like DTSTART;VALUE=DATE:20260305
-      const fieldRegex = new RegExp(`^${name}[;:]([^\\r\\n]*)`, "mi");
-      const fm = block.match(fieldRegex);
-      if (!fm) return undefined;
+      const prefix = name.toUpperCase();
+      const line = block.split(/\r?\n/).find((l) => {
+        const upper = l.toUpperCase();
+        return upper.startsWith(`${prefix}:`) || upper.startsWith(`${prefix};`);
+      });
+      if (!line) return undefined;
       // Strip parameters, keep value after last colon
-      const parts = fm[1]!.split(":");
+      const parts = line.slice(prefix.length + 1).split(":");
       return parts[parts.length - 1]!.trim();
     };
 

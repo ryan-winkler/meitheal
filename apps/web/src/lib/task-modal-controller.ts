@@ -389,10 +389,17 @@
                     t.parent_title ??
                     String(t.parent_id).slice(0, 8),
                 );
-                linkParentDisplay.innerHTML = `
-                <a href="#" class="text-xs text-accent hover:underline td-parent-link" data-id="${escapeHtml(t.parent_id)}">${escapeHtml(parentTitle)}</a>
-                <button type="button" class="text-xs text-danger hover:text-red-400 ml-1 td-unlink-parent" title="Remove parent">✕</button>
-              `;
+                const parentLink = document.createElement("a");
+                parentLink.href = "#";
+                parentLink.className = "text-xs text-accent hover:underline td-parent-link";
+                parentLink.dataset.id = String(t.parent_id);
+                parentLink.textContent = parentTitle;
+                const unlinkBtn = document.createElement("button");
+                unlinkBtn.type = "button";
+                unlinkBtn.className = "text-xs text-danger hover:text-red-400 ml-1 td-unlink-parent";
+                unlinkBtn.title = "Remove parent";
+                unlinkBtn.textContent = "✕";
+                linkParentDisplay.replaceChildren(parentLink, document.createTextNode(" "), unlinkBtn);
                 linkParentDisplay
                   .querySelector(".td-parent-link")
                   ?.addEventListener("click", (e) => {
@@ -510,12 +517,19 @@
                     const row = document.createElement("div");
                     row.className =
                       "flex gap-2 items-baseline py-1 border-b border-border/30";
-                    row.innerHTML = `
-                    <span class="text-text-muted shrink-0">${escapeHtml(ago)}</span>
-                    <span class="font-medium text-text-primary">${escapeHtml(e.field)}</span>
-                    <span class="text-text-muted">→</span>
-                    <span class="text-accent truncate">${escapeHtml(String(e.new_value ?? "—").slice(0, 60))}</span>
-                  `;
+                    const agoSpan = document.createElement("span");
+                    agoSpan.className = "text-text-muted shrink-0";
+                    agoSpan.textContent = ago;
+                    const fieldSpan = document.createElement("span");
+                    fieldSpan.className = "font-medium text-text-primary";
+                    fieldSpan.textContent = String(e.field ?? "");
+                    const arrowSpan = document.createElement("span");
+                    arrowSpan.className = "text-text-muted";
+                    arrowSpan.textContent = "→";
+                    const valSpan = document.createElement("span");
+                    valSpan.className = "text-accent truncate";
+                    valSpan.textContent = String(e.new_value ?? "—").slice(0, 60);
+                    row.append(agoSpan, fieldSpan, arrowSpan, valSpan);
                     activityDiv.appendChild(row);
                   }
                 } catch {
@@ -565,7 +579,8 @@
             const typeIconEl = document.getElementById("td-type-icon") as HTMLElement | null;
             if (typeIconEl) {
               const tt = String(t.task_type || "task").toLowerCase();
-              typeIconEl.innerHTML = renderTypeIconSvg(tt, 16);
+              const iconDoc = new DOMParser().parseFromString(renderTypeIconSvg(tt, 16), "text/html");
+              typeIconEl.replaceChildren(...Array.from(iconDoc.body.childNodes));
               typeIconEl.title = tt.charAt(0).toUpperCase() + tt.slice(1);
             }
 
@@ -734,7 +749,7 @@
                 areaSelect.value = currentAreaId;
               }
             } catch {
-              areaSelect.innerHTML = `<option value="${escapeHtml(currentAreaId)}">${escapeHtml(currentAreaId)}</option>`;
+              areaSelect.replaceChildren(new Option(currentAreaId, currentAreaId));
             }
             if (projectField) {
               const savedProject = String(t.project_id ?? "")
@@ -786,7 +801,7 @@
                 pillarSelect.value = currentPillarId;
               }
             } catch {
-              pillarSelect.innerHTML = `<option value="${escapeHtml(currentPillarId)}">${escapeHtml(currentPillarId)}</option>`;
+              pillarSelect.replaceChildren(new Option(currentPillarId, currentPillarId));
             }
 
             // Populate principle dropdown
@@ -816,7 +831,7 @@
                  principleSelect.innerHTML = '<option value="">No principle</option>';
               }
             } catch {
-              principleSelect.innerHTML = `<option value="${escapeHtml(currentPrincipleId)}">${escapeHtml(currentPrincipleId)}</option>`;
+              principleSelect.replaceChildren(new Option(currentPrincipleId, currentPrincipleId));
             }
             // Phase 20: Agile hierarchy type
             (
@@ -1093,7 +1108,9 @@
 
         function renderTaskDescription(markdown: string) {
           if (!descPreview) return
-          descPreview.innerHTML = sanitizeClient(String(marked.parse(markdown || "*No description provided.*")))
+          const sanitized = sanitizeClient(String(marked.parse(markdown || "*No description provided.*")))
+          const parsedDoc = new DOMParser().parseFromString(sanitized, "text/html")
+          descPreview.replaceChildren(...Array.from(parsedDoc.body.childNodes))
           resolveDescriptionTaskReferences(descPreview)
         }
 
@@ -1117,7 +1134,10 @@
               renderTaskDescription(rawMarkdown)
             } catch (e: any) {
               log.error("Markdown render error", e);
-              descPreview.innerHTML = `<div class="text-red-500">Error rendering markdown: ${escapeHtml(e.message)}</div>`;
+              const errDiv = document.createElement("div");
+              errDiv.className = "text-red-500";
+              errDiv.textContent = `Error rendering markdown: ${String(e?.message ?? e)}`;
+              descPreview.replaceChildren(errDiv);
             }
             saveTD("description", rawMarkdown);
             // Show "✓ Saved" indicator (T4: guarded with timeout tracking)
@@ -1405,21 +1425,29 @@
               if (tasks.length === 0) {
                 parentResultsDiv.innerHTML = `<div class="px-3 py-2 text-xs text-text-muted italic">No matches</div>`;
               } else {
-                parentResultsDiv.innerHTML = tasks
-                  .map((t: Record<string, unknown>) => {
+                parentResultsDiv.replaceChildren(
+                  ...tasks.map((t: Record<string, unknown>) => {
                     const typeIcon =
                       t.task_type === "epic"
                         ? "🎯"
                         : t.task_type === "story"
                           ? "📖"
                           : "✅";
-                    return `<div class="td-parent-result px-3 py-2 text-sm cursor-pointer hover:bg-bg-hover flex items-center gap-2" data-id="${escapeHtml(t.id)}">
-                  <span>${typeIcon}</span>
-                  <span class="truncate">${escapeHtml(String(t.title).slice(0, 60))}</span>
-                  <span class="text-xs text-text-muted ml-auto">${escapeHtml(String(t.task_type ?? "task"))}</span>
-                </div>`;
-                  })
-                  .join("");
+                    const row = document.createElement("div");
+                    row.className = "td-parent-result px-3 py-2 text-sm cursor-pointer hover:bg-bg-hover flex items-center gap-2";
+                    row.dataset.id = String(t.id ?? "");
+                    const iconSpan = document.createElement("span");
+                    iconSpan.textContent = typeIcon;
+                    const titleSpan = document.createElement("span");
+                    titleSpan.className = "truncate";
+                    titleSpan.textContent = String(t.title ?? "").slice(0, 60);
+                    const typeSpan = document.createElement("span");
+                    typeSpan.className = "text-xs text-text-muted ml-auto";
+                    typeSpan.textContent = String(t.task_type ?? "task");
+                    row.append(iconSpan, titleSpan, typeSpan);
+                    return row;
+                  }),
+                );
                 // Click handler for each result
                 parentResultsDiv
                   .querySelectorAll(".td-parent-result")
@@ -1565,9 +1593,24 @@
               const response = document.createElement("div")
               response.id = "td-ai-response"
               response.className = "mt-2 p-3 bg-accent/10 border border-accent/20 rounded-md text-xs text-text-secondary leading-relaxed"
-              response.innerHTML = `<div class="flex justify-between items-center mb-1.5"><strong class="text-accent text-[11px]">AI Response</strong><button type="button" id="td-ai-dismiss" class="text-text-muted hover:text-text-primary text-xs px-1" aria-label="Dismiss AI response">&times;</button></div><div class="whitespace-pre-wrap">${escapeHtml(result.response)}</div>`
+              const header = document.createElement("div")
+              header.className = "flex justify-between items-center mb-1.5"
+              const title = document.createElement("strong")
+              title.className = "text-accent text-[11px]"
+              title.textContent = "AI Response"
+              const dismiss = document.createElement("button")
+              dismiss.type = "button"
+              dismiss.id = "td-ai-dismiss"
+              dismiss.className = "text-text-muted hover:text-text-primary text-xs px-1"
+              dismiss.setAttribute("aria-label", "Dismiss AI response")
+              dismiss.textContent = "×"
+              header.append(title, dismiss)
+              const body = document.createElement("div")
+              body.className = "whitespace-pre-wrap"
+              body.textContent = result.response
+              response.replaceChildren(header, body)
               askAi.parentElement?.after(response)
-              response.querySelector("#td-ai-dismiss")?.addEventListener("click", () => response.remove(), { signal })
+              dismiss.addEventListener("click", () => response.remove(), { signal })
             }
           } catch (err) {
             if (signal.aborted || currentTaskId !== taskId) return

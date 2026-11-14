@@ -34,8 +34,13 @@ export async function supervisorFetch(
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
+  const url = new URL(path, "http://supervisor");
+  if (url.origin !== "http://supervisor") {
+    throw new Error(`Invalid Supervisor API path: ${path}`);
+  }
+
   try {
-    const res = await fetch(`http://supervisor${path}`, {
+    const res = await fetch(url.href, {
       ...options,
       headers: {
         Authorization: `Bearer ${token}`,

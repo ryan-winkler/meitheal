@@ -4,6 +4,19 @@
     "title": "Meitheal API",
     "version": "0.1.0"
   },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    }
+  },
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
   "paths": {
     "/api/unfurl": {
       "post": {

@@ -6,6 +6,7 @@
 [![Docker Hub](https://img.shields.io/docker/v/coolockvillage/meitheal-amd64?label=Docker%20Hub&logo=docker)](https://hub.docker.com/r/coolockvillage/meitheal-amd64)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/ryan-winkler/meitheal/badge)](https://scorecard.dev/viewer/?push=dev&repo=github.com/ryan-winkler/meitheal)
 [![codecov](https://codecov.io/gh/ryan-winkler/meitheal/graph/badge.svg)](https://codecov.io/gh/ryan-winkler/meitheal)
+[![Codacy Badge](https://app.codacy.com/project/badge/Grade/bd98d7c4e8d847ceb539d8504cb2d16a)](https://app.codacy.com/gh/ryan-winkler/meitheal/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade)
 [![GitHub Sponsors](https://img.shields.io/badge/Sponsor-GitHub-ea4aaa?logo=github&logoColor=white)](https://github.com/sponsors/ryan-winkler)
 [![Ko-fi](https://img.shields.io/badge/Support-Ko--fi-ff5e5b?logo=ko-fi&logoColor=white)](https://ko-fi.com/ryanw_eu)
 [![Polar Funding](https://polar.sh/embed/bounties.svg?org=Coolock-Village)](https://polar.sh/Coolock-Village)

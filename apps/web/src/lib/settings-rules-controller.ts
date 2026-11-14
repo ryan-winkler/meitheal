@@ -531,47 +531,71 @@ async function loadFrameworkConfigs(): Promise<void> {
       if (!container) continue
 
       if (fw.fields.length === 0) {
-        container.innerHTML = '<p class="text-muted" style="font-size: 12px; margin: 4px 0;">No configurable fields for this framework.</p>'
+        const emptyP = document.createElement("p")
+        emptyP.className = "text-muted"
+        emptyP.style.fontSize = "12px"
+        emptyP.style.margin = "4px 0"
+        emptyP.textContent = "No configurable fields for this framework."
+        container.replaceChildren(emptyP)
         continue
       }
 
-      container.innerHTML = fw.fields.map((field) => {
-        // Render weight slider for all field types, plus field-specific info
-        const safeLabel = escapeHtml(field.label)
-        const safeHelp = escapeHtml(field.helpText)
-        const safeKey = escapeHtml(field.key)
-        const fieldInfo = isFrameworkFieldOptions(field.options)
-          ? `<span class="fw-field-type" title="${safeHelp}">
-               ${field.options.map((o) => escapeHtml(String(o.label))).join(" · ")}
-             </span>`
-          : Number.isFinite(field.min) && Number.isFinite(field.max)
-            ? `<span class="fw-field-range">${field.min}–${field.max}</span>`
-            : ""
+      container.replaceChildren(
+        ...fw.fields.map((field) => {
+          const weight = frameworkDrafts.get(draftKey(fw.id, field.key))?.weight ?? field.weight
+          const wrapper = document.createElement("div")
+          wrapper.className = "rules-fw-field"
 
-        const weight = frameworkDrafts.get(draftKey(fw.id, field.key))?.weight ?? field.weight
-        return `
-          <div class="rules-fw-field">
-            <div class="rules-fw-field-header">
-              <label title="${safeHelp}">${safeLabel}</label>
-              ${fieldInfo}
-            </div>
-            <div class="rules-fw-field-controls">
-              <input
-                type="range"
-                class="form-input rules-fw-weight"
-                data-framework="${escapeHtml(fw.id)}"
-                data-field="${safeKey}"
-                min="0" max="3" step="0.1"
-                value="${Number.isFinite(weight) ? weight : 1}"
-                aria-label="${safeLabel} weight"
-              />
-              <span class="weight-display">${field.weight.toFixed(1)}×</span>
-            </div>
-            <p class="fw-field-help">${safeHelp}</p>
-            <div class="rules-fw-save-status text-xs" role="status"></div>
-          </div>
-        `
-      }).join("")
+          const header = document.createElement("div")
+          header.className = "rules-fw-field-header"
+          const label = document.createElement("label")
+          label.title = field.helpText
+          label.textContent = field.label
+          header.appendChild(label)
+
+          if (isFrameworkFieldOptions(field.options)) {
+            const typeSpan = document.createElement("span")
+            typeSpan.className = "fw-field-type"
+            typeSpan.title = field.helpText
+            typeSpan.textContent = field.options.map((o) => String(o.label)).join(" · ")
+            header.appendChild(typeSpan)
+          } else if (Number.isFinite(field.min) && Number.isFinite(field.max)) {
+            const rangeSpan = document.createElement("span")
+            rangeSpan.className = "fw-field-range"
+            rangeSpan.textContent = `${field.min}–${field.max}`
+            header.appendChild(rangeSpan)
+          }
+
+          const controls = document.createElement("div")
+          controls.className = "rules-fw-field-controls"
+          const slider = document.createElement("input")
+          slider.type = "range"
+          slider.className = "form-input rules-fw-weight"
+          slider.dataset.framework = fw.id
+          slider.dataset.field = field.key
+          slider.min = "0"
+          slider.max = "3"
+          slider.step = "0.1"
+          slider.value = String(Number.isFinite(weight) ? weight : 1)
+          slider.setAttribute("aria-label", `${field.label} weight`)
+
+          const weightDisplay = document.createElement("span")
+          weightDisplay.className = "weight-display"
+          weightDisplay.textContent = `${field.weight.toFixed(1)}×`
+          controls.append(slider, weightDisplay)
+
+          const helpP = document.createElement("p")
+          helpP.className = "fw-field-help"
+          helpP.textContent = field.helpText
+
+          const statusDiv = document.createElement("div")
+          statusDiv.className = "rules-fw-save-status text-xs"
+          statusDiv.setAttribute("role", "status")
+
+          wrapper.append(header, controls, helpP, statusDiv)
+          return wrapper
+        }),
+      )
 
       // Wire up weight sliders
       container.querySelectorAll<HTMLInputElement>(".rules-fw-weight").forEach((slider) => {

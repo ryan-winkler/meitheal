@@ -12,6 +12,7 @@
  * Completion history stored per-date for streak calculation.
  */
 
+import { randomUUID } from "node:crypto"
 import {
   ensureSchema,
   getPersistenceClient,
@@ -81,7 +82,7 @@ export interface HabitWithStats extends Habit {
 // ── CRUD ────────────────────────────────────────────────────────
 
 function generateId(): string {
-  return `habit_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+  return `habit_${Date.now()}_${randomUUID().slice(0, 8)}`
 }
 
 export async function createHabit(data: {

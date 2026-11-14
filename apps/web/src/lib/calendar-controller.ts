@@ -240,21 +240,32 @@ async function loadDrawerData(dateStr: string): Promise<void> {
       drawerEvents.textContent = ""
       drawerEvents.appendChild(emptyEvents)
     } else {
-      drawerEvents.innerHTML = events.map((event) => {
-        const time = event.start.includes("T")
-          ? new Date(event.start).toLocaleTimeString("en-US", {
-            hour: "numeric",
-            minute: "2-digit",
-          })
-          : "All day"
-        return `<div class="day-drawer-item">
-          <span class="day-drawer-item-icon">📅</span>
-          <div class="day-drawer-item-content">
-            <div class="day-drawer-item-title">${escapeHtml(event.summary)}</div>
-            <div class="day-drawer-item-meta">${time}</div>
-          </div>
-        </div>`
-      }).join("")
+      drawerEvents.replaceChildren(
+        ...events.map((event) => {
+          const time = event.start.includes("T")
+            ? new Date(event.start).toLocaleTimeString("en-US", {
+              hour: "numeric",
+              minute: "2-digit",
+            })
+            : "All day"
+          const item = document.createElement("div")
+          item.className = "day-drawer-item"
+          const icon = document.createElement("span")
+          icon.className = "day-drawer-item-icon"
+          icon.textContent = "📅"
+          const content = document.createElement("div")
+          content.className = "day-drawer-item-content"
+          const title = document.createElement("div")
+          title.className = "day-drawer-item-title"
+          title.textContent = event.summary
+          const meta = document.createElement("div")
+          meta.className = "day-drawer-item-meta"
+          meta.textContent = time
+          content.append(title, meta)
+          item.append(icon, content)
+          return item
+        }),
+      )
     }
   } catch (error) {
     log.error("Failed to load calendar drawer events", error)
@@ -280,18 +291,32 @@ async function loadDrawerData(dateStr: string): Promise<void> {
       return
     }
 
-    drawerTasks.innerHTML = tasks.map((task: Record<string, unknown>) => {
-      const status = String(task.status ?? "")
-      const definition = getStatusDef(status)
-      const deferredLabel = task.deferred_at != null ? ` · ${escapeHtml(window.mI18n?.get("deferral.title") ?? "Deferred")}` : ""
-      return `<div class="day-drawer-item" data-task-id="${String(task.id)}" style="cursor:pointer">
-        <span class="day-drawer-item-icon" aria-hidden="true">${definition?.icon ?? "⬜"}</span>
-        <div class="day-drawer-item-content">
-          <div class="day-drawer-item-title">${escapeHtml(String(task.title ?? "Untitled task"))}</div>
-          <div class="day-drawer-item-meta">${escapeHtml(definition?.label ?? status)}${task.priority ? ` • P${String(task.priority)}` : ""}${deferredLabel}</div>
-        </div>
-      </div>`
-    }).join("")
+    drawerTasks.replaceChildren(
+      ...tasks.map((task: Record<string, unknown>) => {
+        const status = String(task.status ?? "")
+        const definition = getStatusDef(status)
+        const deferredLabel = task.deferred_at != null ? ` · ${window.mI18n?.get("deferral.title") ?? "Deferred"}` : ""
+        const item = document.createElement("div")
+        item.className = "day-drawer-item"
+        item.dataset.taskId = String(task.id)
+        item.style.cursor = "pointer"
+        const icon = document.createElement("span")
+        icon.className = "day-drawer-item-icon"
+        icon.setAttribute("aria-hidden", "true")
+        icon.textContent = definition?.icon ?? "⬜"
+        const content = document.createElement("div")
+        content.className = "day-drawer-item-content"
+        const title = document.createElement("div")
+        title.className = "day-drawer-item-title"
+        title.textContent = String(task.title ?? "Untitled task")
+        const meta = document.createElement("div")
+        meta.className = "day-drawer-item-meta"
+        meta.textContent = `${definition?.label ?? status}${task.priority ? ` • P${String(task.priority)}` : ""}${deferredLabel}`
+        content.append(title, meta)
+        item.append(icon, content)
+        return item
+      }),
+    )
   } catch (error) {
     log.error("Failed to load calendar drawer tasks", error)
     const errTasks = document.createElement("span")
@@ -351,18 +376,26 @@ async function loadInlineEventPreviews(): Promise<void> {
     if (!container) continue
 
     const shown = events.slice(0, 2)
-    container.innerHTML = shown.map((event) => {
+    const nodes: HTMLElement[] = shown.map((event) => {
       const time = event.start.includes("T")
         ? new Date(event.start).toLocaleTimeString("en-US", {
           hour: "numeric",
           minute: "2-digit",
         })
         : "☀"
-      return `<div class="cal-inline-event cal-inline-ha" title="${escapeHtml(event.summary)}">${time} ${escapeHtml(event.summary)}</div>`
-    }).join("")
+      const div = document.createElement("div")
+      div.className = "cal-inline-event cal-inline-ha"
+      div.title = event.summary
+      div.textContent = `${time} ${event.summary}`
+      return div
+    })
 
     if (events.length > shown.length) {
-      container.innerHTML += `<span class="cal-inline-more">+${events.length - shown.length} more</span>`
+      const more = document.createElement("span")
+      more.className = "cal-inline-more"
+      more.textContent = `+${events.length - shown.length} more`
+      nodes.push(more)
     }
+    container.replaceChildren(...nodes)
   }
 }

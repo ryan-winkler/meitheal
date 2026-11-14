@@ -72,33 +72,66 @@ export function initCustomFields({ saveTD, getSettingsFields, signal }: CustomFi
 
     // Key label (always a readonly text input for consistency)
     let valueHtml = ""
+    let valueEl: HTMLElement
     if (fieldType === "checkbox") {
       const isChecked =
         value === "true" || value === "1" || value === "yes"
-      valueHtml = `<label class="td-cf-val-wrap" style="flex:1;display:flex;align-items:center;gap:8px;cursor:pointer;">
-              <input type="checkbox" class="form-checkbox td-cf-val h-5 w-5 accent-accent rounded" style="cursor:pointer;" ${isChecked ? "checked" : ""} />
-              <span class="text-xs text-text-muted">${isChecked ? "Yes" : "No"}</span>
-            </label>`
+      const label = document.createElement("label")
+      label.className = "td-cf-val-wrap"
+      label.style.cssText = "flex:1;display:flex;align-items:center;gap:8px;cursor:pointer;"
+      const cb = document.createElement("input")
+      cb.type = "checkbox"
+      cb.className = "form-checkbox td-cf-val h-5 w-5 accent-accent rounded"
+      cb.style.cursor = "pointer"
+      cb.checked = isChecked
+      const span = document.createElement("span")
+      span.className = "text-xs text-text-muted"
+      span.textContent = isChecked ? "Yes" : "No"
+      label.append(cb, span)
+      valueEl = label
     } else if (fieldType === "select" && options && options.length > 0) {
-      valueHtml = `<select class="form-input td-cf-val text-sm py-1" style="flex:1;">
-              <option value=""${!value ? " selected" : ""}>Select…</option>
-              ${options.map((o) => `<option value="${escapeHtml(o)}"${o === value ? " selected" : ""}>${escapeHtml(o)}</option>`).join("")}
-            </select>`
-    } else if (fieldType === "number") {
-      valueHtml = `<input type="number" class="form-input td-cf-val text-sm py-1" placeholder="Value" value="${escapeHtml(value)}" style="flex:1;" />`
-    } else if (fieldType === "date") {
-      valueHtml = `<input type="date" class="form-input td-cf-val text-sm py-1" value="${escapeHtml(value)}" style="flex:1;" />`
-    } else if (fieldType === "url") {
-      valueHtml = `<input type="url" class="form-input td-cf-val text-sm py-1" placeholder="https://…" value="${escapeHtml(value)}" style="flex:1;" />`
+      const select = document.createElement("select")
+      select.className = "form-input td-cf-val text-sm py-1"
+      select.style.flex = "1"
+      const emptyOpt = document.createElement("option")
+      emptyOpt.value = ""
+      emptyOpt.textContent = "Select…"
+      emptyOpt.selected = !value
+      select.appendChild(emptyOpt)
+      for (const o of options) {
+        const opt = document.createElement("option")
+        opt.value = o
+        opt.textContent = o
+        opt.selected = o === value
+        select.appendChild(opt)
+      }
+      valueEl = select
     } else {
-      valueHtml = `<input type="text" class="form-input td-cf-val text-sm py-1" placeholder="Value" value="${escapeHtml(value)}" style="flex:1;" />`
+      const input = document.createElement("input")
+      input.type = fieldType === "number" || fieldType === "date" || fieldType === "url" ? fieldType : "text"
+      input.className = "form-input td-cf-val text-sm py-1"
+      input.style.flex = "1"
+      if (fieldType === "url") input.placeholder = "https://…"
+      else if (fieldType !== "date") input.placeholder = "Value"
+      input.value = value
+      valueEl = input
     }
 
-    row.innerHTML = `
-          <input type="text" class="form-input td-cf-key text-sm py-1" placeholder="Field name" value="${escapeHtml(key)}" style="flex:1;opacity:0.7;" readonly />
-          ${valueHtml}
-          <button type="button" class="td-cf-remove" style="color:var(--danger);font-size:16px;cursor:pointer;background:none;border:none;padding:0 4px;">&times;</button>
-        `
+    const keyInput = document.createElement("input")
+    keyInput.type = "text"
+    keyInput.className = "form-input td-cf-key text-sm py-1"
+    keyInput.placeholder = "Field name"
+    keyInput.value = key
+    keyInput.style.cssText = "flex:1;opacity:0.7;"
+    keyInput.readOnly = true
+
+    const removeBtn = document.createElement("button")
+    removeBtn.type = "button"
+    removeBtn.className = "td-cf-remove"
+    removeBtn.style.cssText = "color:var(--danger);font-size:16px;cursor:pointer;background:none;border:none;padding:0 4px;"
+    removeBtn.textContent = "×"
+
+    row.replaceChildren(keyInput, valueEl, removeBtn)
 
     // Bind save handlers based on field type
     if (fieldType === "checkbox") {
@@ -199,35 +232,44 @@ export function initCustomFields({ saveTD, getSettingsFields, signal }: CustomFi
     const lowerFilter = filter.toLowerCase()
     const categories = getAvailableFields()
     const _settingsFields = getSettingsFields()
-    let html = ""
+    const nodes: HTMLElement[] = []
     let totalCount = 0
+    const typeBadge: Record<string, string> = {
+      text: "📝",
+      checkbox: "☑️",
+      select: "📊",
+      date: "📅",
+      number: "🔢",
+      url: "🔗",
+    }
     for (const cat of categories) {
       const filtered = cat.fields.filter((f) =>
         f.toLowerCase().includes(lowerFilter),
       )
       if (filtered.length === 0) continue
       totalCount += filtered.length
-      html += `<div class="px-3 py-1 text-[10px] text-text-muted uppercase tracking-wide font-semibold border-t border-border first:border-t-0">${cat.label}</div>`
-      html += filtered
-        .map((f) => {
-          const sfDef = _settingsFields.find((sf) => sf.name === f)
-          const typeBadge: Record<string, string> = {
-            text: "📝",
-            checkbox: "☑️",
-            select: "📊",
-            date: "📅",
-            number: "🔢",
-            url: "🔗",
-          }
-          const badge = typeBadge[sfDef?.type || "text"] || "📝"
-          return `<div class="td-cf-option px-3 py-1.5 text-sm cursor-pointer hover:bg-bg-hover" data-field="${escapeHtml(f)}">${badge} ${escapeHtml(f)}</div>`
-        })
-        .join("")
+      const header = document.createElement("div")
+      header.className = "px-3 py-1 text-[10px] text-text-muted uppercase tracking-wide font-semibold border-t border-border first:border-t-0"
+      header.textContent = cat.label
+      nodes.push(header)
+      for (const f of filtered) {
+        const sfDef = _settingsFields.find((sf) => sf.name === f)
+        const badge = typeBadge[sfDef?.type || "text"] || "📝"
+        const opt = document.createElement("div")
+        opt.className = "td-cf-option px-3 py-1.5 text-sm cursor-pointer hover:bg-bg-hover"
+        opt.dataset.field = f
+        opt.textContent = `${badge} ${f}`
+        nodes.push(opt)
+      }
     }
-    optionsDiv.innerHTML =
-      totalCount > 0
-        ? html
-        : `<div class="px-3 py-1.5 text-xs text-text-muted italic">Type a custom name and press Enter</div>`
+    if (totalCount === 0) {
+      const empty = document.createElement("div")
+      empty.className = "px-3 py-1.5 text-xs text-text-muted italic"
+      empty.textContent = "Type a custom name and press Enter"
+      optionsDiv.replaceChildren(empty)
+    } else {
+      optionsDiv.replaceChildren(...nodes)
+    }
     // Click handlers
     optionsDiv.querySelectorAll(".td-cf-option").forEach((opt) => {
       opt.addEventListener("click", () => {

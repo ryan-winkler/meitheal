@@ -124,12 +124,15 @@ export function initCommandPalette({ openTaskDetail, __signal }: CommandPaletteD
           .slice(0, 10)
         if (matches.length > 0) {
           cpTasksSection?.classList.remove("hidden")
-          cpTasks.innerHTML = matches
-            .map(
-              (t) =>
-                `<div class="cp-item px-4 py-2.5 cursor-pointer hover:bg-bg-hover text-sm text-text-primary" data-task-id="${t.id}">${t.title}</div>`,
-            )
-            .join("")
+          cpTasks.replaceChildren(
+            ...matches.map((t) => {
+              const item = document.createElement("div")
+              item.className = "cp-item px-4 py-2.5 cursor-pointer hover:bg-bg-hover text-sm text-text-primary"
+              item.dataset.taskId = t.id
+              item.textContent = t.title
+              return item
+            }),
+          )
         } else {
           cpTasksSection?.classList.add("hidden")
         }

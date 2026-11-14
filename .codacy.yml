@@ -1,5 +1,10 @@
 ---
+engines:
+  tsqllint:
+    enabled: false
 exclude_paths:
+  - "pnpm-lock.yaml"
+  - "apps/web/drizzle/migrations/*.sql"
   - ".planning/**"
   - ".agents/**"
   - ".skills/**"

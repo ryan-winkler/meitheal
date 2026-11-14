@@ -14,9 +14,10 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN
 from .coordinator import MeithealCoordinator
-from .helpers import PARALLEL_UPDATES as PARALLEL_UPDATES, device_info
+from .helpers import PARALLEL_UPDATES as _PARALLEL_UPDATES, device_info
+
+PARALLEL_UPDATES = _PARALLEL_UPDATES
 
 _LOGGER = logging.getLogger(__name__)
 

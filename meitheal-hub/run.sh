@@ -170,7 +170,7 @@ graceful_shutdown() {
   if [ -n "${WEB_PID:-}" ] && kill -0 "${WEB_PID}" 2>/dev/null; then
     kill -TERM "${WEB_PID}" 2>/dev/null || true
     # Wait up to 10s for graceful exit
-    for i in $(seq 1 10); do
+    for _ in $(seq 1 10); do
       if ! kill -0 "${WEB_PID}" 2>/dev/null; then
         echo "{\"event\":\"addon.stopped\",\"graceful\":true,\"time\":\"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\"}"
         exit 0

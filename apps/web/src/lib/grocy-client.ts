@@ -18,8 +18,8 @@ export async function createGrocyClient(): Promise<GrocyAdapter | null> {
       "SELECT key, value FROM settings WHERE key IN ('grocy_url', 'grocy_api_key')"
     );
 
-    let baseUrl = "";
-    let apiKey = "";
+    let baseUrl: string | undefined;
+    let apiKey: string | undefined;
 
     for (const row of result.rows) {
       if (row.key === "grocy_url") {

@@ -48,7 +48,7 @@ export function decryptCalDAVPassword(encoded: string): string {
   const iv = raw.subarray(0, IV_LEN)
   const tag = raw.subarray(IV_LEN, IV_LEN + TAG_LEN)
   const ciphertext = raw.subarray(IV_LEN + TAG_LEN)
-  const decipher = createDecipheriv(ALGO, key, iv)
+  const decipher = createDecipheriv(ALGO, key, iv, { authTagLength: TAG_LEN })
   decipher.setAuthTag(tag)
   return decipher.update(ciphertext) + decipher.final("utf8")
 }

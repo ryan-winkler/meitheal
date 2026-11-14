@@ -5,7 +5,7 @@
  * `home-assistant-js-websocket`. Uses `SUPERVISOR_TOKEN` for auth.
  *
  * Architecture:
- *   Addon Server → ws://supervisor/core/api/websocket → HA Core
+ *   Addon Server → supervisor/core/api/websocket (via Supervisor proxy) → HA Core
  *
  * @domain ha
  * @bounded-context integration

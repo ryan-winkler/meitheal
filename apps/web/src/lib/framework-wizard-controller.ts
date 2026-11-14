@@ -292,16 +292,34 @@ function renderFormulaVars(): void {
 
   const keys = state.fields.map((f) => f.key).filter(Boolean)
   if (keys.length === 0) {
-    varsEl.innerHTML = "<p class='fw-field-hint'>No fields defined yet. Go back to Step 2 to add fields.</p>"
+    const emptyP = document.createElement("p")
+    emptyP.className = "fw-field-hint"
+    emptyP.textContent = "No fields defined yet. Go back to Step 2 to add fields."
+    varsEl.replaceChildren(emptyP)
     return
   }
 
-  varsEl.innerHTML = `
-    <p class="fw-field-hint"><strong>Available field keys:</strong></p>
-    <div style="display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px;">
-      ${keys.map((k) => `<code style="padding: 2px 6px; background: var(--bg-secondary); border-radius: 4px; font-size: 12px;">${escapeHtml(k)}</code>`).join("")}
-    </div>
-  `
+  const hintP = document.createElement("p")
+  hintP.className = "fw-field-hint"
+  const strong = document.createElement("strong")
+  strong.textContent = "Available field keys:"
+  hintP.appendChild(strong)
+
+  const chips = document.createElement("div")
+  chips.style.display = "flex"
+  chips.style.flexWrap = "wrap"
+  chips.style.gap = "4px"
+  chips.style.marginTop = "4px"
+  for (const k of keys) {
+    const code = document.createElement("code")
+    code.style.padding = "2px 6px"
+    code.style.background = "var(--bg-secondary)"
+    code.style.borderRadius = "4px"
+    code.style.fontSize = "12px"
+    code.textContent = k
+    chips.appendChild(code)
+  }
+  varsEl.replaceChildren(hintP, chips)
 }
 
 // ------------------------------------------------------------------
@@ -364,40 +382,86 @@ function renderPreview(): void {
   const yamlEl = $("#fw-yaml-output")
   if (!previewEl) return
 
-  const fieldsHtml = state.fields.map((f) => `
-    <div style="display: flex; justify-content: space-between; align-items: center; padding: 4px 0; font-size: 13px;">
-      <span><strong>${escapeHtml(f.label)}</strong></span>
-      <span style="color: var(--text-muted);">${escapeHtml(f.type)} (${escapeHtml(f.uiType)})${f.type === "number" ? ` [${escapeHtml(String(f.min))}–${escapeHtml(String(f.max))}]` : ""}</span>
-    </div>
-  `).join("")
+  const nodes: HTMLElement[] = []
 
-  const badgesHtml = state.badges.map((b) => `
-    <span style="display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; background: var(--${escapeHtml(b.color)}); color: var(--bg-primary);">
-      ${escapeHtml(b.label)} (≥${escapeHtml(String(b.min))})
-    </span>
-  `).join(" ")
+  const header = document.createElement("div")
+  header.style.display = "flex"
+  header.style.alignItems = "center"
+  header.style.gap = "8px"
+  header.style.marginBottom = "10px"
+  const title = document.createElement("strong")
+  title.style.fontSize = "16px"
+  title.textContent = state.name || "Untitled"
+  const archBadge = document.createElement("span")
+  archBadge.style.cssText = "font-size: 11px; padding: 2px 8px; border-radius: 999px; background: var(--bg-primary); border: 1px solid var(--border);"
+  archBadge.textContent = state.archetype
+  const customBadge = document.createElement("span")
+  customBadge.style.cssText = "font-size: 11px; padding: 2px 8px; border-radius: 999px; background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent);"
+  customBadge.textContent = "custom"
+  header.append(title, archBadge, customBadge)
+  nodes.push(header)
 
-  previewEl.innerHTML = `
-    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
-      <strong style="font-size: 16px;">${escapeHtml(state.name || "Untitled")}</strong>
-      <span style="font-size: 11px; padding: 2px 8px; border-radius: 999px; background: var(--bg-primary); border: 1px solid var(--border);">
-        ${escapeHtml(state.archetype)}
-      </span>
-      <span style="font-size: 11px; padding: 2px 8px; border-radius: 999px; background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent);">
-        custom
-      </span>
-    </div>
-    ${state.description ? `<p style="font-size: 12px; color: var(--text-muted); margin: 0 0 10px;">${escapeHtml(state.description)}</p>` : ""}
-    ${state.formula ? `<p style="font-size: 12px; font-family: monospace; margin: 0 0 10px;"><strong>Formula:</strong> ${escapeHtml(state.formula)}</p>` : ""}
-    <div style="margin-bottom: 8px;">
-      <strong style="font-size: 12px;">Fields (${state.fields.length})</strong>
-      ${fieldsHtml}
-    </div>
-    <div>
-      <strong style="font-size: 12px;">Badges</strong>
-      <div style="margin-top: 4px; display: flex; flex-wrap: wrap; gap: 4px;">${badgesHtml || "<span style='color: var(--text-muted); font-size: 12px;'>No badges defined</span>"}</div>
-    </div>
-  `
+  if (state.description) {
+    const descP = document.createElement("p")
+    descP.style.cssText = "font-size: 12px; color: var(--text-muted); margin: 0 0 10px;"
+    descP.textContent = state.description
+    nodes.push(descP)
+  }
+
+  if (state.formula) {
+    const formulaP = document.createElement("p")
+    formulaP.style.cssText = "font-size: 12px; font-family: monospace; margin: 0 0 10px;"
+    const fLabel = document.createElement("strong")
+    fLabel.textContent = "Formula:"
+    formulaP.append(fLabel, document.createTextNode(` ${state.formula}`))
+    nodes.push(formulaP)
+  }
+
+  const fieldsSection = document.createElement("div")
+  fieldsSection.style.marginBottom = "8px"
+  const fieldsHeading = document.createElement("strong")
+  fieldsHeading.style.fontSize = "12px"
+  fieldsHeading.textContent = `Fields (${state.fields.length})`
+  fieldsSection.appendChild(fieldsHeading)
+  for (const f of state.fields) {
+    const row = document.createElement("div")
+    row.style.cssText = "display: flex; justify-content: space-between; align-items: center; padding: 4px 0; font-size: 13px;"
+    const left = document.createElement("span")
+    const leftStrong = document.createElement("strong")
+    leftStrong.textContent = f.label
+    left.appendChild(leftStrong)
+    const right = document.createElement("span")
+    right.style.color = "var(--text-muted)"
+    right.textContent = `${f.type} (${f.uiType})${f.type === "number" ? ` [${f.min}–${f.max}]` : ""}`
+    row.append(left, right)
+    fieldsSection.appendChild(row)
+  }
+  nodes.push(fieldsSection)
+
+  const badgesSection = document.createElement("div")
+  const badgesHeading = document.createElement("strong")
+  badgesHeading.style.fontSize = "12px"
+  badgesHeading.textContent = "Badges"
+  const badgesWrap = document.createElement("div")
+  badgesWrap.style.cssText = "margin-top: 4px; display: flex; flex-wrap: wrap; gap: 4px;"
+  if (state.badges.length === 0) {
+    const none = document.createElement("span")
+    none.style.cssText = "color: var(--text-muted); font-size: 12px;"
+    none.textContent = "No badges defined"
+    badgesWrap.appendChild(none)
+  } else {
+    for (const b of state.badges) {
+      const chip = document.createElement("span")
+      chip.style.cssText = "display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; color: var(--bg-primary);"
+      chip.style.background = `var(--${b.color.replace(/[^a-zA-Z0-9_-]/g, "")})`
+      chip.textContent = `${b.label} (≥${b.min})`
+      badgesWrap.appendChild(chip)
+    }
+  }
+  badgesSection.append(badgesHeading, badgesWrap)
+  nodes.push(badgesSection)
+
+  previewEl.replaceChildren(...nodes)
 
   // YAML preview
   if (yamlEl) {
