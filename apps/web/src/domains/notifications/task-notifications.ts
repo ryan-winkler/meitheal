@@ -31,7 +31,7 @@ export interface TaskNotification {
 
 /** Send one notification to every enabled channel. Delivery failures are logged, never thrown. */
 export async function sendTaskNotification(prefs: TaskNotificationPreferences, notification: TaskNotification): Promise<void> {
-  const { callHAService } = await import("@domains/ha/ha-services")
+  const { callHAService } = await import("@domains/ha")
   const { title, message, notificationId, ingress, taskId, isUrgent, badgeCount } = notification
   const deliveries: Promise<unknown>[] = []
 

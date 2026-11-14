@@ -134,6 +134,9 @@ test("an agent assignee reads, answers, updates and hands back only its own task
     const all = await call(claudeToken, "listMyTasks", { include_completed: true })
     expect(all.data.tasks.map((task: { id: string }) => task.id).sort()).toEqual([mine, done].sort())
     expect((await call(codexToken, "listMyTasks")).data.tasks.map((task: { id: string }) => task.id)).toEqual([theirs])
+    const archived = await newTask("Archived old chore", claude.id)
+    expect((await api.put(base + `/api/tasks/${archived}`, { headers: automation, data: { status: "archived" } })).status()).toBe(200)
+    expect((await call(claudeToken, "listMyTasks")).data.tasks.map((task: { id: string }) => task.id)).toEqual([mine])
 
     // A task's own status survives the MCP wrapper.
     const read = await call(claudeToken, "getTask", { id: mine })

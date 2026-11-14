@@ -20,7 +20,7 @@ import {
 } from "@domains/tasks"
 import { apiJson, apiError, apiProblem } from "@lib/api-response"
 import { readWithinLimit } from "@lib/bounded-body"
-import { isDoneStatus } from "@lib/status-config"
+import { isClosedStatus, isDoneStatus } from "@lib/status-config"
 import type { ResolvedAgent } from "@lib/agent-token-guard"
 
 /**
@@ -397,7 +397,7 @@ customHandlers.set("listMyTasks", async (args, requestApi, agent) => {
     total = Number(page.total ?? rows.length)
     for (const row of rows) {
       // An explicit status filter is the caller's own choice of what to see.
-      if (!wanted && !includeCompleted && isDoneStatus(String(row.status ?? ""))) continue
+      if (!wanted && !includeCompleted && isClosedStatus(String(row.status ?? ""))) continue
       if (tasks.length < limit) tasks.push(taskSummary(row))
     }
     if (rows.length < 200 || offset + rows.length >= total) break

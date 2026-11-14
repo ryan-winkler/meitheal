@@ -253,7 +253,7 @@ const schemas = {
     description: "Outbound event fired on task lifecycle changes. Subscribe via webhook settings or HA event bus.",
     properties: {
       eventId: { type: "string", format: "uuid" },
-      eventType: { type: "string", enum: ["task.created", "task.updated", "task.completed", "task.deleted", "task.overdue", "area.updated"] },
+      eventType: { type: "string", enum: ["task.created", "task.updated", "task.completed", "task.deleted", "task.overdue", "task.commented", "area.updated"] },
       occurredAt: { type: "string", format: "date-time" },
       requestId: { type: "string" },
       payload: { type: "object" },
@@ -1963,7 +1963,7 @@ const paths = {
       operationId: "sendA2AMessage",
       tags: ["Agents"],
       summary: "Call A2A JSON-RPC 1.0 methods (SendMessage, GetTask, ListTasks, CancelTask)",
-      description: "Requires a token with a2a:execute and search:read (plus tasks:read for GetTask and ListTasks) and the A2A-Version: 1.0 header. SendMessage returns up to eight active task titles and links; ListTasks returns open tasks assigned to the linked agent assignee; GetTask returns a single task by ID or ticket key.",
+      description: "Requires a token with a2a:execute and search:read (plus tasks:read for GetTask, ListTasks, and CancelTask) and the A2A-Version: 1.0 header. SendMessage returns up to eight active task titles and links; ListTasks returns open tasks assigned to the linked agent assignee; GetTask returns a single task by ID or ticket key.",
       parameters: [
         { name: "A2A-Version", in: "header", required: true, schema: { type: "string", enum: ["1.0"] } },
       ],
@@ -2122,6 +2122,14 @@ const webhooks = {
     post: {
       operationId: "onTaskOverdue",
       summary: "Fires when a task passes its due date without completion",
+      requestBody: { content: { "application/json": { schema: ref("WebhookEvent") } } },
+      responses: { 200: { description: "Acknowledged" } },
+    },
+  },
+  "task.commented": {
+    post: {
+      operationId: "onTaskCommented",
+      summary: "Fires when a comment is added to a task",
       requestBody: { content: { "application/json": { schema: ref("WebhookEvent") } } },
       responses: { 200: { description: "Acknowledged" } },
     },

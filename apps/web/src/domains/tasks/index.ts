@@ -5,7 +5,7 @@ export { getSettingsRevision, SettingsRepository } from "./persistence/settings-
 export { rewriteLabelReferences } from "./persistence/label-reference-repository"
 export { TaskHandoff } from "./persistence/task-handoff"
 export { TaskRepository, type TaskCatalogRow } from "./persistence/task-repository"
-export { UserRepository } from "./persistence/user-repository"
+export { customUserKind, UserRepository, type CustomUserKind } from "./persistence/user-repository"
 export { startInactivityScheduler } from "./task-inactivity-scheduler"
 export {
   boardDraftHeader,

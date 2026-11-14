@@ -15,7 +15,7 @@ import { isAssignedWriteOnly, requireAssignedTaskWriteAccess, restrictedAssignee
 import { db503Response, isDbUnavailable } from "../../../lib/db-fallback"
 import { resolveRecentActivityActor } from "../../../lib/recent-activity-actor"
 import { STATUS, normalizeStatus, isDoneStatus } from "../../../lib/status-config"
-import { sendTaskNotification } from "@domains/notifications/task-notifications"
+import { sendTaskNotification } from "@domains/notifications"
 import { agentActivityActor } from "../../../lib/agent-activity-actor"
 
 
@@ -418,8 +418,10 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
     const changes: Array<{ field: string; oldValue: string | null; newValue: string }> = []
     for (const [field, newVal] of Object.entries(sanitized)) {
       const oldVal = oldTask[field]
-      if (String(newVal) !== String(oldVal ?? "")) {
-        changes.push({ field, oldValue: oldVal != null ? String(oldVal) : null, newValue: String(newVal) })
+      const normalizedNew = newVal == null ? "" : String(newVal)
+      const normalizedOld = oldVal == null ? "" : String(oldVal)
+      if (normalizedNew !== normalizedOld) {
+        changes.push({ field, oldValue: oldVal != null ? String(oldVal) : null, newValue: normalizedNew })
       }
     }
     if (changes.length > 0) {
@@ -448,7 +450,7 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
   const notifPrefs = await repo.getNotificationPreferences()
 
   // F4/F5: Load callHAService once for all notification helpers
-  const haServicesImport = import("../../../domains/ha/ha-services")
+  const haServicesImport = import("@domains/ha")
 
   // Helper: dispatch notification to configured channels
   interface DispatchOpts { isUrgent?: boolean; badgeCount?: number }
@@ -480,7 +482,7 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
 
   // Phase 52: Notification if bumped to Urgent (P1)
   if (notifPrefs.enabled && sanitized.priority === 1 && oldTask?.priority !== 1) {
-    import("../../../domains/ha/ha-connection").then(async ({ getIngressEntry }) => {
+    import("@domains/ha").then(async ({ getIngressEntry }) => {
       const ingress = await getIngressEntry()
       const titleStr = typeof sanitized.title === "string" ? sanitized.title : String(oldTask?.title ?? "Task")
       const ticketKey = taskPayload.ticket_key ?? "Task"
@@ -498,10 +500,10 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
   }
 
   // Assignment-change notification (respects per-user prefs)
-  if (notifPrefs.enabled && sanitized.assigned_to !== undefined && String(sanitized.assigned_to) !== String(oldTask?.assigned_to ?? "")) {
+  if (notifPrefs.enabled && sanitized.assigned_to !== undefined && (sanitized.assigned_to || null) !== (oldTask?.assigned_to || null)) {
     const assignee = typeof sanitized.assigned_to === "string" ? sanitized.assigned_to : null
     if (assignee && !notifPrefs.disabledUsers.has(assignee)) {
-      import("../../../domains/ha/ha-connection").then(async ({ getIngressEntry }) => {
+      import("@domains/ha").then(async ({ getIngressEntry }) => {
         const ingress = await getIngressEntry()
         const titleStr = typeof sanitized.title === "string" ? sanitized.title : String(oldTask?.title ?? "Task")
         const ticketKey = taskPayload.ticket_key ?? "A task"
@@ -509,7 +511,7 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
         let displayName = assignee.replace(/^(ha_|custom_)/, "")
         try {
           if (assignee.startsWith("ha_")) {
-            const { listHAUsers } = await import("../../../domains/ha/ha-users")
+            const { listHAUsers } = await import("@domains/ha")
             const haUsers = await listHAUsers()
             const match = haUsers.find(u => `ha_${u.id}` === assignee)
             if (match?.name) displayName = match.name
@@ -534,7 +536,7 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
     } else if (!assignee && agentActivityActor(locals)) {
       // An agent gave the task up without naming anyone, so someone has to pick it up.
       const agentName = agentActivityActor(locals)!.actor
-      import("../../../domains/ha/ha-connection").then(async ({ getIngressEntry }) => {
+      import("@domains/ha").then(async ({ getIngressEntry }) => {
         const ingress = await getIngressEntry()
         const titleStr = typeof sanitized.title === "string" ? sanitized.title : String(oldTask?.title ?? "Task")
         const ticketKey = taskPayload.ticket_key ?? "A task"

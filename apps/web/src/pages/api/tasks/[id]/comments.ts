@@ -8,7 +8,7 @@ import { requireAssignedTaskWriteAccess, restrictedAssigneeId } from "@lib/agent
 import { checkCommentMentionWriteContext, commentAttempt, commentMentionProblem, prepareCommentMentions } from "@lib/comment-mention-request"
 import { commentAttemptHorizonMs, commentMentions, hasCommentMentionSelector, redactCommentMentionSelectors } from "@lib/comment-mentions"
 import { verifiedIngressUser } from "@lib/verified-ingress-user"
-import { notifyAgentComment } from "@domains/notifications/agent-comment"
+import { notifyAgentComment } from "@domains/notifications"
 import { activeParticipantRequired, commentFailure, commentJson, hasCurrentTaskParticipant, readComment, resolveCommentAuthor } from "@lib/task-comment-request"
 
 export const GET: APIRoute = async ({ locals, params, request }) => {

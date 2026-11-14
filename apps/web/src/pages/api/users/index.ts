@@ -1,7 +1,7 @@
 import type { APIRoute } from "astro"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
-import { UserRepository, customUserKind } from "@domains/tasks/persistence/user-repository"
-import { listHAUsers, type MeithealUser } from "@domains/ha/ha-users"
+import { customUserKind, UserRepository } from "@domains/tasks"
+import { listHAUsers, type MeithealUser } from "@domains/ha"
 
 /**
  * GET /api/users — Merged list of HA users + custom users.

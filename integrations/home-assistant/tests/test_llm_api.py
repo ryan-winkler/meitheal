@@ -264,6 +264,17 @@ async def test_manage_api_reads_and_changes_tasks_for_the_caller(
         assert last_two_calls[1].kwargs["params"]["offset"] == "200"
         client.async_request.side_effect = None
 
+        client.async_request.return_value = {
+            "tasks": [
+                {"id": "open-1", "title": "Open", "status": "pending", "assigned_to": me},
+                {"id": "arch-1", "title": "Archived", "status": "ARCHIVED", "assigned_to": me},
+                {"id": "canc-1", "title": "Canceled", "status": "cancelled", "assigned_to": me},
+            ],
+            "total": 3,
+        }
+        closed_filtered = await async_call(instance, "meitheal_list_tasks", {})
+        assert [t["id"] for t in closed_filtered.data["tasks"]] == ["open-1"]
+
         client.async_request.return_value = {"id": "new", "title": "Plan", "assigned_to": me}
         created = await async_call(
             instance, "meitheal_create_task", {"title": "Plan", "priority": 2, "assignee": "me"}
@@ -290,6 +301,13 @@ async def test_manage_api_reads_and_changes_tasks_for_the_caller(
             instance, "meitheal_update_task", {"task_id": "open", "assignee": "custom_1a2b3c4d"}
         )
         assert client.async_request.await_args.kwargs["payload"] == {"assigned_to": "custom_1a2b3c4d"}
+
+        client.async_request.return_value = {"id": "uuid-42", "ticket_key": "MTH-42", "title": "Via key"}
+        keyed = await async_call(instance, "meitheal_update_task", {"task_id": "mth-42", "title": "Via key"})
+        assert keyed.data["ticket_key"] == "MTH-42"
+        client.async_request.assert_awaited_with(
+            "PUT", "/api/tasks/mth-42", payload={"title": "Via key"}, read_json=True,
+        )
 
         client.async_request.return_value = {"id": 7, "author": "Automation: Home Assistant"}
         comment = await async_call(

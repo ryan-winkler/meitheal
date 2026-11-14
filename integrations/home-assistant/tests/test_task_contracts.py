@@ -310,6 +310,24 @@ async def test_completion_rejects_bad_receipt_without_success_event(coordinator,
     event.assert_not_called()
 
 
+async def test_completion_and_update_accept_ticket_key_case_insensitively(coordinator):
+    coordinator.api.async_request.return_value = {"id": "uuid-42", "ticket_key": "MTH-42", "status": "done"}
+    coordinator.async_request_refresh = AsyncMock()
+    await coordinator.async_complete_task(task_id="MTH-42")
+    assert coordinator.api.async_request.call_args.args[:2] == ("PUT", "/api/tasks/MTH-42")
+
+    coordinator.api.async_request.reset_mock()
+    coordinator.api.async_request.side_effect = [
+        {"id": "uuid-42", "ticket_key": "MTH-42", "status": "pending", "task_version": 7},
+        {"id": "uuid-42", "ticket_key": "MTH-42", "status": "done"},
+    ]
+    await coordinator.async_update_task("mth-42", {"status": "done"})
+    assert [call.args[:2] for call in coordinator.api.async_request.call_args_list] == [
+        ("GET", "/api/tasks/mth-42"),
+        ("PUT", "/api/tasks/mth-42"),
+    ]
+
+
 @pytest.mark.parametrize("repeated", [False, True])
 async def test_nfc_uses_authenticated_route_without_repeat_completion_event(coordinator, repeated):
     result = {"ok": True, "task_id": "tag-task", **({"already_complete": True} if repeated else {

@@ -1,7 +1,8 @@
 import { hasScope } from "@meitheal/domain-auth"
 import { TaskRepository, ensureSchema, getPersistenceClient } from "@domains/tasks"
 import type { ResolvedAgent } from "./agent-token-guard"
-import { isActiveStatus, isDoneStatus, normalizeStatus } from "./status-config"
+import { isActiveStatus, isClosedStatus, isDoneStatus, normalizeStatus } from "./status-config"
+import { formatTicketKey } from "./ticket-key"
 
 /**
  * Meitheal tasks in A2A's task shape. A2A tasks here are the household's own
@@ -13,7 +14,7 @@ type Row = Record<string, unknown>
 function state(status: unknown): string {
   const value = normalizeStatus(String(status ?? ""))
   if (value === "cancelled" || value === "canceled") return "TASK_STATE_CANCELED"
-  if (isDoneStatus(value)) return "TASK_STATE_COMPLETED"
+  if (isDoneStatus(value) || value === "archived") return "TASK_STATE_COMPLETED"
   return isActiveStatus(value) ? "TASK_STATE_WORKING" : "TASK_STATE_SUBMITTED"
 }
 
@@ -30,7 +31,7 @@ function timestamp(value: unknown): string | undefined {
 
 export function toA2aTask(row: Row, base: string, includeArtifacts = true) {
   const id = String(row.id)
-  const ticket = row.ticket_number == null ? null : `MTH-${row.ticket_number}`
+  const ticket = row.ticket_number == null ? null : formatTicketKey(Number(row.ticket_number))
   const updated = timestamp(row.task_version ?? row.updated_at)
   return {
     id,
@@ -104,7 +105,7 @@ export async function listA2aTasks(
   }
   // Filter after the read: A2A states group several Meitheal statuses.
   const matching = rows.filter(row => {
-    if (!(options.state ? state(row.status) === options.state : !isDoneStatus(normalizeStatus(String(row.status ?? ""))))) {
+    if (!(options.state ? state(row.status) === options.state : !isClosedStatus(String(row.status ?? "")))) {
       return false
     }
     if (options.contextId && row.id !== options.contextId) return false

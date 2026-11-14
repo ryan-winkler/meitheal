@@ -12,3 +12,5 @@ export type { CalendarEvent, TodoItem } from "./ha-services";
 export { fireHAEvent, emitTaskCreated, emitTaskUpdated, emitTaskCompleted, emitTaskDeleted, emitTaskOverdue, emitAreaUpdated, emitCalendarSynced, emitCalendarEventCreated } from "./ha-events";
 export type { MeithealEventType, MeithealTaskEventData, MeithealAreaEventData, MeithealCalendarEventData } from "./ha-events";
 export { readCurrentHARole, verifyCurrentHAAdministrator, verifyCurrentHAParticipant } from "./current-admin";
+export { listHAUsers } from "./ha-users";
+export type { MeithealUser } from "./ha-users";

@@ -78,13 +78,22 @@ export const POST: APIRoute = async ({ params, request, locals }) => {
     }
 
     if (!resolved) return apiError("Task not found", 404)
-    const denied = await requireAssignedTaskWriteAccess(
+    const sourceDenied = await requireAssignedTaskWriteAccess(
       locals.agentToken,
       (id) => repo.findById(id),
-      [sourceTaskId, target_task_id],
+      [sourceTaskId],
       "Agent can only modify links for tasks assigned to it",
     )
-    if (denied) return denied
+    if (sourceDenied) return sourceDenied
+    const targetTask = await repo.findById(target_task_id)
+    if (!targetTask) return apiError("Target task not found", 404)
+    const targetDenied = await requireAssignedTaskWriteAccess(
+      locals.agentToken,
+      async () => targetTask,
+      [target_task_id],
+      "Agent can only modify links for tasks assigned to it",
+    )
+    if (targetDenied) return targetDenied
 
     // Idempotency check
     if (await repo.linkExists(sourceTaskId, target_task_id, link_type)) {

@@ -183,6 +183,34 @@ test("agent comments and task notifications are delivered through Home Assistant
     })
     expect(calls.map(call => call.domain)).toEqual(["persistent_notification"])
     expect(await repo.findById("task-notify-1")).toBeTruthy()
+
+    // Writing assigned_to: null on an already-unassigned task is a no-op (no activity entry, no handback push).
+    await settings.upsert("notification_preferences", JSON.stringify({
+      enabled: true,
+      channels: { sidebar: true, mobile_push: false },
+    }))
+    calls.length = 0
+    const { PUT: putTask } = await import("../../apps/web/src/pages/api/tasks/[id]")
+    const noopRes = await putTask({
+      params: { id: "task-notify-1" },
+      request: new Request("http://localhost/api/tasks/task-notify-1", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ assigned_to: null }),
+      }),
+      locals: {
+        requestId: "req-unassigned-noop",
+        agentToken: { id: "tok-notify", name: "Claude", tokenPrefix: "mth_test", scopes: ["tasks:write"], assigneeId: null },
+      },
+    } as unknown as Parameters<typeof putTask>[0])
+    expect(noopRes.status).toBe(200)
+    await new Promise(resolve => setTimeout(resolve, 25))
+    expect(calls).toEqual([])
+    const assignRows = await client.execute({
+      sql: "SELECT COUNT(*) AS n FROM task_activity_log WHERE task_id = ? AND field = 'assigned_to'",
+      args: ["task-notify-1"],
+    })
+    expect(Number(assignRows.rows[0]?.n)).toBe(0)
   } finally {
     entities.stopEntitySubscription()
     ha.closeHAConnection()

@@ -1,6 +1,6 @@
 import type { APIRoute } from "astro"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
-import { UserRepository, customUserKind } from "@domains/tasks/persistence/user-repository"
+import { customUserKind, UserRepository } from "@domains/tasks"
 import { sanitize } from "../../../lib/sanitize"
 
 /**

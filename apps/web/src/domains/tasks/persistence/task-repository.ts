@@ -1792,7 +1792,7 @@ export class TaskRepository {
       {
         sql: `SELECT id, task_id, field, old_value, new_value, actor, actor_type, event_type, summary, correlation_id, created_at
               FROM task_activity_log ${where}
-              ORDER BY created_at DESC
+              ORDER BY created_at DESC, id DESC
               LIMIT ? OFFSET ?`,
         args: [taskId, limit, offset],
       },
@@ -1960,20 +1960,18 @@ export class TaskRepository {
     const now = new Date().toISOString()
     const tx = await this.client.transaction("write")
     try {
-      if (expectedAssignedTo !== undefined) {
-        const res = await tx.execute({
-          sql: "SELECT id, assigned_to FROM tasks WHERE id IN (?, ?)",
-          args: [sourceTaskId, targetTaskId],
-        })
-        const byId = new Map(res.rows.map(r => [String((r as Record<string, unknown>).id), (r as Record<string, unknown>).assigned_to]))
-        if (!byId.has(sourceTaskId) || !byId.has(targetTaskId)) {
-          await tx.commit()
-          return { ok: false, errorCode: "not_found" }
-        }
-        if (byId.get(sourceTaskId) !== expectedAssignedTo || byId.get(targetTaskId) !== expectedAssignedTo) {
-          await tx.commit()
-          return { ok: false, errorCode: "assignee_mismatch" }
-        }
+      const res = await tx.execute({
+        sql: "SELECT id, assigned_to FROM tasks WHERE id IN (?, ?)",
+        args: [sourceTaskId, targetTaskId],
+      })
+      const byId = new Map(res.rows.map(r => [String((r as Record<string, unknown>).id), (r as Record<string, unknown>).assigned_to]))
+      if (!byId.has(sourceTaskId) || !byId.has(targetTaskId)) {
+        await tx.commit()
+        return { ok: false, errorCode: "not_found" }
+      }
+      if (expectedAssignedTo !== undefined && (byId.get(sourceTaskId) !== expectedAssignedTo || byId.get(targetTaskId) !== expectedAssignedTo)) {
+        await tx.commit()
+        return { ok: false, errorCode: "assignee_mismatch" }
       }
       await tx.execute({
         sql: "INSERT INTO task_links (id, source_task_id, target_task_id, link_type, created_at) VALUES (?, ?, ?, ?, ?)",

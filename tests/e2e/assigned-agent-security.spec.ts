@@ -163,6 +163,17 @@ dbTest.describe("Assigned-Agent Authorization & Repository Guards", () => {
     } as unknown as Parameters<typeof postLink>[0])
     expect(crossCreate.status).toBe(403)
 
+    // Non-existent target returns 404 for an assigned-only token owning the source task
+    const missingRes = await postLink({
+      params: { id: ownA },
+      request: new Request(`http://localhost/api/tasks/${ownA}/links`, {
+        method: "POST",
+        body: JSON.stringify({ target_task_id: crypto.randomUUID(), link_type: "related_to" }),
+      }),
+      locals: agentLocals("custom_agent_a"),
+    } as unknown as Parameters<typeof postLink>[0])
+    expect(missingRes.status).toBe(404)
+
     // Agent A can link two tasks both assigned to Agent A
     const ownCreate = await postLink({
       params: { id: ownA },

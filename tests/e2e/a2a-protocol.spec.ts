@@ -222,9 +222,14 @@ test("an agent reads its assigned household tasks as A2A tasks and cannot cancel
 
   expect((await call(agent, "GetTask", { id: other.id })).result).toMatchObject({ id: other.id, status: { state: expect.stringMatching(/^TASK_STATE_/) } })
   expect((await request.post(endpoint, { headers: noRead, data: envelope("GetTask", { id: mine.id }) })).status()).toBe(403)
+  expect((await request.post(endpoint, { headers: noRead, data: envelope("CancelTask", { id: mine.id }) })).status()).toBe(403)
   expect((await call(agent, "CancelTask", { id: mine.id })).error.code).toBe(-32002)
   const unchanged = await (await request.get(ingress + `/api/tasks/${mine.id}`, { headers: admin })).json()
   expect(unchanged.status).toBe(mine.status)
+
+  const archived = await create({ title: "Old archived task", assigned_to: assigneeId, status: "archived" })
+  expect((await call(agent, "ListTasks")).result.tasks.map((task: { id: string }) => task.id)).toEqual([mine.id])
+  expect((await call(agent, "ListTasks", { status: "TASK_STATE_COMPLETED" })).result.tasks.map((task: { id: string }) => task.id)).toContain(archived.id)
 
   const rest = await request.get(ingress + `/api/a2a/tasks/${mine.id}`, { headers: agent })
   expect(rest.status()).toBe(200)

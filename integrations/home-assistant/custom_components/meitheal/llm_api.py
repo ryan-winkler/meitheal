@@ -20,7 +20,7 @@ from homeassistant.exceptions import HomeAssistantError, Unauthorized
 from homeassistant.helpers import llm
 from homeassistant.util.json import JsonObjectType
 
-from .api import task_path
+from .api import task_matches_identifier, task_path
 from .const import DOMAIN
 from .coordinator import MeithealCoordinator, MeithealTask
 from .helpers import ASSIGNEE_ID, assignee_for_user
@@ -200,7 +200,7 @@ def _assignee(args: dict[str, Any]) -> str:
 _TASK_ID = probatio.All(str, probatio.Length(min=1, max=128), probatio.NotIn((".", "..")))
 _ASSIGNEE = probatio.Any("me", probatio.All(str, probatio.Match(ASSIGNEE_ID)))
 _OPEN_STATUSES = ("backlog", "pending", "active")
-_DONE_STATUSES = ("complete", "done")
+_DONE_STATUSES = ("complete", "done", "archived", "cancelled", "canceled")
 
 
 def _task_summary(data: dict[str, Any]) -> JsonObjectType:
@@ -219,13 +219,7 @@ def _task_summary(data: dict[str, Any]) -> JsonObjectType:
 
 def _acknowledged(data: Any, task_id: str | None = None) -> dict[str, Any]:
     """Accept only a task receipt, so a rejected write is never reported as done."""
-    if (
-        not isinstance(data, dict)
-        or not isinstance(data.get("id"), str)
-        or not data["id"]
-        or data.get("error")
-        or (task_id is not None and task_id not in (data["id"], data.get("ticket_key")))
-    ):
+    if not isinstance(data, dict) or not task_matches_identifier(data, task_id):
         raise HomeAssistantError("Meitheal did not acknowledge the change")
     return data
 
@@ -274,7 +268,7 @@ class ListTasksTool(MeithealReadTool):
             if not isinstance(rows, list):
                 raise HomeAssistantError("Meitheal returned an invalid task list")
             for row in rows:
-                if isinstance(row, dict) and (include_completed or row.get("status") not in _DONE_STATUSES):
+                if isinstance(row, dict) and (include_completed or str(row.get("status") or "").lower() not in _DONE_STATUSES):
                     tasks.append(_task_summary(row))
             offset += len(rows)
             total = data.get("total") if isinstance(data, dict) else None

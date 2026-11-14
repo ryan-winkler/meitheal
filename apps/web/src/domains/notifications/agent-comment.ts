@@ -57,7 +57,7 @@ export async function notifyAgentComment(
 
     const prefs = await repo.getNotificationPreferences()
     if (!prefs.enabled) return
-    const { getIngressEntry } = await import("@domains/ha/ha-connection")
+    const { getIngressEntry } = await import("@domains/ha")
     const ingress = await getIngressEntry()
     const link = ingress ? `\n\n[Open ${ticketKey ?? "the task"} in Meitheal →](${ingress}/kanban)` : ""
     await sendTaskNotification(prefs, {

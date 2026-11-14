@@ -142,6 +142,7 @@ test("A2A task helpers resolve ticket keys, paginate past 200 rows, and enforce 
       assigneeId: "custom_agent_a2a",
     }
 
+    expect(parseTicketKey("MTH-0")).toBeNull()
     expect(parseTicketKey("MTH-abc")).toBeNull()
     expect(parseTicketKey(`MTH-${"9".repeat(320)}`)).toBeNull()
 

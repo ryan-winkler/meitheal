@@ -22,5 +22,5 @@ export function parseTicketKey(key: string): number | null {
   const match = key.match(new RegExp(`^${TICKET_PREFIX}-(\\d+)$`, "i"));
   if (!match) return null;
   const num = Number(match[1]);
-  return Number.isSafeInteger(num) ? num : null;
+  return Number.isSafeInteger(num) && num > 0 ? num : null;
 }
