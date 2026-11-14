@@ -101,7 +101,7 @@ export const POST: APIRoute = async ({ locals, request }) => {
       );
     }
 
-    const adapter = new GrocyAdapter({ baseUrl: url, apiKey, timeoutMs: 5000 });
+    const adapter = new GrocyAdapter({ baseUrl: url, apiKey, timeoutMs: 5000, redirect: "manual" });
 
     // Test connection with system info endpoint
     const sysResult = await adapter.getSystemInfo();

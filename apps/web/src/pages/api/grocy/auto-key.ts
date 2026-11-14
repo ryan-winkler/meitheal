@@ -11,6 +11,7 @@ import type { APIRoute } from "astro"
 import { requireSystemSettingsAdmin } from "../../../lib/settings-security"
 import { logApiError } from "../../../lib/api-logger"
 import { supervisorFetch } from "../../../lib/supervisor-fetch"
+import { isBlockedTestHost } from "@meitheal/integration-core"
 
 export const POST: APIRoute = async ({ locals, request }) => {
   const denied = requireSystemSettingsAdmin(request, locals)
@@ -22,6 +23,23 @@ export const POST: APIRoute = async ({ locals, request }) => {
     } catch { /* empty body = auto-detect */ }
 
     let grocyUrl = body.url?.trim()
+
+    // A URL from the request must be http(s). The auto-detected one is built below.
+    if (grocyUrl) {
+      let parsed: URL
+      try {
+        parsed = new URL(grocyUrl)
+      } catch {
+        return new Response(JSON.stringify({ ok: false, error: "Invalid URL format" }), {
+          status: 400, headers: { "Content-Type": "application/json" },
+        })
+      }
+      if (!["http:", "https:"].includes(parsed.protocol)) {
+        return new Response(JSON.stringify({ ok: false, error: "Invalid URL scheme — only http: and https: are allowed" }), {
+          status: 400, headers: { "Content-Type": "application/json" },
+        })
+      }
+    }
 
     // If no URL provided, try to detect Grocy addon via Supervisor
     if (!grocyUrl) {
@@ -69,11 +87,14 @@ export const POST: APIRoute = async ({ locals, request }) => {
       }
     } catch { /* Supervisor proxy failed — try direct */ }
 
-    // Fallback: direct API call (works if Grocy ingress session is active)
-    if (!createRes) {
+    // Fallback: direct API call (works if Grocy ingress session is active).
+    // A typed URL on a private or metadata address is not called directly; the Supervisor proxy above still applies.
+    const directAllowed = !body.url?.trim() || !isBlockedTestHost(new URL(grocyUrl).hostname)
+    if (!createRes && directAllowed) {
       try {
         createRes = await fetch(`${grocyUrl.replace(/\/$/, "")}/api/objects/api_keys`, {
           method: "POST",
+          redirect: "manual",
           headers: {
             "content-type": "application/json",
             accept: "application/json",

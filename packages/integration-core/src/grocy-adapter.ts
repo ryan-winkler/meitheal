@@ -21,6 +21,8 @@ export interface GrocyAdapterConfig {
   baseUrl: string
   apiKey: string
   timeoutMs?: number | undefined
+  /** "manual" stops a redirect from carrying a checked request to another host. Defaults to "follow". */
+  redirect?: RequestRedirect | undefined
 }
 
 export type GrocyErrorCode =
@@ -126,11 +128,13 @@ export class GrocyAdapter {
   private readonly baseUrl: string
   private readonly apiKey: string
   private readonly timeoutMs: number
+  private readonly redirect: RequestRedirect
 
   constructor(config: GrocyAdapterConfig) {
     this.baseUrl = config.baseUrl.replace(/\/$/, "")
     this.apiKey = config.apiKey
     this.timeoutMs = config.timeoutMs ?? 8_000
+    this.redirect = config.redirect ?? "follow"
   }
 
   // ═══════ System ═══════
@@ -454,6 +458,7 @@ export class GrocyAdapter {
       const response = await fetch(url.href, {
         method,
         signal: controller.signal,
+        redirect: this.redirect,
         headers: {
           "GROCY-API-KEY": this.apiKey,
           "content-type": "application/json",

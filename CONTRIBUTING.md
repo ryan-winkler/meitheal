@@ -64,7 +64,7 @@ Use descriptive commit messages. Keep release commands in the [release runbook](
 
 ## Coding standards
 
-Contributions must follow these style guides. CI checks the compiler settings on every push and pull request and fails on errors. Codacy reports findings on pushes and on pull requests from this repository; it does not block a merge, and the reviewer reads its findings and asks for fixes.
+Contributions must follow these style guides. CI checks the compiler settings on pushes to `main`, `dev` and `release` and on pull requests into them, and fails on errors. Codacy reports findings on pushes and on pull requests from this repository; it does not block a merge, and the reviewer reads its findings and asks for fixes.
 
 | Language | Standard | How it is checked |
 | --- | --- | --- |

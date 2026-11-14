@@ -133,6 +133,8 @@ export const POST: APIRoute = async ({ locals, request }) => {
     const fetchOpts = {
       method: "POST",
       signal: controller.signal,
+      // A redirect would carry the test past the private-address check, so report it instead.
+      redirect: "manual" as const,
       headers,
       body: payloadString,
     }

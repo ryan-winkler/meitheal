@@ -37,7 +37,7 @@ The [roadmap](ROADMAP.md) is reviewed when a release is cut, and at least once e
 
 The maintainer account uses two-factor authentication. Anyone given write access must enable it first, using a passkey, hardware security key, or authenticator app rather than SMS.
 
-Until there is a second maintainer, only Ryan Winkler can publish releases, images, or App repository updates. The source, history, issues, and release images are public, so if the maintainer stops responding, anyone can fork the project and continue it under the [license](LICENSE). The project is looking for a second maintainer with administrator access. To help, start with an issue labelled [`good first issue`](https://github.com/ryan-winkler/meitheal/labels/good%20first%20issue) or email the maintainer.
+Until there is a second maintainer, only Ryan Winkler can publish releases, images, or App repository updates. The source, history, issues, and release images are public, so if the maintainer stops responding, anyone can fork the project and continue it under the [license](LICENSE). The project is looking for a second maintainer with administrator access. To help, start with an issue labelled [`good first issue`](https://github.com/ryan-winkler/meitheal/labels/good%20first%20issue) or [email the maintainer](mailto:info@coolockvillage.ie).
 
 ## Changing this document
 

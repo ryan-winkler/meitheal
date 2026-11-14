@@ -31,7 +31,7 @@ Meitheal stays a Home Assistant-native, local-first task manager for households.
 
 ### Project health
 
-- Keep no open high or critical alerts from CodeQL, Codacy, dependency review, or Dependabot on `dev`.
+- Keep no open high or critical alerts from CodeQL, Codacy, or Dependabot on `dev`, and keep dependency review passing on pull requests.
 - Publish signed build provenance for every Stable image, and keep the [security policy](SECURITY.md) and [assurance case](docs/security-assurance-case.md) current.
 - Raise line coverage on Codecov each release, with a regression test for each fixed bug.
 - Recruit a second maintainer so the project no longer depends on one person.

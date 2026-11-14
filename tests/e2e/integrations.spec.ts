@@ -21,6 +21,11 @@ test.describe("Integration Webhooks", () => {
       req.on("data", chunk => { body += chunk; });
       req.on("end", () => {
         receivedRequests.push({ headers: req.headers, body });
+        if (req.url === "/redirect") {
+          res.writeHead(307, { location: `http://127.0.0.1:${port}/redirected` });
+          res.end();
+          return;
+        }
         res.writeHead(200);
         res.end("OK");
       });
@@ -126,6 +131,24 @@ test.describe("Integration Webhooks", () => {
     expect(res.status).toBe(400);
     expect((await res.json()).success).toBe(false);
     expect(receivedRequests).toHaveLength(0);
+  });
+
+  test("test-webhook API endpoint reports a redirect instead of following it", async () => {
+    const client = getPersistenceClient();
+    await client.execute({ sql: "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)", args: ["n8n_webhook_url", `"http://127.0.0.1:${port}/redirect"`, Date.now()] });
+    const { POST } = await import("../../apps/web/src/pages/api/integrations/test-webhook");
+    const request = new Request(`http://127.0.0.1:${port}/api/integrations/test-webhook`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+
+    const res = await POST({ request, locals: { hassIsAdmin: true } } as Parameters<typeof POST>[0]);
+    const json = await res.json();
+
+    expect(json.success).toBe(false);
+    expect(json.status_code).toBe(307);
+    expect(receivedRequests.map((r) => r.headers.host)).toHaveLength(1);
   });
 
   test("test-webhook API endpoint sends test payload and returns success", async () => {
