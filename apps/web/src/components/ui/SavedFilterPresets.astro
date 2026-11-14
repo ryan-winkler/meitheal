@@ -384,7 +384,9 @@ const { class: className } = Astro.props
       void refresh()
     }
     navigator.serviceWorker?.addEventListener("controllerchange", reconnect, { signal })
-    window.addEventListener("meitheal-sw-update", () => { if (expanded()) void refresh() }, { signal })
+    window.addEventListener("meitheal-sw-update", event => {
+      if ((event as CustomEvent<{ type?: string }>).detail?.type === "update-available" && expanded()) void refresh()
+    }, { signal })
     window.addEventListener("offline", reconnect, { signal })
     window.addEventListener("online", reconnect, { signal })
     signal.addEventListener("abort", () => {

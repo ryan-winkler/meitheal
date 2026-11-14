@@ -618,8 +618,8 @@ pageLifecycle.onPageLoad((signal) => {
   navigator.serviceWorker?.addEventListener("controllerchange", () => {
     if (isOpen) void refreshResults()
   }, { signal })
-  window.addEventListener("meitheal-sw-update", () => {
-    if (isOpen) void refreshResults()
+  window.addEventListener("meitheal-sw-update", (event) => {
+    if ((event as CustomEvent<{ type?: string }>).detail?.type === "update-available" && isOpen) void refreshResults()
   }, { signal })
   window.addEventListener("pagehide", () => {
     detailReturn = undefined
