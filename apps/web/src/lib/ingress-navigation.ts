@@ -138,7 +138,10 @@ export function initIngressNavigation(signal: AbortSignal): void {
   const saved = hostRoute()
   const current = appRoute(new URL(location.href))
   if (saved && current === "/" && saved !== "/") {
-    location.replace(safeIngressHref(saved, prefix))
+    const nextUrl = new URL(safeIngressHref(saved, prefix), location.origin)
+    if (nextUrl.origin === location.origin) {
+      location.replace(nextUrl.pathname + nextUrl.search + nextUrl.hash) // nosemgrep: javascript.browser.security.open-redirect.js-open-redirect, javascript.browser.security.open-redirect-from-function.js-open-redirect-from-function
+    }
     return
   }
   reflect()
