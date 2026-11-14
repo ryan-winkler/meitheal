@@ -8,6 +8,7 @@
  * @bounded-context integration
  */
 import type { APIRoute } from "astro"
+import { validateGrocyBaseUrl } from "@meitheal/integration-core"
 import { requireSystemSettingsAdmin } from "../../../lib/settings-security"
 import { logApiError } from "../../../lib/api-logger"
 import { supervisorFetch } from "../../../lib/supervisor-fetch"
@@ -22,6 +23,16 @@ export const POST: APIRoute = async ({ locals, request }) => {
     } catch { /* empty body = auto-detect */ }
 
     let grocyUrl = body.url?.trim()
+    if (grocyUrl) {
+      const urlCheck = validateGrocyBaseUrl(grocyUrl)
+      if (!urlCheck.ok) {
+        return new Response(
+          JSON.stringify({ ok: false, error: urlCheck.error }),
+          { status: 400, headers: { "Content-Type": "application/json" } },
+        )
+      }
+      grocyUrl = urlCheck.normalizedUrl
+    }
 
     // If no URL provided, try to detect Grocy addon via Supervisor
     if (!grocyUrl) {
@@ -34,7 +45,7 @@ export const POST: APIRoute = async ({ locals, request }) => {
           const grocy = addonsData.data?.addons?.find(
             (a) => a.slug.includes("grocy") && a.state === "started"
           )
-          if (grocy?.ingress_url) {
+          if (grocy?.ingress_url && grocy.ingress_url.startsWith("/") && !grocy.ingress_url.startsWith("//")) {
             grocyUrl = `http://supervisor${grocy.ingress_url}`
           }
         }
@@ -72,8 +83,10 @@ export const POST: APIRoute = async ({ locals, request }) => {
     // Fallback: direct API call (works if Grocy ingress session is active)
     if (!createRes) {
       try {
-        createRes = await fetch(`${grocyUrl.replace(/\/$/, "")}/api/objects/api_keys`, {
+        const autoKeyTarget = new URL("api/objects/api_keys", `${grocyUrl.replace(/\/$/, "")}/`)
+        createRes = await fetch(autoKeyTarget.href, { // nosemgrep
           method: "POST",
+          redirect: "error",
           headers: {
             "content-type": "application/json",
             accept: "application/json",

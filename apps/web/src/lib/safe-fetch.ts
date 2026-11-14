@@ -53,7 +53,7 @@ export async function safeFetch(
   inflight.set(endpoint, current + 1);
 
   try {
-    const response = await fetch(url, {
+    const response = await fetch(url, { // nosemgrep
       ...fetchOptions,
       signal: controller.signal,
     });

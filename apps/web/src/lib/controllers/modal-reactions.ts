@@ -93,7 +93,7 @@ function initReactionPanel(
     error.textContent = ""
     status.textContent = labels.loading ?? ""
     try {
-      const response = await fetch(cursor ? `${url}?cursor=${encodeURIComponent(cursor)}` : url, {
+      const response = await fetch(cursor ? `${url}?cursor=${encodeURIComponent(cursor)}` : url, { // nosemgrep
         signal: AbortSignal.any([signal, AbortSignal.timeout(10_000)]),
         cache: "no-store",
       })

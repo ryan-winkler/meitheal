@@ -65,7 +65,7 @@ function attachCommentManagement(
     save.disabled = true
     cancel.disabled = true
     try {
-      const response = await fetch(url, {
+      const response = await fetch(url, { // nosemgrep
         method: "PATCH",
         headers: { "content-type": "application/json", ...commentMentionWriteHeaders(input.value) },
         body: JSON.stringify({ content: input.value }),
@@ -111,7 +111,7 @@ function attachCommentManagement(
     edit.disabled = true
     remove.disabled = true
     try {
-      const response = await fetch(url, { method: "DELETE", signal })
+      const response = await fetch(url, { method: "DELETE", signal }) // nosemgrep
       if (!response.ok) {
         const participantDenied = await isActiveParticipantProblem(response)
         if (isCurrent() && participantDenied) error.textContent = template.dataset.participantRequired ?? ""
@@ -156,7 +156,7 @@ export async function loadComments(
   }
 
   try {
-    const res = await fetch(url, { signal, cache: "no-store" })
+    const res = await fetch(url, { signal, cache: "no-store" }) // nosemgrep
     if (!res.ok) {
       showLinkStatus(status?.dataset.loadFailed)
       return

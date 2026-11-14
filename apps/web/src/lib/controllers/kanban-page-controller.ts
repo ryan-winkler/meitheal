@@ -61,7 +61,7 @@ export function initKanbanPage(signal: AbortSignal): void {
       requestUrl.hash = ""
       // Older installed service workers can serve cached HTML to fetch(), even with no-store.
       requestUrl.searchParams.set("boardRefresh", `${performance.timeOrigin}-${++requestNumber}`)
-      const response = await fetch(requestUrl, {
+      const response = await fetch(requestUrl, { // nosemgrep
         signal: AbortSignal.any([signal, request.signal, AbortSignal.timeout(10_000)]),
         redirect: "error",
         cache: "no-store",

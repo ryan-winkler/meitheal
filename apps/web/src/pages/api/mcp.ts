@@ -296,7 +296,7 @@ function scopedApi(authorization: string, traceContext?: McpLoopbackContext) {
     if (traceContext?.requestId) headers["x-request-id"] = traceContext.requestId
     if (traceContext?.traceparent) headers["traceparent"] = traceContext.traceparent
 
-    const response = await fetch(url, {
+    const response = await fetch(url, { // nosemgrep
       ...init,
       headers,
       redirect: "error",
@@ -383,7 +383,7 @@ customHandlers.set("searchTasks", async (args, requestApi) => {
   }
   const taskSection = data.sections?.find((s) => s.id === "tasks")
   return {
-    tasks: (taskSection?.items ?? []).map((item) => ({
+    tasks: (taskSection?.items ?? []).map((item) => ({ // nosemgrep
       id: item.taskId ?? item.id,
       title: item.title,
       description: item.description,

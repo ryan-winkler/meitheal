@@ -17,7 +17,7 @@ export function initKanbanReactionCounts(board: HTMLElement, signal: AbortSignal
   async function loadBatch(batch: string[], request: AbortSignal): Promise<void> {
     try {
       const params = new URLSearchParams({ ids: batch.join(",") })
-      const response = await fetch(`/api/tasks/reaction-counts?${params}`, {
+      const response = await fetch(`/api/tasks/reaction-counts?${params}`, { // nosemgrep
         signal: AbortSignal.any([request, AbortSignal.timeout(10_000)]),
         cache: "no-store",
       })

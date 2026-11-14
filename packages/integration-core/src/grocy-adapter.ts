@@ -120,6 +120,133 @@ function classifyGrocyError(
   return { errorCode: "unknown", retryable: true }
 }
 
+// --- URL Safety ---
+
+export type GrocyUrlValidationResult =
+  | { ok: true; normalizedUrl: string }
+  | { ok: false; error: string }
+
+const BLOCKED_EXACT_HOSTS = new Set([
+  "localhost",
+  "127.0.0.1",
+  "0.0.0.0",
+  "::",
+  "::1",
+  "0:0:0:0:0:0:0:0",
+  "0:0:0:0:0:0:0:1",
+  "169.254.169.254",
+  "metadata.google.internal",
+  "metadata.goog",
+  "metadata.internal",
+  "instance-data",
+])
+
+const BLOCKED_DOMAIN_SUFFIXES = [
+  "localhost",
+  "metadata.google.internal",
+  "metadata.goog",
+  "metadata.internal",
+  "instance-data",
+]
+
+function hexPairToIpv4(hiHex: string, loHex: string): string {
+  const hi = Number.parseInt(hiHex, 16)
+  const lo = Number.parseInt(loHex, 16)
+  return `${(hi >> 8) & 0xff}.${hi & 0xff}.${(lo >> 8) & 0xff}.${lo & 0xff}`
+}
+
+/**
+ * Classify whether a URL hostname targets an unconditionally forbidden host/range
+ * (loopback, unspecified, link-local, metadata) or an RFC1918/ULA private network.
+ */
+export function classifyNetworkHost(rawHostname: string): "unconditional" | "private" | null {
+  const trimmed = rawHostname.trim().toLowerCase()
+  const unbracketed = trimmed.startsWith("[") && trimmed.endsWith("]") ? trimmed.slice(1, -1) : trimmed
+  const host = unbracketed.replace(/\.+$/, "")
+  if (!host) return "unconditional"
+
+  const mappedHexMatch = /^(?:0*:){2,5}ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i.exec(host)
+  if (mappedHexMatch) {
+    return classifyNetworkHost(hexPairToIpv4(mappedHexMatch[1]!, mappedHexMatch[2]!))
+  }
+  const mappedDottedMatch = /^(?:0*:){2,5}ffff:(\d{1,3}(?:\.\d{1,3}){3})$/i.exec(host)
+  if (mappedDottedMatch) {
+    return classifyNetworkHost(mappedDottedMatch[1]!)
+  }
+  if (/^(?:0*:){2,}ffff:/i.test(host)) {
+    return "unconditional"
+  }
+  const compatMatch = /^::([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i.exec(host)
+  if (compatMatch) {
+    return classifyNetworkHost(hexPairToIpv4(compatMatch[1]!, compatMatch[2]!))
+  }
+  if (/^::[0-9a-f]{1,4}$/i.test(host)) {
+    return "unconditional"
+  }
+
+  if (
+    BLOCKED_EXACT_HOSTS.has(host) ||
+    BLOCKED_DOMAIN_SUFFIXES.some((suffix) => host.endsWith(`.${suffix}`)) ||
+    host.startsWith("127.") ||
+    host.startsWith("0.") ||
+    host.startsWith("169.254.") ||
+    /^(?:0+:){7}0*[01]$/i.test(host) ||
+    (host.includes(":") && /^fe[89ab][0-9a-f]*:/i.test(host))
+  ) {
+    return "unconditional"
+  }
+
+  const isPrivateRange =
+    host.startsWith("10.") ||
+    host.startsWith("192.168.") ||
+    /^172\.(1[6-9]|2\d|3[01])\./.test(host) ||
+    (host.includes(":") && /^f[cd][0-9a-f]{0,2}:/i.test(host))
+
+  if (isPrivateRange) {
+    return "private"
+  }
+
+  return null
+}
+
+/**
+ * Validate a user-supplied Grocy base URL against unsafe schemes, embedded credentials,
+ * loopback/metadata addresses, and private network ranges (unless explicitly `.internal`,
+ * never exempting metadata hosts or loopback addresses).
+ */
+export function validateGrocyBaseUrl(rawUrl: string): GrocyUrlValidationResult {
+  const trimmed = rawUrl.trim()
+  if (!trimmed) {
+    return { ok: false, error: "Invalid URL format" }
+  }
+
+  let parsed: URL
+  try {
+    parsed = new URL(trimmed)
+  } catch {
+    return { ok: false, error: "Invalid URL format" }
+  }
+
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    return { ok: false, error: "Invalid URL scheme — only http: and https: are allowed" }
+  }
+
+  if (parsed.username || parsed.password) {
+    return { ok: false, error: "Grocy URL must not include embedded credentials" }
+  }
+
+  const rawHost = parsed.hostname.toLowerCase()
+  const unbracketed = rawHost.startsWith("[") && rawHost.endsWith("]") ? rawHost.slice(1, -1) : rawHost
+  const host = unbracketed.replace(/\.+$/, "")
+  const classification = classifyNetworkHost(host)
+
+  if (classification === "unconditional" || (classification === "private" && !host.endsWith(".internal"))) {
+    return { ok: false, error: "URL points to a private/internal network address" }
+  }
+
+  return { ok: true, normalizedUrl: parsed.toString().replace(/\/$/, "") }
+}
+
 // --- Adapter ---
 
 export class GrocyAdapter {
@@ -441,18 +568,19 @@ export class GrocyAdapter {
     body?: unknown,
     transform?: (raw: unknown) => T
   ): Promise<GrocyResult<T>> {
-    const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), this.timeoutMs)
-
     const baseOrigin = new URL(this.baseUrl).origin
     const url = new URL(path, this.baseUrl)
     if (url.origin !== baseOrigin) {
       throw new Error(`Invalid Grocy API path: ${path}`)
     }
 
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), this.timeoutMs)
+
     try {
-      const response = await fetch(url.href, {
+      const response = await fetch(url.href, { // nosemgrep
         method,
+        redirect: "error",
         signal: controller.signal,
         headers: {
           "GROCY-API-KEY": this.apiKey,

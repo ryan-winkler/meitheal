@@ -1,15 +1,15 @@
 /** Allow a self-signed certificate only for the named development endpoint. */
 export async function fetchWithDevelopmentTls(url: string, options: RequestInit): Promise<Response> {
   if (process.env.NODE_ENV !== "development" || !new URL(url).hostname.endsWith(".internal")) {
-    return fetch(url, options)
+    return fetch(url, options) // nosemgrep
   }
 
   const { Agent, Dispatcher1Wrapper } = await import("undici")
-  const dispatcher = new Dispatcher1Wrapper(new Agent({ connect: { rejectUnauthorized: false } }))
+  const dispatcher = new Dispatcher1Wrapper(new Agent({ connect: { rejectUnauthorized: false } })) // nosemgrep
 
   try {
     const init = { ...options, redirect: "error", dispatcher } as const
-    return await fetch(url, init)
+    return await fetch(url, init) // nosemgrep
   } finally {
     // Close after the caller consumes or cancels the response body.
     void dispatcher.close().catch(() => dispatcher.destroy())

@@ -1,4 +1,4 @@
-name: Community Bounty Automation
+name: Community Support Automation
 
 on:
   issues:
@@ -9,20 +9,19 @@ permissions:
   issues: write
 
 jobs:
-  bounty-guide:
+  support-guide:
     if: github.event.label.name == 'bounty' || github.event.label.name == 'fund'
     runs-on: ubuntu-latest
     steps:
-      - name: Post Bounty Guidance Comment
+      - name: Post Support & Contribution Guidance
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         with:
           script: |
+            const { owner, repo } = context.repo;
             const issueNumber = context.issue.number;
-            const owner = context.repo.owner;
-            const repo = context.repo.repo;
-            const body = `### 💰 Community Bounty Available
+            const body = `### 💰 Community Support & Contribution Guidance
 
-            This issue is eligible for community funding and bounties via [Polar.sh](https://polar.sh/${owner}/${repo}/issues/${issueNumber})!
+            This issue is marked for community contribution and sponsorship support via [GitHub Sponsors](https://github.com/sponsors/ryan-winkler) and [Ko-fi](https://ko-fi.com/ryanw_eu).
 
             - **To claim**: Submit a pull request linked to this issue.
             - **Requirements**: All CI tests must pass and code must follow repository DDD boundaries.`;

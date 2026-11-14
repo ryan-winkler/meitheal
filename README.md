@@ -3,15 +3,18 @@
 ![Meitheal — Keep track of the work your home needs](docs/screenshots/brand-banner.png)
 
 [![Website](https://img.shields.io/badge/Website-meitheal.io-10231b?labelColor=101210&color=69e3b2)](https://meitheal.io)
-[![Docker Hub](https://img.shields.io/docker/v/coolockvillage/meitheal-amd64?label=Docker%20Hub&logo=docker)](https://hub.docker.com/r/coolockvillage/meitheal-amd64)
-[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/ryan-winkler/meitheal/badge)](https://scorecard.dev/viewer/?push=dev&repo=github.com/ryan-winkler/meitheal)
-[![codecov](https://codecov.io/gh/ryan-winkler/meitheal/graph/badge.svg)](https://codecov.io/gh/ryan-winkler/meitheal)
+[![CI](https://github.com/ryan-winkler/meitheal/actions/workflows/ci.yml/badge.svg?branch=dev)](https://github.com/ryan-winkler/meitheal/actions/workflows/ci.yml?query=branch%3Adev)
+[![GHCR](https://img.shields.io/badge/GHCR-amd64%20%7C%20aarch64-10231b?logo=github&labelColor=101210&color=69e3b2)](https://github.com/ryan-winkler/meitheal/packages)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/ryan-winkler/meitheal/badge)](https://scorecard.dev/viewer/?uri=github.com/ryan-winkler/meitheal)
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/16683/badge)](https://www.bestpractices.dev/projects/16683)
+[![codecov](https://codecov.io/gh/ryan-winkler/meitheal/graph/badge.svg?branch=dev)](https://codecov.io/gh/ryan-winkler/meitheal)
 [![Codacy Badge](https://app.codacy.com/project/badge/Grade/bd98d7c4e8d847ceb539d8504cb2d16a)](https://app.codacy.com/gh/ryan-winkler/meitheal/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade)
+[![License](https://img.shields.io/badge/License-Source--Available%201.0-10231b?labelColor=101210&color=69e3b2)](LICENSE)
 [![GitHub Sponsors](https://img.shields.io/badge/Sponsor-GitHub-ea4aaa?logo=github&logoColor=white)](https://github.com/sponsors/ryan-winkler)
 [![Ko-fi](https://img.shields.io/badge/Support-Ko--fi-ff5e5b?logo=ko-fi&logoColor=white)](https://ko-fi.com/ryanw_eu)
-[![Polar Funding](https://polar.sh/embed/bounties.svg?org=Coolock-Village)](https://polar.sh/Coolock-Village)
+[![Revolut](https://img.shields.io/badge/Support-Revolut-191c1f?logo=revolut&logoColor=white)](https://revolut.me/ryanwi)
 
-[meitheal.io](https://meitheal.io) · [Install status](https://github.com/ryan-winkler/meitheal-ha-addon/issues/1) · [Create your first task](docs/first-task.md) · [Get help](SUPPORT.md)
+[meitheal.io](https://meitheal.io) · [Add-on store](https://github.com/ryan-winkler/meitheal-ha-addon) · [Create your first task](docs/first-task.md) · [Get help](SUPPORT.md)
 
 **Meitheal** (`/meh·hal/`) is an Irish word for neighbors coming together to share the work that no single person should have to carry alone.
 
@@ -63,8 +66,6 @@ Use these terms when you plan work in Meitheal:
 Some older views and integrations use earlier names. The [glossary](docs/kcs/hierarchy-glossary.md) explains the current model.
 
 ## Quick Install on Home Assistant
-
-Check [installation availability](https://github.com/ryan-winkler/meitheal-ha-addon/issues/1) before you start.
 
 1. Open **Settings → Apps → Install app** in Home Assistant (called **Add-ons → Add-on Store** in earlier Home Assistant releases).
 2. Open the top-right **⋮** menu and select **Repositories**.
@@ -147,8 +148,7 @@ Meitheal is independent and community-driven. Financial support helps fund infra
 - [GitHub Sponsors](https://github.com/sponsors/ryan-winkler)
 - [Ko-fi](https://ko-fi.com/ryanw_eu)
 - [Revolut](https://revolut.me/ryanwi)
-- [Polar](https://polar.sh/Coolock-Village)
 
 ## Legal and Licensing
 
-Meitheal is source-available. Use it at home or inside your organisation. Keep attribution when you share it, and offer changes upstream even if you use them only inside your organisation. The [license](LICENSE) sets the conditions and restrictions on paid copies, access, and services. See [business use](COMMERCIAL.md) for examples. The optional [Home Assistant integration](integrations/home-assistant/LICENSE) and [automation integration](integrations/nodered/LICENSE) have separate licenses. The compatibility API remains separately licensed and outside this release. The [distribution license](https://github.com/ryan-winkler/meitheal-ha-addon/blob/main/LICENSE) covers published add-on images.
+Meitheal is source-available under the [Meitheal Source-Available License 1.0](LICENSE) (`LicenseRef-Meitheal-Source-Available-1.0`). Use it at home or inside your organisation. Keep attribution when you share it, and offer changes upstream even if you use them only inside your organisation. The [license](LICENSE) sets the conditions and restrictions on paid copies, access, and services, and [third-party notices](NOTICE) record separate attributions. See [business use](COMMERCIAL.md) for examples. The optional [Home Assistant integration](integrations/home-assistant/LICENSE) and [automation integration](integrations/nodered/LICENSE) have separate licenses. The compatibility API remains separately licensed and outside this release. The [distribution license](https://github.com/ryan-winkler/meitheal-ha-addon/blob/main/LICENSE) covers published add-on images.

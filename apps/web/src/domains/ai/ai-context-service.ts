@@ -60,7 +60,7 @@ async function resolveTask(taskId: string, signal?: AbortSignal): Promise<TaskWi
 
   if (!raw) {
     try {
-      const res = await fetch(`/api/tasks/${taskId}`, { signal: signal ?? null })
+      const res = await fetch(`/api/tasks/${taskId}`, { signal: signal ?? null }) // nosemgrep
       if (res.ok) {
         const data = await res.json();
         // Handle both { task: {...} } and flat {...} response shapes

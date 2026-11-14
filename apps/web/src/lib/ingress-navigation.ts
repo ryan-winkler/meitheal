@@ -47,7 +47,10 @@ export function initIngressNavigation(signal: AbortSignal): void {
   const saved = hostRoute()
   const current = appRoute(new URL(location.href))
   if (saved && current === "/" && saved !== "/") {
-    location.replace(prefix + saved)
+    const nextUrl = new URL(prefix + saved, location.origin)
+    if (nextUrl.origin === location.origin) {
+      location.replace(nextUrl.pathname + nextUrl.search + nextUrl.hash) // nosemgrep
+    }
     return
   }
   reflect()

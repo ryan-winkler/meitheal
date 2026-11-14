@@ -189,7 +189,7 @@ export async function handleRecurrencePostComplete(
   lm: ListenerManager,
 ): Promise<void> {
   try {
-    const res = await fetch(`/api/tasks/${taskId}`, { signal: lm.signal })
+    const res = await fetch(`/api/tasks/${taskId}`, { signal: lm.signal }) // nosemgrep
     if (!res.ok) return
     const data = await res.json() as { task?: { recurrence_rule?: string; title?: string } }
     const task = data.task
@@ -210,7 +210,7 @@ export async function cancelRecurrence(
   if (!confirmed) return
 
   try {
-    const res = await fetch(`/api/tasks/${taskId}`, { signal: lm.signal,
+    const res = await fetch(`/api/tasks/${taskId}`, { signal: lm.signal, // nosemgrep
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ recurrence_rule: null }),

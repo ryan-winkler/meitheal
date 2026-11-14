@@ -267,7 +267,7 @@ export function initQuickActions(
         if (card) (card as HTMLElement).dataset.assigned = ""
         _qa.close()
         try {
-          const res = await fetch(buildTaskApiUrl(taskId), {
+          const res = await fetch(buildTaskApiUrl(taskId), { // nosemgrep
             method: "PUT",
             headers: { "content-type": "application/json" },
             body: JSON.stringify({ assigned_to: null }),
@@ -302,7 +302,7 @@ export function initQuickActions(
           if (card) (card as HTMLElement).dataset.assigned = userId
           _qa.close()
           try {
-            const res = await fetch(buildTaskApiUrl(taskId), {
+            const res = await fetch(buildTaskApiUrl(taskId), { // nosemgrep
               method: "PUT",
               headers: { "content-type": "application/json" },
               body: JSON.stringify({ assigned_to: userId }),

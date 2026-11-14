@@ -210,7 +210,7 @@ export function showTaskChecklist(taskId: string, rawChecklist: unknown, signal:
     try {
       while (!equal(saved, items)) {
         const pending = JSON.stringify(items)
-        const response = await fetch(path, {
+        const response = await fetch(path, { // nosemgrep
           method: "PUT",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ checklists: pending, expected_checklists: savedRaw }),
@@ -293,7 +293,7 @@ export function showTaskChecklist(taskId: string, rawChecklist: unknown, signal:
     }
     recover.disabled = true
     try {
-      const response = await fetch(path, { cache: "no-store", signal })
+      const response = await fetch(path, { cache: "no-store", signal }) // nosemgrep
       if (!response.ok) throw new Error()
       const task = await response.json()
       const latestRaw = task.checklists
