@@ -30,7 +30,9 @@ The Home Assistant base images (`ghcr.io/home-assistant/{arch}-base`) stay on th
   uv pip compile --generate-hashes --python-version 3.14.2 --python-platform x86_64-manylinux_2_28 requirements-test.in -o requirements-test.txt
   ```
 
-  Install it with `python -m pip install --require-hashes -r requirements-test.txt`.
+  Install it with `python -m pip install --require-hashes --no-deps -r requirements-test.txt`. The `.txt` file already holds the full locked set, so pip installs it as written instead of resolving again.
+
+- **Security overrides:** when a Core release pins a vulnerable package the integration does not use, list the fixed version in `requirements-test-<core>.overrides` and add `--override requirements-test-<core>.overrides` to the compile command. Core 2026.10 pins Pillow 12.3.0, so `requirements-test-2026.10.overrides` lifts it to 13.0.0. Run the lane's tests after an override, because `pip check` will report the pin mismatch.
 
 ## Reviewing code scanning alerts
 
