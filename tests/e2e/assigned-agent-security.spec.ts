@@ -364,6 +364,53 @@ dbTest.describe("Assigned-Agent Authorization & Repository Guards", () => {
     }
   })
 
+  dbTest("PUT /api/tasks/[id] records null destination on unassign and handles legacy or corrupt receipt payloads", async ({ repo }) => {
+    const client = getPersistenceClient()
+    const id = crypto.randomUUID()
+    await repo.createTask(makeTaskData({ id, assigned_to: "custom_agent_a" }))
+    const unassign = (requestId: string) => putTask({
+      params: { id },
+      request: new Request(`http://localhost/api/tasks/${id}`, {
+        method: "PUT",
+        body: JSON.stringify({ assigned_to: null, request_id: requestId }),
+      }),
+      locals: agentLocals("custom_agent_a"),
+    } as unknown as Parameters<typeof putTask>[0])
+
+    await client.execute(`CREATE TRIGGER fail_unassign_activity BEFORE INSERT ON task_activity_log
+      WHEN NEW.field = 'assigned_to' BEGIN SELECT RAISE(ABORT, 'activity log unavailable'); END`)
+    try {
+      const first = await unassign("db-unassign-1")
+      expect(first.status).toBe(200)
+      expect((await first.json()).assigned_to).toBeNull()
+    } finally {
+      await client.execute("DROP TRIGGER fail_unassign_activity")
+    }
+
+    const receiptRows = await client.execute({
+      sql: "SELECT idempotency_key, response_payload FROM integration_attempts WHERE integration = 'task.reassignment' AND task_id = ?",
+      args: [id],
+    })
+    expect(receiptRows.rows.map((row) => ({ response_payload: row.response_payload }))).toEqual([
+      { response_payload: JSON.stringify({ assigned_to: null }) },
+    ])
+    expect((await unassign("db-unassign-1")).status).toBe(200)
+
+    const key = String(receiptRows.rows[0]!.idempotency_key)
+    // Legacy receipt (NULL payload) or corrupt JSON falls back to the activity log
+    await client.execute({ sql: "UPDATE integration_attempts SET response_payload = NULL WHERE idempotency_key = ?", args: [key] })
+    expect((await unassign("db-unassign-1")).status).toBe(200)
+
+    await client.execute({ sql: "UPDATE integration_attempts SET response_payload = '{corrupt' WHERE idempotency_key = ?", args: [key] })
+    expect((await unassign("db-unassign-1")).status).toBe(200)
+
+    // With unreadable payload, a mismatched latest activity entry denies replay
+    await repo.logActivity(id, [{ field: "assigned_to", oldValue: "custom_agent_a", newValue: "ha_person_2" }], {
+      actor: "user", actor_type: "user",
+    })
+    expect((await unassign("db-unassign-1")).status).toBe(403)
+  })
+
   dbTest("atomic sub-route guards reject mismatched assignees in SQL without TOCTOU", async ({ repo }) => {
     const id = crypto.randomUUID()
     await repo.createTask(makeTaskData({ id, assigned_to: "custom_agent_a" }))
