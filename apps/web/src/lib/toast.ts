@@ -9,7 +9,7 @@
  *   - Max 5 visible toasts — oldest removed to prevent stack overflow
  */
 
-import { renderSpriteIconSvg } from "../generated/icon-registry"
+import { createSpriteIconElement } from "../generated/icon-registry"
 
 const MAX_VISIBLE_TOASTS = 5;
 
@@ -57,7 +57,7 @@ export function showToast(
               : type === "warning"
                 ? "warning"
                 : "info";
-    iconSpan.innerHTML = renderSpriteIconSvg(iconName, { size: 18 });
+    iconSpan.replaceChildren(createSpriteIconElement(iconName, { size: 18 }));
     toast.appendChild(iconSpan);
 
     const text = document.createElement("span");
@@ -68,7 +68,7 @@ export function showToast(
     const dismiss = document.createElement("button");
     dismiss.className = "toast-dismiss";
     dismiss.setAttribute("aria-label", "Dismiss notification");
-    dismiss.innerHTML = renderSpriteIconSvg("x", { size: 16 });
+    dismiss.replaceChildren(createSpriteIconElement("x", { size: 16 }));
     dismiss.addEventListener("click", () => removeToast(toast));
     toast.appendChild(dismiss);
 
@@ -189,7 +189,7 @@ export function showRetryToast(
     const dismiss = document.createElement("button");
     dismiss.className = "toast-dismiss";
     dismiss.setAttribute("aria-label", "Dismiss notification");
-    dismiss.innerHTML = renderSpriteIconSvg("x", { size: 16 });
+    dismiss.replaceChildren(createSpriteIconElement("x", { size: 16 }));
     dismiss.addEventListener("click", () => removeToast(toast));
     toast.appendChild(dismiss);
 
@@ -233,7 +233,7 @@ export function showTaskCreatedToast(
     const iconSpan = document.createElement("span");
     iconSpan.style.marginRight = "8px";
     iconSpan.style.display = "flex";
-    iconSpan.innerHTML = renderSpriteIconSvg("check", { size: 18 });
+    iconSpan.replaceChildren(createSpriteIconElement("check", { size: 18 }));
     toast.appendChild(iconSpan);
 
     // Message with clickable ticket key
@@ -268,7 +268,7 @@ export function showTaskCreatedToast(
     const dismiss = document.createElement("button");
     dismiss.className = "toast-dismiss";
     dismiss.setAttribute("aria-label", "Dismiss notification");
-    dismiss.innerHTML = renderSpriteIconSvg("x", { size: 16 });
+    dismiss.replaceChildren(createSpriteIconElement("x", { size: 16 }));
     dismiss.addEventListener("click", () => removeToast(toast));
     toast.appendChild(dismiss);
 

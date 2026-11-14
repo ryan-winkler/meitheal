@@ -2,32 +2,42 @@
 # Meitheal Hub — Local testing entrypoint (no bashio/Supervisor)
 #
 # Usage: podman run --rm -p 127.0.0.1:3333:3000 -v /tmp/meitheal-data:/data --entrypoint /run-local.sh local/meitheal-hub
-set -euo pipefail
+set -eu
+if (set -o pipefail) 2>/dev/null; then
+  set -o pipefail
+fi
+
+is_uint() {
+  case "${1:-}" in
+    ""|*[!0-9]*) return 1 ;;
+    *) return 0 ;;
+  esac
+}
 
 resolve_max_old_space_mb() {
-  if [[ "${MEITHEAL_MAX_OLD_SPACE_MB:-}" =~ ^[0-9]+$ ]] && [ "${MEITHEAL_MAX_OLD_SPACE_MB}" -ge 96 ]; then
+  if is_uint "${MEITHEAL_MAX_OLD_SPACE_MB:-}" && [ "${MEITHEAL_MAX_OLD_SPACE_MB}" -ge 96 ]; then
     printf '%s\n' "${MEITHEAL_MAX_OLD_SPACE_MB}"
     return 0
   fi
 
-  local cgroup_v2="${MEITHEAL_CGROUP_V2_MAX_FILE:-/sys/fs/cgroup/memory.max}"
-  local cgroup_v1="${MEITHEAL_CGROUP_V1_LIMIT_FILE:-/sys/fs/cgroup/memory/memory.limit_in_bytes}"
-  local raw=""
-  if [ -r "${cgroup_v2}" ]; then
-    raw="$(tr -d '[:space:]' < "${cgroup_v2}" 2>/dev/null || true)"
-  elif [ -r "${cgroup_v1}" ]; then
-    raw="$(tr -d '[:space:]' < "${cgroup_v1}" 2>/dev/null || true)"
+  _cg_v2="${MEITHEAL_CGROUP_V2_MAX_FILE:-/sys/fs/cgroup/memory.max}"
+  _cg_v1="${MEITHEAL_CGROUP_V1_LIMIT_FILE:-/sys/fs/cgroup/memory/memory.limit_in_bytes}"
+  _raw=""
+  if [ -r "${_cg_v2}" ]; then
+    _raw="$(tr -d '[:space:]' < "${_cg_v2}" 2>/dev/null || true)"
+  elif [ -r "${_cg_v1}" ]; then
+    _raw="$(tr -d '[:space:]' < "${_cg_v1}" 2>/dev/null || true)"
   fi
 
-  if [[ "${raw}" =~ ^[0-9]+$ ]] && [ "${raw}" -gt 0 ] && [ "${raw}" -lt 1099511627776 ]; then
-    local total_mb=$(( raw / 1048576 ))
-    local target_mb=$(( total_mb * 55 / 100 ))
-    if [ "${target_mb}" -lt 96 ]; then
-      target_mb=96
-    elif [ "${target_mb}" -gt 160 ]; then
-      target_mb=160
+  if is_uint "${_raw}" && [ "${_raw}" -gt 0 ] && [ "${_raw}" -lt 1099511627776 ]; then
+    _total_mb=$(( _raw / 1048576 ))
+    _target_mb=$(( _total_mb * 55 / 100 ))
+    if [ "${_target_mb}" -lt 96 ]; then
+      _target_mb=96
+    elif [ "${_target_mb}" -gt 160 ]; then
+      _target_mb=160
     fi
-    printf '%s\n' "${target_mb}"
+    printf '%s\n' "${_target_mb}"
     return 0
   fi
 
@@ -35,14 +45,13 @@ resolve_max_old_space_mb() {
 }
 
 apply_resolved_node_options() {
-  local resolved_mb
-  resolved_mb="$(resolve_max_old_space_mb)"
+  _resolved_mb="$(resolve_max_old_space_mb)"
   case " ${NODE_OPTIONS:-} " in
     *" --max-old-space-size="*)
       export NODE_OPTIONS
       ;;
     *)
-      export NODE_OPTIONS="${NODE_OPTIONS:+${NODE_OPTIONS} }--max-old-space-size=${resolved_mb}"
+      export NODE_OPTIONS="${NODE_OPTIONS:+${NODE_OPTIONS} }--max-old-space-size=${_resolved_mb}"
       ;;
   esac
 }

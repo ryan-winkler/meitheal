@@ -1,7 +1,7 @@
 export function workerAllowsNetworkOnly(worker: ServiceWorker, capability: string): Promise<boolean> {
   return new Promise(resolve => {
     const channel = new MessageChannel()
-    const timer = window.setTimeout(() => finish(false), 500)
+    const timer = window.setTimeout(() => finish(false), 2_500)
     function finish(ready: boolean) {
       window.clearTimeout(timer)
       channel.port1.close()

@@ -156,44 +156,6 @@ export async function rewriteIngressHtml(
   })
   pipeline(body, rewriter, output, () => { /* Stream failures propagate to the response consumer. */ })
 
-  await new Promise<void>((resolve, reject) => {
-    const onReady = () => {
-      cleanupWait()
-      resolve()
-    }
-    const onError = (err: unknown) => {
-      cleanupWait()
-      reject(err)
-    }
-    const onAbort = () => {
-      cleanupWait()
-      cancelInput()
-      output.destroy()
-      releaseInput()
-      reject(signal?.reason ?? new DOMException("The operation was aborted.", "AbortError"))
-    }
-    function cleanupWait() {
-      output.off("readable", onReady)
-      output.off("end", onReady)
-      output.off("close", onReady)
-      output.off("error", onError)
-      signal?.removeEventListener("abort", onAbort)
-    }
-    if (signal?.aborted) {
-      onAbort()
-      return
-    }
-    if (output.readableLength > 0 || output.readableEnded) {
-      resolve()
-      return
-    }
-    output.once("readable", onReady)
-    output.once("end", onReady)
-    output.once("close", onReady)
-    output.once("error", onError)
-    signal?.addEventListener("abort", onAbort, { once: true })
-  })
-
   const stream = Readable.toWeb(output, { strategy: { highWaterMark: 0 } }) as ReadableStream<Uint8Array>
   return result(options?.wait ? paceResponseBody(stream, options.wait, options.signal, outputBatchSize) : stream)
 }

@@ -217,6 +217,23 @@ export function startCalendarSync(config: CalendarSyncConfig): void {
   startSingleEntitySync(config, false);
 }
 
+/** Arm periodic full-sync intervals for registered inbound entities (wrapped in error boundary). */
+function armPendingEntityIntervals(): void {
+  for (const [entityId, state] of activeSyncs) {
+    if (state.config.syncMode === "export" || state.config.syncIntervalMs <= 0 || state.timer !== null) {
+      continue;
+    }
+    state.timer = setInterval(() => {
+      syncEntityFromHA(entityId).catch((err) => {
+        logger.log("error", {
+          event: "calendar.sync.interval_error", domain: "calendar", component: "calendar-bridge",
+          request_id: SYS_REQ, message: `Periodic sync failed for ${entityId}: ${err}`,
+        });
+      });
+    }, state.config.syncIntervalMs);
+  }
+}
+
 /** Internal: start sync for a single entity */
 function startSingleEntitySync(config: CalendarSyncConfig, deferInitialSync = false): void {
   const state: EntitySyncState = {
@@ -250,21 +267,10 @@ function startSingleEntitySync(config: CalendarSyncConfig, deferInitialSync = fa
     const unsub = onEntityChange(config.entityId, debouncedSync);
     // Store cancel function so stopSingleEntitySync can clean up the pending timer
     state.unsubscribers.push(unsub, cancelDebounce);
-
-    // Periodic full sync — wrapped in error boundary to prevent unhandled rejection crash
-    if (config.syncIntervalMs > 0) {
-      state.timer = setInterval(() => {
-        syncEntityFromHA(config.entityId).catch((err) => {
-          logger.log("error", {
-            event: "calendar.sync.interval_error", domain: "calendar", component: "calendar-bridge",
-            request_id: SYS_REQ, message: `Periodic sync failed for ${config.entityId}: ${err}`,
-          });
-        });
-      }, config.syncIntervalMs);
-    }
   }
 
   activeSyncs.set(config.entityId, state);
+  armPendingEntityIntervals();
 
   // Initial inbound sync (skipped for export-only via mode guard in syncEntityFromHA)
   if (!deferInitialSync && config.syncMode !== "export") {

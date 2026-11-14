@@ -95,9 +95,6 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
 <!doctype html>
 <html lang={locale} dir="ltr" data-custom-theme-admin={canManageSystemSettings(Astro.request, Astro.locals) ? "" : undefined}>
   <head>
-    {ingressPath && (
-      <script is:inline set:html={`window.__ingress_path = window.__ingress_path || ${JSON.stringify(ingressPath)};`} />
-    )}
     <!-- Scroll-lock guard: prevent external tools from locking body scroll (P0) -->
     <script is:inline>
       (function () {
@@ -247,6 +244,33 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
               : pathname;
         if (current !== "/") return;
         try {
+          var explicitHomeNavigation = false;
+          if (document.referrer) {
+            try {
+              var refUrl = new URL(document.referrer);
+              if (refUrl.origin === window.location.origin && refUrl.pathname.startsWith(prefix + "/")) {
+                explicitHomeNavigation = true;
+              }
+            } catch {}
+          }
+          if (!explicitHomeNavigation && window.parent !== window) {
+            try {
+              if (
+                window.parent.location.origin === window.location.origin &&
+                window.parent.document.querySelector("home-assistant") &&
+                new URL(window.parent.location.href).searchParams.get("meitheal") === "/"
+              ) {
+                explicitHomeNavigation = true;
+              }
+            } catch {}
+          }
+          if (explicitHomeNavigation) {
+            sessionStorage.setItem(
+              "meitheal-navigation-state",
+              JSON.stringify({ path: "/", scrollY: 0, timestamp: Date.now() }),
+            );
+            return;
+          }
           var raw = sessionStorage.getItem("meitheal-navigation-state");
           if (!raw) return;
           var state = JSON.parse(raw);

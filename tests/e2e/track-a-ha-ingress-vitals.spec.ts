@@ -410,6 +410,11 @@ test("A4/A5/A8: live serve.mjs leaves Ingress HTML uncompressed, keeps attribute
     env,
     stdio: ["ignore", "pipe", "pipe"],
   })
+  child.stdout?.resume()
+  let childStderr = ""
+  child.stderr?.on("data", chunk => {
+    if (childStderr.length < 16_384) childStderr += String(chunk)
+  })
 
   try {
     await expect.poll(async () => {
@@ -449,7 +454,7 @@ test("A4/A5/A8: live serve.mjs leaves Ingress HTML uncompressed, keeps attribute
     // 1. Uncompressed Ingress HTML & attribute size < 32 KiB
     for (const route of ["/tasks", "/planning", "/eisenhower"]) {
       const res = await fetch(`http://127.0.0.1:${port}${route}`, { headers: adminIngressHeaders })
-      expect(res.status).toBe(200)
+      expect(res.status, childStderr).toBe(200)
       expect(res.headers.get("content-encoding")).toBeNull()
       const body = await res.text()
       expect(body).toContain('window.__ingress_path="/api/hassio_ingress/live_tok"')

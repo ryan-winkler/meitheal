@@ -49,6 +49,12 @@ export const FRIENDLY_NAMES = {
 
 /** Expand only local OpenAPI component schemas for standalone MCP tool inputs. */
 export function resolveMcpSchema(schema, document) {
+  const rawSchemas = document?.components?.schemas
+  const schemaMap = new Map(
+    rawSchemas && typeof rawSchemas === "object" && !Array.isArray(rawSchemas)
+      ? Object.entries(rawSchemas)
+      : [],
+  )
   let remaining = 10_000
   function expand(value, references, depth) {
     if (--remaining < 0 || depth > 64) throw new Error("MCP schema exceeds the expansion limit")
@@ -60,16 +66,14 @@ export function resolveMcpSchema(schema, document) {
         throw new Error("MCP schemas require local component schema references")
       }
       if (references.has(reference)) throw new Error(`Cyclic MCP schema reference: ${reference}`)
-      let target = document
-      for (const segment of reference.slice(2).split("/")) {
-        const key = segment.replace(/~1/g, "/").replace(/~0/g, "~")
-        if (!target || typeof target !== "object" || !Object.hasOwn(target, key)) {
-          throw new Error(`Unknown MCP schema reference: ${reference}`)
-        }
-        target = target[key]
-      }
-      if (!target || typeof target !== "object" || Array.isArray(target)) {
+      const rawName = reference.slice("#/components/schemas/".length)
+      if (!rawName || rawName.includes("/")) {
         throw new Error(`Invalid MCP schema reference: ${reference}`)
+      }
+      const schemaName = rawName.replace(/~1/g, "/").replace(/~0/g, "~")
+      const target = schemaMap.get(schemaName)
+      if (!target || typeof target !== "object" || Array.isArray(target)) {
+        throw new Error(`Unknown MCP schema reference: ${reference}`)
       }
       const nextReferences = new Set(references).add(reference)
       const { $ref: _reference, ...siblings } = value

@@ -305,11 +305,12 @@
             }
           }
 
-           // D1: Auto-expand sidebar on mobile so properties are visible immediately
+           // D1: Keep mobile Comments/Activity collapsed unless deep-linking to a comment
            if (window.matchMedia("(max-width: 767px)").matches) {
-             _sidebarProps?.classList.add("td-sidebar-expanded");
-             _sidebarToggle?.setAttribute("aria-expanded", "true");
-             _sidebarChevron?.classList.toggle("td-chevron-open", true);
+             const expandComments = commentTarget !== null;
+             _sidebarProps?.classList.toggle("td-sidebar-expanded", expandComments);
+             _sidebarToggle?.setAttribute("aria-expanded", String(expandComments));
+             _sidebarChevron?.classList.toggle("td-chevron-open", expandComments);
            }
 
           try {

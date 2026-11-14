@@ -9,7 +9,7 @@
 
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { formatCalendarDay } from "@lib/calendar-day"
-import { renderSpriteIconSvg, type IconName } from "../../generated/icon-registry"
+import { createSpriteIconElement, type IconName } from "../../generated/icon-registry"
 
 export interface HabitChecklistItem {
   text: string
@@ -78,7 +78,7 @@ function createIconButton(
   button.dataset.id = habitId
   button.setAttribute("aria-label", label)
   button.title = label
-  button.innerHTML = renderSpriteIconSvg(iconName, { size: 16 })
+  button.replaceChildren(createSpriteIconElement(iconName, { size: 16 }))
   return button
 }
 
@@ -95,7 +95,7 @@ function createChecklistList(habit: HabitData): HTMLUListElement {
     marker.className = "habit-card__checklist-marker"
     marker.setAttribute("aria-hidden", "true")
     if (item.done) {
-      marker.innerHTML = renderSpriteIconSvg("check", { size: 14 })
+      marker.replaceChildren(createSpriteIconElement("check", { size: 14 }))
     } else {
       marker.textContent = "•"
     }
@@ -125,7 +125,7 @@ function createHabitCard(habit: HabitData): HTMLElement {
   completeButton.dataset.id = habit.id
   completeButton.setAttribute("aria-label", `Complete ${habit.name} today`)
   if (habit.todayCompleted) {
-    completeButton.innerHTML = renderSpriteIconSvg("check", { size: 16 })
+    completeButton.replaceChildren(createSpriteIconElement("check", { size: 16 }))
   }
 
   const icon = document.createElement("span")
@@ -155,8 +155,10 @@ function createHabitCard(habit: HabitData): HTMLElement {
     streakItem.style.display = "inline-flex"
     streakItem.style.alignItems = "center"
     streakItem.style.gap = "4px"
-    streakItem.innerHTML = renderSpriteIconSvg("flame", { size: 14 })
-    streakItem.append(document.createTextNode(`${habit.currentStreak} day streak`))
+    streakItem.replaceChildren(
+      createSpriteIconElement("flame", { size: 14 }),
+      document.createTextNode(`${habit.currentStreak} day streak`),
+    )
     meta.prepend(streakItem)
   }
 
@@ -292,7 +294,7 @@ export function createChecklistBuilderItem(text = ""): HTMLDivElement {
   removeButton.type = "button"
   removeButton.className = "btn-remove"
   removeButton.setAttribute("aria-label", "Remove item")
-  removeButton.innerHTML = renderSpriteIconSvg("x", { size: 14 })
+  removeButton.replaceChildren(createSpriteIconElement("x", { size: 14 }))
 
   pageLifecycle.on(removeButton, "click", () => {
     row.remove()

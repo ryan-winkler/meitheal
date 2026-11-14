@@ -153,28 +153,38 @@ function resolveTablerOutlineDir() {
   }
 }
 
+const ALLOWED_SHAPE_LINE_RE =
+  /^<(path|rect|circle|ellipse|line|polyline|polygon)\s+([a-z][a-z0-9-]*="[^"<>&]*"(?:\s+[a-z][a-z0-9-]*="[^"<>&]*")*)\s*\/?>$/i
+const BOUNDING_BOX_PATH_RE =
+  /^<path\s+stroke="none"\s+d="M0 0h24v24H0z"\s+fill="none"\s*\/?>$/i
+
 function extractInnerSvg(rawSvg, iconFile) {
-  const withoutComments = rawSvg.replace(/<!--[\s\S]*?-->/g, "").trim()
-  const match = withoutComments.match(/^<svg\b[^>]*>([\s\S]*?)<\/svg>$/i)
+  const trimmed = rawSvg.trim()
+  if ((trimmed.match(/<svg\b/gi) ?? []).length !== 1 || (trimmed.match(/<\/svg>/gi) ?? []).length !== 1) {
+    throw new Error(`[generate-icons] Expected a single <svg> root in ${iconFile}`)
+  }
+  const match = trimmed.match(/^<svg\b[^>]*>([\s\S]*?)<\/svg>$/i)
   if (!match) {
     throw new Error(`[generate-icons] Unexpected <svg> wrapper in ${iconFile}`)
   }
   const inner = match[1]
-    .replace(/<path\s+stroke="none"\s+d="M0 0h24v24H0z"\s+fill="none"\s*\/?>/gi, "")
     .split("\n")
     .map(line => line.trim())
     .filter(Boolean)
+    .filter(line => !BOUNDING_BOX_PATH_RE.test(line))
     .map(line => {
-      if (/^<(path|rect|circle|ellipse|line|polyline|polygon)\b/i.test(line) && !/vector-effect=/i.test(line)) {
-        return line.replace(/^<([a-z]+)/i, '<$1 vector-effect="non-scaling-stroke"')
+      const shapeMatch = line.match(ALLOWED_SHAPE_LINE_RE)
+      if (!shapeMatch) {
+        throw new Error(`[generate-icons] Disallowed SVG child element in ${iconFile}: ${line}`)
       }
-      return line
+      const [, tag, attrs] = shapeMatch
+      if (/vector-effect=/i.test(attrs)) {
+        return `<${tag} ${attrs} />`
+      }
+      return `<${tag} vector-effect="non-scaling-stroke" ${attrs} />`
     })
     .join("")
 
-  if (/<svg\b/i.test(inner)) {
-    throw new Error(`[generate-icons] Nested <svg> detected inside ${iconFile}`)
-  }
   if (!inner) {
     throw new Error(`[generate-icons] Empty inner SVG extracted from ${iconFile}`)
   }
@@ -256,8 +266,43 @@ export function generateIconRegistrySource() {
     "    : (name as CanonicalIconName)",
     "}",
     "",
+    "const SVG_NS = \"http://www.w3.org/2000/svg\"",
+    "",
     "function escapeAttr(value: string): string {",
     '  return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;")',
+    "}",
+    "",
+    "export function createSpriteIconElement(",
+    "  name: IconName,",
+    "  options?: {",
+    "    size?: number | undefined",
+    "    className?: string | undefined",
+    "    strokeWidth?: number | undefined",
+    "    style?: string | undefined",
+    "  },",
+    "): SVGSVGElement {",
+    "  const size = String(options?.size ?? 20)",
+    "  const strokeWidth = String(options?.strokeWidth ?? 1.75)",
+    "  const canonical = resolveCanonicalIconName(name)",
+    "  const svg = document.createElementNS(SVG_NS, \"svg\")",
+    "  svg.setAttribute(\"xmlns\", SVG_NS)",
+    "  svg.setAttribute(\"width\", size)",
+    "  svg.setAttribute(\"height\", size)",
+    "  svg.setAttribute(\"viewBox\", \"0 0 24 24\")",
+    "  svg.setAttribute(\"fill\", \"none\")",
+    "  svg.setAttribute(\"stroke\", \"currentColor\")",
+    "  svg.setAttribute(\"stroke-width\", strokeWidth)",
+    "  svg.setAttribute(\"stroke-linecap\", \"round\")",
+    "  svg.setAttribute(\"stroke-linejoin\", \"round\")",
+    "  svg.setAttribute(\"vector-effect\", \"non-scaling-stroke\")",
+    "  if (options?.className) svg.setAttribute(\"class\", options.className)",
+    "  if (options?.style) svg.setAttribute(\"style\", options.style)",
+    "  svg.setAttribute(\"aria-hidden\", \"true\")",
+    "  svg.setAttribute(\"role\", \"img\")",
+    "  const use = document.createElementNS(SVG_NS, \"use\")",
+    "  use.setAttribute(\"href\", `#mt-icon-${canonical}`)",
+    "  svg.appendChild(use)",
+    "  return svg",
     "}",
     "",
     "export function renderSpriteIconSvg(",

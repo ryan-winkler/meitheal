@@ -219,8 +219,43 @@ export function resolveCanonicalIconName(name: IconName): CanonicalIconName {
     : (name as CanonicalIconName)
 }
 
+const SVG_NS = "http://www.w3.org/2000/svg"
+
 function escapeAttr(value: string): string {
   return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+}
+
+export function createSpriteIconElement(
+  name: IconName,
+  options?: {
+    size?: number | undefined
+    className?: string | undefined
+    strokeWidth?: number | undefined
+    style?: string | undefined
+  },
+): SVGSVGElement {
+  const size = String(options?.size ?? 20)
+  const strokeWidth = String(options?.strokeWidth ?? 1.75)
+  const canonical = resolveCanonicalIconName(name)
+  const svg = document.createElementNS(SVG_NS, "svg")
+  svg.setAttribute("xmlns", SVG_NS)
+  svg.setAttribute("width", size)
+  svg.setAttribute("height", size)
+  svg.setAttribute("viewBox", "0 0 24 24")
+  svg.setAttribute("fill", "none")
+  svg.setAttribute("stroke", "currentColor")
+  svg.setAttribute("stroke-width", strokeWidth)
+  svg.setAttribute("stroke-linecap", "round")
+  svg.setAttribute("stroke-linejoin", "round")
+  svg.setAttribute("vector-effect", "non-scaling-stroke")
+  if (options?.className) svg.setAttribute("class", options.className)
+  if (options?.style) svg.setAttribute("style", options.style)
+  svg.setAttribute("aria-hidden", "true")
+  svg.setAttribute("role", "img")
+  const use = document.createElementNS(SVG_NS, "use")
+  use.setAttribute("href", `#mt-icon-${canonical}`)
+  svg.appendChild(use)
+  return svg
 }
 
 export function renderSpriteIconSvg(

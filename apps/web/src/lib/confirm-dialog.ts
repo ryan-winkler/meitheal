@@ -9,7 +9,6 @@
 
 import { mountDialogOverlay } from "./dialog-overlay"
 import { copyToClipboard } from "./clipboard"
-import { renderSpriteIconSvg } from "../generated/icon-registry"
 
 export interface ConfirmOptions {
   title?: string;
@@ -67,11 +66,11 @@ export function confirmDialog(options: ConfirmOptions): Promise<boolean> {
       animation: confirmSlideIn 0.15s ease-out;
     `;
 
-    const iconName =
-      variant === "danger" ? "trash" : variant === "warning" ? "warning" : "info";
+    const icon =
+      variant === "danger" ? "🗑️" : variant === "warning" ? "⚠️" : "❓";
 
     dialog.innerHTML = `
-      <div data-confirm-icon style="display: flex; justify-content: center; margin-bottom: 16px; color: var(--text-primary);"></div>
+      <div data-confirm-icon style="font-size: 32px; text-align: center; margin-bottom: 16px;"></div>
       <h3 id="confirm-title" style="
         margin: 0 0 8px; font-size: 16px; font-weight: 600;
         color: var(--text-primary, #f1f5f9); text-align: center;
@@ -102,7 +101,7 @@ export function confirmDialog(options: ConfirmOptions): Promise<boolean> {
     `;
 
     // Dialog options are plain text, including values read back from DOM labels.
-    dialog.querySelector<HTMLElement>("[data-confirm-icon]")!.innerHTML = renderSpriteIconSvg(iconName, { size: 28 })
+    dialog.querySelector<HTMLElement>("[data-confirm-icon]")!.textContent = icon
     dialog.querySelector<HTMLElement>("#confirm-title")!.textContent = options.title ?? "Confirm"
     dialog.querySelector<HTMLElement>("#confirm-message")!.textContent = options.message
     const details = dialog.querySelector<HTMLElement>("#confirm-details")!

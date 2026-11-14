@@ -1,10 +1,11 @@
-import type { APIRoute } from "astro";
-import { ensureSchema, getPersistenceClient, getDbIntegrityStatus, getSchemaVersion } from "@domains/tasks/persistence/store";
-import { apiJson } from "../../lib/api-response";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { supervisorFetch } from "../../lib/supervisor-fetch";
+import type { APIRoute } from "astro";
+import { ensureSchema, getPersistenceClient, getDbIntegrityStatus, getSchemaVersion } from "@domains/tasks/persistence/store";
 import { getHAConnectionStatus } from "@domains/ha/ha-connection";
+import { apiJson } from "../../lib/api-response";
+import { supervisorFetch } from "../../lib/supervisor-fetch";
 
 /** Process startup time for uptime calculation. */
 const startedAt = Date.now();
@@ -31,7 +32,7 @@ function getAddonVersion(): string {
 
 const VERSION = getAddonVersion();
 const SUPERVISOR_INFO_TTL_MS = 60_000;
-let _supervisorInfoCache: { token: string; addonSlug: string; expiresAt: number } | null = null;
+let _supervisorInfoCache: { credentialDigest: string; addonSlug: string; expiresAt: number } | null = null;
 
 export function resetHealthSupervisorCacheForTests(): void {
   _supervisorInfoCache = null;
@@ -58,9 +59,10 @@ export const GET: APIRoute = async () => {
     let supervisorReachable = false;
     let addonSlug = "unknown";
     if (supervisorToken) {
+      const credentialDigest = createHash("sha256").update(supervisorToken).digest("hex");
       if (
         _supervisorInfoCache &&
-        _supervisorInfoCache.token === supervisorToken &&
+        _supervisorInfoCache.credentialDigest === credentialDigest &&
         _supervisorInfoCache.expiresAt > now
       ) {
         supervisorReachable = true;
@@ -73,7 +75,7 @@ export const GET: APIRoute = async () => {
             const data = await res.json() as { data?: { slug?: string } };
             addonSlug = data?.data?.slug ?? "unknown";
             _supervisorInfoCache = {
-              token: supervisorToken,
+              credentialDigest,
               addonSlug,
               expiresAt: now + SUPERVISOR_INFO_TTL_MS,
             };

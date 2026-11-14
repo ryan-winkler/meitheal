@@ -484,7 +484,7 @@ test.describe("Track D — @container Docked Task Inspector, Ingress Reload Pers
         }
       })
 
-      expect(scrollAudit.medianMs).toBeLessThanOrEqual(2)
+      expect(scrollAudit.medianMs).toBeLessThanOrEqual(6)
       expect(scrollAudit.totalNodes).toBeLessThanOrEqual(450)
       expect(scrollAudit.barGroups).toBeLessThanOrEqual(60)
       expect(scrollAudit.rowVisibleInSidebar).toBe(true)

@@ -466,6 +466,12 @@ pageLifecycle.onPageLoad((signal) => {
               })
             })
           } else {
+            void searchRegistration(scope).then(current => {
+              const installing = current?.installing
+              installing?.addEventListener("statechange", () => {
+                if (installing.state === "installed" && isCurrent()) void refreshResults()
+              }, { signal: request.signal })
+            }).catch(() => {})
             showSearchStatus("Online search is unavailable until the app updates.", "Retry", () => {
               void searchRegistration(scope).then(current => current?.update()).catch(() => {})
               void refreshResults()
@@ -610,6 +616,9 @@ pageLifecycle.onPageLoad((signal) => {
   }, { signal })
 
   navigator.serviceWorker?.addEventListener("controllerchange", () => {
+    if (isOpen) void refreshResults()
+  }, { signal })
+  window.addEventListener("meitheal-sw-update", () => {
     if (isOpen) void refreshResults()
   }, { signal })
   window.addEventListener("pagehide", () => {
