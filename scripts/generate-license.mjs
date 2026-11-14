@@ -38,12 +38,6 @@ function base64url(buf) {
 }
 
 function generateKeypair() {
-  if (existsSync(PRIVATE_KEY_PATH)) {
-    console.error("❌ Keypair already exists at", KEYS_DIR)
-    console.error("   Delete .keys/ manually if you want to regenerate (this invalidates ALL existing keys)")
-    process.exit(1)
-  }
-
   mkdirSync(KEYS_DIR, { recursive: true })
 
   const { publicKey, privateKey } = generateKeyPairSync("ed25519", {
@@ -51,8 +45,18 @@ function generateKeypair() {
     privateKeyEncoding: { type: "pkcs8", format: "pem" }
   })
 
-  // "wx" fails if another process created a key after the check above, so an existing key is never replaced.
-  writeFileSync(PRIVATE_KEY_PATH, privateKey, { mode: 0o600, flag: "wx" })
+  // "wx" creates the file only if it is absent, so an existing key is never replaced,
+  // even when another process creates one at the same time. No separate existence check is needed.
+  try {
+    writeFileSync(PRIVATE_KEY_PATH, privateKey, { mode: 0o600, flag: "wx" })
+  } catch (err) {
+    if (err instanceof Error && "code" in err && err.code === "EEXIST") {
+      console.error("❌ Keypair already exists at", KEYS_DIR)
+      console.error("   Delete .keys/ manually if you want to regenerate (this invalidates ALL existing keys)")
+      process.exit(1)
+    }
+    throw err
+  }
   try {
     writeFileSync(PUBLIC_KEY_PATH, publicKey, { mode: 0o644, flag: "wx" })
   } catch (err) {
