@@ -65,6 +65,36 @@ export const GET: APIRoute = async ({ params, url }) => {
   })
 }
 
+/**
+ * An assigned-only agent loses write access to a task once it reassigns it, so a
+ * client retry of that same PUT would be refused even though it succeeded. When
+ * the retry asks only for the reassignment this agent already made, answer with
+ * the current task instead of 403.
+ */
+async function replayedAgentReassignment(
+  repo: TaskRepository,
+  agentToken: App.Locals["agentToken"],
+  taskId: string,
+  body: Record<string, unknown>,
+): Promise<Response | null> {
+  if (!isAssignedWriteOnly(agentToken) || !agentToken?.assigneeId) return null
+  const fields = Object.keys(body).filter((key) => key !== "updated_at" && key !== "request_id")
+  if (fields.length !== 1 || fields[0] !== "assigned_to") return null
+  const requested = typeof body.assigned_to === "string" ? body.assigned_to.trim() : ""
+  const row = await repo.findById(taskId)
+  if (!row || String(row.assigned_to ?? "") !== requested) return null
+  const { activity } = await repo.getActivityLog(taskId, 50, 0)
+  const lastReassignment = activity.find((entry) => entry.field === "assigned_to")
+  if (
+    !lastReassignment ||
+    lastReassignment.actor_type !== "agent" ||
+    lastReassignment.old_value !== agentToken.assigneeId ||
+    String(lastReassignment.new_value ?? "") !== requested
+  ) return null
+  const ticketNum = row.ticket_number != null ? Number(row.ticket_number) : null
+  return Response.json({ ...row, is_promoted: Boolean(row.is_promoted), ticket_key: formatTicketKey(ticketNum) })
+}
+
 export const PUT: APIRoute = async ({ params, request, locals }) => {
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
   if (hasBoardSelection(body)) return unavailableBoardResponse()
@@ -88,7 +118,7 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
     [resolvedId],
     "Agent can only update tasks assigned to it",
   )
-  if (denied) return denied
+  if (denied) return (await replayedAgentReassignment(repo, agentToken, resolvedId, body)) ?? denied
 
   const clientVersion = typeof body.updated_at === "number" ? body.updated_at : undefined
   if (clientVersion !== undefined && (!Number.isSafeInteger(clientVersion) || clientVersion < 0)) {
@@ -502,6 +532,7 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
   // Assignment-change notification (respects per-user prefs)
   if (notifPrefs.enabled && sanitized.assigned_to !== undefined && (sanitized.assigned_to || null) !== (oldTask?.assigned_to || null)) {
     const assignee = typeof sanitized.assigned_to === "string" ? sanitized.assigned_to : null
+    const handedBackByAgent = Boolean(agentToken?.assigneeId) && oldTask?.assigned_to === agentToken?.assigneeId
     if (assignee && !notifPrefs.disabledUsers.has(assignee)) {
       import("@domains/ha").then(async ({ getIngressEntry }) => {
         const ingress = await getIngressEntry()
@@ -521,7 +552,8 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
           }
         } catch { /* fallback to stripped ID */ }
         const badge = await repo.getOpenTaskCount()
-        const agentName = agentActivityActor(locals)?.actor
+        // "Handed back" only when the agent gives up a task it held; otherwise it is an ordinary assignment.
+        const agentName = handedBackByAgent ? agentActivityActor(locals)?.actor : undefined
         dispatchNotification(
           agentName ? `↩️ Handed back by ${agentName}: ${titleStr}` : `📋 Task assigned: ${titleStr}`,
           agentName
@@ -533,7 +565,7 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
           { badgeCount: badge },
         ).catch(() => {})
       }).catch(() => {})
-    } else if (!assignee && agentActivityActor(locals)) {
+    } else if (!assignee && handedBackByAgent && agentActivityActor(locals)) {
       // An agent gave the task up without naming anyone, so someone has to pick it up.
       const agentName = agentActivityActor(locals)!.actor
       import("@domains/ha").then(async ({ getIngressEntry }) => {

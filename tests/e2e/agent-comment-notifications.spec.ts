@@ -211,6 +211,32 @@ test("agent comments and task notifications are delivered through Home Assistant
       args: ["task-notify-1"],
     })
     expect(Number(assignRows.rows[0]?.n)).toBe(0)
+
+    // "Handed back" is only for a task the agent held. Reassigning someone else's task is an ordinary assignment.
+    const agentLocals = {
+      requestId: "req-agent-reassign",
+      agentToken: { tokenId: "tok-notify", tokenName: "Claude", scopes: ["tasks:write"], assigneeId: "custom_agent_claude" },
+    }
+    const reassign = (id: string, assignedTo: string) => putTask({
+      params: { id },
+      request: new Request(`http://localhost/api/tasks/${id}`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ assigned_to: assignedTo }),
+      }),
+      locals: agentLocals,
+    } as unknown as Parameters<typeof putTask>[0])
+    const sidebarTitles = () => calls.filter(call => call.domain === "persistent_notification").map(call => String(call.service_data.title))
+
+    await client.execute({ sql: "UPDATE tasks SET assigned_to = 'ha_niamh' WHERE id = ?", args: ["task-notify-1"] })
+    calls.length = 0
+    expect((await reassign("task-notify-1", "ha_aoife")).status).toBe(200)
+    await expect.poll(sidebarTitles).toEqual(["📋 Task assigned: Order the oil"])
+
+    await client.execute({ sql: "UPDATE tasks SET assigned_to = 'custom_agent_claude' WHERE id = ?", args: ["task-notify-1"] })
+    calls.length = 0
+    expect((await reassign("task-notify-1", "ha_niamh")).status).toBe(200)
+    await expect.poll(sidebarTitles).toEqual(["↩️ Handed back by Claude: Order the oil"])
   } finally {
     entities.stopEntitySubscription()
     ha.closeHAConnection()

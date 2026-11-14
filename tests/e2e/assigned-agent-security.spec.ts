@@ -220,6 +220,48 @@ dbTest.describe("Assigned-Agent Authorization & Repository Guards", () => {
     expect(body.owner).toBe("human")
   })
 
+  dbTest("PUT /api/tasks/[id] acknowledges an agent's retried reassignment and still refuses other writes", async ({ repo }) => {
+    const id = crypto.randomUUID()
+    await repo.createTask(makeTaskData({ id, assigned_to: "custom_agent_a" }))
+    const reassign = () => putTask({
+      params: { id },
+      request: new Request(`http://localhost/api/tasks/${id}`, {
+        method: "PUT",
+        body: JSON.stringify({ assigned_to: "ha_person_1" }),
+      }),
+      locals: agentLocals("custom_agent_a"),
+    } as unknown as Parameters<typeof putTask>[0])
+
+    const first = await reassign()
+    expect(first.status).toBe(200)
+    await expect.poll(async () => (await repo.getActivityLog(id, 10, 0)).activity
+      .some((entry) => entry.field === "assigned_to" && entry.new_value === "ha_person_1")).toBe(true)
+
+    const retry = await reassign()
+    expect(retry.status).toBe(200)
+    expect((await retry.json()).assigned_to).toBe("ha_person_1")
+
+    const otherWrite = await putTask({
+      params: { id },
+      request: new Request(`http://localhost/api/tasks/${id}`, {
+        method: "PUT",
+        body: JSON.stringify({ title: "Agent edit after giving the task away" }),
+      }),
+      locals: agentLocals("custom_agent_a"),
+    } as unknown as Parameters<typeof putTask>[0])
+    expect(otherWrite.status).toBe(403)
+
+    const strangerRetry = await putTask({
+      params: { id },
+      request: new Request(`http://localhost/api/tasks/${id}`, {
+        method: "PUT",
+        body: JSON.stringify({ assigned_to: "ha_person_1" }),
+      }),
+      locals: agentLocals("custom_agent_b"),
+    } as unknown as Parameters<typeof putTask>[0])
+    expect(strangerRetry.status).toBe(403)
+  })
+
   dbTest("atomic sub-route guards reject mismatched assignees in SQL without TOCTOU", async ({ repo }) => {
     const id = crypto.randomUUID()
     await repo.createTask(makeTaskData({ id, assigned_to: "custom_agent_a" }))

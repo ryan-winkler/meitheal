@@ -57,7 +57,7 @@ Create agent tokens in **Settings → Automation & AI → Agent Tokens** as a ve
 | `tasks:read` | Read tasks, `GET /api/users` assignee directory, and `listMyTasks` |
 | `tasks:propose` | Claim, release, or propose edits via `POST /api/tasks/{id}/handoff` |
 | `tasks:write` | Create, update, reorder, NFC-complete, comment, link, track time, defer, and toggle reactions on tasks |
-| `tasks:write:assigned` | Update only tasks assigned to `assigneeId` (`PUT`/`PATCH /api/tasks/{id}`, `deferral`, `comments`, `links`, `time`, `completeTask`, `handBackTask`; excludes reactions and comment deletion) |
+| `tasks:write:assigned` | Update only tasks assigned to `assigneeId` (`PUT`/`PATCH /api/tasks/{id}`, `deferral`, `comments`, `links`, `time`, `completeTask`, `handBackTask`; excludes reactions and comment deletion). Once the agent reassigns a task it loses write access, but retrying that same `{"assigned_to": ...}` `PUT` returns the current task instead of `403`, so a lost response is safe to retry. |
 | `tasks:delete` | Delete tasks and run `/api/tasks/clear-completed` or `/api/tasks/delete-completed` |
 | `projects:read` | List projects (`GET /api/projects`) and read project details (`GET /api/projects/{id}`) |
 | `projects:write` | Create, update, or delete projects |
@@ -99,7 +99,7 @@ Over MCP the agent uses these tools. Its identity always comes from the token, n
 | `getTask`, `getTaskComments` | A task and its discussion. |
 | `addTaskComment` | The agent's answer, shown as **Automation: _token name_**. |
 | `updateTask`, `completeTask` | A change to a task assigned to the agent. |
-| `handBackTask` | Posts an optional note, then returns the task to whoever held it before the agent. Pass `to` to name another assignee, or `null` to leave it unassigned. |
+| `handBackTask` | Posts an optional note, then returns the task to whoever held it before the agent. Pass `to` to name another assignee, or `null` to leave it unassigned. The household gets a "Handed back" notification only for a task the agent held; any other reassignment by an agent notifies as an ordinary assignment. |
 
 With `tasks:write:assigned`, a request to change a task assigned to someone else returns HTTP 403 with the problem type `task-not-assigned`. The agent cannot create or delete tasks. Grant `tasks:write` only to automation that must change any task. A token can act as an agent assignee only, never as a person. Deleting an agent assignee unassigns its tasks and detaches its tokens.
 
