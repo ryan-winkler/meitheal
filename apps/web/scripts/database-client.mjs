@@ -396,8 +396,9 @@ function emitSlowReadLeaseWarning() {
 function openLocal(path, memory, readOnly) {
   verifySQLite()
   // Deliberately do not wait inside SQLite; write retries happen asynchronously on the JS event loop.
-  const connect = (inspectOnly = readOnly, secondary = false) => sqliteOperation(() => {
-    const db = new DatabaseSync(path, { timeout: 0, readOnly: inspectOnly })
+  const connectRaw = (inspectOnly = readOnly) => sqliteOperation(() => new DatabaseSync(path, { timeout: 0, readOnly: inspectOnly }))
+  /** @param {DatabaseSync} db @param {boolean} inspectOnly @param {boolean} secondary */
+  const configureConnection = (db, inspectOnly = readOnly, secondary = false) => sqliteOperation(() => {
     try {
       db.exec("PRAGMA foreign_keys = ON; PRAGMA mmap_size = 0;")
       if (inspectOnly) {
@@ -413,6 +414,7 @@ function openLocal(path, memory, readOnly) {
       throw err
     }
   })
+  const connect = (inspectOnly = readOnly, secondary = false) => configureConnection(connectRaw(inspectOnly), inspectOnly, secondary)
 
   /** @param {DatabaseSync} database */
   function inspectSchema(database) {
@@ -431,18 +433,18 @@ function openLocal(path, memory, readOnly) {
       if (readOnly) throw new Error("Database does not exist. Run the migration command to create it.")
       return connect(false, false)
     }
-    const inspection = connect(true, true)
+    const inspection = connectRaw(true)
     try {
       inspectSchema(inspection)
-      if (readOnly) return inspection
+      if (readOnly) return configureConnection(inspection, true, true)
     } catch (error) {
       inspection.close()
       // SQLite can require a writer to recover a journal left by a crashed process.
       if (readOnly || !(error instanceof LibsqlError) || (error.rawCode !== 264 && error.rawCode !== 776)) throw error
-      const recovery = connect(false, false)
+      const recovery = connectRaw(false)
       try {
         inspectSchema(recovery)
-        return recovery
+        return configureConnection(recovery, false, false)
       } catch (recoveryError) {
         recovery.close()
         throw recoveryError

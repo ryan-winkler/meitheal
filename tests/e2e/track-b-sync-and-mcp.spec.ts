@@ -73,7 +73,7 @@ test("B3: commitSyncMutationChunks commits 60 items in 25/25/10 chunks, isolates
         status: "pending",
         idempotencyKey: `todo-sync-test:${idx}`,
         confirmation: {
-          source: "todo",
+          source: "ha_todo",
           confirmationId,
           entityId: "todo.household",
           externalId: uid,
@@ -100,7 +100,7 @@ test("B3: commitSyncMutationChunks commits 60 items in 25/25/10 chunks, isolates
       status: "pending",
       idempotencyKey: `bulk-todo:${idx}`,
       confirmation: {
-        source: "todo",
+        source: "ha_todo",
         entityId: "todo.bulk",
         externalId: `bulk-uid-${idx}`,
         payload: JSON.stringify({ uid: `bulk-uid-${idx}` }),
@@ -149,7 +149,7 @@ test("B3: commitSyncMutationChunks commits 60 items in 25/25/10 chunks, isolates
 
     const repo = new TaskRepository(client)
     const todoMap = await findTasksByExternalSyncIds({
-      source: "todo",
+      source: "ha_todo",
       entityId: "todo.bulk",
       externalIds: Array.from({ length: 210 }, (_, i) => `bulk-uid-${i}`),
     })

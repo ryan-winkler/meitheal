@@ -336,7 +336,7 @@ async function mergeHATodoItems(entityId: string, items: HATodoItem[]): Promise<
 
     if (candidates.length > 0) {
       const existingMap = await mod.findTasksByExternalSyncIds({
-        source: "todo",
+        source: "ha_todo",
         entityId,
         externalIds: candidates.map((c) => c.uid),
       });
@@ -384,7 +384,7 @@ async function mergeHATodoItems(entityId: string, items: HATodoItem[]): Promise<
             description: stripMeithealAttribution(item.description),
             updatedAt: nowMs,
             confirmation: {
-              source: "todo",
+              source: "ha_todo",
               confirmationId: existingMatch.confirmationId,
               entityId,
               externalId: uid,
@@ -402,7 +402,7 @@ async function mergeHATodoItems(entityId: string, items: HATodoItem[]): Promise<
             taskId: matchedTaskId,
             createdAt: nowMs,
             confirmation: {
-              source: "todo",
+              source: "ha_todo",
               entityId,
               externalId: uid,
               syncDirection: "inbound",
@@ -432,7 +432,7 @@ async function mergeHATodoItems(entityId: string, items: HATodoItem[]): Promise<
           taskKind: "standard_action",
           createdAt: nowMs,
           confirmation: {
-            source: "todo",
+            source: "ha_todo",
             entityId,
             externalId: uid,
             syncDirection: "inbound",

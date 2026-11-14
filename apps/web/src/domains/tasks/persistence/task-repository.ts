@@ -312,7 +312,7 @@ export function taskInsertStatement(data: TaskCreationData, createdAt: number, {
 }
 
 export type ExternalSyncLookup =
-  | { source: "todo"; entityId: string; externalIds: string[] }
+  | { source: "ha_todo"; entityId: string; externalIds: string[] }
   | { source: "calendar"; entityId: string; externalIds: string[] }
   | { source: "grocy"; grocyEntityType: "chore" | "task" | "shopping"; externalIds: string[] }
 
@@ -326,7 +326,7 @@ export interface ExternalSyncMatch {
 
 export type SyncConfirmationTarget =
   | {
-      source: "todo"
+      source: "ha_todo"
       entityId: string
       externalId: string
       confirmationId?: string | undefined
@@ -2249,7 +2249,7 @@ export class TaskRepository {
       const chunk = uniqueIds.slice(offset, offset + maxIdsPerChunk)
       const placeholders = chunk.map(() => "?").join(", ")
       let stmt: InStatement
-      if (lookup.source === "todo") {
+      if (lookup.source === "ha_todo") {
         stmt = {
           sql: `SELECT c.confirmation_id, c.task_id, c.ha_todo_uid AS external_id,
                        COALESCE(c.updated_at, c.created_at, 0) AS sync_updated_at,
@@ -2323,7 +2323,7 @@ export class TaskRepository {
     }
     if (mutations.length === 0) return aggregate
 
-    if (mutations.some(m => m.confirmation?.source === "todo")) {
+    if (mutations.some(m => m.confirmation?.source === "ha_todo")) {
       await ensureTodoSyncConfirmationTable(this.client)
     }
     if (mutations.some(m => m.confirmation?.source === "grocy")) {
@@ -2340,7 +2340,7 @@ export class TaskRepository {
     ): InStatement => {
       const confirmationId = conf.confirmationId ?? crypto.randomUUID()
       const insertVerb = orIgnore ? "INSERT OR IGNORE" : "INSERT"
-      if (conf.source === "todo") {
+      if (conf.source === "ha_todo") {
         return {
           sql: `${insertVerb} INTO todo_sync_confirmations (
                   confirmation_id, task_id, request_id, ha_entity_id, ha_todo_uid,
@@ -2487,7 +2487,7 @@ export class TaskRepository {
                 const nowMs = mutation.updatedAt ?? Date.now()
                 step = "task_update"
 
-                if (mutation.confirmation?.source === "todo" && mutation.confirmation.requireUnmodifiedSinceSync) {
+                if (mutation.confirmation?.source === "ha_todo" && mutation.confirmation.requireUnmodifiedSinceSync) {
                   const taskVersion = taskTimestampMs("tasks.updated_at")
                   const linkArgs: InValue[] = [
                     mutation.confirmation.confirmationId ?? "",
@@ -2595,7 +2595,7 @@ export class TaskRepository {
                           mutation.confirmation.externalId,
                         ],
                       }]
-                    } else if (mutation.confirmation.source === "todo") {
+                    } else if (mutation.confirmation.source === "ha_todo") {
                       yield [{
                         sql: "UPDATE todo_sync_confirmations SET payload = ?, updated_at = ? WHERE ha_entity_id = ? AND ha_todo_uid = ?",
                         args: [
