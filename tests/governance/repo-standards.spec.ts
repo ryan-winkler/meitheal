@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import { test, expect } from "@playwright/test";
 
 const repoRoot = join(process.cwd(), "..");
@@ -93,12 +94,38 @@ test("branching and SemVer guardrails require dev-only auto-push and 0.0.{digit}
   });
   expect(syncResult.status, syncResult.stderr).toBe(0);
 
-  for (const rejected of ["minor", "major", "0.0.5", "0.0.10"]) {
-    const bumpResult = spawnSync(process.execPath, ["scripts/bump-version.mjs", rejected], {
-      cwd: repoRoot,
-      encoding: "utf8",
-    });
-    expect(bumpResult.status, `Expected rejection for ${rejected}`).toBe(1);
-    expect(bumpResult.stderr).toContain("--force-semver");
+  // Run the bump script against a copy of the versioned files, so a version the
+  // policy happens to accept can never rewrite the real manifests.
+  const sandbox = mkdtempSync(join(tmpdir(), "meitheal-bump-"));
+  try {
+    for (const file of [
+      "scripts/bump-version.mjs",
+      "package.json",
+      "meitheal-hub/config.yaml",
+      "meitheal-hub/run.sh",
+      "apps/web/package.json",
+      "apps/web/public/sw.js",
+    ]) {
+      mkdirSync(dirname(join(sandbox, file)), { recursive: true });
+      copyFileSync(join(repoRoot, file), join(sandbox, file));
+    }
+    const current = readFileSync(join(repoRoot, "meitheal-hub/config.yaml"), "utf8")
+      .match(/^version:\s*["']?(\d+)\.(\d+)\.(\d+)/m)!;
+    const twoStepPatch = `${current[1]}.${current[2]}.${Number(current[3]) + 2}`;
+    const versionedFiles = () => ["package.json", "meitheal-hub/config.yaml", "apps/web/package.json"]
+      .map(file => readFileSync(join(sandbox, file), "utf8"));
+    const before = versionedFiles();
+
+    for (const rejected of ["minor", "major", twoStepPatch, "0.0.10"]) {
+      const bumpResult = spawnSync(process.execPath, ["scripts/bump-version.mjs", rejected], {
+        cwd: sandbox,
+        encoding: "utf8",
+      });
+      expect(bumpResult.status, `Expected rejection for ${rejected}`).toBe(1);
+      expect(bumpResult.stderr).toContain("--force-semver");
+    }
+    expect(versionedFiles()).toEqual(before);
+  } finally {
+    rmSync(sandbox, { recursive: true, force: true });
   }
 });
