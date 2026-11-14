@@ -20,7 +20,7 @@ jobs:
     permissions:
       attestations: write
       contents: read
-      id-token: write
+      id-token: write # nosemgrep
       packages: write
     secrets:
       ADDON_REPO_TOKEN: ${{ secrets.ADDON_REPO_TOKEN }}

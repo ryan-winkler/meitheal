@@ -13,12 +13,18 @@ const PRIVATE_IP_RANGES = [
   /^f[cd][0-9a-f]{0,2}:/, // unique local fc00::/7
   /^fe[89ab][0-9a-f]?:/, // link-local fe80::/10
   /^::ffff:/, // IPv4-mapped addresses reach IPv4 hosts, including private ones
-  /^(?:.+\.)?localhost$/,
 ]
 
 export function isPrivateHost(hostname: string): boolean {
   // URL keeps IPv6 literals in brackets ("[::1]") and may end a name with the root dot.
-  const host = hostname.toLowerCase().replace(/^\[(.*)\]$/, "$1").replace(/\.$/, "")
+  const lowered = hostname.trim().toLowerCase()
+  let host = lowered.startsWith("[") && lowered.endsWith("]") ? lowered.slice(1, -1) : lowered
+  while (host.endsWith(".")) {
+    host = host.slice(0, -1)
+  }
+  if (!host || host === "localhost" || host.endsWith(".localhost")) {
+    return true
+  }
   return PRIVATE_IP_RANGES.some((re) => re.test(host))
 }
 

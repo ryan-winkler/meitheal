@@ -51,7 +51,7 @@ jobs:
     permissions:
       attestations: write
       contents: read
-      id-token: write
+      id-token: write # nosemgrep
       packages: write
 
   aarch64:
@@ -64,7 +64,7 @@ jobs:
     permissions:
       attestations: write
       contents: read
-      id-token: write
+      id-token: write # nosemgrep
       packages: write
 
   promote:

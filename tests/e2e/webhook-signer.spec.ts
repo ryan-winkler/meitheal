@@ -35,12 +35,13 @@ test.describe("Webhook Signer", () => {
     expect(verifySignature("secret-b", payload, signature)).toBe(false)
   })
 
-  test("handles empty payload", () => {
+  test("handles empty payload and mismatched signature length", () => {
     const secret = "test-secret"
     const signature = signPayload(secret, "")
 
     expect(signature).toBeTruthy()
     expect(verifySignature(secret, "", signature)).toBe(true)
+    expect(verifySignature(secret, "", "short-sig")).toBe(false)
   })
 })
 
@@ -48,6 +49,8 @@ test.describe("Private URL Guard", () => {
   test("rejects localhost", () => {
     expect(isPrivateUrl("http://localhost:3000/webhook")).toBe(true)
     expect(isPrivateHost("localhost")).toBe(true)
+    expect(isPrivateHost("localhost...")).toBe(true)
+    expect(isPrivateHost("")).toBe(true)
   })
 
   test("rejects 127.x.x.x", () => {
@@ -148,7 +151,32 @@ test.describe("Webhook Config Parser", () => {
   })
 
   test("rejects non-array webhooks", () => {
-    const result = parseWebhookConfig({ webhooks: "not-array" })
-    expect(result.ok).toBe(false)
+    expect(parseWebhookConfig({ webhooks: "not-array" }).ok).toBe(false)
+    expect(parseWebhookConfig(null).ok).toBe(false)
+  })
+
+  test("preserves enabled flag defaults and explicit false", () => {
+    const result = parseWebhookConfig({
+      webhooks: [
+        {
+          id: "sub-default",
+          url: "https://example.com/hook1",
+          secret: "s1",
+          events: ["task.created"],
+        },
+        {
+          id: "sub-disabled",
+          url: "https://example.com/hook2",
+          secret: "s2",
+          events: ["task.completed"],
+          enabled: false,
+        },
+      ],
+    })
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.subscribers[0]?.enabled).toBe(true)
+      expect(result.subscribers[1]?.enabled).toBe(false)
+    }
   })
 })
