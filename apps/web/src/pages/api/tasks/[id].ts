@@ -4,8 +4,7 @@ import { VALID_TASK_TYPES } from "@meitheal/domain-tasks"
 import type { TaskType } from "@meitheal/domain-tasks"
 import { hasBoardSelection, rejectBoardSelectionInJson, unavailableBoardResponse } from "@domains/tasks/board-availability"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
-import { TaskRepository } from "@domains/tasks/persistence/task-repository"
-import { UserRepository } from "@domains/tasks"
+import { TaskRepository, UserRepository } from "@domains/tasks"
 import { taskLabelsJson } from "@domains/tasks/task-creation-service"
 import { formatTicketKey } from "../../../lib/ticket-key"
 import { dispatchTaskEvent, taskEventAuthorityHeaders } from "../../../lib/webhook-dispatcher"
@@ -110,7 +109,7 @@ async function replayedAgentReassignment(
   body: Record<string, unknown>,
   expectedActor: string | undefined,
 ): Promise<Response | null> {
-  if (!isAssignedWriteOnly(agentToken) || !agentToken?.assigneeId) return null
+  if (!agentToken?.assigneeId) return null
   const requestId = typeof body.request_id === "string" ? body.request_id.trim().slice(0, 128) : ""
   if (!requestId) return null
   const requested = normalizeReassignedTarget(body.assigned_to)
@@ -158,12 +157,22 @@ async function replayedAgentReassignment(
 }
 
 export const PUT: APIRoute = async ({ params, request, locals }) => {
-  const rawBody: unknown = await request.json().catch(() => ({}))
+  let rawBody: unknown
+  try {
+    const rawText = await request.text()
+    rawBody = rawText.trim() ? JSON.parse(rawText) : {}
+  } catch {
+    return apiError("Request body must be valid JSON", 400)
+  }
   if (!rawBody || typeof rawBody !== "object" || Array.isArray(rawBody)) {
     return apiError("Request body must be a JSON object", 400)
   }
   const body = rawBody as Record<string, unknown>
   if (hasBoardSelection(body)) return unavailableBoardResponse()
+  const clientVersion = typeof body.updated_at === "number" ? body.updated_at : undefined
+  if (clientVersion !== undefined && (!Number.isSafeInteger(clientVersion) || clientVersion < 0)) {
+    return apiError("updated_at must be a non-negative safe integer", 400)
+  }
   await ensureSchema()
   const repo = new TaskRepository(getPersistenceClient())
 
@@ -181,11 +190,6 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
   const expectedActor = agentActivityActor(locals)?.actor
   const denied = isAssignedWriteOnly(agentToken) ? await checkAssignedTask(resolvedId, agentToken!) : null
   if (denied) return (await replayedAgentReassignment(repo, agentToken, resolvedId, body, expectedActor)) ?? denied
-
-  const clientVersion = typeof body.updated_at === "number" ? body.updated_at : undefined
-  if (clientVersion !== undefined && (!Number.isSafeInteger(clientVersion) || clientVersion < 0)) {
-    return apiError("updated_at must be a non-negative safe integer", 400)
-  }
 
   if (body.expected_status !== undefined && (
     body.expected_status !== STATUS.BACKLOG || clientVersion === undefined ||
@@ -536,9 +540,11 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
       const automation = request.headers.has("X-Automation-Source") ? locals.automationSource : null
       const activityActor = agentActivityActor(locals) ??
         { actor: automation ? `ha:${automation}` : "user", actor_type: (automation ? "ha" : "user") as "ha" | "user" }
+      const commitTimestamp = Number(updatedRow.updated_at)
       await repo.logActivity(resolvedId, changes, {
         ...activityActor,
         ...(requestId ? { correlation_id: requestId } : {}),
+        ...(Number.isSafeInteger(commitTimestamp) ? { createdAt: commitTimestamp } : {}),
       }).catch(() => { })
     }
   }

@@ -1266,8 +1266,6 @@ export class TaskRepository {
 
     const storedVersion = taskTimestampMs("updated_at")
     updates.push(`updated_at = ${nextTaskTimestampMs("updated_at")}`)
-    const now = Date.now()
-    args.push(now)
     const whereArgs: InValue[] = [id]
 
     // Legacy task databases do not have a project foreign key. Check the
@@ -1297,18 +1295,15 @@ export class TaskRepository {
     const where = `WHERE id = ?${destinationExists}${checklistMatches}${assigneeMatches}
       ${predicates.length ? `AND ${predicates.join(" AND ")}` : ""}
       ${dependencies ? `AND NOT EXISTS (${dependencies.sql})` : ""}`
-    const update = {
-      sql: `UPDATE tasks SET ${updates.join(", ")} ${where}
+    const updateSql = `UPDATE tasks SET ${updates.join(", ")} ${where}
             RETURNING id, title, description, status, priority, due_date, labels,
                       framework_payload, calendar_sync_state, area_id, custom_fields,
                       parent_id, time_tracked, start_date, end_date, progress, color,
                       is_favorite, is_promoted, task_type, task_kind, project_id, owner, handoff_state,
                       ticket_number, assigned_to, checklists, urgency, importance, nfc_tag_id,
-                      eisenhower_override, created_at, updated_at`,
-      args: [...args, ...whereArgs],
-    }
+                      eisenhower_override, created_at, updated_at`
 
-    const diagnostics = []
+    const diagnostics: InStatement[] = []
     const versionIndex = version ? diagnostics.length : -1
     if (version) {
       diagnostics.push({ sql: `SELECT status, deferred_at, ${storedVersion} AS updated_at FROM tasks WHERE id = ?`, args: [id] })
@@ -1345,30 +1340,36 @@ export class TaskRepository {
       diagnostics.push({ sql: "SELECT assigned_to FROM tasks WHERE id = ?", args: [id] })
     }
 
-    // Capture the old state and commit the event and update in the same writer batch.
-    const eventId = activity ? crypto.randomUUID() : null
-    const statements: InStatement[] = [...diagnostics]
-    if (activity && eventId) statements.push(taskChangedActivity(fields, where, whereArgs, activity, now, eventId))
-    const writeIndex = statements.length
-    statements.push(update)
-    // Runs straight after the update so changes() still describes it. The upsert
-    // always counts as a change when the update applied, which keeps the discard
-    // below from mistaking a repeated receipt for an ignored update.
-    if (reassignmentReceipt) {
-      statements.push({
-        sql: `INSERT INTO integration_attempts
-                (attempt_id, task_id, integration, request_id, idempotency_key, status, response_payload, created_at, updated_at)
-              SELECT ?, ?, 'task.reassignment', ?, ?, 'completed', ?, ?, ? WHERE changes() = 1
-              ON CONFLICT(idempotency_key, integration) DO UPDATE SET
-                task_id = excluded.task_id, request_id = excluded.request_id,
-                status = excluded.status, response_payload = excluded.response_payload, updated_at = excluded.updated_at`,
-        args: [
-          crypto.randomUUID(), id, reassignmentReceipt.requestId, reassignmentReceipt.key,
-          JSON.stringify({ assigned_to: reassignmentReceipt.assignedTo }), now, now,
-        ],
-      })
+    const writeIndex = diagnostics.length + (activity ? 1 : 0)
+    const buildBatch = (txNow: number): { update: InStatement; statements: InStatement[] } => {
+      const eventId = activity ? crypto.randomUUID() : null
+      const update: InStatement = { sql: updateSql, args: [...args, txNow, ...whereArgs] }
+      const statements: InStatement[] = [...diagnostics]
+      // Capture the old state and commit the event and update in the same writer batch.
+      if (activity && eventId) statements.push(taskChangedActivity(fields, where, whereArgs, activity, txNow, eventId))
+      statements.push(update)
+      // Runs straight after the update so changes() still describes it. The upsert
+      // always counts as a change when the update applied, which keeps the discard
+      // below from mistaking a repeated receipt for an ignored update.
+      if (reassignmentReceipt) {
+        statements.push({
+          sql: `INSERT INTO integration_attempts
+                  (attempt_id, task_id, integration, request_id, idempotency_key, status, response_payload, created_at, updated_at)
+                SELECT ?, ?, 'task.reassignment', ?, ?, 'completed', ?, ?,
+                       COALESCE((SELECT ${storedVersion} FROM tasks WHERE id = ?), ?) WHERE changes() = 1
+                ON CONFLICT(idempotency_key, integration) DO UPDATE SET
+                  task_id = excluded.task_id, request_id = excluded.request_id,
+                  status = excluded.status, response_payload = excluded.response_payload, updated_at = excluded.updated_at`,
+          args: [
+            crypto.randomUUID(), id, reassignmentReceipt.requestId, reassignmentReceipt.key,
+            JSON.stringify({ assigned_to: reassignmentReceipt.assignedTo }), txNow, id, txNow,
+          ],
+        })
+      }
+      if (eventId) statements.push(discardUnappliedTaskActivity(eventId))
+      return { update, statements }
     }
-    if (eventId) statements.push(discardUnappliedTaskActivity(eventId))
+
     let results: ResultSet[]
     let recurrence: RecurrenceOutcome
     if (completing || reassigning) {
@@ -1376,16 +1377,19 @@ export class TaskRepository {
       const completion = await runWriteTransaction(this.client, function* (): Generator<
         InStatement[], { results: ResultSet[]; recurrence: RecurrenceOutcome }, ResultSet[]
       > {
+        const txNow = Date.now()
+        const { statements } = buildBatch(txNow)
         const writeResults = yield statements
         const updatedRow = writeResults[writeIndex]?.rows[0] as Record<string, unknown> | undefined
         if (reassigning && updatedRow) {
           const priorAssignee = writeResults[assigneeDiagIndex]?.rows[0]?.assigned_to ?? null
           const nextAssignee = updatedRow.assigned_to ?? null
           if (priorAssignee !== nextAssignee) {
+            const commitTs = Number(updatedRow.updated_at) || txNow
             const keepKey = reassignmentReceipt?.key ?? null
             yield [{
               sql: "UPDATE integration_attempts SET status = 'superseded', updated_at = ? WHERE integration = 'task.reassignment' AND task_id = ? AND status = 'completed' AND (? IS NULL OR idempotency_key != ?)",
-              args: [now, id, keepKey, keepKey],
+              args: [commitTs, id, keepKey, keepKey],
             }]
           }
         }
@@ -1399,6 +1403,7 @@ export class TaskRepository {
       results = completion.results
       recurrence = completion.recurrence
     } else {
+      const { update, statements } = buildBatch(Date.now())
       results = statements.length > 1
         ? await executeWriteWithRetry(this.client, statements, { signal })
         : [await executeWriteWithRetry(this.client, update, { signal })]
@@ -1559,10 +1564,10 @@ export class TaskRepository {
   async logActivity(
     taskId: string,
     changes: Array<{ field: string; oldValue: string | null; newValue: string }>,
-    opts?: { actor?: string; actor_type?: string; correlation_id?: string },
+    opts?: { actor?: string; actor_type?: string; correlation_id?: string; createdAt?: number },
   ): Promise<void> {
     if (changes.length === 0) return
-    const now = Date.now()
+    const now = opts?.createdAt ?? Date.now()
     const actorType = opts?.actor_type ?? "user"
     const actor = opts?.actor ?? "user"
     const correlationId = opts?.correlation_id ?? null

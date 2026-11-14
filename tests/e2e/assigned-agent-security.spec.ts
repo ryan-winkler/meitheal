@@ -424,9 +424,20 @@ dbTest.describe("Assigned-Agent Authorization & Repository Guards", () => {
       locals: agentLocals("custom_agent_a"),
     } as unknown as Parameters<typeof putTask>[0])
 
-    for (const invalidBody of ["null", "[]", "\"text\"", "42"]) {
+    for (const invalidBody of ["{bad", "null", "[]", "\"text\"", "42"]) {
       const res = await sendRaw(invalidBody)
       expect(res.status).toBe(400)
+    }
+    const unassignedOtherId = crypto.randomUUID()
+    await repo.createTask(makeTaskData({ id: unassignedOtherId, assigned_to: null }))
+    expect((await putTask({
+      params: { id: unassignedOtherId },
+      request: new Request(`http://localhost/api/tasks/${unassignedOtherId}`, { method: "PUT", body: "{bad" }),
+      locals: agentLocals("custom_agent_a"),
+    } as unknown as Parameters<typeof putTask>[0])).status).toBe(400)
+
+    for (const badVersion of [-1, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
+      expect((await sendRaw(JSON.stringify({ assigned_to: "ha_person_1", request_id: "bad-ver", updated_at: badVersion }))).status).toBe(400)
     }
     expect((await sendRaw(JSON.stringify({ assigned_to: "" }))).status).toBe(400)
     expect((await sendRaw(JSON.stringify({ assigned_to: "   " }))).status).toBe(400)
@@ -438,6 +449,9 @@ dbTest.describe("Assigned-Agent Authorization & Repository Guards", () => {
     expect((await sendRaw(JSON.stringify({ assigned_to: "", request_id: "unassign-valid-1" }))).status).toBe(403)
     expect((await sendRaw(JSON.stringify({ assigned_to: "   ", request_id: "unassign-valid-1" }))).status).toBe(403)
     expect((await sendRaw(JSON.stringify({ assigned_to: 123, request_id: "unassign-valid-1" }))).status).toBe(403)
+    for (const badVersion of [-1, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
+      expect((await sendRaw(JSON.stringify({ assigned_to: null, request_id: "unassign-valid-1", updated_at: badVersion }))).status).toBe(400)
+    }
     expect((await sendRaw(JSON.stringify({ assigned_to: null, request_id: "unassign-valid-1" }))).status).toBe(200)
   })
 
@@ -568,6 +582,38 @@ dbTest.describe("Assigned-Agent Authorization & Repository Guards", () => {
     expect((await putWith(id6, { assigned_to: "ha_person_1", request_id: "wf-2" }, {
       assignee: "custom_agent_b", tokenId: "tok-2", tokenName: "Agent Beta",
     })).status).toBe(200)
+
+    // Assign from null then hand off, plus delayed prior logActivity timestamp alignment
+    const id7 = crypto.randomUUID()
+    await repo.createTask(makeTaskData({ id: id7, assigned_to: null }))
+    const dispatcherRes = await putWith(id7, { assigned_to: "custom_agent_a" }, {
+      scopes: ["tasks:read", "tasks:write"], tokenId: "tok-broad", tokenName: "Dispatcher",
+    })
+    expect(dispatcherRes.status).toBe(200)
+    const dispatcherBody = await dispatcherRes.json()
+    expect((await putWith(id7, { assigned_to: "ha_person_1", request_id: "null-to-agent-1" })).status).toBe(200)
+    await repo.logActivity(id7, [{ field: "assigned_to", oldValue: null, newValue: "custom_agent_a" }], {
+      actor: "Dispatcher", actor_type: "agent", createdAt: Number(dispatcherBody.updated_at),
+    })
+    expect((await putWith(id7, { assigned_to: "ha_person_1", request_id: "null-to-agent-1" })).status).toBe(200)
+
+    // Direct updateTask from null assignee and legacy activity row with NULL old_value/new_value
+    const id7b = crypto.randomUUID()
+    await repo.createTask(makeTaskData({ id: id7b, assigned_to: null }))
+    await repo.updateTask(id7b, { assigned_to: "custom_agent_a" })
+    const assignLogs = await repo.findReassignmentReplayState(id7b, "probe", "probe")
+    expect(assignLogs.lastReassignment).toBeNull()
+
+    // Prior-assign log with NULL old_value still matches legacy replay when requested target matches
+    const id8 = crypto.randomUUID()
+    await repo.createTask(makeTaskData({ id: id8, assigned_to: null }))
+    await client.execute({
+      sql: "INSERT INTO task_activity_log (task_id, field, old_value, new_value, actor, actor_type, event_type, summary, correlation_id, created_at) VALUES (?, 'assigned_to', NULL, NULL, 'Dispatcher', 'agent', 'field_change', 'unassigned', NULL, ?)",
+      args: [id8, Date.now()],
+    })
+    const probeNull = await repo.findReassignmentReplayState(id8, "missing", "missing")
+    expect(probeNull.lastReassignment?.old_value).toBeNull()
+    expect(probeNull.lastReassignment?.new_value).toBeNull()
   })
 
   dbTest("PUT /api/tasks/[id] acknowledges concurrent in-flight retry hitting assignee_mismatch", async ({ repo }) => {
