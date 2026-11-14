@@ -3,6 +3,7 @@ import { t } from "../../i18n/translations"
 import type { Locale } from "../../lib/locale"
 import { SETTINGS_SECTIONS } from "../../lib/settings-registry"
 import { serializeForScript } from "../../lib/safe-html"
+import Icon from "../ui/Icon.astro"
 
 interface Props {
   locale: Locale
@@ -93,7 +94,7 @@ const staticConfigJson = serializeForScript(staticConfig)
     <div class="search-hub-panel">
       <div class="search-hub-header">
         <div class="search-hub-input-wrap">
-          <span class="search-hub-input-icon" aria-hidden="true">⌕</span>
+          <span class="search-hub-input-icon" aria-hidden="true"><Icon name="search" size={16} sprite={true} /></span>
           <input
             id="search-hub-input"
             class="search-hub-input"

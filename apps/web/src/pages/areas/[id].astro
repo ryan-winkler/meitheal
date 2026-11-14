@@ -61,7 +61,7 @@ try {
 const areaName = String(area?.name ?? "Area");
 const areaDesc = area?.description ? String(area.description) : null;
 const areaIcon = String(area?.icon ?? "🏠");
-const areaColor = String(area?.color ?? "#6366F1");
+const areaColor = String(area?.color ?? "#146C4E");
 
 const tabs = [
   { id: "overview", label: "Overview", icon: "📊" },
@@ -200,7 +200,7 @@ const tabs = [
         {projects.map((proj) => {
           const counts = taskCountByProject.get(String(proj.id)) ?? { total: 0, completed: 0 };
           const progress = counts.total > 0 ? Math.round((counts.completed / counts.total) * 100) : 0;
-          const projColor = String(proj.color ?? "#6366F1");
+          const projColor = String(proj.color ?? "#146C4E");
           const projIcon = String(proj.icon ?? "📋");
           return (
             <a href={`/projects/${String(proj.id)}`} class="project-card" style={`--project-accent: ${projColor};`}>
@@ -695,7 +695,7 @@ const tabs = [
           name,
           description: descInput?.value?.trim() || null,
           icon: iconInput?.value?.trim() || "🏠",
-          color: colorInput?.value || "#6366F1",
+          color: colorInput?.value || "#146C4E",
         }),
       });
 

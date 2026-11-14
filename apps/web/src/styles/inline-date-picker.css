@@ -30,7 +30,7 @@
 }
 
 .idp-has-date:hover {
-  color: var(--accent, #7c3aed);
+  color: var(--accent);
 }
 
 .idp-placeholder {
@@ -41,7 +41,7 @@
 
 .idp-placeholder:hover {
   opacity: 1;
-  color: var(--accent, #7c3aed);
+  color: var(--accent);
 }
 
 .idp-date-text {
@@ -245,12 +245,12 @@
 }
 
 .idp-cal-day--selected {
-  background: var(--accent, #7c3aed);
-  color: #fff;
+  background: var(--accent);
+  color: var(--personal-accent-foreground, var(--palette-on-accent, #07140f));
   font-weight: 600;
 }
 
 .idp-cal-day--selected:hover {
-  background: var(--accent, #7c3aed);
+  background: var(--accent);
   opacity: 0.85;
 }

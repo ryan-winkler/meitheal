@@ -9,6 +9,7 @@
 
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { formatCalendarDay } from "@lib/calendar-day"
+import { renderIconSvg, type IconName } from "../../generated/icon-registry"
 
 export interface HabitChecklistItem {
   text: string
@@ -68,7 +69,7 @@ function createIconButton(
   action: "edit" | "delete",
   habitId: string,
   label: string,
-  icon: string,
+  iconName: IconName,
 ): HTMLButtonElement {
   const button = document.createElement("button")
   button.type = "button"
@@ -77,7 +78,7 @@ function createIconButton(
   button.dataset.id = habitId
   button.setAttribute("aria-label", label)
   button.title = label
-  button.textContent = icon
+  button.innerHTML = renderIconSvg(iconName, { size: 16 })
   return button
 }
 
@@ -93,7 +94,11 @@ function createChecklistList(habit: HabitData): HTMLUListElement {
     const marker = document.createElement("span")
     marker.className = "habit-card__checklist-marker"
     marker.setAttribute("aria-hidden", "true")
-    marker.textContent = item.done ? "✓" : "•"
+    if (item.done) {
+      marker.innerHTML = renderIconSvg("check", { size: 14 })
+    } else {
+      marker.textContent = "•"
+    }
 
     const text = document.createElement("span")
     text.textContent = item.text
@@ -119,7 +124,9 @@ function createHabitCard(habit: HabitData): HTMLElement {
   completeButton.dataset.action = "complete"
   completeButton.dataset.id = habit.id
   completeButton.setAttribute("aria-label", `Complete ${habit.name} today`)
-  completeButton.textContent = habit.todayCompleted ? "✓" : ""
+  if (habit.todayCompleted) {
+    completeButton.innerHTML = renderIconSvg("check", { size: 16 })
+  }
 
   const icon = document.createElement("span")
   icon.className = "habit-card__icon"
@@ -143,7 +150,14 @@ function createHabitCard(habit: HabitData): HTMLElement {
   )
 
   if (habit.currentStreak > 0) {
-    meta.prepend(createMetaItem(`🔥 ${habit.currentStreak} day streak`, "habit-card__streak"))
+    const streakItem = document.createElement("span")
+    streakItem.className = "habit-card__meta-item habit-card__streak"
+    streakItem.style.display = "inline-flex"
+    streakItem.style.alignItems = "center"
+    streakItem.style.gap = "4px"
+    streakItem.innerHTML = renderIconSvg("flame", { size: 14 })
+    streakItem.append(document.createTextNode(`${habit.currentStreak} day streak`))
+    meta.prepend(streakItem)
   }
 
   if (habit.checklists.length > 0) {
@@ -155,8 +169,8 @@ function createHabitCard(habit: HabitData): HTMLElement {
   const actions = document.createElement("div")
   actions.className = "habit-card__actions"
   actions.append(
-    createIconButton("edit", habit.id, `Edit ${habit.name}`, "✏️"),
-    createIconButton("delete", habit.id, `Delete ${habit.name}`, "🗑️"),
+    createIconButton("edit", habit.id, `Edit ${habit.name}`, "pencil"),
+    createIconButton("delete", habit.id, `Delete ${habit.name}`, "trash"),
   )
 
   top.append(completeButton, icon, info, actions)
@@ -278,7 +292,7 @@ export function createChecklistBuilderItem(text = ""): HTMLDivElement {
   removeButton.type = "button"
   removeButton.className = "btn-remove"
   removeButton.setAttribute("aria-label", "Remove item")
-  removeButton.textContent = "×"
+  removeButton.innerHTML = renderIconSvg("x", { size: 14 })
 
   pageLifecycle.on(removeButton, "click", () => {
     row.remove()

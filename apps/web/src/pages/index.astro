@@ -41,7 +41,7 @@ let gamificationWeekly: Array<{
   points: number
 }> = []
 let areaMap: Record<string, { name: string; color: string }> = {
-  default: { name: "Default", color: "#6366F1" },
+  default: { name: "Default", color: "#146C4E" },
 }
 
 try {
@@ -507,7 +507,7 @@ const heroHintHref =
                 const areaId = String(task.area_id ?? "default")
                 const area = areaMap[areaId] ?? {
                   name: "Default",
-                  color: "#6366F1",
+                  color: "#146C4E",
                 }
                 const ticketNumber = task.ticket_number
                   ? `MTH-${String(task.ticket_number).padStart(3, "0")}`
@@ -833,11 +833,9 @@ const heroHintHref =
     height: 44px;
     border: 1px solid color-mix(in srgb, var(--accent) 36%, var(--border));
     border-radius: 14px;
-    background: color-mix(in srgb, var(--bg-card) 88%, transparent);
+    background: var(--bg-card);
     color: var(--text-primary);
     box-shadow: 0 16px 40px rgba(7, 11, 24, 0.24);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
     cursor: pointer;
     opacity: 0;
     transform: translateY(8px);

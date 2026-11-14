@@ -2,6 +2,7 @@
 import { t } from "../../i18n/translations"
 import type { Locale } from "../../lib/locale"
 import { SETTINGS_SECTIONS } from "../../lib/settings-registry"
+import Icon from "../ui/Icon.astro"
 import SettingsActionRow from "./SettingsActionRow.astro"
 import SettingsCallout from "./SettingsCallout.astro"
 import SettingsFeedback from "./SettingsFeedback.astro"
@@ -44,7 +45,7 @@ const appPwaSection = SETTINGS_SECTIONS.find((section) => section.id === "app-pw
     <div
       style="font-size: 13px; color: var(--text-secondary); line-height: 1.8;"
     >
-      <SettingsCallout title={t("settings.app_readiness_callout_title", locale)} icon="📲" tone="info">
+      <SettingsCallout title={t("settings.app_readiness_callout_title", locale)} icon="phone" tone="info">
         {t("settings.app_readiness_callout_desc", locale)}
       </SettingsCallout>
       <p set:html={t("settings.pwa_about_p1", locale)}></p>
@@ -98,7 +99,7 @@ const appPwaSection = SETTINGS_SECTIONS.find((section) => section.id === "app-pw
           <span
             id="pwa-installed-badge"
             class="badge badge-active"
-            style="font-size: 11px; display: none;">{t("settings.pwa_installed", locale)}</span
+            style="font-size: 11px; display: none;"><Icon name="check" size={12} sprite={true} /> <span>{t("settings.pwa_installed", locale)}</span></span
           >
           <span class="pwa-link-separator" aria-hidden="true">·</span>
           <a
@@ -159,19 +160,19 @@ const appPwaSection = SETTINGS_SECTIONS.find((section) => section.id === "app-pw
                 type="button"
                 id="pwa-clear-cache-btn"
                 class="btn btn-ghost pwa-troubleshoot-btn"
-                >{t("settings.pwa_clear_cache", locale)}</button
+                ><Icon name="trash" size={13} sprite={true} /> <span>{t("settings.pwa_clear_cache", locale)}</span></button
               >
               <button
                 type="button"
                 id="pwa-force-update-btn"
                 class="btn btn-ghost pwa-troubleshoot-btn"
-                >{t("settings.pwa_force_update", locale)}</button
+                ><Icon name="refresh" size={13} sprite={true} /> <span>{t("settings.pwa_force_update", locale)}</span></button
               >
               <button
                 type="button"
                 id="pwa-clear-offline-btn"
                 class="btn btn-ghost pwa-troubleshoot-btn"
-                >{t("settings.pwa_clear_offline", locale)}</button
+                ><Icon name="database" size={13} sprite={true} /> <span>{t("settings.pwa_clear_offline", locale)}</span></button
               >
             </div>
             <div
@@ -188,7 +189,7 @@ const appPwaSection = SETTINGS_SECTIONS.find((section) => section.id === "app-pw
                 type="button"
                 id="pwa-reset-hints-btn"
                 class="btn btn-ghost pwa-troubleshoot-btn"
-                >{t("settings.pwa_reset_hints", locale)}</button
+                ><Icon name="refresh" size={13} sprite={true} /> <span>{t("settings.pwa_reset_hints", locale)}</span></button
               >
             </div>
             <p id="pwa-notification-help" class="settings-companion-card__hint">{t("settings.pwa_notification_help", locale)}</p>
@@ -260,31 +261,32 @@ const appPwaSection = SETTINGS_SECTIONS.find((section) => section.id === "app-pw
         target="_blank"
         rel="noopener noreferrer"
         class="btn btn-secondary settings-link"
-        >{t("settings.pwa_report_issue", locale)}</a
+        ><Icon name="bug" size={14} sprite={true} /> <span>{t("settings.pwa_report_issue", locale)}</span></a
       >
       <a
         href="https://github.com/ryan-winkler/meitheal/discussions"
         target="_blank"
         rel="noopener noreferrer"
         class="btn btn-secondary settings-link"
-        >{t("settings.pwa_discussions", locale)}</a
+        ><Icon name="message-circle" size={14} sprite={true} /> <span>{t("settings.pwa_discussions", locale)}</span></a
       >
       <a
         href="https://github.com/ryan-winkler/meitheal"
         target="_blank"
         rel="noopener noreferrer"
         class="btn btn-secondary settings-link"
-        >{t("settings.pwa_star_github", locale)}</a
+        ><Icon name="star" size={14} sprite={true} /> <span>{t("settings.pwa_star_github", locale)}</span></a
       >
     </SettingsActionRow>
   </SettingsPanelCard>
 
   <!-- Data Portability -->
   <SettingsPanelCard
+    icon="database"
     title={t("settings.data_title", locale)}
     subtitle={t("settings.data_subtitle", locale)}
   >
-    <SettingsCallout title={t("settings.callout_data_title", locale)} icon="🗂">
+    <SettingsCallout title={t("settings.callout_data_title", locale)} icon="database">
       {t("settings.callout_data_desc", locale)}
     </SettingsCallout>
     <div class="form-group mt-3">
@@ -297,7 +299,7 @@ const appPwaSection = SETTINGS_SECTIONS.find((section) => section.id === "app-pw
           class="btn btn-primary"
           id="export-json-btn"
           style="flex: 1; text-align: center; text-decoration: none;"
-          >{t("settings.download_json", locale)}</a
+          ><Icon name="download" size={14} sprite={true} /> <span>{t("settings.download_json", locale)}</span></a
         >
         <a
           href="/api/export/tasks.csv"
@@ -305,7 +307,7 @@ const appPwaSection = SETTINGS_SECTIONS.find((section) => section.id === "app-pw
           class="btn btn-secondary"
           id="export-csv-btn"
           style="flex: 1; text-align: center; text-decoration: none;"
-          >{t("settings.download_csv", locale)}</a
+          ><Icon name="chart-bar" size={14} sprite={true} /> <span>{t("settings.download_csv", locale)}</span></a
         >
         {databaseDownloadToken && (
           <>
@@ -313,7 +315,7 @@ const appPwaSection = SETTINGS_SECTIONS.find((section) => section.id === "app-pw
               <input type="hidden" name="token" value={databaseDownloadToken} />
             </form>
             <button type="button" class="btn btn-secondary" id="export-db-btn"
-              style="flex: 1; text-align: center;">{t("settings.raw_db", locale)}</button>
+              style="flex: 1; text-align: center;"><Icon name="database" size={14} sprite={true} /> <span>{t("settings.raw_db", locale)}</span></button>
           </>
         )}
       </SettingsActionRow>
@@ -335,13 +337,14 @@ const appPwaSection = SETTINGS_SECTIONS.find((section) => section.id === "app-pw
           download
           class="btn btn-secondary flex-1 text-center no-underline"
           id="export-settings-btn"
-          >{t("settings.export_config", locale)}</a
+          ><Icon name="settings" size={14} sprite={true} /> <span>{t("settings.export_config", locale)}</span></a
         >
         <label
           class="settings-file-picker btn btn-secondary flex-1 text-center no-underline"
-          style="cursor: pointer; margin: 0; padding: 6px 16px; display: inline-flex; justify-content: center; align-items: center;"
+          style="cursor: pointer; margin: 0; padding: 6px 16px; display: inline-flex; justify-content: center; align-items: center; gap: 6px;"
         >
-          {t("settings.import_config", locale)}
+          <Icon name="refresh" size={14} sprite={true} />
+          <span>{t("settings.import_config", locale)}</span>
           <input
             type="file"
             id="import-settings-input"
@@ -375,7 +378,7 @@ const appPwaSection = SETTINGS_SECTIONS.find((section) => section.id === "app-pw
   }
   .pwa-compact-dot--active {
     background: var(--accent);
-    box-shadow: 0 0 6px rgba(99, 102, 241, 0.4);
+    box-shadow: 0 0 6px color-mix(in srgb, var(--accent) 40%, transparent);
   }
   .pwa-compact-dot--unavailable {
     background: #f59e0b;

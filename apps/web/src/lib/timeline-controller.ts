@@ -1,5 +1,6 @@
 import { InlineDatePicker } from "../components/shared/InlineDatePicker"
 import { getSelectedAreaId, initAreaSelector } from "@lib/area-selector-controller"
+import { hasPriorityOverlay } from "@lib/layout-shortcuts-controller"
 import { isDisabledCharacterShortcut } from "@lib/single-key-shortcuts"
 import { createClientLogger } from "@lib/client-logger"
 import { FieldPickerPanel, TASK_FIELD_DEFS, loadVisibleFields } from "./field-picker-panel"
@@ -417,7 +418,7 @@ function mapTasks(tasks: TimelineTask[]): MapTasksResult {
       progress: Number(t.progress ?? 0),
       colour: overdue
         ? "#EF4444"
-        : (t.color || PRIORITY_COLOURS[t.priority] || "#6366F1"),
+        : (t.color || PRIORITY_COLOURS[t.priority] || "var(--accent)"),
       taskType: String(t.task_type || "task"),
       isComplete: complete,
       isOverdue: overdue,
@@ -800,15 +801,17 @@ function exportTimelinePNG(outerContainer: HTMLElement) {
   ctx.fillStyle = bgColor
   ctx.fillRect(0, 0, totalW, totalH)
 
-  // Draw sidebar text (visible rows only)
+  // Draw sidebar text (visible rows only — rowY computed from virtualized data-row-index)
   if (sidebar && sidebar.style.display !== "none") {
     const rows = sidebar.querySelectorAll<HTMLElement>(".gantt-sidebar-row")
     ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--text-primary").trim() || "#e0e0e0"
     ctx.font = "12px sans-serif"
-    rows.forEach((row, i) => {
-      const rowY = headerH + i * ROW_HEIGHT - scrollTop
+    rows.forEach((row, fallbackIdx) => {
+      const rowIndex = Number(row.dataset.rowIndex ?? fallbackIdx)
+      const rowY = headerH + rowIndex * ROW_HEIGHT - scrollTop
       if (rowY + ROW_HEIGHT < 0 || rowY > totalH) return // skip offscreen rows
-      const name = row.textContent?.trim() ?? ""
+      const titleEl = row.querySelector<HTMLElement>(".gantt-sidebar-row-title")
+      const name = (titleEl?.textContent ?? row.textContent ?? "").trim()
       ctx.fillText(name, 12, rowY + ROW_HEIGHT / 2 + 4, sidebarW - 16)
     })
   }
@@ -871,6 +874,44 @@ function exportTimelinePNG(outerContainer: HTMLElement) {
 
 // ── Renderer ───────────────────────────────────────────────────────────────
 
+const SHORT_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+function fastShortDate(d: Date): string {
+  return `${d.getDate()} ${SHORT_MONTHS[d.getMonth()] ?? ""}`
+}
+
+function fastIsoShortDate(iso: string | null | undefined): string {
+  if (!iso) return "—"
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso)
+  if (!m) {
+    const dt = parseDate(iso)
+    return dt ? fastShortDate(dt) : "—"
+  }
+  const day = Number(m[3])
+  const monthIdx = Number(m[2]) - 1
+  return `${day} ${SHORT_MONTHS[monthIdx] ?? ""}`
+}
+
+type TimelineDisplayRow =
+  | { kind: "group"; rowIndex: number; bar: HierarchyBar }
+  | { kind: "bar"; rowIndex: number; bar: HierarchyBar }
+  | { kind: "divider"; rowIndex: number; count: number }
+  | { kind: "unscheduled"; rowIndex: number; task: TimelineTask; unscheduledIndex: number }
+
+interface MountedTimelineRow {
+  sidebarEl: HTMLElement
+  svgEl: SVGGElement | null
+  cleanup?: (() => void) | undefined
+}
+
+interface DependencyEdge {
+  fromId: string
+  toId: string
+  fromRow: number
+  toRow: number
+  d: string
+}
+
 // M4: Track per-render AbortController to prevent listener accumulation
 let renderAbort: AbortController | null = null
 
@@ -880,8 +921,12 @@ function renderGantt(
   zoom: ZoomLevel,
   _parentSignal: AbortSignal,
   undatedTasks: TimelineTask[] = [],
-  groupByKey: string = "none"
+  groupByKey: string = "none",
 ) {
+  // Preserve vertical scroll across re-renders (e.g. inline drag/resize completion or collapse)
+  const prevScrollWrapper = outerContainer.querySelector<HTMLElement>(".gantt-scroll-wrapper")
+  const preservedScrollTop = prevScrollWrapper ? prevScrollWrapper.scrollTop : 0
+
   // M4: Abort previous render's listeners before creating new ones
   renderAbort?.abort()
   renderAbort = new AbortController()
@@ -902,15 +947,45 @@ function renderGantt(
   const padAfter = config.unitDays * 4
   const rangeStart = alignToUnit(addDays(minDate, -padBefore), zoom)
   const rangeEnd = startOfDay(addDays(maxDate, padAfter))
-  const totalDays = daysBetween(rangeStart, rangeEnd)
+  const totalDays = Math.max(1, daysBetween(rangeStart, rangeEnd))
   const pxPerDay = config.columnWidth / config.unitDays
   const totalWidth = totalDays * pxPerDay
+
   // Build hierarchy for sidebar (parent→child grouping with indentation or groupby)
   const hBars = buildHierarchy(bars, groupByKey)
 
-  const unscheduledRowCount = undatedTasks.length > 0 ? 1 + (unscheduledCollapsed ? 0 : undatedTasks.length) : 0
-  const totalRowCount = hBars.length + unscheduledRowCount
-  const totalHeight = HEADER_HEIGHT + totalRowCount * ROW_HEIGHT + 20
+  // Build unified TimelineDisplayRow[] covering scheduled rows, divider, and visible unscheduled rows
+  const displayRows: TimelineDisplayRow[] = []
+  const taskRowIndexById = new Map<string, number>()
+  const navigableRowIndices: number[] = []
+
+  for (let i = 0; i < hBars.length; i++) {
+    const bar = hBars[i]!
+    const rowIndex = displayRows.length
+    if (bar.isGroupHeader) {
+      displayRows.push({ kind: "group", rowIndex, bar })
+    } else {
+      displayRows.push({ kind: "bar", rowIndex, bar })
+      taskRowIndexById.set(bar.id, rowIndex)
+      navigableRowIndices.push(rowIndex)
+    }
+  }
+
+  if (undatedTasks.length > 0) {
+    displayRows.push({ kind: "divider", rowIndex: displayRows.length, count: undatedTasks.length })
+    if (!unscheduledCollapsed) {
+      for (let ui = 0; ui < undatedTasks.length; ui++) {
+        const ut = undatedTasks[ui]!
+        const rowIndex = displayRows.length
+        displayRows.push({ kind: "unscheduled", rowIndex, task: ut, unscheduledIndex: ui })
+        taskRowIndexById.set(ut.id, rowIndex)
+      }
+    }
+  }
+
+  const totalRowCount = displayRows.length
+  const totalRowsHeight = totalRowCount * ROW_HEIGHT + 20
+  const totalHeight = HEADER_HEIGHT + totalRowsHeight
   const totalColumnCount = Math.max(1, Math.ceil(totalDays / config.unitDays))
 
   outerContainer.setAttribute("role", "grid")
@@ -925,10 +1000,7 @@ function renderGantt(
 
   const layout = document.createElement("div")
   layout.className = "gantt-layout"
-  layout.style.cssText = `display:flex;flex:1;min-height:0;position:relative;`
-
-  // Read column visibility from module-level state
-  // (visibleFields, showSidebar are at module scope)
+  layout.style.cssText = "display:flex;flex:1;min-height:0;max-height:calc(100vh - 180px);position:relative;overflow:hidden;"
 
   // Sidebar (fixed left) — hidden via display:none when toggle is off
   const sidebar = document.createElement("div")
@@ -944,7 +1016,7 @@ function renderGantt(
   const sidebarHeader = document.createElement("div")
   sidebarHeader.className = "gantt-sidebar-header"
   sidebarHeader.style.cssText = `
-    height:${HEADER_HEIGHT}px;display:flex;align-items:center;
+    height:${HEADER_HEIGHT}px;flex:0 0 ${HEADER_HEIGHT}px;display:flex;align-items:center;
     padding:0 8px;border-bottom:1px solid var(--border);
     font-size:11px;font-weight:600;color:var(--text-muted);
     text-transform:uppercase;letter-spacing:0.04em;
@@ -956,7 +1028,6 @@ function renderGantt(
   nameCol.textContent = "Task"
   sidebarHeader.appendChild(nameCol)
 
-  // Dynamic field column headers based on visibleFields
   for (const fieldId of visibleFields) {
     const fieldDef = TASK_FIELD_DEFS.find(f => f.id === fieldId)
     if (!fieldDef) continue
@@ -973,13 +1044,11 @@ function renderGantt(
     sidebarHeader.appendChild(colWrap)
   }
 
-  // "+" button to open FieldPickerPanel
   const addColBtn = document.createElement("button")
   addColBtn.style.cssText = "position:relative;background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:14px;padding:0 4px;flex-shrink:0;"
   addColBtn.textContent = "+"
   addColBtn.title = "Manage columns"
 
-  // Create FieldPickerPanel instance for this render
   const fieldPicker = new FieldPickerPanel({
     viewId: "timeline",
     fields: TASK_FIELD_DEFS,
@@ -995,137 +1064,730 @@ function renderGantt(
   addColBtn.addEventListener("click", (e) => {
     e.stopPropagation()
     fieldPicker.toggle()
-  })
+  }, { signal })
   sidebarHeader.appendChild(addColBtn)
   sidebar.appendChild(sidebarHeader)
 
-  // Sidebar rows
+  // Sidebar rows viewport + unclipped translated track
   const sidebarRows = document.createElement("div")
   sidebarRows.className = "gantt-sidebar-rows"
-  sidebarRows.style.cssText = "flex:1;overflow:hidden;min-height:0;"
+  sidebarRows.style.cssText = "flex:1;overflow:hidden;min-height:0;position:relative;"
 
-  for (let i = 0; i < hBars.length; i++) {
-    const bar = hBars[i]!
-    const indentPx = bar.depth * 20
-    const row = document.createElement("div")
-    row.className = `gantt-sidebar-row${bar.isOverdue ? " gantt-sidebar-row--overdue" : ""}${bar.isComplete ? " gantt-sidebar-row--complete" : ""}${bar.hasChildren ? " gantt-sidebar-row--parent" : ""}`
-    row.setAttribute("role", "button")
-    row.setAttribute("tabindex", "0")
-    row.setAttribute("aria-label", `Navigate to ${bar.name}`)
-    row.dataset.taskId = bar.id
-    row.style.cssText = `
-      height:${ROW_HEIGHT}px;display:flex;align-items:center;padding:0 8px 0 ${8 + indentPx}px;
-      border-bottom:1px solid var(--border-subtle, rgba(255,255,255,0.05));
-      font-size:12px;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
-      background:${i % 2 === 0 ? "transparent" : "var(--bg-secondary, rgba(255,255,255,0.02))"};
-      transition:background 0.15s;
-    `
+  const sidebarTrack = document.createElement("div")
+  sidebarTrack.className = "gantt-sidebar-track"
+  sidebarTrack.style.cssText = `position:relative;width:100%;height:${totalRowsHeight}px;transform:translateY(0px);`
+  sidebarRows.appendChild(sidebarTrack)
+  sidebar.appendChild(sidebarRows)
+  layout.appendChild(sidebar)
 
-    if (bar.isGroupHeader) {
+  // Scrollable chart area
+  const scrollWrapper = document.createElement("div")
+  scrollWrapper.className = "gantt-scroll-wrapper"
+  scrollWrapper.style.cssText = "flex:1;overflow:auto;position:relative;min-height:0;"
+
+  // Create SVG
+  const svg = svgEl("svg", {
+    class: "gantt-native",
+    width: totalWidth,
+    height: totalHeight,
+  })
+  svg.style.cssText = `min-width:${totalWidth}px;display:block;`
+
+  // ── SVG Defs (arrow marker + repeating column/row grid pattern) ──────
+
+  const defs = svgEl("defs")
+  const marker = svgEl("marker", {
+    id: "arrowhead", markerWidth: 8, markerHeight: 6, refX: 8, refY: 3, orient: "auto",
+  })
+  marker.appendChild(svgEl("polygon", { points: "0 0, 8 3, 0 6", fill: "var(--text-muted)", opacity: 0.5 }))
+  defs.appendChild(marker)
+
+  const gridGroup = svgEl("g", { class: "gantt-grid" })
+
+  if (zoom === "Day" || zoom === "Week") {
+    const patternWidth = 7 * pxPerDay
+    const patternHeight = ROW_HEIGHT * 2
+    const utcDay = new Date(Date.UTC(rangeStart.getFullYear(), rangeStart.getMonth(), rangeStart.getDate())).getUTCDay()
+    const mondayIndex = (utcDay + 6) % 7
+    const weekendOffsetPx = -mondayIndex * pxPerDay
+
+    const colPattern = svgEl("pattern", {
+      id: "gantt-col-grid",
+      width: patternWidth,
+      height: patternHeight,
+      patternUnits: "userSpaceOnUse",
+      patternTransform: `translate(${weekendOffsetPx}, ${HEADER_HEIGHT})`,
+    })
+    colPattern.appendChild(svgEl("rect", {
+      x: 0, y: 0, width: patternWidth, height: ROW_HEIGHT, fill: "var(--bg-card)",
+    }))
+    colPattern.appendChild(svgEl("rect", {
+      x: 0, y: ROW_HEIGHT, width: patternWidth, height: ROW_HEIGHT,
+      fill: "var(--bg-secondary, rgba(255,255,255,0.02))",
+    }))
+    colPattern.appendChild(svgEl("rect", {
+      x: 5 * pxPerDay, y: 0, width: 2 * pxPerDay, height: patternHeight,
+      fill: "var(--bg-secondary, rgba(255,255,255,0.06))", opacity: 0.7,
+    }))
+    colPattern.appendChild(svgEl("line", {
+      x1: 0, y1: ROW_HEIGHT, x2: patternWidth, y2: ROW_HEIGHT,
+      stroke: "var(--border-subtle, rgba(255,255,255,0.05))", "stroke-width": 0.5,
+    }))
+    colPattern.appendChild(svgEl("line", {
+      x1: 0, y1: patternHeight, x2: patternWidth, y2: patternHeight,
+      stroke: "var(--border-subtle, rgba(255,255,255,0.05))", "stroke-width": 0.5,
+    }))
+    if (zoom === "Day") {
+      for (let k = 0; k < 7; k++) {
+        colPattern.appendChild(svgEl("line", {
+          x1: k * pxPerDay, y1: 0, x2: k * pxPerDay, y2: patternHeight,
+          stroke: "var(--border-subtle, rgba(255,255,255,0.05))", "stroke-width": 0.3,
+        }))
+      }
+    } else {
+      colPattern.appendChild(svgEl("line", {
+        x1: 0, y1: 0, x2: 0, y2: patternHeight,
+        stroke: "var(--border-subtle, rgba(255,255,255,0.05))", "stroke-width": 0.3,
+      }))
+    }
+    defs.appendChild(colPattern)
+
+    gridGroup.appendChild(svgEl("rect", {
+      x: 0, y: HEADER_HEIGHT, width: totalWidth, height: totalRowsHeight,
+      fill: "url(#gantt-col-grid)",
+    }))
+  } else {
+    // Month zoom: row stripe pattern + exact 1st-of-month <line> dividers (<= 25 static lines)
+    const patternHeight = ROW_HEIGHT * 2
+    const rowPattern = svgEl("pattern", {
+      id: "gantt-col-grid",
+      width: Math.max(1, totalWidth),
+      height: patternHeight,
+      patternUnits: "userSpaceOnUse",
+      patternTransform: `translate(0, ${HEADER_HEIGHT})`,
+    })
+    rowPattern.appendChild(svgEl("rect", {
+      x: 0, y: 0, width: Math.max(1, totalWidth), height: ROW_HEIGHT, fill: "var(--bg-card)",
+    }))
+    rowPattern.appendChild(svgEl("rect", {
+      x: 0, y: ROW_HEIGHT, width: Math.max(1, totalWidth), height: ROW_HEIGHT,
+      fill: "var(--bg-secondary, rgba(255,255,255,0.02))",
+    }))
+    rowPattern.appendChild(svgEl("line", {
+      x1: 0, y1: ROW_HEIGHT, x2: Math.max(1, totalWidth), y2: ROW_HEIGHT,
+      stroke: "var(--border-subtle, rgba(255,255,255,0.05))", "stroke-width": 0.5,
+    }))
+    rowPattern.appendChild(svgEl("line", {
+      x1: 0, y1: patternHeight, x2: Math.max(1, totalWidth), y2: patternHeight,
+      stroke: "var(--border-subtle, rgba(255,255,255,0.05))", "stroke-width": 0.5,
+    }))
+    defs.appendChild(rowPattern)
+
+    gridGroup.appendChild(svgEl("rect", {
+      x: 0, y: HEADER_HEIGHT, width: totalWidth, height: totalRowsHeight,
+      fill: "url(#gantt-col-grid)",
+    }))
+
+    const monthDates: Date[] = []
+    const cursor = new Date(rangeStart.getFullYear(), rangeStart.getMonth(), 1)
+    if (cursor < rangeStart) cursor.setMonth(cursor.getMonth() + 1)
+    while (cursor <= rangeEnd) {
+      monthDates.push(new Date(cursor))
+      cursor.setMonth(cursor.getMonth() + 1)
+    }
+    const step = Math.max(1, Math.ceil(monthDates.length / 25))
+    for (let mi = 0; mi < monthDates.length; mi += step) {
+      const mDate = monthDates[mi]!
+      const x = daysBetween(rangeStart, mDate) * pxPerDay
+      gridGroup.appendChild(svgEl("line", {
+        class: "gantt-month-divider",
+        "data-month-start": toISODate(mDate),
+        x1: x, y1: HEADER_HEIGHT, x2: x, y2: totalHeight,
+        stroke: "var(--border-subtle, rgba(255,255,255,0.08))", "stroke-width": 0.6,
+      }))
+    }
+  }
+
+  // Single reusable hover/focus highlight rect (avoids 1 rect per row)
+  const sharedHighlightRect = svgEl("rect", {
+    x: 0, y: HEADER_HEIGHT, width: totalWidth, height: ROW_HEIGHT,
+    fill: "var(--accent)", opacity: 0,
+    class: "gantt-row-highlight",
+  })
+  sharedHighlightRect.style.pointerEvents = "none"
+  gridGroup.appendChild(sharedHighlightRect)
+
+  svg.appendChild(defs)
+  svg.appendChild(gridGroup)
+
+  function setChartRowHighlight(rowIndex: number | null) {
+    if (rowIndex === null) {
+      sharedHighlightRect.setAttribute("opacity", "0")
+    } else {
+      sharedHighlightRect.setAttribute("y", String(HEADER_HEIGHT + rowIndex * ROW_HEIGHT))
+      sharedHighlightRect.setAttribute("opacity", "0.06")
+    }
+  }
+
+  // ── Frozen Header (built directly in headerSvg, never left in svg.gantt-native) ──
+
+  const headerGroup = svgEl("g", { class: "gantt-header" })
+  headerGroup.appendChild(
+    svgEl("rect", { x: 0, y: 0, width: totalWidth, height: HEADER_HEIGHT, fill: "var(--bg-card)" }),
+  )
+  headerGroup.appendChild(
+    svgEl("line", { x1: 0, y1: HEADER_HEIGHT, x2: totalWidth, y2: HEADER_HEIGHT, stroke: "var(--border)", "stroke-width": 1 }),
+  )
+
+  let lastUpper = ""
+  if (zoom === "Month") {
+    const hCursor = new Date(rangeStart.getFullYear(), rangeStart.getMonth(), 1)
+    if (hCursor < rangeStart) hCursor.setMonth(hCursor.getMonth() + 1)
+    while (hCursor <= rangeEnd) {
+      const x = daysBetween(rangeStart, hCursor) * pxPerDay
+      const nextMonth = new Date(hCursor.getFullYear(), hCursor.getMonth() + 1, 1)
+      const colW = Math.max(40, daysBetween(hCursor, nextMonth) * pxPerDay)
+      const lower = svgEl("text", {
+        x: x + colW / 2, y: HEADER_HEIGHT - 10,
+        "text-anchor": "middle", fill: "var(--text-muted)", "font-size": 11, "font-family": "inherit",
+      })
+      lower.textContent = SHORT_MONTHS[hCursor.getMonth()] ?? config.headerFormat(hCursor)
+      headerGroup.appendChild(lower)
+
+      const upperText = String(hCursor.getFullYear())
+      if (upperText !== lastUpper) {
+        lastUpper = upperText
+        const upper = svgEl("text", {
+          x: x + 4, y: 18, "text-anchor": "start",
+          fill: "var(--text-primary)", "font-size": 12, "font-weight": 600, "font-family": "inherit",
+        })
+        upper.textContent = upperText
+        headerGroup.appendChild(upper)
+      }
+      hCursor.setMonth(hCursor.getMonth() + 1)
+    }
+  } else {
+    for (let d = 0; d < totalDays; d += config.unitDays) {
+      const date = addDays(rangeStart, d)
+      const x = d * pxPerDay
+      const lower = svgEl("text", {
+        x: x + config.columnWidth / 2, y: HEADER_HEIGHT - 10,
+        "text-anchor": "middle", fill: "var(--text-muted)", "font-size": 11, "font-family": "inherit",
+      })
+      lower.textContent = config.headerFormat(date)
+      headerGroup.appendChild(lower)
+
+      const upperText = config.upperFormat(date)
+      if (upperText !== lastUpper) {
+        lastUpper = upperText
+        const upper = svgEl("text", {
+          x: x + 4, y: 18, "text-anchor": "start",
+          fill: "var(--text-primary)", "font-size": 12, "font-weight": 600, "font-family": "inherit",
+        })
+        upper.textContent = upperText
+        headerGroup.appendChild(upper)
+      }
+    }
+  }
+
+  // ── Today Marker + M3: Today Label ───────────────────────────────────
+
+  const today = startOfDay(new Date())
+  const todayOffset = daysBetween(rangeStart, today)
+  const todayX = todayOffset * pxPerDay
+  let todayHeaderClone: SVGGElement | null = null
+  if (todayOffset >= 0 && todayOffset <= totalDays) {
+    const todayGroup = svgEl("g", { class: "gantt-today" })
+    todayGroup.appendChild(
+      svgEl("line", {
+        x1: todayX, y1: HEADER_HEIGHT, x2: todayX, y2: totalHeight,
+        stroke: "#EF4444", "stroke-width": 2.5, opacity: 0.85,
+      }),
+    )
+    svg.appendChild(todayGroup)
+
+    todayHeaderClone = svgEl("g", { class: "gantt-today" })
+    todayHeaderClone.appendChild(
+      svgEl("polygon", {
+        points: `${todayX},4 ${todayX + 6},12 ${todayX},20 ${todayX - 6},12`,
+        fill: "#EF4444",
+      }),
+    )
+    const todayLabel = svgEl("text", {
+      x: todayX, y: HEADER_HEIGHT - 2,
+      "text-anchor": "middle", fill: "#EF4444",
+      "font-size": 10, "font-weight": 700, "font-family": "inherit",
+      opacity: 0.95,
+    })
+    todayLabel.textContent = "Today"
+    todayHeaderClone.appendChild(todayLabel)
+  }
+
+  // ── Precompute Bar Coordinates & Dependency Edges ────────────────────
+
+  const barPositions = new Map<string, { x: number; y: number; w: number; rowIndex: number }>()
+  for (const dRow of displayRows) {
+    if (dRow.kind === "group") {
+      barPositions.set(dRow.bar.id, { x: 0, y: HEADER_HEIGHT + dRow.rowIndex * ROW_HEIGHT, w: 0, rowIndex: dRow.rowIndex })
+    } else if (dRow.kind === "bar") {
+      const bar = dRow.bar
+      let xStart = daysBetween(rangeStart, bar.start) * pxPerDay
+      const duration = Math.max(1, daysBetween(bar.start, bar.end) + 1)
+      let w = bar.isMilestone ? 16 : duration * pxPerDay
+      if (isNaN(xStart)) xStart = 0
+      if (isNaN(w)) w = 16
+      barPositions.set(bar.id, {
+        x: xStart,
+        y: HEADER_HEIGHT + dRow.rowIndex * ROW_HEIGHT,
+        w,
+        rowIndex: dRow.rowIndex,
+      })
+    }
+  }
+
+  const dependencyEdges: DependencyEdge[] = []
+  for (const dRow of displayRows) {
+    if (dRow.kind !== "bar") continue
+    const bar = dRow.bar
+    const to = barPositions.get(bar.id)
+    if (!to) continue
+    for (const depId of bar.deps) {
+      const from = barPositions.get(depId)
+      if (!from) continue
+      const fx = from.x + from.w
+      const fy = HEADER_HEIGHT + from.rowIndex * ROW_HEIGHT + ROW_HEIGHT / 2
+      const tx = to.x
+      const ty = HEADER_HEIGHT + to.rowIndex * ROW_HEIGHT + ROW_HEIGHT / 2
+      const mx = fx + (tx - fx) / 2
+      dependencyEdges.push({
+        fromId: depId,
+        toId: bar.id,
+        fromRow: from.rowIndex,
+        toRow: to.rowIndex,
+        d: `M ${fx} ${fy} C ${mx} ${fy}, ${mx} ${ty}, ${tx} ${ty}`,
+      })
+    }
+  }
+
+  const arrowGroup = svgEl("g", { class: "gantt-arrows" })
+  const barsGroup = svgEl("g", { class: "gantt-bars" })
+  svg.appendChild(arrowGroup)
+  svg.appendChild(barsGroup)
+  scrollWrapper.appendChild(svg)
+
+  // ── Split chart: frozen header + scrollable body ─────────────────────
+
+  const chartColumn = document.createElement("div")
+  chartColumn.className = "gantt-chart-column"
+  chartColumn.style.cssText = "flex:1;display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden;"
+
+  const headerOverlay = document.createElement("div")
+  headerOverlay.className = "gantt-header-overlay"
+  headerOverlay.style.cssText = `
+    flex:0 0 ${HEADER_HEIGHT}px;overflow:hidden;position:relative;
+    border-bottom:1px solid var(--border);background:var(--bg-card);z-index:3;
+  `
+
+  const headerSvg = svgEl("svg", {
+    class: "gantt-header-svg",
+    width: totalWidth,
+    height: HEADER_HEIGHT,
+  })
+  headerSvg.style.cssText = `min-width:${totalWidth}px;display:block;`
+  headerSvg.appendChild(headerGroup)
+  if (todayHeaderClone) headerSvg.appendChild(todayHeaderClone)
+  headerOverlay.appendChild(headerSvg)
+
+  svg.style.marginTop = `-${HEADER_HEIGHT}px`
+
+  chartColumn.appendChild(headerOverlay)
+  chartColumn.appendChild(scrollWrapper)
+  layout.appendChild(chartColumn)
+  outerContainer.appendChild(layout)
+
+  // ── Virtualized Row Builder & Windowing State ────────────────────────
+
+  let activeFocusedTaskId: string | null = null
+  let activeDragTaskId: string | null = null
+  let focusedNavPos = -1
+  const mountedRows = new Map<number, MountedTimelineRow>()
+
+  function attachLazyDateCell(
+    cell: HTMLElement,
+    rawIsoValue: string | null | undefined,
+    onSelect: (date: Date) => Promise<void>,
+    onClearDate: () => Promise<void>,
+    rowCleanupList: Array<() => void>,
+  ) {
+    cell.classList.add("idp-container")
+    cell.tabIndex = 0
+    cell.title = rawIsoValue ? "Click to change date" : "Set date"
+    cell.textContent = fastIsoShortDate(rawIsoValue)
+    cell.style.color = rawIsoValue ? "var(--text-secondary)" : "var(--text-muted)"
+    cell.style.cursor = "pointer"
+
+    let picker: InlineDatePicker | null = null
+    const upgradeAndOpen = (ev: Event) => {
+      ev.stopPropagation()
+      if (!picker) {
+        cell.removeAttribute("tabindex")
+        const initialValue = rawIsoValue ? parseDate(rawIsoValue) : null
+        picker = new InlineDatePicker(cell, {
+          value: initialValue,
+          onChange: (d) => { void onSelect(d) },
+          onClear: () => { void onClearDate() },
+          signal,
+        })
+        rowCleanupList.push(() => picker?.destroy())
+        const trigger = cell.querySelector<HTMLElement>(".idp-trigger")
+        trigger?.click()
+      }
+    }
+    cell.addEventListener("click", upgradeAndOpen, { signal })
+    cell.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter" || ev.key === " ") {
+        ev.preventDefault()
+        upgradeAndOpen(ev)
+      }
+    }, { signal })
+  }
+
+  function mountDisplayRow(
+    rowIndex: number,
+    sidebarTarget: Node = sidebarTrack,
+    svgTarget: Node = barsGroup,
+  ): MountedTimelineRow | null {
+    const dRow = displayRows[rowIndex]
+    if (!dRow) return null
+    const rowCleanups: Array<() => void> = []
+    const rowSignal = signal
+    const rowTop = rowIndex * ROW_HEIGHT
+    const svgRowY = HEADER_HEIGHT + rowTop
+
+    if (dRow.kind === "group") {
+      const bar = dRow.bar
+      const row = document.createElement("div")
+      row.className = "gantt-sidebar-row gantt-sidebar-row--parent"
       row.setAttribute("role", "heading")
       row.setAttribute("aria-label", `Group: ${bar.name}`)
-      row.removeAttribute("tabindex")
-      row.style.background = "var(--bg-card)"
-      row.style.fontWeight = "bold"
-      row.style.color = "var(--text-primary)"
-      row.style.borderTop = i === 0 ? "none" : "1px solid var(--border)"
-      
+      row.setAttribute("aria-rowindex", String(rowIndex + 1))
+      row.dataset.rowIndex = String(rowIndex)
+      row.dataset.taskId = bar.id
+      row.style.cssText = `
+        position:absolute;left:0;right:0;top:${rowTop}px;height:${ROW_HEIGHT}px;
+        display:flex;align-items:center;padding:0 8px;
+        border-bottom:1px solid var(--border-subtle, rgba(255,255,255,0.05));
+        ${rowIndex === 0 ? "" : "border-top:1px solid var(--border);"}
+        font-size:12px;font-weight:bold;color:var(--text-primary);cursor:pointer;
+        overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:var(--bg-card);
+      `
+
       const toggle = document.createElement("button")
       toggle.className = "gantt-sidebar-toggle"
+      toggle.type = "button"
       toggle.setAttribute("aria-label", bar.isCollapsed ? "Expand group" : "Collapse group")
       toggle.setAttribute("tabindex", "-1")
       toggle.style.cssText = `
         width:16px;height:16px;display:flex;align-items:center;justify-content:center;
         background:none;border:none;cursor:pointer;color:var(--text-muted);
         margin-right:8px;flex-shrink:0;padding:0;border-radius:3px;
-        transition:transform 0.15s, background 0.15s;
-        transform:rotate(${bar.isCollapsed ? "0deg" : "90deg"});
       `
-      toggle.innerHTML = `<svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M3 1.5L7 5L3 8.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`
-      toggle.addEventListener("click", (e) => {
+      toggle.textContent = bar.isCollapsed ? "▸" : "▾"
+      const onToggle = (e: Event) => {
         e.stopPropagation()
         e.preventDefault()
         if (collapsedParents.has(bar.id)) collapsedParents.delete(bar.id)
         else collapsedParents.add(bar.id)
         renderGantt(outerContainer, bars, zoom, _parentSignal, undatedTasks, groupByKey)
-      })
+      }
+      toggle.addEventListener("click", onToggle, { signal: rowSignal })
+      row.addEventListener("click", onToggle, { signal: rowSignal })
       row.appendChild(toggle)
-      
+
       const name = document.createElement("span")
+      name.className = "gantt-sidebar-row-title"
       name.style.cssText = "flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;text-transform:uppercase;letter-spacing:0.04em;"
       name.textContent = bar.name
       row.appendChild(name)
-      
-      sidebarRows.appendChild(row)
 
-      // Group header row click → toggle collapse (not task detail)
-      row.addEventListener("click", () => {
-        if (collapsedParents.has(bar.id)) collapsedParents.delete(bar.id)
-        else collapsedParents.add(bar.id)
-        renderGantt(outerContainer, bars, zoom, _parentSignal, undatedTasks, groupByKey)
-      }, { signal })
-      continue
+      const groupSvg = svgEl("g", {
+        class: "gantt-group-row",
+        "data-row-index": rowIndex,
+        "aria-rowindex": rowIndex + 1,
+      })
+      groupSvg.appendChild(svgEl("rect", {
+        x: 0, y: svgRowY, width: totalWidth, height: ROW_HEIGHT,
+        fill: "var(--bg-secondary, rgba(255,255,255,0.03))",
+      }))
+
+      sidebarTarget.appendChild(row)
+      svgTarget.appendChild(groupSvg)
+      return { sidebarEl: row, svgEl: groupSvg, cleanup: rowCleanups.length ? () => rowCleanups.forEach(fn => fn()) : undefined }
     }
 
-    // Collapse/expand toggle for parent rows
+    if (dRow.kind === "divider") {
+      const divider = document.createElement("div")
+      divider.className = "gantt-unscheduled-divider"
+      divider.dataset.rowIndex = String(rowIndex)
+      divider.setAttribute("aria-rowindex", String(rowIndex + 1))
+      divider.style.cssText = `
+        position:absolute;left:0;right:0;top:${rowTop}px;height:${ROW_HEIGHT}px;
+        display:flex;align-items:center;padding:0 8px;
+        border-bottom:1px solid var(--border-subtle, rgba(255,255,255,0.05));
+        font-size:10px;font-weight:600;color:var(--text-muted);
+        text-transform:uppercase;letter-spacing:0.06em;
+        background:var(--bg-secondary, rgba(255,255,255,0.03));
+        cursor:pointer;gap:4px;user-select:none;
+      `
+      divider.textContent = `${unscheduledCollapsed ? "▸" : "▾"} Unscheduled (${dRow.count})`
+      divider.addEventListener("click", () => {
+        unscheduledCollapsed = !unscheduledCollapsed
+        try { localStorage.setItem(UNSCHEDULED_COLLAPSED_KEY, String(unscheduledCollapsed)) } catch { /* ignore */ }
+        renderGantt(outerContainer, bars, zoom, _parentSignal, undatedTasks, groupByKey)
+      }, { signal: rowSignal })
+
+      const divSvg = svgEl("g", {
+        class: "gantt-divider-row",
+        "data-row-index": rowIndex,
+        "aria-rowindex": rowIndex + 1,
+      })
+      divSvg.appendChild(svgEl("rect", {
+        x: 0, y: svgRowY, width: totalWidth, height: ROW_HEIGHT,
+        fill: "var(--bg-secondary, rgba(255,255,255,0.03))",
+      }))
+
+      sidebarTarget.appendChild(divider)
+      svgTarget.appendChild(divSvg)
+      return { sidebarEl: divider, svgEl: divSvg, cleanup: rowCleanups.length ? () => rowCleanups.forEach(fn => fn()) : undefined }
+    }
+
+    if (dRow.kind === "unscheduled") {
+      const ut = dRow.task
+      const ui = dRow.unscheduledIndex
+      const ticketPrefix = ut.ticket_number ? `MTH-${ut.ticket_number} ` : ""
+      const utName = `${ticketPrefix}${ut.title}`
+      const utRow = document.createElement("div")
+      utRow.className = `gantt-sidebar-row gantt-sidebar-row--unscheduled${activeFocusedTaskId === ut.id ? " gantt-sidebar-row--focused" : ""}`
+      utRow.setAttribute("role", "button")
+      utRow.setAttribute("tabindex", "0")
+      utRow.setAttribute("aria-label", `Unscheduled: ${utName}`)
+      utRow.setAttribute("aria-rowindex", String(rowIndex + 1))
+      utRow.dataset.rowIndex = String(rowIndex)
+      utRow.dataset.taskId = ut.id
+      const baseBg = ui % 2 === 0 ? "transparent" : "var(--bg-secondary, rgba(255,255,255,0.02))"
+      utRow.style.cssText = `
+        position:absolute;left:0;right:0;top:${rowTop}px;height:${ROW_HEIGHT}px;
+        display:flex;align-items:center;padding:0 8px;
+        border-bottom:1px solid var(--border-subtle, rgba(255,255,255,0.05));
+        font-size:12px;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+        background:${baseBg};opacity:0.7;
+      `
+
+      const dot = document.createElement("span")
+      dot.style.cssText = `
+        width:8px;height:8px;border-radius:50%;
+        background:${PRIORITY_COLOURS[ut.priority] || "var(--accent)"};margin-right:8px;flex-shrink:0;
+      `
+      utRow.appendChild(dot)
+
+      const name = document.createElement("span")
+      name.className = "gantt-sidebar-row-title"
+      name.style.cssText = "flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;color:var(--text-primary);"
+      name.textContent = utName
+      name.title = utName
+      utRow.appendChild(name)
+
+      if (visibleFields.has("due_date")) {
+        const dueCell = document.createElement("span")
+        dueCell.style.cssText = "flex:0 0 80px;text-align:right;padding-right:4px;font-size:11px;white-space:nowrap;"
+        attachLazyDateCell(
+          dueCell,
+          null,
+          async (date) => {
+            const iso = toISODate(date)
+            const ok = await patchTask(ut.id, { due_date: iso, start_date: iso })
+            if (ok) {
+              ut.due_date = iso
+              ut.start_date = iso
+              showToast("Date set — task scheduled")
+              const idx = undatedTasks.findIndex(t => t.id === ut.id)
+              if (idx !== -1) undatedTasks.splice(idx, 1)
+              const complete = isComplete(ut.status)
+              const overdue = !complete && date < startOfDay(new Date())
+              bars.push({
+                id: ut.id,
+                name: `${ut.ticket_number ? `MTH-${ut.ticket_number} ` : ""}${ut.title}`,
+                start: date,
+                end: date,
+                progress: Number(ut.progress ?? 0),
+                colour: ut.color || PRIORITY_COLOURS[ut.priority] || "var(--accent)",
+                taskType: String(ut.task_type || "task"),
+                isComplete: complete,
+                isOverdue: overdue,
+                isMilestone: true,
+                priority: ut.priority,
+                original: ut,
+                deps: [],
+              })
+              const targetX = daysBetween(rangeStart, date) * pxPerDay
+              localStorage.setItem(`${SCROLL_KEY_PREFIX}${zoom}`, String(targetX - outerContainer.clientWidth / 2))
+              renderGantt(outerContainer, bars, zoom, _parentSignal, undatedTasks, groupByKey)
+            }
+          },
+          async () => {},
+          rowCleanups,
+        )
+        utRow.appendChild(dueCell)
+      }
+
+      utRow.addEventListener("focusin", () => { activeFocusedTaskId = ut.id }, { signal: rowSignal })
+      utRow.addEventListener("click", (e) => {
+        e.stopPropagation()
+        window.dispatchEvent(new CustomEvent("meitheal:open-task", { detail: { taskId: ut.id } }))
+      }, { signal: rowSignal })
+      utRow.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); utRow.click() }
+      }, { signal: rowSignal })
+      utRow.addEventListener("mouseenter", () => {
+        utRow.style.background = "var(--bg-secondary, rgba(255,255,255,0.06))"
+        utRow.style.opacity = "1"
+        setChartRowHighlight(rowIndex)
+      }, { signal: rowSignal })
+      utRow.addEventListener("mouseleave", () => {
+        utRow.style.background = baseBg
+        utRow.style.opacity = "0.7"
+        setChartRowHighlight(null)
+      }, { signal: rowSignal })
+
+      const utSvg = svgEl("g", {
+        class: "gantt-unscheduled-row",
+        "data-row-index": rowIndex,
+        "aria-rowindex": rowIndex + 1,
+      })
+      const hintText = svgEl("text", {
+        x: totalWidth / 2, y: svgRowY + ROW_HEIGHT / 2 + 1,
+        "text-anchor": "middle", fill: "var(--text-muted)",
+        "font-size": 11, "font-style": "italic", "font-family": "inherit",
+        "dominant-baseline": "central", opacity: 0,
+        class: "gantt-schedule-hint",
+      })
+      hintText.textContent = "Click to schedule"
+      const clickRect = svgEl("rect", {
+        x: 0, y: svgRowY, width: totalWidth, height: ROW_HEIGHT,
+        fill: "transparent", cursor: "crosshair",
+      })
+      clickRect.addEventListener("mouseenter", () => {
+        hintText.setAttribute("opacity", "0.6")
+        utRow.style.background = "var(--bg-secondary, rgba(255,255,255,0.06))"
+        utRow.style.opacity = "1"
+        setChartRowHighlight(rowIndex)
+      }, { signal: rowSignal })
+      clickRect.addEventListener("mouseleave", () => {
+        hintText.setAttribute("opacity", "0")
+        utRow.style.background = baseBg
+        utRow.style.opacity = "0.7"
+        setChartRowHighlight(null)
+      }, { signal: rowSignal })
+      clickRect.addEventListener("click", async (e) => {
+        e.stopPropagation()
+        const svgRect = svg.getBoundingClientRect()
+        const clickX = e.clientX - svgRect.left
+        const dayOffset = Math.floor(clickX / pxPerDay)
+        const clickedDate = addDays(rangeStart, dayOffset)
+        const iso = toISODate(clickedDate)
+        const ok = await patchTask(ut.id, { start_date: iso, due_date: iso })
+        if (ok) {
+          ut.start_date = iso
+          ut.due_date = iso
+          showToast(`Scheduled for ${fmtDate(clickedDate)}`)
+          const idx = undatedTasks.findIndex(t => t.id === ut.id)
+          if (idx !== -1) undatedTasks.splice(idx, 1)
+          const complete = isComplete(ut.status)
+          const overdue = !complete && clickedDate < startOfDay(new Date())
+          bars.push({
+            id: ut.id,
+            name: `${ut.ticket_number ? `MTH-${ut.ticket_number} ` : ""}${ut.title}`,
+            start: clickedDate,
+            end: clickedDate,
+            progress: Number(ut.progress ?? 0),
+            colour: ut.color || PRIORITY_COLOURS[ut.priority] || "var(--accent)",
+            taskType: String(ut.task_type || "task"),
+            isComplete: complete,
+            isOverdue: overdue,
+            isMilestone: true,
+            priority: ut.priority,
+            original: ut,
+            deps: [],
+          })
+          localStorage.setItem(`${SCROLL_KEY_PREFIX}${zoom}`, String(clickX - outerContainer.clientWidth / 2))
+          renderGantt(outerContainer, bars, zoom, _parentSignal, undatedTasks, groupByKey)
+        } else {
+          showToast("Failed to schedule", "error")
+        }
+      }, { signal: rowSignal })
+
+      utSvg.appendChild(hintText)
+      utSvg.appendChild(clickRect)
+      sidebarTarget.appendChild(utRow)
+      svgTarget.appendChild(utSvg)
+      return { sidebarEl: utRow, svgEl: utSvg, cleanup: rowCleanups.length ? () => rowCleanups.forEach(fn => fn()) : undefined }
+    }
+
+    // kind === "bar"
+    const bar = dRow.bar
+    const pos = barPositions.get(bar.id)!
+    const indentPx = bar.depth * 20
+
+    const row = document.createElement("div")
+    row.className = `gantt-sidebar-row gantt-vrow${rowIndex % 2 !== 0 ? " gantt-vrow--alt" : ""}${bar.isOverdue ? " gantt-sidebar-row--overdue" : ""}${bar.isComplete ? " gantt-sidebar-row--complete" : ""}${bar.hasChildren ? " gantt-sidebar-row--parent" : ""}${activeFocusedTaskId === bar.id ? " gantt-sidebar-row--focused" : ""}`
+    row.setAttribute("role", "button")
+    row.setAttribute("tabindex", "0")
+    row.setAttribute("aria-label", `Navigate to ${bar.name}`)
+    row.setAttribute("aria-rowindex", String(rowIndex + 1))
+    row.dataset.rowIndex = String(rowIndex)
+    row.dataset.taskId = bar.id
+    row.style.top = `${rowTop}px`
+    if (indentPx > 0) row.style.paddingLeft = `${8 + indentPx}px`
+
     if (bar.hasChildren) {
       const toggle = document.createElement("button")
       toggle.className = "gantt-sidebar-toggle"
+      toggle.type = "button"
       toggle.setAttribute("aria-label", bar.isCollapsed ? "Expand children" : "Collapse children")
       toggle.setAttribute("tabindex", "-1")
-      toggle.style.cssText = `
-        width:16px;height:16px;display:flex;align-items:center;justify-content:center;
-        background:none;border:none;cursor:pointer;color:var(--text-muted);
-        margin-right:4px;flex-shrink:0;padding:0;border-radius:3px;
-        transition:transform 0.15s, background 0.15s;
-        transform:rotate(${bar.isCollapsed ? "0deg" : "90deg"});
-      `
-      toggle.innerHTML = `<svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M3 1.5L7 5L3 8.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`
+      toggle.style.cssText = "width:16px;height:16px;display:flex;align-items:center;justify-content:center;background:none;border:none;cursor:pointer;color:var(--text-muted);margin-right:4px;flex-shrink:0;padding:0;border-radius:3px;"
+      toggle.textContent = bar.isCollapsed ? "▸" : "▾"
       toggle.addEventListener("click", (e) => {
         e.stopPropagation()
         e.preventDefault()
-        if (collapsedParents.has(bar.id)) {
-          collapsedParents.delete(bar.id)
-        } else {
-          collapsedParents.add(bar.id)
-        }
-        // Re-render
+        if (collapsedParents.has(bar.id)) collapsedParents.delete(bar.id)
+        else collapsedParents.add(bar.id)
         renderGantt(outerContainer, bars, zoom, _parentSignal, undatedTasks, groupByKey)
-      })
-      toggle.addEventListener("mouseenter", () => {
-        toggle.style.background = "var(--bg-secondary, rgba(255,255,255,0.08))"
-      })
-      toggle.addEventListener("mouseleave", () => {
-        toggle.style.background = "none"
-      })
+      }, { signal: rowSignal })
       row.appendChild(toggle)
-    } else if (bar.depth > 0) {
-      // Spacer for leaf children to align with toggle icons
-      const spacer = document.createElement("span")
-      spacer.style.cssText = "width:20px;flex-shrink:0;"
-      row.appendChild(spacer)
     }
 
-    // Type indicator dot
     const dot = document.createElement("span")
-    dot.style.cssText = `
-      width:8px;height:8px;border-radius:${bar.taskType === "epic" ? "2px" : "50%"};
-      background:${bar.colour};margin-right:8px;flex-shrink:0;
-      ${bar.isOverdue ? "box-shadow:0 0 6px rgba(239,68,68,0.6);" : ""}
-    `
+    dot.className = "gantt-vrow-dot"
+    dot.style.background = bar.colour
+    if (bar.taskType === "epic") dot.style.borderRadius = "2px"
+    if (!bar.hasChildren && bar.depth > 0) dot.style.marginLeft = "20px"
+    if (bar.isOverdue) dot.style.boxShadow = "0 0 6px rgba(239,68,68,0.6)"
     row.appendChild(dot)
 
-    // Task name (flex:1 to push due date to the right)
     const name = document.createElement("span")
-    name.style.cssText = `
-      flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;color:var(--text-primary);
-      ${bar.isComplete ? "text-decoration:line-through;color:var(--text-muted);" : ""}
-      ${bar.isOverdue ? "color:var(--danger-text);" : ""}
-      ${bar.hasChildren ? "font-weight:600;" : ""}
-    `
+    name.className = "gantt-sidebar-row-title gantt-vrow-title"
+    if (bar.isComplete) {
+      name.style.textDecoration = "line-through"
+      name.style.color = "var(--text-muted)"
+    } else if (bar.isOverdue) {
+      name.style.color = "var(--danger-text)"
+    }
+    if (bar.hasChildren) name.style.fontWeight = "600"
     name.textContent = bar.name
     name.title = bar.name
     row.appendChild(name)
+
     if (bar.original.deferred_at != null) {
       const badge = document.createElement("span")
       badge.style.cssText = "flex:none;margin-inline:6px;color:var(--text-secondary);font-size:11px"
@@ -1133,60 +1795,52 @@ function renderGantt(
       row.appendChild(badge)
     }
 
-    // Dynamic field cells based on visibleFields
     for (const fieldId of visibleFields) {
       const cell = document.createElement("span")
-      cell.style.cssText = `
-        flex:0 0 ${FIELD_COL_WIDTH}px;text-align:right;padding-right:4px;
-        font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
-      `
+      cell.className = "gantt-vrow-cell"
 
       if (fieldId === "due_date") {
-        // Due date — InlineDatePicker for inline editing
-        const dueStr = bar.original.due_date
-        const dueDate = dueStr ? parseDate(dueStr) : null
-        new InlineDatePicker(cell, {
-          value: dueDate,
-          onChange: async (date) => {
+        attachLazyDateCell(
+          cell,
+          bar.original.due_date,
+          async (date) => {
             const iso = toISODate(date)
             const ok = await patchTask(bar.id, { due_date: iso })
             if (ok) {
               bar.original.due_date = iso
-              renderGantt(outerContainer, bars, zoom, _parentSignal, undatedTasks)
+              renderGantt(outerContainer, bars, zoom, _parentSignal, undatedTasks, groupByKey)
             }
           },
-          onClear: async () => {
+          async () => {
             const ok = await patchTask(bar.id, { due_date: null })
             if (ok) {
-              bar.original.due_date = undefined!
-              renderGantt(outerContainer, bars, zoom, _parentSignal, undatedTasks)
+              bar.original.due_date = null
+              renderGantt(outerContainer, bars, zoom, _parentSignal, undatedTasks, groupByKey)
             }
           },
-          signal,
-        })
+          rowCleanups,
+        )
       } else if (fieldId === "start_date") {
-        // Start date — InlineDatePicker
-        const startStr = bar.original.start_date
-        const startDt = startStr ? parseDate(startStr) : null
-        new InlineDatePicker(cell, {
-          value: startDt,
-          onChange: async (date) => {
+        attachLazyDateCell(
+          cell,
+          bar.original.start_date,
+          async (date) => {
             const iso = toISODate(date)
             const ok = await patchTask(bar.id, { start_date: iso })
             if (ok) {
               bar.original.start_date = iso
-              renderGantt(outerContainer, bars, zoom, _parentSignal, undatedTasks)
+              renderGantt(outerContainer, bars, zoom, _parentSignal, undatedTasks, groupByKey)
             }
           },
-          onClear: async () => {
+          async () => {
             const ok = await patchTask(bar.id, { start_date: null })
             if (ok) {
-              bar.original.start_date = undefined!
-              renderGantt(outerContainer, bars, zoom, _parentSignal, undatedTasks)
+              bar.original.start_date = null
+              renderGantt(outerContainer, bars, zoom, _parentSignal, undatedTasks, groupByKey)
             }
           },
-          signal,
-        })
+          rowCleanups,
+        )
       } else if (fieldId === "priority") {
         const pLabel = PRIORITY_LABELS[bar.priority] || `P${bar.priority}`
         const pColor = PRIORITY_COLOURS[bar.priority] || "var(--text-muted)"
@@ -1220,831 +1874,423 @@ function renderGantt(
       row.appendChild(cell)
     }
 
-    // M2: Row cross-highlighting — sidebar → chart
-    row.addEventListener("mouseenter", () => {
-      const chartRow = svg.querySelector<SVGElement>(`[data-row-id="row-${bar.id}"]`)
-      if (chartRow) chartRow.setAttribute("opacity", "0.06")
-      row.style.background = "var(--bg-secondary, rgba(255,255,255,0.06))"
-    })
-    row.addEventListener("mouseleave", () => {
-      const chartRow = svg.querySelector<SVGElement>(`[data-row-id="row-${bar.id}"]`)
-      if (chartRow) chartRow.setAttribute("opacity", "0")
-      row.style.background = i % 2 === 0 ? "transparent" : "var(--bg-secondary, rgba(255,255,255,0.02))"
-    })
-
-    // M4: Sidebar click → scroll chart to bar + open popup
-    row.addEventListener("click", (e) => {
-      e.stopPropagation() // Prevent global task-link handler from intercepting
-      e.preventDefault()
-      const barPos = barPositions.get(bar.id)
-      if (barPos && !isNaN(barPos.x)) { // P8: Guard NaN on invalid bar position
-        scrollWrapper.scrollTo({
-          left: barPos.x - scrollWrapper.clientWidth / 3,
-          behavior: REDUCED_MOTION ? "instant" : "smooth",
-        })
-      }
-      showPopup(bar, e.clientX, e.clientY, document.body, signal)
-    })
-
-    // P10: Keyboard Enter/Space on sidebar row
-    row.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" || e.key === " ") {
-        e.preventDefault()
-        row.click()
-      }
-    })
-
-    sidebarRows.appendChild(row)
-  }
-
-  // ── §5: Unscheduled tasks section ──────────────────────────────────
-  if (undatedTasks.length > 0) {
-    // Collapsible divider
-    const divider = document.createElement("div")
-    divider.className = "gantt-unscheduled-divider"
-    divider.style.cssText = `
-      height:${ROW_HEIGHT}px;display:flex;align-items:center;padding:0 8px;
-      border-bottom:1px solid var(--border-subtle, rgba(255,255,255,0.05));
-      font-size:10px;font-weight:600;color:var(--text-muted);
-      text-transform:uppercase;letter-spacing:0.06em;
-      background:var(--bg-secondary, rgba(255,255,255,0.03));
-      cursor:pointer;gap:4px;user-select:none;
-    `
-    const chevron = document.createElement("span")
-    chevron.style.cssText = `transition:transform 0.15s ease;display:inline-block;font-size:8px;`
-    chevron.textContent = "▸"
-    chevron.style.transform = unscheduledCollapsed ? "rotate(0deg)" : "rotate(90deg)"
-    divider.appendChild(chevron)
-
-    const divLabel = document.createElement("span")
-    divLabel.textContent = `Unscheduled (${undatedTasks.length})`
-    divider.appendChild(divLabel)
-
-    divider.addEventListener("click", () => {
-      unscheduledCollapsed = !unscheduledCollapsed
-      try { localStorage.setItem(UNSCHEDULED_COLLAPSED_KEY, String(unscheduledCollapsed)) } catch { /* ignore */ }
-      renderGantt(outerContainer, bars, zoom, _parentSignal, undatedTasks, groupByKey)
-    }, { signal })
-    sidebarRows.appendChild(divider)
-
-    for (let ui = 0; ui < (unscheduledCollapsed ? 0 : undatedTasks.length); ui++) {
-      const ut = undatedTasks[ui]!
-      const ticketPrefix = ut.ticket_number ? `MTH-${ut.ticket_number} ` : ""
-      const utName = `${ticketPrefix}${ut.title}`
-      const utRow = document.createElement("div")
-      utRow.className = "gantt-sidebar-row gantt-sidebar-row--unscheduled"
-      utRow.setAttribute("role", "button")
-      utRow.setAttribute("tabindex", "0")
-      utRow.setAttribute("aria-label", `Unscheduled: ${utName}`)
-      utRow.dataset.taskId = ut.id
-      utRow.style.cssText = `
-        height:${ROW_HEIGHT}px;display:flex;align-items:center;padding:0 8px;
-        border-bottom:1px solid var(--border-subtle, rgba(255,255,255,0.05));
-        font-size:12px;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
-        background:${ui % 2 === 0 ? "transparent" : "var(--bg-secondary, rgba(255,255,255,0.02))"};
-        transition:background 0.15s;opacity:0.7;
-      `
-
-      // Priority dot
-      const dot = document.createElement("span")
-      dot.style.cssText = `
-        width:8px;height:8px;border-radius:50%;
-        background:${PRIORITY_COLOURS[ut.priority] || "#6366F1"};margin-right:8px;flex-shrink:0;
-      `
-      utRow.appendChild(dot)
-
-      // Task name
-      const name = document.createElement("span")
-      name.style.cssText = "flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;color:var(--text-primary);"
-      name.textContent = utName
-      name.title = utName
-      utRow.appendChild(name)
-
-      // Due date column — InlineDatePicker for setting date on unscheduled task
-      if (visibleFields.has("due_date")) {
-        const dueCell = document.createElement("span")
-        dueCell.style.cssText = "flex:0 0 80px;text-align:right;padding-right:4px;font-size:11px;white-space:nowrap;"
-
-        new InlineDatePicker(dueCell, {
-          value: null,
-          onChange: async (date) => {
-            const iso = toISODate(date)
-            const ok = await patchTask(ut.id, { due_date: iso, start_date: iso })
-            if (ok) {
-              ut.due_date = iso
-              ut.start_date = iso
-              showToast("Date set — task scheduled")
-
-              // Remove from undated list
-              const idx = undatedTasks.findIndex(t => t.id === ut.id)
-              if (idx !== -1) undatedTasks.splice(idx, 1)
-
-              // Add to dated bars list
-              const complete = isComplete(ut.status)
-              const overdue = !complete && date < startOfDay(new Date())
-              bars.push({
-                id: ut.id,
-                name: `${ut.ticket_number ? `MTH-${ut.ticket_number} ` : ""}${ut.title}`,
-                start: date,
-                end: date,
-                progress: Number(ut.progress ?? 0),
-                colour: ut.color || PRIORITY_COLOURS[ut.priority] || "#6366F1",
-                taskType: String(ut.task_type || "task"),
-                isComplete: complete,
-                isOverdue: overdue,
-                isMilestone: true,
-                priority: ut.priority,
-                original: ut,
-                deps: []
-              })
-
-              // Save scroll position to target the new date
-              const targetX = daysBetween(rangeStart, date) * pxPerDay;
-              localStorage.setItem(`${SCROLL_KEY_PREFIX}${zoom}`, String(targetX - outerContainer.clientWidth / 2))
-
-              renderGantt(outerContainer, bars, zoom, _parentSignal, undatedTasks, groupByKey)
-            }
-          },
-          onClear: () => {},
-          signal,
-        })
-        utRow.appendChild(dueCell)
-      }
-
-      // Click → open task detail
-      utRow.addEventListener("click", (e) => {
-        e.stopPropagation()
-        window.dispatchEvent(new CustomEvent("meitheal:open-task", { detail: { taskId: ut.id } }))
-      })
-      utRow.addEventListener("keydown", (e) => {
-        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); utRow.click() }
-      })
-
-      utRow.addEventListener("mouseenter", () => {
-        utRow.style.background = "var(--bg-secondary, rgba(255,255,255,0.06))"
-        utRow.style.opacity = "1"
-        // Highlight corresponding chart row
-        const chartRow = svg.querySelector<SVGElement>(`[data-row-id="unscheduled-${ut.id}"]`)
-        if (chartRow) chartRow.setAttribute("opacity", "0.06")
-      })
-      utRow.addEventListener("mouseleave", () => {
-        utRow.style.background = ui % 2 === 0 ? "transparent" : "var(--bg-secondary, rgba(255,255,255,0.02))"
-        utRow.style.opacity = "0.7"
-        const chartRow = svg.querySelector<SVGElement>(`[data-row-id="unscheduled-${ut.id}"]`)
-        if (chartRow) chartRow.setAttribute("opacity", "0")
-      })
-
-      sidebarRows.appendChild(utRow)
-    }
-  }
-
-  sidebar.appendChild(sidebarRows)
-  layout.appendChild(sidebar)
-
-  // Scrollable chart area
-  const scrollWrapper = document.createElement("div")
-  scrollWrapper.className = "gantt-scroll-wrapper"
-  scrollWrapper.style.cssText = `
-    flex:1;overflow:auto;position:relative;
-  `
-
-  // Create SVG
-  const svg = svgEl("svg", {
-    class: "gantt-native",
-    width: totalWidth,
-    height: totalHeight,
-  })
-  svg.style.cssText = `min-width:${totalWidth}px;display:block;`
-
-  // ── SVG Defs (arrow markers, clip paths) ─────────────────────────────
-
-  const defs = svgEl("defs")
-  const marker = svgEl("marker", {
-    id: "arrowhead", markerWidth: 8, markerHeight: 6, refX: 8, refY: 3, orient: "auto",
-  })
-  marker.appendChild(svgEl("polygon", { points: "0 0, 8 3, 0 6", fill: "var(--text-muted)", opacity: 0.5 }))
-  defs.appendChild(marker)
-  svg.appendChild(defs)
-
-  // ── Background Grid ──────────────────────────────────────────────────
-
-  const gridGroup = svgEl("g", { class: "gantt-grid" })
-
-  for (let i = 0; i < bars.length; i++) {
-    const y = HEADER_HEIGHT + i * ROW_HEIGHT
-    gridGroup.appendChild(
-      svgEl("rect", {
-        x: 0, y, width: totalWidth, height: ROW_HEIGHT,
-        fill: i % 2 === 0 ? "var(--bg-card)" : "var(--bg-secondary, rgba(255,255,255,0.02))",
-      }),
-    )
-    // M2: Highlight overlay rect (hidden by default, shown on hover)
-    const highlightRect = svgEl("rect", {
-      x: 0, y, width: totalWidth, height: ROW_HEIGHT,
-      fill: "var(--accent, #7c3aed)", opacity: 0,
-      "data-row-id": `row-${bars[i]!.id}`,
-      class: "gantt-row-highlight",
-    })
-    highlightRect.style.pointerEvents = "none"
-    gridGroup.appendChild(highlightRect)
-    gridGroup.appendChild(
-      svgEl("line", {
-        x1: 0, y1: y + ROW_HEIGHT, x2: totalWidth, y2: y + ROW_HEIGHT,
-        stroke: "var(--border-subtle, rgba(255,255,255,0.05))", "stroke-width": 0.5,
-      }),
-    )
-  }
-
-  // Weekend highlighting (Day + Week zoom)
-  if (zoom === "Day" || zoom === "Week") {
-    for (let d = 0; d < totalDays; d++) {
-      const date = addDays(rangeStart, d)
-      if (isWeekend(date)) {
-        gridGroup.appendChild(
-          svgEl("rect", {
-            x: d * pxPerDay, y: HEADER_HEIGHT, width: pxPerDay, height: totalHeight - HEADER_HEIGHT,
-            fill: "var(--bg-secondary, rgba(255,255,255,0.06))", opacity: 0.7,
-          }),
-        )
-      }
-    }
-  }
-
-  // Column tick lines
-  for (let d = 0; d < totalDays; d += config.unitDays) {
-    gridGroup.appendChild(
-      svgEl("line", {
-        x1: d * pxPerDay, y1: HEADER_HEIGHT, x2: d * pxPerDay, y2: totalHeight,
-        stroke: "var(--border-subtle, rgba(255,255,255,0.05))", "stroke-width": 0.3,
-      }),
-    )
-  }
-
-  svg.appendChild(gridGroup)
-
-  // ── Header ───────────────────────────────────────────────────────────
-
-  const headerGroup = svgEl("g", { class: "gantt-header" })
-  headerGroup.appendChild(
-    svgEl("rect", { x: 0, y: 0, width: totalWidth, height: HEADER_HEIGHT, fill: "var(--bg-card)" }),
-  )
-  headerGroup.appendChild(
-    svgEl("line", { x1: 0, y1: HEADER_HEIGHT, x2: totalWidth, y2: HEADER_HEIGHT, stroke: "var(--border)", "stroke-width": 1 }),
-  )
-
-  let lastUpper = ""
-  for (let d = 0; d < totalDays; d += config.unitDays) {
-    const date = addDays(rangeStart, d)
-    const x = d * pxPerDay
-
-    // Lower label
-    const lower = svgEl("text", {
-      x: x + config.columnWidth / 2, y: HEADER_HEIGHT - 10,
-      "text-anchor": "middle", fill: "var(--text-muted)", "font-size": 11, "font-family": "inherit",
-    })
-    lower.textContent = config.headerFormat(date)
-    headerGroup.appendChild(lower)
-
-    // Upper label
-    const upperText = config.upperFormat(date)
-    if (upperText !== lastUpper) {
-      lastUpper = upperText
-      const upper = svgEl("text", {
-        x: x + 4, y: 18, "text-anchor": "start",
-        fill: "var(--text-primary)", "font-size": 12, "font-weight": 600, "font-family": "inherit",
-      })
-      upper.textContent = upperText
-      headerGroup.appendChild(upper)
-    }
-  }
-
-  svg.appendChild(headerGroup)
-
-  // ── Today Marker + M3: Today Label ───────────────────────────────────
-
-  const today = startOfDay(new Date())
-  const todayOffset = daysBetween(rangeStart, today)
-  // Today line at start-of-day boundary (rangeStart is unit-aligned)
-  const todayX = todayOffset * pxPerDay
-  if (todayOffset >= 0 && todayOffset <= totalDays) {
-    const todayGroup = svgEl("g", { class: "gantt-today" })
-
-    todayGroup.appendChild(
-      svgEl("line", {
-        x1: todayX, y1: 0, x2: todayX, y2: totalHeight,
-        stroke: "#EF4444", "stroke-width": 2.5, opacity: 0.85,
-      }),
-    )
-    // Diamond
-    todayGroup.appendChild(
-      svgEl("polygon", {
-        points: `${todayX},4 ${todayX + 6},12 ${todayX},20 ${todayX - 6},12`,
-        fill: "#EF4444",
-      }),
-    )
-    // M3: Today label
-    const todayLabel = svgEl("text", {
-      x: todayX, y: HEADER_HEIGHT - 2,
-      "text-anchor": "middle", fill: "#EF4444",
-      "font-size": 10, "font-weight": 700, "font-family": "inherit",
-      opacity: 0.95,
-    })
-    todayLabel.textContent = "Today"
-    todayGroup.appendChild(todayLabel)
-
-    svg.appendChild(todayGroup)
-  }
-
-  // ── Dependency Arrows ────────────────────────────────────────────────
-
-  const barPositions = new Map<string, { x: number; y: number; w: number }>()
-  for (let i = 0; i < hBars.length; i++) {
-    const bar = hBars[i]!
-    if (bar.isGroupHeader) {
-      barPositions.set(bar.id, { x: 0, y: HEADER_HEIGHT + i * ROW_HEIGHT, w: 0 })
-      continue
-    }
-    let xStart = daysBetween(rangeStart, bar.start) * pxPerDay
-    const duration = Math.max(1, daysBetween(bar.start, bar.end) + 1)
-    let w = bar.isMilestone ? 16 : duration * pxPerDay
-    // Guard against NaN from invalid dates
-    if (isNaN(xStart)) xStart = 0
-    if (isNaN(w)) w = 16
-    barPositions.set(bar.id, {
-      x: xStart,
-      y: HEADER_HEIGHT + i * ROW_HEIGHT,
-      w,
-    })
-  }
-
-  const arrowGroup = svgEl("g", { class: "gantt-arrows" })
-  for (const bar of hBars) {
-    if (bar.isGroupHeader) continue
-    for (const depId of bar.deps) {
-      const from = barPositions.get(depId)
-      const to = barPositions.get(bar.id)
-      if (!from || !to) continue
-      const fx = from.x + from.w
-      const fy = from.y + ROW_HEIGHT / 2
-      const tx = to.x
-      const ty = to.y + ROW_HEIGHT / 2
-      const mx = fx + (tx - fx) / 2
-      arrowGroup.appendChild(
-        svgEl("path", {
-          d: `M ${fx} ${fy} C ${mx} ${fy}, ${mx} ${ty}, ${tx} ${ty}`,
-          stroke: "var(--text-muted)", "stroke-width": 1.5, fill: "none", opacity: 0.3,
-          "marker-end": "url(#arrowhead)",
-        }),
-      )
-    }
-  }
-  svg.appendChild(arrowGroup)
-
-  // ── Task Bars + T3 Resize Handles + T4 Tooltips + T8 Overdue ─────────
-
-  const barsGroup = svgEl("g", { class: "gantt-bars" })
-
-  for (let i = 0; i < hBars.length; i++) {
-    const bar = hBars[i]!
-    const pos = barPositions.get(bar.id)!
-    
-    if (bar.isGroupHeader) {
-      barsGroup.appendChild(
-        svgEl("rect", {
-          x: 0, y: pos.y, width: totalWidth, height: ROW_HEIGHT,
-          fill: "var(--bg-secondary, rgba(255,255,255,0.03))"
-        })
-      )
-      barsGroup.appendChild(
-        svgEl("line", {
-          x1: 0, y1: pos.y + ROW_HEIGHT, x2: totalWidth, y2: pos.y + ROW_HEIGHT,
-          stroke: "var(--border-subtle, rgba(255,255,255,0.05))", "stroke-width": 1
-        })
-      )
-      continue
-    }
-    
     const barY = pos.y + BAR_Y_PAD
 
-    // T10: Milestone rendering
     if (bar.isMilestone) {
       const mx = pos.x
       const my = barY + BAR_HEIGHT / 2
       const ms = 10
       const milestoneGroup = svgEl("g", {
-        class: "gantt-milestone", "data-task-id": bar.id, "data-bar-index": i,
-        tabindex: 0, role: "button", "aria-label": `Milestone: ${bar.name}`,
+        class: "gantt-milestone",
+        "data-task-id": bar.id,
+        "data-row-index": rowIndex,
+        "data-bar-index": rowIndex,
+        "aria-rowindex": rowIndex + 1,
+        tabindex: 0,
+        role: "button",
+        "aria-label": `Milestone: ${bar.name}`,
       })
       milestoneGroup.style.cursor = "pointer"
       milestoneGroup.appendChild(
         svgEl("polygon", {
           points: `${mx},${my - ms} ${mx + ms},${my} ${mx},${my + ms} ${mx - ms},${my}`,
-          fill: bar.colour, opacity: bar.isComplete ? 0.4 : 1,
+          fill: bar.colour,
+          opacity: bar.isComplete ? 0.4 : 1,
           stroke: bar.isOverdue ? "var(--accent-danger, #ef4444)" : "none",
           "stroke-width": bar.isOverdue ? 2 : 0,
         }),
       )
 
-      milestoneGroup.addEventListener("mouseenter", (e) => showTooltip(bar, e.clientX, e.clientY, document.body))
-      milestoneGroup.addEventListener("mouseleave", hideTooltip)
-      milestoneGroup.addEventListener("click", (e) => {
-        e.stopPropagation()
-        hideTooltip()
-        showPopup(bar, e.clientX, e.clientY, document.body, signal)
-      })
-      // O8: Keyboard Enter/Space to open popup
-      milestoneGroup.addEventListener("keydown", (e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault()
-          const rect = (e.target as SVGElement).getBoundingClientRect()
-          showPopup(bar, rect.left, rect.bottom, document.body)
-        }
-      })
-
-      barsGroup.appendChild(milestoneGroup)
-      continue
+      sidebarTarget.appendChild(row)
+      svgTarget.appendChild(milestoneGroup)
+      return { sidebarEl: row, svgEl: milestoneGroup, cleanup: rowCleanups.length ? () => rowCleanups.forEach(fn => fn()) : undefined }
     }
 
     const barW = Math.max(pos.w, 24)
     const barGroup = svgEl("g", {
-      class: `gantt-bar`, "data-task-id": bar.id, "data-bar-index": i,
-      tabindex: 0, role: "button", "aria-label": `Task: ${bar.name}`,
+      class: "gantt-bar",
+      "data-task-id": bar.id,
+      "data-row-index": rowIndex,
+      "data-bar-index": rowIndex,
+      "aria-rowindex": rowIndex + 1,
+      tabindex: 0,
+      role: "button",
+      "aria-label": `Task: ${bar.name}`,
     })
     barGroup.style.cursor = "pointer"
+    barGroup.style.touchAction = "none"
 
-    // T8: Overdue accent — red left border
-    if (bar.isOverdue) {
-      barGroup.appendChild(
-        svgEl("rect", {
-          x: pos.x - 2, y: barY - 1, width: barW + 4, height: BAR_HEIGHT + 2,
-          rx: BAR_RADIUS + 1, ry: BAR_RADIUS + 1,
-          fill: "none", stroke: "var(--accent-danger, #ef4444)", "stroke-width": 2, opacity: 0.7,
-        }),
-      )
-    }
-
-    // Background bar
     const bgRect = svgEl("rect", {
-      x: pos.x, y: barY, width: barW, height: BAR_HEIGHT,
-      rx: BAR_RADIUS, ry: BAR_RADIUS,
-      fill: bar.colour, opacity: bar.isComplete ? 0.3 : 0.75,
+      x: pos.x,
+      y: barY,
+      width: barW,
+      height: BAR_HEIGHT,
+      rx: BAR_RADIUS,
+      ry: BAR_RADIUS,
+      fill: bar.colour,
+      opacity: bar.isComplete ? 0.3 : 0.75,
+      ...(bar.isOverdue ? { stroke: "var(--accent-danger, #ef4444)", "stroke-width": 2 } : {}),
     })
     barGroup.appendChild(bgRect)
 
-    // Progress fill
+    let progRect: SVGRectElement | null = null
     if (bar.progress > 0 && bar.progress <= 100) {
       const progW = Math.min((bar.progress / 100) * barW, barW)
-      barGroup.appendChild(
-        svgEl("rect", {
-          x: pos.x, y: barY, width: progW, height: BAR_HEIGHT,
-          rx: BAR_RADIUS, ry: BAR_RADIUS,
-          fill: bar.colour, opacity: bar.isComplete ? 0.5 : 1,
-        }),
-      )
-    }
-
-    // Label
-    if (barW > 40) {
-      const clipId = `clip-${bar.id.substring(0, 8)}-${i}`
-      const clipPath = svgEl("clipPath", { id: clipId })
-      clipPath.appendChild(svgEl("rect", { x: pos.x + 6, y: barY, width: barW - 12, height: BAR_HEIGHT }))
-      defs.appendChild(clipPath)
-
-      const label = svgEl("text", {
-        x: pos.x + 10, y: barY + BAR_HEIGHT / 2 + 1,
-        fill: "var(--text-on-accent, #fff)", "font-size": 11, "font-weight": 500, // U4: contrast-safe label
-        "font-family": "inherit", "dominant-baseline": "central",
-        "clip-path": `url(#${clipId})`,
+      progRect = svgEl("rect", {
+        x: pos.x,
+        y: barY,
+        width: progW,
+        height: BAR_HEIGHT,
+        rx: BAR_RADIUS,
+        ry: BAR_RADIUS,
+        fill: bar.colour,
+        opacity: bar.isComplete ? 0.5 : 1,
       })
-      label.textContent = bar.name
-      if (bar.isComplete) {
-        label.style.textDecoration = "line-through"
-        label.style.opacity = "0.6"
-      }
-      barGroup.appendChild(label)
+      barGroup.appendChild(progRect)
     }
 
-    // Epic top indicator
+    // D2: When bar pixel width < 96px, position label 8px to the right of the bar (fill var(--text-secondary))
+    const isExternalLabel = barW < 96
+    const labelEl = svgEl("text", {
+      x: isExternalLabel ? pos.x + barW + 8 : pos.x + 10,
+      y: barY + BAR_HEIGHT / 2 + 1,
+      fill: isExternalLabel ? "var(--text-secondary)" : "var(--text-on-accent, #fff)",
+      "font-size": 11,
+      "font-weight": 500,
+      "font-family": "inherit",
+      "dominant-baseline": "central",
+      "data-label-placement": isExternalLabel ? "outside" : "inside",
+    })
+    if (isExternalLabel) {
+      labelEl.textContent = bar.name
+    } else {
+      const maxChars = Math.max(6, Math.floor((barW - 20) / 6.6))
+      labelEl.textContent = bar.name.length > maxChars ? `${bar.name.slice(0, maxChars - 1)}…` : bar.name
+    }
+    if (bar.isComplete) {
+      labelEl.style.textDecoration = "line-through"
+      labelEl.style.opacity = "0.6"
+    }
+    barGroup.appendChild(labelEl)
+
     if (bar.taskType === "epic") {
       barGroup.appendChild(
         svgEl("rect", {
           x: pos.x, y: barY, width: barW, height: 3,
-          rx: BAR_RADIUS, fill: "var(--text-on-accent, #fff)", opacity: 0.4, // P8: contrast-safe
+          rx: BAR_RADIUS, fill: "var(--text-on-accent, #fff)", opacity: 0.4,
         }),
       )
     }
 
-    // T4: Hover tooltip + M2: cross-highlight from chart → sidebar
-    barGroup.addEventListener("mouseenter", (e) => {
-      showTooltip(bar, e.clientX, e.clientY, document.body)
-      // M2: Highlight matching sidebar row
-      const sidebarRow = sidebar.querySelector<HTMLElement>(`.gantt-sidebar-row[data-task-id="${bar.id}"]`)
-      if (sidebarRow) sidebarRow.style.background = "var(--bg-secondary, rgba(255,255,255,0.06))"
-      // M2: Highlight chart row
-      const chartRow = svg.querySelector<SVGElement>(`[data-row-id="row-${bar.id}"]`)
-      if (chartRow) chartRow.setAttribute("opacity", "0.06")
-    })
-    barGroup.addEventListener("mouseleave", () => {
-      hideTooltip()
-      const sidebarRow = sidebar.querySelector<HTMLElement>(`.gantt-sidebar-row[data-task-id="${bar.id}"]`)
-      if (sidebarRow) {
-        const idx = Array.from(sidebar.querySelectorAll(".gantt-sidebar-row")).indexOf(sidebarRow)
-        sidebarRow.style.background = idx % 2 === 0 ? "transparent" : "var(--bg-secondary, rgba(255,255,255,0.02))"
-      }
-      const chartRow = svg.querySelector<SVGElement>(`[data-row-id="row-${bar.id}"]`)
-      if (chartRow) chartRow.setAttribute("opacity", "0")
-    })
-
-    // Click → popup
-    barGroup.addEventListener("click", (e) => {
-      e.stopPropagation()
-      hideTooltip()
-      showPopup(bar, e.clientX, e.clientY, document.body, signal)
-    })
-    // O8: Keyboard Enter/Space to open popup
-    barGroup.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" || e.key === " ") {
-        e.preventDefault()
-        const rect = (e.target as SVGElement).getBoundingClientRect()
-        showPopup(bar, rect.left, rect.bottom, document.body)
-      }
-    })
-
-    // T3: Resize handles
     const leftHandle = svgEl("rect", {
+      class: "gantt-resize-handle gantt-resize-handle--left",
       x: pos.x - 2, y: barY + 4, width: HANDLE_WIDTH, height: BAR_HEIGHT - 8,
       rx: 2, fill: "var(--text-primary)", opacity: 0, cursor: "ew-resize",
     })
     const rightHandle = svgEl("rect", {
+      class: "gantt-resize-handle gantt-resize-handle--right",
       x: pos.x + barW - HANDLE_WIDTH + 2, y: barY + 4, width: HANDLE_WIDTH, height: BAR_HEIGHT - 8,
       rx: 2, fill: "var(--text-primary)", opacity: 0, cursor: "ew-resize",
     })
 
-    barGroup.addEventListener("mouseenter", () => {
-      leftHandle.setAttribute("opacity", "0.4")
-      rightHandle.setAttribute("opacity", "0.4")
-    })
-    barGroup.addEventListener("mouseleave", () => {
-      leftHandle.setAttribute("opacity", "0")
-      rightHandle.setAttribute("opacity", "0")
-    })
-
-    // Drag logic for whole bar — O1: pass signal to fix memory leak
-    setupBarDrag(barGroup, bgRect, bar, pos, pxPerDay, config, signal, () => {
-      renderGantt(outerContainer, bars, zoom, signal, undatedTasks) // O6: re-render after drag
-    })
-
-    // Resize handles drag — O5/O6: visual feedback + re-render
-    setupResizeDrag(leftHandle, "start", bar, pos, pxPerDay, config, barGroup, signal, () => {
-      renderGantt(outerContainer, bars, zoom, signal, undatedTasks) // O6: re-render after resize
-    })
-    setupResizeDrag(rightHandle, "end", bar, pos, pxPerDay, config, barGroup, signal, () => {
-      renderGantt(outerContainer, bars, zoom, signal, undatedTasks) // O6: re-render after resize
-    })
-
-    // M7: Touch support — set touch-action once
-    barGroup.style.touchAction = "none"
+    setupBarDrag(
+      barGroup,
+      bgRect,
+      bar,
+      pos,
+      pxPerDay,
+      config,
+      rowSignal,
+      (dragging) => { activeDragTaskId = dragging ? bar.id : null },
+      () => { renderGantt(outerContainer, bars, zoom, _parentSignal, undatedTasks, groupByKey) },
+    )
+    setupResizeDrag(
+      leftHandle,
+      "start",
+      bar,
+      pos,
+      pxPerDay,
+      config,
+      bgRect,
+      progRect,
+      labelEl,
+      leftHandle,
+      rightHandle,
+      rowSignal,
+      (dragging) => { activeDragTaskId = dragging ? bar.id : null },
+      () => { renderGantt(outerContainer, bars, zoom, _parentSignal, undatedTasks, groupByKey) },
+    )
+    setupResizeDrag(
+      rightHandle,
+      "end",
+      bar,
+      pos,
+      pxPerDay,
+      config,
+      bgRect,
+      progRect,
+      labelEl,
+      leftHandle,
+      rightHandle,
+      rowSignal,
+      (dragging) => { activeDragTaskId = dragging ? bar.id : null },
+      () => { renderGantt(outerContainer, bars, zoom, _parentSignal, undatedTasks, groupByKey) },
+    )
 
     barGroup.appendChild(leftHandle)
     barGroup.appendChild(rightHandle)
-    barsGroup.appendChild(barGroup)
+    sidebarTarget.appendChild(row)
+    svgTarget.appendChild(barGroup)
+    return { sidebarEl: row, svgEl: barGroup, cleanup: rowCleanups.length ? () => rowCleanups.forEach(fn => fn()) : undefined }
   }
 
-  svg.appendChild(barsGroup)
+  let lastWindowKey = ""
 
-  // ── §5: Click-to-Schedule rows for undated tasks ─────────────────────
-  if (undatedTasks.length > 0) {
-    const undatedGroup = svgEl("g", { class: "gantt-undated-rows" })
-    const dividerRowY = HEADER_HEIGHT + bars.length * ROW_HEIGHT
-
-    // Divider row background (matches sidebar divider)
-    undatedGroup.appendChild(
-      svgEl("rect", {
-        x: 0, y: dividerRowY, width: totalWidth, height: ROW_HEIGHT,
-        fill: "var(--bg-secondary, rgba(255,255,255,0.03))",
-      }),
-    )
-    undatedGroup.appendChild(
-      svgEl("line", {
-        x1: 0, y1: dividerRowY + ROW_HEIGHT, x2: totalWidth, y2: dividerRowY + ROW_HEIGHT,
-        stroke: "var(--border-subtle, rgba(255,255,255,0.05))", "stroke-width": 0.5,
-      }),
-    )
-
-    for (let ui = 0; ui < undatedTasks.length; ui++) {
-      const ut = undatedTasks[ui]!
-      const rowY = dividerRowY + (1 + ui) * ROW_HEIGHT // +1 for divider row
-
-      // Alternating row background
-      undatedGroup.appendChild(
-        svgEl("rect", {
-          x: 0, y: rowY, width: totalWidth, height: ROW_HEIGHT,
-          fill: ui % 2 === 0 ? "var(--bg-card)" : "var(--bg-secondary, rgba(255,255,255,0.02))",
-        }),
-      )
-
-      // Highlight rect (for cross-highlighting)
-      const hlRect = svgEl("rect", {
-        x: 0, y: rowY, width: totalWidth, height: ROW_HEIGHT,
-        fill: "var(--accent, #7c3aed)", opacity: 0,
-        "data-row-id": `unscheduled-${ut.id}`,
-        class: "gantt-row-highlight",
-      })
-      hlRect.style.pointerEvents = "none"
-      undatedGroup.appendChild(hlRect)
-
-      // Row divider line
-      undatedGroup.appendChild(
-        svgEl("line", {
-          x1: 0, y1: rowY + ROW_HEIGHT, x2: totalWidth, y2: rowY + ROW_HEIGHT,
-          stroke: "var(--border-subtle, rgba(255,255,255,0.05))", "stroke-width": 0.5,
-        }),
-      )
-
-      // "Click to schedule" hint text (visible on hover)
-      const hintText = svgEl("text", {
-        x: totalWidth / 2, y: rowY + ROW_HEIGHT / 2 + 1,
-        "text-anchor": "middle", fill: "var(--text-muted)",
-        "font-size": 11, "font-style": "italic", "font-family": "inherit",
-        "dominant-baseline": "central", opacity: 0,
-        class: "gantt-schedule-hint",
-      })
-      hintText.textContent = "Click to schedule"
-      undatedGroup.appendChild(hintText)
-
-      // Dotted placeholder line
-      const placeholderLine = svgEl("line", {
-        x1: 40, y1: rowY + ROW_HEIGHT / 2,
-        x2: totalWidth - 40, y2: rowY + ROW_HEIGHT / 2,
-        stroke: "var(--text-muted)", "stroke-width": 1,
-        "stroke-dasharray": "4 6", opacity: 0,
-        class: "gantt-schedule-hint",
-      })
-      undatedGroup.appendChild(placeholderLine)
-
-      // Interactive overlay rect for click-to-schedule
-      const clickRect = svgEl("rect", {
-        x: 0, y: rowY, width: totalWidth, height: ROW_HEIGHT,
-        fill: "transparent", cursor: "crosshair",
-      })
-
-      clickRect.addEventListener("mouseenter", () => {
-        hintText.setAttribute("opacity", "0.6")
-        placeholderLine.setAttribute("opacity", "0.15")
-        // Highlight sidebar row
-        const sidebarRow = sidebar.querySelector<HTMLElement>(`.gantt-sidebar-row[data-task-id="${ut.id}"]`)
-        if (sidebarRow) {
-          sidebarRow.style.background = "var(--bg-secondary, rgba(255,255,255,0.06))"
-          sidebarRow.style.opacity = "1"
-        }
-      })
-      clickRect.addEventListener("mouseleave", () => {
-        hintText.setAttribute("opacity", "0")
-        placeholderLine.setAttribute("opacity", "0")
-        const sidebarRow = sidebar.querySelector<HTMLElement>(`.gantt-sidebar-row[data-task-id="${ut.id}"]`)
-        if (sidebarRow) {
-          sidebarRow.style.background = ui % 2 === 0 ? "transparent" : "var(--bg-secondary, rgba(255,255,255,0.02))"
-          sidebarRow.style.opacity = "0.7"
-        }
-      })
-
-      clickRect.addEventListener("click", async (e) => {
-        e.stopPropagation()
-        // Calculate date from click position
-        const svgRect = svg.getBoundingClientRect()
-        const clickX = e.clientX - svgRect.left
-        const dayOffset = Math.floor(clickX / pxPerDay)
-        const clickedDate = addDays(rangeStart, dayOffset)
-        const iso = toISODate(clickedDate)
-
-        const ok = await patchTask(ut.id, { start_date: iso, due_date: iso })
-        if (ok) {
-          ut.start_date = iso
-          ut.due_date = iso
-          showToast(`Scheduled for ${fmtDate(clickedDate)}`)
-          
-          // Remove from undated list
-          const idx = undatedTasks.findIndex(t => t.id === ut.id)
-          if (idx !== -1) undatedTasks.splice(idx, 1)
-
-          // Add to dated bars list
-          const complete = isComplete(ut.status)
-          const overdue = !complete && clickedDate < startOfDay(new Date())
-          bars.push({
-            id: ut.id,
-            name: `${ut.ticket_number ? `MTH-${ut.ticket_number} ` : ""}${ut.title}`,
-            start: clickedDate,
-            end: clickedDate,
-            progress: Number(ut.progress ?? 0),
-            colour: ut.color || PRIORITY_COLOURS[ut.priority] || "#6366F1",
-            taskType: String(ut.task_type || "task"),
-            isComplete: complete,
-            isOverdue: overdue,
-            isMilestone: true,
-            priority: ut.priority,
-            original: ut,
-            deps: []
-          })
-
-          // Save scroll position to target the new date
-          localStorage.setItem(`${SCROLL_KEY_PREFIX}${zoom}`, String(clickX - outerContainer.clientWidth / 2))
-
-          // Re-render
-          renderGantt(outerContainer, bars, zoom, _parentSignal, undatedTasks)
-        } else {
-          showToast("Failed to schedule", "error")
-        }
-      })
-
-      undatedGroup.appendChild(clickRect)
+  function syncVirtualWindow(force = false) {
+    if (totalRowCount === 0) {
+      for (const [, entry] of mountedRows) {
+        entry.cleanup?.()
+        entry.sidebarEl.remove()
+        entry.svgEl?.remove()
+      }
+      mountedRows.clear()
+      arrowGroup.replaceChildren()
+      return
     }
 
-    svg.appendChild(undatedGroup)
+    const scrollTop = scrollWrapper.scrollTop
+    const viewportH = scrollWrapper.clientHeight > 0 ? scrollWrapper.clientHeight : 600
+    const startRow = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - 8)
+    const endRow = Math.min(totalRowCount - 1, Math.ceil((scrollTop + viewportH) / ROW_HEIGHT) + 8)
+    const focusRow = activeFocusedTaskId !== null ? (taskRowIndexById.get(activeFocusedTaskId) ?? -1) : -1
+    const dragRow = activeDragTaskId !== null ? (taskRowIndexById.get(activeDragTaskId) ?? -1) : -1
+    const windowKey = `${startRow}:${endRow}:${focusRow}:${dragRow}`
+    if (!force && windowKey === lastWindowKey) return
+    lastWindowKey = windowKey
+
+    const wanted = new Set<number>()
+    for (let r = startRow; r <= endRow; r++) wanted.add(r)
+    if (focusRow >= 0 && focusRow < totalRowCount) wanted.add(focusRow)
+    if (dragRow >= 0 && dragRow < totalRowCount) wanted.add(dragRow)
+
+    for (const [idx, entry] of mountedRows) {
+      if (!wanted.has(idx)) {
+        entry.cleanup?.()
+        entry.sidebarEl.remove()
+        entry.svgEl?.remove()
+        mountedRows.delete(idx)
+      }
+    }
+
+    const sidebarFrag = document.createDocumentFragment()
+    const svgFrag = document.createDocumentFragment()
+    for (const idx of wanted) {
+      if (!mountedRows.has(idx)) {
+        const mounted = mountDisplayRow(idx, sidebarFrag, svgFrag)
+        if (mounted) mountedRows.set(idx, mounted)
+      }
+    }
+    if (sidebarFrag.childNodes.length > 0) sidebarTrack.appendChild(sidebarFrag)
+    if (svgFrag.childNodes.length > 0) barsGroup.appendChild(svgFrag)
+
+    // Mount dependency <path> connectors whenever at least one endpoint row is mounted
+    if (dependencyEdges.length > 0) {
+      arrowGroup.replaceChildren()
+      for (const edge of dependencyEdges) {
+        if (wanted.has(edge.fromRow) || wanted.has(edge.toRow)) {
+          arrowGroup.appendChild(
+            svgEl("path", {
+              class: "gantt-dep-arrow",
+              "data-from-id": edge.fromId,
+              "data-to-id": edge.toId,
+              d: edge.d,
+              stroke: "var(--text-muted)",
+              "stroke-width": 1.5,
+              fill: "none",
+              opacity: 0.35,
+              "marker-end": "url(#arrowhead)",
+            }),
+          )
+        }
+      }
+    }
   }
 
-  scrollWrapper.appendChild(svg)
+  // ── Delegated Row & Bar Interaction Handlers (Zero Per-Row Listeners) ─
 
-  // ── Split chart: frozen header + scrollable body ─────────────────────
-  // Create a chart column wrapper (header stays fixed, body scrolls)
-  const chartColumn = document.createElement("div")
-  chartColumn.className = "gantt-chart-column"
-  chartColumn.style.cssText = "flex:1;display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden;"
+  sidebarTrack.addEventListener("focusin", (e) => {
+    const rowEl = (e.target as Element | null)?.closest<HTMLElement>(".gantt-vrow")
+    if (!rowEl) return
+    const rIdx = Number(rowEl.dataset.rowIndex ?? -1)
+    const dRow = displayRows[rIdx]
+    if (dRow?.kind === "bar") {
+      activeFocusedTaskId = dRow.bar.id
+      const navIdx = navigableRowIndices.indexOf(rIdx)
+      if (navIdx !== -1) focusedNavPos = navIdx
+    }
+  }, { signal })
 
-  // Frozen header overlay — clips the top HEADER_HEIGHT of SVG
-  const headerOverlay = document.createElement("div")
-  headerOverlay.className = "gantt-header-overlay"
-  headerOverlay.style.cssText = `
-    flex:0 0 ${HEADER_HEIGHT}px;overflow:hidden;position:relative;
-    border-bottom:1px solid var(--border);background:var(--bg-card);z-index:3;
-  `
+  sidebarTrack.addEventListener("pointerover", (e) => {
+    const rowEl = (e.target as Element | null)?.closest<HTMLElement>(".gantt-vrow")
+    if (!rowEl) return
+    setChartRowHighlight(Number(rowEl.dataset.rowIndex ?? -1))
+  }, { signal })
 
-  // Clone header-relevant elements into a separate SVG for the frozen header
-  const headerSvg = svgEl("svg", {
-    class: "gantt-header-svg",
-    width: totalWidth,
-    height: HEADER_HEIGHT,
-  })
-  headerSvg.style.cssText = `min-width:${totalWidth}px;display:block;`
-  // Copy header group and today marker header portion
-  const headerClone = svg.querySelector(".gantt-header")
-  if (headerClone) {
-    headerSvg.appendChild(headerClone.cloneNode(true))
-    // Remove original header from scrolling SVG to avoid duplicate
-    headerClone.remove()
-  }
-  // Also copy today marker diamond/label into header
-  const todayGroup = svg.querySelector(".gantt-today")
-  if (todayGroup) {
-    const todayHeaderClone = todayGroup.cloneNode(true) as SVGGElement
-    // Clip to header area (remove the long line, keep diamond + label)
-    headerSvg.appendChild(todayHeaderClone)
-  }
-  headerOverlay.appendChild(headerSvg)
+  sidebarTrack.addEventListener("pointerout", (e) => {
+    const rowEl = (e.target as Element | null)?.closest<HTMLElement>(".gantt-vrow")
+    if (!rowEl || rowEl.contains(e.relatedTarget as Node | null)) return
+    setChartRowHighlight(null)
+  }, { signal })
 
-  // Offset body SVG so bars start at top of scroll area (header removed)
-  svg.style.marginTop = `-${HEADER_HEIGHT}px`
+  sidebarTrack.addEventListener("click", (e) => {
+    const target = e.target as Element | null
+    if (!target || target.closest(".idp-container, .gantt-sidebar-toggle")) return
+    const rowEl = target.closest<HTMLElement>(".gantt-vrow")
+    if (!rowEl) return
+    const rIdx = Number(rowEl.dataset.rowIndex ?? -1)
+    const dRow = displayRows[rIdx]
+    if (dRow?.kind !== "bar") return
+    e.stopPropagation()
+    e.preventDefault()
+    const pos = barPositions.get(dRow.bar.id)
+    if (pos && !isNaN(pos.x)) {
+      scrollWrapper.scrollTo({
+        left: pos.x - scrollWrapper.clientWidth / 3,
+        behavior: REDUCED_MOTION ? "instant" : "smooth",
+      })
+    }
+    showPopup(dRow.bar, e.clientX, e.clientY, document.body, signal)
+  }, { signal })
 
-  chartColumn.appendChild(headerOverlay)
-  chartColumn.appendChild(scrollWrapper)
-  layout.appendChild(chartColumn)
-  outerContainer.appendChild(layout)
+  sidebarTrack.addEventListener("keydown", (e) => {
+    const target = e.target as HTMLElement | null
+    if (!target || target.closest(".idp-container")) return
+    if (e.key === "Enter" || e.key === " ") {
+      const rowEl = target.closest<HTMLElement>(".gantt-vrow")
+      if (rowEl) {
+        e.preventDefault()
+        rowEl.click()
+      }
+    }
+  }, { signal })
 
-  // ── Sync sidebar + header scroll with chart ─────────────────────────
+  barsGroup.addEventListener("focusin", (e) => {
+    const groupEl = (e.target as Element | null)?.closest<SVGGElement>(".gantt-bar, .gantt-milestone")
+    if (!groupEl) return
+    const rIdx = Number(groupEl.getAttribute("data-row-index") ?? -1)
+    const dRow = displayRows[rIdx]
+    if (dRow?.kind === "bar") {
+      activeFocusedTaskId = dRow.bar.id
+      const navIdx = navigableRowIndices.indexOf(rIdx)
+      if (navIdx !== -1) focusedNavPos = navIdx
+    }
+  }, { signal })
 
-  // P8: Debounce localStorage writes to avoid performance hit during fast scroll
+  barsGroup.addEventListener("pointerover", (e) => {
+    const groupEl = (e.target as Element | null)?.closest<SVGGElement>(".gantt-bar, .gantt-milestone")
+    if (!groupEl) return
+    const rIdx = Number(groupEl.getAttribute("data-row-index") ?? -1)
+    const dRow = displayRows[rIdx]
+    if (dRow?.kind !== "bar") return
+    showTooltip(dRow.bar, e.clientX, e.clientY, document.body)
+    setChartRowHighlight(rIdx)
+    mountedRows.get(rIdx)?.sidebarEl.classList.add("gantt-vrow--hover")
+    groupEl.querySelectorAll(".gantt-resize-handle").forEach((h) => h.setAttribute("opacity", "0.4"))
+  }, { signal })
+
+  barsGroup.addEventListener("pointerout", (e) => {
+    const groupEl = (e.target as Element | null)?.closest<SVGGElement>(".gantt-bar, .gantt-milestone")
+    if (!groupEl || groupEl.contains(e.relatedTarget as Node | null)) return
+    const rIdx = Number(groupEl.getAttribute("data-row-index") ?? -1)
+    hideTooltip()
+    setChartRowHighlight(null)
+    mountedRows.get(rIdx)?.sidebarEl.classList.remove("gantt-vrow--hover")
+    groupEl.querySelectorAll(".gantt-resize-handle").forEach((h) => h.setAttribute("opacity", "0"))
+  }, { signal })
+
+  barsGroup.addEventListener("click", (e) => {
+    const groupEl = (e.target as Element | null)?.closest<SVGGElement>(".gantt-bar, .gantt-milestone")
+    if (!groupEl) return
+    const rIdx = Number(groupEl.getAttribute("data-row-index") ?? -1)
+    const dRow = displayRows[rIdx]
+    if (dRow?.kind !== "bar") return
+    e.stopPropagation()
+    hideTooltip()
+    showPopup(dRow.bar, e.clientX, e.clientY, document.body, signal)
+  }, { signal })
+
+  barsGroup.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" && e.key !== " ") return
+    const groupEl = (e.target as Element | null)?.closest<SVGGElement>(".gantt-bar, .gantt-milestone")
+    if (!groupEl) return
+    const rIdx = Number(groupEl.getAttribute("data-row-index") ?? -1)
+    const dRow = displayRows[rIdx]
+    if (dRow?.kind !== "bar") return
+    e.preventDefault()
+    const rect = groupEl.getBoundingClientRect()
+    showPopup(dRow.bar, rect.left, rect.bottom, document.body, signal)
+  }, { signal })
+
+  // ── Sync sidebar + header scroll with chart (rAF-coalesced windowing) ─
+
   let scrollSaveTimer: ReturnType<typeof setTimeout> | null = null
+  let virtualRafId = 0
+
+  function scheduleVirtualSync() {
+    if (virtualRafId !== 0) return
+    virtualRafId = requestAnimationFrame(() => {
+      virtualRafId = 0
+      if (!signal.aborted) syncVirtualWindow()
+    })
+  }
+
   scrollWrapper.addEventListener("scroll", () => {
-    sidebarRows.style.transform = `translateY(-${scrollWrapper.scrollTop}px)`
-    // Sync frozen header horizontal scroll with body
+    sidebarTrack.style.transform = `translateY(-${scrollWrapper.scrollTop}px)`
     headerSvg.style.transform = `translateX(-${scrollWrapper.scrollLeft}px)`
-    // T9: Persist scroll position (debounced)
+    scheduleVirtualSync()
     if (scrollSaveTimer) clearTimeout(scrollSaveTimer)
     scrollSaveTimer = setTimeout(() => {
       localStorage.setItem(`${SCROLL_KEY_PREFIX}${zoom}`, String(scrollWrapper.scrollLeft))
     }, 150)
   }, { signal, passive: true })
 
-  // P8: Cancel scroll timer on render abort
+  let resizeObserver: ResizeObserver | null = null
+  if (typeof ResizeObserver !== "undefined") {
+    resizeObserver = new ResizeObserver(() => {
+      if (!signal.aborted) scheduleVirtualSync()
+    })
+    resizeObserver.observe(scrollWrapper)
+  }
+
   signal.addEventListener("abort", () => {
+    if (virtualRafId !== 0) { cancelAnimationFrame(virtualRafId); virtualRafId = 0 }
+    resizeObserver?.disconnect()
+    resizeObserver = null
     if (scrollSaveTimer) { clearTimeout(scrollSaveTimer); scrollSaveTimer = null }
-  })
+    for (const [, entry] of mountedRows) entry.cleanup?.()
+    mountedRows.clear()
+  }, { once: true })
 
-  // ── Scroll to today (or restored position) ───────────────────────────
+  // ── Restore horizontal & vertical scroll before initial window mount ─
 
-  // T9: Restore scroll position
   const savedScroll = localStorage.getItem(`${SCROLL_KEY_PREFIX}${zoom}`)
   if (savedScroll) {
     scrollWrapper.scrollLeft = Number(savedScroll)
   } else if (todayX > 0) {
     scrollWrapper.scrollLeft = todayX - scrollWrapper.clientWidth / 3
   }
+  if (preservedScrollTop > 0) {
+    scrollWrapper.scrollTop = preservedScrollTop
+  }
+  sidebarTrack.style.transform = `translateY(-${scrollWrapper.scrollTop}px)`
+  headerSvg.style.transform = `translateX(-${scrollWrapper.scrollLeft}px)`
+  syncVirtualWindow(true)
 
   // ── T5: Scroll-to-Today FAB ──────────────────────────────────────────
 
   const fab = document.createElement("button")
   fab.className = "gantt-today-fab"
   fab.title = "Scroll to today (T)"
-  // DOM-based SVG construction (avoid innerHTML)
   const fabSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg")
   fabSvg.setAttribute("width", "16")
   fabSvg.setAttribute("height", "16")
@@ -2061,15 +2307,14 @@ function renderGantt(
   fab.style.cssText = `
     position:absolute;bottom:16px;right:16px;z-index:20;
     width:36px;height:36px;border-radius:50%;border:1px solid var(--border);
-    background:var(--bg-card);color:var(--accent, #7c3aed);
+    background:var(--bg-card);color:var(--accent);
     cursor:pointer;display:flex;align-items:center;justify-content:center;
     box-shadow:var(--shadow-md, 0 4px 16px rgba(0,0,0,0.2));
     transition:transform 0.2s,box-shadow 0.2s;
   `
-  // O3: Respect prefers-reduced-motion
   if (!REDUCED_MOTION) {
-    fab.addEventListener("mouseenter", () => { fab.style.transform = "scale(1.1)" })
-    fab.addEventListener("mouseleave", () => { fab.style.transform = "scale(1)" })
+    fab.addEventListener("mouseenter", () => { fab.style.transform = "scale(1.1)" }, { signal })
+    fab.addEventListener("mouseleave", () => { fab.style.transform = "scale(1)" }, { signal })
   }
   fab.addEventListener("click", () => {
     scrollWrapper.scrollTo({ left: todayX - scrollWrapper.clientWidth / 3, behavior: REDUCED_MOTION ? "instant" : "smooth" })
@@ -2077,7 +2322,6 @@ function renderGantt(
   outerContainer.style.position = "relative"
   outerContainer.appendChild(fab)
 
-  // B7: Wire up toolbar "Scroll to Today" button
   const scrollTodayBtn = document.getElementById("timeline-scroll-today")
   if (scrollTodayBtn) {
     scrollTodayBtn.addEventListener("click", () => {
@@ -2085,27 +2329,65 @@ function renderGantt(
     }, { signal })
   }
 
-  // Pulse animation on first load (O3: skip if reduced motion)
   if (!REDUCED_MOTION) {
     fab.animate([
-      { boxShadow: "0 0 0 0 var(--accent, rgba(124,58,237,0.4))" },
+      { boxShadow: "0 0 0 0 color-mix(in srgb, var(--accent) 40%, transparent)" },
       { boxShadow: "0 0 0 8px transparent" },
     ], { duration: 1500, iterations: 2 })
   }
 
-  // ── T6 + M5 + M6: Keyboard shortcuts ─────────────────────────────────
+  // ── T6 + M5 + M6 + D2: Index-driven Keyboard Navigation ──────────────
 
-  let focusedBarIndex = -1 // P8: Reset per render cycle
-  const focusableBarEls = Array.from(svg.querySelectorAll<SVGGElement>(".gantt-bar, .gantt-milestone"))
+  function scrollRowIntoView(rowIndex: number) {
+    const rowTop = rowIndex * ROW_HEIGHT
+    const rowBottom = rowTop + ROW_HEIGHT
+    const viewH = scrollWrapper.clientHeight
+    if (viewH > 0) {
+      if (rowTop < scrollWrapper.scrollTop) {
+        scrollWrapper.scrollTop = rowTop
+      } else if (rowBottom > scrollWrapper.scrollTop + viewH) {
+        scrollWrapper.scrollTop = rowBottom - viewH
+      }
+    }
+    sidebarTrack.style.transform = `translateY(-${scrollWrapper.scrollTop}px)`
+  }
+
+  function focusNavigableRow(nextNavPos: number) {
+    if (navigableRowIndices.length === 0) return
+    focusedNavPos = Math.max(0, Math.min(nextNavPos, navigableRowIndices.length - 1))
+    const targetRowIndex = navigableRowIndices[focusedNavPos]!
+    const targetRow = displayRows[targetRowIndex]
+    if (targetRow && targetRow.kind === "bar") {
+      activeFocusedTaskId = targetRow.bar.id
+    }
+    scrollRowIntoView(targetRowIndex)
+    syncVirtualWindow(true)
+
+    sidebarTrack.querySelectorAll(".gantt-sidebar-row--focused").forEach(el => {
+      el.classList.remove("gantt-sidebar-row--focused")
+    })
+    const sidebarRowEl = sidebarTrack.querySelector<HTMLElement>(`.gantt-sidebar-row[data-row-index="${targetRowIndex}"]`)
+    sidebarRowEl?.classList.add("gantt-sidebar-row--focused")
+    setChartRowHighlight(targetRowIndex)
+
+    const barEl = barsGroup.querySelector<SVGGElement>(
+      `.gantt-bar[data-row-index="${targetRowIndex}"], .gantt-milestone[data-row-index="${targetRowIndex}"]`,
+    )
+    barEl?.focus({ preventScroll: true })
+  }
 
   const keyHandler = (e: KeyboardEvent) => {
-    // Only handle when timeline view is visible
     const timelineContainer = document.getElementById("tasks-view-timeline")
-    if (!timelineContainer || timelineContainer.style.display === "none") return
+    if (!timelineContainer || timelineContainer.style.display === "none" || timelineContainer.classList.contains("hidden")) return
 
-    // Don't capture when user is typing in an input
+    const modalTdOpen = (document.getElementById("task-detail-overlay")?.classList.contains("active") ?? false) &&
+      !document.body.classList.contains("has-docked-inspector")
+    const searchHubOpen = Boolean(document.querySelector("#search-hub-overlay:not(.hidden)"))
+    const shortcutHelpOpen = Boolean(document.querySelector("#shortcut-modal:not(.hidden)"))
+    if (hasPriorityOverlay() || modalTdOpen || searchHubOpen || shortcutHelpOpen) return
+
     const tag = (e.target as HTMLElement).tagName
-    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return
+    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || (e.target as HTMLElement)?.isContentEditable) return
     if (isDisabledCharacterShortcut(e.key)) return
 
     switch (e.key) {
@@ -2115,26 +2397,18 @@ function renderGantt(
         scrollWrapper.scrollTo({ left: todayX - scrollWrapper.clientWidth / 3, behavior: REDUCED_MOTION ? "instant" : "smooth" })
         break
 
-      // M5: Arrow key navigation between bars
       case "ArrowDown":
       case "j":
-        if (focusableBarEls.length > 0) {
+        if (navigableRowIndices.length > 0) {
           e.preventDefault()
-          focusedBarIndex = Math.min(focusedBarIndex + 1, focusableBarEls.length - 1)
-          focusableBarEls[focusedBarIndex]?.focus()
-          // Scroll sidebar to keep in view
-          const sidebarEl = sidebar.querySelectorAll(".gantt-sidebar-row")[focusedBarIndex] as HTMLElement | undefined
-          sidebarEl?.scrollIntoView({ block: "nearest" })
+          focusNavigableRow(focusedNavPos + 1)
         }
         break
       case "ArrowUp":
       case "k":
-        if (focusableBarEls.length > 0) {
+        if (navigableRowIndices.length > 0) {
           e.preventDefault()
-          focusedBarIndex = Math.max(focusedBarIndex - 1, 0)
-          focusableBarEls[focusedBarIndex]?.focus()
-          const sidebarEl = sidebar.querySelectorAll(".gantt-sidebar-row")[focusedBarIndex] as HTMLElement | undefined
-          sidebarEl?.scrollIntoView({ block: "nearest" })
+          focusNavigableRow(focusedNavPos <= 0 ? 0 : focusedNavPos - 1)
         }
         break
       case "ArrowLeft":
@@ -2146,7 +2420,7 @@ function renderGantt(
       case "l":
         e.preventDefault()
         scrollWrapper.scrollBy({ left: 120, behavior: REDUCED_MOTION ? "instant" : "smooth" })
-         break
+        break
       case "+":
       case "=":
         e.preventDefault()
@@ -2173,13 +2447,12 @@ function renderGantt(
   }
   document.addEventListener("keydown", keyHandler, { signal })
 
-  // Close popup on SVG click — also cleanup close listeners
   svg.addEventListener("click", () => {
     document.querySelectorAll(".gantt-popup").forEach(p => p.remove())
-  })
+  }, { signal })
 }
 
-// ── T3: Drag Helpers ───────────────────────────────────────────────────────
+// ── T3: Drag Helpers (In-Place Attribute Mutation on Retained Node) ────────
 
 function setupBarDrag(
   barGroup: SVGGElement,
@@ -2188,58 +2461,21 @@ function setupBarDrag(
   _pos: { x: number; y: number; w: number },
   pxPerDay: number,
   _config: ZoomConfig,
-  signal: AbortSignal, // O1: Accept signal to prevent memory leaks
-  onComplete: () => void, // O6: Re-render callback
+  signal: AbortSignal,
+  onDragStateChange: (dragging: boolean) => void,
+  onComplete: () => void,
 ) {
   let isDragging = false
-  let dragOriginX = 0 // O4: origin-relative tracking (not frame-relative)
-
-  // Store original positions for all elements (O4: fixes cumulative drift)
+  let dragOriginX = 0
+  let dragAbort: AbortController | null = null
   const elemOrigPositions = new Map<Element, number>()
-
-  barGroup.addEventListener("mousedown", (e) => {
-    const target = e.target as SVGElement
-    if (target.style.cursor === "ew-resize") return
-    if (e.button !== 0) return
-    isDragging = true
-    dragOriginX = e.clientX
-    // Snapshot original positions of all children
-    elemOrigPositions.clear()
-    barGroup.querySelectorAll("rect").forEach((r) => {
-      elemOrigPositions.set(r, Number(r.getAttribute("x") || 0))
-    })
-    barGroup.querySelectorAll("text").forEach((t) => {
-      elemOrigPositions.set(t, Number(t.getAttribute("x") || 0))
-    })
-    e.preventDefault()
-    e.stopPropagation()
-  })
-
-  // M7: Touch support for bar drag
-  barGroup.addEventListener("touchstart", (e) => {
-    if (e.touches.length !== 1) return
-    const touch = e.touches[0]!
-    isDragging = true
-    dragOriginX = touch.clientX
-    elemOrigPositions.clear()
-    barGroup.querySelectorAll("rect").forEach((r) => {
-      elemOrigPositions.set(r, Number(r.getAttribute("x") || 0))
-    })
-    barGroup.querySelectorAll("text").forEach((t) => {
-      elemOrigPositions.set(t, Number(t.getAttribute("x") || 0))
-    })
-    e.preventDefault()
-  }, { signal, passive: false })
 
   const onMove = (e: MouseEvent | TouchEvent) => {
     if (!isDragging) return
-    // C2: Guard against empty touches (e.g. touchend fires with empty touches array)
     if ("touches" in e && (!e.touches || e.touches.length === 0)) return
     const clientX = "touches" in e ? e.touches[0]!.clientX : (e as MouseEvent).clientX
-    const totalDx = clientX - dragOriginX // O4: always relative to origin
-    // U1: Show grab cursor during drag
+    const totalDx = clientX - dragOriginX
     document.body.style.cursor = "grabbing"
-    // Apply offset from original positions
     elemOrigPositions.forEach((origPos, el) => {
       el.setAttribute("x", String(origPos + totalDx))
     })
@@ -2248,10 +2484,13 @@ function setupBarDrag(
   const onUp = async (e: MouseEvent | TouchEvent) => {
     if (!isDragging) return
     isDragging = false
-    document.body.style.cursor = "" // U1: Reset cursor
-    // C1: Guard against empty changedTouches (multi-touch cancel)
+    dragAbort?.abort()
+    dragAbort = null
+    onDragStateChange(false)
+    document.body.style.cursor = ""
     if ("changedTouches" in e && (!e.changedTouches || e.changedTouches.length === 0)) {
-      onComplete(); return
+      onComplete()
+      return
     }
     const clientX = "changedTouches" in e ? e.changedTouches[0]!.clientX : (e as MouseEvent).clientX
     const totalDx = clientX - dragOriginX
@@ -2273,19 +2512,58 @@ function setupBarDrag(
       bar.start = newStart
       bar.end = newEnd
       showToast("Dates updated")
-      onComplete() // O6: re-render to snap to grid
+      onComplete()
     } else {
       showToast("Failed to update dates", "error")
-      onComplete() // Reset visual position
+      onComplete()
     }
   }
 
-  // O1: Use AbortSignal to prevent memory leaks on re-render
-  document.addEventListener("mousemove", onMove, { signal })
-  document.addEventListener("mouseup", onUp, { signal })
-  // M7: Touch move/end
-  document.addEventListener("touchmove", onMove as unknown as EventListener, { signal, passive: false })
-  document.addEventListener("touchend", onUp as unknown as EventListener, { signal })
+  const attachActiveDragListeners = () => {
+    dragAbort?.abort()
+    dragAbort = new AbortController()
+    const activeSig = AbortSignal.any([signal, dragAbort.signal])
+    document.addEventListener("mousemove", onMove, { signal: activeSig })
+    document.addEventListener("mouseup", onUp, { signal: activeSig })
+    document.addEventListener("touchmove", onMove as unknown as EventListener, { signal: activeSig, passive: false })
+    document.addEventListener("touchend", onUp as unknown as EventListener, { signal: activeSig })
+  }
+
+  barGroup.addEventListener("mousedown", (e) => {
+    const target = e.target as SVGElement
+    if (target.style.cursor === "ew-resize") return
+    if (e.button !== 0) return
+    isDragging = true
+    onDragStateChange(true)
+    dragOriginX = e.clientX
+    elemOrigPositions.clear()
+    barGroup.querySelectorAll("rect").forEach((r) => {
+      elemOrigPositions.set(r, Number(r.getAttribute("x") || 0))
+    })
+    barGroup.querySelectorAll("text").forEach((t) => {
+      elemOrigPositions.set(t, Number(t.getAttribute("x") || 0))
+    })
+    attachActiveDragListeners()
+    e.preventDefault()
+    e.stopPropagation()
+  }, { signal })
+
+  barGroup.addEventListener("touchstart", (e) => {
+    if (e.touches.length !== 1) return
+    const touch = e.touches[0]!
+    isDragging = true
+    onDragStateChange(true)
+    dragOriginX = touch.clientX
+    elemOrigPositions.clear()
+    barGroup.querySelectorAll("rect").forEach((r) => {
+      elemOrigPositions.set(r, Number(r.getAttribute("x") || 0))
+    })
+    barGroup.querySelectorAll("text").forEach((t) => {
+      elemOrigPositions.set(t, Number(t.getAttribute("x") || 0))
+    })
+    attachActiveDragListeners()
+    e.preventDefault()
+  }, { signal, passive: false })
 }
 
 function setupResizeDrag(
@@ -2295,66 +2573,71 @@ function setupResizeDrag(
   pos: { x: number },
   pxPerDay: number,
   _config: ZoomConfig,
-  barGroup: SVGGElement,
+  bgRect: SVGRectElement,
+  progRect: SVGRectElement | null,
+  labelEl: SVGTextElement,
+  leftHandle: SVGRectElement,
+  rightHandle: SVGRectElement,
   signal: AbortSignal,
-  onComplete: () => void, // O6: Re-render callback
+  onDragStateChange: (dragging: boolean) => void,
+  onComplete: () => void,
 ) {
   let isDragging = false
   let dragOriginX = 0
-  const bgRect = barGroup.querySelector("rect:nth-of-type(2)") as SVGRectElement | null // main bar rect
-  const origBarX = pos.x
-  let origBarW = 0 // C3: captured at drag start for origin-relative calc
+  let origBarX = pos.x
+  let origBarW = 0
+  let dragAbort: AbortController | null = null
 
-  handle.addEventListener("mousedown", (e) => {
-    if (e.button !== 0) return
-    isDragging = true
-    dragOriginX = e.clientX
-    origBarW = Number(bgRect?.getAttribute("width") || 0) // C3: snapshot width at start
-    e.preventDefault()
-    e.stopPropagation()
-  })
-
-  // M7: Touch resize
-  handle.addEventListener("touchstart", (e) => {
-    if (e.touches.length !== 1) return
-    isDragging = true
-    dragOriginX = e.touches[0]!.clientX
-    origBarW = Number(bgRect?.getAttribute("width") || 0) // C3: snapshot width at start
-    e.preventDefault()
-    e.stopPropagation()
-  }, { signal, passive: false })
+  const updateBarGeometry = (newX: number, newW: number) => {
+    bgRect.setAttribute("x", String(newX))
+    bgRect.setAttribute("width", String(newW))
+    if (progRect) {
+      progRect.setAttribute("x", String(newX))
+      progRect.setAttribute("width", String(Math.min((bar.progress / 100) * newW, newW)))
+    }
+    leftHandle.setAttribute("x", String(newX - 2))
+    rightHandle.setAttribute("x", String(newX + newW - HANDLE_WIDTH + 2))
+    if (newW < 96) {
+      labelEl.setAttribute("x", String(newX + newW + 8))
+      labelEl.setAttribute("fill", "var(--text-secondary)")
+      labelEl.setAttribute("data-label-placement", "outside")
+      labelEl.textContent = bar.name
+    } else {
+      labelEl.setAttribute("x", String(newX + 10))
+      labelEl.setAttribute("fill", "var(--text-on-accent, #fff)")
+      labelEl.setAttribute("data-label-placement", "inside")
+      const maxChars = Math.max(6, Math.floor((newW - 20) / 6.6))
+      labelEl.textContent = bar.name.length > maxChars ? `${bar.name.slice(0, maxChars - 1)}…` : bar.name
+    }
+  }
 
   const onMove = (e: MouseEvent | TouchEvent) => {
     if (!isDragging) return
-    // C2: Guard against empty touches
     if ("touches" in e && (!e.touches || e.touches.length === 0)) return
     document.body.style.cursor = "ew-resize"
     const clientX = "touches" in e ? e.touches[0]!.clientX : (e as MouseEvent).clientX
-    // O5/C3: Visual feedback during resize — origin-relative calc
-    if (bgRect) {
-      const dx = clientX - dragOriginX
-      if (edge === "start") {
-        const newX = origBarX + dx
-        const newW = origBarW - dx // C3: use snapshotted width, not stale DOM
-        if (newW > 20) {
-          bgRect.setAttribute("x", String(newX))
-          bgRect.setAttribute("width", String(newW))
-        }
-      } else {
-        const newW = origBarW + dx // C3: origin-relative for end edge too
-        bgRect.setAttribute("width", String(Math.max(20, newW)))
-      }
+    const dx = clientX - dragOriginX
+    if (edge === "start") {
+      const newX = origBarX + dx
+      const newW = origBarW - dx
+      if (newW > 20) updateBarGeometry(newX, newW)
+    } else {
+      const newW = Math.max(20, origBarW + dx)
+      updateBarGeometry(origBarX, newW)
     }
   }
 
   const onUp = async (e: MouseEvent | TouchEvent) => {
     if (!isDragging) return
     isDragging = false
+    dragAbort?.abort()
+    dragAbort = null
+    onDragStateChange(false)
     document.body.style.cursor = ""
 
-    // C1: Guard against empty changedTouches
     if ("changedTouches" in e && (!e.changedTouches || e.changedTouches.length === 0)) {
-      onComplete(); return
+      onComplete()
+      return
     }
     const clientX = "changedTouches" in e ? e.changedTouches[0]!.clientX : (e as MouseEvent).clientX
     const dx = clientX - dragOriginX
@@ -2382,14 +2665,42 @@ function setupResizeDrag(
       if (ok) { bar.end = newEnd; showToast("End date updated") }
       else showToast("Failed to update end date", "error")
     }
-    onComplete() // O6: re-render to snap to grid
+    onComplete()
   }
 
-  document.addEventListener("mousemove", onMove, { signal })
-  document.addEventListener("mouseup", onUp, { signal })
-  // M7: Touch resize events
-  document.addEventListener("touchmove", onMove as unknown as EventListener, { signal, passive: false })
-  document.addEventListener("touchend", onUp as unknown as EventListener, { signal })
+  const attachActiveResizeListeners = () => {
+    dragAbort?.abort()
+    dragAbort = new AbortController()
+    const activeSig = AbortSignal.any([signal, dragAbort.signal])
+    document.addEventListener("mousemove", onMove, { signal: activeSig })
+    document.addEventListener("mouseup", onUp, { signal: activeSig })
+    document.addEventListener("touchmove", onMove as unknown as EventListener, { signal: activeSig, passive: false })
+    document.addEventListener("touchend", onUp as unknown as EventListener, { signal: activeSig })
+  }
+
+  handle.addEventListener("mousedown", (e) => {
+    if (e.button !== 0) return
+    isDragging = true
+    onDragStateChange(true)
+    dragOriginX = e.clientX
+    origBarX = Number(bgRect.getAttribute("x") || pos.x)
+    origBarW = Number(bgRect.getAttribute("width") || 0)
+    attachActiveResizeListeners()
+    e.preventDefault()
+    e.stopPropagation()
+  }, { signal })
+
+  handle.addEventListener("touchstart", (e) => {
+    if (e.touches.length !== 1) return
+    isDragging = true
+    onDragStateChange(true)
+    dragOriginX = e.touches[0]!.clientX
+    origBarX = Number(bgRect.getAttribute("x") || pos.x)
+    origBarW = Number(bgRect.getAttribute("width") || 0)
+    attachActiveResizeListeners()
+    e.preventDefault()
+    e.stopPropagation()
+  }, { signal, passive: false })
 }
 
 // ── Controller ─────────────────────────────────────────────────────────────
@@ -2494,7 +2805,7 @@ export function initTimelineController(signal: AbortSignal) {
     }
 
     if (emptyState) emptyState.style.display = "none"
-    container!.style.display = "block"
+    container!.style.display = "flex"
     renderGantt(container!, bars, zoom, signal, undated, currentFilter.groupBy)
 
     // Update signal bar count — P8: aria-live for screen readers

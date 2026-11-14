@@ -1,4 +1,5 @@
 import { createFocusTrap } from "@lib/focus-trap"
+import { hasPriorityOverlay } from "@lib/layout-shortcuts-controller"
 import { workerAllowsNetworkOnly } from "@lib/network-only-worker"
 import { fetchOnlineSearch, searchRegistration, searchWorkerReady, searchWorkerScope } from "@lib/online-search-client"
 import { singleKeyShortcutsEnabled } from "@lib/single-key-shortcuts"
@@ -534,7 +535,9 @@ pageLifecycle.onPageLoad((signal) => {
     if (event.defaultPrevented) return
     const target = event.target
     if (target instanceof HTMLElement && (target.matches("input, textarea, select") || target.isContentEditable)) return
-    if (document.getElementById("task-detail-overlay")?.classList.contains("active")) return
+    const tdOverlay = document.getElementById("task-detail-overlay")
+    if (tdOverlay?.classList.contains("active") && !document.body.classList.contains("has-docked-inspector")) return
+    if (hasPriorityOverlay()) return
 
     if (event.key === "/" && !event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey
       && singleKeyShortcutsEnabled()) {

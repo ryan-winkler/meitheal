@@ -122,7 +122,7 @@ const visibleAreas = areas.filter((a: any) =>
             {visibleAreas.map((area: any) => {
               const goalCount = goalCountByArea.get(String(area.id)) ?? 0
               const projCount = projectCountByArea.get(String(area.id)) ?? 0
-              const areaColor = String(area.color ?? "#6366F1")
+              const areaColor = String(area.color ?? "#146C4E")
               const areaIcon = String(area.icon ?? "🏠")
               return (
                 <a href={`/areas/${area.id}`} class="spaces-card" style={`--card-accent: ${areaColor};`}>
@@ -157,7 +157,7 @@ const visibleAreas = areas.filter((a: any) =>
             {projects.map((proj: any) => {
               const projCounts = taskCountByProject.get(String(proj.id)) ?? { total: 0, completed: 0 }
               const progress = projCounts.total > 0 ? Math.round((projCounts.completed / projCounts.total) * 100) : 0
-              const projColor = String(proj.color ?? "#6366F1")
+              const projColor = String(proj.color ?? "#146C4E")
               const projIcon = String(proj.icon ?? "📋")
               const projStatus = String(proj.status ?? "active")
               return (
@@ -388,7 +388,7 @@ const visibleAreas = areas.filter((a: any) =>
       const res = await fetch("/api/areas", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ name, icon: "🏠", color: "#6366F1" }),
+        body: JSON.stringify({ name, icon: "🏠", color: "#146C4E" }),
       })
       if (res.ok) window.location.reload()
       else window.showToast?.("Failed to create area", "error")
@@ -404,7 +404,7 @@ const visibleAreas = areas.filter((a: any) =>
       const res = await fetch("/api/projects", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ title, icon: "📋", color: "#6366F1" }),
+        body: JSON.stringify({ title, icon: "📋", color: "#146C4E" }),
       })
       if (res.ok) window.location.reload()
       else window.showToast?.("Failed to create project", "error")

@@ -1,9 +1,11 @@
 ---
 import { t } from "../../i18n/translations"
+import { COLOR_SWATCHES } from "../../lib/design-tokens"
 import type { Locale } from "../../lib/locale"
 import { SETTINGS_SECTIONS } from "../../lib/settings-registry"
 import { canManageSystemSettings } from "../../lib/settings-security"
 import KeyboardShortcutList from "../layout/KeyboardShortcutList.astro"
+import Icon from "../ui/Icon.astro"
 import SettingsActionRow from "./SettingsActionRow.astro"
 import SettingsAppearance from "./SettingsAppearance.astro"
 import SettingsDisclosure from "./SettingsDisclosure.astro"
@@ -15,6 +17,7 @@ interface Props {
 }
 const { locale } = Astro.props
 const canManageTheme = canManageSystemSettings(Astro.request, Astro.locals)
+const INDIGO_SWATCH = COLOR_SWATCHES[4]
 
 const personalSection = SETTINGS_SECTIONS.find((section) => section.id === "personal-settings")!
 ---
@@ -42,7 +45,10 @@ const personalSection = SETTINGS_SECTIONS.find((section) => section.id === "pers
       </select>
     </div>
     <div class="form-group mt-3">
-      <label class="form-label" for="theme-select">{t("settings.theme_title", locale)}</label>
+      <label class="form-label inline-flex items-center gap-1.5" for="theme-select">
+        <Icon name="palette" size={14} sprite={true} />
+        <span>{t("settings.theme_title", locale)}</span>
+      </label>
       <select class="form-select settings-input-compact" id="theme-select">
         <option value="dark">{t("settings.theme_dark", locale)}</option>
         <option value="light">{t("settings.theme_light", locale)}</option>
@@ -53,7 +59,10 @@ const personalSection = SETTINGS_SECTIONS.find((section) => section.id === "pers
 
     <!-- Accent Color -->
     <div class="form-group mt-3">
-      <label class="form-label">{t("settings.accent_title", locale)}</label>
+      <label class="form-label inline-flex items-center gap-1.5">
+        <Icon name="palette" size={14} sprite={true} />
+        <span>{t("settings.accent_title", locale)}</span>
+      </label>
       <div
         style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;"
       >
@@ -66,9 +75,9 @@ const personalSection = SETTINGS_SECTIONS.find((section) => section.id === "pers
         <button
           type="button"
           class="accent-swatch"
-          data-color="#6366F1"
+          data-color={INDIGO_SWATCH}
           title={t("settings.accent_indigo", locale)}
-          style="background: #6366F1;"></button>
+          style={`background: ${INDIGO_SWATCH};`}></button>
         <button
           type="button"
           class="accent-swatch"
@@ -135,7 +144,8 @@ const personalSection = SETTINGS_SECTIONS.find((section) => section.id === "pers
           class="settings-file-picker btn btn-secondary"
           style="cursor: pointer; margin: 0; padding: 6px 16px; display: inline-flex; align-items: center; gap: 6px;"
         >
-          {t("settings.theme_import", locale)}
+          <Icon name="palette" size={14} sprite={true} />
+          <span>{t("settings.theme_import", locale)}</span>
           <input
             type="file"
             id="custom-theme-input"
@@ -150,7 +160,7 @@ const personalSection = SETTINGS_SECTIONS.find((section) => section.id === "pers
         id="custom-theme-loaded"
         style="display: none; align-items: center; gap: 8px; margin-top: 8px; padding: 8px 12px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: var(--radius-sm);"
       >
-        <span style="font-size: 14px;">🎨</span>
+        <Icon name="palette" size={14} sprite={true} />
         <a
           id="custom-theme-filename"
           href="#"
@@ -162,7 +172,7 @@ const personalSection = SETTINGS_SECTIONS.find((section) => section.id === "pers
           class="btn-icon"
           style="color: var(--danger); font-size: 14px; padding: 2px 6px;"
           title={t("settings.theme_remove", locale)}
-          aria-label={t("settings.theme_remove", locale)}>×</button
+          aria-label={t("settings.theme_remove", locale)}><Icon name="x" size={14} sprite={true} /></button
         >
       </div>
     </div>}
@@ -217,6 +227,7 @@ const personalSection = SETTINGS_SECTIONS.find((section) => section.id === "pers
   <div class="settings-personal-support">
   <!-- Keyboard Shortcuts -->
   <SettingsPanelCard
+    icon="keyboard"
     title={t("settings.shortcuts_title", locale)}
     subtitle={t("settings.shortcuts_subtitle", locale)}
   >
@@ -235,7 +246,7 @@ const personalSection = SETTINGS_SECTIONS.find((section) => section.id === "pers
     <div
       style="font-size: 13px; color: var(--text-secondary); line-height: 1.8;"
     >
-      <SettingsDisclosure title={t("settings.help_getting_started", locale)} open={true}>
+      <SettingsDisclosure icon="book" title={t("settings.help_getting_started", locale)} open={true}>
           <p style="margin: 0 0 8px 0;" set:html={t("settings.help_started_p1", locale)}></p>
           <ul style="margin: 0; padding-left: 20px; line-height: 2;">
             <li set:html={t("settings.help_started_li1", locale)}></li>
@@ -245,7 +256,7 @@ const personalSection = SETTINGS_SECTIONS.find((section) => section.id === "pers
             <li set:html={t("settings.help_started_li5", locale)}></li>
           </ul>
       </SettingsDisclosure>
-      <SettingsDisclosure title={t("settings.help_architecture", locale)}>
+      <SettingsDisclosure icon="sliders" title={t("settings.help_architecture", locale)}>
           <p style="margin: 0 0 8px 0;" set:html={t("settings.help_arch_p1", locale)}></p>
           <ul style="margin: 0; padding-left: 20px; line-height: 2;">
             <li set:html={t("settings.help_arch_li1", locale)}></li>
@@ -264,21 +275,21 @@ const personalSection = SETTINGS_SECTIONS.find((section) => section.id === "pers
         target="_blank"
         rel="noopener noreferrer"
         class="btn btn-secondary settings-link"
-        >{t("settings.help_readme", locale)}</a
+        ><Icon name="file-text" size={14} sprite={true} /> <span>{t("settings.help_readme", locale)}</span></a
       >
       <a
         href="https://github.com/ryan-winkler/meitheal/blob/main/docs/index.md"
         target="_blank"
         rel="noopener noreferrer"
         class="btn btn-secondary settings-link"
-        >{t("settings.help_guides", locale)}</a
+        ><Icon name="book" size={14} sprite={true} /> <span>{t("settings.help_guides", locale)}</span></a
       >
       <a
         href="https://github.com/ryan-winkler/meitheal/blob/main/CHANGELOG.md"
         target="_blank"
         rel="noopener noreferrer"
         class="btn btn-secondary settings-link"
-        >{t("settings.help_changelog", locale)}</a
+        ><Icon name="clipboard-list" size={14} sprite={true} /> <span>{t("settings.help_changelog", locale)}</span></a
       >
     </SettingsActionRow>
     <SettingsActionRow class="mt-2">
