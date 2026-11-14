@@ -78,6 +78,15 @@ function resolveDbPath(dbUrl: string): string | null {
   return path.isAbsolute(dbPath) ? dbPath : path.join(process.cwd(), dbPath)
 }
 
+/**
+ * Directory that holds the local SQLite file, for state that belongs beside
+ * the database (and inside its backups). Null when the database is remote.
+ */
+export function getLocalDataDirectory(): string | null {
+  const dbPath = resolveDbPath(resolveDbUrl())
+  return dbPath ? path.dirname(dbPath) : null
+}
+
 function ensureFileDbDirectory(dbUrl: string): void {
   const absolutePath = resolveDbPath(dbUrl)
   if (absolutePath) {

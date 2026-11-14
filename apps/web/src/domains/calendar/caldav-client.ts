@@ -5,7 +5,9 @@
  * using native `fetch` — zero npm dependencies.
  *
  * Security:
- *   - SSRF protection: rejects private IPs, localhost, metadata URLs
+ *   - SSRF protection: rejects private IPs, localhost, metadata URLs; every
+ *     request goes through the shared outbound policy (checked again at
+ *     connect time), and hrefs and redirects must stay on the configured origin
  *   - XXE prevention: safe XML parsing (no external entity resolution)
  *   - Timeout: 10s AbortController on all requests
  *
@@ -23,6 +25,7 @@
  * @bounded-context integration
  */
 import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability";
+import { fetchOutbound } from "@meitheal/integration-core";
 
 const logger = createLogger({
   service: "meitheal-web", env: process.env.NODE_ENV ?? "development",
@@ -120,6 +123,23 @@ function basicAuthHeader(username: string, password: string): string {
   return "Basic " + Buffer.from(`${username}:${password}`).toString("base64");
 }
 
+/** Most redirects a CalDAV request follows (all must stay on the configured origin). */
+const MAX_REDIRECTS = 5;
+
+/**
+ * Resolve a server-supplied href against the configured CalDAV URL and refuse
+ * anything on another origin, so a server response cannot send the user's
+ * credentials to a different host.
+ */
+export function resolveCalDAVHref(baseUrl: string, href: string): URL {
+  const base = new URL(baseUrl);
+  const resolved = new URL(href, base);
+  if (resolved.origin !== base.origin) {
+    throw new Error(`CalDAV server returned an href on another origin (${resolved.origin})`);
+  }
+  return resolved;
+}
+
 async function caldavFetch(
   url: string, method: string, body: string | null,
   username: string, password: string,
@@ -128,26 +148,49 @@ async function caldavFetch(
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
-  const parsed = new URL(url);
-  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
-    throw new Error(`Unsupported CalDAV protocol: ${parsed.protocol}`);
+  const origin = new URL(url);
+  if (origin.protocol !== "https:" && origin.protocol !== "http:") {
+    throw new Error(`Unsupported CalDAV protocol: ${origin.protocol}`);
   }
 
   try {
-    const res = await fetch(parsed.href, {
-      method,
-      headers: {
-        "Content-Type": "application/xml; charset=utf-8",
-        Authorization: basicAuthHeader(username, password),
-        ...extraHeaders,
-      },
-      body,
-      signal: controller.signal,
-    });
+    let target = origin;
+    let currentMethod = method;
+    let currentBody = body;
+    let res: Response;
+    // Redirects are followed by hand so every hop stays on the configured
+    // origin and passes the outbound policy before credentials are re-sent.
+    for (let hop = 0; ; hop++) {
+      res = await fetchOutbound(target, {
+        method: currentMethod,
+        headers: {
+          "Content-Type": "application/xml; charset=utf-8",
+          Authorization: basicAuthHeader(username, password),
+          ...extraHeaders,
+        },
+        body: currentBody,
+        signal: controller.signal,
+        redirect: "manual",
+      });
+      const location = res.headers.get("location");
+      if (res.status < 300 || res.status > 399 || res.status === 304 || !location) break;
+      await res.body?.cancel().catch(() => undefined);
+      if (hop >= MAX_REDIRECTS) throw new Error(`CalDAV server redirected more than ${MAX_REDIRECTS} times`);
+      const next = new URL(location, target);
+      if (next.origin !== origin.origin) {
+        throw new Error(`CalDAV server redirected to another origin (${next.origin}); update the CalDAV URL instead`);
+      }
+      target = next;
+      if (res.status === 303) {
+        currentMethod = "GET";
+        currentBody = null;
+      }
+    }
 
     // Guard: check Content-Length header before reading body
     const contentLength = res.headers.get("content-length");
     if (contentLength && parseInt(contentLength, 10) > MAX_RESPONSE_BYTES) {
+      await res.body?.cancel().catch(() => undefined);
       throw new Error(`CalDAV response too large (${contentLength} bytes, max ${MAX_RESPONSE_BYTES})`);
     }
 
@@ -383,9 +426,8 @@ export async function listCalDAVEvents(
     throw new Error(`CalDAV URL validation failed: ${validation.error}`);
   }
 
-  // Build absolute URL for the calendar
-  const baseUrl = new URL(config.url);
-  const calUrl = new URL(calendarHref, baseUrl).toString();
+  // Build absolute URL for the calendar; it must stay on the configured origin
+  const calUrl = resolveCalDAVHref(config.url, calendarHref).toString();
 
   const startStr = toICalUTC(start);
   const endStr = toICalUTC(end);

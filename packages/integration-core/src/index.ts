@@ -72,4 +72,12 @@ export * from "./runtime";
 export * from "./d1-adapter";
 export * from "./a2a-handler";
 export * from "./tool-registry";
-export { fetchWithDevelopmentTls } from "./development-fetch"
+export {
+  assertOutboundUrl,
+  fetchOutbound,
+  fetchWithDevelopmentTls,
+  guardedLookup,
+  isBlockedOutboundAddress,
+  OutboundUrlError,
+} from "./outbound-fetch"
+export type { OutboundRequestInit } from "./outbound-fetch"

@@ -5,8 +5,11 @@
  * GET  — check if credentials exist (never returns password)
  * DELETE — remove credentials
  *
- * Passwords are encrypted at rest using AES-256-GCM with a key
- * derived from SUPERVISOR_TOKEN (or fallback for dev).
+ * Passwords are encrypted at rest using AES-256-GCM. The key is derived from
+ * SUPERVISOR_TOKEN or HA_TOKEN when one is set (unchanged, so existing
+ * ciphertexts keep decrypting). Without either, a random per-install key is
+ * created beside the local database with owner-only permissions. There is no
+ * built-in fallback key.
  *
  * @domain calendar
  * @bounded-context integration
@@ -14,7 +17,9 @@
 import type { APIRoute } from "astro"
 import { requireSystemSettingsAdmin } from "../../../../lib/settings-security"
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from "node:crypto"
-import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import path from "node:path"
+import { ensureSchema, getLocalDataDirectory, getPersistenceClient } from "@domains/tasks/persistence/store"
 import { SettingsRepository } from "@domains/tasks/persistence/settings-repository"
 import { testConnection } from "@domains/calendar/caldav-client"
 import { logApiError } from "../../../../lib/api-logger"
@@ -25,10 +30,30 @@ const ALGO = "aes-256-gcm"
 const IV_LEN = 16
 const TAG_LEN = 16
 
-/** Derive a 32-byte key from SUPERVISOR_TOKEN (or fallback for dev) */
+const KEY_FILE = "caldav-credentials.key"
+
+/** Read the per-install key, creating it (0600) on first use. */
+function installKey(): Buffer {
+  const directory = getLocalDataDirectory()
+  if (!directory) {
+    throw new Error("CalDAV credentials need SUPERVISOR_TOKEN, HA_TOKEN or a local database directory for their encryption key")
+  }
+  const file = path.join(directory, KEY_FILE)
+  mkdirSync(directory, { recursive: true })
+  try {
+    writeFileSync(file, randomBytes(32).toString("hex"), { mode: 0o600, flag: "wx" })
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err
+  }
+  const key = Buffer.from(readFileSync(file, "utf8").trim(), "hex")
+  if (key.length !== 32) throw new Error(`${file} is not a 32-byte hex key`)
+  return key
+}
+
+/** The 32-byte AES key for CalDAV passwords. */
 function deriveKey(): Buffer {
-  const secret = process.env.SUPERVISOR_TOKEN || process.env.HA_TOKEN || "meitheal-dev-fallback-key"
-  return scryptSync(secret, "meitheal-caldav-salt", 32)
+  const token = process.env.SUPERVISOR_TOKEN || process.env.HA_TOKEN
+  return token ? scryptSync(token, "meitheal-caldav-salt", 32) : installKey()
 }
 
 function encrypt(plaintext: string): string {
@@ -48,9 +73,13 @@ export function decryptCalDAVPassword(encoded: string): string {
   const iv = raw.subarray(0, IV_LEN)
   const tag = raw.subarray(IV_LEN, IV_LEN + TAG_LEN)
   const ciphertext = raw.subarray(IV_LEN + TAG_LEN)
-  const decipher = createDecipheriv(ALGO, key, iv, { authTagLength: TAG_LEN })
-  decipher.setAuthTag(tag)
-  return decipher.update(ciphertext) + decipher.final("utf8")
+  try {
+    const decipher = createDecipheriv(ALGO, key, iv, { authTagLength: TAG_LEN })
+    decipher.setAuthTag(tag)
+    return decipher.update(ciphertext) + decipher.final("utf8")
+  } catch {
+    throw new Error("The saved CalDAV password cannot be decrypted with this install's key; enter it again in Settings → Integrations")
+  }
 }
 
 // ─── CalDAV Settings Keys ───────────────────────────────────────────

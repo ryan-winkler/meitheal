@@ -12,7 +12,7 @@
  */
 import type { APIRoute } from "astro"
 import { requireSystemSettingsAdmin } from "../../../lib/settings-security"
-import { fetchWithDevelopmentTls } from "@meitheal/integration-core"
+import { assertOutboundUrl, fetchOutbound, OutboundUrlError } from "@meitheal/integration-core"
 import { logApiError } from "../../../lib/api-logger"
 
 export const POST: APIRoute = async ({ locals, request }) => {
@@ -34,32 +34,16 @@ export const POST: APIRoute = async ({ locals, request }) => {
     let signingSecret: string | undefined
     let source = "override"
 
-    // SSRF protection: validate user-supplied URL override
+    // SSRF protection: the override goes through the same outbound policy as
+    // every stored integration URL (fetchOutbound re-checks it at connect time).
     if (targetUrlOverride) {
       try {
-        const parsed = new URL(targetUrlOverride)
-        if (!["http:", "https:"].includes(parsed.protocol)) {
-          return new Response(JSON.stringify({
-            success: false,
-            error: "Invalid URL scheme — only http: and https: are allowed",
-          }), { status: 400, headers: { "content-type": "application/json" } })
-        }
-        // Block well-known internal/metadata addresses
-        const host = parsed.hostname.toLowerCase()
-        const BLOCKED_HOSTS = ["localhost", "127.0.0.1", "0.0.0.0", "[::1]", "169.254.169.254", "metadata.google.internal"]
-        if (BLOCKED_HOSTS.some(b => host === b) || host.startsWith("10.") || host.startsWith("192.168.") || /^172\.(1[6-9]|2\d|3[01])\./.test(host)) {
-          // Allow .internal domains (HA ecosystem) but block generic internal IPs
-          if (!host.endsWith(".internal")) {
-            return new Response(JSON.stringify({
-              success: false,
-              error: "URL points to a private/internal network address",
-            }), { status: 400, headers: { "content-type": "application/json" } })
-          }
-        }
-      } catch {
+        assertOutboundUrl(targetUrlOverride)
+      } catch (err) {
+        if (!(err instanceof OutboundUrlError)) throw err
         return new Response(JSON.stringify({
           success: false,
-          error: "Invalid URL format",
+          error: err.message,
         }), { status: 400, headers: { "content-type": "application/json" } })
       }
     }
@@ -130,7 +114,8 @@ export const POST: APIRoute = async ({ locals, request }) => {
       headers["x-meitheal-signature"] = `sha256=${signature}`
     }
 
-    // Send with timeout + scoped TLS bypass for .internal domains in dev
+    // Send with timeout under the outbound policy (no redirects, blocked
+    // metadata/link-local targets, TLS bypass for .internal hosts in dev only)
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), 10_000)
     const startTime = Date.now()
@@ -143,7 +128,7 @@ export const POST: APIRoute = async ({ locals, request }) => {
     }
 
     try {
-      const response = await fetchWithDevelopmentTls(targetUrl, fetchOpts)
+      const response = await fetchOutbound(targetUrl, fetchOpts)
       await response.body?.cancel().catch(() => undefined)
 
       const latencyMs = Date.now() - startTime
