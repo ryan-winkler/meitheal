@@ -16,9 +16,14 @@ Registers Meitheal as a first-class HA integration with:
 
 from __future__ import annotations
 
+import hashlib
+import hmac
+import json
 import logging
 import os
 import shutil
+import tempfile
+from weakref import WeakSet
 
 import voluptuous as vol
 from aiohttp import DummyCookieJar
@@ -55,6 +60,7 @@ from .const import (
     SERVICE_SYNC_TODO,
 )
 from .coordinator import MeithealCoordinator
+from .helpers import resolve_assignee
 
 # The optional native LLM registry requires Core's admin-aware API.
 try:
@@ -72,6 +78,11 @@ CREATE_TASK_SCHEMA = vol.Schema(
         vol.Optional("due_date"): cv.string,
         vol.Optional("urgency"): vol.All(vol.Coerce(int), vol.Range(min=0, max=5)),
         vol.Optional("importance"): vol.All(vol.Coerce(int), vol.Range(min=0, max=5)),
+        # Who the task is for: a person with a Home Assistant account, or any
+        # Meitheal assignee ID such as an AI agent. Omit both for the default assignee.
+        vol.Exclusive("assignee", "task_assignee"): cv.entity_domain("person"),
+        vol.Exclusive("assignee_id", "task_assignee"): cv.string,
+        # Earlier field names, still accepted: an assignee ID or display name.
         vol.Optional("assigned_to"): cv.string,
         vol.Optional("assignee_user"): cv.string,
     }
@@ -105,10 +116,48 @@ COMPLETE_TASK_BY_TAG_SCHEMA = vol.Schema(
 type MeithealConfigEntry = ConfigEntry[MeithealCoordinator]
 
 
-def _install_custom_sentences(src_base: str, dst_base: str) -> None:
-    """Copy bundled custom Assist sentences to the HA config directory (runs in executor)."""
+_SENTENCE_MANIFEST = ".meitheal_sentences.json"
+
+
+def _file_sha256(path: str) -> str:
+    """Return the SHA-256 hex digest of a file on disk."""
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(65536), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _read_sentence_manifest(manifest_path: str) -> dict[str, str]:
+    """Load packaged sentence digests recorded by earlier installs."""
+    try:
+        with open(manifest_path, encoding="utf-8") as handle:
+            loaded = json.load(handle)
+    except (FileNotFoundError, OSError, json.JSONDecodeError):
+        return {}
+    if not isinstance(loaded, dict):
+        return {}
+    return {
+        k: v for k, v in loaded.items() if isinstance(k, str) and isinstance(v, str)
+    }
+
+
+_MCP_VIEW_REGISTERED: WeakSet[HomeAssistant] = WeakSet()
+
+
+def _install_custom_sentences(src_base: str, dst_base: str) -> bool:
+    """Copy bundled Assist sentences to the HA config directory (runs in executor).
+
+    Updates files whose on-disk contents still match the previously installed
+    packaged digest, while preserving locally modified household customizations.
+    Returns whether any sentence file changed, so the caller reloads Assist only then.
+    """
+    changed = False
     if not os.path.isdir(src_base):
-        return
+        return changed
+    manifest_path = os.path.join(dst_base, _SENTENCE_MANIFEST)
+    manifest = _read_sentence_manifest(manifest_path)
+    manifest_dirty = False
     for lang in os.listdir(src_base):
         lang_src = os.path.join(src_base, lang)
         if not os.path.isdir(lang_src):
@@ -116,10 +165,45 @@ def _install_custom_sentences(src_base: str, dst_base: str) -> None:
         lang_dst = os.path.join(dst_base, lang)
         os.makedirs(lang_dst, exist_ok=True)
         for fn in os.listdir(lang_src):
-            if fn.endswith(".yaml"):
-                dst_file = os.path.join(lang_dst, fn)
-                if not os.path.exists(dst_file):
-                    shutil.copy2(os.path.join(lang_src, fn), dst_file)
+            if not fn.endswith(".yaml"):
+                continue
+            src_file, dst_file = os.path.join(lang_src, fn), os.path.join(lang_dst, fn)
+            rel_key = f"{lang}/{fn}"
+            src_sha = _file_sha256(src_file)
+            if not os.path.exists(dst_file):
+                shutil.copy2(src_file, dst_file)
+                manifest[rel_key] = src_sha
+                changed = True
+                manifest_dirty = True
+                continue
+            dst_sha = _file_sha256(dst_file)
+            if hmac.compare_digest(dst_sha, src_sha):
+                if manifest.get(rel_key) != src_sha:
+                    manifest[rel_key] = src_sha
+                    manifest_dirty = True
+                continue
+            recorded = manifest.get(rel_key)
+            if isinstance(recorded, str) and hmac.compare_digest(dst_sha, recorded):
+                shutil.copy2(src_file, dst_file)
+                manifest[rel_key] = src_sha
+                changed = True
+                manifest_dirty = True
+            else:
+                _LOGGER.debug(
+                    "Preserving locally customized Assist sentence file %s", dst_file
+                )
+    if manifest_dirty:
+        os.makedirs(dst_base, exist_ok=True)
+        fd, tmp_path = tempfile.mkstemp(prefix=".meitheal_sentences.", dir=dst_base)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                json.dump(manifest, handle, sort_keys=True)
+            os.replace(tmp_path, manifest_path)
+        except Exception:
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
+            raise
+    return changed
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: MeithealConfigEntry) -> bool:
@@ -165,8 +249,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: MeithealConfigEntry) -> 
 
     async def handle_create_task(call: ServiceCall) -> None:
         """Handle meitheal.create_task service call."""
+        # Raised outside the generic handler so the caller sees which field to correct.
+        assigned_to = resolve_assignee(
+            hass,
+            call.data.get("assignee"),
+            call.data.get("assignee_id"),
+        ) or (
+            # Earlier fields take an ID or a display name; the coordinator resolves names.
+            call.data.get("assigned_to") or call.data.get("assignee_user")
+        )
         try:
-            assigned_to = call.data.get("assigned_to") or call.data.get("assignee_user")
             await coordinator.async_create_task(
                 title=call.data["title"],
                 description=call.data.get("description"),
@@ -174,7 +266,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: MeithealConfigEntry) -> 
                 due_date=call.data.get("due_date"),
                 urgency=call.data.get("urgency"),
                 importance=call.data.get("importance"),
-                assigned_to=assigned_to,
+                **({"assigned_to": assigned_to} if assigned_to else {}),
             )
         except (HomeAssistantError, ValueError) as err:
             raise HomeAssistantError(
@@ -283,14 +375,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: MeithealConfigEntry) -> 
         schema=COMPLETE_TASK_BY_TAG_SCHEMA,
     )
 
-    # Register live MCP HTTP view once; each request resolves runtime_data dynamically
+    # Register live MCP HTTP view once per HomeAssistant instance; each request resolves runtime_data dynamically
     try:
-        domain_state = hass.data.setdefault(DOMAIN, {})
-        if not domain_state.get("mcp_view_registered"):
+        if hass not in _MCP_VIEW_REGISTERED:
             from .mcp_server import MeithealMcpView
 
             hass.http.register_view(MeithealMcpView())
-            domain_state["mcp_view_registered"] = True
+            _MCP_VIEW_REGISTERED.add(hass)
     except (AttributeError, RuntimeError, ValueError) as exc:
         # No http component, a frozen router or a duplicate route: the
         # integration still works without its MCP endpoint.
@@ -300,8 +391,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: MeithealConfigEntry) -> 
     try:
         src_base = os.path.join(os.path.dirname(__file__), "custom_sentences")
         dst_base = hass.config.path("custom_sentences")
-        await hass.async_add_executor_job(_install_custom_sentences, src_base, dst_base)
-    except OSError as exc:
+        if await hass.async_add_executor_job(
+            _install_custom_sentences, src_base, dst_base
+        ) and hass.services.has_service("conversation", "reload"):
+            # Assist reads sentence files once; a new or changed file needs a reload.
+            await hass.services.async_call("conversation", "reload", blocking=False)
+    except (OSError, RuntimeError, ValueError) as exc:
         _LOGGER.warning("Could not copy custom sentences to config dir: %s", exc)
 
     if async_register_llm_api is not None:

@@ -24,6 +24,7 @@ interface TokenInfo {
 interface DirectoryUser {
   id: string
   name: string
+  kind?: string
 }
 
 export function initAgentTokensSettings(): void {
@@ -40,6 +41,8 @@ export function initAgentTokensSettings(): void {
   const doneBtn = document.getElementById("agent-token-reveal-done")
   const nameInput = document.getElementById("agent-token-name") as HTMLInputElement | null
   const assigneeSelect = document.getElementById("agent-token-assignee") as HTMLSelectElement | null
+  const newAssigneeGroup = document.getElementById("agent-token-new-assignee")
+  const newAssigneeName = document.getElementById("agent-token-new-assignee-name") as HTMLInputElement | null
   const expiresSelect = document.getElementById("agent-token-expires") as HTMLSelectElement | null
 
   if (
@@ -49,9 +52,17 @@ export function initAgentTokensSettings(): void {
   ) return
 
   const signal = pageLifecycle.signal
+  const agentNames = new Map<string, string>()
   let copyTimer: ReturnType<typeof setTimeout> | undefined
   let loadSeq = 0
   let activeLoadController: AbortController | null = null
+
+  function toggleNewAssignee() {
+    if (!newAssigneeGroup || !assigneeSelect) return
+    const creating = assigneeSelect.value === "__new__"
+    newAssigneeGroup.hidden = !creating
+    if (!creating && newAssigneeName) newAssigneeName.value = ""
+  }
 
   function clearReveal() {
     if (copyTimer) {
@@ -82,13 +93,22 @@ export function initAgentTokensSettings(): void {
       const data = await res.json() as { users?: DirectoryUser[] }
       if (signal.aborted) return
       const current = assigneeSelect!.value
-      assigneeSelect!.replaceChildren(new Option("None (unassigned)", ""))
+      const createOption = assigneeSelect!.querySelector<HTMLOptionElement>('option[value="__new__"]')
+      assigneeSelect!.querySelectorAll("option[data-agent-option]").forEach(opt => opt.remove())
+      agentNames.clear()
       for (const user of data.users ?? []) {
-        if (typeof user?.id === "string" && user.id && typeof user?.name === "string") {
-          assigneeSelect!.add(new Option(`${user.name} (${user.id})`, user.id))
-        }
+        if (user?.kind !== "agent" || typeof user.id !== "string" || !user.id || typeof user.name !== "string") continue
+        agentNames.set(user.id, user.name)
+        const opt = new Option(user.name, user.id)
+        opt.dataset.agentOption = "1"
+        assigneeSelect!.insertBefore(opt, createOption ?? null)
       }
-      assigneeSelect!.value = current
+      if (current && (current === "__new__" || agentNames.has(current))) {
+        assigneeSelect!.value = current
+      } else {
+        assigneeSelect!.value = ""
+      }
+      toggleNewAssignee()
     } catch {
       /* Optional directory enrichment; manual token creation remains available. */
     }
@@ -225,8 +245,9 @@ export function initAgentTokensSettings(): void {
 
       if (token.assigneeId) {
         const assigneeBadge = document.createElement("span")
-        assigneeBadge.className = "agent-tokens__scope-badge"
-        assigneeBadge.textContent = `assignee:${token.assigneeId}`
+        assigneeBadge.className = "agent-tokens__assignee-badge"
+        const agentLabel = agentNames.get(token.assigneeId) ?? token.assigneeId
+        assigneeBadge.textContent = `Acts as ${agentLabel}`
         meta.appendChild(assigneeBadge)
       }
 
@@ -300,6 +321,10 @@ export function initAgentTokensSettings(): void {
       }
       const tokens: TokenInfo[] = await res.json()
       if (signal.aborted || seq !== loadSeq) return
+      if (tokens.some(token => token.assigneeId) && agentNames.size === 0) {
+        await populateAssignees()
+        if (signal.aborted || seq !== loadSeq) return
+      }
       renderTokens(tokens, focusRetry)
     } catch {
       if (!signal.aborted && !controller.signal.aborted && seq === loadSeq) {
@@ -327,11 +352,30 @@ export function initAgentTokensSettings(): void {
     if (deleteId) void deleteToken(deleteId)
   })
 
+  pageLifecycle.on(assigneeSelect, "change", () => {
+    toggleNewAssignee()
+    if (assigneeSelect.value === "__new__") {
+      const checkboxes = Array.from(document.querySelectorAll<HTMLInputElement>('[name="agent-token-scopes"]'))
+      if (checkboxes.every(cb => !cb.checked)) {
+        const defaults = new Set(["mcp:execute", "tasks:read", "tasks:write:assigned", "search:read"])
+        checkboxes.forEach(cb => { cb.checked = defaults.has(cb.value) })
+      }
+      newAssigneeName?.focus()
+    }
+  })
+
+  let formGeneration = 0
+  let activeCreateController: AbortController | null = null
+
   pageLifecycle.on(createBtn, "click", () => {
+    formGeneration++
+    activeCreateController?.abort()
+    activeCreateController = null
     clearReveal()
     formEl.hidden = false
     nameInput.value = ""
     assigneeSelect.value = ""
+    toggleNewAssignee()
     expiresSelect.value = ""
     document.querySelectorAll<HTMLInputElement>('[name="agent-token-scopes"]')
       .forEach(cb => { cb.checked = false })
@@ -340,6 +384,11 @@ export function initAgentTokensSettings(): void {
   })
 
   pageLifecycle.on(cancelBtn, "click", () => {
+    formGeneration++
+    activeCreateController?.abort()
+    activeCreateController = null
+    assigneeSelect.value = ""
+    toggleNewAssignee()
     formEl.hidden = true
     createBtn.focus()
   })
@@ -362,9 +411,17 @@ export function initAgentTokensSettings(): void {
       return
     }
 
-    const assigneeId = assigneeSelect.value.trim() || null
-    if (scopes.includes("tasks:write:assigned") && !scopes.includes("tasks:write") && !assigneeId) {
-      showToast("Select an assignee for tasks:write:assigned", "error")
+    const creatingNewAgent = assigneeSelect.value === "__new__"
+    const newAgentLabel = creatingNewAgent ? (newAssigneeName?.value.trim() ?? "") : ""
+    if (creatingNewAgent && !newAgentLabel) {
+      showToast("Agent name is required", "error")
+      newAssigneeName?.focus()
+      return
+    }
+
+    let assigneeId: string | null = creatingNewAgent ? null : (assigneeSelect.value.trim() || null)
+    if (scopes.includes("tasks:write:assigned") && !scopes.includes("tasks:write") && !creatingNewAgent && !assigneeId) {
+      showToast("Select an agent assignee for tasks:write:assigned", "error")
       assigneeSelect.focus()
       return
     }
@@ -378,24 +435,58 @@ export function initAgentTokensSettings(): void {
       if (ms) expiresAt = new Date(now + ms).toISOString()
     }
 
+    const generation = formGeneration
+    activeCreateController?.abort()
+    const createController = new AbortController()
+    activeCreateController = createController
+    const reqSignal = AbortSignal.any([signal, createController.signal])
+    const stale = () => signal.aborted || createController.signal.aborted || generation !== formGeneration
+
     try {
+      if (creatingNewAgent) {
+        const createdUserRes = await fetch("/api/users/custom", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: newAgentLabel, kind: "agent" }),
+          signal: reqSignal,
+        })
+        if (stale()) return
+        if (!createdUserRes.ok) {
+          const err = await createdUserRes.json().catch(() => ({}))
+          showToast(err.error || err.detail || "Failed to create agent assignee", "error")
+          newAssigneeName?.focus()
+          return
+        }
+        const createdUser = await createdUserRes.json() as DirectoryUser
+        agentNames.set(createdUser.id, createdUser.name)
+        const createOption = assigneeSelect.querySelector<HTMLOptionElement>('option[value="__new__"]')
+        const opt = new Option(createdUser.name, createdUser.id)
+        opt.dataset.agentOption = "1"
+        assigneeSelect.insertBefore(opt, createOption ?? null)
+        if (!stale()) {
+          assigneeSelect.value = createdUser.id
+          toggleNewAssignee()
+        }
+        assigneeId = createdUser.id
+      }
+
       const res = await fetch("/api/agent-tokens", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, scopes, assigneeId, expiresAt }),
-        signal,
+        signal: reqSignal,
       })
 
-      if (signal.aborted) return
+      if (stale()) return
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
         showToast(err.detail || "Failed to create token", "error")
-        setTimeout(() => { if (!signal.aborted) saveBtn.focus() }, 0)
+        setTimeout(() => { if (!stale()) saveBtn.focus() }, 0)
         return
       }
 
       const data = await res.json()
-      if (signal.aborted) return
+      if (stale()) return
 
       formEl.hidden = true
       revealEl.hidden = false
@@ -405,10 +496,12 @@ export function initAgentTokensSettings(): void {
       showToast("Token created — copy it now!", "success")
       void loadTokens()
     } catch {
-      if (!signal.aborted) {
+      if (!stale()) {
         showToast("Failed to create token", "error")
-        setTimeout(() => { if (!signal.aborted) saveBtn.focus() }, 0)
+        setTimeout(() => { if (!stale()) saveBtn.focus() }, 0)
       }
+    } finally {
+      if (activeCreateController === createController) activeCreateController = null
     }
   }, { loadingText: "Creating…" }))
 

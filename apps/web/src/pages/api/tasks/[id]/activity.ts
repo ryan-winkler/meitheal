@@ -22,11 +22,18 @@ export const GET: APIRoute = async ({ params, url }) => {
   try {
     await ensureSchema()
     const repo = new TaskRepository(getPersistenceClient())
+    const resolved = await repo.resolveTaskId(params.id!)
+    if (!resolved) {
+      return new Response(JSON.stringify({ error: "Task not found" }), {
+        status: 404,
+        headers: { "content-type": "application/json" },
+      })
+    }
 
     const limit = Math.min(Math.max(1, Number(url.searchParams.get("limit")) || 100), 500)
     const offset = Math.max(0, Number(url.searchParams.get("offset")) || 0)
 
-    const history = await repo.getActivityLog(params.id!, limit, offset)
+    const history = await repo.getActivityLog(resolved.id, limit, offset)
     return apiJson({ ...history, limit, offset })
   } catch (err) {
     logger.log("error", {

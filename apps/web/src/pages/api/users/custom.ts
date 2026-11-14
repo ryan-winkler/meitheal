@@ -1,12 +1,13 @@
 import type { APIRoute } from "astro"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
-import { UserRepository } from "@domains/tasks/persistence/user-repository"
+import { customUserKind, UserRepository } from "@domains/tasks"
 import { sanitize } from "../../../lib/sanitize"
 
 /**
  * Custom (non-HA) users CRUD.
  * GET  /api/users/custom — List custom users
- * POST /api/users/custom — Create custom user { name, color? }
+ * POST /api/users/custom — Create custom user { name, color?, kind? }
+ *   kind "agent" marks an AI agent assignee that works through a linked agent token.
  */
 export const GET: APIRoute = async () => {
   await ensureSchema()
@@ -18,7 +19,7 @@ export const GET: APIRoute = async () => {
       id: String(r.id),
       name: String(r.name),
       color: String(r.color ?? "#6366f1"),
-      kind: (r.kind === "agent" ? "agent" : "human") as "agent" | "human",
+      kind: customUserKind(r.kind),
       created_at: Number(r.created_at),
       updated_at: Number(r.updated_at),
     }
@@ -48,6 +49,13 @@ export const POST: APIRoute = async ({ request }) => {
   const color = typeof body.color === "string" && /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(body.color)
     ? body.color : "#6366f1"
 
+  if (body.kind !== undefined && body.kind !== "human" && body.kind !== "agent") {
+    return new Response(JSON.stringify({ error: "kind must be human or agent" }), {
+      status: 400, headers: { "content-type": "application/json" },
+    })
+  }
+  const kind = customUserKind(body.kind)
+
   if (await repo.countCustomUsers() >= 50) {
     return new Response(JSON.stringify({ error: "Maximum 50 custom users allowed" }), {
       status: 409, headers: { "content-type": "application/json" },
@@ -61,7 +69,6 @@ export const POST: APIRoute = async ({ request }) => {
   }
 
   const id = `custom_${crypto.randomUUID().slice(0, 8)}`
-  const kind = body.kind === "agent" ? "agent" : "human"
   const now = await repo.createCustomUser(id, name, color, kind)
 
   return new Response(JSON.stringify({ id, name, color, kind, created_at: now, updated_at: now }), {

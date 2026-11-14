@@ -253,7 +253,7 @@ const schemas = {
     description: "Outbound event fired on task lifecycle changes. Subscribe via webhook settings or HA event bus.",
     properties: {
       eventId: { type: "string", format: "uuid" },
-      eventType: { type: "string", enum: ["task.created", "task.updated", "task.completed", "task.deleted", "task.overdue", "area.updated"] },
+      eventType: { type: "string", enum: ["task.created", "task.updated", "task.completed", "task.deleted", "task.overdue", "task.commented", "area.updated"] },
       occurredAt: { type: "string", format: "date-time" },
       requestId: { type: "string" },
       payload: { type: "object" },
@@ -379,8 +379,8 @@ const schemas = {
   },
   AgentScope: {
     type: "string",
-    enum: ["tasks:read", "tasks:propose", "tasks:write", "tasks:write:assigned", "tasks:delete", "projects:read", "projects:write", "search:read", "mcp:execute", "a2a:execute"],
-    description: "Fine-grained permission scope for agent tokens. Grant only the scopes each client needs.",
+    enum: ["tasks:read", "tasks:propose", "tasks:write:assigned", "tasks:write", "tasks:delete", "projects:read", "projects:write", "search:read", "mcp:execute", "a2a:execute"],
+    description: "Fine-grained permission scope for agent tokens. Grant only the scopes each client needs; tasks:write:assigned limits changes to tasks assigned to the token's agent assignee.",
   },
   AgentToken: {
     type: "object",
@@ -390,7 +390,7 @@ const schemas = {
       name: { type: "string", minLength: 1, maxLength: 100, description: "Human label (e.g., 'n8n-prod', 'claude-agent')" },
       tokenPrefix: { type: "string", description: "Token prefix and suffix for identification" },
       scopes: { type: "array", items: { $ref: "#/components/schemas/AgentScope" } },
-      assigneeId: { type: "string", maxLength: 128, nullable: true, description: "Optional user or agent ID for tasks:write:assigned and listMyTasks" },
+      assigneeId: { type: "string", maxLength: 128, nullable: true, description: "Agent assignee this token acts as (custom user with kind agent). Tasks assigned to it are the token's own tasks." },
       createdAt: { type: "string", format: "date-time" },
       expiresAt: { type: "string", format: "date-time", nullable: true },
       lastUsedAt: { type: "string", format: "date-time", nullable: true },
@@ -404,7 +404,7 @@ const schemas = {
     properties: {
       name: { type: "string", minLength: 1, maxLength: 100, description: "Human label for the token" },
       scopes: { type: "array", items: { $ref: "#/components/schemas/AgentScope" }, minItems: 1 },
-      assigneeId: { type: "string", maxLength: 128, nullable: true, description: "Optional user or agent ID linked to tasks:write:assigned" },
+      assigneeId: { type: "string", maxLength: 128, nullable: true, description: "ID of an agent assignee (custom user with kind agent). Required when tasks:write:assigned is granted without tasks:write." },
       assignee_id: { type: "string", maxLength: 128, nullable: true, description: "Snake-case alias for assigneeId" },
       expiresAt: { type: "string", format: "date-time", nullable: true, description: "Optional expiry. Null = no expiry." },
     },
@@ -1803,7 +1803,18 @@ const paths = {
     get: { operationId: "listUsers", tags: ["Users"], summary: "List all users (HA + custom)", description: "Returns users from Home Assistant integration combined with any custom-defined users.", responses: { 200: { description: "User list" } } },
   },
   "/api/users/custom": {
-    post: { operationId: "createCustomUser", tags: ["Users"], summary: "Create a custom user", responses: { 201: { description: "Created" } } },
+    post: {
+      operationId: "createCustomUser", tags: ["Users"], summary: "Create a custom user or agent assignee",
+      description: "A custom user is an assignee without a Home Assistant account. Set kind to agent for an AI agent that works its tasks through a linked agent token.",
+      requestBody: { required: true, content: { "application/json": { schema: {
+        type: "object", required: ["name"], properties: {
+          name: { type: "string", maxLength: 100 },
+          color: { type: "string", description: "Hex colour, for example #6366f1" },
+          kind: { type: "string", enum: ["human", "agent"], default: "human" },
+        },
+      } } } },
+      responses: { 201: { description: "Created" }, 400: { description: "Invalid name or kind" }, 409: { description: "Name already used or limit reached" } },
+    },
   },
 
   // ── Gamification ──
@@ -2010,13 +2021,13 @@ const paths = {
   },
 
   // ── A2A ──
-  "/api/a2a/agent-card": { get: { operationId: "getA2AAgentCard", tags: ["Agents"], summary: "Get the A2A agent card for read-only task search", responses: { 200: { description: "Agent card with the JSON-RPC task search interface" }, 401: { description: "Ingress or agent token required in managed-ingress mode" }, 403: { description: "Token lacks a2a:execute" }, 404: { description: "A2A disabled" }, 503: { description: "Protocol setting unavailable" } } } },
+  "/api/a2a/agent-card": { get: { operationId: "getA2AAgentCard", tags: ["Agents"], summary: "Get the A2A agent card for task search and assigned tasks", responses: { 200: { description: "Agent card with the JSON-RPC A2A interface" }, 401: { description: "Ingress or agent token required in managed-ingress mode" }, 403: { description: "Token lacks a2a:execute" }, 404: { description: "A2A disabled" }, 503: { description: "Protocol setting unavailable" } } } },
   "/api/a2a/message": {
     post: {
       operationId: "sendA2AMessage",
       tags: ["Agents"],
-      summary: "Search active task titles through A2A JSON-RPC 1.0",
-      description: "Requires a token with a2a:execute and search:read and the A2A-Version: 1.0 header. SendMessage returns up to eight active task titles and links. Results are read-only.",
+      summary: "Call A2A JSON-RPC 1.0 methods (SendMessage, GetTask, ListTasks, CancelTask)",
+      description: "Requires a token with a2a:execute and search:read (plus tasks:read for GetTask, ListTasks, and CancelTask) and the A2A-Version: 1.0 header. SendMessage returns up to eight active task titles and links; ListTasks returns open tasks assigned to the linked agent assignee; GetTask returns a single task by ID or ticket key.",
       parameters: [
         { name: "A2A-Version", in: "header", required: true, schema: { type: "string", enum: ["1.0"] } },
       ],
@@ -2037,7 +2048,27 @@ const paths = {
           },
         },
       },
-      responses: { 200: { description: "JSON-RPC result or error" }, 401: { description: "Missing or invalid agent token" }, 403: { description: "Token lacks a2a:execute or search:read" }, 404: { description: "A2A disabled" }, 413: { description: "Request exceeds 16 KiB" }, 415: { description: "Request is not application/json" }, 503: { description: "Protocol setting unavailable" } },
+      responses: { 200: { description: "JSON-RPC result or error" }, 401: { description: "Missing or invalid agent token" }, 403: { description: "Token lacks required A2A/search/read scopes" }, 404: { description: "A2A disabled" }, 413: { description: "Request exceeds 16 KiB" }, 415: { description: "Request is not application/json" }, 503: { description: "Protocol setting unavailable" } },
+    },
+  },
+  "/api/a2a/tasks/{id}": {
+    get: {
+      operationId: "getA2ATask",
+      tags: ["Agents"],
+      summary: "Get a single household task in A2A task representation",
+      description: "Requires a token with a2a:execute, search:read, and tasks:read, plus A2A-Version: 1.0.",
+      parameters: [
+        { name: "id", in: "path", required: true, schema: { type: "string", maxLength: 128 }, description: "Task UUID or ticket key (e.g., MTH-42)" },
+        { name: "A2A-Version", in: "header", required: true, schema: { type: "string", enum: ["1.0"] } },
+      ],
+      responses: {
+        200: { description: "A2A Task object" },
+        401: { description: "Missing or invalid agent token" },
+        403: { description: "Token lacks a2a:execute, search:read, or tasks:read" },
+        404: { description: "Task not found or A2A disabled" },
+        400: { description: "Unsupported A2A version" },
+        503: { description: "Protocol setting unavailable" },
+      },
     },
   },
 
@@ -2076,7 +2107,7 @@ const paths = {
       operationId: "updateAgentToken",
       tags: ["Auth"],
       summary: "Update a token's name, scopes, or assignee",
-      description: "Modify the display name, permission scopes, or linked assignee of an existing token. The token value itself cannot be changed — revoke and recreate if compromised.",
+      description: "Modify the display name, permission scopes, or linked agent assignee of an existing token. The token value itself cannot be changed — revoke and recreate if compromised.",
       requestBody: {
         required: true,
         content: { "application/json": { schema: { type: "object", properties: { id: { type: "string" }, name: { type: "string", minLength: 1, maxLength: 100 }, scopes: { type: "array", items: ref("AgentScope"), minItems: 1 }, assigneeId: { type: "string", maxLength: 128, nullable: true }, assignee_id: { type: "string", maxLength: 128, nullable: true } }, required: ["id"] } } },
@@ -2155,6 +2186,14 @@ const webhooks = {
     post: {
       operationId: "onTaskOverdue",
       summary: "Fires when a task passes its due date without completion",
+      requestBody: { content: { "application/json": { schema: ref("WebhookEvent") } } },
+      responses: { 200: { description: "Acknowledged" } },
+    },
+  },
+  "task.commented": {
+    post: {
+      operationId: "onTaskCommented",
+      summary: "Fires when a comment is added to a task",
       requestBody: { content: { "application/json": { schema: ref("WebhookEvent") } } },
       responses: { 200: { description: "Acknowledged" } },
     },

@@ -5,16 +5,18 @@ import type { TaskType } from "@meitheal/domain-tasks"
 import { hasBoardSelection, rejectBoardSelectionInJson, unavailableBoardResponse } from "@domains/tasks/board-availability"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import { TaskRepository } from "@domains/tasks/persistence/task-repository"
-import { UserRepository } from "@domains/tasks/persistence/user-repository"
+import { UserRepository } from "@domains/tasks"
 import { taskLabelsJson } from "@domains/tasks/task-creation-service"
 import { formatTicketKey } from "../../../lib/ticket-key"
 import { dispatchTaskEvent, taskEventAuthorityHeaders } from "../../../lib/webhook-dispatcher"
 import { logApiError } from "../../../lib/api-logger"
 import { apiError } from "../../../lib/api-response"
-import { requireAssignedTaskWriteAccess, restrictedAssigneeId } from "../../../lib/agent-token-guard"
+import { checkAssignedTask, isAssignedWriteOnly, restrictedAssigneeId } from "../../../lib/agent-token-guard"
 import { db503Response, isDbUnavailable } from "../../../lib/db-fallback"
 import { resolveRecentActivityActor } from "../../../lib/recent-activity-actor"
 import { STATUS, normalizeStatus, isDoneStatus } from "../../../lib/status-config"
+import { sendTaskNotification } from "@domains/notifications"
+import { agentActivityActor } from "../../../lib/agent-activity-actor"
 
 
 /** GET /api/tasks/[id], PUT /api/tasks/[id], DELETE /api/tasks/[id] */
@@ -71,6 +73,61 @@ export const GET: APIRoute = async ({ params, url }) => {
   })
 }
 
+/**
+ * An assigned-only agent loses write access to a task once it reassigns it, so a
+ * client retry of that same PUT would be refused even though it succeeded. When
+ * a retry carries the original request_id for the reassignment this agent made,
+ * acknowledge it (returning only minimal confirmation unless the token has tasks:read).
+ */
+async function replayedAgentReassignment(
+  repo: TaskRepository,
+  agentToken: App.Locals["agentToken"],
+  taskId: string,
+  body: Record<string, unknown>,
+): Promise<Response | null> {
+  if (!isAssignedWriteOnly(agentToken) || !agentToken?.assigneeId) return null
+  const requestId = typeof body.request_id === "string" ? body.request_id.trim().slice(0, 128) : ""
+  if (!requestId) return null
+  if (body.assigned_to !== null && typeof body.assigned_to !== "string") return null
+  const fields = Object.keys(body).filter((key) => key !== "updated_at" && key !== "request_id")
+  if (fields.length !== 1 || fields[0] !== "assigned_to") return null
+  const requested = typeof body.assigned_to === "string" ? body.assigned_to.trim() : ""
+  const row = await repo.findById(taskId)
+  if (!row || String(row.assigned_to ?? "") !== requested) return null
+
+  const client = getPersistenceClient()
+  const receiptKey = `${agentToken.tokenId}:${agentToken.assigneeId}:${taskId}:${requestId}`
+  const [receiptRes, latestActivityRes] = await Promise.all([
+    client.execute({
+      sql: "SELECT status FROM integration_attempts WHERE integration = 'task.reassignment' AND idempotency_key = ? LIMIT 1",
+      args: [receiptKey],
+    }),
+    client.execute({
+      sql: "SELECT old_value, new_value, actor_type, correlation_id FROM task_activity_log WHERE task_id = ? AND field = 'assigned_to' ORDER BY created_at DESC, id DESC LIMIT 1",
+      args: [taskId],
+    }),
+  ])
+  const hasReceipt = receiptRes.rows[0]?.status === "completed"
+  const lastReassignment = latestActivityRes.rows[0] as Record<string, unknown> | undefined
+  const activityMatches = Boolean(
+    lastReassignment &&
+    lastReassignment.actor_type === "agent" &&
+    lastReassignment.old_value === agentToken.assigneeId &&
+    String(lastReassignment.new_value ?? "") === requested &&
+    lastReassignment.correlation_id === requestId,
+  )
+  // If a newer assignment event exists on the task, ensure it wasn't rewritten after our handoff.
+  if (!activityMatches && (!hasReceipt || (lastReassignment && String(lastReassignment.new_value ?? "") !== requested))) {
+    return null
+  }
+  const ticketNum = row.ticket_number != null ? Number(row.ticket_number) : null
+  const ticketKey = formatTicketKey(ticketNum)
+  if (!agentToken.scopes.includes("tasks:read")) {
+    return Response.json({ id: row.id, ticket_key: ticketKey, assigned_to: row.assigned_to ?? null })
+  }
+  return Response.json({ ...row, is_promoted: Boolean(row.is_promoted), ticket_key: ticketKey })
+}
+
 export const PUT: APIRoute = async ({ params, request, locals }) => {
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
   if (hasBoardSelection(body)) return unavailableBoardResponse()
@@ -88,13 +145,8 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
 
   const resolvedId = resolved.id
   const agentToken = locals.agentToken
-  const denied = await requireAssignedTaskWriteAccess(
-    agentToken,
-    (id) => repo.findById(id),
-    [resolvedId],
-    "Agent can only update tasks assigned to it",
-  )
-  if (denied) return denied
+  const denied = isAssignedWriteOnly(agentToken) ? await checkAssignedTask(resolvedId, agentToken!) : null
+  if (denied) return (await replayedAgentReassignment(repo, agentToken, resolvedId, body)) ?? denied
 
   const clientVersion = typeof body.updated_at === "number" ? body.updated_at : undefined
   if (clientVersion !== undefined && (!Number.isSafeInteger(clientVersion) || clientVersion < 0)) {
@@ -255,10 +307,12 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
     }
   }
   if (body.assigned_to !== undefined) {
-    sanitized.assigned_to = typeof body.assigned_to === "string" && body.assigned_to.trim().length > 0 && body.assigned_to.length <= 255
-      ? body.assigned_to.trim() : null
+    if (body.assigned_to !== null && (typeof body.assigned_to !== "string" || !body.assigned_to.trim() || body.assigned_to.trim().length > 255)) {
+      return apiError("assigned_to must be a non-empty string (max 255 chars) or null", 400)
+    }
+    sanitized.assigned_to = typeof body.assigned_to === "string" ? body.assigned_to.trim() : null
   }
-  if (body.owner !== undefined && typeof body.owner === "string") {
+  if (body.owner !== undefined && typeof body.owner === "string" && !isAssignedWriteOnly(agentToken)) {
     sanitized.owner = body.owner.slice(0, 100)
   } else if (sanitized.assigned_to !== undefined) {
     if (sanitized.assigned_to === null) {
@@ -426,15 +480,37 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
     const changes: Array<{ field: string; oldValue: string | null; newValue: string }> = []
     for (const [field, newVal] of Object.entries(sanitized)) {
       const oldVal = oldTask[field]
-      if (String(newVal) !== String(oldVal ?? "")) {
-        changes.push({ field, oldValue: oldVal != null ? String(oldVal) : null, newValue: String(newVal) })
+      const normalizedNew = newVal == null ? "" : String(newVal)
+      const normalizedOld = oldVal == null ? "" : String(oldVal)
+      if (normalizedNew !== normalizedOld) {
+        changes.push({ field, oldValue: oldVal != null ? String(oldVal) : null, newValue: normalizedNew })
       }
     }
     if (changes.length > 0) {
       const automation = request.headers.has("X-Automation-Source") ? locals.automationSource : null
-      const activityActor = agentToken ? `agent:${agentToken.tokenName}` : (automation ? `ha:${automation}` : "user")
-      const actorType = agentToken ? "agent" : (automation ? "ha" : "user")
-      repo.logActivity(resolvedId, changes, { actor: activityActor, actor_type: actorType }).catch(() => { })
+      const activityActor = agentActivityActor(locals) ??
+        { actor: automation ? `ha:${automation}` : "user", actor_type: (automation ? "ha" : "user") as "ha" | "user" }
+      const requestId = typeof body.request_id === "string" ? body.request_id.trim().slice(0, 128) : ""
+      await repo.logActivity(resolvedId, changes, {
+        ...activityActor,
+        ...(requestId ? { correlation_id: requestId } : {}),
+      }).catch(() => { })
+      if (
+        requestId &&
+        agentToken &&
+        isAssignedWriteOnly(agentToken) &&
+        sanitized.assigned_to !== undefined &&
+        String(sanitized.assigned_to ?? "") !== agentToken.assigneeId
+      ) {
+        const now = Date.now()
+        const receiptKey = `${agentToken.tokenId}:${agentToken.assigneeId}:${resolvedId}:${requestId}`
+        await getPersistenceClient().execute({
+          sql: `INSERT INTO integration_attempts (attempt_id, task_id, integration, request_id, idempotency_key, status, created_at, updated_at)
+                VALUES (?, ?, 'task.reassignment', ?, ?, 'completed', ?, ?)
+                ON CONFLICT(idempotency_key, integration) DO NOTHING`,
+          args: [crypto.randomUUID(), resolvedId, requestId, receiptKey, now, now],
+        }).catch(() => {})
+      }
     }
   }
 
@@ -456,71 +532,18 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
   const notifPrefs = await repo.getNotificationPreferences()
 
   // F4/F5: Load callHAService once for all notification helpers
-  const haServicesImport = import("../../../domains/ha/ha-services")
+  const haServicesImport = import("@domains/ha")
 
   // Helper: dispatch notification to configured channels
   interface DispatchOpts { isUrgent?: boolean; badgeCount?: number }
-  async function dispatchNotification(
+  function dispatchNotification(
     title: string, message: string, notifId: string,
     ingress: string | null, taskId?: string, opts: DispatchOpts = {},
   ) {
-    const { callHAService } = await haServicesImport
-    const promises: Promise<unknown>[] = []
-
-    if (notifPrefs.channels.sidebar !== false) {
-      promises.push(
-        callHAService("persistent_notification", "create", {
-          title,
-          message,
-          notification_id: notifId,
-        }).catch(err => logApiError("ha-notify", "Failed to send sidebar notification", err))
-      )
-    }
-
-    if (notifPrefs.channels.mobile_push && notifPrefs.mobileTargets.length > 0) {
-      const plainMessage = message.replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
-      const ingressPath = ingress ? ingress + "/kanban" : null
-
-      for (const target of notifPrefs.mobileTargets) {
-        const [domain, ...rest] = target.split(".")
-        const service = rest.join(".")
-        if (domain && service) {
-          const pushData: Record<string, unknown> = {
-            title,
-            message: plainMessage,
-            data: {
-              ...(ingressPath ? { clickAction: ingressPath, url: ingressPath } : {}),
-              tag: notifId,
-              group: "meitheal",
-              channel: opts.isUrgent ? "meitheal_urgent" : "meitheal_tasks",
-              color: "#6366F1",
-              ...(opts.isUrgent ? { importance: "high" } : {}),
-              push: {
-                "interruption-level": opts.isUrgent ? "time-sensitive" : "active",
-                ...(opts.badgeCount !== undefined ? { badge: opts.badgeCount } : {}),
-              },
-              actions: [
-                ...(ingressPath ? [{
-                  action: "URI",
-                  title: "Open Task",
-                  uri: ingressPath,
-                }] : []),
-                ...(taskId ? [{
-                  action: `MEITHEAL_TASK_DONE_${taskId}`,
-                  title: "✅ Mark Done",
-                }] : []),
-              ],
-            },
-          }
-          promises.push(
-            callHAService(domain, service, pushData)
-              .catch(err => logApiError("ha-notify", `Failed to send mobile push to ${target}`, err))
-          )
-        }
-      }
-    }
-
-    return Promise.all(promises)
+    return sendTaskNotification(notifPrefs, {
+      title, message, notificationId: notifId, ingress,
+      ...(taskId ? { taskId } : {}), ...opts,
+    })
   }
 
   // Helper: dismiss mobile notifications
@@ -541,7 +564,7 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
 
   // Phase 52: Notification if bumped to Urgent (P1)
   if (notifPrefs.enabled && sanitized.priority === 1 && oldTask?.priority !== 1) {
-    import("../../../domains/ha/ha-connection").then(async ({ getIngressEntry }) => {
+    import("@domains/ha").then(async ({ getIngressEntry }) => {
       const ingress = await getIngressEntry()
       const titleStr = typeof sanitized.title === "string" ? sanitized.title : String(oldTask?.title ?? "Task")
       const ticketKey = taskPayload.ticket_key ?? "Task"
@@ -559,10 +582,11 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
   }
 
   // Assignment-change notification (respects per-user prefs)
-  if (notifPrefs.enabled && sanitized.assigned_to !== undefined && String(sanitized.assigned_to) !== String(oldTask?.assigned_to ?? "")) {
+  if (notifPrefs.enabled && sanitized.assigned_to !== undefined && (sanitized.assigned_to || null) !== (oldTask?.assigned_to || null)) {
     const assignee = typeof sanitized.assigned_to === "string" ? sanitized.assigned_to : null
+    const handedBackByAgent = Boolean(agentToken?.assigneeId) && oldTask?.assigned_to === agentToken?.assigneeId
     if (assignee && !notifPrefs.disabledUsers.has(assignee)) {
-      import("../../../domains/ha/ha-connection").then(async ({ getIngressEntry }) => {
+      import("@domains/ha").then(async ({ getIngressEntry }) => {
         const ingress = await getIngressEntry()
         const titleStr = typeof sanitized.title === "string" ? sanitized.title : String(oldTask?.title ?? "Task")
         const ticketKey = taskPayload.ticket_key ?? "A task"
@@ -570,7 +594,7 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
         let displayName = assignee.replace(/^(ha_|custom_)/, "")
         try {
           if (assignee.startsWith("ha_")) {
-            const { listHAUsers } = await import("../../../domains/ha/ha-users")
+            const { listHAUsers } = await import("@domains/ha")
             const haUsers = await listHAUsers()
             const match = haUsers.find(u => `ha_${u.id}` === assignee)
             if (match?.name) displayName = match.name
@@ -580,13 +604,33 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
           }
         } catch { /* fallback to stripped ID */ }
         const badge = await repo.getOpenTaskCount()
+        // "Handed back" only when the agent gives up a task it held; otherwise it is an ordinary assignment.
+        const agentName = handedBackByAgent ? agentActivityActor(locals)?.actor : undefined
         dispatchNotification(
-          `📋 Task assigned: ${titleStr}`,
-          `${ticketKey} has been assigned to ${displayName}.${link}`,
+          agentName ? `↩️ Handed back by ${agentName}: ${titleStr}` : `📋 Task assigned: ${titleStr}`,
+          agentName
+            ? `${agentName} handed ${ticketKey} back to ${displayName}.${link}`
+            : `${ticketKey} has been assigned to ${displayName}.${link}`,
           `meitheal_assigned_${resolvedId}`,
           ingress,
           resolvedId,
           { badgeCount: badge },
+        ).catch(() => {})
+      }).catch(() => {})
+    } else if (!assignee && handedBackByAgent && agentActivityActor(locals)) {
+      // An agent gave the task up without naming anyone, so someone has to pick it up.
+      const agentName = agentActivityActor(locals)!.actor
+      import("@domains/ha").then(async ({ getIngressEntry }) => {
+        const ingress = await getIngressEntry()
+        const titleStr = typeof sanitized.title === "string" ? sanitized.title : String(oldTask?.title ?? "Task")
+        const ticketKey = taskPayload.ticket_key ?? "A task"
+        const link = ingress ? `\n\n[Open ${ticketKey} in Meitheal →](${ingress}/kanban)` : ""
+        dispatchNotification(
+          `↩️ Handed back by ${agentName}: ${titleStr}`,
+          `${agentName} handed ${ticketKey} back. It is now unassigned.${link}`,
+          `meitheal_assigned_${resolvedId}`,
+          ingress,
+          resolvedId,
         ).catch(() => {})
       }).catch(() => {})
     }

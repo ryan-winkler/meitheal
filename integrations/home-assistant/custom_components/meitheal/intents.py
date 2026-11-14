@@ -34,6 +34,7 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import intent
 
 from .coordinator import MeithealCoordinator
+from .helpers import assignee_for_user
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -105,7 +106,10 @@ class MeithealAddTaskHandler(_MeithealAdminIntent):
             return response
 
         try:
-            await coordinator.async_create_task(title=item)
+            # "My tasks" means the speaker's: the base class has verified this user.
+            user_id = intent_obj.context.user_id
+            assigned_to = assignee_for_user(user_id) if user_id else None
+            await coordinator.async_create_task(title=item, assigned_to=assigned_to)
             response = intent_obj.create_response()
             response.async_set_speech(f"Added '{item}' to your tasks.")
             return response

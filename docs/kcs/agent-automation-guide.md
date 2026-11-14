@@ -47,11 +47,8 @@ Production `POST /api/mcp` loads the precompiled `src/generated/mcp-tools.json` 
 For tools that need custom logic beyond CRUD dispatch:
 
 1. Register `(args, requestApi, agent) => Promise<Record<string, unknown>>` in `customHandlers`.
-2. Add the required `AgentScope` to `customToolScopes`.
-3. Add the tool name to `assignedCustomTools` if `tasks:write:assigned` tokens can call it.
-4. Add custom-only tools (`!routes.has(name)`) to `getCustomToolDescription()` and `getCustomToolSchema()`.
-
-Tools backed by OpenAPI inherit their schema from `openapi.yaml`.
+2. Add the required `AgentScope` (or `"write"` / `"read_and_write"` when `tasks:write:assigned` tokens may call it too; the API it reaches still enforces task assignment) to `customToolScopes`.
+3. Add custom-only tools (`!routes.has(name)`) to `getCustomToolDescription()` and `getCustomToolSchema()`. Tools backed by OpenAPI inherit their schema from `openapi.yaml`.
 
 ## Agent Scopes & Token Policy
 
@@ -62,13 +59,13 @@ Create agent tokens in **Settings → Automation & AI → Agent Tokens** as a ve
 | `tasks:read` | Read tasks, `GET /api/users` assignee directory, and `listMyTasks` |
 | `tasks:propose` | Claim, release, or propose edits via `POST /api/tasks/{id}/handoff` |
 | `tasks:write` | Create, update, reorder, NFC-complete, comment, link, track time, defer, and toggle reactions on tasks |
-| `tasks:write:assigned` | Update only tasks assigned to `assigneeId` (`PUT`/`PATCH /api/tasks/{id}`, `deferral`, `comments`, `links`, `time`, `completeTask`, `handBackTask`; excludes reactions and comment deletion) |
+| `tasks:write:assigned` | Update only tasks assigned to `assigneeId` (`PUT`/`PATCH /api/tasks/{id}`, `deferral`, `comments`, `links`, `time`, `completeTask`, `handBackTask`; excludes reactions and comment deletion). Once the agent reassigns a task it loses write access, but retrying that same `{"assigned_to": ...}` `PUT` returns the current task instead of `403`, so a lost response is safe to retry. |
 | `tasks:delete` | Delete tasks and run `/api/tasks/clear-completed` or `/api/tasks/delete-completed` |
 | `projects:read` | List projects (`GET /api/projects`) and read project details (`GET /api/projects/{id}`) |
 | `projects:write` | Create, update, or delete projects |
 | `search:read` | Search tasks and entities (`GET /api/search`, `searchTasks`, title lookup in `completeTask`) |
 | `mcp:execute` | Access `GET /.well-known/mcp.json`, `POST /api/mcp` (`GET` returns `405 Allow: POST`), and `whoAmI` |
-| `a2a:execute` | Access `GET /api/a2a/agent-card`, `/.well-known/agent-card.json`, `/.well-known/agent.json`, and stateless `/api/a2a/tasks/{id}` (`404`); `POST /api/a2a/message` also requires `search:read` |
+| `a2a:execute` | Access `GET /api/a2a/agent-card`, `/.well-known/agent-card.json`, and `/.well-known/agent.json`; `POST /api/a2a/message` also requires `search:read` (plus `tasks:read` for `GetTask`, `ListTasks`, and `CancelTask`), and `GET /api/a2a/tasks/{id}` requires `a2a:execute`, `search:read`, `tasks:read`, and `A2A-Version: 1.0` |
 
 - Deprecated legacy scopes (`settings:read`, `settings:write`, `webhooks:write`) grant no access; token management requires a real Home Assistant administrator session.
 - **Home Assistant Core recommendation**: Create a token with `tasks:read`, `tasks:write`, `tasks:delete`, and `search:read`. Add `mcp:execute` if calling `POST /api/mcp`.
@@ -85,6 +82,30 @@ Create agent tokens in **Settings → Automation & AI → Agent Tokens** as a ve
   - Outbound Core event bus payloads include `domain: "meitheal"`, `source: "meitheal"`, and an ISO timestamp (`meitheal_task_created`, `meitheal_task_updated`, `meitheal_task_completed`, `meitheal_task_deleted`, `meitheal_task_overdue`, `meitheal_task_commented`, `meitheal_area_updated`). Inspect the Home Assistant Core event bus for `domain: "meitheal"` and the task ID to diagnose automations. Events from other domains never activate Meitheal triggers.
 - **Reactions**: `POST /api/tasks/{id}/reactions` and `POST /api/tasks/{id}/comments/{commentId}/reactions` require `Content-Type: application/json` (`415` otherwise) and `tasks:write` scope. The maximum request body size is 1 KiB (`413`). Reaction text requires 1–16 valid NFC characters without control or bidi characters (`400`). Send `DELETE` with `/{reactionId}` appended to remove a reaction. `GET /api/tasks/reaction-counts?ids=...` accepts up to 100 IDs and omits zero-count tasks.
 - **Idempotency (`Idempotency-Key`)**: Meitheal supports `Idempotency-Key` on `tasks:write` and `tasks:delete` task routes, including `tasks:write:assigned` writes mapped to `tasks:write`. Excluded routes (`PATCH /api/tasks/{id}/deferral`, reaction endpoints, `/api/agent-tokens`, and `handoff`) ignore `Idempotency-Key`. Keys accept up to 255 characters without control characters (`400`). The maximum request body size is 64 KiB (`413`), and cached responses cap at 16 KiB. Each process caches up to 256 entries for 24 hours (`503` when full) and sets `Idempotency-Key-Status: processed | cached`. Distinct payloads hash separately, and in-flight duplicates return HTTP `409`. `taskRetryKey()` namespaces keys by `"task-v2"` and caller principal.
+
+## Hand a task to an AI agent
+
+An agent assignee is an AI agent, such as Claude or Codex, that appears in the assignee list beside the people in your household. It works through one agent token, so the tasks assigned to it are that token's own tasks.
+
+1. Open **Settings → Automation & AI → Agent Tokens** as a Home Assistant administrator and choose **New Token**.
+2. Under **Acts as**, choose **New agent assignee…** and name the agent. Meitheal selects the scopes an agent needs: `mcp:execute`, `tasks:read`, `tasks:write:assigned` and `search:read`.
+3. Create the token and store it in the agent's MCP client. See [MCP and A2A setup](webmcp-a2a-setup.md).
+4. Assign a task to the agent from any assignee menu. Agents are marked **AI agent**.
+
+Over MCP the agent uses these tools. Its identity always comes from the token, never from an argument.
+
+| Tool | Result |
+| --- | --- |
+| `whoAmI` | The token name, its scopes, the agent assignee it acts as, and whether it may change any task or only assigned tasks. |
+| `listMyTasks` | The open tasks assigned to the agent. Pass `include_completed` or a `status` to widen the list. |
+| `getTask`, `getTaskComments` | A task and its discussion. |
+| `addTaskComment` | The agent's answer, shown as **Automation: _token name_**. |
+| `updateTask`, `completeTask` | A change to a task assigned to the agent. |
+| `handBackTask` | Posts an optional note, then returns the task to whoever held it before the agent. Pass `to` to name another assignee, or `null` to leave it unassigned. The household gets a "Handed back" notification only for a task the agent held; any other reassignment by an agent notifies as an ordinary assignment. |
+
+With `tasks:write:assigned`, a request to change a task assigned to someone else returns HTTP 403 with the problem type `task-not-assigned`. The agent cannot create or delete tasks. Grant `tasks:write` only to automation that must change any task. A token can act as an agent assignee only, never as a person. Deleting an agent assignee unassigns its tasks and detaches its tokens.
+
+Task history records the token name and the actor type `agent` for each field an agent changes. When an agent comments or hands a task back, Meitheal sends a notification through the channels enabled in **Settings → Notifications** and emits a `task.commented` webhook event for agent comments.
 
 ## Protocol & Traceability Contracts
 

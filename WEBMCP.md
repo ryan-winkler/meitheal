@@ -14,7 +14,9 @@ Meitheal exposes five separated automation interfaces across four protocol bound
 
 Create a dedicated token in Meitheal Settings as a verified Home Assistant administrator. Grant `mcp:execute` and the scopes required by each tool. Reading tasks requires `tasks:read`. Completing a task by title requires `search:read` and `tasks:write`.
 
-Send `Authorization: Bearer mth_<token>` on each MCP request. Send `server/discover` on MCP `2026-07-28` clients, or send `initialize` on legacy clients (`2025-03-26` to `2025-11-25`). Next, call `tools/list` and `tools/call`. The App serves discovery metadata at `/.well-known/mcp.json` and the OpenAPI contract at `/openapi.yaml`. Clear the MCP toggle in Settings to turn off App MCP. Select **Save Agent Protocol Settings** to apply the change.
+To hand tasks to an agent, link its token to an agent assignee under **Acts as**. The agent then calls `whoAmI`, `listMyTasks`, and `handBackTask`, and with `tasks:write:assigned` it can change only the tasks assigned to it. See [Hand a task to an AI agent](docs/kcs/agent-automation-guide.md#hand-a-task-to-an-ai-agent).
+
+Send `Authorization: Bearer mth_<token>` on each MCP request. Send `server/discover` on MCP `2026-07-28` clients, or send `initialize` on legacy clients (`2025-03-26` to `2025-11-25`), followed by `tools/list` and `tools/call`. The App serves live discovery metadata at `/.well-known/mcp.json` and the OpenAPI contract at `/openapi.yaml`. The installed App's `tools/list` response is authoritative for the caller. Clear the MCP toggle in Settings and select **Save Agent Protocol Settings** to turn off App MCP.
 
 ## Home Assistant Core
 

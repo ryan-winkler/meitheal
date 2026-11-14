@@ -12,7 +12,13 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .api import MeithealApi, MeithealConnectionError, MeithealResponseError, task_path
+from .api import (
+    MeithealApi,
+    MeithealConnectionError,
+    MeithealResponseError,
+    task_matches_identifier,
+    task_path,
+)
 from .const import DOMAIN, SCAN_INTERVAL, STATUS_DONE, STATUS_IN_PROGRESS, STATUS_TODO
 from .repairs import (
     async_create_addon_unreachable_issue,
@@ -124,6 +130,14 @@ class MeithealCoordinator(DataUpdateCoordinator[MeithealCoordinatorData]):
         self._was_available: bool = True
 
     # ── Event Bus Helpers ─────────────────────────────────────────────
+
+    def fire_event(self, event_type: str, data: dict[str, Any]) -> None:
+        """Fire a Meitheal event on the HA event bus."""
+        self._fire_event(event_type, data)
+
+    def fire_logbook(self, name: str, message: str, entity_id: str | None = None) -> None:
+        """Fire a logbook entry so Meitheal actions appear in HA history."""
+        self._fire_logbook(name, message, entity_id)
 
     def _fire_event(self, event_type: str, data: dict[str, Any]) -> None:
         """Fire a Meitheal event on the HA event bus.
@@ -287,7 +301,10 @@ class MeithealCoordinator(DataUpdateCoordinator[MeithealCoordinatorData]):
         urgency: int | None = None, importance: int | None = None,
         assigned_to: str | None = None,
     ) -> None:
-        """Create a task through the authenticated native flat-response API."""
+        """Create a task through the authenticated native flat-response API.
+
+        Without assigned_to, Meitheal applies the household's default assignee.
+        """
         resolved_assignee = (
             await self.async_resolve_assignee(assigned_to)
             if isinstance(assigned_to, str) and assigned_to.strip()
@@ -334,8 +351,8 @@ class MeithealCoordinator(DataUpdateCoordinator[MeithealCoordinatorData]):
             if task and task.status == STATUS_DONE:
                 # A cached completion may have been reopened or access revoked.
                 current = await self.api.async_request("GET", task_path(task_id), read_json=True)
-                if (not isinstance(current, dict) or current.get("id") != task_id
-                    or not isinstance(current.get("status"), str) or current.get("error")):
+                if (not isinstance(current, dict) or not task_matches_identifier(current, task_id)
+                    or not isinstance(current.get("status"), str)):
                     raise UpdateFailed("Meitheal did not confirm the task status")
                 if _TASK_STATUS_ALIASES.get(current["status"], current["status"]) == STATUS_DONE:
                     return
@@ -347,8 +364,8 @@ class MeithealCoordinator(DataUpdateCoordinator[MeithealCoordinatorData]):
             "PUT", task_path(task_id), payload={"status": "done"}, read_json=True,
             event_authority=authority,
         )
-        if (not isinstance(result, dict) or result.get("id") != task_id
-            or result.get("status") not in (STATUS_DONE, "complete") or result.get("error")):
+        if (not isinstance(result, dict) or not task_matches_identifier(result, task_id)
+            or result.get("status") not in (STATUS_DONE, "complete")):
             raise UpdateFailed("Meitheal did not acknowledge task completion")
 
         label = resolved_title or task_id
@@ -470,8 +487,8 @@ class MeithealCoordinator(DataUpdateCoordinator[MeithealCoordinatorData]):
             # Poll data may be stale. Bind the mixed-field write to the same
             # snapshot used for the native fallback's transition decision.
             current = await self.api.async_request("GET", path, read_json=True)
-            if (not isinstance(current, dict) or current.get("error")
-                or current.get("id") != task_id or not isinstance(current.get("status"), str)):
+            if (not isinstance(current, dict) or not task_matches_identifier(current, task_id)
+                or not isinstance(current.get("status"), str)):
                 raise UpdateFailed("Meitheal did not confirm the task status")
             version = current.get("task_version", current.get("updated_at"))
             if type(version) is not int or not 0 <= version < 2**53:
@@ -483,8 +500,8 @@ class MeithealCoordinator(DataUpdateCoordinator[MeithealCoordinatorData]):
         result = await self.api.async_request(
             "PUT", path, payload=payload, read_json=completing, event_authority=authority,
         )
-        if completing and (not isinstance(result, dict) or result.get("error")
-            or result.get("id") != task_id or result.get("status") not in (STATUS_DONE, "complete")):
+        if completing and (not isinstance(result, dict) or not task_matches_identifier(result, task_id)
+            or result.get("status") not in (STATUS_DONE, "complete")):
             raise UpdateFailed("Meitheal did not acknowledge task completion")
 
         # Resolve title for logbook

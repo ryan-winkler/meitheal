@@ -113,6 +113,12 @@ export function isDoneStatus(status: string): boolean {
   return STATUS_CONFIG.find((s) => s.canonical === canonical)?.isDone ?? false;
 }
 
+/** Whether a status represents a closed task omitted from default open-task listings. */
+export function isClosedStatus(status: string): boolean {
+  const canonical = normalizeStatus(status);
+  return isDoneStatus(canonical) || canonical === "archived" || canonical === "cancelled" || canonical === "canceled";
+}
+
 /**
  * Check if a status string represents an "active" state.
  * Handles both canonical and alias values.

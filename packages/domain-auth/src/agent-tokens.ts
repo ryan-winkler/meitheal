@@ -41,8 +41,8 @@ export interface AgentScopeDescriptor {
 export const AVAILABLE_SCOPES: readonly AgentScopeDescriptor[] = [
   { scope: "tasks:read", label: "Read Tasks", description: "List and view tasks, statuses, and metadata", category: "tasks" },
   { scope: "tasks:propose", label: "Propose Task Changes", description: "Claim tasks and propose title or description changes for human review", category: "tasks" },
-  { scope: "tasks:write", label: "Create & Update Tasks", description: "Create new tasks and update existing ones", category: "tasks" },
-  { scope: "tasks:write:assigned", label: "Update Assigned Tasks Only", description: "Update and comment only on tasks assigned to this agent", category: "tasks" },
+  { scope: "tasks:write:assigned", label: "Work on Assigned Tasks", description: "Update, comment on, complete and hand back only the tasks assigned to this agent", category: "tasks" },
+  { scope: "tasks:write", label: "Create & Update Any Task", description: "Create new tasks and update any existing task", category: "tasks" },
   { scope: "tasks:delete", label: "Delete Tasks", description: "Permanently delete tasks", category: "tasks" },
   { scope: "projects:read", label: "Read Projects", description: "List and view projects and hierarchies", category: "projects" },
   { scope: "projects:write", label: "Manage Projects", description: "Create and update projects", category: "projects" },
@@ -63,6 +63,7 @@ export interface AgentTokenRecord {
   tokenHash: string
   tokenPrefix: string
   scopes: AgentScope[]
+  /** Assignee this token acts as. Null for automation with no task identity. */
   assigneeId?: string | null
   createdAt: string
   expiresAt: string | null
