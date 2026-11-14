@@ -291,20 +291,16 @@ test.describe("Track C — Evergreen Carbon Surfaces, Tabler 1.75px Sprites & 5-
       await page.goto("/pillars")
       await page.waitForLoadState("networkidle")
 
-      const result = await page.evaluate(async () => {
+      const resolvedAccent = await page.evaluate(() => {
         document.documentElement.style.setProperty("--personal-accent", "#e11d48")
         document.documentElement.style.setProperty("--personal-accent-hover", "#be123c")
         document.documentElement.style.setProperty("--personal-accent-foreground", "#ffffff")
-        await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
-        const resolvedAccent = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim().toLowerCase()
-        const addBtn = document.getElementById("pillar-add-btn")
-        const addBtnBg = addBtn ? getComputedStyle(addBtn).backgroundColor : ""
-        return { resolvedAccent, addBtnBg }
+        return getComputedStyle(document.documentElement).getPropertyValue("--accent").trim().toLowerCase()
       })
 
-      expect(result.resolvedAccent).toBe("#e11d48")
-      // #e11d48 === rgb(225, 29, 72)
-      expect(result.addBtnBg).toBe("rgb(225, 29, 72)")
+      expect(resolvedAccent).toBe("#e11d48")
+      // #e11d48 === rgb(225, 29, 72); auto-retry across any 0.01ms reduced-motion CSS transition frame
+      await expect(page.locator("#pillar-add-btn")).toHaveCSS("background-color", "rgb(225, 29, 72)")
     })
   })
 })
