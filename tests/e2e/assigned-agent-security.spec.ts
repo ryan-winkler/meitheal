@@ -529,6 +529,45 @@ dbTest.describe("Assigned-Agent Authorization & Repository Guards", () => {
     expect((await putWith(id4, { assigned_to: "ha_person_1", request_id: "legacy-1" }, {
       tokenId: "tok-beta", tokenName: "Agent Beta",
     })).status).toBe(403)
+
+    // Pre-receipt legacy unassign fallback + self-reassignment no-op
+    const id4b = crypto.randomUUID()
+    await repo.createTask(makeTaskData({ id: id4b, assigned_to: "custom_agent_a" }))
+    expect((await putWith(id4b, { assigned_to: "custom_agent_a", request_id: "self-noop" })).status).toBe(200)
+    await repo.updateTask(id4b, { assigned_to: null })
+    await repo.logActivity(id4b, [{ field: "assigned_to", oldValue: "custom_agent_a", newValue: "" }], {
+      actor: "Agent Alpha", actor_type: "agent", correlation_id: "legacy-null",
+    })
+    expect((await putWith(id4b, { assigned_to: null, request_id: "legacy-null" })).status).toBe(200)
+
+    // Multi-hop workflow sharing a single request_id allows each token to retry its own committed hand-off
+    const id5 = crypto.randomUUID()
+    await repo.createTask(makeTaskData({ id: id5, assigned_to: "custom_agent_a" }))
+    expect((await putWith(id5, { assigned_to: "custom_agent_b", request_id: "wf-1" })).status).toBe(200)
+    expect((await putWith(id5, { assigned_to: "ha_person_1", request_id: "wf-1" }, {
+      assignee: "custom_agent_b", tokenId: "tok-2", tokenName: "Agent Beta",
+    })).status).toBe(200)
+    expect((await putWith(id5, { assigned_to: "ha_person_1", request_id: "wf-1" }, {
+      assignee: "custom_agent_b", tokenId: "tok-2", tokenName: "Agent Beta",
+    })).status).toBe(200)
+    expect((await putWith(id5, { assigned_to: "ha_person_1", request_id: "wf-1" }, {
+      assignee: "custom_agent_b", tokenId: "tok-3", tokenName: "Agent Beta",
+    })).status).toBe(403)
+    await repo.updateTask(id5, { assigned_to: "custom_agent_b" })
+    expect((await putWith(id5, { assigned_to: "custom_agent_b", request_id: "wf-1" })).status).toBe(403)
+
+    // Broad token followed by assigned token sharing request_id still allows assigned token retry
+    const id6 = crypto.randomUUID()
+    await repo.createTask(makeTaskData({ id: id6, assigned_to: "custom_agent_a" }))
+    expect((await putWith(id6, { assigned_to: "custom_agent_b", request_id: "wf-2" }, {
+      scopes: ["tasks:write"], tokenId: "tok-broad", tokenName: "Agent Broad",
+    })).status).toBe(200)
+    expect((await putWith(id6, { assigned_to: "ha_person_1", request_id: "wf-2" }, {
+      assignee: "custom_agent_b", tokenId: "tok-2", tokenName: "Agent Beta",
+    })).status).toBe(200)
+    expect((await putWith(id6, { assigned_to: "ha_person_1", request_id: "wf-2" }, {
+      assignee: "custom_agent_b", tokenId: "tok-2", tokenName: "Agent Beta",
+    })).status).toBe(200)
   })
 
   dbTest("PUT /api/tasks/[id] acknowledges concurrent in-flight retry hitting assignee_mismatch", async ({ repo }) => {

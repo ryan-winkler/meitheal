@@ -124,7 +124,6 @@ async function replayedAgentReassignment(
   const { receipt, ownedByOtherToken, lastReassignment } = await repo.findReassignmentReplayState(
     taskId, receiptKey, requestId,
   )
-  if (ownedByOtherToken) return null
 
   // The receipt commits with the hand-off itself, so when present it is the
   // sole authority for this token and never falls back to activity heuristics.
@@ -139,7 +138,7 @@ async function replayedAgentReassignment(
         ? !lastReassignment || loggedTarget(lastReassignment.new_value) === requested
         : destination === requested
     }
-  } else {
+  } else if (!ownedByOtherToken) {
     matched = Boolean(
       lastReassignment &&
       lastReassignment.actor_type === "agent" &&
