@@ -100,6 +100,13 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
 
     const rpc = rpcRequest.safeParse(body)
     if (!rpc.success) return rpcError(null, A2A_ERRORS.INVALID_REQUEST, "Invalid JSON-RPC request.")
+    if ((rpc.data.method === "GetTask" || rpc.data.method === "ListTasks") && !hasScope(token.scopes, "tasks:read")) {
+      return apiProblem({
+        status: 403,
+        detail: `A2A ${rpc.data.method} requires tasks:read.`,
+        extraHeaders: noStore,
+      })
+    }
     if (rpc.data.id === undefined) return new Response(null, { status: 204, headers: noStore })
     id = rpc.data.id
     const version = request.headers.get("A2A-Version") ?? url.searchParams.get("A2A-Version")

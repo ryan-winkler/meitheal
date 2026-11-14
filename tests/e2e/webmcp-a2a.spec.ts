@@ -74,8 +74,12 @@ test.describe("A2A Route Availability", () => {
     expect(body).toMatchObject({ detail: expect.stringContaining("agent token") })
     expect(body).not.toHaveProperty("task")
 
+    const taskGet = await request.get("/api/a2a/tasks/unknown")
+    expect(taskGet.status()).toBe(401)
+    expect(taskGet.headers()["cache-control"]).toBe("private, no-store")
+    expect(await taskGet.json()).not.toHaveProperty("task")
+
     for (const response of [
-      await request.get("/api/a2a/tasks/unknown"),
       await request.post("/api/a2a/tasks/unknown", { data: {} }),
       await request.post("/api/a2a/tasks/unknown:cancel", { data: {} }),
     ]) {
@@ -119,7 +123,7 @@ test.describe("A2A Route Availability", () => {
         const { token } = await response.json()
         return { origin, authorization: `Bearer ${token}` }
       }
-      const authorized = await enroll("a2a:execute", "search:read")
+      const authorized = await enroll("a2a:execute", "search:read", "tasks:read")
       const unrelated = await enroll("search:read")
       const call = (path: string, method: string, headers: Record<string, string> = authorized) =>
         api.fetch(ingress + path, { method, headers, ...(method === "POST" ? { data: {} } : {}) })
@@ -169,7 +173,9 @@ test.describe("A2A Route Availability", () => {
       expect((await save("admin", "true")).status()).toBe(200)
       expect((await call(cards[0], "GET")).status()).toBe(200)
       expect(await (await call("/api/a2a/message", "POST")).json()).toMatchObject({ jsonrpc: "2.0", error: { code: -32600 } })
-      const unknown = await call("/api/a2a/tasks/unknown", "GET")
+      expect((await call("/api/a2a/tasks/unknown", "GET")).status()).toBe(400)
+      const unknown = await call("/api/a2a/tasks/unknown", "GET", { ...authorized, "A2A-Version": "1.0" })
+      expect(unknown.status()).toBe(404)
       expect(await unknown.json()).toMatchObject({ status: 404, detail: "A2A task not found." })
       const unknownCancel = await call("/api/a2a/tasks/unknown:cancel", "POST")
       expect(await unknownCancel.json()).toMatchObject({ status: 404, detail: "A2A task not found." })

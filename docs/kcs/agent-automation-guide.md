@@ -63,7 +63,7 @@ Create agent tokens in **Settings → Automation & AI → Agent Tokens** as a ve
 | `projects:write` | Create, update, or delete projects |
 | `search:read` | Search tasks and entities (`GET /api/search`, `searchTasks`, title lookup in `completeTask`) |
 | `mcp:execute` | Access `GET /.well-known/mcp.json`, `POST /api/mcp` (`GET` returns `405 Allow: POST`), and `whoAmI` |
-| `a2a:execute` | Access `GET /api/a2a/agent-card`, `/.well-known/agent-card.json`, `/.well-known/agent.json`, and stateless `/api/a2a/tasks/{id}` (`404`); `POST /api/a2a/message` also requires `search:read` |
+| `a2a:execute` | Access `GET /api/a2a/agent-card`, `/.well-known/agent-card.json`, and `/.well-known/agent.json`; `POST /api/a2a/message` also requires `search:read` (plus `tasks:read` for `GetTask` and `ListTasks`), and `GET /api/a2a/tasks/{id}` requires `a2a:execute`, `search:read`, `tasks:read`, and `A2A-Version: 1.0` |
 
 - Deprecated legacy scopes (`settings:read`, `settings:write`, `webhooks:write`) grant no access; token management requires a real Home Assistant administrator session.
 - **Home Assistant Core recommendation**: Create a token with `tasks:read`, `tasks:write`, `tasks:delete`, and `search:read`. Add `mcp:execute` if calling `POST /api/mcp`.

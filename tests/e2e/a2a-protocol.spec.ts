@@ -128,11 +128,13 @@ test("discovery aliases advertise a scoped endpoint that returns real task data"
 
 test("enforces scopes, reports unsupported operations, and disables execution with discovery", async () => {
   const endpoint = ingress + "/api/a2a/message"
-  const reader = await issueToken(["a2a:execute", "search:read"])
+  const reader = await issueToken(["a2a:execute", "search:read", "tasks:read"])
+  const searchOnlyReader = await issueToken(["a2a:execute", "search:read"])
   const protocolOnly = await issueToken(["a2a:execute"])
   const searchOnly = await issueToken(["search:read"])
   const version = { "A2A-Version": "1.0" }
   const read = { ...reader, ...version }
+  const searchRead = { ...searchOnlyReader, ...version }
   const taskQuery = envelope("SendMessage", { message: {
     role: "ROLE_USER", messageId: "invalid-input", parts: [{ data: { query: "heating", skill: "task-management" } }],
   } })
@@ -140,6 +142,11 @@ test("enforces scopes, reports unsupported operations, and disables execution wi
   expect((await request.post(endpoint, { headers: { ...version, "A2A-Token": "forged" }, data: taskQuery })).status()).toBe(401)
   expect((await request.post(endpoint, { headers: { ...protocolOnly, ...version }, data: taskQuery })).status()).toBe(403)
   expect((await request.post(endpoint, { headers: { ...searchOnly, ...version }, data: taskQuery })).status()).toBe(403)
+  expect((await request.post(endpoint, { headers: searchRead, data: envelope("GetTask", { id: "does-not-exist" }) })).status()).toBe(403)
+  expect((await request.post(endpoint, { headers: searchRead, data: envelope("ListTasks") })).status()).toBe(403)
+  expect((await request.get(ingress + "/api/a2a/tasks/missing", { headers: searchRead })).status()).toBe(403)
+  expect((await request.get(ingress + "/api/a2a/tasks/missing", { headers: reader })).status()).toBe(400)
+  expect((await request.get(ingress + "/api/a2a/tasks/missing")).status()).toBe(401)
 
   for (const [method, params, code] of [
     ["GetTask", { id: "does-not-exist" }, -32001],
@@ -209,12 +216,12 @@ test("an agent reads its assigned household tasks as A2A tasks and cannot cancel
   expect((await call(agent, "ListTasks")).result.tasks[0]).not.toHaveProperty("artifacts")
   expect((await call(agent, "ListTasks", { status: "TASK_STATE_COMPLETED" })).result.tasks.map((task: { id: string }) => task.id)).toEqual([done.id])
   expect((await call(agent, "ListTasks", { pageToken: "not-a-page" })).error.code).toBe(-32602)
-  // Without a linked assignee there is no "my tasks"; without tasks:read nothing is readable.
+  // Without a linked assignee there is no "my tasks"; without tasks:read reads are denied with 403.
   expect((await call(unlinked, "ListTasks")).result).toMatchObject({ tasks: [], totalSize: 0 })
-  expect((await call(noRead, "ListTasks")).result).toMatchObject({ tasks: [], totalSize: 0 })
+  expect((await request.post(endpoint, { headers: noRead, data: envelope("ListTasks") })).status()).toBe(403)
 
   expect((await call(agent, "GetTask", { id: other.id })).result).toMatchObject({ id: other.id, status: { state: expect.stringMatching(/^TASK_STATE_/) } })
-  expect((await call(noRead, "GetTask", { id: mine.id })).error.code).toBe(-32001)
+  expect((await request.post(endpoint, { headers: noRead, data: envelope("GetTask", { id: mine.id }) })).status()).toBe(403)
   expect((await call(agent, "CancelTask", { id: mine.id })).error.code).toBe(-32002)
   const unchanged = await (await request.get(ingress + `/api/tasks/${mine.id}`, { headers: admin })).json()
   expect(unchanged.status).toBe(mine.status)
@@ -222,6 +229,6 @@ test("an agent reads its assigned household tasks as A2A tasks and cannot cancel
   const rest = await request.get(ingress + `/api/a2a/tasks/${mine.id}`, { headers: agent })
   expect(rest.status()).toBe(200)
   expect(await rest.json()).toMatchObject({ id: mine.id, status: { state: "TASK_STATE_WORKING" } })
-  expect((await request.get(ingress + `/api/a2a/tasks/${mine.id}`, { headers: noRead })).status()).toBe(404)
+  expect((await request.get(ingress + `/api/a2a/tasks/${mine.id}`, { headers: noRead })).status()).toBe(403)
   expect((await request.post(ingress + `/api/a2a/tasks/${mine.id}`, { headers: agent, data: {} })).status()).toBe(404)
 })

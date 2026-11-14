@@ -215,7 +215,7 @@ channels:
         title: Task Commented (Webhook)
         contentType: application/json
         payload:
-          $ref: "#/components/schemas/WebhookTaskPayload"
+          $ref: "#/components/schemas/WebhookTaskCommentedPayload"
   webhook/area.updated:
     description: Outbound webhook fired when an area (board) is modified.
     publish:
@@ -317,16 +317,99 @@ components:
               type: string
               format: date
             assigned_to:
-              type: string
+              type:
+                - string
+                - "null"
             description:
               type: string
               maxLength: 200
             labels:
               type: string
             ticket_key:
-              type: string
+              type:
+                - string
+                - "null"
             task_type:
               type: string
+      required:
+        - eventId
+        - eventType
+        - occurredAt
+        - requestId
+        - payload
+    WebhookTaskCommentedPayload:
+      type: object
+      description: CloudEvents-wrapped task.commented webhook payload emitted when an
+        agent comments on a task.
+      properties:
+        eventId:
+          type: string
+          format: uuid
+          description: Unique event ID (also ce-id)
+        eventType:
+          type: string
+          const: task.commented
+        occurredAt:
+          type: string
+          format: date-time
+          description: ISO 8601 timestamp
+        requestId:
+          type: string
+          description: Originating request correlation ID
+        traceId:
+          type: string
+          description: Optional trace ID
+        payload:
+          type: object
+          description: Task and comment details at time of event
+          properties:
+            id:
+              type: string
+            comment_id:
+              type:
+                - integer
+                - string
+            author:
+              type: string
+            content:
+              type: string
+            title:
+              type: string
+            ticket_key:
+              type:
+                - string
+                - "null"
+            status:
+              type: string
+            assigned_to:
+              type:
+                - string
+                - "null"
+            comment:
+              type: object
+              properties:
+                id:
+                  type:
+                    - integer
+                    - string
+                author:
+                  type: string
+                excerpt:
+                  type: string
+                  maxLength: 280
+                by_agent:
+                  type: boolean
+              required:
+                - author
+                - excerpt
+                - by_agent
+          required:
+            - id
+            - author
+            - content
+            - title
+            - status
+            - comment
       required:
         - eventId
         - eventType
