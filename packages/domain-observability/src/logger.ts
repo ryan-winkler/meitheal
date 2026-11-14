@@ -137,7 +137,13 @@ export function createLogger(config: LoggerConfig) {
       return
     }
     if (partial.domain === "audit" && !auditEnabled) return
-    if (partial.domain !== "audit" && categories.length > 0 && !categories.includes(partial.domain)) {
+    if (
+      level !== "warn" &&
+      level !== "error" &&
+      partial.domain !== "audit" &&
+      categories.length > 0 &&
+      !categories.includes(partial.domain)
+    ) {
       return
     }
 
@@ -156,7 +162,14 @@ export function createLogger(config: LoggerConfig) {
       return typeof value === "string" ? redact(value, redactionPatterns) : value
     })
     process.stdout.write(`${line}\n`)
-    enqueueLokiLog(line, redact(config.service, redactionPatterns), redact(config.env, redactionPatterns), timestamp)
+    enqueueLokiLog(
+      line,
+      redact(config.service, redactionPatterns),
+      redact(config.env, redactionPatterns),
+      timestamp,
+      level,
+      redact(partial.domain || "system", redactionPatterns),
+    )
   }
 
   return {

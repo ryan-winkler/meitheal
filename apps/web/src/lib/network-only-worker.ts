@@ -34,9 +34,9 @@ export async function activatePrivateWorkerUpdate(capability: string, signal: Ab
   let registration = await navigator.serviceWorker.getRegistration()
   if (!registration || registration.scope !== scope.href) return false
   if (!registration.waiting && !registration.installing) void registration.update().catch(() => {})
-  const deadline = performance.now() + 2_500
+  const deadline = performance.now() + 3_500
   while (!registration.waiting && !signal.aborted && performance.now() < deadline) {
-    await new Promise(resolve => setTimeout(resolve, 100))
+    await new Promise(resolve => setTimeout(resolve, 50))
     registration = await navigator.serviceWorker.getRegistration()
     if (registration?.scope !== scope.href) return false
   }

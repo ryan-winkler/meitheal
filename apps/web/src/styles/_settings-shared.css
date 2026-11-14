@@ -23,7 +23,7 @@
 }
 
 .badge-active {
-  background: rgba(99, 102, 241, 0.15);
+  background: rgb(var(--accent-rgb) / 0.15);
   color: var(--accent-text);
 }
 
@@ -101,7 +101,7 @@
   outline: 2px solid var(--border-focus);
   outline-offset: 1px;
   border-color: var(--border-focus);
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+  box-shadow: 0 0 0 3px rgb(var(--accent-rgb) / 0.15);
   transition:
     border-color 200ms ease,
     box-shadow 200ms ease;

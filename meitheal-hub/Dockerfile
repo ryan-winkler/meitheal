@@ -82,7 +82,7 @@ RUN addgroup -S -g 10001 meitheal \
     && adduser -S -D -H -h /data -s /sbin/nologin -u 10001 -G meitheal meitheal \
     && mkdir -p /data
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=5s --start-period=45s --retries=3 \
   CMD curl -fsS http://127.0.0.1:3000/api/health || exit 1
 
 # NOTE: No CMD — s6-overlay (PID 1 in HA base images) discovers

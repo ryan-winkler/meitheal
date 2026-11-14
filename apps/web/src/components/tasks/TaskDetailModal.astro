@@ -3,6 +3,7 @@ import { mentionInboxContext } from "@lib/mention-inbox-context"
 import { verifiedIngressUser } from "@lib/verified-ingress-user"
 // Task Detail Modal Component
 import StrategicEvaluator from "./StrategicEvaluator.astro";
+import Icon from "../ui/Icon.astro";
 import { t } from "../../i18n/translations"
 
 interface Props { suppressUrlOpen?: boolean }
@@ -16,16 +17,18 @@ const mentionUser = verifiedIngressUser(Astro.locals)
       id="task-detail-overlay"
       data-suppress-url-open={suppressUrlOpen ? "true" : undefined}
       class="modal-overlay z-200"
-      role="dialog"
-      aria-modal="true"
+      role="presentation"
       aria-label="Task detail"
     >
       <div
         id="task-detail-panel"
-        class="modal-content w-full max-w-[1000px] h-[90vh] max-h-[900px] bg-bg-primary/95 backdrop-blur-xl border border-white/5 shadow-2xl rounded-2xl flex flex-col overflow-hidden relative m-4 md:m-8"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Task detail"
+        class="modal-content w-full max-w-[1000px] h-[90vh] max-h-[900px] bg-bg-card border border-border shadow-2xl rounded-2xl flex flex-col overflow-hidden relative m-4 md:m-8"
       >
         <!-- Sticky Header Bar -->
-        <header class="flex-none px-6 py-4 border-b border-white/5 bg-bg-card/40 backdrop-blur-md flex justify-between items-center z-20 sticky top-0">
+        <header class="flex-none px-6 py-4 border-b border-border bg-bg-card flex justify-between items-center z-20 sticky top-0">
           <div id="td-task-heading" class="invisible flex items-center gap-3 w-full mr-4">
             <span id="td-priority-dot" class="td-priority-dot text-lg" title="Priority">●</span>
             <div class="flex flex-col flex-1 min-w-0">
@@ -33,9 +36,9 @@ const mentionUser = verifiedIngressUser(Astro.locals)
               <div class="flex items-center gap-2 text-text-muted">
                 <span id="td-type-icon" class="flex items-center justify-center shrink-0" style="width:16px;height:16px"></span>
                 <span id="td-id" class="text-xs font-mono bg-accent/10 text-accent border border-accent/20 px-2 py-0.5 rounded cursor-help"></span>
-                <span id="td-created" class="text-[10px] hidden md:inline"></span>
-                <span class="text-border hidden md:inline">•</span>
-                <span id="td-updated" class="text-[10px] hidden md:inline"></span>
+                <span id="td-created" class="text-[10px] hidden @md/task-inspector:inline"></span>
+                <span class="text-border hidden @md/task-inspector:inline">•</span>
+                <span id="td-updated" class="text-[10px] hidden @md/task-inspector:inline"></span>
               </div>
             </div>
           </div>
@@ -48,7 +51,7 @@ const mentionUser = verifiedIngressUser(Astro.locals)
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
               </button>
               <button id="td-ask-ai" class="p-1.5 hover:bg-bg-hover hover:text-accent text-text-muted rounded transition-colors" title="Ask AI">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a4 4 0 0 1 4 4v1a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V6a4 4 0 0 1 4-4z"></path><path d="M9 8v1a3 3 0 0 0 6 0V8"></path><path d="M6 12a6 6 0 0 0 12 0"></path><line x1="12" y1="18" x2="12" y2="22"></line><line x1="8" y1="22" x2="16" y2="22"></line></svg>
+                <Icon name="message-chatbot" size={20} sprite={true} />
               </button>
               <button id="td-delete" class="p-1.5 hover:bg-bg-hover hover:text-red-400 text-text-muted rounded transition-colors" title="Delete Task">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
@@ -67,8 +70,8 @@ const mentionUser = verifiedIngressUser(Astro.locals)
         </div>
 
         <!-- Loading skeleton — shown while task data fetches -->
-        <div id="td-skeleton" class="flex flex-1 overflow-hidden flex-col md:flex-row">
-          <div class="flex-1 px-6 py-6 lg:px-10 space-y-6">
+        <div id="td-skeleton" class="flex flex-1 overflow-hidden flex-col @2xl/task-inspector:flex-row">
+          <div class="flex-1 px-6 py-6 @2xl/task-inspector:px-10 space-y-6">
             <div class="td-skeleton-line h-8 w-3/4 rounded-lg"></div>
             <div class="td-skeleton-line h-4 w-full rounded"></div>
             <div class="td-skeleton-line h-4 w-5/6 rounded"></div>
@@ -77,7 +80,7 @@ const mentionUser = verifiedIngressUser(Astro.locals)
             <div class="td-skeleton-line h-4 w-1/2 rounded mt-6"></div>
             <div class="td-skeleton-line h-4 w-3/4 rounded"></div>
           </div>
-          <div class="w-full md:w-[320px] border-t md:border-t-0 md:border-l border-border px-6 py-6 space-y-4">
+          <div class="w-full @2xl/task-inspector:w-[320px] border-t @2xl/task-inspector:border-t-0 @2xl/task-inspector:border-l border-border px-6 py-6 space-y-4">
             <div class="td-skeleton-line h-10 w-full rounded-lg"></div>
             <div class="td-skeleton-line h-4 w-1/3 rounded"></div>
             <div class="td-skeleton-line h-8 w-full rounded"></div>
@@ -97,10 +100,10 @@ const mentionUser = verifiedIngressUser(Astro.locals)
           class="px-6 py-6 text-text-primary"
         ></p>
 
-        <div id="td-loaded-content" class="flex-1 overflow-y-auto flex-col md:flex-row relative hidden">
+        <div id="td-loaded-content" class="flex-1 overflow-y-auto flex-col @2xl/task-inspector:flex-row relative hidden">
           
           <!-- MAIN CONTENT COLUMN -->
-          <div class="flex-none w-full md:flex-1 md:w-auto overflow-visible px-6 py-6 lg:px-10 space-y-8 bg-transparent min-w-0">
+          <div class="flex-none w-full @2xl/task-inspector:flex-1 @2xl/task-inspector:w-auto overflow-visible px-6 py-6 @2xl/task-inspector:px-10 space-y-8 bg-transparent min-w-0">
             
             <!-- Title -->
             <div class="relative group">
@@ -140,13 +143,13 @@ const mentionUser = verifiedIngressUser(Astro.locals)
             </div>
 
             <!-- Properties Grid -->
-            <div class="flex flex-col gap-5 py-5 mb-8 border-y border-border/50 bg-bg-card/10 -mx-6 px-6 lg:-mx-10 lg:px-10">
+            <div class="flex flex-col gap-5 py-5 mb-8 border-y border-border/50 bg-bg-card/10 -mx-6 px-6 @2xl/task-inspector:-mx-10 @2xl/task-inspector:px-10">
             <!-- Essential Properties -->
             <h4 class="text-[10px] text-text-muted font-bold uppercase tracking-widest flex items-center gap-2 mb-3">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="opacity-50"><path d="M12 3v18M19 6l-7-3-7 3M19 18l-7 3-7-3"/></svg>
               Properties
             </h4>
-            <div class="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 text-sm w-full">
+            <div class="grid grid-cols-1 @md/task-inspector:grid-cols-2 @2xl/task-inspector:grid-cols-3 @3xl/task-inspector:grid-cols-4 gap-4 text-sm w-full">
                
                <div class="grid grid-cols-[90px_1fr] items-center gap-2 group">
                  <span class="text-xs text-text-muted font-medium uppercase tracking-wide">Status</span>
@@ -180,7 +183,7 @@ const mentionUser = verifiedIngressUser(Astro.locals)
 
                <div class="grid grid-cols-[90px_1fr] items-center gap-2 group">
                  <span class="text-xs text-text-muted font-medium uppercase tracking-wide flex items-center gap-1">
-                   <span title="Eisenhower Matrix dimension">⚡</span> Urgency
+                   <span title="Eisenhower Matrix dimension" class="inline-flex items-center"><Icon name="bolt" size={13} sprite={true} /></span> Urgency
                  </span>
                  <select id="td-urgency" class="form-select py-1.5 px-2 bg-transparent hover:bg-bg-hover border-transparent hover:border-border cursor-pointer transition-colors focus:ring-1 focus:ring-accent font-medium text-text-primary w-full">
                     <option value="0">0 — Unset</option>
@@ -194,7 +197,7 @@ const mentionUser = verifiedIngressUser(Astro.locals)
 
                <div class="grid grid-cols-[90px_1fr] items-center gap-2 group">
                  <span class="text-xs text-text-muted font-medium uppercase tracking-wide flex items-center gap-1">
-                   <span title="Eisenhower Matrix dimension">⭐</span> Importance
+                   <span title="Eisenhower Matrix dimension" class="inline-flex items-center"><Icon name="star" size={13} sprite={true} /></span> Importance
                  </span>
                  <select id="td-importance" class="form-select py-1.5 px-2 bg-transparent hover:bg-bg-hover border-transparent hover:border-border cursor-pointer transition-colors focus:ring-1 focus:ring-accent font-medium text-text-primary w-full">
                     <option value="0">0 — Unset</option>
@@ -226,14 +229,14 @@ const mentionUser = verifiedIngressUser(Astro.locals)
                </div>
 
                <div class="grid grid-cols-[90px_1fr] items-center gap-2 group">
-                 <span class="text-xs text-text-muted font-medium uppercase tracking-wide flex items-center gap-1"><span title="Pillar">🏛️</span> Pillar</span>
+                 <span class="text-xs text-text-muted font-medium uppercase tracking-wide flex items-center gap-1"><span title="Pillar" class="inline-flex items-center"><Icon name="target" size={13} sprite={true} /></span> Pillar</span>
                  <select id="td-pillar" class="form-select py-1.5 px-2 bg-transparent hover:bg-bg-hover border-transparent hover:border-border cursor-pointer transition-colors focus:ring-1 focus:ring-accent font-medium text-text-primary w-full">
                    <option value="">No pillar</option>
                  </select>
                </div>
 
                <div class="grid grid-cols-[90px_1fr] items-center gap-2 group">
-                 <span class="text-xs text-text-muted font-medium uppercase tracking-wide flex items-center gap-1"><span title="Principle">⚖️</span> Principle</span>
+                 <span class="text-xs text-text-muted font-medium uppercase tracking-wide flex items-center gap-1"><span title="Principle" class="inline-flex items-center"><Icon name="book" size={13} sprite={true} /></span> Principle</span>
                  <select id="td-principle" class="form-select py-1.5 px-2 bg-transparent hover:bg-bg-hover border-transparent hover:border-border cursor-pointer transition-colors focus:ring-1 focus:ring-accent font-medium text-text-primary w-full">
                    <option value="">No principle</option>
                  </select>
@@ -249,7 +252,7 @@ const mentionUser = verifiedIngressUser(Astro.locals)
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="opacity-50"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
               Scheduling
             </h4>
-            <div class="grid grid-cols-2 lg:grid-cols-3 gap-4 text-sm w-full">
+            <div class="grid grid-cols-1 @md/task-inspector:grid-cols-2 @2xl/task-inspector:grid-cols-3 gap-4 text-sm w-full">
                <div>
                  <span class="text-xs text-text-muted font-medium uppercase tracking-wide mb-1.5 block">Dates & Metrics</span>
                  <div class="grid grid-cols-[90px_1fr] items-center gap-2 group mb-2">
@@ -302,7 +305,7 @@ const mentionUser = verifiedIngressUser(Astro.locals)
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="opacity-50"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path><line x1="7" y1="7" x2="7.01" y2="7"></line></svg>
               Metadata
             </h4>
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 text-sm w-full">
+            <div class="grid grid-cols-1 @2xl/task-inspector:grid-cols-2 gap-4 text-sm w-full">
               
               <div>
                 <div class="flex items-center justify-between mb-2">
@@ -336,19 +339,11 @@ const mentionUser = verifiedIngressUser(Astro.locals)
 
             <StrategicEvaluator />
 
-            <!-- Description -->
-            <div class="mb-4">
-              <button type="button" class="flex items-center gap-2 text-xs font-medium text-accent hover:text-accent-hover bg-accent/10 hover:bg-accent/20 px-3 py-1.5 rounded-lg transition-colors border border-accent/20">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" class="animate-pulse" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a4 4 0 0 1 4 4v1a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V6a4 4 0 0 1 4-4z"></path><path d="M9 8v1a3 3 0 0 0 6 0V8"></path><path d="M6 12a6 6 0 0 0 12 0"></path><line x1="12" y1="18" x2="12" y2="22"></line><line x1="8" y1="22" x2="16" y2="22"></line></svg>
-                Ask AI to write a description, generate subtasks, or find similar tasks...
-              </button>
-            </div>
-
             <section class="mb-5">
               <div class="flex items-center justify-between mb-3">
                 <h3 class="text-xs text-text-muted font-bold uppercase tracking-wider flex justify-between w-full pr-1">
                     <span>Description</span>
-                    <span id="td-desc-saved" class="text-accent text-[10px] font-medium" style="display:none;">✓ Saved</span>
+                    <span id="td-desc-saved" class="text-accent text-[10px] font-medium inline-flex items-center gap-1" style="display:none;"><Icon name="check" size={12} sprite={true} /> Saved</span>
                 </h3>
               </div>
               <div class="group relative">
@@ -426,7 +421,7 @@ const mentionUser = verifiedIngressUser(Astro.locals)
                   Relationships
               </h3>
               <div class="space-y-5">
-                <div class="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                <div class="grid grid-cols-1 @3xl/task-inspector:grid-cols-2 gap-6">
                   <!-- Parent -->
                   <div>
                     <span class="text-xs text-text-muted font-bold uppercase tracking-wider mb-2 block">Parent Epic/Story</span>
@@ -458,7 +453,7 @@ const mentionUser = verifiedIngressUser(Astro.locals)
                       <div id="td-add-subtask-form" class="hidden mt-2 gap-2">
                         <input id="td-add-subtask-input" class="form-input text-sm py-1.5 flex-1 bg-bg-input" placeholder="Subtask title..." autocomplete="off"/>
                         <button type="button" id="td-add-subtask-submit" class="btn btn-primary text-xs px-3 py-1.5 shadow-sm">Add</button>
-                        <button type="button" id="td-add-subtask-cancel" class="btn bg-bg-input border border-border hover:bg-bg-hover text-text-primary text-xs px-2 py-1.5">✕</button>
+                        <button type="button" id="td-add-subtask-cancel" aria-label="Cancel subtask" class="btn bg-bg-input border border-border hover:bg-bg-hover text-text-primary text-xs px-2 py-1.5"><Icon name="x" size={14} sprite={true} /></button>
                       </div>
                     </div>
                   </div>
@@ -497,15 +492,15 @@ const mentionUser = verifiedIngressUser(Astro.locals)
           </div>
 
           <!-- SIDEBAR (PROPERTIES) COLUMN -->
-          <aside class="w-full md:w-[320px] bg-bg-card/30 backdrop-blur-md border-t md:border-t-0 md:border-l border-white/5 px-6 py-6 flex-none flex flex-col gap-6">
+          <aside class="w-full @2xl/task-inspector:w-[320px] bg-bg-secondary border-t @2xl/task-inspector:border-t-0 @2xl/task-inspector:border-l border-border px-6 py-6 flex-none flex flex-col gap-6">
             
             <button id="td-toggle-done" class="btn btn-primary w-full shadow-lg shadow-accent/20 py-2.5 font-bold text-sm transition-[background,transform] flex items-center justify-center gap-2 hover:-translate-y-0.5 td-done-btn">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
                 Mark as Done
             </button>
 
-            <!-- Mobile sidebar toggle (hidden on desktop) -->
-            <button id="td-sidebar-toggle" class="md:hidden w-full flex items-center justify-between py-2.5 px-3 text-sm font-semibold text-text-primary bg-bg-input rounded-lg border border-border hover:bg-bg-hover transition-colors" type="button" aria-expanded="false" aria-controls="td-sidebar-props">
+            <!-- Container-adaptive sidebar toggle (hidden when inspector >= 672px) -->
+            <button id="td-sidebar-toggle" class="@2xl/task-inspector:hidden w-full flex items-center justify-between py-2.5 px-3 text-sm font-semibold text-text-primary bg-bg-input rounded-lg border border-border hover:bg-bg-hover transition-colors" type="button" aria-expanded="false" aria-controls="td-sidebar-props">
               <span class="flex items-center gap-2">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-text-muted"><path d="M12 3v18M19 6l-7-3-7 3M19 18l-7 3-7-3"/></svg>
                 Details
@@ -602,7 +597,7 @@ const mentionUser = verifiedIngressUser(Astro.locals)
                       data-failed={t("task_modal.comment_failed", locale)}
                       data-participant-required={t("task_modal.participant_required", locale)}></p>
                     <div class="flex justify-end items-center gap-3 mt-2">
-                      <span class="text-[10px] text-text-muted hidden md:flex items-center gap-1"><kbd class="px-1 py-0.5 rounded bg-bg-input border border-border text-[10px] font-mono">⌘</kbd><kbd class="px-1 py-0.5 rounded bg-bg-input border border-border text-[10px] font-mono">↵</kbd></span>
+                      <span class="text-[10px] text-text-muted hidden @md/task-inspector:flex items-center gap-1"><kbd class="px-1 py-0.5 rounded bg-bg-input border border-border text-[10px] font-mono">⌘</kbd><kbd class="px-1 py-0.5 rounded bg-bg-input border border-border text-[10px] font-mono">↵</kbd></span>
                       <button type="button" id="td-comment-submit" class="btn btn-primary text-xs px-4 py-1.5 shadow-sm font-medium">Post Comment</button>
                     </div>
                 </div>

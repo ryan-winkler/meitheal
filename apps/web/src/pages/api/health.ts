@@ -1,10 +1,11 @@
-import type { APIRoute } from "astro";
-import { ensureSchema, getPersistenceClient, getDbIntegrityStatus, getSchemaVersion } from "@domains/tasks/persistence/store";
-import { apiJson } from "../../lib/api-response";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { supervisorFetch } from "../../lib/supervisor-fetch";
+import type { APIRoute } from "astro";
+import { ensureSchema, getPersistenceClient, getDbIntegrityStatus, getSchemaVersion } from "@domains/tasks/persistence/store";
 import { getHAConnectionStatus } from "@domains/ha/ha-connection";
+import { apiJson } from "../../lib/api-response";
+import { supervisorFetch } from "../../lib/supervisor-fetch";
 
 /** Process startup time for uptime calculation. */
 const startedAt = Date.now();
@@ -30,6 +31,12 @@ function getAddonVersion(): string {
 }
 
 const VERSION = getAddonVersion();
+const SUPERVISOR_INFO_TTL_MS = 60_000;
+let _supervisorInfoCache: { credentialDigest: string; addonSlug: string; expiresAt: number } | null = null;
+
+export function resetHealthSupervisorCacheForTests(): void {
+  _supervisorInfoCache = null;
+}
 
 /**
  * GET /api/health — Readiness & liveness probe.
@@ -46,19 +53,35 @@ export const GET: APIRoute = async () => {
     // Simple connectivity check
     await client.execute("SELECT 1");
 
-    // PRA-14: Supervisor API connectivity probe
-    const haMode = process.env.SUPERVISOR_TOKEN ? "ha-addon" : "standalone";
+    // PRA-14: Supervisor API connectivity probe (cached 60s on HTTP 200 only)
+    const supervisorToken = process.env.SUPERVISOR_TOKEN;
+    const haMode = supervisorToken ? "ha-addon" : "standalone";
     let supervisorReachable = false;
     let addonSlug = "unknown";
-    if (process.env.SUPERVISOR_TOKEN) {
-      try {
-        const res = await supervisorFetch("/addons/self/info", {}, 3_000);
-        if (res && res.ok) {
-          supervisorReachable = true;
-          const data = await res.json() as { data?: { slug?: string } };
-          addonSlug = data?.data?.slug ?? "unknown";
-        }
-      } catch { /* Supervisor unreachable — non-fatal */ }
+    if (supervisorToken) {
+      const credentialDigest = createHash("sha256").update(supervisorToken).digest("hex");
+      if (
+        _supervisorInfoCache &&
+        _supervisorInfoCache.credentialDigest === credentialDigest &&
+        _supervisorInfoCache.expiresAt > now
+      ) {
+        supervisorReachable = true;
+        addonSlug = _supervisorInfoCache.addonSlug;
+      } else {
+        try {
+          const res = await supervisorFetch("/addons/self/info", {}, 3_000);
+          if (res && res.ok) {
+            supervisorReachable = true;
+            const data = await res.json() as { data?: { slug?: string } };
+            addonSlug = data?.data?.slug ?? "unknown";
+            _supervisorInfoCache = {
+              credentialDigest,
+              addonSlug,
+              expiresAt: now + SUPERVISOR_INFO_TTL_MS,
+            };
+          }
+        } catch { /* Supervisor unreachable — non-fatal */ }
+      }
     }
 
     // HA WebSocket connection status

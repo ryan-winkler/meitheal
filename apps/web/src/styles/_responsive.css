@@ -319,10 +319,8 @@
     left: 0;
     right: 0;
     z-index: 40;
-    background: var(--bg-card, #1e1e2e);
+    background: var(--bg-card);
     border-top: 1px solid var(--border);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
     padding-bottom: env(safe-area-inset-bottom, 0px);
     justify-content: space-around;
     align-items: center;
@@ -447,6 +445,19 @@
 /* Touch-friendly targets */
 /* ===== Touch-Friendly Targets (Wave 10) ===== */
 @media (pointer: coarse) {
+  button,
+  .btn,
+  .btn-primary,
+  .btn-secondary,
+  .btn-ghost,
+  [role="button"],
+  summary,
+  select,
+  a.nav-link,
+  a.unified-bar__view-pill {
+    min-height: 44px;
+    min-width: 44px;
+  }
 
   .task-checkbox,
   .row-check {

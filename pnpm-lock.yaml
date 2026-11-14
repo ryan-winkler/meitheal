@@ -50,9 +50,6 @@ importers:
       dompurify:
         specifier: ^3.4.17
         version: 3.4.17
-      drizzle-orm:
-        specifier: ^0.45.4
-        version: 0.45.4(@cloudflare/workers-types@5.20261109.1)(@libsql/client@0.18.0)
       home-assistant-js-websocket:
         specifier: ^9.8.1
         version: 9.8.1
@@ -65,9 +62,6 @@ importers:
       sanitize-html:
         specifier: ^2.18.1
         version: 2.18.1
-      sharp:
-        specifier: 0.35.5
-        version: 0.35.5(@types/node@26.6.6)
       undici:
         specifier: ^8.12.4
         version: 8.12.4
@@ -102,6 +96,9 @@ importers:
       '@fontsource/jetbrains-mono':
         specifier: ^5.3.0
         version: 5.3.0
+      '@tabler/icons':
+        specifier: ^3.51.0
+        version: 3.51.0
       '@tailwindcss/vite':
         specifier: ^4.3.5
         version: 4.3.5(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.46.0)(tsx@4.23.15)(yaml@2.9.1))
@@ -120,6 +117,9 @@ importers:
       drizzle-kit:
         specifier: ^0.31.11
         version: 0.31.11
+      drizzle-orm:
+        specifier: ^0.45.4
+        version: 0.45.4(@cloudflare/workers-types@5.20261109.1)(@libsql/client@0.18.0)
       tailwindcss:
         specifier: ^4.3.5
         version: 4.3.5
@@ -1049,6 +1049,9 @@ packages:
 
   '@shikijs/vscode-textmate@10.1.0':
     resolution: {integrity: sha512-cVBuhDQjBZaNMTwBquYfPydrUP+E3hE6oYGasx8h6ZrODIM7/r+gxLDXdd66oszbrggZHEntdE6j+5gYIVyMWQ==}
+
+  '@tabler/icons@3.51.0':
+    resolution: {integrity: sha512-0pinvPZz7YeX+OSfxuEAbnEPWbocVXW5iU8h5lh41pYG8sZuQfpWECC980lxOT0clGIcNGn8xsBr+zKaRGdA/g==}
 
   '@tailwindcss/node@4.3.5':
     resolution: {integrity: sha512-yT53FzV4ke0cr/BguDxhWMpm5MJu1O2muzk+tKw6lKHjODAsYArBbWwFbJiaksfzFv1tpkO9QHGzmfs1hJT66g==}
@@ -3018,7 +3021,8 @@ snapshots:
 
   '@fontsource/jetbrains-mono@5.3.0': {}
 
-  '@img/colour@1.1.0': {}
+  '@img/colour@1.1.0':
+    optional: true
 
   '@img/sharp-darwin-arm64@0.35.5':
     optionalDependencies:
@@ -3323,6 +3327,8 @@ snapshots:
       '@types/hast': 3.0.5
 
   '@shikijs/vscode-textmate@10.1.0': {}
+
+  '@tabler/icons@3.51.0': {}
 
   '@tailwindcss/node@4.3.5':
     dependencies:
@@ -4394,6 +4400,7 @@ snapshots:
       '@img/sharp-win32-ia32': 0.35.5
       '@img/sharp-win32-x64': 0.35.5
       '@types/node': 26.6.6
+    optional: true
 
   shiki@4.6.0:
     dependencies:

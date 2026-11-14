@@ -47,7 +47,11 @@ export async function taskRetryKey(request: Request, url: URL, principal: string
   return createHash("sha256").update(namespace).update(body).digest("hex")
 }
 
-export async function replayTaskRequest(key: string, next: () => Promise<Response>): Promise<Response> {
+export async function replayTaskRequest(
+  key: string,
+  next: () => Promise<Response>,
+  signal?: AbortSignal | undefined,
+): Promise<Response> {
   const cached = idempotencyCache.get(key)
   if (cached) {
     return new Response(cached.body, {
@@ -58,16 +62,18 @@ export async function replayTaskRequest(key: string, next: () => Promise<Respons
   if (idempotencyCache.isInFlight(key)) {
     return apiProblem({ status: 409, detail: "This task request is already in progress." })
   }
+  signal?.throwIfAborted()
   if (!idempotencyCache.markInFlight(key)) {
     return apiProblem({ status: 503, detail: "Task retry capacity is temporarily full. Try again shortly." })
   }
 
   try {
+    signal?.throwIfAborted()
     const response = await next()
     const contentType = response.headers.get("content-type")
     if (response.ok && response.body && contentType?.startsWith("application/json")) {
       try {
-        const body = await readWithinLimit(response.clone().body, MAX_RESPONSE_BYTES)
+        const body = await readWithinLimit(response.clone().body, MAX_RESPONSE_BYTES, signal)
         if (body) {
           idempotencyCache.set(key, {
             body: body.toString("utf8"),
@@ -76,8 +82,11 @@ export async function replayTaskRequest(key: string, next: () => Promise<Respons
             processedAt: Date.now(),
           })
           response.headers.set("Idempotency-Key-Status", "processed")
+        } else if (idempotencyCache.isInFlight(key)) {
+          idempotencyCache.remove(key)
         }
       } catch {
+        if (idempotencyCache.isInFlight(key)) idempotencyCache.remove(key)
         // The original response can still be delivered if buffering fails.
       }
     }

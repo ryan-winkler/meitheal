@@ -1,13 +1,13 @@
 # Using Meitheal
 
-- [Dashboard Shell Guide](dashboard-shell-guide.md) - Understand the dashboard layout and shortcuts.
+- [Dashboard Shell Guide](dashboard-shell-guide.md) - Understand the dashboard layout, docked 1440px task inspector, Ingress reload persistence, and shortcuts.
 - [Today Shell Guide](today-shell-guide.md) - Understand the Today view and its task controls.
 - [Upcoming Shell Guide](upcoming-shell-guide.md) - Understand the Upcoming view and its task controls.
 - [Table Shell Guide](table-shell-guide.md) - Understand the task table and its controls.
 - [Kanban Shell Guide](kanban-shell-guide.md) - Understand the board layout and task controls.
 - [Rank work with RICE](planning-rice.md) - Compare estimates and prioritize work.
 - [Triage Household Tasks](triage-workflow.md) - Review the Backlog and decide what to start.
-- [Calendar Shell Guide](calendar-shell-guide.md) - Understand the calendar view and its controls.
+- [Calendar Shell Guide](calendar-shell-guide.md) - Understand the calendar and virtualized timeline views and their controls.
 - [Habits Shell Guide](habits-shell-guide.md) - Understand the habit view and cadence controls.
 - [Search Hub Guide](search-hub-guide.md) - Find work, views, and settings.
 - [PWA & Offline-First Guide](pwa-offline-guide.md) - Install the web app and understand offline behavior.
@@ -17,7 +17,7 @@
 - [Settings Shell Troubleshooting](settings-troubleshooting.md) - Find settings and diagnose navigation problems.
 - [Save and restore rules and framework settings](settings-persistence.md) - Finish pending edits and recover from rejected saves or imports.
 - [New ticket form](new-ticket-form.md) - Create tickets and preserve checklist and private draft values.
-- [Settings outline icons](settings-outline-icons.md) - Maintain local Settings icons and their attribution.
+- [Settings outline icons](settings-outline-icons.md) - Maintain the build-extracted 64-icon Tabler catalog, SVG sprites, 5-Bucket Emoji Policy, and MIT attribution.
 - [Troubleshooting](troubleshooting.md) - Diagnose common connection, search, and sync problems.
 - [Local feedback queue](feedback-and-support.md) - Understand feedback storage, review, and export.
 

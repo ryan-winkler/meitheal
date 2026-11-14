@@ -1240,12 +1240,12 @@ const taskKinds = [
           try {
             const res = await fetch("/api/projects", {
               method: "POST", headers: { "content-type": "application/json" },
-              body: JSON.stringify({ title, area_id: areaId, icon: "\ud83d\udccb", color: "#6366F1" }),
+              body: JSON.stringify({ title, area_id: areaId, icon: "\ud83d\udccb", color: "#146C4E" }),
             })
             if (res.ok) {
               const data = await res.json()
               const projId = data.id || data.project?.id || ""
-              insertProjectNode(children, projId, title, "\ud83d\udccb", "#6366F1", areaId)
+              insertProjectNode(children, projId, title, "\ud83d\udccb", "#146C4E", areaId)
               // Remove empty hint if present
               children.querySelector(".stree__empty-hint")?.remove()
               showToast(i18n("sidebar.task_created", "Project created"), "success")
@@ -1300,7 +1300,7 @@ const taskKinds = [
         if (!colorIconPopover) return
         const triggerBtn = document.querySelector<HTMLButtonElement>(`[data-area-menu="${entityId}"]`)
         const currentIcon = triggerBtn?.dataset.areaIcon || "\ud83d\udccb"
-        const currentColor = triggerBtn?.dataset.areaColor || "#6366F1"
+        const currentColor = triggerBtn?.dataset.areaColor || "#146C4E"
         // Sync icon preview + hidden input
         const iconInput = colorIconPopover.querySelector<HTMLInputElement>("#entity-icon-input")
         const iconPreview = colorIconPopover.querySelector<HTMLSpanElement>("#entity-icon-preview")
@@ -1387,7 +1387,7 @@ const taskKinds = [
         if (!colorIconPopover) return
         const triggerBtn = document.querySelector<HTMLButtonElement>(`[data-project-menu="${entityId}"]`)
         const currentIcon = triggerBtn?.dataset.projectIconValue || "\ud83d\udccb"
-        const currentColor = triggerBtn?.dataset.projectColor || "#6366F1"
+        const currentColor = triggerBtn?.dataset.projectColor || "#146C4E"
         // Sync icon preview + hidden input
         const iconInput = colorIconPopover.querySelector<HTMLInputElement>("#entity-icon-input")
         const iconPreview = colorIconPopover.querySelector<HTMLSpanElement>("#entity-icon-preview")
@@ -1467,7 +1467,7 @@ const taskKinds = [
       const iconInput = colorIconPopover!.querySelector<HTMLInputElement>("#entity-icon-input")
       const selectedSwatch = colorIconPopover!.querySelector<HTMLButtonElement>("[data-swatch-color].selected")
       const icon = iconInput?.value?.trim() || "\ud83d\udccb"
-      const color = selectedSwatch?.dataset.swatchColor || "#6366F1"
+      const color = selectedSwatch?.dataset.swatchColor || "#146C4E"
       ctrl.hideAll()
       const endpoint = activeEntityType === "area" ? `/api/areas/${entityId}` : `/api/projects/${entityId}`
       try {
@@ -1560,12 +1560,12 @@ const taskKinds = [
           try {
             const res = await fetch("/api/areas", {
               method: "POST", headers: { "content-type": "application/json" },
-              body: JSON.stringify({ name, icon: "\ud83d\udccb", color: "#6366F1" }),
+              body: JSON.stringify({ name, icon: "\ud83d\udccb", color: "#146C4E" }),
             })
             if (res.ok) {
               const data = await res.json()
               const areaId = data.id || data.area?.id || ""
-              insertAreaNode(nav!, areaId, name, "\ud83d\udccb", "#6366F1")
+              insertAreaNode(nav!, areaId, name, "\ud83d\udccb", "#146C4E")
               showToast(i18n("sidebar.area_created", "Area created"), "success")
             }
             else showToast(i18n("sidebar.error_create_failed", "Failed to create"), "error")

@@ -60,6 +60,71 @@ export async function getHAConfiguration(): Promise<HAConfiguration | null> {
   await repo.ensureSettingsTable()
   return resolveHAConfiguration(process.env, await repo.getByKeys(["ha_url", "ha_token"]))
 }
+
+const ALLOWED_HA_REST_PATH_RE = /^\/api\/[a-zA-Z0-9._%-]+(?:\/[a-zA-Z0-9._%-]+)*$/
+
+interface PendingHaRestCall {
+  readonly cleanPath: string
+  readonly options: RequestInit
+  readonly resolve: (response: Response | null) => void
+}
+
+const pendingHaRestCalls: PendingHaRestCall[] = []
+
+function dispatchPendingHaRestCalls(): void {
+  while (pendingHaRestCalls.length > 0) {
+    const next = pendingHaRestCalls.shift()
+    if (!next) continue
+    void (async () => {
+      try {
+        const config = await getHAConfiguration()
+        if (!config) {
+          next.resolve(null)
+          return
+        }
+        const base = new URL(config.baseUrl)
+        if (base.protocol !== "http:" && base.protocol !== "https:") {
+          next.resolve(null)
+          return
+        }
+        const basePrefix = base.pathname.replace(/\/+$/, "")
+        const target = new URL(`${basePrefix}${next.cleanPath}`, base.origin)
+        if (target.origin !== base.origin) {
+          next.resolve(null)
+          return
+        }
+        const response = await fetch(target.href, {
+          ...next.options,
+          headers: {
+            "content-type": "application/json",
+            ...(next.options.headers as Record<string, string> | undefined),
+            authorization: `Bearer ${config.token}`,
+          },
+          redirect: "error",
+          signal: next.options.signal ?? AbortSignal.timeout(5_000),
+        })
+        next.resolve(response)
+      } catch {
+        next.resolve(null)
+      }
+    })()
+  }
+}
+
+/**
+ * Perform an authenticated single-resource REST call against Home Assistant Core.
+ * Returns null if Home Assistant is unconfigured, path is disallowed, or Core is unreachable.
+ */
+export async function haRestFetch(path: string, options: RequestInit = {}): Promise<Response | null> {
+  const cleanPath = path.startsWith("/") ? path : `/${path}`
+  if (!ALLOWED_HA_REST_PATH_RE.test(cleanPath) || cleanPath.includes("..")) {
+    return null
+  }
+  return new Promise<Response | null>((resolve) => {
+    pendingHaRestCalls.push({ cleanPath, options, resolve })
+    dispatchPendingHaRestCalls()
+  })
+}
 let connecting = false;
 let connectingFingerprint: string | null = null
 let connectionGeneration = 0

@@ -14,6 +14,7 @@
 import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability";
 import { STATUS } from "../../lib/status-config";
 import { GrocyAdapter, type GrocyChore, type GrocyTask } from "@meitheal/integration-core";
+import type { SyncTaskMutation } from "@domains/tasks";
 import type { Client } from "@libsql/client";
 import { choreToTask, taskToTask, shoppingListToTask } from "./grocy-mapper.js";
 
@@ -489,51 +490,33 @@ export async function pushNewTaskToGrocy(
 
 // ═══════ Merge Helpers ═══════
 
+let _tasksModule: typeof import("@domains/tasks") | null = null;
+async function getTasksModule() {
+  if (!_tasksModule) _tasksModule = await import("@domains/tasks");
+  return _tasksModule;
+}
+
 /** Helper: get persistence client + ensure tables exist. */
 async function getClient() {
-  const { ensureSchema, getPersistenceClient } = await import("@domains/tasks/persistence/store");
-  await ensureSchema();
-  const client = getPersistenceClient();
+  const mod = await getTasksModule();
+  await mod.ensureSchema();
+  const client = mod.getPersistenceClient();
   await ensureGrocySyncTable(client);
   return client;
 }
 
-/** Fix #4: Batch-load existing confirmations for a set of entity IDs. */
-async function batchLoadConfirmations(
-  client: Client,
-  entityType: string,
-  entityIds: string[],
-): Promise<Map<string, { taskId: string; syncUpdatedAt: number; taskUpdatedAt: number }>> {
-  const map = new Map<string, { taskId: string; syncUpdatedAt: number; taskUpdatedAt: number }>();
-  if (entityIds.length === 0) return map;
-
-  // SQLite doesn't support array params — build a parameterized IN clause
-  const placeholders = entityIds.map(() => "?").join(",");
-  const rows = await client.execute({
-    sql: `SELECT c.grocy_entity_id, c.task_id, c.updated_at AS sync_updated_at,
-                 COALESCE(t.updated_at, 0) AS task_updated_at
-          FROM grocy_sync_confirmations c
-          LEFT JOIN tasks t ON t.id = c.task_id
-          WHERE c.grocy_entity_type = ? AND c.grocy_entity_id IN (${placeholders})`,
-    args: [entityType, ...entityIds],
-  });
-
-  for (const row of rows.rows) {
-    map.set(String(row.grocy_entity_id), {
-      taskId: String(row.task_id),
-      syncUpdatedAt: Number(row.sync_updated_at ?? 0),
-      taskUpdatedAt: Number(row.task_updated_at ?? 0),
-    });
-  }
-  return map;
-}
-
 async function mergeGrocyChores(chores: GrocyChore[]): Promise<number> {
-  const client = await getClient();
+  if (chores.length === 0) return 0;
+  const mod = await getTasksModule();
+  await getClient();
   const entityIds = chores.map((c) => String(c.choreId));
-  const existing = await batchLoadConfirmations(client, "chore", entityIds);
-  let synced = 0;
+  const existing = await mod.findTasksByExternalSyncIds({
+    source: "grocy",
+    grocyEntityType: "chore",
+    externalIds: entityIds,
+  });
   const nowMs = Date.now();
+  const mutations: SyncTaskMutation[] = [];
 
   for (const chore of chores) {
     const taskData = choreToTask(chore);
@@ -543,50 +526,66 @@ async function mergeGrocyChores(chores: GrocyChore[]): Promise<number> {
       // Skip if locally modified after last sync
       if (match.taskUpdatedAt > match.syncUpdatedAt) continue;
 
-      await client.execute({
-        sql: `UPDATE tasks SET title = ?, status = ?, due_date = ?, description = COALESCE(?, description), updated_at = ? WHERE id = ?`,
-        args: [taskData.title, taskData.status, taskData.dueDate, taskData.description, nowMs, match.taskId],
+      mutations.push({
+        kind: "update",
+        taskId: match.taskId,
+        title: taskData.title,
+        status: taskData.status,
+        dueDate: taskData.dueDate,
+        updateDueDate: true,
+        description: taskData.description,
+        updatedAt: nowMs,
+        confirmation: {
+          source: "grocy",
+          grocyEntityType: "chore",
+          externalId: String(chore.choreId),
+          payload: JSON.stringify(chore),
+        },
       });
-      await client.execute({
-        sql: "UPDATE grocy_sync_confirmations SET payload = ?, updated_at = ? WHERE grocy_entity_type = 'chore' AND grocy_entity_id = ?",
-        args: [JSON.stringify(chore), nowMs, String(chore.choreId)],
-      });
-      synced++;
     } else {
-      const taskId = crypto.randomUUID();
-      await client.execute({
-        sql: `INSERT INTO tasks (id, title, description, status, priority, due_date,
-                labels, framework_payload, calendar_sync_state, area_id,
-                custom_fields, task_type, idempotency_key, request_id,
-                created_at, updated_at)
-              VALUES (?, ?, ?, ?, ?, ?, ?, '{}', 'synced', 'default', '{}', 'task', ?, ?, ?, ?)`,
-        args: [
-          taskId, taskData.title, taskData.description ?? "", taskData.status,
-          taskData.priority, taskData.dueDate,
-          JSON.stringify(taskData.labels),
-          `grocy-chore-${chore.choreId}`, crypto.randomUUID(), nowMs, nowMs,
-        ],
+      mutations.push({
+        kind: "create",
+        taskId: crypto.randomUUID(),
+        idempotencyKey: `grocy-chore-${chore.choreId}`,
+        title: taskData.title,
+        description: taskData.description ?? "",
+        status: taskData.status,
+        priority: taskData.priority,
+        dueDate: taskData.dueDate,
+        labels: taskData.labels,
+        areaId: "default",
+        taskType: "task",
+        createdAt: nowMs,
+        confirmation: {
+          source: "grocy",
+          grocyEntityType: "chore",
+          externalId: String(chore.choreId),
+          syncDirection: "inbound",
+          payload: JSON.stringify(chore),
+        },
       });
-      await client.execute({
-        sql: `INSERT INTO grocy_sync_confirmations (confirmation_id, task_id, grocy_entity_type, grocy_entity_id, sync_direction, payload, created_at, updated_at)
-              VALUES (?, ?, 'chore', ?, 'inbound', ?, ?, ?)`,
-        args: [crypto.randomUUID(), taskId, String(chore.choreId), JSON.stringify(chore), nowMs, nowMs],
-      });
-      synced++;
     }
   }
-  return synced;
+
+  const res = await mod.commitSyncMutationChunks(mutations);
+  return res.created + res.updated;
 }
 
 async function mergeGrocyTasks(
   tasks: GrocyTask[],
   categoryNames?: Map<number, string>,
 ): Promise<number> {
-  const client = await getClient();
+  if (tasks.length === 0) return 0;
+  const mod = await getTasksModule();
+  await getClient();
   const entityIds = tasks.map((t) => String(t.taskId));
-  const existing = await batchLoadConfirmations(client, "task", entityIds);
-  let synced = 0;
+  const existing = await mod.findTasksByExternalSyncIds({
+    source: "grocy",
+    grocyEntityType: "task",
+    externalIds: entityIds,
+  });
   const nowMs = Date.now();
+  const mutations: SyncTaskMutation[] = [];
 
   for (const task of tasks) {
     const categoryName = task.categoryId ? categoryNames?.get(task.categoryId) : undefined;
@@ -597,40 +596,50 @@ async function mergeGrocyTasks(
       // Fix #6: If locally modified, only allow Grocy-side completion to override
       if (match.taskUpdatedAt > match.syncUpdatedAt && !task.done) continue;
 
-      await client.execute({
-        sql: `UPDATE tasks SET title = ?, status = ?, due_date = ?, description = COALESCE(?, description), area_id = ?, updated_at = ? WHERE id = ?`,
-        args: [taskData.title, taskData.status, taskData.dueDate, taskData.description, taskData.areaId ?? "default", nowMs, match.taskId],
+      mutations.push({
+        kind: "update",
+        taskId: match.taskId,
+        title: taskData.title,
+        status: taskData.status,
+        dueDate: taskData.dueDate,
+        updateDueDate: true,
+        description: taskData.description,
+        areaId: taskData.areaId ?? "default",
+        updatedAt: nowMs,
+        confirmation: {
+          source: "grocy",
+          grocyEntityType: "task",
+          externalId: String(task.taskId),
+          payload: JSON.stringify(task),
+        },
       });
-      await client.execute({
-        sql: "UPDATE grocy_sync_confirmations SET payload = ?, updated_at = ? WHERE grocy_entity_type = 'task' AND grocy_entity_id = ?",
-        args: [JSON.stringify(task), nowMs, String(task.taskId)],
-      });
-      synced++;
     } else {
-      const meithealTaskId = crypto.randomUUID();
-      await client.execute({
-        sql: `INSERT INTO tasks (id, title, description, status, priority, due_date,
-                labels, framework_payload, calendar_sync_state, area_id,
-                custom_fields, task_type, idempotency_key, request_id,
-                created_at, updated_at)
-              VALUES (?, ?, ?, ?, ?, ?, ?, '{}', 'synced', ?, '{}', 'task', ?, ?, ?, ?)`,
-        args: [
-          meithealTaskId, taskData.title, taskData.description ?? "", taskData.status,
-          taskData.priority, taskData.dueDate,
-          JSON.stringify(taskData.labels),
-          taskData.areaId ?? "default",
-          `grocy-task-${task.taskId}`, crypto.randomUUID(), nowMs, nowMs,
-        ],
+      mutations.push({
+        kind: "create",
+        taskId: crypto.randomUUID(),
+        idempotencyKey: `grocy-task-${task.taskId}`,
+        title: taskData.title,
+        description: taskData.description ?? "",
+        status: taskData.status,
+        priority: taskData.priority,
+        dueDate: taskData.dueDate,
+        labels: taskData.labels,
+        areaId: taskData.areaId ?? "default",
+        taskType: "task",
+        createdAt: nowMs,
+        confirmation: {
+          source: "grocy",
+          grocyEntityType: "task",
+          externalId: String(task.taskId),
+          syncDirection: "inbound",
+          payload: JSON.stringify(task),
+        },
       });
-      await client.execute({
-        sql: `INSERT INTO grocy_sync_confirmations (confirmation_id, task_id, grocy_entity_type, grocy_entity_id, sync_direction, payload, created_at, updated_at)
-              VALUES (?, ?, 'task', ?, 'inbound', ?, ?, ?)`,
-        args: [crypto.randomUUID(), meithealTaskId, String(task.taskId), JSON.stringify(task), nowMs, nowMs],
-      });
-      synced++;
     }
   }
-  return synced;
+
+  const res = await mod.commitSyncMutationChunks(mutations);
+  return res.created + res.updated;
 }
 
 /** Fix #2: Shopping list now accepts product name map for human-readable descriptions. */
@@ -638,47 +647,57 @@ async function mergeShoppingList(
   items: { id?: number; productId: number; amount: number; note?: string }[],
   productNames?: Map<number, string>,
 ): Promise<number> {
-  const client = await getClient();
+  const mod = await getTasksModule();
+  await getClient();
   const taskData = shoppingListToTask(items, productNames);
   const nowMs = Date.now();
-
-  const existing = await client.execute({
-    sql: "SELECT task_id FROM grocy_sync_confirmations WHERE grocy_entity_type = 'shopping' AND grocy_entity_id = 'list-1'",
-    args: [],
+  const existing = await mod.findTasksByExternalSyncIds({
+    source: "grocy",
+    grocyEntityType: "shopping",
+    externalIds: ["list-1"],
   });
+  const match = existing.get("list-1");
 
-  if (existing.rows.length > 0) {
-    const taskId = existing.rows[0]!.task_id as string;
-    await client.execute({
-      sql: `UPDATE tasks SET title = ?, description = ?, status = '${STATUS.PENDING}', updated_at = ? WHERE id = ?`,
-      args: [taskData.title, taskData.description, nowMs, taskId],
-    });
-    await client.execute({
-      sql: "UPDATE grocy_sync_confirmations SET payload = ?, updated_at = ? WHERE grocy_entity_type = 'shopping' AND grocy_entity_id = 'list-1'",
-      args: [JSON.stringify({ itemCount: items.length }), nowMs],
-    });
-    return 1;
-  }
+  const mutation: SyncTaskMutation = match
+    ? {
+        kind: "update",
+        taskId: match.taskId,
+        title: taskData.title,
+        description: taskData.description,
+        replaceDescription: true,
+        status: STATUS.PENDING,
+        updatedAt: nowMs,
+        confirmation: {
+          source: "grocy",
+          grocyEntityType: "shopping",
+          externalId: "list-1",
+          payload: JSON.stringify({ itemCount: items.length }),
+        },
+      }
+    : {
+        kind: "create",
+        taskId: crypto.randomUUID(),
+        idempotencyKey: "grocy-shopping-list-1",
+        title: taskData.title,
+        description: taskData.description,
+        status: STATUS.PENDING,
+        priority: 3,
+        dueDate: null,
+        labels: taskData.labels,
+        areaId: "default",
+        taskType: "task",
+        createdAt: nowMs,
+        confirmation: {
+          source: "grocy",
+          grocyEntityType: "shopping",
+          externalId: "list-1",
+          syncDirection: "inbound",
+          payload: JSON.stringify({ itemCount: items.length }),
+        },
+      };
 
-  const taskId = crypto.randomUUID();
-  await client.execute({
-    sql: `INSERT INTO tasks (id, title, description, status, priority, due_date,
-            labels, framework_payload, calendar_sync_state, area_id,
-            custom_fields, task_type, idempotency_key, request_id,
-            created_at, updated_at)
-          VALUES (?, ?, ?, '${STATUS.PENDING}', 3, NULL, ?, '{}', 'synced', 'default', '{}', 'task', ?, ?, ?, ?)`,
-    args: [
-      taskId, taskData.title, taskData.description,
-      JSON.stringify(taskData.labels),
-      `grocy-shopping-list-1`, crypto.randomUUID(), nowMs, nowMs,
-    ],
-  });
-  await client.execute({
-    sql: `INSERT INTO grocy_sync_confirmations (confirmation_id, task_id, grocy_entity_type, grocy_entity_id, sync_direction, payload, created_at, updated_at)
-          VALUES (?, ?, 'shopping', 'list-1', 'inbound', ?, ?, ?)`,
-    args: [crypto.randomUUID(), taskId, JSON.stringify({ itemCount: items.length }), nowMs, nowMs],
-  });
-  return 1;
+  const res = await mod.commitSyncMutationChunks([mutation]);
+  return res.created + res.updated;
 }
 
 /**

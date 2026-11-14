@@ -160,9 +160,15 @@
                 const taskOverlay = document.getElementById(
                   "task-detail-overlay",
                 );
+                const taskPanel = document.getElementById("task-detail-panel");
+                const isDocked = document.body.classList.contains("has-docked-inspector");
                 const sidebar = document.getElementById("sidebar");
 
-                if (taskOverlay && taskOverlay.classList.contains("active")) {
+                if (
+                  taskOverlay &&
+                  taskOverlay.classList.contains("active") &&
+                  (!isDocked || taskPanel?.contains(document.activeElement))
+                ) {
                   document.getElementById("td-close")?.click()
                   return;
                 }
@@ -173,7 +179,9 @@
               }
 
               if (e.key === "Tab") {
-                const task = document.querySelector<HTMLElement>("#task-detail-overlay.active")
+                const task = document.body.classList.contains("has-docked-inspector")
+                  ? null
+                  : document.querySelector<HTMLElement>("#task-detail-overlay.active")
                 const search = document.querySelector<HTMLElement>("#search-hub-overlay:not(.hidden)")
                 const activeOverlay = task ?? search
                 if (activeOverlay) containTabFocus(activeOverlay, e)
@@ -182,13 +190,17 @@
 
               if (isEditing) return;
 
-              // Suppress most shortcuts when task detail overlay is open
+              if (hasPriorityOverlay()) return;
+
+              // Suppress most shortcuts when modal task detail overlay is open (not when docked)
               // Allow ? and Escape through so users can access help and close
               const taskDetailOpen = document
                 .getElementById("task-detail-overlay")
                 ?.classList.contains("active") ?? false;
+              const isDockedInspector = document.body.classList.contains("has-docked-inspector");
+              const modalTaskDetailOpen = taskDetailOpen && !isDockedInspector;
               if (
-                taskDetailOpen &&
+                modalTaskDetailOpen &&
                 e.key !== "?" &&
                 e.key !== "Escape"
               )
@@ -207,7 +219,7 @@
                     (window.__ingress_path || "") + "/tasks";
                 }
               }
-              if (e.key === "t") {
+              if (e.key === "t" && !(isDockedInspector && document.getElementById("task-detail-panel")?.contains(document.activeElement))) {
                 window.location.href = (window.__ingress_path || "") + "/table";
               }
               if (e.key === "d") {
@@ -229,8 +241,8 @@
               }
 
               // Phase 20 (ADHD Optimization): T/S/E shortcuts for detail panel task_type
-              // Only active when task detail is open AND user is NOT editing a text field
-              if (taskDetailOpen) {
+              // Only active when task detail is modal OR focus resides inside the docked panel
+              if (modalTaskDetailOpen || (taskDetailOpen && document.getElementById("task-detail-panel")?.contains(document.activeElement))) {
                 const tdTag = (e.target as HTMLElement)?.tagName;
                 const tdIsEditing =
                   ["INPUT", "TEXTAREA", "SELECT"].includes(tdTag) ||
@@ -264,7 +276,9 @@
               if (event.key !== "k" || event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey || !singleKeyShortcutsEnabled()) return
               const target = event.target
               if (target instanceof HTMLElement && (target.matches("input, textarea, select") || target.isContentEditable)) return
-              if (hasPriorityOverlay() || document.getElementById("task-detail-overlay")?.classList.contains("active")) return
+              const modalTdOpen = (document.getElementById("task-detail-overlay")?.classList.contains("active") ?? false) &&
+                !document.body.classList.contains("has-docked-inspector")
+              if (hasPriorityOverlay() || modalTdOpen) return
               window.location.href = (window.__ingress_path || "") + "/tasks#kanban"
             }, { signal })
           }
