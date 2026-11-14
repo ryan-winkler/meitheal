@@ -1,17 +1,20 @@
-import { getSettingsRevision } from "./domains/tasks/persistence/settings-repository"
-import type { MiddlewareHandler } from "astro";
-import { apiProblem, apiRateLimited } from "./lib/api-response";
-import { resolveIngressContext } from "@domains/auth/ingress";
-import { getIngressTransport } from "../scripts/ingress-transport.mjs";
-import { buildSecurityHeaders, isCsrfAllowed } from "@domains/auth/ingress-policy";
-import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability";
-import { getPersistenceClient, ensureDatabaseSchemaSupported, ensureSchema } from "@domains/tasks/persistence/store";
-import { initHAIntegrations } from "@domains/ha";
-import { startInactivityScheduler } from "@domains/tasks/task-inactivity-scheduler"
-import type { DateFormat } from "./lib/date";
-import { replayTaskRequest, taskRetryKey } from "./lib/idempotent-task-request"
-import { rejectBoardSelectionInUrl } from "./domains/tasks/board-availability"
+import type { MiddlewareHandler } from "astro"
 import { resolveAgentRouteAccess } from "@meitheal/domain-auth"
+import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability"
+import { buildSecurityHeaders, isCsrfAllowed, resolveIngressContext } from "@domains/auth"
+import { initHAIntegrations } from "@domains/ha"
+import {
+  ensureDatabaseSchemaSupported,
+  ensureSchema,
+  getPersistenceClient,
+  getSettingsRevision,
+  rejectBoardSelectionInUrl,
+  startInactivityScheduler,
+} from "@domains/tasks"
+import { getIngressTransport } from "../scripts/ingress-transport.mjs"
+import { apiProblem, apiRateLimited } from "./lib/api-response"
+import type { DateFormat } from "./lib/date"
+import { replayTaskRequest, taskRetryKey } from "./lib/idempotent-task-request"
 import { checkAssignedTask, resolveAgentAuth, type ResolvedAgent } from "./lib/agent-token-guard"
 import { rewriteIngressHtml } from "./lib/rewrite-ingress-html"
 import { commentAttemptHeader, commentMentionContextHeader } from "./lib/comment-mentions"
@@ -28,7 +31,9 @@ const logger = createLogger({
 
 
 // ── Known automation source identifiers (validated against for log safety) ──
-const KNOWN_AUTOMATION_SOURCES = new Set(["browser", "n8n", "nodered", "mcp", "agent", "a2a", "ha", "api", "webhook", "cron"])
+const KNOWN_AUTOMATION_SOURCES = new Set(["browser", "webmcp", "n8n", "nodered", "mcp", "agent", "a2a", "ha", "api", "webhook", "cron"])
+const AGENT_DISCOVERY_PATHS = new Set(["/.well-known/mcp.json", "/.well-known/agent-card.json", "/.well-known/agent.json"])
+const isAgentDiscoveryPath = (pathname: string) => AGENT_DISCOVERY_PATHS.has(pathname)
 
 // ── W3C Traceparent Parsing (OTel-compatible, zero-dep) ──
 // Format: {version}-{trace-id}-{parent-id}-{trace-flags}
@@ -257,7 +262,8 @@ async function handleRequest({ request, locals, routePattern }: Parameters<Middl
     })
   }
   // Astro can route a decoded API namespace that the raw-path scope checks would miss.
-  if (routePattern.startsWith("/api/") && !url.pathname.startsWith("/api/")) {
+  if ((routePattern.startsWith("/api/") && !url.pathname.startsWith("/api/")) ||
+      (isAgentDiscoveryPath(routePattern) && !isAgentDiscoveryPath(url.pathname))) {
     return new Response(null, { status: 404, headers: { "cache-control": "private, no-store" } })
   }
   const method = request.method.toUpperCase();
@@ -286,7 +292,8 @@ async function handleRequest({ request, locals, routePattern }: Parameters<Middl
   // Rate limit by the trusted identity or actual transport peer. Caller-supplied
   // forwarded addresses must not create new rate-limit buckets.
   const ip = hassUserId ? `ha:${hassUserId}` : transport?.peer || "127.0.0.1";
-  const rateInfo = url.pathname.startsWith("/api/") ? getRateLimit(ip) : null
+  const agentDiscoveryRoute = isAgentDiscoveryPath(url.pathname)
+  const rateInfo = (url.pathname.startsWith("/api/") || agentDiscoveryRoute) ? getRateLimit(ip) : null
 
   if (rateInfo?.exceeded) {
     const retryAfter = Math.ceil((rateInfo.resetAt - Date.now()) / 1000)
@@ -300,7 +307,7 @@ async function handleRequest({ request, locals, routePattern }: Parameters<Middl
   }
 
   // Bot-specific rate limiting (PRA-08) — stricter 60/min for bot mutation endpoints
-  if (rateInfo && isBotEndpoint(url.pathname)) {
+  if (rateInfo && (isBotEndpoint(url.pathname) || isBotEndpoint(routePattern))) {
     const botRate = getBotRateLimit(ip);
     if (botRate.exceeded) {
       logger.log("warn", {
@@ -322,7 +329,7 @@ async function handleRequest({ request, locals, routePattern }: Parameters<Middl
   }
 
   let resolvedAgent: ResolvedAgent | null = null
-  if (url.pathname.startsWith("/api/") && !isHealthCheck) {
+  if ((url.pathname.startsWith("/api/") || agentDiscoveryRoute) && !isHealthCheck) {
     try {
       resolvedAgent = await resolveAgentAuth(request)
     } catch (error) {

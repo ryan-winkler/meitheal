@@ -84,6 +84,7 @@ test("an agent assignee reads, answers, updates and hands back only its own task
     }
     const claudeToken = await token("Claude", agentScopes, claude.id)
     const codexToken = await token("Codex", agentScopes, codex.id)
+    const writeOnlyToken = await token("WriteOnly", ["mcp:execute", "tasks:write:assigned"], claude.id)
     const automation = await token("n8n", ["mcp:execute", "tasks:read", "tasks:write"])
     const tokens = await (await api.get(base + "/api/agent-tokens", { headers: admin })).json()
     expect(tokens).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Claude", assigneeId: claude.id })]))
@@ -112,6 +113,14 @@ test("an agent assignee reads, answers, updates and hands back only its own task
     expect(tools).toEqual(expect.arrayContaining(["whoAmI", "listMyTasks", "handBackTask", "completeTask", "updateTask", "getTask"]))
     expect(tools).not.toContain("createTask")
     expect(tools).not.toContain("deleteTask")
+
+    const writeOnlyTools = ((await (await api.post(base + "/api/mcp", {
+      headers: writeOnlyToken,
+      data: { jsonrpc: "2.0", id: 2, method: "tools/list" },
+    })).json()).result.tools as Array<{ name: string }>).map(tool => tool.name)
+    expect(writeOnlyTools).toEqual(expect.arrayContaining(["whoAmI", "completeTask"]))
+    expect(writeOnlyTools).not.toContain("handBackTask")
+    expect(writeOnlyTools).not.toContain("listMyTasks")
 
     const identity = await call(claudeToken, "whoAmI")
     expect(identity.data).toMatchObject({ token_name: "Claude", assignee: { id: claude.id, name: "Claude" }, can_change: "assigned_tasks" })

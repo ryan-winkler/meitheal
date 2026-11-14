@@ -423,9 +423,9 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
       }
     }
     if (changes.length > 0) {
-      const automationSource = request.headers.get("X-Automation-Source")?.replace(/[^\w .:-]/g, "").slice(0, 60)
+      const automation = request.headers.has("X-Automation-Source") ? locals.automationSource : null
       const activityActor = agentActivityActor(locals) ??
-        (automationSource ? { actor: `ha:${automationSource}`, actor_type: "ha" as const } : undefined)
+        { actor: automation ? `ha:${automation}` : "user", actor_type: (automation ? "ha" : "user") as "ha" | "user" }
       repo.logActivity(resolvedId, changes, activityActor).catch(() => { })
     }
   }

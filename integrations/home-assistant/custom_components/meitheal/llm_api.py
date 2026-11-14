@@ -29,7 +29,7 @@ from .helpers import ASSIGNEE_ID, assignee_for_user
 class MeithealLLMAPI(llm.API):
     """Expose task management tools bound to one loaded Meitheal config entry."""
 
-    id_prefix = "meitheal_tasks"
+    id_prefix = "meitheal_tasks_read"
     api_name = "Meitheal Tasks (read only)"
     prompt = "Look up Meitheal tasks. These tools can only read task data."
 
@@ -87,7 +87,7 @@ class MeithealLLMAPI(llm.API):
 class MeithealManageLLMAPI(MeithealLLMAPI):
     """Expose task reading and writing, bound to one loaded Meitheal config entry."""
 
-    id_prefix = "meitheal_tasks_manage"
+    id_prefix = "meitheal_tasks"
     api_name = "Meitheal Tasks"
     prompt = (
         "Manage the household's Meitheal tasks. Call meitheal_list_tasks to see the "
@@ -328,11 +328,22 @@ class CreateTaskTool(MeithealWriteTool):
         payload = {key: value for key, value in args.items() if key not in ("assignee", _CALLER)}
         if "assignee" in args:
             payload["assigned_to"] = _assignee(args)
+        authority: set[str] = set()
         created = _acknowledged(
             await coordinator.api.async_request(
-                "POST", "/api/tasks", payload=payload, read_json=True
+                "POST",
+                "/api/tasks",
+                payload=payload,
+                read_json=True,
+                event_authority=authority,
             )
         )
+        if "meitheal_task_created" not in authority:
+            coordinator._fire_event(
+                "meitheal_task_created",
+                {"task_id": created["id"], "title": payload["title"]},
+            )
+        coordinator._fire_logbook("Meitheal", f"created task: {payload['title']}")
         await coordinator.async_request_refresh()
         return _task_summary(created)
 

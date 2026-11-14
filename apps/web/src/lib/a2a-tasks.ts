@@ -1,6 +1,5 @@
 import { hasScope } from "@meitheal/domain-auth"
-import { TaskRepository } from "@domains/tasks/persistence/task-repository"
-import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
+import { TaskRepository, ensureSchema, getPersistenceClient } from "@domains/tasks"
 import type { ResolvedAgent } from "./agent-token-guard"
 import { isActiveStatus, isDoneStatus, normalizeStatus } from "./status-config"
 
@@ -16,6 +15,12 @@ function state(status: unknown): string {
   if (value === "cancelled" || value === "canceled") return "TASK_STATE_CANCELED"
   if (isDoneStatus(value)) return "TASK_STATE_COMPLETED"
   return isActiveStatus(value) ? "TASK_STATE_WORKING" : "TASK_STATE_SUBMITTED"
+}
+
+function updatedTimestampMs(row: Row): number | undefined {
+  const value = row.task_version ?? row.updated_at
+  const ms = typeof value === "number" ? value : Date.parse(String(value ?? ""))
+  return Number.isFinite(ms) ? ms : undefined
 }
 
 function timestamp(value: unknown): string | undefined {
@@ -62,7 +67,9 @@ const canRead = (agent: ResolvedAgent) => hasScope(agent.scopes, "tasks:read")
 export async function getA2aTask(agent: ResolvedAgent, idOrKey: string, base: string) {
   if (!canRead(agent) || !/^[\w-]{1,128}$/.test(idOrKey)) return null
   await ensureSchema()
-  const row = await new TaskRepository(getPersistenceClient()).findById(idOrKey)
+  const repo = new TaskRepository(getPersistenceClient())
+  const resolved = await repo.resolveTaskId(idOrKey)
+  const row = resolved ? await repo.findById(resolved.id) : null
   return row ? toA2aTask(row as unknown as Row, base) : null
 }
 
@@ -70,18 +77,43 @@ export async function getA2aTask(agent: ResolvedAgent, idOrKey: string, base: st
 export async function listA2aTasks(
   agent: ResolvedAgent,
   base: string,
-  options: { pageSize: number; offset: number; includeArtifacts: boolean; state?: string | undefined; contextId?: string | undefined },
+  options: {
+    pageSize: number
+    offset: number
+    includeArtifacts: boolean
+    state?: string | undefined
+    contextId?: string | undefined
+    statusTimestampAfterMs?: number | undefined
+  },
 ) {
   const empty = { tasks: [], nextPageToken: "", pageSize: options.pageSize, totalSize: 0 }
   if (!canRead(agent) || !agent.assigneeId) return empty
   await ensureSchema()
-  const { tasks: rows } = await new TaskRepository(getPersistenceClient()).findAll({
-    assignedTo: agent.assigneeId, sort: "updated_at", order: "DESC", limit: 500,
-  })
+  const repo = new TaskRepository(getPersistenceClient())
+  const rows: Row[] = []
+  for (let offset = 0; ; offset += 200) {
+    const { tasks: batch } = await repo.findAll({
+      assignedTo: agent.assigneeId,
+      sort: "updated_at",
+      order: "DESC",
+      limit: 200,
+      offset,
+    })
+    rows.push(...(batch as unknown as Row[]))
+    if (batch.length < 200) break
+  }
   // Filter after the read: A2A states group several Meitheal statuses.
-  const matching = (rows as unknown as Row[]).filter(row =>
-    (options.state ? state(row.status) === options.state : !isDoneStatus(normalizeStatus(String(row.status ?? "")))) &&
-    (!options.contextId || row.id === options.contextId))
+  const matching = rows.filter(row => {
+    if (!(options.state ? state(row.status) === options.state : !isDoneStatus(normalizeStatus(String(row.status ?? ""))))) {
+      return false
+    }
+    if (options.contextId && row.id !== options.contextId) return false
+    if (options.statusTimestampAfterMs !== undefined) {
+      const updatedMs = updatedTimestampMs(row)
+      if (updatedMs === undefined || updatedMs <= options.statusTimestampAfterMs) return false
+    }
+    return true
+  })
   const page = matching.slice(options.offset, options.offset + options.pageSize)
   const next = options.offset + page.length
   return {

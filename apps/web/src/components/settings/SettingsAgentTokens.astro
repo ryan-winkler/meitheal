@@ -1,7 +1,5 @@
 ---
 import { AVAILABLE_SCOPES } from "@meitheal/domain-auth"
-import { t } from "../../i18n/translations"
-import type { Locale } from "../../lib/locale"
 import SettingsPanelCard from "./SettingsPanelCard.astro"
 
 /**
@@ -9,16 +7,14 @@ import SettingsPanelCard from "./SettingsPanelCard.astro"
  *
  * Shows existing tokens with scope badges, lets admins create
  * new tokens (show-once plaintext), revoke, and delete.
+ * Client interactivity is wired via settings-agent-tokens-controller.ts.
  *
  * @domain settings
  * @bounded-context agent-authorization
  * @kcs Agent tokens enable zero-trust API access for n8n, Node-RED, and LLM agents.
  */
 
-interface Props {
-  locale: Locale
-}
-const { locale } = Astro.props
+const canManageTokens = Astro.locals.hassIsAdmin === true && !Astro.locals.agentToken
 
 const scopeGroups = [
   { label: "Tasks", category: "tasks" },
@@ -26,7 +22,6 @@ const scopeGroups = [
   { label: "Search", category: "search" },
   { label: "Protocols", category: "protocols" },
 ] as const
-
 ---
 
 <div class="settings-grid mt-4">
@@ -40,12 +35,17 @@ const scopeGroups = [
       type="button"
       class="btn btn-primary"
       id="agent-token-create-btn"
+      disabled={!canManageTokens}
+      data-can-manage-tokens={canManageTokens ? "true" : "false"}
       style="font-size: 13px; white-space: nowrap;"
     >+ New Token</button>
 
     <!-- Token List -->
     <div id="agent-tokens-list" class="agent-tokens__list">
-      <div class="agent-tokens__empty" id="agent-tokens-empty">
+      <div class="agent-tokens__status" id="agent-tokens-status" role="status" aria-live="polite" hidden={canManageTokens}>
+        {!canManageTokens && "Home Assistant administrator access is required to view or issue agent tokens."}
+      </div>
+      <div class="agent-tokens__empty" id="agent-tokens-empty" hidden>
         <span style="font-size: 24px;">🔒</span>
         <p>No agent tokens yet</p>
         <p class="agent-tokens__empty-hint">Create a token to let external tools access your API securely.</p>
@@ -97,8 +97,8 @@ const scopeGroups = [
         <p class="agent-tokens__hint">This name appears in the assignee list on every task.</p>
       </div>
 
-      <div class="form-group">
-        <label class="form-label">Scopes</label>
+      <fieldset class="form-group" style="border: 0; padding: 0; margin: 0;">
+        <legend class="form-label">Scopes</legend>
         <div class="agent-tokens__scope-grid">
           {scopeGroups.map((group) => (
             <div class="agent-tokens__scope-group">
@@ -112,7 +112,7 @@ const scopeGroups = [
             </div>
           ))}
         </div>
-      </div>
+      </fieldset>
 
       <div class="form-group">
         <label class="form-label" for="agent-token-expires">Expiry (optional)</label>
@@ -144,7 +144,10 @@ const scopeGroups = [
   </SettingsPanelCard>
 </div>
 
-<style>
+<style is:inline>
+  #agent-tokens-card [hidden] {
+    display: none;
+  }
   .agent-tokens__list {
     display: flex;
     flex-direction: column;
@@ -152,12 +155,11 @@ const scopeGroups = [
     background: var(--border);
     border-top: 1px solid var(--border);
   }
-  .agent-tokens__list:empty,
-  .agent-tokens__list:has(> #agent-tokens-empty:only-child) {
+  .agent-tokens__list:not(:has(> .agent-tokens__row, > #agent-tokens-status:not([hidden]))) {
     background: transparent;
     border-top: none;
   }
-  .agent-tokens__empty {
+  .agent-tokens__empty:not([hidden]) {
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -171,6 +173,13 @@ const scopeGroups = [
   .agent-tokens__empty-hint {
     font-size: 12px;
     color: var(--text-secondary);
+  }
+  .agent-tokens__status {
+    padding: 16px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 13px;
+    background: var(--bg-card);
   }
   .agent-tokens__row {
     display: flex;
@@ -202,7 +211,7 @@ const scopeGroups = [
     padding: 1px 6px;
     border-radius: 4px;
     background: color-mix(in srgb, var(--accent) 12%, transparent);
-    color: var(--accent);
+    color: var(--accent-text);
     font-size: 10px;
     font-family: "JetBrains Mono", monospace;
   }
@@ -210,14 +219,13 @@ const scopeGroups = [
     font-family: "JetBrains Mono", monospace;
     font-size: 11px;
     color: var(--text-muted);
-    opacity: 0.7;
   }
   .agent-tokens__row-actions {
     display: flex;
     gap: 4px;
     flex-shrink: 0;
   }
-  .agent-tokens__form {
+  .agent-tokens__form:not([hidden]) {
     padding: 16px;
     border-top: 1px solid var(--border);
     display: flex;
@@ -257,7 +265,7 @@ const scopeGroups = [
     font-size: 11px;
     font-family: "JetBrains Mono", monospace;
   }
-  .agent-tokens__reveal {
+  .agent-tokens__reveal:not([hidden]) {
     padding: 16px;
     border-top: 1px solid var(--border);
     display: flex;
@@ -267,7 +275,7 @@ const scopeGroups = [
   .agent-tokens__reveal-warning {
     font-size: 13px;
     font-weight: 600;
-    color: var(--warning, #f59e0b);
+    color: var(--warning-text, var(--warning, #f59e0b));
     padding: 8px 12px;
     border-radius: 8px;
     background: color-mix(in srgb, var(--warning, #f59e0b) 10%, var(--bg-card));
@@ -304,389 +312,8 @@ const scopeGroups = [
     color: var(--text-primary);
     font-size: 11px;
   }
-  .agent-tokens__revoked {
+  .agent-tokens__revoked .agent-tokens__row-name {
     text-decoration: line-through;
-    opacity: 0.5;
+    color: var(--text-muted);
   }
 </style>
-
-<script>
-  import { confirmDialog } from "@lib/confirm-dialog"
-  import { showToast } from "@lib/toast"
-  import { pageLifecycle } from "@lib/page-lifecycle"
-
-  const listEl = document.getElementById("agent-tokens-list")!
-  const emptyEl = document.getElementById("agent-tokens-empty")!
-  const createBtn = document.getElementById("agent-token-create-btn")!
-  const formEl = document.getElementById("agent-token-form")!
-  const cancelBtn = document.getElementById("agent-token-form-cancel")!
-  const saveBtn = document.getElementById("agent-token-save")!
-  const revealEl = document.getElementById("agent-token-reveal")!
-  const plaintextEl = document.getElementById("agent-token-plaintext")!
-  const copyBtn = document.getElementById("agent-token-copy")!
-  const doneBtn = document.getElementById("agent-token-reveal-done")!
-  const nameInput = document.getElementById("agent-token-name") as HTMLInputElement
-  const expiresSelect = document.getElementById("agent-token-expires") as HTMLSelectElement
-  const assigneeSelect = document.getElementById("agent-token-assignee") as HTMLSelectElement
-  const newAssigneeGroup = document.getElementById("agent-token-new-assignee")!
-  const newAssigneeInput = document.getElementById("agent-token-new-assignee-name") as HTMLInputElement
-
-  const NEW_ASSIGNEE = "__new__"
-  /** What an agent needs to work its own tasks and nothing else. */
-  const AGENT_SCOPES = ["mcp:execute", "tasks:read", "tasks:write:assigned", "search:read"]
-  let agentNames = new Map<string, string>()
-
-  // ── Agent assignees ──
-  async function loadAgentAssignees() {
-    try {
-      const res = await fetch("/api/users/custom")
-      if (!res.ok) return
-      const data: { users?: Array<{ id: string, name: string, kind?: string }> } = await res.json()
-      agentNames = new Map((data.users ?? []).filter(user => user.kind === "agent").map(user => [user.id, user.name]))
-    } catch {
-      return
-    }
-    const selected = assigneeSelect.value
-    assigneeSelect.querySelectorAll("option[data-agent]").forEach(option => option.remove())
-    const newOption = assigneeSelect.querySelector(`option[value="${NEW_ASSIGNEE}"]`)
-    for (const [id, name] of agentNames) {
-      const option = document.createElement("option")
-      option.value = id
-      option.textContent = name
-      option.dataset.agent = "true"
-      assigneeSelect.insertBefore(option, newOption)
-    }
-    if ([...assigneeSelect.options].some(option => option.value === selected)) assigneeSelect.value = selected
-  }
-
-  pageLifecycle.on(assigneeSelect, "change", () => {
-    const creating = assigneeSelect.value === NEW_ASSIGNEE
-    newAssigneeGroup.hidden = !creating
-    if (creating) {
-      if (!newAssigneeInput.value) newAssigneeInput.value = nameInput.value.trim()
-      newAssigneeInput.focus()
-    }
-    const scopeBoxes = [...document.querySelectorAll<HTMLInputElement>('[name="agent-token-scopes"]')]
-    // Suggest the least-privilege agent scopes, but never overwrite a choice already made.
-    if (assigneeSelect.value && !scopeBoxes.some(box => box.checked)) {
-      for (const box of scopeBoxes) box.checked = AGENT_SCOPES.includes(box.value)
-    }
-  })
-
-  interface TokenInfo {
-    id: string
-    name: string
-    tokenPrefix: string
-    scopes: string[]
-    assigneeId?: string | null
-    createdAt: string
-    expiresAt: string | null
-    lastUsedAt?: string | null
-    revoked?: boolean
-  }
-
-  function clearTokenStatus() {
-    listEl.querySelectorAll(".agent-tokens__status").forEach(el => el.remove())
-  }
-
-  function showTokenStatus(html: string) {
-    clearTokenStatus()
-    listEl.querySelectorAll(".agent-tokens__row").forEach(el => el.remove())
-    const statusEl = document.createElement("div")
-    statusEl.className = "agent-tokens__status"
-    statusEl.style.cssText = "padding: 16px; text-align: center; color: var(--text-muted); font-size: 13px;"
-    statusEl.innerHTML = html
-    listEl.appendChild(statusEl)
-    emptyEl.hidden = true
-  }
-
-  function showTokenAdminNotice() {
-    showTokenStatus("Home Assistant administrator access is required to view or issue agent tokens.")
-    if (createBtn instanceof HTMLButtonElement) createBtn.disabled = true
-  }
-
-  // ── T7: Error state with retry ──
-  function showTokenError() {
-    showTokenStatus(
-      `Failed to load tokens.\n<button type="button" class="btn btn-ghost btn-sm" id="tokens-retry" style="margin-left: 8px;">Retry</button>`,
-    )
-    const retryBtn = document.getElementById("tokens-retry")
-    if (retryBtn) pageLifecycle.on(retryBtn, "click", () => loadTokens())
-  }
-
-  // ── Load tokens ──
-  async function loadTokens() {
-    try {
-      const res = await fetch("/api/agent-tokens")
-      if (res.status === 403) {
-        showTokenAdminNotice()
-        return
-      }
-      if (!res.ok) {
-        showTokenError()
-        return
-      }
-      const tokens: TokenInfo[] = await res.json()
-      await loadAgentAssignees()
-      renderTokens(tokens)
-    } catch {
-      showTokenError()
-    }
-  }
-
-  function renderTokens(tokens: TokenInfo[]) {
-    // Clear any stale status banner and old rows while keeping #agent-tokens-empty attached
-    clearTokenStatus()
-    listEl.querySelectorAll(".agent-tokens__row").forEach(el => el.remove())
-    if (createBtn instanceof HTMLButtonElement) createBtn.disabled = false
-
-    if (tokens.length === 0) {
-      emptyEl.hidden = false
-      return
-    }
-
-    emptyEl.hidden = true
-
-    for (const token of tokens) {
-      const row = document.createElement("div")
-      row.className = `agent-tokens__row${token.revoked ? " agent-tokens__revoked" : ""}`
-      row.dataset.tokenId = token.id
-
-      // T2: Escape scope strings to prevent XSS
-      const scopeBadges = token.scopes
-        .map(s => `<span class="agent-tokens__scope-badge">${escapeHtml(s)}</span>`)
-        .join("")
-
-      const actsAs = token.assigneeId && agentNames.get(token.assigneeId)
-      const assigneeBadge = actsAs
-        ? `<span class="agent-tokens__assignee-badge">Acts as ${escapeHtml(actsAs)}</span>`
-        : ""
-
-      const created = new Date(token.createdAt).toLocaleDateString()
-      const expires = token.expiresAt
-        ? `Expires ${new Date(token.expiresAt).toLocaleDateString()}`
-        : "No expiry"
-
-      row.innerHTML = `
-        <div class="agent-tokens__row-info">
-          <div class="agent-tokens__row-name">${escapeHtml(token.name)}</div>
-          <div class="agent-tokens__row-meta">
-            <span class="agent-tokens__row-prefix">${escapeHtml(token.tokenPrefix)}…</span>
-            ${assigneeBadge}
-            ${scopeBadges}
-            <span>Created ${created}</span>
-            <span>· ${expires}</span>
-          </div>
-        </div>
-        <div class="agent-tokens__row-actions">
-          ${token.revoked
-            ? '<span class="badge badge-pending">Revoked</span>'
-            : `<button type="button" class="btn btn-ghost btn-sm" data-revoke="${escapeHtml(token.id)}" title="Revoke">🚫</button>`
-          }
-          <button type="button" class="btn btn-ghost btn-sm" data-delete="${escapeHtml(token.id)}" title="Delete permanently">🗑</button>
-        </div>
-      `
-      listEl.appendChild(row)
-    }
-
-    // T1: Bind action buttons with pageLifecycle for auto-cleanup
-    listEl.querySelectorAll("[data-revoke]").forEach(btn => {
-      pageLifecycle.on(btn, "click", () => revokeToken(btn.getAttribute("data-revoke")!))
-    })
-    listEl.querySelectorAll("[data-delete]").forEach(btn => {
-      pageLifecycle.on(btn, "click", () => deleteToken(btn.getAttribute("data-delete")!))
-    })
-  }
-
-  // ── Create flow ──
-  pageLifecycle.on(createBtn, "click", () => {
-    formEl.hidden = false
-    revealEl.hidden = true
-    nameInput.value = ""
-    nameInput.focus()
-    document.querySelectorAll<HTMLInputElement>('[name="agent-token-scopes"]')
-      .forEach(cb => { cb.checked = false })
-    expiresSelect.value = ""
-    assigneeSelect.value = ""
-    newAssigneeInput.value = ""
-    newAssigneeGroup.hidden = true
-    loadAgentAssignees()
-  })
-
-  pageLifecycle.on(cancelBtn, "click", () => {
-    formEl.hidden = true
-  })
-
-  pageLifecycle.on(saveBtn, "click", async () => {
-    const name = nameInput.value.trim()
-    if (!name) {
-      showToast("Token name is required", "error")
-      nameInput.focus()
-      return
-    }
-
-    const scopes: string[] = []
-    document.querySelectorAll<HTMLInputElement>('[name="agent-token-scopes"]:checked')
-      .forEach(cb => scopes.push(cb.value))
-
-    if (scopes.length === 0) {
-      showToast("Select at least one scope", "error")
-      return
-    }
-
-    // Calculate expiry
-    let expiresAt: string | null = null
-    const exp = expiresSelect.value
-    if (exp) {
-      const now = Date.now()
-      const ms = exp === "7d" ? 7*86400000 : exp === "30d" ? 30*86400000
-        : exp === "90d" ? 90*86400000 : exp === "1y" ? 365*86400000 : 0
-      if (ms) expiresAt = new Date(now + ms).toISOString()
-    }
-
-    const creatingAssignee = assigneeSelect.value === NEW_ASSIGNEE
-    const newAssigneeName = newAssigneeInput.value.trim()
-    if (creatingAssignee && !newAssigneeName) {
-      showToast("Name the new agent assignee", "error")
-      newAssigneeInput.focus()
-      return
-    }
-    if (!assigneeSelect.value && scopes.includes("tasks:write:assigned")) {
-      showToast("Choose who this token acts as to use tasks:write:assigned", "error")
-      assigneeSelect.focus()
-      return
-    }
-
-    saveBtn.setAttribute("disabled", "true")
-    saveBtn.textContent = "Creating…"
-
-    try {
-      let assigneeId: string | null = assigneeSelect.value || null
-      if (creatingAssignee) {
-        const created = await fetch("/api/users/custom", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: newAssigneeName, kind: "agent" }),
-        })
-        const assignee = await created.json().catch(() => ({}))
-        if (!created.ok || typeof assignee.id !== "string") {
-          showToast(assignee.error || "Failed to create the agent assignee", "error")
-          return
-        }
-        assigneeId = assignee.id
-        // Keep the new assignee selected so a failed token request can be retried without a duplicate.
-        await loadAgentAssignees()
-        assigneeSelect.value = assignee.id
-        newAssigneeGroup.hidden = true
-        newAssigneeInput.value = ""
-      }
-
-      const res = await fetch("/api/agent-tokens", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, scopes, expiresAt, assigneeId }),
-      })
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}))
-        showToast(err.detail || "Failed to create token", "error")
-        return
-      }
-
-      const data = await res.json()
-
-      // Show plaintext token (one time only)
-      formEl.hidden = true
-      revealEl.hidden = false
-      plaintextEl.textContent = data.token
-
-      showToast("Token created — copy it now!", "success")
-      loadTokens()
-    } catch {
-      showToast("Failed to create token", "error")
-    } finally {
-      saveBtn.removeAttribute("disabled")
-      saveBtn.textContent = "Create Token"
-    }
-  })
-
-  // ── Copy token ──
-  pageLifecycle.on(copyBtn, "click", async () => {
-    try {
-      await navigator.clipboard.writeText(plaintextEl.textContent || "")
-      showToast("Token copied to clipboard", "success")
-      copyBtn.textContent = "✅ Copied"
-      setTimeout(() => { copyBtn.textContent = "📋 Copy" }, 2000)
-    } catch {
-      showToast("Failed to copy — select and copy manually", "error")
-    }
-  })
-
-  pageLifecycle.on(doneBtn, "click", () => {
-    revealEl.hidden = true
-    plaintextEl.textContent = ""
-  })
-
-  // ── Revoke & Delete ──
-  async function revokeToken(id: string) {
-    const confirmed = await confirmDialog({ message: "Revoke this token? It will immediately stop working.", variant: "warning", confirmText: "Revoke" })
-    if (!confirmed) return
-    try {
-      const res = await fetch("/api/agent-tokens", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id }),
-      })
-      if (res.ok) {
-        showToast("Token revoked", "success")
-        loadTokens()
-      } else {
-        showToast("Failed to revoke token", "error")
-      }
-    } catch {
-      showToast("Failed to revoke token", "error")
-    }
-  }
-
-  async function deleteToken(id: string) {
-    const deleteConfirmed = await confirmDialog({ message: "Permanently delete this token? This cannot be undone.", variant: "danger", confirmText: "Delete" })
-    if (!deleteConfirmed) return
-    try {
-      const res = await fetch("/api/agent-tokens", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id, hard: true }),
-      })
-      if (res.ok) {
-        showToast("Token deleted", "success")
-        loadTokens()
-      } else {
-        showToast("Failed to delete token", "error")
-      }
-    } catch {
-      showToast("Failed to delete token", "error")
-    }
-  }
-
-  function escapeHtml(str: string): string {
-    const el = document.createElement("span")
-    el.textContent = str
-    return el.innerHTML
-  }
-
-  // ── Boot on section visibility ──
-  const section = document.getElementById("automation-ai-settings")
-  if (!section) {
-    loadTokens()
-  } else {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (!entries.some(e => e.isIntersecting)) return
-        observer.disconnect()
-        loadTokens()
-      },
-      { rootMargin: "0px 0px -35% 0px", threshold: 0.15 },
-    )
-    observer.observe(section)
-  }
-</script>

@@ -1,6 +1,6 @@
 """Verify the optional LLM registry and its tool-call boundaries."""
 
-from unittest.mock import AsyncMock
+from unittest.mock import ANY, AsyncMock
 
 import probatio
 import pytest
@@ -115,12 +115,12 @@ async def test_read_tools_use_the_selected_entry(
     """The API is per-entry, serializable, read-only, and bounded."""
     for entry, client, _ in reversed(registered_entries):
         instance = await llm.async_get_api(
-            hass, f"meitheal_tasks-{entry.entry_id}", llm_context(hass_admin_user.id)
+            hass, f"meitheal_tasks_read-{entry.entry_id}", llm_context(hass_admin_user.id)
         )
         assert {tool.name for tool in instance.tools} == {SEARCH, GET_TASK}
-        # Creating and completing live in the separate manage API, so this one stays read-only.
+        # Creating and completing live in the manage API, so this one stays read-only.
         manage = await llm.async_get_api(
-            hass, f"meitheal_tasks_manage-{entry.entry_id}", llm_context(hass_admin_user.id)
+            hass, f"meitheal_tasks-{entry.entry_id}", llm_context(hass_admin_user.id)
         )
         assert {SEARCH, GET_TASK, CREATE_TASK, COMPLETE_TASK} <= {tool.name for tool in manage.tools}
         for tool in instance.tools:
@@ -151,7 +151,7 @@ async def test_cached_tools_recheck_user_entry_and_arguments(
 ) -> None:
     """Denials happen before any request to the selected integration."""
     entry, client, _ = registered_entries[0]
-    api_id = f"meitheal_tasks-{entry.entry_id}"
+    api_id = f"meitheal_tasks_read-{entry.entry_id}"
     context = llm_context(hass_admin_user.id)
     instance = await llm.async_get_api(hass, api_id, context)
     member = await hass.auth.async_create_user("Fixture member", group_ids=[GROUP_ID_USER])
@@ -201,12 +201,12 @@ async def test_manage_api_reads_and_changes_tasks_for_the_caller(
     me = f"ha_{hass_admin_user.id}"
     try:
         read_only = await llm.async_get_api(
-            hass, f"meitheal_tasks-{entry.entry_id}", llm_context(hass_admin_user.id)
+            hass, f"meitheal_tasks_read-{entry.entry_id}", llm_context(hass_admin_user.id)
         )
         assert {tool.name for tool in read_only.tools} == {SEARCH, GET_TASK}
 
         instance = await llm.async_get_api(
-            hass, f"meitheal_tasks_manage-{entry.entry_id}", llm_context(hass_admin_user.id)
+            hass, f"meitheal_tasks-{entry.entry_id}", llm_context(hass_admin_user.id)
         )
         assert instance.api.requires_admin and instance.api.name == "Meitheal Tasks"
         tools = {tool.name: tool for tool in instance.tools}
@@ -247,8 +247,11 @@ async def test_manage_api_reads_and_changes_tasks_for_the_caller(
         )
         assert created.data["id"] == "new"
         client.async_request.assert_awaited_with(
-            "POST", "/api/tasks",
-            payload={"title": "Plan", "priority": 2, "assigned_to": me}, read_json=True,
+            "POST",
+            "/api/tasks",
+            payload={"title": "Plan", "priority": 2, "assigned_to": me},
+            read_json=True,
+            event_authority=ANY,
         )
 
         client.async_request.return_value = {"id": "open", "status": "active", "assigned_to": None}
@@ -314,5 +317,5 @@ async def test_manage_api_reads_and_changes_tasks_for_the_caller(
     finally:
         unregister()
     assert not {api.id for api in llm.async_get_apis(hass)} & {
-        f"meitheal_tasks-{entry.entry_id}", f"meitheal_tasks_manage-{entry.entry_id}"
+        f"meitheal_tasks-{entry.entry_id}", f"meitheal_tasks_read-{entry.entry_id}"
     }

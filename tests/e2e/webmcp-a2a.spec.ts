@@ -129,6 +129,9 @@ test.describe("A2A Route Availability", () => {
       })
 
       expect((await api.get(origin + cards[0])).status()).toBe(403)
+      expect((await api.get(origin + cards[0], { headers: authorized })).status()).toBe(200)
+      expect((await api.get(origin + cards[0], { headers: unrelated })).status()).toBe(403)
+      expect((await call(cards[0], "GET", unrelated)).status()).toBe(403)
       expect((await api.post(origin + "/api/a2a/message", {
         headers: { origin, "A2A-Token": "forged" },
         data: {},
@@ -155,6 +158,7 @@ test.describe("A2A Route Availability", () => {
         ["/api/a2a/message", "POST"],
         ["/api/a2a/tasks/unknown", "GET"],
         ["/api/a2a/tasks/unknown", "POST"],
+        ["/api/a2a/tasks/unknown:cancel", "POST"],
       ] as const) {
         const response = await call(path, method)
         expect(response.status()).toBe(404)
@@ -167,6 +171,8 @@ test.describe("A2A Route Availability", () => {
       expect(await (await call("/api/a2a/message", "POST")).json()).toMatchObject({ jsonrpc: "2.0", error: { code: -32600 } })
       const unknown = await call("/api/a2a/tasks/unknown", "GET")
       expect(await unknown.json()).toMatchObject({ status: 404, detail: "A2A task not found." })
+      const unknownCancel = await call("/api/a2a/tasks/unknown:cancel", "POST")
+      expect(await unknownCancel.json()).toMatchObject({ status: 404, detail: "A2A task not found." })
     } finally {
       if (server && server.exitCode === null && server.signalCode === null) {
         const exited = once(server, "exit")
@@ -235,7 +241,7 @@ test.describe("MCP Discovery", () => {
       const adminPath = origin + info.configuredPath + "/api/agent-tokens"
       const issueToken = async (scopes: string[]) => {
         const enrollment = await api.post(adminPath, {
-          headers: { cookie: "feedback-fixture=admin" },
+          headers: { origin, cookie: "feedback-fixture=admin" },
           data: { name: "MCP discovery fixture", scopes },
         })
         expect(enrollment.status()).toBe(201)
@@ -244,7 +250,7 @@ test.describe("MCP Discovery", () => {
       }
       const send = (headers: Record<string, string>, method: string, params?: Record<string, unknown>) =>
         api.post(ingress + "/api/mcp", { headers: { origin, ...headers }, data: { jsonrpc: "2.0", id: 1, method, params } })
-      const readHeaders = await issueToken(["mcp:execute", "tasks:read"])
+      const readHeaders = await issueToken(["mcp:execute", "tasks:read", "a2a:execute", "search:read"])
       const writeHeaders = await issueToken(["mcp:execute", "tasks:write"])
       const noMcpHeaders = await issueToken(["tasks:read"])
 
@@ -256,7 +262,19 @@ test.describe("MCP Discovery", () => {
         supportedVersions: expect.arrayContaining(["2026-07-28", "2025-03-26"]),
       })
       expect((await api.get(origin + "/.well-known/mcp.json")).status()).toBe(403)
+      expect((await api.get(origin + "/.well-known/mcp.json", { headers: readHeaders })).status()).toBe(200)
+      expect((await api.get(origin + "/.well-known/mcp.json", { headers: noMcpHeaders })).status()).toBe(403)
+      expect((await api.get(ingress + "/.well-known/mcp.json", { headers: noMcpHeaders })).status()).toBe(403)
       expect((await send({}, "tools/list")).status()).toBe(401)
+      for (const badHeaders of [
+        { origin, "sec-fetch-site": "same-origin", ...readHeaders, "content-type": "text/plain" },
+        { origin, ...readHeaders, "content-type": "application/octet-stream" },
+      ]) {
+        expect((await api.post(ingress + "/api/mcp", {
+          headers: badHeaders,
+          data: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
+        })).status()).toBe(415)
+      }
       expect((await send(noMcpHeaders, "tools/list")).status()).toBe(403)
       const initialize = await send(readHeaders, "initialize")
       expect(initialize.status(), await initialize.text()).toBe(200)
@@ -298,6 +316,8 @@ test.describe("MCP Discovery", () => {
         expect(new Set(names).size).toBe(names.length)
         expect(names.filter(name => /agenttoken|localfeedback|exportdatabase|settings/i.test(name))).toEqual([])
         expect(names).not.toContain("findCommentPeople")
+        expect(names).not.toContain("getA2AAgentCard")
+        expect(names).not.toContain("sendA2AMessage")
         for (const tool of tools) {
           expect(tool.name).toMatch(/^[A-Za-z][A-Za-z0-9_]{0,62}$/)
           expect(tool.description).toMatch(/\S/)

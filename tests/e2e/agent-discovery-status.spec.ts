@@ -132,4 +132,24 @@ test("member discovery status comes from endpoints rather than hidden administra
   await expect(page.locator("#agent-protocols-status")).toHaveText("1 of 2 discovery documents available")
   await expect(page.locator("#agent-mcp-runtime-status")).toHaveAttribute("data-state", "disabled")
   await expect(page.locator("#agent-a2a-runtime-status")).toHaveAttribute("data-state", "available")
+  await expect(page.locator("#agent-protocols-admin-only")).toHaveText(
+    "A Home Assistant administrator manages agent protocols for this household.",
+  )
+  await expect(page.locator("#agent-mcp-enabled")).not.toBeChecked()
+  await expect(page.locator("#agent-a2a-enabled")).toBeChecked()
+  await expect(page.locator("#ha-agent-discovery-status")).toHaveText("")
+  for (const selector of [
+    "#agent-mcp-enabled",
+    "#agent-a2a-enabled",
+    "#agent-webmcp-enabled",
+    "#save-agent-protocols",
+    "#ha-agent-select-settings",
+    "#save-ha-agent",
+    "#test-ha-agent",
+    "#refresh-ha-agents",
+    "#agent-token-create-btn",
+  ]) {
+    await expect(page.locator(selector)).toBeDisabled()
+  }
+  await expect(page.locator("#refresh-agent-discovery")).toBeEnabled()
 })

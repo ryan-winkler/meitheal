@@ -2,10 +2,9 @@ import type { APIRoute } from "astro"
 import { z } from "zod"
 import { hasScope } from "@meitheal/domain-auth"
 import { A2A_ERRORS, A2A_PROTOCOL_VERSION, A2A_TASK_SEARCH_SKILL } from "@meitheal/integration-core"
-import { searchMeithealCatalog } from "@domains/search/search-service"
-import { ensureSchema } from "@domains/tasks/persistence/store"
-import { A2A_RESPONSE_HEADERS, checkA2aAvailability } from "@lib/a2a-availability"
-import { getA2ALinkOrigin } from "@lib/a2a-urls"
+import { A2A_RESPONSE_HEADERS, checkA2aAvailability, getA2ALinkOrigin } from "@domains/agents"
+import { searchMeithealCatalog } from "@domains/search"
+import { ensureSchema } from "@domains/tasks"
 import { getA2aTask, listA2aTasks } from "@lib/a2a-tasks"
 import { apiProblem } from "@lib/api-response"
 import { readWithinLimit } from "@lib/bounded-body"
@@ -122,12 +121,20 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
       case "ListTasks": {
         const list = listRequest.safeParse(rpc.data.params ?? {})
         if (!list.success) return rpcError(id, A2A_ERRORS.INVALID_PARAMS, "Invalid task list parameters.")
+        let statusTimestampAfterMs: number | undefined
+        if (list.data.statusTimestampAfter !== undefined) {
+          statusTimestampAfterMs = Date.parse(list.data.statusTimestampAfter)
+          if (!Number.isFinite(statusTimestampAfterMs)) {
+            return rpcError(id, A2A_ERRORS.INVALID_PARAMS, "Invalid statusTimestampAfter timestamp.")
+          }
+        }
         return rpcResult(id, await listA2aTasks(token, linkBase, {
           pageSize: list.data.pageSize ?? 50,
           offset: Number(list.data.pageToken || 0),
           includeArtifacts: list.data.includeArtifacts ?? false,
           state: list.data.status,
           contextId: list.data.contextId,
+          statusTimestampAfterMs,
         }))
       }
       case "SendStreamingMessage":

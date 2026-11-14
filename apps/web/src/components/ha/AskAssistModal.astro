@@ -584,7 +584,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
   }
   .ask-bubble--user {
     background: var(--accent);
-    color: #fff;
+    color: var(--personal-accent-foreground, var(--palette-on-accent, #07140f));
     align-self: flex-end;
     border-bottom-right-radius: 4px;
   }
@@ -698,7 +698,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
     border-radius: 50%;
     border: none;
     background: var(--accent);
-    color: #fff;
+    color: var(--personal-accent-foreground, var(--palette-on-accent, #07140f));
     display: flex;
     align-items: center;
     justify-content: center;

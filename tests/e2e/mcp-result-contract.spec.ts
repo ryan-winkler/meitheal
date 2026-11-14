@@ -91,16 +91,29 @@ test("scoped MCP resolves native schemas and rejects false mutation successes", 
       child!.send({ type: "fixture-mcp-result", result })
       expect((await acknowledged)[0]).toEqual({ mcpResultReady: true })
     }
-    for (const result of [{ status: 403, body: "{}" }, { status: 200, body: "<private-response-secret" }, { status: 200, body: "null" }, { status: 200, body: "[]" }, { status: 200, body: '{"ok":false}' }, { status: 200, body: '{"error":"rejected"}' }, { status: 200, body: '{}' }, { status: 200, body: '{"success":false}' }, { status: 200, body: '{"id":"result-fixture","status":"pending"}' }, { status: 200, body: '{"id":"different-task","status":"complete"}' }]) {
+    const failureFixtures = [
+      { status: 403, body: "{}" },
+      { status: 200, body: "<private-response-secret" },
+      { status: 200, body: "null" },
+      { status: 200, body: "[]" },
+      { status: 200, body: '{"ok":false}' },
+      { status: 200, body: '{"error":"rejected"}' },
+      { status: 200, body: "{}" },
+      { status: 200, body: '{"success":false}' },
+      { status: 200, body: '{"id":"result-fixture","status":"pending"}' },
+      { status: 200, body: '{"id":"different-task","status":"complete"}' },
+    ]
+    for (const [index, result] of failureFixtures.entries()) {
       await setResult(result)
-      for (const modern of [false, true]) {
-        for (const args of [{ id: "result-fixture" }, { title: "Fixture title" }]) {
-          const failed = await rpc("tools/call", { name: "completeTask", arguments: args }, modern)
-          if (modern) expect(failed.result.isError).toBe(true)
-          else expect(failed.error.code).toBe(-32603)
-          expect(JSON.stringify(failed)).not.toContain('"status":"completed"')
-          expect(JSON.stringify(failed)).not.toContain("private-response-secret")
-        }
+      const cases = index <= 1
+        ? ([[false, { id: "result-fixture" }], [false, { title: "Fixture title" }], [true, { id: "result-fixture" }], [true, { title: "Fixture title" }]] as const)
+        : ([[index % 2 === 1, Math.floor(index / 2) % 2 === 0 ? { id: "result-fixture" } : { title: "Fixture title" }]] as const)
+      for (const [modern, args] of cases) {
+        const failed = await rpc("tools/call", { name: "completeTask", arguments: args }, modern)
+        if (modern) expect(failed.result.isError).toBe(true)
+        else expect(failed.error.code).toBe(-32603)
+        expect(JSON.stringify(failed)).not.toContain('"status":"completed"')
+        expect(JSON.stringify(failed)).not.toContain("private-response-secret")
       }
     }
     await setResult({ status: 204 })

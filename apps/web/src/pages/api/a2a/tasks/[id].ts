@@ -1,6 +1,5 @@
 import type { APIRoute } from "astro"
-import { A2A_RESPONSE_HEADERS, checkA2aAvailability } from "@lib/a2a-availability"
-import { getA2ALinkOrigin } from "@lib/a2a-urls"
+import { A2A_RESPONSE_HEADERS, checkA2aAvailability, getA2ALinkOrigin } from "@domains/agents"
 import { getA2aTask } from "@lib/a2a-tasks"
 import { apiProblem } from "@lib/api-response"
 

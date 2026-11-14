@@ -541,8 +541,8 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
     align-items: center;
     gap: 6px;
     padding: 6px 14px;
-    background: rgba(var(--success-rgb, 34, 197, 94), 0.08);
-    border: 1px solid rgba(var(--success-rgb, 34, 197, 94), 0.2);
+    background: rgb(var(--success-rgb, 105 227 178) / 0.08);
+    border: 1px solid rgb(var(--success-rgb, 105 227 178) / 0.2);
     border-radius: 20px;
     white-space: nowrap;
     flex-shrink: 0;
@@ -563,10 +563,10 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
   /* ── Top-task spotlight (first task in Q1) ── */
   .task-wrapper--top-task {
     position: relative;
-    border: 1px solid rgba(var(--accent-rgb), 0.25);
+    border: 1px solid rgb(var(--accent-rgb) / 0.25);
     border-radius: var(--radius-sm, 6px);
-    background: rgba(var(--accent-rgb), 0.04);
-    box-shadow: 0 0 12px rgba(var(--accent-rgb), 0.08);
+    background: rgb(var(--accent-rgb) / 0.04);
+    box-shadow: 0 0 12px rgb(var(--accent-rgb) / 0.08);
   }
   .task-wrapper--top-task::before {
     content: "👑";
@@ -653,7 +653,7 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
     font-size: 0.875rem;
   }
   .mobile-tab__count {
-    background: rgba(var(--accent-rgb), 0.15);
+    background: rgb(var(--accent-rgb) / 0.15);
     color: var(--accent-text);
     font-size: 0.625rem;
     padding: 1px 5px;
@@ -699,9 +699,9 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
     opacity: 1;
   }
   .quadrant--focused .quadrant__focus-btn {
-    background: rgba(var(--accent-rgb), 0.1);
+    background: rgb(var(--accent-rgb) / 0.1);
     color: var(--accent);
-    border-color: rgba(var(--accent-rgb), 0.3);
+    border-color: rgb(var(--accent-rgb) / 0.3);
     opacity: 1;
   }
   @media (max-width: 768px) {
@@ -712,7 +712,7 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
 
   /* ── Quadrant ── */
   .eisenhower__quadrant {
-    background: rgba(var(--bg-card-rgb, 30, 30, 46), 0.6);
+    background: rgb(var(--bg-card-rgb, 29 33 31) / 0.6);
     backdrop-filter: blur(12px);
     border: 1px solid var(--border);
     border-top: 3px solid var(--q-color);
@@ -724,7 +724,7 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
   }
   .eisenhower__quadrant.quadrant--drag-over {
     border-color: var(--q-color);
-    box-shadow: 0 0 20px rgba(var(--accent-rgb), 0.15);
+    box-shadow: 0 0 20px rgb(var(--accent-rgb) / 0.15);
   }
 
   /* ── Quadrant header ── */
@@ -757,7 +757,7 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
   }
   .quadrant__count {
     flex-shrink: 0;
-    background: rgba(var(--accent-rgb), 0.15);
+    background: rgb(var(--accent-rgb) / 0.15);
     color: var(--accent-text);
     font-size: 0.75rem;
     font-weight: 700;
@@ -804,11 +804,11 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
 
   /* ── WIP warning ── */
   .quadrant__wip-warning {
-    background: rgba(var(--warning-rgb, 245, 158, 11), 0.1);
+    background: rgb(var(--warning-rgb, 240 184 109) / 0.1);
     color: var(--warning);
     font-size: 0.75rem;
     padding: 6px 12px;
-    border-bottom: 1px solid rgba(var(--warning-rgb, 245, 158, 11), 0.15);
+    border-bottom: 1px solid rgb(var(--warning-rgb, 240 184 109) / 0.15);
   }
 
   /* ── Triage banner ── */
@@ -816,8 +816,8 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
     display: flex;
     align-items: center;
     gap: 10px;
-    background: rgba(var(--warning-rgb, 245, 158, 11), 0.08);
-    border: 1px solid rgba(var(--warning-rgb, 245, 158, 11), 0.2);
+    background: rgb(var(--warning-rgb, 240 184 109) / 0.08);
+    border: 1px solid rgb(var(--warning-rgb, 240 184 109) / 0.2);
     border-radius: var(--radius-md, 10px);
     padding: 10px 16px;
     margin-bottom: 16px;
@@ -833,9 +833,9 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
   .triage-banner__btn {
     margin-left: auto;
     padding: 6px 14px;
-    border: 1px solid rgba(var(--accent-rgb), 0.3);
+    border: 1px solid rgb(var(--accent-rgb) / 0.3);
     border-radius: var(--radius-sm, 6px);
-    background: rgba(var(--accent-rgb), 0.08);
+    background: rgb(var(--accent-rgb) / 0.08);
     color: var(--accent-text);
     font-size: 0.75rem;
     font-weight: 600;
@@ -844,7 +844,7 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
     white-space: nowrap;
   }
   .triage-banner__btn:hover {
-    background: rgba(var(--accent-rgb), 0.15);
+    background: rgb(var(--accent-rgb) / 0.15);
     border-color: var(--accent);
   }
 
@@ -861,7 +861,7 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
 
   /* ── Unclassified task highlight ── */
   .eisenhower__task-wrapper[data-unclassified] {
-    border-left: 2px dashed rgba(var(--warning-rgb, 245, 158, 11), 0.4);
+    border-left: 2px dashed rgb(var(--warning-rgb, 240 184 109) / 0.4);
     border-radius: 4px;
     padding-left: 4px;
   }
@@ -894,24 +894,24 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
     color: var(--text-primary);
   }
   .quadrant__action-btn--primary {
-    border-color: rgba(var(--accent-rgb), 0.3);
+    border-color: rgb(var(--accent-rgb) / 0.3);
     color: var(--accent);
   }
   .quadrant__action-btn--primary:hover {
-    background: rgba(var(--accent-rgb), 0.1);
+    background: rgb(var(--accent-rgb) / 0.1);
     border-color: var(--accent);
   }
   .quadrant__action-btn--muted {
     color: var(--text-muted);
   }
   .quadrant__action-btn--danger {
-    border-color: rgba(var(--danger-rgb, 239, 68, 68), 0.2);
+    border-color: rgb(var(--danger-rgb, 239 68 68) / 0.2);
     color: var(--text-muted);
   }
   .quadrant__action-btn--danger:hover {
-    background: rgba(var(--danger-rgb, 239, 68, 68), 0.08);
+    background: rgb(var(--danger-rgb, 239 68 68) / 0.08);
     color: var(--danger, #ef4444);
-    border-color: rgba(var(--danger-rgb, 239, 68, 68), 0.4);
+    border-color: rgb(var(--danger-rgb, 239 68 68) / 0.4);
   }
   .quadrant__action-btn[aria-disabled="true"] {
     opacity: 0.65;
@@ -921,8 +921,8 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
   /* ── WIP limit warning (Q1 > threshold) ── */
   .quadrant__wip-warning {
     padding: 6px 12px;
-    background: rgba(var(--warning-rgb, 245, 158, 11), 0.08);
-    border-bottom: 1px solid rgba(var(--warning-rgb, 245, 158, 11), 0.2);
+    background: rgb(var(--warning-rgb, 240 184 109) / 0.08);
+    border-bottom: 1px solid rgb(var(--warning-rgb, 240 184 109) / 0.2);
     color: var(--warning, #f59e0b);
     font-size: 0.6875rem;
     font-weight: 600;
@@ -993,7 +993,7 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
     flex-direction: column;
     gap: 4px;
     padding: 16px;
-    background: rgba(var(--bg-card-rgb, 30, 30, 46), 0.6);
+    background: rgb(var(--bg-card-rgb, 29 33 31) / 0.6);
     border: 1px solid var(--border);
     border-radius: var(--radius-md, 10px);
     text-decoration: none;
@@ -1002,7 +1002,7 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
   }
   .eisenhower__flow-card:hover {
     border-color: var(--accent);
-    background: rgba(var(--accent-rgb), 0.05);
+    background: rgb(var(--accent-rgb) / 0.05);
   }
   .flow-card__icon { font-size: 1.25rem; }
   .flow-card__label { font-size: 0.875rem; font-weight: 600; }
@@ -1217,11 +1217,11 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
     color: var(--text-primary);
   }
   .triage-card__save {
-    background: rgba(var(--accent-rgb), 0.1);
+    background: rgb(var(--accent-rgb) / 0.1);
     color: var(--accent);
   }
   .triage-card__save:hover {
-    background: rgba(var(--accent-rgb), 0.2);
+    background: rgb(var(--accent-rgb) / 0.2);
   }
 
   /* ── Extended triage details (progressive disclosure) ── */

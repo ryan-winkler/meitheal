@@ -18,7 +18,9 @@ Registers Meitheal as a first-class HA integration with:
 
 from __future__ import annotations
 
-import filecmp
+import hashlib
+import hmac
+import json
 import logging
 import os
 import shutil
@@ -88,9 +90,11 @@ COMPLETE_TASK_SCHEMA = vol.Schema(
 SEARCH_TASKS_SCHEMA = vol.Schema(
     {
         vol.Required("query"): cv.string,
-        vol.Optional("status"): vol.In(["backlog", "todo", "in_progress", "done"]),
+        vol.Optional("status"): vol.In(
+            ["backlog", "pending", "active", "complete", "todo", "in_progress", "done"]
+        ),
         vol.Optional("priority"): vol.All(vol.Coerce(int), vol.Range(min=1, max=5)),
-        vol.Optional("include_completed", default=False): cv.boolean,
+        vol.Optional("include_completed"): cv.boolean,
     }
 )
 
@@ -104,15 +108,45 @@ COMPLETE_TASK_BY_TAG_SCHEMA = vol.Schema(
 type MeithealConfigEntry = ConfigEntry[MeithealCoordinator]
 
 
+_SENTENCE_MANIFEST = ".meitheal_sentences.json"
+
+
+def _file_sha256(path: str) -> str:
+    """Return the SHA-256 hex digest of a file on disk."""
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(65536), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _read_sentence_manifest(manifest_path: str) -> dict[str, str]:
+    """Load packaged sentence digests recorded by earlier installs."""
+    try:
+        with open(manifest_path, encoding="utf-8") as handle:
+            loaded = json.load(handle)
+    except (FileNotFoundError, OSError, json.JSONDecodeError):
+        return {}
+    if not isinstance(loaded, dict):
+        return {}
+    return {
+        k: v for k, v in loaded.items() if isinstance(k, str) and isinstance(v, str)
+    }
+
+
 def _install_custom_sentences(src_base: str, dst_base: str) -> bool:
     """Copy bundled Assist sentences to the HA config directory (runs in executor).
 
-    A packaged file that changed replaces the installed copy. Returns whether any
-    file changed, so the caller reloads Assist only then.
+    Updates files whose on-disk contents still match the previously installed
+    packaged digest, while preserving locally modified household customizations.
+    Returns whether any sentence file changed, so the caller reloads Assist only then.
     """
     changed = False
     if not os.path.isdir(src_base):
         return changed
+    manifest_path = os.path.join(dst_base, _SENTENCE_MANIFEST)
+    manifest = _read_sentence_manifest(manifest_path)
+    manifest_dirty = False
     for lang in os.listdir(src_base):
         lang_src = os.path.join(src_base, lang)
         if not os.path.isdir(lang_src):
@@ -123,9 +157,34 @@ def _install_custom_sentences(src_base: str, dst_base: str) -> bool:
             if not fn.endswith(".yaml"):
                 continue
             src_file, dst_file = os.path.join(lang_src, fn), os.path.join(lang_dst, fn)
-            if not os.path.exists(dst_file) or not filecmp.cmp(src_file, dst_file, shallow=False):
+            rel_key = f"{lang}/{fn}"
+            src_sha = _file_sha256(src_file)
+            if not os.path.exists(dst_file):
                 shutil.copy2(src_file, dst_file)
+                manifest[rel_key] = src_sha
                 changed = True
+                manifest_dirty = True
+                continue
+            dst_sha = _file_sha256(dst_file)
+            if hmac.compare_digest(dst_sha, src_sha):
+                if manifest.get(rel_key) != src_sha:
+                    manifest[rel_key] = src_sha
+                    manifest_dirty = True
+                continue
+            recorded = manifest.get(rel_key)
+            if isinstance(recorded, str) and hmac.compare_digest(dst_sha, recorded):
+                shutil.copy2(src_file, dst_file)
+                manifest[rel_key] = src_sha
+                changed = True
+                manifest_dirty = True
+            else:
+                _LOGGER.debug(
+                    "Preserving locally customized Assist sentence file %s", dst_file
+                )
+    if manifest_dirty:
+        os.makedirs(dst_base, exist_ok=True)
+        with open(manifest_path, "w", encoding="utf-8") as handle:
+            json.dump(manifest, handle, sort_keys=True)
     return changed
 
 
@@ -231,7 +290,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: MeithealConfigEntry) -> 
             query=str(call.data.get("query", "")),
             status=call.data.get("status"),
             priority=call.data.get("priority"),
-            include_completed=bool(call.data.get("include_completed", False)),
+            include_completed=call.data.get("include_completed"),
         )
 
     async def handle_get_overdue_tasks(call: ServiceCall) -> ServiceResponse:

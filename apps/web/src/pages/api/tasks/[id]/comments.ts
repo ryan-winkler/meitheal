@@ -10,7 +10,6 @@ import { commentAttemptHorizonMs, commentMentions, hasCommentMentionSelector, re
 import { verifiedIngressUser } from "@lib/verified-ingress-user"
 import { notifyAgentComment } from "@domains/notifications/agent-comment"
 import { activeParticipantRequired, commentFailure, commentJson, hasCurrentTaskParticipant, readComment, resolveCommentAuthor } from "@lib/task-comment-request"
-import { dispatchTaskEvent } from "@lib/webhook-dispatcher"
 
 export const GET: APIRoute = async ({ locals, params, request }) => {
   try {
@@ -96,7 +95,7 @@ export const POST: APIRoute = async ({ params, request, locals }) => {
     if (commentResult.state === "assignee_mismatch") return apiError("Agent can only comment on tasks assigned to it", 403)
     if (commentResult.state === "not_found") return apiError("Task not found", 404)
     // Tells the household and emits task.commented for the agent's answer.
-    if (agentToken) notifyAgentComment(taskId, actor.author, prepared.content).catch(() => {})
+    if (agentToken) notifyAgentComment(taskId, { id: commentResult.comment.id, author: actor.author, content: prepared.content }).catch(() => {})
     return commentJson(commentResult.comment, 201)
   } catch {
     return commentFailure("post", "Failed to create comment")
