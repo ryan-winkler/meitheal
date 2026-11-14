@@ -7,7 +7,6 @@ import re
 from decimal import Decimal
 from itertools import pairwise
 
-
 MIB = 1024**2
 MAX_RECEIPT_BYTES = MIB
 MIN_DRIVER_SECONDS = Decimal("262.5")  # 105 fixed 2.5-second sleeps

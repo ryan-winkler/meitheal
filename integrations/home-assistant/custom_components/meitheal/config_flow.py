@@ -4,6 +4,7 @@ from collections.abc import Mapping
 from http import HTTPStatus
 from typing import Any
 
+import voluptuous as vol
 from aiohttp import DummyCookieJar
 from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
 from homeassistant.const import CONF_HOST, CONF_PORT, CONF_SSL
@@ -14,7 +15,6 @@ from homeassistant.helpers.selector import (
     TextSelectorType,
 )
 from homeassistant.helpers.service_info.hassio import HassioServiceInfo
-import voluptuous as vol
 
 from .api import (
     MeithealApi,

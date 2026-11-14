@@ -28,9 +28,10 @@ from __future__ import annotations
 import logging
 from typing import ClassVar
 
-from homeassistant.core import HomeAssistant
-from homeassistant.helpers import intent
 import voluptuous as vol
+from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import intent
 
 from .coordinator import MeithealCoordinator
 
@@ -108,7 +109,7 @@ class MeithealAddTaskHandler(_MeithealAdminIntent):
             response = intent_obj.create_response()
             response.async_set_speech(f"Added '{item}' to your tasks.")
             return response
-        except Exception as err:
+        except (HomeAssistantError, ValueError) as err:
             _LOGGER.error("Failed to create task via intent: %s", err)
             response = intent_obj.create_response()
             response.async_set_speech(f"Sorry, I couldn't add that task. {err}")
@@ -141,7 +142,7 @@ class MeithealDoneTaskHandler(_MeithealAdminIntent):
             response = intent_obj.create_response()
             response.async_set_speech(f"Done! Marked '{item}' as complete.")
             return response
-        except Exception as err:
+        except (HomeAssistantError, ValueError) as err:
             _LOGGER.error("Failed to complete task via intent: %s", err)
             response = intent_obj.create_response()
             response.async_set_speech(f"Sorry, I couldn't complete that task. {err}")
@@ -333,7 +334,7 @@ class MeithealDeleteTaskHandler(_MeithealAdminIntent):
             response = intent_obj.create_response()
             response.async_set_speech(f"Deleted '{item}' from your tasks.")
             return response
-        except Exception as err:
+        except (HomeAssistantError, ValueError) as err:
             _LOGGER.error("Failed to delete task via intent: %s", err)
             response = intent_obj.create_response()
             response.async_set_speech(f"Sorry, I couldn't delete that task. {err}")
