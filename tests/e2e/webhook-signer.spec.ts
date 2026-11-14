@@ -35,12 +35,13 @@ test.describe("Webhook Signer", () => {
     expect(verifySignature("secret-b", payload, signature)).toBe(false)
   })
 
-  test("handles empty payload", () => {
+  test("handles empty payload and mismatched signature length", () => {
     const secret = "test-secret"
     const signature = signPayload(secret, "")
 
     expect(signature).toBeTruthy()
     expect(verifySignature(secret, "", signature)).toBe(true)
+    expect(verifySignature(secret, "", "short-sig")).toBe(false)
   })
 })
 
@@ -48,6 +49,11 @@ test.describe("Private URL Guard", () => {
   test("rejects localhost", () => {
     expect(isPrivateUrl("http://localhost:3000/webhook")).toBe(true)
     expect(isPrivateHost("localhost")).toBe(true)
+    expect(isPrivateHost("localhost...")).toBe(true)
+    expect(isPrivateHost("0:0:0:0:0:0:0:1")).toBe(true)
+    expect(isPrivateHost("127.1")).toBe(true)
+    expect(isPrivateHost("bad host name")).toBe(true)
+    expect(isPrivateHost("")).toBe(true)
   })
 
   test("rejects 127.x.x.x", () => {
@@ -65,6 +71,28 @@ test.describe("Private URL Guard", () => {
   test("rejects 172.16-31.x.x", () => {
     expect(isPrivateUrl("http://172.16.0.1/hook")).toBe(true)
     expect(isPrivateUrl("http://172.31.255.255/hook")).toBe(true)
+  })
+
+  test("rejects IPv6 loopback, private ranges and IPv4-mapped addresses written as URLs", () => {
+    for (const url of [
+      "http://[::1]:8123/hook",
+      "http://[::]/hook",
+      "http://[::ffff:127.0.0.1]/hook",
+      "http://[::ffff:c0a8:101]/hook",
+      "http://[fd12:3456::1]/hook",
+      "http://[fc00::1]/hook",
+      "http://[fe80::1]/hook",
+      "http://[FE90::1]/hook",
+      "http://homeassistant.localhost/hook",
+      "http://localhost./hook",
+    ]) {
+      expect(isPrivateUrl(url), url).toBe(true)
+    }
+  })
+
+  test("allows public IPv6 and names that only resemble private ranges", () => {
+    expect(isPrivateUrl("https://[2606:4700::1111]/hook")).toBe(false)
+    expect(isPrivateUrl("https://fdroid.example/hook")).toBe(false)
   })
 
   test("allows public IPs", () => {
@@ -126,7 +154,32 @@ test.describe("Webhook Config Parser", () => {
   })
 
   test("rejects non-array webhooks", () => {
-    const result = parseWebhookConfig({ webhooks: "not-array" })
-    expect(result.ok).toBe(false)
+    expect(parseWebhookConfig({ webhooks: "not-array" }).ok).toBe(false)
+    expect(parseWebhookConfig(null).ok).toBe(false)
+  })
+
+  test("preserves enabled flag defaults and explicit false", () => {
+    const result = parseWebhookConfig({
+      webhooks: [
+        {
+          id: "sub-default",
+          url: "https://example.com/hook1",
+          secret: "s1",
+          events: ["task.created"],
+        },
+        {
+          id: "sub-disabled",
+          url: "https://example.com/hook2",
+          secret: "s2",
+          events: ["task.completed"],
+          enabled: false,
+        },
+      ],
+    })
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.subscribers[0]?.enabled).toBe(true)
+      expect(result.subscribers[1]?.enabled).toBe(false)
+    }
   })
 })

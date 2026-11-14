@@ -4,6 +4,7 @@
 
 [![Website](https://img.shields.io/badge/Website-meitheal.io-10231b?labelColor=101210&color=69e3b2)](https://meitheal.io)
 [![Docker Hub](https://img.shields.io/docker/v/coolockvillage/meitheal-amd64?label=Docker%20Hub&logo=docker)](https://hub.docker.com/r/coolockvillage/meitheal-amd64)
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/16683/badge)](https://www.bestpractices.dev/projects/16683)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/ryan-winkler/meitheal/badge)](https://scorecard.dev/viewer/?push=dev&repo=github.com/ryan-winkler/meitheal)
 [![codecov](https://codecov.io/gh/ryan-winkler/meitheal/graph/badge.svg)](https://codecov.io/gh/ryan-winkler/meitheal)
 [![Codacy Badge](https://app.codacy.com/project/badge/Grade/bd98d7c4e8d847ceb539d8504cb2d16a)](https://app.codacy.com/gh/ryan-winkler/meitheal/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade)
@@ -135,6 +136,8 @@ On Home Assistant Core 2026.11 or later, an active administrator can also enable
 ## Contribute and Get Help
 
 - [Contribute a change](CONTRIBUTING.md)
+- [Project governance](GOVERNANCE.md) and [roadmap](ROADMAP.md)
+- [Architecture overview](docs/architecture.md) and [security assurance case](docs/security-assurance-case.md)
 - [Use automations and agents with Meitheal](docs/kcs/agent-automation-guide.md)
 - [Community conduct](CODE_OF_CONDUCT.md)
 - [Support](SUPPORT.md)

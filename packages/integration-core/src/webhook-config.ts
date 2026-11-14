@@ -9,15 +9,32 @@ const PRIVATE_IP_RANGES = [
   /^192\.168\./,
   /^0\./,
   /^169\.254\./,
-  /^::1$/,
-  /^fc00:/,
-  /^fd/,
-  /^fe80:/,
-  /^localhost$/i,
+  /^::1?$/, // loopback and unspecified
+  /^f[cd][0-9a-f]{0,2}:/, // unique local fc00::/7
+  /^fe[89ab][0-9a-f]?:/, // link-local fe80::/10
+  /^::ffff:/, // IPv4-mapped addresses reach IPv4 hosts, including private ones
 ]
 
 export function isPrivateHost(hostname: string): boolean {
-  return PRIVATE_IP_RANGES.some((re) => re.test(hostname))
+  // URL keeps IPv6 literals in brackets ("[::1]") and may end a name with the root dot.
+  // Canonicalize IPv4/IPv6 shorthand literals (such as "127.1" or "0:0:0:0:0:0:0:1") through URL first.
+  const trimmed = hostname.trim().toLowerCase()
+  if (!trimmed) return true
+  let canonical = trimmed
+  try {
+    const candidate = trimmed.includes(":") && !trimmed.startsWith("[") ? `[${trimmed}]` : trimmed
+    canonical = new URL(`http://${candidate}`).hostname.toLowerCase()
+  } catch {
+    return true
+  }
+  let host = canonical.startsWith("[") && canonical.endsWith("]") ? canonical.slice(1, -1) : canonical
+  while (host.endsWith(".")) {
+    host = host.slice(0, -1)
+  }
+  if (!host || host === "localhost" || host.endsWith(".localhost")) {
+    return true
+  }
+  return PRIVATE_IP_RANGES.some((re) => re.test(host))
 }
 
 export function isPrivateUrl(urlString: string): boolean {

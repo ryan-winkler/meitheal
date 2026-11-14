@@ -497,7 +497,20 @@ self.addEventListener("notificationclick", (event) => {
 
 // --- Message Handler ---
 
+function messageSenderOrigin(event) {
+  if (event.origin) return event.origin
+  if (!event.source?.url) return ""
+  try {
+    return new URL(event.source.url).origin
+  } catch {
+    return ""
+  }
+}
+
 self.addEventListener("message", (event) => {
+  // Only pages from this origin can control the worker or purge its caches.
+  if (messageSenderOrigin(event) !== self.location.origin) return
+
   if (["TASK_PINS_IMPLEMENTED", "MEITHEAL_SEARCH_WAITING_CAPABLE",
     "MEITHEAL_PRESETS_WAITING_CAPABLE", "TASK_DRAFTS_IMPLEMENTED"].includes(event.data?.type)) {
     event.ports[0]?.postMessage(true)

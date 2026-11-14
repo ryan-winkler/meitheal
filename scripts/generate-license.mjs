@@ -18,7 +18,7 @@
  * Plans: personal, household, commercial
  */
 
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs"
+import { readFileSync, writeFileSync, mkdirSync, existsSync, unlinkSync } from "node:fs"
 import { generateKeyPairSync, createPrivateKey, sign } from "node:crypto"
 import { resolve, dirname } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -51,8 +51,23 @@ function generateKeypair() {
     privateKeyEncoding: { type: "pkcs8", format: "pem" }
   })
 
-  writeFileSync(PRIVATE_KEY_PATH, privateKey, { mode: 0o600 })
-  writeFileSync(PUBLIC_KEY_PATH, publicKey, { mode: 0o644 })
+  // "wx" fails if another process created a key after the check above, so an existing key is never replaced.
+  writeFileSync(PRIVATE_KEY_PATH, privateKey, { mode: 0o600, flag: "wx" })
+  try {
+    writeFileSync(PUBLIC_KEY_PATH, publicKey, { mode: 0o644, flag: "wx" })
+  } catch (err) {
+    try {
+      unlinkSync(PRIVATE_KEY_PATH)
+    } catch {
+      // Ignore cleanup failure; preserve the existing public key untouched.
+    }
+    console.error("❌ Public key already exists or could not be written at", PUBLIC_KEY_PATH)
+    console.error("   Rolled back newly created private key so existing keys remain intact.")
+    if (err instanceof Error && "code" in err && err.code !== "EEXIST") {
+      throw err
+    }
+    process.exit(1)
+  }
 
   console.log("✅ Ed25519 keypair generated")
   console.log(`   Private key: ${PRIVATE_KEY_PATH}`)

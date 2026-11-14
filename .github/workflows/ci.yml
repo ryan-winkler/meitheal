@@ -6,20 +6,46 @@ on:
       - main
       - dev
       - release
-    paths-ignore:
-      - "meitheal-hub-canary/config.yaml"
-      - "*.md"
-      - ".planning/**"
-      - "docs/**"
+    paths:
+      - "**"
+      - "!meitheal-hub-canary/config.yaml"
+      - "!*.md"
+      - "README.md"
+      - "AGENTS.md"
+      - "WEBMCP.md"
+      - "SECURITY.md"
+      - "CONTRIBUTING.md"
+      - "CODE_OF_CONDUCT.md"
+      - "SUPPORT.md"
+      - "COMMERCIAL.md"
+      - "GOVERNANCE.md"
+      - "ROADMAP.md"
+      - "!.planning/**"
+      - "!docs/**"
+      - "docs/index.md"
+      - "docs/kcs/home-assistant-devcontainer.md"
   pull_request:
     branches:
       - main
       - dev
       - release
-    paths-ignore:
-      - "*.md"
-      - ".planning/**"
-      - "docs/**"
+    paths:
+      - "**"
+      - "!*.md"
+      - "README.md"
+      - "AGENTS.md"
+      - "WEBMCP.md"
+      - "SECURITY.md"
+      - "CONTRIBUTING.md"
+      - "CODE_OF_CONDUCT.md"
+      - "SUPPORT.md"
+      - "COMMERCIAL.md"
+      - "GOVERNANCE.md"
+      - "ROADMAP.md"
+      - "!.planning/**"
+      - "!docs/**"
+      - "docs/index.md"
+      - "docs/kcs/home-assistant-devcontainer.md"
 
 permissions:
   contents: read
@@ -53,6 +79,8 @@ jobs:
           test -f CODE_OF_CONDUCT.md
           test -f SUPPORT.md
           test -f SECURITY.md
+          test -f GOVERNANCE.md
+          test -f ROADMAP.md
           test -f docs/index.md
           test -f docs/kcs/home-assistant-devcontainer.md
           test -f public/.well-known/mcp.json
