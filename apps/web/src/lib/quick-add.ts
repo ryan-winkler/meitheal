@@ -5,6 +5,7 @@
  * @bounded-context tasks
  * @kcs Pure module. "shopping:" and "errand:" create one checklist task.
  */
+import { createChecklistItem } from "./checklist-items"
 import { parseTaskInput, type ParsedTask } from "./nl-task-parser"
 import type { TaskCreatePayload } from "./task-api-client"
 
@@ -53,7 +54,7 @@ export function quickAddPayload(text: string, defaultDueDate: string | null = nu
     const items = match[1]!.split(",").map(item => item.trim()).filter(Boolean)
     payload.title = list.title
     payload.labels = JSON.stringify([list.label])
-    payload.checklists = JSON.stringify(items.map(item => ({ title: item, done: false })))
+    payload.checklists = JSON.stringify(items.map(createChecklistItem))
   }
   return { payload, parsed }
 }
