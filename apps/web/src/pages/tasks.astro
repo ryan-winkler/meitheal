@@ -201,8 +201,8 @@ const priorityLabels: Record<number, string> = {
 // Phase 20: Agile type metadata
 const typeConfig: Record<string, { label: string; color: string }> = {
   epic: { label: "Epic", color: "#8b5cf6" },
-  story: { label: "Story", color: "#3b82f6" },
-  task: { label: "Task", color: "#6366F1" },
+  story: { label: "Story", color: "#22c55e" },
+  task: { label: "Task", color: "#3b82f6" },
   bug: { label: "Bug", color: "#ef4444" },
 };
 const kanbanFilters = readKanbanFilters(currentUrl.searchParams)
@@ -227,7 +227,7 @@ try {
     id: String(a.id ?? ""),
     name: String(a.name ?? ""),
     icon: String(a.icon ?? "📁"),
-    color: String(a.color ?? "#6366F1"),
+    color: String(a.color ?? "var(--accent)"),
   }));
 } catch {
   /* areas table may not exist yet */
