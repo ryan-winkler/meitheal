@@ -1,5 +1,7 @@
 import type { APIRoute } from "astro"
 import type { InValue } from "@libsql/client"
+import { VALID_TASK_TYPES } from "@meitheal/domain-tasks"
+import type { TaskType } from "@meitheal/domain-tasks"
 import { hasBoardSelection, rejectBoardSelectionInJson, unavailableBoardResponse } from "@domains/tasks/board-availability"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import { TaskRepository } from "@domains/tasks/persistence/task-repository"
@@ -9,11 +11,10 @@ import { formatTicketKey } from "../../../lib/ticket-key"
 import { dispatchTaskEvent, taskEventAuthorityHeaders } from "../../../lib/webhook-dispatcher"
 import { logApiError } from "../../../lib/api-logger"
 import { apiError } from "../../../lib/api-response"
+import { requireAssignedTaskWriteAccess, restrictedAssigneeId } from "../../../lib/agent-token-guard"
 import { db503Response, isDbUnavailable } from "../../../lib/db-fallback"
 import { resolveRecentActivityActor } from "../../../lib/recent-activity-actor"
 import { STATUS, normalizeStatus, isDoneStatus } from "../../../lib/status-config"
-import { VALID_TASK_TYPES } from "@meitheal/domain-tasks"
-import type { TaskType } from "@meitheal/domain-tasks"
 
 
 /** GET /api/tasks/[id], PUT /api/tasks/[id], DELETE /api/tasks/[id] */
@@ -78,17 +79,14 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
   }
 
   const resolvedId = resolved.id
-
   const agentToken = locals.agentToken
-  if (agentToken && agentToken.scopes.includes("tasks:write:assigned") && !agentToken.scopes.includes("tasks:write")) {
-    const task = await repo.findById(resolvedId)
-    if (!task || !agentToken.assigneeId || task.assigned_to !== agentToken.assigneeId) {
-      return new Response(JSON.stringify({ error: "Agent can only update tasks assigned to it" }), {
-        status: 403,
-        headers: { "content-type": "application/json" },
-      })
-    }
-  }
+  const denied = await requireAssignedTaskWriteAccess(
+    agentToken,
+    (id) => repo.findById(id),
+    [resolvedId],
+    "Agent can only update tasks assigned to it",
+  )
+  if (denied) return denied
 
   const clientVersion = typeof body.updated_at === "number" ? body.updated_at : undefined
   if (clientVersion !== undefined && (!Number.isSafeInteger(clientVersion) || clientVersion < 0)) {
@@ -265,6 +263,8 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
       } else {
         sanitized.owner = "human"
       }
+    } else {
+      sanitized.owner = "human"
     }
   }
   // Guard the same raw checklist returned by GET. Legacy clients may omit the guard.
@@ -357,12 +357,14 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
     ...(body.expected_status === STATUS.BACKLOG ? { expectedStatus: STATUS.BACKLOG } : {}),
   }
   const completionIntent = typeof sanitized.status === "string" && isDoneStatus(sanitized.status)
+  const expectedAssignedTo = restrictedAssigneeId(agentToken)
   let update
   try {
     update = await repo.updateTask(resolvedId, sanitized, {
       activity: resolveRecentActivityActor(locals),
       ...(version ? { version } : {}),
       ...(expectedChecklists !== undefined ? { expectedChecklists } : {}),
+      ...(expectedAssignedTo !== undefined ? { expectedAssignedTo } : {}),
     })
   } catch (err) {
     if (!completionIntent) throw err
@@ -374,6 +376,9 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
     return apiError("Could not save task completion. Try again.", 500)
   }
   if (!update.ok) {
+    if (update.errorCode === "assignee_mismatch") {
+      return apiError("Agent can only update tasks assigned to it", 403)
+    }
     if (update.errorCode === "conflict") {
       return taskVersionConflict(update.updatedAt, clientVersion!)
     }
@@ -416,8 +421,9 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
       }
     }
     if (changes.length > 0) {
-      const activityActor = agentToken ? `agent:${agentToken.tokenName}` : (request.headers.get("X-Automation-Source") ? `ha:${request.headers.get("X-Automation-Source")}` : "user")
-      const actorType = agentToken ? "agent" : (request.headers.get("X-Automation-Source") ? "ha" : "user")
+      const automation = request.headers.has("X-Automation-Source") ? locals.automationSource : null
+      const activityActor = agentToken ? `agent:${agentToken.tokenName}` : (automation ? `ha:${automation}` : "user")
+      const actorType = agentToken ? "agent" : (automation ? "ha" : "user")
       repo.logActivity(resolvedId, changes, { actor: activityActor, actor_type: actorType }).catch(() => { })
     }
   }
@@ -616,13 +622,9 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
 
     // Phase 6: Cascade completion — complete all subtasks when parent is completed
     try {
-      const cascadedCount = await repo.cascadeComplete(resolvedId)
-      if (cascadedCount > 0) {
-        // Fire events for each cascaded child
-        const childIds = await repo.getChildrenIds(resolvedId)
-        for (const childId of childIds) {
-          dispatchTaskEvent("task.updated", { id: childId, status: STATUS.COMPLETE }).catch(() => {})
-        }
+      const childIds = await repo.cascadeCompleteIds(resolvedId, expectedAssignedTo)
+      for (const childId of childIds) {
+        dispatchTaskEvent("task.updated", { id: childId, status: STATUS.COMPLETE }).catch(() => {})
       }
     } catch (err) {
       logApiError("cascade-complete", "Failed to cascade-complete subtasks", err)

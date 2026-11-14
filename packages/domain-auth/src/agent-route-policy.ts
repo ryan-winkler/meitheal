@@ -14,10 +14,14 @@ const routes = new Map<string, MethodScopes>([
   ["/api/tasks/reorder", taskCreate],
   ["/api/tasks/today-counts", taskRead],
   ["/api/tasks/reaction-counts", taskRead],
+  ["/api/users", { GET: "tasks:read" }],
   ["/api/projects", { GET: "projects:read", POST: "projects:write" }],
   ["/api/search", { GET: "search:read" }],
   ["/api/mcp", { GET: "mcp:execute", POST: "mcp:execute" }],
+  ["/.well-known/mcp.json", { GET: "mcp:execute" }],
   ["/api/a2a/agent-card", { GET: "a2a:execute" }],
+  ["/.well-known/agent-card.json", { GET: "a2a:execute" }],
+  ["/.well-known/agent.json", { GET: "a2a:execute" }],
   ["/api/a2a/message", { POST: "a2a:execute" }],
 ])
 const taskRoutes = new Map<string, MethodScopes>([
@@ -75,4 +79,5 @@ export function resolveAgentRouteScope(pathname: string, method: string): AgentS
   if (task) return taskRoutes.get(task[1] ?? "")?.[verb]
   if (/^\/api\/projects\/[\w-]+$/.test(pathname)) return project[verb]
   if (/^\/api\/a2a\/tasks\/[\w-]+$/.test(pathname)) return a2aTask[verb]
+  if (verb === "POST" && /^\/api\/a2a\/tasks\/[\w-]+:cancel$/.test(pathname)) return "a2a:execute"
 }

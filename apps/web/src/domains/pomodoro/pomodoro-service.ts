@@ -325,39 +325,30 @@ export async function getTodayStats(): Promise<{ sessionsCompleted: number, tota
 
 // ── Time Tracking (separate from Pomodoro) ──────────────────────
 
-/**
- * Start a time tracking entry for a task.
- */
-export async function startTimeEntry(taskId: string): Promise<TimeEntry> {
-  await ensurePomodoroSchema()
-  const client = getPersistenceClient()
+export type TimeEntryMutationResult =
+  | { ok: true; entry: TimeEntry | null }
+  | { ok: false; errorCode: "not_found" | "assignee_mismatch" }
 
-  // Stop any running entry for this task first
-  await stopTimeEntry(taskId)
-
-  const id = generateId()
-  const now = new Date().toISOString()
-
-  await client.execute({
-    sql: "INSERT INTO time_entries(id, task_id, started_at, duration_seconds) VALUES(?, ?, ?, 0)",
-    args: [id, taskId, now],
-  })
-
-  return { id, taskId, startedAt: now, stoppedAt: null, durationSeconds: 0 }
+async function checkTaskAssigneeTx(
+  tx: Awaited<ReturnType<ReturnType<typeof getPersistenceClient>["transaction"]>>,
+  taskId: string,
+  expectedAssignedTo?: string,
+): Promise<"ok" | "not_found" | "assignee_mismatch"> {
+  if (expectedAssignedTo === undefined) return "ok"
+  const taskRow = await tx.execute({ sql: "SELECT assigned_to FROM tasks WHERE id = ?", args: [taskId] })
+  const row = taskRow.rows[0] as Record<string, unknown> | undefined
+  if (!row) return "not_found"
+  return row.assigned_to === expectedAssignedTo ? "ok" : "assignee_mismatch"
 }
 
-/**
- * Stop the running time entry for a task.
- */
-export async function stopTimeEntry(taskId: string): Promise<TimeEntry | null> {
-  await ensurePomodoroSchema()
-  const client = getPersistenceClient()
-
-  const running = await client.execute({
+async function stopRunningTimeEntryTx(
+  tx: Awaited<ReturnType<ReturnType<typeof getPersistenceClient>["transaction"]>>,
+  taskId: string,
+): Promise<TimeEntry | null> {
+  const running = await tx.execute({
     sql: "SELECT id, started_at FROM time_entries WHERE task_id = ? AND stopped_at IS NULL ORDER BY started_at DESC LIMIT 1",
     args: [taskId],
   })
-
   if (running.rows.length === 0) return null
 
   const row = running.rows[0] as Record<string, unknown>
@@ -365,7 +356,7 @@ export async function stopTimeEntry(taskId: string): Promise<TimeEntry | null> {
   const startedAt = new Date(String(row.started_at))
   const durationSeconds = Math.round((now.getTime() - startedAt.getTime()) / 1000)
 
-  await client.execute({
+  await tx.execute({
     sql: "UPDATE time_entries SET stopped_at = ?, duration_seconds = ? WHERE id = ?",
     args: [now.toISOString(), durationSeconds, String(row.id)],
   })
@@ -377,6 +368,75 @@ export async function stopTimeEntry(taskId: string): Promise<TimeEntry | null> {
     stoppedAt: now.toISOString(),
     durationSeconds,
   }
+}
+
+/**
+ * Start a time tracking entry for a task inside a write lock, enforcing optional assignee ownership.
+ */
+export async function startTimeEntryForTask(
+  taskId: string,
+  expectedAssignedTo?: string,
+): Promise<TimeEntryMutationResult> {
+  await ensurePomodoroSchema()
+  const tx = await getPersistenceClient().transaction("write")
+  try {
+    const check = await checkTaskAssigneeTx(tx, taskId, expectedAssignedTo)
+    if (check !== "ok") {
+      await tx.commit()
+      return { ok: false, errorCode: check }
+    }
+    await stopRunningTimeEntryTx(tx, taskId)
+    const id = generateId()
+    const now = new Date().toISOString()
+    await tx.execute({
+      sql: "INSERT INTO time_entries(id, task_id, started_at, duration_seconds) VALUES(?, ?, ?, 0)",
+      args: [id, taskId, now],
+    })
+    await tx.commit()
+    return { ok: true, entry: { id, taskId, startedAt: now, stoppedAt: null, durationSeconds: 0 } }
+  } finally {
+    tx.close()
+  }
+}
+
+/**
+ * Stop the running time entry for a task inside a write lock, enforcing optional assignee ownership.
+ */
+export async function stopTimeEntryForTask(
+  taskId: string,
+  expectedAssignedTo?: string,
+): Promise<TimeEntryMutationResult> {
+  await ensurePomodoroSchema()
+  const tx = await getPersistenceClient().transaction("write")
+  try {
+    const check = await checkTaskAssigneeTx(tx, taskId, expectedAssignedTo)
+    if (check !== "ok") {
+      await tx.commit()
+      return { ok: false, errorCode: check }
+    }
+    const entry = await stopRunningTimeEntryTx(tx, taskId)
+    await tx.commit()
+    return { ok: true, entry }
+  } finally {
+    tx.close()
+  }
+}
+
+/**
+ * Start a time tracking entry for a task.
+ */
+export async function startTimeEntry(taskId: string): Promise<TimeEntry> {
+  const res = await startTimeEntryForTask(taskId)
+  if (!res.ok || !res.entry) throw new Error("Failed to start time entry")
+  return res.entry
+}
+
+/**
+ * Stop the running time entry for a task.
+ */
+export async function stopTimeEntry(taskId: string): Promise<TimeEntry | null> {
+  const res = await stopTimeEntryForTask(taskId)
+  return res.ok ? res.entry : null
 }
 
 /**

@@ -10,7 +10,7 @@
  * @safety
  * - Only touches tasks with status IN ('complete', 'archived')
  * - Active, pending, and in-progress tasks are NEVER affected
- * - No bot/API automation — user-initiated only via Danger Zone settings
+ * - Requires tasks:delete scope (for agent callers) plus explicit months and confirm=true query parameters
  * - Cascades to comments, activity log, and task links
  * - Logs to audit_trail on every deletion
  *

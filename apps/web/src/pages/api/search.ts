@@ -1,7 +1,12 @@
 import type { APIRoute } from "astro"
-import { ensureSchema } from "@domains/tasks/persistence/store"
-import { searchMeithealCatalog } from "@domains/search/search-service"
-import type { SearchQueryOptions, SearchScope, SearchSort, TaskSearchField } from "@domains/search/search-types"
+import { ensureSchema } from "@domains/tasks"
+import {
+  searchMeithealCatalog,
+  type SearchQueryOptions,
+  type SearchScope,
+  type SearchSort,
+  type TaskSearchField,
+} from "@domains/search"
 import { apiError, apiJson, apiProblem } from "../../lib/api-response"
 import { logApiError } from "../../lib/api-logger"
 

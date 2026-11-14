@@ -340,7 +340,13 @@ async function verifyWorkerUpdate(control: "toast" | "settings" | "force", timeO
       updateUrl = origin + prefix + "/settings#app-pwa-settings"
       await page.evaluate(() => { window.location.hash = "app-pwa-settings" })
       await expect(page).toHaveURL(updateUrl)
-      if (control === "force") await page.locator("#pwa-troubleshoot summary").click()
+      await expect(page.locator("#settings-shell")).toHaveAttribute("data-settings-booted", "true")
+      await expect(page.locator("#settings-panels")).not.toHaveAttribute("inert", "")
+      await expect(page.locator("#app-pwa-settings")).toBeVisible()
+      if (control === "force") {
+        await page.locator("#pwa-troubleshoot summary").click()
+        await expect(page.locator("#pwa-troubleshoot")).toHaveAttribute("open", "")
+      }
     }
     const refresh = page.locator({ toast: "#sw-update-btn", settings: "#pwa-update-settings-btn", force: "#pwa-force-update-btn" }[control])
     await expect(refresh).toBeVisible()

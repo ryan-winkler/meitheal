@@ -542,7 +542,7 @@ async function autoStartDueDateReminders(): Promise<void> {
     const { startDueDateReminders } = await import(
       "@domains/notifications/due-date-reminders"
     );
-    startDueDateReminders();
+    void startDueDateReminders();
     logger.log("info", {
       event: "ha.startup.due_date_reminders.started",
       domain: "notifications",

@@ -6,7 +6,6 @@ on:
     - cron: '30 3 * * 1'
   push:
     branches:
-      - main
       - dev
   workflow_dispatch:
 

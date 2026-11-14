@@ -2,8 +2,8 @@
  * Agent Token CRUD API
  *
  * POST   /api/agent-tokens    — Create a new agent token
- * GET    /api/agent-tokens    — List all tokens (metadata only)
- * PATCH  /api/agent-tokens    — Update a token by ID (body: { id, name?, scopes? })
+ * GET    /api/agent-tokens    — List tokens (metadata only)
+ * PATCH  /api/agent-tokens    — Update a token by ID (body: { id, name?, scopes?, assigneeId? })
  * DELETE /api/agent-tokens    — Revoke/delete a token by ID (body: { id, hard? })
  *
  * @domain auth
@@ -12,64 +12,257 @@
  * @kcs Token plaintext returned only on POST (show-once pattern).
  */
 import type { APIRoute } from "astro"
-import { apiJson, apiProblem } from "../../../lib/api-response"
 import { generateAgentToken, validateScopes, toPublicToken, type AgentScope } from "@meitheal/domain-auth"
 import {
   createAgentToken,
-  listAgentTokens,
-  updateAgentToken,
   deleteAgentToken,
-  revokeAgentToken,
   ensureAgentTokenSchema,
-} from "@domains/auth/agent-token-store"
+  getAgentTokenById,
+  isCsrfAllowed,
+  listAgentTokens,
+  revokeAgentToken,
+  updateAgentToken,
+} from "@domains/auth"
+import { verifyCurrentHAAdministrator } from "@domains/ha"
+import { apiJson, apiProblem } from "@lib/api-response"
+import { readWithinLimit } from "@lib/bounded-body"
+import { verifiedIngressUser } from "@lib/verified-ingress-user"
+
+const MAX_BODY_BYTES = 16 * 1024
 
 /** Only an authenticated Home Assistant administrator can manage credentials. */
 function isAdmin(locals: App.Locals): boolean {
   return locals.hassIsAdmin === true && !locals.agentToken
 }
 
-/** Return a validation error with invalidParams for self-correcting agents */
+function noStore(response: Response): Response {
+  response.headers.set("Cache-Control", "no-store")
+  return response
+}
+
+/** Return a validation error with invalidParams for self-correcting agents. */
 function validationError(detail: string, invalidParams: Array<{ name: string; reason: string }>): Response {
-  return apiProblem({
+  return noStore(apiProblem({
     status: 400,
     detail,
     invalidParams,
-  })
+  }))
+}
+
+function requiresAssigneeForScopes(scopes: AgentScope[], assigneeId: string | null | undefined): boolean {
+  return scopes.includes("tasks:write:assigned") && !scopes.includes("tasks:write") && !assigneeId
+}
+
+function cancelBody(request: Request): void {
+  if (!request.body?.locked) void request.body?.cancel().catch(() => undefined)
+}
+
+function parseAssigneeId(raw: unknown): { ok: true; value: string | null } | { ok: false; response: Response } {
+  if (raw === undefined || raw === null) return { ok: true, value: null }
+  if (typeof raw !== "string") {
+    return {
+      ok: false,
+      response: validationError("Invalid assigneeId", [
+        { name: "assigneeId", reason: "must be a string or null" },
+      ]),
+    }
+  }
+  const trimmed = raw.trim()
+  if (trimmed.length > 128) {
+    return {
+      ok: false,
+      response: validationError("Assignee ID too long", [
+        { name: "assigneeId", reason: "must be 128 characters or fewer" },
+      ]),
+    }
+  }
+  return { ok: true, value: trimmed || null }
+}
+
+function authorizeAdminContext(
+  request: Request,
+  locals: App.Locals,
+  action: string,
+  isMutation: boolean,
+): Response | null {
+  if (!isAdmin(locals)) {
+    cancelBody(request)
+    return noStore(apiProblem({
+      status: 403,
+      title: "Admin Required",
+      detail: `${action} agent tokens requires HA admin access`,
+      type: "https://meitheal.local/problems/admin-required",
+    }))
+  }
+
+  if (isMutation) {
+    const origin = request.headers.get("origin")
+    const referer = request.headers.get("referer")
+    const secFetchSite = request.headers.get("sec-fetch-site")
+    const untrustedFetchSite = secFetchSite !== null && secFetchSite !== "same-origin" && secFetchSite !== "none"
+    const untrustedOrigin = (origin !== null || referer !== null) && !isCsrfAllowed({
+      behindIngress: false,
+      isDev: false,
+      host: request.headers.get("host") ?? new URL(request.url).host,
+      origin,
+      referer: origin ? null : referer,
+    })
+    if (untrustedFetchSite || untrustedOrigin) {
+      cancelBody(request)
+      return noStore(apiProblem({
+        status: 403,
+        title: "Cross-Origin Request Denied",
+        detail: "Submit agent token changes from the same site.",
+        type: "https://meitheal.local/problems/csrf-denied",
+      }))
+    }
+  }
+
+  const user = verifiedIngressUser(locals)
+  if (process.env.SUPERVISOR_TOKEN && !user?.isAdmin) {
+    cancelBody(request)
+    return noStore(apiProblem({
+      status: 403,
+      title: "Admin Required",
+      detail: `${action} agent tokens requires a current HA administrator.`,
+      type: "https://meitheal.local/problems/admin-required",
+    }))
+  }
+
+  return null
+}
+
+async function verifyLiveAdmin(
+  request: Request,
+  locals: App.Locals,
+  action: string,
+): Promise<Response | null> {
+  if (!process.env.SUPERVISOR_TOKEN) return null
+  const user = verifiedIngressUser(locals)
+  if (!user?.isAdmin) {
+    return noStore(apiProblem({
+      status: 403,
+      title: "Admin Required",
+      detail: `${action} agent tokens requires a current HA administrator.`,
+      type: "https://meitheal.local/problems/admin-required",
+    }))
+  }
+  const authority = await verifyCurrentHAAdministrator(user.id, request.signal)
+  if (authority !== "allowed") {
+    return noStore(apiProblem({
+      status: authority === "unavailable" ? 503 : 403,
+      title: authority === "unavailable" ? "Service Unavailable" : "Admin Required",
+      detail: authority === "unavailable"
+        ? "Home Assistant could not verify administrator access. Try again."
+        : `${action} agent tokens requires a current HA administrator.`,
+      type: "https://meitheal.local/problems/admin-required",
+    }))
+  }
+  return null
+}
+
+async function readJsonObject(
+  request: Request,
+): Promise<{ ok: true; body: Record<string, unknown> } | { ok: false; response: Response }> {
+  const mediaType = request.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase()
+  if (mediaType !== "application/json") {
+    cancelBody(request)
+    return {
+      ok: false,
+      response: noStore(apiProblem({
+        status: 415,
+        title: "Unsupported Media Type",
+        detail: "Request body must be application/json",
+        type: "https://meitheal.local/problems/unsupported-media-type",
+      })),
+    }
+  }
+
+  if (Number(request.headers.get("content-length")) > MAX_BODY_BYTES) {
+    cancelBody(request)
+    return {
+      ok: false,
+      response: noStore(apiProblem({
+        status: 413,
+        title: "Payload Too Large",
+        detail: "Request body exceeds 16 KiB",
+      })),
+    }
+  }
+
+  let bytes: Buffer | null
+  try {
+    bytes = await readWithinLimit(
+      request.body,
+      MAX_BODY_BYTES,
+      AbortSignal.any([request.signal, AbortSignal.timeout(5_000)]),
+    )
+  } catch {
+    return {
+      ok: false,
+      response: noStore(apiProblem({
+        status: 400,
+        title: "Invalid JSON",
+        detail: "Request body must be valid JSON",
+        type: "https://meitheal.local/problems/invalid-json",
+      })),
+    }
+  }
+
+  if (!bytes) {
+    return {
+      ok: false,
+      response: noStore(apiProblem({
+        status: 413,
+        title: "Payload Too Large",
+        detail: "Request body exceeds 16 KiB",
+      })),
+    }
+  }
+
+  try {
+    const value: unknown = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes))
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return {
+        ok: false,
+        response: validationError("Request body must be a JSON object", [{ name: "body", reason: "expected object" }]),
+      }
+    }
+    return { ok: true, body: value as Record<string, unknown> }
+  } catch {
+    return {
+      ok: false,
+      response: noStore(apiProblem({
+        status: 400,
+        title: "Invalid JSON",
+        detail: "Request body must be valid JSON",
+        type: "https://meitheal.local/problems/invalid-json",
+      })),
+    }
+  }
 }
 
 // ── POST: Create Token ───────────────────────────────────────────────────────
 
 export const POST: APIRoute = async ({ request, locals }) => {
-  if (!isAdmin(locals)) {
-    return apiProblem({
-      status: 403,
-      title: "Admin Required",
-      detail: "Creating agent tokens requires HA admin access",
-      type: "https://meitheal.local/problems/admin-required",
-    })
-  }
+  const contextDenied = authorizeAdminContext(request, locals, "Creating", true)
+  if (contextDenied) return contextDenied
+
+  const parsed = await readJsonObject(request)
+  if (!parsed.ok) return parsed.response
+  const { body } = parsed
+
+  const liveDenied = await verifyLiveAdmin(request, locals, "Creating")
+  if (liveDenied) return liveDenied
 
   await ensureAgentTokenSchema()
 
-  let body: Record<string, unknown>
-  try {
-    const value: unknown = await request.json()
-    if (!value || typeof value !== "object" || Array.isArray(value)) {
-      return validationError("Request body must be a JSON object", [{ name: "body", reason: "expected object" }])
-    }
-    body = value as Record<string, unknown>
-  } catch {
-    return apiProblem({
-      status: 400,
-      title: "Invalid JSON",
-      detail: "Request body must be valid JSON",
-      type: "https://meitheal.local/problems/invalid-json",
-    })
-  }
-
   const name = typeof body.name === "string" ? body.name.trim() : ""
   const rawScopes = Array.isArray(body.scopes) ? body.scopes : []
-  const assigneeId = typeof body.assignee_id === "string" ? body.assignee_id.trim() : (typeof body.assigneeId === "string" ? body.assigneeId.trim() : null)
+  const rawAssignee = body.assignee_id !== undefined ? body.assignee_id : body.assigneeId
+  const parsedAssignee = parseAssigneeId(rawAssignee)
+  if (!parsedAssignee.ok) return parsedAssignee.response
+  const assigneeId = parsedAssignee.value
   const expiration = typeof body.expiresAt === "string" ? Date.parse(body.expiresAt) : Number.NaN
   if (body.expiresAt != null && !(expiration > Date.now())) {
     return validationError("Token expiration must be a future date", [
@@ -104,6 +297,12 @@ export const POST: APIRoute = async ({ request, locals }) => {
     ])
   }
 
+  if (requiresAssigneeForScopes(scopes, assigneeId)) {
+    return validationError("tasks:write:assigned requires an assigneeId", [
+      { name: "assigneeId", reason: "must be a non-empty assignee ID when tasks:write:assigned is granted without tasks:write" },
+    ])
+  }
+
   const { token, tokenHash, tokenPrefix } = generateAgentToken()
   const id = crypto.randomUUID()
 
@@ -117,68 +316,49 @@ export const POST: APIRoute = async ({ request, locals }) => {
     expiresAt,
   })
 
-  // Return plaintext token ONCE — it is never stored or retrievable
-  const response = apiJson({
+  // Return plaintext token ONCE — Meitheal never stores or retrieves it again.
+  return noStore(apiJson({
     id: record.id,
     name: record.name,
-    token,  // Show once!
+    token,
     tokenPrefix: record.tokenPrefix,
     scopes: record.scopes,
     assigneeId: record.assigneeId,
     createdAt: record.createdAt,
     expiresAt: record.expiresAt,
-  }, 201)
-  response.headers.set("Cache-Control", "no-store")
-  return response
+  }, 201))
 }
 
 // ── GET: List Tokens ─────────────────────────────────────────────────────────
 
-export const GET: APIRoute = async ({ locals }) => {
-  if (!isAdmin(locals)) {
-    return apiProblem({
-      status: 403,
-      title: "Admin Required",
-      detail: "Listing agent tokens requires HA admin access",
-      type: "https://meitheal.local/problems/admin-required",
-    })
-  }
+export const GET: APIRoute = async ({ request, locals }) => {
+  const contextDenied = authorizeAdminContext(request, locals, "Listing", false)
+  if (contextDenied) return contextDenied
+
+  const liveDenied = await verifyLiveAdmin(request, locals, "Listing")
+  if (liveDenied) return liveDenied
 
   await ensureAgentTokenSchema()
 
-  const tokens = await listAgentTokens()
-  return apiJson(tokens.map(toPublicToken))
+  const includeRevoked = new URL(request.url).searchParams.get("include_revoked") === "1"
+  const tokens = await listAgentTokens(includeRevoked)
+  return noStore(apiJson(tokens.map(toPublicToken)))
 }
 
 // ── PATCH: Update Token ──────────────────────────────────────────────────────
 
 export const PATCH: APIRoute = async ({ request, locals }) => {
-  if (!isAdmin(locals)) {
-    return apiProblem({
-      status: 403,
-      title: "Admin Required",
-      detail: "Updating agent tokens requires HA admin access",
-      type: "https://meitheal.local/problems/admin-required",
-    })
-  }
+  const contextDenied = authorizeAdminContext(request, locals, "Updating", true)
+  if (contextDenied) return contextDenied
+
+  const parsed = await readJsonObject(request)
+  if (!parsed.ok) return parsed.response
+  const { body } = parsed
+
+  const liveDenied = await verifyLiveAdmin(request, locals, "Updating")
+  if (liveDenied) return liveDenied
 
   await ensureAgentTokenSchema()
-
-  let body: Record<string, unknown>
-  try {
-    const value: unknown = await request.json()
-    if (!value || typeof value !== "object" || Array.isArray(value)) {
-      return validationError("Request body must be a JSON object", [{ name: "body", reason: "expected object" }])
-    }
-    body = value as Record<string, unknown>
-  } catch {
-    return apiProblem({
-      status: 400,
-      title: "Invalid JSON",
-      detail: "Request body must be valid JSON",
-      type: "https://meitheal.local/problems/invalid-json",
-    })
-  }
 
   const id = typeof body.id === "string" ? body.id : ""
   if (!id) {
@@ -191,20 +371,37 @@ export const PATCH: APIRoute = async ({ request, locals }) => {
 
   if (body.assignee_id !== undefined || body.assigneeId !== undefined) {
     const val = body.assignee_id !== undefined ? body.assignee_id : body.assigneeId
-    updates.assigneeId = typeof val === "string" && val.trim() ? val.trim() : null
+    const parsedAssignee = parseAssigneeId(val)
+    if (!parsedAssignee.ok) return parsedAssignee.response
+    updates.assigneeId = parsedAssignee.value
   }
 
-  if (typeof body.name === "string") {
+  if (body.name !== undefined) {
+    if (typeof body.name !== "string") {
+      return validationError("Token name must be a string", [
+        { name: "name", reason: "must be a non-empty string" },
+      ])
+    }
     const name = body.name.trim()
     if (!name) {
       return validationError("Token name cannot be empty", [
         { name: "name", reason: "must be a non-empty string" },
       ])
     }
+    if (name.length > 100) {
+      return validationError("Token name too long", [
+        { name: "name", reason: "must be 100 characters or fewer" },
+      ])
+    }
     updates.name = name
   }
 
-  if (Array.isArray(body.scopes)) {
+  if (body.scopes !== undefined) {
+    if (!Array.isArray(body.scopes)) {
+      return validationError("Scopes must be an array", [
+        { name: "scopes", reason: "must be an array of scope strings" },
+      ])
+    }
     const { valid, invalid } = validateScopes(body.scopes.map(String))
     if (invalid.length > 0) {
       return validationError("Invalid scopes", invalid.map(s => ({
@@ -220,48 +417,57 @@ export const PATCH: APIRoute = async ({ request, locals }) => {
     updates.scopes = valid
   }
 
-  const updated = await updateAgentToken(id, updates)
-  if (!updated) {
-    return apiProblem({
+  if (Object.keys(updates).length === 0) {
+    return validationError("At least one updatable field is required", [
+      { name: "body", reason: "provide name, scopes, or assigneeId" },
+    ])
+  }
+
+  const existing = await getAgentTokenById(id)
+  if (!existing) {
+    return noStore(apiProblem({
       status: 404,
       title: "Token Not Found",
       detail: `No agent token found with ID: ${id}`,
       type: "https://meitheal.local/problems/not-found",
-    })
+    }))
   }
 
-  return apiJson({ ok: true, id })
+  const effectiveScopes = updates.scopes ?? existing.scopes
+  const effectiveAssigneeId = updates.assigneeId !== undefined ? updates.assigneeId : (existing.assigneeId ?? null)
+  if (requiresAssigneeForScopes(effectiveScopes, effectiveAssigneeId)) {
+    return validationError("tasks:write:assigned requires an assigneeId", [
+      { name: "assigneeId", reason: "must be a non-empty assignee ID when tasks:write:assigned is granted without tasks:write" },
+    ])
+  }
+
+  const updated = await updateAgentToken(id, updates)
+  if (!updated) {
+    return noStore(apiProblem({
+      status: 404,
+      title: "Token Not Found",
+      detail: `No agent token found with ID: ${id}`,
+      type: "https://meitheal.local/problems/not-found",
+    }))
+  }
+
+  return noStore(apiJson({ ok: true, id }))
 }
 
 // ── DELETE: Revoke/Delete Token ──────────────────────────────────────────────
 
 export const DELETE: APIRoute = async ({ request, locals }) => {
-  if (!isAdmin(locals)) {
-    return apiProblem({
-      status: 403,
-      title: "Admin Required",
-      detail: "Deleting agent tokens requires HA admin access",
-      type: "https://meitheal.local/problems/admin-required",
-    })
-  }
+  const contextDenied = authorizeAdminContext(request, locals, "Deleting", true)
+  if (contextDenied) return contextDenied
+
+  const parsed = await readJsonObject(request)
+  if (!parsed.ok) return parsed.response
+  const { body } = parsed
+
+  const liveDenied = await verifyLiveAdmin(request, locals, "Deleting")
+  if (liveDenied) return liveDenied
 
   await ensureAgentTokenSchema()
-
-  let body: Record<string, unknown>
-  try {
-    const value: unknown = await request.json()
-    if (!value || typeof value !== "object" || Array.isArray(value)) {
-      return validationError("Request body must be a JSON object", [{ name: "body", reason: "expected object" }])
-    }
-    body = value as Record<string, unknown>
-  } catch {
-    return apiProblem({
-      status: 400,
-      title: "Invalid JSON",
-      detail: "Request body must be valid JSON",
-      type: "https://meitheal.local/problems/invalid-json",
-    })
-  }
 
   const id = typeof body.id === "string" ? body.id : ""
   if (!id) {
@@ -277,13 +483,13 @@ export const DELETE: APIRoute = async ({ request, locals }) => {
     : await revokeAgentToken(id)
 
   if (!success) {
-    return apiProblem({
+    return noStore(apiProblem({
       status: 404,
       title: "Token Not Found",
       detail: `No agent token found with ID: ${id}`,
       type: "https://meitheal.local/problems/not-found",
-    })
+    }))
   }
 
-  return apiJson({ ok: true, id, action: hard ? "deleted" : "revoked" })
+  return noStore(apiJson({ ok: true, id, action: hard ? "deleted" : "revoked" }))
 }

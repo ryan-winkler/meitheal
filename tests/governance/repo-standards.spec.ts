@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test, expect } from "@playwright/test";
@@ -73,4 +74,31 @@ test("version consistency — config.yaml, run.sh, and sw.js must agree", () => 
   const swJs = readFileSync(join(repoRoot, "apps/web/public/sw.js"), "utf8");
   const swVersion = swJs.match(/CACHE_VERSION\s*=\s*"([^"]+)"/)?.[1];
   expect(swVersion, "sw.js CACHE_VERSION must match config.yaml").toBe(configVersion);
+
+  // monorepo root package.json must also agree
+  const rootPkg = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8"));
+  expect(rootPkg.version, "package.json version must match config.yaml").toBe(configVersion);
+});
+
+test("branching and SemVer guardrails require dev-only auto-push and 0.0.{digit} steps", () => {
+  const guidance = readFileSync(join(repoRoot, "AGENTS.md"), "utf8");
+  expect(guidance).toContain("Only automatically push to `dev`");
+  expect(guidance).toContain("`main` | Beta channel (mostly unused)");
+  expect(guidance).toContain("`release` | Full production release");
+  expect(guidance).toContain("0.0.{one digit}");
+
+  const syncResult = spawnSync(process.execPath, ["scripts/check-version-sync.mjs"], {
+    cwd: repoRoot,
+    encoding: "utf8",
+  });
+  expect(syncResult.status, syncResult.stderr).toBe(0);
+
+  for (const rejected of ["minor", "major", "0.0.5", "0.0.10"]) {
+    const bumpResult = spawnSync(process.execPath, ["scripts/bump-version.mjs", rejected], {
+      cwd: repoRoot,
+      encoding: "utf8",
+    });
+    expect(bumpResult.status, `Expected rejection for ${rejected}`).toBe(1);
+    expect(bumpResult.stderr).toContain("--force-semver");
+  }
 });

@@ -1,13 +1,14 @@
 import type { APIRoute } from "astro"
 import {
-  startTimeEntry,
-  stopTimeEntry,
+  startTimeEntryForTask,
+  stopTimeEntryForTask,
   getTimeEntries,
   getTotalTimeForTask,
 } from "@domains/pomodoro"
 import { hasBoardSelection, unavailableBoardResponse } from "@domains/tasks/board-availability"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import { TaskRepository } from "@domains/tasks/persistence/task-repository"
+import { requireAssignedTaskWriteAccess, restrictedAssigneeId } from "../../../../lib/agent-token-guard"
 import { apiJson, apiError } from "../../../../lib/api-response"
 
 /**
@@ -22,8 +23,10 @@ import { apiJson, apiError } from "../../../../lib/api-response"
 
 export const GET: APIRoute = async ({ params }) => {
   try {
-    const taskId = params.id
-    if (!taskId) return apiError("Task ID required", 400)
+    if (!params.id) return apiError("Task ID required", 400)
+    await ensureSchema()
+    // Read with the same task ID that POST writes to, so a ticket key such as MTH-12 works both ways.
+    const taskId = (await new TaskRepository(getPersistenceClient()).resolveTaskId(params.id))?.id ?? params.id
 
     const [entries, total] = await Promise.all([
       getTimeEntries(taskId),
@@ -41,30 +44,32 @@ export const POST: APIRoute = async ({ params, request, locals }) => {
     const taskId = params.id
     if (!taskId) return apiError("Task ID required", 400)
 
-    const agentToken = locals.agentToken
-    if (agentToken && agentToken.scopes.includes("tasks:write:assigned") && !agentToken.scopes.includes("tasks:write")) {
-      await ensureSchema()
-      const repo = new TaskRepository(getPersistenceClient())
-      const task = await repo.findById(taskId)
-      if (!task || !agentToken.assigneeId || task.assigned_to !== agentToken.assigneeId) {
-        return new Response(JSON.stringify({ error: "Agent can only track time on tasks assigned to it" }), {
-          status: 403,
-          headers: { "content-type": "application/json" },
-        })
-      }
-    }
+    await ensureSchema()
+    const repo = new TaskRepository(getPersistenceClient())
+    const resolved = await repo.resolveTaskId(taskId)
+    const resolvedTaskId = resolved?.id ?? taskId
+    const denied = await requireAssignedTaskWriteAccess(
+      locals.agentToken,
+      (id) => repo.findById(id),
+      [resolvedTaskId],
+      "Agent can only track time on tasks assigned to it",
+    )
+    if (denied) return denied
+    if (!resolved) return apiError("Task not found", 404)
 
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
     if (hasBoardSelection(body)) return unavailableBoardResponse()
     const action = String(body.action || "start")
 
     if (action === "start") {
-      const entry = await startTimeEntry(taskId)
-      return apiJson({ entry })
+      const res = await startTimeEntryForTask(resolvedTaskId, restrictedAssigneeId(locals.agentToken))
+      if (!res.ok) return apiError(res.errorCode === "assignee_mismatch" ? "Agent can only track time on tasks assigned to it" : "Task not found", res.errorCode === "assignee_mismatch" ? 403 : 404)
+      return apiJson({ entry: res.entry })
     } else if (action === "stop") {
-      const entry = await stopTimeEntry(taskId)
-      if (!entry) return apiJson({ entry: null, message: "No running timer for this task" })
-      return apiJson({ entry })
+      const res = await stopTimeEntryForTask(resolvedTaskId, restrictedAssigneeId(locals.agentToken))
+      if (!res.ok) return apiError(res.errorCode === "assignee_mismatch" ? "Agent can only track time on tasks assigned to it" : "Task not found", res.errorCode === "assignee_mismatch" ? 403 : 404)
+      if (!res.entry) return apiJson({ entry: null, message: "No running timer for this task" })
+      return apiJson({ entry: res.entry })
     } else {
       return apiError("Invalid action. Use: start, stop", 400)
     }

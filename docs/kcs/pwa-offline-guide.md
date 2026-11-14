@@ -53,7 +53,7 @@ All APIs use **feature detection** with graceful fallbacks — unsupported brows
 
 The web app manifest (`manifest.webmanifest`) includes:
 
-- **Install icons** use the Meitheal mark from `apps/web/public/logo.svg` at 192 and 512 pixels. The maskable icon extends the navy background to every edge and keeps the mark within the safe circle.
+- **Install icons** use the Meitheal mark from `apps/web/public/logo.svg` at 192 and 512 pixels. The maskable icon extends the evergreen (`#10231B`) background to every edge and keeps the mark within the safe circle.
 - **Shortcuts**: Today, Calendar, Settings — appear in long-press/right-click on the app icon
 - **Screenshots**: Desktop and mobile captures of Today with sample tasks. The built app serves them from `/pwa/screenshots/`.
 - **App & PWA entry point**: Settings now includes companion handoff actions and install troubleshooting in one place

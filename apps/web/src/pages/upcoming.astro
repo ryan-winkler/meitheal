@@ -417,7 +417,7 @@ function dayLabelClass(day: DayGroup): string {
   .day-count-badge {
     font-size: 11px;
     background: var(--personal-accent, var(--palette-accent-hover));
-    color: var(--personal-accent-foreground, #fff);
+    color: var(--personal-accent-foreground, var(--palette-on-accent, #07140f));
     padding: 1px 6px;
     border-radius: 8px;
     font-weight: 600;
@@ -434,12 +434,19 @@ function dayLabelClass(day: DayGroup): string {
   }
 
   /* ── Day empty state ── */
+  /* Quiet empty days with a muted colour, not opacity, so their labels keep AA contrast. */
   .day-empty {
-    opacity: 0.6;
     margin-bottom: 4px;
   }
-  .day-empty:hover {
-    opacity: 0.8;
+  .day-empty .day-label:not(.day-label--today),
+  .day-empty .day-count-empty,
+  .day-empty .chevron-icon {
+    color: var(--text-muted);
+  }
+  /* The hover background is lighter than the card in dark, so muted text drops below AA there. */
+  .day-empty .day-header:hover .day-label:not(.day-label--today),
+  .day-empty .day-header:hover .day-count-empty {
+    color: var(--text-primary);
   }
 
   /* ── Task item ── */
@@ -537,19 +544,19 @@ function dayLabelClass(day: DayGroup): string {
     flex-shrink: 0;
   }
   .status-badge--pending {
-    background: rgba(var(--info-rgb), 0.12);
+    background: rgb(var(--info-rgb) / 0.12);
     color: var(--info);
   }
   .status-badge--active {
-    background: rgba(var(--success-rgb), 0.12);
+    background: rgb(var(--success-rgb) / 0.12);
     color: var(--success);
   }
   .status-badge--backlog {
-    background: rgba(var(--text-muted-rgb), 0.12);
+    background: rgb(var(--text-muted-rgb) / 0.12);
     color: var(--text-muted);
   }
   .status-badge--complete {
-    background: rgba(var(--success-rgb), 0.15);
+    background: rgb(var(--success-rgb) / 0.15);
     color: var(--success);
   }
 

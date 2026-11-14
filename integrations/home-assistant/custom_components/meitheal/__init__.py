@@ -10,13 +10,15 @@ Registers Meitheal as a first-class HA integration with:
 - meitheal.sync_todo: Service to trigger manual sync
 - meitheal.search_tasks: Service to search tasks by keyword
 - meitheal.get_overdue_tasks: Service to retrieve overdue tasks
-- Optional read-only task lookup for Home Assistant LLM agents
+- Optional task lookup and management tools for Home Assistant LLM agents
 
 """
 
 from __future__ import annotations
 
 import logging
+import os
+import shutil
 
 from aiohttp import DummyCookieJar
 from homeassistant.config_entries import ConfigEntry
@@ -76,9 +78,11 @@ COMPLETE_TASK_SCHEMA = vol.Schema(
 SEARCH_TASKS_SCHEMA = vol.Schema(
     {
         vol.Required("query"): cv.string,
-        vol.Optional("status"): vol.In(["backlog", "todo", "in_progress", "done"]),
+        vol.Optional("status"): vol.In(
+            ["backlog", "pending", "active", "complete", "todo", "in_progress", "done"]
+        ),
         vol.Optional("priority"): vol.All(vol.Coerce(int), vol.Range(min=1, max=5)),
-        vol.Optional("include_completed", default=False): cv.boolean,
+        vol.Optional("include_completed"): cv.boolean,
     }
 )
 
@@ -90,6 +94,23 @@ COMPLETE_TASK_BY_TAG_SCHEMA = vol.Schema(
 
 
 type MeithealConfigEntry = ConfigEntry[MeithealCoordinator]
+
+
+def _install_custom_sentences(src_base: str, dst_base: str) -> None:
+    """Copy bundled custom Assist sentences to the HA config directory (runs in executor)."""
+    if not os.path.isdir(src_base):
+        return
+    for lang in os.listdir(src_base):
+        lang_src = os.path.join(src_base, lang)
+        if not os.path.isdir(lang_src):
+            continue
+        lang_dst = os.path.join(dst_base, lang)
+        os.makedirs(lang_dst, exist_ok=True)
+        for fn in os.listdir(lang_src):
+            if fn.endswith(".yaml"):
+                dst_file = os.path.join(lang_dst, fn)
+                if not os.path.exists(dst_file):
+                    shutil.copy2(os.path.join(lang_src, fn), dst_file)
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: MeithealConfigEntry) -> bool:
@@ -186,7 +207,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: MeithealConfigEntry) -> 
             query=str(call.data.get("query", "")),
             status=call.data.get("status"),
             priority=call.data.get("priority"),
-            include_completed=bool(call.data.get("include_completed", False)),
+            include_completed=call.data.get("include_completed"),
         )
 
     async def handle_get_overdue_tasks(call: ServiceCall) -> ServiceResponse:
@@ -253,40 +274,31 @@ async def async_setup_entry(hass: HomeAssistant, entry: MeithealConfigEntry) -> 
         schema=COMPLETE_TASK_BY_TAG_SCHEMA,
     )
 
-    # Register live MCP HTTP view on Home Assistant HTTP server
+    # Register live MCP HTTP view once; each request resolves runtime_data dynamically
     try:
-        from .mcp_server import MeithealMcpView
-        hass.http.register_view(MeithealMcpView(coordinator))
+        domain_state = hass.data.setdefault(DOMAIN, {})
+        if not domain_state.get("mcp_view_registered"):
+            from .mcp_server import MeithealMcpView
+
+            hass.http.register_view(MeithealMcpView())
+            domain_state["mcp_view_registered"] = True
     except Exception as exc:
         _LOGGER.debug("Could not register Meitheal MCP HTTP view: %s", exc)
 
-    # Ensure custom sentences are copied to <config>/custom_sentences/ so HA conversation loads them
+    # Ensure custom sentences are copied to <config>/custom_sentences/ off the event loop
     try:
-        import os
-        import shutil
         src_base = os.path.join(os.path.dirname(__file__), "custom_sentences")
         dst_base = hass.config.path("custom_sentences")
-        if os.path.isdir(src_base):
-            for lang in os.listdir(src_base):
-                lang_src = os.path.join(src_base, lang)
-                if os.path.isdir(lang_src):
-                    lang_dst = os.path.join(dst_base, lang)
-                    os.makedirs(lang_dst, exist_ok=True)
-                    for fn in os.listdir(lang_src):
-                        if fn.endswith(".yaml"):
-                            dst_file = os.path.join(lang_dst, fn)
-                            if not os.path.exists(dst_file):
-                                shutil.copy2(os.path.join(lang_src, fn), dst_file)
+        await hass.async_add_executor_job(_install_custom_sentences, src_base, dst_base)
     except Exception as exc:
         _LOGGER.debug("Could not copy custom sentences to config dir: %s", exc)
-
 
     if async_register_llm_api is not None:
         try:
             if unregister_llm := async_register_llm_api(hass, entry):
                 entry.async_on_unload(unregister_llm)
         except HomeAssistantError:
-            _LOGGER.warning("Could not register Meitheal's read-only LLM API")
+            _LOGGER.warning("Could not register Meitheal's LLM API")
 
     # Register custom intents — accent-friendly voice commands that work
     # WITHOUT an LLM. Uses HA's built-in sentence matching engine.

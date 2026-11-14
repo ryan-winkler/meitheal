@@ -30,7 +30,7 @@ The Home Assistant add-on runs an Astro server and uses SQLite with Drizzle repo
 |-------|----------|---------|
 | Web Runtime | `apps/web/` | Astro SSR app — pages, API routes, middleware |
 | Domain Packages | `packages/domain-*/` | Pure domain logic — `auth`, `tasks`, `strategy`, `observability` |
-| In-App Domains | `apps/web/src/domains/` | `auth/`, `ha/`, `pillars/`, `todo/`, `tasks/`, `integrations/`, `search/` |
+| In-App Domains | `apps/web/src/domains/` | Domain modules such as `agents/`, `auth/`, `ha/`, `pillars/`, `todo/`, `tasks/`, and `search/` |
 | Integration Core | `packages/integration-core/` | Calendar adapter interface + HA implementation |
 | API Layer | `apps/web/src/pages/api/` | Native routes |
 | Middleware | `apps/web/src/middleware.ts` | Ingress rewriting, CSP, CSRF, rate limiting |
@@ -45,17 +45,19 @@ The Home Assistant add-on runs an Astro server and uses SQLite with Drizzle repo
 | `domain-strategy` | `packages/domain-strategy/` | RICE scoring, strategic lenses |
 | `domain-observability` | `packages/domain-observability/` | Structured logging, audit trail |
 | `integration-core` | `packages/integration-core/` | Calendar/todo adapters, HA bridge |
+| `domains/agents/` | `apps/web/src/domains/agents/` | MCP, WebMCP, and A2A protocol contracts, schema expansion, and availability gates (`@domains/agents` on server; `@domains/agents/webmcp-protocol` for pure browser contracts) |
 | `domains/ha/` | `apps/web/src/domains/ha/` | HA events, WebSocket, connection status |
 | `domains/search/` | `apps/web/src/domains/search/` | Universal search orchestration and catalog shaping |
 | `domains/todo/` | `apps/web/src/domains/todo/` | HA todo list sync, status mapping |
 | `domains/pillars/` | `apps/web/src/domains/pillars/` | Pillar CRUD, Principles/Non-Negotiables, associations, inheritance |
 
-Cross-context imports must occur through public package APIs, not deep path imports.
+Cross-context imports must use public package APIs (`@domains/*`), not deep internal paths. Browser scripts import `@domains/agents/webmcp-protocol` so SQLite modules never enter client bundles.
 
 ## Dual-Repo Architecture
 
 The source repository contains the application, tests, and CI. The [public add-on repository](https://github.com/ryan-winkler/meitheal-ha-addon) contains the Store manifests, setup guides, and support issues.
 
+- Keeping `meitheal-ha-addon` manifest-only ensures Home Assistant Supervisor clones and refreshes quickly (~2 MB) on low-power devices without pulling monorepo history and tests.
 - The release workflow verifies both image digests before stable promotion.
 - Stable promotion uses `ADDON_REPO_TOKEN` scoped to the add-on repository.
 - A separate reviewed change promotes Canary discovery after hardware and rollback checks.
@@ -173,38 +175,40 @@ Build-time generators produce zero-drift documentation served as static files.
 
 ### Agent Traceability Headers
 
-External callers (n8n, Node-RED, AI agents) should send:
+Send these headers from external callers (n8n, Node-RED, AI agents):
 
 | Header | Purpose | Validation |
 |--------|---------|------------|
-| `X-Automation-Source` | Caller identity | Allowlisted: `browser`, `n8n`, `nodered`, `mcp`, `agent`, `a2a`, `ha`, `api`, `webhook`, `cron` |
-| `X-Agent-Id` | Specific agent ID | Truncated to 128 chars, alphanumeric + dots + hyphens only |
+| `X-Automation-Source` | Caller identity | Allowlisted: `browser`, `webmcp`, `n8n`, `nodered`, `mcp`, `agent`, `a2a`, `ha`, `api`, `webhook`, `cron` |
+| `X-Agent-Id` | Specific agent ID | Truncated to 128 chars, alphanumeric + underscores + dots + hyphens only |
 
 Both are logged in structured API request logs (`metadata.automation_source`, `metadata.agent_id`).
 
 ## Git Commit Policy
 
 - Commit under the contributor's Git identity with descriptive messages. Omit `Co-authored-by` trailers.
-- A human maintainer squash-merges automated contributions. Do not push force-authored bot commits directly to `main`.
+- **Branch Push Rule (Mandatory)**: Only automatically push to `dev` (the primary/default branch). Never automatically push to `main` (beta channel, mostly unused) or `release` (full production release); promote to `main` or `release` only when explicitly directed by the maintainer.
+- A human maintainer squash-merges automated contributions. Do not push force-authored bot commits directly to `dev`, `main`, or `release`.
 - Follow the review process in [Contributing](CONTRIBUTING.md).
 
 ## Deploy Rules
 
 Use the single Canary App entry for feature work and validation. Its directory is `meitheal-hub-canary`, slug is `meitheal_canary`, and image family is `meitheal-canary-{arch}`. Settings and other feature changes belong to that same entry. Release commands enforce the canonical manifests in the source and destination repositories.
 
-Meitheal uses a **two-channel release strategy** (see `docs/kcs/releasing.md` for the full runbook):
+Meitheal uses a **three-branch, two-channel release strategy** (see `docs/kcs/releasing.md` for the full runbook):
 
-| Channel | Dir | Trigger | Version | Stage |
-|---------|-----|---------|---------|-------|
-| Stable | `meitheal-hub/` | Push to `release` or `v*` tag | Semver (`0.0.1`) | `stable` |
-| Canary | `meitheal-hub-canary/` | Push to `dev` (or `main`) | Commit SHA / Semver (`0.0.2-canary`) | `experimental` |
+| Branch | Role | Auto-Push Allowed | Version / Stage |
+|--------|------|-------------------|-----------------|
+| `dev` | Primary default branch (Canary) | **Yes** (automated pushes/PRs target here only) | Commit SHA / `0.0.2-canary` (`experimental`) |
+| `main` | Beta channel (mostly unused) | **No** (explicit maintainer promotion only) | Staging / Beta |
+| `release` | Full production release (`meitheal-hub/`) | **No** (explicit maintainer release promotion only) | Strict SemVer `0.0.{digit}` (`stable`) |
 
-- **Canary**: Merging to `dev` triggers `publish-canary-images.yml`. The system builds multi-arch images (`amd64`, `aarch64`), updates `meitheal-hub-canary/config.yaml`, and automatically updates the `release` branch.
-- **Stable**: Pushing/promoting to `release` or pushing a `v*` tag triggers `publish-addon-images.yml`. The system validates version sync across manifests and builds multi-arch release images. Use `node scripts/bump-version.mjs patch` to bump versions.
-- **CI & Quality Gates**: Every PR runs `ci.yml` (governance, tests, Codecov coverage upload), `dependency-review.yml`, and CodeRabbit AI review across `main`, `dev`, and `release`. The OpenSSF Scorecard analyzes repository security weekly.
+- **Canary (`dev`)**: Pushes to `dev` trigger `publish-canary-images.yml` (`build-only` multi-arch smoke checks). It must never automatically push to `main` or `release`.
+- **Beta (`main`)**: Kept mostly unused; reserved for explicit maintainer beta promotion before full release.
+- **Stable (`release`)**: Only explicit maintainer promotions to `release` or matching `v*` tags trigger `publish-addon-images.yml`. The system validates version sync across manifests and builds multi-arch release images.
+- **SemVer Policy (Mandatory)**: Do not boost versions without explicit reason and maintainer approval. Keep versions on the `0.0.{one digit}` line (for example `0.0.1`) and increment strictly by `+0.0.1` via `node scripts/bump-version.mjs patch` unless explicitly told otherwise (`--force-semver`).
+- **CI & Quality Gates**: Every PR runs `ci.yml` (governance, tests, Codecov coverage upload), `dependency-review.yml`, and CodeRabbit AI review across `dev`, `main`, and `release`. The OpenSSF Scorecard analyzes repository security on `dev` weekly.
 - **Caching**: Docker builds use BuildKit cache mounts (`--mount=type=cache,id=pnpm-store`) and GitHub Actions cache (`type=gha`).
-- Unless explicitly requested, keep version bumps within the current release line and prefer the next patch release (e.g. `0.0.1` for Main, `0.0.2-canary` for Canary)
-- Do not move to a new version line such as `0.0.x` → `0.1.x` without explicit user direction
 
 ## Verification Tiers (Mandatory)
 

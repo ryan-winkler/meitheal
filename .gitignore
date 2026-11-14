@@ -4,6 +4,10 @@ node_modules
 .env.*
 dist
 coverage
+coverage-python.xml
+.coverage
+codacy-results.json
+codacy-results.sarif
 playwright-report
 test-results
 .DS_Store
@@ -30,3 +34,13 @@ apps/web/.data
 
 # Local Archive
 meitheal-archive/
+
+# Internal AI briefs, audits, and process artifacts
+concepts_brief.md
+design_draft.md
+egm_*.md
+*persona-audit*.md
+*persona-loop*.md
+*.review-receipt*
+/.claude/
+/.codex/

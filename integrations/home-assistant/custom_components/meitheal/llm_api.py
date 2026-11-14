@@ -23,6 +23,7 @@ class MeithealLLMAPI(llm.API):
     def __init__(
         self, hass: HomeAssistant, entry: ConfigEntry[MeithealCoordinator]
     ) -> None:
+        """Bind the LLM API instance to one loaded Meitheal config entry."""
         super().__init__(
             hass=hass,
             id=f"meitheal_tasks-{entry.entry_id}",
@@ -72,16 +73,39 @@ class MeithealLLMAPI(llm.API):
         )
 
 
-class MeithealReadTool(llm.Tool):
-    """Authorize and validate every call, including calls in a reused conversation."""
+class _MeithealBaseTool(llm.Tool):
+    """Shared authorization and argument validation for Meitheal LLM tools."""
 
     integration = DOMAIN
+
+    def __init__(self, api: MeithealLLMAPI) -> None:
+        """Store the parent Meitheal LLM API handle."""
+        self._api = api
+
+    async def _async_prepare(
+        self,
+        tool_input: llm.ToolInput,
+        llm_context: llm.LLMContext,
+    ) -> tuple[MeithealCoordinator, dict[str, Any]]:
+        """Authorize the caller and validate tool arguments."""
+        coordinator = await self._api.async_require_coordinator(llm_context)
+        try:
+            args = self.parameters(tool_input.tool_args)
+        except probatio.Invalid:
+            raise HomeAssistantError(
+                "Invalid Meitheal tool arguments",
+                translation_domain=DOMAIN,
+                translation_key="invalid_tool_arguments",
+            ) from None
+        return coordinator, args
+
+
+class MeithealReadTool(_MeithealBaseTool):
+    """Authorize and validate read-only calls, including reused conversations."""
+
     annotations = llm.ToolAnnotations(
         read_only=True, destructive=False, idempotent=True
     )
-
-    def __init__(self, api: MeithealLLMAPI) -> None:
-        self._api = api
 
     async def async_call(
         self,
@@ -89,16 +113,14 @@ class MeithealReadTool(llm.Tool):
         tool_input: llm.ToolInput,
         llm_context: llm.LLMContext,
     ) -> llm.ToolResult:
-        coordinator = await self._api.async_require_coordinator(llm_context)
-        try:
-            args = self.parameters(tool_input.tool_args)
-        except probatio.Invalid:
-            raise HomeAssistantError("Invalid Meitheal tool arguments") from None
+        """Execute a read-only Meitheal tool for an authorized administrator."""
+        coordinator, args = await self._async_prepare(tool_input, llm_context)
         return llm.ToolResult(await self._async_read(coordinator, args))
 
     async def _async_read(
         self, coordinator: MeithealCoordinator, args: dict[str, Any]
     ) -> JsonObjectType:
+        """Read and return task data from the coordinator."""
         raise NotImplementedError
 
 
@@ -114,6 +136,7 @@ class SearchTasksTool(MeithealReadTool):
     async def _async_read(
         self, coordinator: MeithealCoordinator, args: dict[str, Any]
     ) -> JsonObjectType:
+        """Execute a keyword search against Meitheal tasks."""
         return await coordinator.async_search_tasks(query=args["query"])
 
 
@@ -133,6 +156,7 @@ class GetTaskDetailsTool(MeithealReadTool):
     async def _async_read(
         self, coordinator: MeithealCoordinator, args: dict[str, Any]
     ) -> JsonObjectType:
+        """Fetch full details for one Meitheal task."""
         data = await coordinator.api.async_request(
             "GET", task_path(args["task_id"]), read_json=True
         )
@@ -149,10 +173,9 @@ class GetTaskDetailsTool(MeithealReadTool):
         }
 
 
-class CreateTaskTool(llm.Tool):
+class CreateTaskTool(_MeithealBaseTool):
     """Create a new Meitheal task."""
 
-    integration = DOMAIN
     name = "meitheal_create_task"
     description = "Create a new task in Meitheal with title, description, priority, and optional assignee."
     annotations = llm.ToolAnnotations(
@@ -161,15 +184,12 @@ class CreateTaskTool(llm.Tool):
     parameters = probatio.Schema(
         {
             probatio.Required("title"): probatio.All(str, probatio.Length(min=1, max=500)),
-            probatio.Optional("description"): str,
+            probatio.Optional("description"): probatio.All(str, probatio.Length(max=10000)),
             probatio.Optional("priority"): probatio.All(int, probatio.Range(min=1, max=5)),
             probatio.Optional("due_date"): str,
             probatio.Optional("assigned_to"): str,
         }
     )
-
-    def __init__(self, api: MeithealLLMAPI) -> None:
-        self._api = api
 
     async def async_call(
         self,
@@ -177,11 +197,8 @@ class CreateTaskTool(llm.Tool):
         tool_input: llm.ToolInput,
         llm_context: llm.LLMContext,
     ) -> llm.ToolResult:
-        coordinator = await self._api.async_require_coordinator(llm_context)
-        try:
-            args = self.parameters(tool_input.tool_args)
-        except probatio.Invalid:
-            raise HomeAssistantError("Invalid Meitheal tool arguments") from None
+        """Create a Meitheal task for an authorized administrator."""
+        coordinator, args = await self._async_prepare(tool_input, llm_context)
         await coordinator.async_create_task(
             title=args["title"],
             description=args.get("description"),
@@ -192,10 +209,9 @@ class CreateTaskTool(llm.Tool):
         return llm.ToolResult({"status": "created", "title": args["title"]})
 
 
-class CompleteTaskTool(llm.Tool):
+class CompleteTaskTool(_MeithealBaseTool):
     """Mark a Meitheal task as completed."""
 
-    integration = DOMAIN
     name = "meitheal_complete_task"
     description = "Complete an existing Meitheal task by its task ID or exact title."
     annotations = llm.ToolAnnotations(
@@ -210,24 +226,22 @@ class CompleteTaskTool(llm.Tool):
         }
     )
 
-    def __init__(self, api: MeithealLLMAPI) -> None:
-        self._api = api
-
     async def async_call(
         self,
         hass: HomeAssistant,
         tool_input: llm.ToolInput,
         llm_context: llm.LLMContext,
     ) -> llm.ToolResult:
-        coordinator = await self._api.async_require_coordinator(llm_context)
-        try:
-            args = self.parameters(tool_input.tool_args)
-        except probatio.Invalid:
-            raise HomeAssistantError("Invalid Meitheal tool arguments") from None
+        """Complete a Meitheal task for an authorized administrator."""
+        coordinator, args = await self._async_prepare(tool_input, llm_context)
         task_id = args.get("task_id")
         title = args.get("title")
         if not task_id and not title:
-            raise HomeAssistantError("Must provide task_id or title to complete a task")
+            raise HomeAssistantError(
+                "Must provide task_id or title to complete a task",
+                translation_domain=DOMAIN,
+                translation_key="missing_task_identifier",
+            )
         await coordinator.async_complete_task(task_id=task_id, title=title)
         return llm.ToolResult({"status": "completed", "task_id": task_id, "title": title})
 

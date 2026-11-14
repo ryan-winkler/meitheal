@@ -4,165 +4,125 @@ title: "API and Automation Guide"
 description: "Maintain the API, event, and automation contracts."
 ---
 
-# API and Automation Guide
+# Agent & Automation Integration Guide
 
-> KCS runbook for the build-time OpenAPI, AsyncAPI, MCP, and observability pipeline.
-
-Agent handoff status is shown in Settings. Review displays saved proposals and fetches them live. Service workers purge previously cached Review pages during activation.
-
-App events sent to the Home Assistant event bus carry `domain: "meitheal"` and `source: "meitheal"` with an ISO timestamp. Native device triggers filter by the domain marker. When diagnosing a trigger, inspect the event on Core's event bus and confirm that marker and the expected task ID; events from other domains must not activate a Meitheal trigger.
+Meitheal builds API documentation and App MCP tool schemas from one OpenAPI and AsyncAPI source in `apps/web/`. Code contracts define the discovery manifests, Browser WebMCP tools, and Home Assistant Core MCP catalog.
 
 ## Build Pipeline
 
+Generator scripts live under `apps/web/scripts/`.
+
+- `predev` (`pnpm --filter @meitheal/web dev`): runs `generate:openapi`.
+- `prebuild` (`pnpm --filter @meitheal/web build`): runs `generate:openapi` and `generate:asyncapi` before `astro build`.
+
+Generated outputs (under `apps/web/`):
+
+- `public/openapi.yaml` — OpenAPI 3.1 contract (post-processing sets `additionalProperties: false` and `x-strict: true`)
+- `public/.well-known/jsondoc.json` — OpenAPI 3.1 JSON with ingress-aware relative server URL
+- `public/asyncapi.yaml` — AsyncAPI 2.6 event contract
+- `dist/` — Built production server bundle
+
+### Registering API Routes and Events
+
+To add or update an API route:
+
+1. Add the operation under `paths` and its schemas under `components.schemas` in `apps/web/scripts/generate-openapi.mjs`.
+2. Set `operationId`, `parameters`, `requestBody`, and `responses` on the operation.
+3. Map the route method and path in `resolveAgentRouteScope()` inside `packages/domain-auth/src/agent-route-policy.ts`.
+4. Add any assigned-task-safe sub-routes to `isAssignedTaskScopedRoute()` (unmapped routes return HTTP `403` for agent tokens).
+5. Run `pnpm --filter @meitheal/web run generate:openapi`.
+
+To add an async event:
+
+1. Add the channel in `apps/web/scripts/generate-asyncapi.mjs` (`subscribe` for `sse/*`, `publish` with `bindings.http` for `webhook/*`).
+2. Emit the event at runtime through `dispatchTaskEvent()` in `apps/web/src/lib/webhook-dispatcher.ts`.
+3. Run `pnpm --filter @meitheal/web run generate:asyncapi` to update `public/asyncapi.yaml`.
+
+### Registering Custom MCP Tools
+
+`POST /api/mcp` builds tools dynamically from `openapi.yaml`. Exclude internal endpoints in `EXCLUDED_OPS` inside `apps/web/src/pages/api/mcp.ts`.
+
+For tools that need custom logic beyond CRUD dispatch:
+
+1. Register `(args, requestApi, agent) => Promise<Record<string, unknown>>` in `customHandlers`.
+2. Add the required `AgentScope` to `customToolScopes`.
+3. Add the tool name to `assignedCustomTools` if `tasks:write:assigned` tokens can call it.
+4. Add custom-only tools (`!routes.has(name)`) to `getCustomToolDescription()` and `getCustomToolSchema()`.
+
+Tools backed by OpenAPI inherit their schema from `openapi.yaml`.
+
+## Agent Scopes & Token Policy
+
+Create agent tokens in **Settings → Automation & AI → Agent Tokens** as a verified Home Assistant administrator. Authenticate external callers with `Authorization: Bearer mth_<64-hex>`. Tokens never inherit Home Assistant administrator headers.
+
+| Scope | Capability |
+|-------|------------|
+| `tasks:read` | Read tasks, `GET /api/users` assignee directory, and `listMyTasks` |
+| `tasks:propose` | Claim, release, or propose edits via `POST /api/tasks/{id}/handoff` |
+| `tasks:write` | Create, update, reorder, NFC-complete, comment, link, track time, defer, and toggle reactions on tasks |
+| `tasks:write:assigned` | Update only tasks assigned to `assigneeId` (`PUT`/`PATCH /api/tasks/{id}`, `deferral`, `comments`, `links`, `time`, `completeTask`, `handBackTask`; excludes reactions and comment deletion) |
+| `tasks:delete` | Delete tasks and run `/api/tasks/clear-completed` or `/api/tasks/delete-completed` |
+| `projects:read` | List projects (`GET /api/projects`) and read project details (`GET /api/projects/{id}`) |
+| `projects:write` | Create, update, or delete projects |
+| `search:read` | Search tasks and entities (`GET /api/search`, `searchTasks`, title lookup in `completeTask`) |
+| `mcp:execute` | Access `GET /.well-known/mcp.json`, `POST /api/mcp` (`GET` returns `405 Allow: POST`), and `whoAmI` |
+| `a2a:execute` | Access `GET /api/a2a/agent-card`, `/.well-known/agent-card.json`, `/.well-known/agent.json`, and stateless `/api/a2a/tasks/{id}` (`404`); `POST /api/a2a/message` also requires `search:read` |
+
+- Deprecated legacy scopes (`settings:read`, `settings:write`, `webhooks:write`) grant no access; token management requires a real Home Assistant administrator session.
+- **Home Assistant Core recommendation**: Create a token with `tasks:read`, `tasks:write`, `tasks:delete`, and `search:read`. Add `mcp:execute` if calling `POST /api/mcp`.
+- Percent-encoded `/api/` and `/.well-known/` paths (for example `/%61pi/tasks` or `/.well-known/%6dcp.json`) return HTTP `404`.
+
+## Core Agent Flows
+
+- **Create and update tasks**: `POST /api/tasks/create` accepts `title`, optional `description` (or `frameworkPayload.description`), and `assigned_to` (`ha_` or `custom_` ID). It returns `201` on create and `200` on idempotent replay (`result.idempotentReplay`). Update tasks through `PUT` or `PATCH /api/tasks/{id}`.
+- **Agent handoff and Review**: Assign tasks to human members or AI agents.
+  - Agents call `whoAmI`, `listMyTasks`, and `handBackTask` over MCP, or call `POST /api/tasks/{id}/handoff` (`claim`, `release`, `propose`) to stage proposals.
+  - Settings shows agent handoff status. `/review` shows saved proposals live, and service workers purge cached Review pages on activation.
+- **Home Assistant Companion MCP & Events**:
+  - The custom integration exposes a 16-tool admin-only JSON-RPC endpoint at `POST /api/meitheal/mcp` (`mcp_server.py`). It negotiates MCP `2024-11-05` through `2025-11-25` and rejects unknown tool fields. Both `POST /api/mcp` and `POST /api/meitheal/mcp` accept `q` or `query` on `searchTasks`. Both accept canonical task statuses (`backlog`, `pending`, `active`, `complete`) and Home Assistant aliases (`todo`, `in_progress`, `done`). When `status` is `done` or `complete` and you omit `include_completed`, `searchTasks` sets `include_completed=1`. App MCP link tools use path `id` (`linkTask` takes `{ id, target_task_id, link_type }`, `unlinkTask` takes `{ id, link_id }`, and `getTaskLinks` takes `{ id }`). Core MCP uses `source_task_id` on `linkTask` and `task_id` on `unlinkTask` and `getTaskLinks`.
+  - Outbound Core event bus payloads include `domain: "meitheal"`, `source: "meitheal"`, and an ISO timestamp (`meitheal_task_created`, `meitheal_task_updated`, `meitheal_task_completed`, `meitheal_task_deleted`, `meitheal_task_overdue`, `meitheal_task_commented`, `meitheal_area_updated`). Inspect the Home Assistant Core event bus for `domain: "meitheal"` and the task ID to diagnose automations. Events from other domains never activate Meitheal triggers.
+- **Reactions**: `POST /api/tasks/{id}/reactions` and `POST /api/tasks/{id}/comments/{commentId}/reactions` require `Content-Type: application/json` (`415` otherwise) and `tasks:write` scope. The maximum request body size is 1 KiB (`413`). Reaction text requires 1–16 valid NFC characters without control or bidi characters (`400`). Send `DELETE` with `/{reactionId}` appended to remove a reaction. `GET /api/tasks/reaction-counts?ids=...` accepts up to 100 IDs and omits zero-count tasks.
+- **Idempotency (`Idempotency-Key`)**: Meitheal supports `Idempotency-Key` on `tasks:write` and `tasks:delete` task routes, including `tasks:write:assigned` writes mapped to `tasks:write`. Excluded routes (`PATCH /api/tasks/{id}/deferral`, reaction endpoints, `/api/agent-tokens`, and `handoff`) ignore `Idempotency-Key`. Keys accept up to 255 characters without control characters (`400`). The maximum request body size is 64 KiB (`413`), and cached responses cap at 16 KiB. Each process caches up to 256 entries for 24 hours (`503` when full) and sets `Idempotency-Key-Status: processed | cached`. Distinct payloads hash separately, and in-flight duplicates return HTTP `409`. `taskRetryKey()` namespaces keys by `"task-v2"` and caller principal.
+
+## Protocol & Traceability Contracts
+
+### `POST /api/mcp`
+
+- Send `Authorization: Bearer mth_<64-hex>` with `mcp:execute` on every call. When an `Origin` header is present, `matchesOrigin()` enforces the ingress or `SITE_URL`/localhost origin (`403` otherwise). Disabled MCP returns `404` or `503`.
+- Legacy callers use JSON-RPC 2.0 `initialize`, `ping`, `tools/list`, `tools/call`, and `notifications/initialized` or `notifications/cancelled` (`202` empty body when `id` is absent). `GET` and `HEAD /api/mcp` return `405 Allow: POST`.
+- Modern MCP `2026-07-28` callers use `server/discover`, `ping`, `tools/list`, and `tools/call` (modern `initialize` returns `-32601` / HTTP `404`). Modern calls require matching `Mcp-Protocol-Version`, `Mcp-Method`, `params._meta["io.modelcontextprotocol/protocolVersion"]`, object `clientCapabilities`, and `Mcp-Name` on `tools/call`. The maximum request body size is 1 MiB (`413`).
+
+### Traceability Headers
+
+Send these headers from external systems (n8n, Node-RED, AI agents):
+
 ```bash
-# Runs automatically during `pnpm build`:
-npm run generate:openapi   # → public/openapi.yaml and public/.well-known/jsondoc.json
-npm run generate:asyncapi  # → public/asyncapi.yaml (5 SSE + 6 webhook channels)
-astro build                # → dist/
-```
-
-## Adding a New API Route
-
-1. Create the Astro API route in `apps/web/src/pages/api/`
-2. Add the route to the `paths` object in `apps/web/scripts/generate-openapi.mjs`
-3. If the route introduces a new domain object, add it to the `schemas` object
-4. Run `npm run generate:openapi` to verify
-5. For agent access, explicitly map the route and method to a scope in `packages/domain-auth/src/agent-route-policy.ts`. MCP only offers mapped operations permitted by the caller’s scopes.
-
-## Adding a New Event
-
-1. For SSE events: add a channel under `sse/` in `generate-asyncapi.mjs`
-2. For webhook events: add a channel under `webhook/` in `generate-asyncapi.mjs`
-3. Run `npm run generate:asyncapi` to verify
-
-## Adding a Custom MCP Tool
-
-For tools that need special logic beyond simple CRUD dispatch:
-
-1. Add a handler to the `customHandlers` Map in `apps/web/src/pages/api/mcp.ts`
-2. Add the tool's description to `getCustomToolDescription()`
-3. Add the tool's input schema to `getCustomToolSchema()`
-4. Assign the tool an explicit scope. Every downstream API request enforces its own scope.
-
-## Scoped API access
-
-Open Meitheal through Home Assistant as an administrator, then go to **Settings → Automation & AI → Agent Tokens**. Give each client its own token and select the scopes for its operations. Copy the token during creation and store it in the client’s secret storage. Send it as an `Authorization: Bearer` header. A token is required for MCP and needs both `mcp:execute` and the scope of the tool it calls.
-
-Keep tokens out of examples, logs, and reports. Use sample tasks to test a connection. Ask the installation owner before you send task details or household data to an external service.
-
-| Operation | Scope |
-|-----------|-------|
-| List tasks, read a task, or read its links | `tasks:read` |
-| Read task or comment reactions and board reaction counts | `tasks:read` |
-| Create or update tasks, or add and remove their links | `tasks:write` |
-| Update tasks assigned specifically to this agent | `tasks:write:assigned` |
-| Add or remove your own task or comment reactions | `tasks:write` |
-| Delete tasks, including bulk removal of completed tasks | `tasks:delete` |
-| Query universal search | `search:read` |
-| List and change projects | `projects:read` and `projects:write`, respectively |
-
-An invalid, revoked, or expired token returns HTTP 401. A valid token without permission returns HTTP 403. Use the Home Assistant administrator session to change scopes or revoke credentials. Existing settings and webhook scopes have no permitted operations in the current policy. To connect Home Assistant Core, create a token with all three task scopes and `search:read`.
-
-Use the literal `/api/` prefix in API URLs. Encoded spellings of that prefix that resolve to an API route return HTTP 404.
-
-### Find, create, and complete tasks
-
-1. Find tasks with `GET /api/search?q=…&scope=tasks` and use a result's task ID for follow-up requests.
-2. Create a task with `POST /api/tasks`. The response includes its ID at the top level.
-3. Update the task with `PATCH /api/tasks/{id}`. Set `status` to `complete` when the work is done.
-
-The Home Assistant `meitheal.create_task` action stores its optional instructions in the task’s Description. The calendar-aware `POST /api/tasks/create` endpoint accepts a top-level `description` and falls back to `frameworkPayload.description` for existing integrations.
-
-### Read saved agent proposals and manage task handoffs
-
-Open `/review` through the installed App to read saved proposals and their proposed changes. Tasks can be assigned to human members or AI agents. Scoped agents can query their assigned work using `listMyTasks`, inspect caller metadata with `whoAmI`, and return tasks to human triage with `handBackTask`. Use the existing scoped task APIs for supported automation.
-
-### Read or change reactions
-
-Use `GET` or `POST` on `/api/tasks/{id}/reactions` for a task, or `/api/tasks/{id}/comments/{commentId}/reactions` for a comment. A verified Home Assistant user or scoped agent can send a JSON `content` value with up to 16 Unicode code points after normalization. Repeating the same reaction as the same author returns the existing reaction ID. To remove your own reaction, send `DELETE` to the same collection path with the reaction ID appended.
-
-Lists contain up to 50 entries and a `next_cursor` for older entries. Use `GET /api/tasks/reaction-counts?ids=…` with up to 100 comma-separated task IDs for card counts. This response can omit tasks with zero reactions.
-
-### Retry a task mutation
-
-For an authenticated task mutation, send the same `Idempotency-Key` and resend the same method, path, query, content type, and body when retrying. The retry key is limited to 255 characters. Retryable request bodies are limited to 64 KiB. A matching request that is still running returns HTTP 409. The server can replay a recent successful JSON response of up to 16 KiB, with up to 256 entries held per process. Calendar-aware task creation also stores the scoped retry digest in SQLite.
-
-Treat the first request after upgrading as a new attempt if it used a legacy, unscoped key. Use a new key for new work. Standalone callers without a verified identity and callers on older Supervisor versions without trusted ingress identity should check the task list before resubmitting.
-
-## Agent Traceability
-
-External systems should include these headers for observability:
-
-```bash
-curl -X POST http://localhost:4321/api/tasks/create \
+curl -X POST http://localhost:3000/api/tasks/create \
+  -H "Authorization: Bearer mth_<token>" \
   -H "Content-Type: application/json" \
   -H "X-Automation-Source: n8n" \
-  -H "X-Agent-Id: morning-briefing-workflow" \
-  -H "traceparent: 00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01" \
-  -d '{"title": "Review weekly goals"}'
+  -H "X-Agent-Id: nightly-triage-v2" \
+  -d '{"title": "Review overdue items"}'
 ```
 
-Valid `X-Automation-Source` values: `browser`, `n8n`, `nodered`, `mcp`, `agent`, `a2a`, `ha`, `api`, `webhook`, `cron`.
+- `X-Automation-Source`: Send an allowlisted value (`browser`, `webmcp`, `n8n`, `nodered`, `mcp`, `agent`, `a2a`, `ha`, `api`, `webhook`, `cron`). Meitheal logs this value in `metadata.automation_source`.
+- `X-Agent-Id`: Send up to 128 characters (`[A-Za-z0-9._-]`). Meitheal truncates longer values and logs the result in `metadata.agent_id`.
+- `traceparent`: W3C format `00-<32-hex>-<16-hex>-<2-hex>`. Middleware generates a new trace context when `traceparent` is absent or invalid.
+- Outbound webhooks include CloudEvents (`ce-*`) headers and HMAC-SHA256 `x-meitheal-signature` over the JSON payload.
 
-### W3C Traceparent
+## Error & Rate-Limit Behavior
 
-The `traceparent` header follows W3C Trace Context: `{version}-{traceId}-{spanId}-{traceFlags}`. When absent, middleware generates a new trace context. Trace IDs appear in structured logs (`trace_id`, `span_id`) for Grafana Alloy correlation.
-
-### CloudEvents
-
-All outbound webhooks include CNCF CloudEvents 1.0 headers (binary content mode): `ce-specversion`, `ce-id`, `ce-type` (e.g., `io.meitheal.task.created`), `ce-source`, `ce-time`, `ce-subject`. n8n/Node-RED parse these natively.
-
-### JSON-LD
-
-`<JsonLd>` component injects `<script type="application/ld+json">` with `SoftwareApplication` schema by default. Pages can pass custom schemas via the `jsonLd` prop on Layout.
-
-### Strict Schemas
-
-OpenAPI schemas enforce `additionalProperties: false` via post-processing in `generate-openapi.mjs`. The spec root has `x-strict: true`.
-
-### RFC 9457 Problem+JSON Errors
-
-All API errors return `application/problem+json` (RFC 9457). Agents can self-correct by reading `invalidParams`:
-
-```json
-{
-  "type": "https://meitheal.local/problems/validation-error",
-  "title": "Validation Error",
-  "status": 400,
-  "detail": "2 fields failed validation",
-  "traceId": "0af7651916cd43dd8448eb211c80319c",
-  "invalidParams": [
-    { "name": "title", "reason": "Required" },
-    { "name": "priority", "reason": "Must be between 1 and 5" }
-  ]
-}
-```
-
-Helpers: `apiError()` (backward-compat), `apiProblem()` (full control), `apiValidationError(zodError)` (Zod mapping), `apiRateLimited()` (429s).
-
-### IETF Rate Limit Headers
-
-All API responses include dual rate limit headers:
-
-| Header | Standard | Example |
-|--------|----------|---------|
-| `RateLimit` | IETF draft-10 | `limit=300, remaining=299, reset=60` |
-| `RateLimit-Policy` | IETF draft-10 | `300;w=60` |
-| `x-ratelimit-limit` | Legacy | `300` |
-| `x-ratelimit-remaining` | Legacy | `299` |
-| `x-ratelimit-reset` | Legacy | `1711133880` (epoch) |
-| `Retry-After` | RFC 7231 (on 429) | `60` |
-
-429 responses return problem+json. Two tiers: 300/min general, 60/min bot endpoints.
+- Shared helpers in `apps/web/src/lib/api-response.ts` (`apiProblem()`, `apiError()`, `apiValidationError()`, `apiRateLimited()`) return `application/problem+json` (RFC 9457) with `error` and optional `invalidParams`. Legacy handlers in `pages/api/tasks/` can return plain `application/json` `{ "error": "..." }`.
+- API and discovery responses emit `RateLimit`, `RateLimit-Policy`, and `x-ratelimit-*` headers (`300 requests/min` general quota). `/api/mcp` and `/accept-proposal` also enforce a `60 requests/min` bot quota (HTTP `429` with `Retry-After`). Early middleware `401`, `403`, and `503` rejections omit rate-limit headers.
 
 ## Discovery Endpoints
 
 | URL | Purpose |
 |-----|---------|
 | `GET /openapi.yaml` | Full OpenAPI 3.1 spec |
-| `GET /.well-known/jsondoc.json` | Same API operations as OpenAPI 3.1 JSON. The relative server URL retains the App's ingress path. |
+| `GET /.well-known/jsondoc.json` | OpenAPI 3.1 JSON with ingress-aware server URL |
 | `GET /asyncapi.yaml` | AsyncAPI 2.6 event spec |
-| `GET /.well-known/mcp.json` | Current MCP discovery and ingress-aware endpoint |
+| `GET /.well-known/mcp.json` | MCP discovery and ingress-aware endpoint |
 | `POST /api/mcp` | JSON-RPC 2.0 MCP server |
 | `GET /api/a2a/agent-card` | Agent-to-Agent discovery |
 
@@ -170,9 +130,8 @@ All API responses include dual rate limit headers:
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
-| MCP discovery or authenticated requests return 404 | MCP is disabled | Check the MCP toggle in Settings → Automation & AI → Agent Protocols |
-| MCP returns empty tools list | `openapi.yaml` not found | Run `npm run generate:openapi` |
-| Tool definitions stale in dev | 30s cache TTL | Wait or restart dev server |
-| `X-Automation-Source` logged as `unknown` | Value not in allowlist | Use one of the documented values above |
-| CloudEvents headers missing | Old `webhook-emitter.ts` | Rebuild; headers are always emitted |
-| `trace_id` missing in logs | No `traceparent` header | Middleware auto-generates; check log schema |
+| MCP discovery or requests return 404 | MCP is disabled | Enable MCP in **Settings → Automation & AI → Agent Protocols**. Select **Save Agent Protocol Settings**. |
+| MCP returns an empty tool list | `openapi.yaml` is missing | Run `pnpm --filter @meitheal/web run generate:openapi` |
+| Tool definitions appear stale in dev | 30s spec cache TTL | Wait 30 seconds or restart the dev server |
+| `X-Automation-Source` logged as `unknown` | Header value not in allowlist | Use an allowlisted source string |
+| Missing `trace_id` in structured logs | `traceparent` invalid or bypassed | Send valid W3C `traceparent`; middleware generates one automatically |

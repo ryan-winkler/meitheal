@@ -232,6 +232,22 @@ const spec = {
       },
     },
 
+    "webhook/task.commented": {
+      description: "Outbound webhook fired when an automation or agent posts a comment on a task.",
+      publish: {
+        operationId: "webhookTaskCommented",
+        bindings: {
+          http: { type: "request", method: "POST" },
+        },
+        message: {
+          name: "task.commented",
+          title: "Task Commented (Webhook)",
+          contentType: "application/json",
+          payload: { $ref: "#/components/schemas/WebhookTaskPayload" },
+        },
+      },
+    },
+
     "webhook/area.updated": {
       description: "Outbound webhook fired when an area (board) is modified.",
       publish: {

@@ -53,6 +53,8 @@ A local Astro check covers web behavior. Changes to ingress, Supervisor, Home As
 
 ## Submit a pull request
 
+Target pull requests and automated pushes to `dev` (the primary branch). Keep `main` (beta channel, mostly unused) and `release` (full production release) reserved for explicit maintainer promotions, and keep version increments on `0.0.<single-digit>` (`+0.0.1` only when cutting a release).
+
 1. Explain the observed behavior, expected result, and affected domain. Link related issues and credit reused work. Keep applicable license notices.
 2. List the commands and results. For a UI change, show the affected state and explain how you checked keyboard use. For migration or compatibility changes, describe what happens to existing installations.
 3. Update the owning documentation. State which checks you skipped and why. Keep credentials, household data, and unredacted logs or captures out of the pull request.

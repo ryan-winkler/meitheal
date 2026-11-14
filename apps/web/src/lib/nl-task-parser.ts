@@ -107,10 +107,12 @@ export function parseTaskInput(input: string, referenceDate?: Date): ParsedTask 
 
   // ── Extract assignee (@name) ──────────────────────────────
 
-  const assigneeMatch = remaining.match(/@([a-zA-Z][\w.-]*)/)
+  // Only a whitespace-delimited token that starts with "@" names an assignee, so "support+@example.com" stays in the title.
+  const assigneeMatch = remaining.match(/(?<=^|\s)@([a-zA-Z][\w.-]*)/)
   if (assigneeMatch) {
-    result.assignee = assigneeMatch[1]!
-    remaining = remaining.replace(assigneeMatch[0], " ")
+    result.assignee = assigneeMatch[1]!.replace(/[.-]+$/, "")
+    // Cut at the match itself, because the same text can also sit inside an email address earlier on.
+    remaining = `${remaining.slice(0, assigneeMatch.index)} ${remaining.slice(assigneeMatch.index! + assigneeMatch[0].length)}`
     result.hasExtractions = true
   }
 

@@ -239,10 +239,11 @@ export interface SettingRow {
 
 type TaskBlocker = Pick<TaskRow, "id" | "title" | "status" | "ticket_number">
 type DeferralState = Pick<TaskRow, "id" | "status" | "deferred_at" | "deferral_revision" | "updated_at">
+type DeferralDiagnostic = DeferralState & { assigned_to?: string | null }
 
 type DeferralResult =
   | { ok: true; task: DeferralState }
-  | { ok: false; errorCode: "unavailable" | "terminal" | "ineligible" }
+  | { ok: false; errorCode: "unavailable" | "terminal" | "ineligible" | "assignee_mismatch" }
   | { ok: false; errorCode: "conflict"; task: DeferralState }
   | { ok: false; errorCode: "blocked"; blockers: TaskBlocker[] }
 
@@ -1025,14 +1026,16 @@ export class TaskRepository {
   async updateTask(
     id: string,
     fields: Record<string, InValue>,
-    { version, expectedChecklists, activity }: {
+    { version, expectedChecklists, expectedAssignedTo, activity }: {
       version?: { updatedAt: number; expectedStatus?: "backlog" }
       expectedChecklists?: string | null
+      expectedAssignedTo?: string
       activity?: RecentTaskActor
     } = {},
   ): Promise<
     { ok: true; task: TaskRow; previousStatus?: string; successor?: RecurrenceSuccessor }
     | { ok: false; errorCode: "unavailable" }
+    | { ok: false; errorCode: "assignee_mismatch" }
     | { ok: false; errorCode: "checklist_conflict"; checklists: string | null }
     | { ok: false; errorCode: "conflict"; updatedAt: number }
     | { ok: false; errorCode: "blocked"; blockers: TaskBlocker[] }
@@ -1061,6 +1064,8 @@ export class TaskRepository {
     if (typeof projectId === "string") whereArgs.push(projectId)
     const checklistMatches = expectedChecklists === undefined ? "" : " AND checklists IS ?"
     if (expectedChecklists !== undefined) whereArgs.push(expectedChecklists)
+    const assigneeMatches = expectedAssignedTo === undefined ? "" : " AND assigned_to = ?"
+    if (expectedAssignedTo !== undefined) whereArgs.push(expectedAssignedTo)
 
     const predicates: string[] = []
     if (version) {
@@ -1074,7 +1079,7 @@ export class TaskRepository {
 
     const dependencies = fields.status === STATUS.ACTIVE ? openTaskDependencies(id) : null
     if (dependencies) whereArgs.push(...dependencies.args)
-    const where = `WHERE id = ?${destinationExists}${checklistMatches}
+    const where = `WHERE id = ?${destinationExists}${checklistMatches}${assigneeMatches}
       ${predicates.length ? `AND ${predicates.join(" AND ")}` : ""}
       ${dependencies ? `AND NOT EXISTS (${dependencies.sql})` : ""}`
     const update = {
@@ -1089,15 +1094,25 @@ export class TaskRepository {
     }
 
     const diagnostics = []
+    const versionIndex = version ? diagnostics.length : -1
     if (version) {
       diagnostics.push({ sql: `SELECT status, deferred_at, ${storedVersion} AS updated_at FROM tasks WHERE id = ?`, args: [id] })
     }
+    const checklistIndex = expectedChecklists !== undefined ? diagnostics.length : -1
     if (expectedChecklists !== undefined) {
       diagnostics.push({
         sql: "SELECT checklists FROM tasks WHERE id = ? AND checklists IS NOT ?",
         args: [id, expectedChecklists],
       })
     }
+    const assigneeIndex = expectedAssignedTo !== undefined ? diagnostics.length : -1
+    if (expectedAssignedTo !== undefined) {
+      diagnostics.push({
+        sql: "SELECT id FROM tasks WHERE id = ? AND (assigned_to IS NULL OR assigned_to != ?)",
+        args: [id, expectedAssignedTo],
+      })
+    }
+    const depsIndex = dependencies ? diagnostics.length : -1
     if (dependencies) {
       diagnostics.push({ ...dependencies, sql: `${dependencies.sql} ORDER BY t.id LIMIT 5` })
     }
@@ -1146,24 +1161,25 @@ export class TaskRepository {
       ...(successor ? { successor } : {}),
     }
 
-    if (version) {
-      const current = results[0]?.rows[0]
+    if (assigneeIndex >= 0 && results[assigneeIndex]?.rows.length) {
+      return { ok: false, errorCode: "assignee_mismatch" }
+    }
+    if (versionIndex >= 0) {
+      const current = results[versionIndex]?.rows[0]
       if (!current) return { ok: false, errorCode: "unavailable" }
       const updatedAt = Number(current.updated_at)
-      const changed = version.expectedStatus
-        ? updatedAt !== version.updatedAt || current.status !== version.expectedStatus || current.deferred_at !== null
-        : updatedAt > version.updatedAt
+      const changed = version!.expectedStatus
+        ? updatedAt !== version!.updatedAt || current.status !== version!.expectedStatus || current.deferred_at !== null
+        : updatedAt > version!.updatedAt
       if (changed || updatedAt === Number.MAX_SAFE_INTEGER) {
         return { ok: false, errorCode: "conflict", updatedAt }
       }
     }
-    const changedChecklist = expectedChecklists === undefined
-      ? undefined
-      : results[version ? 1 : 0]?.rows[0]?.checklists
+    const changedChecklist = checklistIndex >= 0 ? results[checklistIndex]?.rows[0]?.checklists : undefined
     if (typeof changedChecklist === "string" || changedChecklist === null) {
       return { ok: false, errorCode: "checklist_conflict", checklists: changedChecklist }
     }
-    const blockers = dependencies ? results[statusIndex - 1]?.rows : undefined
+    const blockers = depsIndex >= 0 ? results[depsIndex]?.rows : undefined
     if (blockers?.length) {
       return {
         ok: false,
@@ -1179,10 +1195,12 @@ export class TaskRepository {
     id: string,
     deferred: boolean,
     guard: { updatedAt: number; revision: string | null; inactivityNow?: number },
-    actor: { id: string; type: "agent" | "human" | "system"; requestId: string },
+    actor: { id: string; type: "agent" | "human" | "system"; requestId?: string | null },
+    expectedAssignedTo?: string,
   ): Promise<DeferralResult> {
     const now = guard.inactivityNow ?? Date.now()
     const marker = deferred ? now : null
+    const correlationId = actor.requestId ?? null
     const version = taskTimestampMs("updated_at")
     const columns = `id, status, deferred_at, deferral_revision, ${version} AS updated_at`
     if (deferred && guard.inactivityNow !== undefined) {
@@ -1201,14 +1219,14 @@ export class TaskRepository {
                 (task_id, field, old_value, new_value, actor, actor_type, event_type, summary, correlation_id, created_at)
               SELECT id, 'deferred_at', NULL, CAST(deferred_at AS TEXT), ?, 'system', 'field_change', ?, ?, ?
               FROM tasks WHERE changes() = 1 AND id = ? AND deferred_at = ?`,
-            args: [inactivityRuleActor, "Automatically deferred after inactivity", actor.requestId, now, id, now],
+            args: [inactivityRuleActor, "Automatically deferred after inactivity", correlationId, now, id, now],
           },
           {
             sql: `SELECT 1 FROM task_activity_log WHERE id = last_insert_rowid() AND task_id = ?
               AND field = 'deferred_at' AND old_value IS NULL AND new_value = ?
               AND actor = ? AND actor_type = 'system' AND event_type = 'field_change'
-              AND correlation_id = ? AND created_at = ?`,
-            args: [id, String(now), inactivityRuleActor, actor.requestId, now],
+              AND correlation_id IS ? AND created_at = ?`,
+            args: [id, String(now), inactivityRuleActor, correlationId, now],
           },
         ])
         const task = changed?.rows[0] as unknown as DeferralState | undefined
@@ -1225,19 +1243,21 @@ export class TaskRepository {
     const dependencies = openTaskDependencies(id)
     const activeStates = [STATUS.ACTIVE, ...(getStatusDef(STATUS.ACTIVE)?.aliases ?? [])]
     const activePredicate = `lower(status) IN (${activeStates.map(() => "?").join(", ")})`
+    const assigneeGuard = expectedAssignedTo === undefined ? "" : " AND assigned_to = ?"
+    const assigneeArgs = expectedAssignedTo === undefined ? [] : [expectedAssignedTo]
     const eligible = `id = ? AND ${version} = ? AND deferral_revision IS ?
       AND lower(status) NOT IN ${deferralTerminalStatusesSql}
-      AND deferred_at IS ${deferred ? "" : "NOT "}NULL
+      AND deferred_at IS ${deferred ? "" : "NOT "}NULL${assigneeGuard}
       ${deferred ? "" : `AND (NOT (${activePredicate}) OR NOT EXISTS (${dependencies.sql}))`}`
-    const args = [id, guard.updatedAt, guard.revision, ...(deferred ? [] : [...activeStates, ...dependencies.args])]
+    const args = [id, guard.updatedAt, guard.revision, ...assigneeArgs, ...(deferred ? [] : [...activeStates, ...dependencies.args])]
     const [diagnostic, audit, changed, blockers] = await this.client.batch([
-      { sql: `SELECT ${columns} FROM tasks WHERE id = ?`, args: [id] },
+      { sql: `SELECT ${columns}, assigned_to FROM tasks WHERE id = ?`, args: [id] },
       {
         sql: `INSERT INTO task_activity_log
                 (task_id, field, old_value, new_value, actor, actor_type, event_type, correlation_id, created_at)
               SELECT id, 'deferred_at', CAST(deferred_at AS TEXT), ?, ?, ?, 'field_change', ?, ?
               FROM tasks WHERE ${eligible}`,
-        args: [marker === null ? null : String(marker), actor.id, actor.type, actor.requestId, now, ...args],
+        args: [marker === null ? null : String(marker), actor.id, actor.type, correlationId, now, ...args],
       },
       {
         sql: `UPDATE tasks SET deferred_at = ?, deferral_revision = lower(hex(randomblob(16)))
@@ -1249,8 +1269,12 @@ export class TaskRepository {
     const row = changed?.rows[0] as unknown as DeferralState | undefined
     if (row && audit?.rowsAffected === 1) return { ok: true, task: row }
 
-    const current = diagnostic?.rows[0] as unknown as DeferralState | undefined
-    if (!current) return { ok: false, errorCode: "unavailable" }
+    const currentDiag = diagnostic?.rows[0] as unknown as DeferralDiagnostic | undefined
+    if (!currentDiag) return { ok: false, errorCode: "unavailable" }
+    if (expectedAssignedTo !== undefined && currentDiag.assigned_to !== expectedAssignedTo) {
+      return { ok: false, errorCode: "assignee_mismatch" }
+    }
+    const { assigned_to: _assignedTo, ...current } = currentDiag
     if (current.updated_at !== guard.updatedAt || current.deferral_revision !== guard.revision) {
       return { ok: false, errorCode: "conflict", task: current }
     }
@@ -1515,25 +1539,39 @@ export class TaskRepository {
    * Get immediate child task IDs for cascade completion.
    * Only returns non-complete children.
    */
-  async getChildrenIds(parentId: string): Promise<string[]> {
+  async getChildrenIds(parentId: string, assignedTo?: string): Promise<string[]> {
+    const assigneeFilter = assignedTo === undefined ? "" : " AND assigned_to = ?"
+    const args = assignedTo === undefined ? [parentId, STATUS.COMPLETE] : [parentId, STATUS.COMPLETE, assignedTo]
     const result = await this.client.execute({
-      sql: `SELECT id FROM tasks WHERE parent_id = ? AND status != ?`,
-      args: [parentId, STATUS.COMPLETE],
+      sql: `SELECT id FROM tasks WHERE parent_id = ? AND status != ?${assigneeFilter}`,
+      args,
+    });
+    return result.rows.map((r) => String((r as Record<string, unknown>).id));
+  }
+
+  /**
+   * Cascade complete — set all non-complete children to complete and return their IDs.
+   * When assignedTo is supplied, only children assigned to that agent are updated.
+   */
+  async cascadeCompleteIds(parentId: string, assignedTo?: string): Promise<string[]> {
+    const now = Date.now()
+    const assigneeFilter = assignedTo === undefined ? "" : " AND assigned_to = ?"
+    const args = assignedTo === undefined
+      ? [STATUS.COMPLETE, now, parentId, STATUS.COMPLETE]
+      : [STATUS.COMPLETE, now, parentId, STATUS.COMPLETE, assignedTo]
+    const result = await this.client.execute({
+      sql: `UPDATE tasks SET status = ?, updated_at = ${nextTaskTimestampMs("updated_at")} WHERE parent_id = ? AND status != ?${assigneeFilter} RETURNING id`,
+      args,
     });
     return result.rows.map((r) => String((r as Record<string, unknown>).id));
   }
 
   /**
    * Cascade complete — set all non-complete children to complete.
-   * Returns the count of tasks updated.
+   * When assignedTo is supplied, only children assigned to that agent are updated.
    */
-  async cascadeComplete(parentId: string): Promise<number> {
-    const now = Date.now()
-    const result = await this.client.execute({
-      sql: `UPDATE tasks SET status = ?, updated_at = ? WHERE parent_id = ? AND status != ?`,
-      args: [STATUS.COMPLETE, now, parentId, STATUS.COMPLETE],
-    });
-    return result.rowsAffected;
+  async cascadeComplete(parentId: string, assignedTo?: string): Promise<number> {
+    return (await this.cascadeCompleteIds(parentId, assignedTo)).length
   }
 
   /** Reorder submitted tasks across their existing slots in the shared order. */
@@ -1693,15 +1731,46 @@ export class TaskRepository {
     return result.rows.map(row => ({ ...row, content: String(row.content), can_manage: Number(row.can_manage) === 1 }))
   }
 
+  /** Insert and return a comment atomically with optional assignee ownership guard. */
+  async addCommentChecked(
+    taskId: string,
+    content: string,
+    author: string,
+    ownerKey: string | null,
+    verifiedHuman = false,
+    expectedAssignedTo?: string,
+  ): Promise<{ state: "created"; comment: Record<string, unknown> } | { state: "not_found" } | { state: "assignee_mismatch" }> {
+    const tx = await this.client.transaction("write")
+    try {
+      const assigneeSql = expectedAssignedTo === undefined ? "" : " AND assigned_to = ?"
+      const assigneeArgs = expectedAssignedTo === undefined ? [] : [expectedAssignedTo]
+      const inserted = await tx.execute({
+        sql: `INSERT INTO comments (task_id, content, author, owner_key, inactivity_spike_human)
+              SELECT id, ?, ?, ?, ? FROM tasks WHERE id = ?${assigneeSql}
+              RETURNING id, task_id, content, author, created_at`,
+        args: [content, author, ownerKey, verifiedHuman ? 1 : 0, taskId, ...assigneeArgs],
+      })
+      const row = inserted.rows[0] as Record<string, unknown> | undefined
+      if (row) {
+        await tx.commit()
+        return { state: "created", comment: row }
+      }
+      if (expectedAssignedTo !== undefined) {
+        const current = await tx.execute({ sql: "SELECT assigned_to FROM tasks WHERE id = ?", args: [taskId] })
+        await tx.commit()
+        return current.rows.length > 0 ? { state: "assignee_mismatch" } : { state: "not_found" }
+      }
+      await tx.commit()
+      return { state: "not_found" }
+    } finally {
+      tx.close()
+    }
+  }
+
   /** Insert and return this comment while the parent task exists. */
   async addComment(taskId: string, content: string, author: string, ownerKey: string | null, verifiedHuman = false) {
-    const inserted = await this.client.execute({
-      sql: `INSERT INTO comments (task_id, content, author, owner_key, inactivity_spike_human)
-            SELECT id, ?, ?, ?, ? FROM tasks WHERE id = ?
-            RETURNING id, task_id, content, author, created_at`,
-      args: [content, author, ownerKey, verifiedHuman ? 1 : 0, taskId],
-    })
-    return inserted.rows[0]
+    const res = await this.addCommentChecked(taskId, content, author, ownerKey, verifiedHuman)
+    return res.state === "created" ? res.comment : undefined
   }
 
   async getComment(taskId: string, commentId: number) {
@@ -1886,22 +1955,106 @@ export class TaskRepository {
     return result.rows.length > 0;
   }
 
+  /** Create a task link inside a write lock with optional atomic assignee verification on both endpoints. */
+  async createLinkChecked(
+    id: string,
+    sourceTaskId: string,
+    targetTaskId: string,
+    linkType: string,
+    expectedAssignedTo?: string,
+  ): Promise<{ ok: true; createdAt: string } | { ok: false; errorCode: "not_found" | "assignee_mismatch" }> {
+    const now = new Date().toISOString()
+    const tx = await this.client.transaction("write")
+    try {
+      if (expectedAssignedTo !== undefined) {
+        const res = await tx.execute({
+          sql: "SELECT id, assigned_to FROM tasks WHERE id IN (?, ?)",
+          args: [sourceTaskId, targetTaskId],
+        })
+        const byId = new Map(res.rows.map(r => [String((r as Record<string, unknown>).id), (r as Record<string, unknown>).assigned_to]))
+        if (!byId.has(sourceTaskId) || !byId.has(targetTaskId)) {
+          await tx.commit()
+          return { ok: false, errorCode: "not_found" }
+        }
+        if (byId.get(sourceTaskId) !== expectedAssignedTo || byId.get(targetTaskId) !== expectedAssignedTo) {
+          await tx.commit()
+          return { ok: false, errorCode: "assignee_mismatch" }
+        }
+      }
+      await tx.execute({
+        sql: "INSERT INTO task_links (id, source_task_id, target_task_id, link_type, created_at) VALUES (?, ?, ?, ?, ?)",
+        args: [id, sourceTaskId, targetTaskId, linkType, now],
+      })
+      await tx.commit()
+      return { ok: true, createdAt: now }
+    } finally {
+      tx.close()
+    }
+  }
+
   /** Create a new task link */
   async createLink(id: string, sourceTaskId: string, targetTaskId: string, linkType: string): Promise<string> {
-    const now = new Date().toISOString();
-    await this.client.execute({
-      sql: "INSERT INTO task_links (id, source_task_id, target_task_id, link_type, created_at) VALUES (?, ?, ?, ?, ?)",
-      args: [id, sourceTaskId, targetTaskId, linkType, now],
-    });
-    return now;
+    const res = await this.createLinkChecked(id, sourceTaskId, targetTaskId, linkType)
+    return res.ok ? res.createdAt : new Date().toISOString()
+  }
+
+  /** Fetch endpoints for a task link belonging to the specified task */
+  async getLinkEndpoints(linkId: string, taskId: string): Promise<{ source_task_id: string; target_task_id: string } | null> {
+    const result = await this.client.execute({
+      sql: "SELECT source_task_id, target_task_id FROM task_links WHERE id = ? AND (source_task_id = ? OR target_task_id = ?)",
+      args: [linkId, taskId, taskId],
+    })
+    const row = result.rows[0] as Record<string, unknown> | undefined
+    if (!row) return null
+    return {
+      source_task_id: String(row.source_task_id),
+      target_task_id: String(row.target_task_id),
+    }
+  }
+
+  /** Delete a task link atomically with optional assignee ownership guard on both endpoints. */
+  async deleteLinkChecked(
+    linkId: string,
+    taskId: string,
+    expectedAssignedTo?: string,
+  ): Promise<{ deleted: number; assigneeMismatch: boolean }> {
+    const tx = await this.client.transaction("write")
+    try {
+      if (expectedAssignedTo !== undefined) {
+        const endpoints = await tx.execute({
+          sql: "SELECT source_task_id, target_task_id FROM task_links WHERE id = ? AND (source_task_id = ? OR target_task_id = ?)",
+          args: [linkId, taskId, taskId],
+        })
+        const ep = endpoints.rows[0] as Record<string, unknown> | undefined
+        if (!ep) {
+          const tRow = await tx.execute({ sql: "SELECT assigned_to FROM tasks WHERE id = ?", args: [taskId] })
+          const assigneeMismatch = tRow.rows.length > 0 && (tRow.rows[0] as Record<string, unknown>).assigned_to !== expectedAssignedTo
+          await tx.commit()
+          return { deleted: 0, assigneeMismatch }
+        }
+        const taskRows = await tx.execute({
+          sql: "SELECT id, assigned_to FROM tasks WHERE id IN (?, ?)",
+          args: [String(ep.source_task_id), String(ep.target_task_id)],
+        })
+        const owned = taskRows.rows.length === 2 && taskRows.rows.every(r => (r as Record<string, unknown>).assigned_to === expectedAssignedTo)
+        if (!owned) {
+          await tx.commit()
+          return { deleted: 0, assigneeMismatch: true }
+        }
+      }
+      const result = await tx.execute({
+        sql: "DELETE FROM task_links WHERE id = ? AND (source_task_id = ? OR target_task_id = ?)",
+        args: [linkId, taskId, taskId],
+      })
+      await tx.commit()
+      return { deleted: result.rowsAffected, assigneeMismatch: false }
+    } finally {
+      tx.close()
+    }
   }
 
   /** Delete a task link (scoped to a specific task for authorization) */
   async deleteLink(linkId: string, taskId: string): Promise<number> {
-    const result = await this.client.execute({
-      sql: "DELETE FROM task_links WHERE id = ? AND (source_task_id = ? OR target_task_id = ?)",
-      args: [linkId, taskId, taskId],
-    });
-    return result.rowsAffected;
+    return (await this.deleteLinkChecked(linkId, taskId)).deleted
   }
 }
