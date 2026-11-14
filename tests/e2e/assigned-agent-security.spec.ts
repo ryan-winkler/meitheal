@@ -60,11 +60,15 @@ const dbTest = test.extend<DbFixture>({
   },
 })
 
-function agentLocals(assigneeId: string, scopes = ["tasks:read", "tasks:write:assigned", "mcp:execute"]) {
+function agentLocals(
+  assigneeId: string,
+  scopes = ["tasks:read", "tasks:write:assigned", "mcp:execute"],
+  options?: { tokenId?: string | undefined; tokenName?: string | undefined },
+) {
   return {
     agentToken: {
-      tokenId: "tok-1",
-      tokenName: "Agent Alpha",
+      tokenId: options?.tokenId ?? "tok-1",
+      tokenName: options?.tokenName ?? "Agent Alpha",
       scopes,
       assigneeId,
     },
@@ -409,6 +413,156 @@ dbTest.describe("Assigned-Agent Authorization & Repository Guards", () => {
       actor: "user", actor_type: "user",
     })
     expect((await unassign("db-unassign-1")).status).toBe(403)
+  })
+
+  dbTest("PUT /api/tasks/[id] rejects non-object JSON bodies and empty or whitespace assigned_to on retry", async ({ repo }) => {
+    const id = crypto.randomUUID()
+    await repo.createTask(makeTaskData({ id, assigned_to: "custom_agent_a" }))
+    const sendRaw = (raw: string) => putTask({
+      params: { id },
+      request: new Request(`http://localhost/api/tasks/${id}`, { method: "PUT", body: raw }),
+      locals: agentLocals("custom_agent_a"),
+    } as unknown as Parameters<typeof putTask>[0])
+
+    for (const invalidBody of ["null", "[]", "\"text\"", "42"]) {
+      const res = await sendRaw(invalidBody)
+      expect(res.status).toBe(400)
+    }
+    expect((await sendRaw(JSON.stringify({ assigned_to: "" }))).status).toBe(400)
+    expect((await sendRaw(JSON.stringify({ assigned_to: "   " }))).status).toBe(400)
+    expect((await sendRaw(JSON.stringify({ assigned_to: "x".repeat(256) }))).status).toBe(400)
+    expect((await sendRaw(JSON.stringify({ assigned_to: 123 }))).status).toBe(400)
+
+    const unassigned = await sendRaw(JSON.stringify({ assigned_to: null, request_id: "unassign-valid-1" }))
+    expect(unassigned.status).toBe(200)
+    expect((await sendRaw(JSON.stringify({ assigned_to: "", request_id: "unassign-valid-1" }))).status).toBe(403)
+    expect((await sendRaw(JSON.stringify({ assigned_to: "   ", request_id: "unassign-valid-1" }))).status).toBe(403)
+    expect((await sendRaw(JSON.stringify({ assigned_to: 123, request_id: "unassign-valid-1" }))).status).toBe(403)
+    expect((await sendRaw(JSON.stringify({ assigned_to: null, request_id: "unassign-valid-1" }))).status).toBe(200)
+  })
+
+  dbTest("PUT /api/tasks/[id] blocks cross-token, broad-scope, mismatched-receipt, and round-trip stale replays", async ({ repo }) => {
+    const client = getPersistenceClient()
+    const id1 = crypto.randomUUID()
+    await repo.createTask(makeTaskData({ id: id1, assigned_to: "custom_agent_a" }))
+    const putWith = (
+      taskId: string,
+      payload: Record<string, unknown>,
+      opts?: { assignee?: string; scopes?: string[]; tokenId?: string; tokenName?: string },
+    ) => putTask({
+      params: { id: taskId },
+      request: new Request(`http://localhost/api/tasks/${taskId}`, {
+        method: "PUT",
+        body: JSON.stringify(payload),
+      }),
+      locals: agentLocals(
+        opts?.assignee ?? "custom_agent_a",
+        opts?.scopes ?? ["tasks:read", "tasks:write:assigned"],
+        { tokenId: opts?.tokenId, tokenName: opts?.tokenName },
+      ),
+    } as unknown as Parameters<typeof putTask>[0])
+
+    expect((await putWith(id1, { assigned_to: "ha_person_1", request_id: "cross-1" })).status).toBe(200)
+    // Sibling token bound to same assignee and name cannot replay tok-1's request_id
+    expect((await putWith(id1, { assigned_to: "ha_person_1", request_id: "cross-1" }, {
+      tokenId: "tok-2", tokenName: "Agent Alpha",
+    })).status).toBe(403)
+
+    // Non-object or non-string assigned_to JSON receipt payload still falls back safely to matching log
+    await client.execute({
+      sql: "UPDATE integration_attempts SET response_payload = 'null' WHERE task_id = ? AND request_id = 'cross-1'",
+      args: [id1],
+    })
+    expect((await putWith(id1, { assigned_to: "ha_person_1", request_id: "cross-1" })).status).toBe(200)
+    await client.execute({
+      sql: "UPDATE integration_attempts SET response_payload = '{\"assigned_to\":42}' WHERE task_id = ? AND request_id = 'cross-1'",
+      args: [id1],
+    })
+    expect((await putWith(id1, { assigned_to: "ha_person_1", request_id: "cross-1" })).status).toBe(200)
+
+    // Existing receipt with mismatched destination never falls through to activityMatches
+    await client.execute({
+      sql: "UPDATE integration_attempts SET response_payload = '{\"assigned_to\":\"ha_person_2\"}' WHERE task_id = ? AND request_id = 'cross-1'",
+      args: [id1],
+    })
+    expect((await putWith(id1, { assigned_to: "ha_person_1", request_id: "cross-1" })).status).toBe(403)
+
+    // Incomplete or timestamp-superseded receipt is also refused
+    await client.execute({
+      sql: "UPDATE integration_attempts SET response_payload = '{\"assigned_to\":\"ha_person_1\"}', status = 'pending' WHERE task_id = ? AND request_id = 'cross-1'",
+      args: [id1],
+    })
+    expect((await putWith(id1, { assigned_to: "ha_person_1", request_id: "cross-1" })).status).toBe(403)
+    await client.execute({
+      sql: "UPDATE integration_attempts SET status = 'completed', updated_at = 1 WHERE task_id = ? AND request_id = 'cross-1'",
+      args: [id1],
+    })
+    await repo.logActivity(id1, [{ field: "assigned_to", oldValue: "ha_person_2", newValue: "ha_person_1" }], {
+      actor: "user", actor_type: "user",
+    })
+    expect((await putWith(id1, { assigned_to: "ha_person_1", request_id: "cross-1" })).status).toBe(403)
+
+    // Round-trip via repo.updateTask invalidates prior receipt atomically
+    const id2 = crypto.randomUUID()
+    await repo.createTask(makeTaskData({ id: id2, assigned_to: "custom_agent_a" }))
+    expect((await putWith(id2, { assigned_to: "ha_person_1", request_id: "roundtrip-1" })).status).toBe(200)
+    await repo.updateTask(id2, { assigned_to: "ha_person_2" })
+    await repo.updateTask(id2, { assigned_to: "ha_person_1" })
+    expect((await putWith(id2, { assigned_to: "ha_person_1", request_id: "roundtrip-1" })).status).toBe(403)
+
+    // Broad tasks:write token reassignment cannot be replayed by assigned-only token even with matching tokenName
+    const id3 = crypto.randomUUID()
+    await repo.createTask(makeTaskData({ id: id3, assigned_to: "custom_agent_a" }))
+    expect((await putWith(id3, { assigned_to: "ha_person_1", request_id: "broad-1" }, {
+      scopes: ["tasks:write"], tokenId: "tok-broad", tokenName: "Agent Alpha",
+    })).status).toBe(200)
+    expect((await putWith(id3, { assigned_to: "ha_person_1", request_id: "broad-1" })).status).toBe(403)
+
+    // Pre-receipt legacy activity fallback requires matching agent actor name
+    const id4 = crypto.randomUUID()
+    await repo.createTask(makeTaskData({ id: id4, assigned_to: "custom_agent_a" }))
+    await repo.updateTask(id4, { assigned_to: "ha_person_1" })
+    await repo.logActivity(id4, [{ field: "assigned_to", oldValue: "custom_agent_a", newValue: "ha_person_1" }], {
+      actor: "Agent Alpha", actor_type: "agent", correlation_id: "legacy-1",
+    })
+    expect((await putWith(id4, { assigned_to: "ha_person_1", request_id: "legacy-1" })).status).toBe(200)
+    expect((await putWith(id4, { assigned_to: "ha_person_1", request_id: "legacy-1" }, {
+      tokenId: "tok-beta", tokenName: "Agent Beta",
+    })).status).toBe(403)
+  })
+
+  dbTest("PUT /api/tasks/[id] acknowledges concurrent in-flight retry hitting assignee_mismatch", async ({ repo }) => {
+    const id1 = crypto.randomUUID()
+    await repo.createTask(makeTaskData({ id: id1, assigned_to: "custom_agent_a" }))
+    const reassign = (taskId: string, requestId: string) => putTask({
+      params: { id: taskId },
+      request: new Request(`http://localhost/api/tasks/${taskId}`, {
+        method: "PUT",
+        body: JSON.stringify({ assigned_to: "ha_person_1", request_id: requestId }),
+      }),
+      locals: agentLocals("custom_agent_a"),
+    } as unknown as Parameters<typeof putTask>[0])
+
+    const [first, second] = await Promise.all([reassign(id1, "race-1"), reassign(id1, "race-1")])
+    expect([first.status, second.status]).toEqual([200, 200])
+    expect((await first.json()).assigned_to).toBe("ha_person_1")
+    expect((await second.json()).assigned_to).toBe("ha_person_1")
+
+    const id2 = crypto.randomUUID()
+    await repo.createTask(makeTaskData({ id: id2, assigned_to: "custom_agent_a" }))
+    const [handoff, concurrentEdit] = await Promise.all([
+      reassign(id2, "race-2"),
+      putTask({
+        params: { id: id2 },
+        request: new Request(`http://localhost/api/tasks/${id2}`, {
+          method: "PUT",
+          body: JSON.stringify({ title: "Should fail assignee_mismatch" }),
+        }),
+        locals: agentLocals("custom_agent_a"),
+      } as unknown as Parameters<typeof putTask>[0]),
+    ])
+    expect(handoff.status).toBe(200)
+    expect(concurrentEdit.status).toBe(403)
   })
 
   dbTest("atomic sub-route guards reject mismatched assignees in SQL without TOCTOU", async ({ repo }) => {

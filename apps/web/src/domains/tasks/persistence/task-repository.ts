@@ -140,6 +140,19 @@ export interface TaskRow {
   blocked_by: string | null
 }
 
+export interface ReassignmentReplayState {
+  receipt: { status: string; response_payload: string | null; updated_at: number } | null
+  ownedByOtherToken: boolean
+  lastReassignment: {
+    old_value: string | null
+    new_value: string | null
+    actor: string
+    actor_type: string
+    correlation_id: string | null
+    created_at: number
+  } | null
+}
+
 /**
  * Strip agent_scratchpad from task rows before returning to callers.
  * The scratchpad is ephemeral bot working data that must NEVER appear in API responses.
@@ -1177,6 +1190,50 @@ export class TaskRepository {
     return result.rows as unknown as Array<{ id: string; title: string; status: string }>
   }
 
+  /** Read receipt ownership and assignment log history for idempotent agent hand-off retries. */
+  async findReassignmentReplayState(
+    taskId: string,
+    receiptKey: string,
+    requestId: string,
+  ): Promise<ReassignmentReplayState> {
+    const [receiptRes, otherRes, latestActivityRes] = await Promise.all([
+      this.client.execute({
+        sql: "SELECT status, response_payload, updated_at FROM integration_attempts WHERE integration = 'task.reassignment' AND task_id = ? AND idempotency_key = ? LIMIT 1",
+        args: [taskId, receiptKey],
+      }),
+      this.client.execute({
+        sql: "SELECT 1 FROM integration_attempts WHERE integration = 'task.reassignment' AND task_id = ? AND request_id = ? AND idempotency_key != ? LIMIT 1",
+        args: [taskId, requestId, receiptKey],
+      }),
+      this.client.execute({
+        sql: "SELECT old_value, new_value, actor, actor_type, correlation_id, created_at FROM task_activity_log WHERE task_id = ? AND field = 'assigned_to' ORDER BY created_at DESC, id DESC LIMIT 1",
+        args: [taskId],
+      }),
+    ])
+    const receiptRow = receiptRes.rows[0] as Record<string, unknown> | undefined
+    const activityRow = latestActivityRes.rows[0] as Record<string, unknown> | undefined
+    return {
+      receipt: receiptRow
+        ? {
+          status: String(receiptRow.status),
+          response_payload: typeof receiptRow.response_payload === "string" ? receiptRow.response_payload : null,
+          updated_at: Number(receiptRow.updated_at),
+        }
+        : null,
+      ownedByOtherToken: otherRes.rows.length > 0,
+      lastReassignment: activityRow
+        ? {
+          old_value: typeof activityRow.old_value === "string" ? activityRow.old_value : null,
+          new_value: typeof activityRow.new_value === "string" ? activityRow.new_value : null,
+          actor: String(activityRow.actor),
+          actor_type: String(activityRow.actor_type),
+          correlation_id: typeof activityRow.correlation_id === "string" ? activityRow.correlation_id : null,
+          created_at: Number(activityRow.created_at),
+        }
+        : null,
+    }
+  }
+
   /** Apply a partial update with atomic dependency, version and checklist guards. */
   async updateTask(
     id: string,
@@ -1277,9 +1334,15 @@ export class TaskRepository {
 
     // A status transition and its prior state share the same writer transaction.
     // Callers must use this snapshot for once-only completion side effects.
+    const completing = typeof fields.status === "string" && isDoneStatus(fields.status)
+    const reassigning = fields.assigned_to !== undefined
     const statusIndex = diagnostics.length
     if (typeof fields.status === "string") {
       diagnostics.push({ sql: "SELECT status, date('now') AS completion_day FROM tasks WHERE id = ?", args: [id] })
+    }
+    const assigneeDiagIndex = reassigning ? diagnostics.length : -1
+    if (reassigning) {
+      diagnostics.push({ sql: "SELECT assigned_to FROM tasks WHERE id = ?", args: [id] })
     }
 
     // Capture the old state and commit the event and update in the same writer batch.
@@ -1297,6 +1360,7 @@ export class TaskRepository {
                 (attempt_id, task_id, integration, request_id, idempotency_key, status, response_payload, created_at, updated_at)
               SELECT ?, ?, 'task.reassignment', ?, ?, 'completed', ?, ?, ? WHERE changes() = 1
               ON CONFLICT(idempotency_key, integration) DO UPDATE SET
+                task_id = excluded.task_id, request_id = excluded.request_id,
                 status = excluded.status, response_payload = excluded.response_payload, updated_at = excluded.updated_at`,
         args: [
           crypto.randomUUID(), id, reassignmentReceipt.requestId, reassignmentReceipt.key,
@@ -1307,15 +1371,27 @@ export class TaskRepository {
     if (eventId) statements.push(discardUnappliedTaskActivity(eventId))
     let results: ResultSet[]
     let recurrence: RecurrenceOutcome
-    if (typeof fields.status === "string" && isDoneStatus(fields.status)) {
+    if (completing || reassigning) {
       const repo = this
       const completion = await runWriteTransaction(this.client, function* (): Generator<
         InStatement[], { results: ResultSet[]; recurrence: RecurrenceOutcome }, ResultSet[]
       > {
         const writeResults = yield statements
-        const prior = writeResults[statusIndex]?.rows[0]
+        const updatedRow = writeResults[writeIndex]?.rows[0] as Record<string, unknown> | undefined
+        if (reassigning && updatedRow) {
+          const priorAssignee = writeResults[assigneeDiagIndex]?.rows[0]?.assigned_to ?? null
+          const nextAssignee = updatedRow.assigned_to ?? null
+          if (priorAssignee !== nextAssignee) {
+            const keepKey = reassignmentReceipt?.key ?? null
+            yield [{
+              sql: "UPDATE integration_attempts SET status = 'superseded', updated_at = ? WHERE integration = 'task.reassignment' AND task_id = ? AND status = 'completed' AND (? IS NULL OR idempotency_key != ?)",
+              args: [now, id, keepKey, keepKey],
+            }]
+          }
+        }
+        const prior = completing ? writeResults[statusIndex]?.rows[0] : undefined
         const previousStatus = String(prior?.status ?? "")
-        const next = writeResults[writeIndex]?.rows[0] && !isDoneStatus(previousStatus)
+        const next = completing && updatedRow && !isDoneStatus(previousStatus)
           ? yield* repo.createRecurrenceSuccessor(id, String(prior?.completion_day ?? ""))
           : undefined
         return { results: writeResults, recurrence: next }
