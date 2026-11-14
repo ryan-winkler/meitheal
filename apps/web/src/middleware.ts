@@ -1,17 +1,20 @@
-import { getSettingsRevision } from "./domains/tasks/persistence/settings-repository"
-import type { MiddlewareHandler } from "astro";
-import { apiProblem, apiRateLimited } from "./lib/api-response";
-import { resolveIngressContext } from "@domains/auth/ingress";
-import { getIngressTransport } from "../scripts/ingress-transport.mjs";
-import { buildSecurityHeaders, isCsrfAllowed } from "@domains/auth/ingress-policy";
-import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability";
-import { getPersistenceClient, ensureDatabaseSchemaSupported, ensureSchema } from "@domains/tasks/persistence/store";
-import { initHAIntegrations } from "@domains/ha";
-import { startInactivityScheduler } from "@domains/tasks/task-inactivity-scheduler"
-import type { DateFormat } from "./lib/date";
-import { replayTaskRequest, taskRetryKey } from "./lib/idempotent-task-request"
-import { rejectBoardSelectionInUrl } from "./domains/tasks/board-availability"
+import type { MiddlewareHandler } from "astro"
 import { hasScope, isAssignedTaskScopedRoute, resolveAgentRouteScope } from "@meitheal/domain-auth"
+import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability"
+import { buildSecurityHeaders, isCsrfAllowed, resolveIngressContext } from "@domains/auth"
+import { initHAIntegrations } from "@domains/ha"
+import {
+  ensureDatabaseSchemaSupported,
+  ensureSchema,
+  getPersistenceClient,
+  getSettingsRevision,
+  rejectBoardSelectionInUrl,
+  startInactivityScheduler,
+} from "@domains/tasks"
+import { getIngressTransport } from "../scripts/ingress-transport.mjs"
+import { apiProblem, apiRateLimited } from "./lib/api-response"
+import type { DateFormat } from "./lib/date"
+import { replayTaskRequest, taskRetryKey } from "./lib/idempotent-task-request"
 import { resolveAgentAuth, type ResolvedAgent } from "./lib/agent-token-guard"
 import { rewriteIngressHtml } from "./lib/rewrite-ingress-html"
 import { commentAttemptHeader, commentMentionContextHeader } from "./lib/comment-mentions"
@@ -29,7 +32,9 @@ const logger = createLogger({
 
 
 // ── Known automation source identifiers (validated against for log safety) ──
-const KNOWN_AUTOMATION_SOURCES = new Set(["browser", "n8n", "nodered", "mcp", "agent", "a2a", "ha", "api", "webhook", "cron"])
+const KNOWN_AUTOMATION_SOURCES = new Set(["browser", "webmcp", "n8n", "nodered", "mcp", "agent", "a2a", "ha", "api", "webhook", "cron"])
+const AGENT_DISCOVERY_PATHS = new Set(["/.well-known/mcp.json", "/.well-known/agent-card.json", "/.well-known/agent.json"])
+const isAgentDiscoveryPath = (pathname: string) => AGENT_DISCOVERY_PATHS.has(pathname)
 
 // ── W3C Traceparent Parsing (OTel-compatible, zero-dep) ──
 // Format: {version}-{trace-id}-{parent-id}-{trace-flags}
@@ -296,7 +301,8 @@ async function handleRequest({ request, locals, routePattern }: Parameters<Middl
     })
   }
   // Astro can route a decoded API namespace that the raw-path scope checks would miss.
-  if (routePattern.startsWith("/api/") && !url.pathname.startsWith("/api/")) {
+  if ((routePattern.startsWith("/api/") && !url.pathname.startsWith("/api/")) ||
+      (isAgentDiscoveryPath(routePattern) && !isAgentDiscoveryPath(url.pathname))) {
     return new Response(null, { status: 404, headers: { "cache-control": "private, no-store" } })
   }
   const method = request.method.toUpperCase();
@@ -323,11 +329,14 @@ async function handleRequest({ request, locals, routePattern }: Parameters<Middl
   locals.traceFlags = traceCtx.traceFlags
 
   const isApiRoute = url.pathname.startsWith("/api/")
+  const agentDiscoveryRoute = isAgentDiscoveryPath(url.pathname)
+  const isRateLimitedRoute = isApiRoute || agentDiscoveryRoute
   if (isApiRoute && (method === "POST" || method === "PUT" || method === "PATCH" || method === "DELETE")) {
     locals.writeAbortSignal = AbortSignal.any([request.signal, AbortSignal.timeout(25_000)])
   }
 
   // Rate limit by the trusted identity, verified token, or actual transport peer.
+  // Caller-supplied forwarded addresses must not create new rate-limit buckets.
   const isLoopbackPeer = transport?.peer === "127.0.0.1" || transport?.peer === "::1"
   const ip = hassUserId ? `ha:${hassUserId}` : transport?.peer || "127.0.0.1";
 
@@ -361,11 +370,11 @@ async function handleRequest({ request, locals, routePattern }: Parameters<Middl
   }
 
   let rateInfo: { remaining: number; resetAt: number; exceeded: boolean } | null = null
-  const botEndpoint = isApiRoute && isBotEndpoint(url.pathname)
+  const botEndpoint = isRateLimitedRoute && (isBotEndpoint(url.pathname) || isBotEndpoint(routePattern))
 
   // Enforce in-memory IP rate limits BEFORE resolveAgentAuth for all non-loopback peers
   // so unauthenticated invalid-token floods never hit synchronous SQLite.
-  if (isApiRoute && !isLoopbackPeer) {
+  if (isRateLimitedRoute && !isLoopbackPeer) {
     rateInfo = getRateLimit(ip)
     if (rateInfo.exceeded) return buildApiRateLimitedResponse(rateInfo.resetAt)
     if (botEndpoint) {
@@ -375,7 +384,7 @@ async function handleRequest({ request, locals, routePattern }: Parameters<Middl
   }
 
   let resolvedAgent: ResolvedAgent | null = null
-  if (isApiRoute && !isHealthCheck) {
+  if (isRateLimitedRoute && !isHealthCheck) {
     try {
       resolvedAgent = await resolveAgentAuth(request)
     } catch (error) {
@@ -420,7 +429,7 @@ async function handleRequest({ request, locals, routePattern }: Parameters<Middl
         if (botRate.exceeded) return buildBotRateLimitedResponse(botRate.resetAt, ip)
       }
     }
-  } else if (isApiRoute && isLoopbackPeer) {
+  } else if (isRateLimitedRoute && isLoopbackPeer) {
     rateInfo = getRateLimit(ip)
     if (rateInfo.exceeded) return buildApiRateLimitedResponse(rateInfo.resetAt)
   }

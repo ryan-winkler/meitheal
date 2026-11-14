@@ -17,7 +17,7 @@
 
 .card:focus-within {
   @apply shadow-md border-border-focus/60;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2), 0 0 0 1px var(--accent-light, rgba(var(--accent-rgb), 0.12));
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2), 0 0 0 1px var(--accent-light, rgb(var(--accent-rgb) / 0.12));
 }
 
 .card-header {

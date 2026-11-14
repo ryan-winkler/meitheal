@@ -1,4 +1,4 @@
-import type { SearchResponse } from "@domains/search/search-types"
+import type { SearchResponse } from "@domains/search"
 import { workerAllowsNetworkOnly } from "@lib/network-only-worker"
 
 export function searchWorkerScope(): URL {

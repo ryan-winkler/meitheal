@@ -30,7 +30,7 @@ The Home Assistant add-on runs an Astro server and uses Node.js built-in SQLite 
 |-------|----------|---------|
 | Web Runtime | `apps/web/` | Astro SSR app — pages, API routes, middleware |
 | Domain Packages | `packages/domain-*/` | Pure domain logic — `auth`, `tasks`, `strategy`, `observability` |
-| In-App Domains | `apps/web/src/domains/` | `auth/`, `ha/`, `pillars/`, `todo/`, `tasks/`, `integrations/`, `search/` |
+| In-App Domains | `apps/web/src/domains/` | Domain modules such as `agents/`, `auth/`, `ha/`, `pillars/`, `todo/`, `tasks/`, and `search/` |
 | Integration Core | `packages/integration-core/` | Calendar adapter interface + HA implementation |
 | API Layer | `apps/web/src/pages/api/` | Native routes |
 | Middleware | `apps/web/src/middleware.ts` | Ingress rewriting, CSP, CSRF, rate limiting |
@@ -45,12 +45,13 @@ The Home Assistant add-on runs an Astro server and uses Node.js built-in SQLite 
 | `domain-strategy` | `packages/domain-strategy/` | RICE scoring, strategic lenses |
 | `domain-observability` | `packages/domain-observability/` | Structured logging, audit trail |
 | `integration-core` | `packages/integration-core/` | Calendar/todo adapters, HA bridge |
+| `domains/agents/` | `apps/web/src/domains/agents/` | MCP, WebMCP, and A2A protocol contracts, schema expansion, and availability gates (`@domains/agents` on server; `@domains/agents/webmcp-protocol` for pure browser contracts) |
 | `domains/ha/` | `apps/web/src/domains/ha/` | HA events, WebSocket, connection status |
 | `domains/search/` | `apps/web/src/domains/search/` | Universal search orchestration and catalog shaping |
 | `domains/todo/` | `apps/web/src/domains/todo/` | HA todo list sync, status mapping |
 | `domains/pillars/` | `apps/web/src/domains/pillars/` | Pillar CRUD, Principles/Non-Negotiables, associations, inheritance |
 
-Cross-context imports must occur through public package APIs, not deep path imports.
+Cross-context imports must use public package APIs (`@domains/*`), not deep internal paths. Browser scripts import `@domains/agents/webmcp-protocol` so SQLite modules never enter client bundles.
 
 ## Dual-Repo Architecture
 
@@ -176,12 +177,12 @@ Build-time generators produce zero-drift documentation served as static files.
 
 ### Agent Traceability Headers
 
-External callers (n8n, Node-RED, AI agents) should send:
+Send these headers from external callers (n8n, Node-RED, AI agents):
 
 | Header | Purpose | Validation |
 |--------|---------|------------|
-| `X-Automation-Source` | Caller identity | Allowlisted: `browser`, `n8n`, `nodered`, `mcp`, `agent`, `a2a`, `ha`, `api`, `webhook`, `cron` |
-| `X-Agent-Id` | Specific agent ID | Truncated to 128 chars, alphanumeric + dots + hyphens only |
+| `X-Automation-Source` | Caller identity | Allowlisted: `browser`, `webmcp`, `n8n`, `nodered`, `mcp`, `agent`, `a2a`, `ha`, `api`, `webhook`, `cron` |
+| `X-Agent-Id` | Specific agent ID | Truncated to 128 chars, alphanumeric + underscores + dots + hyphens only |
 
 Both are logged in structured API request logs (`metadata.automation_source`, `metadata.agent_id`).
 

@@ -33,7 +33,7 @@
 .form-select:focus {
   @apply outline-none bg-bg-input;
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-light, rgba(var(--accent-rgb), 0.12));
+  box-shadow: 0 0 0 3px var(--accent-light, rgb(var(--accent-rgb) / 0.12));
 }
 
 .form-input::placeholder {

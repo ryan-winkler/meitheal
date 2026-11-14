@@ -27,7 +27,7 @@
 .gantt-toast--success {
   background: var(--accent);
   color: var(--personal-accent-foreground, var(--palette-on-accent, #07140f));
-  box-shadow: 0 4px 16px rgba(var(--accent-rgb), 0.3);
+  box-shadow: 0 4px 16px rgb(var(--accent-rgb) / 0.3);
 }
 
 .gantt-toast--error {
@@ -215,7 +215,7 @@
 
 .timeline-zoom-select:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.15);
+  box-shadow: 0 0 0 2px rgb(var(--accent-rgb) / 0.15);
 }
 
 /* ── T7: Priority Legend ─────────────────────────────────────────────── */

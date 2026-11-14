@@ -8,7 +8,7 @@
  * @bounded-context agent-authorization
  * @kcs Token plaintext is never stored. Only SHA-256 hashes are persisted.
  */
-import { getPersistenceClient } from "@domains/tasks/persistence/store"
+import { getPersistenceClient } from "@domains/tasks"
 import type { AgentTokenRecord, AgentScope } from "@meitheal/domain-auth"
 
 // ── Schema Bootstrap ─────────────────────────────────────────────────────────
@@ -120,6 +120,20 @@ export async function getAgentTokenByHash(tokenHash: string): Promise<AgentToken
           FROM agent_tokens
           WHERE token_hash = ?`,
     args: [tokenHash],
+  })
+
+  if (result.rows.length === 0) return null
+  return rowToRecord(result.rows[0]!)
+}
+
+/** Look up a token by its ID */
+export async function getAgentTokenById(id: string): Promise<AgentTokenRecord | null> {
+  const db = getPersistenceClient()
+  const result = await db.execute({
+    sql: `SELECT id, name, token_hash, token_prefix, scopes, assignee_id, created_at, expires_at, last_used_at, revoked
+          FROM agent_tokens
+          WHERE id = ?`,
+    args: [id],
   })
 
   if (result.rows.length === 0) return null

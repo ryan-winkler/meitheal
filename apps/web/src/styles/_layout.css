@@ -172,7 +172,7 @@
   /* Active indicator: bottom border instead of right border */
   body.sidebar-collapsed .nav-link.active {
     border-right: none;
-    background: rgba(var(--accent-rgb), 0.15);
+    background: rgb(var(--accent-rgb) / 0.15);
   }
   /* Hide board switcher, hierarchy tree, streak badge, and footer text when collapsed */
   body.sidebar-collapsed .board-switcher,
@@ -253,7 +253,7 @@
     @apply bg-bg-card;
     transform: translateY(-2px) scale(1.02);
     box-shadow:
-      0 4px 20px rgba(var(--accent-rgb), 0.12),
+      0 4px 20px rgb(var(--accent-rgb) / 0.12),
       var(--shadow-md);
     border-color: var(--accent);
   }

@@ -107,37 +107,14 @@
             "description": "Task title (required)"
           },
           "description": {
-            "type": "string"
-          },
-          "status": {
             "type": "string",
-            "default": "todo"
-          },
-          "priority": {
-            "type": "integer"
-          },
-          "due_date": {
-            "type": "string",
-            "format": "date-time"
+            "maxLength": 10000
           },
           "assigned_to": {
             "type": "string",
+            "maxLength": 255,
+            "nullable": true,
             "description": "Must start with 'ha_' or 'custom_'"
-          },
-          "area_id": {
-            "type": "string"
-          },
-          "project_id": {
-            "type": "string"
-          },
-          "parent_id": {
-            "type": "string"
-          },
-          "labels": {
-            "type": "string"
-          },
-          "task_kind": {
-            "type": "string"
           },
           "frameworkPayload": {
             "type": "object"
@@ -158,6 +135,9 @@
               },
               "durationMinutes": {
                 "type": "integer"
+              },
+              "timezone": {
+                "type": "string"
               }
             },
             "additionalProperties": false
@@ -380,11 +360,53 @@
       }
     },
     {
-      "name": "deleteCompletedTasks",
-      "description": "⚠️ Destructive. Permanently removes all tasks with status 'complete'. Cannot be undone. Prefer clearCompletedTasks for safe cleanup.",
+      "name": "previewDeleteCompletedTasks",
+      "description": "Dry-run preview returning the count of completed and archived tasks older than 3, 6, 12, or 24 months.",
       "inputSchema": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "months": {
+            "type": "integer",
+            "enum": [
+              3,
+              6,
+              12,
+              24
+            ],
+            "description": "Retention threshold in months (3, 6, 12, or 24)"
+          }
+        },
+        "required": [
+          "months"
+        ]
+      }
+    },
+    {
+      "name": "deleteCompletedTasks",
+      "description": "⚠️ Destructive. Permanently removes completed and archived tasks older than 3, 6, 12, or 24 months when confirm=true. Cannot be undone. Prefer clearCompletedTasks for safe archival.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "months": {
+            "type": "integer",
+            "enum": [
+              3,
+              6,
+              12,
+              24
+            ],
+            "description": "Retention threshold in months (3, 6, 12, or 24)"
+          },
+          "confirm": {
+            "type": "boolean",
+            "const": true,
+            "description": "Must be true to execute permanent deletion"
+          }
+        },
+        "required": [
+          "months",
+          "confirm"
+        ]
       }
     },
     {
@@ -716,17 +738,29 @@
         "properties": {
           "id": {
             "type": "string",
-            "description": "id parameter"
+            "description": "Source task ID or ticket key"
           },
-          "target_id": {
-            "type": "string"
+          "target_task_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Target task UUID"
           },
           "link_type": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "related_to",
+              "blocked_by",
+              "blocks",
+              "duplicates",
+              "duplicated_by"
+            ],
+            "description": "Relationship type"
           }
         },
         "required": [
-          "id"
+          "id",
+          "target_task_id",
+          "link_type"
         ]
       }
     },
@@ -738,11 +772,16 @@
         "properties": {
           "id": {
             "type": "string",
-            "description": "id parameter"
+            "description": "Task ID or ticket key"
+          },
+          "link_id": {
+            "type": "string",
+            "description": "Link UUID to remove"
           }
         },
         "required": [
-          "id"
+          "id",
+          "link_id"
         ]
       }
     },
@@ -796,7 +835,7 @@
     },
     {
       "name": "addTaskTimeEntry",
-      "description": "Log time against a task",
+      "description": "Start or stop a time tracking entry on a task",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -804,11 +843,13 @@
             "type": "string",
             "description": "id parameter"
           },
-          "duration_minutes": {
-            "type": "integer"
-          },
-          "note": {
-            "type": "string"
+          "action": {
+            "type": "string",
+            "enum": [
+              "start",
+              "stop"
+            ],
+            "default": "start"
           }
         },
         "required": [
@@ -834,7 +875,7 @@
     },
     {
       "name": "searchTasks",
-      "description": "The primary search endpoint for all Meitheal content. Supports scoped search (tasks, views, settings, actions), field selection, and sorting. Use scope=tasks for task-specific searches, or scope=all for universal discovery.",
+      "description": "Search tasks by query text, status, priority, or assignee. Returns a clean list of matching tasks.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -875,7 +916,7 @@
           },
           "status": {
             "type": "string",
-            "description": "status parameter"
+            "description": "Filter by status (backlog, pending, active, complete, todo, in_progress, done)."
           },
           "assigned_to": {
             "type": "string",
@@ -888,6 +929,10 @@
           "task_fields": {
             "type": "string",
             "description": "Comma-separated: id,title,description,labels,custom_fields,comments"
+          },
+          "query": {
+            "type": "string",
+            "description": "Search text (alias for q)."
           }
         }
       }
@@ -1145,7 +1190,26 @@
       "description": "Projects are containers for tasks within an area. They can be linked to goals for progress tracking.",
       "inputSchema": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "goal_id": {
+            "type": "string",
+            "description": "goal_id parameter"
+          },
+          "area_id": {
+            "type": "string",
+            "description": "area_id parameter"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "completed",
+              "paused",
+              "archived"
+            ],
+            "description": "status parameter"
+          }
+        }
       }
     },
     {
@@ -1154,11 +1218,15 @@
       "inputSchema": {
         "type": "object",
         "properties": {
-          "id": {
-            "type": "string"
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
           },
-          "name": {
-            "type": "string"
+          "description": {
+            "type": "string",
+            "maxLength": 2000,
+            "nullable": true
           },
           "area_id": {
             "type": "string",
@@ -1169,32 +1237,25 @@
             "nullable": true
           },
           "status": {
-            "type": "string"
-          },
-          "task_counts": {
-            "type": "object",
-            "properties": {
-              "active_open": {
-                "type": "integer"
-              },
-              "total": {
-                "type": "integer"
-              },
-              "complete": {
-                "type": "integer"
-              }
-            },
-            "required": [
-              "active_open",
-              "total",
-              "complete"
+            "type": "string",
+            "enum": [
+              "active",
+              "completed",
+              "paused",
+              "archived"
             ],
-            "additionalProperties": false
+            "default": "active"
+          },
+          "icon": {
+            "type": "string",
+            "maxLength": 10
+          },
+          "color": {
+            "type": "string"
           }
         },
         "required": [
-          "id",
-          "name"
+          "title"
         ]
       }
     },
@@ -1228,10 +1289,18 @@
         "type": "object",
         "properties": {
           "id": {
-            "type": "string"
+            "type": "string",
+            "description": "id parameter"
           },
-          "name": {
-            "type": "string"
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 2000,
+            "nullable": true
           },
           "area_id": {
             "type": "string",
@@ -1242,32 +1311,27 @@
             "nullable": true
           },
           "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "completed",
+              "paused",
+              "archived"
+            ]
+          },
+          "icon": {
+            "type": "string",
+            "maxLength": 10
+          },
+          "color": {
             "type": "string"
           },
-          "task_counts": {
-            "type": "object",
-            "properties": {
-              "active_open": {
-                "type": "integer"
-              },
-              "total": {
-                "type": "integer"
-              },
-              "complete": {
-                "type": "integer"
-              }
-            },
-            "required": [
-              "active_open",
-              "total",
-              "complete"
-            ],
-            "additionalProperties": false
+          "position": {
+            "type": "integer"
           }
         },
         "required": [
-          "id",
-          "name"
+          "id"
         ]
       }
     },
@@ -2087,29 +2151,15 @@
       }
     },
     {
-      "name": "getA2AAgentCard",
-      "description": "Get the A2A agent card for read-only task search",
-      "inputSchema": {
-        "type": "object",
-        "properties": {}
-      }
-    },
-    {
-      "name": "sendA2AMessage",
-      "description": "Requires a token with a2a:execute and search:read and the A2A-Version: 1.0 header. SendMessage returns up to eight active task titles and links. Results are read-only.",
-      "inputSchema": {
-        "type": "object",
-        "properties": {}
-      }
-    },
-    {
       "name": "createAgentToken",
-      "description": "Issue a zero-trust agent token with fine-grained scopes. The plaintext token is returned ONCE in the response — store it securely. Requires admin access (HA admin or settings:write scope).\n\n**For n8n/Node-RED**: Create a token with only the scopes your workflow needs, then set it as Bearer token in your HTTP Request node.",
+      "description": "Issue a zero-trust agent token with fine-grained scopes. The plaintext token is returned ONCE in the response — store it securely. Requires Home Assistant admin access.\n\n**For n8n/Node-RED**: Create a token with only the scopes your workflow needs, then set it as Bearer token in your HTTP Request node.",
       "inputSchema": {
         "type": "object",
         "properties": {
           "name": {
             "type": "string",
+            "minLength": 1,
+            "maxLength": 100,
             "description": "Human label for the token"
           },
           "scopes": {
@@ -2118,20 +2168,31 @@
               "type": "string",
               "enum": [
                 "tasks:read",
+                "tasks:propose",
                 "tasks:write",
+                "tasks:write:assigned",
+                "tasks:delete",
                 "projects:read",
                 "projects:write",
-                "pillars:read",
-                "pillars:write",
                 "search:read",
-                "settings:read",
-                "settings:write",
-                "webhooks:manage",
-                "admin:*"
+                "mcp:execute",
+                "a2a:execute"
               ],
-              "description": "Fine-grained permission scope for agent tokens. Use least-privilege: grant only what the agent needs."
+              "description": "Fine-grained permission scope for agent tokens. Grant only the scopes each client needs."
             },
             "minItems": 1
+          },
+          "assigneeId": {
+            "type": "string",
+            "maxLength": 128,
+            "nullable": true,
+            "description": "Optional user or agent ID linked to tasks:write:assigned"
+          },
+          "assignee_id": {
+            "type": "string",
+            "maxLength": 128,
+            "nullable": true,
+            "description": "Snake-case alias for assigneeId"
           },
           "expiresAt": {
             "type": "string",
@@ -2148,15 +2209,24 @@
     },
     {
       "name": "listAgentTokens",
-      "description": "Returns public metadata for all active tokens. Token hashes and plaintexts are never exposed. Requires admin access.",
+      "description": "Returns public metadata for active tokens, or active and soft-revoked tokens when `include_revoked=1`. Token hashes and plaintexts are never exposed. Requires Home Assistant admin access.",
       "inputSchema": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "include_revoked": {
+            "type": "string",
+            "enum": [
+              "0",
+              "1"
+            ],
+            "description": "Set to `1` to include soft-revoked tokens in the list"
+          }
+        }
       }
     },
     {
       "name": "updateAgentToken",
-      "description": "Modify the display name or permission scopes of an existing token. The token value itself cannot be changed — revoke and recreate if compromised.",
+      "description": "Modify the display name, permission scopes, or linked assignee of an existing token. The token value itself cannot be changed — revoke and recreate if compromised.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -2164,7 +2234,9 @@
             "type": "string"
           },
           "name": {
-            "type": "string"
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
           },
           "scopes": {
             "type": "array",
@@ -2172,19 +2244,29 @@
               "type": "string",
               "enum": [
                 "tasks:read",
+                "tasks:propose",
                 "tasks:write",
+                "tasks:write:assigned",
+                "tasks:delete",
                 "projects:read",
                 "projects:write",
-                "pillars:read",
-                "pillars:write",
                 "search:read",
-                "settings:read",
-                "settings:write",
-                "webhooks:manage",
-                "admin:*"
+                "mcp:execute",
+                "a2a:execute"
               ],
-              "description": "Fine-grained permission scope for agent tokens. Use least-privilege: grant only what the agent needs."
-            }
+              "description": "Fine-grained permission scope for agent tokens. Grant only the scopes each client needs."
+            },
+            "minItems": 1
+          },
+          "assigneeId": {
+            "type": "string",
+            "maxLength": 128,
+            "nullable": true
+          },
+          "assignee_id": {
+            "type": "string",
+            "maxLength": 128,
+            "nullable": true
           }
         },
         "required": [
@@ -2293,12 +2375,24 @@
       "pathParams": [],
       "queryParams": []
     },
+    "previewDeleteCompletedTasks": {
+      "method": "GET",
+      "path": "/api/tasks/delete-completed",
+      "hasBody": false,
+      "pathParams": [],
+      "queryParams": [
+        "months"
+      ]
+    },
     "deleteCompletedTasks": {
       "method": "DELETE",
       "path": "/api/tasks/delete-completed",
       "hasBody": false,
       "pathParams": [],
-      "queryParams": []
+      "queryParams": [
+        "months",
+        "confirm"
+      ]
     },
     "reorderTasks": {
       "method": "POST",
@@ -2452,7 +2546,9 @@
       "pathParams": [
         "id"
       ],
-      "queryParams": []
+      "queryParams": [
+        "link_id"
+      ]
     },
     "getTaskActivity": {
       "method": "GET",
@@ -2604,7 +2700,11 @@
       "path": "/api/projects",
       "hasBody": false,
       "pathParams": [],
-      "queryParams": []
+      "queryParams": [
+        "goal_id",
+        "area_id",
+        "status"
+      ]
     },
     "createProject": {
       "method": "POST",
@@ -3150,20 +3250,6 @@
       "pathParams": [],
       "queryParams": []
     },
-    "getA2AAgentCard": {
-      "method": "GET",
-      "path": "/api/a2a/agent-card",
-      "hasBody": false,
-      "pathParams": [],
-      "queryParams": []
-    },
-    "sendA2AMessage": {
-      "method": "POST",
-      "path": "/api/a2a/message",
-      "hasBody": true,
-      "pathParams": [],
-      "queryParams": []
-    },
     "createAgentToken": {
       "method": "POST",
       "path": "/api/agent-tokens",
@@ -3176,7 +3262,9 @@
       "path": "/api/agent-tokens",
       "hasBody": false,
       "pathParams": [],
-      "queryParams": []
+      "queryParams": [
+        "include_revoked"
+      ]
     },
     "updateAgentToken": {
       "method": "PATCH",

@@ -167,10 +167,11 @@ function parseNotifyTarget(target: string): { domain: string; service: string } 
 
 /**
  * Start the due-date reminder scheduler.
- * Idempotent — calling multiple times is safe.
+ * Idempotent — calling multiple times is safe. The returned promise settles when
+ * the immediate first check finishes; it never rejects.
  */
-export function startDueDateReminders(): void {
-  if (intervalHandle !== null) return;
+export function startDueDateReminders(): Promise<void> {
+  if (intervalHandle !== null) return Promise.resolve();
 
   logger.log("info", {
     event: "due_date_reminders.started",
@@ -181,13 +182,14 @@ export function startDueDateReminders(): void {
   });
 
   // Run once immediately, then on interval
-  checkDueDates().catch(() => {});
+  const firstRun = checkDueDates().catch(() => {});
   intervalHandle = setInterval(() => {
     checkDueDates().catch(() => {});
   }, CHECK_INTERVAL_MS);
   // The scheduler must not keep the process alive. Signal listeners would also
   // replace Node's default exit, so Supervisor would have to kill the App on stop.
   intervalHandle.unref?.();
+  return firstRun;
 }
 
 /**

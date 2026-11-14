@@ -66,7 +66,7 @@
 }
 
 .glass-dropdown__item.is-active {
-  background-color: rgba(var(--accent-rgb), 0.14);
+  background-color: rgb(var(--accent-rgb) / 0.14);
   color: var(--accent-text);
   font-weight: 500;
 }

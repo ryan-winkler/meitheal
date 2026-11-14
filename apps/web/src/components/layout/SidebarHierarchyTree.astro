@@ -315,9 +315,9 @@ const taskKinds = [
     flex-direction: column;
     gap: 1px;
     padding: var(--stree-block-padding) var(--stree-inline-padding);
-    background: rgba(var(--bg-primary-rgb), 0.4);
+    background: rgb(var(--bg-primary-rgb) / 0.4);
     border-radius: var(--radius-md, 10px);
-    border: 1px solid rgba(var(--border-rgb), 0.35);
+    border: 1px solid rgb(var(--border-rgb) / 0.35);
     margin-bottom: 0.5rem;
     font-size: 13px;
     position: relative;
@@ -329,7 +329,7 @@ const taskKinds = [
     overflow-y: auto;
     max-height: calc(100vh - 380px);
     scrollbar-width: thin;
-    scrollbar-color: rgba(var(--border-rgb), 0.3) transparent;
+    scrollbar-color: rgb(var(--border-rgb) / 0.3) transparent;
   }
 
   /* ── Header — P2-11: compact & refined ── */
@@ -371,7 +371,7 @@ const taskKinds = [
     text-decoration: none;
     border-radius: var(--radius-sm, 4px);
   }
-  .stree__manage-link:hover { color: var(--accent); background: rgba(var(--accent-rgb), 0.08); }
+  .stree__manage-link:hover { color: var(--accent); background: rgb(var(--accent-rgb) / 0.08); }
 
   /* ── Section labels ── */
   .stree__section-label {
@@ -456,7 +456,7 @@ const taskKinds = [
     font-variant-numeric: tabular-nums;
     padding: 0 5px;
     border-radius: 8px;
-    background: rgba(var(--accent-rgb), 0.06);
+    background: rgb(var(--accent-rgb) / 0.06);
     line-height: 1.6;
     transition: opacity 200ms ease, background 200ms ease;
   }
@@ -512,7 +512,7 @@ const taskKinds = [
   }
   .stree__action-btn:hover {
     color: var(--text-primary);
-    background: rgba(var(--border-rgb), 0.25);
+    background: rgb(var(--border-rgb) / 0.25);
   }
   .stree__action-btn--add {
     font-size: 15px;
@@ -559,7 +559,7 @@ const taskKinds = [
     top: 0;
     bottom: 0;
     width: 1px;
-    background: rgba(var(--border-rgb), 0.18);
+    background: rgb(var(--border-rgb) / 0.18);
   }
   .stree__project--last .stree__line-v { bottom: 50%; }
   .stree__line-h {
@@ -568,7 +568,7 @@ const taskKinds = [
     top: 50%;
     width: 9px;
     height: 1px;
-    background: rgba(var(--border-rgb), 0.18);
+    background: rgb(var(--border-rgb) / 0.18);
   }
   /* Rounded corner at the L-bend */
   .stree__project--last .stree__connector::after {
@@ -578,8 +578,8 @@ const taskKinds = [
     top: 50%;
     width: 4px;
     height: 4px;
-    border-left: 1px solid rgba(var(--border-rgb), 0.18);
-    border-bottom: 1px solid rgba(var(--border-rgb), 0.18);
+    border-left: 1px solid rgb(var(--border-rgb) / 0.18);
+    border-bottom: 1px solid rgb(var(--border-rgb) / 0.18);
     border-bottom-left-radius: 4px;
     transform: translateY(-100%);
   }
@@ -608,7 +608,7 @@ const taskKinds = [
     color: var(--text-primary);
   }
   .stree__project-link.active {
-    background: rgba(var(--accent-rgb), 0.1);
+    background: rgb(var(--accent-rgb) / 0.1);
     color: var(--accent);
     font-weight: 600;
   }
@@ -634,7 +634,7 @@ const taskKinds = [
 
   /* ── Pinned section ── */
   .stree__pinned {
-    border-bottom: 1px solid rgba(var(--border-rgb), 0.2);
+    border-bottom: 1px solid rgb(var(--border-rgb) / 0.2);
     padding-bottom: 4px;
     margin-bottom: 2px;
   }
@@ -659,7 +659,7 @@ const taskKinds = [
     align-items: center;
     justify-content: center;
     border-radius: 50%;
-    background: rgba(var(--border-rgb), 0.15);
+    background: rgb(var(--border-rgb) / 0.15);
     color: var(--text-muted);
     opacity: 0.4;
     cursor: help;
@@ -670,8 +670,8 @@ const taskKinds = [
 
   /* ── T1: Inline editable input ── */
   .stree__inline-input {
-    background: rgba(var(--border-rgb), 0.12);
-    border: 1px solid rgba(var(--accent-rgb), 0.4);
+    background: rgb(var(--border-rgb) / 0.12);
+    border: 1px solid rgb(var(--accent-rgb) / 0.4);
     border-radius: 4px;
     color: var(--text-primary);
     font-size: 12px;
@@ -707,7 +707,7 @@ const taskKinds = [
     gap: 6px;
     padding: 5px 8px;
     margin-top: 4px;
-    border: 1px dashed rgba(var(--border-rgb), 0.25);
+    border: 1px dashed rgb(var(--border-rgb) / 0.25);
     background: none;
     border-radius: var(--radius-sm, 6px);
     cursor: pointer;
@@ -718,7 +718,7 @@ const taskKinds = [
   .stree__new-area:hover {
     border-color: var(--accent);
     color: var(--accent-text);
-    background: rgba(var(--accent-rgb), 0.04);
+    background: rgb(var(--accent-rgb) / 0.04);
   }
   .stree__new-area-icon {
     font-size: 13px;
@@ -729,11 +729,11 @@ const taskKinds = [
     align-items: center;
     justify-content: center;
     border-radius: 4px;
-    background: rgba(var(--border-rgb), 0.1);
+    background: rgb(var(--border-rgb) / 0.1);
     transition: background 200ms;
   }
   .stree__new-area:hover .stree__new-area-icon {
-    background: rgba(var(--accent-rgb), 0.1);
+    background: rgb(var(--accent-rgb) / 0.1);
   }
 
   /* ── Shared dropdown (body-level) ── */
@@ -742,7 +742,7 @@ const taskKinds = [
     z-index: 10000;
     min-width: 180px;
     background: var(--bg-surface, #1e1e2e);
-    border: 1px solid rgba(var(--border-rgb), 0.5);
+    border: 1px solid rgb(var(--border-rgb) / 0.5);
     border-radius: var(--radius-md, 8px);
     box-shadow: 0 8px 28px rgba(0,0,0,0.45);
     padding: 4px;
@@ -774,7 +774,7 @@ const taskKinds = [
   .stree__dropdown-item:hover { background: rgba(255, 255, 255, 0.06); color: var(--text-primary); }
   .stree__dropdown-item--danger:hover { background: rgba(239,68,68,0.12); color: #EF4444; }
   .stree__dropdown-icon { font-size: 13px; flex-shrink: 0; width: 18px; text-align: center; }
-  .stree__dropdown-divider { border: none; border-top: 1px solid rgba(var(--border-rgb), 0.2); margin: 3px 8px; }
+  .stree__dropdown-divider { border: none; border-top: 1px solid rgb(var(--border-rgb) / 0.2); margin: 3px 8px; }
 
   /* ── Color & Icon popover (body-level) ── */
   .stree__popover {
@@ -782,7 +782,7 @@ const taskKinds = [
     z-index: 10001;
     min-width: 220px;
     background: var(--bg-surface, #1e1e2e);
-    border: 1px solid rgba(var(--border-rgb), 0.5);
+    border: 1px solid rgb(var(--border-rgb) / 0.5);
     border-radius: var(--radius-md, 8px);
     box-shadow: 0 12px 36px rgba(0,0,0,0.5);
     padding: 14px;
@@ -812,16 +812,16 @@ const taskKinds = [
     display: flex;
     align-items: center;
     justify-content: center;
-    background: rgba(var(--border-rgb), 0.1);
+    background: rgb(var(--border-rgb) / 0.1);
     border-radius: var(--radius-md, 8px);
-    border: 1px solid rgba(var(--border-rgb), 0.2);
+    border: 1px solid rgb(var(--border-rgb) / 0.2);
     transition: border-color 200ms;
   }
   .stree__emoji-selected:hover { border-color: var(--accent); }
   .stree__emoji-tabs {
     display: flex;
     gap: 2px;
-    border-bottom: 1px solid rgba(var(--border-rgb), 0.2);
+    border-bottom: 1px solid rgb(var(--border-rgb) / 0.2);
     padding-bottom: 4px;
     margin-bottom: 6px;
   }
@@ -835,14 +835,14 @@ const taskKinds = [
     opacity: 0.45;
     transition: opacity 120ms, background 120ms;
   }
-  .stree__emoji-tab:hover { opacity: 0.75; background: rgba(var(--border-rgb), 0.12); }
-  .stree__emoji-tab.active { opacity: 1; background: rgba(var(--accent-rgb), 0.1); }
+  .stree__emoji-tab:hover { opacity: 0.75; background: rgb(var(--border-rgb) / 0.12); }
+  .stree__emoji-tab.active { opacity: 1; background: rgb(var(--accent-rgb) / 0.1); }
   .stree__emoji-grid {
     max-height: 160px;
     overflow-y: auto;
     overscroll-behavior: contain;
     scrollbar-width: thin;
-    scrollbar-color: rgba(var(--border-rgb), 0.3) transparent;
+    scrollbar-color: rgb(var(--border-rgb) / 0.3) transparent;
   }
   .stree__emoji-panel {
     display: grid;
@@ -859,8 +859,8 @@ const taskKinds = [
     border-radius: 5px;
     transition: background 100ms, transform 100ms;
   }
-  .stree__emoji-btn:hover { background: rgba(var(--border-rgb), 0.2); transform: scale(1.15); }
-  .stree__emoji-btn.selected { background: rgba(var(--accent-rgb), 0.18); }
+  .stree__emoji-btn:hover { background: rgb(var(--border-rgb) / 0.2); transform: scale(1.15); }
+  .stree__emoji-btn.selected { background: rgb(var(--accent-rgb) / 0.18); }
   .stree__swatches { display: flex; flex-wrap: wrap; gap: 6px; }
   .stree__swatch {
     width: 24px; height: 24px; border-radius: 50%;
@@ -869,17 +869,17 @@ const taskKinds = [
   }
   .stree__swatch:hover {
     transform: scale(1.15);
-    box-shadow: 0 0 0 2px rgba(var(--border-rgb), 0.3);
+    box-shadow: 0 0 0 2px rgb(var(--border-rgb) / 0.3);
   }
   .stree__swatch.selected {
     border-color: var(--text-primary);
     transform: scale(1.15);
-    box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.3);
+    box-shadow: 0 0 0 2px rgb(var(--accent-rgb) / 0.3);
   }
   .stree__popover-save {
     padding: 6px 14px; font-size: 12px; font-weight: 600;
     border: none; border-radius: var(--radius-sm, 4px);
-    background: var(--accent); color: white; cursor: pointer;
+    background: var(--accent); color: var(--personal-accent-foreground, var(--palette-on-accent, #07140f)); cursor: pointer;
     transition: filter 150ms, transform 100ms;
   }
   .stree__popover-save:hover { filter: brightness(1.1); }

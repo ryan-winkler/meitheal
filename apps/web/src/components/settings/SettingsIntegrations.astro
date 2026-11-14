@@ -544,7 +544,7 @@ const { locale } = Astro.props
 
   .ha-status-indicator--connected .ha-status-indicator__dot {
     background: var(--accent);
-    box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 40%, transparent);
+    box-shadow: 0 0 8px rgb(var(--accent-rgb) / 0.4);
   }
 
   .ha-status-indicator--checking .ha-status-indicator__dot {

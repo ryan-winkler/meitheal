@@ -1052,7 +1052,7 @@ coreTest("verified members receive durable receipts and queue APIs fail closed",
     expect((await list.json()).reports).toMatchObject([{ id: receipt.id, message: body.message, state: "open" }])
 
     const enrollment = await api.post(at("/api/agent-tokens"), {
-      headers: admin, data: { name: "Feedback fixture", scopes: ["mcp:execute", "tasks:write"] },
+      headers: { ...admin, origin }, data: { name: "Feedback fixture", scopes: ["mcp:execute", "tasks:write"] },
     })
     expect(enrollment.status()).toBe(201)
     const { token } = await enrollment.json()

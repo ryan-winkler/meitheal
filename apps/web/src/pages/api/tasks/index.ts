@@ -140,14 +140,12 @@ export const POST: APIRoute = async ({ request, locals }) => {
   await ensureSchema()
   const client = getPersistenceClient()
   const repo = new TaskRepository(client)
-  const autoSource = request.headers.get("X-Automation-Source")
-  const agentId = request.headers.get("X-Agent-Id")
+  // Attribution comes only from verified identity. Unauthenticated X-Agent-Id headers and
+  // body fields are claims, so a caller cannot record a task as created by an agent or person.
   const effectiveSource = locals.agentToken
     ? "agent"
-    : (autoSource ?? (typeof body.source === "string" ? body.source : "user"))
-  const effectiveCreatedBy = locals.agentToken
-    ? locals.agentToken.tokenName
-    : (agentId ?? (typeof body.created_by === "string" ? body.created_by : null))
+    : (request.headers.has("X-Automation-Source") ? locals.automationSource : "user")
+  const effectiveCreatedBy = locals.agentToken ? locals.agentToken.tokenName : null
 
   const taskBody = {
     ...body,

@@ -28,6 +28,7 @@ export const EXCLUDED_OPS = new Set([
   "updateLabel", "deleteLabel",
   "taskInactivity",
   "mcpEndpoint",
+  "getA2AAgentCard", "sendA2AMessage",
   "healthPing",
   "getRuntimeDiagnostics",
   "subscribeSSE",
@@ -131,11 +132,18 @@ export function buildMcpCatalogFromYaml(specContent) {
 
       if (toolName === "searchTasks") {
         properties.scope = { type: "string", enum: ["tasks"], default: "tasks" }
+        properties.query = { type: "string", description: "Search text (alias for q)." }
+        properties.status = {
+          type: "string",
+          description: "Filter by status (backlog, pending, active, complete, todo, in_progress, done).",
+        }
       }
 
       tools.push({
         name: toolName,
-        description: op.description ?? op.summary ?? `${method.toUpperCase()} ${path}`,
+        description: toolName === "searchTasks"
+          ? "Search tasks by query text, status, priority, or assignee. Returns a clean list of matching tasks."
+          : (op.description ?? op.summary ?? `${method.toUpperCase()} ${path}`),
         inputSchema: {
           type: "object",
           properties,

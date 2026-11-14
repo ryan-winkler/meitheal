@@ -208,15 +208,15 @@ const statusLabels: Record<string, string> = {
     flex-shrink: 0;
   }
   .status-active {
-    background: rgba(var(--accent-rgb), 0.12);
+    background: rgb(var(--accent-rgb) / 0.12);
     color: var(--accent-text);
   }
   .status-completed {
-    background: rgba(var(--success-rgb), 0.12);
+    background: rgb(var(--success-rgb) / 0.12);
     color: var(--success);
   }
   .status-archived {
-    background: rgba(var(--text-muted-rgb, 128, 128, 128), 0.12);
+    background: rgb(var(--text-muted-rgb, 169 183 176) / 0.12);
     color: var(--text-muted);
   }
 
@@ -269,11 +269,11 @@ const statusLabels: Record<string, string> = {
   }
   .goal-delete-btn:hover {
     border-color: var(--danger);
-    background: rgba(var(--danger-rgb), 0.08);
+    background: rgb(var(--danger-rgb) / 0.08);
   }
   .goal-complete-btn:hover {
     border-color: var(--success);
-    background: rgba(var(--success-rgb), 0.08);
+    background: rgb(var(--success-rgb) / 0.08);
   }
 
   /* Inline create form — reuses project pattern */
@@ -308,7 +308,7 @@ const statusLabels: Record<string, string> = {
   }
   .create-form-input:focus {
     border-color: var(--accent);
-    box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.15);
+    box-shadow: 0 0 0 2px rgb(var(--accent-rgb) / 0.15);
   }
   .create-form-input::placeholder { color: var(--text-muted); }
   .create-form-select {

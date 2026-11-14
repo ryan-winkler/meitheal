@@ -90,7 +90,7 @@
   font-size: 11px;
   padding: 1px 6px;
   border-radius: 4px;
-  background: rgba(var(--accent-rgb), 0.12);
+  background: rgb(var(--accent-rgb) / 0.12);
   color: var(--accent);
 }
 
@@ -148,7 +148,7 @@
 .kanban-card:hover {
   @apply bg-bg-card border-accent/40;
   box-shadow:
-    0 12px 24px -6px rgba(var(--accent-rgb), 0.14),
+    0 12px 24px -6px rgb(var(--accent-rgb) / 0.14),
     0 4px 8px -2px rgba(0, 0, 0, 0.2);
   transform: translateY(-2px);
 }
@@ -179,7 +179,7 @@
 
 .kanban-column.drag-over {
   border-color: var(--accent);
-  background: rgba(var(--accent-rgb), 0.05);
+  background: rgb(var(--accent-rgb) / 0.05);
 }
 
 .kanban-card.dragging {
@@ -222,7 +222,7 @@
 }
 
 .search-highlight {
-  background: rgba(var(--accent-rgb), 0.2);
+  background: rgb(var(--accent-rgb) / 0.2);
   color: var(--accent);
   border-radius: 2px;
   padding: 0 2px;
@@ -370,7 +370,7 @@
 
 .kanban-add-task:hover {
   @apply text-accent;
-  background: rgba(var(--accent-rgb), 0.06);
+  background: rgb(var(--accent-rgb) / 0.06);
   border-top-color: var(--accent);
   border-top-style: solid;
 }

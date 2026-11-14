@@ -590,8 +590,8 @@ body.has-docked-inspector #task-detail-panel {
 }
 
 .nt-status-pill.active {
-  background: rgba(var(--accent-rgb), 0.14);
-  border: 1px solid rgba(var(--accent-rgb), 0.34);
+  background: rgb(var(--accent-rgb) / 0.14);
+  border: 1px solid rgb(var(--accent-rgb) / 0.34);
   color: var(--accent-text);
 }
 

@@ -75,6 +75,9 @@ test("verified members see committed task activity and can filter it by current 
     expect((await mutate(a, task, "PATCH", { status: "todo" })).status).toBe(200)
 
     db = new DatabaseSync(join(work, "pins.db"))
+    // The spoofed X-Agent-Id header must not become stored attribution.
+    expect({ ...db.prepare("SELECT source, created_by FROM tasks WHERE id = ?").get(first.body.id) })
+      .toEqual({ source: "user", created_by: null })
     db.prepare(`INSERT INTO task_activity_log (task_id, field, old_value, new_value, actor, created_at)
       VALUES (?, 'description', 'legacy-old-sentinel', 'legacy-new-sentinel', 'legacy-actor-sentinel', ?)`)
       .run(first.body.id, Date.now())

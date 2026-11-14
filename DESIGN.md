@@ -1,7 +1,7 @@
 ---
 type: "Reference"
 title: "Meitheal Design System & Appearance"
-description: "Canonical Evergreen Carbon & Living Mint brand identity, opaque structural elevation rules, Tabler 1.75px icon sprites, docked workspace inspector, and local appearance behavior."
+description: "Canonical Evergreen Carbon & Living Mint brand identity from meitheal.io, opaque structural elevation rules, Tabler 1.75px icon sprites, Home Assistant storefront specifications, docked workspace inspector, and local appearance behavior."
 design_md_format: "spec"
 aesthetic: "Calm Architectural Household Utility — opaque Evergreen Carbon surfaces, Living Mint signal, Warm Paper light mode"
 surfaces:
@@ -74,6 +74,9 @@ spacing:
 ### Design Direction & Opaque Structural Elevation
 
 - **Opaque Structural Elevation**: Surfaces separate cleanly through luminance steps and `1px solid var(--border)` hairlines with `backdrop-filter: none` (`0` `backdrop-filter` / `backdrop-blur-*` utilities across the application), solid `rgba(0, 0, 0, 0.62)` modal scrims, zero radial glow pseudo-elements, and zero decorative AI pulse badges. This eliminates GPU backdrop-sampling overhead on Raspberry Pi / Home Assistant Green WebViews and ensures crisp legibility across Home Assistant dashboards, mobile Companion WebViews, and desktop monitors.
+
+### Canonical Mark & Wordmark Lockup
+
 - **App Mark (`64×64` geometry)**: Rounded evergreen tile (`#10231B`, `rx="13"`), warm off-white continuous double-arch `m` (`#EDF5EF`, `stroke-width="5"`, `stroke-linecap="round"`), and a living mint completion dot (`#75E9BE`, `cx="52" cy="40" r="3.5"`).
 - **Wordmark**: Lowercase `meitheal.` in `Geist Variable` (`font-weight: 500`, `letter-spacing: -0.05em`) paired with `/meh·hal/` in `JetBrains Mono` (`letter-spacing: 0.09em`).
 - **Home Assistant Storefront Assets**:
@@ -83,17 +86,17 @@ spacing:
 ### Color & Contrast Architecture
 
 - **Dark Mode (Default — Evergreen Carbon + Living Mint)**:
-  - Primary Background `--bg-primary: #101210`, Lowest/Input Surface `#0D0F0E`, Chrome/Secondary Surface `--bg-secondary: #171A18`, Card/Inspector Surface `--bg-card: #1D211F`, Hover `#252B28`, Border `--border: #344039`.
-  - Primary Brand Accent `--accent: #69E3B2` (`--palette-on-accent: #07140F`, 11.9:1 contrast; `--accent-text: #ADF8D7`), Warning `#F0B86D`, Danger `#EF4444`.
-- **Light Mode (Warm Paper + Forest Emerald)**:
-  - Primary Background `--bg-primary: #F6F5F0`, Chrome `#ECEBE4`, Card Surface `--bg-card: #FFFFFF`, Border `--border: #C9D1CB`.
-  - Primary Brand Accent `--accent: #146C4E` (`--palette-on-accent: #FFFFFF`, 6.4:1–8.9:1 contrast; `--accent-hover` / `--accent-text: #0E533B`), Warning `#B45309`, Danger `#DC2626`.
+  - Surfaces step cleanly by luminance: `--bg-input: #0D0F0E` → `--bg-primary: #101210` → `--bg-secondary: #171A18` → `--bg-card: #1D211F` → `#252B28` (hover), framed by `--border: #344039` hairline borders.
+  - Primary Brand Accent `--accent: #69E3B2` pairs with deep forest ink `--palette-on-accent: #07140F` (11.9:1 contrast) on filled buttons and badges, and `--accent-text: #ADF8D7` on dark surfaces; Warning `#F0B86D`, Danger `#EF4444`.
+- **Light Mode (Warm Architectural Paper + Forest Emerald)**:
+  - Warm paper canvas `--bg-primary: #F6F5F0` with `--bg-secondary: #ECEBE4` chrome, crisp `--bg-card: #FFFFFF` cards, and `--border: #C9D1CB` borders.
+  - Deep Forest Emerald `--accent: #146C4E` and `--accent-hover` / `--accent-text: #0E533B` pair with `--palette-on-accent: #FFFFFF` (6.4:1–8.9:1 contrast) so every text link, badge, and filled primary action passes WCAG AA 4.5:1; Warning `#B45309`, Danger `#DC2626`.
 - **Personal Accent CSS Binding**: Dynamic accent chrome binds directly to `var(--accent)` / `var(--accent-hover)` and `var(--personal-accent-foreground, var(--palette-on-accent))` rather than static RGB utility classes or legacy `#6366f1` / `#7c3aed` fallbacks.
 
 ### Typography
 
 - **Operational Type**: Headings and UI Body render in self-hosted `Geist Variable` (with `Inter Variable` fallback; `14px` operational body default). Tickets, timestamps, RICE scores, and IPA use `JetBrains Mono` (`font-variant-numeric: tabular-nums`).
-- **Lazy Appearance Fonts & Ingress Safety**: `Layout.astro` preloads only `Geist Variable` Latin `woff2`; optional `Outfit` and `Comic Neue` appearance presets load lazily via CSS `@font-face` only when selected in Appearance settings. All `@fontsource` assets resolve via relative `./` paths to satisfy `font-src 'self'` behind Home Assistant Ingress.
+- **Lazy Appearance Fonts & Ingress Safety**: `Layout.astro` preloads only `Geist Variable` Latin `woff2`; optional `Outfit` and `Comic Neue` appearance presets load lazily via CSS `@font-face` only when selected in Appearance settings. All `@fontsource` assets resolve via relative `./` paths to satisfy strict `font-src 'self'` Content Security Policy behind Home Assistant Ingress.
 
 ### Iconography & 5-Bucket Emoji Safety Policy
 
@@ -109,7 +112,7 @@ spacing:
 - **Spatial Grid & Adaptive Containers**: `4px` base spacing grid, single-scroll `body`, and CSS `@container` component queries (`container-name: task-inspector`) so panels adapt to their own inline width rather than viewport breakpoints.
 - **Docked Workspace Inspector (`>= 1440px`)**: At `>= 1440px` desktop widths, opening a task docks `#task-detail-panel` as a `420px` non-modal right rail (`body.has-docked-inspector`, `role="region"`, `aria-modal="false"`, unlocked `body` scroll, active `SearchHub` and single-key navigation outside panel inputs); below `1440px`, the same live DOM node presents as a `role="dialog"` (`aria-modal="true"`) modal without losing unsaved drafts.
 - **Coarse-Pointer Hit Targets**: Interactive controls enforce `@media (pointer: coarse)` `44px × 44px` minimum hit targets for Home Assistant Companion touch screens and wall tablets.
-- **GPU-Composited Motion**: Tactile feedback (`transform: scale(0.97)`) and disclosures use `transform`/`opacity` transitions (`<= 160ms`, `--ease-out: cubic-bezier(0.23, 1, 0.32, 1)`) with zero mount fade loops or floating icon animations, and disable cleanly under `prefers-reduced-motion: reduce`.
+- **Keyboard Speed & GPU-Composited Motion**: High-frequency surfaces such as `SearchHub` (`Ctrl+K` / `/`) open instantaneously with zero artificial entrance delay. Tactile press feedback (`transform: scale(0.97)`), sheets/drawers (`--ease-drawer: cubic-bezier(0.32, 0.72, 0, 1)`), and disclosures use `transform`/`opacity` transitions (`<= 160ms`, `--ease-out: cubic-bezier(0.23, 1, 0.32, 1)`) with zero mount fade loops or floating icon animations, and disable cleanly under `prefers-reduced-motion: reduce`.
 
 ---
 

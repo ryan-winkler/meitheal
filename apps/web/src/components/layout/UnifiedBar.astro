@@ -562,11 +562,14 @@ const locale = Astro.cookies.get("meitheal-locale")?.value === "ga" ? "ga" : "en
     border-radius: 10px;
     padding: 3px;
   }
+  .unified-bar__view-pills + .unified-bar__tabs:empty {
+    display: none;
+  }
   .unified-bar__view-pill {
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    padding: 5px 12px;
+    padding: 5px 10px;
     border-radius: 7px;
     background: transparent;
     color: var(--text-secondary);
