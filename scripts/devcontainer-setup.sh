@@ -26,6 +26,17 @@ else
   toolchain="$(cd "$(dirname "${BASH_SOURCE[0]}")/../meitheal-hub/toolchain" && pwd)"
   npm ci --prefix "$toolchain" --ignore-scripts --no-audit --no-fund
   export PATH="$toolchain/node_modules/.bin:$PATH"
+  if [ -n "${HOME:-}" ] && [ -d "$HOME" ] && [ -w "$HOME" ]; then
+    path_export="export PATH=\"${toolchain}/node_modules/.bin:\$PATH\""
+    for profile_file in "${HOME}/.bashrc" "${HOME}/.profile"; do
+      if [ -w "$profile_file" ] || [ ! -e "$profile_file" ]; then
+        touch "$profile_file"
+        if ! grep -Fqx "$path_export" "$profile_file"; then
+          printf '\n%s\n' "$path_export" >> "$profile_file"
+        fi
+      fi
+    done
+  fi
   pnpm install --frozen-lockfile 2>&1 || pnpm install 2>&1
 fi
 log "Dependencies installed."

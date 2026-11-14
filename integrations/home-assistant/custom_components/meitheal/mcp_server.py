@@ -716,6 +716,9 @@ async def _execute_tool(
             except (HomeAssistantError, ValueError) as err:
                 _LOGGER.warning("batchComplete failed for task %s: %s", t.id, err)
                 failed.append({"id": t.id, "title": t.title, "error": str(err)})
+            except Exception as err:
+                _LOGGER.exception("batchComplete hit unexpected error for task %s", t.id)
+                failed.append({"id": t.id, "title": t.title, "error": str(err)})
         return {"completed": completed, "count": len(completed), "failed": failed}
 
     elif tool_name == "linkTask":

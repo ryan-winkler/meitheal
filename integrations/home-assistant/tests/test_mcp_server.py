@@ -374,12 +374,13 @@ async def test_mcp_create_complete_batch_and_boundary_errors(hass: HomeAssistant
     coordinator = _mock_coordinator(hass)
     coordinator.async_create_task = AsyncMock(return_value={"id": "created-1"})  # type: ignore[method-assign]
     coordinator.async_complete_task = AsyncMock(  # type: ignore[method-assign]
-        side_effect=[None, HomeAssistantError("boom"), None]
+        side_effect=[None, HomeAssistantError("boom"), RuntimeError("unexpected"), None]
     )
     coordinator.data = MeithealCoordinatorData(
         [
             MeithealTask({"id": "t-1", "title": "First", "status": "pending", "priority": 1, "labels": ["Home"]}),
             MeithealTask({"id": "t-2", "title": "Second", "status": "pending", "priority": 2, "labels": ["Home"]}),
+            MeithealTask({"id": "t-3", "title": "Third", "status": "pending", "priority": 2, "labels": ["Home"]}),
             MeithealTask({"id": "t-done", "title": "Already", "status": "done", "priority": 1, "labels": ["Home"]}),
         ]
     )
@@ -421,7 +422,10 @@ async def test_mcp_create_complete_batch_and_boundary_errors(hass: HomeAssistant
     assert batch_payload == {
         "completed": ["First"],
         "count": 1,
-        "failed": [{"id": "t-2", "title": "Second", "error": "boom"}],
+        "failed": [
+            {"id": "t-2", "title": "Second", "error": "boom"},
+            {"id": "t-3", "title": "Third", "error": "unexpected"},
+        ],
     }
 
     completed = await handle_mcp_request(
