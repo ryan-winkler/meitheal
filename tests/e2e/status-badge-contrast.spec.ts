@@ -74,3 +74,33 @@ for (const theme of ["light", "dark"] as const) {
     }
   })
 }
+
+for (const theme of ["light", "dark"] as const) {
+  test(`completed goals and unlocked achievement dates stay readable in ${theme} theme`, async ({ page, request, baseURL }) => {
+    test.skip(shouldSkipBrowserSpecs(), "Requires a disposable Meitheal fixture")
+    const headers = { origin: new URL(baseURL!).origin }
+    const goal = await request.post("/api/goals", { headers, data: { title: `Completed goal contrast ${theme}` } })
+    expect(goal.status(), await goal.text()).toBe(201)
+    const { id: goalId } = await goal.json()
+    const task = await request.post("/api/tasks", { headers, data: { title: `Achievement contrast ${theme}` } })
+    expect(task.status(), await task.text()).toBe(201)
+    const { id: taskId } = await task.json()
+    try {
+      expect((await request.put(`/api/goals/${goalId}`, { headers, data: { status: "completed" } })).ok()).toBe(true)
+      expect((await request.put(`/api/tasks/${taskId}`, { headers, data: { status: STATUS.COMPLETE } })).ok()).toBe(true)
+      await page.addInitScript(value => localStorage.setItem("meitheal-theme", value), theme)
+
+      await page.goto("/goals")
+      const badge = `.goal-card[data-goal-id="${goalId}"] .goal-status-badge`
+      await expect(page.locator(badge)).toBeVisible()
+      await checkContrast(page, [badge], `/goals ${theme}`)
+
+      await page.goto("/gamification")
+      await expect(page.locator(".gam-achievement-card__date").first()).toBeVisible()
+      await checkContrast(page, [".gam-achievement-card__date"], `/gamification ${theme}`)
+    } finally {
+      await request.delete(`/api/goals/${goalId}`, { headers })
+      await request.delete(`/api/tasks/${taskId}`, { headers })
+    }
+  })
+}

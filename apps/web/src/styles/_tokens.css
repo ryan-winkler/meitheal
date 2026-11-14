@@ -141,6 +141,7 @@
     --on-warning: #161108;
     --danger: #EF4444;
     --danger-text: color-mix(in srgb, var(--danger) 60%, var(--text-primary));
+    --success-text: color-mix(in srgb, var(--success) 60%, var(--text-primary));
     --info: #38BDF8;
     --border: #344039;
     --border-focus: #ADF8D7;
