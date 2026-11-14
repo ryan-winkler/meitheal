@@ -11,34 +11,36 @@
  *
  * @domain strategy
  */
-import SettingsPanelCard from "./SettingsPanelCard.astro"
-import SettingsActionRow from "./SettingsActionRow.astro"
-import SettingsDisclosure from "./SettingsDisclosure.astro"
-import FrameworkWizard from "./FrameworkWizard.astro"
+import type { IconName } from "../../generated/icon-registry"
 import { t } from "../../i18n/translations"
 import type { Locale } from "../../lib/locale"
+import Icon from "../ui/Icon.astro"
+import FrameworkWizard from "./FrameworkWizard.astro"
+import SettingsActionRow from "./SettingsActionRow.astro"
+import SettingsDisclosure from "./SettingsDisclosure.astro"
+import SettingsPanelCard from "./SettingsPanelCard.astro"
 
 interface Props {
   locale: Locale
 }
 const { locale } = Astro.props
 
-const frameworks = [
-  { id: "rice", label: "RICE", description: t("settings.frameworks.rice_desc", locale), icon: "📊" },
-  { id: "drice", label: "DRICE", description: t("settings.frameworks.drice_desc", locale), icon: "🎯" },
-  { id: "heart", label: "HEART", description: t("settings.frameworks.heart_desc", locale), icon: "❤️" },
-  { id: "ddd", label: "DDD", description: t("settings.frameworks.ddd_desc", locale), icon: "🏗️" },
-  { id: "kcs", label: "KCS", description: t("settings.frameworks.kcs_desc", locale), icon: "📚" },
-  { id: "wsjf", label: "WSJF", description: t("settings.frameworks.wsjf_desc", locale), icon: "⚖️" },
-  { id: "moscow", label: "MoSCoW", description: t("settings.frameworks.moscow_desc", locale), icon: "🏷️" },
-  { id: "ice", label: "ICE", description: t("settings.frameworks.ice_desc", locale), icon: "🧊" },
+const frameworks: Array<{ id: string; label: string; description: string; icon: IconName }> = [
+  { id: "rice", label: "RICE", description: t("settings.frameworks.rice_desc", locale), icon: "chart-bar" },
+  { id: "drice", label: "DRICE", description: t("settings.frameworks.drice_desc", locale), icon: "target" },
+  { id: "heart", label: "HEART", description: t("settings.frameworks.heart_desc", locale), icon: "sparkles" },
+  { id: "ddd", label: "DDD", description: t("settings.frameworks.ddd_desc", locale), icon: "sliders" },
+  { id: "kcs", label: "KCS", description: t("settings.frameworks.kcs_desc", locale), icon: "book" },
+  { id: "wsjf", label: "WSJF", description: t("settings.frameworks.wsjf_desc", locale), icon: "calculator" },
+  { id: "moscow", label: "MoSCoW", description: t("settings.frameworks.moscow_desc", locale), icon: "tag" },
+  { id: "ice", label: "ICE", description: t("settings.frameworks.ice_desc", locale), icon: "flame" },
 ]
 
-const taskTypes = [
-  { id: "epic", label: t("settings.task_types.epic", locale), icon: "⚡" },
-  { id: "story", label: t("settings.task_types.story", locale), icon: "📖" },
-  { id: "task", label: t("settings.task_types.task", locale), icon: "✅" },
-  { id: "documentation", label: t("settings.task_types.documentation", locale), icon: "📝" },
+const taskTypes: Array<{ id: string; label: string; icon: IconName }> = [
+  { id: "epic", label: t("settings.task_types.epic", locale), icon: "automation" },
+  { id: "story", label: t("settings.task_types.story", locale), icon: "book" },
+  { id: "task", label: t("settings.task_types.task", locale), icon: "checkbox" },
+  { id: "documentation", label: t("settings.task_types.documentation", locale), icon: "file-text" },
 ]
 
 const aiCapabilities = [
@@ -48,12 +50,12 @@ const aiCapabilities = [
   { key: "canSuggestLabels", label: t("settings.ai_cap.labels", locale), description: t("settings.ai_cap.labels_desc", locale) },
 ]
 
-const presets = [
-  { id: "strategic", label: t("settings.presets.strategic", locale), description: t("settings.presets.strategic_desc", locale), icon: "🎯" },
-  { id: "ux-focused", label: t("settings.presets.ux", locale), description: t("settings.presets.ux_desc", locale), icon: "❤️" },
-  { id: "agile-delivery", label: t("settings.presets.agile", locale), description: t("settings.presets.agile_desc", locale), icon: "🚀" },
-  { id: "balanced", label: t("settings.presets.balanced", locale), description: t("settings.presets.balanced_desc", locale), icon: "⚖️" },
-  { id: "simple", label: t("settings.presets.simple", locale), description: t("settings.presets.simple_desc", locale), icon: "⚡" },
+const presets: Array<{ id: string; label: string; description: string; icon: IconName }> = [
+  { id: "strategic", label: t("settings.presets.strategic", locale), description: t("settings.presets.strategic_desc", locale), icon: "target" },
+  { id: "ux-focused", label: t("settings.presets.ux", locale), description: t("settings.presets.ux_desc", locale), icon: "sparkles" },
+  { id: "agile-delivery", label: t("settings.presets.agile", locale), description: t("settings.presets.agile_desc", locale), icon: "rocket" },
+  { id: "balanced", label: t("settings.presets.balanced", locale), description: t("settings.presets.balanced_desc", locale), icon: "sliders" },
+  { id: "simple", label: t("settings.presets.simple", locale), description: t("settings.presets.simple_desc", locale), icon: "automation" },
 ]
 ---
 
@@ -69,7 +71,7 @@ const presets = [
           title={preset.description}
           aria-pressed="false"
         >
-          <span class="rules-preset-icon">{preset.icon}</span>
+          <span class="rules-preset-icon"><Icon name={preset.icon} size={20} sprite={true} /></span>
           <span class="rules-preset-label">{preset.label}</span>
           <span class="rules-preset-desc">{preset.description}</span>
         </button>
@@ -77,19 +79,24 @@ const presets = [
     </div>
     <div class="rules-actions" style="margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap;">
       <button class="btn btn-ghost btn-sm" id="rules-restore-defaults" type="button" title="Reset all rules to default presets">
+        <Icon name="refresh" size={14} sprite={true} />
         {t("settings.rules_restore_defaults", locale)}
       </button>
       <button class="btn btn-ghost btn-sm" id="rules-export-btn" type="button" title="Export rules and framework configs as JSON">
+        <Icon name="download" size={14} sprite={true} />
         {t("settings.rules_export", locale)}
       </button>
       <label class="settings-file-picker btn btn-ghost btn-sm" style="cursor: pointer;" title="Import rules from a JSON file">
+        <Icon name="download" size={14} sprite={true} />
         {t("settings.rules_import", locale)}
         <input type="file" id="rules-import-input" accept=".json" />
       </label>
       <button class="btn btn-accent btn-sm" id="fw-create-btn" type="button" title="Create a custom evaluation framework">
+        <Icon name="sparkles" size={14} sprite={true} />
         {t("settings.rules_create_framework", locale)}
       </button>
       <button class="btn btn-ghost btn-sm" id="fw-import-btn" type="button" title="Import a framework from YAML">
+        <Icon name="clipboard-list" size={14} sprite={true} />
         {t("settings.rules_import_yaml", locale)}
       </button>
     </div>
@@ -101,7 +108,7 @@ const presets = [
       {taskTypes.map((type) => (
         <div class="rules-assignment-row" data-task-type={type.id}>
           <div class="rules-assignment-type">
-            <span class="rules-assignment-type-icon">{type.icon}</span>
+            <span class="rules-assignment-type-icon"><Icon name={type.icon} size={16} sprite={true} /></span>
             <span class="rules-assignment-type-label">{type.label}</span>
           </div>
           <div class="rules-assignment-frameworks">
@@ -114,7 +121,7 @@ const presets = [
                   data-framework={fw.id}
                 />
                 <span class="rules-fw-pill">
-                  <span class="rules-fw-pill-icon">{fw.icon}</span>
+                  <span class="rules-fw-pill-icon"><Icon name={fw.icon} size={14} sprite={true} /></span>
                   {fw.label}
                 </span>
               </label>
@@ -131,7 +138,7 @@ const presets = [
       {taskTypes.map((type) => (
         <div class="rules-ai-type-block" data-task-type={type.id}>
           <h4 class="rules-ai-type-header">
-            <span>{type.icon}</span>
+            <Icon name={type.icon} size={16} sprite={true} />
             {type.label}
           </h4>
           <div class="rules-ai-toggles">
@@ -176,7 +183,7 @@ const presets = [
       {frameworks.map((fw) => (
         <div class="rules-fw-config" data-framework={fw.id}>
           <div class="rules-fw-config-header">
-            <span class="rules-fw-config-icon">{fw.icon}</span>
+            <span class="rules-fw-config-icon"><Icon name={fw.icon} size={18} sprite={true} /></span>
             <div>
               <strong>{fw.label}</strong>
               <small>{fw.description}</small>
@@ -187,6 +194,7 @@ const presets = [
               type="button"
               title={t("settings.rules_fw_reset_title", locale).replace("{label}", fw.label)}
             >
+              <Icon name="refresh" size={14} sprite={true} />
               {t("settings.rules_fw_reset", locale)}
             </button>
           </div>
@@ -205,56 +213,56 @@ const presets = [
     <div class="rules-fw-reference">
       <div class="rules-fw-ref-item">
         <div class="rules-fw-ref-header">
-          <strong>📊 RICE</strong>
+          <strong class="inline-flex items-center gap-1.5"><Icon name="chart-bar" size={14} sprite={true} /> RICE</strong>
           <a href="https://www.intercom.com/blog/rice-simple-prioritization-for-product-managers/" target="_blank" rel="noopener noreferrer" class="rules-fw-ref-link">Intercom Blog →</a>
         </div>
         <p set:html={t("settings.rules_fw_ref_rice_desc", locale)} />
       </div>
       <div class="rules-fw-ref-item">
         <div class="rules-fw-ref-header">
-          <strong>🎯 DRICE</strong>
+          <strong class="inline-flex items-center gap-1.5"><Icon name="target" size={14} sprite={true} /> DRICE</strong>
           <a href="https://www.lennysnewsletter.com/p/introducing-drice-a-modern-prioritization" target="_blank" rel="noopener noreferrer" class="rules-fw-ref-link">Lenny's Newsletter →</a>
         </div>
         <p set:html={t("settings.rules_fw_ref_drice_desc", locale)} />
       </div>
       <div class="rules-fw-ref-item">
         <div class="rules-fw-ref-header">
-          <strong>🏗️ DDD</strong>
+          <strong class="inline-flex items-center gap-1.5"><Icon name="sliders" size={14} sprite={true} /> DDD</strong>
           <a href="https://martinfowler.com/bliki/DomainDrivenDesign.html" target="_blank" rel="noopener noreferrer" class="rules-fw-ref-link">Fowler →</a>
         </div>
         <p set:html={t("settings.rules_fw_ref_ddd_desc", locale)} />
       </div>
       <div class="rules-fw-ref-item">
         <div class="rules-fw-ref-header">
-          <strong>❤️ HEART</strong>
+          <strong class="inline-flex items-center gap-1.5"><Icon name="sparkles" size={14} sprite={true} /> HEART</strong>
           <a href="https://www.heartframework.com/" target="_blank" rel="noopener noreferrer" class="rules-fw-ref-link">heartframework.com →</a>
         </div>
         <p set:html={t("settings.rules_fw_ref_heart_desc", locale)} />
       </div>
       <div class="rules-fw-ref-item">
         <div class="rules-fw-ref-header">
-          <strong>📚 KCS</strong>
+          <strong class="inline-flex items-center gap-1.5"><Icon name="book" size={14} sprite={true} /> KCS</strong>
           <a href="https://library.serviceinnovation.org/KCS" target="_blank" rel="noopener noreferrer" class="rules-fw-ref-link">Service Innovation →</a>
         </div>
         <p set:html={t("settings.rules_fw_ref_kcs_desc", locale)} />
       </div>
       <div class="rules-fw-ref-item">
         <div class="rules-fw-ref-header">
-          <strong>⚖️ WSJF</strong>
+          <strong class="inline-flex items-center gap-1.5"><Icon name="calculator" size={14} sprite={true} /> WSJF</strong>
           <a href="https://www.scaledagileframework.com/wsjf/" target="_blank" rel="noopener noreferrer" class="rules-fw-ref-link">SAFe Docs →</a>
         </div>
         <p set:html={t("settings.rules_fw_ref_wsjf_desc", locale)} />
       </div>
       <div class="rules-fw-ref-item">
         <div class="rules-fw-ref-header">
-          <strong>🏷️ MoSCoW</strong>
+          <strong class="inline-flex items-center gap-1.5"><Icon name="tag" size={14} sprite={true} /> MoSCoW</strong>
           <a href="https://www.agilebusiness.org/dsdm-project-framework/moscow-prioririsation.html" target="_blank" rel="noopener noreferrer" class="rules-fw-ref-link">DSDM Docs →</a>
         </div>
         <p set:html={t("settings.rules_fw_ref_moscow_desc", locale)} />
       </div>
       <div class="rules-fw-ref-item">
         <div class="rules-fw-ref-header">
-          <strong>🧊 ICE</strong>
+          <strong class="inline-flex items-center gap-1.5"><Icon name="flame" size={14} sprite={true} /> ICE</strong>
           <a href="https://growthmethod.com/growth-scoring/ice/" target="_blank" rel="noopener noreferrer" class="rules-fw-ref-link">Growth Method →</a>
         </div>
         <p set:html={t("settings.rules_fw_ref_ice_desc", locale)} />
@@ -270,7 +278,9 @@ const presets = [
     <div class="fw-wizard-content" style="max-width: 520px;">
       <header class="fw-wizard-header">
         <h3 class="fw-wizard-title">{t("settings.rules_import_dialog_title", locale)}</h3>
-        <button class="fw-wizard-close" id="fw-import-close" type="button" aria-label="Close">&times;</button>
+        <button class="fw-wizard-close" id="fw-import-close" type="button" aria-label="Close">
+          <Icon name="x" size={16} sprite={true} />
+        </button>
       </header>
       <div style="padding: 20px;">
         <div class="fw-field-group">

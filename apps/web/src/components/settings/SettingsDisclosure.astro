@@ -1,21 +1,27 @@
 ---
+import type { IconName } from "../../generated/icon-registry"
+import Icon from "../ui/Icon.astro"
+
 interface Props {
-  id?: string
+  id?: string | undefined
   title: string
-  subtitle?: string
-  open?: boolean
+  subtitle?: string | undefined
+  icon?: IconName | undefined
+  open?: boolean | undefined
 }
 
 const {
   id,
   title,
   subtitle,
+  icon,
   open = false,
 } = Astro.props
 ---
 
 <details id={id} class="settings-disclosure" open={open}>
   <summary class="settings-disclosure__summary">
+    {icon && <Icon name={icon} size={16} sprite={true} />}
     <span>
       {title}
       {subtitle && <small>{subtitle}</small>}

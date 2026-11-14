@@ -3,7 +3,8 @@
  * Todo Sync integration card sub-component.
  * @domain integrations/todo
  */
-import HelpTooltip from "../../ui/HelpTooltip.astro";
+import HelpTooltip from "../../ui/HelpTooltip.astro"
+import Icon from "../../ui/Icon.astro"
 import IntegrationCardHeader from "./IntegrationCardHeader.astro"
 import { t } from "../../../i18n/translations"
 import type { Locale } from "../../../lib/locale"
@@ -28,14 +29,14 @@ const locale = Astro.props.locale || "en"
   <div class="integration-card__body" id="integration-todo-body" inert>
     <!-- Bridge purpose explainer -->
     <div class="integration-callout integration-callout--info mb-3">
-      <strong>{t("settings.todo_bridge_title", locale)}</strong>
+      <strong class="inline-flex items-center gap-1.5"><Icon name="link" size={14} sprite={true} /> {t("settings.todo_bridge_title", locale)}</strong>
       <div class="integration-callout__detail">
         <span set:html={t("settings.todo_bridge_desc", locale)} />
       </div>
     </div>
     <!-- HA auto-detect callout -->
     <div id="todo-auto-info" class="integration-callout integration-callout--success" style="display: none;">
-      <strong>{t("settings.todo_detected", locale)}</strong>
+      <strong class="inline-flex items-center gap-1.5"><Icon name="check" size={14} sprite={true} /> {t("settings.todo_detected", locale)}</strong>
       <div id="todo-auto-entities" class="integration-callout__detail"></div>
     </div>
 
@@ -56,7 +57,7 @@ const locale = Astro.props.locale || "en"
       </p>
       <div id="todo-entities-container" class="cal-toggle-list"></div>
       <div id="todo-no-entities" class="cal-empty-state" style="display: none;">
-        <span class="cal-empty-icon">📭</span>
+        <span class="cal-empty-icon"><Icon name="empty" size={20} sprite={true} /></span>
         <span>{t("settings.todo_no_entities", locale)}</span>
       </div>
     </div>
@@ -64,7 +65,7 @@ const locale = Astro.props.locale || "en"
     <!-- Manual entity input for advanced users -->
     <details class="caldav-section" style="margin-bottom: 10px;">
       <summary class="caldav-toggle">
-        <span>{t("settings.todo_manual_title", locale)}</span>
+        <span class="inline-flex items-center gap-1.5"><Icon name="keyboard" size={14} sprite={true} /> {t("settings.todo_manual_title", locale)}</span>
         <small>{t("settings.todo_manual_desc", locale)}</small>
       </summary>
       <div class="form-group form-group--spaced">

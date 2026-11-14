@@ -2,48 +2,76 @@
  * Ingress State Persistence — restores navigation position after
  * HA Supervisor destroys and recreates the addon iframe.
  *
- * When the user clicks away from Meitheal in the HA sidebar and
- * clicks back, the iframe is destroyed and recreated from scratch,
- * always loading the root `/` URL.  This module persists the current
- * route + scroll position to `sessionStorage` and restores it on
- * reload if the saved state is less than 60 seconds old.
- *
  * Bounded context: auth (ingress)
  *
  * @module ingress-state-persistence
  */
 
-// Window globals (typed in types/window.d.ts):
-//   __ingress_path
+const STORAGE_KEY = "meitheal-navigation-state"
+const SCROLL_KEY = "meitheal-restore-scroll"
+const MAX_AGE_MS = 60_000
+const SCROLL_DEBOUNCE_MS = 500
 
-// ── Constants ──────────────────────────────────────────────────────
-const STORAGE_KEY = "meitheal-navigation-state";
-const MAX_AGE_MS = 60_000; // 60 seconds — state expires after this
-const SCROLL_DEBOUNCE_MS = 500;
-
-// ── Types ──────────────────────────────────────────────────────────
 export interface NavigationState {
-  /** Internal path, e.g. "/kanban" or "/settings" */
-  path: string;
+  /** Ingress-stripped internal path + search + hash, e.g. "/tickets/MTH-142" or "/tasks?view=timeline" */
+  path: string
   /** Vertical scroll position in pixels */
-  scrollY: number;
+  scrollY: number
   /** Unix timestamp (ms) when this state was last saved */
-  timestamp: number;
+  timestamp: number
 }
 
-// ── Save / Read helpers ────────────────────────────────────────────
+/**
+ * Strip the Home Assistant ingress prefix from a pathname or full relative URL
+ * (`pathname + search + hash`), always returning a leading-slash internal route.
+ */
+export function stripIngressPrefix(
+  rawPath: string,
+  ingressPath: string | undefined = typeof window !== "undefined" ? window.__ingress_path : undefined,
+): string {
+  const value = rawPath || "/"
+  const prefix = (ingressPath ?? "").replace(/\/+$/, "")
+  if (!prefix) {
+    return value.startsWith("/") ? value : `/${value}`
+  }
+  if (value === prefix) return "/"
+  if (value.startsWith(`${prefix}/`)) {
+    return value.slice(prefix.length) || "/"
+  }
+  if (value.startsWith(`${prefix}?`) || value.startsWith(`${prefix}#`)) {
+    return `/${value.slice(prefix.length)}`
+  }
+  return value.startsWith("/") ? value : `/${value}`
+}
+
+function currentInternalRoute(): string {
+  const full = `${window.location.pathname}${window.location.search}${window.location.hash}`
+  return stripIngressPrefix(full, window.__ingress_path)
+}
 
 /**
  * Save the current navigation state to sessionStorage.
+ * When `path` is omitted, captures the current browser URL (behind HA ingress only).
  */
-export function saveNavigationState(path: string, scrollY = 0): void {
+export function saveNavigationState(path?: string, scrollY?: number): void {
   try {
+    let resolvedPath: string
+    let resolvedScrollY: number
+    if (path === undefined) {
+      if (typeof window === "undefined" || !window.__ingress_path) return
+      resolvedPath = currentInternalRoute()
+      resolvedScrollY = scrollY ?? window.scrollY
+    } else {
+      resolvedPath = stripIngressPrefix(path)
+      resolvedScrollY = scrollY ?? (typeof window !== "undefined" ? window.scrollY : 0)
+    }
+
     const state: NavigationState = {
-      path,
-      scrollY,
+      path: resolvedPath,
+      scrollY: resolvedScrollY,
       timestamp: Date.now(),
-    };
-    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    }
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state))
   } catch {
     // sessionStorage full or unavailable — silently ignore
   }
@@ -55,104 +83,116 @@ export function saveNavigationState(path: string, scrollY = 0): void {
  */
 export function getNavigationState(): NavigationState | null {
   try {
-    const raw = sessionStorage.getItem(STORAGE_KEY);
-    if (!raw) return null;
+    const raw = sessionStorage.getItem(STORAGE_KEY)
+    if (!raw) return null
 
-    const state: NavigationState = JSON.parse(raw);
+    const state: NavigationState = JSON.parse(raw)
 
-    // Validate shape
     if (
       typeof state.path !== "string" ||
       typeof state.scrollY !== "number" ||
       typeof state.timestamp !== "number"
     ) {
-      return null;
+      return null
     }
 
-    // Check freshness
     if (Date.now() - state.timestamp > MAX_AGE_MS) {
-      sessionStorage.removeItem(STORAGE_KEY);
-      return null;
+      sessionStorage.removeItem(STORAGE_KEY)
+      return null
     }
 
-    return state;
+    return {
+      ...state,
+      path: stripIngressPrefix(state.path),
+    }
   } catch {
-    return null;
+    return null
   }
 }
 
 /**
  * Determine whether this page load should restore a saved route.
- * Only restores when:
- * 1. Running inside HA ingress (window.__ingress_path is set)
- * 2. Current path is "/" (the default ingress entry point)
- * 3. A valid, non-expired saved state exists pointing to a different path
  */
 export function shouldRestore(
   currentPath: string,
   ingressPath: string | undefined,
 ): boolean {
-  if (!ingressPath) return false; // Not behind ingress
-  if (currentPath !== "/") return false; // Already on a sub-route
-  const state = getNavigationState();
-  if (!state) return false;
-  if (state.path === "/") return false; // Saved path is root — nothing to restore
-  return true;
+  if (!ingressPath) return false
+  if (stripIngressPrefix(currentPath, ingressPath) !== "/") return false
+  const state = getNavigationState()
+  if (!state) return false
+  if (stripIngressPrefix(state.path, ingressPath) === "/") return false
+  return true
 }
 
-// ── Initialization ─────────────────────────────────────────────────
-
-let scrollTimer: ReturnType<typeof setTimeout> | null = null;
+let scrollTimer: ReturnType<typeof setTimeout> | null = null
+let activeController: AbortController | null = null
 
 /**
- * Initialize the state persistence system.
- * Call once on page load. Safe to call multiple times (idempotent).
- * MP-01: All listeners use AbortController signal for cleanup.
+ * Initialize runtime ingress state persistence and pending scroll restoration.
+ * Safe to call multiple times (aborts previous listeners).
  */
 export function initStatePersistence(): void {
-  if (typeof window === "undefined") return;
-  if (!window.__ingress_path) return; // Only active behind HA ingress
+  if (typeof window === "undefined") return
+  if (!window.__ingress_path) return
 
-  const currentPath = window.location.pathname;
+  activeController?.abort()
+  const controller = new AbortController()
+  activeController = controller
+  const { signal } = controller
 
-  // Save the current page on every load (including initial)
-  saveNavigationState(currentPath, 0);
+  saveNavigationState(currentInternalRoute(), window.scrollY)
 
-  // MP-01: AbortController for listener cleanup on page transitions
-  const controller = new AbortController();
-  const { signal } = controller;
-
-  // Debounced scroll tracking
   window.addEventListener(
     "scroll",
     () => {
-      if (scrollTimer) clearTimeout(scrollTimer);
+      if (scrollTimer) clearTimeout(scrollTimer)
       scrollTimer = setTimeout(() => {
-        saveNavigationState(window.location.pathname, window.scrollY);
-      }, SCROLL_DEBOUNCE_MS);
+        saveNavigationState(currentInternalRoute(), window.scrollY)
+      }, SCROLL_DEBOUNCE_MS)
     },
     { passive: true, signal },
-  );
+  )
 
-  // Astro client-side navigation: save state on page transitions
-  document.addEventListener("astro:page-load", () => {
-    const path = window.location.pathname;
-    saveNavigationState(path, 0);
-  }, { signal });
+  document.addEventListener(
+    "astro:page-load",
+    () => {
+      saveNavigationState(currentInternalRoute(), window.scrollY)
+    },
+    { signal },
+  )
 
-  // P1-5: visibilitychange is more reliable than beforeunload in HA iframe
-  // context — iOS WKWebView and some Android WebViews don't fire beforeunload
-  // when the ingress iframe is destroyed. visibilitychange fires consistently.
-  document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "hidden") {
-      saveNavigationState(window.location.pathname, window.scrollY);
+  document.addEventListener(
+    "visibilitychange",
+    () => {
+      if (document.visibilityState === "hidden") {
+        saveNavigationState(currentInternalRoute(), window.scrollY)
+      }
+    },
+    { signal },
+  )
+
+  window.addEventListener(
+    "beforeunload",
+    () => {
+      saveNavigationState(currentInternalRoute(), window.scrollY)
+      controller.abort()
+    },
+    { signal },
+  )
+
+  try {
+    const pendingScroll = sessionStorage.getItem(SCROLL_KEY)
+    if (pendingScroll) {
+      sessionStorage.removeItem(SCROLL_KEY)
+      const y = parseInt(pendingScroll, 10)
+      if (y > 0) {
+        requestAnimationFrame(() => {
+          window.scrollTo(0, y)
+        })
+      }
     }
-  }, { signal });
-
-  // Save state just before the page unloads (fallback for non-iframe contexts)
-  // Also abort the controller to clean up all listeners
-  window.addEventListener("beforeunload", () => {
-    saveNavigationState(window.location.pathname, window.scrollY);
-    controller.abort();
-  });
+  } catch {
+    /* non-fatal */
+  }
 }

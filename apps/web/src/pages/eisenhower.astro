@@ -724,8 +724,7 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
 
   /* ── Quadrant ── */
   .eisenhower__quadrant {
-    background: rgba(var(--bg-card-rgb, 30, 30, 46), 0.6);
-    backdrop-filter: blur(12px);
+    background: var(--bg-card);
     border: 1px solid var(--border);
     border-top: 3px solid var(--q-color);
     border-radius: var(--radius-md, 10px);
@@ -1051,8 +1050,7 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
     position: fixed;
     inset: 0;
     z-index: 9999;
-    background: rgba(0, 0, 0, 0.7);
-    backdrop-filter: blur(4px);
+    background: rgba(0, 0, 0, 0.62);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1357,16 +1355,16 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
     padding: 6px 14px;
     font-size: 0.75rem;
     font-weight: 600;
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    border: 1px solid var(--border);
     border-radius: 8px;
-    background: rgba(99, 102, 241, 0.1);
-    color: #818cf8;
+    background: color-mix(in srgb, var(--accent) 10%, transparent);
+    color: var(--accent-text);
     cursor: pointer;
     transition: background 0.15s, border-color 0.15s;
   }
   .eisenhower__review-btn:hover {
-    background: rgba(99, 102, 241, 0.2);
-    border-color: rgba(99, 102, 241, 0.3);
+    background: color-mix(in srgb, var(--accent) 18%, transparent);
+    border-color: var(--accent);
   }
 
   /* ── Review overlay ── */
@@ -1377,8 +1375,7 @@ function parseFrameworkPayload(fp: unknown): Record<string, unknown> {
     display: flex;
     align-items: center;
     justify-content: center;
-    background: rgba(0, 0, 0, 0.6);
-    backdrop-filter: blur(4px);
+    background: rgba(0, 0, 0, 0.62);
     animation: fadeIn 0.2s ease;
   }
   .review-card {

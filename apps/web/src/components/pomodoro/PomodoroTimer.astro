@@ -16,6 +16,8 @@
  * Timer display updates every second via setInterval polling of local countdown.
  */
 
+import Icon from "../ui/Icon.astro"
+
 interface Props {
   /** When false, renders nothing (feature flag off) */
   enabled?: boolean
@@ -32,14 +34,14 @@ const { enabled = true } = Astro.props
   aria-label="Expand Pomodoro timer"
   title="Pomodoro Timer"
 >
-  <span id="pomodoro-pill-icon">🍅</span>
+  <span id="pomodoro-pill-icon" class="inline-flex items-center"><Icon name="today" size={16} sprite={true} /></span>
   <span id="pomodoro-pill-time" class="pomodoro-pill__time">25:00</span>
 </button>
 
 <!-- Expanded timer panel -->
 <div id="pomodoro-panel" class="pomodoro-panel pomodoro-hidden" role="dialog" aria-label="Pomodoro Timer">
   <div class="pomodoro-panel__header">
-    <span class="pomodoro-panel__title">🍅 Pomodoro</span>
+    <span class="pomodoro-panel__title inline-flex items-center gap-1.5"><Icon name="today" size={16} sprite={true} /> Pomodoro</span>
     <button type="button" id="pomodoro-collapse" class="pomodoro-panel__close" aria-label="Collapse timer">—</button>
   </div>
 
@@ -59,7 +61,7 @@ const { enabled = true } = Astro.props
   <div class="pomodoro-controls">
     <button type="button" id="pomodoro-start" class="pomodoro-btn pomodoro-btn--primary">▶ Start Focus</button>
     <button type="button" id="pomodoro-skip" class="pomodoro-btn pomodoro-btn--secondary pomodoro-hidden">⏭ Skip</button>
-    <button type="button" id="pomodoro-cancel" class="pomodoro-btn pomodoro-btn--danger pomodoro-hidden">✕ Cancel</button>
+    <button type="button" id="pomodoro-cancel" class="pomodoro-btn pomodoro-btn--danger pomodoro-hidden"><Icon name="x" size={14} sprite={true} /> Cancel</button>
   </div>
 
   <!-- Session counter -->
@@ -104,7 +106,7 @@ const { enabled = true } = Astro.props
   }
 
   .pomodoro-pill--active {
-    border-color: var(--accent, #6366f1);
+    border-color: var(--accent);
     animation: pomodoro-pulse 2s ease-in-out infinite;
   }
 
@@ -114,7 +116,7 @@ const { enabled = true } = Astro.props
 
   @keyframes pomodoro-pulse {
     0%, 100% { box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3); }
-    50% { box-shadow: 0 4px 16px rgba(99, 102, 241, 0.3); }
+    50% { box-shadow: 0 4px 16px color-mix(in srgb, var(--accent) 30%, transparent); }
   }
 
   /* Panel */
@@ -184,11 +186,10 @@ const { enabled = true } = Astro.props
 
   .pomodoro-ring__fill {
     fill: none;
-    stroke: var(--accent, #6366f1);
+    stroke: var(--accent);
     stroke-width: 5;
     stroke-linecap: round;
     transition: stroke-dashoffset 0.5s ease;
-    filter: drop-shadow(0 0 4px var(--accent, #6366f1));
   }
 
   .pomodoro-ring__content {
@@ -225,6 +226,10 @@ const { enabled = true } = Astro.props
 
   .pomodoro-btn {
     flex: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
     padding: 6px 10px;
     border: 1px solid var(--border, #334155);
     border-radius: 8px;
@@ -236,9 +241,9 @@ const { enabled = true } = Astro.props
   }
 
   .pomodoro-btn--primary {
-    background: var(--accent, #6366f1);
-    color: white;
-    border-color: var(--accent, #6366f1);
+    background: var(--accent);
+    color: var(--personal-accent-foreground, var(--palette-on-accent, #07140f));
+    border-color: var(--accent);
   }
 
   .pomodoro-btn--primary:hover {
@@ -293,6 +298,8 @@ const { enabled = true } = Astro.props
 </style>
 
 <script>
+  import { renderIconSvg } from "../../generated/icon-registry"
+
   // Pomodoro Timer Client Controller
   const CIRCUMFERENCE = 2 * Math.PI * 52
 
@@ -346,10 +353,8 @@ const { enabled = true } = Astro.props
       // Change color for breaks
       if (localPhase === "short_break" || localPhase === "long_break") {
         ringFill.style.stroke = "#10b981"
-        ringFill.style.filter = "drop-shadow(0 0 4px #10b981)"
       } else {
         ringFill.style.stroke = ""
-        ringFill.style.filter = ""
       }
     }
 
@@ -358,7 +363,7 @@ const { enabled = true } = Astro.props
       pill.classList.toggle("pomodoro-pill--active", localPhase === "focus")
       pill.classList.toggle("pomodoro-pill--break", localPhase.includes("break"))
       if (pillIcon) {
-        pillIcon.textContent = localPhase === "focus" ? "🍅" : localPhase.includes("break") ? "☕" : "🍅"
+        pillIcon.innerHTML = renderIconSvg(localPhase.includes("break") ? "mug" : "today", { size: 16 })
       }
     }
 

@@ -615,7 +615,7 @@ export function getGroupDisplay(groupBy: string, key: string): { label: string, 
       return {
         epic: { label: "Epic", icon: "🎯", color: "var(--type-epic, #8b5cf6)" },
         story: { label: "Story", icon: "📖", color: "var(--type-story, #3b82f6)" },
-        task: { label: "Task", icon: "✅", color: "var(--type-task, #6366F1)" },
+        task: { label: "Task", icon: "✅", color: "var(--type-task, #0EA5E9)" },
       }[key] ?? { label: key, icon: "📋", color: "var(--text-muted, #6b7280)" }
     case "priority":
       return {
@@ -642,10 +642,10 @@ export function getGroupDisplay(groupBy: string, key: string): { label: string, 
       }[key] ?? { label: key, icon: "📊", color: "#6b7280" }
     case "assignee":
       if (key === "__unassigned__") return { label: "Unassigned", icon: "∅", color: "#6b7280" }
-      return { label: key.replace(/^(ha_|custom_)/, ""), icon: "👤", color: "#6366F1" }
+      return { label: key.replace(/^(ha_|custom_)/, ""), icon: "👤", color: "var(--accent)" }
     case "area":
-      if (key === "default") return { label: "Default Area", icon: "📋", color: "#6366F1" }
-      return { label: key, icon: "📋", color: "#6366F1" }
+      if (key === "default") return { label: "Default Area", icon: "📋", color: "var(--accent)" }
+      return { label: key, icon: "📋", color: "var(--accent)" }
     default:
       return { label: "All Tasks", icon: "📋", color: "#6b7280" }
   }

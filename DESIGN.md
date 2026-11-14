@@ -1,9 +1,12 @@
 ---
 type: "Reference"
 title: "Meitheal Design System & Appearance"
-description: "Canonical Evergreen & Mint brand identity from meitheal.io, CSS design tokens, Home Assistant storefront specifications, and local appearance customization behavior."
+description: "Canonical Evergreen Carbon & Living Mint brand identity, opaque structural elevation rules, Tabler 1.75px icon sprites, docked workspace inspector, and local appearance behavior."
 design_md_format: "spec"
-aesthetic: "Calm Architectural Household Utility — warm forest carbon, living mint signal, cream paper typography"
+aesthetic: "Calm Architectural Household Utility — opaque Evergreen Carbon surfaces, Living Mint signal, Warm Paper light mode"
+surfaces:
+  backdrop_filter: "none"
+  elevation: "Opaque luminance steps with 1px solid var(--border) hairlines; zero backdrop-filter, zero radial glow pseudo-elements, zero decorative AI pulse badges"
 colors:
   dark:
     background: "#101210"
@@ -41,7 +44,12 @@ typography:
   heading: "'Geist Variable', 'Inter Variable', -apple-system, sans-serif"
   sans: "'Geist Variable', 'Inter Variable', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif"
   mono: "'JetBrains Mono', ui-monospace, monospace"
+  body_default: "14px"
+  preload: "Geist Variable Latin woff2 only"
   wordmark: "meitheal. (Geist Variable 500, -0.05em tracking) + /meh·hal/ (JetBrains Mono 400, 0.09em tracking)"
+iconography:
+  catalog: "Build-extracted Tabler Outline SVGs (24x24 viewBox, 1.75px stroke, vector-effect: non-scaling-stroke)"
+  sprites: "Per-request <IconSpriteDefs /> streaming <symbol id='mt-icon-...'> emission"
 rounded:
   xs: "4px"
   sm: "6px"
@@ -51,7 +59,10 @@ rounded:
 spacing:
   base_unit: "4px"
   sidebar_width: "240px"
+  docked_inspector_width: "420px"
+  docked_inspector_breakpoint: "1440px"
   mobile_tab_bar_height: "56px"
+  coarse_pointer_target: "44px"
 ---
 
 # Meitheal Design System & Appearance
@@ -60,8 +71,9 @@ spacing:
 
 **Meitheal** (`/meh·hal/`) comes from the Irish word for neighbors coming together to share the work none of them could carry alone. Visually and verbally, Meitheal avoids loud corporate project-management clichés and cold DevOps neon in favor of a calm, tactile household utility aesthetic: *"Keep track of the work your home needs."*
 
-### Canonical Mark & Wordmark Lockup
+### Design Direction & Opaque Structural Elevation
 
+- **Opaque Structural Elevation**: Surfaces separate cleanly through luminance steps and `1px solid var(--border)` hairlines with `backdrop-filter: none` (`0` `backdrop-filter` / `backdrop-blur-*` utilities across the application), solid `rgba(0, 0, 0, 0.62)` modal scrims, zero radial glow pseudo-elements, and zero decorative AI pulse badges. This eliminates GPU backdrop-sampling overhead on Raspberry Pi / Home Assistant Green WebViews and ensures crisp legibility across Home Assistant dashboards, mobile Companion WebViews, and desktop monitors.
 - **App Mark (`64×64` geometry)**: Rounded evergreen tile (`#10231B`, `rx="13"`), warm off-white continuous double-arch `m` (`#EDF5EF`, `stroke-width="5"`, `stroke-linecap="round"`), and a living mint completion dot (`#75E9BE`, `cx="52" cy="40" r="3.5"`).
 - **Wordmark**: Lowercase `meitheal.` in `Geist Variable` (`font-weight: 500`, `letter-spacing: -0.05em`) paired with `/meh·hal/` in `JetBrains Mono` (`letter-spacing: 0.09em`).
 - **Home Assistant Storefront Assets**:
@@ -71,18 +83,33 @@ spacing:
 ### Color & Contrast Architecture
 
 - **Dark Mode (Default — Evergreen Carbon + Living Mint)**:
-  - Surfaces step cleanly by luminance: `#0D0F0E` (inputs) → `#101210` (canvas) → `#171A18` (sidebar/chrome) → `#1D211F` (cards) → `#252B28` (hover), framed by `#344039` hairline borders.
-  - Primary accent `#69E3B2` (`--palette-accent`) pairs with deep forest ink `#07140F` (`--palette-on-accent`, 11.9:1 contrast) on filled buttons and badges, and `#ADF8D7` (`--accent-text`) on dark surfaces.
-- **Light Mode (Warm Architectural Paper + Forest Emerald)**:
-  - Warm paper canvas `#F6F5F0` with crisp `#FFFFFF` cards and `#ECEBE4` chrome.
-  - Deep Forest Emerald `#146C4E` (`--palette-accent`) and `#0E533B` (`--palette-accent-hover` / `--accent-text`) pair with `#FFFFFF` (`--palette-on-accent`, 6.4:1–8.9:1 contrast) so every text link, badge, and filled primary action passes WCAG AA 4.5:1 without washed-out mint-on-white text.
+  - Primary Background `--bg-primary: #101210`, Lowest/Input Surface `#0D0F0E`, Chrome/Secondary Surface `--bg-secondary: #171A18`, Card/Inspector Surface `--bg-card: #1D211F`, Hover `#252B28`, Border `--border: #344039`.
+  - Primary Brand Accent `--accent: #69E3B2` (`--palette-on-accent: #07140F`, 11.9:1 contrast; `--accent-text: #ADF8D7`), Warning `#F0B86D`, Danger `#EF4444`.
+- **Light Mode (Warm Paper + Forest Emerald)**:
+  - Primary Background `--bg-primary: #F6F5F0`, Chrome `#ECEBE4`, Card Surface `--bg-card: #FFFFFF`, Border `--border: #C9D1CB`.
+  - Primary Brand Accent `--accent: #146C4E` (`--palette-on-accent: #FFFFFF`, 6.4:1–8.9:1 contrast; `--accent-hover` / `--accent-text: #0E533B`), Warning `#B45309`, Danger `#DC2626`.
+- **Personal Accent CSS Binding**: Dynamic accent chrome binds directly to `var(--accent)` / `var(--accent-hover)` and `var(--personal-accent-foreground, var(--palette-on-accent))` rather than static RGB utility classes or legacy `#6366f1` / `#7c3aed` fallbacks.
 
-### Motion & Interaction Principles
+### Typography
 
-- **Tactile Press Feedback**: Interactive buttons scale subtly on press (`transform: scale(0.97)`) using fast `160ms` transitions.
-- **Natural Easing Curves**: Entrances and disclosures use custom strong ease-out curves (`--ease-out: cubic-bezier(0.23, 1, 0.32, 1)`), sheets/drawers use `--ease-drawer: cubic-bezier(0.32, 0.72, 0, 1)`, and dropdowns anchor `transform-origin` to their trigger corner (`top left` / `top right`).
-- **Keyboard Speed First**: High-frequency surfaces such as `SearchHub` (`Ctrl+K` / `/`) open instantaneously with zero artificial entrance delay, and all motion honors `prefers-reduced-motion: reduce`.
-- **Self-Hosted Fonts Only**: All `@font-face` assets (`Geist Variable`, `Inter Variable`, `Outfit`, `JetBrains Mono`, `Comic Neue`) load from local `@fontsource` bundles to satisfy strict `font-src 'self'` Content Security Policy behind Home Assistant Ingress.
+- **Operational Type**: Headings and UI Body render in self-hosted `Geist Variable` (with `Inter Variable` fallback; `14px` operational body default). Tickets, timestamps, RICE scores, and IPA use `JetBrains Mono` (`font-variant-numeric: tabular-nums`).
+- **Lazy Appearance Fonts & Ingress Safety**: `Layout.astro` preloads only `Geist Variable` Latin `woff2`; optional `Outfit` and `Comic Neue` appearance presets load lazily via CSS `@font-face` only when selected in Appearance settings. All `@fontsource` assets resolve via relative `./` paths to satisfy `font-src 'self'` behind Home Assistant Ingress.
+
+### Iconography & 5-Bucket Emoji Safety Policy
+
+- **Tabler `1.75px` Outline Catalog**: UI chrome and task-type icons use build-extracted `@tabler/icons` Outline SVGs (`24×24` `viewBox`, `stroke-width="1.75"`, `stroke-linecap="round"`, `stroke-linejoin="round"`, `vector-effect="non-scaling-stroke"`), deduplicated per SSR response via `<IconSpriteDefs />` (`<symbol id="mt-icon-...">`).
+- **5-Bucket Emoji Governance**:
+  1. **Bucket 1 (Sync & Cleanup Parsers — Untouched)**: Bidirectional calendar attribution markers and corrupt-title cleanup parsers remain intact.
+  2. **Bucket 2 (User Entities, Pickers, Reactions & Native `<option>` Text — Untouched)**: User-authored area/project/lane emoji icons, `IconPicker`, comment reactions, `I18nText` swap attributes, and native `<select><option>` plain-text labels remain intact.
+  3. **Bucket 3 (Component Defaults — Tabler)**: `EmptyState` (`clipboard-list`) and `TaskTypeIcon` (`bolt` / `book` / `bug` / `checkbox`) default to Tabler outline icons while rendering user-authored Bucket 2 emoji strings when passed.
+  4. **Bucket 4 & 5 (Static Chrome & Non-`<option>` Locale Strings — Tabler)**: Decorative emojis in static UI chrome, Settings headings/buttons, `SearchHub`, and toasts are replaced by `1.75px` Tabler `<Icon />` elements.
+
+### Layout, Touch & Motion
+
+- **Spatial Grid & Adaptive Containers**: `4px` base spacing grid, single-scroll `body`, and CSS `@container` component queries (`container-name: task-inspector`) so panels adapt to their own inline width rather than viewport breakpoints.
+- **Docked Workspace Inspector (`>= 1440px`)**: At `>= 1440px` desktop widths, opening a task docks `#task-detail-panel` as a `420px` non-modal right rail (`body.has-docked-inspector`, `role="region"`, `aria-modal="false"`, unlocked `body` scroll, active `SearchHub` and single-key navigation outside panel inputs); below `1440px`, the same live DOM node presents as a `role="dialog"` (`aria-modal="true"`) modal without losing unsaved drafts.
+- **Coarse-Pointer Hit Targets**: Interactive controls enforce `@media (pointer: coarse)` `44px × 44px` minimum hit targets for Home Assistant Companion touch screens and wall tablets.
+- **GPU-Composited Motion**: Tactile feedback (`transform: scale(0.97)`) and disclosures use `transform`/`opacity` transitions (`<= 160ms`, `--ease-out: cubic-bezier(0.23, 1, 0.32, 1)`) with zero mount fade loops or floating icon animations, and disable cleanly under `prefers-reduced-motion: reduce`.
 
 ---
 
@@ -94,6 +121,6 @@ The Customize appearance panel exposes ten preferences: navigation, navigation t
 
 Defaults preserve the current interface. Desktop users may select a vertical sidebar or a horizontal navigation bar; destination links remain native and a single More disclosure holds overflow from both destination lists when space is limited. The current route remains visible when it fits. Crowded Tasks view links use the same primitive and preserve their route semantics. The controller moves existing link nodes, retaining IDs, hrefs and listeners; it restores focus during reflow and uses keyboard arrows, Home/End and Escape within the disclosure. ResizeObserver only schedules width changes into a later animation frame. Areas uses its existing native disclosure in either layout. Phones keep their existing mobile navigation. Hover expansion also responds to keyboard focus and leaves the main content in place.
 
-Fonts are self-hosted, including Comic Neue. Neutral palettes update both CSS variables and RGB utility tokens for light and dark modes. Accent navigation uses a dark tint so labels remain readable with pale accent choices. Filled primary actions use the deeper palette accent by default. A custom accent pairs with black or white text using measured luminance, separately for its normal and shaded hover surface; the same helper runs before paint and when Settings changes it. Native form widgets follow the effective app color scheme, including Auto with Home Assistant. Focus does not fade placeholder guidance. Shared radius tokens apply to existing controls and cards. Floating panel rules affect existing task, search and day-drawer surfaces without replacing their controllers.
+Fonts are self-hosted, including Comic Neue. Neutral palettes update both CSS variables and RGB utility tokens for light and dark modes. Accent navigation uses a dark tint so labels remain readable with pale accent choices. Filled primary actions use the deeper palette accent by default. A custom accent pairs with black or white text using measured luminance, separately for its normal and shaded hover surface; the same helper runs before paint and when Settings changes it. Native form widgets follow the effective app color scheme, including Auto with Home Assistant. Focus does not fade placeholder guidance. Shared radius tokens apply to existing controls and cards. Floating panel rules affect existing non-docked task, search and day-drawer surfaces without replacing their controllers.
 
 See [Settings troubleshooting](docs/kcs/settings-troubleshooting.md) for save/reset behavior and local preference recovery. Domain boundaries, ingress handling, lifecycle cleanup and accessible focus behavior remain part of the implementation contract.

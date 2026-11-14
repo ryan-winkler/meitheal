@@ -8,7 +8,7 @@
 /* --- Forms --- */
 .form-input,
 .form-select {
-  @apply w-full bg-bg-input/60 backdrop-blur-sm border border-border rounded-md px-3 py-2.5 text-text-primary text-sm;
+  @apply w-full bg-bg-input border border-border rounded-md px-3 py-2.5 text-text-primary text-sm;
   transition: border-color 160ms var(--ease-out, ease), box-shadow 160ms var(--ease-out, ease), background-color 160ms var(--ease-out, ease);
   min-height: 44px;
   min-width: 44px;
@@ -31,7 +31,8 @@
   }
 .form-input:focus,
 .form-select:focus {
-  @apply outline-none border-accent ring-2 ring-accent/20 bg-bg-input/80;
+  @apply outline-none bg-bg-input;
+  border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-light, rgba(var(--accent-rgb), 0.12));
 }
 

@@ -1,0 +1,25 @@
+---
+import {
+  ICON_INNER_SVG,
+  isIconName,
+  type IconName,
+} from "../../generated/icon-registry"
+
+const locals = Astro.locals
+const lazySprites = {
+  [Symbol.for("astro:html-string")]: true,
+  toString(): string {
+    const registered = Array.from(locals.usedIcons ?? []).filter(isIconName)
+    if (registered.length === 0) return ""
+    const symbols = registered
+      .map(
+        (name) =>
+          `<symbol id="mt-icon-${name}" viewBox="0 0 24 24">${ICON_INNER_SVG[name as IconName]}</symbol>`,
+      )
+      .join("")
+    return `<svg id="mt-icon-sprite-defs" hidden aria-hidden="true" style="display:none" xmlns="http://www.w3.org/2000/svg"><defs>${symbols}</defs></svg>`
+  },
+} as unknown as string
+---
+
+<Fragment set:html={lazySprites} />

@@ -252,16 +252,9 @@ const locale = Astro.cookies.get("meitheal-locale")?.value === "ga" ? "ga" : "en
     align-items: center;
     padding: 0 24px;
     min-height: 56px;
-    background: color-mix(in srgb, var(--bg-primary) 95%, transparent);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border);
     box-shadow: 0 1px 4px rgba(0,0,0,.15);
-  }
-  @supports not (backdrop-filter: blur(1px)) {
-    .unified-bar {
-      background: var(--bg-primary);
-    }
   }
   .unified-bar__inner {
     display: flex;
@@ -326,20 +319,13 @@ const locale = Astro.cookies.get("meitheal-locale")?.value === "ga" ? "ga" : "en
     margin-top: 4px;
     min-width: 240px;
     max-width: calc(100vw - 32px);
-    background: color-mix(in srgb, var(--bg-card) 97%, transparent);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
+    background: var(--bg-card);
     border: 1px solid var(--border);
     border-radius: 12px;
     box-shadow: 0 8px 24px rgba(0,0,0,.18);
     padding: 4px;
     z-index: 50;
     animation: unified-bar-dropdown-in 160ms ease-out;
-  }
-  @supports not (backdrop-filter: blur(1px)) {
-    .unified-bar__switcher-dropdown {
-      background: var(--bg-card);
-    }
   }
   .unified-bar__switcher-dropdown.is-open {
     display: flex;

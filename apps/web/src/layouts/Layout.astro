@@ -10,6 +10,8 @@ import Sidebar from "../components/layout/Sidebar.astro";
 import SearchHub from "../components/layout/SearchHub.astro";
 import KeyboardShortcutList from "../components/layout/KeyboardShortcutList.astro";
 import TopNavigation from "../components/layout/TopNavigation.astro";
+import Icon from "../components/ui/Icon.astro";
+import IconSpriteDefs from "../components/ui/IconSpriteDefs.astro";
 
 import NewTaskModal from "../components/tasks/NewTaskModal.astro";
 import TaskDetailModal from "../components/tasks/TaskDetailModal.astro";
@@ -93,13 +95,21 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
 <!doctype html>
 <html lang={locale} dir="ltr" data-custom-theme-admin={canManageSystemSettings(Astro.request, Astro.locals) ? "" : undefined}>
   <head>
+    {ingressPath && (
+      <script is:inline set:html={`window.__ingress_path = window.__ingress_path || ${JSON.stringify(ingressPath)};`} />
+    )}
     <!-- Scroll-lock guard: prevent external tools from locking body scroll (P0) -->
     <script is:inline>
       (function () {
         // Meitheal modals that legitimately lock scroll set data-scroll-lock="true"
         function isRealModalOpen() {
           var overlay = document.getElementById("task-detail-overlay");
-          if (overlay && !overlay.classList.contains("hidden")) return true;
+          if (
+            overlay &&
+            overlay.classList.contains("active") &&
+            !document.body.classList.contains("has-docked-inspector")
+          )
+            return true;
           var ntModal = document.getElementById("new-task-modal");
           if (ntModal && ntModal.classList.contains("active")) return true;
           var confirmOverlay = document.getElementById("confirm-dialog-overlay");
@@ -184,7 +194,7 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
                 if (tc) {
                   var t = document.createElement("div");
                   t.className = "toast warning";
-                  t.textContent = "🔄 Session expired. Reloading...";
+                  t.textContent = "Session expired. Reloading...";
                   t.setAttribute("role", "alert");
                   tc.appendChild(t);
                 }
@@ -226,7 +236,16 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
     <script is:inline>
       (function () {
         if (!window.__ingress_path) return;
-        if (window.location.pathname !== "/") return;
+        var prefix = window.__ingress_path.replace(/\/+$/, "");
+        if (!prefix) return;
+        var pathname = window.location.pathname;
+        var current =
+          pathname === prefix
+            ? "/"
+            : pathname.startsWith(prefix + "/")
+              ? pathname.slice(prefix.length) || "/"
+              : pathname;
+        if (current !== "/") return;
         try {
           var raw = sessionStorage.getItem("meitheal-navigation-state");
           if (!raw) return;
@@ -241,10 +260,17 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
             sessionStorage.removeItem("meitheal-navigation-state");
             return;
           }
+          var cleanPath =
+            state.path === prefix
+              ? "/"
+              : state.path.startsWith(prefix + "/")
+                ? state.path.slice(prefix.length) || "/"
+                : state.path;
+          if (!cleanPath.startsWith("/")) cleanPath = "/" + cleanPath;
           // Don't redirect to root (no-op)
-          if (state.path === "/") return;
-          // Redirect to saved path — prepend ingress path for proper routing
-          var target = window.__ingress_path + state.path;
+          if (cleanPath === "/") return;
+          // Redirect to saved path — prepend ingress prefix without double-prefixing
+          var target = prefix + cleanPath;
           // Save scroll position to restore after redirect
           if (state.scrollY) {
             sessionStorage.setItem(
@@ -503,23 +529,23 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
     <!-- PRA-16: Mobile bottom tab bar — thumb-zone navigation for HA Companion App -->
     <nav class="mobile-tab-bar" id="mobile-tab-bar" aria-label="Mobile navigation">
       <a href="/" class="mobile-tab-bar__item" data-page="dashboard">
-        <span class="mobile-tab-bar__icon">⌂</span>
+        <span class="mobile-tab-bar__icon" aria-hidden="true"><Icon name="home" size={20} sprite={true} /></span>
         <span class="mobile-tab-bar__label">Home</span>
       </a>
       <a href="/today" class="mobile-tab-bar__item" data-page="today">
-        <span class="mobile-tab-bar__icon">☀️</span>
+        <span class="mobile-tab-bar__icon" aria-hidden="true"><Icon name="today" size={20} sprite={true} /></span>
         <span class="mobile-tab-bar__label">Today</span>
       </a>
       <a href="/tasks" class="mobile-tab-bar__item" data-page="tasks">
-        <span class="mobile-tab-bar__icon">📋</span>
+        <span class="mobile-tab-bar__icon" aria-hidden="true"><Icon name="tasks" size={20} sprite={true} /></span>
         <span class="mobile-tab-bar__label">Tasks</span>
       </a>
       <a href="/tasks?view=calendar#calendar" data-astro-prefetch="false" class="mobile-tab-bar__item" data-page="calendar">
-        <span class="mobile-tab-bar__icon">📅</span>
+        <span class="mobile-tab-bar__icon" aria-hidden="true"><Icon name="calendar" size={20} sprite={true} /></span>
         <span class="mobile-tab-bar__label">Calendar</span>
       </a>
       <a href="/settings" class="mobile-tab-bar__item" data-page="settings">
-        <span class="mobile-tab-bar__icon">⚙️</span>
+        <span class="mobile-tab-bar__icon" aria-hidden="true"><Icon name="settings" size={20} sprite={true} /></span>
         <span class="mobile-tab-bar__label">Settings</span>
       </a>
     </nav>
@@ -615,8 +641,8 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
     <div id="shortcut-modal" class="shortcut-modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="shortcut-modal-title">
       <div class="shortcut-modal-content">
         <div class="shortcut-modal-header">
-          <h3 id="shortcut-modal-title"><span aria-hidden="true">⌨</span>{t("settings.shortcut_modal_title", locale)}</h3>
-          <button id="shortcut-modal-close" type="button" class="btn-icon shortcut-modal-close" aria-label={t("settings.shortcut_modal_close", locale)}><span aria-hidden="true">✕</span></button>
+          <h3 id="shortcut-modal-title"><Icon name="keyboard" size={18} sprite={true} />{t("settings.shortcut_modal_title", locale)}</h3>
+          <button id="shortcut-modal-close" type="button" class="btn-icon shortcut-modal-close" aria-label={t("settings.shortcut_modal_close", locale)}><Icon name="x" size={18} sprite={true} /></button>
         </div>
         <KeyboardShortcutList locale={locale} variant="dialog" scopes={["global", "tasks"]} />
       </div>
@@ -631,5 +657,6 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
         </div>
       </div>
     </noscript>
+    <IconSpriteDefs />
   </body>
 </html>

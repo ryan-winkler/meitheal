@@ -1,6 +1,7 @@
 ---
 import { t } from "../../i18n/translations";
 import type { Locale } from "../../lib/locale";
+import Icon from "../ui/Icon.astro";
 import LabelPicker from "../ui/LabelPicker.astro";
 
 const cookieLocale = Astro.cookies.get("meitheal-locale")?.value;
@@ -11,7 +12,9 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
   <div class="modal-content nt-modal">
     <header class="nt-header">
       <h2 id="new-task-title">{t("tasks.new_task_modal", locale)}</h2>
-      <button type="button" class="btn btn-ghost nt-icon-button" id="close-new-task-modal" aria-label="Close">×</button>
+      <button type="button" class="btn btn-ghost nt-icon-button" id="close-new-task-modal" aria-label="Close">
+        <Icon name="x" size={18} sprite={true} />
+      </button>
     </header>
     <form id="new-task-form" class="nt-form"
       data-toast-created={t("task_modal.toast_created", locale)}
@@ -174,11 +177,11 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
         <div id="nt-custom-fields-container" class="hidden space-y-2 mt-2 p-3 nt-feature-card">
           <div id="nt-custom-fields-list" class="space-y-2"></div>
           <div id="nt-add-field-dropdown" class="hidden flex-wrap gap-1.5 pt-2 border-t border-border-dim/30">
-            <button type="button" class="nt-add-field-type text-xs px-2.5 py-1 bg-bg-input/50 border border-border-dim rounded-lg hover:bg-border-dim/30 transition-colors flex items-center gap-1" data-field-type="url">🔗 {t("task_modal.custom_field_url", locale)}</button>
-            <button type="button" class="nt-add-field-type text-xs px-2.5 py-1 bg-bg-input/50 border border-border-dim rounded-lg hover:bg-border-dim/30 transition-colors flex items-center gap-1" data-field-type="text">📝 {t("task_modal.custom_field_text", locale)}</button>
-            <button type="button" class="nt-add-field-type text-xs px-2.5 py-1 bg-bg-input/50 border border-border-dim rounded-lg hover:bg-border-dim/30 transition-colors flex items-center gap-1" data-field-type="number">🔢 {t("task_modal.custom_field_number", locale)}</button>
-            <button type="button" class="nt-add-field-type text-xs px-2.5 py-1 bg-bg-input/50 border border-border-dim rounded-lg hover:bg-border-dim/30 transition-colors flex items-center gap-1" data-field-type="date">📅 {t("task_modal.custom_field_date", locale)}</button>
-            <button type="button" class="nt-add-field-type text-xs px-2.5 py-1 bg-bg-input/50 border border-border-dim rounded-lg hover:bg-border-dim/30 transition-colors flex items-center gap-1" data-field-type="checkbox">☑️ {t("task_modal.custom_field_checkbox", locale)}</button>
+            <button type="button" class="nt-add-field-type text-xs px-2.5 py-1 bg-bg-input/50 border border-border-dim rounded-lg hover:bg-border-dim/30 transition-colors flex items-center gap-1" data-field-type="url"><Icon name="link" size={14} sprite={true} /> {t("task_modal.custom_field_url", locale)}</button>
+            <button type="button" class="nt-add-field-type text-xs px-2.5 py-1 bg-bg-input/50 border border-border-dim rounded-lg hover:bg-border-dim/30 transition-colors flex items-center gap-1" data-field-type="text"><Icon name="file-text" size={14} sprite={true} /> {t("task_modal.custom_field_text", locale)}</button>
+            <button type="button" class="nt-add-field-type text-xs px-2.5 py-1 bg-bg-input/50 border border-border-dim rounded-lg hover:bg-border-dim/30 transition-colors flex items-center gap-1" data-field-type="number"><Icon name="hash" size={14} sprite={true} /> {t("task_modal.custom_field_number", locale)}</button>
+            <button type="button" class="nt-add-field-type text-xs px-2.5 py-1 bg-bg-input/50 border border-border-dim rounded-lg hover:bg-border-dim/30 transition-colors flex items-center gap-1" data-field-type="date"><Icon name="calendar" size={14} sprite={true} /> {t("task_modal.custom_field_date", locale)}</button>
+            <button type="button" class="nt-add-field-type text-xs px-2.5 py-1 bg-bg-input/50 border border-border-dim rounded-lg hover:bg-border-dim/30 transition-colors flex items-center gap-1" data-field-type="checkbox"><Icon name="checkbox" size={14} sprite={true} /> {t("task_modal.custom_field_checkbox", locale)}</button>
           </div>
         </div>
       </div>
@@ -235,6 +238,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
 </div>
 <script>
   import { showToast } from "@lib/toast";
+  import { renderIconSvg, type IconName } from "../../generated/icon-registry";
   import { InlineDatePicker } from "../shared/InlineDatePicker"
   import { checklistLines, createChecklistItem } from "@lib/checklist-items"
   import { createClientLogger } from "@lib/client-logger";
@@ -397,8 +401,8 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
       label.textContent = item.text
       const remove = document.createElement("button")
       remove.type = "button"
-      remove.className = "btn btn-ghost"
-      remove.textContent = "×"
+      remove.className = "btn btn-ghost inline-flex items-center justify-center"
+      remove.innerHTML = renderIconSvg("x", { size: 14 })
       remove.setAttribute("aria-label", `Remove ${item.text}`)
       remove.addEventListener("click", () => {
         checklistItems.delete(row)
@@ -458,8 +462,8 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
 
       const remove = document.createElement("button")
       remove.type = "button"
-      remove.className = "btn btn-ghost text-text-muted"
-      remove.textContent = "✕"
+      remove.className = "btn btn-ghost text-text-muted inline-flex items-center justify-center"
+      remove.innerHTML = renderIconSvg("x", { size: 14 })
       remove.setAttribute("aria-label", `Remove ${name}${suffix}`)
       remove.addEventListener("click", () => {
         shoppingListItems.splice(shoppingListItems.indexOf(item), 1)
@@ -518,7 +522,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
       entry.dataset.fieldType = type
 
       const fieldLabel = form?.querySelector<HTMLElement>(`[data-field-type="${type}"].nt-add-field-type`)?.textContent?.trim() || type
-      const emojiMap: Record<string, string> = { url: "🔗", number: "🔢", date: "📅", attachment: "📎", text: "📝" }
+      const iconMap: Record<string, IconName> = { url: "link", number: "hash", date: "calendar", attachment: "paperclip", text: "file-text" }
 
       if (type === "checkbox") {
         const cb = document.createElement("input")
@@ -528,8 +532,8 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
         entry.appendChild(cb)
       } else {
         const icon = document.createElement("span")
-        icon.className = "text-xs text-text-muted"
-        icon.textContent = emojiMap[type] || "📝"
+        icon.className = "text-xs text-text-muted inline-flex items-center"
+        icon.innerHTML = renderIconSvg(iconMap[type] ?? "file-text", { size: 14 })
         entry.appendChild(icon)
       }
 
@@ -544,8 +548,8 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
 
       const removeBtn = document.createElement("button")
       removeBtn.type = "button"
-      removeBtn.className = "text-text-muted hover:text-red-400 text-xs"
-      removeBtn.textContent = "✕"
+      removeBtn.className = "text-text-muted hover:text-red-400 text-xs inline-flex items-center justify-center"
+      removeBtn.innerHTML = renderIconSvg("x", { size: 14 })
       removeBtn.addEventListener("click", () => { entry.remove(); markEdited() }, { signal })
       removeBtn.setAttribute("aria-label", `Remove ${type} field`)
       entry.appendChild(removeBtn)
@@ -622,6 +626,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
       // If the detail panel is open, close it to avoid dual modal
       document.getElementById("task-detail-panel")?.classList.remove("open");
       document.getElementById("task-detail-overlay")?.classList.remove("active");
+      document.body.classList.remove("has-docked-inspector");
 
       clearCapture()
       const contextualDate = window.__prefillTaskDate
