@@ -479,10 +479,12 @@ test("A4/A5/A8: live serve.mjs leaves Ingress HTML uncompressed, keeps attribute
       expect(res.headers.get("content-encoding")).toBeNull()
       const body = await res.text()
       expect(body).toContain('window.__ingress_path="/api/hassio_ingress/live_tok"')
-      const attrMatches = body.matchAll(/\s[a-zA-Z_:][-a-zA-Z0-9_:.]*="([^"]*)"/g)
-      for (const m of attrMatches) {
-        expect((m[1] ?? "").length).toBeLessThan(32_768)
+      let maxAttrLength = 0
+      for (const m of body.matchAll(/\s[a-zA-Z_:][-a-zA-Z0-9_:.]*="([^"]*)"/g)) {
+        const attrLen = (m[1] ?? "").length
+        if (attrLen > maxAttrLength) maxAttrLength = attrLen
       }
+      expect(maxAttrLength).toBeLessThan(32_768)
     }
 
     // 2. Diagnostics before abort
