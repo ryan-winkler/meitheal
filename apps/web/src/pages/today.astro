@@ -736,7 +736,7 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
   }
   .today-filter-bar .form-input:focus {
     border-color: var(--accent);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent, #6366f1) 15%, transparent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 15%, transparent);
   }
   .today-filter-bar .form-select {
     font-size: 12px;
@@ -782,7 +782,7 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
     transition: border-color 0.2s ease, box-shadow 0.2s ease;
   }
   .today-section:hover {
-    border-color: color-mix(in srgb, var(--border) 70%, var(--accent, #6366f1) 30%);
+    border-color: color-mix(in srgb, var(--border) 70%, var(--accent) 30%);
   }
 
   .today-section__header {
@@ -830,7 +830,7 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
     font-size: 12px;
     padding: 2px 8px;
     border-radius: 10px;
-    background: rgba(99, 102, 241, 0.12);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
     color: var(--accent-text);
     font-weight: 600;
     flex-shrink: 0;
@@ -965,7 +965,6 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
     border: 1px solid var(--border);
     border-radius: var(--radius-md);
     box-shadow: 0 8px 32px rgb(0 0 0 / 0.4);
-    backdrop-filter: blur(12px);
   }
   :global(#batch-action-bar span) {
     font-size: 13px;
@@ -987,7 +986,7 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
   }
   :global(.tli--drag-over) {
     border-top: 2px solid var(--accent);
-    box-shadow: 0 -4px 12px -2px color-mix(in srgb, var(--accent, #6366f1) 30%, transparent);
+    box-shadow: 0 -4px 12px -2px color-mix(in srgb, var(--accent) 30%, transparent);
     transition: box-shadow 0.15s ease;
   }
 
@@ -1018,7 +1017,7 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
     bottom: 8px;
     width: 3px;
     border-radius: 0 2px 2px 0;
-    background: var(--accent, #6366f1);
+    background: var(--accent);
     opacity: 0;
     transition: opacity 0.2s ease;
   }
@@ -1211,8 +1210,7 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
     align-items: center;
     gap: 12px;
     padding: 10px 14px;
-    background: rgb(var(--bg-card-rgb, 29 33 31) / 0.7);
-    backdrop-filter: blur(8px);
+    background: var(--bg-card);
     border: 1px solid var(--border);
     border-radius: var(--radius-sm, 6px);
     transition: border-color 200ms, box-shadow 200ms, opacity 200ms, transform 200ms;

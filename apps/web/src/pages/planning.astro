@@ -29,17 +29,23 @@ import { TaskRepository } from "@domains/tasks/persistence/task-repository"
 const cookieLocale = Astro.cookies.get("meitheal-locale")?.value
 const locale: Locale = cookieLocale === "ga" ? "ga" : "en"
 
-const { tasks } = await getTasksForView()
+const { tasks } = await getTasksForView({
+  slim: true,
+  descriptionPreviewChars: 240,
+  excludeStatuses: ["complete", "archived"],
+})
 
 // Derive Eisenhower quadrant counts
 let q1 = 0, q2 = 0, q3 = 0, q4 = 0
 for (const task of tasks) {
   if (task.is_done) continue
   switch (task.eisenhower_quadrant) {
-    case "do": q1++; break
+    case "do":
+    case "do-first": q1++; break
     case "schedule": q2++; break
     case "delegate": q3++; break
-    case "eliminate": q4++; break
+    case "eliminate":
+    case "not-now": q4++; break
   }
 }
 
@@ -80,11 +86,11 @@ try {
     }
   }
 
-  // Task counts per project
+  // Task counts per project (single grouped SQL query)
+  const countsByProject = await taskRepo.getProjectTaskCounts()
   for (const proj of projects) {
-    const projTasks = await taskRepo.findByProjectId(String(proj.id))
-    const completed = projTasks.filter((t: any) => String(t.status) === "complete").length
-    taskCountByProject.set(String(proj.id), { total: projTasks.length, completed })
+    const projId = String(proj.id)
+    taskCountByProject.set(projId, countsByProject.get(projId) ?? { total: 0, completed: 0 })
   }
 } catch {
   // Schema may not exist yet — render empty
@@ -122,7 +128,7 @@ const visibleAreas = areas.filter((a: any) =>
             {visibleAreas.map((area: any) => {
               const goalCount = goalCountByArea.get(String(area.id)) ?? 0
               const projCount = projectCountByArea.get(String(area.id)) ?? 0
-              const areaColor = String(area.color ?? "#6366F1")
+              const areaColor = String(area.color ?? "#146C4E")
               const areaIcon = String(area.icon ?? "🏠")
               return (
                 <a href={`/areas/${area.id}`} class="spaces-card" style={`--card-accent: ${areaColor};`}>
@@ -157,7 +163,7 @@ const visibleAreas = areas.filter((a: any) =>
             {projects.map((proj: any) => {
               const projCounts = taskCountByProject.get(String(proj.id)) ?? { total: 0, completed: 0 }
               const progress = projCounts.total > 0 ? Math.round((projCounts.completed / projCounts.total) * 100) : 0
-              const projColor = String(proj.color ?? "#6366F1")
+              const projColor = String(proj.color ?? "#146C4E")
               const projIcon = String(proj.icon ?? "📋")
               const projStatus = String(proj.status ?? "active")
               return (
@@ -388,7 +394,7 @@ const visibleAreas = areas.filter((a: any) =>
       const res = await fetch("/api/areas", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ name, icon: "🏠", color: "#6366F1" }),
+        body: JSON.stringify({ name, icon: "🏠", color: "#146C4E" }),
       })
       if (res.ok) window.location.reload()
       else window.showToast?.("Failed to create area", "error")
@@ -404,7 +410,7 @@ const visibleAreas = areas.filter((a: any) =>
       const res = await fetch("/api/projects", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ title, icon: "📋", color: "#6366F1" }),
+        body: JSON.stringify({ title, icon: "📋", color: "#146C4E" }),
       })
       if (res.ok) window.location.reload()
       else window.showToast?.("Failed to create project", "error")

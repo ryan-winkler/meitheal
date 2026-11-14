@@ -2,10 +2,7 @@
   position: fixed;
   inset: 0;
   z-index: 70;
-  background:
-    radial-gradient(circle at top, rgb(var(--accent-rgb, 105 227 178) / 0.16), transparent 35%),
-    rgba(10, 14, 12, 0.74);
-  backdrop-filter: blur(16px);
+  background: rgba(0, 0, 0, 0.62);
 }
 
 .search-hub-shell {
@@ -18,8 +15,8 @@
 
 .search-hub-panel {
   width: min(960px, 100%);
-  background: color-mix(in srgb, var(--bg-card) 94%, #0b120e 6%);
-  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--border) 78%);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
   border-radius: 24px;
   box-shadow: 0 32px 80px rgba(0, 0, 0, 0.36);
   overflow: hidden;
@@ -27,10 +24,8 @@
 
 .search-hub-header {
   padding: 1.25rem 1.25rem 1rem;
-  border-bottom: 1px solid rgb(var(--border-rgb) / 0.6);
-  background:
-    linear-gradient(135deg, rgb(var(--accent-rgb) / 0.12), transparent 46%),
-    color-mix(in srgb, var(--bg-secondary) 92%, transparent);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-secondary);
 }
 
 .search-hub-input-wrap {

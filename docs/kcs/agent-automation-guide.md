@@ -12,15 +12,17 @@ Meitheal builds API documentation and App MCP tool schemas from one OpenAPI and 
 
 Generator scripts live under `apps/web/scripts/`.
 
-- `predev` (`pnpm --filter @meitheal/web dev`): runs `generate:openapi`.
-- `prebuild` (`pnpm --filter @meitheal/web build`): runs `generate:openapi` and `generate:asyncapi` before `astro build`.
+- `predev` (`pnpm --filter @meitheal/web dev`): runs `generate:codegen` (`generate:openapi`, `generate:mcp`, and `generate:icons`).
+- `prebuild` (`pnpm --filter @meitheal/web build`): runs `generate:codegen` and `generate:asyncapi` before `astro build`.
 
 Generated outputs (under `apps/web/`):
 
-- `public/openapi.yaml` — OpenAPI 3.1 contract (post-processing sets `additionalProperties: false` and `x-strict: true`)
-- `public/.well-known/jsondoc.json` — OpenAPI 3.1 JSON with ingress-aware relative server URL
-- `public/asyncapi.yaml` — AsyncAPI 2.6 event contract
-- `dist/` — Built production server bundle
+- `public/openapi.yaml` - OpenAPI 3.1 contract (post-processing sets `additionalProperties: false` and `x-strict: true`)
+- `public/.well-known/jsondoc.json` - OpenAPI 3.1 JSON with ingress-aware relative server URL
+- `src/generated/mcp-tools.json` - Precompiled MCP tool catalog derived from `public/openapi.yaml`
+- `src/generated/icon-registry.ts` - Typed 64-icon `1.75px` Tabler outline SVG catalog
+- `public/asyncapi.yaml` - AsyncAPI 2.6 event contract
+- `dist/` - Built production server bundle
 
 ### Registering API Routes and Events
 
@@ -30,7 +32,7 @@ To add or update an API route:
 2. Set `operationId`, `parameters`, `requestBody`, and `responses` on the operation.
 3. Map the route method and path in `resolveAgentRouteScope()` inside `packages/domain-auth/src/agent-route-policy.ts`.
 4. Add any assigned-task-safe sub-routes to `isAssignedTaskScopedRoute()` (unmapped routes return HTTP `403` for agent tokens).
-5. Run `pnpm --filter @meitheal/web run generate:openapi`.
+5. Run `pnpm --filter @meitheal/web run generate:codegen` to update `public/openapi.yaml` and `src/generated/mcp-tools.json`.
 
 To add an async event:
 
@@ -40,7 +42,7 @@ To add an async event:
 
 ### Registering Custom MCP Tools
 
-`POST /api/mcp` builds tools dynamically from `openapi.yaml`. Exclude internal endpoints in `EXCLUDED_OPS` inside `apps/web/src/pages/api/mcp.ts`.
+Production `POST /api/mcp` loads the precompiled `src/generated/mcp-tools.json` catalog (falling back to dynamic `openapi.yaml` parsing in dev/tests or when `MEITHEAL_MCP_DYNAMIC_OPENAPI=1`). Exclude internal endpoints in `EXCLUDED_OPS` inside `apps/web/src/pages/api/mcp.ts` and `apps/web/scripts/generate-mcp-tools.mjs`.
 
 For tools that need custom logic beyond CRUD dispatch:
 
@@ -131,7 +133,7 @@ curl -X POST http://localhost:3000/api/tasks/create \
 | Symptom | Cause | Fix |
 |---------|-------|-----|
 | MCP discovery or requests return 404 | MCP is disabled | Enable MCP in **Settings → Automation & AI → Agent Protocols**. Select **Save Agent Protocol Settings**. |
-| MCP returns an empty tool list | `openapi.yaml` is missing | Run `pnpm --filter @meitheal/web run generate:openapi` |
+| MCP returns an empty tool list | `src/generated/mcp-tools.json` or `openapi.yaml` is missing | Run `pnpm --filter @meitheal/web run generate:codegen` |
 | Tool definitions appear stale in dev | 30s spec cache TTL | Wait 30 seconds or restart the dev server |
 | `X-Automation-Source` logged as `unknown` | Header value not in allowlist | Use an allowlisted source string |
 | Missing `trace_id` in structured logs | `traceparent` invalid or bypassed | Send valid W3C `traceparent`; middleware generates one automatically |

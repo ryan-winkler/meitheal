@@ -17,6 +17,7 @@
 import { onEntityChange, listCalendarEvents, createCalendarEvent, updateCalendarEvent, deleteCalendarEvent } from "../ha";
 import { emitCalendarSynced } from "../ha";
 import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability";
+import type { SyncTaskMutation } from "@domains/tasks";
 import { STATUS } from "../../lib/status-config";
 
 const logger = createLogger({
@@ -90,6 +91,30 @@ interface EntitySyncState {
 
 /** Hard cap: prevent runaway entity registration (memory safety) */
 const MAX_ENTITIES = 10;
+const CALENDAR_MAX_CONCURRENCY = 2;
+
+async function runWithConcurrency<T, R>(
+  items: readonly T[],
+  maxConcurrency: number,
+  worker: (item: T) => Promise<R>,
+): Promise<PromiseSettledResult<R>[]> {
+  const results: PromiseSettledResult<R>[] = new Array(items.length);
+  let nextIndex = 0;
+  const workerCount = Math.min(Math.max(1, maxConcurrency), items.length);
+  await Promise.all(
+    Array.from({ length: workerCount }, async () => {
+      while (nextIndex < items.length) {
+        const idx = nextIndex++;
+        try {
+          results[idx] = { status: "fulfilled", value: await worker(items[idx]!) };
+        } catch (reason) {
+          results[idx] = { status: "rejected", reason };
+        }
+      }
+    }),
+  );
+  return results;
+}
 
 /** Sync timeout per entity — prevents hung syncs from blocking forever */
 const SYNC_TIMEOUT_MS = 30_000;
@@ -98,19 +123,16 @@ const SYNC_TIMEOUT_MS = 30_000;
 const activeSyncs = new Map<string, EntitySyncState>();
 
 // Cached persistence refs — avoids repeated dynamic imports in hot sync path
-let _storeModule: typeof import("@domains/tasks/persistence/store") | null = null;
-let _schemaEnsured = false;
+let _storeModule: typeof import("@domains/tasks") | null = null;
 async function getStoreModule() {
-  if (!_storeModule) _storeModule = await import("@domains/tasks/persistence/store");
+  if (!_storeModule) _storeModule = await import("@domains/tasks");
   return _storeModule;
 }
 
-/** Ensure schema once per process — avoids redundant DDL on every sync cycle */
+/** Ensure schema via store's per-client singleton bootstrap */
 async function ensureSchemaOnce() {
-  if (_schemaEnsured) return;
   const mod = await getStoreModule();
   await mod.ensureSchema();
-  _schemaEnsured = true;
 }
 
 /** Concurrency guard — prevents overlapping syncs for the same entity */
@@ -140,7 +162,7 @@ function debounceWithCancel<T extends (...args: unknown[]) => unknown>(
  * Start simultaneous sync for multiple HA calendar entities.
  * Replaces any previously active syncs.
  */
-export function startMultiCalendarSync(configs: CalendarSyncConfig[]): void {
+export function startMultiCalendarSync(configs: CalendarSyncConfig[]): Promise<void> {
   stopCalendarSync();
 
   const enabled = configs.filter(c => c.syncEnabled);
@@ -155,16 +177,29 @@ export function startMultiCalendarSync(configs: CalendarSyncConfig[]): void {
     });
   }
 
-  for (const config of enabled.slice(0, MAX_ENTITIES)) {
-    startSingleEntitySync(config);
+  const capped = enabled.slice(0, MAX_ENTITIES);
+  for (const config of capped) {
+    startSingleEntitySync(config, true);
   }
 
   logger.log("info", {
     event: "calendar.sync.multi_started", domain: "calendar", component: "calendar-bridge",
     request_id: SYS_REQ,
-    message: `Multi-calendar sync started for ${Math.min(enabled.length, MAX_ENTITIES)} entities`,
-    metadata: { entities: enabled.slice(0, MAX_ENTITIES).map(c => c.entityId) },
+    message: `Multi-calendar sync started for ${capped.length} entities`,
+    metadata: { entities: capped.map(c => c.entityId) },
   });
+
+  const inboundConfigs = capped.filter(c => c.syncMode !== "export");
+  return runWithConcurrency(inboundConfigs, CALENDAR_MAX_CONCURRENCY, async (config) => {
+    try {
+      await syncEntityFromHA(config.entityId);
+    } catch (err) {
+      logger.log("error", {
+        event: "calendar.sync.initial_failed", domain: "calendar", component: "calendar-bridge",
+        request_id: SYS_REQ, message: `Initial calendar sync failed for ${config.entityId}: ${err}`,
+      });
+    }
+  }).then(() => {});
 }
 
 /**
@@ -179,11 +214,28 @@ export function startCalendarSync(config: CalendarSyncConfig): void {
   }
 
   if (!config.syncEnabled) return;
-  startSingleEntitySync(config);
+  startSingleEntitySync(config, false);
+}
+
+/** Arm periodic full-sync intervals for registered inbound entities (wrapped in error boundary). */
+function armPendingEntityIntervals(): void {
+  for (const [entityId, state] of activeSyncs) {
+    if (state.config.syncMode === "export" || state.config.syncIntervalMs <= 0 || state.timer !== null) {
+      continue;
+    }
+    state.timer = setInterval(() => {
+      syncEntityFromHA(entityId).catch((err) => {
+        logger.log("error", {
+          event: "calendar.sync.interval_error", domain: "calendar", component: "calendar-bridge",
+          request_id: SYS_REQ, message: `Periodic sync failed for ${entityId}: ${err}`,
+        });
+      });
+    }, state.config.syncIntervalMs);
+  }
 }
 
 /** Internal: start sync for a single entity */
-function startSingleEntitySync(config: CalendarSyncConfig): void {
+function startSingleEntitySync(config: CalendarSyncConfig, deferInitialSync = false): void {
   const state: EntitySyncState = {
     config,
     timer: null,
@@ -215,24 +267,13 @@ function startSingleEntitySync(config: CalendarSyncConfig): void {
     const unsub = onEntityChange(config.entityId, debouncedSync);
     // Store cancel function so stopSingleEntitySync can clean up the pending timer
     state.unsubscribers.push(unsub, cancelDebounce);
-
-    // Periodic full sync — wrapped in error boundary to prevent unhandled rejection crash
-    if (config.syncIntervalMs > 0) {
-      state.timer = setInterval(() => {
-        syncEntityFromHA(config.entityId).catch((err) => {
-          logger.log("error", {
-            event: "calendar.sync.interval_error", domain: "calendar", component: "calendar-bridge",
-            request_id: SYS_REQ, message: `Periodic sync failed for ${config.entityId}: ${err}`,
-          });
-        });
-      }, config.syncIntervalMs);
-    }
   }
 
   activeSyncs.set(config.entityId, state);
+  armPendingEntityIntervals();
 
   // Initial inbound sync (skipped for export-only via mode guard in syncEntityFromHA)
-  if (config.syncMode !== "export") {
+  if (!deferInitialSync && config.syncMode !== "export") {
     syncEntityFromHA(config.entityId).catch((err) => {
       logger.log("error", {
         event: "calendar.sync.initial_failed", domain: "calendar", component: "calendar-bridge",
@@ -269,9 +310,11 @@ export async function syncFromHA(overrideEntityId?: string): Promise<CalendarSyn
     throw new Error("No active calendar sync is configured");
   }
 
-  // Sync ALL configured entities in parallel
-  const results = await Promise.allSettled(
-    Array.from(activeSyncs.keys()).map((entityId) => syncEntityFromHA(entityId, true)),
+  // Sync configured entities with bounded concurrency (max 2 concurrent workers)
+  const results = await runWithConcurrency(
+    Array.from(activeSyncs.keys()),
+    CALENDAR_MAX_CONCURRENCY,
+    (entityId) => syncEntityFromHA(entityId, true),
   );
 
   const aggregated: CalendarSyncCounts = { created: 0, updated: 0, total: 0 };
@@ -396,136 +439,150 @@ async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState |
     let updated = 0;
     let skipped = 0;
 
-    // Batch dedup: pre-fetch all existing provider_event_ids in one query
+    // Batch dedup: pre-fetch existing provider_event_ids scoped to entityId in <= 200-param chunks
     const eventUids = events.map((evt) => evt.uid ?? `ha-cal-${entityId}-${evt.summary}-${evt.start}`);
-    const placeholders = eventUids.map(() => "?").join(", ");
-    const existingRows = await client.execute({
-      sql: `SELECT provider_event_id, task_id FROM calendar_confirmations WHERE provider_event_id IN (${placeholders})`,
-      args: eventUids,
+    const existingLookup = await mod.findTasksByExternalSyncIds({
+      source: "calendar",
+      entityId,
+      externalIds: eventUids,
     });
     const existingMap = new Map<string, string>();
-    for (const row of existingRows.rows) {
-      existingMap.set(String(row.provider_event_id), String(row.task_id));
+    for (const [uid, match] of existingLookup.entries()) {
+      existingMap.set(uid, match.taskId);
+    }
+
+    const unmatchedSummaries = [
+      ...new Set(
+        events
+          .map((evt, idx) => ({ evt, uid: eventUids[idx]! }))
+          .filter(({ evt, uid }) => !existingMap.has(uid) && Boolean(evt.summary) && !(evt.description && /Added from Meitheal/i.test(evt.description)))
+          .map(({ evt }) => evt.summary),
+      ),
+    ];
+    const openTitleToTaskId = new Map<string, string>();
+    for (let offset = 0; offset < unmatchedSummaries.length; offset += 200) {
+      const chunk = unmatchedSummaries.slice(offset, offset + 200);
+      const placeholders = chunk.map(() => "?").join(", ");
+      const titleMatches = await client.execute({
+        sql: `SELECT id, title FROM tasks WHERE status != 'complete' AND title IN (${placeholders}) ORDER BY rowid ASC`,
+        args: chunk,
+      });
+      for (const row of titleMatches.rows) {
+        const titleKey = String(row.title);
+        if (!openTitleToTaskId.has(titleKey)) {
+          openTitleToTaskId.set(titleKey, String(row.id));
+        }
+      }
     }
 
     let errors = 0;
+    const mutations: SyncTaskMutation[] = [];
+    const mutationSummaries: string[] = [];
+    const nowMs = Date.now();
 
     for (let i = 0; i < events.length; i++) {
       const evt = events[i]!;
       const uid = eventUids[i]!;
       let existingTaskId = existingMap.get(uid);
 
-      try {
-        // ── Loop prevention: skip events that Meitheal pushed outbound ──
-        // If description contains our attribution, this event came from us.
-        // Re-importing it would create a duplicate, closing the sync loop.
-        if (evt.description && /Added from Meitheal/i.test(evt.description)) {
-          skipped++;
-          continue;
+      // ── Loop prevention: skip events that Meitheal pushed outbound ──
+      if (evt.description && /Added from Meitheal/i.test(evt.description)) {
+        skipped++;
+        continue;
+      }
+
+      const confirmationPayload = JSON.stringify({
+        summary: evt.summary,
+        start: evt.start,
+        end: evt.end,
+        entity_id: entityId,
+      });
+
+      // Fallback dedup: if UID lookup fails, check if an open task with this title exists.
+      if (!existingTaskId && evt.summary) {
+        const titleMatchedId = openTitleToTaskId.get(evt.summary);
+        if (titleMatchedId) {
+          existingTaskId = titleMatchedId;
+          mutations.push({
+            kind: "link",
+            taskId: existingTaskId,
+            createdAt: nowMs,
+            confirmation: {
+              source: "calendar",
+              entityId,
+              externalId: uid,
+              confirmationSource: "ha.calendar_sync",
+              payload: confirmationPayload,
+            },
+          });
+          mutationSummaries.push(evt.summary);
         }
+      }
 
-        // Fallback dedup: if UID lookup fails, check if a task with this title exists.
-        // This catches write-back events re-appearing with a different UID.
-        if (!existingTaskId && evt.summary) {
-          const titleMatch = await client.execute({
-            sql: "SELECT id FROM tasks WHERE title = ? AND status != 'complete' LIMIT 1",
-            args: [evt.summary],
-          });
-          if (titleMatch.rows.length > 0) {
-            existingTaskId = String(titleMatch.rows[0]!.id);
-            // Link it for future lookups
-            await client.execute({
-              sql: `INSERT OR IGNORE INTO calendar_confirmations (confirmation_id, task_id, request_id, provider_event_id,
-                      source, payload, created_at) VALUES (?, ?, ?, ?, 'ha.calendar_sync', ?, ?)`,
-              args: [
-                crypto.randomUUID(), existingTaskId, crypto.randomUUID(), uid,
-                JSON.stringify({ summary: evt.summary, start: evt.start, end: evt.end, entity_id: entityId }),
-                Date.now(),
-              ],
-            });
-          }
+      if (existingTaskId) {
+        const descParts: string[] = [];
+        if (evt.location) descParts.push(`📍 ${evt.location}`);
+        const stripped = stripMeithealAttribution(evt.description);
+        if (stripped) descParts.push(stripped);
+        const inboundDesc = descParts.length > 0 ? descParts.join("\n\n") : null;
+
+        mutations.push({
+          kind: "update",
+          taskId: existingTaskId,
+          dueDate: evt.start,
+          updateDueDate: true,
+          description: inboundDesc,
+          ensureCalendarSyncLabel: true,
+          updatedAt: nowMs,
+        });
+        mutationSummaries.push(evt.summary);
+      } else {
+        const taskId = crypto.randomUUID();
+        if (evt.summary) {
+          openTitleToTaskId.set(evt.summary, taskId);
         }
+        const newDescParts: string[] = [];
+        if (evt.location) newDescParts.push(`📍 ${evt.location}`);
+        if (evt.description) newDescParts.push(evt.description);
+        const newDesc = newDescParts.length > 0 ? newDescParts.join("\n\n") : "";
 
-        if (existingTaskId) {
-          // Build description: include location if present
-          const descParts: string[] = [];
-          if (evt.location) descParts.push(`📍 ${evt.location}`);
-          const stripped = stripMeithealAttribution(evt.description);
-          if (stripped) descParts.push(stripped);
-          const inboundDesc = descParts.length > 0 ? descParts.join('\n\n') : null;
+        mutations.push({
+          kind: "create",
+          taskId,
+          idempotencyKey: `cal-sync-${uid}`,
+          title: evt.summary,
+          description: newDesc,
+          status: "pending",
+          priority: 3,
+          dueDate: evt.start,
+          labels: ["calendar-sync"],
+          areaId: "default",
+          taskType: "task",
+          createdAt: nowMs,
+          confirmation: {
+            source: "calendar",
+            entityId,
+            externalId: uid,
+            confirmationSource: "ha.calendar_sync",
+            payload: confirmationPayload,
+          },
+        });
+        mutationSummaries.push(evt.summary);
+      }
+    }
 
-          await client.execute({
-            sql: `UPDATE tasks SET
-                    due_date = ?, description = COALESCE(?, description), updated_at = ?,
-                    labels = CASE
-                      WHEN labels IS NULL OR labels = '' OR labels = '[]' THEN '["calendar-sync"]'
-                      WHEN json_valid(labels) AND labels NOT LIKE '%calendar-sync%'
-                      THEN json_insert(labels, '$[#]', 'calendar-sync')
-                      ELSE COALESCE(labels, '[]')
-                    END
-                  WHERE id = ?`,
-            args: [evt.start, inboundDesc, Date.now(), existingTaskId],
-          });
-          updated++;
-        } else {
-          // Create new task from calendar event — atomic ticket_number allocation
-          const taskId = crypto.randomUUID();
-          const reqId = crypto.randomUUID();
-          const nowMs = Date.now();
-
-          // Build description for new task: include location if present
-          const newDescParts: string[] = [];
-          if (evt.location) newDescParts.push(`📍 ${evt.location}`);
-          if (evt.description) newDescParts.push(evt.description);
-          const newDesc = newDescParts.length > 0 ? newDescParts.join('\n\n') : '';
-
-          // Atomic INSERT...SELECT to prevent ticket_number race under concurrent sync
-          await client.execute({
-            sql: `INSERT INTO tasks (id, title, description, status, priority, due_date,
-                    labels, framework_payload, calendar_sync_state, area_id,
-                    custom_fields, task_type, idempotency_key, request_id,
-                    ticket_number, created_at, updated_at)
-                  VALUES (?, ?, ?, 'pending', 3, ?, ?, '{}', 'synced', 'default',
-                    '{}', 'task', ?, ?,
-                    (SELECT COALESCE(MAX(ticket_number), 0) + 1 FROM tasks),
-                    ?, ?)`,
-            args: [
-              taskId,
-              evt.summary,
-              newDesc,
-              evt.start,
-              JSON.stringify(["calendar-sync"]),
-              `cal-sync-${uid}`,
-              reqId,
-              nowMs,
-              nowMs,
-            ],
-          });
-
-          // Record confirmation for deduplication — include source entity for multi-cal tracking
-          await client.execute({
-            sql: `INSERT INTO calendar_confirmations (confirmation_id, task_id, request_id, provider_event_id,
-                    source, payload, created_at) VALUES (?, ?, ?, ?, 'ha.calendar_sync', ?, ?)`,
-            args: [
-              crypto.randomUUID(),
-              taskId,
-              reqId,
-              uid,
-              JSON.stringify({ summary: evt.summary, start: evt.start, end: evt.end, entity_id: entityId }),
-              nowMs,
-            ],
-          });
-
-          created++;
-        }
-      } catch (evtErr) {
-        errors++;
+    if (mutations.length > 0) {
+      const commitRes = await mod.commitSyncMutationChunks(mutations);
+      created += commitRes.created;
+      updated += commitRes.updated;
+      errors += commitRes.errors.length;
+      for (const itemErr of commitRes.errors) {
+        const summary = mutationSummaries[itemErr.index] ?? `index ${itemErr.index}`;
         logger.log("error", {
           event: "calendar.sync.event_error", domain: "calendar", component: "calendar-bridge",
           request_id: SYS_REQ,
-          message: `Failed to process event "${evt.summary}" from ${entityId}: ${evtErr}`,
+          message: `Failed to process event "${summary}" from ${entityId}: ${itemErr.message}`,
         });
-        // Continue processing remaining events — don't let one bad event crash the whole sync
       }
     }
 
@@ -1084,53 +1141,67 @@ async function importCalDAVEvents(): Promise<CalendarSyncCounts> {
         const events = await listCalDAVEvents(config, cal.href, start, end);
         totalEvents += events.length;
 
-        // Batch dedup: pre-fetch all existing UIDs for this calendar in one query
+        // Batch dedup: pre-fetch existing UIDs for this calendar in <= 200-param chunks
         const calUids = events.map((evt) => evt.uid);
-        const uidPlaceholders = calUids.map(() => "?").join(", ");
-        const existingCalRes = calUids.length > 0 ? await client.execute({
-          sql: `SELECT provider_event_id FROM calendar_confirmations WHERE provider_event_id IN (${uidPlaceholders}) AND source = 'caldav'`,
-          args: calUids,
-        }) : { rows: [] };
-        const existingCalUids = new Set(existingCalRes.rows.map((r) => String(r.provider_event_id)));
+        const existingCalUids = new Set<string>();
+        for (let offset = 0; offset < calUids.length; offset += 200) {
+          const chunk = calUids.slice(offset, offset + 200);
+          const uidPlaceholders = chunk.map(() => "?").join(", ");
+          const existingCalRes = await client.execute({
+            sql: `SELECT provider_event_id FROM calendar_confirmations WHERE provider_event_id IN (${uidPlaceholders}) AND source = 'caldav'`,
+            args: chunk,
+          });
+          for (const r of existingCalRes.rows) {
+            existingCalUids.add(String(r.provider_event_id));
+          }
+        }
 
+        const nowMs = Date.now();
+        const calMutations: SyncTaskMutation[] = [];
         for (const evt of events) {
           if (existingCalUids.has(evt.uid)) {
             totalUpdated++;
             continue;
           }
+          existingCalUids.add(evt.uid);
+          calMutations.push({
+            kind: "create",
+            taskId: crypto.randomUUID(),
+            idempotencyKey: `caldav-sync-${evt.uid}`,
+            title: evt.summary,
+            description: evt.description || `📡 CalDAV event from ${cal.displayName}`,
+            status: "backlog",
+            priority: 3,
+            dueDate: evt.dtstart,
+            labels: ["calendar-sync"],
+            areaId: "default",
+            taskType: "task",
+            createdAt: nowMs,
+            confirmation: {
+              source: "calendar",
+              entityId: cal.displayName,
+              externalId: evt.uid,
+              confirmationSource: "caldav",
+              payload: JSON.stringify({
+                summary: evt.summary,
+                dtstart: evt.dtstart,
+                calendar: cal.displayName,
+                entity_id: cal.displayName,
+              }),
+            },
+          });
+        }
 
-          // Create task from CalDAV event — atomic ticket_number allocation
-          const taskId = crypto.randomUUID();
-          const reqId = crypto.randomUUID();
-          const nowMs = Date.now();
-
-          // Commit each task and its dedup confirmation together so a failed import can be retried.
-          await client.batch([{
-            sql: `INSERT INTO tasks (id, title, description, status, priority, due_date,
-                    labels, framework_payload, calendar_sync_state, area_id,
-                    custom_fields, task_type, idempotency_key, request_id,
-                    ticket_number, created_at, updated_at)
-                  VALUES (?, ?, ?, 'backlog', 3, ?, ?, '{}', 'synced', 'default',
-                    '{}', 'task', ?, ?,
-                    (SELECT COALESCE(MAX(ticket_number), 0) + 1 FROM tasks),
-                    ?, ?)`,
-            args: [
-              taskId,
-              evt.summary,
-              evt.description || `📡 CalDAV event from ${cal.displayName}`,
-              evt.dtstart,
-              '["calendar-sync"]',
-              `caldav-sync-${evt.uid}`,
-              reqId,
-              nowMs,
-              nowMs,
-            ],
-          }, {
-            sql: `INSERT INTO calendar_confirmations (confirmation_id, task_id, request_id, provider_event_id, source, payload, created_at)
-                  VALUES (?, ?, ?, ?, 'caldav', ?, ?)`,
-            args: [crypto.randomUUID(), taskId, reqId, evt.uid, JSON.stringify({ summary: evt.summary, dtstart: evt.dtstart, calendar: cal.displayName }), nowMs],
-          }], "write");
-          totalCreated++;
+        if (calMutations.length > 0) {
+          const commitRes = await mod.commitSyncMutationChunks(calMutations);
+          totalCreated += commitRes.created;
+          if (commitRes.errors.length > 0) {
+            failures++;
+            logger.log("warn", {
+              event: "calendar.caldav.calendar_error", domain: "calendar", component: "calendar-bridge",
+              request_id: SYS_REQ, message: "Failed to fetch or import a CalDAV calendar; check server access and database health",
+            });
+          }
         }
       } catch {
         failures++

@@ -33,6 +33,8 @@
         import { commentAttemptHeader, commentMentionContextHeader } from "@lib/comment-mentions"
         import { initModalTaskReferences } from "@lib/controllers/modal-task-references"
         import { resolveDescriptionTaskReferences } from "@lib/task-references"
+        import { saveNavigationState } from "@lib/ingress-state-persistence"
+        import { hasPriorityOverlay } from "@lib/layout-shortcuts-controller"
 
         // Use lifecycle signal for all global listeners in this module
         pageLifecycle.onPageLoad(() => {
@@ -59,6 +61,7 @@
         const pins = initModalTaskPin(tdOverlay, __signal, () => { if (pinnedSession) pinnedSession.dirty = true })
         const closeTaskReferences = initModalTaskReferences(tdOverlay, __signal)
         const tdClose = document.getElementById("td-close")
+        const tdPanel = document.getElementById("task-detail-panel")
         const tdHeading = document.getElementById("td-task-heading")
         const tdActions = document.getElementById("td-task-actions")
         const tdError = document.getElementById("td-load-error")
@@ -90,6 +93,27 @@
         const drawerSession = crypto.randomUUID?.() ?? Array.from(crypto.getRandomValues(new Uint8Array(16)),
           byte => byte.toString(16).padStart(2, "0")).join("")
         tdOverlay.dataset.ticketHistorySession = drawerSession
+
+        const dockMedia = window.matchMedia("(min-width: 1440px)")
+        function setInspectorAriaLabel(label: string) {
+          tdOverlay.setAttribute("aria-label", label)
+          tdPanel?.setAttribute("aria-label", label)
+        }
+        function syncInspectorDockMode() {
+          const isOpen = tdOverlay.classList.contains("active") && !tdOverlay.classList.contains("closing")
+          const docked = isOpen && window.innerWidth >= 1440
+          document.body.classList.toggle("has-docked-inspector", docked)
+          tdPanel?.setAttribute("role", docked ? "region" : "dialog")
+          tdPanel?.setAttribute("aria-modal", docked ? "false" : "true")
+          document.body.style.overflow = isOpen && !docked ? "hidden" : ""
+        }
+        dockMedia.addEventListener("change", syncInspectorDockMode, { signal: __signal })
+        window.addEventListener("resize", syncInspectorDockMode, { passive: true, signal: __signal })
+        __signal.addEventListener("abort", () => {
+          document.body.classList.remove("has-docked-inspector")
+          tdPanel?.setAttribute("role", "dialog")
+          tdPanel?.setAttribute("aria-modal", "true")
+        }, { once: true })
 
         function beginScopedWrite() {
           const search = searchSession
@@ -133,6 +157,7 @@
             if (target.href === url.href) return
             if (ticket !== null) {
               history.replaceState(history.state, "", target)
+              saveNavigationState()
               return
             }
             const legacy = url.searchParams.has("open") || getLegacyTaskId(url.hash) !== null
@@ -145,9 +170,13 @@
               history.replaceState({ ...history.state, ticketBackground: drawerSession }, "")
               history.pushState(state, "", target)
             }
+            saveNavigationState()
           } else if (ticket !== null) {
             if (history.state?.ticketDrawer?.pushed) history.back()
-            else history.replaceState(history.state, "", taskBackgroundUrl(url))
+            else {
+              history.replaceState(history.state, "", taskBackgroundUrl(url))
+              saveNavigationState()
+            }
           }
         }
 
@@ -173,7 +202,7 @@
           const finishClose = () => {
             if (closing !== detailGeneration || currentTaskId !== null || !tdOverlay.classList.contains("active")) return
             tdOverlay.classList.remove("active", "closing");
-            document.body.style.overflow = "";
+            syncInspectorDockMode();
             // D1: Collapse sidebar on close (reset for next open)
             _sidebarProps?.classList.remove("td-sidebar-expanded");
             _sidebarToggle?.setAttribute("aria-expanded", "false");
@@ -195,7 +224,7 @@
             search?.handoff.onDismiss(reason)
           };
 
-          if (reducedMotion || immediate) {
+          if (reducedMotion || immediate || document.body.classList.contains("has-docked-inspector")) {
             finishClose();
             return;
           }
@@ -251,11 +280,10 @@
           if (projectField) projectField.disabled = true
           tdOverlay.classList.remove("closing")
           tdOverlay.classList.add("active");
+          syncInspectorDockMode();
           tdClose?.focus()
-          // Lock body scroll while panel is open (closeTD restores it)
-          document.body.style.overflow = "hidden";
           // Set dynamic aria-label for screen readers
-          tdOverlay.setAttribute("aria-label", `Task detail: loading...`);
+          setInspectorAriaLabel(`Task detail: loading...`);
           // Show skeleton, hide loaded content
           const tdSkeleton = document.getElementById("td-skeleton");
           const tdLoaded = document.getElementById("td-loaded-content");
@@ -270,7 +298,7 @@
             currentTaskId = null
             _isPopulating = false
             if (tdSkeleton) tdSkeleton.style.display = "none"
-            tdOverlay.setAttribute("aria-label", "Task detail")
+            setInspectorAriaLabel("Task detail")
             if (tdError) {
               tdError.textContent = (unavailable ? tdError.dataset.unavailable : tdError.dataset.failed) ?? null
               tdError.hidden = false
@@ -595,7 +623,7 @@
               }, 10);
             }
             // Update aria-label with actual task title for screen readers
-            tdOverlay?.setAttribute("aria-label", `Task detail: ${String(t.title ?? "Untitled")}`);
+            setInspectorAriaLabel(`Task detail: ${String(t.title ?? "Untitled")}`);
 
             // Priority dot color
             const priorityDot = document.getElementById(
@@ -712,8 +740,12 @@
               dueRow.classList.add("hidden");
             }
 
-            (document.getElementById("td-color") as HTMLInputElement).value =
-              String(t.color ?? "#6366F1");
+            const fallbackAccentHex = (() => {
+              const raw = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim()
+              return /^#[0-9a-fA-F]{6}$/.test(raw) ? raw : "#69e3b2"
+            })()
+            ;(document.getElementById("td-color") as HTMLInputElement).value =
+              String(t.color ?? fallbackAccentHex);
             (document.getElementById("td-due-date") as HTMLInputElement).value =
               String(t.due_date ?? "");
             (
@@ -1323,6 +1355,8 @@
         document.addEventListener("keydown", (e) => {
           const panel = document.getElementById("task-detail-panel");
           if (!panel || panel.style.display === "none") return;
+          if (!tdOverlay.classList.contains("active") || hasPriorityOverlay() || !document.getElementById("shortcut-modal")?.classList.contains("hidden")) return;
+          if (document.body.classList.contains("has-docked-inspector") && !panel.contains(document.activeElement)) return;
           if (e.key === "a" && !e.ctrlKey && !e.metaKey && !e.altKey && singleKeyShortcutsEnabled()) {
             const active = document.activeElement as HTMLElement;
             if (
@@ -1779,11 +1813,12 @@
         // Close
         tdClose?.addEventListener("click", () => closeTD(), { signal: __signal })
         tdOverlay?.addEventListener("click", (e) => {
-          if (e.target === tdOverlay) closeTD("discard")
+          if (e.target === tdOverlay && !document.body.classList.contains("has-docked-inspector")) closeTD("discard")
         }, { signal: __signal });
 
         function checkTaskLocation(fromHistory = false) {
           if (waitForDetailWrites(() => checkTaskLocation(fromHistory))) return
+          if (fromHistory) saveNavigationState()
           const url = new URL(window.location.href)
           const taskId = ticketIdFromPath(url.pathname, window.__ingress_path) ?? getLegacyTaskId(url.hash) ?? url.searchParams.get("open")
           const commentTarget = url.searchParams.get("comment")

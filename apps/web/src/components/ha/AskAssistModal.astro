@@ -44,12 +44,12 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
         >
           <option value="">Default Agent</option>
         </select>
-        <button type="button" class="btn-icon" id="refresh-ask-ha-agents" aria-label="Refresh conversation agents" title="Refresh conversation agents">↻</button>
+        <button type="button" class="btn-icon" id="refresh-ask-ha-agents" aria-label="Refresh conversation agents" title="Refresh conversation agents"><Icon name="refresh" size={16} sprite={true} /></button>
         <button
           type="button"
           class="btn-icon text-lg text-text-muted hover:text-text-primary transition-colors"
           id="close-ask-ha-modal"
-          aria-label="Close">✕</button
+          aria-label="Close"><Icon name="x" size={18} sprite={true} /></button
         >
       </div>
     </div>
@@ -74,18 +74,18 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
           <button
             type="button"
             class="ask-hint"
-            data-hint="What tasks are overdue?">📋 Overdue tasks</button
+            data-hint="What tasks are overdue?"><Icon name="clipboard-list" size={14} sprite={true} /> Overdue tasks</button
           >
           <button
             type="button"
             class="ask-hint"
             data-hint="Create a task to review the weekly plan"
-            >✏️ Create a task</button
+            ><Icon name="pencil" size={14} sprite={true} /> Create a task</button
           >
           <button
             type="button"
             class="ask-hint"
-            data-hint="How many active tasks do I have?">📊 Task summary</button
+            data-hint="How many active tasks do I have?"><Icon name="chart-bar" size={14} sprite={true} /> Task summary</button
           >
         </div>
       </div>
@@ -133,6 +133,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
   import { createClientLogger } from "@lib/client-logger";
   import { pageLifecycle } from "@lib/page-lifecycle"
   import { fetchHaAgents, renderHaAgentOptions } from "@lib/ha-agent-picker"
+  import { renderSpriteIconSvg, type IconName } from "../../generated/icon-registry"
 
   pageLifecycle.onPageLoad((pageSignal) => {
   const runtime = window as unknown as { __meithealAskAssist?: AbortController }
@@ -262,16 +263,16 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
   }
 
   /** Response type icon mapping */
-  function getResponseIcon(type: string | null): string {
+  function getResponseIcon(type: string | null): IconName {
     switch (type) {
       case "action_done":
-        return "✅";
+        return "check";
       case "query_answer":
-        return "💬";
+        return "message-circle";
       case "error":
-        return "❌";
+        return "x";
       default:
-        return "🤖";
+        return "message-chatbot";
     }
   }
 
@@ -294,8 +295,8 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
 
     if (!isUser && responseType) {
       const icon = document.createElement("span");
-      icon.className = "ask-bubble__icon";
-      icon.textContent = getResponseIcon(responseType);
+      icon.className = "ask-bubble__icon inline-flex items-center";
+      icon.innerHTML = renderSpriteIconSvg(getResponseIcon(responseType), { size: 15 });
       icon.setAttribute("aria-hidden", "true");
       bubble.appendChild(icon);
     }
@@ -554,6 +555,9 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
     margin-top: 4px;
   }
   .ask-hint {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
     background: var(--bg-secondary);
     border: 1px solid var(--border);
     border-radius: 20px;

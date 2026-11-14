@@ -11,6 +11,8 @@ import {
   ensureSchema,
   getPersistenceClient,
 } from "@domains/tasks/persistence/store";
+import { taskTimestampMs } from "@domains/tasks/persistence/task-timestamp";
+import type { InValue } from "@libsql/client";
 import { deriveEisenhowerQuadrant } from "@meitheal/domain-tasks";
 import { frameworkPayloadObject, readRiceInputs, riceLensScore } from "./rice-lens"
 
@@ -22,6 +24,7 @@ export interface TaskViewItem {
   id: string;
   title: string;
   description: string | null;
+  has_description?: boolean | undefined;
   status: string;
   priority: number;
   due_date: string | null;
@@ -42,6 +45,8 @@ export interface TaskViewItem {
   ticket_number: number | null;
   assigned_to: string | null;
   checklists: string | null;
+  checklist_total?: number | undefined;
+  checklist_done?: number | undefined;
   created_at: string;
   updated_at: string;
   deferred_at: number | null
@@ -55,6 +60,19 @@ export interface TaskViewItem {
   effort_minutes: number | null;
   effort_type: string | null;
   blocked_by: string | null;
+}
+
+export interface TaskViewOptions {
+  requireAvailable?: boolean | undefined;
+  statuses?: string[] | undefined;
+  excludeStatuses?: string[] | undefined;
+  includeDeferred?: boolean | undefined;
+  excludeCompletedBeforeMs?: number | undefined;
+  areaId?: string | undefined;
+  projectId?: string | undefined;
+  slim?: boolean | undefined;
+  descriptionPreviewChars?: number | undefined;
+  limit?: number | undefined;
 }
 
 export interface TaskViewResult {
@@ -115,11 +133,33 @@ const TASK_VIEW_COLUMNS = `
   effort_minutes, effort_type, blocked_by
 `;
 
+function localTodayIso(): string {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
 /**
- * Load all tasks with computed fields for any task view page.
- * Returns structured task items with RICE scores, overdue flags, and counts.
+ * Load tasks with computed fields for any task view page.
+ * Supports optional SQL pushdown predicates and `slim: true` checklist scalar projection
+ * while preserving global unfiltered header badge counts.
  */
-export async function getTasksForView({ requireAvailable = false } = {}): Promise<TaskViewResult> {
+export async function getTasksForView(options: TaskViewOptions = {}): Promise<TaskViewResult> {
+  const {
+    requireAvailable = false,
+    statuses,
+    excludeStatuses,
+    includeDeferred,
+    excludeCompletedBeforeMs,
+    areaId,
+    projectId,
+    slim = false,
+    descriptionPreviewChars,
+    limit,
+  } = options;
+
   const emptyResult: TaskViewResult = {
     tasks: [],
     counts: { total: 0, open: 0, active: 0, pending: 0, complete: 0, overdue: 0 },
@@ -129,7 +169,87 @@ export async function getTasksForView({ requireAvailable = false } = {}): Promis
   try {
     await ensureSchema();
     const client = getPersistenceClient();
-    const result = await client.execute(`SELECT ${TASK_VIEW_COLUMNS} FROM tasks ORDER BY created_at DESC`);
+
+    const selectArgs: InValue[] = [];
+    const previewChars =
+      typeof descriptionPreviewChars === "number" &&
+      Number.isInteger(descriptionPreviewChars) &&
+      descriptionPreviewChars > 0
+        ? descriptionPreviewChars
+        : null;
+
+    let columnsSql = TASK_VIEW_COLUMNS;
+    if (slim) {
+      const descriptionExpr = previewChars !== null
+        ? "CASE WHEN description IS NOT NULL THEN substr(description, 1, ?) ELSE NULL END AS description"
+        : "description";
+      if (previewChars !== null) selectArgs.push(previewChars);
+      columnsSql = `
+        id, title, ${descriptionExpr},
+        CASE WHEN description IS NOT NULL AND length(trim(description)) > 0 THEN 1 ELSE 0 END AS has_description,
+        status, priority, due_date, labels,
+        framework_payload, calendar_sync_state, area_id, project_id, custom_fields,
+        start_date, end_date, progress, color, is_favorite, task_type, task_kind,
+        parent_id, ticket_number, assigned_to,
+        NULL AS checklists,
+        CASE WHEN json_valid(checklists) THEN json_array_length(checklists) ELSE 0 END AS checklist_total,
+        (SELECT COUNT(*) FROM json_each(CASE WHEN json_valid(tasks.checklists) THEN tasks.checklists ELSE '[]' END) WHERE json_extract(value, '$.done') = 1) AS checklist_done,
+        created_at, updated_at, deferred_at,
+        urgency, importance, eisenhower_override,
+        effort_minutes, effort_type, blocked_by
+      `;
+    } else if (previewChars !== null) {
+      selectArgs.push(previewChars);
+      columnsSql = `
+        id, title,
+        CASE WHEN description IS NOT NULL THEN substr(description, 1, ?) ELSE NULL END AS description,
+        status, priority, due_date, labels,
+        framework_payload, calendar_sync_state, area_id, project_id, custom_fields,
+        start_date, end_date, progress, color, is_favorite, task_type, task_kind,
+        parent_id, ticket_number, assigned_to, checklists, created_at, updated_at, deferred_at,
+        urgency, importance, eisenhower_override,
+        effort_minutes, effort_type, blocked_by
+      `;
+    }
+
+    const whereClauses: string[] = [];
+    if (Array.isArray(statuses) && statuses.length > 0) {
+      whereClauses.push(`status IN (${statuses.map(() => "?").join(", ")})`);
+      selectArgs.push(...statuses);
+    }
+    if (Array.isArray(excludeStatuses) && excludeStatuses.length > 0) {
+      whereClauses.push(`status NOT IN (${excludeStatuses.map(() => "?").join(", ")})`);
+      selectArgs.push(...excludeStatuses);
+    }
+    if (includeDeferred === false) {
+      whereClauses.push("deferred_at IS NULL");
+    }
+    if (typeof excludeCompletedBeforeMs === "number" && Number.isFinite(excludeCompletedBeforeMs)) {
+      whereClauses.push(`(status != 'complete' OR ${taskTimestampMs("updated_at")} >= ?)`);
+      selectArgs.push(excludeCompletedBeforeMs);
+    }
+    if (typeof areaId === "string" && areaId.length > 0) {
+      whereClauses.push("area_id = ?");
+      selectArgs.push(areaId);
+    }
+    if (typeof projectId === "string" && projectId.length > 0) {
+      whereClauses.push("project_id = ?");
+      selectArgs.push(projectId);
+    }
+
+    const hasPushdownFilter =
+      whereClauses.length > 0 || (typeof limit === "number" && Number.isFinite(limit) && limit > 0);
+    const whereSql = whereClauses.length > 0 ? ` WHERE ${whereClauses.join(" AND ")}` : "";
+    let limitSql = "";
+    if (typeof limit === "number" && Number.isFinite(limit) && limit > 0) {
+      limitSql = " LIMIT ?";
+      selectArgs.push(Math.floor(limit));
+    }
+
+    const result = await client.execute({
+      sql: `SELECT ${columnsSql} FROM tasks${whereSql} ORDER BY created_at DESC${limitSql}`,
+      args: selectArgs,
+    });
     const rows = result.rows as Record<string, unknown>[];
 
     // Load custom field definitions
@@ -147,8 +267,40 @@ export async function getTasksForView({ requireAvailable = false } = {}): Promis
 
     const counts = { total: 0, open: 0, active: 0, pending: 0, complete: 0, overdue: 0 };
 
+    if (slim || hasPushdownFilter) {
+      const todayIso = localTodayIso();
+      const countRes = await client.execute({
+        sql: `
+          SELECT COUNT(*) AS total,
+                 COUNT(*) FILTER (WHERE status = 'complete') AS complete,
+                 COUNT(*) FILTER (WHERE status != 'complete' AND deferred_at IS NULL) AS open,
+                 COUNT(*) FILTER (WHERE status = 'active' AND deferred_at IS NULL) AS active,
+                 COUNT(*) FILTER (WHERE status != 'complete' AND status != 'active' AND deferred_at IS NULL) AS pending,
+                 COUNT(*) FILTER (
+                   WHERE status != 'complete'
+                     AND deferred_at IS NULL
+                     AND due_date IS NOT NULL
+                     AND due_date != ''
+                     AND substr(due_date, 1, 10) < ?
+                 ) AS overdue
+          FROM tasks
+        `,
+        args: [todayIso],
+      });
+      const cr = (countRes.rows[0] ?? {}) as Record<string, unknown>;
+      counts.total = Number(cr.total ?? 0);
+      counts.complete = Number(cr.complete ?? 0);
+      counts.open = Number(cr.open ?? 0);
+      counts.active = Number(cr.active ?? 0);
+      counts.pending = Number(cr.pending ?? 0);
+      counts.overdue = Number(cr.overdue ?? 0);
+
+      const tasks = rows.map((row) => toTaskViewItem(row, slim));
+      return { tasks, counts, customFieldDefs };
+    }
+
     const tasks = rows.map((row) => {
-      const task = toTaskViewItem(row);
+      const task = toTaskViewItem(row, false);
       counts.total++;
       if (task.is_done) counts.complete++;
       else if (task.deferred_at === null) {
@@ -167,7 +319,7 @@ export async function getTasksForView({ requireAvailable = false } = {}): Promis
   }
 }
 
-function toTaskViewItem(row: Record<string, unknown>): TaskViewItem {
+function toTaskViewItem(row: Record<string, unknown>, slim = false): TaskViewItem {
   const status = String(row.status ?? "pending");
   const priority = Number(row.priority ?? 3);
   const isDone = status === "complete";
@@ -178,7 +330,7 @@ function toTaskViewItem(row: Record<string, unknown>): TaskViewItem {
   const deferredAt = row.deferred_at == null ? null : Number(row.deferred_at)
   const overdue = deferredAt === null && isOverdue(dueDate, isDone);
 
-  return {
+  const item: TaskViewItem = {
     id: String(row.id),
     title: String(row.title),
     description: row.description ? String(row.description) : null,
@@ -201,7 +353,7 @@ function toTaskViewItem(row: Record<string, unknown>): TaskViewItem {
     parent_id: row.parent_id ? String(row.parent_id) : null,
     ticket_number: row.ticket_number ? Number(row.ticket_number) : null,
     assigned_to: row.assigned_to ? String(row.assigned_to) : null,
-    checklists: row.checklists ? String(row.checklists) : null,
+    checklists: slim ? null : (row.checklists ? String(row.checklists) : null),
     created_at: String(row.created_at),
     updated_at: String(row.updated_at),
     deferred_at: deferredAt,
@@ -216,6 +368,14 @@ function toTaskViewItem(row: Record<string, unknown>): TaskViewItem {
     effort_type: row.effort_type ? String(row.effort_type) : null,
     blocked_by: row.blocked_by ? String(row.blocked_by) : null,
   };
+
+  if (slim) {
+    item.has_description = Boolean(Number(row.has_description ?? 0));
+    item.checklist_total = Number(row.checklist_total ?? 0);
+    item.checklist_done = Number(row.checklist_done ?? 0);
+  }
+
+  return item;
 }
 
 const TODAY_COMPLETION_COUNT = `
@@ -284,7 +444,7 @@ export async function getTodayTaskRows(today: string, includeUnscheduled: boolea
     return {
       completedTodayCount: Number(rows[0]?.completed_today ?? 0),
       openUnscheduledCount: Number(rows[0]?.open_unscheduled ?? 0),
-      tasks: rows.filter(row => row.id !== null).map(toTaskViewItem),
+      tasks: rows.filter(row => row.id !== null).map(row => toTaskViewItem(row as Record<string, unknown>, false)),
     }
   } catch {
     return { completedTodayCount: 0, openUnscheduledCount: 0, tasks: [] }

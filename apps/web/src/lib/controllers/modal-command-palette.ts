@@ -58,7 +58,8 @@ export function initCommandPalette({ openTaskDetail, __signal }: CommandPaletteD
   document.addEventListener(
     "keydown",
     (e) => {
-      if (e.defaultPrevented || tdOverlay?.classList.contains("active")) return
+      const modalTdOpen = tdOverlay?.classList.contains("active") && !document.body.classList.contains("has-docked-inspector")
+      if (e.defaultPrevented || modalTdOpen) return
       if ((e.ctrlKey || e.metaKey) && e.key === "k") {
         e.preventDefault()
         if (cpOverlay?.classList.contains("hidden")) openCP()

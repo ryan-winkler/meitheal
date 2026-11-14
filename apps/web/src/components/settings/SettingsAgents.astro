@@ -2,6 +2,7 @@
 import { t } from "../../i18n/translations"
 import type { Locale } from "../../lib/locale"
 import { canManageSystemSettings } from "../../lib/settings-security"
+import Icon from "../ui/Icon.astro"
 import SettingsPanelCard from "./SettingsPanelCard.astro"
 
 /**
@@ -31,7 +32,7 @@ const canManageAi = canManageSystemSettings(Astro.request, Astro.locals)
       <div class="integration-section">
         <div class="integration-header">
           <div>
-            <strong>{t("settings.ha_agent_title", locale)}</strong>
+            <strong class="inline-flex items-center gap-1.5"><Icon name="home" size={16} sprite={true} /> <span>{t("settings.ha_agent_title", locale)}</span></strong>
             <div class="integration-desc">
               {t("settings.ha_agent_desc", locale)}
             </div>
@@ -141,7 +142,7 @@ const canManageAi = canManageSystemSettings(Astro.request, Astro.locals)
       <div class="integration-section">
         <div class="integration-header">
           <div>
-            <strong>{t("settings.agent_protocols_title", locale)}</strong>
+            <strong class="inline-flex items-center gap-1.5"><Icon name="link" size={16} sprite={true} /> <span>{t("settings.agent_protocols_title", locale)}</span></strong>
             <div class="integration-desc">
               {t("settings.agent_protocols_desc", locale)}
             </div>

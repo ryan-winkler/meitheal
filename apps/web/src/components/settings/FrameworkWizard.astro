@@ -1,4 +1,6 @@
 ---
+import Icon from "../ui/Icon.astro"
+
 /**
  * FrameworkWizard.astro — 5-step modal wizard for creating custom frameworks
  *
@@ -19,7 +21,7 @@
   <div class="fw-wizard-content">
     <header class="fw-wizard-header">
       <h3 class="fw-wizard-title">Create Custom Framework</h3>
-      <button class="fw-wizard-close" data-action="close" type="button" aria-label="Close">&times;</button>
+      <button class="fw-wizard-close" data-action="close" type="button" aria-label="Close"><Icon name="x" size={18} sprite={true} /></button>
     </header>
 
     <!-- Step Indicator -->
@@ -71,7 +73,7 @@
           <label class="fw-archetype-option">
             <input type="radio" name="fw-archetype" value="formula" checked />
             <div class="fw-archetype-card">
-              <span class="fw-archetype-icon">🧮</span>
+              <span class="fw-archetype-icon"><Icon name="calculator" size={22} sprite={true} /></span>
               <strong>Formula</strong>
               <small>Calculate a score from field values</small>
             </div>
@@ -79,7 +81,7 @@
           <label class="fw-archetype-option">
             <input type="radio" name="fw-archetype" value="matrix" />
             <div class="fw-archetype-card">
-              <span class="fw-archetype-icon">📊</span>
+              <span class="fw-archetype-icon"><Icon name="chart-bar" size={22} sprite={true} /></span>
               <strong>Matrix</strong>
               <small>Multi-dimensional scoring grid</small>
             </div>
@@ -87,7 +89,7 @@
           <label class="fw-archetype-option">
             <input type="radio" name="fw-archetype" value="taxonomy" />
             <div class="fw-archetype-card">
-              <span class="fw-archetype-icon">🏷️</span>
+              <span class="fw-archetype-icon"><Icon name="tag" size={22} sprite={true} /></span>
               <strong>Taxonomy</strong>
               <small>Categorization / classification</small>
             </div>
@@ -95,7 +97,7 @@
           <label class="fw-archetype-option">
             <input type="radio" name="fw-archetype" value="workflow" />
             <div class="fw-archetype-card">
-              <span class="fw-archetype-icon">✅</span>
+              <span class="fw-archetype-icon"><Icon name="checkbox" size={22} sprite={true} /></span>
               <strong>Workflow</strong>
               <small>Step-by-step checklist</small>
             </div>
@@ -123,7 +125,7 @@
               <option value="number">Number</option>
               <option value="select">Select</option>
             </select>
-            <button class="btn btn-ghost btn-sm fw-field-remove" type="button" title="Remove field">✕</button>
+            <button class="btn btn-ghost btn-sm fw-field-remove" type="button" title="Remove field"><Icon name="x" size={14} sprite={true} /></button>
           </div>
           <div class="fw-field-editor-body">
             <div class="fw-field-editor-row">
@@ -184,7 +186,7 @@
             <option value="bg-secondary">⚪ Neutral</option>
             <option value="bg-primary">🔵 Primary</option>
           </select>
-          <button class="btn btn-ghost btn-sm fw-badge-remove" type="button" title="Remove">✕</button>
+          <button class="btn btn-ghost btn-sm fw-badge-remove" type="button" title="Remove"><Icon name="x" size={14} sprite={true} /></button>
         </div>
       </template>
     </div>
@@ -225,8 +227,7 @@
     overflow: hidden;
   }
   .fw-wizard-dialog::backdrop {
-    background: rgba(0, 0, 0, 0.5);
-    backdrop-filter: blur(4px);
+    background: rgba(0, 0, 0, 0.62);
   }
   .fw-wizard-backdrop {
     display: none;

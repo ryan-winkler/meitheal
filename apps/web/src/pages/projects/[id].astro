@@ -65,7 +65,7 @@ try {
 const projTitle = String(project?.title ?? "Project");
 const projDesc = project?.description ? String(project.description) : null;
 const projIcon = String(project?.icon ?? "📋");
-const projColor = String(project?.color ?? "#6366F1");
+const projColor = String(project?.color ?? "#146C4E");
 const projStatus = String(project?.status ?? "active");
 
 const completedCount = tasks.filter((t) => String(t.status) === "complete").length;
@@ -758,7 +758,7 @@ const tabs = [
           title,
           description: descInput?.value?.trim() || null,
           icon: iconInput?.value?.trim() || "📋",
-          color: colorInput?.value || "#6366F1",
+          color: colorInput?.value || "#146C4E",
           status: statusSelect?.value || "active",
           goal_id: goalSelect?.value || null,
         }),

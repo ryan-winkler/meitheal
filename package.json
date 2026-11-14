@@ -12,6 +12,9 @@
     "url": "https://github.com/ryan-winkler/meitheal/issues"
   },
   "packageManager": "pnpm@10.34.9",
+  "engines": {
+    "node": ">=22.23.4"
+  },
   "scripts": {
     "build:image": "bash scripts/build-image.sh",
     "check": "pnpm -r --if-present check",

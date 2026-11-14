@@ -1,4 +1,6 @@
 ---
+import Icon from "../ui/Icon.astro"
+
 /**
  * GamificationWidget — Dashboard progress ring + weekly bar chart
  *
@@ -71,13 +73,13 @@ function dayLabel(dateStr: string): string {
 
   {/* Motivational copy */}
   {stats.todayCompleted === 0 && (
-    <p class="gam-motivation">Complete a task to start today's streak! 🚀</p>
+    <p class="gam-motivation"><Icon name="rocket" size={14} sprite={true} class="inline-block align-text-bottom mr-1" />Complete a task to start today's streak!</p>
   )}
   {stats.todayCompleted > 0 && progress < 1 && (
     <p class="gam-motivation">{dailyGoal - stats.todayCompleted} more to hit your daily goal</p>
   )}
   {progress >= 1 && (
-    <p class="gam-motivation gam-motivation--success">🎉 Daily goal smashed!</p>
+    <p class="gam-motivation gam-motivation--success"><Icon name="confetti" size={14} sprite={true} class="inline-block align-text-bottom mr-1" />Daily goal smashed!</p>
   )}
 
   {/* Stats row — with level */}
@@ -92,7 +94,7 @@ function dayLabel(dateStr: string): string {
     </div>
     <div class="gam-stat">
       <span class="gam-stat__value">
-        {stats.currentStreak > 0 ? `🔥 ${stats.currentStreak}` : stats.longestStreak}
+        {stats.currentStreak > 0 ? <span class="inline-flex items-center justify-center gap-1"><Icon name="flame" size={15} sprite={true} />{stats.currentStreak}</span> : stats.longestStreak}
       </span>
       <span class="gam-stat__label">
         {stats.currentStreak > 0 ? 'Streak' : 'Best'}
@@ -113,7 +115,7 @@ function dayLabel(dateStr: string): string {
     <div class="gam-weekly__title">This Week</div>
     {maxCompleted === 0 || maxCompleted === dailyGoal && weekly.every(d => d.completedCount === 0) ? (
       <div class="gam-weekly__empty" style="height: 60px; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; color: var(--text-muted); font-size: 0.75rem;">
-        <span style="font-size: 1.25rem; opacity: 0.5; margin-bottom: 4px;">📊</span>
+        <span style="opacity: 0.5; margin-bottom: 4px; display: inline-flex;"><Icon name="chart-bar" size={20} sprite={true} /></span>
         <p style="margin: 0; line-height: 1.2;">No tasks yet.<br/>You got this!</p>
       </div>
     ) : (
@@ -174,7 +176,7 @@ function dayLabel(dateStr: string): string {
 
   .gam-ring__fill {
     fill: none;
-    stroke: var(--accent, #6366f1);
+    stroke: var(--accent);
     stroke-width: 6;
     stroke-linecap: round;
     transition: stroke-dashoffset 0.6s ease;
@@ -182,7 +184,6 @@ function dayLabel(dateStr: string): string {
 
   .gam-ring--complete .gam-ring__fill {
     stroke: #22c55e;
-    filter: drop-shadow(0 0 6px rgba(34, 197, 94, 0.4));
   }
 
   /* Motivational copy */
@@ -282,7 +283,7 @@ function dayLabel(dateStr: string): string {
   .gam-bar {
     width: 100%;
     border-radius: 3px 3px 0 0;
-    background: var(--accent, #6366f1);
+    background: var(--accent);
     opacity: 0.5;
     transition: height 0.3s ease, opacity 0.15s;
     min-height: 2px;
@@ -294,7 +295,7 @@ function dayLabel(dateStr: string): string {
 
   .gam-bar--today {
     opacity: 1;
-    background: linear-gradient(to top, var(--accent, #6366f1), hsl(250 80% 70%));
+    background: var(--accent);
   }
 
   .gam-bar-label {
@@ -323,7 +324,7 @@ function dayLabel(dateStr: string): string {
 
   .gam-level-progress__fill {
     height: 100%;
-    background: linear-gradient(90deg, var(--accent, #6366f1), hsl(250 80% 70%));
+    background: var(--accent);
     border-radius: 2px;
     transition: width 0.6s ease;
     min-width: 1px;
