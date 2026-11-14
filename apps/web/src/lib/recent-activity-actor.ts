@@ -67,7 +67,13 @@ export function resolveVerifiedProvenanceLink(
   locale: Locale,
 ): ProvenanceLink {
   const safeTarget = sanitizeOriginTarget(provenance.originTarget)
-  if (safeTarget && !safeTarget.startsWith("/settings")) {
+  const isSettingsTarget = safeTarget !== null && (
+    safeTarget === "/settings"
+    || safeTarget.startsWith("/settings#")
+    || safeTarget.startsWith("/settings?")
+    || safeTarget.startsWith("/settings/")
+  )
+  if (safeTarget && !isSettingsTarget) {
     const label =
       provenance.originKind === "conversation_agent"
         ? (locale === "ga" ? "Oscail Cúntóirí Gutha" : "Open Voice Assistants")

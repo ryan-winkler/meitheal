@@ -16,7 +16,7 @@
  *
  * MVP scope:
  *   - VEVENT only (no VTODO, VJOURNAL)
- *   - Single events only (no RRULE expansion)
+ *   - Supports VEVENT recurrence expansion (RRULE / EXDATE)
  *   - Read-only (no write-back to CalDAV)
  *
  * @domain calendar
@@ -72,14 +72,34 @@ export interface CalDAVEvent {
 
 /** Private/reserved IP ranges that MUST be rejected */
 const PRIVATE_RANGES = [
-  /^127\./, /^10\./, /^172\.(1[6-9]|2\d|3[01])\./, /^192\.168\./,
-  /^169\.254\./, /^0\./, /^fc00:/i, /^fd/i, /^fe80:/i, /^::1$/,
+  /^127\./,
+  /^10\./,
+  /^172\.(1[6-9]|2\d|3[01])\./,
+  /^192\.168\./,
+  /^169\.254\./,
+  /^0\./,
+  /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./, // RFC 6598 CGNAT
+  /^fc[0-9a-f]{2}:/i,
+  /^fd[0-9a-f]{2}:/i,
+  /^fe[89ab][0-9a-f]:/i,
+  /^::1$/,
+  /^::$/,
+  /^::ffff:/i,
+  /^0+(?::0+){4}:ffff:/i,
 ];
 
 const BLOCKED_HOSTNAMES = [
   "localhost", "metadata.google.internal", "instance-data",
   "metadata.internal", "169.254.169.254",
 ];
+
+function normalizeHostname(rawHostname: string): string {
+  const lower = rawHostname.toLowerCase().replace(/\.+$/, "");
+  if (lower.startsWith("[") && lower.endsWith("]")) {
+    return lower.slice(1, -1);
+  }
+  return lower;
+}
 
 /**
  * Validate a CalDAV URL for SSRF safety.
@@ -95,8 +115,8 @@ export function validateCalDAVUrl(rawUrl: string): { valid: boolean; error?: str
     }
 
     // Block known dangerous hostnames
-    const hostname = url.hostname.toLowerCase();
-    if (BLOCKED_HOSTNAMES.some((h) => hostname === h || hostname.endsWith(`.${h}`))) {
+    const hostname = normalizeHostname(url.hostname);
+    if (!hostname || BLOCKED_HOSTNAMES.some((h) => hostname === h || hostname.endsWith(`.${h}`))) {
       return { valid: false, error: `Hostname "${hostname}" is blocked for security` };
     }
 
@@ -134,6 +154,11 @@ async function caldavFetch(
   username: string, password: string,
   extraHeaders: Record<string, string> = {},
 ): Promise<{ status: number; text: string }> {
+  const urlCheck = validateCalDAVUrl(url);
+  if (!urlCheck.valid) {
+    throw new Error(`CalDAV URL validation failed: ${urlCheck.error}`);
+  }
+
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
@@ -146,6 +171,7 @@ async function caldavFetch(
         ...extraHeaders,
       },
       body,
+      redirect: "error",
       signal: controller.signal,
     });
 
@@ -170,51 +196,108 @@ async function caldavFetch(
 
 // ─── XML Parsing (XXE-safe) ─────────────────────────────────────────
 
+function unwrapCdata(raw: string): string {
+  const trimmed = raw.trim();
+  if (trimmed.startsWith("<![CDATA[") && trimmed.endsWith("]]>")) {
+    return trimmed.slice(9, -3).trim();
+  }
+  return trimmed;
+}
+
+function isTagBoundaryChar(ch: string | undefined): boolean {
+  return ch === ">" || ch === "/" || ch === " " || ch === "\t" || ch === "\n" || ch === "\r";
+}
+
+function findNextOpenTag(lowerXml: string, localName: string, fromIndex: number): {
+  contentStart: number;
+  selfClosing: boolean;
+  tagName: string;
+} | null {
+  let cursor = fromIndex;
+  while (cursor < lowerXml.length) {
+    const lt = lowerXml.indexOf("<", cursor);
+    if (lt === -1) return null;
+    if (lowerXml.startsWith("</", lt) || lowerXml.startsWith("<!", lt) || lowerXml.startsWith("<?", lt)) {
+      const close = lowerXml.indexOf(">", lt + 2);
+      cursor = close === -1 ? lowerXml.length : close + 1;
+      continue;
+    }
+    const gt = lowerXml.indexOf(">", lt + 1);
+    if (gt === -1) return null;
+    const header = lowerXml.slice(lt + 1, gt);
+    let endName = 0;
+    while (endName < header.length && !isTagBoundaryChar(header[endName])) {
+      endName++;
+    }
+    const fullTagName = header.slice(0, endName);
+    const colonIdx = fullTagName.indexOf(":");
+    const tagLocal = colonIdx === -1 ? fullTagName : fullTagName.slice(colonIdx + 1);
+    if (tagLocal === localName) {
+      const selfClosing = header.trimEnd().endsWith("/");
+      return { contentStart: gt + 1, selfClosing, tagName: fullTagName };
+    }
+    cursor = gt + 1;
+  }
+  return null;
+}
+
+function extractTagContents(xml: string, localName: string): string[] {
+  const lower = xml.toLowerCase();
+  const target = localName.toLowerCase();
+  const results: string[] = [];
+  let cursor = 0;
+
+  while (cursor < lower.length) {
+    const open = findNextOpenTag(lower, target, cursor);
+    if (!open) break;
+    if (open.selfClosing) {
+      cursor = open.contentStart;
+      continue;
+    }
+    const closeToken = `</${open.tagName}>`;
+    const closeIdx = lower.indexOf(closeToken, open.contentStart);
+    if (closeIdx === -1) {
+      cursor = open.contentStart;
+      continue;
+    }
+    results.push(xml.slice(open.contentStart, closeIdx));
+    cursor = closeIdx + closeToken.length;
+  }
+
+  return results;
+}
+
 /**
- * Parse XML string safely. Uses regex-based extraction to avoid
- * XXE vulnerabilities from DOM parsers with external entity resolution.
- *
- * This is intentionally minimal — we only need to extract specific
- * CalDAV/WebDAV properties, not build a full DOM.
+ * Parse XML string safely with linear tag scanning to prevent XXE
+ * declarations and regular-expression backtracking (ReDoS).
  */
-function extractXmlResponses(xml: string): Array<{ href: string; props: Record<string, string> }> {
-  // Strip any DOCTYPE declarations (XXE prevention)
-  const safeXml = xml.replace(/<!DOCTYPE[^>]*>/gi, "");
+export function extractXmlResponses(xml: string): Array<{ href: string; props: Record<string, string> }> {
+  // Reject DOCTYPE/ENTITY declarations fail-closed (handles internal DTD subsets too).
+  if (/<!(?:DOCTYPE|ENTITY)\b/i.test(xml)) {
+    throw new Error("Rejected CalDAV XML response containing unsafe DOCTYPE or ENTITY declaration");
+  }
 
   const responses: Array<{ href: string; props: Record<string, string> }> = [];
+  for (const block of extractTagContents(xml, "response")) {
+    const hrefRaw = extractTagContents(block, "href")[0];
+    if (hrefRaw === undefined) continue;
 
-  // Match each <d:response> or <D:response> or <response> block
-  const responseRegex = /<(?:[a-zA-Z]+:)?response\b[^>]*>([\s\S]*?)<\/(?:[a-zA-Z]+:)?response>/gi;
-  let match;
-
-  while ((match = responseRegex.exec(safeXml)) !== null) {
-    const block = match[1]!;
-
-    // Extract href
-    const hrefMatch = block.match(/<(?:[a-zA-Z]+:)?href[^>]*>([\s\S]*?)<\/(?:[a-zA-Z]+:)?href>/i);
-    if (!hrefMatch) continue;
-
-    const href = hrefMatch[1]!.trim();
+    const href = unwrapCdata(hrefRaw);
     const props: Record<string, string> = {};
 
-    // Extract displayname
-    const dnMatch = block.match(/<(?:[a-zA-Z]+:)?displayname[^>]*>([\s\S]*?)<\/(?:[a-zA-Z]+:)?displayname>/i);
-    if (dnMatch) props.displayname = dnMatch[1]!.trim();
+    const dnRaw = extractTagContents(block, "displayname")[0];
+    if (dnRaw !== undefined) props.displayname = unwrapCdata(dnRaw);
 
-    // Extract getctag
-    const ctagMatch = block.match(/<(?:[a-zA-Z]+:)?getctag[^>]*>([\s\S]*?)<\/(?:[a-zA-Z]+:)?getctag>/i);
-    if (ctagMatch) props.ctag = ctagMatch[1]!.trim();
+    const ctagRaw = extractTagContents(block, "getctag")[0];
+    if (ctagRaw !== undefined) props.ctag = unwrapCdata(ctagRaw);
 
-    // Extract calendar-color
-    const colorMatch = block.match(/<(?:[a-zA-Z]+:)?calendar-color[^>]*>([\s\S]*?)<\/(?:[a-zA-Z]+:)?calendar-color>/i);
-    if (colorMatch) props.color = colorMatch[1]!.trim();
+    const colorRaw = extractTagContents(block, "calendar-color")[0];
+    if (colorRaw !== undefined) props.color = unwrapCdata(colorRaw);
 
-    // Extract calendar-data (iCalendar content)
-    const calDataMatch = block.match(/<(?:[a-zA-Z]+:)?calendar-data[^>]*>([\s\S]*?)<\/(?:[a-zA-Z]+:)?calendar-data>/i);
-    if (calDataMatch) props.calendarData = calDataMatch[1]!.trim();
+    const calDataRaw = extractTagContents(block, "calendar-data")[0];
+    if (calDataRaw !== undefined) props.calendarData = unwrapCdata(calDataRaw);
 
-    // Check for resourcetype calendar
-    if (block.match(/<(?:[a-zA-Z]+:)?calendar\s*\/?\s*>/i)) {
+    if (findNextOpenTag(block.toLowerCase(), "calendar", 0) !== null) {
       props.isCalendar = "true";
     }
 
@@ -646,9 +729,17 @@ export async function listCalDAVEvents(
     throw new Error(`CalDAV URL validation failed: ${validation.error}`);
   }
 
-  // Build absolute URL for the calendar
+  // Build absolute URL for the calendar and keep requests strictly same-origin & SSRF-validated
   const baseUrl = new URL(config.url);
-  const calUrl = new URL(calendarHref, baseUrl).toString();
+  const resolvedCalUrl = new URL(calendarHref, baseUrl);
+  if (resolvedCalUrl.origin !== baseUrl.origin) {
+    throw new Error(`Rejected cross-origin CalDAV calendar href "${calendarHref}"`);
+  }
+  const calUrl = resolvedCalUrl.toString();
+  const calValidation = validateCalDAVUrl(calUrl);
+  if (!calValidation.valid) {
+    throw new Error(`CalDAV calendar URL validation failed: ${calValidation.error}`);
+  }
 
   const startStr = toICalUTC(start);
   const endStr = toICalUTC(end);

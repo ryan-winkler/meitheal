@@ -23,7 +23,10 @@ import {
 } from "../../apps/web/src/domains/calendar/recurrence"
 import {
   expandCalDAVEventsInWindow,
+  extractXmlResponses,
+  listCalDAVEvents,
   parseVEvents,
+  validateCalDAVUrl,
 } from "../../apps/web/src/domains/calendar/caldav-client"
 import {
   calendarDayFromInput,
@@ -89,6 +92,67 @@ test.describe("calendar recurrence engine", () => {
     expect(inferRRuleFromDates(["2026-11-13T08:00:00Z", "2026-11-14T08:00:00Z", "2026-11-15T08:00:00Z"], "Europe/Dublin")).toBe("FREQ=DAILY")
     expect(inferRRuleFromDates(["2026-11-13T08:00:00Z", "2026-11-20T08:00:00Z", "2026-11-27T08:00:00Z"], "Europe/Dublin")).toBe("FREQ=WEEKLY;BYDAY=FR")
     expect(inferRRuleFromDates(["2026-10-13T08:00:00Z", "2026-11-13T08:00:00Z", "2026-12-13T08:00:00Z"], "Europe/Dublin")).toBe("FREQ=MONTHLY")
+  })
+
+  test("expands long-running daily series >500 days after dtstart and excludes floating EXDATE", () => {
+    const hits = expandRRuleOccurrences({
+      dtstart: "2024-01-01T09:00:00",
+      dtend: "2024-01-01T10:00:00",
+      rrule: "FREQ=DAILY",
+      exdates: ["2026-06-02T09:00:00"],
+      windowStart: new Date("2026-06-01T00:00:00Z"),
+      windowEnd: new Date("2026-06-03T23:59:59Z"),
+      timezone: "Europe/Dublin",
+    })
+    expect(hits.map((h) => h.start)).toEqual([
+      "2026-06-01T09:00:00",
+      "2026-06-03T09:00:00",
+    ])
+  })
+
+  test("validates CalDAV SSRF IPv6/CGNAT/redirect/DOCTYPE/cross-origin defenses", async () => {
+    for (const blocked of [
+      "https://[::1]/cal",
+      "https://[::ffff:127.0.0.1]/cal",
+      "https://[::]/cal",
+      "https://100.64.0.1/cal",
+      "https://localhost./cal",
+    ]) {
+      expect(validateCalDAVUrl(blocked).valid, blocked).toBe(false)
+    }
+    expect(validateCalDAVUrl("https://caldav.example.com/dav").valid).toBe(true)
+
+    await expect(
+      listCalDAVEvents(
+        { url: "https://caldav.example.com/dav", username: "u", password: "p" },
+        "https://evil.example.net/steal",
+        new Date("2026-11-01T00:00:00Z"),
+        new Date("2026-11-02T00:00:00Z"),
+      ),
+    ).rejects.toThrow(/cross-origin/i)
+
+    expect(() =>
+      extractXmlResponses(`<?xml version="1.0"?><!DOCTYPE d [<!ENTITY x SYSTEM "file:///etc/passwd">]><d:multistatus/>`),
+    ).toThrow(/DOCTYPE|ENTITY/i)
+
+    const parsedXml = extractXmlResponses(
+      `<D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">` +
+      `<D:response><D:href>/cal/home/</D:href><D:propstat><D:prop>` +
+      `<D:resourcetype><D:collection/><C:calendar/></D:resourcetype>` +
+      `<D:displayname>Family</D:displayname>` +
+      `<C:calendar-data><![CDATA[BEGIN:VCALENDAR\nEND:VCALENDAR]]></C:calendar-data>` +
+      `</D:prop></D:propstat></D:response></D:multistatus>`,
+    )
+    expect(parsedXml).toEqual([
+      {
+        href: "/cal/home/",
+        props: {
+          displayname: "Family",
+          calendarData: "BEGIN:VCALENDAR\nEND:VCALENDAR",
+          isCalendar: "true",
+        },
+      },
+    ])
   })
 })
 

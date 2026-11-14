@@ -330,16 +330,36 @@ export interface ExpandRRuleInput {
   maxOccurrences?: number | undefined
 }
 
-function buildExdateSet(exdates: string[] | undefined, timezone: string): { days: Set<string>; instants: Set<number> } {
+function buildExdateSet(
+  exdates: string[] | undefined,
+  timezone: string,
+  isZoned: boolean,
+): { days: Set<string>; instants: Set<number> } {
   const days = new Set<string>()
   const instants = new Set<number>()
   for (const ex of exdates ?? []) {
-    const day = calendarDayFromInput(ex, timezone)
-    if (day) days.add(day)
-    if (ex.includes("T")) {
-      const ms = Date.parse(ex)
-      if (!Number.isNaN(ms)) instants.add(ms)
+    const trimmed = ex.trim()
+    if (!trimmed) continue
+    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+      days.add(trimmed)
+      continue
     }
+    if (trimmed.includes("T") || trimmed.includes(" ")) {
+      if (/(?:Z|[+-]\d{2}:?\d{2})$/i.test(trimmed)) {
+        const ms = Date.parse(trimmed)
+        if (!Number.isNaN(ms)) instants.add(ms)
+      } else {
+        // Normalize floating EXDATE wall-clock timestamps against the event's timezone semantics.
+        const isoWall = trimmed.replace(" ", "T")
+        const ms = isZoned
+          ? fromZonedTime(isoWall, timezone).getTime()
+          : Date.parse(`${isoWall}Z`)
+        if (!Number.isNaN(ms)) instants.add(ms)
+      }
+      continue
+    }
+    const day = calendarDayFromInput(trimmed, timezone)
+    if (day) days.add(day)
   }
   return { days, instants }
 }
@@ -425,7 +445,7 @@ export function expandRRuleOccurrences(input: ExpandRRuleInput): ExpandedOccurre
   const startParts = parseStartTimeParts(input.dtstart, tz)
   if (!startParts) return []
 
-  const exdateSet = buildExdateSet(input.exdates, tz)
+  const exdateSet = buildExdateSet(input.exdates, tz, startParts.isZoned)
   const durationDays = allDay ? computeAllDayDurationDays(input.dtstart, input.dtend) : 0
   const parseInstantMs = (value: string, isZoned: boolean): number => {
     if (isZoned || /(?:Z|[+-]\d{2}:?\d{2})$/i.test(value)) return Date.parse(value)
@@ -436,6 +456,7 @@ export function expandRRuleOccurrences(input: ExpandRRuleInput): ExpandedOccurre
     : 0
   const hasEnd = Boolean(input.dtend)
   const maxOccurrences = input.maxOccurrences ?? DEFAULT_MAX_OCCURRENCES
+  const maxScanIterations = Math.max(maxOccurrences * 20, 10_000)
 
   const untilMs = parsedRule.until
     ? (/^\d{4}-\d{2}-\d{2}$/.test(parsedRule.until)
@@ -449,7 +470,7 @@ export function expandRRuleOccurrences(input: ExpandRRuleInput): ExpandedOccurre
 
   let totalGenerated = 0
 
-  while (cursor && totalGenerated < maxOccurrences) {
+  while (cursor && occurrences.length < maxOccurrences && totalGenerated < maxScanIterations) {
     if (parsedRule.count !== undefined && totalGenerated >= parsedRule.count) break
 
     const occDay = cursor.toISOString().slice(0, 10)
