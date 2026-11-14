@@ -4,11 +4,14 @@ import { tmpdir } from "node:os"
 import path from "node:path"
 import { expect, test } from "@playwright/test"
 
+const prevDbUrl = process.env.MEITHEAL_DB_URL
 const workDir = mkdtempSync(path.join(tmpdir(), "meitheal-repos-unit-"))
 const dbFile = path.join(workDir, "repos.db")
 const dbUrl = `file:${dbFile}`
 
 test.afterAll(() => {
+  if (prevDbUrl === undefined) delete process.env.MEITHEAL_DB_URL
+  else process.env.MEITHEAL_DB_URL = prevDbUrl
   rmSync(workDir, { recursive: true, force: true })
 })
 

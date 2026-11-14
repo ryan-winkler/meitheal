@@ -16,6 +16,10 @@ test("validateCalDAVUrl blocks IPv6 loopback brackets, IPv4-mapped IPv6, compres
     "http://0.1.2.3/dav",
     "http://localhost/dav",
     "http://localhost./dav",
+    "http://localhost..................................../dav",
+    "http://[fd00::1]:8080/dav",
+    "http://[2001:db8::1]:8080/dav",
+    "http://[fe80::1%25eth0]:8080/dav",
     "http://127.0.0.1:5232/dav",
     "http://169.254.169.254/latest/meta-data/",
     "http://metadata.google.internal./computeMetadata/v1/",
@@ -29,6 +33,8 @@ test("validateCalDAVUrl blocks IPv6 loopback brackets, IPv4-mapped IPv6, compres
 
   expect(validateCalDAVUrl("https://caldav.example.com/dav/")).toEqual({ valid: true })
   expect(validateCalDAVUrl("https://fd.example.com/dav/")).toEqual({ valid: true })
+  expect(validateCalDAVUrl("https://[2606:4700:4700::1111]/dav/")).toEqual({ valid: true })
+  expect(validateCalDAVUrl("https://[::ffff:8.8.8.8]/dav/")).toEqual({ valid: true })
 })
 
 test("validateGrocyBaseUrl blocks metadata hosts, IPv6 loopback, IPv4-mapped IPv6, and compressed ULA", () => {
@@ -50,12 +56,17 @@ test("validateGrocyBaseUrl blocks metadata hosts, IPv6 loopback, IPv4-mapped IPv
     "http://[::ffff:10.0.0.1]:9283",
     "http://[fd0::1]:9283",
     "http://[fc0::1]:9283",
+    "http://[fd00::1]:9283",
     "http://[fe80::1]:9283",
+    "http://[fe80::1%25eth0]:9283",
+    "http://[2001:db8::1]:9283",
+    "http://[::ffff:7f00:1]:9283",
     "http://0.1.2.3:9283",
     "http://169.254.169.254",
     "http://127.0.0.1:9283",
     "http://localhost:9283",
     "http://localhost.:9283",
+    "http://localhost....................................:9283",
     "http://192.168.1.10:9283",
     "http://10.0.0.5:9283",
     "http://172.16.0.5:9283",
@@ -75,6 +86,14 @@ test("validateGrocyBaseUrl blocks metadata hosts, IPv6 loopback, IPv4-mapped IPv
   expect(validateGrocyBaseUrl("https://fd.example.com:9283/")).toEqual({
     ok: true,
     normalizedUrl: "https://fd.example.com:9283",
+  })
+  expect(validateGrocyBaseUrl("https://[2606:4700:4700::1111]:9283/")).toEqual({
+    ok: true,
+    normalizedUrl: "https://[2606:4700:4700::1111]:9283",
+  })
+  expect(validateGrocyBaseUrl("https://[::ffff:8.8.8.8]:9283/")).toEqual({
+    ok: true,
+    normalizedUrl: "https://[::ffff:808:808]:9283",
   })
 })
 

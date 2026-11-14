@@ -7,11 +7,14 @@ import path from "node:path"
 import { expect, test } from "@playwright/test"
 import { GrocyAdapter } from "../../packages/integration-core/src/grocy-adapter"
 
+const prevDbUrl = process.env.MEITHEAL_DB_URL
 const workDir = mkdtempSync(path.join(tmpdir(), "meitheal-grocy-bridge-"))
 const dbFile = path.join(workDir, "bridge.db")
 const dbUrl = `file:${dbFile}`
 
 test.afterAll(() => {
+  if (prevDbUrl === undefined) delete process.env.MEITHEAL_DB_URL
+  else process.env.MEITHEAL_DB_URL = prevDbUrl
   rmSync(workDir, { recursive: true, force: true })
 })
 

@@ -23,7 +23,7 @@
  * @bounded-context integration
  */
 import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability";
-import { classifyNetworkHost } from "@meitheal/integration-core";
+import { classifyNetworkHost, normalizeNetworkHost } from "@meitheal/integration-core";
 
 const logger = createLogger({
   service: "meitheal-web", env: process.env.NODE_ENV ?? "development",
@@ -75,11 +75,7 @@ export function validateCalDAVUrl(rawUrl: string): { valid: boolean; error?: str
       return { valid: false, error: "Only HTTP/HTTPS protocols are allowed" };
     }
 
-    const rawHostname = url.hostname.toLowerCase();
-    const unbracketed = rawHostname.startsWith("[") && rawHostname.endsWith("]")
-      ? rawHostname.slice(1, -1)
-      : rawHostname;
-    const hostname = unbracketed.replace(/\.+$/, "");
+    const hostname = normalizeNetworkHost(url.hostname);
     const hostSafety = classifyNetworkHost(hostname);
     if (hostSafety === "unconditional") {
       return { valid: false, error: `Hostname "${hostname}" is blocked for security` };

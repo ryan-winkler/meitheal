@@ -9,11 +9,14 @@ import { expect, test } from "@playwright/test"
 
 const { WebSocketServer } = createRequire(new URL("../../apps/web/package.json", import.meta.url))("ws")
 
+const prevDbUrl = process.env.MEITHEAL_DB_URL
 const workDir = mkdtempSync(path.join(tmpdir(), "meitheal-ha-todo-unit-"))
 const dbFile = path.join(workDir, "ha-todo.db")
 const dbUrl = `file:${dbFile}`
 
 test.afterAll(() => {
+  if (prevDbUrl === undefined) delete process.env.MEITHEAL_DB_URL
+  else process.env.MEITHEAL_DB_URL = prevDbUrl
   rmSync(workDir, { recursive: true, force: true })
 })
 

@@ -169,16 +169,28 @@ async function hasColumn(client: Client, tableName: string, columnName: string):
  * Concurrent requests share one initialization and later calls reuse its result.
  */
 export function ensureSchema(): Promise<void> {
-  const dbUrl = resolveDbUrl()
-  if (initializedDbUrl !== dbUrl) {
+  const targetDbUrl = resolveDbUrl()
+  if (initializedDbUrl !== targetDbUrl) {
     schemaInitialization = undefined
-    initializedDbUrl = dbUrl
+    initializedDbUrl = targetDbUrl
   }
-  schemaInitialization ??= initializeSchema().catch(error => {
-    schemaInitialization = undefined
-    initializedDbUrl = null
-    throw error
-  })
+  if (!schemaInitialization) {
+    const pending = initializeSchema().then(
+      () => {
+        if (schemaInitialization === pending && resolveDbUrl() === targetDbUrl) {
+          initializedDbUrl = targetDbUrl
+        }
+      },
+      error => {
+        if (schemaInitialization === pending) {
+          schemaInitialization = undefined
+          initializedDbUrl = null
+        }
+        throw error
+      },
+    )
+    schemaInitialization = pending
+  }
   return schemaInitialization
 }
 
