@@ -98,21 +98,21 @@ test("branching and SemVer guardrails require dev-only auto-push and 0.0.{digit}
   // policy happens to accept can never rewrite the real manifests.
   const sandbox = mkdtempSync(join(tmpdir(), "meitheal-bump-"));
   try {
-    for (const file of [
-      "scripts/bump-version.mjs",
+    const versionedManifests = [
       "package.json",
       "meitheal-hub/config.yaml",
       "meitheal-hub/run.sh",
       "apps/web/package.json",
       "apps/web/public/sw.js",
-    ]) {
+    ]
+    for (const file of ["scripts/bump-version.mjs", ...versionedManifests]) {
       mkdirSync(dirname(join(sandbox, file)), { recursive: true });
       copyFileSync(join(repoRoot, file), join(sandbox, file));
     }
     const current = readFileSync(join(repoRoot, "meitheal-hub/config.yaml"), "utf8")
       .match(/^version:\s*["']?(\d+)\.(\d+)\.(\d+)/m)!;
     const twoStepPatch = `${current[1]}.${current[2]}.${Number(current[3]) + 2}`;
-    const versionedFiles = () => ["package.json", "meitheal-hub/config.yaml", "apps/web/package.json"]
+    const versionedFiles = () => versionedManifests
       .map(file => readFileSync(join(sandbox, file), "utf8"));
     const before = versionedFiles();
 
