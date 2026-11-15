@@ -1,102 +1,117 @@
 # Meitheal Canary
 
-Preview builds of Meitheal, the household task hub for Home Assistant.
+Test builds of Meitheal, the household task manager for Home Assistant.
 
-> ⚠️ **Canary is a testing channel.** Builds come straight from the latest source and may be unstable, break, or lose data. Use the **Meitheal** app for everyday use, and keep backups if you run Canary.
+> **Warning:** Do not use Canary for your everyday tasks. Canary builds come directly from the latest source code. They can be unstable and they can lose data. Use the **Meitheal** app for everyday use. If you use Canary, make backups frequently.
 
 ![Meitheal: keep track of the work your home needs](https://raw.githubusercontent.com/ryan-winkler/meitheal/dev/docs/screenshots/brand-banner.png)
 
 ## About Canary
 
-Meitheal Canary lets you try upcoming features and fixes before they reach a tagged Stable release. Each build is versioned by the source commit it was built from, so the version on this page tells you exactly which code you are running.
+Use Meitheal Canary to try new features and fixes before they go into a Stable release. The version of each Canary build is the source commit that it comes from. Thus the version on this page tells you which code you have.
 
-Canary is a separate app (`meitheal_canary`) with its own container and its own data directory. Its tasks and settings are not shared with the Stable **Meitheal** app.
+Canary is a separate app (`meitheal_canary`). It has its own container and its own data folder. It does not share tasks or settings with the Stable **Meitheal** app.
 
-| Channel | App | Best for | Versions |
+| Channel | App | Use it for | Version |
 |---|---|---|---|
-| Stable | **Meitheal** | Everyday household use | Tagged releases such as `0.0.1` |
-| Canary | **Meitheal Canary** | Previewing features and checking fixes early | The source commit each build comes from |
+| Stable | **Meitheal** | Everyday household tasks | A release number, such as `0.0.1` |
+| Canary | **Meitheal Canary** | Tests of new features and fixes | The source commit of the build |
 
 ## About Meitheal
 
-**Meitheal** (`/meh·hal/`) is an Irish word for neighbours coming together to share the work no single person should carry alone.
+Meitheal (say "meh-hal") is an Irish word for a group of neighbours who work together on a job, such as the harvest.
 
-Home Assistant already knows when the back door is still open at night, when the water filter reaches six months, or when a frost warning is due. Meitheal turns those signals, together with family routines, seasonal maintenance and multi-step home projects, into one calm, local-first task hub in your Home Assistant sidebar. Everything is stored in SQLite on your own hardware.
+Meitheal is a task manager that runs as a Home Assistant app. Use it for jobs around the house, daily and weekly routines, seasonal maintenance and larger projects. Home Assistant automations can also add tasks. For example, a door sensor can add a task when the back door stays open at night.
+
+Meitheal keeps all data in a SQLite database on your Home Assistant machine. It does not send your tasks to a cloud service.
 
 ## Features
 
-- 📅 **Today view**: due work, recurring routines, carried-forward items and an evening wrap-up in one focused screen.
-- 🗂️ **Plan your way**: switch between **Kanban**, **Table**, **Calendar** and **Timeline**, and group work by **Area**, **Goal** and **Project**.
-- 🔁 **Routines**: daily and weekly templates that create real tasks with step-by-step checklists.
-- 🔎 **Search Hub**: press `/` or `Ctrl/Cmd + K` to jump to any task, project, area, view or setting.
-- 🏠 **Home Assistant native**: runs behind Ingress in your sidebar, with two-way calendar sync and to-do list sync.
-- 🗣️ **Assist and automations**: the optional Meitheal integration adds `todo.meitheal_tasks`, task sensors, actions such as `meitheal.create_task`, and voice sentences in English and Irish.
-- 🤖 **Agents and automation tools**: scoped API tokens for webhooks, n8n, Node-RED and MCP clients.
-- 📱 **Any screen, even offline**: works in the Companion app, and installs as a PWA that queues changes while offline.
-- 🔒 **Your data stays home**: a local SQLite database included in Home Assistant backups, with JSON, CSV and SQLite exports at any time.
+- **Today**: Shows the tasks that are due, your routines and the tasks from earlier days that are not done. An evening summary shows what you completed.
+- **Views**: Show your tasks as a Kanban board, a table, a calendar or a timeline. Put tasks into areas, goals and projects.
+- **Routines**: Make daily and weekly templates. Each template makes real tasks, with a checklist for each step.
+- **Search**: Press `/` or `Ctrl+K` (`Cmd+K` on a Mac) to find a task, project, area, view or setting.
+- **Home Assistant**: Meitheal opens in the sidebar through Ingress. It can sync tasks with your Home Assistant calendars and to-do lists in two directions.
+- **Assist and automations**: The optional Meitheal integration adds the `todo.meitheal_tasks` entity, task sensors and actions such as `meitheal.create_task`. It also adds voice commands for Assist in English and Irish.
+- **API tokens**: Give webhooks, n8n, Node-RED and MCP clients their own tokens, each with limited permissions.
+- **Phone and offline use**: Meitheal works in the Home Assistant Companion app. You can also install it as a PWA. The PWA keeps your changes when you are offline and sends them when you connect again.
+- **Your data**: Home Assistant backups include the database. You can export your data as JSON, CSV or SQLite at any time.
 
-## What you can track
+## Examples
 
-| Household need | Example task | How Home Assistant helps |
+| Job | Example task | What Home Assistant does |
 |---|---|---|
-| Sensor follow-up | *Close the back door, still open after the 21:45 check* | An automation calls `meitheal.create_task` when the sensor stays open |
-| Shared routines | *School morning bags: lunch, books and PE kit* | A weekday routine creates the task with its checklist |
-| Preventive maintenance | *Replace the under-sink water filter cartridge* | The due date syncs to your Home Assistant calendar and `todo.meitheal_tasks` |
-| Seasonal projects | *Winter boiler and heating prep* | Quotes, radiator bleeding and pressure checks tracked on a Kanban board |
+| Sensor follow-up | *Close the back door. It was open at the 21:45 check.* | An automation calls `meitheal.create_task` when the door sensor stays open. |
+| Shared routine | *Pack the school bags: lunch, books and PE kit.* | A weekday routine makes the task and its checklist. |
+| Maintenance | *Replace the water filter under the kitchen sink.* | The due date shows in your Home Assistant calendar and in `todo.meitheal_tasks`. |
+| Seasonal project | *Get the boiler and heating ready for winter.* | A Kanban board holds the quotes, the radiator bleeding and the pressure check. |
 
 ## Screenshots
 
 | Today | Kanban |
 |---|---|
-| ![Today view with due tasks and routines](https://raw.githubusercontent.com/ryan-winkler/meitheal/dev/docs/screenshots/today.png) | ![Kanban board with household tasks](https://raw.githubusercontent.com/ryan-winkler/meitheal/dev/docs/screenshots/kanban.png) |
+| ![The Today view with due tasks and routines](https://raw.githubusercontent.com/ryan-winkler/meitheal/dev/docs/screenshots/today.png) | ![A Kanban board with household tasks](https://raw.githubusercontent.com/ryan-winkler/meitheal/dev/docs/screenshots/kanban.png) |
 
 ## Installation
 
-1. Open **Settings → Apps → Install app** in Home Assistant (**Settings → Add-ons → Add-on Store** on older releases).
-2. Open the **⋮** menu, select **Repositories**, and add `https://github.com/ryan-winkler/meitheal-ha-addon`.
-3. Select **Meitheal Canary**, then **Install**.
-4. Select **Start**, turn on **Show in sidebar**, and select **Open web UI**.
-5. Add your first task in **Today**.
+1. In Home Assistant, go to **Settings → Apps → Install app**. On older versions, go to **Settings → Add-ons → Add-on Store**.
+2. Open the **⋮** menu and select **Repositories**.
+3. Add `https://github.com/ryan-winkler/meitheal-ha-addon`.
+4. Select **Meitheal Canary**, then select **Install**.
+5. Select **Start**.
+6. Set **Show in sidebar** to on, then select **Open web UI**.
+7. In **Today**, add your first task.
 
-The **Documentation** tab covers configuration, the Home Assistant integration, calendars, Assist and the Companion app in full.
+The **Documentation** tab tells you how to set up the integration, calendars, Assist and the Companion app.
 
 ## Data and backups
 
-All Meitheal Canary data lives in the app's data directory:
+Meitheal Canary keeps all of its data in its own app data folder:
 
-- The task database (`/data/meitheal.db`), with your tasks, projects, routines and settings
-- Scoped API tokens and local audit records
+- The database (`/data/meitheal.db`). It holds your tasks, projects, routines and settings.
+- Your API tokens and the local audit log.
 
-Meitheal uses cold backups, so Home Assistant stops the app briefly and every SQLite write is flushed before the backup is taken. A Home Assistant backup of the Meitheal Canary app therefore includes all of its data. Canary updates often, so make a backup before every update, and before switching between Canary and Stable, so you can always restore the previous build.
+Meitheal uses cold backups. Home Assistant stops the app for a short time, so that all database writes are complete before the backup starts. Thus a Home Assistant backup of Meitheal Canary holds all of its data.
 
-Changes made offline in the PWA stay in your browser until they sync, and are not part of Home Assistant backups until then.
+Canary gets updates frequently. Make a backup before each update and before you change between Canary and Stable. Then you can go back to the previous build if you have a problem.
+
+> **Note:** The PWA keeps offline changes in your browser until they sync. Home Assistant backups do not include these changes until they sync.
 
 ## Requirements
 
-- Home Assistant OS or Supervised, on an `amd64` or `aarch64` machine
-- Ingress (built in) for sidebar access; HTTPS is needed only to install the PWA
+- Home Assistant OS or Home Assistant Supervised
+- An `amd64` or `aarch64` machine
+- HTTPS, but only if you want to install the PWA. The sidebar uses Ingress and does not need HTTPS.
 
 ## Troubleshooting
 
-- **The Info tab shows an older version**: open the **⋮** menu in the app store and select **Check for updates**.
-- **The app restarts on its own**: the watchdog restarts Meitheal when `/api/health` stops answering. Check the **Log** tab for the reason, and raise `log_level` to `debug` if you need more detail.
-- **Meitheal cannot reach Home Assistant**: restart the app, then check the **Log** tab for Home Assistant connection errors. Meitheal reaches Home Assistant through the Supervisor, so no URL or token needs to be entered for the app itself.
-- **The web UI shows an old version after updating**: accept the update prompt in Meitheal, or hard refresh with `Ctrl+Shift+R`.
+- **The Info tab shows an old version.** Open the **⋮** menu in the app store and select **Check for updates**.
+- **The app restarts by itself.** The watchdog restarts Meitheal when `/api/health` does not reply. Look in the **Log** tab for the cause. For more detail, set `log_level` to `debug`.
+- **Meitheal cannot connect to Home Assistant.** Restart the app, then look for connection errors in the **Log** tab. The app connects through the Supervisor, so you do not need to give it a URL or a token.
+- **The web UI shows an old version after an update.** Accept the update message in Meitheal, or press `Ctrl+Shift+R` to reload the page.
 
-More fixes are in the [troubleshooting guide](https://github.com/ryan-winkler/meitheal/blob/dev/docs/kcs/troubleshooting.md).
+The [troubleshooting guide](https://github.com/ryan-winkler/meitheal/blob/dev/docs/kcs/troubleshooting.md) has more solutions.
 
 ## Feedback and contributing
 
-Canary exists to find problems early, so reports are especially welcome. Include the Canary version from this page, your Home Assistant Core and Supervisor versions, and the steps that led to the problem, with tokens and personal details removed.
+Canary is there to find problems early, so we want your reports. In each report, give:
 
-- 🐛 [Report a bug](https://github.com/ryan-winkler/meitheal-ha-addon/issues)
-- 💡 [Suggest a feature](https://github.com/ryan-winkler/meitheal/issues/new?template=feature_request.yml)
-- 🔧 [Submit a pull request](https://github.com/ryan-winkler/meitheal/blob/dev/CONTRIBUTING.md)
-- 📝 [Improve the documentation](https://github.com/ryan-winkler/meitheal/tree/dev/docs)
-- 🔐 [Report a security problem privately](https://github.com/ryan-winkler/meitheal/blob/dev/SECURITY.md)
+- The Canary version from this page
+- Your Home Assistant Core and Supervisor versions
+- The steps that caused the problem
 
-Visit [meitheal.io](https://meitheal.io) or the [source repository](https://github.com/ryan-winkler/meitheal) to learn more. You can support development through [GitHub Sponsors](https://github.com/sponsors/ryan-winkler) or [Ko-fi](https://ko-fi.com/ryanw_eu).
+Remove all tokens and personal data from logs and screenshots before you send them.
+
+Meitheal is open source. You can help in these ways:
+
+- [Report a bug](https://github.com/ryan-winkler/meitheal-ha-addon/issues)
+- [Ask for a feature](https://github.com/ryan-winkler/meitheal/issues/new?template=feature_request.yml)
+- [Send a pull request](https://github.com/ryan-winkler/meitheal/blob/dev/CONTRIBUTING.md)
+- [Make the documentation better](https://github.com/ryan-winkler/meitheal/tree/dev/docs)
+- [Tell us about a security problem privately](https://github.com/ryan-winkler/meitheal/blob/dev/SECURITY.md)
+
+For more information, go to [meitheal.io](https://meitheal.io) or the [source code](https://github.com/ryan-winkler/meitheal). To support the work, use [GitHub Sponsors](https://github.com/sponsors/ryan-winkler) or [Ko-fi](https://ko-fi.com/ryanw_eu).
 
 ## License
 
-Meitheal is free software under the [GNU Affero General Public License v3.0 only](https://github.com/ryan-winkler/meitheal/blob/dev/LICENSE). A [commercial license](https://github.com/ryan-winkler/meitheal/blob/dev/COMMERCIAL.md) is available for uses that cannot meet its terms.
+Meitheal is free software under the [GNU Affero General Public License v3.0 only](https://github.com/ryan-winkler/meitheal/blob/dev/LICENSE). If you cannot agree to its terms, you can get a [commercial license](https://github.com/ryan-winkler/meitheal/blob/dev/COMMERCIAL.md).

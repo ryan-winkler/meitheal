@@ -1,32 +1,32 @@
 configuration:
   log_level:
-    name: Log Level
+    name: Log level
     description: >-
-      Verbosity of application logging. Use "debug" for troubleshooting,
-      "info" for normal operation, "warn" or "error" for quieter output.
+      Sets how much the app writes to the log. Use "debug" to find a problem,
+      "info" for normal use, and "warn" or "error" for fewer messages.
   log_categories:
-    name: Log Categories
+    name: Log categories
     description: >-
-      Categories to include for debug and info log output (default: auth, tasks,
-      integrations, observability, ha, calendar, todo, api, security, search).
-      Warning and error events are always emitted.
+      Sets which parts of the app write debug and info messages. The default is
+      auth, tasks, integrations, observability, ha, calendar, todo, api,
+      security, search. The app always writes warning and error messages.
   log_redaction:
-    name: Log Redaction
+    name: Log redaction
     description: >-
-      When enabled, tokens, passwords, and PII are redacted from log output
-      before it leaves the add-on.
+      Removes tokens, passwords and personal data from log messages before the
+      app writes them.
   audit_enabled:
-    name: Audit Logging
+    name: Audit log
     description: >-
-      Emit structured audit trail records for security-sensitive operations
-      such as login, data export, and configuration changes.
+      Records security events, such as sign-ins, data exports and
+      configuration changes, in a local audit log.
   loki_url:
-    name: Loki Push URL
+    name: Loki push URL
     description: >-
-      Full URL of a Grafana Loki push endpoint for the observability pipeline.
-      Leave default if using the Grafana stack add-on.
+      The full URL of a Grafana Loki push endpoint. The app sends its log to
+      this URL. Keep the default value if you use the Grafana stack app.
   license_key:
-    name: License Key
+    name: License key
     description: >-
-      Optional license key for Meitheal. Paste a valid license JWT here,
-      or leave empty for personal/homelab use.
+      Optional. Paste your Meitheal license key here. For personal and homelab
+      use, keep this field empty.
