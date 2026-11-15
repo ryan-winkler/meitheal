@@ -4,12 +4,12 @@ Meitheal is free software under the [GNU Affero General Public License v3.0 only
 
 | Use | Under AGPL-3.0-only |
 | --- | --- |
-| Run Meitheal at home or in your organisation, including modified builds | Permitted. If people use a modified build over a network, offer them its complete source (AGPL section 13) |
+| Run Meitheal at home or in your organisation, including modified builds | Permitted. If people interact with a modified build over a network, prominently offer them its complete source at no charge through network access (AGPL section 13) |
 | Install or set up Meitheal for someone else and charge for your time | Permitted. Give them the source and license with the copy |
-| Write tooling that only talks to Meitheal through its APIs | Permitted. That tooling can use its own license |
+| Write a separate program that only talks to Meitheal through its network APIs | Permitted. That program can use its own license. Plugins or extensions combined with Meitheal into one program are covered by the AGPL |
 | Share or sell a copy or modified version | Permitted only if every recipient gets the complete corresponding source under AGPL-3.0-only |
 | Run a modified Meitheal as a service for other people | Permitted only if those users can get the complete corresponding source under AGPL-3.0-only |
-| Distribute or host a modified Meitheal without offering its source to recipients or users, embed it in a proprietary product, or offer it as a closed hosted or subscription service | Needs a commercial license |
+| Distribute or host a modified Meitheal without offering its source to recipients or users, or embed it in a proprietary product | Needs a commercial license. Hosting or charging for access is allowed without one when you meet the AGPL source terms |
 
 The Meitheal name and logo are not licensed by the AGPL. A modified or redistributed version must not present itself as the official Meitheal.
 

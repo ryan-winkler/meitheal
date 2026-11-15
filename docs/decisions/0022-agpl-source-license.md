@@ -18,11 +18,11 @@ No license that bans third-party sales or hosting is OSI- or FSF-approved. The p
 ## Decision
 
 - License Meitheal-owned source and artwork under `AGPL-3.0-only`. `LICENSE` holds the unmodified FSF text so scanners recognise it. Copyright and the license statement are in `NOTICE`.
-- Offer separate commercial licenses for closed modifications, proprietary embedding, and closed hosted or subscription services. Each needs a written agreement with the maintainer. [COMMERCIAL.md](../../COMMERCIAL.md) explains the route.
+- Offer separate commercial licenses for distributing or hosting modified versions without the AGPL source offer, and for proprietary embedding. Each needs a written agreement with the maintainer. [COMMERCIAL.md](../../COMMERCIAL.md) explains the route.
 - The [contributor agreement](../../.github/CLA.md) lets the maintainer distribute contributions under AGPL-3.0-only and under separate commercial terms, including official binary images.
 - Keep `org.opencontainers.image.licenses=LicenseRef-Proprietary` on official images. The maintainer distributes those under separate terms.
 - Keep the Apache-2.0 integrations, the CC BY 4.0 documentation, and third-party notices unchanged.
-- Ask for security fixes, bug fixes, and improvements to be sent upstream. This is an expectation, not a license condition. Tooling that only talks to Meitheal through its APIs can stay private.
+- Ask for security fixes, bug fixes, and improvements to be sent upstream. This is an expectation, not a license condition. A separate program that only talks to Meitheal through its network APIs can stay private.
 
 ## Consequences
 
