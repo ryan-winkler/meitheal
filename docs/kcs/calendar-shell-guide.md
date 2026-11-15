@@ -92,9 +92,9 @@ Home Assistant sends the date of each occurrence, so a difference there usually 
 
 Known differences:
 
-- A monthly series that starts on the 29th, 30th or 31st moves to the last day of shorter months in Meitheal, and a yearly series on 29 February moves to 28 February. Many calendar apps skip those months instead. A rule saved as "on day 31" skips them in Meitheal too. To get the same dates in both, choose "last day of the month" in the calendar app, or pick an earlier day.
+- A monthly series on the 29th, 30th or 31st skips months that do not have that day, and a yearly series on 29 February skips common years. This matches CalDAV servers and most calendar apps. To land on the last day of every month, choose "last day of the month" in the calendar app.
 - Repeats more often than daily are not supported: Meitheal imports only the first occurrence, and only when it falls inside the sync window.
-- Combined rules such as "Friday the 13th" repeat on every 13th. Repeat options Meitheal does not support, such as specific hours of the day, are ignored.
+- Combined rules such as "Friday the 13th" repeat only when both the weekday and the date match. Repeat options Meitheal does not support, such as specific hours of the day, are ignored.
 
 ### The drawer opens but tasks or events stay empty
 

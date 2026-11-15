@@ -593,6 +593,70 @@ test("HA sync keys ID-less series on HA wall clock, leaves unchanged tasks alone
   }
 })
 
+test("HA sync adopts an ID-less series saved under the earlier household-time key even if it is completed and renamed", async () => {
+  const previous = Object.fromEntries(["MEITHEAL_DB_URL", "SUPERVISOR_TOKEN", "HA_BASE_URL", "HA_TOKEN"].map((k) => [k, process.env[k]]))
+  const directory = await mkdtemp(join(tmpdir(), "meitheal-cal-prior-key-"))
+  const ha = await startHAWebSocketFixture()
+  delete process.env.SUPERVISOR_TOKEN
+  process.env.HA_BASE_URL = ha.url
+  process.env.HA_TOKEN = "calendar-prior-key-fixture"
+  process.env.MEITHEAL_DB_URL = `file:${join(directory, "tasks.db")}`
+  resetPersistenceForTests()
+  const db = getPersistenceClient()
+
+  try {
+    await ensureSchema()
+    const settingsRepo = new SettingsRepository(db)
+    await settingsRepo.ensureSettingsTable()
+    await settingsRepo.upsert("timezone", "Europe/Dublin")
+    expect(await getHAConnection()).not.toBeNull()
+    const repo = new TaskRepository(db)
+    const todayStr = calendarToday("Europe/Dublin")
+    const d7 = shiftCalendarDay(todayStr, 7)
+    const d14 = shiftCalendarDay(todayStr, 14)
+    ha.setCalendarEvents([
+      { summary: "Swim", start: `${todayStr}T18:00:00-05:00`, end: `${todayStr}T19:00:00-05:00` },
+      { summary: "Swim", start: `${d7}T18:00:00-05:00`, end: `${d7}T19:00:00-05:00` },
+      { summary: "Swim", start: `${d14}T18:00:00-05:00`, end: `${d14}T19:00:00-05:00` },
+    ])
+    await syncFromHA("calendar.household")
+    const created = await db.execute({ sql: "SELECT id FROM tasks WHERE title = 'Swim'", args: [] })
+    expect(created.rows).toHaveLength(1)
+    const swimId = String(created.rows[0]?.id)
+
+    // Rewrite the saved key to the earlier release's form (household-time 23:00), then
+    // complete and rename the task so only the key can find it again.
+    await db.execute({
+      sql: "UPDATE calendar_confirmations SET provider_event_id = ? WHERE task_id = ? AND source = 'ha.calendar_sync'",
+      args: ["ha-cal-series-calendar.household-swim::23:00", swimId],
+    })
+    await repo.updateTask(swimId, { title: "Swim (renamed)", status: "complete" })
+
+    await syncFromHA("calendar.household")
+    const after = await db.execute({ sql: "SELECT id, title, status FROM tasks WHERE title LIKE 'Swim%'", args: [] })
+    expect(after.rows).toHaveLength(1)
+    expect(String(after.rows[0]?.id)).toBe(swimId)
+    expect(String(after.rows[0]?.status)).toBe("complete")
+    const key = await db.execute({
+      sql: "SELECT provider_event_id FROM calendar_confirmations WHERE task_id = ? AND source = 'ha.calendar_sync'",
+      args: [swimId],
+    })
+    expect(String(key.rows[0]?.provider_event_id)).toBe("ha-cal-series-calendar.household-swim::18:00")
+  } finally {
+    stopCalendarSync()
+    stopEntitySubscription()
+    closeHAConnection()
+    await ha.close()
+    db.close()
+    resetPersistenceForTests()
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+
 test("CalDAV sync parses RRULE, EXDATE, colons in DESCRIPTION, exclusive all-day DTEND, and updates existing tasks on re-sync", async () => {
   const origin = "http://caldav-recurrence-fixture.example"
   const previous = Object.fromEntries(["MEITHEAL_DB_URL", "SUPERVISOR_TOKEN", "HA_TOKEN"].map((k) => [k, process.env[k]]))

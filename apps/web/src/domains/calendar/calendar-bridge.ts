@@ -679,6 +679,9 @@ function groupHAEventsIntoSeries(
 ): GroupedCalendarSeries<CalendarEvent>[] {
   const withUid = new Map<string, CalendarEvent[]>()
   const withoutUid = new Map<string, CalendarEvent[]>()
+  // Earlier releases keyed ID-less series by household-time wall clock. Keep those
+  // keys as lookup candidates so existing tasks (completed or renamed) are adopted.
+  const priorHouseholdKeys = new Map<string, Set<string>>()
 
   for (const evt of events) {
     const explicitUid = evt.uid?.trim()
@@ -696,6 +699,13 @@ function groupHAEventsIntoSeries(
     const group = withoutUid.get(key) ?? []
     group.push(evt)
     withoutUid.set(key, group)
+    const priorTimeKey = isAllDay ? "all-day" : (formatTimeInZone(evt.start.trim(), timezone) ?? evt.start.trim())
+    const priorKey = `${normSummary}::${priorTimeKey}`
+    if (priorKey !== key) {
+      const prior = priorHouseholdKeys.get(key) ?? new Set<string>()
+      prior.add(`ha-cal-series-${entityId}-${priorKey}`)
+      priorHouseholdKeys.set(key, prior)
+    }
   }
 
   const seriesList: GroupedCalendarSeries<CalendarEvent>[] = []
@@ -731,11 +741,12 @@ function groupHAEventsIntoSeries(
   for (const [key, group] of withoutUid) {
     const legacyPerOcc = group.map((evt) => `ha-cal-${entityId}-${evt.summary}-${evt.start}`)
     const seriesKeyUid = `ha-cal-series-${entityId}-${key}`
+    const priorKeys = [...(priorHouseholdKeys.get(key) ?? [])]
     if (group.length > 1) {
-      finalizeGroup(seriesKeyUid, [seriesKeyUid, ...legacyPerOcc], group)
+      finalizeGroup(seriesKeyUid, [seriesKeyUid, ...priorKeys, ...legacyPerOcc], group)
     } else {
       const singleUid = legacyPerOcc[0]!
-      finalizeGroup(singleUid, [singleUid, seriesKeyUid], group)
+      finalizeGroup(singleUid, [singleUid, seriesKeyUid, ...priorKeys], group)
     }
   }
 
