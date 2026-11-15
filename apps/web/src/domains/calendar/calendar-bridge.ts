@@ -1556,6 +1556,15 @@ async function syncCalDAVFromServer(manualRetry = false): Promise<CalendarSyncCo
   }
 }
 
+function normalizeCalDAVCalendarKey(baseUrl: string, calendarHref: string): string {
+  try {
+    const pathname = new URL(calendarHref, baseUrl).pathname.replace(/\/+$/, "")
+    return pathname || "/"
+  } catch {
+    return calendarHref.trim().replace(/\/+$/, "") || "/"
+  }
+}
+
 async function importCalDAVEvents(): Promise<CalendarSyncCounts> {
   let totalCreated = 0
   let totalUpdated = 0
@@ -1614,6 +1623,7 @@ async function importCalDAVEvents(): Promise<CalendarSyncCounts> {
 
     for (const cal of calendars) {
       try {
+        const calendarKey = normalizeCalDAVCalendarKey(config.url, cal.href)
         const listed = await listCalDAVEvents(config, cal.href, start, end)
         // Events Meitheal itself wrote to a calendar are never imported back as new tasks.
         const events = listed.filter((evt) => !(evt.description && /Added from Meitheal/i.test(evt.description)))
@@ -1625,16 +1635,26 @@ async function importCalDAVEvents(): Promise<CalendarSyncCounts> {
         }
         totalEvents += groupedByUid.size
 
-        // Batch dedup: pre-fetch existing UIDs for this calendar in <= 200-param chunks
+        // Batch dedup: pre-fetch existing UIDs scoped to this calendar in <= 200-param chunks
         const calUids = Array.from(groupedByUid.keys())
         const existingCalMap = new Map<string, string>()
         const existingCalPayloads = new Map<string, string | null>()
-        for (let offset = 0; offset < calUids.length; offset += 200) {
-          const chunk = calUids.slice(offset, offset + 200)
+        for (let offset = 0; offset < calUids.length; offset += 198) {
+          const chunk = calUids.slice(offset, offset + 198)
           const uidPlaceholders = chunk.map(() => "?").join(", ")
           const existingCalRes = await client.execute({
-            sql: `SELECT provider_event_id, task_id, payload FROM calendar_confirmations WHERE provider_event_id IN (${uidPlaceholders}) AND source = 'caldav'`,
-            args: chunk,
+            sql: `SELECT provider_event_id, task_id, payload
+                  FROM calendar_confirmations
+                  WHERE provider_event_id IN (${uidPlaceholders})
+                    AND source = 'caldav'
+                    AND (
+                      CASE WHEN json_valid(payload) THEN COALESCE(json_extract(payload, '$.calendar_href'), json_extract(payload, '$.entity_id')) ELSE NULL END = ?
+                      OR (
+                        CASE WHEN json_valid(payload) THEN json_extract(payload, '$.calendar_href') ELSE NULL END IS NULL
+                        AND CASE WHEN json_valid(payload) THEN json_extract(payload, '$.calendar') ELSE NULL END = ?
+                      )
+                    )`,
+            args: [...chunk, calendarKey, cal.displayName],
           })
           for (const row of existingCalRes.rows) {
             existingCalMap.set(String(row.provider_event_id), String(row.task_id))
@@ -1675,7 +1695,8 @@ async function importCalDAVEvents(): Promise<CalendarSyncCounts> {
             dtend: repEvt.dtend,
             effective_end: repEnd,
             calendar: cal.displayName,
-            entity_id: cal.displayName,
+            calendar_href: calendarKey,
+            entity_id: calendarKey,
             rrule: recurrenceRule,
             inferred_rrule: inferredRecurrenceRule,
             occurrences: selected.occurrences.map((o) => ({
@@ -1700,7 +1721,7 @@ async function importCalDAVEvents(): Promise<CalendarSyncCounts> {
               updatedAt: nowMs,
               confirmation: {
                 source: "calendar",
-                entityId: cal.displayName,
+                entityId: calendarKey,
                 externalId: uid,
                 confirmationSource: "caldav",
                 payload,
@@ -1711,7 +1732,7 @@ async function importCalDAVEvents(): Promise<CalendarSyncCounts> {
             calMutations.push({
               kind: "create",
               taskId: crypto.randomUUID(),
-              idempotencyKey: `caldav-sync-${uid}`,
+              idempotencyKey: `caldav-sync-${calendarKey}:${uid}`,
               title: repEvt.summary,
               description: inboundCalDesc ?? `📡 CalDAV event from ${cal.displayName}`,
               status: "backlog",
@@ -1727,7 +1748,7 @@ async function importCalDAVEvents(): Promise<CalendarSyncCounts> {
               createdAt: nowMs,
               confirmation: {
                 source: "calendar",
-                entityId: cal.displayName,
+                entityId: calendarKey,
                 externalId: uid,
                 confirmationSource: "caldav",
                 payload,

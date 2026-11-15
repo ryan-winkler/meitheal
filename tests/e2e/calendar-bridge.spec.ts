@@ -626,3 +626,120 @@ test("CalDAV sync parses RRULE, EXDATE, colons in DESCRIPTION, exclusive all-day
     await rm(directory, { recursive: true, force: true })
   }
 })
+
+test("CalDAV isolates same UID across distinct calendars without overwriting either task", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "meitheal-caldav-multical-"))
+  const previous = Object.fromEntries(["MEITHEAL_DB_URL", "SUPERVISOR_TOKEN", "HA_TOKEN"].map((key) => [key, process.env[key]]))
+  const originalFetch = globalThis.fetch
+  const origin = "http://caldav-multical.example"
+  const todayStr = calendarToday("Europe/Dublin")
+  const tomorrowStr = shiftCalendarDay(todayStr, 1)
+  const dtBasic = (day: string) => day.replace(/-/g, "")
+
+  let teamTitle = "Team Dentists"
+  const personalTitle = "Personal Dentists"
+
+  const server = createServer(async (request, response) => {
+    for await (const _ of request) { /* consume XML request */ }
+    response.setHeader("content-type", "application/xml")
+    if (request.method === "PROPFIND") {
+      response.writeHead(207).end(
+        `<?xml version="1.0"?><d:multistatus xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">`
+        + `<d:response><d:href>/team/</d:href><d:propstat><d:prop><d:displayname>Shared</d:displayname><d:resourcetype><c:calendar/></d:resourcetype></d:prop></d:propstat></d:response>`
+        + `<d:response><d:href>/personal/</d:href><d:propstat><d:prop><d:displayname>Shared</d:displayname><d:resourcetype><c:calendar/></d:resourcetype></d:prop></d:propstat></d:response>`
+        + `</d:multistatus>`,
+      )
+      return
+    }
+    if (request.method === "REPORT") {
+      const isTeam = request.url?.startsWith("/team")
+      const summary = isTeam ? teamTitle : personalTitle
+      const day = isTeam ? dtBasic(todayStr) : dtBasic(tomorrowStr)
+      const ics = [
+        "BEGIN:VCALENDAR",
+        "VERSION:2.0",
+        "BEGIN:VEVENT",
+        "UID:shared-invite-uid",
+        `SUMMARY:${summary}`,
+        `DTSTART;VALUE=DATE:${day}`,
+        "END:VEVENT",
+        "END:VCALENDAR",
+      ].join("\r\n")
+      response.writeHead(207).end(
+        `<?xml version="1.0"?><d:multistatus xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav"><d:response><d:href>${request.url}item.ics</d:href><d:propstat><d:prop><c:calendar-data>${ics}</c:calendar-data></d:prop></d:propstat></d:response></d:multistatus>`,
+      )
+      return
+    }
+    response.writeHead(405).end()
+  })
+
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+  const address = server.address()
+  if (!address || typeof address === "string") throw new Error("Fixture server has no TCP address")
+
+  globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) => {
+    const target = new URL(input instanceof Request ? input.url : input)
+    if (target.origin !== origin) throw new Error(`Unexpected fixture egress: ${target.origin}`)
+    target.hostname = "127.0.0.1"
+    target.port = String(address.port)
+    return originalFetch(target, init)
+  }) as typeof fetch
+
+  delete process.env.SUPERVISOR_TOKEN
+  process.env.HA_TOKEN = "caldav-multical-key"
+  process.env.MEITHEAL_DB_URL = `file:${join(directory, "tasks.db")}`
+  resetPersistenceForTests()
+  const db = getPersistenceClient()
+
+  try {
+    await ensureSchema()
+    const settingsRepo = new SettingsRepository(db)
+    await settingsRepo.ensureSettingsTable()
+    await settingsRepo.upsert("timezone", "Europe/Dublin")
+    const saved = await saveCredentials({
+      locals: { hassIsAdmin: true },
+      request: new Request("http://localhost/api/integrations/calendar/caldav-credentials", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "save", url: origin, username: "u", password: "p" }),
+      }),
+    } as unknown as Parameters<typeof saveCredentials>[0])
+    expect(saved.status).toBe(200)
+
+    startCalDAVSync(origin, 0)
+    await expect.poll(() => getCalendarSyncStatus().lastSyncAt).not.toBeNull()
+    expect(getCalendarSyncStatus().lastSyncError).toBeNull()
+    expect(getCalendarSyncStatus().lastSyncEventCount).toBe(2)
+
+    const tasksAfterFirst = (await db.execute({ sql: `SELECT title, due_date FROM tasks ORDER BY title ASC`, args: [] })).rows
+    expect(tasksAfterFirst).toEqual([
+      expect.objectContaining({ title: "Personal Dentists", due_date: tomorrowStr }),
+      expect.objectContaining({ title: "Team Dentists", due_date: todayStr }),
+    ])
+
+    const idempotent = await syncCalDAVEvents()
+    expect(idempotent).toEqual({ created: 0, updated: 2, total: 2 })
+
+    teamTitle = "Team Dentists (Updated)"
+    const second = await syncCalDAVEvents()
+    expect(second).toEqual({ created: 0, updated: 2, total: 2 })
+
+    const tasksAfterSecond = (await db.execute({ sql: `SELECT title, due_date FROM tasks ORDER BY title ASC`, args: [] })).rows
+    expect(tasksAfterSecond).toEqual([
+      expect.objectContaining({ title: "Personal Dentists", due_date: tomorrowStr }),
+      expect.objectContaining({ title: "Team Dentists (Updated)", due_date: todayStr }),
+    ])
+  } finally {
+    stopCalDAVSync()
+    globalThis.fetch = originalFetch
+    server.closeAllConnections()
+    await new Promise<void>((resolve) => server.close(() => resolve()))
+    db.close()
+    resetPersistenceForTests()
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
+    await rm(directory, { recursive: true, force: true })
+  }
+})

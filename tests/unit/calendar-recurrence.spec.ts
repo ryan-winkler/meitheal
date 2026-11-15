@@ -41,7 +41,9 @@ import {
   getPersistenceClient,
   resetPersistenceForTests,
 } from "../../apps/web/src/domains/tasks/persistence/store"
+import { SettingsRepository } from "../../apps/web/src/domains/tasks/persistence/settings-repository"
 import { TaskRepository } from "../../apps/web/src/domains/tasks/persistence/task-repository"
+import { GET as getTodayCountsRoute } from "../../apps/web/src/pages/api/tasks/today-counts"
 import { loadKanbanBoard } from "../../apps/web/src/lib/kanban-board-data"
 import { getTasksForView, getTodayTaskCounts, todayDueSection } from "../../apps/web/src/lib/task-queries"
 
@@ -641,6 +643,97 @@ test("completing a local repeating calendar_event task spawns its next occurrenc
     expect(rows.rows[1]!.due_date).toBe("2026-11-09")
     expect(rows.rows[1]!.recurrence_rule).toBe("FREQ=WEEKLY")
     expect(rows.rows[1]!.task_kind).toBe("calendar_event")
+  } finally {
+    db.close()
+    resetPersistenceForTests()
+    if (previousDb === undefined) delete process.env.MEITHEAL_DB_URL
+    else process.env.MEITHEAL_DB_URL = previousDb
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+
+test("toRRuleString and CalDAV expansion preserve UNTIL time and zone cutoff", () => {
+  expect(normalizeRRule("FREQ=DAILY;UNTIL=20261117T080000Z")).toBe("FREQ=DAILY;UNTIL=20261117T080000Z")
+  expect(normalizeRRule("FREQ=DAILY;UNTIL=20261117T080000")).toBe("FREQ=DAILY;UNTIL=20261117T080000")
+  expect(toRRuleString({ freq: "DAILY", interval: 1, until: "2026-11-17T08:00:00Z" })).toBe("FREQ=DAILY;UNTIL=20261117T080000Z")
+
+  const ics = [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "BEGIN:VEVENT",
+    "UID:until-cutoff-series",
+    "SUMMARY:Morning Check-in",
+    "DTSTART:20261115T090000Z",
+    "DTEND:20261115T093000Z",
+    "RRULE:FREQ=DAILY;UNTIL=20261117T080000Z",
+    "END:VEVENT",
+    "END:VCALENDAR",
+  ].join("\r\n")
+
+  const parsed = parseVEvents(ics, "/cal/cutoff.ics")
+  expect(parsed[0]?.rrule).toBe("FREQ=DAILY;UNTIL=20261117T080000Z")
+
+  const expanded = expandCalDAVEventsInWindow(
+    parsed,
+    new Date("2026-11-14T00:00:00Z"),
+    new Date("2026-11-20T23:59:59Z"),
+  )
+  expect(expanded.map((e) => e.dtstart)).toEqual([
+    "2026-11-15T09:00:00Z",
+    "2026-11-16T09:00:00Z",
+  ])
+})
+
+test("GET /api/tasks/today-counts and getTodayTaskCounts evaluate counters in the household timezone", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "meitheal-today-counts-tz-"))
+  const previousDb = process.env.MEITHEAL_DB_URL
+  process.env.MEITHEAL_DB_URL = `file:${join(directory, "today-counts.db")}`
+  resetPersistenceForTests()
+  const db = getPersistenceClient()
+  try {
+    await ensureSchema()
+    const settings = new SettingsRepository(db)
+    await settings.ensureSettingsTable()
+    await settings.upsert("timezone", "America/Los_Angeles")
+
+    // 2026-11-13T02:00:00Z is 2026-11-12 18:00 in America/Los_Angeles (carried forward on Nov 13 LA),
+    // but 2026-11-13 02:00 in Europe/Dublin (due today on Nov 13 Dublin).
+    await db.execute({
+      sql: `INSERT INTO tasks (id, title, status, priority, due_date, idempotency_key, request_id, ticket_number, created_at, updated_at)
+            VALUES ('tz-Boundary-1', 'Late Evening LA', 'pending', 3, '2026-11-13T02:00:00Z', 'k-tz-b1', 'r-tz-b1', 1, 1, 1)`,
+      args: [],
+    })
+
+    // Omitting timezone reads household settings.timezone (America/Los_Angeles), not hardcoded Europe/Dublin
+    const storedTzCounts = await getTodayTaskCounts(new Date("2026-11-13T12:00:00Z"))
+    expect(storedTzCounts.dueToday).toBe(0)
+    expect(storedTzCounts.carriedForward).toBe(1)
+
+    const dublinCounts = await getTodayTaskCounts(new Date("2026-11-13T12:00:00Z"), "Europe/Dublin")
+    expect(dublinCounts.dueToday).toBe(1)
+    expect(dublinCounts.carriedForward).toBe(0)
+
+    // Deterministically verify GET /api/tasks/today-counts across the international date line at any UTC hour
+    const now = new Date()
+    const behindDay = calendarToday("Etc/GMT+12", now)
+    await db.execute({
+      sql: `UPDATE tasks SET due_date = ? WHERE id = 'tz-Boundary-1'`,
+      args: [behindDay],
+    })
+    await settings.upsert("timezone", "Etc/GMT+12")
+
+    const behindResp = await getTodayCountsRoute({ locals: { timezone: "Etc/GMT+12" } } as unknown as Parameters<typeof getTodayCountsRoute>[0])
+    expect(behindResp.status).toBe(200)
+    await expect(behindResp.json()).resolves.toMatchObject({ dueToday: 1, carriedForward: 0 })
+
+    // Even if locals.timezone is unset, the route honors persisted household timezone in settings
+    const fallbackResp = await getTodayCountsRoute({ locals: {} } as unknown as Parameters<typeof getTodayCountsRoute>[0])
+    expect(fallbackResp.status).toBe(200)
+    await expect(fallbackResp.json()).resolves.toMatchObject({ dueToday: 1, carriedForward: 0 })
+
+    const aheadResp = await getTodayCountsRoute({ locals: { timezone: "Pacific/Kiritimati" } } as unknown as Parameters<typeof getTodayCountsRoute>[0])
+    expect(aheadResp.status).toBe(200)
+    await expect(aheadResp.json()).resolves.toMatchObject({ dueToday: 0, carriedForward: 1 })
   } finally {
     db.close()
     resetPersistenceForTests()

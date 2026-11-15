@@ -466,11 +466,45 @@ export async function getTodayTaskRows(
   }
 }
 
-/** Refresh the visible counters without reading or serializing individual tasks. */
-export async function getTodayTaskCounts(now = new Date(), timezone = "Europe/Dublin"): Promise<TodayTaskCounts> {
-  const today = calendarToday(timezone, now)
+function isValidTimeZone(tz: string): boolean {
+  try {
+    new Intl.DateTimeFormat("en", { timeZone: tz })
+    return true
+  } catch {
+    return false
+  }
+}
 
+async function readStoredHouseholdTimezone(): Promise<string> {
+  try {
+    const res = await getPersistenceClient().execute({
+      sql: "SELECT value FROM settings WHERE key = 'timezone' LIMIT 1",
+      args: [],
+    })
+    let raw: unknown = res.rows[0]?.value
+    if (typeof raw === "string") {
+      try {
+        raw = JSON.parse(raw)
+      } catch {
+        /* legacy plain-text setting */
+      }
+      const trimmed = typeof raw === "string" ? raw.trim() : ""
+      if (trimmed && isValidTimeZone(trimmed)) return trimmed
+    }
+  } catch {
+    /* ignore missing or unreadable setting */
+  }
+  return "Europe/Dublin"
+}
+
+/** Refresh the visible counters without reading or serializing individual tasks. */
+export async function getTodayTaskCounts(now = new Date(), timezone?: string): Promise<TodayTaskCounts> {
   await ensureSchema()
+  const trimmedTz = typeof timezone === "string" ? timezone.trim() : ""
+  const resolvedTimezone = trimmedTz && isValidTimeZone(trimmedTz)
+    ? trimmedTz
+    : await readStoredHouseholdTimezone()
+  const today = calendarToday(resolvedTimezone, now)
   const { rows } = await getPersistenceClient().execute({
     sql: `
       SELECT NULL AS due_date, ${TODAY_COMPLETION_COUNT} AS completed_today,
@@ -498,7 +532,7 @@ export async function getTodayTaskCounts(now = new Date(), timezone = "Europe/Du
       continue
     }
 
-    const section = todayDueSection(String(row.due_date), today, timezone)
+    const section = todayDueSection(String(row.due_date), today, resolvedTimezone)
     if (section === "due") dueToday += Number(row.dated_count)
     if (section === "carried") carriedForward += Number(row.dated_count)
   }

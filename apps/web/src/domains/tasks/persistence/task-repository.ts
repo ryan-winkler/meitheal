@@ -2712,8 +2712,14 @@ export class TaskRepository {
                   step = "confirmation_dedup_probe"
                   const [existingConf] = mutation.confirmation.confirmationSource === "caldav"
                     ? yield [{
-                        sql: "SELECT 1 FROM calendar_confirmations WHERE source = 'caldav' AND provider_event_id = ? LIMIT 1",
-                        args: [mutation.confirmation.externalId],
+                        sql: `SELECT 1 FROM calendar_confirmations
+                              WHERE source = 'caldav' AND provider_event_id = ?
+                                AND (
+                                  CASE WHEN json_valid(payload) THEN COALESCE(json_extract(payload, '$.calendar_href'), json_extract(payload, '$.entity_id')) ELSE NULL END IS NULL
+                                  OR CASE WHEN json_valid(payload) THEN COALESCE(json_extract(payload, '$.calendar_href'), json_extract(payload, '$.entity_id')) ELSE NULL END = ?
+                                )
+                              LIMIT 1`,
+                        args: [mutation.confirmation.externalId, mutation.confirmation.entityId],
                       }]
                     : yield [{
                         sql: `SELECT 1 FROM calendar_confirmations
@@ -2928,11 +2934,24 @@ export class TaskRepository {
                       if (mutation.confirmation.confirmationSource === "caldav") {
                         yield [{
                           sql: `UPDATE calendar_confirmations SET payload = ?
-                                WHERE task_id = ? AND provider_event_id = ? AND source = 'caldav'`,
+                                WHERE task_id = ? AND provider_event_id = ? AND source = 'caldav'
+                                  AND (
+                                    CASE WHEN json_valid(payload) THEN COALESCE(json_extract(payload, '$.calendar_href'), json_extract(payload, '$.entity_id')) ELSE NULL END IS NULL
+                                    OR CASE WHEN json_valid(payload) THEN COALESCE(json_extract(payload, '$.calendar_href'), json_extract(payload, '$.entity_id')) ELSE NULL END = ?
+                                    OR (
+                                      CASE WHEN json_valid(payload) THEN json_extract(payload, '$.calendar_href') ELSE NULL END IS NULL
+                                      AND CASE WHEN json_valid(payload) THEN json_extract(payload, '$.calendar') ELSE NULL END = (
+                                        CASE WHEN json_valid(?) THEN json_extract(?, '$.calendar') ELSE NULL END
+                                      )
+                                    )
+                                  )`,
                           args: [
                             mutation.confirmation.payload,
                             mutation.taskId,
                             mutation.confirmation.externalId,
+                            mutation.confirmation.entityId,
+                            mutation.confirmation.payload,
+                            mutation.confirmation.payload,
                           ],
                         }]
                       } else {

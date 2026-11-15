@@ -139,6 +139,23 @@ export function parseRRule(rrule: string): RecurrenceRule | null {
   return rule
 }
 
+function formatRRuleUntil(until: string): string {
+  const trimmed = until.trim()
+  if (/^\d{8}(?:T\d{6}Z?)?$/i.test(trimmed)) {
+    return trimmed.toUpperCase()
+  }
+  const isoMatch = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2}))?(Z?))?$/)
+  if (isoMatch) {
+    const [, y, m, d, hh, mm, ss = "00", z = ""] = isoMatch
+    return hh && mm ? `${y}${m}${d}T${hh}${mm}${ss}${z.toUpperCase()}` : `${y}${m}${d}`
+  }
+  const parsed = new Date(trimmed)
+  if (!Number.isNaN(parsed.getTime())) {
+    return parsed.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z")
+  }
+  return trimmed.slice(0, 10).replace(/-/g, "")
+}
+
 /** Serialize a RecurrenceRule back to an RRULE string (without "RRULE:" prefix). */
 export function toRRuleString(rule: RecurrenceRule): string {
   const parts: string[] = [`FREQ=${rule.freq}`]
@@ -154,8 +171,7 @@ export function toRRuleString(rule: RecurrenceRule): string {
   if (rule.wkst && rule.wkst !== "MO") parts.push(`WKST=${rule.wkst}`)
   if (rule.count !== undefined) parts.push(`COUNT=${rule.count}`)
   if (rule.until) {
-    const untilDate = rule.until.slice(0, 10).replace(/-/g, "")
-    parts.push(`UNTIL=${untilDate}`)
+    parts.push(`UNTIL=${formatRRuleUntil(rule.until)}`)
   }
   return parts.join(";")
 }
@@ -299,7 +315,9 @@ export function getNextOccurrence(
   if (rule.until) {
     const untilDate = /^\d{4}-\d{2}-\d{2}$/.test(rule.until)
       ? new Date(`${rule.until}T23:59:59.999Z`)
-      : new Date(rule.until)
+      : /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}$/.test(rule.until)
+        ? new Date(`${rule.until.replace(" ", "T")}Z`)
+        : new Date(rule.until)
     if (!Number.isNaN(untilDate.getTime()) && next > untilDate) {
       return null
     }
@@ -579,8 +597,14 @@ export function expandRRuleOccurrences(input: ExpandRRuleInput): ExpandedOccurre
 
   const untilMs = parsedRule.until
     ? (/^\d{4}-\d{2}-\d{2}$/.test(parsedRule.until)
-      ? Date.parse(`${parsedRule.until}T23:59:59.999Z`)
-      : Date.parse(parsedRule.until))
+      ? (allDay || !startParts.isZoned
+        ? Date.parse(`${parsedRule.until}T23:59:59.999Z`)
+        : fromZonedTime(`${parsedRule.until}T23:59:59.999`, tz).getTime())
+      : /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}$/.test(parsedRule.until)
+        ? (startParts.isZoned
+          ? fromZonedTime(parsedRule.until.replace(" ", "T"), tz).getTime()
+          : parseInstantValue(parsedRule.until))
+        : Date.parse(parsedRule.until))
     : null
 
   const occurrences: ExpandedOccurrence[] = []
