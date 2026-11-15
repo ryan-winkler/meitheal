@@ -59,12 +59,16 @@ export function sanitizeOriginName(value: unknown): string | null {
   // C0/C1 controls become spaces. Invisible and bidi formatting characters (U+200B-200F,
   // U+202A-202E, U+2066-2069, U+FEFF...) are removed so an origin name cannot reorder or
   // hide the verified token name it is displayed next to.
+  // Controls become spaces first, so a control character inside the label below
+  // ("(via\u0001token …)") cannot slip past the label check and turn into a space after it.
   const cleaned = value
     .replace(INVISIBLE_FORMAT_CHARS, "")
+    .replace(/[\r\n\t\x00-\x1f\x7f-\x9f\u2028\u2029]+/g, " ")
+    .replace(/\s+/g, " ")
     // The feed appends the verified token as `(via token "…")`; an origin name cannot
     // carry its own copy of that label to pose as a different token.
     .replace(/\(\s*via\s+token\b[^)]*\)?/gi, " ")
-    .replace(/[\r\n\t\x00-\x1f\x7f-\x9f\u2028\u2029]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 120).trim()
+    .replace(/\s+/g, " ").trim().slice(0, 120).trim()
   return cleaned || null
 }
 

@@ -25,7 +25,7 @@ import {
 } from "../ha"
 import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability"
 import type { SyncTaskMutation } from "@domains/tasks"
-import { STATUS } from "../../lib/status-config"
+import { isClosedStatus, isDoneStatus, STATUS } from "../../lib/status-config"
 import { calendarDayFromInput, calendarToday, formatTimeInZone, shiftCalendarDay } from "../../lib/date"
 import { inferRRuleFromDates, normalizeRRule } from "./recurrence"
 
@@ -529,7 +529,9 @@ export function planInboundCalendarUpdate(
   }
   const previousDay = previous?.start ? calendarDayFromInput(previous.start, opts.timezone) : null
   const incomingDay = calendarDayFromInput(incoming.start, opts.timezone)
-  const completed = String(current.status) === STATUS.COMPLETE
+  // Older rows can hold alias statuses ("done"); archived and cancelled tasks are closed too.
+  const completed = isDoneStatus(String(current.status ?? ""))
+  const closed = isClosedStatus(String(current.status ?? ""))
   // A completion made under the previous release's rules is not undone on upgrade: the
   // first payload this release writes becomes the baseline, and the task reopens at the
   // occurrence after that.
@@ -539,7 +541,7 @@ export function planInboundCalendarUpdate(
   ) {
     plan.status = STATUS.PENDING
   }
-  if (completed) {
+  if (closed) {
     if (plan.status === STATUS.PENDING) {
       // A reopened series task moves to the calendar's current occurrence.
       plan.dueDate = incoming.start
@@ -1044,7 +1046,7 @@ async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState |
       const starts = new Set(series.occurrences.map((o) => o.start))
       const rank = (taskId: string) => {
         const task = currentTasks.get(taskId)
-        const open = String(task?.status ?? "") !== STATUS.COMPLETE ? 2 : 0
+        const open = isClosedStatus(String(task?.status ?? "")) ? 0 : 2
         const holdsOccurrence = starts.has(String(task?.due_date ?? "")) ? 1 : 0
         return open + holdsOccurrence
       }
@@ -1146,26 +1148,30 @@ async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState |
         if (stripped) descParts.push(stripped)
         const inboundDesc = descParts.length > 0 ? descParts.join("\n\n") : null
 
+        const currentTask = currentTasks.get(existingTaskId)
+        const plan = planInboundCalendarUpdate(
+          currentTask,
+          matchedCandidateUid
+            ? existingLookup.get(matchedCandidateUid)?.payload ?? null
+            : titleMatchedPayloads.get(existingTaskId) ?? null,
+          {
+            title: evt.summary,
+            start: evt.start,
+            end: series.representativeEndDate,
+            recurrenceRule: series.recurrenceRule,
+            repeats: series.recurrenceRule !== null || series.inferredRecurrenceRule !== null,
+            occurrenceStarts: series.occurrences.map((o) => o.start),
+          },
+          { timezone },
+        )
+        // A closed task that is not being reopened keeps its description and labels too,
+        // so a calendar edit does not bump its updated_at.
+        const keepClosed = isClosedStatus(String(currentTask?.status ?? "")) && plan.status === undefined
         mutations.push({
           kind: "update",
           taskId: existingTaskId,
-          ...planInboundCalendarUpdate(
-            currentTasks.get(existingTaskId),
-            matchedCandidateUid
-              ? existingLookup.get(matchedCandidateUid)?.payload ?? null
-              : titleMatchedPayloads.get(existingTaskId) ?? null,
-            {
-              title: evt.summary,
-              start: evt.start,
-              end: series.representativeEndDate,
-              recurrenceRule: series.recurrenceRule,
-              repeats: series.recurrenceRule !== null || series.inferredRecurrenceRule !== null,
-              occurrenceStarts: series.occurrences.map((o) => o.start),
-            },
-            { timezone },
-          ),
-          description: inboundDesc,
-          ensureCalendarSyncLabel: true,
+          ...plan,
+          ...(keepClosed ? {} : { description: inboundDesc, ensureCalendarSyncLabel: true }),
           updatedAt: nowMs,
           confirmation: {
             source: "calendar",
@@ -1273,7 +1279,7 @@ async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState |
             // grow without bound.
             if (
               !touchedTaskIds.has(taskId) && Number(row.created_by_sync ?? 0) !== 0 &&
-              String(row.task_status ?? "") === STATUS.COMPLETE && Number(row.has_occurrences ?? 0) === 0
+              isClosedStatus(String(row.task_status ?? "")) && Number(row.has_occurrences ?? 0) === 0
             ) continue
             // A task created in Meitheal that sync only matched by title belongs to the
             // household: its event going away unlinks it instead of completing it, so a

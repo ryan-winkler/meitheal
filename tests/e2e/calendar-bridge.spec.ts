@@ -27,6 +27,7 @@ import {
   stopCalDAVSync,
   syncCalDAVEvents,
   isImportedCalendarTask,
+  planInboundCalendarUpdate,
   syncFromHA,
 } from "../../apps/web/src/domains/calendar/calendar-bridge"
 import { calendarDaysFromToday, calendarToday, formatRelativeDue, shiftCalendarDay } from "../../apps/web/src/lib/date"
@@ -276,6 +277,24 @@ test("selectRepresentativeOccurrence prioritizes today over +28d and handles exc
     "Europe/Dublin",
   )
   expect(pastAllDay.startDay).toBe("2026-11-15")
+})
+
+test("planInboundCalendarUpdate treats alias and archived statuses as closed", () => {
+  const payload = JSON.stringify({ summary: "Bins", start: "2026-11-09T07:00:00Z", end: null, rrule: null })
+  const base = {
+    id: "t", title: "Bins", due_date: "2026-11-09T07:00:00Z", start_date: "2026-11-09T07:00:00Z", end_date: null,
+    task_kind: "calendar_event", recurrence_rule: null, idempotency_key: "cal-sync-calendar.x:series",
+  }
+  const incoming = { title: "Bins", start: "2026-11-16T07:00:00Z", end: null, recurrenceRule: null, repeats: true }
+  // A legacy "done" alias reopens like "complete" and follows the next occurrence.
+  const done = planInboundCalendarUpdate({ ...base, status: "done" } as never, payload, incoming, { timezone: "UTC" })
+  expect(done.status).toBe("pending")
+  expect(done.dueDate).toBe("2026-11-16T07:00:00Z")
+  // An archived task is closed but never reopened, and its fields stay put.
+  const archived = planInboundCalendarUpdate({ ...base, status: "archived" } as never, payload, incoming, { timezone: "UTC" })
+  expect(archived.status).toBeUndefined()
+  expect(archived.dueDate).toBeUndefined()
+  expect(archived.title).toBeUndefined()
 })
 
 test("HA sync groups recurring occurrences (with and without UID), picks today over +28d, infers RRULE, and expands calendar counts", async () => {
