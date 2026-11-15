@@ -9,9 +9,9 @@
  */
 import type { APIRoute } from "astro"
 import { GrocyAdapter, validateGrocyBaseUrl } from "@meitheal/integration-core"
-import { requireSystemSettingsAdmin } from "../../../lib/settings-security"
 import { logApiError } from "../../../lib/api-logger"
 import { isLegacySupervisorIngressUrl, resolveSupervisorGrocyAddon } from "../../../lib/grocy-client"
+import { requireSystemSettingsAdmin } from "../../../lib/settings-security"
 
 /**
  * POST /api/grocy/test
@@ -73,14 +73,15 @@ export const POST: APIRoute = async ({ locals, request }) => {
     // For auto-detected installs, try fetching API key from saved settings
     if (autoDetected && !apiKey) {
       try {
-        const { ensureSchema, getPersistenceClient } = await import("@domains/tasks/persistence/store")
-        const { SettingsRepository } = await import("@domains/tasks/persistence/settings-repository")
+        const { ensureSchema, getPersistenceClient, SettingsRepository } = await import("@domains/tasks")
         await ensureSchema()
         const repo = new SettingsRepository(getPersistenceClient())
         await repo.ensureSettingsTable()
         const result = await repo.getByKey("grocy_api_key")
-        if (result?.value && typeof result.value === "string") {
+        if (typeof result?.value === "string" && result.value) {
           apiKey = result.value
+        } else if (typeof result?.value === "number" && Number.isFinite(result.value)) {
+          apiKey = String(result.value)
         }
       } catch { /* Settings lookup failed */ }
     }

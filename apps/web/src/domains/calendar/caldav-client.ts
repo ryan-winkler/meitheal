@@ -5,7 +5,9 @@
  * using native `fetch` — zero npm dependencies.
  *
  * Security:
- *   - SSRF protection: rejects private IPs, localhost, metadata URLs
+ *   - SSRF protection: rejects private IPs, localhost, metadata URLs; every
+ *     request goes through the shared outbound policy (checked again at
+ *     connect time), and hrefs and redirects must stay on the configured origin
  *   - XXE prevention: safe XML parsing (no external entity resolution)
  *   - Timeout: 10s AbortController on all requests
  *
@@ -23,7 +25,7 @@
  * @bounded-context integration
  */
 import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability";
-import { classifyNetworkHost, normalizeNetworkHost } from "@meitheal/integration-core";
+import { classifyNetworkHost, fetchOutbound, normalizeNetworkHost } from "@meitheal/integration-core"
 
 const logger = createLogger({
   service: "meitheal-web", env: process.env.NODE_ENV ?? "development",
@@ -106,37 +108,96 @@ function basicAuthHeader(username: string, password: string): string {
   return "Basic " + Buffer.from(`${username}:${password}`).toString("base64");
 }
 
+/** Most redirects a CalDAV request follows (all must stay on the configured origin). */
+const MAX_REDIRECTS = 5
+const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308])
+
+/**
+ * Resolve a server-supplied href against the configured CalDAV URL and refuse
+ * anything on another origin, so a server response cannot send the user's
+ * credentials to a different host.
+ */
+export function resolveCalDAVHref(baseUrl: string, href: string): URL {
+  const base = new URL(baseUrl)
+  if ((base.protocol !== "http:" && base.protocol !== "https:") || base.origin === "null") {
+    throw new Error("Only HTTP/HTTPS URLs are supported")
+  }
+  if (base.username || base.password) {
+    throw new Error("CalDAV URL must not include embedded credentials")
+  }
+  const resolved = new URL(href, base)
+  if (resolved.protocol !== "http:" && resolved.protocol !== "https:") {
+    throw new Error("Only HTTP/HTTPS URLs are supported")
+  }
+  if (resolved.username || resolved.password) {
+    throw new Error("CalDAV href must not include embedded credentials")
+  }
+  if (resolved.protocol !== base.protocol || resolved.origin !== base.origin) {
+    throw new Error(`CalDAV server returned an href on another origin (${resolved.origin})`)
+  }
+  return resolved
+}
+
 async function caldavFetch(
   url: string, method: string, body: string | null,
   username: string, password: string,
   extraHeaders: Record<string, string> = {},
 ): Promise<{ status: number; text: string }> {
-  const urlCheck = validateCalDAVUrl(url);
+  const urlCheck = validateCalDAVUrl(url)
   if (!urlCheck.valid) {
-    throw new Error(urlCheck.error);
+    throw new Error(urlCheck.error)
   }
-  const parsed = new URL(url);
+  const origin = new URL(url)
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS)
 
   try {
-    const res = await fetch(parsed.href, { // nosemgrep
-      method,
-      redirect: "error",
-      headers: {
-        "Content-Type": "application/xml; charset=utf-8",
+    let target = origin
+    let currentMethod = method
+    let currentBody = body
+    let res: Response
+    // Redirects are followed by hand so every hop stays on the configured
+    // origin and passes both CalDAV and connect-time outbound checks before credentials are re-sent.
+    for (let hop = 0; ; hop++) {
+      const requestHeaders: Record<string, string> = {
         Authorization: basicAuthHeader(username, password),
         ...extraHeaders,
-      },
-      body,
-      signal: controller.signal,
-    });
+      }
+      if (currentBody !== null) {
+        requestHeaders["Content-Type"] = "application/xml; charset=utf-8"
+      }
+      res = await fetchOutbound(target, {
+        method: currentMethod,
+        headers: requestHeaders,
+        body: currentBody,
+        signal: controller.signal,
+        redirect: "manual",
+      })
+      const location = res.headers.get("location")
+      if (!REDIRECT_STATUSES.has(res.status) || !location) break
+      await res.body?.cancel().catch(() => undefined)
+      if (hop >= MAX_REDIRECTS) throw new Error(`CalDAV server redirected more than ${MAX_REDIRECTS} times`)
+      const next = new URL(location, target)
+      if (next.protocol !== origin.protocol || next.origin !== origin.origin) {
+        throw new Error(`CalDAV server redirected to another origin (${next.origin}); update the CalDAV URL instead`)
+      }
+      const nextCheck = validateCalDAVUrl(next.toString())
+      if (!nextCheck.valid) {
+        throw new Error(nextCheck.error)
+      }
+      target = next
+      if (res.status === 303) {
+        currentMethod = "GET"
+        currentBody = null
+      }
+    }
 
     // Guard: check Content-Length header before reading body
-    const contentLength = res.headers.get("content-length");
+    const contentLength = res.headers.get("content-length")
     if (contentLength && parseInt(contentLength, 10) > MAX_RESPONSE_BYTES) {
-      throw new Error(`CalDAV response too large (${contentLength} bytes, max ${MAX_RESPONSE_BYTES})`);
+      await res.body?.cancel().catch(() => undefined)
+      throw new Error(`CalDAV response too large (${contentLength} bytes, max ${MAX_RESPONSE_BYTES})`)
     }
 
     const text = await res.text();
@@ -371,12 +432,8 @@ export async function listCalDAVEvents(
     throw new Error(`CalDAV URL validation failed: ${validation.error}`);
   }
 
-  // Build absolute URL for the calendar
-  const baseUrl = new URL(config.url);
-  const parsedCalUrl = new URL(calendarHref, baseUrl);
-  if (parsedCalUrl.origin !== baseUrl.origin) {
-    throw new Error(`CalDAV calendar href escaped configured origin: ${parsedCalUrl.origin}`);
-  }
+  // Build absolute URL for the calendar; it must stay on the configured origin
+  const parsedCalUrl = resolveCalDAVHref(config.url, calendarHref)
   const calUrlCheck = validateCalDAVUrl(parsedCalUrl.toString());
   if (!calUrlCheck.valid) {
     throw new Error(calUrlCheck.error);

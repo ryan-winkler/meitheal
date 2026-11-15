@@ -5,10 +5,22 @@
  * and hydration of Grocy status on load.
  */
 import { withAsyncButton } from "@lib/async-button"
+import { isBrowserReachableGrocyUrl, LEGACY_HASSIO_INGRESS_PATH } from "@lib/grocy-url-ui"
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { escapeHtml } from "@lib/safe-html"
 import { showToast } from "@lib/toast"
 import { saveSetting, log } from "@lib/settings-utils"
+
+function syncOpenGrocyLink(rawUrl: string | undefined): void {
+  const openLink = document.getElementById("open-grocy-link") as HTMLAnchorElement | null
+  if (!openLink) return
+  if (typeof rawUrl === "string" && isBrowserReachableGrocyUrl(rawUrl)) {
+    openLink.href = rawUrl
+    openLink.style.display = ""
+  } else {
+    openLink.style.display = "none"
+  }
+}
 
 export function initGrocySettings(): void {
   // Auto-key generation
@@ -58,7 +70,7 @@ export function initGrocySettings(): void {
 
     const grocyAutoDetected = document.getElementById("grocy-auto-info")
     const isAutoDetected = Boolean(grocyAutoDetected && grocyAutoDetected.style.display !== "none")
-    const url = isAutoDetected && rawUrl.startsWith("/api/hassio_ingress/") ? "" : rawUrl
+    const url = rawUrl
     if (!url && !isAutoDetected) {
       showToast("settings.grocy_required", "error")
       const urlInput = document.getElementById("grocy-url")
@@ -66,7 +78,7 @@ export function initGrocySettings(): void {
       urlInput?.addEventListener("input", () => urlInput.classList.remove("form-input--error"), { once: true })
       return
     }
-    if (url) {
+    if (url && !LEGACY_HASSIO_INGRESS_PATH.test(url)) {
       try { new URL(url) } catch {
         showToast("Please enter a valid URL", "error")
         const urlInput = document.getElementById("grocy-url")
@@ -95,6 +107,9 @@ export function initGrocySettings(): void {
         if (typeof data.url === "string" && data.url) {
           const urlInput = document.getElementById("grocy-url") as HTMLInputElement | null
           if (urlInput) urlInput.value = data.url
+          syncOpenGrocyLink(data.url)
+        } else {
+          syncOpenGrocyLink(url || undefined)
         }
         const statusEl = document.getElementById("grocy-status")
         if (statusEl) { statusEl.textContent = "Configured"; statusEl.className = "badge badge-active" }
@@ -236,24 +251,7 @@ async function hydrateGrocyStatus() {
       if (statusEl) { statusEl.textContent = "Configured"; statusEl.className = "badge badge-active" }
       const syncBtn = document.getElementById("sync-grocy-now")
       if (syncBtn) syncBtn.style.display = ""
-      const openLink = document.getElementById("open-grocy-link") as HTMLAnchorElement | null
-      if (openLink && s.grocy_url) {
-        let showExternalLink = false
-        try {
-          const parsed = new URL(String(s.grocy_url))
-          showExternalLink =
-            (parsed.protocol === "http:" || parsed.protocol === "https:") &&
-            (parsed.hostname.includes(".") || parsed.hostname === "localhost")
-        } catch {
-          showExternalLink = false
-        }
-        if (showExternalLink) {
-          openLink.href = String(s.grocy_url)
-          openLink.style.display = ""
-        } else {
-          openLink.style.display = "none"
-        }
-      }
+      syncOpenGrocyLink(typeof s.grocy_url === "string" ? s.grocy_url : undefined)
     }
     const syncRes = await fetch((window.__ingress_path || "") + "/api/grocy/sync", { signal: pageLifecycle.signal })
     if (syncRes.ok) {

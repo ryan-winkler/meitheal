@@ -9,9 +9,13 @@
  */
 import type { APIRoute } from "astro"
 import { validateGrocyBaseUrl } from "@meitheal/integration-core"
-import { requireSystemSettingsAdmin } from "../../../lib/settings-security"
 import { logApiError } from "../../../lib/api-logger"
-import { isLegacySupervisorIngressUrl, resolveSupervisorGrocyAddon } from "../../../lib/grocy-client"
+import {
+  isLegacySupervisorIngressUrl,
+  resolveSupervisorGrocyAddon,
+  resolveSupervisorGrocySlugForUrl,
+} from "../../../lib/grocy-client"
+import { requireSystemSettingsAdmin } from "../../../lib/settings-security"
 import { supervisorFetch } from "../../../lib/supervisor-fetch"
 
 export const POST: APIRoute = async ({ locals, request }) => {
@@ -40,8 +44,9 @@ export const POST: APIRoute = async ({ locals, request }) => {
       grocyUrl = urlCheck.normalizedUrl
     }
 
-    // If no URL provided, try to detect Grocy addon container URL via Supervisor
-    let detectedSlug = "a0d7b954_grocy"
+    // Resolve matching Supervisor Grocy add-on slug only when auto-detecting or when
+    // the caller-supplied URL matches a started Supervisor Grocy add-on container URL.
+    let detectedSlug: string | null = null
     if (!grocyUrl) {
       const detected = legacyIngressHint
         ? await resolveSupervisorGrocyAddon(legacyIngressHint)
@@ -50,6 +55,8 @@ export const POST: APIRoute = async ({ locals, request }) => {
         grocyUrl = detected.url
         detectedSlug = detected.slug
       }
+    } else {
+      detectedSlug = await resolveSupervisorGrocySlugForUrl(grocyUrl)
     }
 
     if (!grocyUrl) {
@@ -59,28 +66,28 @@ export const POST: APIRoute = async ({ locals, request }) => {
       )
     }
 
-    // Attempt to create an API key via Supervisor ingress (authenticated by HA session)
-    // Direct fetch won't work — Grocy requires auth for API key creation
+    // Attempt to create an API key via Supervisor ingress only for a matched Supervisor add-on
     let createRes: Response | null = null
-    try {
-      // Try Supervisor-proxied request first (works for HA addon installs)
-      const supervisorRes = await supervisorFetch(
-        `/addons/${encodeURIComponent(detectedSlug)}/proxy/api/objects/api_keys`,
-        {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-            accept: "application/json",
+    if (detectedSlug) {
+      try {
+        const supervisorRes = await supervisorFetch(
+          `/addons/${encodeURIComponent(detectedSlug)}/proxy/api/objects/api_keys`,
+          {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              accept: "application/json",
+            },
+            body: JSON.stringify({ key_type: "default" }),
           },
-          body: JSON.stringify({ key_type: "default" }),
+        )
+        if (supervisorRes?.ok) {
+          createRes = supervisorRes
+        } else {
+          await supervisorRes?.body?.cancel().catch(() => undefined)
         }
-      )
-      if (supervisorRes?.ok) {
-        createRes = supervisorRes
-      } else {
-        await supervisorRes?.body?.cancel().catch(() => undefined)
-      }
-    } catch { /* Supervisor proxy failed — try direct */ }
+      } catch { /* Supervisor proxy failed — try direct */ }
+    }
 
     // Fallback: direct API call (works if Grocy ingress session is active)
     if (!createRes) {
@@ -126,8 +133,7 @@ export const POST: APIRoute = async ({ locals, request }) => {
 
     // Save the key to settings via SettingsRepository
     try {
-      const { ensureSchema, getPersistenceClient } = await import("@domains/tasks/persistence/store")
-      const { SettingsRepository } = await import("@domains/tasks/persistence/settings-repository")
+      const { ensureSchema, getPersistenceClient, SettingsRepository } = await import("@domains/tasks")
       await ensureSchema()
       const repo = new SettingsRepository(getPersistenceClient())
       await repo.ensureSettingsTable()

@@ -8,12 +8,11 @@
  * @bounded-context integration
  */
 import type { APIRoute } from "astro"
+import { ensureSchema, getPersistenceClient, SettingsRepository } from "@domains/tasks"
 import { validateGrocyBaseUrl } from "@meitheal/integration-core"
-import { requireSystemSettingsAdmin } from "../../../lib/settings-security"
-import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
-import { SettingsRepository } from "@domains/tasks/persistence/settings-repository"
 import { logApiError } from "../../../lib/api-logger"
 import { isLegacySupervisorIngressUrl, resolveSupervisorGrocyAddon } from "../../../lib/grocy-client"
+import { requireSystemSettingsAdmin } from "../../../lib/settings-security"
 
 const GROCY_SETTINGS_KEYS = [
   "grocy_url",
@@ -52,14 +51,17 @@ export const GET: APIRoute = async ({ locals, request }) => {
       }
     }
 
-    // Mask API key for security
-    if (settings.grocy_api_key && typeof settings.grocy_api_key === "string") {
-      settings.grocy_api_key_masked =
-        settings.grocy_api_key.length > 4
-          ? "••••" + settings.grocy_api_key.slice(-4)
-          : "••••"
+    // Mask API key for security (coercing legacy numeric keys; always strip raw key)
+    const rawKey =
+      typeof settings.grocy_api_key === "string"
+        ? settings.grocy_api_key
+        : typeof settings.grocy_api_key === "number" && Number.isFinite(settings.grocy_api_key)
+          ? String(settings.grocy_api_key)
+          : ""
+    delete settings.grocy_api_key
+    if (rawKey) {
+      settings.grocy_api_key_masked = rawKey.length > 4 ? "••••" + rawKey.slice(-4) : "••••"
       settings.grocy_api_key_set = true
-      delete settings.grocy_api_key
     } else {
       settings.grocy_api_key_set = false
     }
@@ -88,7 +90,14 @@ export const PUT: APIRoute = async ({ locals, request }) => {
     let body: Record<string, unknown>
 
     try {
-      body = await request.json()
+      const parsed: unknown = await request.json()
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        return new Response(JSON.stringify({ ok: false, error: "Invalid JSON body" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        })
+      }
+      body = parsed as Record<string, unknown>
     } catch {
       return new Response(JSON.stringify({ ok: false, error: "Invalid JSON body" }), {
         status: 400,
@@ -99,7 +108,7 @@ export const PUT: APIRoute = async ({ locals, request }) => {
     await ensureSchema()
     const repo = new SettingsRepository(getPersistenceClient())
     await repo.ensureSettingsTable()
-    const saved: string[] = []
+    const pendingWrites: Array<{ key: string; value: string }> = []
     let resolvedGrocyUrl: string | undefined
 
     for (const settingKey of GROCY_SETTINGS_KEYS) {
@@ -141,12 +150,23 @@ export const PUT: APIRoute = async ({ locals, request }) => {
               JSON.stringify({ ok: false, error: "Invalid URL format" }),
               { status: 400, headers: { "Content-Type": "application/json" } },
             )
+          } else {
+            value = JSON.stringify("")
+          }
+        }
+
+        if (settingKey === "grocy_api_key") {
+          if (typeof body[settingKey] !== "string") {
+            return new Response(
+              JSON.stringify({ ok: false, error: "grocy_api_key must be a string" }),
+              { status: 400, headers: { "Content-Type": "application/json" } },
+            )
           }
         }
 
         if (settingKey === "grocy_sync_mode") {
-          const mode = body[settingKey] as string
-          if (!["import", "export", "bidirectional"].includes(mode)) {
+          const mode = body[settingKey]
+          if (typeof mode !== "string" || !["import", "export", "bidirectional"].includes(mode)) {
             return new Response(
               JSON.stringify({ ok: false, error: "sync_mode must be import, export, or bidirectional" }),
               { status: 400, headers: { "Content-Type": "application/json" } },
@@ -154,8 +174,26 @@ export const PUT: APIRoute = async ({ locals, request }) => {
           }
         }
 
-        await repo.upsert(settingKey, value)
-        saved.push(settingKey)
+        if (settingKey === "grocy_sync_interval") {
+          const interval = body[settingKey]
+          if (typeof interval !== "number" || !Number.isFinite(interval) || interval < 0) {
+            return new Response(
+              JSON.stringify({ ok: false, error: "grocy_sync_interval must be a non-negative number" }),
+              { status: 400, headers: { "Content-Type": "application/json" } },
+            )
+          }
+        }
+
+        if (settingKey === "grocy_sync_enabled") {
+          if (typeof body[settingKey] !== "boolean") {
+            return new Response(
+              JSON.stringify({ ok: false, error: "grocy_sync_enabled must be a boolean" }),
+              { status: 400, headers: { "Content-Type": "application/json" } },
+            )
+          }
+        }
+
+        pendingWrites.push({ key: settingKey, value })
       }
     }
 
@@ -167,12 +205,21 @@ export const PUT: APIRoute = async ({ locals, request }) => {
         const detected = existingVal
           ? await resolveSupervisorGrocyAddon(existingVal)
           : await resolveSupervisorGrocyAddon()
-        if (detected) {
-          resolvedGrocyUrl = detected.url
-          await repo.upsert("grocy_url", JSON.stringify(detected.url))
-          saved.push("grocy_url")
+        if (!detected) {
+          return new Response(
+            JSON.stringify({ ok: false, error: "Grocy add-on is not running or Grocy URL is required" }),
+            { status: 400, headers: { "Content-Type": "application/json" } },
+          )
         }
+        resolvedGrocyUrl = detected.url
+        pendingWrites.push({ key: "grocy_url", value: JSON.stringify(detected.url) })
       }
+    }
+
+    const saved: string[] = []
+    for (const entry of pendingWrites) {
+      await repo.upsert(entry.key, entry.value)
+      saved.push(entry.key)
     }
 
     return new Response(

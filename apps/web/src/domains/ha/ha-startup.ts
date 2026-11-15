@@ -29,17 +29,17 @@ const logger = createLogger({
 const SYS_REQ = "ha-system";
 
 // Cached DB references — avoids 4x repeated dynamic import + ensureSchema
-let _dbReady = false;
-let _getPersistenceClient: (() => ReturnType<typeof import("@domains/tasks/persistence/store")["getPersistenceClient"]>) | null = null;
+let _dbReady = false
+let _getPersistenceClient: (() => ReturnType<typeof import("@domains/tasks")["getPersistenceClient"]>) | null = null
 
 async function getDB() {
   if (!_dbReady) {
-    const mod = await import("@domains/tasks/persistence/store");
-    await mod.ensureSchema();
-    _getPersistenceClient = mod.getPersistenceClient;
-    _dbReady = true;
+    const mod = await import("@domains/tasks")
+    await mod.ensureSchema()
+    _getPersistenceClient = mod.getPersistenceClient
+    _dbReady = true
   }
-  return _getPersistenceClient!();
+  return _getPersistenceClient!()
 }
 
 let initialized = false;
@@ -427,7 +427,12 @@ async function autoStartGrocySync(): Promise<void> {
       settings.grocy_sync_enabled === "true" ||
       settings.grocy_sync_enabled === "1"
     const url = typeof settings.grocy_url === "string" ? settings.grocy_url : ""
-    const apiKey = typeof settings.grocy_api_key === "string" ? settings.grocy_api_key : ""
+    const apiKey =
+      typeof settings.grocy_api_key === "string"
+        ? settings.grocy_api_key
+        : typeof settings.grocy_api_key === "number"
+          ? String(settings.grocy_api_key)
+          : ""
     const syncMode = (
       typeof settings.grocy_sync_mode === "string" ? settings.grocy_sync_mode : "bidirectional"
     ) as "import" | "export" | "bidirectional"

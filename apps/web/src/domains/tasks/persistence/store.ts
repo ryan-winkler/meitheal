@@ -75,9 +75,38 @@ function resolveDbUrl(): string {
 }
 
 function resolveDbPath(dbUrl: string): string | null {
-  if (!dbUrl.startsWith("file:")) return null
-  const dbPath = dbUrl.slice("file:".length)
+  if (!/^file:/i.test(dbUrl)) return null
+  const withoutScheme = dbUrl.slice("file:".length)
+  const hashIdx = withoutScheme.indexOf("#")
+  const rawRest = hashIdx >= 0 ? withoutScheme.slice(0, hashIdx) : withoutScheme
+  const qIdx = rawRest.indexOf("?")
+  const rawPath = qIdx >= 0 ? rawRest.slice(0, qIdx) : rawRest
+  const query = qIdx >= 0 ? rawRest.slice(qIdx + 1) : ""
+  if (/(?:^|&)mode=memory(?:&|$)/i.test(query)) return null
+  let dbPath = rawPath
+  if (/^\/\/localhost\//i.test(dbPath)) {
+    dbPath = dbPath.slice("//localhost".length)
+  } else if (dbPath.startsWith("///")) {
+    dbPath = dbPath.slice(2)
+  } else if (dbPath.startsWith("//")) {
+    return null
+  }
+  try {
+    dbPath = decodeURIComponent(dbPath)
+  } catch {
+    return null
+  }
+  if (!dbPath || dbPath === ":memory:" || dbPath.startsWith(":memory:")) return null
   return path.isAbsolute(dbPath) ? dbPath : path.join(process.cwd(), dbPath)
+}
+
+/**
+ * Directory that holds the local SQLite file, for state that belongs beside
+ * the database (and inside its backups). Null when the database is remote or in-memory.
+ */
+export function getLocalDataDirectory(): string | null {
+  const dbPath = resolveDbPath(resolveDbUrl())
+  return dbPath ? path.dirname(dbPath) : null
 }
 
 function ensureFileDbDirectory(dbUrl: string): void {

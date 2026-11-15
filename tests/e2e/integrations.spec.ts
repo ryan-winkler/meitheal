@@ -21,6 +21,11 @@ test.describe("Integration Webhooks", () => {
       req.on("data", chunk => { body += chunk; });
       req.on("end", () => {
         receivedRequests.push({ headers: req.headers, body });
+        if (req.url === "/redirect") {
+          res.writeHead(307, { location: `http://127.0.0.1:${port}/redirected` })
+          res.end()
+          return
+        }
         res.writeHead(200);
         res.end("OK");
       });
@@ -112,6 +117,102 @@ test.describe("Integration Webhooks", () => {
     expect(payload.payload.status).toBe("done");
     expect(req.headers["x-meitheal-event"]).toBe("task.updated");
   });
+
+  test("test-webhook API endpoint refuses IPv4-mapped loopback, metadata, Supervisor, and DNS-rebound overrides without delivering", async () => {
+    const { POST } = await import("../../apps/web/src/pages/api/integrations/test-webhook")
+    for (const blockedOverride of [
+      `http://[::ffff:127.0.0.1]:${port}/mapped`,
+      `http://127.0.0.2:${port}/loopback`,
+      "http://metadata.google.internal/computeMetadata/v1/",
+      "http://supervisor/core/api",
+      "ftp://example.com/hook",
+      ["http://admin", `topsecret@example.com/${"//a:".repeat(500)}`].join(":"),
+    ]) {
+      const request = new Request(`http://127.0.0.1:${port}/api/integrations/test-webhook`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: blockedOverride }),
+      })
+
+      const res = await POST({ request, locals: { hassIsAdmin: true } } as Parameters<typeof POST>[0])
+      expect(res.status, blockedOverride).toBe(400)
+      expect((await res.json()).success).toBe(false)
+    }
+
+    const dns = await import("node:dns")
+    const originalLookup = dns.default.lookup
+    dns.default.lookup = ((hostname: string, options: unknown, cb?: unknown) => {
+      const done = (typeof options === "function" ? options : cb) as (
+        err: NodeJS.ErrnoException | null,
+        addr: string | { address: string; family: number }[],
+        fam?: number,
+      ) => void
+      const all = typeof options === "object" && options !== null && "all" in options && Boolean((options as { all?: boolean }).all)
+      const ip = hostname === "supervisor" ? "172.30.32.2" : "127.0.0.1"
+      if (all) done(null, [{ address: ip, family: 4 }])
+      else done(null, ip, 4)
+    }) as typeof dns.default.lookup
+    try {
+      const rebindReq = new Request(`http://127.0.0.1:${port}/api/integrations/test-webhook`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: `http://rebind-override.example:${port}/rebound` }),
+      })
+      const rebindRes = await POST({ request: rebindReq, locals: { hassIsAdmin: true } } as Parameters<typeof POST>[0])
+      expect(rebindRes.status).toBe(502)
+      expect((await rebindRes.json()).success).toBe(false)
+    } finally {
+      dns.default.lookup = originalLookup
+    }
+
+    expect(receivedRequests).toHaveLength(0)
+  })
+
+  test("test-webhook API endpoint reports a redirect on a stored URL instead of following it", async () => {
+    const client = getPersistenceClient()
+    await client.execute({
+      sql: "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)",
+      args: ["n8n_webhook_url", `"http://127.0.0.1:${port}/redirect"`, Date.now()],
+    })
+    const { POST } = await import("../../apps/web/src/pages/api/integrations/test-webhook")
+    const request = new Request(`http://127.0.0.1:${port}/api/integrations/test-webhook`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    })
+
+    const res = await POST({ request, locals: { hassIsAdmin: true } } as Parameters<typeof POST>[0])
+    const json = await res.json()
+
+    expect(json.success).toBe(false)
+    expect(json.status_code).toBe(307)
+    expect(receivedRequests).toHaveLength(1)
+
+    // Stored legacy URLs with embedded credentials (including scheme-relative, whitespace, and malformed forms) fail safely and mask secrets.
+    for (const storedUrl of [
+      ["http://admin", `supersecret@127.0.0.1:${port}/hook`].join(":"),
+      ["http://user@org.com", "supersecret@127.0.0.1:99999/hook"].join(":"),
+      ["admin", "supersecret@127.0.0.1:8080/hook"].join(":"),
+      ["  //admin", "supersecret@127.0.0.1:8080/hook  "].join(":"),
+    ]) {
+      await client.execute({
+        sql: "UPDATE settings SET value = ?, updated_at = ? WHERE key = 'n8n_webhook_url'",
+        args: [JSON.stringify(storedUrl), Date.now()],
+      })
+      const credRes = await POST({
+        request: new Request(`http://127.0.0.1:${port}/api/integrations/test-webhook`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+        }),
+        locals: { hassIsAdmin: true },
+      } as Parameters<typeof POST>[0])
+      expect(credRes.status, storedUrl).toBe(502)
+      const credJson = await credRes.json()
+      expect(credJson.target_url, storedUrl).toContain("***@")
+      expect(JSON.stringify(credJson), storedUrl).not.toContain("supersecret")
+    }
+  })
 
   test("test-webhook API endpoint sends test payload and returns success", async () => {
     const client = getPersistenceClient();

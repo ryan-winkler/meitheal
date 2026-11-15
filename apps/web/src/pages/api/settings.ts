@@ -1,11 +1,18 @@
 import type { APIRoute } from "astro"
-import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
-import { AI_HANDOFF_SETTING_KEYS, saveAiHandoffSettings, saveLegacyAiHandoffUrl, SettingsRepository } from "@domains/tasks/persistence/settings-repository"
+import {
+  AI_HANDOFF_SETTING_KEYS,
+  ensureSchema,
+  getPersistenceClient,
+  saveAiHandoffSettings,
+  saveLegacyAiHandoffUrl,
+  SettingsRepository,
+} from "@domains/tasks"
 import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability"
 import { validateGrocyBaseUrl } from "@meitheal/integration-core"
-import { currentSettingsAccess } from "../../lib/current-settings-access"
 import { parseAiHandoffUrl } from "../../lib/ai-handoff-url"
 import { apiError, apiJson, apiProblem } from "../../lib/api-response"
+import { currentSettingsAccess } from "../../lib/current-settings-access"
+import { isLegacySupervisorIngressUrl, resolveSupervisorGrocyAddon } from "../../lib/grocy-client"
 import { canManageSystemSettings, isSecretSetting, isSystemSetting, requireSystemSettingsAdmin, REDACTED_SETTING_VALUE } from "../../lib/settings-security"
 
 function settingsJson(data: unknown): Response {
@@ -70,7 +77,16 @@ export const GET: APIRoute = async ({ request, url, locals }) => {
         if (access instanceof Response) return access
       }
       const values = await repo.getByKeys([key])
-      const value = Object.hasOwn(values, key) ? values[key] : null
+      let value = Object.hasOwn(values, key) ? values[key] : null
+      if (key === "grocy_url" && typeof value === "string" && isLegacySupervisorIngressUrl(value)) {
+        const detected = await resolveSupervisorGrocyAddon(value)
+        if (detected) {
+          value = detected.url
+          await repo.upsert("grocy_url", JSON.stringify(detected.url))
+        } else {
+          value = null
+        }
+      }
       if (!admin && key === "ai-custom-url" && (typeof value !== "string" || !value || values["ai-custom-url-approved"] !== value)) {
         return apiProblem({ status: 403, title: "URL review required", detail: "Ask an administrator to review and share this custom AI URL in Settings.", extraHeaders: { "Cache-Control": "no-store" } })
       }
@@ -95,6 +111,15 @@ export const GET: APIRoute = async ({ request, url, locals }) => {
         settings[k] = JSON.parse(String(row.value))
       } catch {
         settings[k] = String(row.value)
+      }
+    }
+    if (typeof settings.grocy_url === "string" && isLegacySupervisorIngressUrl(settings.grocy_url)) {
+      const detected = await resolveSupervisorGrocyAddon(settings.grocy_url)
+      if (detected) {
+        settings.grocy_url = detected.url
+        await repo.upsert("grocy_url", JSON.stringify(detected.url))
+      } else {
+        delete settings.grocy_url
       }
     }
     if (admin) settings["ai-handoff-editable"] = canReadHandoffSettings
@@ -187,10 +212,17 @@ export const PUT: APIRoute = async ({ request, locals }) => {
       if (typeof normalizedSettingValue !== "string") {
         return apiError("Invalid Grocy URL format", 400)
       }
-      const trimmedGrocyUrl = normalizedSettingValue.trim()
+      let trimmedGrocyUrl = normalizedSettingValue.trim()
       if (!trimmedGrocyUrl) {
         normalizedSettingValue = ""
       } else {
+        if (isLegacySupervisorIngressUrl(trimmedGrocyUrl)) {
+          const detected = await resolveSupervisorGrocyAddon(trimmedGrocyUrl)
+          if (!detected) {
+            return apiError("Grocy add-on is not running or could not be resolved", 400)
+          }
+          trimmedGrocyUrl = detected.url
+        }
         const urlCheck = validateGrocyBaseUrl(trimmedGrocyUrl)
         if (!urlCheck.ok) {
           return apiError(urlCheck.error, 400)

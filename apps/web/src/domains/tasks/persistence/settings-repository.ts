@@ -107,7 +107,14 @@ export class SettingsRepository {
     })
     const row = result.rows[0] as Record<string, unknown> | undefined
     if (!row) return null
-    return { key: String(row.key), value: JSON.parse(String(row.value)) }
+    const rawValue = String(row.value)
+    let parsedValue: unknown
+    try {
+      parsedValue = JSON.parse(rawValue)
+    } catch {
+      parsedValue = rawValue
+    }
+    return { key: String(row.key), value: parsedValue }
   }
 
   /** Get all settings (returns raw rows for caller to handle redaction) */

@@ -10,15 +10,13 @@ import {
   classifyNetworkHost,
   GrocyAdapter,
   isIpv4TranslationIpv6Host,
-  validateGrocyBaseUrl,
-} from "../../packages/integration-core/src/grocy-adapter"
-import {
   isPrivateHost,
   isPrivateUrl,
   parseWebhookConfig,
   signPayload,
+  validateGrocyBaseUrl,
   verifySignature,
-} from "../../packages/integration-core/src/webhook-config"
+} from "../../packages/integration-core/src/index"
 
 test.describe("Webhook Signer", () => {
   test("sign and verify round-trip", () => {
@@ -315,13 +313,17 @@ test.describe("Private URL Guard", () => {
     const port = (server.address() as AddressInfo).port
 
     const { ensureSchema, getPersistenceClient, resetPersistenceForTests } = await import(
-      "../../apps/web/src/domains/tasks/persistence/store"
+      "../../apps/web/src/domains/tasks"
     )
     const {
       createGrocyClient,
       isLegacySupervisorIngressUrl,
       resolveSupervisorGrocyAddon,
+      resolveSupervisorGrocySlugForUrl,
     } = await import("../../apps/web/src/lib/grocy-client")
+    const { isBrowserReachableGrocyUrl } = await import(
+      "../../apps/web/src/lib/grocy-url-ui"
+    )
     const { GET: getSettings, PUT: putSettings } = await import("../../apps/web/src/pages/api/grocy/settings")
     const { POST: postAutoKey } = await import("../../apps/web/src/pages/api/grocy/auto-key")
     const { POST: postTest } = await import("../../apps/web/src/pages/api/grocy/test")
@@ -346,6 +348,7 @@ test.describe("Private URL Guard", () => {
     }) as typeof dns.lookup
 
     let infoPayload: Record<string, unknown> = { hostname: "a0d7b954-grocy", ingress_port: port }
+    const supervisorProxyHits: string[] = []
     globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
       const target = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
       if (target === "http://supervisor/addons") {
@@ -367,7 +370,11 @@ test.describe("Private URL Guard", () => {
         return Response.json({ data: infoPayload })
       }
       if (target === "http://supervisor/addons/a0d7b954_grocy/proxy/api/objects/api_keys") {
+        supervisorProxyHits.push(target)
         return Response.json({ created_object_id: "auto-grocy-key-1234" })
+      }
+      if (target === "https://grocy.example.com/api/objects/api_keys") {
+        return Response.json({ created_object_id: "external-grocy-key-9999" })
       }
       if (target.startsWith("http://supervisor")) {
         throw new Error(`Unexpected direct Supervisor fetch: ${target}`)
@@ -375,11 +382,21 @@ test.describe("Private URL Guard", () => {
       return originalFetch(input, init)
     }) as typeof fetch
 
+    let db: ReturnType<typeof getPersistenceClient> | undefined
     try {
       expect(isLegacySupervisorIngressUrl("http://supervisor/api/hassio_ingress/tok_1")).toBe(true)
       expect(isLegacySupervisorIngressUrl("/api/hassio_ingress/tok_1")).toBe(true)
       expect(isLegacySupervisorIngressUrl("http://supervisor/core/api")).toBe(false)
       expect(isLegacySupervisorIngressUrl("not-a-url")).toBe(false)
+
+      expect(isBrowserReachableGrocyUrl("http://grocyserver:8080")).toBe(true)
+      expect(isBrowserReachableGrocyUrl("https://[2606:4700::1111]/")).toBe(true)
+      expect(isBrowserReachableGrocyUrl("https://grocy.home.internal")).toBe(true)
+      expect(isBrowserReachableGrocyUrl("http://a0d7b954-grocy")).toBe(false)
+      expect(isBrowserReachableGrocyUrl("http://local-grocy:8080")).toBe(false)
+      expect(isBrowserReachableGrocyUrl("http://supervisor/api/hassio_ingress/tok_1")).toBe(false)
+      expect(isBrowserReachableGrocyUrl("/api/hassio_ingress/tok_1")).toBe(false)
+      expect(isBrowserReachableGrocyUrl("not-a-url")).toBe(false)
 
       // Default auto-detect (first started Grocy add-on prefers 80/tcp over ingress_port 8099)
       const firstDetected = await resolveSupervisorGrocyAddon()
@@ -389,6 +406,8 @@ test.describe("Private URL Guard", () => {
       const matchedDetected = await resolveSupervisorGrocyAddon("http://supervisor/api/hassio_ingress/tok_1")
       expect(matchedDetected).toEqual({ slug: "a0d7b954_grocy", url: `http://a0d7b954-grocy:${port}` })
       expect(await resolveSupervisorGrocyAddon("http://supervisor/api/hassio_ingress/unknown_tok")).toBeNull()
+      expect(await resolveSupervisorGrocySlugForUrl(`http://a0d7b954-grocy:${port}`)).toBe("a0d7b954_grocy")
+      expect(await resolveSupervisorGrocySlugForUrl("https://grocy.example.com")).toBeNull()
 
       // Direct 80/tcp mapping takes precedence over ingress_port on the matched add-on too
       infoPayload = { hostname: "a0d7b954-grocy", ingress_port: 8099, network: { "80/tcp": 9192 } }
@@ -399,6 +418,7 @@ test.describe("Private URL Guard", () => {
       infoPayload = { hostname: "a0d7b954-grocy", ingress_port: port }
 
       // Auto-key saves direct container URL (never http://supervisor/*)
+      supervisorProxyHits.length = 0
       const autoRes = await postAutoKey({
         locals: { hassIsAdmin: true },
         request: new Request("http://localhost/api/grocy/auto-key", {
@@ -410,13 +430,36 @@ test.describe("Private URL Guard", () => {
       const autoJson = (await autoRes.json()) as { ok: boolean; url?: string }
       expect(autoJson.ok).toBe(true)
       expect(autoJson.url).toBe(`http://a0d7b954-grocy:${port}`)
+      expect(supervisorProxyHits).toEqual([
+        "http://supervisor/addons/a0d7b954_grocy/proxy/api/objects/api_keys",
+      ])
 
-      // Seed legacy Supervisor ingress URL and verify createGrocyClient + settings + test migrate cleanly
+      // External URL on auto-key must NOT proxy to a0d7b954_grocy via Supervisor
+      supervisorProxyHits.length = 0
+      const extAutoRes = await postAutoKey({
+        locals: { hassIsAdmin: true },
+        request: new Request("http://localhost/api/grocy/auto-key", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ url: "https://grocy.example.com" }),
+        }),
+      } as unknown as Parameters<typeof postAutoKey>[0])
+      const extAutoJson = (await extAutoRes.json()) as { ok: boolean; url?: string }
+      expect(extAutoJson.ok).toBe(true)
+      expect(extAutoJson.url).toBe("https://grocy.example.com")
+      expect(supervisorProxyHits).toEqual([])
+
+      // Seed RAW unquoted pre-PR auto-key values ("http://supervisor/..." and numeric "1") to verify
+      // SettingsRepository.getByKey, createGrocyClient, GET /api/grocy/settings, and POST /api/grocy/test upgrade safely
       await ensureSchema()
-      const db = getPersistenceClient()
+      db = getPersistenceClient()
       await db.execute({
         sql: "UPDATE settings SET value = ?, updated_at = ? WHERE key = 'grocy_url'",
-        args: [JSON.stringify("http://supervisor/api/hassio_ingress/tok_1"), Date.now()],
+        args: ["http://supervisor/api/hassio_ingress/tok_1", Date.now()],
+      })
+      await db.execute({
+        sql: "UPDATE settings SET value = ?, updated_at = ? WHERE key = 'grocy_api_key'",
+        args: ["1", Date.now()],
       })
       const client = await createGrocyClient()
       expect(client).not.toBeNull()
@@ -425,19 +468,26 @@ test.describe("Private URL Guard", () => {
 
       await db.execute({
         sql: "UPDATE settings SET value = ?, updated_at = ? WHERE key = 'grocy_url'",
-        args: [JSON.stringify("http://supervisor/api/hassio_ingress/tok_1"), Date.now()],
+        args: ["http://supervisor/api/hassio_ingress/tok_1", Date.now()],
       })
       const getRes = await getSettings({
         locals: { hassIsAdmin: true },
         request: new Request("http://localhost/api/grocy/settings"),
       } as unknown as Parameters<typeof getSettings>[0])
-      const getJson = (await getRes.json()) as { ok: boolean; settings: { grocy_url?: string } }
+      const getJson = (await getRes.json()) as {
+        ok: boolean
+        settings: { grocy_url?: string; grocy_api_key?: unknown; grocy_api_key_set?: boolean; grocy_api_key_masked?: string }
+      }
+      expect(getRes.status).toBe(200)
       expect(getJson.settings.grocy_url).toBe(`http://a0d7b954-grocy:${port}`)
+      expect(getJson.settings.grocy_api_key).toBeUndefined()
+      expect(getJson.settings.grocy_api_key_set).toBe(true)
+      expect(getJson.settings.grocy_api_key_masked).toBe("••••")
 
       // Unmatched legacy ingress token does NOT overwrite with other_grocy and does NOT leak http://supervisor/*
       await db.execute({
         sql: "UPDATE settings SET value = ?, updated_at = ? WHERE key = 'grocy_url'",
-        args: [JSON.stringify("http://supervisor/api/hassio_ingress/unmatched_tok"), Date.now()],
+        args: ["http://supervisor/api/hassio_ingress/unmatched_tok", Date.now()],
       })
       const getUnmatched = await getSettings({
         locals: { hassIsAdmin: true },
@@ -445,6 +495,32 @@ test.describe("Private URL Guard", () => {
       } as unknown as Parameters<typeof getSettings>[0])
       const getUnmatchedJson = (await getUnmatched.json()) as { ok: boolean; settings: { grocy_url?: string } }
       expect(getUnmatchedJson.settings.grocy_url).toBeUndefined()
+
+      // PUT /api/grocy/settings is atomic on validation failure (never writes earlier keys when a later key fails)
+      const putAtomicFail = await putSettings({
+        locals: { hassIsAdmin: true },
+        request: new Request("http://localhost/api/grocy/settings", {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            grocy_url: "https://atomic-should-not-save.example.com",
+            grocy_sync_mode: "invalid-mode",
+          }),
+        }),
+      } as unknown as Parameters<typeof putSettings>[0])
+      expect(putAtomicFail.status).toBe(400)
+      const urlRowAfterFail = await db.execute("SELECT value FROM settings WHERE key = 'grocy_url'")
+      expect(String(urlRowAfterFail.rows[0]?.value)).not.toContain("atomic-should-not-save")
+
+      const putNonStringKey = await putSettings({
+        locals: { hassIsAdmin: true },
+        request: new Request("http://localhost/api/grocy/settings", {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ grocy_api_key: 12345 }),
+        }),
+      } as unknown as Parameters<typeof putSettings>[0])
+      expect(putNonStringKey.status).toBe(400)
 
       const putLegacy = await putSettings({
         locals: { hassIsAdmin: true },
@@ -498,9 +574,33 @@ test.describe("Private URL Guard", () => {
       expect(testAuto.status).toBe(200)
       expect(((await testAuto.json()) as { ok: boolean }).ok).toBe(true)
 
-      // Generic settings PUT and settings import also enforce validateGrocyBaseUrl
-      const { PUT: putGenericSetting } = await import("../../apps/web/src/pages/api/settings")
+      // Generic settings GET/PUT and settings import also enforce validateGrocyBaseUrl and migrate/skip legacy ingress URLs
+      const { GET: getGenericSettings, PUT: putGenericSetting } = await import(
+        "../../apps/web/src/pages/api/settings"
+      )
       const { POST: postImportSettings } = await import("../../apps/web/src/pages/api/import/settings")
+
+      await db.execute({
+        sql: "UPDATE settings SET value = ?, updated_at = ? WHERE key = 'grocy_url'",
+        args: ["http://supervisor/api/hassio_ingress/tok_1", Date.now()],
+      })
+      const genericGetAll = await getGenericSettings({
+        locals: { hassIsAdmin: true },
+        request: new Request("http://localhost/api/settings"),
+        url: new URL("http://localhost/api/settings"),
+      } as unknown as Parameters<typeof getGenericSettings>[0])
+      const genericGetAllJson = (await genericGetAll.json()) as { grocy_url?: string }
+      expect(genericGetAllJson.grocy_url).toBe(`http://a0d7b954-grocy:${port}`)
+
+      const genericLegacyOk = await putGenericSetting({
+        locals: { hassIsAdmin: true },
+        request: new Request("http://localhost/api/settings", {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ key: "grocy_url", value: "http://supervisor/api/hassio_ingress/tok_1" }),
+        }),
+      } as unknown as Parameters<typeof putGenericSetting>[0])
+      expect(genericLegacyOk.status).toBe(200)
 
       const genericBad = await putGenericSetting({
         locals: { hassIsAdmin: true },
@@ -533,8 +633,22 @@ test.describe("Private URL Guard", () => {
       } as unknown as Parameters<typeof postImportSettings>[0])
       expect(importBad.status).toBe(400)
 
-      db.close()
+      // Unresolvable legacy Supervisor ingress URL in a backup skips grocy_url with a warning instead of failing the backup restore
+      const importLegacyBackup = await postImportSettings({
+        locals: { hassIsAdmin: true, hassUserId: "admin-1" },
+        request: new Request("http://localhost/api/import/settings", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            locale: "en",
+            grocy_url: "http://supervisor/api/hassio_ingress/tok_1",
+          }),
+        }),
+      } as unknown as Parameters<typeof postImportSettings>[0])
+      expect(importLegacyBackup.status).toBe(200)
+      expect(((await importLegacyBackup.json()) as { success: boolean }).success).toBe(true)
     } finally {
+      db?.close()
       globalThis.fetch = originalFetch
       dns.lookup = originalLookup
       server.close()

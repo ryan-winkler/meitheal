@@ -5,7 +5,9 @@ export {
   ensureDatabaseSchemaSupported,
   ensureSchema,
   findTasksByExternalSyncIds,
+  getLocalDataDirectory,
   getPersistenceClient,
+  resetPersistenceForTests,
   type ExternalSyncLookup,
   type ExternalSyncMatch,
   type SyncChunkCommitResult,
@@ -13,7 +15,13 @@ export {
   type SyncConfirmationTarget,
   type SyncTaskMutation,
 } from "./persistence/store"
-export { getSettingsRevision, SettingsRepository } from "./persistence/settings-repository"
+export {
+  AI_HANDOFF_SETTING_KEYS,
+  getSettingsRevision,
+  saveAiHandoffSettings,
+  saveLegacyAiHandoffUrl,
+  SettingsRepository,
+} from "./persistence/settings-repository"
 export { rewriteLabelReferences } from "./persistence/label-reference-repository"
 export { TaskHandoff } from "./persistence/task-handoff"
 export { TaskRepository, type ReassignmentReplayState, type TaskCatalogRow } from "./persistence/task-repository"

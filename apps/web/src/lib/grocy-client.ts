@@ -1,7 +1,6 @@
 import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability"
 import { GrocyAdapter, validateGrocyBaseUrl } from "@meitheal/integration-core"
-import { SettingsRepository } from "@domains/tasks/persistence/settings-repository"
-import { getPersistenceClient } from "@domains/tasks/persistence/store"
+import { getPersistenceClient, SettingsRepository } from "@domains/tasks"
 import { supervisorFetch } from "./supervisor-fetch"
 
 const logger = createLogger({
@@ -90,6 +89,53 @@ function selectAddonPort(info: {
   return 80
 }
 
+async function resolveStartedAddonContainerUrl(slug: string): Promise<string | null> {
+  let hostname = slug.replace(/_/g, "-")
+  let port = 80
+  try {
+    const infoRes = await supervisorFetch(`/addons/${encodeURIComponent(slug)}/info`)
+    if (infoRes?.ok) {
+      const infoData = (await infoRes.json()) as {
+        data?: {
+          hostname?: string
+          ingress_port?: number
+          network?: Record<string, unknown>
+        }
+      }
+      if (typeof infoData.data?.hostname === "string" && infoData.data.hostname.trim()) {
+        hostname = infoData.data.hostname.trim()
+      }
+      if (infoData.data) {
+        port = selectAddonPort(infoData.data)
+      }
+    } else {
+      await infoRes?.body?.cancel().catch(() => undefined)
+    }
+  } catch {
+    /* Fall back to standard slug-derived container hostname and port 80 */
+  }
+
+  const check = validateGrocyBaseUrl(`http://${hostname}:${port}`)
+  if (!check.ok) return null
+  return check.normalizedUrl
+}
+
+async function listStartedSupervisorGrocyAddons(): Promise<
+  Array<{ slug: string; ingress_url?: string; state?: string }>
+> {
+  const addonsRes = await supervisorFetch("/addons")
+  if (!addonsRes?.ok) {
+    await addonsRes?.body?.cancel().catch(() => undefined)
+    return []
+  }
+  const addonsData = (await addonsRes.json()) as {
+    data?: { addons?: { slug: string; ingress_url?: string; state?: string }[] }
+  }
+  return (addonsData.data?.addons ?? []).filter(
+    (addon) => addon.slug.includes("grocy") && addon.state === "started",
+  )
+}
+
 /**
  * Resolve the direct internal container URL for a started Home Assistant Grocy add-on
  * (e.g. `http://a0d7b954-grocy` or `http://a0d7b954-grocy:<port>`) via Supervisor metadata
@@ -102,17 +148,7 @@ export async function resolveSupervisorGrocyAddon(
   expectedIngressUrl?: string,
 ): Promise<{ slug: string; url: string } | null> {
   try {
-    const addonsRes = await supervisorFetch("/addons")
-    if (!addonsRes?.ok) {
-      await addonsRes?.body?.cancel().catch(() => undefined)
-      return null
-    }
-    const addonsData = (await addonsRes.json()) as {
-      data?: { addons?: { slug: string; ingress_url?: string; state?: string }[] }
-    }
-    const startedAddons = (addonsData.data?.addons ?? []).filter(
-      (addon) => addon.slug.includes("grocy") && addon.state === "started",
-    )
+    const startedAddons = await listStartedSupervisorGrocyAddons()
     const expectedPath = expectedIngressUrl ? extractLegacyIngressPath(expectedIngressUrl) : null
     const grocy = expectedPath
       ? startedAddons.find(
@@ -123,34 +159,37 @@ export async function resolveSupervisorGrocyAddon(
       : startedAddons[0]
     if (!grocy?.slug) return null
 
-    let hostname = grocy.slug.replace(/_/g, "-")
-    let port = 80
-    try {
-      const infoRes = await supervisorFetch(`/addons/${encodeURIComponent(grocy.slug)}/info`)
-      if (infoRes?.ok) {
-        const infoData = (await infoRes.json()) as {
-          data?: {
-            hostname?: string
-            ingress_port?: number
-            network?: Record<string, unknown>
-          }
-        }
-        if (typeof infoData.data?.hostname === "string" && infoData.data.hostname.trim()) {
-          hostname = infoData.data.hostname.trim()
-        }
-        if (infoData.data) {
-          port = selectAddonPort(infoData.data)
-        }
-      } else {
-        await infoRes?.body?.cancel().catch(() => undefined)
-      }
-    } catch {
-      /* Fall back to standard slug-derived container hostname and port 80 */
-    }
+    const url = await resolveStartedAddonContainerUrl(grocy.slug)
+    if (!url) return null
+    return { slug: grocy.slug, url }
+  } catch {
+    return null
+  }
+}
 
-    const check = validateGrocyBaseUrl(`http://${hostname}:${port}`)
-    if (!check.ok) return null
-    return { slug: grocy.slug, url: check.normalizedUrl }
+/**
+ * Return the Supervisor add-on slug whose resolved internal container hostname matches `targetUrl`,
+ * or `null` when `targetUrl` points at an external/non-Supervisor Grocy server.
+ */
+export async function resolveSupervisorGrocySlugForUrl(targetUrl: string): Promise<string | null> {
+  try {
+    const target = new URL(targetUrl)
+    const targetHostname = target.hostname.toLowerCase()
+    const startedAddons = await listStartedSupervisorGrocyAddons()
+    let hostnameFallbackSlug: string | null = null
+    for (const addon of startedAddons) {
+      if (!addon.slug) continue
+      const resolvedUrl = await resolveStartedAddonContainerUrl(addon.slug)
+      if (!resolvedUrl) continue
+      const resolved = new URL(resolvedUrl)
+      if (resolved.origin === target.origin) {
+        return addon.slug
+      }
+      if (!hostnameFallbackSlug && resolved.hostname.toLowerCase() === targetHostname) {
+        hostnameFallbackSlug = addon.slug
+      }
+    }
+    return hostnameFallbackSlug
   } catch {
     return null
   }
@@ -169,13 +208,16 @@ export async function createGrocyClient(): Promise<GrocyAdapter | null> {
     for (const row of result.rows) {
       if (row.key === "grocy_url") {
         try {
-          baseUrl = JSON.parse(String(row.value))
+          const parsedUrl: unknown = JSON.parse(String(row.value))
+          if (typeof parsedUrl === "string") baseUrl = parsedUrl
         } catch {
           baseUrl = String(row.value)
         }
       } else if (row.key === "grocy_api_key") {
         try {
-          apiKey = JSON.parse(String(row.value))
+          const parsedKey: unknown = JSON.parse(String(row.value))
+          if (typeof parsedKey === "string") apiKey = parsedKey
+          else if (typeof parsedKey === "number" && Number.isFinite(parsedKey)) apiKey = String(parsedKey)
         } catch {
           apiKey = String(row.value)
         }

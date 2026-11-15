@@ -1017,7 +1017,9 @@ const { locale } = Astro.props
         }[];
       };
 
-      const grocy = addonsData.addons?.find((a) => a.slug.includes("grocy"));
+      const grocy = addonsData.addons?.find(
+        (a) => a.slug.includes("grocy") && a.state === "started",
+      )
       if (grocy) {
         // Auto-detected! Server resolves the internal container URL directly via Supervisor
         autoInfo.style.display = "block";

@@ -1,18 +1,18 @@
 import type { APIRoute } from "astro"
-import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
-import { SettingsRepository } from "@domains/tasks/persistence/settings-repository"
-import { currentSettingsAccess } from "../../../lib/current-settings-access"
-import { validateSafeId } from "../../../lib/sanitize-id"
-import { replaceRules } from "@domains/strategy/rule-repository"
-import { saveOverrides } from "@domains/strategy/framework-repository"
 import { restoreCustomFramework } from "@domains/strategy/custom-framework-repository"
-import { isSecretSetting } from "../../../lib/settings-security"
-import { logApiError, logApiWarn } from "../../../lib/api-logger"
-import { validateFrameworkConfig, validateFrameworkOverrides, type TaskRule, type FrameworkConfig, type FrameworkOverrides } from "@meitheal/domain-strategy"
-import { validateGrocyBaseUrl } from "@meitheal/integration-core"
+import { saveOverrides } from "@domains/strategy/framework-repository"
 import { parseRuleInput, RuleInputError } from "@domains/strategy/rule-input"
+import { replaceRules } from "@domains/strategy/rule-repository"
+import { ensureSchema, getPersistenceClient, SettingsRepository } from "@domains/tasks"
+import { validateFrameworkConfig, validateFrameworkOverrides, type FrameworkConfig, type FrameworkOverrides, type TaskRule } from "@meitheal/domain-strategy"
+import { validateGrocyBaseUrl } from "@meitheal/integration-core"
+import { logApiError, logApiWarn } from "../../../lib/api-logger"
 import { readWithinLimit } from "../../../lib/bounded-body"
+import { currentSettingsAccess } from "../../../lib/current-settings-access"
 import { FEATURE_DEFAULTS } from "../../../lib/feature-flags"
+import { isLegacySupervisorIngressUrl, resolveSupervisorGrocyAddon } from "../../../lib/grocy-client"
+import { validateSafeId } from "../../../lib/sanitize-id"
+import { isSecretSetting } from "../../../lib/settings-security"
 
 /** Known safe setting keys — only these will be imported.
  * IMPORTANT: Update this set when adding new saveSetting() calls.
@@ -154,6 +154,13 @@ export const POST: APIRoute = async ({ request, locals }) => {
                 const trimmedGrocyUrl = decoded.trim()
                 if (!trimmedGrocyUrl) {
                     decoded = ""
+                } else if (isLegacySupervisorIngressUrl(trimmedGrocyUrl)) {
+                    const detected = await resolveSupervisorGrocyAddon(trimmedGrocyUrl)
+                    if (!detected) {
+                        logApiWarn("import-settings", "Skipped unresolvable legacy Supervisor Grocy URL during import")
+                        continue
+                    }
+                    decoded = detected.url
                 } else {
                     const urlCheck = validateGrocyBaseUrl(trimmedGrocyUrl)
                     if (!urlCheck.ok) {
