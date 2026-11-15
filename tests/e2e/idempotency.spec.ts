@@ -184,6 +184,19 @@ test("task retry keys separate actors, request targets, and body bytes", async (
   expect(await identity("agent:one", base, '{"title":"other"}')).not.toBe(first)
   expect(await identity(undefined)).toBeUndefined()
   expect(await identity("ha:admin", "http://meitheal.local/api/agent-tokens")).toBeUndefined()
+  for (const method of ["PUT", "PATCH"] as const) {
+    for (const target of ["http://meitheal.local/api/tasks/task-1", "http://meitheal.local/api/tasks/task-1/"]) {
+      expect(await taskRetryKey(
+        new Request(target, {
+          method,
+          headers: { "idempotency-key": "unique-work", "content-type": "application/json" },
+          body: '{"status":"active"}',
+        }),
+        new URL(target),
+        "agent:one",
+      )).toBeUndefined()
+    }
+  }
 })
 
 test("full retry cache does not evict active task requests", () => {
