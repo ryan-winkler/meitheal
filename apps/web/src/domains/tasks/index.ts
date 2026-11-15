@@ -5,6 +5,7 @@ export {
   ensureDatabaseSchemaSupported,
   ensureSchema,
   findTasksByExternalSyncIds,
+  getLocalDataDirectory,
   getPersistenceClient,
   type ExternalSyncLookup,
   type ExternalSyncMatch,

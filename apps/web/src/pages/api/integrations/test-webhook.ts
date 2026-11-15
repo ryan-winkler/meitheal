@@ -11,16 +11,80 @@
  * @bounded-context event-dispatch
  */
 import type { APIRoute } from "astro"
-import { requireSystemSettingsAdmin } from "../../../lib/settings-security"
-import { fetchWithDevelopmentTls } from "@meitheal/integration-core"
+import { assertOutboundUrl, fetchOutbound, OutboundUrlError } from "@meitheal/integration-core"
 import { logApiError } from "../../../lib/api-logger"
+import { requireSystemSettingsAdmin } from "../../../lib/settings-security"
+
+function redactUrlCredentials(rawUrl: string): string {
+  const trimmed = rawUrl.trim()
+  if (/^https?:/i.test(trimmed)) {
+    try {
+      const parsed = new URL(trimmed)
+      if (parsed.password) parsed.password = "***"
+      else if (parsed.username) parsed.username = "***"
+      return parsed.href
+    } catch {
+      // Fall through to linear authority scan for malformed HTTP(S) URLs.
+    }
+  }
+  let authStart = 0
+  const schemeColon = trimmed.indexOf(":")
+  if (schemeColon > 0) {
+    let validScheme = true
+    for (let i = 0; i < schemeColon; i++) {
+      const c = trimmed.charCodeAt(i)
+      const ok =
+        (c >= 65 && c <= 90) ||
+        (c >= 97 && c <= 122) ||
+        (i > 0 && ((c >= 48 && c <= 57) || c === 43 || c === 45 || c === 46))
+      if (!ok) {
+        validScheme = false
+        break
+      }
+    }
+    const nextChar = trimmed.charCodeAt(schemeColon + 1)
+    if (validScheme && (nextChar === 47 || nextChar === 92)) {
+      authStart = schemeColon + 1
+      while (authStart < trimmed.length) {
+        const ch = trimmed.charCodeAt(authStart)
+        if (ch !== 47 && ch !== 92) break
+        authStart++
+      }
+    }
+  }
+  if (authStart === 0 && trimmed.length >= 2) {
+    const c0 = trimmed.charCodeAt(0)
+    const c1 = trimmed.charCodeAt(1)
+    if ((c0 === 47 || c0 === 92) && (c1 === 47 || c1 === 92)) {
+      while (authStart < trimmed.length) {
+        const ch = trimmed.charCodeAt(authStart)
+        if (ch !== 47 && ch !== 92) break
+        authStart++
+      }
+    }
+  }
+  let authorityEnd = trimmed.length
+  for (let i = authStart; i < trimmed.length; i++) {
+    const ch = trimmed.charCodeAt(i)
+    if (ch === 47 || ch === 92 || ch === 63 || ch === 35) {
+      authorityEnd = i
+      break
+    }
+  }
+  const relAt = trimmed.slice(authStart, authorityEnd).lastIndexOf("@")
+  if (relAt < 0) return trimmed
+  const absAt = authStart + relAt
+  const userinfo = trimmed.slice(authStart, absAt)
+  const colonIdx = userinfo.indexOf(":")
+  const userPart = colonIdx > 0 ? `${userinfo.slice(0, colonIdx)}:***` : "***"
+  return `${trimmed.slice(0, authStart)}${userPart}${trimmed.slice(absAt)}`
+}
 
 export const POST: APIRoute = async ({ locals, request }) => {
   const denied = requireSystemSettingsAdmin(request, locals)
   if (denied) return denied
   try {
-    const { ensureSchema, getPersistenceClient } = await import("@domains/tasks/persistence/store")
-    const { SettingsRepository } = await import("@domains/tasks/persistence/settings-repository")
+    const { ensureSchema, getPersistenceClient, SettingsRepository } = await import("@domains/tasks")
     await ensureSchema()
     const repo = new SettingsRepository(getPersistenceClient())
     await repo.ensureSettingsTable()
@@ -34,32 +98,29 @@ export const POST: APIRoute = async ({ locals, request }) => {
     let signingSecret: string | undefined
     let source = "override"
 
-    // SSRF protection: validate user-supplied URL override
+    // SSRF protection: ad-hoc URL overrides must pass the shared outbound policy
+    // and cannot target private/loopback/IPv4-mapped addresses (except non-metadata .internal names)
+    // either literally or via DNS resolution.
+    let allowPrivate = true
     if (targetUrlOverride) {
       try {
-        const parsed = new URL(targetUrlOverride)
-        if (!["http:", "https:"].includes(parsed.protocol)) {
-          return new Response(JSON.stringify({
-            success: false,
-            error: "Invalid URL scheme — only http: and https: are allowed",
-          }), { status: 400, headers: { "content-type": "application/json" } })
+        const parsed = assertOutboundUrl(targetUrlOverride)
+        const lowerHost = parsed.hostname.toLowerCase()
+        let end = lowerHost.length
+        while (end > 0 && lowerHost.charCodeAt(end - 1) === 46) {
+          end--
         }
-        // Block well-known internal/metadata addresses
-        const host = parsed.hostname.toLowerCase()
-        const BLOCKED_HOSTS = ["localhost", "127.0.0.1", "0.0.0.0", "[::1]", "169.254.169.254", "metadata.google.internal"]
-        if (BLOCKED_HOSTS.some(b => host === b) || host.startsWith("10.") || host.startsWith("192.168.") || /^172\.(1[6-9]|2\d|3[01])\./.test(host)) {
-          // Allow .internal domains (HA ecosystem) but block generic internal IPs
-          if (!host.endsWith(".internal")) {
-            return new Response(JSON.stringify({
-              success: false,
-              error: "URL points to a private/internal network address",
-            }), { status: 400, headers: { "content-type": "application/json" } })
-          }
+        const trimmedHost = lowerHost.slice(0, end)
+        allowPrivate = trimmedHost.endsWith(".internal")
+        if (!allowPrivate) {
+          assertOutboundUrl(parsed, { allowPrivate: false })
         }
-      } catch {
+        targetUrl = parsed.href
+      } catch (err) {
+        if (!(err instanceof OutboundUrlError)) throw err
         return new Response(JSON.stringify({
           success: false,
-          error: "Invalid URL format",
+          error: err.message,
         }), { status: 400, headers: { "content-type": "application/json" } })
       }
     }
@@ -130,7 +191,7 @@ export const POST: APIRoute = async ({ locals, request }) => {
       headers["x-meitheal-signature"] = `sha256=${signature}`
     }
 
-    // Send with timeout + scoped TLS bypass for .internal domains in dev
+    // Send with timeout under the shared outbound policy; report 3xx redirects without following them.
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), 10_000)
     const startTime = Date.now()
@@ -138,12 +199,14 @@ export const POST: APIRoute = async ({ locals, request }) => {
     const fetchOpts = {
       method: "POST",
       signal: controller.signal,
+      redirect: "manual" as const,
+      allowPrivate,
       headers,
       body: payloadString,
     }
 
     try {
-      const response = await fetchWithDevelopmentTls(targetUrl, fetchOpts)
+      const response = await fetchOutbound(targetUrl, fetchOpts)
       await response.body?.cancel().catch(() => undefined)
 
       const latencyMs = Date.now() - startTime
@@ -161,10 +224,12 @@ export const POST: APIRoute = async ({ locals, request }) => {
         await repo.upsert("n8n_last_delivery", JSON.stringify(deliveryResult))
       } catch { /* non-critical */ }
 
+      const redactedTargetUrl = redactUrlCredentials(targetUrl)
+
       return new Response(JSON.stringify({
         success: response.ok,
         source,
-        target_url: targetUrl.replace(/\/\/([^:]+):([^@]+)@/, "//$1:***@"),
+        target_url: redactedTargetUrl,
         status_code: response.status,
         latency_ms: latencyMs,
         timestamp: deliveryResult.timestamp,
@@ -177,10 +242,24 @@ export const POST: APIRoute = async ({ locals, request }) => {
       })
     } catch (err) {
       const latencyMs = Date.now() - startTime
+      const redactedTargetUrl = redactUrlCredentials(targetUrl)
 
-      const errorMessage = err instanceof Error
+      const rawError = err instanceof Error
         ? (err.name === "AbortError" ? `Timeout after 10s` : err.message)
         : "Unknown error"
+      let errorMessage = rawError
+      if (rawError.includes("@")) {
+        errorMessage = errorMessage.replaceAll(targetUrl, redactedTargetUrl)
+        const trimmedTarget = targetUrl.trim()
+        if (trimmedTarget) {
+          errorMessage = errorMessage.replaceAll(trimmedTarget, redactedTargetUrl)
+        }
+        try {
+          errorMessage = errorMessage.replaceAll(new URL(trimmedTarget).href, redactedTargetUrl)
+        } catch {
+          // Malformed URL already scrubbed via raw targetUrl replacement.
+        }
+      }
 
       // Persist failure for UI display
       try {
@@ -196,7 +275,7 @@ export const POST: APIRoute = async ({ locals, request }) => {
       return new Response(JSON.stringify({
         success: false,
         source,
-        target_url: targetUrl.replace(/\/\/([^:]+):([^@]+)@/, "//$1:***@"),
+        target_url: redactedTargetUrl,
         status_code: null,
         latency_ms: latencyMs,
         error: errorMessage,

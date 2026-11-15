@@ -1,4 +1,4 @@
-import { fetchWithDevelopmentTls } from "./development-fetch"
+import { fetchOutbound } from "./outbound-fetch"
 import type { DomainEvent, IntegrationPlugin } from "./index"
 import { signPayload, type WebhookSubscriberConfig } from "./webhook-config"
 
@@ -92,7 +92,7 @@ export async function emitWebhook(
         body: payload,
       }
 
-      const response = await fetchWithDevelopmentTls(subscriber.url, fetchOpts)
+      const response = await fetchOutbound(subscriber.url, fetchOpts)
       await response.body?.cancel().catch(() => undefined)
 
       lastStatusCode = response.status
