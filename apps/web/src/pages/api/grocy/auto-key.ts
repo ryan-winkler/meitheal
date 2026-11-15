@@ -143,7 +143,11 @@ export const POST: APIRoute = async ({ locals, request }) => {
       )
     }
 
-    const createData = (await createRes.json()) as Record<string, unknown>
+    const rawData: unknown = await createRes.json().catch(() => null)
+    const createData =
+      rawData && typeof rawData === "object" && !Array.isArray(rawData)
+        ? (rawData as Record<string, unknown>)
+        : {}
     const apiKey = String(createData.created_object_id ?? createData.api_key ?? "")
 
     if (!apiKey) {

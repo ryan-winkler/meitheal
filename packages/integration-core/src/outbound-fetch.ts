@@ -124,7 +124,9 @@ function configuredSupervisorHostname(): string {
 }
 
 function isBlockedHostname(hostname: string): boolean {
-  const host = normalizeHostname(hostname)
+  const trimmed = hostname.trim().toLowerCase()
+  if (!trimmed.includes(":") && (trimmed.startsWith(".") || trimmed.includes(".."))) return true
+  const host = normalizeHostname(trimmed)
   if (!host || host.includes("%")) return true
   if (BLOCKED_HOSTNAMES.has(host)) return true
   if (BLOCKED_HOSTNAME_SUFFIXES.some((suffix) => host.endsWith(suffix))) return true

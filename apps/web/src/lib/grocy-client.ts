@@ -52,25 +52,25 @@ export function isLegacySupervisorIngressUrl(rawUrl: string): boolean {
   return extractLegacyIngressPath(rawUrl) !== null
 }
 
+function isValidSupervisorNetworkEntry(mapped: unknown): boolean {
+  return (
+    mapped === null ||
+    (typeof mapped === "number" && Number.isInteger(mapped) && mapped > 0 && mapped <= 65535)
+  )
+}
+
 function selectAddonPort(info: {
   ingress_port?: unknown
   network?: Record<string, unknown>
 }): number {
   const network = info.network
   if (network && typeof network === "object") {
-    const port80 = network["80/tcp"]
-    if (typeof port80 === "number" && Number.isInteger(port80) && port80 > 0 && port80 <= 65535) {
+    if (Object.hasOwn(network, "80/tcp") && isValidSupervisorNetworkEntry(network["80/tcp"])) {
       return 80
     }
     for (const [key, mapped] of Object.entries(network)) {
       const match = /^(\d+)\/tcp$/.exec(key)
-      if (
-        match &&
-        typeof mapped === "number" &&
-        Number.isInteger(mapped) &&
-        mapped > 0 &&
-        mapped <= 65535
-      ) {
+      if (match && isValidSupervisorNetworkEntry(mapped)) {
         const containerPort = Number(match[1])
         if (Number.isInteger(containerPort) && containerPort > 0 && containerPort <= 65535) {
           return containerPort
@@ -168,28 +168,27 @@ export async function resolveSupervisorGrocyAddon(
 }
 
 /**
- * Return the Supervisor add-on slug whose resolved internal container hostname matches `targetUrl`,
- * or `null` when `targetUrl` points at an external/non-Supervisor Grocy server.
+ * Return the Supervisor add-on slug whose resolved internal container endpoint matches `targetUrl`
+ * (scheme, host, port, and normalized base path), or `null` when `targetUrl` points elsewhere.
  */
 export async function resolveSupervisorGrocySlugForUrl(targetUrl: string): Promise<string | null> {
   try {
     const target = new URL(targetUrl)
-    const targetHostname = target.hostname.toLowerCase()
+    const targetBasePath = target.pathname.replace(/\/+$/, "")
     const startedAddons = await listStartedSupervisorGrocyAddons()
-    let hostnameFallbackSlug: string | null = null
     for (const addon of startedAddons) {
       if (!addon.slug) continue
       const resolvedUrl = await resolveStartedAddonContainerUrl(addon.slug)
       if (!resolvedUrl) continue
       const resolved = new URL(resolvedUrl)
-      if (resolved.origin === target.origin) {
+      if (
+        resolved.origin === target.origin &&
+        resolved.pathname.replace(/\/+$/, "") === targetBasePath
+      ) {
         return addon.slug
       }
-      if (!hostnameFallbackSlug && resolved.hostname.toLowerCase() === targetHostname) {
-        hostnameFallbackSlug = addon.slug
-      }
     }
-    return hostnameFallbackSlug
+    return null
   } catch {
     return null
   }

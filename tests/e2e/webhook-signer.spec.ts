@@ -144,6 +144,19 @@ test.describe("Private URL Guard", () => {
     expect(isIpv4TranslationIpv6Host("not:valid:ipv6")).toBe(true)
     expect(isPrivateUrl("ftp://example.com/hook")).toBe(true)
     expect(classifyNetworkHost("0x7f.1")).toBe("unconditional")
+    expect(classifyNetworkHost("127.1..")).toBe("unconditional")
+    expect(classifyNetworkHost("0x7f.1..")).toBe("unconditional")
+    expect(classifyNetworkHost("2852039166..")).toBe("unconditional")
+    expect(classifyNetworkHost("[fd00::0:5efe:169.254.169.254]")).toBe("unconditional")
+    const prevSupUrl = process.env.SUPERVISOR_URL
+    try {
+      process.env.SUPERVISOR_URL = "http://custom-sup.internal:8123"
+      expect(classifyNetworkHost("custom-sup.internal")).toBe("unconditional")
+      expect(validateGrocyBaseUrl("http://custom-sup.internal:8123").ok).toBe(false)
+    } finally {
+      if (prevSupUrl === undefined) delete process.env.SUPERVISOR_URL
+      else process.env.SUPERVISOR_URL = prevSupUrl
+    }
     expect(classifyNetworkHost("   ")).toBe("unconditional")
     expect(classifyNetworkHost("...")).toBe("unconditional")
     expect(classifyNetworkHost("%eth0")).toBe("unconditional")
@@ -443,6 +456,9 @@ test.describe("Private URL Guard", () => {
         if (target === "https://grocy.example.com/api/objects/api_keys") {
           return Response.json({ created_object_id: "external-grocy-key-9999" })
         }
+        if (target === "https://grocy.example.com/html/api/objects/api_keys") {
+          return new Response("<html>login</html>", { status: 200, headers: { "content-type": "text/html" } })
+        }
         if (target.startsWith("http://supervisor")) {
           throw new Error(`Unexpected direct Supervisor fetch: ${target}`)
         }
@@ -487,15 +503,21 @@ test.describe("Private URL Guard", () => {
       expect(matchedDetected).toEqual({ slug: "a0d7b954_grocy", url: `http://a0d7b954-grocy:${port}` })
       expect(await resolveSupervisorGrocyAddon("http://supervisor/api/hassio_ingress/unknown_tok")).toBeNull()
       expect(await resolveSupervisorGrocySlugForUrl(`http://a0d7b954-grocy:${port}`)).toBe("a0d7b954_grocy")
-      expect(await resolveSupervisorGrocySlugForUrl("http://a0d7b954-grocy:9999")).toBe("a0d7b954_grocy")
+      expect(await resolveSupervisorGrocySlugForUrl("http://a0d7b954-grocy:9999")).toBeNull()
+      expect(await resolveSupervisorGrocySlugForUrl(`http://a0d7b954-grocy:${port}/subpath`)).toBeNull()
       expect(await resolveSupervisorGrocySlugForUrl("not-a-valid-url")).toBeNull()
       expect(await resolveSupervisorGrocySlugForUrl("https://grocy.example.com")).toBeNull()
 
-      // Non-80 tcp port mapping and default port-80 fallback on add-on info
+      // Non-80 tcp port mapping, null host port (direct access disabled), and default port-80 fallback on add-on info
       infoPayload = { hostname: "a0d7b954-grocy", network: { "9192/tcp": 9192 } }
       expect(await resolveSupervisorGrocyAddon("/api/hassio_ingress/tok_1")).toEqual({
         slug: "a0d7b954_grocy",
         url: "http://a0d7b954-grocy:9192",
+      })
+      infoPayload = { hostname: "a0d7b954-grocy", ingress_port: 8099, network: { "80/tcp": null } }
+      expect(await resolveSupervisorGrocyAddon("/api/hassio_ingress/tok_1")).toEqual({
+        slug: "a0d7b954_grocy",
+        url: "http://a0d7b954-grocy",
       })
       infoPayload = { hostname: "a0d7b954-grocy" }
       expect(await resolveSupervisorGrocyAddon("/api/hassio_ingress/tok_1")).toEqual({
@@ -542,6 +564,18 @@ test.describe("Private URL Guard", () => {
       expect(extAutoJson.ok).toBe(true)
       expect(extAutoJson.url).toBe("https://grocy.example.com")
       expect(supervisorProxyHits).toEqual([])
+
+      // Non-JSON 200 body on auto-key returns self-service { ok: false } instead of HTTP 500
+      const htmlAutoRes = await postAutoKey({
+        locals: { hassIsAdmin: true },
+        request: new Request("http://localhost/api/grocy/auto-key", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ url: "https://grocy.example.com/html" }),
+        }),
+      } as unknown as Parameters<typeof postAutoKey>[0])
+      expect(htmlAutoRes.status).toBe(200)
+      expect(((await htmlAutoRes.json()) as { ok: boolean }).ok).toBe(false)
 
       // Seed RAW unquoted pre-PR auto-key values ("http://supervisor/..." and numeric "1") to verify
       // SettingsRepository.getByKey, createGrocyClient, GET /api/grocy/settings, and POST /api/grocy/test upgrade safely

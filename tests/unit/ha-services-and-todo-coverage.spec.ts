@@ -408,7 +408,18 @@ test("HA connection, services, users, todo-bridge, and ha-startup work against l
     expect(grocyBridge.getGrocySyncStatus().active).toBe(true)
     expect(grocyBridge.getActiveGrocySyncConfig()?.intervalMs).toBe(0)
     expect(recordedCommands.length).toBeGreaterThan(0)
+
+    // Bounded startup retry when a legacy Supervisor ingress URL is temporarily unresolvable on boot
+    grocyBridge.stopGrocySync()
+    await client.execute({
+      sql: "UPDATE settings SET value = ?, updated_at = ? WHERE key = 'grocy_url'",
+      args: [JSON.stringify("http://supervisor/api/hassio_ingress/tok_retry"), now],
+    })
+    await haStartup.autoStartGrocySync(0, 15)
+    expect(grocyBridge.getGrocySyncStatus().active).toBe(false)
+    haStartup.clearGrocyStartupRetry()
   } finally {
+    haStartup.clearGrocyStartupRetry()
     grocyBridge.stopGrocySync()
     calendarBridge.stopCalendarSync()
     todoBridge.stopTodoSync()

@@ -291,7 +291,7 @@ function classifyEmbeddedIpv6Prefix(h: number[]): "unconditional" | "private" | 
     if (h[5] === 0) return "unconditional"
   }
   if (isAllZeroHextets(h, 0, 4) && h[4] === 0xffff && h[5] === 0) {
-    return classifyNetworkHost(hextetsToIpv4(h[6]!, h[7]!))
+    return "unconditional"
   }
   if (h[0] === 0x0064 && h[1] === 0xff9b) {
     return isAllZeroHextets(h, 2, 6) ? classifyNetworkHost(hextetsToIpv4(h[6]!, h[7]!)) : "unconditional"
@@ -301,10 +301,7 @@ function classifyEmbeddedIpv6Prefix(h: number[]): "unconditional" | "private" | 
 
 function classifyGlobalUnicastIpv6(h: number[]): "unconditional" | "private" | null {
   if (h[0] === 0x2002) {
-    return classifyNetworkHost(hextetsToIpv4(h[1]!, h[2]!))
-  }
-  if (isIsatapHextets(h)) {
-    return classifyNetworkHost(hextetsToIpv4(h[6]!, h[7]!))
+    return "unconditional"
   }
   const isReserved2001 = h[0] === 0x2001 && (h[1]! < 0x0200 || h[1] === 0x0db8)
   const isReservedDocOrAs112 =
@@ -320,6 +317,9 @@ function classifyIpv6Host(host: string): "unconditional" | "private" | null {
   const embedded = classifyEmbeddedIpv6Prefix(h)
   if (embedded !== undefined) {
     return embedded
+  }
+  if (isIsatapHextets(h)) {
+    return "unconditional"
   }
   if (h[0] === 0xfd00 && h[1] === 0x0ec2 && isAllZeroHextets(h, 2, 7) && h[7] === 0x0254) {
     return "unconditional"
@@ -353,14 +353,40 @@ function classifyIpv4Octets(o: number[]): "unconditional" | "private" | null {
   return isPrivateOrShared ? "private" : null
 }
 
+function unwrapEmbeddedIpv4OrSelf(canonicalHost: string): string {
+  if (!canonicalHost.includes(":")) return canonicalHost
+  const h = parseIpv6Hextets(canonicalHost)
+  if (!h) return canonicalHost
+  if (isAllZeroHextets(h, 0, 5) && h[5] === 0xffff) {
+    return hextetsToIpv4(h[6]!, h[7]!)
+  }
+  if (h[0] === 0x0064 && h[1] === 0xff9b && isAllZeroHextets(h, 2, 6)) {
+    return hextetsToIpv4(h[6]!, h[7]!)
+  }
+  return canonicalHost
+}
+
+function configuredSupervisorCanonicalHost(): string {
+  const raw = process.env.SUPERVISOR_URL
+  if (!raw) return ""
+  try {
+    return canonicalizeNetworkHost(new URL(raw).hostname) ?? ""
+  } catch {
+    return ""
+  }
+}
+
 /**
  * Canonicalize a standalone host string through WHATWG URL parsing while rejecting
- * zone IDs, ports, credentials, paths, queries, fragments, and invalid host syntax.
+ * zone IDs, ports, credentials, paths, queries, fragments, empty labels, and invalid host syntax.
  */
 export function canonicalizeNetworkHost(rawHostname: string): string | null {
   const trimmed = rawHostname.trim().toLowerCase()
   if (!trimmed || trimmed.includes("%") || /[/?#@\\]/.test(trimmed)) return null
   if (trimmed.startsWith("[") && (!trimmed.endsWith("]") || !trimmed.slice(1, -1).includes(":"))) {
+    return null
+  }
+  if (!trimmed.includes(":") && (trimmed.startsWith(".") || trimmed.includes(".."))) {
     return null
   }
   const candidate = trimmed.includes(":") && !trimmed.startsWith("[") ? `[${trimmed}]` : trimmed
@@ -377,11 +403,16 @@ export function canonicalizeNetworkHost(rawHostname: string): string | null {
 
 /**
  * Classify whether a URL hostname targets an unconditionally forbidden host/range
- * (loopback, unspecified, link-local, metadata, special-purpose) or a private/CGNAT network.
+ * (loopback, unspecified, link-local, metadata, Supervisor, special-purpose) or a private/CGNAT network.
  */
 export function classifyNetworkHost(rawHostname: string): "unconditional" | "private" | null {
   const host = canonicalizeNetworkHost(rawHostname)
   if (!host) return "unconditional"
+
+  const supHost = configuredSupervisorCanonicalHost()
+  if (supHost && unwrapEmbeddedIpv4OrSelf(host) === unwrapEmbeddedIpv4OrSelf(supHost)) {
+    return "unconditional"
+  }
 
   if (host.includes(":")) {
     return classifyIpv6Host(host)
@@ -428,7 +459,10 @@ export function validateGrocyBaseUrl(rawUrl: string): GrocyUrlValidationResult {
     return { ok: false, error: "Grocy URL must not include query parameters or fragments" }
   }
 
-  const host = normalizeNetworkHost(parsed.hostname)
+  const host = canonicalizeNetworkHost(parsed.hostname)
+  if (!host) {
+    return { ok: false, error: "Invalid URL format" }
+  }
   const classification = classifyNetworkHost(host)
 
   if (classification === "unconditional" || (classification === "private" && !host.endsWith(".internal"))) {

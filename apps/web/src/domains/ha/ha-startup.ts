@@ -397,20 +397,45 @@ async function autoStartCalendarSync(): Promise<void> {
   }
 }
 
+const MAX_GROCY_STARTUP_RETRIES = 3
+const GROCY_STARTUP_RETRY_DELAY_MS = 30_000
+let grocyStartupRetryTimer: ReturnType<typeof setTimeout> | null = null
+
+export function clearGrocyStartupRetry(): void {
+  if (grocyStartupRetryTimer !== null) {
+    clearTimeout(grocyStartupRetryTimer)
+    grocyStartupRetryTimer = null
+  }
+}
+
+function redactUrlForLog(rawUrl: string): string {
+  try {
+    const parsed = new URL(rawUrl)
+    parsed.username = ""
+    parsed.password = ""
+    return parsed.toString()
+  } catch {
+    return "<invalid-url>"
+  }
+}
+
 /**
  * Read persisted Grocy sync settings from SQLite and auto-start sync.
  * Replaces the old validateGrocyConnection — now actually starts the sync
  * bridge instead of just pinging the API.
  */
-async function autoStartGrocySync(): Promise<void> {
+export async function autoStartGrocySync(
+  retryAttempt = 0,
+  retryDelayMs = GROCY_STARTUP_RETRY_DELAY_MS,
+): Promise<void> {
   try {
-    const client = await getDB();
+    const client = await getDB()
 
     // Read grocy sync settings
     const res = await client.execute({
       sql: "SELECT key, value FROM settings WHERE key IN ('grocy_url', 'grocy_api_key', 'grocy_sync_enabled', 'grocy_sync_mode', 'grocy_sync_interval')",
       args: [],
-    });
+    })
 
     const settings: Record<string, unknown> = {}
     for (const row of res.rows) {
@@ -425,18 +450,22 @@ async function autoStartGrocySync(): Promise<void> {
 
     const enabled =
       settings.grocy_sync_enabled === true ||
+      settings.grocy_sync_enabled === 1 ||
       settings.grocy_sync_enabled === "true" ||
       settings.grocy_sync_enabled === "1"
     const url = typeof settings.grocy_url === "string" ? settings.grocy_url : ""
     const apiKey =
       typeof settings.grocy_api_key === "string"
         ? settings.grocy_api_key
-        : typeof settings.grocy_api_key === "number"
+        : typeof settings.grocy_api_key === "number" && Number.isFinite(settings.grocy_api_key)
           ? String(settings.grocy_api_key)
           : ""
-    const syncMode = (
-      typeof settings.grocy_sync_mode === "string" ? settings.grocy_sync_mode : "bidirectional"
-    ) as "import" | "export" | "bidirectional"
+    const syncMode: "import" | "export" | "bidirectional" =
+      settings.grocy_sync_mode === "import" ||
+      settings.grocy_sync_mode === "export" ||
+      settings.grocy_sync_mode === "bidirectional"
+        ? settings.grocy_sync_mode
+        : "bidirectional"
     const rawInterval =
       settings.grocy_sync_interval !== undefined &&
       settings.grocy_sync_interval !== null &&
@@ -446,6 +475,7 @@ async function autoStartGrocySync(): Promise<void> {
     const intervalMs = Number.isFinite(rawInterval) && rawInterval >= 0 ? rawInterval : 15 * 60 * 1000
 
     if (!enabled || !url || !apiKey) {
+      clearGrocyStartupRetry()
       logger.log("info", {
         event: "ha.startup.grocy.skipped",
         domain: "integrations",
@@ -457,21 +487,40 @@ async function autoStartGrocySync(): Promise<void> {
     }
 
     // Validate & migrate Grocy URL through createGrocyClient before starting sync bridge
-    const { createGrocyClient } = await import("../../lib/grocy-client")
-    const { startGrocySync } = await import("@domains/grocy")
+    const { createGrocyClient, isLegacySupervisorIngressUrl } = await import("../../lib/grocy-client")
+    const { getGrocySyncStatus, startGrocySync } = await import("@domains/grocy")
+
+    if (retryAttempt > 0 && getGrocySyncStatus().active) {
+      clearGrocyStartupRetry()
+      return
+    }
 
     const adapter = await createGrocyClient()
     if (!adapter) {
+      const canRetryLegacy =
+        isLegacySupervisorIngressUrl(url) &&
+        retryAttempt < MAX_GROCY_STARTUP_RETRIES &&
+        grocyStartupRetryTimer === null
       logger.log("warn", {
         event: "ha.startup.grocy.skipped",
         domain: "integrations",
         component: "ha-startup",
         request_id: SYS_REQ,
-        message: "Grocy sync skipped due to invalid or unresolvable Grocy configuration",
+        message: canRetryLegacy
+          ? `Grocy add-on not yet resolvable on boot; scheduling retry ${retryAttempt + 1}/${MAX_GROCY_STARTUP_RETRIES}`
+          : "Grocy sync skipped due to invalid or unresolvable Grocy configuration",
       })
+      if (canRetryLegacy) {
+        grocyStartupRetryTimer = setTimeout(() => {
+          grocyStartupRetryTimer = null
+          void autoStartGrocySync(retryAttempt + 1, retryDelayMs)
+        }, retryDelayMs)
+        grocyStartupRetryTimer.unref?.()
+      }
       return
     }
 
+    clearGrocyStartupRetry()
     startGrocySync(
       { syncEnabled: true, syncMode, intervalMs },
       adapter,
@@ -483,7 +532,7 @@ async function autoStartGrocySync(): Promise<void> {
       component: "ha-startup",
       request_id: SYS_REQ,
       message: `Auto-started Grocy sync (mode: ${syncMode}, interval: ${intervalMs}ms)`,
-    });
+    })
   } catch (err) {
     logger.log("error", {
       event: "ha.startup.grocy.failed",
@@ -491,7 +540,7 @@ async function autoStartGrocySync(): Promise<void> {
       component: "ha-startup",
       request_id: SYS_REQ,
       message: `Failed to auto-start Grocy sync: ${err}`,
-    });
+    })
   }
 }
 
@@ -502,25 +551,26 @@ async function autoStartGrocySync(): Promise<void> {
  */
 async function validateWebhookEndpoints(): Promise<void> {
   try {
-    const client = await getDB();
+    const client = await getDB()
 
     const res = await client.execute({
       sql: "SELECT key, value FROM settings WHERE key IN ('webhook_endpoint', 'n8n_webhook_url')",
       args: [],
-    });
+    })
 
-    const endpoints: { name: string; url: string }[] = [];
+    const endpoints: { name: string; url: string }[] = []
     for (const row of res.rows) {
       if (typeof row.key === "string" && typeof row.value === "string") {
-        let url: string;
+        let url = ""
         try {
-          url = JSON.parse(row.value);
+          const parsed: unknown = JSON.parse(row.value)
+          if (typeof parsed === "string") url = parsed.trim()
         } catch {
-          url = row.value;
+          url = row.value.trim()
         }
         if (url) {
-          const name = row.key === "n8n_webhook_url" ? "n8n" : "webhook";
-          endpoints.push({ name, url });
+          const name = row.key === "n8n_webhook_url" ? "n8n" : "webhook"
+          endpoints.push({ name, url })
         }
       }
     }
@@ -532,12 +582,13 @@ async function validateWebhookEndpoints(): Promise<void> {
         component: "ha-startup",
         request_id: SYS_REQ,
         message: "No webhook endpoints configured",
-      });
-      return;
+      })
+      return
     }
 
     // Validate each endpoint with a lightweight HEAD request under shared outbound policy
     for (const ep of endpoints) {
+      const safeUrl = redactUrlForLog(ep.url)
       const controller = new AbortController()
       const timeout = setTimeout(() => controller.abort(), 5000)
       timeout.unref?.()
@@ -555,15 +606,17 @@ async function validateWebhookEndpoints(): Promise<void> {
           domain: "integrations",
           component: "ha-startup",
           request_id: SYS_REQ,
-          message: `${ep.name} endpoint reachable (${response.status}): ${ep.url}`,
+          message: `${ep.name} endpoint reachable (${response.status}): ${safeUrl}`,
         })
       } catch (fetchErr) {
+        const rawErr = fetchErr instanceof Error ? fetchErr.message : String(fetchErr)
+        const safeErr = ep.url ? rawErr.replaceAll(ep.url, safeUrl) : rawErr
         logger.log("warn", {
           event: `ha.startup.${ep.name}.unreachable`,
           domain: "integrations",
           component: "ha-startup",
           request_id: SYS_REQ,
-          message: `${ep.name} endpoint unreachable: ${ep.url} — ${fetchErr}`,
+          message: `${ep.name} endpoint unreachable: ${safeUrl} — ${safeErr}`,
         })
       } finally {
         clearTimeout(timeout)
@@ -576,7 +629,7 @@ async function validateWebhookEndpoints(): Promise<void> {
       component: "ha-startup",
       request_id: SYS_REQ,
       message: `Webhook validation failed: ${err}`,
-    });
+    })
   }
 }
 
