@@ -27,6 +27,8 @@ UI emoji handling follows five explicit buckets:
 4. **Bucket 4 (Replaced)**: Static Astro/TS UI chrome badges, buttons, and toasts use `<Icon>` or `renderIconSvg()`.
 5. **Bucket 5 (Replaced)**: Non-`<option>` chrome strings in `en.json` and `ga.json` pair clean text with adjacent `<Icon aria-hidden="true" />` elements.
 
+The desktop sidebar keeps a single circular edge collapse control (`#sidebar-edge-toggle`, with directional chevron flip and hover/ARIA state), while expandable navigation submenus (`Tasks`, `Areas`, and individual areas) use square disclosure buttons with dynamic `aria-expanded`, `aria-label`, and hover titles.
+
 ## Verification
 
 Run `tabler-settings-recovery.spec.ts` against a disposable local Astro dev server to check section navigation, outline rendering, keyboard help, icon and security-link contrast in Light and Dark, mobile navigation, disclosure text and shared card spacing. Verified feedback capture and queue operations retain their separate `feedback-ingress.spec.ts` fixture checks; standalone mode intentionally does not expose those controls.

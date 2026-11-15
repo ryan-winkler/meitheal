@@ -493,7 +493,7 @@ for (const secure of [true, false]) {
     try {
       await admin.addCookies([{ name: "feedback-fixture", value: "admin", url: browserOrigin }])
       const page = await admin.newPage()
-      const settings = browserOrigin + prefix + "/settings#app-pwa-settings"
+      const settings = browserOrigin + prefix + "/settings#backups-reset-settings"
       const endpoint = browserOrigin + prefix + "/api/export/database.sqlite"
       await page.goto(browserOrigin + "/api/health")
       await page.setContent(`<iframe title="Home Assistant app" style="width:100%;height:95vh" src="${settings}"></iframe>`)
@@ -1151,7 +1151,7 @@ coreTest("a live ingress role change prevents reuse of an administrator's Custom
 coreTest("Settings saves and retries feedback, then reviews, downloads and deletes it", async ({ browser }) => {
   const member = await browser.newContext({ extraHTTPHeaders: {}, viewport: { width: 320, height: 812 } })
   const admin = await browser.newContext({ extraHTTPHeaders: {}, viewport: { width: 390, height: 844 }, acceptDownloads: true })
-  const personal = origin + prefix + "/settings#personal-settings"
+  const appPwa = origin + prefix + "/settings#app-pwa-settings"
   const settings = origin + prefix + "/settings#local-feedback"
   const message = 'Synthetic <img src=x onerror="window.feedbackExecuted=true"> report'
   try {
@@ -1167,13 +1167,13 @@ coreTest("Settings saves and retries feedback, then reviews, downloads and delet
       expect(saved.status()).toBe(201)
       await route.abort()
     })
-    await userPage.goto(personal)
-    const personalPanel = userPage.locator("#personal-settings")
-    const localFeedback = personalPanel.getByRole("link", { name: "Share local feedback", exact: true })
-    await personalPanel.getByRole("link", { name: /Changelog/ }).focus()
+    await userPage.goto(appPwa)
+    const appPanel = userPage.locator("#app-pwa-settings")
+    const localFeedback = appPanel.getByRole("link", { name: "Share local feedback", exact: true })
+    await appPanel.getByRole("link", { name: /Changelog/ }).focus()
     await userPage.keyboard.press("Tab")
     await expect(localFeedback).toBeFocused()
-    const guides = personalPanel.getByRole("link", { name: "Guides", exact: true })
+    const guides = appPanel.getByRole("link", { name: "Guides", exact: true })
     await expect(guides).toHaveAttribute("href", "https://github.com/ryan-winkler/meitheal/blob/main/docs/index.md")
     await expect(guides).toHaveAttribute("target", "_blank")
     await expect(localFeedback).toHaveAttribute("href", "#local-feedback")
@@ -1235,8 +1235,8 @@ coreTest("Settings saves and retries feedback, then reviews, downloads and delet
 
     await member.addCookies([{ name: "meitheal-locale", value: "ga", url: origin }])
     const irishPage = await member.newPage()
-    await irishPage.goto(personal)
-    const irishPanel = irishPage.locator("#personal-settings")
+    await irishPage.goto(appPwa)
+    const irishPanel = irishPage.locator("#app-pwa-settings")
     await expect(irishPanel.getByRole("link", { name: "Treoracha", exact: true })).toBeVisible()
     const irishFeedback = irishPanel.getByRole("link", { name: "Roinn aiseolas áitiúil", exact: true })
     await expect(irishFeedback).toHaveAttribute("href", "#local-feedback")

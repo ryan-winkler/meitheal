@@ -20,6 +20,8 @@ async function refreshSidebarBadge() {
     const data = await res.json()
     if (badge.isConnected && typeof data.total === "number") {
       badge.textContent = String(data.total)
+      badge.hidden = data.total <= 0
+      badge.setAttribute("aria-label", `${data.total} active`)
     }
   } catch {
     /* best-effort */

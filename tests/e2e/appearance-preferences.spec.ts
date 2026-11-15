@@ -8,9 +8,9 @@ test.describe("Appearance preferences", () => {
 
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => localStorage.setItem("meitheal-theme", localStorage.getItem("meitheal-theme") || "dark"));
-    await page.goto("/settings#personal-settings");
+    await page.goto("/settings#look-and-feel-settings");
     await expect(page.locator("#settings-panels")).not.toHaveAttribute("inert", "");
-    await expect(page.locator('[data-settings-nav="personal-settings"]').first()).toHaveAttribute(
+    await expect(page.locator('[data-settings-nav="look-and-feel-settings"]').first()).toHaveAttribute(
       "aria-current",
       "location",
     );
@@ -27,15 +27,27 @@ test.describe("Appearance preferences", () => {
     })
     await page.goto("/settings#appearance-settings")
     await page.reload()
-    const form = page.locator("#appearance-preferences-form")
-    await expect(form.locator("select")).toHaveCount(10)
-    const choices = {
-      navigation: "navbar", navTone: "accent", font: "comic", base: "mist", radius: "1.5",
-      width: "boxed", header: "default", navStyle: "floating", panelStyle: "floating", sidebar: "folded",
+    const visualForm = page.locator("#appearance-preferences-form")
+    await expect(visualForm.locator("select")).toHaveCount(6)
+    const visualChoices = {
+      font: "comic", base: "mist", radius: "1.5",
+      width: "boxed", header: "default", panelStyle: "floating",
     }
-    for (const [name, value] of Object.entries(choices)) await form.locator(`[name="${name}"]`).selectOption(value)
-    await form.getByRole("button", { name: "Save appearance" }).click()
+    const navChoices = {
+      navigation: "navbar", navTone: "accent", navStyle: "floating", sidebar: "folded",
+    }
+    const choices = { ...visualChoices, ...navChoices }
+    for (const [name, value] of Object.entries(visualChoices)) await visualForm.locator(`[name="${name}"]`).selectOption(value)
+    await visualForm.getByRole("button", { name: "Save appearance" }).click()
     await expect(page.locator("#appearance-save-status")).toHaveText("Appearance saved on this device.")
+
+    await page.goto("/settings#navigation-settings")
+    const navForm = page.locator("#navigation-appearance-form")
+    await expect(navForm.locator("select")).toHaveCount(4)
+    for (const [name, value] of Object.entries(navChoices)) await navForm.locator(`[name="${name}"]`).selectOption(value)
+    await navForm.getByRole("button", { name: "Save navigation layout" }).click()
+    await expect(page.locator("#navigation-appearance-save-status")).toHaveText("Appearance saved on this device.")
+
     for (const [name, value] of Object.entries(choices)) {
       const suffix = name.replace(/[A-Z]/g, letter => `-${letter.toLowerCase()}`)
       await expect(page.locator("html")).toHaveAttribute(`data-appearance-${suffix}`, value)
@@ -62,15 +74,21 @@ test.describe("Appearance preferences", () => {
       expect(await page.evaluate(() => localStorage.getItem("meitheal_project_nav_group_collapsed"))).toBe("false")
     }
     await page.reload()
-    for (const [name, value] of Object.entries(choices)) await expect(form.locator(`[name="${name}"]`)).toHaveValue(value)
+    for (const [name, value] of Object.entries(navChoices)) await expect(navForm.locator(`[name="${name}"]`)).toHaveValue(value)
+    await page.goto("/settings#appearance-settings")
+    for (const [name, value] of Object.entries(visualChoices)) await expect(visualForm.locator(`[name="${name}"]`)).toHaveValue(value)
     await page.setViewportSize({ width: 320, height: 780 })
     await expect(page.locator("#mobile-tab-bar")).toBeVisible()
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(321)
     await expect(page.locator("body")).not.toHaveClass(/sidebar-collapsed/)
-    await form.getByRole("button", { name: "Reset to defaults" }).click()
+    await visualForm.getByRole("button", { name: "Reset to defaults" }).click()
     await expect(page.locator("html")).toHaveAttribute("data-appearance-font", "comic")
-    await form.getByRole("button", { name: "Save appearance" }).click()
-    for (const [name, preference] of Object.entries(APPEARANCE_PREFERENCES)) await expect(form.locator(`[name="${name}"]`)).toHaveValue(preference.defaultValue)
+    await visualForm.getByRole("button", { name: "Save appearance" }).click()
+    for (const name of Object.keys(visualChoices)) await expect(visualForm.locator(`[name="${name}"]`)).toHaveValue(APPEARANCE_PREFERENCES[name as keyof typeof APPEARANCE_PREFERENCES].defaultValue)
+    await page.goto("/settings#navigation-settings")
+    await navForm.getByRole("button", { name: "Reset to defaults" }).click()
+    await navForm.getByRole("button", { name: "Save navigation layout" }).click()
+    for (const name of Object.keys(navChoices)) await expect(navForm.locator(`[name="${name}"]`)).toHaveValue(APPEARANCE_PREFERENCES[name as keyof typeof APPEARANCE_PREFERENCES].defaultValue)
     expect(await page.evaluate(() => localStorage.getItem("meitheal-theme"))).toBe("dark")
     expect(await page.evaluate(() => localStorage.getItem("meitheal-accent-color"))).toBe("#ffffff")
     expect(await page.evaluate(() => localStorage.getItem("meitheal_sidebar_collapsed"))).toBe("true")
@@ -82,23 +100,23 @@ test.describe("Appearance preferences", () => {
       localStorage.setItem("meitheal_sidebar_collapsed", "false")
       localStorage.setItem("meitheal-appearance", JSON.stringify({ sidebar: "folded" }))
     })
-    await page.goto("/settings#appearance-settings")
+    await page.goto("/settings#navigation-settings")
     await page.reload()
     const sidebar = page.locator("#sidebar")
     const body = page.locator("body")
     await expect(body).toHaveClass(/sidebar-collapsed/)
-    const form = page.locator("#appearance-preferences-form")
+    const form = page.locator("#navigation-appearance-form")
     await form.locator('[name="sidebar"]').selectOption("expanded")
-    await form.getByRole("button", { name: "Save appearance" }).click()
+    await form.getByRole("button", { name: "Save navigation layout" }).click()
     await expect(body).not.toHaveClass(/sidebar-collapsed/)
-    await page.locator("#sidebar-toggle-btn").click()
+    await page.locator("#sidebar-edge-toggle").click()
     await expect(body).toHaveClass(/sidebar-collapsed/)
     expect(await page.evaluate(() => localStorage.getItem("meitheal_sidebar_collapsed"))).toBe("false")
     await page.reload()
     await expect(body).not.toHaveClass(/sidebar-collapsed/)
     await form.locator('[name="sidebar"]').selectOption("hover")
     await form.locator('[name="navStyle"]').selectOption("floating")
-    await form.getByRole("button", { name: "Save appearance" }).click()
+    await form.getByRole("button", { name: "Save navigation layout" }).click()
     await page.mouse.move(1000, 700)
     await expect(body).toHaveClass(/sidebar-collapsed/)
     // Finish the mode-change transition before checking that focus expansion stays in place.
@@ -110,22 +128,25 @@ test.describe("Appearance preferences", () => {
     await form.locator('[name="sidebar"]').focus()
     await expect(body).toHaveClass(/sidebar-collapsed/)
     await form.locator('[name="sidebar"]').selectOption("remember")
-    await form.getByRole("button", { name: "Save appearance" }).click()
+    await form.getByRole("button", { name: "Save navigation layout" }).click()
     await expect(body).not.toHaveClass(/sidebar-collapsed/)
   })
 
   test("neutral palette follows Light and Auto while fluid width and sticky headers remain effective", async ({ page }) => {
     await page.setViewportSize({ width: 2000, height: 1000 })
     await page.goto("/settings#appearance-settings")
-    const form = page.locator("#appearance-preferences-form")
-    await form.locator('[name="base"]').selectOption("stone")
-    await form.locator('[name="navigation"]').selectOption("navbar")
-    await form.locator('[name="width"]').selectOption("fluid")
-    await form.getByRole("button", { name: "Save appearance" }).click()
+    const visualForm = page.locator("#appearance-preferences-form")
+    await visualForm.locator('[name="base"]').selectOption("stone")
+    await visualForm.locator('[name="width"]').selectOption("fluid")
+    await visualForm.getByRole("button", { name: "Save appearance" }).click()
+    await page.goto("/settings#navigation-settings")
+    const navForm = page.locator("#navigation-appearance-form")
+    await navForm.locator('[name="navigation"]').selectOption("navbar")
+    await navForm.getByRole("button", { name: "Save navigation layout" }).click()
     expect(await page.locator("#settings-shell").evaluate(el => el.getBoundingClientRect().width)).toBeGreaterThan(1280)
     await expect(page.locator("#settings-bar")).toHaveCSS("position", "sticky")
     await expect(page.locator("#settings-bar")).toHaveCSS("top", "64px")
-    await page.goto("/settings#personal-settings")
+    await page.goto("/settings#look-and-feel-settings")
     await page.locator("#theme-select").selectOption("light")
     await expect.poll(() => page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--bg-primary-rgb").trim())).toBe("250 250 249")
     await page.emulateMedia({ colorScheme: "light" })

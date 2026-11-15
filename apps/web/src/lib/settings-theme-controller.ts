@@ -82,18 +82,24 @@ function initAccentSettings(): void {
   }
 }
 
-function initAppearanceSettings(): void {
-  const form = document.querySelector<HTMLFormElement>("#appearance-preferences-form")
-  const status = document.getElementById("appearance-save-status")
-  if (!form || !status) return
+function bindAppearanceForm(form: HTMLFormElement): void {
+  const status =
+    form.querySelector<HTMLElement>("[data-appearance-status]") ??
+    document.getElementById("appearance-save-status")
+  if (!status) return
 
   const root = document.documentElement
-  const fields = Object.entries(APPEARANCE_PREFERENCES).map(([name, preference]) => ({
-    name,
-    attribute: appearanceAttribute(name),
-    select: form.elements.namedItem(name) as HTMLSelectElement,
-    ...preference,
-  }))
+  const fields = Object.entries(APPEARANCE_PREFERENCES).flatMap(([name, preference]) => {
+    const select = form.elements.namedItem(name) as HTMLSelectElement | null
+    if (!select) return []
+    return [{
+      name,
+      attribute: appearanceAttribute(name),
+      select,
+      ...preference,
+    }]
+  })
+  if (fields.length === 0) return
 
   for (const field of fields) field.select.value = root.getAttribute(field.attribute) ?? field.defaultValue
   pageLifecycle.on(form, "change", () => { status.textContent = "" })
@@ -113,18 +119,40 @@ function initAppearanceSettings(): void {
       const stored: unknown = JSON.parse(localStorage.getItem(APPEARANCE_STORAGE_KEY) ?? "{}")
       if (stored && typeof stored === "object" && !Array.isArray(stored)) previous = stored as Record<string, unknown>
     } catch { /* A valid save replaces malformed stored preferences. */ }
+    const defaults = Object.fromEntries(
+      Object.entries(APPEARANCE_PREFERENCES).map(([name, preference]) => {
+        const current = root.getAttribute(appearanceAttribute(name))
+        return [name, current && preference.options.includes(current) ? current : preference.defaultValue]
+      }),
+    )
+    const nextStored = {
+      ...defaults,
+      ...previous,
+      ...Object.fromEntries(selected.map(({ name, value }) => [name, value])),
+    }
     try {
-      localStorage.setItem(APPEARANCE_STORAGE_KEY, JSON.stringify({
-        ...previous,
-        ...Object.fromEntries(selected.map(({ name, value }) => [name, value])),
-      }))
+      localStorage.setItem(APPEARANCE_STORAGE_KEY, JSON.stringify(nextStored))
     } catch {
       status.textContent = status.dataset.error ?? ""
       return
     }
-    applyAppearancePreferences(Object.fromEntries(selected.map(({ name, value }) => [name, value])) as AppearancePreferences)
+    const resolved = Object.fromEntries(
+      Object.entries(APPEARANCE_PREFERENCES).map(([name, preference]) => {
+        const val = nextStored[name as keyof typeof nextStored]
+        return [name, typeof val === "string" && preference.options.includes(val) ? val : preference.defaultValue]
+      }),
+    ) as AppearancePreferences
+    applyAppearancePreferences(resolved)
     status.textContent = status.dataset.saved ?? ""
   })
+}
+
+function initAppearanceSettings(): void {
+  const forms = new Set<HTMLFormElement>()
+  const primary = document.querySelector<HTMLFormElement>("#appearance-preferences-form")
+  if (primary) forms.add(primary)
+  document.querySelectorAll<HTMLFormElement>("[data-appearance-form]").forEach((form) => forms.add(form))
+  forms.forEach((form) => bindAppearanceForm(form))
 }
 
 export function initThemeSettings(): void {
@@ -290,11 +318,14 @@ export function restoreThemeSettings(settings: Record<string, unknown>): void {
 
   try {
     // Restore locale
-    if (settings.locale) {
-      (document.getElementById("locale-select") as HTMLSelectElement).value = String(settings.locale)
-    } else {
-      const stored = localStorage.getItem("meitheal-locale") || "en"
-      ;(document.getElementById("locale-select") as HTMLSelectElement).value = stored
+    const localeSelect = document.getElementById("locale-select") as HTMLSelectElement | null
+    if (localeSelect) {
+      if (settings.locale) {
+        localeSelect.value = String(settings.locale)
+      } else {
+        const stored = localStorage.getItem("meitheal-locale") || "en"
+        localeSelect.value = stored
+      }
     }
   } catch (e) {
     log.error("Locale restore error", e)

@@ -489,7 +489,9 @@ settingsBrowserTest("Settings Agent Tokens UI handles deferred load, retry, focu
   const claude = await createdAgent.json() as { id: string; name: string }
 
   let failOnce = true
+  let tokenListCalls = 0
   await page.route("**/api/agent-tokens?include_revoked=1", async route => {
+    tokenListCalls += 1
     if (failOnce) {
       failOnce = false
       await route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: "boom" }) })
@@ -499,11 +501,14 @@ settingsBrowserTest("Settings Agent Tokens UI handles deferred load, retry, focu
   })
 
   await page.goto("/settings#personal-settings")
-  await expect(page.locator("#automation-ai-settings")).toBeHidden()
-  await page.locator('[data-settings-nav="automation-ai-settings"]').click()
-  await expect(page.locator("#automation-ai-settings")).toBeVisible()
+  await expect(page.locator("#settings-panels")).not.toHaveAttribute("inert", "")
+  await expect(page.locator("#ai-agents-settings")).toBeHidden()
+  expect(tokenListCalls).toBe(0)
+  await page.locator('[data-settings-nav="ai-agents-settings"]').click()
+  await expect(page.locator("#ai-agents-settings")).toBeVisible()
 
   await expect(page.locator("#agent-tokens-status")).toBeVisible()
+  expect(tokenListCalls).toBe(1)
   await expect(page.locator("#tokens-retry")).toBeVisible()
   await page.locator("#tokens-retry").click()
   await expect(page.locator("#agent-tokens-status")).toBeHidden()
@@ -588,7 +593,7 @@ settingsBrowserTest("Settings Agent Tokens UI handles deferred load, retry, focu
   await page.locator("#bot-allow-proposals").click()
   await expect(page).toHaveURL(/\/review$/)
   await page.goBack()
-  await page.locator('[data-settings-nav="automation-ai-settings"]').click()
+  await page.locator('[data-settings-nav="ai-agents-settings"]').click()
   await expect(page.locator("#agent-token-reveal")).toBeHidden()
   await expect(page.locator("#agent-token-plaintext")).toHaveText("")
 

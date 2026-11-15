@@ -8,6 +8,7 @@ import { withAsyncButton } from "@lib/async-button"
 import { confirmDialog } from "@lib/confirm-dialog"
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { showToast } from "@lib/toast"
+import { createTablerSvgElement } from "@lib/tabler-svg"
 
 interface TokenInfo {
   id: string
@@ -64,12 +65,19 @@ export function initAgentTokensSettings(): void {
     if (!creating && newAssigneeName) newAssigneeName.value = ""
   }
 
+  function setCopyButtonState(copied: boolean) {
+    copyBtn!.replaceChildren(
+      createTablerSvgElement(copied ? "check" : "clipboard-list", 14),
+      document.createTextNode(copied ? " Copied" : " Copy"),
+    )
+  }
+
   function clearReveal() {
     if (copyTimer) {
       clearTimeout(copyTimer)
       copyTimer = undefined
     }
-    copyBtn!.textContent = "📋 Copy"
+    setCopyButtonState(false)
     plaintextEl!.textContent = ""
     revealEl!.hidden = true
   }
@@ -280,7 +288,7 @@ export function initAgentTokensSettings(): void {
         revokeBtn.dataset.revoke = token.id
         revokeBtn.title = "Revoke"
         revokeBtn.setAttribute("aria-label", `Revoke token ${token.name}`)
-        revokeBtn.textContent = "🚫"
+        revokeBtn.appendChild(createTablerSvgElement("x", 14))
         actions.appendChild(revokeBtn)
       }
 
@@ -290,7 +298,7 @@ export function initAgentTokensSettings(): void {
       deleteBtn.dataset.delete = token.id
       deleteBtn.title = "Delete permanently"
       deleteBtn.setAttribute("aria-label", `Delete token ${token.name} permanently`)
-      deleteBtn.textContent = "🗑"
+      deleteBtn.appendChild(createTablerSvgElement("trash", 14))
       actions.appendChild(deleteBtn)
 
       row.append(info, actions)
@@ -510,10 +518,10 @@ export function initAgentTokensSettings(): void {
       await navigator.clipboard.writeText(plaintextEl.textContent || "")
       if (signal.aborted) return
       showToast("Token copied to clipboard", "success")
-      copyBtn.textContent = "✅ Copied"
+      setCopyButtonState(true)
       if (copyTimer) clearTimeout(copyTimer)
       copyTimer = setTimeout(() => {
-        if (!signal.aborted) copyBtn.textContent = "📋 Copy"
+        if (!signal.aborted) setCopyButtonState(false)
       }, 2000)
     } catch {
       if (!signal.aborted) showToast("Failed to copy — select and copy manually", "error")
@@ -530,7 +538,9 @@ export function initAgentTokensSettings(): void {
     return
   }
 
-  const section = document.getElementById("automation-ai-settings")
+  const section = document.getElementById("automation-ai-settings")?.closest<HTMLElement>("[data-settings-shell-section]")
+    ?? document.getElementById("ai-agents-settings")
+    ?? document.getElementById("automation-ai-settings")
   if (!section || !section.hidden) {
     void loadTokens()
   } else {

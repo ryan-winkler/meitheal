@@ -18,7 +18,7 @@ test.describe("Sidebar and Today follow-through", () => {
   })
 
   test("Areas visibility, label and order persist, with one custom link per click", async ({ page }) => {
-    await page.goto("/settings#workflow-settings")
+    await page.goto("/settings#navigation-settings")
     await expect(page.getByRole("checkbox", { name: "Show Areas in sidebar" })).toBeVisible()
     await page.getByRole("textbox", { name: "Custom label for Areas" }).fill("Household areas")
     await page.getByRole("button", { name: "Move Areas up", exact: true }).press("Enter")

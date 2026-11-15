@@ -65,7 +65,7 @@ export function initN8nSettings(): void {
     btn.textContent = "🔌 Sending..."
     btn.disabled = true
     try {
-      const res = await fetch((window.__ingress_path || "") + "/api/integrations/test-event", {
+      const res = await fetch("/api/integrations/test-event", {
         method: "POST", headers: { "content-type": "application/json" }, signal: pageLifecycle.signal,
       })
       const data = await res.json()
@@ -114,7 +114,7 @@ export function initN8nSettings(): void {
     const btn = document.getElementById("copy-nodered-flows") as HTMLButtonElement
     if (!btn) return
     try {
-      const res = await fetch((window.__ingress_path || "") + "/api/integrations/nodered/flows", { signal: pageLifecycle.signal })
+      const res = await fetch("/api/integrations/nodered/flows", { signal: pageLifecycle.signal })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const flowJson = await res.text()
       await navigator.clipboard.writeText(flowJson)
@@ -145,7 +145,7 @@ export function initN8nSettings(): void {
     btn.textContent = "🔄 Deploying..."
     btn.disabled = true
     try {
-      const res = await fetch((window.__ingress_path || "") + "/api/integrations/nodered/deploy", {
+      const res = await fetch("/api/integrations/nodered/deploy", {
         method: "POST", headers: { "content-type": "application/json" }, signal: pageLifecycle.signal,
       })
       const data = await res.json() as { success: boolean; message?: string; error?: string; nodeCount?: number }
@@ -211,7 +211,7 @@ export function initN8nSettings(): void {
     btn.textContent = "🔌 Sending..."
     btn.disabled = true
     try {
-      const res = await fetch((window.__ingress_path || "") + "/api/integrations/test-webhook", {
+      const res = await fetch("/api/integrations/test-webhook", {
         method: "POST", headers: { "content-type": "application/json" }, signal: pageLifecycle.signal,
       })
       const data = await res.json()
@@ -267,7 +267,7 @@ export function initN8nSettings(): void {
       workflowsList.innerHTML = `<div class="cal-empty-state"><span class="cal-empty-icon">⏳</span><span>Fetching workflows...</span></div>`
     }
     try {
-      const res = await fetch((window.__ingress_path || "") + "/api/integrations/n8n/health", { signal: pageLifecycle.signal })
+      const res = await fetch("/api/integrations/n8n/health", { signal: pageLifecycle.signal })
       const data = await res.json()
       if (healthDetail) {
         const span = document.createElement("span")
@@ -296,7 +296,7 @@ export function initN8nSettings(): void {
       }
     }
     try {
-      const res = await fetch((window.__ingress_path || "") + "/api/integrations/n8n/workflows", { signal: pageLifecycle.signal })
+      const res = await fetch("/api/integrations/n8n/workflows", { signal: pageLifecycle.signal })
       const data = await res.json()
       if (workflowsList) {
         const setEmptyState = (icon: string, text: string) => {
@@ -378,7 +378,7 @@ export function initN8nSettings(): void {
     const haVersionEl = document.getElementById("n8n-ha-version")
     if (!busStatusEl) return
     try {
-      const res = await fetch((window.__ingress_path || "") + "/api/integrations/status", { signal: pageLifecycle.signal })
+      const res = await fetch("/api/integrations/status", { signal: pageLifecycle.signal })
       const data = await res.json()
       if (data.ha_connection) {
         if (data.ha_connection.connected)
@@ -409,7 +409,7 @@ async function initNodeRedDeployStatus() {
   badge.textContent = "Checking..."
   badge.className = "badge badge-disabled"
   try {
-    const res = await fetch((window.__ingress_path || "") + "/api/integrations/nodered/status", { signal: pageLifecycle.signal })
+    const res = await fetch("/api/integrations/nodered/status", { signal: pageLifecycle.signal })
     const data = await res.json() as { available?: boolean; reachable?: boolean; flowDeployed?: boolean; nodeRedUrl?: string }
     if (!data.available) {
       badge.textContent = "N/A (standalone)"

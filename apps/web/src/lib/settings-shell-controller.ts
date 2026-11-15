@@ -4,7 +4,7 @@ import {
   buildCompanionXCallbackUrl,
   buildIngressPagePath,
 } from "@lib/page-shell-links"
-import { type SettingsSectionId } from "@lib/settings-registry"
+import { resolveSettingsSectionId, type SettingsSectionId } from "@lib/settings-registry"
 import { showToast } from "@lib/toast"
 import { initUnifiedBarSearchLauncher } from "@lib/unified-bar-controller"
 
@@ -91,14 +91,25 @@ export function initSettingsShell(): void {
     try {
       id = decodeURIComponent(hash.slice(1))
     } catch {
-      // A malformed fragment still opens Personal.
+      // A malformed fragment still opens Look & Feel.
     }
     // The shared skip link keeps the active section and its native behavior.
     if (id === "main-content") return
 
-    const target = document.getElementById(id)
-    const section = target?.closest<HTMLElement>("[data-settings-shell-section]")
-    const sectionId = section?.id ?? "personal-settings"
+    const aliasedId = id ? resolveSettingsSectionId(id) : undefined
+    const rawTarget = id ? document.getElementById(id) : null
+    const section =
+      (aliasedId ? document.getElementById(aliasedId) : null) ??
+      rawTarget?.closest<HTMLElement>("[data-settings-shell-section]") ??
+      null
+    const sectionId = section?.id ?? "look-and-feel-settings"
+    const isLegacyWrapper = Boolean(
+      aliasedId &&
+        rawTarget &&
+        !rawTarget.matches("[data-settings-shell-section]") &&
+        !(rawTarget instanceof HTMLDetailsElement),
+    )
+    const target = isLegacyWrapper ? section : (rawTarget ?? section)
     sections.forEach((element) => { element.hidden = element.id !== sectionId })
     links.forEach((link) => {
       if (link.dataset.settingsNav === sectionId) link.setAttribute("aria-current", "location")

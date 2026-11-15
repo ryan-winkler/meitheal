@@ -132,8 +132,8 @@ test.describe("Dynamic Home Assistant agent pickers", () => {
     await expect(picker.locator("option")).toHaveCount(5)
     await expect(picker).toHaveValue("01LEGACYCONFIGENTRY")
     const previousReads = reads
-    await page.getByRole("navigation", { name: "Sections" }).getByRole("link", { name: "Workflow", exact: true }).click()
-    await page.getByRole("navigation", { name: "Sections" }).getByRole("link", { name: "Automation & AI", exact: true }).click()
+    await page.getByRole("navigation", { name: "Sections" }).getByRole("link", { name: "Tasks & Boards", exact: true }).click()
+    await page.getByRole("navigation", { name: "Sections" }).getByRole("link", { name: "AI & Agent Access", exact: true }).click()
     await expect.poll(() => reads).toBeGreaterThan(previousReads)
     await expect(page.locator("#refresh-ha-agents")).toHaveAttribute("aria-busy", "false")
     failure = true

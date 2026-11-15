@@ -89,7 +89,7 @@ export function initCalendarTodoSettings(): void {
     }
     if (resultEl) { resultEl.textContent = ""; resultEl.style.color = "" }
     try {
-      const res = await fetch((window.__ingress_path || "") + "/api/integrations/calendar/caldav-credentials", {
+      const res = await fetch("/api/integrations/calendar/caldav-credentials", {
         method: "POST", headers: { "content-type": "application/json" },
         body: JSON.stringify({ action: "test", url, username, password }),
         signal: pageLifecycle.signal,
@@ -155,7 +155,7 @@ export function initCalendarTodoSettings(): void {
     pageLifecycle.on(testCalBtn, "click", withAsyncButton(testCalBtn, async () => {
     const resultEl = document.getElementById("cal-sync-result")
     try {
-      const res = await fetch((window.__ingress_path || "") + "/api/integrations/calendar/sync", {
+      const res = await fetch("/api/integrations/calendar/sync", {
         method: "POST", headers: { "content-type": "application/json" },
         body: JSON.stringify({ action: "sync" }),
         signal: pageLifecycle.signal,
@@ -281,7 +281,7 @@ export function initCalendarTodoSettings(): void {
     try {
       const enabledTodos = Array.from(document.querySelectorAll<HTMLInputElement>("#todo-entities-container .todo-entity-toggle:checked")).map((cb) => cb.value)
       const entity = enabledTodos[0] || undefined
-      const res = await fetch((window.__ingress_path || "") + "/api/todo/sync", {
+      const res = await fetch("/api/todo/sync", {
         method: "POST", headers: { "content-type": "application/json" },
         body: JSON.stringify({ action: "sync", entity_id: entity || undefined }),
         signal: pageLifecycle.signal,
@@ -337,7 +337,7 @@ async function hydrateCalendarStatus(s: Record<string, unknown>) {
   const lastSynced = document.getElementById("cal-last-synced")
 
   try {
-    const res = await fetch((window.__ingress_path || "") + "/api/integrations/calendar/status", { signal: pageLifecycle.signal })
+    const res = await fetch("/api/integrations/calendar/status", { signal: pageLifecycle.signal })
     if (!res.ok) throw new Error("API error")
     const data = (await res.json()) as { ok: boolean; calendars?: { entity_id: string; friendly_name: string; state: string }[]; sync: { active: boolean; entityId: string; lastSyncAt: number | null; eventCount: number } }
 
@@ -534,7 +534,7 @@ async function hydrateTodoStatus(settings: Record<string, unknown>) {
   const enabledLabel = document.getElementById("todo-enabled-label")
 
   try {
-    const res = await fetch((window.__ingress_path || "") + "/api/todo", { signal: pageLifecycle.signal })
+    const res = await fetch("/api/todo", { signal: pageLifecycle.signal })
     if (!res.ok) throw new Error("API error")
     const data = (await res.json()) as { ok: boolean; entities?: { entity_id: string; friendly_name: string; state: string; sync: { active: boolean; direction: string; lastSyncAt: number | null; itemCount: number } | null }[] }
     const entities = data.entities ?? []
@@ -641,7 +641,7 @@ export function restoreCalendarTodoSettings(s: Record<string, unknown>): void {
     (document.getElementById("caldav-url") as HTMLInputElement).value = String(s.caldav_url)
     ;(async () => {
       try {
-        const credRes = await fetch((window.__ingress_path || "") + "/api/integrations/calendar/caldav-credentials", { signal: pageLifecycle.signal })
+        const credRes = await fetch("/api/integrations/calendar/caldav-credentials", { signal: pageLifecycle.signal })
         if (credRes.ok) {
           const credData = await credRes.json()
           if (credData.configured) {

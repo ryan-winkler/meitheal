@@ -68,14 +68,15 @@ test("dashboard section links and ownership filter use native navigation semanti
 
 test("Settings navigation and fields have valid semantics at mobile width", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
-  await page.goto("/settings#workflow-settings")
+  await page.goto("/settings#navigation-settings")
 
   await expect(page.locator("#settings-directory")).toBeHidden()
   await page.getByRole("button", { name: "Sections", exact: true }).click()
-  const workflow = page.locator('[data-settings-nav="workflow-settings"]')
-  await expect(workflow).toBeVisible()
-  await expect(workflow).toHaveAttribute("aria-current", "location")
+  const navSection = page.locator('[data-settings-nav="navigation-settings"]')
+  await expect(navSection).toBeVisible()
+  await expect(navSection).toHaveAttribute("aria-current", "location")
   await expect(page.getByRole("checkbox", { name: "Show Dashboard in sidebar" })).toBeVisible()
+  await page.getByRole("link", { name: "Tasks & Boards", exact: true }).click()
   await expect(page.getByRole("combobox", { name: "Sprint field type" })).toBeVisible()
 
   const results = await new AxeBuilder({ page })

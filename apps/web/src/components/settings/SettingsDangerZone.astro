@@ -10,20 +10,99 @@ import SettingsSectionIntro from "./SettingsSectionIntro.astro"
 
 interface Props {
   locale: Locale
+  databaseDownloadToken?: string | undefined
 }
-const { locale } = Astro.props
+const { locale, databaseDownloadToken } = Astro.props
 
-const dangerZoneSection = SETTINGS_SECTIONS.find((section) => section.id === "danger-zone-settings")!
+const backupsResetSection = SETTINGS_SECTIONS.find((section) => section.id === "backups-reset-settings")!
 ---
 
 <section
-  id="danger-zone-settings"
+  id="backups-reset-settings"
   class="settings-shell__section"
   data-settings-shell-section
   hidden
 >
-  <SettingsSectionIntro section={dangerZoneSection} />
+  <SettingsSectionIntro section={backupsResetSection} />
   <div class="settings-grid">
+
+  <!-- Backups & Data Portability -->
+  <SettingsPanelCard
+    icon="database"
+    title={t("settings.data_title", locale)}
+    subtitle={t("settings.data_subtitle", locale)}
+  >
+    <SettingsCallout title={t("settings.callout_data_title", locale)} icon="database">
+      {t("settings.callout_data_desc", locale)}
+    </SettingsCallout>
+    <div class="form-group mt-3">
+      <label class="form-label mb-2"
+        >{t("settings.export_tasks", locale)}</label
+      >
+      <SettingsActionRow>
+        <a
+          href="#"
+          class="btn btn-primary"
+          id="export-json-btn"
+          style="flex: 1; text-align: center; text-decoration: none;"
+          ><Icon name="download" size={14} sprite={true} /> <span>{t("settings.download_json", locale)}</span></a
+        >
+        <a
+          href="/api/export/tasks.csv"
+          download
+          class="btn btn-secondary"
+          id="export-csv-btn"
+          style="flex: 1; text-align: center; text-decoration: none;"
+          ><Icon name="chart-bar" size={14} sprite={true} /> <span>{t("settings.download_csv", locale)}</span></a
+        >
+        {databaseDownloadToken && (
+          <>
+            <form id="export-db-form" method="post" action="/api/export/database.sqlite" hidden>
+              <input type="hidden" name="token" value={databaseDownloadToken} />
+            </form>
+            <button type="button" class="btn btn-secondary" id="export-db-btn"
+              style="flex: 1; text-align: center;"><Icon name="database" size={14} sprite={true} /> <span>{t("settings.raw_db", locale)}</span></button>
+          </>
+        )}
+      </SettingsActionRow>
+      <small class="settings-hint" style="display: block; margin-top: 6px;">
+        {t(databaseDownloadToken ? "settings.export_hint_admin" : "settings.export_hint", locale)}
+      </small>
+    </div>
+
+    <div
+      class="form-group"
+      style="margin-top: 16px; border-top: 1px solid var(--border-color); padding-top: 16px;"
+    >
+      <label class="form-label mb-2"
+        >{t("settings.settings_config", locale)}</label
+      >
+      <SettingsActionRow>
+        <a
+          href="/api/export/settings.json"
+          download
+          class="btn btn-secondary flex-1 text-center no-underline"
+          id="export-settings-btn"
+          ><Icon name="settings" size={14} sprite={true} /> <span>{t("settings.export_config", locale)}</span></a
+        >
+        <label
+          class="settings-file-picker btn btn-secondary flex-1 text-center no-underline"
+          style="cursor: pointer; margin: 0; padding: 6px 16px; display: inline-flex; justify-content: center; align-items: center; gap: 6px;"
+        >
+          <Icon name="refresh" size={14} sprite={true} />
+          <span>{t("settings.import_config", locale)}</span>
+          <input
+            type="file"
+            id="import-settings-input"
+            accept=".json"
+          />
+        </label>
+      </SettingsActionRow>
+      <small class="settings-hint" style="display: block; margin-top: 6px;">
+        {t("settings.config_hint", locale)}
+      </small>
+    </div>
+  </SettingsPanelCard>
 
   <!-- Archiving & Data Retention -->
   <SettingsPanelCard

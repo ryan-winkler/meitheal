@@ -6,9 +6,9 @@ test.describe("Theme accent and keyboard focus", () => {
 
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => localStorage.setItem("meitheal-theme", localStorage.getItem("meitheal-theme") || "dark"));
-    await page.goto("/settings#personal-settings");
+    await page.goto("/settings#look-and-feel-settings");
     await expect(page.locator("#settings-panels")).not.toHaveAttribute("inert", "");
-    await expect(page.locator('[data-settings-nav="personal-settings"]').first()).toHaveAttribute(
+    await expect(page.locator('[data-settings-nav="look-and-feel-settings"]').first()).toHaveAttribute(
       "aria-current",
       "location",
     );
@@ -52,7 +52,7 @@ test.describe("Theme accent and keyboard focus", () => {
       await expect.poll(tokens).toEqual({ accent: surface, focus: baseline.focus })
       await page.getByRole("link", { name: "Settings", exact: true }).first().click()
       await expect(page).toHaveURL(/\/settings(?:#.*)?$/)
-      await expect(page.locator("#personal-settings")).toBeVisible()
+      await expect(page.locator("#look-and-feel-settings")).toBeVisible()
       await expect(page.locator("#settings-panels")).not.toHaveAttribute("inert", "")
       await expect(picker).toHaveValue(surface)
       await page.reload()
