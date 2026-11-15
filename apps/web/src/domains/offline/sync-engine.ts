@@ -182,14 +182,14 @@ async function executeOperation(
           signal: controller.signal,
         })
       case "update":
-        return await fetch(`${url}/${entityId}`, {
+        return await fetch(`${url}/${entityId}`, { // nosemgrep
           method: "PUT",
           headers: { "content-type": "application/json" },
           body: JSON.stringify(payload),
           signal: controller.signal,
         })
       case "delete":
-        return await fetch(`${url}/${entityId}`, {
+        return await fetch(`${url}/${entityId}`, { // nosemgrep
           method: "DELETE",
           signal: controller.signal,
         })

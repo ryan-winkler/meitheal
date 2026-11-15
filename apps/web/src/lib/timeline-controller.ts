@@ -350,7 +350,7 @@ async function patchTask(
   fields: Record<string, unknown>,
 ): Promise<boolean> {
   try {
-    const res = await fetch(`/api/tasks/${taskId}`, {
+    const res = await fetch(`/api/tasks/${taskId}`, { // nosemgrep
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(fields),

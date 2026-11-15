@@ -120,6 +120,239 @@ function classifyGrocyError(
   return { errorCode: "unknown", retryable: true }
 }
 
+// --- URL Safety ---
+
+export type GrocyUrlValidationResult =
+  | { ok: true; normalizedUrl: string }
+  | { ok: false; error: string }
+
+const BLOCKED_EXACT_HOSTS = new Set([
+  "localhost",
+  "127.0.0.1",
+  "0.0.0.0",
+  "::",
+  "::1",
+  "0:0:0:0:0:0:0:0",
+  "0:0:0:0:0:0:0:1",
+  "169.254.169.254",
+  "metadata.google.internal",
+  "metadata.goog",
+  "metadata.internal",
+  "instance-data",
+])
+
+const BLOCKED_DOMAIN_SUFFIXES = [
+  "localhost",
+  "metadata.google.internal",
+  "metadata.goog",
+  "metadata.internal",
+  "instance-data",
+]
+
+function stripTrailingDots(value: string): string {
+  let end = value.length
+  while (end > 0 && value.charCodeAt(end - 1) === 46) {
+    end--
+  }
+  return end === value.length ? value : value.slice(0, end)
+}
+
+/** Normalize a hostname by trimming, lowercasing, unbracketing IPv6 literals, and stripping trailing dots. */
+export function normalizeNetworkHost(rawHostname: string): string {
+  const trimmed = rawHostname.trim().toLowerCase()
+  const unbracketed = trimmed.startsWith("[") && trimmed.endsWith("]") ? trimmed.slice(1, -1) : trimmed
+  return stripTrailingDots(unbracketed)
+}
+
+function isAsciiDigits(value: string): boolean {
+  if (value.length === 0 || value.length > 3) return false
+  for (let i = 0; i < value.length; i++) {
+    const code = value.charCodeAt(i)
+    if (code < 48 || code > 57) return false
+  }
+  return true
+}
+
+function isAsciiHexGroup(value: string): boolean {
+  if (value.length === 0 || value.length > 4) return false
+  for (let i = 0; i < value.length; i++) {
+    const code = value.charCodeAt(i)
+    const isDigit = code >= 48 && code <= 57
+    const isLowerHex = code >= 97 && code <= 102
+    if (!isDigit && !isLowerHex) return false
+  }
+  return true
+}
+
+function parseDottedIpv4Octets(value: string): number[] | null {
+  const parts = value.split(".")
+  if (parts.length !== 4) return null
+  const octets: number[] = []
+  for (const part of parts) {
+    if (!isAsciiDigits(part)) return null
+    const num = Number.parseInt(part, 10)
+    if (num < 0 || num > 255) return null
+    octets.push(num)
+  }
+  return octets
+}
+
+function parseHexGroups(segment: string): number[] | null {
+  if (!segment) return []
+  const parts = segment.split(":")
+  const groups: number[] = []
+  for (const part of parts) {
+    if (!isAsciiHexGroup(part)) return null
+    groups.push(Number.parseInt(part, 16))
+  }
+  return groups
+}
+
+function parseIpv6Hextets(host: string): number[] | null {
+  const zoneIndex = host.indexOf("%")
+  const addr = zoneIndex >= 0 ? host.slice(0, zoneIndex) : host
+  if (!addr) return null
+
+  const lastColon = addr.lastIndexOf(":")
+  const tail = addr.slice(lastColon + 1)
+  let expandedAddr = addr
+  if (tail.includes(".")) {
+    const octets = parseDottedIpv4Octets(tail)
+    if (!octets) return null
+    const hi = ((octets[0]! << 8) | octets[1]!).toString(16)
+    const lo = ((octets[2]! << 8) | octets[3]!).toString(16)
+    expandedAddr = `${addr.slice(0, lastColon + 1)}${hi}:${lo}`
+  }
+
+  const compressed = expandedAddr.split("::")
+  if (compressed.length > 2) return null
+
+  const left = parseHexGroups(compressed[0]!)
+  if (!left) return null
+
+  if (compressed.length === 1) {
+    return left.length === 8 ? left : null
+  }
+
+  const right = parseHexGroups(compressed[1]!)
+  if (!right) return null
+
+  const total = left.length + right.length
+  if (total >= 8) return null
+
+  const zeros = new Array<number>(8 - total).fill(0)
+  return [...left, ...zeros, ...right]
+}
+
+function hextetsToIpv4(hi: number, lo: number): string {
+  return `${(hi >> 8) & 0xff}.${hi & 0xff}.${(lo >> 8) & 0xff}.${lo & 0xff}`
+}
+
+function classifyIpv6Host(host: string): "unconditional" | "private" | null {
+  const h = parseIpv6Hextets(host)
+  if (!h) {
+    // Fail closed on malformed colon-containing hostnames
+    return "unconditional"
+  }
+
+  const prefixAllZero = h[0] === 0 && h[1] === 0 && h[2] === 0 && h[3] === 0 && h[4] === 0
+  if (prefixAllZero && h[5] === 0xffff) {
+    return classifyNetworkHost(hextetsToIpv4(h[6]!, h[7]!))
+  }
+  if (prefixAllZero && h[5] === 0) {
+    if (h[6] !== 0) {
+      return classifyNetworkHost(hextetsToIpv4(h[6]!, h[7]!))
+    }
+    return "unconditional"
+  }
+
+  // Unique Local Addresses (fc00::/7)
+  if ((h[0]! & 0xfe00) === 0xfc00) {
+    return "private"
+  }
+
+  // Global Unicast (2000::/3), excluding documentation range (2001:db8::/32)
+  if ((h[0]! & 0xe000) === 0x2000) {
+    if (h[0] === 0x2001 && h[1] === 0x0db8) {
+      return "unconditional"
+    }
+    return null
+  }
+
+  // Block link-local (fe80::/10), multicast (ff00::/8), and unassigned/reserved prefixes
+  return "unconditional"
+}
+
+/**
+ * Classify whether a URL hostname targets an unconditionally forbidden host/range
+ * (loopback, unspecified, link-local, metadata) or an RFC1918/ULA private network.
+ */
+export function classifyNetworkHost(rawHostname: string): "unconditional" | "private" | null {
+  const host = normalizeNetworkHost(rawHostname)
+  if (!host) return "unconditional"
+
+  if (host.includes(":")) {
+    return classifyIpv6Host(host)
+  }
+
+  if (
+    BLOCKED_EXACT_HOSTS.has(host) ||
+    BLOCKED_DOMAIN_SUFFIXES.some((suffix) => host.endsWith(`.${suffix}`)) ||
+    host.startsWith("127.") ||
+    host.startsWith("0.") ||
+    host.startsWith("169.254.")
+  ) {
+    return "unconditional"
+  }
+
+  const isPrivateRange =
+    host.startsWith("10.") ||
+    host.startsWith("192.168.") ||
+    /^172\.(1[6-9]|2\d|3[01])\./.test(host)
+
+  if (isPrivateRange) {
+    return "private"
+  }
+
+  return null
+}
+
+/**
+ * Validate a user-supplied Grocy base URL against unsafe schemes, embedded credentials,
+ * loopback/metadata addresses, and private network ranges (unless explicitly `.internal`,
+ * never exempting metadata hosts or loopback addresses).
+ */
+export function validateGrocyBaseUrl(rawUrl: string): GrocyUrlValidationResult {
+  const trimmed = rawUrl.trim()
+  if (!trimmed) {
+    return { ok: false, error: "Invalid URL format" }
+  }
+
+  let parsed: URL
+  try {
+    parsed = new URL(trimmed)
+  } catch {
+    return { ok: false, error: "Invalid URL format" }
+  }
+
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    return { ok: false, error: "Invalid URL scheme — only http: and https: are allowed" }
+  }
+
+  if (parsed.username || parsed.password) {
+    return { ok: false, error: "Grocy URL must not include embedded credentials" }
+  }
+
+  const host = normalizeNetworkHost(parsed.hostname)
+  const classification = classifyNetworkHost(host)
+
+  if (classification === "unconditional" || (classification === "private" && !host.endsWith(".internal"))) {
+    return { ok: false, error: "URL points to a private/internal network address" }
+  }
+
+  return { ok: true, normalizedUrl: parsed.toString().replace(/\/$/, "") }
+}
+
 // --- Adapter ---
 
 export class GrocyAdapter {
@@ -441,18 +674,19 @@ export class GrocyAdapter {
     body?: unknown,
     transform?: (raw: unknown) => T
   ): Promise<GrocyResult<T>> {
-    const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), this.timeoutMs)
-
     const baseOrigin = new URL(this.baseUrl).origin
     const url = new URL(path, this.baseUrl)
     if (url.origin !== baseOrigin) {
       throw new Error(`Invalid Grocy API path: ${path}`)
     }
 
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), this.timeoutMs)
+
     try {
-      const response = await fetch(url.href, {
+      const response = await fetch(url.href, { // nosemgrep
         method,
+        redirect: "error",
         signal: controller.signal,
         headers: {
           "GROCY-API-KEY": this.apiKey,

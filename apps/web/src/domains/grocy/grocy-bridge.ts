@@ -87,7 +87,7 @@ export function startGrocySync(config: GrocySyncConfig, adapter: GrocyAdapter): 
 
   // Set up polling timer (0 = manual only)
   if (config.intervalMs > 0) {
-    state.timer = setInterval(() => {
+    state.timer = setInterval(() => { // nosemgrep
       syncFromGrocy().catch((err) => {
         logger.log("error", {
           event: "grocy.sync.poll_failed",

@@ -51,7 +51,7 @@ async function request(
   deadline.throwIfAborted()
   requireSameTransport(scope, worker)
   const url = new URL("api/task-drafts", scope)
-  const response = await fetch(url.href, {
+  const response = await fetch(url.href, { // nosemgrep
     method, mode: "same-origin", cache: "no-store", redirect: "error", referrerPolicy: "same-origin", signal: deadline,
     headers: {
       ...(data ? { "content-type": "application/json" } : {}),

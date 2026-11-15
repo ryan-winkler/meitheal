@@ -1,5 +1,5 @@
 import { getPersistenceClient } from "@domains/tasks/persistence/store";
-import { GrocyAdapter } from "@meitheal/integration-core";
+import { GrocyAdapter, validateGrocyBaseUrl } from "@meitheal/integration-core";
 import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability";
 
 const logger = createLogger({
@@ -37,12 +37,24 @@ export async function createGrocyClient(): Promise<GrocyAdapter | null> {
       }
     }
 
-    if (!baseUrl || !apiKey) {
+    if (typeof baseUrl !== "string" || typeof apiKey !== "string" || !baseUrl || !apiKey) {
+      return null;
+    }
+
+    const urlCheck = validateGrocyBaseUrl(baseUrl);
+    if (!urlCheck.ok) {
+      logger.log("warn", {
+        event: "integration.grocy.invalid_url",
+        domain: "integrations",
+        component: "grocy-client",
+        request_id: crypto.randomUUID(),
+        message: urlCheck.error,
+      });
       return null;
     }
 
     return new GrocyAdapter({
-      baseUrl,
+      baseUrl: urlCheck.normalizedUrl,
       apiKey,
       timeoutMs: 5000,
     });

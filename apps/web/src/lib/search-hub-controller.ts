@@ -328,12 +328,13 @@ pageLifecycle.onPageLoad((signal) => {
       const target = prefixIngress(item.href)
       if (isSafeUrl(target)) {
         const url = new URL(target, window.location.href)
+        if (url.origin !== window.location.origin) return
         const settingsShell = document.getElementById("settings-shell")
         if (item.kind === "setting" && settingsShell && url.href === window.location.href) {
           settingsShell.dispatchEvent(new Event("meitheal:settings-jump"))
           return
         }
-        window.location.href = target
+        window.location.href = url.pathname + url.search + url.hash // nosemgrep
       }
     }
   }

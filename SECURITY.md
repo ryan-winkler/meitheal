@@ -2,7 +2,7 @@
 
 ## Report privately
 
-Email [the maintainer](mailto:info@coolockvillage.ie) with the subject **Meitheal security report**. Use a test installation and sample data.
+Report suspected vulnerabilities privately via [GitHub Private Vulnerability Reporting](https://github.com/ryan-winkler/meitheal/security/advisories/new) or email the maintainer at [hi@ryanw.eu](mailto:hi@ryanw.eu) with the subject **Meitheal security report**. Use a test installation and sample data.
 
 Include the Meitheal version, install type, and steps to reproduce the problem. Explain which account or access level the steps need. Describe the data or action that the problem exposes.
 
@@ -30,8 +30,8 @@ Security fixes go into the current Stable release and the current Canary build. 
 
 | Channel | Receives security fixes |
 | --- | --- |
-| Latest Stable release | Yes |
-| Latest Canary build | Yes |
+| Latest Stable release (`0.0.1`, `meitheal-hub`) | Yes |
+| Latest Canary build (`0.0.2-canary`, `meitheal-hub-canary` / `dev`) | Yes |
 | Older releases | No. Update to the latest Stable release. |
 
 ## How the maintainer responds
