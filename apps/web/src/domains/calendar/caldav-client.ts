@@ -770,7 +770,14 @@ export function expandCalDAVEventsInWindow(
           )
           return Number.isFinite(shift) ? Math.max(max, shift) : max
         }, 0)
-        const padMs = rangeOverrides.length > 0 ? maxShiftMs + 2 * 86_400_000 : 0
+        // A range can also lengthen every later instance, so one that starts before the window
+        // can now reach into it. Pad by the longest override length as well.
+        const maxSpanMs = rangeOverrides.reduce((max, o) => {
+          if (o.cancelled || !o.dtend) return max
+          const span = wallClockMs(o.dtend, timezone, o.allDay) - wallClockMs(o.dtstart, timezone, o.allDay)
+          return Number.isFinite(span) ? Math.max(max, span) : max
+        }, 0)
+        const padMs = rangeOverrides.length > 0 ? maxShiftMs + maxSpanMs + 2 * 86_400_000 : 0
         const occs = expandRRuleOccurrences({
           dtstart: master.dtstart,
           dtend: master.dtend,

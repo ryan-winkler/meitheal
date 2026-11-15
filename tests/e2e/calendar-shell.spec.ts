@@ -55,32 +55,34 @@ test.describe("Calendar Shell", () => {
     expect(day).toMatch(/^\d{4}-\d{2}-\d{2}$/)
     expect(otherDay).toMatch(/^\d{4}-\d{2}-\d{2}$/)
 
-    const complete = await request.post("/api/tasks", {
-      data: { title: "Calendar completed task", status: "complete", due_date: day },
-    })
-    expect(complete.status(), await complete.text()).toBe(201)
-    const active = await request.post("/api/tasks", {
-      data: { title: "Calendar active task", status: "active", due_date: day },
-    })
-    expect(active.status(), await active.text()).toBe(201)
-    const other = await request.post("/api/tasks", {
-      data: { title: "Calendar task on another day", status: "pending", due_date: otherDay },
-    })
-    expect(other.status(), await other.text()).toBe(201)
+    // The month summary test reads shared month totals, so this test removes what it creates.
+    const createdIds: string[] = []
+    const create = async (data: Record<string, unknown>) => {
+      const res = await request.post("/api/tasks", { data })
+      expect(res.status(), await res.text()).toBe(201)
+      createdIds.push((await res.json()).id as string)
+    }
+    try {
+      await create({ title: "Calendar completed task", status: "complete", due_date: day })
+      await create({ title: "Calendar active task", status: "active", due_date: day })
+      await create({ title: "Calendar task on another day", status: "pending", due_date: otherDay })
 
-    await page.reload()
-    await expect(cells.first()).toHaveAccessibleName(/1 task$/)
-    await expect(cells.nth(1)).toHaveAccessibleName(/1 task$/)
-    await cells.first().press("Enter")
+      await page.reload()
+      await expect(cells.first()).toHaveAccessibleName(/1 task$/)
+      await expect(cells.nth(1)).toHaveAccessibleName(/1 task$/)
+      await cells.first().press("Enter")
 
-    const drawer = page.locator("#day-drawer-tasks")
-    const completeRow = drawer.locator("[data-task-id]").filter({ hasText: "Calendar completed task" })
-    await expect(completeRow).toContainText("Done")
-    await expect(completeRow.locator(".day-drawer-item-icon")).toHaveText("✅")
-    const activeRow = drawer.locator("[data-task-id]").filter({ hasText: "Calendar active task" })
-    await expect(activeRow).toContainText("In Progress")
-    await expect(activeRow.locator(".day-drawer-item-icon")).toHaveText("⚡")
-    await expect(drawer.getByText("Calendar task on another day")).toHaveCount(0)
+      const drawer = page.locator("#day-drawer-tasks")
+      const completeRow = drawer.locator("[data-task-id]").filter({ hasText: "Calendar completed task" })
+      await expect(completeRow).toContainText("Done")
+      await expect(completeRow.locator(".day-drawer-item-icon")).toHaveText("✅")
+      const activeRow = drawer.locator("[data-task-id]").filter({ hasText: "Calendar active task" })
+      await expect(activeRow).toContainText("In Progress")
+      await expect(activeRow.locator(".day-drawer-item-icon")).toHaveText("⚡")
+      await expect(drawer.getByText("Calendar task on another day")).toHaveCount(0)
+    } finally {
+      for (const id of createdIds) await request.delete(`/api/tasks/${id}`, { data: {} })
+    }
   })
 
   test("search launcher opens SearchHub and Assist remains available", async ({ page }) => {

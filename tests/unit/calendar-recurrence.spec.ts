@@ -1044,6 +1044,16 @@ test("RECURRENCE-ID ranges move instances across the window edge, carry the over
     "2026-11-16..2026-11-18",
   ])
 
+  // A range that lengthens every instance: only the extended end of an earlier instance
+  // overlaps the requested window.
+  const lengthened = parseVEvents(ical([
+    "BEGIN:VEVENT", "UID:long-1", "SUMMARY:Retreat", "DTSTART:20261102T090000Z", "DTEND:20261102T100000Z", "RRULE:FREQ=WEEKLY;COUNT=4", "END:VEVENT",
+    "BEGIN:VEVENT", "UID:long-1", "SUMMARY:Retreat", "RECURRENCE-ID;RANGE=THISANDFUTURE:20261109T090000Z",
+    "DTSTART:20261109T090000Z", "DTEND:20261119T090000Z", "END:VEVENT",
+  ]), "/cal/long.ics")
+  const reaching = expandCalDAVEventsInWindow(lengthened, new Date("2026-11-22T00:00:00Z"), new Date("2026-11-22T23:00:00Z"))
+  expect(reaching.map((e) => `${e.dtstart}..${e.dtend}`)).toEqual(["2026-11-16T09:00:00Z..2026-11-26T09:00:00Z"])
+
   // A cancelled range removes its instance and every later one.
   const cancelled = parseVEvents(ical([
     "BEGIN:VEVENT", "UID:cancel-1", "SUMMARY:Class", "DTSTART:20261102T090000Z", "DTEND:20261102T100000Z", "RRULE:FREQ=WEEKLY;COUNT=4", "END:VEVENT",
