@@ -1062,7 +1062,21 @@ test("HA sync keeps old completions closed, keeps user-added repeats, leaves del
     await syncFromHA(entity)
     const vets = await db.execute({ sql: "SELECT due_date FROM tasks WHERE title = 'Vet' ORDER BY due_date", args: [] })
     expect(vets.rows.map((row) => String(row.due_date))).toEqual([at(d7, "09:00"), at(d14, "09:00")])
-    expect((await db.execute({ sql: "SELECT id FROM tasks WHERE title = 'Bins'", args: [] })).rows).toHaveLength(1)
+    const bins = await db.execute({ sql: "SELECT id, idempotency_key FROM tasks WHERE title = 'Bins'", args: [] })
+    expect(bins.rows).toHaveLength(1)
+    const seriesUid = `ha-cal-series-${entity}-bins::07:00`
+    expect(String(bins.rows[0]?.idempotency_key)).toBe(`cal-sync-${entity}:${seriesUid}`)
+    for (const days of [[d7], [d7, d14]]) {
+      ha.setCalendarEvents(days.map((day) => ({ summary: "Bins", start: at(day, "07:00"), end: at(day, "07:15") })))
+      await syncFromHA(entity)
+      const current = await db.execute({ sql: "SELECT id, idempotency_key FROM tasks WHERE title = 'Bins'", args: [] })
+      expect(current.rows).toEqual(bins.rows)
+      const confirmations = await db.execute({
+        sql: "SELECT provider_event_id FROM calendar_confirmations WHERE task_id = ?",
+        args: [String(bins.rows[0]?.id)],
+      })
+      expect(confirmations.rows.map((row) => String(row.provider_event_id))).toEqual([seriesUid])
+    }
   } finally {
     stopCalendarSync()
     stopEntitySubscription()

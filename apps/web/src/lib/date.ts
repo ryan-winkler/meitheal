@@ -255,11 +255,12 @@ export function isDueOverdue(
   if (typeof dueDate !== "string" && typeof dueDate !== "number") return false
   const raw = String(dueDate).trim()
   if (!raw) return false
-  const day = calendarDayFromInput(raw, timezone)
+  const dateOnly = DATE_ONLY.test(raw)
+  const dueMs = dateOnly ? NaN : dueInstantMs(raw)
+  const day = calendarDayFromInput(dateOnly ? raw : dueMs, timezone)
   if (!day) return false
   if (day < today) return true
-  if (day > today || /^\d{4}-\d{2}-\d{2}$/.test(raw)) return false
+  if (day > today || dateOnly) return false
   if (today !== calendarToday(timezone, new Date(now))) return false
-  const dueMs = dueInstantMs(raw)
   return Number.isFinite(dueMs) && dueMs < now
 }

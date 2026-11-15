@@ -881,8 +881,8 @@ function groupHAEventsIntoSeries(
     const legacyPerOcc = group.map((evt) => `ha-cal-${entityId}-${evt.summary}-${evt.start}`)
     const seriesKeyUid = `ha-cal-series-${entityId}-${key}`
     const priorKeys = [...(priorHouseholdKeys.get(key) ?? [])]
-    const grouped = group.length > 1 && (
-      knownSeriesKeys.has(seriesKeyUid) || isRegularHASeries(group.map((evt) => evt.start), timezone)
+    const grouped = knownSeriesKeys.has(seriesKeyUid) || (
+      group.length > 1 && isRegularHASeries(group.map((evt) => evt.start), timezone)
     )
     if (grouped) {
       finalizeGroup(seriesKeyUid, [seriesKeyUid, ...legacyPerOcc], group, priorKeys)

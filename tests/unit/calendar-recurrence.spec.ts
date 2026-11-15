@@ -575,6 +575,24 @@ test("isDueOverdue: date-only after its household day, timed once its time passe
   expect(isDueOverdue("", "Europe/Dublin", today, now)).toBe(false)
 })
 
+test("isDueOverdue normalizes timed inputs before comparing household days in Auckland", () => {
+  const timezone = "Pacific/Auckland"
+  const now = Date.parse("2026-11-15T12:00:00Z")
+  const today = "2026-11-16"
+  for (const due of [
+    "2026-11-15T23:00:00",
+    "2026-11-15 23:00:00",
+    "2026-11-15T23:00:00Z",
+    "2026-11-16T12:00:00+13:00",
+    String(Date.parse("2026-11-15T23:00:00Z")),
+  ]) {
+    expect(isDueOverdue(due, timezone, today, now), due).toBe(false)
+    expect(isDueOverdue(due, timezone, today, Date.parse("2026-11-15T23:30:00Z")), due).toBe(true)
+  }
+  expect(isDueOverdue("2026-11-15", timezone, today, now)).toBe(true)
+  expect(isDueOverdue("2026-11-16", timezone, today, now)).toBe(false)
+})
+
 test("Kanban overdue index and getTasksForView slim counts treat a timed due date as overdue once its time passes", async () => {
   const directory = await mkdtemp(join(tmpdir(), "meitheal-tz-overdue-"))
   const previousDb = process.env.MEITHEAL_DB_URL
