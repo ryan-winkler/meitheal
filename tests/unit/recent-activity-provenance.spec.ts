@@ -7,6 +7,7 @@ import {
   sanitizeOriginKind,
   sanitizeOriginName,
   sanitizeOriginTarget,
+  decodeOriginHeader,
   taskAddedActivity,
   taskChangedActivity,
 } from "../../apps/web/src/domains/tasks"
@@ -55,7 +56,26 @@ test("sanitizes origin kind, display name, and safe internal target paths", () =
   expect(sanitizeOriginName("x".repeat(140))?.length).toBe(120)
   expect(sanitizeOriginName(null)).toBeNull()
 
-  expect(sanitizeOriginTarget(" /config/automation/edit/kitchen?tab=1 ")).toBe("/config/automation/edit/kitchen?tab=1")
+  expect(sanitizeOriginTarget(" /config/automation/edit/kitchen ")).toBe("/config/automation/edit/kitchen")
+  expect(sanitizeOriginTarget("/config/automation/edit/kitchen", "ha_automation")).toBe("/config/automation/edit/kitchen")
+  expect(sanitizeOriginTarget("/config/script/edit/night", "ha_script")).toBe("/config/script/edit/night")
+  expect(sanitizeOriginTarget("/config/voice-assistants/assistants", "conversation_agent")).toBe("/config/voice-assistants/assistants")
+  expect(sanitizeOriginTarget("/settings#agent-tokens-card", "webhook")).toBe("/settings#agent-tokens-card")
+  // Kind-mismatched, query-bearing, and non-allowlisted Home Assistant paths are dropped.
+  expect(sanitizeOriginTarget("/config/script/edit/night", "ha_automation")).toBeNull()
+  expect(sanitizeOriginTarget("/config/automation/edit/kitchen", "webhook")).toBeNull()
+  expect(sanitizeOriginTarget("/config/automation/edit/kitchen?tab=1", "ha_automation")).toBeNull()
+  expect(sanitizeOriginTarget("/config/automationx", "ha_automation")).toBeNull()
+  expect(sanitizeOriginTarget(
+    "/auth/authorize?response_type=code&client_id=https://evil.example/&redirect_uri=https://evil.example/cb",
+    "ha_automation",
+  )).toBeNull()
+  expect(sanitizeOriginTarget("/config/integrations")).toBeNull()
+
+  expect(decodeOriginHeader("O%C3%ADche%20mhaith")).toBe("Oíche mhaith")
+  expect(decodeOriginHeader("100% done")).toBe("100% done")
+  expect(decodeOriginHeader("Plain name")).toBe("Plain name")
+  expect(decodeOriginHeader(null)).toBeNull()
   for (const invalid of [
     null,
     "",
@@ -85,6 +105,22 @@ test("resolves verified agent, human ingress, and system actors", () => {
     }),
     req,
   )
+  const spoofed = resolveRecentActivityActor(
+    baseLocals({ agentToken: { tokenId: "tok-2", tokenName: "n8n", scopes: ["tasks:write"] } }),
+    new Request("http://localhost/api/tasks", {
+      headers: {
+        "X-Meitheal-Origin-Kind": "ha_automation",
+        "X-Meitheal-Origin-Name": "%F0%9F%8C%99 O%C3%ADche mhaith",
+        "X-Meitheal-Origin-Target": "/auth/authorize?client_id=https://evil.example/",
+      },
+    }),
+  )
+  expect(spoofed.provenance).toEqual({
+    tokenName: "n8n",
+    originKind: "ha_automation",
+    originName: "🌙 Oíche mhaith",
+    originTarget: null,
+  })
   expect(agentActor).toEqual({
     kind: "agent",
     personKey: null,
@@ -156,7 +192,18 @@ test("formats verified agent labels and resolves HA/internal provenance links ac
     { tokenName: "Bridge", originKind: "webhook", originTarget: "/config/integrations" },
     null,
     "ga",
-  ).label).toBe("Oscail foinse")
+  )).toEqual({
+    href: "/settings#agent-tokens-card",
+    label: "Bainistigh comharthaí gníomhaire",
+    isInternal: true,
+    isExternalHa: false,
+  })
+  // A stored row whose target does not match its kind never renders a Home Assistant link.
+  expect(resolveVerifiedProvenanceLink(
+    { tokenName: "Bridge", originKind: "ha_script", originTarget: "/config/automation/edit/1" },
+    "https://ha.local:8123",
+    "en",
+  ).isExternalHa).toBe(false)
 
   expect(resolveVerifiedProvenanceLink(
     { tokenName: "Bridge", originKind: "agent_token", originTarget: "javascript:bad" },
@@ -223,16 +270,30 @@ test("builds activity statements and reads paginated provenance history", async 
       source: "agent",
       area_name: null,
     },
-    ...Array.from({ length: 24 }, (_, idx) => ({
-      id: 28 - idx,
+    {
+      id: 28,
+      created_at: 2_850,
+      feed_action: "closed",
+      feed_person_key: null,
+      actor_type: "agent",
+      summary: null,
+      task_id: "t-29",
+      title: "Legacy close by another token",
+      ticket_number: null,
+      created_by: "Legacy Token",
+      source: "agent",
+      area_name: null,
+    },
+    ...Array.from({ length: 23 }, (_, idx) => ({
+      id: 27 - idx,
       created_at: 2_800 - idx,
       feed_action: "edited",
       feed_person_key: "pk-1",
       actor_type: "human",
       summary: null,
-      task_id: `t-${28 - idx}`,
-      title: `Task ${28 - idx}`,
-      ticket_number: 28 - idx,
+      task_id: `t-${27 - idx}`,
+      title: `Task ${27 - idx}`,
+      ticket_number: 27 - idx,
       created_by: "user-1",
       source: "web",
       area_name: "Home",
@@ -262,6 +323,8 @@ test("builds activity statements and reads paginated provenance history", async 
     originName: null,
     originTarget: null,
   })
+  // A pre-provenance close row is not credited to the token that created the task.
   expect(page.items[2]?.provenance).toBeNull()
-  expect(page.next).toEqual({ at: 2_800 - 22, id: 6 })
+  expect(page.items[3]?.provenance).toBeNull()
+  expect(page.next).toEqual({ at: 2_800 - 21, id: 6 })
 })

@@ -469,6 +469,15 @@ def test_build_origin_headers_rejects_unsafe_targets() -> None:
     assert "X-Meitheal-Origin-Kind" not in build_origin_headers("spoofed_kind", "Bedtime", None)
 
 
+def test_build_origin_headers_percent_encodes_non_ascii_names() -> None:
+    """UTF-8 names survive Latin-1 header decoding; printable ASCII stays readable."""
+    headers = build_origin_headers("ha_automation", "🌙 Oíche mhaith", None)
+    assert headers["X-Meitheal-Origin-Name"] == "%F0%9F%8C%99 O%C3%ADche mhaith"
+    assert headers["X-Meitheal-Origin-Name"].isascii()
+    assert build_origin_headers("ha_script", "100% done", None)["X-Meitheal-Origin-Name"] == "100%25 done"
+    assert build_origin_headers("mcp", 'Claude "Desktop" (beta)', None)["X-Meitheal-Origin-Name"] == 'Claude "Desktop" (beta)'
+
+
 async def test_service_call_from_automation_context_sends_origin_headers(
     hass: HomeAssistant,
     aioclient_mock: AiohttpClientMocker,

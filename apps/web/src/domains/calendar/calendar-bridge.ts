@@ -656,6 +656,21 @@ export function selectRepresentativeOccurrence<T extends { start: string; end?: 
   }
 }
 
+/**
+ * Time-of-day key for an ID-less HA event series. Home Assistant sends local times
+ * with its own UTC offset (18:00-05:00, then 18:00-04:00 after DST), so the written
+ * wall-clock time stays the same across DST. Converting to the household timezone
+ * instead would split one series in two whenever HA and the household follow
+ * different DST rules, creating a duplicate task. UTC ("Z") values have no local
+ * wall clock and fall back to the household timezone.
+ */
+export function seriesWallClockKey(start: string, timezone: string): string {
+  const trimmed = start.trim()
+  const written = /^\d{4}-\d{2}-\d{2}[T ](\d{2}:\d{2})(?::\d{2}(?:\.\d+)?)?([+-]\d{2}:?\d{2})?$/.exec(trimmed)
+  if (written) return written[1]!
+  return formatTimeInZone(trimmed, timezone) ?? trimmed
+}
+
 function groupHAEventsIntoSeries(
   entityId: string,
   events: CalendarEvent[],
@@ -676,7 +691,7 @@ function groupHAEventsIntoSeries(
 
     const normSummary = (evt.summary ?? "").trim().toLowerCase().replace(/\s+/g, " ")
     const isAllDay = DATE_ONLY_PATTERN.test(evt.start.trim())
-    const timeKey = isAllDay ? "all-day" : (formatTimeInZone(evt.start, timezone) ?? evt.start)
+    const timeKey = isAllDay ? "all-day" : seriesWallClockKey(evt.start, timezone)
     const key = `${normSummary}::${timeKey}`
     const group = withoutUid.get(key) ?? []
     group.push(evt)
@@ -1062,6 +1077,13 @@ async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState |
                 sql: `UPDATE tasks SET status = ?, updated_at = ? WHERE id = ? AND status != ?`,
                 args: [STATUS.COMPLETE, Date.now(), taskId, STATUS.COMPLETE],
               })
+              // The deleted event's occurrence list would otherwise keep showing HA
+              // badges on the month grid for every day the series used to cover.
+              await client.execute({
+                sql: `UPDATE calendar_confirmations SET payload = json_remove(payload, '$.occurrences')
+                      WHERE confirmation_id = ? AND json_valid(payload)`,
+                args: [String(row.confirmation_id)],
+              })
               logger.log("info", {
                 event: "calendar.sync.stale_archived", domain: "calendar", component: "calendar-bridge",
                 request_id: SYS_REQ,
@@ -1172,21 +1194,25 @@ function buildCalendarDescription(
  * If dueDate has no time component (YYYY-MM-DD only), creates an all-day event.
  */
 /**
- * True when the task came from a calendar (imported by Home Assistant or CalDAV sync)
- * and was never sent out by Meitheal. Writing such a task back would duplicate its event.
+ * True when calendar sync created the task (its idempotency key starts with
+ * `cal-sync-` or `caldav-sync-`) and Meitheal never sent it out. Writing such a task
+ * back would duplicate its event. A task created in Meitheal that sync later matched
+ * by title is not imported, even though it has a sync confirmation.
  */
 export async function isImportedCalendarTask(taskId: string): Promise<boolean> {
   await ensureSchemaOnce()
   const mod = await getStoreModule()
   const result = await mod.getPersistenceClient().execute({
     sql: `SELECT
+            (SELECT COUNT(*) FROM tasks
+              WHERE id = ? AND (idempotency_key LIKE 'cal-sync-%' OR idempotency_key LIKE 'caldav-sync-%')) AS created_by_sync,
             SUM(CASE WHEN source IN ('ha.calendar_sync', 'caldav') THEN 1 ELSE 0 END) AS imported,
             SUM(CASE WHEN source = 'ha.write_back' THEN 1 ELSE 0 END) AS sent
           FROM calendar_confirmations WHERE task_id = ?`,
-    args: [taskId],
+    args: [taskId, taskId],
   })
   const row = result.rows[0]
-  return Number(row?.imported ?? 0) > 0 && Number(row?.sent ?? 0) === 0
+  return Number(row?.created_by_sync ?? 0) > 0 && Number(row?.imported ?? 0) > 0 && Number(row?.sent ?? 0) === 0
 }
 
 export async function pushTaskToCalendar(

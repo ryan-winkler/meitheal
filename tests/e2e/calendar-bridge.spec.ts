@@ -510,6 +510,89 @@ test("HA sync groups recurring occurrences (with and without UID), picks today o
   }
 })
 
+test("HA sync keys ID-less series on HA wall clock, leaves unchanged tasks alone, keeps Meitheal repeats, and clears deleted-series badges", async () => {
+  const previous = Object.fromEntries(["MEITHEAL_DB_URL", "SUPERVISOR_TOKEN", "HA_BASE_URL", "HA_TOKEN"].map((k) => [k, process.env[k]]))
+  const directory = await mkdtemp(join(tmpdir(), "meitheal-cal-series-key-"))
+  const ha = await startHAWebSocketFixture()
+  delete process.env.SUPERVISOR_TOKEN
+  process.env.HA_BASE_URL = ha.url
+  process.env.HA_TOKEN = "calendar-series-key-fixture"
+  process.env.MEITHEAL_DB_URL = `file:${join(directory, "tasks.db")}`
+  resetPersistenceForTests()
+  const db = getPersistenceClient()
+
+  try {
+    await ensureSchema()
+    const settingsRepo = new SettingsRepository(db)
+    await settingsRepo.ensureSettingsTable()
+    await settingsRepo.upsert("timezone", "Europe/Dublin")
+    expect(await getHAConnection()).not.toBeNull()
+    const repo = new TaskRepository(db)
+
+    const todayStr = calendarToday("Europe/Dublin")
+    const d7 = shiftCalendarDay(todayStr, 7)
+    const d14 = shiftCalendarDay(todayStr, 14)
+
+    // HA in New York reports 18:00 local with -05:00, then -04:00 after US DST. In Dublin
+    // time these are 23:00 and 22:00, but they are one series and must stay one task.
+    ha.setCalendarEvents([
+      { summary: "Swim", start: `${todayStr}T18:00:00-05:00`, end: `${todayStr}T19:00:00-05:00` },
+      { summary: "Swim", start: `${d7}T18:00:00-04:00`, end: `${d7}T19:00:00-04:00` },
+      { summary: "Swim", start: `${d14}T18:00:00-04:00`, end: `${d14}T19:00:00-04:00` },
+    ])
+    await syncFromHA("calendar.household")
+    const swims = await db.execute({ sql: "SELECT id FROM tasks WHERE title = 'Swim'", args: [] })
+    expect(swims.rows).toHaveLength(1)
+    const swimId = String(swims.rows[0]?.id)
+
+    // A sync that changes nothing must not touch a completed task's updated_at.
+    await repo.updateTask(swimId, { status: "complete" })
+    await db.execute({ sql: "UPDATE tasks SET updated_at = 1000 WHERE id = ?", args: [swimId] })
+    await syncFromHA("calendar.household")
+    const unchanged = await db.execute({ sql: "SELECT status, updated_at FROM tasks WHERE id = ?", args: [swimId] })
+    expect(String(unchanged.rows[0]?.status)).toBe("complete")
+    expect(Number(unchanged.rows[0]?.updated_at)).toBe(1000)
+
+    // A repeating Event task created in Meitheal that sync links by title keeps its own repeats.
+    await db.execute({
+      sql: `INSERT INTO tasks (id, title, description, status, priority, labels, framework_payload, area_id, custom_fields, task_type, task_kind, due_date, recurrence_rule, idempotency_key, request_id, ticket_number, created_at, updated_at)
+            VALUES ('bin-day', 'Bin day', '', 'pending', 3, '[]', '{}', 'default', '{}', 'task', 'calendar_event', ?, 'FREQ=WEEKLY', 'bin-day', 'bin-day', 901, 1, 1)`,
+      args: [d7],
+    })
+    ha.setCalendarEvents([
+      { summary: "Swim", start: `${todayStr}T18:00:00-05:00`, end: `${todayStr}T19:00:00-05:00` },
+      { summary: "Swim", start: `${d7}T18:00:00-04:00`, end: `${d7}T19:00:00-04:00` },
+      { summary: "Swim", start: `${d14}T18:00:00-04:00`, end: `${d14}T19:00:00-04:00` },
+      { summary: "Bin day", start: d7, end: shiftCalendarDay(d7, 1) },
+    ])
+    await syncFromHA("calendar.household")
+    expect(await isImportedCalendarTask("bin-day")).toBe(false)
+    expect(await isImportedCalendarTask(swimId)).toBe(true)
+    await repo.updateTask("bin-day", { status: "complete" })
+    const binDays = await db.execute({ sql: "SELECT status FROM tasks WHERE title = 'Bin day' ORDER BY created_at", args: [] })
+    expect(binDays.rows.map((row) => String(row.status))).toEqual(["complete", "pending"])
+
+    // Deleting the series completes its task and removes its month-grid badges.
+    expect((await repo.getCalendarHAEventCounts(todayStr, d14, "Europe/Dublin"))[d14]).toBe(1)
+    ha.setCalendarEvents([{ summary: "Bin day", start: d7, end: shiftCalendarDay(d7, 1) }])
+    await syncFromHA("calendar.household")
+    const deletedCounts = await repo.getCalendarHAEventCounts(todayStr, d14, "Europe/Dublin")
+    expect(deletedCounts[d14] ?? 0).toBe(0)
+  } finally {
+    stopCalendarSync()
+    stopEntitySubscription()
+    closeHAConnection()
+    await ha.close()
+    db.close()
+    resetPersistenceForTests()
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+
 test("CalDAV sync parses RRULE, EXDATE, colons in DESCRIPTION, exclusive all-day DTEND, and updates existing tasks on re-sync", async () => {
   const origin = "http://caldav-recurrence-fixture.example"
   const previous = Object.fromEntries(["MEITHEAL_DB_URL", "SUPERVISOR_TOKEN", "HA_TOKEN"].map((k) => [k, process.env[k]]))

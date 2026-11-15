@@ -1867,7 +1867,9 @@ export class TaskRepository {
     const source = recurrence?.rows[0] as unknown as TaskRow | undefined
     const rule = source?.recurrence_rule
     if (!source || typeof rule !== "string" || !rule) return
-    // An external calendar owns a synced event's repeats: sync reopens it at the next occurrence.
+    // An external calendar owns the repeats of an event that sync created: sync reopens
+    // it at the next occurrence. A Meitheal Event task that sync only matched by title
+    // keeps creating its own next occurrence.
     if (Number((source as { calendar_imported?: unknown }).calendar_imported ?? 0) > 0) return
 
     const parsed = parseRRule(rule)
@@ -1904,7 +1906,7 @@ export class TaskRepository {
     return {
       sql: `SELECT recurrence_rule, recurrence_anchor, due_date, title, description, priority, labels, task_kind,
                    area_id, project_id, parent_id, task_type, assigned_to, checklists, custom_fields,
-                   (EXISTS(
+                   ((idempotency_key LIKE 'cal-sync-%' OR idempotency_key LIKE 'caldav-sync-%') AND EXISTS(
                      SELECT 1 FROM calendar_confirmations
                      WHERE task_id = tasks.id AND source IN ('ha.calendar_sync', 'caldav')
                    ) AND NOT EXISTS(
@@ -2846,66 +2848,63 @@ export class TaskRepository {
                     skipped++
                   }
                 } else {
+                  // Each assignment is paired with an "IS NOT" test so a sync that changes
+                  // nothing leaves the row, and its updated_at, alone. Bumping updated_at on
+                  // every pass would count completed tasks as completed today, keep them in
+                  // the Done lane, and give open editors a stale-version conflict.
                   const sets: string[] = []
                   const args: InValue[] = []
-                  if (mutation.title !== undefined) {
-                    sets.push("title = ?")
-                    args.push(mutation.title)
+                  const changed: string[] = []
+                  const changedArgs: InValue[] = []
+                  const assign = (column: string, expression: string, expressionArgs: InValue[]) => {
+                    sets.push(`${column} = ${expression}`)
+                    args.push(...expressionArgs)
+                    changed.push(`${column} IS NOT (${expression})`)
+                    changedArgs.push(...expressionArgs)
                   }
-                  if (mutation.status !== undefined) {
-                    sets.push("status = ?")
-                    args.push(normalizeStatus(mutation.status))
-                  }
+                  if (mutation.title !== undefined) assign("title", "?", [mutation.title])
+                  if (mutation.status !== undefined) assign("status", "?", [normalizeStatus(mutation.status)])
                   if (mutation.updateDueDate === true || mutation.dueDate !== undefined) {
-                    sets.push("due_date = ?")
-                    args.push(mutation.dueDate ?? null)
+                    assign("due_date", "?", [mutation.dueDate ?? null])
                   }
-                  if (mutation.startDate !== undefined) {
-                    sets.push("start_date = ?")
-                    args.push(mutation.startDate ?? null)
-                  }
-                  if (mutation.endDate !== undefined) {
-                    sets.push("end_date = ?")
-                    args.push(mutation.endDate ?? null)
-                  }
+                  if (mutation.startDate !== undefined) assign("start_date", "?", [mutation.startDate ?? null])
+                  if (mutation.endDate !== undefined) assign("end_date", "?", [mutation.endDate ?? null])
                   if (mutation.recurrenceRule !== undefined) {
-                    sets.push(mutation.replaceRecurrenceRule ? "recurrence_rule = ?" : "recurrence_rule = COALESCE(?, recurrence_rule)")
-                    args.push(mutation.recurrenceRule)
+                    assign(
+                      "recurrence_rule",
+                      mutation.replaceRecurrenceRule ? "?" : "COALESCE(?, recurrence_rule)",
+                      [mutation.recurrenceRule],
+                    )
                   }
-                  if (mutation.taskKind !== undefined) {
-                    sets.push("task_kind = ?")
-                    args.push(mutation.taskKind)
-                  }
+                  if (mutation.taskKind !== undefined) assign("task_kind", "?", [mutation.taskKind])
                   if (mutation.description !== undefined) {
-                    if (mutation.replaceDescription) {
-                      sets.push("description = ?")
-                      args.push(mutation.description)
-                    } else {
-                      sets.push("description = COALESCE(?, description)")
-                      args.push(mutation.description)
-                    }
+                    assign(
+                      "description",
+                      mutation.replaceDescription ? "?" : "COALESCE(?, description)",
+                      [mutation.description],
+                    )
                   }
-                  if (mutation.areaId !== undefined) {
-                    sets.push("area_id = ?")
-                    args.push(mutation.areaId)
-                  }
+                  if (mutation.areaId !== undefined) assign("area_id", "?", [mutation.areaId])
                   if (mutation.ensureCalendarSyncLabel) {
-                    sets.push(
-                      `labels = CASE
+                    assign(
+                      "labels",
+                      `CASE
                         WHEN labels IS NULL OR labels = '' OR labels = '[]' THEN '["calendar-sync"]'
                         WHEN json_valid(labels) AND labels NOT LIKE '%calendar-sync%'
                         THEN json_insert(labels, '$[#]', 'calendar-sync')
                         ELSE COALESCE(labels, '[]')
                       END`,
+                      [],
                     )
                   }
-                  sets.push("updated_at = ?")
-                  args.push(nowMs, mutation.taskId)
 
-                  yield [{
-                    sql: `UPDATE tasks SET ${sets.join(", ")} WHERE id = ?`,
-                    args,
-                  }]
+                  if (sets.length > 0) {
+                    yield [{
+                      sql: `UPDATE tasks SET ${sets.join(", ")}, updated_at = ?
+                            WHERE id = ? AND (${changed.join(" OR ")})`,
+                      args: [...args, nowMs, mutation.taskId, ...changedArgs],
+                    }]
+                  }
 
                   if (mutation.confirmation) {
                     step = "confirmation_update"

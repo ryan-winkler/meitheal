@@ -4,6 +4,7 @@ import {
   ensureSchema,
   getPersistenceClient,
   HierarchyRepository,
+  isSettingsOriginTarget,
   readRecentActivity,
   recentActivityPersonKey,
 } from "@domains/tasks"
@@ -51,7 +52,7 @@ if (!invalid) {
     invalid = Boolean((areaId && !areas.some(area => area.id === areaId)) || (personKey && !people.has(personKey)))
     if (!invalid) {
       page = await readRecentActivity(client, { areaId, personKey, before })
-      if (page.items.some(item => item.kind === "agent" && item.provenance?.originTarget && !item.provenance.originTarget.startsWith("/settings"))) {
+      if (page.items.some(item => item.kind === "agent" && item.provenance?.originTarget && !isSettingsOriginTarget(item.provenance.originTarget))) {
         haBaseUrl = await getHABaseUrl().catch(() => null)
       }
     }

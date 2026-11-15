@@ -90,7 +90,16 @@ test.describe("calendar recurrence engine", () => {
       windowEnd: new Date("2026-12-31T23:59:59Z"),
       timezone: "Europe/Dublin",
     })
-    expect(yearly.map((o) => o.start)).toEqual(["2024-02-29", "2025-02-28", "2026-02-28"])
+    // RFC 5545 §3.3.10: a year without February 29 has no occurrence.
+    expect(yearly.map((o) => o.start)).toEqual(["2024-02-29"])
+    const leapYears = expandRRuleOccurrences({
+      dtstart: "2024-02-29",
+      rrule: "FREQ=YEARLY;COUNT=2",
+      windowStart: new Date("2024-01-01T00:00:00Z"),
+      windowEnd: new Date("2032-12-31T23:59:59Z"),
+      timezone: "Europe/Dublin",
+    })
+    expect(leapYears.map((o) => o.start)).toEqual(["2024-02-29", "2028-02-29"])
   })
 
   test("keeps ordinal BYDAY, BYMONTHDAY and BYSETPOS rules and expands them exactly", () => {
@@ -126,7 +135,7 @@ test.describe("calendar recurrence engine", () => {
     expect(weekdays.map((o) => o.start)).toEqual(["2026-11-13", "2026-11-16", "2026-11-17", "2026-11-18"])
   })
 
-  test("a series started on the 31st returns to the 31st after a short month", () => {
+  test("a series started on the 31st skips months without a 31st, as CalDAV servers do", () => {
     const monthly = expandRRuleOccurrences({
       dtstart: "2026-01-31",
       rrule: "FREQ=MONTHLY",
@@ -134,7 +143,39 @@ test.describe("calendar recurrence engine", () => {
       windowEnd: new Date("2026-05-31T23:59:59Z"),
       timezone: "Europe/Dublin",
     })
-    expect(monthly.map((o) => o.start)).toEqual(["2026-01-31", "2026-02-28", "2026-03-31", "2026-04-30", "2026-05-31"])
+    expect(monthly.map((o) => o.start)).toEqual(["2026-01-31", "2026-03-31", "2026-05-31"])
+  })
+
+  test("BYMONTH, BYMONTHDAY and BYDAY limits apply to every frequency", () => {
+    const seasonal = expandRRuleOccurrences({
+      dtstart: "2026-04-07",
+      rrule: "FREQ=WEEKLY;BYDAY=TU;BYMONTH=4,5,6,7,8,9,10",
+      windowStart: new Date("2026-10-20T00:00:00Z"),
+      windowEnd: new Date("2026-11-30T23:59:59Z"),
+      timezone: "UTC",
+    })
+    expect(seasonal.map((o) => o.start)).toEqual(["2026-10-20", "2026-10-27"])
+
+    const fridayThe13th = expandRRuleOccurrences({
+      dtstart: "2026-02-13",
+      rrule: "FREQ=MONTHLY;BYDAY=FR;BYMONTHDAY=13",
+      windowStart: new Date("2026-01-01T00:00:00Z"),
+      windowEnd: new Date("2026-12-31T23:59:59Z"),
+      timezone: "UTC",
+    })
+    expect(fridayThe13th.map((o) => o.start)).toEqual(["2026-02-13", "2026-03-13", "2026-11-13"])
+
+    const firstAndFifteenth = expandRRuleOccurrences({
+      dtstart: "2026-11-01",
+      rrule: "FREQ=DAILY;BYMONTHDAY=1,15;COUNT=3",
+      windowStart: new Date("2026-11-01T00:00:00Z"),
+      windowEnd: new Date("2027-01-31T23:59:59Z"),
+      timezone: "UTC",
+    })
+    expect(firstAndFifteenth.map((o) => o.start)).toEqual(["2026-11-01", "2026-11-15", "2026-12-01"])
+
+    // BYSETPOS is only modelled within a month, so a DAILY rule keeps it verbatim.
+    expect(normalizeRRule("FREQ=DAILY;BYDAY=MO,FR;BYSETPOS=1")).toBe("FREQ=DAILY;BYDAY=MO,FR;BYSETPOS=1")
   })
 
   test("a long-running daily series still expands in the current window", () => {
@@ -613,6 +654,51 @@ test("CalDAV expansion excludes STATUS:CANCELLED standalone events and RECURRENC
     "win-tz-series@2026-11-03T09:00:00",
     "win-tz-series@2026-11-10T09:00:00",
     "weekly-series@2026-11-23T09:00:00Z",
+  ])
+})
+
+test("entity-escaped SabreDAV calendar-data keeps RRULE, UNTIL and STATUS intact", () => {
+  const escapedIcs = [
+    "BEGIN:VCALENDAR",
+    "BEGIN:VEVENT",
+    "UID:bins",
+    "SUMMARY:Bins &amp; recycling",
+    "DTSTART:20261102T080000Z",
+    "RRULE:FREQ=WEEKLY;BYDAY=MO;UNTIL=20261110T000000Z",
+    "END:VEVENT",
+    "BEGIN:VEVENT",
+    "UID:club",
+    "SUMMARY:Book club",
+    "DTSTART:20261110T180000Z",
+    "RRULE:FREQ=MONTHLY;BYDAY=2TU",
+    "END:VEVENT",
+    "BEGIN:VEVENT",
+    "UID:club",
+    "RECURRENCE-ID:20261208T180000Z",
+    "DTSTART:20261208T180000Z",
+    "STATUS:CANCELLED",
+    "END:VEVENT",
+    "END:VCALENDAR",
+  ].join("&#13;\n")
+  const [response] = extractXmlResponses(
+    `<D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">` +
+    `<D:response><D:href>/cal/home/bins.ics?x=1&amp;y=2</D:href><D:propstat><D:prop>` +
+    `<C:calendar-data>${escapedIcs}</C:calendar-data>` +
+    `</D:prop></D:propstat></D:response></D:multistatus>`,
+  )
+  expect(response?.href).toBe("/cal/home/bins.ics?x=1&y=2")
+  const parsed = parseVEvents(response!.props.calendarData!, response!.href)
+  expect(parsed.find(e => e.uid === "bins")?.summary).toBe("Bins & recycling")
+  const expanded = expandCalDAVEventsInWindow(
+    parsed,
+    new Date("2026-11-01T00:00:00Z"),
+    new Date("2027-01-31T23:59:59Z"),
+  )
+  expect(expanded.map((e) => `${e.uid}@${e.dtstart}`)).toEqual([
+    "bins@2026-11-02T08:00:00Z",
+    "bins@2026-11-09T08:00:00Z",
+    "club@2026-11-10T18:00:00Z",
+    "club@2027-01-12T18:00:00Z",
   ])
 })
 

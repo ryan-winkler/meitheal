@@ -37,26 +37,70 @@ export function sanitizeOriginKind(value: unknown): VerifiedOriginKind | null {
   return ORIGIN_KIND_SET.has(normalized) ? (normalized as VerifiedOriginKind) : null
 }
 
+/**
+ * The Home Assistant integration percent-encodes UTF-8 origin names because
+ * Node reads header values as Latin-1. Values that are not valid
+ * percent-encoding (for example "100% done") are kept as sent.
+ */
+export function decodeOriginHeader(value: string | null | undefined): string | null {
+  if (typeof value !== "string") return null
+  if (!/%[0-9a-fA-F]{2}/.test(value)) return value
+  try {
+    return decodeURIComponent(value)
+  } catch {
+    return value
+  }
+}
+
 export function sanitizeOriginName(value: unknown): string | null {
   if (typeof value !== "string") return null
   const cleaned = value.replace(/[\r\n\t\x00-\x1f\x7f]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 120).trim()
   return cleaned || null
 }
 
-export function sanitizeOriginTarget(value: unknown): string | null {
+/**
+ * Origin targets are caller-supplied, so each origin kind may only link to the
+ * Home Assistant page that kind has, or to Meitheal settings. Home Assistant
+ * targets never carry a query string or fragment, which keeps links such as
+ * `/auth/authorize?client_id=…` out of the feed.
+ */
+const HA_TARGET_PREFIXES: Partial<Record<VerifiedOriginKind, string>> = {
+  ha_automation: "/config/automation",
+  ha_script: "/config/script",
+  conversation_agent: "/config/voice-assistants",
+}
+
+function matchesPathPrefix(pathname: string, prefix: string): boolean {
+  return pathname === prefix || pathname.startsWith(`${prefix}/`)
+}
+
+export function isSettingsOriginTarget(target: string): boolean {
+  return target === "/settings"
+    || target.startsWith("/settings#")
+    || target.startsWith("/settings?")
+    || target.startsWith("/settings/")
+}
+
+export function sanitizeOriginTarget(value: unknown, kind?: VerifiedOriginKind | null): string | null {
   if (typeof value !== "string") return null
   const trimmed = value.trim()
   if (!trimmed || trimmed.length > 512) return null
   if (!trimmed.startsWith("/") || trimmed.startsWith("//") || trimmed.startsWith("/\\")) return null
   if (/[\x00-\x1f\x7f\\]/.test(trimmed)) return null
   if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(trimmed)) return null
+  let parsed: URL
   try {
-    const parsed = new URL(trimmed, "https://meitheal.local")
+    parsed = new URL(trimmed, "https://meitheal.local")
     if (parsed.origin !== "https://meitheal.local" || !parsed.pathname.startsWith("/")) return null
   } catch {
     return null
   }
-  return trimmed
+  if (isSettingsOriginTarget(trimmed)) return trimmed
+  if (parsed.search || parsed.hash) return null
+  const prefixes = kind
+    ? [HA_TARGET_PREFIXES[kind]].filter((prefix): prefix is string => typeof prefix === "string")
+    : Object.values(HA_TARGET_PREFIXES)
+  return prefixes.some(prefix => matchesPathPrefix(parsed.pathname, prefix)) ? trimmed : null
 }
 
 function serializeProvenanceSummary(actor: RecentTaskActor): string | null {
@@ -65,7 +109,7 @@ function serializeProvenanceSummary(actor: RecentTaskActor): string | null {
   if (!tokenName) return null
   const originKind = sanitizeOriginKind(actor.provenance.originKind)
   const originName = sanitizeOriginName(actor.provenance.originName)
-  const originTarget = sanitizeOriginTarget(actor.provenance.originTarget)
+  const originTarget = sanitizeOriginTarget(actor.provenance.originTarget, originKind)
   return JSON.stringify({
     v: 1,
     tokenName,
@@ -79,6 +123,7 @@ function parseProvenanceSummary(
   summary: unknown,
   fallbackSource: unknown,
   fallbackCreatedBy: unknown,
+  feedAction: unknown,
 ): VerifiedActivityProvenance | null {
   let parsed: Record<string, unknown> | null = null
   if (typeof summary === "string" && summary.startsWith("{")) {
@@ -92,14 +137,20 @@ function parseProvenanceSummary(
     }
   }
   const summaryToken = parsed ? sanitizeOriginName(parsed.tokenName) : null
-  const fallbackToken = fallbackSource === "agent" ? sanitizeOriginName(fallbackCreatedBy) : null
+  // Rows written before provenance existed carry no token in `summary`. Only the
+  // "added" row can be credited to the creating token; a later edit, close or
+  // reopen may have come from a different token, so it stays unattributed.
+  const fallbackToken = feedAction === "added" && fallbackSource === "agent"
+    ? sanitizeOriginName(fallbackCreatedBy)
+    : null
   const tokenName = summaryToken ?? fallbackToken
   if (!tokenName) return null
+  const originKind = parsed ? sanitizeOriginKind(parsed.originKind) : "agent_token"
   return {
     tokenName,
-    originKind: parsed ? sanitizeOriginKind(parsed.originKind) : "agent_token",
+    originKind,
     originName: parsed ? sanitizeOriginName(parsed.originName) : null,
-    originTarget: parsed ? sanitizeOriginTarget(parsed.originTarget) : null,
+    originTarget: parsed ? sanitizeOriginTarget(parsed.originTarget, originKind) : null,
   }
 }
 
@@ -206,7 +257,7 @@ export async function readRecentActivity(
     const kind = String(row.actor_type)
     // Only expose verified token/origin provenance for rows recorded by an authenticated agent token.
     const provenance = kind === "agent"
-      ? parseProvenanceSummary(row.summary, row.source, row.created_by)
+      ? parseProvenanceSummary(row.summary, row.source, row.created_by, row.feed_action)
       : null
     return {
       id: Number(row.id),

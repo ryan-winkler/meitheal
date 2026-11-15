@@ -166,6 +166,13 @@ test("verified members see committed task activity and can filter it by current 
       "x-meitheal-origin-name": "Safe Label",
       "x-meitheal-origin-target": "javascript:alert(1)",
     })).status).toBe(201)
+    expect((await mutate(b, prefix + "/api/tasks", "POST", {
+      title: "Phishing target capture",
+    }, token, {
+      "x-meitheal-origin-kind": "ha_automation",
+      "x-meitheal-origin-name": "Unlock front door",
+      "x-meitheal-origin-target": "/auth/authorize?response_type=code&client_id=https://evil.example/&redirect_uri=https://evil.example/cb",
+    })).status).toBe(201)
 
     const automation = await a.reload()
     const tokenEvent = events.filter({ hasText: "Automated capture" })
@@ -183,6 +190,10 @@ test("verified members see committed task activity and can filter it by current 
     const unsafeTargetEvent = events.filter({ hasText: "Unsafe target capture" })
     await expect(unsafeTargetEvent.locator('a[href^="javascript:"]')).toHaveCount(0)
     await expect(unsafeTargetEvent.locator('a[href$="/settings#agent-tokens-card"]')).toHaveCount(1)
+
+    const phishingTargetEvent = events.filter({ hasText: "Phishing target capture" })
+    await expect(phishingTargetEvent.locator('a[href*="/auth/authorize"]')).toHaveCount(0)
+    await expect(phishingTargetEvent.locator('a[href$="/settings#agent-tokens-card"]')).toHaveCount(1)
 
     const feedText = await automation?.text()
     expect(feedText).not.toMatch(/synthetic-token-id|spoofed actor|spoofed-person-name/)

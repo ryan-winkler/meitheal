@@ -2,8 +2,9 @@
  * Calendar Recurrence Engine — RFC 5545 RRULE / EXDATE Parsing, Inference & Expansion
  *
  * Supports DAILY, WEEKLY, MONTHLY, YEARLY with INTERVAL, BYDAY (including ordinals
- * such as 2TU or -1FR), BYMONTHDAY, BYMONTH, BYSETPOS, COUNT, UNTIL, EXDATE
- * exclusions, and occurrence inference for HA calendar series without RRULE.
+ * such as 2TU or -1FR), BYMONTHDAY, BYMONTH, BYSETPOS (MONTHLY and YEARLY), COUNT,
+ * UNTIL, EXDATE exclusions, and occurrence inference for HA calendar series without
+ * RRULE. Days that do not exist in a month (the 31st, February 29) are skipped.
  * Rules with other parts are kept verbatim so a provider rule is never rewritten.
  *
  * @domain calendar
@@ -113,6 +114,8 @@ export function parseRRule(rrule: string): RecurrenceRule | null {
   const wkst = map.get("WKST")
   if (wkst && wkst in DAY_MAP) rule.wkst = wkst
   const unsupported = Array.from(map.keys()).filter(key => !MODELED_PARTS.has(key))
+  // BYSETPOS is only expanded within a month; on DAILY or WEEKLY rules keep it verbatim.
+  if (rule.bySetPos && (freq === "DAILY" || freq === "WEEKLY")) unsupported.push("BYSETPOS")
   if (unsupported.length > 0) rule.unsupportedParts = unsupported
 
   const count = map.get("COUNT")
@@ -195,16 +198,18 @@ function daysInMonth(year: number, month: number): number {
 
 /**
  * Days (1-31) a MONTHLY or YEARLY rule selects in one month. Without BYMONTHDAY or
- * BYDAY the rule repeats on the start day, moved to the last day of a shorter month.
- * Each month is computed from the start day, so the 31st returns after February
- * instead of drifting to the 28th for good.
+ * BYDAY the rule repeats on the start day. RFC 5545 §3.3.10 says a month without
+ * that day (February 30, or February 29 in a common year) is skipped and not
+ * counted, which matches CalDAV servers. With both BYMONTHDAY and BYDAY, only days
+ * that satisfy both are kept (Friday the 13th).
  */
 function monthCandidateDays(rule: RecurrenceRule, year: number, month: number, startDay: number): number[] {
   const length = daysInMonth(year, month)
   let days: number[]
-  if (rule.byMonthDay?.length) {
-    days = rule.byMonthDay.map(d => (d > 0 ? d : length + d + 1)).filter(d => d >= 1 && d <= length)
-  } else if (rule.byDayEntries?.length) {
+  const monthDays = rule.byMonthDay?.length
+    ? rule.byMonthDay.map(d => (d > 0 ? d : length + d + 1)).filter(d => d >= 1 && d <= length)
+    : null
+  if (rule.byDayEntries?.length) {
     days = []
     for (const entry of rule.byDayEntries) {
       const weekday = DAY_MAP[entry.day]!
@@ -218,8 +223,14 @@ function monthCandidateDays(rule: RecurrenceRule, year: number, month: number, s
         if (pick !== undefined) days.push(pick)
       }
     }
+    if (monthDays) {
+      const allowed = new Set(monthDays)
+      days = days.filter(d => allowed.has(d))
+    }
+  } else if (monthDays) {
+    days = monthDays
   } else {
-    days = [Math.min(startDay, length)]
+    days = startDay <= length ? [startDay] : []
   }
   days = Array.from(new Set(days)).sort((a, b) => a - b)
   if (rule.bySetPos?.length) {
@@ -546,6 +557,20 @@ function overlapsWindow(startStr: string, endStr: string | undefined, allDay: bo
   return endMs >= windowStart.getTime() && startMs <= windowEnd.getTime()
 }
 
+/** Whether a DAILY or WEEKLY candidate day is removed by the rule's BYDAY, BYMONTHDAY or BYMONTH limits. */
+function isLimitedOut(rule: RecurrenceRule, day: Date): boolean {
+  if (rule.freq === "DAILY" && rule.byDay?.length && !rule.byDay.includes(CODE_BY_UTC_DAY[day.getUTCDay()]!)) {
+    return true
+  }
+  if (rule.byMonth?.length && !rule.byMonth.includes(day.getUTCMonth() + 1)) return true
+  if (rule.freq === "DAILY" && rule.byMonthDay?.length) {
+    const length = daysInMonth(day.getUTCFullYear(), day.getUTCMonth())
+    const dayOfMonth = day.getUTCDate()
+    if (!rule.byMonthDay.some(d => (d > 0 ? d : length + d + 1) === dayOfMonth)) return true
+  }
+  return false
+}
+
 /**
  * Expand a VEVENT (single or recurring via RRULE with EXDATE exclusions)
  * into concrete occurrences overlapping [windowStart, windowEnd].
@@ -658,10 +683,10 @@ export function expandRRuleOccurrences(input: ExpandRRuleInput): ExpandedOccurre
         : endInstant.toISOString().slice(0, 19)
     }
 
-    // A DAILY rule with BYDAY ("every weekday") only produces the listed weekdays.
-    const weekdayFiltered = parsedRule.freq === "DAILY" && parsedRule.byDay?.length
-      ? !parsedRule.byDay.includes(CODE_BY_UTC_DAY[cursor.getUTCDay()]!)
-      : false
+    // BYxxx parts limit DAILY and WEEKLY rules (RFC 5545 §3.3.10): "every weekday",
+    // "every Tuesday from April to October", "every day on the 1st and 15th".
+    // MONTHLY and YEARLY candidates already apply them in monthCandidateDays.
+    const weekdayFiltered = !monthDays && isLimitedOut(parsedRule, cursor)
     const isExcluded = weekdayFiltered || exdateSet.days.has(occDay) || (!allDay && exdateSet.instants.has(occStartMs))
     if (!isExcluded && overlapsWindow(occStart, occEnd, allDay, input.windowStart, input.windowEnd)) {
       occurrences.push({

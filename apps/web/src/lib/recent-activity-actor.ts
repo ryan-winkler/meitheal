@@ -1,8 +1,10 @@
 import {
+  decodeOriginHeader,
   recentActivityPersonKey,
   sanitizeOriginKind,
   sanitizeOriginName,
   sanitizeOriginTarget,
+  isSettingsOriginTarget,
   type RecentTaskActor,
   type VerifiedActivityProvenance,
 } from "@domains/tasks"
@@ -21,8 +23,8 @@ export function resolveRecentActivityActor(locals: App.Locals, request?: Request
   if (locals.agentToken) {
     const headers = request?.headers
     const originKind = sanitizeOriginKind(headers?.get("X-Meitheal-Origin-Kind")) ?? "agent_token"
-    const originName = sanitizeOriginName(headers?.get("X-Meitheal-Origin-Name"))
-    const originTarget = sanitizeOriginTarget(headers?.get("X-Meitheal-Origin-Target"))
+    const originName = sanitizeOriginName(decodeOriginHeader(headers?.get("X-Meitheal-Origin-Name")))
+    const originTarget = sanitizeOriginTarget(headers?.get("X-Meitheal-Origin-Target"), originKind)
     const provenance: VerifiedActivityProvenance = {
       tokenName: sanitizeOriginName(locals.agentToken.tokenName) ?? "Agent token",
       originKind,
@@ -66,13 +68,8 @@ export function resolveVerifiedProvenanceLink(
   haBaseUrl: string | null,
   locale: Locale,
 ): ProvenanceLink {
-  const safeTarget = sanitizeOriginTarget(provenance.originTarget)
-  const isSettingsTarget = safeTarget !== null && (
-    safeTarget === "/settings"
-    || safeTarget.startsWith("/settings#")
-    || safeTarget.startsWith("/settings?")
-    || safeTarget.startsWith("/settings/")
-  )
+  const safeTarget = sanitizeOriginTarget(provenance.originTarget, provenance.originKind ?? "agent_token")
+  const isSettingsTarget = safeTarget !== null && isSettingsOriginTarget(safeTarget)
   if (safeTarget && !isSettingsTarget) {
     const label =
       provenance.originKind === "conversation_agent"

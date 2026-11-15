@@ -251,12 +251,28 @@ async function caldavFetch(
 
 // ─── XML Parsing (XXE-safe) ─────────────────────────────────────────
 
+const XML_NAMED_ENTITIES: Record<string, string> = { lt: "<", gt: ">", amp: "&", quot: "\"", apos: "'" }
+
+/**
+ * Decode XML character data in one pass. SabreDAV servers (Nextcloud, Baïkal)
+ * escape the CR of iCalendar CRLF line endings as `&#13;`, and `&amp;` appears in
+ * hrefs and text, so RRULE, UNTIL and STATUS values must be decoded before parsing.
+ */
+export function decodeXmlText(value: string): string {
+  return value.replace(/&(?:#(\d{1,7})|#x([0-9a-fA-F]{1,6})|(lt|gt|amp|quot|apos));/g, (match, dec, hex, named) => {
+    if (named) return XML_NAMED_ENTITIES[named as string] ?? match
+    const code = dec ? Number.parseInt(dec as string, 10) : Number.parseInt(hex as string, 16)
+    if (!Number.isInteger(code) || code < 1 || code > 0x10ffff || (code >= 0xd800 && code <= 0xdfff)) return match
+    return String.fromCodePoint(code)
+  })
+}
+
 function unwrapCdata(raw: string): string {
   const trimmed = raw.trim()
   if (trimmed.startsWith("<![CDATA[") && trimmed.endsWith("]]>")) {
     return trimmed.slice(9, -3).trim()
   }
-  return trimmed
+  return decodeXmlText(trimmed).trim()
 }
 
 function isTagBoundaryChar(ch: string | undefined): boolean {

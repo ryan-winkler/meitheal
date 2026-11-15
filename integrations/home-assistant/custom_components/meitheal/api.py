@@ -35,6 +35,9 @@ _ORIGIN_HEADER_KEYS = frozenset({
 _CURRENT_ORIGIN: ContextVar[dict[str, str] | None] = ContextVar("_CURRENT_ORIGIN", default=None)
 
 
+_ORIGIN_NAME_SAFE = "".join(chr(code) for code in range(0x20, 0x7F) if chr(code) != "%")
+
+
 def build_origin_headers(
     origin_kind: str | None = None,
     origin_name: str | None = None,
@@ -49,7 +52,9 @@ def build_origin_headers(
     if isinstance(origin_name, str):
         clean_name = re.sub(r"\s+", " ", re.sub(r"[\r\n\t\x00-\x1f\x7f]+", " ", origin_name)).strip()[:120].strip()
         if clean_name:
-            headers["X-Meitheal-Origin-Name"] = clean_name
+            # HTTP header values are Latin-1 on the Meitheal side, so percent-encode
+            # UTF-8 names. Printable ASCII other than "%" stays readable.
+            headers["X-Meitheal-Origin-Name"] = quote(clean_name, safe=_ORIGIN_NAME_SAFE)
     if isinstance(origin_target, str):
         clean_target = origin_target.strip()
         if (
