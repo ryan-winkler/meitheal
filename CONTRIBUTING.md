@@ -64,12 +64,12 @@ Use descriptive commit messages. Keep release commands in the [release runbook](
 
 ## Coding standards
 
-Contributions must follow these style guides. CI checks the compiler settings on pushes to `main`, `dev` and `release` and on pull requests into them, and fails on errors. Codacy reports findings on pushes and on pull requests from this repository; it does not block a merge, and the reviewer reads its findings and asks for fixes.
+Contributions must follow these style guides. CI checks the compiler and linter settings on pushes to `main`, `dev` and `release` and on pull requests into them, and fails on errors. Codacy reports findings on pushes and on pull requests from this repository; it does not block a merge, and the reviewer reads its findings and asks for fixes.
 
 | Language | Standard | How it is checked |
 | --- | --- | --- |
 | TypeScript and Astro | The strict compiler settings in [tsconfig.base.json](tsconfig.base.json) (`strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`), the [Astro project structure](https://docs.astro.build/en/basics/project-structure/), and the patterns in [client-side patterns](docs/kcs/client-side-patterns.md) and [DESIGN.md](DESIGN.md) | `tsc --noEmit` for each package and `astro check` in [CI](.github/workflows/ci.yml); ESLint and Semgrep rules in [Codacy](.github/workflows/codacy.yml) |
-| Python (Home Assistant integration) | [PEP 8](https://peps.python.org/pep-0008/), type hints, and the [Home Assistant development guidelines](https://developers.home-assistant.io/docs/development_guidelines) | `ruff check` with the rules in [ruff.toml](integrations/home-assistant/ruff.toml) fails CI; Pylint, Prospector and Bandit in Codacy; pytest against two Home Assistant Core releases in CI |
+| Python (Home Assistant integration) | [PEP 8](https://peps.python.org/pep-0008/), [Ruff](https://docs.astral.sh/ruff/) style and lint rules, type hints, and the [Home Assistant development guidelines](https://developers.home-assistant.io/docs/development_guidelines) | `ruff check` with the rules in [ruff.toml](integrations/home-assistant/ruff.toml) fails CI; Pylint, Prospector and Bandit in Codacy; Rust-based `uv` (`setup-uv`) + pytest against two Home Assistant Core releases in CI |
 | GitHub Actions | Actions pinned to a full commit SHA, least-privilege `permissions`, and no untrusted input in `run:` steps | CodeQL and OpenSSF Scorecard |
 | Documentation | Plain, short sentences. Pages under `docs/` carry front matter and appear in an index, except `log.md` files and non-root `index.md` files, which must not have front matter | The docs bundle test in [tests/governance](tests/governance) |
 
@@ -114,4 +114,4 @@ Before a pull request can be merged, follow the CLA prompt on the pull request. 
 
 GitHub must associate each commit with its author’s account. If you open the pull request, include a commit under your own GitHub identity. Keep each pull request within 250 commits so the check covers the full contribution. Comment `recheck` to refresh the CLA status after a failed check.
 
-Offer changes through a pull request or contact the maintainer. Include a patch or branch and the steps needed to verify it. If you use automated tools, verify the change, check the source and license of any reused material, and test the result from the user’s perspective. For questions, bug reports, and private security disclosure, see [Support](SUPPORT.md).
+Please send security fixes, bug fixes, and improvements to Meitheal upstream so every household benefits. A separate program that only talks to Meitheal through its network APIs can stay with you. Offer changes through a pull request or contact the maintainer. Include a patch or branch and the steps needed to verify it. If you use automated tools, verify the change, check the source and license of any reused material, and test the result from the user’s perspective. For questions, bug reports, and private security disclosure, see [Support](SUPPORT.md).

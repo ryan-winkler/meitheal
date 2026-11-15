@@ -8,10 +8,12 @@
  * @bounded-context integration
  */
 import type { APIRoute } from "astro"
+import { validateGrocyBaseUrl } from "@meitheal/integration-core"
 import { requireSystemSettingsAdmin } from "../../../lib/settings-security"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import { SettingsRepository } from "@domains/tasks/persistence/settings-repository"
 import { logApiError } from "../../../lib/api-logger"
+import { isLegacySupervisorIngressUrl, resolveSupervisorGrocyAddon } from "../../../lib/grocy-client"
 
 const GROCY_SETTINGS_KEYS = [
   "grocy_url",
@@ -37,6 +39,14 @@ export const GET: APIRoute = async ({ locals, request }) => {
       const result = await repo.getByKey(key)
       if (result) {
         settings[key] = result.value
+      }
+    }
+
+    if (typeof settings.grocy_url === "string" && isLegacySupervisorIngressUrl(settings.grocy_url)) {
+      const detected = await resolveSupervisorGrocyAddon()
+      if (detected) {
+        settings.grocy_url = detected.url
+        await repo.upsert("grocy_url", JSON.stringify(detected.url))
       }
     }
 
@@ -91,14 +101,30 @@ export const PUT: APIRoute = async ({ locals, request }) => {
 
     for (const settingKey of GROCY_SETTINGS_KEYS) {
       if (body[settingKey] !== undefined) {
-        const value = JSON.stringify(body[settingKey])
+        let value = JSON.stringify(body[settingKey])
 
         // Validate
         if (settingKey === "grocy_url" && typeof body[settingKey] === "string") {
           const urlStr = body[settingKey] as string
-          if (urlStr && !urlStr.startsWith("http://") && !urlStr.startsWith("https://")) {
+          let trimmedUrl = urlStr.trim()
+          if (trimmedUrl && isLegacySupervisorIngressUrl(trimmedUrl)) {
+            const detected = await resolveSupervisorGrocyAddon()
+            if (detected) {
+              trimmedUrl = detected.url
+            }
+          }
+          if (trimmedUrl) {
+            const urlCheck = validateGrocyBaseUrl(trimmedUrl)
+            if (!urlCheck.ok) {
+              return new Response(
+                JSON.stringify({ ok: false, error: urlCheck.error }),
+                { status: 400, headers: { "Content-Type": "application/json" } },
+              )
+            }
+            value = JSON.stringify(urlCheck.normalizedUrl)
+          } else if (urlStr.length > 0) {
             return new Response(
-              JSON.stringify({ ok: false, error: "Grocy URL must start with http:// or https://" }),
+              JSON.stringify({ ok: false, error: "Invalid URL format" }),
               { status: 400, headers: { "Content-Type": "application/json" } },
             )
           }

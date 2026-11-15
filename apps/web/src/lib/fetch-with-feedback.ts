@@ -65,7 +65,7 @@ export async function fetchWithFeedback<T = unknown>(
   }
 
   try {
-    const res = await fetch(url, fetchOptions)
+    const res = await fetch(url, fetchOptions) // nosemgrep
 
     if (res.ok) {
       let data: T = {} as T

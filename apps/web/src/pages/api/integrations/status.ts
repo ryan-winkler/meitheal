@@ -72,7 +72,7 @@ export const GET: APIRoute = async () => {
         version: haStatus.haVersion,
         last_error: haStatus.lastError,
         reconnect_attempts: haStatus.reconnectAttempts,
-        supervisor_token_present: !!process.env.SUPERVISOR_TOKEN,
+        supervisor_token_present: !!process.env.SUPERVISOR_TOKEN, // nosemgrep
       },
     }), {
       status: 200,

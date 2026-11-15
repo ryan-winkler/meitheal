@@ -1,0 +1,4 @@
+# Security override: homeassistant==2026.10.4 wheel metadata pins Pillow==12.3.0
+# (43 CVEs/PYSEC advisories fixed in 13.0.0). Meitheal declares requirements: []
+# and does not import PIL. Install compiled lockfile with --require-hashes --no-deps.
+pillow==13.0.0

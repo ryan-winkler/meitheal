@@ -6,8 +6,7 @@
  * DELETE — remove credentials
  *
  * Passwords are encrypted at rest using AES-256-GCM with a key
- * derived from SUPERVISOR_TOKEN or HA_TOKEN. Without either, a random
- * secret is created once beside the database and kept there.
+ * derived from SUPERVISOR_TOKEN (or fallback for dev).
  *
  * @domain calendar
  * @bounded-context integration
@@ -15,8 +14,6 @@
 import type { APIRoute } from "astro"
 import { requireSystemSettingsAdmin } from "../../../../lib/settings-security"
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from "node:crypto"
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
-import { dirname, join, resolve } from "node:path"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import { SettingsRepository } from "@domains/tasks/persistence/settings-repository"
 import { testConnection } from "@domains/calendar/caldav-client"
@@ -28,37 +25,9 @@ const ALGO = "aes-256-gcm"
 const IV_LEN = 16
 const TAG_LEN = 16
 
-// Releases before 0.0.2 used this public secret when no token was set. It is kept only to read those passwords.
-const LEGACY_FALLBACK_SECRET = "meitheal-dev-fallback-key"
-
-function isErrnoCode(error: unknown, code: string): boolean {
-  return error instanceof Error && "code" in error && error.code === code
-}
-
-/** A random secret created once beside the database, for installations without a Home Assistant token. */
-function localKeySecret(): string {
-  const dbUrl = process.env.MEITHEAL_DB_URL ?? "file:./.data/meitheal.db"
-  const dbPath = dbUrl.startsWith("file:") && !dbUrl.includes(":memory:") ? dbUrl.slice("file:".length) : "./.data/meitheal.db"
-  const keyPath = join(dirname(resolve(dbPath)), ".caldav-key")
-  try {
-    return readFileSync(keyPath, "utf8").trim()
-  } catch (error) {
-    if (!isErrnoCode(error, "ENOENT")) throw error
-  }
-  mkdirSync(dirname(keyPath), { recursive: true })
-  const secret = randomBytes(32).toString("base64url")
-  try {
-    // "wx" keeps a secret that another request created first.
-    writeFileSync(keyPath, secret, { mode: 0o600, flag: "wx" })
-    return secret
-  } catch (error) {
-    if (isErrnoCode(error, "EEXIST")) return readFileSync(keyPath, "utf8").trim()
-    throw error
-  }
-}
-
-/** Derive a 32-byte key from SUPERVISOR_TOKEN or HA_TOKEN, or from the local secret. */
-function deriveKey(secret = process.env.SUPERVISOR_TOKEN || process.env.HA_TOKEN || localKeySecret()): Buffer {
+/** Derive a 32-byte key from SUPERVISOR_TOKEN (or fallback for dev) */
+function deriveKey(): Buffer {
+  const secret = process.env.SUPERVISOR_TOKEN || process.env.HA_TOKEN || "meitheal-dev-fallback-key"
   return scryptSync(secret, "meitheal-caldav-salt", 32)
 }
 
@@ -74,20 +43,7 @@ function encrypt(plaintext: string): string {
 
 /** @internal — exported for bridge sync use only */
 export function decryptCalDAVPassword(encoded: string): string {
-  try {
-    return decryptWithKey(encoded, deriveKey())
-  } catch (error) {
-    // A password saved by an older release without a token was encrypted with the public fallback secret.
-    // Saving the credentials again re-encrypts it with the current key.
-    try {
-      return decryptWithKey(encoded, deriveKey(LEGACY_FALLBACK_SECRET))
-    } catch {
-      throw error
-    }
-  }
-}
-
-function decryptWithKey(encoded: string, key: Buffer): string {
+  const key = deriveKey()
   const raw = Buffer.from(encoded, "base64")
   const iv = raw.subarray(0, IV_LEN)
   const tag = raw.subarray(IV_LEN, IV_LEN + TAG_LEN)

@@ -1,11 +1,23 @@
+import dns from "node:dns"
+import { mkdtemp, rm } from "node:fs/promises"
+import { createServer } from "node:http"
+import type { AddressInfo } from "node:net"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import { expect, test } from "@playwright/test"
 import {
+  canonicalizeNetworkHost,
+  classifyNetworkHost,
+  GrocyAdapter,
+  isIpv4TranslationIpv6Host,
+  validateGrocyBaseUrl,
+} from "../../packages/integration-core/src/grocy-adapter"
+import {
+  isPrivateHost,
+  isPrivateUrl,
+  parseWebhookConfig,
   signPayload,
   verifySignature,
-  isPrivateUrl,
-  isPrivateHost,
-  isBlockedTestHost,
-  parseWebhookConfig,
 } from "../../packages/integration-core/src/webhook-config"
 
 test.describe("Webhook Signer", () => {
@@ -105,19 +117,340 @@ test.describe("Private URL Guard", () => {
     expect(isPrivateUrl("not-a-url")).toBe(true)
   })
 
-  test("blocks private, mapped and metadata hosts for integration test URLs but allows App host names", () => {
+  test("blocks private, mapped, NAT64, zone-ID, metadata and Supervisor hosts across webhook and Grocy URL guards", () => {
+    expect(isPrivateHost("   ")).toBe(true)
+    expect(isPrivateHost("...")).toBe(true)
+    expect(isPrivateHost("::ffff:169.254.169.254%eth0")).toBe(true)
+    expect(isPrivateHost("localhost@8.8.8.8")).toBe(true)
+    expect(isPrivateHost("8.8.8.8/127.0.0.1")).toBe(true)
+    expect(isPrivateHost("8.8.8.8?@127.0.0.1")).toBe(true)
+    expect(isPrivateHost("8.8.8.8#@127.0.0.1")).toBe(true)
+    expect(isPrivateHost("8.8.8.8:8080")).toBe(true)
+    expect(isPrivateHost("[not-ipv6]")).toBe(true)
+    expect(isPrivateHost("[::ffff:8.8.8.8]")).toBe(true)
+    expect(isPrivateHost("[::ffff:0:8.8.8.8]")).toBe(true)
+    expect(isPrivateHost("[64:ff9b::8.8.8.8]")).toBe(true)
+    expect(isPrivateHost("[2002:0808:0808::1]")).toBe(true)
+    expect(isPrivateHost("[2001:470:1:1:0:5efe:8.8.8.8]")).toBe(true)
+    expect(canonicalizeNetworkHost("localhost@8.8.8.8")).toBeNull()
+    expect(canonicalizeNetworkHost("%eth0")).toBeNull()
+    expect(canonicalizeNetworkHost("...")).toBeNull()
+    expect(isIpv4TranslationIpv6Host("not:valid:ipv6")).toBe(true)
+    expect(isPrivateUrl("ftp://example.com/hook")).toBe(true)
+    expect(classifyNetworkHost("0x7f.1")).toBe("unconditional")
+    expect(classifyNetworkHost("   ")).toBe("unconditional")
+    expect(classifyNetworkHost("...")).toBe("unconditional")
+    expect(classifyNetworkHost("%eth0")).toBe("unconditional")
+    expect(classifyNetworkHost("localhost@8.8.8.8")).toBe("unconditional")
+    expect(classifyNetworkHost("bad host name")).toBe("unconditional")
     for (const url of [
       "http://[::ffff:127.0.0.1]:8080/mapped",
+      "http://[::ffff:0:169.254.169.254]/latest",
+      "http://[::127.0.0.1]/hook",
+      "http://[::8.8.8.8]/hook",
+      "http://[::169.254.169.254]/latest",
+      "http://[64:ff9b::169.254.169.254]/latest",
+      "http://[64:ff9b:1::169.254.169.254]/latest",
+      "http://[64:ff9b:1:a9fe:a9:fe00:808:808]/latest",
+      "http://[64:ff9b:2::1]/latest",
+      "http://[2002:a9fe:a9fe::1]/latest",
+      "http://[2001:470:1:1:0:5efe:169.254.169.254]/latest",
+      "http://[2001:470:1:1:200:5efe:127.0.0.1]/hook",
+      "http://[2001::1]/hook",
+      "http://[2001:2::1]/hook",
+      "http://[2001:20::1]/hook",
+      "http://[2001:db8::1]/hook",
+      "http://[3fff::1]/hook",
+      "http://[2620:4f:8000::1]/hook",
+      "http://[ff02::1]/hook",
       "http://127.0.0.2/hook",
+      "http://100.64.0.1/hook",
+      "http://100.100.100.100/hook",
+      "http://192.0.0.1/hook",
+      "http://192.0.2.1/hook",
+      "http://198.18.0.1/hook",
+      "http://198.51.100.1/hook",
+      "http://203.0.113.1/hook",
+      "http://224.0.0.1/hook",
+      "http://255.255.255.255/hook",
       "http://[fd00::1]/hook",
+      "http://[fd00:ec2::254]/latest",
       "http://169.254.169.254/latest",
+      "http://100.100.100.200/latest",
+      "http://metadata/computeMetadata",
       "http://metadata.google.internal/computeMetadata",
-      "http://METADATA.google.internal./computeMetadata",
+      "http://sub.metadata.google.internal./computeMetadata",
+      "http://instance-data.ec2.internal/latest",
+      "http://sub.instance-data/latest",
+      "http://sub.ec2.internal/latest",
+      "http://supervisor/core/api",
+      "http://supervisor/api/hassio_ingress/abc123",
+      "http://supervisor.internal/core/api",
+      "http://core.hass.io/api",
     ]) {
-      expect(isBlockedTestHost(new URL(url).hostname), url).toBe(true)
+      expect(isPrivateUrl(url), `webhook-url:${url}`).toBe(true)
+      expect(isPrivateHost(new URL(url).hostname), `webhook:${url}`).toBe(true)
+      expect(validateGrocyBaseUrl(url).ok, `grocy:${url}`).toBe(false)
     }
     for (const url of ["http://a0d7b954-grocy/api", "https://grocy.home.internal/api", "https://example.com/hook"]) {
-      expect(isBlockedTestHost(new URL(url).hostname), url).toBe(false)
+      expect(isPrivateHost(new URL(url).hostname), `webhook:${url}`).toBe(false)
+      expect(validateGrocyBaseUrl(url).ok, `grocy:${url}`).toBe(true)
+    }
+  })
+
+  test("GrocyAdapter and POST /api/grocy/test reject blocked URLs and report HTTP 3xx with retryable: false instead of following redirects", async () => {
+    const hits: string[] = []
+    let mode: "redirect" | "ok" = "redirect"
+    const server = createServer((req, res) => {
+      hits.push(req.url ?? "")
+      if (mode === "redirect" && req.url === "/api/system/info") {
+        res.writeHead(302, { location: "/redirected" })
+        res.end()
+        return
+      }
+      if (req.url === "/api/system/info") {
+        res.writeHead(200, { "content-type": "application/json" })
+        res.end(JSON.stringify({ grocy_version_info: { Version: "4.0.0", ReleaseDate: "2026-01-01" } }))
+        return
+      }
+      res.writeHead(200, { "content-type": "application/json" })
+      res.end("[]")
+    })
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+    const port = (server.address() as AddressInfo).port
+    const originalLookup = dns.lookup
+    try {
+      const adapter = new GrocyAdapter({
+        baseUrl: `http://127.0.0.1:${port}`,
+        apiKey: "test-key",
+        redirect: "manual",
+      })
+      const result = await adapter.getSystemInfo()
+      expect(result.ok).toBe(false)
+      if (!result.ok) {
+        expect(result.message).toContain("HTTP 302")
+        expect(result.retryable).toBe(false)
+      }
+      expect(hits).toEqual(["/api/system/info"])
+
+      const { POST } = await import("../../apps/web/src/pages/api/grocy/test")
+      for (const badUrl of ["http://metadata.google.internal/", "http://instance-data.ec2.internal/", "http://127.0.0.1/"]) {
+        const badRes = await POST({
+          locals: { hassIsAdmin: true },
+          request: new Request("http://localhost/api/grocy/test", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ url: badUrl, api_key: "test-key" }),
+          }),
+        } as unknown as Parameters<typeof POST>[0])
+        expect(badRes.status, badUrl).toBe(400)
+      }
+
+      dns.lookup = ((hostname: string, options: unknown, cb?: unknown) => {
+        const done = (typeof options === "function" ? options : cb) as (
+          err: NodeJS.ErrnoException | null,
+          addr: string | dns.LookupAddress[],
+          fam?: number,
+        ) => void
+        const all = typeof options === "object" && options !== null && "all" in options && Boolean((options as { all?: boolean }).all)
+        if (hostname === "grocy.home.internal") {
+          if (all) done(null, [{ address: "127.0.0.1", family: 4 }])
+          else done(null, "127.0.0.1", 4)
+          return
+        }
+        return (originalLookup as (...args: unknown[]) => unknown)(hostname, options, cb)
+      }) as typeof dns.lookup
+
+      hits.length = 0
+      const redirRes = await POST({
+        locals: { hassIsAdmin: true },
+        request: new Request("http://localhost/api/grocy/test", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ url: `http://grocy.home.internal:${port}`, api_key: "test-key" }),
+        }),
+      } as unknown as Parameters<typeof POST>[0])
+      expect(redirRes.status).toBe(200)
+      const redirBody = (await redirRes.json()) as { ok: boolean; error: string; retryable: boolean }
+      expect(redirBody.ok).toBe(false)
+      expect(redirBody.retryable).toBe(false)
+      expect(redirBody.error).toContain("HTTP 302")
+      expect(hits).toEqual(["/api/system/info"])
+
+      mode = "ok"
+      const okRes = await POST({
+        locals: { hassIsAdmin: true },
+        request: new Request("http://localhost/api/grocy/test", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ url: `http://grocy.home.internal:${port}`, api_key: "test-key" }),
+        }),
+      } as unknown as Parameters<typeof POST>[0])
+      expect(okRes.status).toBe(200)
+      const okBody = (await okRes.json()) as { ok: boolean; version?: string }
+      expect(okBody.ok).toBe(true)
+      expect(okBody.version).toBe("4.0.0")
+    } finally {
+      dns.lookup = originalLookup
+      server.close()
+    }
+  })
+
+  test("Supervisor Grocy auto-detection and legacy ingress URL migration resolve direct container URLs while blocking arbitrary Supervisor paths", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "meitheal-grocy-supervisor-"))
+    const prevDb = process.env.MEITHEAL_DB_URL
+    const prevSup = process.env.SUPERVISOR_TOKEN
+    const originalFetch = globalThis.fetch
+    const originalLookup = dns.lookup
+    const server = createServer((req, res) => {
+      if (req.url === "/api/system/info") {
+        res.writeHead(200, { "content-type": "application/json" })
+        res.end(JSON.stringify({ grocy_version_info: { Version: "4.2.0", ReleaseDate: "2026-02-01" } }))
+        return
+      }
+      res.writeHead(200, { "content-type": "application/json" })
+      res.end("[]")
+    })
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+    const port = (server.address() as AddressInfo).port
+
+    const { ensureSchema, getPersistenceClient, resetPersistenceForTests } = await import(
+      "../../apps/web/src/domains/tasks/persistence/store"
+    )
+    const {
+      createGrocyClient,
+      isLegacySupervisorIngressUrl,
+      resolveSupervisorGrocyAddon,
+    } = await import("../../apps/web/src/lib/grocy-client")
+    const { GET: getSettings, PUT: putSettings } = await import("../../apps/web/src/pages/api/grocy/settings")
+    const { POST: postAutoKey } = await import("../../apps/web/src/pages/api/grocy/auto-key")
+    const { POST: postTest } = await import("../../apps/web/src/pages/api/grocy/test")
+
+    process.env.MEITHEAL_DB_URL = `file:${join(dir, "tasks.db")}`
+    process.env.SUPERVISOR_TOKEN = "sup-token-test"
+    resetPersistenceForTests()
+
+    dns.lookup = ((hostname: string, options: unknown, cb?: unknown) => {
+      const done = (typeof options === "function" ? options : cb) as (
+        err: NodeJS.ErrnoException | null,
+        addr: string | dns.LookupAddress[],
+        fam?: number,
+      ) => void
+      const all = typeof options === "object" && options !== null && "all" in options && Boolean((options as { all?: boolean }).all)
+      if (hostname === "a0d7b954-grocy") {
+        if (all) done(null, [{ address: "127.0.0.1", family: 4 }])
+        else done(null, "127.0.0.1", 4)
+        return
+      }
+      return (originalLookup as (...args: unknown[]) => unknown)(hostname, options, cb)
+    }) as typeof dns.lookup
+
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      const target = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
+      if (target === "http://supervisor/addons") {
+        return Response.json({
+          data: { addons: [{ slug: "a0d7b954_grocy", state: "started", ingress_url: "/api/hassio_ingress/tok_1" }] },
+        })
+      }
+      if (target === "http://supervisor/addons/a0d7b954_grocy/info") {
+        return Response.json({ data: { hostname: "a0d7b954-grocy", ingress_port: port } })
+      }
+      if (target === "http://supervisor/addons/a0d7b954_grocy/proxy/api/objects/api_keys") {
+        return Response.json({ created_object_id: "auto-grocy-key-1234" })
+      }
+      if (target.startsWith("http://supervisor")) {
+        throw new Error(`Unexpected direct Supervisor fetch: ${target}`)
+      }
+      return originalFetch(input, init)
+    }) as typeof fetch
+
+    try {
+      expect(isLegacySupervisorIngressUrl("http://supervisor/api/hassio_ingress/tok_1")).toBe(true)
+      expect(isLegacySupervisorIngressUrl("http://supervisor/core/api")).toBe(false)
+      expect(isLegacySupervisorIngressUrl("not-a-url")).toBe(false)
+
+      const detected = await resolveSupervisorGrocyAddon()
+      expect(detected).toEqual({ slug: "a0d7b954_grocy", url: `http://a0d7b954-grocy:${port}` })
+
+      // Auto-key saves direct container URL (never http://supervisor/*)
+      const autoRes = await postAutoKey({
+        locals: { hassIsAdmin: true },
+        request: new Request("http://localhost/api/grocy/auto-key", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ url: "http://supervisor/api/hassio_ingress/tok_1" }),
+        }),
+      } as unknown as Parameters<typeof postAutoKey>[0])
+      const autoJson = (await autoRes.json()) as { ok: boolean; url?: string }
+      expect(autoJson.ok).toBe(true)
+      expect(autoJson.url).toBe(`http://a0d7b954-grocy:${port}`)
+
+      // Seed legacy Supervisor ingress URL and verify createGrocyClient + settings + test migrate cleanly
+      await ensureSchema()
+      const db = getPersistenceClient()
+      await db.execute({
+        sql: "UPDATE settings SET value = ?, updated_at = ? WHERE key = 'grocy_url'",
+        args: [JSON.stringify("http://supervisor/api/hassio_ingress/legacy_tok"), Date.now()],
+      })
+      const client = await createGrocyClient()
+      expect(client).not.toBeNull()
+      const sys = await client!.getSystemInfo()
+      expect(sys.ok).toBe(true)
+
+      await db.execute({
+        sql: "UPDATE settings SET value = ?, updated_at = ? WHERE key = 'grocy_url'",
+        args: [JSON.stringify("http://supervisor/api/hassio_ingress/legacy_tok2"), Date.now()],
+      })
+      const getRes = await getSettings({
+        locals: { hassIsAdmin: true },
+        request: new Request("http://localhost/api/grocy/settings"),
+      } as unknown as Parameters<typeof getSettings>[0])
+      const getJson = (await getRes.json()) as { ok: boolean; settings: { grocy_url?: string } }
+      expect(getJson.settings.grocy_url).toBe(`http://a0d7b954-grocy:${port}`)
+
+      const putLegacy = await putSettings({
+        locals: { hassIsAdmin: true },
+        request: new Request("http://localhost/api/grocy/settings", {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ grocy_url: "http://supervisor/api/hassio_ingress/legacy_tok3" }),
+        }),
+      } as unknown as Parameters<typeof putSettings>[0])
+      expect(putLegacy.status).toBe(200)
+
+      // Arbitrary Supervisor API paths remain strictly rejected on settings and test
+      const putBad = await putSettings({
+        locals: { hassIsAdmin: true },
+        request: new Request("http://localhost/api/grocy/settings", {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ grocy_url: "http://supervisor/core/api" }),
+        }),
+      } as unknown as Parameters<typeof putSettings>[0])
+      expect(putBad.status).toBe(400)
+
+      const testAuto = await postTest({
+        locals: { hassIsAdmin: true },
+        request: new Request("http://localhost/api/grocy/test", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ auto_detected: true }),
+        }),
+      } as unknown as Parameters<typeof postTest>[0])
+      expect(testAuto.status).toBe(200)
+      expect(((await testAuto.json()) as { ok: boolean }).ok).toBe(true)
+
+      db.close()
+    } finally {
+      globalThis.fetch = originalFetch
+      dns.lookup = originalLookup
+      server.close()
+      resetPersistenceForTests()
+      if (prevDb === undefined) delete process.env.MEITHEAL_DB_URL
+      else process.env.MEITHEAL_DB_URL = prevDb
+      if (prevSup === undefined) delete process.env.SUPERVISOR_TOKEN
+      else process.env.SUPERVISOR_TOKEN = prevSup
+      await rm(dir, { recursive: true, force: true })
     }
   })
 })

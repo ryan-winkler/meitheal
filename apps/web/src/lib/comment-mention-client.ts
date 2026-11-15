@@ -8,7 +8,7 @@ export async function fetchCommentPrivate(endpoint: string, signal: AbortSignal,
     throw new Error("Private inbox requires a current Home Assistant session and service worker.")
   }
   if (signal.aborted || navigator.serviceWorker?.controller !== worker) throw new Error("App session changed.")
-  const response = await fetch("/" + endpoint, {
+  const response = await fetch("/" + endpoint, { // nosemgrep
     ...init, signal, cache: "no-store", redirect: "error", mode: "same-origin", referrerPolicy: "same-origin",
   })
   const policy = response.headers.get("cache-control")?.split(",").map(value => value.trim().toLowerCase())

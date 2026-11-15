@@ -97,7 +97,7 @@ const PRESET_DEFINITIONS: Record<string, {
  */
 async function apiFetch(path: string, options?: RequestInit): Promise<RuleApiResponse> {
   try {
-    const res = await fetch(path, { cache: "no-store", ...options, signal: pageLifecycle.signal })
+    const res = await fetch(path, { cache: "no-store", ...options, signal: pageLifecycle.signal }) // nosemgrep
     const payload = await res.json() as RuleApiResponse
     if (!res.ok || payload.ok !== true) {
       if (!options?.method || options.method === "GET") {

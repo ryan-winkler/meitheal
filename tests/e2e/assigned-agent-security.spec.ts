@@ -60,11 +60,15 @@ const dbTest = test.extend<DbFixture>({
   },
 })
 
-function agentLocals(assigneeId: string, scopes = ["tasks:read", "tasks:write:assigned", "mcp:execute"]) {
+function agentLocals(
+  assigneeId: string,
+  scopes = ["tasks:read", "tasks:write:assigned", "mcp:execute"],
+  options?: { tokenId?: string | undefined; tokenName?: string | undefined },
+) {
   return {
     agentToken: {
-      tokenId: "tok-1",
-      tokenName: "Agent Alpha",
+      tokenId: options?.tokenId ?? "tok-1",
+      tokenName: options?.tokenName ?? "Agent Alpha",
       scopes,
       assigneeId,
     },
@@ -279,6 +283,371 @@ dbTest.describe("Assigned-Agent Authorization & Repository Guards", () => {
       locals: agentLocals("custom_agent_b"),
     } as unknown as Parameters<typeof putTask>[0])
     expect(strangerRetry.status).toBe(403)
+  })
+
+  dbTest("PUT /api/tasks/[id] acknowledges a retried reassignment when its activity log entry was never written", async ({ repo }) => {
+    const client = getPersistenceClient()
+    const id = crypto.randomUUID()
+    await repo.createTask(makeTaskData({ id, assigned_to: "custom_agent_a" }))
+    // An earlier hand-off to someone else is the newest assignment entry the log will ever hold.
+    await repo.logActivity(id, [{ field: "assigned_to", oldValue: "ha_person_2", newValue: "custom_agent_a" }], {
+      actor: "user", actor_type: "user",
+    })
+    const reassign = (requestId: string, agent = "custom_agent_a") => putTask({
+      params: { id },
+      request: new Request(`http://localhost/api/tasks/${id}`, {
+        method: "PUT",
+        body: JSON.stringify({ assigned_to: "ha_person_1", request_id: requestId }),
+      }),
+      locals: agentLocals(agent),
+    } as unknown as Parameters<typeof putTask>[0])
+    const receipts = async () => (await client.execute({
+      sql: "SELECT request_id, response_payload FROM integration_attempts WHERE integration = 'task.reassignment' AND task_id = ?",
+      args: [id],
+    })).rows
+
+    // A refused hand-off leaves no receipt behind.
+    expect((await reassign("db-atomic-1", "custom_agent_b")).status).toBe(403)
+    expect(await receipts()).toHaveLength(0)
+
+    await client.execute(`CREATE TRIGGER fail_assignment_activity BEFORE INSERT ON task_activity_log
+      WHEN NEW.field = 'assigned_to' BEGIN SELECT RAISE(ABORT, 'activity log unavailable'); END`)
+    try {
+      const first = await reassign("db-atomic-1")
+      expect(first.status).toBe(200)
+      expect((await first.json()).assigned_to).toBe("ha_person_1")
+    } finally {
+      await client.execute("DROP TRIGGER fail_assignment_activity")
+    }
+
+    // The receipt was committed with the update even though the activity entry was lost.
+    expect((await repo.getActivityLog(id, 10, 0)).activity
+      .some((entry) => entry.field === "assigned_to" && entry.new_value === "ha_person_1")).toBe(false)
+    expect((await receipts()).map((row) => ({ ...row }))).toEqual([
+      { request_id: "db-atomic-1", response_payload: JSON.stringify({ assigned_to: "ha_person_1" }) },
+    ])
+
+    const retry = await reassign("db-atomic-1")
+    expect(retry.status).toBe(200)
+    expect((await retry.json()).assigned_to).toBe("ha_person_1")
+
+    expect((await reassign("db-atomic-2")).status).toBe(403)
+    expect((await reassign("db-atomic-1", "custom_agent_b")).status).toBe(403)
+
+    // Once the task moves on, the old receipt no longer describes it.
+    await repo.updateTask(id, { assigned_to: "ha_person_2" })
+    expect((await reassign("db-atomic-1")).status).toBe(403)
+  })
+
+  dbTest("updateTask saves a reassignment receipt only when the update applies, and keeps the activity event on a repeat", async ({ repo }) => {
+    const client = getPersistenceClient()
+    const id = crypto.randomUUID()
+    await repo.createTask(makeTaskData({ id, assigned_to: "custom_agent_a" }))
+    const receipt = { key: `token:custom_agent_a:${id}:repeat-1`, requestId: "repeat-1", assignedTo: "ha_person_1" }
+    const activity = { kind: "agent" as const, personKey: "custom_agent_a" }
+    const count = async (sql: string) => Number((await client.execute({ sql, args: [id] })).rows[0]!.n)
+    const receiptCount = () => count("SELECT count(*) AS n FROM integration_attempts WHERE integration = 'task.reassignment' AND task_id = ?")
+    const eventCount = () => count("SELECT count(*) AS n FROM task_activity_log WHERE task_id = ? AND field = 'activity'")
+
+    const refused = await repo.updateTask(id, { assigned_to: "ha_person_1" }, {
+      expectedAssignedTo: "custom_agent_b", reassignmentReceipt: receipt, activity,
+    })
+    expect(refused).toEqual({ ok: false, errorCode: "assignee_mismatch" })
+    expect(await receiptCount()).toBe(0)
+    expect(await eventCount()).toBe(0)
+
+    for (const round of [1, 2]) {
+      const applied = await repo.updateTask(id, { assigned_to: "ha_person_1" }, {
+        expectedAssignedTo: "custom_agent_a", reassignmentReceipt: receipt, activity,
+      })
+      expect(applied.ok).toBe(true)
+      expect(await receiptCount()).toBe(1)
+      // Reusing a receipt key must not make the batch discard its own activity event.
+      expect(await eventCount()).toBe(round)
+      await repo.updateTask(id, { assigned_to: "custom_agent_a" })
+    }
+  })
+
+  dbTest("PUT /api/tasks/[id] records null destination on unassign and handles legacy or corrupt receipt payloads", async ({ repo }) => {
+    const client = getPersistenceClient()
+    const id = crypto.randomUUID()
+    await repo.createTask(makeTaskData({ id, assigned_to: "custom_agent_a" }))
+    const unassign = (requestId: string) => putTask({
+      params: { id },
+      request: new Request(`http://localhost/api/tasks/${id}`, {
+        method: "PUT",
+        body: JSON.stringify({ assigned_to: null, request_id: requestId }),
+      }),
+      locals: agentLocals("custom_agent_a"),
+    } as unknown as Parameters<typeof putTask>[0])
+
+    await client.execute(`CREATE TRIGGER fail_unassign_activity BEFORE INSERT ON task_activity_log
+      WHEN NEW.field = 'assigned_to' BEGIN SELECT RAISE(ABORT, 'activity log unavailable'); END`)
+    try {
+      const first = await unassign("db-unassign-1")
+      expect(first.status).toBe(200)
+      expect((await first.json()).assigned_to).toBeNull()
+    } finally {
+      await client.execute("DROP TRIGGER fail_unassign_activity")
+    }
+
+    const receiptRows = await client.execute({
+      sql: "SELECT idempotency_key, response_payload FROM integration_attempts WHERE integration = 'task.reassignment' AND task_id = ?",
+      args: [id],
+    })
+    expect(receiptRows.rows.map((row) => ({ response_payload: row.response_payload }))).toEqual([
+      { response_payload: JSON.stringify({ assigned_to: null }) },
+    ])
+    expect((await unassign("db-unassign-1")).status).toBe(200)
+
+    const key = String(receiptRows.rows[0]!.idempotency_key)
+    // Legacy receipt (NULL payload) or corrupt JSON falls back to the activity log
+    await client.execute({ sql: "UPDATE integration_attempts SET response_payload = NULL WHERE idempotency_key = ?", args: [key] })
+    expect((await unassign("db-unassign-1")).status).toBe(200)
+
+    await client.execute({ sql: "UPDATE integration_attempts SET response_payload = '{corrupt' WHERE idempotency_key = ?", args: [key] })
+    expect((await unassign("db-unassign-1")).status).toBe(200)
+
+    // With unreadable payload, a mismatched latest activity entry denies replay
+    await repo.logActivity(id, [{ field: "assigned_to", oldValue: "custom_agent_a", newValue: "ha_person_2" }], {
+      actor: "user", actor_type: "user",
+    })
+    expect((await unassign("db-unassign-1")).status).toBe(403)
+  })
+
+  dbTest("PUT /api/tasks/[id] rejects non-object JSON bodies and empty or whitespace assigned_to on retry", async ({ repo }) => {
+    const id = crypto.randomUUID()
+    await repo.createTask(makeTaskData({ id, assigned_to: "custom_agent_a" }))
+    const sendRaw = (raw: string) => putTask({
+      params: { id },
+      request: new Request(`http://localhost/api/tasks/${id}`, { method: "PUT", body: raw }),
+      locals: agentLocals("custom_agent_a"),
+    } as unknown as Parameters<typeof putTask>[0])
+
+    for (const invalidBody of ["{bad", "null", "[]", "\"text\"", "42"]) {
+      const res = await sendRaw(invalidBody)
+      expect(res.status).toBe(400)
+    }
+    const unassignedOtherId = crypto.randomUUID()
+    await repo.createTask(makeTaskData({ id: unassignedOtherId, assigned_to: null }))
+    expect((await putTask({
+      params: { id: unassignedOtherId },
+      request: new Request(`http://localhost/api/tasks/${unassignedOtherId}`, { method: "PUT", body: "{bad" }),
+      locals: agentLocals("custom_agent_a"),
+    } as unknown as Parameters<typeof putTask>[0])).status).toBe(400)
+
+    for (const badVersion of [-1, 1.5, Number.MAX_SAFE_INTEGER + 1, null, "123", true, {}, []]) {
+      expect((await sendRaw(JSON.stringify({ assigned_to: "ha_person_1", request_id: "bad-ver", updated_at: badVersion }))).status).toBe(400)
+    }
+    expect((await sendRaw(JSON.stringify({ assigned_to: "" }))).status).toBe(400)
+    expect((await sendRaw(JSON.stringify({ assigned_to: "   " }))).status).toBe(400)
+    expect((await sendRaw(JSON.stringify({ assigned_to: "x".repeat(256) }))).status).toBe(400)
+    expect((await sendRaw(JSON.stringify({ assigned_to: 123 }))).status).toBe(400)
+
+    const unassigned = await sendRaw(JSON.stringify({ assigned_to: null, request_id: "unassign-valid-1" }))
+    expect(unassigned.status).toBe(200)
+    expect((await sendRaw(JSON.stringify({ assigned_to: "", request_id: "unassign-valid-1" }))).status).toBe(403)
+    expect((await sendRaw(JSON.stringify({ assigned_to: "   ", request_id: "unassign-valid-1" }))).status).toBe(403)
+    expect((await sendRaw(JSON.stringify({ assigned_to: 123, request_id: "unassign-valid-1" }))).status).toBe(403)
+    for (const badVersion of [-1, 1.5, Number.MAX_SAFE_INTEGER + 1, null, "123", true, {}, []]) {
+      expect((await sendRaw(JSON.stringify({ assigned_to: null, request_id: "unassign-valid-1", updated_at: badVersion }))).status).toBe(400)
+    }
+    expect((await sendRaw(JSON.stringify({ assigned_to: null, request_id: "unassign-valid-1" }))).status).toBe(200)
+  })
+
+  dbTest("PUT /api/tasks/[id] blocks cross-token, broad-scope, mismatched-receipt, and round-trip stale replays", async ({ repo }) => {
+    const client = getPersistenceClient()
+    const id1 = crypto.randomUUID()
+    await repo.createTask(makeTaskData({ id: id1, assigned_to: "custom_agent_a" }))
+    const putWith = (
+      taskId: string,
+      payload: Record<string, unknown>,
+      opts?: { assignee?: string; scopes?: string[]; tokenId?: string; tokenName?: string },
+    ) => putTask({
+      params: { id: taskId },
+      request: new Request(`http://localhost/api/tasks/${taskId}`, {
+        method: "PUT",
+        body: JSON.stringify(payload),
+      }),
+      locals: agentLocals(
+        opts?.assignee ?? "custom_agent_a",
+        opts?.scopes ?? ["tasks:read", "tasks:write:assigned"],
+        { tokenId: opts?.tokenId, tokenName: opts?.tokenName },
+      ),
+    } as unknown as Parameters<typeof putTask>[0])
+
+    expect((await putWith(id1, { assigned_to: "ha_person_1", request_id: "cross-1" })).status).toBe(200)
+    // Sibling token bound to same assignee and name cannot replay tok-1's request_id
+    expect((await putWith(id1, { assigned_to: "ha_person_1", request_id: "cross-1" }, {
+      tokenId: "tok-2", tokenName: "Agent Alpha",
+    })).status).toBe(403)
+
+    // Non-object or non-string assigned_to JSON receipt payload still falls back safely to matching log
+    await client.execute({
+      sql: "UPDATE integration_attempts SET response_payload = 'null' WHERE task_id = ? AND request_id = 'cross-1'",
+      args: [id1],
+    })
+    expect((await putWith(id1, { assigned_to: "ha_person_1", request_id: "cross-1" })).status).toBe(200)
+    await client.execute({
+      sql: "UPDATE integration_attempts SET response_payload = '{\"assigned_to\":42}' WHERE task_id = ? AND request_id = 'cross-1'",
+      args: [id1],
+    })
+    expect((await putWith(id1, { assigned_to: "ha_person_1", request_id: "cross-1" })).status).toBe(200)
+
+    // Existing receipt with mismatched destination never falls through to activityMatches
+    await client.execute({
+      sql: "UPDATE integration_attempts SET response_payload = '{\"assigned_to\":\"ha_person_2\"}' WHERE task_id = ? AND request_id = 'cross-1'",
+      args: [id1],
+    })
+    expect((await putWith(id1, { assigned_to: "ha_person_1", request_id: "cross-1" })).status).toBe(403)
+
+    // Incomplete or timestamp-superseded receipt is also refused
+    await client.execute({
+      sql: "UPDATE integration_attempts SET response_payload = '{\"assigned_to\":\"ha_person_1\"}', status = 'pending' WHERE task_id = ? AND request_id = 'cross-1'",
+      args: [id1],
+    })
+    expect((await putWith(id1, { assigned_to: "ha_person_1", request_id: "cross-1" })).status).toBe(403)
+    await client.execute({
+      sql: "UPDATE integration_attempts SET status = 'completed', updated_at = 1 WHERE task_id = ? AND request_id = 'cross-1'",
+      args: [id1],
+    })
+    await repo.logActivity(id1, [{ field: "assigned_to", oldValue: "ha_person_2", newValue: "ha_person_1" }], {
+      actor: "user", actor_type: "user",
+    })
+    expect((await putWith(id1, { assigned_to: "ha_person_1", request_id: "cross-1" })).status).toBe(403)
+
+    // Round-trip via repo.updateTask invalidates prior receipt atomically
+    const id2 = crypto.randomUUID()
+    await repo.createTask(makeTaskData({ id: id2, assigned_to: "custom_agent_a" }))
+    expect((await putWith(id2, { assigned_to: "ha_person_1", request_id: "roundtrip-1" })).status).toBe(200)
+    await repo.updateTask(id2, { assigned_to: "ha_person_2" })
+    await repo.updateTask(id2, { assigned_to: "ha_person_1" })
+    expect((await putWith(id2, { assigned_to: "ha_person_1", request_id: "roundtrip-1" })).status).toBe(403)
+
+    // Broad tasks:write token reassignment cannot be replayed by assigned-only token even with matching tokenName
+    const id3 = crypto.randomUUID()
+    await repo.createTask(makeTaskData({ id: id3, assigned_to: "custom_agent_a" }))
+    expect((await putWith(id3, { assigned_to: "ha_person_1", request_id: "broad-1" }, {
+      scopes: ["tasks:write"], tokenId: "tok-broad", tokenName: "Agent Alpha",
+    })).status).toBe(200)
+    expect((await putWith(id3, { assigned_to: "ha_person_1", request_id: "broad-1" })).status).toBe(403)
+
+    // Pre-receipt legacy activity fallback requires matching agent actor name
+    const id4 = crypto.randomUUID()
+    await repo.createTask(makeTaskData({ id: id4, assigned_to: "custom_agent_a" }))
+    await repo.updateTask(id4, { assigned_to: "ha_person_1" })
+    await repo.logActivity(id4, [{ field: "assigned_to", oldValue: "custom_agent_a", newValue: "ha_person_1" }], {
+      actor: "Agent Alpha", actor_type: "agent", correlation_id: "legacy-1",
+    })
+    expect((await putWith(id4, { assigned_to: "ha_person_1", request_id: "legacy-1" })).status).toBe(200)
+    expect((await putWith(id4, { assigned_to: "ha_person_1", request_id: "legacy-1" }, {
+      tokenId: "tok-beta", tokenName: "Agent Beta",
+    })).status).toBe(403)
+
+    // Pre-receipt legacy unassign fallback + self-reassignment no-op
+    const id4b = crypto.randomUUID()
+    await repo.createTask(makeTaskData({ id: id4b, assigned_to: "custom_agent_a" }))
+    expect((await putWith(id4b, { assigned_to: "custom_agent_a", request_id: "self-noop" })).status).toBe(200)
+    await repo.updateTask(id4b, { assigned_to: null })
+    await repo.logActivity(id4b, [{ field: "assigned_to", oldValue: "custom_agent_a", newValue: "" }], {
+      actor: "Agent Alpha", actor_type: "agent", correlation_id: "legacy-null",
+    })
+    expect((await putWith(id4b, { assigned_to: null, request_id: "legacy-null" })).status).toBe(200)
+
+    // Multi-hop workflow sharing a single request_id allows each token to retry its own committed hand-off
+    const id5 = crypto.randomUUID()
+    await repo.createTask(makeTaskData({ id: id5, assigned_to: "custom_agent_a" }))
+    expect((await putWith(id5, { assigned_to: "custom_agent_b", request_id: "wf-1" })).status).toBe(200)
+    expect((await putWith(id5, { assigned_to: "ha_person_1", request_id: "wf-1" }, {
+      assignee: "custom_agent_b", tokenId: "tok-2", tokenName: "Agent Beta",
+    })).status).toBe(200)
+    expect((await putWith(id5, { assigned_to: "ha_person_1", request_id: "wf-1" }, {
+      assignee: "custom_agent_b", tokenId: "tok-2", tokenName: "Agent Beta",
+    })).status).toBe(200)
+    expect((await putWith(id5, { assigned_to: "ha_person_1", request_id: "wf-1" }, {
+      assignee: "custom_agent_b", tokenId: "tok-3", tokenName: "Agent Beta",
+    })).status).toBe(403)
+    await repo.updateTask(id5, { assigned_to: "custom_agent_b" })
+    expect((await putWith(id5, { assigned_to: "custom_agent_b", request_id: "wf-1" })).status).toBe(403)
+
+    // Broad token followed by assigned token sharing request_id still allows assigned token retry
+    const id6 = crypto.randomUUID()
+    await repo.createTask(makeTaskData({ id: id6, assigned_to: "custom_agent_a" }))
+    expect((await putWith(id6, { assigned_to: "custom_agent_b", request_id: "wf-2" }, {
+      scopes: ["tasks:write"], tokenId: "tok-broad", tokenName: "Agent Broad",
+    })).status).toBe(200)
+    expect((await putWith(id6, { assigned_to: "ha_person_1", request_id: "wf-2" }, {
+      assignee: "custom_agent_b", tokenId: "tok-2", tokenName: "Agent Beta",
+    })).status).toBe(200)
+    expect((await putWith(id6, { assigned_to: "ha_person_1", request_id: "wf-2" }, {
+      assignee: "custom_agent_b", tokenId: "tok-2", tokenName: "Agent Beta",
+    })).status).toBe(200)
+
+    // Assign from null then hand off, plus delayed prior logActivity timestamp alignment
+    const id7 = crypto.randomUUID()
+    await repo.createTask(makeTaskData({ id: id7, assigned_to: null }))
+    const dispatcherRes = await putWith(id7, { assigned_to: "custom_agent_a" }, {
+      scopes: ["tasks:read", "tasks:write"], tokenId: "tok-broad", tokenName: "Dispatcher",
+    })
+    expect(dispatcherRes.status).toBe(200)
+    const dispatcherBody = await dispatcherRes.json()
+    expect((await putWith(id7, { assigned_to: "ha_person_1", request_id: "null-to-agent-1" })).status).toBe(200)
+    await repo.logActivity(id7, [{ field: "assigned_to", oldValue: null, newValue: "custom_agent_a" }], {
+      actor: "Dispatcher", actor_type: "agent", createdAt: Number(dispatcherBody.updated_at),
+    })
+    expect((await putWith(id7, { assigned_to: "ha_person_1", request_id: "null-to-agent-1" })).status).toBe(200)
+
+    // Direct updateTask from null assignee and legacy activity row with NULL old_value/new_value
+    const id7b = crypto.randomUUID()
+    await repo.createTask(makeTaskData({ id: id7b, assigned_to: null }))
+    await repo.updateTask(id7b, { assigned_to: "custom_agent_a" })
+    const assignLogs = await repo.findReassignmentReplayState(id7b, "probe", "probe")
+    expect(assignLogs.lastReassignment).toBeNull()
+
+    // Prior-assign log with NULL old_value still matches legacy replay when requested target matches
+    const id8 = crypto.randomUUID()
+    await repo.createTask(makeTaskData({ id: id8, assigned_to: null }))
+    await client.execute({
+      sql: "INSERT INTO task_activity_log (task_id, field, old_value, new_value, actor, actor_type, event_type, summary, correlation_id, created_at) VALUES (?, 'assigned_to', NULL, NULL, 'Dispatcher', 'agent', 'field_change', 'unassigned', NULL, ?)",
+      args: [id8, Date.now()],
+    })
+    const probeNull = await repo.findReassignmentReplayState(id8, "missing", "missing")
+    expect(probeNull.lastReassignment?.old_value).toBeNull()
+    expect(probeNull.lastReassignment?.new_value).toBeNull()
+  })
+
+  dbTest("PUT /api/tasks/[id] acknowledges concurrent in-flight retry hitting assignee_mismatch", async ({ repo }) => {
+    const id1 = crypto.randomUUID()
+    await repo.createTask(makeTaskData({ id: id1, assigned_to: "custom_agent_a" }))
+    const reassign = (taskId: string, requestId: string) => putTask({
+      params: { id: taskId },
+      request: new Request(`http://localhost/api/tasks/${taskId}`, {
+        method: "PUT",
+        body: JSON.stringify({ assigned_to: "ha_person_1", request_id: requestId }),
+      }),
+      locals: agentLocals("custom_agent_a"),
+    } as unknown as Parameters<typeof putTask>[0])
+
+    const [first, second] = await Promise.all([reassign(id1, "race-1"), reassign(id1, "race-1")])
+    expect([first.status, second.status]).toEqual([200, 200])
+    expect((await first.json()).assigned_to).toBe("ha_person_1")
+    expect((await second.json()).assigned_to).toBe("ha_person_1")
+
+    const id2 = crypto.randomUUID()
+    await repo.createTask(makeTaskData({ id: id2, assigned_to: "custom_agent_a" }))
+    const [handoff, concurrentEdit] = await Promise.all([
+      reassign(id2, "race-2"),
+      putTask({
+        params: { id: id2 },
+        request: new Request(`http://localhost/api/tasks/${id2}`, {
+          method: "PUT",
+          body: JSON.stringify({ title: "Should fail assignee_mismatch" }),
+        }),
+        locals: agentLocals("custom_agent_a"),
+      } as unknown as Parameters<typeof putTask>[0]),
+    ])
+    expect(handoff.status).toBe(200)
+    expect(concurrentEdit.status).toBe(403)
   })
 
   dbTest("atomic sub-route guards reject mismatched assignees in SQL without TOCTOU", async ({ repo }) => {
@@ -510,27 +879,86 @@ test.describe("Live Built HTTP & MCP Assigned-Agent Contract", () => {
       })
       expect(nonReplayRes.status()).toBe(403)
 
-      // A write-only token without tasks:read receives only a minimal ack on replay (no title/description leak)
+      // A write-only token without tasks:read receives only a minimal ack on initial writes, conflicts, and replay
       const writeOnlyTokenRes = await adminCtx.post(p("/api/agent-tokens"), {
         data: { name: "Alpha Write-Only", scopes: ["tasks:write:assigned"], assignee_id: agentA.id },
       })
       expect(writeOnlyTokenRes.status()).toBe(201)
       const { token: writeOnlyToken } = await writeOnlyTokenRes.json()
+      const secretBlockerRes = await adminCtx.post(p("/api/tasks"), {
+        data: { title: "Secret Blocker Title" },
+      })
+      expect(secretBlockerRes.status()).toBe(201)
+      const secretBlocker = await secretBlockerRes.json()
       const writeOnlyTaskRes = await adminCtx.post(p("/api/tasks"), {
-        data: { title: "Confidential Handoff Secret", description: "Sensitive body", assigned_to: agentA.id },
+        data: {
+          title: "Confidential Handoff Secret",
+          description: "Sensitive body",
+          assigned_to: agentA.id,
+        },
       })
       expect(writeOnlyTaskRes.status()).toBe(201)
       const writeOnlyTask = await writeOnlyTaskRes.json()
+      expect((await adminCtx.post(p(`/api/tasks/${writeOnlyTask.id}/links`), {
+        data: { target_task_id: secretBlocker.id, link_type: "blocked_by" },
+      })).status()).toBe(201)
       const writeOnlyCtx = await playwright.request.newContext({
         baseURL: origin,
         extraHTTPHeaders: { authorization: `Bearer ${writeOnlyToken}`, origin, "content-type": "application/json" },
       })
       try {
+        // Non-reassignment PUT with Idempotency-Key must not cache or leak task content
+        const blockedConflict = await writeOnlyCtx.put(p(`/api/tasks/${writeOnlyTask.id}`), {
+          data: { status: "active" },
+        })
+        expect(blockedConflict.status()).toBe(409)
+        const blockedBody = await blockedConflict.json()
+        expect(blockedBody.errorCode).toBe("TASK_BLOCKED")
+        expect(blockedBody.blocked_by).toBeUndefined()
+
+        const checklistConflict = await writeOnlyCtx.put(p(`/api/tasks/${writeOnlyTask.id}`), {
+          data: {
+            checklists: JSON.stringify([{ text: "New item", done: false }]),
+            expected_checklists: JSON.stringify([{ text: "Stale item", done: true }]),
+          },
+        })
+        expect(checklistConflict.status()).toBe(409)
+        const checklistBody = await checklistConflict.json()
+        expect(checklistBody.code).toBe("checklist_conflict")
+        expect(checklistBody.checklists).toBeUndefined()
+
+        const nonHandoffUpdate = await writeOnlyCtx.put(p(`/api/tasks/${writeOnlyTask.id}`), {
+          headers: { "Idempotency-Key": "write-only-status-key" },
+          data: { status: "pending" },
+        })
+        expect(nonHandoffUpdate.status()).toBe(200)
+        expect(nonHandoffUpdate.headers()["idempotency-key-status"]).toBeUndefined()
+        expect(await nonHandoffUpdate.json()).toEqual({
+          id: writeOnlyTask.id,
+          ticket_key: writeOnlyTask.ticket_key ?? null,
+          status: "pending",
+          assigned_to: agentA.id,
+        })
+
         const firstHandoff = await writeOnlyCtx.put(p(`/api/tasks/${writeOnlyTask.id}`), {
+          headers: { "Idempotency-Key": "write-only-handoff-idemp" },
           data: { assigned_to: null, request_id: "write-only-handoff-1" },
         })
         expect(firstHandoff.status()).toBe(200)
+        expect(firstHandoff.headers()["idempotency-key-status"]).toBeUndefined()
+        const firstBody = await firstHandoff.json()
+        expect(firstBody).toEqual({
+          id: writeOnlyTask.id,
+          ticket_key: writeOnlyTask.ticket_key ?? null,
+          status: "pending",
+          assigned_to: null,
+        })
+        expect(firstBody.title).toBeUndefined()
+        expect(firstBody.description).toBeUndefined()
+
+        // Retry with same request_id + Idempotency-Key works while current, then fails once superseded
         const replayHandoff = await writeOnlyCtx.put(p(`/api/tasks/${writeOnlyTask.id}`), {
+          headers: { "Idempotency-Key": "write-only-handoff-idemp" },
           data: { assigned_to: null, request_id: "write-only-handoff-1" },
         })
         expect(replayHandoff.status()).toBe(200)
@@ -542,6 +970,22 @@ test.describe("Live Built HTTP & MCP Assigned-Agent Contract", () => {
         })
         expect(replayBody.title).toBeUndefined()
         expect(replayBody.description).toBeUndefined()
+
+        // Supersede the receipt via a subsequent reassignment and confirm Idempotency-Key cannot bypass 403
+        expect((await adminCtx.put(p(`/api/tasks/${writeOnlyTask.id}`), {
+          data: { assigned_to: agentA.id },
+        })).status()).toBe(200)
+        expect((await writeOnlyCtx.put(p(`/api/tasks/${writeOnlyTask.id}`), {
+          data: { assigned_to: null, request_id: "write-only-handoff-2" },
+        })).status()).toBe(200)
+        expect((await writeOnlyCtx.put(p(`/api/tasks/${writeOnlyTask.id}`), {
+          headers: { "Idempotency-Key": "write-only-handoff-idemp" },
+          data: { assigned_to: null, request_id: "write-only-handoff-1" },
+        })).status()).toBe(403)
+        expect((await writeOnlyCtx.put(p(`/api/tasks/${writeOnlyTask.id}`), {
+          headers: { "Idempotency-Key": "write-only-status-key" },
+          data: { status: "pending" },
+        })).status()).toBe(403)
       } finally {
         await writeOnlyCtx.dispose()
       }

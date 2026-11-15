@@ -18,7 +18,7 @@
  * Plans: personal, household, commercial
  */
 
-import { readFileSync, writeFileSync, mkdirSync, existsSync, unlinkSync } from "node:fs"
+import { readFileSync, writeFileSync, mkdirSync, unlinkSync } from "node:fs"
 import { generateKeyPairSync, createPrivateKey, sign } from "node:crypto"
 import { resolve, dirname } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -83,11 +83,6 @@ function generateKeypair() {
 }
 
 function generateLicense({ email, plan, expires }) {
-  if (!existsSync(PRIVATE_KEY_PATH)) {
-    console.error("❌ No keypair found. Run with --init first")
-    process.exit(1)
-  }
-
   if (!email) {
     console.error("❌ --email is required")
     process.exit(1)
@@ -98,7 +93,16 @@ function generateLicense({ email, plan, expires }) {
     process.exit(1)
   }
 
-  const privateKeyPem = readFileSync(PRIVATE_KEY_PATH, "utf-8")
+  let privateKeyPem
+  try {
+    privateKeyPem = readFileSync(PRIVATE_KEY_PATH, "utf-8")
+  } catch (err) {
+    if (err instanceof Error && "code" in err && err.code === "ENOENT") {
+      console.error("❌ No keypair found. Run with --init first")
+      process.exit(1)
+    }
+    throw err
+  }
   const privateKey = createPrivateKey(privateKeyPem)
 
   const now = Math.floor(Date.now() / 1000)

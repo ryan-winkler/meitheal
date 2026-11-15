@@ -4,8 +4,7 @@ import { VALID_TASK_TYPES } from "@meitheal/domain-tasks"
 import type { TaskType } from "@meitheal/domain-tasks"
 import { hasBoardSelection, rejectBoardSelectionInJson, unavailableBoardResponse } from "@domains/tasks/board-availability"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
-import { TaskRepository } from "@domains/tasks/persistence/task-repository"
-import { UserRepository } from "@domains/tasks"
+import { TaskRepository, UserRepository } from "@domains/tasks"
 import { taskLabelsJson } from "@domains/tasks/task-creation-service"
 import { formatTicketKey } from "../../../lib/ticket-key"
 import { dispatchTaskEvent, taskEventAuthorityHeaders } from "../../../lib/webhook-dispatcher"
@@ -73,6 +72,30 @@ export const GET: APIRoute = async ({ params, url }) => {
   })
 }
 
+function normalizeReassignedTarget(value: unknown): string | null | undefined {
+  if (value === null) return null
+  if (typeof value !== "string") return undefined
+  const trimmed = value.trim()
+  if (!trimmed || trimmed.length > 255) return undefined
+  return trimmed
+}
+
+function parseReceiptAssignee(payload: string | null): string | null | undefined {
+  if (typeof payload !== "string") return undefined
+  try {
+    const parsed: unknown = JSON.parse(payload)
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return undefined
+    const value = (parsed as { assigned_to?: unknown }).assigned_to
+    return value === null || typeof value === "string" ? value : undefined
+  } catch {
+    return undefined
+  }
+}
+
+function loggedTarget(value: string | null): string | null {
+  return value === null || value === "" ? null : value
+}
+
 /**
  * An assigned-only agent loses write access to a task once it reassigns it, so a
  * client retry of that same PUT would be refused even though it succeeded. When
@@ -84,42 +107,47 @@ async function replayedAgentReassignment(
   agentToken: App.Locals["agentToken"],
   taskId: string,
   body: Record<string, unknown>,
+  expectedActor: string | undefined,
 ): Promise<Response | null> {
-  if (!isAssignedWriteOnly(agentToken) || !agentToken?.assigneeId) return null
+  if (!agentToken?.assigneeId) return null
   const requestId = typeof body.request_id === "string" ? body.request_id.trim().slice(0, 128) : ""
   if (!requestId) return null
-  if (body.assigned_to !== null && typeof body.assigned_to !== "string") return null
+  const requested = normalizeReassignedTarget(body.assigned_to)
+  if (requested === undefined) return null
   const fields = Object.keys(body).filter((key) => key !== "updated_at" && key !== "request_id")
   if (fields.length !== 1 || fields[0] !== "assigned_to") return null
-  const requested = typeof body.assigned_to === "string" ? body.assigned_to.trim() : ""
   const row = await repo.findById(taskId)
-  if (!row || String(row.assigned_to ?? "") !== requested) return null
+  if (!row || (row.assigned_to ?? null) !== requested) return null
 
-  const client = getPersistenceClient()
   const receiptKey = `${agentToken.tokenId}:${agentToken.assigneeId}:${taskId}:${requestId}`
-  const [receiptRes, latestActivityRes] = await Promise.all([
-    client.execute({
-      sql: "SELECT status FROM integration_attempts WHERE integration = 'task.reassignment' AND idempotency_key = ? LIMIT 1",
-      args: [receiptKey],
-    }),
-    client.execute({
-      sql: "SELECT old_value, new_value, actor_type, correlation_id FROM task_activity_log WHERE task_id = ? AND field = 'assigned_to' ORDER BY created_at DESC, id DESC LIMIT 1",
-      args: [taskId],
-    }),
-  ])
-  const hasReceipt = receiptRes.rows[0]?.status === "completed"
-  const lastReassignment = latestActivityRes.rows[0] as Record<string, unknown> | undefined
-  const activityMatches = Boolean(
-    lastReassignment &&
-    lastReassignment.actor_type === "agent" &&
-    lastReassignment.old_value === agentToken.assigneeId &&
-    String(lastReassignment.new_value ?? "") === requested &&
-    lastReassignment.correlation_id === requestId,
+  const { receipt, ownedByOtherToken, lastReassignment } = await repo.findReassignmentReplayState(
+    taskId, receiptKey, requestId,
   )
-  // If a newer assignment event exists on the task, ensure it wasn't rewritten after our handoff.
-  if (!activityMatches && (!hasReceipt || (lastReassignment && String(lastReassignment.new_value ?? "") !== requested))) {
-    return null
+
+  // The receipt commits with the hand-off itself, so when present it is the
+  // sole authority for this token and never falls back to activity heuristics.
+  let matched = false
+  if (receipt) {
+    const stale = Boolean(
+      lastReassignment && lastReassignment.created_at > receipt.updated_at && lastReassignment.correlation_id !== requestId,
+    )
+    if (receipt.status === "completed" && !stale) {
+      const destination = parseReceiptAssignee(receipt.response_payload)
+      matched = destination === undefined
+        ? !lastReassignment || loggedTarget(lastReassignment.new_value) === requested
+        : destination === requested
+    }
+  } else if (!ownedByOtherToken) {
+    matched = Boolean(
+      lastReassignment &&
+      lastReassignment.actor_type === "agent" &&
+      expectedActor === lastReassignment.actor &&
+      lastReassignment.old_value === agentToken.assigneeId &&
+      loggedTarget(lastReassignment.new_value) === requested &&
+      lastReassignment.correlation_id === requestId,
+    )
   }
+  if (!matched) return null
   const ticketNum = row.ticket_number != null ? Number(row.ticket_number) : null
   const ticketKey = formatTicketKey(ticketNum)
   if (!agentToken.scopes.includes("tasks:read")) {
@@ -129,8 +157,25 @@ async function replayedAgentReassignment(
 }
 
 export const PUT: APIRoute = async ({ params, request, locals }) => {
-  const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
+  let rawBody: unknown
+  try {
+    const rawText = await request.text()
+    rawBody = rawText.trim() ? JSON.parse(rawText) : {}
+  } catch {
+    return apiError("Request body must be valid JSON", 400)
+  }
+  if (!rawBody || typeof rawBody !== "object" || Array.isArray(rawBody)) {
+    return apiError("Request body must be a JSON object", 400)
+  }
+  const body = rawBody as Record<string, unknown>
   if (hasBoardSelection(body)) return unavailableBoardResponse()
+  let clientVersion: number | undefined
+  if (body.updated_at !== undefined) {
+    if (typeof body.updated_at !== "number" || !Number.isSafeInteger(body.updated_at) || body.updated_at < 0) {
+      return apiError("updated_at must be a non-negative safe integer", 400)
+    }
+    clientVersion = body.updated_at
+  }
   await ensureSchema()
   const repo = new TaskRepository(getPersistenceClient())
 
@@ -145,13 +190,10 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
 
   const resolvedId = resolved.id
   const agentToken = locals.agentToken
+  const canReadTask = !agentToken || agentToken.scopes.includes("tasks:read")
+  const expectedActor = agentActivityActor(locals)?.actor
   const denied = isAssignedWriteOnly(agentToken) ? await checkAssignedTask(resolvedId, agentToken!) : null
-  if (denied) return (await replayedAgentReassignment(repo, agentToken, resolvedId, body)) ?? denied
-
-  const clientVersion = typeof body.updated_at === "number" ? body.updated_at : undefined
-  if (clientVersion !== undefined && (!Number.isSafeInteger(clientVersion) || clientVersion < 0)) {
-    return apiError("updated_at must be a non-negative safe integer", 400)
-  }
+  if (denied) return (await replayedAgentReassignment(repo, agentToken, resolvedId, body, expectedActor)) ?? denied
 
   if (body.expected_status !== undefined && (
     body.expected_status !== STATUS.BACKLOG || clientVersion === undefined ||
@@ -307,10 +349,11 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
     }
   }
   if (body.assigned_to !== undefined) {
-    if (body.assigned_to !== null && (typeof body.assigned_to !== "string" || !body.assigned_to.trim() || body.assigned_to.trim().length > 255)) {
+    const nextAssignee = normalizeReassignedTarget(body.assigned_to)
+    if (nextAssignee === undefined) {
       return apiError("assigned_to must be a non-empty string (max 255 chars) or null", 400)
     }
-    sanitized.assigned_to = typeof body.assigned_to === "string" ? body.assigned_to.trim() : null
+    sanitized.assigned_to = nextAssignee
   }
   if (body.owner !== undefined && typeof body.owner === "string" && !isAssignedWriteOnly(agentToken)) {
     sanitized.owner = body.owner.slice(0, 100)
@@ -420,6 +463,15 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
   }
   const completionIntent = typeof sanitized.status === "string" && isDoneStatus(sanitized.status)
   const expectedAssignedTo = restrictedAssigneeId(agentToken)
+  const requestId = typeof body.request_id === "string" ? body.request_id.trim().slice(0, 128) : ""
+  const reassignmentReceipt = requestId && agentToken && sanitized.assigned_to !== undefined &&
+    (!isAssignedWriteOnly(agentToken) || (sanitized.assigned_to ?? null) !== agentToken.assigneeId)
+    ? {
+      key: `${agentToken.tokenId}:${isAssignedWriteOnly(agentToken) ? agentToken.assigneeId : "scope:broad"}:${resolvedId}:${requestId}`,
+      requestId,
+      assignedTo: sanitized.assigned_to === null ? null : String(sanitized.assigned_to),
+    }
+    : undefined
   let update
   try {
     update = await repo.updateTask(resolvedId, sanitized, {
@@ -427,6 +479,7 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
       ...(version ? { version } : {}),
       ...(expectedChecklists !== undefined ? { expectedChecklists } : {}),
       ...(expectedAssignedTo !== undefined ? { expectedAssignedTo } : {}),
+      ...(reassignmentReceipt ? { reassignmentReceipt } : {}),
       ...(locals.writeAbortSignal ? { signal: locals.writeAbortSignal } : {}),
     })
   } catch (err) {
@@ -441,7 +494,8 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
   }
   if (!update.ok) {
     if (update.errorCode === "assignee_mismatch") {
-      return apiError("Agent can only update tasks assigned to it", 403)
+      return (await replayedAgentReassignment(repo, agentToken, resolvedId, body, expectedActor)) ??
+        apiError("Agent can only update tasks assigned to it", 403)
     }
     if (update.errorCode === "conflict") {
       return taskVersionConflict(update.updatedAt, clientVersion!)
@@ -450,19 +504,23 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
       return Response.json({
         error: "The checklist changed since your last read",
         code: "checklist_conflict",
-        checklists: update.checklists,
+        ...(canReadTask ? { checklists: update.checklists } : {}),
       }, { status: 409, headers: { "cache-control": "no-store" } })
     }
     if (update.errorCode === "blocked") {
       return new Response(JSON.stringify({
         error: "Cannot activate: task is blocked by open dependencies",
         errorCode: "TASK_BLOCKED",
-        blocked_by: update.blockers.map(({ id, title, status, ticket_number }) => ({
-          id,
-          title,
-          status,
-          ticket_key: ticket_number ? formatTicketKey(Number(ticket_number)) : null,
-        })),
+        ...(canReadTask
+          ? {
+              blocked_by: update.blockers.map(({ id, title, status, ticket_number }) => ({
+                id,
+                title,
+                status,
+                ticket_key: ticket_number ? formatTicketKey(Number(ticket_number)) : null,
+              })),
+            }
+          : {}),
       }), {
         status: 409,
         headers: { "content-type": "application/json" },
@@ -490,27 +548,12 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
       const automation = request.headers.has("X-Automation-Source") ? locals.automationSource : null
       const activityActor = agentActivityActor(locals) ??
         { actor: automation ? `ha:${automation}` : "user", actor_type: (automation ? "ha" : "user") as "ha" | "user" }
-      const requestId = typeof body.request_id === "string" ? body.request_id.trim().slice(0, 128) : ""
+      const commitTimestamp = Number(updatedRow.updated_at)
       await repo.logActivity(resolvedId, changes, {
         ...activityActor,
         ...(requestId ? { correlation_id: requestId } : {}),
+        ...(Number.isSafeInteger(commitTimestamp) ? { createdAt: commitTimestamp } : {}),
       }).catch(() => { })
-      if (
-        requestId &&
-        agentToken &&
-        isAssignedWriteOnly(agentToken) &&
-        sanitized.assigned_to !== undefined &&
-        String(sanitized.assigned_to ?? "") !== agentToken.assigneeId
-      ) {
-        const now = Date.now()
-        const receiptKey = `${agentToken.tokenId}:${agentToken.assigneeId}:${resolvedId}:${requestId}`
-        await getPersistenceClient().execute({
-          sql: `INSERT INTO integration_attempts (attempt_id, task_id, integration, request_id, idempotency_key, status, created_at, updated_at)
-                VALUES (?, ?, 'task.reassignment', ?, ?, 'completed', ?, ?)
-                ON CONFLICT(idempotency_key, integration) DO NOTHING`,
-          args: [crypto.randomUUID(), resolvedId, requestId, receiptKey, now, now],
-        }).catch(() => {})
-      }
     }
   }
 
@@ -526,7 +569,7 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
     // The App also owns the decision not to re-emit an acknowledged completion.
     ...(completionIntent ? ["task.completed"] : []),
   ])
-  dispatchTaskEvent("task.updated", taskPayload, typeof body.request_id === "string" ? body.request_id : undefined, undefined, undefined, authority).catch(() => {})
+  dispatchTaskEvent("task.updated", taskPayload, requestId || undefined, undefined, undefined, authority).catch(() => {})
 
   // Notification preference guard
   const notifPrefs = await repo.getNotificationPreferences()
@@ -651,7 +694,7 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
   }
 
   if (newlyCompleted) {
-    dispatchTaskEvent("task.completed", { ...taskPayload, completed_at: new Date().toISOString() }, typeof body.request_id === "string" ? body.request_id : undefined, undefined, undefined, authority).catch(() => {})
+    dispatchTaskEvent("task.completed", { ...taskPayload, completed_at: new Date().toISOString() }, requestId || undefined, undefined, undefined, authority).catch(() => {})
     try {
       const { isFeatureEnabled } = await import("../../../lib/feature-flags")
       if (await isFeatureEnabled("gamification")) {
@@ -685,7 +728,16 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
     }
   }
 
-  return new Response(JSON.stringify(taskPayload), {
+  const responseBody = canReadTask
+    ? taskPayload
+    : {
+        id: updatedRow.id,
+        ticket_key: taskPayload.ticket_key,
+        status: updatedRow.status,
+        assigned_to: updatedRow.assigned_to ?? null,
+      }
+
+  return new Response(JSON.stringify(responseBody), {
     status: 200,
     headers: {
       "content-type": "application/json",

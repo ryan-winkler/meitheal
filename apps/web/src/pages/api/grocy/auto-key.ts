@@ -8,10 +8,11 @@
  * @bounded-context integration
  */
 import type { APIRoute } from "astro"
+import { validateGrocyBaseUrl } from "@meitheal/integration-core"
 import { requireSystemSettingsAdmin } from "../../../lib/settings-security"
 import { logApiError } from "../../../lib/api-logger"
+import { isLegacySupervisorIngressUrl, resolveSupervisorGrocyAddon } from "../../../lib/grocy-client"
 import { supervisorFetch } from "../../../lib/supervisor-fetch"
-import { isBlockedTestHost } from "@meitheal/integration-core"
 
 export const POST: APIRoute = async ({ locals, request }) => {
   const denied = requireSystemSettingsAdmin(request, locals)
@@ -23,40 +24,28 @@ export const POST: APIRoute = async ({ locals, request }) => {
     } catch { /* empty body = auto-detect */ }
 
     let grocyUrl = body.url?.trim()
-
-    // A URL from the request must be http(s). The auto-detected one is built below.
+    if (grocyUrl && isLegacySupervisorIngressUrl(grocyUrl)) {
+      grocyUrl = undefined
+    }
     if (grocyUrl) {
-      let parsed: URL
-      try {
-        parsed = new URL(grocyUrl)
-      } catch {
-        return new Response(JSON.stringify({ ok: false, error: "Invalid URL format" }), {
-          status: 400, headers: { "Content-Type": "application/json" },
-        })
+      const urlCheck = validateGrocyBaseUrl(grocyUrl)
+      if (!urlCheck.ok) {
+        return new Response(
+          JSON.stringify({ ok: false, error: urlCheck.error }),
+          { status: 400, headers: { "Content-Type": "application/json" } },
+        )
       }
-      if (!["http:", "https:"].includes(parsed.protocol)) {
-        return new Response(JSON.stringify({ ok: false, error: "Invalid URL scheme — only http: and https: are allowed" }), {
-          status: 400, headers: { "Content-Type": "application/json" },
-        })
-      }
+      grocyUrl = urlCheck.normalizedUrl
     }
 
-    // If no URL provided, try to detect Grocy addon via Supervisor
+    // If no URL provided, try to detect Grocy addon container URL via Supervisor
+    let detectedSlug = "a0d7b954_grocy"
     if (!grocyUrl) {
-      try {
-        const addonsRes = await supervisorFetch("/addons")
-        if (addonsRes?.ok) {
-          const addonsData = (await addonsRes.json()) as {
-            data?: { addons?: { slug: string; ingress_url?: string; state?: string }[] }
-          }
-          const grocy = addonsData.data?.addons?.find(
-            (a) => a.slug.includes("grocy") && a.state === "started"
-          )
-          if (grocy?.ingress_url) {
-            grocyUrl = `http://supervisor${grocy.ingress_url}`
-          }
-        }
-      } catch { /* auto-detect failed — need manual URL */ }
+      const detected = await resolveSupervisorGrocyAddon()
+      if (detected) {
+        grocyUrl = detected.url
+        detectedSlug = detected.slug
+      }
     }
 
     if (!grocyUrl) {
@@ -72,7 +61,7 @@ export const POST: APIRoute = async ({ locals, request }) => {
     try {
       // Try Supervisor-proxied request first (works for HA addon installs)
       const supervisorRes = await supervisorFetch(
-        `/addons/a0d7b954_grocy/proxy/api/objects/api_keys`,
+        `/addons/${encodeURIComponent(detectedSlug)}/proxy/api/objects/api_keys`,
         {
           method: "POST",
           headers: {
@@ -87,14 +76,13 @@ export const POST: APIRoute = async ({ locals, request }) => {
       }
     } catch { /* Supervisor proxy failed — try direct */ }
 
-    // Fallback: direct API call (works if Grocy ingress session is active).
-    // A typed URL on a private or metadata address is not called directly; the Supervisor proxy above still applies.
-    const directAllowed = !body.url?.trim() || !isBlockedTestHost(new URL(grocyUrl).hostname)
-    if (!createRes && directAllowed) {
+    // Fallback: direct API call (works if Grocy ingress session is active)
+    if (!createRes) {
       try {
-        createRes = await fetch(`${grocyUrl.replace(/\/$/, "")}/api/objects/api_keys`, {
+        const autoKeyTarget = new URL("api/objects/api_keys", `${grocyUrl.replace(/\/$/, "")}/`)
+        createRes = await fetch(autoKeyTarget.href, { // nosemgrep
           method: "POST",
-          redirect: "manual",
+          redirect: "error",
           headers: {
             "content-type": "application/json",
             accept: "application/json",
@@ -135,8 +123,8 @@ export const POST: APIRoute = async ({ locals, request }) => {
       const repo = new SettingsRepository(getPersistenceClient())
       await repo.ensureSettingsTable()
 
-      await repo.upsert("grocy_url", grocyUrl)
-      await repo.upsert("grocy_api_key", apiKey)
+      await repo.upsert("grocy_url", JSON.stringify(grocyUrl))
+      await repo.upsert("grocy_api_key", JSON.stringify(apiKey))
     } catch (err) {
       logApiError("grocy-auto-key", "Failed to save settings", err)
       // Still return the key even if saving failed

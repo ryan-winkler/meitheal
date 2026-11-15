@@ -8,10 +8,10 @@
  * @bounded-context integration
  */
 import type { APIRoute } from "astro";
-import { requireSystemSettingsAdmin } from "../../../lib/settings-security"
-import { GrocyAdapter, isBlockedTestHost } from "@meitheal/integration-core";
+import { GrocyAdapter, validateGrocyBaseUrl } from "@meitheal/integration-core";
+import { requireSystemSettingsAdmin } from "../../../lib/settings-security";
 import { logApiError } from "../../../lib/api-logger";
-import { supervisorFetch } from "../../../lib/supervisor-fetch";
+import { isLegacySupervisorIngressUrl, resolveSupervisorGrocyAddon } from "../../../lib/grocy-client";
 
 /**
  * POST /api/grocy/test
@@ -20,8 +20,8 @@ import { supervisorFetch } from "../../../lib/supervisor-fetch";
  * Tests connection to a Grocy instance and returns system info.
  */
 export const POST: APIRoute = async ({ locals, request }) => {
-  const denied = requireSystemSettingsAdmin(request, locals)
-  if (denied) return denied
+  const denied = requireSystemSettingsAdmin(request, locals);
+  if (denied) return denied;
   try {
     let body: { url?: string; api_key?: string; auto_detected?: boolean };
 
@@ -38,44 +38,31 @@ export const POST: APIRoute = async ({ locals, request }) => {
     let apiKey = body.api_key?.trim();
     const autoDetected = body.auto_detected === true;
 
-    // SSRF protection: validate user-supplied URL
-    if (url) {
-      try {
-        const parsed = new URL(url)
-        if (!["http:", "https:"].includes(parsed.protocol)) {
-          return new Response(JSON.stringify({ ok: false, error: "Invalid URL scheme — only http: and https: are allowed" }), {
-            status: 400, headers: { "Content-Type": "application/json" },
-          })
-        }
-        // Block private, loopback, IPv4-mapped and metadata addresses. App host names stay allowed.
-        if (isBlockedTestHost(parsed.hostname)) {
-          return new Response(JSON.stringify({ ok: false, error: "URL points to a private/internal network address" }), {
-            status: 400, headers: { "Content-Type": "application/json" },
-          })
-        }
-      } catch {
-        return new Response(JSON.stringify({ ok: false, error: "Invalid URL format" }), {
-          status: 400, headers: { "Content-Type": "application/json" },
-        })
+    // Translate legacy auto-detected Supervisor ingress URLs via Supervisor add-on lookup
+    if (url && isLegacySupervisorIngressUrl(url)) {
+      const detected = await resolveSupervisorGrocyAddon();
+      if (detected) {
+        url = detected.url;
       }
     }
 
-    // For auto-detected installs, resolve URL via Supervisor if not provided
+    // SSRF protection: validate user-supplied URL
+    if (url) {
+      const urlCheck = validateGrocyBaseUrl(url);
+      if (!urlCheck.ok) {
+        return new Response(JSON.stringify({ ok: false, error: urlCheck.error }), {
+          status: 400, headers: { "Content-Type": "application/json" },
+        });
+      }
+      url = urlCheck.normalizedUrl;
+    }
+
+    // For auto-detected installs, resolve add-on container URL via Supervisor if not provided
     if (autoDetected && !url) {
-      try {
-        const addonsRes = await supervisorFetch("/addons");
-        if (addonsRes?.ok) {
-          const addonsData = (await addonsRes.json()) as {
-            data?: { addons?: { slug: string; ingress_url?: string; state?: string }[] };
-          };
-          const grocy = addonsData.data?.addons?.find(
-            (a) => a.slug.includes("grocy") && a.state === "started"
-          );
-          if (grocy?.ingress_url) {
-            url = `http://supervisor${grocy.ingress_url}`;
-          }
-        }
-      } catch { /* Supervisor detection failed */ }
+      const detected = await resolveSupervisorGrocyAddon();
+      if (detected) {
+        url = detected.url;
+      }
     }
 
     // For auto-detected installs, try fetching API key from saved settings

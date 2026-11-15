@@ -15,10 +15,17 @@ export function resolveMcpSchema(schema: Record<string, unknown>, document: unkn
       let target: unknown = document
       for (const segment of reference.slice(2).split("/")) {
         const key = segment.replace(/~1/g, "/").replace(/~0/g, "~")
-        if (!target || typeof target !== "object" || !Object.hasOwn(target, key)) {
+        if (
+          key === "__proto__" ||
+          key === "constructor" ||
+          key === "prototype" ||
+          !target ||
+          typeof target !== "object" ||
+          !Object.hasOwn(target, key)
+        ) {
           throw new Error(`Unknown MCP schema reference: ${reference}`)
         }
-        target = (target as Record<string, unknown>)[key]
+        target = Object.getOwnPropertyDescriptor(target, key)?.value
       }
       if (!target || typeof target !== "object" || Array.isArray(target)) throw new Error(`Invalid MCP schema reference: ${reference}`)
       const nextReferences = new Set(references).add(reference)

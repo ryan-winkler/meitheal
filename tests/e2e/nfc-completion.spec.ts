@@ -36,7 +36,10 @@ test("NFC requires task write authority and a unique assignment, then shares can
     const task = await create("Scan hallway task")
     const assigned = await api.put(path(`/api/tasks/${task.id}`), { headers: writer, data: { nfc_tag_id: " fixture-tag " } })
     expect(assigned.status()).toBe(200)
-    expect((await assigned.json()).nfc_tag_id).toBe("fixture-tag")
+    expect((await assigned.json()).nfc_tag_id).toBeUndefined()
+    const stored = await api.get(path(`/api/tasks/${task.id}`), { headers: readOnly })
+    expect(stored.status()).toBe(200)
+    expect((await stored.json()).nfc_tag_id).toBe("fixture-tag")
     const initial = (await (await api.get(path("/api/gamification"))).json()).stats.totalCompleted
     const first = await api.post(complete, { headers: writer, data: { tag_id: "fixture-tag" } })
     expect(first.status()).toBe(200)

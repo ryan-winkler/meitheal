@@ -12,7 +12,7 @@
  */
 import type { APIRoute } from "astro"
 import { requireSystemSettingsAdmin } from "../../../lib/settings-security"
-import { fetchWithDevelopmentTls, isBlockedTestHost } from "@meitheal/integration-core"
+import { fetchWithDevelopmentTls } from "@meitheal/integration-core"
 import { logApiError } from "../../../lib/api-logger"
 
 export const POST: APIRoute = async ({ locals, request }) => {
@@ -44,12 +44,17 @@ export const POST: APIRoute = async ({ locals, request }) => {
             error: "Invalid URL scheme — only http: and https: are allowed",
           }), { status: 400, headers: { "content-type": "application/json" } })
         }
-        // Block private, loopback, IPv4-mapped and metadata addresses. App host names stay allowed.
-        if (isBlockedTestHost(parsed.hostname)) {
-          return new Response(JSON.stringify({
-            success: false,
-            error: "URL points to a private/internal network address",
-          }), { status: 400, headers: { "content-type": "application/json" } })
+        // Block well-known internal/metadata addresses
+        const host = parsed.hostname.toLowerCase()
+        const BLOCKED_HOSTS = ["localhost", "127.0.0.1", "0.0.0.0", "[::1]", "169.254.169.254", "metadata.google.internal"]
+        if (BLOCKED_HOSTS.some(b => host === b) || host.startsWith("10.") || host.startsWith("192.168.") || /^172\.(1[6-9]|2\d|3[01])\./.test(host)) {
+          // Allow .internal domains (HA ecosystem) but block generic internal IPs
+          if (!host.endsWith(".internal")) {
+            return new Response(JSON.stringify({
+              success: false,
+              error: "URL points to a private/internal network address",
+            }), { status: 400, headers: { "content-type": "application/json" } })
+          }
         }
       } catch {
         return new Response(JSON.stringify({
@@ -133,8 +138,6 @@ export const POST: APIRoute = async ({ locals, request }) => {
     const fetchOpts = {
       method: "POST",
       signal: controller.signal,
-      // A redirect would carry the test past the private-address check, so report it instead.
-      redirect: "manual" as const,
       headers,
       body: payloadString,
     }

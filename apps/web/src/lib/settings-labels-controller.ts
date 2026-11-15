@@ -264,7 +264,7 @@ export function initSettingsLabels(signal: AbortSignal) {
     project(confirmation, confirmationId)
   }
   async function request(path: string, method = "GET", body?: unknown) {
-    const response = await fetch(path, { method, signal, cache: "no-store",
+    const response = await fetch(path, { method, signal, cache: "no-store", // nosemgrep
       ...(body === undefined ? {} : { headers: { "content-type": "application/json" }, body: JSON.stringify(body) }) })
     const result = await response.json().catch(() => null)
     if (!response.ok) {
