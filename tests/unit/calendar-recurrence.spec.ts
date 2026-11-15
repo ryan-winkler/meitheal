@@ -45,7 +45,7 @@ import { SettingsRepository } from "../../apps/web/src/domains/tasks/persistence
 import { TaskRepository } from "../../apps/web/src/domains/tasks/persistence/task-repository"
 import { GET as getTodayCountsRoute } from "../../apps/web/src/pages/api/tasks/today-counts"
 import { loadKanbanBoard } from "../../apps/web/src/lib/kanban-board-data"
-import { getTasksForView, getTodayTaskCounts, todayDueSection } from "../../apps/web/src/lib/task-queries"
+import { getTasksForView, getTodayTaskCounts, getTodayTaskRows, todayDueSection } from "../../apps/web/src/lib/task-queries"
 
 // ── 1. Calendar RRULE Engine ───────────────────────────────────────────
 
@@ -726,6 +726,29 @@ test("GET /api/tasks/today-counts and getTodayTaskCounts evaluate counters in th
     const dublinCounts = await getTodayTaskCounts(new Date("2026-11-13T12:00:00Z"), "Europe/Dublin")
     expect(dublinCounts.dueToday).toBe(1)
     expect(dublinCounts.carriedForward).toBe(0)
+
+    // Evening completions in America/Los_Angeles (2026-11-14 18:30 PST = 2026-11-15T02:30:00Z)
+    // count toward 2026-11-14 in LA (not 2026-11-15), for both epoch ms and ISO text updated_at.
+    const laEveningMs = Date.parse("2026-11-15T02:30:00Z")
+    await db.batch([
+      {
+        sql: `INSERT INTO tasks (id, title, status, priority, idempotency_key, request_id, ticket_number, created_at, updated_at)
+              VALUES ('la-done-ms', 'Completed LA Evening (ms)', 'complete', 3, 'k-la-ms', 'r-la-ms', 2, ?, ?)`,
+        args: [laEveningMs, laEveningMs],
+      },
+      {
+        sql: `INSERT INTO tasks (id, title, status, priority, idempotency_key, request_id, ticket_number, created_at, updated_at)
+              VALUES ('la-done-iso', 'Completed LA Evening (iso)', 'complete', 3, 'k-la-iso', 'r-la-iso', 3, ?, '2026-11-15T02:30:00Z')`,
+        args: [laEveningMs],
+      },
+    ], "write")
+    const laNov14Counts = await getTodayTaskCounts(new Date("2026-11-15T03:00:00Z"))
+    expect(laNov14Counts.completedToday).toBe(2)
+    expect(laNov14Counts.completionPercent).toBe(Math.round((2 / 3) * 100))
+    const laNov14Rows = await getTodayTaskRows("2026-11-14", false, "America/Los_Angeles")
+    expect(laNov14Rows.completedTodayCount).toBe(2)
+    const laNov15Counts = await getTodayTaskCounts(new Date("2026-11-15T18:00:00Z"))
+    expect(laNov15Counts.completedToday).toBe(0)
 
     // Deterministically verify GET /api/tasks/today-counts across the international date line at any UTC hour
     const now = new Date()

@@ -7,6 +7,7 @@
  * Bounded Context: Tasks (persistence query)
  */
 
+import { fromZonedTime } from "date-fns-tz"
 import {
   ensureSchema,
   getPersistenceClient,
@@ -387,13 +388,32 @@ function toTaskViewItem(row: Record<string, unknown>, slim = false, timezone = "
 const TODAY_COMPLETION_COUNT = `
   COUNT(*) FILTER (
     WHERE status = 'complete'
-      AND ((updated_at >= ? AND updated_at < ?) OR substr(updated_at, 1, 10) = ?)
+      AND (
+        (typeof(updated_at) IN ('integer', 'real') AND updated_at >= ? AND updated_at < ?)
+        OR (typeof(updated_at) = 'text' AND (
+          ((updated_at LIKE '%T%' OR updated_at LIKE '%:%') AND strftime('%s', updated_at) IS NOT NULL
+            AND CAST(strftime('%s', updated_at) AS INTEGER) * 1000 >= ?
+            AND CAST(strftime('%s', updated_at) AS INTEGER) * 1000 < ?)
+          OR (updated_at NOT LIKE '%T%' AND updated_at NOT LIKE '%:%' AND substr(updated_at, 1, 10) = ?)
+        ))
+      )
   )
 `
 
-function todayCompletionArgs(today: string): [number, number, string] {
-  const dayStart = Date.parse(today)
-  return [dayStart, dayStart + 86_400_000, today]
+function isValidTimeZone(tz: string): boolean {
+  try {
+    new Intl.DateTimeFormat("en", { timeZone: tz })
+    return true
+  } catch {
+    return false
+  }
+}
+
+function todayCompletionArgs(today: string, timezone = "Europe/Dublin"): [number, number, number, number, string] {
+  const safeTz = isValidTimeZone(timezone) ? timezone : "Europe/Dublin"
+  const startMs = fromZonedTime(`${today}T00:00:00`, safeTz).getTime()
+  const endMs = fromZonedTime(`${shiftCalendarDay(today, 1)}T00:00:00`, safeTz).getTime()
+  return [startMs, endMs, startMs, endMs, today]
 }
 
 export function todayDueSection(
@@ -431,6 +451,8 @@ export async function getTodayTaskRows(
 ) {
   try {
     await ensureSchema()
+    const trimmedTz = timezone.trim()
+    const resolvedTimezone = trimmedTz && isValidTimeZone(trimmedTz) ? trimmedTz : "Europe/Dublin"
     const { rows } = await getPersistenceClient().execute({
       sql: `
         WITH totals AS (
@@ -453,25 +475,16 @@ export async function getTodayTaskRows(
           )
         ORDER BY created_at DESC, tasks.rowid DESC
       `,
-      args: [...todayCompletionArgs(today), includeUnscheduled ? 1 : 0],
+      args: [...todayCompletionArgs(today, resolvedTimezone), includeUnscheduled ? 1 : 0],
     })
 
     return {
       completedTodayCount: Number(rows[0]?.completed_today ?? 0),
       openUnscheduledCount: Number(rows[0]?.open_unscheduled ?? 0),
-      tasks: rows.filter(row => row.id !== null).map(row => toTaskViewItem(row as Record<string, unknown>, false, timezone)),
+      tasks: rows.filter(row => row.id !== null).map(row => toTaskViewItem(row as Record<string, unknown>, false, resolvedTimezone)),
     }
   } catch {
     return { completedTodayCount: 0, openUnscheduledCount: 0, tasks: [] }
-  }
-}
-
-function isValidTimeZone(tz: string): boolean {
-  try {
-    new Intl.DateTimeFormat("en", { timeZone: tz })
-    return true
-  } catch {
-    return false
   }
 }
 
@@ -518,7 +531,7 @@ export async function getTodayTaskCounts(now = new Date(), timezone?: string): P
         AND due_date IS NOT NULL AND due_date <> ''
       GROUP BY due_date
     `,
-    args: todayCompletionArgs(today),
+    args: todayCompletionArgs(today, resolvedTimezone),
   })
 
   let dueToday = 0
