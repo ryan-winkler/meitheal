@@ -110,6 +110,6 @@ network:
 *Last updated: 2026-02-28 — Phase 2 Integration Deepening*
 
 
-## Local development TLS
+## Outbound policy and local development TLS
 
-Use a trusted certificate for webhook delivery in production. In development, an actual `.internal` hostname can use a request-scoped TLS exception. A compatibility wrapper connects the development dispatcher to Node’s built-in fetch. The request rejects redirects so the exception cannot move to another host. The dispatcher closes after the response body is consumed or cancelled. An external URL containing `.internal` in its path or query does not qualify for the exception.
+Outbound webhook and n8n requests go through `fetchOutbound` (`packages/integration-core/src/outbound-fetch.ts`). In every environment, TLS certificates are verified strictly (no per-host `rejectUnauthorized` bypass); to trust a private or local development CA, point Node at its bundle with `NODE_EXTRA_CA_CERTS`. Every request checks both the URL and connect-time DNS answers to block cloud metadata services and the Home Assistant Supervisor API, rejects embedded URL credentials, and refuses implicit redirects.
