@@ -1,5 +1,6 @@
 import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability"
 import { GrocyAdapter, validateGrocyBaseUrl } from "@meitheal/integration-core"
+import { SettingsRepository } from "@domains/tasks/persistence/settings-repository"
 import { getPersistenceClient } from "@domains/tasks/persistence/store"
 import { supervisorFetch } from "./supervisor-fetch"
 
@@ -15,17 +16,21 @@ const logger = createLogger({
 const LEGACY_HASSIO_INGRESS_PATH = /^\/api\/hassio_ingress\/[A-Za-z0-9_-]+\/?$/
 
 /**
- * True when a URL matches the legacy auto-detected `http://supervisor/api/hassio_ingress/<token>`
- * form written by earlier versions before Supervisor hostnames were blocked.
+ * Extract normalized `/api/hassio_ingress/<token>` path when `rawUrl` is either a bare
+ * Supervisor ingress path or the legacy `http://supervisor/api/hassio_ingress/<token>` URL.
  */
-export function isLegacySupervisorIngressUrl(rawUrl: string): boolean {
+export function extractLegacyIngressPath(rawUrl: string): string | null {
+  const trimmed = rawUrl.trim()
+  if (LEGACY_HASSIO_INGRESS_PATH.test(trimmed)) {
+    return trimmed.replace(/\/+$/, "")
+  }
   let parsed: URL
   try {
-    parsed = new URL(rawUrl.trim())
+    parsed = new URL(trimmed)
   } catch {
-    return false
+    return null
   }
-  return (
+  if (
     parsed.protocol === "http:" &&
     parsed.hostname.toLowerCase() === "supervisor" &&
     parsed.port === "" &&
@@ -34,23 +39,88 @@ export function isLegacySupervisorIngressUrl(rawUrl: string): boolean {
     parsed.search === "" &&
     parsed.hash === "" &&
     LEGACY_HASSIO_INGRESS_PATH.test(parsed.pathname)
-  )
+  ) {
+    return parsed.pathname.replace(/\/+$/, "")
+  }
+  return null
+}
+
+/**
+ * True when a URL matches the legacy auto-detected `http://supervisor/api/hassio_ingress/<token>`
+ * or bare `/api/hassio_ingress/<token>` form written before Supervisor hostnames were blocked.
+ */
+export function isLegacySupervisorIngressUrl(rawUrl: string): boolean {
+  return extractLegacyIngressPath(rawUrl) !== null
+}
+
+function selectAddonPort(info: {
+  ingress_port?: unknown
+  network?: Record<string, unknown>
+}): number {
+  const network = info.network
+  if (network && typeof network === "object") {
+    const port80 = network["80/tcp"]
+    if (typeof port80 === "number" && Number.isInteger(port80) && port80 > 0 && port80 <= 65535) {
+      return 80
+    }
+    for (const [key, mapped] of Object.entries(network)) {
+      const match = /^(\d+)\/tcp$/.exec(key)
+      if (
+        match &&
+        typeof mapped === "number" &&
+        Number.isInteger(mapped) &&
+        mapped > 0 &&
+        mapped <= 65535
+      ) {
+        const containerPort = Number(match[1])
+        if (Number.isInteger(containerPort) && containerPort > 0 && containerPort <= 65535) {
+          return containerPort
+        }
+      }
+    }
+  }
+  if (
+    typeof info.ingress_port === "number" &&
+    Number.isInteger(info.ingress_port) &&
+    info.ingress_port > 0 &&
+    info.ingress_port <= 65535
+  ) {
+    return info.ingress_port
+  }
+  return 80
 }
 
 /**
  * Resolve the direct internal container URL for a started Home Assistant Grocy add-on
- * (e.g. `http://a0d7b954-grocy:80`) via Supervisor metadata rather than proxying `http://supervisor/*`.
+ * (e.g. `http://a0d7b954-grocy` or `http://a0d7b954-grocy:<port>`) via Supervisor metadata
+ * rather than proxying `http://supervisor/*`.
+ *
+ * When `expectedIngressUrl` is provided, matches the add-on's `ingress_url` so migrating
+ * a saved URL never switches to a different Grocy add-on instance.
  */
-export async function resolveSupervisorGrocyAddon(): Promise<{ slug: string; url: string } | null> {
+export async function resolveSupervisorGrocyAddon(
+  expectedIngressUrl?: string,
+): Promise<{ slug: string; url: string } | null> {
   try {
     const addonsRes = await supervisorFetch("/addons")
-    if (!addonsRes?.ok) return null
-    const addonsData = (await addonsRes.json()) as {
-      data?: { addons?: { slug: string; state?: string }[] }
+    if (!addonsRes?.ok) {
+      await addonsRes?.body?.cancel().catch(() => undefined)
+      return null
     }
-    const grocy = addonsData.data?.addons?.find(
+    const addonsData = (await addonsRes.json()) as {
+      data?: { addons?: { slug: string; ingress_url?: string; state?: string }[] }
+    }
+    const startedAddons = (addonsData.data?.addons ?? []).filter(
       (addon) => addon.slug.includes("grocy") && addon.state === "started",
     )
+    const expectedPath = expectedIngressUrl ? extractLegacyIngressPath(expectedIngressUrl) : null
+    const grocy = expectedPath
+      ? startedAddons.find(
+          (addon) =>
+            typeof addon.ingress_url === "string" &&
+            addon.ingress_url.replace(/\/+$/, "") === expectedPath,
+        )
+      : startedAddons[0]
     if (!grocy?.slug) return null
 
     let hostname = grocy.slug.replace(/_/g, "-")
@@ -59,19 +129,20 @@ export async function resolveSupervisorGrocyAddon(): Promise<{ slug: string; url
       const infoRes = await supervisorFetch(`/addons/${encodeURIComponent(grocy.slug)}/info`)
       if (infoRes?.ok) {
         const infoData = (await infoRes.json()) as {
-          data?: { hostname?: string; ingress_port?: number }
+          data?: {
+            hostname?: string
+            ingress_port?: number
+            network?: Record<string, unknown>
+          }
         }
         if (typeof infoData.data?.hostname === "string" && infoData.data.hostname.trim()) {
           hostname = infoData.data.hostname.trim()
         }
-        if (
-          typeof infoData.data?.ingress_port === "number" &&
-          Number.isInteger(infoData.data.ingress_port) &&
-          infoData.data.ingress_port > 0 &&
-          infoData.data.ingress_port <= 65535
-        ) {
-          port = infoData.data.ingress_port
+        if (infoData.data) {
+          port = selectAddonPort(infoData.data)
         }
+      } else {
+        await infoRes?.body?.cancel().catch(() => undefined)
       }
     } catch {
       /* Fall back to standard slug-derived container hostname and port 80 */
@@ -116,13 +187,12 @@ export async function createGrocyClient(): Promise<GrocyAdapter | null> {
     }
 
     if (isLegacySupervisorIngressUrl(baseUrl)) {
-      const detected = await resolveSupervisorGrocyAddon()
+      const detected = await resolveSupervisorGrocyAddon(baseUrl)
       if (detected) {
         baseUrl = detected.url
-        await client.execute({
-          sql: "UPDATE settings SET value = ?, updated_at = ? WHERE key = 'grocy_url'",
-          args: [JSON.stringify(detected.url), Date.now()],
-        })
+        const repo = new SettingsRepository(client)
+        await repo.ensureSettingsTable()
+        await repo.upsert("grocy_url", JSON.stringify(detected.url))
       }
     }
 

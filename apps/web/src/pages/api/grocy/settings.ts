@@ -43,10 +43,12 @@ export const GET: APIRoute = async ({ locals, request }) => {
     }
 
     if (typeof settings.grocy_url === "string" && isLegacySupervisorIngressUrl(settings.grocy_url)) {
-      const detected = await resolveSupervisorGrocyAddon()
+      const detected = await resolveSupervisorGrocyAddon(settings.grocy_url)
       if (detected) {
         settings.grocy_url = detected.url
         await repo.upsert("grocy_url", JSON.stringify(detected.url))
+      } else {
+        delete settings.grocy_url
       }
     }
 
@@ -98,20 +100,31 @@ export const PUT: APIRoute = async ({ locals, request }) => {
     const repo = new SettingsRepository(getPersistenceClient())
     await repo.ensureSettingsTable()
     const saved: string[] = []
+    let resolvedGrocyUrl: string | undefined
 
     for (const settingKey of GROCY_SETTINGS_KEYS) {
       if (body[settingKey] !== undefined) {
         let value = JSON.stringify(body[settingKey])
 
         // Validate
-        if (settingKey === "grocy_url" && typeof body[settingKey] === "string") {
-          const urlStr = body[settingKey] as string
+        if (settingKey === "grocy_url") {
+          if (typeof body[settingKey] !== "string") {
+            return new Response(
+              JSON.stringify({ ok: false, error: "Invalid URL format" }),
+              { status: 400, headers: { "Content-Type": "application/json" } },
+            )
+          }
+          const urlStr = body[settingKey]
           let trimmedUrl = urlStr.trim()
           if (trimmedUrl && isLegacySupervisorIngressUrl(trimmedUrl)) {
-            const detected = await resolveSupervisorGrocyAddon()
-            if (detected) {
-              trimmedUrl = detected.url
+            const detected = await resolveSupervisorGrocyAddon(trimmedUrl)
+            if (!detected) {
+              return new Response(
+                JSON.stringify({ ok: false, error: "Grocy add-on is not running or could not be resolved" }),
+                { status: 400, headers: { "Content-Type": "application/json" } },
+              )
             }
+            trimmedUrl = detected.url
           }
           if (trimmedUrl) {
             const urlCheck = validateGrocyBaseUrl(trimmedUrl)
@@ -121,6 +134,7 @@ export const PUT: APIRoute = async ({ locals, request }) => {
                 { status: 400, headers: { "Content-Type": "application/json" } },
               )
             }
+            resolvedGrocyUrl = urlCheck.normalizedUrl
             value = JSON.stringify(urlCheck.normalizedUrl)
           } else if (urlStr.length > 0) {
             return new Response(
@@ -145,8 +159,29 @@ export const PUT: APIRoute = async ({ locals, request }) => {
       }
     }
 
+    // Auto-detected UI save may omit grocy_url; populate from running add-on if none saved yet
+    if (body.grocy_url === undefined && body.grocy_sync_enabled === true) {
+      const existingUrl = await repo.getByKey("grocy_url")
+      const existingVal = typeof existingUrl?.value === "string" ? existingUrl.value.trim() : ""
+      if (!existingVal || isLegacySupervisorIngressUrl(existingVal)) {
+        const detected = existingVal
+          ? await resolveSupervisorGrocyAddon(existingVal)
+          : await resolveSupervisorGrocyAddon()
+        if (detected) {
+          resolvedGrocyUrl = detected.url
+          await repo.upsert("grocy_url", JSON.stringify(detected.url))
+          saved.push("grocy_url")
+        }
+      }
+    }
+
     return new Response(
-      JSON.stringify({ ok: true, saved, message: `Saved ${saved.length} setting(s)` }),
+      JSON.stringify({
+        ok: true,
+        saved,
+        ...(resolvedGrocyUrl ? { url: resolvedGrocyUrl } : {}),
+        message: `Saved ${saved.length} setting(s)`,
+      }),
       { status: 200, headers: { "Content-Type": "application/json" } },
     )
   } catch (err) {

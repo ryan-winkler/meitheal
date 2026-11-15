@@ -51,13 +51,14 @@ export function initGrocySettings(): void {
   const saveGrocyBtn = document.getElementById("save-grocy") as HTMLButtonElement
   if (saveGrocyBtn) {
     pageLifecycle.on(saveGrocyBtn, "click", withAsyncButton(saveGrocyBtn, async () => {
-    const url = (document.getElementById("grocy-url") as HTMLInputElement).value
+    const rawUrl = (document.getElementById("grocy-url") as HTMLInputElement).value.trim()
     const key = (document.getElementById("grocy-key") as HTMLInputElement).value
     const syncMode = (document.getElementById("grocy-sync-mode") as HTMLSelectElement).value
     const syncInterval = (document.getElementById("grocy-sync-interval") as HTMLSelectElement).value
 
     const grocyAutoDetected = document.getElementById("grocy-auto-info")
-    const isAutoDetected = grocyAutoDetected && grocyAutoDetected.style.display !== "none"
+    const isAutoDetected = Boolean(grocyAutoDetected && grocyAutoDetected.style.display !== "none")
+    const url = isAutoDetected && rawUrl.startsWith("/api/hassio_ingress/") ? "" : rawUrl
     if (!url && !isAutoDetected) {
       showToast("settings.grocy_required", "error")
       const urlInput = document.getElementById("grocy-url")
@@ -91,6 +92,10 @@ export function initGrocySettings(): void {
       })
       const data = await res.json()
       if (data.ok) {
+        if (typeof data.url === "string" && data.url) {
+          const urlInput = document.getElementById("grocy-url") as HTMLInputElement | null
+          if (urlInput) urlInput.value = data.url
+        }
         const statusEl = document.getElementById("grocy-status")
         if (statusEl) { statusEl.textContent = "Configured"; statusEl.className = "badge badge-active" }
         const syncBtn = document.getElementById("sync-grocy-now")
@@ -232,7 +237,23 @@ async function hydrateGrocyStatus() {
       const syncBtn = document.getElementById("sync-grocy-now")
       if (syncBtn) syncBtn.style.display = ""
       const openLink = document.getElementById("open-grocy-link") as HTMLAnchorElement | null
-      if (openLink && s.grocy_url) { openLink.href = String(s.grocy_url); openLink.style.display = "" }
+      if (openLink && s.grocy_url) {
+        let showExternalLink = false
+        try {
+          const parsed = new URL(String(s.grocy_url))
+          showExternalLink =
+            (parsed.protocol === "http:" || parsed.protocol === "https:") &&
+            (parsed.hostname.includes(".") || parsed.hostname === "localhost")
+        } catch {
+          showExternalLink = false
+        }
+        if (showExternalLink) {
+          openLink.href = String(s.grocy_url)
+          openLink.style.display = ""
+        } else {
+          openLink.style.display = "none"
+        }
+      }
     }
     const syncRes = await fetch((window.__ingress_path || "") + "/api/grocy/sync", { signal: pageLifecycle.signal })
     if (syncRes.ok) {

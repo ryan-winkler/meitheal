@@ -24,7 +24,9 @@ export const POST: APIRoute = async ({ locals, request }) => {
     } catch { /* empty body = auto-detect */ }
 
     let grocyUrl = body.url?.trim()
+    let legacyIngressHint: string | undefined
     if (grocyUrl && isLegacySupervisorIngressUrl(grocyUrl)) {
+      legacyIngressHint = grocyUrl
       grocyUrl = undefined
     }
     if (grocyUrl) {
@@ -41,7 +43,9 @@ export const POST: APIRoute = async ({ locals, request }) => {
     // If no URL provided, try to detect Grocy addon container URL via Supervisor
     let detectedSlug = "a0d7b954_grocy"
     if (!grocyUrl) {
-      const detected = await resolveSupervisorGrocyAddon()
+      const detected = legacyIngressHint
+        ? await resolveSupervisorGrocyAddon(legacyIngressHint)
+        : await resolveSupervisorGrocyAddon()
       if (detected) {
         grocyUrl = detected.url
         detectedSlug = detected.slug
@@ -73,6 +77,8 @@ export const POST: APIRoute = async ({ locals, request }) => {
       )
       if (supervisorRes?.ok) {
         createRes = supervisorRes
+      } else {
+        await supervisorRes?.body?.cancel().catch(() => undefined)
       }
     } catch { /* Supervisor proxy failed — try direct */ }
 
@@ -83,6 +89,7 @@ export const POST: APIRoute = async ({ locals, request }) => {
         createRes = await fetch(autoKeyTarget.href, { // nosemgrep
           method: "POST",
           redirect: "error",
+          signal: AbortSignal.timeout(5_000),
           headers: {
             "content-type": "application/json",
             accept: "application/json",
@@ -93,10 +100,12 @@ export const POST: APIRoute = async ({ locals, request }) => {
     }
 
     if (!createRes || !createRes.ok) {
+      const failedStatus = createRes?.status
+      await createRes?.body?.cancel().catch(() => undefined)
       return new Response(
         JSON.stringify({
           ok: false,
-          error: `Failed to create API key: ${createRes ? `HTTP ${createRes.status}` : "Connection failed"}. Create one manually in Grocy → Settings → API Keys.`,
+          error: `Failed to create API key: ${failedStatus ? `HTTP ${failedStatus}` : "Connection failed"}. Create one manually in Grocy → Settings → API Keys.`,
         }),
         { status: 200, headers: { "Content-Type": "application/json" } },
       )

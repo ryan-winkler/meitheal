@@ -1019,16 +1019,11 @@ const { locale } = Astro.props
 
       const grocy = addonsData.addons?.find((a) => a.slug.includes("grocy"));
       if (grocy) {
-        // Auto-detected!
+        // Auto-detected! Server resolves the internal container URL directly via Supervisor
         autoInfo.style.display = "block";
         urlGroup.style.display = "none";
         keyGroup.style.display = "none";
         if (customToggle) customToggle.style.display = "";
-
-        // Auto-fill URL from ingress
-        if (grocy.ingress_url) {
-          urlInput.value = grocy.ingress_url;
-        }
 
         // Update badge
         if (statusEl) {

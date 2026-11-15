@@ -9,6 +9,7 @@ import { restoreCustomFramework } from "@domains/strategy/custom-framework-repos
 import { isSecretSetting } from "../../../lib/settings-security"
 import { logApiError, logApiWarn } from "../../../lib/api-logger"
 import { validateFrameworkConfig, validateFrameworkOverrides, type TaskRule, type FrameworkConfig, type FrameworkOverrides } from "@meitheal/domain-strategy"
+import { validateGrocyBaseUrl } from "@meitheal/integration-core"
 import { parseRuleInput, RuleInputError } from "@domains/strategy/rule-input"
 import { readWithinLimit } from "../../../lib/bounded-body"
 import { FEATURE_DEFAULTS } from "../../../lib/feature-flags"
@@ -145,6 +146,21 @@ export const POST: APIRoute = async ({ request, locals }) => {
             // payloads and explicitly marked exports retain literal JSON-looking strings.
             if (legacyEncoded && typeof value === "string") {
                 try { decoded = JSON.parse(value) } catch { /* Preserve legacy plain text. */ }
+            }
+            if (key === "grocy_url" && decoded !== null && decoded !== "") {
+                if (typeof decoded !== "string") {
+                    return invalid("Invalid grocy_url: must be a string")
+                }
+                const trimmedGrocyUrl = decoded.trim()
+                if (!trimmedGrocyUrl) {
+                    decoded = ""
+                } else {
+                    const urlCheck = validateGrocyBaseUrl(trimmedGrocyUrl)
+                    if (!urlCheck.ok) {
+                        return invalid(`Invalid grocy_url: ${urlCheck.error}`)
+                    }
+                    decoded = urlCheck.normalizedUrl
+                }
             }
             entries.push({ key, value: JSON.stringify(decoded) })
         }

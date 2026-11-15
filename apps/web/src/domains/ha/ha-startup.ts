@@ -411,26 +411,27 @@ async function autoStartGrocySync(): Promise<void> {
       args: [],
     });
 
-    const settings: Record<string, string> = {};
+    const settings: Record<string, unknown> = {}
     for (const row of res.rows) {
       if (typeof row.key === "string" && typeof row.value === "string") {
         try {
-          settings[row.key] = JSON.parse(row.value);
+          settings[row.key] = JSON.parse(row.value)
         } catch {
-          settings[row.key] = row.value;
+          settings[row.key] = row.value
         }
       }
     }
 
     const enabled =
-      settings.grocy_sync_enabled === "true" || settings.grocy_sync_enabled === "1";
-    const url = settings.grocy_url;
-    const apiKey = settings.grocy_api_key;
-    const syncMode = (settings.grocy_sync_mode ?? "bidirectional") as
-      | "import"
-      | "export"
-      | "bidirectional";
-    const intervalMs = Number(settings.grocy_sync_interval) || 15 * 60 * 1000;
+      settings.grocy_sync_enabled === true ||
+      settings.grocy_sync_enabled === "true" ||
+      settings.grocy_sync_enabled === "1"
+    const url = typeof settings.grocy_url === "string" ? settings.grocy_url : ""
+    const apiKey = typeof settings.grocy_api_key === "string" ? settings.grocy_api_key : ""
+    const syncMode = (
+      typeof settings.grocy_sync_mode === "string" ? settings.grocy_sync_mode : "bidirectional"
+    ) as "import" | "export" | "bidirectional"
+    const intervalMs = Number(settings.grocy_sync_interval) || 15 * 60 * 1000
 
     if (!enabled || !url || !apiKey) {
       logger.log("info", {
@@ -439,20 +440,30 @@ async function autoStartGrocySync(): Promise<void> {
         component: "ha-startup",
         request_id: SYS_REQ,
         message: `Grocy sync not configured (enabled: ${enabled}, url: ${url ? "set" : "missing"}, key: ${apiKey ? "set" : "missing"})`,
-      });
-      return;
+      })
+      return
     }
 
-    // Import and start Grocy sync bridge
-    const { GrocyAdapter } = await import("@meitheal/integration-core");
-    const { startGrocySync } = await import("@domains/grocy");
+    // Validate & migrate Grocy URL through createGrocyClient before starting sync bridge
+    const { createGrocyClient } = await import("../../lib/grocy-client")
+    const { startGrocySync } = await import("@domains/grocy")
 
-    const adapter = new GrocyAdapter({ baseUrl: url, apiKey });
+    const adapter = await createGrocyClient()
+    if (!adapter) {
+      logger.log("warn", {
+        event: "ha.startup.grocy.skipped",
+        domain: "integrations",
+        component: "ha-startup",
+        request_id: SYS_REQ,
+        message: "Grocy sync skipped due to invalid or unresolvable Grocy configuration",
+      })
+      return
+    }
 
     startGrocySync(
       { syncEnabled: true, syncMode, intervalMs },
       adapter,
-    );
+    )
 
     logger.log("info", {
       event: "ha.startup.grocy.started",

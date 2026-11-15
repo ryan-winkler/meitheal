@@ -2,6 +2,7 @@ import type { APIRoute } from "astro"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import { AI_HANDOFF_SETTING_KEYS, saveAiHandoffSettings, saveLegacyAiHandoffUrl, SettingsRepository } from "@domains/tasks/persistence/settings-repository"
 import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability"
+import { validateGrocyBaseUrl } from "@meitheal/integration-core"
 import { currentSettingsAccess } from "../../lib/current-settings-access"
 import { parseAiHandoffUrl } from "../../lib/ai-handoff-url"
 import { apiError, apiJson, apiProblem } from "../../lib/api-response"
@@ -181,7 +182,24 @@ export const PUT: APIRoute = async ({ request, locals }) => {
       return apiProblem({ status: 400, detail: "Use a text value or null for a credential." })
     }
 
-    const value = JSON.stringify(body.value ?? null)
+    let normalizedSettingValue: unknown = body.value ?? null
+    if (key === "grocy_url" && normalizedSettingValue !== null && normalizedSettingValue !== "") {
+      if (typeof normalizedSettingValue !== "string") {
+        return apiError("Invalid Grocy URL format", 400)
+      }
+      const trimmedGrocyUrl = normalizedSettingValue.trim()
+      if (!trimmedGrocyUrl) {
+        normalizedSettingValue = ""
+      } else {
+        const urlCheck = validateGrocyBaseUrl(trimmedGrocyUrl)
+        if (!urlCheck.ok) {
+          return apiError(urlCheck.error, 400)
+        }
+        normalizedSettingValue = urlCheck.normalizedUrl
+      }
+    }
+
+    const value = JSON.stringify(normalizedSettingValue)
     const maxSize = key === "custom_theme_css" ? 65536 : 10240
     if (value.length > maxSize) {
       return apiError(`value exceeds ${maxSize > 10240 ? "64KB" : "10KB"} limit`, 400)
@@ -210,7 +228,7 @@ export const PUT: APIRoute = async ({ request, locals }) => {
     }
     return settingsJson({
       key,
-      value: secret ? (body.value ? REDACTED_SETTING_VALUE : null) : body.value,
+      value: secret ? (normalizedSettingValue ? REDACTED_SETTING_VALUE : null) : normalizedSettingValue,
       updated_at: Date.now(),
     })
   } catch (err) {
