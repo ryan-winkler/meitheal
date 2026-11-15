@@ -109,6 +109,18 @@ export function startGrocySync(config: GrocySyncConfig, adapter: GrocyAdapter): 
   });
 }
 
+const stopListeners = new Set<() => void>();
+
+/**
+ * Register a callback invoked whenever `stopGrocySync()` runs.
+ */
+export function onGrocySyncStopped(listener: () => void): () => void {
+  stopListeners.add(listener);
+  return () => {
+    stopListeners.delete(listener);
+  };
+}
+
 /**
  * Stop Grocy sync and clean up timer.
  */
@@ -119,6 +131,9 @@ export function stopGrocySync(): void {
   }
   state.config.syncEnabled = false;
   state.adapter = null;
+  for (const listener of stopListeners) {
+    listener();
+  }
 }
 
 /**

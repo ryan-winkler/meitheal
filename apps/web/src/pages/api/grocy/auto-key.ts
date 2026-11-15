@@ -148,7 +148,13 @@ export const POST: APIRoute = async ({ locals, request }) => {
       rawData && typeof rawData === "object" && !Array.isArray(rawData)
         ? (rawData as Record<string, unknown>)
         : {}
-    const apiKey = String(createData.created_object_id ?? createData.api_key ?? "")
+    const rawKey = createData.created_object_id ?? createData.api_key
+    const apiKey =
+      typeof rawKey === "string"
+        ? rawKey.trim()
+        : typeof rawKey === "number" && Number.isFinite(rawKey)
+          ? String(rawKey)
+          : ""
 
     if (!apiKey) {
       return new Response(

@@ -276,8 +276,9 @@ function isIsatapHextets(h: number[]): boolean {
 
 /** True when an IPv6 literal embeds or translates an IPv4 target (mapped, SIIT, NAT64, 6to4, ISATAP). */
 export function isIpv4TranslationIpv6Host(host: string): boolean {
-  if (!host.includes(":")) return false
-  const h = parseIpv6Hextets(host)
+  const normalized = normalizeNetworkHost(host)
+  if (!normalized.includes(":")) return false
+  const h = parseIpv6Hextets(normalized)
   if (!h) return true
   if (isAllZeroHextets(h, 0, 5) && h[5] === 0xffff) return true
   if (isAllZeroHextets(h, 0, 4) && h[4] === 0xffff && h[5] === 0) return true
@@ -472,6 +473,17 @@ export function validateGrocyBaseUrl(rawUrl: string): GrocyUrlValidationResult {
   return { ok: true, normalizedUrl: parsed.toString().replace(/\/$/, "") }
 }
 
+class GrocyInvalidResponseError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = "GrocyInvalidResponseError"
+  }
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value)
+}
+
 // --- Adapter ---
 
 export class GrocyAdapter {
@@ -494,17 +506,27 @@ export class GrocyAdapter {
    */
   async getSystemInfo(): Promise<GrocyResult<GrocySystemInfo>> {
     return this.request<GrocySystemInfo>("GET", "/api/system/info", undefined, (raw) => {
-      const r = raw as Record<string, unknown>
-      const versionInfo = r.grocy_version_info as Record<string, string> | undefined
+      if (!isPlainRecord(raw)) {
+        throw new GrocyInvalidResponseError("Grocy GET /api/system/info: invalid JSON system info response")
+      }
+      const versionInfo = isPlainRecord(raw.grocy_version_info)
+        ? raw.grocy_version_info
+        : isPlainRecord(raw.grocy_version)
+          ? raw.grocy_version
+          : null
+      const rawVersion = versionInfo?.Version
+      if (typeof rawVersion !== "string" || !rawVersion.trim()) {
+        throw new GrocyInvalidResponseError("Grocy GET /api/system/info: invalid JSON system info response")
+      }
       return {
         grocyVersionInfo: {
-          Version: versionInfo?.Version ?? "unknown",
-          ReleaseDate: versionInfo?.ReleaseDate ?? "unknown",
+          Version: rawVersion.trim(),
+          ReleaseDate: typeof versionInfo?.ReleaseDate === "string" ? versionInfo.ReleaseDate : "unknown",
         },
-        phpVersion: String(r.php_version ?? "unknown"),
-        sqliteVersion: String(r.sqlite_version ?? "unknown"),
-        os: String(r.os ?? "unknown"),
-        client: String(r.client ?? "unknown"),
+        phpVersion: String(raw.php_version ?? "unknown"),
+        sqliteVersion: String(raw.sqlite_version ?? "unknown"),
+        os: String(raw.os ?? "unknown"),
+        client: String(raw.client ?? "unknown"),
       }
     })
   }
@@ -690,8 +712,10 @@ export class GrocyAdapter {
         done: 0,
       },
       (raw) => {
-        const r = raw as Record<string, unknown>
-        return { taskId: Number(r.created_object_id ?? r.id ?? 0) }
+        if (!isPlainRecord(raw)) {
+          throw new GrocyInvalidResponseError("Grocy POST /api/objects/tasks: invalid JSON response")
+        }
+        return { taskId: Number(raw.created_object_id ?? raw.id ?? 0) }
       }
     )
   }
@@ -853,6 +877,15 @@ export class GrocyAdapter {
         }
       }
 
+      if (error instanceof GrocyInvalidResponseError) {
+        return {
+          ok: false,
+          errorCode: "invalid_request",
+          retryable: false,
+          message: error.message,
+        }
+      }
+
       const cause = error instanceof Error ? error.cause : undefined
       if (error instanceof OutboundUrlError || cause instanceof OutboundUrlError) {
         const outboundErr = error instanceof OutboundUrlError ? error : (cause as OutboundUrlError)
@@ -906,8 +939,20 @@ export class GrocyAdapter {
       "/api/objects/api_keys",
       { key_type: "default" },
       (raw) => {
-        const r = raw as Record<string, unknown>
-        return { apiKey: String(r.created_object_id ?? r.api_key ?? "") }
+        if (!isPlainRecord(raw)) {
+          throw new GrocyInvalidResponseError("Grocy POST /api/objects/api_keys: invalid JSON response")
+        }
+        const rawKey = raw.created_object_id ?? raw.api_key
+        const apiKey =
+          typeof rawKey === "string"
+            ? rawKey.trim()
+            : typeof rawKey === "number" && Number.isFinite(rawKey)
+              ? String(rawKey)
+              : ""
+        if (!apiKey) {
+          throw new GrocyInvalidResponseError("Grocy POST /api/objects/api_keys: missing API key in response")
+        }
+        return { apiKey }
       }
     )
   }

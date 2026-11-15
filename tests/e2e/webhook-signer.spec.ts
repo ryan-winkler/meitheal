@@ -227,12 +227,27 @@ test.describe("Private URL Guard", () => {
 
   test("GrocyAdapter and POST /api/grocy/test reject blocked URLs and report HTTP 3xx with retryable: false instead of following redirects", async () => {
     const hits: string[] = []
-    let mode: "redirect" | "ok" = "redirect"
+    let mode: "redirect" | "ok" | "html" | "nested_key" = "redirect"
     const originalLookup = dns.lookup
     let server: Server | undefined
     try {
       server = createServer((req, res) => {
         hits.push(req.url ?? "")
+        if (mode === "html") {
+          res.writeHead(200, { "content-type": "text/html" })
+          res.end("<html>login</html>")
+          return
+        }
+        if (mode === "nested_key" && req.url === "/api/objects/api_keys") {
+          res.writeHead(200, { "content-type": "application/json" })
+          res.end(JSON.stringify({ created_object_id: { nested: 1 } }))
+          return
+        }
+        if (req.url === "/api/objects/api_keys") {
+          res.writeHead(200, { "content-type": "application/json" })
+          res.end(JSON.stringify({ created_object_id: 77 }))
+          return
+        }
         if (mode === "redirect" && req.url === "/api/system/info") {
           res.writeHead(302, { location: "/redirected" })
           res.end()
@@ -260,6 +275,24 @@ test.describe("Private URL Guard", () => {
         expect(result.retryable).toBe(false)
       }
       expect(hits).toEqual(["/api/system/info"])
+
+      mode = "html"
+      const htmlSys = await adapter.getSystemInfo()
+      expect(htmlSys).toMatchObject({ ok: false, errorCode: "invalid_request", retryable: false })
+      const htmlTask = await adapter.createTask("Test task")
+      expect(htmlTask).toMatchObject({ ok: false, errorCode: "invalid_request", retryable: false })
+      const htmlKey = await adapter.createApiKey()
+      expect(htmlKey).toMatchObject({ ok: false, errorCode: "invalid_request", retryable: false })
+
+      mode = "nested_key"
+      const nestedKey = await adapter.createApiKey()
+      expect(nestedKey).toMatchObject({ ok: false, errorCode: "invalid_request", retryable: false })
+
+      mode = "ok"
+      const numKey = await adapter.createApiKey()
+      expect(numKey).toEqual({ ok: true, data: { apiKey: "77" } })
+      hits.length = 0
+      mode = "redirect"
 
       const { POST } = await import("../../apps/web/src/pages/api/grocy/test")
       for (const badBody of ["null", JSON.stringify({ url: 12345 }), JSON.stringify({ url: "https://grocy.example.com", api_key: 12345 })]) {
@@ -459,6 +492,12 @@ test.describe("Private URL Guard", () => {
         if (target === "https://grocy.example.com/html/api/objects/api_keys") {
           return new Response("<html>login</html>", { status: 200, headers: { "content-type": "text/html" } })
         }
+        if (target === "https://grocy.example.com/obj/api/objects/api_keys") {
+          return Response.json({ created_object_id: { nested: 1 } })
+        }
+        if (target === "https://grocy.example.com/num/api/objects/api_keys") {
+          return Response.json({ created_object_id: 999 })
+        }
         if (target.startsWith("http://supervisor")) {
           throw new Error(`Unexpected direct Supervisor fetch: ${target}`)
         }
@@ -576,6 +615,29 @@ test.describe("Private URL Guard", () => {
       } as unknown as Parameters<typeof postAutoKey>[0])
       expect(htmlAutoRes.status).toBe(200)
       expect(((await htmlAutoRes.json()) as { ok: boolean }).ok).toBe(false)
+
+      // Non-primitive JSON key payload is rejected (never coerced to "[object Object]"), while finite numeric IDs succeed
+      const objAutoRes = await postAutoKey({
+        locals: { hassIsAdmin: true },
+        request: new Request("http://localhost/api/grocy/auto-key", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ url: "https://grocy.example.com/obj" }),
+        }),
+      } as unknown as Parameters<typeof postAutoKey>[0])
+      expect(objAutoRes.status).toBe(200)
+      expect(((await objAutoRes.json()) as { ok: boolean }).ok).toBe(false)
+
+      const numAutoRes = await postAutoKey({
+        locals: { hassIsAdmin: true },
+        request: new Request("http://localhost/api/grocy/auto-key", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ url: "https://grocy.example.com/num" }),
+        }),
+      } as unknown as Parameters<typeof postAutoKey>[0])
+      expect(numAutoRes.status).toBe(200)
+      expect(((await numAutoRes.json()) as { ok: boolean }).ok).toBe(true)
 
       // Seed RAW unquoted pre-PR auto-key values ("http://supervisor/..." and numeric "1") to verify
       // SettingsRepository.getByKey, createGrocyClient, GET /api/grocy/settings, and POST /api/grocy/test upgrade safely

@@ -175,6 +175,7 @@ test.describe("outbound policy", () => {
       "http://[fd00:ec2::254]/",
       ["http://user", "secret@example.com/hook"].join(":"),
       "http://user@example.com/hook",
+      "https://example.com../hook",
       "http://[64:ff9b::0.0.0.1]/",
     ]) {
       expect(() => assertOutboundUrl(url), url).toThrow(OutboundUrlError)

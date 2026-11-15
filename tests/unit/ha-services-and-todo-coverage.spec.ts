@@ -409,13 +409,29 @@ test("HA connection, services, users, todo-bridge, and ha-startup work against l
     expect(grocyBridge.getActiveGrocySyncConfig()?.intervalMs).toBe(0)
     expect(recordedCommands.length).toBeGreaterThan(0)
 
-    // Bounded startup retry when a legacy Supervisor ingress URL is temporarily unresolvable on boot
+    // Bounded startup retry when a legacy Supervisor ingress URL is temporarily unresolvable on boot,
+    // and disabling Grocy sync cancels any pending retry so sync stays off even if URL becomes valid.
     grocyBridge.stopGrocySync()
     await client.execute({
       sql: "UPDATE settings SET value = ?, updated_at = ? WHERE key = 'grocy_url'",
       args: [JSON.stringify("http://supervisor/api/hassio_ingress/tok_retry"), now],
     })
-    await haStartup.autoStartGrocySync(0, 15)
+    await haStartup.autoStartGrocySync(0, 20)
+    expect(grocyBridge.getGrocySyncStatus().active).toBe(false)
+    await client.execute({
+      sql: "UPDATE settings SET value = ?, updated_at = ? WHERE key = 'grocy_url'",
+      args: [JSON.stringify(`http://grocy.local:${port}`), now],
+    })
+    const { POST: postGrocySync } = await import("../../apps/web/src/pages/api/grocy/sync")
+    const disableRes = await postGrocySync({
+      request: new Request("http://localhost/api/grocy/sync", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "disable" }),
+      }),
+    } as unknown as Parameters<typeof postGrocySync>[0])
+    expect(disableRes.status).toBe(200)
+    await new Promise<void>((resolve) => setTimeout(resolve, 45))
     expect(grocyBridge.getGrocySyncStatus().active).toBe(false)
     haStartup.clearGrocyStartupRetry()
   } finally {

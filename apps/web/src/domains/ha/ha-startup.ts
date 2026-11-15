@@ -400,12 +400,19 @@ async function autoStartCalendarSync(): Promise<void> {
 const MAX_GROCY_STARTUP_RETRIES = 3
 const GROCY_STARTUP_RETRY_DELAY_MS = 30_000
 let grocyStartupRetryTimer: ReturnType<typeof setTimeout> | null = null
+let grocyStartupEpoch = 0
+let grocyStopHookRegistered = false
 
-export function clearGrocyStartupRetry(): void {
+function resetGrocyStartupRetryTimer(): void {
   if (grocyStartupRetryTimer !== null) {
     clearTimeout(grocyStartupRetryTimer)
     grocyStartupRetryTimer = null
   }
+}
+
+export function clearGrocyStartupRetry(): void {
+  grocyStartupEpoch++
+  resetGrocyStartupRetryTimer()
 }
 
 function redactUrlForLog(rawUrl: string): string {
@@ -429,6 +436,13 @@ export async function autoStartGrocySync(
   retryDelayMs = GROCY_STARTUP_RETRY_DELAY_MS,
 ): Promise<void> {
   try {
+    const { getGrocySyncStatus, onGrocySyncStopped, startGrocySync } = await import("@domains/grocy")
+    if (!grocyStopHookRegistered) {
+      onGrocySyncStopped(clearGrocyStartupRetry)
+      grocyStopHookRegistered = true
+    }
+    const runEpoch = grocyStartupEpoch
+
     const client = await getDB()
 
     // Read grocy sync settings
@@ -436,6 +450,7 @@ export async function autoStartGrocySync(
       sql: "SELECT key, value FROM settings WHERE key IN ('grocy_url', 'grocy_api_key', 'grocy_sync_enabled', 'grocy_sync_mode', 'grocy_sync_interval')",
       args: [],
     })
+    if (runEpoch !== grocyStartupEpoch) return
 
     const settings: Record<string, unknown> = {}
     for (const row of res.rows) {
@@ -475,7 +490,7 @@ export async function autoStartGrocySync(
     const intervalMs = Number.isFinite(rawInterval) && rawInterval >= 0 ? rawInterval : 15 * 60 * 1000
 
     if (!enabled || !url || !apiKey) {
-      clearGrocyStartupRetry()
+      resetGrocyStartupRetryTimer()
       logger.log("info", {
         event: "ha.startup.grocy.skipped",
         domain: "integrations",
@@ -488,14 +503,15 @@ export async function autoStartGrocySync(
 
     // Validate & migrate Grocy URL through createGrocyClient before starting sync bridge
     const { createGrocyClient, isLegacySupervisorIngressUrl } = await import("../../lib/grocy-client")
-    const { getGrocySyncStatus, startGrocySync } = await import("@domains/grocy")
 
     if (retryAttempt > 0 && getGrocySyncStatus().active) {
-      clearGrocyStartupRetry()
+      resetGrocyStartupRetryTimer()
       return
     }
 
     const adapter = await createGrocyClient()
+    if (runEpoch !== grocyStartupEpoch) return
+
     if (!adapter) {
       const canRetryLegacy =
         isLegacySupervisorIngressUrl(url) &&
@@ -513,6 +529,7 @@ export async function autoStartGrocySync(
       if (canRetryLegacy) {
         grocyStartupRetryTimer = setTimeout(() => {
           grocyStartupRetryTimer = null
+          if (runEpoch !== grocyStartupEpoch) return
           void autoStartGrocySync(retryAttempt + 1, retryDelayMs)
         }, retryDelayMs)
         grocyStartupRetryTimer.unref?.()
@@ -520,7 +537,7 @@ export async function autoStartGrocySync(
       return
     }
 
-    clearGrocyStartupRetry()
+    resetGrocyStartupRetryTimer()
     startGrocySync(
       { syncEnabled: true, syncMode, intervalMs },
       adapter,

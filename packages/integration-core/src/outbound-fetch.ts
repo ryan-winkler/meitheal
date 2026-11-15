@@ -289,7 +289,7 @@ export function assertOutboundUrl(raw: string | URL, options: OutboundPolicyOpti
   }
   const host = normalizeHostname(url.hostname)
   if (!host) throw new OutboundUrlError("URL has no host")
-  if (isBlockedHostname(host)) {
+  if (isBlockedHostname(url.hostname)) {
     throw new OutboundUrlError(`Host "${host}" is not an allowed integration target`)
   }
   if (isBlockedOutboundAddress(host)) {

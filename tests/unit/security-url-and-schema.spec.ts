@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test"
 
 import { resolveMcpSchema } from "../../apps/web/src/domains/agents/mcp-schema"
 import { validateCalDAVUrl } from "../../apps/web/src/domains/calendar/caldav-client"
-import { validateGrocyBaseUrl } from "../../packages/integration-core/src/grocy-adapter"
+import { isIpv4TranslationIpv6Host, validateGrocyBaseUrl } from "../../packages/integration-core/src/grocy-adapter"
 
 test("validateCalDAVUrl blocks IPv6 loopback brackets, IPv4-mapped IPv6, compressed ULA, and link-local metadata while allowing public fd domains", () => {
   for (const blocked of [
@@ -20,6 +20,7 @@ test("validateCalDAVUrl blocks IPv6 loopback brackets, IPv4-mapped IPv6, compres
     "http://127.1../dav",
     "http://0x7f.1../dav",
     "http://2852039166../dav",
+    "https://caldav.example.com../dav",
     "http://[fd00::1]:8080/dav",
     "http://[2001:db8::1]:8080/dav",
     "http://[fe80::1%25eth0]:8080/dav",
@@ -107,6 +108,9 @@ test("validateGrocyBaseUrl blocks metadata hosts, IPv6 loopback, IPv4-mapped IPv
     ok: true,
     normalizedUrl: "https://[::ffff:808:808]:9283",
   })
+  expect(isIpv4TranslationIpv6Host("[2606:4700:4700::1111]")).toBe(false)
+  expect(isIpv4TranslationIpv6Host("2606:4700:ABCD::1")).toBe(false)
+  expect(isIpv4TranslationIpv6Host("[::FFFF:8.8.8.8]")).toBe(true)
 })
 
 test("resolveMcpSchema rejects prototype pollution segments and expands escaped local $refs", () => {
