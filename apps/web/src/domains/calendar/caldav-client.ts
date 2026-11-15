@@ -662,10 +662,11 @@ function applyThisAndFutureOverride(
   occ: { start: string; end?: string | undefined; inclusiveEndDate?: string | undefined },
 ): CalDAVEvent {
   const timezone = safeTimeZone(master.tzid)
+  const allDay = master.allDay
   const delta =
     wallClockMs(override.dtstart, timezone, override.allDay) -
     wallClockMs(override.recurrenceId!, timezone, override.allDay)
-  const start = shiftWallClock(occ.start, delta, timezone, master.allDay)
+  const start = shiftWallClock(occ.start, delta, timezone, allDay)
   const result: CalDAVEvent = {
     ...master,
     summary: override.summary || master.summary,
@@ -675,20 +676,42 @@ function applyThisAndFutureOverride(
     dtend: occ.end,
     inclusiveEndDate: occ.inclusiveEndDate ?? master.inclusiveEndDate,
   }
-  if (occ.end) {
-    if (override.dtend && !master.allDay && /Z$/.test(start)) {
-      const durationMs = Date.parse(override.dtend) - Date.parse(override.dtstart)
-      result.dtend = Number.isFinite(durationMs) && durationMs > 0
-        ? new Date(Date.parse(start) + durationMs).toISOString().replace(/\.\d{3}Z$/, "Z")
-        : shiftWallClock(occ.end, delta, timezone, master.allDay)
-    } else {
-      result.dtend = shiftWallClock(occ.end, delta, timezone, master.allDay)
+  // The override's own length applies to every later instance, including when it adds an end
+  // the master never had. Without an override end, the master's length is kept.
+  const overrideSpan = override.dtend
+    ? wallClockMs(override.dtend, timezone, override.allDay) - wallClockMs(override.dtstart, timezone, override.allDay)
+    : null
+  if (overrideSpan !== null && Number.isFinite(overrideSpan) && overrideSpan >= 0) {
+    const end = shiftWallClock(start, overrideSpan, timezone, allDay)
+    result.dtend = end
+    if (allDay) {
+      // iCalendar all-day DTEND is exclusive.
+      result.inclusiveEndDate = end > start ? shiftCalendarDay(end, -1) : start
+    }
+  } else {
+    if (occ.end) result.dtend = shiftWallClock(occ.end, delta, timezone, allDay)
+    if (allDay && occ.inclusiveEndDate) {
+      result.inclusiveEndDate = shiftWallClock(occ.inclusiveEndDate, delta, timezone, true)
     }
   }
-  if (master.allDay && occ.inclusiveEndDate) {
-    result.inclusiveEndDate = shiftWallClock(occ.inclusiveEndDate, delta, timezone, true)
-  }
   return result
+}
+
+/** Whether an expanded instance overlaps [windowStart, windowEnd] (all-day ends are exclusive). */
+function instanceOverlapsWindow(
+  evt: { dtstart: string; dtend?: string | undefined; inclusiveEndDate?: string | undefined; allDay: boolean },
+  windowStart: Date,
+  windowEnd: Date,
+): boolean {
+  if (evt.allDay) {
+    const startMs = Date.parse(evt.dtstart.slice(0, 10))
+    const endMs = Date.parse((evt.inclusiveEndDate ?? evt.dtstart).slice(0, 10)) + 86_400_000
+    return endMs > windowStart.getTime() && startMs <= windowEnd.getTime()
+  }
+  const startMs = Date.parse(evt.dtstart)
+  if (Number.isNaN(startMs)) return true
+  const endMs = evt.dtend ? Date.parse(evt.dtend) : startMs
+  return (Number.isNaN(endMs) ? startMs : endMs) >= windowStart.getTime() && startMs <= windowEnd.getTime()
 }
 
 /** Expand RRULE recurring events and apply EXDATE / RECURRENCE-ID overrides within [start, end]. */
@@ -734,32 +757,44 @@ export function expandCalDAVEventsInWindow(
       const combinedExdates = [...(master.exdates ?? []), ...overrideExdates]
 
       if (master.rrule) {
+        // Ranges (THISANDFUTURE) can move instances across the window edge in either direction,
+        // so expand a wider window and check the moved instances against the requested one.
+        const rangeOverrides = overrides
+          .filter((o) => o.recurrenceRange === "THISANDFUTURE" && o.recurrenceId)
+          .sort((a, b) => Date.parse(a.recurrenceId!) - Date.parse(b.recurrenceId!))
+        const timezone = safeTimeZone(master.tzid)
+        const maxShiftMs = rangeOverrides.reduce((max, o) => {
+          if (o.cancelled) return max
+          const shift = Math.abs(
+            wallClockMs(o.dtstart, timezone, o.allDay) - wallClockMs(o.recurrenceId!, timezone, o.allDay),
+          )
+          return Number.isFinite(shift) ? Math.max(max, shift) : max
+        }, 0)
+        const padMs = rangeOverrides.length > 0 ? maxShiftMs + 2 * 86_400_000 : 0
         const occs = expandRRuleOccurrences({
           dtstart: master.dtstart,
           dtend: master.dtend,
           rrule: master.rrule,
           exdates: combinedExdates,
           allDay: master.allDay,
-          timezone: safeTimeZone(master.tzid),
-          windowStart: start,
-          windowEnd: end,
+          timezone,
+          windowStart: new Date(start.getTime() - padMs),
+          windowEnd: new Date(end.getTime() + padMs),
         })
-        const rangeOverrides = overrides
-          .filter((o) => o.recurrenceRange === "THISANDFUTURE" && !o.cancelled && o.recurrenceId)
-          .sort((a, b) => Date.parse(a.recurrenceId!) - Date.parse(b.recurrenceId!))
         for (const occ of occs) {
           const occMs = Date.parse(occ.start)
           const range = [...rangeOverrides].reverse().find((o) => Date.parse(o.recurrenceId!) <= occMs)
-          if (range) {
-            expanded.push(applyThisAndFutureOverride(master, range, occ))
-            continue
-          }
-          expanded.push({
-            ...master,
-            dtstart: occ.start,
-            dtend: occ.end,
-            inclusiveEndDate: occ.inclusiveEndDate ?? master.inclusiveEndDate,
-          })
+          // A cancelled range removes its instance and every later one.
+          if (range?.cancelled) continue
+          const instance: CalDAVEvent = range
+            ? applyThisAndFutureOverride(master, range, occ)
+            : {
+              ...master,
+              dtstart: occ.start,
+              dtend: occ.end,
+              inclusiveEndDate: occ.inclusiveEndDate ?? master.inclusiveEndDate,
+            }
+          if (padMs === 0 || instanceOverlapsWindow(instance, start, end)) expanded.push(instance)
         }
       } else {
         const occs = expandRRuleOccurrences({

@@ -116,7 +116,9 @@ test.describe("Calendar Shell", () => {
     // This test creates a task, so it only runs against the disposable fixture.
     test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the disposable Meitheal fixture")
 
-    const today = new Date().toISOString().slice(0, 10)
+    // The calendar shows the month of the fixture's Europe/Dublin "today", which is not the
+    // UTC date around midnight, so create the task on that day.
+    const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Dublin" }).format(new Date())
     const created = await request.post("/api/tasks", { data: { title: "Single calendar summary task", due_date: today } })
     expect(created.status(), await created.text()).toBe(201)
     const taskId = (await created.json()).id as string
@@ -124,6 +126,8 @@ test.describe("Calendar Shell", () => {
       await page.goto("/calendar")
       await page.waitForLoadState("networkidle")
       const summaryText = await page.locator("#calendar-signal-summary").innerText()
+      // The fixture starts empty, so the month holds exactly this one task on one day.
+      expect(summaryText).toMatch(/\b1 item across 1 day\b/)
       expect(summaryText).not.toMatch(/\b1 items\b/)
       expect(summaryText).not.toMatch(/\b1 days\b/)
       expect(summaryText).not.toMatch(/\b1 HA events\b/)

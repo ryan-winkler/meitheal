@@ -2810,7 +2810,22 @@ export class TaskRepository {
                 const nowMs = mutation.updatedAt ?? Date.now()
                 step = "task_update"
 
-                if (mutation.confirmation?.source === "ha_todo" && mutation.confirmation.requireUnmodifiedSinceSync) {
+                // The plan was made for the status the task had when it was read. If the user
+                // completed or reopened it since, the plan no longer fits, so skip the update and
+                // leave the saved baseline alone; the next sync plans again from the current state.
+                let staleSnapshot = false
+                if (mutation.expected !== undefined && "status" in mutation.expected) {
+                  const [fresh] = yield [{
+                    sql: "SELECT 1 AS present FROM tasks WHERE id = ? AND status IS ?",
+                    args: [mutation.taskId, (mutation.expected.status ?? null) as InValue],
+                  }]
+                  staleSnapshot = (fresh?.rows.length ?? 0) === 0
+                }
+
+                if (staleSnapshot) {
+                  yield [`RELEASE SAVEPOINT ${sp}`]
+                  skipped++
+                } else if (mutation.confirmation?.source === "ha_todo" && mutation.confirmation.requireUnmodifiedSinceSync) {
                   const taskVersion = taskTimestampMs("tasks.updated_at")
                   const linkArgs: InValue[] = [
                     mutation.confirmation.confirmationId ?? "",

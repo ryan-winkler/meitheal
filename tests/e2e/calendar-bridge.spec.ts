@@ -629,6 +629,18 @@ test("HA sync keys ID-less series on HA wall clock, leaves unchanged tasks alone
   }
 })
 
+// Time of day in Europe/Dublin for an instant, and Dublin's UTC offset on a day. Both change
+// with daylight saving, so tests that depend on household time derive them instead of
+// assuming the winter values.
+function dublinClock(iso: string): string {
+  return new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Dublin", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(iso))
+}
+
+function dublinOffsetHours(day: string): number {
+  const hour = Number(new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Dublin", hour: "2-digit", hour12: false }).format(new Date(`${day}T12:00:00Z`)))
+  return hour - 12
+}
+
 test("HA sync adopts an ID-less series saved under the earlier household-time key even if it is completed and renamed", async () => {
   const previous = Object.fromEntries(["MEITHEAL_DB_URL", "SUPERVISOR_TOKEN", "HA_BASE_URL", "HA_TOKEN"].map((k) => [k, process.env[k]]))
   const directory = await mkdtemp(join(tmpdir(), "meitheal-cal-prior-key-"))
@@ -664,7 +676,7 @@ test("HA sync adopts an ID-less series saved under the earlier household-time ke
     // complete and rename the task so only the key can find it again.
     await db.execute({
       sql: "UPDATE calendar_confirmations SET provider_event_id = ? WHERE task_id = ? AND source = 'ha.calendar_sync'",
-      args: ["ha-cal-series-calendar.household-swim::23:00", swimId],
+      args: [`ha-cal-series-calendar.household-swim::${dublinClock(`${todayStr}T18:00:00-05:00`)}`, swimId],
     })
     await repo.updateTask(swimId, { title: "Swim (renamed)", status: "complete" })
 
@@ -712,6 +724,8 @@ test("HA sync keeps two ID-less series that share an earlier household-time key 
     expect(await getHAConnection()).not.toBeNull()
     const todayStr = calendarToday("Europe/Dublin")
     const d7 = shiftCalendarDay(todayStr, 7)
+    // B is written so that its Dublin time is exactly 23:00, the key the evening series holds.
+    const sharedHour = String(18 - dublinOffsetHours(todayStr)).padStart(2, "0")
     const evening = [
       { summary: "Swim", start: `${todayStr}T23:00:00-05:00`, end: `${shiftCalendarDay(todayStr, 1)}T00:00:00-05:00` },
       { summary: "Swim", start: `${d7}T23:00:00-05:00`, end: `${shiftCalendarDay(d7, 1)}T00:00:00-05:00` },
@@ -725,8 +739,8 @@ test("HA sync keeps two ID-less series that share an earlier household-time key 
     // A second series at 18:00-05:00 is 23:00 in Dublin, the key the evening series now holds.
     ha.setCalendarEvents([
       ...evening,
-      { summary: "Swim", start: `${todayStr}T18:00:00-05:00`, end: `${todayStr}T19:00:00-05:00` },
-      { summary: "Swim", start: `${d7}T18:00:00-05:00`, end: `${d7}T19:00:00-05:00` },
+      { summary: "Swim", start: `${todayStr}T${sharedHour}:00:00-05:00`, end: `${todayStr}T${sharedHour}:30:00-05:00` },
+      { summary: "Swim", start: `${d7}T${sharedHour}:00:00-05:00`, end: `${d7}T${sharedHour}:30:00-05:00` },
     ])
     await syncFromHA("calendar.household")
     const both = await db.execute({ sql: "SELECT id FROM tasks WHERE title = 'Swim' ORDER BY created_at", args: [] })
@@ -736,10 +750,10 @@ test("HA sync keeps two ID-less series that share an earlier household-time key 
       sql: "SELECT provider_event_id FROM calendar_confirmations WHERE source = 'ha.calendar_sync' ORDER BY provider_event_id",
       args: [],
     })
-    expect(keys.rows.map((row) => String(row.provider_event_id))).toEqual([
-      "ha-cal-series-calendar.household-swim::18:00",
+    expect(keys.rows.map((row) => String(row.provider_event_id)).sort()).toEqual([
+      `ha-cal-series-calendar.household-swim::${sharedHour}:00`,
       "ha-cal-series-calendar.household-swim::23:00",
-    ])
+    ].sort())
   } finally {
     stopCalendarSync()
     stopEntitySubscription()
@@ -784,6 +798,24 @@ test("sync updates skip fields edited after the planner read its snapshot", asyn
     const row = await db.execute({ sql: "SELECT title, due_date FROM tasks WHERE id = 'snap-1'", args: [] })
     expect(String(row.rows[0]?.title)).toBe("Edited by hand")
     expect(String(row.rows[0]?.due_date)).toBe("2026-12-02")
+
+    // The task was open when the plan was made and has been completed since: the plan no
+    // longer fits, so the update is skipped as a whole.
+    await db.execute({ sql: "UPDATE tasks SET status = 'complete', due_date = '2026-12-01' WHERE id = 'snap-1'", args: [] })
+    const stale = await repo.commitSyncMutationChunks([
+      {
+        kind: "update",
+        taskId: "snap-1",
+        dueDate: "2026-12-08",
+        updateDueDate: true,
+        expected: { status: "pending", dueDate: "2026-12-01" },
+      },
+    ])
+    expect(stale.skipped).toBe(1)
+    expect(stale.updated).toBe(0)
+    const afterStale = await db.execute({ sql: "SELECT status, due_date FROM tasks WHERE id = 'snap-1'", args: [] })
+    expect(String(afterStale.rows[0]?.status)).toBe("complete")
+    expect(String(afterStale.rows[0]?.due_date)).toBe("2026-12-01")
   } finally {
     db.close()
     resetPersistenceForTests()
@@ -1003,6 +1035,65 @@ test("HA sync leaves completed tasks alone, keeps user-added repeats on old impo
     const secondSwim = await db.execute({ sql: "SELECT id FROM tasks WHERE title = 'Swim'", args: [] })
     expect(secondSwim.rows).toHaveLength(1)
     expect(String(secondSwim.rows[0]?.id)).not.toBe(String(firstSwim.rows[0]?.id))
+  } finally {
+    stopCalendarSync()
+    stopEntitySubscription()
+    closeHAConnection()
+    await ha.close()
+    db.close()
+    resetPersistenceForTests()
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+
+test("a completed series keeps its last-applied baseline, so a provider rename still applies when the series reopens", async () => {
+  const previous = Object.fromEntries(["MEITHEAL_DB_URL", "SUPERVISOR_TOKEN", "HA_BASE_URL", "HA_TOKEN"].map((k) => [k, process.env[k]]))
+  const directory = await mkdtemp(join(tmpdir(), "meitheal-cal-frozen-baseline-"))
+  const ha = await startHAWebSocketFixture()
+  delete process.env.SUPERVISOR_TOKEN
+  process.env.HA_BASE_URL = ha.url
+  process.env.HA_TOKEN = "calendar-frozen-baseline-fixture"
+  process.env.MEITHEAL_DB_URL = `file:${join(directory, "tasks.db")}`
+  resetPersistenceForTests()
+  const db = getPersistenceClient()
+
+  try {
+    await ensureSchema()
+    const settingsRepo = new SettingsRepository(db)
+    await settingsRepo.ensureSettingsTable()
+    await settingsRepo.upsert("timezone", "Europe/Dublin")
+    expect(await getHAConnection()).not.toBeNull()
+    const repo = new TaskRepository(db)
+    const todayStr = calendarToday("Europe/Dublin")
+    const [d7, d14, d21] = [7, 14, 21].map((n) => shiftCalendarDay(todayStr, n)) as [string, string, string]
+    const at = (day: string) => `${day}T07:00:00Z`
+    const series = (title: string, days: string[]) => days.map((day) => ({ uid: "rec-1", summary: title, start: at(day), end: `${day}T07:30:00Z` }))
+
+    ha.setCalendarEvents(series("Recycling", [todayStr, d7, d14]))
+    await syncFromHA("calendar.household")
+    const created = await db.execute({ sql: "SELECT id FROM tasks WHERE title = 'Recycling'", args: [] })
+    expect(created.rows).toHaveLength(1)
+    const taskId = String(created.rows[0]?.id)
+    await repo.updateTask(taskId, { status: "complete" })
+
+    // The provider renames the series while the task is completed: the task stays as completed...
+    ha.setCalendarEvents(series("Recycling B", [todayStr, d7, d14]))
+    await syncFromHA("calendar.household")
+    const frozen = await db.execute({ sql: "SELECT title, status FROM tasks WHERE id = ?", args: [taskId] })
+    expect(String(frozen.rows[0]?.title)).toBe("Recycling")
+    expect(String(frozen.rows[0]?.status)).toBe("complete")
+
+    // ...and follows the calendar again, with the new title, once the next occurrence reopens it.
+    ha.setCalendarEvents(series("Recycling B", [d7, d14, d21]))
+    await syncFromHA("calendar.household")
+    const reopened = await db.execute({ sql: "SELECT title, status, due_date FROM tasks WHERE id = ?", args: [taskId] })
+    expect(String(reopened.rows[0]?.status)).toBe("pending")
+    expect(String(reopened.rows[0]?.title)).toBe("Recycling B")
+    expect(String(reopened.rows[0]?.due_date)).toBe(at(d7))
   } finally {
     stopCalendarSync()
     stopEntitySubscription()

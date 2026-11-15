@@ -1016,3 +1016,52 @@ test("rules with unmodeled parts import only the first occurrence, and long-runn
   // 1990-01-03 plus whole two-week steps lands on 2026-11-04 and 2026-11-18 (a Wednesday each).
   expect(weekly.map((o) => o.start)).toEqual(["2026-11-04", "2026-11-18"])
 })
+
+test("RECURRENCE-ID ranges move instances across the window edge, carry the override length, and honor cancelled ranges", () => {
+  const ical = (lines: string[]) => ["BEGIN:VCALENDAR", ...lines, "END:VCALENDAR"].join("\r\n")
+  // Tuesday series moved back one day from Dec 1: Nov 30 must appear in a window that ends Nov 30.
+  const moved = parseVEvents(ical([
+    "BEGIN:VEVENT", "UID:edge-1", "SUMMARY:Review", "DTSTART:20261124T100000Z", "DTEND:20261124T110000Z", "RRULE:FREQ=WEEKLY;COUNT=4", "END:VEVENT",
+    "BEGIN:VEVENT", "UID:edge-1", "SUMMARY:Review", "RECURRENCE-ID;RANGE=THISANDFUTURE:20261201T100000Z",
+    "DTSTART:20261130T100000Z", "DTEND:20261130T110000Z", "END:VEVENT",
+  ]), "/cal/edge.ics")
+  const inWindow = expandCalDAVEventsInWindow(moved, new Date("2026-11-30T00:00:00Z"), new Date("2026-11-30T23:00:00Z"))
+  expect(inWindow.map((e) => e.dtstart)).toEqual(["2026-11-30T10:00:00Z"])
+  // Instances moved out of the window are not returned.
+  const outside = expandCalDAVEventsInWindow(moved, new Date("2026-12-01T00:00:00Z"), new Date("2026-12-01T23:00:00Z"))
+  expect(outside).toEqual([])
+
+  // Extending an all-day series to three days applies to later instances too.
+  const longer = parseVEvents(ical([
+    "BEGIN:VEVENT", "UID:span-1", "SUMMARY:Trip", "DTSTART;VALUE=DATE:20261102", "DTEND;VALUE=DATE:20261103", "RRULE:FREQ=WEEKLY;COUNT=3", "END:VEVENT",
+    "BEGIN:VEVENT", "UID:span-1", "SUMMARY:Trip", "RECURRENCE-ID;RANGE=THISANDFUTURE;VALUE=DATE:20261109",
+    "DTSTART;VALUE=DATE:20261109", "DTEND;VALUE=DATE:20261112", "END:VEVENT",
+  ]), "/cal/span.ics")
+  const trips = expandCalDAVEventsInWindow(longer, new Date("2026-11-01T00:00:00Z"), new Date("2026-12-31T00:00:00Z"))
+  expect(trips.map((e) => `${e.dtstart}..${e.inclusiveEndDate}`)).toEqual([
+    "2026-11-02..2026-11-02",
+    "2026-11-09..2026-11-11",
+    "2026-11-16..2026-11-18",
+  ])
+
+  // A cancelled range removes its instance and every later one.
+  const cancelled = parseVEvents(ical([
+    "BEGIN:VEVENT", "UID:cancel-1", "SUMMARY:Class", "DTSTART:20261102T090000Z", "DTEND:20261102T100000Z", "RRULE:FREQ=WEEKLY;COUNT=4", "END:VEVENT",
+    "BEGIN:VEVENT", "UID:cancel-1", "STATUS:CANCELLED", "RECURRENCE-ID;RANGE=THISANDFUTURE:20261109T090000Z", "END:VEVENT",
+  ]), "/cal/cancel.ics")
+  const classes = expandCalDAVEventsInWindow(cancelled, new Date("2026-11-01T00:00:00Z"), new Date("2026-12-31T00:00:00Z"))
+  expect(classes.map((e) => e.dtstart)).toEqual(["2026-11-02T09:00:00Z"])
+})
+
+test("a YEARLY year-relative ordinal weekday is only narrowed by BYMONTHDAY, never reinterpreted per month", () => {
+  const first = expandRRuleOccurrences({
+    dtstart: "2026-01-05",
+    allDay: true,
+    rrule: "FREQ=YEARLY;BYMONTHDAY=5;BYDAY=1MO",
+    timezone: "UTC",
+    windowStart: new Date("2026-01-01T00:00:00Z"),
+    windowEnd: new Date("2027-12-31T00:00:00Z"),
+  })
+  // The year's first Monday is Jan 5 in 2026 and Jan 4 in 2027, so only 2026 matches the 5th.
+  expect(first.map((o) => o.start)).toEqual(["2026-01-05"])
+})

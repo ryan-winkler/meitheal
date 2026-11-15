@@ -467,6 +467,25 @@ function readPreviousSyncedFields(payload: string | null): PreviousSyncedFields 
 }
 
 /**
+ * The payload a closed task's confirmation keeps. A completed or archived task is frozen, so a
+ * calendar rename or edit is not applied to it. The confirmation must then keep the baseline
+ * the task was last updated from; advancing it would make the unchanged task look edited by
+ * hand, and it would stop following the calendar when the series reopens. Payloads saved
+ * before sync recorded the rule (no "rrule" key) adopt the first payload this release writes.
+ */
+function baselinePayload(
+  current: SyncedTaskFields | undefined,
+  plan: { status?: string | undefined },
+  previousPayload: string | null,
+  nextPayload: string,
+): string {
+  if (!current || !previousPayload) return nextPayload
+  const frozen = isClosedStatus(String(current.status ?? "")) && plan.status === undefined
+  const previous = readPreviousSyncedFields(previousPayload)
+  return frozen && previous !== null && previous.rrule !== undefined ? previousPayload : nextPayload
+}
+
+/**
  * Decide which task fields an inbound calendar change may update, so sync does not
  * overwrite a title, date or rule edited in Meitheal. A field follows the calendar
  * while it still equals what the calendar sent last time. A completed repeating
@@ -1167,6 +1186,9 @@ async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState |
         // A closed task that is not being reopened keeps its description and labels too,
         // so a calendar edit does not bump its updated_at.
         const keepClosed = isClosedStatus(String(currentTask?.status ?? "")) && plan.status === undefined
+        const previousPayload = matchedCandidateUid
+          ? existingLookup.get(matchedCandidateUid)?.payload ?? null
+          : titleMatchedPayloads.get(existingTaskId) ?? null
         mutations.push({
           kind: "update",
           taskId: existingTaskId,
@@ -1179,7 +1201,7 @@ async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState |
             externalId: uid,
             previousExternalId: matchedCandidateUid ?? titleMatchedExternalId ?? uid,
             confirmationSource: "ha.calendar_sync",
-            payload: confirmationPayload,
+            payload: baselinePayload(currentTask, plan, previousPayload, confirmationPayload),
           },
         })
         mutationSummaries.push(evt.summary)
@@ -1951,15 +1973,18 @@ async function importCalDAVEvents(): Promise<CalendarSyncCounts> {
 
           const existingTaskId = existingCalMap.get(uid)
           if (existingTaskId) {
+            const currentCalTask = currentCalTasks.get(existingTaskId)
+            const calPreviousPayload = existingCalPayloads.get(uid) ?? null
+            const calPlan = planInboundCalendarUpdate(
+              currentCalTask,
+              calPreviousPayload,
+              { title: repEvt.summary, start: repEvt.dtstart, end: repEnd, recurrenceRule, repeats: recurrenceRule !== null || inferredRecurrenceRule !== null },
+              { timezone },
+            )
             calMutations.push({
               kind: "update",
               taskId: existingTaskId,
-              ...planInboundCalendarUpdate(
-                currentCalTasks.get(existingTaskId),
-                existingCalPayloads.get(uid) ?? null,
-                { title: repEvt.summary, start: repEvt.dtstart, end: repEnd, recurrenceRule, repeats: recurrenceRule !== null || inferredRecurrenceRule !== null },
-                { timezone },
-              ),
+              ...calPlan,
               // The description is written once, on import. Notes added in Meitheal are
               // kept; CalDAV re-syncs update the title, dates and rule only.
               updatedAt: nowMs,
@@ -1968,7 +1993,7 @@ async function importCalDAVEvents(): Promise<CalendarSyncCounts> {
                 entityId: calendarKey,
                 externalId: uid,
                 confirmationSource: "caldav",
-                payload,
+                payload: baselinePayload(currentCalTask, calPlan, calPreviousPayload, payload),
               },
             })
           } else {

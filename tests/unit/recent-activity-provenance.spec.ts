@@ -53,6 +53,10 @@ test("sanitizes origin kind, display name, and safe internal target paths", () =
 
   expect(sanitizeOriginName("  Morning\r\nKitchen\tRoutine  ")).toBe("Morning Kitchen Routine")
   expect(sanitizeOriginName("   ")).toBeNull()
+  // Nested token labels cannot survive a single removal pass.
+  const nested = sanitizeOriginName('Bedtime (via (via (via token "A")token "B")token "C")token "D")') ?? ""
+  expect(nested).not.toMatch(/via\s+token/i)
+  expect(nested.startsWith("Bedtime")).toBe(true)
   expect(sanitizeOriginName("x".repeat(140))?.length).toBe(120)
   expect(sanitizeOriginName(null)).toBeNull()
   // Bidi overrides and invisible characters cannot reorder the token name shown next to the origin.

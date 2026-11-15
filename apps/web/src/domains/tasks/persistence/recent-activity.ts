@@ -67,9 +67,17 @@ export function sanitizeOriginName(value: unknown): string | null {
     .replace(/\s+/g, " ")
     // The feed appends the verified token as `(via token "…")`; an origin name cannot
     // carry its own copy of that label to pose as a different token.
-    .replace(/\(\s*via\s+token\b[^)]*\)?/gi, " ")
-    .replace(/\s+/g, " ").trim().slice(0, 120).trim()
-  return cleaned || null
+    .trim()
+  // Removing one label can join the pieces of another ("(via (via token "A")token "B")"), so
+  // repeat until none is left. Each pass shortens the text, so the loop always ends.
+  let withoutLabels = cleaned
+  for (let pass = 0; pass < 64; pass++) {
+    const next = withoutLabels.replace(/\(\s*via\s+token\b[^)]*\)?/gi, " ").replace(/\s+/g, " ").trim()
+    if (next === withoutLabels) break
+    withoutLabels = next
+  }
+  const result = withoutLabels.slice(0, 120).trim()
+  return result || null
 }
 
 /**

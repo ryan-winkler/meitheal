@@ -94,7 +94,8 @@ Known differences:
 
 - A monthly series on the 29th, 30th or 31st skips months that do not have that day, and a yearly series on 29 February skips common years. This matches CalDAV servers and most calendar apps. To land on the last day of every month, choose "last day of the month" in the calendar app.
 - Repeats more often than daily are not supported: Meitheal imports only the first occurrence, and only when it falls inside the sync window.
-- Combined rules such as "Friday the 13th" repeat only when both the weekday and the date match. Repeat options Meitheal does not support, such as specific hours of the day, are ignored.
+- A repeat rule that uses an option Meitheal does not support, such as specific hours of the day (`BYHOUR`), is not expanded at all: Meitheal imports only the first occurrence, and only when it falls inside the sync window. If later occurrences are missing, check the rule in the calendar app for options like these.
+- Combined rules such as "Friday the 13th" repeat only when both the weekday and the date match.
 
 ### The drawer opens but tasks or events stay empty
 

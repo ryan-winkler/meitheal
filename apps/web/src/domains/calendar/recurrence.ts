@@ -273,9 +273,9 @@ function* monthBasedDays(rule: RecurrenceRule, startDay: string): Generator<stri
   // BYMONTHDAY or BYDAY expands a YEARLY rule across every month unless BYMONTH narrows it.
   const yearlyMonths = rule.byMonth?.map(n => n - 1)
     ?? (rule.byMonthDay?.length || rule.byDayEntries?.length ? Array.from({ length: 12 }, (_, i) => i) : [startMonth])
-  // Without BYMONTH or BYMONTHDAY, an ordinal BYDAY in a YEARLY rule counts within the
-  // year (20MO is the 20th Monday of the year), RFC 5545 §3.3.10.
-  const yearOrdinals = rule.freq === "YEARLY" && !rule.byMonth?.length && !rule.byMonthDay?.length &&
+  // Without BYMONTH, an ordinal BYDAY in a YEARLY rule counts within the year (20MO is the
+  // 20th Monday of the year), RFC 5545 §3.3.10. BYMONTHDAY then only narrows those days.
+  const yearOrdinals = rule.freq === "YEARLY" && !rule.byMonth?.length &&
     Boolean(rule.byDayEntries?.some(entry => entry.ordinal !== null))
   const months = rule.freq === "YEARLY" ? [...yearlyMonths].sort((a, b) => a - b) : null
   let emptyYears = 0
@@ -284,6 +284,14 @@ function* monthBasedDays(rule: RecurrenceRule, startDay: string): Generator<stri
       // BYSETPOS selects within the whole year's combined candidates, not month by month.
       const year = y + step * rule.interval
       const yearDays: string[] = yearOrdinals ? yearOrdinalDays(rule, year) : []
+      if (yearOrdinals && rule.byMonthDay?.length) {
+        const monthDayList = rule.byMonthDay
+        yearDays.splice(0, yearDays.length, ...yearDays.filter((iso) => {
+          const [yy, mm, dd] = iso.split("-").map(Number) as [number, number, number]
+          const length = daysInMonth(yy, mm - 1)
+          return monthDayList.some((md) => (md > 0 ? md : length + md + 1) === dd)
+        }))
+      }
       if (!yearOrdinals) for (const month of months) {
         for (const day of monthCandidateDays(rule, year, month, d, false)) {
           yearDays.push(`${String(year).padStart(4, "0")}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`)

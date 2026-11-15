@@ -36,8 +36,11 @@ test.describe("Dashboard Shell", () => {
   })
 
   test("achievement badges link to /progress#achievements with hover titles and timed ISO due dates match today", async ({ page, request }) => {
-    // The fixture household timezone is Europe/Dublin, so build "today" there. Noon UTC is
-    // the same Dublin calendar day in both winter (UTC+0) and summer (UTC+1).
+    // Creates a task and relies on the fixture's Europe/Dublin household timezone, so it only
+    // runs against the disposable fixture.
+    test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the disposable Meitheal fixture")
+
+    // Noon UTC is the same Dublin calendar day in both winter (UTC+0) and summer (UTC+1).
     const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Dublin" }).format(new Date())
     const createRes = await request.post("/api/tasks", {
       data: { title: "Timed ISO due today task", due_date: `${today}T12:00:00Z` },
