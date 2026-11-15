@@ -3,6 +3,7 @@
   "private": true,
   "version": "0.0.1",
   "description": "Home Assistant-native household and homelab execution hub for tasks, routines, planning, and AI-assisted coordination.",
+  "license": "AGPL-3.0-only",
   "homepage": "https://github.com/ryan-winkler/meitheal",
   "repository": {
     "type": "git",
