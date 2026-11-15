@@ -124,7 +124,13 @@ test.describe("outbound policy", () => {
     }
     expect(isBlockedOutboundAddress("not-an-ip")).toBe(false)
     expect(isBlockedOutboundAddress("invalid:colon:host")).toBe(false)
+    expect(isBlockedOutboundAddress("0xa9fea9fe")).toBe(true)
+    expect(isBlockedOutboundAddress("2852039166")).toBe(true)
+    expect(isBlockedOutboundAddress("169.254.43518")).toBe(true)
     expect(isPrivateOutboundAddress("127.0.0.2")).toBe(true)
+    expect(isPrivateOutboundAddress("127.1")).toBe(true)
+    expect(isPrivateOutboundAddress("0177.0.0.1")).toBe(true)
+    expect(isPrivateOutboundAddress("2130706433")).toBe(true)
     expect(isPrivateOutboundAddress("[::ffff:127.0.0.1]")).toBe(true)
     expect(isPrivateOutboundAddress("[64:ff9b::192.168.1.5]")).toBe(true)
     expect(isPrivateOutboundAddress("8.8.8.8")).toBe(false)
@@ -148,7 +154,7 @@ test.describe("outbound policy", () => {
     expect(assertOutboundUrl("https://n8n.internal/webhook").hostname).toBe("n8n.internal")
   })
 
-  test("rejects blocked hosts, Supervisor aliases, custom SUPERVISOR_URL, and bad schemes", () => {
+  test("rejects blocked hosts, Supervisor aliases, custom SUPERVISOR_URL, and bad schemes", async () => {
     for (const url of [
       "ftp://example.com/",
       "file:///etc/passwd",
@@ -178,6 +184,14 @@ test.describe("outbound policy", () => {
     process.env.SUPERVISOR_URL = "http://custom-supervisor.local:8123"
     try {
       expect(() => assertOutboundUrl("http://custom-supervisor.local/addons")).toThrow(OutboundUrlError)
+      await withResolver({ "custom-supervisor.local": [] }, async () => {
+        await expect(fetchOutbound("http://127.0.0.1:9999/")).rejects.toThrow(/SUPERVISOR_URL/)
+      })
+      const aborted = new AbortController()
+      aborted.abort(new Error("aborted-before-dns"))
+      await expect(fetchOutbound("http://127.0.0.1:9999/", { signal: aborted.signal })).rejects.toThrow(
+        "aborted-before-dns",
+      )
       process.env.SUPERVISOR_URL = "http://10.99.9.9:8123"
       expect(() => assertOutboundUrl("http://10.99.9.9/addons")).toThrow(OutboundUrlError)
     } finally {
@@ -429,6 +443,12 @@ test.describe("CalDAV credential key initialization and legacy migration", () =>
       expect(getLocalDataDirectory()).toBe(directory)
       process.env.MEITHEAL_DB_URL = "file::memory:"
       expect(() => decryptCalDAVPassword(stored)).toThrow(/local database directory/)
+
+      const remoteKeyDir = join(directory, "remote-key-dir")
+      process.env.MEITHEAL_DATA_DIR = remoteKeyDir
+      expect(() => decryptCalDAVPassword(stored)).toThrow(/enter it again/)
+      expect(statSync(join(remoteKeyDir, "caldav-credentials.key")).mode & 0o777).toBe(0o600)
+      delete process.env.MEITHEAL_DATA_DIR
 
       getPersistenceClient().close()
     } finally {

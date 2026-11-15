@@ -17,11 +17,12 @@
  */
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from "node:crypto"
 import { closeSync, fsyncSync, linkSync, mkdirSync, openSync, readFileSync, unlinkSync, writeFileSync } from "node:fs"
+import { homedir } from "node:os"
 import path from "node:path"
 import type { APIRoute } from "astro"
 import { testConnection } from "@domains/calendar/caldav-client"
 import { ensureSchema, getLocalDataDirectory, getPersistenceClient, SettingsRepository } from "@domains/tasks"
-import { logApiError } from "../../../../lib/api-logger"
+import { logApiError, logApiWarn } from "../../../../lib/api-logger"
 import { requireSystemSettingsAdmin } from "../../../../lib/settings-security"
 
 // ─── Encryption Helpers ─────────────────────────────────────────────
@@ -47,13 +48,38 @@ function parseKeyHex(raw: string, file: string): Buffer {
   return Buffer.from(trimmed, "hex")
 }
 
+function resolveCredentialKeyDirectory(): string | null {
+  const explicitDir = process.env.MEITHEAL_DATA_DIR?.trim()
+  if (explicitDir) return explicitDir
+  const localDir = getLocalDataDirectory()
+  if (localDir) return localDir
+  const rawDbUrl = (process.env.MEITHEAL_DB_URL ?? "").trim()
+  if (rawDbUrl && !/^(?:file:|:memory:)/i.test(rawDbUrl)) {
+    return path.join(homedir(), ".local", "share", "meitheal")
+  }
+  return null
+}
+
+function fsyncDirectoryBestEffort(directory: string): void {
+  try {
+    const dirFd = openSync(directory, "r")
+    try {
+      fsyncSync(dirFd)
+    } finally {
+      closeSync(dirFd)
+    }
+  } catch {
+    // Some container/virtual filesystems do not support directory fsync.
+  }
+}
+
 /**
  * Read the per-install key, or atomically initialize it (0600) via a private
  * temporary file + hard link so concurrent callers and interrupted writes
  * never overwrite or expose a partial key.
  */
 function installKey(): Buffer {
-  const directory = getLocalDataDirectory()
+  const directory = resolveCredentialKeyDirectory()
   if (!directory) {
     throw new Error("CalDAV credentials need SUPERVISOR_TOKEN, HA_TOKEN or a local database directory for their encryption key")
   }
@@ -73,8 +99,10 @@ function installKey(): Buffer {
   } finally {
     closeSync(fd)
   }
+  let published = false
   try {
     linkSync(tmpFile, file)
+    published = true
   } catch (err) {
     if (!isErrnoCode(err, "EEXIST")) throw err
   } finally {
@@ -83,6 +111,9 @@ function installKey(): Buffer {
     } catch {
       // Best-effort cleanup of the private temporary file.
     }
+  }
+  if (published) {
+    fsyncDirectoryBestEffort(directory)
   }
   return parseKeyHex(readFileSync(file, "utf8"), file)
 }
@@ -137,7 +168,9 @@ function migrateLegacyStoredPassword(legacyEncoded: string, reencrypted: string)
     void client.execute({
       sql: "UPDATE settings SET value = ?, updated_at = ? WHERE key = 'caldav_password_enc' AND (value = ? OR value = ?)",
       args: [reencrypted, Date.now(), legacyEncoded, JSON.stringify(legacyEncoded)],
-    }).catch(() => undefined)
+    }).catch(() => {
+      logApiWarn("caldav-credentials", "Failed to persist migrated CalDAV credential; will retry on next read")
+    })
   } catch {
     // Non-fatal if persistence is not open during an isolated unit call.
   }

@@ -157,9 +157,29 @@ function parseEmbeddedIPv4Tail(tail: string, allowCompressedZeroHigh = false): s
   return `${(high >> 8) & 0xff}.${high & 0xff}.${(low >> 8) & 0xff}.${low & 0xff}`
 }
 
+function looksLikeNumericIpv4Literal(value: string): boolean {
+  if (!value) return false
+  const first = value.charCodeAt(0)
+  if (first < 48 || first > 57) return false
+  for (let i = 1; i < value.length; i++) {
+    const c = value.charCodeAt(i)
+    const ok = (c >= 48 && c <= 57) || (c >= 97 && c <= 102) || c === 46 || c === 120
+    if (!ok) return false
+  }
+  return true
+}
+
 function canonicalizeIpLiteral(address: string): string {
   const clean = stripZoneId(address)
-  if (!clean.includes(":")) return clean
+  if (!clean.includes(":")) {
+    if (isIP(clean) === 4 || !looksLikeNumericIpv4Literal(clean)) return clean
+    try {
+      const urlHost = new URL(`http://${clean}`).hostname.toLowerCase()
+      return isIP(urlHost) === 4 ? urlHost : clean
+    } catch {
+      return clean
+    }
+  }
   try {
     const urlHost = new URL(`http://[${clean}]`).hostname.toLowerCase()
     return urlHost.startsWith("[") && urlHost.endsWith("]") ? urlHost.slice(1, -1) : urlHost
@@ -260,67 +280,104 @@ let cachedSupervisorEnv = ""
 let cachedSupervisorIps: Set<string> = new Set()
 let cachedSupervisorExpiry = 0
 
-function resolveSupervisorIps(lookupFn: typeof dns.lookup, cb: (ips: Set<string>) => void): void {
+function resolveSupervisorIps(
+  lookupFn: typeof dns.lookup,
+  cb: (ips: Set<string>, customSupervisorFailed: boolean) => void,
+): void {
   const now = Date.now()
   const supEnv = process.env.SUPERVISOR_URL ?? ""
   if (cachedLookupFn === lookupFn && cachedSupervisorEnv === supEnv && now < cachedSupervisorExpiry) {
-    cb(cachedSupervisorIps)
+    cb(cachedSupervisorIps, false)
     return
   }
 
   const namesToProbe = ["supervisor"]
   const supHost = configuredSupervisorHostname()
+  let customHostToResolve = ""
   const staticIps = new Set<string>()
   if (supHost) {
     const unmapped = unmapIPv4(supHost)
     if (isIP(unmapped) !== 0) {
       staticIps.add(unmapped)
-    } else if (!namesToProbe.includes(supHost)) {
-      namesToProbe.push(supHost)
+    } else {
+      customHostToResolve = supHost
+      if (!namesToProbe.includes(supHost)) {
+        namesToProbe.push(supHost)
+      }
     }
   }
 
   let remaining = namesToProbe.length
   const collected = new Set<string>(staticIps)
+  let customFailed = false
   let finished = false
   const completeOne = () => {
     remaining--
     if (remaining > 0 || finished) return
     finished = true
-    cachedLookupFn = lookupFn
-    cachedSupervisorEnv = supEnv
-    cachedSupervisorIps = collected
-    cachedSupervisorExpiry = now + 30_000
-    cb(collected)
+    if (!customFailed) {
+      cachedLookupFn = lookupFn
+      cachedSupervisorEnv = supEnv
+      cachedSupervisorIps = collected
+      cachedSupervisorExpiry = now + 30_000
+    }
+    cb(collected, customFailed)
   }
 
   for (const name of namesToProbe) {
     let probeDone = false
-    const markProbe = () => {
+    const markProbe = (resolvedAny: boolean) => {
       if (probeDone) return
       probeDone = true
+      if (customHostToResolve && name === customHostToResolve && !resolvedAny) {
+        customFailed = true
+      }
       completeOne()
     }
     try {
       lookupFn(name, { all: true }, (err, entries) => {
+        let added = false
         if (!err && Array.isArray(entries)) {
           for (const entry of entries) {
             if (!entry.address.includes("%")) {
               collected.add(unmapIPv4(normalizeHostname(entry.address)))
+              added = true
             }
           }
         }
-        markProbe()
+        markProbe(added)
       })
     } catch {
-      markProbe()
+      markProbe(false)
     }
   }
 }
 
-function getSupervisorIps(lookupFn: typeof dns.lookup): Promise<Set<string>> {
-  return new Promise((resolve) => {
-    resolveSupervisorIps(lookupFn, resolve)
+function toAbortReason(signal: AbortSignal): unknown {
+  return signal.reason ?? new DOMException("The operation was aborted.", "AbortError")
+}
+
+function getSupervisorIps(
+  lookupFn: typeof dns.lookup,
+  signal?: AbortSignal | null,
+): Promise<{ ips: Set<string>; customSupervisorFailed: boolean }> {
+  if (signal?.aborted) {
+    return Promise.reject(toAbortReason(signal))
+  }
+  return new Promise((resolve, reject) => {
+    let settled = false
+    const onAbort = () => {
+      if (settled) return
+      settled = true
+      reject(toAbortReason(signal!))
+    }
+    signal?.addEventListener("abort", onAbort, { once: true })
+    resolveSupervisorIps(lookupFn, (ips, customSupervisorFailed) => {
+      if (settled) return
+      settled = true
+      signal?.removeEventListener("abort", onAbort)
+      resolve({ ips, customSupervisorFailed })
+    })
   })
 }
 
@@ -345,7 +402,11 @@ export function createGuardedLookup(policy: OutboundPolicyOptions = {}) {
     }
     // Read dns.lookup at call time so a test's resolver stub is honoured.
     const currentLookup = dns.lookup
-    resolveSupervisorIps(currentLookup, (supervisorIps) => {
+    resolveSupervisorIps(currentLookup, (supervisorIps, customSupervisorFailed) => {
+      if (customSupervisorFailed) {
+        done(new OutboundUrlError("Configured SUPERVISOR_URL hostname could not be resolved safely"), "")
+        return
+      }
       currentLookup(hostname, { ...opts, all: true }, (error, addresses) => {
         if (error) return done(error, "")
         const refused = addresses.find((entry) => {
@@ -405,7 +466,10 @@ export async function fetchOutbound(
   // so verify literal IPs against dynamically resolved Supervisor addresses up front.
   const canonicalHost = unmapIPv4(normalizeHostname(target.hostname))
   if (isIP(canonicalHost) !== 0) {
-    const supervisorIps = await getSupervisorIps(dns.lookup)
+    const { ips: supervisorIps, customSupervisorFailed } = await getSupervisorIps(dns.lookup, requestOptions.signal)
+    if (customSupervisorFailed) {
+      throw new OutboundUrlError("Configured SUPERVISOR_URL hostname could not be resolved safely")
+    }
     if (supervisorIps.has(canonicalHost)) {
       throw new OutboundUrlError(`Address ${target.hostname} is not an allowed integration target`)
     }

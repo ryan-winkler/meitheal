@@ -52,6 +52,17 @@ function redactUrlCredentials(rawUrl: string): string {
       }
     }
   }
+  if (authStart === 0 && trimmed.length >= 2) {
+    const c0 = trimmed.charCodeAt(0)
+    const c1 = trimmed.charCodeAt(1)
+    if ((c0 === 47 || c0 === 92) && (c1 === 47 || c1 === 92)) {
+      while (authStart < trimmed.length) {
+        const ch = trimmed.charCodeAt(authStart)
+        if (ch !== 47 && ch !== 92) break
+        authStart++
+      }
+    }
+  }
   let authorityEnd = trimmed.length
   for (let i = authStart; i < trimmed.length; i++) {
     const ch = trimmed.charCodeAt(i)
@@ -239,8 +250,12 @@ export const POST: APIRoute = async ({ locals, request }) => {
       let errorMessage = rawError
       if (rawError.includes("@")) {
         errorMessage = errorMessage.replaceAll(targetUrl, redactedTargetUrl)
+        const trimmedTarget = targetUrl.trim()
+        if (trimmedTarget) {
+          errorMessage = errorMessage.replaceAll(trimmedTarget, redactedTargetUrl)
+        }
         try {
-          errorMessage = errorMessage.replaceAll(new URL(targetUrl).href, redactedTargetUrl)
+          errorMessage = errorMessage.replaceAll(new URL(trimmedTarget).href, redactedTargetUrl)
         } catch {
           // Malformed URL already scrubbed via raw targetUrl replacement.
         }
