@@ -8,14 +8,21 @@
  * Supports:
  *   - Multiple calendar entities syncing concurrently
  *   - Configurable sync interval per entity (or global)
- *   - CalDAV external calendars (future: caldav-client.ts)
+ *   - CalDAV external calendars (caldav-client.ts)
  *   - Write-back deduplication and all-day event handling
  *
  * @domain calendar
  * @bounded-context integration
  */
-import { onEntityChange, listCalendarEvents, createCalendarEvent, updateCalendarEvent, deleteCalendarEvent, type CalendarEvent } from "../ha"
-import { emitCalendarSynced } from "../ha"
+import {
+  onEntityChange,
+  listCalendarEvents,
+  createCalendarEvent,
+  updateCalendarEvent,
+  deleteCalendarEvent,
+  emitCalendarSynced,
+  type CalendarEvent,
+} from "../ha"
 import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability"
 import type { SyncTaskMutation } from "@domains/tasks"
 import { STATUS } from "../../lib/status-config"

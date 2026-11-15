@@ -153,8 +153,8 @@ export async function pushToActiveSyncs(
   if (dueDate) {
     try {
       const { pushTaskToCalendar, getCalendarSyncConfigs, isImportedCalendarTask } = await import("@domains/calendar")
-      if (typeof taskId === "string" && await isImportedCalendarTask(taskId)) return
-      const calConfigs = getCalendarSyncConfigs();
+      const importedFromCalendar = typeof taskId === "string" && await isImportedCalendarTask(taskId)
+      const calConfigs = importedFromCalendar ? [] : getCalendarSyncConfigs()
       // Only push to calendars with export/bidirectional mode AND writeBack enabled
       const hasWriteBack = calConfigs.some((c) => c.writeBack && c.syncMode !== "import");
 

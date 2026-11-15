@@ -2,14 +2,19 @@ import type { APIRoute } from "astro"
 import type { ResultSet } from "@libsql/client"
 import { deriveEisenhowerQuadrant, VALID_TASK_TYPES, type TaskType } from "@meitheal/domain-tasks"
 import { normalizeLabelTitle, taskLabelInsert } from "@domains/labels"
-import { hasBoardSelection, rejectBoardSelectionInJson, unavailableBoardResponse } from "@domains/tasks/board-availability"
 import {
+  dispatchTaskCreation,
   ensureSchema,
   getPersistenceClient,
+  hasBoardSelection,
+  prepareTaskCreation,
+  rejectBoardSelectionInJson,
   taskAddedActivity,
+  taskCreationPayload,
+  taskInsertStatement,
+  TaskRepository,
+  unavailableBoardResponse,
 } from "@domains/tasks"
-import { taskInsertStatement, TaskRepository } from "@domains/tasks/persistence/task-repository"
-import { dispatchTaskCreation, prepareTaskCreation, taskCreationPayload } from "@domains/tasks/task-creation-service"
 import { runWriteTransaction } from "../../../../scripts/database-client.mjs"
 import { formatTicketKey } from "../../../lib/ticket-key"
 import { logApiError } from "../../../lib/api-logger"

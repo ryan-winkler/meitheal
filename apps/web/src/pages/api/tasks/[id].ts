@@ -2,10 +2,16 @@ import type { APIRoute } from "astro"
 import type { InValue } from "@libsql/client"
 import { VALID_TASK_TYPES } from "@meitheal/domain-tasks"
 import type { TaskType } from "@meitheal/domain-tasks"
-import { hasBoardSelection, rejectBoardSelectionInJson, unavailableBoardResponse } from "@domains/tasks/board-availability"
-import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
-import { TaskRepository, UserRepository } from "@domains/tasks"
-import { taskLabelsJson } from "@domains/tasks/task-creation-service"
+import {
+  ensureSchema,
+  getPersistenceClient,
+  hasBoardSelection,
+  rejectBoardSelectionInJson,
+  taskLabelsJson,
+  TaskRepository,
+  unavailableBoardResponse,
+  UserRepository,
+} from "@domains/tasks"
 import { formatTicketKey } from "../../../lib/ticket-key"
 import { dispatchTaskEvent, taskEventAuthorityHeaders } from "../../../lib/webhook-dispatcher"
 import { logApiError } from "../../../lib/api-logger"
