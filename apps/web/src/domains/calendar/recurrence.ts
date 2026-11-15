@@ -622,6 +622,9 @@ export function expandRRuleOccurrences(input: ExpandRRuleInput): ExpandedOccurre
 
   // COUNT counts every instance from DTSTART. The output cap counts only instances
   // inside the window, so a long-running series still expands in the current window.
+  // Advance cursor dates without UNTIL so positive-UTC offsets do not cut off the last local day early;
+  // occStartMs > untilMs below enforces the exact zoned instant cutoff.
+  const { until: _omitUntil, ...cursorRule } = parsedRule
   let totalGenerated = 0
   let countedInstances = 0
 
@@ -674,7 +677,7 @@ export function expandRRuleOccurrences(input: ExpandRRuleInput): ExpandedOccurre
       const next = monthDays.next()
       cursor = next.done ? null : parseCalendarDay(next.value)
     } else {
-      cursor = getNextOccurrence(parsedRule, cursor, countedInstances)
+      cursor = getNextOccurrence(cursorRule, cursor, countedInstances)
     }
   }
 

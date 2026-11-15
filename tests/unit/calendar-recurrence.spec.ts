@@ -682,6 +682,20 @@ test("toRRuleString and CalDAV expansion preserve UNTIL time and zone cutoff", (
     "2026-11-15T09:00:00Z",
     "2026-11-16T09:00:00Z",
   ])
+
+  // Positive UTC offset (IST = UTC+1) where 00:30 local shifts UTC day back: final exact UNTIL occurrence stays included
+  const positiveOffsetExpanded = expandRRuleOccurrences({
+    dtstart: "2026-07-01T23:30:00Z",
+    rrule: "FREQ=DAILY;UNTIL=20260703T233000Z",
+    timezone: "Europe/Dublin",
+    windowStart: new Date("2026-07-01T00:00:00Z"),
+    windowEnd: new Date("2026-07-10T23:59:59Z"),
+  })
+  expect(positiveOffsetExpanded.map((o) => o.start)).toEqual([
+    "2026-07-01T23:30:00Z",
+    "2026-07-02T23:30:00Z",
+    "2026-07-03T23:30:00Z",
+  ])
 })
 
 test("GET /api/tasks/today-counts and getTodayTaskCounts evaluate counters in the household timezone", async () => {
