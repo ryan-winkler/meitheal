@@ -485,8 +485,15 @@ def test_resolve_service_origin_variants(hass):
         {"friendly_name": "Nightly Reset", "id": "nightly_reset"},
         context=Context(id="ctx-auto-state"),
     )
+    # The script editor opens scripts by registry unique_id. This one was renamed, so its
+    # entity id (script.kitchen_prep) differs from its configuration key (morning_prep).
+    from homeassistant.helpers import entity_registry as er
+
+    er.async_get(hass).async_get_or_create(
+        "script", "script", "morning_prep", suggested_object_id="kitchen_prep"
+    )
     hass.states.async_set(
-        "script.morning_prep",
+        "script.kitchen_prep",
         "off",
         {"friendly_name": "Morning Prep"},
         context=Context(id="ctx-script-state"),
@@ -519,7 +526,7 @@ def test_resolve_service_origin_variants(hass):
     # origin_event script -> edit target
     script_origin = SimpleNamespace(
         event_type="script_started",
-        data={"name": "Morning Prep", "entity_id": "script.morning_prep"},
+        data={"name": "Morning Prep", "entity_id": "script.kitchen_prep"},
     )
     assert _resolve_service_origin(
         hass,
@@ -527,6 +534,18 @@ def test_resolve_service_origin_variants(hass):
             context=SimpleNamespace(id="ctx-3", parent_id=None, origin_event=script_origin)
         ),
     ) == ("ha_script", "Morning Prep", "/config/script/edit/morning_prep")
+
+    # a script with no registry entry falls back to the dashboard
+    unregistered_script = SimpleNamespace(
+        event_type="script_started",
+        data={"name": "Ghost", "entity_id": "script.ghost"},
+    )
+    assert _resolve_service_origin(
+        hass,
+        SimpleNamespace(
+            context=SimpleNamespace(id="ctx-4", parent_id=None, origin_event=unregistered_script)
+        ),
+    ) == ("ha_script", "Ghost", "/config/script/dashboard")
 
     # state-context parent_id fallback for automation and script
     assert _resolve_service_origin(

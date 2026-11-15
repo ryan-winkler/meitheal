@@ -657,6 +657,106 @@ test("HA sync adopts an ID-less series saved under the earlier household-time ke
   }
 })
 
+test("HA sync keeps two ID-less series that share an earlier household-time key in separate tasks", async () => {
+  const previous = Object.fromEntries(["MEITHEAL_DB_URL", "SUPERVISOR_TOKEN", "HA_BASE_URL", "HA_TOKEN"].map((k) => [k, process.env[k]]))
+  const directory = await mkdtemp(join(tmpdir(), "meitheal-cal-alias-collision-"))
+  const ha = await startHAWebSocketFixture()
+  delete process.env.SUPERVISOR_TOKEN
+  process.env.HA_BASE_URL = ha.url
+  process.env.HA_TOKEN = "calendar-alias-collision-fixture"
+  process.env.MEITHEAL_DB_URL = `file:${join(directory, "tasks.db")}`
+  resetPersistenceForTests()
+  const db = getPersistenceClient()
+
+  try {
+    await ensureSchema()
+    const settingsRepo = new SettingsRepository(db)
+    await settingsRepo.ensureSettingsTable()
+    await settingsRepo.upsert("timezone", "Europe/Dublin")
+    expect(await getHAConnection()).not.toBeNull()
+    const todayStr = calendarToday("Europe/Dublin")
+    const d7 = shiftCalendarDay(todayStr, 7)
+    const evening = [
+      { summary: "Swim", start: `${todayStr}T23:00:00-05:00`, end: `${shiftCalendarDay(todayStr, 1)}T00:00:00-05:00` },
+      { summary: "Swim", start: `${d7}T23:00:00-05:00`, end: `${shiftCalendarDay(d7, 1)}T00:00:00-05:00` },
+    ]
+    ha.setCalendarEvents(evening)
+    await syncFromHA("calendar.household")
+    const first = await db.execute({ sql: "SELECT id FROM tasks WHERE title = 'Swim'", args: [] })
+    expect(first.rows).toHaveLength(1)
+    const eveningId = String(first.rows[0]?.id)
+
+    // A second series at 18:00-05:00 is 23:00 in Dublin, the key the evening series now holds.
+    ha.setCalendarEvents([
+      ...evening,
+      { summary: "Swim", start: `${todayStr}T18:00:00-05:00`, end: `${todayStr}T19:00:00-05:00` },
+      { summary: "Swim", start: `${d7}T18:00:00-05:00`, end: `${d7}T19:00:00-05:00` },
+    ])
+    await syncFromHA("calendar.household")
+    const both = await db.execute({ sql: "SELECT id FROM tasks WHERE title = 'Swim' ORDER BY created_at", args: [] })
+    expect(both.rows).toHaveLength(2)
+    expect(String(both.rows[0]?.id)).toBe(eveningId)
+    const keys = await db.execute({
+      sql: "SELECT provider_event_id FROM calendar_confirmations WHERE source = 'ha.calendar_sync' ORDER BY provider_event_id",
+      args: [],
+    })
+    expect(keys.rows.map((row) => String(row.provider_event_id))).toEqual([
+      "ha-cal-series-calendar.household-swim::18:00",
+      "ha-cal-series-calendar.household-swim::23:00",
+    ])
+  } finally {
+    stopCalendarSync()
+    stopEntitySubscription()
+    closeHAConnection()
+    await ha.close()
+    db.close()
+    resetPersistenceForTests()
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+
+test("sync updates skip fields edited after the planner read its snapshot", async () => {
+  const previous = process.env.MEITHEAL_DB_URL
+  const directory = await mkdtemp(join(tmpdir(), "meitheal-sync-snapshot-"))
+  process.env.MEITHEAL_DB_URL = `file:${join(directory, "tasks.db")}`
+  resetPersistenceForTests()
+  const db = getPersistenceClient()
+  try {
+    await ensureSchema()
+    const repo = new TaskRepository(db)
+    await db.execute({
+      sql: `INSERT INTO tasks (id, title, description, status, priority, labels, framework_payload, area_id, custom_fields, task_type, task_kind, due_date, idempotency_key, request_id, ticket_number, created_at, updated_at)
+            VALUES ('snap-1', 'Edited by hand', '', 'pending', 3, '[]', '{}', 'default', '{}', 'task', 'calendar_event', '2026-12-01', 'cal-sync-snap', 'snap', 950, 1, 1)`,
+      args: [],
+    })
+    // The planner read "Calendar title" / 2026-11-30, then the user saved a new title before the commit.
+    const result = await repo.commitSyncMutationChunks([
+      {
+        kind: "update",
+        taskId: "snap-1",
+        title: "Provider title",
+        dueDate: "2026-12-02",
+        updateDueDate: true,
+        expected: { title: "Calendar title", dueDate: "2026-12-01" },
+      },
+    ])
+    expect(result.errors).toHaveLength(0)
+    const row = await db.execute({ sql: "SELECT title, due_date FROM tasks WHERE id = 'snap-1'", args: [] })
+    expect(String(row.rows[0]?.title)).toBe("Edited by hand")
+    expect(String(row.rows[0]?.due_date)).toBe("2026-12-02")
+  } finally {
+    db.close()
+    resetPersistenceForTests()
+    if (previous === undefined) delete process.env.MEITHEAL_DB_URL
+    else process.env.MEITHEAL_DB_URL = previous
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+
 test("CalDAV sync parses RRULE, EXDATE, colons in DESCRIPTION, exclusive all-day DTEND, and updates existing tasks on re-sync", async () => {
   const origin = "http://caldav-recurrence-fixture.example"
   const previous = Object.fromEntries(["MEITHEAL_DB_URL", "SUPERVISOR_TOKEN", "HA_TOKEN"].map((k) => [k, process.env[k]]))

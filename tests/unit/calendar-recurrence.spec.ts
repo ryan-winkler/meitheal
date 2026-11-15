@@ -865,3 +865,118 @@ test("GET /api/tasks/today-counts and getTodayTaskCounts evaluate counters in th
     await rm(directory, { recursive: true, force: true })
   }
 })
+
+test("CalDAV XML scanning keeps offsets for characters whose lowercase form is longer and stays linear on unclosed tags", () => {
+  const xml = `<d:multistatus xmlns:d="DAV:"><d:response><d:href>/cal/a/</d:href><d:propstat><d:prop><d:displayname>İstanbul</d:displayname></d:prop></d:propstat></d:response><d:response><d:href>/cal/b/</d:href><d:propstat><d:prop><d:displayname>Second</d:displayname></d:prop></d:propstat></d:response></d:multistatus>`
+  const parsed = extractXmlResponses(xml)
+  expect(parsed.map((r) => r.href)).toEqual(["/cal/a/", "/cal/b/"])
+  expect(parsed.map((r) => r.props.displayname)).toEqual(["İstanbul", "Second"])
+
+  const unclosed = `<d:multistatus xmlns:d="DAV:">${"<d:response><d:href>/x".repeat(20000)}</d:multistatus>`
+  const startedAt = Date.now()
+  expect(extractXmlResponses(unclosed)).toEqual([])
+  expect(Date.now() - startedAt).toBeLessThan(2000)
+})
+
+test("CalDAV property lines split on the first colon outside quoted parameters", () => {
+  const ics = [
+    "BEGIN:VCALENDAR",
+    "BEGIN:VEVENT",
+    "UID:alt-1",
+    "SUMMARY:Planning",
+    "DTSTART:20261116T090000Z",
+    'DESCRIPTION;ALTREP="cid:part1@example.org":Meeting notes',
+    "END:VEVENT",
+    "END:VCALENDAR",
+  ].join("\r\n")
+  const [event] = parseVEvents(ics, "/cal/alt.ics")
+  expect(event?.description).toBe("Meeting notes")
+})
+
+test("RECURRENCE-ID RANGE=THISANDFUTURE moves every later instance, keeps earlier ones and survives DST", () => {
+  const ics = [
+    "BEGIN:VCALENDAR",
+    "BEGIN:VEVENT",
+    "UID:range-1",
+    "SUMMARY:Standup",
+    "DTSTART;TZID=Europe/Dublin:20261019T090000",
+    "DTEND;TZID=Europe/Dublin:20261019T093000",
+    "RRULE:FREQ=WEEKLY;COUNT=6",
+    "END:VEVENT",
+    "BEGIN:VEVENT",
+    "UID:range-1",
+    "SUMMARY:Standup (later)",
+    "RECURRENCE-ID;TZID=Europe/Dublin;RANGE=THISANDFUTURE:20261102T090000",
+    "DTSTART;TZID=Europe/Dublin:20261102T100000",
+    "DTEND;TZID=Europe/Dublin:20261102T103000",
+    "END:VEVENT",
+    "END:VCALENDAR",
+  ].join("\r\n")
+  const parsed = parseVEvents(ics, "/cal/range.ics")
+  expect(parsed.find((e) => e.recurrenceId)?.recurrenceRange).toBe("THISANDFUTURE")
+  const expanded = expandCalDAVEventsInWindow(parsed, new Date("2026-10-15T00:00:00Z"), new Date("2026-12-31T00:00:00Z"))
+  const starts = expanded.map((e) => `${e.dtstart} ${e.summary}`)
+  // Oct 19 and Oct 26 stay at 09:00 Dublin (IST until the clocks change on Oct 25).
+  expect(starts.slice(0, 2)).toEqual(["2026-10-19T08:00:00Z Standup", "2026-10-26T09:00:00Z Standup"])
+  // From Nov 2 the wall clock is 10:00 Dublin (GMT = 10:00Z), including after the clocks changed.
+  expect(starts.slice(2)).toEqual([
+    "2026-11-02T10:00:00Z Standup (later)",
+    "2026-11-09T10:00:00Z Standup (later)",
+    "2026-11-16T10:00:00Z Standup (later)",
+    "2026-11-23T10:00:00Z Standup (later)",
+  ])
+})
+
+test("YEARLY rules apply BYSETPOS to the whole year and expand BYMONTHDAY across every month", () => {
+  const setPos = expandRRuleOccurrences({
+    dtstart: "2026-01-05",
+    allDay: true,
+    rrule: "FREQ=YEARLY;BYMONTH=1,2;BYDAY=MO;BYSETPOS=1;COUNT=2",
+    timezone: "UTC",
+    windowStart: new Date("2026-01-01T00:00:00Z"),
+    windowEnd: new Date("2028-12-31T00:00:00Z"),
+  })
+  expect(setPos.map((o) => o.start)).toEqual(["2026-01-05", "2027-01-04"])
+
+  const monthDay = expandRRuleOccurrences({
+    dtstart: "2026-01-15",
+    allDay: true,
+    rrule: "FREQ=YEARLY;BYMONTHDAY=15",
+    timezone: "UTC",
+    windowStart: new Date("2026-02-01T00:00:00Z"),
+    windowEnd: new Date("2026-03-31T00:00:00Z"),
+  })
+  expect(monthDay.map((o) => o.start)).toEqual(["2026-02-15", "2026-03-15"])
+})
+
+test("rules with unmodeled parts import only the first occurrence, and long-running series still expand in the current window", () => {
+  const byHour = expandRRuleOccurrences({
+    dtstart: "2026-11-15T09:00:00Z",
+    rrule: "FREQ=DAILY;BYHOUR=9,17;COUNT=4",
+    timezone: "UTC",
+    windowStart: new Date("2026-11-01T00:00:00Z"),
+    windowEnd: new Date("2026-12-31T00:00:00Z"),
+  })
+  expect(byHour.map((o) => o.start)).toEqual(["2026-11-15T09:00:00Z"])
+
+  const daily = expandRRuleOccurrences({
+    dtstart: "1990-01-01",
+    allDay: true,
+    rrule: "FREQ=DAILY",
+    timezone: "UTC",
+    windowStart: new Date("2026-11-10T00:00:00Z"),
+    windowEnd: new Date("2026-11-12T00:00:00Z"),
+  })
+  expect(daily.map((o) => o.start)).toEqual(["2026-11-10", "2026-11-11", "2026-11-12"])
+
+  const weekly = expandRRuleOccurrences({
+    dtstart: "1990-01-03",
+    allDay: true,
+    rrule: "FREQ=WEEKLY;INTERVAL=2;BYDAY=WE",
+    timezone: "UTC",
+    windowStart: new Date("2026-11-01T00:00:00Z"),
+    windowEnd: new Date("2026-11-30T00:00:00Z"),
+  })
+  // 1990-01-03 plus whole two-week steps lands on 2026-11-04 and 2026-11-18 (a Wednesday each).
+  expect(weekly.map((o) => o.start)).toEqual(["2026-11-04", "2026-11-18"])
+})

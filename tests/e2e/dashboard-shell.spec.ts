@@ -36,9 +36,11 @@ test.describe("Dashboard Shell", () => {
   })
 
   test("achievement badges link to /progress#achievements with hover titles and timed ISO due dates match today", async ({ page, request }) => {
-    const today = new Date().toISOString().slice(0, 10)
+    // The fixture household timezone is Europe/Dublin, so build "today" there. Noon UTC is
+    // the same Dublin calendar day in both winter (UTC+0) and summer (UTC+1).
+    const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Dublin" }).format(new Date())
     const createRes = await request.post("/api/tasks", {
-      data: { title: "Timed ISO due today task", due_date: `${today}T23:30:00Z` },
+      data: { title: "Timed ISO due today task", due_date: `${today}T12:00:00Z` },
     })
     expect(createRes.status()).toBe(201)
 

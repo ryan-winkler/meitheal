@@ -14,7 +14,6 @@
  * @prop weekly - Weekly data from getWeeklyData()
  * @prop dailyGoal - Configurable daily task completion goal (default: 5)
  */
-import { calendarToday } from "../../lib/date"
 import Icon from "../ui/Icon.astro"
 import { resolveAchievementTablerIcon } from "../../lib/tabler-svg"
 
@@ -55,14 +54,15 @@ const {
   level = 1,
   progressToNext = 0,
   achievements = [],
-  timezone = "Europe/Dublin",
 } = Astro.props
 
 const progress = Math.min(stats.todayCompleted / dailyGoal, 1)
 const circumference = 2 * Math.PI * 42
 const dashOffset = circumference * (1 - progress)
 const maxCompleted = Math.max(...weekly.map(d => d.completedCount), dailyGoal)
-const todayDateStr = calendarToday(timezone || "Europe/Dublin")
+// The weekly series is built from UTC dates and ends on its own "today", so mark that last
+// entry rather than a household-timezone date that can fall a day apart from the buckets.
+const todayDateStr = weekly[weekly.length - 1]?.date
 
 function dayLabel(dateStr: string): string {
   const d = new Date(dateStr + "T00:00:00")

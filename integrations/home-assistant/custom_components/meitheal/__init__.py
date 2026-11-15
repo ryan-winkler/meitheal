@@ -41,6 +41,7 @@ from homeassistant.exceptions import (
     HomeAssistantError,
 )
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.aiohttp_client import async_create_clientsession
 
 from .api import (
@@ -117,6 +118,21 @@ COMPLETE_TASK_BY_TAG_SCHEMA = vol.Schema(
 type MeithealConfigEntry = ConfigEntry[MeithealCoordinator]
 
 
+def _script_edit_target(hass: HomeAssistant, entity_id: str | None) -> str:
+    """Link to a script's editor by its registry unique_id.
+
+    The editor opens a script by its configuration key, which is the entity registry
+    ``unique_id``. After a rename the entity id (``script.kitchen_prep``) no longer matches
+    that key (``morning_prep``), so linking by entity id would open a missing script.
+    Without a registry entry the dashboard is the safe destination.
+    """
+    entry = er.async_get(hass).async_get(entity_id) if entity_id else None
+    unique_id = entry.unique_id if entry is not None else None
+    if not unique_id:
+        return "/config/script/dashboard"
+    return f"/config/script/edit/{quote(str(unique_id), safe='')}"
+
+
 def _resolve_service_origin(
     hass: HomeAssistant, call: ServiceCall
 ) -> tuple[str | None, str | None, str | None]:
@@ -150,13 +166,12 @@ def _resolve_service_origin(
             )
             return ("ha_automation", str(name) if name else None, target)
 
-        slug = entity_id.removeprefix("script.") if isinstance(entity_id, str) else None
         name = (
             (str(friendly).strip() if isinstance(friendly, str) and friendly.strip() else None)
             or (state.attributes.get("friendly_name") if state else None)
             or (entity_id if isinstance(entity_id, str) else None)
         )
-        target = f"/config/script/edit/{quote(slug, safe='')}" if slug else "/config/script/dashboard"
+        target = _script_edit_target(hass, entity_id if isinstance(entity_id, str) else None)
         return ("ha_script", str(name) if name else None, target)
 
     context_ids = {cid for cid in (context.id, context.parent_id) if cid}
@@ -174,9 +189,7 @@ def _resolve_service_origin(
                     else "/config/automation/dashboard"
                 )
                 return ("ha_automation", str(name), target)
-            slug = state.object_id
-            target = f"/config/script/edit/{quote(slug, safe='')}" if slug else "/config/script/dashboard"
-            return ("ha_script", str(name), target)
+            return ("ha_script", str(name), _script_edit_target(hass, state.entity_id))
 
     return (None, None, None)
 

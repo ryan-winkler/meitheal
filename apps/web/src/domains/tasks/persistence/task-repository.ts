@@ -411,6 +411,12 @@ export type SyncTaskMutation =
       taskKind?: string | undefined
       areaId?: string | undefined
       ensureCalendarSyncLabel?: boolean | undefined
+      /**
+       * Values the planner read before committing. When given, each planned field is written
+       * only if the stored value still equals the one it was planned from, so an edit saved
+       * after the snapshot read is not overwritten by the sync.
+       */
+      expected?: Partial<Record<"title" | "status" | "dueDate" | "startDate" | "endDate" | "recurrenceRule" | "taskKind", string | number | bigint | null>> | undefined
       updatedAt?: number | undefined
       confirmation?: (SyncConfirmationTarget & { requireUnmodifiedSinceSync?: boolean | undefined }) | undefined
     }
@@ -713,8 +719,8 @@ export class TaskRepository {
     monthEnd: string,
     timezone = "Europe/Dublin",
   ): Promise<Record<string, CalendarDayInfo>> {
-    const lowerBound = shiftCalendarDay(monthStart, -1);
-    const upperBound = shiftCalendarDay(monthEnd, 1);
+    const lowerBound = shiftCalendarDay(monthStart, -2);
+    const upperBound = shiftCalendarDay(monthEnd, 2);
     const result = await this.client.execute({
       sql: `SELECT due_date, color
             FROM tasks
@@ -886,8 +892,8 @@ export class TaskRepository {
 
   /** Tasks due on a specific date (non-complete) */
   async getTasksDueOn(dateStr: string, timezone = "Europe/Dublin"): Promise<TaskRow[]> {
-    const lowerBound = shiftCalendarDay(dateStr, -1);
-    const upperBound = shiftCalendarDay(dateStr, 1);
+    const lowerBound = shiftCalendarDay(dateStr, -2);
+    const upperBound = shiftCalendarDay(dateStr, 2);
     const result = await this.client.execute({
       sql: `SELECT * FROM tasks
             WHERE due_date IS NOT NULL AND due_date <> ''
@@ -920,9 +926,9 @@ export class TaskRepository {
    */
   async getSuggestedTasks(todayStr: string, limit = 10, timezone = "Europe/Dublin"): Promise<TaskRow[]> {
     // Calculate end date (3 days from today)
-    const lowerBound = shiftCalendarDay(todayStr, -1);
+    const lowerBound = shiftCalendarDay(todayStr, -2);
     const endStr = shiftCalendarDay(todayStr, 3);
-    const upperBound = shiftCalendarDay(endStr, 1);
+    const upperBound = shiftCalendarDay(endStr, 2);
 
     const result = await this.client.execute({
       sql: `SELECT * FROM tasks
@@ -932,8 +938,7 @@ export class TaskRepository {
                 (due_date IS NOT NULL AND due_date <> '' AND substr(due_date, 1, 10) >= ? AND substr(due_date, 1, 10) <= ? AND priority <= 2)
                 OR (due_date IS NULL AND priority <= 2)
               )
-            ORDER BY priority ASC, due_date ASC NULLS LAST
-            LIMIT ${limit * 3}`,
+            ORDER BY priority ASC, due_date ASC NULLS LAST`,
       args: [STATUS.COMPLETE, lowerBound, upperBound],
     });
     const rows = sanitizeRows(result.rows as unknown as TaskRow[]);
@@ -963,8 +968,8 @@ export class TaskRepository {
 
   /** Tasks within a date range (non-complete) for upcoming view */
   async getTasksInRange(startDate: string, endDate: string, timezone = "Europe/Dublin"): Promise<TaskRow[]> {
-    const lowerBound = shiftCalendarDay(startDate, -1);
-    const upperBound = shiftCalendarDay(endDate, 1);
+    const lowerBound = shiftCalendarDay(startDate, -2);
+    const upperBound = shiftCalendarDay(endDate, 2);
     const result = await this.client.execute({
       sql: `SELECT * FROM tasks
             WHERE due_date IS NOT NULL AND due_date <> ''
@@ -1150,9 +1155,9 @@ export class TaskRepository {
       args.push(...statuses)
     }
     if (opts.dueDate) {
-      // Widen by ±1 day in SQL, then match in the configured household timezone.
-      const lowerBound = shiftCalendarDay(opts.dueDate, -1)
-      const upperBound = shiftCalendarDay(opts.dueDate, 1)
+      // Widen by ±2 days in SQL (offset-bearing timestamps can sit two calendar days away), then match in the configured household timezone.
+      const lowerBound = shiftCalendarDay(opts.dueDate, -2)
+      const upperBound = shiftCalendarDay(opts.dueDate, 2)
       conditions.push("due_date IS NOT NULL AND due_date <> '' AND substr(due_date, 1, 10) >= ? AND substr(due_date, 1, 10) <= ?")
       args.push(lowerBound, upperBound)
     }
@@ -2856,27 +2861,44 @@ export class TaskRepository {
                   const args: InValue[] = []
                   const changed: string[] = []
                   const changedArgs: InValue[] = []
-                  const assign = (column: string, expression: string, expressionArgs: InValue[]) => {
+                  const expected = mutation.expected
+                  const assign = (
+                    column: string,
+                    expression: string,
+                    expressionArgs: InValue[],
+                    guard?: keyof NonNullable<typeof expected>,
+                  ) => {
+                    const guarded = guard !== undefined && expected !== undefined && guard in expected
+                    if (guarded) {
+                      // Write only while the stored value is still the one the plan was based on.
+                      const snapshot = (expected[guard] ?? null) as InValue
+                      sets.push(`${column} = CASE WHEN ${column} IS ? THEN ${expression} ELSE ${column} END`)
+                      args.push(snapshot, ...expressionArgs)
+                      changed.push(`(${column} IS ? AND ${column} IS NOT (${expression}))`)
+                      changedArgs.push(snapshot, ...expressionArgs)
+                      return
+                    }
                     sets.push(`${column} = ${expression}`)
                     args.push(...expressionArgs)
                     changed.push(`${column} IS NOT (${expression})`)
                     changedArgs.push(...expressionArgs)
                   }
-                  if (mutation.title !== undefined) assign("title", "?", [mutation.title])
-                  if (mutation.status !== undefined) assign("status", "?", [normalizeStatus(mutation.status)])
+                  if (mutation.title !== undefined) assign("title", "?", [mutation.title], "title")
+                  if (mutation.status !== undefined) assign("status", "?", [normalizeStatus(mutation.status)], "status")
                   if (mutation.updateDueDate === true || mutation.dueDate !== undefined) {
-                    assign("due_date", "?", [mutation.dueDate ?? null])
+                    assign("due_date", "?", [mutation.dueDate ?? null], "dueDate")
                   }
-                  if (mutation.startDate !== undefined) assign("start_date", "?", [mutation.startDate ?? null])
-                  if (mutation.endDate !== undefined) assign("end_date", "?", [mutation.endDate ?? null])
+                  if (mutation.startDate !== undefined) assign("start_date", "?", [mutation.startDate ?? null], "startDate")
+                  if (mutation.endDate !== undefined) assign("end_date", "?", [mutation.endDate ?? null], "endDate")
                   if (mutation.recurrenceRule !== undefined) {
                     assign(
                       "recurrence_rule",
                       mutation.replaceRecurrenceRule ? "?" : "COALESCE(?, recurrence_rule)",
                       [mutation.recurrenceRule],
+                      "recurrenceRule",
                     )
                   }
-                  if (mutation.taskKind !== undefined) assign("task_kind", "?", [mutation.taskKind])
+                  if (mutation.taskKind !== undefined) assign("task_kind", "?", [mutation.taskKind], "taskKind")
                   if (mutation.description !== undefined) {
                     assign(
                       "description",

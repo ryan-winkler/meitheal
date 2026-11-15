@@ -511,10 +511,21 @@ export function planInboundCalendarUpdate(
   const previousDay = previous?.start ? calendarDayFromInput(previous.start, opts.timezone) : null
   const incomingDay = calendarDayFromInput(incoming.start, opts.timezone)
   if (
-    calendarOwned && incoming.repeats && String(current.status) === STATUS.COMPLETE &&
+    importedBySync && calendarOwned && incoming.repeats && String(current.status) === STATUS.COMPLETE &&
     previousDay && incomingDay && incomingDay > previousDay
   ) {
     plan.status = STATUS.PENDING
+  }
+  // The commit writes each planned field only while it still holds the value read here.
+  const snapshot = (value: unknown) => (value === undefined ? null : (value as string | number | bigint | null))
+  plan.expected = {
+    title: snapshot(current.title),
+    status: snapshot(current.status),
+    dueDate: snapshot(current.due_date),
+    startDate: snapshot(current.start_date),
+    endDate: snapshot(current.end_date),
+    recurrenceRule: snapshot(current.recurrence_rule),
+    taskKind: snapshot(current.task_kind),
   }
   return plan
 }
@@ -578,6 +589,11 @@ export interface SeriesOccurrenceEntry {
 export interface GroupedCalendarSeries<T> {
   seriesUid: string
   legacyCandidateUids: string[]
+  /**
+   * Keys an earlier release used for this series. They are tried only after every current
+   * key has been matched, and never take a task another present series already owns.
+   */
+  aliasCandidateUids: string[]
   representative: T
   representativeStartDay: string
   representativeEndDate: string | null
@@ -710,7 +726,12 @@ function groupHAEventsIntoSeries(
 
   const seriesList: GroupedCalendarSeries<CalendarEvent>[] = []
 
-  const finalizeGroup = (seriesUid: string, legacyCandidateUids: string[], group: CalendarEvent[]) => {
+  const finalizeGroup = (
+    seriesUid: string,
+    legacyCandidateUids: string[],
+    group: CalendarEvent[],
+    aliasCandidateUids: string[] = [],
+  ) => {
     const selected = selectRepresentativeOccurrence(group, todayStr, timezone)
     const explicitRRule = group
       .map((evt) => normalizeRRule(evt.rrule))
@@ -725,6 +746,7 @@ function groupHAEventsIntoSeries(
     seriesList.push({
       seriesUid,
       legacyCandidateUids,
+      aliasCandidateUids,
       representative: selected.representative,
       representativeStartDay: selected.startDay,
       representativeEndDate: repEnd,
@@ -743,10 +765,10 @@ function groupHAEventsIntoSeries(
     const seriesKeyUid = `ha-cal-series-${entityId}-${key}`
     const priorKeys = [...(priorHouseholdKeys.get(key) ?? [])]
     if (group.length > 1) {
-      finalizeGroup(seriesKeyUid, [seriesKeyUid, ...priorKeys, ...legacyPerOcc], group)
+      finalizeGroup(seriesKeyUid, [seriesKeyUid, ...legacyPerOcc], group, priorKeys)
     } else {
       const singleUid = legacyPerOcc[0]!
-      finalizeGroup(singleUid, [singleUid, seriesKeyUid, ...priorKeys], group)
+      finalizeGroup(singleUid, [singleUid, seriesKeyUid], group, priorKeys)
     }
   }
 
@@ -804,7 +826,7 @@ async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState |
     const seriesList = groupHAEventsIntoSeries(entityId, inboundEvents, todayStr, timezone)
 
     // Batch dedup: pre-fetch existing provider_event_ids scoped to entityId in <= 200-param chunks
-    const lookupUids = Array.from(new Set(seriesList.flatMap((s) => s.legacyCandidateUids)))
+    const lookupUids = Array.from(new Set(seriesList.flatMap((s) => [...s.legacyCandidateUids, ...s.aliasCandidateUids])))
     const existingLookup = await mod.findTasksByExternalSyncIds({
       source: "calendar",
       entityId,
@@ -813,6 +835,25 @@ async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState |
     const existingMap = new Map<string, string>()
     for (const [uid, match] of existingLookup.entries()) {
       existingMap.set(uid, match.taskId)
+    }
+
+    // Exact current keys own their tasks first. A series with no exact match may then adopt a
+    // task saved under an earlier release's key, unless a present series already owns that task.
+    const keyOwnedTaskIds = new Set<string>()
+    for (const series of seriesList) {
+      const exact = series.legacyCandidateUids.find((candidate) => existingMap.has(candidate))
+      if (exact) keyOwnedTaskIds.add(existingMap.get(exact)!)
+    }
+    for (const series of seriesList) {
+      if (series.legacyCandidateUids.some((candidate) => existingMap.has(candidate))) continue
+      const alias = series.aliasCandidateUids.find((candidate) => {
+        const taskId = existingMap.get(candidate)
+        return taskId !== undefined && !keyOwnedTaskIds.has(taskId)
+      })
+      if (alias) {
+        series.legacyCandidateUids.push(alias)
+        keyOwnedTaskIds.add(existingMap.get(alias)!)
+      }
     }
 
     const unmatchedSummaries = [

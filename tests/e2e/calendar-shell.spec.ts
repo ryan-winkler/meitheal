@@ -113,14 +113,23 @@ test.describe("Calendar Shell", () => {
   })
 
   test("calendar summary avoids singular/plural grammar mismatches", async ({ page, request }) => {
+    // This test creates a task, so it only runs against the disposable fixture.
+    test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the disposable Meitheal fixture")
+
     const today = new Date().toISOString().slice(0, 10)
-    await request.post("/api/tasks", { data: { title: "Single calendar summary task", due_date: today } })
-    await page.goto("/calendar")
-    await page.waitForLoadState("networkidle")
-    const summaryText = await page.locator("#calendar-signal-summary").innerText()
-    expect(summaryText).not.toMatch(/\b1 items\b/)
-    expect(summaryText).not.toMatch(/\b1 days\b/)
-    expect(summaryText).not.toMatch(/\b1 HA events\b/)
+    const created = await request.post("/api/tasks", { data: { title: "Single calendar summary task", due_date: today } })
+    expect(created.status(), await created.text()).toBe(201)
+    const taskId = (await created.json()).id as string
+    try {
+      await page.goto("/calendar")
+      await page.waitForLoadState("networkidle")
+      const summaryText = await page.locator("#calendar-signal-summary").innerText()
+      expect(summaryText).not.toMatch(/\b1 items\b/)
+      expect(summaryText).not.toMatch(/\b1 days\b/)
+      expect(summaryText).not.toMatch(/\b1 HA events\b/)
+    } finally {
+      await request.delete(`/api/tasks/${taskId}`, { data: {} })
+    }
   })
 
   test("calendar task counts bucket timed UTC due dates in household timezone", async ({ page, request }) => {

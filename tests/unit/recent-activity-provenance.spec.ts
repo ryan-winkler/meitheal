@@ -71,6 +71,11 @@ test("sanitizes origin kind, display name, and safe internal target paths", () =
     "ha_automation",
   )).toBeNull()
   expect(sanitizeOriginTarget("/config/integrations")).toBeNull()
+  // A settings prefix that normalizes to a path outside settings is dropped.
+  expect(sanitizeOriginTarget("/settings/../auth/authorize?client_id=https://evil.example/", "webhook")).toBeNull()
+  expect(sanitizeOriginTarget("/settings/%2e%2e/auth/authorize", "webhook")).toBeNull()
+  expect(sanitizeOriginTarget("/settings/./integrations#x", "webhook")).toBeNull()
+  expect(sanitizeOriginTarget("/settings/integrations#x", "webhook")).toBe("/settings/integrations#x")
 
   expect(decodeOriginHeader("O%C3%ADche%20mhaith")).toBe("Oíche mhaith")
   expect(decodeOriginHeader("100% done")).toBe("100% done")

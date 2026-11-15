@@ -203,7 +203,13 @@ function daysInMonth(year: number, month: number): number {
  * counted, which matches CalDAV servers. With both BYMONTHDAY and BYDAY, only days
  * that satisfy both are kept (Friday the 13th).
  */
-function monthCandidateDays(rule: RecurrenceRule, year: number, month: number, startDay: number): number[] {
+function monthCandidateDays(
+  rule: RecurrenceRule,
+  year: number,
+  month: number,
+  startDay: number,
+  applySetPos = true,
+): number[] {
   const length = daysInMonth(year, month)
   let days: number[]
   const monthDays = rule.byMonthDay?.length
@@ -233,7 +239,7 @@ function monthCandidateDays(rule: RecurrenceRule, year: number, month: number, s
     days = startDay <= length ? [startDay] : []
   }
   days = Array.from(new Set(days)).sort((a, b) => a - b)
-  if (rule.bySetPos?.length) {
+  if (applySetPos && rule.bySetPos?.length) {
     const picked = rule.bySetPos
       .map(pos => (pos > 0 ? days[pos - 1] : days[days.length + pos]))
       .filter((d): d is number => d !== undefined)
@@ -246,11 +252,32 @@ function monthCandidateDays(rule: RecurrenceRule, year: number, month: number, s
 function* monthBasedDays(rule: RecurrenceRule, startDay: string): Generator<string> {
   const [y, m, d] = startDay.split("-").map(Number) as [number, number, number]
   const startMonth = m - 1
-  const months = rule.freq === "YEARLY" ? (rule.byMonth?.map(n => n - 1) ?? [startMonth]).sort((a, b) => a - b) : null
+  // BYMONTHDAY expands a YEARLY rule across every month unless BYMONTH narrows it.
+  const yearlyMonths = rule.byMonth?.map(n => n - 1)
+    ?? (rule.byMonthDay?.length ? Array.from({ length: 12 }, (_, i) => i) : [startMonth])
+  const months = rule.freq === "YEARLY" ? [...yearlyMonths].sort((a, b) => a - b) : null
   for (let step = 0; step < 12_000; step++) {
-    const periodMonths = months
-      ? months.map(month => ({ year: y + step * rule.interval, month }))
-      : [{ year: y + Math.floor((startMonth + step * rule.interval) / 12), month: (startMonth + step * rule.interval) % 12 }]
+    if (months) {
+      // BYSETPOS selects within the whole year's combined candidates, not month by month.
+      const year = y + step * rule.interval
+      const yearDays: string[] = []
+      for (const month of months) {
+        for (const day of monthCandidateDays(rule, year, month, d, false)) {
+          yearDays.push(`${String(year).padStart(4, "0")}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`)
+        }
+      }
+      yearDays.sort()
+      const selected = rule.bySetPos?.length
+        ? Array.from(new Set(
+          rule.bySetPos
+            .map(pos => (pos > 0 ? yearDays[pos - 1] : yearDays[yearDays.length + pos]))
+            .filter((iso): iso is string => iso !== undefined),
+        )).sort()
+        : yearDays
+      for (const iso of selected) if (iso >= startDay) yield iso
+      continue
+    }
+    const periodMonths = [{ year: y + Math.floor((startMonth + step * rule.interval) / 12), month: (startMonth + step * rule.interval) % 12 }]
     for (const { year, month } of periodMonths) {
       if (rule.freq === "MONTHLY" && rule.byMonth?.length && !rule.byMonth.includes(month + 1)) continue
       for (const day of monthCandidateDays(rule, year, month, d)) {
@@ -578,7 +605,11 @@ function isLimitedOut(rule: RecurrenceRule, day: Date): boolean {
 export function expandRRuleOccurrences(input: ExpandRRuleInput): ExpandedOccurrence[] {
   const tz = input.timezone?.trim() || "UTC"
   const allDay = input.allDay ?? /^\d{4}-\d{2}-\d{2}$/.test(input.dtstart)
-  const parsedRule = input.rrule ? parseRRule(input.rrule) : null
+  // A rule with parts this engine does not model (BYHOUR, BYWEEKNO, ...) cannot be expanded
+  // faithfully, so it is imported as its first occurrence only (see the calendar KCS guide)
+  // instead of being expanded as a simpler rule that would produce wrong dates.
+  const rawRule = input.rrule ? parseRRule(input.rrule) : null
+  const parsedRule = rawRule && !rawRule.unsupportedParts?.length ? rawRule : null
 
   const startParts = parseStartTimeParts(input.dtstart, tz)
   const exdateSet = buildExdateSet(input.exdates, tz, startParts?.isZoned ?? false)
@@ -643,6 +674,18 @@ export function expandRRuleOccurrences(input: ExpandRRuleInput): ExpandedOccurre
   if (monthDays) {
     const first = monthDays.next()
     cursor = first.done ? null : parseCalendarDay(first.value)
+  }
+
+  // Without COUNT, instances before the window never matter, so jump a long-running DAILY or
+  // WEEKLY series close to the window instead of scanning from DTSTART until the scan budget
+  // runs out. The jump keeps the interval alignment and leaves a margin for time zones.
+  if (cursor && !monthDays && parsedRule.count === undefined && (parsedRule.freq === "DAILY" || parsedRule.freq === "WEEKLY")) {
+    const windowDay = Date.parse(`${input.windowStart.toISOString().slice(0, 10)}T00:00:00Z`)
+    const spanDays = allDay ? durationDays : Math.ceil(timedDurationMs / DAY_MS)
+    const daysToWindow = Math.floor((windowDay - cursor.getTime()) / DAY_MS) - spanDays - 2
+    const stepDays = parsedRule.freq === "DAILY" ? parsedRule.interval : 7 * parsedRule.interval
+    const skipSteps = Math.floor((daysToWindow - (parsedRule.freq === "WEEKLY" ? stepDays : 0)) / stepDays)
+    if (skipSteps > 0) cursor = new Date(cursor.getTime() + skipSteps * stepDays * DAY_MS)
   }
 
   // COUNT counts every instance from DTSTART. The output cap counts only instances

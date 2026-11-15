@@ -24,7 +24,7 @@
  * @domain calendar
  * @bounded-context integration
  */
-import { fromZonedTime } from "date-fns-tz"
+import { formatInTimeZone, fromZonedTime } from "date-fns-tz"
 import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability"
 import { classifyNetworkHost, fetchOutbound, normalizeNetworkHost } from "@meitheal/integration-core"
 import { shiftCalendarDay } from "../../lib/date"
@@ -66,6 +66,8 @@ export interface CalDAVEvent {
   rrule?: string | undefined
   exdates?: string[] | undefined
   recurrenceId?: string | undefined
+  /** RECURRENCE-ID RANGE parameter: the override also applies to every later instance */
+  recurrenceRange?: "THISANDFUTURE" | undefined
   tzid?: string | undefined
   cancelled?: boolean | undefined
   /** Raw href on the CalDAV server for dedup */
@@ -275,6 +277,15 @@ function unwrapCdata(raw: string): string {
   return decodeXmlText(trimmed).trim()
 }
 
+/**
+ * ASCII-only lowercase. `String#toLowerCase` can change the string length (for example
+ * U+0130 becomes two code points), which would shift every offset taken from the
+ * lowered copy and slice the original XML in the wrong place.
+ */
+function asciiLower(value: string): string {
+  return value.replace(/[A-Z]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) + 32))
+}
+
 function isTagBoundaryChar(ch: string | undefined): boolean {
   return ch === ">" || ch === "/" || ch === " " || ch === "\t" || ch === "\n" || ch === "\r"
 }
@@ -313,9 +324,12 @@ function findNextOpenTag(lowerXml: string, localName: string, fromIndex: number)
 }
 
 function extractTagContents(xml: string, localName: string): string[] {
-  const lower = xml.toLowerCase()
-  const target = localName.toLowerCase()
+  const lower = asciiLower(xml)
+  const target = asciiLower(localName)
   const results: string[] = []
+  // A closing tag missing after one opening tag is missing after every later one with the
+  // same name, so remember it instead of rescanning the rest of the document each time.
+  const unclosed = new Set<string>()
   let cursor = 0
 
   while (cursor < lower.length) {
@@ -325,9 +339,14 @@ function extractTagContents(xml: string, localName: string): string[] {
       cursor = open.contentStart
       continue
     }
+    if (unclosed.has(open.tagName)) {
+      cursor = open.contentStart
+      continue
+    }
     const closeToken = `</${open.tagName}>`
     const closeIdx = lower.indexOf(closeToken, open.contentStart)
     if (closeIdx === -1) {
+      unclosed.add(open.tagName)
       cursor = open.contentStart
       continue
     }
@@ -368,7 +387,7 @@ export function extractXmlResponses(xml: string): Array<{ href: string; props: R
     const calDataRaw = extractTagContents(block, "calendar-data")[0]
     if (calDataRaw !== undefined) props.calendarData = unwrapCdata(calDataRaw)
 
-    if (findNextOpenTag(block.toLowerCase(), "calendar", 0) !== null) {
+    if (findNextOpenTag(asciiLower(block), "calendar", 0) !== null) {
       props.isCalendar = "true"
     }
 
@@ -392,7 +411,18 @@ function parseICalPropertyLine(line: string): {
   params: Record<string, string>
   value: string
 } | null {
-  const colonIdx = line.indexOf(":")
+  // The name/value separator is the first colon outside a quoted parameter value
+  // (DESCRIPTION;ALTREP="cid:part1@example.org":Meeting notes).
+  let colonIdx = -1
+  let quoted = false
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i]
+    if (ch === '"') quoted = !quoted
+    else if (ch === ":" && !quoted) {
+      colonIdx = i
+      break
+    }
+  }
   if (colonIdx === -1) return null
 
   const left = line.slice(0, colonIdx)
@@ -589,6 +619,7 @@ export function parseVEvents(ical: string, eventHref: string): CalDAVEvent[] {
       rrule,
       exdates: exdates.length > 0 ? exdates : undefined,
       recurrenceId,
+      recurrenceRange: recurrenceId && recurrenceIdParams.RANGE?.toUpperCase() === "THISANDFUTURE" ? "THISANDFUTURE" : undefined,
       tzid,
       href: eventHref,
       cancelled: cancelled || undefined,
@@ -597,6 +628,64 @@ export function parseVEvents(ical: string, eventHref: string): CalDAVEvent[] {
   }
 
   return events
+}
+
+function wallClockMs(value: string, timezone: string, allDay: boolean): number {
+  if (allDay || /^\d{4}-\d{2}-\d{2}$/.test(value)) return Date.parse(value.slice(0, 10))
+  if (/(?:Z|[+-]\d{2}:?\d{2})$/i.test(value)) {
+    return Date.parse(`${formatInTimeZone(new Date(value), timezone, "yyyy-MM-dd'T'HH:mm:ss")}Z`)
+  }
+  return Date.parse(`${value.slice(0, 19)}Z`)
+}
+
+function shiftWallClock(value: string, deltaMs: number, timezone: string, allDay: boolean): string {
+  const shifted = new Date(wallClockMs(value, timezone, allDay) + deltaMs)
+  if (allDay || /^\d{4}-\d{2}-\d{2}$/.test(value)) return shifted.toISOString().slice(0, 10)
+  const wall = shifted.toISOString().slice(0, 19)
+  if (/(?:Z|[+-]\d{2}:?\d{2})$/i.test(value)) {
+    return fromZonedTime(wall, timezone).toISOString().replace(/\.\d{3}Z$/, "Z")
+  }
+  return wall
+}
+
+/**
+ * RECURRENCE-ID;RANGE=THISANDFUTURE: the override's changes (new time of day, title,
+ * location, description) apply to the identified instance and every later one. The
+ * time change is applied to the wall clock so it survives DST.
+ */
+function applyThisAndFutureOverride(
+  master: CalDAVEvent,
+  override: CalDAVEvent,
+  occ: { start: string; end?: string | undefined; inclusiveEndDate?: string | undefined },
+): CalDAVEvent {
+  const timezone = safeTimeZone(master.tzid)
+  const delta =
+    wallClockMs(override.dtstart, timezone, override.allDay) -
+    wallClockMs(override.recurrenceId!, timezone, override.allDay)
+  const start = shiftWallClock(occ.start, delta, timezone, master.allDay)
+  const result: CalDAVEvent = {
+    ...master,
+    summary: override.summary || master.summary,
+    description: override.description ?? master.description,
+    location: override.location ?? master.location,
+    dtstart: start,
+    dtend: occ.end,
+    inclusiveEndDate: occ.inclusiveEndDate ?? master.inclusiveEndDate,
+  }
+  if (occ.end) {
+    if (override.dtend && !master.allDay && /Z$/.test(start)) {
+      const durationMs = Date.parse(override.dtend) - Date.parse(override.dtstart)
+      result.dtend = Number.isFinite(durationMs) && durationMs > 0
+        ? new Date(Date.parse(start) + durationMs).toISOString().replace(/\.\d{3}Z$/, "Z")
+        : shiftWallClock(occ.end, delta, timezone, master.allDay)
+    } else {
+      result.dtend = shiftWallClock(occ.end, delta, timezone, master.allDay)
+    }
+  }
+  if (master.allDay && occ.inclusiveEndDate) {
+    result.inclusiveEndDate = shiftWallClock(occ.inclusiveEndDate, delta, timezone, true)
+  }
+  return result
 }
 
 /** Expand RRULE recurring events and apply EXDATE / RECURRENCE-ID overrides within [start, end]. */
@@ -652,7 +741,16 @@ export function expandCalDAVEventsInWindow(
           windowStart: start,
           windowEnd: end,
         })
+        const rangeOverrides = overrides
+          .filter((o) => o.recurrenceRange === "THISANDFUTURE" && !o.cancelled && o.recurrenceId)
+          .sort((a, b) => Date.parse(a.recurrenceId!) - Date.parse(b.recurrenceId!))
         for (const occ of occs) {
+          const occMs = Date.parse(occ.start)
+          const range = [...rangeOverrides].reverse().find((o) => Date.parse(o.recurrenceId!) <= occMs)
+          if (range) {
+            expanded.push(applyThisAndFutureOverride(master, range, occ))
+            continue
+          }
           expanded.push({
             ...master,
             dtstart: occ.start,

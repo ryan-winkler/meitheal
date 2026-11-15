@@ -95,7 +95,13 @@ export function sanitizeOriginTarget(value: unknown, kind?: VerifiedOriginKind |
   } catch {
     return null
   }
-  if (isSettingsOriginTarget(trimmed)) return trimmed
+  if (isSettingsOriginTarget(trimmed)) {
+    // Judge the path the browser will actually request: "/settings/../auth/authorize" starts
+    // with "/settings/" as written but normalizes to "/auth/authorize".
+    const writtenPath = trimmed.split(/[?#]/, 1)[0]
+    const inSettings = parsed.pathname === "/settings" || parsed.pathname.startsWith("/settings/")
+    return inSettings && writtenPath === parsed.pathname ? trimmed : null
+  }
   if (parsed.search || parsed.hash) return null
   const prefixes = kind
     ? [HA_TARGET_PREFIXES[kind]].filter((prefix): prefix is string => typeof prefix === "string")

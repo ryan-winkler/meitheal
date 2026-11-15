@@ -152,7 +152,7 @@ const mentionUser = verifiedIngressUser(Astro.locals)
                 <div class="grid grid-cols-1 @md/task-inspector:grid-cols-2 @2xl/task-inspector:grid-cols-3 @3xl/task-inspector:grid-cols-4 gap-3 text-sm w-full">
 
                   <div class="grid grid-cols-[100px_minmax(0,1fr)] items-center gap-2 min-w-0">
-                    <span class="text-xs text-text-secondary font-medium truncate">Status</span>
+                    <label for="td-status" class="text-xs text-text-secondary font-medium truncate">Status</label>
                     <select id="td-status" class="form-select py-1.5 px-2 bg-bg-card hover:bg-bg-hover border border-border cursor-pointer transition-colors focus:ring-1 focus:ring-accent font-medium text-text-primary w-full min-w-0">
                       <option value="backlog">Backlog</option>
                       <option value="pending">Pending</option>
@@ -162,7 +162,7 @@ const mentionUser = verifiedIngressUser(Astro.locals)
                   </div>
 
                   <div class="grid grid-cols-[100px_minmax(0,1fr)] items-center gap-2 min-w-0">
-                    <span class="text-xs text-text-secondary font-medium truncate">Type</span>
+                    <label for="td-task-type" class="text-xs text-text-secondary font-medium truncate">Type</label>
                     <select id="td-task-type" class="form-select py-1.5 px-2 bg-bg-card hover:bg-bg-hover border border-border cursor-pointer transition-colors focus:ring-1 focus:ring-accent font-medium text-text-primary w-full min-w-0">
                       <option value="task">Task</option>
                       <option value="story">Story</option>
@@ -171,7 +171,7 @@ const mentionUser = verifiedIngressUser(Astro.locals)
                   </div>
 
                   <div class="grid grid-cols-[100px_minmax(0,1fr)] items-center gap-2 min-w-0">
-                    <span class="text-xs text-text-secondary font-medium truncate">Priority</span>
+                    <label for="td-priority" class="text-xs text-text-secondary font-medium truncate">Priority</label>
                     <select id="td-priority" class="form-select py-1.5 px-2 bg-bg-card hover:bg-bg-hover border border-border cursor-pointer transition-colors focus:ring-1 focus:ring-accent font-medium text-text-primary w-full min-w-0">
                       <option value="1">Urgent</option>
                       <option value="2">High</option>
@@ -182,10 +182,10 @@ const mentionUser = verifiedIngressUser(Astro.locals)
                   </div>
 
                   <div class="grid grid-cols-[100px_minmax(0,1fr)] items-center gap-2 min-w-0">
-                    <span class="text-xs text-text-secondary font-medium flex items-center gap-1.5 truncate" title="Eisenhower Matrix dimension">
+                    <label for="td-urgency" class="text-xs text-text-secondary font-medium flex items-center gap-1.5 truncate" title="Eisenhower Matrix dimension">
                       <Icon name="bolt" size={13} sprite={true} />
                       Urgency
-                    </span>
+                    </label>
                     <select id="td-urgency" class="form-select py-1.5 px-2 bg-bg-card hover:bg-bg-hover border border-border cursor-pointer transition-colors focus:ring-1 focus:ring-accent font-medium text-text-primary w-full min-w-0">
                       <option value="0">0 — Unset</option>
                       <option value="1">1 — Low</option>
@@ -197,10 +197,10 @@ const mentionUser = verifiedIngressUser(Astro.locals)
                   </div>
 
                   <div class="grid grid-cols-[100px_minmax(0,1fr)] items-center gap-2 min-w-0">
-                    <span class="text-xs text-text-secondary font-medium flex items-center gap-1.5 truncate" title="Eisenhower Matrix dimension">
+                    <label for="td-importance" class="text-xs text-text-secondary font-medium flex items-center gap-1.5 truncate" title="Eisenhower Matrix dimension">
                       <Icon name="star" size={13} sprite={true} />
                       Importance
-                    </span>
+                    </label>
                     <select id="td-importance" class="form-select py-1.5 px-2 bg-bg-card hover:bg-bg-hover border border-border cursor-pointer transition-colors focus:ring-1 focus:ring-accent font-medium text-text-primary w-full min-w-0">
                       <option value="0">0 — Unset</option>
                       <option value="1">1 — Low</option>
@@ -212,14 +212,14 @@ const mentionUser = verifiedIngressUser(Astro.locals)
                   </div>
 
                   <div class="grid grid-cols-[100px_minmax(0,1fr)] items-center gap-2 min-w-0">
-                    <span class="text-xs text-text-secondary font-medium truncate">Assignee</span>
+                    <label for="td-assigned-to" class="text-xs text-text-secondary font-medium truncate">Assignee</label>
                     <select id="td-assigned-to" class="form-select py-1.5 px-2 bg-bg-card hover:bg-bg-hover border border-border cursor-pointer transition-colors focus:ring-1 focus:ring-accent font-medium text-text-primary w-full min-w-0">
                       <option value="">Unassigned</option>
                     </select>
                   </div>
 
                   <div class="grid grid-cols-[100px_minmax(0,1fr)] items-center gap-2 min-w-0">
-                    <span class="text-xs text-text-secondary font-medium truncate">Area</span>
+                    <label for="td-area" class="text-xs text-text-secondary font-medium truncate">Area</label>
                     <select id="td-area" class="form-select py-1.5 px-2 bg-bg-card hover:bg-bg-hover border border-border cursor-pointer transition-colors focus:ring-1 focus:ring-accent font-medium text-text-primary w-full min-w-0"></select>
                   </div>
 
@@ -231,20 +231,20 @@ const mentionUser = verifiedIngressUser(Astro.locals)
                   </div>
 
                   <div class="grid grid-cols-[100px_minmax(0,1fr)] items-center gap-2 min-w-0">
-                    <span class="text-xs text-text-secondary font-medium flex items-center gap-1.5 truncate" title="Pillar">
+                    <label for="td-pillar" class="text-xs text-text-secondary font-medium flex items-center gap-1.5 truncate" title="Pillar">
                       <Icon name="target" size={13} sprite={true} />
                       Pillar
-                    </span>
+                    </label>
                     <select id="td-pillar" class="form-select py-1.5 px-2 bg-bg-card hover:bg-bg-hover border border-border cursor-pointer transition-colors focus:ring-1 focus:ring-accent font-medium text-text-primary w-full min-w-0">
                       <option value="">No pillar</option>
                     </select>
                   </div>
 
                   <div class="grid grid-cols-[100px_minmax(0,1fr)] items-center gap-2 min-w-0">
-                    <span class="text-xs text-text-secondary font-medium flex items-center gap-1.5 truncate" title="Principle">
+                    <label for="td-principle" class="text-xs text-text-secondary font-medium flex items-center gap-1.5 truncate" title="Principle">
                       <Icon name="book" size={13} sprite={true} />
                       Principle
-                    </span>
+                    </label>
                     <select id="td-principle" class="form-select py-1.5 px-2 bg-bg-card hover:bg-bg-hover border border-border cursor-pointer transition-colors focus:ring-1 focus:ring-accent font-medium text-text-primary w-full min-w-0">
                       <option value="">No principle</option>
                     </select>
@@ -263,7 +263,7 @@ const mentionUser = verifiedIngressUser(Astro.locals)
                   <div class="min-w-0">
                     <span class="text-xs text-text-secondary font-medium mb-2 block">Dates & Metrics</span>
                     <div class="grid grid-cols-[100px_minmax(0,1fr)] items-center gap-2 mb-2 min-w-0">
-                      <span class="text-xs text-text-secondary">Due</span>
+                      <label for="td-due-date" class="text-xs text-text-secondary">Due</label>
                       <input id="td-due-date" type="date" class="form-input text-xs py-1.5 bg-bg-card hover:bg-bg-hover border border-border transition-colors w-full min-w-0 cursor-pointer" />
                     </div>
 
@@ -272,7 +272,7 @@ const mentionUser = verifiedIngressUser(Astro.locals)
                     <input id="td-end-date" type="date" class="hidden" />
 
                     <div class="grid grid-cols-[100px_minmax(0,1fr)] items-center gap-2 mb-2 min-w-0">
-                      <span class="text-xs text-text-secondary">Progress</span>
+                      <label for="td-progress" class="text-xs text-text-secondary">Progress</label>
                       <div class="flex items-center gap-2 px-2 h-8 bg-bg-card rounded border border-border min-w-0">
                         <input id="td-progress" type="range" min="0" max="100" class="flex-1 accent-accent h-1.5 bg-bg-input rounded-lg cursor-pointer appearance-none" />
                         <span id="td-progress-value" class="text-xs font-mono text-text-primary w-8 text-right font-medium">0%</span>
@@ -280,13 +280,13 @@ const mentionUser = verifiedIngressUser(Astro.locals)
                     </div>
 
                     <div class="grid grid-cols-[100px_minmax(0,1fr)] items-center gap-2 mb-2 min-w-0">
-                      <span class="text-xs text-text-secondary">Tracked (min)</span>
+                      <label for="td-time-tracked" class="text-xs text-text-secondary">Tracked (min)</label>
                       <input id="td-time-tracked" type="number" min="0" step="1" class="form-input text-xs py-1.5 bg-bg-card hover:bg-bg-hover border border-border transition-colors w-full min-w-0 font-mono placeholder-text-muted" placeholder="0" />
                     </div>
                   </div>
 
                   <div class="min-w-0">
-                    <span class="text-xs text-text-secondary font-medium mb-2 block">Recurrence Pattern</span>
+                    <label for="td-recurrence" class="text-xs text-text-secondary font-medium mb-2 block">Recurrence Pattern</label>
                     <select id="td-recurrence" class="form-select text-xs py-1.5 px-2 bg-bg-card hover:border-border-focus border border-border transition-colors w-full min-w-0 cursor-pointer font-medium">
                       <option value="">None (One-time)</option>
                       <option value="FREQ=DAILY">Every day</option>
@@ -299,7 +299,7 @@ const mentionUser = verifiedIngressUser(Astro.locals)
                   </div>
 
                   <div class="min-w-0">
-                    <span class="text-xs text-text-secondary font-medium mb-2 block">Reminder Time</span>
+                    <label for="td-reminder" class="text-xs text-text-secondary font-medium mb-2 block">Reminder Time</label>
                     <input id="td-reminder" type="datetime-local" class="form-input text-xs py-1.5 bg-bg-card hover:border-border-focus border border-border transition-colors w-full min-w-0 cursor-pointer" />
                   </div>
                 </div>
@@ -315,7 +315,7 @@ const mentionUser = verifiedIngressUser(Astro.locals)
 
                   <div class="min-w-0">
                     <div class="flex items-center justify-between mb-2">
-                      <span class="text-xs text-text-secondary font-medium">Labels</span>
+                      <label for="td-label-input" class="text-xs text-text-secondary font-medium">Labels</label>
                       <input id="td-color" type="color" class="w-6 h-6 rounded cursor-pointer border border-border bg-transparent p-0 tooltip" title="Task Color" />
                     </div>
                     <div id="td-labels" class="flex flex-wrap gap-1.5 mb-2 min-h-[24px]"></div>
