@@ -9,7 +9,7 @@
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/16683/badge)](https://www.bestpractices.dev/projects/16683)
 [![codecov](https://codecov.io/gh/ryan-winkler/meitheal/graph/badge.svg?branch=dev)](https://codecov.io/gh/ryan-winkler/meitheal)
 [![Codacy Badge](https://app.codacy.com/project/badge/Grade/bd98d7c4e8d847ceb539d8504cb2d16a)](https://app.codacy.com/gh/ryan-winkler/meitheal/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade)
-[![License](https://img.shields.io/badge/License-Source--Available%201.0-10231b?labelColor=101210&color=69e3b2)](LICENSE)
+[![License: AGPL-3.0-only](https://img.shields.io/badge/License-AGPL--3.0--only-10231b?labelColor=101210&color=69e3b2)](LICENSE)
 [![GitHub Sponsors](https://img.shields.io/badge/Sponsor-GitHub-ea4aaa?logo=github&logoColor=white)](https://github.com/sponsors/ryan-winkler)
 [![Ko-fi](https://img.shields.io/badge/Support-Ko--fi-ff5e5b?logo=ko-fi&logoColor=white)](https://ko-fi.com/ryanw_eu)
 [![Revolut](https://img.shields.io/badge/Support-Revolut-191c1f?logo=revolut&logoColor=white)](https://revolut.me/ryanwi)
@@ -153,4 +153,4 @@ Meitheal is independent and community-driven. Financial support helps fund infra
 
 ## Legal and Licensing
 
-Meitheal is source-available under the [Meitheal Source-Available License 1.0](LICENSE) (`LicenseRef-Meitheal-Source-Available-1.0`). Use it at home or inside your organisation. Keep attribution when you share it, and offer changes upstream even if you use them only inside your organisation. The [license](LICENSE) sets the conditions and restrictions on paid copies, access, and services, and [third-party notices](NOTICE) record separate attributions. See [business use](COMMERCIAL.md) for examples. The optional [Home Assistant integration](integrations/home-assistant/LICENSE) and [automation integration](integrations/nodered/LICENSE) have separate licenses. The compatibility API remains separately licensed and outside this release. The [distribution license](https://github.com/ryan-winkler/meitheal-ha-addon/blob/main/LICENSE) covers published add-on images.
+Meitheal is free software under the [GNU Affero General Public License v3.0 only](LICENSE) (`AGPL-3.0-only`). You can use, study, modify, and share it. If you distribute Meitheal, or let others interact with a modified version over a network, you must offer them its complete source under the same license. A [commercial license](COMMERCIAL.md) is available for uses that cannot meet those terms. The optional [Home Assistant integration](integrations/home-assistant/LICENSE) and [automation integration](integrations/nodered/LICENSE) have separate licenses. The compatibility API remains separately licensed and outside this release. The [distribution license](https://github.com/ryan-winkler/meitheal-ha-addon/blob/main/LICENSE) covers published add-on images.

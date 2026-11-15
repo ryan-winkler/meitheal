@@ -2217,7 +2217,7 @@ const document = {
     version: "0.2.35",
     description: "Meitheal is a Home Assistant-native household and homelab execution hub. This API powers task management, strategic planning, habits, calendar sync, agent orchestration, and automation integrations. All endpoints accept and return JSON unless noted otherwise.\n\n**For AI agents**: Use operationId values as tool names. Prefer searchMeitheal for discovery, createTask/updateTask for mutations. Check getHealth before starting workflows.",
     contact: { name: "Ryan Winkler", url: "https://github.com/ryan-winkler/meitheal" },
-    license: { name: "AGPL-3.0", url: "https://www.gnu.org/licenses/agpl-3.0.html" },
+    license: { name: "AGPL-3.0-only", url: "https://www.gnu.org/licenses/agpl-3.0.html" },
   },
   servers: [
     { url: "./", description: "Meitheal App origin relative to this document" },
