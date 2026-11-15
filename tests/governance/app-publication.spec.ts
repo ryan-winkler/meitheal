@@ -163,6 +163,9 @@ test("staging one channel preserves the other channel and the source manifest", 
     expect(readFileSync(source, "utf8")).toBe(before)
     expect(existsSync(join(fixture, "repository.yaml"))).toBe(true)
     expect(existsSync(join(fixture, "meitheal-hub-canary/translations/en.yaml"))).toBe(true)
+    expect(readFileSync(join(fixture, "meitheal-hub-canary/README.md"), "utf8")).toBe(
+      readFileSync(join(root, "meitheal-hub-canary/README.md"), "utf8"),
+    )
 
     expect(release("stage", "stable", String(stableVersion), fixture).stderr).toContain("would move backwards")
     expect(release("stage", "canary", "invalid", fixture).status).toBe(1)
@@ -182,6 +185,8 @@ test("staging both channels uses the reviewed AppArmor policy", () => {
     for (const directory of ["meitheal-hub", "meitheal-hub-canary"]) {
       expect(readFileSync(join(fixture, directory, "config.yaml"), "utf8")).toMatch(/^apparmor: true$/m)
       expect(readFileSync(join(fixture, directory, "apparmor.txt"))).toEqual(profile)
+      expect(existsSync(join(fixture, directory, "README.md")), `${directory} store listing`).toBe(true)
+      expect(existsSync(join(fixture, directory, "DOCS.md")), `${directory} documentation`).toBe(true)
     }
   } finally {
     rmSync(fixture, { recursive: true, force: true })
