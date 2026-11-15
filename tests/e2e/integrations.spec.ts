@@ -22,9 +22,9 @@ test.describe("Integration Webhooks", () => {
       req.on("end", () => {
         receivedRequests.push({ headers: req.headers, body });
         if (req.url === "/redirect") {
-          res.writeHead(307, { location: `http://127.0.0.1:${port}/redirected` });
-          res.end();
-          return;
+          res.writeHead(307, { location: `http://127.0.0.1:${port}/redirected` })
+          res.end()
+          return
         }
         res.writeHead(200);
         res.end("OK");

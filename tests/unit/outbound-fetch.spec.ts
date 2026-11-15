@@ -308,6 +308,12 @@ test.describe("CalDAV origin pinning and protocol validation", () => {
 
     expect(resolveCalDAVHref("https://dav.example/user/", "/cal/").href).toBe("https://dav.example/cal/")
     expect(() => resolveCalDAVHref("file:///tmp/a", "file:///tmp/b")).toThrow(/Only HTTP\/HTTPS/)
+    expect(() => resolveCalDAVHref("https://dav.example/user/", "blob:https://dav.example/123")).toThrow(
+      /Only HTTP\/HTTPS/,
+    )
+    expect(() =>
+      resolveCalDAVHref("https://dav.example/user/", ["blob:https://user", "secret@dav.example/123"].join(":")),
+    ).toThrow(/Only HTTP\/HTTPS/)
     expect(() => resolveCalDAVHref(["https://user", "pass@dav.example/user/"].join(":"), "/cal/")).toThrow(
       /embedded credentials/,
     )
@@ -380,8 +386,9 @@ test.describe("CalDAV credential key initialization and legacy migration", () =>
   test("atomically initializes a 0600 per-install key under concurrency without overwriting or leaving temp files", async () => {
     const directory = await mkdtemp(join(tmpdir(), "meitheal-caldav-key-"))
     const previous = Object.fromEntries(
-      ["MEITHEAL_DB_URL", "SUPERVISOR_TOKEN", "HA_TOKEN"].map((key) => [key, process.env[key]]),
+      ["MEITHEAL_DATA_DIR", "MEITHEAL_DB_URL", "SUPERVISOR_TOKEN", "HA_TOKEN"].map((key) => [key, process.env[key]]),
     )
+    delete process.env.MEITHEAL_DATA_DIR
     delete process.env.SUPERVISOR_TOKEN
     delete process.env.HA_TOKEN
     process.env.MEITHEAL_DB_URL = `file:${join(directory, "tasks.db")}`
@@ -464,8 +471,9 @@ test.describe("CalDAV credential key initialization and legacy migration", () =>
   test("migrates pre-0.0.2 legacy fallback credentials in-place to the per-install key on first read", async () => {
     const directory = await mkdtemp(join(tmpdir(), "meitheal-caldav-legacy-"))
     const previous = Object.fromEntries(
-      ["MEITHEAL_DB_URL", "SUPERVISOR_TOKEN", "HA_TOKEN"].map((key) => [key, process.env[key]]),
+      ["MEITHEAL_DATA_DIR", "MEITHEAL_DB_URL", "SUPERVISOR_TOKEN", "HA_TOKEN"].map((key) => [key, process.env[key]]),
     )
+    delete process.env.MEITHEAL_DATA_DIR
     delete process.env.SUPERVISOR_TOKEN
     delete process.env.HA_TOKEN
     process.env.MEITHEAL_DB_URL = `file:${join(directory, "tasks.db")}`

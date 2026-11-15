@@ -126,10 +126,13 @@ export function resolveCalDAVHref(baseUrl: string, href: string): URL {
     throw new Error("CalDAV URL must not include embedded credentials")
   }
   const resolved = new URL(href, base)
+  if (resolved.protocol !== "http:" && resolved.protocol !== "https:") {
+    throw new Error("Only HTTP/HTTPS URLs are supported")
+  }
   if (resolved.username || resolved.password) {
     throw new Error("CalDAV href must not include embedded credentials")
   }
-  if (resolved.origin !== base.origin) {
+  if (resolved.protocol !== base.protocol || resolved.origin !== base.origin) {
     throw new Error(`CalDAV server returned an href on another origin (${resolved.origin})`)
   }
   return resolved
@@ -176,7 +179,7 @@ async function caldavFetch(
       await res.body?.cancel().catch(() => undefined)
       if (hop >= MAX_REDIRECTS) throw new Error(`CalDAV server redirected more than ${MAX_REDIRECTS} times`)
       const next = new URL(location, target)
-      if (next.origin !== origin.origin) {
+      if (next.protocol !== origin.protocol || next.origin !== origin.origin) {
         throw new Error(`CalDAV server redirected to another origin (${next.origin}); update the CalDAV URL instead`)
       }
       const nextCheck = validateCalDAVUrl(next.toString())
