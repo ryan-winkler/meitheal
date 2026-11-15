@@ -42,7 +42,11 @@ export function readKanbanFilters(params: URLSearchParams): KanbanFilters {
     promoted: params.get("promoted") === "1",
     rice: params.get("rice") ?? "",
     groupBy: params.get("groupBy") ?? "none",
-    types: (params.get("types") ?? "").split(",").filter(Boolean).slice(0, 50),
+    types: (params.get("types") ?? "")
+      .split(",")
+      .filter(Boolean)
+      .map(type => (type === "standard" ? "standard_action" : type))
+      .slice(0, 50),
     labels: readFilterLabels(params),
     advancedFilter: readRules(params.get("advancedFilter")) ?? null,
   }

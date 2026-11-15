@@ -3,8 +3,11 @@ import type { ResultSet } from "@libsql/client"
 import { deriveEisenhowerQuadrant, VALID_TASK_TYPES, type TaskType } from "@meitheal/domain-tasks"
 import { normalizeLabelTitle, taskLabelInsert } from "@domains/labels"
 import { hasBoardSelection, rejectBoardSelectionInJson, unavailableBoardResponse } from "@domains/tasks/board-availability"
-import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
-import { taskAddedActivity } from "@domains/tasks/persistence/recent-activity"
+import {
+  ensureSchema,
+  getPersistenceClient,
+  taskAddedActivity,
+} from "@domains/tasks"
 import { taskInsertStatement, TaskRepository } from "@domains/tasks/persistence/task-repository"
 import { dispatchTaskCreation, prepareTaskCreation, taskCreationPayload } from "@domains/tasks/task-creation-service"
 import { runWriteTransaction } from "../../../../scripts/database-client.mjs"
@@ -18,7 +21,7 @@ import { taskEventAuthorityHeaders } from "../../../lib/webhook-dispatcher"
 
 /** GET /api/tasks — list all tasks, POST /api/tasks — create a task */
 
-export const GET: APIRoute = async ({ url }) => {
+export const GET: APIRoute = async ({ url, locals }) => {
   try {
   await ensureSchema()
   const repo = new TaskRepository(getPersistenceClient())
@@ -50,7 +53,17 @@ export const GET: APIRoute = async ({ url }) => {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(dueDate) || !Number.isFinite(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== dueDate) {
       return apiError("due_date must be a valid date in YYYY-MM-DD format", 400)
     }
+    let tz = typeof locals?.timezone === "string" && locals.timezone ? locals.timezone : undefined
+    if (!tz) {
+      const settings = await repo.getSettings(["timezone"])
+      let rawTz: unknown = settings.timezone
+      if (typeof rawTz === "string") {
+        try { rawTz = JSON.parse(rawTz) } catch { /* plain-text setting */ }
+      }
+      if (typeof rawTz === "string" && rawTz) tz = rawTz
+    }
     findOpts.dueDate = dueDate
+    findOpts.timezone = tz || "Europe/Dublin"
   }
   const priority = url.searchParams.get("priority")
   if (priority) {
@@ -156,7 +169,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
   if (!prepared.ok) return Response.json({ error: prepared.error }, { status: 400 })
 
   const now = Date.now()
-  const activity = taskAddedActivity(prepared.task.id, resolveRecentActivityActor(locals), now)
+  const activity = taskAddedActivity(prepared.task.id, resolveRecentActivityActor(locals, request), now)
   const statements = [taskInsertStatement(prepared.task, now), activity]
   if (body.new_labels !== undefined) {
     if (locals.agentToken) return apiError("Creating labels with a task requires a browser session.", 403)

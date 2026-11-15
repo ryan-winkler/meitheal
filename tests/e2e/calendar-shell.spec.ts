@@ -111,4 +111,55 @@ test.describe("Calendar Shell", () => {
     await expect(page).toHaveURL(/\/tasks\?status=active&priority=1&view=table#table$/)
     await expect(table).toHaveAttribute("aria-current", "page")
   })
+
+  test("calendar summary avoids singular/plural grammar mismatches", async ({ page, request }) => {
+    const today = new Date().toISOString().slice(0, 10)
+    await request.post("/api/tasks", { data: { title: "Single calendar summary task", due_date: today } })
+    await page.goto("/calendar")
+    await page.waitForLoadState("networkidle")
+    const summaryText = await page.locator("#calendar-signal-summary").innerText()
+    expect(summaryText).not.toMatch(/\b1 items\b/)
+    expect(summaryText).not.toMatch(/\b1 days\b/)
+    expect(summaryText).not.toMatch(/\b1 HA events\b/)
+  })
+
+  test("calendar task counts bucket timed UTC due dates in household timezone", async ({ page, request }) => {
+    test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the disposable Meitheal fixture")
+
+    const beforeSettings = await (await request.get("/api/settings")).json()
+    const prevTz = typeof beforeSettings.timezone === "string" ? beforeSettings.timezone : "Europe/Dublin"
+    let taskId: string | undefined
+    try {
+      expect((await request.put("/api/settings", {
+        data: { key: "timezone", value: "America/Los_Angeles" },
+      })).status()).toBe(200)
+
+      const created = await request.post("/api/tasks", {
+        data: { title: "LA Evening Timed Task", status: "pending", due_date: "2027-06-16T02:00:00Z" },
+      })
+      expect(created.status(), await created.text()).toBe(201)
+      taskId = (await created.json()).id
+
+      await page.goto("/tasks?view=calendar&year=2027&month=5#calendar")
+      await page.waitForLoadState("networkidle")
+
+      await expect(page.locator('.cal-cell[data-date="2027-06-15"]')).toHaveAccessibleName(/1 task$/)
+      await expect(page.locator('.cal-cell[data-date="2027-06-16"]')).not.toHaveAccessibleName(/\btasks?$/)
+
+      await page.locator('.cal-cell[data-date="2027-06-15"]').click()
+      await expect(page.locator("#day-drawer")).toHaveAttribute("aria-hidden", "false")
+      await expect(page.locator("#day-drawer-tasks")).toContainText("LA Evening Timed Task")
+      await page.locator("#day-drawer-close").click()
+      await expect(page.locator("#day-drawer")).toHaveAttribute("aria-hidden", "true")
+
+      await page.locator('.cal-cell[data-date="2027-06-16"]').click()
+      await expect(page.locator("#day-drawer-tasks")).toContainText("No tasks due")
+      await expect(page.locator("#day-drawer-tasks").getByText("LA Evening Timed Task")).toHaveCount(0)
+    } finally {
+      await request.put("/api/settings", { data: { key: "timezone", value: prevTz } })
+      if (taskId) {
+        await request.delete(`/api/tasks/${taskId}`, { data: {} })
+      }
+    }
+  })
 })

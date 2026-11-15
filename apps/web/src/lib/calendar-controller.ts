@@ -1,4 +1,5 @@
 import { createClientLogger } from "@lib/client-logger"
+import { calendarDayFromInput, formatTimeInZone, shiftCalendarDay } from "@lib/date"
 import { initPageShellNavigation } from "@lib/page-shell-controller"
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { escapeHtml } from "@lib/safe-html"
@@ -17,6 +18,10 @@ interface CalendarEventRecord {
 
 const log = createClientLogger("tasks", "calendar-shell")
 let currentDrawerDate = ""
+
+function getCalendarTimezone(): string {
+  return document.getElementById("calendar-shell")?.dataset.timezone || "Europe/Dublin"
+}
 
 export function initCalendarPage(): void {
   if (document.getElementById("calendar-bar")) {
@@ -206,9 +211,8 @@ async function loadDrawerData(dateStr: string): Promise<void> {
   if (!drawerEvents || !drawerTasks) return
 
   try {
-    const nextDay = new Date(`${dateStr}T00:00:00`)
-    nextDay.setDate(nextDay.getDate() + 1)
-    const endStr = nextDay.toISOString().split("T")[0] || dateStr
+    const tz = getCalendarTimezone()
+    const endStr = shiftCalendarDay(dateStr, 1)
     const entities = await fetchCalendarEntities()
     const events: CalendarEventRecord[] = []
 
@@ -242,12 +246,7 @@ async function loadDrawerData(dateStr: string): Promise<void> {
     } else {
       drawerEvents.replaceChildren(
         ...events.map((event) => {
-          const time = event.start.includes("T")
-            ? new Date(event.start).toLocaleTimeString("en-US", {
-              hour: "numeric",
-              minute: "2-digit",
-            })
-            : "All day"
+          const time = formatTimeInZone(event.start, tz) ?? "All day"
           const item = document.createElement("div")
           item.className = "day-drawer-item"
           const icon = document.createElement("span")
@@ -337,10 +336,10 @@ async function loadInlineEventPreviews(): Promise<void> {
     .filter((date): date is string => Boolean(date))
   if (dates.length === 0) return
 
+  const tz = getCalendarTimezone()
   const start = dates[0]
-  const lastDate = new Date(`${dates[dates.length - 1]}T00:00:00`)
-  lastDate.setDate(lastDate.getDate() + 1)
-  const end = lastDate.toISOString().split("T")[0]
+  const lastDay = dates[dates.length - 1]
+  const end = lastDay ? shiftCalendarDay(lastDay, 1) : ""
   if (!start || !end) return
 
   const allEvents: CalendarEventRecord[] = []
@@ -362,7 +361,7 @@ async function loadInlineEventPreviews(): Promise<void> {
 
   const byDate = new Map<string, CalendarEventRecord[]>()
   for (const event of allEvents) {
-    const dateKey = event.start.includes("T") ? event.start.split("T")[0] : event.start
+    const dateKey = calendarDayFromInput(event.start, tz)
     if (!dateKey) continue
 
     if (!byDate.has(dateKey)) {
@@ -377,12 +376,7 @@ async function loadInlineEventPreviews(): Promise<void> {
 
     const shown = events.slice(0, 2)
     const nodes: HTMLElement[] = shown.map((event) => {
-      const time = event.start.includes("T")
-        ? new Date(event.start).toLocaleTimeString("en-US", {
-          hour: "numeric",
-          minute: "2-digit",
-        })
-        : "☀"
+      const time = formatTimeInZone(event.start, tz) ?? "☀"
       const div = document.createElement("div")
       div.className = "cal-inline-event cal-inline-ha"
       div.title = event.summary

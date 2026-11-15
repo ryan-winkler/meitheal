@@ -12,7 +12,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
   <div class="modal-content nt-modal">
     <header class="nt-header">
       <h2 id="new-task-title">{t("tasks.new_task_modal", locale)}</h2>
-      <button type="button" class="btn btn-ghost nt-icon-button" id="close-new-task-modal" aria-label="Close">
+      <button type="button" class="btn btn-ghost nt-icon-button" id="close-new-task-modal" aria-label="Close" title="Close">
         <Icon name="x" size={18} sprite={true} />
       </button>
     </header>
@@ -26,10 +26,10 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
       <fieldset class="nt-group">
         <legend>{t("task_modal.type_label", locale)}</legend>
         <div class="nt-kind-grid" id="nt-kind-tabs">
-          <button type="button" class="nt-kind-pill active" data-kind="standard_action" aria-pressed="true">{t("task_modal.kind_task", locale)}</button>
-          <button type="button" class="nt-kind-pill" data-kind="shopping_item" aria-pressed="false">{t("task_modal.kind_shopping_list", locale)}</button>
-          <button type="button" class="nt-kind-pill" data-kind="checklist" aria-pressed="false">{t("task_modal.kind_checklist", locale)}</button>
-          <button type="button" class="nt-kind-pill" data-kind="calendar_event" aria-pressed="false">{t("task_modal.kind_event", locale)}</button>
+          <button type="button" class="nt-kind-pill active inline-flex items-center justify-center gap-1.5" data-kind="standard_action" aria-pressed="true"><Icon name="checkbox" size={15} /><span>{t("task_modal.kind_task", locale)}</span></button>
+          <button type="button" class="nt-kind-pill inline-flex items-center justify-center gap-1.5" data-kind="shopping_item" aria-pressed="false"><Icon name="shopping-cart" size={15} /><span>{t("task_modal.kind_shopping_list", locale)}</span></button>
+          <button type="button" class="nt-kind-pill inline-flex items-center justify-center gap-1.5" data-kind="checklist" aria-pressed="false"><Icon name="list-check" size={15} /><span>{t("task_modal.kind_checklist", locale)}</span></button>
+          <button type="button" class="nt-kind-pill inline-flex items-center justify-center gap-1.5" data-kind="calendar_event" aria-pressed="false"><Icon name="calendar-event" size={15} /><span>{t("task_modal.kind_event", locale)}</span></button>
         </div>
       </fieldset>
       <div class="nt-field">
@@ -111,7 +111,10 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
         <div class="nt-field">
           <input type="hidden" id="new-task-status" name="status" value="pending" />
           <div id="nt-status-pills" class="filter-toolbar__type-toggles" role="radiogroup" aria-label="Task status">
-            <button type="button" class="filter-toolbar__type-btn active" data-status="pending" role="radio" aria-checked="true">{t("task_modal.status_todo", locale)}</button>
+            <button type="button" class="filter-toolbar__type-btn active" data-status="pending" role="radio" aria-checked="true">
+              <span class="nt-status-pill-icon inline-flex items-center" aria-hidden="true"><Icon name="clock" size={14} /></span>
+              <span>{t("task_modal.status_todo", locale)}</span>
+            </button>
           </div>
         </div>
         <div class="nt-form-grid">
@@ -240,6 +243,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
   import { showToast } from "@lib/toast";
   import { renderSpriteIconSvg, type IconName } from "../../generated/icon-registry";
   import { InlineDatePicker } from "../shared/InlineDatePicker"
+  import { createTablerSvgElement, renderIconOrCustomEmoji, type TablerIconName } from "@lib/tabler-svg";
   import { checklistLines, createChecklistItem } from "@lib/checklist-items"
   import { createClientLogger } from "@lib/client-logger";
   import { pageLifecycle } from "@lib/page-lifecycle";
@@ -528,7 +532,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
         const cb = document.createElement("input")
         cb.type = "checkbox"
         cb.setAttribute("aria-label", fieldLabel)
-        cb.className = "rounded border-border-dim bg-bg-input/50 focus:ring-accent"
+        cb.className = "rounded border-border bg-bg-input/50 focus:ring-accent"
         entry.appendChild(cb)
       } else {
         const icon = document.createElement("span")
@@ -703,8 +707,15 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
           pill.dataset.status = lane.key
           pill.setAttribute("role", "radio")
           const icon = document.createElement("span")
-          icon.className = "nt-status-pill-icon"
-          icon.textContent = lane.icon
+          icon.className = "nt-status-pill-icon inline-flex items-center"
+          icon.setAttribute("aria-hidden", "true")
+          const laneFallbackIcon: Record<string, TablerIconName> = {
+            backlog: "inbox",
+            pending: "clock",
+            active: "bolt",
+            complete: "check",
+          }
+          renderIconOrCustomEmoji(icon, lane.icon, laneFallbackIcon[lane.key] ?? "clock", 14)
           const label = document.createElement("span")
           label.textContent = lane.label
           pill.append(icon, label)
@@ -839,7 +850,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
         goalSelect.replaceChildren(noGoal, ...goals.map(goal => {
           const option = document.createElement("option")
           option.value = goal.id
-          option.textContent = `🎯 ${goal.title || goal.name}`
+          option.textContent = String(goal.title || goal.name || "")
           return option
         }))
         selectSavedOption(goalSelect, selected, taskDraftText("goal_missing"))
@@ -1369,7 +1380,6 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
 </script>
 
 <style>
-  @import "../../styles/inline-date-picker.css";
   #nt-status-pills :global(.filter-toolbar__type-btn:not(.active)) { opacity: 1; }
   .nt-due-picker { min-height: 44px; }
   .nt-due-picker :global(.idp-trigger) { min-width: 44px; min-height: 44px; color: var(--text-primary); opacity: 1; white-space: normal; }

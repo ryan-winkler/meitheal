@@ -23,6 +23,7 @@ import logging
 import os
 import shutil
 import tempfile
+from urllib.parse import quote
 from weakref import WeakSet
 
 import voluptuous as vol
@@ -114,6 +115,70 @@ COMPLETE_TASK_BY_TAG_SCHEMA = vol.Schema(
 
 
 type MeithealConfigEntry = ConfigEntry[MeithealCoordinator]
+
+
+def _resolve_service_origin(
+    hass: HomeAssistant, call: ServiceCall
+) -> tuple[str | None, str | None, str | None]:
+    """Derive verified HA automation or script provenance from ServiceCall context."""
+    context = call.context
+    if context is None:
+        return (None, None, None)
+
+    origin_event = getattr(context, "origin_event", None)
+    if origin_event is not None and getattr(origin_event, "event_type", None) in (
+        "automation_triggered",
+        "script_started",
+    ):
+        data = getattr(origin_event, "data", {}) or {}
+        entity_id = data.get("entity_id")
+        friendly = data.get("name")
+        state = hass.states.get(entity_id) if isinstance(entity_id, str) and entity_id else None
+        if origin_event.event_type == "automation_triggered" or (
+            isinstance(entity_id, str) and entity_id.startswith("automation.")
+        ):
+            auto_id = state.attributes.get("id") if state else None
+            name = (
+                (str(friendly).strip() if isinstance(friendly, str) and friendly.strip() else None)
+                or (state.attributes.get("friendly_name") if state else None)
+                or (entity_id if isinstance(entity_id, str) else None)
+            )
+            target = (
+                f"/config/automation/edit/{quote(str(auto_id), safe='')}"
+                if auto_id
+                else "/config/automation/dashboard"
+            )
+            return ("ha_automation", str(name) if name else None, target)
+
+        slug = entity_id.removeprefix("script.") if isinstance(entity_id, str) else None
+        name = (
+            (str(friendly).strip() if isinstance(friendly, str) and friendly.strip() else None)
+            or (state.attributes.get("friendly_name") if state else None)
+            or (entity_id if isinstance(entity_id, str) else None)
+        )
+        target = f"/config/script/edit/{quote(slug, safe='')}" if slug else "/config/script/dashboard"
+        return ("ha_script", str(name) if name else None, target)
+
+    context_ids = {cid for cid in (context.id, context.parent_id) if cid}
+    if context_ids:
+        for state in hass.states.async_all(["automation", "script"]):
+            state_ctx = getattr(state, "context", None)
+            if state_ctx is None or state_ctx.id not in context_ids:
+                continue
+            name = state.attributes.get("friendly_name") or state.name or state.entity_id
+            if state.domain == "automation":
+                auto_id = state.attributes.get("id")
+                target = (
+                    f"/config/automation/edit/{quote(str(auto_id), safe='')}"
+                    if auto_id
+                    else "/config/automation/dashboard"
+                )
+                return ("ha_automation", str(name), target)
+            slug = state.object_id
+            target = f"/config/script/edit/{quote(slug, safe='')}" if slug else "/config/script/dashboard"
+            return ("ha_script", str(name), target)
+
+    return (None, None, None)
 
 
 _SENTENCE_MANIFEST = ".meitheal_sentences.json"
@@ -259,6 +324,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: MeithealConfigEntry) -> 
             call.data.get("assigned_to") or call.data.get("assignee_user")
         )
         try:
+            origin_kind, origin_name, origin_target = _resolve_service_origin(hass, call)
+            origin_kwargs = (
+                {
+                    "origin_kind": origin_kind,
+                    "origin_name": origin_name,
+                    "origin_target": origin_target,
+                }
+                if origin_kind
+                else {}
+            )
             await coordinator.async_create_task(
                 title=call.data["title"],
                 description=call.data.get("description"),
@@ -267,6 +342,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: MeithealConfigEntry) -> 
                 urgency=call.data.get("urgency"),
                 importance=call.data.get("importance"),
                 **({"assigned_to": assigned_to} if assigned_to else {}),
+                **origin_kwargs,
             )
         except (HomeAssistantError, ValueError) as err:
             raise HomeAssistantError(
@@ -278,9 +354,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: MeithealConfigEntry) -> 
     async def handle_complete_task(call: ServiceCall) -> None:
         """Handle meitheal.complete_task service call."""
         try:
+            origin_kind, origin_name, origin_target = _resolve_service_origin(hass, call)
+            origin_kwargs = (
+                {
+                    "origin_kind": origin_kind,
+                    "origin_name": origin_name,
+                    "origin_target": origin_target,
+                }
+                if origin_kind
+                else {}
+            )
             await coordinator.async_complete_task(
                 task_id=call.data.get("task_id"),
                 title=call.data.get("title"),
+                **origin_kwargs,
             )
         except (HomeAssistantError, ValueError) as err:
             raise HomeAssistantError(
@@ -358,8 +445,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: MeithealConfigEntry) -> 
     async def handle_complete_task_by_tag(call: ServiceCall) -> None:
         """Handle meitheal.complete_task_by_tag service call."""
         try:
+            origin_kind, origin_name, origin_target = _resolve_service_origin(hass, call)
+            origin_kwargs = (
+                {
+                    "origin_kind": origin_kind,
+                    "origin_name": origin_name,
+                    "origin_target": origin_target,
+                }
+                if origin_kind
+                else {}
+            )
             await coordinator.async_complete_task_by_tag(
                 tag_id=call.data["tag_id"],
+                **origin_kwargs,
             )
         except (HomeAssistantError, ValueError) as err:
             raise HomeAssistantError(

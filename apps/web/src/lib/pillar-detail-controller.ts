@@ -1,6 +1,7 @@
 import type { Principle } from "@domains/pillars/principle-service"
 import { confirmDialog } from "@lib/confirm-dialog"
 import { pageLifecycle } from "@lib/page-lifecycle"
+import { renderIconOrCustomEmoji } from "@lib/tabler-svg"
 
 interface PillarDetail {
   id: string
@@ -154,7 +155,8 @@ pageLifecycle.onPageLoad(signal => {
     if (busy) return
     pillar = event.detail
     overlay.style.setProperty("--pillar-accent", pillar.colorHex || "var(--accent)")
-    element("pillar-detail-icon")!.textContent = pillar.icon || "🏛️"
+    const detailIcon = element("pillar-detail-icon")
+    if (detailIcon) renderIconOrCustomEmoji(detailIcon, pillar.icon, "pillars", 22)
     element("pillar-detail-title")!.textContent = pillar.name
     element("pillar-detail-weight")!.textContent = `Weight ${pillar.weight}/10`
     element("pillar-detail-manifesto-text")!.textContent = pillar.manifesto || "No manifesto yet. Choose Edit pillar to add one."

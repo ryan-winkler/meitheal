@@ -18,51 +18,87 @@
  *
  * MVP scope:
  *   - VEVENT only (no VTODO, VJOURNAL)
- *   - Single events only (no RRULE expansion)
+ *   - Supports VEVENT recurrence expansion (RRULE / EXDATE)
  *   - Read-only (no write-back to CalDAV)
  *
  * @domain calendar
  * @bounded-context integration
  */
-import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability";
+import { fromZonedTime } from "date-fns-tz"
+import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability"
 import { classifyNetworkHost, fetchOutbound, normalizeNetworkHost } from "@meitheal/integration-core"
+import { shiftCalendarDay } from "../../lib/date"
+import { expandRRuleOccurrences, normalizeRRule } from "./recurrence"
 
 const logger = createLogger({
   service: "meitheal-web", env: process.env.NODE_ENV ?? "development",
   minLevel: "info", enabledCategories: ["caldav", "calendar"],
   redactPatterns: [...defaultRedactionPatterns, /password=\S+/gi, /Authorization:\s*\S+/gi],
   auditEnabled: false,
-});
-const SYS_REQ = "caldav-system";
+})
+const SYS_REQ = "caldav-system"
 
 // ─── Types ──────────────────────────────────────────────────────────
 
 export interface CalDAVConfig {
-  url: string;
-  username: string;
-  password: string;
+  url: string
+  username: string
+  password: string
 }
 
 export interface CalDAVCalendar {
-  href: string;
-  displayName: string;
-  ctag?: string | undefined;
-  color?: string | undefined;
+  href: string
+  displayName: string
+  ctag?: string | undefined
+  color?: string | undefined
 }
 
 export interface CalDAVEvent {
-  uid: string;
-  summary: string;
-  dtstart: string;
-  dtend?: string | undefined;
-  description?: string | undefined;
-  location?: string | undefined;
-  allDay: boolean;
+  uid: string
+  summary: string
+  dtstart: string
+  dtend?: string | undefined
+  /** Inclusive end date (YYYY-MM-DD) for all-day events where iCal DTEND is exclusive */
+  inclusiveEndDate?: string | undefined
+  description?: string | undefined
+  location?: string | undefined
+  allDay: boolean
+  rrule?: string | undefined
+  exdates?: string[] | undefined
+  recurrenceId?: string | undefined
+  tzid?: string | undefined
+  cancelled?: boolean | undefined
   /** Raw href on the CalDAV server for dedup */
-  href: string;
+  href: string
 }
 
 // ─── SSRF Protection ────────────────────────────────────────────────
+
+function isCgnatHost(hostname: string): boolean {
+  const octets = hostname.split(".")
+  if (
+    octets.length === 4 &&
+    octets.every((p) => p.length >= 1 && p.length <= 3 && [...p].every((c) => c >= "0" && c <= "9") && Number(p) <= 255)
+  ) {
+    const second = Number(octets[1])
+    return Number(octets[0]) === 100 && second >= 64 && second <= 127
+  }
+  const tail = hostname.startsWith("::ffff:")
+    ? hostname.slice(7)
+    : hostname.startsWith("::")
+      ? hostname.slice(2)
+      : ""
+  if (!tail) return false
+  const parts = tail.split(":")
+  if (
+    parts.length !== 2 ||
+    !parts.every((p) => p.length >= 1 && p.length <= 4 && [...p].every((c) => (c >= "0" && c <= "9") || (c >= "a" && c <= "f") || (c >= "A" && c <= "F")))
+  ) {
+    return false
+  }
+  const hi = Number.parseInt(parts[0]!, 16)
+  return (hi & 0xffc0) === 0x6440
+}
 
 /**
  * Validate a CalDAV URL for SSRF safety.
@@ -70,42 +106,42 @@ export interface CalDAVEvent {
  */
 export function validateCalDAVUrl(rawUrl: string): { valid: boolean; error?: string } {
   try {
-    const url = new URL(rawUrl);
+    const url = new URL(rawUrl)
 
     // Must be HTTP(S)
     if (!["http:", "https:"].includes(url.protocol)) {
-      return { valid: false, error: "Only HTTP/HTTPS protocols are allowed" };
+      return { valid: false, error: "Only HTTP/HTTPS protocols are allowed" }
     }
 
-    const hostname = normalizeNetworkHost(url.hostname);
-    const hostSafety = classifyNetworkHost(hostname);
-    if (hostSafety === "unconditional") {
-      return { valid: false, error: `Hostname "${hostname}" is blocked for security` };
+    const hostname = normalizeNetworkHost(url.hostname)
+    const hostSafety = classifyNetworkHost(hostname)
+    if (!hostname || hostSafety === "unconditional") {
+      return { valid: false, error: `Hostname "${hostname}" is blocked for security` }
     }
-    if (hostSafety === "private") {
-      return { valid: false, error: "Private/internal IP addresses are not allowed" };
+    if (hostSafety === "private" || isCgnatHost(hostname)) {
+      return { valid: false, error: "Private/internal IP addresses are not allowed" }
     }
 
     // Warn on HTTP (but allow for local testing)
     if (url.protocol === "http:" && process.env.NODE_ENV === "production") {
-      return { valid: false, error: "HTTPS is required for CalDAV connections in production" };
+      return { valid: false, error: "HTTPS is required for CalDAV connections in production" }
     }
 
-    return { valid: true };
+    return { valid: true }
   } catch {
-    return { valid: false, error: "Invalid URL format" };
+    return { valid: false, error: "Invalid URL format" }
   }
 }
 
 // ─── HTTP Helpers ───────────────────────────────────────────────────
 
-const TIMEOUT_MS = 10_000;
+const TIMEOUT_MS = 10_000
 
 /** Max response body size (5MB) — prevents OOM from oversized calendar responses */
-const MAX_RESPONSE_BYTES = 5 * 1024 * 1024;
+const MAX_RESPONSE_BYTES = 5 * 1024 * 1024
 
 function basicAuthHeader(username: string, password: string): string {
-  return "Basic " + Buffer.from(`${username}:${password}`).toString("base64");
+  return "Basic " + Buffer.from(`${username}:${password}`).toString("base64")
 }
 
 /** Most redirects a CalDAV request follows (all must stay on the configured origin). */
@@ -145,7 +181,7 @@ async function caldavFetch(
 ): Promise<{ status: number; text: string }> {
   const urlCheck = validateCalDAVUrl(url)
   if (!urlCheck.valid) {
-    throw new Error(urlCheck.error)
+    throw new Error(`CalDAV URL validation failed: ${urlCheck.error}`)
   }
   const origin = new URL(url)
 
@@ -200,149 +236,480 @@ async function caldavFetch(
       throw new Error(`CalDAV response too large (${contentLength} bytes, max ${MAX_RESPONSE_BYTES})`)
     }
 
-    const text = await res.text();
+    const text = await res.text()
 
     // Guard: check actual body size after reading
     if (text.length > MAX_RESPONSE_BYTES) {
-      throw new Error(`CalDAV response body too large (${text.length} chars, max ${MAX_RESPONSE_BYTES})`);
+      throw new Error(`CalDAV response body too large (${text.length} chars, max ${MAX_RESPONSE_BYTES})`)
     }
 
-    return { status: res.status, text };
+    return { status: res.status, text }
   } finally {
-    clearTimeout(timeout);
+    clearTimeout(timeout)
   }
 }
 
 // ─── XML Parsing (XXE-safe) ─────────────────────────────────────────
 
-/**
- * Parse XML string safely. Uses regex-based extraction to avoid
- * XXE vulnerabilities from DOM parsers with external entity resolution.
- *
- * This is intentionally minimal — we only need to extract specific
- * CalDAV/WebDAV properties, not build a full DOM.
- */
-function extractXmlResponses(xml: string): Array<{ href: string; props: Record<string, string> }> {
-  // Strip any DOCTYPE declarations (XXE prevention)
-  const safeXml = xml.replace(/<!DOCTYPE[^>]*>/gi, "");
+function unwrapCdata(raw: string): string {
+  const trimmed = raw.trim()
+  if (trimmed.startsWith("<![CDATA[") && trimmed.endsWith("]]>")) {
+    return trimmed.slice(9, -3).trim()
+  }
+  return trimmed
+}
 
-  const responses: Array<{ href: string; props: Record<string, string> }> = [];
+function isTagBoundaryChar(ch: string | undefined): boolean {
+  return ch === ">" || ch === "/" || ch === " " || ch === "\t" || ch === "\n" || ch === "\r"
+}
 
-  // Match each <d:response> or <D:response> or <response> block
-  const responseRegex = /<(?:[a-zA-Z]+:)?response\b[^>]*>([\s\S]*?)<\/(?:[a-zA-Z]+:)?response>/gi;
-  let match;
-
-  while ((match = responseRegex.exec(safeXml)) !== null) {
-    const block = match[1]!;
-
-    // Extract href
-    const hrefMatch = block.match(/<(?:[a-zA-Z]+:)?href[^>]*>([\s\S]*?)<\/(?:[a-zA-Z]+:)?href>/i);
-    if (!hrefMatch) continue;
-
-    const href = hrefMatch[1]!.trim();
-    const props: Record<string, string> = {};
-
-    // Extract displayname
-    const dnMatch = block.match(/<(?:[a-zA-Z]+:)?displayname[^>]*>([\s\S]*?)<\/(?:[a-zA-Z]+:)?displayname>/i);
-    if (dnMatch) props.displayname = dnMatch[1]!.trim();
-
-    // Extract getctag
-    const ctagMatch = block.match(/<(?:[a-zA-Z]+:)?getctag[^>]*>([\s\S]*?)<\/(?:[a-zA-Z]+:)?getctag>/i);
-    if (ctagMatch) props.ctag = ctagMatch[1]!.trim();
-
-    // Extract calendar-color
-    const colorMatch = block.match(/<(?:[a-zA-Z]+:)?calendar-color[^>]*>([\s\S]*?)<\/(?:[a-zA-Z]+:)?calendar-color>/i);
-    if (colorMatch) props.color = colorMatch[1]!.trim();
-
-    // Extract calendar-data (iCalendar content)
-    const calDataMatch = block.match(/<(?:[a-zA-Z]+:)?calendar-data[^>]*>([\s\S]*?)<\/(?:[a-zA-Z]+:)?calendar-data>/i);
-    if (calDataMatch) props.calendarData = calDataMatch[1]!.trim();
-
-    // Check for resourcetype calendar
-    if (block.match(/<(?:[a-zA-Z]+:)?calendar\s*\/?\s*>/i)) {
-      props.isCalendar = "true";
+function findNextOpenTag(lowerXml: string, localName: string, fromIndex: number): {
+  contentStart: number
+  selfClosing: boolean
+  tagName: string
+} | null {
+  let cursor = fromIndex
+  while (cursor < lowerXml.length) {
+    const lt = lowerXml.indexOf("<", cursor)
+    if (lt === -1) return null
+    if (lowerXml.startsWith("</", lt) || lowerXml.startsWith("<!", lt) || lowerXml.startsWith("<?", lt)) {
+      const close = lowerXml.indexOf(">", lt + 2)
+      cursor = close === -1 ? lowerXml.length : close + 1
+      continue
     }
+    const gt = lowerXml.indexOf(">", lt + 1)
+    if (gt === -1) return null
+    const header = lowerXml.slice(lt + 1, gt)
+    let endName = 0
+    while (endName < header.length && !isTagBoundaryChar(header[endName])) {
+      endName++
+    }
+    const fullTagName = header.slice(0, endName)
+    const colonIdx = fullTagName.indexOf(":")
+    const tagLocal = colonIdx === -1 ? fullTagName : fullTagName.slice(colonIdx + 1)
+    if (tagLocal === localName) {
+      const selfClosing = header.trimEnd().endsWith("/")
+      return { contentStart: gt + 1, selfClosing, tagName: fullTagName }
+    }
+    cursor = gt + 1
+  }
+  return null
+}
 
-    responses.push({ href, props });
+function extractTagContents(xml: string, localName: string): string[] {
+  const lower = xml.toLowerCase()
+  const target = localName.toLowerCase()
+  const results: string[] = []
+  let cursor = 0
+
+  while (cursor < lower.length) {
+    const open = findNextOpenTag(lower, target, cursor)
+    if (!open) break
+    if (open.selfClosing) {
+      cursor = open.contentStart
+      continue
+    }
+    const closeToken = `</${open.tagName}>`
+    const closeIdx = lower.indexOf(closeToken, open.contentStart)
+    if (closeIdx === -1) {
+      cursor = open.contentStart
+      continue
+    }
+    results.push(xml.slice(open.contentStart, closeIdx))
+    cursor = closeIdx + closeToken.length
   }
 
-  return responses;
+  return results
+}
+
+/**
+ * Parse XML string safely with linear tag scanning to prevent XXE
+ * declarations and regular-expression backtracking (ReDoS).
+ */
+export function extractXmlResponses(xml: string): Array<{ href: string; props: Record<string, string> }> {
+  // Reject DOCTYPE/ENTITY declarations fail-closed (handles internal DTD subsets too).
+  if (/<!(?:DOCTYPE|ENTITY)\b/i.test(xml)) {
+    throw new Error("Rejected CalDAV XML response containing unsafe DOCTYPE or ENTITY declaration")
+  }
+
+  const responses: Array<{ href: string; props: Record<string, string> }> = []
+  for (const block of extractTagContents(xml, "response")) {
+    const hrefRaw = extractTagContents(block, "href")[0]
+    if (hrefRaw === undefined) continue
+
+    const href = unwrapCdata(hrefRaw)
+    const props: Record<string, string> = {}
+
+    const dnRaw = extractTagContents(block, "displayname")[0]
+    if (dnRaw !== undefined) props.displayname = unwrapCdata(dnRaw)
+
+    const ctagRaw = extractTagContents(block, "getctag")[0]
+    if (ctagRaw !== undefined) props.ctag = unwrapCdata(ctagRaw)
+
+    const colorRaw = extractTagContents(block, "calendar-color")[0]
+    if (colorRaw !== undefined) props.color = unwrapCdata(colorRaw)
+
+    const calDataRaw = extractTagContents(block, "calendar-data")[0]
+    if (calDataRaw !== undefined) props.calendarData = unwrapCdata(calDataRaw)
+
+    if (findNextOpenTag(block.toLowerCase(), "calendar", 0) !== null) {
+      props.isCalendar = "true"
+    }
+
+    responses.push({ href, props })
+  }
+
+  return responses
 }
 
 // ─── iCalendar Parsing ──────────────────────────────────────────────
 
+function unescapeICalText(raw: string): string {
+  return raw.replace(/\\([\\,;nN])/g, (_match, ch: string) => {
+    if (ch === "n" || ch === "N") return "\n"
+    return ch
+  })
+}
+
+function parseICalPropertyLine(line: string): {
+  name: string
+  params: Record<string, string>
+  value: string
+} | null {
+  const colonIdx = line.indexOf(":")
+  if (colonIdx === -1) return null
+
+  const left = line.slice(0, colonIdx)
+  const value = line.slice(colonIdx + 1).trim()
+  const segments: string[] = []
+  let current = ""
+  let inQuotes = false
+
+  for (let i = 0; i < left.length; i++) {
+    const ch = left[i]!
+    if (ch === '"') {
+      inQuotes = !inQuotes
+      current += ch
+    } else if (ch === ";" && !inQuotes) {
+      segments.push(current)
+      current = ""
+    } else {
+      current += ch
+    }
+  }
+  segments.push(current)
+
+  const name = segments[0]?.trim().toUpperCase()
+  if (!name) return null
+
+  const params: Record<string, string> = {}
+  for (let i = 1; i < segments.length; i++) {
+    const seg = segments[i]!
+    const eqIdx = seg.indexOf("=")
+    if (eqIdx === -1) continue
+    const pKey = seg.slice(0, eqIdx).trim().toUpperCase()
+    let pVal = seg.slice(eqIdx + 1).trim()
+    if (pVal.startsWith('"') && pVal.endsWith('"') && pVal.length >= 2) {
+      pVal = pVal.slice(1, -1)
+    }
+    if (pKey) params[pKey] = pVal
+  }
+
+  return { name, params, value }
+}
+
+function isValidTimeZone(tzid: string): boolean {
+  try {
+    new Intl.DateTimeFormat("en", { timeZone: tzid })
+    return true
+  } catch {
+    return false
+  }
+}
+
+function safeTimeZone(tzid?: string): string {
+  return tzid && isValidTimeZone(tzid) ? tzid : "UTC"
+}
+
 /**
- * Parse a VEVENT from iCalendar text.
- * Handles common field formats: date-time, date-only, quoted-printable.
+ * Parse VEVENT blocks from iCalendar text.
+ * Uses colon-safe property parsing (`indexOf(":")`), handles TZID, RRULE, EXDATE,
+ * RECURRENCE-ID, nested subcomponents (VALARM), and exclusive all-day DTEND.
  */
-function parseVEvents(ical: string, eventHref: string): CalDAVEvent[] {
-  const events: CalDAVEvent[] = [];
+export function parseVEvents(ical: string, eventHref: string): CalDAVEvent[] {
+  const events: CalDAVEvent[] = []
 
   // Unfold continuation lines (RFC 5545 §3.1)
-  const unfolded = ical.replace(/\r?\n[ \t]/g, "");
+  const unfolded = ical.replace(/\r?\n[ \t]/g, "")
 
   // Extract each VEVENT block
-  const veventRegex = /BEGIN:VEVENT([\s\S]*?)END:VEVENT/gi;
-  let match;
+  const veventRegex = /BEGIN:VEVENT\b([\s\S]*?)END:VEVENT/gi
+  let match
 
   while ((match = veventRegex.exec(unfolded)) !== null) {
-    const block = match[1]!;
+    const block = match[1]!
+    const lines = block.split(/\r?\n/)
 
-    const getField = (name: string): string | undefined => {
-      // Handle fields with params like DTSTART;VALUE=DATE:20260305
-      const prefix = name.toUpperCase();
-      const line = block.split(/\r?\n/).find((l) => {
-        const upper = l.toUpperCase();
-        return upper.startsWith(`${prefix}:`) || upper.startsWith(`${prefix};`);
-      });
-      if (!line) return undefined;
-      // Strip parameters, keep value after last colon
-      const parts = line.slice(prefix.length + 1).split(":");
-      return parts[parts.length - 1]!.trim();
-    };
+    let uid: string | undefined
+    let summary: string | undefined
+    let dtstartRaw: string | undefined
+    let dtstartParams: Record<string, string> = {}
+    let dtendRaw: string | undefined
+    let dtendParams: Record<string, string> = {}
+    let description: string | undefined
+    let location: string | undefined
+    let rrule: string | undefined
+    let recurrenceIdRaw: string | undefined
+    let recurrenceIdParams: Record<string, string> = {}
+    let cancelled = false
+    const exdates: string[] = []
 
-    const uid = getField("UID");
-    const summary = getField("SUMMARY");
-    const dtstart = getField("DTSTART");
+    let nestedDepth = 0
 
-    if (!uid || !summary || !dtstart) continue;
+    for (const rawLine of lines) {
+      const line = rawLine.trim()
+      if (!line) continue
 
-    const dtend = getField("DTEND");
-    const description = getField("DESCRIPTION")?.replace(/\\n/g, "\n").replace(/\\,/g, ",");
-    const location = getField("LOCATION")?.replace(/\\,/g, ",");
+      if (/^BEGIN:/i.test(line)) {
+        nestedDepth++
+        continue
+      }
+      if (/^END:/i.test(line)) {
+        nestedDepth = Math.max(0, nestedDepth - 1)
+        continue
+      }
+      if (nestedDepth > 0) continue // Ignore VALARM or other nested subcomponents
 
-    // All-day: DTSTART is date-only (YYYYMMDD, 8 chars, no T)
-    const allDay = dtstart.length === 8 && !dtstart.includes("T");
+      const prop = parseICalPropertyLine(line)
+      if (!prop) continue
 
-    events.push({
+      switch (prop.name) {
+        case "UID":
+          uid = prop.value
+          break
+        case "SUMMARY":
+          summary = unescapeICalText(prop.value)
+          break
+        case "DTSTART":
+          dtstartRaw = prop.value
+          dtstartParams = prop.params
+          break
+        case "DTEND":
+          dtendRaw = prop.value
+          dtendParams = prop.params
+          break
+        case "DESCRIPTION":
+          description = unescapeICalText(prop.value)
+          break
+        case "LOCATION":
+          location = unescapeICalText(prop.value)
+          break
+        case "RRULE":
+          rrule = normalizeRRule(prop.value) ?? undefined
+          break
+        case "RECURRENCE-ID":
+          recurrenceIdRaw = prop.value
+          recurrenceIdParams = prop.params
+          break
+        case "STATUS":
+          if (prop.value.trim().toUpperCase() === "CANCELLED") cancelled = true
+          break
+        case "EXDATE": {
+          const exIsDate = prop.params.VALUE?.toUpperCase() === "DATE"
+          for (const item of prop.value.split(",")) {
+            const trimmed = item.trim()
+            if (!trimmed) continue
+            const itemAllDay = exIsDate || (/^\d{8}$/.test(trimmed) && !trimmed.includes("T"))
+            exdates.push(formatICalDate(trimmed, prop.params.TZID, itemAllDay))
+          }
+          break
+        }
+      }
+    }
+
+    const effectiveDtstartRaw = dtstartRaw ?? (cancelled ? recurrenceIdRaw : undefined)
+    const effectiveDtstartParams = dtstartRaw ? dtstartParams : recurrenceIdParams
+    if (!uid || !effectiveDtstartRaw || (!summary && !cancelled)) continue
+
+    const allDay =
+      effectiveDtstartParams.VALUE?.toUpperCase() === "DATE" ||
+      (/^\d{8}$/.test(effectiveDtstartRaw) && !effectiveDtstartRaw.includes("T"))
+    const rawTzid = effectiveDtstartParams.TZID
+    const tzid = rawTzid && isValidTimeZone(rawTzid) ? rawTzid : undefined
+    const dtstart = formatICalDate(effectiveDtstartRaw, tzid, allDay)
+
+    let dtend: string | undefined
+    let inclusiveEndDate: string | undefined
+    if (dtendRaw) {
+      const endAllDay =
+        allDay ||
+        dtendParams.VALUE?.toUpperCase() === "DATE" ||
+        (/^\d{8}$/.test(dtendRaw) && !dtendRaw.includes("T"))
+      dtend = formatICalDate(dtendRaw, dtendParams.TZID ?? tzid, endAllDay)
+      if (allDay) {
+        inclusiveEndDate = dtend > dtstart ? shiftCalendarDay(dtend, -1) : dtstart
+      }
+    } else if (allDay) {
+      inclusiveEndDate = dtstart
+    }
+
+    let recurrenceId: string | undefined
+    if (recurrenceIdRaw) {
+      const recAllDay =
+        recurrenceIdParams.VALUE?.toUpperCase() === "DATE" ||
+        (/^\d{8}$/.test(recurrenceIdRaw) && !recurrenceIdRaw.includes("T"))
+      recurrenceId = formatICalDate(recurrenceIdRaw, recurrenceIdParams.TZID ?? tzid, recAllDay)
+    }
+
+    const parsedEvent: CalDAVEvent = {
       uid,
-      summary,
-      dtstart: formatICalDate(dtstart),
-      dtend: dtend ? formatICalDate(dtend) : undefined,
+      summary: summary ?? "",
+      dtstart,
+      dtend,
+      inclusiveEndDate,
       description,
       location,
       allDay,
+      rrule,
+      exdates: exdates.length > 0 ? exdates : undefined,
+      recurrenceId,
+      tzid,
       href: eventHref,
-    });
+      cancelled: cancelled || undefined,
+    }
+    events.push(parsedEvent)
   }
 
-  return events;
+  return events
 }
 
-/** Convert iCal date (YYYYMMDD or YYYYMMDDTHHmmSSZ) to ISO 8601 */
-function formatICalDate(icalDate: string): string {
-  if (icalDate.length === 8) {
-    // Date only: YYYYMMDD → YYYY-MM-DD
-    return `${icalDate.slice(0, 4)}-${icalDate.slice(4, 6)}-${icalDate.slice(6, 8)}`;
+/** Expand RRULE recurring events and apply EXDATE / RECURRENCE-ID overrides within [start, end]. */
+export function expandCalDAVEventsInWindow(
+  parsedEvents: CalDAVEvent[],
+  start: Date,
+  end: Date,
+): CalDAVEvent[] {
+  const byUid = new Map<string, CalDAVEvent[]>()
+  for (const evt of parsedEvents) {
+    const group = byUid.get(evt.uid) ?? []
+    group.push(evt)
+    byUid.set(evt.uid, group)
+  }
+
+  const expanded: CalDAVEvent[] = []
+
+  for (const [, group] of byUid) {
+    const masters = group.filter(e => !e.recurrenceId)
+    const overrides = group.filter(e => Boolean(e.recurrenceId))
+
+    if (masters.length === 0) {
+      for (const ov of overrides) {
+        if (ov.cancelled) continue
+        const occs = expandRRuleOccurrences({
+          dtstart: ov.dtstart,
+          dtend: ov.dtend,
+          allDay: ov.allDay,
+          timezone: safeTimeZone(ov.tzid),
+          windowStart: start,
+          windowEnd: end,
+        })
+        if (occs.length > 0) expanded.push(ov)
+      }
+      continue
+    }
+
+    for (const master of masters) {
+      if (master.cancelled) continue
+      const overrideExdates = overrides
+        .map(o => o.recurrenceId)
+        .filter((d): d is string => Boolean(d))
+      const combinedExdates = [...(master.exdates ?? []), ...overrideExdates]
+
+      if (master.rrule) {
+        const occs = expandRRuleOccurrences({
+          dtstart: master.dtstart,
+          dtend: master.dtend,
+          rrule: master.rrule,
+          exdates: combinedExdates,
+          allDay: master.allDay,
+          timezone: safeTimeZone(master.tzid),
+          windowStart: start,
+          windowEnd: end,
+        })
+        for (const occ of occs) {
+          expanded.push({
+            ...master,
+            dtstart: occ.start,
+            dtend: occ.end,
+            inclusiveEndDate: occ.inclusiveEndDate ?? master.inclusiveEndDate,
+          })
+        }
+      } else {
+        const occs = expandRRuleOccurrences({
+          dtstart: master.dtstart,
+          dtend: master.dtend,
+          exdates: combinedExdates,
+          allDay: master.allDay,
+          timezone: safeTimeZone(master.tzid),
+          windowStart: start,
+          windowEnd: end,
+        })
+        if (occs.length > 0) expanded.push(master)
+      }
+    }
+
+    for (const ov of overrides) {
+      if (ov.cancelled) continue
+      const occs = expandRRuleOccurrences({
+        dtstart: ov.dtstart,
+        dtend: ov.dtend,
+        allDay: ov.allDay,
+        timezone: safeTimeZone(ov.tzid),
+        windowStart: start,
+        windowEnd: end,
+      })
+      if (occs.length > 0) {
+        const masterRRule = masters.find(m => m.rrule)?.rrule
+        expanded.push({
+          ...ov,
+          rrule: ov.rrule ?? masterRRule,
+        })
+      }
+    }
+  }
+
+  expanded.sort((a, b) => {
+    const aMs = Date.parse(a.dtstart)
+    const bMs = Date.parse(b.dtstart)
+    if (!Number.isNaN(aMs) && !Number.isNaN(bMs) && aMs !== bMs) return aMs - bMs
+    return a.dtstart.localeCompare(b.dtstart)
+  })
+
+  return expanded
+}
+
+/** Convert iCal date (YYYYMMDD or YYYYMMDDTHHmmSS[Z] with optional TZID) to ISO 8601 */
+function formatICalDate(icalDate: string, tzid?: string, allDay = false): string {
+  const clean = icalDate.trim()
+  if (allDay || (clean.length === 8 && !clean.includes("T"))) {
+    const digits = clean.replace(/[^0-9]/g, "")
+    if (digits.length >= 8) {
+      return `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6, 8)}`
+    }
   }
   // DateTime: YYYYMMDDTHHmmSS[Z] → ISO
-  const base = icalDate.replace(/[^0-9TZ]/g, "");
-  const d = base.slice(0, 4) + "-" + base.slice(4, 6) + "-" + base.slice(6, 8);
+  const base = clean.replace(/[^0-9TZ]/gi, "").toUpperCase()
+  if (base.length < 8) return clean
+  const d = base.slice(0, 4) + "-" + base.slice(4, 6) + "-" + base.slice(6, 8)
   if (base.includes("T") && base.length >= 15) {
-    const t = base.slice(9, 11) + ":" + base.slice(11, 13) + ":" + base.slice(13, 15);
-    return d + "T" + t + (base.endsWith("Z") ? "Z" : "");
+    const t = base.slice(9, 11) + ":" + base.slice(11, 13) + ":" + base.slice(13, 15)
+    if (base.endsWith("Z")) return `${d}T${t}Z`
+    if (tzid && isValidTimeZone(tzid)) {
+      return fromZonedTime(`${d}T${t}`, tzid).toISOString().replace(/\.\d{3}Z$/, "Z")
+    }
+    return `${d}T${t}`
   }
-  return d;
+  return d
 }
 
 // ─── CalDAV Operations ──────────────────────────────────────────────
@@ -352,16 +719,16 @@ function formatICalDate(icalDate: string): string {
  * Sends PROPFIND Depth:1 to the base URL to find calendar collections.
  */
 export async function discoverCalendars(config: CalDAVConfig): Promise<CalDAVCalendar[]> {
-  const validation = validateCalDAVUrl(config.url);
+  const validation = validateCalDAVUrl(config.url)
   if (!validation.valid) {
-    throw new Error(`CalDAV URL validation failed: ${validation.error}`);
+    throw new Error(`CalDAV URL validation failed: ${validation.error}`)
   }
 
   logger.log("info", {
     event: "caldav.discovery.starting",
     domain: "caldav", component: "caldav-client",
     request_id: SYS_REQ, message: `Discovering calendars at ${new URL(config.url).hostname}`,
-  });
+  })
 
   const propfindBody = `<?xml version="1.0" encoding="utf-8"?>
 <d:propfind xmlns:d="DAV:" xmlns:cs="http://calendarserver.org/ns/" xmlns:c="urn:ietf:params:xml:ns:caldav" xmlns:ical="http://apple.com/ns/ical/">
@@ -371,34 +738,34 @@ export async function discoverCalendars(config: CalDAVConfig): Promise<CalDAVCal
     <cs:getctag/>
     <ical:calendar-color/>
   </d:prop>
-</d:propfind>`;
+</d:propfind>`
 
   try {
     const { status, text } = await caldavFetch(
       config.url, "PROPFIND", propfindBody,
       config.username, config.password,
       { Depth: "1" },
-    );
+    )
 
     if (status === 401 || status === 403) {
-      throw new Error("Authentication failed — check username and password");
+      throw new Error("Authentication failed — check username and password")
     }
     if (status !== 207) {
-      throw new Error(`Unexpected status ${status} from PROPFIND`);
+      throw new Error(`Unexpected status ${status} from PROPFIND`)
     }
 
-    const responses = extractXmlResponses(text);
-    const calendars: CalDAVCalendar[] = [];
+    const responses = extractXmlResponses(text)
+    const calendars: CalDAVCalendar[] = []
 
     for (const resp of responses) {
       if (resp.props.isCalendar === "true") {
         const cal: CalDAVCalendar = {
           href: resp.href,
           displayName: resp.props.displayname || resp.href.split("/").filter(Boolean).pop() || "Calendar",
-        };
-        if (resp.props.ctag !== undefined) cal.ctag = resp.props.ctag;
-        if (resp.props.color !== undefined) cal.color = resp.props.color;
-        calendars.push(cal);
+        }
+        if (resp.props.ctag !== undefined) cal.ctag = resp.props.ctag
+        if (resp.props.color !== undefined) cal.color = resp.props.color
+        calendars.push(cal)
       }
     }
 
@@ -406,14 +773,14 @@ export async function discoverCalendars(config: CalDAVConfig): Promise<CalDAVCal
       event: "caldav.discovery.success",
       domain: "caldav", component: "caldav-client",
       request_id: SYS_REQ, message: `Discovered ${calendars.length} calendar(s)`,
-    });
+    })
 
-    return calendars;
+    return calendars
   } catch (err) {
     if (err instanceof Error && err.name === "AbortError") {
-      throw new Error("CalDAV server connection timed out (10s)");
+      throw new Error("CalDAV server connection timed out (10s)")
     }
-    throw err;
+    throw err
   }
 }
 
@@ -427,21 +794,21 @@ export async function listCalDAVEvents(
   start: Date,
   end: Date,
 ): Promise<CalDAVEvent[]> {
-  const validation = validateCalDAVUrl(config.url);
+  const validation = validateCalDAVUrl(config.url)
   if (!validation.valid) {
-    throw new Error(`CalDAV URL validation failed: ${validation.error}`);
+    throw new Error(`CalDAV URL validation failed: ${validation.error}`)
   }
 
   // Build absolute URL for the calendar; it must stay on the configured origin
   const parsedCalUrl = resolveCalDAVHref(config.url, calendarHref)
-  const calUrlCheck = validateCalDAVUrl(parsedCalUrl.toString());
-  if (!calUrlCheck.valid) {
-    throw new Error(calUrlCheck.error);
+  const calUrl = parsedCalUrl.toString()
+  const calValidation = validateCalDAVUrl(calUrl)
+  if (!calValidation.valid) {
+    throw new Error(`CalDAV calendar URL validation failed: ${calValidation.error}`)
   }
-  const calUrl = parsedCalUrl.toString();
 
-  const startStr = toICalUTC(start);
-  const endStr = toICalUTC(end);
+  const startStr = toICalUTC(start)
+  const endStr = toICalUTC(end)
 
   const reportBody = `<?xml version="1.0" encoding="utf-8"?>
 <c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
@@ -456,45 +823,47 @@ export async function listCalDAVEvents(
       </c:comp-filter>
     </c:comp-filter>
   </c:filter>
-</c:calendar-query>`;
+</c:calendar-query>`
 
   try {
     const { status, text } = await caldavFetch(
       calUrl, "REPORT", reportBody,
       config.username, config.password,
       { Depth: "1" },
-    );
+    )
 
     if (status === 401 || status === 403) {
-      throw new Error("Authentication failed");
+      throw new Error("Authentication failed")
     }
     if (status !== 207) {
-      throw new Error(`Unexpected status ${status} from REPORT`);
+      throw new Error(`Unexpected status ${status} from REPORT`)
     }
 
-    const responses = extractXmlResponses(text);
-    const events: CalDAVEvent[] = [];
+    const responses = extractXmlResponses(text)
+    const parsedEvents: CalDAVEvent[] = []
 
     for (const resp of responses) {
       if (resp.props.calendarData) {
-        const parsed = parseVEvents(resp.props.calendarData, resp.href);
-        events.push(...parsed);
+        const parsed = parseVEvents(resp.props.calendarData, resp.href)
+        parsedEvents.push(...parsed)
       }
     }
+
+    const events = expandCalDAVEventsInWindow(parsedEvents, start, end)
 
     logger.log("info", {
       event: "caldav.sync.success",
       domain: "caldav", component: "caldav-client",
       request_id: SYS_REQ,
       message: `Fetched ${events.length} events from CalDAV (${startStr} to ${endStr})`,
-    });
+    })
 
-    return events;
+    return events
   } catch (err) {
     if (err instanceof Error && err.name === "AbortError") {
-      throw new Error("CalDAV event fetch timed out (10s)");
+      throw new Error("CalDAV event fetch timed out (10s)")
     }
-    throw err;
+    throw err
   }
 }
 
@@ -504,15 +873,15 @@ export async function listCalDAVEvents(
  */
 export async function testConnection(config: CalDAVConfig): Promise<{ ok: boolean; message: string; calendars?: CalDAVCalendar[] }> {
   try {
-    const calendars = await discoverCalendars(config);
+    const calendars = await discoverCalendars(config)
     return {
       ok: true,
       message: `Connected! Found ${calendars.length} calendar${calendars.length !== 1 ? "s" : ""}: ${calendars.map((c) => c.displayName).join(", ")}`,
       calendars,
-    };
+    }
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Connection failed";
-    return { ok: false, message };
+    const message = err instanceof Error ? err.message : "Connection failed"
+    return { ok: false, message }
   }
 }
 
@@ -520,5 +889,5 @@ export async function testConnection(config: CalDAVConfig): Promise<{ ok: boolea
 
 /** Convert Date to iCal UTC format: YYYYMMDDTHHmmSSZ */
 function toICalUTC(date: Date): string {
-  return date.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
+  return date.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "")
 }

@@ -7,7 +7,30 @@
  * @domain calendar
  * @bounded-context integration
  */
+import { createServer } from "node:http"
+import { mkdtemp, rm } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import { expect, test } from "@playwright/test"
+import { startHAWebSocketFixture } from "../scripts/ha-websocket-fixture"
+import { ensureSchema, getPersistenceClient, resetPersistenceForTests } from "../../apps/web/src/domains/tasks/persistence/store"
+import { SettingsRepository } from "../../apps/web/src/domains/tasks/persistence/settings-repository"
+import { TaskRepository } from "../../apps/web/src/domains/tasks/persistence/task-repository"
+import { closeHAConnection, getHAConnection } from "../../apps/web/src/domains/ha/ha-connection"
+import { stopEntitySubscription } from "../../apps/web/src/domains/ha/ha-entities"
+import {
+  getCalendarSyncStatus,
+  selectRepresentativeOccurrence,
+  startCalDAVSync,
+  startCalendarSync,
+  stopCalendarSync,
+  stopCalDAVSync,
+  syncCalDAVEvents,
+  isImportedCalendarTask,
+  syncFromHA,
+} from "../../apps/web/src/domains/calendar/calendar-bridge"
+import { calendarDaysFromToday, calendarToday, formatRelativeDue, shiftCalendarDay } from "../../apps/web/src/lib/date"
+import { POST as saveCredentials } from "../../apps/web/src/pages/api/integrations/calendar/caldav-credentials"
 
 // ── Helpers ──
 
@@ -222,4 +245,384 @@ test("sync timeout: Promise.race rejects on timeout", async () => {
   }
 
   expect(timedOut).toBe(true)
+})
+
+// ── Requirement 11: Multi-Occurrence Recurring Series, Today Priority, & CalDAV Compliance ──
+
+test("selectRepresentativeOccurrence prioritizes today over +28d and handles exclusive all-day DTEND", () => {
+  const today = "2026-11-13"
+  const picked = selectRepresentativeOccurrence(
+    [
+      { start: "2026-12-11T09:00:00Z", end: "2026-12-11T10:00:00Z" },
+      { start: "2026-11-20T09:00:00Z", end: "2026-11-20T10:00:00Z" },
+      { start: "2026-11-13T09:00:00Z", end: "2026-11-13T10:00:00Z" },
+      { start: "2026-11-06T09:00:00Z", end: "2026-11-06T10:00:00Z" },
+    ],
+    today,
+    "Europe/Dublin",
+  )
+
+  expect(picked.startDay).toBe("2026-11-13")
+  expect(picked.representative.start).toBe("2026-11-13T09:00:00Z")
+  expect(picked.occurrences).toHaveLength(4)
+
+  // Exclusive all-day DTEND (2026-11-12..2026-11-13) ended yesterday -> must NOT match today
+  const pastAllDay = selectRepresentativeOccurrence(
+    [
+      { start: "2026-11-12", end: "2026-11-13" },
+      { start: "2026-11-15", end: "2026-11-16" },
+    ],
+    today,
+    "Europe/Dublin",
+  )
+  expect(pastAllDay.startDay).toBe("2026-11-15")
+})
+
+test("HA sync groups recurring occurrences (with and without UID), picks today over +28d, infers RRULE, and expands calendar counts", async () => {
+  const previous = Object.fromEntries(["MEITHEAL_DB_URL", "SUPERVISOR_TOKEN", "HA_BASE_URL", "HA_TOKEN"].map((k) => [k, process.env[k]]))
+  const directory = await mkdtemp(join(tmpdir(), "meitheal-cal-recur-ha-"))
+  const ha = await startHAWebSocketFixture()
+  delete process.env.SUPERVISOR_TOKEN
+  process.env.HA_BASE_URL = ha.url
+  process.env.HA_TOKEN = "calendar-recurrence-fixture"
+  process.env.MEITHEAL_DB_URL = `file:${join(directory, "tasks.db")}`
+  resetPersistenceForTests()
+  const db = getPersistenceClient()
+
+  try {
+    await ensureSchema()
+    const settingsRepo = new SettingsRepository(db)
+    await settingsRepo.ensureSettingsTable()
+    await settingsRepo.upsert("timezone", "Europe/Dublin")
+    expect(await getHAConnection()).not.toBeNull()
+
+    const todayStr = calendarToday("Europe/Dublin")
+    const d7 = shiftCalendarDay(todayStr, 7)
+    const d14 = shiftCalendarDay(todayStr, 14)
+    const d28 = shiftCalendarDay(todayStr, 28)
+
+    // Mix: series WITH shared UID, plus series WITHOUT UID (same title + time-of-day) returned out of order (+28d last)
+    ha.setCalendarEvents([
+      { uid: "weekly-standup", summary: "Weekly Standup", start: `${d28}T10:00:00Z`, end: `${d28}T10:30:00Z` },
+      { uid: "weekly-standup", summary: "Weekly Standup", start: `${todayStr}T10:00:00Z`, end: `${todayStr}T10:30:00Z` },
+      { uid: "weekly-standup", summary: "Weekly Standup", start: `${d7}T10:00:00Z`, end: `${d7}T10:30:00Z` },
+      { uid: "weekly-standup", summary: "Weekly Standup", start: `${d14}T10:00:00Z`, end: `${d14}T10:30:00Z` },
+      { summary: "Bin Night", start: `${todayStr}T18:30:00Z`, end: `${todayStr}T19:00:00Z` },
+      { summary: "Bin Night", start: `${d7}T18:30:00Z`, end: `${d7}T19:00:00Z` },
+      { summary: "Bin Night", start: `${d28}T18:30:00Z`, end: `${d28}T19:00:00Z` },
+    ])
+
+    const result = await syncFromHA("calendar.household")
+    expect(result.created).toBe(2)
+    expect(result.updated).toBe(0)
+
+    const tasksRes = await db.execute({
+      sql: `SELECT id, title, due_date, start_date, end_date, recurrence_rule, task_kind FROM tasks ORDER BY title ASC`,
+      args: [],
+    })
+    expect(tasksRes.rows).toHaveLength(2)
+
+    const binNight = tasksRes.rows.find((r) => String(r.title) === "Bin Night")!
+    const standup = tasksRes.rows.find((r) => String(r.title) === "Weekly Standup")!
+
+    expect(binNight.task_kind).toBe("calendar_event")
+    expect(standup.task_kind).toBe("calendar_event")
+
+    // Must pick TODAY's occurrence rather than +28d
+    expect(String(standup.due_date)).toBe(`${todayStr}T10:00:00Z`)
+    expect(String(binNight.due_date)).toBe(`${todayStr}T18:30:00Z`)
+    expect(calendarDaysFromToday(String(binNight.due_date), "Europe/Dublin")).toBe(0)
+    expect(formatRelativeDue(String(binNight.due_date), "Europe/Dublin")).toMatch(/^Today · \d{2}:\d{2}$/)
+
+    // The weekly cadence is inferred into the sync record only. Without a provider
+    // RRULE the task stores no rule, so completing it cannot spawn a standalone repeat.
+    expect(standup.recurrence_rule).toBeNull()
+    expect(binNight.recurrence_rule).toBeNull()
+    const payloads = await db.execute({
+      sql: "SELECT json_extract(payload, '$.inferred_rrule') AS inferred, json_extract(payload, '$.rrule') AS rrule FROM calendar_confirmations WHERE task_id IN (?, ?)",
+      args: [String(standup.id), String(binNight.id)],
+    })
+    for (const row of payloads.rows) {
+      expect(String(row.inferred)).toContain("FREQ=WEEKLY")
+      expect(row.rrule).toBeNull()
+    }
+
+    // Calendar counts include EVERY expanded occurrence in [todayStr, d28]
+    const repo = new TaskRepository(db)
+    const haCounts = await repo.getCalendarHAEventCounts(todayStr, d28, "Europe/Dublin")
+    expect(haCounts[todayStr]).toBe(2)
+    expect(haCounts[d7]).toBe(2)
+    expect(haCounts[d14]).toBe(1)
+    expect(haCounts[d28]).toBe(2)
+
+    // Re-syncing must update (not create duplicates or overwrite due_date with +28d)
+    const secondResult = await syncFromHA("calendar.household")
+    expect(secondResult.created).toBe(0)
+    expect(secondResult.updated).toBe(2)
+
+    // A title edited in Meitheal survives a calendar rename; untouched fields still follow.
+    await db.execute({ sql: "UPDATE tasks SET title = 'Standup (bring notes)' WHERE id = ?", args: [String(standup.id)] })
+    ha.setCalendarEvents([
+      { uid: "weekly-standup", summary: "Team Standup", start: `${todayStr}T11:00:00Z`, end: `${todayStr}T11:30:00Z` },
+      { uid: "weekly-standup", summary: "Team Standup", start: `${d7}T11:00:00Z`, end: `${d7}T11:30:00Z` },
+      { summary: "Bin Night", start: `${todayStr}T18:30:00Z`, end: `${todayStr}T19:00:00Z` },
+      { summary: "Bin Night", start: `${d7}T18:30:00Z`, end: `${d7}T19:00:00Z` },
+    ])
+    await syncFromHA("calendar.household")
+    const edited = await db.execute({ sql: "SELECT title, due_date FROM tasks WHERE id = ?", args: [String(standup.id)] })
+    expect(edited.rows[0]?.title).toBe("Standup (bring notes)")
+    expect(String(edited.rows[0]?.due_date)).toBe(`${todayStr}T11:00:00Z`)
+
+    // Completing a synced calendar event never creates a separate repeating task.
+    await db.execute({ sql: "UPDATE tasks SET recurrence_rule = 'FREQ=WEEKLY' WHERE id = ?", args: [String(standup.id)] })
+    await repo.updateTask(String(standup.id), { status: "complete" })
+    const afterComplete = await db.execute({ sql: "SELECT COUNT(*) AS n FROM tasks", args: [] })
+    expect(Number(afterComplete.rows[0]?.n)).toBe(2)
+
+    // A hand-made task with the same title as an event is never adopted.
+    await db.execute({
+      sql: `INSERT INTO tasks (id, title, description, status, priority, labels, framework_payload, area_id, custom_fields, task_type, idempotency_key, request_id, ticket_number, created_at, updated_at)
+            VALUES ('hand-made', 'Dentist', '', 'pending', 3, '[]', '{}', 'default', '{}', 'task', 'hand-made', 'hand-made', 900, 1, 1)`,
+      args: [],
+    })
+    ha.setCalendarEvents([{ uid: "dentist-1", summary: "Dentist", start: `${d7}T09:00:00Z`, end: `${d7}T10:00:00Z` }])
+    await syncFromHA("calendar.household")
+    const handMade = await db.execute({ sql: "SELECT task_kind, due_date FROM tasks WHERE id = 'hand-made'", args: [] })
+    expect(handMade.rows[0]?.task_kind).toBe("standard_action")
+    expect(handMade.rows[0]?.due_date).toBeNull()
+    const dentists = await db.execute({ sql: "SELECT COUNT(*) AS n FROM tasks WHERE title = 'Dentist'", args: [] })
+    expect(Number(dentists.rows[0]?.n)).toBe(2)
+    // Imported events are never written back to a calendar; hand-made tasks still can be.
+    expect(await isImportedCalendarTask(String(standup.id))).toBe(true)
+    expect(await isImportedCalendarTask("hand-made")).toBe(false)
+
+    // Rescheduling an event without an ID keeps the same open task, replaces its old confirmation, and moves its counts.
+    const d9 = shiftCalendarDay(todayStr, 9)
+    const d11 = shiftCalendarDay(todayStr, 11)
+    ha.setCalendarEvents([{ summary: "Boiler service", start: `${d9}T09:00:00Z`, end: `${d9}T10:00:00Z` }])
+    await syncFromHA("calendar.household")
+    ha.setCalendarEvents([{ summary: "Boiler service", start: `${d11}T10:00:00Z`, end: `${d11}T11:00:00Z` }])
+    await syncFromHA("calendar.household")
+    const boiler = await db.execute({ sql: "SELECT id, status, due_date FROM tasks WHERE title = 'Boiler service'", args: [] })
+    expect(boiler.rows).toHaveLength(1)
+    expect(String(boiler.rows[0]?.status)).not.toBe("complete")
+    expect(String(boiler.rows[0]?.due_date)).toBe(`${d11}T10:00:00Z`)
+    const boilerConfirmations = await db.execute({
+      sql: "SELECT provider_event_id FROM calendar_confirmations WHERE task_id = ? AND source = 'ha.calendar_sync'",
+      args: [String(boiler.rows[0]?.id)],
+    })
+    expect(boilerConfirmations.rows).toHaveLength(1)
+    const movedCounts = await repo.getCalendarHAEventCounts(d9, d11, "Europe/Dublin")
+    expect(movedCounts[d9] ?? 0).toBe(0)
+    expect(movedCounts[d11]).toBe(1)
+
+    // Adding a second ID-less event at the former day creates a separate task without colliding with the retired key.
+    ha.setCalendarEvents([
+      { summary: "Boiler service", start: `${d9}T09:00:00Z`, end: `${d9}T10:00:00Z` },
+      { summary: "Boiler service", start: `${d11}T10:00:00Z`, end: `${d11}T11:00:00Z` },
+    ])
+    await syncFromHA("calendar.household")
+    const boilersCount = await db.execute({ sql: "SELECT COUNT(*) AS n FROM tasks WHERE title = 'Boiler service'", args: [] })
+    expect(Number(boilersCount.rows[0]?.n)).toBe(2)
+    const twoBoilerCounts = await repo.getCalendarHAEventCounts(d9, d11, "Europe/Dublin")
+    expect(twoBoilerCounts[d9]).toBe(1)
+    expect(twoBoilerCounts[d11]).toBe(1)
+
+    const d11ConfRow = await db.execute({
+      sql: `SELECT c.provider_event_id
+            FROM calendar_confirmations c
+            JOIN tasks t ON t.id = c.task_id
+            WHERE t.title = 'Boiler service' AND t.due_date = ? AND c.source = 'ha.calendar_sync'`,
+      args: [`${d11}T10:00:00Z`],
+    })
+    const d11ConfId = String(d11ConfRow.rows[0]?.provider_event_id ?? "")
+    expect(d11ConfId.length).toBeGreaterThan(0)
+    const retryDup = await repo.commitSyncMutationChunks([
+      {
+        kind: "create",
+        taskId: globalThis.crypto.randomUUID(),
+        idempotencyKey: `cal-sync-calendar.household:${d11ConfId}:retry`,
+        title: "Boiler service",
+        status: "pending",
+        dueDate: `${d11}T10:00:00Z`,
+        startDate: `${d11}T10:00:00Z`,
+        endDate: `${d11}T11:00:00Z`,
+        areaId: "default",
+        taskType: "task",
+        taskKind: "calendar_event",
+        confirmation: {
+          source: "calendar",
+          entityId: "calendar.household",
+          externalId: d11ConfId,
+          confirmationSource: "ha.calendar_sync",
+          payload: JSON.stringify({ entity_id: "calendar.household" }),
+        },
+      },
+    ])
+    expect(retryDup.created).toBe(0)
+    expect(retryDup.skipped).toBe(1)
+    expect(retryDup.errors).toHaveLength(0)
+    const afterRetryCount = await db.execute({ sql: "SELECT COUNT(*) AS n FROM tasks WHERE title = 'Boiler service'", args: [] })
+    expect(Number(afterRetryCount.rows[0]?.n)).toBe(2)
+
+    // Two new events that share a title each get their own task.
+    ha.setCalendarEvents([
+      { uid: "vet-1", summary: "Vet", start: `${d7}T09:00:00Z`, end: `${d7}T09:30:00Z` },
+      { uid: "vet-2", summary: "Vet", start: `${d14}T09:00:00Z`, end: `${d14}T09:30:00Z` },
+    ])
+    await syncFromHA("calendar.household")
+    const vets = await db.execute({ sql: "SELECT due_date FROM tasks WHERE title = 'Vet' ORDER BY due_date", args: [] })
+    expect(vets.rows.map((row) => String(row.due_date))).toEqual([`${d7}T09:00:00Z`, `${d14}T09:00:00Z`])
+
+    // A same-title event added later gets its own task while the first event is still there.
+    ha.setCalendarEvents([{ summary: "Swimming", start: `${d7}T17:00:00Z`, end: `${d7}T18:00:00Z` }])
+    await syncFromHA("calendar.household")
+    ha.setCalendarEvents([
+      { summary: "Swimming", start: `${d7}T17:00:00Z`, end: `${d7}T18:00:00Z` },
+      { summary: "Swimming", start: `${d14}T10:00:00Z`, end: `${d14}T11:00:00Z` },
+    ])
+    await syncFromHA("calendar.household")
+    const swimsBefore = await db.execute({ sql: "SELECT id, due_date FROM tasks WHERE title = 'Swimming' ORDER BY due_date", args: [] })
+    expect(swimsBefore.rows.map((row) => String(row.due_date))).toEqual([`${d7}T17:00:00Z`, `${d14}T10:00:00Z`])
+
+    // Moving the second ID-less same-title event keeps its existing task (and does not get blocked by the first).
+    ha.setCalendarEvents([
+      { summary: "Swimming", start: `${d7}T17:00:00Z`, end: `${d7}T18:00:00Z` },
+      { summary: "Swimming", start: `${d14}T11:30:00Z`, end: `${d14}T12:30:00Z` },
+    ])
+    await syncFromHA("calendar.household")
+    const swimsAfter = await db.execute({ sql: "SELECT id, status, due_date FROM tasks WHERE title = 'Swimming' ORDER BY due_date", args: [] })
+    expect(swimsAfter.rows.map((row) => String(row.id))).toEqual(swimsBefore.rows.map((row) => String(row.id)))
+    expect(swimsAfter.rows.map((row) => String(row.due_date))).toEqual([`${d7}T17:00:00Z`, `${d14}T11:30:00Z`])
+    expect(swimsAfter.rows.every((row) => String(row.status) !== "complete")).toBe(true)
+  } finally {
+    stopCalendarSync()
+    stopEntitySubscription()
+    closeHAConnection()
+    await ha.close()
+    db.close()
+    resetPersistenceForTests()
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+
+test("CalDAV sync parses RRULE, EXDATE, colons in DESCRIPTION, exclusive all-day DTEND, and updates existing tasks on re-sync", async () => {
+  const origin = "http://caldav-recurrence-fixture.example"
+  const previous = Object.fromEntries(["MEITHEAL_DB_URL", "SUPERVISOR_TOKEN", "HA_TOKEN"].map((k) => [k, process.env[k]]))
+  const originalFetch = globalThis.fetch
+  const directory = await mkdtemp(join(tmpdir(), "meitheal-caldav-recur-"))
+
+  const todayStr = calendarToday("Europe/Dublin")
+  const d7 = shiftCalendarDay(todayStr, 7)
+  const d14 = shiftCalendarDay(todayStr, 14)
+  const compact = (day: string) => day.replace(/-/g, "")
+
+  let summaryTitle = "CalDAV Standup"
+  const server = createServer(async (request, response) => {
+    for await (const _ of request) { /* drain request body */ }
+    response.setHeader("content-type", "application/xml")
+    if (request.method === "PROPFIND") {
+      response.writeHead(207).end(
+        `<?xml version="1.0"?><d:multistatus xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav"><d:response><d:href>/team/</d:href><d:propstat><d:prop><d:displayname>Team</d:displayname><d:resourcetype><c:calendar/></d:resourcetype></d:prop></d:propstat></d:response></d:multistatus>`,
+      )
+      return
+    }
+    if (request.method === "REPORT") {
+      const ics = [
+        "BEGIN:VCALENDAR",
+        "VERSION:2.0",
+        "BEGIN:VEVENT",
+        "UID:caldav-weekly-1",
+        `SUMMARY:${summaryTitle}`,
+        `DTSTART;TZID=Europe/Dublin:${compact(todayStr)}T093000`,
+        `DTEND;TZID=Europe/Dublin:${compact(todayStr)}T100000`,
+        "RRULE:FREQ=WEEKLY;COUNT=3",
+        `EXDATE;TZID=Europe/Dublin:${compact(d7)}T093000`,
+        "DESCRIPTION:Agenda: https://meet.example.com/room:8443",
+        "END:VEVENT",
+        "END:VCALENDAR",
+      ].join("\r\n")
+      response.writeHead(207).end(
+        `<?xml version="1.0"?><d:multistatus xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav"><d:response><d:href>/team/weekly.ics</d:href><d:propstat><d:prop><c:calendar-data>${ics}</c:calendar-data></d:prop></d:propstat></d:response></d:multistatus>`,
+      )
+      return
+    }
+    response.writeHead(405).end()
+  })
+
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+  const address = server.address()
+  if (!address || typeof address === "string") throw new Error("Fixture server has no TCP address")
+
+  globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) => {
+    const target = new URL(input instanceof Request ? input.url : input)
+    if (target.origin !== origin) throw new Error(`Unexpected fixture egress: ${target.origin}`)
+    target.hostname = "127.0.0.1"
+    target.port = String(address.port)
+    return originalFetch(target, init)
+  }) as typeof fetch
+
+  delete process.env.SUPERVISOR_TOKEN
+  process.env.HA_TOKEN = "caldav-recur-key"
+  process.env.MEITHEAL_DB_URL = `file:${join(directory, "tasks.db")}`
+  resetPersistenceForTests()
+  const db = getPersistenceClient()
+
+  try {
+    await ensureSchema()
+    const settingsRepo = new SettingsRepository(db)
+    await settingsRepo.ensureSettingsTable()
+    await settingsRepo.upsert("timezone", "Europe/Dublin")
+    const saved = await saveCredentials({
+      locals: { hassIsAdmin: true },
+      request: new Request("http://localhost/api/integrations/calendar/caldav-credentials", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "save", url: origin, username: "u", password: "p" }),
+      }),
+    } as unknown as Parameters<typeof saveCredentials>[0])
+    expect(saved.status).toBe(200)
+
+    startCalDAVSync(origin, 0)
+    await expect.poll(() => getCalendarSyncStatus().lastSyncAt).not.toBeNull()
+    expect(getCalendarSyncStatus().lastSyncError).toBeNull()
+
+    const row1 = (await db.execute({ sql: `SELECT title, description, due_date, recurrence_rule, task_kind FROM tasks`, args: [] })).rows[0]!
+    expect(row1.title).toBe("CalDAV Standup")
+    expect(row1.description).toBe("Agenda: https://meet.example.com/room:8443")
+    expect(row1.recurrence_rule).toBe("FREQ=WEEKLY;COUNT=3")
+    expect(row1.task_kind).toBe("calendar_event")
+
+    // Confirm EXDATE excluded d7 while todayStr and d14 are counted
+    const repo = new TaskRepository(db)
+    const counts = await repo.getCalendarHAEventCounts(todayStr, d14, "Europe/Dublin")
+    expect(counts[todayStr]).toBe(1)
+    expect(counts[d7] ?? 0).toBe(0)
+    expect(counts[d14]).toBe(1)
+
+    // Re-sync after upstream title change -> updates existing task instead of skipping
+    summaryTitle = "CalDAV Standup (Renamed)"
+    const second = await syncCalDAVEvents()
+    expect(second).toEqual({ created: 0, updated: 1, total: 1 })
+
+    const rows2 = (await db.execute({ sql: `SELECT title FROM tasks`, args: [] })).rows
+    expect(rows2).toHaveLength(1)
+    expect(rows2[0]!.title).toBe("CalDAV Standup (Renamed)")
+  } finally {
+    stopCalDAVSync()
+    globalThis.fetch = originalFetch
+    server.closeAllConnections()
+    await new Promise<void>((resolve) => server.close(() => resolve()))
+    db.close()
+    resetPersistenceForTests()
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
+    await rm(directory, { recursive: true, force: true })
+  }
 })

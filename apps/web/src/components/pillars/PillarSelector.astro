@@ -41,7 +41,7 @@ const { value, name = "pillarId", id = "pillar-selector", class: className } = A
 .pillar-selector__label {
   font-size: 0.75rem;
   font-weight: 600;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
@@ -49,10 +49,10 @@ const { value, name = "pillarId", id = "pillar-selector", class: className } = A
 .pillar-selector__select {
   width: 100%;
   padding: 0.5rem 0.75rem;
-  background: var(--surface);
+  background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  color: var(--text);
+  color: var(--text-primary);
   font-size: 0.875rem;
   cursor: pointer;
   transition: border-color 150ms ease;
@@ -70,20 +70,22 @@ const { value, name = "pillarId", id = "pillar-selector", class: className } = A
 </style>
 
 <script>
+  import { pageLifecycle } from "../../lib/page-lifecycle"
+
   /**
    * PillarSelector client controller
    *
    * Fetches active Pillars and populates the <select>.
    * Sets selected value from data-value attribute or initial value.
    */
-  document.addEventListener("astro:page-load", () => {
+  pageLifecycle.onPageLoad((signal) => {
     const selects = document.querySelectorAll<HTMLSelectElement>("[data-pillar-selector]")
     if (selects.length === 0) return
 
-    fetch("/api/pillars")
+    fetch("/api/pillars", { signal })
       .then(r => r.json())
       .then(data => {
-        if (!data.pillars) return
+        if (!data.pillars || signal.aborted) return
 
         selects.forEach(select => {
           // Preserve first option (None)
@@ -94,7 +96,7 @@ const { value, name = "pillarId", id = "pillar-selector", class: className } = A
           for (const pillar of data.pillars) {
             const option = document.createElement("option")
             option.value = pillar.id
-            option.textContent = `${pillar.icon || "🏛️"} ${pillar.name}`
+            option.textContent = pillar.icon ? `${pillar.icon} ${pillar.name}` : pillar.name
             select.appendChild(option)
           }
 

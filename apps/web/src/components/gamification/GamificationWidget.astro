@@ -1,6 +1,4 @@
 ---
-import Icon from "../ui/Icon.astro"
-
 /**
  * GamificationWidget — Dashboard progress ring + weekly bar chart
  *
@@ -16,6 +14,19 @@ import Icon from "../ui/Icon.astro"
  * @prop weekly - Weekly data from getWeeklyData()
  * @prop dailyGoal - Configurable daily task completion goal (default: 5)
  */
+import { calendarToday } from "../../lib/date"
+import Icon from "../ui/Icon.astro"
+import { resolveAchievementTablerIcon } from "../../lib/tabler-svg"
+
+interface WidgetAchievement {
+  id: string
+  name: string
+  description: string
+  icon: string
+  category: string
+  unlockedAt: string | null
+}
+
 interface Props {
   stats: {
     currentStreak: number
@@ -33,6 +44,8 @@ interface Props {
   dailyGoal?: number
   level?: number
   progressToNext?: number
+  achievements?: WidgetAchievement[]
+  timezone?: string
 }
 
 const {
@@ -41,17 +54,91 @@ const {
   dailyGoal = 5,
   level = 1,
   progressToNext = 0,
+  achievements = [],
+  timezone = "Europe/Dublin",
 } = Astro.props
 
 const progress = Math.min(stats.todayCompleted / dailyGoal, 1)
 const circumference = 2 * Math.PI * 42
 const dashOffset = circumference * (1 - progress)
 const maxCompleted = Math.max(...weekly.map(d => d.completedCount), dailyGoal)
+const todayDateStr = calendarToday(timezone || "Europe/Dublin")
 
 function dayLabel(dateStr: string): string {
   const d = new Date(dateStr + "T00:00:00")
   return d.toLocaleDateString("en", { weekday: "short" })
 }
+
+function getWidgetAchievementProgress(id: string): string {
+  const milestoneTargets: Record<string, number> = {
+    first_task: 1,
+    tasks_10: 10,
+    tasks_25: 25,
+    tasks_50: 50,
+    tasks_100: 100,
+    tasks_250: 250,
+    tasks_500: 500,
+  }
+  const milestoneTarget = milestoneTargets[id]
+  if (milestoneTarget !== undefined) {
+    return `${Math.min(stats.totalCompleted, milestoneTarget)}/${milestoneTarget} tasks`
+  }
+
+  const streakTargets: Record<string, number> = {
+    streak_3: 3,
+    streak_7: 7,
+    streak_14: 14,
+    streak_30: 30,
+    streak_60: 60,
+    streak_100: 100,
+  }
+  const streakTarget = streakTargets[id]
+  if (streakTarget !== undefined) {
+    return `${Math.min(stats.longestStreak, streakTarget)}/${streakTarget} day streak`
+  }
+
+  const xpTargets: Record<string, number> = {
+    xp_100: 100,
+    xp_500: 500,
+    xp_1000: 1000,
+    xp_2500: 2500,
+    xp_5000: 5000,
+    xp_10000: 10000,
+  }
+  const xpTarget = xpTargets[id]
+  if (xpTarget !== undefined) {
+    return `${Math.min(stats.totalPoints, xpTarget).toLocaleString()}/${xpTarget.toLocaleString()} XP`
+  }
+
+  const levelTargets: Record<string, number> = {
+    level_5: 5,
+    level_10: 10,
+    level_20: 20,
+  }
+  const levelTarget = levelTargets[id]
+  if (levelTarget !== undefined) {
+    return `Level ${Math.min(level, levelTarget)}/${levelTarget}`
+  }
+
+  if (id === "daily_goal" || id === "five_in_day") return `${Math.min(stats.todayCompleted, 5)}/5 today`
+  if (id === "ten_in_day") return `${Math.min(stats.todayCompleted, 10)}/10 today`
+  return "Locked"
+}
+
+function getWidgetAchievementTitle(a: WidgetAchievement): string {
+  if (a.unlockedAt) {
+    const unlockedLabel = new Date(a.unlockedAt).toLocaleDateString("en", { month: "short", day: "numeric", year: "numeric" })
+    return `${a.name} — ${a.description} · Unlocked ${unlockedLabel}`
+  }
+  return `${a.name} — ${a.description} · Locked (${getWidgetAchievementProgress(a.id)})`
+}
+
+const unlockedAchievements = achievements.filter(a => Boolean(a.unlockedAt))
+const lockedAchievements = achievements.filter(a => !a.unlockedAt)
+const featuredAchievements = [...unlockedAchievements, ...lockedAchievements].slice(0, 4)
+const streakLinkTitle = stats.currentStreak > 0
+  ? `Current streak: ${stats.currentStreak} day${stats.currentStreak === 1 ? "" : "s"} (best: ${stats.longestStreak}) — view achievements`
+  : `Best streak: ${stats.longestStreak} day${stats.longestStreak === 1 ? "" : "s"} — view achievements`
 ---
 
 <div class="gamification-widget">
@@ -79,10 +166,10 @@ function dayLabel(dateStr: string): string {
     <p class="gam-motivation">{dailyGoal - stats.todayCompleted} more to hit your daily goal</p>
   )}
   {progress >= 1 && (
-    <p class="gam-motivation gam-motivation--success"><Icon name="confetti" size={14} sprite={true} class="inline-block align-text-bottom mr-1" />Daily goal smashed!</p>
+    <p class="gam-motivation gam-motivation--success"><Icon name="confetti" size={14} sprite={true} class="inline-block align-text-bottom mr-1" />Daily goal complete!</p>
   )}
 
-  {/* Stats row — with level */}
+  {/* Stats row — with level & clickable streak */}
   <div class="gam-stats-row">
     <div class="gam-stat">
       <span class="gam-stat__value">{level}</span>
@@ -92,14 +179,18 @@ function dayLabel(dateStr: string): string {
       <span class="gam-stat__value">{stats.totalPoints}</span>
       <span class="gam-stat__label">XP</span>
     </div>
-    <div class="gam-stat">
-      <span class="gam-stat__value">
+    <a
+      href="/progress#achievements"
+      class="gam-stat gam-stat--link"
+      title={streakLinkTitle}
+    >
+      <span class="gam-stat__value gam-stat__value--streak">
         {stats.currentStreak > 0 ? <span class="inline-flex items-center justify-center gap-1"><Icon name="flame" size={15} sprite={true} />{stats.currentStreak}</span> : stats.longestStreak}
       </span>
       <span class="gam-stat__label">
-        {stats.currentStreak > 0 ? 'Streak' : 'Best'}
+        {stats.currentStreak > 0 ? "Streak" : "Best"}
       </span>
-    </div>
+    </a>
   </div>
 
   {/* Level progress bar */}
@@ -110,19 +201,48 @@ function dayLabel(dateStr: string): string {
     <span class="gam-level-progress__text">Level {level} → {level + 1}</span>
   </div>
 
+  {/* Featured Achievements (click-through to /progress#achievements) */}
+  {featuredAchievements.length > 0 && (
+    <div class="gam-achievements">
+      <div class="gam-achievements__header">
+        <span class="gam-achievements__title">Achievements</span>
+        <a href="/progress#achievements" class="gam-achievements__all">
+          {unlockedAchievements.length}/{achievements.length}
+        </a>
+      </div>
+      <div class="gam-achievements__row">
+        {featuredAchievements.map(a => {
+          const badgeTitle = getWidgetAchievementTitle(a)
+          return (
+            <a
+              href="/progress#achievements"
+              class={`gam-achievement-badge ${a.unlockedAt ? "gam-achievement-badge--unlocked" : "gam-achievement-badge--locked"}`}
+              title={badgeTitle}
+            >
+              <span class="gam-achievement-badge__icon inline-flex items-center" aria-hidden="true">
+                <Icon name={resolveAchievementTablerIcon(a.id || a.icon)} size={15} />
+              </span>
+              <span class="gam-achievement-badge__name">{a.name}</span>
+            </a>
+          )
+        })}
+      </div>
+    </div>
+  )}
+
   {/* Weekly bar chart */}
   <div class="gam-weekly">
     <div class="gam-weekly__title">This Week</div>
     {maxCompleted === 0 || maxCompleted === dailyGoal && weekly.every(d => d.completedCount === 0) ? (
-      <div class="gam-weekly__empty" style="height: 60px; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; color: var(--text-muted); font-size: 0.75rem;">
-        <span style="opacity: 0.5; margin-bottom: 4px; display: inline-flex;"><Icon name="chart-bar" size={20} sprite={true} /></span>
+      <div class="gam-weekly__empty" style="height: 60px; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; color: var(--text-secondary); font-size: 0.75rem;">
+        <span style="opacity: 0.6; margin-bottom: 4px; display: inline-flex;"><Icon name="chart-bar" size={20} sprite={true} /></span>
         <p style="margin: 0; line-height: 1.2;">No tasks yet.<br/>You got this!</p>
       </div>
     ) : (
       <div class="gam-weekly__chart">
         {weekly.map(day => {
           const height = maxCompleted > 0 ? (day.completedCount / maxCompleted) * 100 : 0
-          const isToday = day.date === new Date().toISOString().split("T")[0]
+          const isToday = day.date === todayDateStr
           return (
             <div class="gam-bar-col">
               <div class="gam-bar-wrapper">
@@ -196,7 +316,11 @@ function dayLabel(dateStr: string): string {
   }
 
   .gam-motivation--success {
-    color: #22c55e;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.25rem;
+    color: var(--accent-text, #22c55e);
     font-weight: 600;
   }
 
@@ -234,6 +358,25 @@ function dayLabel(dateStr: string): string {
     text-align: center;
   }
 
+  .gam-stat--link {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-decoration: none;
+    color: inherit;
+    padding: 0.25rem 0.5rem;
+    border-radius: 8px;
+    border: 1px solid transparent;
+    transition: background 0.15s, border-color 0.15s;
+  }
+
+  .gam-stat--link:hover,
+  .gam-stat--link:focus-visible {
+    background: var(--bg-hover);
+    border-color: var(--border);
+    outline: none;
+  }
+
   .gam-stat__value {
     display: block;
     font-size: 1.125rem;
@@ -242,11 +385,100 @@ function dayLabel(dateStr: string): string {
     font-variant-numeric: tabular-nums;
   }
 
+  .gam-stat__value--streak {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.2rem;
+    color: var(--accent-text, var(--text-primary));
+  }
+
   .gam-stat__label {
     font-size: 0.6875rem;
-    color: var(--text-muted, #888);
+    color: var(--text-secondary, #888);
     text-transform: uppercase;
     letter-spacing: 0.03em;
+  }
+
+  /* Featured Achievements strip */
+  .gam-achievements {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    padding-top: 0.25rem;
+    border-top: 1px solid var(--border);
+  }
+
+  .gam-achievements__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .gam-achievements__title {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .gam-achievements__all {
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: var(--accent-text, var(--accent));
+    text-decoration: none;
+  }
+
+  .gam-achievements__all:hover {
+    text-decoration: underline;
+  }
+
+  .gam-achievements__row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.375rem;
+  }
+
+  .gam-achievement-badge {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.35rem 0.5rem;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    text-decoration: none;
+    min-width: 0;
+    transition: border-color 0.15s, background 0.15s;
+  }
+
+  .gam-achievement-badge--locked {
+    opacity: 0.76;
+    border-style: dashed;
+  }
+
+  .gam-achievement-badge:hover,
+  .gam-achievement-badge:focus-visible {
+    opacity: 1;
+    border-color: var(--accent);
+    background: var(--bg-hover);
+    outline: none;
+  }
+
+  .gam-achievement-badge__icon {
+    font-size: 0.875rem;
+    line-height: 1;
+    flex-shrink: 0;
+  }
+
+  .gam-achievement-badge__name {
+    font-size: 0.6875rem;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   /* Weekly bar chart */

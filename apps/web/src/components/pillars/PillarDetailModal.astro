@@ -16,7 +16,7 @@
 
 <div
   id="pillar-detail-overlay"
-  class="modal-overlay z-200"
+  class="modal-overlay"
   role="dialog"
   aria-modal="true"
   aria-labelledby="pillar-detail-title"
@@ -26,7 +26,9 @@
     <div class="pillar-detail-modal__header" id="pillar-detail-header">
       <div class="pillar-detail-modal__accent-bar" id="pillar-detail-accent"></div>
       <div class="pillar-detail-modal__hero">
-        <span class="pillar-detail-modal__icon" id="pillar-detail-icon" aria-hidden="true">🏛️</span>
+        <span class="pillar-detail-modal__icon" id="pillar-detail-icon" aria-hidden="true">
+          <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18" /><path d="M3 10h18" /><path d="M5 6l7 -3l7 3" /><path d="M4 10v11" /><path d="M20 10v11" /><path d="M8 14v3" /><path d="M12 14v3" /><path d="M16 14v3" /></svg>
+        </span>
         <div class="pillar-detail-modal__meta">
           <h2 class="pillar-detail-modal__name" id="pillar-detail-title">Pillar</h2>
           <div class="pillar-detail-modal__weight" id="pillar-detail-weight"></div>
@@ -95,8 +97,10 @@
     max-height: 85vh;
     overflow-y: auto;
     border-radius: var(--radius-lg, 12px);
-    background: var(--surface);
+    background: var(--bg-card);
+    color: var(--text-primary);
     border: 1px solid var(--border);
+    box-shadow: var(--shadow-lg, 0 24px 48px rgba(0, 0, 0, 0.4));
   }
 
   .pillar-detail-modal__header {
@@ -131,7 +135,7 @@
     margin: 0;
     font-size: 1.375rem;
     font-weight: 700;
-    color: var(--text);
+    color: var(--text-primary);
     line-height: 1.3;
   }
 
@@ -156,7 +160,7 @@
   .pillar-detail-modal__weight-label {
     margin-left: 0.5rem;
     font-size: 0.75rem;
-    color: var(--text-muted);
+    color: var(--text-secondary);
   }
 
   .pillar-detail-modal__actions {
@@ -173,22 +177,26 @@
     height: 32px;
     border: 1px solid var(--border);
     border-radius: var(--radius-sm, 6px);
-    background: transparent;
-    color: var(--text-muted);
+    background: var(--bg-secondary);
+    color: var(--text-primary);
     cursor: pointer;
     transition: color 150ms ease, border-color 150ms ease, background 150ms ease;
   }
 
   .pillar-detail-modal__action-btn:hover {
-    color: var(--text);
+    color: var(--text-primary);
     border-color: var(--pillar-accent, var(--accent));
-    background: color-mix(in srgb, var(--pillar-accent, var(--accent)) 10%, transparent);
+    background: var(--bg-hover);
+  }
+
+  .pillar-detail-modal__action-btn--danger {
+    color: var(--danger-text, var(--danger));
   }
 
   .pillar-detail-modal__action-btn--danger:hover {
-    color: var(--danger, #ef4444);
-    border-color: var(--danger, #ef4444);
-    background: color-mix(in srgb, var(--danger, #ef4444) 10%, transparent);
+    color: var(--danger-text, var(--danger));
+    border-color: var(--danger);
+    background: color-mix(in srgb, var(--danger) 12%, var(--bg-secondary));
   }
 
   .pillar-detail-modal__close-btn {
@@ -200,14 +208,14 @@
     border: none;
     border-radius: var(--radius-sm, 6px);
     background: transparent;
-    color: var(--text-muted);
+    color: var(--text-secondary);
     cursor: pointer;
     transition: color 150ms ease, background 150ms ease;
   }
 
   .pillar-detail-modal__close-btn:hover {
-    color: var(--text);
-    background: var(--surface-raised, rgba(255,255,255,0.05));
+    color: var(--text-primary);
+    background: var(--bg-hover);
   }
 
   /* Manifesto */
@@ -219,11 +227,11 @@
     margin: 0;
     padding: 0.875rem 1.125rem;
     border-left: 4px solid var(--pillar-accent, var(--accent));
-    background: color-mix(in srgb, var(--pillar-accent, var(--accent)) 6%, transparent);
+    background: var(--bg-secondary);
     border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
     font-size: 1rem;
     line-height: 1.6;
-    color: var(--text);
+    color: var(--text-primary);
     font-style: italic;
   }
 
@@ -232,7 +240,7 @@
     border: 2px dashed var(--border);
     border-radius: var(--radius-sm);
     text-align: center;
-    color: var(--text-muted);
+    color: var(--text-secondary);
     font-size: 0.875rem;
     font-style: italic;
   }
@@ -255,7 +263,7 @@
     margin: 0;
     font-size: 0.8125rem;
     font-weight: 600;
-    color: var(--text-muted);
+    color: var(--text-secondary);
     text-transform: uppercase;
     letter-spacing: 0.04em;
     display: flex;
@@ -263,8 +271,26 @@
     gap: 0.375rem;
   }
 
-  .pillar-detail-modal__add-principle-btn { min-height: 44px; gap: .375rem; white-space: nowrap; }
-  #pillar-detail-edit-btn { width: auto; min-height: 44px; padding-inline: .5rem; gap: .25rem; }
+  .pillar-detail-modal__add-principle-btn {
+    min-height: 44px;
+    gap: .375rem;
+    white-space: nowrap;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    border-color: var(--border);
+  }
+  .pillar-detail-modal__add-principle-btn:hover:not(:disabled) {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+  }
+  #pillar-detail-edit-btn {
+    width: auto;
+    min-height: 44px;
+    padding-inline: .625rem;
+    gap: .375rem;
+    font-size: .8125rem;
+    font-weight: 500;
+  }
   .pillar-detail-modal__status { margin: 0; color: var(--text-secondary); }
   .pillar-detail-modal__status:not(:empty) { margin-block: .5rem; }
   .pillar-detail-modal__status[data-error] { font-weight: 600; border-inline-start: 3px solid var(--danger); padding-inline-start: .5rem; }
@@ -285,7 +311,8 @@
     padding: 0.75rem;
     border: 1px solid var(--pillar-accent, var(--accent));
     border-radius: var(--radius-sm, 6px);
-    background: color-mix(in srgb, var(--pillar-accent, var(--accent)) 4%, var(--surface));
+    background: var(--bg-secondary);
+    color: var(--text-primary);
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
@@ -327,17 +354,33 @@
 
   .pillar-detail-modal__goal-item {
     padding: 0.5rem 0.625rem;
-    background: var(--surface-raised, var(--surface));
+    background: var(--bg-secondary);
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
     font-size: 0.875rem;
-    color: var(--text);
+    color: var(--text-primary);
   }
 </style>
 
 <!-- Separate global styles for dynamically rendered content (innerHTML from controller) -->
 <!-- Scoped to #pillar-detail-overlay to avoid leaking into other components -->
 <style is:global>
+  #pillar-detail-overlay {
+    background: rgba(8, 12, 10, 0.72);
+    z-index: 240;
+  }
+
+  #pillar-detail-principle-cancel {
+    background: var(--bg-card);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+  }
+
+  #pillar-detail-principle-cancel:hover:not(:disabled) {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+  }
+
   /* ── Principle list items (rendered by pillar-detail-controller.ts) ── */
   #pillar-detail-principles .pillar-detail-modal__principle-item {
     display: flex;
@@ -355,6 +398,9 @@
     flex: 1 1 12rem;
     overflow-wrap: anywhere;
   }
+  #pillar-detail-principles .pillar-detail-modal__principle-text {
+    color: var(--text-primary);
+  }
   #pillar-detail-principles .pillar-detail-modal__principle-nn-badge {
     display: inline-flex;
     align-items: center;
@@ -366,6 +412,25 @@
   }
   #pillar-detail-principles .pillar-detail-modal__principle-actions { display: flex; flex-wrap: wrap; gap: .375rem; }
   #pillar-detail-principles button { min-height: 44px; }
+  #pillar-detail-principles .btn-secondary {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+  }
+  #pillar-detail-principles .btn-secondary:hover:not(:disabled) {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+  }
+  #pillar-detail-principles .btn-ghost {
+    background: var(--bg-secondary);
+    color: var(--danger-text, var(--danger));
+    border: 1px solid var(--border);
+  }
+  #pillar-detail-principles .btn-ghost:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--danger) 12%, var(--bg-secondary));
+    border-color: var(--danger);
+    color: var(--danger-text, var(--danger));
+  }
   .pillar-detail-modal__name { overflow-wrap: anywhere; }
   .pillar-detail-modal__hero, .pillar-detail-modal__actions, .pillar-detail-modal__section-header { flex-wrap: wrap; }
 

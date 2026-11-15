@@ -17,17 +17,26 @@ test("due date filters rows and total before pagination", async ({ request }) =>
     ids.push((await response.json()).id)
   }
 
+  // due_date matches the household calendar day (Europe/Dublin by default). The stored
+  // 23:50 at -05:00 on 29 February is 04:50 on 1 March in the household, so it is due then.
   const params = { due_date: "2032-02-29", sort: "title", order: "asc", limit: "1" }
   const first = await request.get("/api/tasks", { params })
   expect(first.status(), await first.text()).toBe(200)
   expect(await first.json()).toMatchObject({
     tasks: [{ id: ids[1], due_date: "2032-02-29" }],
-    total: 2, limit: 1, offset: 0,
+    total: 1, limit: 1, offset: 0,
   })
 
-  const next = await request.get("/api/tasks", { params: { ...params, offset: "1" } })
-  expect(next.status(), await next.text()).toBe(200)
-  expect(await next.json()).toMatchObject({
+  const march = { due_date: "2032-03-01", sort: "title", order: "asc", limit: "1" }
+  const marchFirst = await request.get("/api/tasks", { params: march })
+  expect(marchFirst.status(), await marchFirst.text()).toBe(200)
+  expect(await marchFirst.json()).toMatchObject({
+    tasks: [{ id: ids[0], due_date: "2032-03-01" }],
+    total: 2, limit: 1, offset: 0,
+  })
+  const marchNext = await request.get("/api/tasks", { params: { ...march, offset: "1" } })
+  expect(marchNext.status(), await marchNext.text()).toBe(200)
+  expect(await marchNext.json()).toMatchObject({
     tasks: [{ id: ids[2], due_date: "2032-02-29T23:50:00-05:00" }],
     total: 2, limit: 1, offset: 1,
   })

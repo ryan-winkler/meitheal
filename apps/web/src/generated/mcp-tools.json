@@ -45,7 +45,7 @@
           "due_date": {
             "type": "string",
             "format": "date",
-            "description": "Match the stored calendar day, either a date-only value or the date written in a stored ISO timestamp. Invalid dates return 400."
+            "description": "Match the household calendar day (date-only, floating datetime, or zoned ISO timestamp in the configured household timezone). Invalid dates return 400."
           },
           "parent_id": {
             "type": "string",

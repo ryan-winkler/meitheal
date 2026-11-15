@@ -14,6 +14,22 @@ export {
   type SyncConfirmationTarget,
   type SyncTaskMutation,
 } from "./persistence/store"
+export { HierarchyRepository } from "./persistence/hierarchy-repository"
+export {
+  discardUnappliedTaskActivity,
+  readRecentActivity,
+  recentActivityPersonKey,
+  sanitizeOriginKind,
+  sanitizeOriginName,
+  sanitizeOriginTarget,
+  taskAddedActivity,
+  taskChangedActivity,
+  VERIFIED_ORIGIN_KINDS,
+  type RecentTaskAction,
+  type RecentTaskActor,
+  type VerifiedActivityProvenance,
+  type VerifiedOriginKind,
+} from "./persistence/recent-activity"
 export { getSettingsRevision, SettingsRepository } from "./persistence/settings-repository"
 export { rewriteLabelReferences } from "./persistence/label-reference-repository"
 export { TaskHandoff } from "./persistence/task-handoff"

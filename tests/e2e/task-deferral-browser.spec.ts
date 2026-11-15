@@ -31,6 +31,7 @@ test("keyboard Defer removes a board card and keyboard Resume brings it back", a
   await page.goto("/tasks")
   const card = page.locator(`.kanban-card[data-id="${task.id}"]`)
   await expect(card).toBeVisible()
+  await expect(page.locator("#kanban-card-menu")).toBeAttached()
   await card.locator(".card-more-btn").press("Enter")
   await page.locator("#kanban-card-menu").getByRole("button", { name: "Defer", exact: true }).press("Enter")
   await expect(card).toHaveCount(0)

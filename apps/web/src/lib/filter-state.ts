@@ -97,6 +97,10 @@ function deserializeArray(val: string | null | undefined): string[] {
   return val.split(",").filter(Boolean)
 }
 
+function normalizeTaskKindAliases(values: string[]): string[] {
+  return values.map((kind) => (kind === "standard" ? "standard_action" : kind))
+}
+
 /** Deserialize URL param string back to an object */
 function parseJsonParam(val: string | null | undefined): any | null {
   if (!val) return null
@@ -265,7 +269,7 @@ function normalizeTableValues(input: Record<string, unknown>): Partial<FilterSta
     const laneIds = stringList(input.laneIds)
     if (laneIds.length) result.laneIds = laneIds
   }
-  const kindValues = stringList(input.types)
+  const kindValues = normalizeTaskKindAliases(stringList(input.types))
   const types = kindValues.filter(kind => VALID_TASK_KINDS.some(valid => valid === kind))
   if (types.length) result.types = types
   const labels = stringList(input.labels)
@@ -417,7 +421,7 @@ export function loadFilterState(): Partial<FilterState> {
       sort: urlParams.get("sort") ?? DEFAULT_SORT,
       user: urlParams.get("user") ?? "",
       area: urlParams.get("area") ?? "",
-      types: deserializeArray(urlParams.get("types")),
+      types: normalizeTaskKindAliases(deserializeArray(urlParams.get("types"))),
       groupBy: urlParams.get("groupBy") ?? "none",
       subGroupBy: urlParams.get("subGroupBy") ?? "none",
       labels: deserializeArray(urlParams.get("labels")),
@@ -429,6 +433,7 @@ export function loadFilterState(): Partial<FilterState> {
     const stored = JSON.parse(localStorage.getItem(FILTER_STORAGE_KEY) ?? "{}")
     // Ensure array fields are arrays after parse
     if (stored.types && !Array.isArray(stored.types)) stored.types = []
+    else if (Array.isArray(stored.types)) stored.types = normalizeTaskKindAliases(stored.types)
     if (stored.labels && !Array.isArray(stored.labels)) stored.labels = []
     return stored
   } catch {
