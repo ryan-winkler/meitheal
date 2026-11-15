@@ -44,7 +44,7 @@ The [App container smoke workflow](../../.github/workflows/container-smoke.yml) 
 
 ## Hosted builds and stable publication
 
-The [Stable workflow](../../.github/workflows/publish-addon-images.yml) builds and tests images on native amd64 and ARM64 runners before pushing to GHCR. The smoke test checks migrations, starts the packaged server with disposable SQLite data, opens Today and creates a task. An existing version tag is accepted only when its image has the expected source revision and App metadata and passes the same smoke test.
+The [Stable workflow](../../.github/workflows/publish-addon-images.yml) builds and tests images on native amd64 and ARM64 runners before pushing to GHCR and signing a Sigstore build provenance attestation (`actions/attest-build-provenance`) for each published image. The smoke test checks migrations, starts the packaged server with disposable SQLite data, opens Today and creates a task. An existing version tag is accepted only when its image has the expected source revision and App metadata and passes the same smoke test.
 
 For stable, a fresh runner with an empty Docker configuration pulls both versioned images from GHCR and compares their digests with the build job outputs. It uses the App repository credential to commit the manifest, docs and assets with both digests in the commit message. Stable promotion rejects a version lower than the advertised version.
 

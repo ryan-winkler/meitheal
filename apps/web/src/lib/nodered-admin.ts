@@ -66,17 +66,19 @@ export async function nodeRedFetch(
   options: RequestInit & { timeoutMs?: number } = {},
 ): Promise<Response> {
   const { timeoutMs = DEFAULT_TIMEOUT_MS, ...fetchOptions } = options
-  const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), timeoutMs)
   const baseUrl = getNodeRedInternalUrl()
   const url = new URL(path, baseUrl)
   if (url.origin !== baseUrl) {
     throw new Error(`Invalid Node-RED API path: ${path}`)
   }
 
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), timeoutMs)
+
   try {
-    const response = await fetch(url.href, {
+    const response = await fetch(url.href, { // nosemgrep
       ...fetchOptions,
+      redirect: "error",
       headers: {
         "Content-Type": "application/json",
         "Accept": "application/json",

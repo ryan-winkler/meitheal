@@ -27,7 +27,7 @@ const spec = {
       url: "https://github.com/ryan-winkler/meitheal",
     },
     license: {
-      name: "AGPL-3.0",
+      name: "AGPL-3.0-only",
       url: "https://www.gnu.org/licenses/agpl-3.0.html",
     },
   },

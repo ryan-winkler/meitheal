@@ -5,6 +5,7 @@ export {
   ensureDatabaseSchemaSupported,
   ensureSchema,
   findTasksByExternalSyncIds,
+  getLocalDataDirectory,
   getPersistenceClient,
   type ExternalSyncLookup,
   type ExternalSyncMatch,
@@ -16,7 +17,7 @@ export {
 export { getSettingsRevision, SettingsRepository } from "./persistence/settings-repository"
 export { rewriteLabelReferences } from "./persistence/label-reference-repository"
 export { TaskHandoff } from "./persistence/task-handoff"
-export { TaskRepository, type TaskCatalogRow } from "./persistence/task-repository"
+export { TaskRepository, type ReassignmentReplayState, type TaskCatalogRow } from "./persistence/task-repository"
 export { customUserKind, UserRepository, type CustomUserKind } from "./persistence/user-repository"
 export { startInactivityScheduler } from "./task-inactivity-scheduler"
 export {

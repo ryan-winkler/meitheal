@@ -1,6 +1,10 @@
 # Meitheal notices
 
-Copyright (c) 2026 Ryan Winkler. The Meitheal Source-Available License 1.0 applies to the Meitheal-owned source and artwork in this release. Preserve this notice, LICENSE, and applicable third-party notices in redistributions.
+Copyright (c) 2026 Ryan Winkler.
+
+The Meitheal-owned source and artwork in this release are free software: you can redistribute them and/or modify them under the terms of the GNU Affero General Public License, version 3 only (SPDX-License-Identifier: AGPL-3.0-only), as published by the Free Software Foundation. They are distributed WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See LICENSE for the full text. Preserve this notice, LICENSE, and applicable third-party notices in redistributions.
+
+Commercial licenses for uses that cannot meet the AGPL-3.0-only terms are available from the copyright holder. See COMMERCIAL.md.
 
 The application documentation in docs/ is available under CC BY 4.0 unless a file identifies other terms. See https://creativecommons.org/licenses/by/4.0/.
 

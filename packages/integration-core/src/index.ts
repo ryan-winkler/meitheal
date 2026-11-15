@@ -74,10 +74,12 @@ export * from "./a2a-handler";
 export * from "./tool-registry";
 export {
   assertOutboundUrl,
+  createGuardedLookup,
   fetchOutbound,
   fetchWithDevelopmentTls,
   guardedLookup,
   isBlockedOutboundAddress,
+  isPrivateOutboundAddress,
   OutboundUrlError,
 } from "./outbound-fetch"
-export type { OutboundRequestInit } from "./outbound-fetch"
+export type { OutboundPolicyOptions, OutboundRequestInit, ValidatedOutboundUrl } from "./outbound-fetch"

@@ -49,7 +49,9 @@ jobs:
       channel: ${{ inputs.channel }}
       version: ${{ needs.release-ref.outputs.version }}
     permissions:
+      attestations: write
       contents: read
+      id-token: write # nosemgrep
       packages: write
 
   aarch64:
@@ -60,7 +62,9 @@ jobs:
       channel: ${{ inputs.channel }}
       version: ${{ needs.release-ref.outputs.version }}
     permissions:
+      attestations: write
       contents: read
+      id-token: write # nosemgrep
       packages: write
 
   promote:

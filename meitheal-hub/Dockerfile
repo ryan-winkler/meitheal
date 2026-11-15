@@ -56,6 +56,9 @@ RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
     pnpm --filter @meitheal/web... install --frozen-lockfile --ignore-scripts --prod
 
 # ── Stage 3: Runtime ──
+# s6-overlay starts as root to prepare the Supervisor /data volume, then drops
+# privileges via s6-setuidgid meitheal in /run.sh.
+# nosemgrep: dockerfile.security.missing-user.missing-user
 FROM ${BUILD_FROM}
 
 LABEL io.hass.type="addon"
@@ -87,6 +90,7 @@ RUN addgroup -S -g 10001 meitheal \
     && adduser -S -D -H -h /data -s /sbin/nologin -u 10001 -G meitheal meitheal \
     && mkdir -p /data
 
+# nosemgrep: dockerfile.security.missing-user.missing-user
 HEALTHCHECK --interval=30s --timeout=5s --start-period=45s --retries=3 \
   CMD curl -fsS http://127.0.0.1:3000/api/health || exit 1
 

@@ -83,7 +83,7 @@ async function request(
   const deadline = AbortSignal.any([signal, AbortSignal.timeout(4_000)])
   await checkWorker(transport, deadline)
   const url = new URL("api/task-pins", transport.scope)
-  const response = await fetch(url.href, {
+  const response = await fetch(url.href, { // nosemgrep
     method, mode: "same-origin", cache: "no-store", redirect: "error", referrerPolicy: "same-origin", signal: deadline,
     headers: { ...(body ? { "Content-Type": "application/json" } : {}), ...(context ? { [contextHeader]: context } : {}) },
     ...(body ? { body: JSON.stringify(body) } : {}),

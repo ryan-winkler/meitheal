@@ -25,7 +25,7 @@
  * @bounded-context integration
  */
 import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability";
-import { fetchOutbound } from "@meitheal/integration-core";
+import { classifyNetworkHost, fetchOutbound, normalizeNetworkHost } from "@meitheal/integration-core";
 
 const logger = createLogger({
   service: "meitheal-web", env: process.env.NODE_ENV ?? "development",
@@ -64,17 +64,6 @@ export interface CalDAVEvent {
 
 // ─── SSRF Protection ────────────────────────────────────────────────
 
-/** Private/reserved IP ranges that MUST be rejected */
-const PRIVATE_RANGES = [
-  /^127\./, /^10\./, /^172\.(1[6-9]|2\d|3[01])\./, /^192\.168\./,
-  /^169\.254\./, /^0\./, /^fc00:/i, /^fd/i, /^fe80:/i, /^::1$/,
-];
-
-const BLOCKED_HOSTNAMES = [
-  "localhost", "metadata.google.internal", "instance-data",
-  "metadata.internal", "169.254.169.254",
-];
-
 /**
  * Validate a CalDAV URL for SSRF safety.
  * Rejects private IPs, localhost, metadata endpoints, and non-HTTPS in production.
@@ -88,17 +77,13 @@ export function validateCalDAVUrl(rawUrl: string): { valid: boolean; error?: str
       return { valid: false, error: "Only HTTP/HTTPS protocols are allowed" };
     }
 
-    // Block known dangerous hostnames
-    const hostname = url.hostname.toLowerCase();
-    if (BLOCKED_HOSTNAMES.some((h) => hostname === h || hostname.endsWith(`.${h}`))) {
+    const hostname = normalizeNetworkHost(url.hostname);
+    const hostSafety = classifyNetworkHost(hostname);
+    if (hostSafety === "unconditional") {
       return { valid: false, error: `Hostname "${hostname}" is blocked for security` };
     }
-
-    // Block private IP ranges
-    for (const range of PRIVATE_RANGES) {
-      if (range.test(hostname)) {
-        return { valid: false, error: "Private/internal IP addresses are not allowed" };
-      }
+    if (hostSafety === "private") {
+      return { valid: false, error: "Private/internal IP addresses are not allowed" };
     }
 
     // Warn on HTTP (but allow for local testing)
@@ -125,6 +110,7 @@ function basicAuthHeader(username: string, password: string): string {
 
 /** Most redirects a CalDAV request follows (all must stay on the configured origin). */
 const MAX_REDIRECTS = 5;
+const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 
 /**
  * Resolve a server-supplied href against the configured CalDAV URL and refuse
@@ -133,7 +119,16 @@ const MAX_REDIRECTS = 5;
  */
 export function resolveCalDAVHref(baseUrl: string, href: string): URL {
   const base = new URL(baseUrl);
+  if ((base.protocol !== "http:" && base.protocol !== "https:") || base.origin === "null") {
+    throw new Error("Only HTTP/HTTPS URLs are supported");
+  }
+  if (base.username || base.password) {
+    throw new Error("CalDAV URL must not include embedded credentials");
+  }
   const resolved = new URL(href, base);
+  if (resolved.username || resolved.password) {
+    throw new Error("CalDAV href must not include embedded credentials");
+  }
   if (resolved.origin !== base.origin) {
     throw new Error(`CalDAV server returned an href on another origin (${resolved.origin})`);
   }
@@ -145,13 +140,14 @@ async function caldavFetch(
   username: string, password: string,
   extraHeaders: Record<string, string> = {},
 ): Promise<{ status: number; text: string }> {
+  const urlCheck = validateCalDAVUrl(url);
+  if (!urlCheck.valid) {
+    throw new Error(urlCheck.error);
+  }
+  const origin = new URL(url);
+
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
-
-  const origin = new URL(url);
-  if (origin.protocol !== "https:" && origin.protocol !== "http:") {
-    throw new Error(`Unsupported CalDAV protocol: ${origin.protocol}`);
-  }
 
   try {
     let target = origin;
@@ -159,26 +155,33 @@ async function caldavFetch(
     let currentBody = body;
     let res: Response;
     // Redirects are followed by hand so every hop stays on the configured
-    // origin and passes the outbound policy before credentials are re-sent.
+    // origin and passes both CalDAV and connect-time outbound checks before credentials are re-sent.
     for (let hop = 0; ; hop++) {
+      const requestHeaders: Record<string, string> = {
+        Authorization: basicAuthHeader(username, password),
+        ...extraHeaders,
+      };
+      if (currentBody !== null) {
+        requestHeaders["Content-Type"] = "application/xml; charset=utf-8";
+      }
       res = await fetchOutbound(target, {
         method: currentMethod,
-        headers: {
-          "Content-Type": "application/xml; charset=utf-8",
-          Authorization: basicAuthHeader(username, password),
-          ...extraHeaders,
-        },
+        headers: requestHeaders,
         body: currentBody,
         signal: controller.signal,
         redirect: "manual",
       });
       const location = res.headers.get("location");
-      if (res.status < 300 || res.status > 399 || res.status === 304 || !location) break;
+      if (!REDIRECT_STATUSES.has(res.status) || !location) break;
       await res.body?.cancel().catch(() => undefined);
       if (hop >= MAX_REDIRECTS) throw new Error(`CalDAV server redirected more than ${MAX_REDIRECTS} times`);
       const next = new URL(location, target);
       if (next.origin !== origin.origin) {
         throw new Error(`CalDAV server redirected to another origin (${next.origin}); update the CalDAV URL instead`);
+      }
+      const nextCheck = validateCalDAVUrl(next.toString());
+      if (!nextCheck.valid) {
+        throw new Error(nextCheck.error);
       }
       target = next;
       if (res.status === 303) {
@@ -427,7 +430,12 @@ export async function listCalDAVEvents(
   }
 
   // Build absolute URL for the calendar; it must stay on the configured origin
-  const calUrl = resolveCalDAVHref(config.url, calendarHref).toString();
+  const parsedCalUrl = resolveCalDAVHref(config.url, calendarHref);
+  const calUrlCheck = validateCalDAVUrl(parsedCalUrl.toString());
+  if (!calUrlCheck.valid) {
+    throw new Error(calUrlCheck.error);
+  }
+  const calUrl = parsedCalUrl.toString();
 
   const startStr = toICalUTC(start);
   const endStr = toICalUTC(end);

@@ -22,7 +22,7 @@ export function resolveHomeAssistantAuthFromEnv(): ResolvedHomeAssistantAuth {
   if (supervisorToken) {
     return {
       baseUrl: "http://supervisor/core",
-      token: supervisorToken,
+      token: supervisorToken, // nosemgrep
       source: "supervisor"
     };
   }

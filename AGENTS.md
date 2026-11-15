@@ -241,13 +241,13 @@ Use [LICENSE](LICENSE) for Meitheal-owned material and [NOTICE](NOTICE) for sepa
 
 - Keep existing third-party notices and the separate license files in `integrations/`.
 - Integration code in `integrations/` communicates with the core through network APIs.
-- Keep the license and notices with future image builds. `LicenseRef-Meitheal-Source-Available-1.0` describes the Meitheal source grant. Distributed images must use `org.opencontainers.image.licenses=LicenseRef-Proprietary`; this binary metadata does not change source or integration grants.
+- Keep the license and notices with future image builds. `AGPL-3.0-only` is the Meitheal source license; the maintainer also offers separate commercial licenses under the contributor agreement. Distributed images must use `org.opencontainers.image.licenses=LicenseRef-Proprietary`; this binary metadata does not change source or integration grants.
 - Keep contributor agreements in the repository’s signing workflow.
 - Keep private signing keys outside Git.
 
 ## Required Files (CI Enforced)
 
-- `README.md`, `AGENTS.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SUPPORT.md`, `SECURITY.md`, `COMMERCIAL.md`
+- `README.md`, `AGENTS.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SUPPORT.md`, `SECURITY.md`, `COMMERCIAL.md`, `GOVERNANCE.md`, `ROADMAP.md`
 - `WEBMCP.md` and the discovery files `public/.well-known/mcp.json` and `public/.well-known/jsondoc.json`
 - `.coderabbit.yaml`, `repository.yaml`, and the stable App manifest and docs
 - `docs/index.md`, the Home Assistant devcontainer and operations runbooks, and the architecture and licensing decisions

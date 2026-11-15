@@ -2,8 +2,7 @@
  * n8n Fetch Utilities — Shared helpers for n8n API communication
  *
  * DRYs up repeated patterns across health.ts, workflows.ts, and test-webhook.ts:
- * - Outbound policy (blocked metadata/link-local targets, no implicit redirects,
- *   TLS bypass for .internal domains in local dev only)
+ * - Outbound policy (blocked metadata/link-local/Supervisor targets, no implicit redirects)
  * - Base URL extraction from webhook URLs
  * - Timeout + abort controller setup
  * - JSON response helpers

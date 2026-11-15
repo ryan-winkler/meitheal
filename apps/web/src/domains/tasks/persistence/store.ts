@@ -53,8 +53,10 @@ export interface PersistedTaskResponse {
   integration: IntegrationOutcome;
 }
 
-let clientSingleton: Client | null = null;
+let clientSingleton: Client | null = null
+let clientSingletonDbUrl: string | null = null
 let schemaInitialization: Promise<void> | undefined
+let initializedDbUrl: string | null = null
 let remoteSchemaCheck: Promise<void> | undefined
 let startupBackupAttempted = false
 
@@ -73,14 +75,34 @@ function resolveDbUrl(): string {
 }
 
 function resolveDbPath(dbUrl: string): string | null {
-  if (!dbUrl.startsWith("file:")) return null
-  const dbPath = dbUrl.slice("file:".length)
+  if (!/^file:/i.test(dbUrl)) return null
+  const withoutScheme = dbUrl.slice("file:".length)
+  const hashIdx = withoutScheme.indexOf("#")
+  const rawRest = hashIdx >= 0 ? withoutScheme.slice(0, hashIdx) : withoutScheme
+  const qIdx = rawRest.indexOf("?")
+  const rawPath = qIdx >= 0 ? rawRest.slice(0, qIdx) : rawRest
+  const query = qIdx >= 0 ? rawRest.slice(qIdx + 1) : ""
+  if (/(?:^|&)mode=memory(?:&|$)/i.test(query)) return null
+  let dbPath = rawPath
+  if (/^\/\/localhost\//i.test(dbPath)) {
+    dbPath = dbPath.slice("//localhost".length)
+  } else if (dbPath.startsWith("///")) {
+    dbPath = dbPath.slice(2)
+  } else if (dbPath.startsWith("//")) {
+    return null
+  }
+  try {
+    dbPath = decodeURIComponent(dbPath)
+  } catch {
+    return null
+  }
+  if (!dbPath || dbPath === ":memory:" || dbPath.startsWith(":memory:")) return null
   return path.isAbsolute(dbPath) ? dbPath : path.join(process.cwd(), dbPath)
 }
 
 /**
  * Directory that holds the local SQLite file, for state that belongs beside
- * the database (and inside its backups). Null when the database is remote.
+ * the database (and inside its backups). Null when the database is remote or in-memory.
  */
 export function getLocalDataDirectory(): string | null {
   const dbPath = resolveDbPath(resolveDbUrl())
@@ -95,14 +117,25 @@ function ensureFileDbDirectory(dbUrl: string): void {
 }
 
 function getClient(): Client {
+  const dbUrl = resolveDbUrl()
+  if (clientSingleton && clientSingletonDbUrl === dbUrl) {
+    return clientSingleton
+  }
   if (clientSingleton) {
-    return clientSingleton;
+    const prev = clientSingleton
+    clientSingleton = null
+    clientSingletonDbUrl = null
+    schemaInitialization = undefined
+    initializedDbUrl = null
+    remoteSchemaCheck = undefined
+    startupBackupAttempted = false
+    prev.close()
   }
 
-  const dbUrl = resolveDbUrl();
-  ensureFileDbDirectory(dbUrl);
+  ensureFileDbDirectory(dbUrl)
   clientSingleton = openDatabase(dbUrl)
-  return clientSingleton;
+  clientSingletonDbUrl = dbUrl
+  return clientSingleton
 }
 
 /** Low-level SQLite client — use for raw SQL queries. */
@@ -165,10 +198,28 @@ async function hasColumn(client: Client, tableName: string, columnName: string):
  * Concurrent requests share one initialization and later calls reuse its result.
  */
 export function ensureSchema(): Promise<void> {
-  schemaInitialization ??= initializeSchema().catch(error => {
+  const targetDbUrl = resolveDbUrl()
+  if (initializedDbUrl !== targetDbUrl) {
     schemaInitialization = undefined
-    throw error
-  })
+    initializedDbUrl = targetDbUrl
+  }
+  if (!schemaInitialization) {
+    const pending = initializeSchema().then(
+      () => {
+        if (schemaInitialization === pending && resolveDbUrl() === targetDbUrl) {
+          initializedDbUrl = targetDbUrl
+        }
+      },
+      error => {
+        if (schemaInitialization === pending) {
+          schemaInitialization = undefined
+          initializedDbUrl = null
+        }
+        throw error
+      },
+    )
+    schemaInitialization = pending
+  }
   return schemaInitialization
 }
 

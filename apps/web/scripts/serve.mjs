@@ -43,7 +43,7 @@ async function supervisorProtectsIdentityHeaders() {
   if (!supervisorToken) return false
 
   try {
-    const response = await fetch(`http://${SUPERVISOR_ADDRESS}/info`, {
+    const response = await fetch(`http://${SUPERVISOR_ADDRESS}/info`, { // nosemgrep
       headers: { authorization: `Bearer ${supervisorToken}` },
       redirect: "error",
       signal: AbortSignal.timeout(2_000),

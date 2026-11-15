@@ -17,6 +17,9 @@ export async function taskRetryKey(request: Request, url: URL, principal: string
   // Deferral retries must compare against the live revision, even with a replay key.
   if (request.method === "PATCH" && /^\/api\/tasks\/[\w-]+\/deferral$/.test(url.pathname)) return
 
+  // Task updates enforce live ownership, optimistic concurrency, read redaction, and reassignment receipts.
+  if ((request.method === "PUT" || request.method === "PATCH") && /^\/api\/tasks\/[^/]+\/?$/.test(url.pathname)) return
+
   // Reactions use their database identity so removing and adding one never replays stale data.
   if (isTaskReactionRoute(url.pathname)) return
 

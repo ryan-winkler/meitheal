@@ -1,6 +1,7 @@
 ---
 type: "Decision"
 title: "ADR-0012: Docker Hub Publishing for HA Add-on Distribution"
+status: "superseded"
 description: "Records the earlier decision to publish Home Assistant App images to Docker Hub."
 ---
 
@@ -8,7 +9,7 @@ description: "Records the earlier decision to publish Home Assistant App images 
 
 ## Status
 
-**Accepted** — 2026-03-01
+**Superseded** — Docker Hub publishing was retired; Stable images now publish to GitHub Container Registry (`ghcr.io/ryan-winkler/meitheal-{arch}`) and Canary images publish to `ghcr.io/coolock-village/meitheal-canary-{arch}`, with manifests distributed via `ryan-winkler/meitheal-ha-addon` (see the [Release Runbook](../kcs/releasing.md)). Originally **Accepted** — 2026-03-01.
 
 ## Context
 

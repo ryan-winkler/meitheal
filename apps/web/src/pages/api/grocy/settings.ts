@@ -8,6 +8,7 @@
  * @bounded-context integration
  */
 import type { APIRoute } from "astro"
+import { validateGrocyBaseUrl } from "@meitheal/integration-core"
 import { requireSystemSettingsAdmin } from "../../../lib/settings-security"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import { SettingsRepository } from "@domains/tasks/persistence/settings-repository"
@@ -91,14 +92,24 @@ export const PUT: APIRoute = async ({ locals, request }) => {
 
     for (const settingKey of GROCY_SETTINGS_KEYS) {
       if (body[settingKey] !== undefined) {
-        const value = JSON.stringify(body[settingKey])
+        let value = JSON.stringify(body[settingKey])
 
         // Validate
         if (settingKey === "grocy_url" && typeof body[settingKey] === "string") {
           const urlStr = body[settingKey] as string
-          if (urlStr && !urlStr.startsWith("http://") && !urlStr.startsWith("https://")) {
+          const trimmedUrl = urlStr.trim()
+          if (trimmedUrl) {
+            const urlCheck = validateGrocyBaseUrl(trimmedUrl)
+            if (!urlCheck.ok) {
+              return new Response(
+                JSON.stringify({ ok: false, error: urlCheck.error }),
+                { status: 400, headers: { "Content-Type": "application/json" } },
+              )
+            }
+            value = JSON.stringify(urlCheck.normalizedUrl)
+          } else if (urlStr.length > 0) {
             return new Response(
-              JSON.stringify({ ok: false, error: "Grocy URL must start with http:// or https://" }),
+              JSON.stringify({ ok: false, error: "Invalid URL format" }),
               { status: 400, headers: { "Content-Type": "application/json" } },
             )
           }

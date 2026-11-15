@@ -1,27 +1,29 @@
 #!/bin/bash
-# Meitheal Hub — Build and push to Docker Hub for dev testing on HA Green
+# Meitheal Hub — Build and push to GitHub Container Registry for dev testing on HA Green
 #
 # Prerequisites:
-#   docker login -u coolockvillage  (use PAT as password)
+#   docker login ghcr.io -u ryan-winkler  (use a PAT with write:packages)
 #
 # Usage:
 #   ./meitheal-hub/build-push-dev.sh          # builds amd64 + aarch64, pushes :dev
-#   ./meitheal-hub/build-push-dev.sh v0.1.0   # builds and pushes :v0.1.0 + :latest
+#   ./meitheal-hub/build-push-dev.sh 0.0.1    # builds and pushes :0.0.1
 #
 # After pushing, on your HA Green:
 #   1. Go to Settings → Add-ons → Add-on Store → ⋮ → Repositories
-#   2. Add: https://github.com/ryan-winkler/meitheal
-#   3. Find "Meitheal Hub" → Install → Start → Open Web UI
+#   2. Add: https://github.com/ryan-winkler/meitheal-ha-addon
+#   3. Find "Meitheal" → Install → Start → Open Web UI
 #
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-DOCKER_USER="coolockvillage"
-IMAGE_BASE="${DOCKER_USER}/meitheal"
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+APP_VERSION="$(sed -n 's/^version: "\(.*\)"$/\1/p' "${REPO_ROOT}/meitheal-hub/config.yaml")"
+REGISTRY="ghcr.io/ryan-winkler"
+IMAGE_BASE="${REGISTRY}/meitheal"
 TAG="${1:-dev}"
 
 echo "=== Meitheal Hub — Docker Build & Push ==="
 echo "Tag: ${TAG}"
+echo "Version: ${APP_VERSION}"
 echo "Repo: ${REPO_ROOT}"
 echo ""
 
@@ -42,20 +44,11 @@ for ARCH in amd64 aarch64; do
   docker buildx build \
     --platform "${PLATFORM}" \
     --build-arg BUILD_FROM="${BUILD_FROM}" \
-    -f meitheal-hub/Dockerfile \
+    --build-arg MEITHEAL_VERSION="${APP_VERSION}" \
+    -f "${REPO_ROOT}/meitheal-hub/Dockerfile" \
     -t "${IMAGE}:${TAG}" \
     --push \
     "${REPO_ROOT}"
-
-  if [ "${TAG}" != "dev" ]; then
-    docker buildx build \
-      --platform "${PLATFORM}" \
-      --build-arg BUILD_FROM="${BUILD_FROM}" \
-      -f meitheal-hub/Dockerfile \
-      -t "${IMAGE}:latest" \
-      --push \
-      "${REPO_ROOT}"
-  fi
 
   echo "✅ ${IMAGE}:${TAG} pushed"
 done
@@ -65,7 +58,7 @@ echo "=== Done! ==="
 echo ""
 echo "To install on HA Green:"
 echo "  1. Settings → Add-ons → Add-on Store → ⋮ → Repositories"
-echo "  2. Add: https://github.com/ryan-winkler/meitheal"
-echo "  3. Find 'Meitheal Hub' → Install → Start"
+echo "  2. Add: https://github.com/ryan-winkler/meitheal-ha-addon"
+echo "  3. Find 'Meitheal' → Install → Start"
 echo ""
 echo "To update after code changes, re-run this script and restart the add-on in HA."
