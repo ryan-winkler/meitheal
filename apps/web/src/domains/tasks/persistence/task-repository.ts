@@ -1196,22 +1196,22 @@ export class TaskRepository {
     receiptKey: string,
     requestId: string,
   ): Promise<ReassignmentReplayState> {
-    const [receiptRes, otherRes, latestActivityRes] = await Promise.all([
-      this.client.execute({
+    const [receiptRes, otherRes, latestActivityRes] = await this.client.batch([
+      {
         sql: "SELECT status, response_payload, updated_at FROM integration_attempts WHERE integration = 'task.reassignment' AND task_id = ? AND idempotency_key = ? LIMIT 1",
         args: [taskId, receiptKey],
-      }),
-      this.client.execute({
+      },
+      {
         sql: "SELECT 1 FROM integration_attempts WHERE integration = 'task.reassignment' AND task_id = ? AND request_id = ? AND idempotency_key != ? LIMIT 1",
         args: [taskId, requestId, receiptKey],
-      }),
-      this.client.execute({
+      },
+      {
         sql: "SELECT old_value, new_value, actor, actor_type, correlation_id, created_at FROM task_activity_log WHERE task_id = ? AND field = 'assigned_to' ORDER BY created_at DESC, id DESC LIMIT 1",
         args: [taskId],
-      }),
-    ])
-    const receiptRow = receiptRes.rows[0] as Record<string, unknown> | undefined
-    const activityRow = latestActivityRes.rows[0] as Record<string, unknown> | undefined
+      },
+    ], "read")
+    const receiptRow = receiptRes?.rows[0] as Record<string, unknown> | undefined
+    const activityRow = latestActivityRes?.rows[0] as Record<string, unknown> | undefined
     return {
       receipt: receiptRow
         ? {
@@ -1220,7 +1220,7 @@ export class TaskRepository {
           updated_at: Number(receiptRow.updated_at),
         }
         : null,
-      ownedByOtherToken: otherRes.rows.length > 0,
+      ownedByOtherToken: (otherRes?.rows.length ?? 0) > 0,
       lastReassignment: activityRow
         ? {
           old_value: typeof activityRow.old_value === "string" ? activityRow.old_value : null,

@@ -169,9 +169,12 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
   }
   const body = rawBody as Record<string, unknown>
   if (hasBoardSelection(body)) return unavailableBoardResponse()
-  const clientVersion = typeof body.updated_at === "number" ? body.updated_at : undefined
-  if (clientVersion !== undefined && (!Number.isSafeInteger(clientVersion) || clientVersion < 0)) {
-    return apiError("updated_at must be a non-negative safe integer", 400)
+  let clientVersion: number | undefined
+  if (body.updated_at !== undefined) {
+    if (typeof body.updated_at !== "number" || !Number.isSafeInteger(body.updated_at) || body.updated_at < 0) {
+      return apiError("updated_at must be a non-negative safe integer", 400)
+    }
+    clientVersion = body.updated_at
   }
   await ensureSchema()
   const repo = new TaskRepository(getPersistenceClient())
@@ -187,6 +190,7 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
 
   const resolvedId = resolved.id
   const agentToken = locals.agentToken
+  const canReadTask = !agentToken || agentToken.scopes.includes("tasks:read")
   const expectedActor = agentActivityActor(locals)?.actor
   const denied = isAssignedWriteOnly(agentToken) ? await checkAssignedTask(resolvedId, agentToken!) : null
   if (denied) return (await replayedAgentReassignment(repo, agentToken, resolvedId, body, expectedActor)) ?? denied
@@ -500,19 +504,23 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
       return Response.json({
         error: "The checklist changed since your last read",
         code: "checklist_conflict",
-        checklists: update.checklists,
+        ...(canReadTask ? { checklists: update.checklists } : {}),
       }, { status: 409, headers: { "cache-control": "no-store" } })
     }
     if (update.errorCode === "blocked") {
       return new Response(JSON.stringify({
         error: "Cannot activate: task is blocked by open dependencies",
         errorCode: "TASK_BLOCKED",
-        blocked_by: update.blockers.map(({ id, title, status, ticket_number }) => ({
-          id,
-          title,
-          status,
-          ticket_key: ticket_number ? formatTicketKey(Number(ticket_number)) : null,
-        })),
+        ...(canReadTask
+          ? {
+              blocked_by: update.blockers.map(({ id, title, status, ticket_number }) => ({
+                id,
+                title,
+                status,
+                ticket_key: ticket_number ? formatTicketKey(Number(ticket_number)) : null,
+              })),
+            }
+          : {}),
       }), {
         status: 409,
         headers: { "content-type": "application/json" },
@@ -561,7 +569,7 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
     // The App also owns the decision not to re-emit an acknowledged completion.
     ...(completionIntent ? ["task.completed"] : []),
   ])
-  dispatchTaskEvent("task.updated", taskPayload, typeof body.request_id === "string" ? body.request_id : undefined, undefined, undefined, authority).catch(() => {})
+  dispatchTaskEvent("task.updated", taskPayload, requestId || undefined, undefined, undefined, authority).catch(() => {})
 
   // Notification preference guard
   const notifPrefs = await repo.getNotificationPreferences()
@@ -686,7 +694,7 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
   }
 
   if (newlyCompleted) {
-    dispatchTaskEvent("task.completed", { ...taskPayload, completed_at: new Date().toISOString() }, typeof body.request_id === "string" ? body.request_id : undefined, undefined, undefined, authority).catch(() => {})
+    dispatchTaskEvent("task.completed", { ...taskPayload, completed_at: new Date().toISOString() }, requestId || undefined, undefined, undefined, authority).catch(() => {})
     try {
       const { isFeatureEnabled } = await import("../../../lib/feature-flags")
       if (await isFeatureEnabled("gamification")) {
@@ -720,7 +728,16 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
     }
   }
 
-  return new Response(JSON.stringify(taskPayload), {
+  const responseBody = canReadTask
+    ? taskPayload
+    : {
+        id: updatedRow.id,
+        ticket_key: taskPayload.ticket_key,
+        status: updatedRow.status,
+        assigned_to: updatedRow.assigned_to ?? null,
+      }
+
+  return new Response(JSON.stringify(responseBody), {
     status: 200,
     headers: {
       "content-type": "application/json",

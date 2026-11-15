@@ -436,7 +436,7 @@ dbTest.describe("Assigned-Agent Authorization & Repository Guards", () => {
       locals: agentLocals("custom_agent_a"),
     } as unknown as Parameters<typeof putTask>[0])).status).toBe(400)
 
-    for (const badVersion of [-1, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
+    for (const badVersion of [-1, 1.5, Number.MAX_SAFE_INTEGER + 1, null, "123", true, {}, []]) {
       expect((await sendRaw(JSON.stringify({ assigned_to: "ha_person_1", request_id: "bad-ver", updated_at: badVersion }))).status).toBe(400)
     }
     expect((await sendRaw(JSON.stringify({ assigned_to: "" }))).status).toBe(400)
@@ -449,7 +449,7 @@ dbTest.describe("Assigned-Agent Authorization & Repository Guards", () => {
     expect((await sendRaw(JSON.stringify({ assigned_to: "", request_id: "unassign-valid-1" }))).status).toBe(403)
     expect((await sendRaw(JSON.stringify({ assigned_to: "   ", request_id: "unassign-valid-1" }))).status).toBe(403)
     expect((await sendRaw(JSON.stringify({ assigned_to: 123, request_id: "unassign-valid-1" }))).status).toBe(403)
-    for (const badVersion of [-1, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
+    for (const badVersion of [-1, 1.5, Number.MAX_SAFE_INTEGER + 1, null, "123", true, {}, []]) {
       expect((await sendRaw(JSON.stringify({ assigned_to: null, request_id: "unassign-valid-1", updated_at: badVersion }))).status).toBe(400)
     }
     expect((await sendRaw(JSON.stringify({ assigned_to: null, request_id: "unassign-valid-1" }))).status).toBe(200)
@@ -879,27 +879,86 @@ test.describe("Live Built HTTP & MCP Assigned-Agent Contract", () => {
       })
       expect(nonReplayRes.status()).toBe(403)
 
-      // A write-only token without tasks:read receives only a minimal ack on replay (no title/description leak)
+      // A write-only token without tasks:read receives only a minimal ack on initial writes, conflicts, and replay
       const writeOnlyTokenRes = await adminCtx.post(p("/api/agent-tokens"), {
         data: { name: "Alpha Write-Only", scopes: ["tasks:write:assigned"], assignee_id: agentA.id },
       })
       expect(writeOnlyTokenRes.status()).toBe(201)
       const { token: writeOnlyToken } = await writeOnlyTokenRes.json()
+      const secretBlockerRes = await adminCtx.post(p("/api/tasks"), {
+        data: { title: "Secret Blocker Title" },
+      })
+      expect(secretBlockerRes.status()).toBe(201)
+      const secretBlocker = await secretBlockerRes.json()
       const writeOnlyTaskRes = await adminCtx.post(p("/api/tasks"), {
-        data: { title: "Confidential Handoff Secret", description: "Sensitive body", assigned_to: agentA.id },
+        data: {
+          title: "Confidential Handoff Secret",
+          description: "Sensitive body",
+          assigned_to: agentA.id,
+        },
       })
       expect(writeOnlyTaskRes.status()).toBe(201)
       const writeOnlyTask = await writeOnlyTaskRes.json()
+      expect((await adminCtx.post(p(`/api/tasks/${writeOnlyTask.id}/links`), {
+        data: { target_task_id: secretBlocker.id, link_type: "blocked_by" },
+      })).status()).toBe(201)
       const writeOnlyCtx = await playwright.request.newContext({
         baseURL: origin,
         extraHTTPHeaders: { authorization: `Bearer ${writeOnlyToken}`, origin, "content-type": "application/json" },
       })
       try {
+        // Non-reassignment PUT with Idempotency-Key must not cache or leak task content
+        const blockedConflict = await writeOnlyCtx.put(p(`/api/tasks/${writeOnlyTask.id}`), {
+          data: { status: "active" },
+        })
+        expect(blockedConflict.status()).toBe(409)
+        const blockedBody = await blockedConflict.json()
+        expect(blockedBody.errorCode).toBe("TASK_BLOCKED")
+        expect(blockedBody.blocked_by).toBeUndefined()
+
+        const checklistConflict = await writeOnlyCtx.put(p(`/api/tasks/${writeOnlyTask.id}`), {
+          data: {
+            checklists: JSON.stringify([{ text: "New item", done: false }]),
+            expected_checklists: JSON.stringify([{ text: "Stale item", done: true }]),
+          },
+        })
+        expect(checklistConflict.status()).toBe(409)
+        const checklistBody = await checklistConflict.json()
+        expect(checklistBody.code).toBe("checklist_conflict")
+        expect(checklistBody.checklists).toBeUndefined()
+
+        const nonHandoffUpdate = await writeOnlyCtx.put(p(`/api/tasks/${writeOnlyTask.id}`), {
+          headers: { "Idempotency-Key": "write-only-status-key" },
+          data: { status: "pending" },
+        })
+        expect(nonHandoffUpdate.status()).toBe(200)
+        expect(nonHandoffUpdate.headers()["idempotency-key-status"]).toBeUndefined()
+        expect(await nonHandoffUpdate.json()).toEqual({
+          id: writeOnlyTask.id,
+          ticket_key: writeOnlyTask.ticket_key ?? null,
+          status: "pending",
+          assigned_to: agentA.id,
+        })
+
         const firstHandoff = await writeOnlyCtx.put(p(`/api/tasks/${writeOnlyTask.id}`), {
+          headers: { "Idempotency-Key": "write-only-handoff-idemp" },
           data: { assigned_to: null, request_id: "write-only-handoff-1" },
         })
         expect(firstHandoff.status()).toBe(200)
+        expect(firstHandoff.headers()["idempotency-key-status"]).toBeUndefined()
+        const firstBody = await firstHandoff.json()
+        expect(firstBody).toEqual({
+          id: writeOnlyTask.id,
+          ticket_key: writeOnlyTask.ticket_key ?? null,
+          status: "pending",
+          assigned_to: null,
+        })
+        expect(firstBody.title).toBeUndefined()
+        expect(firstBody.description).toBeUndefined()
+
+        // Retry with same request_id + Idempotency-Key works while current, then fails once superseded
         const replayHandoff = await writeOnlyCtx.put(p(`/api/tasks/${writeOnlyTask.id}`), {
+          headers: { "Idempotency-Key": "write-only-handoff-idemp" },
           data: { assigned_to: null, request_id: "write-only-handoff-1" },
         })
         expect(replayHandoff.status()).toBe(200)
@@ -911,6 +970,22 @@ test.describe("Live Built HTTP & MCP Assigned-Agent Contract", () => {
         })
         expect(replayBody.title).toBeUndefined()
         expect(replayBody.description).toBeUndefined()
+
+        // Supersede the receipt via a subsequent reassignment and confirm Idempotency-Key cannot bypass 403
+        expect((await adminCtx.put(p(`/api/tasks/${writeOnlyTask.id}`), {
+          data: { assigned_to: agentA.id },
+        })).status()).toBe(200)
+        expect((await writeOnlyCtx.put(p(`/api/tasks/${writeOnlyTask.id}`), {
+          data: { assigned_to: null, request_id: "write-only-handoff-2" },
+        })).status()).toBe(200)
+        expect((await writeOnlyCtx.put(p(`/api/tasks/${writeOnlyTask.id}`), {
+          headers: { "Idempotency-Key": "write-only-handoff-idemp" },
+          data: { assigned_to: null, request_id: "write-only-handoff-1" },
+        })).status()).toBe(403)
+        expect((await writeOnlyCtx.put(p(`/api/tasks/${writeOnlyTask.id}`), {
+          headers: { "Idempotency-Key": "write-only-status-key" },
+          data: { status: "pending" },
+        })).status()).toBe(403)
       } finally {
         await writeOnlyCtx.dispose()
       }
