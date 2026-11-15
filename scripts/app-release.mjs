@@ -109,7 +109,7 @@ function stage(channel, config, version, destination) {
     ? config.manifest.replace(/^version: "[^"\r\n]+"$/m, `version: "${version}"`)
     : config.manifest
   writeFileSync(manifestPath, manifest)
-  for (const name of ["DOCS.md", "CHANGELOG.md", "icon.png", "logo.png", "apparmor.txt"]) {
+  for (const name of ["README.md", "DOCS.md", "CHANGELOG.md", "icon.png", "logo.png", "apparmor.txt"]) {
     const source = name === "apparmor.txt"
       ? join(root, channels.stable.dir, name)
       : join(config.source, name)

@@ -1,38 +1,75 @@
-# Meitheal Canary — Home Assistant Documentation
+# Meitheal Canary documentation
 
-**Meitheal Canary** (`/meh·hal/`) is the preview channel for Meitheal — letting you test upcoming household task, routine, project, and Home Assistant integration improvements before they are promoted to a tagged Stable release.
+Meitheal Canary is the test channel for Meitheal. Use it to try new features and fixes for tasks, routines, projects and the Home Assistant integration before they go into a Stable release.
 
-Each Canary build is versioned by its exact source commit SHA and runs inside its own isolated Home Assistant App container (`meitheal_canary`).
+The version of each Canary build is the source commit that it comes from. Canary runs in its own app container (`meitheal_canary`).
 
-## When to Choose Canary vs. Stable
+> **Warning:** Do not use Canary for your everyday tasks. Canary builds can be unstable and they can lose data. Make backups frequently.
 
-| Channel | App Name | Best For | Update Cadence |
+## Canary or Stable
+
+| Channel | App | Use it for | Updates |
 |---|---|---|---|
-| **Stable** | **Meitheal** | Everyday household production use | Tagged SemVer releases |
-| **Canary** | **Meitheal Canary** | Previewing new features and validating fixes early | Commit-stamped preview builds |
+| **Stable** | **Meitheal** | Everyday household tasks | Numbered releases |
+| **Canary** | **Meitheal Canary** | Tests of new features and fixes | A new build for each change to the source code |
 
 ## 1. Install Meitheal Canary
 
-1. In Home Assistant, open **Settings → Apps → Install app** (or **Settings → Add-ons → Add-on Store**).
-2. Open the top-right **⋮** menu, select **Repositories**, and add `https://github.com/ryan-winkler/meitheal-ha-addon`.
-3. Select **Meitheal Canary**, then select **Install** and **Start**.
-4. Enable **Show in sidebar** if you want quick access, then select **Open web UI**.
-5. Add a test task in **Today**, refresh the page, and confirm the task persists cleanly.
+1. In Home Assistant, go to **Settings → Apps → Install app**. On older versions, go to **Settings → Add-ons → Add-on Store**.
+2. Open the **⋮** menu in the top-right corner and select **Repositories**.
+3. Add `https://github.com/ryan-winkler/meitheal-ha-addon`.
+4. Select **Meitheal Canary**, then select **Install**.
+5. Select **Start**.
+6. If you want Canary in the sidebar, set **Show in sidebar** to on. Then select **Open web UI**.
+7. Add a test task in **Today**. Reload the page and make sure that the task is still there.
 
-Check [install status (#1)](https://github.com/ryan-winkler/meitheal-ha-addon/issues/1) if an image is mid-rollout.
+If a new image is not available yet, read [install status (#1)](https://github.com/ryan-winkler/meitheal-ha-addon/issues/1).
 
-## 2. Protecting Your Data Across Updates
+## 2. Keep your data safe during updates
 
-- **Same-channel updates preserve `/data/meitheal.db`**: Updating **Meitheal Canary** in place keeps your existing SQLite database and settings.
-- **Switching channels or repository URLs uses a separate data directory**: Always create a Home Assistant backup that includes **Meitheal Canary** (or export JSON/SQLite from **Settings**) before uninstalling, changing repository URLs, or moving between Canary and Stable.
-- **Home Assistant Core integration tokens**: If you connect the separate Meitheal Core custom component in **Settings → Devices & Services**, pause automatic updates before updating, verify your scoped **Agent Token** under **Settings → Automation & AI**, and confirm `todo.meitheal_tasks` and task actions respond after updating.
+- **Updates in the same channel keep your data.** When you update Meitheal Canary, it keeps `/data/meitheal.db` and your settings.
+- **Each channel and repository URL has its own data folder.** Make a Home Assistant backup that includes **Meitheal Canary** before you uninstall Canary. Also make a backup before you change the repository URL, or change between Canary and Stable. You can also export your data as JSON or SQLite from **Settings**.
+- **The Meitheal integration uses a token.** If you use the Meitheal integration in **Settings → Devices & Services**, stop automatic updates before you update. After the update, make sure that your token in **Settings → Automation & AI** is correct. Then make sure that `todo.meitheal_tasks` and the task actions work.
 
-## 3. Share Feedback or Report an Issue
+## 3. Set up Meitheal Canary
 
-When reporting something you found on Canary, include:
+Canary has the same features and setup as Stable. The [Meitheal documentation](https://github.com/ryan-winkler/meitheal/blob/dev/meitheal-hub/DOCS.md) tells you about:
 
-1. The **Canary commit version** shown on the Home Assistant App **Info** tab.
-2. Your **Home Assistant Core** and **Supervisor** versions.
-3. The steps you took, what you expected, and what happened (strip any access tokens or personal household details from logs and screenshots).
+- Your first five minutes
+- Calendar and to-do sync
+- The Meitheal integration and Assist
+- The Companion app and the PWA
+- Exports
+
+Canary has its own tokens. If you connect the Meitheal integration to Canary, make the token in Canary and connect the integration to the Canary app.
+
+## 4. Configuration options
+
+| Option | Default | What it does |
+|---|---|---|
+| `log_level` | `info` | Sets how much the app writes to the log: `debug`, `info`, `warn` or `error`. |
+| `log_categories` | `auth, tasks, integrations, observability, ha, calendar, todo, api, security, search` | Sets which parts of the app write `debug` and `info` messages. The app always writes `warn` and `error` messages. |
+| `log_redaction` | `true` | Removes tokens, secrets and passwords from the log. |
+| `audit_enabled` | `true` | Records task and token changes in a local audit log. |
+| `loki_url` | `""` | Optional. Sends the log to a Grafana Loki server at this URL. |
+| `license_key` | `""` | Optional. An offline Ed25519 license key. Meitheal has all its functions without a key. |
+
+## 5. Troubleshooting
+
+- **The app restarts by itself.** The watchdog sends `GET /api/health` to internal port `3000`. If Canary does not reply, the watchdog restarts it. Look in the **Log** tab for the cause. For more detail, set `log_level` to `debug`.
+- **A new build does not show.** Open the **⋮** menu in the app store and select **Check for updates**.
+- **The web UI shows an old build after an update.** Accept the update message in Meitheal, or press `Ctrl+Shift+R` to reload the page.
+
+The [troubleshooting guide](https://github.com/ryan-winkler/meitheal/blob/dev/docs/kcs/troubleshooting.md) has more solutions.
+
+## 6. Send feedback or report a problem
+
+When you report a problem with Canary, give:
+
+1. The Canary version from the **Info** tab of the app.
+2. Your Home Assistant Core and Supervisor versions.
+3. What you did, what you expected and what occurred.
+
+Remove all tokens and personal data from logs and screenshots before you send them.
 
 Open an issue at [github.com/ryan-winkler/meitheal-ha-addon/issues](https://github.com/ryan-winkler/meitheal-ha-addon/issues).

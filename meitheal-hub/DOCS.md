@@ -1,82 +1,88 @@
-# Meitheal — Home Assistant Documentation
+# Meitheal documentation
 
-**Meitheal** (`/meh·hal/`) keeps track of the work your home needs — bringing household tasks, recurring routines, multi-step home projects, and Home Assistant automations into one local-first app in your Home Assistant sidebar.
+Meitheal (say "meh-hal") is a task manager for your home. It runs as an app in Home Assistant. Use it for household tasks, routines, projects and tasks that come from Home Assistant automations.
 
-Synced data stays on your own hardware in `/data/meitheal.db` and is included in standard Home Assistant backups. Offline PWA task changes stay in browser storage until they sync and are not included in Home Assistant backups.
+Meitheal keeps its data in `/data/meitheal.db` on your own hardware. Home Assistant backups include this file.
 
-## What You Can Track
+> **Note:** The PWA keeps offline changes in your browser until they sync. Home Assistant backups do not include these changes until they sync.
 
-| Household Need | Example in Meitheal | Home Assistant Connection |
+## Examples
+
+| Job | Example task | What Home Assistant does |
 |---|---|---|
-| **Sensor-triggered follow-up** | *Close the back door — still open after 21:45 check* | Created via `meitheal.create_task` or webhook when a sensor stays open |
-| **Shared daily & weekly routines** | *School morning bags — lunch, books, and PE kit* | Daily or weekly Routine templates with step-by-step checklists |
-| **Preventive maintenance** | *Replace kitchen under-sink water filter cartridge* | Due dates synced with Home Assistant calendars and `todo.meitheal_tasks` |
-| **Seasonal home projects** | *Winter Boiler and Heating Prep* | Grouped by **Area** and **Project** across **Today**, **Kanban**, **Table**, and **Calendar** |
+| Sensor follow-up | *Close the back door. It was open at the 21:45 check.* | An automation calls `meitheal.create_task`, or sends a webhook, when the door sensor stays open. |
+| Shared routine | *Pack the school bags: lunch, books and PE kit.* | A daily or weekly routine makes the task and its checklist. |
+| Maintenance | *Replace the water filter under the kitchen sink.* | The due date syncs with your Home Assistant calendars and with `todo.meitheal_tasks`. |
+| Seasonal project | *Get the boiler and heating ready for winter.* | The tasks go into an area and a project. You can see them in **Today**, **Kanban**, **Table** and **Calendar**. |
 
-## 1. Add the Repository & Install
+## 1. Add the repository and install the app
 
-1. In Home Assistant, open **Settings → Apps → Install app** (or **Settings → Add-ons → Add-on Store** on earlier Home Assistant versions).
-2. Open the top-right **⋮** menu and select **Repositories**.
+1. In Home Assistant, go to **Settings → Apps → Install app**. On older versions, go to **Settings → Add-ons → Add-on Store**.
+2. Open the **⋮** menu in the top-right corner and select **Repositories**.
 3. Add `https://github.com/ryan-winkler/meitheal-ha-addon`.
-4. Select **Meitheal** from the store list.
-5. Select **Install**, wait for the container image download to complete, and select **Start**.
-6. Enable **Show in sidebar** for one-click household access, then select **Open web UI**.
+4. Select **Meitheal** in the list.
+5. Select **Install**. Wait for the download to complete.
+6. Select **Start**.
+7. Set **Show in sidebar** to on, then select **Open web UI**.
 
-> **Note:** If an existing Meitheal installation is already running on your system from another repository URL, create a Home Assistant backup before switching entries. If Supervisor logs a `401` image download error during a release transition, check [install status (#1)](https://github.com/ryan-winkler/meitheal-ha-addon/issues/1) and reload the store.
+> **Note:** If you already have Meitheal from a different repository URL, make a Home Assistant backup before you change to this one. If the Supervisor log shows a `401` error for the image download, read [install status (#1)](https://github.com/ryan-winkler/meitheal-ha-addon/issues/1) and then reload the store.
 
-## 2. Your First 5 Minutes in Meitheal
+## 2. Your first five minutes
 
 1. Open **Today** from the sidebar.
-2. In the **Add a task for today** box, enter a real job around the house — for example, `Replace kitchen water filter tomorrow` or `Check hallway smoke sensor` — and select **Add**.
-3. Open **Tasks** to view your work as a **Kanban** board, **Table**, **Calendar**, or **Timeline**.
-4. Press `/` (or `Ctrl/Cmd + K`) from anywhere to open **Search Hub** and jump straight to any task, project, area, or setting.
-5. Visit **Settings → Personal** to choose **Dark**, **Light**, or **Auto** theme, pick an accent color, and set your regional date/week preferences.
+2. In the **Add a task for today** box, type a real job, for example `Replace kitchen water filter tomorrow`. Then select **Add**.
+3. Open **Tasks**. Show your tasks as a **Kanban** board, a **Table**, a **Calendar** or a **Timeline**.
+4. Press `/` or `Ctrl+K` (`Cmd+K` on a Mac) to open **Search Hub**. Use it to find a task, project, area or setting.
+5. Go to **Settings → Personal**. Select the **Dark**, **Light** or **Auto** theme, an accent colour and your date and week format.
 
-## 3. Connect Home Assistant Calendars, To-Do & Assist
+## 3. Connect calendars, to-do lists and Assist
 
-### Calendar & To-Do Sync
+### Calendar and to-do sync
 
-Open **Settings → Integrations** inside Meitheal to:
+In Meitheal, go to **Settings → Integrations**. There you can:
 
-- Connect Home Assistant calendar entities and choose your sync direction before enabling sync.
-- Link Home Assistant to-do lists so household checklists stay aligned across dashboards and mobile cards.
+- Connect Home Assistant calendar entities. Select the sync direction before you start the sync.
+- Connect Home Assistant to-do lists. Then the same checklists show in Meitheal, on your dashboards and on your phone.
 
-### Home Assistant Custom Integration (Entities, Actions & Assist)
+### The Meitheal integration (entities, actions and Assist)
 
-The Meitheal Home Assistant custom integration is installed separately from this Supervisor App (see the [Home Assistant integration setup guide](https://github.com/ryan-winkler/meitheal/blob/dev/docs/kcs/home-assistant-marketplace.md)):
+The Meitheal integration is a custom integration. You install it separately from this app. The [integration setup guide](https://github.com/ryan-winkler/meitheal/blob/dev/docs/kcs/home-assistant-marketplace.md) gives all the steps.
 
-1. Install `custom_components/meitheal` in Home Assistant and restart Core.
-2. In **Meitheal → Settings → Automation & AI**, create a scoped API token (`tasks:read` and `tasks:write`, plus `search:read` for `meitheal.search_tasks` and `tasks:delete` if deleting items via `todo.meitheal_tasks`).
-3. In Home Assistant, open **Settings → Devices & Services → Add Integration → Meitheal**. Enter your Meitheal host, port, and HTTPS setting, then your scoped token (if Home Assistant auto-discovers the App, select the discovered **Meitheal** card and enter only the token).
+1. Install `custom_components/meitheal` in Home Assistant, then restart Home Assistant Core.
+2. In Meitheal, go to **Settings → Automation & AI** and make an API token. Give it the `tasks:read` and `tasks:write` scopes.
+3. If you want to use `meitheal.search_tasks`, also give the token the `search:read` scope.
+4. If you want to delete tasks through `todo.meitheal_tasks`, also give the token the `tasks:delete` scope.
+5. In Home Assistant, go to **Settings → Devices & Services → Add Integration → Meitheal**.
+6. Type the Meitheal host, the port and the HTTPS setting, then type your token. If Home Assistant finds the app by itself, select the **Meitheal** card and type only the token.
 
-Once paired, Home Assistant exposes:
+After you connect the integration, Home Assistant has these items:
 
-- **Entities exposed**: `todo.meitheal_tasks`, `sensor.meitheal_active_tasks`, `sensor.meitheal_overdue_tasks`, and `sensor.meitheal_total_tasks`.
-- **Services available**: `meitheal.create_task`, `meitheal.complete_task`, `meitheal.complete_task_by_tag`, `meitheal.sync_todo`, `meitheal.search_tasks`, `meitheal.get_overdue_tasks`, and `meitheal.notify_overdue`.
-- **Assist & Voice**: Expose `todo.meitheal_tasks` under **Settings → Voice assistants → Expose** using your enrolled scoped token.
+- **Entities**: `todo.meitheal_tasks`, `sensor.meitheal_active_tasks`, `sensor.meitheal_overdue_tasks` and `sensor.meitheal_total_tasks`.
+- **Actions**: `meitheal.create_task`, `meitheal.complete_task`, `meitheal.complete_task_by_tag`, `meitheal.sync_todo`, `meitheal.search_tasks`, `meitheal.get_overdue_tasks` and `meitheal.notify_overdue`.
+- **Assist**: To use your tasks with voice, go to **Settings → Voice assistants → Expose** and expose `todo.meitheal_tasks`.
 
-## 4. Companion App, PWA & Offline Access
+## 4. Companion app, PWA and offline use
 
-- **Home Assistant Companion**: Meitheal runs cleanly inside Home Assistant Ingress on iOS and Android. Copy ingress-safe Companion deep links and `x-callback-url` shortcuts from **Settings → App & PWA**.
-- **Installable PWA**: When served over HTTPS, Meitheal can be installed to your home screen or desktop with offline app-shell caching and queued task updates.
+- **Home Assistant Companion app**: Meitheal works through Ingress in the Companion app on iOS and Android. To get links and `x-callback-url` shortcuts for the Companion app, go to **Settings → App & PWA**.
+- **PWA**: If you open Meitheal through HTTPS, you can install it on your home screen or desktop. The PWA opens when you are offline and keeps your task changes until you connect again.
 
-## 5. Backups, Exports & Data Ownership
+## 5. Backups, exports and your data
 
-- **Home Assistant Backups**: Meitheal uses `backup: cold` so SQLite writes are cleanly flushed when Home Assistant creates a full or partial backup. Always create a backup before uninstalling or switching between **Meitheal** and **Meitheal Canary**.
-- **Open Exports**: Download your tasks and database anytime as **JSON**, **CSV**, or raw **SQLite** from **Settings → App & PWA**. The **SQLite** download appears only for Home Assistant administrators.
+- **Home Assistant backups**: Meitheal uses `backup: cold`. Home Assistant stops the app for a short time, so that all database writes are complete before the backup starts. Make a backup before you uninstall Meitheal, and before you change between **Meitheal** and **Meitheal Canary**.
+- **Exports**: Go to **Settings → App & PWA** to download your data as **JSON**, **CSV** or **SQLite**. Only Home Assistant administrators can download the **SQLite** file.
 
-## Configuration Options
+## Configuration options
 
-| Option | Default | Purpose |
+| Option | Default | What it does |
 |---|---|---|
-| `log_level` | `info` | Structured log verbosity (`debug`, `info`, `warn`, `error`) |
-| `log_categories` | `auth, tasks, integrations, observability, ha, calendar, todo, api, security, search` | Active structured log domains for `debug`/`info` events (`warn`/`error` always emit) |
-| `log_redaction` | `true` | Redacts tokens, secrets, and credentials from logs by default |
-| `audit_enabled` | `true` | Records local audit events for task and token actions |
-| `loki_url` | `""` | Optional Grafana Loki push endpoint for homelab observability |
-| `license_key` | `""` | Optional offline Ed25519 license key (Meitheal runs fully in grace mode without a key) |
+| `log_level` | `info` | Sets how much the app writes to the log: `debug`, `info`, `warn` or `error`. |
+| `log_categories` | `auth, tasks, integrations, observability, ha, calendar, todo, api, security, search` | Sets which parts of the app write `debug` and `info` messages. The app always writes `warn` and `error` messages. |
+| `log_redaction` | `true` | Removes tokens, secrets and passwords from the log. |
+| `audit_enabled` | `true` | Records task and token changes in a local audit log. |
+| `loki_url` | `""` | Optional. Sends the log to a Grafana Loki server at this URL. |
+| `license_key` | `""` | Optional. An offline Ed25519 license key. Meitheal has all its functions without a key. |
 
-## Support & Troubleshooting
+## Help and troubleshooting
 
-- **Health check**: Watchdog monitors `GET /api/health` on internal port `3000`.
-- **Issue tracker**: Report bugs or setup questions at [github.com/ryan-winkler/meitheal-ha-addon/issues](https://github.com/ryan-winkler/meitheal-ha-addon/issues) with your Meitheal version and Home Assistant version (remove any private tokens or personal task titles first).
+- **Health check**: The watchdog sends `GET /api/health` to internal port `3000`. If the app does not reply, the watchdog restarts it. Look in the **Log** tab for the cause.
+- **Problems**: Report bugs and setup problems at [github.com/ryan-winkler/meitheal-ha-addon/issues](https://github.com/ryan-winkler/meitheal-ha-addon/issues). Give your Meitheal version and your Home Assistant version. Before you send logs or screenshots, remove all tokens and personal task names.

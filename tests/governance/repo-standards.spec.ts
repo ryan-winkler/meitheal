@@ -23,6 +23,8 @@ const requiredFiles = [
   "meitheal-hub/README.md",
   "meitheal-hub/DOCS.md",
   "meitheal-hub/config.yaml",
+  "meitheal-hub-canary/README.md",
+  "meitheal-hub-canary/DOCS.md",
   "docs/decisions/0001-legal-and-naming-strategy.md",
   "docs/decisions/0002-target-architecture.md",
   "docs/index.md",
