@@ -8,7 +8,7 @@
  * @bounded-context integration
  */
 import type { APIRoute } from "astro"
-import { validateGrocyBaseUrl } from "@meitheal/integration-core"
+import { fetchOutbound, validateGrocyBaseUrl } from "@meitheal/integration-core"
 import { logApiError } from "../../../lib/api-logger"
 import {
   isLegacySupervisorIngressUrl,
@@ -23,9 +23,32 @@ export const POST: APIRoute = async ({ locals, request }) => {
   if (denied) return denied
   try {
     let body: { url?: string } = {}
-    try {
-      body = await request.json()
-    } catch { /* empty body = auto-detect */ }
+    const rawBody = await request.text()
+    if (rawBody.trim()) {
+      let parsed: unknown
+      try {
+        parsed = JSON.parse(rawBody)
+      } catch {
+        return new Response(
+          JSON.stringify({ ok: false, error: "Invalid JSON body" }),
+          { status: 400, headers: { "Content-Type": "application/json" } },
+        )
+      }
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        return new Response(
+          JSON.stringify({ ok: false, error: "Invalid JSON body" }),
+          { status: 400, headers: { "Content-Type": "application/json" } },
+        )
+      }
+      const record = parsed as Record<string, unknown>
+      if (record.url !== undefined && typeof record.url !== "string") {
+        return new Response(
+          JSON.stringify({ ok: false, error: "Invalid URL format" }),
+          { status: 400, headers: { "Content-Type": "application/json" } },
+        )
+      }
+      body = record as { url?: string }
+    }
 
     let grocyUrl = body.url?.trim()
     let legacyIngressHint: string | undefined
@@ -89,12 +112,14 @@ export const POST: APIRoute = async ({ locals, request }) => {
       } catch { /* Supervisor proxy failed — try direct */ }
     }
 
-    // Fallback: direct API call (works if Grocy ingress session is active)
+    // Fallback: direct API call under shared connect-time outbound policy
     if (!createRes) {
       try {
-        const autoKeyTarget = new URL("api/objects/api_keys", `${grocyUrl.replace(/\/$/, "")}/`)
-        createRes = await fetch(autoKeyTarget.href, { // nosemgrep
+        const autoKeyTarget = new URL(grocyUrl)
+        autoKeyTarget.pathname = `${autoKeyTarget.pathname.replace(/\/+$/, "")}/api/objects/api_keys`
+        createRes = await fetchOutbound(autoKeyTarget.href, {
           method: "POST",
+          allowPrivate: true,
           redirect: "error",
           signal: AbortSignal.timeout(5_000),
           headers: {
@@ -131,18 +156,26 @@ export const POST: APIRoute = async ({ locals, request }) => {
       )
     }
 
-    // Save the key to settings via SettingsRepository
+    // Save the URL and key atomically to settings via SettingsRepository
     try {
       const { ensureSchema, getPersistenceClient, SettingsRepository } = await import("@domains/tasks")
       await ensureSchema()
       const repo = new SettingsRepository(getPersistenceClient())
       await repo.ensureSettingsTable()
 
-      await repo.upsert("grocy_url", JSON.stringify(grocyUrl))
-      await repo.upsert("grocy_api_key", JSON.stringify(apiKey))
+      await repo.importBatch([
+        { key: "grocy_url", value: JSON.stringify(grocyUrl) },
+        { key: "grocy_api_key", value: JSON.stringify(apiKey) },
+      ])
     } catch (err) {
       logApiError("grocy-auto-key", "Failed to save settings", err)
-      // Still return the key even if saving failed
+      return new Response(
+        JSON.stringify({
+          ok: false,
+          error: "API key was created in Grocy, but saving settings failed. Create or copy a key manually in Grocy → Settings → API Keys.",
+        }),
+        { status: 500, headers: { "Content-Type": "application/json" } },
+      )
     }
 
     return new Response(

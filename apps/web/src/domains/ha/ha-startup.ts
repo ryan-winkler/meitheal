@@ -14,9 +14,10 @@
  * @domain ha
  * @bounded-context integration
  */
-import { initEntitySubscription } from "./ha-entities";
-import { getHAConnection, getHAConfiguration } from "./ha-connection";
-import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability";
+import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability"
+import { fetchOutbound } from "@meitheal/integration-core"
+import { getHAConnection, getHAConfiguration } from "./ha-connection"
+import { initEntitySubscription } from "./ha-entities"
 
 const logger = createLogger({
   service: "meitheal-web",
@@ -436,7 +437,13 @@ async function autoStartGrocySync(): Promise<void> {
     const syncMode = (
       typeof settings.grocy_sync_mode === "string" ? settings.grocy_sync_mode : "bidirectional"
     ) as "import" | "export" | "bidirectional"
-    const intervalMs = Number(settings.grocy_sync_interval) || 15 * 60 * 1000
+    const rawInterval =
+      settings.grocy_sync_interval !== undefined &&
+      settings.grocy_sync_interval !== null &&
+      settings.grocy_sync_interval !== ""
+        ? Number(settings.grocy_sync_interval)
+        : Number.NaN
+    const intervalMs = Number.isFinite(rawInterval) && rawInterval >= 0 ? rawInterval : 15 * 60 * 1000
 
     if (!enabled || !url || !apiKey) {
       logger.log("info", {
@@ -529,17 +536,19 @@ async function validateWebhookEndpoints(): Promise<void> {
       return;
     }
 
-    // Validate each endpoint with a lightweight HEAD/GET request
+    // Validate each endpoint with a lightweight HEAD request under shared outbound policy
     for (const ep of endpoints) {
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), 5000)
+      timeout.unref?.()
       try {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 5000);
-        // Use HEAD to minimize payload; fall back to GET if HEAD fails
-        const response = await fetch(ep.url, {
+        const response = await fetchOutbound(ep.url, {
           method: "HEAD",
+          allowPrivate: true,
+          redirect: "error",
           signal: controller.signal,
-        });
-        clearTimeout(timeout);
+        })
+        await response.body?.cancel().catch(() => undefined)
 
         logger.log("info", {
           event: `ha.startup.${ep.name}.reachable`,
@@ -547,7 +556,7 @@ async function validateWebhookEndpoints(): Promise<void> {
           component: "ha-startup",
           request_id: SYS_REQ,
           message: `${ep.name} endpoint reachable (${response.status}): ${ep.url}`,
-        });
+        })
       } catch (fetchErr) {
         logger.log("warn", {
           event: `ha.startup.${ep.name}.unreachable`,
@@ -555,7 +564,9 @@ async function validateWebhookEndpoints(): Promise<void> {
           component: "ha-startup",
           request_id: SYS_REQ,
           message: `${ep.name} endpoint unreachable: ${ep.url} — ${fetchErr}`,
-        });
+        })
+      } finally {
+        clearTimeout(timeout)
       }
     }
   } catch (err) {

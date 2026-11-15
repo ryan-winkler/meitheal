@@ -216,11 +216,8 @@ export const PUT: APIRoute = async ({ locals, request }) => {
       }
     }
 
-    const saved: string[] = []
-    for (const entry of pendingWrites) {
-      await repo.upsert(entry.key, entry.value)
-      saved.push(entry.key)
-    }
+    await repo.importBatch(pendingWrites)
+    const saved = pendingWrites.map((entry) => entry.key)
 
     return new Response(
       JSON.stringify({

@@ -15,6 +15,8 @@
  * @bounded-context grocy
  */
 
+import { fetchOutbound, OutboundUrlError } from "./outbound-fetch"
+
 // --- Types: Core ---
 
 export interface GrocyAdapterConfig {
@@ -422,6 +424,10 @@ export function validateGrocyBaseUrl(rawUrl: string): GrocyUrlValidationResult {
     return { ok: false, error: "Grocy URL must not include embedded credentials" }
   }
 
+  if (parsed.search || parsed.hash) {
+    return { ok: false, error: "Grocy URL must not include query parameters or fragments" }
+  }
+
   const host = normalizeNetworkHost(parsed.hostname)
   const classification = classifyNetworkHost(host)
 
@@ -755,8 +761,11 @@ export class GrocyAdapter {
     body?: unknown,
     transform?: (raw: unknown) => T
   ): Promise<GrocyResult<T>> {
-    const baseOrigin = new URL(this.baseUrl).origin
-    const url = new URL(path, this.baseUrl)
+    const base = new URL(this.baseUrl)
+    const baseOrigin = base.origin
+    const basePrefix = base.pathname.replace(/\/+$/, "")
+    const normalizedPath = path.startsWith("/") ? path : `/${path}`
+    const url = new URL(`${basePrefix}${normalizedPath}`, baseOrigin)
     if (url.origin !== baseOrigin) {
       throw new Error(`Invalid Grocy API path: ${path}`)
     }
@@ -765,8 +774,9 @@ export class GrocyAdapter {
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs)
 
     try {
-      const response = await fetch(url.href, { // nosemgrep
+      const response = await fetchOutbound(url.href, {
         method,
+        allowPrivate: true,
         redirect: this.redirect,
         signal: controller.signal,
         headers: {
@@ -806,6 +816,17 @@ export class GrocyAdapter {
           errorCode: "timeout",
           retryable: true,
           message: `Grocy ${method} ${path}: timeout after ${this.timeoutMs}ms`,
+        }
+      }
+
+      const cause = error instanceof Error ? error.cause : undefined
+      if (error instanceof OutboundUrlError || cause instanceof OutboundUrlError) {
+        const outboundErr = error instanceof OutboundUrlError ? error : (cause as OutboundUrlError)
+        return {
+          ok: false,
+          errorCode: "invalid_request",
+          retryable: false,
+          message: outboundErr.message,
         }
       }
 

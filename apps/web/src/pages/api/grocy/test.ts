@@ -26,7 +26,27 @@ export const POST: APIRoute = async ({ locals, request }) => {
     let body: { url?: string; api_key?: string; auto_detected?: boolean }
 
     try {
-      body = await request.json()
+      const parsed: unknown = await request.json()
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        return new Response(JSON.stringify({ ok: false, error: "Invalid JSON body" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        })
+      }
+      const record = parsed as Record<string, unknown>
+      if (record.url !== undefined && typeof record.url !== "string") {
+        return new Response(JSON.stringify({ ok: false, error: "Invalid URL format" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        })
+      }
+      if (record.api_key !== undefined && typeof record.api_key !== "string") {
+        return new Response(JSON.stringify({ ok: false, error: "api_key must be a string" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        })
+      }
+      body = record as { url?: string; api_key?: string; auto_detected?: boolean }
     } catch {
       return new Response(JSON.stringify({ ok: false, error: "Invalid JSON body" }), {
         status: 400,
