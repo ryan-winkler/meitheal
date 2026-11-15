@@ -27,7 +27,29 @@ Check [install status (#1)](https://github.com/ryan-winkler/meitheal-ha-addon/is
 - **Switching channels or repository URLs uses a separate data directory**: Always create a Home Assistant backup that includes **Meitheal Canary** (or export JSON/SQLite from **Settings**) before uninstalling, changing repository URLs, or moving between Canary and Stable.
 - **Home Assistant Core integration tokens**: If you connect the separate Meitheal Core custom component in **Settings → Devices & Services**, pause automatic updates before updating, verify your scoped **Agent Token** under **Settings → Automation & AI**, and confirm `todo.meitheal_tasks` and task actions respond after updating.
 
-## 3. Share Feedback or Report an Issue
+## 3. Set Up Meitheal Canary
+
+Canary has the same features and setup as Stable. The [Meitheal setup guide](https://github.com/ryan-winkler/meitheal/blob/dev/meitheal-hub/DOCS.md) covers your first five minutes, calendar and to-do sync, the Home Assistant integration and Assist, the Companion app and PWA, and exports. If you pair the Meitheal integration with Canary, point it at the Canary app and create its token inside Canary, because Canary keeps its own tokens.
+
+## 4. Configuration Options
+
+| Option | Default | Purpose |
+|---|---|---|
+| `log_level` | `info` | Structured log verbosity (`debug`, `info`, `warn`, `error`) |
+| `log_categories` | `auth, tasks, integrations, observability, ha, calendar, todo, api, security, search` | Active structured log domains for `debug`/`info` events (`warn`/`error` always emit) |
+| `log_redaction` | `true` | Redacts tokens, secrets, and credentials from logs by default |
+| `audit_enabled` | `true` | Records local audit events for task and token actions |
+| `loki_url` | `""` | Optional Grafana Loki push endpoint for homelab observability |
+| `license_key` | `""` | Optional offline Ed25519 license key (Meitheal runs fully in grace mode without a key) |
+
+## 5. Troubleshooting
+
+- **Health check**: the watchdog restarts Canary when `GET /api/health` on internal port `3000` stops answering. Check the **Log** tab for the reason, and set `log_level` to `debug` for more detail.
+- **A newer build is not offered**: open the **⋮** menu in the app store and select **Check for updates**.
+- **The web UI shows an old build after updating**: accept the update prompt in Meitheal, or hard refresh with `Ctrl+Shift+R`.
+- More fixes are in the [troubleshooting guide](https://github.com/ryan-winkler/meitheal/blob/dev/docs/kcs/troubleshooting.md).
+
+## 6. Share Feedback or Report an Issue
 
 When reporting something you found on Canary, include:
 
