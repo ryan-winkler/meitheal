@@ -895,6 +895,110 @@ test("HA sync upgrades tasks saved by the per-occurrence release: due dates foll
   }
 })
 
+test("HA sync leaves completed tasks alone, keeps user-added repeats on old imports, and re-imports a series whose task was deleted", async () => {
+  const previous = Object.fromEntries(["MEITHEAL_DB_URL", "SUPERVISOR_TOKEN", "HA_BASE_URL", "HA_TOKEN"].map((k) => [k, process.env[k]]))
+  const directory = await mkdtemp(join(tmpdir(), "meitheal-cal-completed-"))
+  const ha = await startHAWebSocketFixture()
+  delete process.env.SUPERVISOR_TOKEN
+  process.env.HA_BASE_URL = ha.url
+  process.env.HA_TOKEN = "calendar-completed-fixture"
+  process.env.MEITHEAL_DB_URL = `file:${join(directory, "tasks.db")}`
+  resetPersistenceForTests()
+  const db = getPersistenceClient()
+
+  try {
+    await ensureSchema()
+    const settingsRepo = new SettingsRepository(db)
+    await settingsRepo.ensureSettingsTable()
+    await settingsRepo.upsert("timezone", "Europe/Dublin")
+    expect(await getHAConnection()).not.toBeNull()
+    const repo = new TaskRepository(db)
+    const entity = "calendar.household"
+    const todayStr = calendarToday("Europe/Dublin")
+    const d7 = shiftCalendarDay(todayStr, 7)
+    const d14 = shiftCalendarDay(todayStr, 14)
+    const d21 = shiftCalendarDay(todayStr, 21)
+    const at = (day: string, time: string) => `${day}T${time}:00Z`
+
+    // A Meitheal Event task linked by title to a weekly HA event, then completed.
+    await db.execute({
+      sql: `INSERT INTO tasks (id, title, description, status, priority, labels, framework_payload, area_id, custom_fields, task_type, task_kind, due_date, recurrence_rule, idempotency_key, request_id, ticket_number, created_at, updated_at)
+            VALUES ('recycling', 'Recycling', '', 'pending', 3, '[]', '{}', 'default', '{}', 'task', 'calendar_event', ?, 'FREQ=WEEKLY', 'recycling', 'recycling', 9001, 1, 1)`,
+      args: [at(todayStr, "07:00")],
+    })
+    ha.setCalendarEvents([todayStr, d7, d14].map((day) => ({ summary: "Recycling", start: at(day, "07:00"), end: at(day, "07:30") })))
+    await syncFromHA(entity)
+    await repo.updateTask("recycling", { status: "complete" })
+    await db.execute({ sql: "UPDATE tasks SET updated_at = 1000 WHERE id = 'recycling'", args: [] })
+    // The next week comes into view; the completed task keeps its date and updated_at.
+    ha.setCalendarEvents([d7, d14, d21].map((day) => ({ summary: "Recycling", start: at(day, "07:00"), end: at(day, "07:30") })))
+    await syncFromHA(entity)
+    const completed = await db.execute({ sql: "SELECT status, due_date, updated_at FROM tasks WHERE id = 'recycling'", args: [] })
+    expect(String(completed.rows[0]?.status)).toBe("complete")
+    expect(String(completed.rows[0]?.due_date)).toBe(at(todayStr, "07:00"))
+    expect(Number(completed.rows[0]?.updated_at)).toBe(1000)
+
+    // The previous release imported a one-off "Boiler service"; the user then added a yearly rule.
+    const boilerStart = at(d7, "09:00")
+    await db.execute({
+      sql: `INSERT INTO tasks (id, title, description, status, priority, labels, framework_payload, area_id, custom_fields, task_type, due_date, recurrence_rule, idempotency_key, request_id, ticket_number, created_at, updated_at)
+            VALUES ('boiler', 'Boiler service', '', 'pending', 3, '["calendar-sync"]', '{}', 'default', '{}', 'task', ?, 'FREQ=YEARLY', ?, 'boiler', 9501, 1, 1)`,
+      args: [boilerStart, `cal-sync-ha-cal-${entity}-Boiler service-${boilerStart}`],
+    })
+    await db.execute({
+      sql: `INSERT INTO calendar_confirmations (confirmation_id, task_id, request_id, provider_event_id, source, payload, created_at)
+            VALUES ('boiler-link', 'boiler', 'boiler-link', ?, 'ha.calendar_sync', ?, 1)`,
+      args: [`ha-cal-${entity}-Boiler service-${boilerStart}`, JSON.stringify({ summary: "Boiler service", start: boilerStart, end: boilerStart, entity_id: entity })],
+    })
+    // The previous release also left a completed weekly "Gym" task; upgrading must not reopen it.
+    const gymStart = at(todayStr, "06:00")
+    await db.execute({
+      sql: `INSERT INTO tasks (id, title, description, status, priority, labels, framework_payload, area_id, custom_fields, task_type, due_date, idempotency_key, request_id, ticket_number, created_at, updated_at)
+            VALUES ('gym', 'Gym', '', 'complete', 3, '["calendar-sync"]', '{}', 'default', '{}', 'task', ?, ?, 'gym', 9701, 1, 1)`,
+      args: [gymStart, `cal-sync-ha-cal-${entity}-Gym-${gymStart}`],
+    })
+    await db.execute({
+      sql: `INSERT INTO calendar_confirmations (confirmation_id, task_id, request_id, provider_event_id, source, payload, created_at)
+            VALUES ('gym-link', 'gym', 'gym-link', ?, 'ha.calendar_sync', ?, 1)`,
+      args: [`ha-cal-${entity}-Gym-${gymStart}`, JSON.stringify({ summary: "Gym", start: gymStart, end: gymStart, entity_id: entity })],
+    })
+    ha.setCalendarEvents([
+      ...[d7, d14, d21].map((day) => ({ summary: "Recycling", start: at(day, "07:00"), end: at(day, "07:30") })),
+      { summary: "Boiler service", start: boilerStart, end: boilerStart },
+      ...[todayStr, d7, d14].map((day) => ({ summary: "Gym", start: at(day, "06:00"), end: at(day, "07:00") })),
+    ])
+    await syncFromHA(entity)
+    expect(String((await db.execute({ sql: "SELECT status FROM tasks WHERE id = 'gym'", args: [] })).rows[0]?.status)).toBe("complete")
+    await repo.updateTask("boiler", { status: "complete" })
+    const boilers = await db.execute({ sql: "SELECT status, recurrence_rule FROM tasks WHERE title = 'Boiler service' ORDER BY created_at", args: [] })
+    expect(boilers.rows.map((row) => String(row.status))).toEqual(["complete", "pending"])
+
+    // Deleting a synced task does not stop its series: the next sync imports it again.
+    const swimEvents = [todayStr, d7, d14].map((day) => ({ summary: "Swim", start: at(day, "18:00"), end: at(day, "19:00") }))
+    ha.setCalendarEvents(swimEvents)
+    await syncFromHA(entity)
+    const firstSwim = await db.execute({ sql: "SELECT id FROM tasks WHERE title = 'Swim'", args: [] })
+    expect(firstSwim.rows).toHaveLength(1)
+    await db.execute({ sql: "DELETE FROM tasks WHERE id = ?", args: [String(firstSwim.rows[0]?.id)] })
+    await syncFromHA(entity)
+    const secondSwim = await db.execute({ sql: "SELECT id FROM tasks WHERE title = 'Swim'", args: [] })
+    expect(secondSwim.rows).toHaveLength(1)
+    expect(String(secondSwim.rows[0]?.id)).not.toBe(String(firstSwim.rows[0]?.id))
+  } finally {
+    stopCalendarSync()
+    stopEntitySubscription()
+    closeHAConnection()
+    await ha.close()
+    db.close()
+    resetPersistenceForTests()
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+
 test("CalDAV sync parses RRULE, EXDATE, colons in DESCRIPTION, exclusive all-day DTEND, and updates existing tasks on re-sync", async () => {
   const origin = "http://caldav-recurrence-fixture.example"
   const previous = Object.fromEntries(["MEITHEAL_DB_URL", "SUPERVISOR_TOKEN", "HA_TOKEN"].map((k) => [k, process.env[k]]))

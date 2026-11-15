@@ -529,11 +529,35 @@ export function planInboundCalendarUpdate(
   }
   const previousDay = previous?.start ? calendarDayFromInput(previous.start, opts.timezone) : null
   const incomingDay = calendarDayFromInput(incoming.start, opts.timezone)
+  const completed = String(current.status) === STATUS.COMPLETE
+  // A completion made under the previous release's rules is not undone on upgrade: the
+  // first payload this release writes becomes the baseline, and the task reopens at the
+  // occurrence after that.
   if (
-    importedBySync && calendarOwned && incoming.repeats && String(current.status) === STATUS.COMPLETE &&
+    importedBySync && calendarOwned && incoming.repeats && completed && !legacyPayload &&
     previousDay && incomingDay && incomingDay > previousDay
   ) {
     plan.status = STATUS.PENDING
+  }
+  if (completed) {
+    if (plan.status === STATUS.PENDING) {
+      // A reopened series task moves to the calendar's current occurrence.
+      plan.dueDate = incoming.start
+      plan.updateDueDate = true
+      plan.startDate = incoming.start
+      plan.endDate = incoming.end
+    } else {
+      // A completed task stays as it was completed. Moving its dates would bump updated_at,
+      // so it would count as completed today again and return to the Done lane.
+      delete plan.title
+      delete plan.dueDate
+      delete plan.updateDueDate
+      delete plan.startDate
+      delete plan.endDate
+      delete plan.recurrenceRule
+      delete plan.replaceRecurrenceRule
+      delete plan.taskKind
+    }
   }
   // The commit writes each planned field only while it still holds the value read here.
   const snapshot = (value: unknown) => (value === undefined ? null : (value as string | number | bigint | null))
@@ -854,6 +878,34 @@ async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState |
     const existingMap = new Map<string, string>()
     for (const [uid, match] of existingLookup.entries()) {
       existingMap.set(uid, match.taskId)
+    }
+    // Confirmations outlive tasks that were deleted or purged. A key that points at a
+    // missing task would make its series update nothing forever, so the dangling links
+    // are removed and the series is imported again as new.
+    const linkedTaskIds = [...new Set(existingMap.values())]
+    const presentTaskIds = new Set<string>()
+    for (let offset = 0; offset < linkedTaskIds.length; offset += 200) {
+      const chunk = linkedTaskIds.slice(offset, offset + 200)
+      const present = await client.execute({
+        sql: `SELECT id FROM tasks WHERE id IN (${chunk.map(() => "?").join(", ")})`,
+        args: chunk,
+      })
+      for (const row of present.rows) presentTaskIds.add(String(row.id))
+    }
+    const danglingTaskIds = linkedTaskIds.filter((taskId) => !presentTaskIds.has(taskId))
+    for (let offset = 0; offset < danglingTaskIds.length; offset += 200) {
+      const chunk = danglingTaskIds.slice(offset, offset + 200)
+      await client.execute({
+        sql: `DELETE FROM calendar_confirmations
+              WHERE source = 'ha.calendar_sync' AND task_id IN (${chunk.map(() => "?").join(", ")})`,
+        args: chunk,
+      })
+    }
+    for (const [uid, taskId] of [...existingMap.entries()]) {
+      if (!presentTaskIds.has(taskId)) {
+        existingMap.delete(uid)
+        existingLookup.delete(uid)
+      }
     }
 
     // Exact current keys own their tasks first. A series with no exact match may then adopt a
@@ -1198,7 +1250,9 @@ async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState |
       try {
         const allConfirmations = await client.execute({
           sql: `SELECT c.confirmation_id, c.task_id, c.provider_event_id,
-                       (t.idempotency_key LIKE 'cal-sync-%' OR t.idempotency_key LIKE 'caldav-sync-%') AS created_by_sync
+                       (t.idempotency_key LIKE 'cal-sync-%' OR t.idempotency_key LIKE 'caldav-sync-%') AS created_by_sync,
+                       t.status AS task_status,
+                       (json_valid(c.payload) AND json_type(c.payload, '$.occurrences') IS NOT NULL) AS has_occurrences
                 FROM calendar_confirmations c
                 LEFT JOIN tasks t ON t.id = c.task_id
                 WHERE c.source = 'ha.calendar_sync'
@@ -1214,6 +1268,13 @@ async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState |
           // older key for it (an ID-less event's previous title or time) is gone.
           if (!currentUids.has(eventUid)) {
             const taskId = String(row.task_id)
+            // Already archived and already without badges: nothing to write. Old releases
+            // left one such row per past occurrence, so rewriting them every sync would
+            // grow without bound.
+            if (
+              !touchedTaskIds.has(taskId) && Number(row.created_by_sync ?? 0) !== 0 &&
+              String(row.task_status ?? "") === STATUS.COMPLETE && Number(row.has_occurrences ?? 0) === 0
+            ) continue
             // A task created in Meitheal that sync only matched by title belongs to the
             // household: its event going away unlinks it instead of completing it, so a
             // repeating Event task keeps creating its next occurrence.

@@ -61,6 +61,9 @@ export function sanitizeOriginName(value: unknown): string | null {
   // hide the verified token name it is displayed next to.
   const cleaned = value
     .replace(INVISIBLE_FORMAT_CHARS, "")
+    // The feed appends the verified token as `(via token "…")`; an origin name cannot
+    // carry its own copy of that label to pose as a different token.
+    .replace(/\(\s*via\s+token\b[^)]*\)?/gi, " ")
     .replace(/[\r\n\t\x00-\x1f\x7f-\x9f\u2028\u2029]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 120).trim()
   return cleaned || null
 }

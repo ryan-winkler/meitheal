@@ -363,7 +363,10 @@ function extractTagContents(xml: string, localName: string): string[] {
  */
 export function extractXmlResponses(xml: string): Array<{ href: string; props: Record<string, string> }> {
   // Reject DOCTYPE/ENTITY declarations fail-closed (handles internal DTD subsets too).
-  if (/<!(?:DOCTYPE|ENTITY)\b/i.test(xml)) {
+  // CDATA sections are character data, not markup: an HTML invite description
+  // (X-ALT-DESC "<!DOCTYPE HTML ...>") inside CDATA calendar-data is not a declaration.
+  const markup = xml.replace(/<!\[CDATA\[[\s\S]*?\]\]>/g, "")
+  if (/<!(?:DOCTYPE|ENTITY)\b/i.test(markup)) {
     throw new Error("Rejected CalDAV XML response containing unsafe DOCTYPE or ENTITY declaration")
   }
 

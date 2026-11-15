@@ -311,6 +311,16 @@ test.describe("calendar recurrence engine", () => {
       extractXmlResponses(`<?xml version="1.0"?><!DOCTYPE d [<!ENTITY x SYSTEM "file:///etc/passwd">]><d:multistatus/>`),
     ).toThrow(/DOCTYPE|ENTITY/i)
 
+    // An Outlook HTML description inside CDATA calendar-data is character data, not a DTD.
+    const htmlInvite = extractXmlResponses(
+      `<D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">` +
+      `<D:response><D:href>/cal/home/invite.ics</D:href><D:propstat><D:prop>` +
+      `<C:calendar-data><![CDATA[BEGIN:VCALENDAR\nX-ALT-DESC;FMTTYPE=text/html:<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">\nEND:VCALENDAR]]></C:calendar-data>` +
+      `</D:prop></D:propstat></D:response></D:multistatus>`,
+    )
+    expect(htmlInvite[0]?.props.calendarData).toContain("<!DOCTYPE HTML")
+    expect(() => extractXmlResponses(`<!DOCTYPE d [<!ENTITY x "y">]><D:multistatus><![CDATA[x]]></D:multistatus>`)).toThrow(/DOCTYPE|ENTITY/i)
+
     const parsedXml = extractXmlResponses(
       `<D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">` +
       `<D:response><D:href>/cal/home/</D:href><D:propstat><D:prop>` +

@@ -1915,8 +1915,13 @@ export class TaskRepository {
       sql: `SELECT recurrence_rule, recurrence_anchor, due_date, title, description, priority, labels, task_kind,
                    area_id, project_id, parent_id, task_type, assigned_to, checklists, custom_fields,
                    ((idempotency_key LIKE 'cal-sync-%' OR idempotency_key LIKE 'caldav-sync-%') AND EXISTS(
+                     -- The calendar owns the repeats only when it has a rule for the event. A
+                     -- one-off event imported by an earlier release, to which the user later
+                     -- added a rule in Meitheal, keeps creating its next occurrence.
                      SELECT 1 FROM calendar_confirmations
                      WHERE task_id = tasks.id AND source IN ('ha.calendar_sync', 'caldav')
+                       AND json_valid(payload)
+                       AND (json_extract(payload, '$.rrule') IS NOT NULL OR json_extract(payload, '$.inferred_rrule') IS NOT NULL)
                    ) AND NOT EXISTS(
                      SELECT 1 FROM calendar_confirmations
                      WHERE task_id = tasks.id AND source = 'ha.write_back'

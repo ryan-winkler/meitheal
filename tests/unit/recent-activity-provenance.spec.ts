@@ -56,7 +56,8 @@ test("sanitizes origin kind, display name, and safe internal target paths", () =
   expect(sanitizeOriginName("x".repeat(140))?.length).toBe(120)
   expect(sanitizeOriginName(null)).toBeNull()
   // Bidi overrides and invisible characters cannot reorder the token name shown next to the origin.
-  expect(sanitizeOriginName('Bedtime (via token "HA Bridge")\u202E')).toBe('Bedtime (via token "HA Bridge")')
+  expect(sanitizeOriginName('Bedtime (via token "HA Bridge")\u202E')).toBe("Bedtime")
+  expect(sanitizeOriginName('Automation "Bedtime" (VIA TOKEN "Admin Bridge"')).toBe('Automation "Bedtime"')
   expect(sanitizeOriginName("Bed\u200Btime\u2066 Routine\u2069\u0085")).toBe("Bedtime Routine")
 
   expect(sanitizeOriginTarget(" /config/automation/edit/kitchen ")).toBe("/config/automation/edit/kitchen")
