@@ -27,6 +27,7 @@ import logging
 import math
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from urllib.parse import unquote
 
 from aiohttp import web
 from homeassistant.components.http import (
@@ -850,7 +851,9 @@ class MeithealMcpView(HomeAssistantView):
             coordinator,
             body,
             origin_kind="mcp",
-            origin_name=request.headers.get("X-Meitheal-Origin-Name") or "Home Assistant MCP",
+            # Clients percent-encode UTF-8 names (see the agent automation guide); decode once
+            # so build_origin_headers does not encode the "%" a second time.
+            origin_name=unquote(request.headers.get("X-Meitheal-Origin-Name") or "") or "Home Assistant MCP",
             origin_target=request.headers.get("X-Meitheal-Origin-Target"),
         )
         if response is None:

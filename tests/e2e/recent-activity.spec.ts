@@ -201,6 +201,9 @@ test("verified members see committed task activity and can filter it by current 
     const taskActivityJson = JSON.stringify(taskActivityRes)
     const statusChange = taskActivityRes.activity.find((item: { event_type?: string }) => item.event_type === "status_change")
     expect(statusChange).toMatchObject({ actor: "synthetic-token-name", actor_type: "agent" })
+    // Provenance JSON stays internal; the public activity API keeps a readable summary.
+    const created = taskActivityRes.activity.find((item: { field?: string }) => item.field === "created")
+    expect(created?.summary).toBe("Task added")
     expect(taskActivityJson).not.toMatch(/synthetic-token-id|spoofed/)
     await a.setViewportSize({ width: 320, height: 740 })
     await expect.poll(() => a.locator(".recent-activity").evaluate(element =>

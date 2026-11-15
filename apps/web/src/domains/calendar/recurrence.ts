@@ -248,20 +248,43 @@ function monthCandidateDays(
   return days
 }
 
+/** BYDAY days of one year when the ordinals count within the year (YEARLY without BYMONTH). */
+function yearOrdinalDays(rule: RecurrenceRule, year: number): string[] {
+  const days: string[] = []
+  for (const entry of rule.byDayEntries ?? []) {
+    const weekday = DAY_MAP[entry.day]!
+    const matches: string[] = []
+    for (let date = new Date(Date.UTC(year, 0, 1)); date.getUTCFullYear() === year; date.setUTCDate(date.getUTCDate() + 1)) {
+      if (date.getUTCDay() === weekday) matches.push(date.toISOString().slice(0, 10))
+    }
+    if (entry.ordinal === null) days.push(...matches)
+    else {
+      const pick = entry.ordinal > 0 ? matches[entry.ordinal - 1] : matches[matches.length + entry.ordinal]
+      if (pick !== undefined) days.push(pick)
+    }
+  }
+  return Array.from(new Set(days))
+}
+
 /** Candidate days of a MONTHLY or YEARLY rule from its start day, in order. */
 function* monthBasedDays(rule: RecurrenceRule, startDay: string): Generator<string> {
   const [y, m, d] = startDay.split("-").map(Number) as [number, number, number]
   const startMonth = m - 1
-  // BYMONTHDAY expands a YEARLY rule across every month unless BYMONTH narrows it.
+  // BYMONTHDAY or BYDAY expands a YEARLY rule across every month unless BYMONTH narrows it.
   const yearlyMonths = rule.byMonth?.map(n => n - 1)
-    ?? (rule.byMonthDay?.length ? Array.from({ length: 12 }, (_, i) => i) : [startMonth])
+    ?? (rule.byMonthDay?.length || rule.byDayEntries?.length ? Array.from({ length: 12 }, (_, i) => i) : [startMonth])
+  // Without BYMONTH or BYMONTHDAY, an ordinal BYDAY in a YEARLY rule counts within the
+  // year (20MO is the 20th Monday of the year), RFC 5545 §3.3.10.
+  const yearOrdinals = rule.freq === "YEARLY" && !rule.byMonth?.length && !rule.byMonthDay?.length &&
+    Boolean(rule.byDayEntries?.some(entry => entry.ordinal !== null))
   const months = rule.freq === "YEARLY" ? [...yearlyMonths].sort((a, b) => a - b) : null
+  let emptyYears = 0
   for (let step = 0; step < 12_000; step++) {
     if (months) {
       // BYSETPOS selects within the whole year's combined candidates, not month by month.
       const year = y + step * rule.interval
-      const yearDays: string[] = []
-      for (const month of months) {
+      const yearDays: string[] = yearOrdinals ? yearOrdinalDays(rule, year) : []
+      if (!yearOrdinals) for (const month of months) {
         for (const day of monthCandidateDays(rule, year, month, d, false)) {
           yearDays.push(`${String(year).padStart(4, "0")}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`)
         }
@@ -274,6 +297,10 @@ function* monthBasedDays(rule: RecurrenceRule, startDay: string): Generator<stri
             .filter((iso): iso is string => iso !== undefined),
         )).sort()
         : yearDays
+      // Every valid yearly rule matches within a few decades (February 29 every 4-8 years).
+      // A rule that never matches stops here instead of scanning 12,000 years.
+      emptyYears = selected.length === 0 ? emptyYears + 1 : 0
+      if (emptyYears > 400) return
       for (const iso of selected) if (iso >= startDay) yield iso
       continue
     }

@@ -56,7 +56,7 @@ Check these first:
 
 To bring an edited title or all-day date back in step, make the calendar and Meitheal show the same value once, for example by changing the event in the calendar app. From the next sync after they match, the field follows the calendar again. The match must be exact, including the time and time zone, so timed dates rarely match again. For those, set the date in Meitheal to the value you want; it then stays as set. With Home Assistant, renaming an event usually replaces its task instead (see the next section), so titles follow the calendar reliably only for CalDAV.
 
-**Fields that always follow the calendar.** If the event has a location or a description, it replaces the description of the task linked to it, including a task you made yourself. Keep notes in a comment or checklist instead. Home Assistant sync also adds the `calendar-sync` label to linked tasks and puts it back if it is removed. Leave that label in place.
+**Fields that always follow the calendar.** With Home Assistant sync, if the event has a location or a description, it replaces the description of the task linked to it, including a task you made yourself. Keep notes in a comment or checklist instead. CalDAV sync writes the description once, when it imports the event, and keeps notes you add in Meitheal after that. Home Assistant sync also adds the `calendar-sync` label to linked tasks and puts it back if it is removed. Leave that label in place.
 
 ### A synced task completed itself, or a second task appeared
 

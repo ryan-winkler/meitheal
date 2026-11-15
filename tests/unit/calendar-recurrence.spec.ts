@@ -174,6 +174,32 @@ test.describe("calendar recurrence engine", () => {
     })
     expect(firstAndFifteenth.map((o) => o.start)).toEqual(["2026-11-01", "2026-11-15", "2026-12-01"])
 
+    // A YEARLY BYDAY without BYMONTH covers the whole year; an ordinal counts within the year.
+    const everyMondayOfYear = expandRRuleOccurrences({
+      dtstart: "2026-01-05",
+      rrule: "FREQ=YEARLY;BYDAY=MO;COUNT=6",
+      windowStart: new Date("2026-01-01T00:00:00Z"),
+      windowEnd: new Date("2026-12-31T23:59:59Z"),
+      timezone: "UTC",
+    })
+    expect(everyMondayOfYear.map((o) => o.start)).toEqual(["2026-01-05", "2026-01-12", "2026-01-19", "2026-01-26", "2026-02-02", "2026-02-09"])
+    const twentiethMonday = expandRRuleOccurrences({
+      dtstart: "2026-05-18",
+      rrule: "FREQ=YEARLY;BYDAY=20MO",
+      windowStart: new Date("2026-01-01T00:00:00Z"),
+      windowEnd: new Date("2027-12-31T23:59:59Z"),
+      timezone: "UTC",
+    })
+    expect(twentiethMonday.map((o) => o.start)).toEqual(["2026-05-18", "2027-05-17"])
+    const never = expandRRuleOccurrences({
+      dtstart: "2026-01-01",
+      rrule: "FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=30",
+      windowStart: new Date("2026-01-01T00:00:00Z"),
+      windowEnd: new Date("2027-12-31T23:59:59Z"),
+      timezone: "UTC",
+    })
+    expect(never).toEqual([])
+
     // BYSETPOS is only modelled within a month, so a DAILY rule keeps it verbatim.
     expect(normalizeRRule("FREQ=DAILY;BYDAY=MO,FR;BYSETPOS=1")).toBe("FREQ=DAILY;BYDAY=MO,FR;BYSETPOS=1")
   })

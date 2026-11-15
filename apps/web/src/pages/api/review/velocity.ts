@@ -28,12 +28,12 @@ import type { APIRoute } from "astro"
 import { getTasksForView } from "../../../lib/task-queries"
 import { apiLogger, logApiError } from "../../../lib/api-logger"
 
-export const GET: APIRoute = async ({ url }) => {
+export const GET: APIRoute = async ({ url, locals }) => {
   try {
     const daysParam = url.searchParams.get("days")
     const days = Math.min(Math.max(Number(daysParam) || 30, 1), 90)
 
-    const { tasks } = await getTasksForView()
+    const { tasks } = await getTasksForView({ timezone: locals.timezone || "Europe/Dublin" })
 
     const today = new Date()
     today.setHours(0, 0, 0, 0)

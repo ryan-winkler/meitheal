@@ -476,6 +476,8 @@ def test_build_origin_headers_percent_encodes_non_ascii_names() -> None:
     assert headers["X-Meitheal-Origin-Name"].isascii()
     assert build_origin_headers("ha_script", "100% done", None)["X-Meitheal-Origin-Name"] == "100%25 done"
     assert build_origin_headers("mcp", 'Claude "Desktop" (beta)', None)["X-Meitheal-Origin-Name"] == 'Claude "Desktop" (beta)'
+    spoof = build_origin_headers("webhook", 'Bedtime (via token "HA Bridge")\u202e', None)
+    assert spoof["X-Meitheal-Origin-Name"] == "Bedtime (via token %22HA Bridge%22)".replace("%22", '"')
 
 
 async def test_service_call_from_automation_context_sends_origin_headers(

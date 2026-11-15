@@ -476,13 +476,28 @@ function readPreviousSyncedFields(payload: string | null): PreviousSyncedFields 
 export function planInboundCalendarUpdate(
   current: SyncedTaskFields | undefined,
   previousPayload: string | null,
-  incoming: { title: string; start: string; end: string | null; recurrenceRule: string | null; repeats: boolean },
+  incoming: {
+    title: string
+    start: string
+    end: string | null
+    recurrenceRule: string | null
+    repeats: boolean
+    /** Starts of every occurrence of the series in the sync window. */
+    occurrenceStarts?: readonly string[] | undefined
+  },
   opts: { timezone: string },
 ): Partial<Extract<SyncTaskMutation, { kind: "update" }>> {
   if (!current) return {}
   const previous = readPreviousSyncedFields(previousPayload)
   const unchanged = (value: unknown, synced: string | null | undefined) =>
     previous !== null && synced !== undefined && String(value ?? "") === String(synced ?? "")
+  // Releases before series grouping saved one payload per occurrence (no "rrule" key) and
+  // moved due_date to whichever occurrence synced last, often four weeks out. Such a due
+  // date still follows the calendar when it is one of the series' occurrences, and start
+  // and end dates that release never wrote are filled in.
+  const legacyPayload = previous !== null && previous.rrule === undefined
+  const legacyDueFollows = legacyPayload && current.due_date != null &&
+    (incoming.occurrenceStarts ?? []).includes(String(current.due_date))
 
   const kind = String(current.task_kind ?? "standard_action")
   // Only a task that sync itself imported becomes a calendar event. A household task
@@ -493,12 +508,16 @@ export function planInboundCalendarUpdate(
   const plan: Partial<Extract<SyncTaskMutation, { kind: "update" }>> = {}
 
   if (calendarOwned && unchanged(current.title, previous?.title)) plan.title = incoming.title
-  if (unchanged(current.due_date, previous?.start)) {
+  if (unchanged(current.due_date, previous?.start) || legacyDueFollows) {
     plan.dueDate = incoming.start
     plan.updateDueDate = true
   }
-  if (unchanged(current.start_date, previous?.start)) plan.startDate = incoming.start
-  if (unchanged(current.end_date, previous?.end)) plan.endDate = incoming.end
+  if (unchanged(current.start_date, previous?.start) || (legacyPayload && current.start_date == null)) {
+    plan.startDate = incoming.start
+  }
+  if (unchanged(current.end_date, previous?.end) || (legacyPayload && current.end_date == null)) {
+    plan.endDate = incoming.end
+  }
   if (nextKind !== kind) plan.taskKind = nextKind
   // Before sync recorded the rule it applied, an empty rule may adopt the calendar's.
   const ruleFollows = previous?.rrule === undefined
@@ -954,6 +973,47 @@ async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState |
     }
     const touchedTaskIds = new Set<string>()
 
+    // The release before series grouping linked every same-title event to one task. When
+    // two present series still point at that task, the series whose occurrences include
+    // the task's due date keeps it and the other series gets a task of its own.
+    // That release also skipped completed tasks when matching by title, so after a user
+    // completed a repeating task, later occurrences created a second task. One series can
+    // therefore point at several tasks: it keeps the open task that holds one of its
+    // occurrences, and its links to the others are released.
+    type SyncSeries = (typeof seriesList)[number]
+    const preferredSeriesTask = new Map<SyncSeries, string>()
+    for (const series of seriesList) {
+      const taskIds = [...new Set(
+        series.legacyCandidateUids
+          .filter((candidate) => existingMap.has(candidate))
+          .map((candidate) => existingMap.get(candidate)!),
+      )]
+      if (taskIds.length === 0) continue
+      const starts = new Set(series.occurrences.map((o) => o.start))
+      const rank = (taskId: string) => {
+        const task = currentTasks.get(taskId)
+        const open = String(task?.status ?? "") !== STATUS.COMPLETE ? 2 : 0
+        const holdsOccurrence = starts.has(String(task?.due_date ?? "")) ? 1 : 0
+        return open + holdsOccurrence
+      }
+      preferredSeriesTask.set(series, taskIds.reduce((best, taskId) => (rank(taskId) > rank(best) ? taskId : best)))
+    }
+    const seriesTaskOwner = new Map<string, SyncSeries>()
+    for (const series of seriesList) {
+      const taskId = preferredSeriesTask.get(series)
+      if (!taskId) continue
+      const owner = seriesTaskOwner.get(taskId)
+      if (!owner) {
+        seriesTaskOwner.set(taskId, series)
+        continue
+      }
+      const due = String(currentTasks.get(taskId)?.due_date ?? "")
+      const holdsDue = (candidateSeries: SyncSeries) =>
+        candidateSeries.occurrences.some((o) => o.start === due)
+      if (!holdsDue(owner) && holdsDue(series)) seriesTaskOwner.set(taskId, series)
+    }
+    const releasedLegacyLinks: { taskId: string; uids: string[] }[] = []
+
     let errors = 0
     const mutations: SyncTaskMutation[] = []
     const mutationSummaries: string[] = []
@@ -962,8 +1022,28 @@ async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState |
     for (const series of seriesList) {
       const evt = series.representative
       const uid = series.seriesUid
-      const matchedCandidateUid = series.legacyCandidateUids.find((candidate) => existingMap.has(candidate))
-      let existingTaskId = matchedCandidateUid ? existingMap.get(matchedCandidateUid) : undefined
+      const preferredTaskId = preferredSeriesTask.get(series)
+      let matchedCandidateUid = preferredTaskId
+        ? series.legacyCandidateUids.find((candidate) => existingMap.get(candidate) === preferredTaskId)
+        : undefined
+      let existingTaskId = preferredTaskId
+      // Links from this series to tasks it does not keep are released after the commit.
+      for (const otherTaskId of new Set(series.legacyCandidateUids.map((c) => existingMap.get(c)))) {
+        if (!otherTaskId || otherTaskId === preferredTaskId) continue
+        releasedLegacyLinks.push({
+          taskId: otherTaskId,
+          uids: series.legacyCandidateUids.filter((candidate) => existingMap.get(candidate) === otherTaskId),
+        })
+      }
+      if (existingTaskId && seriesTaskOwner.get(existingTaskId) !== series) {
+        const sharedTaskId = existingTaskId
+        releasedLegacyLinks.push({
+          taskId: sharedTaskId,
+          uids: series.legacyCandidateUids.filter((candidate) => existingMap.get(candidate) === sharedTaskId),
+        })
+        existingTaskId = undefined
+        matchedCandidateUid = undefined
+      }
       let titleMatchedExternalId: string | undefined
       const confirmationPayload = JSON.stringify({
         summary: evt.summary,
@@ -1028,6 +1108,7 @@ async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState |
               end: series.representativeEndDate,
               recurrenceRule: series.recurrenceRule,
               repeats: series.recurrenceRule !== null || series.inferredRecurrenceRule !== null,
+              occurrenceStarts: series.occurrences.map((o) => o.start),
             },
             { timezone },
           ),
@@ -1087,6 +1168,18 @@ async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState |
       created += commitRes.created
       updated += commitRes.updated
       errors += commitRes.errors.length
+      // A series that got its own task no longer shares the old merged task's links.
+      if (commitRes.errors.length === 0) {
+        for (const released of releasedLegacyLinks) {
+          if (released.uids.length === 0) continue
+          await client.execute({
+            sql: `DELETE FROM calendar_confirmations
+                  WHERE task_id = ? AND source = 'ha.calendar_sync'
+                    AND provider_event_id IN (${released.uids.map(() => "?").join(", ")})`,
+            args: [released.taskId, ...released.uids],
+          })
+        }
+      }
       for (const itemErr of commitRes.errors) {
         const summary = mutationSummaries[itemErr.index] ?? `index ${itemErr.index}`
         logger.log("error", {
@@ -1104,8 +1197,10 @@ async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState |
     if (errors === 0 && events.length > 0 && staleMode !== "export") {
       try {
         const allConfirmations = await client.execute({
-          sql: `SELECT c.confirmation_id, c.task_id, c.provider_event_id
+          sql: `SELECT c.confirmation_id, c.task_id, c.provider_event_id,
+                       (t.idempotency_key LIKE 'cal-sync-%' OR t.idempotency_key LIKE 'caldav-sync-%') AS created_by_sync
                 FROM calendar_confirmations c
+                LEFT JOIN tasks t ON t.id = c.task_id
                 WHERE c.source = 'ha.calendar_sync'
                   AND CASE WHEN json_valid(c.payload) THEN json_extract(c.payload, '$.entity_id') ELSE NULL END = ?`,
           args: [entityId],
@@ -1119,7 +1214,10 @@ async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState |
           // older key for it (an ID-less event's previous title or time) is gone.
           if (!currentUids.has(eventUid)) {
             const taskId = String(row.task_id)
-            if (touchedTaskIds.has(taskId)) {
+            // A task created in Meitheal that sync only matched by title belongs to the
+            // household: its event going away unlinks it instead of completing it, so a
+            // repeating Event task keeps creating its next occurrence.
+            if (touchedTaskIds.has(taskId) || Number(row.created_by_sync ?? 0) === 0) {
               await client.execute({
                 sql: "DELETE FROM calendar_confirmations WHERE confirmation_id = ?",
                 args: [String(row.confirmation_id)],
@@ -1242,31 +1340,31 @@ function buildCalendarDescription(
 }
 
 /**
- * Push a task due date TO HA calendar — supports write-back deduplication.
- * If dueDate has no time component (YYYY-MM-DD only), creates an all-day event.
- */
-/**
- * True when calendar sync created the task (its idempotency key starts with
- * `cal-sync-` or `caldav-sync-`) and Meitheal never sent it out. Writing such a task
- * back would duplicate its event. A task created in Meitheal that sync later matched
- * by title is not imported, even though it has a sync confirmation.
+ * True when a calendar sent this task to Meitheal (imported by Home Assistant or CalDAV
+ * sync, or a Meitheal task that sync matched to an existing event by title) and
+ * Meitheal never sent it out. Writing such a task back would duplicate its event.
+ * Whether the task repeats on its own is a separate question: only a task that sync
+ * created leaves its repeats to the calendar (see the recurrence query in the task
+ * repository).
  */
 export async function isImportedCalendarTask(taskId: string): Promise<boolean> {
   await ensureSchemaOnce()
   const mod = await getStoreModule()
   const result = await mod.getPersistenceClient().execute({
     sql: `SELECT
-            (SELECT COUNT(*) FROM tasks
-              WHERE id = ? AND (idempotency_key LIKE 'cal-sync-%' OR idempotency_key LIKE 'caldav-sync-%')) AS created_by_sync,
             SUM(CASE WHEN source IN ('ha.calendar_sync', 'caldav') THEN 1 ELSE 0 END) AS imported,
             SUM(CASE WHEN source = 'ha.write_back' THEN 1 ELSE 0 END) AS sent
           FROM calendar_confirmations WHERE task_id = ?`,
-    args: [taskId, taskId],
+    args: [taskId],
   })
   const row = result.rows[0]
-  return Number(row?.created_by_sync ?? 0) > 0 && Number(row?.imported ?? 0) > 0 && Number(row?.sent ?? 0) === 0
+  return Number(row?.imported ?? 0) > 0 && Number(row?.sent ?? 0) === 0
 }
 
+/**
+ * Push a task due date TO HA calendar — supports write-back deduplication.
+ * If dueDate has no time component (YYYY-MM-DD only), creates an all-day event.
+ */
 export async function pushTaskToCalendar(
   taskId: string, title: string, dueDate: string, description?: string,
   targetEntityId?: string, meta?: TaskCalendarMeta,
@@ -1795,7 +1893,8 @@ async function importCalDAVEvents(): Promise<CalendarSyncCounts> {
                 { title: repEvt.summary, start: repEvt.dtstart, end: repEnd, recurrenceRule, repeats: recurrenceRule !== null || inferredRecurrenceRule !== null },
                 { timezone },
               ),
-              description: inboundCalDesc,
+              // The description is written once, on import. Notes added in Meitheal are
+              // kept; CalDAV re-syncs update the title, dates and rule only.
               updatedAt: nowMs,
               confirmation: {
                 source: "calendar",

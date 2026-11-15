@@ -54,9 +54,9 @@ interface PriorityBreakdown {
   p5_lowest: number
 }
 
-export const GET: APIRoute = async () => {
+export const GET: APIRoute = async ({ locals }) => {
   try {
-    const { tasks } = await getTasksForView()
+    const { tasks } = await getTasksForView({ timezone: locals.timezone || "Europe/Dublin" })
 
     const now = new Date()
     const today = new Date(now)

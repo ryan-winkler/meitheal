@@ -35,6 +35,8 @@ _ORIGIN_HEADER_KEYS = frozenset({
 _CURRENT_ORIGIN: ContextVar[dict[str, str] | None] = ContextVar("_CURRENT_ORIGIN", default=None)
 
 
+# Invisible and bidi formatting characters could reorder the token name shown beside the origin.
+_INVISIBLE_FORMAT_CHARS = re.compile("[\u00ad\u061c\u180e\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff\ufff9-\ufffb]")
 _ORIGIN_NAME_SAFE = "".join(chr(code) for code in range(0x20, 0x7F) if chr(code) != "%")
 
 
@@ -50,7 +52,10 @@ def build_origin_headers(
         if kind in _ORIGIN_KINDS:
             headers["X-Meitheal-Origin-Kind"] = kind
     if isinstance(origin_name, str):
-        clean_name = re.sub(r"\s+", " ", re.sub(r"[\r\n\t\x00-\x1f\x7f]+", " ", origin_name)).strip()[:120].strip()
+        visible = _INVISIBLE_FORMAT_CHARS.sub("", origin_name)
+        clean_name = re.sub(
+            r"\s+", " ", re.sub(r"[\r\n\t\x00-\x1f\x7f-\x9f\u2028\u2029]+", " ", visible)
+        ).strip()[:120].strip()
         if clean_name:
             # HTTP header values are Latin-1 on the Meitheal side, so percent-encode
             # UTF-8 names. Printable ASCII other than "%" stays readable.

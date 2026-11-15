@@ -45,6 +45,9 @@ function isTaskOverdueOnDay(
   return Boolean(day && day < resolvedToday)
 }
 const taskHistoryPredicate = "(feed_action IS NULL OR field <> 'activity')"
+// Agent "added" rows keep Recent Activity provenance as JSON in `summary`. The task
+// activity and timeline APIs (and their MCP tools) keep returning readable text.
+const PUBLIC_ACTIVITY_SUMMARY = `CASE WHEN field = 'created' AND summary LIKE '{"v":1,%' THEN 'Task added' ELSE summary END`
 
 type RecurrenceSuccessor = {
   id: string
@@ -2248,7 +2251,7 @@ export class TaskRepository {
     const where = `WHERE task_id = ? AND ${taskHistoryPredicate}`
     const [events, count] = await this.client.batch([
       {
-        sql: `SELECT id, task_id, field, old_value, new_value, actor, actor_type, event_type, summary, correlation_id, created_at
+        sql: `SELECT id, task_id, field, old_value, new_value, actor, actor_type, event_type, ${PUBLIC_ACTIVITY_SUMMARY} AS summary, correlation_id, created_at
               FROM task_activity_log ${where}
               ORDER BY created_at DESC, id DESC
               LIMIT ? OFFSET ?`,
@@ -2313,7 +2316,7 @@ export class TaskRepository {
     const result = await this.client.execute({
       sql: `SELECT *, COUNT(*) OVER() as _total
             FROM (
-              SELECT id, task_id, field, old_value, new_value, actor, actor_type, event_type, summary, correlation_id, created_at
+              SELECT id, task_id, field, old_value, new_value, actor, actor_type, event_type, ${PUBLIC_ACTIVITY_SUMMARY} AS summary, correlation_id, created_at
               FROM task_activity_log
               WHERE ${where}
               ${commentSubquery}

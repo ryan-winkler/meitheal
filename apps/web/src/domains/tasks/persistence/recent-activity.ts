@@ -52,9 +52,16 @@ export function decodeOriginHeader(value: string | null | undefined): string | n
   }
 }
 
+const INVISIBLE_FORMAT_CHARS = /[\u00ad\u061c\u180e\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff\ufff9-\ufffb]/g
+
 export function sanitizeOriginName(value: unknown): string | null {
   if (typeof value !== "string") return null
-  const cleaned = value.replace(/[\r\n\t\x00-\x1f\x7f]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 120).trim()
+  // C0/C1 controls become spaces. Invisible and bidi formatting characters (U+200B-200F,
+  // U+202A-202E, U+2066-2069, U+FEFF...) are removed so an origin name cannot reorder or
+  // hide the verified token name it is displayed next to.
+  const cleaned = value
+    .replace(INVISIBLE_FORMAT_CHARS, "")
+    .replace(/[\r\n\t\x00-\x1f\x7f-\x9f\u2028\u2029]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 120).trim()
   return cleaned || null
 }
 
