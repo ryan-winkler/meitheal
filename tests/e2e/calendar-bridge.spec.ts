@@ -1081,11 +1081,20 @@ test("a completed series keeps its last-applied baseline, so a provider rename s
     await repo.updateTask(taskId, { status: "complete" })
 
     // The provider renames the series while the task is completed: the task stays as completed...
-    ha.setCalendarEvents(series("Recycling B", [todayStr, d7, d14]))
+    // The calendar also moves its last occurrence from d14 to d21.
+    ha.setCalendarEvents(series("Recycling B", [todayStr, d7, d21]))
     await syncFromHA("calendar.household")
     const frozen = await db.execute({ sql: "SELECT title, status FROM tasks WHERE id = ?", args: [taskId] })
     expect(String(frozen.rows[0]?.title)).toBe("Recycling")
     expect(String(frozen.rows[0]?.status)).toBe("complete")
+    // The saved baseline keeps the last-applied title, while month-grid occurrences follow the calendar.
+    const baseline = await db.execute({
+      sql: "SELECT payload FROM calendar_confirmations WHERE task_id = ? AND source = 'ha.calendar_sync'",
+      args: [taskId],
+    })
+    const savedPayload = JSON.parse(String(baseline.rows[0]?.payload)) as { summary: string; occurrences: Array<{ start: string }> }
+    expect(savedPayload.summary).toBe("Recycling")
+    expect(savedPayload.occurrences.map((o) => o.start)).toEqual([at(todayStr), at(d7), at(d21)])
 
     // ...and follows the calendar again, with the new title, once the next occurrence reopens it.
     ha.setCalendarEvents(series("Recycling B", [d7, d14, d21]))

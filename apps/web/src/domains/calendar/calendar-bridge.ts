@@ -472,6 +472,7 @@ function readPreviousSyncedFields(payload: string | null): PreviousSyncedFields 
  * the task was last updated from; advancing it would make the unchanged task look edited by
  * hand, and it would stop following the calendar when the series reopens. Payloads saved
  * before sync recorded the rule (no "rrule" key) adopt the first payload this release writes.
+ * The occurrence list is the exception: it always follows the latest calendar response.
  */
 function baselinePayload(
   current: SyncedTaskFields | undefined,
@@ -482,7 +483,18 @@ function baselinePayload(
   if (!current || !previousPayload) return nextPayload
   const frozen = isClosedStatus(String(current.status ?? "")) && plan.status === undefined
   const previous = readPreviousSyncedFields(previousPayload)
-  return frozen && previous !== null && previous.rrule !== undefined ? previousPayload : nextPayload
+  if (!frozen || previous === null || previous.rrule === undefined) return nextPayload
+  // The task fields stay at their baseline, but the calendar's occurrence list is display data
+  // for the month grid, so it follows the latest response.
+  try {
+    const kept = JSON.parse(previousPayload) as Record<string, unknown>
+    const latest = JSON.parse(nextPayload) as Record<string, unknown>
+    if ("occurrences" in latest) kept.occurrences = latest.occurrences
+    else delete kept.occurrences
+    return JSON.stringify(kept)
+  } catch {
+    return nextPayload
+  }
 }
 
 /**
