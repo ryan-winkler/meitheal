@@ -29,6 +29,7 @@ import {
   validateCalDAVUrl,
 } from "../../apps/web/src/domains/calendar/caldav-client"
 import {
+  isDueOverdue,
   calendarDayFromInput,
   calendarDaysFromToday,
   calendarToday,
@@ -559,7 +560,22 @@ test("TaskRepository queries handle timed ISO due dates and expanded HA event oc
   }
 })
 
-test("Kanban overdue index and getTasksForView slim counts evaluate timed ISO due dates in household timezone", async () => {
+test("isDueOverdue: date-only after its household day, timed once its time passes", () => {
+  const now = Date.parse("2026-11-15T15:00:00Z")
+  const today = "2026-11-15"
+  expect(isDueOverdue("2026-11-14", "Europe/Dublin", today, now)).toBe(true)
+  expect(isDueOverdue("2026-11-15", "Europe/Dublin", today, now)).toBe(false)
+  expect(isDueOverdue("2026-11-15T09:00:00Z", "Europe/Dublin", today, now)).toBe(true)
+  expect(isDueOverdue("2026-11-15T18:30:00Z", "Europe/Dublin", today, now)).toBe(false)
+  expect(isDueOverdue("2026-11-15T11:00:00-05:00", "Europe/Dublin", today, now)).toBe(false)
+  expect(isDueOverdue("2026-11-15T09:00:00-05:00", "Europe/Dublin", today, now)).toBe(true)
+  expect(isDueOverdue("2026-11-16T01:00:00Z", "Europe/Dublin", today, now)).toBe(false)
+  // Checked for a past reference day, today's times are not compared with the clock.
+  expect(isDueOverdue("2026-11-13T08:00:00Z", "Europe/Dublin", "2026-11-13", now)).toBe(false)
+  expect(isDueOverdue("", "Europe/Dublin", today, now)).toBe(false)
+})
+
+test("Kanban overdue index and getTasksForView slim counts treat a timed due date as overdue once its time passes", async () => {
   const directory = await mkdtemp(join(tmpdir(), "meitheal-tz-overdue-"))
   const previousDb = process.env.MEITHEAL_DB_URL
   process.env.MEITHEAL_DB_URL = `file:${join(directory, "tz-overdue.db")}`
@@ -567,12 +583,9 @@ test("Kanban overdue index and getTasksForView slim counts evaluate timed ISO du
   const db = getPersistenceClient()
   try {
     await ensureSchema()
-    const todayAkl = calendarToday("Pacific/Auckland")
-    const todayLa = calendarToday("America/Los_Angeles")
-    // In Pacific/Auckland (+12/+13), 22:00Z on yesterday is already 10:00/11:00 todayAkl (NOT overdue).
-    const aklTodayIso = `${shiftCalendarDay(todayAkl, -1)}T22:00:00Z`
-    // In America/Los_Angeles (-7/-8), 02:00Z on todayLa is 18:00/19:00 yesterday in LA (IS overdue).
-    const laOverdueIso = `${todayLa}T02:00:00Z`
+    // A timed due date is overdue once its time passes, whatever the household timezone.
+    const aklTodayIso = new Date(Date.now() + 2 * 3_600_000).toISOString().replace(/\.\d{3}Z$/, "Z")
+    const laOverdueIso = new Date(Date.now() - 2 * 3_600_000).toISOString().replace(/\.\d{3}Z$/, "Z")
 
     await db.execute({
       sql: `INSERT INTO tasks (id, title, status, priority, due_date, task_kind, idempotency_key, request_id, created_at, updated_at)

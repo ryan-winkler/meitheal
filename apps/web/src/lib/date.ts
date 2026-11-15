@@ -231,3 +231,35 @@ export function formatRegionalDate(
     return String(dateInput);
   }
 }
+
+/** Epoch milliseconds of a timed due date, read like the overdue events (offset-less as UTC). */
+function dueInstantMs(raw: string): number {
+  if (/^\d{12,}$/.test(raw)) return Number(raw)
+  if (/(?:Z|[+-]\d{2}:?\d{2})$/i.test(raw)) return Date.parse(raw)
+  return Date.parse(`${raw.replace(" ", "T")}Z`)
+}
+
+/**
+ * Overdue rule shared by the web app, the Home Assistant overdue sensor and the
+ * `task.overdue` event: a date-only due date is overdue once its household calendar
+ * day has ended; a due date with a time is overdue once that time passes.
+ * `today` is the household day the check is made for; a timed due date on that day
+ * is compared with `now` only when `today` is the actual current day.
+ */
+export function isDueOverdue(
+  dueDate: unknown,
+  timezone = DEFAULT_TIMEZONE,
+  today = calendarToday(timezone),
+  now = Date.now(),
+): boolean {
+  if (typeof dueDate !== "string" && typeof dueDate !== "number") return false
+  const raw = String(dueDate).trim()
+  if (!raw) return false
+  const day = calendarDayFromInput(raw, timezone)
+  if (!day) return false
+  if (day < today) return true
+  if (day > today || /^\d{4}-\d{2}-\d{2}$/.test(raw)) return false
+  if (today !== calendarToday(timezone, new Date(now))) return false
+  const dueMs = dueInstantMs(raw)
+  return Number.isFinite(dueMs) && dueMs < now
+}

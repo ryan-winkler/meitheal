@@ -19,7 +19,7 @@ import { getStatusDef, isDoneStatus, normalizeStatus, STATUS } from "../../../li
 import { logApiError, logApiWarn } from "../../../lib/api-logger"
 import { EXACT_TASK_IDENTIFIER_SCORE } from "../../../lib/task-search-score"
 import { readStoredCalendarDay } from "../../../lib/calendar-day"
-import { calendarDayFromInput, calendarToday, shiftCalendarDay } from "../../../lib/date"
+import { calendarDayFromInput, calendarToday, shiftCalendarDay, isDueOverdue } from "../../../lib/date"
 import { parseTicketKey } from "../../../lib/ticket-key"
 import { getNextOccurrence, parseRRule } from "../recurrence"
 import { deferralTerminalStatusesSql, isDeferralTerminalStatus } from "./task-deferral-status"
@@ -29,9 +29,9 @@ import { inactivityRuleActor, inactivityWriteGuard } from "./task-inactivity-que
 import { openTaskDependencies } from "./task-dependencies"
 
 /**
- * Both date-only (`YYYY-MM-DD`) and timed ISO (`YYYY-MM-DDTHH:MM...`) due dates
- * are evaluated against the household calendar day so events occurring today are never overdue.
- * Arguments: today (YYYY-MM-DD in the user's timezone), complete status.
+ * A date-only due date is overdue once its household calendar day has ended; a due
+ * date with a time is overdue once that time passes (see `isDueOverdue`), the same rule
+ * as the Home Assistant overdue sensor and the `task.overdue` event.
  */
 function isTaskOverdueOnDay(
   dueDate: unknown,
@@ -40,9 +40,7 @@ function isTaskOverdueOnDay(
   timezone: string,
 ): boolean {
   if (String(status ?? "").toLowerCase() === STATUS.COMPLETE) return false
-  if (dueDate === null || dueDate === undefined || dueDate === "") return false
-  const day = calendarDayFromInput(String(dueDate), timezone)
-  return Boolean(day && day < resolvedToday)
+  return isDueOverdue(dueDate, timezone, resolvedToday)
 }
 const taskHistoryPredicate = "(feed_action IS NULL OR field <> 'activity')"
 // Agent "added" rows keep Recent Activity provenance as JSON in `summary`. The task
@@ -594,8 +592,7 @@ export class TaskRepository {
     });
     let count = 0;
     for (const row of result.rows) {
-      const day = calendarDayFromInput(String((row as Record<string, unknown>).due_date ?? ""), timezone);
-      if (day && day < resolvedToday) count++;
+      if (isDueOverdue((row as Record<string, unknown>).due_date, timezone, resolvedToday)) count++;
     }
     return count;
   }
@@ -887,10 +884,7 @@ export class TaskRepository {
       args: [upperBound, STATUS.COMPLETE],
     });
     const rows = sanitizeRows(result.rows as unknown as TaskRow[]);
-    return rows.filter((row) => {
-      const day = calendarDayFromInput(row.due_date, timezone);
-      return day !== null && day < todayStr;
-    });
+    return rows.filter((row) => isDueOverdue(row.due_date, timezone, todayStr));
   }
 
   /** Tasks due on a specific date (non-complete) */

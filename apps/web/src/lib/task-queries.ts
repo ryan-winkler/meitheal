@@ -15,7 +15,7 @@ import {
 import { taskTimestampMs } from "@domains/tasks/persistence/task-timestamp";
 import type { InValue } from "@libsql/client";
 import { deriveEisenhowerQuadrant } from "@meitheal/domain-tasks";
-import { calendarDayFromInput, calendarToday, shiftCalendarDay } from "./date";
+import { calendarDayFromInput, calendarToday, shiftCalendarDay, isDueOverdue } from "./date";
 import { frameworkPayloadObject, readRiceInputs, riceLensScore } from "./rice-lens"
 
 // =============================================================================
@@ -114,10 +114,10 @@ function safeParseLabels(value: unknown): string[] {
 // Overdue Detection
 // =============================================================================
 
+/** Date-only due dates are overdue after their household day; timed ones once their time passes. */
 function isDueDayOverdue(dueDate: string | null, today: string, timezone = "Europe/Dublin"): boolean {
   if (!dueDate) return false;
-  const dueDay = calendarDayFromInput(dueDate, timezone);
-  return Boolean(dueDay && dueDay < today);
+  return isDueOverdue(dueDate, timezone, today);
 }
 
 function isOverdue(dueDate: string | null, isDone: boolean, timezone = "Europe/Dublin"): boolean {
