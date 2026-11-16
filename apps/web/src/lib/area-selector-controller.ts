@@ -14,6 +14,7 @@ import { renderIconOrCustomEmoji } from "./tabler-svg"
 
 const STORAGE_KEY = "meitheal-selected-area"
 export const CALENDAR_AREA_REQUEST_EVENT = "meitheal:calendar-area-request"
+export const CALENDAR_AREA_APPLIED_EVENT = "meitheal:calendar-area-applied"
 
 interface AreaChangedDetail {
   areaId: string
@@ -59,21 +60,29 @@ export function initAreaSelector(signal: AbortSignal): void {
     const option = Array.from(dropdown.querySelectorAll<HTMLElement>("[data-area-id]"))
       .find(item => item.dataset.areaId === requested)
     if (option) {
-      selectArea(requested, option.dataset.areaName ?? "All Areas", option.dataset.areaIcon ?? "🗂", false)
+      selectArea(requested, option.dataset.areaName ?? "All Areas", option.dataset.areaIcon ?? "🗂")
     } else if (table || calendar) {
-      selectArea(requested, "Unavailable Area", "🗂", false)
+      selectArea(requested, "Unavailable Area", "🗂")
     }
-  } else {
+  } else if (!calendar) {
     const saved = loadSavedArea()
     if (saved.areaId && Array.from(dropdown.querySelectorAll<HTMLElement>("[data-area-id]"))
       .some(option => option.dataset.areaId === saved.areaId)) {
-      selectArea(saved.areaId, saved.areaName, saved.areaIcon, false)
+      selectArea(saved.areaId, saved.areaName, saved.areaIcon)
     }
   }
   if (table) {
-    document.addEventListener("meitheal:table-area-reset", () => selectArea("", "All Areas", "🗂", false), { signal })
+    document.addEventListener("meitheal:table-area-reset", () => selectArea("", "All Areas", "🗂"), { signal })
   } else if (calendar) {
-    document.addEventListener("meitheal:calendar-filters-reset", () => selectArea("", "All Areas", "🗂", false), { signal })
+    document.addEventListener("meitheal:calendar-filters-reset", () => selectArea("", "All Areas", "🗂"), { signal })
+    document.addEventListener(CALENDAR_AREA_APPLIED_EVENT, event => {
+      const areaId = (event as CustomEvent<string>).detail
+      const option = [...dropdown.querySelectorAll<HTMLElement>("[data-area-id]")]
+        .find(item => item.dataset.areaId === areaId)
+      if (option && option.getAttribute("aria-selected") !== "true") {
+        selectArea(areaId, option.dataset.areaName ?? "All Areas", option.dataset.areaIcon ?? "🗂", "calendar")
+      }
+    }, { signal })
   }
 
   // Toggle dropdown on trigger click
@@ -96,7 +105,7 @@ export function initAreaSelector(signal: AbortSignal): void {
     const areaName = option.dataset.areaName ?? "All Areas"
     const areaIcon = option.dataset.areaIcon ?? "🗂"
 
-    selectArea(areaId, areaName, areaIcon, true)
+    selectArea(areaId, areaName, areaIcon, "user")
     closeDropdown()
     trigger.focus()
   }, { signal })
@@ -130,9 +139,9 @@ export function initAreaSelector(signal: AbortSignal): void {
     dropdown!.classList.remove("is-open")
   }
 
-  function selectArea(areaId: string, areaName: string, areaIcon: string, dispatch: boolean): void {
+  function selectArea(areaId: string, areaName: string, areaIcon: string, source: "restore" | "user" | "calendar" = "restore"): void {
     const detail: AreaChangedDetail = { areaId, areaName, areaIcon }
-    if (dispatch && calendar && !document.dispatchEvent(new CustomEvent(CALENDAR_AREA_REQUEST_EVENT, {
+    if (source === "user" && calendar && !document.dispatchEvent(new CustomEvent(CALENDAR_AREA_REQUEST_EVENT, {
       cancelable: true, detail,
     }))) return
 
@@ -149,12 +158,12 @@ export function initAreaSelector(signal: AbortSignal): void {
     })
 
     // Save to localStorage
-    if (dispatch || !table) saveArea(areaId, areaName, areaIcon)
+    if (source !== "restore" || !table) saveArea(areaId, areaName, areaIcon)
 
     // Sync all FilterToolbar area selects across views
     if (!table) syncFilterToolbarAreas(areaId)
 
-    if (dispatch) document.dispatchEvent(new CustomEvent("meitheal:area-changed", { detail }))
+    if (source !== "restore") document.dispatchEvent(new CustomEvent("meitheal:area-changed", { detail }))
   }
 
   function syncFilterToolbarAreas(areaId: string): void {

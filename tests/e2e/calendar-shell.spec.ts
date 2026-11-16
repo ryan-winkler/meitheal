@@ -366,10 +366,29 @@ test.describe("Calendar Shell", () => {
       await expect(all).toHaveAttribute("aria-selected", "true")
       expect(await page.evaluate(() => JSON.parse(localStorage.getItem("meitheal-selected-area") ?? "{}").areaId)).toBe("")
 
-      await page.getByRole("textbox", { name: "Filter by text" }).fill("")
+      const filters = page.getByRole("toolbar", { name: "Filter tasks" })
+      const eventType = filters.getByRole("button", { name: "Events", exact: true })
+      const priority = filters.getByRole("combobox", { name: "Filter by priority" })
+      await eventType.click()
+      await expect(eventType).toHaveAttribute("aria-pressed", "true")
+      await priority.selectOption("3")
+      await expect(priority).toHaveValue("")
+      await expect(page).toHaveURL(route)
+
+      await filters.getByRole("textbox", { name: "Filter by text" }).fill("")
       await expect(page).toHaveURL(url => !url.searchParams.has("search") && url.searchParams.get("area") === "")
       await expect(trigger).toContainText("All Areas")
       await expect(all).toHaveAttribute("aria-selected", "true")
+
+      await page.evaluate(areaId => localStorage.setItem("meitheal-selected-area", JSON.stringify({
+        areaId, areaName: "Extra calendar area", areaIcon: "folder",
+      })), id)
+      params.delete("area")
+      await page.goto("/tasks?" + params + "#calendar")
+      await expect(page.locator("[data-calendar-status]")).toContainText("The previous results are still shown.")
+      await expect(trigger).toContainText("All Areas")
+      await expect(all).toHaveAttribute("aria-selected", "true")
+      expect(await page.evaluate(() => JSON.parse(localStorage.getItem("meitheal-selected-area") ?? "{}").areaId)).toBe(id)
     } finally {
       await request.delete(`/api/areas/${id}`, { headers })
     }

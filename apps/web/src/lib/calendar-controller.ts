@@ -1,5 +1,5 @@
 import type { TaskKind } from "@meitheal/domain-tasks"
-import { CALENDAR_AREA_REQUEST_EVENT, getRememberedAreaId } from "@lib/area-selector-controller"
+import { CALENDAR_AREA_APPLIED_EVENT, CALENDAR_AREA_REQUEST_EVENT, getRememberedAreaId } from "@lib/area-selector-controller"
 import { readCalendarTaskFilters } from "@lib/calendar-task-filter"
 import { createClientLogger } from "@lib/client-logger"
 import { calendarDayFromInput, calendarEventLastDay, calendarOccurrenceStartKey, formatTimeInZone, normalizeCalendarEventSummary, shiftCalendarDay } from "@lib/date"
@@ -134,6 +134,8 @@ export function initCalendarPage(signal: AbortSignal): void {
         history.replaceState(history.state, "", url)
       }
       applied = new URL(url)
+      const area = readCalendarTaskFilters(applied.searchParams).area
+      if (area !== undefined) document.dispatchEvent(new CustomEvent(CALENDAR_AREA_APPLIED_EVENT, { detail: area }))
       document.dispatchEvent(new Event(TASK_VIEW_LOCATION_EVENT))
       announce(rejectedFilterChange)
       if (activeDay || activeRetry) focusMonthDay(activeDay)
@@ -395,8 +397,7 @@ export function initCalendarPage(signal: AbortSignal): void {
   }, { once: true })
 
   const rememberedArea = readCalendarTaskFilters(desired.searchParams).area === undefined ? getRememberedAreaId() : ""
-  if (rememberedArea) applyFilters({ area: rememberedArea })
-  else previewEvents()
+  if (!rememberedArea || !applyFilters({ area: rememberedArea })) previewEvents()
 }
 
 const agendaFilterKeys = new Set(["area", "area_id", "board", "search", "user", "status", "priority",
