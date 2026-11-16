@@ -77,6 +77,42 @@ test("Today holds the displayed date and counts together after rollover", async 
   await expect(page.locator(".today-summary__date time")).toHaveAttribute("datetime", date!)
 })
 
+test("Today keeps focus on a completion during polling and recovers when it disappears", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("meitheal-theme", "knight-rider"))
+  await page.clock.install()
+  const first = { id: "completed-poll-one", title: "Finished kitchen task" }
+  const second = { id: "completed-poll-two", title: "Finished workshop task" }
+  let completedTasks = [first]
+  await page.route(url => url.pathname === "/api/tasks/today-counts", route => route.fulfill({ json: {
+    completedTasks, completedToday: completedTasks.length, dueToday: 0,
+    remaining: 0, carriedForward: 0, completionPercent: 100,
+  } }))
+  await page.goto("/today#today-work")
+  const disclosure = page.locator(".today-completed-tasks")
+  const summary = disclosure.locator("summary")
+  await page.clock.fastForward(30_100)
+  await expect(summary).toHaveText("Completed today (1)")
+  await summary.focus()
+  await page.keyboard.press("Enter")
+  const focused = disclosure.getByRole("link", { name: first.title })
+  await focused.focus()
+
+  completedTasks = [second, first]
+  await page.clock.fastForward(30_100)
+  await expect(summary).toHaveText("Completed today (2)")
+  await expect(focused).toBeFocused()
+
+  completedTasks = [second]
+  await page.clock.fastForward(30_100)
+  await expect(focused).toHaveCount(0)
+  await expect(summary).toBeFocused()
+
+  completedTasks = []
+  await page.clock.fastForward(30_100)
+  await expect(disclosure).toBeHidden()
+  await expect(page.locator("#clear-completed-btn")).toBeFocused()
+})
+
 test("keyboard completion keeps a focus target when the Active filter removes a row", async ({ page, request }) => {
   const due_date = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Dublin", dateStyle: "short" }).format(new Date())
   const tasks = []

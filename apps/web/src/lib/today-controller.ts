@@ -961,8 +961,9 @@ function renderCompletedTasks(container: HTMLElement, counts: TodayTaskCounts): 
   const tasks = counts.completedTasks
   const completed = container.querySelector<HTMLDetailsElement>(".today-completed-tasks")
   if (!tasks || !completed) return
+  const focused = completed.contains(document.activeElement) ? document.activeElement : null
   completed.hidden = tasks.length === 0
-  const summary = completed.querySelector("summary")
+  const summary = completed.querySelector<HTMLElement>("summary")
   if (summary) summary.textContent = `Completed today (${counts.completedToday})`
   const limit = completed.querySelector("p")
   if (limit) {
@@ -983,6 +984,12 @@ function renderCompletedTasks(container: HTMLElement, counts: TodayTaskCounts): 
       row.append(createSpriteIconElement("checkbox", { size: 17 }), link)
       return row
     }))
+  }
+  if (focused && (completed.hidden || !focused.isConnected)) {
+    const id = focused instanceof HTMLAnchorElement ? focused.dataset.taskDetailLink : undefined
+    const retained = id ? list?.querySelector<HTMLElement>(`a[data-task-detail-link="${CSS.escape(id)}"]`) : null
+    const fallback = completed.hidden ? container.querySelector<HTMLElement>("#clear-completed-btn") : summary
+    ;(retained ?? fallback)?.focus({ preventScroll: true })
   }
   const empty = container.querySelector<HTMLElement>("[data-today-due-empty]")
   if (empty) {
