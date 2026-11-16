@@ -1092,6 +1092,75 @@ test("ingress Auto updates with its parent and restores one observer across ifra
   await expect.poll(palette).toBe("#171a18")
 })
 
+test("member can opt into Home Assistant colors and keep the saved fallback", async ({ page, context }) => {
+  await context.setExtraHTTPHeaders({})
+  await context.addCookies([{ name: "feedback-fixture", value: "member", url: origin }])
+  await page.emulateMedia({ colorScheme: "dark", reducedMotion: "reduce" })
+  await page.addInitScript(() => {
+    localStorage.setItem("meitheal-theme", "dark")
+    localStorage.setItem("meitheal-accent-color", "#8844ee")
+    localStorage.setItem("meitheal-appearance", JSON.stringify({ base: "mist" }))
+  })
+  const panel = origin + "/match-theme-panel-fixture"
+  await page.route(panel, route => route.fulfill({
+    contentType: "text/html",
+    body: `<!doctype html>
+      <html lang="en" style="--primary-background-color:#f4f6fa;--secondary-background-color:#e8edf9;--card-background-color:#fff;--primary-text-color:#121929;--secondary-text-color:#423b62;--primary-color:#2453a6;--accent-color:#294766">
+        <title>Home Assistant theme fixture</title>
+        <iframe src="${origin + prefix}/settings#look-and-feel-settings" title="Meitheal" style="width:100%;height:900px"></iframe>
+      </html>`,
+  }))
+  await page.goto(panel)
+  const content = page.frameLocator("iframe")
+  const root = content.locator("html")
+  const match = content.getByRole("checkbox", { name: "Match Home Assistant theme" })
+  const token = (name: string) => root.evaluate((element, property) => getComputedStyle(element).getPropertyValue(property).trim(), name)
+  const parentColor = (name: string, color: string) => page.evaluate(([property, value]) => {
+    document.documentElement.style.setProperty(property!, value!)
+  }, [name, color])
+
+  await expect(content.locator("#settings-panels")).not.toHaveAttribute("inert", "")
+  const theme = content.locator("#theme-select")
+  await theme.selectOption("light")
+  await expect(root).toHaveAttribute("data-theme", "light")
+  await theme.selectOption("dark")
+  await expect(root).toHaveAttribute("data-theme", "dark")
+  await expect(match).not.toBeChecked()
+  await expect.poll(() => token("--personal-accent")).toBe("#8844ee")
+  await match.focus()
+  await match.press("Space")
+  await expect(match).toBeFocused()
+  await expect(content.locator("#match-ha-theme-status")).toHaveText("Using Home Assistant colors.")
+  await expect(theme).toHaveValue("dark")
+  await expect(root).toHaveCSS("color-scheme", "light")
+  await expect.poll(() => token("--bg-primary-rgb")).toBe("244 246 250")
+  await expect.poll(() => token("--accent-rgb")).toBe("36 83 166")
+  await expect.poll(() => token("--accent-text-rgb")).toBe("41 71 102")
+
+  await parentColor("--accent-color", "hsl(330 65% 25%)")
+  await expect.poll(() => token("--accent-text-rgb")).not.toBe("41 71 102")
+  await expect.poll(() => token("--accent-rgb")).toBe("36 83 166")
+  await expect(match).toBeFocused()
+  await parentColor("--primary-text-color", "#f4f6fa")
+  await expect(content.locator("#match-ha-theme-status")).toContainText("unavailable here")
+  await expect(root).toHaveCSS("color-scheme", "dark")
+  await expect.poll(() => token("--personal-accent")).toBe("#8844ee")
+  await expect(match).toBeChecked()
+  await parentColor("--primary-text-color", "#121929")
+  await expect(root).toHaveAttribute("data-ha-match", "light")
+  await page.reload()
+  await expect(match).toBeChecked()
+  await expect(root).toHaveAttribute("data-ha-match", "light")
+
+  await page.emulateMedia({ forcedColors: "active" })
+  await expect(root).toHaveAttribute("data-ha-match", "contrast")
+  await page.emulateMedia({ forcedColors: "none" })
+  await expect(root).toHaveAttribute("data-ha-match", "light")
+  await match.uncheck()
+  await expect(root).toHaveAttribute("data-theme", "dark")
+  await expect.poll(() => token("--personal-accent")).toBe("#8844ee")
+})
+
 test("ingress Auto follows device preference when its parent is cross-origin", async ({ page, context }) => {
   await context.setExtraHTTPHeaders({})
   await context.addCookies([{ name: "feedback-fixture", value: "member", url: origin }])
