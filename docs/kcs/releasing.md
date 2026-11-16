@@ -24,11 +24,13 @@ Keep at most one Canary installed during the transition: uninstall the legacy Ca
 
 | Channel | Source ref | App version | GHCR image |
 | --- | --- | --- | --- |
-| Canary (primary dev) | `dev` branch (default) | The first 12 characters of its commit ID or `0.0.2-canary` | `ghcr.io/coolock-village/meitheal-canary-{arch}:{version}` |
+| Canary (primary dev) | `dev` branch (default) | The first 12 characters of its commit ID | `ghcr.io/coolock-village/meitheal-canary-{arch}:{version}` |
 | Beta (mostly unused) | `main` branch (explicit promotion) | Prerelease / qualification | — |
 | Stable (full release) | `release` branch or matching `vX.Y.Z` tag (explicit promotion) | `0.0.{digit}` (currently `0.0.1`) | `ghcr.io/ryan-winkler/meitheal-{arch}:X.Y.Z` |
 
 ## Qualify the release
+
+The [Canary Store listing](../../meitheal-hub-canary/README.md) shows the release in testing, such as **0.0.2 Canary preview**, alongside the commit shown in Home Assistant's **Current version** field. Update the preview number in the listing and the Canary manifest description when starting the next release cycle. Keep the manifest's `version` field tied to the exact image tag.
 
 The [CI workflow](../../.github/workflows/ci.yml) runs on pull requests and pushes across `dev`, `main`, and `release`. Feature work targets `dev` (the primary branch and only branch that accepts automated pushes); `main` stays reserved as a mostly unused beta channel, and `release` stays reserved for full releases. Feature branch updates use the pull request run to avoid duplicate push and pull request checks for the same update.
 

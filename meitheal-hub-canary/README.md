@@ -1,6 +1,6 @@
 # Meitheal Canary
 
-Test builds of Meitheal, the household task manager for Home Assistant.
+**0.0.2 Canary preview** of Meitheal, the household task manager for Home Assistant.
 
 > **Warning:** Do not use Canary for your everyday tasks. Canary builds come directly from the latest source code. They can be unstable and they can lose data. Use the **Meitheal** app for everyday use. If you use Canary, make backups frequently.
 
@@ -8,14 +8,14 @@ Test builds of Meitheal, the household task manager for Home Assistant.
 
 ## About Canary
 
-Use Meitheal Canary to try new features and fixes before they go into a Stable release. The version of each Canary build is the source commit that it comes from. Thus the version on this page tells you which code you have.
+Use Meitheal Canary to try new features and fixes before they go into a Stable release. The preview number tells you which release is in testing. **Current version** shows the first 12 characters of the source commit, so you can identify the exact build when reporting a problem.
 
 Canary is a separate app (`meitheal_canary`). It has its own container and its own data folder. It does not share tasks or settings with the Stable **Meitheal** app.
 
 | Channel | App | Use it for | Version |
 |---|---|---|---|
 | Stable | **Meitheal** | Everyday household tasks | A release number, such as `0.0.1` |
-| Canary | **Meitheal Canary** | Tests of new features and fixes | The source commit of the build |
+| Canary | **Meitheal Canary** | Tests of new features and fixes | Preview number in this guide, source commit under **Current version** |
 
 ## About Meitheal
 
