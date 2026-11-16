@@ -244,7 +244,7 @@ export function initAgentTokensSettings(): void {
       prefixEl.textContent = `${token.tokenPrefix}${token.tokenPrefix.includes("...") ? "" : "…"}`
       meta.appendChild(prefixEl)
       const idEl = document.createElement("span")
-      idEl.className = "agent-tokens__row-prefix"
+      idEl.className = "agent-tokens__row-id"
       idEl.textContent = `ID: ${token.id}`
       meta.append(idEl)
 

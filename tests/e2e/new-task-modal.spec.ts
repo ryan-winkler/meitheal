@@ -206,7 +206,7 @@ test.describe("Recovered ticket form", () => {
 
   test("labeled grouped controls keep goals available without assignees and fit desktop and mobile", async ({ page }) => {
     await page.route("**/api/users", route => route.fulfill({ json: { users: [] } }))
-    await page.route("**/api/goals", route => route.fulfill({ json: { goals: [{ id: "form-goal", title: "Prepare household supplies" }] } }))
+    await page.route(url => url.pathname === "/api/goals" && url.searchParams.get("projection") === "household", route => route.fulfill({ json: { goals: [{ id: "form-goal", title: "Prepare household supplies" }] } }))
     await page.goto("/today")
     await page.getByRole("button", { name: "New Task", exact: true }).click()
     await page.addStyleTag({ content: "astro-dev-toolbar { display: none !important; }" })

@@ -14,13 +14,9 @@ const snapshot = user && directory ? boardViewKey(directory, user.actor.id) : un
 <Layout title="Boards">
   <span slot="page-title">Boards</span>
   <div class="boards-workspace">
-    <header class="boards-heading">
-      <div>
-        <h1>Boards</h1>
-        <p>Open a Board to work on its tickets.</p>
-      </div>
+    <nav class="board-back" aria-label="Planning">
       <a class="btn btn-ghost" href="/planning#spaces">Areas &amp; Projects</a>
-    </header>
+    </nav>
 
     <section class="boards-list" aria-label="Household">
       <a class="board-tile" href="/tasks">

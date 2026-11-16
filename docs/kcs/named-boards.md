@@ -1,3 +1,9 @@
+---
+type: "Guide"
+title: "Named Boards"
+description: "Set up private Boards, send-only access and scoped planning."
+---
+
 # Named Boards
 
 Open **Boards** from the sidebar inside Home Assistant. **Household** takes you to the existing task workspace. Use **New Board** for work with its own members and workflow. Use **Hide from my sidebar** to change your shortcuts. You can reopen a hidden Board from **Your Boards**.
