@@ -193,16 +193,10 @@ class MeithealDueTodaySensor(
         """Expose today's task details."""
         if not self.coordinator.data:
             return None
-        from datetime import UTC
-        from datetime import datetime as dt
-        today = dt.now(UTC).strftime("%Y-%m-%d")
-        due = [
-            t for t in self.coordinator.data.tasks
-            if t.due_date and t.due_date.startswith(today) and t.status != "done"
-        ]
+        due = self.coordinator.data.due_today_tasks[:10]
         return {
-            "task_titles": [t.title for t in due[:10]],
-            "priorities": [t.priority for t in due[:10]],
+            "task_titles": [t.title for t in due],
+            "priorities": [t.priority for t in due],
         }
 
 
