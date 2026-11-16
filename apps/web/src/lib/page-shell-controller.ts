@@ -55,10 +55,29 @@ export function initPageShellNavigation<SectionId extends string>({
   }
 
   const sectionIdSet = new Set(sectionIds)
+  const sections = document.querySelectorAll<HTMLElement>(sectionSelector)
   let linkedSection: {
     element: HTMLElement
     wasVisible: boolean
   } | null = null
+
+  function resumeSectionTracking(): void {
+    linkedSection = null
+    let mostVisibleSectionId: SectionId | null = null
+    let greatestVisibleHeight = 0
+
+    for (const section of sections) {
+      const { top, bottom } = section.getBoundingClientRect()
+      const visibleHeight = Math.min(window.innerHeight, bottom) - Math.max(0, top)
+      const sectionId = resolveSectionId(section.id)
+      if (sectionId && visibleHeight > greatestVisibleHeight) {
+        greatestVisibleHeight = visibleHeight
+        mostVisibleSectionId = sectionId
+      }
+    }
+
+    if (mostVisibleSectionId) updateActiveState(mostVisibleSectionId)
+  }
 
   function syncLinkedSectionVisibility(): void {
     if (!linkedSection) return
@@ -66,7 +85,7 @@ export function initPageShellNavigation<SectionId extends string>({
     if (bottom > 0 && top < window.innerHeight) {
       linkedSection.wasVisible = true
     } else if (linkedSection.wasVisible) {
-      linkedSection = null
+      resumeSectionTracking()
     }
   }
 
@@ -153,7 +172,6 @@ export function initPageShellNavigation<SectionId extends string>({
     })
   })
 
-  const sections = document.querySelectorAll<HTMLElement>(sectionSelector)
   if (sections.length === 0) {
     log.warn("No shell sections matched selector", {
       barId,
@@ -165,7 +183,7 @@ export function initPageShellNavigation<SectionId extends string>({
   if (sections.length > 0) {
     pageLifecycle.on(window, "scroll", syncLinkedSectionVisibility, { passive: true })
     pageLifecycle.on(document, "scrollend", () => {
-      if (linkedSection && !linkedSection.wasVisible) linkedSection = null
+      if (linkedSection && !linkedSection.wasVisible) resumeSectionTracking()
     })
     const observer = new IntersectionObserver(
       (entries) => {
