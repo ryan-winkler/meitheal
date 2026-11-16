@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto"
 import type { Client, Transaction } from "@libsql/client"
-import { isDoneStatus, normalizeStatus, STATUS } from "../../../lib/status-config"
+import { isClosedStatus, isDoneStatus, normalizeStatus, STATUS } from "../../../lib/status-config"
 import { readBoardGrantRevision } from "./board-grant-fence"
 import { permitsBoardTaskAction, selectNamedBoardAccess, type BoardActor, type TaskBoardAction } from "./named-board-repository"
 import { canAdvanceTaskTimestampMs, nextTaskTimestampMs, taskTimestampMs } from "./task-timestamp"
@@ -95,7 +95,9 @@ export class NamedBoardTaskRepository {
       if (!current) return unavailable
       const lane = await this.readLane(tx, boardId, laneId)
       if (!lane) return unavailable
-      const wasDone = isDoneStatus(String(current.status))
+      const previousStatus = String(current.status)
+      const wasDone = isDoneStatus(previousStatus)
+      if (!wasDone && isClosedStatus(previousStatus) && !allows("restore")) return denied
       const becomesDone = isDoneStatus(lane.status)
       if (wasDone !== becomesDone && !allows(becomesDone ? "complete" : "reopen")) return denied
       if (current.version !== version) return stale

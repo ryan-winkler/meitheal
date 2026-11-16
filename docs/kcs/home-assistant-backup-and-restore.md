@@ -8,7 +8,7 @@ description: "Back up, restore, and verify Meitheal with the Home Assistant Supe
 
 Stable and canary use Supervisor-managed cold backups. Supervisor stops a running Meitheal app before archiving its data and starts it again afterward. The app is unavailable during the snapshot. [Home Assistant app backup configuration](https://contributors.home-assistant.io/apps/reference/configuration/#backups)
 
-The in-app SQLite download is unavailable once a named Board is stored. The copy contains every Board. Use the Home Assistant backup controls for App storage custody. Named Board access uses a separate revision file excluded from the App backup. A restored App whose database and current revision disagree keeps named Board access closed.
+The in-app SQLite download is unavailable once a named Board is stored. The copy contains every Board. Use the Home Assistant backup controls for App storage custody. Named Board access uses a separate revision file and a pending publication directory excluded from the App backup. A live interruption can finish publishing an exact matching committed revision from that directory. A restored App whose database and current revision disagree keeps named Board access closed.
 
 ## What is protected
 

@@ -3,7 +3,7 @@ import type { Client } from "@libsql/client"
 import { verifyCurrentHAParticipant } from "@domains/ha/current-admin"
 import { verifiedIngressUser } from "@lib/verified-ingress-user"
 
-import { readBoardGrantRevision } from "./board-grant-fence"
+import { boardGrantStillCurrent, currentBoardGrantRevision } from "./board-grant-fence"
 
 export interface SharedGoalProgress {
   id: string
@@ -31,10 +31,10 @@ export async function listSharedGoals(
 ): Promise<SharedGoalProgress[]> {
   const viewer = verifiedIngressUser(locals)
   if (!viewer || signal.aborted) return []
-  const revision = await readBoardGrantRevision()
+  const revision = await currentBoardGrantRevision(db)
   if (!revision || await verifyCurrentHAParticipant(viewer.id, signal) !== "allowed") return []
   const goals = await readSharedGoals(db, viewer.id, scope, revision, signal)
-  if (signal.aborted || await readBoardGrantRevision() !== revision) return []
+  if (signal.aborted || !await boardGrantStillCurrent(db, revision)) return []
   return goals
 }
 

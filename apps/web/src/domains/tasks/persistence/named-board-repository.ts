@@ -1,6 +1,6 @@
 import { randomBytes, randomUUID } from "node:crypto"
 import type { Client, Transaction } from "@libsql/client"
-import { changeBoardGrants, readBoardGrantRevision } from "./board-grant-fence"
+import { boardGrantStillCurrent, changeBoardGrants, currentBoardGrantRevision, readBoardGrantRevision } from "./board-grant-fence"
 
 export type BoardActor = { kind: "ha_user" | "agent"; id: string }
 export type BoardRole = "owner" | "member" | "viewer" | "service"
@@ -73,10 +73,10 @@ export class NamedBoardRepository {
 
   /** Read a scope without inheriting permissions from Home Assistant administration. */
   async findAccess(actor: BoardActor, id: string) {
-    const revision = await readBoardGrantRevision(this.markerPath)
+    const revision = await currentBoardGrantRevision(this.db, this.markerPath)
     if (!revision) return null
     const access = await selectNamedBoardAccess(this.db, actor, revision, id)
-    return await readBoardGrantRevision(this.markerPath) === revision ? access : null
+    return await boardGrantStillCurrent(this.db, revision, this.markerPath) ? access : null
   }
 
   /** The caller verifies that the creator is the current active Home Assistant user. */

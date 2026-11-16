@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { expect, test } from "@playwright/test"
@@ -105,6 +105,24 @@ test("a restored, absent, or replaced grant marker fails closed", async () => {
   await rm(marker)
   await writeFile(marker, active)
   expect(await repo.findAccess(actor, id)).not.toBeNull()
+})
+
+test("failed grant-marker publication can recover the one committed change", async () => {
+  const db = getPersistenceClient()
+  const repo = new NamedBoardRepository(db, marker)
+  await mkdir(marker)
+  const creation = await repo.create("owner", "Work")
+  expect(creation.status).toBe("committed-locked")
+  if (creation.status !== "committed-locked") throw new Error("Expected a durable Board with work still locked")
+  const { id } = creation.result
+  const actor = { kind: "ha_user", id: "owner" } as const
+  expect(await repo.findAccess(actor, id)).toBeNull()
+  await rm(marker, { recursive: true })
+
+  expect(await repo.findAccess(actor, id)).toMatchObject({ id, name: "Work" })
+  const { rows } = await db.execute("SELECT id FROM task_boards WHERE id <> 'household'")
+  expect(rows.map(row => row.id)).toEqual([id])
+  expect(await readBoardGrantRevision(marker)).toMatch(/^[0-9a-f-]{36}$/)
 })
 
 test("a child can move and edit a named ticket while completion and deletion remain denied", async () => {
