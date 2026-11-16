@@ -44,6 +44,30 @@ const objects = {
     AFTER UPDATE OF owner_board_id ON goals
     WHEN NEW.owner_board_id IS NOT OLD.owner_board_id
     BEGIN DELETE FROM board_goal_shares WHERE goal_id = OLD.id; END`,
+  board_task_planning: `CREATE TABLE board_task_planning (
+    task_id TEXT PRIMARY KEY NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    area_id TEXT REFERENCES areas(id) ON DELETE RESTRICT,
+    project_id TEXT REFERENCES projects(id) ON DELETE RESTRICT,
+    goal_id TEXT REFERENCES goals(id) ON DELETE RESTRICT,
+    CHECK (area_id IS NOT NULL OR project_id IS NOT NULL OR goal_id IS NOT NULL)
+  )`,
+  board_task_planning_area_idx: `CREATE INDEX board_task_planning_area_idx
+    ON board_task_planning(area_id) WHERE area_id IS NOT NULL`,
+  board_task_planning_project_idx: `CREATE INDEX board_task_planning_project_idx
+    ON board_task_planning(project_id) WHERE project_id IS NOT NULL`,
+  board_task_planning_goal_idx: `CREATE INDEX board_task_planning_goal_idx
+    ON board_task_planning(goal_id) WHERE goal_id IS NOT NULL`,
+  board_task_planning_named_insert: `CREATE TRIGGER board_task_planning_named_insert
+    BEFORE INSERT ON board_task_planning
+    WHEN NOT EXISTS (SELECT 1 FROM tasks WHERE id = NEW.task_id AND task_board_id IS NOT NULL)
+    BEGIN SELECT RAISE(ABORT, 'Task planning requires a named Board ticket'); END`,
+  board_task_planning_task_update: `CREATE TRIGGER board_task_planning_task_update
+    BEFORE UPDATE OF task_id ON board_task_planning WHEN NEW.task_id IS NOT OLD.task_id
+    BEGIN SELECT RAISE(ABORT, 'Task planning cannot change tickets'); END`,
+  board_task_planning_household_return: `CREATE TRIGGER board_task_planning_household_return
+    BEFORE UPDATE OF task_board_id ON tasks
+    WHEN NEW.task_board_id IS NULL AND EXISTS (SELECT 1 FROM board_task_planning WHERE task_id = OLD.id)
+    BEGIN SELECT RAISE(ABORT, 'Remove named Board task planning before changing to Household'); END`,
   board_access_epoch: `CREATE TABLE board_access_epoch (
     singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
     revision TEXT NOT NULL CHECK (length(revision) = 36)

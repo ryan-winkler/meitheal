@@ -313,7 +313,10 @@ export function taskInsertStatement(data: TaskCreationData, createdAt: number, {
           SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                   ${nextHouseholdTicketNumberSql}, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                   ?, ?, ?, ?
-          ${guard ? `WHERE ${guard.sql}` : ""}
+          WHERE NOT EXISTS (SELECT 1 FROM areas WHERE id = ? AND owner_board_id IS NOT NULL)
+            AND NOT EXISTS (SELECT 1 FROM projects WHERE id = ? AND owner_board_id IS NOT NULL)
+            AND NOT EXISTS (SELECT 1 FROM goals WHERE id = ? AND owner_board_id IS NOT NULL)
+            ${guard ? `AND (${guard.sql})` : ""}
           RETURNING ticket_number`,
     args: [
       data.id, data.title, data.description, normalizeStatus(data.status), data.priority,
@@ -326,6 +329,7 @@ export function taskInsertStatement(data: TaskCreationData, createdAt: number, {
       data.effort_minutes ?? null, data.effort_type ?? null, data.blocked_by ?? null,
       data.source ?? "user", data.created_by ?? null,
       idempotencyKey, requestId, createdAt, createdAt,
+      data.area_id, data.project_id ?? null, data.goal_id ?? null,
       ...(guard?.args ?? []),
     ] as InValue[],
   }
@@ -1367,13 +1371,15 @@ export class TaskRepository {
    */
   async createTask(data: TaskCreationData, createdAt = Date.now()): Promise<number> {
     const result = await this.client.execute(taskInsertStatement(data, createdAt))
-    return Number(result.rows[0]!.ticket_number)
+    const ticket = result.rows[0]
+    if (!ticket) throw new Error("Task relationships are unavailable")
+    return Number(ticket.ticket_number)
   }
 
   /** Resolve a physical tag without silently choosing duplicate assignments. */
   async findByNfcTag(tagId: string): Promise<Array<{ id: string; title: string; status: string }>> {
     const result = await this.client.execute({
-      sql: "SELECT id, title, status FROM tasks WHERE nfc_tag_id = ? AND status != 'archived' ORDER BY id LIMIT 2",
+      sql: "SELECT id, title, status FROM tasks WHERE task_board_id IS NULL AND nfc_tag_id = ? AND status != 'archived' ORDER BY id LIMIT 2",
       args: [tagId],
     })
     return result.rows as unknown as Array<{ id: string; title: string; status: string }>
@@ -1461,9 +1467,18 @@ export class TaskRepository {
     // destination in the write so project deletion cannot race reassignment.
     const projectId = fields.project_id
     const destinationExists = typeof projectId === "string"
-      ? " AND EXISTS (SELECT 1 FROM projects WHERE id = ?)"
+      ? " AND EXISTS (SELECT 1 FROM projects WHERE id = ? AND owner_board_id IS NULL)"
       : ""
     if (typeof projectId === "string") whereArgs.push(projectId)
+    const planningGuards: string[] = []
+    if (typeof fields.area_id === "string") {
+      planningGuards.push("NOT EXISTS (SELECT 1 FROM areas WHERE id = ? AND owner_board_id IS NOT NULL)")
+      whereArgs.push(fields.area_id)
+    }
+    if (typeof fields.goal_id === "string") {
+      planningGuards.push("NOT EXISTS (SELECT 1 FROM goals WHERE id = ? AND owner_board_id IS NOT NULL)")
+      whereArgs.push(fields.goal_id)
+    }
     const checklistMatches = expectedChecklists === undefined ? "" : " AND checklists IS ?"
     if (expectedChecklists !== undefined) whereArgs.push(expectedChecklists)
     const assigneeMatches = expectedAssignedTo === undefined ? "" : " AND assigned_to = ?"
@@ -1481,7 +1496,8 @@ export class TaskRepository {
 
     const dependencies = fields.status === STATUS.ACTIVE ? openTaskDependencies(id) : null
     if (dependencies) whereArgs.push(...dependencies.args)
-    const where = `WHERE id = ? AND task_board_id IS NULL${destinationExists}${checklistMatches}${assigneeMatches}
+    const planningAvailable = planningGuards.map(guard => ` AND ${guard}`).join("")
+    const where = `WHERE id = ? AND task_board_id IS NULL${destinationExists}${planningAvailable}${checklistMatches}${assigneeMatches}
       ${predicates.length ? `AND ${predicates.join(" AND ")}` : ""}
       ${dependencies ? `AND NOT EXISTS (${dependencies.sql})` : ""}`
     const updateSql = `UPDATE tasks SET ${updates.join(", ")} ${where}
@@ -1495,19 +1511,19 @@ export class TaskRepository {
     const diagnostics: InStatement[] = []
     const versionIndex = version ? diagnostics.length : -1
     if (version) {
-      diagnostics.push({ sql: `SELECT status, deferred_at, ${storedVersion} AS updated_at FROM tasks WHERE id = ?`, args: [id] })
+      diagnostics.push({ sql: `SELECT status, deferred_at, ${storedVersion} AS updated_at FROM tasks WHERE id = ? AND task_board_id IS NULL`, args: [id] })
     }
     const checklistIndex = expectedChecklists !== undefined ? diagnostics.length : -1
     if (expectedChecklists !== undefined) {
       diagnostics.push({
-        sql: "SELECT checklists FROM tasks WHERE id = ? AND checklists IS NOT ?",
+        sql: "SELECT checklists FROM tasks WHERE id = ? AND task_board_id IS NULL AND checklists IS NOT ?",
         args: [id, expectedChecklists],
       })
     }
     const assigneeIndex = expectedAssignedTo !== undefined ? diagnostics.length : -1
     if (expectedAssignedTo !== undefined) {
       diagnostics.push({
-        sql: "SELECT id FROM tasks WHERE id = ? AND (assigned_to IS NULL OR assigned_to != ?)",
+        sql: "SELECT id FROM tasks WHERE id = ? AND task_board_id IS NULL AND (assigned_to IS NULL OR assigned_to != ?)",
         args: [id, expectedAssignedTo],
       })
     }
@@ -1522,11 +1538,11 @@ export class TaskRepository {
     const reassigning = fields.assigned_to !== undefined
     const statusIndex = diagnostics.length
     if (typeof fields.status === "string") {
-      diagnostics.push({ sql: "SELECT status, date('now') AS completion_day FROM tasks WHERE id = ?", args: [id] })
+      diagnostics.push({ sql: "SELECT status, date('now') AS completion_day FROM tasks WHERE id = ? AND task_board_id IS NULL", args: [id] })
     }
     const assigneeDiagIndex = reassigning ? diagnostics.length : -1
     if (reassigning) {
-      diagnostics.push({ sql: "SELECT assigned_to FROM tasks WHERE id = ?", args: [id] })
+      diagnostics.push({ sql: "SELECT assigned_to FROM tasks WHERE id = ? AND task_board_id IS NULL", args: [id] })
     }
 
     const writeIndex = diagnostics.length + (activity ? 1 : 0)
@@ -1973,7 +1989,7 @@ export class TaskRepository {
                                checklists, custom_fields, ticket_number,
                                idempotency_key, request_id, created_at, updated_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    (SELECT id FROM projects WHERE id = ?), ?, ?, ?, ?, ?, ?,
+                    (SELECT id FROM projects WHERE id = ? AND owner_board_id IS NULL), ?, ?, ?, ?, ?, ?,
                     ${nextHouseholdTicketNumberSql}, ?, ?, ?, ?)
             RETURNING ticket_number`,
       args: [

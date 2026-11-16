@@ -40,6 +40,7 @@ export const EXCLUDED_OPS = new Set([
   "findCommentPeople", "useMentionInbox",
   "readTaskDraft", "verifyTaskDraftContext", "writeTaskDraft",
   "checkPersonalPillarSession",
+  "checkSharedGoalProjection",
 ])
 
 /** Must match FRIENDLY_NAMES in apps/web/src/pages/api/mcp.ts */

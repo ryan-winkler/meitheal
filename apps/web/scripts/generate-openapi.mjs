@@ -1543,6 +1543,15 @@ const paths = {
 
   // ── Goals ──
   "/api/goals": {
+    head: {
+      operationId: "checkSharedGoalProjection", tags: ["Hierarchy"], summary: "Verify the current viewer's shared Goal projection",
+      parameters: [
+        { name: "X-Meitheal-Goal-Projection", in: "header", required: true, schema: { type: "string" } },
+        { name: "area_id", in: "query", schema: { type: "string" } },
+        { name: "project_id", in: "query", schema: { type: "string" } },
+      ],
+      responses: { 204: { description: "Current shared Goal projection matches" }, 409: { description: "Refresh Goals" }, 503: { description: "Cannot verify projection" } },
+    },
     get: {
       operationId: "listGoals",
       tags: ["Hierarchy"],
@@ -1552,6 +1561,7 @@ const paths = {
         { name: "area_id", in: "query", schema: { type: "string" }, description: "Goals linked to this Area directly or through one of its projects." },
         { name: "project_id", in: "query", schema: { type: "string" }, description: "The goal linked to this project." },
         { name: "status", in: "query", schema: { type: "string", enum: ["active", "completed", "archived", "shared"] } },
+        { name: "projection", in: "query", schema: { type: "string", enum: ["household"] }, description: "Select Household Goals for the legacy task editor." },
       ],
       responses: { 200: jsonContent({ type: "object", required: ["goals"], properties: {
         goals: { type: "array", items: { oneOf: [ref("Goal"), ref("SharedGoal")] } },
@@ -1560,7 +1570,7 @@ const paths = {
     post: { operationId: "createGoal", tags: ["Hierarchy"], summary: "Create a goal", requestBody: { content: { "application/json": { schema: ref("Goal") } } }, responses: { 201: jsonContent(ref("Goal"), "Created") } },
   },
   "/api/goals/{id}": {
-    get: { operationId: "getGoal", tags: ["Hierarchy"], summary: "Get goal details", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: jsonContent(ref("Goal"), "Goal") } },
+    get: { operationId: "getGoal", tags: ["Hierarchy"], summary: "Get goal details", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: jsonContent({ oneOf: [ref("Goal"), ref("SharedGoal")] }, "Goal") } },
     put: { operationId: "updateGoal", tags: ["Hierarchy"], summary: "Update a goal, including progress metrics", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], requestBody: { content: { "application/json": { schema: ref("Goal") } } }, responses: { 200: jsonContent(ref("Goal"), "Updated") } },
     delete: { operationId: "deleteGoal", tags: ["Hierarchy"], summary: "Delete a goal", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: { description: "Deleted" } } },
   },

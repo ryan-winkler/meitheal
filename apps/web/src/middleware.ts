@@ -221,7 +221,7 @@ export const onRequest: MiddlewareHandler = async (context, next) => {
   const taskHistoryRoute = hasTaskHistoryPath || taskHistoryPath.test(routePattern) || taskHistoryPath.test(url.pathname)
   const participantRoute = commentPaths.has(routePattern) || reactionPaths.has(routePattern)
   const privatePillars = routePattern === "/progress" || pillarPagePath.test(routePattern) || pillarApiPath.test(routePattern)
-  const boardPlanningRoute = routePattern === "/areas/[id]" || routePattern === "/api/goals"
+  const boardPlanningRoute = routePattern === "/goals" || routePattern === "/areas/[id]" || routePattern === "/api/goals" || routePattern === "/api/goals/[id]"
   const privateTaskRoute = pinRoute || draftRoute || inactivityApi || inactivityPage || mentionRoute || labelCleanup
   if (!privateTaskRoute && !onlineReadRoute && !taskHistoryRoute && !participantRoute && !privatePillars && !boardPlanningRoute) {
     return handleRequest(context, next, requestUrl)

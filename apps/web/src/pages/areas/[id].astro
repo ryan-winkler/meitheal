@@ -11,7 +11,8 @@ import {
   ensureSchema,
   getPersistenceClient,
 } from "@domains/tasks/persistence/store"
-import { HierarchyRepository, type AreaRow, type GoalRow, type ProjectRow } from "@domains/tasks/persistence/hierarchy-repository"
+import { HierarchyRepository, type AreaRow, type ProjectRow } from "@domains/tasks/persistence/hierarchy-repository"
+import { listSharedGoals, type SharedGoalProgress } from "@domains/tasks/persistence/shared-goal-repository"
 import { TaskRepository } from "@domains/tasks/persistence/task-repository"
 import { TemplateRepository, type RoutineTemplateRow } from "@domains/tasks/persistence/template-repository"
 import GoalsTab from "../../components/progress/GoalsTab.astro"
@@ -24,7 +25,8 @@ if (!areaId) {
 }
 
 let area: AreaRow | null
-let goals: GoalRow[]
+let goalCount = 0
+let sharedGoals: SharedGoalProgress[] = []
 let projects: ProjectRow[]
 let routines: RoutineTemplateRow[] = []
 let routinesEnabled = false
@@ -41,11 +43,13 @@ try {
     return Astro.redirect(areasPath)
   }
 
-  const [areaGoals, areaProjects] = await Promise.all([
+  const [areaGoals, areaProjects, receivedGoals] = await Promise.all([
     repo.findAllGoals({ area_id: areaId }),
     repo.findProjectsByArea(areaId),
+    listSharedGoals(client, Astro.locals, Astro.request.signal, { areaId }),
   ])
-  goals = areaGoals
+  sharedGoals = receivedGoals
+  goalCount = new Set([...areaGoals, ...receivedGoals].map(goal => goal.id)).size
   projects = areaProjects
   routinesEnabled = await isFeatureEnabled("habits")
   if (routinesEnabled) routines = await new TemplateRepository(client).findRoutines(areaId)
@@ -110,19 +114,19 @@ const tabs = [
     <div class="project-grid">
       {[
         { id: "projects", title: "Projects", count: projects.length, empty: "Group related work" },
-        { id: "goals", title: "Goals", count: goals.length, empty: "Define an outcome" },
+        { id: "goals", title: "Goals", count: goalCount, empty: "Define an outcome" },
         ...(routinesEnabled ? [{ id: "routines", title: "Routines", count: routines.length, empty: "Schedule repeat work" }] : []),
       ].map(({ id, title, count, empty }) => (
         <a class="project-card" href={`#${id}`} data-astro-reload>
           <h3 class="project-card-name">{title}</h3>
-          <p class="project-card-meta">{count ? `${count} in this Area` : empty}</p>
+          <p class="project-card-meta" data-board-goal-projection={id === "goals" && sharedGoals.length ? "" : undefined}>{count ? `${count} in this Area` : empty}</p>
         </a>
       ))}
     </div>
   </section>
 
   <section id="section-goals" class="area-section" data-section="goals" role="tabpanel" aria-labelledby="area-tab-goals" tabindex="0">
-    <GoalsTab {areaId} />
+    <GoalsTab {areaId} {sharedGoals} />
   </section>
 
   {routinesEnabled && (

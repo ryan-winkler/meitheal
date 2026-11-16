@@ -4038,6 +4038,32 @@ paths:
         "200":
           description: Deleted
   /api/goals:
+    head:
+      operationId: checkSharedGoalProjection
+      tags:
+        - Hierarchy
+      summary: Verify the current viewer's shared Goal projection
+      parameters:
+        - name: X-Meitheal-Goal-Projection
+          in: header
+          required: true
+          schema:
+            type: string
+        - name: area_id
+          in: query
+          schema:
+            type: string
+        - name: project_id
+          in: query
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Current shared Goal projection matches
+        "409":
+          description: Refresh Goals
+        "503":
+          description: Cannot verify projection
     get:
       operationId: listGoals
       tags:
@@ -4065,6 +4091,13 @@ paths:
               - completed
               - archived
               - shared
+        - name: projection
+          in: query
+          schema:
+            type: string
+            enum:
+              - household
+          description: Select Household Goals for the legacy task editor.
       responses:
         "200":
           description: Goals
@@ -4117,7 +4150,9 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Goal"
+                oneOf:
+                  - $ref: "#/components/schemas/Goal"
+                  - $ref: "#/components/schemas/SharedGoal"
     put:
       operationId: updateGoal
       tags:

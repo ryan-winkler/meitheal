@@ -1,6 +1,6 @@
 import type { APIRoute } from "astro"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
-import { listSharedGoals } from "@domains/tasks/persistence/shared-goal-repository"
+import { listSharedGoals, sharedGoalProjectionKey } from "@domains/tasks/persistence/shared-goal-repository"
 import { HierarchyRepository } from "@domains/tasks/persistence/hierarchy-repository"
 import { stripHtml } from "../../../lib/strip-html"
 import { apiError, apiJson } from "../../../lib/api-response"
@@ -19,6 +19,26 @@ import { logApiError } from "../../../lib/api-logger"
  * @see docs/decisions/ADR-007-hierarchy-model.md
  */
 
+export const HEAD: APIRoute = async ({ url, locals, request }) => {
+  const expected = request.headers.get("x-meitheal-goal-projection")
+  const headers = { "cache-control": "private, no-store" }
+  if (!expected || !/^[0-9a-f]{64}$/.test(expected)) return new Response(null, { status: 409, headers })
+
+  try {
+    await ensureSchema()
+    const areaId = url.searchParams.get("area_id")
+    const projectId = url.searchParams.get("project_id")
+    const goals = await listSharedGoals(getPersistenceClient(), locals, request.signal, {
+      ...(areaId ? { areaId } : {}),
+      ...(projectId ? { projectId } : {}),
+    })
+    const matches = sharedGoalProjectionKey(goals) === expected
+    return new Response(null, { status: matches ? 204 : 409, headers })
+  } catch {
+    return new Response(null, { status: 503, headers })
+  }
+}
+
 export const GET: APIRoute = async ({ url, locals, request }) => {
   try {
     await ensureSchema()
@@ -32,14 +52,22 @@ export const GET: APIRoute = async ({ url, locals, request }) => {
     if (project_id) filters.project_id = project_id
     if (status) filters.status = status
     const goals = await repo.findAllGoals(filters)
-    const shared = !status || status === "shared"
+    const wantsShared = url.searchParams.get("projection") !== "household" && (!status || status === "shared")
+    const shared = wantsShared
       ? await listSharedGoals(client, locals, request.signal, {
         ...(area_id ? { areaId: area_id } : {}),
         ...(project_id ? { projectId: project_id } : {}),
       }) : []
-    const ownedIds = new Set(goals.map(goal => goal.id))
-    const received = shared.filter(goal => !ownedIds.has(goal.id))
-    return apiJson({ goals: [...goals, ...received.map(goal => ({ ...goal, status: "shared", shared: true }))] })
+    const sharedById = new Map(shared.map(goal => [goal.id, goal]))
+    const projected = goals.map(goal => {
+      const progress = sharedById.get(goal.id)
+      sharedById.delete(goal.id)
+      return progress ? {
+        ...goal, project_count: progress.project_count, completed_project_count: progress.completed_project_count,
+      } : goal
+    })
+    const received = [...sharedById.values()].map(goal => ({ ...goal, status: "shared", shared: true }))
+    return apiJson({ goals: [...projected, ...received] })
   } catch (error) {
     logApiError("goals", "GET error", error)
     return apiError("Failed to list goals")

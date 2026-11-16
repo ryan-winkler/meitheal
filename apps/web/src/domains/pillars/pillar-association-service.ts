@@ -17,6 +17,7 @@
  */
 
 import { randomUUID } from "node:crypto"
+import type { Row } from "@libsql/client"
 import { getPersistenceClient } from "../tasks/persistence/store"
 import { ensurePillarSchema, HOUSEHOLD_PILLAR_OWNER, type Pillar } from "./pillar-service"
 
@@ -72,6 +73,25 @@ export interface PillarAssociation {
   createdAt: number
 }
 
+const householdPillar = (id: string) => `SELECT 1 FROM pillars
+  WHERE id = ${id} AND owner_board_id IS NULL AND user_id = '${HOUSEHOLD_PILLAR_OWNER}'`
+
+const householdEntity = (kind: string, id: string) => `(
+  (${kind} = 'goal' AND EXISTS (SELECT 1 FROM goals WHERE id = ${id} AND owner_board_id IS NULL))
+  OR (${kind} = 'routine' AND EXISTS (SELECT 1 FROM task_templates WHERE id = ${id} AND is_routine = 1))
+  OR (${kind} = 'task' AND EXISTS (SELECT 1 FROM tasks WHERE id = ${id} AND task_board_id IS NULL))
+)`
+
+function mapAssociation(row: Row): PillarAssociation {
+  return {
+    id: String(row.id),
+    pillarId: String(row.pillar_id),
+    entityType: String(row.entity_type) as PillarEntityType,
+    entityId: String(row.entity_id),
+    createdAt: Number(row.created_at),
+  }
+}
+
 // ── M2M Association CRUD ────────────────────────────────────────
 
 function generateId(): string {
@@ -82,7 +102,7 @@ export async function linkEntity(
   pillarId: string,
   entityType: PillarEntityType,
   entityId: string
-): Promise<PillarAssociation> {
+): Promise<PillarAssociation | null> {
   await ensureAssociationSchema()
   const client = getPersistenceClient()
 
@@ -90,16 +110,22 @@ export async function linkEntity(
     throw new Error(`Invalid entity type: ${entityType}. Must be one of: ${VALID_PILLAR_ENTITY_TYPES.join(", ")}`)
   }
 
-  const id = generateId()
-  const now = Date.now()
-
-  await client.execute({
-    sql: `INSERT OR IGNORE INTO pillar_associations (id, pillar_id, entity_type, entity_id, created_at)
-          VALUES (?, ?, ?, ?, ?)`,
-    args: [id, pillarId, entityType, entityId, now],
-  })
-
-  return { id, pillarId, entityType, entityId, createdAt: now }
+  const [, existing] = await client.batch([
+    {
+      sql: `WITH target(kind, entity_id) AS (VALUES (?, ?))
+            INSERT OR IGNORE INTO pillar_associations (id, pillar_id, entity_type, entity_id, created_at)
+            SELECT ?, ?, kind, entity_id, ? FROM target
+            WHERE EXISTS (${householdPillar("?")}) AND ${householdEntity("target.kind", "target.entity_id")}`,
+      args: [entityType, entityId, generateId(), pillarId, Date.now(), pillarId],
+    }, {
+      sql: `SELECT * FROM pillar_associations AS link
+            WHERE link.pillar_id = ? AND link.entity_type = ? AND link.entity_id = ?
+              AND EXISTS (${householdPillar("link.pillar_id")}) AND ${householdEntity("link.entity_type", "link.entity_id")}`,
+      args: [pillarId, entityType, entityId],
+    },
+  ], "write")
+  const row = existing?.rows[0]
+  return row ? mapAssociation(row) : null
 }
 
 export async function unlinkEntity(
@@ -111,7 +137,8 @@ export async function unlinkEntity(
   const client = getPersistenceClient()
 
   const result = await client.execute({
-    sql: "DELETE FROM pillar_associations WHERE pillar_id = ? AND entity_type = ? AND entity_id = ?",
+    sql: `DELETE FROM pillar_associations AS link WHERE pillar_id = ? AND entity_type = ? AND entity_id = ?
+      AND EXISTS (${householdPillar("link.pillar_id")}) AND ${householdEntity("link.entity_type", "link.entity_id")}`,
     args: [pillarId, entityType, entityId],
   })
 
@@ -123,20 +150,12 @@ export async function getAssociationsForPillar(pillarId: string): Promise<Pillar
   const client = getPersistenceClient()
 
   const result = await client.execute({
-    sql: "SELECT * FROM pillar_associations WHERE pillar_id = ? ORDER BY created_at ASC",
+    sql: `SELECT * FROM pillar_associations AS link WHERE pillar_id = ?
+      AND EXISTS (${householdPillar("link.pillar_id")}) AND ${householdEntity("link.entity_type", "link.entity_id")}
+      ORDER BY created_at ASC, id ASC`,
     args: [pillarId],
   })
-
-  return result.rows.map(row => {
-    const r = row as Record<string, unknown>
-    return {
-      id: String(r.id),
-      pillarId: String(r.pillar_id),
-      entityType: String(r.entity_type) as PillarEntityType,
-      entityId: String(r.entity_id),
-      createdAt: Number(r.created_at),
-    }
-  })
+  return result.rows.map(mapAssociation)
 }
 
 export async function getPillarsForEntity(
@@ -151,6 +170,7 @@ export async function getPillarsForEntity(
       SELECT p.* FROM pillars p
       INNER JOIN pillar_associations pa ON pa.pillar_id = p.id
       WHERE pa.entity_type = ? AND pa.entity_id = ? AND p.is_active = 1 AND p.owner_board_id IS NULL AND p.user_id = ?
+        AND ${householdEntity("pa.entity_type", "pa.entity_id")}
       ORDER BY p.weight DESC, p.position ASC
     `,
     args: [entityType, entityId, HOUSEHOLD_PILLAR_OWNER],
@@ -185,9 +205,12 @@ export async function setEntityPillar(
   await ensureAssociationSchema()
   const client = getPersistenceClient()
 
+  const scope = table === "tasks" ? "task_board_id IS NULL" : table === "goals" ? "owner_board_id IS NULL" : "is_routine = 1"
   const result = await client.execute({
-    sql: `UPDATE ${table} SET pillar_id = ? WHERE id = ?`,
-    args: [pillarId, entityId],
+    sql: `UPDATE ${table} SET pillar_id = ? WHERE id = ? AND ${scope}
+      AND (pillar_id IS NULL OR EXISTS (${householdPillar(`${table}.pillar_id`)}))
+      AND (? IS NULL OR EXISTS (${householdPillar("?")}))`,
+    args: [pillarId, entityId, pillarId, pillarId],
   })
 
   return (result.rowsAffected ?? 0) > 0
@@ -200,8 +223,10 @@ export async function getEntityPillarId(
   await ensureAssociationSchema()
   const client = getPersistenceClient()
 
+  const scope = table === "tasks" ? "task_board_id IS NULL" : table === "goals" ? "owner_board_id IS NULL" : "is_routine = 1"
   const result = await client.execute({
-    sql: `SELECT pillar_id FROM ${table} WHERE id = ?`,
+    sql: `SELECT pillar_id FROM ${table} WHERE id = ? AND ${scope}
+      AND EXISTS (${householdPillar(`${table}.pillar_id`)})`,
     args: [entityId],
   })
 

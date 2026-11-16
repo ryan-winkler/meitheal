@@ -71,6 +71,12 @@ const householdProjectProjection = `projects.*, (${householdAreaLink("projects.a
 export class HierarchyRepository {
   constructor(private client: Client) {}
 
+  /** Named Board links can only be removed by an operation with all affected rights. */
+  async legacyPlanningDeletionAvailable(): Promise<boolean> {
+    const { rows } = await this.client.execute("SELECT 1 FROM board_access_epoch")
+    return rows.length === 0
+  }
+
   // ── Areas ────────────────────────────────────────────────────────
 
   async findAllAreas(): Promise<AreaRow[]> {
@@ -134,6 +140,7 @@ export class HierarchyRepository {
   async deleteArea(id: string): Promise<boolean> {
     const result = await this.client.execute({
       sql: `DELETE FROM areas WHERE id = ? AND owner_board_id IS NULL
+        AND NOT EXISTS (SELECT 1 FROM board_access_epoch)
         AND NOT EXISTS (SELECT 1 FROM projects WHERE area_id = areas.id AND owner_board_id IS NOT NULL)
         AND NOT EXISTS (SELECT 1 FROM goals WHERE area_id = areas.id AND owner_board_id IS NOT NULL)
         AND NOT EXISTS (SELECT 1 FROM tasks WHERE area_id = areas.id AND task_board_id IS NOT NULL)
@@ -244,10 +251,11 @@ export class HierarchyRepository {
     args.push(id)
 
     const area = data.area_id
+    const existingAreaGuard = area === undefined ? "" : `AND (area_id IS NULL OR EXISTS (${householdAreaLink("goals.area_id")}))`
     const areaGuard = area == null ? "" : `AND EXISTS (${householdAreaLink("?")})`
     if (area != null) args.push(area)
     const result = await this.client.execute({
-      sql: `UPDATE goals SET ${sets.join(", ")} WHERE id = ? AND owner_board_id IS NULL ${areaGuard}`,
+      sql: `UPDATE goals SET ${sets.join(", ")} WHERE id = ? AND owner_board_id IS NULL ${existingAreaGuard} ${areaGuard}`,
       args,
     })
     return (result.rowsAffected ?? 0) > 0
@@ -256,6 +264,7 @@ export class HierarchyRepository {
   async deleteGoal(id: string): Promise<boolean> {
     const result = await this.client.execute({
       sql: `DELETE FROM goals WHERE id = ? AND owner_board_id IS NULL
+        AND NOT EXISTS (SELECT 1 FROM board_access_epoch)
         AND NOT EXISTS (SELECT 1 FROM projects WHERE goal_id = goals.id AND owner_board_id IS NOT NULL)
         AND NOT EXISTS (SELECT 1 FROM tasks WHERE goal_id = goals.id AND task_board_id IS NOT NULL)
         AND NOT EXISTS (SELECT 1 FROM board_goal_shares WHERE goal_id = goals.id)`,
@@ -278,8 +287,9 @@ export class HierarchyRepository {
 
     if (filters?.goal_id) { conditions.push("visible_goal_id = ?"); args.push(filters.goal_id) }
     if (filters?.area_id) {
-      conditions.push(`COALESCE(visible_area_id, (SELECT (${householdAreaLink("goals.area_id")}) FROM goals
-        WHERE goals.id = projects.goal_id AND goals.owner_board_id IS NULL)) = ?`)
+      conditions.push(`(CASE WHEN projects.area_id IS NOT NULL THEN visible_area_id
+        ELSE (SELECT (${householdAreaLink("goals.area_id")}) FROM goals
+          WHERE goals.id = projects.goal_id AND goals.owner_board_id IS NULL) END) = ?`)
       args.push(filters.area_id)
     }
     if (filters?.status) { conditions.push("status = ?"); args.push(filters.status) }
@@ -367,12 +377,15 @@ export class HierarchyRepository {
 
     const goal = data.goal_id
     const area = data.area_id
+    const existingGoalGuard = goal === undefined ? "" : `AND (goal_id IS NULL OR EXISTS (${householdGoalLink("projects.goal_id")}))`
+    const existingAreaGuard = area === undefined ? "" : `AND (area_id IS NULL OR EXISTS (${householdAreaLink("projects.area_id")}))`
     const goalGuard = goal == null ? "" : `AND EXISTS (${householdGoalLink("?")})`
     const areaGuard = area == null ? "" : `AND EXISTS (${householdAreaLink("?")})`
     if (goal != null) args.push(goal)
     if (area != null) args.push(area)
     const result = await this.client.execute({
-      sql: `UPDATE projects SET ${sets.join(", ")} WHERE id = ? AND owner_board_id IS NULL ${goalGuard} ${areaGuard}`,
+      sql: `UPDATE projects SET ${sets.join(", ")} WHERE id = ? AND owner_board_id IS NULL
+        ${existingGoalGuard} ${existingAreaGuard} ${goalGuard} ${areaGuard}`,
       args,
     })
     return (result.rowsAffected ?? 0) > 0
@@ -380,6 +393,7 @@ export class HierarchyRepository {
 
   async deleteProject(id: string): Promise<boolean> {
     const deletable = `SELECT 1 FROM projects WHERE id = ? AND is_default = 0 AND owner_board_id IS NULL
+      AND NOT EXISTS (SELECT 1 FROM board_access_epoch)
       AND NOT EXISTS (SELECT 1 FROM tasks WHERE project_id = projects.id AND task_board_id IS NOT NULL)
       AND NOT EXISTS (SELECT 1 FROM task_boards WHERE project_id = projects.id AND id <> 'household')`
     const [, result] = await this.client.batch([

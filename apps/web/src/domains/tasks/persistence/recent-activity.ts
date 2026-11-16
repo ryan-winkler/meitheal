@@ -258,7 +258,7 @@ export async function readRecentActivity(
   const conditions = ["activity.feed_action IN ('added', 'edited', 'closed', 'reopened')"]
   const args: InValue[] = []
   if (areaId) {
-    conditions.push("task.area_id = ?")
+    conditions.push("area.id = ?")
     args.push(areaId)
   }
   if (personKey) {
@@ -276,7 +276,7 @@ export async function readRecentActivity(
                  area.name AS area_name
           FROM task_activity_log AS activity
           JOIN tasks AS task ON task.id = activity.task_id AND task.task_board_id IS NULL
-          LEFT JOIN areas AS area ON area.id = task.area_id
+          LEFT JOIN areas AS area ON area.id = task.area_id AND area.owner_board_id IS NULL
           WHERE ${conditions.join(" AND ")}
           ORDER BY activity.created_at DESC, activity.id DESC LIMIT ?`,
     args: [...args, size + 1],

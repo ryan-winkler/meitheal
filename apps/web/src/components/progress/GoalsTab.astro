@@ -10,10 +10,10 @@
  */
 import ProgressRing from "../ui/ProgressRing.astro"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
-import { listSharedGoals } from "@domains/tasks/persistence/shared-goal-repository"
-import { HierarchyRepository } from "@domains/tasks/persistence/hierarchy-repository"
+import { listSharedGoals, sharedGoalProjectionKey, type SharedGoalProgress } from "@domains/tasks/persistence/shared-goal-repository"
+import { HierarchyRepository, type AreaRow } from "@domains/tasks/persistence/hierarchy-repository"
 
-interface Props { areaId?: string }
+interface Props { areaId?: string; sharedGoals?: SharedGoalProgress[] }
 
 const embeddedArea = Astro.props.areaId
 const areaId = embeddedArea ?? Astro.url.searchParams.get("area_id") ?? undefined
@@ -22,6 +22,8 @@ let scopedAreaName: string | undefined
 let scopedProjectName: string | undefined
 let unavailable = false
 let scopeMissing = false
+let projectionKey: string | undefined
+let areaOptions: AreaRow[] = []
 
 let goals: Array<{
   id: string
@@ -42,6 +44,7 @@ try {
   const db = getPersistenceClient()
   const repo = new HierarchyRepository(db)
   const areas = await repo.findAllAreas()
+  areaOptions = areas
   const selectedProject = projectId ? await repo.findProjectById(projectId) : null
   const projects = projectId
     ? selectedProject ? [selectedProject] : []
@@ -77,13 +80,19 @@ try {
   }
 
   if (!scopeMissing) {
-    const shared = await listSharedGoals(db, Astro.locals, Astro.request.signal, {
+    const shared = Astro.props.sharedGoals ?? await listSharedGoals(db, Astro.locals, Astro.request.signal, {
       ...(areaId ? { areaId } : {}),
       ...(projectId ? { projectId } : {}),
     })
-    const ownedIds = new Set(rawGoals.map(goal => goal.id))
+    projectionKey = sharedGoalProjectionKey(shared)
+    const ownedById = new Map(goals.map(goal => [goal.id, goal]))
     for (const goal of shared) {
-      if (ownedIds.has(goal.id)) continue
+      const owned = ownedById.get(goal.id)
+      if (owned) {
+        owned.projectCount = goal.project_count
+        owned.completedProjectCount = goal.completed_project_count
+        continue
+      }
       const area = goal.area_id ? areaMap.get(goal.area_id) : undefined
       goals.push({
         id: goal.id, title: goal.title, area_id: goal.area_id, status: "shared",
@@ -108,18 +117,27 @@ const statusLabels: Record<string, string> = {
 }
 ---
 
-<div class="goals-tab" id="goals-tab-root" data-area-id={scopedAreaName ? areaId : undefined}>
+<div class="goals-tab" id="goals-tab-root" data-area-id={scopedAreaName ? areaId : undefined}
+     data-projection-key={projectionKey} data-projection-project={projectionKey ? projectId : undefined}>
   <header class="goals-tab__header">
     <div class="goals-tab__header-left">
-      {!unavailable && !scopeMissing && <span class="goals-tab__count">{goals.length} goal{goals.length !== 1 ? "s" : ""}{scopeName && ` · ${scopeName}`}</span>}
+      {!unavailable && !scopeMissing && <span class="goals-tab__count" data-board-goal-projection={projectionKey ? "" : undefined}>{goals.length} goal{goals.length !== 1 ? "s" : ""}{scopeName && ` · ${scopeName}`}</span>}
       {(areaId !== undefined || projectId !== undefined) && <a href="/progress#goals">All Goals</a>}
     </div>
     {canCreate && <button type="button" class="btn btn-primary" id="goals-tab-new-btn">+ New Goal</button>}
   </header>
 
+  {projectionKey && <p id="shared-goal-projection-status" hidden role="status">Goal access or progress changed. <button type="button" class="btn btn-ghost">Refresh Goals</button></p>}
+
   {canCreate && (
     <form class="goals-tab__create-form" id="goals-tab-create-inline" hidden>
       <input type="text" id="goals-tab-create-input" aria-label="New goal title" placeholder="Goal title…" maxlength="200" autocomplete="off" required />
+      {!areaId && areaOptions.length > 0 && (
+        <select name="area_id" class="form-select" aria-label="Area">
+          <option value="">No Area</option>
+          {areaOptions.map(area => <option value={area.id}>{area.icon} {area.name}</option>)}
+        </select>
+      )}
       <button type="submit" class="btn btn-primary">Create</button>
       <button type="button" class="btn btn-ghost" id="goals-tab-create-cancel">Cancel</button>
       <p role="status" id="goals-tab-create-error"></p>
@@ -138,7 +156,7 @@ const statusLabels: Record<string, string> = {
       )}
     </div>
   ) : (
-    <div class="goals-tab__list">
+    <div class="goals-tab__list" data-board-goal-projection={projectionKey ? "" : undefined}>
       {goals.map((goal) => (
         <div class="goals-tab__card" data-goal-id={goal.id} data-goal-status={goal.status}>
           <div class="goals-tab__card-header">
@@ -192,6 +210,7 @@ const statusLabels: Record<string, string> = {
     margin: 0 auto;
     padding: 0.5rem 0;
   }
+  [data-board-goal-projection][hidden] { display: none; }
   .goals-tab__create-form:not([hidden]) {
     display: flex;
     flex-wrap: wrap;
@@ -364,12 +383,14 @@ const statusLabels: Record<string, string> = {
 <script>
   import { confirmDialog } from "@lib/confirm-dialog"
   import { pageLifecycle } from "@lib/page-lifecycle"
+  import { bindSharedGoalProjection } from "@lib/shared-goal-projection"
 
   pageLifecycle.onPageLoad(signal => {
     const root = document.getElementById("goals-tab-root")
     if (!root || root.dataset.bound) return
     root.dataset.bound = "true"
     signal.addEventListener("abort", () => { delete root.dataset.bound }, { once: true })
+    bindSharedGoalProjection(root, signal)
 
     const newButton = root.querySelector<HTMLButtonElement>("#goals-tab-new-btn")
     const form = root.querySelector<HTMLFormElement>("#goals-tab-create-inline")
@@ -398,6 +419,7 @@ const statusLabels: Record<string, string> = {
     form?.addEventListener("submit", async event => {
       event.preventDefault()
       const value = title?.value.trim()
+      const selectedArea = root.dataset.areaId || form?.querySelector<HTMLSelectElement>('select[name="area_id"]')?.value
       if (!value || !save || save.disabled) return
       save.disabled = true
       if (error) error.textContent = ""
@@ -405,7 +427,7 @@ const statusLabels: Record<string, string> = {
         const response = await fetch("/api/goals", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ title: value, area_id: root.dataset.areaId }),
+          body: JSON.stringify({ title: value, area_id: selectedArea || undefined }),
           signal,
         })
         if (!response.ok) throw new Error("Goal could not be created")

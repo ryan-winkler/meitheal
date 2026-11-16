@@ -66,6 +66,9 @@ export const DELETE: APIRoute = async ({ params }) => {
   try {
     await ensureSchema()
     const repo = new HierarchyRepository(getPersistenceClient())
+    if (!await repo.legacyPlanningDeletionAvailable()) {
+      return apiError("Deleting planning records is unavailable here after named Boards are enabled.", 409)
+    }
 
     // Phase 15: prevent deleting the default "Every Day" project
     const project = await repo.findProjectById(params.id!)

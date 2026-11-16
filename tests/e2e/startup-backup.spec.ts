@@ -607,6 +607,10 @@ test("Household task reads and cleanup exclude a named Board even by exact ID", 
   expect(await readSharedGoals(db, "home-user", { projectId: "work-project" }, revision)).toEqual([])
   expect(await hierarchy.findProjectById("home-project")).toMatchObject({ goal_id: null, area_id: "default" })
   expect(await hierarchy.findAllProjects({ goal_id: "work-goal" })).toEqual([])
+  expect(await hierarchy.updateProject("home-project", { goal_id: null })).toBe(false)
+  expect(await hierarchy.updateProject("home-project", { title: "Title changes without changing its Goal" })).toBe(true)
+  expect((await db.execute("SELECT goal_id FROM projects WHERE id = 'home-project'")).rows[0]?.goal_id).toBe("work-goal")
+  expect(await hierarchy.updateProject("home-project", { title: "Home project" })).toBe(true)
   expect(await hierarchy.updateProject("home-project", { area_id: "work-area", title: "Rejected" })).toBe(false)
   expect(await hierarchy.updateProject("home-project", { goal_id: "work-goal" })).toBe(false)
   expect(await hierarchy.findProjectById("home-project")).toMatchObject({ title: "Home project" })
@@ -615,8 +619,13 @@ test("Household task reads and cleanup exclude a named Board even by exact ID", 
     "INSERT INTO goals (id, title, created_at, updated_at) VALUES ('legacy-goal', 'Household goal', 1, 1)",
     "INSERT INTO projects (id, title, area_id, goal_id, owner_board_id, created_at, updated_at) VALUES ('linked-project', 'Linked in Work', 'legacy-area', 'legacy-goal', 'work-fixture', 1, 1)",
   ], "write")
+  expect(await hierarchy.legacyPlanningDeletionAvailable()).toBe(false)
   expect(await hierarchy.deleteArea("legacy-area")).toBe(false)
   expect(await hierarchy.deleteGoal("legacy-goal")).toBe(false)
+  await hierarchy.createArea({ id: "unlinked-area", name: "Unlinked Area" })
+  await hierarchy.createGoal({ id: "unlinked-goal", title: "Unlinked Goal" })
+  expect(await hierarchy.deleteArea("unlinked-area")).toBe(false)
+  expect(await hierarchy.deleteGoal("unlinked-goal")).toBe(false)
   expect((await db.execute("SELECT area_id, goal_id FROM projects WHERE id = 'linked-project'")).rows[0])
     .toMatchObject({ area_id: "legacy-area", goal_id: "legacy-goal" })
   await db.execute("UPDATE projects SET title = 'Private changes', status = 'completed' WHERE id = 'work-project'")
@@ -633,4 +642,15 @@ test("Household task reads and cleanup exclude a named Board even by exact ID", 
   expect(await readSharedGoals(db, "home-user", { areaId: "default" }, revision)).toEqual([])
   await db.execute("INSERT INTO board_goal_shares VALUES ('work-goal', 'default', 'household')")
   expect(await readSharedGoals(db, "home-user", { areaId: "default" }, revision)).toEqual(home)
+
+  await db.batch([
+    "INSERT INTO goals (id, area_id, title, created_at, updated_at) VALUES ('home-goal', 'default', 'Home Goal', 1, 1)",
+    "INSERT INTO projects (id, goal_id, title, created_at, updated_at) VALUES ('inherited-home-project', 'home-goal', 'Inherited Home', 1, 1)",
+    "INSERT INTO projects (id, goal_id, area_id, title, created_at, updated_at) VALUES ('explicit-work-project', 'home-goal', 'work-area', 'Explicit Work', 1, 1)",
+    "INSERT INTO board_goal_shares VALUES ('home-goal', 'default', 'household')",
+  ], "write")
+  expect(await readSharedGoals(db, "home-user", { areaId: "default", projectId: "inherited-home-project" }, revision))
+    .toMatchObject([{ id: "home-goal" }])
+  expect(await readSharedGoals(db, "home-user", { areaId: "default", projectId: "explicit-work-project" }, revision)).toEqual([])
+  expect((await hierarchy.findProjectsByArea("default")).map(({ id }) => id)).not.toContain("explicit-work-project")
 })

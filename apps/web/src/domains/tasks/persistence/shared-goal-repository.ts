@@ -1,10 +1,9 @@
-import { constants } from "node:fs"
-import { open } from "node:fs/promises"
+import { createHash } from "node:crypto"
 import type { Client } from "@libsql/client"
 import { verifyCurrentHAParticipant } from "@domains/ha/current-admin"
 import { verifiedIngressUser } from "@lib/verified-ingress-user"
 
-const boardGrantPath = "/data/meitheal-board-grants.json"
+import { readBoardGrantRevision } from "./board-grant-fence"
 
 export interface SharedGoalProgress {
   id: string
@@ -14,27 +13,14 @@ export interface SharedGoalProgress {
   completed_project_count: number
 }
 
-/** An absent or expired copy outside the database only disables named access. */
-async function readBoardGrantRevision(path: string): Promise<string | null> {
-  try {
-    const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW)
-    try {
-      const info = await file.stat()
-      if (!info.isFile() || info.size > 160) return null
-      const data = JSON.parse(await file.readFile("utf8")) as { epoch?: unknown }
-      const value = data?.epoch
-      return typeof value === "string" && /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(value) ? value : null
-    } finally {
-      await file.close()
-    }
-  } catch {
-    return null
-  }
+export function sharedGoalProjectionKey(goals: SharedGoalProgress[]): string | undefined {
+  return goals.length ? createHash("sha256").update(JSON.stringify(goals)).digest("hex") : undefined
 }
 
 export interface SharedGoalScope {
   areaId?: string
   projectId?: string
+  goalId?: string
 }
 
 export async function listSharedGoals(
@@ -45,10 +31,10 @@ export async function listSharedGoals(
 ): Promise<SharedGoalProgress[]> {
   const viewer = verifiedIngressUser(locals)
   if (!viewer || signal.aborted) return []
-  const revision = await readBoardGrantRevision(boardGrantPath)
+  const revision = await readBoardGrantRevision()
   if (!revision || await verifyCurrentHAParticipant(viewer.id, signal) !== "allowed") return []
   const goals = await readSharedGoals(db, viewer.id, scope, revision, signal)
-  if (signal.aborted || await readBoardGrantRevision(boardGrantPath) !== revision) return []
+  if (signal.aborted || await readBoardGrantRevision() !== revision) return []
   return goals
 }
 
@@ -56,13 +42,13 @@ export async function listSharedGoals(
 export async function readSharedGoals(
   db: Pick<Client, "execute">,
   userId: string,
-  { areaId, projectId }: SharedGoalScope,
+  { areaId, projectId, goalId }: SharedGoalScope,
   grantRevision: string,
   signal?: AbortSignal,
 ): Promise<SharedGoalProgress[]> {
   if (signal?.aborted) return []
   const { rows } = await db.execute({
-    sql: `WITH scope(area_id, project_id, revision) AS (VALUES (?, ?, ?)),
+    sql: `WITH scope(area_id, project_id, goal_id, revision) AS (VALUES (?, ?, ?, ?)),
       visible_boards AS (
         SELECT board.id
         FROM task_boards AS board
@@ -75,13 +61,16 @@ export async function readSharedGoals(
         FROM scope CROSS JOIN board_goal_shares AS share
         JOIN areas AS area ON area.id = share.area_id
         WHERE (scope.area_id IS NULL OR share.area_id = scope.area_id)
+          AND (scope.goal_id IS NULL OR share.goal_id = scope.goal_id)
           AND share.receiving_board_id = COALESCE(area.owner_board_id, 'household')
           AND share.receiving_board_id IN (SELECT id FROM visible_boards)
           AND (scope.project_id IS NULL OR EXISTS (
             SELECT 1 FROM projects AS selected
             WHERE selected.id = scope.project_id AND selected.goal_id = share.goal_id
               AND COALESCE(selected.owner_board_id, 'household') IN (SELECT id FROM visible_boards)
-              AND (scope.area_id IS NULL OR selected.area_id = scope.area_id)
+              AND (scope.area_id IS NULL OR COALESCE(selected.area_id, (
+                SELECT owning_goal.area_id FROM goals AS owning_goal WHERE owning_goal.id = selected.goal_id
+              )) = scope.area_id)
           ))
           AND EXISTS (SELECT 1 FROM board_access_epoch WHERE singleton = 1 AND revision = scope.revision)
         GROUP BY share.goal_id
@@ -95,7 +84,7 @@ export async function readSharedGoals(
         AND COALESCE(project.owner_board_id, 'household') IN (SELECT id FROM visible_boards)
       GROUP BY goal.id, goal.title, readable_shares.area_id
       ORDER BY goal.title COLLATE NOCASE, goal.id`,
-    args: [areaId ?? null, projectId ?? null, grantRevision, userId],
+    args: [areaId ?? null, projectId ?? null, goalId ?? null, grantRevision, userId],
   })
   if (signal?.aborted) return []
   return rows.map(row => ({

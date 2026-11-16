@@ -59,6 +59,7 @@ export const POST: APIRoute = async ({ params, request }) => {
     switch (action) {
       case "link": {
         const association = await linkEntity(pillarId, entityType, entityId)
+        if (!association) return apiError("Association target unavailable", 404)
         return apiJson({ association }, 201)
       }
 
