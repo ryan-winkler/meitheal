@@ -288,6 +288,13 @@ test("Calendar reads configured sources as a household member and filters before
     insertConfirmation.run(boundaryId, boundaryId, boundaryId, "timezone-boundary-uid", "caldav", JSON.stringify({
       occurrences: [{ start, end: "2031-07-21T01:00:00Z", effective_end: "2031-07-21" }],
     }))
+    const legacyId = "legacy-linked-with-provider-bounds"
+    const startDate = "2031-07-22"
+    insertLinkedTask.run(legacyId, "Legacy linked workshop", "pending", legacyId, legacyId, null)
+    db.prepare("UPDATE tasks SET due_date = ? WHERE id = ?").run(startDate, legacyId)
+    insertConfirmation.run(legacyId, legacyId, legacyId, "legacy-bounds-uid", "ha.calendar_sync", JSON.stringify({
+      entity_id: "calendar.household", start: startDate, end: "2031-07-24",
+    }))
     await page.reload()
     await expect(page.locator("#calendar-shell")).toHaveAttribute("data-timezone", "America/Los_Angeles")
     const boundaryDay = page.locator('.cal-cell[data-date="2031-07-20"]')
@@ -300,6 +307,13 @@ test("Calendar reads configured sources as a household member and filters before
     await page.keyboard.press("Escape")
     await followingDay.press("Enter")
     await expect(appointment).toHaveCount(0)
+    await page.keyboard.press("Escape")
+
+    const legacyLastDay = page.locator('.cal-cell[data-date="2031-07-23"]')
+    await expect(legacyLastDay).toHaveAccessibleName(/1 calendar event$/)
+    await expect(page.locator('.cal-cell[data-date="2031-07-24"]')).not.toHaveAccessibleName(/calendar event/)
+    await legacyLastDay.press("Enter")
+    await expect(connected.getByRole("button", { name: /Legacy linked workshop/ })).toBeVisible()
   } catch (error) {
     console.log("Calendar browser diagnostics", pageErrors)
     throw error

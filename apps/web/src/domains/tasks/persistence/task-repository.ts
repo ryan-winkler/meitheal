@@ -835,6 +835,9 @@ export class TaskRepository {
       let payload: {
         entity_id?: unknown
         summary?: unknown
+        start?: unknown
+        end?: unknown
+        effective_end?: unknown
         occurrences?: Array<{ start?: unknown; end?: unknown; effective_end?: unknown }>
       } | null = null
       try {
@@ -850,6 +853,8 @@ export class TaskRepository {
         for (const occurrence of payload.occurrences) {
           addSpan(task, occurrence?.start, occurrence?.end, occurrence?.effective_end)
         }
+      } else if (typeof payload?.start === "string" && calendarDayFromInput(payload.start, timezone)) {
+        addSpan(task, payload.start, payload.end, payload.effective_end)
       } else {
         const endDay = typeof row.end_date === "string" ? calendarDayFromInput(row.end_date, timezone) : undefined
         addSpan(task, row.start_date ?? row.due_date, undefined, endDay)
