@@ -45,7 +45,7 @@ export function applyTheme(): void {
   const root = document.documentElement
   const matched = root.dataset.haMatch === "light" || root.dataset.haMatch === "dark"
   const theme = getEffectiveTheme()
-  root.dataset.theme = !matched && (stored === "auto" || stored === "knight-rider") ? "auto" : theme
+  root.dataset.theme = !matched && (stored === "auto" || stored === "knight-rider") ? stored : theme
   root.classList.toggle("dark", theme === "dark")
   root.classList.toggle("light", theme === "light")
   applyCustomTheme(!matched && stored === "custom" && root.hasAttribute("data-custom-theme-admin")
