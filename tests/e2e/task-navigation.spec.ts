@@ -346,7 +346,9 @@ test("Shopping links identify their own Area and follow applied Board filters", 
       areas.push(id)
       paths.push("/tasks?" + new URLSearchParams({ types: "shopping_item", area: id }))
     }
-    const calendarParams = new URLSearchParams({ view: "calendar", types: "shopping_item", area_id: areas[0]! })
+    const calendarParams = new URLSearchParams({
+      view: "calendar", types: "shopping_item", area_id: areas[0]!, area: areas[1]!,
+    })
     paths.push("/tasks?" + calendarParams + "#calendar")
     const shortcuts = ["All Shopping", ...names, "Kitchen shopping calendar"].map((label, index) => ({
       id: `shopping-route-${index}`,
