@@ -209,7 +209,7 @@ export async function getTasksForView(options: TaskViewOptions = {}): Promise<Ta
       `;
     }
 
-    const whereClauses: string[] = [];
+    const whereClauses = ["task_board_id IS NULL"];
     if (Array.isArray(statuses) && statuses.length > 0) {
       whereClauses.push(`status IN (${statuses.map(() => "?").join(", ")})`);
       selectArgs.push(...statuses);
@@ -235,8 +235,8 @@ export async function getTasksForView(options: TaskViewOptions = {}): Promise<Ta
     }
 
     const hasPushdownFilter =
-      whereClauses.length > 0 || (typeof limit === "number" && Number.isFinite(limit) && limit > 0);
-    const whereSql = whereClauses.length > 0 ? ` WHERE ${whereClauses.join(" AND ")}` : "";
+      whereClauses.length > 1 || (typeof limit === "number" && Number.isFinite(limit) && limit > 0);
+    const whereSql = ` WHERE ${whereClauses.join(" AND ")}`;
     let limitSql = "";
     if (typeof limit === "number" && Number.isFinite(limit) && limit > 0) {
       limitSql = " LIMIT ?";
@@ -275,7 +275,7 @@ export async function getTasksForView(options: TaskViewOptions = {}): Promise<Ta
                    COUNT(*) FILTER (WHERE status != 'complete' AND deferred_at IS NULL) AS open,
                    COUNT(*) FILTER (WHERE status = 'active' AND deferred_at IS NULL) AS active,
                    COUNT(*) FILTER (WHERE status != 'complete' AND status != 'active' AND deferred_at IS NULL) AS pending
-            FROM tasks
+            FROM tasks WHERE task_board_id IS NULL
           `,
           args: [],
         }),
@@ -283,7 +283,7 @@ export async function getTasksForView(options: TaskViewOptions = {}): Promise<Ta
           sql: `
             SELECT due_date
             FROM tasks
-            WHERE status != 'complete'
+            WHERE task_board_id IS NULL AND status != 'complete'
               AND deferred_at IS NULL
               AND due_date IS NOT NULL
               AND due_date != ''
@@ -449,12 +449,12 @@ export async function getTodayTaskRows(
                  COUNT(*) FILTER (
                    WHERE status IS NOT 'complete' AND deferred_at IS NULL AND (due_date IS NULL OR due_date = '')
                  ) AS open_unscheduled
-          FROM tasks
+          FROM tasks WHERE task_board_id IS NULL
         )
         SELECT ${TASK_VIEW_COLUMNS}, completed_today, open_unscheduled
         FROM totals
         LEFT JOIN tasks
-          ON status IS NOT 'complete'
+          ON tasks.task_board_id IS NULL AND status IS NOT 'complete'
           AND deferred_at IS NULL
           AND (
             ? = 1
@@ -511,11 +511,11 @@ export async function getTodayTaskCounts(now = new Date(), timezone?: string): P
       SELECT NULL AS due_date, ${TODAY_COMPLETION_COUNT} AS completed_today,
              COUNT(*) FILTER (WHERE status IS NOT 'complete' AND deferred_at IS NULL AND is_favorite NOT IN (0, '')) AS pinned_count,
              0 AS dated_count
-      FROM tasks
+      FROM tasks WHERE task_board_id IS NULL
       UNION ALL
       SELECT due_date, 0, 0, COUNT(*)
       FROM tasks
-      WHERE status IS NOT 'complete' AND deferred_at IS NULL AND COALESCE(is_favorite, 0) IN (0, '')
+      WHERE task_board_id IS NULL AND status IS NOT 'complete' AND deferred_at IS NULL AND COALESCE(is_favorite, 0) IN (0, '')
         AND due_date IS NOT NULL AND due_date <> ''
       GROUP BY due_date
     `,

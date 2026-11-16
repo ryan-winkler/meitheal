@@ -87,7 +87,7 @@ export class UserRepository {
     await this.client.execute({ sql: "UPDATE agent_tokens SET assignee_id = NULL WHERE assignee_id = ?", args: [id] })
       .catch(() => {})
     await this.client.execute({
-      sql: "UPDATE tasks SET assigned_to = NULL, updated_at = ? WHERE assigned_to = ?",
+      sql: "UPDATE tasks SET assigned_to = NULL, updated_at = ? WHERE assigned_to = ? AND task_board_id IS NULL",
       args: [Date.now(), id],
     })
   }

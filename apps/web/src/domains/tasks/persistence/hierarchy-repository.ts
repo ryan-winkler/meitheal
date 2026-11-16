@@ -71,12 +71,6 @@ const householdProjectProjection = `projects.*, (${householdAreaLink("projects.a
 export class HierarchyRepository {
   constructor(private client: Client) {}
 
-  /** Named Board links can only be removed by an operation with all affected rights. */
-  async legacyPlanningDeletionAvailable(): Promise<boolean> {
-    const { rows } = await this.client.execute("SELECT 1 FROM board_access_epoch")
-    return rows.length === 0
-  }
-
   // ── Areas ────────────────────────────────────────────────────────
 
   async findAllAreas(): Promise<AreaRow[]> {
@@ -140,7 +134,7 @@ export class HierarchyRepository {
   async deleteArea(id: string): Promise<boolean> {
     const result = await this.client.execute({
       sql: `DELETE FROM areas WHERE id = ? AND owner_board_id IS NULL
-        AND NOT EXISTS (SELECT 1 FROM board_access_epoch)
+        AND NOT EXISTS (SELECT 1 FROM board_task_planning WHERE area_id = areas.id)
         AND NOT EXISTS (SELECT 1 FROM projects WHERE area_id = areas.id AND owner_board_id IS NOT NULL)
         AND NOT EXISTS (SELECT 1 FROM goals WHERE area_id = areas.id AND owner_board_id IS NOT NULL)
         AND NOT EXISTS (SELECT 1 FROM tasks WHERE area_id = areas.id AND task_board_id IS NOT NULL)
@@ -264,7 +258,7 @@ export class HierarchyRepository {
   async deleteGoal(id: string): Promise<boolean> {
     const result = await this.client.execute({
       sql: `DELETE FROM goals WHERE id = ? AND owner_board_id IS NULL
-        AND NOT EXISTS (SELECT 1 FROM board_access_epoch)
+        AND NOT EXISTS (SELECT 1 FROM board_task_planning WHERE goal_id = goals.id)
         AND NOT EXISTS (SELECT 1 FROM projects WHERE goal_id = goals.id AND owner_board_id IS NOT NULL)
         AND NOT EXISTS (SELECT 1 FROM tasks WHERE goal_id = goals.id AND task_board_id IS NOT NULL)
         AND NOT EXISTS (SELECT 1 FROM board_goal_shares WHERE goal_id = goals.id)`,
@@ -393,7 +387,7 @@ export class HierarchyRepository {
 
   async deleteProject(id: string): Promise<boolean> {
     const deletable = `SELECT 1 FROM projects WHERE id = ? AND is_default = 0 AND owner_board_id IS NULL
-      AND NOT EXISTS (SELECT 1 FROM board_access_epoch)
+      AND NOT EXISTS (SELECT 1 FROM board_task_planning WHERE project_id = projects.id)
       AND NOT EXISTS (SELECT 1 FROM tasks WHERE project_id = projects.id AND task_board_id IS NOT NULL)
       AND NOT EXISTS (SELECT 1 FROM task_boards WHERE project_id = projects.id AND id <> 'household')`
     const [, result] = await this.client.batch([

@@ -628,13 +628,12 @@ test("Household task reads and cleanup exclude a named Board even by exact ID", 
     "INSERT INTO goals (id, title, created_at, updated_at) VALUES ('legacy-goal', 'Household goal', 1, 1)",
     "INSERT INTO projects (id, title, area_id, goal_id, owner_board_id, created_at, updated_at) VALUES ('linked-project', 'Linked in Work', 'legacy-area', 'legacy-goal', 'work-fixture', 1, 1)",
   ], "write")
-  expect(await hierarchy.legacyPlanningDeletionAvailable()).toBe(false)
   expect(await hierarchy.deleteArea("legacy-area")).toBe(false)
   expect(await hierarchy.deleteGoal("legacy-goal")).toBe(false)
   await hierarchy.createArea({ id: "unlinked-area", name: "Unlinked Area" })
   await hierarchy.createGoal({ id: "unlinked-goal", title: "Unlinked Goal" })
-  expect(await hierarchy.deleteArea("unlinked-area")).toBe(false)
-  expect(await hierarchy.deleteGoal("unlinked-goal")).toBe(false)
+  expect(await hierarchy.deleteArea("unlinked-area")).toBe(true)
+  expect(await hierarchy.deleteGoal("unlinked-goal")).toBe(true)
   expect((await db.execute("SELECT area_id, goal_id FROM projects WHERE id = 'linked-project'")).rows[0])
     .toMatchObject({ area_id: "legacy-area", goal_id: "legacy-goal" })
   await db.execute("UPDATE projects SET title = 'Private changes', status = 'completed' WHERE id = 'work-project'")

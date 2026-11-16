@@ -1366,7 +1366,7 @@ export class TaskRepository {
   /** Look up a parent task's type for nesting validation */
   async getParentTaskType(parentId: string): Promise<string | null> {
     const result = await this.client.execute({
-      sql: "SELECT task_type FROM tasks WHERE id = ? LIMIT 1",
+      sql: "SELECT task_type FROM tasks WHERE id = ? AND task_board_id IS NULL LIMIT 1",
       args: [parentId],
     });
     if (result.rows.length === 0) return null;
@@ -1487,6 +1487,10 @@ export class TaskRepository {
       planningGuards.push(householdPlanningTarget("goals"))
       whereArgs.push(fields.goal_id, fields.goal_id)
     }
+    if (typeof fields.parent_id === "string") {
+      planningGuards.push("EXISTS (SELECT 1 FROM tasks AS parent WHERE parent.id = ? AND parent.task_board_id IS NULL)")
+      whereArgs.push(fields.parent_id)
+    }
     const checklistMatches = expectedChecklists === undefined ? "" : " AND checklists IS ?"
     if (expectedChecklists !== undefined) whereArgs.push(expectedChecklists)
     const assigneeMatches = expectedAssignedTo === undefined ? "" : " AND assigned_to = ?"
@@ -1550,7 +1554,7 @@ export class TaskRepository {
     }
     const assigneeDiagIndex = reassigning ? diagnostics.length : -1
     if (reassigning) {
-      diagnostics.push({ sql: "SELECT assigned_to FROM tasks WHERE id = ? AND task_board_id IS NULL", args: [id] })
+      diagnostics.push({ sql: "SELECT assigned_to FROM tasks WHERE id = ? AND task_board_id IS NULL AND task_board_id IS NULL", args: [id] })
     }
 
     const writeIndex = diagnostics.length + (activity ? 1 : 0)
@@ -1713,13 +1717,13 @@ export class TaskRepository {
     const activePredicate = `lower(status) IN (${activeStates.map(() => "?").join(", ")})`
     const assigneeGuard = expectedAssignedTo === undefined ? "" : " AND assigned_to = ?"
     const assigneeArgs = expectedAssignedTo === undefined ? [] : [expectedAssignedTo]
-    const eligible = `id = ? AND ${version} = ? AND deferral_revision IS ?
+    const eligible = `task_board_id IS NULL AND id = ? AND ${version} = ? AND deferral_revision IS ?
       AND lower(status) NOT IN ${deferralTerminalStatusesSql}
       AND deferred_at IS ${deferred ? "" : "NOT "}NULL${assigneeGuard}
       ${deferred ? "" : `AND (NOT (${activePredicate}) OR NOT EXISTS (${dependencies.sql}))`}`
     const args = [id, guard.updatedAt, guard.revision, ...assigneeArgs, ...(deferred ? [] : [...activeStates, ...dependencies.args])]
     const [diagnostic, audit, changed, blockers] = await this.client.batch([
-      { sql: `SELECT ${columns}, assigned_to FROM tasks WHERE id = ?`, args: [id] },
+      { sql: `SELECT ${columns}, assigned_to FROM tasks WHERE id = ? AND task_board_id IS NULL`, args: [id] },
       {
         sql: `INSERT INTO task_activity_log
                 (task_id, field, old_value, new_value, actor, actor_type, event_type, correlation_id, created_at)
@@ -1764,7 +1768,7 @@ export class TaskRepository {
                    task_type, task_kind, project_id, owner, handoff_state,
                    start_date, end_date, progress, color, is_favorite, is_promoted, assigned_to,
                    urgency, importance, eisenhower_override
-            FROM tasks WHERE id = ? LIMIT 1`,
+            FROM tasks WHERE id = ? AND task_board_id IS NULL LIMIT 1`,
       args: [id],
     });
     return (result.rows[0] as unknown as TaskRow) ?? null;
@@ -1966,7 +1970,7 @@ export class TaskRepository {
                      SELECT 1 FROM calendar_confirmations
                      WHERE task_id = tasks.id AND source = 'ha.write_back'
                    )) AS calendar_imported
-            FROM tasks WHERE id = ? LIMIT 1`,
+            FROM tasks WHERE id = ? AND task_board_id IS NULL LIMIT 1`,
       args: [id],
     }
   }
@@ -2028,7 +2032,7 @@ export class TaskRepository {
   async getOpenTaskCount(): Promise<number> {
     try {
       const result = await this.client.execute({
-        sql: `SELECT COUNT(*) as cnt FROM tasks WHERE status NOT IN (?)`,
+        sql: `SELECT COUNT(*) as cnt FROM tasks WHERE task_board_id IS NULL AND status NOT IN (?)`,
         args: [STATUS.COMPLETE],
       });
       return Number((result.rows[0] as Record<string, unknown>).cnt) || 0;
@@ -2043,7 +2047,7 @@ export class TaskRepository {
     const assigneeFilter = assignedTo === undefined ? "" : " AND assigned_to = ?"
     const args = assignedTo === undefined ? [parentId, STATUS.COMPLETE] : [parentId, STATUS.COMPLETE, assignedTo]
     const result = await this.client.execute({
-      sql: `SELECT id FROM tasks WHERE parent_id = ? AND status != ?${assigneeFilter}`,
+      sql: `SELECT id FROM tasks WHERE task_board_id IS NULL AND parent_id = ? AND status != ?${assigneeFilter}`,
       args,
     });
     return result.rows.map((r) => String((r as Record<string, unknown>).id));
@@ -2082,14 +2086,14 @@ export class TaskRepository {
               SELECT value AS id, key AS ordinal FROM json_each(?)
             ), allowed AS MATERIALIZED (
               SELECT COUNT(*) AS total FROM requested
-              JOIN tasks ON tasks.id = requested.id AND tasks.deferred_at IS NULL
+              JOIN tasks ON tasks.id = requested.id AND tasks.task_board_id IS NULL AND tasks.deferred_at IS NULL
               HAVING total = (SELECT COUNT(*) FROM requested)
                  AND total = COUNT(DISTINCT requested.id)
             ), ordered AS MATERIALIZED (
               SELECT id, ROW_NUMBER() OVER (
                 ORDER BY kanban_position ASC NULLS LAST, priority ASC, created_at DESC, id ASC
               ) - 1 AS position
-              FROM tasks WHERE EXISTS (SELECT 1 FROM allowed)
+              FROM tasks WHERE task_board_id IS NULL AND EXISTS (SELECT 1 FROM allowed)
             ), slots AS MATERIALIZED (
               SELECT position, ROW_NUMBER() OVER (ORDER BY position) - 1 AS ordinal
               FROM ordered WHERE id IN (SELECT id FROM requested)
@@ -2104,7 +2108,7 @@ export class TaskRepository {
               deferral_revision = CASE WHEN ranks.submitted AND ${taskTimestampMs("tasks.updated_at")} = 9007199254740991
                 THEN lower(hex(randomblob(16))) ELSE deferral_revision END,
               updated_at = CASE WHEN ranks.submitted THEN ${nextTaskTimestampMs("tasks.updated_at")} ELSE updated_at END
-            FROM ranks WHERE tasks.id = ranks.id
+            FROM ranks WHERE tasks.id = ranks.id AND tasks.task_board_id IS NULL
               AND (ranks.submitted OR tasks.kanban_position IS NOT ranks.position)`,
       args: [JSON.stringify(ids), Date.now()],
     })
@@ -2248,7 +2252,7 @@ export class TaskRepository {
       const assigneeArgs = expectedAssignedTo === undefined ? [] : [expectedAssignedTo]
       const inserted = await tx.execute({
         sql: `INSERT INTO comments (task_id, content, author, owner_key, inactivity_spike_human)
-              SELECT id, ?, ?, ?, ? FROM tasks WHERE id = ?${assigneeSql}
+              SELECT id, ?, ?, ?, ? FROM tasks WHERE id = ? AND task_board_id IS NULL${assigneeSql}
               RETURNING id, task_id, content, author, created_at`,
         args: [content, author, ownerKey, verifiedHuman ? 1 : 0, taskId, ...assigneeArgs],
       })
@@ -2258,7 +2262,7 @@ export class TaskRepository {
         return { state: "created", comment: row }
       }
       if (expectedAssignedTo !== undefined) {
-        const current = await tx.execute({ sql: "SELECT assigned_to FROM tasks WHERE id = ?", args: [taskId] })
+        const current = await tx.execute({ sql: "SELECT assigned_to FROM tasks WHERE id = ? AND task_board_id IS NULL", args: [taskId] })
         await tx.commit()
         return current.rows.length > 0 ? { state: "assignee_mismatch" } : { state: "not_found" }
       }
@@ -2535,7 +2539,7 @@ export class TaskRepository {
         })
         const ep = endpoints.rows[0] as Record<string, unknown> | undefined
         if (!ep) {
-          const tRow = await tx.execute({ sql: "SELECT assigned_to FROM tasks WHERE id = ?", args: [taskId] })
+          const tRow = await tx.execute({ sql: "SELECT assigned_to FROM tasks WHERE id = ? AND task_board_id IS NULL", args: [taskId] })
           const assigneeMismatch = tRow.rows.length > 0 && (tRow.rows[0] as Record<string, unknown>).assigned_to !== expectedAssignedTo
           await tx.commit()
           return { deleted: 0, assigneeMismatch }

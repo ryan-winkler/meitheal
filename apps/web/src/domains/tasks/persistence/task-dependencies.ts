@@ -11,7 +11,7 @@ export function openTaskDependenciesSql(task: "?" | "tasks.id") {
       WHERE target_task_id = ${task} AND link_type = 'blocks'
     ) AS dependency
     JOIN tasks t ON t.id = dependency.blocker_id
-    WHERE t.status NOT IN ('${STATUS.COMPLETE}', 'archived')`
+    WHERE t.task_board_id IS NULL AND t.status NOT IN ('${STATUS.COMPLETE}', 'archived')`
 }
 
 export function openTaskDependencies(id: string) {

@@ -58,11 +58,11 @@ export const DELETE: APIRoute = async ({ params }) => {
   try {
     await ensureSchema()
     const repo = new HierarchyRepository(getPersistenceClient())
-    if (!await repo.legacyPlanningDeletionAvailable()) {
-      return apiError("Deleting planning records is unavailable here after named Boards are enabled.", 409)
-    }
     const deleted = await repo.deleteArea(params.id!)
-    if (!deleted) return apiError("Area not found", 404)
+    if (!deleted) {
+      if (!await repo.findAreaById(params.id!)) return apiError("Area not found", 404)
+      return apiError("This area could not be deleted while it is in use.", 409)
+    }
     return apiJson({ ok: true })
   } catch (error) {
     logApiError("areas", "DELETE error", error)

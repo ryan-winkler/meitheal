@@ -179,7 +179,7 @@ export class SettingsRepository {
     const result = await this.client.execute({
       sql: `SELECT id, title, due_date, reminder_at, priority, status
             FROM tasks
-            WHERE reminder_at IS NOT NULL
+            WHERE task_board_id IS NULL AND reminder_at IS NOT NULL
               AND reminder_at <= ?
               AND status NOT IN (?)
             ORDER BY reminder_at ASC
@@ -192,7 +192,7 @@ export class SettingsRepository {
   /** Snooze a reminder to a future time */
   async snoozeReminder(taskId: string, snoozeTime: string): Promise<void> {
     await this.client.execute({
-      sql: "UPDATE tasks SET reminder_at = ?, updated_at = ? WHERE id = ?",
+      sql: "UPDATE tasks SET reminder_at = ?, updated_at = ? WHERE id = ? AND task_board_id IS NULL",
       args: [snoozeTime, Date.now(), taskId],
     })
   }
@@ -200,7 +200,7 @@ export class SettingsRepository {
   /** Dismiss a reminder (clear reminder_at) */
   async dismissReminder(taskId: string): Promise<void> {
     await this.client.execute({
-      sql: "UPDATE tasks SET reminder_at = NULL, updated_at = ? WHERE id = ?",
+      sql: "UPDATE tasks SET reminder_at = NULL, updated_at = ? WHERE id = ? AND task_board_id IS NULL",
       args: [Date.now(), taskId],
     })
   }

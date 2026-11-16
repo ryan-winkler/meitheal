@@ -66,9 +66,6 @@ export const DELETE: APIRoute = async ({ params }) => {
   try {
     await ensureSchema()
     const repo = new HierarchyRepository(getPersistenceClient())
-    if (!await repo.legacyPlanningDeletionAvailable()) {
-      return apiError("Deleting planning records is unavailable here after named Boards are enabled.", 409)
-    }
 
     // Phase 15: prevent deleting the default "Every Day" project
     const project = await repo.findProjectById(params.id!)
@@ -76,7 +73,7 @@ export const DELETE: APIRoute = async ({ params }) => {
     if (project.is_default) return apiError("Cannot delete the default project", 403)
 
     const deleted = await repo.deleteProject(params.id!)
-    if (!deleted) return apiError("Project not found", 404)
+    if (!deleted) return apiError("This project could not be deleted while it is in use.", 409)
     return apiJson({ ok: true })
   } catch (error) {
     logApiError("projects", "DELETE error", error)
