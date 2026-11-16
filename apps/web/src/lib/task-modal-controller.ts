@@ -342,27 +342,26 @@
             currentTaskId = taskId
             setTaskLocation(taskId, true, commentTarget)
 
-            // Start independent inspector reads together. Populate fields in their
-            // usual order and let the existing field handlers handle each failure.
-            function readProperty(path: string): Promise<Response> {
-              const request = fetch(path, { signal: modalSignal })
-              void request.catch(() => {}) // The field may consume this rejection later.
-              return request
-            }
-            const lanes = readProperty("/api/lanes")
-            const backlogModeSetting = readProperty("/api/settings?key=backlog_mode")
+            // Start independent inspector reads together. Each field keeps its own fallback.
+            const requestOptions = { signal: modalSignal }
+            const lanes = fetch("/api/lanes", requestOptions)
+            const backlogModeSetting = fetch("/api/settings?key=backlog_mode", requestOptions)
             const childrenDiv = document.getElementById("td-link-children")
-            const children = childrenDiv ? readProperty(`/api/tasks?parent_id=${encodeURIComponent(taskId)}`) : null
-            const areas = readProperty("/api/areas")
-            const projectRead = projectField ? readProperty("/api/projects") : null
-            const pillars = readProperty("/api/pillars")
+            const children = childrenDiv
+              ? fetch(`/api/tasks?parent_id=${encodeURIComponent(taskId)}`, requestOptions)
+              : null
+            const areas = fetch("/api/areas", requestOptions)
+            const projectRead = projectField ? fetch("/api/projects", requestOptions) : null
+            const pillars = fetch("/api/pillars", requestOptions)
             const currentPillarId = String(t.pillar_id ?? "")
             const principles = currentPillarId && currentPillarId !== "null" && currentPillarId !== "undefined"
-              ? readProperty(`/api/pillars/${encodeURIComponent(currentPillarId)}/principles`)
+              ? fetch(`/api/pillars/${encodeURIComponent(currentPillarId)}/principles`, requestOptions)
               : null
             const assignSelect = document.querySelector<HTMLSelectElement>("#td-assigned-to")
-            const users = assignSelect ? readProperty("/api/users") : null
-            const settings = readProperty("/api/settings")
+            const users = assignSelect ? fetch("/api/users", requestOptions) : null
+            const settings = fetch("/api/settings", requestOptions)
+            // Observe rejections immediately. Field handlers consume the original promises in order.
+            void Promise.allSettled([lanes, backlogModeSetting, children, areas, projectRead, pillars, principles, users, settings])
 
             // Populate status dropdown from lanes API
             const statusSelect = document.getElementById(
