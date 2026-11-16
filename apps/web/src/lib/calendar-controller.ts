@@ -1,6 +1,6 @@
 import type { TaskKind } from "@meitheal/domain-tasks"
 import { CALENDAR_AREA_APPLIED_EVENT, CALENDAR_AREA_REQUEST_EVENT, getRememberedAreaId } from "@lib/area-selector-controller"
-import { readCalendarTaskFilters } from "@lib/calendar-task-filter"
+import { CALENDAR_FILTER_STATE_EVENT, readCalendarTaskFilters } from "@lib/calendar-task-filter"
 import { createClientLogger } from "@lib/client-logger"
 import { calendarDayFromInput, calendarEventLastDay, calendarOccurrenceStartKey, formatTimeInZone, normalizeCalendarEventSummary, shiftCalendarDay } from "@lib/date"
 import { createFocusTrap } from "@lib/focus-trap"
@@ -56,6 +56,7 @@ export function initCalendarPage(signal: AbortSignal): void {
   let month = initialMonth
   let desired = taskBackgroundUrl(new URL(location.href))
   let applied = new URL(desired)
+  let retryTarget: URL | undefined
   let refreshRequest: AbortController | undefined
   let previewsRequest: AbortController | undefined
   let drawerRequest: AbortController | undefined
@@ -90,6 +91,12 @@ export function initCalendarPage(signal: AbortSignal): void {
     const cell = date && month.querySelector<HTMLElement>(`.cal-cell[data-date="${CSS.escape(date)}"]`)
     const target = cell || month.querySelector<HTMLElement>(".cal-today-btn")
     target?.focus()
+  }
+
+  function restoreFilterControls(url = applied, keepSearch = false) {
+    document.dispatchEvent(new CustomEvent(CALENDAR_FILTER_STATE_EVENT, {
+      detail: { ...readCalendarTaskFilters(url.searchParams), keepSearch },
+    }))
   }
 
   async function refresh(url: URL) {
@@ -136,13 +143,22 @@ export function initCalendarPage(signal: AbortSignal): void {
       applied = new URL(url)
       const area = readCalendarTaskFilters(applied.searchParams).area
       if (area !== undefined) document.dispatchEvent(new CustomEvent(CALENDAR_AREA_APPLIED_EVENT, { detail: area }))
+      if (retryTarget) {
+        retryTarget = undefined
+        restoreFilterControls()
+      }
       document.dispatchEvent(new Event(TASK_VIEW_LOCATION_EVENT))
       announce(rejectedFilterChange)
       if (activeDay || activeRetry) focusMonthDay(activeDay)
       previewEvents()
       if (drawerDate) startDrawerRead(drawerDate)
     } catch {
-      if (!request.signal.aborted && !signal.aborted) announce("Couldn’t apply calendar changes. The previous results are still shown.", true)
+      if (!request.signal.aborted && !signal.aborted) {
+        retryTarget = new URL(url)
+        desired = new URL(applied)
+        restoreFilterControls()
+        announce("Couldn’t apply calendar changes. The previous results are still shown.", true)
+      }
     } finally {
       if (request === refreshRequest) {
         refreshRequest = undefined
@@ -153,6 +169,7 @@ export function initCalendarPage(signal: AbortSignal): void {
 
   function rejectFilters(message: string): false {
     rejectedFilterChange = `${message} The previous results are still shown.`
+    restoreFilterControls(desired, true)
     announce(rejectedFilterChange)
     return false
   }
@@ -331,9 +348,10 @@ export function initCalendarPage(signal: AbortSignal): void {
     if (event.defaultPrevented) return
     const target = event.target as Element
     const monthLink = target.closest<HTMLAnchorElement>("[data-calendar-nav]")
-    if (monthLink && desired.search !== applied.search) {
+    const requested = retryTarget ?? desired
+    if (monthLink && requested.search !== applied.search) {
       const destination = new URL(monthLink.href)
-      const next = new URL(desired)
+      const next = new URL(requested)
       for (const key of ["year", "month"]) {
         const value = destination.searchParams.get(key)
         if (value === null) next.searchParams.delete(key)
@@ -377,18 +395,19 @@ export function initCalendarPage(signal: AbortSignal): void {
   }, { signal })
 
   moreTasks.addEventListener("click", () => loadMoreDueTasks?.(), { signal })
-  retry.addEventListener("click", () => void refresh(new URL(desired)), { signal })
+  retry.addEventListener("click", () => void refresh(new URL(retryTarget ?? desired)), { signal })
   document.addEventListener("meitheal:filter-change", event => {
-    const detail = (event as CustomEvent<{ view: string } & KanbanFilters>).detail
+    const detail = (event as CustomEvent<{ view: string; clear?: boolean } & KanbanFilters>).detail
     if (detail?.view !== "calendar") return
-    const { area, search, status, priority, rice, user, task_type, types, labels, promoted, advancedFilter } = detail
-    if (!applyFilters({ area, search, status, priority, rice, user, task_type, types, labels, promoted, advancedFilter } as KanbanFilters)) {
+    const { search, status, priority, rice, user, task_type, types, labels, promoted, advancedFilter } = detail
+    const area = detail.clear ? { area: "" } : {}
+    if (!applyFilters({ ...area, search, status, priority, rice, user, task_type, types, labels, promoted, advancedFilter } as KanbanFilters)) {
       event.preventDefault()
     }
   }, { signal })
   document.addEventListener(CALENDAR_AREA_REQUEST_EVENT, event => {
     const area = (event as CustomEvent<{ areaId: string }>).detail.areaId
-    if (!applyFilters({ area })) event.preventDefault()
+    applyFilters({ area })
   }, { signal })
   document.addEventListener("meitheal:tasks-changed", () => void refresh(new URL(desired)), { signal })
   signal.addEventListener("abort", () => {

@@ -16,7 +16,9 @@ const { activeLabels = [], id = "label-filter-bar", view = "" } = Astro.props
 </details>
 
 <script>
+  import { CALENDAR_FILTER_STATE_EVENT } from "@lib/calendar-task-filter"
   import { loadTableFilterState } from "@lib/filter-state"
+  import type { KanbanFilters } from "@lib/kanban-query"
   import { pageLifecycle } from "@lib/page-lifecycle"
 
   type Label = { title: string; hex_color?: string }
@@ -111,6 +113,10 @@ const { activeLabels = [], id = "label-filter-bar", view = "" } = Astro.props
           render()
         }, { signal })
       }
+      if (view === "calendar") document.addEventListener(CALENDAR_FILTER_STATE_EVENT, event => {
+        active = new Set((event as CustomEvent<KanbanFilters>).detail.labels)
+        render()
+      }, { signal })
       render()
     })
   })

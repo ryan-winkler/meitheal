@@ -6,6 +6,8 @@ import { readKanbanFilters, type KanbanFilters } from "./kanban-query"
 import { frameworkPayloadObject, readRiceInputs, riceLensScore } from "./rice-lens"
 import { isClosedStatus, isDoneStatus, normalizeStatus } from "./status-config"
 
+export const CALENDAR_FILTER_STATE_EVENT = "meitheal:calendar-filter-state"
+
 export function readCalendarTaskFilters(params: URLSearchParams): KanbanFilters {
   const filters = readKanbanFilters(params)
   delete filters.area

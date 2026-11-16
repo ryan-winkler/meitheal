@@ -189,7 +189,7 @@ In a disposable ingress session, open **Planning → RICE**. Edit an open task, 
 
 ## Deferred Work Verification
 
-In a disposable ingress session, defer an open card from the Kanban menu. Confirm the lane count and active sidebar update, and find the task through search or Table. Open **Tasks → Deferred**, resume the card, and confirm focus moves to the next row or queue heading. Complete a deferred task in Details and verify that its badge and queue row disappear. Use **Reload Deferred** to activate a waiting service worker before opening the live queue.
+In a disposable ingress session, defer an open card from the Kanban menu. Confirm the lane count and active sidebar update, and find the task through search or Table. Return to Kanban and select **Deferred**. On narrow screens, open **Board actions** first. Resume the card and confirm focus moves to the next row or queue heading. Complete a deferred task in Details and verify that its badge and queue row disappear. Use **Reload Deferred** to activate a waiting service worker before opening the live queue.
 
 Open **Deferred** from a board with an Area selected. Check that the queue and its count cover that Area, then choose **All areas → Apply area** to include the rest of the household. **Back to Tasks** returns to Kanban with the displayed Area selection.
 
@@ -207,7 +207,7 @@ In a disposable ingress session, open **Planning → RICE**. Edit an open task, 
 
 ## Deferred Work Verification
 
-In a disposable ingress session, defer an open card from the Kanban menu. Confirm the lane count and active sidebar update, and find the task through search or Table. Open **Tasks → Deferred**, resume the card, and confirm focus moves to the next row or queue heading. Complete a deferred task in Details and verify that its badge and queue row disappear. Use **Reload Deferred** to activate a waiting service worker before opening the live queue.
+In a disposable ingress session, defer an open card from the Kanban menu. Confirm the lane count and active sidebar update, and find the task through search or Table. Return to Kanban and select **Deferred**. On narrow screens, open **Board actions** first. Resume the card and confirm focus moves to the next row or queue heading. Complete a deferred task in Details and verify that its badge and queue row disappear. Use **Reload Deferred** to activate a waiting service worker before opening the live queue.
 
 Use the most recent `task_version` and `deferral_revision` from task Details for `PATCH /api/tasks/{id}/deferral`. On `TASK_VERSION_CONFLICT` or an interrupted response, refresh the task and inspect its current state before making another decision. `TASK_BLOCKED` includes the open prerequisites and leaves the task deferred.
 

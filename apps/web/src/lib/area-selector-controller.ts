@@ -74,7 +74,6 @@ export function initAreaSelector(signal: AbortSignal): void {
   if (table) {
     document.addEventListener("meitheal:table-area-reset", () => selectArea("", "All Areas", "🗂"), { signal })
   } else if (calendar) {
-    document.addEventListener("meitheal:calendar-filters-reset", () => selectArea("", "All Areas", "🗂"), { signal })
     document.addEventListener(CALENDAR_AREA_APPLIED_EVENT, event => {
       const areaId = (event as CustomEvent<string>).detail
       const option = [...dropdown.querySelectorAll<HTMLElement>("[data-area-id]")]
@@ -141,9 +140,10 @@ export function initAreaSelector(signal: AbortSignal): void {
 
   function selectArea(areaId: string, areaName: string, areaIcon: string, source: "restore" | "user" | "calendar" = "restore"): void {
     const detail: AreaChangedDetail = { areaId, areaName, areaIcon }
-    if (source === "user" && calendar && !document.dispatchEvent(new CustomEvent(CALENDAR_AREA_REQUEST_EVENT, {
-      cancelable: true, detail,
-    }))) return
+    if (source === "user" && calendar) {
+      document.dispatchEvent(new CustomEvent(CALENDAR_AREA_REQUEST_EVENT, { detail }))
+      return
+    }
 
     // Update trigger display
     labelEl!.textContent = areaName

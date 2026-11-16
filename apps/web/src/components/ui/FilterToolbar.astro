@@ -464,10 +464,10 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
 <script>
   // Expose global for inline views (kanban)
   import { getRememberedAreaId } from "@lib/area-selector-controller"
-  import { readCalendarTaskFilters } from "@lib/calendar-task-filter"
+  import { CALENDAR_FILTER_STATE_EVENT, readCalendarTaskFilters } from "@lib/calendar-task-filter"
   import { FILTER_LIST_LIMIT, isTaskVisible, loadFilterState, loadTableFilterState, normalizeTableCreationRange } from "@lib/filter-state"
   import { pageLifecycle } from "@lib/page-lifecycle"
-  import { readKanbanFilters, storedKanbanGroup } from "../../lib/kanban-query"
+  import { readKanbanFilters, storedKanbanGroup, type KanbanFilters } from "../../lib/kanban-query"
   declare global {
     interface Window {
       __isTaskVisible?: (el: HTMLElement, state?: any) => boolean
@@ -877,8 +877,6 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
     }
     if (createdDate) document.addEventListener("meitheal:table-filters-applied", updateClearVisibility, { signal })
 
-    let acceptedCalendarState = prefix === "calendar" ? gatherState() : null
-
     function emitChange(clear = false) {
       const state = gatherState()
       const accepted = document.dispatchEvent(
@@ -887,7 +885,6 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
           detail: { ...state, view: prefix, clear, ...(clear ? { labels: [] } : {}) },
         })
       )
-      if (accepted && prefix === "calendar") acceptedCalendarState = state
       updateLaneCount()
       updateClearVisibility()
       return accepted
@@ -979,13 +976,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
 
     // Select change listeners (for remaining native selects)
     ;[statusSel, prioritySel, riceSel, userSel, areaSel].forEach((sel) => {
-      if (!sel) return
-      sel.addEventListener("change", () => {
-        if (emitChange() || !acceptedCalendarState) return
-        if (sel === statusSel) sel.value = acceptedCalendarState.status
-        if (sel === prioritySel) sel.value = acceptedCalendarState.priority
-        updateClearVisibility()
-      }, { signal })
+      sel?.addEventListener("change", () => emitChange(), { signal })
     })
 
     signal.addEventListener("abort", () => clearTimeout(searchTimer), { once: true })
@@ -1049,10 +1040,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
             type.setAttribute("aria-pressed", "true")
           }
         }
-        if (!emitChange() && acceptedCalendarState) {
-          setTypeButtons(acceptedCalendarState.types)
-          updateClearVisibility()
-        }
+        emitChange()
       }, { signal })
     })
 
@@ -1068,7 +1056,8 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
       const restoreFilterFocus = (prefix === "table" || prefix === "calendar") && document.activeElement === clearBtn
       if (search) search.value = ""
       setPromoted(false)
-      status = priority = rice = user = task_type = area = ""
+      status = priority = rice = user = task_type = ""
+      if (prefix !== "calendar") area = ""
       if (unassigned) unassigned.checked = false
       for (const option of laneOptions()) option.checked = false
       createdRange = { createdFrom: undefined, createdThrough: undefined }
@@ -1141,10 +1130,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
 
     promotedToggle?.addEventListener("click", () => {
       setPromoted(!promoted)
-      if (!emitChange()) {
-        setPromoted(!promoted)
-        updateClearVisibility()
-      }
+      emitChange()
     }, { signal })
     
     if (filterToggle) {
@@ -1241,6 +1227,13 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
           groupControl.value = "none"
         }
       }
+      renderSavedRules()
+      updateLaneCount()
+      updateClearVisibility()
+    }
+
+    function renderSavedRules() {
+      advContainer?.querySelectorAll(".advanced-filter-row").forEach(row => row.remove())
       if (advContainer && advancedFilterState?.conditions.length) {
         for (const condition of readOnlyRules ? [] : advancedFilterState.conditions) {
           if ("conditions" in condition) continue
@@ -1258,13 +1251,29 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
           if (logic && (condition.logic ?? advancedFilterState.logic) === "OR") logic.click()
           advContainer.append(row)
         }
-        advToggleBtn?.classList.add("filter-pill--active")
-        checkEmptyState()
       }
-      updateLaneCount()
-      updateClearVisibility()
+      advToggleBtn?.classList.toggle("filter-pill--active", Boolean(advancedFilterState?.conditions.length))
+      checkEmptyState()
     }
-    if (prefix === "calendar" && search) search.disabled = false
+    if (prefix === "calendar") {
+      if (search) search.disabled = false
+      document.addEventListener(CALENDAR_FILTER_STATE_EVENT, event => {
+        const filters = (event as CustomEvent<KanbanFilters & { keepSearch: boolean }>).detail
+        ;({ status = "", priority = "", rice = "", user = "", task_type = "", labels = [] } = filters)
+        if (search && !searchTimer && !filters.keepSearch) search.value = filters.search ?? ""
+        if (statusSel) statusSel.value = status
+        if (prioritySel) prioritySel.value = priority
+        setTypeButtons(filters.types ?? [])
+        setPromoted(filters.promoted ?? false)
+        advancedFilterState = filters.advancedFilter ?? null
+        readOnlyRules = advancedFilterState?.conditions.some(condition =>
+          "conditions" in condition || condition.operator === "between") ?? false
+        renderInheritedFilters()
+        updateRulesMode()
+        renderSavedRules()
+        updateClearVisibility()
+      }, { signal })
+    }
     loadAreas()
   }
 

@@ -342,6 +342,61 @@ test.describe("Calendar Shell", () => {
     await expect(search).toHaveValue("orchard")
   })
 
+  test("pending and failed Calendar refreshes retain accepted Area and Events states", async ({ page, request }) => {
+    const created = await request.post("/api/areas", { data: { name: "Remembered workshop" } })
+    expect(created.status()).toBe(201)
+    const { id } = await created.json()
+    let release = () => {}
+    const hold = new Promise<void>(resolve => { release = resolve })
+    let held = false
+    let fail = false
+    await page.evaluate(areaId => localStorage.setItem("meitheal-selected-area", JSON.stringify({
+      areaId, areaName: "Remembered workshop", areaIcon: "folder",
+    })), id)
+    await page.route(url => url.searchParams.has("calendarRefresh"), async route => {
+      const params = new URL(route.request().url()).searchParams
+      if (fail) return route.fulfill({ status: 503 })
+      if (!held && params.get("area") === id) {
+        held = true
+        await hold
+      }
+      return route.continue()
+    })
+    try {
+      await page.goto("/tasks?view=calendar&year=2031&month=6#calendar")
+      await expect.poll(() => held).toBe(true)
+      const trigger = page.locator("#area-selector-trigger")
+      await expect(trigger).toContainText("All Areas")
+      await page.getByRole("combobox", { name: "Filter by priority" }).selectOption("3")
+      await expect(page).toHaveURL(url => url.searchParams.get("area") === id && url.searchParams.get("priority") === "3")
+      await expect(trigger).toContainText("Remembered workshop")
+      release()
+
+      fail = true
+      await trigger.click()
+      await page.locator('#area-selector-dropdown [data-area-id=""]').click()
+      const retry = page.getByRole("button", { name: "Retry calendar" })
+      await expect(retry).toBeVisible()
+      await expect(trigger).toContainText("Remembered workshop")
+      await expect(page.locator(`#area-selector-dropdown [data-area-id="${id}"]`)).toHaveAttribute("aria-selected", "true")
+      expect(await page.evaluate(() => JSON.parse(localStorage.getItem("meitheal-selected-area") ?? "{}").areaId)).toBe(id)
+
+      const events = page.getByRole("toolbar", { name: "Filter tasks" }).getByRole("button", { name: "Events", exact: true })
+      await events.click()
+      await expect(retry).toBeVisible()
+      await expect(events).toHaveAttribute("aria-pressed", "true")
+      await expect(page).toHaveURL(url => url.searchParams.get("area") === id && !url.searchParams.has("types"))
+
+      fail = false
+      await retry.click()
+      await expect(events).toHaveAttribute("aria-pressed", "false")
+      await expect(page).toHaveURL(url => url.searchParams.get("area") === id && url.searchParams.has("types"))
+    } finally {
+      release()
+      await request.delete(`/api/areas/${id}`)
+    }
+  })
+
   test("Calendar keeps the previous Area when a filter change exceeds its URL limit", async ({ page, request, baseURL }) => {
     const headers = { origin: new URL(baseURL!).origin }
     const created = await request.post("/api/areas", { headers, data: { name: "Extra calendar area" } })
