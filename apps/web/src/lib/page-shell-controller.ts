@@ -55,6 +55,23 @@ export function initPageShellNavigation<SectionId extends string>({
   }
 
   const sectionIdSet = new Set(sectionIds)
+  let linkedSection: { element: HTMLElement; wasVisible: boolean } | null = null
+
+  function syncLinkedSectionVisibility(): void {
+    if (!linkedSection) return
+    const { top, bottom } = linkedSection.element.getBoundingClientRect()
+    if (bottom > 0 && top < window.innerHeight) {
+      linkedSection.wasVisible = true
+    } else if (linkedSection.wasVisible) {
+      linkedSection = null
+    }
+  }
+
+  function trackLinkedSection(sectionId: SectionId | null): void {
+    const element = sectionId ? document.getElementById(sectionId) : null
+    linkedSection = element ? { element, wasVisible: false } : null
+    syncLinkedSectionVisibility()
+  }
 
   function resolveSectionId(anchorId: string): SectionId | null {
     const target = document.getElementById(anchorId)
@@ -100,10 +117,11 @@ export function initPageShellNavigation<SectionId extends string>({
       return
     }
 
+    const sectionId = resolveSectionId(anchorId)
+    trackLinkedSection(sectionId)
     target.scrollIntoView({ behavior, block: "start" })
     if (updateLocation) history.replaceState(history.state, "", `#${anchorId}`)
 
-    const sectionId = resolveSectionId(anchorId)
     if (sectionId) {
       updateActiveState(sectionId)
     }
@@ -117,6 +135,7 @@ export function initPageShellNavigation<SectionId extends string>({
   function syncFromHash(): void {
     const hash = window.location.hash.replace("#", "")
     const sectionId = hash ? resolveSectionId(hash) : null
+    trackLinkedSection(sectionId)
     updateActiveState(sectionId ?? defaultSectionId)
   }
 
@@ -141,8 +160,14 @@ export function initPageShellNavigation<SectionId extends string>({
   }
 
   if (sections.length > 0) {
+    pageLifecycle.on(window, "scroll", syncLinkedSectionVisibility, { passive: true })
+    pageLifecycle.on(document, "scrollend", () => {
+      if (linkedSection && !linkedSection.wasVisible) linkedSection = null
+    })
     const observer = new IntersectionObserver(
       (entries) => {
+        // Keep the linked section current during the jump and until it leaves view.
+        if (linkedSection) return
         const active = entries
           .filter((entry) => entry.isIntersecting)
           .sort((left, right) => right.intersectionRatio - left.intersectionRatio)[0]
@@ -194,6 +219,7 @@ export function initPageShellNavigation<SectionId extends string>({
         "",
         `${window.location.pathname}${window.location.search}`,
       )
+      trackLinkedSection(defaultSectionId)
       window.scrollTo({ top: 0, behavior: "smooth" })
       updateActiveState(defaultSectionId)
     })

@@ -17,10 +17,10 @@ test.describe("Today Shell", () => {
     await workLink.click()
 
     await expect(page).toHaveURL(/#today-work$/)
+    await expect(page.locator("#today-work")).toBeInViewport()
     await expect(workLink).toHaveClass(/is-active/)
     await expect(workLink).toHaveAttribute("aria-current", "location")
     await expect(workLink).not.toHaveAttribute("aria-selected")
-    await expect(page.locator("#today-work")).toBeVisible()
   })
 
   test("search launcher opens SearchHub and Assist remains available", async ({ page }) => {
