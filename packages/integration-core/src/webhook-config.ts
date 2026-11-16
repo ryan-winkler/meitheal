@@ -1,45 +1,22 @@
 import { createHmac } from "node:crypto"
+import { canonicalizeNetworkHost, classifyNetworkHost, isIpv4TranslationIpv6Host } from "./grocy-adapter"
 
 // --- URL Validation (reused by SSRF guard and webhook config) ---
 
-const PRIVATE_IP_RANGES = [
-  /^127\./,
-  /^10\./,
-  /^172\.(1[6-9]|2\d|3[01])\./,
-  /^192\.168\./,
-  /^0\./,
-  /^169\.254\./,
-  /^::1?$/, // loopback and unspecified
-  /^f[cd][0-9a-f]{0,2}:/, // unique local fc00::/7
-  /^fe[89ab][0-9a-f]?:/, // link-local fe80::/10
-  /^::ffff:/, // IPv4-mapped addresses reach IPv4 hosts, including private ones
-]
-
 export function isPrivateHost(hostname: string): boolean {
-  // URL keeps IPv6 literals in brackets ("[::1]") and may end a name with the root dot.
-  // Canonicalize IPv4/IPv6 shorthand literals (such as "127.1" or "0:0:0:0:0:0:0:1") through URL first.
-  const trimmed = hostname.trim().toLowerCase()
-  if (!trimmed) return true
-  let canonical = trimmed
-  try {
-    const candidate = trimmed.includes(":") && !trimmed.startsWith("[") ? `[${trimmed}]` : trimmed
-    canonical = new URL(`http://${candidate}`).hostname.toLowerCase()
-  } catch {
+  const host = canonicalizeNetworkHost(hostname)
+  if (!host || isIpv4TranslationIpv6Host(host)) {
     return true
   }
-  let host = canonical.startsWith("[") && canonical.endsWith("]") ? canonical.slice(1, -1) : canonical
-  while (host.endsWith(".")) {
-    host = host.slice(0, -1)
-  }
-  if (!host || host === "localhost" || host.endsWith(".localhost")) {
-    return true
-  }
-  return PRIVATE_IP_RANGES.some((re) => re.test(host))
+  return classifyNetworkHost(host) !== null
 }
 
 export function isPrivateUrl(urlString: string): boolean {
   try {
     const parsed = new URL(urlString)
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return true
+    }
     return isPrivateHost(parsed.hostname)
   } catch {
     return true // invalid URLs are treated as private (rejected)

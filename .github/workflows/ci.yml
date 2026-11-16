@@ -227,6 +227,7 @@ jobs:
           uv pip install --require-hashes --no-deps -r "$TEST_REQUIREMENTS"
           if [ "$HA_CORE_VERSION" = "2026.11.1" ]; then
             uv pip check -q
+            python -m ruff check .
             python -m pytest -q --cov=custom_components.meitheal --cov-report=xml:coverage-python.xml --cov-report=term-missing:skip-covered
           elif [ "$HA_CORE_VERSION" = "2026.10.4" ]; then
             EXPECTED_PILLOW=$(grep -iE '^[[:space:]]*pillow==' overrides-2026.10.txt | sed -nE 's/^[[:space:]]*[^=]+==([^[:space:]#;\\]+).*/\1/p' | head -n 1)

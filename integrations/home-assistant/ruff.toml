@@ -1,0 +1,7 @@
+# Style rules that CI enforces for the Home Assistant integration (see CONTRIBUTING.md#coding-standards).
+target-version = "py314"
+line-length = 88
+
+[lint]
+# pycodestyle errors and Pyflakes. Import order and long lines are left to review.
+select = ["E4", "E7", "E9", "F"]

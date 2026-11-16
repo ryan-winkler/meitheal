@@ -52,9 +52,13 @@ blocked.addSubnet("fe80::", 10, "ipv6") // link-local
 blocked.addSubnet("ff00::", 8, "ipv6") // multicast
 blocked.addAddress("fd00:ec2::254", "ipv6") // AWS metadata over IPv6
 
+const postUnmapBlockedIpv6 = new BlockList()
+postUnmapBlockedIpv6.addSubnet("64:ff9b::", 32, "ipv6") // reserved non-/96 NAT64 space (64:ff9b::/96 unmaps to IPv4)
+
 const privateOrLoopback = new BlockList()
 privateOrLoopback.addSubnet("127.0.0.0", 8, "ipv4")
 privateOrLoopback.addSubnet("10.0.0.0", 8, "ipv4")
+privateOrLoopback.addSubnet("100.64.0.0", 10, "ipv4") // RFC 6598 shared carrier / Tailscale CGNAT
 privateOrLoopback.addSubnet("172.16.0.0", 12, "ipv4")
 privateOrLoopback.addSubnet("192.168.0.0", 16, "ipv4")
 privateOrLoopback.addAddress("::1", "ipv6")
@@ -120,7 +124,9 @@ function configuredSupervisorHostname(): string {
 }
 
 function isBlockedHostname(hostname: string): boolean {
-  const host = normalizeHostname(hostname)
+  const trimmed = hostname.trim().toLowerCase()
+  if (!trimmed.includes(":") && (trimmed.startsWith(".") || trimmed.includes(".."))) return true
+  const host = normalizeHostname(trimmed)
   if (!host || host.includes("%")) return true
   if (BLOCKED_HOSTNAMES.has(host)) return true
   if (BLOCKED_HOSTNAME_SUFFIXES.some((suffix) => host.endsWith(suffix))) return true
@@ -209,12 +215,38 @@ function unmapIPv4(address: string): string {
   return canonical
 }
 
+function parseCanonicalIpv6Hextets(canonical: string): number[] | null {
+  if (isIP(canonical) !== 6) return null
+  const dblIdx = canonical.indexOf("::")
+  if (dblIdx >= 0) {
+    const head = canonical.slice(0, dblIdx)
+    const tail = canonical.slice(dblIdx + 2)
+    const headParts = head ? head.split(":") : []
+    const tailParts = tail ? tail.split(":") : []
+    const zeroCount = 8 - headParts.length - tailParts.length
+    if (zeroCount < 0) return null
+    const groups = [...headParts, ...Array<string>(zeroCount).fill("0"), ...tailParts]
+    return groups.length === 8 ? groups.map((g) => Number.parseInt(g, 16)) : null
+  }
+  const parts = canonical.split(":")
+  return parts.length === 8 ? parts.map((g) => Number.parseInt(g, 16)) : null
+}
+
+function isIsatapIpv6(canonical: string): boolean {
+  const h = parseCanonicalIpv6Hextets(canonical)
+  return Boolean(h && (h[4] === 0x0000 || h[4] === 0x0200) && h[5] === 0x5efe)
+}
+
 /** True when an IP address is one integration traffic must never reach. */
 export function isBlockedOutboundAddress(address: string): boolean {
   const raw = normalizeHostname(address)
   if (raw.includes("%")) return true
   const canonical = canonicalizeIpLiteral(raw)
-  if (isIP(canonical) === 6 && canonical !== "::1" && blocked.check(canonical, "ipv6")) {
+  if (
+    isIP(canonical) === 6 &&
+    canonical !== "::1" &&
+    (blocked.check(canonical, "ipv6") || isIsatapIpv6(canonical))
+  ) {
     return true
   }
   const normalized = unmapIPv4(canonical)
@@ -227,7 +259,7 @@ export function isBlockedOutboundAddress(address: string): boolean {
   }
   if (family === 4) return blocked.check(normalized, "ipv4")
   if (normalized === "::1") return false
-  return blocked.check(normalized, "ipv6")
+  return blocked.check(normalized, "ipv6") || postUnmapBlockedIpv6.check(normalized, "ipv6")
 }
 
 /** True when an IP address is blocked, loopback, RFC1918 private, or IPv6 ULA. */
@@ -257,7 +289,7 @@ export function assertOutboundUrl(raw: string | URL, options: OutboundPolicyOpti
   }
   const host = normalizeHostname(url.hostname)
   if (!host) throw new OutboundUrlError("URL has no host")
-  if (isBlockedHostname(host)) {
+  if (isBlockedHostname(url.hostname)) {
     throw new OutboundUrlError(`Host "${host}" is not an allowed integration target`)
   }
   if (isBlockedOutboundAddress(host)) {

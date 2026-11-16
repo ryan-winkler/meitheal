@@ -5,3 +5,5 @@ aiohasupervisor==0.10.0
 hassil==3.12.1
 # Coverage plugin for the CI pytest run.
 pytest-cov==7.1.0
+# Linter that CI runs on the integration (rules in ruff.toml).
+ruff==0.14.0
