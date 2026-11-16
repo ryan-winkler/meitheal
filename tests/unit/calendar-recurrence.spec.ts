@@ -1,3 +1,4 @@
+import { nextHouseholdTicketNumberSql } from "../../apps/web/drizzle/migrations/task-board-tickets.mjs"
 /**
  * Calendar Recurrence, CalDAV iCal Compliance, Timed ISO Dates, & Query Tests
  *
@@ -467,10 +468,10 @@ test("TaskRepository queries handle timed ISO due dates and expanded HA event oc
   const directory = await mkdtemp(join(tmpdir(), "meitheal-repo-timed-"))
   process.env.MEITHEAL_DB_URL = `file:${join(directory, "tasks.db")}`
   resetPersistenceForTests()
+  await ensureSchema()
   const db = getPersistenceClient()
 
   try {
-    await ensureSchema()
     const repo = new TaskRepository(db)
 
     // Seed tasks: yesterday overdue, earlier today timed, later today timed, month-end timed, tomorrow high-priority timed
@@ -599,9 +600,10 @@ test("Kanban overdue index and getTasksForView slim counts treat a timed due dat
   const previousDb = process.env.MEITHEAL_DB_URL
   process.env.MEITHEAL_DB_URL = `file:${join(directory, "tz-overdue.db")}`
   resetPersistenceForTests()
+  await ensureSchema()
   const db = getPersistenceClient()
+
   try {
-    await ensureSchema()
     // A timed due date is overdue once its time passes, whatever the household timezone.
     const aklTodayIso = new Date(Date.now() + 2 * 3_600_000).toISOString().replace(/\.\d{3}Z$/, "Z")
     const laOverdueIso = new Date(Date.now() - 2 * 3_600_000).toISOString().replace(/\.\d{3}Z$/, "Z")
@@ -775,12 +777,13 @@ test("completing a local repeating calendar_event task spawns its next occurrenc
   const previousDb = process.env.MEITHEAL_DB_URL
   process.env.MEITHEAL_DB_URL = `file:${join(directory, "local-repeat.db")}`
   resetPersistenceForTests()
+  await ensureSchema()
   const db = getPersistenceClient()
+
   try {
-    await ensureSchema()
     await db.execute({
       sql: `INSERT INTO tasks (id, title, status, priority, due_date, recurrence_rule, task_kind, idempotency_key, request_id, ticket_number, created_at, updated_at)
-            VALUES ('local-evt-1', 'Local Team Standup', 'pending', 3, '2026-11-02', 'FREQ=WEEKLY', 'calendar_event', 'k-le1', 'r-le1', 10, 1, 1)`,
+            VALUES ('local-evt-1', 'Local Team Standup', 'pending', 3, '2026-11-02', 'FREQ=WEEKLY', 'calendar_event', 'k-le1', 'r-le1', ${nextHouseholdTicketNumberSql}, 1, 1)`,
       args: [],
     })
     const repo = new TaskRepository(db)
@@ -857,9 +860,10 @@ test("GET /api/tasks/today-counts and getTodayTaskCounts evaluate counters in th
   const previousDb = process.env.MEITHEAL_DB_URL
   process.env.MEITHEAL_DB_URL = `file:${join(directory, "today-counts.db")}`
   resetPersistenceForTests()
+  await ensureSchema()
   const db = getPersistenceClient()
+
   try {
-    await ensureSchema()
     const settings = new SettingsRepository(db)
     await settings.ensureSettingsTable()
     await settings.upsert("timezone", "America/Los_Angeles")

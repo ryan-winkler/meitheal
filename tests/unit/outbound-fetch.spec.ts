@@ -458,7 +458,6 @@ test.describe("CalDAV credential key initialization and legacy migration", () =>
       expect(statSync(join(remoteKeyDir, "caldav-credentials.key")).mode & 0o777).toBe(0o600)
       delete process.env.MEITHEAL_DATA_DIR
 
-      getPersistenceClient().close()
     } finally {
       resetPersistenceForTests()
       for (const [key, value] of Object.entries(previous)) {

@@ -49,6 +49,7 @@ test("notifyAgentComment includes comment_id and content in webhook events and i
     await settings.upsert("notification_preferences", JSON.stringify({ enabled: false }))
 
     const now = Date.now()
+    await client.execute("UPDATE task_boards SET ticket_high_water = 6 WHERE id = 'household'")
     await client.execute({
       sql: "INSERT INTO tasks (id, title, status, idempotency_key, request_id, ticket_number, created_at, updated_at) VALUES (?, ?, 'pending', ?, ?, ?, ?, ?)",
       args: ["task-notify-unit-1", "Check boiler pressure", "k1", "r1", 7, now, now],
@@ -117,6 +118,7 @@ test("A2A task helpers resolve ticket keys, paginate past 200 rows, and enforce 
     await settings.upsert("agent-protocols-a2a-enabled", "true")
 
     const baseTime = 1_700_000_000_000
+    await client.execute("UPDATE task_boards SET ticket_high_water = 16 WHERE id = 'household'")
     for (let i = 0; i < 205; i++) {
       const ts = baseTime + i * 1000
       const id = i === 17 ? "a2a-task-17" : `a2a-task-${i}`

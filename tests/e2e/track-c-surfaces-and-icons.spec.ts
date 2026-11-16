@@ -71,10 +71,10 @@ test.describe("Track C — Evergreen Carbon Surfaces, Tabler 1.75px Sprites & 5-
     process.env.HA_TOKEN = "track-c-cal-token"
     process.env.MEITHEAL_DB_URL = `file:${join(dir, "tasks.db")}`
     resetPersistenceForTests()
+    await ensureSchema()
     const db = getPersistenceClient()
 
     try {
-      await ensureSchema()
       expect(await getHAConnection()).not.toBeNull()
       startCalendarSync({
         entityId: "calendar.household",
@@ -84,6 +84,7 @@ test.describe("Track C — Evergreen Carbon Surfaces, Tabler 1.75px Sprites & 5-
         syncIntervalMs: 0,
       })
 
+      await db.execute("UPDATE task_boards SET ticket_high_water = 41 WHERE id = 'household'")
       await db.execute({
         sql: `INSERT INTO tasks (id, title, description, status, priority, due_date, labels, framework_payload, calendar_sync_state, area_id, custom_fields, task_type, idempotency_key, request_id, ticket_number, created_at, updated_at)
               VALUES ('task-cal-1', 'Service heat pump', 'Initial note', 'active', 2, '2026-11-20', '["homelab","hvac"]', '{}', 'pending', 'default', '{}', 'task', 'idem-cal-1', 'req-cal-1', 42, ?, ?)`,

@@ -1969,7 +1969,7 @@ export class TaskRepository {
                                checklists, custom_fields, ticket_number,
                                idempotency_key, request_id, created_at, updated_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    (SELECT id FROM projects WHERE id = ?), ?, ?, ?, ?, ?,
+                    (SELECT id FROM projects WHERE id = ?), ?, ?, ?, ?, ?, ?,
                     ${nextHouseholdTicketNumberSql}, ?, ?, ?, ?)
             RETURNING ticket_number`,
       args: [
