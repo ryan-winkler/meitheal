@@ -461,6 +461,7 @@ test.describe("Private URL Guard", () => {
       }) as typeof dns.lookup
 
       let infoPayload: Record<string, unknown> = { hostname: "a0d7b954-grocy", ingress_port: port }
+      let matchedInfoOverride: (() => Response | Promise<Response>) | undefined
       const supervisorProxyHits: string[] = []
       globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
         const target = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
@@ -480,6 +481,7 @@ test.describe("Private URL Guard", () => {
           })
         }
         if (target === "http://supervisor/addons/a0d7b954_grocy/info") {
+          if (matchedInfoOverride) return matchedInfoOverride()
           return Response.json({ data: infoPayload })
         }
         if (target === "http://supervisor/addons/a0d7b954_grocy/proxy/api/objects/api_keys") {
@@ -650,6 +652,29 @@ test.describe("Private URL Guard", () => {
       await db.execute({
         sql: "UPDATE settings SET value = ?, updated_at = ? WHERE key = 'grocy_api_key'",
         args: ["1", Date.now()],
+      })
+      const persistence = db
+      const rawGrocyUrl = async () => (await persistence.execute(
+        "SELECT value FROM settings WHERE key = 'grocy_url'",
+      )).rows[0]?.value
+      matchedInfoOverride = () => new Response(null, { status: 503 })
+      expect(await createGrocyClient()).toBeNull()
+      expect(await rawGrocyUrl()).toBe("http://supervisor/api/hassio_ingress/tok_1")
+
+      const newGrocyUrl = JSON.stringify("https://grocy.example.com/api-root")
+      matchedInfoOverride = async () => {
+        await persistence.execute({
+          sql: "UPDATE settings SET value = ? WHERE key = 'grocy_url'",
+          args: [newGrocyUrl],
+        })
+        return Response.json({ data: infoPayload })
+      }
+      expect(await createGrocyClient()).not.toBeNull()
+      expect(await rawGrocyUrl()).toBe(newGrocyUrl)
+      matchedInfoOverride = undefined
+      await persistence.execute({
+        sql: "UPDATE settings SET value = ? WHERE key = 'grocy_url'",
+        args: ["http://supervisor/api/hassio_ingress/tok_1"],
       })
       const client = await createGrocyClient()
       expect(client).not.toBeNull()

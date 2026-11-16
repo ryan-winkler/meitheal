@@ -129,6 +129,15 @@ export class SettingsRepository {
     settingsRevision++
   }
 
+  /** Update an existing setting only if its stored value has not changed. */
+  async replaceIfUnchanged(key: string, oldValue: string, newValue: string): Promise<void> {
+    const result = await this.client.execute({
+      sql: "UPDATE settings SET value = ?, updated_at = ? WHERE key = ? AND value = ?",
+      args: [newValue, Date.now(), key, oldValue],
+    })
+    if (result.rowsAffected > 0) settingsRevision++
+  }
+
   /** Delete all settings (factory reset) */
   async deleteAll(): Promise<void> {
     await this.client.execute("DELETE FROM settings")

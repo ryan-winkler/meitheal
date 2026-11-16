@@ -90,30 +90,18 @@ function selectAddonPort(info: {
 }
 
 async function resolveStartedAddonContainerUrl(slug: string): Promise<string | null> {
-  let hostname = slug.replace(/_/g, "-")
-  let port = 80
-  try {
-    const infoRes = await supervisorFetch(`/addons/${encodeURIComponent(slug)}/info`)
-    if (infoRes?.ok) {
-      const infoData = (await infoRes.json()) as {
-        data?: {
-          hostname?: string
-          ingress_port?: number
-          network?: Record<string, unknown>
-        }
-      }
-      if (typeof infoData.data?.hostname === "string" && infoData.data.hostname.trim()) {
-        hostname = infoData.data.hostname.trim()
-      }
-      if (infoData.data) {
-        port = selectAddonPort(infoData.data)
-      }
-    } else {
-      await infoRes?.body?.cancel().catch(() => undefined)
-    }
-  } catch {
-    /* Fall back to standard slug-derived container hostname and port 80 */
+  const infoRes = await supervisorFetch(`/addons/${encodeURIComponent(slug)}/info`).catch(() => null)
+  if (!infoRes?.ok) {
+    await infoRes?.body?.cancel().catch(() => undefined)
+    return null
   }
+  const info = (await infoRes.json().catch(() => null)) as {
+    data?: { hostname?: unknown; ingress_port?: unknown; network?: Record<string, unknown> }
+  } | null
+  const data = info?.data
+  if (!data || typeof data !== "object" || Array.isArray(data)) return null
+  const hostname = (typeof data.hostname === "string" && data.hostname.trim()) || slug.replace(/_/g, "-")
+  const port = selectAddonPort(data)
 
   const check = validateGrocyBaseUrl(`http://${hostname}:${port}`)
   if (!check.ok) return null
@@ -197,45 +185,33 @@ export async function resolveSupervisorGrocySlugForUrl(targetUrl: string): Promi
 export async function createGrocyClient(): Promise<GrocyAdapter | null> {
   try {
     const client = getPersistenceClient()
-    const result = await client.execute(
+    const readConfig = () => client.execute(
       "SELECT key, value FROM settings WHERE key IN ('grocy_url', 'grocy_api_key')",
     )
+    let { rows } = await readConfig()
+    const storedUrl = rows.find((row) => row.key === "grocy_url")?.value
+    if (typeof storedUrl !== "string" || !rows.some((row) => row.key === "grocy_api_key")) return null
 
-    let baseUrl: string | undefined
-    let apiKey: string | undefined
-
-    for (const row of result.rows) {
-      if (row.key === "grocy_url") {
-        try {
-          const parsedUrl: unknown = JSON.parse(String(row.value))
-          if (typeof parsedUrl === "string") baseUrl = parsedUrl
-        } catch {
-          baseUrl = String(row.value)
-        }
-      } else if (row.key === "grocy_api_key") {
-        try {
-          const parsedKey: unknown = JSON.parse(String(row.value))
-          if (typeof parsedKey === "string") apiKey = parsedKey
-          else if (typeof parsedKey === "number" && Number.isFinite(parsedKey)) apiKey = String(parsedKey)
-        } catch {
-          apiKey = String(row.value)
-        }
+    function decode(value: unknown): unknown {
+      if (typeof value !== "string") return value
+      try {
+        return JSON.parse(value)
+      } catch {
+        return value
       }
     }
-
-    if (typeof baseUrl !== "string" || typeof apiKey !== "string" || !baseUrl || !apiKey) {
-      return null
+    const originalUrl = decode(storedUrl)
+    if (typeof originalUrl === "string" && isLegacySupervisorIngressUrl(originalUrl)) {
+      const detected = await resolveSupervisorGrocyAddon(originalUrl)
+      if (!detected) return null
+      const repo = new SettingsRepository(client)
+      await repo.replaceIfUnchanged("grocy_url", storedUrl, JSON.stringify(detected.url))
+      rows = (await readConfig()).rows
     }
-
-    if (isLegacySupervisorIngressUrl(baseUrl)) {
-      const detected = await resolveSupervisorGrocyAddon(baseUrl)
-      if (detected) {
-        baseUrl = detected.url
-        const repo = new SettingsRepository(client)
-        await repo.ensureSettingsTable()
-        await repo.upsert("grocy_url", JSON.stringify(detected.url))
-      }
-    }
+    const baseUrl = decode(rows.find((row) => row.key === "grocy_url")?.value)
+    const storedKey = decode(rows.find((row) => row.key === "grocy_api_key")?.value)
+    const apiKey = typeof storedKey === "number" && Number.isFinite(storedKey) ? String(storedKey) : storedKey
+    if (typeof baseUrl !== "string" || !baseUrl || typeof apiKey !== "string" || !apiKey) return null
 
     const urlCheck = validateGrocyBaseUrl(baseUrl)
     if (!urlCheck.ok) {

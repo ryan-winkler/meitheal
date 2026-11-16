@@ -435,14 +435,13 @@ export async function autoStartGrocySync(
   retryAttempt = 0,
   retryDelayMs = GROCY_STARTUP_RETRY_DELAY_MS,
 ): Promise<void> {
+  const runEpoch = grocyStartupEpoch
   try {
     const { getGrocySyncStatus, onGrocySyncStopped, startGrocySync } = await import("@domains/grocy")
     if (!grocyStopHookRegistered) {
       onGrocySyncStopped(clearGrocyStartupRetry)
       grocyStopHookRegistered = true
     }
-    const runEpoch = grocyStartupEpoch
-
     const client = await getDB()
 
     // Read grocy sync settings

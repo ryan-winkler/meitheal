@@ -434,6 +434,25 @@ test("HA connection, services, users, todo-bridge, and ha-startup work against l
     await new Promise<void>((resolve) => setTimeout(resolve, 45))
     expect(grocyBridge.getGrocySyncStatus().active).toBe(false)
     haStartup.clearGrocyStartupRetry()
+
+    // A temporary lookup failure also has a recovery path when sync stays enabled.
+    await client.batch([
+      {
+        sql: "UPDATE settings SET value = 'true' WHERE key = 'grocy_sync_enabled'",
+        args: [],
+      },
+      {
+        sql: "UPDATE settings SET value = ? WHERE key = 'grocy_url'",
+        args: [JSON.stringify("http://supervisor/api/hassio_ingress/tok_retry")],
+      },
+    ])
+    await haStartup.autoStartGrocySync(0, 50)
+    expect(grocyBridge.getGrocySyncStatus().active).toBe(false)
+    await client.execute({
+      sql: "UPDATE settings SET value = ? WHERE key = 'grocy_url'",
+      args: [JSON.stringify(`http://grocy.local:${port}`)],
+    })
+    await expect.poll(() => grocyBridge.getGrocySyncStatus().active).toBe(true)
   } finally {
     haStartup.clearGrocyStartupRetry()
     grocyBridge.stopGrocySync()
