@@ -1,9 +1,11 @@
 ---
+import BoardPlanning from "../../components/boards/BoardPlanning.astro"
 import Layout from "../../layouts/Layout.astro"
 import "../../styles/boards.css"
 import { permitsBoardTaskAction } from "@domains/tasks/persistence/named-board-repository"
 import { boardViewKey, readBoardView } from "@lib/board-view"
 import { boardSessionProof, currentBoardUser } from "@lib/named-board-request"
+import { isFeatureEnabled } from "@lib/feature-flags"
 import { isDoneStatus } from "@lib/status-config"
 
 const boardId = Astro.params.id
@@ -16,6 +18,7 @@ const policy = view?.board.policy
 const canEdit = view && permitsBoardTaskAction(view.board, "edit")
 const canDelete = view && permitsBoardTaskAction(view.board, "delete")
 const canComplete = view && permitsBoardTaskAction(view.board, "complete")
+const routinesEnabled = view ? await isFeatureEnabled("habits") : false
 const verifyPath = boardId ? `/api/boards/${encodeURIComponent(boardId)}?offset=${offset}` : ""
 ---
 <Layout title="Board">
@@ -38,6 +41,10 @@ const verifyPath = boardId ? `/api/boards/${encodeURIComponent(boardId)}?offset=
               <label>Column <select name="laneId">
                 {view.lanes.filter(lane => canComplete || !isDoneStatus(lane.key)).map(lane => <option value={lane.id}>{lane.label}</option>)}
               </select></label>
+              {view.planning?.projects.length ? <label>Project <select name="projectId">
+                <option value="">No Project</option>
+                {view.planning.projects.filter(project => project.status !== "archived").map(project => <option value={project.id}>{project.title}</option>)}
+              </select></label> : null}
               <p role="status" data-board-feedback></p>
               <button type="submit" class="btn btn-primary">Create task</button>
             </form>
@@ -80,6 +87,7 @@ const verifyPath = boardId ? `/api/boards/${encodeURIComponent(boardId)}?offset=
           {view.nextOffset !== null && <a href={`?offset=${view.nextOffset}`}>More tasks</a>}
         </nav>}
 
+        {view.planning && <BoardPlanning planning={view.planning} canManage={Boolean(policy) && view.board.state === "active"} canComplete={Boolean(canComplete)} routinesEnabled={routinesEnabled} />}
         {policy && <details class="named-boards board-settings">
           <summary>Board settings</summary>
           <div class="board-settings-grid">

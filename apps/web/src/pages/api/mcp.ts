@@ -104,6 +104,7 @@ const EXCLUDED_OPS = new Set([
   "listPrivateBoards", "verifyBoardDirectory", "createPrivateBoard", "getPrivateBoard", "verifyPrivateBoard", "changePrivateBoard",
   "createPrivateBoardTicket", "changePrivateBoardTicket", "deletePrivateBoardTicket",
   "createPrivateBoardIntake", "changePrivateBoardIntake", "listPrivateBoardIntakes", "submitPrivateBoardIntake",
+  "savePrivateBoardPlanning",
 ])
 
 /** Operations where method names should be used as-is (no camelCase conversion) */

@@ -8,6 +8,7 @@ import {
 } from "../../../../scripts/database-client.mjs"
 import { autoBackupDb } from "../../../../scripts/startup-backup.mjs"
 import { applyStartupTaskSchema } from "../../../../scripts/task-schema-startup.mjs"
+import { taskTemplateTableSql } from "../../../../drizzle/migrations/task-template-schema.mjs"
 import { taskWriteTriggerMetadata, validateExistingTaskWriteTriggers } from "../../../../drizzle/migrations/task-activity-schema.mjs"
 import { nextHouseholdTicketNumberSql } from "../../../../drizzle/migrations/task-board-tickets.mjs"
 import { STATUS } from "../../../lib/status-config"
@@ -461,19 +462,7 @@ async function initializeRuntimeTables(client: Transaction): Promise<void> {
 
   // Phase 31: Task templates — reusable task blueprints
   // is_habit: 1 = habit template (auto-creates daily recurring tasks)
-  await client.execute(`
-    CREATE TABLE IF NOT EXISTS task_templates (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      template_json TEXT NOT NULL DEFAULT '{}',
-      icon TEXT NOT NULL DEFAULT '📝',
-      is_habit INTEGER NOT NULL DEFAULT 0,
-      frequency TEXT NOT NULL DEFAULT 'daily',
-      position INTEGER NOT NULL DEFAULT 0,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
-    )
-  `);
+  await client.execute(taskTemplateTableSql)
   await client.execute("CREATE INDEX IF NOT EXISTS task_templates_position_idx ON task_templates(position)");
 
   // Habits integration: is_habit column on task_templates (existing DBs)

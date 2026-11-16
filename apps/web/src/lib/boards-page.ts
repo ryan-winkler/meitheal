@@ -130,7 +130,9 @@ export function bindBoardPage(signal: AbortSignal) {
           })
           break
         case "task-create":
-          await jsonRequest(api + "/tickets", "POST", { ...content, laneId: value("laneId") })
+          await jsonRequest(api + "/tickets", "POST", {
+            ...content, laneId: value("laneId"), ...(value("projectId") ? { projectId: value("projectId") } : {}),
+          })
           break
         case "task-edit":
           await jsonRequest(ticket, "PATCH", { ...content, version: Number(version) })
@@ -140,6 +142,15 @@ export function bindBoardPage(signal: AbortSignal) {
           break
         case "task-delete":
           await jsonRequest(ticket, "DELETE", { version: Number(version) })
+          break
+        case "planning":
+          await jsonRequest(api + "/planning", "POST", {
+            action: value("action"), ...content, areaId: value("areaId"), goalId: value("goalId") || null,
+            ...(data.has("id") ? { id: value("id") } : {}),
+            ...(data.has("enabled") ? { enabled: value("enabled") === "true" } : {}),
+            ...(data.has("status") ? { status: value("status") } : {}),
+            ...(data.has("cadence") ? { cadence: value("cadence") } : {}),
+          })
           break
         case "intake-create":
           await jsonRequest(api + "/intakes", "POST", {

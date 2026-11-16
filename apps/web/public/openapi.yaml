@@ -1375,6 +1375,62 @@ paths:
                 id: *a13
                 enabled: *a14
               additionalProperties: false
+  /api/boards/{id}/planning:
+    post:
+      operationId: savePrivateBoardPlanning
+      summary: Create or manage planning and Pillars on an owned Board
+      tags:
+        - Boards
+      parameters:
+        - *a9
+        - *a12
+      responses:
+        "200":
+          description: Saved
+        "400":
+          description: Invalid planning change
+        "404": *a11
+      security: *a7
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                action:
+                  type: string
+                  enum:
+                    - area
+                    - goal
+                    - project
+                    - project-edit
+                    - project-status
+                    - goal-share
+                    - pillar
+                    - routine
+                    - routine-complete
+                title: *a13
+                description: *a13
+                id: *a13
+                areaId: *a13
+                goalId:
+                  type:
+                    - string
+                    - "null"
+                status:
+                  type: string
+                  enum:
+                    - active
+                    - completed
+                    - archived
+                enabled: *a14
+                cadence:
+                  type: string
+                  enum:
+                    - daily
+                    - weekly
+              additionalProperties: false
   /api/board-intake:
     get:
       operationId: listPrivateBoardIntakes

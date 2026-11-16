@@ -1,10 +1,11 @@
 import { applyNamedBoardStoragePhase } from "./task-board-household.mjs"
 import { matchesSql } from "./board-storage-schema.mjs"
+import { taskTemplateTableSql } from "./task-template-schema.mjs"
 
 export const BOARD_ACCESS_SCHEMA_VERSION = 21
 export const BOARD_ACCESS_MIGRATION = "0011_board_access.mjs"
 
-const planningTables = ["areas", "projects", "goals", "pillars"]
+const planningTables = ["areas", "projects", "goals", "pillars", "task_templates"]
 const objects = {
   board_permissions: `CREATE TABLE board_permissions (
     board_id TEXT PRIMARY KEY NOT NULL REFERENCES task_boards(id) ON DELETE RESTRICT,
@@ -145,6 +146,7 @@ export async function readBoardAccessMigrationState(db) {
 /** @param {import("@libsql/client").Transaction} tx */
 export async function applyBoardAccessMigration(tx) {
   if (await readBoardAccessMigrationState(tx)) return false
+  await tx.execute(taskTemplateTableSql)
   for (const table of planningTables) {
     await tx.execute(`ALTER TABLE main.${table}
       ADD COLUMN owner_board_id TEXT REFERENCES task_boards(id) ON DELETE RESTRICT

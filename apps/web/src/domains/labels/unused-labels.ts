@@ -96,7 +96,8 @@ async function usedDefinitions(tx: Transaction, definitions: CleanupLabel[]): Pr
           CASE WHEN length(CAST(selection AS BLOB)) <= ${selectionBytes} THEN selection END AS selection,
           CASE WHEN length(CAST(extra AS BLOB)) <= ${selectionBytes} THEN extra END AS extra
           FROM (SELECT CAST(rowid AS TEXT) AS cursor, ${source.labels} AS selection, ${source.extra} AS extra
-            FROM ${source.table} WHERE (? IS NULL OR rowid > CAST(? AS INTEGER)) ORDER BY rowid LIMIT ${batchSize})`,
+            FROM ${source.table} WHERE (? IS NULL OR rowid > CAST(? AS INTEGER))
+              ${source.table === "tasks" ? "AND task_board_id IS NULL" : source.table === "task_templates" ? "AND owner_board_id IS NULL" : ""} ORDER BY rowid LIMIT ${batchSize})`,
         args: [cursor, cursor],
       })
       for (const row of rows) {

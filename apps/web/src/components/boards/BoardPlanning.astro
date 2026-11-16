@@ -1,0 +1,205 @@
+---
+import type { readNamedBoardPlanning } from "@domains/tasks/persistence/named-board-planning-repository"
+
+interface Props {
+  planning: NonNullable<Awaited<ReturnType<typeof readNamedBoardPlanning>>>
+  canManage: boolean
+  canComplete: boolean
+  routinesEnabled: boolean
+}
+const { planning, canManage, canComplete, routinesEnabled } = Astro.props
+const goalHref = (filter: string, id: string) => `/progress?${filter}=${encodeURIComponent(id)}#goals`
+const showRoutines = routinesEnabled && (canManage || planning.routines.length > 0)
+const ownedAreaIds = new Set(planning.areas.map(area => area.id))
+---
+
+<section class="named-boards board-settings" aria-labelledby="board-planning-title">
+  <h2 id="board-planning-title">Planning</h2>
+  {planning.areas.length === 0 && <p class="board-empty">Add an Area to group Projects and Goals on this Board.</p>}
+  <div class="board-settings-grid">
+    {planning.areas.map(area => <section class="board-tile">
+      <h3 class="board-name">{area.name}</h3>
+      {canManage && <details>
+        <summary>Rename Area</summary>
+        <form data-board-form="planning" class="board-form">
+          <input type="hidden" name="action" value="area" />
+          <input type="hidden" name="id" value={area.id} />
+          <label>Name <input name="title" value={area.name} maxlength="150" required /></label>
+          <p role="status" data-board-feedback></p>
+          <button type="submit" class="btn btn-ghost">Save Area</button>
+        </form>
+      </details>}
+      <a href={goalHref("area_id", area.id)}>View Goals</a>
+      <div>
+        <strong>Projects</strong>
+        {planning.projects.filter(project => project.areaId === area.id).map(project => <article class="board-tile">
+          <h4 class="board-name">{project.title}</h4>
+          <a href={goalHref("project_id", project.id)}>View Project Goals</a>
+          {project.description && <p>{project.description}</p>}
+          {canManage && <details>
+            <summary>Edit Project</summary>
+            <form data-board-form="planning" class="board-form">
+              <input type="hidden" name="action" value="project-edit" />
+              <input type="hidden" name="id" value={project.id} />
+              <label>Name <input name="title" value={project.title} maxlength="150" required /></label>
+              <label>Details <textarea name="description" rows="2" maxlength="10000">{project.description}</textarea></label>
+              <p role="status" data-board-feedback></p>
+              <button type="submit" class="btn btn-ghost">Save Project</button>
+            </form>
+          </details>}
+          {canManage ? <form data-board-form="planning" class="board-form">
+            <input type="hidden" name="action" value="project-status" />
+            <input type="hidden" name="id" value={project.id} />
+            <label>Project status <select name="status">
+              <option value="active" selected={project.status === "active"}>Active</option>
+              <option value="completed" selected={project.status === "completed"}>Completed</option>
+              <option value="archived" selected={project.status === "archived"}>Archived</option>
+            </select></label>
+            <p role="status" data-board-feedback></p>
+            <button type="submit" class="btn btn-ghost">Save status</button>
+          </form> : <p class="board-note">{project.status}</p>}
+        </article>)}
+      </div>
+      {canManage && <details>
+        <summary>New Project</summary>
+        <form data-board-form="planning" class="board-form">
+          <input type="hidden" name="action" value="project" />
+          <input type="hidden" name="areaId" value={area.id} />
+          <label>Name <input name="title" maxlength="150" required /></label>
+          <label>Details <textarea name="description" rows="2" maxlength="10000"></textarea></label>
+          <label>Goal <select name="goalId">
+            <option value="">No Goal</option>
+            {planning.linkableGoals.filter(goal => goal.sharedAreaId === null || goal.sharedAreaId === area.id)
+              .map(goal => <option value={goal.id}>{goal.title}</option>)}
+          </select></label>
+          <p role="status" data-board-feedback></p>
+          <button type="submit" class="btn btn-ghost">Create Project</button>
+        </form>
+      </details>}
+      {planning.goals.filter(goal => goal.areaId === area.id).map(goal => <article class="board-tile">
+        <h4 class="board-name">{goal.title}</h4>
+        {goal.description && <p>{goal.description}</p>}
+        {canManage && <details>
+          <summary>Edit Goal</summary>
+          <form data-board-form="planning" class="board-form">
+            <input type="hidden" name="action" value="goal" />
+            <input type="hidden" name="id" value={goal.id} />
+            <input type="hidden" name="areaId" value={area.id} />
+            <label>Title <input name="title" value={goal.title} maxlength="150" required /></label>
+            <label>Details <textarea name="description" rows="2" maxlength="10000">{goal.description}</textarea></label>
+            <p role="status" data-board-feedback></p>
+            <button type="submit" class="btn btn-ghost">Save Goal</button>
+          </form>
+        </details>}
+      </article>)}
+      {canManage && <details>
+        <summary>New Goal</summary>
+        <form data-board-form="planning" class="board-form">
+          <input type="hidden" name="action" value="goal" />
+          <input type="hidden" name="areaId" value={area.id} />
+          <label>Title <input name="title" maxlength="150" required /></label>
+          <label>Details <textarea name="description" rows="2" maxlength="10000"></textarea></label>
+          <p role="status" data-board-feedback></p>
+          <button type="submit" class="btn btn-ghost">Create Goal</button>
+        </form>
+      </details>}
+      {showRoutines && <div class="named-boards">
+        {planning.routines.filter(routine => routine.areaId === area.id).map(routine => <article class="board-tile">
+          <h4 class="board-name">{routine.name}</h4>
+          <p class="board-note">{routine.cadence}{routine.complete ? " · Done" : ""}</p>
+          {canComplete && !routine.complete && <form data-board-form="planning" class="board-form">
+            <input type="hidden" name="action" value="routine-complete" />
+            <input type="hidden" name="id" value={routine.id} />
+            <p role="status" data-board-feedback></p>
+            <button type="submit" class="btn btn-ghost">Mark routine done</button>
+          </form>}
+        </article>)}
+        {canManage && <details>
+          <summary>New Routine</summary>
+          <form data-board-form="planning" class="board-form">
+            <input type="hidden" name="action" value="routine" />
+            <input type="hidden" name="areaId" value={area.id} />
+            <label>Title <input name="title" maxlength="150" required /></label>
+            <label>Details <textarea name="description" rows="2" maxlength="10000"></textarea></label>
+            <label>Frequency <select name="cadence"><option value="daily">Daily</option><option value="weekly">Weekly</option></select></label>
+            <p role="status" data-board-feedback></p>
+            <button type="submit" class="btn btn-ghost">Create Routine</button>
+          </form>
+        </details>}
+      </div>}
+    </section>)}
+    {planning.projects.filter(project => !project.areaId || !ownedAreaIds.has(project.areaId)).map(project => <article class="board-tile">
+      <h3 class="board-name">{project.title}</h3>
+      {project.description && <p>{project.description}</p>}
+      <a href={goalHref("project_id", project.id)}>View Project Goals</a>
+    </article>)}
+    {canManage && <details class="board-tile">
+      <summary>New Area</summary>
+      <form data-board-form="planning" class="board-form">
+        <input type="hidden" name="action" value="area" />
+        <label>Name <input name="title" maxlength="150" required /></label>
+        <p role="status" data-board-feedback></p>
+        <button type="submit" class="btn btn-ghost">Create Area</button>
+      </form>
+    </details>}
+  </div>
+  {canManage && planning.goals.length > 0 && <details class="board-tile">
+    <summary>Goal sharing</summary>
+    {planning.goals.map(goal => <section class="board-form">
+      <h3 class="board-name">{goal.title}</h3>
+      {planning.shares.filter(share => share.goalId === goal.id).map(share => <form data-board-form="planning" class="board-move">
+        <span>{share.areaName || "Unavailable Area"}</span>
+        <input type="hidden" name="action" value="goal-share" />
+        <input type="hidden" name="id" value={goal.id} />
+        <input type="hidden" name="areaId" value={share.areaId} />
+        <input type="hidden" name="enabled" value="false" />
+        <button type="submit" class="btn btn-ghost">Stop sharing</button>
+        <p role="status" data-board-feedback></p>
+      </form>)}
+      <form data-board-form="planning" class="board-form">
+        <input type="hidden" name="action" value="goal-share" />
+        <input type="hidden" name="id" value={goal.id} />
+        <input type="hidden" name="enabled" value="true" />
+        <label>Share with <select name="areaId" required>
+          <option value="">Choose an Area</option>
+          {planning.destinations.filter(area => !planning.shares.some(share => share.goalId === goal.id && share.areaId === area.id))
+            .map(area => <option value={area.id}>{area.board} · {area.name}</option>)}
+        </select></label>
+        <p class="board-note">People in the selected Area can see this title and progress from Projects they can access.</p>
+        <p role="status" data-board-feedback></p>
+        <button type="submit" class="btn btn-ghost">Share Goal</button>
+      </form>
+    </section>)}
+  </details>}
+  <section class="named-boards" aria-labelledby="board-pillars-title">
+    <h2 id="board-pillars-title">Board Pillars</h2>
+    <div class="boards-list">
+      {planning.pillars.map(pillar => <article class="board-tile">
+        <h3 class="board-name">{pillar.name}</h3>
+        {pillar.manifesto && <p>{pillar.manifesto}</p>}
+        {canManage && <details>
+          <summary>Edit Pillar</summary>
+          <form data-board-form="planning" class="board-form">
+            <input type="hidden" name="action" value="pillar" />
+            <input type="hidden" name="id" value={pillar.id} />
+            <label>Name <input name="title" value={pillar.name} maxlength="150" required /></label>
+            <label>Manifesto <textarea name="description" rows="2" maxlength="10000">{pillar.manifesto}</textarea></label>
+            <p role="status" data-board-feedback></p>
+            <button type="submit" class="btn btn-ghost">Save Pillar</button>
+          </form>
+        </details>}
+      </article>)}
+    </div>
+    {canManage && <details class="board-tile">
+      <summary>New Board Pillar</summary>
+      <form data-board-form="planning" class="board-form">
+        <input type="hidden" name="action" value="pillar" />
+        <label>Name <input name="title" maxlength="150" required /></label>
+        <label>Manifesto <textarea name="description" rows="2" maxlength="10000"></textarea></label>
+        <p class="board-note">Visible to people with access to this Board.</p>
+        <p role="status" data-board-feedback></p>
+        <button type="submit" class="btn btn-ghost">Create Pillar</button>
+      </form>
+    </details>}
+  </section>
+</section>

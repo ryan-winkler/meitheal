@@ -662,6 +662,16 @@ const paths = {
       200: { description: "Saved" }, 404: boardUnavailable,
     }, boardJson({ id: boardString, enabled: boardBoolean })),
   },
+  "/api/boards/{id}/planning": {
+    post: boardOperation("savePrivateBoardPlanning", "Create or manage planning and Pillars on an owned Board", [boardIdParam, boardSessionParam], {
+      200: { description: "Saved" }, 400: { description: "Invalid planning change" }, 404: boardUnavailable,
+    }, boardJson({
+      action: { type: "string", enum: ["area", "goal", "project", "project-edit", "project-status", "goal-share", "pillar", "routine", "routine-complete"] },
+      title: boardString, description: boardString, id: boardString, areaId: boardString, goalId: { type: ["string", "null"] },
+      status: { type: "string", enum: ["active", "completed", "archived"] }, enabled: boardBoolean,
+      cadence: { type: "string", enum: ["daily", "weekly"] },
+    })),
+  },
   "/api/board-intake": {
     get: boardOperation("listPrivateBoardIntakes", "List send-only destinations for the current user", [], {
       200: { description: "Send aliases, assignment options, and recent submissions owned by the sender" }, 403: { description: "A current Home Assistant session is required" },

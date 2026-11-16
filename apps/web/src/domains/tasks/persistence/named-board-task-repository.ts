@@ -4,6 +4,7 @@ import { isActiveAgentToken } from "@domains/auth"
 import { acquireWriteTransaction } from "../../../../scripts/database-client.mjs"
 import { isClosedStatus, isDoneStatus, normalizeStatus, STATUS } from "../../../lib/status-config"
 import { boardGrantStillCurrent, currentBoardGrantRevision, readBoardGrantRevision } from "./board-grant-fence"
+import { namedRoutinePeriod, readNamedBoardPlanning } from "./named-board-planning-repository"
 import { permitsBoardTaskAction, selectNamedBoardAccess, type BoardActor, type TaskBoardAction } from "./named-board-repository"
 import { canAdvanceTaskTimestampMs, nextTaskTimestampMs, taskTimestampMs } from "./task-timestamp"
 
@@ -27,6 +28,7 @@ export async function insertNamedTask(tx: Transaction, input: {
   status: string
   content: NamedTaskContent
   assignedTo?: string
+  routine?: { templateId: string; period: string }
 }) {
   const { rows: [ticket] } = await tx.execute({
     sql: `UPDATE task_boards SET ticket_high_water = ticket_high_water + 1
@@ -40,10 +42,11 @@ export async function insertNamedTask(tx: Transaction, input: {
   const now = Date.now()
   await tx.execute({
     sql: `INSERT INTO tasks (id, title, description, status, area_id, task_board_id, assigned_to,
-      board_column_id, ticket_ref, idempotency_key, request_id, created_at, updated_at)
-      VALUES (?, ?, ?, ?, '__meitheal_no_area__', ?, ?, ?, ?, ?, ?, ?, ?)`,
+      board_column_id, ticket_ref, idempotency_key, request_id, created_at, updated_at, source_template_id, due_date, task_kind)
+      VALUES (?, ?, ?, ?, '__meitheal_no_area__', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     args: [id, input.content.title, input.content.description, input.status, input.boardId,
-      input.assignedTo ?? null, input.laneId, String(ticket.key), id, id, now, now],
+      input.assignedTo ?? null, input.laneId, String(ticket.key), id, id, now, now,
+      input.routine?.templateId ?? null, input.routine?.period ?? null, input.routine ? "routine_instance" : "standard_action"],
   })
   return { id, ticket: String(ticket.key), version: now }
 }
@@ -87,9 +90,11 @@ export class NamedBoardTaskRepository {
           args: [boardId, access.role],
         },
       ])
+      const planning = await readNamedBoardPlanning(tx, actor, access)
       if (!await boardGrantStillCurrent(this.db, revision, this.markerPath)) return null
       return {
         board: access,
+        planning,
         lanes: lanes!.rows.map(lane => ({ id: String(lane.id), label: String(lane.label), key: String(lane.key) })),
         tasks: tasks!.rows.slice(0, 50).map(task => ({
           id: String(task.id), title: String(task.title), description: String(task.description ?? ""),
@@ -143,6 +148,43 @@ export class NamedBoardTaskRepository {
         })
       }
       return { ok: true, value: task }
+    })
+  }
+
+  async completeRoutine(actor: BoardActor, boardId: string, routineId: string) {
+    return this.mutate(actor, boardId, "complete", async (tx, allows) => {
+      if (!allows("create")) return denied
+      const { rows: [routine] } = await tx.execute({
+        sql: `SELECT routine.name, routine.cadence, area.id AS area_id,
+            json_extract(routine.template_json, '$.description') AS description,
+            (SELECT id FROM kanban_lanes WHERE board_id = ? AND key = 'complete' LIMIT 1) AS lane_id
+          FROM task_templates AS routine
+          JOIN areas AS area ON json_extract(routine.template_json, '$.area_id') = area.id
+            AND area.owner_board_id = routine.owner_board_id
+          WHERE routine.id = ? AND routine.owner_board_id = ? AND routine.is_routine = 1`,
+        args: [boardId, routineId, boardId],
+      })
+      if (!routine || typeof routine.lane_id !== "string") return unavailable
+      const period = namedRoutinePeriod(String(routine.cadence))
+      const { rows: [existing] } = await tx.execute({
+        sql: `SELECT id, status FROM tasks WHERE task_board_id = ? AND source_template_id = ? AND due_date = ? LIMIT 1`,
+        args: [boardId, routineId, period],
+      })
+      if (existing) {
+        if (existing.status !== STATUS.COMPLETE) return stale
+        return { ok: true, value: { id: String(existing.id) } }
+      }
+      const task = await insertNamedTask(tx, {
+        boardId, laneId: routine.lane_id, status: STATUS.COMPLETE,
+        content: { title: String(routine.name), description: String(routine.description ?? "") },
+        routine: { templateId: routineId, period },
+      })
+      if (!task) return unavailable
+      await tx.execute({
+        sql: "INSERT INTO board_task_planning (task_id, area_id) VALUES (?, ?)",
+        args: [task.id, String(routine.area_id)],
+      })
+      return { ok: true, value: { id: task.id } }
     })
   }
 

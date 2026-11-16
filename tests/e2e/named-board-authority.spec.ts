@@ -6,6 +6,9 @@ import { createAgentToken, ensureAgentTokenSchema, revokeAgentToken, updateAgent
 import { BoardIntakeRepository } from "../../apps/web/src/domains/tasks/persistence/board-intake-repository"
 import { changeBoardGrants, readBoardGrantRevision } from "../../apps/web/src/domains/tasks/persistence/board-grant-fence"
 import { NamedBoardRepository, permitsBoardTaskAction } from "../../apps/web/src/domains/tasks/persistence/named-board-repository"
+import { NamedBoardPlanningRepository } from "../../apps/web/src/domains/tasks/persistence/named-board-planning-repository"
+import { TemplateRepository } from "../../apps/web/src/domains/tasks/persistence/template-repository"
+import { readSharedGoals } from "../../apps/web/src/domains/tasks/persistence/shared-goal-repository"
 import { NamedBoardTaskRepository } from "../../apps/web/src/domains/tasks/persistence/named-board-task-repository"
 import { ensureSchema, getPersistenceClient, resetPersistenceForTests } from "../../apps/web/src/domains/tasks/persistence/store"
 
@@ -269,4 +272,92 @@ test("send-only intake accepts once, returns opaque retries, and can assign with
   expect(await intake.submit(sender, unusedPermit.value.token, input, ["owner"])).toEqual({ ok: false, errorCode: "unavailable" })
   expect(await intake.submit(sender, permit.value.token, input, ["owner"])).toEqual(accepted)
   expect(await intake.submit(sender, permit.value.token, input, ["owner"], permit.value.expiresAt)).toEqual({ ok: false, errorCode: "unavailable" })
+})
+
+test("named Board owners link Projects to shared Goals without publishing private progress or Pillars", async () => {
+  const db = getPersistenceClient()
+  const boards = new NamedBoardRepository(db, marker)
+  const tasks = new NamedBoardTaskRepository(db, marker)
+  const planning = new NamedBoardPlanningRepository(db, marker)
+  const workUser = { kind: "ha_user", id: "work-owner" } as const
+  const homeUser = { kind: "ha_user", id: "home-owner" } as const
+  const [work, home] = [await boards.create(workUser.id, "Work"), await boards.create(homeUser.id, "Home")]
+  if (work.status !== "committed" || home.status !== "committed") throw new Error("Expected two Boards")
+  const workBoard = work.result.id
+  const homeBoard = home.result.id
+  await boards.updateMember(homeUser.id, homeBoard, workUser.id, {
+    role: "viewer", denyCompletion: false, denyDeletion: false,
+  }, [workUser.id, homeUser.id])
+  expect(await planning.save(workUser.id, homeBoard, { action: "area", title: "No unauthorized changes" })).toBe(false)
+  expect(await planning.save(workUser.id, workBoard, { action: "area", title: "Work Area" })).toBe(true)
+  expect(await planning.save(homeUser.id, homeBoard, { action: "area", title: "Home Area" })).toBe(true)
+  const workArea = (await tasks.view(workUser, workBoard))?.planning?.areas[0]?.id
+  const homeArea = (await tasks.view(homeUser, homeBoard))?.planning?.areas[0]?.id
+  if (!workArea || !homeArea) throw new Error("Expected both Areas")
+  expect(await planning.save(workUser.id, workBoard, {
+    action: "goal", title: "Shared outcome", description: "Work details remain private", areaId: workArea,
+  })).toBe(true)
+  const goal = (await tasks.view(workUser, workBoard))?.planning?.goals[0]?.id
+  if (!goal) throw new Error("Expected a shared Goal")
+  const homeProject = { action: "project", title: "Visible Home Project", description: "", areaId: homeArea, goalId: goal } as const
+  expect(await planning.save(homeUser.id, homeBoard, homeProject)).toBe(false)
+  expect(await planning.save(workUser.id, workBoard, { action: "goal-share", id: goal, areaId: homeArea, enabled: true })).toBe(true)
+  expect((await tasks.view(homeUser, homeBoard))?.planning?.linkableGoals).toContainEqual({
+    id: goal, title: "Shared outcome", sharedAreaId: homeArea,
+  })
+  expect(await planning.save(homeUser.id, homeBoard, homeProject)).toBe(true)
+  const visibleProjectId = (await tasks.view(homeUser, homeBoard))?.planning?.projects[0]?.id
+  if (!visibleProjectId) throw new Error("Expected a Home Project")
+  expect(await planning.save(homeUser.id, homeBoard, { action: "project-status", id: visibleProjectId, status: "completed" })).toBe(true)
+  const revision = await readBoardGrantRevision(marker)
+  if (!revision) throw new Error("Expected the current revision")
+  const homeBefore = await readSharedGoals(db, homeUser.id, { areaId: homeArea }, revision)
+  expect(homeBefore).toEqual([{ id: goal, title: "Shared outcome", area_id: homeArea, project_count: 1, completed_project_count: 1 }])
+  expect(await planning.save(workUser.id, workBoard, {
+    action: "project", title: "Private Work Project", description: "", areaId: workArea, goalId: goal,
+  })).toBe(true)
+  const privateProjectId = (await tasks.view(workUser, workBoard))?.planning?.projects[0]?.id
+  if (!privateProjectId) throw new Error("Expected a Work Project")
+  expect(await planning.save(workUser.id, workBoard, { action: "project-status", id: privateProjectId, status: "completed" })).toBe(true)
+  expect(await readSharedGoals(db, homeUser.id, { areaId: homeArea }, revision)).toEqual(homeBefore)
+  expect(await readSharedGoals(db, workUser.id, { areaId: homeArea }, revision)).toMatchObject([
+    { id: goal, project_count: 2, completed_project_count: 2 },
+  ])
+  expect(await planning.save(workUser.id, workBoard, {
+    action: "pillar", title: "Work Pillar", description: "Visible to Work only",
+  })).toBe(true)
+  expect((await tasks.view(workUser, workBoard))?.planning?.pillars[0]).toMatchObject({ name: "Work Pillar" })
+  expect((await tasks.view(homeUser, homeBoard))?.planning?.pillars).toEqual([])
+  expect(await tasks.view(homeUser, workBoard)).toBeNull()
+  expect(await planning.save(workUser.id, workBoard, {
+    action: "routine", title: "Private Work Routine", description: "Weekly fixture",
+    areaId: workArea, cadence: "weekly",
+  })).toBe(true)
+  const workRoutine = (await tasks.view(workUser, workBoard))?.planning?.routines[0]?.id
+  if (!workRoutine) throw new Error("Expected a Work Routine")
+  expect((await tasks.view(homeUser, homeBoard))?.planning?.routines).toEqual([])
+  expect(await tasks.completeRoutine(homeUser, workBoard, workRoutine)).toEqual({ ok: false, errorCode: "unavailable" })
+  await boards.updateMember(workUser.id, workBoard, homeUser.id, {
+    role: "member", denyCompletion: true, denyDeletion: true,
+  }, [workUser.id, homeUser.id])
+  expect(await tasks.completeRoutine(homeUser, workBoard, workRoutine)).toEqual({ ok: false, errorCode: "denied" })
+  const [completion, completionRetry] = await Promise.all([
+    tasks.completeRoutine(workUser, workBoard, workRoutine), tasks.completeRoutine(workUser, workBoard, workRoutine),
+  ])
+  expect(completion).toMatchObject({ ok: true, value: { id: expect.any(String) } })
+  expect(completionRetry).toEqual(completion)
+  const legacy = new TemplateRepository(db)
+  expect(await legacy.findById(workRoutine)).toBeNull()
+  expect(await legacy.findRoutines()).toEqual([])
+  expect((await tasks.view(workUser, workBoard))?.planning?.routines[0]).toMatchObject({ complete: true })
+  await boards.updateMember(workUser.id, workBoard, homeUser.id, null, [workUser.id, homeUser.id])
+  const preRevokeSnapshot = await readFile(marker)
+  expect(await planning.save(workUser.id, workBoard, { action: "goal-share", id: goal, areaId: homeArea, enabled: false })).toBe(true)
+  const latest = await readBoardGrantRevision(marker)
+  expect(latest).not.toBe(revision)
+  if (!latest) throw new Error("Expected a revised grant marker")
+  expect(await readSharedGoals(db, homeUser.id, { areaId: homeArea }, latest)).toEqual([])
+  expect(await readSharedGoals(db, homeUser.id, { projectId: visibleProjectId }, latest)).toEqual([])
+  await writeFile(marker, preRevokeSnapshot)
+  expect(await tasks.view(workUser, workBoard)).toBeNull()
 })

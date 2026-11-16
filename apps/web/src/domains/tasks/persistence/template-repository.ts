@@ -53,7 +53,7 @@ export class TemplateRepository {
   /** List all templates ordered by position */
   async findAll() {
     const result = await this.client.execute(
-      "SELECT * FROM task_templates ORDER BY position ASC, created_at ASC"
+      "SELECT * FROM task_templates WHERE owner_board_id IS NULL ORDER BY position ASC, created_at ASC"
     )
     return result.rows
   }
@@ -61,7 +61,7 @@ export class TemplateRepository {
   /** Find a template by ID */
   async findById(id: string) {
     const result = await this.client.execute({
-      sql: "SELECT * FROM task_templates WHERE id = ?",
+      sql: "SELECT * FROM task_templates WHERE owner_board_id IS NULL AND id = ?",
       args: [id],
     })
     return (result.rows[0] as Record<string, unknown>) ?? null
@@ -70,7 +70,7 @@ export class TemplateRepository {
   /** Get next available template position */
   async getNextPosition(): Promise<number> {
     const result = await this.client.execute(
-      "SELECT COALESCE(MAX(position), -1) + 1 AS next_pos FROM task_templates"
+      "SELECT COALESCE(MAX(position), -1) + 1 AS next_pos FROM task_templates WHERE owner_board_id IS NULL"
     )
     return Number((result.rows[0] as Record<string, unknown>)?.next_pos ?? 0)
   }
@@ -133,7 +133,7 @@ export class TemplateRepository {
   /** Delete a template by ID */
   async delete(id: string): Promise<void> {
     await this.client.execute({
-      sql: "DELETE FROM task_templates WHERE id = ?",
+      sql: "DELETE FROM task_templates WHERE owner_board_id IS NULL AND id = ?",
       args: [id],
     })
   }
@@ -171,7 +171,7 @@ export class TemplateRepository {
     if (data.areaId !== undefined) args.push(data.areaId)
 
     const written = await this.client.execute({
-      sql: `UPDATE task_templates SET ${sets.join(", ")} WHERE id = ? ${areaCheck}`,
+      sql: `UPDATE task_templates SET ${sets.join(", ")} WHERE owner_board_id IS NULL AND id = ? ${areaCheck}`,
       args,
     })
     return written.rowsAffected !== 0
@@ -183,7 +183,7 @@ export class TemplateRepository {
   async findRoutines(areaId?: string): Promise<RoutineTemplateRow[]> {
     const areaFilter = areaId ? "AND COALESCE(CASE WHEN json_valid(template_json) THEN json_extract(template_json, '$.area_id') END, 'default') = ?" : ""
     const result = await this.client.execute({
-      sql: `SELECT * FROM task_templates WHERE is_routine = 1 ${areaFilter} ORDER BY position ASC, created_at ASC`,
+      sql: `SELECT * FROM task_templates WHERE owner_board_id IS NULL AND is_routine = 1 ${areaFilter} ORDER BY position ASC, created_at ASC`,
       args: areaId ? [areaId] : [],
     })
     return result.rows.map(r => {
@@ -332,7 +332,7 @@ export class TemplateRepository {
             framework_payload, calendar_sync_state, idempotency_key, request_id, created_at, updated_at)
             SELECT ?, ?, ?, ?, ?, ?, ?, 'routine_instance', ?, ?, ?, ?, ?,
                    ${nextHouseholdTicketNumberSql}, '{}', 'pending', ?, ?, ?, ?
-            WHERE EXISTS (SELECT 1 FROM task_templates WHERE id = ? AND is_routine = 1 AND template_json = ?)
+            WHERE EXISTS (SELECT 1 FROM task_templates WHERE owner_board_id IS NULL AND id = ? AND is_routine = 1 AND template_json = ?)
               AND (? = 'default' OR EXISTS (SELECT 1 FROM areas WHERE id = ? AND owner_board_id IS NULL))
               AND NOT EXISTS (SELECT 1 FROM tasks WHERE task_board_id IS NULL AND source_template_id = ? AND due_date = ?)`,
       args: [

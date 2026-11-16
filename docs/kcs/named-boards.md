@@ -14,9 +14,15 @@ A Board owner can create a named destination, choose a triage column, and select
 
 Keep the same submission when retrying unchanged content after a timeout. A submission token remains valid for 24 hours. The sender can retrieve the same acknowledgement through a retry during that period, including after the owner closes intake. Initial limits are 20 outstanding submissions and 60 accepted tasks per sender in a rolling 24-hour period.
 
-## Goals and backups
+## Areas, Projects, Goals, Routines, and Pillars
 
-When a Goal is shared with an Area, each viewer sees progress based on their readable Projects. A Board member with direct access can also open its unshared Goals. For instance, a Home viewer sees Home progress on a Goal shared with Home. A viewer who can open both scopes sees contributions from both.
+Under **Planning** on a named Board, create an Area to group Projects, Goals and Routines. Choose an optional Goal when creating a Project, and use the Project status to track completion. Board owners manage the planning records and Board Pillars. People with Board access can read them. Create a Pillar for yourself under **Progress → Pillars → New Pillar → Only me**.
+
+Sharing a Goal with an Area publishes its title and a Project progress summary to people who can read that Area. Each viewer sees progress from Projects they can access. If a Project is private to Work, its progress is omitted for Home readers. Select **Goal sharing → Stop sharing** to remove the Area audience. The visitor can still see a Goal they already have direct access to.
+
+A Board Routine is completed at most once per daily or weekly period. Completing it creates a Done ticket on the same Board and requires permission to mark tickets done.
+
+## Backups
 
 Use Home Assistant App backups for the full instance. See [Home Assistant backups and restore](./home-assistant-backup-and-restore.md) for the Board revision lock and rollback procedure.
 
