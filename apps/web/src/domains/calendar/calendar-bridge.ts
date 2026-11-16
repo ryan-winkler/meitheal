@@ -448,6 +448,7 @@ interface PreviousSyncedFields {
   start?: string | undefined
   end?: string | null | undefined
   rrule?: string | null | undefined
+  inferredRrule?: string | undefined
 }
 
 function readPreviousSyncedFields(payload: string | null): PreviousSyncedFields | null {
@@ -460,6 +461,7 @@ function readPreviousSyncedFields(payload: string | null): PreviousSyncedFields 
       start: text(parsed.start) ?? text(parsed.dtstart),
       end: text(parsed.effective_end) ?? text(parsed.end) ?? text(parsed.dtend) ?? null,
       rrule: "rrule" in parsed ? (text(parsed.rrule) ?? null) : undefined,
+      inferredRrule: text(parsed.inferred_rrule),
     }
   } catch {
     return null
@@ -996,12 +998,13 @@ async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState |
       for (const row of present.rows) presentTaskIds.add(String(row.id))
     }
     /** Deleted-task links: confirmation id → last calendar day that task stood for. */
-    const tombstones = new Map<string, { taskId: string; day: string }>()
+    const tombstones = new Map<string, { taskId: string; day: string; repeats: boolean }>()
     for (const [uid, taskId] of [...existingMap.entries()]) {
       if (!presentTaskIds.has(taskId)) {
-        const start = readPreviousSyncedFields(existingLookup.get(uid)?.payload ?? null)?.start
+        const previous = readPreviousSyncedFields(existingLookup.get(uid)?.payload ?? null)
+        const start = previous?.start
         const day = (start ? calendarDayFromInput(start, timezone) : null) ?? "9999-12-31"
-        tombstones.set(uid, { taskId, day })
+        tombstones.set(uid, { taskId, day, repeats: Boolean(previous?.rrule || previous?.inferredRrule) })
         existingMap.delete(uid)
         existingLookup.delete(uid)
       }
@@ -1194,6 +1197,7 @@ async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState |
     for (const series of seriesList) {
       const evt = series.representative
       const uid = series.seriesUid
+      const isIdlessSeries = !evt.uid?.trim() && uid.startsWith(`ha-cal-series-${entityId}-`)
       const preferredTaskId = preferredSeriesTask.get(series)
       let matchedCandidateUid = preferredTaskId
         ? series.legacyCandidateUids.find((candidate) => existingMap.get(candidate) === preferredTaskId)
@@ -1222,12 +1226,15 @@ async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState |
         existingTaskId = undefined
         matchedCandidateUid = undefined
       }
-      // A series whose task the household deleted is skipped until an occurrence later than
-      // the deleted one comes up; then its tombstones go and it is imported as new.
+      // Rescheduling a standalone event must not revive a deleted task. A repeating
+      // event can import again once there is a later occurrence to work on.
       const seriesTombstones = series.legacyCandidateUids.filter((candidate) => tombstones.has(candidate))
       if (!existingTaskId && seriesTombstones.length > 0) {
+        const hasRecurrence = isIdlessSeries || evt.recurrence_id !== undefined ||
+          series.recurrenceRule !== null || series.inferredRecurrenceRule !== null ||
+          seriesTombstones.some((candidate) => tombstones.get(candidate)?.repeats)
         const deletedThrough = seriesTombstones.map((candidate) => tombstones.get(candidate)!.day).sort().at(-1)!
-        if (series.representativeStartDay <= deletedThrough) {
+        if (!hasRecurrence || series.representativeStartDay <= deletedThrough) {
           skipped++
           continue
         }
@@ -1298,7 +1305,7 @@ async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState |
             end: series.representativeEndDate,
             recurrenceRule: series.recurrenceRule,
             repeats: series.recurrenceRule !== null || series.inferredRecurrenceRule !== null,
-            seriesKey: series.seriesUid.startsWith("ha-cal-series-"),
+            seriesKey: isIdlessSeries,
             occurrenceStarts: series.occurrences.map((o) => o.start),
           },
           { timezone },
@@ -2126,7 +2133,12 @@ async function importCalDAVEvents(): Promise<CalendarSyncCounts> {
           if (existingTaskId && !currentCalTasks.has(existingTaskId)) {
             // A deleted CalDAV task stays deleted. A repeating event gets a new task once an
             // occurrence later than the deleted one comes up, as with Home Assistant.
-            const deletedStart = readPreviousSyncedFields(existingCalPayloads.get(uid) ?? null)?.start
+            const previous = readPreviousSyncedFields(existingCalPayloads.get(uid) ?? null)
+            const hasRecurrence = recurrenceRule !== null || inferredRecurrenceRule !== null ||
+              group.some((event) => event.recurrenceId !== undefined) ||
+              Boolean(previous?.rrule || previous?.inferredRrule)
+            if (!hasRecurrence) continue
+            const deletedStart = previous?.start
             const deletedDay = (deletedStart ? calendarDayFromInput(deletedStart, timezone) : null) ?? "9999-12-31"
             if (selected.startDay <= deletedDay) continue
             releasedCalTombstones.push({ uid, taskId: existingTaskId })

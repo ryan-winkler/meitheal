@@ -1074,6 +1074,19 @@ test("HA sync keeps old completions closed, keeps user-added repeats, leaves del
     expect(String(secondSwim.rows[0]?.due_date)).toBe(at(d7, "18:00"))
     expect((await db.execute({ sql: "SELECT id FROM tasks WHERE title = 'Party'", args: [] })).rows).toHaveLength(0)
 
+    const pickup = {
+      uid: "one-off-pickup",
+      summary: "Pick up the spare key",
+      start: at(d7, "11:00"),
+      end: at(d7, "12:00"),
+    }
+    ha.setCalendarEvents([pickup])
+    expect((await syncFromHA(entity)).created).toBe(1)
+    await db.execute({ sql: "DELETE FROM tasks WHERE title = 'Pick up the spare key'", args: [] })
+    ha.setCalendarEvents([{ ...pickup, start: at(d14, "11:00"), end: at(d14, "12:00") }])
+    expect((await syncFromHA(entity)).created).toBe(0)
+    expect((await db.execute({ sql: "SELECT id FROM tasks WHERE title = 'Pick up the spare key'", args: [] })).rows).toHaveLength(0)
+
     // Two separate same-title appointments without IDs keep a task each; three weekly dates form one series.
     ha.setCalendarEvents([
       { summary: "Vet", start: at(d7, "09:00"), end: at(d7, "09:30") },
@@ -1275,6 +1288,9 @@ test("CalDAV sync parses RRULE, EXDATE, colons in DESCRIPTION, exclusive all-day
   const compact = (day: string) => day.replace(/-/g, "")
 
   let summaryTitle = "CalDAV Standup"
+  let startDay = todayStr
+  let recurring = true
+  let omitFirstOccurrence = false
   const server = createServer(async (request, response) => {
     for await (const _ of request) { /* drain request body */ }
     response.setHeader("content-type", "application/xml")
@@ -1289,12 +1305,12 @@ test("CalDAV sync parses RRULE, EXDATE, colons in DESCRIPTION, exclusive all-day
         "BEGIN:VCALENDAR",
         "VERSION:2.0",
         "BEGIN:VEVENT",
-        "UID:caldav-weekly-1",
+        recurring ? "UID:caldav-weekly-1" : "UID:caldav-one-off",
         `SUMMARY:${summaryTitle}`,
-        `DTSTART;TZID=Europe/Dublin:${compact(todayStr)}T093000`,
-        `DTEND;TZID=Europe/Dublin:${compact(todayStr)}T100000`,
-        "RRULE:FREQ=WEEKLY;COUNT=3",
-        `EXDATE;TZID=Europe/Dublin:${compact(d7)}T093000`,
+        `DTSTART;TZID=Europe/Dublin:${compact(startDay)}T093000`,
+        `DTEND;TZID=Europe/Dublin:${compact(startDay)}T100000`,
+        ...(recurring ? ["RRULE:FREQ=WEEKLY;COUNT=3", `EXDATE;TZID=Europe/Dublin:${compact(d7)}T093000`] : []),
+        ...(omitFirstOccurrence ? [`EXDATE;TZID=Europe/Dublin:${compact(todayStr)}T093000`] : []),
         "DESCRIPTION:Agenda: https://meet.example.com/room:8443",
         "END:VEVENT",
         "END:VCALENDAR",
@@ -1371,6 +1387,21 @@ test("CalDAV sync parses RRULE, EXDATE, colons in DESCRIPTION, exclusive all-day
     const third = await syncCalDAVEvents()
     expect(third.created).toBe(0)
     expect(third.updated).toBe(0)
+    expect((await db.execute({ sql: "SELECT id FROM tasks", args: [] })).rows).toHaveLength(0)
+
+    // The next recurrence can create a new task. Moving a one-off date with
+    // the same CalDAV UID cannot bring a deleted task back.
+    omitFirstOccurrence = true
+    expect((await syncCalDAVEvents()).created).toBe(1)
+    await db.execute({ sql: "DELETE FROM tasks", args: [] })
+    recurring = false
+    omitFirstOccurrence = false
+    summaryTitle = "CalDAV One-off"
+    startDay = todayStr
+    expect((await syncCalDAVEvents()).created).toBe(1)
+    await db.execute({ sql: "DELETE FROM tasks", args: [] })
+    startDay = d7
+    expect((await syncCalDAVEvents()).created).toBe(0)
     expect((await db.execute({ sql: "SELECT id FROM tasks", args: [] })).rows).toHaveLength(0)
   } finally {
     stopCalDAVSync()
