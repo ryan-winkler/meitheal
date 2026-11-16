@@ -71,7 +71,9 @@ function initAccentSettings(): void {
 
   function syncSelection(): void {
     const stored = readAppearanceValue(ACCENT_KEY)
-    const defaultAccent = getComputedStyle(root).getPropertyValue("--palette-accent").trim()
+    const defaultAccent = matchesHaPalette()
+      ? root.style.getPropertyValue("--personal-accent").trim()
+      : getComputedStyle(root).getPropertyValue("--palette-accent").trim()
     updateSelection(stored && /^#[0-9a-f]{6}$/i.test(stored) ? stored : defaultAccent)
   }
 

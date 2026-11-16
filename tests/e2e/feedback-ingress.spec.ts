@@ -1172,8 +1172,13 @@ test("member can opt into Home Assistant colors and keep the saved fallback", as
   await expect(root).toHaveCSS("color-scheme", "light")
   await expect(theme).toHaveValue("knight-rider")
   await expect.poll(() => token("--bg-primary-rgb")).toBe("244 246 250")
+  await content.locator("#accent-reset").click()
+  const accent = content.locator("#accent-color-custom")
+  await expect(accent).toHaveValue("#2453a6")
+  await expect.poll(() => token("--personal-accent")).toBe("#2453a6")
   await match.uncheck()
   await expect(root).toHaveAttribute("data-theme", "knight-rider")
+  await expect(accent).toHaveValue("#6495ed")
   await expect.poll(() => token("--bg-primary-rgb")).toBe(knightBackground)
 })
 
