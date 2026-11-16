@@ -1405,9 +1405,13 @@ paths:
                     - goal
                     - project
                     - project-edit
+                    - project-goal
                     - project-status
                     - goal-share
+                    - retire
                     - pillar
+                    - pillar-principle
+                    - pillar-link
                     - routine
                     - routine-complete
                 title: *a13
@@ -1430,6 +1434,24 @@ paths:
                   enum:
                     - daily
                     - weekly
+                period:
+                  type: string
+                  format: date
+                entity:
+                  type: string
+                  enum:
+                    - area
+                    - goal
+                    - project
+                    - routine
+                entityType:
+                  type: string
+                  enum:
+                    - goal
+                    - routine
+                    - task
+                pillarId: *a13
+                nonNegotiable: *a14
               additionalProperties: false
   /api/board-intake:
     get:

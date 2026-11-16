@@ -1,10 +1,12 @@
 import { applyNamedBoardStoragePhase } from "./task-board-household.mjs"
 import { matchesSql } from "./board-storage-schema.mjs"
+import { pillarAssociationTableSql, principleTableSql } from "./pillar-storage-schema.mjs"
 import { taskTemplateTableSql } from "./task-template-schema.mjs"
 
 export const BOARD_ACCESS_SCHEMA_VERSION = 21
 export const BOARD_ACCESS_MIGRATION = "0011_board_access.mjs"
 
+const retirableTables = ["areas", "projects", "goals", "task_templates"]
 const planningTables = ["areas", "projects", "goals", "pillars", "task_templates"]
 const objects = {
   board_permissions: `CREATE TABLE board_permissions (
@@ -133,6 +135,12 @@ export async function readBoardAccessMigrationState(db) {
       })
       if (!matchesSql(object?.sql, shape)) throw new Error(`Unexpected Board access object: ${name}`)
     }
+    for (const table of retirableTables) {
+      const { rows } = await db.execute(`PRAGMA main.table_info(${table})`)
+      if (!rows.some(column => column.name === "retired_at" && column.type === "INTEGER")) {
+        throw new Error(`Planning retirement is missing from ${table}`)
+      }
+    }
     for (const table of planningTables) {
       const { rows: keys } = await db.execute(`PRAGMA main.foreign_key_list(${table})`)
       if (!keys.some(key => key.from === "owner_board_id" && key.table === "task_boards" && key.to === "id" && key.on_delete === "RESTRICT")) {
@@ -146,11 +154,14 @@ export async function readBoardAccessMigrationState(db) {
 /** @param {import("@libsql/client").Transaction} tx */
 export async function applyBoardAccessMigration(tx) {
   if (await readBoardAccessMigrationState(tx)) return false
-  await tx.execute(taskTemplateTableSql)
+  await tx.batch([taskTemplateTableSql, principleTableSql, pillarAssociationTableSql])
   for (const table of planningTables) {
     await tx.execute(`ALTER TABLE main.${table}
       ADD COLUMN owner_board_id TEXT REFERENCES task_boards(id) ON DELETE RESTRICT
       CHECK (owner_board_id IS NULL OR owner_board_id <> 'household')`)
+  }
+  for (const table of retirableTables) {
+    await tx.execute(`ALTER TABLE main.${table} ADD COLUMN retired_at INTEGER`)
   }
   await tx.batch(Object.values(objects))
   await applyNamedBoardStoragePhase(tx)

@@ -293,7 +293,7 @@ export type TaskCreationData = {
 }
 
 const noNamedBoardEpoch = "NOT EXISTS (SELECT 1 FROM board_access_epoch)"
-const householdAreaForWrite = `COALESCE((SELECT owner_board_id IS NULL FROM areas WHERE id = ?), ? = 'default' OR ${noNamedBoardEpoch})`
+const householdAreaForWrite = `COALESCE((SELECT owner_board_id IS NULL AND retired_at IS NULL FROM areas WHERE id = ?), ? = 'default' OR ${noNamedBoardEpoch})`
 const householdPlanningTarget = (table: "projects" | "goals") => `(? IS NULL OR COALESCE((
   SELECT owner_board_id IS NULL FROM ${table} WHERE id = ?
 ), ${noNamedBoardEpoch}))`
@@ -619,7 +619,7 @@ export class TaskRepository {
 
   /** All boards (for card badges on dashboard) */
   async getAreas(): Promise<Record<string, AreaInfo>> {
-    const result = await this.client.execute("SELECT id, name, color FROM areas WHERE owner_board_id IS NULL");
+    const result = await this.client.execute("SELECT id, name, color FROM areas WHERE owner_board_id IS NULL AND retired_at IS NULL");
     const areaMap: Record<string, AreaInfo> = {
       default: { id: "default", name: "Default", color: "#6366F1" },
     };
@@ -822,7 +822,7 @@ export class TaskRepository {
             FROM calendar_confirmations cc
             INNER JOIN tasks t ON t.id = cc.task_id
             WHERE cc.source IN ('ha.calendar_sync', 'caldav')
-              AND t.calendar_sync_state = 'synced'`,
+              AND t.task_board_id IS NULL AND t.calendar_sync_state = 'synced'`,
       args: [],
     });
 
@@ -859,7 +859,7 @@ export class TaskRepository {
     const syncedTasksRes = await this.client.execute({
       sql: `SELECT id, due_date, start_date, end_date
             FROM tasks
-            WHERE calendar_sync_state = 'synced'`,
+            WHERE task_board_id IS NULL AND calendar_sync_state = 'synced'`,
       args: [],
     });
     for (const row of syncedTasksRes.rows) {
@@ -1475,7 +1475,7 @@ export class TaskRepository {
     // destination in the write so project deletion cannot race reassignment.
     const projectId = fields.project_id
     const destinationExists = typeof projectId === "string"
-      ? " AND EXISTS (SELECT 1 FROM projects WHERE id = ? AND owner_board_id IS NULL)"
+      ? " AND EXISTS (SELECT 1 FROM projects WHERE id = ? AND owner_board_id IS NULL AND retired_at IS NULL)"
       : ""
     if (typeof projectId === "string") whereArgs.push(projectId)
     const planningGuards: string[] = []
@@ -2001,7 +2001,7 @@ export class TaskRepository {
                                checklists, custom_fields, ticket_number,
                                idempotency_key, request_id, created_at, updated_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    (SELECT id FROM projects WHERE id = ? AND owner_board_id IS NULL), ?, ?, ?, ?, ?, ?,
+                    (SELECT id FROM projects WHERE id = ? AND owner_board_id IS NULL AND retired_at IS NULL), ?, ?, ?, ?, ?, ?,
                     ${nextHouseholdTicketNumberSql}, ?, ?, ?, ?)
             RETURNING ticket_number`,
       args: [

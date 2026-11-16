@@ -1,13 +1,16 @@
 ---
 import type { readNamedBoardPlanning } from "@domains/tasks/persistence/named-board-planning-repository"
 
+import RetirePlanningForm from "./RetirePlanningForm.astro"
+
 interface Props {
   planning: NonNullable<Awaited<ReturnType<typeof readNamedBoardPlanning>>>
   canManage: boolean
   canComplete: boolean
   routinesEnabled: boolean
+  tickets: { id: string; title: string }[]
 }
-const { planning, canManage, canComplete, routinesEnabled } = Astro.props
+const { planning, canManage, canComplete, routinesEnabled, tickets } = Astro.props
 const goalHref = (filter: string, id: string) => `/progress?${filter}=${encodeURIComponent(id)}#goals`
 const showRoutines = routinesEnabled && (canManage || planning.routines.length > 0)
 const ownedAreaIds = new Set(planning.areas.map(area => area.id))
@@ -28,6 +31,7 @@ const ownedAreaIds = new Set(planning.areas.map(area => area.id))
           <p role="status" data-board-feedback></p>
           <button type="submit" class="btn btn-ghost">Save Area</button>
         </form>
+        <RetirePlanningForm entity="area" id={area.id} />
       </details>}
       <a href={goalHref("area_id", area.id)}>View Goals</a>
       <div>
@@ -46,6 +50,18 @@ const ownedAreaIds = new Set(planning.areas.map(area => area.id))
               <p role="status" data-board-feedback></p>
               <button type="submit" class="btn btn-ghost">Save Project</button>
             </form>
+            <form data-board-form="planning" class="board-form">
+              <input type="hidden" name="action" value="project-goal" />
+              <input type="hidden" name="id" value={project.id} />
+              <label>Goal <select name="goalId">
+                <option value="">No Goal</option>
+                {planning.linkableGoals.filter(goal => goal.sharedAreaId === null || goal.sharedAreaId === area.id)
+                  .map(goal => <option value={goal.id} selected={goal.id === project.goalId}>{goal.title}</option>)}
+              </select></label>
+              <p role="status" data-board-feedback></p>
+              <button type="submit" class="btn btn-ghost">Save Goal link</button>
+            </form>
+            <RetirePlanningForm entity="project" id={project.id} />
           </details>}
           {canManage ? <form data-board-form="planning" class="board-form">
             <input type="hidden" name="action" value="project-status" />
@@ -90,6 +106,7 @@ const ownedAreaIds = new Set(planning.areas.map(area => area.id))
             <p role="status" data-board-feedback></p>
             <button type="submit" class="btn btn-ghost">Save Goal</button>
           </form>
+          <RetirePlanningForm entity="goal" id={goal.id} />
         </details>}
       </article>)}
       {canManage && <details>
@@ -110,9 +127,24 @@ const ownedAreaIds = new Set(planning.areas.map(area => area.id))
           {canComplete && !routine.complete && <form data-board-form="planning" class="board-form">
             <input type="hidden" name="action" value="routine-complete" />
             <input type="hidden" name="id" value={routine.id} />
+            <input type="hidden" name="period" value={routine.period} />
             <p role="status" data-board-feedback></p>
             <button type="submit" class="btn btn-ghost">Mark routine done</button>
           </form>}
+          {canManage && <details>
+            <summary>Edit Routine</summary>
+            <form data-board-form="planning" class="board-form">
+              <input type="hidden" name="action" value="routine" />
+              <input type="hidden" name="id" value={routine.id} />
+              <input type="hidden" name="areaId" value={area.id} />
+              <input type="hidden" name="cadence" value={routine.cadence} />
+              <label>Title <input name="title" value={routine.name} maxlength="150" required /></label>
+              <label>Details <textarea name="description" rows="2" maxlength="10000">{routine.description}</textarea></label>
+              <p role="status" data-board-feedback></p>
+              <button type="submit" class="btn btn-ghost">Save Routine</button>
+            </form>
+            <RetirePlanningForm entity="routine" id={routine.id} />
+          </details>}
         </article>)}
         {canManage && <details>
           <summary>New Routine</summary>
@@ -177,6 +209,70 @@ const ownedAreaIds = new Set(planning.areas.map(area => area.id))
       {planning.pillars.map(pillar => <article class="board-tile">
         <h3 class="board-name">{pillar.name}</h3>
         {pillar.manifesto && <p>{pillar.manifesto}</p>}
+        {pillar.principles.length > 0 && <ul>
+          {pillar.principles.map(principle => <li>
+            {principle.statement}{principle.nonNegotiable && " (Non-negotiable)"}
+            {canManage && <details>
+              <summary>Edit Principle</summary>
+              <form data-board-form="planning" class="board-form">
+                <input type="hidden" name="action" value="pillar-principle" />
+                <input type="hidden" name="pillarId" value={pillar.id} />
+                <input type="hidden" name="id" value={principle.id} />
+                <label>Statement <input name="title" value={principle.statement} required maxlength="150" /></label>
+                <label class="check"><input type="checkbox" name="nonNegotiable" checked={principle.nonNegotiable} /> Non-negotiable</label>
+                <p role="status" data-board-feedback></p>
+                <button type="submit" class="btn btn-ghost">Save Principle</button>
+              </form>
+            </details>}
+          </li>)}
+        </ul>}
+        {pillar.links.length > 0 && <ul>
+          {pillar.links.map(link => <li>
+            {link.label}
+            {canManage && <form data-board-form="planning" class="board-preference">
+              <input type="hidden" name="action" value="pillar-link" />
+              <input type="hidden" name="pillarId" value={pillar.id} />
+              <input type="hidden" name="id" value={link.id} />
+              <input type="hidden" name="entityType" value={link.type} />
+              <input type="hidden" name="enabled" value="false" />
+              <button type="submit" class="btn btn-ghost">Remove link</button>
+              <p role="status" data-board-feedback></p>
+            </form>}
+          </li>)}
+        </ul>}
+        {canManage && <details>
+          <summary>Add Principle</summary>
+          <form data-board-form="planning" class="board-form">
+            <input type="hidden" name="action" value="pillar-principle" />
+            <input type="hidden" name="pillarId" value={pillar.id} />
+            <label>Statement <input name="title" required maxlength="150" /></label>
+            <label class="check"><input type="checkbox" name="nonNegotiable" /> Non-negotiable</label>
+            <p role="status" data-board-feedback></p>
+            <button type="submit" class="btn btn-ghost">Add Principle</button>
+          </form>
+        </details>}
+        {canManage && (planning.goals.length + planning.routines.length + tickets.length > 0) && <details>
+          <summary>Link work</summary>
+          <form data-board-form="planning" class="board-form">
+            <input type="hidden" name="action" value="pillar-link" />
+            <input type="hidden" name="pillarId" value={pillar.id} />
+            <input type="hidden" name="enabled" value="true" />
+            <label>Work item <select name="linkedEntity" required>
+              <option value="">Choose a work item</option>
+              {planning.goals.length > 0 && <optgroup label="Goals">
+                {planning.goals.map(goal => <option value={`goal/${goal.id}`}>{goal.title}</option>)}
+              </optgroup>}
+              {planning.routines.length > 0 && <optgroup label="Routines">
+                {planning.routines.map(routine => <option value={`routine/${routine.id}`}>{routine.name}</option>)}
+              </optgroup>}
+              {tickets.length > 0 && <optgroup label="Tickets on this page">
+                {tickets.map(ticket => <option value={`task/${ticket.id}`}>{ticket.title}</option>)}
+              </optgroup>}
+            </select></label>
+            <p role="status" data-board-feedback></p>
+            <button type="submit" class="btn btn-ghost">Link to Pillar</button>
+          </form>
+        </details>}
         {canManage && <details>
           <summary>Edit Pillar</summary>
           <form data-board-form="planning" class="board-form">

@@ -276,7 +276,7 @@ export async function readRecentActivity(
                  area.name AS area_name
           FROM task_activity_log AS activity
           JOIN tasks AS task ON task.id = activity.task_id AND task.task_board_id IS NULL
-          LEFT JOIN areas AS area ON area.id = task.area_id AND area.owner_board_id IS NULL
+          LEFT JOIN areas AS area ON area.id = task.area_id AND area.owner_board_id IS NULL AND area.retired_at IS NULL
           WHERE ${conditions.join(" AND ")}
           ORDER BY activity.created_at DESC, activity.id DESC LIMIT ?`,
     args: [...args, size + 1],

@@ -97,6 +97,7 @@ export function bindBoardPage(signal: AbortSignal) {
     const button = form.querySelector<HTMLButtonElement>('[type="submit"]')
     if (!button || button.disabled) return
     if (boardForm === "task-delete" && !await confirmDialog({ message: "Delete this task?" })) return
+    if (value("action") === "retire" && !await confirmDialog({ message: "Remove this item from active planning?" })) return
     button.disabled = true
     if (feedback) feedback.textContent = ""
 
@@ -143,15 +144,26 @@ export function bindBoardPage(signal: AbortSignal) {
         case "task-delete":
           await jsonRequest(ticket, "DELETE", { version: Number(version) })
           break
-        case "planning":
-          await jsonRequest(api + "/planning", "POST", {
+        case "planning": {
+          const linkedEntity = value("linkedEntity")
+          const [entityType, linkedId] = linkedEntity.split("/", 2)
+          const result = await jsonRequest(api + "/planning", "POST", {
             action: value("action"), ...content, areaId: value("areaId"), goalId: value("goalId") || null,
-            ...(data.has("id") ? { id: value("id") } : {}),
+            ...(linkedId ? { id: linkedId, entityType } : data.has("id") ? { id: value("id") } : {}),
+            ...(data.has("entityType") ? { entityType: value("entityType") } : {}),
+            ...(data.has("pillarId") ? { pillarId: value("pillarId"), nonNegotiable: data.has("nonNegotiable") } : {}),
             ...(data.has("enabled") ? { enabled: value("enabled") === "true" } : {}),
+            ...(data.has("entity") ? { entity: value("entity") } : {}),
             ...(data.has("status") ? { status: value("status") } : {}),
             ...(data.has("cadence") ? { cadence: value("cadence") } : {}),
+            ...(data.has("period") ? { period: value("period") } : {}),
           })
+          if (result.accessPending && feedback) {
+            feedback.textContent = "Saved. Board access is still being verified."
+            return
+          }
           break
+        }
         case "intake-create":
           await jsonRequest(api + "/intakes", "POST", {
             label: value("label"), laneId: value("laneId"), senderIds: data.getAll("senderIds"), recipientId: value("recipientId"),

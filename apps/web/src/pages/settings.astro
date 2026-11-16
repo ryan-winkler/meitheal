@@ -17,12 +17,16 @@ import { t } from "../i18n/translations"
 import type { Locale } from "../lib/locale"
 import { issueDatabaseDownloadToken } from "../lib/database-download-token"
 import { SETTINGS_SECTIONS } from "../lib/settings-registry"
+import { ensureSchema, getPersistenceClient } from "@domains/tasks"
 import { verifyCurrentHAOwner } from "@domains/ha/current-admin"
 import { verifiedIngressUser } from "../lib/verified-ingress-user"
 
 const user = verifiedIngressUser(Astro.locals)
 const mayDownloadDatabase = user?.isAdmin && await verifyCurrentHAOwner(user.id, Astro.request.signal) === "allowed"
-const databaseDownloadToken = mayDownloadDatabase ? issueDatabaseDownloadToken(user.id) : undefined
+const namedBoardsExist = mayDownloadDatabase && await ensureSchema().then(async () =>
+  (await getPersistenceClient().execute("SELECT 1 FROM task_boards WHERE id <> 'household' LIMIT 1")).rows.length > 0
+).catch(() => true)
+const databaseDownloadToken = mayDownloadDatabase && !namedBoardsExist ? issueDatabaseDownloadToken(user.id) : undefined
 if (databaseDownloadToken) Astro.response.headers.set("Cache-Control", "private, no-store")
 const cookieLocale = Astro.cookies.get("meitheal-locale")?.value
 const locale: Locale = cookieLocale === "ga" ? "ga" : "en"

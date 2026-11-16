@@ -13,6 +13,7 @@
  * @see docs/decisions/ADR-017-pillars-domain.md
  */
 
+import { principleTableSql } from "../../../drizzle/migrations/pillar-storage-schema.mjs"
 import { randomUUID } from "node:crypto"
 import { getPersistenceClient } from "../tasks/persistence/store"
 import { ensurePillarSchema, HOUSEHOLD_PILLAR_OWNER } from "./pillar-service"
@@ -26,17 +27,7 @@ export async function ensurePrincipleSchema(): Promise<void> {
   await ensurePillarSchema()
   const client = getPersistenceClient()
 
-  await client.execute(`
-    CREATE TABLE IF NOT EXISTS principles (
-      id TEXT PRIMARY KEY,
-      pillar_id TEXT NOT NULL,
-      statement TEXT NOT NULL,
-      is_non_negotiable INTEGER NOT NULL DEFAULT 0,
-      position INTEGER NOT NULL DEFAULT 0,
-      created_at INTEGER NOT NULL,
-      FOREIGN KEY (pillar_id) REFERENCES pillars(id) ON DELETE CASCADE
-    )
-  `)
+  await client.execute(principleTableSql)
 
   await client.execute("CREATE INDEX IF NOT EXISTS principles_pillar_idx ON principles(pillar_id)")
   await client.execute("CREATE INDEX IF NOT EXISTS principles_non_neg_idx ON principles(is_non_negotiable)")

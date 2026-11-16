@@ -23,7 +23,7 @@ function readPolicy(row: Row | undefined, fallback: number) {
 const areaCatalogSql = `SELECT areas.id, areas.name, areas.inactivity_generation AS generation,
     task_inactivity_policy.revision AS policy_revision
   FROM areas LEFT JOIN task_inactivity_policy ON task_inactivity_policy.area_id = areas.id
-  WHERE areas.owner_board_id IS NULL
+  WHERE areas.owner_board_id IS NULL AND areas.retired_at IS NULL
   ORDER BY areas.position, areas.id`
 
 function areaCatalogRevision(rows: Row[]) {
@@ -33,7 +33,7 @@ function areaCatalogRevision(rows: Row[]) {
 
 const selectedScope = (areaId: InactivityScope) => areaId === null ? "default" : `area:${areaId}`
 const enabledPolicySql = (simulate = false) => `WITH input(area_id, proposed) AS (VALUES (?, ?))
-  SELECT 1 FROM areas, input WHERE areas.owner_board_id IS NULL
+  SELECT 1 FROM areas, input WHERE areas.owner_board_id IS NULL AND areas.retired_at IS NULL
     AND (input.area_id IS NULL OR areas.id = input.area_id)
     AND (${inactivityDaysSql(simulate, "areas.id")}) > 0 LIMIT 1`
 const deadline = `CASE WHEN can_defer THEN last_activity + days * ${inactivityDayMs} END`
@@ -79,7 +79,7 @@ export class TaskInactivityRepository {
     const [policies, areas, result, enabled] = await this.client.batch([
       { sql: `SELECT scope, days, CASE WHEN ${validInactivityRevisionSql} THEN revision END AS revision
           FROM task_inactivity_policy AS policy WHERE scope IN ('default', ?)
-          AND (area_id IS NULL OR EXISTS (SELECT 1 FROM areas WHERE id = policy.area_id AND owner_board_id IS NULL))`,
+          AND (area_id IS NULL OR EXISTS (SELECT 1 FROM areas WHERE id = policy.area_id AND owner_board_id IS NULL AND retired_at IS NULL))`,
         args: [selectedScope(areaId)] },
       areaCatalogSql,
       { sql: `${rowsCte(true, filter === "stalled")}, filtered AS MATERIALIZED (SELECT * FROM dated WHERE ${where}),
@@ -130,7 +130,7 @@ export class TaskInactivityRepository {
       sql: `INSERT INTO task_inactivity_policy (scope, area_id, days, revision)
         SELECT ?, ?, ?, lower(hex(randomblob(16)))
         WHERE (SELECT revision FROM task_inactivity_policy WHERE scope = ?) IS ?
-          AND (? IS NULL OR (EXISTS (SELECT 1 FROM areas WHERE id = ? AND owner_board_id IS NULL AND inactivity_generation IS ?)
+          AND (? IS NULL OR (EXISTS (SELECT 1 FROM areas WHERE id = ? AND owner_board_id IS NULL AND retired_at IS NULL AND inactivity_generation IS ?)
             AND (SELECT revision FROM task_inactivity_policy WHERE scope = 'default') IS ?))
         ON CONFLICT(scope) DO UPDATE SET days = excluded.days, revision = excluded.revision
         RETURNING days, revision`,
@@ -153,7 +153,7 @@ export class TaskInactivityRepository {
     }
     const [saved, area] = await this.client.batch([
       mutation,
-      { sql: "SELECT 1 FROM areas WHERE id = ? AND owner_board_id IS NULL", args: [areaId] },
+      { sql: "SELECT 1 FROM areas WHERE id = ? AND owner_board_id IS NULL AND retired_at IS NULL", args: [areaId] },
     ], "write")
     if (saved!.rows[0]) return { status: "saved", policy: readPolicy(saved!.rows[0], days) } as const
     return { status: !area!.rows.length ? "missing" : "stale" } as const
@@ -162,7 +162,7 @@ export class TaskInactivityRepository {
   async hasEnabledPolicy(areaId?: InactivityScope) {
     const { rows } = await this.client.execute(areaId === undefined
       ? `SELECT 1 FROM task_inactivity_policy AS policy WHERE days > 0 AND ${validInactivityRevisionSql}
-          AND (area_id IS NULL OR EXISTS (SELECT 1 FROM areas WHERE id = policy.area_id AND owner_board_id IS NULL))
+          AND (area_id IS NULL OR EXISTS (SELECT 1 FROM areas WHERE id = policy.area_id AND owner_board_id IS NULL AND retired_at IS NULL))
           LIMIT 1`
       : { sql: enabledPolicySql(), args: [areaId, null] })
     return rows.length > 0

@@ -64,24 +64,29 @@ export async function readSharedGoals(
         UNION ALL SELECT 'household'
       ), visible_areas AS (
         SELECT area.id FROM areas AS area
-        WHERE COALESCE(area.owner_board_id, 'household') IN (SELECT id FROM visible_boards)
+        WHERE area.retired_at IS NULL AND COALESCE(area.owner_board_id, 'household') IN (SELECT id FROM visible_boards)
       ), visible_projects AS (
         SELECT project.id, project.goal_id, project.status, COALESCE(project.area_id, goal.area_id) AS area_id
-        FROM projects AS project LEFT JOIN goals AS goal ON goal.id = project.goal_id
-        WHERE COALESCE(project.owner_board_id, 'household') IN (SELECT id FROM visible_boards)
+        FROM projects AS project LEFT JOIN goals AS goal ON goal.id = project.goal_id AND goal.retired_at IS NULL
+        WHERE project.retired_at IS NULL AND COALESCE(project.owner_board_id, 'household') IN (SELECT id FROM visible_boards)
       ), readable_sources AS (
-        SELECT share.goal_id, share.area_id, 0 AS named
+        SELECT share.goal_id,
+          CASE WHEN scope.area_id IS NULL OR share.area_id = scope.area_id THEN share.area_id END AS area_id,
+          0 AS named
         FROM scope CROSS JOIN board_goal_shares AS share
         JOIN areas AS area ON area.id = share.area_id
-        WHERE (scope.area_id IS NULL OR share.area_id = scope.area_id)
+        WHERE (scope.area_id IS NULL OR share.area_id = scope.area_id OR EXISTS (
+            SELECT 1 FROM visible_projects WHERE area_id = scope.area_id AND goal_id = share.goal_id
+          ))
           AND share.receiving_board_id = COALESCE(area.owner_board_id, 'household')
           AND share.area_id IN (SELECT id FROM visible_areas)
+          AND (scope.area_id IS NULL OR scope.area_id IN (SELECT id FROM visible_areas))
         UNION ALL
         SELECT owned.id AS goal_id,
                CASE WHEN owned.area_id IN (SELECT id FROM visible_areas) THEN owned.area_id END AS area_id,
                1 AS named
         FROM scope CROSS JOIN goals AS owned
-        WHERE owned.owner_board_id IS NOT NULL AND owned.owner_board_id IN (SELECT id FROM visible_boards)
+        WHERE owned.retired_at IS NULL AND owned.owner_board_id IS NOT NULL AND owned.owner_board_id IN (SELECT id FROM visible_boards)
           AND (scope.area_id IS NULL OR (
             scope.area_id IN (SELECT id FROM visible_areas) AND
             (owned.area_id = scope.area_id OR EXISTS (
@@ -109,9 +114,9 @@ export async function readSharedGoals(
              CASE WHEN readable_goals.named THEN goal.status END AS status,
              CASE WHEN readable_goals.named THEN goal.target_date END AS target_date
       FROM readable_goals
-      JOIN goals AS goal ON goal.id = readable_goals.goal_id
+      JOIN goals AS goal ON goal.id = readable_goals.goal_id AND goal.retired_at IS NULL
       JOIN task_boards AS owner ON owner.id = COALESCE(goal.owner_board_id, 'household') AND owner.state IN ('active', 'archived')
-      LEFT JOIN projects AS project ON project.goal_id = goal.id
+      LEFT JOIN projects AS project ON project.goal_id = goal.id AND project.retired_at IS NULL
         AND COALESCE(project.owner_board_id, 'household') IN (SELECT id FROM visible_boards)
       GROUP BY goal.id, goal.title, readable_goals.area_id, readable_goals.named
       ORDER BY goal.title COLLATE NOCASE, goal.id`,
@@ -149,8 +154,8 @@ export async function readNamedGoalScope(
           JOIN board_permissions AS policy ON policy.board_id = board.id
           WHERE board.state IN ('active', 'archived') AND grant.principal_type = 'ha_user' AND grant.principal_id = ?
         )
-        SELECT (SELECT name FROM areas WHERE id = ? AND owner_board_id IN (SELECT id FROM scoped_boards)) AS area_name,
-               (SELECT title FROM projects WHERE id = ? AND owner_board_id IN (SELECT id FROM scoped_boards)) AS project_name
+        SELECT (SELECT name FROM areas WHERE id = ? AND retired_at IS NULL AND owner_board_id IN (SELECT id FROM scoped_boards)) AS area_name,
+               (SELECT title FROM projects WHERE id = ? AND retired_at IS NULL AND owner_board_id IN (SELECT id FROM scoped_boards)) AS project_name
         WHERE EXISTS (SELECT 1 FROM board_access_epoch WHERE singleton = 1 AND revision = ?)`,
     args: [viewer.id, scope.areaId ?? null, scope.projectId ?? null, revision],
   })

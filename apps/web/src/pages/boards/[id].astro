@@ -75,7 +75,7 @@ const verifyPath = boardId ? `/api/boards/${encodeURIComponent(boardId)}?offset=
                 <button type="submit" class="btn btn-ghost">Move</button>
                 <p role="status" data-board-feedback></p>
               </form>}
-              {canDelete && <form data-board-form="task-delete" data-ticket-id={task.id} data-version={task.version}>
+              {canDelete && !task.routine && <form data-board-form="task-delete" data-ticket-id={task.id} data-version={task.version}>
                 <button type="submit" class="btn btn-ghost board-danger">Delete task</button>
                 <span role="status" data-board-feedback></span>
               </form>}
@@ -87,7 +87,7 @@ const verifyPath = boardId ? `/api/boards/${encodeURIComponent(boardId)}?offset=
           {view.nextOffset !== null && <a href={`?offset=${view.nextOffset}`}>More tasks</a>}
         </nav>}
 
-        {view.planning && <BoardPlanning planning={view.planning} canManage={Boolean(policy) && view.board.state === "active"} canComplete={Boolean(canComplete)} routinesEnabled={routinesEnabled} />}
+        {view.planning && <BoardPlanning planning={view.planning} canManage={Boolean(policy) && view.board.state === "active"} canComplete={Boolean(canComplete)} routinesEnabled={routinesEnabled} tickets={view.tasks} />}
         {policy && <details class="named-boards board-settings">
           <summary>Board settings</summary>
           <div class="board-settings-grid">

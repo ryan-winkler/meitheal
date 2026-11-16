@@ -666,10 +666,12 @@ const paths = {
     post: boardOperation("savePrivateBoardPlanning", "Create or manage planning and Pillars on an owned Board", [boardIdParam, boardSessionParam], {
       200: { description: "Saved" }, 400: { description: "Invalid planning change" }, 404: boardUnavailable,
     }, boardJson({
-      action: { type: "string", enum: ["area", "goal", "project", "project-edit", "project-status", "goal-share", "pillar", "routine", "routine-complete"] },
+      action: { type: "string", enum: ["area", "goal", "project", "project-edit", "project-goal", "project-status", "goal-share", "retire", "pillar", "pillar-principle", "pillar-link", "routine", "routine-complete"] },
       title: boardString, description: boardString, id: boardString, areaId: boardString, goalId: { type: ["string", "null"] },
       status: { type: "string", enum: ["active", "completed", "archived"] }, enabled: boardBoolean,
-      cadence: { type: "string", enum: ["daily", "weekly"] },
+      cadence: { type: "string", enum: ["daily", "weekly"] }, period: { type: "string", format: "date" },
+      entity: { type: "string", enum: ["area", "goal", "project", "routine"] },
+      entityType: { type: "string", enum: ["goal", "routine", "task"] }, pillarId: boardString, nonNegotiable: boardBoolean,
     })),
   },
   "/api/board-intake": {

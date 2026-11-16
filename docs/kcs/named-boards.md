@@ -16,11 +16,13 @@ Keep the same submission when retrying unchanged content after a timeout. A subm
 
 ## Areas, Projects, Goals, Routines, and Pillars
 
-Under **Planning** on a named Board, create an Area to group Projects, Goals and Routines. Choose an optional Goal when creating a Project, and use the Project status to track completion. Board owners manage the planning records and Board Pillars. People with Board access can read them. Create a Pillar for yourself under **Progress → Pillars → New Pillar → Only me**.
+Under **Planning** on a named Board, create an Area to group Projects, Goals and Routines. Choose an optional Goal when creating a Project, and use the Project status to track completion. Board owners manage planning, retire records and link Projects to Goals. Board Pillars can have Principles and links to the same Board’s Goals, Routines and tickets. People with Board access can read them. Create a Pillar for yourself under **Progress → Pillars → New Pillar → Only me**.
 
 Sharing a Goal with an Area publishes its title and a Project progress summary to people who can read that Area. Each viewer sees progress from Projects they can access. If a Project is private to Work, its progress is omitted for Home readers. Select **Goal sharing → Stop sharing** to remove the Area audience. The visitor can still see a Goal they already have direct access to.
 
-A Board Routine is completed at most once per daily or weekly period. Completing it creates a Done ticket on the same Board and requires permission to mark tickets done.
+Removing a Household Area, Goal or Project hides it from planning and keeps historical relationships intact. Existing Household tasks are unassigned from a removed Project. Named tickets and their versions stay intact.
+
+A Board Routine is completed at most once per UTC day or week starting Monday. Completing it creates a Done ticket on the same Board and requires permission to mark tickets done. Routine tickets remain on the Board to preserve completion history.
 
 ## Backups
 

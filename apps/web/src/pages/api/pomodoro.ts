@@ -1,5 +1,6 @@
 import type { APIRoute } from "astro"
 import {
+  PomodoroTaskUnavailableError,
   getTimerState,
   startFocus,
   skipToBreak,
@@ -64,6 +65,7 @@ export const POST: APIRoute = async ({ request }) => {
 
     return apiJson({ state })
   } catch (err) {
+    if (err instanceof PomodoroTaskUnavailableError) return apiError("Task unavailable", 404)
     return apiError("Failed to execute pomodoro action")
   }
 }

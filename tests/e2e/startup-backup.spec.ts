@@ -1,3 +1,4 @@
+import { cancelSession, ensurePomodoroSchema, getSessionHistory, getTimerState, getTodayStats, resetPomodoroForTests, skipToBreak, startFocus } from "../../apps/web/src/domains/pomodoro/index"
 import { execFile, fork } from "node:child_process"
 import { createHash } from "node:crypto"
 import { once } from "node:events"
@@ -559,6 +560,23 @@ test("Household task reads and cleanup exclude a named Board even by exact ID", 
         '__meitheal_no_area__', 'complete', 'private-fixture', 'fixture', 1, 1)`,
   ], "write")
 
+  try {
+    await ensurePomodoroSchema()
+    const standalone = await startFocus()
+    await expect(startFocus("private-task")).rejects.toThrow("Task unavailable")
+    expect(getTimerState().sessionId).toBe(standalone.sessionId)
+    await db.execute(`INSERT INTO pomodoro_sessions (id, task_id, started_at, completed_at, duration_minutes)
+      VALUES ('foreign-session', 'private-task', datetime('now'), datetime('now'), 15)`)
+    expect(await getSessionHistory()).toEqual([])
+    expect(await getTodayStats()).toEqual({ sessionsCompleted: 0, totalFocusMinutes: 0 })
+    await startFocus("household-task")
+    await skipToBreak()
+    expect((await db.execute("SELECT task_id FROM time_entries")).rows).toEqual([{ task_id: "household-task" }])
+    await cancelSession()
+  } finally {
+    resetPomodoroForTests()
+  }
+
   const listing = await repo.findAll({ limit: 1 })
   expect(listing.total).toBe(1)
   expect(listing.tasks.map(task => task.id)).toEqual(["household-task"])
@@ -628,8 +646,19 @@ test("Household task reads and cleanup exclude a named Board even by exact ID", 
     "INSERT INTO goals (id, title, created_at, updated_at) VALUES ('legacy-goal', 'Household goal', 1, 1)",
     "INSERT INTO projects (id, title, area_id, goal_id, owner_board_id, created_at, updated_at) VALUES ('linked-project', 'Linked in Work', 'legacy-area', 'legacy-goal', 'work-fixture', 1, 1)",
   ], "write")
-  expect(await hierarchy.deleteArea("legacy-area")).toBe(false)
-  expect(await hierarchy.deleteGoal("legacy-goal")).toBe(false)
+  await hierarchy.createProject({ id: "legacy-project", title: "Household linked Project" })
+  await hierarchy.createProject({ id: "unlinked-project", title: "Household unlinked Project" })
+  await db.execute("INSERT INTO board_task_planning (task_id, area_id, project_id, goal_id) VALUES ('private-task', 'legacy-area', 'legacy-project', 'legacy-goal')")
+  expect(await hierarchy.deleteProject("legacy-project")).toBe(true)
+  expect(await hierarchy.deleteProject("unlinked-project")).toBe(true)
+  expect(await hierarchy.findProjectById("legacy-project")).toBeNull()
+  expect((await db.execute("SELECT task_id, area_id, project_id, goal_id FROM board_task_planning WHERE task_id = 'private-task'")).rows[0])
+    .toMatchObject({ task_id: "private-task", area_id: "legacy-area", project_id: "legacy-project", goal_id: "legacy-goal" })
+  expect((await db.execute("SELECT updated_at FROM tasks WHERE id = 'private-task'")).rows[0]?.updated_at).toBe(1)
+  expect(await hierarchy.deleteArea("legacy-area")).toBe(true)
+  expect(await hierarchy.deleteGoal("legacy-goal")).toBe(true)
+  expect(await hierarchy.findAreaById("legacy-area")).toBeNull()
+  expect(await hierarchy.findGoalById("legacy-goal")).toBeNull()
   await hierarchy.createArea({ id: "unlinked-area", name: "Unlinked Area" })
   await hierarchy.createGoal({ id: "unlinked-goal", title: "Unlinked Goal" })
   expect(await hierarchy.deleteArea("unlinked-area")).toBe(true)
@@ -660,5 +689,12 @@ test("Household task reads and cleanup exclude a named Board even by exact ID", 
   expect(await readSharedGoals(db, "home-user", { areaId: "default", projectId: "inherited-home-project" }, revision))
     .toMatchObject([{ id: "home-goal" }])
   expect(await readSharedGoals(db, "home-user", { areaId: "default", projectId: "explicit-work-project" }, revision)).toEqual([])
+  await db.batch([
+    "INSERT INTO areas (id, name, created_at, updated_at) VALUES ('other-home-area', 'Other Home Area', 1, 1)",
+    "INSERT INTO projects (id, goal_id, area_id, title, created_at, updated_at) VALUES ('other-home-project', 'work-goal', 'other-home-area', 'Other Home Project', 1, 1)",
+  ], "write")
+  expect(await readSharedGoals(db, "home-user", { areaId: "other-home-area" }, revision)).toEqual([
+    { id: "work-goal", title: "Work goal", area_id: null, project_count: 2, completed_project_count: 1 },
+  ])
   expect((await hierarchy.findProjectsByArea("default")).map(({ id }) => id)).not.toContain("explicit-work-project")
 })

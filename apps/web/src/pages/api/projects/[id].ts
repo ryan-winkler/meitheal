@@ -73,7 +73,7 @@ export const DELETE: APIRoute = async ({ params }) => {
     if (project.is_default) return apiError("Cannot delete the default project", 403)
 
     const deleted = await repo.deleteProject(params.id!)
-    if (!deleted) return apiError("This project could not be deleted while it is in use.", 409)
+    if (!deleted) return apiError("Project not found", 404)
     return apiJson({ ok: true })
   } catch (error) {
     logApiError("projects", "DELETE error", error)

@@ -69,7 +69,7 @@ export class NamedBoardTaskRepository {
         },
         {
           sql: `SELECT id, title, description, status, ticket_ref, board_column_id AS lane_id,
-              assigned_to, ${taskTimestampMs("updated_at")} AS version
+              assigned_to, source_template_id IS NOT NULL AS routine, ${taskTimestampMs("updated_at")} AS version
             FROM tasks WHERE task_board_id = ?
             ORDER BY created_at DESC, id DESC LIMIT 51 OFFSET ?`,
           args: [boardId, offset],
@@ -99,7 +99,8 @@ export class NamedBoardTaskRepository {
         tasks: tasks!.rows.slice(0, 50).map(task => ({
           id: String(task.id), title: String(task.title), description: String(task.description ?? ""),
           status: String(task.status), ticket: String(task.ticket_ref), laneId: String(task.lane_id),
-          assignedTo: typeof task.assigned_to === "string" ? task.assigned_to : null, version: Number(task.version),
+          assignedTo: typeof task.assigned_to === "string" ? task.assigned_to : null,
+          routine: task.routine === 1, version: Number(task.version),
         })),
         nextOffset: tasks!.rows.length > 50 ? offset + 50 : null,
         agents: agents!.rows.map(agent => String(agent.principal_id)),
@@ -128,7 +129,7 @@ export class NamedBoardTaskRepository {
         if (!target) continue
         const { rows } = await tx.execute({
           sql: `SELECT 1 FROM ${table} AS planning
-            WHERE planning.id = ? AND (planning.owner_board_id IS NULL OR EXISTS (
+            WHERE planning.id = ? AND planning.retired_at IS NULL AND (planning.owner_board_id IS NULL OR EXISTS (
               SELECT 1 FROM board_access_grants AS grant JOIN task_boards AS target_board ON target_board.id = grant.board_id
               JOIN board_permissions AS policy ON policy.board_id = target_board.id
               WHERE grant.board_id = planning.owner_board_id AND target_board.state IN ('active', 'archived')
@@ -151,7 +152,7 @@ export class NamedBoardTaskRepository {
     })
   }
 
-  async completeRoutine(actor: BoardActor, boardId: string, routineId: string) {
+  async completeRoutine(actor: BoardActor, boardId: string, routineId: string, requestedPeriod?: string) {
     return this.mutate(actor, boardId, "complete", async (tx, allows) => {
       if (!allows("create")) return denied
       const { rows: [routine] } = await tx.execute({
@@ -160,12 +161,13 @@ export class NamedBoardTaskRepository {
             (SELECT id FROM kanban_lanes WHERE board_id = ? AND key = 'complete' LIMIT 1) AS lane_id
           FROM task_templates AS routine
           JOIN areas AS area ON json_extract(routine.template_json, '$.area_id') = area.id
-            AND area.owner_board_id = routine.owner_board_id
-          WHERE routine.id = ? AND routine.owner_board_id = ? AND routine.is_routine = 1`,
+            AND area.owner_board_id = routine.owner_board_id AND area.retired_at IS NULL
+          WHERE routine.id = ? AND routine.owner_board_id = ? AND routine.is_routine = 1 AND routine.retired_at IS NULL`,
         args: [boardId, routineId, boardId],
       })
       if (!routine || typeof routine.lane_id !== "string") return unavailable
       const period = namedRoutinePeriod(String(routine.cadence))
+      if (requestedPeriod !== undefined && requestedPeriod !== period) return stale
       const { rows: [existing] } = await tx.execute({
         sql: `SELECT id, status FROM tasks WHERE task_board_id = ? AND source_template_id = ? AND due_date = ? LIMIT 1`,
         args: [boardId, routineId, period],
@@ -232,6 +234,11 @@ export class NamedBoardTaskRepository {
 
   async delete(actor: BoardActor, boardId: string, id: string, version: number) {
     return this.mutate(actor, boardId, "delete", async tx => {
+      const { rows: [task] } = await tx.execute({
+        sql: "SELECT source_template_id FROM tasks WHERE id = ? AND task_board_id = ?",
+        args: [id, boardId],
+      })
+      if (task?.source_template_id != null) return denied
       const { rows } = await tx.execute({
         sql: `DELETE FROM tasks WHERE id = ? AND task_board_id = ? AND ${taskTimestampMs("updated_at")} = ?
           AND NOT EXISTS (SELECT 1 FROM tasks AS child WHERE child.parent_id = tasks.id)
