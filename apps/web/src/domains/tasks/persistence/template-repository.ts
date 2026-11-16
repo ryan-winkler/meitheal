@@ -225,7 +225,7 @@ export class TemplateRepository {
       // Today's task for this routine
       const todayTask = await this.client.execute({
         sql: `SELECT id, status FROM tasks
-              WHERE source_template_id = ? AND due_date = ?
+              WHERE task_board_id IS NULL AND source_template_id = ? AND due_date = ?
               ORDER BY created_at DESC LIMIT 1`,
         args: [routine.id, today],
       })
@@ -236,7 +236,7 @@ export class TemplateRepository {
       // Last completed date
       const lastCompleted = await this.client.execute({
         sql: `SELECT due_date FROM tasks
-              WHERE source_template_id = ? AND status = 'complete'
+              WHERE task_board_id IS NULL AND source_template_id = ? AND status = 'complete'
               ORDER BY due_date DESC LIMIT 1`,
         args: [routine.id],
       })
@@ -245,7 +245,7 @@ export class TemplateRepository {
 
       // Total completions
       const totalResult = await this.client.execute({
-        sql: "SELECT COUNT(*) as cnt FROM tasks WHERE source_template_id = ? AND status = 'complete'",
+        sql: "SELECT COUNT(*) as cnt FROM tasks WHERE task_board_id IS NULL AND source_template_id = ? AND status = 'complete'",
         args: [routine.id],
       })
       const totalCompletions = Number((totalResult.rows[0] as Record<string, unknown>).cnt)
@@ -292,7 +292,7 @@ export class TemplateRepository {
     const today = new Date().toISOString().split("T")[0]!
 
     const findToday = {
-      sql: `SELECT id FROM tasks WHERE source_template_id = ? AND due_date = ? LIMIT 1`,
+      sql: `SELECT id FROM tasks WHERE task_board_id IS NULL AND source_template_id = ? AND due_date = ? LIMIT 1`,
       args: [templateId, today],
     }
     const existing = await this.client.execute(findToday)
@@ -334,7 +334,7 @@ export class TemplateRepository {
                    ${nextHouseholdTicketNumberSql}, '{}', 'pending', ?, ?, ?, ?
             WHERE EXISTS (SELECT 1 FROM task_templates WHERE id = ? AND is_routine = 1 AND template_json = ?)
               AND (? = 'default' OR EXISTS (SELECT 1 FROM areas WHERE id = ?))
-              AND NOT EXISTS (SELECT 1 FROM tasks WHERE source_template_id = ? AND due_date = ?)`,
+              AND NOT EXISTS (SELECT 1 FROM tasks WHERE task_board_id IS NULL AND source_template_id = ? AND due_date = ?)`,
       args: [
         taskId,
         String(template.title ?? tmpl.name ?? "Routine"),
@@ -381,7 +381,7 @@ export class TemplateRepository {
   private async calculateStreak(templateId: string): Promise<{ current: number; longest: number }> {
     const result = await this.client.execute({
       sql: `SELECT DISTINCT due_date FROM tasks
-            WHERE source_template_id = ? AND status = 'complete' AND due_date IS NOT NULL
+            WHERE task_board_id IS NULL AND source_template_id = ? AND status = 'complete' AND due_date IS NOT NULL
             ORDER BY due_date DESC`,
       args: [templateId],
     })

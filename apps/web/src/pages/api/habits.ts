@@ -113,7 +113,7 @@ export const POST: APIRoute = async ({ request }) => {
 
         // Mark the task as complete
         await client.execute({
-          sql: "UPDATE tasks SET status = 'complete', updated_at = ? WHERE id = ?",
+          sql: "UPDATE tasks SET status = 'complete', updated_at = ? WHERE id = ? AND task_board_id IS NULL",
           args: [Date.now(), taskId],
         })
 
