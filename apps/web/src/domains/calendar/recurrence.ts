@@ -516,6 +516,8 @@ export interface ExpandedOccurrence {
 export interface ExpandRRuleInput {
   dtstart: string
   dtend?: string | undefined
+  /** Provider durations may depend on the occurrence's local date. */
+  timedEndForStart?: ((start: string) => string | undefined) | undefined
   rrule?: string | undefined
   exdates?: string[] | undefined
   windowStart: Date
@@ -754,6 +756,8 @@ export function expandRRuleOccurrences(input: ExpandRRuleInput): ExpandedOccurre
       } else {
         occInclusiveEnd = occDay
       }
+    } else if (input.timedEndForStart) {
+      occEnd = input.timedEndForStart(occStart)
     } else if (hasEnd) {
       const endInstant = new Date(occStartMs + timedDurationMs)
       occEnd = startParts.isZoned

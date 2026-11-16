@@ -58,6 +58,7 @@ export interface CalDAVEvent {
   summary: string
   dtstart: string
   dtend?: string | undefined
+  duration?: string | undefined
   /** Inclusive end date (YYYY-MM-DD) for all-day events where iCal DTEND is exclusive */
   inclusiveEndDate?: string | undefined
   description?: string | undefined
@@ -638,6 +639,7 @@ export function parseVEvents(ical: string, eventHref: string): CalDAVEvent[] {
       summary: summary ?? "",
       dtstart,
       dtend,
+      duration: !dtendRaw && dtend ? duration : undefined,
       inclusiveEndDate,
       description,
       location,
@@ -704,7 +706,11 @@ function applyThisAndFutureOverride(
   const overrideSpan = override.dtend
     ? wallClockMs(override.dtend, timezone, override.allDay) - wallClockMs(override.dtstart, timezone, override.allDay)
     : null
-  if (overrideSpan !== null && Number.isFinite(overrideSpan) && overrideSpan >= 0) {
+  const duration = override.duration ?? (override.dtend ? undefined : master.duration)
+  if (duration) {
+    result.dtend = eventEndFromDuration(start, duration, allDay, timezone)
+    if (allDay) result.inclusiveEndDate = result.dtend ? shiftCalendarDay(result.dtend, -1) : start
+  } else if (overrideSpan !== null && Number.isFinite(overrideSpan) && overrideSpan >= 0) {
     const end = shiftWallClock(start, overrideSpan, timezone, allDay)
     result.dtend = end
     if (allDay) {
@@ -801,9 +807,11 @@ export function expandCalDAVEventsInWindow(
           return Number.isFinite(span) ? Math.max(max, span) : max
         }, 0)
         const padMs = rangeOverrides.length > 0 ? maxShiftMs + maxSpanMs + 2 * 86_400_000 : 0
+        const duration = master.allDay ? undefined : master.duration
         const occs = expandRRuleOccurrences({
           dtstart: master.dtstart,
           dtend: master.dtend,
+          timedEndForStart: duration ? (start) => eventEndFromDuration(start, duration, false, timezone) : undefined,
           rrule: master.rrule,
           exdates: combinedExdates,
           allDay: master.allDay,

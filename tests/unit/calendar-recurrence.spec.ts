@@ -956,6 +956,27 @@ test("CalDAV keeps events with DURATION that started before the import window", 
   ])
 })
 
+test("CalDAV work-day durations are reapplied to each occurrence across DST before filtering", () => {
+  const events = parseVEvents([
+    "BEGIN:VEVENT",
+    "UID:weekly-duration",
+    "SUMMARY:Weekly work",
+    "DTSTART;TZID=Europe/Dublin:20260321T233000",
+    "DURATION:P1D",
+    "RRULE:FREQ=WEEKLY;COUNT=2",
+    "END:VEVENT",
+  ].join("\r\n"), "/cal/weekly-duration.ics")
+
+  const second = expandCalDAVEventsInWindow(
+    events, new Date("2026-03-29T20:00:00Z"), new Date("2026-03-29T22:00:00Z"),
+  )
+  expect(second).toHaveLength(1)
+  expect(second[0]?.dtend).toBe("2026-03-29T22:30:00Z")
+  expect(expandCalDAVEventsInWindow(
+    events, new Date("2026-03-29T22:45:00Z"), new Date("2026-03-30T00:00:00Z"),
+  )).toEqual([])
+})
+
 test("RECURRENCE-ID RANGE=THISANDFUTURE moves every later instance, keeps earlier ones and survives DST", () => {
   const ics = [
     "BEGIN:VCALENDAR",
