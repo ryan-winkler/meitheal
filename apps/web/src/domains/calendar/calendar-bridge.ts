@@ -889,9 +889,11 @@ function groupHAEventsIntoSeries(
     const legacyPerOcc = group.map((evt) => `ha-cal-${entityId}-${evt.summary}-${evt.start}`)
     const seriesKeyUid = `ha-cal-series-${entityId}-${key}`
     const priorKeys = [...(priorHouseholdKeys.get(key) ?? [])]
-    const grouped = group.length > 1 && (
-      knownSeriesKeys.has(seriesKeyUid) || isRegularHASeries(group.map((evt) => evt.start), timezone)
-    )
+    // Keep the series key even when this response has only one date. Rewriting
+    // it to that occurrence's key would lose the evidence needed on the next
+    // sync, when two dates are not enough to infer a new series.
+    const grouped = knownSeriesKeys.has(seriesKeyUid) ||
+      isRegularHASeries(group.map((evt) => evt.start), timezone)
     if (grouped) {
       finalizeGroup(seriesKeyUid, [seriesKeyUid, ...legacyPerOcc], group, priorKeys)
     } else if (group.length > 1) {

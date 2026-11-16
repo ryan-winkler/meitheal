@@ -1215,6 +1215,17 @@ test("HA sync turns separate same-title tasks into one series without duplicates
     await syncFromHA(entity)
     const reopened = await openBins()
     expect(reopened.map((row) => [String(row.id), String(row.due_date)])).toEqual([[String(series[0]?.id), at(day(21), "07:00")]])
+    const seriesId = String(series[0]?.id)
+    const readBinsLink = async () => (await db.execute({
+      sql: "SELECT provider_event_id FROM calendar_confirmations WHERE source = 'ha.calendar_sync' AND task_id = ?",
+      args: [seriesId],
+    })).rows.map((row) => row.provider_event_id)
+    const binsKey = `ha-cal-series-${entity}-bins::${dublinClock(at(day(21), "07:00"))}`
+    expect(await readBinsLink()).toEqual([binsKey])
+    ha.setCalendarEvents(bins([21, 28]))
+    await syncFromHA(entity)
+    expect((await openBins()).map((row) => row.id)).toEqual([seriesId])
+    expect(await readBinsLink()).toEqual([binsKey])
 
     // The previous release left one completed monthly "Rent" task for two months' events.
     const rentEarlier = day(-5)
