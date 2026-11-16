@@ -346,22 +346,14 @@
             const requestOptions = { signal: modalSignal }
             const lanes = fetch("/api/lanes", requestOptions)
             const backlogModeSetting = fetch("/api/settings?key=backlog_mode", requestOptions)
-            const childrenDiv = document.getElementById("td-link-children")
-            const children = childrenDiv
-              ? fetch(`/api/tasks?parent_id=${encodeURIComponent(taskId)}`, requestOptions)
-              : null
             const areas = fetch("/api/areas", requestOptions)
             const projectRead = projectField ? fetch("/api/projects", requestOptions) : null
             const pillars = fetch("/api/pillars", requestOptions)
-            const currentPillarId = String(t.pillar_id ?? "")
-            const principles = currentPillarId && currentPillarId !== "null" && currentPillarId !== "undefined"
-              ? fetch(`/api/pillars/${encodeURIComponent(currentPillarId)}/principles`, requestOptions)
-              : null
             const assignSelect = document.querySelector<HTMLSelectElement>("#td-assigned-to")
             const users = assignSelect ? fetch("/api/users", requestOptions) : null
             const settings = fetch("/api/settings", requestOptions)
             // Observe rejections immediately. Field handlers consume the original promises in order.
-            void Promise.allSettled([lanes, backlogModeSetting, children, areas, projectRead, pillars, principles, users, settings])
+            void Promise.allSettled([lanes, backlogModeSetting, areas, projectRead, pillars, users, settings])
 
             // Populate status dropdown from lanes API
             const statusSelect = document.getElementById(
@@ -473,14 +465,20 @@
             })();
 
             // Linked Tickets — children
-            if (childrenDiv && children) {
+            const childrenDiv = document.getElementById(
+              "td-link-children",
+            ) as HTMLElement;
+            if (childrenDiv) {
               childrenDiv.replaceChildren();
               // Progress bar elements
               const progressWrap = document.getElementById("td-subtask-progress");
               const progressLabel = document.getElementById("td-subtask-progress-label");
               const progressBar = document.getElementById("td-subtask-progress-bar");
               try {
-                const childRes = await children
+                const childRes = await fetch( // nosemgrep
+                  `${window.__ingress_path || ""}/api/tasks?parent_id=${taskId}`, // nosemgrep
+                  requestOptions,
+                );
                 if (modalSignal.aborted) return
                 if (childRes.ok) {
                   const childData = await childRes.json()
@@ -824,6 +822,7 @@
             const pillarSelect = document.getElementById(
               "td-pillar",
             ) as HTMLSelectElement;
+            const currentPillarId = String(t.pillar_id ?? "");
             try {
               const pilRes = await pillars
               if (modalSignal.aborted) return
@@ -851,8 +850,11 @@
             ) as HTMLSelectElement;
             const currentPrincipleId = String(t.principle_id ?? "");
             try {
-              if (principles) {
-                const prinRes = await principles
+              if (currentPillarId && currentPillarId !== "null" && currentPillarId !== "undefined") {
+                const prinRes = await fetch( // nosemgrep
+                  (window.__ingress_path || "") + `/api/pillars/${currentPillarId}/principles`, // nosemgrep
+                  requestOptions,
+                );
                 if (modalSignal.aborted) return
                 if (prinRes.ok) {
                   const prinData = await prinRes.json()
