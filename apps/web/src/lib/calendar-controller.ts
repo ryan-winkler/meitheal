@@ -99,7 +99,10 @@ export function initCalendarPage(signal: AbortSignal): void {
     }))
   }
 
-  async function refresh(url: URL) {
+  const refreshFailure = "Couldn’t apply calendar changes. The previous results are still shown."
+
+  async function refresh(url: URL, background = false) {
+    const preserveRetry = background && retryTarget && retryTarget.search !== url.search
     refreshRequest?.abort()
     const request = new AbortController()
     refreshRequest = request
@@ -143,21 +146,22 @@ export function initCalendarPage(signal: AbortSignal): void {
       applied = new URL(url)
       const area = readCalendarTaskFilters(applied.searchParams).area
       if (area !== undefined) document.dispatchEvent(new CustomEvent(CALENDAR_AREA_APPLIED_EVENT, { detail: area }))
-      if (retryTarget) {
+      if (retryTarget && !preserveRetry) {
         retryTarget = undefined
         restoreFilterControls()
       }
       document.dispatchEvent(new Event(TASK_VIEW_LOCATION_EVENT))
-      announce(rejectedFilterChange)
+      if (preserveRetry) announce(refreshFailure, true)
+      else announce(rejectedFilterChange)
       if (activeDay || activeRetry) focusMonthDay(activeDay)
       previewEvents()
       if (drawerDate) startDrawerRead(drawerDate)
     } catch {
       if (!request.signal.aborted && !signal.aborted) {
-        retryTarget = new URL(url)
+        if (!preserveRetry) retryTarget = new URL(url)
         desired = new URL(applied)
         restoreFilterControls()
-        announce("Couldn’t apply calendar changes. The previous results are still shown.", true)
+        announce(refreshFailure, true)
       }
     } finally {
       if (request === refreshRequest) {
@@ -348,10 +352,9 @@ export function initCalendarPage(signal: AbortSignal): void {
     if (event.defaultPrevented) return
     const target = event.target as Element
     const monthLink = target.closest<HTMLAnchorElement>("[data-calendar-nav]")
-    const requested = retryTarget ?? desired
-    if (monthLink && requested.search !== applied.search) {
+    if (monthLink && desired.search !== applied.search) {
       const destination = new URL(monthLink.href)
-      const next = new URL(requested)
+      const next = new URL(desired)
       for (const key of ["year", "month"]) {
         const value = destination.searchParams.get(key)
         if (value === null) next.searchParams.delete(key)
@@ -409,14 +412,15 @@ export function initCalendarPage(signal: AbortSignal): void {
     const area = (event as CustomEvent<{ areaId: string }>).detail.areaId
     applyFilters({ area })
   }, { signal })
-  document.addEventListener("meitheal:tasks-changed", () => void refresh(new URL(desired)), { signal })
+  document.addEventListener("meitheal:tasks-changed", () => void refresh(new URL(desired), true), { signal })
   signal.addEventListener("abort", () => {
     delete shell.dataset.calendarReady
     closeDrawer(false)
   }, { once: true })
 
   const rememberedArea = readCalendarTaskFilters(desired.searchParams).area === undefined ? getRememberedAreaId() : ""
-  if (!rememberedArea || !applyFilters({ area: rememberedArea })) previewEvents()
+  previewEvents()
+  if (rememberedArea) applyFilters({ area: rememberedArea })
 }
 
 const agendaFilterKeys = new Set(["area", "area_id", "board", "search", "user", "status", "priority",

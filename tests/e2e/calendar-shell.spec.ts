@@ -328,6 +328,11 @@ test.describe("Calendar Shell", () => {
     await expect(page).not.toHaveURL(/search=/)
 
     fail = false
+    const backgroundRefresh = page.waitForResponse(response => new URL(response.url()).searchParams.has("calendarRefresh"))
+    await page.evaluate(() => document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "created" } })))
+    expect((await backgroundRefresh).status()).toBe(200)
+    await expect(month).not.toHaveAttribute("aria-busy")
+    await expect(page).not.toHaveURL(/search=/)
     await page.getByRole("button", { name: "Retry calendar" }).click()
     await expect(page).toHaveURL(/search=temporarily\+unavailable/)
     await expect(page.getByText("No tasks match these filters this month.")).toBeVisible()
@@ -338,8 +343,8 @@ test.describe("Calendar Shell", () => {
     await expect(page.getByRole("button", { name: "Retry calendar" })).toBeVisible()
     fail = false
     await page.getByRole("link", { name: "Next month" }).click()
-    await expect(page).toHaveURL(/search=orchard/)
-    await expect(search).toHaveValue("orchard")
+    await expect(page).toHaveURL(/search=temporarily\+unavailable/)
+    await expect(search).toHaveValue("temporarily unavailable")
   })
 
   test("pending and failed Calendar refreshes retain accepted Area and Events states", async ({ page, request }) => {
@@ -391,6 +396,16 @@ test.describe("Calendar Shell", () => {
       await retry.click()
       await expect(events).toHaveAttribute("aria-pressed", "false")
       await expect(page).toHaveURL(url => url.searchParams.get("area") === id && url.searchParams.has("types"))
+
+      fail = true
+      await page.route("**/api/ha/calendars?configured=1", route => route.fulfill({ json: { entities: ["calendar.household"] } }))
+      await page.route("**/api/ha/events?*", route => route.fulfill({ json: { events: [
+        { summary: "Available despite Area failure", start: "2031-07-08", end: "2031-07-09" },
+      ] } }))
+      await page.goto("/tasks?view=calendar&year=2031&month=6#calendar")
+      await expect(retry).toBeVisible()
+      await expect(trigger).toContainText("All Areas")
+      await expect(page.locator('.cal-cell[data-date="2031-07-08"] .cal-inline-ha')).toContainText("Available despite Area failure")
     } finally {
       release()
       await request.delete(`/api/areas/${id}`)
