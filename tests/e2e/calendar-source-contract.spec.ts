@@ -109,12 +109,71 @@ test("Calendar reads configured sources as a household member and filters before
     await expect(agenda.getByRole("button")).toHaveCount(1)
     await expect(agenda.getByRole("button").first()).toContainText("Matching garden task 0")
 
-    for (const [key, value] of [["timezone", "America/Los_Angeles"], ["calendar-entities", "[]"]]) {
+    const insertLinkedTask = db.prepare(`INSERT INTO tasks (id, title, status, idempotency_key, request_id, task_kind,
+      calendar_sync_state, start_date, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'calendar_event', 'synced', ?, 100, 100)`)
+    const insertConfirmation = db.prepare(`INSERT INTO calendar_confirmations (confirmation_id, task_id, request_id,
+      provider_event_id, source, payload, created_at) VALUES (?, ?, ?, ?, ?, ?, 100)`)
+    const linkedDay = "2031-07-14"
+    for (const [id, title, status, source, uid] of [
+      ["ha-linked", "Household seed event", "pending", "ha.calendar_sync", "linked-uid"],
+      ["caldav-linked", "Linked calendar retreat", "pending", "caldav", "retreat-uid"],
+      ["archived-linked", "Archived linked event", "archived", "caldav", "archived-uid"],
+    ] as const) {
+      insertLinkedTask.run(id, title, status, id, id, "2031-07-11")
+      const occurrences = source === "caldav"
+        ? [{ start: "2031-07-13", end: "2031-07-15" }]
+        : [{ start: "2031-07-14T08:00:00Z", end: "2031-07-14T09:00:00Z" }]
+      insertConfirmation.run(id, id, id, uid, source, JSON.stringify({ entity_id: "calendar.household", occurrences }))
+    }
+    let liveAvailable = true
+    await page.route("**/api/ha/events?*", route => {
+      const params = new URL(route.request().url()).searchParams
+      if (params.get("start") !== linkedDay) return route.fallback()
+      if (!liveAvailable) return route.fulfill({ status: 503 })
+      return route.fulfill({ json: { events: [
+        { uid: "linked-uid", summary: "Household live duplicate", start: "2031-07-14T09:00:00+01:00" },
+        { uid: "unlinked-uid", summary: "Live calendar only", start: "2031-07-14T10:00:00Z" },
+      ] } })
+    })
+    const unfilteredMonth = base + "/tasks?view=calendar&year=2031&month=6&area=#calendar"
+    await page.goto(unfilteredMonth)
+    const linkedCell = page.locator(`.cal-cell[data-date="${linkedDay}"]`)
+    const connected = page.locator("#day-drawer-events")
+    await expect(linkedCell).toHaveAccessibleName(/2 calendar events$/)
+    await expect(page.locator('.cal-cell[data-date="2031-07-15"]')).not.toHaveAccessibleName(/calendar event/)
+    await linkedCell.press("Enter")
+    await expect(connected.getByRole("button", { name: /Household seed event/ })).toBeVisible()
+    await expect(connected.getByRole("button", { name: /Linked calendar retreat/ })).toBeVisible()
+    await expect(connected.getByText("Live calendar only")).toBeVisible()
+    await expect(connected.getByText("Household live duplicate")).toHaveCount(0)
+    await expect(connected.getByText("Archived linked event")).toHaveCount(0)
+    await connected.getByRole("button", { name: /Linked calendar retreat/ }).click()
+    await expect(page.locator("#td-title")).toHaveValue("Linked calendar retreat")
+    await page.getByRole("button", { name: "Close detail" }).click()
+    await expect(page.locator("#task-detail-overlay")).toBeHidden()
+    liveAvailable = false
+    await linkedCell.press("Enter")
+    await expect(connected.getByText("Connected calendar events couldn’t load.")).toBeVisible()
+    await expect(connected.getByRole("button", { name: /Household seed event/ })).toBeVisible()
+    await expect(connected.getByRole("button", { name: /Linked calendar retreat/ })).toBeVisible()
+    await page.keyboard.press("Escape")
+    await page.getByRole("toolbar", { name: "Filter tasks" }).getByRole("button", { name: "Events", exact: true }).click()
+    await expect(linkedCell).not.toHaveAccessibleName(/calendar event/)
+    await linkedCell.press("Enter")
+    await expect(connected).toBeHidden()
+
+    for (const [key, value] of [["timezone", "America/Los_Angeles"], ["calendar_entities", "[]"]]) {
       const result = await api.put(base + "/api/settings", { headers: headers("admin"), data: { key, value } })
       expect(result.status(), await result.text()).toBe(200)
     }
-    const unfilteredMonth = base + "/tasks?view=calendar&year=2031&month=6&area=#calendar"
+    const clearedSources = await api.get(base + "/api/ha/calendars?configured=1", { headers: headers("member") })
+    expect(await clearedSources.json()).toEqual({ entities: [] })
     await page.goto(unfilteredMonth)
+    await page.evaluate(() => { document.documentElement.dataset.fixtureCalendar = "mounted" })
+    await linkedCell.press("Enter")
+    await expect(connected.getByRole("button", { name: /Linked calendar retreat/ })).toBeVisible()
+    await expect(connected.getByText("Connected calendar events couldn’t load.")).toHaveCount(0)
+    await page.keyboard.press("Escape")
     await expect(page.locator("#calendar-shell")).toHaveAttribute("data-timezone", "America/Los_Angeles")
     await expect(day).toHaveAccessibleName(/105 tasks$/)
     const eventDay = page.locator('.cal-cell[data-date="2031-07-09"]')
@@ -130,7 +189,10 @@ test("Calendar reads configured sources as a household member and filters before
     expect(capturedDate.get("Native patio gathering")).toMatchObject({
       task_kind: "calendar_event", start_date: "2031-07-09", due_date: null,
     })
-    await page.goto(unfilteredMonth)
+    await expect(page.locator("#td-title")).toHaveValue("Native patio gathering")
+    await page.getByRole("button", { name: "Close detail" }).click()
+    await expect(page.locator("#task-detail-overlay")).toBeHidden()
+    await expect(page.locator("html")).toHaveAttribute("data-fixture-calendar", "mounted")
     await expect(eventDay).toHaveAccessibleName(/1 calendar event$/)
     await expect(day).toHaveAccessibleName(/105 tasks$/)
     await eventDay.press("Enter")
@@ -147,7 +209,10 @@ test("Calendar reads configured sources as a household member and filters before
     await page.locator("#submit-new-task-btn").click()
     expect((await taskCreated).status()).toBe(201)
     expect(capturedDate.get("Workshop bench check")).toMatchObject({ task_kind: "standard_action", due_date: "2031-07-10" })
-    await page.goto(unfilteredMonth)
+    await expect(page.locator("#td-title")).toHaveValue("Workshop bench check")
+    await page.getByRole("button", { name: "Close detail" }).click()
+    await expect(page.locator("#task-detail-overlay")).toBeHidden()
+    await expect(page.locator("html")).toHaveAttribute("data-fixture-calendar", "mounted")
     await expect(taskDay).toHaveAccessibleName(/1 task$/)
     await expect(eventDay).toHaveAccessibleName(/1 calendar event$/)
     await taskDay.press("Enter")

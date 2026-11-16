@@ -112,6 +112,35 @@ test.describe("Tasks Shell (Kanban)", () => {
     }
   })
 
+  test("offers a retry when an empty assignment directory is unverified", async ({ page, request }) => {
+    const created = await request.post("/api/tasks", { data: { title: "Check empty assignment directory" } })
+    expect(created.status()).toBe(201)
+    const { id } = await created.json()
+    let verified = false
+    await page.route("**/api/users", route => route.fulfill({ json: {
+      users: [], ha_connected: true, ha_roster_verified: verified,
+    } }))
+    try {
+      await page.reload()
+      const trigger = page.locator(`.kanban-card[data-id="${id}"] .card-assign-btn`)
+      await trigger.press("Enter")
+      const dialog = page.getByRole("dialog", { name: "Assign User" })
+      const retry = dialog.getByRole("button", { name: "Retry" })
+      await expect(dialog).toContainText("Home Assistant assignees could not be verified")
+      await expect(dialog.getByText("No users configured")).toHaveCount(0)
+      await expect(retry).toBeFocused()
+
+      verified = true
+      await retry.press("Enter")
+      await expect(dialog).toContainText("No users configured")
+      await expect(retry).toHaveCount(0)
+      await page.keyboard.press("Escape")
+      await expect(trigger).toBeFocused()
+    } finally {
+      await request.delete(`/api/tasks/${id}`)
+    }
+  })
+
   test("color saves keep focus on the card during the request and after refresh", async ({ page, request, baseURL }) => {
     const headers = { origin: new URL(baseURL!).origin }
     const created = await request.post("/api/tasks", { headers, data: { title: "Color focus regression", priority: 2 } })

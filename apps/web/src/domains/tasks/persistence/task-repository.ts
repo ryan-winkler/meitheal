@@ -244,6 +244,14 @@ export interface CalendarDayInfo {
   haEvents: number;
 }
 
+interface LinkedCalendarEvent {
+  id: string
+  title: string
+  start: string
+  entity: string | null
+  uid: string | null
+}
+
 /** Kanban lane definition */
 export interface KanbanLane {
   id: string;
@@ -778,9 +786,15 @@ export class TaskRepository {
     monthEnd: string,
     timezone = "Europe/Dublin",
   ): Promise<Record<string, number>> {
-    const taskDays = new Map<string, Set<string>>();
+    const byDay = await this.getLinkedCalendarEvents(monthStart, monthEnd, timezone)
+    return Object.fromEntries(Object.entries(byDay).map(([day, events]) => [day, events?.length ?? 0]))
+  }
 
-    const addSpan = (taskId: string, startRaw: unknown, endRaw?: unknown, effectiveEndRaw?: unknown) => {
+  async getLinkedCalendarEvents(fromDay: string, throughDay: string, timezone: string): Promise<Partial<Record<string, LinkedCalendarEvent[]>>> {
+    const byDay = new Map<string, Map<string, LinkedCalendarEvent>>()
+    const addSpan = (
+      task: Omit<LinkedCalendarEvent, "start">, startRaw: unknown, endRaw?: unknown, effectiveEndRaw?: unknown,
+    ) => {
       if (typeof startRaw !== "string" || !startRaw.trim()) return;
       const startDay = calendarDayFromInput(startRaw, timezone);
       if (!startDay) return;
@@ -799,85 +813,52 @@ export class TaskRepository {
       }
       if (endDay < startDay) endDay = startDay;
 
-      const from = startDay > monthStart ? startDay : monthStart;
-      const to = endDay < monthEnd ? endDay : monthEnd;
+      const from = startDay > fromDay ? startDay : fromDay;
+      const to = endDay < throughDay ? endDay : throughDay;
       if (from > to) return;
 
-      let set = taskDays.get(taskId);
-      if (!set) {
-        set = new Set<string>();
-        taskDays.set(taskId, set);
-      }
       let cur = from;
       for (let guard = 0; guard < 62 && cur <= to; guard++) {
-        set.add(cur);
+        let day = byDay.get(cur)
+        if (!day) byDay.set(cur, day = new Map())
+        const previous = day.get(task.id)
+        if (!previous || startRaw < previous.start) day.set(task.id, { ...task, start: startRaw })
         const next = shiftCalendarDay(cur, 1);
         if (next === cur) break;
         cur = next;
       }
     };
 
-    const confirmationsRes = await this.client.execute({
-      sql: `SELECT cc.task_id, cc.payload, t.due_date, t.start_date, t.end_date
-            FROM calendar_confirmations cc
-            INNER JOIN tasks t ON t.id = cc.task_id
-            WHERE cc.source IN ('ha.calendar_sync', 'caldav')
-              AND t.calendar_sync_state = 'synced'`,
+    const result = await this.client.execute({
+      sql: `SELECT t.id, t.title, t.due_date, t.start_date, t.end_date, cc.payload, cc.source, cc.provider_event_id
+            FROM tasks t
+            LEFT JOIN calendar_confirmations cc ON cc.task_id = t.id AND cc.source IN ('ha.calendar_sync', 'caldav')
+            WHERE t.calendar_sync_state = 'synced' AND t.status IS NOT 'archived'
+            ORDER BY cc.created_at DESC, cc.confirmation_id ASC`,
       args: [],
     });
 
-    const confirmedTaskIds = new Set<string>();
-    for (const row of confirmationsRes.rows) {
-      const r = row as Record<string, unknown>;
-      const taskId = String(r.task_id ?? "");
-      if (!taskId) continue;
-      confirmedTaskIds.add(taskId);
-
-      let expandedFromPayload = false;
-      if (typeof r.payload === "string" && r.payload.trim()) {
-        try {
-          const parsed = JSON.parse(r.payload) as {
-            occurrences?: Array<{ start?: unknown; end?: unknown; effective_end?: unknown }>;
-          };
-          if (Array.isArray(parsed.occurrences) && parsed.occurrences.length > 0) {
-            expandedFromPayload = true;
-            for (const occ of parsed.occurrences) {
-              addSpan(taskId, occ?.start, occ?.end, occ?.effective_end);
-            }
-          }
-        } catch {
-          // Malformed confirmation payload falls back to task dates below
+    for (const row of result.rows) {
+      let payload: { entity_id?: unknown; occurrences?: Array<{ start?: unknown; end?: unknown; effective_end?: unknown }> } | null = null
+      try {
+        if (typeof row.payload === "string") payload = JSON.parse(row.payload)
+      } catch { /* Older or malformed payloads still have the task dates. */ }
+      const entity = row.source === "ha.calendar_sync" && typeof payload?.entity_id === "string" ? payload.entity_id : null
+      const task = {
+        id: String(row.id), title: String(row.title), entity,
+        uid: entity && typeof row.provider_event_id === "string" ? row.provider_event_id : null,
+      }
+      if (Array.isArray(payload?.occurrences) && payload.occurrences.length) {
+        for (const occurrence of payload.occurrences) {
+          addSpan(task, occurrence?.start, occurrence?.end, occurrence?.effective_end)
         }
-      }
-
-      if (!expandedFromPayload) {
-        const startVal = r.start_date ?? r.due_date;
-        addSpan(taskId, startVal, undefined, typeof r.end_date === "string" ? calendarDayFromInput(r.end_date, timezone) : undefined);
+      } else {
+        const endDay = typeof row.end_date === "string" ? calendarDayFromInput(row.end_date, timezone) : undefined
+        addSpan(task, row.start_date ?? row.due_date, undefined, endDay)
       }
     }
-
-    const syncedTasksRes = await this.client.execute({
-      sql: `SELECT id, due_date, start_date, end_date
-            FROM tasks
-            WHERE calendar_sync_state = 'synced'`,
-      args: [],
-    });
-    for (const row of syncedTasksRes.rows) {
-      const r = row as Record<string, unknown>;
-      const taskId = String(r.id ?? "");
-      if (!taskId || confirmedTaskIds.has(taskId)) continue;
-      const startVal = r.start_date ?? r.due_date;
-      const endDay = typeof r.end_date === "string" ? calendarDayFromInput(r.end_date, timezone) : undefined;
-      addSpan(taskId, startVal, undefined, endDay ?? undefined);
-    }
-
-    const counts: Record<string, number> = {};
-    for (const days of taskDays.values()) {
-      for (const day of days) {
-        counts[day] = (counts[day] ?? 0) + 1;
-      }
-    }
-    return counts;
+    return Object.fromEntries([...byDay].map(([day, events]) =>
+      [day, [...events.values()].sort((left, right) => left.start.localeCompare(right.start) || left.id.localeCompare(right.id))]))
   }
 
   // ── Timeline (timeline.astro) ─────────────────────────────────────────

@@ -16,7 +16,7 @@ export async function resolveCalendarEntities(requireAvailable = false): Promise
     await ensureSchema()
     const repo = new SettingsRepository(getPersistenceClient())
     await repo.ensureSettingsTable()
-    const keys = ["calendar_entities", "calendar_entity", "cal_entity", "calendar-entities"]
+    const keys = ["calendar_entities", "calendar_entity", "cal_entity", "calendar-entity", "calendar-entities"]
     const settings = await repo.getByKeys(keys)
     for (const key of keys) {
       let value = settings[key]
@@ -30,6 +30,8 @@ export async function resolveCalendarEntities(requireAvailable = false): Promise
       const entries = Array.isArray(value) ? value : [value]
       const ids = [...new Set(entries.filter((id): id is string =>
         typeof id === "string" && /^calendar\.[a-z0-9_]+$/.test(id)))]
+      if (key === "calendar_entities" && Array.isArray(value)) return ids
+      if (key === "calendar_entity" && value === "") return []
       if (ids.length) return ids
     }
   } catch (error) {

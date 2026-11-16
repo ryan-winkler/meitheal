@@ -41,12 +41,18 @@ export const POST: APIRoute = async ({ request, locals }) => {
     const timezone = isValidTimezone(configuredTimezone) ? configuredTimezone : await readStoredHouseholdTimezone()
     const filter = createCalendarTaskFilter(new URLSearchParams(filters), timezone)
     const repo = new TaskRepository(getPersistenceClient())
-    const { tasks, total } = await repo.findAll({ calendarDay: date, timezone, matchDueTask: filter.matchesAgenda, limit, offset })
+    const [{ tasks, total }, linkedEvents] = await Promise.all([
+      repo.findAll({ calendarDay: date, timezone, matchDueTask: filter.matchesAgenda, limit, offset }),
+      filter.showConnectedEvents && offset === 0
+        ? repo.getLinkedCalendarEvents(date, date, timezone).then(events => events[date] ?? [])
+        : [],
+    ])
     return Response.json({
       tasks: tasks.map(({ id, title, status, priority, task_kind, start_date, deferred_at }) => ({
         id, title, status, priority: Number(priority ?? 3), task_kind, start_date, deferred_at,
       })),
       total,
+      linkedEvents,
     }, { headers: { "cache-control": "no-store" } })
   } catch (error) {
     if (isDbUnavailable(error)) return db503Response("calendar-agenda", error)

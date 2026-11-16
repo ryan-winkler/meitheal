@@ -770,7 +770,7 @@ const paths = {
       operationId: "readCalendarAgenda",
       tags: ["Tasks"],
       summary: "Read the Calendar agenda for a household day",
-      description: "Read-only browser operation. Returns due tasks and native events that start on the selected day, applying Calendar filters before pagination. Connected Home Assistant events are read separately.",
+      description: "Read-only browser operation. Returns due tasks and native events that start on the selected day, applying Calendar filters before pagination. The first page also returns saved linked Home Assistant and CalDAV occurrences when Events is selected. Live Home Assistant events are read separately.",
       security: ingressSession,
       requestBody: { required: true, content: { "application/json": { schema: {
         type: "object", required: ["date", "filters", "limit", "offset"], properties: {
@@ -782,7 +782,7 @@ const paths = {
       } } } },
       responses: {
         200: jsonContent({
-          type: "object", required: ["tasks", "total"], properties: {
+          type: "object", required: ["tasks", "total", "linkedEvents"], properties: {
             tasks: { type: "array", items: {
               type: "object", required: ["id", "title", "status", "priority", "task_kind", "start_date", "deferred_at"],
               properties: {
@@ -791,6 +791,13 @@ const paths = {
               },
             } },
             total: { type: "integer", minimum: 0 },
+            linkedEvents: { type: "array", items: {
+              type: "object", required: ["id", "title", "start", "entity", "uid"],
+              properties: {
+                id: { type: "string" }, title: { type: "string" }, start: { type: "string" },
+                entity: { type: ["string", "null"] }, uid: { type: ["string", "null"] },
+              },
+            } },
           },
         }, "Scheduled work page and matching total"),
         400: problemContent("Invalid Calendar query"),

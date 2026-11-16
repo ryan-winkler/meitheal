@@ -391,7 +391,7 @@ test.describe("Calendar Shell", () => {
     await expect(during.getByText("Household calendar preview")).toHaveCount(0)
   })
 
-  test("day feed timeout preserves available events and reports a fully unavailable feed", async ({ page }) => {
+  test("month and day feed timeouts preserve available events and report a fully unavailable day", async ({ page }) => {
     test.slow()
     const day = "2031-07-08"
     let allFail = false
@@ -402,7 +402,7 @@ test.describe("Calendar Shell", () => {
     // An intercepted response never reaches fetch. Wait for the real AbortSignal deadline.
     await page.route("**/api/ha/events?*", async route => {
       const params = new URL(route.request().url()).searchParams
-      if (params.get("start") === day && (allFail || params.get("entity_id") === "calendar.garden")) {
+      if (params.get("entity_id") === "calendar.garden" || (allFail && params.get("start") === day)) {
         await new Promise<void>(resolve => waiting.add(resolve))
         await route.abort().catch(() => {})
         return
@@ -416,12 +416,43 @@ test.describe("Calendar Shell", () => {
       await cell.press("Enter")
       await expect(events).toContainText("Some connected calendar events couldn’t load.", { timeout: 15_000 })
       await expect(events).toContainText("Household feed result")
+      await expect(cell.getByText("Household feed result")).toBeVisible()
       await page.keyboard.press("Escape")
       allFail = true
       await cell.press("Enter")
       await expect(events).toHaveText("Connected calendar events couldn’t load.", { timeout: 15_000 })
     } finally {
       for (const resolve of waiting) resolve()
+    }
+  })
+
+  test("a pending filter refresh preserves focus in and out of the day drawer", async ({ page }) => {
+    const day = "2031-07-08"
+    await page.route("**/api/calendar/agenda", route => route.fulfill({ json: {
+      total: 1,
+      tasks: [{ id: "agenda-focus", title: "Agenda focus item", status: "active" }],
+    } }))
+    let release = () => {}
+    const pending = new Promise<void>(resolve => { release = resolve })
+    await page.route(url => url.searchParams.has("calendarRefresh"), async route => {
+      await pending
+      await route.continue()
+    })
+    try {
+      await page.goto("/tasks?view=calendar&year=2031&month=6#calendar")
+      await page.getByRole("combobox", { name: "Filter by priority" }).selectOption("3")
+      await expect(page.getByText("Loading calendar…")).toBeVisible()
+      const cell = page.locator(`.cal-cell[data-date="${day}"]`)
+      await cell.press("Enter")
+      const task = page.getByRole("button", { name: /Agenda focus item/ })
+      await task.focus()
+      release()
+      await expect(page).toHaveURL(url => url.searchParams.get("priority") === "3")
+      await expect(task).toBeFocused()
+      await page.keyboard.press("Escape")
+      await expect(cell).toBeFocused()
+    } finally {
+      release()
     }
   })
 

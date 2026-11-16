@@ -478,6 +478,8 @@
         pageLifecycle.onPageLoad((signal) => {
           const reloadOnEvent = () => window.location.reload()
           document.addEventListener("meitheal:tasks-changed", event => {
+            // Calendar already refreshes its month and open day on this event.
+            if (document.querySelector("#calendar-shell[data-calendar-ready='true']")) return
             if (!(event as CustomEvent<{ dataOnly?: boolean }>).detail?.dataOnly) reloadOnEvent()
           }, { signal })
           document.addEventListener("meitheal:navigation-changed", reloadOnEvent, { signal })

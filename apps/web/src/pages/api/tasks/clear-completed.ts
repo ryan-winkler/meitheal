@@ -18,7 +18,7 @@ import {
 import { parseCalendarDay } from "../../../lib/calendar-day"
 import { apiError } from "../../../lib/api-response"
 import { calendarToday, isValidTimezone } from "../../../lib/date"
-import { readStoredHouseholdTimezone, TODAY_COMPLETION_FILTER, todayCompletionArgs } from "../../../lib/task-queries"
+import { readStoredHouseholdTimezone, todayCompletionFilter } from "../../../lib/task-queries"
 import { apiLogger, logApiError } from "../../../lib/api-logger"
 
 export const POST: APIRoute = async ({ request, url, locals }) => {
@@ -34,9 +34,10 @@ export const POST: APIRoute = async ({ request, url, locals }) => {
       if (!parseCalendarDay(expectedDay)) return apiError("expected_day must be a calendar date", 400)
       if (expectedDay !== today) return apiError("Today has changed. Review the completed tasks before archiving.", 409)
     }
+    const filter = todayCompletionFilter(today, timezone)
     const result = await client.execute({
-      sql: `UPDATE tasks SET status = 'archived', updated_at = ? WHERE ${TODAY_COMPLETION_FILTER}`,
-      args: [Date.now(), ...todayCompletionArgs(today, timezone)],
+      sql: `UPDATE tasks SET status = 'archived', updated_at = ? WHERE ${filter.sql}`,
+      args: [Date.now(), ...filter.args],
     })
     const count = result.rowsAffected
 

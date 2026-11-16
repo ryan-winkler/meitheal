@@ -312,16 +312,20 @@ export function initQuickActions(
       })
 
       const currentMissing = currentAssigned && !users.some(user => user.id === currentAssigned)
-      if (!directory || currentMissing || !users.length) {
+      const rosterUnverified = (directory?.ha_roster_verified ?? directory?.ha_connected) === false
+      const directoryMessage = !directory ? "Could not load assignees"
+        : currentMissing ? assigneeFallback(currentAssigned, directory)
+        : rosterUnverified ? "Home Assistant assignees could not be verified"
+        : !users.length ? "No users configured" : ""
+      if (directoryMessage) {
         const empty = document.createElement("div")
         empty.className = "popover-item"
         empty.style.color = "var(--text-muted)"
         empty.setAttribute("role", "status")
-        empty.textContent = currentMissing ? assigneeFallback(currentAssigned, directory)
-          : directory ? "No users configured" : "Could not load assignees"
+        empty.textContent = directoryMessage
         content.appendChild(empty)
       }
-      if (!directory) {
+      if (!directory || rosterUnverified) {
         const retry = document.createElement("button")
         retry.type = "button"
         retry.className = "popover-item"
@@ -335,7 +339,8 @@ export function initQuickActions(
         content.appendChild(retry)
       }
       if (document.activeElement === btn) {
-        const first = content.querySelector<HTMLElement>("[data-assignee-retry], .active") ?? content.querySelector("button")
+        const first = content.querySelector<HTMLElement>("[data-assignee-retry]") ??
+          content.querySelector<HTMLElement>(".active") ?? content.querySelector("button")
         first?.focus({ preventScroll: true })
       }
     }, { signal: __signal })

@@ -13,7 +13,16 @@ import { getStatusDef } from "@lib/status-config"
 interface CalendarEventRecord {
   summary: string
   start: string
-  end: string
+  entity: string
+  uid?: string
+}
+
+interface LinkedCalendarEvent {
+  id: string
+  title: string
+  start: string
+  entity: string | null
+  uid: string | null
 }
 
 const log = createClientLogger("tasks", "calendar-shell")
@@ -71,8 +80,14 @@ export function initCalendarPage(signal: AbortSignal): void {
     previewsRequest?.abort()
     if (month.dataset.calendarEvents !== "true") return
     previewsRequest = new AbortController()
-    const linked = AbortSignal.any([signal, previewsRequest.signal, AbortSignal.timeout(10_000)])
-    void loadInlineEventPreviews(month, timezone, readCalendarSources, linked)
+    const lifetime = AbortSignal.any([signal, previewsRequest.signal])
+    void loadInlineEventPreviews(month, timezone, readCalendarSources, lifetime)
+  }
+
+  function focusMonthDay(date?: string) {
+    const cell = date && month.querySelector<HTMLElement>(`.cal-cell[data-date="${CSS.escape(date)}"]`)
+    const target = cell || month.querySelector<HTMLElement>(".cal-today-btn")
+    target?.focus()
   }
 
   async function refresh(url: URL) {
@@ -115,8 +130,7 @@ export function initCalendarPage(signal: AbortSignal): void {
       }
       applied = new URL(url)
       announce(rejectedFilterChange)
-      if (activeDay) month.querySelector<HTMLElement>(`.cal-cell[data-date="${CSS.escape(activeDay)}"]`)?.focus()
-      else if (activeRetry) month.querySelector<HTMLElement>(".cal-today-btn")?.focus()
+      if (activeDay || activeRetry) focusMonthDay(activeDay)
       previewEvents()
       if (drawerDate) startDrawerRead(drawerDate)
     } catch {
@@ -166,23 +180,50 @@ export function initCalendarPage(signal: AbortSignal): void {
     const currentRequest = new AbortController()
     drawerRequest = currentRequest
     const linked = AbortSignal.any([signal, currentRequest.signal, AbortSignal.timeout(10_000)])
+    const closeButton = drawer!.querySelector<HTMLElement>("#day-drawer-close")
+    const focused = document.activeElement as HTMLElement | null
+    const focusedTask = focused?.closest<HTMLElement>("[data-task-id]")?.dataset.taskId
+    const restoreMore = focused === moreTasks
+    if (focused && (restoreMore || drawerTasks!.contains(focused) || drawerEvents!.contains(focused))) closeButton?.focus()
     const showEvents = month.dataset.calendarEvents === "true"
     eventsSection!.hidden = !showEvents
+    let live: Awaited<ReturnType<typeof loadCalendarRange>> | undefined
+    let persisted: LinkedCalendarEvent[] | null | undefined
+    function renderConnectedEvents() {
+      if (!showEvents || persisted === undefined && live === undefined) return
+      const activeId = drawerEvents!.contains(document.activeElement)
+        ? (document.activeElement as HTMLElement).dataset.taskId : undefined
+      const items = (persisted ?? []).map(event => ({
+        start: event.start,
+        row: agendaItem("calendar-event", event.title, formatTimeInZone(event.start, timezone) ?? "All day", event.id),
+      }))
+      for (const event of live?.events ?? []) {
+        if (persisted?.some(link => matchesLinkedEvent(event, link))) continue
+        items.push({ start: event.start, row: agendaItem("calendar-event", event.summary, formatTimeInZone(event.start, timezone) ?? "All day") })
+      }
+      items.sort((a, b) => a.start.localeCompare(b.start))
+      drawerEvents!.replaceChildren(...items.map(item => item.row))
+      if (!live || persisted === undefined) drawerEvents!.append(agendaMessage(loading))
+      else if (!live.available) drawerEvents!.append(agendaMessage("Connected calendar events couldn’t load."))
+      else if (live.partial) drawerEvents!.append(agendaMessage("Some connected calendar events couldn’t load."))
+      else if (persisted && !items.length) drawerEvents!.append(agendaMessage("No calendar events"))
+      if (persisted === null) drawerEvents!.append(agendaMessage("Saved calendar links couldn’t load."))
+      const restoreId = activeId ?? focusedTask
+      if (restoreId && (activeId || document.activeElement === closeButton)) {
+        const restore = items.find(item => item.row.dataset.taskId === restoreId)?.row ?? closeButton
+        restore?.focus()
+      }
+    }
     if (showEvents) {
       renderMessage(drawerEvents!, loading)
-      void loadCalendarRange(date, shiftCalendarDay(date, 1), 5, readCalendarSources, linked).then(({ events, partial, available }) => {
+      void loadCalendarRange(date, shiftCalendarDay(date, 1), 5, readCalendarSources, linked).then(result => {
         if (drawerRequest !== currentRequest || currentRequest.signal.aborted || signal.aborted) return
-        if (!available) {
-          renderMessage(drawerEvents!, "Connected calendar events couldn’t load.")
-          return
-        }
-        const items = events.map(event => agendaItem("calendar-event", event.summary, formatTimeInZone(event.start, timezone) ?? "All day"))
-        drawerEvents!.replaceChildren(...items)
-        if (partial) drawerEvents!.append(agendaMessage("Some connected calendar events couldn’t load."))
-        else if (!items.length) renderMessage(drawerEvents!, "No calendar events")
+        live = result
+        renderConnectedEvents()
       }).catch(() => {
         if (drawerRequest === currentRequest && !currentRequest.signal.aborted && !signal.aborted) {
-          renderMessage(drawerEvents!, "Connected calendar events couldn’t load.")
+          live = { events: [], available: false, partial: false }
+          renderConnectedEvents()
         }
       })
     }
@@ -203,9 +244,13 @@ export function initCalendarPage(signal: AbortSignal): void {
       drawerTaskStatus!.textContent = offset ? loading : ""
       const taskSignal = AbortSignal.any([signal, currentRequest.signal, AbortSignal.timeout(10_000)])
       try {
-        const { rows, total } = await loadDrawerTasks({ date, filters, offset, limit }, timezone, taskSignal)
+        const { rows, total, linkedEvents } = await loadDrawerTasks({ date, filters, offset, limit }, timezone, taskSignal)
         if (taskSignal.aborted) return
-        if (!offset) drawerTasks!.replaceChildren()
+        if (!offset) {
+          drawerTasks!.replaceChildren()
+          persisted = linkedEvents
+          renderConnectedEvents()
+        }
         const fresh = rows.filter(row => {
           const id = row.dataset.taskId ?? ""
           if (seen.has(id)) return false
@@ -218,16 +263,23 @@ export function initCalendarPage(signal: AbortSignal): void {
         const canLoadMore = rows.length > 0 && total > offset
         if (!canLoadMore && document.activeElement === moreTasks) {
           (fresh[0] ?? drawerTasks!.querySelector<HTMLElement>("[data-task-id]") ??
-            drawer!.querySelector<HTMLElement>("#day-drawer-close"))?.focus()
+            closeButton)?.focus()
         }
         moreTasks.hidden = !canLoadMore
         moreTasks.textContent = canLoadMore ? `Load more tasks (${total - offset} remaining)` : "Load more tasks"
+        if (offset === rows.length && document.activeElement === closeButton) {
+          const restore = restoreMore && canLoadMore ? moreTasks : fresh.find(row => row.dataset.taskId === focusedTask)
+          restore?.focus()
+        }
         drawerTaskStatus!.textContent = ""
       } catch (error) {
         if (drawerRequest !== currentRequest || currentRequest.signal.aborted || signal.aborted) return
         log.warn("Could not load due tasks", error)
-        if (!offset) renderMessage(drawerTasks!, "Couldn’t load tasks for this day.")
-        else drawerTaskStatus!.textContent = "Couldn’t load more tasks."
+        if (!offset) {
+          renderMessage(drawerTasks!, "Couldn’t load tasks for this day.")
+          persisted = null
+          renderConnectedEvents()
+        } else drawerTaskStatus!.textContent = "Couldn’t load more tasks."
         moreTasks.hidden = false
         moreTasks.textContent = "Retry tasks"
       } finally {
@@ -256,12 +308,14 @@ export function initCalendarPage(signal: AbortSignal): void {
 
   function closeDrawer(restoreFocus = true) {
     if (!drawerDate) return
+    const closedDay = drawerDate
     drawerDate = ""
     drawerRequest?.abort()
     loadMoreDueTasks = undefined
     drawer!.setAttribute("aria-hidden", "true")
     document.body.style.overflow = previousOverflow
-    trap.deactivate(restoreFocus)
+    trap.deactivate(false)
+    if (restoreFocus) focusMonthDay(closedDay)
   }
 
   shell.addEventListener("click", event => {
@@ -293,7 +347,7 @@ export function initCalendarPage(signal: AbortSignal): void {
       else (document.getElementById("kanban-bar-new-task") as HTMLButtonElement | null)?.click()
       return
     }
-    const taskId = target.closest<HTMLElement>("#day-drawer-tasks [data-task-id]")?.dataset.taskId
+    const taskId = target.closest<HTMLElement>("#day-drawer-tasks [data-task-id], #day-drawer-events [data-task-id]")?.dataset.taskId
     if (taskId) {
       closeDrawer()
       openTaskDetailHandoff(taskId)
@@ -368,9 +422,10 @@ async function loadCalendarRange(
     const params = new URLSearchParams({ entity_id: entity, start, end })
     const response = await fetch(`/api/ha/events?${params}`, { signal })
     if (!response.ok) throw new Error("Calendar feed unavailable")
-    const data = await response.json() as { events?: CalendarEventRecord[] }
+    const data = await response.json() as { events?: Array<Omit<CalendarEventRecord, "entity">> }
     if (!Array.isArray(data.events)) throw new Error("Invalid calendar feed")
     return data.events.filter(event => event && typeof event.start === "string" && typeof event.summary === "string")
+      .map(event => ({ ...event, entity }))
   }))
   const events = results.flatMap(result => result.status === "fulfilled" ? result.value : [])
   events.sort((a, b) => a.start.localeCompare(b.start))
@@ -379,6 +434,13 @@ async function loadCalendarRange(
     partial: results.some(result => result.status === "rejected"),
     available: results.length === 0 || results.some(result => result.status === "fulfilled"),
   }
+}
+
+function matchesLinkedEvent(live: CalendarEventRecord, linked: LinkedCalendarEvent): boolean {
+  if (!live.uid || linked.uid !== live.uid || linked.entity !== live.entity) return false
+  if (linked.start === live.start) return true
+  const zoned = /T.*(?:Z|[+-]\d{2}:?\d{2})$/i
+  return zoned.test(linked.start) && zoned.test(live.start) && Date.parse(linked.start) === Date.parse(live.start)
 }
 
 function agendaMessage(text: string) {
@@ -426,7 +488,7 @@ async function loadDrawerTasks(
     signal,
   })
   if (!response.ok) throw new Error(`Task query failed: ${response.status}`)
-  const data = await response.json() as { tasks?: Record<string, unknown>[]; total?: number }
+  const data = await response.json() as { tasks?: Record<string, unknown>[]; total?: number; linkedEvents?: LinkedCalendarEvent[] }
   if (!Array.isArray(data.tasks)) throw new Error("Invalid task list")
 
   const rows = data.tasks.map(task => {
@@ -440,11 +502,11 @@ async function loadDrawerTasks(
     const icon = isEvent ? "calendar-event" : definition ? mapEntityEmojiToTabler(definition.icon) ?? "checkbox" : "checkbox"
     return agendaItem(icon, String(task.title ?? "Untitled task"), `${meta}${priority}${deferred}`, String(task.id))
   })
-  return { rows, total: data.total ?? rows.length }
+  return { rows, total: data.total ?? rows.length, linkedEvents: data.linkedEvents ?? [] }
 }
 
 async function loadInlineEventPreviews(
-  month: HTMLElement, timezone: string, readSources: () => Promise<string[]>, signal: AbortSignal,
+  month: HTMLElement, timezone: string, readSources: () => Promise<string[]>, lifetime: AbortSignal,
 ): Promise<void> {
   const cells = Array.from(month.querySelectorAll<HTMLElement>("[data-inline-date]"))
   const start = cells[0]?.dataset.inlineDate
@@ -452,8 +514,9 @@ async function loadInlineEventPreviews(
   if (!start || !lastDay) return
 
   try {
-    const { events } = await loadCalendarRange(start, shiftCalendarDay(lastDay, 1), 3, readSources, signal)
-    if (signal.aborted) return
+    const deadline = AbortSignal.any([lifetime, AbortSignal.timeout(10_000)])
+    const { events } = await loadCalendarRange(start, shiftCalendarDay(lastDay, 1), 3, readSources, deadline)
+    if (lifetime.aborted) return
 
     const byDate = new Map<string, CalendarEventRecord[]>()
     for (const event of events) {
@@ -483,6 +546,6 @@ async function loadInlineEventPreviews(
       }
     }
   } catch (error) {
-    if (!signal.aborted) log.warn("Could not load calendar previews", error)
+    if (!lifetime.aborted) log.warn("Could not load calendar previews", error)
   }
 }

@@ -7,7 +7,6 @@
  * Bounded Context: Tasks (persistence query)
  */
 
-import { fromZonedTime } from "date-fns-tz"
 import {
   ensureSchema,
   getPersistenceClient,
@@ -385,27 +384,13 @@ function toTaskViewItem(row: Record<string, unknown>, slim = false, timezone = "
   return item;
 }
 
-export const TODAY_COMPLETION_FILTER = `
-  status = 'complete'
-      AND (
-        (typeof(updated_at) IN ('integer', 'real') AND updated_at >= ? AND updated_at < ?)
-        OR (typeof(updated_at) = 'text' AND (
-          ((updated_at LIKE '%T%' OR updated_at LIKE '%:%') AND strftime('%s', updated_at) IS NOT NULL
-            AND CAST(strftime('%s', updated_at) AS INTEGER) * 1000 >= ?
-            AND CAST(strftime('%s', updated_at) AS INTEGER) * 1000 < ?)
-          OR (updated_at NOT LIKE '%T%' AND updated_at NOT LIKE '%:%' AND substr(updated_at, 1, 10) = ?)
-        ))
-      )
-`
-const TODAY_COMPLETION_COUNT = `COUNT(*) FILTER (WHERE ${TODAY_COMPLETION_FILTER})`
-
-function completedTodayQuery(args: ReturnType<typeof todayCompletionArgs>) {
+function completedTodayQuery(filter: ReturnType<typeof todayCompletionFilter>) {
   return {
-    sql: `SELECT id, title FROM tasks WHERE ${TODAY_COMPLETION_FILTER}
+    sql: `SELECT id, title FROM tasks WHERE ${filter.sql}
           ORDER BY CASE WHEN typeof(updated_at) = 'text' AND updated_at NOT LIKE '%T%' AND updated_at NOT LIKE '%:%'
             THEN ? ELSE ${taskTimestampMs("updated_at")} END DESC, rowid DESC
           LIMIT 20`,
-    args: [...args, args[0]],
+    args: [...filter.args, filter.firstInstant],
   }
 }
 
@@ -413,28 +398,70 @@ function completedTodaySummaries(rows: Row[]) {
   return rows.map(row => ({ id: String(row.id), title: String(row.title) }))
 }
 
-function startOfHouseholdDay(day: string, timezone: string): number {
-  const midnight = fromZonedTime(`${day}T00:00:00`, timezone).getTime()
-  const dateAt = (instant: number) => calendarToday(timezone, new Date(instant))
-  if (dateAt(midnight) === day && dateAt(midnight - 1) < day) return midnight
+function householdDayRanges(day: string, timezone: string): [number, number][] {
+  const dayMs = 86_400_000
+  const localStart = Date.parse(`${day}T00:00:00Z`)
+  const localEnd = localStart + dayMs
+  const formatter = new Intl.DateTimeFormat("en", { timeZone: timezone, timeZoneName: "longOffset" })
 
-  // A midnight transition can skip the requested wall time or resolve it to
-  // the second occurrence. Find the first instant that belongs to this day.
-  let before = Date.parse(`${day}T00:00:00Z`) - 86_400_000
-  let after = before + 2 * 86_400_000
+  function offsetAt(instant: number): number {
+    const name = formatter.formatToParts(instant).find(part => part.type === "timeZoneName")?.value
+    if (name === "GMT") return 0
+    const match = name?.match(/^GMT([+-])(\d{2}):(\d{2})(?::(\d{2}))?$/u)
+    if (!match) throw new Error("Could not determine household UTC offset")
+    const seconds = Number(match[2]) * 3600 + Number(match[3]) * 60 + Number(match[4] ?? 0)
+    return (match[1] === "-" ? -1 : 1) * seconds * 1000
+  }
+
+  // All IANA offsets are within 24 hours of UTC and there is at most one
+  // offset transition in this three-day window. With a constant offset the
+  // local date translates directly to a UTC interval.
+  const windowStart = localStart - dayMs
+  const windowEnd = localEnd + dayMs
+  const firstOffset = offsetAt(windowStart)
+  const lastOffset = offsetAt(windowEnd - 1)
+  if (firstOffset === lastOffset) return [[localStart - firstOffset, localEnd - firstOffset]]
+
+  let before = windowStart
+  let after = windowEnd - 1
   while (after - before > 1) {
     const middle = Math.floor((before + after) / 2)
-    if (dateAt(middle) < day) before = middle
+    if (offsetAt(middle) === firstOffset) before = middle
     else after = middle
   }
-  return after
+
+  // Intersect the requested local date with each constant-offset segment.
+  // A rollback just after midnight can leave a gap between the two ranges.
+  const ranges: [number, number][] = []
+  for (const [from, to, offset] of [[windowStart, after, firstOffset], [after, windowEnd, lastOffset]] as const) {
+    const start = Math.max(from, localStart - offset)
+    const end = Math.min(to, localEnd - offset)
+    if (start >= end) continue
+    const previous = ranges.at(-1)
+    if (previous?.[1] === start) previous[1] = end
+    else ranges.push([start, end])
+  }
+  return ranges
 }
 
-export function todayCompletionArgs(today: string, timezone = "Europe/Dublin"): [number, number, number, number, string] {
-  const safeTz = resolveTimezone(timezone)
-  const startMs = startOfHouseholdDay(today, safeTz)
-  const endMs = startOfHouseholdDay(shiftCalendarDay(today, 1), safeTz)
-  return [startMs, endMs, startMs, endMs, today]
+export function todayCompletionFilter(today: string, timezone = "Europe/Dublin") {
+  const ranges = householdDayRanges(today, resolveTimezone(timezone))
+  const matchesDay = (column: string) =>
+    ranges.map(() => `(${column} >= ? AND ${column} < ?)`).join(" OR ") || "0"
+  const bounds = ranges.flat()
+  return {
+    sql: `status = 'complete'
+      AND (
+        (typeof(updated_at) IN ('integer', 'real') AND (${matchesDay("updated_at")}))
+        OR (typeof(updated_at) = 'text' AND (
+          ((updated_at LIKE '%T%' OR updated_at LIKE '%:%') AND strftime('%s', updated_at) IS NOT NULL
+            AND (${matchesDay("CAST(strftime('%s', updated_at) AS INTEGER) * 1000")}))
+          OR (updated_at NOT LIKE '%T%' AND updated_at NOT LIKE '%:%' AND substr(updated_at, 1, 10) = ?)
+        ))
+      )`,
+    args: [...bounds, ...bounds, today],
+    firstInstant: ranges[0]?.[0] ?? null,
+  }
 }
 
 export function todayDueSection(
@@ -474,11 +501,11 @@ export async function getTodayTaskRows(
     await ensureSchema()
     const resolvedTimezone = resolveTimezone(timezone)
     const client = getPersistenceClient()
-    const completionArgs = todayCompletionArgs(today, resolvedTimezone)
+    const completionFilter = todayCompletionFilter(today, resolvedTimezone)
     const tasksQuery = {
       sql: `
         WITH totals AS (
-          SELECT ${TODAY_COMPLETION_COUNT} AS completed_today,
+          SELECT COUNT(*) FILTER (WHERE ${completionFilter.sql}) AS completed_today,
                  COUNT(*) FILTER (
                    WHERE status IS NOT 'complete' AND status IS NOT 'archived' AND deferred_at IS NULL AND (due_date IS NULL OR due_date = '')
                  ) AS open_unscheduled
@@ -497,9 +524,9 @@ export async function getTodayTaskRows(
           )
         ORDER BY created_at DESC, tasks.rowid DESC
       `,
-      args: [...completionArgs, includeUnscheduled ? 1 : 0],
+      args: [...completionFilter.args, includeUnscheduled ? 1 : 0],
     }
-    const [taskResult, completed] = await client.batch([tasksQuery, completedTodayQuery(completionArgs)], "read")
+    const [taskResult, completed] = await client.batch([tasksQuery, completedTodayQuery(completionFilter)], "read")
     const rows = taskResult?.rows ?? []
 
     return {
@@ -543,10 +570,10 @@ export async function getTodayTaskCounts(now = new Date(), timezone?: string, in
     : await readStoredHouseholdTimezone()
   const today = calendarToday(resolvedTimezone, now)
   const client = getPersistenceClient()
-  const completionArgs = todayCompletionArgs(today, resolvedTimezone)
+  const completionFilter = todayCompletionFilter(today, resolvedTimezone)
   const countsQuery = {
     sql: `
-      SELECT NULL AS due_date, ${TODAY_COMPLETION_COUNT} AS completed_today,
+      SELECT NULL AS due_date, COUNT(*) FILTER (WHERE ${completionFilter.sql}) AS completed_today,
              COUNT(*) FILTER (WHERE status IS NOT 'complete' AND status IS NOT 'archived' AND deferred_at IS NULL AND is_favorite NOT IN (0, '')) AS pinned_count,
              0 AS dated_count
       FROM tasks
@@ -557,10 +584,10 @@ export async function getTodayTaskCounts(now = new Date(), timezone?: string, in
         AND due_date IS NOT NULL AND due_date <> ''
       GROUP BY due_date
     `,
-    args: completionArgs,
+    args: completionFilter.args,
   }
   const [countResult, completed] = includeCompleted
-    ? await client.batch([countsQuery, completedTodayQuery(completionArgs)], "read")
+    ? await client.batch([countsQuery, completedTodayQuery(completionFilter)], "read")
     : [await client.execute(countsQuery)]
   const rows = countResult?.rows ?? []
 

@@ -22,7 +22,7 @@ Calendar opens within **Tasks** at `/tasks?view=calendar`. Older `/calendar` and
 ### Open a day drawer and create follow-up work
 
 1. Select a day in the month grid using a pointer, Enter or Space.
-2. Review **Tasks and Events** and **Connected Calendar Events**. Local Event rows show their start time or **All day**. Task rows show the shared status label and icon. Archived tasks are hidden. Without task filters, the agenda also shows completed tasks that are absent from the month count.
+2. Review **Tasks and Events** and **Connected Calendar Events**. Local Event rows show their start time or **All day**. Task rows show the shared status label and icon. Saved Home Assistant and CalDAV events open their linked task and remain available if the live source is unavailable. Archived tasks are hidden. Without task filters, the agenda also shows completed tasks that are absent from the month count.
 3. When more than 100 tasks match a day, use **Load more tasks** in its task list.
 4. Use **Add Task** to open the shared form with the selected due date, or **Add Event** to start an Event on that date. A newly created Event appears on its start day even with no calendar connection.
 
@@ -110,7 +110,7 @@ Known differences:
 1. Confirm the day drawer title updates to the selected date.
 2. In browser network tools, check the read-only `POST /api/calendar/agenda` request. Its JSON includes the day, applied filters and pagination. The response filters before pagination and returns a matching `total`. Date-only values match directly, whereas an ISO timestamp with a time and offset matches the resulting day in the household time zone.
 3. The default month badge counts open tasks, while the default drawer also shows completed work. Ordinary filters match open tasks in both places. Choose **Complete** or apply custom rules to include matching completed work in both places. When a task status looks wrong, compare the list result with the status sent on creation. Known aliases such as `done` become the built-in status `complete`. Custom statuses keep their names.
-4. If HA events are missing, inspect Home Assistant calendar entity settings and the browser console for `calendar-shell` warnings.
+4. If live HA events are missing, inspect Home Assistant calendar entity settings and the browser console for `calendar-shell` warnings. The connected section reports a partial feed when only some live sources respond.
 
 ### Calendar changes could not be applied
 

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 import { expect, test } from "@playwright/test"
-import { TODAY_COMPLETION_FILTER, todayCompletionArgs } from "../../apps/web/src/lib/task-queries"
+import { todayCompletionFilter } from "../../apps/web/src/lib/task-queries"
 import { startCoreFixture } from "../scripts/task-pins-fixture"
 
 for (const { timezone, day, firstInstant, nextDay, completions } of [
@@ -34,15 +34,37 @@ for (const { timezone, day, firstInstant, nextDay, completions } of [
       insert.run(Date.parse(nextDay) - 1)
       insert.run(nextDay)
 
-      const args = todayCompletionArgs(day, timezone)
-      expect(args.slice(0, 2)).toEqual([Date.parse(firstInstant), Date.parse(nextDay)])
-      const eligible = db.prepare(`SELECT id FROM tasks WHERE ${TODAY_COMPLETION_FILTER} ORDER BY id`).all(...args)
+      const filter = todayCompletionFilter(day, timezone)
+      expect(filter.firstInstant).toBe(Date.parse(firstInstant))
+      const eligible = db.prepare(`SELECT id FROM tasks WHERE ${filter.sql} ORDER BY id`).all(...filter.args)
       expect(eligible.map(row => row.id)).toEqual([2, 3, 4])
     } finally {
       db.close()
     }
   })
 }
+
+test("Today completion predicate excludes the rollback into yesterday", () => {
+  const db = new DatabaseSync(":memory:")
+  try {
+    db.exec("CREATE TABLE tasks (id INTEGER PRIMARY KEY, status TEXT, updated_at)")
+    const insert = db.prepare("INSERT INTO tasks (status, updated_at) VALUES ('complete', ?)")
+    insert.run(Date.parse("2010-11-07T02:59:59.999Z"))
+    insert.run(Date.parse("2010-11-07T03:00:00Z"))
+    insert.run("2010-11-07T03:00:59.999Z")
+    insert.run(Date.parse("2010-11-07T03:01:00Z"))
+    insert.run("2010-11-07T03:59:59.999Z")
+    insert.run(Date.parse("2010-11-07T04:00:00Z"))
+    insert.run("2010-11-07")
+    insert.run("2010-11-08T04:00:00Z")
+
+    const filter = todayCompletionFilter("2010-11-07", "America/Goose_Bay")
+    const selected = db.prepare(`UPDATE tasks SET status = 'archived' WHERE ${filter.sql} RETURNING id`).all(...filter.args)
+    expect(selected.map(row => row.id).sort()).toEqual([2, 3, 6, 7])
+  } finally {
+    db.close()
+  }
+})
 
 test("Today uses one household day for mixed completion snapshots and archive", async ({ playwright }) => {
   test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires a built App and authenticated ingress")

@@ -1531,7 +1531,8 @@ paths:
         - Tasks
       summary: Read the Calendar agenda for a household day
       description: Read-only browser operation. Returns due tasks and native events that start on the selected day, applying
-        Calendar filters before pagination. Connected Home Assistant events are read separately.
+        Calendar filters before pagination. The first page also returns saved linked Home Assistant and CalDAV
+        occurrences when Events is selected. Live Home Assistant events are read separately.
       security: *a8
       requestBody:
         required: true
@@ -1570,6 +1571,7 @@ paths:
                 required:
                   - tasks
                   - total
+                  - linkedEvents
                 properties:
                   tasks:
                     type: array
@@ -1608,6 +1610,32 @@ paths:
                   total:
                     type: integer
                     minimum: 0
+                  linkedEvents:
+                    type: array
+                    items:
+                      type: object
+                      required:
+                        - id
+                        - title
+                        - start
+                        - entity
+                        - uid
+                      properties:
+                        id:
+                          type: string
+                        title:
+                          type: string
+                        start:
+                          type: string
+                        entity:
+                          type:
+                            - string
+                            - "null"
+                        uid:
+                          type:
+                            - string
+                            - "null"
+                      additionalProperties: false
                 additionalProperties: false
         "400":
           description: Invalid Calendar query
