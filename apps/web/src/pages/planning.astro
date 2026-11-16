@@ -54,7 +54,7 @@ for (const task of tasks) {
 let taskRepo: TaskRepository | undefined
 let areas: any[] = []
 let projects: any[] = []
-let goalCountByArea = new Map<string, number>()
+const goalsByArea = new Map<string, Set<string>>()
 let projectCountByArea = new Map<string, number>()
 let taskCountByProject = new Map<string, { total: number; completed: number }>()
 
@@ -71,7 +71,9 @@ try {
   // Goal counts per area
   for (const g of goals) {
     if (g.area_id) {
-      goalCountByArea.set(String(g.area_id), (goalCountByArea.get(String(g.area_id)) ?? 0) + 1)
+      const ids = goalsByArea.get(g.area_id) ?? new Set<string>()
+      ids.add(g.id)
+      goalsByArea.set(g.area_id, ids)
     }
   }
 
@@ -84,6 +86,11 @@ try {
     const areaId = p.area_id ? String(p.area_id) : p.goal_id ? goalToArea.get(String(p.goal_id)) : null
     if (areaId) {
       projectCountByArea.set(areaId, (projectCountByArea.get(areaId) ?? 0) + 1)
+      if (p.goal_id) {
+        const ids = goalsByArea.get(areaId) ?? new Set<string>()
+        ids.add(p.goal_id)
+        goalsByArea.set(areaId, ids)
+      }
     }
   }
 
@@ -99,7 +106,7 @@ try {
 
 // Filter out Uncategorized if empty
 const visibleAreas = areas.filter((a: any) =>
-  String(a.name) !== "Uncategorized" || (goalCountByArea.get(String(a.id)) ?? 0) > 0
+  String(a.name) !== "Uncategorized" || goalsByArea.has(String(a.id)) || projectCountByArea.has(String(a.id))
 )
 ---
 
@@ -127,7 +134,7 @@ const visibleAreas = areas.filter((a: any) =>
         ) : (
           <div class="spaces-grid">
             {visibleAreas.map((area: any) => {
-              const goalCount = goalCountByArea.get(String(area.id)) ?? 0
+              const goalCount = goalsByArea.get(String(area.id))?.size ?? 0
               const projCount = projectCountByArea.get(String(area.id)) ?? 0
               const areaColor = String(area.color ?? "#146C4E")
               const areaIcon = String(area.icon ?? "🏠")

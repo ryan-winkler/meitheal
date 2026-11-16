@@ -939,7 +939,7 @@
     },
     {
       "name": "listAreas",
-      "description": "Areas are the top-level organizational containers (WHERE things happen). Every goal and project belongs to an area.",
+      "description": "Areas organize work by responsibility. Goals and projects can be linked to an area.",
       "inputSchema": {
         "type": "object",
         "properties": {}
@@ -1047,10 +1047,28 @@
     },
     {
       "name": "listGoals",
-      "description": "Goals define WHAT you want to achieve. They belong to areas and can have metric tracking (percentage, count, boolean).",
+      "description": "List goals across all areas, or filter by association. With multiple filters, a goal must match all of them.",
       "inputSchema": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "area_id": {
+            "type": "string",
+            "description": "Goals linked to this Area directly or through one of its projects."
+          },
+          "project_id": {
+            "type": "string",
+            "description": "The goal linked to this project."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "completed",
+              "archived"
+            ],
+            "description": "status parameter"
+          }
+        }
       }
     },
     {
@@ -1197,7 +1215,7 @@
           },
           "area_id": {
             "type": "string",
-            "description": "area_id parameter"
+            "description": "Use the project's explicit Area, then its linked goal's Area when no explicit Area is set."
           },
           "status": {
             "type": "string",
@@ -2696,7 +2714,11 @@
       "path": "/api/goals",
       "hasBody": false,
       "pathParams": [],
-      "queryParams": []
+      "queryParams": [
+        "area_id",
+        "project_id",
+        "status"
+      ]
     },
     "createGoal": {
       "method": "POST",

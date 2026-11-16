@@ -12,6 +12,11 @@ import ProgressRing from "../ui/ProgressRing.astro"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import { HierarchyRepository } from "@domains/tasks/persistence/hierarchy-repository"
 
+const areaId = Astro.url.searchParams.get("area_id") || undefined
+const projectId = Astro.url.searchParams.get("project_id") || undefined
+let scopedAreaName: string | undefined
+let scopedProjectName: string | undefined
+
 let goals: Array<{
   id: string
   title: string
@@ -29,11 +34,19 @@ try {
   await ensureSchema()
   const db = getPersistenceClient()
   const repo = new HierarchyRepository(db)
-  const rawGoals = await repo.findAllGoals({})
+  const rawGoals = await repo.findAllGoals({
+    ...(areaId ? { area_id: areaId } : {}),
+    ...(projectId ? { project_id: projectId } : {}),
+  })
   const areas = await repo.findAllAreas()
-  const projects = await repo.findAllProjects({})
+  const selectedProject = projectId ? await repo.findProjectById(projectId) : null
+  const projects = projectId
+    ? selectedProject ? [selectedProject] : []
+    : await repo.findAllProjects(areaId ? { area_id: areaId } : {})
 
   const areaMap = new Map(areas.map((a) => [a.id, a]))
+  scopedAreaName = areaId ? areaMap.get(areaId)?.name : undefined
+  scopedProjectName = selectedProject?.title
 
   for (const g of rawGoals) {
     const area = g.area_id ? areaMap.get(g.area_id as string) : null
@@ -58,6 +71,8 @@ try {
   // Goals will be empty on error
 }
 
+const scopeName = scopedProjectName ?? scopedAreaName
+const canCreate = !projectId && (!areaId || scopedAreaName)
 const statusLabels: Record<string, string> = {
   active: "Active",
   completed: "Completed",
@@ -65,22 +80,26 @@ const statusLabels: Record<string, string> = {
 }
 ---
 
-<div class="goals-tab" id="goals-tab-root">
+<div class="goals-tab" id="goals-tab-root" data-area-id={scopedAreaName ? areaId : undefined}>
   <header class="goals-tab__header">
     <div class="goals-tab__header-left">
-      <span class="goals-tab__count">{goals.length} goal{goals.length !== 1 ? "s" : ""}</span>
+      <span class="goals-tab__count">{goals.length} goal{goals.length !== 1 ? "s" : ""}{scopeName && ` · ${scopeName}`}</span>
+      {(areaId || projectId) && <a href="/progress#goals">All Goals</a>}
     </div>
-    <button type="button" class="btn btn-primary" id="goals-tab-new-btn">+ New Goal</button>
+    {canCreate && <button type="button" class="btn btn-primary" id="goals-tab-new-btn">+ New Goal</button>}
   </header>
 
   {goals.length === 0 ? (
     <div class="goals-tab__empty">
       <div class="goals-tab__empty-icon">🎯</div>
       <h2 class="goals-tab__empty-title">No goals yet</h2>
-      <p class="goals-tab__empty-desc">Create your first goal to define strategic outcomes for your work.</p>
-      <button type="button" class="btn btn-primary" id="goals-tab-empty-btn">
+      {canCreate && <p class="goals-tab__empty-desc">Create a goal to define an outcome for your work.</p>}
+      {canCreate && <button type="button" class="btn btn-primary" id="goals-tab-empty-btn">
         Create Goal
-      </button>
+      </button>}
+      {scopedProjectName && projectId && (
+        <a href={`/projects/${encodeURIComponent(projectId)}#settings`}>Choose a Goal in Project settings</a>
+      )}
     </div>
   ) : (
     <div class="goals-tab__list">
@@ -146,6 +165,7 @@ const statusLabels: Record<string, string> = {
   }
   .goals-tab__header-left {
     display: flex;
+    flex-wrap: wrap;
     align-items: baseline;
     gap: 0.75rem;
     min-width: 0;
@@ -153,7 +173,7 @@ const statusLabels: Record<string, string> = {
   .goals-tab__count {
     font-size: 0.8125rem;
     color: var(--text-muted);
-    white-space: nowrap;
+    overflow-wrap: anywhere;
   }
 
   .goals-tab__empty {
@@ -389,7 +409,7 @@ const statusLabels: Record<string, string> = {
       fetch("/api/goals", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ title }),
+        body: JSON.stringify({ title, area_id: root?.dataset.areaId }),
       })
         .then((r) => { if (r.ok) window.location.reload(); else throw new Error("Failed") })
         .catch(() => {

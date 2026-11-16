@@ -3911,8 +3911,7 @@ paths:
       tags:
         - Hierarchy
       summary: List all areas
-      description: Areas are the top-level organizational containers (WHERE things happen). Every goal and project belongs to
-        an area.
+      description: Areas organize work by responsibility. Goals and projects can be linked to an area.
       responses:
         "200":
           description: Areas
@@ -4000,18 +3999,42 @@ paths:
       operationId: listGoals
       tags:
         - Hierarchy
-      summary: List all goals
-      description: Goals define WHAT you want to achieve. They belong to areas and can have metric tracking (percentage,
-        count, boolean).
+      summary: List goals
+      description: List goals across all areas, or filter by association. With multiple filters, a goal must match all of them.
+      parameters:
+        - name: area_id
+          in: query
+          schema:
+            type: string
+          description: Goals linked to this Area directly or through one of its projects.
+        - name: project_id
+          in: query
+          schema:
+            type: string
+          description: The goal linked to this project.
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum:
+              - active
+              - completed
+              - archived
       responses:
         "200":
           description: Goals
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/Goal"
+                type: object
+                required:
+                  - goals
+                properties:
+                  goals:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Goal"
+                additionalProperties: false
     post:
       operationId: createGoal
       tags:
@@ -4101,6 +4124,7 @@ paths:
           in: query
           schema:
             type: string
+          description: Use the project's explicit Area, then its linked goal's Area when no explicit Area is set.
         - name: status
           in: query
           schema:

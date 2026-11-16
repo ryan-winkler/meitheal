@@ -11,7 +11,7 @@ import { logApiError } from "../../../lib/api-logger"
  * Goals represent desired outcomes linked to areas.
  * They are aggregate roots — the primary container for strategic intent.
  *
- * GET  /api/goals — List goals (optional ?area_id=&status= filters)
+ * GET  /api/goals — List goals (optional ?area_id=&project_id=&status= filters)
  * POST /api/goals — Create a new goal
  *
  * @domain domain-tasks (hierarchy context)
@@ -22,10 +22,12 @@ export const GET: APIRoute = async ({ url }) => {
   try {
     await ensureSchema()
     const repo = new HierarchyRepository(getPersistenceClient())
-    const filters: { area_id?: string; status?: string } = {}
+    const filters: { area_id?: string; project_id?: string; status?: string } = {}
     const area_id = url.searchParams.get("area_id")
+    const project_id = url.searchParams.get("project_id")
     const status = url.searchParams.get("status")
     if (area_id) filters.area_id = area_id
+    if (project_id) filters.project_id = project_id
     if (status) filters.status = status
     const goals = await repo.findAllGoals(filters)
     return apiJson({ goals })

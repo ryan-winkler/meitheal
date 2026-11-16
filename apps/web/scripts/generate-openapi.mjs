@@ -1513,7 +1513,7 @@ const paths = {
 
   // ── Areas ──
   "/api/areas": {
-    get: { operationId: "listAreas", tags: ["Hierarchy"], summary: "List all areas", description: "Areas are the top-level organizational containers (WHERE things happen). Every goal and project belongs to an area.", responses: { 200: jsonContent(arrOf("Area"), "Areas") } },
+    get: { operationId: "listAreas", tags: ["Hierarchy"], summary: "List all areas", description: "Areas organize work by responsibility. Goals and projects can be linked to an area.", responses: { 200: jsonContent(arrOf("Area"), "Areas") } },
     post: { operationId: "createArea", tags: ["Hierarchy"], summary: "Create an area", requestBody: { content: { "application/json": { schema: ref("Area") } } }, responses: { 201: jsonContent(ref("Area"), "Created") } },
   },
   "/api/areas/{id}": {
@@ -1524,7 +1524,18 @@ const paths = {
 
   // ── Goals ──
   "/api/goals": {
-    get: { operationId: "listGoals", tags: ["Hierarchy"], summary: "List all goals", description: "Goals define WHAT you want to achieve. They belong to areas and can have metric tracking (percentage, count, boolean).", responses: { 200: jsonContent(arrOf("Goal"), "Goals") } },
+    get: {
+      operationId: "listGoals",
+      tags: ["Hierarchy"],
+      summary: "List goals",
+      description: "List goals across all areas, or filter by association. With multiple filters, a goal must match all of them.",
+      parameters: [
+        { name: "area_id", in: "query", schema: { type: "string" }, description: "Goals linked to this Area directly or through one of its projects." },
+        { name: "project_id", in: "query", schema: { type: "string" }, description: "The goal linked to this project." },
+        { name: "status", in: "query", schema: { type: "string", enum: ["active", "completed", "archived"] } },
+      ],
+      responses: { 200: jsonContent({ type: "object", required: ["goals"], properties: { goals: arrOf("Goal") } }, "Goals") },
+    },
     post: { operationId: "createGoal", tags: ["Hierarchy"], summary: "Create a goal", requestBody: { content: { "application/json": { schema: ref("Goal") } } }, responses: { 201: jsonContent(ref("Goal"), "Created") } },
   },
   "/api/goals/{id}": {
@@ -1542,7 +1553,7 @@ const paths = {
       description: "Projects are containers for tasks within an area. They can be linked to goals for progress tracking.",
       parameters: [
         { name: "goal_id", in: "query", schema: { type: "string" } },
-        { name: "area_id", in: "query", schema: { type: "string" } },
+        { name: "area_id", in: "query", schema: { type: "string" }, description: "Use the project's explicit Area, then its linked goal's Area when no explicit Area is set." },
         { name: "status", in: "query", schema: { type: "string", enum: ["active", "completed", "paused", "archived"] } },
       ],
       responses: { 200: jsonContent({ type: "object", required: ["projects"], properties: { projects: arrOf("Project") } }, "Projects") },
