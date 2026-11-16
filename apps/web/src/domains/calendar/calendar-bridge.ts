@@ -449,6 +449,7 @@ interface PreviousSyncedFields {
   end?: string | null | undefined
   rrule?: string | null | undefined
   inferredRrule?: string | undefined
+  series?: boolean | undefined
 }
 
 function readPreviousSyncedFields(payload: string | null): PreviousSyncedFields | null {
@@ -462,6 +463,7 @@ function readPreviousSyncedFields(payload: string | null): PreviousSyncedFields 
       end: text(parsed.effective_end) ?? text(parsed.end) ?? text(parsed.dtend) ?? null,
       rrule: "rrule" in parsed ? (text(parsed.rrule) ?? null) : undefined,
       inferredRrule: text(parsed.inferred_rrule),
+      series: parsed.series === true,
     }
   } catch {
     return null
@@ -493,6 +495,9 @@ function baselinePayload(
     const latest = JSON.parse(nextPayload) as Record<string, unknown>
     if ("occurrences" in latest) kept.occurrences = latest.occurrences
     else delete kept.occurrences
+    for (const key of ["entity_id", "calendar_href", "calendar", "series"]) {
+      if (key in latest) kept[key] = latest[key]
+    }
     return JSON.stringify(kept)
   } catch {
     return nextPayload
@@ -515,8 +520,6 @@ export function planInboundCalendarUpdate(
     end: string | null
     recurrenceRule: string | null
     repeats: boolean
-    /** The task stands for a series key: a later occurrence under that key is a new one. */
-    seriesKey?: boolean | undefined
     /** Starts of every occurrence of the series in the sync window. */
     occurrenceStarts?: readonly string[] | undefined
   },
@@ -571,30 +574,21 @@ export function planInboundCalendarUpdate(
   // first payload this release writes becomes the baseline, and the task reopens at the
   // occurrence after that.
   if (
-    importedBySync && calendarOwned && (incoming.repeats || incoming.seriesKey === true) && completed && !legacyPayload &&
+    importedBySync && calendarOwned && incoming.repeats && completed && !legacyPayload &&
     previousDay && incomingDay && incomingDay > previousDay
   ) {
     plan.status = STATUS.PENDING
   }
-  if (closed) {
-    if (plan.status === STATUS.PENDING) {
-      // A reopened series task moves to the calendar's current occurrence.
-      plan.dueDate = incoming.start
-      plan.updateDueDate = true
-      plan.startDate = incoming.start
-      plan.endDate = incoming.end
-    } else {
-      // A completed task stays as it was completed. Moving its dates would bump updated_at,
-      // so it would count as completed today again and return to the Done lane.
-      delete plan.title
-      delete plan.dueDate
-      delete plan.updateDueDate
-      delete plan.startDate
-      delete plan.endDate
-      delete plan.recurrenceRule
-      delete plan.replaceRecurrenceRule
-      delete plan.taskKind
-    }
+  if (closed && plan.status === undefined) {
+    // Changing fields on a task that remains closed would return it to the Done lane.
+    delete plan.title
+    delete plan.dueDate
+    delete plan.updateDueDate
+    delete plan.startDate
+    delete plan.endDate
+    delete plan.recurrenceRule
+    delete plan.replaceRecurrenceRule
+    delete plan.taskKind
   }
   // The commit writes each planned field only while it still holds the value read here.
   const snapshot = (value: unknown) => (value === undefined ? null : (value as string | number | bigint | null))
@@ -998,13 +992,16 @@ async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState |
       for (const row of present.rows) presentTaskIds.add(String(row.id))
     }
     /** Deleted-task links: confirmation id → last calendar day that task stood for. */
-    const tombstones = new Map<string, { taskId: string; day: string; repeats: boolean }>()
+    const tombstones = new Map<string, { taskId: string; confirmationId: string; day: string; repeats: boolean }>()
     for (const [uid, taskId] of [...existingMap.entries()]) {
       if (!presentTaskIds.has(taskId)) {
         const previous = readPreviousSyncedFields(existingLookup.get(uid)?.payload ?? null)
         const start = previous?.start
         const day = (start ? calendarDayFromInput(start, timezone) : null) ?? "9999-12-31"
-        tombstones.set(uid, { taskId, day, repeats: Boolean(previous?.rrule || previous?.inferredRrule) })
+        tombstones.set(uid, {
+          taskId, confirmationId: existingLookup.get(uid)!.confirmationId, day,
+          repeats: Boolean(previous?.series || previous?.rrule || previous?.inferredRrule),
+        })
         existingMap.delete(uid)
         existingLookup.delete(uid)
       }
@@ -1187,8 +1184,6 @@ async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState |
         candidateSeries.occurrences.some((o) => o.start === due)
       if (!holdsDue(owner) && holdsDue(series)) seriesTaskOwner.set(taskId, series)
     }
-    const releasedLegacyLinks: { taskId: string; uids: string[] }[] = []
-
     let errors = 0
     const mutations: SyncTaskMutation[] = []
     const mutationSummaries: string[] = []
@@ -1203,13 +1198,17 @@ async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState |
         ? series.legacyCandidateUids.find((candidate) => existingMap.get(candidate) === preferredTaskId)
         : undefined
       let existingTaskId = preferredTaskId
-      // Links from this series to tasks it does not keep are released before the commit.
+      const replacedCalendarLinks: NonNullable<SyncTaskMutation["replacedCalendarLinks"]> = []
+      function releaseCalendarLink(externalId: string, taskId: string, confirmationId: string) {
+        replacedCalendarLinks.push({ externalId, taskId, confirmationId })
+      }
+      // Release old links in the same savepoint that stores the replacement.
       for (const otherTaskId of new Set(series.legacyCandidateUids.map((c) => existingMap.get(c)))) {
         if (!otherTaskId || otherTaskId === preferredTaskId) continue
-        releasedLegacyLinks.push({
-          taskId: otherTaskId,
-          uids: series.legacyCandidateUids.filter((candidate) => existingMap.get(candidate) === otherTaskId),
-        })
+        for (const candidate of series.legacyCandidateUids) {
+          const old = existingLookup.get(candidate)
+          if (old?.taskId === otherTaskId) releaseCalendarLink(candidate, otherTaskId, old.confirmationId)
+        }
       }
       // A closed task an earlier release shared between same-title events (for example one
       // monthly "Rent" task completed for December while it already showed January) stays
@@ -1219,10 +1218,10 @@ async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState |
         readPreviousSyncedFields(matchedCandidateUid ? existingLookup.get(matchedCandidateUid)?.payload ?? null : null)?.rrule === undefined
       if (existingTaskId && seriesTaskOwner.get(existingTaskId) !== series && !sharedClosedLegacy) {
         const sharedTaskId = existingTaskId
-        releasedLegacyLinks.push({
-          taskId: sharedTaskId,
-          uids: series.legacyCandidateUids.filter((candidate) => existingMap.get(candidate) === sharedTaskId),
-        })
+        for (const candidate of series.legacyCandidateUids) {
+          const old = existingLookup.get(candidate)
+          if (old?.taskId === sharedTaskId) releaseCalendarLink(candidate, sharedTaskId, old.confirmationId)
+        }
         existingTaskId = undefined
         matchedCandidateUid = undefined
       }
@@ -1240,10 +1239,13 @@ async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState |
         }
         for (const candidate of seriesTombstones) {
           const tombstone = tombstones.get(candidate)!
-          releasedLegacyLinks.push({ taskId: tombstone.taskId, uids: [candidate] })
+          releaseCalendarLink(candidate, tombstone.taskId, tombstone.confirmationId)
         }
       }
       let titleMatchedExternalId: string | undefined
+      const previousSeries = readPreviousSyncedFields(matchedCandidateUid ? existingLookup.get(matchedCandidateUid)?.payload ?? null : null)
+      const repeats = isIdlessSeries || series.recurrenceRule !== null || series.inferredRecurrenceRule !== null ||
+        evt.recurrence_id !== undefined || Boolean(previousSeries?.series || previousSeries?.rrule || previousSeries?.inferredRrule)
       const confirmationPayload = JSON.stringify({
         summary: evt.summary,
         start: evt.start,
@@ -1252,6 +1254,7 @@ async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState |
         entity_id: entityId,
         rrule: series.recurrenceRule,
         inferred_rrule: series.inferredRecurrenceRule,
+        series: repeats,
         occurrences: series.occurrences.map((o) => ({
           start: o.start,
           end: o.end,
@@ -1304,8 +1307,7 @@ async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState |
             start: evt.start,
             end: series.representativeEndDate,
             recurrenceRule: series.recurrenceRule,
-            repeats: series.recurrenceRule !== null || series.inferredRecurrenceRule !== null,
-            seriesKey: isIdlessSeries,
+            repeats,
             occurrenceStarts: series.occurrences.map((o) => o.start),
           },
           { timezone },
@@ -1319,6 +1321,7 @@ async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState |
         mutations.push({
           kind: "update",
           taskId: existingTaskId,
+          replacedCalendarLinks,
           ...plan,
           ...(keepClosed ? {} : { description: inboundDesc, ensureCalendarSyncLabel: true }),
           updatedAt: nowMs,
@@ -1344,6 +1347,7 @@ async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState |
         mutations.push({
           kind: "create",
           taskId,
+          replacedCalendarLinks,
           idempotencyKey: `cal-sync-${entityId}:${uid}`,
           title: evt.summary,
           description: newDesc,
@@ -1370,43 +1374,16 @@ async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState |
       }
     }
 
-    // Released links go before the commit, so a series that gets its own task is not
-    // blocked by the create dedup check finding the link it is leaving.
-    for (const released of releasedLegacyLinks) {
-      if (released.uids.length === 0) continue
-      await client.execute({
-        sql: `DELETE FROM calendar_confirmations
-              WHERE task_id = ? AND source = 'ha.calendar_sync'
-                AND provider_event_id IN (${released.uids.map(() => "?").join(", ")})`,
-        args: [released.taskId, ...released.uids],
-      })
-    }
-    // When separate same-title events become one series (a third regular date came into
-    // view), the series keeps one of their tasks. The others are open duplicates that sync
-    // created and no longer links, so they are completed (as sync does for a deleted event)
-    // instead of being left behind.
-    const keptTaskIds = new Set<string>([
-      ...mutations.filter((m) => m.kind === "update").map((m) => m.taskId),
-      ...seriesTaskOwner.keys(),
-    ])
-    const supersededTaskIds = [...new Set(releasedLegacyLinks.map((released) => released.taskId))].filter((taskId) => {
-      const task = currentTasks.get(taskId)
-      return task !== undefined && !keptTaskIds.has(taskId) && syncMayKeep(taskId) &&
-        !writtenBackTaskIds.has(taskId) && !isClosedStatus(String(task.status ?? ""))
-    })
-    for (const taskId of supersededTaskIds) {
-      const result = await client.execute({
-        sql: `UPDATE tasks SET status = '${STATUS.COMPLETE}', updated_at = ?
-              WHERE id = ? AND status = ?
-                AND NOT EXISTS (SELECT 1 FROM calendar_confirmations WHERE task_id = ? AND source = 'ha.calendar_sync')`,
-        args: [nowMs, taskId, String(currentTasks.get(taskId)?.status ?? ""), taskId],
-      })
-      if ((result.rowsAffected ?? 0) > 0) {
-        logger.log("info", {
-          event: "calendar.sync.series_duplicate_completed", domain: "calendar", component: "calendar-bridge",
-          request_id: SYS_REQ,
-          message: `Completed task ${taskId}: its event joined a series that keeps another task in ${entityId}`,
-        })
+    // Complete only an open sync-owned duplicate that no present series keeps. The
+    // repository checks that the released link was the last one in the same savepoint.
+    const keptTaskIds = new Set<string>([...touchedTaskIds, ...seriesTaskOwner.keys()])
+    for (const mutation of mutations) {
+      for (const link of mutation.replacedCalendarLinks ?? []) {
+        const task = currentTasks.get(link.taskId)
+        if (task && !keptTaskIds.has(link.taskId) && syncMayKeep(link.taskId) &&
+          !writtenBackTaskIds.has(link.taskId) && !isClosedStatus(String(task.status ?? ""))) {
+          link.completeIfStatus = String(task.status ?? "")
+        }
       }
     }
 
@@ -2041,10 +2018,15 @@ async function importCalDAVEvents(): Promise<CalendarSyncCounts> {
     const todayStr = calendarToday(timezone, now)
 
     let failures = 0
+    const calendarNames = new Map<string, number>()
+    for (const calendar of calendars) {
+      calendarNames.set(calendar.displayName, (calendarNames.get(calendar.displayName) ?? 0) + 1)
+    }
 
     for (const cal of calendars) {
       try {
         const calendarKey = normalizeCalDAVCalendarKey(config.url, cal.href)
+        const legacyCalendarName = calendarNames.get(cal.displayName) === 1 ? cal.displayName : null
         const listed = await listCalDAVEvents(config, cal.href, start, end)
         // Events Meitheal itself wrote to a calendar are never imported back as new tasks.
         const events = listed.filter((evt) => !(evt.description && /Added from Meitheal/i.test(evt.description)))
@@ -2058,37 +2040,39 @@ async function importCalDAVEvents(): Promise<CalendarSyncCounts> {
 
         // Batch dedup: pre-fetch existing UIDs scoped to this calendar in <= 200-param chunks
         const calUids = Array.from(groupedByUid.keys())
-        const existingCalMap = new Map<string, string>()
-        const existingCalPayloads = new Map<string, string | null>()
+        const existingCalLinks = new Map<string, { taskId: string; confirmationId: string; payload: string | null }>()
         for (let offset = 0; offset < calUids.length; offset += 198) {
           const chunk = calUids.slice(offset, offset + 198)
           const uidPlaceholders = chunk.map(() => "?").join(", ")
           const existingCalRes = await client.execute({
-            sql: `SELECT provider_event_id, task_id, payload
+            sql: `SELECT provider_event_id, task_id, payload, confirmation_id
                   FROM calendar_confirmations
                   WHERE provider_event_id IN (${uidPlaceholders})
                     AND source = 'caldav'
                     AND (
                       CASE WHEN json_valid(payload) THEN COALESCE(json_extract(payload, '$.calendar_href'), json_extract(payload, '$.entity_id')) ELSE NULL END = ?
                       OR (
-                        CASE WHEN json_valid(payload) THEN json_extract(payload, '$.calendar_href') ELSE NULL END IS NULL
+                        CASE WHEN json_valid(payload) THEN COALESCE(json_extract(payload, '$.calendar_href'), json_extract(payload, '$.entity_id')) ELSE NULL END IS NULL
                         AND CASE WHEN json_valid(payload) THEN json_extract(payload, '$.calendar') ELSE NULL END = ?
                       )
-                    )`,
-            args: [...chunk, calendarKey, cal.displayName],
+                    )
+                  ORDER BY CASE WHEN json_valid(payload) THEN COALESCE(json_extract(payload, '$.calendar_href'), json_extract(payload, '$.entity_id')) ELSE NULL END ASC NULLS FIRST`,
+            args: [...chunk, calendarKey, legacyCalendarName],
           })
           for (const row of existingCalRes.rows) {
-            existingCalMap.set(String(row.provider_event_id), String(row.task_id))
-            existingCalPayloads.set(String(row.provider_event_id), row.payload == null ? null : String(row.payload))
+            existingCalLinks.set(String(row.provider_event_id), {
+              taskId: String(row.task_id),
+              confirmationId: String(row.confirmation_id),
+              payload: row.payload == null ? null : String(row.payload),
+            })
           }
         }
-        const currentCalTasks = await readSyncedTaskFields(client, [...existingCalMap.values()])
+        const currentCalTasks = await readSyncedTaskFields(client, Array.from(existingCalLinks.values(), link => link.taskId))
 
         const nowMs = Date.now()
         const calMutations: SyncTaskMutation[] = []
-        // Links to tasks the household deleted, removed before a later occurrence is imported.
-        const releasedCalTombstones: { uid: string; taskId: string }[] = []
         for (const [uid, group] of groupedByUid) {
+          const replacedCalendarLinks: NonNullable<SyncTaskMutation["replacedCalendarLinks"]> = []
           const wrapped = group.map((evt) => ({
             evt,
             start: evt.dtstart,
@@ -2112,6 +2096,12 @@ async function importCalDAVEvents(): Promise<CalendarSyncCounts> {
           if (repEvt.description) calDescParts.push(repEvt.description)
           const inboundCalDesc = calDescParts.length > 0 ? calDescParts.join("\n\n") : null
 
+          const existingLink = existingCalLinks.get(uid)
+          const calPreviousPayload = existingLink?.payload ?? null
+          const previousCalSeries = readPreviousSyncedFields(calPreviousPayload)
+          const repeats = recurrenceRule !== null || inferredRecurrenceRule !== null ||
+            group.some((event) => event.recurrenceId !== undefined) ||
+            Boolean(previousCalSeries?.series || previousCalSeries?.rrule || previousCalSeries?.inferredRrule)
           const payload = JSON.stringify({
             summary: repEvt.summary,
             dtstart: repEvt.dtstart,
@@ -2122,6 +2112,7 @@ async function importCalDAVEvents(): Promise<CalendarSyncCounts> {
             entity_id: calendarKey,
             rrule: recurrenceRule,
             inferred_rrule: inferredRecurrenceRule,
+            series: repeats,
             occurrences: selected.occurrences.map((o) => ({
               start: o.start,
               end: o.end,
@@ -2129,28 +2120,25 @@ async function importCalDAVEvents(): Promise<CalendarSyncCounts> {
             })),
           })
 
-          let existingTaskId = existingCalMap.get(uid)
-          if (existingTaskId && !currentCalTasks.has(existingTaskId)) {
+          let existingTaskId = existingLink?.taskId
+          if (existingLink && !currentCalTasks.has(existingLink.taskId)) {
             // A deleted CalDAV task stays deleted. A repeating event gets a new task once an
             // occurrence later than the deleted one comes up, as with Home Assistant.
-            const previous = readPreviousSyncedFields(existingCalPayloads.get(uid) ?? null)
-            const hasRecurrence = recurrenceRule !== null || inferredRecurrenceRule !== null ||
-              group.some((event) => event.recurrenceId !== undefined) ||
-              Boolean(previous?.rrule || previous?.inferredRrule)
-            if (!hasRecurrence) continue
-            const deletedStart = previous?.start
+            if (!repeats) continue
+            const deletedStart = previousCalSeries?.start
             const deletedDay = (deletedStart ? calendarDayFromInput(deletedStart, timezone) : null) ?? "9999-12-31"
             if (selected.startDay <= deletedDay) continue
-            releasedCalTombstones.push({ uid, taskId: existingTaskId })
+            replacedCalendarLinks.push({
+              externalId: uid, taskId: existingLink.taskId, confirmationId: existingLink.confirmationId,
+            })
             existingTaskId = undefined
           }
           if (existingTaskId) {
             const currentCalTask = currentCalTasks.get(existingTaskId)
-            const calPreviousPayload = existingCalPayloads.get(uid) ?? null
             const calPlan = planInboundCalendarUpdate(
               currentCalTask,
               calPreviousPayload,
-              { title: repEvt.summary, start: repEvt.dtstart, end: repEnd, recurrenceRule, repeats: recurrenceRule !== null || inferredRecurrenceRule !== null },
+              { title: repEvt.summary, start: repEvt.dtstart, end: repEnd, recurrenceRule, repeats },
               { timezone },
             )
             calMutations.push({
@@ -2165,14 +2153,15 @@ async function importCalDAVEvents(): Promise<CalendarSyncCounts> {
                 entityId: calendarKey,
                 externalId: uid,
                 confirmationSource: "caldav",
+                legacyCalendarName,
                 payload: baselinePayload(currentCalTask, calPlan, calPreviousPayload, payload),
               },
             })
           } else {
-            existingCalMap.set(uid, uid)
             calMutations.push({
               kind: "create",
               taskId: crypto.randomUUID(),
+              replacedCalendarLinks,
               idempotencyKey: `caldav-sync-${calendarKey}:${uid}`,
               title: repEvt.summary,
               description: inboundCalDesc ?? `📡 CalDAV event from ${cal.displayName}`,
@@ -2198,12 +2187,6 @@ async function importCalDAVEvents(): Promise<CalendarSyncCounts> {
           }
         }
 
-        for (const released of releasedCalTombstones) {
-          await client.execute({
-            sql: `DELETE FROM calendar_confirmations WHERE source = 'caldav' AND provider_event_id = ? AND task_id = ?`,
-            args: [released.uid, released.taskId],
-          })
-        }
         if (calMutations.length > 0) {
           const commitRes = await mod.commitSyncMutationChunks(calMutations)
           totalCreated += commitRes.created

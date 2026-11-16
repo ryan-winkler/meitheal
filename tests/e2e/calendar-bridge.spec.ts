@@ -303,6 +303,14 @@ test("planInboundCalendarUpdate treats alias and archived statuses as closed", (
   const done = planInboundCalendarUpdate({ ...base, status: "done" } as never, payload, incoming, { timezone: "UTC" })
   expect(done.status).toBe("pending")
   expect(done.dueDate).toBe("2026-11-16T07:00:00Z")
+  const edited = planInboundCalendarUpdate(
+    { ...base, status: "complete", due_date: "2026-11-10", start_date: "2026-11-10", end_date: "2026-11-11" } as never,
+    payload, incoming, { timezone: "UTC" },
+  )
+  expect(edited.status).toBe("pending")
+  expect(edited.dueDate).toBeUndefined()
+  expect(edited.startDate).toBeUndefined()
+  expect(edited.endDate).toBeUndefined()
   // A completed task whose event moves, without a next occurrence to reopen for, stays as completed.
   const movedOneOff = planInboundCalendarUpdate(
     { ...base, status: "complete" } as never, payload, { ...incoming, repeats: false }, { timezone: "UTC" },
@@ -389,6 +397,13 @@ test("HA sync groups recurring occurrences (with and without UID), picks today o
 
     // Calendar counts include EVERY expanded occurrence in [todayStr, d28]
     const repo = new TaskRepository(db)
+    const datePage = await repo.findAll({
+      dueDate: todayStr, timezone: "Europe/Dublin", sort: "title", order: "ASC", limit: 1, offset: 1,
+    })
+    expect(datePage.total).toBe(2)
+    expect(datePage.tasks.map(task => task.id)).toEqual([String(standup.id)])
+    const pastLastPage = await repo.findAll({ dueDate: todayStr, limit: 1, offset: 2 })
+    expect(pastLastPage).toEqual({ tasks: [], total: 2 })
     const haCounts = await repo.getCalendarHAEventCounts(todayStr, d28, "Europe/Dublin")
     expect(haCounts[todayStr]).toBe(2)
     expect(haCounts[d7]).toBe(2)
@@ -418,6 +433,14 @@ test("HA sync groups recurring occurrences (with and without UID), picks today o
     await repo.updateTask(String(standup.id), { status: "complete" })
     const afterComplete = await db.execute({ sql: "SELECT COUNT(*) AS n FROM tasks", args: [] })
     expect(Number(afterComplete.rows[0]?.n)).toBe(2)
+    // The next window can contain just one occurrence and no provider RRULE.
+    ha.setCalendarEvents([{ uid: "weekly-standup", summary: "Team Standup", start: `${d7}T11:00:00Z`, end: `${d7}T11:30:00Z` }])
+    const sparseSync = await syncFromHA("calendar.household")
+    expect(sparseSync.created).toBe(0)
+    const reopenedStandup = await db.execute({
+      sql: "SELECT status, due_date FROM tasks WHERE id = ?", args: [String(standup.id)],
+    })
+    expect(reopenedStandup.rows[0]).toMatchObject({ status: "pending", due_date: `${d7}T11:00:00Z` })
 
     // A hand-made task with the same title as an event is never adopted.
     await db.execute({
@@ -1211,6 +1234,16 @@ test("HA sync turns separate same-title tasks into one series without duplicates
     ha.setCalendarEvents(bins([14, 28]))
     await syncFromHA(entity)
     expect(await openBins()).toHaveLength(2)
+    const beforeMerge = await openBins()
+    const linksBeforeMerge = await db.execute("SELECT confirmation_id, task_id, payload FROM calendar_confirmations ORDER BY confirmation_id")
+    await db.execute(`CREATE TRIGGER fail_calendar_series_confirmation BEFORE UPDATE ON calendar_confirmations
+      BEGIN SELECT RAISE(ABORT, 'calendar series confirmation rollback fixture'); END`)
+    ha.setCalendarEvents(bins([0, 14, 28]))
+    await syncFromHA(entity)
+    expect(await openBins()).toEqual(beforeMerge)
+    expect((await db.execute("SELECT confirmation_id, task_id, payload FROM calendar_confirmations ORDER BY confirmation_id")).rows)
+      .toEqual(linksBeforeMerge.rows)
+    await db.execute("DROP TRIGGER fail_calendar_series_confirmation")
     // A third regular date comes into view: one series, and no duplicate is left open.
     ha.setCalendarEvents(bins([0, 14, 28]))
     await syncFromHA(entity)
@@ -1496,13 +1529,25 @@ test("CalDAV isolates same UID across distinct calendars without overwriting eit
       }),
     } as unknown as Parameters<typeof saveCredentials>[0])
     expect(saved.status).toBe(200)
+    // Before collection paths were stored, the display name alone was ambiguous.
+    await db.execute({
+      sql: `INSERT INTO tasks (id, title, status, area_id, idempotency_key, request_id, ticket_number, created_at, updated_at)
+            VALUES ('legacy-caldav', 'Legacy dentist', 'pending', 'default', 'caldav-sync-shared-invite-uid', 'legacy-caldav', 9010, 1, 1)`,
+      args: [],
+    })
+    const legacyPayload = JSON.stringify({ calendar: "Shared", summary: "Legacy dentist", dtstart: todayStr })
+    await db.execute({
+      sql: `INSERT INTO calendar_confirmations (confirmation_id, task_id, request_id, provider_event_id, source, payload, created_at)
+            VALUES ('legacy-caldav', 'legacy-caldav', 'legacy-caldav', 'shared-invite-uid', 'caldav', ?, 1)`,
+      args: [legacyPayload],
+    })
 
     startCalDAVSync(origin, 0)
     await expect.poll(() => getCalendarSyncStatus().lastSyncAt).not.toBeNull()
     expect(getCalendarSyncStatus().lastSyncError).toBeNull()
     expect(getCalendarSyncStatus().lastSyncEventCount).toBe(2)
 
-    const tasksAfterFirst = (await db.execute({ sql: `SELECT title, due_date FROM tasks ORDER BY title ASC`, args: [] })).rows
+    const tasksAfterFirst = (await db.execute({ sql: `SELECT title, due_date FROM tasks WHERE id <> 'legacy-caldav' ORDER BY title ASC`, args: [] })).rows
     expect(tasksAfterFirst).toEqual([
       expect.objectContaining({ title: "Personal Dentists", due_date: tomorrowStr }),
       expect.objectContaining({ title: "Team Dentists", due_date: todayStr }),
@@ -1515,7 +1560,7 @@ test("CalDAV isolates same UID across distinct calendars without overwriting eit
     const second = await syncCalDAVEvents()
     expect(second).toEqual({ created: 0, updated: 2, total: 2 })
 
-    const tasksAfterSecond = (await db.execute({ sql: `SELECT title, due_date FROM tasks ORDER BY title ASC`, args: [] })).rows
+    const tasksAfterSecond = (await db.execute({ sql: `SELECT title, due_date FROM tasks WHERE id <> 'legacy-caldav' ORDER BY title ASC`, args: [] })).rows
     expect(tasksAfterSecond).toEqual([
       expect.objectContaining({ title: "Personal Dentists", due_date: tomorrowStr }),
       expect.objectContaining({ title: "Team Dentists (Updated)", due_date: todayStr }),
@@ -1526,6 +1571,7 @@ test("CalDAV isolates same UID across distinct calendars without overwriting eit
       WHERE c.source = 'caldav' ORDER BY calendar
     `)
     expect(links.rows).toEqual([
+      expect.objectContaining({ title: "Legacy dentist", uid: "shared-invite-uid", calendar: null }),
       expect.objectContaining({ title: "Personal Dentists", uid: "shared-invite-uid", calendar: "/personal" }),
       expect.objectContaining({ title: "Team Dentists (Updated)", uid: "shared-invite-uid", calendar: "/team" }),
     ])

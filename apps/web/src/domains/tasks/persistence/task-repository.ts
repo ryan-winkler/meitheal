@@ -362,6 +362,7 @@ export type SyncConfirmationTarget =
       previousExternalId?: string | undefined
       confirmationId?: string | undefined
       confirmationSource?: string | undefined
+      legacyCalendarName?: string | null | undefined
       payload: string
     }
   | {
@@ -373,7 +374,14 @@ export type SyncConfirmationTarget =
       payload: string
     }
 
-export type SyncTaskMutation =
+interface SyncCalendarLinkRelease {
+  confirmationId: string
+  taskId: string
+  externalId: string
+  completeIfStatus?: string | undefined
+}
+
+export type SyncTaskMutation = (
   | {
       kind: "create"
       taskId?: string | undefined
@@ -428,6 +436,7 @@ export type SyncTaskMutation =
       createdAt?: number | undefined
       confirmation: SyncConfirmationTarget
     }
+) & { replacedCalendarLinks?: SyncCalendarLinkRelease[] | undefined }
 
 export interface SyncChunkItemError {
   index: number
@@ -1171,26 +1180,35 @@ export class TaskRepository {
 
     const where = conditions.length > 0 ? ` WHERE ${conditions.join(" AND ")}` : "";
 
-    const baseSelectSql = `SELECT id, title, description, status, priority, due_date, labels,
+    const projection = `id, title, description, status, priority, due_date, labels,
                               framework_payload, calendar_sync_state, parent_id, time_tracked,
                               area_id, custom_fields, start_date, end_date, progress, color,
                               is_favorite, task_type, task_kind, project_id, owner, handoff_state,
                               ticket_number, assigned_to, created_at, updated_at, deferred_at, deferral_revision,
                               urgency, importance, eisenhower_override,
                               effort_minutes, effort_type, blocked_by, nfc_tag_id, kanban_position,
-                              ${taskTimestampMs("updated_at")} AS task_version
-                       FROM tasks${where}
-                       ORDER BY ${sortCol} ${order} NULLS LAST, id ASC`;
+                              ${taskTimestampMs("updated_at")} AS task_version`
+    const ordering = `ORDER BY ${sortCol} ${order} NULLS LAST, id ASC`
 
     if (opts.dueDate) {
-      const tz = opts.timezone || "Europe/Dublin"
-      const result = await this.client.execute({ sql: baseSelectSql, args })
-      const allRows = (result.rows ?? []) as unknown as TaskRow[]
-      const matching = allRows.filter((row) => calendarDayFromInput(row.due_date, tz) === opts.dueDate)
-      return { tasks: matching.slice(offset, offset + limit), total: matching.length }
+      const snapshot = await this.client.transaction("read")
+      try {
+        const tz = opts.timezone || "Europe/Dublin"
+        const candidates = await snapshot.execute({ sql: `SELECT id, due_date FROM tasks${where} ${ordering}`, args })
+        const ids = candidates.rows.filter(row => calendarDayFromInput(String(row.due_date), tz) === opts.dueDate)
+        const page = ids.slice(offset, offset + limit)
+        if (page.length === 0) return { tasks: [], total: ids.length }
+        const result = await snapshot.execute({
+          sql: `SELECT ${projection} FROM tasks WHERE id IN (SELECT value FROM json_each(?)) ${ordering}`,
+          args: [JSON.stringify(page.map(row => String(row.id)))],
+        })
+        return { tasks: result.rows as unknown as TaskRow[], total: ids.length }
+      } finally {
+        snapshot.close()
+      }
     }
 
-    const selectSql = `${baseSelectSql} LIMIT ${limit} OFFSET ${offset}`;
+    const selectSql = `SELECT ${projection} FROM tasks${where} ${ordering} LIMIT ${limit} OFFSET ${offset}`
     const countSql = `SELECT COUNT(*) as cnt FROM tasks${where}`;
 
     const [result, countResult] = await this.client.batch([
@@ -2708,6 +2726,25 @@ export class TaskRepository {
             let candidateTaskId: string | null = null
 
             try {
+              if (mutation.confirmation?.source === "calendar" && mutation.replacedCalendarLinks?.length) {
+                step = "calendar_link_release"
+                const source = mutation.confirmation.confirmationSource ?? "ha.calendar_sync"
+                for (const link of mutation.replacedCalendarLinks) {
+                  const [removed] = yield [{
+                    sql: `DELETE FROM calendar_confirmations
+                          WHERE confirmation_id = ? AND task_id = ? AND provider_event_id = ? AND source = ?`,
+                    args: [link.confirmationId, link.taskId, link.externalId, source],
+                  }]
+                  if ((removed?.rowsAffected ?? 0) > 0 && link.completeIfStatus !== undefined) {
+                    yield [{
+                      sql: `UPDATE tasks SET status = ?, updated_at = ?
+                            WHERE id = ? AND status = ?
+                              AND NOT EXISTS (SELECT 1 FROM calendar_confirmations WHERE task_id = ? AND source = ?)`,
+                      args: [STATUS.COMPLETE, Date.now(), link.taskId, link.completeIfStatus, link.taskId, source],
+                    }]
+                  }
+                }
+              }
               if (mutation.kind === "create") {
                 const taskId = mutation.taskId ?? crypto.randomUUID()
                 candidateTaskId = taskId
@@ -2723,10 +2760,7 @@ export class TaskRepository {
                     ? yield [{
                         sql: `SELECT 1 FROM calendar_confirmations
                               WHERE source = 'caldav' AND provider_event_id = ?
-                                AND (
-                                  CASE WHEN json_valid(payload) THEN COALESCE(json_extract(payload, '$.calendar_href'), json_extract(payload, '$.entity_id')) ELSE NULL END IS NULL
-                                  OR CASE WHEN json_valid(payload) THEN COALESCE(json_extract(payload, '$.calendar_href'), json_extract(payload, '$.entity_id')) ELSE NULL END = ?
-                                )
+                                AND CASE WHEN json_valid(payload) THEN COALESCE(json_extract(payload, '$.calendar_href'), json_extract(payload, '$.entity_id')) ELSE NULL END = ?
                               LIMIT 1`,
                         args: [mutation.confirmation.externalId, mutation.confirmation.entityId],
                       }]
@@ -2745,7 +2779,7 @@ export class TaskRepository {
                         ],
                       }]
                   if (existingConf?.rows.length) {
-                    yield [`RELEASE SAVEPOINT ${sp}`]
+                    yield [`ROLLBACK TO SAVEPOINT ${sp}`, `RELEASE SAVEPOINT ${sp}`]
                     skipped++
                     continue
                   }
@@ -2817,7 +2851,7 @@ export class TaskRepository {
                 }
 
                 if (staleSnapshot) {
-                  yield [`RELEASE SAVEPOINT ${sp}`]
+                  yield [`ROLLBACK TO SAVEPOINT ${sp}`, `RELEASE SAVEPOINT ${sp}`]
                   skipped++
                 } else if (mutation.confirmation?.source === "ha_todo" && mutation.confirmation.requireUnmodifiedSinceSync) {
                   const taskVersion = taskTimestampMs("tasks.updated_at")
@@ -2974,13 +3008,10 @@ export class TaskRepository {
                           sql: `UPDATE calendar_confirmations SET payload = ?
                                 WHERE task_id = ? AND provider_event_id = ? AND source = 'caldav'
                                   AND (
-                                    CASE WHEN json_valid(payload) THEN COALESCE(json_extract(payload, '$.calendar_href'), json_extract(payload, '$.entity_id')) ELSE NULL END IS NULL
-                                    OR CASE WHEN json_valid(payload) THEN COALESCE(json_extract(payload, '$.calendar_href'), json_extract(payload, '$.entity_id')) ELSE NULL END = ?
+                                    CASE WHEN json_valid(payload) THEN COALESCE(json_extract(payload, '$.calendar_href'), json_extract(payload, '$.entity_id')) ELSE NULL END = ?
                                     OR (
-                                      CASE WHEN json_valid(payload) THEN json_extract(payload, '$.calendar_href') ELSE NULL END IS NULL
-                                      AND CASE WHEN json_valid(payload) THEN json_extract(payload, '$.calendar') ELSE NULL END = (
-                                        CASE WHEN json_valid(?) THEN json_extract(?, '$.calendar') ELSE NULL END
-                                      )
+                                      CASE WHEN json_valid(payload) THEN COALESCE(json_extract(payload, '$.calendar_href'), json_extract(payload, '$.entity_id')) ELSE NULL END IS NULL
+                                      AND CASE WHEN json_valid(payload) THEN json_extract(payload, '$.calendar') ELSE NULL END = ?
                                     )
                                   )`,
                           args: [
@@ -2988,8 +3019,7 @@ export class TaskRepository {
                             mutation.taskId,
                             mutation.confirmation.externalId,
                             mutation.confirmation.entityId,
-                            mutation.confirmation.payload,
-                            mutation.confirmation.payload,
+                            mutation.confirmation.legacyCalendarName ?? null,
                           ],
                         }]
                       } else {
@@ -3049,6 +3079,7 @@ export class TaskRepository {
               const extCode = (stepErr as { extendedCode?: string } | null)?.extendedCode
               if (
                 mutation.kind === "create" &&
+                !mutation.replacedCalendarLinks?.length &&
                 step === "task_insert" &&
                 extCode === "SQLITE_CONSTRAINT_TRIGGER" &&
                 candidateTaskId !== null
