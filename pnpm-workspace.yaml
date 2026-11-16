@@ -5,6 +5,9 @@ packages:
 
 pmOnFail: error
 
+allowBuilds:
+  esbuild: false
+
 overrides:
   "lodash": ">=4.17.23"
   "svgo": "^4.1.0"
