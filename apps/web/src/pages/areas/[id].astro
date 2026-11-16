@@ -458,10 +458,15 @@ const tabs = [
     const links = [...document.querySelectorAll<HTMLAnchorElement>(".area-tab")]
     function updateSection() {
       const hash = window.location.hash.slice(1)
-      const active = sections.find(section => section.dataset.section === hash)?.dataset.section ?? "overview"
+      const destination = sections.find(section => section.dataset.section === hash) ?? sections[0]
+      const active = destination?.dataset.section
+      const focusInLeavingSection = sections.some(section =>
+        section !== destination && section.classList.contains("active") && section.contains(document.activeElement),
+      )
       for (const section of sections) {
-        section.classList.toggle("active", section.dataset.section === active)
+        section.classList.toggle("active", section === destination)
       }
+      if (focusInLeavingSection) destination?.focus({ preventScroll: true })
       for (const link of links) {
         const isActive = link.dataset.tab === active
         link.classList.toggle("active", isActive)
@@ -473,13 +478,14 @@ const tabs = [
     window.addEventListener("hashchange", updateSection, { signal })
     for (const [index, link] of links.entries()) {
       link.addEventListener("keydown", event => {
-        const next = {
+        const tabKeys: Partial<Record<string, number>> = {
           ArrowLeft: (index + links.length - 1) % links.length,
           ArrowRight: (index + 1) % links.length,
           Home: 0,
           End: links.length - 1,
           " ": index,
-        }[event.key]
+        }
+        const next = tabKeys[event.key]
         if (next === undefined) return
         event.preventDefault()
         links[next]?.focus()

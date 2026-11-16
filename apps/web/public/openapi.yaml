@@ -5164,7 +5164,7 @@ paths:
           in: query
           schema:
             type: string
-          description: List Routines in an existing Area.
+          description: List Routines in an existing Area, or use default for unassigned Routines.
       responses:
         "200":
           description: Routines list

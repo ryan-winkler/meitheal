@@ -1592,7 +1592,7 @@
         "properties": {
           "area_id": {
             "type": "string",
-            "description": "List Routines in an existing Area."
+            "description": "List Routines in an existing Area, or use default for unassigned Routines."
           }
         }
       }

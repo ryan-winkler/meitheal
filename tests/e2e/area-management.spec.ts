@@ -63,7 +63,10 @@ test("Area options open the editor and save within Home Assistant ingress", asyn
     await expect(settingsTab).toHaveAttribute("aria-selected", "true")
     await settingsTab.press("Home")
     await expect(tabs.getByRole("tab", { name: /Overview/ })).toBeFocused()
-    await expect(page.getByRole("tabpanel", { name: /Overview/ })).toBeVisible()
+    const overview = page.getByRole("tabpanel", { name: /Overview/ })
+    await expect(overview).toBeVisible()
+    await overview.getByRole("link", { name: /Projects/ }).press("Enter")
+    await expect(page.getByRole("tabpanel", { name: /Projects/ })).toBeFocused()
     await settingsTab.click()
 
     const missing = await context.request.get(appUrl + "/areas/nonexistent", { maxRedirects: 0 })
@@ -104,6 +107,14 @@ test("Area options open the editor and save within Home Assistant ingress", asyn
       headers: { origin }, data: { name: "Unassigned Routine", area_id: "default" },
     })
     expect(unassigned.status()).toBe(201)
+    const { id: unassignedId } = await unassigned.json()
+    const unassignedList = await context.request.get(appUrl + "/api/habits?area_id=default")
+    expect(unassignedList.status()).toBe(200)
+    expect((await unassignedList.json()).habits).toContainEqual(expect.objectContaining({ id: unassignedId }))
+    const unassignedCompletion = await context.request.post(appUrl + "/api/habits", {
+      headers: { origin }, data: { action: "complete", templateId: unassignedId },
+    })
+    expect(unassignedCompletion.status()).toBe(200)
     await page.goto(appUrl + "/habits?new=1")
     await expect(page.getByRole("dialog", { name: "New Routine" }).getByLabel("Area")).toHaveValue("default")
   } finally {

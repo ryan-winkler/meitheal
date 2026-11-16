@@ -1714,7 +1714,7 @@ const paths = {
 
   // ── Habits ──
   "/api/habits": {
-    get: { operationId: "listHabits", tags: ["Habits"], summary: "List routine templates and streaks", parameters: [{ name: "area_id", in: "query", schema: { type: "string" }, description: "List Routines in an existing Area." }], responses: { 200: { description: "Routines list" } } },
+    get: { operationId: "listHabits", tags: ["Habits"], summary: "List routine templates and streaks", parameters: [{ name: "area_id", in: "query", schema: { type: "string" }, description: "List Routines in an existing Area, or use default for unassigned Routines." }], responses: { 200: { description: "Routines list" } } },
     post: {
       operationId: "createHabit", tags: ["Habits"], summary: "Manage a Routine",
       description: "Create with a name and optional area_id. Send templateId for complete, update, or delete.",

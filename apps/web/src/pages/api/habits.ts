@@ -29,7 +29,7 @@ export const GET: APIRoute = async ({ url }) => {
     await ensureSchema()
     const client = getPersistenceClient()
     const areaId = url.searchParams.get("area_id")
-    if (areaId !== null && !await new HierarchyRepository(client).findAreaById(areaId)) {
+    if (areaId !== null && areaId !== "default" && !await new HierarchyRepository(client).findAreaById(areaId)) {
       return apiError("Area not found", 404)
     }
     const habits = await new TemplateRepository(client).getRoutinesWithStats(areaId ?? undefined)
