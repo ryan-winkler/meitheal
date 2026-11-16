@@ -193,6 +193,51 @@ test("staging both channels uses the reviewed AppArmor policy", () => {
   }
 })
 
+test("0.0.2 replaces only the temporary Stable Store entry or a valid Stable predecessor", () => {
+  const fixture = mkdtempSync(join(tmpdir(), "meitheal-stable-cutover-"))
+  try {
+    const source = join(fixture, "source")
+    const destination = join(fixture, "store")
+    mkdirSync(join(source, "scripts"), { recursive: true })
+    mkdirSync(join(destination, ".git"), { recursive: true })
+    copyFileSync(join(root, "scripts/app-release.mjs"), join(source, "scripts/app-release.mjs"))
+    for (const directory of ["meitheal-hub", "meitheal-hub-canary"]) {
+      cpSync(join(root, directory), join(source, directory), { recursive: true })
+    }
+    const stablePath = "meitheal-hub/config.yaml"
+    const desired = stableManifest.replace(/^version: ".*"$/m, 'version: "0.0.2"')
+    writeFileSync(join(source, stablePath), desired)
+    mkdirSync(join(destination, "meitheal-hub"))
+    const temporary = [
+      'version: "fec6e08e09f3"',
+      'slug: "meitheal"',
+      "stage: experimental",
+      'image: "ghcr.io/coolock-village/meitheal-canary-{arch}"',
+    ].join("\n") + "\n"
+    const stage = (current: string) => {
+      writeFileSync(join(destination, stablePath), current)
+      return spawnSync(process.execPath, [join(source, "scripts/app-release.mjs"), "stage", "stable", "0.0.2", destination], {
+        encoding: "utf8",
+      })
+    }
+    for (const invalid of [
+      temporary.replace("fec6e08e09f3", "abcdef123456"),
+      temporary.replace("experimental", "stable"),
+      temporary.replace("meitheal-canary-{arch}", "unrelated-{arch}"),
+      'version: "0.0.3"\n',
+    ]) {
+      expect(stage(invalid).stderr).toContain("would move backwards")
+      expect(readFileSync(join(destination, stablePath), "utf8")).toBe(invalid)
+    }
+    const result = stage(temporary)
+    expect(result.status, result.stderr).toBe(0)
+    expect(readFileSync(join(destination, stablePath), "utf8")).toBe(desired)
+    expect(stage(desired).status).toBe(0)
+  } finally {
+    rmSync(fixture, { recursive: true, force: true })
+  }
+})
+
 test("staging rejects destination links outside the App repository", () => {
   const fixture = mkdtempSync(join(tmpdir(), "meitheal-release-"))
   try {

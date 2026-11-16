@@ -50,6 +50,8 @@ The [Stable workflow](../../.github/workflows/publish-addon-images.yml) builds a
 
 For stable, a fresh runner with an empty Docker configuration pulls both versioned images from GHCR and compares their digests with the build job outputs. It uses the App repository credential to commit the manifest, docs and assets with both digests in the commit message. Stable promotion rejects a version lower than the advertised version.
 
+The App Store temporarily served the verified Canary `fec6e08e09f3` under the Stable slug `meitheal`. Stable `0.0.2` replaces that specific experimental catalog entry with the regular Stable image family after both versioned Stable images pass verification. The version guard still rejects other non-semver entries and Stable downgrades. Back up the installed App before moving from the temporary entry.
+
 The [Canary workflow](../../.github/workflows/publish-canary-images.yml) runs the same build and smoke test on both native architectures. It uses local image tags and has no package permissions or App repository credential. Build results are recorded in Actions. Use the release-host procedure below for retained images, hardware qualification and publication.
 
 Before Green qualification, verify that both exact images have Alpine zlib version `1.4-r0` or later installed. The runtime Dockerfile enforces that minimum even when the Home Assistant base is cached. [Alpine security tracker](https://security.alpinelinux.org/vuln/CVE-2026-4738)
