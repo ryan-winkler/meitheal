@@ -84,7 +84,7 @@ async function validateCommittedTaskSchema(tx) {
   const pending = boardMigrations.filter(name => !ledger.has(name))
   if (pending.length > 0) throw new Error(`Pending migrations: ${pending.join(", ")}`)
   await validateTaskMigrationShape(tx, true)
-  await validateTaskBoardUpgrade(tx)
+  await validateTaskBoardUpgrade(tx, { namedStorage: await readBoardAccessMigrationState(tx) })
 }
 
 /** @param {Transaction} tx @param {{ allowPending?: boolean }} [options] */

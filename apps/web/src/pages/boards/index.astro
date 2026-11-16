@@ -1,0 +1,87 @@
+---
+import Layout from "../../layouts/Layout.astro"
+import "../../styles/boards.css"
+import { boardViewKey, readBoardDirectory } from "@lib/board-view"
+import { boardSessionProof, currentBoardUser } from "@lib/named-board-request"
+
+const user = await currentBoardUser(Astro.locals, Astro.request.signal)
+const directory = user ? await readBoardDirectory(user.actor) : null
+const snapshot = user && directory ? boardViewKey(directory, user.actor.id) : undefined
+---
+<Layout title="Boards">
+  <span slot="page-title">Boards</span>
+  <div class="boards-workspace">
+    <header class="boards-heading">
+      <div>
+        <h1>Boards</h1>
+        <p>Open a Board to work on its tickets.</p>
+      </div>
+      <a class="btn btn-ghost" href="/planning#spaces">Areas &amp; Projects</a>
+    </header>
+
+    <section class="boards-list" aria-label="Household">
+      <a class="board-tile" href="/tasks">
+        <span class="board-name">Household</span>
+        <span class="board-note">Shared tasks and workflows</span>
+      </a>
+    </section>
+
+    {!user && <p>Open Meitheal through Home Assistant to use private Boards.</p>}
+    {user && directory && <div data-board-directory data-board-verify="/api/boards" data-board-key={snapshot}
+      data-board-session={boardSessionProof(user.actor.id)}>
+      <section class="named-boards" aria-labelledby="private-heading">
+        <header class="boards-heading">
+          <div>
+            <h2 id="private-heading">Your Boards</h2>
+            <p>Each Board has its own members and permissions.</p>
+          </div>
+          <details class="board-add">
+            <summary class="btn btn-primary">New Board</summary>
+            <form data-board-form="create" class="board-form">
+              <label>Board name <input name="name" required maxlength="100" autocomplete="off" /></label>
+              <p role="status" data-board-feedback></p>
+              <button type="submit" class="btn btn-primary">Create Board</button>
+            </form>
+          </details>
+        </header>
+        {directory.boards.length ? <div class="boards-list">
+          {directory.boards.map(board => <article class="board-tile">
+            <a class="board-name" href={`/boards/${encodeURIComponent(board.id)}`}>{board.name}</a>
+            <span class="board-note">{board.state === "archived" ? "Archived" : board.role}</span>
+            <form data-board-form="sidebar" data-board-id={board.id} class="board-preference">
+              <input type="hidden" name="hidden" value={board.hidden ? "false" : "true"} />
+              <button type="submit" class="btn btn-ghost">{board.hidden ? "Show in my sidebar" : "Hide from my sidebar"}</button>
+              <span role="status" data-board-feedback></span>
+            </form>
+          </article>)}
+        </div> : <p class="board-empty">Create a Board for work with a different group of people.</p>}
+      </section>
+
+      {directory.destinations.length > 0 && <section class="named-boards" aria-labelledby="send-heading">
+        <h2 id="send-heading">Send a task</h2>
+        <form data-board-form="send" class="board-form board-send">
+          <label>Destination
+            <select name="destination" required>
+              {directory.destinations.map(destination => <option value={destination.id} data-recipient={destination.acceptsAssignment ? "true" : undefined}>{destination.label}</option>)}
+            </select>
+          </label>
+          <label>Title <input name="title" required maxlength="500" autocomplete="off" /></label>
+          <label>Details <textarea name="description" maxlength="10000" rows="3"></textarea></label>
+          <label class="check" data-board-recipient><input name="assign" type="checkbox" /> Assign to the recipient</label>
+          <p role="status" data-board-feedback></p>
+          <div class="board-form-actions">
+            <button type="submit" class="btn btn-primary">Send task</button>
+            <button type="button" class="btn btn-ghost" data-new-submission hidden>Start a new submission</button>
+          </div>
+        </form>
+      </section>}
+    </div>}
+    <p hidden data-board-expired role="status">Your Board view changed. <button type="button" class="btn btn-ghost" data-board-refresh>Refresh Boards</button></p>
+  </div>
+</Layout>
+
+<script>
+  import { pageLifecycle } from "@lib/page-lifecycle"
+  import { bindBoardPage } from "@lib/boards-page"
+  pageLifecycle.onPageLoad(bindBoardPage)
+</script>

@@ -17,14 +17,6 @@ test.beforeEach(async () => {
   marker = join(directory, "meitheal-board-grants.json")
   process.env.MEITHEAL_DB_URL = `file:${join(directory, "meitheal.db")}`
   await ensureSchema()
-  // Production still denies named writes. Simulate the successor only on this disposable database.
-  await getPersistenceClient().batch([
-    "DROP TRIGGER task_boards_household_v19_insert",
-    "DROP TRIGGER task_boards_household_v19_update",
-    "DROP TRIGGER tasks_household_v19_insert",
-    "DROP TRIGGER tasks_household_v19_update",
-    "DROP TRIGGER kanban_lanes_household_v19_insert",
-  ], "write")
 })
 
 test.afterEach(async () => {

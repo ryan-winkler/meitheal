@@ -552,3 +552,7 @@ Household task lists, Project counts, direct ticket routes, task exports routine
 ### Board access storage
 
 Schema 21 records ownership for Areas, Projects, Goals and Pillars. It adds named Board grants, personal sidebar preferences and shares pinned to the Area and its receiving Board. Existing planning records stay in Household. A shared Goal shows the Goal title and counts for eligible Projects. A missing or mismatched grant revision hides all shared Goal data. Home Assistant App backups omit the revision marker. Restore access through the approved Board owner recovery procedure before exposing named records.
+
+### Named Board access
+
+Use [Named Boards](./named-boards.md) to verify owner, member, viewer and send-only journeys after a schema upgrade. Exercise an active Home Assistant administrator outside the Board as well as a member with completion and deletion denied. Use [Home Assistant backups and restore](./home-assistant-backup-and-restore.md) for revision mismatches and App restore. Confirm that an interrupted live revision publication recovers and that a restored revision remains closed pending verified recovery.

@@ -1,3 +1,4 @@
+import { applyNamedBoardStoragePhase } from "./task-board-household.mjs"
 import { matchesSql } from "./board-storage-schema.mjs"
 
 export const BOARD_ACCESS_SCHEMA_VERSION = 21
@@ -143,6 +144,7 @@ export async function applyBoardAccessMigration(tx) {
       CHECK (owner_board_id IS NULL OR owner_board_id <> 'household')`)
   }
   await tx.batch(Object.values(objects))
+  await applyNamedBoardStoragePhase(tx)
   const now = Date.now()
   await tx.batch([
     { sql: "INSERT INTO main.__meitheal_migrations (name, applied_at) VALUES (?, ?)", args: [BOARD_ACCESS_MIGRATION, now] },

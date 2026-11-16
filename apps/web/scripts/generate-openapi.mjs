@@ -595,7 +595,79 @@ const inactivityObject = (properties) => ({
 })
 const inactivityPolicy = inactivityObject({ days: inactivityDays, revision: inactivityRevision })
 
+const boardIdParam = { name: "id", in: "path", required: true, schema: { type: "string" } }
+const boardTicketParam = { name: "ticket", in: "path", required: true, schema: { type: "string" } }
+const boardSessionParam = { name: "X-Meitheal-Board-Session", in: "header", required: true, schema: { type: "string" } }
+const boardJson = properties => ({
+  required: true,
+  content: { "application/json": { schema: { type: "object", properties } } },
+})
+const boardString = { type: "string" }
+const boardBoolean = { type: "boolean" }
+const boardVersion = { type: "integer" }
+const boardOperation = (operationId, summary, parameters, responses, requestBody) => ({
+  operationId, summary, tags: ["Boards"], parameters, responses,
+  ...(requestBody ? { requestBody } : {}),
+})
+const boardUnavailable = { description: "Board, ticket, or destination unavailable" }
+
 const paths = {
+  "/api/boards": {
+    get: boardOperation("listPrivateBoards", "List Boards and send destinations for the current Home Assistant user", [], {
+      200: { description: "Accessible Boards, personal sidebar preferences, and authorized send destinations. Response includes the Board session header." },
+      403: { description: "A current Home Assistant session is required" },
+    }),
+    head: boardOperation("verifyBoardDirectory", "Verify the current Board directory projection", [], { 200: { description: "The current projection hash and session are in the response headers" } }),
+    post: boardOperation("createPrivateBoard", "Create a Board owned by the current Home Assistant user", [boardSessionParam], {
+      201: { description: "The owned Board ID" }, 202: { description: "The Board was saved, and access verification is pending" }, 503: { description: "Board access is locked" },
+    }, boardJson({ name: boardString })),
+  },
+  "/api/boards/{id}": {
+    get: boardOperation("getPrivateBoard", "Read a Board and a page of its tickets", [boardIdParam, { name: "offset", in: "query", schema: boardVersion }], {
+      200: { description: "Authorized Board, lanes, tickets and eligible owner settings" }, 404: boardUnavailable,
+    }),
+    head: boardOperation("verifyPrivateBoard", "Verify the current Board view", [boardIdParam, { name: "offset", in: "query", schema: boardVersion }], {
+      200: { description: "The current projection hash and session are in the response headers" }, 404: boardUnavailable,
+    }),
+    patch: boardOperation("changePrivateBoard", "Change a personal sidebar preference or manage a Board's access", [boardIdParam, boardSessionParam], {
+      200: { description: "Saved" }, 404: boardUnavailable, 409: { description: "A Board must retain an active owner" },
+    }, boardJson({
+      action: { type: "string", enum: ["sidebar", "policy", "member"] }, hidden: boardBoolean,
+      denyCompletion: boardBoolean, denyDeletion: boardBoolean, denyAgentDeletion: boardBoolean,
+      memberId: boardString, role: { type: ["string", "null"], enum: ["owner", "member", "viewer", null] },
+    })),
+  },
+  "/api/boards/{id}/tickets": {
+    post: boardOperation("createPrivateBoardTicket", "Create a ticket in an authorized Board column", [boardIdParam, boardSessionParam], {
+      201: { description: "Created ticket identifier, reference and edit version" }, 403: { description: "Ticket creation or completion is denied" }, 404: boardUnavailable,
+    }, boardJson({ title: boardString, description: boardString, laneId: boardString, areaId: boardString, projectId: boardString, goalId: boardString })),
+  },
+  "/api/boards/{id}/tickets/{ticket}": {
+    patch: boardOperation("changePrivateBoardTicket", "Edit a ticket or move it to a Board column", [boardIdParam, boardTicketParam, boardSessionParam], {
+      200: { description: "New ticket version" }, 403: { description: "A required effect is denied" }, 404: boardUnavailable, 409: { description: "Ticket version is stale" },
+    }, boardJson({ version: boardVersion, title: boardString, description: boardString, laneId: boardString })),
+    delete: boardOperation("deletePrivateBoardTicket", "Delete a ticket when the current Board and actor allow deletion", [boardIdParam, boardTicketParam, boardSessionParam], {
+      200: { description: "Deleted" }, 403: { description: "Deletion is denied" }, 404: boardUnavailable, 409: { description: "Ticket version or relationship changed" },
+    }, boardJson({ version: boardVersion })),
+  },
+  "/api/boards/{id}/intakes": {
+    post: boardOperation("createPrivateBoardIntake", "Create a send-only destination for selected people", [boardIdParam, boardSessionParam], {
+      201: { description: "Destination created" }, 404: boardUnavailable,
+    }, boardJson({ label: boardString, laneId: boardString, senderIds: { type: "array", items: boardString }, recipientId: boardString })),
+    patch: boardOperation("changePrivateBoardIntake", "Enable or disable a send destination", [boardIdParam, boardSessionParam], {
+      200: { description: "Saved" }, 404: boardUnavailable,
+    }, boardJson({ id: boardString, enabled: boardBoolean })),
+  },
+  "/api/board-intake": {
+    get: boardOperation("listPrivateBoardIntakes", "List send-only destinations for the current user", [], {
+      200: { description: "Send aliases and their assignment options" }, 403: { description: "A current Home Assistant session is required" },
+    }),
+    post: boardOperation("submitPrivateBoardIntake", "Prepare or send a task without Board read access", [boardSessionParam], {
+      200: { description: "An opaque acknowledgment bound to the sender" }, 201: { description: "A sender-bound submission token expires after 24 hours" },
+      404: boardUnavailable, 409: { description: "The token was used with different content" }, 429: { description: "Sender limit reached" },
+    }, boardJson({ action: { type: "string", enum: ["prepare", "send"] }, id: boardString, token: boardString, title: boardString, description: boardString, assignToRecipient: boardBoolean })),
+  },
+
   "/api/feedback": {
     post: {
       operationId: "submitLocalFeedback",
@@ -2373,6 +2445,7 @@ const document = {
     { name: "Events", description: "Server-sent events for real-time updates" },
     { name: "HomeAssistant", description: "Home Assistant integration endpoints" },
     { name: "Integrations", description: "External integrations (n8n, Node-RED, Grocy, calendar)" },
+    { name: "Boards", description: "Named Home Assistant Board access and send-only capture" },
     { name: "Agents", description: "MCP and A2A agent protocol endpoints" },
     { name: "Auth", description: "Agent token management — zero-trust authorization for automations" },
   ],

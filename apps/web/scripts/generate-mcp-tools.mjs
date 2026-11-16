@@ -41,6 +41,9 @@ export const EXCLUDED_OPS = new Set([
   "readTaskDraft", "verifyTaskDraftContext", "writeTaskDraft",
   "checkPersonalPillarSession",
   "checkSharedGoalProjection",
+  "listPrivateBoards", "verifyBoardDirectory", "createPrivateBoard", "getPrivateBoard", "verifyPrivateBoard", "changePrivateBoard",
+  "createPrivateBoardTicket", "changePrivateBoardTicket", "deletePrivateBoardTicket",
+  "createPrivateBoardIntake", "changePrivateBoardIntake", "listPrivateBoardIntakes", "submitPrivateBoardIntake",
 ])
 
 /** Must match FRIENDLY_NAMES in apps/web/src/pages/api/mcp.ts */

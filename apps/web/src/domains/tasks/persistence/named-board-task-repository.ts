@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto"
 import type { Client, Transaction } from "@libsql/client"
 import { acquireWriteTransaction } from "../../../../scripts/database-client.mjs"
 import { isClosedStatus, isDoneStatus, normalizeStatus, STATUS } from "../../../lib/status-config"
-import { readBoardGrantRevision } from "./board-grant-fence"
+import { boardGrantStillCurrent, currentBoardGrantRevision, readBoardGrantRevision } from "./board-grant-fence"
 import { permitsBoardTaskAction, selectNamedBoardAccess, type BoardActor, type TaskBoardAction } from "./named-board-repository"
 import { canAdvanceTaskTimestampMs, nextTaskTimestampMs, taskTimestampMs } from "./task-timestamp"
 
@@ -50,6 +50,52 @@ export async function insertNamedTask(tx: Transaction, input: {
 /** Named ticket writes keep the Board grant, placement and task version in the same transaction. */
 export class NamedBoardTaskRepository {
   constructor(private readonly db: Client, private readonly markerPath?: string) {}
+
+  async view(actor: BoardActor, boardId: string, offset = 0) {
+    const revision = await currentBoardGrantRevision(this.db, this.markerPath)
+    if (!revision) return null
+    const tx = await this.db.transaction("read")
+    try {
+      const access = await selectNamedBoardAccess(tx, actor, revision, boardId)
+      if (!access) return null
+      const [lanes, tasks, members] = await tx.batch([
+        {
+          sql: "SELECT id, label, key FROM kanban_lanes WHERE board_id = ? ORDER BY position, id",
+          args: [boardId],
+        },
+        {
+          sql: `SELECT id, title, description, status, ticket_ref, board_column_id AS lane_id,
+              assigned_to, ${taskTimestampMs("updated_at")} AS version
+            FROM tasks WHERE task_board_id = ?
+            ORDER BY created_at DESC, id DESC LIMIT 51 OFFSET ?`,
+          args: [boardId, offset],
+        },
+        {
+          sql: `SELECT principal_id, role, deny_completion, deny_deletion
+            FROM board_access_grants WHERE board_id = ? AND principal_type = 'ha_user' AND ? = 'owner'
+            ORDER BY principal_id`,
+          args: [boardId, access.role],
+        },
+      ])
+      if (!await boardGrantStillCurrent(this.db, revision, this.markerPath)) return null
+      return {
+        board: access,
+        lanes: lanes!.rows.map(lane => ({ id: String(lane.id), label: String(lane.label), key: String(lane.key) })),
+        tasks: tasks!.rows.slice(0, 50).map(task => ({
+          id: String(task.id), title: String(task.title), description: String(task.description ?? ""),
+          status: String(task.status), ticket: String(task.ticket_ref), laneId: String(task.lane_id),
+          assignedTo: typeof task.assigned_to === "string" ? task.assigned_to : null, version: Number(task.version),
+        })),
+        nextOffset: tasks!.rows.length > 50 ? offset + 50 : null,
+        members: members!.rows.map(member => ({
+          id: String(member.principal_id), role: String(member.role),
+          denyCompletion: member.deny_completion === 1, denyDeletion: member.deny_deletion === 1,
+        })),
+      }
+    } finally {
+      tx.close()
+    }
+  }
 
   async create(actor: BoardActor, boardId: string, content: NamedTaskContent, placement: NamedTaskPlacement) {
     return this.mutate(actor, boardId, "create", async (tx, allows) => {

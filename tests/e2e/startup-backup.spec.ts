@@ -548,13 +548,16 @@ test("Household task reads and cleanup exclude a named Board even by exact ID", 
   await db.execute(`INSERT INTO tasks (id, title, idempotency_key, request_id, ticket_number, created_at, updated_at)
     SELECT 'household-task', 'Household fixture', 'household-fixture', 'fixture', ticket_high_water + 1, 1, 1
     FROM task_boards WHERE id = 'household'`)
-  // A hypothetical successor removes these guards. Keep this storage disposable.
-  await db.execute("DROP TRIGGER task_boards_household_v19_insert")
-  await db.execute("DROP TRIGGER tasks_household_v19_insert")
-  await db.execute(`INSERT INTO task_boards (id, name, visibility, ticket_prefix, created_at, updated_at)
-    VALUES ('work-fixture', 'Work fixture', 'restricted', 'WFX', 1, 1)`)
-  await db.execute(`INSERT INTO tasks (id, title, task_board_id, area_id, status, idempotency_key, request_id, created_at, updated_at)
-    VALUES ('private-task', 'Private fixture', 'work-fixture', '__meitheal_no_area__', 'complete', 'private-fixture', 'fixture', 1, 1)`)
+  await db.batch([
+    `INSERT INTO task_boards (id, name, visibility, ticket_prefix, created_at, updated_at)
+      VALUES ('work-fixture', 'Work fixture', 'restricted', 'WORKABCD', 1, 1)`,
+    `INSERT INTO kanban_lanes (id, key, label, board_id, created_at, updated_at)
+      VALUES ('work-done', 'complete', 'Done', 'work-fixture', 1, 1)`,
+    `INSERT INTO tasks (id, title, task_board_id, board_column_id, ticket_ref, area_id, status,
+      idempotency_key, request_id, created_at, updated_at)
+      VALUES ('private-task', 'Private fixture', 'work-fixture', 'work-done', 'WORKABCD-1',
+        '__meitheal_no_area__', 'complete', 'private-fixture', 'fixture', 1, 1)`,
+  ], "write")
 
   const listing = await repo.findAll({ limit: 1 })
   expect(listing.total).toBe(1)

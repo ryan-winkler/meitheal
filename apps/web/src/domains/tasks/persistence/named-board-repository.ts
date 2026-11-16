@@ -16,6 +16,7 @@ interface BoardAccess {
   state: "active" | "archived"
   denyCompletion: boolean
   denyDeletion: boolean
+  policy?: { denyCompletion: boolean; denyDeletion: boolean; denyAgentDeletion: boolean }
 }
 
 const base32Symbols = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
@@ -53,7 +54,9 @@ export async function selectNamedBoardAccess(
     sql: `SELECT board.id, board.name, board.state, access.role,
         (policy.deny_completion OR access.deny_completion) AS deny_completion,
         (policy.deny_deletion OR access.deny_deletion OR
-          (access.principal_type = 'agent' AND policy.deny_agent_deletion)) AS deny_deletion
+          (access.principal_type = 'agent' AND policy.deny_agent_deletion)) AS deny_deletion,
+        policy.deny_completion AS board_deny_completion, policy.deny_deletion AS board_deny_deletion,
+        policy.deny_agent_deletion AS board_deny_agent_deletion
       FROM task_boards AS board
       JOIN board_access_grants AS access ON access.board_id = board.id
       JOIN board_permissions AS policy ON policy.board_id = board.id
@@ -66,6 +69,10 @@ export async function selectNamedBoardAccess(
   return {
     id: String(row.id), name: String(row.name), state: row.state as BoardAccess["state"],
     role: row.role as BoardRole, denyCompletion: row.deny_completion === 1, denyDeletion: row.deny_deletion === 1,
+    ...(row.role === "owner" ? { policy: {
+      denyCompletion: row.board_deny_completion === 1, denyDeletion: row.board_deny_deletion === 1,
+      denyAgentDeletion: row.board_deny_agent_deletion === 1,
+    } } : {}),
   }
 }
 
@@ -78,6 +85,30 @@ export class NamedBoardRepository {
     if (!revision) return null
     const access = await selectNamedBoardAccess(this.db, actor, revision, id)
     return await boardGrantStillCurrent(this.db, revision, this.markerPath) ? access : null
+  }
+
+  async findDirectory(actor: BoardActor) {
+    const revision = await currentBoardGrantRevision(this.db, this.markerPath)
+    if (!revision) return []
+    const { rows } = await this.db.execute({
+      sql: `SELECT board.id, board.name, board.state, access.role,
+          CASE WHEN preference.ha_user_id IS NULL THEN 0 ELSE 1 END AS hidden
+        FROM task_boards AS board
+        JOIN board_access_grants AS access ON access.board_id = board.id
+        JOIN board_permissions AS policy ON policy.board_id = board.id
+        LEFT JOIN board_sidebar_preferences AS preference ON preference.board_id = board.id
+          AND access.principal_type = 'ha_user' AND preference.ha_user_id = access.principal_id
+        WHERE board.id <> 'household' AND board.state IN ('active', 'archived')
+          AND access.principal_type = ? AND access.principal_id = ?
+          AND EXISTS (SELECT 1 FROM board_access_epoch WHERE singleton = 1 AND revision = ?)
+        ORDER BY board.name COLLATE NOCASE, board.id`,
+      args: [actor.kind, actor.id, revision],
+    })
+    if (!await boardGrantStillCurrent(this.db, revision, this.markerPath)) return []
+    return rows.map(row => ({
+      id: String(row.id), name: String(row.name), state: row.state as BoardAccess["state"],
+      role: row.role as BoardRole, hidden: row.hidden === 1,
+    }))
   }
 
   /** The caller verifies that the creator is the current active Home Assistant user. */

@@ -2,7 +2,7 @@ import { createHash, randomBytes, randomUUID } from "node:crypto"
 import type { Client, Transaction } from "@libsql/client"
 import { acquireWriteTransaction } from "../../../../scripts/database-client.mjs"
 import { normalizeStatus, STATUS } from "../../../lib/status-config"
-import { changeBoardGrants, currentBoardGrantRevision, readBoardGrantRevision } from "./board-grant-fence"
+import { boardGrantStillCurrent, changeBoardGrants, currentBoardGrantRevision, readBoardGrantRevision } from "./board-grant-fence"
 import { selectNamedBoardAccess, type BoardActor } from "./named-board-repository"
 import { insertNamedTask } from "./named-board-task-repository"
 
@@ -20,6 +20,27 @@ interface Submission {
 
 export class BoardIntakeRepository {
   constructor(private readonly db: Client, private readonly markerPath?: string) {}
+
+  async findDestinations(actor: BoardActor) {
+    const revision = await currentBoardGrantRevision(this.db, this.markerPath)
+    if (!revision) return []
+    const { rows } = await this.db.execute({
+      sql: `SELECT intake.id, intake.label, intake.recipient_user_id AS recipient, lane.key
+        FROM board_intake_senders AS access
+        JOIN board_intakes AS intake ON intake.id = access.intake_id AND intake.enabled = 1
+        JOIN task_boards AS board ON board.id = intake.board_id AND board.state = 'active'
+        JOIN board_permissions AS policy ON policy.board_id = board.id
+        JOIN kanban_lanes AS lane ON lane.id = intake.lane_id AND lane.board_id = board.id
+        WHERE access.sender_kind = ? AND access.sender_id = ?
+          AND EXISTS (SELECT 1 FROM board_access_epoch WHERE singleton = 1 AND revision = ?)
+        ORDER BY intake.label COLLATE NOCASE, intake.id`,
+      args: [actor.kind, actor.id, revision],
+    })
+    if (!await boardGrantStillCurrent(this.db, revision, this.markerPath)) return []
+    return rows.filter(row => triageStatus(String(row.key))).map(row => ({
+      id: String(row.id), label: String(row.label), acceptsAssignment: typeof row.recipient === "string",
+    }))
+  }
 
   /** Configure an audience that can send work without reading the Board. */
   async create(ownerId: string, boardId: string, input: {

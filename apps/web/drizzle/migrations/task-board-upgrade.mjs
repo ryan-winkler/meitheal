@@ -3,8 +3,8 @@ import { applyTaskBoardStorage, taskBoardStorageObjectNames, validateTaskBoardSt
 import { assertNoInboundReferences } from "./board-storage-schema.mjs"
 import { applyTaskBoardDraftStorage, taskBoardDraftStagingNames, validateTaskBoardDraftStorage } from "./task-board-drafts.mjs"
 import {
-  applyTaskBoardHouseholdPhase, taskBoardHouseholdObjectNames, taskBoardHouseholdTriggerNames,
-  validateTaskBoardHouseholdPhase,
+  applyTaskBoardHouseholdPhase, namedBoardPhaseTriggerNames, taskBoardHouseholdObjectNames, taskBoardHouseholdTriggerNames,
+  validateNamedBoardStoragePhase, validateTaskBoardHouseholdPhase,
 } from "./task-board-household.mjs"
 import { applyTaskBoardTicketAllocator, taskBoardTicketTriggerNames, validateTaskBoardTicketAllocator } from "./task-board-tickets.mjs"
 import { validateTaskActivityTriggers } from "./task-activity-schema.mjs"
@@ -106,13 +106,15 @@ export async function readTaskBoardMigrationState(db) {
   return state.value
 }
 
-export async function validateTaskBoardUpgrade(db) {
+export async function validateTaskBoardUpgrade(db, { namedStorage = false } = {}) {
   if (await readTaskBoardMigrationState(db) !== "household-v19") throw new Error("The Household Board upgrade is pending")
   await assertNoInboundReferences(db, tables)
-  await validateTaskBoardStorage(db, taskBoardHouseholdTriggerNames)
-  await validateTaskBoardDraftStorage(db, taskBoardHouseholdTriggerNames)
+  const allowedTriggers = namedStorage ? namedBoardPhaseTriggerNames : taskBoardHouseholdTriggerNames
+  await validateTaskBoardStorage(db, allowedTriggers)
+  await validateTaskBoardDraftStorage(db, allowedTriggers)
   await validateTaskBoardTicketAllocator(db)
-  await validateTaskBoardHouseholdPhase(db)
+  if (namedStorage) await validateNamedBoardStoragePhase(db)
+  else await validateTaskBoardHouseholdPhase(db)
 }
 
 /** The caller owns commit/rollback, and must have already prepared the v18 schema and ledger. */
