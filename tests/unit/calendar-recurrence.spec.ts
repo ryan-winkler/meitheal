@@ -580,8 +580,6 @@ test("isDueOverdue normalizes timed inputs before comparing household days in Au
   const now = Date.parse("2026-11-15T12:00:00Z")
   const today = "2026-11-16"
   for (const due of [
-    "2026-11-15T23:00:00",
-    "2026-11-15 23:00:00",
     "2026-11-15T23:00:00Z",
     "2026-11-16T12:00:00+13:00",
     String(Date.parse("2026-11-15T23:00:00Z")),
@@ -589,6 +587,15 @@ test("isDueOverdue normalizes timed inputs before comparing household days in Au
     expect(isDueOverdue(due, timezone, today, now), due).toBe(false)
     expect(isDueOverdue(due, timezone, today, Date.parse("2026-11-15T23:30:00Z")), due).toBe(true)
   }
+  // A time without an offset is household wall-clock time, as every other date view reads it:
+  // 12:00 on the 16th in Auckland is 23:00Z on the 15th.
+  for (const due of ["2026-11-16T12:00:00", "2026-11-16 12:00:00"]) {
+    expect(isDueOverdue(due, timezone, today, now), due).toBe(false)
+    expect(isDueOverdue(due, timezone, today, Date.parse("2026-11-15T23:30:00Z")), due).toBe(true)
+  }
+  // Read as UTC, 23:00 on the 15th would already be overdue on the 16th in Auckland; read as
+  // household time it is yesterday evening and overdue, and the day views agree.
+  expect(isDueOverdue("2026-11-15T23:00:00", timezone, today, now)).toBe(true)
   expect(isDueOverdue("2026-11-15", timezone, today, now)).toBe(true)
   expect(isDueOverdue("2026-11-16", timezone, today, now)).toBe(false)
 })

@@ -30,8 +30,8 @@ import { openTaskDependencies } from "./task-dependencies"
 
 /**
  * A date-only due date is overdue once its household calendar day has ended; a due
- * date with a time is overdue once that time passes (see `isDueOverdue`), the same rule
- * as the Home Assistant overdue sensor and the `task.overdue` event.
+ * date with a time is overdue once that time passes (see `isDueOverdue`). For times with
+ * a UTC offset this matches the Home Assistant overdue sensor and the `task.overdue` event.
  */
 function isTaskOverdueOnDay(
   dueDate: unknown,

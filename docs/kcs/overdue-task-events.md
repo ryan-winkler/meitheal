@@ -11,13 +11,14 @@ Each check records up to 100 episodes in the local event ledger before passing t
 
 To receive events in n8n, enable `task.overdue` in its event selection. An explicit empty selection delivers no events; an absent selection uses the defaults. Keep notification preferences separate from this domain event selection.
 
-<!-- coderabbit-ai-generated:v1 -->
+## When a task counts as overdue
 
-<!-- coderabbit-ai-generated-section:v1:241d1dd24c92cc03e87284a620ab06708ad1979637a1e39ccb2f69dc4901b5e1 -->
+A due date with a UTC offset (`2026-11-16T09:00:00Z`, `…+01:00`) becomes overdue at that instant for the `task.overdue` event, the Home Assistant overdue sensor and the Meitheal web views alike.
 
-Date-only deadlines become overdue after their household calendar day ends. Timed deadlines use the same normalized instant for both the household day and clock comparison; timestamps without an offset are interpreted as UTC. To check a cross-day case, use Pacific/Auckland just after midnight with an offset-less timestamp dated the previous UTC day whose instant is still in the future: it must remain current until that instant passes.
+Date-only due dates and times without an offset are not treated the same way everywhere yet:
 
-For a disposable verification dataset, start the app before creating a task with a near-future deadline. Let the deadline pass with reminders off and verify one `task.overdue` event. Restart and confirm the event is not repeated. Move the deadline into the future and let it pass again to verify a new episode. Confirm an empty n8n selection suppresses delivery. A local harness proves these contracts; native Home Assistant and subscriber receipt require separate environment checks.
+- **Meitheal web views** (Dashboard counter, Kanban Overdue filter, task views, Today): a date-only due date is overdue once its household calendar day has ended. A time without an offset is read in the household timezone.
+- **`task.overdue` event:** a date-only due date is overdue from 00:00 UTC on that date, and a time without an offset is read as UTC.
+- **Home Assistant overdue sensor:** a date-only due date counts as overdue from the start of that day, and a time without an offset is read in the Home Assistant host's timezone.
 
-
-<!-- /coderabbit-ai-generated:v1 -->
+To keep all three in step, give timed due dates an offset. For a disposable verification dataset, start the app before creating a task with a near-future deadline that has an offset. Let the deadline pass with reminders off and verify one `task.overdue` event. Restart and confirm the event is not repeated. Move the deadline into the future and let it pass again to verify a new episode. Confirm an empty n8n selection suppresses delivery. A local harness proves these contracts; native Home Assistant and subscriber receipt require separate environment checks.
