@@ -1,3 +1,4 @@
+import { saveNavigationState } from "@lib/ingress-state-persistence"
 import { pageLifecycle } from "@lib/page-lifecycle"
 import {
   buildCompanionNavigateUrl,
@@ -164,6 +165,7 @@ export function initSettingsShell(): void {
     event.preventDefault()
     if (location.hash !== link.hash) history.pushState(history.state, "", link.hash)
     showDestination(link.hash, true)
+    saveNavigationState()
   })
 
   pageLifecycle.on(window, "hashchange", () => showDestination(location.hash, true))

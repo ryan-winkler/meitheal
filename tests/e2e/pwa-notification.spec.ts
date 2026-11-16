@@ -88,10 +88,22 @@ test.describe("browser notification test in Settings", () => {
   test("delivers a browser notification through the App worker", async ({ page }) => {
     await allowNotifications(page)
     const send = await openTroubleshooting(page)
-    await page.waitForFunction(async scope => {
-      const registration = await navigator.serviceWorker.getRegistration(scope)
-      return registration?.scope === scope && registration.active?.state === "activated"
-    }, scope, { timeout: 5_000 })
+    // Poll the resolved worker state. waitForFunction treats an unresolved Promise as truthy.
+    await expect.poll(() => page.evaluate(async scope => {
+      const workers = navigator.serviceWorker
+      const registration = await workers.getRegistration(scope)
+      return {
+        scope: registration?.scope,
+        script: registration?.active?.scriptURL,
+        state: registration?.active?.state,
+        controller: workers.controller?.scriptURL,
+      }
+    }, scope), { timeout: 15_000 }).toEqual({
+      scope,
+      script: scope + "sw.js",
+      state: "activated",
+      controller: scope + "sw.js",
+    })
     expect(await notifications(page)).toEqual([])
     await send.click()
     await expect(page.locator("#pwa-notification-result")).toHaveText(/Test notification sent/)

@@ -126,7 +126,7 @@ Open a task and select **Copy task link**. If the browser cannot access the clip
 2. Repeat through Home Assistant. Confirm the URL keeps its ingress prefix and that the destination still requires Home Assistant access. Use Back and Forward to close and reopen the ordinary drawer. Modified clicks on task links open the ticket in another tab.
 3. Open old `/tasks?open=…` and `/tasks#task-MTH-…` links. Confirm they open the task at its ticket URL and restore the original view when closed. Pin and search drawers keep their existing return flow.
 4. Delete a disposable task and reopen its link. Confirm the unavailable message appears and **Close detail** returns to the Tasks view.
-5. Run `MEITHEAL_TEST_BROWSER=1 pnpm --filter @meitheal/tests test e2e/task-permalink.spec.ts` after building the web app.
+5. Run `MEITHEAL_TEST_BROWSER=1 pnpm --filter @meitheal/tests test e2e/task-permalink.spec.ts` after building the web app. Check the linked comment and focus in a fresh authorized tab while the App worker starts. The inspector requests independent lists and settings together after the task loads. Closing the inspector cancels those reads.
 
 The main ticket pane includes **Scoring & frameworks**. Choose RICE or another framework, enter estimates and select **Save score**. RICE retains the existing whole-percentage score scale. Reach 10, impact 2, confidence 80 and effort 0.5 produce 3200, matching Planning and task badges. Failed saves retain the estimates for retry. Reload to verify the saved evaluation and confirm other framework values remain intact.
 

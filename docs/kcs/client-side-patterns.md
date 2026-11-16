@@ -135,7 +135,7 @@ These are set during modal lifecycle and must be cleaned up on signal abort:
 
 ## Embedded navigation and generated controls
 
-Inside the same-origin Home Assistant panel, Meitheal keeps its current route in the outer address's `meitheal` query parameter. Opening that bookmark recreates the iframe at the saved route. Native page navigation and ticket history update the value. If Home Assistant reloads the iframe during a shortcut or Search jump, Meitheal keeps the pending destination, including its filters and section. Direct ingress tabs keep their normal page URL.
+Inside the same-origin Home Assistant panel, Meitheal keeps its current route in the outer address's `meitheal` query parameter. Opening that bookmark recreates the iframe at the saved route. Native page navigation and ticket history update the value. If Home Assistant reloads the iframe during a shortcut or Search jump, Meitheal keeps the pending destination, including its filters and section. A Settings hash jump stays in the current document and a later section choice immediately updates the saved route. Direct ingress tabs keep their normal page URL.
 
 Controls appended by client code outside an Astro component need global CSS selectors. Check generated menus with real pointer and keyboard input near the viewport edge. Moving focus into a menu should keep its options reachable.
 ## Confirmation and prompt text

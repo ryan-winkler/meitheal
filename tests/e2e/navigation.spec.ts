@@ -73,7 +73,9 @@ test.describe("Responsive Navigation", () => {
     await input.fill(name)
     await input.press("Enter")
     await expect(toggle).toHaveAccessibleName(name)
+    await expect(toggle).toHaveAttribute("data-area-name-label", name)
     await expect(menu).toHaveAccessibleName(new RegExp(name + "$"))
+    await expect(row.locator("[data-area-add]")).toHaveAccessibleName(`New project in ${name}`)
     await expect(toggle).toHaveAttribute("title", (initiallyExpanded ? "Collapse " : "Expand ") + name)
     await toggle.click()
     await expect(toggle).toHaveAttribute("title", (initiallyExpanded ? "Expand " : "Collapse ") + name)
@@ -98,11 +100,11 @@ test.describe("Responsive Navigation", () => {
         width: rect.width,
         height: rect.height,
         opacity: actionGroup ? getComputedStyle(actionGroup).opacity : "",
-        maxWidth: actionGroup ? getComputedStyle(actionGroup).maxWidth : "",
+        groupWidth: actionGroup?.getBoundingClientRect().width ?? 0,
       };
     });
     expect(metrics.opacity).toBe("1");
-    expect(metrics.maxWidth).toBe("none")
+    expect(metrics.groupWidth).toBeGreaterThanOrEqual(92)
     expect(metrics.width).toBeGreaterThanOrEqual(44);
     expect(metrics.height).toBeGreaterThanOrEqual(44);
   });

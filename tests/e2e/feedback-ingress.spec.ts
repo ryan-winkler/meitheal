@@ -350,7 +350,9 @@ coreTest("database download includes committed writes still in the WAL", async (
     const source = new DatabaseSync(dbPath)
     try {
       expect(source.prepare("PRAGMA journal_mode").get()).toMatchObject({ journal_mode: "wal" })
-      expect(source.prepare("PRAGMA wal_checkpoint(TRUNCATE)").get()).toMatchObject({ busy: 0, log: 0 })
+      const checkpoint = source.prepare("PRAGMA wal_checkpoint(TRUNCATE)")
+      // The fixture can finish startup database work after it starts answering health requests.
+      await expect.poll(() => checkpoint.get()).toMatchObject({ busy: 0, log: 0 })
       const title = "Committed WAL task"
       const created = await api.post(`${prefix}/api/tasks`, { headers: admin, data: { title } })
       expect(created.status()).toBe(201)
@@ -757,6 +759,23 @@ test("the service worker precaches inside ingress without opening inactive board
   } finally {
     await context.close()
   }
+})
+
+test("a Settings section chosen after a search jump is remembered inside ingress", async ({ page, context }) => {
+  await context.setExtraHTTPHeaders({})
+  await context.addCookies([{ name: "feedback-fixture", value: "admin", url: origin }])
+  await page.goto(origin + prefix + "/settings")
+  await page.locator("#settings-bar-search-launcher").click()
+  await page.locator('[data-scope="settings"]').click()
+  const search = page.locator("#search-hub-input")
+  await search.fill("theme")
+  await expect(page.locator(".search-hub-item.is-selected .search-hub-item-title")).toHaveText("Theme")
+  await search.press("Enter")
+  await expect(page.locator("#theme-select")).toBeFocused()
+  await page.locator('[data-settings-nav="navigation-settings"]').click()
+  await expect(page).toHaveURL(/\/settings#navigation-settings$/)
+  const saved = await page.evaluate(() => JSON.parse(sessionStorage.getItem("meitheal-navigation-state") ?? "null"))
+  expect(saved).toMatchObject({ path: "/settings#navigation-settings" })
 })
 
 test("ingress Settings keeps readable palettes and resolves Auto from the panel or system", async ({ page, context }) => {

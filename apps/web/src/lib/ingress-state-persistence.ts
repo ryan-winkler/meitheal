@@ -132,8 +132,11 @@ export function shouldRestore(
 
 /** Remember the destination while the old document is still firing lifecycle events. */
 export function saveNavigationDestination(path: string): void {
-  pendingDestination = { path: stripIngressPrefix(path), timestamp: Date.now() }
-  saveNavigationState(path, 0)
+  const route = stripIngressPrefix(path)
+  const sameDocument = typeof window !== "undefined" &&
+    route.split("#", 1)[0] === currentInternalRoute().split("#", 1)[0]
+  pendingDestination = sameDocument ? undefined : { path: route, timestamp: Date.now() }
+  saveNavigationState(route, 0)
 }
 
 let scrollTimer: ReturnType<typeof setTimeout> | null = null

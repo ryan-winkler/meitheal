@@ -4,7 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
-import { expect, test } from "@playwright/test"
+import { expect, test, type Page } from "@playwright/test"
 import { deferred } from "./_helpers"
 
 test("copies a stable task link and returns from a deleted task to the task view", async ({ page, request, baseURL }) => {
@@ -180,7 +180,8 @@ test("a task link preserves simulated ingress and opens in another authorized co
     const card = sourcePage.getByRole("link", { name: /^Task: Ingress task permalink round trip,/ })
     await card.press("Enter")
     const detail = sourcePage.getByRole("dialog", { name: `Task detail: ${title}` })
-    await expect(detail.locator("#td-title")).toHaveValue(title)
+    // Wait for the detail to finish loading its fields on a fresh ingress connection.
+    await expect(detail.locator("#td-title")).toHaveValue(title, { timeout: 10_000 })
     const copy = detail.getByRole("button", { name: "Copy task link" })
     await copy.press("Enter")
     const manual = sourcePage.getByLabel("Copy this task link manually")
@@ -253,8 +254,22 @@ test("a comment link focuses the edited comment through ingress and recovers aft
     const taskUrl = `${entry}/tickets/${id}`
     const commentApiPath = `/api/tasks/${id}/comments/${comment}`
 
+    const commentsUrl = entry + `/api/tasks/${id}/comments`
+    const openWithComments = async (page: Page, url: string, content: string) => {
+      const [commentsRead] = await Promise.all([
+        page.waitForResponse(
+          response => response.url() === commentsUrl && response.request().method() === "GET",
+          { timeout: 12_000 },
+        ),
+        page.goto(url),
+      ])
+      expect(commentsRead.status()).toBe(200)
+      expect(await commentsRead.json()).toMatchObject({
+        comments: expect.arrayContaining([expect.objectContaining({ id: comment, content })]),
+      })
+    }
     const sourcePage = await source.newPage()
-    await sourcePage.goto(taskUrl)
+    await openWithComments(sourcePage, taskUrl, "The linked comment")
     const list = sourcePage.locator("#td-comments")
     await expect(list).toContainText("The linked comment")
     const authorRow = sourcePage.locator(`#td-comment-${comment}`)
@@ -330,7 +345,7 @@ test("a comment link focuses the edited comment through ingress and recovers aft
     await expect(editor).toBeHidden()
 
     const page = await recipient.newPage()
-    await page.goto(href)
+    await openWithComments(page, href, "Edited linked comment")
     const target = page.locator(`#td-comment-${comment}`)
     await expect(target).toContainText("Edited linked comment")
     await expect(target).toBeFocused()
