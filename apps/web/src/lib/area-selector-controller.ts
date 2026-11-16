@@ -13,6 +13,7 @@ import { readTableFilterParams } from "./filter-state"
 import { renderIconOrCustomEmoji } from "./tabler-svg"
 
 const STORAGE_KEY = "meitheal-selected-area"
+export const CALENDAR_AREA_REQUEST_EVENT = "meitheal:calendar-area-request"
 
 interface AreaChangedDetail {
   areaId: string
@@ -130,11 +131,10 @@ export function initAreaSelector(signal: AbortSignal): void {
   }
 
   function selectArea(areaId: string, areaName: string, areaIcon: string, dispatch: boolean): void {
-    const changed = dispatch && new CustomEvent<AreaChangedDetail>("meitheal:area-changed", {
-      cancelable: calendar,
-      detail: { areaId, areaName, areaIcon },
-    })
-    if (changed && calendar && !document.dispatchEvent(changed)) return
+    const detail: AreaChangedDetail = { areaId, areaName, areaIcon }
+    if (dispatch && calendar && !document.dispatchEvent(new CustomEvent(CALENDAR_AREA_REQUEST_EVENT, {
+      cancelable: true, detail,
+    }))) return
 
     // Update trigger display
     labelEl!.textContent = areaName
@@ -154,7 +154,7 @@ export function initAreaSelector(signal: AbortSignal): void {
     // Sync all FilterToolbar area selects across views
     if (!table) syncFilterToolbarAreas(areaId)
 
-    if (changed && !calendar) document.dispatchEvent(changed)
+    if (dispatch) document.dispatchEvent(new CustomEvent("meitheal:area-changed", { detail }))
   }
 
   function syncFilterToolbarAreas(areaId: string): void {

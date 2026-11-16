@@ -349,7 +349,7 @@ test.describe("Calendar Shell", () => {
     const { id } = await created.json()
     try {
       const labels = Array.from({ length: 27 }, (_, index) => String(index).padStart(2, "0") + "x".repeat(497))
-      const params = new URLSearchParams({ view: "calendar", area: "" })
+      const params = new URLSearchParams({ view: "calendar", area: "", search: "search-with-room-to-shorten-".repeat(4) })
       params.set("labels", [...labels, ""].join(","))
       const lastLabelLength = 13_990 - ("/tasks?".length + params.toString().length)
       params.set("labels", [...labels, "y".repeat(lastLabelLength)].join(","))
@@ -365,6 +365,11 @@ test.describe("Calendar Shell", () => {
       await expect(trigger).toContainText("All Areas")
       await expect(all).toHaveAttribute("aria-selected", "true")
       expect(await page.evaluate(() => JSON.parse(localStorage.getItem("meitheal-selected-area") ?? "{}").areaId)).toBe("")
+
+      await page.getByRole("textbox", { name: "Filter by text" }).fill("")
+      await expect(page).toHaveURL(url => !url.searchParams.has("search") && url.searchParams.get("area") === "")
+      await expect(trigger).toContainText("All Areas")
+      await expect(all).toHaveAttribute("aria-selected", "true")
     } finally {
       await request.delete(`/api/areas/${id}`, { headers })
     }

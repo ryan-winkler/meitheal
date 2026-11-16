@@ -1,5 +1,5 @@
 import type { TaskKind } from "@meitheal/domain-tasks"
-import { getRememberedAreaId } from "@lib/area-selector-controller"
+import { CALENDAR_AREA_REQUEST_EVENT, getRememberedAreaId } from "@lib/area-selector-controller"
 import { readCalendarTaskFilters } from "@lib/calendar-task-filter"
 import { createClientLogger } from "@lib/client-logger"
 import { calendarDayFromInput, calendarEventLastDay, calendarOccurrenceStartKey, formatTimeInZone, normalizeCalendarEventSummary, shiftCalendarDay } from "@lib/date"
@@ -381,7 +381,7 @@ export function initCalendarPage(signal: AbortSignal): void {
       event.preventDefault()
     }
   }, { signal })
-  document.addEventListener("meitheal:area-changed", event => {
+  document.addEventListener(CALENDAR_AREA_REQUEST_EVENT, event => {
     const area = (event as CustomEvent<{ areaId: string }>).detail.areaId
     if (!applyFilters({ area })) event.preventDefault()
   }, { signal })
