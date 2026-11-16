@@ -35,13 +35,13 @@ Task detail and list reads retain saved urgency, importance, effort, NFC tag and
 
 ### Find and page shared labels
 
-**Settings → Workflow → Labels** shows up to 25 editable definitions at a time. **Search labels** searches saved names across all definitions, ignoring letter case and treating canonically equivalent Unicode alike. The range distinguishes matching definitions from the total. Clear search to return to the full list. Search becomes available after the complete list loads; use **Retry** if loading fails.
+**Settings → Tasks & Boards → Labels** shows up to 25 editable definitions at a time. **Search labels** searches saved names across all definitions, ignoring letter case and treating canonically equivalent Unicode alike. The range distinguishes matching definitions from the total. Clear search to return to the full list. Search becomes available after the complete list loads; use **Retry** if loading fails.
 
 Changing pages or search retains unsaved names, colours, row messages and pending writes for this page visit. Search uses the saved name until a rename succeeds. A save may finish while its row is on another page; its result is announced and appears when you return. Creation keeps the current page and search. Reloading or leaving Settings clears unsaved edits.
 
 ### Rename or delete a shared label
 
-In **Settings → Workflow → Labels**, edit the name or colour and choose **Save**. The label badge changes only after the write succeeds. If saving fails, the previous badge and your unsaved input remain so you can correct or retry the change. **Delete** asks for confirmation before removing the selected definition.
+In **Settings → Tasks & Boards → Labels**, edit the name or colour and choose **Save**. The label badge changes only after the write succeeds. If saving fails, the previous badge and your unsaved input remain so you can correct or retry the change. **Delete** asks for confirmation before removing the selected definition.
 
 Renaming updates matching current task, saved-draft and template label selections together. Matching ignores surrounding whitespace and letter case and treats canonically equivalent Unicode names alike. An ambiguous rename changes nothing: use a distinct name or remove the duplicate definition first. Deleting one equivalent definition retains shared name selections while another definition survives; deleting the final definition removes those selections. It preserves the tasks, drafts, templates and unrelated fields.
 
@@ -49,7 +49,7 @@ These shared changes require a currently verified Home Assistant administrator, 
 
 ### Review unused labels
 
-Open **Settings → Workflow → Labels**, then choose **Review unused labels** with a current Home Assistant administrator account. Select labels on the displayed page and choose **Remove selected labels**. The confirmation names every selected label. Changing pages clears the selection.
+Open **Settings → Tasks & Boards → Labels**, then choose **Review unused labels** with a current Home Assistant administrator account. Select labels on the displayed page and choose **Remove selected labels**. The confirmation names every selected label. Changing pages clears the selection.
 
 An unused label definition has no remaining task association or matching saved label name. Cleanup checks tasks in every Area, including deferred and completed work, plus private draft and template selections. It removes selected definitions only. Tasks, drafts and templates are preserved. A label that becomes used or changes after the preview requires another review before removal. Planned labels remain available until deliberately selected.
 

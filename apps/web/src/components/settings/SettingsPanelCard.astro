@@ -1,16 +1,21 @@
 ---
+import type { IconName } from "../../generated/icon-registry"
+import Icon from "../ui/Icon.astro"
+
 interface Props {
-  id?: string
+  id?: string | undefined
   title: string
   subtitle: string
-  tone?: "default" | "accent" | "danger"
-  padded?: boolean
+  icon?: IconName | undefined
+  tone?: "default" | "accent" | "danger" | undefined
+  padded?: boolean | undefined
 }
 
 const {
   id,
   title,
   subtitle,
+  icon,
   tone = "default",
   padded = true,
 } = Astro.props
@@ -21,7 +26,10 @@ const hasActions = Astro.slots.has("actions")
 <div id={id} class:list={["card", "settings-panel-card", `settings-panel-card--${tone}`]}>
   <div class="card-header settings-panel-card__header">
     <div class="settings-panel-card__heading">
-      <h3 class="card-title settings-panel-card__title">{title}</h3>
+      <h3 class="card-title settings-panel-card__title">
+        {icon && <Icon name={icon} size={18} sprite={true} />}
+        <span>{title}</span>
+      </h3>
       <div class="card-subtitle settings-panel-card__subtitle">{subtitle}</div>
     </div>
 

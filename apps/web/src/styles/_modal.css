@@ -12,15 +12,13 @@
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.6);
-  backdrop-filter: blur(4px);
-    -webkit-backdrop-filter: blur(4px);
+  background: rgba(0, 0, 0, 0.62);
   z-index: 200;
   display: none;
   align-items: center;
   justify-content: center;
   opacity: 0;
-    transition: opacity 0.2s ease;
+  transition: opacity 0.16s ease;
 }
 
 .modal-overlay.active {
@@ -40,9 +38,8 @@ dialog {
 }
 
 dialog::backdrop {
-  background: rgba(0, 0, 0, 0.4);
-  backdrop-filter: blur(4px);
-  animation: modalBackdropFadeIn 0.2s ease-out forwards;
+  background: rgba(0, 0, 0, 0.62);
+  animation: modalBackdropFadeIn 0.16s ease-out forwards;
 }
 
 .checklist-editor {
@@ -103,13 +100,13 @@ dialog::backdrop {
 
 dialog[open] .modal-content,
 .modal-overlay.active .modal-content {
-  animation: modalFadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: modalFadeIn 0.22s var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1)) forwards;
 }
 
 /* --- Animations --- */
 @keyframes modalBackdropFadeIn {
-  from { opacity: 0; backdrop-filter: blur(0px); }
-  to { opacity: 1; backdrop-filter: blur(4px); }
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 @keyframes modalFadeIn {
@@ -228,7 +225,7 @@ dialog[open] .modal-content,
 .modal-actions {
   display: flex;
   flex-shrink: 0;
-  background: var(--bg-surface);
+  background: var(--bg-card);
   z-index: 5;
 }
 
@@ -261,7 +258,7 @@ dialog[open] .modal-content,
 }
 
 .nt-footer {
-  border-top: 1px solid var(--border-dim);
+  border-top: 1px solid var(--border);
 }
 
 /* Unified toggle switch — replaces 3× duplicated inline Tailwind */
@@ -269,8 +266,8 @@ dialog[open] .modal-content,
   position: relative;
   width: 2.25rem;  /* 36px / w-9 */
   height: 1.25rem; /* 20px / h-5 */
-  background: var(--bg-input, rgba(0,0,0,0.15));
-  border: 1px solid var(--border-dim);
+  background: var(--bg-input, var(--bg-secondary));
+  border: 1px solid var(--border);
   border-radius: 9999px;
   transition: background-color 0.15s ease, border-color 0.15s ease;
   cursor: pointer;
@@ -305,8 +302,7 @@ dialog[open] .modal-content,
   display: flex;
   align-items: center;
   justify-content: center;
-  background-color: rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(4px);
+  background-color: rgba(0, 0, 0, 0.62);
   padding: 1rem;
 }
 
@@ -424,15 +420,48 @@ body:has(dialog[open], #meitheal-confirm-overlay, #meitheal-prompt-overlay) .sho
 
 /* Task Detail Specific Styling */
 #task-detail-panel {
-  background: var(--color-bg-primary);
-  border: 1px solid var(--color-border);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
   box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+  container-type: inline-size;
+  container-name: task-inspector;
 }
 
 #task-detail-panel header {
-  background: color-mix(in srgb, var(--color-bg-card) 85%, transparent);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border);
+}
+
+/* Docked Task Inspector (>= 1440px right workspace rail) */
+body.has-docked-inspector #task-detail-overlay {
+  position: fixed;
+  inset: auto;
+  top: var(--topbar-height, 0px);
+  right: 0;
+  bottom: 0;
+  left: auto;
+  width: 420px;
+  z-index: 35;
+  overflow-y: auto;
+  border-left: 1px solid var(--border);
+  background: var(--bg-card);
+  padding: 0;
+  align-items: stretch;
+  justify-content: stretch;
+}
+
+body.has-docked-inspector #task-detail-panel {
+  width: 100%;
+  max-width: 100%;
+  height: 100%;
+  max-height: none;
+  margin: 0 !important;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  transform: none;
+  opacity: 1;
+  animation: none;
 }
 
 /* --- Loading Skeleton Shimmer --- */
@@ -516,14 +545,14 @@ body:has(dialog[open], #meitheal-confirm-overlay, #meitheal-prompt-overlay) .sho
 }
 
 .nt-kind-pill.active {
-  background: color-mix(in srgb, var(--color-accent, #7c3aed) 16%, transparent);
-  border-color: color-mix(in srgb, var(--color-accent, #7c3aed) 30%, transparent);
-  color: var(--color-accent, #7c3aed);
+  background: color-mix(in srgb, var(--color-accent, #69e3b2) 14%, transparent);
+  border-color: color-mix(in srgb, var(--color-accent, #69e3b2) 32%, transparent);
+  color: var(--accent-text);
   font-weight: 600;
 }
 .nt-kind-pill.active svg {
   opacity: 1;
-  stroke: var(--color-accent, #7c3aed);
+  stroke: var(--accent-text);
 }
 
 /* --- NewTask Section Labels --- */
@@ -562,9 +591,9 @@ body:has(dialog[open], #meitheal-confirm-overlay, #meitheal-prompt-overlay) .sho
 }
 
 .nt-status-pill.active {
-  background: var(--accent-transparent, rgba(138, 180, 248, 0.15));
-  border: 1px solid var(--accent-transparent, rgba(138, 180, 248, 0.3));
-  color: var(--accent, #8ab4f8);
+  background: rgb(var(--accent-rgb) / 0.14);
+  border: 1px solid rgb(var(--accent-rgb) / 0.34);
+  color: var(--accent-text);
 }
 
 .nt-status-pill-icon {
@@ -598,19 +627,19 @@ body:has(dialog[open], #meitheal-confirm-overlay, #meitheal-prompt-overlay) .sho
   outline: none !important;
   box-shadow: none !important;
   border: none !important;
-  border-bottom: 1px solid color-mix(in srgb, var(--border-dim) 40%, transparent) !important;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent) !important;
   border-radius: 0 !important;
 }
 
 /* Feature cards (routine toggle, ai assist, custom fields) */
 .nt-feature-card {
-  border: 1px solid color-mix(in srgb, var(--border-dim) 40%, transparent);
-  background: color-mix(in srgb, var(--border-dim) 10%, transparent);
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
   border-radius: var(--radius-xl, 12px);
   transition: border-color 0.15s ease;
 }
 .nt-feature-card:hover {
-  border-color: color-mix(in srgb, var(--border-dim) 80%, transparent);
+  border-color: var(--border-focus);
 }
 
 /* Specific styling for the priority dot */
@@ -618,20 +647,20 @@ body:has(dialog[open], #meitheal-confirm-overlay, #meitheal-prompt-overlay) .sho
   text-shadow: 0 0 10px currentColor;
 }
 
-/* --- Mobile sidebar disclosure (F10) --- */
-@media (max-width: 767px) {
+/* --- Container-adaptive sidebar disclosure (F10 + Track D1) --- */
+@container task-inspector (max-width: 671px) {
   .td-sidebar-props {
     display: none;
   }
   .td-sidebar-props.td-sidebar-expanded {
     display: flex;
-    animation: sidebarSlideDown 0.22s ease-out forwards;
+    animation: sidebarSlideDown 0.16s ease-out forwards;
   }
   #td-sidebar-chevron.td-chevron-open {
     transform: rotate(180deg);
   }
 }
-@media (min-width: 768px) {
+@container task-inspector (min-width: 672px) {
   #td-sidebar-toggle { display: none !important; }
   .td-sidebar-props { display: flex !important; }
 }
@@ -648,7 +677,7 @@ body:has(dialog[open], #meitheal-confirm-overlay, #meitheal-prompt-overlay) .sho
 }
 
 /* Noscript fallback: show sidebar props when JS is unavailable */
-@media (max-width: 767px) {
+@container task-inspector (max-width: 671px) {
   noscript ~ .td-sidebar-props { display: flex !important; }
 }
 

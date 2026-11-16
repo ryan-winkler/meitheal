@@ -74,7 +74,7 @@ find_compose() {
     echo "podman compose"
   else
     err "No compose tool found. Install podman-compose:"
-    err "  pip install podman-compose"
+    err "  uv tool install podman-compose"
     err "  # or: brew install podman-compose"
     exit 1
   fi

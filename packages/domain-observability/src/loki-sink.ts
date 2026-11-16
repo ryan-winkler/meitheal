@@ -1,5 +1,19 @@
 /** Optional, process-wide best-effort transport. Stdout remains authoritative. */
-type Entry = { service: string; env: string; timestamp: string; line: string }
+type LokiStreamLabels = {
+  addon: "meitheal"
+  service: string
+  env: string
+  level: string
+  domain: string
+}
+type Entry = {
+  service: string
+  env: string
+  level: string
+  domain: string
+  timestamp: string
+  line: string
+}
 const queue: Entry[] = []
 const MAX_QUEUE = 200
 const BATCH_SIZE = 50
@@ -32,10 +46,21 @@ async function flush(): Promise<void> {
   if (!destination || sending) return
   const endpoint = destination
   const entries = queue.splice(0, BATCH_SIZE)
-  const streams = new Map<string, { stream: { service: string; env: string }; values: string[][] }>()
+  const streams = new Map<string, { stream: LokiStreamLabels; values: string[][] }>()
   for (const entry of entries) {
-    const key = JSON.stringify([entry.service, entry.env])
-    if (!streams.has(key)) streams.set(key, { stream: { service: entry.service, env: entry.env }, values: [] })
+    const key = JSON.stringify([entry.service, entry.env, entry.level, entry.domain])
+    if (!streams.has(key)) {
+      streams.set(key, {
+        stream: {
+          addon: "meitheal",
+          service: entry.service,
+          env: entry.env,
+          level: entry.level,
+          domain: entry.domain,
+        },
+        values: [],
+      })
+    }
     streams.get(key)!.values.push([entry.timestamp, entry.line])
   }
   sending = true
@@ -55,8 +80,15 @@ async function flush(): Promise<void> {
   }
 }
 
-/** Only pre-redacted log lines and static redacted service/env labels enter here. */
-export function enqueueLokiLog(line: string, service: string, env: string, timestamp: number): void {
+/** Only pre-redacted log lines and static bounded labels enter here. */
+export function enqueueLokiLog(
+  line: string,
+  service: string,
+  env: string,
+  timestamp: number,
+  level = "info",
+  domain = "system",
+): void {
   const option = process.env.LOKI_URL?.trim() ?? ""
   if (option !== configured) {
     configured = option
@@ -72,6 +104,13 @@ export function enqueueLokiLog(line: string, service: string, env: string, times
   }
   if (!destination) return
   if (queue.length >= MAX_QUEUE || Buffer.byteLength(line) > MAX_LINE_BYTES) { warn(); return }
-  queue.push({ line, service, env, timestamp: (BigInt(timestamp) * 1_000_000n).toString() })
+  queue.push({
+    line,
+    service,
+    env,
+    level,
+    domain,
+    timestamp: (BigInt(timestamp) * 1_000_000n).toString(),
+  })
   schedule()
 }

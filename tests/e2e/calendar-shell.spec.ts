@@ -55,32 +55,34 @@ test.describe("Calendar Shell", () => {
     expect(day).toMatch(/^\d{4}-\d{2}-\d{2}$/)
     expect(otherDay).toMatch(/^\d{4}-\d{2}-\d{2}$/)
 
-    const complete = await request.post("/api/tasks", {
-      data: { title: "Calendar completed task", status: "complete", due_date: day },
-    })
-    expect(complete.status(), await complete.text()).toBe(201)
-    const active = await request.post("/api/tasks", {
-      data: { title: "Calendar active task", status: "active", due_date: day },
-    })
-    expect(active.status(), await active.text()).toBe(201)
-    const other = await request.post("/api/tasks", {
-      data: { title: "Calendar task on another day", status: "pending", due_date: otherDay },
-    })
-    expect(other.status(), await other.text()).toBe(201)
+    // The month summary test reads shared month totals, so this test removes what it creates.
+    const createdIds: string[] = []
+    const create = async (data: Record<string, unknown>) => {
+      const res = await request.post("/api/tasks", { data })
+      expect(res.status(), await res.text()).toBe(201)
+      createdIds.push((await res.json()).id as string)
+    }
+    try {
+      await create({ title: "Calendar completed task", status: "complete", due_date: day })
+      await create({ title: "Calendar active task", status: "active", due_date: day })
+      await create({ title: "Calendar task on another day", status: "pending", due_date: otherDay })
 
-    await page.reload()
-    await expect(cells.first()).toHaveAccessibleName(/1 task$/)
-    await expect(cells.nth(1)).toHaveAccessibleName(/1 task$/)
-    await cells.first().press("Enter")
+      await page.reload()
+      await expect(cells.first()).toHaveAccessibleName(/1 task$/)
+      await expect(cells.nth(1)).toHaveAccessibleName(/1 task$/)
+      await cells.first().press("Enter")
 
-    const drawer = page.locator("#day-drawer-tasks")
-    const completeRow = drawer.locator("[data-task-id]").filter({ hasText: "Calendar completed task" })
-    await expect(completeRow).toContainText("Done")
-    await expect(completeRow.locator(".day-drawer-item-icon")).toHaveText("✅")
-    const activeRow = drawer.locator("[data-task-id]").filter({ hasText: "Calendar active task" })
-    await expect(activeRow).toContainText("In Progress")
-    await expect(activeRow.locator(".day-drawer-item-icon")).toHaveText("⚡")
-    await expect(drawer.getByText("Calendar task on another day")).toHaveCount(0)
+      const drawer = page.locator("#day-drawer-tasks")
+      const completeRow = drawer.locator("[data-task-id]").filter({ hasText: "Calendar completed task" })
+      await expect(completeRow).toContainText("Done")
+      await expect(completeRow.locator(".day-drawer-item-icon")).toHaveText("✅")
+      const activeRow = drawer.locator("[data-task-id]").filter({ hasText: "Calendar active task" })
+      await expect(activeRow).toContainText("In Progress")
+      await expect(activeRow.locator(".day-drawer-item-icon")).toHaveText("⚡")
+      await expect(drawer.getByText("Calendar task on another day")).toHaveCount(0)
+    } finally {
+      for (const id of createdIds) await request.delete(`/api/tasks/${id}`, { data: {} })
+    }
   })
 
   test("search launcher opens SearchHub and Assist remains available", async ({ page }) => {
@@ -110,5 +112,69 @@ test.describe("Calendar Shell", () => {
 
     await expect(page).toHaveURL(/\/tasks\?status=active&priority=1&view=table#table$/)
     await expect(table).toHaveAttribute("aria-current", "page")
+  })
+
+  test("calendar summary avoids singular/plural grammar mismatches", async ({ page, request }) => {
+    // This test creates a task, so it only runs against the disposable fixture.
+    test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the disposable Meitheal fixture")
+
+    // The calendar shows the month of the fixture's Europe/Dublin "today", which is not the
+    // UTC date around midnight, so create the task on that day.
+    const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Dublin" }).format(new Date())
+    const created = await request.post("/api/tasks", { data: { title: "Single calendar summary task", due_date: today } })
+    expect(created.status(), await created.text()).toBe(201)
+    const taskId = (await created.json()).id as string
+    try {
+      await page.goto("/calendar")
+      await page.waitForLoadState("networkidle")
+      const summaryText = await page.locator("#calendar-signal-summary").innerText()
+      // The fixture starts empty, so the month holds exactly this one task on one day.
+      expect(summaryText).toMatch(/\b1 item across 1 day\b/)
+      expect(summaryText).not.toMatch(/\b1 items\b/)
+      expect(summaryText).not.toMatch(/\b1 days\b/)
+      expect(summaryText).not.toMatch(/\b1 HA events\b/)
+    } finally {
+      await request.delete(`/api/tasks/${taskId}`, { data: {} })
+    }
+  })
+
+  test("calendar task counts bucket timed UTC due dates in household timezone", async ({ page, request }) => {
+    test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the disposable Meitheal fixture")
+
+    const beforeSettings = await (await request.get("/api/settings")).json()
+    const prevTz = typeof beforeSettings.timezone === "string" ? beforeSettings.timezone : "Europe/Dublin"
+    let taskId: string | undefined
+    try {
+      expect((await request.put("/api/settings", {
+        data: { key: "timezone", value: "America/Los_Angeles" },
+      })).status()).toBe(200)
+
+      const created = await request.post("/api/tasks", {
+        data: { title: "LA Evening Timed Task", status: "pending", due_date: "2027-06-16T02:00:00Z" },
+      })
+      expect(created.status(), await created.text()).toBe(201)
+      taskId = (await created.json()).id
+
+      await page.goto("/tasks?view=calendar&year=2027&month=5#calendar")
+      await page.waitForLoadState("networkidle")
+
+      await expect(page.locator('.cal-cell[data-date="2027-06-15"]')).toHaveAccessibleName(/1 task$/)
+      await expect(page.locator('.cal-cell[data-date="2027-06-16"]')).not.toHaveAccessibleName(/\btasks?$/)
+
+      await page.locator('.cal-cell[data-date="2027-06-15"]').click()
+      await expect(page.locator("#day-drawer")).toHaveAttribute("aria-hidden", "false")
+      await expect(page.locator("#day-drawer-tasks")).toContainText("LA Evening Timed Task")
+      await page.locator("#day-drawer-close").click()
+      await expect(page.locator("#day-drawer")).toHaveAttribute("aria-hidden", "true")
+
+      await page.locator('.cal-cell[data-date="2027-06-16"]').click()
+      await expect(page.locator("#day-drawer-tasks")).toContainText("No tasks due")
+      await expect(page.locator("#day-drawer-tasks").getByText("LA Evening Timed Task")).toHaveCount(0)
+    } finally {
+      await request.put("/api/settings", { data: { key: "timezone", value: prevTz } })
+      if (taskId) {
+        await request.delete(`/api/tasks/${taskId}`, { data: {} })
+      }
+    }
   })
 })

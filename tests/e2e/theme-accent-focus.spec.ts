@@ -6,15 +6,15 @@ test.describe("Theme accent and keyboard focus", () => {
 
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => localStorage.setItem("meitheal-theme", localStorage.getItem("meitheal-theme") || "dark"));
-    await page.goto("/settings#personal-settings");
+    await page.goto("/settings#look-and-feel-settings");
     await expect(page.locator("#settings-panels")).not.toHaveAttribute("inert", "");
-    await expect(page.locator('[data-settings-nav="personal-settings"]').first()).toHaveAttribute(
+    await expect(page.locator('[data-settings-nav="look-and-feel-settings"]').first()).toHaveAttribute(
       "aria-current",
       "location",
     );
   });
 
-  for (const [theme, surface] of [["light", "#f8fafc"], ["dark", "#0f172a"]] as const) {
+  for (const [theme, surface] of [["light", "#f6f5f0"], ["dark", "#101210"]] as const) {
     test(`keeps keyboard focus visible with a ${theme} surface accent`, async ({ page }) => {
       await page.locator("#theme-select").selectOption(theme)
       await expect(page.locator("html")).toHaveAttribute("data-theme", theme)
@@ -31,7 +31,7 @@ test.describe("Theme accent and keyboard focus", () => {
       expect(focusRgb).toHaveLength(3)
       await picker.fill(surface)
       await expect.poll(tokens).toEqual({ accent: surface, focus: baseline.focus })
-      await expect(page.getByRole("button", { name: "Indigo (Default)" })).toHaveAttribute("aria-pressed", "false")
+      await expect(page.getByRole("button", { name: "Mint (Default)" })).toHaveAttribute("aria-pressed", "false")
 
       await page.getByRole("link", { name: "Today", exact: true }).first().click()
       await expect(page).toHaveURL(/\/today$/)
@@ -52,7 +52,7 @@ test.describe("Theme accent and keyboard focus", () => {
       await expect.poll(tokens).toEqual({ accent: surface, focus: baseline.focus })
       await page.getByRole("link", { name: "Settings", exact: true }).first().click()
       await expect(page).toHaveURL(/\/settings(?:#.*)?$/)
-      await expect(page.locator("#personal-settings")).toBeVisible()
+      await expect(page.locator("#look-and-feel-settings")).toBeVisible()
       await expect(page.locator("#settings-panels")).not.toHaveAttribute("inert", "")
       await expect(picker).toHaveValue(surface)
       await page.reload()
@@ -66,7 +66,7 @@ test.describe("Theme accent and keyboard focus", () => {
       await expect(reset).toHaveCSS("outline-width", "2px")
       await page.keyboard.press("Enter")
       await expect.poll(tokens).toEqual(baseline)
-      await expect(page.getByRole("button", { name: "Indigo (Default)" })).toHaveAttribute("aria-pressed", "true")
+      await expect(page.getByRole("button", { name: "Mint (Default)" })).toHaveAttribute("aria-pressed", "true")
     })
   }
 });

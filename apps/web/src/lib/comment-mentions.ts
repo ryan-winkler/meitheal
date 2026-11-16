@@ -1,7 +1,6 @@
 // Stored mention text is portable and has no ingress URL or raw Core identity.
-const selectorPattern = String.raw`@\{person:([a-f0-9]{32})\|([^\s{}|]{1,960})\}`
-const mentionPattern = new RegExp(String.raw`(^|\s)${selectorPattern}`, "g")
-const redactPattern = new RegExp(selectorPattern, "g")
+const mentionPattern = /(^|\s)@\{person:([a-f0-9]{32})\|([^\s{}|]{1,960})\}/g
+const redactPattern = /@\{person:([a-f0-9]{32})\|([^\s{}|]{1,960})\}/g
 const ignoredPattern = /\\[^\n]|(`+)[\s\S]*?\1|\[[^\]\n]*\]\([^\n)]*\)|<(pre|code)\b[^>]*>[\s\S]*?<\/\2\s*>|<[^>\n]*>/gi
 export const commentMentionContextHeader = "X-Meitheal-Mention-Context"
 export const commentMentionProblemType = "https://meitheal.local/problems/comment-mention"

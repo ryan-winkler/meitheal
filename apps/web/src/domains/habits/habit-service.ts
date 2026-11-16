@@ -12,6 +12,7 @@
  * Completion history stored per-date for streak calculation.
  */
 
+import { randomUUID } from "node:crypto"
 import {
   ensureSchema,
   getPersistenceClient,
@@ -81,7 +82,7 @@ export interface HabitWithStats extends Habit {
 // ── CRUD ────────────────────────────────────────────────────────
 
 function generateId(): string {
-  return `habit_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+  return `habit_${Date.now()}_${randomUUID().slice(0, 8)}`
 }
 
 export async function createHabit(data: {
@@ -130,31 +131,49 @@ export async function getHabits(): Promise<HabitWithStats[]> {
   const result = await client.execute(
     "SELECT * FROM habits WHERE active = 1 ORDER BY created_at ASC"
   )
+  if (result.rows.length === 0) return []
+
+  const habitIds = result.rows.map(row => String((row as Record<string, unknown>).id))
+  const grouped = await client.execute({
+    sql: `SELECT habit_id,
+                 COUNT(*) AS total_completions,
+                 COALESCE(MAX(CASE WHEN completed_date = ? THEN count END), 0) AS today_count,
+                 json_group_array(completed_date) AS dates_json
+          FROM (
+            SELECT habit_id, completed_date, count
+            FROM habit_completions
+            WHERE habit_id IN (SELECT value FROM json_each(?))
+            ORDER BY habit_id ASC, completed_date DESC
+          )
+          GROUP BY habit_id`,
+    args: [today, JSON.stringify(habitIds)],
+  })
+
+  const statsByHabit = new Map<string, { todayCount: number; totalCompletions: number; dates: string[] }>()
+  for (const row of grouped.rows) {
+    const r = row as Record<string, unknown>
+    let dates: string[] = []
+    if (typeof r.dates_json === "string") {
+      try {
+        const parsed = JSON.parse(r.dates_json)
+        if (Array.isArray(parsed)) dates = parsed.map(String)
+      } catch {
+        dates = []
+      }
+    }
+    statsByHabit.set(String(r.habit_id), {
+      todayCount: Number(r.today_count ?? 0),
+      totalCompletions: Number(r.total_completions ?? 0),
+      dates,
+    })
+  }
 
   const habits: HabitWithStats[] = []
-
   for (const row of result.rows) {
     const r = row as Record<string, unknown>
     const habitId = String(r.id)
-
-    // Today's count
-    const todayResult = await client.execute({
-      sql: "SELECT COALESCE(count, 0) as cnt FROM habit_completions WHERE habit_id = ? AND completed_date = ?",
-      args: [habitId, today],
-    })
-    const todayCount = todayResult.rows.length > 0
-      ? Number((todayResult.rows[0] as Record<string, unknown>).cnt)
-      : 0
-
-    // Streak calculation
-    const streakData = await calculateStreak(habitId)
-
-    // Total completions
-    const totalResult = await client.execute({
-      sql: "SELECT COUNT(*) as cnt FROM habit_completions WHERE habit_id = ?",
-      args: [habitId],
-    })
-    const totalCompletions = Number((totalResult.rows[0] as Record<string, unknown>).cnt)
+    const stat = statsByHabit.get(habitId)
+    const streakData = computeStreakFromDates(stat?.dates ?? [], today)
 
     habits.push({
       id: habitId,
@@ -165,10 +184,10 @@ export async function getHabits(): Promise<HabitWithStats[]> {
       targetCount: Number(r.target_count),
       active: Number(r.active) === 1,
       createdAt: Number(r.created_at),
-      todayCount,
+      todayCount: stat?.todayCount ?? 0,
       currentStreak: streakData.current,
       longestStreak: streakData.longest,
-      totalCompletions,
+      totalCompletions: stat?.totalCompletions ?? 0,
     })
   }
 
@@ -209,18 +228,8 @@ export async function deleteHabit(habitId: string): Promise<void> {
 
 // ── Streak Calculation ──────────────────────────────────────────
 
-async function calculateStreak(habitId: string): Promise<{ current: number, longest: number }> {
-  const client = getPersistenceClient()
-
-  const result = await client.execute({
-    sql: "SELECT completed_date FROM habit_completions WHERE habit_id = ? ORDER BY completed_date DESC",
-    args: [habitId],
-  })
-
-  if (result.rows.length === 0) return { current: 0, longest: 0 }
-
-  const dates = result.rows.map(r => String((r as Record<string, unknown>).completed_date))
-  const today = new Date().toISOString().split("T")[0]!
+function computeStreakFromDates(dates: string[], today: string): { current: number, longest: number } {
+  if (dates.length === 0) return { current: 0, longest: 0 }
 
   let current = 0
   let longest = 0

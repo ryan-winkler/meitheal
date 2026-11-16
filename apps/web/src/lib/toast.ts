@@ -9,12 +9,14 @@
  *   - Max 5 visible toasts — oldest removed to prevent stack overflow
  */
 
+import { createSpriteIconElement } from "../generated/icon-registry"
+
 const MAX_VISIBLE_TOASTS = 5;
 
 /** Show a toast notification */
 export function showToast(
     message: string,
-    type: "success" | "error" | "warning" = "success",
+    type: "success" | "error" | "warning" | "info" = "success",
 ): void {
     let container = document.getElementById("toast-container");
     if (!container) {
@@ -47,13 +49,15 @@ export function showToast(
     const iconSpan = document.createElement("span");
     iconSpan.style.marginRight = "8px";
     iconSpan.style.display = "flex";
-    if (type === "success") {
-        iconSpan.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
-    } else if (type === "error") {
-        iconSpan.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>`;
-    } else if (type === "warning") {
-        iconSpan.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>`;
-    }
+    const iconName =
+        type === "success"
+            ? "check"
+            : type === "error"
+              ? "x"
+              : type === "warning"
+                ? "warning"
+                : "info";
+    iconSpan.replaceChildren(createSpriteIconElement(iconName, { size: 18 }));
     toast.appendChild(iconSpan);
 
     const text = document.createElement("span");
@@ -64,7 +68,7 @@ export function showToast(
     const dismiss = document.createElement("button");
     dismiss.className = "toast-dismiss";
     dismiss.setAttribute("aria-label", "Dismiss notification");
-    dismiss.textContent = "×";
+    dismiss.replaceChildren(createSpriteIconElement("x", { size: 16 }));
     dismiss.addEventListener("click", () => removeToast(toast));
     toast.appendChild(dismiss);
 
@@ -185,7 +189,7 @@ export function showRetryToast(
     const dismiss = document.createElement("button");
     dismiss.className = "toast-dismiss";
     dismiss.setAttribute("aria-label", "Dismiss notification");
-    dismiss.textContent = "×";
+    dismiss.replaceChildren(createSpriteIconElement("x", { size: 16 }));
     dismiss.addEventListener("click", () => removeToast(toast));
     toast.appendChild(dismiss);
 
@@ -229,7 +233,7 @@ export function showTaskCreatedToast(
     const iconSpan = document.createElement("span");
     iconSpan.style.marginRight = "8px";
     iconSpan.style.display = "flex";
-    iconSpan.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
+    iconSpan.replaceChildren(createSpriteIconElement("check", { size: 18 }));
     toast.appendChild(iconSpan);
 
     // Message with clickable ticket key
@@ -264,7 +268,7 @@ export function showTaskCreatedToast(
     const dismiss = document.createElement("button");
     dismiss.className = "toast-dismiss";
     dismiss.setAttribute("aria-label", "Dismiss notification");
-    dismiss.textContent = "×";
+    dismiss.replaceChildren(createSpriteIconElement("x", { size: 16 }));
     dismiss.addEventListener("click", () => removeToast(toast));
     toast.appendChild(dismiss);
 

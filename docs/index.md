@@ -24,12 +24,15 @@ okf_version: "0.2"
 
 # Develop and release
 
+- [Architecture overview](architecture.md) - See the components, request flow, and where each responsibility lives.
 - [Target architecture](decisions/0002-target-architecture.md) - Find runtime, domain, and persistence boundaries.
+- [Security assurance case](security-assurance-case.md) - Learn what Meitheal protects, its trust boundaries, and the evidence.
 - [Home Assistant devcontainer](kcs/home-assistant-devcontainer.md) - Verify Home Assistant integration, ingress, and App packaging.
 - [Client-side patterns](kcs/client-side-patterns.md) - Implement controls that work with the application lifecycle.
 - [Operations runbook](kcs/operations-runbook.md) - Diagnose and recover from operating problems.
 - [Home Assistant publishing checklist](kcs/ha-publishing-checklist.md) - Check App packaging and installation.
 - [Release runbook](kcs/releasing.md) - Understand release channels and how to verify builds.
+- [Dependency pinning and code scanning](kcs/dependency-pinning.md) - Update pinned build inputs and review security alerts.
 - [Licensing guide](kcs/licensing.md) - Find the license boundaries for source, integrations, and distribution.
 
 # Browse the bundle

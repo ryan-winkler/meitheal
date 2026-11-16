@@ -6,7 +6,7 @@ Harassment, threats, discriminatory remarks, unwanted contact, and disclosure of
 
 ## Report a problem
 
-Email [the maintainer](mailto:info@coolockvillage.ie). Include the link, what happened, and any steps that would help you feel safe. Share private details by email.
+Email the maintainer at [hi@ryanw.eu](mailto:hi@ryanw.eu). Include the link, what happened, and any steps that would help you feel safe. Share private details by email.
 
 If your report concerns the maintainer, use the reporting controls on the service where it happened.
 

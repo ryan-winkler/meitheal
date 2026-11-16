@@ -65,7 +65,7 @@ export function initN8nSettings(): void {
     btn.textContent = "🔌 Sending..."
     btn.disabled = true
     try {
-      const res = await fetch((window.__ingress_path || "") + "/api/integrations/test-event", {
+      const res = await fetch("/api/integrations/test-event", {
         method: "POST", headers: { "content-type": "application/json" }, signal: pageLifecycle.signal,
       })
       const data = await res.json()
@@ -114,7 +114,7 @@ export function initN8nSettings(): void {
     const btn = document.getElementById("copy-nodered-flows") as HTMLButtonElement
     if (!btn) return
     try {
-      const res = await fetch((window.__ingress_path || "") + "/api/integrations/nodered/flows", { signal: pageLifecycle.signal })
+      const res = await fetch("/api/integrations/nodered/flows", { signal: pageLifecycle.signal })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const flowJson = await res.text()
       await navigator.clipboard.writeText(flowJson)
@@ -145,7 +145,7 @@ export function initN8nSettings(): void {
     btn.textContent = "🔄 Deploying..."
     btn.disabled = true
     try {
-      const res = await fetch((window.__ingress_path || "") + "/api/integrations/nodered/deploy", {
+      const res = await fetch("/api/integrations/nodered/deploy", {
         method: "POST", headers: { "content-type": "application/json" }, signal: pageLifecycle.signal,
       })
       const data = await res.json() as { success: boolean; message?: string; error?: string; nodeCount?: number }
@@ -211,7 +211,7 @@ export function initN8nSettings(): void {
     btn.textContent = "🔌 Sending..."
     btn.disabled = true
     try {
-      const res = await fetch((window.__ingress_path || "") + "/api/integrations/test-webhook", {
+      const res = await fetch("/api/integrations/test-webhook", {
         method: "POST", headers: { "content-type": "application/json" }, signal: pageLifecycle.signal,
       })
       const data = await res.json()
@@ -229,11 +229,20 @@ export function initN8nSettings(): void {
       const lastDeliveryEl = document.getElementById("n8n-last-delivery")
       if (lastDeliveryEl) {
         const timeStr = data.timestamp ? new Date(data.timestamp).toLocaleString() : "Just now"
+        const statusSpan = document.createElement("span")
+        const metaSpan = document.createElement("span")
+        metaSpan.style.fontSize = "11px"
+        metaSpan.style.color = "var(--text-muted)"
         if (data.success) {
-          lastDeliveryEl.innerHTML = `<span style="color: var(--success);">✓ Success (${escapeHtml(data.status_code)})</span><br><span style="font-size: 11px; color: var(--text-muted);">${escapeHtml(timeStr)} · ${escapeHtml(data.latency_ms)}ms</span>`
+          statusSpan.style.color = "var(--success)"
+          statusSpan.textContent = `✓ Success (${String(data.status_code ?? "")})`
+          metaSpan.textContent = `${timeStr} · ${String(data.latency_ms ?? "")}ms`
         } else {
-          lastDeliveryEl.innerHTML = `<span style="color: var(--error);">❌ Failed (${escapeHtml(data.status_code || data.error || 'Error')})</span><br><span style="font-size: 11px; color: var(--text-muted);">${escapeHtml(timeStr)}</span>`
+          statusSpan.style.color = "var(--error)"
+          statusSpan.textContent = `❌ Failed (${String(data.status_code || data.error || "Error")})`
+          metaSpan.textContent = timeStr
         }
+        lastDeliveryEl.replaceChildren(statusSpan, document.createElement("br"), metaSpan)
       }
     } catch (err) {
       if (resultDiv && msgSpan) {
@@ -258,44 +267,98 @@ export function initN8nSettings(): void {
       workflowsList.innerHTML = `<div class="cal-empty-state"><span class="cal-empty-icon">⏳</span><span>Fetching workflows...</span></div>`
     }
     try {
-      const res = await fetch((window.__ingress_path || "") + "/api/integrations/n8n/health", { signal: pageLifecycle.signal })
+      const res = await fetch("/api/integrations/n8n/health", { signal: pageLifecycle.signal })
       const data = await res.json()
       if (healthDetail) {
-        if (data.status === "connected") healthDetail.innerHTML = `<span style="color: var(--success); font-weight: 600;">✓ Connected</span>`
-        else if (data.status === "unreachable") healthDetail.innerHTML = `<span style="color: var(--error);">Unreachable</span>`
-        else if (data.status === "unconfigured") healthDetail.innerHTML = `<span style="color: var(--text-muted);">Unconfigured</span>`
-        else healthDetail.innerHTML = `<span style="color: var(--warning);">Error: ${escapeHtml(data.code || data.message || "Unknown")}</span>`
+        const span = document.createElement("span")
+        if (data.status === "connected") {
+          span.style.color = "var(--success)"
+          span.style.fontWeight = "600"
+          span.textContent = "✓ Connected"
+        } else if (data.status === "unreachable") {
+          span.style.color = "var(--error)"
+          span.textContent = "Unreachable"
+        } else if (data.status === "unconfigured") {
+          span.style.color = "var(--text-muted)"
+          span.textContent = "Unconfigured"
+        } else {
+          span.style.color = "var(--warning)"
+          span.textContent = `Error: ${String(data.code || data.message || "Unknown")}`
+        }
+        healthDetail.replaceChildren(span)
       }
     } catch {
-      if (healthDetail) healthDetail.innerHTML = `<span style="color: var(--error);">Failed to check</span>`
+      if (healthDetail) {
+        const span = document.createElement("span")
+        span.style.color = "var(--error)"
+        span.textContent = "Failed to check"
+        healthDetail.replaceChildren(span)
+      }
     }
     try {
-      const res = await fetch((window.__ingress_path || "") + "/api/integrations/n8n/workflows", { signal: pageLifecycle.signal })
+      const res = await fetch("/api/integrations/n8n/workflows", { signal: pageLifecycle.signal })
       const data = await res.json()
       if (workflowsList) {
+        const setEmptyState = (icon: string, text: string) => {
+          const empty = document.createElement("div")
+          empty.className = "cal-empty-state"
+          const iconEl = document.createElement("span")
+          iconEl.className = "cal-empty-icon"
+          iconEl.textContent = icon
+          const msgEl = document.createElement("span")
+          msgEl.textContent = text
+          empty.append(iconEl, msgEl)
+          workflowsList.replaceChildren(empty)
+        }
         if (data.success && Array.isArray(data.workflows)) {
           if (data.workflows.length === 0) {
-            workflowsList.innerHTML = `<div class="cal-empty-state"><span class="cal-empty-icon">📭</span><span>No workflows found.</span></div>`
+            setEmptyState("📭", "No workflows found.")
           } else {
             workflowsList.replaceChildren()
             data.workflows.forEach((wf: { id: string; name: string; active: boolean }) => {
               const el = document.createElement("div")
               el.className = "cal-entity-card"
-              const safeName = escapeHtml(wf.name)
-              el.innerHTML = `<div class="cal-entity-card__info" style="flex: 1;"><strong>${safeName}</strong><div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">ID: ${escapeHtml(wf.id)}</div></div><div class="cal-entity-card__toggle"><span class="badge ${wf.active ? "badge-active" : "badge-disabled"}">${wf.active ? "Active" : "Inactive"}</span></div>`
+              const info = document.createElement("div")
+              info.className = "cal-entity-card__info"
+              info.style.flex = "1"
+              const strong = document.createElement("strong")
+              strong.textContent = wf.name
+              const idDiv = document.createElement("div")
+              idDiv.style.fontSize = "11px"
+              idDiv.style.color = "var(--text-muted)"
+              idDiv.style.marginTop = "2px"
+              idDiv.textContent = `ID: ${wf.id}`
+              info.append(strong, idDiv)
+              const toggle = document.createElement("div")
+              toggle.className = "cal-entity-card__toggle"
+              const badge = document.createElement("span")
+              badge.className = `badge ${wf.active ? "badge-active" : "badge-disabled"}`
+              badge.textContent = wf.active ? "Active" : "Inactive"
+              toggle.appendChild(badge)
+              el.append(info, toggle)
               workflowsList.appendChild(el)
             })
           }
         } else if (data.error === "not_configured") {
-          workflowsList.innerHTML = `<div class="cal-empty-state"><span class="cal-empty-icon">🔒</span><span>API Key missing or invalid.</span></div>`
+          setEmptyState("🔒", "API Key missing or invalid.")
         } else if (data.error === "unconfigured") {
-          workflowsList.innerHTML = `<div class="cal-empty-state"><span class="cal-empty-icon">📭</span><span>Configure URL to discover workflows.</span></div>`
+          setEmptyState("📭", "Configure URL to discover workflows.")
         } else {
-          workflowsList.innerHTML = `<div class="cal-empty-state"><span class="cal-empty-icon">⚠️</span><span>Failed to load workflows: ${escapeHtml(data.message || data.error || "Unknown error")}</span></div>`
+          setEmptyState("⚠️", `Failed to load workflows: ${String(data.message || data.error || "Unknown error")}`)
         }
       }
     } catch {
-      if (workflowsList) workflowsList.innerHTML = `<div class="cal-empty-state"><span class="cal-empty-icon">❌</span><span>Network error fetching workflows.</span></div>`
+      if (workflowsList) {
+        const empty = document.createElement("div")
+        empty.className = "cal-empty-state"
+        const iconEl = document.createElement("span")
+        iconEl.className = "cal-empty-icon"
+        iconEl.textContent = "❌"
+        const msgEl = document.createElement("span")
+        msgEl.textContent = "Network error fetching workflows."
+        empty.append(iconEl, msgEl)
+        workflowsList.replaceChildren(empty)
+      }
     }
   }
 
@@ -315,7 +378,7 @@ export function initN8nSettings(): void {
     const haVersionEl = document.getElementById("n8n-ha-version")
     if (!busStatusEl) return
     try {
-      const res = await fetch((window.__ingress_path || "") + "/api/integrations/status", { signal: pageLifecycle.signal })
+      const res = await fetch("/api/integrations/status", { signal: pageLifecycle.signal })
       const data = await res.json()
       if (data.ha_connection) {
         if (data.ha_connection.connected)
@@ -346,7 +409,7 @@ async function initNodeRedDeployStatus() {
   badge.textContent = "Checking..."
   badge.className = "badge badge-disabled"
   try {
-    const res = await fetch((window.__ingress_path || "") + "/api/integrations/nodered/status", { signal: pageLifecycle.signal })
+    const res = await fetch("/api/integrations/nodered/status", { signal: pageLifecycle.signal })
     const data = await res.json() as { available?: boolean; reachable?: boolean; flowDeployed?: boolean; nodeRedUrl?: string }
     if (!data.available) {
       badge.textContent = "N/A (standalone)"
@@ -389,11 +452,19 @@ export function restoreN8nSettings(s: Record<string, unknown>): void {
       try {
         const res = typeof s.n8n_last_delivery === "string" ? JSON.parse(s.n8n_last_delivery) : s.n8n_last_delivery
         const timeStr = res.timestamp ? new Date(res.timestamp).toLocaleString() : "Unknown"
+        const statusSpan = document.createElement("span")
+        const timeSpan = document.createElement("span")
+        timeSpan.style.fontSize = "11px"
+        timeSpan.style.color = "var(--text-muted)"
+        timeSpan.textContent = timeStr
         if (res.success) {
-          lastDeliveryEl.innerHTML = `<span style="color: var(--success);">✓ Success (${escapeHtml(res.status)})</span><br><span style="font-size: 11px; color: var(--text-muted);">${escapeHtml(timeStr)}</span>`
+          statusSpan.style.color = "var(--success)"
+          statusSpan.textContent = `✓ Success (${String(res.status ?? "")})`
         } else {
-          lastDeliveryEl.innerHTML = `<span style="color: var(--error);">❌ Failed (${escapeHtml(res.status || 'Error')})</span><br><span style="font-size: 11px; color: var(--text-muted);">${escapeHtml(timeStr)}</span>`
+          statusSpan.style.color = "var(--error)"
+          statusSpan.textContent = `❌ Failed (${String(res.status || "Error")})`
         }
+        lastDeliveryEl.replaceChildren(statusSpan, document.createElement("br"), timeSpan)
       } catch { lastDeliveryEl.textContent = "Parse error" }
     }
   }

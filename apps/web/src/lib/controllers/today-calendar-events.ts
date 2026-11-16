@@ -55,22 +55,35 @@ export async function setupCalendarEvents(lm: ListenerManager): Promise<void> {
     // Render
     countEl.textContent = `(${allEvents.length})`
     section.style.display = ""
-    list.innerHTML = allEvents.map(evt => {
-      const startDate = new Date(evt.start)
-      const endDate = new Date(evt.end)
-      const isAllDay = !evt.start.includes("T")
-      const timeStr = isAllDay
-        ? "All day"
-        : `${startDate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} – ${endDate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+    list.replaceChildren(
+      ...allEvents.map(evt => {
+        const startDate = new Date(evt.start)
+        const endDate = new Date(evt.end)
+        const isAllDay = !evt.start.includes("T")
+        const timeStr = isAllDay
+          ? "All day"
+          : `${startDate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} – ${endDate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
 
-      return `
-        <div class="calendar-event-card card" title="${escapeHtml(evt.description ?? "")}">
-          <div class="calendar-event-card__time">${timeStr}</div>
-          <div class="calendar-event-card__title">${escapeHtml(evt.summary)}</div>
-          <div class="calendar-event-card__source">${escapeHtml(evt.source)}</div>
-        </div>
-      `
-    }).join("")
+        const card = document.createElement("div")
+        card.className = "calendar-event-card card"
+        card.title = evt.description ?? ""
+
+        const timeDiv = document.createElement("div")
+        timeDiv.className = "calendar-event-card__time"
+        timeDiv.textContent = timeStr
+
+        const titleDiv = document.createElement("div")
+        titleDiv.className = "calendar-event-card__title"
+        titleDiv.textContent = evt.summary
+
+        const sourceDiv = document.createElement("div")
+        sourceDiv.className = "calendar-event-card__source"
+        sourceDiv.textContent = evt.source
+
+        card.append(timeDiv, titleDiv, sourceDiv)
+        return card
+      }),
+    )
   } catch {
     /* HA not available — fail silently */
   }

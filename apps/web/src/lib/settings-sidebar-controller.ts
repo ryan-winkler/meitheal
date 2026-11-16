@@ -10,7 +10,6 @@ import { pageLifecycle } from "@lib/page-lifecycle"
 import { showToast } from "@lib/toast"
 import { saveSetting, showSettingsSaveError, log } from "@lib/settings-utils"
 import { settingsStore } from "@lib/settings-store"
-import { escapeHtml } from "@lib/safe-html"
 
 // ───── Constants ─────
 
@@ -171,18 +170,50 @@ export function restoreSidebarSettings(settings: Record<string, unknown>): void 
         row.className = "sidebar-config-row"
         row.draggable = true
         row.dataset.index = String(index)
-        row.innerHTML = `
-          <span class="drag-handle" title="Drag to reorder" aria-hidden="true">☰</span>
-          <label class="sidebar-config-row__visibility">
-            <input type="checkbox" class="sidebar-visible-cb" data-key="${escapeHtml(key)}" aria-label="Show ${escapeHtml(defaultLabel)} in sidebar" ${isVisible ? "checked" : ""} />
-            <span>${escapeHtml(defaultLabel)}</span>
-          </label>
-          <input type="text" class="form-input sidebar-label-input" data-key="${escapeHtml(key)}" aria-label="Custom label for ${escapeHtml(defaultLabel)}" value="${escapeHtml(labelStr)}" placeholder="Custom label" />
-          <div class="sidebar-config-row__moves">
-            <button type="button" class="btn btn-ghost sidebar-order-up" aria-label="Move ${escapeHtml(defaultLabel)} up" ${index === 0 ? "disabled" : ""}>↑</button>
-            <button type="button" class="btn btn-ghost sidebar-order-down" aria-label="Move ${escapeHtml(defaultLabel)} down" ${index === orderItems.length - 1 ? "disabled" : ""}>↓</button>
-          </div>
-        `
+
+        const handle = document.createElement("span")
+        handle.className = "drag-handle"
+        handle.title = "Drag to reorder"
+        handle.setAttribute("aria-hidden", "true")
+        handle.textContent = "☰"
+
+        const visLabel = document.createElement("label")
+        visLabel.className = "sidebar-config-row__visibility"
+        const visCb = document.createElement("input")
+        visCb.type = "checkbox"
+        visCb.className = "sidebar-visible-cb"
+        visCb.dataset.key = key
+        visCb.setAttribute("aria-label", `Show ${defaultLabel} in sidebar`)
+        visCb.checked = isVisible
+        const visText = document.createElement("span")
+        visText.textContent = defaultLabel
+        visLabel.append(visCb, visText)
+
+        const labelInput = document.createElement("input")
+        labelInput.type = "text"
+        labelInput.className = "form-input sidebar-label-input"
+        labelInput.dataset.key = key
+        labelInput.setAttribute("aria-label", `Custom label for ${defaultLabel}`)
+        labelInput.value = labelStr
+        labelInput.placeholder = "Custom label"
+
+        const moves = document.createElement("div")
+        moves.className = "sidebar-config-row__moves"
+        const upBtn = document.createElement("button")
+        upBtn.type = "button"
+        upBtn.className = "btn btn-ghost sidebar-order-up"
+        upBtn.setAttribute("aria-label", `Move ${defaultLabel} up`)
+        upBtn.disabled = index === 0
+        upBtn.textContent = "↑"
+        const downBtn = document.createElement("button")
+        downBtn.type = "button"
+        downBtn.className = "btn btn-ghost sidebar-order-down"
+        downBtn.setAttribute("aria-label", `Move ${defaultLabel} down`)
+        downBtn.disabled = index === orderItems.length - 1
+        downBtn.textContent = "↓"
+        moves.append(upBtn, downBtn)
+
+        row.append(handle, visLabel, labelInput, moves)
 
         row.querySelector<HTMLInputElement>(".sidebar-visible-cb")?.addEventListener("change", event => {
           sidebarConfig[key] = (event.currentTarget as HTMLInputElement).checked
@@ -330,16 +361,32 @@ export function restoreSidebarSettings(settings: Record<string, unknown>): void 
         const row = document.createElement("div")
         row.className = "sidebar-custom-link"
         row.dataset.customId = item.id
-        row.innerHTML = `
-          <input type="text" class="form-input custom-item-label" aria-label="Custom link label" placeholder="Label" value="${escapeHtml(item.label)}" />
-          <input type="text" class="form-input custom-item-href" aria-label="Custom link URL" placeholder="URL (e.g. /notes)" value="${escapeHtml(item.href)}" />
-          <button type="button" class="btn btn-ghost text-danger remove-custom-link" aria-label="Remove custom link ${escapeHtml(item.label)}" data-index="${index}">×</button>
-        `
-        row.querySelector<HTMLInputElement>(".custom-item-label")?.addEventListener("input", event => {
-          item.label = (event.currentTarget as HTMLInputElement).value
+        // Build with DOM properties so stored labels and URLs never pass through an HTML parser.
+        const labelInput = document.createElement("input")
+        labelInput.type = "text"
+        labelInput.className = "form-input custom-item-label"
+        labelInput.setAttribute("aria-label", "Custom link label")
+        labelInput.placeholder = "Label"
+        labelInput.value = item.label
+        const hrefInput = document.createElement("input")
+        hrefInput.type = "text"
+        hrefInput.className = "form-input custom-item-href"
+        hrefInput.setAttribute("aria-label", "Custom link URL")
+        hrefInput.placeholder = "URL (e.g. /notes)"
+        hrefInput.value = item.href
+        const removeButton = document.createElement("button")
+        removeButton.type = "button"
+        removeButton.className = "btn btn-ghost text-danger remove-custom-link"
+        removeButton.setAttribute("aria-label", `Remove custom link ${item.label}`)
+        removeButton.dataset.index = String(index)
+        removeButton.textContent = "×"
+        row.append(labelInput, hrefInput, removeButton)
+        labelInput.addEventListener("input", () => {
+          item.label = labelInput.value
+          removeButton.setAttribute("aria-label", `Remove custom link ${item.label}`)
         }, { signal })
-        row.querySelector<HTMLInputElement>(".custom-item-href")?.addEventListener("input", event => {
-          item.href = (event.currentTarget as HTMLInputElement).value
+        hrefInput.addEventListener("input", () => {
+          item.href = hrefInput.value
         }, { signal })
         customList.appendChild(row)
       })

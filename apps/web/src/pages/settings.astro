@@ -1,15 +1,17 @@
 ---
-import SettingsLabels from "../components/settings/SettingsLabels.astro"
-import SettingsGeneral from "../components/settings/SettingsGeneral.astro"
-import SettingsIntegrations from "../components/settings/SettingsIntegrations.astro"
 import SettingsAgents from "../components/settings/SettingsAgents.astro"
 import SettingsAgentTokens from "../components/settings/SettingsAgentTokens.astro"
-import SettingsRules from "../components/settings/SettingsRules.astro"
-import SettingsPersonal from "../components/settings/SettingsPersonal.astro"
 import SettingsAppPwa from "../components/settings/SettingsAppPwa.astro"
 import SettingsDangerZone from "../components/settings/SettingsDangerZone.astro"
+import SettingsIntegrations from "../components/settings/SettingsIntegrations.astro"
+import SettingsLanguageTime from "../components/settings/SettingsLanguageTime.astro"
+import SettingsLookAndFeel from "../components/settings/SettingsLookAndFeel.astro"
+import SettingsNavigation from "../components/settings/SettingsNavigation.astro"
+import SettingsPeopleNotifications from "../components/settings/SettingsPeopleNotifications.astro"
+import SettingsRules from "../components/settings/SettingsRules.astro"
 import SettingsSectionIntro from "../components/settings/SettingsSectionIntro.astro"
 import SettingsShellNav from "../components/settings/SettingsShellNav.astro"
+import SettingsTasksBoards from "../components/settings/SettingsTasksBoards.astro"
 import Layout from "../layouts/Layout.astro"
 import { t } from "../i18n/translations"
 import type { Locale } from "../lib/locale"
@@ -22,10 +24,9 @@ const databaseDownloadToken = user?.isAdmin ? issueDatabaseDownloadToken(user.id
 if (databaseDownloadToken) Astro.response.headers.set("Cache-Control", "private, no-store")
 const cookieLocale = Astro.cookies.get("meitheal-locale")?.value
 const locale: Locale = cookieLocale === "ga" ? "ga" : "en"
-const workflowSection = SETTINGS_SECTIONS.find((section) => section.id === "workflow-settings")!
-const rulesSection = SETTINGS_SECTIONS.find((section) => section.id === "rules-lenses-settings")!
-const automationAiSection = SETTINGS_SECTIONS.find((section) => section.id === "automation-ai-settings")!
-const integrationsSection = SETTINGS_SECTIONS.find((section) => section.id === "integrations-settings")!
+const scoringSection = SETTINGS_SECTIONS.find((section) => section.id === "scoring-settings")!
+const aiAgentsSection = SETTINGS_SECTIONS.find((section) => section.id === "ai-agents-settings")!
+const connectionsSection = SETTINGS_SECTIONS.find((section) => section.id === "connections-settings")!
 ---
 
 <Layout title={`Meitheal — ${t("settings.title", locale)}`}>
@@ -57,60 +58,66 @@ const integrationsSection = SETTINGS_SECTIONS.find((section) => section.id === "
       <div id="settings-panels" inert>
 
 
-      <!-- 1. Personal -->
-      <SettingsPersonal locale={locale} />
+      <!-- 1. Look & Feel -->
+      <SettingsLookAndFeel locale={locale} />
 
-      <!-- 2. Workflow -->
+      <!-- 2. Language & Time -->
+      <SettingsLanguageTime locale={locale} />
+
+      <!-- 3. Navigation & Shortcuts -->
+      <SettingsNavigation locale={locale} />
+
+      <!-- 4. Tasks & Boards -->
+      <SettingsTasksBoards locale={locale} />
+
+      <!-- 5. People & Notifications -->
+      <SettingsPeopleNotifications locale={locale} />
+
+      <!-- 6. Scoring & Rules -->
       <section
-        id="workflow-settings"
+        id="scoring-settings"
         class="settings-shell__section"
         data-settings-shell-section
         hidden
       >
-        <SettingsSectionIntro section={workflowSection} />
-        <SettingsGeneral locale={locale} />
-        <SettingsLabels locale={locale} />
+        <SettingsSectionIntro section={scoringSection} />
+        <div id="rules-lenses-settings">
+          <SettingsRules locale={locale} />
+        </div>
       </section>
 
-      <!-- 3. Rules & Lenses -->
+      <!-- 7. AI & Agent Access -->
       <section
-        id="rules-lenses-settings"
+        id="ai-agents-settings"
         class="settings-shell__section"
         data-settings-shell-section
         hidden
       >
-        <SettingsSectionIntro section={rulesSection} />
-        <SettingsRules locale={locale} />
+        <SettingsSectionIntro section={aiAgentsSection} />
+        <div id="automation-ai-settings">
+          <SettingsAgents locale={locale} />
+          <SettingsAgentTokens locale={locale} />
+        </div>
       </section>
 
-      <!-- 4. Automation & AI -->
+      <!-- 8. Connected Services -->
       <section
-        id="automation-ai-settings"
+        id="connections-settings"
         class="settings-shell__section"
         data-settings-shell-section
         hidden
       >
-        <SettingsSectionIntro section={automationAiSection} />
-        <SettingsAgents locale={locale} />
-        <SettingsAgentTokens locale={locale} />
+        <SettingsSectionIntro section={connectionsSection} />
+        <div id="integrations-settings">
+          <SettingsIntegrations locale={locale} />
+        </div>
       </section>
 
-      <!-- 5. Integrations -->
-      <section
-        id="integrations-settings"
-        class="settings-shell__section"
-        data-settings-shell-section
-        hidden
-      >
-        <SettingsSectionIntro section={integrationsSection} />
-        <SettingsIntegrations locale={locale} />
-      </section>
+      <!-- 9. App & Companion -->
+      <SettingsAppPwa locale={locale} />
 
-      <!-- 6. App & PWA -->
-      <SettingsAppPwa locale={locale} databaseDownloadToken={databaseDownloadToken} />
-
-      <!-- 7. Danger Zone -->
-      <SettingsDangerZone locale={locale} />
+      <!-- 10. Backups & Reset -->
+      <SettingsDangerZone locale={locale} databaseDownloadToken={databaseDownloadToken} />
       </div>
     </div>
   </div>
@@ -232,7 +239,7 @@ const integrationsSection = SETTINGS_SECTIONS.find((section) => section.id === "
     position: absolute;
     inset-block-start: 0;
     width: 1px;
-    height: 400px;
+    height: 160px;
     pointer-events: none;
   }
 

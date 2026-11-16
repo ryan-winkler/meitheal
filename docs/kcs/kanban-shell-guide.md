@@ -63,7 +63,7 @@ Open **Overdue** from Dashboard to filter tasks across every Kanban page. The bo
 
 The work-in-progress count uses all eligible cards in the lane. Reordering a card preserves the relative order of all other cards across area filters and overlapping custom lanes. After a move, the destination lane may show a different page from the one containing the moved card.
 
-Dates due today appear in amber. The light palette uses a darker shade on white cards, including when Auto selects light. A due date without a time is a calendar day in the timezone set in **Personal** settings. The relative format shows it as today, tomorrow, yesterday or a number of days, weeks or months. Absolute formats keep the same day in every timezone.
+Dates due today appear in amber. The light palette uses a darker shade on white cards, including when Auto selects light. A due date without a time is a calendar day in the timezone set in **Settings → Language & Time**. The relative format shows it as today, tomorrow, yesterday or a number of days, weeks or months. Absolute formats keep the same day in every timezone.
 
 ### Switch task views and keep the current query
 
@@ -73,7 +73,7 @@ Dates due today appear in amber. The light palette uses a darker shade on white 
 
 On mobile, the view pills remain as a horizontal touch strip below the unified bar actions. The bottom app navigation opens Tasks, while the in-page strip switches between Kanban, Calendar, Table, and Timeline.
 
-On narrow screens the task type filters use two rows. Board cards and table rows appear as soon as the view renders, including when the device requests reduced motion.
+On narrow screens the filter toolbar wraps its type toggles and right-aligned action capsule (`Deferred`, `Inactivity`, `Fields`, and `Lanes`) cleanly across rows inside `.tasks-filter-row` so controls never overlap. Board cards and table rows appear as soon as the view renders, including when the device requests reduced motion.
 
 ### Filter and group Timeline
 

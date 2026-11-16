@@ -26,43 +26,28 @@
  */
 import type { APIRoute } from "astro"
 import { getTasksForView } from "../../../lib/task-queries"
+import { calendarDayFromInput, calendarToday, resolveTimezone, shiftCalendarDay } from "../../../lib/date"
 import { apiLogger, logApiError } from "../../../lib/api-logger"
 
-export const GET: APIRoute = async ({ url }) => {
+export const GET: APIRoute = async ({ url, locals }) => {
   try {
     const daysParam = url.searchParams.get("days")
-    const days = Math.min(Math.max(Number(daysParam) || 30, 1), 90)
+    const days = Math.min(Math.max(Math.trunc(Number(daysParam) || 30), 1), 90)
+    const timezone = resolveTimezone(locals.timezone)
+    const { tasks } = await getTasksForView({ timezone })
+    const todayStr = calendarToday(timezone)
+    const startStr = shiftCalendarDay(todayStr, 1 - days)
 
-    const { tasks } = await getTasksForView()
-
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    const todayStr = today.toISOString().split("T")[0] ?? ""
-
-    // Build daily counts map
     const dailyCounts = new Map<string, number>()
     for (let i = days - 1; i >= 0; i--) {
-      const d = new Date(today)
-      d.setDate(d.getDate() - i)
-      const ds = d.toISOString().split("T")[0] ?? ""
-      dailyCounts.set(ds, 0)
+      dailyCounts.set(shiftCalendarDay(todayStr, -i), 0)
     }
-
-    // Count completions by day
-    const startStr = (() => {
-      const d = new Date(today)
-      d.setDate(d.getDate() - days)
-      return d.toISOString().split("T")[0] ?? ""
-    })()
 
     for (const task of tasks) {
       if (!task.is_done) continue
-      const completedDay = task.updated_at?.split("T")[0] ?? ""
-      if (completedDay >= startStr && completedDay <= todayStr) {
-        const existing = dailyCounts.get(completedDay)
-        if (existing !== undefined) {
-          dailyCounts.set(completedDay, existing + 1)
-        }
+      const completedDay = calendarDayFromInput(task.updated_at, timezone)
+      if (completedDay !== null && dailyCounts.has(completedDay)) {
+        dailyCounts.set(completedDay, dailyCounts.get(completedDay)! + 1)
       }
     }
 

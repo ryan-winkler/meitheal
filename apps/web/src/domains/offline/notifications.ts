@@ -35,9 +35,28 @@ export async function showTaskNotification(notification: TaskNotification): Prom
 
   try {
     const scope = new URL(buildIngressPagePath("/"), location.origin)
-    const registration = await navigator.serviceWorker.getRegistration(scope.href)
+    const expectedScript = new URL("sw.js", scope).href
+    let registration = await navigator.serviceWorker.getRegistration(scope.href)
+    if (registration?.scope === scope.href && !registration.active) {
+      const pending = registration.installing ?? registration.waiting
+      if (pending?.scriptURL === expectedScript) {
+        await new Promise<void>(resolve => {
+          const timer = window.setTimeout(resolve, 2_500)
+          const check = () => {
+            if (pending.state === "activated" || pending.state === "redundant") {
+              window.clearTimeout(timer)
+              pending.removeEventListener("statechange", check)
+              resolve()
+            }
+          }
+          pending.addEventListener("statechange", check)
+          check()
+        })
+        registration = await navigator.serviceWorker.getRegistration(scope.href)
+      }
+    }
     // The browser may return Home Assistant's broader worker before the App worker is active.
-    if (registration?.scope !== scope.href || registration.active?.scriptURL !== new URL("sw.js", scope).href) return false
+    if (registration?.scope !== scope.href || registration.active?.scriptURL !== expectedScript) return false
 
     const url = new URL((notification.url ?? "").replace(/^\/+/, ""), scope)
     if (url.origin !== scope.origin || url.username || url.password || !url.pathname.startsWith(scope.pathname)) return false

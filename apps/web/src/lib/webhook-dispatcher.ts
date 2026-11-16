@@ -36,6 +36,7 @@ const HA_EVENT_MAP: Record<string, MeithealEventType> = {
   "task.completed": "meitheal_task_completed",
   "task.deleted": "meitheal_task_deleted",
   "task.overdue": "meitheal_task_overdue",
+  "task.commented": "meitheal_task_commented",
   "area.updated": "meitheal_area_updated",
 };
 
@@ -83,7 +84,7 @@ async function getN8nAutoEvents(): Promise<string[]> {
     }
   } catch { /* fall through to defaults */ }
   // Default: all events enabled
-  const defaults = ["task.created", "task.updated", "task.completed", "task.deleted", "task.overdue"];
+  const defaults = ["task.created", "task.updated", "task.completed", "task.deleted", "task.overdue", "task.commented"];
   _cachedN8nEvents = defaults;
   _n8nEventsCachedAt = now;
   return defaults;
@@ -151,6 +152,8 @@ export async function dispatchTaskEvent(eventType: string, payload: Record<strin
           ...(payload.ticket_key ? { ticket_key: String(payload.ticket_key) } : {}),
           ...(payload.task_type ? { task_type: String(payload.task_type) } : {}),
           ...(payload.description ? { description: String(payload.description).slice(0, 200) } : {}),
+          ...(payload.comment_id != null ? { comment_id: Number(payload.comment_id) } : {}),
+          ...(payload.author ? { author: String(payload.author) } : {}),
         };
 
         // Fire the mapped event type

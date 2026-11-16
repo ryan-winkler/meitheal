@@ -148,10 +148,13 @@ export async function pushToActiveSyncs(
   }
 
   // ── Calendar Sync: push to active calendar entities (if due_date exists) ──
+  // An event imported from a calendar already lives there. Writing it back would add a
+  // second copy of the event, so only tasks made in Meitheal are sent.
   if (dueDate) {
     try {
-      const { pushTaskToCalendar, getCalendarSyncConfigs } = await import("@domains/calendar/calendar-bridge");
-      const calConfigs = getCalendarSyncConfigs();
+      const { pushTaskToCalendar, getCalendarSyncConfigs, isImportedCalendarTask } = await import("@domains/calendar")
+      const importedFromCalendar = typeof taskId === "string" && await isImportedCalendarTask(taskId)
+      const calConfigs = importedFromCalendar ? [] : getCalendarSyncConfigs()
       // Only push to calendars with export/bidirectional mode AND writeBack enabled
       const hasWriteBack = calConfigs.some((c) => c.writeBack && c.syncMode !== "import");
 

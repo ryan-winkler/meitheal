@@ -28,6 +28,7 @@ import { getPersistenceClient } from "@domains/tasks/persistence/store"
 import { TemplateRepository } from "@domains/tasks/persistence/template-repository"
 import type { HabitWithStats } from "@domains/tasks/persistence/template-repository"
 import { getTodayTaskRows, todayCompletionPercent, todayDueSection, type TaskViewItem } from "../lib/task-queries"
+import { calendarDayFromInput, calendarToday, formatRelativeDue, shiftCalendarDay } from "../lib/date"
 import { isFeatureEnabled } from "../lib/feature-flags"
 import { TODAY_SECTIONS } from "../lib/today-registry"
 import { getUnscheduledPage, requestedUnscheduledPage, setUnscheduledPage } from "../lib/today-list"
@@ -45,14 +46,13 @@ let currentStreak = 0
 let todayXP = 0
 let habits: HabitWithStats[] = []
 let habitsEnabled = false
+const todayTimeZone = Astro.locals.timezone || "Europe/Dublin"
 
 try {
-  const today = new Date()
-  const todayStr = today.toISOString().split("T")[0] ?? ""
+  const todayStr = calendarToday(todayTimeZone)
   const includeUnscheduled = requestedUnscheduledPage(Astro.url.searchParams) !== null
-  const { tasks, completedTodayCount: completed, openUnscheduledCount } = await getTodayTaskRows(todayStr, includeUnscheduled)
+  const { tasks, completedTodayCount: completed, openUnscheduledCount } = await getTodayTaskRows(todayStr, includeUnscheduled, todayTimeZone)
   completedTodayCount = completed
-  today.setHours(0, 0, 0, 0)
 
   // Partition tasks into sections
   for (const task of tasks) {
@@ -62,7 +62,7 @@ try {
     }
 
     if (task.due_date) {
-      const section = todayDueSection(task.due_date, todayStr, today)
+      const section = todayDueSection(task.due_date, todayStr, todayTimeZone)
 
       if (section === "carried") {
         // Carried forward (overdue)
@@ -79,17 +79,16 @@ try {
   }
 
   // Suggested: high-priority tasks due within 3 days + top-RICE unscheduled
-  const threeDaysOut = new Date(today)
-  threeDaysOut.setDate(threeDaysOut.getDate() + 3)
-  const threeDaysStr = threeDaysOut.toISOString().split("T")[0]!
+  const threeDaysStr = shiftCalendarDay(todayStr, 3)
 
   suggestedTasks = tasks.filter(t => {
     if (t.is_done) return false
+    const dueDay = t.due_date ? calendarDayFromInput(t.due_date, todayTimeZone) : null
     // Already in today or carried forward
-    if (t.due_date === todayStr) return false
+    if (dueDay === todayStr) return false
     if (t.is_overdue) return false
     // High priority due within 3 days
-    if (t.due_date && t.due_date <= threeDaysStr && t.priority <= 2) return true
+    if (dueDay && dueDay <= threeDaysStr && t.priority <= 2) return true
     // Top RICE unscheduled (not already in unscheduled section to avoid double)
     if (!t.due_date && t.rice !== null && t.rice >= 15) return true
     return false
@@ -102,11 +101,14 @@ try {
   // Focus Stack — top 3 actionable tasks ranked by urgency for ADHD decision support
   // Ranking: overdue first → highest priority → nearest due date
   const focusCandidates = tasks
-    .filter(t => !t.is_done && (t.due_date === todayStr || (t.due_date && new Date(t.due_date) < today)))
+    .filter(t => {
+      if (t.is_done || !t.due_date) return false
+      const dueDay = calendarDayFromInput(t.due_date, todayTimeZone)
+      return dueDay !== null && dueDay <= todayStr
+    })
     .sort((a, b) => {
-      const aOverdue = a.due_date && a.due_date < todayStr ? 1 : 0
-      const bOverdue = b.due_date && b.due_date < todayStr ? 1 : 0
-      if (aOverdue !== bOverdue) return bOverdue - aOverdue
+      const overdueOrder = Number(b.is_overdue) - Number(a.is_overdue)
+      if (overdueOrder) return overdueOrder
       const aPri = Number(a.priority ?? 3)
       const bPri = Number(b.priority ?? 3)
       if (aPri !== bPri) return aPri - bPri
@@ -158,16 +160,12 @@ function unscheduledLink(page: number): string {
 const remainingCount = carriedForwardTasks.length + todayTasks.length + pinnedTasks.length
 const todayHeroSignal = `${todayTasks.length} due today · ${carriedForwardTasks.length} carried forward`
 const todayDate = new Date()
-const todayTimeZone = Astro.locals.timezone || "Europe/Dublin"
 const locale = Astro.cookies.get("meitheal-locale")?.value === "ga" ? "ga-IE" : "en-IE"
 const todayDateLabel = new Intl.DateTimeFormat(locale, {
   weekday: "long", day: "numeric", month: "long",
   timeZone: todayTimeZone,
 }).format(todayDate)
-const todayDateParts = new Intl.DateTimeFormat("en-IE", {
-  year: "numeric", month: "2-digit", day: "2-digit", timeZone: todayTimeZone,
-}).formatToParts(todayDate)
-const todayIsoDate = ["year", "month", "day"].map(type => todayDateParts.find(part => part.type === type)?.value).join("-")
+const todayIsoDate = calendarToday(todayTimeZone, todayDate)
 const completionPercent = todayCompletionPercent(completedTodayCount, remainingCount)
 ---
 
@@ -308,7 +306,7 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
                       <span
                         class={`focus-card__due ${task.is_overdue ? "focus-card__due--overdue" : ""}`}
                       >
-                        {task.is_overdue ? `⚠ Overdue` : `📅 ${task.due_date}`}
+                        {task.is_overdue ? "⚠ Overdue" : `📅 ${formatRelativeDue(task.due_date, todayTimeZone)}`}
                       </span>
                     )}
                   </div>
@@ -736,7 +734,7 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
   }
   .today-filter-bar .form-input:focus {
     border-color: var(--accent);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent, #6366f1) 15%, transparent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 15%, transparent);
   }
   .today-filter-bar .form-select {
     font-size: 12px;
@@ -782,7 +780,7 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
     transition: border-color 0.2s ease, box-shadow 0.2s ease;
   }
   .today-section:hover {
-    border-color: color-mix(in srgb, var(--border) 70%, var(--accent, #6366f1) 30%);
+    border-color: color-mix(in srgb, var(--border) 70%, var(--accent) 30%);
   }
 
   .today-section__header {
@@ -830,7 +828,7 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
     font-size: 12px;
     padding: 2px 8px;
     border-radius: 10px;
-    background: rgba(99, 102, 241, 0.12);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
     color: var(--accent-text);
     font-weight: 600;
     flex-shrink: 0;
@@ -965,7 +963,6 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
     border: 1px solid var(--border);
     border-radius: var(--radius-md);
     box-shadow: 0 8px 32px rgb(0 0 0 / 0.4);
-    backdrop-filter: blur(12px);
   }
   :global(#batch-action-bar span) {
     font-size: 13px;
@@ -987,7 +984,7 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
   }
   :global(.tli--drag-over) {
     border-top: 2px solid var(--accent);
-    box-shadow: 0 -4px 12px -2px color-mix(in srgb, var(--accent, #6366f1) 30%, transparent);
+    box-shadow: 0 -4px 12px -2px color-mix(in srgb, var(--accent) 30%, transparent);
     transition: box-shadow 0.15s ease;
   }
 
@@ -1018,7 +1015,7 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
     bottom: 8px;
     width: 3px;
     border-radius: 0 2px 2px 0;
-    background: var(--accent, #6366f1);
+    background: var(--accent);
     opacity: 0;
     transition: opacity 0.2s ease;
   }
@@ -1167,8 +1164,8 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
   /* ── Focus Stack (PRA-02) ────────────────────────────────── */
   .focus-stack {
     margin-bottom: 20px;
-    background: linear-gradient(135deg, rgba(var(--accent-rgb), 0.06), rgba(var(--accent-rgb), 0.02));
-    border: 1px solid rgba(var(--accent-rgb), 0.18);
+    background: linear-gradient(135deg, rgb(var(--accent-rgb) / 0.06), rgb(var(--accent-rgb) / 0.02));
+    border: 1px solid rgb(var(--accent-rgb) / 0.18);
     border-radius: var(--radius-md, 10px);
     padding: 16px;
     position: relative;
@@ -1211,8 +1208,7 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
     align-items: center;
     gap: 12px;
     padding: 10px 14px;
-    background: rgba(var(--bg-card-rgb, 30, 30, 46), 0.7);
-    backdrop-filter: blur(8px);
+    background: var(--bg-card);
     border: 1px solid var(--border);
     border-radius: var(--radius-sm, 6px);
     transition: border-color 200ms, box-shadow 200ms, opacity 200ms, transform 200ms;
@@ -1220,7 +1216,7 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
   }
   .focus-card:hover {
     border-color: var(--accent);
-    box-shadow: 0 2px 12px rgba(var(--accent-rgb), 0.12);
+    box-shadow: 0 2px 12px rgb(var(--accent-rgb) / 0.12);
     transform: translateX(2px);
   }
   .focus-card--overdue {
@@ -1240,11 +1236,11 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
     height: 28px;
     border-radius: 50%;
     background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 70%, #f59e0b));
-    color: white;
+    color: var(--personal-accent-foreground, var(--palette-on-accent, #07140f));
     font-size: 13px;
     font-weight: 700;
     flex-shrink: 0;
-    box-shadow: 0 2px 6px rgba(var(--accent-rgb), 0.3);
+    box-shadow: 0 2px 6px rgb(var(--accent-rgb) / 0.3);
   }
 
   .focus-card__body {
@@ -1301,8 +1297,8 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
   .focus-card__complete:hover {
     border-color: var(--success);
     color: var(--success);
-    background: rgba(var(--success-rgb), 0.1);
-    box-shadow: 0 0 8px rgba(var(--success-rgb), 0.2);
+    background: rgb(var(--success-rgb) / 0.1);
+    box-shadow: 0 0 8px rgb(var(--success-rgb) / 0.2);
   }
 
   .focus-stack--cleared {

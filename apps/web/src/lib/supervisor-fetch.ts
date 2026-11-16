@@ -31,12 +31,18 @@ export async function supervisorFetch(
   const token = process.env.SUPERVISOR_TOKEN;
   if (!token) return null;
 
+  const url = new URL(path, "http://supervisor");
+  if (url.origin !== "http://supervisor") {
+    throw new Error(`Invalid Supervisor API path: ${path}`);
+  }
+
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const res = await fetch(`http://supervisor${path}`, {
+    const res = await fetch(url.href, { // nosemgrep
       ...options,
+      redirect: "error",
       headers: {
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",

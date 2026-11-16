@@ -1,4 +1,5 @@
-Contact: mailto:info@coolockvillage.ie
+Contact: https://github.com/ryan-winkler/meitheal/security/advisories/new
+Contact: mailto:hi@ryanw.eu
 Expires: 2027-03-02T00:00:00.000Z
 Preferred-Languages: en
-Policy: https://github.com/ryan-winkler/meitheal-ha-addon/blob/main/SECURITY.md
+Policy: https://github.com/ryan-winkler/meitheal/blob/dev/SECURITY.md

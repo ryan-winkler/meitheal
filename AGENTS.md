@@ -6,7 +6,7 @@
 
 Meitheal helps people keep track of household tasks and routines in Home Assistant. It stores task data locally. The app connects tasks to calendars, to-do lists, and automations that users set up.
 
-The Home Assistant add-on runs an Astro server and uses SQLite with Drizzle repositories. Keep the app and its optional integration distinct. See the [README](README.md) for the product overview and the [automation guide](docs/kcs/agent-automation-guide.md) for use by tools and agents.
+The Home Assistant add-on runs an Astro server and uses Node.js built-in SQLite (`node:sqlite` `DatabaseSync`) repositories. Keep the app and its optional integration distinct. See the [README](README.md) for the product overview and the [automation guide](docs/kcs/agent-automation-guide.md) for use by tools and agents.
 
 ## Hard Requirements
 
@@ -30,7 +30,7 @@ The Home Assistant add-on runs an Astro server and uses SQLite with Drizzle repo
 |-------|----------|---------|
 | Web Runtime | `apps/web/` | Astro SSR app — pages, API routes, middleware |
 | Domain Packages | `packages/domain-*/` | Pure domain logic — `auth`, `tasks`, `strategy`, `observability` |
-| In-App Domains | `apps/web/src/domains/` | `auth/`, `ha/`, `pillars/`, `todo/`, `tasks/`, `integrations/`, `search/` |
+| In-App Domains | `apps/web/src/domains/` | Domain modules such as `agents/`, `auth/`, `ha/`, `pillars/`, `todo/`, `tasks/`, and `search/` |
 | Integration Core | `packages/integration-core/` | Calendar adapter interface + HA implementation |
 | API Layer | `apps/web/src/pages/api/` | Native routes |
 | Middleware | `apps/web/src/middleware.ts` | Ingress rewriting, CSP, CSRF, rate limiting |
@@ -45,12 +45,13 @@ The Home Assistant add-on runs an Astro server and uses SQLite with Drizzle repo
 | `domain-strategy` | `packages/domain-strategy/` | RICE scoring, strategic lenses |
 | `domain-observability` | `packages/domain-observability/` | Structured logging, audit trail |
 | `integration-core` | `packages/integration-core/` | Calendar/todo adapters, HA bridge |
+| `domains/agents/` | `apps/web/src/domains/agents/` | MCP, WebMCP, and A2A protocol contracts, schema expansion, and availability gates (`@domains/agents` on server; `@domains/agents/webmcp-protocol` for pure browser contracts) |
 | `domains/ha/` | `apps/web/src/domains/ha/` | HA events, WebSocket, connection status |
 | `domains/search/` | `apps/web/src/domains/search/` | Universal search orchestration and catalog shaping |
 | `domains/todo/` | `apps/web/src/domains/todo/` | HA todo list sync, status mapping |
 | `domains/pillars/` | `apps/web/src/domains/pillars/` | Pillar CRUD, Principles/Non-Negotiables, associations, inheritance |
 
-Cross-context imports must occur through public package APIs, not deep path imports.
+Cross-context imports must use public package APIs (`@domains/*`), not deep internal paths. Browser scripts import `@domains/agents/webmcp-protocol` so SQLite modules never enter client bundles.
 
 ## Dual-Repo Architecture
 
@@ -102,10 +103,10 @@ Offline JWT license validation using Ed25519 — no phone-home, homelab-friendly
 ## Settings Shell Patterns (Critical)
 
 - `apps/web/src/lib/settings-registry.ts` is the canonical source for settings section ids, labels, and settings-search metadata
-- Keep Settings navigation hash-based (`#personal-settings`, `#app-pwa-settings`, etc.) so the page stays ingress-safe inside HA and PWA scopes
+- Keep Settings navigation hash-based (`#look-and-feel-settings`, `#app-pwa-settings`, `#backups-reset-settings`, etc.; legacy hashes like `#personal-settings` resolve via `LEGACY_SETTINGS_SECTION_ALIASES`) so the page stays ingress-safe inside HA and PWA scopes
 - Bootstrap Settings via `apps/web/src/lib/settings-page.ts` and `pageLifecycle`; do not add long-lived component-owned `astro:page-load` listeners back into settings panels
 - `apps/web/src/lib/settings-store.ts` preserves the flat `/api/settings` contract; do not change persisted setting keys in UI refactors
-- Companion handoff links live in `apps/web/src/lib/settings-shell-controller.ts` / `apps/web/src/components/settings/SettingsSystem.astro` and must preserve ingress-scoped paths
+- Companion handoff links live in `apps/web/src/lib/settings-shell-controller.ts` / `apps/web/src/components/settings/SettingsAppPwa.astro` and must preserve ingress-scoped paths
 
 ## Search Patterns
 
@@ -157,16 +158,18 @@ Build-time generators produce zero-drift documentation served as static files.
 | Artifact | Generator | Output |
 |----------|-----------|--------|
 | OpenAPI 3.1 spec | `apps/web/scripts/generate-openapi.mjs` | `public/openapi.yaml` |
+| Precompiled MCP catalog | `apps/web/scripts/generate-mcp-tools.mjs` | `src/generated/mcp-tools.json` |
+| Typed Tabler icon registry | `apps/web/scripts/generate-icons.mjs` | `src/generated/icon-registry.ts` |
 | AsyncAPI 2.6 spec | `apps/web/scripts/generate-asyncapi.mjs` | `public/asyncapi.yaml` |
 
-- `prebuild` runs `generate:openapi` and `generate:asyncapi` before `astro build`
-- Adding a new API route? Add its entry to the `paths` object in `generate-openapi.mjs`
+- `prebuild` runs `generate:codegen` (`generate:openapi` -> `generate:mcp` -> `generate:icons`) -> `generate:asyncapi` before `astro build`
+- Adding a new API route? Add its entry to the `paths` object in `generate-openapi.mjs` and run `pnpm --filter @meitheal/web run generate:codegen`
 - Adding a new domain concept? Add its schema to the `schemas` object in `generate-openapi.mjs`
 - Adding a new SSE/webhook event? Add its channel to `generate-asyncapi.mjs`
 
 ### MCP Dynamic Tools
 
-- `apps/web/src/pages/api/mcp.ts` reads `openapi.yaml` at startup, caches tool list
+- Production `apps/web/src/pages/api/mcp.ts` loads the precompiled `src/generated/mcp-tools.json` catalog (with dynamic `openapi.yaml` fallback in dev/tests or when `MEITHEAL_MCP_DYNAMIC_OPENAPI=1`)
 - OpenAPI operations become tools when the caller has the mapped API scope as well as `mcp:execute`
 - Custom handlers in `customHandlers` Map override specific tools (e.g., `completeTask` and `searchTasks`)
 - `EXCLUDED_OPS` set prevents internal endpoints from becoming tools
@@ -174,38 +177,40 @@ Build-time generators produce zero-drift documentation served as static files.
 
 ### Agent Traceability Headers
 
-External callers (n8n, Node-RED, AI agents) should send:
+Send these headers from external callers (n8n, Node-RED, AI agents):
 
 | Header | Purpose | Validation |
 |--------|---------|------------|
-| `X-Automation-Source` | Caller identity | Allowlisted: `browser`, `n8n`, `nodered`, `mcp`, `agent`, `a2a`, `ha`, `api`, `webhook`, `cron` |
-| `X-Agent-Id` | Specific agent ID | Truncated to 128 chars, alphanumeric + dots + hyphens only |
+| `X-Automation-Source` | Caller identity | Allowlisted: `browser`, `webmcp`, `n8n`, `nodered`, `mcp`, `agent`, `a2a`, `ha`, `api`, `webhook`, `cron` |
+| `X-Agent-Id` | Specific agent ID | Truncated to 128 chars, alphanumeric + underscores + dots + hyphens only |
 
 Both are logged in structured API request logs (`metadata.automation_source`, `metadata.agent_id`).
 
 ## Git Commit Policy
 
 - Commit under the contributor's Git identity with descriptive messages. Omit `Co-authored-by` trailers.
-- A human maintainer squash-merges automated contributions. Do not push force-authored bot commits directly to `main`.
+- **Branch Push Rule (Mandatory)**: Only automatically push to `dev` (the primary/default branch). Never automatically push to `main` (beta channel, mostly unused) or `release` (full production release); promote to `main` or `release` only when explicitly directed by the maintainer.
+- A human maintainer squash-merges automated contributions. Do not push force-authored bot commits directly to `dev`, `main`, or `release`.
 - Follow the review process in [Contributing](CONTRIBUTING.md).
 
 ## Deploy Rules
 
 Use the single Canary App entry for feature work and validation. Its directory is `meitheal-hub-canary`, slug is `meitheal_canary`, and image family is `meitheal-canary-{arch}`. Settings and other feature changes belong to that same entry. Release commands enforce the canonical manifests in the source and destination repositories.
 
-Meitheal uses a **two-channel release strategy** (see `docs/kcs/releasing.md` for the full runbook):
+Meitheal uses a **three-branch, two-channel release strategy** (see `docs/kcs/releasing.md` for the full runbook):
 
-| Channel | Dir | Trigger | Version | Stage |
-|---------|-----|---------|---------|-------|
-| Stable | `meitheal-hub/` | Push to `release` or `v*` tag | Semver (`0.0.1`) | `stable` |
-| Canary | `meitheal-hub-canary/` | Push to `dev` (or `main`) | Commit SHA / Semver (`0.0.2-canary`) | `experimental` |
+| Branch | Role | Auto-Push Allowed | Version / Stage |
+|--------|------|-------------------|-----------------|
+| `dev` | Primary default branch (Canary) | **Yes** (automated pushes/PRs target here only) | Commit SHA / `0.0.2-canary` (`experimental`) |
+| `main` | Beta channel (mostly unused) | **No** (explicit maintainer promotion only) | Staging / Beta |
+| `release` | Full production release (`meitheal-hub/`) | **No** (explicit maintainer release promotion only) | Strict SemVer `0.0.{digit}` (`stable`) |
 
-- **Canary**: Merging to `dev` triggers `publish-canary-images.yml`. The system builds multi-arch images (`amd64`, `aarch64`), updates `meitheal-hub-canary/config.yaml`, and automatically updates the `release` branch.
-- **Stable**: Pushing/promoting to `release` or pushing a `v*` tag triggers `publish-addon-images.yml`. The system validates version sync across manifests and builds multi-arch release images. Use `node scripts/bump-version.mjs patch` to bump versions.
-- **CI & Quality Gates**: Every PR runs `ci.yml` (governance, tests, Codecov coverage upload), `dependency-review.yml`, and CodeRabbit AI review across `main`, `dev`, and `release`. The OpenSSF Scorecard analyzes repository security weekly.
+- **Canary (`dev`)**: Pushes to `dev` trigger `publish-canary-images.yml` (`build-only` multi-arch smoke checks). It must never automatically push to `main` or `release`.
+- **Beta (`main`)**: Kept mostly unused; reserved for explicit maintainer beta promotion before full release.
+- **Stable (`release`)**: Only explicit maintainer promotions to `release` or matching `v*` tags trigger `publish-addon-images.yml`. The system validates version sync across manifests and builds multi-arch release images.
+- **SemVer Policy (Mandatory)**: Do not boost versions without explicit reason and maintainer approval. Keep versions on the `0.0.{one digit}` line (for example `0.0.1`) and increment strictly by `+0.0.1` via `node scripts/bump-version.mjs patch` unless explicitly told otherwise (`--force-semver`).
+- **CI & Quality Gates**: Every PR runs `ci.yml` (governance, tests, Codecov coverage upload), `dependency-review.yml`, and CodeRabbit AI review across `dev`, `main`, and `release`. The OpenSSF Scorecard analyzes repository security on `dev` weekly.
 - **Caching**: Docker builds use BuildKit cache mounts (`--mount=type=cache,id=pnpm-store`) and GitHub Actions cache (`type=gha`).
-- Unless explicitly requested, keep version bumps within the current release line and prefer the next patch release (e.g. `0.0.1` for Main, `0.0.2-canary` for Canary)
-- Do not move to a new version line such as `0.0.x` → `0.1.x` without explicit user direction
 
 ## Verification Tiers (Mandatory)
 
@@ -236,13 +241,13 @@ Use [LICENSE](LICENSE) for Meitheal-owned material and [NOTICE](NOTICE) for sepa
 
 - Keep existing third-party notices and the separate license files in `integrations/`.
 - Integration code in `integrations/` communicates with the core through network APIs.
-- Keep the license and notices with future image builds. `LicenseRef-Meitheal-Source-Available-1.0` describes the Meitheal source grant. Distributed images must use `org.opencontainers.image.licenses=LicenseRef-Proprietary`; this binary metadata does not change source or integration grants.
+- Keep the license and notices with future image builds. `AGPL-3.0-only` is the Meitheal source license; the maintainer also offers separate commercial licenses under the contributor agreement. Distributed images must use `org.opencontainers.image.licenses=LicenseRef-Proprietary`; this binary metadata does not change source or integration grants.
 - Keep contributor agreements in the repository’s signing workflow.
 - Keep private signing keys outside Git.
 
 ## Required Files (CI Enforced)
 
-- `README.md`, `AGENTS.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SUPPORT.md`, `SECURITY.md`, `COMMERCIAL.md`
+- `README.md`, `AGENTS.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SUPPORT.md`, `SECURITY.md`, `COMMERCIAL.md`, `GOVERNANCE.md`, `ROADMAP.md`
 - `WEBMCP.md` and the discovery files `public/.well-known/mcp.json` and `public/.well-known/jsondoc.json`
 - `.coderabbit.yaml`, `repository.yaml`, and the stable App manifest and docs
 - `docs/index.md`, the Home Assistant devcontainer and operations runbooks, and the architecture and licensing decisions

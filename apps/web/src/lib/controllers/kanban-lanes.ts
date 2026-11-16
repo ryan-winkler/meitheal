@@ -79,28 +79,58 @@ export function initLaneManagementPanel(): void {
 
   const renderLaneList = async (): Promise<void> => {
     const lanes = await fetchLanes()
-    laneList.innerHTML = lanes
-      .map((lane) => {
-        const id = escapeHtml(lane.id)
-        const label = escapeHtml(lane.label)
-        return `
-          <div class="lane-item" data-id="${id}" data-position="${lane.position}">
-            <span class="lane-item-label">${lane.builtIn ? "🔒" : "📌"} ${label}</span>
-            <label class="lane-wip-label" title="WIP limit (0 = unlimited)">
-              WIP: <input type="number" class="lane-wip-input" data-id="${id}" value="${lane.wip_limit}" min="0" max="99" />
-            </label>
-            ${
-              lane.builtIn
-                ? '<span class="lane-builtin-label">built-in</span>'
-                : `
-                  <button type="button" class="lane-action-btn edit lane-edit" data-id="${id}" data-label="${label}" title="Rename" aria-label="Rename lane">✎</button>
-                  <button type="button" class="lane-action-btn remove lane-remove" data-id="${id}" title="Remove" aria-label="Remove lane">×</button>
-                `
-            }
-          </div>
-        `
-      })
-      .join("")
+    laneList.replaceChildren(
+      ...lanes.map((lane) => {
+        const item = document.createElement("div")
+        item.className = "lane-item"
+        item.dataset.id = lane.id
+        item.dataset.position = String(lane.position)
+
+        const labelSpan = document.createElement("span")
+        labelSpan.className = "lane-item-label"
+        labelSpan.textContent = `${lane.builtIn ? "🔒" : "📌"} ${lane.label}`
+
+        const wipLabel = document.createElement("label")
+        wipLabel.className = "lane-wip-label"
+        wipLabel.title = "WIP limit (0 = unlimited)"
+        const wipInput = document.createElement("input")
+        wipInput.type = "number"
+        wipInput.className = "lane-wip-input"
+        wipInput.dataset.id = lane.id
+        wipInput.value = String(lane.wip_limit)
+        wipInput.min = "0"
+        wipInput.max = "99"
+        wipLabel.append(document.createTextNode("WIP: "), wipInput)
+
+        item.append(labelSpan, wipLabel)
+        if (lane.builtIn) {
+          const builtinSpan = document.createElement("span")
+          builtinSpan.className = "lane-builtin-label"
+          builtinSpan.textContent = "built-in"
+          item.appendChild(builtinSpan)
+        } else {
+          const editBtn = document.createElement("button")
+          editBtn.type = "button"
+          editBtn.className = "lane-action-btn edit lane-edit"
+          editBtn.dataset.id = lane.id
+          editBtn.dataset.label = lane.label
+          editBtn.title = "Rename"
+          editBtn.setAttribute("aria-label", "Rename lane")
+          editBtn.textContent = "✎"
+
+          const removeBtn = document.createElement("button")
+          removeBtn.type = "button"
+          removeBtn.className = "lane-action-btn remove lane-remove"
+          removeBtn.dataset.id = lane.id
+          removeBtn.title = "Remove"
+          removeBtn.setAttribute("aria-label", "Remove lane")
+          removeBtn.textContent = "×"
+
+          item.append(editBtn, removeBtn)
+        }
+        return item
+      }),
+    )
   }
 
   const closeLaneMgmt = (): void => {

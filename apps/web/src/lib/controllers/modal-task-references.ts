@@ -1,4 +1,4 @@
-import type { SearchResultItem } from "@domains/search/search-types"
+import type { SearchResultItem } from "@domains/search"
 import { fetchOnlineSearch, searchWorkerReady, searchWorkerScope } from "@lib/online-search-client"
 import { commentMentionContextHeader, commentMentionToken } from "@lib/comment-mentions"
 import { fetchCommentPrivate } from "@lib/comment-mention-client"

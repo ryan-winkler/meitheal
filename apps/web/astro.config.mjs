@@ -1,4 +1,4 @@
-import { defineConfig } from "astro/config";
+import { defineConfig, passthroughImageService } from "astro/config";
 import node from "@astrojs/node";
 import tailwindcss from "@tailwindcss/vite";
 import { readFileSync, writeFileSync } from "node:fs";
@@ -35,6 +35,7 @@ export default defineConfig({
   output: "server",
   trailingSlash: "never",
   adapter: node({ mode: "standalone" }),
+  image: { service: passthroughImageService() },
   integrations: [{
     name: "compact-server-output",
     hooks: {
@@ -54,10 +55,6 @@ export default defineConfig({
         // Dynamic preloads must resolve from the script URL inside HA ingress.
         if (hostType === "js" && type === "asset") return { relative: true }
       },
-    },
-    ssr: {
-      // Sharp must resolve its native binary from the target-platform install.
-      external: ["sharp"],
     },
     plugins: [
       // Tailwind CSS v4 — replaces @astrojs/tailwind integration

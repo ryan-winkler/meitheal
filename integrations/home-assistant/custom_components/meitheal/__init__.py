@@ -10,23 +10,38 @@ Registers Meitheal as a first-class HA integration with:
 - meitheal.sync_todo: Service to trigger manual sync
 - meitheal.search_tasks: Service to search tasks by keyword
 - meitheal.get_overdue_tasks: Service to retrieve overdue tasks
-- Optional read-only task lookup for Home Assistant LLM agents
+- Optional task lookup and management tools for Home Assistant LLM agents
 
 """
 
-# ruff: noqa: TRY003
-
 from __future__ import annotations
 
+import hashlib
+import hmac
+import json
 import logging
-from typing import Any
+import os
+import shutil
+import tempfile
+from urllib.parse import quote
+from weakref import WeakSet
 
-from aiohttp import DummyCookieJar
 import voluptuous as vol
+from aiohttp import DummyCookieJar
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse, SupportsResponse
-from homeassistant.exceptions import ConfigEntryError, ConfigEntryNotReady, HomeAssistantError
+from homeassistant.core import (
+    HomeAssistant,
+    ServiceCall,
+    ServiceResponse,
+    SupportsResponse,
+)
+from homeassistant.exceptions import (
+    ConfigEntryError,
+    ConfigEntryNotReady,
+    HomeAssistantError,
+)
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.aiohttp_client import async_create_clientsession
 
 from .api import (
@@ -47,6 +62,7 @@ from .const import (
     SERVICE_SYNC_TODO,
 )
 from .coordinator import MeithealCoordinator
+from .helpers import resolve_assignee
 
 # The optional native LLM registry requires Core's admin-aware API.
 try:
@@ -64,6 +80,11 @@ CREATE_TASK_SCHEMA = vol.Schema(
         vol.Optional("due_date"): cv.string,
         vol.Optional("urgency"): vol.All(vol.Coerce(int), vol.Range(min=0, max=5)),
         vol.Optional("importance"): vol.All(vol.Coerce(int), vol.Range(min=0, max=5)),
+        # Who the task is for: a person with a Home Assistant account, or any
+        # Meitheal assignee ID such as an AI agent. Omit both for the default assignee.
+        vol.Exclusive("assignee", "task_assignee"): cv.entity_domain("person"),
+        vol.Exclusive("assignee_id", "task_assignee"): cv.string,
+        # Earlier field names, still accepted: an assignee ID or display name.
         vol.Optional("assigned_to"): cv.string,
         vol.Optional("assignee_user"): cv.string,
     }
@@ -79,9 +100,11 @@ COMPLETE_TASK_SCHEMA = vol.Schema(
 SEARCH_TASKS_SCHEMA = vol.Schema(
     {
         vol.Required("query"): cv.string,
-        vol.Optional("status"): vol.In(["backlog", "todo", "in_progress", "done"]),
+        vol.Optional("status"): vol.In(
+            ["backlog", "pending", "active", "complete", "todo", "in_progress", "done"]
+        ),
         vol.Optional("priority"): vol.All(vol.Coerce(int), vol.Range(min=1, max=5)),
-        vol.Optional("include_completed", default=False): cv.boolean,
+        vol.Optional("include_completed"): cv.boolean,
     }
 )
 
@@ -93,6 +116,175 @@ COMPLETE_TASK_BY_TAG_SCHEMA = vol.Schema(
 
 
 type MeithealConfigEntry = ConfigEntry[MeithealCoordinator]
+
+
+def _script_edit_target(hass: HomeAssistant, entity_id: str | None) -> str:
+    """Link to a script's editor by its registry unique_id.
+
+    The editor opens a script by its configuration key, which is the entity registry
+    ``unique_id``. After a rename the entity id (``script.kitchen_prep``) no longer matches
+    that key (``morning_prep``), so linking by entity id would open a missing script.
+    Without a registry entry the dashboard is the safe destination.
+    """
+    entry = er.async_get(hass).async_get(entity_id) if entity_id else None
+    unique_id = entry.unique_id if entry is not None else None
+    if not unique_id:
+        return "/config/script/dashboard"
+    return f"/config/script/edit/{quote(str(unique_id), safe='')}"
+
+
+def _resolve_service_origin(
+    hass: HomeAssistant, call: ServiceCall
+) -> tuple[str | None, str | None, str | None]:
+    """Derive verified HA automation or script provenance from ServiceCall context."""
+    context = call.context
+    if context is None:
+        return (None, None, None)
+
+    origin_event = getattr(context, "origin_event", None)
+    if origin_event is not None and getattr(origin_event, "event_type", None) in (
+        "automation_triggered",
+        "script_started",
+    ):
+        data = getattr(origin_event, "data", {}) or {}
+        entity_id = data.get("entity_id")
+        friendly = data.get("name")
+        state = hass.states.get(entity_id) if isinstance(entity_id, str) and entity_id else None
+        if origin_event.event_type == "automation_triggered" or (
+            isinstance(entity_id, str) and entity_id.startswith("automation.")
+        ):
+            auto_id = state.attributes.get("id") if state else None
+            name = (
+                (str(friendly).strip() if isinstance(friendly, str) and friendly.strip() else None)
+                or (state.attributes.get("friendly_name") if state else None)
+                or (entity_id if isinstance(entity_id, str) else None)
+            )
+            target = (
+                f"/config/automation/edit/{quote(str(auto_id), safe='')}"
+                if auto_id
+                else "/config/automation/dashboard"
+            )
+            return ("ha_automation", str(name) if name else None, target)
+
+        name = (
+            (str(friendly).strip() if isinstance(friendly, str) and friendly.strip() else None)
+            or (state.attributes.get("friendly_name") if state else None)
+            or (entity_id if isinstance(entity_id, str) else None)
+        )
+        target = _script_edit_target(hass, entity_id if isinstance(entity_id, str) else None)
+        return ("ha_script", str(name) if name else None, target)
+
+    # The call's own context wins over its parent: when automation A changes an entity
+    # that triggers automation B, B's context id matches B and its parent id matches A.
+    candidates = [state for state in hass.states.async_all(["automation", "script"]) if getattr(state, "context", None) is not None]
+    for context_id in (context.id, context.parent_id):
+        if not context_id:
+            continue
+        for state in candidates:
+            if state.context.id != context_id:
+                continue
+            name = state.attributes.get("friendly_name") or state.name or state.entity_id
+            if state.domain == "automation":
+                auto_id = state.attributes.get("id")
+                target = (
+                    f"/config/automation/edit/{quote(str(auto_id), safe='')}"
+                    if auto_id
+                    else "/config/automation/dashboard"
+                )
+                return ("ha_automation", str(name), target)
+            return ("ha_script", str(name), _script_edit_target(hass, state.entity_id))
+
+    return (None, None, None)
+
+
+_SENTENCE_MANIFEST = ".meitheal_sentences.json"
+
+
+def _file_sha256(path: str) -> str:
+    """Return the SHA-256 hex digest of a file on disk."""
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(65536), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _read_sentence_manifest(manifest_path: str) -> dict[str, str]:
+    """Load packaged sentence digests recorded by earlier installs."""
+    try:
+        with open(manifest_path, encoding="utf-8") as handle:
+            loaded = json.load(handle)
+    except (FileNotFoundError, OSError, json.JSONDecodeError):
+        return {}
+    if not isinstance(loaded, dict):
+        return {}
+    return {
+        k: v for k, v in loaded.items() if isinstance(k, str) and isinstance(v, str)
+    }
+
+
+_MCP_VIEW_REGISTERED: WeakSet[HomeAssistant] = WeakSet()
+
+
+def _install_custom_sentences(src_base: str, dst_base: str) -> bool:
+    """Copy bundled Assist sentences to the HA config directory (runs in executor).
+
+    Updates files whose on-disk contents still match the previously installed
+    packaged digest, while preserving locally modified household customizations.
+    Returns whether any sentence file changed, so the caller reloads Assist only then.
+    """
+    changed = False
+    if not os.path.isdir(src_base):
+        return changed
+    manifest_path = os.path.join(dst_base, _SENTENCE_MANIFEST)
+    manifest = _read_sentence_manifest(manifest_path)
+    manifest_dirty = False
+    for lang in os.listdir(src_base):
+        lang_src = os.path.join(src_base, lang)
+        if not os.path.isdir(lang_src):
+            continue
+        lang_dst = os.path.join(dst_base, lang)
+        os.makedirs(lang_dst, exist_ok=True)
+        for fn in os.listdir(lang_src):
+            if not fn.endswith(".yaml"):
+                continue
+            src_file, dst_file = os.path.join(lang_src, fn), os.path.join(lang_dst, fn)
+            rel_key = f"{lang}/{fn}"
+            src_sha = _file_sha256(src_file)
+            if not os.path.exists(dst_file):
+                shutil.copy2(src_file, dst_file)
+                manifest[rel_key] = src_sha
+                changed = True
+                manifest_dirty = True
+                continue
+            dst_sha = _file_sha256(dst_file)
+            if hmac.compare_digest(dst_sha, src_sha):
+                if manifest.get(rel_key) != src_sha:
+                    manifest[rel_key] = src_sha
+                    manifest_dirty = True
+                continue
+            recorded = manifest.get(rel_key)
+            if isinstance(recorded, str) and hmac.compare_digest(dst_sha, recorded):
+                shutil.copy2(src_file, dst_file)
+                manifest[rel_key] = src_sha
+                changed = True
+                manifest_dirty = True
+            else:
+                _LOGGER.debug(
+                    "Preserving locally customized Assist sentence file %s", dst_file
+                )
+    if manifest_dirty:
+        os.makedirs(dst_base, exist_ok=True)
+        fd, tmp_path = tempfile.mkstemp(prefix=".meitheal_sentences.", dir=dst_base)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                json.dump(manifest, handle, sort_keys=True)
+            os.replace(tmp_path, manifest_path)
+        except Exception:
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
+            raise
+    return changed
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: MeithealConfigEntry) -> bool:
@@ -138,8 +330,26 @@ async def async_setup_entry(hass: HomeAssistant, entry: MeithealConfigEntry) -> 
 
     async def handle_create_task(call: ServiceCall) -> None:
         """Handle meitheal.create_task service call."""
+        # Raised outside the generic handler so the caller sees which field to correct.
+        assigned_to = resolve_assignee(
+            hass,
+            call.data.get("assignee"),
+            call.data.get("assignee_id"),
+        ) or (
+            # Earlier fields take an ID or a display name; the coordinator resolves names.
+            call.data.get("assigned_to") or call.data.get("assignee_user")
+        )
         try:
-            assigned_to = call.data.get("assigned_to") or call.data.get("assignee_user")
+            origin_kind, origin_name, origin_target = _resolve_service_origin(hass, call)
+            origin_kwargs = (
+                {
+                    "origin_kind": origin_kind,
+                    "origin_name": origin_name,
+                    "origin_target": origin_target,
+                }
+                if origin_kind
+                else {}
+            )
             await coordinator.async_create_task(
                 title=call.data["title"],
                 description=call.data.get("description"),
@@ -147,9 +357,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: MeithealConfigEntry) -> 
                 due_date=call.data.get("due_date"),
                 urgency=call.data.get("urgency"),
                 importance=call.data.get("importance"),
-                assigned_to=assigned_to,
+                **({"assigned_to": assigned_to} if assigned_to else {}),
+                **origin_kwargs,
             )
-        except Exception as err:
+        except (HomeAssistantError, ValueError) as err:
             raise HomeAssistantError(
                 translation_domain=DOMAIN,
                 translation_key="create_failed",
@@ -159,11 +370,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: MeithealConfigEntry) -> 
     async def handle_complete_task(call: ServiceCall) -> None:
         """Handle meitheal.complete_task service call."""
         try:
+            origin_kind, origin_name, origin_target = _resolve_service_origin(hass, call)
+            origin_kwargs = (
+                {
+                    "origin_kind": origin_kind,
+                    "origin_name": origin_name,
+                    "origin_target": origin_target,
+                }
+                if origin_kind
+                else {}
+            )
             await coordinator.async_complete_task(
                 task_id=call.data.get("task_id"),
                 title=call.data.get("title"),
+                **origin_kwargs,
             )
-        except Exception as err:
+        except (HomeAssistantError, ValueError) as err:
             raise HomeAssistantError(
                 translation_domain=DOMAIN,
                 translation_key="complete_failed",
@@ -174,7 +396,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: MeithealConfigEntry) -> 
         """Handle meitheal.sync_todo service call."""
         try:
             await coordinator.async_request_refresh()
-        except Exception as err:
+        except (HomeAssistantError, ValueError) as err:
             raise HomeAssistantError(
                 translation_domain=DOMAIN,
                 translation_key="addon_unavailable",
@@ -189,7 +411,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: MeithealConfigEntry) -> 
             query=str(call.data.get("query", "")),
             status=call.data.get("status"),
             priority=call.data.get("priority"),
-            include_completed=bool(call.data.get("include_completed", False)),
+            include_completed=call.data.get("include_completed"),
         )
 
     async def handle_get_overdue_tasks(call: ServiceCall) -> ServiceResponse:
@@ -239,10 +461,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: MeithealConfigEntry) -> 
     async def handle_complete_task_by_tag(call: ServiceCall) -> None:
         """Handle meitheal.complete_task_by_tag service call."""
         try:
+            origin_kind, origin_name, origin_target = _resolve_service_origin(hass, call)
+            origin_kwargs = (
+                {
+                    "origin_kind": origin_kind,
+                    "origin_name": origin_name,
+                    "origin_target": origin_target,
+                }
+                if origin_kind
+                else {}
+            )
             await coordinator.async_complete_task_by_tag(
                 tag_id=call.data["tag_id"],
+                **origin_kwargs,
             )
-        except Exception as err:
+        except (HomeAssistantError, ValueError) as err:
             raise HomeAssistantError(
                 translation_domain=DOMAIN,
                 translation_key="nfc_complete_failed",
@@ -256,40 +489,36 @@ async def async_setup_entry(hass: HomeAssistant, entry: MeithealConfigEntry) -> 
         schema=COMPLETE_TASK_BY_TAG_SCHEMA,
     )
 
-    # Register live MCP HTTP view on Home Assistant HTTP server
+    # Register live MCP HTTP view once per HomeAssistant instance; each request resolves runtime_data dynamically
     try:
-        from .mcp_server import MeithealMcpView
-        hass.http.register_view(MeithealMcpView(coordinator))
-    except Exception as exc:
-        _LOGGER.debug("Could not register Meitheal MCP HTTP view: %s", exc)
+        if hass not in _MCP_VIEW_REGISTERED:
+            from .mcp_server import MeithealMcpView
 
-    # Ensure custom sentences are copied to <config>/custom_sentences/ so HA conversation loads them
+            hass.http.register_view(MeithealMcpView())
+            _MCP_VIEW_REGISTERED.add(hass)
+    except (AttributeError, RuntimeError, ValueError) as exc:
+        # No http component, a frozen router or a duplicate route: the
+        # integration still works without its MCP endpoint.
+        _LOGGER.warning("Could not register Meitheal MCP HTTP view: %s", exc)
+
+    # Ensure custom sentences are copied to <config>/custom_sentences/ off the event loop
     try:
-        import os
-        import shutil
         src_base = os.path.join(os.path.dirname(__file__), "custom_sentences")
         dst_base = hass.config.path("custom_sentences")
-        if os.path.isdir(src_base):
-            for lang in os.listdir(src_base):
-                lang_src = os.path.join(src_base, lang)
-                if os.path.isdir(lang_src):
-                    lang_dst = os.path.join(dst_base, lang)
-                    os.makedirs(lang_dst, exist_ok=True)
-                    for fn in os.listdir(lang_src):
-                        if fn.endswith(".yaml"):
-                            dst_file = os.path.join(lang_dst, fn)
-                            if not os.path.exists(dst_file):
-                                shutil.copy2(os.path.join(lang_src, fn), dst_file)
-    except Exception as exc:
-        _LOGGER.debug("Could not copy custom sentences to config dir: %s", exc)
-
+        if await hass.async_add_executor_job(
+            _install_custom_sentences, src_base, dst_base
+        ) and hass.services.has_service("conversation", "reload"):
+            # Assist reads sentence files once; a new or changed file needs a reload.
+            await hass.services.async_call("conversation", "reload", blocking=False)
+    except (OSError, RuntimeError, ValueError) as exc:
+        _LOGGER.warning("Could not copy custom sentences to config dir: %s", exc)
 
     if async_register_llm_api is not None:
         try:
             if unregister_llm := async_register_llm_api(hass, entry):
                 entry.async_on_unload(unregister_llm)
         except HomeAssistantError:
-            _LOGGER.warning("Could not register Meitheal's read-only LLM API")
+            _LOGGER.warning("Could not register Meitheal's LLM API")
 
     # Register custom intents — accent-friendly voice commands that work
     # WITHOUT an LLM. Uses HA's built-in sentence matching engine.
@@ -299,8 +528,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: MeithealConfigEntry) -> 
     try:
         from .intents import async_register_intents
         async_register_intents(hass)
-    except Exception:
-        _LOGGER.warning("Could not register Meitheal intents — voice triggers disabled")
+    except Exception:  # Optional voice triggers must never block setup
+        _LOGGER.warning(
+            "Could not register Meitheal intents; voice triggers disabled", exc_info=True
+        )
 
     # Register proactive notification service
     # meitheal.notify_overdue — pushes overdue task alerts through HA notify

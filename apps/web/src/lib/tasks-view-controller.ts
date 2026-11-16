@@ -3,6 +3,7 @@
  * @domain navigation
  */
 import { singleKeyShortcutsEnabled } from "@lib/single-key-shortcuts"
+import { hasPriorityOverlay } from "@lib/layout-shortcuts-controller"
 import { getLegacyTaskId, openTaskDetailHandoff } from "@lib/task-detail-handoff"
 import { parseTaskView, TASK_VIEWS, taskViewUrl, type TaskView } from "@lib/task-view-route"
 import { taskBackgroundUrl, ticketIdFromPath } from "@lib/task-page-url"
@@ -50,7 +51,7 @@ export function initTasksViewSwitcher(rendered: TaskView, signal: AbortSignal): 
   window.addEventListener("hashchange", () => { syncLegacyLocation() }, { signal })
   window.addEventListener("keydown", e => {
     const target = e.target as HTMLElement | null
-    if (e.defaultPrevented || target?.isContentEditable || target?.closest("input, textarea, select, [role='dialog']") ||
+    if (e.defaultPrevented || hasPriorityOverlay() || target?.isContentEditable || target?.closest("input, textarea, select, [role='dialog']") ||
         e.ctrlKey || e.altKey || e.metaKey || e.shiftKey || e.isComposing) return
     if (!/^[1-4]$/.test(e.key) || !singleKeyShortcutsEnabled()) return
     const view = TASK_VIEWS[Number(e.key) - 1]

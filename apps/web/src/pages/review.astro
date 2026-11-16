@@ -141,7 +141,7 @@ const displayValue = (value: string | null) => value === null ? "(not set)" : va
     transition: border-color 0.2s ease, box-shadow 0.2s ease;
   }
   .review-card:hover {
-    border-color: color-mix(in srgb, var(--border) 60%, var(--accent, #6366f1) 40%);
+    border-color: color-mix(in srgb, var(--border) 60%, var(--accent) 40%);
     box-shadow: 0 4px 16px -4px rgba(0, 0, 0, 0.15);
   }
 
@@ -162,7 +162,7 @@ const displayValue = (value: string | null) => value === null ? "(not set)" : va
     font-size: 12px;
     font-weight: 700;
     color: var(--accent-text);
-    background: color-mix(in srgb, var(--accent, #6366f1) 10%, transparent);
+    background: color-mix(in srgb, var(--accent) 10%, transparent);
     padding: 2px 8px;
     border-radius: 10px;
     flex-shrink: 0;

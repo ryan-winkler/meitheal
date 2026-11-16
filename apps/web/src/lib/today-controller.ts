@@ -355,13 +355,20 @@ function showSnoozePopover(anchor: HTMLElement) {
 
   const popover = document.createElement("div")
   popover.className = "snooze-popover"
-  popover.innerHTML = `
-    <button data-snooze="1" data-task-id="${id}" class="snooze-option">+1 Day</button>
-    <button data-snooze="3" data-task-id="${id}" class="snooze-option">+3 Days</button>
-    <button data-snooze="7" data-task-id="${id}" class="snooze-option">+1 Week</button>
-    <button data-snooze="14" data-task-id="${id}" class="snooze-option">+2 Weeks</button>
-    <button data-snooze="30" data-task-id="${id}" class="snooze-option">+1 Month</button>
-  `
+  for (const [days, label] of [
+    ["1", "+1 Day"],
+    ["3", "+3 Days"],
+    ["7", "+1 Week"],
+    ["14", "+2 Weeks"],
+    ["30", "+1 Month"],
+  ] as const) {
+    const btn = document.createElement("button")
+    btn.dataset.snooze = days
+    btn.dataset.taskId = id
+    btn.className = "snooze-option"
+    btn.textContent = label
+    popover.appendChild(btn)
+  }
 
   // Position near the anchor
   const rect = anchor.getBoundingClientRect()
@@ -816,12 +823,23 @@ function setupWipLimit(container: HTMLElement) {
     font-size: 13px; color: var(--warning, #f59e0b); display: flex;
     align-items: center; gap: 8px;
   `
-  banner.innerHTML = `
-    <span style="font-size: 16px;">⚠️</span>
-    <span><strong>${todayTasks.length} tasks</strong> due today — consider triaging or snoozing some to stay focused (recommended: ≤${WIP_LIMIT})</span>
-    <button type="button" class="btn btn-sm" style="margin-left: auto; font-size: 11px; padding: 2px 8px;"
-      onclick="this.closest('.wip-warning-banner')?.remove()">Dismiss</button>
-  `
+  const iconSpan = document.createElement("span")
+  iconSpan.style.fontSize = "16px"
+  iconSpan.textContent = "⚠️"
+  const textSpan = document.createElement("span")
+  const countStrong = document.createElement("strong")
+  countStrong.textContent = `${todayTasks.length} tasks`
+  textSpan.append(
+    countStrong,
+    document.createTextNode(` due today — consider triaging or snoozing some to stay focused (recommended: ≤${WIP_LIMIT})`),
+  )
+  const dismissBtn = document.createElement("button")
+  dismissBtn.type = "button"
+  dismissBtn.className = "btn btn-sm"
+  dismissBtn.style.cssText = "margin-left: auto; font-size: 11px; padding: 2px 8px;"
+  dismissBtn.textContent = "Dismiss"
+  dismissBtn.addEventListener("click", () => banner.remove(), { once: true })
+  banner.replaceChildren(iconSpan, textSpan, dismissBtn)
 
   const statsContainer = container.querySelector("#daily-stats-container")
   if (statsContainer) {

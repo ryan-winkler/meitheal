@@ -107,7 +107,14 @@ export class SettingsRepository {
     })
     const row = result.rows[0] as Record<string, unknown> | undefined
     if (!row) return null
-    return { key: String(row.key), value: JSON.parse(String(row.value)) }
+    const rawValue = String(row.value)
+    let parsedValue: unknown
+    try {
+      parsedValue = JSON.parse(rawValue)
+    } catch {
+      parsedValue = rawValue
+    }
+    return { key: String(row.key), value: parsedValue }
   }
 
   /** Get all settings (returns raw rows for caller to handle redaction) */
@@ -120,6 +127,15 @@ export class SettingsRepository {
   async upsert(key: string, value: string): Promise<void> {
     await this.client.execute(upsertSettingStatement(key, value, Date.now()))
     settingsRevision++
+  }
+
+  /** Update an existing setting only if its stored value has not changed. */
+  async replaceIfUnchanged(key: string, oldValue: string, newValue: string): Promise<void> {
+    const result = await this.client.execute({
+      sql: "UPDATE settings SET value = ?, updated_at = ? WHERE key = ? AND value = ?",
+      args: [newValue, Date.now(), key, oldValue],
+    })
+    if (result.rowsAffected > 0) settingsRevision++
   }
 
   /** Delete all settings (factory reset) */

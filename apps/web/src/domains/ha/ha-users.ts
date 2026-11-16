@@ -32,9 +32,10 @@ export interface MeithealUser {
   id: string;
   name: string;
   source: "home_assistant" | "custom";
+  /** "agent" marks an AI agent assignee; everyone else is a person. */
+  kind?: "human" | "agent";
   is_owner?: boolean;
   color?: string;
-  kind?: "human" | "agent";
 }
 
 // ── Cache ──

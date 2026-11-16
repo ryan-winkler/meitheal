@@ -92,7 +92,7 @@ With the output property set to **event data**, `msg.payload` holds the whole Ho
 
 ### Configuration
 
-1. Go to **Meitheal → Settings → Integrations → n8n / Node-RED**
+1. Go to **Meitheal → Settings → Connected Services → n8n / Node-RED**
 2. Select **HA Addon** mode (auto-detected when Node-RED addon is installed)
 3. Check which events you want to receive
 4. Click **Save n8n Settings**

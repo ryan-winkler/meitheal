@@ -137,7 +137,13 @@ export function createLogger(config: LoggerConfig) {
       return
     }
     if (partial.domain === "audit" && !auditEnabled) return
-    if (partial.domain !== "audit" && categories.length > 0 && !categories.includes(partial.domain)) {
+    if (
+      level !== "warn" &&
+      level !== "error" &&
+      partial.domain !== "audit" &&
+      categories.length > 0 &&
+      !categories.includes(partial.domain)
+    ) {
       return
     }
 
@@ -156,7 +162,14 @@ export function createLogger(config: LoggerConfig) {
       return typeof value === "string" ? redact(value, redactionPatterns) : value
     })
     process.stdout.write(`${line}\n`)
-    enqueueLokiLog(line, redact(config.service, redactionPatterns), redact(config.env, redactionPatterns), timestamp)
+    enqueueLokiLog(
+      line,
+      redact(config.service, redactionPatterns),
+      redact(config.env, redactionPatterns),
+      timestamp,
+      level,
+      redact(partial.domain || "system", redactionPatterns),
+    )
   }
 
   return {
@@ -231,6 +244,7 @@ export const VALID_EVENT_TYPE_SET: ReadonlySet<string> = new Set(VALID_EVENT_TYP
 
 export const defaultRedactionPatterns: RegExp[] = [
   /\b(?:password|secret|api[_-]?key|(?:access[_-]?)?token)\s*[=:]\s*(?:"[^"]*"|'[^']*'|[^\s&,;]+)/gi,
+  /\bmth_[a-f0-9]{64}\b/gi,
   /(bearer\s+)[a-z0-9\-._~+/]+=*/gi,
   /(authorization:\s*)[^\s]+/gi,
   /(hassio_token=)[^&\s]+/gi,

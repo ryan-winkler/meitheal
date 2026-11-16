@@ -97,26 +97,50 @@ export class CommentMentionRepository {
     }
   }
 
-  async edit(taskId: string, commentId: number, owner: string, content: string, recipients: string[]) {
+  async editChecked(
+    taskId: string,
+    commentId: number,
+    owner: string,
+    content: string,
+    recipients: string[],
+    expectedAssignedTo?: string,
+  ): Promise<{ state: "ok"; comment: Record<string, unknown> } | { state: "not_found" } | { state: "assignee_mismatch" }> {
     const tx = await this.client.transaction("write")
     try {
+      const assigneeSql = expectedAssignedTo === undefined
+        ? ""
+        : " AND EXISTS (SELECT 1 FROM tasks WHERE id = ? AND assigned_to = ?)"
+      const assigneeArgs = expectedAssignedTo === undefined ? [] : [taskId, expectedAssignedTo]
       const result = await tx.execute({
-        sql: `UPDATE comments SET content = ? WHERE task_id = ? AND id = ? AND owner_key = ?
+        sql: `UPDATE comments SET content = ? WHERE task_id = ? AND id = ? AND owner_key = ?${assigneeSql}
               RETURNING ${commentColumns}`,
-        args: [content, taskId, commentId, owner],
+        args: [content, taskId, commentId, owner, ...assigneeArgs],
       })
-      const comment = result.rows[0]
-      if (!comment) return
+      const comment = result.rows[0] as Record<string, unknown> | undefined
+      if (!comment) {
+        if (expectedAssignedTo !== undefined) {
+          const taskRow = await tx.execute({ sql: "SELECT assigned_to FROM tasks WHERE id = ?", args: [taskId] })
+          if (taskRow.rows.length > 0 && (taskRow.rows[0] as Record<string, unknown>).assigned_to !== expectedAssignedTo) {
+            return { state: "assignee_mismatch" }
+          }
+        }
+        return { state: "not_found" }
+      }
       if (recipients.length) {
         await reconcile(tx, taskId, commentId, recipients)
       } else {
         await tx.execute({ sql: "UPDATE comment_mentions SET withdrawn = 1 WHERE comment_id = ? AND withdrawn = 0", args: [commentId] })
       }
       await tx.commit()
-      return comment
+      return { state: "ok", comment }
     } finally {
       tx.close()
     }
+  }
+
+  async edit(taskId: string, commentId: number, owner: string, content: string, recipients: string[]) {
+    const res = await this.editChecked(taskId, commentId, owner, content, recipients)
+    return res.state === "ok" ? res.comment : undefined
   }
 
   async page(recipient: string, before: number | null) {

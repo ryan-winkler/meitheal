@@ -119,7 +119,7 @@ const { id, value = "📋", locale = "en" } = Astro.props
     justify-content: center;
     width: 2.75rem;
     height: 2.75rem;
-    background: var(--bg-input, rgba(var(--border-rgb), 0.08));
+    background: var(--bg-input, rgb(var(--border-rgb) / 0.08));
     border: 1px solid var(--border);
     border-radius: var(--radius-sm, 6px);
     cursor: pointer;
@@ -147,7 +147,7 @@ const { id, value = "📋", locale = "en" } = Astro.props
     min-width: 240px;
     max-width: 300px;
     background: var(--bg-surface, #1e1e2e);
-    border: 1px solid rgba(var(--border-rgb), 0.5);
+    border: 1px solid rgb(var(--border-rgb) / 0.5);
     border-radius: var(--radius-md, 8px);
     box-shadow: 0 12px 36px rgba(0, 0, 0, 0.5);
     padding: 14px;
@@ -191,9 +191,9 @@ const { id, value = "📋", locale = "en" } = Astro.props
     display: flex;
     align-items: center;
     justify-content: center;
-    background: rgba(var(--border-rgb), 0.1);
+    background: rgb(var(--border-rgb) / 0.1);
     border-radius: var(--radius-md, 8px);
-    border: 1px solid rgba(var(--border-rgb), 0.2);
+    border: 1px solid rgb(var(--border-rgb) / 0.2);
     transition: border-color 200ms;
     flex-shrink: 0;
     overflow: hidden;
@@ -205,8 +205,8 @@ const { id, value = "📋", locale = "en" } = Astro.props
     align-items: center;
     gap: 4px;
     padding: 5px 10px;
-    background: rgba(var(--border-rgb), 0.1);
-    border: 1px solid rgba(var(--border-rgb), 0.2);
+    background: rgb(var(--border-rgb) / 0.1);
+    border: 1px solid rgb(var(--border-rgb) / 0.2);
     border-radius: var(--radius-sm, 4px);
     color: var(--text-muted);
     font-size: 11px;
@@ -214,15 +214,15 @@ const { id, value = "📋", locale = "en" } = Astro.props
     transition: background 150ms, color 150ms, border-color 150ms;
   }
   .icon-picker__upload-btn:hover {
-    background: rgba(var(--accent-rgb), 0.1);
+    background: rgb(var(--accent-rgb) / 0.1);
     color: var(--accent);
-    border-color: rgba(var(--accent-rgb), 0.3);
+    border-color: rgb(var(--accent-rgb) / 0.3);
   }
 
   .icon-picker__tabs {
     display: flex;
     gap: 2px;
-    border-bottom: 1px solid rgba(var(--border-rgb), 0.2);
+    border-bottom: 1px solid rgb(var(--border-rgb) / 0.2);
     padding-bottom: 4px;
   }
 
@@ -236,15 +236,15 @@ const { id, value = "📋", locale = "en" } = Astro.props
     opacity: 0.45;
     transition: opacity 120ms, background 120ms;
   }
-  .icon-picker__tab:hover { opacity: 0.75; background: rgba(var(--border-rgb), 0.12); }
-  .icon-picker__tab.active { opacity: 1; background: rgba(var(--accent-rgb), 0.1); }
+  .icon-picker__tab:hover { opacity: 0.75; background: rgb(var(--border-rgb) / 0.12); }
+  .icon-picker__tab.active { opacity: 1; background: rgb(var(--accent-rgb) / 0.1); }
 
   .icon-picker__grid {
     max-height: 160px;
     overflow-y: auto;
     overscroll-behavior: contain;
     scrollbar-width: thin;
-    scrollbar-color: rgba(var(--border-rgb), 0.3) transparent;
+    scrollbar-color: rgb(var(--border-rgb) / 0.3) transparent;
   }
 
   .icon-picker__panel {
@@ -264,11 +264,11 @@ const { id, value = "📋", locale = "en" } = Astro.props
     transition: background 100ms, transform 100ms;
   }
   .icon-picker__emoji:hover {
-    background: rgba(var(--border-rgb), 0.2);
+    background: rgb(var(--border-rgb) / 0.2);
     transform: scale(1.15);
   }
   .icon-picker__emoji.selected {
-    background: rgba(var(--accent-rgb), 0.18);
+    background: rgb(var(--accent-rgb) / 0.18);
   }
 
   /* Focus rings */

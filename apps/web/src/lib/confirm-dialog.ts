@@ -34,10 +34,16 @@ export function confirmDialog(options: ConfirmOptions): Promise<boolean> {
     const variant = options.variant ?? "default";
     const accentColor =
       variant === "danger"
-        ? "var(--danger, #ef4444)"
+        ? "#dc2626"
         : variant === "warning"
-          ? "var(--warning, #f59e0b)"
-          : "var(--accent, #6366f1)";
+          ? "var(--warning, #f0b86d)"
+          : "var(--accent, #69e3b2)";
+    const accentTextColor =
+      variant === "danger"
+        ? "#ffffff"
+        : variant === "warning"
+          ? "var(--on-warning, #161108)"
+          : "var(--personal-accent-foreground, var(--palette-on-accent, #07140f))";
 
     const overlay = document.createElement("div");
     overlay.id = "meitheal-confirm-overlay";
@@ -48,13 +54,13 @@ export function confirmDialog(options: ConfirmOptions): Promise<boolean> {
     overlay.style.cssText = `
       position: fixed; inset: 0; z-index: 9999;
       display: flex; align-items: center; justify-content: center;
-      background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(4px);
+      background: rgba(0, 0, 0, 0.62);
       animation: confirmFadeIn 0.15s ease-out;
     `;
 
     const dialog = document.createElement("div");
     dialog.style.cssText = `
-      background: var(--bg-card, #1e293b); border: 1px solid var(--border, #334155);
+      background: var(--bg-card, #171a18); border: 1px solid var(--border, #344039);
       border-radius: 12px; padding: 24px; max-width: 420px; width: 90%;
       box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
       animation: confirmSlideIn 0.15s ease-out;
@@ -64,7 +70,7 @@ export function confirmDialog(options: ConfirmOptions): Promise<boolean> {
       variant === "danger" ? "🗑️" : variant === "warning" ? "⚠️" : "❓";
 
     dialog.innerHTML = `
-      <div data-confirm-icon style="text-align: center; margin-bottom: 16px; font-size: 32px;"></div>
+      <div data-confirm-icon style="font-size: 32px; text-align: center; margin-bottom: 16px;"></div>
       <h3 id="confirm-title" style="
         margin: 0 0 8px; font-size: 16px; font-weight: 600;
         color: var(--text-primary, #f1f5f9); text-align: center;
@@ -81,14 +87,14 @@ export function confirmDialog(options: ConfirmOptions): Promise<boolean> {
       <div style="display: flex; flex-wrap: wrap; gap: 12px; justify-content: center;">
         <button type="button" id="confirm-cancel" style="
           padding: 8px 20px; border-radius: 8px; font-size: 14px; cursor: pointer;
-          background: transparent; border: 1px solid var(--border, #334155);
+          background: transparent; border: 1px solid var(--border, #344039);
           color: var(--text-secondary, #94a3b8);
           transition: background 0.15s, border-color 0.15s;
         "></button>
         <button type="button" id="confirm-ok" style="
           padding: 8px 20px; border-radius: 8px; font-size: 14px; cursor: pointer;
-          background: var(--accent, #6366f1); border: 1px solid var(--accent, #6366f1);
-          color: #fff; font-weight: 500;
+          background: var(--accent); border: 1px solid var(--accent);
+          color: var(--personal-accent-foreground, var(--palette-on-accent, #07140f)); font-weight: 500;
           transition: opacity 0.15s;
         "></button>
       </div>
@@ -134,6 +140,7 @@ export function confirmDialog(options: ConfirmOptions): Promise<boolean> {
     okBtn.textContent = options.confirmText ?? "Confirm"
     okBtn.style.background = accentColor
     okBtn.style.borderColor = accentColor
+    okBtn.style.color = accentTextColor
 
     overlay.appendChild(dialog);
 

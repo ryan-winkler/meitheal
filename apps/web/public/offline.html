@@ -13,8 +13,8 @@
       body {
         font-family:
           -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-        background: #ffffff;
-        color: #1e293b;
+        background: #f6f5f0;
+        color: #10231b;
         display: flex;
         align-items: center;
         justify-content: center;
@@ -25,55 +25,69 @@
         text-align: center;
         max-width: 400px;
       }
-      .icon {
-        font-size: 4rem;
-        margin-bottom: 1rem;
-        opacity: 0.6;
+      .mark {
+        display: inline-flex;
+        margin-bottom: 1.25rem;
       }
       h1 {
         font-size: 1.5rem;
         font-weight: 600;
+        letter-spacing: -0.02em;
         margin-bottom: 0.5rem;
       }
       p {
-        color: #64748b;
+        color: #4a5e55;
         margin-bottom: 1.5rem;
         line-height: 1.6;
       }
       button {
-        background: #3b82f6;
-        color: #fff;
+        background: #146c4e;
+        color: #ffffff;
         border: none;
         padding: 0.75rem 2rem;
         border-radius: 0.5rem;
-        font-size: 1rem;
+        font-size: 0.95rem;
+        font-weight: 600;
         cursor: pointer;
-        transition: background 0.2s;
+        transition: transform 0.16s cubic-bezier(0.23, 1, 0.32, 1), background 0.16s ease;
       }
       button:hover {
-        background: #2563eb;
+        background: #0e533b;
       }
       button:active {
-        background: #1d4ed8;
+        transform: scale(0.97);
       }
       @media (prefers-color-scheme: dark) {
         body {
-          background: #0f172a;
-          color: #f8fafc;
+          background: #101210;
+          color: #f1efe8;
         }
         p {
-          color: #94a3b8;
+          color: #a9b7b0;
+        }
+        button {
+          background: #69e3b2;
+          color: #07140f;
+        }
+        button:hover {
+          background: #8af0c5;
         }
       }
     </style>
   </head>
   <body>
     <div class="container">
-      <div class="icon" aria-hidden="true">⊘</div>
+      <div class="mark" aria-hidden="true">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="56" height="56">
+          <rect width="64" height="64" rx="13" fill="#10231b"></rect>
+          <path d="M15 41V25m0 6c0-5 3-8 7-8s7 3 7 8v10m0-10c0-5 3-8 7-8s7 3 7 8v10" fill="none" stroke="#edf5ef" stroke-linecap="round" stroke-width="5"></path>
+          <circle cx="52" cy="40" r="3.5" fill="#75e9be"></circle>
+        </svg>
+      </div>
       <h1>You're offline</h1>
       <p>
-        Meitheal can't reach the server right now. Your changes are saved
-        locally and will sync automatically when you're back online.
+        Meitheal can't reach your Home Assistant server right now. Your changes
+        are saved locally and will sync automatically when you're back online.
       </p>
       <button onclick="location.reload()">Try again</button>
     </div>

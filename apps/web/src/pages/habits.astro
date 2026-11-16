@@ -993,8 +993,6 @@ const habitsBootstrap = serializeForScript({ habits })
     justify-content: center;
     padding: 20px;
     background: rgba(0, 0, 0, 0.62);
-    backdrop-filter: blur(4px);
-    -webkit-backdrop-filter: blur(4px);
   }
 
   .habit-modal-overlay.hidden {
@@ -1008,7 +1006,7 @@ const habitsBootstrap = serializeForScript({ habits })
     overflow-y: auto;
     border-radius: 20px;
     border: 1px solid color-mix(in srgb, var(--accent) 14%, var(--border));
-    background: color-mix(in srgb, var(--bg-card) 96%, transparent);
+    background: var(--bg-card);
     box-shadow: 0 28px 60px -18px rgba(0, 0, 0, 0.6);
   }
 

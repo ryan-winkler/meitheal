@@ -66,8 +66,10 @@ test("native Loki push receives exactly the redacted stdout lines with static la
       const push = local.pushes[0]!
       expect(push.streams).toHaveLength(2)
       for (const stream of push.streams) {
-        expect(Object.keys(stream.stream).sort()).toEqual(["env", "service"])
+        expect(Object.keys(stream.stream).sort()).toEqual(["addon", "domain", "env", "level", "service"])
+        expect(stream.stream.addon).toBe("meitheal")
         expect(stream.stream.env).toBe("test")
+        expect(stream.stream.domain).toBe("test")
         for (const [timestamp, line] of stream.values) {
           expect(timestamp).toMatch(/^\d{19}$/)
           expect(BigInt(timestamp!)).toBe(BigInt(Date.parse(JSON.parse(line!).ts)) * 1_000_000n)

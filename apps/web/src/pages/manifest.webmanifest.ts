@@ -21,12 +21,12 @@ import type { APIRoute } from "astro";
 const MANIFEST_BASE = {
   name: "Meitheal",
   short_name: "Meitheal",
-  description: "Your homelab's execution layer — centralize tasks, automate coordination, get out of the way of life.",
+  description: "Keep track of the work your home needs — local-first household tasks, recurring routines, and projects inside Home Assistant.",
   lang: "en",
   display: "standalone" as const,
   orientation: "any" as const,
-  background_color: "#0f172a",
-  theme_color: "#0f172a",
+  background_color: "#101210",
+  theme_color: "#10231b",
   categories: ["productivity", "utilities"],
   prefer_related_applications: false,
   icons: [

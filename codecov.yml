@@ -19,5 +19,7 @@ ignore:
   - ".planning/**/*"
   - "docs/**/*"
   - "tests/**/*"
+  - "integrations/home-assistant/tests/**/*"
+  - "apps/web/public/**"
   - "**/*.spec.ts"
   - "**/*.d.ts"

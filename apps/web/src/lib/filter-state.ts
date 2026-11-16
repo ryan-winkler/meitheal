@@ -97,6 +97,10 @@ function deserializeArray(val: string | null | undefined): string[] {
   return val.split(",").filter(Boolean)
 }
 
+function normalizeTaskKindAliases(values: string[]): string[] {
+  return values.map((kind) => (kind === "standard" ? "standard_action" : kind))
+}
+
 /** Deserialize URL param string back to an object */
 function parseJsonParam(val: string | null | undefined): any | null {
   if (!val) return null
@@ -265,7 +269,7 @@ function normalizeTableValues(input: Record<string, unknown>): Partial<FilterSta
     const laneIds = stringList(input.laneIds)
     if (laneIds.length) result.laneIds = laneIds
   }
-  const kindValues = stringList(input.types)
+  const kindValues = normalizeTaskKindAliases(stringList(input.types))
   const types = kindValues.filter(kind => VALID_TASK_KINDS.some(valid => valid === kind))
   if (types.length) result.types = types
   const labels = stringList(input.labels)
@@ -417,7 +421,7 @@ export function loadFilterState(): Partial<FilterState> {
       sort: urlParams.get("sort") ?? DEFAULT_SORT,
       user: urlParams.get("user") ?? "",
       area: urlParams.get("area") ?? "",
-      types: deserializeArray(urlParams.get("types")),
+      types: normalizeTaskKindAliases(deserializeArray(urlParams.get("types"))),
       groupBy: urlParams.get("groupBy") ?? "none",
       subGroupBy: urlParams.get("subGroupBy") ?? "none",
       labels: deserializeArray(urlParams.get("labels")),
@@ -429,6 +433,7 @@ export function loadFilterState(): Partial<FilterState> {
     const stored = JSON.parse(localStorage.getItem(FILTER_STORAGE_KEY) ?? "{}")
     // Ensure array fields are arrays after parse
     if (stored.types && !Array.isArray(stored.types)) stored.types = []
+    else if (Array.isArray(stored.types)) stored.types = normalizeTaskKindAliases(stored.types)
     if (stored.labels && !Array.isArray(stored.labels)) stored.labels = []
     return stored
   } catch {
@@ -615,7 +620,7 @@ export function getGroupDisplay(groupBy: string, key: string): { label: string, 
       return {
         epic: { label: "Epic", icon: "🎯", color: "var(--type-epic, #8b5cf6)" },
         story: { label: "Story", icon: "📖", color: "var(--type-story, #3b82f6)" },
-        task: { label: "Task", icon: "✅", color: "var(--type-task, #6366F1)" },
+        task: { label: "Task", icon: "✅", color: "var(--type-task, #0EA5E9)" },
       }[key] ?? { label: key, icon: "📋", color: "var(--text-muted, #6b7280)" }
     case "priority":
       return {
@@ -642,10 +647,10 @@ export function getGroupDisplay(groupBy: string, key: string): { label: string, 
       }[key] ?? { label: key, icon: "📊", color: "#6b7280" }
     case "assignee":
       if (key === "__unassigned__") return { label: "Unassigned", icon: "∅", color: "#6b7280" }
-      return { label: key.replace(/^(ha_|custom_)/, ""), icon: "👤", color: "#6366F1" }
+      return { label: key.replace(/^(ha_|custom_)/, ""), icon: "👤", color: "var(--accent)" }
     case "area":
-      if (key === "default") return { label: "Default Area", icon: "📋", color: "#6366F1" }
-      return { label: key, icon: "📋", color: "#6366F1" }
+      if (key === "default") return { label: "Default Area", icon: "📋", color: "var(--accent)" }
+      return { label: key, icon: "📋", color: "var(--accent)" }
     default:
       return { label: "All Tasks", icon: "📋", color: "#6b7280" }
   }

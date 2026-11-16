@@ -9,7 +9,14 @@ import { fileURLToPath, pathToFileURL } from "node:url"
 import { promisify } from "node:util"
 import { expect, test } from "@playwright/test"
 import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core"
-import { DATABASE_SCHEMA_VERSION, openDatabase, runWriteTransaction } from "../../apps/web/scripts/database-client.mjs"
+import {
+  DATABASE_SCHEMA_VERSION,
+  executeWriteWithRetry,
+  getDatabaseDiagnostics,
+  openDatabase,
+  resetDatabaseDiagnosticsForTests,
+  runWriteTransaction,
+} from "../../apps/web/scripts/database-client.mjs"
 
 const webRequire = createRequire(new URL("../../apps/web/package.json", import.meta.url))
 const execFileAsync = promisify(execFile)
@@ -275,3 +282,107 @@ for (const refused of [false, true]) {
     }
   })
 }
+
+test("pools sequential read transactions, opens overflow handles on overlap, and closes cleanly", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "meitheal-sqlite-readpool-"))
+  const path = join(directory, "readpool.db")
+  resetDatabaseDiagnosticsForTests()
+  const client = openDatabase(pathToFileURL(path).href)
+  try {
+    await client.executeMultiple("CREATE TABLE notes(id INTEGER PRIMARY KEY, body TEXT NOT NULL);")
+    const inserted = await client.execute("INSERT INTO notes(id, body) VALUES (?, ?)", [1, "alpha"])
+    expect(inserted.rowsAffected).toBe(1)
+    // Cached total_changes() delta must report 0 on DDL right after INSERT
+    const indexRes = await client.execute("CREATE INDEX idx_notes_body ON notes(body)")
+    expect(indexRes.rowsAffected).toBe(0)
+
+    const r1 = await client.transaction("read")
+    expect((await r1.execute("SELECT body FROM notes WHERE id = 1")).rows[0]?.body).toBe("alpha")
+    r1.close()
+
+    const r2 = await client.transaction("read")
+    expect((await r2.execute("SELECT body FROM notes WHERE id = 1")).rows[0]?.body).toBe("alpha")
+    r2.close()
+
+    const afterSequential = getDatabaseDiagnostics()
+    expect(afterSequential.readPoolHitsTotal).toBeGreaterThanOrEqual(1)
+    expect(afterSequential.readPoolOverflowTotal).toBe(0)
+
+    // Overlapping read transactions: first takes idle handle, second opens overflow handle
+    const concurrentA = await client.transaction("read")
+    const concurrentB = await client.transaction("read")
+    try {
+      expect((await concurrentA.execute("SELECT COUNT(*) AS c FROM notes")).rows[0]?.c).toBe(1)
+      expect((await concurrentB.execute("SELECT COUNT(*) AS c FROM notes")).rows[0]?.c).toBe(1)
+      expect(getDatabaseDiagnostics().readPoolOverflowTotal).toBe(1)
+    } finally {
+      concurrentB.close()
+      concurrentA.close()
+    }
+    expect(concurrentA.closed).toBe(true)
+    expect(concurrentB.closed).toBe(true)
+
+    // Reconnect disposes idle read handle cleanly without leaking open statements
+    client.reconnect()
+    const r3 = await client.transaction("read")
+    expect((await r3.execute("SELECT body FROM notes WHERE id = 1")).rows[0]?.body).toBe("alpha")
+    r3.close()
+  } finally {
+    client.close()
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+
+test("rejects with AbortError when signal is pre-aborted or aborts during SQLITE_BUSY retry backoff", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "meitheal-sqlite-abort-"))
+  const path = join(directory, "abort.db")
+  resetDatabaseDiagnosticsForTests()
+  const primary = openDatabase(pathToFileURL(path).href)
+  const locker = openDatabase(pathToFileURL(path).href)
+  try {
+    await primary.executeMultiple("CREATE TABLE items(id INTEGER PRIMARY KEY, val TEXT);")
+
+    // 1. Pre-aborted signal rejects before touching SQLite
+    const preAborted = new AbortController()
+    preAborted.abort()
+    await expect(
+      executeWriteWithRetry(primary, ["INSERT INTO items VALUES (1, 'skip')"], { signal: preAborted.signal }),
+    ).rejects.toMatchObject({ name: "AbortError" })
+    await expect(
+      runWriteTransaction(primary, function* () {
+        yield ["INSERT INTO items VALUES (1, 'skip')"]
+        return true
+      }, { signal: preAborted.signal }),
+    ).rejects.toMatchObject({ name: "AbortError" })
+
+    // 2. Abort mid-backoff while another writer holds the WAL write lock
+    const lockTx = await locker.transaction("write")
+    try {
+      await lockTx.execute("INSERT INTO items VALUES (10, 'locked')")
+      const midAbort = new AbortController()
+      setTimeout(() => midAbort.abort(), 12)
+      await expect(
+        executeWriteWithRetry(primary, { sql: "INSERT INTO items VALUES (11, 'contended')" }, { signal: midAbort.signal }),
+      ).rejects.toMatchObject({ name: "AbortError" })
+      expect(getDatabaseDiagnostics().sqliteBusyRetriesTotal).toBeGreaterThanOrEqual(1)
+
+      const txAbort = new AbortController()
+      setTimeout(() => txAbort.abort(), 12)
+      await expect(
+        runWriteTransaction(primary, function* () {
+          yield ["INSERT INTO items VALUES (12, 'contended-tx')"]
+          return "ok"
+        }, { signal: txAbort.signal }),
+      ).rejects.toMatchObject({ name: "AbortError" })
+    } finally {
+      await lockTx.rollback()
+      lockTx.close()
+    }
+
+    expect((await primary.execute("SELECT COUNT(*) AS c FROM items")).rows[0]?.c).toBe(0)
+  } finally {
+    locker.close()
+    primary.close()
+    await rm(directory, { recursive: true, force: true })
+  }
+})

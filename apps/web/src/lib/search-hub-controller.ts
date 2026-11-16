@@ -1,8 +1,11 @@
 import { createFocusTrap } from "@lib/focus-trap"
+import { safeIngressHref, syncIngressDestination } from "@lib/ingress-navigation"
+import { hasPriorityOverlay } from "@lib/layout-shortcuts-controller"
 import { workerAllowsNetworkOnly } from "@lib/network-only-worker"
 import { fetchOnlineSearch, searchRegistration, searchWorkerReady, searchWorkerScope } from "@lib/online-search-client"
 import { singleKeyShortcutsEnabled } from "@lib/single-key-shortcuts"
 import { pageLifecycle } from "@lib/page-lifecycle"
+import { createTablerSvgElement, type TablerIconName } from "@lib/tabler-svg"
 import { openTaskDetailHandoff } from "@lib/task-detail-handoff"
 import { EXACT_TASK_IDENTIFIER_SCORE } from "@lib/task-search-score"
 import type {
@@ -11,7 +14,7 @@ import type {
   SearchResultSection,
   SearchScope,
   TaskSearchField,
-} from "@domains/search/search-types"
+} from "@domains/search"
 
 const waitingSearchCapability = "MEITHEAL_SEARCH_WAITING_CAPABLE"
 
@@ -54,23 +57,29 @@ function itemMatchesQuery(item: SearchResultItem, query: string): boolean {
     .includes(needle)
 }
 
-function getIconForItem(item: SearchResultItem): string {
-  if (item.icon) return item.icon
+function resolveSearchIconName(item: SearchResultItem): TablerIconName {
+  if (item.id === "page-dashboard") return "dashboard"
+  if (item.id === "page-today") return "today"
+  if (item.id === "page-calendar") return "calendar"
+  if (item.id === "page-table") return "table"
+  if (item.id === "page-tasks") return "kanban"
+  if (item.id === "page-settings") return "settings"
+  if (item.id === "action-new-task") return "plus"
   switch (item.kind) {
     case "task":
-      return "✓"
+      return "checkbox"
     case "area":
-      return "▦"
+      return "folder"
     case "saved_filter":
-      return "⌘"
+      return "filter"
     case "setting":
-      return "⚙"
+      return "settings"
     case "action":
-      return "✦"
+      return "sparkles"
     case "page":
-      return "→"
+      return "arrow-right"
     default:
-      return "•"
+      return "search"
   }
 }
 
@@ -86,7 +95,7 @@ function isSafeUrl(url: string): boolean {
 
 function prefixIngress(href: string): string {
   if (!href.startsWith("/")) return href
-  return `${window.__ingress_path || ""}${href}`
+  return safeIngressHref(href)
 }
 
 function renderResultItem(
@@ -106,9 +115,9 @@ function renderResultItem(
   icon.className = "search-hub-item-icon"
   icon.setAttribute("aria-hidden", "true")
   if (item.color) {
-    icon.style.boxShadow = `inset 0 0 0 1px rgba(var(--border-rgb), 0.4), 0 0 0 1px ${item.color}`
+    icon.style.boxShadow = `inset 0 0 0 1px rgb(var(--border-rgb) / 0.4), 0 0 0 1px ${item.color}`
   }
-  icon.textContent = getIconForItem(item)
+  icon.replaceChildren(createTablerSvgElement(resolveSearchIconName(item), 16))
 
   const body = document.createElement("div")
   const title = document.createElement("p")
@@ -254,6 +263,13 @@ pageLifecycle.onPageLoad((signal) => {
     if (selected) {
       inputEl.setAttribute("aria-activedescendant", selected.id)
       selected.scrollIntoView({ block: "nearest" })
+      const optionRect = selected.getBoundingClientRect()
+      const listRect = resultsEl.getBoundingClientRect()
+      if (optionRect.bottom > listRect.bottom) {
+        resultsEl.scrollTop += optionRect.bottom - listRect.bottom + 8
+      } else if (optionRect.top < listRect.top) {
+        resultsEl.scrollTop -= listRect.top - optionRect.top + 8
+      }
     } else {
       inputEl.removeAttribute("aria-activedescendant")
     }
@@ -327,12 +343,14 @@ pageLifecycle.onPageLoad((signal) => {
       const target = prefixIngress(item.href)
       if (isSafeUrl(target)) {
         const url = new URL(target, window.location.href)
+        if (url.origin !== window.location.origin) return
         const settingsShell = document.getElementById("settings-shell")
         if (item.kind === "setting" && settingsShell && url.href === window.location.href) {
           settingsShell.dispatchEvent(new Event("meitheal:settings-jump"))
           return
         }
-        window.location.href = target
+        syncIngressDestination(item.href)
+        window.location.href = url.pathname + url.search + url.hash // nosemgrep
       }
     }
   }
@@ -465,6 +483,12 @@ pageLifecycle.onPageLoad((signal) => {
               })
             })
           } else {
+            void searchRegistration(scope).then(current => {
+              const installing = current?.installing
+              installing?.addEventListener("statechange", () => {
+                if (installing.state === "installed" && isCurrent()) void refreshResults()
+              }, { signal: request.signal })
+            }).catch(() => {})
             showSearchStatus("Online search is unavailable until the app updates.", "Retry", () => {
               void searchRegistration(scope).then(current => current?.update()).catch(() => {})
               void refreshResults()
@@ -534,7 +558,9 @@ pageLifecycle.onPageLoad((signal) => {
     if (event.defaultPrevented) return
     const target = event.target
     if (target instanceof HTMLElement && (target.matches("input, textarea, select") || target.isContentEditable)) return
-    if (document.getElementById("task-detail-overlay")?.classList.contains("active")) return
+    const tdOverlay = document.getElementById("task-detail-overlay")
+    if (tdOverlay?.classList.contains("active") && !document.body.classList.contains("has-docked-inspector")) return
+    if (hasPriorityOverlay()) return
 
     if (event.key === "/" && !event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey
       && singleKeyShortcutsEnabled()) {
@@ -608,6 +634,9 @@ pageLifecycle.onPageLoad((signal) => {
 
   navigator.serviceWorker?.addEventListener("controllerchange", () => {
     if (isOpen) void refreshResults()
+  }, { signal })
+  window.addEventListener("meitheal-sw-update", (event) => {
+    if ((event as CustomEvent<{ type?: string }>).detail?.type === "update-available" && isOpen) void refreshResults()
   }, { signal })
   window.addEventListener("pagehide", () => {
     detailReturn = undefined

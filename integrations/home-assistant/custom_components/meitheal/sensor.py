@@ -12,9 +12,11 @@ from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN
 from .coordinator import MeithealCoordinator
-from .helpers import PARALLEL_UPDATES as PARALLEL_UPDATES, device_info
+from .helpers import PARALLEL_UPDATES as _PARALLEL_UPDATES
+from .helpers import device_info
+
+PARALLEL_UPDATES = _PARALLEL_UPDATES
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -191,15 +193,10 @@ class MeithealDueTodaySensor(
         """Expose today's task details."""
         if not self.coordinator.data:
             return None
-        from datetime import datetime as dt
-        today = dt.now().strftime("%Y-%m-%d")
-        due = [
-            t for t in self.coordinator.data.tasks
-            if t.due_date and t.due_date.startswith(today) and t.status != "done"
-        ]
+        due = self.coordinator.data.due_today_tasks[:10]
         return {
-            "task_titles": [t.title for t in due[:10]],
-            "priorities": [t.priority for t in due[:10]],
+            "task_titles": [t.title for t in due],
+            "priorities": [t.priority for t in due],
         }
 
 

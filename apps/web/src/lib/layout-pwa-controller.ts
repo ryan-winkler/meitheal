@@ -45,7 +45,7 @@ function showUpdateToast() {
   toast.innerHTML = `
     <span>🔄 A new version of Meitheal is available.</span>
     <button type="button" id="sw-update-btn"
-      style="margin-left:12px;padding:4px 12px;font-size:12px;font-weight:600;color:#fff;background:var(--accent,#6366F1);border:none;border-radius:6px;cursor:pointer;"
+      style="margin-left:12px;padding:4px 12px;font-size:12px;font-weight:600;color:var(--personal-accent-foreground,var(--palette-on-accent,#07140f));background:var(--accent,#69E3B2);border:none;border-radius:6px;cursor:pointer;"
     >Refresh</button>
   `
   container.appendChild(toast)

@@ -5,10 +5,24 @@
  * and hydration of Grocy status on load.
  */
 import { withAsyncButton } from "@lib/async-button"
+import { LEGACY_HASSIO_INGRESS_PATH, normalizeBrowserReachableGrocyUrl } from "@lib/grocy-url-ui"
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { escapeHtml } from "@lib/safe-html"
 import { showToast } from "@lib/toast"
 import { saveSetting, log } from "@lib/settings-utils"
+
+function syncOpenGrocyLink(rawUrl: string | undefined): void {
+  const openLink = document.getElementById("open-grocy-link") as HTMLAnchorElement | null
+  if (!openLink) return
+  const safeHref = typeof rawUrl === "string" ? normalizeBrowserReachableGrocyUrl(rawUrl) : null
+  if (safeHref && (safeHref.startsWith("http://") || safeHref.startsWith("https://"))) {
+    openLink.href = safeHref
+    openLink.style.display = ""
+  } else {
+    openLink.removeAttribute("href")
+    openLink.style.display = "none"
+  }
+}
 
 export function initGrocySettings(): void {
   // Auto-key generation
@@ -24,7 +38,7 @@ export function initGrocySettings(): void {
       const keyInput = document.getElementById("grocy-key") as HTMLInputElement
       const body: Record<string, string> = {}
       if (urlInput?.value?.trim()) body.url = urlInput.value.trim()
-      const res = await fetch((window.__ingress_path || "") + "/api/grocy/auto-key", {
+      const res = await fetch("/api/grocy/auto-key", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body),
@@ -33,7 +47,10 @@ export function initGrocySettings(): void {
       const data = await res.json()
       if (data.ok) {
         if (keyInput) keyInput.placeholder = data.apiKey || "••••"
-        if (urlInput && data.url) urlInput.value = data.url
+        if (urlInput && data.url) {
+          urlInput.value = data.url
+          syncOpenGrocyLink(data.url)
+        }
         showToast("API key generated and saved", "success")
       } else {
         showToast(data.error || "Auto-key failed", "error")
@@ -51,26 +68,33 @@ export function initGrocySettings(): void {
   const saveGrocyBtn = document.getElementById("save-grocy") as HTMLButtonElement
   if (saveGrocyBtn) {
     pageLifecycle.on(saveGrocyBtn, "click", withAsyncButton(saveGrocyBtn, async () => {
-    const url = (document.getElementById("grocy-url") as HTMLInputElement).value
+    const rawUrl = (document.getElementById("grocy-url") as HTMLInputElement).value.trim()
     const key = (document.getElementById("grocy-key") as HTMLInputElement).value
     const syncMode = (document.getElementById("grocy-sync-mode") as HTMLSelectElement).value
     const syncInterval = (document.getElementById("grocy-sync-interval") as HTMLSelectElement).value
 
     const grocyAutoDetected = document.getElementById("grocy-auto-info")
-    const isAutoDetected = grocyAutoDetected && grocyAutoDetected.style.display !== "none"
+    const isAutoDetected = Boolean(grocyAutoDetected && grocyAutoDetected.style.display !== "none")
+    const url = rawUrl
     if (!url && !isAutoDetected) {
       showToast("settings.grocy_required", "error")
       const urlInput = document.getElementById("grocy-url")
       urlInput?.classList.add("form-input--error")
-      urlInput?.addEventListener("input", () => urlInput.classList.remove("form-input--error"), { once: true })
+      urlInput?.addEventListener("input", () => urlInput.classList.remove("form-input--error"), {
+        once: true,
+        signal: pageLifecycle.signal,
+      })
       return
     }
-    if (url) {
+    if (url && !LEGACY_HASSIO_INGRESS_PATH.test(url)) {
       try { new URL(url) } catch {
         showToast("Please enter a valid URL", "error")
         const urlInput = document.getElementById("grocy-url")
         urlInput?.classList.add("form-input--error")
-        urlInput?.addEventListener("input", () => urlInput.classList.remove("form-input--error"), { once: true })
+        urlInput?.addEventListener("input", () => urlInput.classList.remove("form-input--error"), {
+          once: true,
+          signal: pageLifecycle.signal,
+        })
         return
       }
     }
@@ -83,7 +107,7 @@ export function initGrocySettings(): void {
       }
       if (url) payload.grocy_url = url
       if (key) payload.grocy_api_key = key
-      const res = await fetch((window.__ingress_path || "") + "/api/grocy/settings", {
+      const res = await fetch("/api/grocy/settings", {
         method: "PUT",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(payload),
@@ -91,6 +115,13 @@ export function initGrocySettings(): void {
       })
       const data = await res.json()
       if (data.ok) {
+        if (typeof data.url === "string" && data.url) {
+          const urlInput = document.getElementById("grocy-url") as HTMLInputElement | null
+          if (urlInput) urlInput.value = data.url
+          syncOpenGrocyLink(data.url)
+        } else {
+          syncOpenGrocyLink(url || undefined)
+        }
         const statusEl = document.getElementById("grocy-status")
         if (statusEl) { statusEl.textContent = "Configured"; statusEl.className = "badge badge-active" }
         const syncBtn = document.getElementById("sync-grocy-now")
@@ -126,7 +157,7 @@ export function initGrocySettings(): void {
     btn.textContent = "Testing..."
     btn.disabled = true
     try {
-      const res = await fetch((window.__ingress_path || "") + "/api/grocy/test", {
+      const res = await fetch("/api/grocy/test", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ url: url || undefined, api_key: key || undefined, auto_detected: isAutoDetected || false }),
@@ -135,19 +166,31 @@ export function initGrocySettings(): void {
       const data = await res.json()
       if (resultEl) {
         resultEl.style.display = "block"
+        const title = document.createElement("strong")
+        const detail = document.createElement("div")
+        detail.className = "integration-callout__detail"
         if (data.ok) {
           resultEl.className = "integration-callout integration-callout--success"
-          resultEl.innerHTML = `<strong>✓ Connected to Grocy ${escapeHtml(data.version)}</strong><div class="integration-callout__detail">${escapeHtml(data.counts.chores)} chore${data.counts.chores !== 1 ? "s" : ""} · ${escapeHtml(data.counts.tasks)} task${data.counts.tasks !== 1 ? "s" : ""} · ${escapeHtml(data.counts.shoppingItems)} shopping item${data.counts.shoppingItems !== 1 ? "s" : ""}</div>`
+          title.textContent = `✓ Connected to Grocy ${String(data.version ?? "")}`
+          const c = data.counts ?? {}
+          detail.textContent = `${c.chores ?? 0} chore${c.chores !== 1 ? "s" : ""} · ${c.tasks ?? 0} task${c.tasks !== 1 ? "s" : ""} · ${c.shoppingItems ?? 0} shopping item${c.shoppingItems !== 1 ? "s" : ""}`
         } else {
           resultEl.className = "integration-callout integration-callout--warning"
-          resultEl.innerHTML = `<strong>✗ Connection failed</strong><div class="integration-callout__detail">${escapeHtml(data.error || "Unknown error")}</div>`
+          title.textContent = "✗ Connection failed"
+          detail.textContent = String(data.error || "Unknown error")
         }
+        resultEl.replaceChildren(title, detail)
       }
     } catch (err) {
       if (resultEl) {
         resultEl.style.display = "block"
         resultEl.className = "integration-callout integration-callout--warning"
-        resultEl.innerHTML = `<strong>✗ Network error</strong><div class="integration-callout__detail">${escapeHtml(err instanceof Error ? err.message : "Unknown")}</div>`
+        const title = document.createElement("strong")
+        title.textContent = "✗ Network error"
+        const detail = document.createElement("div")
+        detail.className = "integration-callout__detail"
+        detail.textContent = err instanceof Error ? err.message : "Unknown"
+        resultEl.replaceChildren(title, detail)
       }
     }
     btn.textContent = "Test Connection"
@@ -165,7 +208,7 @@ export function initGrocySettings(): void {
     try {
       const syncMode = (document.getElementById("grocy-sync-mode") as HTMLSelectElement).value
       const syncInterval = (document.getElementById("grocy-sync-interval") as HTMLSelectElement).value
-      const res = await fetch((window.__ingress_path || "") + "/api/grocy/sync", {
+      const res = await fetch("/api/grocy/sync", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ action: "sync", sync_mode: syncMode, interval_ms: Number(syncInterval) }),
@@ -206,7 +249,7 @@ export function initGrocySettings(): void {
 
 async function hydrateGrocyStatus() {
   try {
-    const res = await fetch((window.__ingress_path || "") + "/api/grocy/settings", { signal: pageLifecycle.signal })
+    const res = await fetch("/api/grocy/settings", { signal: pageLifecycle.signal })
     if (!res.ok) return
     const data = await res.json()
     const s = data.settings || {}
@@ -219,10 +262,9 @@ async function hydrateGrocyStatus() {
       if (statusEl) { statusEl.textContent = "Configured"; statusEl.className = "badge badge-active" }
       const syncBtn = document.getElementById("sync-grocy-now")
       if (syncBtn) syncBtn.style.display = ""
-      const openLink = document.getElementById("open-grocy-link") as HTMLAnchorElement | null
-      if (openLink && s.grocy_url) { openLink.href = String(s.grocy_url); openLink.style.display = "" }
+      syncOpenGrocyLink(typeof s.grocy_url === "string" ? s.grocy_url : undefined)
     }
-    const syncRes = await fetch((window.__ingress_path || "") + "/api/grocy/sync", { signal: pageLifecycle.signal })
+    const syncRes = await fetch("/api/grocy/sync", { signal: pageLifecycle.signal })
     if (syncRes.ok) {
       const syncData = await syncRes.json()
       const sync = syncData.sync

@@ -65,7 +65,7 @@ try {
 const projTitle = String(project?.title ?? "Project");
 const projDesc = project?.description ? String(project.description) : null;
 const projIcon = String(project?.icon ?? "📋");
-const projColor = String(project?.color ?? "#6366F1");
+const projColor = String(project?.color ?? "#146C4E");
 const projStatus = String(project?.status ?? "active");
 
 const completedCount = tasks.filter((t) => String(t.status) === "complete").length;
@@ -412,10 +412,10 @@ const tabs = [
     border-radius: 9999px;
     text-transform: capitalize;
   }
-  .status-active { background: rgba(var(--success-rgb), 0.1); color: var(--success); }
-  .status-completed { background: rgba(var(--accent-rgb), 0.1); color: var(--accent); }
-  .status-paused { background: rgba(var(--warning-rgb), 0.1); color: var(--warning); }
-  .status-archived { background: rgba(var(--text-muted-rgb), 0.1); color: var(--text-muted); }
+  .status-active { background: rgb(var(--success-rgb) / 0.1); color: var(--success); }
+  .status-completed { background: rgb(var(--accent-rgb) / 0.1); color: var(--accent); }
+  .status-paused { background: rgb(var(--warning-rgb) / 0.1); color: var(--warning); }
+  .status-archived { background: rgb(var(--text-muted-rgb) / 0.1); color: var(--text-muted); }
 
   .project-header-stats { display: flex; gap: 1.5rem; }
   .stat-block { text-align: center; }
@@ -449,7 +449,7 @@ const tabs = [
     align-items: center;
     justify-content: space-between;
     padding: 0.75rem 1.25rem;
-    border-bottom: 1px solid rgba(var(--border-rgb), 0.3);
+    border-bottom: 1px solid rgb(var(--border-rgb) / 0.3);
     cursor: pointer;
     transition: background 150ms;
     gap: 0.75rem;
@@ -538,7 +538,7 @@ const tabs = [
   .form-group input:focus,
   .form-group textarea:focus {
     border-color: var(--accent);
-    box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.15);
+    box-shadow: 0 0 0 2px rgb(var(--accent-rgb) / 0.15);
   }
   .form-select {
     width: 100%;
@@ -555,7 +555,7 @@ const tabs = [
   }
   .form-select:focus {
     border-color: var(--accent);
-    box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.15);
+    box-shadow: 0 0 0 2px rgb(var(--accent-rgb) / 0.15);
   }
   .form-row { display: flex; gap: 1rem; }
   .form-group-sm { flex: 0 0 80px; }
@@ -602,7 +602,7 @@ const tabs = [
     gap: 0.5rem;
     padding: 0.75rem 1.25rem;
     border-bottom: 1px solid var(--border);
-    background: rgba(var(--accent-rgb), 0.03);
+    background: rgb(var(--accent-rgb) / 0.03);
     border-radius: var(--radius-md);
     margin-bottom: 0.75rem;
     animation: task-form-in 200ms ease;
@@ -624,7 +624,7 @@ const tabs = [
   }
   .task-create-input:focus {
     border-color: var(--accent);
-    box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.15);
+    box-shadow: 0 0 0 2px rgb(var(--accent-rgb) / 0.15);
   }
   .task-create-input::placeholder { color: var(--text-muted); }
   .task-create-actions { display: flex; gap: 0.375rem; flex-shrink: 0; }
@@ -758,7 +758,7 @@ const tabs = [
           title,
           description: descInput?.value?.trim() || null,
           icon: iconInput?.value?.trim() || "📋",
-          color: colorInput?.value || "#6366F1",
+          color: colorInput?.value || "#146C4E",
           status: statusSelect?.value || "active",
           goal_id: goalSelect?.value || null,
         }),

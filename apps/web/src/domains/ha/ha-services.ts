@@ -7,7 +7,8 @@
  * @bounded-context integration
  */
 import { callService } from "home-assistant-js-websocket";
-import { getHAConnection } from "./ha-connection";
+import { getHAConnection, haRestFetch } from "./ha-connection";
+import { getEntity, waitForInitialEntityHydration } from "./ha-entities";
 import { readConversationAgents, type ConversationAgent } from "./conversation-agents";
 export type { ConversationAgent } from "./conversation-agents";
 import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability";
@@ -25,10 +26,25 @@ export interface CalendarEvent {
   summary: string;
   start: string;
   end: string;
-  description?: string;
-  location?: string;
-  uid?: string;
-  recurrence_id?: string;
+  description?: string | undefined;
+  location?: string | undefined;
+  uid?: string | undefined;
+  recurrence_id?: string | undefined;
+  rrule?: string | undefined;
+}
+
+function readCalendarBound(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (value && typeof value === "object") {
+    const obj = value as { dateTime?: unknown; date?: unknown };
+    if (typeof obj.dateTime === "string") return obj.dateTime;
+    if (typeof obj.date === "string") return obj.date;
+  }
+  return "";
+}
+
+function optionalNonEmptyString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0 ? value : undefined;
 }
 
 /** HA CalendarEntityFeature bitmask values */
@@ -57,41 +73,64 @@ function buildDateFields(start: string, end: string): Record<string, string> {
   return { start_date_time: start, end_date_time: end };
 }
 
-/** Feature detection cache — avoids re-fetching all states for every calendar operation */
+/** Feature detection cache — avoids re-fetching entity state for every calendar operation */
 const _featureCache = new Map<string, { features: number; cachedAt: number }>();
-const FEATURE_CACHE_TTL_MS = 60_000; // 1 minute
+const _featureInFlight = new Map<string, Promise<number>>();
+const FEATURE_CACHE_TTL_MS = 300_000; // 5 minutes
 
 /**
- * Get supported calendar features for an entity from its state attributes.
- * Returns bitmask of CalendarFeature values. Cached for 60s.
+ * Get supported calendar features for an entity from the scoped cache or singleflight REST lookup.
+ * Returns bitmask of CalendarFeature values.
  */
 export async function getCalendarEntityFeatures(entityId: string): Promise<number> {
-  // Check cache first
+  const cachedEntity = getEntity(entityId);
+  if (cachedEntity?.attributes?.supported_features !== undefined) {
+    return Number(cachedEntity.attributes.supported_features) || 0;
+  }
+
   const cached = _featureCache.get(entityId);
   if (cached && Date.now() - cached.cachedAt < FEATURE_CACHE_TTL_MS) {
     return cached.features;
   }
 
-  const conn = await getHAConnection();
-  if (!conn) return 0;
-  try {
-    const states = await conn.sendMessagePromise<Array<{ entity_id: string; attributes: Record<string, unknown> }>>({
-      type: "get_states",
-    });
-    const entity = states.find((s) => s.entity_id === entityId);
-    const features = (entity?.attributes?.supported_features as number) ?? 0;
-
-    // Cache result
-    _featureCache.set(entityId, { features, cachedAt: Date.now() });
-
-    return features;
-  } catch (err) {
-    logger.log("warn", {
-      event: "ha.calendar.features.failed", domain: "ha", component: "ha-services",
-      request_id: SYS_REQ, message: `Failed to get calendar features for ${entityId}: ${err}`,
-    });
-    return 0;
+  if (!cachedEntity) {
+    await waitForInitialEntityHydration(2_500);
+    const hydratedEntity = getEntity(entityId);
+    if (hydratedEntity?.attributes?.supported_features !== undefined) {
+      return Number(hydratedEntity.attributes.supported_features) || 0;
+    }
+    const postHydrationCached = _featureCache.get(entityId);
+    if (postHydrationCached && Date.now() - postHydrationCached.cachedAt < FEATURE_CACHE_TTL_MS) {
+      return postHydrationCached.features;
+    }
   }
+
+  const existingFlight = _featureInFlight.get(entityId);
+  if (existingFlight) return existingFlight;
+
+  const flight = (async (): Promise<number> => {
+    try {
+      const res = await haRestFetch(`/api/states/${encodeURIComponent(entityId)}`, {
+        signal: AbortSignal.timeout(5_000),
+      });
+      if (!res || !res.ok) return 0;
+      const stateObj = (await res.json()) as { attributes?: { supported_features?: unknown } };
+      const features = Number(stateObj?.attributes?.supported_features ?? 0) || 0;
+      _featureCache.set(entityId, { features, cachedAt: Date.now() });
+      return features;
+    } catch (err) {
+      logger.log("warn", {
+        event: "ha.calendar.features.failed", domain: "ha", component: "ha-services",
+        request_id: SYS_REQ, message: `Failed to get calendar features for ${entityId}: ${err}`,
+      });
+      return 0;
+    } finally {
+      _featureInFlight.delete(entityId);
+    }
+  })();
+
+  _featureInFlight.set(entityId, flight);
+  return flight;
 }
 
 export async function listCalendarEvents(
@@ -112,8 +151,28 @@ export async function listCalendarEvents(
     const respObj = (result as { response?: Record<string, { events?: CalendarEvent[] }> });
     // Direct access supports older HA versions or websocket-library unwrapping.
     const direct = result as Record<string, { events?: CalendarEvent[] }>;
-    const events = respObj?.response?.[entityId]?.events ?? direct?.[entityId]?.events
-    if (!Array.isArray(events)) throw new Error("Home Assistant returned no calendar event response")
+    const rawEvents = respObj?.response?.[entityId]?.events ?? direct?.[entityId]?.events
+    if (!Array.isArray(rawEvents)) throw new Error("Home Assistant returned no calendar event response")
+
+    const events: CalendarEvent[] = rawEvents.map((raw) => {
+      const record = raw as unknown as Record<string, unknown>;
+      const mapped: CalendarEvent = {
+        summary: typeof record.summary === "string" ? record.summary : "",
+        start: readCalendarBound(record.start),
+        end: readCalendarBound(record.end),
+      };
+      const description = optionalNonEmptyString(record.description);
+      const location = optionalNonEmptyString(record.location);
+      const uid = optionalNonEmptyString(record.uid);
+      const recurrenceId = optionalNonEmptyString(record.recurrence_id);
+      const rrule = optionalNonEmptyString(record.rrule);
+      if (description !== undefined) mapped.description = description;
+      if (location !== undefined) mapped.location = location;
+      if (uid !== undefined) mapped.uid = uid;
+      if (recurrenceId !== undefined) mapped.recurrence_id = recurrenceId;
+      if (rrule !== undefined) mapped.rrule = rrule;
+      return mapped;
+    });
 
     logger.log("debug", {
       event: "ha.calendar.list_events", domain: "ha", component: "ha-services",

@@ -6,6 +6,9 @@ const key = Symbol.for("meitheal.ingress.transport")
 const transport = globalThis[key] ??= new AsyncLocalStorage()
 
 export function runWithIngressTransport(context, handle) {
+  context.behindIngress ??= false
+  context.streamingIngressHtml ??= false
+  context.abortRecorded ??= false
   return transport.run(context, handle)
 }
 

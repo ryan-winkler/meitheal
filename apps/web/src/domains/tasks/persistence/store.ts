@@ -1,8 +1,6 @@
 import { mkdirSync } from "node:fs"
-import { createRequire } from "node:module"
 import path from "node:path";
 import type { Client } from "@libsql/client"
-import type { LibSQLDatabase } from "drizzle-orm/libsql"
 import type { CalendarResult } from "@meitheal/integration-core";
 import type { CalendarSyncState, CreateTaskPlan, IntegrationOutcome } from "@meitheal/domain-tasks";
 import { assertSupportedDatabaseSchema, DATABASE_SCHEMA_VERSION, openDatabase } from "../../../../scripts/database-client.mjs"
@@ -18,6 +16,24 @@ import {
 } from "../../../../drizzle/migrations/task-activity-schema.mjs"
 import { reconcileTaskSchemaPrerequisites } from "../../../../drizzle/migrations/task-schema-prerequisites.mjs"
 import { STATUS } from "../../../lib/status-config"
+import {
+  TaskRepository,
+  type ExternalSyncLookup,
+  type ExternalSyncMatch,
+  type SyncChunkCommitResult,
+  type SyncChunkItemError,
+  type SyncConfirmationTarget,
+  type SyncTaskMutation,
+} from "./task-repository"
+
+export type {
+  ExternalSyncLookup,
+  ExternalSyncMatch,
+  SyncChunkCommitResult,
+  SyncChunkItemError,
+  SyncConfirmationTarget,
+  SyncTaskMutation,
+}
 
 export interface PersistedTask {
   id: string;
@@ -37,9 +53,10 @@ export interface PersistedTaskResponse {
   integration: IntegrationOutcome;
 }
 
-let clientSingleton: Client | null = null;
-let dbSingleton: LibSQLDatabase | null = null
+let clientSingleton: Client | null = null
+let clientSingletonDbUrl: string | null = null
 let schemaInitialization: Promise<void> | undefined
+let initializedDbUrl: string | null = null
 let remoteSchemaCheck: Promise<void> | undefined
 let startupBackupAttempted = false
 
@@ -58,9 +75,38 @@ function resolveDbUrl(): string {
 }
 
 function resolveDbPath(dbUrl: string): string | null {
-  if (!dbUrl.startsWith("file:")) return null
-  const dbPath = dbUrl.slice("file:".length)
+  if (!/^file:/i.test(dbUrl)) return null
+  const withoutScheme = dbUrl.slice("file:".length)
+  const hashIdx = withoutScheme.indexOf("#")
+  const rawRest = hashIdx >= 0 ? withoutScheme.slice(0, hashIdx) : withoutScheme
+  const qIdx = rawRest.indexOf("?")
+  const rawPath = qIdx >= 0 ? rawRest.slice(0, qIdx) : rawRest
+  const query = qIdx >= 0 ? rawRest.slice(qIdx + 1) : ""
+  if (/(?:^|&)mode=memory(?:&|$)/i.test(query)) return null
+  let dbPath = rawPath
+  if (/^\/\/localhost\//i.test(dbPath)) {
+    dbPath = dbPath.slice("//localhost".length)
+  } else if (dbPath.startsWith("///")) {
+    dbPath = dbPath.slice(2)
+  } else if (dbPath.startsWith("//")) {
+    return null
+  }
+  try {
+    dbPath = decodeURIComponent(dbPath)
+  } catch {
+    return null
+  }
+  if (!dbPath || dbPath === ":memory:" || dbPath.startsWith(":memory:")) return null
   return path.isAbsolute(dbPath) ? dbPath : path.join(process.cwd(), dbPath)
+}
+
+/**
+ * Directory that holds the local SQLite file, for state that belongs beside
+ * the database (and inside its backups). Null when the database is remote or in-memory.
+ */
+export function getLocalDataDirectory(): string | null {
+  const dbPath = resolveDbPath(resolveDbUrl())
+  return dbPath ? path.dirname(dbPath) : null
 }
 
 function ensureFileDbDirectory(dbUrl: string): void {
@@ -71,27 +117,28 @@ function ensureFileDbDirectory(dbUrl: string): void {
 }
 
 function getClient(): Client {
+  const dbUrl = resolveDbUrl()
+  if (clientSingleton && clientSingletonDbUrl === dbUrl) {
+    return clientSingleton
+  }
   if (clientSingleton) {
-    return clientSingleton;
+    const prev = clientSingleton
+    clientSingleton = null
+    clientSingletonDbUrl = null
+    schemaInitialization = undefined
+    initializedDbUrl = null
+    remoteSchemaCheck = undefined
+    startupBackupAttempted = false
+    prev.close()
   }
 
-  const dbUrl = resolveDbUrl();
-  ensureFileDbDirectory(dbUrl);
+  ensureFileDbDirectory(dbUrl)
   clientSingleton = openDatabase(dbUrl)
-  return clientSingleton;
+  clientSingletonDbUrl = dbUrl
+  return clientSingleton
 }
 
-/** Drizzle ORM client — lazy-initialized singleton. Use for typed queries. */
-export function getDb() {
-  if (!dbSingleton) {
-    const require = createRequire(import.meta.url)
-    const { drizzle } = require("drizzle-orm/libsql") as typeof import("drizzle-orm/libsql")
-    dbSingleton = drizzle(getClient())
-  }
-  return dbSingleton;
-}
-
-/** Low-level libSQL client — use for raw SQL when Drizzle isn't needed. */
+/** Low-level SQLite client — use for raw SQL queries. */
 export function getPersistenceClient(): Client {
   return getClient();
 }
@@ -151,10 +198,28 @@ async function hasColumn(client: Client, tableName: string, columnName: string):
  * Concurrent requests share one initialization and later calls reuse its result.
  */
 export function ensureSchema(): Promise<void> {
-  schemaInitialization ??= initializeSchema().catch(error => {
+  const targetDbUrl = resolveDbUrl()
+  if (initializedDbUrl !== targetDbUrl) {
     schemaInitialization = undefined
-    throw error
-  })
+    initializedDbUrl = targetDbUrl
+  }
+  if (!schemaInitialization) {
+    const pending = initializeSchema().then(
+      () => {
+        if (schemaInitialization === pending && resolveDbUrl() === targetDbUrl) {
+          initializedDbUrl = targetDbUrl
+        }
+      },
+      error => {
+        if (schemaInitialization === pending) {
+          schemaInitialization = undefined
+          initializedDbUrl = null
+        }
+        throw error
+      },
+    )
+    schemaInitialization = pending
+  }
   return schemaInitialization
 }
 
@@ -504,10 +569,11 @@ async function initializeSchema(): Promise<void> {
       updated_at INTEGER NOT NULL
     )
   `);
-
+  // An agent assignee is an AI agent that works its tasks through a linked token.
   if (!(await hasColumn(client, "custom_users", "kind"))) {
     await client.execute("ALTER TABLE custom_users ADD COLUMN kind TEXT NOT NULL DEFAULT 'human'");
   }
+
 
   // Jira-style task linking — relationship types beyond parent/children
   await client.execute(`
@@ -612,6 +678,24 @@ async function initializeSchema(): Promise<void> {
   if (!(await hasColumn(client, "tasks", "owner"))) {
     await client.execute("ALTER TABLE tasks ADD COLUMN owner TEXT NOT NULL DEFAULT 'human'")
   }
+  // A task assigned to an agent assignee is owned by that agent ('bot:<name>');
+  // every other task is 'human'. Triggers keep this true on every write path,
+  // including Home Assistant, bulk edits and imports that never set the column.
+  // Static SQL only: the owner expression is repeated so no statement is assembled at run time.
+  await client.execute(`CREATE TRIGGER IF NOT EXISTS tasks_owner_on_insert AFTER INSERT ON tasks
+    WHEN NEW.owner = 'human' AND NEW.assigned_to IS NOT NULL
+      AND COALESCE((SELECT 'bot:' || name FROM custom_users WHERE id = NEW.assigned_to AND kind = 'agent'), 'human') IS NOT 'human'
+    BEGIN UPDATE tasks SET owner = COALESCE((SELECT 'bot:' || name FROM custom_users WHERE id = NEW.assigned_to AND kind = 'agent'), 'human') WHERE id = NEW.id; END`)
+  await client.execute(`CREATE TRIGGER IF NOT EXISTS tasks_owner_on_assign AFTER UPDATE OF assigned_to ON tasks
+    WHEN NEW.assigned_to IS NOT OLD.assigned_to
+      AND NEW.owner IS NOT COALESCE((SELECT 'bot:' || name FROM custom_users WHERE id = NEW.assigned_to AND kind = 'agent'), 'human')
+    BEGIN UPDATE tasks SET owner = COALESCE((SELECT 'bot:' || name FROM custom_users WHERE id = NEW.assigned_to AND kind = 'agent'), 'human') WHERE id = NEW.id; END`)
+  // Tasks assigned before these triggers existed, or with a mismatched bot owner.
+  await client.execute(`UPDATE tasks
+    SET owner = (SELECT 'bot:' || name FROM custom_users WHERE id = tasks.assigned_to AND kind = 'agent')
+    WHERE assigned_to IS NOT NULL
+      AND EXISTS (SELECT 1 FROM custom_users WHERE id = tasks.assigned_to AND kind = 'agent')
+      AND owner IS NOT (SELECT 'bot:' || name FROM custom_users WHERE id = tasks.assigned_to AND kind = 'agent')`)
   // lock_holder: bot agent name holding the lock (null = unlocked)
   if (!(await hasColumn(client, "tasks", "lock_holder"))) {
     await client.execute("ALTER TABLE tasks ADD COLUMN lock_holder TEXT")
@@ -1123,9 +1207,19 @@ export async function persistManualCalendarConfirmation(params: {
   return { confirmationId: params.confirmationId, alreadyExisted: false };
 }
 
+export function findTasksByExternalSyncIds(lookup: ExternalSyncLookup): Promise<Map<string, ExternalSyncMatch>> {
+  return new TaskRepository(getClient()).findTasksByExternalSyncIds(lookup)
+}
+
+export function commitSyncMutationChunks(
+  mutations: SyncTaskMutation[],
+  options?: { chunkSize?: number | undefined; signal?: AbortSignal | undefined },
+): Promise<SyncChunkCommitResult> {
+  return new TaskRepository(getClient()).commitSyncMutationChunks(mutations, options)
+}
+
 export function resetPersistenceForTests(): void {
   clientSingleton = null;
-  dbSingleton = null;
   schemaInitialization = undefined
   remoteSchemaCheck = undefined
   startupBackupAttempted = false

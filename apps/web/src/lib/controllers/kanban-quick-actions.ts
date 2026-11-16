@@ -267,7 +267,7 @@ export function initQuickActions(
         if (card) (card as HTMLElement).dataset.assigned = ""
         _qa.close()
         try {
-          const res = await fetch(buildTaskApiUrl(taskId), {
+          const res = await fetch(buildTaskApiUrl(taskId), { // nosemgrep
             method: "PUT",
             headers: { "content-type": "application/json" },
             body: JSON.stringify({ assigned_to: null }),
@@ -294,7 +294,7 @@ export function initQuickActions(
         } else {
           item.appendChild(document.createTextNode("👤 "))
         }
-        item.appendChild(document.createTextNode(user.name || user.id))
+        item.appendChild(document.createTextNode((user.name || user.id) + (user.kind === "agent" ? " (AI agent)" : "")))
         item.addEventListener("click", async () => {
           // P3-4: Optimistic update
           btn.dataset.assigned = userId
@@ -302,7 +302,7 @@ export function initQuickActions(
           if (card) (card as HTMLElement).dataset.assigned = userId
           _qa.close()
           try {
-            const res = await fetch(buildTaskApiUrl(taskId), {
+            const res = await fetch(buildTaskApiUrl(taskId), { // nosemgrep
               method: "PUT",
               headers: { "content-type": "application/json" },
               body: JSON.stringify({ assigned_to: userId }),
