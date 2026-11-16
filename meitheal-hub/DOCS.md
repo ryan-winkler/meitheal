@@ -33,13 +33,13 @@ Meitheal keeps its data in `/data/meitheal.db` on your own hardware. Home Assist
 2. In the **Add a task for today** box, type a real job, for example `Replace kitchen water filter tomorrow`. Then select **Add**.
 3. Open **Tasks**. Show your tasks as a **Kanban** board, a **Table**, a **Calendar** or a **Timeline**.
 4. Press `/` or `Ctrl+K` (`Cmd+K` on a Mac) to open **Search Hub**. Use it to find a task, project, area or setting.
-5. Go to **Settings → Personal**. Select the **Dark**, **Light** or **Auto** theme, an accent colour and your date and week format.
+5. Go to **Settings → Look & Feel** to select the **Dark**, **Light** or **Auto** theme and an accent colour. Choose your date format and week start in **Language & Time**.
 
 ## 3. Connect calendars, to-do lists and Assist
 
 ### Calendar and to-do sync
 
-In Meitheal, go to **Settings → Integrations**. There you can:
+In Meitheal, go to **Settings → Connected Services**. There you can:
 
 - Connect Home Assistant calendar entities. Select the sync direction before you start the sync.
 - Connect Home Assistant to-do lists. Then the same checklists show in Meitheal, on your dashboards and on your phone.
@@ -49,7 +49,7 @@ In Meitheal, go to **Settings → Integrations**. There you can:
 The Meitheal integration is a custom integration. You install it separately from this app. The [integration setup guide](https://github.com/ryan-winkler/meitheal/blob/dev/docs/kcs/home-assistant-marketplace.md) gives all the steps.
 
 1. Install `custom_components/meitheal` in Home Assistant, then restart Home Assistant Core.
-2. In Meitheal, go to **Settings → Automation & AI** and make an API token. Give it the `tasks:read` and `tasks:write` scopes.
+2. In Meitheal, go to **Settings → AI & Agent Access** and make an API token. Give it the `tasks:read` and `tasks:write` scopes.
 3. If you want to use `meitheal.search_tasks`, also give the token the `search:read` scope.
 4. If you want to delete tasks through `todo.meitheal_tasks`, also give the token the `tasks:delete` scope.
 5. In Home Assistant, go to **Settings → Devices & Services → Add Integration → Meitheal**.
@@ -63,13 +63,13 @@ After you connect the integration, Home Assistant has these items:
 
 ## 4. Companion app, PWA and offline use
 
-- **Home Assistant Companion app**: Meitheal works through Ingress in the Companion app on iOS and Android. To get links and `x-callback-url` shortcuts for the Companion app, go to **Settings → App & PWA**.
+- **Home Assistant Companion app**: Meitheal works through Ingress in the Companion app on iOS and Android. To get links and `x-callback-url` shortcuts for the Companion app, go to **Settings → App & Companion**.
 - **PWA**: If you open Meitheal through HTTPS, you can install it on your home screen or desktop. The PWA opens when you are offline and keeps your task changes until you connect again.
 
 ## 5. Backups, exports and your data
 
 - **Home Assistant backups**: Meitheal uses `backup: cold`. Home Assistant stops the app for a short time, so that all database writes are complete before the backup starts. Make a backup before you uninstall Meitheal, and before you change between **Meitheal** and **Meitheal Canary**.
-- **Exports**: Go to **Settings → App & PWA** to download your data as **JSON**, **CSV** or **SQLite**. Only Home Assistant administrators can download the **SQLite** file.
+- **Exports**: Go to **Settings → Backups & Reset → Data Portability** to download your data as **JSON**, **CSV** or **SQLite**. Only Home Assistant administrators can download the **SQLite** file.
 
 ## Configuration options
 

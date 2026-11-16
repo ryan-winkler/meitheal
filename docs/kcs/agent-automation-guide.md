@@ -52,7 +52,7 @@ For tools that need custom logic beyond CRUD dispatch:
 
 ## Agent Scopes & Token Policy
 
-Create agent tokens in **Settings → Automation & AI → Agent Tokens** as a verified Home Assistant administrator. Authenticate external callers with `Authorization: Bearer mth_<64-hex>`. Tokens never inherit Home Assistant administrator headers.
+Create agent tokens in **Settings → AI & Agent Access → Agent Tokens** as a verified Home Assistant administrator. Authenticate external callers with `Authorization: Bearer mth_<64-hex>`. Tokens never inherit Home Assistant administrator headers.
 
 | Scope | Capability |
 |-------|------------|
@@ -87,7 +87,7 @@ Create agent tokens in **Settings → Automation & AI → Agent Tokens** as a ve
 
 An agent assignee is an AI agent, such as Claude or Codex, that appears in the assignee list beside the people in your household. It works through one agent token, so the tasks assigned to it are that token's own tasks.
 
-1. Open **Settings → Automation & AI → Agent Tokens** as a Home Assistant administrator and choose **New Token**.
+1. Open **Settings → AI & Agent Access → Agent Tokens** as a Home Assistant administrator and choose **New Token**.
 2. Under **Acts as**, choose **New agent assignee…** and name the agent. Meitheal selects the scopes an agent needs: `mcp:execute`, `tasks:read`, `tasks:write:assigned` and `search:read`.
 3. Create the token and store it in the agent's MCP client. See [MCP and A2A setup](webmcp-a2a-setup.md).
 4. Assign a task to the agent from any assignee menu. Agents are marked **AI agent**.
@@ -156,7 +156,7 @@ curl -X POST http://localhost:3000/api/tasks/create \
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
-| MCP discovery or requests return 404 | MCP is disabled | Enable MCP in **Settings → Automation & AI → Agent Protocols**. Select **Save Agent Protocol Settings**. |
+| MCP discovery or requests return 404 | MCP is disabled | Enable MCP in **Settings → AI & Agent Access → Agent Protocols**. Select **Save Agent Protocol Settings**. |
 | MCP returns an empty tool list | `src/generated/mcp-tools.json` or `openapi.yaml` is missing | Run `pnpm --filter @meitheal/web run generate:codegen` |
 | Tool definitions appear stale in dev | 30s spec cache TTL | Wait 30 seconds or restart the dev server |
 | `X-Automation-Source` logged as `unknown` | Header value not in allowlist | Use an allowlisted source string |

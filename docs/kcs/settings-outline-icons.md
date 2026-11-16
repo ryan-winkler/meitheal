@@ -12,7 +12,7 @@ Integration rows have separate controls: the heading expands the configuration, 
 
 Disclosure summaries show their description once. Their touch target is at least 44 pixels high, and cards use the shared Settings inset. Theme choices remain **Auto (System)**, **Light**, **Dark** and **Custom**.
 
-Local feedback remains under **Settings → App & PWA** when opened through verified Home Assistant ingress. Its form, administrator queue, retry receipts and reviewed exports use the existing implementation. The underlined security reporting link remains available below the card. See [Feedback and support](feedback-and-support.md) for the permission and privacy boundaries.
+Local feedback remains under **Settings → App & Companion** when opened through verified Home Assistant ingress. Its form, administrator queue, retry receipts and reviewed exports use the existing implementation. The underlined security reporting link remains available below the card. See [Feedback and support](feedback-and-support.md) for the permission and privacy boundaries.
 
 The selected Tabler outline paths retain their MIT notice in `apps/web/scripts/generate-icons.mjs`, the committed `apps/web/src/generated/icon-registry.ts` catalog, `apps/web/src/components/ui/Icon.astro`, and `apps/web/public/licenses/tabler-icons.txt`. They do not require an external icon service.
 
