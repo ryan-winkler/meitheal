@@ -1,4 +1,3 @@
-import { cancelSession, ensurePomodoroSchema, getSessionHistory, getTimerState, getTodayStats, resetPomodoroForTests, skipToBreak, startFocus } from "../../apps/web/src/domains/pomodoro/index"
 import { execFile, fork } from "node:child_process"
 import { createHash } from "node:crypto"
 import { once } from "node:events"
@@ -14,6 +13,8 @@ import { PERSONAL_PILLAR_MIGRATION } from "../../apps/web/drizzle/migrations/001
 import { BOARD_ACCESS_MIGRATION } from "../../apps/web/drizzle/migrations/0011_board_access.mjs"
 import { TASK_BOARD_MIGRATION, TASK_BOARD_SCHEMA_VERSION } from "../../apps/web/drizzle/migrations/task-board-upgrade.mjs"
 import { DATABASE_SCHEMA_VERSION, openDatabase } from "../../apps/web/scripts/database-client.mjs"
+import { cancelSession, ensurePomodoroSchema, getSessionHistory, getTimerState, getTodayStats, resetPomodoroForTests, skipToBreak, startFocus } from "../../apps/web/src/domains/pomodoro/index"
+import { currentBoardGrantRevision, readBoardGrantRevision } from "../../apps/web/src/domains/tasks/persistence/board-grant-fence"
 import { HierarchyRepository } from "../../apps/web/src/domains/tasks/persistence/hierarchy-repository"
 import { getPillarById, getPillars } from "../../apps/web/src/domains/pillars/pillar-service"
 import { readSharedGoals } from "../../apps/web/src/domains/tasks/persistence/shared-goal-repository"
@@ -594,7 +595,8 @@ test("Household task reads and cleanup exclude a named Board even by exact ID", 
     "INSERT INTO projects (id, goal_id, area_id, title, owner_board_id, created_at, updated_at) VALUES ('work-project', 'work-goal', 'work-area', 'Work project', 'work-fixture', 1, 1)",
     "INSERT INTO pillars (id, name, slug, owner_board_id, created_at, updated_at) VALUES ('work-pillar', 'Work pillar', '~work-pillar', 'work-fixture', 1, 1)",
   ], "write")
-  const hierarchy = new HierarchyRepository(db)
+  const markerPath = join(directory, "meitheal-board-grants.json")
+  const hierarchy = new HierarchyRepository(db, markerPath)
   expect(await hierarchy.findAreaById("work-area")).toBeNull()
   expect(await hierarchy.findProjectById("work-project")).toBeNull()
   expect(await hierarchy.findAllGoals({ area_id: "work-area" })).toEqual([])
@@ -612,7 +614,8 @@ test("Household task reads and cleanup exclude a named Board even by exact ID", 
   expect(await getPillarById("work-pillar")).toBeNull()
   expect((await getPillars()).map(pillar => pillar.id)).not.toContain("work-pillar")
 
-  const revision = "99999999-9999-4999-8999-999999999999"
+  let revision = "99999999-9999-4999-8999-999999999999"
+  await writeFile(markerPath, JSON.stringify({ epoch: revision }))
   await db.batch([
     { sql: "INSERT INTO board_access_epoch (singleton, revision) VALUES (1, ?)", args: [revision] },
     "INSERT INTO board_goal_shares VALUES ('work-goal', 'default', 'household')",
@@ -646,6 +649,11 @@ test("Household task reads and cleanup exclude a named Board even by exact ID", 
     "INSERT INTO goals (id, title, created_at, updated_at) VALUES ('legacy-goal', 'Household goal', 1, 1)",
     "INSERT INTO projects (id, title, area_id, goal_id, owner_board_id, created_at, updated_at) VALUES ('linked-project', 'Linked in Work', 'legacy-area', 'legacy-goal', 'work-fixture', 1, 1)",
   ], "write")
+  expect(await hierarchy.deleteArea("default")).toBe(false)
+  expect(await hierarchy.findAreaById("default")).not.toBeNull()
+  await hierarchy.createGoal({ id: "surviving-goal", title: "Surviving Goal", area_id: "legacy-area" })
+  await hierarchy.createProject({ id: "surviving-project", title: "Surviving Project", area_id: "legacy-area", goal_id: "legacy-goal" })
+  const afterShares = revision
   await hierarchy.createProject({ id: "legacy-project", title: "Household linked Project" })
   await hierarchy.createProject({ id: "unlinked-project", title: "Household unlinked Project" })
   await db.execute("INSERT INTO board_task_planning (task_id, area_id, project_id, goal_id) VALUES ('private-task', 'legacy-area', 'legacy-project', 'legacy-goal')")
@@ -657,12 +665,21 @@ test("Household task reads and cleanup exclude a named Board even by exact ID", 
   expect((await db.execute("SELECT updated_at FROM tasks WHERE id = 'private-task'")).rows[0]?.updated_at).toBe(1)
   expect(await hierarchy.deleteArea("legacy-area")).toBe(true)
   expect(await hierarchy.deleteGoal("legacy-goal")).toBe(true)
+  expect(await hierarchy.updateGoal("surviving-goal", { area_id: null })).toBe(true)
+  expect(await hierarchy.updateProject("surviving-project", { area_id: "default", goal_id: null })).toBe(true)
   expect(await hierarchy.findAreaById("legacy-area")).toBeNull()
   expect(await hierarchy.findGoalById("legacy-goal")).toBeNull()
   await hierarchy.createArea({ id: "unlinked-area", name: "Unlinked Area" })
   await hierarchy.createGoal({ id: "unlinked-goal", title: "Unlinked Goal" })
   expect(await hierarchy.deleteArea("unlinked-area")).toBe(true)
   expect(await hierarchy.deleteGoal("unlinked-goal")).toBe(true)
+  const retiredRevision = await readBoardGrantRevision(markerPath)
+  if (!retiredRevision) throw new Error("Expected an updated grant marker")
+  expect(retiredRevision).not.toBe(afterShares)
+  await db.execute({ sql: "UPDATE board_access_epoch SET revision = ?", args: [afterShares] })
+  expect(await currentBoardGrantRevision(db, markerPath)).toBeNull()
+  await db.execute({ sql: "UPDATE board_access_epoch SET revision = ?", args: [retiredRevision] })
+  revision = retiredRevision
   expect((await db.execute("SELECT area_id, goal_id FROM projects WHERE id = 'linked-project'")).rows[0])
     .toMatchObject({ area_id: "legacy-area", goal_id: "legacy-goal" })
   await db.execute("UPDATE projects SET title = 'Private changes', status = 'completed' WHERE id = 'work-project'")

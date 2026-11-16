@@ -16,7 +16,7 @@ Keep the same submission when retrying unchanged content after a timeout. A subm
 
 ## Areas, Projects, Goals, Routines, and Pillars
 
-Under **Planning** on a named Board, create an Area to group Projects, Goals and Routines. Choose an optional Goal when creating a Project, and use the Project status to track completion. Board owners manage planning, retire records and link Projects to Goals. Board Pillars can have Principles and links to the same Board’s Goals, Routines and tickets. People with Board access can read them. Create a Pillar for yourself under **Progress → Pillars → New Pillar → Only me**.
+Under **Planning** on a named Board, create an Area to group Projects, Goals and Routines. Choose an optional Goal when creating a Project, and use the Project status to track completion. Board owners manage planning, retire records and link Projects to Goals. Board Pillars can have Principles and links to the same Board’s Goals, Routines and tickets. People with Board access can read them. Remove an Area’s active Projects, Goals and Routines before removing the Area. Create a Pillar for yourself under **Progress → Pillars → New Pillar → Only me**.
 
 Sharing a Goal with an Area publishes its title and a Project progress summary to people who can read that Area. Each viewer sees progress from Projects they can access. If a Project is private to Work, its progress is omitted for Home readers. Select **Goal sharing → Stop sharing** to remove the Area audience. The visitor can still see a Goal they already have direct access to.
 

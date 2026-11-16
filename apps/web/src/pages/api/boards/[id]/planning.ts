@@ -70,7 +70,8 @@ export const POST: APIRoute = async ({ locals, params, request }) => {
   if (change.action === "goal-share" || change.action === "retire") {
     const outcome = await repository.saveVisibility(user.actor.id, params.id, change)
     if (outcome.status === "locked") return apiError("Named Board access is temporarily locked.", 503)
-    if (!outcome.result) return apiError("Board or planning selection unavailable", 404)
+    if (outcome.result === "children") return apiError("Remove this Area’s active Projects, Goals, and Routines first.", 409)
+    if (outcome.result !== "saved") return apiError("Board or planning selection unavailable", 404)
     return apiJson({ ok: true, accessPending: outcome.status === "committed-locked" })
   }
   if (!await repository.save(user.actor.id, params.id, change)) return apiError("Board or planning selection unavailable", 404)

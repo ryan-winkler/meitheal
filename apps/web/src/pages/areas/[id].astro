@@ -212,11 +212,11 @@ const tabs = [
       </div>
     </form>
 
-    <div class="danger-zone">
+    {areaId !== "default" && <div class="danger-zone">
       <h3 class="danger-title">Danger Zone</h3>
       <p class="danger-desc">Delete this Area and keep its tasks, goals and projects in Meitheal.</p>
       <button type="button" class="btn btn-danger" id="delete-area-btn">Delete Area</button>
-    </div>
+    </div>}
   </section>
 
   <div
@@ -504,7 +504,7 @@ const tabs = [
     const icon = form.querySelector<HTMLInputElement>("#edit-area-icon")!
     const color = form.querySelector<HTMLInputElement>("#edit-area-color")!
     const save = form.querySelector<HTMLButtonElement>("#save-area-btn")!
-    const remove = document.querySelector<HTMLButtonElement>("#delete-area-btn")!
+    const remove = document.querySelector<HTMLButtonElement>("#delete-area-btn")
     const back = document.querySelector<HTMLAnchorElement>("#back-to-areas")!
     const endpoint = "/api/areas/" + encodeURIComponent(areaId)
     const newProject = document.querySelector<HTMLButtonElement>("#area-new-project")
@@ -555,7 +555,7 @@ const tabs = [
       }
     }, { signal })
 
-    remove.addEventListener("click", async () => {
+    if (remove) remove.addEventListener("click", async () => {
       const confirmed = await confirmDialog({
         title: "Delete Area",
         message: "Delete this Area? Its tasks, goals and projects will stay in Meitheal.",

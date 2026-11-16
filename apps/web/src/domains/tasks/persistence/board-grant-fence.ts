@@ -106,6 +106,7 @@ export async function changeBoardGrants<T>(
   db: Pick<Client, "transaction">,
   change: (tx: Transaction, revision: string | null) => Promise<GrantChange<T>>,
   path = boardGrantPath,
+  options?: { keepUninitialized?: boolean },
 ): Promise<GrantChangeResult<T>> {
   const transaction = await acquireWriteTransaction(db)
   let next: string | undefined
@@ -121,6 +122,11 @@ export async function changeBoardGrants<T>(
     }
     const result = await change(transaction, revision)
     if ("unchanged" in result) return { status: "unchanged", result: result.unchanged }
+
+    if (revision === null && options?.keepUninitialized) {
+      await transaction.commit()
+      return { status: "committed", result: result.next }
+    }
 
     next = randomUUID()
     await prepareGrantMarker(path, next)

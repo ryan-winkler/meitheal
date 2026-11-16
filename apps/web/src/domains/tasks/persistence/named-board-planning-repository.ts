@@ -141,7 +141,7 @@ export class NamedBoardPlanningRepository {
   async save(ownerId: string, boardId: string, input: Change): Promise<boolean> {
     if (input.action === "goal-share" || input.action === "retire") {
       const outcome = await this.saveVisibility(ownerId, boardId, input)
-      return outcome.status !== "locked" && outcome.result
+      return outcome.status !== "locked" && outcome.result === "saved"
     }
     const revision = await readBoardGrantRevision(this.markerPath)
     if (!revision) return false
@@ -158,17 +158,29 @@ export class NamedBoardPlanningRepository {
   }
 
   async saveVisibility(ownerId: string, boardId: string, input: VisibilityChange) {
-    return changeBoardGrants(this.db, async (tx, revision) => {
-      if (!revision || !await this.ownsActiveBoard(tx, ownerId, boardId, revision)) return { unchanged: false }
+    return changeBoardGrants<"saved" | "unavailable" | "children">(this.db, async (tx, revision) => {
+      if (!revision || !await this.ownsActiveBoard(tx, ownerId, boardId, revision)) return { unchanged: "unavailable" }
       const effect = input.action === "goal-share"
         ? await this.setGoalShare(tx, ownerId, boardId, input)
         : await this.retire(tx, boardId, input)
-      if (effect === "changed") return { next: true }
-      return { unchanged: effect === "unchanged" }
+      if (effect === "changed") return { next: "saved" }
+      return { unchanged: effect === "unchanged" ? "saved" : effect }
     }, this.markerPath)
   }
 
   private async retire(tx: Transaction, boardId: string, input: Extract<VisibilityChange, { action: "retire" }>) {
+    if (input.entity === "area") {
+      const { rows } = await tx.execute({
+        sql: `SELECT 1 FROM areas AS area WHERE area.id = ? AND area.owner_board_id = ? AND area.retired_at IS NULL AND (
+          EXISTS (SELECT 1 FROM projects WHERE area_id = area.id AND owner_board_id = area.owner_board_id AND retired_at IS NULL)
+          OR EXISTS (SELECT 1 FROM goals WHERE area_id = area.id AND owner_board_id = area.owner_board_id AND retired_at IS NULL)
+          OR EXISTS (SELECT 1 FROM task_templates WHERE owner_board_id = area.owner_board_id AND retired_at IS NULL
+            AND is_routine = 1 AND json_extract(CASE WHEN json_valid(template_json) THEN template_json END, '$.area_id') = area.id)
+        )`,
+        args: [input.id, boardId],
+      })
+      if (rows.length) return "children"
+    }
     const table = { area: "areas", goal: "goals", project: "projects", routine: "task_templates" }[input.entity]
     const now = Date.now()
     const result = await tx.execute({

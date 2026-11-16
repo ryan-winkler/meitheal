@@ -375,6 +375,8 @@ test("named Board owners link Projects to shared Goals without publishing privat
   expect(await legacy.findRoutines()).toEqual([])
   expect((await tasks.view(workUser, workBoard))?.planning?.routines[0]).toMatchObject({ complete: true })
   await boards.updateMember(workUser.id, workBoard, homeUser.id, null, [workUser.id, homeUser.id])
+  expect(await planning.saveVisibility(workUser.id, workBoard, { action: "retire", entity: "area", id: workArea }))
+    .toEqual({ status: "unchanged", result: "children" })
   expect(await planning.save(homeUser.id, homeBoard, { action: "project-goal", id: visibleProjectId, goalId: null })).toBe(true)
   expect(await planning.save(homeUser.id, homeBoard, { action: "project-goal", id: visibleProjectId, goalId: goal })).toBe(true)
   expect(await planning.save(workUser.id, workBoard, { action: "retire", entity: "routine", id: workRoutine })).toBe(true)

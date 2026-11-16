@@ -2,7 +2,7 @@ import type { APIRoute } from "astro"
 import { isValidGoalProgress } from "@meitheal/domain-tasks"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import { listSharedGoals, serializeBoardGoal } from "@domains/tasks/persistence/shared-goal-repository"
-import { HierarchyRepository } from "@domains/tasks/persistence/hierarchy-repository"
+import { HierarchyRepository, PlanningAccessLockedError } from "@domains/tasks/persistence/hierarchy-repository"
 import { stripHtml } from "../../../lib/strip-html"
 import { apiError, apiJson } from "../../../lib/api-response"
 import { logApiError } from "../../../lib/api-logger"
@@ -76,6 +76,7 @@ export const DELETE: APIRoute = async ({ params }) => {
     if (!deleted) return apiError("Goal not found", 404)
     return apiJson({ ok: true })
   } catch (error) {
+    if (error instanceof PlanningAccessLockedError) return apiError(error.message, 503)
     logApiError("goals", "DELETE error", error)
     return apiError("Failed to delete goal")
   }

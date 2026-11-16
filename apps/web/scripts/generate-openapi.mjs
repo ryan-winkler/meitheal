@@ -665,6 +665,7 @@ const paths = {
   "/api/boards/{id}/planning": {
     post: boardOperation("savePrivateBoardPlanning", "Create or manage planning and Pillars on an owned Board", [boardIdParam, boardSessionParam], {
       200: { description: "Saved" }, 400: { description: "Invalid planning change" }, 404: boardUnavailable,
+      409: { description: "A Routine period changed or an Area still has active planning records" },
     }, boardJson({
       action: { type: "string", enum: ["area", "goal", "project", "project-edit", "project-goal", "project-status", "goal-share", "retire", "pillar", "pillar-principle", "pillar-link", "routine", "routine-complete"] },
       title: boardString, description: boardString, id: boardString, areaId: boardString, goalId: { type: ["string", "null"] },

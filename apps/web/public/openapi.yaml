@@ -1390,6 +1390,8 @@ paths:
         "400":
           description: Invalid planning change
         "404": *a11
+        "409":
+          description: A Routine period changed or an Area still has active planning records
       security: *a7
       requestBody:
         required: true

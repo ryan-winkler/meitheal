@@ -10,6 +10,7 @@
 import type { Client } from "@libsql/client"
 import { goalProgress } from "@meitheal/domain-tasks"
 import { getStatusDef, STATUS } from "../../../lib/status-config"
+import { changeBoardGrants } from "./board-grant-fence"
 import { deferralTerminalStatusesSql } from "./task-deferral-status"
 
 // ─── Types ───────────────────────────────────────────────────────────
@@ -59,8 +60,10 @@ export interface ProjectRow {
   updated_at: number
 }
 
-const householdAreaLink = (reference: string) => `SELECT id FROM areas WHERE id = ${reference} AND owner_board_id IS NULL AND retired_at IS NULL`
-const householdGoalLink = (reference: string) => `SELECT id FROM goals WHERE id = ${reference} AND owner_board_id IS NULL AND retired_at IS NULL`
+const householdPlanningLink = (table: "areas" | "goals", reference: string, includeRetired = false) =>
+  `SELECT id FROM ${table} WHERE id = ${reference} AND owner_board_id IS NULL${includeRetired ? "" : " AND retired_at IS NULL"}`
+const householdAreaLink = (reference: string, includeRetired = false) => householdPlanningLink("areas", reference, includeRetired)
+const householdGoalLink = (reference: string, includeRetired = false) => householdPlanningLink("goals", reference, includeRetired)
 
 const householdGoalProjection = `goals.*, (${householdAreaLink("goals.area_id")}) AS visible_area_id`
 const householdProjectProjection = `projects.*, (${householdAreaLink("projects.area_id")}) AS visible_area_id,
@@ -68,8 +71,10 @@ const householdProjectProjection = `projects.*, (${householdAreaLink("projects.a
 
 // ─── Repository ──────────────────────────────────────────────────────
 
+export class PlanningAccessLockedError extends Error {}
+
 export class HierarchyRepository {
-  constructor(private client: Client) {}
+  constructor(private client: Client, private markerPath?: string) {}
 
   // ── Areas ────────────────────────────────────────────────────────
 
@@ -132,12 +137,8 @@ export class HierarchyRepository {
   }
 
   async deleteArea(id: string): Promise<boolean> {
-    const now = Date.now()
-    const result = await this.client.execute({
-      sql: "UPDATE areas SET retired_at = ?, updated_at = ? WHERE id = ? AND owner_board_id IS NULL AND retired_at IS NULL",
-      args: [now, now, id],
-    })
-    return result.rowsAffected > 0
+    if (id === "default") return false
+    return this.retireHouseholdPlanning("areas", id)
   }
 
   async countAreas(): Promise<number> {
@@ -241,7 +242,7 @@ export class HierarchyRepository {
     args.push(id)
 
     const area = data.area_id
-    const existingAreaGuard = area === undefined ? "" : `AND (area_id IS NULL OR EXISTS (${householdAreaLink("goals.area_id")}))`
+    const existingAreaGuard = area === undefined ? "" : `AND (area_id IS NULL OR EXISTS (${householdAreaLink("goals.area_id", true)}))`
     const areaGuard = area == null ? "" : `AND EXISTS (${householdAreaLink("?")})`
     if (area != null) args.push(area)
     const result = await this.client.execute({
@@ -252,12 +253,21 @@ export class HierarchyRepository {
   }
 
   async deleteGoal(id: string): Promise<boolean> {
-    const now = Date.now()
-    const result = await this.client.execute({
-      sql: "UPDATE goals SET retired_at = ?, updated_at = ? WHERE id = ? AND owner_board_id IS NULL AND retired_at IS NULL",
-      args: [now, now, id],
-    })
-    return result.rowsAffected > 0
+    return this.retireHouseholdPlanning("goals", id)
+  }
+
+  private async retireHouseholdPlanning(table: "areas" | "goals", id: string) {
+    const outcome = await changeBoardGrants(this.client, async tx => {
+      const now = Date.now()
+      const result = await tx.execute({
+        sql: `UPDATE ${table} SET retired_at = ?, updated_at = ?
+          WHERE id = ? AND owner_board_id IS NULL AND retired_at IS NULL`,
+        args: [now, now, id],
+      })
+      return result.rowsAffected ? { next: true } : { unchanged: false }
+    }, this.markerPath, { keepUninitialized: true })
+    if (outcome.status === "locked") throw new PlanningAccessLockedError("Named Board access is temporarily locked")
+    return outcome.result
   }
 
   async countGoals(): Promise<number> {
@@ -364,8 +374,8 @@ export class HierarchyRepository {
 
     const goal = data.goal_id
     const area = data.area_id
-    const existingGoalGuard = goal === undefined ? "" : `AND (goal_id IS NULL OR EXISTS (${householdGoalLink("projects.goal_id")}))`
-    const existingAreaGuard = area === undefined ? "" : `AND (area_id IS NULL OR EXISTS (${householdAreaLink("projects.area_id")}))`
+    const existingGoalGuard = goal === undefined ? "" : `AND (goal_id IS NULL OR EXISTS (${householdGoalLink("projects.goal_id", true)}))`
+    const existingAreaGuard = area === undefined ? "" : `AND (area_id IS NULL OR EXISTS (${householdAreaLink("projects.area_id", true)}))`
     const goalGuard = goal == null ? "" : `AND EXISTS (${householdGoalLink("?")})`
     const areaGuard = area == null ? "" : `AND EXISTS (${householdAreaLink("?")})`
     if (goal != null) args.push(goal)
