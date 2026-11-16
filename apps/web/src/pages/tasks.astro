@@ -11,7 +11,8 @@ import FilterToolbar from "../components/ui/FilterToolbar.astro";
 import CardCustomizer from "../components/ui/CardCustomizer.astro";
 import { t } from "../i18n/translations";
 import type { Locale } from "../lib/locale";
-import { calendarDaysFromToday, formatRegionalDate, isDueOverdue } from "../lib/date";
+import { calendarDaysFromToday, isDueOverdue } from "../lib/date";
+import { formatRegionalDate } from "../lib/regional-date";
 import { formatTicketKey } from "../lib/ticket-key";
 import { taskSurface } from "../lib/task-surface"
 import { taskDescriptionPreview } from "../lib/task-description-preview"

@@ -1,7 +1,8 @@
 import { expect, test } from "@playwright/test"
 
 import { sanitizeTodoTitle } from "../../apps/web/src/lib/cleanup-corrupt-titles"
-import { calendarDaysFromToday, calendarToday, formatRegionalDate } from "../../apps/web/src/lib/date"
+import { calendarDaysFromToday, calendarToday } from "../../apps/web/src/lib/date"
+import { formatRegionalDate } from "../../apps/web/src/lib/regional-date"
 import { evaluateFilterGroup, extractDataFromElement, passesAdvancedFilter, type FilterGroup } from "../../apps/web/src/lib/filter-engine"
 
 test("date helpers format calendar-only dates and zoned timestamps across all formats", () => {

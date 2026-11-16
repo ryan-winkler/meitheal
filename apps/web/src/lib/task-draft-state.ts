@@ -59,7 +59,7 @@ export const taskDraftSnapshot = z.strictObject({
   fields,
 }).refine(snapshot => snapshot.newLabels.every(name => snapshot.labels.includes(name)))
 
-const publishDate = z.iso.datetime({ local: true, offset: true }).max(64)
+const publishDate = z.union([z.iso.date(), z.iso.datetime({ local: true, offset: true }).max(64)])
 export const taskDraftPublication = z.strictObject({
   title: z.string().min(1).max(500),
   description: z.string().max(16384),

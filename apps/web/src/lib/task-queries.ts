@@ -399,8 +399,7 @@ export const TODAY_COMPLETION_FILTER = `
 `
 const TODAY_COMPLETION_COUNT = `COUNT(*) FILTER (WHERE ${TODAY_COMPLETION_FILTER})`
 
-function completedTodayQuery(today: string, timezone: string) {
-  const args = todayCompletionArgs(today, timezone)
+function completedTodayQuery(args: ReturnType<typeof todayCompletionArgs>) {
   return {
     sql: `SELECT id, title FROM tasks WHERE ${TODAY_COMPLETION_FILTER}
           ORDER BY CASE WHEN typeof(updated_at) = 'text' AND updated_at NOT LIKE '%T%' AND updated_at NOT LIKE '%:%'
@@ -414,10 +413,27 @@ function completedTodaySummaries(rows: Row[]) {
   return rows.map(row => ({ id: String(row.id), title: String(row.title) }))
 }
 
+function startOfHouseholdDay(day: string, timezone: string): number {
+  const midnight = fromZonedTime(`${day}T00:00:00`, timezone).getTime()
+  const dateAt = (instant: number) => calendarToday(timezone, new Date(instant))
+  if (dateAt(midnight) === day && dateAt(midnight - 1) < day) return midnight
+
+  // A midnight transition can skip the requested wall time or resolve it to
+  // the second occurrence. Find the first instant that belongs to this day.
+  let before = Date.parse(`${day}T00:00:00Z`) - 86_400_000
+  let after = before + 2 * 86_400_000
+  while (after - before > 1) {
+    const middle = Math.floor((before + after) / 2)
+    if (dateAt(middle) < day) before = middle
+    else after = middle
+  }
+  return after
+}
+
 export function todayCompletionArgs(today: string, timezone = "Europe/Dublin"): [number, number, number, number, string] {
   const safeTz = resolveTimezone(timezone)
-  const startMs = fromZonedTime(`${today}T00:00:00`, safeTz).getTime()
-  const endMs = fromZonedTime(`${shiftCalendarDay(today, 1)}T00:00:00`, safeTz).getTime()
+  const startMs = startOfHouseholdDay(today, safeTz)
+  const endMs = startOfHouseholdDay(shiftCalendarDay(today, 1), safeTz)
   return [startMs, endMs, startMs, endMs, today]
 }
 
@@ -458,6 +474,7 @@ export async function getTodayTaskRows(
     await ensureSchema()
     const resolvedTimezone = resolveTimezone(timezone)
     const client = getPersistenceClient()
+    const completionArgs = todayCompletionArgs(today, resolvedTimezone)
     const tasksQuery = {
       sql: `
         WITH totals AS (
@@ -480,9 +497,9 @@ export async function getTodayTaskRows(
           )
         ORDER BY created_at DESC, tasks.rowid DESC
       `,
-      args: [...todayCompletionArgs(today, resolvedTimezone), includeUnscheduled ? 1 : 0],
+      args: [...completionArgs, includeUnscheduled ? 1 : 0],
     }
-    const [taskResult, completed] = await client.batch([tasksQuery, completedTodayQuery(today, resolvedTimezone)], "read")
+    const [taskResult, completed] = await client.batch([tasksQuery, completedTodayQuery(completionArgs)], "read")
     const rows = taskResult?.rows ?? []
 
     return {
@@ -526,6 +543,7 @@ export async function getTodayTaskCounts(now = new Date(), timezone?: string, in
     : await readStoredHouseholdTimezone()
   const today = calendarToday(resolvedTimezone, now)
   const client = getPersistenceClient()
+  const completionArgs = todayCompletionArgs(today, resolvedTimezone)
   const countsQuery = {
     sql: `
       SELECT NULL AS due_date, ${TODAY_COMPLETION_COUNT} AS completed_today,
@@ -539,10 +557,10 @@ export async function getTodayTaskCounts(now = new Date(), timezone?: string, in
         AND due_date IS NOT NULL AND due_date <> ''
       GROUP BY due_date
     `,
-    args: todayCompletionArgs(today, resolvedTimezone),
+    args: completionArgs,
   }
   const [countResult, completed] = includeCompleted
-    ? await client.batch([countsQuery, completedTodayQuery(today, resolvedTimezone)], "read")
+    ? await client.batch([countsQuery, completedTodayQuery(completionArgs)], "read")
     : [await client.execute(countsQuery)]
   const rows = countResult?.rows ?? []
 

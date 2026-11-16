@@ -112,7 +112,7 @@ for (const action of ["complete", "snooze", "delete"] as const) {
   })
 }
 
-test("mixed Work and Focus completion clears the visible Focus Stack", async ({ page, request, baseURL }) => {
+test("Work reopens Focus cards before and after the cleared state", async ({ page, request, baseURL }) => {
   const headers = { origin: new URL(baseURL!).origin }
   const day = new Intl.DateTimeFormat("en-CA", { dateStyle: "short", timeZone: "Europe/Dublin" }).format(new Date())
   const ids: string[] = []
@@ -124,16 +124,42 @@ test("mixed Work and Focus completion clears the visible Focus Stack", async ({ 
       expect(response.status(), await response.text()).toBe(201)
       ids.push((await response.json()).id)
     }
+    await page.emulateMedia({ reducedMotion: "no-preference" })
+    await page.clock.install()
     await page.goto("/today#today-work")
+    await page.clock.pauseAt(new Date(Date.now() + 1000))
     const stack = page.locator("#section-focus-stack")
-    await expect(stack.locator(".focus-card")).toHaveCount(2)
+    const visibleCards = stack.locator(".focus-card:not([hidden], [inert])")
+    await expect(visibleCards).toHaveCount(2)
     const first = page.locator(`#today-due-list .tli[data-id="${ids[0]}"] .tli__checkbox`)
+    const second = page.locator(`#today-due-list .tli[data-id="${ids[1]}"] .tli__checkbox`)
+    const secondFocus = stack.locator(`.focus-card__complete[data-id="${ids[1]}"]`)
+
     await first.press("Space")
-    await expect(stack.locator(".focus-card")).toHaveCount(1)
+    await expect(visibleCards).toHaveCount(1)
     await expect(stack).toContainText("1 to focus on")
-    await stack.locator(`.focus-card__complete[data-id="${ids[1]}"]`).press("Enter")
+
+    await secondFocus.press("Enter")
+    await expect(second).toBeChecked()
+    await expect(stack.locator(".focus-card--completing")).toHaveCount(1)
+    await second.press("Space")
+    await expect(second).not.toHaveAttribute("aria-disabled", "true")
+    await expect(visibleCards).toHaveCount(1)
+    await page.clock.runFor(400)
+    await expect(secondFocus).toBeVisible()
+    await expect(visibleCards).toHaveCount(1)
+
+    await secondFocus.press("Enter")
+    await expect(second).toBeChecked()
+    await expect(stack.locator(".focus-card--completing")).toHaveCount(1)
+    await page.clock.runFor(400)
     await expect(stack).toContainText("Focus Stack cleared!")
-    await expect(stack.locator(".focus-card")).toHaveCount(0)
+    await expect(visibleCards).toHaveCount(0)
+
+    await first.press("Space")
+    await expect(stack.getByText("Focus Stack cleared!")).toHaveCount(0)
+    await expect(stack.getByRole("button", { name: "Complete Finish the Work row first" })).toBeVisible()
+    await expect(visibleCards).toHaveCount(1)
   } finally {
     for (const id of ids) await request.delete(`/api/tasks/${id}`, { headers, data: {} })
   }

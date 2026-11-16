@@ -95,12 +95,15 @@ const { activeLabels = [], id = "label-filter-bar", view = "" } = Astro.props
         const button = (event.target as Element).closest<HTMLButtonElement>("button")
         if (!button) return
         const name = button.dataset.label
+        const previous = new Set(active)
         if (button === clear) active.clear()
         else if (name && !active.delete(name)) active.add(name)
-        render()
-        document.dispatchEvent(new CustomEvent("meitheal:label-filter", {
+        const accepted = document.dispatchEvent(new CustomEvent("meitheal:label-filter", {
+          cancelable: view === "calendar",
           detail: { labels: [...active], view },
         }))
+        if (!accepted) active = previous
+        render()
       }, { signal })
       if (view === "table" || view === "calendar") {
         document.addEventListener(view === "table" ? "meitheal:table-labels-reset" : "meitheal:calendar-filters-reset", () => {

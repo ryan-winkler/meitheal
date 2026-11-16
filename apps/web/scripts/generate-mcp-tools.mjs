@@ -27,6 +27,7 @@ export const EXCLUDED_OPS = new Set([
   "useLabelCleanup",
   "updateLabel", "deleteLabel",
   "taskInactivity",
+  "readCalendarAgenda",
   "mcpEndpoint",
   "getA2AAgentCard", "sendA2AMessage",
   "healthPing",

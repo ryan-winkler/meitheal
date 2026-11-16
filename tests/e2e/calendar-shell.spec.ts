@@ -380,7 +380,7 @@ test.describe("Calendar Shell", () => {
     await expect(types.getByRole("textbox", { name: "Filter by text" })).toHaveValue("roof")
     await during.press("Enter")
     await expect(page.getByRole("heading", { name: "Connected Calendar Events" })).toHaveCount(0)
-    await expect(page.locator("#day-drawer-tasks")).toContainText("No tasks due")
+    await expect(page.locator("#day-drawer-tasks")).toContainText("No tasks or events scheduled")
 
     await page.keyboard.press("Escape")
     await page.goto("/tasks?view=calendar&year=2031&month=6&types=calendar_event#calendar")
@@ -428,11 +428,10 @@ test.describe("Calendar Shell", () => {
   test("large day agenda loads another page with the same filters and restores keyboard focus", async ({ page }) => {
     const day = "2031-07-08"
     const filtersByPage: Array<string | null> = []
-    await page.route(url => url.pathname.endsWith("/api/tasks") && url.searchParams.get("due_date") === day, route => {
-      const { searchParams } = new URL(route.request().url())
-      const offset = Number(searchParams.get("offset"))
-      const limit = Number(searchParams.get("limit"))
-      filtersByPage.push(new URLSearchParams(searchParams.get("calendar_filters") ?? "").get("search"))
+    await page.route("**/api/calendar/agenda", route => {
+      const { date, offset, limit, filters } = route.request().postDataJSON()
+      expect(date).toBe(day)
+      filtersByPage.push(new URLSearchParams(filters).get("search"))
       return route.fulfill({ json: {
         total: 101,
         tasks: Array.from({ length: Math.min(limit, 101 - offset) }, (_, index) => ({
@@ -480,7 +479,7 @@ test.describe("Calendar Shell", () => {
       await expect(page.locator("#day-drawer")).toHaveAttribute("aria-hidden", "true")
 
       await page.locator('.cal-cell[data-date="2027-06-16"]').click()
-      await expect(page.locator("#day-drawer-tasks")).toContainText("No tasks due")
+      await expect(page.locator("#day-drawer-tasks")).toContainText("No tasks or events scheduled")
       await expect(page.locator("#day-drawer-tasks").getByText("LA Evening Timed Task")).toHaveCount(0)
     } finally {
       await request.put("/api/settings", { data: { key: "timezone", value: prevTz } })

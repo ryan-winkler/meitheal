@@ -787,6 +787,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
 
     advApplyBtn?.addEventListener("click", () => {
       if (!advContainer) return
+      const previousRules = advancedFilterState
       const rows = advContainer.querySelectorAll(".advanced-filter-row")
       if (rows.length === 0) {
         advancedFilterState = null
@@ -805,7 +806,12 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
           conditions
         }
       }
-      
+      if (prefix === "calendar" && !emitChange()) {
+        advancedFilterState = previousRules
+        updateClearVisibility()
+        return
+      }
+
       // Visual feedback on toggle button
       if (advancedFilterState && advancedFilterState.conditions.length > 0) {
         advToggleBtn?.classList.add("filter-pill--active")
@@ -815,7 +821,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
 
       advToggleBtn?.setAttribute("aria-expanded", "false")
       advPanel?.classList.add("hidden")
-      emitChange()
+      if (prefix !== "calendar") emitChange()
     }, { signal })
 
     function gatherState() {
@@ -868,13 +874,15 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
 
     function emitChange(clear = false) {
       const state = gatherState()
-      document.dispatchEvent(
+      const accepted = document.dispatchEvent(
         new CustomEvent("meitheal:filter-change", {
+          cancelable: prefix === "calendar",
           detail: { ...state, view: prefix, clear, ...(clear ? { labels: [] } : {}) },
         })
       )
       updateLaneCount()
       updateClearVisibility()
+      return accepted
     }
 
     unassigned?.addEventListener("change", () => {
@@ -1183,9 +1191,13 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
       document.addEventListener("meitheal:label-filter", event => {
         const detail = (event as CustomEvent<{ view: string; labels: string[] }>).detail
         if (detail?.view !== prefix) return
+        const previousLabels = labels
         labels = detail.labels
-        if (prefix === "calendar") emitChange()
-        else updateClearVisibility()
+        if (prefix === "calendar" && !emitChange()) {
+          labels = previousLabels
+          event.preventDefault()
+        }
+        updateClearVisibility()
       }, { signal })
       document.addEventListener("meitheal:area-changed", event => {
         area = (event as CustomEvent<{ areaId: string }>).detail.areaId

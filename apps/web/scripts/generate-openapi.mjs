@@ -765,6 +765,42 @@ const paths = {
       },
     },
   },
+  "/api/calendar/agenda": {
+    post: {
+      operationId: "readCalendarAgenda",
+      tags: ["Tasks"],
+      summary: "Read the Calendar agenda for a household day",
+      description: "Read-only browser operation. Returns due tasks and native events that start on the selected day, applying Calendar filters before pagination. Connected Home Assistant events are read separately.",
+      security: ingressSession,
+      requestBody: { required: true, content: { "application/json": { schema: {
+        type: "object", required: ["date", "filters", "limit", "offset"], properties: {
+          date: { type: "string", format: "date" },
+          filters: { type: "string", maxLength: 20000, description: "Encoded Calendar query without its leading question mark." },
+          limit: { type: "integer", minimum: 1, maximum: 100 },
+          offset: { type: "integer", minimum: 0 },
+        },
+      } } } },
+      responses: {
+        200: jsonContent({
+          type: "object", required: ["tasks", "total"], properties: {
+            tasks: { type: "array", items: {
+              type: "object", required: ["id", "title", "status", "priority", "task_kind", "start_date", "deferred_at"],
+              properties: {
+                id: { type: "string" }, title: { type: "string" }, status: { type: "string" }, priority: { type: "integer" },
+                task_kind: { type: ["string", "null"] }, start_date: { type: ["string", "null"] }, deferred_at: { type: ["integer", "null"] },
+              },
+            } },
+            total: { type: "integer", minimum: 0 },
+          },
+        }, "Scheduled work page and matching total"),
+        400: problemContent("Invalid Calendar query"),
+        408: problemContent("Calendar query timed out"),
+        413: problemContent("Calendar query too large"),
+        415: problemContent("Expected JSON"),
+        503: problemContent("Calendar agenda unavailable"),
+      },
+    },
+  },
   "/api/tasks/create": {
     post: {
       operationId: "createTask",

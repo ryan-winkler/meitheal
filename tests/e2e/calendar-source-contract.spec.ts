@@ -15,14 +15,16 @@ test("Calendar reads configured sources as a household member and filters before
   const api = await playwright.request.newContext({ ignoreHTTPSErrors: true })
   const db = new DatabaseSync(join(work, "pins.db"))
   const browser = await launchPinBrowser(work)
-  const context = await browser.newContext({ ignoreHTTPSErrors: true, extraHTTPHeaders: {}, serviceWorkers: "block" })
+  const context = await browser.newContext({
+    ignoreHTTPSErrors: true, extraHTTPHeaders: {}, serviceWorkers: "block", timezoneId: "America/Los_Angeles",
+  })
   await context.setExtraHTTPHeaders({})
   const page = await context.newPage()
   const pageErrors: string[] = []
   page.on("pageerror", (error) => pageErrors.push(error.message))
   page.on("response", response => {
-    if (response.url().includes("due_date") || response.status() >= 400) {
-      pageErrors.push(`${response.status()} ${response.url()}`)
+    if (response.url().includes("/api/calendar/agenda") || response.status() >= 400) {
+      pageErrors.push(`${response.status()} ${new URL(response.url()).pathname}`)
     }
   })
   page.on("requestfailed", request => pageErrors.push(`${request.failure()?.errorText} ${request.url()}`))
@@ -50,6 +52,7 @@ test("Calendar reads configured sources as a household member and filters before
       const title = index < 101 ? `Matching garden task ${index}` : `Excluded indoor task ${index}`
       insert.run(id, title, id, id, date, 100_000 + index, 100_000 + index)
     }
+    db.prepare("UPDATE tasks SET status = 'done' WHERE id = ?").run("calendar-fixture-105")
 
     const query = new URLSearchParams({ due_date: date, calendar_filters: "search=matching+garden", limit: "100" })
     const first = await api.get(base + "/api/tasks?" + query, { headers: headers("member") })
@@ -62,6 +65,20 @@ test("Calendar reads configured sources as a household member and filters before
     query.set("offset", "100")
     const second = await api.get(base + "/api/tasks?" + query, { headers: headers("member") })
     expect(await second.json()).toMatchObject({ tasks: [{ title: "Matching garden task 0" }], total: 101 })
+    const credential = await api.post(base + "/api/agent-tokens", {
+      headers: headers("admin"), data: { name: "Calendar scope fixture", scopes: ["tasks:read"] },
+    })
+    expect(credential.status()).toBe(201)
+    const { token } = await credential.json()
+    const scoped = { ...headers("member"), authorization: `Bearer ${token}` }
+    const agendaPath = base + "/api/calendar/agenda"
+    const agendaQuery = { date, filters: "", offset: 0, limit: 1 }
+    expect((await api.get(base + "/api/tasks?limit=1", { headers: scoped })).status()).toBe(200)
+    expect((await api.post(agendaPath, { headers: scoped, data: agendaQuery })).status()).toBe(403)
+    const overflow = await api.post(base + "/api/calendar/agenda", { headers: headers("member"), data: {
+      date, filters: "x".repeat(21_000), offset: 0, limit: 100,
+    } })
+    expect(overflow.status()).toBe(413)
 
     await context.addCookies([{ name: "feedback-fixture", value: "member", url: origin }])
     await page.route("**/api/ha/events?*", route => route.fulfill({ json: { events: [] } }))
@@ -91,6 +108,92 @@ test("Calendar reads configured sources as a household member and filters before
     await day.press("Enter")
     await expect(agenda.getByRole("button")).toHaveCount(1)
     await expect(agenda.getByRole("button").first()).toContainText("Matching garden task 0")
+
+    for (const [key, value] of [["timezone", "America/Los_Angeles"], ["calendar-entities", "[]"]]) {
+      const result = await api.put(base + "/api/settings", { headers: headers("admin"), data: { key, value } })
+      expect(result.status(), await result.text()).toBe(200)
+    }
+    const unfilteredMonth = base + "/tasks?view=calendar&year=2031&month=6&area=#calendar"
+    await page.goto(unfilteredMonth)
+    await expect(page.locator("#calendar-shell")).toHaveAttribute("data-timezone", "America/Los_Angeles")
+    await expect(day).toHaveAccessibleName(/105 tasks$/)
+    const eventDay = page.locator('.cal-cell[data-date="2031-07-09"]')
+    await eventDay.press("Enter")
+    await page.getByRole("button", { name: "Add Event" }).click()
+    await expect(page.locator("#nt-event-start")).toHaveValue(/^2031-07-09T00:00/)
+    await page.locator("#new-task-title-input").fill("Native patio gathering")
+    const created = page.waitForResponse(response => response.request().method() === "POST" &&
+      new URL(response.url()).pathname.endsWith("/api/tasks"))
+    await page.locator("#submit-new-task-btn").click()
+    expect((await created).status()).toBe(201)
+    const capturedDate = db.prepare("SELECT task_kind, start_date, due_date FROM tasks WHERE title = ?")
+    expect(capturedDate.get("Native patio gathering")).toMatchObject({
+      task_kind: "calendar_event", start_date: "2031-07-09", due_date: null,
+    })
+    await page.goto(unfilteredMonth)
+    await expect(eventDay).toHaveAccessibleName(/1 calendar event$/)
+    await expect(day).toHaveAccessibleName(/105 tasks$/)
+    await eventDay.press("Enter")
+    await expect(agenda.getByRole("button", { name: /Native patio gathering/ })).toContainText("All day")
+    await expect(agenda.locator(".day-drawer-item-icon use")).toHaveAttribute("href", "#mt-icon-calendar-event")
+    await page.keyboard.press("Escape")
+    const taskDay = page.locator('.cal-cell[data-date="2031-07-10"]')
+    await taskDay.press("Enter")
+    await page.locator("#day-drawer-add-task").click()
+    await expect(page.locator("#nt-contextual-due")).toHaveValue("2031-07-10")
+    await page.locator("#new-task-title-input").fill("Workshop bench check")
+    const taskCreated = page.waitForResponse(response => response.request().method() === "POST" &&
+      new URL(response.url()).pathname.endsWith("/api/tasks"))
+    await page.locator("#submit-new-task-btn").click()
+    expect((await taskCreated).status()).toBe(201)
+    expect(capturedDate.get("Workshop bench check")).toMatchObject({ task_kind: "standard_action", due_date: "2031-07-10" })
+    await page.goto(unfilteredMonth)
+    await expect(taskDay).toHaveAccessibleName(/1 task$/)
+    await expect(eventDay).toHaveAccessibleName(/1 calendar event$/)
+    await taskDay.press("Enter")
+    await expect(agenda.getByRole("button", { name: /Workshop bench check/ })).toBeVisible()
+
+    const legacy = JSON.stringify({ conditions: [
+      { field: "title", operator: "equals", value: "Matching garden task 0" },
+      ...Array.from({ length: 19 }, () => ({ field: "title", operator: "notContains", value: "x".repeat(340) })),
+    ] })
+    deepLink.set("advancedFilter", legacy)
+    await page.goto(base + "/tasks?" + deepLink + "#calendar")
+    await expect(day).toHaveAccessibleName(/1 task$/)
+    await page.getByRole("combobox", { name: "Filter by priority" }).selectOption("3")
+    await expect(page).toHaveURL(url => url.searchParams.get("priority") === "3")
+    expect(new URL(page.url()).searchParams.get("advancedFilter")).toBe(legacy)
+    await expect(day).toHaveAccessibleName(/1 task$/)
+    await day.press("Enter")
+    await expect(agenda.getByRole("button")).toHaveCount(1)
+    await expect(agenda.getByRole("button").first()).toContainText("Matching garden task 0")
+
+    const names = Array.from({ length: 23 }, (_, index) => `${"園".repeat(63)}${String(index).padStart(2, "0")}`)
+    const extra = "川".repeat(100)
+    await page.route("**/api/labels", route => route.fulfill({ json: [...names, extra].map(title => ({ title })) }))
+    db.prepare("UPDATE tasks SET labels = ? WHERE id = ?").run(JSON.stringify(names), "calendar-fixture-0")
+    deepLink.delete("advancedFilter")
+    deepLink.set("labels", names.join(","))
+    const monthUrl = base + "/tasks?" + deepLink + "#calendar"
+    expect(new URL(monthUrl).search.length).toBeLessThan(14_000)
+    expect(new URLSearchParams({ calendar_filters: deepLink.toString() }).toString().length).toBeGreaterThan(20_000)
+    await page.goto(monthUrl)
+    await expect(day).toHaveAccessibleName(/1 task$/)
+    await day.press("Enter")
+    await expect(agenda.getByRole("button")).toHaveCount(1)
+    await expect(agenda.getByRole("button").first()).toContainText("Matching garden task 0")
+    await page.keyboard.press("Escape")
+    await page.getByText("Labels (23)", { exact: true }).click()
+    const longLabel = page.getByRole("button", { name: extra, exact: true })
+    await longLabel.click()
+    await expect(longLabel).toHaveAttribute("aria-pressed", "false")
+    await expect(page.locator("[data-calendar-status]")).toContainText("Remove a Calendar filter")
+    await expect(page).toHaveURL(monthUrl)
+    await expect(day).toHaveAccessibleName(/1 task$/)
+    await page.getByText("Labels (23)", { exact: true }).click()
+    await page.getByRole("button", { name: "Clear all active filters" }).click()
+    await expect(page).toHaveURL(url => !url.searchParams.has("labels"))
+    await expect(day).toHaveAccessibleName(/105 tasks$/)
   } catch (error) {
     console.log("Calendar browser diagnostics", pageErrors)
     throw error

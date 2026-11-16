@@ -57,6 +57,17 @@ test("old task pins and visibility move to New task while view pins navigate and
   await expect.poll(() => new URL(page.url()).searchParams.get("types")).toBe("calendar_event")
   await expect(pinnedTable.getByRole("link", { name: "Table", exact: true })).toHaveAttribute("aria-current", "page")
 
+  // Standalone Astro navigation persists the sidebar, including the pinned anchor.
+  const pinnedLink = pinnedTable.getByRole("link", { name: "Table", exact: true })
+  await pinnedLink.evaluate(link => { link.dataset.persistedTaskView = "yes" })
+  await page.locator('.sidebar .nav-link[data-page="dashboard"]').click()
+  await expect(page).toHaveURL(url => url.pathname === "/")
+  await expect(pinnedLink).toHaveAttribute("data-persisted-task-view", "yes")
+  await expect.poll(() => pinnedLink.evaluate(link => new URL((link as HTMLAnchorElement).href).searchParams.get("types"))).toBeNull()
+  await pinnedLink.click()
+  await expect(page).toHaveURL(url => url.pathname === "/tasks" && url.searchParams.get("view") === "table")
+  expect(new URL(page.url()).searchParams.get("types")).toBeNull()
+
   await page.reload()
   await expect(createMenu.locator('[data-task-nav-pinned-item="calendar_event"]')).toBeVisible()
   await expect(pinnedTable).toBeVisible()

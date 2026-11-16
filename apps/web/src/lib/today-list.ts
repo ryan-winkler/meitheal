@@ -99,12 +99,12 @@ export function lockTodayTaskStatus(container: HTMLElement, id: string): (() => 
     controls.forEach(control => control.removeAttribute("aria-disabled"))
     if (!controls.includes(focused as HTMLInputElement) ||
         (document.activeElement !== focused && document.activeElement !== document.body)) return
-    if (focused instanceof HTMLElement && focused.isConnected && !focused.closest(".filtered-out, .focus-card--completing")) {
+    if (focused instanceof HTMLElement && focused.isConnected && !focused.closest(".filtered-out, [hidden], [inert]")) {
       if (document.activeElement !== focused) focused.focus({ preventScroll: true })
       return
     }
     const next = section?.querySelector<HTMLElement>(
-      ".tli:not(.filtered-out) .tli__checkbox, .focus-card:not(.focus-card--completing) .focus-card__complete",
+      ".tli:not(.filtered-out) .tli__checkbox, .focus-card:not([hidden], [inert]) .focus-card__complete",
     ) ?? section?.querySelector<HTMLElement>(".today-section__header")
     const fallback = container.querySelector<HTMLElement>("#today-filter-status")
     if (next) next.focus()
@@ -132,10 +132,6 @@ export function syncTodayTaskStatus(container: HTMLElement, id: string, value: s
       item.classList.toggle("tli--done", done)
       item.querySelector(".tli__title")?.classList.toggle("done", done)
     }
-    if (done && item.matches(".focus-card:not(.focus-card--completing)")) item.remove()
   }
-  const remaining = container.querySelectorAll(".focus-card:not(.focus-card--completing)").length
-  const count = container.querySelector(".focus-stack__subtitle")
-  if (count) count.textContent = `${remaining} to focus on`
   container.dispatchEvent(new CustomEvent("meitheal:today-status-committed", { detail: { id } }))
 }

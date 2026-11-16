@@ -232,12 +232,15 @@ export type CalendarFilterRow = Pick<TaskRow,
   "is_promoted" | "labels" | "due_date" | "framework_payload">
 
 const CALENDAR_FILTER_COLUMNS = "status, title, priority, task_type, task_kind, area_id, assigned_to, is_promoted, labels, framework_payload"
+const CALENDAR_ITEM_DATE = "CASE WHEN task_kind = 'calendar_event' THEN COALESCE(NULLIF(start_date, ''), due_date) ELSE due_date END"
+const CALENDAR_LOCAL_ITEM = "(task_kind IS NOT 'calendar_event' OR calendar_sync_state IS NOT 'synced')"
 
 /** Calendar day task aggregate */
 export interface CalendarDayInfo {
   dueDate: string;
   count: number;
   colors: string[];
+  scheduledEvents: number;
   haEvents: number;
 }
 
@@ -728,7 +731,7 @@ export class TaskRepository {
 
   // ── Calendar (calendar.astro) ───────────────────────────────────────
 
-  /** Task counts per day for a given month (non-complete) */
+  /** Local tasks and scheduled event starts per day for a given month. */
   async getCalendarTaskCounts(
     monthStart: string,
     monthEnd: string,
@@ -738,26 +741,28 @@ export class TaskRepository {
     const lowerBound = shiftCalendarDay(monthStart, -2);
     const upperBound = shiftCalendarDay(monthEnd, 2);
     const result = await this.client.execute({
-      sql: `SELECT due_date, color${options.matches ? `, ${CALENDAR_FILTER_COLUMNS}` : ""}
+      sql: `SELECT ${CALENDAR_ITEM_DATE} AS calendar_date, due_date, color, ${options.matches ? CALENDAR_FILTER_COLUMNS : "status, task_kind"}
             FROM tasks
-            WHERE due_date IS NOT NULL AND due_date <> '' AND status <> 'archived'
-              AND substr(due_date, 1, 10) >= ? AND substr(due_date, 1, 10) <= ?
-              ${options.includeCompleted ? "" : "AND status NOT IN (?)"}`,
-      args: options.includeCompleted ? [lowerBound, upperBound] : [lowerBound, upperBound, STATUS.COMPLETE],
+            WHERE ${CALENDAR_LOCAL_ITEM} AND status <> 'archived'
+              AND substr(${CALENDAR_ITEM_DATE}, 1, 10) BETWEEN ? AND ?`,
+      args: [lowerBound, upperBound],
     });
 
     const tasksByDay: Record<string, CalendarDayInfo> = {};
     for (const row of result.rows) {
-      const r = row as unknown as CalendarFilterRow & { color: string | null };
-      const day = calendarDayFromInput(String(r.due_date ?? ""), timezone);
+      const r = row as unknown as CalendarFilterRow & { calendar_date: string; color: string | null };
+      if (!options.includeCompleted && isDoneStatus(r.status)) continue
+      const day = calendarDayFromInput(r.calendar_date, timezone);
       if (!day || day < monthStart || day > monthEnd || (options.matches && !options.matches(r))) continue;
       const existing = tasksByDay[day] ?? {
         dueDate: day,
         count: 0,
         colors: [],
+        scheduledEvents: 0,
         haEvents: 0,
       };
       existing.count += 1;
+      if (r.task_kind === "calendar_event") existing.scheduledEvents += 1
       const color = typeof r.color === "string" ? r.color.trim() : "";
       if (color && existing.colors.length < 3) {
         existing.colors.push(color);
@@ -1138,6 +1143,7 @@ export class TaskRepository {
   async findAll(opts: {
     status?: string;
     dueDate?: string | undefined;
+    calendarDay?: string | undefined;
     timezone?: string | undefined;
     matchDueTask?: ((task: CalendarFilterRow) => boolean) | undefined;
     priority?: number;
@@ -1160,6 +1166,8 @@ export class TaskRepository {
     const order = opts.order ?? "DESC";
     const limit = Math.min(500, Math.max(1, opts.limit ?? 100));
     const offset = Math.max(0, opts.offset ?? 0);
+    const day = opts.calendarDay ?? opts.dueDate
+    const dateColumn = opts.calendarDay ? CALENDAR_ITEM_DATE : "due_date"
 
     const conditions: string[] = [];
     const args: InValue[] = [];
@@ -1170,11 +1178,12 @@ export class TaskRepository {
       conditions.push(`status IN (${statuses.map(() => "?").join(", ")})`)
       args.push(...statuses)
     }
-    if (opts.dueDate) {
+    if (day) {
       // Widen by ±2 days in SQL (offset-bearing timestamps can sit two calendar days away), then match in the configured household timezone.
-      const lowerBound = shiftCalendarDay(opts.dueDate, -2)
-      const upperBound = shiftCalendarDay(opts.dueDate, 2)
-      conditions.push("due_date IS NOT NULL AND due_date <> '' AND substr(due_date, 1, 10) >= ? AND substr(due_date, 1, 10) <= ?")
+      const lowerBound = shiftCalendarDay(day, -2)
+      const upperBound = shiftCalendarDay(day, 2)
+      if (opts.calendarDay) conditions.push(CALENDAR_LOCAL_ITEM)
+      conditions.push(`substr(${dateColumn}, 1, 10) BETWEEN ? AND ?`)
       args.push(lowerBound, upperBound)
     }
     if (opts.priority != null) { conditions.push("priority = ?"); args.push(opts.priority); }
@@ -1200,14 +1209,16 @@ export class TaskRepository {
                               ${taskTimestampMs("updated_at")} AS task_version`
     const ordering = `ORDER BY ${sortCol} ${order} NULLS LAST, id ASC`
 
-    if (opts.dueDate) {
+    if (day) {
       const snapshot = await this.client.transaction("read")
       try {
         const tz = opts.timezone || "Europe/Dublin"
         const filterProjection = opts.matchDueTask ? `, ${CALENDAR_FILTER_COLUMNS}` : ""
-        const candidates = await snapshot.execute({ sql: `SELECT id, due_date${filterProjection} FROM tasks${where} ${ordering}`, args })
+        const candidates = await snapshot.execute({
+          sql: `SELECT id, ${dateColumn} AS calendar_date, due_date${filterProjection} FROM tasks${where} ${ordering}`, args,
+        })
         const matches = opts.matchDueTask
-        const ids = candidates.rows.filter(row => calendarDayFromInput(String(row.due_date), tz) === opts.dueDate &&
+        const ids = candidates.rows.filter(row => calendarDayFromInput(String(row.calendar_date), tz) === day &&
           (!matches || matches(row as unknown as CalendarFilterRow)))
         const page = ids.slice(offset, offset + limit)
         if (page.length === 0) return { tasks: [], total: ids.length }

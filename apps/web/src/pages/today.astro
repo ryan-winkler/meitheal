@@ -509,7 +509,9 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
 
       <details class="today-completed-tasks" hidden={completedTaskSummaries.length === 0}>
         <summary>Completed today ({completedTodayCount})</summary>
-        <p hidden={completedTaskSummaries.length >= completedTodayCount}>Showing {completedTaskSummaries.length} recent completions.</p>
+        <p hidden={completedTaskSummaries.length >= completedTodayCount}>
+          Showing {completedTaskSummaries.length} of {completedTodayCount} completions. Archive applies to all {completedTodayCount}.
+        </p>
         <ul>
           {completedTaskSummaries.map(task => (
             <li>
@@ -1322,6 +1324,11 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
     display: flex;
     flex-direction: column;
     gap: 8px;
+  }
+
+  .focus-stack__header[hidden],
+  .focus-card[hidden] {
+    display: none;
   }
 
   .focus-card {

@@ -834,10 +834,6 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
       if (saved && control?.value === saved.display) return saved.raw
       return control?.value ? new Date(control.value).toISOString() : ""
     }
-    function publicationDate(raw: string): string {
-      return dateOnly.test(raw) ? new Date(raw).toISOString() : raw
-    }
-
     // Goals Loader
     async function loadGoals(requestSignal: AbortSignal) {
       if (!goalSelect) return
@@ -1235,7 +1231,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
           if (!finalTitle) finalTitle = titleInput.value.trim();
 
           const explicitDue = (document.getElementById("nt-contextual-due") as HTMLInputElement)?.value;
-          const finalDue = explicitDue ? publicationDate(explicitDue) : extractedDue;
+          const finalDue = explicitDue || extractedDue;
 
           const kindInputEl = document.getElementById("new-task-kind") as HTMLInputElement | null;
           const descInputEl = document.getElementById("new-task-desc-input") as HTMLTextAreaElement | null;
@@ -1285,8 +1281,8 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
           if (body.task_kind === "calendar_event") {
             const start = eventDateValue("nt-event-start")
             const end = eventDateValue("nt-event-end")
-            if (start) body.start_date = publicationDate(start)
-            if (end) body.end_date = publicationDate(end)
+            if (start) body.start_date = start
+            if (end) body.end_date = end
           }
 
           // Custom fields

@@ -967,7 +967,7 @@ function renderCompletedTasks(container: HTMLElement, counts: TodayTaskCounts): 
   const limit = completed.querySelector("p")
   if (limit) {
     limit.hidden = tasks.length >= counts.completedToday
-    limit.textContent = `Showing ${tasks.length} recent completions.`
+    limit.textContent = `Showing ${tasks.length} of ${counts.completedToday} completions. Archive applies to all ${counts.completedToday}.`
   }
   const list = completed.querySelector("ul")
   // Keep existing links and focus during polling when the data is unchanged.

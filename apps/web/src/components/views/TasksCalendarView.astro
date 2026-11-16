@@ -1,7 +1,7 @@
 ---
 
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
-import { TaskRepository } from "@domains/tasks/persistence/task-repository"
+import { TaskRepository, type CalendarDayInfo } from "@domains/tasks/persistence/task-repository"
 import { createCalendarTaskFilter } from "../../lib/calendar-task-filter"
 import { calendarToday } from "../../lib/date"
 import { sanitizeCssColor } from "../../lib/safe-html"
@@ -78,10 +78,7 @@ let calendarAvailable = true
 if (url.searchParams.has("calendarRefresh")) Astro.response.headers.set("Cache-Control", "no-store")
 
 // Query task counts per day for this month
-const tasksByDay: Record<
-  string,
-  { count: number; colors: string[]; haEvents: number }
-> = {};
+const tasksByDay: Record<string, Pick<CalendarDayInfo, "count" | "colors" | "haEvents" | "scheduledEvents">> = {};
 let monthTotal = 0;
 let monthHAEvents = 0;
 
@@ -96,11 +93,7 @@ try {
     includeCompleted: filter.includeCompletedInCounts,
   })
   for (const [dateStr, info] of Object.entries(calendarData)) {
-    tasksByDay[dateStr] = {
-      count: info.count,
-      colors: info.colors,
-      haEvents: 0,
-    };
+    tasksByDay[dateStr] = info;
     monthTotal += info.count;
   }
 
@@ -111,7 +104,7 @@ try {
     if (tasksByDay[dateStr]) {
       tasksByDay[dateStr].haEvents = count;
     } else {
-      tasksByDay[dateStr] = { count: 0, colors: [], haEvents: count };
+      tasksByDay[dateStr] = { count: 0, colors: [], haEvents: count, scheduledEvents: 0 };
     }
   }
 } catch {
@@ -127,7 +120,7 @@ interface CalDay {
   isToday: boolean;
   isWeekend: boolean;
   taskCount: number;
-  haEventLabel: string | undefined;
+  calendarEventLabel: string | undefined;
   colors: string[];
 }
 
@@ -143,7 +136,8 @@ for (let week = 0; week < 6; week++) {
       ? `${year}-${String(month + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`
       : "";
     const dayData = tasksByDay[dateStr];
-    const haEventCount = dayData?.haEvents ?? 0;
+    const scheduledEvents = dayData?.scheduledEvents ?? 0;
+    const calendarEventCount = scheduledEvents + (dayData?.haEvents ?? 0);
 
     row.push({
       day: d,
@@ -151,9 +145,9 @@ for (let week = 0; week < 6; week++) {
       isCurrentMonth,
       isToday: dateStr === todayStr,
       isWeekend: isWeekendFn(dow),
-      taskCount: dayData?.count ?? 0,
-      haEventLabel: haEventCount > 0
-        ? `${haEventCount} calendar event${haEventCount === 1 ? "" : "s"}`
+      taskCount: (dayData?.count ?? 0) - scheduledEvents,
+      calendarEventLabel: calendarEventCount > 0
+        ? `${calendarEventCount} calendar event${calendarEventCount === 1 ? "" : "s"}`
         : undefined,
       colors: dayData?.colors ?? [],
     });
@@ -170,7 +164,7 @@ const dayWord = scheduledDayCount === 1 ? "day" : "days"
 const haEventWord = monthHAEvents === 1 ? "synced event" : "synced events"
 const agendaNote = filter.matches && !Object.values(tasksByDay).some(day => day.count)
   ? "No tasks match these filters this month."
-  : "Select a day to see its calendar events and due tasks."
+  : "Select a day to see its tasks and events."
 ---
 
 <div id="tasks-view-calendar" class="tasks-view-container" data-task-view="calendar">
@@ -231,15 +225,15 @@ const agendaNote = filter.matches && !Object.values(tasksByDay).some(day => day.
                   >
                     {cell.day}<span class="sr-only">{` ${monthName}`}</span>
                   </span>
-                  {(cell.taskCount > 0 || cell.haEventLabel) && (
+                  {(cell.taskCount > 0 || cell.calendarEventLabel) && (
                     <div class="cal-task-indicator">
                       {cell.taskCount > 0 && <span class="cal-task-badge">
                         {cell.taskCount}<span class="sr-only">{cell.taskCount === 1 ? " task" : " tasks"}</span>
                       </span>}
-                      {cell.haEventLabel && (
-                        <span class="cal-ha-badge" title={cell.haEventLabel}>
+                      {cell.calendarEventLabel && (
+                        <span class="cal-ha-badge" title={cell.calendarEventLabel}>
                           <Icon name="calendar-event" size={12} />
-                          <span class="sr-only">{cell.haEventLabel}</span>
+                          <span class="sr-only">{cell.calendarEventLabel}</span>
                         </span>
                       )}
                       {cell.colors.length > 0 && (
@@ -288,7 +282,7 @@ const agendaNote = filter.matches && !Object.values(tasksByDay).some(day => day.
           <div class="day-drawer-section">
             <h4 class="day-drawer-section-title flex items-center gap-1.5">
               <Icon name="clipboard-list" size={14} />
-              Tasks Due
+              Tasks and Events
             </h4>
             <div id="day-drawer-tasks" class="day-drawer-list">
               <span class="day-drawer-empty">Loading...</span>

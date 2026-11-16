@@ -13,6 +13,7 @@ import type { ListenerManager } from "../managed-listeners"
 import { taskApi } from "../task-api-client"
 import { showToast } from "../toast"
 import { onTaskCompleted } from "../gamification-hook"
+import { isDoneStatus } from "../status-config"
 import { openTaskDetailHandoff } from "../task-detail-handoff"
 import { lockTodayTaskStatus, syncTodayTaskStatus } from "../today-list"
 
@@ -20,14 +21,25 @@ export function setupFocusStack(
   container: HTMLElement,
   lm: ListenerManager,
 ): void {
-  const stack = container.querySelector("#section-focus-stack") as HTMLElement | null
+  const stack = container.querySelector<HTMLElement>("#section-focus-stack")
   if (!stack) return
+  const header = stack.querySelector<HTMLElement>(".focus-stack__header")
+  const count = header?.querySelector(".focus-stack__subtitle")
+  const cards = [...stack.querySelectorAll<HTMLElement>(".focus-card[data-id]")]
+  const completionTimers = new Map<HTMLElement, number>()
 
-  const hadCards = Boolean(stack.querySelector(".focus-card"))
+  function renderStack() {
+    const remaining = cards.filter(card => !card.hidden && !card.inert).length
+    if (count) count.textContent = `${remaining} to focus on`
 
-  function showClearedStack() {
-    if (!hadCards || stack!.querySelector(".focus-card, .focus-stack--cleared")) return
-    void import("@lib/celebrations").then(({ celebrateFocusStackClear }) => celebrateFocusStackClear())
+    const allHidden = cards.every(card => card.hidden)
+    header?.toggleAttribute("hidden", remaining === 0)
+    const announcement = stack!.querySelector(".focus-stack--cleared")
+    if (!allHidden) {
+      announcement?.remove()
+      return
+    }
+    if (announcement) return
     const cleared = document.createElement("div")
     cleared.className = "focus-stack--cleared"
     cleared.setAttribute("role", "status")
@@ -39,9 +51,28 @@ export function setupFocusStack(
     detail.className = "focus-stack__cleared-sub"
     detail.textContent = "Great focus session — take a breath"
     cleared.append(message, detail)
-    stack!.replaceChildren(cleared)
+    stack!.append(cleared)
+    void import("@lib/celebrations").then(({ celebrateFocusStackClear }) => {
+      if (!lm.disposed && cleared.isConnected) celebrateFocusStackClear()
+    })
   }
-  lm.on(container, "meitheal:today-status-committed", showClearedStack)
+  function settleCard(card: HTMLElement, done: boolean) {
+    clearTimeout(completionTimers.get(card))
+    completionTimers.delete(card)
+    card.hidden = done
+    card.inert = false
+    card.classList.remove("focus-card--completing")
+    renderStack()
+  }
+
+  lm.on(container, "meitheal:today-status-committed", event => {
+    const { id } = (event as CustomEvent<{ id: string }>).detail
+    const card = cards.find(item => item.dataset.id === id)
+    if (!card) return
+    const done = isDoneStatus(card.dataset.status ?? "")
+    if (done && completionTimers.has(card)) renderStack()
+    else settleCard(card, done)
+  })
 
   // ── Complete button handler ──
   lm.on(stack, "click", async (e: Event) => {
@@ -52,29 +83,27 @@ export function setupFocusStack(
     if (completeBtn) {
       e.stopPropagation()
       const id = completeBtn.dataset.id
-      if (!id) return
+      const card = completeBtn.closest<HTMLElement>(".focus-card")
+      if (!id || !card || card.hidden || card.inert) return
 
       const unlock = lockTodayTaskStatus(container, id)
       if (!unlock) return
-      const card = completeBtn.closest(".focus-card") as HTMLElement
-
       try {
         const completed = await taskApi.updateTask(id, { status: "complete" })
+        if (lm.disposed) return
         showToast("common.task_completed")
         onTaskCompleted(completed)
 
-        // Animate card out
-        card?.classList.add("focus-card--completing")
+        if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+          card.classList.add("focus-card--completing")
+          card.inert = true
+          completionTimers.set(card, lm.onTimeout(() => settleCard(card, true), 350))
+        }
         syncTodayTaskStatus(container, id, "complete")
-        lm.onTimeout(() => {
-          card?.remove()
-          showClearedStack()
-        }, 350)
       } catch {
         showToast("common.failed_update", "error")
       } finally {
         unlock()
-        if (card?.classList.contains("focus-card--completing")) completeBtn.disabled = true
       }
       return
     }

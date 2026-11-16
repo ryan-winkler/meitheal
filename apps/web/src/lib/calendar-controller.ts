@@ -1,6 +1,6 @@
 import type { TaskKind } from "@meitheal/domain-tasks"
 import { getRememberedAreaId } from "@lib/area-selector-controller"
-import { hasCalendarTaskFilters, readCalendarTaskFilters } from "@lib/calendar-task-filter"
+import { readCalendarTaskFilters } from "@lib/calendar-task-filter"
 import { createClientLogger } from "@lib/client-logger"
 import { calendarDayFromInput, formatTimeInZone, shiftCalendarDay } from "@lib/date"
 import { createFocusTrap } from "@lib/focus-trap"
@@ -18,6 +18,9 @@ interface CalendarEventRecord {
 
 const log = createClientLogger("tasks", "calendar-shell")
 const loading = "Loading…"
+// Node's 16 KiB request-header limit also includes the request target and
+// browser headers. Leave room for ingress headers and the refresh marker.
+const monthTargetLimit = 14_000
 
 export function initCalendarPage(signal: AbortSignal): void {
   const shell = document.getElementById("calendar-shell")
@@ -49,6 +52,7 @@ export function initCalendarPage(signal: AbortSignal): void {
   let loadMoreDueTasks: (() => void) | undefined
   let previousOverflow = ""
   let refreshCount = 0
+  let rejectedFilterChange = ""
   let calendarSources: Promise<string[]> | undefined
   const readCalendarSources = () => calendarSources ??= fetchCalendarEntities(
     AbortSignal.any([signal, AbortSignal.timeout(10_000)]),
@@ -110,7 +114,7 @@ export function initCalendarPage(signal: AbortSignal): void {
         history.replaceState(history.state, "", url)
       }
       applied = new URL(url)
-      announce("")
+      announce(rejectedFilterChange)
       if (activeDay) month.querySelector<HTMLElement>(`.cal-cell[data-date="${CSS.escape(activeDay)}"]`)?.focus()
       else if (activeRetry) month.querySelector<HTMLElement>(".cal-today-btn")?.focus()
       previewEvents()
@@ -125,13 +129,36 @@ export function initCalendarPage(signal: AbortSignal): void {
     }
   }
 
-  function applyFilters(values: KanbanFilters) {
+  function rejectFilters(message: string): false {
+    rejectedFilterChange = `${message} The previous results are still shown.`
+    announce(rejectedFilterChange)
+    return false
+  }
+
+  function applyFilters(values: KanbanFilters): boolean {
     const url = new URL(desired)
     const previous = readCalendarTaskFilters(url.searchParams)
     const next = { ...previous, ...values }
-    if (JSON.stringify(previous) === JSON.stringify(next)) return
-    writeCalendarTaskFilters(url, next)
+    if (JSON.stringify(previous) === JSON.stringify(next)) {
+      if (rejectedFilterChange) {
+        rejectedFilterChange = ""
+        announce("")
+      }
+      return true
+    }
+    const sameRules = JSON.stringify(previous.advancedFilter) === JSON.stringify(next.advancedFilter)
+    writeCalendarTaskFilters(url, next, sameRules ? url.searchParams.get("advancedFilter") : null)
+    const accepted = readCalendarTaskFilters(url.searchParams)
+    if (next.advancedFilter?.conditions.length && !accepted.advancedFilter) {
+      return rejectFilters("Shorten the Calendar rules or remove a condition.")
+    }
+    if (url.pathname.length + url.search.length > monthTargetLimit ||
+      (next.labels?.length ?? 0) !== (accepted.labels?.length ?? 0)) {
+      return rejectFilters("Remove a Calendar filter or shorten its values.")
+    }
+    rejectedFilterChange = ""
     void refresh(url)
+    return true
   }
 
   function startDrawerRead(date: string) {
@@ -161,17 +188,7 @@ export function initCalendarPage(signal: AbortSignal): void {
     }
 
     renderMessage(drawerTasks!, loading)
-    const params = new URLSearchParams({ due_date: date })
-    const filters = readCalendarTaskFilters(applied.searchParams)
-    const query = new URL(applied)
-    query.search = ""
-    if (hasCalendarTaskFilters(filters)) {
-      writeCalendarTaskFilters(query, filters)
-      const rules = applied.searchParams.get("advancedFilter")
-      // The month has already applied this representation within the filter readers' size bounds.
-      if (filters.advancedFilter && rules) query.searchParams.set("advancedFilter", rules)
-    }
-    params.set("calendar_filters", query.searchParams.toString())
+    const filters = new URLSearchParams([...applied.searchParams].filter(([key]) => agendaFilterKeys.has(key))).toString()
     moreTasks.hidden = true
     moreTasks.removeAttribute("aria-disabled")
     drawerTaskStatus!.textContent = ""
@@ -184,11 +201,9 @@ export function initCalendarPage(signal: AbortSignal): void {
       busy = true
       moreTasks.setAttribute("aria-disabled", "true")
       drawerTaskStatus!.textContent = offset ? loading : ""
-      params.set("offset", String(offset))
-      params.set("limit", String(limit))
       const taskSignal = AbortSignal.any([signal, currentRequest.signal, AbortSignal.timeout(10_000)])
       try {
-        const { rows, total } = await loadDrawerTasks(params, taskSignal)
+        const { rows, total } = await loadDrawerTasks({ date, filters, offset, limit }, timezone, taskSignal)
         if (taskSignal.aborted) return
         if (!offset) drawerTasks!.replaceChildren()
         const fresh = rows.filter(row => {
@@ -199,7 +214,7 @@ export function initCalendarPage(signal: AbortSignal): void {
         })
         drawerTasks!.append(...fresh)
         offset += rows.length
-        if (!offset) renderMessage(drawerTasks!, "No tasks due")
+        if (!offset) renderMessage(drawerTasks!, "No tasks or events scheduled")
         const canLoadMore = rows.length > 0 && total > offset
         if (!canLoadMore && document.activeElement === moreTasks) {
           (fresh[0] ?? drawerTasks!.querySelector<HTMLElement>("[data-task-id]") ??
@@ -304,7 +319,9 @@ export function initCalendarPage(signal: AbortSignal): void {
     const detail = (event as CustomEvent<{ view: string } & KanbanFilters>).detail
     if (detail?.view !== "calendar") return
     const { area, search, status, priority, rice, user, task_type, types, labels, promoted, advancedFilter } = detail
-    applyFilters({ area, search, status, priority, rice, user, task_type, types, labels, promoted, advancedFilter } as KanbanFilters)
+    if (!applyFilters({ area, search, status, priority, rice, user, task_type, types, labels, promoted, advancedFilter } as KanbanFilters)) {
+      event.preventDefault()
+    }
   }, { signal })
   document.addEventListener("meitheal:area-changed", event => {
     const area = (event as CustomEvent<{ areaId: string }>).detail.areaId
@@ -321,10 +338,13 @@ export function initCalendarPage(signal: AbortSignal): void {
   else previewEvents()
 }
 
-function writeCalendarTaskFilters(url: URL, filters: KanbanFilters) {
+const agendaFilterKeys = new Set(["area", "area_id", "board", "search", "user", "status", "priority",
+  "rice", "types", "task_type", "label", "labels", "promoted", "advancedFilter"])
+
+function writeCalendarTaskFilters(url: URL, filters: KanbanFilters, rawRules: string | null) {
   updateKanbanFilters(url, filters)
   if (filters.advancedFilter?.conditions.length) {
-    url.searchParams.set("advancedFilter", JSON.stringify(filters.advancedFilter))
+    url.searchParams.set("advancedFilter", rawRules ?? JSON.stringify(filters.advancedFilter))
   }
   url.searchParams.delete("area_id")
   if (filters.task_type) url.searchParams.set("task_type", filters.task_type)
@@ -392,8 +412,19 @@ function agendaItem(icon: TablerIconName, title: string, meta: string, taskId?: 
   return item
 }
 
-async function loadDrawerTasks(params: URLSearchParams, signal: AbortSignal) {
-  const response = await fetch(`/api/tasks?${params}`, { signal })
+async function loadDrawerTasks(
+  query: { date: string; filters: string; offset: number; limit: number },
+  timezone: string,
+  signal: AbortSignal,
+) {
+  const response = await fetch("/api/calendar/agenda", {
+    method: "POST",
+    mode: "same-origin",
+    redirect: "error",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(query),
+    signal,
+  })
   if (!response.ok) throw new Error(`Task query failed: ${response.status}`)
   const data = await response.json() as { tasks?: Record<string, unknown>[]; total?: number }
   if (!Array.isArray(data.tasks)) throw new Error("Invalid task list")
@@ -403,8 +434,11 @@ async function loadDrawerTasks(params: URLSearchParams, signal: AbortSignal) {
     const definition = getStatusDef(status)
     const deferred = task.deferred_at != null ? ` · ${window.mI18n?.get("deferral.title") ?? "Deferred"}` : ""
     const priority = task.priority ? ` · P${String(task.priority)}` : ""
-    return agendaItem(definition ? mapEntityEmojiToTabler(definition.icon) ?? "checkbox" : "checkbox",
-      String(task.title ?? "Untitled task"), `${definition?.label ?? status}${priority}${deferred}`, String(task.id))
+    const isEvent = task.task_kind === "calendar_event"
+    const eventTime = isEvent && typeof task.start_date === "string" && formatTimeInZone(task.start_date, timezone)
+    const meta = isEvent && task.start_date ? `${eventTime || "All day"} · ${definition?.label ?? status}` : definition?.label ?? status
+    const icon = isEvent ? "calendar-event" : definition ? mapEntityEmojiToTabler(definition.icon) ?? "checkbox" : "checkbox"
+    return agendaItem(icon, String(task.title ?? "Untitled task"), `${meta}${priority}${deferred}`, String(task.id))
   })
   return { rows, total: data.total ?? rows.length }
 }

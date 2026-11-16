@@ -316,6 +316,16 @@ function isExternal(href: string): boolean {
     return path.replace(/\/$/, "") || "/"
   }
 
+  function refreshTaskViewLink(link: HTMLAnchorElement, background: URL) {
+    const view = parseTaskView(link.dataset.taskViewLink ?? null)
+    if (!view) return
+    const tasks = appPath(background.pathname) === "/tasks"
+      ? background
+      : new URL(`${window.__ingress_path || ""}/tasks`, background)
+    const href = taskViewUrl(tasks, view).href
+    if (link.href !== href) link.href = href
+  }
+
   function updateActiveNavLink() {
     const current = new URL(location.href)
     const currentPath = appPath(current.pathname)
@@ -326,9 +336,10 @@ function isExternal(href: string): boolean {
       ?? document.querySelector(`#tasks-nav-submenu:not([hidden]) [data-task-view-link="${view}"]`)
     document.querySelectorAll<HTMLAnchorElement>(".sidebar .nav-link").forEach(link => {
       if (link.classList.contains("nav-link--external")) return
+      const child = link.dataset.taskViewLink
+      if (child) refreshTaskViewLink(link, background)
       const url = new URL(link.href)
       const href = appPath(url.pathname)
-      const child = link.dataset.taskViewLink
       const active = child
         ? taskContext && child === view
         : link.dataset.page === "tasks"
@@ -410,10 +421,7 @@ function isExternal(href: string): boolean {
     nav.addEventListener("click", event => {
       const target = event.target instanceof Element ? event.target : null
       const link = target?.closest<HTMLAnchorElement>("[data-task-view-link]")
-      const view = parseTaskView(link?.dataset.taskViewLink ?? null)
-      if (link && view) {
-        const current = taskBackgroundUrl(new URL(location.href))
-        if (appPath(current.pathname) === "/tasks") link.href = taskViewUrl(current, view).href
+      if (link) {
         setOpen(false)
       }
       const pin = target?.closest<HTMLElement>("[data-task-view-pin]")

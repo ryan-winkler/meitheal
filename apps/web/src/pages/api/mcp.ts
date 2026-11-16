@@ -87,6 +87,7 @@ const EXCLUDED_OPS = new Set([
   "useLabelCleanup",
   "updateLabel", "deleteLabel", // Shared vocabulary requires a current administrator, never an agent token
   "taskInactivity",
+  "readCalendarAgenda",
   "mcpEndpoint",       // Self-reference
   "getA2AAgentCard", "sendA2AMessage", "getA2ATask", // Separate A2A protocol boundary
   "healthPing",        // HEAD-only liveness
