@@ -381,6 +381,13 @@ test("Shopping links identify their own Area and follow applied Board filters", 
     await sidebar.getByRole("link", { name: "Kitchen shopping calendar", exact: true }).click()
     await expect(page.locator("#calendar-shell")).toBeVisible()
     await expect(current).toHaveText("Kitchen shopping calendar")
+    await expect(page).toHaveURL(url => url.searchParams.get("area_id") === areas[0])
+    await sidebar.getByRole("button", { name: "Task views", exact: true }).click()
+    await sidebar.locator("#tasks-nav-submenu").getByRole("link", { name: "Kanban", exact: true }).click()
+    await expect(page).toHaveURL(url => url.hash === "#kanban" && url.searchParams.get("area") === areas[0])
+    await expect(areaTrigger).toContainText(names[0])
+
+    await sidebar.getByRole("link", { name: "Kitchen shopping calendar", exact: true }).click()
     await page.getByRole("textbox", { name: "Filter by text" }).fill("pan")
     await expect(page).toHaveURL(url => url.searchParams.get("area") === areas[0] && url.searchParams.get("search") === "pan")
     await expect(current).toHaveText("Kitchen shopping calendar")

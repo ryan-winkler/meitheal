@@ -280,6 +280,29 @@ test("Calendar reads configured sources as a household member and filters before
     await page.getByRole("button", { name: "Clear all active filters" }).click()
     await expect(page).toHaveURL(url => !url.searchParams.has("labels"))
     await expect(day).toHaveAccessibleName(/105 tasks$/)
+
+    const timezone = await api.put(base + "/api/settings", {
+      headers: headers("admin"), data: { key: "timezone", value: "America/New_York" },
+    })
+    expect(timezone.status()).toBe(200)
+    const boundaryId = "linked-timezone-boundary"
+    const start = "2031-07-20T23:30:00Z"
+    insertLinkedTask.run(boundaryId, "Linked timed appointment", "pending", boundaryId, boundaryId, start)
+    insertConfirmation.run(boundaryId, boundaryId, boundaryId, "timezone-boundary-uid", "caldav", JSON.stringify({
+      occurrences: [{ start, end: "2031-07-21T01:00:00Z", effective_end: "2031-07-21" }],
+    }))
+    await page.goto(unfilteredMonth)
+    await expect(page.locator("#calendar-shell")).toHaveAttribute("data-timezone", "America/New_York")
+    const boundaryDay = page.locator('.cal-cell[data-date="2031-07-20"]')
+    const followingDay = page.locator('.cal-cell[data-date="2031-07-21"]')
+    await expect(boundaryDay).toHaveAccessibleName(/1 calendar event$/)
+    await expect(followingDay).not.toHaveAccessibleName(/calendar event/)
+    await boundaryDay.press("Enter")
+    const appointment = connected.getByRole("button", { name: /Linked timed appointment/ })
+    await expect(appointment).toBeVisible()
+    await page.keyboard.press("Escape")
+    await followingDay.press("Enter")
+    await expect(appointment).toHaveCount(0)
   } catch (error) {
     console.log("Calendar browser diagnostics", pageErrors)
     throw error

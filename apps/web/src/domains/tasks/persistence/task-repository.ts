@@ -800,16 +800,14 @@ export class TaskRepository {
       const startDay = calendarDayFromInput(startRaw, timezone);
       if (!startDay) return;
 
-      let endDay = startDay;
-      if (typeof effectiveEndRaw === "string" && /^\d{4}-\d{2}-\d{2}$/.test(effectiveEndRaw.trim())) {
-        endDay = effectiveEndRaw.trim();
-      } else if (typeof endRaw === "string" && endRaw.trim()) {
-        endDay = calendarEventLastDay(endRaw, timezone) ?? startDay
-      }
-      if (endDay < startDay) endDay = startDay;
+      const providerEnd = typeof endRaw === "string" ? calendarEventLastDay(endRaw, timezone) : null
+      const storedEnd = typeof effectiveEndRaw === "string" && /^\d{4}-\d{2}-\d{2}$/.test(effectiveEndRaw.trim())
+        ? calendarDayFromInput(effectiveEndRaw, timezone) : null
+      const endDay = providerEnd ?? storedEnd ?? startDay
 
       const from = startDay > fromDay ? startDay : fromDay;
-      const to = endDay < throughDay ? endDay : throughDay;
+      const lastDay = endDay < startDay ? startDay : endDay
+      const to = lastDay < throughDay ? lastDay : throughDay;
       if (from > to) return;
 
       const key = task.id + "/" + calendarOccurrenceStartKey(startRaw)
