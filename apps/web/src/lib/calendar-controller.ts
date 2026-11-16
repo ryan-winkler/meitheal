@@ -52,7 +52,7 @@ export function initCalendarPage(signal: AbortSignal): void {
 
   shell.dataset.calendarReady = "true"
   const trap = createFocusTrap(panel)
-  const timezone = shell.dataset.timezone || "Europe/Dublin"
+  let timezone = shell.dataset.timezone || "Europe/Dublin"
   let month = initialMonth
   let desired = taskBackgroundUrl(new URL(location.href))
   let applied = new URL(desired)
@@ -112,9 +112,12 @@ export function initCalendarPage(signal: AbortSignal): void {
       })
       if (!response.ok) throw new Error("Calendar request failed")
       const html = new DOMParser().parseFromString(await response.text(), "text/html")
-      const nextMonth = html.querySelector<HTMLElement>('[data-calendar-month][data-calendar-available="true"]')
+      const nextShell = html.querySelector<HTMLElement>("#calendar-shell")
+      const nextMonth = nextShell?.querySelector<HTMLElement>('[data-calendar-month][data-calendar-available="true"]')
       if (request.signal.aborted || signal.aborted) return
       if (!nextMonth) throw new Error("Calendar response unavailable")
+      timezone = nextShell?.dataset.timezone || timezone
+      shell!.dataset.timezone = timezone
       const activeDay = (document.activeElement as HTMLElement | null)?.closest<HTMLElement>(".cal-cell")?.dataset.date
       month.replaceWith(nextMonth)
       month = nextMonth

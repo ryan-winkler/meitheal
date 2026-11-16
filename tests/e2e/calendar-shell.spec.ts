@@ -508,6 +508,15 @@ test.describe("Calendar Shell", () => {
         "2031-07-07T00:00:00Z/2031-07-10T00:00:00Z",
         "2031-07-08T00:00:00Z/2031-07-11T00:00:00Z",
       ]))
+
+      const timezoneChange = await request.put("/api/settings", { data: { key: "timezone", value: "UTC" } })
+      expect(timezoneChange.status()).toBe(200)
+      await page.keyboard.press("Escape")
+      await page.getByRole("textbox", { name: "Filter by text" }).fill("yard")
+      await expect(page.locator("#calendar-shell")).toHaveAttribute("data-timezone", "UTC")
+      await expect(following.getByText("Next UTC date on selected household day")).toBeVisible()
+      await following.press("Enter")
+      await expect(connected.getByText("Next UTC date on selected household day")).toBeVisible()
     } finally {
       await request.put("/api/settings", { data: { key: "timezone", value: previousTimezone ?? "Europe/Dublin" } })
     }

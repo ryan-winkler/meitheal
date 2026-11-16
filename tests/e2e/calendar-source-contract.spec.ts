@@ -288,7 +288,7 @@ test("Calendar reads configured sources as a household member and filters before
     insertConfirmation.run(boundaryId, boundaryId, boundaryId, "timezone-boundary-uid", "caldav", JSON.stringify({
       occurrences: [{ start, end: "2031-07-21T01:00:00Z", effective_end: "2031-07-21" }],
     }))
-    await page.goto(unfilteredMonth)
+    await page.reload()
     await expect(page.locator("#calendar-shell")).toHaveAttribute("data-timezone", "America/Los_Angeles")
     const boundaryDay = page.locator('.cal-cell[data-date="2031-07-20"]')
     const followingDay = page.locator('.cal-cell[data-date="2031-07-21"]')
