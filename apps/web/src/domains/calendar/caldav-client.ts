@@ -117,7 +117,7 @@ export function validateCalDAVUrl(rawUrl: string): { valid: boolean; error?: str
     }
 
     const hostname = normalizeNetworkHost(url.hostname)
-    const hostSafety = classifyNetworkHost(hostname)
+    const hostSafety = classifyNetworkHost(url.hostname)
     if (!hostname || hostSafety === "unconditional") {
       return { valid: false, error: `Hostname "${hostname}" is blocked for security` }
     }

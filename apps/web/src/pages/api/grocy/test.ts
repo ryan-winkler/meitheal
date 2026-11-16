@@ -7,11 +7,11 @@
  * @domain grocy
  * @bounded-context integration
  */
-import type { APIRoute } from "astro";
-import { GrocyAdapter, validateGrocyBaseUrl } from "@meitheal/integration-core";
-import { requireSystemSettingsAdmin } from "../../../lib/settings-security";
-import { logApiError } from "../../../lib/api-logger";
-import { supervisorFetch } from "../../../lib/supervisor-fetch";
+import type { APIRoute } from "astro"
+import { GrocyAdapter, validateGrocyBaseUrl } from "@meitheal/integration-core"
+import { logApiError } from "../../../lib/api-logger"
+import { isLegacySupervisorIngressUrl, resolveSupervisorGrocyAddon } from "../../../lib/grocy-client"
+import { requireSystemSettingsAdmin } from "../../../lib/settings-security"
 
 /**
  * POST /api/grocy/test
@@ -20,80 +20,104 @@ import { supervisorFetch } from "../../../lib/supervisor-fetch";
  * Tests connection to a Grocy instance and returns system info.
  */
 export const POST: APIRoute = async ({ locals, request }) => {
-  const denied = requireSystemSettingsAdmin(request, locals);
-  if (denied) return denied;
+  const denied = requireSystemSettingsAdmin(request, locals)
+  if (denied) return denied
   try {
-    let body: { url?: string; api_key?: string; auto_detected?: boolean };
+    let body: { url?: string; api_key?: string; auto_detected?: boolean }
 
     try {
-      body = await request.json();
+      const parsed: unknown = await request.json()
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        return new Response(JSON.stringify({ ok: false, error: "Invalid JSON body" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        })
+      }
+      const record = parsed as Record<string, unknown>
+      if (record.url !== undefined && typeof record.url !== "string") {
+        return new Response(JSON.stringify({ ok: false, error: "Invalid URL format" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        })
+      }
+      if (record.api_key !== undefined && typeof record.api_key !== "string") {
+        return new Response(JSON.stringify({ ok: false, error: "api_key must be a string" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        })
+      }
+      body = record as { url?: string; api_key?: string; auto_detected?: boolean }
     } catch {
       return new Response(JSON.stringify({ ok: false, error: "Invalid JSON body" }), {
         status: 400,
         headers: { "Content-Type": "application/json" },
-      });
+      })
     }
 
-    let url = body.url?.trim();
-    let apiKey = body.api_key?.trim();
-    const autoDetected = body.auto_detected === true;
+    let url = body.url?.trim()
+    let apiKey = body.api_key?.trim()
+    const autoDetected = body.auto_detected === true
+
+    // Translate legacy auto-detected Supervisor ingress URLs via Supervisor add-on lookup
+    if (url && isLegacySupervisorIngressUrl(url)) {
+      const detected = await resolveSupervisorGrocyAddon(url)
+      if (!detected) {
+        return new Response(
+          JSON.stringify({ ok: false, error: "Grocy add-on is not running or could not be resolved" }),
+          { status: 400, headers: { "Content-Type": "application/json" } },
+        )
+      }
+      url = detected.url
+    }
 
     // SSRF protection: validate user-supplied URL
     if (url) {
-      const urlCheck = validateGrocyBaseUrl(url);
+      const urlCheck = validateGrocyBaseUrl(url)
       if (!urlCheck.ok) {
         return new Response(JSON.stringify({ ok: false, error: urlCheck.error }), {
-          status: 400, headers: { "Content-Type": "application/json" },
-        });
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        })
       }
-      url = urlCheck.normalizedUrl;
+      url = urlCheck.normalizedUrl
     }
 
-    // For auto-detected installs, resolve URL via Supervisor if not provided
+    // For auto-detected installs, resolve add-on container URL via Supervisor if not provided
     if (autoDetected && !url) {
-      try {
-        const addonsRes = await supervisorFetch("/addons");
-        if (addonsRes?.ok) {
-          const addonsData = (await addonsRes.json()) as {
-            data?: { addons?: { slug: string; ingress_url?: string; state?: string }[] };
-          };
-          const grocy = addonsData.data?.addons?.find(
-            (a) => a.slug.includes("grocy") && a.state === "started"
-          );
-          if (typeof grocy?.ingress_url === "string" && grocy.ingress_url.startsWith("/") && !grocy.ingress_url.startsWith("//")) {
-            url = `http://supervisor${grocy.ingress_url}`;
-          }
-        }
-      } catch { /* Supervisor detection failed */ }
+      const detected = await resolveSupervisorGrocyAddon()
+      if (detected) {
+        url = detected.url
+      }
     }
 
     // For auto-detected installs, try fetching API key from saved settings
     if (autoDetected && !apiKey) {
       try {
-        const { ensureSchema, getPersistenceClient } = await import("@domains/tasks/persistence/store")
-        const { SettingsRepository } = await import("@domains/tasks/persistence/settings-repository")
+        const { ensureSchema, getPersistenceClient, SettingsRepository } = await import("@domains/tasks")
         await ensureSchema()
         const repo = new SettingsRepository(getPersistenceClient())
         await repo.ensureSettingsTable()
         const result = await repo.getByKey("grocy_api_key")
-        if (result?.value && typeof result.value === "string") {
+        if (typeof result?.value === "string" && result.value) {
           apiKey = result.value
+        } else if (typeof result?.value === "number" && Number.isFinite(result.value)) {
+          apiKey = String(result.value)
         }
       } catch { /* Settings lookup failed */ }
     }
 
     if (!url || !apiKey) {
-      const missing = !url && !apiKey ? "URL and API key" : !url ? "URL" : "API key";
+      const missing = !url && !apiKey ? "URL and API key" : !url ? "URL" : "API key"
       return new Response(
         JSON.stringify({ ok: false, error: `${missing} required. ${autoDetected ? "Try the ⚡ Auto button to generate an API key, or create one in Grocy → Settings → API Keys." : ""}` }),
         { status: 400, headers: { "Content-Type": "application/json" } },
-      );
+      )
     }
 
-    const adapter = new GrocyAdapter({ baseUrl: url, apiKey, timeoutMs: 5000 });
+    const adapter = new GrocyAdapter({ baseUrl: url, apiKey, timeoutMs: 5000, redirect: "manual" })
 
     // Test connection with system info endpoint
-    const sysResult = await adapter.getSystemInfo();
+    const sysResult = await adapter.getSystemInfo()
 
     if (!sysResult.ok) {
       return new Response(
@@ -104,28 +128,28 @@ export const POST: APIRoute = async ({ locals, request }) => {
           retryable: sysResult.retryable,
         }),
         { status: 200, headers: { "Content-Type": "application/json" } },
-      );
+      )
     }
 
     // Fetch counts for display
-    let choreCount = 0;
-    let taskCount = 0;
-    let shoppingCount = 0;
+    let choreCount = 0
+    let taskCount = 0
+    let shoppingCount = 0
 
     const [choresRes, tasksRes, shoppingRes] = await Promise.allSettled([
       adapter.getChores(),
       adapter.getTasks(false),
       adapter.getShoppingList(),
-    ]);
+    ])
 
     if (choresRes.status === "fulfilled" && choresRes.value.ok) {
-      choreCount = choresRes.value.data.length;
+      choreCount = choresRes.value.data.length
     }
     if (tasksRes.status === "fulfilled" && tasksRes.value.ok) {
-      taskCount = tasksRes.value.data.length;
+      taskCount = tasksRes.value.data.length
     }
     if (shoppingRes.status === "fulfilled" && shoppingRes.value.ok) {
-      shoppingCount = shoppingRes.value.data.length;
+      shoppingCount = shoppingRes.value.data.length
     }
 
     return new Response(
@@ -137,12 +161,12 @@ export const POST: APIRoute = async ({ locals, request }) => {
         message: `Connected to Grocy ${sysResult.data.grocyVersionInfo.Version}`,
       }),
       { status: 200, headers: { "Content-Type": "application/json" } },
-    );
+    )
   } catch (err) {
-    logApiError("grocy-test", "POST failed", err);
+    logApiError("grocy-test", "POST failed", err)
     return new Response(JSON.stringify({ ok: false, error: "Internal server error" }), {
       status: 500,
       headers: { "Content-Type": "application/json" },
-    });
+    })
   }
-};
+}

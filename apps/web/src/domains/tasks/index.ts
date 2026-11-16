@@ -7,6 +7,7 @@ export {
   findTasksByExternalSyncIds,
   getLocalDataDirectory,
   getPersistenceClient,
+  resetPersistenceForTests,
   type ExternalSyncLookup,
   type ExternalSyncMatch,
   type SyncChunkCommitResult,
@@ -32,7 +33,13 @@ export {
   type VerifiedActivityProvenance,
   type VerifiedOriginKind,
 } from "./persistence/recent-activity"
-export { getSettingsRevision, SettingsRepository } from "./persistence/settings-repository"
+export {
+  AI_HANDOFF_SETTING_KEYS,
+  getSettingsRevision,
+  saveAiHandoffSettings,
+  saveLegacyAiHandoffUrl,
+  SettingsRepository,
+} from "./persistence/settings-repository"
 export { rewriteLabelReferences } from "./persistence/label-reference-repository"
 export { TaskHandoff } from "./persistence/task-handoff"
 export {

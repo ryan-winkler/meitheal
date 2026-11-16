@@ -27,6 +27,7 @@ import {
   stopCalDAVSync,
   syncCalDAVEvents,
   isImportedCalendarTask,
+  isRegularHASeries,
   planInboundCalendarUpdate,
   syncFromHA,
 } from "../../apps/web/src/domains/calendar/calendar-bridge"
@@ -279,6 +280,18 @@ test("selectRepresentativeOccurrence prioritizes today over +28d and handles exc
   expect(pastAllDay.startDay).toBe("2026-11-15")
 })
 
+test("isRegularHASeries needs three dates that a rule predicts without unseen dates in between", () => {
+  const utc = (days: string[]) => days.map((d) => `${d}T10:00:00Z`)
+  expect(isRegularHASeries(utc(["2026-11-16", "2026-11-23", "2026-11-30"]), "UTC")).toBe(true)
+  expect(isRegularHASeries(utc(["2026-11-16", "2026-11-30", "2026-12-14"]), "UTC")).toBe(true)
+  expect(isRegularHASeries(utc(["2026-11-16", "2026-11-23"]), "UTC")).toBe(false)
+  // Monday, Thursday and the next Tuesday fit "weekly on Mon, Tue, Thu" but are separate visits.
+  expect(isRegularHASeries(utc(["2026-11-16", "2026-11-19", "2026-11-24"]), "UTC")).toBe(false)
+  expect(isRegularHASeries(utc(["2026-11-16", "2026-11-17", "2026-11-19"]), "UTC")).toBe(false)
+  // A weekly series with one cancelled week among four seen dates is still a series.
+  expect(isRegularHASeries(utc(["2026-11-02", "2026-11-09", "2026-11-23", "2026-11-30"]), "UTC")).toBe(true)
+})
+
 test("planInboundCalendarUpdate treats alias and archived statuses as closed", () => {
   const payload = JSON.stringify({ summary: "Bins", start: "2026-11-09T07:00:00Z", end: null, rrule: null })
   const base = {
@@ -290,6 +303,20 @@ test("planInboundCalendarUpdate treats alias and archived statuses as closed", (
   const done = planInboundCalendarUpdate({ ...base, status: "done" } as never, payload, incoming, { timezone: "UTC" })
   expect(done.status).toBe("pending")
   expect(done.dueDate).toBe("2026-11-16T07:00:00Z")
+  const edited = planInboundCalendarUpdate(
+    { ...base, status: "complete", due_date: "2026-11-10", start_date: "2026-11-10", end_date: "2026-11-11" } as never,
+    payload, incoming, { timezone: "UTC" },
+  )
+  expect(edited.status).toBe("pending")
+  expect(edited.dueDate).toBeUndefined()
+  expect(edited.startDate).toBeUndefined()
+  expect(edited.endDate).toBeUndefined()
+  // A completed task whose event moves, without a next occurrence to reopen for, stays as completed.
+  const movedOneOff = planInboundCalendarUpdate(
+    { ...base, status: "complete" } as never, payload, { ...incoming, repeats: false }, { timezone: "UTC" },
+  )
+  expect(movedOneOff.status).toBeUndefined()
+  expect(movedOneOff.dueDate).toBeUndefined()
   // An archived task is closed but never reopened, and its fields stay put.
   const archived = planInboundCalendarUpdate({ ...base, status: "archived" } as never, payload, incoming, { timezone: "UTC" })
   expect(archived.status).toBeUndefined()
@@ -328,6 +355,8 @@ test("HA sync groups recurring occurrences (with and without UID), picks today o
       { uid: "weekly-standup", summary: "Weekly Standup", start: `${d14}T10:00:00Z`, end: `${d14}T10:30:00Z` },
       { summary: "Bin Night", start: `${todayStr}T18:30:00Z`, end: `${todayStr}T19:00:00Z` },
       { summary: "Bin Night", start: `${d7}T18:30:00Z`, end: `${d7}T19:00:00Z` },
+      { summary: "Bin Night", start: `${d14}T18:30:00Z`, end: `${d14}T19:00:00Z` },
+      { summary: "Bin Night", start: `${shiftCalendarDay(todayStr, 21)}T18:30:00Z`, end: `${shiftCalendarDay(todayStr, 21)}T19:00:00Z` },
       { summary: "Bin Night", start: `${d28}T18:30:00Z`, end: `${d28}T19:00:00Z` },
     ])
 
@@ -368,10 +397,17 @@ test("HA sync groups recurring occurrences (with and without UID), picks today o
 
     // Calendar counts include EVERY expanded occurrence in [todayStr, d28]
     const repo = new TaskRepository(db)
+    const datePage = await repo.findAll({
+      dueDate: todayStr, timezone: "Europe/Dublin", sort: "title", order: "ASC", limit: 1, offset: 1,
+    })
+    expect(datePage.total).toBe(2)
+    expect(datePage.tasks.map(task => task.id)).toEqual([String(standup.id)])
+    const pastLastPage = await repo.findAll({ dueDate: todayStr, limit: 1, offset: 2 })
+    expect(pastLastPage).toEqual({ tasks: [], total: 2 })
     const haCounts = await repo.getCalendarHAEventCounts(todayStr, d28, "Europe/Dublin")
     expect(haCounts[todayStr]).toBe(2)
     expect(haCounts[d7]).toBe(2)
-    expect(haCounts[d14]).toBe(1)
+    expect(haCounts[d14]).toBe(2)
     expect(haCounts[d28]).toBe(2)
 
     // Re-syncing must update (not create duplicates or overwrite due_date with +28d)
@@ -397,6 +433,14 @@ test("HA sync groups recurring occurrences (with and without UID), picks today o
     await repo.updateTask(String(standup.id), { status: "complete" })
     const afterComplete = await db.execute({ sql: "SELECT COUNT(*) AS n FROM tasks", args: [] })
     expect(Number(afterComplete.rows[0]?.n)).toBe(2)
+    // The next window can contain just one occurrence and no provider RRULE.
+    ha.setCalendarEvents([{ uid: "weekly-standup", summary: "Team Standup", start: `${d7}T11:00:00Z`, end: `${d7}T11:30:00Z` }])
+    const sparseSync = await syncFromHA("calendar.household")
+    expect(sparseSync.created).toBe(0)
+    const reopenedStandup = await db.execute({
+      sql: "SELECT status, due_date FROM tasks WHERE id = ?", args: [String(standup.id)],
+    })
+    expect(reopenedStandup.rows[0]).toMatchObject({ status: "pending", due_date: `${d7}T11:00:00Z` })
 
     // A hand-made task with the same title as an event is never adopted.
     await db.execute({
@@ -404,7 +448,7 @@ test("HA sync groups recurring occurrences (with and without UID), picks today o
             VALUES ('hand-made', 'Dentist', '', 'pending', 3, '[]', '{}', 'default', '{}', 'task', 'hand-made', 'hand-made', 900, 1, 1)`,
       args: [],
     })
-    ha.setCalendarEvents([{ uid: "dentist-1", summary: "Dentist", start: `${d7}T09:00:00Z`, end: `${d7}T10:00:00Z` }])
+    ha.setCalendarEvents([{ summary: "Dentist", start: `${d7}T09:00:00Z`, end: `${d7}T10:00:00Z` }])
     await syncFromHA("calendar.household")
     const handMade = await db.execute({ sql: "SELECT task_kind, due_date FROM tasks WHERE id = 'hand-made'", args: [] })
     expect(handMade.rows[0]?.task_kind).toBe("standard_action")
@@ -486,8 +530,8 @@ test("HA sync groups recurring occurrences (with and without UID), picks today o
 
     // Two new events that share a title each get their own task.
     ha.setCalendarEvents([
-      { uid: "vet-1", summary: "Vet", start: `${d7}T09:00:00Z`, end: `${d7}T09:30:00Z` },
-      { uid: "vet-2", summary: "Vet", start: `${d14}T09:00:00Z`, end: `${d14}T09:30:00Z` },
+      { summary: "Vet", start: `${d7}T09:00:00Z`, end: `${d7}T09:30:00Z` },
+      { summary: "Vet", start: `${d14}T09:00:00Z`, end: `${d14}T09:30:00Z` },
     ])
     await syncFromHA("calendar.household")
     const vets = await db.execute({ sql: "SELECT due_date FROM tasks WHERE title = 'Vet' ORDER BY due_date", args: [] })
@@ -585,12 +629,20 @@ test("HA sync keys ID-less series on HA wall clock, leaves unchanged tasks alone
       { summary: "Bin day", start: d7, end: shiftCalendarDay(d7, 1) },
     ])
     await syncFromHA("calendar.household")
-    // Linked to the household's own HA event, so it is never written back as a copy...
-    expect(await isImportedCalendarTask("bin-day")).toBe(true)
+    // A task the household created is never linked by title: the HA event gets its own task.
+    expect(await isImportedCalendarTask("bin-day")).toBe(false)
+    const importedBinDay = await db.execute({
+      sql: "SELECT id FROM tasks WHERE title = 'Bin day' AND id <> 'bin-day' AND idempotency_key LIKE 'cal-sync-%'",
+      args: [],
+    })
+    expect(importedBinDay.rows).toHaveLength(1)
     expect(await isImportedCalendarTask(swimId)).toBe(true)
     // ...but it still creates its own next occurrence when completed.
     await repo.updateTask("bin-day", { status: "complete" })
-    const binDays = await db.execute({ sql: "SELECT status FROM tasks WHERE title = 'Bin day' ORDER BY created_at", args: [] })
+    const binDays = await db.execute({
+      sql: "SELECT status FROM tasks WHERE title = 'Bin day' AND idempotency_key NOT LIKE 'cal-sync-%' ORDER BY created_at",
+      args: [],
+    })
     expect(binDays.rows.map((row) => String(row.status))).toEqual(["complete", "pending"])
 
     // Deleting the series completes its task and removes its month-grid badges.
@@ -601,7 +653,10 @@ test("HA sync keys ID-less series on HA wall clock, leaves unchanged tasks alone
     expect(deletedCounts[d14] ?? 0).toBe(0)
 
     // When the household's own repeating task loses its HA event, it is unlinked, not completed.
-    const openBinDay = await db.execute({ sql: "SELECT id FROM tasks WHERE title = 'Bin day' AND status = 'pending'", args: [] })
+    const openBinDay = await db.execute({
+      sql: "SELECT id FROM tasks WHERE title = 'Bin day' AND status = 'pending' AND idempotency_key NOT LIKE 'cal-sync-%'",
+      args: [],
+    })
     expect(openBinDay.rows).toHaveLength(1)
     await db.execute({
       sql: `INSERT INTO calendar_confirmations (confirmation_id, task_id, request_id, provider_event_id, source, payload, created_at)
@@ -724,11 +779,13 @@ test("HA sync keeps two ID-less series that share an earlier household-time key 
     expect(await getHAConnection()).not.toBeNull()
     const todayStr = calendarToday("Europe/Dublin")
     const d7 = shiftCalendarDay(todayStr, 7)
+    const d14 = shiftCalendarDay(todayStr, 14)
     // B is written so that its Dublin time is exactly 23:00, the key the evening series holds.
     const sharedHour = String(18 - dublinOffsetHours(todayStr)).padStart(2, "0")
     const evening = [
       { summary: "Swim", start: `${todayStr}T23:00:00-05:00`, end: `${shiftCalendarDay(todayStr, 1)}T00:00:00-05:00` },
       { summary: "Swim", start: `${d7}T23:00:00-05:00`, end: `${shiftCalendarDay(d7, 1)}T00:00:00-05:00` },
+      { summary: "Swim", start: `${d14}T23:00:00-05:00`, end: `${shiftCalendarDay(d14, 1)}T00:00:00-05:00` },
     ]
     ha.setCalendarEvents(evening)
     await syncFromHA("calendar.household")
@@ -741,6 +798,7 @@ test("HA sync keeps two ID-less series that share an earlier household-time key 
       ...evening,
       { summary: "Swim", start: `${todayStr}T${sharedHour}:00:00-05:00`, end: `${todayStr}T${sharedHour}:30:00-05:00` },
       { summary: "Swim", start: `${d7}T${sharedHour}:00:00-05:00`, end: `${d7}T${sharedHour}:30:00-05:00` },
+      { summary: "Swim", start: `${d14}T${sharedHour}:00:00-05:00`, end: `${d14}T${sharedHour}:30:00-05:00` },
     ])
     await syncFromHA("calendar.household")
     const both = await db.execute({ sql: "SELECT id FROM tasks WHERE title = 'Swim' ORDER BY created_at", args: [] })
@@ -872,20 +930,22 @@ test("HA sync upgrades tasks saved by the per-occurrence release: due dates foll
 
     // The old release linked every "Bin Night" occurrence to one task and left its due
     // date on the occurrence it synced last (four weeks out).
-    const binStarts = [todayStr, d7, d28].map((day) => `${day}T18:30:00Z`)
-    await seedTask("legacy-bin", "Bin Night", binStarts[2]!, binStarts[0]!)
+    const binStarts = [todayStr, d7, d14, shiftCalendarDay(todayStr, 21), d28].map((day) => `${day}T18:30:00Z`)
+    await seedTask("legacy-bin", "Bin Night", binStarts[4]!, binStarts[0]!)
     for (const start of binStarts) await seedLink("legacy-bin", "Bin Night", start, start.replace("18:30", "19:00"))
 
     // It also merged two different "Swimming" series (Tuesday 17:00, Saturday 10:00) into one task.
-    const tueStarts = [d7, d14].map((day) => `${day}T17:00:00Z`)
-    const satStarts = [d3, d10].map((day) => `${day}T10:00:00Z`)
-    await seedTask("legacy-swim", "Swimming", tueStarts[1]!, satStarts[0]!)
+    const d17 = shiftCalendarDay(todayStr, 17)
+    const d21 = shiftCalendarDay(todayStr, 21)
+    const tueStarts = [d7, d14, d21].map((day) => `${day}T17:00:00Z`)
+    const satStarts = [d3, d10, d17].map((day) => `${day}T10:00:00Z`)
+    await seedTask("legacy-swim", "Swimming", tueStarts[2]!, satStarts[0]!)
     for (const start of [...satStarts, ...tueStarts]) await seedLink("legacy-swim", "Swimming", start, start)
 
     // After the user completed last week's "Gym" task, the old release created a second
     // task for the later occurrences (it never matched completed tasks by title).
-    const dMinus5 = shiftCalendarDay(todayStr, -5)
-    const gymStarts = [dMinus5, todayStr, d7, d14].map((day) => `${day}T07:00:00Z`)
+    const dMinus7 = shiftCalendarDay(todayStr, -7)
+    const gymStarts = [dMinus7, todayStr, d7, d14].map((day) => `${day}T07:00:00Z`)
     await seedTask("legacy-gym-done", "Gym", gymStarts[0]!, gymStarts[0]!)
     await db.execute({ sql: "UPDATE tasks SET status = 'complete' WHERE id = 'legacy-gym-done'", args: [] })
     await seedLink("legacy-gym-done", "Gym", gymStarts[0]!, gymStarts[0]!)
@@ -946,7 +1006,7 @@ test("HA sync upgrades tasks saved by the per-occurrence release: due dates foll
   }
 })
 
-test("HA sync leaves completed tasks alone, keeps user-added repeats on old imports, and re-imports a series whose task was deleted", async () => {
+test("HA sync keeps old completions closed, keeps user-added repeats, leaves deleted tasks deleted, and groups only regular ID-less series", async () => {
   const previous = Object.fromEntries(["MEITHEAL_DB_URL", "SUPERVISOR_TOKEN", "HA_BASE_URL", "HA_TOKEN"].map((k) => [k, process.env[k]]))
   const directory = await mkdtemp(join(tmpdir(), "meitheal-cal-completed-"))
   const ha = await startHAWebSocketFixture()
@@ -970,24 +1030,6 @@ test("HA sync leaves completed tasks alone, keeps user-added repeats on old impo
     const d14 = shiftCalendarDay(todayStr, 14)
     const d21 = shiftCalendarDay(todayStr, 21)
     const at = (day: string, time: string) => `${day}T${time}:00Z`
-
-    // A Meitheal Event task linked by title to a weekly HA event, then completed.
-    await db.execute({
-      sql: `INSERT INTO tasks (id, title, description, status, priority, labels, framework_payload, area_id, custom_fields, task_type, task_kind, due_date, recurrence_rule, idempotency_key, request_id, ticket_number, created_at, updated_at)
-            VALUES ('recycling', 'Recycling', '', 'pending', 3, '[]', '{}', 'default', '{}', 'task', 'calendar_event', ?, 'FREQ=WEEKLY', 'recycling', 'recycling', 9001, 1, 1)`,
-      args: [at(todayStr, "07:00")],
-    })
-    ha.setCalendarEvents([todayStr, d7, d14].map((day) => ({ summary: "Recycling", start: at(day, "07:00"), end: at(day, "07:30") })))
-    await syncFromHA(entity)
-    await repo.updateTask("recycling", { status: "complete" })
-    await db.execute({ sql: "UPDATE tasks SET updated_at = 1000 WHERE id = 'recycling'", args: [] })
-    // The next week comes into view; the completed task keeps its date and updated_at.
-    ha.setCalendarEvents([d7, d14, d21].map((day) => ({ summary: "Recycling", start: at(day, "07:00"), end: at(day, "07:30") })))
-    await syncFromHA(entity)
-    const completed = await db.execute({ sql: "SELECT status, due_date, updated_at FROM tasks WHERE id = 'recycling'", args: [] })
-    expect(String(completed.rows[0]?.status)).toBe("complete")
-    expect(String(completed.rows[0]?.due_date)).toBe(at(todayStr, "07:00"))
-    expect(Number(completed.rows[0]?.updated_at)).toBe(1000)
 
     // The previous release imported a one-off "Boiler service"; the user then added a yearly rule.
     const boilerStart = at(d7, "09:00")
@@ -1014,7 +1056,6 @@ test("HA sync leaves completed tasks alone, keeps user-added repeats on old impo
       args: [`ha-cal-${entity}-Gym-${gymStart}`, JSON.stringify({ summary: "Gym", start: gymStart, end: gymStart, entity_id: entity })],
     })
     ha.setCalendarEvents([
-      ...[d7, d14, d21].map((day) => ({ summary: "Recycling", start: at(day, "07:00"), end: at(day, "07:30") })),
       { summary: "Boiler service", start: boilerStart, end: boilerStart },
       ...[todayStr, d7, d14].map((day) => ({ summary: "Gym", start: at(day, "06:00"), end: at(day, "07:00") })),
     ])
@@ -1024,7 +1065,7 @@ test("HA sync leaves completed tasks alone, keeps user-added repeats on old impo
     const boilers = await db.execute({ sql: "SELECT status, recurrence_rule FROM tasks WHERE title = 'Boiler service' ORDER BY created_at", args: [] })
     expect(boilers.rows.map((row) => String(row.status))).toEqual(["complete", "pending"])
 
-    // Deleting a synced task does not stop its series: the next sync imports it again.
+    // A deleted synced task stays deleted while its occurrence is still the current one...
     const swimEvents = [todayStr, d7, d14].map((day) => ({ summary: "Swim", start: at(day, "18:00"), end: at(day, "19:00") }))
     ha.setCalendarEvents(swimEvents)
     await syncFromHA(entity)
@@ -1032,9 +1073,53 @@ test("HA sync leaves completed tasks alone, keeps user-added repeats on old impo
     expect(firstSwim.rows).toHaveLength(1)
     await db.execute({ sql: "DELETE FROM tasks WHERE id = ?", args: [String(firstSwim.rows[0]?.id)] })
     await syncFromHA(entity)
-    const secondSwim = await db.execute({ sql: "SELECT id FROM tasks WHERE title = 'Swim'", args: [] })
+    await syncFromHA(entity)
+    expect((await db.execute({ sql: "SELECT id FROM tasks WHERE title = 'Swim'", args: [] })).rows).toHaveLength(0)
+    // ...and a one-off deleted event never comes back.
+    const party = { summary: "Party", start: at(d14, "20:00"), end: at(d14, "23:00") }
+    ha.setCalendarEvents([...swimEvents, party])
+    await syncFromHA(entity)
+    await db.execute({ sql: "DELETE FROM tasks WHERE title = 'Party'", args: [] })
+    await syncFromHA(entity)
+    expect((await db.execute({ sql: "SELECT id FROM tasks WHERE title = 'Party'", args: [] })).rows).toHaveLength(0)
+    // A partial calendar response must not discard the deletion record.
+    ha.setCalendarEvents(swimEvents)
+    await syncFromHA(entity)
+    ha.setCalendarEvents([...swimEvents, party])
+    await syncFromHA(entity)
+    expect((await db.execute({ sql: "SELECT id FROM tasks WHERE title = 'Party'", args: [] })).rows).toHaveLength(0)
+    // When the series moves on to a later occurrence, that occurrence gets a new task.
+    ha.setCalendarEvents([...[d7, d14, d21].map((day) => ({ summary: "Swim", start: at(day, "18:00"), end: at(day, "19:00") })), party])
+    await syncFromHA(entity)
+    const secondSwim = await db.execute({ sql: "SELECT id, due_date FROM tasks WHERE title = 'Swim'", args: [] })
     expect(secondSwim.rows).toHaveLength(1)
     expect(String(secondSwim.rows[0]?.id)).not.toBe(String(firstSwim.rows[0]?.id))
+    expect(String(secondSwim.rows[0]?.due_date)).toBe(at(d7, "18:00"))
+    expect((await db.execute({ sql: "SELECT id FROM tasks WHERE title = 'Party'", args: [] })).rows).toHaveLength(0)
+
+    const pickup = {
+      uid: "one-off-pickup",
+      summary: "Pick up the spare key",
+      start: at(d7, "11:00"),
+      end: at(d7, "12:00"),
+    }
+    ha.setCalendarEvents([pickup])
+    expect((await syncFromHA(entity)).created).toBe(1)
+    await db.execute({ sql: "DELETE FROM tasks WHERE title = 'Pick up the spare key'", args: [] })
+    ha.setCalendarEvents([{ ...pickup, start: at(d14, "11:00"), end: at(d14, "12:00") }])
+    expect((await syncFromHA(entity)).created).toBe(0)
+    expect((await db.execute({ sql: "SELECT id FROM tasks WHERE title = 'Pick up the spare key'", args: [] })).rows).toHaveLength(0)
+
+    // Two separate same-title appointments without IDs keep a task each; three weekly dates form one series.
+    ha.setCalendarEvents([
+      { summary: "Vet", start: at(d7, "09:00"), end: at(d7, "09:30") },
+      { summary: "Vet", start: at(d14, "09:00"), end: at(d14, "09:30") },
+      ...[todayStr, d7, d14].map((day) => ({ summary: "Bins", start: at(day, "07:00"), end: at(day, "07:15") })),
+    ])
+    await syncFromHA(entity)
+    const vets = await db.execute({ sql: "SELECT due_date FROM tasks WHERE title = 'Vet' ORDER BY due_date", args: [] })
+    expect(vets.rows.map((row) => String(row.due_date))).toEqual([at(d7, "09:00"), at(d14, "09:00")])
+    expect((await db.execute({ sql: "SELECT id FROM tasks WHERE title = 'Bins'", args: [] })).rows).toHaveLength(1)
   } finally {
     stopCalendarSync()
     stopEntitySubscription()
@@ -1118,6 +1203,112 @@ test("a completed series keeps its last-applied baseline, so a provider rename s
   }
 })
 
+test("HA sync turns separate same-title tasks into one series without duplicates, reopens a closed series for a later event, and keeps a completed legacy month done", async () => {
+  const previous = Object.fromEntries(["MEITHEAL_DB_URL", "SUPERVISOR_TOKEN", "HA_BASE_URL", "HA_TOKEN"].map((k) => [k, process.env[k]]))
+  const directory = await mkdtemp(join(tmpdir(), "meitheal-cal-two-to-three-"))
+  const ha = await startHAWebSocketFixture()
+  delete process.env.SUPERVISOR_TOKEN
+  process.env.HA_BASE_URL = ha.url
+  process.env.HA_TOKEN = "calendar-two-to-three-fixture"
+  process.env.MEITHEAL_DB_URL = `file:${join(directory, "tasks.db")}`
+  resetPersistenceForTests()
+  const db = getPersistenceClient()
+
+  try {
+    await ensureSchema()
+    const settingsRepo = new SettingsRepository(db)
+    await settingsRepo.ensureSettingsTable()
+    await settingsRepo.upsert("timezone", "Europe/Dublin")
+    expect(await getHAConnection()).not.toBeNull()
+    const repo = new TaskRepository(db)
+    const entity = "calendar.household"
+    const todayStr = calendarToday("Europe/Dublin")
+    const day = (offset: number) => shiftCalendarDay(todayStr, offset)
+    const at = (d: string, time: string) => `${d}T${time}:00Z`
+    const bins = (days: number[]) => days.map((offset) => ({ summary: "Bins", start: at(day(offset), "07:00"), end: at(day(offset), "07:15") }))
+    const openBins = async () => (await db.execute({
+      sql: "SELECT id, due_date FROM tasks WHERE title = 'Bins' AND status <> 'complete' ORDER BY due_date", args: [],
+    })).rows
+
+    // A fortnightly bin day first seen with two dates: two separate tasks.
+    ha.setCalendarEvents(bins([14, 28]))
+    await syncFromHA(entity)
+    expect(await openBins()).toHaveLength(2)
+    const beforeMerge = await openBins()
+    const linksBeforeMerge = await db.execute("SELECT confirmation_id, task_id, payload FROM calendar_confirmations ORDER BY confirmation_id")
+    await db.execute(`CREATE TRIGGER fail_calendar_series_confirmation BEFORE UPDATE ON calendar_confirmations
+      BEGIN SELECT RAISE(ABORT, 'calendar series confirmation rollback fixture'); END`)
+    ha.setCalendarEvents(bins([0, 14, 28]))
+    await syncFromHA(entity)
+    expect(await openBins()).toEqual(beforeMerge)
+    expect((await db.execute("SELECT confirmation_id, task_id, payload FROM calendar_confirmations ORDER BY confirmation_id")).rows)
+      .toEqual(linksBeforeMerge.rows)
+    await db.execute("DROP TRIGGER fail_calendar_series_confirmation")
+    // A third regular date comes into view: one series, and no duplicate is left open.
+    ha.setCalendarEvents(bins([0, 14, 28]))
+    await syncFromHA(entity)
+    const series = await openBins()
+    expect(series).toHaveLength(1)
+    expect(String(series[0]?.due_date)).toBe(at(todayStr, "07:00"))
+    await syncFromHA(entity)
+    expect(await openBins()).toHaveLength(1)
+
+    // The series ends and its task is completed; a later "Bins" event under the same key reopens it.
+    await repo.updateTask(String(series[0]?.id), { status: "complete" })
+    ha.setCalendarEvents([{ summary: "Other", start: at(day(3), "10:00"), end: at(day(3), "11:00") }])
+    await syncFromHA(entity)
+    ha.setCalendarEvents(bins([21]))
+    await syncFromHA(entity)
+    const reopened = await openBins()
+    expect(reopened.map((row) => [String(row.id), String(row.due_date)])).toEqual([[String(series[0]?.id), at(day(21), "07:00")]])
+    const seriesId = String(series[0]?.id)
+    const readBinsLink = async () => (await db.execute({
+      sql: "SELECT provider_event_id FROM calendar_confirmations WHERE source = 'ha.calendar_sync' AND task_id = ?",
+      args: [seriesId],
+    })).rows.map((row) => row.provider_event_id)
+    const binsKey = `ha-cal-series-${entity}-bins::${dublinClock(at(day(21), "07:00"))}`
+    expect(await readBinsLink()).toEqual([binsKey])
+    ha.setCalendarEvents(bins([21, 28]))
+    await syncFromHA(entity)
+    expect((await openBins()).map((row) => row.id)).toEqual([seriesId])
+    expect(await readBinsLink()).toEqual([binsKey])
+
+    // The previous release left one completed monthly "Rent" task for two months' events.
+    const rentEarlier = day(-5)
+    const rentLater = day(26)
+    const legacyKey = (start: string) => `ha-cal-${entity}-Rent-${start}`
+    await db.execute({
+      sql: `INSERT INTO tasks (id, title, description, status, priority, labels, framework_payload, area_id, custom_fields, task_type, due_date, idempotency_key, request_id, ticket_number, created_at, updated_at)
+            VALUES ('legacy-rent', 'Rent', '', 'complete', 3, '["calendar-sync"]', '{}', 'default', '{}', 'task', ?, ?, 'legacy-rent', 9601, 1, 1)`,
+      args: [rentLater, `cal-sync-${legacyKey(rentEarlier)}`],
+    })
+    for (const start of [rentEarlier, rentLater]) {
+      await db.execute({
+        sql: `INSERT INTO calendar_confirmations (confirmation_id, task_id, request_id, provider_event_id, source, payload, created_at)
+              VALUES (?, 'legacy-rent', ?, ?, 'ha.calendar_sync', ?, 1)`,
+        args: [`rent-${start}`, `rent-${start}`, legacyKey(start), JSON.stringify({ summary: "Rent", start, end: shiftCalendarDay(start, 1), entity_id: entity })],
+      })
+    }
+    ha.setCalendarEvents([rentEarlier, rentLater].map((start) => ({ summary: "Rent", start, end: shiftCalendarDay(start, 1) })))
+    await syncFromHA(entity)
+    // The month the household already marked done does not come back as an open task.
+    const rents = await db.execute({ sql: "SELECT id, status FROM tasks WHERE title = 'Rent'", args: [] })
+    expect(rents.rows.map((row) => [String(row.id), String(row.status)])).toEqual([["legacy-rent", "complete"]])
+  } finally {
+    stopCalendarSync()
+    stopEntitySubscription()
+    closeHAConnection()
+    await ha.close()
+    db.close()
+    resetPersistenceForTests()
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+
 test("CalDAV sync parses RRULE, EXDATE, colons in DESCRIPTION, exclusive all-day DTEND, and updates existing tasks on re-sync", async () => {
   const origin = "http://caldav-recurrence-fixture.example"
   const previous = Object.fromEntries(["MEITHEAL_DB_URL", "SUPERVISOR_TOKEN", "HA_TOKEN"].map((k) => [k, process.env[k]]))
@@ -1130,6 +1321,9 @@ test("CalDAV sync parses RRULE, EXDATE, colons in DESCRIPTION, exclusive all-day
   const compact = (day: string) => day.replace(/-/g, "")
 
   let summaryTitle = "CalDAV Standup"
+  let startDay = todayStr
+  let recurring = true
+  let omitFirstOccurrence = false
   const server = createServer(async (request, response) => {
     for await (const _ of request) { /* drain request body */ }
     response.setHeader("content-type", "application/xml")
@@ -1144,12 +1338,12 @@ test("CalDAV sync parses RRULE, EXDATE, colons in DESCRIPTION, exclusive all-day
         "BEGIN:VCALENDAR",
         "VERSION:2.0",
         "BEGIN:VEVENT",
-        "UID:caldav-weekly-1",
+        recurring ? "UID:caldav-weekly-1" : "UID:caldav-one-off",
         `SUMMARY:${summaryTitle}`,
-        `DTSTART;TZID=Europe/Dublin:${compact(todayStr)}T093000`,
-        `DTEND;TZID=Europe/Dublin:${compact(todayStr)}T100000`,
-        "RRULE:FREQ=WEEKLY;COUNT=3",
-        `EXDATE;TZID=Europe/Dublin:${compact(d7)}T093000`,
+        `DTSTART;TZID=Europe/Dublin:${compact(startDay)}T093000`,
+        `DTEND;TZID=Europe/Dublin:${compact(startDay)}T100000`,
+        ...(recurring ? ["RRULE:FREQ=WEEKLY;COUNT=3", `EXDATE;TZID=Europe/Dublin:${compact(d7)}T093000`] : []),
+        ...(omitFirstOccurrence ? [`EXDATE;TZID=Europe/Dublin:${compact(todayStr)}T093000`] : []),
         "DESCRIPTION:Agenda: https://meet.example.com/room:8443",
         "END:VEVENT",
         "END:VCALENDAR",
@@ -1220,6 +1414,28 @@ test("CalDAV sync parses RRULE, EXDATE, colons in DESCRIPTION, exclusive all-day
     const rows2 = (await db.execute({ sql: `SELECT title FROM tasks`, args: [] })).rows
     expect(rows2).toHaveLength(1)
     expect(rows2[0]!.title).toBe("CalDAV Standup (Renamed)")
+
+    // A deleted CalDAV task stays deleted while its occurrence is still the current one.
+    await db.execute({ sql: "DELETE FROM tasks", args: [] })
+    const third = await syncCalDAVEvents()
+    expect(third.created).toBe(0)
+    expect(third.updated).toBe(0)
+    expect((await db.execute({ sql: "SELECT id FROM tasks", args: [] })).rows).toHaveLength(0)
+
+    // The next recurrence can create a new task. Moving a one-off date with
+    // the same CalDAV UID cannot bring a deleted task back.
+    omitFirstOccurrence = true
+    expect((await syncCalDAVEvents()).created).toBe(1)
+    await db.execute({ sql: "DELETE FROM tasks", args: [] })
+    recurring = false
+    omitFirstOccurrence = false
+    summaryTitle = "CalDAV One-off"
+    startDay = todayStr
+    expect((await syncCalDAVEvents()).created).toBe(1)
+    await db.execute({ sql: "DELETE FROM tasks", args: [] })
+    startDay = d7
+    expect((await syncCalDAVEvents()).created).toBe(0)
+    expect((await db.execute({ sql: "SELECT id FROM tasks", args: [] })).rows).toHaveLength(0)
   } finally {
     stopCalDAVSync()
     globalThis.fetch = originalFetch

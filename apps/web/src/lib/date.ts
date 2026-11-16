@@ -1,5 +1,5 @@
 import { formatDistanceToNow } from "date-fns";
-import { format as tzFormat, toZonedTime } from "date-fns-tz";
+import { format as tzFormat, fromZonedTime, toZonedTime } from "date-fns-tz";
 import { createClientLogger } from "@lib/client-logger";
 import { parseCalendarDay } from "./calendar-day";
 
@@ -12,14 +12,19 @@ const FLOATING_DATETIME = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}):(\d{2})(?::(\d{2})(?:
 const DAY_MS = 86_400_000;
 const DEFAULT_TIMEZONE = "Europe/Dublin";
 
-function resolveTimezone(timezone?: string): string {
-  const candidate = timezone?.trim() || DEFAULT_TIMEZONE;
+export function isValidTimezone(timezone: string): boolean {
+  if (!timezone) return false
   try {
-    new Intl.DateTimeFormat("en", { timeZone: candidate });
-    return candidate;
+    new Intl.DateTimeFormat("en", { timeZone: timezone })
+    return true
   } catch {
-    return DEFAULT_TIMEZONE;
+    return false
   }
+}
+
+export function resolveTimezone(timezone?: string): string {
+  const candidate = timezone?.trim() ?? ""
+  return isValidTimezone(candidate) ? candidate : DEFAULT_TIMEZONE
 }
 
 /** Today's calendar date in the given timezone, as YYYY-MM-DD. */
@@ -65,7 +70,7 @@ export function calendarDayFromInput(
       return parseCalendarDay(dayPart) ? dayPart : null;
     }
 
-    const parsed = new Date(trimmed);
+    const parsed = new Date(/^\d{12,}$/.test(trimmed) ? Number(trimmed) : trimmed)
     if (Number.isNaN(parsed.getTime())) return null;
     return calendarToday(tz, parsed);
   }
@@ -230,4 +235,36 @@ export function formatRegionalDate(
     log.warn("Date formatting error", e);
     return String(dateInput);
   }
+}
+
+function parseDueTime(raw: string, timezone: string): number {
+  if (/^\d{12,}$/.test(raw)) return Number(raw)
+  if (/(?:Z|[+-]\d{2}:?\d{2})$/i.test(raw)) return Date.parse(raw)
+  if (!FLOATING_DATETIME.test(raw) || !calendarDayFromInput(raw, timezone)) return NaN
+  return fromZonedTime(raw.replace(" ", "T"), resolveTimezone(timezone)).getTime()
+}
+
+/**
+ * Web overdue checks keep date-only deadlines on their household day and read
+ * floating times in the household timezone. For an explicit reference day,
+ * only compare the clock when that day contains `now`.
+ */
+export function isDueOverdue(
+  dueDate: unknown,
+  timezone = DEFAULT_TIMEZONE,
+  today?: string,
+  now = Date.now(),
+): boolean {
+  if (typeof dueDate !== "string" && typeof dueDate !== "number") return false
+  const raw = String(dueDate).trim()
+  if (!raw) return false
+  const clockDay = calendarToday(timezone, new Date(now))
+  const dayInView = today ?? clockDay
+  if (DATE_ONLY.test(raw)) return Boolean(parseCalendarDay(raw) && raw < dayInView)
+
+  const instant = parseDueTime(raw, timezone)
+  if (!Number.isFinite(instant)) return false
+  const dueDay = calendarDayFromInput(instant, timezone)
+  if (dueDay === null) return false
+  return dueDay < dayInView || (dueDay === dayInView && dayInView === clockDay && instant < now)
 }

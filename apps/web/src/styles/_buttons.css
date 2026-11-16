@@ -253,25 +253,6 @@
   transform: scale(0.97);
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .btn:active:not(:disabled),
-  .btn-primary:active:not(:disabled),
-  .btn-secondary:active:not(:disabled),
-  .btn-outline:active:not(:disabled),
-  .btn-ghost:active:not(:disabled),
-  .btn-danger:active:not(:disabled),
-  .btn-ghost-accent:active:not(:disabled),
-  .btn-icon:active:not(:disabled),
-  .task-action-btn:active:not(:disabled),
-  .task-fav-btn:active:not(:disabled) {
-    transform: none;
-  }
-
-  .btn-primary::before {
-    transition: none;
-  }
-}
-
 .btn:hover {
   box-shadow: var(--shadow-sm);
 }
@@ -297,6 +278,26 @@
   transform: scale(2.5);
   opacity: 1;
   transition: transform 0.15s ease-out, opacity 0s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn:active:not(:disabled),
+  .btn-primary:active:not(:disabled),
+  .btn-secondary:active:not(:disabled),
+  .btn-outline:active:not(:disabled),
+  .btn-ghost:active:not(:disabled),
+  .btn-danger:active:not(:disabled),
+  .btn-ghost-accent:active:not(:disabled),
+  .btn-icon:active:not(:disabled),
+  .task-action-btn:active:not(:disabled),
+  .task-fav-btn:active:not(:disabled) {
+    transform: none;
+  }
+
+  .btn-primary::before,
+  .btn-primary:active::before {
+    transition: none;
+  }
 }
 
 /* B1: Success/error flash feedback */

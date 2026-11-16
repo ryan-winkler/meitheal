@@ -15,12 +15,16 @@
  * @bounded-context grocy
  */
 
+import { fetchOutbound, OutboundUrlError } from "./outbound-fetch"
+
 // --- Types: Core ---
 
 export interface GrocyAdapterConfig {
   baseUrl: string
   apiKey: string
   timeoutMs?: number | undefined
+  /** "manual" reports a redirect status without following it; defaults to "error". */
+  redirect?: "error" | "manual" | undefined
 }
 
 export type GrocyErrorCode =
@@ -105,6 +109,9 @@ export interface GrocySystemInfo {
 function classifyGrocyError(
   status: number
 ): Pick<Extract<GrocyResult<never>, { ok: false }>, "errorCode" | "retryable"> {
+  if (status >= 300 && status < 400) {
+    return { errorCode: "invalid_request", retryable: false }
+  }
   if (status === 401 || status === 403) {
     return { errorCode: "unauthorized", retryable: false }
   }
@@ -135,10 +142,18 @@ const BLOCKED_EXACT_HOSTS = new Set([
   "0:0:0:0:0:0:0:0",
   "0:0:0:0:0:0:0:1",
   "169.254.169.254",
+  "100.100.100.200",
+  "172.30.32.2",
+  "metadata",
   "metadata.google.internal",
   "metadata.goog",
   "metadata.internal",
   "instance-data",
+  "instance-data.ec2.internal",
+  "supervisor",
+  "supervisor.internal",
+  "hassio",
+  "hassio.internal",
 ])
 
 const BLOCKED_DOMAIN_SUFFIXES = [
@@ -147,6 +162,8 @@ const BLOCKED_DOMAIN_SUFFIXES = [
   "metadata.goog",
   "metadata.internal",
   "instance-data",
+  "ec2.internal",
+  "hass.io",
 ]
 
 function stripTrailingDots(value: string): string {
@@ -209,19 +226,17 @@ function parseHexGroups(segment: string): number[] | null {
 }
 
 function parseIpv6Hextets(host: string): number[] | null {
-  const zoneIndex = host.indexOf("%")
-  const addr = zoneIndex >= 0 ? host.slice(0, zoneIndex) : host
-  if (!addr) return null
+  if (!host || host.includes("%")) return null
 
-  const lastColon = addr.lastIndexOf(":")
-  const tail = addr.slice(lastColon + 1)
-  let expandedAddr = addr
+  const lastColon = host.lastIndexOf(":")
+  const tail = host.slice(lastColon + 1)
+  let expandedAddr = host
   if (tail.includes(".")) {
     const octets = parseDottedIpv4Octets(tail)
     if (!octets) return null
     const hi = ((octets[0]! << 8) | octets[1]!).toString(16)
     const lo = ((octets[2]! << 8) | octets[3]!).toString(16)
-    expandedAddr = `${addr.slice(0, lastColon + 1)}${hi}:${lo}`
+    expandedAddr = `${host.slice(0, lastColon + 1)}${hi}:${lo}`
   }
 
   const compressed = expandedAddr.split("::")
@@ -248,48 +263,157 @@ function hextetsToIpv4(hi: number, lo: number): string {
   return `${(hi >> 8) & 0xff}.${hi & 0xff}.${(lo >> 8) & 0xff}.${lo & 0xff}`
 }
 
+function isAllZeroHextets(h: number[], start: number, endExclusive: number): boolean {
+  for (let i = start; i < endExclusive; i++) {
+    if (h[i] !== 0) return false
+  }
+  return true
+}
+
+function isIsatapHextets(h: number[]): boolean {
+  return (h[4]! & 0xfdff) === 0 && h[5] === 0x5efe
+}
+
+/** True when an IPv6 literal embeds or translates an IPv4 target (mapped, SIIT, NAT64, 6to4, ISATAP). */
+export function isIpv4TranslationIpv6Host(host: string): boolean {
+  const normalized = normalizeNetworkHost(host)
+  if (!normalized.includes(":")) return false
+  const h = parseIpv6Hextets(normalized)
+  if (!h) return true
+  if (isAllZeroHextets(h, 0, 5) && h[5] === 0xffff) return true
+  if (isAllZeroHextets(h, 0, 4) && h[4] === 0xffff && h[5] === 0) return true
+  if (h[0] === 0x0064 && h[1] === 0xff9b) return true
+  return h[0] === 0x2002 || isIsatapHextets(h)
+}
+
+function classifyEmbeddedIpv6Prefix(h: number[]): "unconditional" | "private" | null | undefined {
+  if (isAllZeroHextets(h, 0, 5)) {
+    if (h[5] === 0xffff) return classifyNetworkHost(hextetsToIpv4(h[6]!, h[7]!))
+    if (h[5] === 0) return "unconditional"
+  }
+  if (isAllZeroHextets(h, 0, 4) && h[4] === 0xffff && h[5] === 0) {
+    return "unconditional"
+  }
+  if (h[0] === 0x0064 && h[1] === 0xff9b) {
+    return isAllZeroHextets(h, 2, 6) ? classifyNetworkHost(hextetsToIpv4(h[6]!, h[7]!)) : "unconditional"
+  }
+  return undefined
+}
+
+function classifyGlobalUnicastIpv6(h: number[]): "unconditional" | "private" | null {
+  if (h[0] === 0x2002) {
+    return "unconditional"
+  }
+  const isReserved2001 = h[0] === 0x2001 && (h[1]! < 0x0200 || h[1] === 0x0db8)
+  const isReservedDocOrAs112 =
+    (h[0]! & 0xfff0) === 0x3ff0 || (h[0] === 0x2620 && h[1] === 0x004f && h[2] === 0x8000)
+  return isReserved2001 || isReservedDocOrAs112 ? "unconditional" : null
+}
+
 function classifyIpv6Host(host: string): "unconditional" | "private" | null {
   const h = parseIpv6Hextets(host)
   if (!h) {
-    // Fail closed on malformed colon-containing hostnames
     return "unconditional"
   }
-
-  const prefixAllZero = h[0] === 0 && h[1] === 0 && h[2] === 0 && h[3] === 0 && h[4] === 0
-  if (prefixAllZero && h[5] === 0xffff) {
-    return classifyNetworkHost(hextetsToIpv4(h[6]!, h[7]!))
+  const embedded = classifyEmbeddedIpv6Prefix(h)
+  if (embedded !== undefined) {
+    return embedded
   }
-  if (prefixAllZero && h[5] === 0) {
-    if (h[6] !== 0) {
-      return classifyNetworkHost(hextetsToIpv4(h[6]!, h[7]!))
-    }
+  if (isIsatapHextets(h)) {
     return "unconditional"
   }
-
-  // Unique Local Addresses (fc00::/7)
+  if (h[0] === 0xfd00 && h[1] === 0x0ec2 && isAllZeroHextets(h, 2, 7) && h[7] === 0x0254) {
+    return "unconditional"
+  }
   if ((h[0]! & 0xfe00) === 0xfc00) {
     return "private"
   }
-
-  // Global Unicast (2000::/3), excluding documentation range (2001:db8::/32)
   if ((h[0]! & 0xe000) === 0x2000) {
-    if (h[0] === 0x2001 && h[1] === 0x0db8) {
-      return "unconditional"
-    }
+    return classifyGlobalUnicastIpv6(h)
+  }
+  return "unconditional"
+}
+
+function isSpecialPurposeIpv4(o: number[]): boolean {
+  if (o[0] === 0 || o[0] === 127 || o[0]! >= 224) return true
+  if (o[0] === 169 && o[1] === 254) return true
+  if (o[0] === 192 && o[1] === 0 && (o[2] === 0 || o[2] === 2)) return true
+  if (o[0] === 198 && (o[1] === 18 || o[1] === 19 || (o[1] === 51 && o[2] === 100))) return true
+  return o[0] === 203 && o[1] === 0 && o[2] === 113
+}
+
+function classifyIpv4Octets(o: number[]): "unconditional" | "private" | null {
+  if (isSpecialPurposeIpv4(o)) {
+    return "unconditional"
+  }
+  const isPrivateOrShared =
+    o[0] === 10 ||
+    (o[0] === 100 && o[1]! >= 64 && o[1]! <= 127) ||
+    (o[0] === 172 && o[1]! >= 16 && o[1]! <= 31) ||
+    (o[0] === 192 && o[1] === 168)
+  return isPrivateOrShared ? "private" : null
+}
+
+function unwrapEmbeddedIpv4OrSelf(canonicalHost: string): string {
+  if (!canonicalHost.includes(":")) return canonicalHost
+  const h = parseIpv6Hextets(canonicalHost)
+  if (!h) return canonicalHost
+  if (isAllZeroHextets(h, 0, 5) && h[5] === 0xffff) {
+    return hextetsToIpv4(h[6]!, h[7]!)
+  }
+  if (h[0] === 0x0064 && h[1] === 0xff9b && isAllZeroHextets(h, 2, 6)) {
+    return hextetsToIpv4(h[6]!, h[7]!)
+  }
+  return canonicalHost
+}
+
+function configuredSupervisorCanonicalHost(): string {
+  const raw = process.env.SUPERVISOR_URL
+  if (!raw) return ""
+  try {
+    return canonicalizeNetworkHost(new URL(raw).hostname) ?? ""
+  } catch {
+    return ""
+  }
+}
+
+/**
+ * Canonicalize a standalone host string through WHATWG URL parsing while rejecting
+ * zone IDs, ports, credentials, paths, queries, fragments, empty labels, and invalid host syntax.
+ */
+export function canonicalizeNetworkHost(rawHostname: string): string | null {
+  const trimmed = rawHostname.trim().toLowerCase()
+  if (!trimmed || trimmed.includes("%") || /[/?#@\\]/.test(trimmed)) return null
+  if (trimmed.startsWith("[") && (!trimmed.endsWith("]") || !trimmed.slice(1, -1).includes(":"))) {
     return null
   }
-
-  // Block link-local (fe80::/10), multicast (ff00::/8), and unassigned/reserved prefixes
-  return "unconditional"
+  if (!trimmed.includes(":") && (trimmed.startsWith(".") || trimmed.includes(".."))) {
+    return null
+  }
+  const candidate = trimmed.includes(":") && !trimmed.startsWith("[") ? `[${trimmed}]` : trimmed
+  let parsed: URL
+  try {
+    parsed = new URL(`http://${candidate}`)
+  } catch {
+    return null
+  }
+  if (parsed.port !== "") return null
+  const host = normalizeNetworkHost(parsed.hostname.toLowerCase())
+  return host || null
 }
 
 /**
  * Classify whether a URL hostname targets an unconditionally forbidden host/range
- * (loopback, unspecified, link-local, metadata) or an RFC1918/ULA private network.
+ * (loopback, unspecified, link-local, metadata, Supervisor, special-purpose) or a private/CGNAT network.
  */
 export function classifyNetworkHost(rawHostname: string): "unconditional" | "private" | null {
-  const host = normalizeNetworkHost(rawHostname)
+  const host = canonicalizeNetworkHost(rawHostname)
   if (!host) return "unconditional"
+
+  const supHost = configuredSupervisorCanonicalHost()
+  if (supHost && unwrapEmbeddedIpv4OrSelf(host) === unwrapEmbeddedIpv4OrSelf(supHost)) {
+    return "unconditional"
+  }
 
   if (host.includes(":")) {
     return classifyIpv6Host(host)
@@ -297,24 +421,13 @@ export function classifyNetworkHost(rawHostname: string): "unconditional" | "pri
 
   if (
     BLOCKED_EXACT_HOSTS.has(host) ||
-    BLOCKED_DOMAIN_SUFFIXES.some((suffix) => host.endsWith(`.${suffix}`)) ||
-    host.startsWith("127.") ||
-    host.startsWith("0.") ||
-    host.startsWith("169.254.")
+    BLOCKED_DOMAIN_SUFFIXES.some((suffix) => host.endsWith(`.${suffix}`))
   ) {
     return "unconditional"
   }
 
-  const isPrivateRange =
-    host.startsWith("10.") ||
-    host.startsWith("192.168.") ||
-    /^172\.(1[6-9]|2\d|3[01])\./.test(host)
-
-  if (isPrivateRange) {
-    return "private"
-  }
-
-  return null
+  const octets = parseDottedIpv4Octets(host)
+  return octets ? classifyIpv4Octets(octets) : null
 }
 
 /**
@@ -343,7 +456,14 @@ export function validateGrocyBaseUrl(rawUrl: string): GrocyUrlValidationResult {
     return { ok: false, error: "Grocy URL must not include embedded credentials" }
   }
 
-  const host = normalizeNetworkHost(parsed.hostname)
+  if (parsed.search || parsed.hash) {
+    return { ok: false, error: "Grocy URL must not include query parameters or fragments" }
+  }
+
+  const host = canonicalizeNetworkHost(parsed.hostname)
+  if (!host) {
+    return { ok: false, error: "Invalid URL format" }
+  }
   const classification = classifyNetworkHost(host)
 
   if (classification === "unconditional" || (classification === "private" && !host.endsWith(".internal"))) {
@@ -353,17 +473,30 @@ export function validateGrocyBaseUrl(rawUrl: string): GrocyUrlValidationResult {
   return { ok: true, normalizedUrl: parsed.toString().replace(/\/$/, "") }
 }
 
+class GrocyInvalidResponseError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = "GrocyInvalidResponseError"
+  }
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value)
+}
+
 // --- Adapter ---
 
 export class GrocyAdapter {
   private readonly baseUrl: string
   private readonly apiKey: string
   private readonly timeoutMs: number
+  private readonly redirect: "error" | "manual"
 
   constructor(config: GrocyAdapterConfig) {
     this.baseUrl = config.baseUrl.replace(/\/$/, "")
     this.apiKey = config.apiKey
     this.timeoutMs = config.timeoutMs ?? 8_000
+    this.redirect = config.redirect ?? "error"
   }
 
   // ═══════ System ═══════
@@ -373,17 +506,27 @@ export class GrocyAdapter {
    */
   async getSystemInfo(): Promise<GrocyResult<GrocySystemInfo>> {
     return this.request<GrocySystemInfo>("GET", "/api/system/info", undefined, (raw) => {
-      const r = raw as Record<string, unknown>
-      const versionInfo = r.grocy_version_info as Record<string, string> | undefined
+      if (!isPlainRecord(raw)) {
+        throw new GrocyInvalidResponseError("Grocy GET /api/system/info: invalid JSON system info response")
+      }
+      const versionInfo = isPlainRecord(raw.grocy_version_info)
+        ? raw.grocy_version_info
+        : isPlainRecord(raw.grocy_version)
+          ? raw.grocy_version
+          : null
+      const rawVersion = versionInfo?.Version
+      if (typeof rawVersion !== "string" || !rawVersion.trim()) {
+        throw new GrocyInvalidResponseError("Grocy GET /api/system/info: invalid JSON system info response")
+      }
       return {
         grocyVersionInfo: {
-          Version: versionInfo?.Version ?? "unknown",
-          ReleaseDate: versionInfo?.ReleaseDate ?? "unknown",
+          Version: rawVersion.trim(),
+          ReleaseDate: typeof versionInfo?.ReleaseDate === "string" ? versionInfo.ReleaseDate : "unknown",
         },
-        phpVersion: String(r.php_version ?? "unknown"),
-        sqliteVersion: String(r.sqlite_version ?? "unknown"),
-        os: String(r.os ?? "unknown"),
-        client: String(r.client ?? "unknown"),
+        phpVersion: String(raw.php_version ?? "unknown"),
+        sqliteVersion: String(raw.sqlite_version ?? "unknown"),
+        os: String(raw.os ?? "unknown"),
+        client: String(raw.client ?? "unknown"),
       }
     })
   }
@@ -569,8 +712,10 @@ export class GrocyAdapter {
         done: 0,
       },
       (raw) => {
-        const r = raw as Record<string, unknown>
-        return { taskId: Number(r.created_object_id ?? r.id ?? 0) }
+        if (!isPlainRecord(raw)) {
+          throw new GrocyInvalidResponseError("Grocy POST /api/objects/tasks: invalid JSON response")
+        }
+        return { taskId: Number(raw.created_object_id ?? raw.id ?? 0) }
       }
     )
   }
@@ -674,8 +819,11 @@ export class GrocyAdapter {
     body?: unknown,
     transform?: (raw: unknown) => T
   ): Promise<GrocyResult<T>> {
-    const baseOrigin = new URL(this.baseUrl).origin
-    const url = new URL(path, this.baseUrl)
+    const base = new URL(this.baseUrl)
+    const baseOrigin = base.origin
+    const basePrefix = base.pathname.replace(/\/+$/, "")
+    const normalizedPath = path.startsWith("/") ? path : `/${path}`
+    const url = new URL(`${basePrefix}${normalizedPath}`, baseOrigin)
     if (url.origin !== baseOrigin) {
       throw new Error(`Invalid Grocy API path: ${path}`)
     }
@@ -684,9 +832,10 @@ export class GrocyAdapter {
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs)
 
     try {
-      const response = await fetch(url.href, { // nosemgrep
+      const response = await fetchOutbound(url.href, {
         method,
-        redirect: "error",
+        allowPrivate: true,
+        redirect: this.redirect,
         signal: controller.signal,
         headers: {
           "GROCY-API-KEY": this.apiKey,
@@ -697,6 +846,7 @@ export class GrocyAdapter {
       })
 
       if (!response.ok) {
+        await response.body?.cancel().catch(() => undefined)
         const classification = classifyGrocyError(response.status)
         return {
           ok: false,
@@ -724,6 +874,26 @@ export class GrocyAdapter {
           errorCode: "timeout",
           retryable: true,
           message: `Grocy ${method} ${path}: timeout after ${this.timeoutMs}ms`,
+        }
+      }
+
+      if (error instanceof GrocyInvalidResponseError) {
+        return {
+          ok: false,
+          errorCode: "invalid_request",
+          retryable: false,
+          message: error.message,
+        }
+      }
+
+      const cause = error instanceof Error ? error.cause : undefined
+      if (error instanceof OutboundUrlError || cause instanceof OutboundUrlError) {
+        const outboundErr = error instanceof OutboundUrlError ? error : (cause as OutboundUrlError)
+        return {
+          ok: false,
+          errorCode: "invalid_request",
+          retryable: false,
+          message: outboundErr.message,
         }
       }
 
@@ -769,8 +939,20 @@ export class GrocyAdapter {
       "/api/objects/api_keys",
       { key_type: "default" },
       (raw) => {
-        const r = raw as Record<string, unknown>
-        return { apiKey: String(r.created_object_id ?? r.api_key ?? "") }
+        if (!isPlainRecord(raw)) {
+          throw new GrocyInvalidResponseError("Grocy POST /api/objects/api_keys: invalid JSON response")
+        }
+        const rawKey = raw.created_object_id ?? raw.api_key
+        const apiKey =
+          typeof rawKey === "string"
+            ? rawKey.trim()
+            : typeof rawKey === "number" && Number.isFinite(rawKey)
+              ? String(rawKey)
+              : ""
+        if (!apiKey) {
+          throw new GrocyInvalidResponseError("Grocy POST /api/objects/api_keys: missing API key in response")
+        }
+        return { apiKey }
       }
     )
   }

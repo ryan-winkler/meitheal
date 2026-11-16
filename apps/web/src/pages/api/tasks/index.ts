@@ -21,6 +21,8 @@ import { logApiError } from "../../../lib/api-logger"
 import { isDbUnavailable, db503Response } from "../../../lib/db-fallback"
 import { apiError } from "../../../lib/api-response"
 import { normalizeStatus } from "../../../lib/status-config"
+import { isValidTimezone } from "../../../lib/date"
+import { readStoredHouseholdTimezone } from "../../../lib/task-queries"
 import { resolveRecentActivityActor } from "../../../lib/recent-activity-actor"
 import { taskEventAuthorityHeaders } from "../../../lib/webhook-dispatcher"
 
@@ -58,17 +60,9 @@ export const GET: APIRoute = async ({ url, locals }) => {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(dueDate) || !Number.isFinite(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== dueDate) {
       return apiError("due_date must be a valid date in YYYY-MM-DD format", 400)
     }
-    let tz = typeof locals?.timezone === "string" && locals.timezone ? locals.timezone : undefined
-    if (!tz) {
-      const settings = await repo.getSettings(["timezone"])
-      let rawTz: unknown = settings.timezone
-      if (typeof rawTz === "string") {
-        try { rawTz = JSON.parse(rawTz) } catch { /* plain-text setting */ }
-      }
-      if (typeof rawTz === "string" && rawTz) tz = rawTz
-    }
+    const timezone = locals?.timezone?.trim() ?? ""
     findOpts.dueDate = dueDate
-    findOpts.timezone = tz || "Europe/Dublin"
+    findOpts.timezone = isValidTimezone(timezone) ? timezone : await readStoredHouseholdTimezone()
   }
   const priority = url.searchParams.get("priority")
   if (priority) {

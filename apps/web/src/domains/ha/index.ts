@@ -7,7 +7,7 @@ export { getHAConnection, getHAConnectionStatus, getHAConfig, getHABaseUrl, clos
 export type { HAConnectionState } from "./ha-connection"
 export { initEntitySubscription, waitForInitialEntityHydration, getEntityCacheDiagnostics, getAllEntities, getEntity, getEntitiesByDomain, getCalendarEntities, getTodoEntities, onEntityChange, stopEntitySubscription, resetEntityConnection } from "./ha-entities"
 export type { SlimHassEntity } from "./ha-entities"
-export { initHAIntegrations } from "./ha-startup"
+export { initHAIntegrations, clearGrocyStartupRetry } from "./ha-startup"
 export { listCalendarEvents, createCalendarEvent, updateCalendarEvent, deleteCalendarEvent, getCalendarEntityFeatures, CalendarFeature, addTodoItem, getTodoItems, updateTodoItem, removeTodoItem, removeTodoCompletedItems, moveTodoItem, subscribeTodoItems, sendNotification, callHAService } from "./ha-services"
 export type { CalendarEvent, TodoItem } from "./ha-services"
 export { fireHAEvent, emitTaskCreated, emitTaskUpdated, emitTaskCompleted, emitTaskDeleted, emitTaskOverdue, emitAreaUpdated, emitCalendarSynced, emitCalendarEventCreated } from "./ha-events"

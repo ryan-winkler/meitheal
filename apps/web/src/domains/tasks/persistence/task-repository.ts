@@ -19,7 +19,7 @@ import { getStatusDef, isDoneStatus, normalizeStatus, STATUS } from "../../../li
 import { logApiError, logApiWarn } from "../../../lib/api-logger"
 import { EXACT_TASK_IDENTIFIER_SCORE } from "../../../lib/task-search-score"
 import { readStoredCalendarDay } from "../../../lib/calendar-day"
-import { calendarDayFromInput, calendarToday, shiftCalendarDay } from "../../../lib/date"
+import { calendarDayFromInput, calendarToday, shiftCalendarDay, isDueOverdue } from "../../../lib/date"
 import { parseTicketKey } from "../../../lib/ticket-key"
 import { getNextOccurrence, parseRRule } from "../recurrence"
 import { deferralTerminalStatusesSql, isDeferralTerminalStatus } from "./task-deferral-status"
@@ -29,9 +29,9 @@ import { inactivityRuleActor, inactivityWriteGuard } from "./task-inactivity-que
 import { openTaskDependencies } from "./task-dependencies"
 
 /**
- * Both date-only (`YYYY-MM-DD`) and timed ISO (`YYYY-MM-DDTHH:MM...`) due dates
- * are evaluated against the household calendar day so events occurring today are never overdue.
- * Arguments: today (YYYY-MM-DD in the user's timezone), complete status.
+ * A date-only due date is overdue once its household calendar day has ended; a due
+ * date with a time is overdue once that time passes (see `isDueOverdue`). For times with
+ * a UTC offset this matches the Home Assistant overdue sensor and the `task.overdue` event.
  */
 function isTaskOverdueOnDay(
   dueDate: unknown,
@@ -40,9 +40,7 @@ function isTaskOverdueOnDay(
   timezone: string,
 ): boolean {
   if (String(status ?? "").toLowerCase() === STATUS.COMPLETE) return false
-  if (dueDate === null || dueDate === undefined || dueDate === "") return false
-  const day = calendarDayFromInput(String(dueDate), timezone)
-  return Boolean(day && day < resolvedToday)
+  return isDueOverdue(dueDate, timezone, resolvedToday)
 }
 const taskHistoryPredicate = "(feed_action IS NULL OR field <> 'activity')"
 // Agent "added" rows keep Recent Activity provenance as JSON in `summary`. The task
@@ -375,7 +373,14 @@ export type SyncConfirmationTarget =
       payload: string
     }
 
-export type SyncTaskMutation =
+interface SyncCalendarLinkRelease {
+  confirmationId: string
+  taskId: string
+  externalId: string
+  completeIfStatus?: string | undefined
+}
+
+export type SyncTaskMutation = (
   | {
       kind: "create"
       taskId?: string | undefined
@@ -430,6 +435,7 @@ export type SyncTaskMutation =
       createdAt?: number | undefined
       confirmation: SyncConfirmationTarget
     }
+) & { replacedCalendarLinks?: SyncCalendarLinkRelease[] | undefined }
 
 export interface SyncChunkItemError {
   index: number
@@ -594,8 +600,7 @@ export class TaskRepository {
     });
     let count = 0;
     for (const row of result.rows) {
-      const day = calendarDayFromInput(String((row as Record<string, unknown>).due_date ?? ""), timezone);
-      if (day && day < resolvedToday) count++;
+      if (isDueOverdue((row as Record<string, unknown>).due_date, timezone, resolvedToday)) count++;
     }
     return count;
   }
@@ -887,10 +892,7 @@ export class TaskRepository {
       args: [upperBound, STATUS.COMPLETE],
     });
     const rows = sanitizeRows(result.rows as unknown as TaskRow[]);
-    return rows.filter((row) => {
-      const day = calendarDayFromInput(row.due_date, timezone);
-      return day !== null && day < todayStr;
-    });
+    return rows.filter((row) => isDueOverdue(row.due_date, timezone, todayStr));
   }
 
   /** Tasks due on a specific date (non-complete) */
@@ -1177,26 +1179,35 @@ export class TaskRepository {
 
     const where = conditions.length > 0 ? ` WHERE ${conditions.join(" AND ")}` : "";
 
-    const baseSelectSql = `SELECT id, title, description, status, priority, due_date, labels,
+    const projection = `id, title, description, status, priority, due_date, labels,
                               framework_payload, calendar_sync_state, parent_id, time_tracked,
                               area_id, custom_fields, start_date, end_date, progress, color,
                               is_favorite, task_type, task_kind, project_id, owner, handoff_state,
                               ticket_number, assigned_to, created_at, updated_at, deferred_at, deferral_revision,
                               urgency, importance, eisenhower_override,
                               effort_minutes, effort_type, blocked_by, nfc_tag_id, kanban_position,
-                              ${taskTimestampMs("updated_at")} AS task_version
-                       FROM tasks${where}
-                       ORDER BY ${sortCol} ${order} NULLS LAST, id ASC`;
+                              ${taskTimestampMs("updated_at")} AS task_version`
+    const ordering = `ORDER BY ${sortCol} ${order} NULLS LAST, id ASC`
 
     if (opts.dueDate) {
-      const tz = opts.timezone || "Europe/Dublin"
-      const result = await this.client.execute({ sql: baseSelectSql, args })
-      const allRows = (result.rows ?? []) as unknown as TaskRow[]
-      const matching = allRows.filter((row) => calendarDayFromInput(row.due_date, tz) === opts.dueDate)
-      return { tasks: matching.slice(offset, offset + limit), total: matching.length }
+      const snapshot = await this.client.transaction("read")
+      try {
+        const tz = opts.timezone || "Europe/Dublin"
+        const candidates = await snapshot.execute({ sql: `SELECT id, due_date FROM tasks${where} ${ordering}`, args })
+        const ids = candidates.rows.filter(row => calendarDayFromInput(String(row.due_date), tz) === opts.dueDate)
+        const page = ids.slice(offset, offset + limit)
+        if (page.length === 0) return { tasks: [], total: ids.length }
+        const result = await snapshot.execute({
+          sql: `SELECT ${projection} FROM tasks WHERE id IN (SELECT value FROM json_each(?)) ${ordering}`,
+          args: [JSON.stringify(page.map(row => String(row.id)))],
+        })
+        return { tasks: result.rows as unknown as TaskRow[], total: ids.length }
+      } finally {
+        snapshot.close()
+      }
     }
 
-    const selectSql = `${baseSelectSql} LIMIT ${limit} OFFSET ${offset}`;
+    const selectSql = `SELECT ${projection} FROM tasks${where} ${ordering} LIMIT ${limit} OFFSET ${offset}`
     const countSql = `SELECT COUNT(*) as cnt FROM tasks${where}`;
 
     const [result, countResult] = await this.client.batch([
@@ -2714,6 +2725,25 @@ export class TaskRepository {
             let candidateTaskId: string | null = null
 
             try {
+              if (mutation.confirmation?.source === "calendar" && mutation.replacedCalendarLinks?.length) {
+                step = "calendar_link_release"
+                const source = mutation.confirmation.confirmationSource ?? "ha.calendar_sync"
+                for (const link of mutation.replacedCalendarLinks) {
+                  const [removed] = yield [{
+                    sql: `DELETE FROM calendar_confirmations
+                          WHERE confirmation_id = ? AND task_id = ? AND provider_event_id = ? AND source = ?`,
+                    args: [link.confirmationId, link.taskId, link.externalId, source],
+                  }]
+                  if ((removed?.rowsAffected ?? 0) > 0 && link.completeIfStatus !== undefined) {
+                    yield [{
+                      sql: `UPDATE tasks SET status = ?, updated_at = ?
+                            WHERE id = ? AND status = ?
+                              AND NOT EXISTS (SELECT 1 FROM calendar_confirmations WHERE task_id = ? AND source = ?)`,
+                      args: [STATUS.COMPLETE, Date.now(), link.taskId, link.completeIfStatus, link.taskId, source],
+                    }]
+                  }
+                }
+              }
               if (mutation.kind === "create") {
                 const taskId = mutation.taskId ?? crypto.randomUUID()
                 candidateTaskId = taskId
@@ -2748,7 +2778,7 @@ export class TaskRepository {
                         ],
                       }]
                   if (existingConf?.rows.length) {
-                    yield [`RELEASE SAVEPOINT ${sp}`]
+                    yield [`ROLLBACK TO SAVEPOINT ${sp}`, `RELEASE SAVEPOINT ${sp}`]
                     skipped++
                     continue
                   }
@@ -2820,7 +2850,7 @@ export class TaskRepository {
                 }
 
                 if (staleSnapshot) {
-                  yield [`RELEASE SAVEPOINT ${sp}`]
+                  yield [`ROLLBACK TO SAVEPOINT ${sp}`, `RELEASE SAVEPOINT ${sp}`]
                   skipped++
                 } else if (mutation.confirmation?.source === "ha_todo" && mutation.confirmation.requireUnmodifiedSinceSync) {
                   const taskVersion = taskTimestampMs("tasks.updated_at")
@@ -3040,6 +3070,7 @@ export class TaskRepository {
               const extCode = (stepErr as { extendedCode?: string } | null)?.extendedCode
               if (
                 mutation.kind === "create" &&
+                !mutation.replacedCalendarLinks?.length &&
                 step === "task_insert" &&
                 extCode === "SQLITE_CONSTRAINT_TRIGGER" &&
                 candidateTaskId !== null

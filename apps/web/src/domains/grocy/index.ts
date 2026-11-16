@@ -6,6 +6,7 @@
 export {
   startGrocySync,
   stopGrocySync,
+  onGrocySyncStopped,
   syncFromGrocy,
   pushCompletionToGrocy,
   pushNewTaskToGrocy,
