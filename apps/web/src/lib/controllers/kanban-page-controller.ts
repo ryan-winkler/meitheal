@@ -2,6 +2,7 @@ import { getRememberedAreaId, getSelectedAreaId } from "@lib/area-selector-contr
 import { taskBackgroundUrl, ticketIdFromPath } from "@lib/task-page-url"
 import { DEFERRAL_RECONCILED, type DeferralReconciliation } from "@lib/deferral-client"
 import { initKanbanArea } from "@lib/kanban-controller"
+import { hydrateTaskAssignees } from "@lib/task-assignee-display"
 import { KANBAN_GROUP_KEY, readKanbanFilters, setKanbanPage, storedKanbanGroup, updateKanbanFilters, type KanbanFilters } from "@lib/kanban-query"
 import { initKanbanInactivity } from "./kanban-inactivity"
 import { initLaneManagementPanel } from "./kanban-lanes"
@@ -28,16 +29,17 @@ export function initKanbanPage(signal: AbortSignal): void {
   let lastFocus: KanbanRefreshFocus | undefined
   let resetScroll = false
   let requestNumber = 0
-  const inactivityLink = document.querySelector<HTMLAnchorElement>("[data-inactivity-link]")
-  const syncInactivityLink = (area: string) => {
-    if (!inactivityLink) return
-    const url = new URL(inactivityLink.href)
-    if (area) url.searchParams.set("area", area)
-    else url.searchParams.delete("area")
-    inactivityLink.href = url.href
+  const areaLinks = document.querySelectorAll<HTMLAnchorElement>("[data-deferred-link], [data-inactivity-link]")
+  const syncAreaLinks = (area: string) => {
+    for (const link of areaLinks) {
+      const url = new URL(link.href)
+      if (area) url.searchParams.set("area", area)
+      else url.searchParams.delete("area")
+      link.href = url.href
+    }
   }
   const initialArea = desired.searchParams.get("area") ?? (getSelectedAreaId() || getRememberedAreaId())
-  syncInactivityLink(initialArea)
+  syncAreaLinks(initialArea)
 
   const renderStatus = (message: string, failed = false) => {
     status.hidden = !message
@@ -90,6 +92,7 @@ export function initKanbanPage(signal: AbortSignal): void {
       board = replacement
       boardLifetime = new AbortController()
       initKanbanArea(boardLifetime.signal, refresh)
+      void hydrateTaskAssignees(board, boardLifetime.signal)
       initKanbanReactionCounts(board, boardLifetime.signal)
       initKanbanInactivity(board, boardLifetime.signal)
 
@@ -97,6 +100,8 @@ export function initKanbanPage(signal: AbortSignal): void {
       const label = shell?.querySelector("[data-kanban-visible-label]")
       if (total) total.textContent = html.querySelector("[data-kanban-visible-count]")?.textContent ?? ""
       if (label) label.textContent = html.querySelector("[data-kanban-visible-label]")?.textContent ?? ""
+      const promotedNote = shell?.querySelector<HTMLElement>("[data-kanban-promoted-note]")
+      if (promotedNote) promotedNote.hidden = html.querySelector("[data-kanban-promoted-note]")?.hasAttribute("hidden") !== false
       for (const lane of board.querySelectorAll<HTMLElement>(".kanban-column")) {
         if (lane.dataset.status) setKanbanPage(url, lane.dataset.status, Number(lane.dataset.page))
         const list = lane.querySelector(".kanban-cards")
@@ -154,8 +159,13 @@ export function initKanbanPage(signal: AbortSignal): void {
     if (url.search !== before) void load(url, undefined, true)
   }
 
+  const toolsToggle = document.getElementById("kanban-tools-toggle")
+  toolsToggle?.addEventListener("click", () => {
+    toolsToggle.setAttribute("aria-expanded", String(toolsToggle.getAttribute("aria-expanded") !== "true"))
+  }, { signal })
   initLaneManagementPanel()
   initKanbanArea(boardLifetime.signal, refresh)
+  void hydrateTaskAssignees(board, boardLifetime.signal)
   initKanbanReactionCounts(board, boardLifetime.signal)
 
   shell.addEventListener("click", event => {
@@ -192,7 +202,7 @@ export function initKanbanPage(signal: AbortSignal): void {
     if (event.persisted) void refresh()
   }, { signal })
   document.addEventListener("meitheal:area-changed", () => {
-    syncInactivityLink(getSelectedAreaId())
+    syncAreaLinks(getSelectedAreaId())
     filter({})
   }, { signal })
   document.addEventListener("meitheal:filter-change", event => {

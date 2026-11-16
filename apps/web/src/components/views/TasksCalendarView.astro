@@ -1,14 +1,14 @@
 ---
 
-import SignalBar from "../layout/SignalBar.astro";
-import {
-  ensureSchema,
-  getPersistenceClient,
-} from "@domains/tasks/persistence/store";
-import { TaskRepository } from "@domains/tasks/persistence/task-repository";
-import { STATUS } from "../../lib/status-config";
-import { CALENDAR_SECTIONS } from "../../lib/calendar-registry";
-import { calendarToday } from "../../lib/date";
+import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
+import { TaskRepository } from "@domains/tasks/persistence/task-repository"
+import { createCalendarTaskFilter } from "../../lib/calendar-task-filter"
+import { calendarToday } from "../../lib/date"
+import { sanitizeCssColor } from "../../lib/safe-html"
+import { taskViewUrl } from "../../lib/task-view-route"
+import SignalBar from "../layout/SignalBar.astro"
+import FilterToolbar from "../ui/FilterToolbar.astro"
+import Icon from "../ui/Icon.astro"
 
 const { weekStart = "monday", timezone = "Europe/Dublin" } = Astro.locals;
 const tz = timezone || "Europe/Dublin";
@@ -22,7 +22,7 @@ const monthParam = url.searchParams.get("month");
 
 const parsedYear = yearParam ? parseInt(yearParam, 10) : NaN;
 const parsedMonth = monthParam ? parseInt(monthParam, 10) : NaN;
-const year = Number.isInteger(parsedYear) ? parsedYear : todayYear!;
+const year = Number.isInteger(parsedYear) && parsedYear >= 100 && parsedYear <= 9999 ? parsedYear : todayYear!;
 const month = Number.isInteger(parsedMonth) && parsedMonth >= 0 && parsedMonth <= 11 ? parsedMonth : (todayMonth! - 1); // 0-indexed
 
 const firstDay = new Date(Date.UTC(year, month, 1));
@@ -57,6 +57,26 @@ const prevYear = month === 0 ? year - 1 : year;
 const nextMonth = month === 11 ? 0 : month + 1;
 const nextYear = month === 11 ? year + 1 : year;
 
+function monthHref(nextYear?: number, nextMonth?: number) {
+  const target = taskViewUrl(url, "calendar")
+  target.pathname = "/tasks"
+  target.searchParams.delete("calendarRefresh")
+  target.searchParams.delete("open")
+  target.searchParams.delete("comment")
+  if (nextYear === undefined || nextMonth === undefined) {
+    target.searchParams.delete("year")
+    target.searchParams.delete("month")
+  } else {
+    target.searchParams.set("year", String(nextYear))
+    target.searchParams.set("month", String(nextMonth))
+  }
+  return target.pathname + target.search + target.hash
+}
+
+const filter = createCalendarTaskFilter(url.searchParams, tz)
+let calendarAvailable = true
+if (url.searchParams.has("calendarRefresh")) Astro.response.headers.set("Cache-Control", "no-store")
+
 // Query task counts per day for this month
 const tasksByDay: Record<
   string,
@@ -71,7 +91,10 @@ try {
   const monthStart = `${year}-${String(month + 1).padStart(2, "0")}-01`;
   const monthEnd = `${year}-${String(month + 1).padStart(2, "0")}-${String(daysInMonth).padStart(2, "0")}`;
 
-  const calendarData = await repo.getCalendarTaskCounts(monthStart, monthEnd, tz);
+  const calendarData = await repo.getCalendarTaskCounts(monthStart, monthEnd, tz, {
+    matches: filter.matches,
+    includeCompleted: filter.includeCompletedInCounts,
+  })
   for (const [dateStr, info] of Object.entries(calendarData)) {
     tasksByDay[dateStr] = {
       count: info.count,
@@ -82,18 +105,18 @@ try {
   }
 
   // Also query HA-synced event counts per day
-  const haData = await repo.getCalendarHAEventCounts(monthStart, monthEnd, tz);
+  const haData = filter.showConnectedEvents ? await repo.getCalendarHAEventCounts(monthStart, monthEnd, tz) : {};
   for (const [dateStr, count] of Object.entries(haData)) {
     monthHAEvents += count;
     if (tasksByDay[dateStr]) {
       tasksByDay[dateStr].haEvents = count;
     } else {
-      tasksByDay[dateStr] = { count, colors: [], haEvents: count };
-      monthTotal += count;
+      tasksByDay[dateStr] = { count: 0, colors: [], haEvents: count };
     }
   }
 } catch {
-  /* DB not available */
+  calendarAvailable = false
+  Astro.response.headers.set("Cache-Control", "no-store")
 }
 
 // Build calendar grid (6 rows × 7 cols)
@@ -141,54 +164,49 @@ for (let week = 0; week < 6; week++) {
   grid.push(row);
 }
 
-const scheduledDayCount = Object.keys(tasksByDay).length
+const scheduledDayCount = Object.values(tasksByDay).filter(day => day.count > 0).length
 const itemWord = monthTotal === 1 ? "item" : "items"
 const dayWord = scheduledDayCount === 1 ? "day" : "days"
-const haEventWord = monthHAEvents === 1 ? "HA event" : "HA events"
-const calendarSignal =
-  monthTotal === 0
-    ? "No tasks or connected events on this month yet"
-    : `${monthTotal} ${itemWord} tracked across ${scheduledDayCount} ${dayWord}`
+const haEventWord = monthHAEvents === 1 ? "synced event" : "synced events"
+const agendaNote = filter.matches && !Object.values(tasksByDay).some(day => day.count)
+  ? "No tasks match these filters this month."
+  : "Select a day to see its calendar events and due tasks."
 ---
 
 <div id="tasks-view-calendar" class="tasks-view-container" data-task-view="calendar">
 
   <div id="calendar-shell" class="page-shell" data-timezone={tz}>
-    <!-- Signal bar -->
-    <SignalBar>
-      <span id="calendar-signal-summary">
-        <strong>{monthTotal}</strong> {itemWord} across <strong>{scheduledDayCount}</strong> {dayWord} · <strong>{monthHAEvents}</strong> {haEventWord}
-      </span>
-    </SignalBar>
+    <div class="card calendar-filter-island">
+      <FilterToolbar view="calendar" showSearch showGroupBy={false} showSortBy={false} />
+    </div>
+    <div class="calendar-refresh-status" data-calendar-status role="status" hidden={calendarAvailable}>
+      {!calendarAvailable && "Calendar data could not load."}
+    </div>
+    <button class="btn btn-outline" type="button" data-calendar-retry hidden={calendarAvailable}>Retry calendar</button>
+    <div class="calendar-month" data-calendar-month data-calendar-available={String(calendarAvailable)}
+      data-calendar-events={String(filter.showConnectedEvents)}>
+      {calendarAvailable && <SignalBar>
+        <span id="calendar-signal-summary">
+          <strong>{monthTotal}</strong> {itemWord} across <strong>{scheduledDayCount}</strong> {dayWord}
+          {filter.showConnectedEvents && <> · <strong>{monthHAEvents}</strong> {haEventWord}</>}
+        </span>
+      </SignalBar>}
 
-      <div class="calendar-controls">
-        <a
-          href={`/calendar?year=${prevYear}&month=${prevMonth}`}
-          class="cal-nav-btn"
-          aria-label="Previous month"
-        >
-          <span>←</span>
-        </a>
-        <a
-          href={`/calendar?year=${nextYear}&month=${nextMonth}`}
-          class="cal-nav-btn"
-          aria-label="Next month"
-        >
-          <span>→</span>
-        </a>
-        <a href="/calendar" class="cal-today-btn">Today</a>
-        <span class="cal-task-summary"
-          >{monthTotal} {itemWord} this month{
-            monthHAEvents > 0 && (
-              <>
-                {" "}({monthHAEvents}{" "}
-                <svg class="inline-block align-text-bottom" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2v-12" /><path d="M16 3v4" /><path d="M8 3v4" /><path d="M4 11h16" /></svg>)
-              </>
-            )
-          }</span
-        >
-      </div>
-
+      <section class="card calendar-card" aria-labelledby="calendar-month-heading">
+        <div class="card-header calendar-controls">
+          <h2 class="card-title" id="calendar-month-heading">{monthName}</h2>
+          <div class="btn-list calendar-navigation" aria-label="Change month">
+            <a href={monthHref()} class="btn cal-today-btn" data-calendar-nav="today">Today</a>
+            <div class="btn-group">
+              <a href={monthHref(prevYear, prevMonth)} class="btn cal-nav-btn" data-calendar-nav="previous" aria-label="Previous month">
+                <Icon name="chevron-down" class="cal-prev-icon" size={16} />
+              </a>
+              <a href={monthHref(nextYear, nextMonth)} class="btn cal-nav-btn" data-calendar-nav="next" aria-label="Next month">
+                <Icon name="chevron-down" class="cal-next-icon" size={16} />
+              </a>
+            </div>
+          </div>
+        </div>
       <div class="calendar-grid">
         {
           weekLabels.map((d, i) => (
@@ -213,14 +231,14 @@ const calendarSignal =
                   >
                     {cell.day}<span class="sr-only">{` ${monthName}`}</span>
                   </span>
-                  {cell.taskCount > 0 && (
+                  {(cell.taskCount > 0 || cell.haEventLabel) && (
                     <div class="cal-task-indicator">
-                      <span class="cal-task-badge">
+                      {cell.taskCount > 0 && <span class="cal-task-badge">
                         {cell.taskCount}<span class="sr-only">{cell.taskCount === 1 ? " task" : " tasks"}</span>
-                      </span>
+                      </span>}
                       {cell.haEventLabel && (
                         <span class="cal-ha-badge" title={cell.haEventLabel}>
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2v-12" /><path d="M16 3v4" /><path d="M8 3v4" /><path d="M4 11h16" /></svg>
+                          <Icon name="calendar-event" size={12} />
                           <span class="sr-only">{cell.haEventLabel}</span>
                         </span>
                       )}
@@ -229,14 +247,14 @@ const calendarSignal =
                           {cell.colors.map((c) => (
                             <span
                               class="cal-color-dot"
-                              style={`background: ${c || "var(--accent)"};`}
+                              style={`background: ${sanitizeCssColor(c)};`}
                             />
                           ))}
                         </div>
                       )}
                     </div>
                   )}
-                  <div class="cal-inline-events" data-inline-date={cell.dateStr}></div>
+                  {filter.showConnectedEvents && <div class="cal-inline-events" data-inline-date={cell.dateStr}></div>}
                 </div>
               )}
             </div>
@@ -244,23 +262,24 @@ const calendarSignal =
         }
       </div>
 
-    <!-- Agenda hint card -->
-    <div class="card calendar-shell__agenda-card">
-      Click any active day in the month grid to inspect calendar events and due tasks.
+        <p class="card-footer calendar-agenda-note">
+          {calendarAvailable ? agendaNote : "Calendar counts are temporarily unavailable."}
+        </p>
+      </section>
     </div>
 
     <div class="day-drawer" id="day-drawer" aria-hidden="true">
       <div class="day-drawer-backdrop" id="day-drawer-backdrop"></div>
-      <div class="day-drawer-panel">
+      <div class="day-drawer-panel" role="dialog" aria-modal="true" aria-labelledby="day-drawer-title">
         <div class="day-drawer-header">
           <h3 class="day-drawer-title" id="day-drawer-title"></h3>
-          <button class="day-drawer-close" id="day-drawer-close" aria-label="Close">✕</button>
+          <button type="button" class="btn btn-icon day-drawer-close" id="day-drawer-close" aria-label="Close"><Icon name="x" size={18} /></button>
         </div>
         <div class="day-drawer-content">
-          <div class="day-drawer-section">
+          <div class="day-drawer-section" data-calendar-events-section>
             <h4 class="day-drawer-section-title flex items-center gap-1.5">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2v-12" /><path d="M16 3v4" /><path d="M8 3v4" /><path d="M4 11h16" /></svg>
-              Calendar Events
+              <Icon name="calendar-event" size={14} />
+              Connected Calendar Events
             </h4>
             <div id="day-drawer-events" class="day-drawer-list">
               <span class="day-drawer-empty">Loading...</span>
@@ -268,16 +287,18 @@ const calendarSignal =
           </div>
           <div class="day-drawer-section">
             <h4 class="day-drawer-section-title flex items-center gap-1.5">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5h-2a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-12a2 2 0 0 0 -2 -2h-2" /><path d="M9 3m0 2a2 2 0 0 1 2 -2h2a2 2 0 0 1 2 2v0a2 2 0 0 1 -2 2h-2a2 2 0 0 1 -2 -2z" /><path d="M9 12h6" /><path d="M9 16h6" /></svg>
+              <Icon name="clipboard-list" size={14} />
               Tasks Due
             </h4>
             <div id="day-drawer-tasks" class="day-drawer-list">
               <span class="day-drawer-empty">Loading...</span>
             </div>
+            <div id="day-drawer-task-status" class="day-drawer-task-status" role="status"></div>
+            <button type="button" class="btn btn-outline day-drawer-more" id="day-drawer-more-tasks" hidden>Load more tasks</button>
           </div>
           <div class="day-drawer-actions">
-            <button class="btn btn-primary day-drawer-add" id="day-drawer-add-event">+ Add Event</button>
-            <button class="btn btn-ghost day-drawer-add" id="day-drawer-add-task">+ Add Task</button>
+            <button type="button" class="btn day-drawer-add" id="day-drawer-add-event"><Icon name="plus" size={14} /> Add Event</button>
+            <button type="button" class="btn btn-primary day-drawer-add" id="day-drawer-add-task"><Icon name="plus" size={14} /> Add Task</button>
           </div>
         </div>
       </div>
@@ -286,81 +307,62 @@ const calendarSignal =
 </div>
 
 <style>
-  /* Signal bar CSS now in SignalBar.astro */
-
-  /* Calendar-specific styles */
-
-  .calendar-shell__agenda-card {
-    padding: 18px;
+  #calendar-shell, .calendar-month {
+    display: grid;
+    gap: 12px;
+    min-width: 0;
+  }
+  .calendar-filter-island {
+    margin-block-start: 12px;
+    padding: 10px 12px;
+  }
+  .calendar-refresh-status {
     color: var(--text-muted);
+    padding-inline: 4px;
   }
-
-  .calendar-shell__sync-btn {
-    min-height: 40px;
-    padding: 0 14px;
-    border-radius: 10px;
-    border: 1px solid color-mix(in srgb, var(--info, #60a5fa) 35%, var(--border));
-    background: color-mix(in srgb, var(--info, #60a5fa) 10%, transparent);
-    color: var(--text-primary);
+  [data-calendar-retry]:not([hidden]) {
+    justify-self: start;
   }
-
+  .calendar-card {
+    overflow: hidden;
+    min-width: 0;
+  }
   .calendar-controls {
     display: flex;
+    justify-content: space-between;
     align-items: center;
-    gap: 12px;
-    margin-bottom: 16px;
     flex-wrap: wrap;
+    gap: 8px 16px;
+    padding: 12px 16px;
   }
-  .cal-nav-btn {
+  .calendar-controls h2 {
+    font-size: 16px;
+    margin: 0;
+  }
+  .calendar-navigation, .calendar-navigation .btn-group {
     display: inline-flex;
     align-items: center;
-    justify-content: center;
-    width: 36px;
-    height: 36px;
-    border-radius: 8px;
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    color: var(--text-primary);
-    font-size: 16px;
-    text-decoration: none;
-    transition: background 0.15s, color 0.15s, border-color 0.15s, opacity 0.15s, transform 0.15s;
   }
-  .cal-nav-btn:hover {
-    background: var(--bg-hover);
-    border-color: var(--accent);
-  }
-  .cal-month-title {
+  .calendar-navigation { gap: 8px; }
+  .calendar-navigation .btn-group > .btn:first-child { border-start-end-radius: 0; border-end-end-radius: 0; }
+  .calendar-navigation .btn-group > .btn:last-child { border-start-start-radius: 0; border-end-start-radius: 0; }
+  .calendar-navigation .btn-group > .btn + .btn { margin-inline-start: -1px; }
+  .cal-nav-btn { min-width: 36px; }
+  .cal-nav-btn > :global(.cal-prev-icon) { transform: rotate(90deg); }
+  .cal-nav-btn > :global(.cal-next-icon) { transform: rotate(-90deg); }
+  .calendar-agenda-note {
     margin: 0;
-    font-size: 18px;
-    font-weight: 600;
-    color: var(--text-primary);
-  }
-  .cal-today-btn {
-    margin-left: auto;
-    font-size: 12px;
-    color: var(--accent-text);
-    text-decoration: none;
-    padding: 4px 10px;
-    border-radius: 6px;
-    background: var(--accent-bg, rgba(99, 102, 241, 0.1));
-    transition: background 0.15s;
-  }
-  .cal-today-btn:hover {
-    background: rgba(99, 102, 241, 0.2);
-  }
-  .cal-task-summary {
-    font-size: 12px;
+    padding: 9px 16px;
     color: var(--text-muted);
+    font-size: 13px;
   }
 
   .calendar-grid {
     display: grid;
-    grid-template-columns: repeat(7, 1fr);
+    grid-template-columns: repeat(7, minmax(0, 1fr));
     gap: 1px;
     background: var(--border);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    overflow: hidden;
+    border-block: 1px solid var(--border);
   }
 
   .cal-header {
@@ -392,7 +394,7 @@ const calendarSignal =
     background: var(--bg-hover);
   }
   .cal-cell:focus-visible {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--border-focus);
     outline-offset: -2px;
     z-index: 1;
   }
@@ -424,6 +426,10 @@ const calendarSignal =
   }
 
   .cal-task-indicator {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 3px;
     margin-top: 4px;
   }
   .cal-task-badge {
@@ -448,17 +454,15 @@ const calendarSignal =
     border-radius: 50%;
     box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.2);
   }
-  .cal-ha-badge {
-    font-size: 10px;
-    margin-left: 2px;
-    cursor: help;
-  }
+  .cal-ha-badge { display: inline-flex; color: var(--text-secondary); }
 
   @media (max-width: 640px) {
+    .calendar-navigation .btn { min-height: 44px; }
     .cal-cell {
       min-height: 48px;
       padding: 4px;
     }
+    .cal-header { padding-inline: 2px; }
     .cal-day-num {
       font-size: 11px;
     }
@@ -471,8 +475,8 @@ const calendarSignal =
     flex-direction: column;
     gap: 1px;
   }
-  .cal-inline-event {
-    font-size: 9px;
+  :global(.cal-inline-event) {
+    font-size: 11px;
     color: var(--text-secondary);
     white-space: nowrap;
     overflow: hidden;
@@ -482,11 +486,11 @@ const calendarSignal =
     background: var(--accent-bg, rgba(99, 102, 241, 0.08));
     line-height: 1.3;
   }
-  .cal-inline-event.cal-inline-ha {
-    background: rgba(56, 189, 248, 0.1);
-    color: var(--info, #38bdf8);
+  :global(.cal-inline-event.cal-inline-ha) {
+    background: var(--accent-bg);
+    color: var(--accent-text);
   }
-  .cal-inline-more {
+  :global(.cal-inline-more) {
     font-size: 9px;
     color: var(--text-muted);
     padding: 0 3px;
@@ -549,6 +553,8 @@ const calendarSignal =
     color: var(--text-primary);
   }
   .day-drawer-close {
+    min-width: 44px;
+    min-height: 44px;
     background: none;
     border: none;
     color: var(--text-muted);
@@ -582,7 +588,7 @@ const calendarSignal =
     flex-direction: column;
     gap: 6px;
   }
-  .day-drawer-item {
+  :global(.day-drawer-item) {
     padding: 8px 12px;
     background: var(--bg-secondary);
     border-radius: 8px;
@@ -590,35 +596,45 @@ const calendarSignal =
     align-items: center;
     gap: 10px;
     transition: background 0.15s;
+    border: 1px solid transparent;
+    text-align: start;
   }
-  .day-drawer-item:hover {
+  :global(button.day-drawer-item) { cursor: pointer; min-block-size: 44px; }
+  :global(.day-drawer-item:hover) {
     background: var(--bg-hover);
   }
-  .day-drawer-item-icon {
+  :global(.day-drawer-item-icon) {
     font-size: 16px;
     flex-shrink: 0;
   }
-  .day-drawer-item-content {
+  :global(.day-drawer-item-content) {
     flex: 1;
     min-width: 0;
   }
-  .day-drawer-item-title {
+  :global(.day-drawer-item-title) {
     font-size: 13px;
     font-weight: 500;
     color: var(--text-primary);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    overflow-wrap: anywhere;
   }
-  .day-drawer-item-meta {
+  :global(.day-drawer-item-meta) {
     font-size: 11px;
     color: var(--text-muted);
   }
-  .day-drawer-empty {
+  :global(.day-drawer-empty) {
     font-size: 12px;
     color: var(--text-muted);
     font-style: italic;
     padding: 8px 0;
+  }
+  .day-drawer-task-status {
+    color: var(--text-muted);
+    font-size: 12px;
+  }
+  .day-drawer-more:not([hidden]) {
+    margin-block-start: 8px;
+    min-height: 44px;
+    white-space: normal;
   }
   .day-drawer-actions {
     display: flex;
@@ -631,14 +647,14 @@ const calendarSignal =
     font-size: 12px;
   }
 
-  /* Responsive overrides for shell/hero classes are in _page-shell.css */
+  @media (prefers-reduced-motion: reduce) {
+    .day-drawer-backdrop, .day-drawer-panel { transition: none; }
+  }
 </style>
 
 <script>
   import { initCalendarPage } from "../../lib/calendar-controller"
   import { pageLifecycle } from "../../lib/page-lifecycle"
 
-  pageLifecycle.onPageLoad(() => {
-    initCalendarPage()
-  })
+  pageLifecycle.onPageLoad(initCalendarPage)
 </script>

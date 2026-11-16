@@ -300,6 +300,10 @@
       border-color 0.25s ease;
   }
 
+  .dashboard-task-card {
+    border-left: 3px solid var(--dashboard-task-accent);
+  }
+
   .bento-card:hover {
     transform: translateY(-3px) scale(1.01);
     border-color: var(--accent);
@@ -523,4 +527,25 @@
   padding: 0 !important;
   border: none !important;
   pointer-events: none;
+}
+
+/* Filled task surfaces share the same color precedence across list and card views. */
+:root[data-theme="knight-rider"] .dashboard-task-card {
+  border-left: 1px solid var(--border);
+}
+
+:root[data-theme="knight-rider"] :is(.tli, .focus-card, .kanban-card, .bento-card, .task-item)[data-task-color] {
+  --knight-selected-task-fill: color-mix(in srgb, var(--knight-task-color) 18%, var(--bg-secondary));
+  background-color: var(--knight-selected-task-fill);
+}
+
+:root[data-theme="knight-rider"] :is(.tli, .focus-card, .kanban-card, .bento-card, .task-item)[data-work-active]:not(.tli--done) {
+  background-color: var(--knight-selected-task-fill, var(--knight-active-fill));
+  border-bottom-color: var(--knight-active-indicator);
+  --text-muted-rgb: var(--knight-task-muted-rgb);
+  --text-muted: rgb(var(--text-muted-rgb));
+}
+
+:root[data-theme="knight-rider"] .tli__custom-chip {
+  color: var(--accent-text);
 }

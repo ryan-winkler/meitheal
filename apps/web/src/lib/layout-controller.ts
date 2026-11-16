@@ -11,7 +11,6 @@
         import { pageLifecycle } from "@lib/page-lifecycle";
         import { SINGLE_KEY_SHORTCUTS_STORAGE_KEY, singleKeyShortcutsEnabled } from "@lib/single-key-shortcuts"
         import { attachShortcutTooltips, injectShortcutStyles } from "@lib/shortcut-tooltip";
-        import { normalizeTaskTypeFilterValue } from "@lib/task-nav-types"
 
         const log = createClientLogger("app", "layout");
 
@@ -158,41 +157,6 @@
             }
             SHORTCUT_NAV.tasks()
           }
-
-          // Active nav link — strip ingress prefix so path comparison works behind HA ingress
-          const rawPath = window.location.pathname;
-          const ip = window.__ingress_path || "";
-          const currentPath =
-            ip && (rawPath === ip || rawPath === ip + "/")
-              ? "/"
-              : ip && rawPath.startsWith(ip + "/")
-                ? rawPath.slice(ip.length) || "/"
-                : rawPath
-          const currentTypes = normalizeTaskTypeFilterValue(
-            new URLSearchParams(window.location.search).get("types"),
-          )
-          document.querySelectorAll(".nav-link").forEach((link) => {
-            const href = link.getAttribute("href") || "";
-            if (!href || href.startsWith("http")) return
-            const linkUrl = new URL(href, window.location.origin)
-            const rawLinkPath = linkUrl.pathname
-            const linkPath =
-              ip && (rawLinkPath === ip || rawLinkPath === ip + "/")
-                ? "/"
-                : ip && rawLinkPath.startsWith(ip + "/")
-                  ? rawLinkPath.slice(ip.length) || "/"
-                  : rawLinkPath
-            const linkTypes = normalizeTaskTypeFilterValue(linkUrl.searchParams.get("types"))
-            const typesMatch = linkTypes ? linkTypes === currentTypes : currentTypes === ""
-            if (
-              (linkPath === currentPath && typesMatch) ||
-              (linkPath !== "/" && currentPath.startsWith(linkPath + "/") && !linkTypes) ||
-              (currentPath === "/" &&
-                link.getAttribute("data-page") === "dashboard")
-            ) {
-              link.classList.add("active");
-            }
-          });
 
           // Collapsed-rail quick action + floating tooltips
           const railNewTaskBtn = document.getElementById("sidebar-rail-new-task")

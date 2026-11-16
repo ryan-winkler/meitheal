@@ -10,36 +10,30 @@
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import { SettingsRepository } from "@domains/tasks/persistence/settings-repository"
 
-/**
- * Resolve calendar entity IDs from settings.
- * Priority: calendar_entities (array) → calendar_entity / cal_entity (legacy single).
- * Returns empty array if nothing is configured.
- */
-export async function resolveCalendarEntities(): Promise<string[]> {
+/** Resolve calendar IDs from the current setting and supported legacy forms. */
+export async function resolveCalendarEntities(requireAvailable = false): Promise<string[]> {
   try {
     await ensureSchema()
     const repo = new SettingsRepository(getPersistenceClient())
     await repo.ensureSettingsTable()
-
-    // Try multi-entity first
-    const multiSetting = await repo.getByKey("calendar_entities")
-    if (multiSetting?.value) {
-      const parsed = multiSetting.value
-      if (Array.isArray(parsed)) {
-        const entities = parsed.filter((e: unknown) => typeof e === "string" && e.length > 0)
-        if (entities.length > 0) return entities
+    const keys = ["calendar_entities", "calendar_entity", "cal_entity", "calendar-entities"]
+    const settings = await repo.getByKeys(keys)
+    for (const key of keys) {
+      let value = settings[key]
+      if (typeof value === "string" && value.trimStart().startsWith("[")) {
+        try {
+          value = JSON.parse(value)
+        } catch {
+          continue
+        }
       }
+      const entries = Array.isArray(value) ? value : [value]
+      const ids = [...new Set(entries.filter((id): id is string =>
+        typeof id === "string" && /^calendar\.[a-z0-9_]+$/.test(id)))]
+      if (ids.length) return ids
     }
-
-    // Legacy fallback — try single entity keys
-    for (const legacyKey of ["calendar_entity", "cal_entity"]) {
-      const setting = await repo.getByKey(legacyKey)
-      if (setting?.value) {
-        const entityId = typeof setting.value === "string" ? setting.value : String(setting.value)
-        if (entityId.length > 0) return [entityId]
-      }
-    }
-  } catch { /* DB not available — return empty */ }
-
+  } catch (error) {
+    if (requireAvailable) throw error
+  }
   return []
 }

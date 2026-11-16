@@ -22,8 +22,10 @@
  * dynamic content support.
  */
 
+import { createSpriteIconElement, type IconName } from "../generated/icon-registry"
 import { isDisabledCharacterShortcut } from "@lib/single-key-shortcuts"
 import { taskApi } from "./task-api-client"
+import { hydrateTaskAssignees } from "./task-assignee-display"
 import { showToast } from "./toast"
 import { confirmDialog } from "./confirm-dialog"
 import { onTaskCompleted } from "./gamification-hook"
@@ -34,10 +36,10 @@ import {
 } from "./filter-state"
 import { createListenerManager, installPageCleanup } from "./managed-listeners"
 import { initPageShellNavigation } from "./page-shell-controller"
-import { openTaskDetailHandoff } from "./task-detail-handoff"
+import { buildTaskPath, openTaskDetailHandoff } from "./task-detail-handoff"
 import type { TodayTaskCounts } from "./task-queries"
 import { TODAY_SECTIONS } from "./today-registry"
-import { compareTodayRows, matchesTodayFilters, type TodayFilters } from "./today-list"
+import { compareTodayRows, matchesTodayFilters, lockTodayTaskStatus, syncTodayTaskStatus, type TodayFilters } from "./today-list"
 import { setupUnscheduledSection } from "./controllers/today-unscheduled"
 
 // ── Extracted controller modules ──────────────────────────────────────────
@@ -113,8 +115,17 @@ export function initTodayPage(options?: Partial<TodayControllerOptions>) {
   setupAutoRefresh(container)     // G33
   setupEveningReview(container, lm)   // G34
   renderEffortIndicators(container) // G35
-  const refreshUnscheduled = setupUnscheduledSection(container, lm, addBatchCheckboxes)
+  void hydrateTaskAssignees(container, lm.signal)
+  const refreshUnscheduled = setupUnscheduledSection(container, lm, scope => {
+    addBatchCheckboxes(scope)
+    void hydrateTaskAssignees(scope, lm.signal)
+  })
   setupFilters(container, refreshUnscheduled)
+  lm.on(container, "meitheal:today-status-committed", event => {
+    applyFilters(container)
+    const id = (event as CustomEvent<{ id: string }>).detail.id
+    if (container.querySelector(`#today-unscheduled-list .tli[data-id="${CSS.escape(id)}"]`)) refreshUnscheduled(true)
+  })
   if (window.location.search !== initialSearch) refreshUnscheduled()
   setupHabitsSection(container, lm)    // G38
   setupCalendarEvents(lm)              // G28
@@ -140,7 +151,8 @@ export function initTodayPage(options?: Partial<TodayControllerOptions>) {
 
 function setupEventDelegation(container: HTMLElement) {
   lm.on(container, "click", async (e: Event) => {
-    const target = e.target as HTMLElement
+    const origin = e.target as HTMLElement
+    const target = origin.closest("button") ?? origin
 
     // ── Checkbox completion ──
     if (target.classList.contains("tli__checkbox")) {
@@ -149,8 +161,14 @@ function setupEventDelegation(container: HTMLElement) {
       const id = cb.dataset.id
       if (!id) return
 
+      const unlock = lockTodayTaskStatus(container, id)
+      if (!unlock) {
+        e.preventDefault()
+        return
+      }
       const item = cb.closest(".tli") as HTMLElement | null
-      const newStatus = cb.checked ? "complete" : "pending"
+      const completing = cb.checked
+      const newStatus = completing ? "complete" : "pending"
 
       // Optimistic UI
       if (cb.checked) {
@@ -162,15 +180,20 @@ function setupEventDelegation(container: HTMLElement) {
 
       try {
         const completed = await taskApi.updateTask(id, { status: newStatus })
-        showToast(cb.checked ? "common.task_completed" : "common.task_reopened")
-        if (cb.checked) onTaskCompleted(completed)
+        syncTodayTaskStatus(container, id, newStatus)
+        showToast(completing ? "common.task_completed" : "common.task_reopened")
+        if (completing) onTaskCompleted(completed)
       } catch {
-        cb.checked = !cb.checked
-        item?.classList.toggle("tli--done", cb.checked)
+        cb.checked = !completing
+        item?.classList.toggle("tli--done", !completing)
         showToast("common.failed_update", "error")
+      } finally {
+        unlock()
       }
       return
     }
+
+    if (target.closest(".tli__completion")) return
 
     // ── Favorite toggle ──
     if (target.classList.contains("tli__fav")) {
@@ -182,17 +205,20 @@ function setupEventDelegation(container: HTMLElement) {
       const isFav = el.classList.contains("is-fav")
       const newFav = !isFav
 
-      // Optimistic
-      el.classList.toggle("is-fav", newFav)
-      el.textContent = newFav ? "★" : "☆"
-      el.title = newFav ? "★ Favorited" : "☆ Favorite"
+      function renderFavorite(favorite: boolean): void {
+        el.classList.toggle("is-fav", favorite)
+        const label = favorite ? "Remove from favorites" : "Add to favorites"
+        el.title = label
+        el.setAttribute("aria-label", label)
+        el.setAttribute("aria-pressed", String(favorite))
+      }
+      renderFavorite(newFav)
 
       try {
         await taskApi.updateTask(id, { is_favorite: newFav ? 1 : 0 })
         showToast(newFav ? "common.favorited" : "common.unfavorited")
       } catch {
-        el.classList.toggle("is-fav", isFav)
-        el.textContent = isFav ? "★" : "☆"
+        renderFavorite(isFav)
         showToast("common.failed", "error")
       }
       return
@@ -213,7 +239,7 @@ function setupEventDelegation(container: HTMLElement) {
         document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "today-focus" } }))
       } catch {
         btn.disabled = false
-        btn.textContent = "➕ Today"
+        btn.replaceChildren(createSpriteIconElement("plus", { size: 12 }), document.createTextNode(" Today"))
         showToast("common.failed", "error")
       }
       return
@@ -288,17 +314,30 @@ function setupEventDelegation(container: HTMLElement) {
     }
 
     // ── Clear completed ──
-    if (target.id === "clear-completed-btn" || target.closest("#clear-completed-btn")) {
+    if (target.closest("[data-today-refresh]")) {
+      location.reload()
+      return
+    }
+    const archive = target.closest<HTMLElement>("[data-today-archive]")
+    const archiveDay = archive?.dataset.todayArchive
+    if (archiveDay) {
       e.stopPropagation()
+      if (archive?.getAttribute("aria-disabled") === "true") return
       const ok = await confirmDialog({
-        title: "Clear Completed Tasks?",
+        title: "Archive completed tasks?",
         message: "This will archive all tasks completed today.",
         variant: "warning",
-        confirmText: "Clear",
+        confirmText: "Archive",
       })
       if (!ok) return
       try {
-        await taskApi.raw("/api/tasks/clear-completed", { method: "POST" })
+        const params = new URLSearchParams({ expected_day: archiveDay })
+        const response = await taskApi.raw(`/api/tasks/clear-completed?${params}`, { method: "POST" })
+        if (response.status === 409) {
+          showTodayRollover(container)
+          return
+        }
+        if (!response.ok) throw new Error("Archive failed")
         showToast("common.tasks_cleared")
         setTimeout(() => document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "today-clear-completed" } })), 500)
       } catch {
@@ -492,30 +531,32 @@ function setupQuickAdd(container: HTMLElement) {
       }
 
       const parsed = parseQuickTask(val)
-      const parts: string[] = []
+      const parts: Array<[IconName, string]> = []
 
-      if (parsed.dueDate) parts.push(`📅 Due: ${parsed.dueDate}`)
-      if (parsed.priority) parts.push(`🔴 Priority: P${parsed.priority}`)
-      if (parsed.labels.length > 0) parts.push(`🏷️ ${parsed.labels.join(", ")}`)
-      if (parsed.assignee) parts.push(`👤 ${parsed.assignee}`)
+      if (parsed.dueDate) parts.push(["calendar-event", `Due: ${parsed.dueDate}`])
+      if (parsed.priority) parts.push(["alert-triangle", `Priority: P${parsed.priority}`])
+      if (parsed.labels.length > 0) parts.push(["tag", parsed.labels.join(", ")])
+      if (parsed.assignee) parts.push(["user", parsed.assignee])
 
-      // Shopping / errand detection
       if (/^shopping:/i.test(val)) {
         const count = val.replace(/^shopping:\s*/i, "").split(",").filter(s => s.trim()).length
-        parts.push(`🛒 Shopping list (${count} items)`)
+        parts.push(["shopping-cart", `Shopping list (${count} items)`])
       }
       if (/^errand:/i.test(val)) {
         const count = val.replace(/^errand:\s*/i, "").split(",").filter(s => s.trim()).length
-        parts.push(`📌 Errand list (${count} items)`)
+        parts.push(["pin", `Errand list (${count} items)`])
       }
 
-      if (!parsed.dueDate && !parts.length) {
-        parts.push("📅 Due: Today (default)")
-      }
+      if (!parts.length) parts.push(["calendar-event", "Due: Today (default)"])
 
       if (quickFeedback) {
-        quickFeedback.textContent = parts.join(" · ")
-        quickFeedback.style.display = parts.length > 0 ? "block" : "none"
+        quickFeedback.replaceChildren(...parts.map(([icon, text]) => {
+          const part = document.createElement("span")
+          part.className = "quick-add-feedback-part"
+          part.append(createSpriteIconElement(icon, { size: 14 }), document.createTextNode(text))
+          return part
+        }))
+        quickFeedback.style.display = parts.length > 0 ? "flex" : "none"
       }
     }, 150)
   })
@@ -646,11 +687,7 @@ function setupKeyboardNav(container: HTMLElement) {
       case "x":
         if (focusedIndex >= 0 && focusedIndex < items.length) {
           const cb = items[focusedIndex]?.querySelector(".tli__checkbox") as HTMLInputElement
-          if (cb) {
-            cb.checked = !cb.checked
-            cb.dispatchEvent(new Event("change", { bubbles: true }))
-            cb.dispatchEvent(new Event("click", { bubbles: true }))
-          }
+          if (cb && cb.getAttribute("aria-disabled") !== "true") cb.click()
         }
         break
       case "e":
@@ -849,19 +886,46 @@ function setupWipLimit(container: HTMLElement) {
 
 // ── G33: Auto-Refresh Polling ─────────────────────────────────────────────
 
+function showTodayRollover(container: HTMLElement): void {
+  const banner = container.querySelector<HTMLElement>("#today-rollover")
+  if (banner?.hidden) {
+    banner.hidden = false
+    showToast("Today has changed. Refresh to review the current tasks.", "warning")
+  }
+  for (const archive of container.querySelectorAll("[data-today-archive]")) {
+    archive.setAttribute("aria-disabled", "true")
+  }
+}
+
 function setupAutoRefresh(container: HTMLElement) {
   const stats = container.querySelector("#daily-stats-container")
   if (!stats) return
   const counters = stats.querySelectorAll<HTMLElement>("[data-today-count]")
   const fill = stats.querySelector<HTMLElement>(".daily-stats-progress-fill")
   const signal = lm.signal
+  const displayedDay = container.querySelector<HTMLElement>("[data-today-archive]")?.dataset.todayArchive
   let pending = false
+  let dayChanged = false
 
-  lm.onInterval(async () => {
-    if (pending) return
+  let queued = false
+
+  async function refreshCounts(): Promise<void> {
+    if (dayChanged) return
+    if (pending) {
+      queued = true
+      return
+    }
     pending = true
     try {
-      const resp = await fetch("/api/tasks/today-counts", { signal })
+      const params = new URLSearchParams()
+      if (displayedDay) params.set("expected_day", displayedDay)
+      if (document.documentElement.dataset.theme === "knight-rider") params.set("completed", "1")
+      const resp = await fetch(`/api/tasks/today-counts?${params}`, { signal })
+      if (resp.status === 409) {
+        dayChanged = true
+        showTodayRollover(container)
+        return
+      }
       if (!resp.ok) return
       const counts: TodayTaskCounts = await resp.json()
       if (signal.aborted) return
@@ -873,6 +937,7 @@ function setupAutoRefresh(container: HTMLElement) {
         fill.style.width = `${counts.completionPercent}%`
         fill.closest('[role="progressbar"]')?.setAttribute("aria-valuenow", String(counts.completionPercent))
       }
+      if (counts.completedTasks) renderCompletedTasks(container, counts)
       const summary = container.querySelector("#today-signal-summary")
       if (summary && Number.isFinite(counts.dueToday) && Number.isFinite(counts.carriedForward)) {
         summary.textContent = `${counts.dueToday} due today · ${counts.carriedForward} carried forward`
@@ -881,7 +946,49 @@ function setupAutoRefresh(container: HTMLElement) {
       /* Keep the last counts if the refresh fails. */
     } finally {
       pending = false
+      if (queued && !signal.aborted) {
+        queued = false
+        void refreshCounts()
+      }
     }
-  }, 30_000)
+  }
+  lm.on(container, "meitheal:today-status-committed", refreshCounts)
+  lm.onInterval(refreshCounts, 30_000)
 }
 
+
+function renderCompletedTasks(container: HTMLElement, counts: TodayTaskCounts): void {
+  const tasks = counts.completedTasks
+  const completed = container.querySelector<HTMLDetailsElement>(".today-completed-tasks")
+  if (!tasks || !completed) return
+  completed.hidden = tasks.length === 0
+  const summary = completed.querySelector("summary")
+  if (summary) summary.textContent = `Completed today (${counts.completedToday})`
+  const limit = completed.querySelector("p")
+  if (limit) {
+    limit.hidden = tasks.length >= counts.completedToday
+    limit.textContent = `Showing ${tasks.length} recent completions.`
+  }
+  const list = completed.querySelector("ul")
+  // Keep existing links and focus during polling when the data is unchanged.
+  const previous = Array.from(list?.querySelectorAll<HTMLAnchorElement>("a") ?? [])
+  if (previous.length !== tasks.length || !tasks.every((task, index) =>
+    previous[index]?.dataset.taskDetailLink === task.id && previous[index]?.textContent === task.title)) {
+    list?.replaceChildren(...tasks.map(task => {
+      const row = document.createElement("li")
+      const link = document.createElement("a")
+      link.href = buildTaskPath(task.id)
+      link.dataset.taskDetailLink = task.id
+      link.textContent = task.title
+      row.append(createSpriteIconElement("checkbox", { size: 17 }), link)
+      return row
+    }))
+  }
+  const empty = container.querySelector<HTMLElement>("[data-today-due-empty]")
+  if (empty) {
+    empty.hidden = counts.dueToday > 0 || Boolean(empty.parentElement?.querySelector(".tli:not(.tli--done)"))
+    const heading = empty.querySelector(".empty-state-title")
+    if (heading) heading.textContent = counts.remaining === 0 && counts.completedToday > 0
+      ? "Today’s tasks are complete" : "Nothing due today"
+  }
+}

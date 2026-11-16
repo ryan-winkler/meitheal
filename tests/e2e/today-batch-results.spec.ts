@@ -79,6 +79,11 @@ for (const action of ["complete", "snooze", "delete"] as const) {
       await apply()
       await expect.poll(() => isSaved(savedId)).toBe(true)
       await expect.poll(() => attempted.length).toBe(2)
+      if (action === "complete") {
+        await expect(savedRow).toHaveAttribute("data-status", "complete")
+        await expect(savedRow.locator(".tli__checkbox")).toBeChecked()
+        await expect(retryRow.locator(".tli__checkbox")).toHaveAttribute("aria-disabled", "true")
+      }
       await expect(bar.locator('button[value="snooze"]')).toBeDisabled()
       await actionButton.evaluate(button => (button as HTMLButtonElement).click())
       refusal.resolve()
@@ -106,3 +111,30 @@ for (const action of ["complete", "snooze", "delete"] as const) {
     }
   })
 }
+
+test("mixed Work and Focus completion clears the visible Focus Stack", async ({ page, request, baseURL }) => {
+  const headers = { origin: new URL(baseURL!).origin }
+  const day = new Intl.DateTimeFormat("en-CA", { dateStyle: "short", timeZone: "Europe/Dublin" }).format(new Date())
+  const ids: string[] = []
+  try {
+    for (const title of ["Finish the Work row first", "Finish the Focus card second"]) {
+      const response = await request.post("/api/tasks", { headers, data: {
+        title, due_date: day, status: "active", priority: 1,
+      } })
+      expect(response.status(), await response.text()).toBe(201)
+      ids.push((await response.json()).id)
+    }
+    await page.goto("/today#today-work")
+    const stack = page.locator("#section-focus-stack")
+    await expect(stack.locator(".focus-card")).toHaveCount(2)
+    const first = page.locator(`#today-due-list .tli[data-id="${ids[0]}"] .tli__checkbox`)
+    await first.press("Space")
+    await expect(stack.locator(".focus-card")).toHaveCount(1)
+    await expect(stack).toContainText("1 to focus on")
+    await stack.locator(`.focus-card__complete[data-id="${ids[1]}"]`).press("Enter")
+    await expect(stack).toContainText("Focus Stack cleared!")
+    await expect(stack.locator(".focus-card")).toHaveCount(0)
+  } finally {
+    for (const id of ids) await request.delete(`/api/tasks/${id}`, { headers, data: {} })
+  }
+})

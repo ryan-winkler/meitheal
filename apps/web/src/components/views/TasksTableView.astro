@@ -2,6 +2,7 @@
 
 import SignalBar from "../layout/SignalBar.astro";
 import EmptyState from "../ui/EmptyState.astro";
+import Icon from "../ui/Icon.astro"
 import TaskTypeIcon from "../ui/TaskTypeIcon.astro";
 import FrameworkBadge from "../ui/FrameworkBadge.astro";
 import LabelBadges from "../ui/LabelBadges.astro";
@@ -37,6 +38,9 @@ const params = new URLSearchParams(Astro.url.search)
 const filters = readTableFilterParams(params)
 const laneSelectionUnapplied = workflowColumnsUnavailable && Boolean(filters.laneIds?.length)
 const resultsUnavailable = tableReadFailed || laneSelectionUnapplied
+const hasTaskCriteria = Boolean(filters.search || filters.area || filters.user || filters.status ||
+  filters.priority || filters.rice || filters.task_type || filters.types?.length || filters.labels?.length ||
+  filters.laneIds?.length || filters.advancedFilter?.conditions.length || filters.createdFrom || filters.createdThrough)
 const { rows, page, pageCount, offset, stats, active, overdue } = getTablePage(
   tableReadFailed ? [] : tasks, filters, params.get("tp"), workflowColumns, creationTimezone,
 )
@@ -96,10 +100,9 @@ const priorityClasses: Record<number, string> = {
 
     <div id="table-empty" hidden={resultsUnavailable || tasks.length > 0}>
       <EmptyState
-        title={t("table.no_tasks", locale)}
-        description={t("table.no_tasks", locale)}
-        actionText={t("tasks.new_task", locale)}
-        actionEvent="meitheal:new-task"
+        title={t(hasTaskCriteria ? "table.no_filter_matches" : "table.no_tasks", locale)}
+        actionText={t(hasTaskCriteria ? "tasks.clear_filters" : "tasks.new_task", locale)}
+        actionEvent={hasTaskCriteria ? "meitheal:table-clear-filters" : "meitheal:new-task"}
       />
     </div>
 
@@ -174,14 +177,16 @@ const priorityClasses: Record<number, string> = {
                   scope="col"
                   class="col-calendar"
                   title={t("table.col_calendar", locale)}
+                  aria-label={t("table.col_calendar", locale)}
                 >
-                  📅
+                  <Icon name="calendar-event" size={16} />
                 </th>
                 <th scope="col" class="col-custom-fields">
                   {t("table.col_custom_fields", locale)}
                 </th>
-                <th scope="col" class="col-assigned" title="Assigned To">
-                  👤
+                <th scope="col" class="col-assigned"
+                  title={t("task_modal.assignee_label", locale)} aria-label={t("task_modal.assignee_label", locale)}>
+                  <Icon name="user" size={16} />
                 </th>
                 <th scope="col" class="col-labels">
                   {t("table.col_labels", locale)}
@@ -418,7 +423,12 @@ const priorityClasses: Record<number, string> = {
               })}
               <tr class="no-results-row" hidden={rows.length !== 0}>
                 <td colspan="13" class="cell-center text-muted" style="padding: 40px 20px; font-size: 14px;">
-                  {t("table.no_results", locale)}
+                  <div class="inline-flex flex-wrap items-center justify-center gap-2">
+                    <span>{t("table.no_filter_matches", locale)}</span>
+                    {hasTaskCriteria && <button type="button" class="btn btn-outline btn-sm" data-empty-action="meitheal:table-clear-filters">
+                      {t("tasks.clear_filters", locale)}
+                    </button>}
+                  </div>
                 </td>
               </tr>
             </tbody>

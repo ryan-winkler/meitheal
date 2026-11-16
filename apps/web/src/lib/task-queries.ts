@@ -13,7 +13,7 @@ import {
   getPersistenceClient,
 } from "@domains/tasks/persistence/store";
 import { taskTimestampMs } from "@domains/tasks/persistence/task-timestamp";
-import type { InValue } from "@libsql/client";
+import type { InValue, Row } from "@libsql/client";
 import { deriveEisenhowerQuadrant } from "@meitheal/domain-tasks";
 import { calendarDayFromInput, calendarToday, isDueOverdue, isValidTimezone, resolveTimezone, shiftCalendarDay } from "./date"
 import { frameworkPayloadObject, readRiceInputs, riceLensScore } from "./rice-lens"
@@ -385,9 +385,8 @@ function toTaskViewItem(row: Record<string, unknown>, slim = false, timezone = "
   return item;
 }
 
-const TODAY_COMPLETION_COUNT = `
-  COUNT(*) FILTER (
-    WHERE status = 'complete'
+export const TODAY_COMPLETION_FILTER = `
+  status = 'complete'
       AND (
         (typeof(updated_at) IN ('integer', 'real') AND updated_at >= ? AND updated_at < ?)
         OR (typeof(updated_at) = 'text' AND (
@@ -397,10 +396,25 @@ const TODAY_COMPLETION_COUNT = `
           OR (updated_at NOT LIKE '%T%' AND updated_at NOT LIKE '%:%' AND substr(updated_at, 1, 10) = ?)
         ))
       )
-  )
 `
+const TODAY_COMPLETION_COUNT = `COUNT(*) FILTER (WHERE ${TODAY_COMPLETION_FILTER})`
 
-function todayCompletionArgs(today: string, timezone = "Europe/Dublin"): [number, number, number, number, string] {
+function completedTodayQuery(today: string, timezone: string) {
+  const args = todayCompletionArgs(today, timezone)
+  return {
+    sql: `SELECT id, title FROM tasks WHERE ${TODAY_COMPLETION_FILTER}
+          ORDER BY CASE WHEN typeof(updated_at) = 'text' AND updated_at NOT LIKE '%T%' AND updated_at NOT LIKE '%:%'
+            THEN ? ELSE ${taskTimestampMs("updated_at")} END DESC, rowid DESC
+          LIMIT 20`,
+    args: [...args, args[0]],
+  }
+}
+
+function completedTodaySummaries(rows: Row[]) {
+  return rows.map(row => ({ id: String(row.id), title: String(row.title) }))
+}
+
+export function todayCompletionArgs(today: string, timezone = "Europe/Dublin"): [number, number, number, number, string] {
   const safeTz = resolveTimezone(timezone)
   const startMs = fromZonedTime(`${today}T00:00:00`, safeTz).getTime()
   const endMs = fromZonedTime(`${shiftCalendarDay(today, 1)}T00:00:00`, safeTz).getTime()
@@ -428,6 +442,7 @@ export interface TodayTaskCounts {
   carriedForward: number
   remaining: number
   completionPercent: number
+  completedTasks?: Array<{ id: string; title: string }>
 }
 
 /** Count the complete queue and read its renderable rows from one SQLite snapshot.
@@ -442,19 +457,20 @@ export async function getTodayTaskRows(
   try {
     await ensureSchema()
     const resolvedTimezone = resolveTimezone(timezone)
-    const { rows } = await getPersistenceClient().execute({
+    const client = getPersistenceClient()
+    const tasksQuery = {
       sql: `
         WITH totals AS (
           SELECT ${TODAY_COMPLETION_COUNT} AS completed_today,
                  COUNT(*) FILTER (
-                   WHERE status IS NOT 'complete' AND deferred_at IS NULL AND (due_date IS NULL OR due_date = '')
+                   WHERE status IS NOT 'complete' AND status IS NOT 'archived' AND deferred_at IS NULL AND (due_date IS NULL OR due_date = '')
                  ) AS open_unscheduled
           FROM tasks
         )
         SELECT ${TASK_VIEW_COLUMNS}, completed_today, open_unscheduled
         FROM totals
         LEFT JOIN tasks
-          ON status IS NOT 'complete'
+          ON status IS NOT 'complete' AND status IS NOT 'archived'
           AND deferred_at IS NULL
           AND (
             ? = 1
@@ -465,15 +481,18 @@ export async function getTodayTaskRows(
         ORDER BY created_at DESC, tasks.rowid DESC
       `,
       args: [...todayCompletionArgs(today, resolvedTimezone), includeUnscheduled ? 1 : 0],
-    })
+    }
+    const [taskResult, completed] = await client.batch([tasksQuery, completedTodayQuery(today, resolvedTimezone)], "read")
+    const rows = taskResult?.rows ?? []
 
     return {
+      completedTasks: completedTodaySummaries(completed?.rows ?? []),
       completedTodayCount: Number(rows[0]?.completed_today ?? 0),
       openUnscheduledCount: Number(rows[0]?.open_unscheduled ?? 0),
       tasks: rows.filter(row => row.id !== null).map(row => toTaskViewItem(row as Record<string, unknown>, false, resolvedTimezone)),
     }
   } catch {
-    return { completedTodayCount: 0, openUnscheduledCount: 0, tasks: [] }
+    return { completedTodayCount: 0, openUnscheduledCount: 0, tasks: [], completedTasks: [] }
   }
 }
 
@@ -498,29 +517,34 @@ export async function readStoredHouseholdTimezone(): Promise<string> {
   return "Europe/Dublin"
 }
 
-/** Refresh the visible counters without reading or serializing individual tasks. */
-export async function getTodayTaskCounts(now = new Date(), timezone?: string): Promise<TodayTaskCounts> {
+/** Refresh visible counters, with the bounded completed list when requested. */
+export async function getTodayTaskCounts(now = new Date(), timezone?: string, includeCompleted = false): Promise<TodayTaskCounts> {
   await ensureSchema()
   const trimmedTz = typeof timezone === "string" ? timezone.trim() : ""
   const resolvedTimezone = trimmedTz && isValidTimezone(trimmedTz)
     ? trimmedTz
     : await readStoredHouseholdTimezone()
   const today = calendarToday(resolvedTimezone, now)
-  const { rows } = await getPersistenceClient().execute({
+  const client = getPersistenceClient()
+  const countsQuery = {
     sql: `
       SELECT NULL AS due_date, ${TODAY_COMPLETION_COUNT} AS completed_today,
-             COUNT(*) FILTER (WHERE status IS NOT 'complete' AND deferred_at IS NULL AND is_favorite NOT IN (0, '')) AS pinned_count,
+             COUNT(*) FILTER (WHERE status IS NOT 'complete' AND status IS NOT 'archived' AND deferred_at IS NULL AND is_favorite NOT IN (0, '')) AS pinned_count,
              0 AS dated_count
       FROM tasks
       UNION ALL
       SELECT due_date, 0, 0, COUNT(*)
       FROM tasks
-      WHERE status IS NOT 'complete' AND deferred_at IS NULL AND COALESCE(is_favorite, 0) IN (0, '')
+      WHERE status IS NOT 'complete' AND status IS NOT 'archived' AND deferred_at IS NULL AND COALESCE(is_favorite, 0) IN (0, '')
         AND due_date IS NOT NULL AND due_date <> ''
       GROUP BY due_date
     `,
     args: todayCompletionArgs(today, resolvedTimezone),
-  })
+  }
+  const [countResult, completed] = includeCompleted
+    ? await client.batch([countsQuery, completedTodayQuery(today, resolvedTimezone)], "read")
+    : [await client.execute(countsQuery)]
+  const rows = countResult?.rows ?? []
 
   let dueToday = 0
   let carriedForward = 0
@@ -542,5 +566,8 @@ export async function getTodayTaskCounts(now = new Date(), timezone?: string): P
   return {
     dueToday, completedToday, carriedForward, remaining,
     completionPercent: todayCompletionPercent(completedToday, remaining),
+    ...(includeCompleted ? {
+      completedTasks: completedTodaySummaries(completed?.rows ?? []),
+    } : {}),
   }
 }

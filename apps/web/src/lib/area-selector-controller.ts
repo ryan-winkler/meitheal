@@ -52,13 +52,14 @@ export function initAreaSelector(signal: AbortSignal): void {
   // Restore saved area on init
   const params = new URLSearchParams(location.search)
   const table = Boolean(document.getElementById("table-shell"))
-  const requested = table ? readTableFilterParams(params).area : params.get("area") ?? undefined
+  const calendar = Boolean(document.getElementById("calendar-shell"))
+  const requested = table || calendar ? readTableFilterParams(params).area : params.get("area") ?? undefined
   if (requested !== undefined) {
     const option = Array.from(dropdown.querySelectorAll<HTMLElement>("[data-area-id]"))
       .find(item => item.dataset.areaId === requested)
     if (option) {
       selectArea(requested, option.dataset.areaName ?? "All Areas", option.dataset.areaIcon ?? "🗂", false)
-    } else if (table) {
+    } else if (table || calendar) {
       selectArea(requested, "Unavailable Area", "🗂", false)
     }
   } else {
@@ -70,6 +71,8 @@ export function initAreaSelector(signal: AbortSignal): void {
   }
   if (table) {
     document.addEventListener("meitheal:table-area-reset", () => selectArea("", "All Areas", "🗂", false), { signal })
+  } else if (calendar) {
+    document.addEventListener("meitheal:calendar-filters-reset", () => selectArea("", "All Areas", "🗂", false), { signal })
   }
 
   // Toggle dropdown on trigger click

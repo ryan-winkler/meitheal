@@ -35,6 +35,8 @@
         import { resolveDescriptionTaskReferences } from "@lib/task-references"
         import { saveNavigationState } from "@lib/ingress-state-persistence"
         import { hasPriorityOverlay } from "@lib/layout-shortcuts-controller"
+        import { taskApi } from "@lib/task-api-client"
+        import { assigneeFallback } from "@lib/task-assignee-display"
 
         // Use lifecycle signal for all global listeners in this module
         pageLifecycle.onPageLoad(() => {
@@ -350,7 +352,12 @@
             const projectRead = projectField ? fetch("/api/projects", requestOptions) : null
             const pillars = fetch("/api/pillars", requestOptions)
             const assignSelect = document.querySelector<HTMLSelectElement>("#td-assigned-to")
-            const users = assignSelect ? fetch("/api/users", requestOptions) : null
+            const assigned = String(t.assigned_to ?? "")
+            if (assignSelect) {
+              assignSelect.replaceChildren(new Option("Unassigned", ""))
+              if (assigned) assignSelect.add(new Option("Loading assignee…", assigned, true, true))
+            }
+            const users = assignSelect ? taskApi.listUserDirectory(modalSignal).catch(() => null) : null
             const settings = fetch("/api/settings", requestOptions)
             // Observe rejections immediately. Field handlers consume the original promises in order.
             void Promise.allSettled([lanes, backlogModeSetting, areas, projectRead, pillars, users, settings])
@@ -893,29 +900,18 @@
               }
             }
 
-            // Assigned To — populate from /api/users
             if (assignSelect && users) {
-              try {
-                const usersRes = await users
-                if (modalSignal.aborted) return
-                if (usersRes.ok) {
-                  const usersData = await usersRes.json()
-                  if (modalSignal.aborted) return
-                  const users = usersData.users ?? [];
-                  assignSelect.innerHTML =
-                    '<option value="">Unassigned</option>';
-                  for (const u of users) {
-                    const opt = document.createElement("option");
-                    opt.value = u.id;
-                    opt.textContent = (u.display_name ?? u.name ?? u.id) + (u.kind === "agent" ? " (AI agent)" : "");
-                    assignSelect.appendChild(opt);
-                  }
-                }
-              } catch {
-                if (modalSignal.aborted) return
-                /* keep default unassigned option */
+              const directory = await users
+              if (modalSignal.aborted) return
+              assignSelect.replaceChildren(new Option(directory ? "Unassigned" : "Could not load assignees", ""))
+              for (const user of directory?.users ?? []) {
+                const name = user.display_name || user.name || user.id
+                assignSelect.add(new Option(name + (user.kind === "agent" ? " (AI agent)" : ""), user.id))
               }
-              assignSelect.value = String(t.assigned_to ?? "");
+              if (assigned && !Array.from(assignSelect.options).some(option => option.value === assigned)) {
+                assignSelect.add(new Option(assigneeFallback(assigned, directory), assigned))
+              }
+              assignSelect.value = assigned
             }
 
             const isFav = Number(t.is_favorite ?? 0);

@@ -8,11 +8,13 @@
  * Handles completion animation and full-stack-clear celebration.
  */
 
+import { createSpriteIconElement } from "../../generated/icon-registry"
 import type { ListenerManager } from "../managed-listeners"
 import { taskApi } from "../task-api-client"
 import { showToast } from "../toast"
 import { onTaskCompleted } from "../gamification-hook"
 import { openTaskDetailHandoff } from "../task-detail-handoff"
+import { lockTodayTaskStatus, syncTodayTaskStatus } from "../today-list"
 
 export function setupFocusStack(
   container: HTMLElement,
@@ -21,8 +23,25 @@ export function setupFocusStack(
   const stack = container.querySelector("#section-focus-stack") as HTMLElement | null
   if (!stack) return
 
-  const totalCards = stack.querySelectorAll(".focus-card").length
-  let completedCards = 0
+  const hadCards = Boolean(stack.querySelector(".focus-card"))
+
+  function showClearedStack() {
+    if (!hadCards || stack!.querySelector(".focus-card, .focus-stack--cleared")) return
+    void import("@lib/celebrations").then(({ celebrateFocusStackClear }) => celebrateFocusStackClear())
+    const cleared = document.createElement("div")
+    cleared.className = "focus-stack--cleared"
+    cleared.setAttribute("role", "status")
+    cleared.append(createSpriteIconElement("confetti", { size: 32 }))
+    const message = document.createElement("div")
+    message.className = "focus-stack__cleared-msg"
+    message.textContent = "Focus Stack cleared!"
+    const detail = document.createElement("div")
+    detail.className = "focus-stack__cleared-sub"
+    detail.textContent = "Great focus session — take a breath"
+    cleared.append(message, detail)
+    stack!.replaceChildren(cleared)
+  }
+  lm.on(container, "meitheal:today-status-committed", showClearedStack)
 
   // ── Complete button handler ──
   lm.on(stack, "click", async (e: Event) => {
@@ -35,7 +54,8 @@ export function setupFocusStack(
       const id = completeBtn.dataset.id
       if (!id) return
 
-      completeBtn.disabled = true
+      const unlock = lockTodayTaskStatus(container, id)
+      if (!unlock) return
       const card = completeBtn.closest(".focus-card") as HTMLElement
 
       try {
@@ -45,45 +65,16 @@ export function setupFocusStack(
 
         // Animate card out
         card?.classList.add("focus-card--completing")
-        completedCards++
-
-        // Also mark in main task list if visible
-        const mainCheckbox = container.querySelector(
-          `.tli__checkbox[data-id="${id}"]`
-        ) as HTMLInputElement | null
-        if (mainCheckbox) {
-          mainCheckbox.checked = true
-          mainCheckbox.closest(".tli")?.classList.add("tli--done")
-        }
-
-        setTimeout(() => {
+        syncTodayTaskStatus(container, id, "complete")
+        lm.onTimeout(() => {
           card?.remove()
-
-          // All cleared → celebration!
-          if (completedCards >= totalCards) {
-            import("@lib/celebrations").then(({ celebrateFocusStackClear }) => {
-              celebrateFocusStackClear()
-            })
-            // Replace stack content with cleared message
-            const cleared = document.createElement("div")
-            cleared.className = "focus-stack--cleared"
-            const emoji = document.createElement("div")
-            emoji.style.fontSize = "32px"
-            emoji.textContent = "🎉"
-            const msg = document.createElement("div")
-            msg.className = "focus-stack__cleared-msg"
-            msg.textContent = "Focus Stack cleared!"
-            const sub = document.createElement("div")
-            sub.className = "focus-stack__cleared-sub"
-            sub.textContent = "Great focus session — take a breath"
-            cleared.append(emoji, msg, sub)
-            stack.textContent = ""
-            stack.appendChild(cleared)
-          }
+          showClearedStack()
         }, 350)
       } catch {
-        completeBtn.disabled = false
         showToast("common.failed_update", "error")
+      } finally {
+        unlock()
+        if (card?.classList.contains("focus-card--completing")) completeBtn.disabled = true
       }
       return
     }

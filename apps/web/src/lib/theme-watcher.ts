@@ -7,7 +7,7 @@
  * Bounded context: lib (cross-domain utility)
  */
 
-export type ThemeMode = "light" | "dark" | "auto" | "custom"
+import { type ThemeMode } from "./theme-mode"
 
 const STORAGE_KEY = "meitheal-theme"
 const CUSTOM_CSS_KEY = "meitheal-custom-theme-css"
@@ -17,7 +17,7 @@ export function getEffectiveTheme(): "light" | "dark" {
   const stored = localStorage.getItem(STORAGE_KEY) as ThemeMode | null
   if (stored === "light" || stored === "dark") return stored
   // Custom themes layer on top of dark base
-  if (stored === "custom") return "dark"
+  if (stored === "custom" || stored === "knight-rider") return "dark"
   if (stored === "auto") {
     const appearance = document.documentElement.dataset.haTheme
     if (appearance === "light" || appearance === "dark") return appearance
@@ -35,6 +35,7 @@ export function setTheme(mode: ThemeMode): void {
   } else {
     applyCustomTheme(null)
   }
+  window.dispatchEvent(new CustomEvent("meitheal:theme-changed", { detail: { theme: getEffectiveTheme() } }))
 }
 
 export function applyTheme(): void {
@@ -44,8 +45,8 @@ export function applyTheme(): void {
   if (stored === "custom") {
     // Custom themes use dark as base, override via injected <style>
     document.documentElement.dataset.theme = "dark"
-  } else if (stored === "auto") {
-    document.documentElement.dataset.theme = "auto"
+  } else if (stored === "auto" || stored === "knight-rider") {
+    document.documentElement.dataset.theme = stored
   } else {
     document.documentElement.dataset.theme = theme
   }
@@ -53,7 +54,7 @@ export function applyTheme(): void {
   document.documentElement.classList.toggle("light", theme === "light")
   const metaTheme = document.querySelector('meta[name="theme-color"]')
   if (metaTheme) {
-    metaTheme.setAttribute("content", theme === "dark" ? "#1a1a2e" : "#ffffff")
+    metaTheme.setAttribute("content", stored === "knight-rider" ? "#131314" : theme === "dark" ? "#1a1a2e" : "#ffffff")
   }
 }
 

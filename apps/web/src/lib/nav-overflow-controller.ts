@@ -23,9 +23,12 @@ export function initNavOverflow(root: HTMLElement, pageSignal: AbortSignal): voi
   const controller = new AbortController()
   bindings.set(root, { pageSignal, controller })
   const signal = AbortSignal.any([pageSignal, controller.signal])
+  // Nested disclosures keep native Tab order, including when their parent is in More.
+  const collectLinks = (items: HTMLElement[]) => items.flatMap(item => item.matches("a[href]") ? [item]
+    : [...item.querySelectorAll<HTMLElement>("a[href]")].filter(link => !link.closest("[data-nav-overflow-submenu]")))
   let sources = primaries.map(primary => ({ primary, items: [...primary.children] as HTMLElement[] }))
   let items = sources.flatMap(source => source.items)
-  let links = items.flatMap(item => item.matches("a[href]") ? [item] : [...item.querySelectorAll<HTMLElement>("a[href]")])
+  let links = collectLinks(items)
   const originalTabs = new Map(links.map(link => [link, link.getAttribute("tabindex")]))
   let frame = 0
   let lastWidth = -1
@@ -33,7 +36,7 @@ export function initNavOverflow(root: HTMLElement, pageSignal: AbortSignal): voi
   function refreshSources() {
     sources = primaries.map(primary => ({ primary, items: [...primary.children] as HTMLElement[] }))
     items = sources.flatMap(source => source.items)
-    links = items.flatMap(item => item.matches("a[href]") ? [item] : [...item.querySelectorAll<HTMLElement>("a[href]")])
+    links = collectLinks(items)
     for (const link of links) {
       if (!originalTabs.has(link)) originalTabs.set(link, link.getAttribute("tabindex"))
     }
@@ -67,7 +70,7 @@ export function initNavOverflow(root: HTMLElement, pageSignal: AbortSignal): voi
       }
     }
     items = sources.flatMap(source => source.items)
-    links = items.flatMap(item => item.matches("a[href]") ? [item] : [...item.querySelectorAll<HTMLElement>("a[href]")])
+    links = collectLinks(items)
   }
   function focusDestination(target: HTMLElement | undefined) {
     if (!target) return

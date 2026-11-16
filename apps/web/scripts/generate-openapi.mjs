@@ -716,6 +716,7 @@ const paths = {
         { name: "assigned_to", in: "query", schema: { type: "string" } },
         { name: "priority", in: "query", schema: { type: "integer" } },
         { name: "due_date", in: "query", schema: { type: "string", format: "date" }, description: "Match the household calendar day (date-only, floating datetime, or zoned ISO timestamp in the configured household timezone). Invalid dates return 400." },
+        { name: "calendar_filters", in: "query", schema: { type: "string", maxLength: 20000 }, description: "Optional Calendar view query string applied to due_date results before pagination. When present, including when empty, archived tasks are excluded. Includes search, status, priority, area, user, types, task_type, labels, promoted, rice, and advancedFilter." },
         { name: "parent_id", in: "query", schema: { type: "string" }, description: "Get subtasks of a parent" },
         { name: "sort", in: "query", schema: { type: "string", enum: ["created_at", "updated_at", "title", "status", "priority", "due_date", "kanban_position"] }, description: "Equal values use task ID ascending; null values sort last." },
         { name: "order", in: "query", schema: { type: "string", enum: ["asc", "desc"], default: "desc" } },
@@ -739,7 +740,11 @@ const paths = {
       operationId: "getTodayTaskCounts",
       tags: ["Tasks"],
       summary: "Get the Today page task counters",
-      description: "Returns counts over the full task database using the Today page rules. No task rows are returned.",
+      description: "Returns counts over the full task database using the Today page rules. The optional completed=1 parameter also returns up to 20 completed task summaries for the household day.",
+      parameters: [
+        { name: "completed", in: "query", schema: { type: "string", enum: ["1"] } },
+        { name: "expected_day", in: "query", schema: { type: "string", format: "date" }, description: "Household day shown by the caller. A rollover returns 409." },
+      ],
       responses: {
         200: jsonContent({
           type: "object",
@@ -750,8 +755,12 @@ const paths = {
             carriedForward: { type: "integer", minimum: 0 },
             remaining: { type: "integer", minimum: 0 },
             completionPercent: { type: "integer", minimum: 0, maximum: 100 },
+            completedTasks: { type: "array", maxItems: 20, items: {
+              type: "object", required: ["id", "title"], properties: { id: { type: "string" }, title: { type: "string" } },
+            } },
           },
         }, "Today counters"),
+        409: { description: "The household day changed" },
         503: problemContent("Today counters unavailable"),
       },
     },
@@ -1004,9 +1013,12 @@ const paths = {
     post: {
       operationId: "clearCompletedTasks",
       tags: ["Tasks"],
-      summary: "Archive all completed tasks",
-      description: "Moves all tasks with status 'complete' to 'archived'. Use this in daily/weekly cleanup automations.",
-      responses: { 200: jsonContent({ type: "object", properties: { archived: { type: "integer" } } }, "Count of archived tasks") },
+      summary: "Archive tasks completed on the household day",
+      description: "Moves tasks counted as completed today by Today to the archived status. Returns the number changed.",
+      parameters: [{ name: "expected_day", in: "query", schema: { type: "string", format: "date" }, description: "Household day the caller reviewed. A rollover returns 409 without changing any tasks." }],
+      responses: { 409: { description: "The household day changed" }, 200: jsonContent({ type: "object", required: ["ok", "cleared"], properties: {
+        ok: { type: "boolean" }, cleared: { type: "integer" }, message: { type: "string" },
+      } }, "Count of archived tasks") },
     },
   },
   "/api/tasks/delete-completed": {
@@ -1877,7 +1889,7 @@ const paths = {
 
   // ── Users ──
   "/api/users": {
-    get: { operationId: "listUsers", tags: ["Users"], summary: "List all users (HA + custom)", description: "Returns users from Home Assistant integration combined with any custom-defined users.", responses: { 200: { description: "User list" } } },
+    get: { operationId: "listUsers", tags: ["Users"], summary: "List all users (HA + custom)", description: "Returns Home Assistant and custom users. ha_roster_verified indicates whether the Home Assistant roster is verified and can distinguish an absent user from an unavailable roster.", responses: { 200: { description: "User list" } } },
   },
   "/api/users/custom": {
     post: {
@@ -2013,7 +2025,7 @@ const paths = {
 
   // ── Home Assistant ──
   "/api/ha/connection": { get: { operationId: "getHAConnection", tags: ["HomeAssistant"], summary: "Get HA WebSocket connection status", responses: { 200: { description: "Connection status" } } } },
-  "/api/ha/calendars": { get: { operationId: "getHACalendars", tags: ["HomeAssistant"], summary: "List HA calendar entities", responses: { 200: { description: "Calendars" } } } },
+  "/api/ha/calendars": { get: { operationId: "getHACalendars", tags: ["HomeAssistant"], summary: "List HA calendar entities", parameters: [{ name: "configured", in: "query", schema: { type: "integer", enum: [1] }, description: "Return only configured calendar entity IDs in the entities array." }], responses: { 200: { description: "Calendars" } } } },
   "/api/ha/events": { get: { operationId: "getHAEvents", tags: ["HomeAssistant"], summary: "List recent HA events", responses: { 200: { description: "Events" } } } },
   "/api/ha/services": { get: { operationId: "getHAServices", tags: ["HomeAssistant"], summary: "List HA services", responses: { 200: { description: "Services" } } } },
   "/api/ha/addons": { get: { operationId: "getHAAddons", tags: ["HomeAssistant"], summary: "List HA add-ons", responses: { 200: { description: "Add-ons" } } } },

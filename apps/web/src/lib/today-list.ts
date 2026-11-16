@@ -1,4 +1,5 @@
 import { matchesRiceFilter, matchesStatusFilter } from "./filter-state"
+import { isActiveStatus, isDoneStatus, normalizeStatus, STATUS_LABELS } from "./status-config"
 import type { TaskViewItem } from "./task-queries"
 
 const PAGE_SIZE = 50
@@ -77,4 +78,64 @@ export function setUnscheduledPage(url: URL, page: number): URL {
   if (page > 0) url.searchParams.set(PAGE_PARAM, String(page))
   else url.searchParams.delete(PAGE_PARAM)
   return url
+}
+
+const pendingStatusWrites = new WeakMap<HTMLElement, Set<string>>()
+
+export function lockTodayTaskStatus(container: HTMLElement, id: string): (() => void) | null {
+  const pending = pendingStatusWrites.get(container) ?? new Set<string>()
+  if (pending.has(id)) return null
+  pendingStatusWrites.set(container, pending)
+  pending.add(id)
+  const focused = document.activeElement
+  const taskId = CSS.escape(id)
+  const controls = [...container.querySelectorAll<HTMLInputElement | HTMLButtonElement>(
+    `.tli__checkbox[data-id="${taskId}"], .focus-card__complete[data-id="${taskId}"]`,
+  )].filter(control => !control.disabled && !control.hasAttribute("aria-disabled"))
+  controls.forEach(control => control.setAttribute("aria-disabled", "true"))
+  const section = focused?.closest(".today-section, .focus-stack")
+  return () => {
+    pending.delete(id)
+    controls.forEach(control => control.removeAttribute("aria-disabled"))
+    if (!controls.includes(focused as HTMLInputElement) ||
+        (document.activeElement !== focused && document.activeElement !== document.body)) return
+    if (focused instanceof HTMLElement && focused.isConnected && !focused.closest(".filtered-out, .focus-card--completing")) {
+      if (document.activeElement !== focused) focused.focus({ preventScroll: true })
+      return
+    }
+    const next = section?.querySelector<HTMLElement>(
+      ".tli:not(.filtered-out) .tli__checkbox, .focus-card:not(.focus-card--completing) .focus-card__complete",
+    ) ?? section?.querySelector<HTMLElement>(".today-section__header")
+    const fallback = container.querySelector<HTMLElement>("#today-filter-status")
+    if (next) next.focus()
+    else fallback?.focus()
+  }
+}
+
+/** Keep status, controls and filters consistent across visible copies of a Today task. */
+export function syncTodayTaskStatus(container: HTMLElement, id: string, value: string): void {
+  const status = normalizeStatus(value)
+  const done = isDoneStatus(status)
+  const active = isActiveStatus(status)
+  const taskId = CSS.escape(id)
+  for (const item of container.querySelectorAll<HTMLElement>(`.tli[data-id="${taskId}"], .focus-card[data-id="${taskId}"]`)) {
+    item.dataset.status = status
+    item.toggleAttribute("data-work-active", active)
+    const badge = item.querySelector<HTMLElement>("[data-badge-status]")
+    if (badge) {
+      badge.dataset.badgeStatus = status
+      badge.textContent = STATUS_LABELS[status] ?? status
+    }
+    const checkbox = item.querySelector<HTMLInputElement>(".tli__checkbox")
+    if (checkbox) {
+      checkbox.checked = done
+      item.classList.toggle("tli--done", done)
+      item.querySelector(".tli__title")?.classList.toggle("done", done)
+    }
+    if (done && item.matches(".focus-card:not(.focus-card--completing)")) item.remove()
+  }
+  const remaining = container.querySelectorAll(".focus-card:not(.focus-card--completing)").length
+  const count = container.querySelector(".focus-stack__subtitle")
+  if (count) count.textContent = `${remaining} to focus on`
+  container.dispatchEvent(new CustomEvent("meitheal:today-status-committed", { detail: { id } }))
 }

@@ -266,13 +266,14 @@ details.filter-dropdown summary::-webkit-details-marker {
 
   .filter-toolbar__type-toggles {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(82px, 1fr));
     flex-basis: 100%;
     min-width: 0;
   }
 
   .filter-toolbar__type-btn {
     min-height: 44px;
+    padding-inline: 4px;
     justify-content: center;
   }
 }

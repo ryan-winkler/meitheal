@@ -142,11 +142,12 @@ test("task promotion is shared, typed, and independent of the stored manual orde
     await expect(lane.locator("[data-kanban-range]")).toHaveText("1–25 of 29")
     await expect(target.getByRole("link", { name: /Paging card 25.*Promoted/ })).toBeVisible()
 
-    const filter = page.getByRole("button", { name: "Promoted only" })
+    const filter = page.getByRole("button", { name: "Promoted cards only" })
     await filter.press("Enter")
     await expect(filter).toHaveAttribute("aria-pressed", "true")
     await expect(page).toHaveURL(/promoted=1/)
     await expect(cards).toHaveCount(1)
+    await expect(page.getByText("Showing only cards promoted to the top of their lane.")).toBeVisible()
     await expect(lane).toHaveAttribute("data-total", "29")
 
     const otherPage = await adminBrowser.newPage()
@@ -164,6 +165,7 @@ test("task promotion is shared, typed, and independent of the stored manual orde
     await expect(cards).toHaveCount(0)
     await page.getByRole("button", { name: "Clear all active filters" }).press("Enter")
     await expect(filter).toHaveAttribute("aria-pressed", "false")
+    await expect(page.locator("[data-kanban-promoted-note]")).toBeHidden()
     await expect(cards.first()).toHaveAttribute("data-id", third)
     await lane.getByRole("link", { name: "Next" }).press("Enter")
     await expect(cards.last()).toHaveAttribute("data-id", targetId)

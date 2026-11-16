@@ -102,8 +102,8 @@ const { activeLabels = [], id = "label-filter-bar", view = "" } = Astro.props
           detail: { labels: [...active], view },
         }))
       }, { signal })
-      if (view === "table") {
-        document.addEventListener("meitheal:table-labels-reset", () => {
+      if (view === "table" || view === "calendar") {
+        document.addEventListener(view === "table" ? "meitheal:table-labels-reset" : "meitheal:calendar-filters-reset", () => {
           active = new Set()
           render()
         }, { signal })

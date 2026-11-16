@@ -625,7 +625,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
     }, { signal });
 
     // Expose global open method
-    window.openNewTaskModal = () => {
+    window.openNewTaskModal = (kind) => {
       if (signal.aborted || overlay.classList.contains("active")) return
       // If the detail panel is open, close it to avoid dual modal
       document.getElementById("task-detail-panel")?.classList.remove("open");
@@ -633,9 +633,13 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
       document.body.classList.remove("has-docked-inspector");
 
       clearCapture()
+      if (kind && [...kindTabs].some(tab => (tab as HTMLElement).dataset.kind === kind)) selectKind(kind)
       const contextualDate = window.__prefillTaskDate
       delete window.__prefillTaskDate
-      if (contextualDate) restoreDue(contextualDate)
+      if (contextualDate) {
+        if (kind === "calendar_event") restoreEventDate("nt-event-start", contextualDate)
+        else restoreDue(contextualDate)
+      }
       preserveAssignee = false
       captureSession++
       overlay.classList.add("active")

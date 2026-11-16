@@ -20,6 +20,7 @@ import {
 import { t } from "../i18n/translations"
 import type { Locale } from "../lib/locale"
 import { getPriorityColor } from "../lib/priority-config"
+import { taskSurface } from "../lib/task-surface"
 import { STATUS_LABELS as statusLabels } from "../lib/status-config"
 import { DASHBOARD_SECTIONS } from "../lib/dashboard-registry"
 import { calendarDaysFromToday, calendarToday } from "../lib/date"
@@ -327,7 +328,7 @@ const heroHintHref =
                     statusLabels[String(favorite.status)] ?? String(favorite.status)
 
                   return (
-                    <div class="task-item cursor-pointer" data-id={String(favorite.id)}>
+                    <div class="task-item cursor-pointer" data-id={String(favorite.id)} {...taskSurface(String(favorite.status), favorite.color)}>
                       <div class="task-title">
                         <span
                           class="priority-dot"
@@ -452,6 +453,7 @@ const heroHintHref =
                 return (
                   <div
                     class="task-item cursor-pointer"
+                    {...taskSurface(String(task.status), task.color)}
                     data-id={String(task.id)}
                     data-assigned={String(task.assigned_to ?? "")}
                   >
@@ -546,12 +548,14 @@ const heroHintHref =
                   ? `MTH-${String(task.ticket_number).padStart(3, "0")}`
                   : null
 
+                const { style: taskColorStyle, ...surface } = taskSurface(String(task.status), task.color)
                 return (
                   <div
-                    class="bento-card"
+                    class="bento-card dashboard-task-card"
+                    {...surface}
                     data-id={String(task.id)}
                     data-area={areaId}
-                    style={`border-left: 3px solid ${taskColor};`}
+                    style={`--dashboard-task-accent: ${taskColor};${taskColorStyle ?? ""}`}
                   >
                     <div class="bento-card-body">
                       <div class="bento-card-header">

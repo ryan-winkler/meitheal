@@ -1,4 +1,5 @@
 import { calendarSyncResult } from "@domains/calendar/calendar-sync-result"
+import { resolveCalendarEntities } from "@domains/calendar/resolve-calendar-entities"
 /**
  * HA Calendar API Endpoints
  *
@@ -15,6 +16,11 @@ import { getCalendarSyncStatus, syncFromHA } from "../../../domains/calendar/cal
 
 export const GET: APIRoute = async ({ url }) => {
   try {
+    if (url.searchParams.get("configured") === "1") {
+      return Response.json({ entities: await resolveCalendarEntities(true) }, {
+        headers: { "Cache-Control": "private, no-store" },
+      })
+    }
     const entityId = url.searchParams.get("entity_id");
     const start = url.searchParams.get("start");
     const end = url.searchParams.get("end");
@@ -60,7 +66,6 @@ export const POST: APIRoute = async ({ request }) => {
       resolvedEntities = [entityId];
     } else {
       // Resolve via shared helper (uses SettingsRepository)
-      const { resolveCalendarEntities } = await import("../../../domains/calendar/resolve-calendar-entities");
       resolvedEntities = await resolveCalendarEntities();
     }
 

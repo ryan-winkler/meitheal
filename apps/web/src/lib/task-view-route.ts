@@ -1,6 +1,20 @@
 export const TASK_VIEWS = ["kanban", "table", "calendar", "timeline"] as const
 export type TaskView = (typeof TASK_VIEWS)[number]
 
+export const TASK_VIEW_LABELS = {
+  kanban: "Kanban",
+  table: "Table",
+  calendar: "Calendar",
+  timeline: "Timeline (Gantt)",
+} as const
+
+export const TASK_VIEW_ICONS = {
+  kanban: "kanban",
+  table: "table",
+  calendar: "calendar",
+  timeline: "chart-bar",
+} as const
+
 export function parseTaskView(value: string | null): TaskView | undefined {
   return TASK_VIEWS.find(view => view === value)
 }

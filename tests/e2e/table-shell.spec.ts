@@ -68,6 +68,23 @@ test.describe("Table Shell", () => {
     await expect(excluded).toBeHidden()
   })
 
+  test("filtered empty state can clear criteria and return to the task list", async ({ page, tableTasks }) => {
+    const missing = randomUUID()
+    await page.goto(`/tasks?view=table&search=${missing}#table`)
+    const empty = page.locator(".no-results-row")
+    await expect(empty.getByText("No tasks match these filters", { exact: true })).toBeVisible()
+    await empty.getByRole("button", { name: "Clear All", exact: true }).press("Enter")
+    await expect(empty).toBeHidden()
+    await expect(page.getByRole("row").filter({ hasText: tableTasks[0].title })).toBeVisible()
+    const search = page.getByRole("textbox", { name: "Filter by text" })
+    await expect(search).toBeFocused()
+    await search.fill(missing)
+    await expect(empty.getByText("No tasks match these filters", { exact: true })).toBeVisible()
+    await empty.getByRole("button", { name: "Clear All", exact: true }).press("Enter")
+    await expect(empty).toBeHidden()
+    await expect(search).toBeFocused()
+  })
+
   test("the shared search and Assist launchers open their respective panels", async ({ page }) => {
     await page.route("**/api/ha/agents", route => route.fulfill({ json: { agents: [] } }))
     await page.goto("/table")

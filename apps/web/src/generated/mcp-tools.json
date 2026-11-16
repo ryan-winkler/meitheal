@@ -47,6 +47,11 @@
             "format": "date",
             "description": "Match the household calendar day (date-only, floating datetime, or zoned ISO timestamp in the configured household timezone). Invalid dates return 400."
           },
+          "calendar_filters": {
+            "type": "string",
+            "maxLength": 20000,
+            "description": "Optional Calendar view query string applied to due_date results before pagination. When present, including when empty, archived tasks are excluded. Includes search, status, priority, area, user, types, task_type, labels, promoted, rice, and advancedFilter."
+          },
           "parent_id": {
             "type": "string",
             "description": "Get subtasks of a parent"
@@ -90,10 +95,23 @@
     },
     {
       "name": "getTodayTaskCounts",
-      "description": "Returns counts over the full task database using the Today page rules. No task rows are returned.",
+      "description": "Returns counts over the full task database using the Today page rules. The optional completed=1 parameter also returns up to 20 completed task summaries for the household day.",
       "inputSchema": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "completed": {
+            "type": "string",
+            "enum": [
+              "1"
+            ],
+            "description": "completed parameter"
+          },
+          "expected_day": {
+            "type": "string",
+            "format": "date",
+            "description": "Household day shown by the caller. A rollover returns 409."
+          }
+        }
       }
     },
     {
@@ -353,10 +371,16 @@
     },
     {
       "name": "clearCompletedTasks",
-      "description": "Moves all tasks with status 'complete' to 'archived'. Use this in daily/weekly cleanup automations.",
+      "description": "Moves tasks counted as completed today by Today to the archived status. Returns the number changed.",
       "inputSchema": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "expected_day": {
+            "type": "string",
+            "format": "date",
+            "description": "Household day the caller reviewed. A rollover returns 409 without changing any tasks."
+          }
+        }
       }
     },
     {
@@ -1903,7 +1927,7 @@
     },
     {
       "name": "listUsers",
-      "description": "Returns users from Home Assistant integration combined with any custom-defined users.",
+      "description": "Returns Home Assistant and custom users. ha_roster_verified indicates whether the Home Assistant roster is verified and can distinguish an absent user from an unavailable roster.",
       "inputSchema": {
         "type": "object",
         "properties": {}
@@ -2102,7 +2126,15 @@
       "description": "List HA calendar entities",
       "inputSchema": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "configured": {
+            "type": "integer",
+            "enum": [
+              1
+            ],
+            "description": "Return only configured calendar entity IDs in the entities array."
+          }
+        }
       }
     },
     {
@@ -2456,6 +2488,7 @@
         "assigned_to",
         "priority",
         "due_date",
+        "calendar_filters",
         "parent_id",
         "sort",
         "order",
@@ -2468,7 +2501,10 @@
       "path": "/api/tasks/today-counts",
       "hasBody": false,
       "pathParams": [],
-      "queryParams": []
+      "queryParams": [
+        "completed",
+        "expected_day"
+      ]
     },
     "createTask": {
       "method": "POST",
@@ -2525,7 +2561,9 @@
       "path": "/api/tasks/clear-completed",
       "hasBody": true,
       "pathParams": [],
-      "queryParams": []
+      "queryParams": [
+        "expected_day"
+      ]
     },
     "previewDeleteCompletedTasks": {
       "method": "GET",
@@ -3248,7 +3286,9 @@
       "path": "/api/ha/calendars",
       "hasBody": false,
       "pathParams": [],
-      "queryParams": []
+      "queryParams": [
+        "configured"
+      ]
     },
     "getHAEvents": {
       "method": "GET",

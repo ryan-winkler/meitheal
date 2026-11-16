@@ -30,7 +30,7 @@ Tab and Shift+Tab stay inside task detail while it loads and while you edit. Pre
 
 ### Promote a card
 
-Open a card’s **Task actions** and choose **Promote to top** to move it above ordinary cards in the same lane. Everyone using the board can see the **Promoted** badge. Use **Promoted only** to filter the board, and bookmark the resulting URL to reopen that filter. Work-in-progress counts still include all cards in the lane.
+Open a card’s **Task actions** and choose **Promote to top** to move it above ordinary cards in the same lane. Everyone using the board can see the **Promoted** badge. Use **Promoted cards only** to see just those cards. The count strip confirms the filter is active. Bookmark the resulting URL to reopen that filter. Work-in-progress counts still include all cards in the lane.
 
 Choose **Remove promotion** from the same menu to return the card to its normal position. Promotion leaves the task’s priority and favorite setting intact. Drag to reorder within either group, or move a card to another lane to carry its promotion with it.
 
@@ -73,13 +73,13 @@ Dates due today appear in amber. The light palette uses a darker shade on white 
 
 On mobile, the view pills remain as a horizontal touch strip below the unified bar actions. The bottom app navigation opens Tasks, while the in-page strip switches between Kanban, Calendar, Table, and Timeline.
 
-On narrow screens the filter toolbar wraps its type toggles and right-aligned action capsule (`Deferred`, `Inactivity`, `Fields`, and `Lanes`) cleanly across rows inside `.tasks-filter-row` so controls never overlap. Board cards and table rows appear as soon as the view renders, including when the device requests reduced motion.
+On wide screens **New Task**, **Search Meitheal**, and **Ask Home Assistant** sit at the upper right. The row below holds **Deferred**, **Inactivity**, **Fields**, and **Lanes**. On phones, open **Board actions** to reach that group. The first two links carry the current area to their respective views.
 
 ### Filter and group Timeline
 
 Use Tab to move between visible task views. If a view moves into **More**, open that control and use the arrow keys to choose it.
 
-Open **Timeline** to narrow the chart by text, status, priority, task type, or area. Use **Group by** to organize dated tasks. The URL keeps these choices when you reload or move between task views.
+Open **Timeline** to narrow the chart by text, status, priority, task type, or area. Use **Group by** to organize dated tasks. The URL keeps these choices when you reload or move between task views. On phones, open **Filters** to adjust the chart. The task pane starts closed unless you saved a preference. Select **Task pane** to open or close it.
 
 ## Troubleshooting
 
@@ -107,7 +107,7 @@ The form keeps the title. Check the area selection and destination lane. If you 
 
 ## Card colors
 
-Use **Set card color** to choose the card edge accent. Saving and reloading the board retain that choice. **Clear color** restores the task type accent. Rejected writes retain the saved color and report an error so you can retry.
+Use **Set card color** to choose the task color. Knight Rider tints the whole card while keeping the active-work indicator visible. Other palettes use the color at the card edge. Saving and reloading retain that choice. **Clear color** restores the default treatment. Rejected writes retain the saved color and report an error so you can retry.
 
 In the color picker, use the arrow keys to choose a swatch and Enter to save. Focus returns to the card’s **More actions** button during the save and after the board refreshes.
 

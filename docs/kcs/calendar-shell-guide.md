@@ -15,13 +15,16 @@ Calendar opens within **Tasks** at `/tasks?view=calendar`. Older `/calendar` and
 ### Move around the month without losing the shell context
 
 1. Use **Previous month**, **Next month** or **Today** above the grid.
-2. Open any day in the displayed month to review its events and due tasks.
+2. Filter by title, task type, status, priority, label, area, or custom rules above the month. On phones, select **Filters** to open these controls. **Active** shows that filters still apply when the controls are closed. **Promoted cards only** narrows the task results to work moved to the top of a Kanban lane.
+3. Open any day in the displayed month to review matching due tasks. Connected calendar events have their own section and total. Household members can see the configured feed in Calendar. Administrators manage the sources in Settings. Task filters apply to Meitheal work. Turn off **Events** in the type filters to hide connected event previews and counts.
+4. The month controls keep the active filters. Use **Clear all active filters** to start over.
 
 ### Open a day drawer and create follow-up work
 
 1. Select a day in the month grid using a pointer, Enter or Space.
-2. Review tasks due on that date and HA events. Task rows show the shared status label and icon.
-3. Use `Add Task` to open the shared task modal with the current drawer date prefilled.
+2. Review tasks due on that date and HA events. Task rows show the shared status label and icon. Archived tasks are hidden. Without task filters, the agenda also shows completed tasks that are absent from the month count.
+3. When more than 100 tasks match a day, use **Load more tasks** in its task list.
+4. Use **Add Task** to open the shared form with the selected due date, or **Add Event** to start an Event on that date.
 
 Assistive technology announces the visible day number first, followed by the month and year and the task count when a badge is shown. The current date is identified as today. Weekend headings and the current date remain distinct in light and dark themes.
 
@@ -106,8 +109,12 @@ Known differences:
 
 1. Confirm the day drawer title updates to the selected date.
 2. Check `GET /api/tasks?due_date=YYYY-MM-DD`. The date must exist on the calendar. The response filters before pagination, and `total` counts tasks due on that date. Date-only values match directly, whereas an ISO timestamp with a time and offset matches the resulting calendar day in the household time zone.
-3. When a task status looks wrong, compare the list result with the status sent on creation. Known aliases such as `done` become the built-in status `complete`. Custom statuses keep their names. A list filtered by either alias or built-in status includes older rows saved with the alias.
+3. If Calendar filters are active, check the `calendar_filters` query in the same request. It applies the same filters as the month before pagination. The default month badge counts open tasks, while the default drawer also shows completed work. Ordinary filters match open tasks in both places. Choose **Complete** or apply custom rules to include matching completed work in both places. When a task status looks wrong, compare the list result with the status sent on creation. Known aliases such as `done` become the built-in status `complete`. Custom statuses keep their names. A list filtered by either alias or built-in status includes older rows saved with the alias.
 4. If HA events are missing, inspect Home Assistant calendar entity settings and the browser console for `calendar-shell` warnings.
+
+### Calendar changes could not be applied
+
+Calendar keeps showing the month and results from the last successful load. Select **Retry calendar** to reapply the current filters.
 
 ### View switching loses the current filters
 

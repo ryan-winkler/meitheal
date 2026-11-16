@@ -53,7 +53,10 @@ function syncSidebarState(): void {
   const desktopSidebar = innerWidth > 768 && root.appearanceNavigation !== "navbar"
   let collapsed = desktopSidebar && ["folded", "hover"].includes(root.appearanceSidebar ?? "")
   if (desktopSidebar && root.appearanceSidebar === "remember") {
-    try { collapsed = localStorage.getItem("meitheal_sidebar_collapsed") === "true" } catch { /* Open without storage. */ }
+    try {
+      const remembered = localStorage.getItem("meitheal_sidebar_collapsed")
+      collapsed = remembered === "true" || (remembered === null && root.theme === "knight-rider")
+    } catch { /* Open without storage. */ }
   }
   document.body.classList.toggle("sidebar-collapsed", collapsed)
   syncSidebarButtons(collapsed)
@@ -129,6 +132,7 @@ export function bindAppearanceNavigation(signal: AbortSignal): void {
   sidebar?.addEventListener("pointerleave", syncHover, { signal })
   sidebar?.addEventListener("focusin", syncHover, { signal })
   sidebar?.addEventListener("focusout", () => queueMicrotask(syncHover), { signal })
+  window.addEventListener("meitheal:theme-changed", syncSidebarState, { signal })
   window.addEventListener("resize", () => {
     syncSidebarState()
     syncHover()

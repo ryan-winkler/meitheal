@@ -208,6 +208,48 @@
     --text: var(--text-primary);
   }
 
+  /* Knight Rider — Super Productivity's charcoal workspace and blue actions. */
+  [data-theme="knight-rider"] {
+    --bg-primary-rgb: 19 19 20;
+    --bg-secondary-rgb: 26 26 27;
+    --bg-card-rgb: 36 36 36;
+    --bg-hover-rgb: 48 48 50;
+    --bg-input-rgb: 16 16 17;
+    --text-primary-rgb: 230 230 230;
+    --text-secondary-rgb: 205 205 210;
+    --knight-task-muted-rgb: 185 183 190;
+    --text-muted-rgb: var(--knight-task-muted-rgb);
+    --accent-rgb: 100 149 237;
+    --accent-hover-rgb: 125 165 246;
+    --border-rgb: 54 54 58;
+    --border-focus-rgb: 166 192 249;
+    --bg-primary: rgb(var(--bg-primary-rgb));
+    --bg-secondary: rgb(var(--bg-secondary-rgb));
+    --bg-card: rgb(var(--bg-card-rgb));
+    --bg-hover: rgb(var(--bg-hover-rgb));
+    --bg-input: rgb(var(--bg-input-rgb));
+    --text-primary: rgb(var(--text-primary-rgb));
+    --text-secondary: rgb(var(--text-secondary-rgb));
+    --text-muted: rgb(var(--text-muted-rgb));
+    --palette-accent: #6495ED;
+    --palette-accent-hover: rgb(var(--accent-hover-rgb));
+    --palette-accent-light: rgb(var(--accent-rgb) / 0.14);
+    --palette-on-accent: #131314;
+    --accent-text: #ACC5FC;
+    --border: rgb(var(--border-rgb));
+    --border-focus: rgb(var(--border-focus-rgb));
+    --color-success: rgb(var(--success-rgb) / 0.9);
+    --success: #76C99B;
+    --success-rgb: 118 201 155;
+    --type-task: #8AB0FA;
+    --prio-low: #76C99B;
+    --prio-none: #A4A4AA;
+    --knight-control-border: #88888C;
+    --knight-active-fill: #593541;
+    --knight-active-indicator: #FF5E92;
+    --danger-text: #FFADB1;
+  }
+
   /* Light theme overrides — Warm Architectural Paper + Forest Emerald */
   :is([data-theme="light"], [data-theme="auto"][data-ha-theme="light"]) {
     color-scheme: light;
@@ -347,6 +389,16 @@
       --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.5);
       --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.6);
       --palette-accent-light: rgba(105, 227, 178, 0.25);
+    }
+
+    [data-theme="knight-rider"] {
+      --knight-task-muted-rgb: 215 213 220;
+      --text-muted-rgb: var(--knight-task-muted-rgb);
+      --text-muted: rgb(var(--text-muted-rgb));
+      --border-rgb: 119 119 123;
+      --border: rgb(var(--border-rgb));
+      --palette-accent-light: rgb(var(--accent-rgb) / 0.25);
+      --knight-control-border: #ADADB3;
     }
 
     :is([data-theme="light"], [data-theme="auto"][data-ha-theme="light"]) {

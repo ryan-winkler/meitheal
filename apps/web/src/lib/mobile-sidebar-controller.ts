@@ -1,4 +1,5 @@
 import { pageLifecycle } from "./page-lifecycle"
+import { hasPriorityOverlay } from "./layout-shortcuts-controller"
 
 pageLifecycle.onPageLoad(signal => {
   const mobileMenu = document.querySelector<HTMLButtonElement>("#menu-toggle")
@@ -31,7 +32,7 @@ pageLifecycle.onPageLoad(signal => {
     if (!sidebar.contains(target) || link) closeDrawer()
   }, { signal })
   document.addEventListener("keydown", event => {
-    if (event.key === "Escape" && sidebar.classList.contains("open")) {
+    if (event.key === "Escape" && !event.defaultPrevented && !hasPriorityOverlay() && sidebar.classList.contains("open")) {
       event.preventDefault()
       closeDrawer(true)
     }

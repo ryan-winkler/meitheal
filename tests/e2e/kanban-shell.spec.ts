@@ -55,6 +55,63 @@ test.describe("Tasks Shell (Kanban)", () => {
     }
   })
 
+  test("retains the assigned Home Assistant identity when its directory cannot verify it", async ({ page, request, baseURL }) => {
+    const idFromHa = "ha_0123456789abcdef0123456789abcdef"
+    const headers = { origin: new URL(baseURL!).origin }
+    const response = await request.post("/api/tasks", { headers, data: {
+      title: "Check assignee availability", assigned_to: idFromHa,
+    } })
+    expect(response.status()).toBe(201)
+    const { id } = await response.json()
+    const olderUser = { id: "ha_old_account", name: "A cached Home Assistant user" }
+    const currentUser = { id: idFromHa, name: "Home Assistant housemate" }
+    let directoryMode: "verified" | "stale" | "failed" = "stale"
+    await page.route("**/api/users", route => {
+      if (directoryMode === "failed") return route.fulfill({ status: 503, json: { error: "Unavailable" } })
+      return route.fulfill({ json: {
+        users: directoryMode === "verified" ? [olderUser, currentUser] : [olderUser],
+        ha_connected: true, ha_roster_verified: directoryMode === "verified",
+      } })
+    })
+    const card = page.locator(`.kanban-card[data-id="${id}"]`)
+    const selected = page.locator("#td-assigned-to option:checked")
+    try {
+      await page.reload()
+      await expect(card.locator("[data-task-assignee]")).toHaveText("Home Assistant assignee not verified")
+      await card.locator(".card-open-btn").click()
+      await expect(selected).toHaveText("Home Assistant assignee not verified")
+      await expect(selected).toHaveAttribute("value", idFromHa)
+
+      directoryMode = "failed"
+      await page.goto("/tasks")
+      await expect(card.locator("[data-task-assignee]")).toHaveText("Could not load assignee")
+      const trigger = card.locator(".card-assign-btn")
+      await trigger.press("Enter")
+      const dialog = page.getByRole("dialog", { name: "Assign User" })
+      const retry = dialog.getByRole("button", { name: "Retry" })
+      await expect(retry).toBeFocused()
+      directoryMode = "stale"
+      await retry.press("Enter")
+      await expect(dialog).toContainText("Home Assistant assignee not verified")
+      await page.keyboard.press("Escape")
+      await expect(trigger).toBeFocused()
+
+      directoryMode = "verified"
+      await card.locator(".card-open-btn").click()
+      await expect(selected).toHaveText(currentUser.name)
+      await page.keyboard.press("Escape")
+      await expect(page.locator("#task-detail-overlay")).toBeHidden()
+
+      directoryMode = "failed"
+      await card.locator(".card-open-btn").click()
+      await expect(selected).toHaveText("Could not load assignee")
+      await expect(selected).toHaveAttribute("value", idFromHa)
+      await expect(page.locator(`#td-assigned-to option[value="${olderUser.id}"]`)).toHaveCount(0)
+    } finally {
+      await request.delete(`/api/tasks/${id}`, { headers })
+    }
+  })
+
   test("color saves keep focus on the card during the request and after refresh", async ({ page, request, baseURL }) => {
     const headers = { origin: new URL(baseURL!).origin }
     const created = await request.post("/api/tasks", { headers, data: { title: "Color focus regression", priority: 2 } })
@@ -196,7 +253,7 @@ test.describe("Tasks Shell (Kanban)", () => {
     }
   })
 
-  test("quick actions stay below card details on narrow screens and reveal on desktop", async ({ page, request, baseURL }) => {
+  test("quick actions stay reachable below card details at narrow and desktop widths", async ({ page, request, baseURL }) => {
     const title = "Kanban fixture with a long household task title that wraps onto multiple lines"
     const headers = { origin: new URL(baseURL!).origin }
     const response = await request.post("/api/tasks", {
@@ -233,8 +290,8 @@ test.describe("Tasks Shell (Kanban)", () => {
 
       await page.setViewportSize({ width: 1440, height: 900 })
       await page.mouse.move(0, 0)
-      await expect(actions).toHaveCSS("opacity", "0")
-      await expect(actions).toHaveCSS("pointer-events", "none")
+      await expect(actions).toHaveCSS("opacity", "1")
+      await expect(actions).toHaveCSS("pointer-events", "auto")
       await card.locator(".card-open-btn").focus()
       await page.keyboard.press("Tab")
       const more = card.getByRole("button", { name: `Task actions for ${title}` })
@@ -243,7 +300,7 @@ test.describe("Tasks Shell (Kanban)", () => {
       await expect(actions).toHaveCSS("pointer-events", "auto")
       await expect.poll(hasRoom).toBe(true)
       await more.blur()
-      await expect(actions).toHaveCSS("opacity", "0")
+      await expect(actions).toHaveCSS("opacity", "1")
       await card.hover()
       await expect(actions).toHaveCSS("opacity", "1")
     } finally {

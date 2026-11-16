@@ -1,0 +1,141 @@
+import { expect, test } from "@playwright/test"
+
+test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the disposable Meitheal browser fixture")
+
+test("Knight Rider persists and fills active work and task colors on Today and Board", async ({ page, request }, testInfo) => {
+  await page.emulateMedia({ colorScheme: "light", reducedMotion: "reduce" })
+  const dueDate = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Dublin", dateStyle: "short" }).format(new Date())
+  async function create(title: string, status: string, color?: string): Promise<string> {
+    const response = await request.post("/api/tasks", { data: { title, due_date: dueDate, status, color, priority: color ? 3 : 1 } })
+    expect(response.status()).toBe(201)
+    return (await response.json()).id
+  }
+
+  const activeId = await create("Review the household plan", "active")
+  const coloredId = await create("Update automation notes", "pending", "#21a366")
+  const idleId = await create("Review design feedback", "pending")
+  const paleId = await create("Prime the new workshop controller", "active", "#fff")
+  const themeSelect = page.locator("#theme-select")
+  const root = page.locator("html")
+  const themeColor = page.locator('meta[name="theme-color"]')
+  const accent = page.locator("#accent-color-custom")
+
+  try {
+    await page.goto("/settings#look-and-feel-settings")
+    await expect(themeSelect).toBeEnabled()
+    await expect(themeSelect.locator('option[value="dark"]')).toHaveText("Emerald Isle")
+    await themeSelect.selectOption("knight-rider")
+    await expect(root).toHaveAttribute("data-theme", "knight-rider")
+    await expect(root).toHaveCSS("color-scheme", "dark")
+    await expect(themeColor).toHaveAttribute("content", "#131314")
+    await expect(accent).toHaveValue("#6495ed")
+    const persisted = await request.get("/api/settings?key=theme")
+    expect((await persisted.json()).value).toBe("knight-rider")
+    await page.reload()
+    await expect(themeSelect).toHaveValue("knight-rider")
+    await expect(root).toHaveAttribute("data-theme", "knight-rider")
+
+    await page.locator('.accent-swatch[data-color="#f59e0b"]').click()
+    await expect(accent).toHaveValue("#f59e0b")
+    await page.locator("#accent-reset").click()
+    await expect(accent).toHaveValue("#6495ed")
+
+    await page.evaluate(() => {
+      document.addEventListener("astro:after-swap", () => { sessionStorage.setItem("knight-swap", "yes") }, { once: true })
+    })
+    await page.locator('#sidebar a[href="/today"]').first().click()
+    await expect.poll(() => page.evaluate(() => sessionStorage.getItem("knight-swap"))).toBe("yes")
+    await expect(root).toHaveAttribute("data-theme", "knight-rider")
+    await expect(page.locator("body")).toHaveCSS("background-color", "rgb(19, 19, 20)")
+
+    const active = page.locator(`.tli[data-id="${activeId}"]`)
+    const colored = page.locator(`.tli[data-id="${coloredId}"]`)
+    const idle = page.locator(`.tli[data-id="${idleId}"]`)
+    await expect(active).toBeVisible()
+    await expect(active).toHaveCSS("border-bottom-color", "rgb(255, 94, 146)")
+    await expect(active).toHaveCSS("background-color", "rgb(89, 53, 65)")
+    await expect(idle).toHaveCSS("background-color", /(?:transparent|0\s*\))/)
+    await expect(colored.locator(".tli__color")).toBeHidden()
+    expect(await colored.evaluate(el => getComputedStyle(el).backgroundColor))
+      .not.toBe(await idle.evaluate(el => getComputedStyle(el).backgroundColor))
+    await expect(page.locator(`.focus-card[data-id="${activeId}"] .status-badge`)).toHaveText("In Progress")
+    await expect(page.locator(`.focus-card[data-id="${activeId}"]`)).toHaveCSS("background-color", "rgb(89, 53, 65)")
+    const contrast = await page.evaluate(({ activeId, paleId }) => {
+      const ctx = document.createElement("canvas").getContext("2d")!
+      const luminance = (color: string) => {
+        ctx.clearRect(0, 0, 1, 1)
+        ctx.fillStyle = color
+        ctx.fillRect(0, 0, 1, 1)
+        const [red, green, blue] = Array.from(ctx.getImageData(0, 0, 1, 1).data, value => {
+          const n = value / 255
+          return n <= 0.04045 ? n / 12.92 : ((n + 0.055) / 1.055) ** 2.4
+        })
+        return 0.2126 * red! + 0.7152 * green! + 0.0722 * blue!
+      }
+      const measure = (surface: HTMLElement, control: HTMLElement, property: string) => {
+        const fill = luminance(getComputedStyle(surface).backgroundColor)
+        const boundary = luminance(getComputedStyle(control).getPropertyValue(property))
+        return (Math.max(fill, boundary) + 0.05) / (Math.min(fill, boundary) + 0.05)
+      }
+      const row = (id: string) => document.querySelector<HTMLElement>(`#today-due-list .tli[data-id="${CSS.escape(id)}"]`)!
+      const focus = document.querySelector<HTMLElement>(`.focus-card[data-id="${CSS.escape(activeId)}"]`)!
+      return [row(activeId), row(paleId)].map(surface =>
+        measure(surface, surface.querySelector(".tli__checkbox")!, "outline-color"),
+      ).concat(measure(focus, focus.querySelector(".focus-card__complete")!, "border-top-color"))
+    }, { activeId, paleId })
+    for (const ratio of contrast) expect(ratio).toBeGreaterThanOrEqual(3)
+    await testInfo.attach("active-control-contrast", { body: JSON.stringify(contrast), contentType: "application/json" })
+    await page.locator("#section-today").scrollIntoViewIfNeeded()
+    await page.screenshot({ path: testInfo.outputPath("knight-rider-today-desktop.png"), animations: "disabled" })
+
+    await page.setViewportSize({ width: 390, height: 844 })
+    await active.scrollIntoViewIfNeeded()
+    await expect(active).toBeVisible()
+    await expect(active).toHaveCSS("border-bottom-color", "rgb(255, 94, 146)")
+    await page.screenshot({ path: testInfo.outputPath("knight-rider-today-mobile.png"), animations: "disabled" })
+
+    await expect(active.locator(".tli__title-text")).toHaveCSS("white-space", "normal")
+    const completed = active.locator(".tli__checkbox")
+    await page.route(`**/api/tasks/${activeId}`, route =>
+      route.request().method() === "PUT" ? route.fulfill({ status: 503 }) : route.continue(), { times: 1 })
+    await completed.click()
+    await expect(completed).not.toBeChecked()
+    await expect(active.locator(".status-badge")).toHaveText("In Progress")
+    await completed.click()
+    await expect(active).not.toHaveAttribute("data-work-active", "")
+    await expect(active.locator(".status-badge")).toHaveText("Done")
+    await completed.click()
+    await expect(active.locator(".status-badge")).toHaveText("Todo")
+    expect((await request.put(`/api/tasks/${activeId}`, { data: { status: "active" } })).ok()).toBe(true)
+
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await page.goto("/tasks#kanban")
+    const card = (id: string) => page.locator(`.kanban-card[data-id="${id}"]`)
+    await expect(card(activeId)).toHaveCSS("background-color", "rgb(89, 53, 65)")
+    await expect(card(coloredId)).toHaveCSS("border-inline-start-width", "1px")
+    await expect(card(idleId)).toHaveCSS("background-color", "rgb(36, 36, 36)")
+    expect(await card(coloredId).evaluate(el => getComputedStyle(el).backgroundColor))
+      .not.toBe(await card(idleId).evaluate(el => getComputedStyle(el).backgroundColor))
+    await expect(card(paleId)).toHaveCSS("border-bottom-color", "rgb(255, 94, 146)")
+    expect(await card(paleId).evaluate(el => getComputedStyle(el).backgroundColor)).not.toBe("rgb(89, 53, 65)")
+    await page.mouse.move(0, 0)
+    await card(activeId).locator(".card-open-btn").focus()
+    await expect(card(activeId)).toHaveCSS("outline-color", "rgb(166, 192, 249)")
+    await page.screenshot({ path: testInfo.outputPath("knight-rider-board.png"), animations: "disabled" })
+    await page.emulateMedia({ contrast: "more" })
+    await expect.poll(() => root.evaluate(el => getComputedStyle(el).getPropertyValue("--text-muted").trim())).toBe("rgb(215 213 220)")
+    await expect.poll(() => root.evaluate(el => getComputedStyle(el).getPropertyValue("--border").trim())).toBe("rgb(119 119 123)")
+    await page.emulateMedia({ contrast: "no-preference" })
+
+    await page.goto("/settings#look-and-feel-settings")
+    await themeSelect.selectOption("dark")
+    await expect(root).toHaveAttribute("data-theme", "dark")
+    await page.goto("/tasks#kanban")
+    await expect(card(activeId)).toHaveCSS("background-color", "rgb(29, 33, 31)")
+    await expect(card(coloredId)).toHaveCSS("border-inline-start-width", "3px")
+    await expect(card(coloredId)).toHaveCSS("border-inline-start-color", "rgb(33, 163, 102)")
+  } finally {
+    for (const id of [activeId, coloredId, idleId, paleId]) await request.delete(`/api/tasks/${id}`)
+    await request.put("/api/settings", { data: { key: "theme", value: "dark" } })
+  }
+})

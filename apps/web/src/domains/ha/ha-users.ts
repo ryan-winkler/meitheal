@@ -42,6 +42,7 @@ export interface MeithealUser {
 
 let cachedUsers: HAUser[] | null = null;
 let cacheTimestamp = 0;
+let cachedRosterVerified = false;
 const CACHE_TTL_MS = 60_000; // 60s
 
 function sanitizeHAUserName(value: unknown): string {
@@ -63,10 +64,10 @@ function sanitizeHAUserName(value: unknown): string {
  * List HA users via WebSocket `config/auth/list`.
  * Cached for 60s. Returns [] in standalone mode (no SUPERVISOR_TOKEN).
  */
-export async function listHAUsers(): Promise<HAUser[]> {
+export async function listHAUserDirectory(): Promise<{ users: HAUser[]; verified: boolean }> {
   const now = Date.now();
   if (cachedUsers && (now - cacheTimestamp) < CACHE_TTL_MS) {
-    return cachedUsers;
+    return { users: cachedUsers, verified: cachedRosterVerified };
   }
 
   const conn = await getHAConnection();
@@ -74,7 +75,8 @@ export async function listHAUsers(): Promise<HAUser[]> {
     // Standalone mode — no HA connection available
     cachedUsers = [];
     cacheTimestamp = now;
-    return [];
+    cachedRosterVerified = false;
+    return { users: cachedUsers, verified: false };
   }
 
   try {
@@ -83,7 +85,8 @@ export async function listHAUsers(): Promise<HAUser[]> {
     });
 
     // Filter out system-generated accounts (e.g. homeassistant, supervisor)
-    const users = (result ?? []).filter(
+    if (!Array.isArray(result)) throw new Error("Invalid Home Assistant user directory")
+    const users = result.filter(
       (u) => !((u as unknown as Record<string, unknown>).system_generated) && u.is_active
     ).map((u) => ({
       ...u,
@@ -94,21 +97,26 @@ export async function listHAUsers(): Promise<HAUser[]> {
 
     cachedUsers = users;
     cacheTimestamp = now;
+    cachedRosterVerified = true;
 
     logger.log("info", {
       event: "ha.users.discovered", domain: "ha", component: "ha-users",
       request_id: SYS_REQ, message: `Discovered ${users.length} HA user(s)`,
     });
 
-    return users;
+    return { users, verified: true };
   } catch (err) {
     logger.log("error", {
       event: "ha.users.discovery_failed", domain: "ha", component: "ha-users",
       request_id: SYS_REQ, message: `Failed to list HA users: ${err}`,
     });
     // Return cached if available, otherwise empty
-    return cachedUsers ?? [];
+    return { users: cachedUsers ?? [], verified: false };
   }
+}
+
+export async function listHAUsers(): Promise<HAUser[]> {
+  return (await listHAUserDirectory()).users;
 }
 
 /**
@@ -117,6 +125,7 @@ export async function listHAUsers(): Promise<HAUser[]> {
 export function invalidateUserCache(): void {
   cachedUsers = null;
   cacheTimestamp = 0;
+  cachedRosterVerified = false;
 }
 
 /** Resolve a display name without waiting for a live Home Assistant call. */

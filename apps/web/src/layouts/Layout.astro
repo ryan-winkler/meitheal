@@ -21,6 +21,7 @@ import JsonLd from "../components/seo/JsonLd.astro";
 import { APPEARANCE_PREFERENCES, APPEARANCE_STORAGE_KEY } from "../lib/appearance-preferences"
 import { applyPersonalAccent } from "../lib/accent-colors"
 import { canManageSystemSettings } from "../lib/settings-security"
+import { THEME_MODES } from "../lib/theme-mode"
 
 import geistWoff2 from '@fontsource-variable/geist/files/geist-latin-wght-normal.woff2?url';
 
@@ -310,9 +311,10 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
       })();
     </script>
 
+    <meta name="theme-color" content="#10231b" />
     <!-- Restore appearance before a full load or an Astro document swap. -->
     <script is:inline set:html={`window.__meithealApplyAccent = ${applyPersonalAccent.toString()};`} />
-    <script is:inline define:vars={{ APPEARANCE_PREFERENCES, APPEARANCE_STORAGE_KEY }}>
+    <script is:inline define:vars={{ APPEARANCE_PREFERENCES, APPEARANCE_STORAGE_KEY, THEME_MODES }}>
       (function () {
         function restoreAppearance(doc) {
           function stored(key) {
@@ -320,7 +322,11 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
           }
           var theme = stored("meitheal-theme");
           var root = doc.documentElement;
-          root.dataset.theme = theme === "custom" ? "dark" : ["light", "dark"].includes(theme) ? theme : "auto";
+          root.dataset.theme = theme === "custom" ? "dark" : THEME_MODES.includes(theme) ? theme : "auto";
+          if (theme === "knight-rider") {
+            root.classList.add("dark");
+            doc.querySelector('meta[name="theme-color"]')?.setAttribute("content", "#131314");
+          }
           var appearance;
           try {
             appearance = JSON.parse(stored(APPEARANCE_STORAGE_KEY) ?? "{}");
@@ -332,8 +338,10 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
           if (doc.body) {
             var desktopSidebar = innerWidth > 768 && root.dataset.appearanceNavigation !== "navbar";
             var sidebarMode = root.dataset.appearanceSidebar;
+            var rememberedSidebar = stored("meitheal_sidebar_collapsed");
             var collapsed = desktopSidebar && (["folded", "hover"].includes(sidebarMode)
-              || (sidebarMode === "remember" && stored("meitheal_sidebar_collapsed") === "true"));
+              || (sidebarMode === "remember" && (rememberedSidebar === "true"
+                || (rememberedSidebar === null && theme === "knight-rider"))));
             doc.body.classList.toggle("sidebar-collapsed", collapsed);
           }
           var accent = stored("meitheal-accent-color");
@@ -417,7 +425,6 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
       crossorigin="use-credentials"
     />
     <link rel="apple-touch-icon" href="/icon-192.png" />
-    <meta name="theme-color" content="#10231b" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta
       name="apple-mobile-web-app-status-bar-style"
@@ -518,7 +525,10 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
         var desktopSidebar = innerWidth > 768 && appearance.appearanceNavigation !== "navbar";
         var collapsed = desktopSidebar && ["folded", "hover"].includes(appearance.appearanceSidebar);
         if (desktopSidebar && appearance.appearanceSidebar === "remember") {
-          try { collapsed = localStorage.getItem("meitheal_sidebar_collapsed") === "true"; } catch {}
+          try {
+            var remembered = localStorage.getItem("meitheal_sidebar_collapsed");
+            collapsed = remembered === "true" || (remembered === null && appearance.theme === "knight-rider");
+          } catch {}
         }
         document.body.classList.toggle("sidebar-collapsed", collapsed);
       })();

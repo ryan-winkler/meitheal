@@ -120,6 +120,80 @@ test.describe("Tasks Shell (Timeline/GANTT)", () => {
     }
   })
 
+  test("phone Timeline discloses filters and the task pane without crowding the chart", async ({ page, request, baseURL }) => {
+    const title = "Phone Timeline milestone " + crypto.randomUUID()
+    const date = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10)
+    const headers = { origin: new URL(baseURL!).origin }
+    const response = await request.post("/api/tasks", { headers, data: {
+      title, start_date: date, due_date: date, color: "#000044",
+    } })
+    expect(response.status(), await response.text()).toBe(201)
+    const { id } = await response.json()
+
+    try {
+      await page.setViewportSize({ width: 320, height: 780 })
+      await page.goto(`/tasks?view=timeline&search=${encodeURIComponent(title)}#timeline`)
+      const disclosure = page.getByRole("button", { name: "Filters Active" })
+      const toolbar = page.locator("#timeline-filter-bar")
+      const paneToggle = page.getByRole("button", { name: "Task pane" })
+      const pane = page.locator("#timeline-task-pane")
+      const chart = page.locator("#gantt-chart")
+      const milestone = chart.locator(`.gantt-milestone[data-task-id="${id}"] polygon`)
+      await expect(disclosure).toHaveAttribute("aria-expanded", "false")
+      await expect(toolbar).toBeHidden()
+      await expect(paneToggle).toHaveAttribute("aria-expanded", "false")
+      await expect(pane).toBeHidden()
+      await expect(chart).toBeInViewport()
+      expect((await paneToggle.boundingBox())?.height).toBeGreaterThanOrEqual(44)
+      expect((await chart.locator(".gantt-scroll-wrapper").boundingBox())?.width).toBeGreaterThan(240)
+
+      await disclosure.press("Enter")
+      await page.keyboard.press("Tab")
+      const search = toolbar.getByRole("textbox", { name: "Filter by text" })
+      await expect(search).toBeFocused()
+      await expect(search).toHaveValue(title)
+      await page.keyboard.press("Escape")
+      await expect(disclosure).toBeFocused()
+      await expect(toolbar).toBeHidden()
+
+      await paneToggle.press("Enter")
+      await expect(paneToggle).toHaveAttribute("aria-expanded", "true")
+      await expect(pane).toBeVisible()
+      await page.reload()
+      await expect(paneToggle).toHaveAttribute("aria-expanded", "true")
+      await expect(pane).toBeVisible()
+
+      for (const theme of ["light", "dark", "knight-rider", "auto", "custom"]) {
+        await page.evaluate(mode => { localStorage.setItem("meitheal-theme", mode) }, theme)
+        await page.reload()
+        await expect(milestone).toHaveCSS("fill", "rgb(0, 0, 68)")
+        const contrast = await milestone.evaluate(polygon => {
+          const canvas = document.createElement("canvas")
+          const context = canvas.getContext("2d")
+          if (!context) throw new Error("Canvas unavailable")
+          function luminance(color: string) {
+            context!.fillStyle = color
+            context!.fillRect(0, 0, 1, 1)
+            const rgb = Array.from(context!.getImageData(0, 0, 1, 1).data.slice(0, 3)).map(value => {
+              const channel = value / 255
+              return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4
+            })
+            return (rgb[0] ?? 0) * 0.2126 + (rgb[1] ?? 0) * 0.7152 + (rgb[2] ?? 0) * 0.0722
+          }
+          const stroke = luminance(getComputedStyle(polygon).stroke)
+          return Array.from(polygon.closest("svg")?.querySelectorAll("#gantt-col-grid rect") ?? [], rect => {
+            const fill = luminance(getComputedStyle(rect).fill)
+            return (Math.max(stroke, fill) + 0.05) / (Math.min(stroke, fill) + 0.05)
+          })
+        })
+        expect(contrast.length).toBeGreaterThanOrEqual(2)
+        expect(Math.min(...contrast), theme).toBeGreaterThanOrEqual(3)
+      }
+    } finally {
+      await request.delete(`/api/tasks/${id}`, { headers })
+    }
+  })
+
   test("native GANTT sidebar renders task labels", async ({ page }) => {
     const isEmpty = await page.locator("#timeline-empty").isVisible()
 

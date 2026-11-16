@@ -1367,6 +1367,14 @@ paths:
             format: date
           description: Match the household calendar day (date-only, floating datetime, or zoned ISO timestamp in the configured
             household timezone). Invalid dates return 400.
+        - name: calendar_filters
+          in: query
+          schema:
+            type: string
+            maxLength: 20000
+          description: Optional Calendar view query string applied to due_date results before pagination. When present, including
+            when empty, archived tasks are excluded. Includes search, status, priority, area, user, types, task_type,
+            labels, promoted, rice, and advancedFilter.
         - name: parent_id
           in: query
           schema:
@@ -1448,7 +1456,21 @@ paths:
       tags:
         - Tasks
       summary: Get the Today page task counters
-      description: Returns counts over the full task database using the Today page rules. No task rows are returned.
+      description: Returns counts over the full task database using the Today page rules. The optional completed=1 parameter
+        also returns up to 20 completed task summaries for the household day.
+      parameters:
+        - name: completed
+          in: query
+          schema:
+            type: string
+            enum:
+              - "1"
+        - name: expected_day
+          in: query
+          schema:
+            type: string
+            format: date
+          description: Household day shown by the caller. A rollover returns 409.
       responses:
         "200":
           description: Today counters
@@ -1479,7 +1501,23 @@ paths:
                     type: integer
                     minimum: 0
                     maximum: 100
+                  completedTasks:
+                    type: array
+                    maxItems: 20
+                    items:
+                      type: object
+                      required:
+                        - id
+                        - title
+                      properties:
+                        id:
+                          type: string
+                        title:
+                          type: string
+                      additionalProperties: false
                 additionalProperties: false
+        "409":
+          description: The household day changed
         "503":
           description: Today counters unavailable
           content:
@@ -2035,8 +2073,15 @@ paths:
       operationId: clearCompletedTasks
       tags:
         - Tasks
-      summary: Archive all completed tasks
-      description: Moves all tasks with status 'complete' to 'archived'. Use this in daily/weekly cleanup automations.
+      summary: Archive tasks completed on the household day
+      description: Moves tasks counted as completed today by Today to the archived status. Returns the number changed.
+      parameters:
+        - name: expected_day
+          in: query
+          schema:
+            type: string
+            format: date
+          description: Household day the caller reviewed. A rollover returns 409 without changing any tasks.
       responses:
         "200":
           description: Count of archived tasks
@@ -2044,10 +2089,19 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                  - ok
+                  - cleared
                 properties:
-                  archived:
+                  ok:
+                    type: boolean
+                  cleared:
                     type: integer
+                  message:
+                    type: string
                 additionalProperties: false
+        "409":
+          description: The household day changed
   /api/tasks/delete-completed:
     get:
       operationId: previewDeleteCompletedTasks
@@ -5639,7 +5693,8 @@ paths:
       tags:
         - Users
       summary: List all users (HA + custom)
-      description: Returns users from Home Assistant integration combined with any custom-defined users.
+      description: Returns Home Assistant and custom users. ha_roster_verified indicates whether the Home Assistant roster is
+        verified and can distinguish an absent user from an unavailable roster.
       responses:
         "200":
           description: User list
@@ -6075,6 +6130,14 @@ paths:
       tags:
         - HomeAssistant
       summary: List HA calendar entities
+      parameters:
+        - name: configured
+          in: query
+          schema:
+            type: integer
+            enum:
+              - 1
+          description: Return only configured calendar entity IDs in the entities array.
       responses:
         "200":
           description: Calendars

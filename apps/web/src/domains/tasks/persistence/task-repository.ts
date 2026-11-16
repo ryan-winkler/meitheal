@@ -227,6 +227,12 @@ export interface AreaInfo {
   color: string;
 }
 
+export type CalendarFilterRow = Pick<TaskRow,
+  "status" | "title" | "priority" | "task_type" | "task_kind" | "area_id" | "assigned_to" |
+  "is_promoted" | "labels" | "due_date" | "framework_payload">
+
+const CALENDAR_FILTER_COLUMNS = "status, title, priority, task_type, task_kind, area_id, assigned_to, is_promoted, labels, framework_payload"
+
 /** Calendar day task aggregate */
 export interface CalendarDayInfo {
   dueDate: string;
@@ -727,23 +733,24 @@ export class TaskRepository {
     monthStart: string,
     monthEnd: string,
     timezone = "Europe/Dublin",
+    options: { matches?: ((task: CalendarFilterRow) => boolean) | undefined; includeCompleted?: boolean } = {},
   ): Promise<Record<string, CalendarDayInfo>> {
     const lowerBound = shiftCalendarDay(monthStart, -2);
     const upperBound = shiftCalendarDay(monthEnd, 2);
     const result = await this.client.execute({
-      sql: `SELECT due_date, color
+      sql: `SELECT due_date, color${options.matches ? `, ${CALENDAR_FILTER_COLUMNS}` : ""}
             FROM tasks
-            WHERE due_date IS NOT NULL AND due_date <> ''
+            WHERE due_date IS NOT NULL AND due_date <> '' AND status <> 'archived'
               AND substr(due_date, 1, 10) >= ? AND substr(due_date, 1, 10) <= ?
-              AND status NOT IN (?)`,
-      args: [lowerBound, upperBound, STATUS.COMPLETE],
+              ${options.includeCompleted ? "" : "AND status NOT IN (?)"}`,
+      args: options.includeCompleted ? [lowerBound, upperBound] : [lowerBound, upperBound, STATUS.COMPLETE],
     });
 
     const tasksByDay: Record<string, CalendarDayInfo> = {};
     for (const row of result.rows) {
-      const r = row as Record<string, unknown>;
+      const r = row as unknown as CalendarFilterRow & { color: string | null };
       const day = calendarDayFromInput(String(r.due_date ?? ""), timezone);
-      if (!day || day < monthStart || day > monthEnd) continue;
+      if (!day || day < monthStart || day > monthEnd || (options.matches && !options.matches(r))) continue;
       const existing = tasksByDay[day] ?? {
         dueDate: day,
         count: 0,
@@ -1089,16 +1096,18 @@ export class TaskRepository {
     }
   }
 
-  /** List tasks with optional filters, pagination, and sorting. */
-  async findDeferredPage(requestedPage: number): Promise<{
+  /** List deferred tasks within the selected Area or across all Areas. */
+  async findDeferredPage(requestedPage: number, areaId = ""): Promise<{
     page: number
     total: number
     tasks: Array<DeferralState & Pick<TaskRow, "title" | "project_id" | "ticket_number"> & { automatic: boolean }>
   }> {
     const page = Number.isSafeInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1
+    const scope = areaId ? " AND area_id = ?" : ""
+    const areaArgs = areaId ? [areaId] : []
     const { rows } = await this.client.execute({
       sql: `WITH totals AS (
-              SELECT COUNT(*) AS total FROM tasks WHERE deferred_at IS NOT NULL
+              SELECT COUNT(*) AS total FROM tasks WHERE deferred_at IS NOT NULL${scope}
             ), bounds AS (
               SELECT total, MAX(1, MIN(?, (total + 24) / 25)) AS page FROM totals
             ), items AS (
@@ -1107,14 +1116,14 @@ export class TaskRepository {
                      COALESCE((SELECT actor = '${inactivityRuleActor}' AND actor_type = 'system'
                       FROM task_activity_log WHERE task_id = tasks.id AND field = 'deferred_at'
                         AND new_value = CAST(tasks.deferred_at AS TEXT) ORDER BY id DESC LIMIT 1), 0) AS automatic
-              FROM tasks WHERE deferred_at IS NOT NULL
+              FROM tasks WHERE deferred_at IS NOT NULL${scope}
               ORDER BY deferred_at DESC, id ASC
               LIMIT 25 OFFSET (SELECT (page - 1) * 25 FROM bounds)
             )
             SELECT bounds.total, bounds.page, items.*
             FROM bounds LEFT JOIN items ON TRUE
             ORDER BY items.deferred_at DESC, items.id ASC`,
-      args: [page],
+      args: [...areaArgs, page, ...areaArgs],
     })
     return {
       page: Number(rows[0]?.page ?? 1),
@@ -1130,6 +1139,7 @@ export class TaskRepository {
     status?: string;
     dueDate?: string | undefined;
     timezone?: string | undefined;
+    matchDueTask?: ((task: CalendarFilterRow) => boolean) | undefined;
     priority?: number;
     areaId?: string;
     projectId?: string;
@@ -1194,8 +1204,11 @@ export class TaskRepository {
       const snapshot = await this.client.transaction("read")
       try {
         const tz = opts.timezone || "Europe/Dublin"
-        const candidates = await snapshot.execute({ sql: `SELECT id, due_date FROM tasks${where} ${ordering}`, args })
-        const ids = candidates.rows.filter(row => calendarDayFromInput(String(row.due_date), tz) === opts.dueDate)
+        const filterProjection = opts.matchDueTask ? `, ${CALENDAR_FILTER_COLUMNS}` : ""
+        const candidates = await snapshot.execute({ sql: `SELECT id, due_date${filterProjection} FROM tasks${where} ${ordering}`, args })
+        const matches = opts.matchDueTask
+        const ids = candidates.rows.filter(row => calendarDayFromInput(String(row.due_date), tz) === opts.dueDate &&
+          (!matches || matches(row as unknown as CalendarFilterRow)))
         const page = ids.slice(offset, offset + limit)
         if (page.length === 0) return { tasks: [], total: ids.length }
         const result = await snapshot.execute({

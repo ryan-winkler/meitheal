@@ -46,6 +46,7 @@
     "dompurify": "^3.4.17",
     "home-assistant-js-websocket": "^9.8.1",
     "marked": "^18.2.0",
+    "parse5": "8.1.1",
     "parse5-html-rewriting-stream": "8.1.1",
     "sanitize-html": "^2.18.1",
     "undici": "^8.12.4",

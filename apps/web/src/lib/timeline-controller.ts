@@ -108,6 +108,7 @@ const BAR_Y_PAD = (ROW_HEIGHT - BAR_HEIGHT) / 2
 const HEADER_HEIGHT = 56
 const BAR_RADIUS = 6
 const BASE_SIDEBAR_WIDTH = 200
+const SIDEBAR_PREFERENCE_KEY = "meitheal-gantt-show-sidebar"
 const FIELD_COL_WIDTH = 80
 const ZOOM_KEY = "meitheal-timeline-zoom"
 const SCROLL_KEY_PREFIX = "meitheal-timeline-scroll-"
@@ -124,10 +125,6 @@ function sidebarWidth(): number {
 }
 
 let showSidebar = true
-try {
-  const sidebarStored = typeof window !== "undefined" ? localStorage.getItem("meitheal-gantt-show-sidebar") : null
-  if (sidebarStored === "false") showSidebar = false
-} catch { /* ignore */ }
 
 const PRIORITY_COLOURS: Record<number, string> = {
   1: "#EF4444", // P1 — urgent red
@@ -1004,6 +1001,7 @@ function renderGantt(
 
   // Sidebar (fixed left) — hidden via display:none when toggle is off
   const sidebar = document.createElement("div")
+  sidebar.id = "timeline-task-pane"
   sidebar.className = "gantt-sidebar"
   sidebar.style.cssText = `
     flex:0 0 auto;width:${sidebarWidth()}px;
@@ -1895,9 +1893,10 @@ function renderGantt(
         svgEl("polygon", {
           points: `${mx},${my - ms} ${mx + ms},${my} ${mx},${my + ms} ${mx - ms},${my}`,
           fill: bar.colour,
-          opacity: bar.isComplete ? 0.4 : 1,
-          stroke: bar.isOverdue ? "var(--accent-danger, #ef4444)" : "none",
-          "stroke-width": bar.isOverdue ? 2 : 0,
+          "fill-opacity": bar.isComplete ? 0.4 : 1,
+          stroke: bar.isOverdue ? "var(--danger-text, var(--text-secondary))" : "var(--text-secondary)",
+          "stroke-width": bar.isOverdue ? 2 : 1.5,
+          "vector-effect": "non-scaling-stroke",
         }),
       )
 
@@ -2711,7 +2710,7 @@ export function initTimelineController(signal: AbortSignal) {
   const emptyState = document.getElementById("timeline-empty")
   const skeleton = document.getElementById("timeline-skeleton")
 
-  if (!container || !dataEl) return
+  if (!container || !dataEl || container.dataset.timelineReady === "true") return
 
   let tasks: TimelineTask[] = []
   try {
@@ -2721,6 +2720,7 @@ export function initTimelineController(signal: AbortSignal) {
     return
   }
 
+  container.dataset.timelineReady = "true"
   const { dated: allBars, undated: allUndated } = mapTasks(tasks)
 
   // Load area name lookup from SSR data
@@ -2800,6 +2800,7 @@ export function initTimelineController(signal: AbortSignal) {
           }
         }
       }
+      sidebarToggle?.removeAttribute("aria-controls")
       container!.style.display = "none"
       return
     }
@@ -2807,6 +2808,7 @@ export function initTimelineController(signal: AbortSignal) {
     if (emptyState) emptyState.style.display = "none"
     container!.style.display = "flex"
     renderGantt(container!, bars, zoom, signal, undated, currentFilter.groupBy)
+    sidebarToggle?.setAttribute("aria-controls", "timeline-task-pane")
 
     // Update signal bar count — P8: aria-live for screen readers
     const countEl = document.querySelector("#tasks-view-timeline .signal-bar span")
@@ -2825,7 +2827,27 @@ export function initTimelineController(signal: AbortSignal) {
   const validZooms: ZoomLevel[] = ["Day", "Week", "Month"]
   let currentZoom: ZoomLevel = savedZoom && validZooms.includes(savedZoom) ? savedZoom : "Week"
 
+  const sidebarToggle = document.getElementById("timeline-sidebar-toggle")
+  const phoneViewport = window.matchMedia("(max-width: 640px)")
+  let sidebarPreference: boolean | undefined
+  try {
+    const saved = localStorage.getItem(SIDEBAR_PREFERENCE_KEY)
+    if (saved === "true" || saved === "false") sidebarPreference = saved === "true"
+  } catch { /* ignore */ }
+
+  function syncSidebar() {
+    showSidebar = sidebarPreference ?? !phoneViewport.matches
+    sidebarToggle?.setAttribute("aria-expanded", String(showSidebar))
+  }
+
+  phoneViewport.addEventListener("change", () => {
+    if (sidebarPreference !== undefined) return
+    syncSidebar()
+    doRender(currentZoom)
+  }, { signal })
+
   // Initial render
+  syncSidebar()
   doRender(currentZoom)
 
   // Wire zoom dropdown (custom <details> dropdown instead of <select>)
@@ -2875,15 +2897,12 @@ export function initTimelineController(signal: AbortSignal) {
     }, { signal })
   })
 
-  // Wire sidebar toggle button (⊞)
-  const sidebarToggle = document.getElementById("timeline-sidebar-toggle")
-  if (sidebarToggle) {
-    sidebarToggle.addEventListener("click", () => {
-      showSidebar = !showSidebar
-      try { localStorage.setItem("meitheal-gantt-show-sidebar", String(showSidebar)) } catch { /* ignore */ }
-      doRender(currentZoom)
-    }, { signal })
-  }
+  sidebarToggle?.addEventListener("click", () => {
+    sidebarPreference = !showSidebar
+    try { localStorage.setItem(SIDEBAR_PREFERENCE_KEY, String(sidebarPreference)) } catch { /* ignore */ }
+    syncSidebar()
+    doRender(currentZoom)
+  }, { signal })
 
   // M6: Listen for zoom keyboard shortcut dispatches
   window.addEventListener("meitheal:timeline-zoom", ((e: CustomEvent) => {
@@ -2951,6 +2970,7 @@ export function initTimelineController(signal: AbortSignal) {
   signal.addEventListener("abort", () => {
     renderAbort?.abort() // M4: Clean up per-render listeners
     renderAbort = null
+    delete container.dataset.timelineReady
     container.replaceChildren()
     hideTooltip()
     clearToastTimers() // M3: Clean up toast timers

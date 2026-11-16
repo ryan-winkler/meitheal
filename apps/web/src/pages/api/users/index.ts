@@ -1,7 +1,7 @@
 import type { APIRoute } from "astro"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import { customUserKind, UserRepository } from "@domains/tasks"
-import { listHAUsers, type MeithealUser } from "@domains/ha"
+import { listHAUserDirectory, type MeithealUser } from "@domains/ha"
 
 /**
  * GET /api/users — Merged list of HA users + custom users.
@@ -12,7 +12,7 @@ export const GET: APIRoute = async () => {
   const repo = new UserRepository(getPersistenceClient())
 
   // Fetch HA users (auto-discovered, cached 60s)
-  const haUsers = await listHAUsers()
+  const { users: haUsers, verified } = await listHAUserDirectory()
   const haUserList: MeithealUser[] = haUsers.map((u) => ({
     id: `ha_${u.id}`,
     name: u.name,
@@ -43,6 +43,7 @@ export const GET: APIRoute = async () => {
   return new Response(JSON.stringify({
     users,
     ha_connected: haUsers.length > 0,
+    ha_roster_verified: verified,
     default_assignee: defaultAssignee,
   }), {
     status: 200,

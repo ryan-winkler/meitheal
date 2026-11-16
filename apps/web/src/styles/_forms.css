@@ -36,6 +36,15 @@
   box-shadow: 0 0 0 3px var(--accent-light, rgb(var(--accent-rgb) / 0.12));
 }
 
+[data-theme="knight-rider"] :is(.form-input, .form-select):focus {
+  border-color: var(--border-focus);
+  box-shadow: var(--focus-ring);
+}
+
+[data-theme="knight-rider"] :is(.form-input, .form-select):not(:focus):not([aria-invalid="true"]) {
+  border-color: var(--knight-control-border);
+}
+
 .form-input::placeholder {
   @apply text-text-muted;
   /* Keep guidance readable while typing; entered text replaces it naturally. */

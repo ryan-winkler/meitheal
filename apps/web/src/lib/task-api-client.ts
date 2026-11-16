@@ -22,6 +22,12 @@ import { safeFetch, type SafeFetchOptions } from "./safe-fetch"
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
+export interface AssigneeDirectory {
+  users: Array<{ id: string; name: string; display_name?: string; color?: string; kind?: string }>
+  ha_connected?: boolean
+  ha_roster_verified?: boolean
+}
+
 /** Fields accepted by PATCH /api/tasks/:id */
 export interface TaskPatchPayload {
   title?: string
@@ -433,9 +439,15 @@ export const taskApi = {
   // ── Users ─────────────────────────────────────────────────────────
 
   /** GET /api/users — list users */
-  async listUsers(): Promise<any[]> {
-    const res = await safeFetch("/api/users")
-    return (await parseResponse<any[]>(res)) ?? []
+  async listUserDirectory(signal?: AbortSignal): Promise<AssigneeDirectory> {
+    const res = await safeFetch("/api/users", signal ? { signal } : undefined)
+    const data = await parseResponse<AssigneeDirectory>(res)
+    if (!Array.isArray(data?.users)) throw new Error("Assignee directory unavailable")
+    return data
+  },
+
+  async listUsers(): Promise<AssigneeDirectory["users"]> {
+    return (await taskApi.listUserDirectory()).users
   },
 
   // ── Todo Sync ─────────────────────────────────────────────────────

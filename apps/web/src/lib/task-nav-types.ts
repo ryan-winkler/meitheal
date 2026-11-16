@@ -1,21 +1,21 @@
+import { parseTaskView, type TaskView } from "./task-view-route"
+
 export type TaskNavTypeId = "standard" | "shopping_item" | "checklist" | "calendar_event"
 
 export type TaskNavDisplayMode = "all" | "none" | "custom"
 
 export interface TaskNavTypeEntry {
   id: TaskNavTypeId
-  filterKind: "standard_action" | "shopping_item" | "checklist" | "calendar_event"
+  kind: "standard_action" | "shopping_item" | "checklist" | "calendar_event"
   label: string
-  shortLabel: string
-  href: string
-  icon: "inbox" | "shopping-cart" | "list-check" | "calendar-event"
+  icon: "checkbox" | "shopping-cart" | "list-check" | "calendar-event"
 }
 
 export interface TaskNavPrefs {
   mode: TaskNavDisplayMode
-  expanded: boolean
   visible: Record<TaskNavTypeId, boolean>
   pinned: TaskNavTypeId[]
+  pinnedViews: TaskView[]
 }
 
 export const TASK_NAV_PREFS_KEY = "meitheal-task-nav-prefs"
@@ -24,34 +24,26 @@ export const TASK_NAV_PREFS_EVENT = "meitheal:task-nav-prefs-changed"
 export const TASK_NAV_TYPES: readonly TaskNavTypeEntry[] = [
   {
     id: "standard",
-    filterKind: "standard_action",
-    label: "Standard Tasks",
-    shortLabel: "Tasks",
-    href: "/tasks?types=standard_action",
-    icon: "inbox",
+    kind: "standard_action",
+    label: "Task",
+    icon: "checkbox",
   },
   {
     id: "shopping_item",
-    filterKind: "shopping_item",
-    label: "Shopping",
-    shortLabel: "Shopping",
-    href: "/tasks?types=shopping_item",
+    kind: "shopping_item",
+    label: "Shopping list",
     icon: "shopping-cart",
   },
   {
     id: "checklist",
-    filterKind: "checklist",
-    label: "Checklists",
-    shortLabel: "Checklists",
-    href: "/tasks?types=checklist",
+    kind: "checklist",
+    label: "Checklist",
     icon: "list-check",
   },
   {
     id: "calendar_event",
-    filterKind: "calendar_event",
-    label: "Events",
-    shortLabel: "Events",
-    href: "/tasks?types=calendar_event",
+    kind: "calendar_event",
+    label: "Event",
     icon: "calendar-event",
   },
 ] as const
@@ -61,7 +53,6 @@ const VALID_TYPE_IDS = new Set<TaskNavTypeId>(TASK_NAV_TYPES.map((item) => item.
 export function defaultTaskNavPrefs(): TaskNavPrefs {
   return {
     mode: "all",
-    expanded: false,
     visible: {
       standard: true,
       shopping_item: true,
@@ -69,17 +60,8 @@ export function defaultTaskNavPrefs(): TaskNavPrefs {
       calendar_event: true,
     },
     pinned: [],
+    pinnedViews: [],
   }
-}
-
-export function normalizeTaskTypeFilterValue(value: string | null | undefined): string {
-  if (!value) return ""
-  const parts = value
-    .split(",")
-    .map((part) => part.trim())
-    .filter(Boolean)
-    .map((part) => (part === "standard" ? "standard_action" : part))
-  return Array.from(new Set(parts)).sort().join(",")
 }
 
 export function normalizeTaskNavPrefs(input: unknown): TaskNavPrefs {
@@ -88,8 +70,6 @@ export function normalizeTaskNavPrefs(input: unknown): TaskNavPrefs {
   const raw = input as Record<string, unknown>
   const mode: TaskNavDisplayMode =
     raw.mode === "all" || raw.mode === "none" || raw.mode === "custom" ? raw.mode : "all"
-  const expanded = typeof raw.expanded === "boolean" ? raw.expanded : defaults.expanded
-
   const visibleRaw = raw.visible && typeof raw.visible === "object" ? (raw.visible as Record<string, unknown>) : {}
   const visible: Record<TaskNavTypeId, boolean> = {
     standard: typeof visibleRaw.standard === "boolean" ? visibleRaw.standard : true,
@@ -102,7 +82,14 @@ export function normalizeTaskNavPrefs(input: unknown): TaskNavPrefs {
     ? Array.from(new Set(raw.pinned.filter((id): id is TaskNavTypeId => typeof id === "string" && VALID_TYPE_IDS.has(id as TaskNavTypeId))))
     : []
 
-  return { mode, expanded, visible, pinned }
+  const pinnedViews = Array.isArray(raw.pinnedViews)
+    ? [...new Set(raw.pinnedViews.flatMap(entry => {
+      const view = parseTaskView(typeof entry === "string" ? entry : null)
+      return view ? [view] : []
+    }))]
+    : []
+
+  return { mode, visible, pinned, pinnedViews }
 }
 
 export function readTaskNavPrefs(): TaskNavPrefs {
@@ -142,7 +129,6 @@ export function setTaskNavMode(prefs: TaskNavPrefs, mode: TaskNavDisplayMode): T
     return writeTaskNavPrefs({
       ...prefs,
       mode: "all",
-      expanded: true,
       visible: {
         standard: true,
         shopping_item: true,
@@ -155,7 +141,6 @@ export function setTaskNavMode(prefs: TaskNavPrefs, mode: TaskNavDisplayMode): T
     return writeTaskNavPrefs({
       ...prefs,
       mode: "none",
-      expanded: false,
       visible: {
         standard: false,
         shopping_item: false,
@@ -165,11 +150,6 @@ export function setTaskNavMode(prefs: TaskNavPrefs, mode: TaskNavDisplayMode): T
     })
   }
   return writeTaskNavPrefs({ ...prefs, mode: "custom" })
-}
-
-export function toggleTaskNavExpanded(prefs: TaskNavPrefs, force?: boolean): TaskNavPrefs {
-  const expanded = typeof force === "boolean" ? force : !prefs.expanded
-  return writeTaskNavPrefs({ ...prefs, expanded })
 }
 
 export function toggleTaskNavChild(prefs: TaskNavPrefs, id: TaskNavTypeId): TaskNavPrefs {
@@ -187,7 +167,6 @@ export function toggleTaskNavChild(prefs: TaskNavPrefs, id: TaskNavTypeId): Task
   return writeTaskNavPrefs({
     ...prefs,
     mode,
-    expanded: allOff ? false : prefs.expanded,
     visible,
   })
 }
@@ -201,6 +180,13 @@ export function toggleTaskNavPin(prefs: TaskNavPrefs, id: TaskNavTypeId, force?:
       : [...prefs.pinned, id]
     : prefs.pinned.filter((entry) => entry !== id)
   return writeTaskNavPrefs({ ...prefs, pinned })
+}
+
+export function toggleTaskViewPin(prefs: TaskNavPrefs, view: TaskView): TaskNavPrefs {
+  const pinnedViews = prefs.pinnedViews.includes(view)
+    ? prefs.pinnedViews.filter(entry => entry !== view)
+    : [...prefs.pinnedViews, view]
+  return writeTaskNavPrefs({ ...prefs, pinnedViews })
 }
 
 export function getTaskNavTypeById(id: string): TaskNavTypeEntry | undefined {

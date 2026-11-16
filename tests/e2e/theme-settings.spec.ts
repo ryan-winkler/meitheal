@@ -14,12 +14,13 @@ test.describe("Theme Settings", () => {
     );
   });
 
-  test("Theme select has all 4 options (Dark, Light, Auto, Custom)", async ({ page }) => {
+  test("Theme select lists the built-in presets and Custom", async ({ page }) => {
     const themeSelect = page.locator("#theme-select");
     await expect(themeSelect).toBeVisible();
 
     const options = await themeSelect.locator("option").allTextContents();
-    expect(options).toContain("Dark");
+    expect(options).toContain("Emerald Isle");
+    expect(options).toContain("Knight Rider");
     expect(options).toContain("Light");
     expect(options).toContain("Auto (System)");
     expect(options).toContain("Custom");

@@ -4,6 +4,7 @@ import { shouldSkipBrowserSpecs } from "./_helpers"
 
 test.describe("Calendar Shell", () => {
   test.skip(shouldSkipBrowserSpecs(), "Set E2E_BASE_URL to run browser specs")
+  test.use({ serviceWorkers: "block" })
 
   test.beforeEach(async ({ page }) => {
     await page.goto("/calendar")
@@ -19,9 +20,42 @@ test.describe("Calendar Shell", () => {
     await page.locator('.cal-cell[data-date]:not(.cal-other)').first().press("Enter")
 
     await expect(page.locator("#day-drawer")).toHaveAttribute("aria-hidden", "false")
+    await expect(page.locator("#day-drawer-close")).toBeFocused()
+    await page.keyboard.press("Escape")
+    await expect(page.locator("#day-drawer")).toHaveAttribute("aria-hidden", "true")
+    await expect(page.locator('.cal-cell[data-date]:not(.cal-other)').first()).toBeFocused()
   })
 
-  test("day controls announce the visible number and retain contrast in both themes", async ({ page }) => {
+  test("phone filters stay compact, accessible and marked when active", async ({ page }) => {
+    await page.setViewportSize({ width: 320, height: 780 })
+    await page.goto("/tasks?view=calendar&year=2031&month=6#calendar")
+    const disclosure = page.getByRole("button", { name: "Filters", exact: true })
+    const toolbar = page.locator("#calendar-filter-bar")
+    await expect(disclosure).toHaveAttribute("aria-expanded", "false")
+    await expect(toolbar).toBeHidden()
+    await expect(page.getByRole("heading", { name: "July 2031" })).toBeInViewport()
+    expect((await disclosure.boundingBox())?.height).toBeGreaterThanOrEqual(44)
+
+    await disclosure.press("Enter")
+    await expect(toolbar).toBeVisible()
+    await page.keyboard.press("Tab")
+    const search = toolbar.getByRole("textbox", { name: "Filter by text" })
+    await expect(search).toBeFocused()
+    await search.fill("phone calendar filter")
+    await expect(page).toHaveURL(/search=phone\+calendar\+filter/)
+    await page.keyboard.press("Escape")
+    const active = page.getByRole("button", { name: "Filters Active" })
+    await expect(active).toBeFocused()
+    await expect(active).toHaveAttribute("aria-expanded", "false")
+    await expect(toolbar).toBeHidden()
+
+    await page.setViewportSize({ width: 1100, height: 780 })
+    await expect(active).toBeHidden()
+    await expect(toolbar).toBeVisible()
+    await expect(search).toHaveValue("phone calendar filter")
+  })
+
+  test("day controls announce the visible number and retain contrast in the built-in light and dark themes", async ({ page }) => {
     const firstDay = page.locator('.cal-cell[data-date$="-01"]')
     const monthStart = new Date(`${await firstDay.getAttribute("data-date")}T12:00:00Z`)
     const month = monthStart.toLocaleDateString("en-US", {
@@ -30,7 +64,7 @@ test.describe("Calendar Shell", () => {
     await expect(firstDay).toHaveAccessibleName(new RegExp(`^1 ${month}`))
     await expect(page.locator(".cal-cell.cal-today")).toHaveAttribute("aria-current", "date")
 
-    for (const theme of ["light", "dark"]) {
+    for (const theme of ["light", "dark", "knight-rider"]) {
       await page.evaluate(value => localStorage.setItem("meitheal-theme", value), theme)
       await page.reload()
       await expect(page.locator("html")).toHaveAttribute("data-theme", theme)
@@ -75,10 +109,10 @@ test.describe("Calendar Shell", () => {
       const drawer = page.locator("#day-drawer-tasks")
       const completeRow = drawer.locator("[data-task-id]").filter({ hasText: "Calendar completed task" })
       await expect(completeRow).toContainText("Done")
-      await expect(completeRow.locator(".day-drawer-item-icon")).toHaveText("✅")
+      await expect(completeRow.locator(".day-drawer-item-icon use")).toHaveAttribute("href", "#mt-icon-checkbox")
       const activeRow = drawer.locator("[data-task-id]").filter({ hasText: "Calendar active task" })
       await expect(activeRow).toContainText("In Progress")
-      await expect(activeRow.locator(".day-drawer-item-icon")).toHaveText("⚡")
+      await expect(activeRow.locator(".day-drawer-item-icon use")).toHaveAttribute("href", "#mt-icon-bolt")
       await expect(drawer.getByText("Calendar task on another day")).toHaveCount(0)
     } finally {
       for (const id of createdIds) await request.delete(`/api/tasks/${id}`, { data: {} })
@@ -101,6 +135,14 @@ test.describe("Calendar Shell", () => {
 
     await expect(page.locator("#new-task-overlay")).toHaveClass(/active/)
     await expect(page.locator("#new-task-title-input")).toBeFocused()
+    const date = await page.locator('.cal-cell[data-date]:not(.cal-other)').first().getAttribute("data-date")
+    await expect(page.locator("#nt-contextual-due")).toHaveValue(date ?? "")
+    await page.keyboard.press("Escape")
+    await expect(page.locator("#new-task-overlay")).toBeHidden()
+    await page.locator('.cal-cell[data-date]:not(.cal-other)').first().press("Enter")
+    await page.locator("#day-drawer-add-event").click()
+    await expect(page.locator("#new-task-overlay")).toHaveClass(/active/)
+    await expect(page.locator("#nt-event-start")).toHaveValue(new RegExp(`^${date}T`))
   })
 
   test("view links preserve query string when switching routes", async ({ page }) => {
@@ -132,10 +174,280 @@ test.describe("Calendar Shell", () => {
       expect(summaryText).toMatch(/\b1 item across 1 day\b/)
       expect(summaryText).not.toMatch(/\b1 items\b/)
       expect(summaryText).not.toMatch(/\b1 days\b/)
-      expect(summaryText).not.toMatch(/\b1 HA events\b/)
+      expect(summaryText).not.toMatch(/\b1 synced events\b/)
     } finally {
       await request.delete(`/api/tasks/${taskId}`, { data: {} })
     }
+  })
+
+  test("Calendar filters apply to the month and drawer, survive month navigation, and clear together", async ({ page, request }) => {
+    test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the disposable Meitheal fixture")
+    const day = "2031-07-08"
+    const createdIds: string[] = []
+    try {
+      for (const [title, priority, status, task_kind] of [
+        ["Calendar filter: roof inspection", 1, "active", "standard_action"],
+        ["Calendar filter: roof supplies", 2, "pending", "shopping_item"],
+        ["Calendar filter: roof checklist", 1, "complete", "checklist"],
+      ] as const) {
+        const response = await request.post("/api/tasks", { data: {
+          title, priority, status, task_kind, due_date: day,
+          ...(status === "pending" && { framework_payload: JSON.stringify({ rice: { reach: 10, impact: 5, confidence: 1, effort: 2 } }) }),
+        } })
+        expect(response.status(), await response.text()).toBe(201)
+        createdIds.push((await response.json()).id)
+      }
+
+      await page.goto("/tasks?view=calendar&year=2031&month=6#calendar")
+      const filterBar = page.getByRole("toolbar", { name: "Filter tasks" })
+      const search = filterBar.getByRole("textbox", { name: "Filter by text" })
+      const status = filterBar.getByRole("combobox", { name: "Filter by status" })
+      const priority = filterBar.getByRole("combobox", { name: "Filter by priority" })
+      const shopping = filterBar.getByRole("button", { name: "Shopping", exact: true })
+      const dayCell = page.locator(`.cal-cell[data-date="${day}"]`)
+      await expect(dayCell).toHaveAccessibleName(/2 tasks$/)
+      await search.fill("roof")
+      await page.waitForURL(/search=roof/)
+      await expect(dayCell).toHaveAccessibleName(/2 tasks$/)
+      await dayCell.press("Enter")
+      const agenda = page.locator("#day-drawer-tasks")
+      await expect(agenda.getByRole("button", { name: /roof inspection/ })).toBeVisible()
+      await expect(agenda.getByRole("button", { name: /roof supplies/ })).toBeVisible()
+      await expect(agenda.getByText(/roof checklist/)).toHaveCount(0)
+      await page.keyboard.press("Escape")
+      await shopping.click()
+      await priority.selectOption("1")
+      await status.selectOption("active")
+      await expect(page).toHaveURL(/status=active/)
+      await expect(dayCell).toHaveAccessibleName(/1 task$/)
+
+      await dayCell.press("Enter")
+      await expect(agenda.getByRole("button", { name: /roof inspection/ })).toBeVisible()
+      await expect(agenda.getByText(/roof supplies|roof checklist/)).toHaveCount(0)
+      await page.keyboard.press("Escape")
+      await expect(dayCell).toBeFocused()
+
+      await status.selectOption("complete")
+      await expect(page).toHaveURL(/status=complete/)
+      await expect(dayCell).toHaveAccessibleName(/1 task$/)
+      await page.getByRole("link", { name: "Next month" }).click()
+      await expect(page.getByRole("heading", { name: "August 2031" })).toBeVisible()
+      await expect(search).toHaveValue("roof")
+      await expect(status).toHaveValue("complete")
+      await expect(shopping).toHaveAttribute("aria-pressed", "false")
+      await expect(page.getByText("No tasks match these filters this month.")).toBeVisible()
+      await page.getByRole("link", { name: "Previous month" }).click()
+      await dayCell.press("Enter")
+      await expect(agenda.getByRole("button", { name: /roof checklist/ })).toBeVisible()
+      await expect(agenda.getByText(/roof inspection|roof supplies/)).toHaveCount(0)
+      await page.keyboard.press("Escape")
+      await filterBar.getByRole("button", { name: "Clear all active filters" }).click()
+      await expect(search).toBeFocused()
+      await expect(dayCell).toHaveAccessibleName(/2 tasks$/)
+      await expect(status).toHaveValue("")
+      await expect(shopping).toHaveAttribute("aria-pressed", "true")
+      await expect(page).not.toHaveURL(/(?:search|status|priority|types)=/)
+
+      const nested = { id: "root", logic: "AND", conditions: [
+        { id: "inner", logic: "AND", conditions: [{ id: "rice", field: "rice", operator: "greaterThan", value: 20 }] },
+      ] }
+      const nestedQuery = new URLSearchParams({ view: "calendar", year: "2031", month: "6", advancedFilter: JSON.stringify(nested) })
+      await page.goto(`/tasks?${nestedQuery}#calendar`)
+      await expect(dayCell).toHaveAccessibleName(/1 task$/)
+      await dayCell.press("Enter")
+      await expect(agenda.getByRole("button", { name: /roof supplies/ })).toBeVisible()
+      await expect(agenda.getByText(/roof checklist|roof inspection/)).toHaveCount(0)
+    } finally {
+      for (const id of createdIds) await request.delete(`/api/tasks/${id}`, { data: {} })
+    }
+  })
+
+  test("Calendar honors legacy Table areas and keeps today's archived work out of the agenda", async ({ page, request }) => {
+    test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the disposable Meitheal fixture")
+    const day = "2031-07-08"
+    const response = await request.post("/api/areas", { data: { name: "Calendar legacy area" } })
+    expect(response.status(), await response.text()).toBe(201)
+    const { id: areaId } = await response.json()
+    const ids: string[] = []
+    try {
+      for (const draft of [
+        { title: "Calendar active in the legacy area", area_id: areaId, status: "active" },
+        { title: "Calendar completed in the legacy area", area_id: areaId, status: "complete" },
+        { title: "Calendar active outside the legacy area", status: "active" },
+      ]) {
+        const task = await request.post("/api/tasks", { data: { ...draft, due_date: day } })
+        expect(task.status(), await task.text()).toBe(201)
+        ids.push((await task.json()).id)
+      }
+
+      await page.goto(`/tasks?view=table&area_id=${areaId}&year=2031&month=6#table`)
+      await page.getByRole("navigation", { name: "Task views" }).getByRole("link", { name: "Calendar" }).click()
+      const cell = page.locator(`.cal-cell[data-date="${day}"]`)
+      const agenda = page.locator("#day-drawer-tasks")
+      await expect(page.locator("[data-area-label]")).toHaveText("Calendar legacy area")
+      await expect(cell).toHaveAccessibleName(/1 task$/)
+      await cell.press("Enter")
+      await expect(agenda.getByText("Calendar active in the legacy area")).toBeVisible()
+      await expect(agenda.getByText("Calendar active outside the legacy area")).toHaveCount(0)
+
+      await page.goto("/today")
+      await page.getByRole("button", { name: "Archive completed", exact: true }).click()
+      const submitted = page.waitForResponse(response => new URL(response.url()).pathname === "/api/tasks/clear-completed")
+      await page.getByRole("button", { name: "Archive", exact: true }).click()
+      const archive = await submitted
+      expect(archive.status(), await archive.text()).toBe(200)
+      expect(await archive.json()).toMatchObject({ ok: true, cleared: 1 })
+      await page.goto("/tasks?view=calendar&year=2031&month=6&area=#calendar")
+      await expect(cell).toHaveAccessibleName(/2 tasks$/)
+      await cell.press("Enter")
+      await expect(agenda.getByText("Calendar active in the legacy area")).toBeVisible()
+      await expect(agenda.getByText("Calendar active outside the legacy area")).toBeVisible()
+      await expect(agenda.getByText("Calendar completed in the legacy area")).toHaveCount(0)
+      const unfilteredApi = await request.get(`/api/tasks?due_date=${day}`)
+      expect((await unfilteredApi.json()).tasks).toEqual(expect.arrayContaining([
+        expect.objectContaining({ id: ids[1], status: "archived" }),
+      ]))
+    } finally {
+      for (const id of ids) await request.delete(`/api/tasks/${id}`, { data: {} })
+      await request.delete(`/api/areas/${areaId}`, { data: {} })
+    }
+  })
+
+  test("Calendar keeps its applied results after a failed filter refresh and offers retry", async ({ page }) => {
+    const month = page.locator("[data-calendar-month]")
+    const search = page.getByRole("textbox", { name: "Filter by text" })
+    let fail = true
+    await page.route(url => url.searchParams.has("calendarRefresh"), route => fail
+      ? route.fulfill({ status: 503, body: "Calendar service unavailable" })
+      : route.continue())
+
+    await search.fill("temporarily unavailable")
+    await expect(page.getByText("Couldn’t apply calendar changes. The previous results are still shown.")).toBeVisible()
+    await expect(month).toBeVisible()
+    await expect(month).not.toHaveAttribute("aria-busy")
+    await expect(page).not.toHaveURL(/search=/)
+
+    fail = false
+    await page.getByRole("button", { name: "Retry calendar" }).click()
+    await expect(page).toHaveURL(/search=temporarily\+unavailable/)
+    await expect(page.getByText("No tasks match these filters this month.")).toBeVisible()
+    await expect(page.getByRole("link", { name: "Today", exact: true }).and(page.locator(".cal-today-btn"))).toBeFocused()
+
+    fail = true
+    await search.fill("orchard")
+    await expect(page.getByRole("button", { name: "Retry calendar" })).toBeVisible()
+    fail = false
+    await page.getByRole("link", { name: "Next month" }).click()
+    await expect(page).toHaveURL(/search=orchard/)
+    await expect(search).toHaveValue("orchard")
+  })
+
+  test("month navigation retains a filter while the calendar is still loading", async ({ page }) => {
+    let releaseRequest = () => {}
+    const pending = new Promise<void>(resolve => { releaseRequest = resolve })
+    await page.route(url => url.searchParams.has("calendarRefresh"), async route => {
+      await pending
+      await route.abort().catch(() => {})
+    })
+    try {
+      await page.getByRole("textbox", { name: "Filter by text" }).fill("roof")
+      await expect(page.getByText("Loading calendar…")).toBeVisible()
+      await page.getByRole("link", { name: "Next month" }).click()
+      await expect(page).toHaveURL(/[?&]search=roof(?:&|#)/)
+      await expect(page.getByRole("textbox", { name: "Filter by text" })).toHaveValue("roof")
+    } finally {
+      releaseRequest()
+    }
+  })
+
+  test("Events toggles connected calendar previews and agenda without clearing task filters", async ({ page }) => {
+    const day = "2031-07-08"
+    await page.route("**/api/ha/calendars?configured=1", route => route.fulfill({ json: { entities: ["calendar.household"] } }))
+    await page.route("**/api/ha/events?*", route => route.fulfill({
+      json: { events: [{ summary: "Household calendar preview", start: day, end: "2031-07-09" }] },
+    }))
+    await page.goto("/tasks?view=calendar&year=2031&month=6&search=roof#calendar")
+    const during = page.locator(`.cal-cell[data-date="${day}"]`)
+    const types = page.getByRole("toolbar", { name: "Filter tasks" })
+
+    await expect(during.getByText("Household calendar preview")).toBeVisible()
+    await during.press("Enter")
+    await expect(page.getByRole("heading", { name: "Connected Calendar Events" })).toBeVisible()
+    await expect(page.locator("#day-drawer-events")).toContainText("Household calendar preview")
+    await page.keyboard.press("Escape")
+    await types.getByRole("button", { name: "Events", exact: true }).click()
+    await expect(during.getByText("Household calendar preview")).toHaveCount(0)
+    await expect(types.getByRole("textbox", { name: "Filter by text" })).toHaveValue("roof")
+    await during.press("Enter")
+    await expect(page.getByRole("heading", { name: "Connected Calendar Events" })).toHaveCount(0)
+    await expect(page.locator("#day-drawer-tasks")).toContainText("No tasks due")
+
+    await page.keyboard.press("Escape")
+    await page.goto("/tasks?view=calendar&year=2031&month=6&types=calendar_event#calendar")
+    await expect(during.getByText("Household calendar preview")).toBeVisible()
+    const events = types.getByRole("button", { name: "Events", exact: true })
+    await events.click()
+    await expect(events).toHaveAttribute("aria-pressed", "false")
+    await expect(during.getByText("Household calendar preview")).toHaveCount(0)
+  })
+
+  test("day feed timeout preserves available events and reports a fully unavailable feed", async ({ page }) => {
+    test.slow()
+    const day = "2031-07-08"
+    let allFail = false
+    const waiting = new Set<() => void>()
+    await page.route("**/api/ha/calendars?configured=1", route => route.fulfill({
+      json: { entities: ["calendar.household", "calendar.garden"] },
+    }))
+    // An intercepted response never reaches fetch. Wait for the real AbortSignal deadline.
+    await page.route("**/api/ha/events?*", async route => {
+      const params = new URL(route.request().url()).searchParams
+      if (params.get("start") === day && (allFail || params.get("entity_id") === "calendar.garden")) {
+        await new Promise<void>(resolve => waiting.add(resolve))
+        await route.abort().catch(() => {})
+        return
+      }
+      await route.fulfill({ json: { events: [{ summary: "Household feed result", start: day, end: "2031-07-09" }] } })
+    })
+    try {
+      await page.goto("/tasks?view=calendar&year=2031&month=6#calendar")
+      const cell = page.locator(`.cal-cell[data-date="${day}"]`)
+      const events = page.locator("#day-drawer-events")
+      await cell.press("Enter")
+      await expect(events).toContainText("Some connected calendar events couldn’t load.", { timeout: 15_000 })
+      await expect(events).toContainText("Household feed result")
+      await page.keyboard.press("Escape")
+      allFail = true
+      await cell.press("Enter")
+      await expect(events).toHaveText("Connected calendar events couldn’t load.", { timeout: 15_000 })
+    } finally {
+      for (const resolve of waiting) resolve()
+    }
+  })
+
+  test("large day agenda loads another page with the same filters and restores keyboard focus", async ({ page }) => {
+    const day = "2031-07-08"
+    const filtersByPage: Array<string | null> = []
+    await page.route(url => url.pathname.endsWith("/api/tasks") && url.searchParams.get("due_date") === day, route => {
+      const { searchParams } = new URL(route.request().url())
+      const offset = Number(searchParams.get("offset"))
+      const limit = Number(searchParams.get("limit"))
+      filtersByPage.push(new URLSearchParams(searchParams.get("calendar_filters") ?? "").get("search"))
+      return route.fulfill({ json: {
+        total: 101,
+        tasks: Array.from({ length: Math.min(limit, 101 - offset) }, (_, index) => ({
+          id: String(offset + index + 1), status: "active", title: `Fitted roof task ${offset + index + 1}`,
+        })),
+      } })
+    })
+    await page.goto("/tasks?view=calendar&year=2031&month=6&search=roof#calendar")
+    await page.locator(`.cal-cell[data-date="${day}"]`).press("Enter")
+    const drawer = page.locator("#day-drawer-tasks")
+    await expect(drawer.getByRole("button")).toHaveCount(100)
+    await page.getByRole("button", { name: "Load more tasks (1 remaining)" }).press("Enter")
+    await expect(drawer.getByRole("button")).toHaveCount(101)
+    await expect(drawer.getByRole("button", { name: /Fitted roof task 101/ })).toBeFocused()
+    expect(filtersByPage).toEqual(["roof", "roof"])
   })
 
   test("calendar task counts bucket timed UTC due dates in household timezone", async ({ page, request }) => {

@@ -5,7 +5,7 @@ export function setupUnscheduledSection(
   container: HTMLElement,
   lm: ListenerManager,
   addBatchCheckboxes: (scope: HTMLElement) => void,
-): () => void {
+): (keepPage?: boolean) => void {
   const section = container.querySelector<HTMLElement>("#section-unscheduled")
   const list = section?.querySelector<HTMLElement>("#today-unscheduled-list")
   const toggle = section?.querySelector<HTMLButtonElement>(".today-section__toggle")
@@ -98,12 +98,12 @@ export function setupUnscheduledSection(
   lm.on(retry, "click", () => void loadPage(requestedPage, focusRange))
   syncExpanded()
 
-  return () => {
+  return (keepPage = false) => {
     if (!isOpen()) return
     pending?.abort()
     window.clearTimeout(timer)
     timer = window.setTimeout(() => {
-      if (!lm.disposed && isOpen()) void loadPage(1, false)
+      if (!lm.disposed && isOpen()) void loadPage(keepPage ? currentPage() || 1 : 1, keepPage)
     }, 200)
   }
 }
