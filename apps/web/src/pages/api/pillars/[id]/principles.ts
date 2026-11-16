@@ -1,5 +1,5 @@
 import type { APIRoute } from "astro"
-import { getVisiblePillar } from "@lib/personal-pillar-access"
+import { getVisiblePillar, readPillarBody } from "@lib/personal-pillar-access"
 import { apiJson, apiError } from "../../../../lib/api-response"
 import { logApiError } from "../../../../lib/api-logger"
 import {
@@ -41,10 +41,12 @@ export const POST: APIRoute = async ({ params, request, locals }) => {
     const pillarId = params.id
     if (!pillarId) return apiError("Pillar ID is required", 400)
 
+    const body = await readPillarBody(request)
+    if (body instanceof Response) return body
+
     const pillar = await getVisiblePillar(pillarId, locals, request.signal)
     if (!pillar) return apiError("Pillar not found", 404)
 
-    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
     const action = String(body.action || "create")
 
     switch (action) {

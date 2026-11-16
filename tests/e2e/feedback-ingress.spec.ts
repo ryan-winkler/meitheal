@@ -352,6 +352,9 @@ coreTest("Personal Pillars stay within the verified user across pages, APIs and 
     expect(progress.headers()["cache-control"]).toBe("private, no-store")
     const audienceProof = /data-audience-proof="([\w.-]+)"/.exec(await progress.text())?.[1]
     expect(audienceProof).toBeTruthy()
+    const proof = { "X-Meitheal-Pillar-Session": audienceProof! }
+    expect((await api.head(endpoint, { headers: { ...owner, ...proof } })).status()).toBe(204)
+    expect((await api.head(endpoint, { headers: { ...other, ...proof } })).status()).toBe(403)
     const label = "Private synthetic manifesto"
     const data = { name: "Private fixture", manifesto: label, audience: "personal", audienceProof }
     expect((await api.post(endpoint, { headers: other, data })).status()).toBe(409)

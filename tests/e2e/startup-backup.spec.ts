@@ -9,6 +9,8 @@ import { setTimeout } from "node:timers/promises"
 import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
 import { expect, test } from "@playwright/test"
+import { PERSONAL_PILLAR_MIGRATION } from "../../apps/web/drizzle/migrations/0010_personal_pillars.mjs"
+import { TASK_BOARD_MIGRATION, TASK_BOARD_SCHEMA_VERSION } from "../../apps/web/drizzle/migrations/task-board-upgrade.mjs"
 import { DATABASE_SCHEMA_VERSION, openDatabase } from "../../apps/web/scripts/database-client.mjs"
 import { ensureSchema, getPersistenceClient, resetPersistenceForTests } from "../../apps/web/src/domains/tasks/persistence/store"
 import { prepareTaskBoardPredecessor, predecessorMigrationNames } from "../scripts/task-board-predecessor"
@@ -19,6 +21,7 @@ let directory: string
 let dbPath: string
 const previousDbUrl = process.env.MEITHEAL_DB_URL
 const previousBackupHandled = process.env.MEITHEAL_STARTUP_BACKUP_HANDLED
+const predecessorVersion = String(TASK_BOARD_SCHEMA_VERSION - 1)
 const futureVersion = String(DATABASE_SCHEMA_VERSION + 1)
 
 function migrate(...args: string[]) {
@@ -28,7 +31,7 @@ function migrate(...args: string[]) {
 function seedSchemaMarker(value: string, inWal = false) {
   const database = new DatabaseSync(dbPath)
   database.exec("CREATE TABLE app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at INTEGER NOT NULL)")
-  database.prepare("INSERT INTO app_settings VALUES ('schema_version', ?, 1)").run(String(DATABASE_SCHEMA_VERSION - 1))
+  database.prepare("INSERT INTO app_settings VALUES ('schema_version', ?, 1)").run(predecessorVersion)
   if (inWal) database.exec("PRAGMA journal_mode=WAL; PRAGMA wal_autocheckpoint=0; PRAGMA wal_checkpoint(TRUNCATE)")
   database.prepare("UPDATE app_settings SET value=? WHERE key='schema_version'").run(value)
   return database
@@ -173,7 +176,7 @@ test("migration check leaves missing storage and an untracked legacy database al
   })).rejects.toThrow(/Database does not exist/)
   expect(await readdir(directory)).toEqual([])
 
-  seedSchemaMarker(String(DATABASE_SCHEMA_VERSION - 1)).close()
+  seedSchemaMarker(predecessorVersion).close()
   const before = await readFile(dbPath)
   await expect(migrate("--check")).rejects.toThrow(/Pending migrations:/)
   expect(await readFile(dbPath)).toEqual(before)
@@ -210,7 +213,7 @@ for (const { marker, message } of [
       await copyFile(dbPath, join(directory, "main-only.db"))
       const mainOnly = new DatabaseSync(join(directory, "main-only.db"), { readOnly: true })
       try {
-        expect(mainOnly.prepare("SELECT value FROM app_settings").get()?.value).toBe(String(DATABASE_SCHEMA_VERSION - 1))
+        expect(mainOnly.prepare("SELECT value FROM app_settings").get()?.value).toBe(predecessorVersion)
       } finally { mainOnly.close() }
 
       await expect(migrate()).rejects.toThrow(message)
@@ -244,7 +247,7 @@ test("writable startup can recover an interrupted SQLite transaction before chec
     import { DatabaseSync } from "node:sqlite"
     const db = new DatabaseSync(process.argv[1])
     db.exec(\`CREATE TABLE app_settings(key TEXT PRIMARY KEY,value TEXT,updated_at INTEGER);
-      INSERT INTO app_settings VALUES('schema_version','${DATABASE_SCHEMA_VERSION - 1}',1);
+      INSERT INTO app_settings VALUES('schema_version','${predecessorVersion}',1);
       CREATE TABLE spill(value TEXT);
       PRAGMA cache_size=1; PRAGMA cache_spill=ON;
       BEGIN IMMEDIATE; UPDATE app_settings SET value='${futureVersion}';
@@ -281,17 +284,17 @@ for (const lock of ["reader", "writer"]) {
     }
     await Promise.all([cli, runtime])
     const client = getPersistenceClient()
-    expect((await client.execute("SELECT value FROM app_settings WHERE key = 'schema_version'")).rows).toEqual([{ value: "19" }])
+    expect((await client.execute("SELECT value FROM app_settings WHERE key = 'schema_version'")).rows).toEqual([{ value: String(DATABASE_SCHEMA_VERSION) }])
     const ledger = await client.execute("SELECT name, applied_at FROM __meitheal_migrations ORDER BY name")
-    expect(ledger.rows).toHaveLength(predecessorMigrationNames.length + 1)
-    expect(ledger.rows.at(-1)?.name).toBe("0009_task_boards.mjs")
-    expect(ledger.rows.slice(0, -1).every(row => row.applied_at === 1)).toBe(true)
+    expect(ledger.rows).toHaveLength(predecessorMigrationNames.length + 2)
+    expect(ledger.rows.slice(-2).map(row => row.name)).toEqual([TASK_BOARD_MIGRATION, PERSONAL_PILLAR_MIGRATION])
+    expect(ledger.rows.slice(0, -2).every(row => row.applied_at === 1)).toBe(true)
     expect((await client.execute("SELECT title FROM tasks")).rows).toEqual([{ title: "Retained startup task" }])
     await expect(migrate("--check")).resolves.toMatchObject({ stdout: expect.stringContaining("Migration check passed") })
   })
 }
 
-test("schema 19 startup restores missing Household lanes and preserves custom ordering", async () => {
+test("upgraded startup restores missing Household lanes and preserves custom ordering", async () => {
   await migrate()
   const db = new DatabaseSync(dbPath)
   try {
@@ -375,7 +378,7 @@ test("the built runtime refuses a first agent request before touching incompatib
   }, "synthetic-schema-fixture")
 })
 
-test("a first authenticated request adopts a runtime-first predecessor and waits for v19", async () => {
+test("a first authenticated request adopts a runtime-first predecessor and waits for the full upgrade", async () => {
   test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the built Astro runtime")
   await seedBoardPredecessor({ token: true, ledger: false })
   await withBuiltApp(async origin => {
@@ -386,7 +389,7 @@ test("a first authenticated request adopts a runtime-first predecessor and waits
     expect(await tasks.text()).toContain("Retained startup task")
     const health = await fetch(`${origin}/api/health`, { signal: AbortSignal.timeout(5_000) })
     expect(health.status).toBe(200)
-    expect(await health.json()).toMatchObject({ schema_version: 19 })
+    expect(await health.json()).toMatchObject({ schema_version: DATABASE_SCHEMA_VERSION })
     await expect(migrate("--check")).resolves.toMatchObject({ stdout: expect.stringContaining("Migration check passed") })
   }, "synthetic-schema-fixture")
 })

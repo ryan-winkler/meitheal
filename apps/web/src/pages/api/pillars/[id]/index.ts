@@ -1,5 +1,5 @@
 import type { APIRoute } from "astro"
-import { getVisiblePillar } from "@lib/personal-pillar-access"
+import { getVisiblePillar, readPillarBody } from "@lib/personal-pillar-access"
 import { apiJson, apiError } from "../../../../lib/api-response"
 import { logApiError } from "../../../../lib/api-logger"
 import {
@@ -37,10 +37,12 @@ export const PATCH: APIRoute = async ({ params, request, locals }) => {
     const id = params.id
     if (!id) return apiError("Pillar ID is required", 400)
 
+    const body = await readPillarBody(request)
+    if (body instanceof Response) return body
+
     const pillar = await getVisiblePillar(id, locals, request.signal)
     if (!pillar) return apiError("Pillar not found", 404)
 
-    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
 
     if (body.audience !== undefined || body.userId !== undefined || body.user_id !== undefined) {
       return apiError("The audience is set when the Pillar is created.", 400)

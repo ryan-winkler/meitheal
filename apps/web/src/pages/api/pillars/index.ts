@@ -1,5 +1,5 @@
 import type { APIRoute } from "astro"
-import { matchesPersonalPillarForm, resolvePersonalPillarOwner } from "@lib/personal-pillar-access"
+import { matchesPersonalPillarForm, readPillarBody, resolvePersonalPillarOwner } from "@lib/personal-pillar-access"
 import { apiJson, apiError } from "../../../lib/api-response"
 import { logApiError } from "../../../lib/api-logger"
 import {
@@ -34,9 +34,18 @@ export const GET: APIRoute = async ({ url, locals, request }) => {
   }
 }
 
+export const HEAD: APIRoute = async ({ request, locals }) => {
+  const proof = request.headers.get("x-meitheal-pillar-session")
+  if (!proof) return new Response(null, { status: 200 })
+  const owner = await resolvePersonalPillarOwner(locals, request.signal)
+  const valid = owner && matchesPersonalPillarForm(proof, owner)
+  return new Response(null, { status: valid ? 204 : 403 })
+}
+
 export const POST: APIRoute = async ({ request, locals }) => {
   try {
-    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
+    const body = await readPillarBody(request)
+    if (body instanceof Response) return body
     const name = String(body.name || "").trim()
 
     if (!name) return apiError("name is required", 400)

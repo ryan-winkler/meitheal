@@ -62,7 +62,7 @@ const { personalForm } = Astro.props
         <p class="pillar-form__hint">{t("pillars.name_hint")}</p>
       </div>
 
-      {personalForm && (
+      {personalForm ? (
         <div class="form-group">
           <label for="pillar-audience" class="form-label">Visible to</label>
           <select id="pillar-audience" class="form-input" data-audience-proof={personalForm} aria-describedby="pillar-audience-hint">
@@ -71,6 +71,8 @@ const { personalForm } = Astro.props
           </select>
           <p id="pillar-audience-hint" class="pillar-form__hint">Choose the audience before saving.</p>
         </div>
+      ) : (
+        <p class="pillar-form__hint">New Pillars here are visible to the Household. To create one only you can see, open Progress in an active Home Assistant session.</p>
       )}
 
       <!-- Manifesto (WHY) -->
@@ -230,12 +232,60 @@ const { personalForm } = Astro.props
       }
     } catch { /* Session storage can be unavailable in embedded browsers. */ }
 
-    window.addEventListener("pagehide", event => {
-      if (event.persisted && audience) document.getElementById("progress-section-pillars")?.replaceChildren()
-    }, { signal })
-    window.addEventListener("pageshow", event => {
-      if (event.persisted && audience) window.location.reload()
-    }, { signal })
+    const pillarSection = document.getElementById("progress-section-pillars")
+    if (audience?.dataset.audienceProof && pillarSection) {
+      const proof = audience.dataset.audienceProof
+      let pendingRecheck = false
+      const hidePersonal = () => {
+        pillarSection.style.visibility = "hidden"
+        pillarSection.inert = true
+      }
+      const clearPersonal = () => {
+        const message = document.createElement("p")
+        message.textContent = "Reconnect and refresh Progress to see your Personal Pillars."
+        pillarSection.replaceChildren(message)
+        pillarSection.style.visibility = ""
+        pillarSection.inert = false
+      }
+      document.addEventListener("visibilitychange", async () => {
+        if (document.hidden) {
+          hidePersonal()
+          return
+        }
+        if (pendingRecheck) return
+        pendingRecheck = true
+        hidePersonal()
+        try {
+          const response = await fetch("/api/pillars", {
+            method: "HEAD",
+            cache: "no-store",
+            headers: { "X-Meitheal-Pillar-Session": proof },
+            signal,
+          })
+          if (signal.aborted) return
+          if (response.status !== 204) {
+            clearPersonal()
+            window.location.reload()
+          } else if (!document.hidden) {
+            pillarSection.style.visibility = ""
+            pillarSection.inert = false
+          }
+        } catch {
+          if (!signal.aborted) clearPersonal()
+        } finally {
+          pendingRecheck = false
+        }
+      }, { signal })
+      window.addEventListener("pagehide", event => {
+        if (event.persisted) {
+          hidePersonal()
+          pillarSection.replaceChildren()
+        }
+      }, { signal })
+      window.addEventListener("pageshow", event => {
+        if (event.persisted) window.location.reload()
+      }, { signal })
+    }
 
     // --- Init shared pickers ---
     const iconPickerCleanup = initIconPicker("pillar-icon-picker", {

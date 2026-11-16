@@ -4307,6 +4307,23 @@ paths:
         "404":
           description: Project not found
   /api/pillars:
+    head:
+      operationId: checkPersonalPillarSession
+      tags:
+        - Pillars
+      summary: Verify the current Personal Pillar viewer
+      parameters:
+        - name: X-Meitheal-Pillar-Session
+          in: header
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Service available
+        "204":
+          description: The Personal viewer still matches
+        "403":
+          description: The viewer changed or verification is unavailable
     get:
       operationId: listPillars
       tags:

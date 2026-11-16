@@ -1,6 +1,8 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto"
 import { verifyCurrentHAParticipant } from "@domains/ha/current-admin"
 import { getPillarById } from "@domains/pillars/pillar-service"
+import { apiError } from "./api-response"
+import { readWithinLimit } from "./bounded-body"
 import { verifiedIngressUser } from "./verified-ingress-user"
 
 /** The immutable owner key comes from Home Assistant, never the request body. */
@@ -36,4 +38,17 @@ export async function getVisiblePillar(id: string, locals: App.Locals, signal: A
   if (household) return household
   const owner = await resolvePersonalPillarOwner(locals, signal)
   return owner ? getPillarById(id, owner) : null
+}
+
+export async function readPillarBody(request: Request): Promise<Record<string, unknown> | Response> {
+  const signal = AbortSignal.any([request.signal, AbortSignal.timeout(5_000)])
+  try {
+    const data = await readWithinLimit(request.body, 64 * 1024, signal)
+    if (!data) return apiError("Pillar requests are limited to 64 KiB.", 413)
+    const body: unknown = JSON.parse(data.toString("utf8"))
+    if (body && typeof body === "object" && !Array.isArray(body)) return body as Record<string, unknown>
+    return apiError("Send a JSON object.", 400)
+  } catch {
+    return signal.aborted ? apiError("The request body did not arrive in time.", 408) : apiError("Send a JSON object.", 400)
+  }
 }

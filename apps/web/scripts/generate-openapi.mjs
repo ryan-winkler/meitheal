@@ -1622,6 +1622,11 @@ const paths = {
 
   // ── Pillars ──
   "/api/pillars": {
+    head: {
+      operationId: "checkPersonalPillarSession", tags: ["Pillars"], summary: "Verify the current Personal Pillar viewer",
+      parameters: [{ name: "X-Meitheal-Pillar-Session", in: "header", schema: { type: "string" } }],
+      responses: { 200: { description: "Service available" }, 204: { description: "The Personal viewer still matches" }, 403: { description: "The viewer changed or verification is unavailable" } },
+    },
     get: {
       operationId: "listPillars", tags: ["Pillars"], summary: "List visible Pillars",
       description: "Returns Household Pillars by default. Personal Pillars are opt-in for the verified current Home Assistant user.",
