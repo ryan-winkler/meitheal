@@ -1095,7 +1095,7 @@ test("ingress Auto updates with its parent and restores one observer across ifra
 test("member can opt into Home Assistant colors and keep the saved fallback", async ({ page, context }) => {
   await context.setExtraHTTPHeaders({})
   await context.addCookies([{ name: "feedback-fixture", value: "member", url: origin }])
-  await page.emulateMedia({ colorScheme: "dark", reducedMotion: "reduce" })
+  await page.emulateMedia({ colorScheme: "dark" })
   await page.addInitScript(() => {
     localStorage.setItem("meitheal-theme", "dark")
     localStorage.setItem("meitheal-accent-color", "#8844ee")
@@ -1127,6 +1127,7 @@ test("member can opt into Home Assistant colors and keep the saved fallback", as
   await expect(root).toHaveAttribute("data-theme", "dark")
   await expect(match).not.toBeChecked()
   await expect.poll(() => token("--personal-accent")).toBe("#8844ee")
+  const fallbackBackground = await token("--bg-primary-rgb")
   await match.focus()
   await match.press("Space")
   await expect(match).toBeFocused()
@@ -1157,6 +1158,8 @@ test("member can opt into Home Assistant colors and keep the saved fallback", as
   await page.emulateMedia({ forcedColors: "none" })
   await expect(root).toHaveAttribute("data-ha-match", "light")
   await match.uncheck()
+  await expect.poll(() => token("--bg-primary-rgb")).toBe(fallbackBackground)
+  await expect(root).toHaveCSS("color-scheme", "dark")
   await expect(root).toHaveAttribute("data-theme", "dark")
   await expect.poll(() => token("--personal-accent")).toBe("#8844ee")
 })
