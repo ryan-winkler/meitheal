@@ -4,6 +4,6 @@
   "description": "Hash-pinned build tools installed with npm ci by the App image and the devcontainer.",
   "license": "SEE LICENSE IN ../../LICENSE",
   "dependencies": {
-    "pnpm": "10.34.9"
+    "pnpm": "12.18.0"
   }
 }
