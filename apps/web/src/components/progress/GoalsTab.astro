@@ -10,7 +10,7 @@
  */
 import ProgressRing from "../ui/ProgressRing.astro"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
-import { listSharedGoalsForArea } from "@domains/tasks/persistence/shared-goal-repository"
+import { listSharedGoals } from "@domains/tasks/persistence/shared-goal-repository"
 import { HierarchyRepository } from "@domains/tasks/persistence/hierarchy-repository"
 
 interface Props { areaId?: string }
@@ -76,10 +76,15 @@ try {
     })
   }
 
-  if (areaId && !scopeMissing) {
-    const shared = await listSharedGoalsForArea(db, Astro.locals, Astro.request.signal, areaId)
+  if (!scopeMissing) {
+    const shared = await listSharedGoals(db, Astro.locals, Astro.request.signal, {
+      ...(areaId ? { areaId } : {}),
+      ...(projectId ? { projectId } : {}),
+    })
+    const ownedIds = new Set(rawGoals.map(goal => goal.id))
     for (const goal of shared) {
-      const area = areaMap.get(goal.area_id)
+      if (ownedIds.has(goal.id)) continue
+      const area = goal.area_id ? areaMap.get(goal.area_id) : undefined
       goals.push({
         id: goal.id, title: goal.title, area_id: goal.area_id, status: "shared",
         description: null, target_date: null,

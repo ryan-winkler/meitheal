@@ -28,7 +28,7 @@ const unscheduled = protectedFields.map(field => `NULLIF(trim(tasks.${field}, ch
 export const inactivityOpenTaskSql = `tasks.task_board_id IS NULL AND tasks.deferred_at IS NULL
   AND lower(tasks.status) IN (${openStatuses})
   AND ${created} > 0 AND ${updated} > 0
-  AND EXISTS (SELECT 1 FROM areas WHERE areas.id = tasks.area_id)`
+  AND EXISTS (SELECT 1 FROM areas WHERE areas.id = tasks.area_id AND areas.owner_board_id IS NULL)`
 
 export const inactivityProtectionSql = `tasks.task_kind IS NOT 'routine_instance'
   AND (lower(tasks.status) NOT IN (${activeStatuses})

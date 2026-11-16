@@ -33,20 +33,20 @@ export class AreaRepository {
   /** List all areas ordered by position */
   async findAll(): Promise<AreaRow[]> {
     const result = await this.client.execute(
-      "SELECT id, name, icon, color, position, created_at, updated_at FROM areas ORDER BY position ASC, created_at ASC"
+      "SELECT id, name, icon, color, position, created_at, updated_at FROM areas WHERE owner_board_id IS NULL ORDER BY position ASC, created_at ASC"
     )
     return result.rows as unknown as AreaRow[]
   }
 
   /** Count total areas (for abuse limits) */
   async count(): Promise<number> {
-    const result = await this.client.execute("SELECT COUNT(*) as c FROM areas")
+    const result = await this.client.execute("SELECT COUNT(*) as c FROM areas WHERE owner_board_id IS NULL")
     return Number(result.rows[0]?.c || 0)
   }
 
   /** Get the next available position */
   async getNextPosition(): Promise<number> {
-    const result = await this.client.execute("SELECT COALESCE(MAX(position), 0) + 1 as next_pos FROM areas")
+    const result = await this.client.execute("SELECT COALESCE(MAX(position), 0) + 1 as next_pos FROM areas WHERE owner_board_id IS NULL")
     return Number(result.rows[0]?.next_pos ?? 0)
   }
 
@@ -77,20 +77,8 @@ export class AreaRepository {
     args.push(id)
 
     await this.client.execute({
-      sql: `UPDATE areas SET ${updates.join(", ")} WHERE id = ?`,
+      sql: `UPDATE areas SET ${updates.join(", ")} WHERE id = ? AND owner_board_id IS NULL`,
       args,
-    })
-  }
-
-  /** Delete an area and reassign its tasks to 'default' */
-  async delete(id: string): Promise<void> {
-    await this.client.execute({
-      sql: "UPDATE tasks SET area_id = 'default' WHERE area_id = ?",
-      args: [id],
-    })
-    await this.client.execute({
-      sql: "DELETE FROM areas WHERE id = ?",
-      args: [id],
     })
   }
 }

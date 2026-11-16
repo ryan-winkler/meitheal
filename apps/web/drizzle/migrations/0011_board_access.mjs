@@ -36,6 +36,14 @@ const objects = {
   )`,
   board_goal_shares_area_idx: `CREATE INDEX board_goal_shares_area_idx
     ON board_goal_shares(area_id, receiving_board_id, goal_id)`,
+  invalidate_area_goal_shares: `CREATE TRIGGER invalidate_area_goal_shares
+    AFTER UPDATE OF owner_board_id ON areas
+    WHEN NEW.owner_board_id IS NOT OLD.owner_board_id
+    BEGIN DELETE FROM board_goal_shares WHERE area_id = OLD.id; END`,
+  invalidate_owned_goal_shares: `CREATE TRIGGER invalidate_owned_goal_shares
+    AFTER UPDATE OF owner_board_id ON goals
+    WHEN NEW.owner_board_id IS NOT OLD.owner_board_id
+    BEGIN DELETE FROM board_goal_shares WHERE goal_id = OLD.id; END`,
   board_access_epoch: `CREATE TABLE board_access_epoch (
     singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
     revision TEXT NOT NULL CHECK (length(revision) = 36)

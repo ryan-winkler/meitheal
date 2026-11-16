@@ -59,6 +59,13 @@ export interface ProjectRow {
   updated_at: number
 }
 
+const householdAreaLink = (reference: string) => `SELECT id FROM areas WHERE id = ${reference} AND owner_board_id IS NULL`
+const householdGoalLink = (reference: string) => `SELECT id FROM goals WHERE id = ${reference} AND owner_board_id IS NULL`
+
+const householdGoalProjection = `goals.*, (${householdAreaLink("goals.area_id")}) AS visible_area_id`
+const householdProjectProjection = `projects.*, (${householdAreaLink("projects.area_id")}) AS visible_area_id,
+  (${householdGoalLink("projects.goal_id")}) AS visible_goal_id`
+
 // ─── Repository ──────────────────────────────────────────────────────
 
 export class HierarchyRepository {
@@ -126,7 +133,11 @@ export class HierarchyRepository {
 
   async deleteArea(id: string): Promise<boolean> {
     const result = await this.client.execute({
-      sql: "DELETE FROM areas WHERE id = ? AND owner_board_id IS NULL",
+      sql: `DELETE FROM areas WHERE id = ? AND owner_board_id IS NULL
+        AND NOT EXISTS (SELECT 1 FROM projects WHERE area_id = areas.id AND owner_board_id IS NOT NULL)
+        AND NOT EXISTS (SELECT 1 FROM goals WHERE area_id = areas.id AND owner_board_id IS NOT NULL)
+        AND NOT EXISTS (SELECT 1 FROM tasks WHERE area_id = areas.id AND task_board_id IS NOT NULL)
+        AND NOT EXISTS (SELECT 1 FROM board_goal_shares WHERE area_id = areas.id)`,
       args: [id],
     })
     return (result.rowsAffected ?? 0) > 0
@@ -147,13 +158,14 @@ export class HierarchyRepository {
   // ── Goals ────────────────────────────────────────────────────────
 
   async findAllGoals(filters?: { area_id?: string; project_id?: string; status?: string }): Promise<GoalRow[]> {
-    let sql = "SELECT * FROM goals"
+    let sql = `SELECT ${householdGoalProjection} FROM goals`
     const conditions = ["owner_board_id IS NULL"]
     const args: string[] = []
 
     if (filters?.area_id) {
-      conditions.push("(area_id = ? OR id IN (SELECT goal_id FROM projects WHERE area_id = ? AND owner_board_id IS NULL))")
-      args.push(filters.area_id, filters.area_id)
+      conditions.push(`EXISTS (${householdAreaLink("?")}) AND
+        (area_id = ? OR id IN (SELECT goal_id FROM projects WHERE area_id = ? AND owner_board_id IS NULL))`)
+      args.push(filters.area_id, filters.area_id, filters.area_id)
     }
     if (filters?.project_id) {
       conditions.push("id = (SELECT goal_id FROM projects WHERE id = ? AND owner_board_id IS NULL)")
@@ -170,7 +182,7 @@ export class HierarchyRepository {
 
   async findGoalById(id: string): Promise<GoalRow | null> {
     const result = await this.client.execute({
-      sql: "SELECT * FROM goals WHERE id = ? AND owner_board_id IS NULL",
+      sql: `SELECT ${householdGoalProjection} FROM goals WHERE id = ? AND owner_board_id IS NULL`,
       args: [id],
     })
     return result.rows[0] ? this.mapGoal(result.rows[0] as Record<string, unknown>) : null
@@ -179,11 +191,12 @@ export class HierarchyRepository {
   async createGoal(data: {
     id: string; title: string; area_id?: string | null | undefined; description?: string; status?: string; target_date?: string | null | undefined
     metric_type?: string | null; metric_target?: number | null; metric_current?: number
-  }): Promise<void> {
+  }): Promise<boolean> {
     const now = Date.now()
-    await this.client.execute({
+    const result = await this.client.execute({
       sql: `INSERT INTO goals (id, area_id, title, description, status, target_date, metric_type, metric_target, metric_current, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+            WHERE ? IS NULL OR EXISTS (${householdAreaLink("?")})`,
       args: [
         data.id,
         data.area_id ?? null,
@@ -196,8 +209,11 @@ export class HierarchyRepository {
         data.metric_current ?? 0,
         now,
         now,
+        data.area_id ?? null,
+        data.area_id ?? null,
       ],
     })
+    return result.rowsAffected > 0
   }
 
   async updateGoal(id: string, data: {
@@ -227,8 +243,11 @@ export class HierarchyRepository {
     args.push(Date.now())
     args.push(id)
 
+    const area = data.area_id
+    const areaGuard = area == null ? "" : `AND EXISTS (${householdAreaLink("?")})`
+    if (area != null) args.push(area)
     const result = await this.client.execute({
-      sql: `UPDATE goals SET ${sets.join(", ")} WHERE id = ? AND owner_board_id IS NULL`,
+      sql: `UPDATE goals SET ${sets.join(", ")} WHERE id = ? AND owner_board_id IS NULL ${areaGuard}`,
       args,
     })
     return (result.rowsAffected ?? 0) > 0
@@ -236,7 +255,10 @@ export class HierarchyRepository {
 
   async deleteGoal(id: string): Promise<boolean> {
     const result = await this.client.execute({
-      sql: "DELETE FROM goals WHERE id = ? AND owner_board_id IS NULL",
+      sql: `DELETE FROM goals WHERE id = ? AND owner_board_id IS NULL
+        AND NOT EXISTS (SELECT 1 FROM projects WHERE goal_id = goals.id AND owner_board_id IS NOT NULL)
+        AND NOT EXISTS (SELECT 1 FROM tasks WHERE goal_id = goals.id AND task_board_id IS NOT NULL)
+        AND NOT EXISTS (SELECT 1 FROM board_goal_shares WHERE goal_id = goals.id)`,
       args: [id],
     })
     return (result.rowsAffected ?? 0) > 0
@@ -250,13 +272,14 @@ export class HierarchyRepository {
   // ── Projects ─────────────────────────────────────────────────────
 
   async findAllProjects(filters?: { goal_id?: string; area_id?: string; status?: string }): Promise<ProjectRow[]> {
-    let sql = "SELECT * FROM projects"
+    let sql = `SELECT ${householdProjectProjection} FROM projects`
     const conditions = ["owner_board_id IS NULL"]
     const args: string[] = []
 
-    if (filters?.goal_id) { conditions.push("goal_id = ?"); args.push(filters.goal_id) }
+    if (filters?.goal_id) { conditions.push("visible_goal_id = ?"); args.push(filters.goal_id) }
     if (filters?.area_id) {
-      conditions.push("COALESCE(area_id, (SELECT goals.area_id FROM goals WHERE goals.id = projects.goal_id AND goals.owner_board_id IS NULL)) = ?")
+      conditions.push(`COALESCE(visible_area_id, (SELECT (${householdAreaLink("goals.area_id")}) FROM goals
+        WHERE goals.id = projects.goal_id AND goals.owner_board_id IS NULL)) = ?`)
       args.push(filters.area_id)
     }
     if (filters?.status) { conditions.push("status = ?"); args.push(filters.status) }
@@ -275,7 +298,7 @@ export class HierarchyRepository {
 
   async findProjectById(id: string): Promise<ProjectRow | null> {
     const result = await this.client.execute({
-      sql: "SELECT * FROM projects WHERE id = ? AND owner_board_id IS NULL",
+      sql: `SELECT ${householdProjectProjection} FROM projects WHERE id = ? AND owner_board_id IS NULL`,
       args: [id],
     })
     return result.rows[0] ? this.mapProject(result.rows[0] as Record<string, unknown>) : null
@@ -295,11 +318,13 @@ export class HierarchyRepository {
 
   async createProject(data: {
     id: string; title: string; goal_id?: string | null | undefined; area_id?: string | null | undefined; description?: string; status?: string; icon?: string; color?: string; position?: number
-  }): Promise<void> {
+  }): Promise<boolean> {
     const now = Date.now()
-    await this.client.execute({
+    const result = await this.client.execute({
       sql: `INSERT INTO projects (id, goal_id, area_id, title, description, status, icon, color, position, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+            WHERE (? IS NULL OR EXISTS (${householdGoalLink("?")}))
+              AND (? IS NULL OR EXISTS (${householdAreaLink("?")}))`,
       args: [
         data.id,
         data.goal_id ?? null,
@@ -312,8 +337,11 @@ export class HierarchyRepository {
         data.position ?? 0,
         now,
         now,
+        data.goal_id ?? null, data.goal_id ?? null,
+        data.area_id ?? null, data.area_id ?? null,
       ],
     })
+    return result.rowsAffected > 0
   }
 
   async updateProject(id: string, data: {
@@ -337,24 +365,32 @@ export class HierarchyRepository {
     args.push(Date.now())
     args.push(id)
 
+    const goal = data.goal_id
+    const area = data.area_id
+    const goalGuard = goal == null ? "" : `AND EXISTS (${householdGoalLink("?")})`
+    const areaGuard = area == null ? "" : `AND EXISTS (${householdAreaLink("?")})`
+    if (goal != null) args.push(goal)
+    if (area != null) args.push(area)
     const result = await this.client.execute({
-      sql: `UPDATE projects SET ${sets.join(", ")} WHERE id = ? AND owner_board_id IS NULL`,
+      sql: `UPDATE projects SET ${sets.join(", ")} WHERE id = ? AND owner_board_id IS NULL ${goalGuard} ${areaGuard}`,
       args,
     })
     return (result.rowsAffected ?? 0) > 0
   }
 
   async deleteProject(id: string): Promise<boolean> {
+    const deletable = `SELECT 1 FROM projects WHERE id = ? AND is_default = 0 AND owner_board_id IS NULL
+      AND NOT EXISTS (SELECT 1 FROM tasks WHERE project_id = projects.id AND task_board_id IS NOT NULL)
+      AND NOT EXISTS (SELECT 1 FROM task_boards WHERE project_id = projects.id AND id <> 'household')`
     const [, result] = await this.client.batch([
       {
         sql: `UPDATE tasks SET project_id = NULL, updated_at = ?
-              WHERE task_board_id IS NULL AND project_id = ?
-                AND EXISTS (SELECT 1 FROM projects WHERE id = ? AND is_default = 0 AND owner_board_id IS NULL)`,
+              WHERE task_board_id IS NULL AND project_id = ? AND EXISTS (${deletable})`,
         args: [Date.now(), id, id],
       },
       {
-        sql: "DELETE FROM projects WHERE id = ? AND owner_board_id IS NULL AND is_default = 0",
-        args: [id],
+        sql: `DELETE FROM projects WHERE id = ? AND EXISTS (${deletable})`,
+        args: [id, id],
       },
     ], "write")
     return (result?.rowsAffected ?? 0) > 0
@@ -389,7 +425,7 @@ export class HierarchyRepository {
   private mapGoal(row: Record<string, unknown>): GoalRow {
     return {
       id: String(row.id),
-      area_id: row.area_id ? String(row.area_id) : null,
+      area_id: row.visible_area_id ? String(row.visible_area_id) : null,
       title: String(row.title),
       description: row.description ? String(row.description) : null,
       status: String(row.status ?? "active"),
@@ -406,8 +442,8 @@ export class HierarchyRepository {
   private mapProject(row: Record<string, unknown>): ProjectRow {
     return {
       id: String(row.id),
-      goal_id: row.goal_id ? String(row.goal_id) : null,
-      area_id: row.area_id ? String(row.area_id) : null,
+      goal_id: row.visible_goal_id ? String(row.visible_goal_id) : null,
+      area_id: row.visible_area_id ? String(row.visible_area_id) : null,
       title: String(row.title),
       description: row.description ? String(row.description) : null,
       status: String(row.status ?? "active"),
@@ -425,7 +461,7 @@ export class HierarchyRepository {
   /** Find the default "Every Day" project */
   async findDefaultProject(): Promise<ProjectRow | null> {
     const result = await this.client.execute(
-      "SELECT * FROM projects WHERE is_default = 1 LIMIT 1"
+      `SELECT ${householdProjectProjection} FROM projects WHERE is_default = 1 AND owner_board_id IS NULL LIMIT 1`
     )
     return result.rows[0] ? this.mapProject(result.rows[0] as Record<string, unknown>) : null
   }

@@ -84,7 +84,7 @@ export class TemplateRepository {
             recurrence_rule, checklists, custom_fields, area_id, framework_payload,
             calendar_sync_state, idempotency_key, request_id, created_at, updated_at)
             SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '{}', ?, ?, ?, ?, ?
-            WHERE ? = 'default' OR EXISTS (SELECT 1 FROM areas WHERE id = ?)`,
+            WHERE ? = 'default' OR EXISTS (SELECT 1 FROM areas WHERE id = ? AND owner_board_id IS NULL)`,
       args: [
         taskId,
         String(template.title ?? "Untitled"),
@@ -124,7 +124,7 @@ export class TemplateRepository {
     const inserted = await this.client.execute({
       sql: `INSERT INTO task_templates (id, name, template_json, icon, is_routine, cadence, position, created_at, updated_at)
             SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
-            WHERE ? IS NULL OR EXISTS (SELECT 1 FROM areas WHERE id = ?)`,
+            WHERE ? IS NULL OR EXISTS (SELECT 1 FROM areas WHERE id = ? AND owner_board_id IS NULL)`,
       args: [data.id, data.name, data.templateJson, data.icon, isRoutine ? 1 : 0, cadence, data.position, now, now, data.areaId ?? null, data.areaId ?? null],
     })
     return inserted.rowsAffected !== 0
@@ -167,7 +167,7 @@ export class TemplateRepository {
     sets.push("updated_at = ?")
     args.push(Date.now())
     args.push(id)
-    const areaCheck = data.areaId === undefined ? "" : "AND EXISTS (SELECT 1 FROM areas WHERE id = ?)"
+    const areaCheck = data.areaId === undefined ? "" : "AND EXISTS (SELECT 1 FROM areas WHERE id = ? AND owner_board_id IS NULL)"
     if (data.areaId !== undefined) args.push(data.areaId)
 
     const written = await this.client.execute({
@@ -333,7 +333,7 @@ export class TemplateRepository {
             SELECT ?, ?, ?, ?, ?, ?, ?, 'routine_instance', ?, ?, ?, ?, ?,
                    ${nextHouseholdTicketNumberSql}, '{}', 'pending', ?, ?, ?, ?
             WHERE EXISTS (SELECT 1 FROM task_templates WHERE id = ? AND is_routine = 1 AND template_json = ?)
-              AND (? = 'default' OR EXISTS (SELECT 1 FROM areas WHERE id = ?))
+              AND (? = 'default' OR EXISTS (SELECT 1 FROM areas WHERE id = ? AND owner_board_id IS NULL))
               AND NOT EXISTS (SELECT 1 FROM tasks WHERE task_board_id IS NULL AND source_template_id = ? AND due_date = ?)`,
       args: [
         taskId,

@@ -15,7 +15,9 @@ import { TASK_BOARD_MIGRATION, TASK_BOARD_SCHEMA_VERSION } from "../../apps/web/
 import { DATABASE_SCHEMA_VERSION, openDatabase } from "../../apps/web/scripts/database-client.mjs"
 import { HierarchyRepository } from "../../apps/web/src/domains/tasks/persistence/hierarchy-repository"
 import { getPillarById, getPillars } from "../../apps/web/src/domains/pillars/pillar-service"
-import { readSharedGoalsForArea } from "../../apps/web/src/domains/tasks/persistence/shared-goal-repository"
+import { readSharedGoals } from "../../apps/web/src/domains/tasks/persistence/shared-goal-repository"
+import { searchMeithealCatalog } from "../../apps/web/src/domains/search/search-service"
+import { TaskInactivityRepository } from "../../apps/web/src/domains/tasks/persistence/task-inactivity-repository"
 import { TaskRepository } from "../../apps/web/src/domains/tasks/persistence/task-repository"
 import { ensureSchema, getPersistenceClient, resetPersistenceForTests } from "../../apps/web/src/domains/tasks/persistence/store"
 import { prepareTaskBoardPredecessor, predecessorMigrationNames } from "../scripts/task-board-predecessor"
@@ -576,6 +578,15 @@ test("Household task reads and cleanup exclude a named Board even by exact ID", 
   expect(await hierarchy.findProjectById("work-project")).toBeNull()
   expect(await hierarchy.findAllGoals({ area_id: "work-area" })).toEqual([])
   expect(await hierarchy.findAllGoals({ project_id: "work-project" })).toEqual([])
+  expect(await repo.getAreas()).not.toHaveProperty("work-area")
+  expect((await searchMeithealCatalog({
+    query: "Work area", scope: "views", limit: 10, includeCompleted: false,
+    includeArchived: false, sort: "relevance", taskFields: [],
+  })).sections.flatMap(section => section.items)).not.toContainEqual(expect.objectContaining({ id: "work-area" }))
+  expect(await new TaskInactivityRepository(db).preview({ areaId: "work-area", page: 1, filter: "all", now: 1 }))
+    .toMatchObject({ areaExists: false, areaGeneration: null, areas: expect.not.arrayContaining([expect.objectContaining({ id: "work-area" })]) })
+  expect(await hierarchy.createProject({ id: "rejected-project", title: "Rejected", area_id: "work-area" })).toBe(false)
+  expect(await hierarchy.createGoal({ id: "rejected-goal", title: "Rejected", area_id: "work-area" })).toBe(false)
   expect(await hierarchy.deleteProject("work-project")).toBe(false)
   expect(await getPillarById("work-pillar")).toBeNull()
   expect((await getPillars()).map(pillar => pillar.id)).not.toContain("work-pillar")
@@ -587,16 +598,39 @@ test("Household task reads and cleanup exclude a named Board even by exact ID", 
     "INSERT INTO projects (id, goal_id, area_id, title, status, created_at, updated_at) VALUES ('home-project', 'work-goal', 'default', 'Home project', 'completed', 1, 1)",
     "INSERT INTO board_access_grants (board_id, principal_type, principal_id, role) VALUES ('work-fixture', 'ha_user', 'work-user', 'member')",
   ], "write")
-  const home = await readSharedGoalsForArea(db, "home-user", "default", revision)
+  const home = await readSharedGoals(db, "home-user", { areaId: "default" }, revision)
   expect(home).toEqual([{ id: "work-goal", title: "Work goal", area_id: "default", project_count: 1, completed_project_count: 1 }])
+  expect(await readSharedGoals(db, "home-user", {}, revision)).toEqual(home)
+  expect(await readSharedGoals(db, "home-user", { projectId: "home-project" }, revision)).toEqual(home)
+  expect(await readSharedGoals(db, "home-user", { areaId: "default", projectId: "home-project" }, revision)).toEqual(home)
+  expect(await readSharedGoals(db, "home-user", { areaId: "work-area", projectId: "home-project" }, revision)).toEqual([])
+  expect(await readSharedGoals(db, "home-user", { projectId: "work-project" }, revision)).toEqual([])
+  expect(await hierarchy.findProjectById("home-project")).toMatchObject({ goal_id: null, area_id: "default" })
+  expect(await hierarchy.findAllProjects({ goal_id: "work-goal" })).toEqual([])
+  expect(await hierarchy.updateProject("home-project", { area_id: "work-area", title: "Rejected" })).toBe(false)
+  expect(await hierarchy.updateProject("home-project", { goal_id: "work-goal" })).toBe(false)
+  expect(await hierarchy.findProjectById("home-project")).toMatchObject({ title: "Home project" })
+  await db.batch([
+    "INSERT INTO areas (id, name, created_at, updated_at) VALUES ('legacy-area', 'Household area', 1, 1)",
+    "INSERT INTO goals (id, title, created_at, updated_at) VALUES ('legacy-goal', 'Household goal', 1, 1)",
+    "INSERT INTO projects (id, title, area_id, goal_id, owner_board_id, created_at, updated_at) VALUES ('linked-project', 'Linked in Work', 'legacy-area', 'legacy-goal', 'work-fixture', 1, 1)",
+  ], "write")
+  expect(await hierarchy.deleteArea("legacy-area")).toBe(false)
+  expect(await hierarchy.deleteGoal("legacy-goal")).toBe(false)
+  expect((await db.execute("SELECT area_id, goal_id FROM projects WHERE id = 'linked-project'")).rows[0])
+    .toMatchObject({ area_id: "legacy-area", goal_id: "legacy-goal" })
   await db.execute("UPDATE projects SET title = 'Private changes', status = 'completed' WHERE id = 'work-project'")
-  expect(await readSharedGoalsForArea(db, "home-user", "default", revision)).toEqual(home)
-  expect(await readSharedGoalsForArea(db, "work-user", "default", revision)).toMatchObject([
+  expect(await readSharedGoals(db, "home-user", { areaId: "default" }, revision)).toEqual(home)
+  expect(await readSharedGoals(db, "work-user", { areaId: "default" }, revision)).toMatchObject([
     { id: "work-goal", project_count: 2, completed_project_count: 2 },
   ])
-  expect(await readSharedGoalsForArea(db, "home-user", "default", crypto.randomUUID())).toEqual([])
+  expect(await readSharedGoals(db, "home-user", { areaId: "default" }, crypto.randomUUID())).toEqual([])
   await db.execute("DELETE FROM board_access_grants WHERE principal_id = 'work-user'")
-  expect(await readSharedGoalsForArea(db, "work-user", "default", revision)).toEqual(home)
+  expect(await readSharedGoals(db, "work-user", { areaId: "default" }, revision)).toEqual(home)
   await db.execute("UPDATE areas SET owner_board_id = 'work-fixture' WHERE id = 'default'")
-  expect(await readSharedGoalsForArea(db, "home-user", "default", revision)).toEqual([])
+  expect(await readSharedGoals(db, "home-user", { areaId: "default" }, revision)).toEqual([])
+  await db.execute("UPDATE areas SET owner_board_id = NULL WHERE id = 'default'")
+  expect(await readSharedGoals(db, "home-user", { areaId: "default" }, revision)).toEqual([])
+  await db.execute("INSERT INTO board_goal_shares VALUES ('work-goal', 'default', 'household')")
+  expect(await readSharedGoals(db, "home-user", { areaId: "default" }, revision)).toEqual(home)
 })

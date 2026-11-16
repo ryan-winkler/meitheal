@@ -607,7 +607,7 @@ export class TaskRepository {
 
   /** All boards (for card badges on dashboard) */
   async getAreas(): Promise<Record<string, AreaInfo>> {
-    const result = await this.client.execute("SELECT id, name, color FROM areas");
+    const result = await this.client.execute("SELECT id, name, color FROM areas WHERE owner_board_id IS NULL");
     const areaMap: Record<string, AreaInfo> = {
       default: { id: "default", name: "Default", color: "#6366F1" },
     };
