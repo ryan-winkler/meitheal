@@ -513,6 +513,8 @@ export function planInboundCalendarUpdate(
     end: string | null
     recurrenceRule: string | null
     repeats: boolean
+    /** The task stands for a series key: a later occurrence under that key is a new one. */
+    seriesKey?: boolean | undefined
     /** Starts of every occurrence of the series in the sync window. */
     occurrenceStarts?: readonly string[] | undefined
   },
@@ -567,7 +569,7 @@ export function planInboundCalendarUpdate(
   // first payload this release writes becomes the baseline, and the task reopens at the
   // occurrence after that.
   if (
-    importedBySync && calendarOwned && incoming.repeats && completed && !legacyPayload &&
+    importedBySync && calendarOwned && (incoming.repeats || incoming.seriesKey === true) && completed && !legacyPayload &&
     previousDay && incomingDay && incomingDay > previousDay
   ) {
     plan.status = STATUS.PENDING
@@ -800,7 +802,13 @@ export function isRegularHASeries(starts: string[], timezone: string): boolean {
     maxOccurrences: 1000,
   })
   const ruleDays = new Set(expanded.map((occurrence) => occurrence.start.slice(0, 10)))
-  return days.every((day) => ruleDays.has(day))
+  if (!days.every((day) => ruleDays.has(day))) return false
+  // The rule must also not predict dates between the first and last that did not happen:
+  // Monday, Thursday and the next Tuesday fit "weekly on Mon, Tue, Thu" but are three
+  // separate appointments. One missing date per four seen (a cancelled week) is allowed.
+  const observed = new Set(days)
+  const missing = [...ruleDays].filter((day) => !observed.has(day)).length
+  return missing <= Math.floor(days.length / 4)
 }
 
 function groupHAEventsIntoSeries(
@@ -1152,9 +1160,11 @@ async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState |
       const starts = new Set(series.occurrences.map((o) => o.start))
       const rank = (taskId: string) => {
         const task = currentTasks.get(taskId)
-        const open = isClosedStatus(String(task?.status ?? "")) ? 0 : 2
-        const holdsOccurrence = starts.has(String(task?.due_date ?? "")) ? 1 : 0
-        return open + holdsOccurrence
+        const due = String(task?.due_date ?? "")
+        const open = isClosedStatus(String(task?.status ?? "")) ? 0 : 4
+        const holdsOccurrence = starts.has(due) ? 1 : 0
+        const holdsRepresentative = due === series.representative.start ? 2 : 0
+        return open + holdsRepresentative + holdsOccurrence
       }
       preferredSeriesTask.set(series, taskIds.reduce((best, taskId) => (rank(taskId) > rank(best) ? taskId : best)))
     }
@@ -1195,7 +1205,13 @@ async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState |
           uids: series.legacyCandidateUids.filter((candidate) => existingMap.get(candidate) === otherTaskId),
         })
       }
-      if (existingTaskId && seriesTaskOwner.get(existingTaskId) !== series) {
+      // A closed task an earlier release shared between same-title events (for example one
+      // monthly "Rent" task completed for December while it already showed January) stays
+      // shared: splitting it off would bring the completed occurrence back as a new task.
+      const sharedClosedLegacy = existingTaskId !== undefined &&
+        isClosedStatus(String(currentTasks.get(existingTaskId)?.status ?? "")) &&
+        readPreviousSyncedFields(matchedCandidateUid ? existingLookup.get(matchedCandidateUid)?.payload ?? null : null)?.rrule === undefined
+      if (existingTaskId && seriesTaskOwner.get(existingTaskId) !== series && !sharedClosedLegacy) {
         const sharedTaskId = existingTaskId
         releasedLegacyLinks.push({
           taskId: sharedTaskId,
@@ -1280,6 +1296,7 @@ async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState |
             end: series.representativeEndDate,
             recurrenceRule: series.recurrenceRule,
             repeats: series.recurrenceRule !== null || series.inferredRecurrenceRule !== null,
+            seriesKey: series.seriesUid.startsWith("ha-cal-series-"),
             occurrenceStarts: series.occurrences.map((o) => o.start),
           },
           { timezone },
@@ -1354,6 +1371,34 @@ async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState |
                 AND provider_event_id IN (${released.uids.map(() => "?").join(", ")})`,
         args: [released.taskId, ...released.uids],
       })
+    }
+    // When separate same-title events become one series (a third regular date came into
+    // view), the series keeps one of their tasks. The others are open duplicates that sync
+    // created and no longer links, so they are completed (as sync does for a deleted event)
+    // instead of being left behind.
+    const keptTaskIds = new Set<string>([
+      ...mutations.filter((m) => m.kind === "update").map((m) => m.taskId),
+      ...seriesTaskOwner.keys(),
+    ])
+    const supersededTaskIds = [...new Set(releasedLegacyLinks.map((released) => released.taskId))].filter((taskId) => {
+      const task = currentTasks.get(taskId)
+      return task !== undefined && !keptTaskIds.has(taskId) && syncMayKeep(taskId) &&
+        !writtenBackTaskIds.has(taskId) && !isClosedStatus(String(task.status ?? ""))
+    })
+    for (const taskId of supersededTaskIds) {
+      const result = await client.execute({
+        sql: `UPDATE tasks SET status = '${STATUS.COMPLETE}', updated_at = ?
+              WHERE id = ? AND status = ?
+                AND NOT EXISTS (SELECT 1 FROM calendar_confirmations WHERE task_id = ? AND source = 'ha.calendar_sync')`,
+        args: [nowMs, taskId, String(currentTasks.get(taskId)?.status ?? ""), taskId],
+      })
+      if ((result.rowsAffected ?? 0) > 0) {
+        logger.log("info", {
+          event: "calendar.sync.series_duplicate_completed", domain: "calendar", component: "calendar-bridge",
+          request_id: SYS_REQ,
+          message: `Completed task ${taskId}: its event joined a series that keeps another task in ${entityId}`,
+        })
+      }
     }
 
     if (mutations.length > 0) {
@@ -2031,6 +2076,8 @@ async function importCalDAVEvents(): Promise<CalendarSyncCounts> {
 
         const nowMs = Date.now()
         const calMutations: SyncTaskMutation[] = []
+        // Links to tasks the household deleted, removed before a later occurrence is imported.
+        const releasedCalTombstones: { uid: string; taskId: string }[] = []
         for (const [uid, group] of groupedByUid) {
           const wrapped = group.map((evt) => ({
             evt,
@@ -2072,7 +2119,16 @@ async function importCalDAVEvents(): Promise<CalendarSyncCounts> {
             })),
           })
 
-          const existingTaskId = existingCalMap.get(uid)
+          let existingTaskId = existingCalMap.get(uid)
+          if (existingTaskId && !currentCalTasks.has(existingTaskId)) {
+            // A deleted CalDAV task stays deleted. A repeating event gets a new task once an
+            // occurrence later than the deleted one comes up, as with Home Assistant.
+            const deletedStart = readPreviousSyncedFields(existingCalPayloads.get(uid) ?? null)?.start
+            const deletedDay = (deletedStart ? calendarDayFromInput(deletedStart, timezone) : null) ?? "9999-12-31"
+            if (selected.startDay <= deletedDay) continue
+            releasedCalTombstones.push({ uid, taskId: existingTaskId })
+            existingTaskId = undefined
+          }
           if (existingTaskId) {
             const currentCalTask = currentCalTasks.get(existingTaskId)
             const calPreviousPayload = existingCalPayloads.get(uid) ?? null
@@ -2127,6 +2183,12 @@ async function importCalDAVEvents(): Promise<CalendarSyncCounts> {
           }
         }
 
+        for (const released of releasedCalTombstones) {
+          await client.execute({
+            sql: `DELETE FROM calendar_confirmations WHERE source = 'caldav' AND provider_event_id = ? AND task_id = ?`,
+            args: [released.uid, released.taskId],
+          })
+        }
         if (calMutations.length > 0) {
           const commitRes = await mod.commitSyncMutationChunks(calMutations)
           totalCreated += commitRes.created

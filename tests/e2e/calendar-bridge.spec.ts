@@ -27,6 +27,7 @@ import {
   stopCalDAVSync,
   syncCalDAVEvents,
   isImportedCalendarTask,
+  isRegularHASeries,
   planInboundCalendarUpdate,
   syncFromHA,
 } from "../../apps/web/src/domains/calendar/calendar-bridge"
@@ -279,6 +280,18 @@ test("selectRepresentativeOccurrence prioritizes today over +28d and handles exc
   expect(pastAllDay.startDay).toBe("2026-11-15")
 })
 
+test("isRegularHASeries needs three dates that a rule predicts without unseen dates in between", () => {
+  const utc = (days: string[]) => days.map((d) => `${d}T10:00:00Z`)
+  expect(isRegularHASeries(utc(["2026-11-16", "2026-11-23", "2026-11-30"]), "UTC")).toBe(true)
+  expect(isRegularHASeries(utc(["2026-11-16", "2026-11-30", "2026-12-14"]), "UTC")).toBe(true)
+  expect(isRegularHASeries(utc(["2026-11-16", "2026-11-23"]), "UTC")).toBe(false)
+  // Monday, Thursday and the next Tuesday fit "weekly on Mon, Tue, Thu" but are separate visits.
+  expect(isRegularHASeries(utc(["2026-11-16", "2026-11-19", "2026-11-24"]), "UTC")).toBe(false)
+  expect(isRegularHASeries(utc(["2026-11-16", "2026-11-17", "2026-11-19"]), "UTC")).toBe(false)
+  // A weekly series with one cancelled week among four seen dates is still a series.
+  expect(isRegularHASeries(utc(["2026-11-02", "2026-11-09", "2026-11-23", "2026-11-30"]), "UTC")).toBe(true)
+})
+
 test("planInboundCalendarUpdate treats alias and archived statuses as closed", () => {
   const payload = JSON.stringify({ summary: "Bins", start: "2026-11-09T07:00:00Z", end: null, rrule: null })
   const base = {
@@ -334,6 +347,8 @@ test("HA sync groups recurring occurrences (with and without UID), picks today o
       { uid: "weekly-standup", summary: "Weekly Standup", start: `${d14}T10:00:00Z`, end: `${d14}T10:30:00Z` },
       { summary: "Bin Night", start: `${todayStr}T18:30:00Z`, end: `${todayStr}T19:00:00Z` },
       { summary: "Bin Night", start: `${d7}T18:30:00Z`, end: `${d7}T19:00:00Z` },
+      { summary: "Bin Night", start: `${d14}T18:30:00Z`, end: `${d14}T19:00:00Z` },
+      { summary: "Bin Night", start: `${shiftCalendarDay(todayStr, 21)}T18:30:00Z`, end: `${shiftCalendarDay(todayStr, 21)}T19:00:00Z` },
       { summary: "Bin Night", start: `${d28}T18:30:00Z`, end: `${d28}T19:00:00Z` },
     ])
 
@@ -377,7 +392,7 @@ test("HA sync groups recurring occurrences (with and without UID), picks today o
     const haCounts = await repo.getCalendarHAEventCounts(todayStr, d28, "Europe/Dublin")
     expect(haCounts[todayStr]).toBe(2)
     expect(haCounts[d7]).toBe(2)
-    expect(haCounts[d14]).toBe(1)
+    expect(haCounts[d14]).toBe(2)
     expect(haCounts[d28]).toBe(2)
 
     // Re-syncing must update (not create duplicates or overwrite due_date with +28d)
@@ -892,8 +907,8 @@ test("HA sync upgrades tasks saved by the per-occurrence release: due dates foll
 
     // The old release linked every "Bin Night" occurrence to one task and left its due
     // date on the occurrence it synced last (four weeks out).
-    const binStarts = [todayStr, d7, d28].map((day) => `${day}T18:30:00Z`)
-    await seedTask("legacy-bin", "Bin Night", binStarts[2]!, binStarts[0]!)
+    const binStarts = [todayStr, d7, d14, shiftCalendarDay(todayStr, 21), d28].map((day) => `${day}T18:30:00Z`)
+    await seedTask("legacy-bin", "Bin Night", binStarts[4]!, binStarts[0]!)
     for (const start of binStarts) await seedLink("legacy-bin", "Bin Night", start, start.replace("18:30", "19:00"))
 
     // It also merged two different "Swimming" series (Tuesday 17:00, Saturday 10:00) into one task.
@@ -906,8 +921,8 @@ test("HA sync upgrades tasks saved by the per-occurrence release: due dates foll
 
     // After the user completed last week's "Gym" task, the old release created a second
     // task for the later occurrences (it never matched completed tasks by title).
-    const dMinus5 = shiftCalendarDay(todayStr, -5)
-    const gymStarts = [dMinus5, todayStr, d7, d14].map((day) => `${day}T07:00:00Z`)
+    const dMinus7 = shiftCalendarDay(todayStr, -7)
+    const gymStarts = [dMinus7, todayStr, d7, d14].map((day) => `${day}T07:00:00Z`)
     await seedTask("legacy-gym-done", "Gym", gymStarts[0]!, gymStarts[0]!)
     await db.execute({ sql: "UPDATE tasks SET status = 'complete' WHERE id = 'legacy-gym-done'", args: [] })
     await seedLink("legacy-gym-done", "Gym", gymStarts[0]!, gymStarts[0]!)
@@ -1146,6 +1161,91 @@ test("a completed series keeps its last-applied baseline, so a provider rename s
   }
 })
 
+test("HA sync turns separate same-title tasks into one series without duplicates, reopens a closed series for a later event, and keeps a completed legacy month done", async () => {
+  const previous = Object.fromEntries(["MEITHEAL_DB_URL", "SUPERVISOR_TOKEN", "HA_BASE_URL", "HA_TOKEN"].map((k) => [k, process.env[k]]))
+  const directory = await mkdtemp(join(tmpdir(), "meitheal-cal-two-to-three-"))
+  const ha = await startHAWebSocketFixture()
+  delete process.env.SUPERVISOR_TOKEN
+  process.env.HA_BASE_URL = ha.url
+  process.env.HA_TOKEN = "calendar-two-to-three-fixture"
+  process.env.MEITHEAL_DB_URL = `file:${join(directory, "tasks.db")}`
+  resetPersistenceForTests()
+  const db = getPersistenceClient()
+
+  try {
+    await ensureSchema()
+    const settingsRepo = new SettingsRepository(db)
+    await settingsRepo.ensureSettingsTable()
+    await settingsRepo.upsert("timezone", "Europe/Dublin")
+    expect(await getHAConnection()).not.toBeNull()
+    const repo = new TaskRepository(db)
+    const entity = "calendar.household"
+    const todayStr = calendarToday("Europe/Dublin")
+    const day = (offset: number) => shiftCalendarDay(todayStr, offset)
+    const at = (d: string, time: string) => `${d}T${time}:00Z`
+    const bins = (days: number[]) => days.map((offset) => ({ summary: "Bins", start: at(day(offset), "07:00"), end: at(day(offset), "07:15") }))
+    const openBins = async () => (await db.execute({
+      sql: "SELECT id, due_date FROM tasks WHERE title = 'Bins' AND status <> 'complete' ORDER BY due_date", args: [],
+    })).rows
+
+    // A fortnightly bin day first seen with two dates: two separate tasks.
+    ha.setCalendarEvents(bins([14, 28]))
+    await syncFromHA(entity)
+    expect(await openBins()).toHaveLength(2)
+    // A third regular date comes into view: one series, and no duplicate is left open.
+    ha.setCalendarEvents(bins([0, 14, 28]))
+    await syncFromHA(entity)
+    const series = await openBins()
+    expect(series).toHaveLength(1)
+    expect(String(series[0]?.due_date)).toBe(at(todayStr, "07:00"))
+    await syncFromHA(entity)
+    expect(await openBins()).toHaveLength(1)
+
+    // The series ends and its task is completed; a later "Bins" event under the same key reopens it.
+    await repo.updateTask(String(series[0]?.id), { status: "complete" })
+    ha.setCalendarEvents([{ summary: "Other", start: at(day(3), "10:00"), end: at(day(3), "11:00") }])
+    await syncFromHA(entity)
+    ha.setCalendarEvents(bins([21]))
+    await syncFromHA(entity)
+    const reopened = await openBins()
+    expect(reopened.map((row) => [String(row.id), String(row.due_date)])).toEqual([[String(series[0]?.id), at(day(21), "07:00")]])
+
+    // The previous release left one completed monthly "Rent" task for two months' events.
+    const rentEarlier = day(-5)
+    const rentLater = day(26)
+    const legacyKey = (start: string) => `ha-cal-${entity}-Rent-${start}`
+    await db.execute({
+      sql: `INSERT INTO tasks (id, title, description, status, priority, labels, framework_payload, area_id, custom_fields, task_type, due_date, idempotency_key, request_id, ticket_number, created_at, updated_at)
+            VALUES ('legacy-rent', 'Rent', '', 'complete', 3, '["calendar-sync"]', '{}', 'default', '{}', 'task', ?, ?, 'legacy-rent', 9601, 1, 1)`,
+      args: [rentLater, `cal-sync-${legacyKey(rentEarlier)}`],
+    })
+    for (const start of [rentEarlier, rentLater]) {
+      await db.execute({
+        sql: `INSERT INTO calendar_confirmations (confirmation_id, task_id, request_id, provider_event_id, source, payload, created_at)
+              VALUES (?, 'legacy-rent', ?, ?, 'ha.calendar_sync', ?, 1)`,
+        args: [`rent-${start}`, `rent-${start}`, legacyKey(start), JSON.stringify({ summary: "Rent", start, end: shiftCalendarDay(start, 1), entity_id: entity })],
+      })
+    }
+    ha.setCalendarEvents([rentEarlier, rentLater].map((start) => ({ summary: "Rent", start, end: shiftCalendarDay(start, 1) })))
+    await syncFromHA(entity)
+    // The month the household already marked done does not come back as an open task.
+    const rents = await db.execute({ sql: "SELECT id, status FROM tasks WHERE title = 'Rent'", args: [] })
+    expect(rents.rows.map((row) => [String(row.id), String(row.status)])).toEqual([["legacy-rent", "complete"]])
+  } finally {
+    stopCalendarSync()
+    stopEntitySubscription()
+    closeHAConnection()
+    await ha.close()
+    db.close()
+    resetPersistenceForTests()
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+
 test("CalDAV sync parses RRULE, EXDATE, colons in DESCRIPTION, exclusive all-day DTEND, and updates existing tasks on re-sync", async () => {
   const origin = "http://caldav-recurrence-fixture.example"
   const previous = Object.fromEntries(["MEITHEAL_DB_URL", "SUPERVISOR_TOKEN", "HA_TOKEN"].map((k) => [k, process.env[k]]))
@@ -1248,6 +1348,13 @@ test("CalDAV sync parses RRULE, EXDATE, colons in DESCRIPTION, exclusive all-day
     const rows2 = (await db.execute({ sql: `SELECT title FROM tasks`, args: [] })).rows
     expect(rows2).toHaveLength(1)
     expect(rows2[0]!.title).toBe("CalDAV Standup (Renamed)")
+
+    // A deleted CalDAV task stays deleted while its occurrence is still the current one.
+    await db.execute({ sql: "DELETE FROM tasks", args: [] })
+    const third = await syncCalDAVEvents()
+    expect(third.created).toBe(0)
+    expect(third.updated).toBe(0)
+    expect((await db.execute({ sql: "SELECT id FROM tasks", args: [] })).rows).toHaveLength(0)
   } finally {
     stopCalDAVSync()
     globalThis.fetch = originalFetch

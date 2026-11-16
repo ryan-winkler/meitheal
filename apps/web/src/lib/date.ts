@@ -1,5 +1,5 @@
 import { formatDistanceToNow } from "date-fns";
-import { format as tzFormat, toZonedTime } from "date-fns-tz";
+import { format as tzFormat, fromZonedTime, toZonedTime } from "date-fns-tz";
 import { createClientLogger } from "@lib/client-logger";
 import { parseCalendarDay } from "./calendar-day";
 
@@ -232,34 +232,34 @@ export function formatRegionalDate(
   }
 }
 
-/** Epoch milliseconds of a timed due date, read like the overdue events (offset-less as UTC). */
-function dueInstantMs(raw: string): number {
+function parseDueTime(raw: string, timezone: string): number {
   if (/^\d{12,}$/.test(raw)) return Number(raw)
   if (/(?:Z|[+-]\d{2}:?\d{2})$/i.test(raw)) return Date.parse(raw)
-  return Date.parse(`${raw.replace(" ", "T")}Z`)
+  if (!FLOATING_DATETIME.test(raw) || !calendarDayFromInput(raw, timezone)) return NaN
+  return fromZonedTime(raw.replace(" ", "T"), resolveTimezone(timezone)).getTime()
 }
 
 /**
- * Overdue rule shared by the web app, the Home Assistant overdue sensor and the
- * `task.overdue` event: a date-only due date is overdue once its household calendar
- * day has ended; a due date with a time is overdue once that time passes.
- * `today` is the household day the check is made for; a timed due date on that day
- * is compared with `now` only when `today` is the actual current day.
+ * Web overdue checks keep date-only deadlines on their household day and read
+ * floating times in the household timezone. For an explicit reference day,
+ * only compare the clock when that day contains `now`.
  */
 export function isDueOverdue(
   dueDate: unknown,
   timezone = DEFAULT_TIMEZONE,
-  today = calendarToday(timezone),
+  today?: string,
   now = Date.now(),
 ): boolean {
   if (typeof dueDate !== "string" && typeof dueDate !== "number") return false
   const raw = String(dueDate).trim()
   if (!raw) return false
-  const day = calendarDayFromInput(raw, timezone)
-  if (!day) return false
-  if (day < today) return true
-  if (day > today || /^\d{4}-\d{2}-\d{2}$/.test(raw)) return false
-  if (today !== calendarToday(timezone, new Date(now))) return false
-  const dueMs = dueInstantMs(raw)
-  return Number.isFinite(dueMs) && dueMs < now
+  const clockDay = calendarToday(timezone, new Date(now))
+  const dayInView = today ?? clockDay
+  if (DATE_ONLY.test(raw)) return Boolean(parseCalendarDay(raw) && raw < dayInView)
+
+  const instant = parseDueTime(raw, timezone)
+  if (!Number.isFinite(instant)) return false
+  const dueDay = calendarDayFromInput(instant, timezone)
+  if (dueDay === null) return false
+  return dueDay < dayInView || (dueDay === dayInView && dayInView === clockDay && instant < now)
 }

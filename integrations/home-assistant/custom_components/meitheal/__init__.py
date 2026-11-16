@@ -174,11 +174,14 @@ def _resolve_service_origin(
         target = _script_edit_target(hass, entity_id if isinstance(entity_id, str) else None)
         return ("ha_script", str(name) if name else None, target)
 
-    context_ids = {cid for cid in (context.id, context.parent_id) if cid}
-    if context_ids:
-        for state in hass.states.async_all(["automation", "script"]):
-            state_ctx = getattr(state, "context", None)
-            if state_ctx is None or state_ctx.id not in context_ids:
+    # The call's own context wins over its parent: when automation A changes an entity
+    # that triggers automation B, B's context id matches B and its parent id matches A.
+    candidates = [state for state in hass.states.async_all(["automation", "script"]) if getattr(state, "context", None) is not None]
+    for context_id in (context.id, context.parent_id):
+        if not context_id:
+            continue
+        for state in candidates:
+            if state.context.id != context_id:
                 continue
             name = state.attributes.get("friendly_name") or state.name or state.entity_id
             if state.domain == "automation":

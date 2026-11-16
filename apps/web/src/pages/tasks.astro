@@ -11,7 +11,7 @@ import FilterToolbar from "../components/ui/FilterToolbar.astro";
 import CardCustomizer from "../components/ui/CardCustomizer.astro";
 import { t } from "../i18n/translations";
 import type { Locale } from "../lib/locale";
-import { calendarDaysFromToday, formatRegionalDate } from "../lib/date";
+import { calendarDaysFromToday, formatRegionalDate, isDueOverdue } from "../lib/date";
 import { formatTicketKey } from "../lib/ticket-key";
 import { buildTaskPath } from "../lib/task-detail-handoff"
 import {
@@ -521,9 +521,13 @@ try {
                 const dueDays = task.due_date
                   ? calendarDaysFromToday(String(task.due_date), timezone || "Europe/Dublin")
                   : null;
+                // The card badge follows the same overdue rule as the Overdue filter and the
+                // dashboard count: a timed due date earlier today is already overdue.
                 const dueStatus = dueDate
                   ? dueDays !== null
-                    ? dueDays < 0 ? "overdue" : dueDays === 0 ? "today" : "upcoming"
+                    ? dueDays < 0 || isDueOverdue(String(task.due_date), timezone || "Europe/Dublin")
+                      ? "overdue"
+                      : dueDays === 0 ? "today" : "upcoming"
                     : dueDate < today
                       ? "overdue"
                       : dueDate.toDateString() === new Date().toDateString()
