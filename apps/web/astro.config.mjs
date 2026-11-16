@@ -3,6 +3,7 @@ import node from "@astrojs/node";
 import tailwindcss from "@tailwindcss/vite";
 import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { minify } from "terser";
 
 // ── Single source of truth for version ──────────────────────────────
 // Read from meitheal-hub/config.yaml at build time. This value is
@@ -44,6 +45,19 @@ export default defineConfig({
           ssr: { noExternal: ["date-fns", "date-fns-tz", "zod", "yaml", "home-assistant-js-websocket", "parse5-html-rewriting-stream", "sanitize-html"] },
           build: { minify: "terser", terserOptions: { keep_fnames: true, keep_classnames: true } },
         })
+      },
+    },
+  }, {
+    name: "compact-service-worker",
+    hooks: {
+      "astro:build:done": async ({ dir }) => {
+        const worker = new URL("sw.js", dir)
+        const { code } = await minify(readFileSync(worker, "utf8"), {
+          compress: false,
+          mangle: false,
+          format: { comments: "some" },
+        })
+        writeFileSync(worker, code)
       },
     },
   }],
