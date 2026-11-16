@@ -5,6 +5,7 @@ import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 
 import { expect, test } from "@playwright/test"
+import { DATABASE_SCHEMA_VERSION } from "../../apps/web/scripts/database-client.mjs"
 import { openDatabase } from "../../apps/web/scripts/database-client.mjs"
 import { recentActivityPersonKey } from "../../apps/web/src/domains/tasks/persistence/recent-activity"
 import { prepareTaskBoardPredecessor } from "../scripts/task-board-predecessor"
@@ -49,7 +50,7 @@ test("CLI and runtime reconcile draft storage around an existing ordinary task",
 
     await ensureSchema()
     upgraded = getPersistenceClient()
-    expect(getSchemaVersion()).toBe(19)
+    expect(getSchemaVersion()).toBe(DATABASE_SCHEMA_VERSION)
     expect(migrate("--check")).toContain("Migration check passed")
     migrate()
     expect(migrate("--check")).toContain("Migration check passed")

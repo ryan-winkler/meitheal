@@ -8,6 +8,7 @@ import { join } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import { promisify } from "node:util"
 import { expect, test } from "@playwright/test"
+import { TASK_BOARD_SCHEMA_VERSION } from "../../apps/web/drizzle/migrations/task-board-upgrade.mjs"
 import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core"
 import {
   DATABASE_SCHEMA_VERSION,
@@ -226,7 +227,7 @@ test("starts with remote transports unloaded and sends remote requests through l
       await expect(migrate(...args)).rejects.toMatchObject({ code: 1, stderr: expect.stringMatching(/requires a newer App/) })
       expect(takeStatements()).toEqual(markerReads)
     }
-    version = DATABASE_SCHEMA_VERSION - 1
+    version = TASK_BOARD_SCHEMA_VERSION - 1
     await expect(migrate("--check")).rejects.toMatchObject({ code: 1, stderr: expect.stringMatching(/Pending migrations/) })
     expect(takeStatements()).toEqual([
       ...markerReads,
