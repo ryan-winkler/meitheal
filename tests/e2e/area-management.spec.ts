@@ -2,6 +2,7 @@ import { once } from "node:events"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { DatabaseSync } from "node:sqlite"
 
 import { expect, test } from "@playwright/test"
 import { launchPinBrowser, startCoreFixture } from "../scripts/task-pins-fixture"
@@ -57,6 +58,13 @@ test("Area options open the editor and save within Home Assistant ingress", asyn
     await expect(page.getByRole("heading", { name: /Workshop renamed/ })).toBeVisible()
     await expect(page).toHaveURL(editorUrl)
     await expect(name).toHaveValue("Workshop renamed")
+    const tabs = page.getByRole("tablist", { name: "Area sections" })
+    const settingsTab = tabs.getByRole("tab", { name: /Settings/ })
+    await expect(settingsTab).toHaveAttribute("aria-selected", "true")
+    await settingsTab.press("Home")
+    await expect(tabs.getByRole("tab", { name: /Overview/ })).toBeFocused()
+    await expect(page.getByRole("tabpanel", { name: /Overview/ })).toBeVisible()
+    await settingsTab.click()
 
     const missing = await context.request.get(appUrl + "/areas/nonexistent", { maxRedirects: 0 })
     expect(missing.status()).toBe(302)
@@ -84,6 +92,20 @@ test("Area options open the editor and save within Home Assistant ingress", asyn
     await editProject.press("Enter")
     await expect(page).toHaveURL(`${appUrl}/projects/${projectId}#settings`)
     await expect(page.getByRole("heading", { name: "Project Settings" })).toBeVisible()
+
+    const db = new DatabaseSync(join(work, "pins.db"))
+    try {
+      db.exec("DELETE FROM areas WHERE id = 'default'")
+    } finally {
+      db.close()
+    }
+    expect((await context.request.get(appUrl + "/api/areas/default")).status()).toBe(404)
+    const unassigned = await context.request.post(appUrl + "/api/habits", {
+      headers: { origin }, data: { name: "Unassigned Routine", area_id: "default" },
+    })
+    expect(unassigned.status()).toBe(201)
+    await page.goto(appUrl + "/habits?new=1")
+    await expect(page.getByRole("dialog", { name: "New Routine" }).getByLabel("Area")).toHaveValue("default")
   } finally {
     await browser?.close()
     if (child.exitCode === null && child.signalCode === null) {
@@ -122,7 +144,7 @@ test("Area and Project pages show associated Goals and keep the All Goals view",
     projectId = await create("/api/projects", { title: "Start Tuesday " + stamp, area_id: work, goal_id: unlinkedGoal })
 
     await page.goto(`/areas/${work}`)
-    await page.getByRole("navigation", { name: "Area sections" }).getByRole("link", { name: /Goals/ }).click()
+    await page.getByRole("navigation", { name: "Area sections" }).getByRole("tab", { name: /Goals/ }).click()
     const areaGoals = page.locator("#section-goals")
     await expect(areaGoals.getByRole("heading", { name: "Finish the class " + stamp })).toBeVisible()
     await expect(areaGoals.getByRole("heading", { name: "Learn to cycle " + stamp })).toBeVisible()
@@ -174,6 +196,7 @@ test("Area Routines open the existing editor in context and keep the generated t
   const { id: area } = await created.json()
   let routineId: string | undefined
   let taskId: string | undefined
+  let nextArea: string | undefined
   try {
     await page.goto(`/areas/${area}#routines`)
     await page.getByRole("link", { name: "New Routine", exact: true }).click()
@@ -191,23 +214,35 @@ test("Area Routines open the existing editor in context and keep the generated t
     routineId = routines[0]?.id
     const defaultArea = await request.get("/api/habits?area_id=default")
     expect((await defaultArea.json()).habits.map((routine: { id: string }) => routine.id)).not.toContain(routineId)
-    const updated = await request.post("/api/habits", {
-      data: { action: "update", templateId: routineId, templateJson: { checklists: [] } },
+    await expect(page).toHaveURL(new RegExp(`/areas/${area}#routines$`))
+    await expect(page.locator("#section-routines").getByText(name, { exact: false })).toBeVisible()
+
+    const destination = await request.post("/api/areas", { data: { name: name + " destination" } })
+    expect(destination.status()).toBe(201)
+    nextArea = (await destination.json()).id
+    const moveRoutine = (areaId: string) => request.post("/api/habits", {
+      data: { action: "update", templateId: routineId, templateJson: { area_id: areaId, checklists: [] } },
     })
+    const updated = await moveRoutine(nextArea!)
+
     expect(updated.ok()).toBe(true)
     const completed = await request.post("/api/habits", { data: { action: "complete", templateId: routineId } })
     expect(completed.ok()).toBe(true)
     taskId = (await completed.json()).taskId
     const task = await request.get(`/api/tasks/${taskId}`)
-    expect((await task.json()).area_id).toBe(area)
-    await expect(page).toHaveURL(new RegExp(`/areas/${area}#routines$`))
-    await expect(page.locator("#section-routines").getByText(name, { exact: false })).toBeVisible()
+    expect((await task.json()).area_id).toBe(nextArea)
+    expect((await moveRoutine("default")).ok()).toBe(true)
+    const replay = await request.post("/api/habits", { data: { action: "complete", templateId: routineId } })
+    expect(await replay.json()).toMatchObject({ taskId, alreadyExisted: true })
+    const original = await request.get(`/api/tasks/${taskId}`)
+    expect((await original.json()).area_id).toBe(nextArea)
     await page.goto("/habits?area_id=&new=1")
     await expect(page).toHaveURL(/\/planning#spaces$/)
     await expect(page.getByRole("dialog", { name: "New Routine" })).toHaveCount(0)
   } finally {
     if (taskId) await request.delete(`/api/tasks/${taskId}`)
     if (routineId) await request.post("/api/habits", { data: { action: "delete", templateId: routineId } })
+    if (nextArea) await request.delete(`/api/areas/${nextArea}`)
     await request.delete(`/api/areas/${area}`)
   }
 })

@@ -128,3 +128,5 @@ Open an Area’s **Goals** tab and select **New Goal** to create a Goal linked t
 Open an Area’s **Routines** tab and choose **New Routine** to open the editor with that Area selected. Saving or cancelling returns to the Area. Work created by the Routine keeps that Area. Progress & Growth also offers **New Routine** and **View Routines**. A Routine with a deleted Area needs a new Area before it can create more work.
 
 Area membership in this hierarchy and sidebar preferences organize work. Use board sharing rules when available to control who can view or change work.
+
+Changing a Routine’s Area affects tasks generated afterward. The existing task for today keeps its Area and remains the one completed by that Routine.

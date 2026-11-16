@@ -1715,7 +1715,27 @@ const paths = {
   // ── Habits ──
   "/api/habits": {
     get: { operationId: "listHabits", tags: ["Habits"], summary: "List routine templates and streaks", parameters: [{ name: "area_id", in: "query", schema: { type: "string" }, description: "List Routines in an existing Area." }], responses: { 200: { description: "Routines list" } } },
-    post: { operationId: "createHabit", tags: ["Habits"], summary: "Manage a Routine", description: "Create with a name and optional existing area_id. Send templateId for complete, update, or delete.", requestBody: { content: { "application/json": { schema: { type: "object", properties: { action: { type: "string", enum: ["create", "complete", "update", "delete"], default: "create" }, templateId: { type: "string" }, name: { type: "string" }, area_id: { type: "string", description: "Area for work from a newly created Routine." }, templateJson: { type: "object", description: "Template fields to update." } } } } } }, responses: { 200: { description: "Routine action succeeded" }, 201: { description: "Created" } } },
+    post: {
+      operationId: "createHabit", tags: ["Habits"], summary: "Manage a Routine",
+      description: "Create with a name and optional area_id. Send templateId for complete, update, or delete.",
+      requestBody: { content: { "application/json": { schema: { type: "object", properties: {
+        action: { type: "string", enum: ["create", "complete", "update", "delete"], default: "create" },
+        templateId: { type: "string" },
+        habitId: { type: "string", description: "Legacy template identifier for complete and delete." },
+        name: { type: "string", maxLength: 100 },
+        area_id: { type: "string", description: "Area for new work. Use default for unassigned work." },
+        cadence: { type: "string", enum: ["daily", "weekly"] },
+        frequency: { type: "string", enum: ["daily", "weekly"], description: "Legacy alias for cadence." },
+        icon: { type: "string" },
+        description: { type: "string" },
+        priority: { type: "number" },
+        checklists: { type: "array", items: { type: "object", properties: {
+          text: { type: "string" }, done: { type: "boolean" },
+        }, required: ["text"] } },
+        templateJson: { type: "object", additionalProperties: true, description: "Template fields to update, including area_id." },
+      } } } } },
+      responses: { 200: { description: "Routine action succeeded" }, 201: { description: "Created" } },
+    },
   },
 
   // ── Settings ──

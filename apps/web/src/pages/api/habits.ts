@@ -49,7 +49,7 @@ export const POST: APIRoute = async ({ request }) => {
     const client = getPersistenceClient()
     const repo = new TemplateRepository(client)
     const hierarchy = new HierarchyRepository(client)
-    const validArea = async (value: unknown) => value == null ||
+    const validArea = async (value: unknown) => value == null || value === "default" ||
       (typeof value === "string" && Boolean(await hierarchy.findAreaById(value)))
 
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
@@ -92,7 +92,7 @@ export const POST: APIRoute = async ({ request }) => {
           position,
           isRoutine: true,
           cadence,
-          areaId: typeof body.area_id === "string" ? body.area_id : undefined,
+          areaId: typeof body.area_id === "string" && body.area_id !== "default" ? body.area_id : undefined,
         })
         if (!inserted) return apiError("Choose an existing Area", 400)
 
@@ -135,7 +135,7 @@ export const POST: APIRoute = async ({ request }) => {
         if (body.templateJson && typeof body.templateJson === "object" && !Array.isArray(body.templateJson)) {
           const patch = body.templateJson as Record<string, unknown>
           if (!await validArea(patch.area_id)) return apiError("Choose an existing Area", 400)
-          if (typeof patch.area_id === "string") updates.areaId = patch.area_id
+          if (typeof patch.area_id === "string" && patch.area_id !== "default") updates.areaId = patch.area_id
           updates.templatePatch = JSON.stringify(patch)
         }
 

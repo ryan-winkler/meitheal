@@ -5173,7 +5173,7 @@ paths:
       tags:
         - Habits
       summary: Manage a Routine
-      description: Create with a name and optional existing area_id. Send templateId for complete, update, or delete.
+      description: Create with a name and optional area_id. Send templateId for complete, update, or delete.
       requestBody:
         content:
           application/json:
@@ -5190,14 +5190,48 @@ paths:
                   default: create
                 templateId:
                   type: string
+                habitId:
+                  type: string
+                  description: Legacy template identifier for complete and delete.
                 name:
                   type: string
+                  maxLength: 100
                 area_id:
                   type: string
-                  description: Area for work from a newly created Routine.
+                  description: Area for new work. Use default for unassigned work.
+                cadence:
+                  type: string
+                  enum:
+                    - daily
+                    - weekly
+                frequency:
+                  type: string
+                  enum:
+                    - daily
+                    - weekly
+                  description: Legacy alias for cadence.
+                icon:
+                  type: string
+                description:
+                  type: string
+                priority:
+                  type: number
+                checklists:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      text:
+                        type: string
+                      done:
+                        type: boolean
+                    required:
+                      - text
+                    additionalProperties: false
                 templateJson:
                   type: object
-                  description: Template fields to update.
+                  additionalProperties: true
+                  description: Template fields to update, including area_id.
               additionalProperties: false
       responses:
         "200":

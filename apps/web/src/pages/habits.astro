@@ -499,6 +499,8 @@ const habitsBootstrap = serializeForScript({ habits })
           <div class="form-group">
             <label for="habit-area">Area</label>
             <select id="habit-area" required>
+              {!areas.some(option => option.id === "default") &&
+                <option value="default" selected={!area}>Without an Area</option>}
               {areas.map(option => <option value={option.id} selected={(area?.id ?? "default") === option.id}>{option.name}</option>)}
             </select>
           </div>
