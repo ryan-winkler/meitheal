@@ -92,6 +92,7 @@ test("verified members see committed task activity and can filter it by current 
     expect((await mutate(a, task, "PATCH", { status: "todo" })).status).toBe(200)
 
     db = new DatabaseSync(join(work, "pins.db"))
+    db.exec("PRAGMA busy_timeout = 2000")
     // Unauthenticated X-Agent-Id, body created_by/source, and X-Meitheal-Origin-* headers must not become stored attribution.
     expect({ ...db.prepare("SELECT source, created_by FROM tasks WHERE id = ?").get(first.body.id) })
       .toEqual({ source: "user", created_by: null })
