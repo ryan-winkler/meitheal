@@ -1,7 +1,7 @@
 name: "Meitheal Canary"
 version: "309575d"
 slug: "meitheal_canary"
-description: "The test channel for Meitheal. Try new features before they go into a Stable release. Builds can be unstable and can lose data. Not for everyday use."
+description: "0.0.2 Canary preview of Meitheal. Builds can be unstable and can lose data. Use the Stable app for everyday tasks."
 url: "https://meitheal.io"
 github: "ryan-winkler/meitheal-ha-addon"
 docs_url: "https://github.com/ryan-winkler/meitheal-ha-addon/tree/main/meitheal-hub-canary/DOCS.md"
