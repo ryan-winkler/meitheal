@@ -13,8 +13,18 @@ const STORAGE_KEY = "meitheal-theme"
 const CUSTOM_CSS_KEY = "meitheal-custom-theme-css"
 const CUSTOM_STYLE_ID = "meitheal-custom-theme"
 
+export function readAppearanceValue(key: string): string | null {
+  try {
+    return localStorage.getItem(key)
+  } catch {
+    return null
+  }
+}
+
 export function getEffectiveTheme(): "light" | "dark" {
-  const stored = localStorage.getItem(STORAGE_KEY) as ThemeMode | null
+  const matched = document.documentElement.dataset.haMatch
+  if (matched === "light" || matched === "dark") return matched
+  const stored = readAppearanceValue(STORAGE_KEY)
   if (stored === "light" || stored === "dark") return stored
   // Custom themes layer on top of dark base
   if (stored === "custom" || stored === "knight-rider") return "dark"
@@ -28,34 +38,24 @@ export function getEffectiveTheme(): "light" | "dark" {
 export function setTheme(mode: ThemeMode): void {
   localStorage.setItem(STORAGE_KEY, mode)
   applyTheme()
-  // Auto-apply custom CSS when switching to custom
-  if (mode === "custom") {
-    const css = localStorage.getItem(CUSTOM_CSS_KEY)
-    applyCustomTheme(css)
-  } else {
-    applyCustomTheme(null)
-  }
-  window.dispatchEvent(new CustomEvent("meitheal:theme-changed", { detail: { theme: getEffectiveTheme() } }))
 }
 
 export function applyTheme(): void {
-  const stored = localStorage.getItem(STORAGE_KEY) as ThemeMode | null
+  const stored = readAppearanceValue(STORAGE_KEY) ?? "auto"
+  const root = document.documentElement
+  const matched = root.dataset.haMatch === "light" || root.dataset.haMatch === "dark"
   const theme = getEffectiveTheme()
-  // For built-in themes, set data-theme for CSS variable overrides
-  if (stored === "custom") {
-    // Custom themes use dark as base, override via injected <style>
-    document.documentElement.dataset.theme = "dark"
-  } else if (stored === "auto" || stored === "knight-rider") {
-    document.documentElement.dataset.theme = stored
-  } else {
-    document.documentElement.dataset.theme = theme
-  }
-  document.documentElement.classList.toggle("dark", theme === "dark")
-  document.documentElement.classList.toggle("light", theme === "light")
+  root.dataset.theme = !matched && (stored === "auto" || stored === "knight-rider") ? "auto" : theme
+  root.classList.toggle("dark", theme === "dark")
+  root.classList.toggle("light", theme === "light")
+  applyCustomTheme(!matched && stored === "custom" && root.hasAttribute("data-custom-theme-admin")
+    ? readAppearanceValue(CUSTOM_CSS_KEY) : null)
   const metaTheme = document.querySelector('meta[name="theme-color"]')
   if (metaTheme) {
-    metaTheme.setAttribute("content", stored === "knight-rider" ? "#131314" : theme === "dark" ? "#1a1a2e" : "#ffffff")
+    const color = matched ? getComputedStyle(root).getPropertyValue("--bg-primary").trim() : ""
+    metaTheme.setAttribute("content", color || (root.dataset.theme === "knight-rider" ? "#131314" : theme === "dark" ? "#1a1a2e" : "#ffffff"))
   }
+  window.dispatchEvent(new CustomEvent("meitheal:theme-changed", { detail: { theme } }))
 }
 
 /**
@@ -73,25 +73,16 @@ export function applyCustomTheme(css: string | null): void {
     el.id = CUSTOM_STYLE_ID
     document.head.appendChild(el)
   }
-  el.textContent = css
+  if (el.textContent !== css) el.textContent = css
 }
 
 export function initThemeWatcher(): void {
   applyTheme()
-  // If custom theme, restore injected CSS from localStorage
-  const stored = localStorage.getItem(STORAGE_KEY) as ThemeMode | null
-  if (stored === "custom") {
-    const css = localStorage.getItem(CUSTOM_CSS_KEY)
-    applyCustomTheme(css)
-  }
   const mq = window.matchMedia("(prefers-color-scheme: dark)")
   mq.addEventListener("change", () => {
-    const current = localStorage.getItem(STORAGE_KEY) as ThemeMode | null
+    const current = readAppearanceValue(STORAGE_KEY)
     if (!current || current === "auto") {
       applyTheme()
-      window.dispatchEvent(new CustomEvent("meitheal:theme-changed", {
-        detail: { theme: getEffectiveTheme() },
-      }))
     }
   })
 }

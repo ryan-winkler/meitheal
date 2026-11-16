@@ -342,6 +342,34 @@ test.describe("Calendar Shell", () => {
     await expect(search).toHaveValue("orchard")
   })
 
+  test("Calendar keeps the previous Area when a filter change exceeds its URL limit", async ({ page, request, baseURL }) => {
+    const headers = { origin: new URL(baseURL!).origin }
+    const created = await request.post("/api/areas", { headers, data: { name: "Extra calendar area" } })
+    expect(created.status()).toBe(201)
+    const { id } = await created.json()
+    try {
+      const labels = Array.from({ length: 27 }, (_, index) => String(index).padStart(2, "0") + "x".repeat(497))
+      const params = new URLSearchParams({ view: "calendar", area: "" })
+      params.set("labels", [...labels, ""].join(","))
+      const lastLabelLength = 13_990 - ("/tasks?".length + params.toString().length)
+      params.set("labels", [...labels, "y".repeat(lastLabelLength)].join(","))
+      const route = "/tasks?" + params + "#calendar"
+      await page.goto(route)
+      const trigger = page.locator("#area-selector-trigger")
+      const all = page.locator('#area-selector-dropdown [data-area-id=""]')
+      await expect(trigger).toContainText("All Areas")
+      await trigger.click()
+      await page.locator(`#area-selector-dropdown [data-area-id="${id}"]`).click()
+      await expect(page.locator("[data-calendar-status]")).toContainText("The previous results are still shown.")
+      await expect(page).toHaveURL(url => url.searchParams.get("area") === "")
+      await expect(trigger).toContainText("All Areas")
+      await expect(all).toHaveAttribute("aria-selected", "true")
+      expect(await page.evaluate(() => JSON.parse(localStorage.getItem("meitheal-selected-area") ?? "{}").areaId)).toBe("")
+    } finally {
+      await request.delete(`/api/areas/${id}`, { headers })
+    }
+  })
+
   test("month navigation retains a filter while the calendar is still loading", async ({ page }) => {
     let releaseRequest = () => {}
     const pending = new Promise<void>(resolve => { releaseRequest = resolve })

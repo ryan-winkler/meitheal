@@ -26,6 +26,22 @@ test.describe("Theme Settings", () => {
     expect(options).toContain("Custom");
   });
 
+  test("Home Assistant matching is separate from the selected theme", async ({ page }) => {
+    const theme = page.locator("#theme-select")
+    const match = page.getByRole("checkbox", { name: "Match Home Assistant theme" })
+    await expect(match).not.toBeChecked()
+    await theme.selectOption("dark")
+    await match.check()
+    await expect(page.locator("#match-ha-theme-status")).toContainText("unavailable here")
+    await expect(theme).toHaveValue("dark")
+    await page.reload()
+    await expect(match).toBeChecked()
+    await expect(theme).toHaveValue("dark")
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark")
+    await match.uncheck()
+    await expect(page.locator("#match-ha-theme-status")).toBeEmpty()
+  })
+
   test("Language changes reload the matching client dictionary", async ({ page }) => {
     const html = page.locator("html")
     const lookup = () => page.evaluate(() => (window as Window & {

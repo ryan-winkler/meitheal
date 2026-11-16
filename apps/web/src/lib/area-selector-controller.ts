@@ -130,6 +130,12 @@ export function initAreaSelector(signal: AbortSignal): void {
   }
 
   function selectArea(areaId: string, areaName: string, areaIcon: string, dispatch: boolean): void {
+    const changed = dispatch && new CustomEvent<AreaChangedDetail>("meitheal:area-changed", {
+      cancelable: calendar,
+      detail: { areaId, areaName, areaIcon },
+    })
+    if (changed && calendar && !document.dispatchEvent(changed)) return
+
     // Update trigger display
     labelEl!.textContent = areaName
     renderIconOrCustomEmoji(iconEl!, areaIcon, "folders", 15)
@@ -148,11 +154,7 @@ export function initAreaSelector(signal: AbortSignal): void {
     // Sync all FilterToolbar area selects across views
     if (!table) syncFilterToolbarAreas(areaId)
 
-    // Dispatch global event
-    if (dispatch) {
-      const detail: AreaChangedDetail = { areaId, areaName, areaIcon }
-      document.dispatchEvent(new CustomEvent("meitheal:area-changed", { detail }))
-    }
+    if (changed && !calendar) document.dispatchEvent(changed)
   }
 
   function syncFilterToolbarAreas(areaId: string): void {

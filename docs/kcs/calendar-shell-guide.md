@@ -110,7 +110,7 @@ Known differences:
 1. Confirm the day drawer title updates to the selected date.
 2. In browser network tools, check the read-only `POST /api/calendar/agenda` request. Its JSON includes the day, applied filters and pagination. The response filters before pagination and returns a matching `total`. Date-only values match directly, whereas an ISO timestamp with a time and offset matches the resulting day in the household time zone.
 3. The default month badge counts open tasks, while the default drawer also shows completed work. Ordinary filters match open tasks in both places. Choose **Complete** or apply custom rules to include matching completed work in both places. When a task status looks wrong, compare the list result with the status sent on creation. Known aliases such as `done` become the built-in status `complete`. Custom statuses keep their names.
-4. If live HA events are missing, inspect Home Assistant calendar entity settings and the browser console for `calendar-shell` warnings. The connected section reports a partial feed when only some live sources respond.
+4. If live Home Assistant events are missing, check the message in the connected section and the configured entities. The section reports a partial feed when only some sources respond. Use the browser Network panel to identify the affected feed.
 
 ### Calendar changes could not be applied
 

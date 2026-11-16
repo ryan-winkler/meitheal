@@ -19,6 +19,10 @@ export function parseTaskView(value: string | null): TaskView | undefined {
   return TASK_VIEWS.find(view => view === value)
 }
 
+export function readTaskAreaParam(params: URLSearchParams): string | null {
+  return params.get("area_id") ?? params.get("area") ?? params.get("board")
+}
+
 export function taskViewUrl(current: URL, view: TaskView): URL {
   const url = new URL(current)
   if (view === "kanban") url.searchParams.delete("view")

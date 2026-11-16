@@ -7,9 +7,11 @@
 import { APPEARANCE_PREFERENCES, APPEARANCE_STORAGE_KEY, appearanceAttribute, applyAppearancePreferences, type AppearancePreferences } from "@lib/appearance-preferences"
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { applyPersonalAccent } from "@lib/accent-colors"
+import { refreshHAThemeMatch } from "@lib/ha-theme-bridge"
+import { HA_THEME_MATCH_KEY } from "@lib/ha-theme-palette"
 import { showToast } from "@lib/toast"
 import { isThemeMode } from "@lib/theme-mode"
-import { setTheme } from "@lib/theme-watcher"
+import { readAppearanceValue, setTheme } from "@lib/theme-watcher"
 import { attachShortcutTooltips } from "@lib/shortcut-tooltip"
 import { SINGLE_KEY_SHORTCUTS_STORAGE_KEY, setSingleKeyShortcuts, singleKeyShortcutsEnabled } from "@lib/single-key-shortcuts"
 import { settingsStore } from "@lib/settings-store"
@@ -62,13 +64,13 @@ function initAccentSettings(): void {
 
   function setAccent(color: string): void {
     if (!/^#[0-9a-f]{6}$/i.test(color)) return
-    applyPersonalAccent(root, color)
     localStorage.setItem(ACCENT_KEY, color)
+    if (!matchesHaPalette()) applyPersonalAccent(root, color)
     updateSelection(color)
   }
 
   function syncSelection(): void {
-    const stored = localStorage.getItem(ACCENT_KEY)
+    const stored = readAppearanceValue(ACCENT_KEY)
     const defaultAccent = getComputedStyle(root).getPropertyValue("--palette-accent").trim()
     updateSelection(stored && /^#[0-9a-f]{6}$/i.test(stored) ? stored : defaultAccent)
   }
@@ -81,11 +83,41 @@ function initAccentSettings(): void {
   if (picker) pageLifecycle.on(picker, "input", () => setAccent(picker.value))
   if (reset) {
     pageLifecycle.on(reset, "click", () => {
-      applyPersonalAccent(root, null)
       localStorage.removeItem(ACCENT_KEY)
+      if (!matchesHaPalette()) applyPersonalAccent(root, null)
       syncSelection()
     })
   }
+}
+
+function matchesHaPalette(): boolean {
+  const match = document.documentElement.dataset.haMatch
+  return match === "light" || match === "dark"
+}
+
+function initHAThemeSettings(): void {
+  const checkbox = document.querySelector<HTMLInputElement>("#match-ha-theme")
+  const status = document.getElementById("match-ha-theme-status")
+  if (!checkbox || !status) return
+  const sync = () => {
+    checkbox.checked = readAppearanceValue(HA_THEME_MATCH_KEY) === "1"
+    const state = document.documentElement.dataset.haMatch
+    const message = matchesHaPalette() ? status.dataset.active : state ? status.dataset[state] : ""
+    if (status.textContent !== (message ?? "")) status.textContent = message ?? ""
+  }
+  sync()
+  pageLifecycle.on(document, "meitheal:ha-theme-match", sync)
+  pageLifecycle.on(checkbox, "change", () => {
+    try {
+      if (checkbox.checked) localStorage.setItem(HA_THEME_MATCH_KEY, "1")
+      else localStorage.removeItem(HA_THEME_MATCH_KEY)
+    } catch {
+      sync()
+      showToast("settings.match_ha_theme_error", "error")
+      return
+    }
+    refreshHAThemeMatch()
+  })
 }
 
 function bindAppearanceForm(form: HTMLFormElement): void {
@@ -184,11 +216,12 @@ export function initThemeSettings(): void {
 
   initAccentSettings()
   initAppearanceSettings()
+  initHAThemeSettings()
 
   // Theme Config — init select from localStorage
   const themeSelect = document.getElementById("theme-select") as HTMLSelectElement
   if (themeSelect) {
-    themeSelect.value = localStorage.getItem("meitheal-theme") || "dark"
+    themeSelect.value = readAppearanceValue("meitheal-theme") || "dark"
     showCustomThemeSection(themeSelect.value === "custom")
   }
 
@@ -198,10 +231,10 @@ export function initThemeSettings(): void {
 
     pageLifecycle.on(select, "change", async () => {
       const value = select.value
-      const previousTheme = key === "theme" ? localStorage.getItem("meitheal-theme") : null
+      const previousTheme = key === "theme" ? readAppearanceValue("meitheal-theme") : null
       if (key === "theme") {
         showCustomThemeSection(value === "custom")
-        if (value === "custom" && !localStorage.getItem("meitheal-custom-theme-css")) return
+        if (value === "custom" && !readAppearanceValue("meitheal-custom-theme-css")) return
       }
       select.disabled = true
       select.setAttribute("aria-busy", "true")
@@ -306,7 +339,7 @@ export function initThemeSettings(): void {
 
 function restoreTheme(settings: Record<string, unknown>): boolean {
   try {
-    const savedTheme = settings.theme ?? localStorage.getItem("meitheal-theme")
+    const savedTheme = settings.theme ?? readAppearanceValue("meitheal-theme")
     const themeEl = document.querySelector<HTMLSelectElement>("#theme-select")
     const css = document.getElementById("custom-theme-input") && typeof settings.custom_theme_css === "string"
       ? sanitizeCSS(settings.custom_theme_css) : ""

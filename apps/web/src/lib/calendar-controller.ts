@@ -383,7 +383,7 @@ export function initCalendarPage(signal: AbortSignal): void {
   }, { signal })
   document.addEventListener("meitheal:area-changed", event => {
     const area = (event as CustomEvent<{ areaId: string }>).detail.areaId
-    applyFilters({ area })
+    if (!applyFilters({ area })) event.preventDefault()
   }, { signal })
   document.addEventListener("meitheal:tasks-changed", () => void refresh(new URL(desired)), { signal })
   signal.addEventListener("abort", () => {

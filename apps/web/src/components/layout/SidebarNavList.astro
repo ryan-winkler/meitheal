@@ -346,7 +346,7 @@ function isExternal(href: string): boolean {
       if (href !== appPath(background.pathname) ||
           normalizeTaskTypeFilterValue(target.searchParams.get("types")) !== types ||
           (href === "/tasks" ? viewFrom(target) !== view : target.hash && target.hash !== current.hash)) continue
-      const criteria = matchingTaskShortcutCriteria(target.searchParams, background.searchParams)
+      const criteria = matchingTaskShortcutCriteria(target.searchParams, background.searchParams, view)
       if (criteria <= matchedCriteria) continue
       matchedCriteria = criteria
       typedLink = link

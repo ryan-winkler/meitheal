@@ -17,6 +17,7 @@ import { parseCalendarDay } from "./calendar-day"
 import { evaluateFilterGroup, extractDataFromElement, type FilterGroup, type FilterOperator } from "./filter-engine"
 import { normalizeStatus } from "./status-config"
 import { TABLE_COLUMNS } from "./table-registry"
+import { readTaskAreaParam } from "./task-view-route"
 
 // =============================================================================
 // Types
@@ -317,7 +318,7 @@ export function normalizeSavedFilter(raw: unknown): Partial<FilterState> | null 
 }
 
 export function readTableFilterParams(params: URLSearchParams): Partial<FilterState> {
-  const area = params.get("area_id") ?? params.get("area") ?? params.get("board") ?? undefined
+  const area = readTaskAreaParam(params) ?? undefined
   return normalizeTableValues({
     ...Object.fromEntries(params),
     area,

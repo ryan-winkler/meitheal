@@ -346,7 +346,9 @@ test("Shopping links identify their own Area and follow applied Board filters", 
       areas.push(id)
       paths.push("/tasks?" + new URLSearchParams({ types: "shopping_item", area: id }))
     }
-    const shortcuts = ["All Shopping", ...names].map((label, index) => ({
+    const calendarParams = new URLSearchParams({ view: "calendar", types: "shopping_item", area_id: areas[0]! })
+    paths.push("/tasks?" + calendarParams + "#calendar")
+    const shortcuts = ["All Shopping", ...names, "Kitchen shopping calendar"].map((label, index) => ({
       id: `shopping-route-${index}`,
       label,
       href: paths[index],
@@ -375,6 +377,13 @@ test("Shopping links identify their own Area and follow applied Board filters", 
     await page.locator('#area-selector-dropdown [data-area-id=""]').click()
     await expect(page).toHaveURL(url => url.searchParams.get("area") === "")
     await expect(current).toHaveText("All Shopping")
+
+    await sidebar.getByRole("link", { name: "Kitchen shopping calendar", exact: true }).click()
+    await expect(page.locator("#calendar-shell")).toBeVisible()
+    await expect(current).toHaveText("Kitchen shopping calendar")
+    await page.getByRole("textbox", { name: "Filter by text" }).fill("pan")
+    await expect(page).toHaveURL(url => url.searchParams.get("area") === areas[0] && url.searchParams.get("search") === "pan")
+    await expect(current).toHaveText("Kitchen shopping calendar")
   } finally {
     await request.put("/api/settings", { headers, data: { key: "sidebar_config", value: previous ?? null } })
     for (const id of areas) await request.delete(`/api/areas/${id}`, { headers })

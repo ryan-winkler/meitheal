@@ -45,7 +45,7 @@ The board remains usable when reaction counts are unavailable. A denied request 
 ### Manage lanes without leaving the board
 
 1. Open `Kanban`.
-2. Use the shell `Manage Lanes` action.
+2. Open **Lanes**. On a phone, open **Board actions** first.
 3. Keep the board visible while editing lane structure and WIP limits.
 
 ### Change card density without fighting the shell
@@ -100,9 +100,9 @@ The form keeps the title. Check the area selection and destination lane. If you 
 1. Inspect the browser console for `kanban` client logger warnings.
 2. Confirm client fetches are using bare `/api/...` paths and not double-prefixed ingress URLs.
 
-### Manage Lanes does not open
+### Lanes does not open
 
-1. Confirm `#lane-mgmt` drops the `hidden` class after clicking `Manage Lanes`.
+1. Confirm `#lane-mgmt` drops the `hidden` class after opening **Lanes**.
 2. If the button responds but the panel stays hidden, capture the browser console and the current filter state.
 
 ## Card colors

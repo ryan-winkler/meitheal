@@ -471,7 +471,7 @@ Card quick-action menus use viewport-bounded positions and 44-pixel color target
 
 ### Kanban assignment troubleshooting
 
-In **Assign User**, an unverified Home Assistant directory can still show cached assignees from the current Home Assistant configuration, along with custom assignees. Use **Retry** to check the directory again. A saved assignment whose name cannot be resolved keeps its unavailable label. Otherwise, a verified empty directory shows **No users configured**.
+In **Assign User**, a failed directory request shows **Could not load assignees**. During an unverified Home Assistant lookup, cached names from the current connection and custom assignees can still appear. An uncached saved Home Assistant assignee is marked unverified. Use **Retry** after a failed or unverified lookup. A confirmed missing assignee shows **Assignee unavailable**. A verified empty directory shows **No users configured** when the card has no unresolved assignment. These messages preserve the saved assignee.
 
 ## Checklist edits from multiple sessions
 

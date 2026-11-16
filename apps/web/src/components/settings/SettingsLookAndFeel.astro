@@ -50,6 +50,22 @@ const VISUAL_PREFERENCE_KEYS: readonly AppearancePreferenceName[] = [
         </select>
       </div>
 
+      <div class="form-group mt-3">
+        <label class="flex items-center gap-2">
+          <input id="match-ha-theme" type="checkbox" aria-describedby="match-ha-theme-help match-ha-theme-status" />
+          {t("settings.match_ha_theme", locale)}
+        </label>
+        <p id="match-ha-theme-help" class="settings-hint">{t("settings.match_ha_theme_help", locale)}</p>
+        <p
+          id="match-ha-theme-status"
+          class="settings-hint"
+          role="status"
+          data-active={t("settings.match_ha_theme_active", locale)}
+          data-unavailable={t("settings.match_ha_theme_unavailable", locale)}
+          data-contrast={t("settings.match_ha_theme_contrast", locale)}
+        ></p>
+      </div>
+
       <!-- Accent Color -->
       <div class="form-group mt-3">
         <label class="form-label">{t("settings.accent_title", locale)}</label>
