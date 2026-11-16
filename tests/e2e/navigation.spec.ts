@@ -92,6 +92,7 @@ test.describe("Responsive Navigation", () => {
     const actionCount = await page.locator(".stree__action-btn").count();
     test.skip(actionCount === 0, "No hierarchy action buttons in this fixture");
 
+    await expect(firstAction.locator("..")).toHaveCSS("opacity", "1")
     await firstAction.focus()
     const metrics = await firstAction.evaluate((action) => {
       const rect = action.getBoundingClientRect();
