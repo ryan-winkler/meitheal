@@ -335,7 +335,7 @@ for (const theme of ["light", "dark", "knight-rider", "auto", "custom"] as const
 test("Shopping links identify their own Area and follow applied Board filters", async ({ page, request, baseURL }) => {
   const headers = { origin: new URL(baseURL!).origin }
   const previous = (await (await request.get("/api/settings")).json()).sidebar_config
-  const names = ["Kitchen supplies", "Workshop supplies"]
+  const names = ["Kitchen supplies", "Workshop supplies"] as const
   const areas: string[] = []
   const paths = ["/tasks?types=shopping_item"]
   try {
