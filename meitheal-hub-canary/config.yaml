@@ -30,6 +30,7 @@ backup: cold
 backup_exclude:
   - "*.log"
   - "*.tmp"
+  - "meitheal-board-grants.json"
 stage: experimental
 options:
   log_level: info

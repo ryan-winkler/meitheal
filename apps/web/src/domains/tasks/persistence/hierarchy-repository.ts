@@ -68,14 +68,14 @@ export class HierarchyRepository {
 
   async findAllAreas(): Promise<AreaRow[]> {
     const result = await this.client.execute(
-      "SELECT * FROM areas ORDER BY position ASC, created_at ASC"
+      "SELECT * FROM areas WHERE owner_board_id IS NULL ORDER BY position ASC, created_at ASC"
     )
     return result.rows.map(r => this.mapArea(r as Record<string, unknown>))
   }
 
   async findAreaById(id: string): Promise<AreaRow | null> {
     const result = await this.client.execute({
-      sql: "SELECT * FROM areas WHERE id = ?",
+      sql: "SELECT * FROM areas WHERE id = ? AND owner_board_id IS NULL",
       args: [id],
     })
     return result.rows[0] ? this.mapArea(result.rows[0] as Record<string, unknown>) : null
@@ -118,7 +118,7 @@ export class HierarchyRepository {
     args.push(id)
 
     const result = await this.client.execute({
-      sql: `UPDATE areas SET ${sets.join(", ")} WHERE id = ?`,
+      sql: `UPDATE areas SET ${sets.join(", ")} WHERE id = ? AND owner_board_id IS NULL`,
       args,
     })
     return (result.rowsAffected ?? 0) > 0
@@ -126,20 +126,20 @@ export class HierarchyRepository {
 
   async deleteArea(id: string): Promise<boolean> {
     const result = await this.client.execute({
-      sql: "DELETE FROM areas WHERE id = ?",
+      sql: "DELETE FROM areas WHERE id = ? AND owner_board_id IS NULL",
       args: [id],
     })
     return (result.rowsAffected ?? 0) > 0
   }
 
   async countAreas(): Promise<number> {
-    const result = await this.client.execute("SELECT COUNT(*) as cnt FROM areas")
+    const result = await this.client.execute("SELECT COUNT(*) as cnt FROM areas WHERE owner_board_id IS NULL")
     return Number((result.rows[0] as Record<string, unknown>).cnt)
   }
 
   async getNextAreaPosition(): Promise<number> {
     const result = await this.client.execute(
-      "SELECT COALESCE(MAX(position), -1) + 1 AS next_pos FROM areas"
+      "SELECT COALESCE(MAX(position), -1) + 1 AS next_pos FROM areas WHERE owner_board_id IS NULL"
     )
     return Number((result.rows[0] as Record<string, unknown>)?.next_pos ?? 0)
   }
@@ -148,20 +148,20 @@ export class HierarchyRepository {
 
   async findAllGoals(filters?: { area_id?: string; project_id?: string; status?: string }): Promise<GoalRow[]> {
     let sql = "SELECT * FROM goals"
-    const conditions: string[] = []
+    const conditions = ["owner_board_id IS NULL"]
     const args: string[] = []
 
     if (filters?.area_id) {
-      conditions.push("(area_id = ? OR id IN (SELECT goal_id FROM projects WHERE area_id = ?))")
+      conditions.push("(area_id = ? OR id IN (SELECT goal_id FROM projects WHERE area_id = ? AND owner_board_id IS NULL))")
       args.push(filters.area_id, filters.area_id)
     }
     if (filters?.project_id) {
-      conditions.push("id = (SELECT goal_id FROM projects WHERE id = ?)")
+      conditions.push("id = (SELECT goal_id FROM projects WHERE id = ? AND owner_board_id IS NULL)")
       args.push(filters.project_id)
     }
     if (filters?.status) { conditions.push("status = ?"); args.push(filters.status) }
 
-    if (conditions.length > 0) sql += ` WHERE ${conditions.join(" AND ")}`
+    sql += ` WHERE ${conditions.join(" AND ")}`
     sql += " ORDER BY created_at DESC"
 
     const result = await this.client.execute({ sql, args })
@@ -170,7 +170,7 @@ export class HierarchyRepository {
 
   async findGoalById(id: string): Promise<GoalRow | null> {
     const result = await this.client.execute({
-      sql: "SELECT * FROM goals WHERE id = ?",
+      sql: "SELECT * FROM goals WHERE id = ? AND owner_board_id IS NULL",
       args: [id],
     })
     return result.rows[0] ? this.mapGoal(result.rows[0] as Record<string, unknown>) : null
@@ -228,7 +228,7 @@ export class HierarchyRepository {
     args.push(id)
 
     const result = await this.client.execute({
-      sql: `UPDATE goals SET ${sets.join(", ")} WHERE id = ?`,
+      sql: `UPDATE goals SET ${sets.join(", ")} WHERE id = ? AND owner_board_id IS NULL`,
       args,
     })
     return (result.rowsAffected ?? 0) > 0
@@ -236,14 +236,14 @@ export class HierarchyRepository {
 
   async deleteGoal(id: string): Promise<boolean> {
     const result = await this.client.execute({
-      sql: "DELETE FROM goals WHERE id = ?",
+      sql: "DELETE FROM goals WHERE id = ? AND owner_board_id IS NULL",
       args: [id],
     })
     return (result.rowsAffected ?? 0) > 0
   }
 
   async countGoals(): Promise<number> {
-    const result = await this.client.execute("SELECT COUNT(*) as cnt FROM goals")
+    const result = await this.client.execute("SELECT COUNT(*) as cnt FROM goals WHERE owner_board_id IS NULL")
     return Number((result.rows[0] as Record<string, unknown>).cnt)
   }
 
@@ -251,17 +251,17 @@ export class HierarchyRepository {
 
   async findAllProjects(filters?: { goal_id?: string; area_id?: string; status?: string }): Promise<ProjectRow[]> {
     let sql = "SELECT * FROM projects"
-    const conditions: string[] = []
+    const conditions = ["owner_board_id IS NULL"]
     const args: string[] = []
 
     if (filters?.goal_id) { conditions.push("goal_id = ?"); args.push(filters.goal_id) }
     if (filters?.area_id) {
-      conditions.push("COALESCE(area_id, (SELECT goals.area_id FROM goals WHERE goals.id = projects.goal_id)) = ?")
+      conditions.push("COALESCE(area_id, (SELECT goals.area_id FROM goals WHERE goals.id = projects.goal_id AND goals.owner_board_id IS NULL)) = ?")
       args.push(filters.area_id)
     }
     if (filters?.status) { conditions.push("status = ?"); args.push(filters.status) }
 
-    if (conditions.length > 0) sql += ` WHERE ${conditions.join(" AND ")}`
+    sql += ` WHERE ${conditions.join(" AND ")}`
     sql += " ORDER BY position ASC, created_at DESC"
 
     const result = await this.client.execute({ sql, args })
@@ -275,7 +275,7 @@ export class HierarchyRepository {
 
   async findProjectById(id: string): Promise<ProjectRow | null> {
     const result = await this.client.execute({
-      sql: "SELECT * FROM projects WHERE id = ?",
+      sql: "SELECT * FROM projects WHERE id = ? AND owner_board_id IS NULL",
       args: [id],
     })
     return result.rows[0] ? this.mapProject(result.rows[0] as Record<string, unknown>) : null
@@ -287,7 +287,7 @@ export class HierarchyRepository {
       sql: `SELECT COUNT(*) AS total,
                   COUNT(*) FILTER (WHERE deferred_at IS NULL AND lower(status) NOT IN ${deferralTerminalStatusesSql}) AS active_open,
                   COUNT(*) FILTER (WHERE lower(status) IN (${completed.map(() => "?").join(", ")})) AS complete
-            FROM tasks WHERE project_id = ?`,
+            FROM tasks WHERE task_board_id IS NULL AND project_id = ?`,
       args: [...completed, id],
     })
     return { total: Number(counts?.total), active_open: Number(counts?.active_open), complete: Number(counts?.complete) }
@@ -338,7 +338,7 @@ export class HierarchyRepository {
     args.push(id)
 
     const result = await this.client.execute({
-      sql: `UPDATE projects SET ${sets.join(", ")} WHERE id = ?`,
+      sql: `UPDATE projects SET ${sets.join(", ")} WHERE id = ? AND owner_board_id IS NULL`,
       args,
     })
     return (result.rowsAffected ?? 0) > 0
@@ -348,11 +348,12 @@ export class HierarchyRepository {
     const [, result] = await this.client.batch([
       {
         sql: `UPDATE tasks SET project_id = NULL, updated_at = ?
-              WHERE project_id = ? AND EXISTS (SELECT 1 FROM projects WHERE id = ? AND is_default = 0)`,
+              WHERE task_board_id IS NULL AND project_id = ?
+                AND EXISTS (SELECT 1 FROM projects WHERE id = ? AND is_default = 0 AND owner_board_id IS NULL)`,
         args: [Date.now(), id, id],
       },
       {
-        sql: "DELETE FROM projects WHERE id = ? AND is_default = 0",
+        sql: "DELETE FROM projects WHERE id = ? AND owner_board_id IS NULL AND is_default = 0",
         args: [id],
       },
     ], "write")
@@ -360,13 +361,13 @@ export class HierarchyRepository {
   }
 
   async countProjects(): Promise<number> {
-    const result = await this.client.execute("SELECT COUNT(*) as cnt FROM projects")
+    const result = await this.client.execute("SELECT COUNT(*) as cnt FROM projects WHERE owner_board_id IS NULL")
     return Number((result.rows[0] as Record<string, unknown>).cnt)
   }
 
   async getNextProjectPosition(): Promise<number> {
     const result = await this.client.execute(
-      "SELECT COALESCE(MAX(position), -1) + 1 AS next_pos FROM projects"
+      "SELECT COALESCE(MAX(position), -1) + 1 AS next_pos FROM projects WHERE owner_board_id IS NULL"
     )
     return Number((result.rows[0] as Record<string, unknown>)?.next_pos ?? 0)
   }

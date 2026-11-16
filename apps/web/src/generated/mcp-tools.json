@@ -1047,7 +1047,7 @@
     },
     {
       "name": "listGoals",
-      "description": "List goals across all areas, or filter by association. With multiple filters, a goal must match all of them.",
+      "description": "List goals across all Areas, or filter by association. An Area can include shared goals with progress based on Projects the viewer can read.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1064,7 +1064,8 @@
             "enum": [
               "active",
               "completed",
-              "archived"
+              "archived",
+              "shared"
             ],
             "description": "status parameter"
           }

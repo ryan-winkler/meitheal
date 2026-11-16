@@ -10,8 +10,12 @@ import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
 import { expect, test } from "@playwright/test"
 import { PERSONAL_PILLAR_MIGRATION } from "../../apps/web/drizzle/migrations/0010_personal_pillars.mjs"
+import { BOARD_ACCESS_MIGRATION } from "../../apps/web/drizzle/migrations/0011_board_access.mjs"
 import { TASK_BOARD_MIGRATION, TASK_BOARD_SCHEMA_VERSION } from "../../apps/web/drizzle/migrations/task-board-upgrade.mjs"
 import { DATABASE_SCHEMA_VERSION, openDatabase } from "../../apps/web/scripts/database-client.mjs"
+import { HierarchyRepository } from "../../apps/web/src/domains/tasks/persistence/hierarchy-repository"
+import { getPillarById, getPillars } from "../../apps/web/src/domains/pillars/pillar-service"
+import { readSharedGoalsForArea } from "../../apps/web/src/domains/tasks/persistence/shared-goal-repository"
 import { TaskRepository } from "../../apps/web/src/domains/tasks/persistence/task-repository"
 import { ensureSchema, getPersistenceClient, resetPersistenceForTests } from "../../apps/web/src/domains/tasks/persistence/store"
 import { prepareTaskBoardPredecessor, predecessorMigrationNames } from "../scripts/task-board-predecessor"
@@ -331,9 +335,9 @@ for (const lock of ["reader", "writer"]) {
     const client = getPersistenceClient()
     expect((await client.execute("SELECT value FROM app_settings WHERE key = 'schema_version'")).rows).toEqual([{ value: String(DATABASE_SCHEMA_VERSION) }])
     const ledger = await client.execute("SELECT name, applied_at FROM __meitheal_migrations ORDER BY name")
-    expect(ledger.rows).toHaveLength(predecessorMigrationNames.length + 2)
-    expect(ledger.rows.slice(-2).map(row => row.name)).toEqual([TASK_BOARD_MIGRATION, PERSONAL_PILLAR_MIGRATION])
-    expect(ledger.rows.slice(0, -2).every(row => row.applied_at === 1)).toBe(true)
+    expect(ledger.rows).toHaveLength(predecessorMigrationNames.length + 3)
+    expect(ledger.rows.slice(-3).map(row => row.name)).toEqual([TASK_BOARD_MIGRATION, PERSONAL_PILLAR_MIGRATION, BOARD_ACCESS_MIGRATION])
+    expect(ledger.rows.slice(0, -3).every(row => row.applied_at === 1)).toBe(true)
     expect((await client.execute("SELECT title FROM tasks")).rows).toEqual([{ title: "Retained startup task" }])
     await expect(migrate("--check")).resolves.toMatchObject({ stdout: expect.stringContaining("Migration check passed") })
   })
@@ -560,4 +564,39 @@ test("Household task reads and cleanup exclude a named Board even by exact ID", 
   expect(await repo.countCompletedBefore(2)).toBe(0)
   await repo.deleteTask("private-task")
   expect((await db.execute("SELECT id FROM tasks WHERE id = 'private-task'")).rows).toHaveLength(1)
+
+  await db.batch([
+    "INSERT INTO areas (id, name, owner_board_id, created_at, updated_at) VALUES ('work-area', 'Work area', 'work-fixture', 1, 1)",
+    "INSERT INTO goals (id, area_id, title, owner_board_id, created_at, updated_at) VALUES ('work-goal', 'work-area', 'Work goal', 'work-fixture', 1, 1)",
+    "INSERT INTO projects (id, goal_id, area_id, title, owner_board_id, created_at, updated_at) VALUES ('work-project', 'work-goal', 'work-area', 'Work project', 'work-fixture', 1, 1)",
+    "INSERT INTO pillars (id, name, slug, owner_board_id, created_at, updated_at) VALUES ('work-pillar', 'Work pillar', '~work-pillar', 'work-fixture', 1, 1)",
+  ], "write")
+  const hierarchy = new HierarchyRepository(db)
+  expect(await hierarchy.findAreaById("work-area")).toBeNull()
+  expect(await hierarchy.findProjectById("work-project")).toBeNull()
+  expect(await hierarchy.findAllGoals({ area_id: "work-area" })).toEqual([])
+  expect(await hierarchy.findAllGoals({ project_id: "work-project" })).toEqual([])
+  expect(await hierarchy.deleteProject("work-project")).toBe(false)
+  expect(await getPillarById("work-pillar")).toBeNull()
+  expect((await getPillars()).map(pillar => pillar.id)).not.toContain("work-pillar")
+
+  const revision = "99999999-9999-4999-8999-999999999999"
+  await db.batch([
+    { sql: "INSERT INTO board_access_epoch (singleton, revision) VALUES (1, ?)", args: [revision] },
+    "INSERT INTO board_goal_shares VALUES ('work-goal', 'default', 'household')",
+    "INSERT INTO projects (id, goal_id, area_id, title, status, created_at, updated_at) VALUES ('home-project', 'work-goal', 'default', 'Home project', 'completed', 1, 1)",
+    "INSERT INTO board_access_grants (board_id, principal_type, principal_id, role) VALUES ('work-fixture', 'ha_user', 'work-user', 'member')",
+  ], "write")
+  const home = await readSharedGoalsForArea(db, "home-user", "default", revision)
+  expect(home).toEqual([{ id: "work-goal", title: "Work goal", area_id: "default", project_count: 1, completed_project_count: 1 }])
+  await db.execute("UPDATE projects SET title = 'Private changes', status = 'completed' WHERE id = 'work-project'")
+  expect(await readSharedGoalsForArea(db, "home-user", "default", revision)).toEqual(home)
+  expect(await readSharedGoalsForArea(db, "work-user", "default", revision)).toMatchObject([
+    { id: "work-goal", project_count: 2, completed_project_count: 2 },
+  ])
+  expect(await readSharedGoalsForArea(db, "home-user", "default", crypto.randomUUID())).toEqual([])
+  await db.execute("DELETE FROM board_access_grants WHERE principal_id = 'work-user'")
+  expect(await readSharedGoalsForArea(db, "work-user", "default", revision)).toEqual(home)
+  await db.execute("UPDATE areas SET owner_board_id = 'work-fixture' WHERE id = 'default'")
+  expect(await readSharedGoalsForArea(db, "home-user", "default", revision)).toEqual([])
 })

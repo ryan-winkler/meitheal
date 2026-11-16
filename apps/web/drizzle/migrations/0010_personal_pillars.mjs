@@ -43,7 +43,7 @@ export async function readPersonalPillarMigrationState(db) {
     sql: "SELECT name FROM main.__meitheal_migrations WHERE name = ? COLLATE NOCASE LIMIT 2",
     args: [PERSONAL_PILLAR_MIGRATION],
   })
-  const current = version?.value === String(PERSONAL_PILLAR_SCHEMA_VERSION)
+  const current = Number(version?.value) >= PERSONAL_PILLAR_SCHEMA_VERSION
   if ((current ? 1 : 0) !== ledger.length || (current && ledger[0]?.name !== PERSONAL_PILLAR_MIGRATION)) {
     throw new Error("The Meitheal Personal Pillar schema markers disagree")
   }

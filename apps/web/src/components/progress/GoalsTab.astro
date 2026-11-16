@@ -10,6 +10,7 @@
  */
 import ProgressRing from "../ui/ProgressRing.astro"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
+import { listSharedGoalsForArea } from "@domains/tasks/persistence/shared-goal-repository"
 import { HierarchyRepository } from "@domains/tasks/persistence/hierarchy-repository"
 
 interface Props { areaId?: string }
@@ -33,6 +34,7 @@ let goals: Array<{
   areaIcon: string | null
   projectCount: number
   completedProjectCount: number
+  shared?: boolean
 }> = []
 
 try {
@@ -73,6 +75,20 @@ try {
       completedProjectCount,
     })
   }
+
+  if (areaId && !scopeMissing) {
+    const shared = await listSharedGoalsForArea(db, Astro.locals, Astro.request.signal, areaId)
+    for (const goal of shared) {
+      const area = areaMap.get(goal.area_id)
+      goals.push({
+        id: goal.id, title: goal.title, area_id: goal.area_id, status: "shared",
+        description: null, target_date: null,
+        areaName: area?.name ?? null, areaIcon: area?.icon ?? null,
+        projectCount: goal.project_count, completedProjectCount: goal.completed_project_count,
+        shared: true,
+      })
+    }
+  }
 } catch {
   unavailable = true
 }
@@ -83,6 +99,7 @@ const statusLabels: Record<string, string> = {
   active: "Active",
   completed: "Completed",
   archived: "Archived",
+  shared: "Shared",
 }
 ---
 
@@ -125,7 +142,7 @@ const statusLabels: Record<string, string> = {
               <span class={`goals-tab__status-badge status-${goal.status}`}>
                 {statusLabels[goal.status] ?? goal.status}
               </span>
-              <div class="goals-tab__actions-row">
+              {!goal.shared && <div class="goals-tab__actions-row">
                 {goal.status === "active" && (
                   <button type="button" class="goals-tab__action-btn goals-tab__complete-btn" data-goal-id={goal.id} title="Mark completed" aria-label="Mark goal completed">✓</button>
                 )}
@@ -133,7 +150,7 @@ const statusLabels: Record<string, string> = {
                   <button type="button" class="goals-tab__action-btn goals-tab__reactivate-btn" data-goal-id={goal.id} title="Reactivate" aria-label="Reactivate goal">↩</button>
                 )}
                 <button type="button" class="goals-tab__action-btn goals-tab__delete-btn" data-goal-id={goal.id} title="Delete goal" aria-label="Delete goal">🗑</button>
-              </div>
+              </div>}
             </div>
           </div>
           {goal.description && (

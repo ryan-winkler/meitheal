@@ -150,7 +150,7 @@ export async function getPillarsForEntity(
     sql: `
       SELECT p.* FROM pillars p
       INNER JOIN pillar_associations pa ON pa.pillar_id = p.id
-      WHERE pa.entity_type = ? AND pa.entity_id = ? AND p.is_active = 1 AND p.user_id = ?
+      WHERE pa.entity_type = ? AND pa.entity_id = ? AND p.is_active = 1 AND p.owner_board_id IS NULL AND p.user_id = ?
       ORDER BY p.weight DESC, p.position ASC
     `,
     args: [entityType, entityId, HOUSEHOLD_PILLAR_OWNER],

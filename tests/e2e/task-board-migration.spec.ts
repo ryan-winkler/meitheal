@@ -69,7 +69,9 @@ async function predecessorRows(db: Client) {
   return Promise.all(["boards", "areas", "tasks", "kanban_lanes"].map(async table => {
     const { rows: columns } = await db.execute({ sql: "SELECT name FROM pragma_table_info(?) ORDER BY cid", args: [table] })
     const projection = columns.map(column => String(column.name)).filter(name =>
-      table === "tasks" ? !["task_board_id", "board_column_id", "ticket_ref"].includes(name) : table !== "kanban_lanes" || name !== "board_id",
+      name !== "owner_board_id" && (table === "tasks"
+        ? !["task_board_id", "board_column_id", "ticket_ref"].includes(name)
+        : table !== "kanban_lanes" || name !== "board_id"),
     ).map(name => `"${name.replaceAll('"', '""')}"`).join(", ")
     const { rows } = await db.execute(`SELECT rowid AS fixture_rowid, ${projection} FROM ${table} ORDER BY rowid`)
     return { table, count: rows.length, hash: createHash("sha256").update(JSON.stringify(rows)).digest("hex") }
@@ -321,6 +323,8 @@ test("the startup CLI upgrades 2,000 historical tasks and preserves draft public
   expect(run()).toContain("Applied migration: 0009_task_boards.mjs")
   expect(run("--check")).toContain("Migration check passed")
   expect(await predecessorRows(db)).toEqual(before)
+  expect((await db.execute("SELECT COUNT(*) AS count FROM areas WHERE owner_board_id IS NOT NULL")).rows)
+    .toEqual([{ count: 0 }])
   expect((await db.execute("SELECT board_id, draft_id, revision FROM task_drafts")).rows)
     .toEqual([{ board_id: "household", draft_id: "draft", revision: 4 }])
   expect((await db.execute("SELECT board_id, task_id, published_seq FROM task_draft_receipts")).rows)

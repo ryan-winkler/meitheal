@@ -220,7 +220,8 @@ function privateResourcePath(url) {
     const path = appRoutePath(pathname)
     if (path === "/api/export/database.sqlite" || path === "/api/task-pins" ||
         path === "/pinned" || path === "/activity" || path === "/api/search" ||
-        path === "/progress" || /^\/(?:api\/)?pillars(?:\/|$)/.test(path) ||
+        path === "/progress" || path === "/api/goals" || /^\/areas\/[^/]+$/.test(path) ||
+        /^\/(?:api\/)?pillars(?:\/|$)/.test(path) ||
         path === "/api/comment-people" || path === "/api/mention-inbox" || path === "/mention-inbox" ||
         path === "/api/saved-filters" || path === "/api/task-drafts" ||
         path === "/inactivity" || path === "/api/task-inactivity" || path === "/api/labels/cleanup" ||

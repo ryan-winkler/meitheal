@@ -226,6 +226,19 @@ const schemas = {
     },
     required: ["id", "title"],
   },
+  SharedGoal: {
+    type: "object",
+    properties: {
+      id: { type: "string" },
+      title: { type: "string" },
+      area_id: { type: "string" },
+      shared: { type: "boolean", const: true },
+      status: { type: "string", const: "shared" },
+      project_count: { type: "integer", minimum: 0 },
+      completed_project_count: { type: "integer", minimum: 0 },
+    },
+    required: ["id", "title", "area_id", "shared", "status", "project_count", "completed_project_count"],
+  },
   Pillar: {
     type: "object",
     properties: {
@@ -1534,13 +1547,15 @@ const paths = {
       operationId: "listGoals",
       tags: ["Hierarchy"],
       summary: "List goals",
-      description: "List goals across all areas, or filter by association. With multiple filters, a goal must match all of them.",
+      description: "List goals across all Areas, or filter by association. An Area can include shared goals with progress based on Projects the viewer can read.",
       parameters: [
         { name: "area_id", in: "query", schema: { type: "string" }, description: "Goals linked to this Area directly or through one of its projects." },
         { name: "project_id", in: "query", schema: { type: "string" }, description: "The goal linked to this project." },
-        { name: "status", in: "query", schema: { type: "string", enum: ["active", "completed", "archived"] } },
+        { name: "status", in: "query", schema: { type: "string", enum: ["active", "completed", "archived", "shared"] } },
       ],
-      responses: { 200: jsonContent({ type: "object", required: ["goals"], properties: { goals: arrOf("Goal") } }, "Goals") },
+      responses: { 200: jsonContent({ type: "object", required: ["goals"], properties: {
+        goals: { type: "array", items: { oneOf: [ref("Goal"), ref("SharedGoal")] } },
+      } }, "Goals") },
     },
     post: { operationId: "createGoal", tags: ["Hierarchy"], summary: "Create a goal", requestBody: { content: { "application/json": { schema: ref("Goal") } } }, responses: { 201: jsonContent(ref("Goal"), "Created") } },
   },

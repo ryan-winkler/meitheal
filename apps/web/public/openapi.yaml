@@ -480,6 +480,36 @@ components:
         - id
         - title
       additionalProperties: false
+    SharedGoal:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        area_id:
+          type: string
+        shared:
+          type: boolean
+          const: true
+        status:
+          type: string
+          const: shared
+        project_count:
+          type: integer
+          minimum: 0
+        completed_project_count:
+          type: integer
+          minimum: 0
+      required:
+        - id
+        - title
+        - area_id
+        - shared
+        - status
+        - project_count
+        - completed_project_count
+      additionalProperties: false
     Pillar:
       type: object
       properties:
@@ -4013,7 +4043,8 @@ paths:
       tags:
         - Hierarchy
       summary: List goals
-      description: List goals across all areas, or filter by association. With multiple filters, a goal must match all of them.
+      description: List goals across all Areas, or filter by association. An Area can include shared goals with progress based
+        on Projects the viewer can read.
       parameters:
         - name: area_id
           in: query
@@ -4033,6 +4064,7 @@ paths:
               - active
               - completed
               - archived
+              - shared
       responses:
         "200":
           description: Goals
@@ -4046,7 +4078,9 @@ paths:
                   goals:
                     type: array
                     items:
-                      $ref: "#/components/schemas/Goal"
+                      oneOf:
+                        - $ref: "#/components/schemas/Goal"
+                        - $ref: "#/components/schemas/SharedGoal"
                 additionalProperties: false
     post:
       operationId: createGoal

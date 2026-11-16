@@ -221,8 +221,9 @@ export const onRequest: MiddlewareHandler = async (context, next) => {
   const taskHistoryRoute = hasTaskHistoryPath || taskHistoryPath.test(routePattern) || taskHistoryPath.test(url.pathname)
   const participantRoute = commentPaths.has(routePattern) || reactionPaths.has(routePattern)
   const privatePillars = routePattern === "/progress" || pillarPagePath.test(routePattern) || pillarApiPath.test(routePattern)
+  const boardPlanningRoute = routePattern === "/areas/[id]" || routePattern === "/api/goals"
   const privateTaskRoute = pinRoute || draftRoute || inactivityApi || inactivityPage || mentionRoute || labelCleanup
-  if (!privateTaskRoute && !onlineReadRoute && !taskHistoryRoute && !participantRoute && !privatePillars) {
+  if (!privateTaskRoute && !onlineReadRoute && !taskHistoryRoute && !participantRoute && !privatePillars && !boardPlanningRoute) {
     return handleRequest(context, next, requestUrl)
   }
   if (draftRoute && (requestPath !== draftPath || requestUrl.search)) {
@@ -247,7 +248,7 @@ export const onRequest: MiddlewareHandler = async (context, next) => {
   }
   let response: Response
   try {
-    response = await handleRequest(context, next, requestUrl, privateTaskRoute || privatePillars)
+    response = await handleRequest(context, next, requestUrl, privateTaskRoute || privatePillars || boardPlanningRoute)
   } catch (error) {
     if (!labelCleanup) throw error
     return Response.json({ ok: false, errorCode: "unavailable", detail: "Could not verify label cleanup. Try again." }, {

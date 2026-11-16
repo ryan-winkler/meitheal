@@ -1,5 +1,6 @@
 import type { APIRoute } from "astro"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
+import { listSharedGoalsForArea } from "@domains/tasks/persistence/shared-goal-repository"
 import { HierarchyRepository } from "@domains/tasks/persistence/hierarchy-repository"
 import { stripHtml } from "../../../lib/strip-html"
 import { apiError, apiJson } from "../../../lib/api-response"
@@ -18,10 +19,11 @@ import { logApiError } from "../../../lib/api-logger"
  * @see docs/decisions/ADR-007-hierarchy-model.md
  */
 
-export const GET: APIRoute = async ({ url }) => {
+export const GET: APIRoute = async ({ url, locals, request }) => {
   try {
     await ensureSchema()
-    const repo = new HierarchyRepository(getPersistenceClient())
+    const client = getPersistenceClient()
+    const repo = new HierarchyRepository(client)
     const filters: { area_id?: string; project_id?: string; status?: string } = {}
     const area_id = url.searchParams.get("area_id")
     const project_id = url.searchParams.get("project_id")
@@ -30,7 +32,9 @@ export const GET: APIRoute = async ({ url }) => {
     if (project_id) filters.project_id = project_id
     if (status) filters.status = status
     const goals = await repo.findAllGoals(filters)
-    return apiJson({ goals })
+    const shared = area_id && !project_id && (!status || status === "shared")
+      ? await listSharedGoalsForArea(client, locals, request.signal, area_id) : []
+    return apiJson({ goals: [...goals, ...shared.map(goal => ({ ...goal, status: "shared", shared: true }))] })
   } catch (error) {
     logApiError("goals", "GET error", error)
     return apiError("Failed to list goals")
