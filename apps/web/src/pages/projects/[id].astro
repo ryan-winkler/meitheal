@@ -810,7 +810,7 @@ const tabs = [
     deleteProjectBtn.textContent = "Deleting…";
 
     try {
-      const res = await fetch(`/api/projects/${projectId}`, { method: "DELETE" });
+      const res = await fetch(`/api/projects/${projectId}`, { method: "DELETE", headers: { "content-type": "application/json" } });
       if (res.ok) {
         window.location.href = projectsPath;
       } else {

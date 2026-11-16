@@ -568,7 +568,7 @@ const tabs = [
       remove.disabled = true
       remove.textContent = "Deleting…"
       try {
-        const response = await fetch(endpoint, { method: "DELETE" })
+        const response = await fetch(endpoint, { method: "DELETE", headers: { "content-type": "application/json" }, signal })
         if (!response.ok) throw new Error("Area deletion failed")
         if (!signal.aborted) window.location.assign(back.href)
       } catch {

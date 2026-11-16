@@ -357,7 +357,7 @@ export const taskApi = {
 
   /** DELETE /api/goals/:id — delete a goal */
   async deleteGoal(id: string): Promise<void> {
-    await safeFetch(`/api/goals/${enc(id)}`, { method: "DELETE" })
+    await safeFetch(`/api/goals/${enc(id)}`, { method: "DELETE", headers: JSON_HEADERS })
   },
 
   // ── Projects ─────────────────────────────────────────────────────
@@ -392,7 +392,7 @@ export const taskApi = {
 
   /** DELETE /api/projects/:id — delete a project */
   async deleteProject(id: string): Promise<void> {
-    await safeFetch(`/api/projects/${enc(id)}`, { method: "DELETE" })
+    await safeFetch(`/api/projects/${enc(id)}`, { method: "DELETE", headers: JSON_HEADERS })
   },
 
   // ── Lanes ─────────────────────────────────────────────────────────

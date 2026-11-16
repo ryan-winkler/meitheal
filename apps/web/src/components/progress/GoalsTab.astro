@@ -477,7 +477,7 @@ const statusLabels: Record<string, string> = {
       button.disabled = true
       try {
         const response = await fetch("/api/goals/" + encodeURIComponent(id), remove ? {
-          method: "DELETE", signal,
+          method: "DELETE", signal, headers: { "content-type": "application/json" },
         } : {
           method: "PUT", signal, headers: { "content-type": "application/json" },
           body: JSON.stringify({ status: button.classList.contains("goals-tab__complete-btn") ? "completed" : "active" }),
