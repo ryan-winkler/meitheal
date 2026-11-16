@@ -13,6 +13,8 @@ import { DATABASE_SCHEMA_VERSION, openDatabase } from "../../apps/web/scripts/da
 import { ensureSchema, getPersistenceClient, resetPersistenceForTests } from "../../apps/web/src/domains/tasks/persistence/store"
 import { prepareTaskBoardPredecessor } from "../scripts/task-board-predecessor"
 
+const upgradeMigrations = new Set<string>([TASK_BOARD_MIGRATION, PERSONAL_PILLAR_MIGRATION])
+
 const execFileAsync = promisify(execFile)
 const webRoot = fileURLToPath(new URL("../../apps/web", import.meta.url))
 const generation = /^[0-9a-f]{32}$/
@@ -359,7 +361,7 @@ test("CLI check detects a missing predecessor activity trigger and apply restore
   await migrate(databasePath, "--check")
   withDatabase(databasePath, database => {
     expect(readTriggers(database)).toEqual(triggers)
-    expect(readLedger(database).filter(entry => ![TASK_BOARD_MIGRATION, PERSONAL_PILLAR_MIGRATION].includes(String(entry.name)))).toEqual(ledger)
+    expect(readLedger(database).filter(entry => !upgradeMigrations.has(String(entry.name)))).toEqual(ledger)
     expect(readMarker(database)).toBe(String(DATABASE_SCHEMA_VERSION))
   })
 })
@@ -397,7 +399,7 @@ test("a malformed stall column preserves predecessor activity state through both
   await migrate(databasePath, "--check")
   withDatabase(databasePath, database => {
     expect(readTriggers(database)).toEqual(triggers)
-    expect(readLedger(database).filter(entry => ![TASK_BOARD_MIGRATION, PERSONAL_PILLAR_MIGRATION, "0008_task_stall.mjs"].includes(String(entry.name))))
+    expect(readLedger(database).filter(entry => !upgradeMigrations.has(String(entry.name)) && entry.name !== "0008_task_stall.mjs"))
       .toEqual(ledger)
     expect(database.prepare("SELECT inactivity_generation FROM areas WHERE id = 'default'").get()).toEqual({
       inactivity_generation: expect.stringMatching(generation),
