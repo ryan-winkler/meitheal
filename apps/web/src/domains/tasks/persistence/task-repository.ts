@@ -837,6 +837,8 @@ export class TaskRepository {
         summary?: unknown
         start?: unknown
         end?: unknown
+        dtstart?: unknown
+        dtend?: unknown
         effective_end?: unknown
         occurrences?: Array<{ start?: unknown; end?: unknown; effective_end?: unknown }>
       } | null = null
@@ -849,12 +851,13 @@ export class TaskRepository {
         uid: entity && typeof row.provider_event_id === "string" ? row.provider_event_id : null,
         providerSummary: entity && typeof payload?.summary === "string" ? payload.summary : null,
       }
+      const providerStart = payload?.start ?? payload?.dtstart
       if (Array.isArray(payload?.occurrences) && payload.occurrences.length) {
         for (const occurrence of payload.occurrences) {
           addSpan(task, occurrence?.start, occurrence?.end, occurrence?.effective_end)
         }
-      } else if (typeof payload?.start === "string" && calendarDayFromInput(payload.start, timezone)) {
-        addSpan(task, payload.start, payload.end, payload.effective_end)
+      } else if (typeof providerStart === "string" && calendarDayFromInput(providerStart, timezone)) {
+        addSpan(task, providerStart, payload?.end ?? payload?.dtend, payload?.effective_end)
       } else {
         const endDay = typeof row.end_date === "string" ? calendarDayFromInput(row.end_date, timezone) : undefined
         addSpan(task, row.start_date ?? row.due_date, undefined, endDay)

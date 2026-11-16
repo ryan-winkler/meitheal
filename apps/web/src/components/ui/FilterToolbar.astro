@@ -149,6 +149,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
       placeholder={t("table.filter_placeholder", locale)}
       aria-label="Filter by text"
       value={calendarState.search}
+      disabled={prefix === "calendar"}
     />
   )}
 
@@ -1244,6 +1245,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
       updateLaneCount()
       updateClearVisibility()
     }
+    if (prefix === "calendar" && search) search.disabled = false
     loadAreas()
   }
 
