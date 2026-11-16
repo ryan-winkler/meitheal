@@ -12,7 +12,7 @@ New installations enable MCP by default. Managed-ingress deployments require ing
 
 To hand tasks to the client as an assignee, link its token to an agent assignee under **Acts as** (requires `tasks:read` plus `tasks:write:assigned` or `tasks:write`). Call `whoAmI` first to confirm the identity, then `listMyTasks`. See [Hand a task to an AI agent](agent-automation-guide.md#hand-a-task-to-an-ai-agent).
 
-1. Enable the MCP toggle in **Settings → Automation & AI → Agent Protocols**.
+1. Enable the MCP toggle in **Settings → AI & Agent Access → Agent Protocols**.
 2. Select **Save Agent Protocol Settings**.
 3. Create a dedicated Meitheal token with `mcp:execute` and the scopes for each required tool.
 4. Configure your Streamable HTTP client to send `Authorization: Bearer mth_<token>` over HTTPS on every request:
@@ -53,7 +53,7 @@ Through Home Assistant the caller is the signed-in administrator, not an agent a
 
 ## Check discovery in Settings
 
-**Settings → Automation & AI → Agent Protocols** probes the MCP manifest and the A2A agent card. The status badge counts available **discovery documents out of two**. It does not count saved toggles, browser tools, or token-scoped MCP tools. WebMCP shows its own browser registration status below its toggle.
+**Settings → AI & Agent Access → Agent Protocols** probes the MCP manifest and the A2A agent card. The status badge counts available **discovery documents out of two**. It does not count saved toggles, browser tools, or token-scoped MCP tools. WebMCP shows its own browser registration status below its toggle.
 
 Meitheal shows each discovery link only after a valid response matches the current public contract. The UI reports a disabled endpoint separately from a failed or invalid response. Non-administrator household members can check discovery status, while only administrators can change protocol toggles.
 
@@ -73,7 +73,7 @@ For the Home Assistant conversation LLM API, see [Core credential enrollment](ho
 
 WebMCP starts **off** and requires a Home Assistant administrator session (or a local standalone session).
 
-1. Enable **WebMCP (Browser Agent)** in **Settings → Automation & AI → Agent Protocols**.
+1. Enable **WebMCP (Browser Agent)** in **Settings → AI & Agent Access → Agent Protocols**.
 2. Select **Save Agent Protocol Settings**.
 
 The status line reports whether tools registered, whether the browser lacks support, or whether startup failed. If a save fails, Meitheal keeps your draft selections. Select **Save Agent Protocol Settings** again to retry. The runtime rechecks the persisted setting rather than trusting the checkbox state.

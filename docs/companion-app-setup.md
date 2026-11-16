@@ -17,7 +17,7 @@ Open Meitheal from the Home Assistant sidebar. Set up the [optional Core integra
 
 ## URL Handler and X-Callback-URL
 
-The redesigned `Settings → App & PWA` section now surfaces companion-safe deep links directly in the UI:
+The redesigned `Settings → App & Companion` section now surfaces companion-safe deep links directly in the UI:
 
 - `Open in Companion` uses Home Assistant's documented URL handler:
   `homeassistant://navigate/api/hassio_ingress/<TOKEN>/settings#app-pwa-settings`

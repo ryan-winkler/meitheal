@@ -228,13 +228,13 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
       })();
     </script>
 
-    <!-- Ingress state persistence: restore last route after iframe recreation -->
+    <!-- Ingress state persistence: restore last route only on initial cold/standalone boot -->
     <!-- Runs pre-paint so the user never sees a flash of the wrong page -->
     <script is:inline>
       (function () {
         if (!window.__ingress_path) return;
-        var prefix = window.__ingress_path.replace(/\/+$/, "");
-        if (!prefix) return;
+        var prefix = String(window.__ingress_path).replace(/\/+$/, "");
+        if (!prefix || !prefix.startsWith("/") || prefix.startsWith("//") || prefix.includes("\\")) return;
         var pathname = window.location.pathname;
         var current =
           pathname === prefix
@@ -291,10 +291,11 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
                 ? state.path.slice(prefix.length) || "/"
                 : state.path;
           if (!cleanPath.startsWith("/")) cleanPath = "/" + cleanPath;
-          // Don't redirect to root (no-op)
-          if (cleanPath === "/") return;
+          // Don't redirect to root (no-op) or unsafe/scheme-relative paths
+          if (cleanPath === "/" || cleanPath.startsWith("//") || cleanPath.includes("\\")) return;
           // Redirect to saved path — prepend ingress prefix without double-prefixing
-          var target = prefix + cleanPath;
+          var resolvedTarget = new URL(prefix + cleanPath, window.location.origin);
+          if (resolvedTarget.origin !== window.location.origin) return;
           // Save scroll position to restore after redirect
           if (state.scrollY) {
             sessionStorage.setItem(
@@ -302,7 +303,7 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
               String(state.scrollY),
             );
           }
-          window.location.replace(target);
+          window.location.replace(resolvedTarget.pathname + resolvedTarget.search + resolvedTarget.hash);
         } catch (e) {
           // sessionStorage unavailable or parse error — silently continue
         }

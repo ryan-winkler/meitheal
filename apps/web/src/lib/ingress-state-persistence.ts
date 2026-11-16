@@ -12,6 +12,8 @@ const SCROLL_KEY = "meitheal-restore-scroll"
 const MAX_AGE_MS = 60_000
 const SCROLL_DEBOUNCE_MS = 500
 
+let pendingDestination: { path: string; timestamp: number } | undefined
+
 export interface NavigationState {
   /** Ingress-stripped internal path + search + hash, e.g. "/tickets/MTH-142" or "/tasks?view=timeline" */
   path: string
@@ -60,6 +62,9 @@ export function saveNavigationState(path?: string, scrollY?: number): void {
     if (path === undefined) {
       if (typeof window === "undefined" || !window.__ingress_path) return
       resolvedPath = currentInternalRoute()
+      if (pendingDestination && resolvedPath !== pendingDestination.path &&
+        Date.now() - pendingDestination.timestamp <= MAX_AGE_MS) return
+      pendingDestination = undefined
       resolvedScrollY = scrollY ?? window.scrollY
     } else {
       resolvedPath = stripIngressPrefix(path)
@@ -125,6 +130,15 @@ export function shouldRestore(
   return true
 }
 
+/** Remember the destination while the old document is still firing lifecycle events. */
+export function saveNavigationDestination(path: string): void {
+  const route = stripIngressPrefix(path)
+  const sameDocument = typeof window !== "undefined" &&
+    route.split("#", 1)[0] === currentInternalRoute().split("#", 1)[0]
+  pendingDestination = sameDocument ? undefined : { path: route, timestamp: Date.now() }
+  saveNavigationState(route, 0)
+}
+
 let scrollTimer: ReturnType<typeof setTimeout> | null = null
 let activeController: AbortController | null = null
 
@@ -141,14 +155,18 @@ export function initStatePersistence(): void {
   activeController = controller
   const { signal } = controller
 
-  saveNavigationState(currentInternalRoute(), window.scrollY)
+  signal.addEventListener("abort", () => {
+    if (scrollTimer) clearTimeout(scrollTimer)
+    scrollTimer = null
+  }, { once: true })
+  saveNavigationState()
 
   window.addEventListener(
     "scroll",
     () => {
       if (scrollTimer) clearTimeout(scrollTimer)
       scrollTimer = setTimeout(() => {
-        saveNavigationState(currentInternalRoute(), window.scrollY)
+        saveNavigationState()
       }, SCROLL_DEBOUNCE_MS)
     },
     { passive: true, signal },
@@ -157,16 +175,18 @@ export function initStatePersistence(): void {
   document.addEventListener(
     "astro:page-load",
     () => {
-      saveNavigationState(currentInternalRoute(), window.scrollY)
+      saveNavigationState()
     },
     { signal },
   )
+
+  window.addEventListener("hashchange", () => saveNavigationState(), { signal })
 
   document.addEventListener(
     "visibilitychange",
     () => {
       if (document.visibilityState === "hidden") {
-        saveNavigationState(currentInternalRoute(), window.scrollY)
+        saveNavigationState()
       }
     },
     { signal },
@@ -175,7 +195,7 @@ export function initStatePersistence(): void {
   window.addEventListener(
     "beforeunload",
     () => {
-      saveNavigationState(currentInternalRoute(), window.scrollY)
+      saveNavigationState()
       controller.abort()
     },
     { signal },

@@ -342,21 +342,25 @@
             currentTaskId = taskId
             setTaskLocation(taskId, true, commentTarget)
 
+            // Start independent inspector reads together. Each field keeps its own fallback.
+            const requestOptions = { signal: modalSignal }
+            const lanes = fetch("/api/lanes", requestOptions)
+            const backlogModeSetting = fetch("/api/settings?key=backlog_mode", requestOptions)
+            const areas = fetch("/api/areas", requestOptions)
+            const projectRead = projectField ? fetch("/api/projects", requestOptions) : null
+            const pillars = fetch("/api/pillars", requestOptions)
+            const assignSelect = document.querySelector<HTMLSelectElement>("#td-assigned-to")
+            const users = assignSelect ? fetch("/api/users", requestOptions) : null
+            const settings = fetch("/api/settings", requestOptions)
+            // Observe rejections immediately. Field handlers consume the original promises in order.
+            void Promise.allSettled([lanes, backlogModeSetting, areas, projectRead, pillars, users, settings])
+
             // Populate status dropdown from lanes API
             const statusSelect = document.getElementById(
               "td-status",
             ) as HTMLSelectElement | null;
             try {
-              const [lanesRes, modeRes] = await Promise.all([
-                fetch((window.__ingress_path || "") + "/api/lanes", {
-                  signal: modalSignal,
-                }),
-                fetch(
-                  (window.__ingress_path || "") +
-                    "/api/settings?key=backlog_mode",
-                  { signal: modalSignal },
-                ),
-              ]);
+              const [lanesRes, modeRes] = await Promise.all([lanes, backlogModeSetting])
               let backlogMode = "visible";
               try {
                 if (modeRes.ok) {
@@ -368,7 +372,8 @@
                 /* default */
               }
               if (lanesRes.ok && statusSelect) {
-                const lanesData = await lanesRes.json();
+                const lanesData = await lanesRes.json()
+                if (modalSignal.aborted) return
                 let lanes = lanesData.lanes || [];
                 // When backlog is disabled, remove it from status options
                 if (backlogMode === "disabled") {
@@ -472,10 +477,12 @@
               try {
                 const childRes = await fetch( // nosemgrep
                   `${window.__ingress_path || ""}/api/tasks?parent_id=${taskId}`, // nosemgrep
-                  { signal: __signal },
+                  requestOptions,
                 );
+                if (modalSignal.aborted) return
                 if (childRes.ok) {
-                  const childData = await childRes.json();
+                  const childData = await childRes.json()
+                  if (modalSignal.aborted) return
                   const children = childData.tasks ?? [];
                   if (children.length === 0) {
                     childrenDiv.innerHTML = `<span class="text-xs text-text-muted italic">No children</span>`;
@@ -511,6 +518,7 @@
                   }
                 }
               } catch {
+                if (modalSignal.aborted) return
                 childrenDiv.innerHTML = `<span class="text-xs text-text-muted italic">—</span>`;
                 if (progressWrap) progressWrap.classList.add("hidden");
               }
@@ -762,12 +770,11 @@
             ) as HTMLSelectElement;
             const currentAreaId = String(t.area_id ?? "default");
             try {
-              const boardRes = await fetch(
-                (window.__ingress_path || "") + "/api/areas",
-                { signal: __signal },
-              );
+              const boardRes = await areas
+              if (modalSignal.aborted) return
               if (boardRes.ok) {
-                const areaData = await boardRes.json();
+                const areaData = await boardRes.json()
+                if (modalSignal.aborted) return
                 const boards = areaData.areas ?? [];
                 areaSelect.replaceChildren();
                 boards.forEach(
@@ -781,12 +788,13 @@
                 areaSelect.value = currentAreaId;
               }
             } catch {
+              if (modalSignal.aborted) return
               areaSelect.replaceChildren(new Option(currentAreaId, currentAreaId));
             }
-            if (projectField) {
+            if (projectField && projectRead) {
               const savedProject = String(t.project_id ?? "")
               try {
-                const response = await fetch("/api/projects", { signal: modalSignal })
+                const response = await projectRead
                 if (!response.ok) throw new Error("Projects unavailable")
                 const data = await response.json()
                 if (modalSignal.aborted) return
@@ -816,12 +824,11 @@
             ) as HTMLSelectElement;
             const currentPillarId = String(t.pillar_id ?? "");
             try {
-              const pilRes = await fetch(
-                (window.__ingress_path || "") + "/api/pillars",
-                { signal: __signal },
-              );
+              const pilRes = await pillars
+              if (modalSignal.aborted) return
               if (pilRes.ok) {
-                const pilData = await pilRes.json();
+                const pilData = await pilRes.json()
+                if (modalSignal.aborted) return
                 const pillars = pilData.pillars ?? pilData ?? [];
                 pillarSelect.replaceChildren(new Option("No pillar", ""));
                 (pillars as Array<{ id: string; name: string; icon?: string }>).forEach((p) => {
@@ -833,6 +840,7 @@
                 pillarSelect.value = currentPillarId;
               }
             } catch {
+              if (modalSignal.aborted) return
               pillarSelect.replaceChildren(new Option(currentPillarId, currentPillarId));
             }
 
@@ -845,10 +853,12 @@
               if (currentPillarId && currentPillarId !== "null" && currentPillarId !== "undefined") {
                 const prinRes = await fetch( // nosemgrep
                   (window.__ingress_path || "") + `/api/pillars/${currentPillarId}/principles`, // nosemgrep
-                  { signal: __signal },
+                  requestOptions,
                 );
+                if (modalSignal.aborted) return
                 if (prinRes.ok) {
-                  const prinData = await prinRes.json();
+                  const prinData = await prinRes.json()
+                  if (modalSignal.aborted) return
                   const principles = prinData.principles ?? prinData ?? [];
                   principleSelect.replaceChildren(new Option("No principle", ""));
                   (principles as Array<{ id: string; description: string }>).forEach((p) => {
@@ -863,6 +873,7 @@
                  principleSelect.replaceChildren(new Option("No principle", ""));
               }
             } catch {
+              if (modalSignal.aborted) return
               principleSelect.replaceChildren(new Option(currentPrincipleId, currentPrincipleId));
             }
             // Phase 20: Agile hierarchy type
@@ -883,17 +894,13 @@
             }
 
             // Assigned To — populate from /api/users
-            const assignSelect = document.getElementById(
-              "td-assigned-to",
-            ) as HTMLSelectElement | null;
-            if (assignSelect) {
+            if (assignSelect && users) {
               try {
-                const usersRes = await fetch(
-                  (window.__ingress_path || "") + "/api/users",
-                  { signal: __signal },
-                );
+                const usersRes = await users
+                if (modalSignal.aborted) return
                 if (usersRes.ok) {
-                  const usersData = await usersRes.json();
+                  const usersData = await usersRes.json()
+                  if (modalSignal.aborted) return
                   const users = usersData.users ?? [];
                   assignSelect.innerHTML =
                     '<option value="">Unassigned</option>';
@@ -905,6 +912,7 @@
                   }
                 }
               } catch {
+                if (modalSignal.aborted) return
                 /* keep default unassigned option */
               }
               assignSelect.value = String(t.assigned_to ?? "");
@@ -927,7 +935,7 @@
             _settingsFields = [];
             let allSettings: Record<string, unknown> = {};
             try {
-              const settingsRes = await fetch("/api/settings", { signal: modalSignal })
+              const settingsRes = await settings
               if (settingsRes.ok) {
                 allSettings = await settingsRes.json();
                 if (modalSignal.aborted || currentTaskId !== taskId) return

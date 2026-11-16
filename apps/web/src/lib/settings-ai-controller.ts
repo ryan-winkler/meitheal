@@ -7,6 +7,7 @@
 import { WEBMCP_SETTING } from "@domains/agents/webmcp-protocol"
 import { parseAiHandoffUrl } from "@lib/ai-handoff-url"
 import { withAsyncButton } from "@lib/async-button"
+import { safeIngressHref } from "@lib/ingress-navigation"
 import { fetchHaAgents, renderHaAgentOptions } from "@lib/ha-agent-picker"
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { initAgentTokensSettings } from "@lib/settings-agent-tokens-controller"
@@ -185,10 +186,9 @@ async function restoreHaAgent(savedAgent: unknown) {
 }
 
 function fixProtocolLinks(): void {
-  const base = window.__ingress_path || ""
   document.querySelectorAll<HTMLAnchorElement>(".protocol-link[data-path]").forEach(el => {
     const path = el.dataset.path
-    if (path) el.href = base + path
+    if (path) el.href = safeIngressHref(path)
   })
 }
 

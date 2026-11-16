@@ -126,7 +126,7 @@ Open a task and select **Copy task link**. If the browser cannot access the clip
 2. Repeat through Home Assistant. Confirm the URL keeps its ingress prefix and that the destination still requires Home Assistant access. Use Back and Forward to close and reopen the ordinary drawer. Modified clicks on task links open the ticket in another tab.
 3. Open old `/tasks?open=…` and `/tasks#task-MTH-…` links. Confirm they open the task at its ticket URL and restore the original view when closed. Pin and search drawers keep their existing return flow.
 4. Delete a disposable task and reopen its link. Confirm the unavailable message appears and **Close detail** returns to the Tasks view.
-5. Run `MEITHEAL_TEST_BROWSER=1 pnpm --filter @meitheal/tests test e2e/task-permalink.spec.ts` after building the web app.
+5. Run `MEITHEAL_TEST_BROWSER=1 pnpm --filter @meitheal/tests test e2e/task-permalink.spec.ts` after building the web app. Check the linked comment and focus in a fresh authorized tab while the App worker starts. The inspector requests independent lists and settings together after the task loads. Closing the inspector cancels those reads.
 
 The main ticket pane includes **Scoring & frameworks**. Choose RICE or another framework, enter estimates and select **Save score**. RICE retains the existing whole-percentage score scale. Reach 10, impact 2, confidence 80 and effort 0.5 produce 3200, matching Planning and task badges. Failed saves retain the estimates for retry. Reload to verify the saved evaluation and confirm other framework values remain intact.
 
@@ -219,7 +219,7 @@ Use this after changing the Table shell or `table-controller.ts`.
 
 Run `e2e/character-shortcuts.spec.ts` against a disposable Astro instance after changing Tasks keyboard navigation or help. Open Table before pressing `K` and confirm that Kanban stays open. On Tasks, `1` opens Kanban, `2` Table, `3` Calendar, and `4` Timeline. Open help with `?` from a focused control. Confirm that Tab stays inside help and that Escape and **Close shortcuts** return focus to the opener.
 
-Help and **Settings → Personal → Keyboard Shortcuts** render the same list from `apps/web/src/lib/keyboard-shortcuts.ts`. Add a key there only when its handler ships, with an `en` and `ga` label. Help shows **Everywhere** (`/`, `n`, `d`, `k`, `t`, `y`, `u`, `c`, Ctrl + K, Ctrl + B, `?`, Esc) and **On the Tasks page** (`1` to `4`). Settings adds **On the Settings page** (Home). Each destination has one label: `k` and `1` both say **Kanban view**, and the `k` row notes that it moves up on Today and Timeline. The dialog takes its accessible name from the visible title (**Keyboard shortcuts**, or **Aicearraí méarchláir** in Irish). Close is a 44 px `.btn-icon`. At 667 × 375 the header stays visible while the list scrolls, and the dialog is at most 420 px wide.
+Help and **Settings → Navigation & Shortcuts → Keyboard shortcuts** render the same list from `apps/web/src/lib/keyboard-shortcuts.ts`. Add a key there only when its handler ships, with an `en` and `ga` label. Help shows **Everywhere** (`/`, `n`, `d`, `k`, `t`, `y`, `u`, `c`, Ctrl + K, Ctrl + B, `?`, Esc) and **On the Tasks page** (`1` to `4`). Settings adds **On the Settings page** (Home). Each destination has one label: `k` and `1` both say **Kanban view**, and the `k` row notes that it moves up on Today and Timeline. The dialog takes its accessible name from the visible title (**Keyboard shortcuts**, or **Aicearraí méarchláir** in Irish). Close is a 44 px `.btn-icon`. At 667 × 375 the header stays visible while the list scrolls, and the dialog is at most 420 px wide.
 
 Check that `K` still moves to the previous task after navigating to Today and after changing Timeline zoom. Use at least two dated tasks to verify the selection moves within the current view.
 
@@ -351,7 +351,7 @@ The JSON body limit is 16 KiB. The App reads the first 256 KiB of decoded HTML a
 
 ## Data Retention & Cleanup
 
-User-initiated deletion of old completed/archived tasks via Settings → Danger Zone.
+User-initiated deletion of old completed or archived tasks in **Settings → Backups & Reset → Archiving & Data Retention**.
 
 **API endpoints:**
 
@@ -443,7 +443,7 @@ Renames and final deletions scan bounded label selections inside one writer tran
 
 For upgrade and recovery, retain a task, a private saved draft and a template with the same label in a disposable copy. Rename and verify all three, restart, then restore the candidate App backup and check the new name and draft revision. Include an emoji in the new name to verify valid UTF-16 pairs survive the round trip. Restore the exact predecessor image and data backup and verify the old name, revision and links. A data-only restore against a different image is not predecessor rollback proof. After any uncertain network response, reload Labels before retrying.
 
-Administrators can review unused definitions in **Settings → Workflow → Labels**. Review shows up to 25 eligible labels per page. Selection clears on pagination, refresh, disconnection or account verification failure. Removal rechecks current usage and metadata together before committing the complete selection. A changed or newly used label leaves the selection intact in storage and asks for a new preview.
+Administrators can review unused definitions in **Settings → Tasks & Boards → Labels**. Review shows up to 25 eligible labels per page. Selection clears on pagination, refresh, disconnection or account verification failure. Removal rechecks current usage and metadata together before committing the complete selection. A changed or newly used label leaves the selection intact in storage and asks for a new preview.
 
 If cleanup reports that stored label selections need attention, inspect a verified backup in a disposable installation. Check task label JSON arrays, version-1 draft label selections and template label arrays for malformed or oversized data. Cleanup preserves all definitions when it cannot determine usage safely. Repair through the corresponding supported task, draft or template workflow, or restore a known-good App backup, then review again. Do not erase private draft data to make cleanup pass. Large unrelated descriptions do not prevent cleanup; each label selection is limited to 64 KiB.
 

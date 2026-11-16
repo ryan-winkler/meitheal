@@ -38,7 +38,7 @@ export function initGrocySettings(): void {
       const keyInput = document.getElementById("grocy-key") as HTMLInputElement
       const body: Record<string, string> = {}
       if (urlInput?.value?.trim()) body.url = urlInput.value.trim()
-      const res = await fetch((window.__ingress_path || "") + "/api/grocy/auto-key", {
+      const res = await fetch("/api/grocy/auto-key", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body),
@@ -107,7 +107,7 @@ export function initGrocySettings(): void {
       }
       if (url) payload.grocy_url = url
       if (key) payload.grocy_api_key = key
-      const res = await fetch((window.__ingress_path || "") + "/api/grocy/settings", {
+      const res = await fetch("/api/grocy/settings", {
         method: "PUT",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(payload),
@@ -157,7 +157,7 @@ export function initGrocySettings(): void {
     btn.textContent = "Testing..."
     btn.disabled = true
     try {
-      const res = await fetch((window.__ingress_path || "") + "/api/grocy/test", {
+      const res = await fetch("/api/grocy/test", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ url: url || undefined, api_key: key || undefined, auto_detected: isAutoDetected || false }),
@@ -208,7 +208,7 @@ export function initGrocySettings(): void {
     try {
       const syncMode = (document.getElementById("grocy-sync-mode") as HTMLSelectElement).value
       const syncInterval = (document.getElementById("grocy-sync-interval") as HTMLSelectElement).value
-      const res = await fetch((window.__ingress_path || "") + "/api/grocy/sync", {
+      const res = await fetch("/api/grocy/sync", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ action: "sync", sync_mode: syncMode, interval_ms: Number(syncInterval) }),
@@ -249,7 +249,7 @@ export function initGrocySettings(): void {
 
 async function hydrateGrocyStatus() {
   try {
-    const res = await fetch((window.__ingress_path || "") + "/api/grocy/settings", { signal: pageLifecycle.signal })
+    const res = await fetch("/api/grocy/settings", { signal: pageLifecycle.signal })
     if (!res.ok) return
     const data = await res.json()
     const s = data.settings || {}
@@ -264,7 +264,7 @@ async function hydrateGrocyStatus() {
       if (syncBtn) syncBtn.style.display = ""
       syncOpenGrocyLink(typeof s.grocy_url === "string" ? s.grocy_url : undefined)
     }
-    const syncRes = await fetch((window.__ingress_path || "") + "/api/grocy/sync", { signal: pageLifecycle.signal })
+    const syncRes = await fetch("/api/grocy/sync", { signal: pageLifecycle.signal })
     if (syncRes.ok) {
       const syncData = await syncRes.json()
       const sync = syncData.sync

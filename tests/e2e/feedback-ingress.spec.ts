@@ -350,7 +350,9 @@ coreTest("database download includes committed writes still in the WAL", async (
     const source = new DatabaseSync(dbPath)
     try {
       expect(source.prepare("PRAGMA journal_mode").get()).toMatchObject({ journal_mode: "wal" })
-      expect(source.prepare("PRAGMA wal_checkpoint(TRUNCATE)").get()).toMatchObject({ busy: 0, log: 0 })
+      const checkpoint = source.prepare("PRAGMA wal_checkpoint(TRUNCATE)")
+      // The fixture can finish startup database work after it starts answering health requests.
+      await expect.poll(() => checkpoint.get()).toMatchObject({ busy: 0, log: 0 })
       const title = "Committed WAL task"
       const created = await api.post(`${prefix}/api/tasks`, { headers: admin, data: { title } })
       expect(created.status()).toBe(201)
@@ -493,7 +495,7 @@ for (const secure of [true, false]) {
     try {
       await admin.addCookies([{ name: "feedback-fixture", value: "admin", url: browserOrigin }])
       const page = await admin.newPage()
-      const settings = browserOrigin + prefix + "/settings#app-pwa-settings"
+      const settings = browserOrigin + prefix + "/settings#backups-reset-settings"
       const endpoint = browserOrigin + prefix + "/api/export/database.sqlite"
       await page.goto(browserOrigin + "/api/health")
       await page.setContent(`<iframe title="Home Assistant app" style="width:100%;height:95vh" src="${settings}"></iframe>`)
@@ -757,6 +759,23 @@ test("the service worker precaches inside ingress without opening inactive board
   } finally {
     await context.close()
   }
+})
+
+test("a Settings section chosen after a search jump is remembered inside ingress", async ({ page, context }) => {
+  await context.setExtraHTTPHeaders({})
+  await context.addCookies([{ name: "feedback-fixture", value: "admin", url: origin }])
+  await page.goto(origin + prefix + "/settings")
+  await page.locator("#settings-bar-search-launcher").click()
+  await page.locator('[data-scope="settings"]').click()
+  const search = page.locator("#search-hub-input")
+  await search.fill("theme")
+  await expect(page.locator(".search-hub-item.is-selected .search-hub-item-title")).toHaveText("Theme")
+  await search.press("Enter")
+  await expect(page.locator("#theme-select")).toBeFocused()
+  await page.locator('[data-settings-nav="navigation-settings"]').click()
+  await expect(page).toHaveURL(/\/settings#navigation-settings$/)
+  const saved = await page.evaluate(() => JSON.parse(sessionStorage.getItem("meitheal-navigation-state") ?? "null"))
+  expect(saved).toMatchObject({ path: "/settings#navigation-settings" })
 })
 
 test("ingress Settings keeps readable palettes and resolves Auto from the panel or system", async ({ page, context }) => {
@@ -1151,7 +1170,7 @@ coreTest("a live ingress role change prevents reuse of an administrator's Custom
 coreTest("Settings saves and retries feedback, then reviews, downloads and deletes it", async ({ browser }) => {
   const member = await browser.newContext({ extraHTTPHeaders: {}, viewport: { width: 320, height: 812 } })
   const admin = await browser.newContext({ extraHTTPHeaders: {}, viewport: { width: 390, height: 844 }, acceptDownloads: true })
-  const personal = origin + prefix + "/settings#personal-settings"
+  const appPwa = origin + prefix + "/settings#app-pwa-settings"
   const settings = origin + prefix + "/settings#local-feedback"
   const message = 'Synthetic <img src=x onerror="window.feedbackExecuted=true"> report'
   try {
@@ -1167,13 +1186,13 @@ coreTest("Settings saves and retries feedback, then reviews, downloads and delet
       expect(saved.status()).toBe(201)
       await route.abort()
     })
-    await userPage.goto(personal)
-    const personalPanel = userPage.locator("#personal-settings")
-    const localFeedback = personalPanel.getByRole("link", { name: "Share local feedback", exact: true })
-    await personalPanel.getByRole("link", { name: /Changelog/ }).focus()
+    await userPage.goto(appPwa)
+    const appPanel = userPage.locator("#app-pwa-settings")
+    const localFeedback = appPanel.getByRole("link", { name: "Share local feedback", exact: true })
+    await appPanel.getByRole("link", { name: /Changelog/ }).focus()
     await userPage.keyboard.press("Tab")
     await expect(localFeedback).toBeFocused()
-    const guides = personalPanel.getByRole("link", { name: "Guides", exact: true })
+    const guides = appPanel.getByRole("link", { name: "Guides", exact: true })
     await expect(guides).toHaveAttribute("href", "https://github.com/ryan-winkler/meitheal/blob/main/docs/index.md")
     await expect(guides).toHaveAttribute("target", "_blank")
     await expect(localFeedback).toHaveAttribute("href", "#local-feedback")
@@ -1235,8 +1254,8 @@ coreTest("Settings saves and retries feedback, then reviews, downloads and delet
 
     await member.addCookies([{ name: "meitheal-locale", value: "ga", url: origin }])
     const irishPage = await member.newPage()
-    await irishPage.goto(personal)
-    const irishPanel = irishPage.locator("#personal-settings")
+    await irishPage.goto(appPwa)
+    const irishPanel = irishPage.locator("#app-pwa-settings")
     await expect(irishPanel.getByRole("link", { name: "Treoracha", exact: true })).toBeVisible()
     const irishFeedback = irishPanel.getByRole("link", { name: "Roinn aiseolas áitiúil", exact: true })
     await expect(irishFeedback).toHaveAttribute("href", "#local-feedback")

@@ -98,7 +98,7 @@ The optional Home Assistant custom integration adds `todo.meitheal_tasks`, task 
 
 1. Install the [Meitheal integration](docs/kcs/home-assistant-marketplace.md).
 2. Open **Settings → Devices & Services** in Home Assistant and configure the discovered **Meitheal** entry.
-3. Enter a scoped Meitheal agent token when prompted (**Settings → Automation & AI** inside Meitheal).
+3. Enter a scoped Meitheal agent token when prompted (**Settings → AI & Agent Access** inside Meitheal).
 4. In **Settings → Voice assistants → Expose**, choose whether Assist can use `todo.meitheal_tasks`. Grant **Read Tasks** and **Create & Update Tasks** for voice capture and completion.
 
 On Home Assistant Core 2026.11 or later, an active administrator can also enable **Meitheal Tasks (read only)** in a conversation agent's LLM API settings to search and summarize tasks safely. External automation tools (n8n, Node-RED, MCP clients) can use separate scoped tokens.

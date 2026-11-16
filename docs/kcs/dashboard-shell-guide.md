@@ -128,7 +128,7 @@ date with a time becomes overdue when that time passes. The Dashboard counter,
 the Overdue Kanban filter and the Focus Queue labels ("Due today", "Due
 tomorrow", "Overdue by 2 days") use the same rule.
 
-If the counter disagrees with Today, check the timezone in Settings → Personal.
+If the counter disagrees with Today, check the timezone in **Settings → Language & Time**.
 `e2e/launch-layout-regressions.spec.ts` covers the counter with tasks due
 yesterday, today and tomorrow.
 

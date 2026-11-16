@@ -35,5 +35,8 @@ export const COLOR_SWATCHES = [
   "#64748B", // Slate
 ] as const
 
+/** Curated Indigo swatch referenced by settings UI without literal chrome hex duplication */
+export const INDIGO_SWATCH = COLOR_SWATCHES[4]
+
 /** Type for valid swatch colors */
 export type SwatchColor = (typeof COLOR_SWATCHES)[number]

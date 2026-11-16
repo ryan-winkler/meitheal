@@ -12,7 +12,7 @@ Integration rows have separate controls: the heading expands the configuration, 
 
 Disclosure summaries show their description once. Their touch target is at least 44 pixels high, and cards use the shared Settings inset. Theme choices remain **Auto (System)**, **Light**, **Dark** and **Custom**.
 
-Local feedback remains under **Settings → App & PWA** when opened through verified Home Assistant ingress. Its form, administrator queue, retry receipts and reviewed exports use the existing implementation. The underlined security reporting link remains available below the card. See [Feedback and support](feedback-and-support.md) for the permission and privacy boundaries.
+Local feedback remains under **Settings → App & Companion** when opened through verified Home Assistant ingress. Its form, administrator queue, retry receipts and reviewed exports use the existing implementation. The underlined security reporting link remains available below the card. See [Feedback and support](feedback-and-support.md) for the permission and privacy boundaries.
 
 The selected Tabler outline paths retain their MIT notice in `apps/web/scripts/generate-icons.mjs`, the committed `apps/web/src/generated/icon-registry.ts` catalog, `apps/web/src/components/ui/Icon.astro`, and `apps/web/public/licenses/tabler-icons.txt`. They do not require an external icon service.
 
@@ -26,6 +26,10 @@ UI emoji handling follows five explicit buckets:
 3. **Bucket 3 (Replaced)**: Component default fallback props (`EmptyState.astro`, `TaskTypeIcon.astro`) default to typed Tabler `IconName` values while rendering a text span when passed user-authored Bucket 2 strings.
 4. **Bucket 4 (Replaced)**: Static Astro/TS UI chrome badges, buttons, and toasts use `<Icon>` or `renderIconSvg()`.
 5. **Bucket 5 (Replaced)**: Non-`<option>` chrome strings in `en.json` and `ga.json` pair clean text with adjacent `<Icon aria-hidden="true" />` elements.
+
+The desktop sidebar keeps a single circular edge collapse control (`#sidebar-edge-toggle`, with directional chevron flip and hover/ARIA state), while expandable navigation submenus (`Tasks`, `Areas`, and individual areas) use square disclosure buttons with dynamic `aria-expanded`, `aria-label`, and hover titles.
+
+Pin task types beside **Tasks** for quick access. The sidebar restores those links and the Tasks controls after returning from pages that hide the sidebar, such as Inactivity.
 
 ## Verification
 

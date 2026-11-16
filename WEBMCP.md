@@ -8,7 +8,7 @@ Meitheal exposes five separated automation interfaces across four protocol bound
 | Core LLM API | Install the Home Assistant Core integration. Select **Meitheal Tasks** in the Home Assistant conversation agent settings. |
 | Core MCP | Send JSON-RPC 2.0 requests to `POST /api/meitheal/mcp` as a verified Home Assistant administrator when the Core integration is loaded. |
 | A2A | Read the A2A `1.0` agent card at `GET /api/a2a/agent-card`. Send `SendMessage` to `POST /api/a2a/message` with `a2a:execute` and `search:read` to search active task titles. |
-| WebMCP | Enable **WebMCP (Browser Agent)** in **Settings → Automation & AI → Agent Protocols**. Select **Save Agent Protocol Settings** in an administrator browser session. Compatible browsers register `meitheal_search_tasks` and `meitheal_open_tasks`. |
+| WebMCP | Enable **WebMCP (Browser Agent)** in **Settings → AI & Agent Access → Agent Protocols**. Select **Save Agent Protocol Settings** in an administrator browser session. Compatible browsers register `meitheal_search_tasks` and `meitheal_open_tasks`. |
 
 ## App MCP
 

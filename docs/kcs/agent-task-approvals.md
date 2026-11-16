@@ -5,7 +5,7 @@ description: "Submit and review scoped automation proposals."
 ---
 # Agent task approvals
 
-Use the proposal scope when an automation should suggest a change for a person to review. In **Settings → Automation & AI → Agent Tokens**, issue a token with **Propose Task Changes** (`tasks:propose`). Add **Read Tasks** only if the client also needs to browse tasks. Direct task writes use their existing separate permission. A proposal token cannot approve its own work. For mandatory review, grant `tasks:propose` and only the read/transport scopes the client needs; omit `tasks:write`, `tasks:delete`. This is an operation permission boundary, not a restriction based on advisory per-task AI scope preferences. Claims and review windows are fixed; there is no automatic acceptance setting.
+Use the proposal scope when an automation should suggest a change for a person to review. In **Settings → AI & Agent Access → Agent Tokens**, issue a token with the **tasks:propose** scope. Add **tasks:read** only if the client also needs to browse tasks. Direct task writes use their existing separate permission. A proposal token cannot approve its own work. For mandatory review, grant `tasks:propose` and only the read/transport scopes the client needs; omit `tasks:write`, `tasks:delete`. This is an operation permission boundary, not a restriction based on advisory per-task AI scope preferences. Claims and review windows are fixed; there is no automatic acceptance setting.
 
 ## Submit a proposal
 
@@ -22,7 +22,7 @@ A proposal can contain a title, a description, or both. An empty description cle
 ## Decide in Home Assistant
 
 1. Open Meitheal through authenticated Home Assistant ingress as a current administrator. Authority is rechecked with Core for every decision.
-2. Open **Settings → Automation & AI → Agent approvals → Open review queue**.
+2. Open **Settings → AI & Agent Access → Agent handoff → Open Review**.
 3. Compare the current and proposed values. On a narrow screen, press Tab to focus the proposal comparison, then use the Left and Right Arrow keys to see its columns.
 4. Choose **Accept proposal** to apply those fields or **Reject proposal** to dismiss it. The queue reports the result and the task activity records applied field changes. Accepted changes also record the verified human in Recent Activity in the same database transaction as the edit.
 

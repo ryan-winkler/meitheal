@@ -56,7 +56,7 @@ The web app manifest (`manifest.webmanifest`) includes:
 - **Install icons** use the Meitheal mark from `apps/web/public/logo.svg` at 192 and 512 pixels. The maskable icon extends the evergreen (`#10231B`) background to every edge and keeps the mark within the safe circle.
 - **Shortcuts**: Today, Calendar, Settings — appear in long-press/right-click on the app icon
 - **Screenshots**: Desktop and mobile captures of Today with sample tasks. The built app serves them from `/pwa/screenshots/`.
-- **App & PWA entry point**: Settings now includes companion handoff actions and install troubleshooting in one place
+- **App & Companion**: Find companion handoff actions and install troubleshooting in one Settings section
 
 ### Sync Status Indicator
 
@@ -94,7 +94,7 @@ When the same task is edited on multiple devices:
 | Clearing all offline data | Browser settings → Clear site data |
 | Force sync | Navigate to any page while online |
 | Attachment not showing | Check browser IDB storage quota in DevTools |
-| Notification not showing | Check notification permissions in browser settings. App & PWA shows a test notification with the app icon when the browser first grants permission. |
+| Notification not showing | Check notification permissions in browser settings. In **Settings → App & Companion → Troubleshooting**, choose **Send a test notification**. |
 | Theme not matching OS | Clear `meitheal-theme` from localStorage |
 
 ## Home Assistant Ingress Compatibility
@@ -130,7 +130,7 @@ PWA features (service worker, install prompt, push notifications) require a **se
 | Direct LAN HTTP | ❌ | ❌ |
 | localhost | ✅ implicit | ✅ |
 
-**Graceful degradation**: on insecure origins, Meitheal skips SW registration silently. The app works fully — you just won't get offline caching or the install prompt. Settings > App & PWA shows a status card with actionable HTTPS guidance.
+**Graceful degradation**: on insecure origins, Meitheal skips SW registration silently. The app works fully — you just won't get offline caching or the install prompt. Settings > App & Companion shows a status card with actionable HTTPS guidance.
 
 ## Cache Eviction Rules
 
@@ -152,7 +152,7 @@ Eviction runs on SW activation and every 5 minutes during active use. Entries ar
 Meitheal prompts for PWA installation through two paths:
 
 1. **Install Banner** — a fixed bottom banner appears for first-time users on secure contexts. Dismissable with a 7-day cooldown (`localStorage`). Located in `PwaInstallBanner.astro`.
-2. **Settings > App & PWA** — the PWA status card includes an Install button when the browser's install prompt is available, an Update button when a new SW is waiting, and companion URL handler / x-callback-url actions for mobile reopen flows.
+2. **Settings > App & Companion** — the PWA status card includes an Install button when the browser's install prompt is available, an Update button when a new SW is waiting, and companion URL handler / x-callback-url actions for mobile reopen flows.
 
 The `beforeinstallprompt` event is captured in `Layout.astro` and stored on `window.__pwa_install_prompt`.
 

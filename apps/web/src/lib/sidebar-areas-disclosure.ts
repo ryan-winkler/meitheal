@@ -15,8 +15,14 @@ export function initSidebarAreasDisclosure(signal: AbortSignal): void {
 
   const key = "meitheal_project_nav_group_collapsed"
   const navbar = () => innerWidth > 768 && document.documentElement.dataset.appearanceNavigation === "navbar"
+  const syncTitle = () => {
+    const summary = node.querySelector<HTMLElement>("#project-nav-group-toggle")
+    if (summary) summary.title = node.open ? "Collapse Areas" : "Expand Areas"
+  }
   try { node.open = !navbar() && localStorage.getItem(key) !== "true" } catch { node.open = !navbar() }
+  syncTitle()
   const save = () => {
+    syncTitle()
     if (navbar()) return
     try { localStorage.setItem(key, String(!node.open)) } catch { /* Keep the current page usable. */ }
   }

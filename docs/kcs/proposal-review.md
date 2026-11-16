@@ -6,7 +6,7 @@ description: "Compare, accept and reject a saved task proposal through Home Assi
 
 # Review agent proposals
 
-Open **Settings → Automation & AI → Open Review** through Home Assistant ingress with a current, active administrator account. Review checks the current Core role before displaying the queue; each decision checks it again. A token that proposes task changes cannot approve them. Standalone access and ordinary household members cannot open this administrator queue.
+Open **Settings → AI & Agent Access → Open Review** through Home Assistant ingress with a current, active administrator account. Review checks the current Core role before displaying the queue; each decision checks it again. A token that proposes task changes cannot approve them. Standalone access and ordinary household members cannot open this administrator queue.
 
 Each card shows the proposing agent, summary, expiry, and proposed title or description changes. **When proposed** is the value the agent started with; **Current** is the value read for this page; **Proposed** is the requested replacement. If the task has changed, acceptance is unavailable. You can reject the stale proposal without applying it, or refresh and review the latest values.
 

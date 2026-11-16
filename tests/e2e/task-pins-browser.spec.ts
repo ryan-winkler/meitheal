@@ -257,6 +257,14 @@ test("an older controller makes no pin requests until the user activates the rep
     expect(requests).toBe(0)
     await expect(page.locator("[data-pins-list] li")).toHaveCount(0)
     await workerMode(false)
+    await page.evaluate(async () => {
+      const registration = await navigator.serviceWorker.getRegistration()
+      await registration?.update()
+    })
+    await expect.poll(() => page.evaluate(async () => (
+      (await navigator.serviceWorker.getRegistration())?.waiting?.state
+    )), { timeout: 15_000 }).toBe("installed")
+    expect(requests).toBe(0)
     await page.getByRole("button", { name: "Activate update" }).press("Enter")
     await expect(page.locator("[data-pins-status]")).toContainText("No pinned tasks yet")
     expect(requests).toBeGreaterThanOrEqual(2)

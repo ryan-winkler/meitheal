@@ -30,12 +30,12 @@ The task list and completed-task cleanup return HTTP 503 when local storage is b
 **Fix**:
 
 1. Open the top bar search from Settings to find a field by name.
-2. Use `Settings → App & PWA` for companion URL handler and x-callback actions.
+2. Use `Settings → App & Companion` for companion URL handler and x-callback actions.
 3. See `docs/kcs/settings-troubleshooting.md` for the Settings-specific runbook.
 
 ### Restore an inline helper
 
-Dismissed helpers stay hidden on reload. When letter, number and symbol shortcuts are enabled, press `?` outside a text field to restore dismissed helpers. Press it again to open **Keyboard shortcuts**, which lists the same shortcuts as **Settings → Personal → Keyboard Shortcuts**. Focus moves to **Close shortcuts** and stays in the dialog while you tab. Press Escape or activate **Close shortcuts** to return focus to the control you were using. Use **Toggle helper** to expand or collapse the explanation without dismissing it.
+Dismissed helpers stay hidden on reload. When letter, number and symbol shortcuts are enabled, press `?` outside a text field to restore dismissed helpers. Press it again to open **Keyboard shortcuts**, which lists the same shortcuts as **Settings → Navigation & Shortcuts → Keyboard shortcuts**. Focus moves to **Close shortcuts** and stays in the dialog while you tab. Press Escape or activate **Close shortcuts** to return focus to the control you were using. Use **Toggle helper** to expand or collapse the explanation without dismissing it.
 
 ### IDB Quota Exceeded
 

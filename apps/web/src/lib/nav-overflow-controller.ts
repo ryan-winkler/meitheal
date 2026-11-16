@@ -23,12 +23,21 @@ export function initNavOverflow(root: HTMLElement, pageSignal: AbortSignal): voi
   const controller = new AbortController()
   bindings.set(root, { pageSignal, controller })
   const signal = AbortSignal.any([pageSignal, controller.signal])
-  const sources = primaries.map(primary => ({ primary, items: [...primary.children] as HTMLElement[] }))
-  const items = sources.flatMap(source => source.items)
-  const links = items.flatMap(item => item.matches("a[href]") ? [item] : [...item.querySelectorAll<HTMLElement>("a[href]")])
+  let sources = primaries.map(primary => ({ primary, items: [...primary.children] as HTMLElement[] }))
+  let items = sources.flatMap(source => source.items)
+  let links = items.flatMap(item => item.matches("a[href]") ? [item] : [...item.querySelectorAll<HTMLElement>("a[href]")])
   const originalTabs = new Map(links.map(link => [link, link.getAttribute("tabindex")]))
   let frame = 0
   let lastWidth = -1
+
+  function refreshSources() {
+    sources = primaries.map(primary => ({ primary, items: [...primary.children] as HTMLElement[] }))
+    items = sources.flatMap(source => source.items)
+    links = items.flatMap(item => item.matches("a[href]") ? [item] : [...item.querySelectorAll<HTMLElement>("a[href]")])
+    for (const link of links) {
+      if (!originalTabs.has(link)) originalTabs.set(link, link.getAttribute("tabindex"))
+    }
+  }
 
   const resetTab = (link: HTMLElement) => {
     const value = originalTabs.get(link)
@@ -47,10 +56,18 @@ export function initNavOverflow(root: HTMLElement, pageSignal: AbortSignal): voi
     for (const link of overflow) link.tabIndex = link === selectedOverflow ? 0 : -1
   }
   function restoreItems() {
-    for (const { primary, items: sourceItems } of sources) {
+    for (const source of sources) {
+      const { primary } = source
+      source.items = source.items.filter(item => root.contains(item))
       primary.removeAttribute("data-nav-overflow-empty")
-      for (const item of sourceItems) primary.append(item)
+      const alreadyRestored = menu.childElementCount === 0
+        && source.items.every(item => item.parentElement === primary)
+      if (!alreadyRestored) {
+        for (const item of source.items) primary.append(item)
+      }
     }
+    items = sources.flatMap(source => source.items)
+    links = items.flatMap(item => item.matches("a[href]") ? [item] : [...item.querySelectorAll<HTMLElement>("a[href]")])
   }
   function focusDestination(target: HTMLElement | undefined) {
     if (!target) return
@@ -135,7 +152,11 @@ export function initNavOverflow(root: HTMLElement, pageSignal: AbortSignal): voi
     lastWidth = width
     schedule()
   })
-  const appearance = new MutationObserver(schedule)
+  const appearance = new MutationObserver(() => {
+    restoreItems()
+    refreshSources()
+    schedule()
+  })
   const content = new MutationObserver(records => {
     if (records.some(record => record.type !== "childList" || (record.target !== menu && !primaries.includes(record.target as HTMLElement)))) schedule()
   })
@@ -182,6 +203,13 @@ export function initNavOverflow(root: HTMLElement, pageSignal: AbortSignal): voi
     if (event.target instanceof Element && event.target.closest("a[href]")) closeMenu(true)
   }, { signal })
   window.addEventListener("meitheal:view-changed", schedule, { signal })
+  const syncTaskNavDom = () => {
+    restoreItems()
+    refreshSources()
+    schedule()
+  }
+  window.addEventListener("meitheal:task-nav-prefs-changed", syncTaskNavDom, { signal })
+  window.addEventListener("meitheal:task-nav-dom-synced", syncTaskNavDom, { signal })
   document.fonts?.addEventListener("loadingdone", schedule, { signal })
   void document.fonts?.ready.then(schedule)
   signal.addEventListener("abort", () => {
