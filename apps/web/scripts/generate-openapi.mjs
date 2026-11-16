@@ -660,12 +660,12 @@ const paths = {
   },
   "/api/board-intake": {
     get: boardOperation("listPrivateBoardIntakes", "List send-only destinations for the current user", [], {
-      200: { description: "Send aliases and their assignment options" }, 403: { description: "A current Home Assistant session is required" },
+      200: { description: "Send aliases, assignment options, and recent submissions owned by the sender" }, 403: { description: "A current Home Assistant session is required" },
     }),
-    post: boardOperation("submitPrivateBoardIntake", "Prepare or send a task without Board read access", [boardSessionParam], {
-      200: { description: "An opaque acknowledgment bound to the sender" }, 201: { description: "A sender-bound submission token expires after 24 hours" },
+    post: boardOperation("submitPrivateBoardIntake", "Prepare, send, or retry a task without Board read access", [boardSessionParam], {
+      200: { description: "An opaque acknowledgment bound to the sender" }, 201: { description: "A sender-bound submission expires after 24 hours" },
       404: boardUnavailable, 409: { description: "The token was used with different content" }, 429: { description: "Sender limit reached" },
-    }, boardJson({ action: { type: "string", enum: ["prepare", "send"] }, id: boardString, token: boardString, title: boardString, description: boardString, assignToRecipient: boardBoolean })),
+    }, boardJson({ action: { type: "string", enum: ["prepare", "send", "retry"] }, id: boardString, token: boardString, resumeId: boardString, title: boardString, description: boardString, assignToRecipient: boardBoolean })),
   },
 
   "/api/feedback": {

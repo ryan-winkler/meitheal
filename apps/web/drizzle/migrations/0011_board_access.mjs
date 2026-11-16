@@ -93,6 +93,13 @@ const objects = {
     acknowledgement TEXT UNIQUE,
     submitted_digest TEXT,
     accepted_at INTEGER,
+    resume_id TEXT,
+    draft_title TEXT,
+    draft_description TEXT,
+    draft_assign INTEGER CHECK (draft_assign IN (0, 1)),
+    CHECK ((resume_id IS NULL) = (draft_title IS NULL)
+      AND (draft_description IS NULL) = (draft_assign IS NULL)),
+    UNIQUE (sender_kind, sender_id, resume_id),
     CHECK ((acknowledgement IS NULL) = (submitted_digest IS NULL)
       AND (acknowledgement IS NULL) = (accepted_at IS NULL))
   )`,

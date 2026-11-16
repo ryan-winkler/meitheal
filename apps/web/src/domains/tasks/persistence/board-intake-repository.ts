@@ -12,6 +12,8 @@ const maxSubmissions = 60
 const unavailable = { ok: false, errorCode: "unavailable" } as const
 const digest = (value: string) => createHash("sha256").update(value).digest("hex")
 
+type PermitResult<Value> = { ok: true; value: Value } | { ok: false; errorCode: "unavailable" | "quota" | "conflict" }
+
 interface Submission {
   title: string
   description: string
@@ -39,6 +41,19 @@ export class BoardIntakeRepository {
     if (!await boardGrantStillCurrent(this.db, revision, this.markerPath)) return []
     return rows.filter(row => triageStatus(String(row.key))).map(row => ({
       id: String(row.id), label: String(row.label), acceptsAssignment: typeof row.recipient === "string",
+    }))
+  }
+
+  async findSubmissions(sender: BoardActor, now = Date.now()) {
+    const { rows } = await this.db.execute({
+      sql: `SELECT resume_id, draft_title, acknowledgement FROM board_intake_requests
+        WHERE sender_kind = ? AND sender_id = ? AND resume_id IS NOT NULL AND expires_at > ?
+        ORDER BY expires_at DESC, resume_id`,
+      args: [sender.kind, sender.id, now],
+    })
+    return rows.map(row => ({
+      id: String(row.resume_id), title: String(row.draft_title),
+      sent: typeof row.acknowledgement === "string",
     }))
   }
 
@@ -83,13 +98,29 @@ export class BoardIntakeRepository {
   }
 
   /** Only the sender-bound token and its own expiry leave the repository. */
-  async issue(sender: BoardActor, intakeId: string, now = Date.now()) {
-    const revision = await currentBoardGrantRevision(this.db, this.markerPath)
-    if (!revision) return unavailable
-
+  async issue(sender: BoardActor, intakeId: string, now?: number): Promise<PermitResult<{ token: string; expiresAt: number }>>
+  async issue(sender: BoardActor, intakeId: string, now: number, draft: Submission & { resumeId: string }): Promise<PermitResult<{ resumeId: string; expiresAt: number }>>
+  async issue(sender: BoardActor, intakeId: string, now = Date.now(), draft?: Submission & { resumeId: string }) {
     const tx = await acquireWriteTransaction(this.db)
     try {
-      if (!await this.eligibleIntake(tx, sender, intakeId, revision)) return unavailable
+      if (draft) {
+        const { rows: [existing] } = await tx.execute({
+          sql: `SELECT intake_id, expires_at, submitted_digest, draft_title, draft_description, draft_assign
+            FROM board_intake_requests WHERE sender_kind = ? AND sender_id = ? AND resume_id = ?`,
+          args: [sender.kind, sender.id, draft.resumeId],
+        })
+        if (existing) {
+          if (Number(existing.expires_at) <= now) return unavailable
+          const matches = existing.intake_id === intakeId && (typeof existing.submitted_digest === "string"
+            ? existing.submitted_digest === fingerprint(draft)
+            : existing.draft_title === draft.title && existing.draft_description === draft.description &&
+              existing.draft_assign === Number(draft.assignToRecipient))
+          return matches ? { ok: true, value: { resumeId: draft.resumeId, expiresAt: Number(existing.expires_at) } } as const
+            : { ok: false, errorCode: "conflict" } as const
+        }
+      }
+      const revision = await readBoardGrantRevision(this.markerPath)
+      if (!revision || !await this.eligibleIntake(tx, sender, intakeId, revision)) return unavailable
       await tx.execute({
         sql: "DELETE FROM board_intake_requests WHERE expires_at <= ? AND (accepted_at IS NULL OR accepted_at <= ?)",
         args: [now, now - permitDuration],
@@ -106,12 +137,15 @@ export class BoardIntakeRepository {
       const token = randomBytes(32).toString("base64url")
       const expiresAt = now + permitDuration
       await tx.execute({
-        sql: "INSERT INTO board_intake_requests(digest, intake_id, sender_kind, sender_id, expires_at) VALUES (?, ?, ?, ?, ?)",
-        args: [digest(token), intakeId, sender.kind, sender.id, expiresAt],
+        sql: `INSERT INTO board_intake_requests (
+            digest, intake_id, sender_kind, sender_id, expires_at, resume_id, draft_title, draft_description, draft_assign
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        args: [digest(token), intakeId, sender.kind, sender.id, expiresAt,
+          draft?.resumeId ?? null, draft?.title ?? null, draft?.description ?? null, draft ? Number(draft.assignToRecipient) : null],
       })
       if (await readBoardGrantRevision(this.markerPath) !== revision) return unavailable
       await tx.commit()
-      return { ok: true, value: { token, expiresAt } } as const
+      return { ok: true, value: draft ? { resumeId: draft.resumeId, expiresAt } : { token, expiresAt } } as const
     } finally {
       tx.close()
     }
@@ -120,21 +154,33 @@ export class BoardIntakeRepository {
   /** The route revalidates the current sender and the opted-in recipient against Home Assistant. */
   async submit(sender: BoardActor, token: string, content: Submission, activeUsers: readonly string[], now = Date.now()) {
     if (!/^[A-Za-z0-9_-]{43}$/.test(token)) return unavailable
-    const tokenDigest = digest(token)
-    const fingerprint = digest(JSON.stringify([content.title, content.description, content.assignToRecipient]))
+    return this.deliver(sender, digest(token), undefined, content, activeUsers, now)
+  }
+
+  async retry(sender: BoardActor, resumeId: string, activeUsers: readonly string[], now = Date.now()) {
+    return this.deliver(sender, undefined, resumeId, undefined, activeUsers, now)
+  }
+
+  private async deliver(sender: BoardActor, tokenDigest: string | undefined, resumeId: string | undefined,
+    submitted: Submission | undefined, activeUsers: readonly string[], now: number) {
     const tx = await acquireWriteTransaction(this.db)
     try {
       const { rows: [saved] } = await tx.execute({
-        sql: `SELECT intake_id, acknowledgement, submitted_digest FROM board_intake_requests
-          WHERE digest = ? AND sender_kind = ? AND sender_id = ? AND expires_at > ?`,
-        args: [tokenDigest, sender.kind, sender.id, now],
+        sql: `SELECT digest, intake_id, acknowledgement, submitted_digest, draft_title, draft_description, draft_assign
+          FROM board_intake_requests WHERE sender_kind = ? AND sender_id = ? AND expires_at > ?
+            AND (digest = ? OR resume_id = ?)`,
+        args: [sender.kind, sender.id, now, tokenDigest ?? null, resumeId ?? null],
       })
       if (!saved) return unavailable
       if (typeof saved.acknowledgement === "string") {
-        return saved.submitted_digest === fingerprint
+        return !submitted || saved.submitted_digest === fingerprint(submitted)
           ? { ok: true, value: { acknowledgement: saved.acknowledgement } } as const
           : { ok: false, errorCode: "conflict" } as const
       }
+      const content = submitted ?? (typeof saved.draft_title === "string" && typeof saved.draft_description === "string" ? {
+        title: saved.draft_title, description: saved.draft_description, assignToRecipient: saved.draft_assign === 1,
+      } : null)
+      if (!content) return unavailable
 
       const revision = await readBoardGrantRevision(this.markerPath)
       if (!revision) return unavailable
@@ -159,8 +205,9 @@ export class BoardIntakeRepository {
       if (!task) return unavailable
       const acknowledgement = randomUUID()
       await tx.execute({
-        sql: "UPDATE board_intake_requests SET task_id = ?, acknowledgement = ?, submitted_digest = ?, accepted_at = ? WHERE digest = ?",
-        args: [task.id, acknowledgement, fingerprint, now, tokenDigest],
+        sql: `UPDATE board_intake_requests SET task_id = ?, acknowledgement = ?, submitted_digest = ?, accepted_at = ?,
+          draft_description = NULL, draft_assign = NULL WHERE digest = ?`,
+        args: [task.id, acknowledgement, fingerprint(content), now, String(saved.digest)],
       })
       if (await readBoardGrantRevision(this.markerPath) !== revision) return unavailable
       await tx.commit()
@@ -191,4 +238,8 @@ export class BoardIntakeRepository {
 function triageStatus(key: string) {
   const status = normalizeStatus(key)
   return status === STATUS.PENDING || status === STATUS.ACTIVE || status === STATUS.BACKLOG ? status : null
+}
+
+function fingerprint(content: Submission) {
+  return digest(JSON.stringify([content.title, content.description, content.assignToRecipient]))
 }

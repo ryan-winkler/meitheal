@@ -55,18 +55,12 @@ export function bindBoardPage(signal: AbortSignal) {
 
   const dest = root.querySelector<HTMLSelectElement>('[name="destination"]')
   const recipient = root.querySelector<HTMLElement>("[data-board-recipient]")
-  const retry = root.querySelector<HTMLButtonElement>("[data-new-submission]")
-  let permit: { destination: string; token: string; expiresAt: number } | undefined
+  let submission: { id: string; content: string } | undefined
   const showAssignment = () => {
     if (recipient) recipient.hidden = dest?.selectedOptions[0]?.dataset.recipient !== "true"
   }
   showAssignment()
-  dest?.addEventListener("change", () => { permit = undefined; showAssignment() }, { signal })
-  retry?.addEventListener("click", () => {
-    permit = undefined
-    retry.hidden = true
-    retry.closest("form")?.querySelector<HTMLElement>('[name="title"]')?.focus()
-  }, { signal })
+  dest?.addEventListener("change", showAssignment, { signal })
 
   async function jsonRequest(path: string, method: string, body: object) {
     const response = await fetch(path, {
@@ -77,7 +71,6 @@ export function bindBoardPage(signal: AbortSignal) {
     const data = await response.json().catch(() => ({})) as Record<string, unknown>
     if (!response.ok) {
       const message = typeof data.error === "string" ? data.error : (typeof data.detail === "string" ? data.detail : "")
-      if (response.status === 409 && retry) retry.hidden = false
       throw new Error(message || "Could not save. Refresh your Board and try again.")
     }
     return data
@@ -145,23 +138,29 @@ export function bindBoardPage(signal: AbortSignal) {
             label: value("label"), laneId: value("laneId"), senderIds: data.getAll("senderIds"), recipientId: value("recipientId"),
           })
           break
+        case "intake-toggle":
+          await jsonRequest(api + "/intakes", "PATCH", { id: value("id"), enabled: value("enabled") === "true" })
+          break
         case "send": {
-          const destination = value("destination")
-          if (!permit || permit.destination !== destination || permit.expiresAt <= Date.now()) {
-            const prepared = await jsonRequest("/api/board-intake", "POST", { action: "prepare", id: destination })
-            if (typeof prepared.token !== "string" || typeof prepared.expiresAt !== "number") throw new Error("Could not prepare this submission.")
-            permit = { destination, token: prepared.token, expiresAt: prepared.expiresAt }
+          const payload = { ...content, id: value("destination"), assignToRecipient: !recipient?.hidden && data.has("assign") }
+          const signature = JSON.stringify(payload)
+          if (submission && submission.content !== signature) {
+            throw new Error("Retry the original submission or refresh Boards to review it before starting another.")
           }
-          await jsonRequest("/api/board-intake", "POST", {
-            action: "send", token: permit.token, ...content, assignToRecipient: !recipient?.hidden && data.has("assign"),
-          })
-          permit = undefined
+          submission ??= { id: crypto.randomUUID(), content: signature }
+          await jsonRequest("/api/board-intake", "POST", { action: "prepare", ...payload, resumeId: submission.id })
+          await jsonRequest("/api/board-intake", "POST", { action: "retry", resumeId: submission.id })
+          submission = undefined
           form.reset()
           showAssignment()
-          if (retry) retry.hidden = true
           if (feedback) feedback.textContent = "Task sent."
           return
         }
+        case "retry-send":
+          await jsonRequest("/api/board-intake", "POST", { action: "retry", resumeId: value("resumeId") })
+          if (feedback) feedback.textContent = "Task sent."
+          button.hidden = true
+          return
         default:
           return
       }

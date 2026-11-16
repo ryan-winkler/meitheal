@@ -58,7 +58,7 @@ export class NamedBoardTaskRepository {
     try {
       const access = await selectNamedBoardAccess(tx, actor, revision, boardId)
       if (!access) return null
-      const [lanes, tasks, members] = await tx.batch([
+      const [lanes, tasks, members, intakes] = await tx.batch([
         {
           sql: "SELECT id, label, key FROM kanban_lanes WHERE board_id = ? ORDER BY position, id",
           args: [boardId],
@@ -76,6 +76,10 @@ export class NamedBoardTaskRepository {
             ORDER BY principal_id`,
           args: [boardId, access.role],
         },
+        {
+          sql: "SELECT id, label, enabled FROM board_intakes WHERE board_id = ? AND ? = 'owner' ORDER BY label COLLATE NOCASE, id",
+          args: [boardId, access.role],
+        },
       ])
       if (!await boardGrantStillCurrent(this.db, revision, this.markerPath)) return null
       return {
@@ -87,6 +91,9 @@ export class NamedBoardTaskRepository {
           assignedTo: typeof task.assigned_to === "string" ? task.assigned_to : null, version: Number(task.version),
         })),
         nextOffset: tasks!.rows.length > 50 ? offset + 50 : null,
+        intakes: intakes!.rows.map(intake => ({
+          id: String(intake.id), label: String(intake.label), enabled: intake.enabled === 1,
+        })),
         members: members!.rows.map(member => ({
           id: String(member.principal_id), role: String(member.role),
           denyCompletion: member.deny_completion === 1, denyDeletion: member.deny_deletion === 1,

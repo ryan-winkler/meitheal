@@ -19,3 +19,5 @@ Keep the same submission when retrying unchanged content after a timeout. A subm
 When a Goal is shared with an Area, each viewer sees progress based on their readable Projects. A Board member with direct access can also open its unshared Goals. For instance, a Home viewer sees Home progress on a Goal shared with Home. A viewer who can open both scopes sees contributions from both.
 
 Use Home Assistant App backups for the full instance. See [Home Assistant backups and restore](./home-assistant-backup-and-restore.md) for the Board revision lock and rollback procedure.
+
+Sender submissions are available on Boards under Recent submissions for up to 24 hours. If a connection drops, retry the original submission there. Accepted submissions remain marked Sent if an owner closes the destination. Board owners can close or reopen destinations in Board settings.

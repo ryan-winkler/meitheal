@@ -1,4 +1,6 @@
 ---
+import { BoardIntakeRepository } from "@domains/tasks/persistence/board-intake-repository"
+import { getPersistenceClient } from "@domains/tasks/persistence/store"
 import Layout from "../../layouts/Layout.astro"
 import "../../styles/boards.css"
 import { boardViewKey, readBoardDirectory } from "@lib/board-view"
@@ -6,6 +8,7 @@ import { boardSessionProof, currentBoardUser } from "@lib/named-board-request"
 
 const user = await currentBoardUser(Astro.locals, Astro.request.signal)
 const directory = user ? await readBoardDirectory(user.actor) : null
+const submissions = user ? await new BoardIntakeRepository(getPersistenceClient()).findSubmissions(user.actor) : []
 const snapshot = user && directory ? boardViewKey(directory, user.actor.id) : undefined
 ---
 <Layout title="Boards">
@@ -71,10 +74,23 @@ const snapshot = user && directory ? boardViewKey(directory, user.actor.id) : un
           <p role="status" data-board-feedback></p>
           <div class="board-form-actions">
             <button type="submit" class="btn btn-primary">Send task</button>
-            <button type="button" class="btn btn-ghost" data-new-submission hidden>Start a new submission</button>
           </div>
         </form>
       </section>}
+      {submissions.length > 0 && <details class="named-boards board-settings">
+        <summary>Recent submissions</summary>
+        <ul>
+          {submissions.map(submission => <li>
+            <span>{submission.title}</span>
+            {submission.sent ? <span class="board-note">Sent</span> :
+              <form data-board-form="retry-send" class="board-preference">
+                <input type="hidden" name="resumeId" value={submission.id} />
+                <button type="submit" class="btn btn-ghost">Retry sending</button>
+                <span role="status" data-board-feedback></span>
+              </form>}
+          </li>)}
+        </ul>
+      </details>}
     </div>}
     <p hidden data-board-expired role="status">Your Board view changed. <button type="button" class="btn btn-ghost" data-board-refresh>Refresh Boards</button></p>
   </div>

@@ -220,7 +220,34 @@ test("send-only intake accepts once, returns opaque retries, and can assign with
     { title: "Triage instead", assigned_to: null, board_column_id: triage?.id },
   ])
 
+  const pending = {
+    ...input, title: "Recover after refresh", resumeId: crypto.randomUUID(),
+  }
+  const prepared = await intake.issue(sender, id, afterIssue, pending)
+  expect(prepared).toMatchObject({ ok: true, value: { resumeId: pending.resumeId } })
+  expect(await intake.issue(sender, id, afterIssue, pending)).toEqual(prepared)
+  expect(await intake.issue(sender, id, afterIssue, { ...pending, title: "Changed" }))
+    .toEqual({ ok: false, errorCode: "conflict" })
+  const refreshed = new BoardIntakeRepository(db, marker)
+  expect(await refreshed.findSubmissions(sender)).toEqual([
+    { id: pending.resumeId, title: pending.title, sent: false },
+  ])
+  const other = { kind: "ha_user", id: "other" } as const
+  expect(await refreshed.findSubmissions(other)).toEqual([])
+  expect(await refreshed.retry(other, pending.resumeId, ["owner"])).toEqual({ ok: false, errorCode: "unavailable" })
+  const [recovered, repeat] = await Promise.all([
+    refreshed.retry(sender, pending.resumeId, ["owner"]), refreshed.retry(sender, pending.resumeId, ["owner"]),
+  ])
+  expect(recovered).toMatchObject({ ok: true, value: { acknowledgement: expect.any(String) } })
+  expect(repeat).toEqual(recovered)
+  expect((await db.execute("SELECT count(*) AS count FROM tasks WHERE title = 'Recover after refresh'")).rows[0]?.count).toBe(1)
+
   expect(await intake.setEnabled("owner", boardId, id, false)).toMatchObject({ status: "committed" })
+  expect(await refreshed.findSubmissions(sender)).toEqual([
+    { id: pending.resumeId, title: pending.title, sent: true },
+  ])
+  expect(await refreshed.issue(sender, id, afterIssue, pending)).toEqual(prepared)
+  expect(await refreshed.retry(sender, pending.resumeId, ["owner"])).toEqual(recovered)
   expect(await intake.issue(sender, id)).toEqual({ ok: false, errorCode: "unavailable" })
   expect(await intake.submit(sender, unusedPermit.value.token, input, ["owner"])).toEqual({ ok: false, errorCode: "unavailable" })
   expect(await intake.submit(sender, permit.value.token, input, ["owner"])).toEqual(accepted)

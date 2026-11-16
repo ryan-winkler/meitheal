@@ -58,6 +58,7 @@ const verifyPath = boardId ? `/api/boards/${encodeURIComponent(boardId)}?offset=
                   <button type="submit" class="btn btn-ghost">Save changes</button>
                 </form>
               </details> : <h3 class="board-name">{task.title}</h3>}
+              {task.assignedTo && <p class="board-note">Assigned to {user.roster.get(task.assignedTo.replace(/^ha_/, "")) || "an unavailable user"}</p>}
               {task.description && <p>{task.description}</p>}
               {canEdit && <form data-board-form="task-move" data-ticket-id={task.id} data-version={task.version} class="board-move">
                 <label>Move to <select name="laneId">
@@ -116,22 +117,32 @@ const verifyPath = boardId ? `/api/boards/${encodeURIComponent(boardId)}?offset=
                 <button type="submit" class="btn btn-ghost">Add person</button>
               </form>
             </div>
-            <form data-board-form="intake-create" class="board-form">
-              <h2>Send-only access</h2>
-              <label>Destination name <input name="label" maxlength="100" required /></label>
-              <label>Triage column <select name="laneId" required>
-                {view.lanes.filter(lane => !isDoneStatus(lane.key)).map(lane => <option value={lane.id}>{lane.label}</option>)}
-              </select></label>
-              <fieldset class="board-people"><legend>Allowed senders</legend>
-                {[...user.roster].map(([id, name]) => <label class="check"><input type="checkbox" name="senderIds" value={id} /> {name}</label>)}
-              </fieldset>
-              <label>Allow assignment to <select name="recipientId">
-                <option value="">No one</option>
-                {view.members.filter(member => user.roster.has(member.id)).map(member => <option value={member.id}>{user.roster.get(member.id)}</option>)}
-              </select></label>
-              <p role="status" data-board-feedback></p>
-              <button type="submit" class="btn btn-ghost">Create destination</button>
-            </form>
+            <section aria-labelledby="board-intake-settings">
+              <h2 id="board-intake-settings">Send-only access</h2>
+              {view.intakes.map(intake => <form data-board-form="intake-toggle" class="board-form board-member">
+                <h3>{intake.label}</h3>
+                <span class="board-note">{intake.enabled ? "Accepting tasks" : "Closed"}</span>
+                <input type="hidden" name="id" value={intake.id} />
+                <input type="hidden" name="enabled" value={intake.enabled ? "false" : "true"} />
+                <p role="status" data-board-feedback></p>
+                <button type="submit" class="btn btn-ghost">{intake.enabled ? "Close destination" : "Reopen destination"}</button>
+              </form>)}
+              <form data-board-form="intake-create" class="board-form">
+                <label>Destination name <input name="label" maxlength="100" required /></label>
+                <label>Triage column <select name="laneId" required>
+                  {view.lanes.filter(lane => !isDoneStatus(lane.key)).map(lane => <option value={lane.id}>{lane.label}</option>)}
+                </select></label>
+                <fieldset class="board-people"><legend>Allowed senders</legend>
+                  {[...user.roster].map(([id, name]) => <label class="check"><input type="checkbox" name="senderIds" value={id} /> {name}</label>)}
+                </fieldset>
+                <label>Allow assignment to <select name="recipientId">
+                  <option value="">No one</option>
+                  {view.members.filter(member => user.roster.has(member.id)).map(member => <option value={member.id}>{user.roster.get(member.id)}</option>)}
+                </select></label>
+                <p role="status" data-board-feedback></p>
+                <button type="submit" class="btn btn-ghost">Create destination</button>
+              </form>
+            </section>
           </div>
         </details>}
       </div>}
