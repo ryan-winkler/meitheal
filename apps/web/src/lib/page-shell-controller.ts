@@ -55,7 +55,10 @@ export function initPageShellNavigation<SectionId extends string>({
   }
 
   const sectionIdSet = new Set(sectionIds)
-  let linkedSection: { element: HTMLElement; wasVisible: boolean } | null = null
+  let linkedSection: {
+    element: HTMLElement
+    wasVisible: boolean
+  } | null = null
 
   function syncLinkedSectionVisibility(): void {
     if (!linkedSection) return
