@@ -1909,7 +1909,7 @@ async function importCalDAVEvents(): Promise<CalendarSyncCounts> {
       try {
         const calendarKey = normalizeCalDAVCalendarKey(config.url, cal.href)
         const legacyCalendarName = calendarNames.get(cal.displayName) === 1 ? cal.displayName : null
-        const listed = await listCalDAVEvents(config, cal.href, start, end)
+        const { events: listed, skippedSeries } = await listCalDAVEvents(config, cal.href, start, end)
         // Events Meitheal itself wrote to a calendar are never imported back as new tasks.
         const events = listed.filter((evt) => !(evt.description && /Added from Meitheal/i.test(evt.description)))
         const groupedByUid = new Map<string, typeof events>()
@@ -2052,18 +2052,27 @@ async function importCalDAVEvents(): Promise<CalendarSyncCounts> {
           }
         }
 
+        let importFailed = skippedSeries > 0
+        if (importFailed) {
+          logger.log("warn", {
+            event: "calendar.caldav.recurrence_limit", domain: "calendar", component: "calendar-bridge",
+            request_id: SYS_REQ, message: "Some CalDAV series reached the recurrence scan limit",
+            metadata: { skipped_series: skippedSeries },
+          })
+        }
         if (calMutations.length > 0) {
           const commitRes = await mod.commitSyncMutationChunks(calMutations)
           totalCreated += commitRes.created
           totalUpdated += commitRes.updated
           if (commitRes.errors.length > 0) {
-            failures++
+            importFailed = true
             logger.log("warn", {
               event: "calendar.caldav.calendar_error", domain: "calendar", component: "calendar-bridge",
               request_id: SYS_REQ, message: "Failed to fetch or import a CalDAV calendar; check server access and database health",
             })
           }
         }
+        if (importFailed) failures++
       } catch {
         failures++
         logger.log("warn", {
