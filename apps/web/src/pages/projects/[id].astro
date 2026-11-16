@@ -749,6 +749,10 @@ const tabs = [
   });
 
   // --- Settings: Save ---
+  const goalSelect = document.getElementById("edit-proj-goal")
+  const areaSelect = document.getElementById("edit-proj-area")
+  const initialGoal = goalSelect?.value
+  const initialArea = areaSelect?.value
   const saveProjectBtn = document.getElementById("save-proj-btn");
   saveProjectBtn?.addEventListener("click", async () => {
     const titleInput = document.getElementById("edit-proj-title");
@@ -756,8 +760,6 @@ const tabs = [
     const iconInput = document.getElementById("edit-proj-icon");
     const colorInput = document.getElementById("edit-proj-color");
     const statusSelect = document.getElementById("edit-proj-status");
-    const goalSelect = document.getElementById("edit-proj-goal");
-    const areaSelect = document.getElementById("edit-proj-area")
 
     const title = titleInput?.value?.trim();
     if (!title) {
@@ -778,8 +780,8 @@ const tabs = [
           icon: iconInput?.value?.trim() || "📋",
           color: colorInput?.value || "#146C4E",
           status: statusSelect?.value || "active",
-          goal_id: goalSelect?.value || null,
-          area_id: areaSelect?.value || null,
+          ...(goalSelect?.value !== initialGoal ? { goal_id: goalSelect?.value || null } : {}),
+          ...(areaSelect?.value !== initialArea ? { area_id: areaSelect?.value || null } : {}),
         }),
       });
 
@@ -808,7 +810,7 @@ const tabs = [
     deleteProjectBtn.textContent = "Deleting…";
 
     try {
-      const res = await fetch(`/api/projects/${projectId}`, { method: "DELETE" });
+      const res = await fetch(`/api/projects/${projectId}`, { method: "DELETE", headers: { "content-type": "application/json" } });
       if (res.ok) {
         window.location.href = projectsPath;
       } else {

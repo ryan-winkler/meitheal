@@ -33,7 +33,7 @@ export async function applyInboundTodoUpdate(
               deferral_revision = CASE WHEN ${taskVersion} = 9007199254740991
                 THEN lower(hex(randomblob(16))) ELSE deferral_revision END,
               updated_at = ${nextTaskTimestampMs("tasks.updated_at")}
-            WHERE id = ?
+            WHERE id = ? AND task_board_id IS NULL
               AND EXISTS (
                 SELECT 1 FROM todo_sync_confirmations confirmation
                 WHERE ${matchingLink} AND ${taskVersion} <= ${taskTimestampMs("confirmation.updated_at")}

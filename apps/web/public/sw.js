@@ -215,12 +215,15 @@ function isBoardRequest(path, params) {
       (path === "/api/search" || /^\/api\/(?:tasks|lanes)(?:\/|$)/.test(path)))
 }
 
+const privateBoardPath = /^\/(?:api\/)?boards(?:\/|$)|^\/api\/board-intake$/
+
 function privateResourcePath(url) {
   const privatePath = pathname => {
     const path = appRoutePath(pathname)
-    if (path === "/api/export/database.sqlite" || path === "/api/task-pins" ||
+    if (privateBoardPath.test(path) || path === "/api/export/database.sqlite" || path === "/api/task-pins" ||
         path === "/pinned" || path === "/activity" || path === "/api/search" ||
-        path === "/progress" || /^\/(?:api\/)?pillars(?:\/|$)/.test(path) ||
+        path === "/progress" || path === "/goals" || /^\/api\/goals(?:\/[^/]+)?$/.test(path) || /^\/areas\/[^/]+$/.test(path) ||
+        /^\/(?:api\/)?pillars(?:\/|$)/.test(path) ||
         path === "/api/comment-people" || path === "/api/mention-inbox" || path === "/mention-inbox" ||
         path === "/api/saved-filters" || path === "/api/task-drafts" ||
         path === "/inactivity" || path === "/api/task-inactivity" || path === "/api/labels/cleanup" ||
@@ -323,7 +326,9 @@ self.addEventListener("fetch", (event) => {
   // Keep sensitive API routes out of Cache Storage, even before the worker receives an ingress path.
   const apiPath = url.pathname.replace(/^\/api\/hassio_ingress\/[^/]+/, "");
   const privatePath = privateResourcePath(url)
-  if (privatePath && (taskHistoryPath.test(privatePath) || (url.search && isBoardRequest(privatePath, url.searchParams)))) {
+  if (privatePath && (privateBoardPath.test(privatePath) || taskHistoryPath.test(privatePath) ||
+      /^\/(?:progress|api\/goals(?:\/[^/]+)?|areas\/[^/]+)$/.test(privatePath) ||
+      (url.search && isBoardRequest(privatePath, url.searchParams)))) {
     const headers = { "cache-control": "private, no-store" }
     event.respondWith(fetch(event.request, { cache: "no-store" })
       .catch(() => privatePath.startsWith("/api/")

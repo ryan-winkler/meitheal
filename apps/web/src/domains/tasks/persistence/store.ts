@@ -8,6 +8,7 @@ import {
 } from "../../../../scripts/database-client.mjs"
 import { autoBackupDb } from "../../../../scripts/startup-backup.mjs"
 import { applyStartupTaskSchema } from "../../../../scripts/task-schema-startup.mjs"
+import { taskTemplateTableSql } from "../../../../drizzle/migrations/task-template-schema.mjs"
 import { taskWriteTriggerMetadata, validateExistingTaskWriteTriggers } from "../../../../drizzle/migrations/task-activity-schema.mjs"
 import { nextHouseholdTicketNumberSql } from "../../../../drizzle/migrations/task-board-tickets.mjs"
 import { STATUS } from "../../../lib/status-config"
@@ -461,19 +462,7 @@ async function initializeRuntimeTables(client: Transaction): Promise<void> {
 
   // Phase 31: Task templates — reusable task blueprints
   // is_habit: 1 = habit template (auto-creates daily recurring tasks)
-  await client.execute(`
-    CREATE TABLE IF NOT EXISTS task_templates (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      template_json TEXT NOT NULL DEFAULT '{}',
-      icon TEXT NOT NULL DEFAULT '📝',
-      is_habit INTEGER NOT NULL DEFAULT 0,
-      frequency TEXT NOT NULL DEFAULT 'daily',
-      position INTEGER NOT NULL DEFAULT 0,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
-    )
-  `);
+  await client.execute(taskTemplateTableSql)
   await client.execute("CREATE INDEX IF NOT EXISTS task_templates_position_idx ON task_templates(position)");
 
   // Habits integration: is_habit column on task_templates (existing DBs)
@@ -780,10 +769,11 @@ async function initializeRuntimeTables(client: Transaction): Promise<void> {
   await client.execute("CREATE UNIQUE INDEX IF NOT EXISTS tasks_routine_spawn_unique_idx ON tasks(routine_template_id, spawned_for_date)")
 
   validateExistingTaskWriteTriggers(await client.execute(taskWriteTriggerMetadata))
+  const household = await hasColumn(client, "tasks", "task_board_id") ? "task_board_id IS NULL AND " : ""
   await client.batch([
-    "UPDATE tasks SET status = 'pending' WHERE status = 'todo'",
-    "UPDATE tasks SET status = 'active' WHERE status = 'in_progress'",
-    "UPDATE tasks SET status = 'complete' WHERE status = 'done'",
+    `UPDATE tasks SET status = 'pending' WHERE ${household}status = 'todo'`,
+    `UPDATE tasks SET status = 'active' WHERE ${household}status = 'in_progress'`,
+    `UPDATE tasks SET status = 'complete' WHERE ${household}status = 'done'`,
   ])
 }
 
@@ -793,7 +783,7 @@ export async function findByIdempotencyKey(idempotencyKey: string): Promise<Pers
     sql: `
       SELECT id, title, status, framework_payload, calendar_sync_state, idempotency_key, request_id, created_at, updated_at
       FROM tasks
-      WHERE idempotency_key = ?
+      WHERE idempotency_key = ? AND task_board_id IS NULL
       LIMIT 1
     `,
     args: [idempotencyKey]
@@ -853,7 +843,7 @@ export async function findTaskById(taskId: string): Promise<PersistedTask | null
     sql: `
       SELECT id, title, status, framework_payload, calendar_sync_state, idempotency_key, request_id, created_at, updated_at
       FROM tasks
-      WHERE id = ?
+      WHERE id = ? AND task_board_id IS NULL
       LIMIT 1
     `,
     args: [taskId]
@@ -946,7 +936,7 @@ export async function persistCalendarIntegrationResult(params: {
     {
       sql: `
         UPDATE tasks SET calendar_sync_state = 'confirmed', updated_at = ?
-        WHERE id = ?
+        WHERE id = ? AND task_board_id IS NULL
       `,
       args: [now, params.taskId]
     },
@@ -1008,7 +998,7 @@ export async function persistCalendarIntegrationResult(params: {
     {
       sql: `
         UPDATE tasks SET calendar_sync_state = ?, updated_at = ?
-        WHERE id = ?
+        WHERE id = ? AND task_board_id IS NULL
       `,
       args: [failedState, now, params.taskId]
     },
@@ -1074,7 +1064,8 @@ export async function persistManualCalendarConfirmation(params: {
       sql: `
         INSERT INTO calendar_confirmations(
           confirmation_id, task_id, request_id, provider_event_id, source, payload, created_at
-        ) VALUES (?, ?, ?, ?, 'manual.confirmation', ?, ?)
+        ) SELECT ?, ?, ?, ?, 'manual.confirmation', ?, ?
+        WHERE EXISTS (SELECT 1 FROM tasks WHERE id = ? AND task_board_id IS NULL)
         ON CONFLICT(confirmation_id) DO NOTHING
       `,
       args: [
@@ -1083,7 +1074,7 @@ export async function persistManualCalendarConfirmation(params: {
         params.requestId,
         params.providerEventId ?? null,
         JSON.stringify(params.payload ?? null),
-        now
+        now, params.taskId
       ]
     },
 
@@ -1091,7 +1082,7 @@ export async function persistManualCalendarConfirmation(params: {
       sql: `
         UPDATE tasks
         SET calendar_sync_state = 'confirmed', updated_at = ?
-        WHERE id = ? AND changes() = 1
+        WHERE id = ? AND task_board_id IS NULL AND changes() = 1
       `,
       args: [now, params.taskId]
     },

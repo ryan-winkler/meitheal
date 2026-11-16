@@ -105,7 +105,7 @@ test("reopening retries failed and cancelled reads while keeping the task form u
   let goalsAttempts = 0
   const delayed = deferred<void>()
   const staleResponse = deferred<void>()
-  await page.route("**/api/goals", async route => {
+  await page.route(url => url.pathname === "/api/goals" && url.searchParams.get("projection") === "household", async route => {
     if (++goalsAttempts !== 1) return route.continue()
     await delayed.promise
     await route.fulfill({ json: { goals: [{ id: "stale", title: "Stale goal" }] } }).catch(() => {})

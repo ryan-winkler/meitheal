@@ -120,12 +120,12 @@ test("retains nullable legacy task storage while removing an unused definition",
   const db = openDatabase("file::memory:")
   try {
     await db.batch([
-      "CREATE TABLE tasks (id TEXT PRIMARY KEY, labels TEXT)",
+      "CREATE TABLE tasks (id TEXT PRIMARY KEY, labels TEXT, task_board_id TEXT)",
       "CREATE TABLE task_drafts (snapshot_json TEXT)",
-      "CREATE TABLE task_templates (template_json TEXT)",
+      "CREATE TABLE task_templates (template_json TEXT, owner_board_id TEXT)",
       "CREATE TABLE vikunja_task_labels (label_id INTEGER)",
       "CREATE TABLE vikunja_labels (id INTEGER PRIMARY KEY AUTOINCREMENT,title TEXT,hex_color TEXT)",
-      "INSERT INTO tasks VALUES ('legacy',NULL)",
+      "INSERT INTO tasks (id, labels) VALUES ('legacy',NULL)",
       "INSERT INTO vikunja_labels VALUES (1,'Unused','abcdef')",
     ], "write")
     const cleanup = new UnusedLabelRepository(db)

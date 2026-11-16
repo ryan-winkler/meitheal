@@ -100,21 +100,13 @@
   src: url('@fontsource-variable/outfit/files/outfit-latin-wght-normal.woff2') format('woff2-variations');
 }
 
-/* Self-hosted JetBrains Mono — latin subset only (inline, not @import — must come before @tailwind) */
+/* Self-hosted JetBrains Mono variable font, Latin subset. */
 @font-face {
   font-family: 'JetBrains Mono';
   font-style: normal;
   font-display: swap;
-  font-weight: 400;
-  src: url('@fontsource/jetbrains-mono/files/jetbrains-mono-latin-400-normal.woff2') format('woff2');
-}
-
-@font-face {
-  font-family: 'JetBrains Mono';
-  font-style: normal;
-  font-display: swap;
-  font-weight: 500;
-  src: url('@fontsource/jetbrains-mono/files/jetbrains-mono-latin-500-normal.woff2') format('woff2');
+  font-weight: 400 500;
+  src: url('@fontsource-variable/jetbrains-mono/files/jetbrains-mono-latin-wght-normal.woff2') format('woff2-variations');
 }
 
 /* ===== Design Tokens — Evergreen Carbon + Living Mint (meitheal.io) ===== */

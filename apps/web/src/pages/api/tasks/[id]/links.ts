@@ -32,7 +32,8 @@ export const GET: APIRoute = async ({ params }) => {
   try {
     await ensureSchema()
     const repo = new TaskRepository(getPersistenceClient())
-    const taskId = (await repo.resolveTaskId(params.id!))?.id ?? params.id!
+    const taskId = (await repo.resolveTaskId(params.id!))?.id
+    if (!taskId) return apiJson({ outbound: [], inbound: [] })
 
     const [outbound, inbound] = await Promise.all([
       repo.getOutboundLinks(taskId),

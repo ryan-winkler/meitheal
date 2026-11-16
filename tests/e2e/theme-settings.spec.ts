@@ -52,6 +52,7 @@ test.describe("Theme Settings", () => {
     expect(await lookup()).toBe("Today")
 
     await page.goto("/settings#language-time-settings")
+    await expect(page.locator("#settings-panels")).not.toHaveAttribute("inert", "")
     await page.locator("#locale-select").selectOption("ga")
     await expect(html).toHaveAttribute("lang", "ga")
     expect(await lookup()).toBe("Inniu")
@@ -59,6 +60,7 @@ test.describe("Theme Settings", () => {
     await expect(page.locator("#appearance-settings > summary")).toHaveText("Saincheap an chuma")
 
     await page.goto("/settings#language-time-settings")
+    await expect(page.locator("#settings-panels")).not.toHaveAttribute("inert", "")
     await page.locator("#locale-select").selectOption("en")
     await expect(html).toHaveAttribute("lang", "en")
     expect(await lookup()).toBe("Today")

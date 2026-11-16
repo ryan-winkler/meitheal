@@ -324,7 +324,8 @@ test("builds activity statements and reads paginated provenance history", async 
   } as unknown as Parameters<typeof readRecentActivity>[0]
 
   const page = await readRecentActivity(client, { areaId: "home", personKey: "pk-1", before: { at: 4_000, id: 99 } })
-  expect(capturedSql).toContain("task.area_id = ?")
+  expect(capturedSql).toContain("AND area.id = ?")
+  expect(capturedSql).toContain("area.owner_board_id IS NULL AND area.retired_at IS NULL")
   expect(capturedArgs).toEqual(["home", "pk-1", 4_000, 99, 26])
   expect(page.items).toHaveLength(25)
   expect(page.items[0]?.provenance).toEqual({

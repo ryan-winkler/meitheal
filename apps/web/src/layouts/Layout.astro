@@ -73,7 +73,7 @@ if (!privatePageShell) try {
   await ensureSchema();
   const client = getPersistenceClient();
   const result = await client.execute(
-    "SELECT status, COUNT(*) AS cnt, COUNT(*) FILTER (WHERE deferred_at IS NULL) AS open_count FROM tasks GROUP BY status",
+    "SELECT status, COUNT(*) AS cnt, COUNT(*) FILTER (WHERE deferred_at IS NULL) AS open_count FROM tasks WHERE task_board_id IS NULL GROUP BY status",
   );
   for (const row of result.rows) {
     const r = row as Record<string, unknown>;

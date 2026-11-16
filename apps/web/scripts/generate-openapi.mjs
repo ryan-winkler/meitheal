@@ -226,6 +226,34 @@ const schemas = {
     },
     required: ["id", "title"],
   },
+  SharedGoal: {
+    type: "object",
+    properties: {
+      id: { type: "string" },
+      title: { type: "string" },
+      area_id: { type: ["string", "null"] },
+      shared: { type: "boolean", const: true },
+      status: { type: "string", const: "shared" },
+      project_count: { type: "integer", minimum: 0 },
+      completed_project_count: { type: "integer", minimum: 0 },
+    },
+    required: ["id", "title", "area_id", "shared", "status", "project_count", "completed_project_count"],
+  },
+  NamedBoardGoal: {
+    type: "object",
+    properties: {
+      id: { type: "string" },
+      title: { type: "string" },
+      area_id: { type: ["string", "null"] },
+      named: { type: "boolean", const: true },
+      status: { type: "string" },
+      description: { type: ["string", "null"] },
+      target_date: { type: ["string", "null"] },
+      project_count: { type: "integer", minimum: 0 },
+      completed_project_count: { type: "integer", minimum: 0 },
+    },
+    required: ["id", "title", "area_id", "named", "status", "project_count", "completed_project_count"],
+  },
   Pillar: {
     type: "object",
     properties: {
@@ -567,7 +595,96 @@ const inactivityObject = (properties) => ({
 })
 const inactivityPolicy = inactivityObject({ days: inactivityDays, revision: inactivityRevision })
 
+const boardIdParam = { name: "id", in: "path", required: true, schema: { type: "string" } }
+const boardTicketParam = { name: "ticket", in: "path", required: true, schema: { type: "string" } }
+const boardSessionParam = { name: "X-Meitheal-Board-Session", in: "header", required: true, schema: { type: "string" } }
+const boardTicketSessionParam = { ...boardSessionParam, required: false, description: "Required for requests authenticated through Home Assistant ingress." }
+const boardJson = properties => ({
+  required: true,
+  content: { "application/json": { schema: { type: "object", properties } } },
+})
+const boardString = { type: "string" }
+const boardBoolean = { type: "boolean" }
+const boardVersion = { type: "integer" }
+const boardOperation = (operationId, summary, parameters, responses, requestBody, agentScope) => ({
+  operationId, summary, tags: ["Boards"], parameters, responses,
+  security: agentScope ? [...ingressSession, { bearerAuth: [] }] : ingressSession,
+  ...(agentScope ? { description: `An agent token needs ${agentScope} and an explicit service grant on this Board.` } : {}),
+  ...(requestBody ? { requestBody } : {}),
+})
+const boardUnavailable = { description: "Board, ticket, or destination unavailable" }
+
 const paths = {
+  "/api/boards": {
+    get: boardOperation("listPrivateBoards", "List Boards and send destinations for the current Home Assistant user", [], {
+      200: { description: "Accessible Boards, personal sidebar preferences, and authorized send destinations. Response includes the Board session header." },
+      403: { description: "A current Home Assistant session is required" },
+    }),
+    head: boardOperation("verifyBoardDirectory", "Verify the current Board directory projection", [], { 200: { description: "The current projection hash and session are in the response headers" } }),
+    post: boardOperation("createPrivateBoard", "Create a Board owned by the current Home Assistant user", [boardSessionParam], {
+      201: { description: "The owned Board ID" }, 202: { description: "The Board was saved, and access verification is pending" }, 503: { description: "Board access is locked" },
+    }, boardJson({ name: boardString })),
+  },
+  "/api/boards/{id}": {
+    get: boardOperation("getPrivateBoard", "Read a Board and a page of its tickets", [boardIdParam, { name: "offset", in: "query", schema: boardVersion }], {
+      200: { description: "Authorized Board, lanes, tickets and eligible owner settings" }, 404: boardUnavailable,
+    }, undefined, "tasks:read"),
+    head: boardOperation("verifyPrivateBoard", "Verify the current Board view", [boardIdParam, { name: "offset", in: "query", schema: boardVersion }], {
+      200: { description: "The current projection hash and session are returned to a Home Assistant browser" }, 404: boardUnavailable,
+    }, undefined, "tasks:read"),
+    patch: boardOperation("changePrivateBoard", "Change a personal sidebar preference or manage a Board's access", [boardIdParam, boardSessionParam], {
+      200: { description: "Saved" }, 404: boardUnavailable, 409: { description: "A Board must retain an active owner" },
+    }, boardJson({
+      action: { type: "string", enum: ["sidebar", "policy", "member", "agent"] }, hidden: boardBoolean,
+      tokenId: boardString, enabled: boardBoolean,
+      denyCompletion: boardBoolean, denyDeletion: boardBoolean, denyAgentDeletion: boardBoolean,
+      memberId: boardString, role: { type: ["string", "null"], enum: ["owner", "member", "viewer", null] },
+    })),
+  },
+  "/api/boards/{id}/tickets": {
+    post: boardOperation("createPrivateBoardTicket", "Create a ticket in an authorized Board column", [boardIdParam, boardTicketSessionParam], {
+      201: { description: "Created ticket identifier, reference and edit version" }, 403: { description: "Ticket creation or completion is denied" }, 404: boardUnavailable,
+    }, boardJson({ title: boardString, description: boardString, laneId: boardString, areaId: boardString, projectId: boardString, goalId: boardString }), "tasks:write"),
+  },
+  "/api/boards/{id}/tickets/{ticket}": {
+    patch: boardOperation("changePrivateBoardTicket", "Edit a ticket or move it to a Board column", [boardIdParam, boardTicketParam, boardTicketSessionParam], {
+      200: { description: "New ticket version" }, 403: { description: "A required effect is denied" }, 404: boardUnavailable, 409: { description: "Ticket version is stale" },
+    }, boardJson({ version: boardVersion, title: boardString, description: boardString, laneId: boardString }), "tasks:write"),
+    delete: boardOperation("deletePrivateBoardTicket", "Delete a ticket when the current Board and actor allow deletion", [boardIdParam, boardTicketParam, boardTicketSessionParam], {
+      200: { description: "Deleted" }, 403: { description: "Deletion is denied" }, 404: boardUnavailable, 409: { description: "Ticket version or relationship changed" },
+    }, boardJson({ version: boardVersion }), "tasks:delete"),
+  },
+  "/api/boards/{id}/intakes": {
+    post: boardOperation("createPrivateBoardIntake", "Create a send-only destination for selected people", [boardIdParam, boardSessionParam], {
+      201: { description: "Destination created" }, 404: boardUnavailable,
+    }, boardJson({ label: boardString, laneId: boardString, senderIds: { type: "array", items: boardString }, recipientId: boardString })),
+    patch: boardOperation("changePrivateBoardIntake", "Enable or disable a send destination", [boardIdParam, boardSessionParam], {
+      200: { description: "Saved" }, 404: boardUnavailable,
+    }, boardJson({ id: boardString, enabled: boardBoolean })),
+  },
+  "/api/boards/{id}/planning": {
+    post: boardOperation("savePrivateBoardPlanning", "Create or manage planning and Pillars on an owned Board", [boardIdParam, boardSessionParam], {
+      200: { description: "Saved" }, 400: { description: "Invalid planning change" }, 404: boardUnavailable,
+      409: { description: "A Routine period changed or an Area still has active planning records" },
+    }, boardJson({
+      action: { type: "string", enum: ["area", "goal", "project", "project-edit", "project-goal", "project-status", "goal-share", "retire", "pillar", "pillar-principle", "pillar-link", "routine", "routine-complete"] },
+      title: boardString, description: boardString, id: boardString, areaId: boardString, goalId: { type: ["string", "null"] },
+      status: { type: "string", enum: ["active", "completed", "archived"] }, enabled: boardBoolean,
+      cadence: { type: "string", enum: ["daily", "weekly"] }, period: { type: "string", format: "date" },
+      entity: { type: "string", enum: ["area", "goal", "project", "routine"] },
+      entityType: { type: "string", enum: ["goal", "routine", "task"] }, pillarId: boardString, nonNegotiable: boardBoolean,
+    })),
+  },
+  "/api/board-intake": {
+    get: boardOperation("listPrivateBoardIntakes", "List send-only destinations for the current user", [], {
+      200: { description: "Send aliases, assignment options, and recent submissions owned by the sender" }, 403: { description: "A current Home Assistant session is required" },
+    }),
+    post: boardOperation("submitPrivateBoardIntake", "Prepare, send, or retry a task without Board read access", [boardSessionParam], {
+      200: { description: "An opaque acknowledgment bound to the sender" }, 201: { description: "A sender-bound submission expires after 24 hours" },
+      404: boardUnavailable, 409: { description: "The token was used with different content" }, 429: { description: "Sender limit reached" },
+    }, boardJson({ action: { type: "string", enum: ["prepare", "send", "retry"] }, id: boardString, token: boardString, resumeId: boardString, title: boardString, description: boardString, assignToRecipient: boardBoolean })),
+  },
+
   "/api/feedback": {
     post: {
       operationId: "submitLocalFeedback",
@@ -1584,22 +1701,34 @@ const paths = {
 
   // ── Goals ──
   "/api/goals": {
+    head: {
+      operationId: "checkSharedGoalProjection", tags: ["Hierarchy"], summary: "Verify the current viewer's shared Goal projection",
+      parameters: [
+        { name: "X-Meitheal-Goal-Projection", in: "header", required: true, schema: { type: "string" } },
+        { name: "area_id", in: "query", schema: { type: "string" } },
+        { name: "project_id", in: "query", schema: { type: "string" } },
+      ],
+      responses: { 204: { description: "Current shared Goal projection matches" }, 409: { description: "Refresh Goals" }, 503: { description: "Cannot verify projection" } },
+    },
     get: {
       operationId: "listGoals",
       tags: ["Hierarchy"],
       summary: "List goals",
-      description: "List goals across all areas, or filter by association. With multiple filters, a goal must match all of them.",
+      description: "List goals across all Areas, or filter by association. An Area can include shared goals with progress based on Projects the viewer can read.",
       parameters: [
         { name: "area_id", in: "query", schema: { type: "string" }, description: "Goals linked to this Area directly or through one of its projects." },
         { name: "project_id", in: "query", schema: { type: "string" }, description: "The goal linked to this project." },
-        { name: "status", in: "query", schema: { type: "string", enum: ["active", "completed", "archived"] } },
+        { name: "status", in: "query", schema: { type: "string", enum: ["active", "completed", "archived", "shared"] } },
+        { name: "projection", in: "query", schema: { type: "string", enum: ["household"] }, description: "Select Household Goals for the legacy task editor." },
       ],
-      responses: { 200: jsonContent({ type: "object", required: ["goals"], properties: { goals: arrOf("Goal") } }, "Goals") },
+      responses: { 200: jsonContent({ type: "object", required: ["goals"], properties: {
+        goals: { type: "array", items: { anyOf: [ref("Goal"), ref("SharedGoal"), ref("NamedBoardGoal")] } },
+      } }, "Goals") },
     },
     post: { operationId: "createGoal", tags: ["Hierarchy"], summary: "Create a goal", requestBody: { content: { "application/json": { schema: ref("Goal") } } }, responses: { 201: jsonContent(ref("Goal"), "Created") } },
   },
   "/api/goals/{id}": {
-    get: { operationId: "getGoal", tags: ["Hierarchy"], summary: "Get goal details", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: jsonContent(ref("Goal"), "Goal") } },
+    get: { operationId: "getGoal", tags: ["Hierarchy"], summary: "Get goal details", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: jsonContent({ anyOf: [ref("Goal"), ref("SharedGoal"), ref("NamedBoardGoal")] }, "Goal") } },
     put: { operationId: "updateGoal", tags: ["Hierarchy"], summary: "Update a goal, including progress metrics", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], requestBody: { content: { "application/json": { schema: ref("Goal") } } }, responses: { 200: jsonContent(ref("Goal"), "Updated") } },
     delete: { operationId: "deleteGoal", tags: ["Hierarchy"], summary: "Delete a goal", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: { description: "Deleted" } } },
   },
@@ -2387,6 +2516,7 @@ const document = {
     { name: "Events", description: "Server-sent events for real-time updates" },
     { name: "HomeAssistant", description: "Home Assistant integration endpoints" },
     { name: "Integrations", description: "External integrations (n8n, Node-RED, Grocy, calendar)" },
+    { name: "Boards", description: "Named Home Assistant Board access and send-only capture" },
     { name: "Agents", description: "MCP and A2A agent protocol endpoints" },
     { name: "Auth", description: "Agent token management — zero-trust authorization for automations" },
   ],

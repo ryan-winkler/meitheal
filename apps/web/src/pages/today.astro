@@ -194,7 +194,7 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
       class="unified-bar__new-task-btn today-shell__clear-btn"
       id="clear-completed-btn"
       data-today-archive={todayIsoDate}
-      title="Archive tasks completed today"
+      title="Archive Complete tasks last updated today"
       aria-label="Archive completed"
     >
       <span class="unified-bar__new-task-label">Archive completed</span>
@@ -495,7 +495,6 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
           <div data-today-due-empty hidden={todayTasks.length > 0}>
             <EmptyState
               title={remainingCount === 0 && completedTodayCount > 0 ? "Today’s tasks are complete" : "Nothing due today"}
-              description="Add a task to today’s plan whenever you’re ready."
               icon="check"
               actionText="Add a task"
               actionEvent="meitheal:new-task"

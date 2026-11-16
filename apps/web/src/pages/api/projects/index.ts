@@ -61,12 +61,14 @@ export const POST: APIRoute = async ({ request }) => {
     const color = typeof body.color === "string" && /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(body.color) ? body.color : "#6366F1"
     const position = await repo.getNextProjectPosition()
 
-    await repo.createProject({
+    const created = await repo.createProject({
       id, title, status, icon, color, position,
       ...(goal_id != null ? { goal_id } : {}),
       ...(area_id != null ? { area_id } : {}),
       ...(description != null ? { description } : {}),
     })
+
+    if (!created) return apiError("Choose an available Area and Goal", 400)
 
     return apiJson({
       id, title, goal_id, area_id, description, status, icon, color, position,

@@ -435,7 +435,7 @@ async function readSyncedTaskFields(
     const chunk = ids.slice(offset, offset + 200)
     const result = await client.execute({
       sql: `SELECT id, title, due_date, start_date, end_date, status, task_kind, recurrence_rule, idempotency_key
-            FROM tasks WHERE id IN (${chunk.map(() => "?").join(", ")})`,
+            FROM tasks WHERE task_board_id IS NULL AND id IN (${chunk.map(() => "?").join(", ")})`,
       args: chunk,
     })
     for (const row of result.rows) rows.set(String(row.id), row as unknown as SyncedTaskFields)
@@ -986,7 +986,7 @@ async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState |
     for (let offset = 0; offset < linkedTaskIds.length; offset += 200) {
       const chunk = linkedTaskIds.slice(offset, offset + 200)
       const present = await client.execute({
-        sql: `SELECT id FROM tasks WHERE id IN (${chunk.map(() => "?").join(", ")})`,
+        sql: `SELECT id FROM tasks WHERE task_board_id IS NULL AND id IN (${chunk.map(() => "?").join(", ")})`,
         args: chunk,
       })
       for (const row of present.rows) presentTaskIds.add(String(row.id))
@@ -1045,7 +1045,7 @@ async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState |
         // can be matched by title. Any other household task is left alone.
         // Only a task that calendar sync created, or one Meitheal pushed to a calendar, can
         // be matched by title. A task the household created in Meitheal is never linked.
-        sql: `SELECT id, title FROM tasks WHERE status != 'complete' AND title IN (${placeholders})
+        sql: `SELECT id, title FROM tasks WHERE task_board_id IS NULL AND status != 'complete' AND title IN (${placeholders})
                 AND ((idempotency_key LIKE 'cal-sync-%' OR idempotency_key LIKE 'caldav-sync-%')
                   OR id IN (SELECT task_id FROM calendar_confirmations WHERE source = 'ha.write_back'))
                 AND NOT EXISTS (
@@ -1414,7 +1414,7 @@ async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState |
                        t.status AS task_status,
                        (json_valid(c.payload) AND json_type(c.payload, '$.occurrences') IS NOT NULL) AS has_occurrences
                 FROM calendar_confirmations c
-                JOIN tasks t ON t.id = c.task_id
+                JOIN tasks t ON t.id = c.task_id AND t.task_board_id IS NULL
                 WHERE c.source = 'ha.calendar_sync'
                   AND CASE WHEN json_valid(c.payload) THEN json_extract(c.payload, '$.entity_id') ELSE NULL END = ?`,
           args: [entityId],
@@ -1446,7 +1446,7 @@ async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState |
               })
             } else {
               await client.execute({
-                sql: `UPDATE tasks SET status = ?, updated_at = ? WHERE id = ? AND status != ?`,
+                sql: `UPDATE tasks SET status = ?, updated_at = ? WHERE id = ? AND task_board_id IS NULL AND status != ?`,
                 args: [STATUS.COMPLETE, Date.now(), taskId, STATUS.COMPLETE],
               })
               // The deleted event's occurrence list would otherwise keep showing HA

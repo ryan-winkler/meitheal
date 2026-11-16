@@ -856,7 +856,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
     async function loadGoals(requestSignal: AbortSignal) {
       if (!goalSelect) return
       try {
-        const res = await fetch("/api/goals", { signal: requestSignal })
+        const res = await fetch("/api/goals?projection=household", { signal: requestSignal })
         if (!res.ok) return
         const data = await res.json()
         const goals = data?.goals ?? data

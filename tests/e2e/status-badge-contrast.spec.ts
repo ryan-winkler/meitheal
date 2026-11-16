@@ -94,7 +94,8 @@ for (const theme of ["light", "dark"] as const) {
       await page.addInitScript(value => localStorage.setItem("meitheal-theme", value), theme)
 
       await page.goto("/goals")
-      const badge = `.goal-card[data-goal-id="${goalId}"] .goal-status-badge`
+      await expect(page).toHaveURL(/\/progress#goals$/)
+      const badge = `.goals-tab__card[data-goal-id="${goalId}"][data-goal-status="completed"] .goals-tab__status-badge`
       await expect(page.locator(badge)).toBeVisible()
       await checkContrast(page, [badge], `/goals ${theme}`)
 

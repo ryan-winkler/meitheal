@@ -114,7 +114,7 @@ Known differences:
 
 ### Calendar changes could not be applied
 
-Calendar keeps showing the month and results from the last successful load. Select **Retry calendar** to repeat a failed change. Month navigation keeps the last applied filters. If Calendar asks you to shorten rules or remove filters, edit the selection or use **Clear All**.
+If Calendar had already loaded, it keeps the last successful results. Select **Retry calendar** to repeat the failed request. Month navigation after a failure keeps the last applied filters. If the rule editor asks you to shorten a rule, edit the draft and select **Apply Rules**, or reset it with **Clear Rules**. An existing Retry still repeats the earlier failed request. To reset the applied filters, use **Clear All**.
 
 ### View switching loses the current filters
 

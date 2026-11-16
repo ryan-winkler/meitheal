@@ -116,6 +116,9 @@ export const POST: APIRoute = async ({ locals, request }) => {
     try {
       // Pin one WAL snapshot so writes on other connections cannot restart the copy.
       source.exec("BEGIN")
+      if (source.prepare("SELECT 1 FROM task_boards WHERE id <> 'household' LIMIT 1").get()) {
+        return backupProblem(403, "Download is unavailable for databases with named Boards. Use the Home Assistant backup controls.")
+      }
       const pages = Number(source.prepare("PRAGMA page_count").get()?.page_count)
       const pageSize = Number(source.prepare("PRAGMA page_size").get()?.page_size)
       const free = await statfs(directory)

@@ -76,6 +76,7 @@ const routinesEnabled = await isFeatureEnabled("habits")
     <section data-parent-section="pillars" id="progress-section-pillars">
       <div class="progress-inline-page" id="pillars-inline">
         <div class="progress-inline-page__header">
+          {personalOwner && <a class="btn btn-ghost" href="/boards">Board Pillars</a>}
           <button
             type="button"
             class="pillars-page__add-btn"

@@ -1,6 +1,6 @@
 import type { APIRoute } from "astro"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
-import { HierarchyRepository } from "@domains/tasks/persistence/hierarchy-repository"
+import { HierarchyRepository, PlanningAccessLockedError } from "@domains/tasks/persistence/hierarchy-repository"
 import { stripHtml } from "../../../lib/strip-html"
 import { apiError, apiJson } from "../../../lib/api-response"
 import { logApiError } from "../../../lib/api-logger"
@@ -55,6 +55,7 @@ export const PUT: APIRoute = async ({ params, request }) => {
 }
 
 export const DELETE: APIRoute = async ({ params }) => {
+  if (params.id === "default") return apiError("Cannot delete the default Area", 403)
   try {
     await ensureSchema()
     const repo = new HierarchyRepository(getPersistenceClient())
@@ -62,6 +63,7 @@ export const DELETE: APIRoute = async ({ params }) => {
     if (!deleted) return apiError("Area not found", 404)
     return apiJson({ ok: true })
   } catch (error) {
+    if (error instanceof PlanningAccessLockedError) return apiError(error.message, 503)
     logApiError("areas", "DELETE error", error)
     return apiError("Failed to delete area")
   }

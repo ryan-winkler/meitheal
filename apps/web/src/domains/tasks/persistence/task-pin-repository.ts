@@ -25,7 +25,7 @@ export class TaskPinRepository {
     try {
       const { rows: [count] } = await snapshot.execute({
         sql: `SELECT COUNT(*) AS total FROM task_pins AS pin
-              JOIN tasks AS task ON task.id = pin.task_id
+              JOIN tasks AS task ON task.id = pin.task_id AND task.task_board_id IS NULL
               WHERE pin.owner_id = ?`,
         args: [ownerId],
       })
@@ -33,7 +33,7 @@ export class TaskPinRepository {
       const page = Math.min(requestedPage, Math.max(1, Math.ceil(total / TASK_PIN_PAGE_SIZE)))
       const { rows } = await snapshot.execute({
         sql: `SELECT task.id, task.title, task.ticket_number, task.status, task.deferred_at, pin.pinned_at
-              FROM task_pins AS pin JOIN tasks AS task ON task.id = pin.task_id
+              FROM task_pins AS pin JOIN tasks AS task ON task.id = pin.task_id AND task.task_board_id IS NULL
               WHERE pin.owner_id = ?
               ORDER BY pin.pinned_at DESC, pin.task_id ASC LIMIT ? OFFSET ?`,
         args: [ownerId, TASK_PIN_PAGE_SIZE, (page - 1) * TASK_PIN_PAGE_SIZE],
@@ -48,7 +48,7 @@ export class TaskPinRepository {
     const { rows: [row] } = await this.client.execute({
       sql: `SELECT pin.pinned_at FROM tasks AS task
             LEFT JOIN task_pins AS pin ON pin.task_id = task.id AND pin.owner_id = ?
-            WHERE task.id = ?`,
+            WHERE task.id = ? AND task.task_board_id IS NULL`,
       args: [ownerId, taskId],
     })
     if (!row) return null
@@ -58,14 +58,15 @@ export class TaskPinRepository {
 
   async set(ownerId: string, taskId: string, desired: boolean, now = Date.now()): Promise<TaskPinState | null> {
     const [task, , pin] = await this.client.batch([
-      { sql: "SELECT id FROM tasks WHERE id = ?", args: [taskId] },
+      { sql: "SELECT id FROM tasks WHERE id = ? AND task_board_id IS NULL", args: [taskId] },
       desired ? {
         sql: `INSERT INTO task_pins (owner_id, task_id, pinned_at)
-              SELECT ?, id, ? FROM tasks WHERE id = ?
+              SELECT ?, id, ? FROM tasks WHERE id = ? AND task_board_id IS NULL
               ON CONFLICT(owner_id, task_id) DO NOTHING`,
         args: [ownerId, now, taskId],
       } : {
-        sql: "DELETE FROM task_pins WHERE owner_id = ? AND task_id = ?",
+        sql: `DELETE FROM task_pins WHERE owner_id = ? AND task_id = ?
+              AND EXISTS (SELECT 1 FROM tasks WHERE id = task_pins.task_id AND task_board_id IS NULL)`,
         args: [ownerId, taskId],
       },
       { sql: "SELECT pinned_at FROM task_pins WHERE owner_id = ? AND task_id = ?", args: [ownerId, taskId] },

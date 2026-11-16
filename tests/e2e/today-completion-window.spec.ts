@@ -26,7 +26,7 @@ for (const { timezone, day, firstInstant, nextDay, completions } of [
   test(`Today completion predicate follows the midnight transition in ${timezone}`, () => {
     const db = new DatabaseSync(":memory:")
     try {
-      db.exec("CREATE TABLE tasks (id INTEGER PRIMARY KEY, status TEXT, updated_at)")
+      db.exec("CREATE TABLE tasks (id INTEGER PRIMARY KEY, status TEXT, updated_at, task_board_id TEXT)")
       const insert = db.prepare("INSERT INTO tasks (status, updated_at) VALUES ('complete', ?)")
       insert.run(Date.parse(firstInstant) - 1)
       insert.run(Date.parse(completions[0]!))
@@ -47,7 +47,7 @@ for (const { timezone, day, firstInstant, nextDay, completions } of [
 test("Today completion predicate excludes the rollback into yesterday", () => {
   const db = new DatabaseSync(":memory:")
   try {
-    db.exec("CREATE TABLE tasks (id INTEGER PRIMARY KEY, status TEXT, updated_at)")
+    db.exec("CREATE TABLE tasks (id INTEGER PRIMARY KEY, status TEXT, updated_at, task_board_id TEXT)")
     const insert = db.prepare("INSERT INTO tasks (status, updated_at) VALUES ('complete', ?)")
     insert.run(Date.parse("2010-11-07T02:59:59.999Z"))
     insert.run(Date.parse("2010-11-07T03:00:00Z"))
@@ -57,6 +57,7 @@ test("Today completion predicate excludes the rollback into yesterday", () => {
     insert.run(Date.parse("2010-11-07T04:00:00Z"))
     insert.run("2010-11-07")
     insert.run("2010-11-08T04:00:00Z")
+    db.prepare("INSERT INTO tasks (status, updated_at, task_board_id) VALUES ('complete', ?, 'private')").run("2010-11-07")
 
     const filter = todayCompletionFilter("2010-11-07", "America/Goose_Bay")
     const selected = db.prepare(`UPDATE tasks SET status = 'archived' WHERE ${filter.sql} RETURNING id`).all(...filter.args)

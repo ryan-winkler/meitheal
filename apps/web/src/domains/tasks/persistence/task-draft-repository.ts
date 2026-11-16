@@ -190,7 +190,7 @@ export class TaskDraftRepository {
           SELECT CASE WHEN json_valid(value) THEN COALESCE(json_extract(value, '$'), 'unavailable')
                       ELSE 'unavailable' END FROM settings WHERE key = 'backlog_mode'
         ), 'visible') = 'visible')
-        AND (? IS NULL OR EXISTS (SELECT 1 FROM goals WHERE id = ?))
+        AND (? IS NULL OR EXISTS (SELECT 1 FROM goals WHERE id = ? AND owner_board_id IS NULL AND retired_at IS NULL))
         AND (? IS NULL OR substr(?, 1, 3) = 'ha_' OR EXISTS (SELECT 1 FROM custom_users WHERE id = ?))
         AND NOT EXISTS (
           SELECT 1 FROM json_each(?) AS wanted

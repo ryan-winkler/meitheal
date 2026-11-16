@@ -548,3 +548,13 @@ MCP completion acknowledgements require the expected task ID or exact ticket key
 ### Local Feedback access and request failures
 
 For Feedback 503, check the Home Assistant Core connection and current account availability before investigating local storage/quota.403 requires an active nonsystem account for submission and a current administrator for queue access. Reopen Settings after correcting permissions.408 indicates the 8KiB JSON body did not arrive within five seconds; retry the unchanged form to retain its submission receipt.499 indicates cancellation. Optional app-version context accepts the published 12-character lowercase Canary version or the existing bounded release-context format; source hash abbreviations/full hashes are rejected. Administrator review drafts remain local to the current Settings lifecycle and export previews must be prepared again after refresh.
+
+Household task lists, Project counts, direct ticket routes, task exports routine cleanup, Calendar and Todo matching, and due-date reminders operate on Household records. Named Board storage remains closed until readers, actions, deliveries and recovery all enforce current grants.
+
+### Board access storage
+
+Schema 21 records ownership for Areas, Projects, Goals and Pillars. It adds named Board grants, personal sidebar preferences and shares pinned to the Area and its receiving Board. Existing planning records stay in Household. A shared Goal shows the Goal title and counts for eligible Projects. A missing or mismatched grant revision hides all shared Goal data. Home Assistant App backups omit the revision marker. Restore access through the approved Board owner recovery procedure before exposing named records.
+
+### Named Board access
+
+Use [Named Boards](./named-boards.md) to verify owner, member, viewer and send-only journeys after a schema upgrade. Exercise an active Home Assistant administrator outside the Board as well as a member with completion and deletion denied. Use [Home Assistant backups and restore](./home-assistant-backup-and-restore.md) for revision mismatches and App restore. Confirm that an interrupted live revision publication recovers and that a restored revision remains closed pending verified recovery.

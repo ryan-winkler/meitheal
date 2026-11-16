@@ -25,10 +25,10 @@ const protectedFields = [
 ]
 const unscheduled = protectedFields.map(field => `NULLIF(trim(tasks.${field}, char(9,10,11,12,13,32)), '') IS NULL`).join(" AND ")
 
-export const inactivityOpenTaskSql = `tasks.deferred_at IS NULL
+export const inactivityOpenTaskSql = `tasks.task_board_id IS NULL AND tasks.deferred_at IS NULL
   AND lower(tasks.status) IN (${openStatuses})
   AND ${created} > 0 AND ${updated} > 0
-  AND EXISTS (SELECT 1 FROM areas WHERE areas.id = tasks.area_id)`
+  AND EXISTS (SELECT 1 FROM areas WHERE areas.id = tasks.area_id AND areas.owner_board_id IS NULL AND areas.retired_at IS NULL)`
 
 export const inactivityProtectionSql = `tasks.task_kind IS NOT 'routine_instance'
   AND (lower(tasks.status) NOT IN (${activeStatuses})

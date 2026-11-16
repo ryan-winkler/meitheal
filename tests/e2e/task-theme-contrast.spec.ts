@@ -99,7 +99,7 @@ test.describe("Shopping theme contrast", () => {
           const response = await route.fetch(), data = await response.json()
           await route.fulfill({ response, json: data.users?.length ? data : { ...data, users: [{ id: "contrast-fixture-user", name: "Fixture household member", source: "custom" }] } })
         })
-        await page.route("**/api/goals", async route => {
+        await page.route(url => url.pathname === "/api/goals" && url.searchParams.get("projection") === "household", async route => {
           const response = await route.fetch(), data = await response.json()
           const goal = { id: "contrast-fixture-goal", title: "Fixture goal" }
           await route.fulfill({ response, json: Array.isArray(data) ? data.length ? data : [goal] : data.goals?.length ? data : { ...data, goals: [goal] } })

@@ -438,6 +438,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
       </div>
     </div>
 
+    {view === "calendar" && <p class="m-0 px-4 pb-3 text-sm text-text-primary" data-calendar-rule-error hidden></p>}
     <div class="advanced-panel__footer px-4 py-3 bg-bg-secondary border-t border-border flex justify-between items-center gap-2 rounded-b-lg">
       <div class="flex gap-2">
         <button type="button" class="btn btn-outline text-xs px-2.5 py-1 min-h-[28px] border-border hover:border-border-focus bg-bg-primary hover:bg-bg-hover text-text-primary" id={`${prefix}-advanced-add-condition`}>
@@ -751,17 +752,19 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
       advPanel?.classList.toggle("hidden")
     }, { signal })
 
-    advCloseBtn?.addEventListener("click", () => {
+    function closeAdvancedPanel(restoreFocus = false) {
       advToggleBtn?.setAttribute("aria-expanded", "false")
       advPanel?.classList.add("hidden")
-    }, { signal })
+      if (restoreFocus) advToggleBtn?.focus()
+    }
+
+    advCloseBtn?.addEventListener("click", () => closeAdvancedPanel(true), { signal })
 
     // Click outside to close advanced panel
     document.addEventListener("click", (e) => {
       if (!advPanel?.classList.contains("hidden") && advToggleBtn && advPanel) {
         if (!advPanel.contains(e.target as Node) && !advToggleBtn.contains(e.target as Node)) {
-          advToggleBtn.setAttribute("aria-expanded", "false")
-          advPanel.classList.add("hidden")
+          closeAdvancedPanel()
         }
       }
     }, { signal })
@@ -823,8 +826,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
         advToggleBtn?.classList.remove("filter-pill--active")
       }
 
-      advToggleBtn?.setAttribute("aria-expanded", "false")
-      advPanel?.classList.add("hidden")
+      closeAdvancedPanel(true)
       if (prefix !== "calendar") emitChange()
     }, { signal })
 
@@ -1143,6 +1145,11 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
     document.addEventListener("keydown", (e) => {
       if (e.key !== "Escape" || e.defaultPrevented ||
           (e.target as Element | null)?.closest?.('[role="dialog"], [role="alertdialog"]')) return
+      if (e.target instanceof Node && advPanel?.contains(e.target) && !advPanel.classList.contains("hidden")) {
+        e.preventDefault()
+        closeAdvancedPanel(true)
+        return
+      }
       if (filterToggle?.getClientRects().length && e.target instanceof Node &&
           (filterToggle.contains(e.target) || toolbar.contains(e.target))) {
         if (filterToggle.getAttribute("aria-expanded") === "true") {

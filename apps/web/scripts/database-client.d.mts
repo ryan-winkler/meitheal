@@ -22,6 +22,7 @@ export function isMemoryDatabase(url: string): boolean
 export function openDatabaseForStartup(url: string, options?: { readOnly?: boolean }): Promise<Client>
 export function enableStartupWal(client: Client): Promise<ResultSet>
 export function withStartupWriteTransaction<T>(client: Client, apply: (tx: Transaction) => Promise<T>): Promise<T>
+export function acquireWriteTransaction(client: Pick<Client, "transaction">, options?: WriteExecutionOptions): Promise<Transaction>
 export function runWriteTransaction<T>(
   client: Client,
   steps: () => Generator<InStatement[], T, ResultSet[]>,

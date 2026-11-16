@@ -355,6 +355,33 @@ test.describe("Calendar Shell", () => {
     await expect(search).toHaveValue("temporarily unavailable")
   })
 
+  test("invalid rule leaves Retry available after an initial Calendar outage", async ({ page }) => {
+    await page.route(url => url.pathname === "/tasks" && url.searchParams.get("view") === "calendar"
+      && !url.searchParams.has("calendarRefresh"), async route => {
+      const response = await route.fetch()
+      const body = (await response.text())
+        .replace('data-calendar-available="true"', 'data-calendar-available="false"')
+        .replace(/(data-calendar-status role="status") hidden[^>]*>/, "$1>Calendar data could not load.")
+        .replace(/data-calendar-retry hidden[^>]*>/, "data-calendar-retry>")
+      await route.fulfill({ response, body })
+    }, { times: 1 })
+    await page.goto("/tasks?view=calendar&year=2031&month=6#calendar")
+    const retry = page.getByRole("button", { name: "Retry calendar" })
+    await expect(retry).toBeVisible()
+    const advanced = page.locator("#calendar-advanced-toggle")
+    await advanced.click()
+    await page.getByRole("button", { name: "Condition", exact: true }).click()
+    await page.locator("#calendar-advanced-panel .adv-val").fill("word".repeat(2050))
+    await page.getByRole("button", { name: "Apply Rules" }).click()
+    await expect(page.locator("[data-calendar-rule-error]")).toBeVisible()
+    await expect(page.locator("[data-calendar-status]")).toContainText("Calendar data could not load.")
+    await page.getByRole("button", { name: "Close custom filters" }).press("Enter")
+    await expect(advanced).toBeFocused()
+    await retry.click()
+    await expect(page.locator("[data-calendar-month]")).toHaveAttribute("data-calendar-available", "true")
+    await expect(retry).toBeHidden()
+  })
+
   test("pending and failed Calendar refreshes retain accepted Area and Events states", async ({ page, request }) => {
     const created = await request.post("/api/areas", { data: { name: "Remembered workshop" } })
     expect(created.status()).toBe(201)
@@ -477,10 +504,15 @@ test.describe("Calendar Shell", () => {
       await value.fill(tooLong)
       await page.getByRole("button", { name: "Apply Rules" }).click()
       await expect(page.locator("[data-calendar-status]")).toContainText("Shorten the Calendar rules")
+      await expect(page.locator("[data-calendar-rule-error]")).toBeVisible()
       await expect(advanced).toHaveAttribute("aria-expanded", "true")
       await expect(value).toHaveValue(tooLong)
+      await page.keyboard.press("Escape")
+      await expect(advanced).toBeFocused()
+      await advanced.press("Enter")
       await value.fill("workshop")
-      await page.getByRole("button", { name: "Apply Rules" }).click()
+      await page.getByRole("button", { name: "Apply Rules" }).press("Enter")
+      await expect(advanced).toBeFocused()
       await expect(page).toHaveURL(url => url.searchParams.has("advancedFilter"))
     } finally {
       await request.delete(`/api/areas/${id}`, { headers })
@@ -533,7 +565,7 @@ test.describe("Calendar Shell", () => {
     await expect(types.getByRole("textbox", { name: "Filter by text" })).toHaveValue("roof")
     await during.press("Enter")
     await expect(page.getByRole("heading", { name: "Connected Calendar Events" })).toHaveCount(0)
-    await expect(page.locator("#day-drawer-tasks")).toContainText("No tasks or events scheduled")
+    await expect(page.locator("#day-drawer-tasks")).toContainText("No matching tasks or local events")
 
     await page.keyboard.press("Escape")
     await page.goto("/tasks?view=calendar&year=2031&month=6&types=calendar_event#calendar")
@@ -542,6 +574,34 @@ test.describe("Calendar Shell", () => {
     await events.click()
     await expect(events).toHaveAttribute("aria-pressed", "false")
     await expect(during.getByText("Household calendar preview")).toHaveCount(0)
+  })
+
+  test("open Calendar reads current connected sources when the day or filters change", async ({ page }) => {
+    const day = "2031-07-08"
+    let configured = ["calendar.household"]
+    await page.route("**/api/ha/calendars?configured=1", route => route.fulfill({ json: { entities: configured } }))
+    await page.route("**/api/ha/events?*", route => route.fulfill({
+      json: { events: [{ summary: "Household calendar preview", start: day, end: "2031-07-09" }] },
+    }))
+    await page.goto("/tasks?view=calendar&year=2031&month=6#calendar")
+    const cell = page.locator(`.cal-cell[data-date="${day}"]`)
+    const events = page.locator("#day-drawer-events")
+    await expect(cell.getByText("Household calendar preview")).toBeVisible()
+
+    configured = []
+    await cell.press("Enter")
+    await expect(events).toContainText("No calendar events")
+    await page.keyboard.press("Escape")
+
+    const search = page.getByRole("toolbar", { name: "Filter tasks" }).getByRole("textbox", { name: "Filter by text" })
+    await search.fill("updated")
+    await expect(page).toHaveURL(/search=updated/)
+    await expect(cell.getByText("Household calendar preview")).toHaveCount(0)
+
+    configured = ["calendar.household"]
+    await search.fill("updated again")
+    await expect(page).toHaveURL(/search=updated\+again/)
+    await expect(cell.getByText("Household calendar preview")).toBeVisible()
   })
 
   test("month and day feed timeouts preserve available events and report a fully unavailable day", async ({ page }) => {
@@ -726,7 +786,7 @@ test.describe("Calendar Shell", () => {
       await expect(page.locator("#day-drawer")).toHaveAttribute("aria-hidden", "true")
 
       await page.locator('.cal-cell[data-date="2027-06-16"]').click()
-      await expect(page.locator("#day-drawer-tasks")).toContainText("No tasks or events scheduled")
+      await expect(page.locator("#day-drawer-tasks")).toContainText("No matching tasks or local events")
       await expect(page.locator("#day-drawer-tasks").getByText("LA Evening Timed Task")).toHaveCount(0)
     } finally {
       await request.put("/api/settings", { data: { key: "timezone", value: prevTz } })

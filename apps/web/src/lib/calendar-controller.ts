@@ -38,6 +38,7 @@ export function initCalendarPage(signal: AbortSignal): void {
   const initialMonth = shell?.querySelector<HTMLElement>("[data-calendar-month]")
   const status = shell?.querySelector<HTMLElement>("[data-calendar-status]")
   const retry = shell?.querySelector<HTMLButtonElement>("[data-calendar-retry]")
+  const ruleError = shell?.querySelector<HTMLElement>("[data-calendar-rule-error]")
   const drawer = document.getElementById("day-drawer")
   const panel = drawer?.querySelector<HTMLElement>('[role="dialog"]')
   const drawerTitle = document.getElementById("day-drawer-title")
@@ -56,7 +57,7 @@ export function initCalendarPage(signal: AbortSignal): void {
   let month = initialMonth
   let desired = taskBackgroundUrl(new URL(location.href))
   let applied = new URL(desired)
-  let retryTarget: URL | undefined
+  let retryTarget = initialMonth.dataset.calendarAvailable === "false" ? new URL(applied) : undefined
   let refreshRequest: AbortController | undefined
   let previewsRequest: AbortController | undefined
   let drawerRequest: AbortController | undefined
@@ -68,9 +69,8 @@ export function initCalendarPage(signal: AbortSignal): void {
   let calendarSources: Promise<string[]> | undefined
   const readCalendarSources = () => calendarSources ??= fetchCalendarEntities(
     AbortSignal.any([signal, AbortSignal.timeout(10_000)]),
-  ).catch(error => {
+  ).finally(() => {
     calendarSources = undefined
-    throw error
   })
 
   function announce(message: string, failed = Boolean(retryTarget)) {
@@ -99,7 +99,9 @@ export function initCalendarPage(signal: AbortSignal): void {
     }))
   }
 
-  const refreshFailure = "Couldn’t apply calendar changes. The previous results are still shown."
+  const unavailable = "Calendar data could not load."
+  const refreshFailure = () => month.dataset.calendarAvailable === "false"
+    ? unavailable : "Couldn’t apply calendar changes. The previous results are still shown."
 
   async function refresh(url: URL, background = false) {
     const preserveRetry = background && retryTarget && retryTarget.search !== url.search
@@ -151,7 +153,7 @@ export function initCalendarPage(signal: AbortSignal): void {
         restoreFilterControls()
       }
       document.dispatchEvent(new Event(TASK_VIEW_LOCATION_EVENT))
-      if (preserveRetry) announce(refreshFailure, true)
+      if (preserveRetry) announce(refreshFailure(), true)
       else announce(rejectedFilterChange)
       if (activeDay || activeRetry) focusMonthDay(activeDay)
       previewEvents()
@@ -161,7 +163,7 @@ export function initCalendarPage(signal: AbortSignal): void {
         if (!preserveRetry) retryTarget = new URL(url)
         desired = new URL(applied)
         restoreFilterControls()
-        announce(refreshFailure, true)
+        announce(refreshFailure(), true)
       }
     } finally {
       if (request === refreshRequest) {
@@ -172,20 +174,26 @@ export function initCalendarPage(signal: AbortSignal): void {
   }
 
   function rejectFilters(message: string): false {
-    rejectedFilterChange = `${message} The previous results are still shown.`
+    const recovery = month.dataset.calendarAvailable === "false" ? unavailable : "The previous results are still shown."
+    rejectedFilterChange = `${message} ${recovery}`
+    if (ruleError) {
+      ruleError.hidden = false
+      ruleError.textContent = retryTarget ? `${message} Retry calendar repeats the earlier request.` : message
+    }
     restoreFilterControls(desired, true)
     announce(rejectedFilterChange)
     return false
   }
 
   function applyFilters(values: KanbanFilters): boolean {
+    if (ruleError) ruleError.hidden = true
     const url = new URL(desired)
     const previous = readCalendarTaskFilters(url.searchParams)
     const next = { ...previous, ...values }
     if (JSON.stringify(previous) === JSON.stringify(next)) {
       if (rejectedFilterChange) {
         rejectedFilterChange = ""
-        announce(retryTarget ? refreshFailure : "")
+        announce(retryTarget ? refreshFailure() : "")
       }
       return true
     }
@@ -289,7 +297,7 @@ export function initCalendarPage(signal: AbortSignal): void {
         })
         drawerTasks!.append(...fresh)
         offset += rows.length
-        if (!offset) renderMessage(drawerTasks!, "No tasks or events scheduled")
+        if (!offset) renderMessage(drawerTasks!, "No matching tasks or local events")
         const canLoadMore = rows.length > 0 && total > offset
         if (!canLoadMore && document.activeElement === moreTasks) {
           (fresh[0] ?? drawerTasks!.querySelector<HTMLElement>("[data-task-id]") ??
