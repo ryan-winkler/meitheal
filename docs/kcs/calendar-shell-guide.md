@@ -17,7 +17,7 @@ Calendar opens within **Tasks** at `/tasks?view=calendar`. Older `/calendar` and
 1. Use **Previous month**, **Next month** or **Today** above the grid.
 2. Filter by title, task type, status, priority, label, area, or custom rules above the month. On phones, select **Filters** to open these controls. **Active** shows that filters still apply when the controls are closed. **Promoted cards only** narrows the task results to work moved to the top of a Kanban lane.
 3. Open any day in the displayed month to review matching due tasks and local Events that start that day. The month’s synced event total comes from saved calendar occurrences. The day drawer lists saved and live events in its connected section using Meitheal’s household timezone. All-day events stay on their calendar dates. Household members can see the configured feed in Calendar. Administrators manage the sources in Settings. Task filters apply to Meitheal work. Turn off **Events** in the type filters to hide local Events and connected event previews and counts.
-4. The month controls keep the active filters. Use **Clear all active filters** to start over.
+4. The month controls keep the active filters. Use **Clear All** to start over. Its accessible name is **Clear all active filters**.
 
 ### Open a day drawer and create follow-up work
 
@@ -110,11 +110,11 @@ Known differences:
 1. Confirm the day drawer title updates to the selected date.
 2. In browser network tools, check the read-only `POST /api/calendar/agenda` request. Its JSON includes the day, applied filters and pagination. The response filters before pagination and returns a matching `total`. Date-only values match directly, whereas an ISO timestamp with a time and offset matches the resulting day in the household time zone.
 3. The default month badge counts open tasks, while the default drawer also shows completed work. Ordinary filters match open tasks in both places. Choose **Complete** or apply custom rules to include matching completed work in both places. When a task status looks wrong, compare the list result with the status sent on creation. Known aliases such as `done` become the built-in status `complete`. Custom statuses keep their names.
-4. If live Home Assistant events are missing, check the message in the connected section and the configured entities. The section reports a partial feed when only some sources respond. Use the browser Network panel to identify the affected feed.
+4. If live Home Assistant events are missing, check the message in the connected section and the configured entities. Month previews read the first three configured sources and show up to two live events per day before the overflow count. The day drawer reads the first five sources. The month’s synced total comes from saved occurrences. The connected section reports a partial feed when only some requested sources respond. Use the browser Network panel to identify the affected source.
 
 ### Calendar changes could not be applied
 
-Calendar keeps showing the month and results from the last successful load. Select **Retry calendar** after a connection failure. If Calendar asks you to shorten rules or remove filters, edit the selection or use **Clear all active filters**.
+Calendar keeps showing the month and results from the last successful load. Select **Retry calendar** after a connection failure. If Calendar asks you to shorten rules or remove filters, edit the selection or use **Clear All**.
 
 ### View switching loses the current filters
 
