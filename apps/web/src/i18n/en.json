@@ -934,7 +934,7 @@
     "download_csv": "Download CSV",
     "raw_db": "Raw DB",
     "export_hint": "Export your tasks to JSON or CSV.",
-    "export_hint_admin": "Export tasks to JSON or CSV, or download the raw SQLite database. It contains private household data and local feedback.",
+    "export_hint_admin": "Export tasks to JSON or CSV, or download the raw SQLite database. It contains all local data, including Personal Pillars and feedback.",
     "settings_config": "Settings Configuration",
     "export_config": "Export Config",
     "import_config": "Import Config",

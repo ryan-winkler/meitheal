@@ -12,6 +12,8 @@
 import IconPicker from "../ui/IconPicker.astro"
 import ColorPicker from "../ui/ColorPicker.astro"
 import { t } from "../../i18n/translations"
+interface Props { personalForm?: string | undefined }
+const { personalForm } = Astro.props
 ---
 
 <div
@@ -37,7 +39,7 @@ import { t } from "../../i18n/translations"
       >✕</button>
     </div>
 
-    <form id="pillar-form" class="space-y-4"
+    <form id="pillar-form" class="space-y-4" autocomplete="off"
       data-created-toast={t("pillars.created_toast")}
       data-updated-toast={t("pillars.updated_toast")}
       data-error-save={t("pillars.error_save")}
@@ -59,6 +61,17 @@ import { t } from "../../i18n/translations"
         />
         <p class="pillar-form__hint">{t("pillars.name_hint")}</p>
       </div>
+
+      {personalForm && (
+        <div class="form-group">
+          <label for="pillar-audience" class="form-label">Visible to</label>
+          <select id="pillar-audience" class="form-input" data-audience-proof={personalForm} aria-describedby="pillar-audience-hint">
+            <option value="household">Household</option>
+            <option value="personal">Only me</option>
+          </select>
+          <p id="pillar-audience-hint" class="pillar-form__hint">Choose the audience before saving.</p>
+        </div>
+      )}
 
       <!-- Manifesto (WHY) -->
       <div class="form-group">
@@ -193,6 +206,8 @@ import { t } from "../../i18n/translations"
     const closeBtn = document.getElementById("close-pillar-modal")
     const cancelBtn = document.getElementById("cancel-pillar-modal")
     const form = document.getElementById("pillar-form") as HTMLFormElement | null
+    const audience = document.querySelector<HTMLSelectElement>("#pillar-audience")
+    const audienceHint = document.getElementById("pillar-audience-hint")
     const titleEl = document.getElementById("pillar-form-title")
     const submitBtn = document.getElementById("submit-pillar-btn") as HTMLButtonElement | null
     const iconHidden = document.getElementById("pillar-icon") as HTMLInputElement | null
@@ -204,6 +219,7 @@ import { t } from "../../i18n/translations"
 
     // --- State: tracks current editing context ---
     let editingPillarId: string | null = null
+    let editingPersonal = false
     let opener: HTMLElement | null = null
     const savedMessageKey = "meitheal-pillar-saved"
     try {
@@ -213,6 +229,13 @@ import { t } from "../../i18n/translations"
         showToast(saved, "success")
       }
     } catch { /* Session storage can be unavailable in embedded browsers. */ }
+
+    window.addEventListener("pagehide", event => {
+      if (event.persisted && audience) document.getElementById("progress-section-pillars")?.replaceChildren()
+    }, { signal })
+    window.addEventListener("pageshow", event => {
+      if (event.persisted && audience) window.location.reload()
+    }, { signal })
 
     // --- Init shared pickers ---
     const iconPickerCleanup = initIconPicker("pillar-icon-picker", {
@@ -271,6 +294,12 @@ import { t } from "../../i18n/translations"
       opener = source ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null)
       form?.reset()
       editingPillarId = null
+      editingPersonal = editData?.personal === true
+      if (audience) {
+        audience.disabled = Boolean(editData?.id)
+        audience.value = editingPersonal ? "personal" : "household"
+        if (audienceHint) audienceHint.hidden = audience.disabled
+      }
 
       // Reset picker previews
       const iconPreview = document.querySelector<HTMLElement>("#pillar-icon-picker .icon-picker__preview-icon")
@@ -365,6 +394,7 @@ import { t } from "../../i18n/translations"
         ? (submitBtn.dataset.savingLabel || "Saving…")
         : (submitBtn.dataset.creatingLabel || "Creating…")
 
+      const isPersonal = editingPillarId ? editingPersonal : audience?.value === "personal"
       try {
         const body: Record<string, unknown> = {
           name,
@@ -374,6 +404,10 @@ import { t } from "../../i18n/translations"
           weight: parseInt((document.getElementById("pillar-weight") as HTMLInputElement).value, 10),
         }
 
+        if (!editingPillarId && isPersonal) {
+          body.audience = "personal"
+          body.audienceProof = audience?.dataset.audienceProof
+        }
         const url = editingPillarId ? `/api/pillars/${editingPillarId}` : "/api/pillars"
         const method = editingPillarId ? "PATCH" : "POST"
 
@@ -392,7 +426,7 @@ import { t } from "../../i18n/translations"
           const toastTemplate = editingPillarId
             ? (form.dataset.updatedToast || '"{name}" updated')
             : (form.dataset.createdToast || 'Pillar "{name}" created')
-          const message = toastTemplate.replace("{name}", name)
+          const message = isPersonal ? "Personal Pillar saved." : toastTemplate.replace("{name}", name)
           try { sessionStorage.setItem(savedMessageKey, message) } catch { showToast(message, "success") }
           closePillarModal(true)
           window.location.reload()

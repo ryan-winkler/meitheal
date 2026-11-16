@@ -1,3 +1,4 @@
+import { PERSONAL_PILLAR_SCHEMA_VERSION } from "../drizzle/migrations/0010_personal_pillars.mjs"
 import { createRequire } from "node:module"
 import { statSync } from "node:fs"
 import { DatabaseSync } from "node:sqlite"
@@ -63,7 +64,7 @@ export function resetDatabaseDiagnosticsForTests() {
   s.readLeaseSlowWarningsTotal = 0
 }
 
-export const DATABASE_SCHEMA_VERSION = 19
+export const DATABASE_SCHEMA_VERSION = PERSONAL_PILLAR_SCHEMA_VERSION
 
 const schemaMarkerTable = "SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = 'app_settings' COLLATE NOCASE"
 const schemaMarkerRows = "SELECT value AS value FROM app_settings WHERE key = 'schema_version' LIMIT 2"
@@ -835,7 +836,7 @@ async function inspectStartupSchema(client) {
   try {
     if (await readTaskBoardMigrationState(tx) === "household-v19") {
       const { validateStartupTaskSchema } = await import("./task-schema-startup.mjs")
-      await validateStartupTaskSchema(tx)
+      await validateStartupTaskSchema(tx, { allowPendingPersonal: true })
     }
   } finally {
     tx.close()

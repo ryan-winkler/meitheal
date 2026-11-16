@@ -177,6 +177,8 @@ const draftPath = "/api/task-drafts"
 const inactivityApiPath = "/api/task-inactivity"
 const inactivityPagePath = "/inactivity"
 const labelCleanupPath = "/api/labels/cleanup"
+const pillarPagePath = /^\/pillars(?:\/|$)/
+const pillarApiPath = /^\/api\/pillars(?:\/|$)/
 const commentPaths = new Set(["/api/tasks/[id]/comments", "/api/tasks/[id]/comments/[commentId]"])
 const reactionPaths = new Set([
   "/api/tasks/reaction-counts",
@@ -218,8 +220,9 @@ export const onRequest: MiddlewareHandler = async (context, next) => {
   const hasTaskHistoryPath = taskHistoryPath.test(requestPath)
   const taskHistoryRoute = hasTaskHistoryPath || taskHistoryPath.test(routePattern) || taskHistoryPath.test(url.pathname)
   const participantRoute = commentPaths.has(routePattern) || reactionPaths.has(routePattern)
+  const privatePillars = routePattern === "/progress" || pillarPagePath.test(routePattern) || pillarApiPath.test(routePattern)
   const privateTaskRoute = pinRoute || draftRoute || inactivityApi || inactivityPage || mentionRoute || labelCleanup
-  if (!privateTaskRoute && !onlineReadRoute && !taskHistoryRoute && !participantRoute) {
+  if (!privateTaskRoute && !onlineReadRoute && !taskHistoryRoute && !participantRoute && !privatePillars) {
     return handleRequest(context, next, requestUrl)
   }
   if (draftRoute && (requestPath !== draftPath || requestUrl.search)) {
@@ -244,7 +247,7 @@ export const onRequest: MiddlewareHandler = async (context, next) => {
   }
   let response: Response
   try {
-    response = await handleRequest(context, next, requestUrl, privateTaskRoute)
+    response = await handleRequest(context, next, requestUrl, privateTaskRoute || privatePillars)
   } catch (error) {
     if (!labelCleanup) throw error
     return Response.json({ ok: false, errorCode: "unavailable", detail: "Could not verify label cleanup. Try again." }, {
@@ -282,7 +285,7 @@ async function handleRequest({ request, locals, routePattern }: Parameters<Middl
   const commentRoute = commentPaths.has(routePattern)
   const participantRoute = commentRoute || reactionPaths.has(routePattern)
   const privateLog = privatePersonalRoute || participantRoute
-  const logPath = participantRoute ? routePattern : url.pathname
+  const logPath = participantRoute || pillarApiPath.test(routePattern) ? routePattern : url.pathname
   const requestId = (privateLog ? null : request.headers.get("x-request-id")) ?? crypto.randomUUID();
   locals.requestId = requestId
   const supervisorMode = Boolean(process.env.SUPERVISOR_TOKEN);

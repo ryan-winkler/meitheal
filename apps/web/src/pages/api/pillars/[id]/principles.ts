@@ -1,7 +1,7 @@
 import type { APIRoute } from "astro"
+import { getVisiblePillar } from "@lib/personal-pillar-access"
 import { apiJson, apiError } from "../../../../lib/api-response"
 import { logApiError } from "../../../../lib/api-logger"
-import { getPillarById } from "@domains/pillars/pillar-service"
 import {
   createPrinciple,
   getPrinciplesForPillar,
@@ -20,15 +20,15 @@ import {
  * @kcs Non-Negotiable Principles are injected into AI system prompts.
  */
 
-export const GET: APIRoute = async ({ params }) => {
+export const GET: APIRoute = async ({ params, request, locals }) => {
   try {
     const pillarId = params.id
     if (!pillarId) return apiError("Pillar ID is required", 400)
 
-    const pillar = await getPillarById(pillarId)
+    const pillar = await getVisiblePillar(pillarId, locals, request.signal)
     if (!pillar) return apiError("Pillar not found", 404)
 
-    const principles = await getPrinciplesForPillar(pillarId)
+    const principles = await getPrinciplesForPillar(pillarId, pillar.userId)
     return apiJson({ principles })
   } catch (error) {
     logApiError("pillars", "GET principles error", error)
@@ -36,12 +36,12 @@ export const GET: APIRoute = async ({ params }) => {
   }
 }
 
-export const POST: APIRoute = async ({ params, request }) => {
+export const POST: APIRoute = async ({ params, request, locals }) => {
   try {
     const pillarId = params.id
     if (!pillarId) return apiError("Pillar ID is required", 400)
 
-    const pillar = await getPillarById(pillarId)
+    const pillar = await getVisiblePillar(pillarId, locals, request.signal)
     if (!pillar) return apiError("Pillar not found", 404)
 
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
@@ -57,7 +57,7 @@ export const POST: APIRoute = async ({ params, request }) => {
           pillarId,
           statement,
           isNonNegotiable: body.isNonNegotiable === true,
-        })
+        }, pillar.userId)
 
         return apiJson({ principle }, 201)
       }
@@ -77,7 +77,7 @@ export const POST: APIRoute = async ({ params, request }) => {
         if (typeof body.isNonNegotiable === "boolean") updates.isNonNegotiable = body.isNonNegotiable
         if (typeof body.position === "number") updates.position = body.position
 
-        const updated = await updatePrinciple(principleId, updates, pillarId)
+        const updated = await updatePrinciple(principleId, updates, pillarId, pillar.userId)
 
         if (!updated) return apiError("Principle not found or no changes", 404)
         return apiJson({ ok: true })
@@ -87,7 +87,7 @@ export const POST: APIRoute = async ({ params, request }) => {
         const principleId = String(body.principleId || "")
         if (!principleId) return apiError("principleId is required", 400)
 
-        const deleted = await deletePrinciple(principleId, pillarId)
+        const deleted = await deletePrinciple(principleId, pillarId, pillar.userId)
         if (!deleted) return apiError("Principle not found", 404)
         return apiJson({ ok: true })
       }

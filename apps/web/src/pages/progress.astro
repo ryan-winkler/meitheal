@@ -20,7 +20,8 @@ import PillarDetailModal from "../components/pillars/PillarDetailModal.astro"
 import { t } from "../i18n/translations"
 import type { Locale } from "../lib/locale"
 import { isFeatureEnabled } from "../lib/feature-flags"
-import { getPillars } from "@domains/pillars/pillar-service"
+import { issuePersonalPillarForm, resolvePersonalPillarOwner } from "../lib/personal-pillar-access"
+import { HOUSEHOLD_PILLAR_OWNER, getPillars } from "@domains/pillars/pillar-service"
 import { getAllPrinciples } from "@domains/pillars/principle-service"
 import { getAssociationsForPillar } from "@domains/pillars/pillar-association-service"
 
@@ -38,18 +39,24 @@ let enrichedPillars: Array<{
   weight: number
   principles: Array<{ id: string; pillarId: string; statement: string; isNonNegotiable: boolean; position: number; createdAt: number }>
   linkedGoalCount: number
+  personal: boolean
 }> = []
 
+const personalOwner = await resolvePersonalPillarOwner(Astro.locals, Astro.request.signal)
+const personalForm = personalOwner ? issuePersonalPillarForm(personalOwner) : undefined
+
 try {
-  const pillarsData = await getPillars({ includeInactive: false })
-  const allPrinciplesMap = await getAllPrinciples()
+  const pillarsData = await getPillars({ includeInactive: false, personalOwner })
+  const allPrinciplesMap = await getAllPrinciples(personalOwner)
   enrichedPillars = await Promise.all(
     pillarsData.map(async (p) => {
-      const associations = await getAssociationsForPillar(p.id)
+      const personal = p.userId !== HOUSEHOLD_PILLAR_OWNER
+      const associations = personal ? [] : await getAssociationsForPillar(p.id)
       const linkedGoalCount = associations.filter((a: { entityType: string }) => a.entityType === "goal").length
       return {
         ...p,
-        slug: (p as any).slug || p.id,
+        slug: p.slug || p.id,
+        personal,
         principles: allPrinciplesMap.get(p.id) || [],
         linkedGoalCount,
       }
@@ -82,7 +89,7 @@ const routinesEnabled = await isFeatureEnabled("habits")
 
         <InlineHelper helperId="pillars-explainer" title="What are Pillars?" icon="🏛️">
           <p><strong>Pillars</strong> are permanent, identity-based motivational anchors. They answer the question <em>"Who am I, and what do I stand for?"</em></p>
-          <p>Each Pillar can have <strong>Principles</strong> — behavioral boundaries you won't compromise on. Principles marked <strong>Non-Negotiable</strong> are injected into AI system prompts to keep recommendations aligned with your values.</p>
+          <p>Each Pillar can have <strong>Principles</strong> — behavioral boundaries you won't compromise on. <strong>Non-Negotiable</strong> principles from Household Pillars can guide AI recommendations.</p>
           <p>Research suggests 3-5 active Pillars is optimal for focus. Press <kbd>?</kbd> to restore this helper if dismissed.</p>
         </InlineHelper>
 
@@ -118,12 +125,13 @@ const routinesEnabled = await isFeatureEnabled("habits")
             weight={pillar.weight}
             principles={pillar.principles}
             linkedGoalCount={pillar.linkedGoalCount}
+            personal={pillar.personal}
           />
             ))}
           </div>
         )}
       </div>
-      <PillarFormModal />
+      <PillarFormModal personalForm={personalForm} />
       <PillarDetailModal />
     </section>
 

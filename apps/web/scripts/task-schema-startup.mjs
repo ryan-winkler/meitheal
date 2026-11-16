@@ -8,6 +8,9 @@ import { applyTaskDraftsMigration, validateTaskDraftsSchema } from "../drizzle/m
 import { applyCommentMentionsMigration, validateCommentMentionsSchema } from "../drizzle/migrations/0007_comment_mentions.mjs"
 import { applyTaskInactivityMigration, validateTaskInactivitySchema } from "../drizzle/migrations/0007_task_inactivity.mjs"
 import { applyTaskStallMigration, validateTaskStallSchema } from "../drizzle/migrations/0008_task_stall.mjs"
+import {
+  applyPersonalPillarMigration, PERSONAL_PILLAR_MIGRATION, readPersonalPillarMigrationState,
+} from "../drizzle/migrations/0010_personal_pillars.mjs"
 import { assertNoInboundReferences } from "../drizzle/migrations/board-storage-schema.mjs"
 import { installTaskActivityTriggers, validateTaskActivityTriggers } from "../drizzle/migrations/task-activity-schema.mjs"
 import {
@@ -37,7 +40,7 @@ const executableMigrations = [
   ["0008_task_stall.mjs", applyTaskStallMigration, validateTaskStallSchema],
 ]
 const predecessorMigrations = [...sqlMigrations, ...executableMigrations.map(([name]) => name)]
-const allMigrations = [...predecessorMigrations, TASK_BOARD_MIGRATION]
+const boardMigrations = [...predecessorMigrations, TASK_BOARD_MIGRATION]
 
 /** The source script and the Astro server chunk both live under the application root. */
 function findSqlMigrations() {
@@ -75,21 +78,24 @@ async function validateTaskMigrationShape(tx, boardScopedLanes) {
 /** @param {Transaction} tx */
 async function validateCommittedTaskSchema(tx) {
   const ledger = await readLedger(tx)
-  const pending = allMigrations.filter(name => !ledger.has(name))
+  const pending = boardMigrations.filter(name => !ledger.has(name))
   if (pending.length > 0) throw new Error(`Pending migrations: ${pending.join(", ")}`)
   await validateTaskMigrationShape(tx, true)
   await validateTaskBoardUpgrade(tx)
 }
 
-/** @param {Transaction} tx */
-export async function validateStartupTaskSchema(tx) {
+/** @param {Transaction} tx @param {{ allowPendingPersonal?: boolean }} [options] */
+export async function validateStartupTaskSchema(tx, { allowPendingPersonal = false } = {}) {
   if (await readTaskBoardMigrationState(tx) !== "household-v19") {
     const ledger = await readLedger(tx)
-    const pending = allMigrations.filter(name => !ledger.has(name))
+    const pending = boardMigrations.filter(name => !ledger.has(name))
     if (pending.length === 1) await validateTaskMigrationShape(tx, false)
     throw new Error(`Pending migrations: ${pending.join(", ")}`)
   }
   await validateCommittedTaskSchema(tx)
+  if (!await readPersonalPillarMigrationState(tx) && !allowPendingPersonal) {
+    throw new Error(`Pending migrations: ${PERSONAL_PILLAR_MIGRATION}`)
+  }
 }
 
 /**
@@ -103,7 +109,7 @@ export async function applyStartupTaskSchema(tx, prepareRuntime) {
     await validateCommittedTaskSchema(tx)
     await seedHouseholdTaskPrerequisites(tx)
     await prepareRuntime?.(tx)
-    return []
+    return await applyPersonalPillarMigration(tx) ? [PERSONAL_PILLAR_MIGRATION] : []
   }
 
   await assertNoInboundReferences(tx, ["__meitheal_migrations", "app_settings"])
@@ -141,5 +147,6 @@ export async function applyStartupTaskSchema(tx, prepareRuntime) {
     throw new Error("The Board upgrade changed an existing migration ledger entry")
   }
   await applyTaskBoardUpgrade(tx, predecessorMigrations)
-  return [...pending, TASK_BOARD_MIGRATION]
+  await applyPersonalPillarMigration(tx)
+  return [...pending, TASK_BOARD_MIGRATION, PERSONAL_PILLAR_MIGRATION]
 }

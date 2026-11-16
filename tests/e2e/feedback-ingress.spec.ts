@@ -310,7 +310,7 @@ coreTest("a household member opens only an approved destination from Today throu
   await expect(link).toHaveAttribute("rel", "noopener noreferrer")
 })
 
-coreTest("database download checks current Core role without reusing a stale administrator grant", async ({ playwright }) => {
+coreTest("database download checks current Core role without reusing a stale owner grant", async ({ playwright }) => {
   const api = await playwright.request.newContext({ baseURL: origin })
   const headers = { cookie: "feedback-fixture=admin", origin }
   const endpoint = `${prefix}/api/export/database.sqlite`
@@ -323,16 +323,73 @@ coreTest("database download checks current Core role without reusing a stale adm
     expect((await download()).status()).toBe(200)
     await expect.poll(snapshotDirs).toEqual([])
 
-    for (const role of ["demoted", "inactive", "system", "missing", "malformed", "oversized", "disconnected", "stalled"]) {
+    for (const role of ["delegated-admin", "demoted", "inactive", "system", "missing", "malformed", "oversized", "disconnected", "stalled"]) {
       await setDatabaseCoreRole(role)
       const denied = await download()
-      expect(denied.status(), role).toBe(["demoted", "inactive", "system", "missing"].includes(role) ? 403 : 503)
+      expect(denied.status(), role).toBe(["delegated-admin", "demoted", "inactive", "system", "missing"].includes(role) ? 403 : 503)
       expect(denied.headers()["cache-control"], role).toBe("no-store")
       expect(denied.headers()["content-disposition"], role).toBeUndefined()
       expect(await snapshotDirs(), role).toEqual([])
     }
     await setDatabaseCoreRole("owner")
     expect((await download()).status()).toBe(200)
+  } finally {
+    await api.dispose()
+  }
+})
+
+coreTest("Personal Pillars stay within the verified user across pages, APIs and a stale create form", async ({ playwright }) => {
+  const api = await playwright.request.newContext({ baseURL: origin })
+  const owner = { cookie: "feedback-fixture=member", origin }
+  const other = { cookie: "feedback-fixture=member-two", origin }
+  const admin = { cookie: "feedback-fixture=admin", origin }
+  const endpoint = prefix + "/api/pillars"
+  const page = prefix + "/progress"
+  try {
+    const household = await api.post(endpoint, { headers: admin, data: { name: "Household fixture" } })
+    expect(household.status(), await household.text()).toBe(201)
+    const progress = await api.get(page, { headers: owner })
+    expect(progress.headers()["cache-control"]).toBe("private, no-store")
+    const audienceProof = /data-audience-proof="([\w.-]+)"/.exec(await progress.text())?.[1]
+    expect(audienceProof).toBeTruthy()
+    const label = "Private synthetic manifesto"
+    const data = { name: "Private fixture", manifesto: label, audience: "personal", audienceProof }
+    expect((await api.post(endpoint, { headers: other, data })).status()).toBe(409)
+
+    const result = await api.post(endpoint, { headers: owner, data })
+    expect(result.status(), await result.text()).toBe(201)
+    const { pillar } = await result.json()
+    const detail = endpoint + "/" + pillar.id
+    expect((await api.get(detail, { headers: owner })).status()).toBe(200)
+    const principle = await api.post(detail + "/principles", {
+      headers: owner, data: { statement: "Private synthetic principle", isNonNegotiable: true },
+    })
+    expect(principle.status(), await principle.text()).toBe(201)
+
+    for (const headers of [other, admin]) {
+      const unavailable = await api.get(detail, { headers })
+      expect(unavailable.status()).toBe(404)
+      expect(unavailable.headers()["cache-control"]).toBe("private, no-store")
+      expect((await api.patch(detail, { headers, data: { name: "Wrong account" } })).status()).toBe(404)
+      const deleteDenied = await api.delete(detail, { headers: { ...headers, "content-type": "application/json" } })
+      expect(deleteDenied.status(), await deleteDenied.text()).toBe(404)
+      expect((await api.get(detail + "/principles", { headers })).status()).toBe(404)
+      expect((await api.post(detail + "/principles", { headers, data: { statement: "Wrong account" } })).status()).toBe(404)
+      const theirPage = await (await api.get(page, { headers })).text()
+      expect(theirPage).not.toContain(label)
+      expect(theirPage).not.toContain("Private synthetic principle")
+      expect(theirPage).not.toContain(pillar.id)
+    }
+    const mine = await (await api.get(page, { headers: owner })).text()
+    expect(mine).toContain(label)
+    expect(mine).toContain("Private synthetic principle")
+    expect(await (await api.get(endpoint, { headers: owner })).text()).not.toContain(pillar.id)
+    expect(await (await api.get(endpoint + "?include_personal=true", { headers: owner })).text()).toContain(pillar.id)
+    expect((await api.get(detail + "/associations", { headers: owner })).status()).toBe(404)
+    expect((await api.patch(detail, { headers: owner, data: { audience: "household" } })).status()).toBe(400)
+    const removed = await api.delete(detail, { headers: { ...owner, "content-type": "application/json" } })
+    expect(removed.status(), await removed.text()).toBe(200)
+    expect(await (await api.get(page, { headers: owner })).text()).not.toContain(label)
   } finally {
     await api.dispose()
   }
@@ -453,7 +510,7 @@ coreTest("a paused database download keeps one snapshot until cancelled", async 
   }
 })
 
-test("database download requires a valid administrator form and rejects cross-site submissions", async ({ playwright }) => {
+coreTest("database download requires a valid owner form and rejects cross-site submissions", async ({ playwright }) => {
   const api = await playwright.request.newContext({ baseURL: origin })
   const admin = { cookie: "feedback-fixture=admin", origin }
   const exportPath = `${prefix}/api/export/database.sqlite`
@@ -477,7 +534,7 @@ test("database download requires a valid administrator form and rejects cross-si
     expect((await readdir(work)).filter(name => name.startsWith(".meitheal-export-"))).toEqual([])
 
     await stopServer()
-    await startServer()
+    await startServer(true)
     const restarted = await api.post(origin + exportPath, { headers: { ...admin, origin }, form })
     expect(restarted.status()).toBe(403)
   } finally {

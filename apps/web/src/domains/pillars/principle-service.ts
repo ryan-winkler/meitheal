@@ -15,7 +15,7 @@
 
 import { randomUUID } from "node:crypto"
 import { getPersistenceClient } from "../tasks/persistence/store"
-import { ensurePillarSchema } from "./pillar-service"
+import { ensurePillarSchema, HOUSEHOLD_PILLAR_OWNER } from "./pillar-service"
 
 // ── Schema ──────────────────────────────────────────────────────
 
@@ -78,48 +78,40 @@ export async function createPrinciple(data: {
   pillarId: string
   statement: string
   isNonNegotiable?: boolean
-}): Promise<Principle> {
+}, owner = HOUSEHOLD_PILLAR_OWNER): Promise<Principle> {
   await ensurePrincipleSchema()
   const client = getPersistenceClient()
   const id = generateId()
   const now = Date.now()
 
-  const posResult = await client.execute({
-    sql: "SELECT COALESCE(MAX(position), -1) + 1 as next_pos FROM principles WHERE pillar_id = ?",
-    args: [data.pillarId],
-  })
-  const position = Number((posResult.rows[0] as Record<string, unknown>).next_pos)
-
-  await client.execute({
+  const result = await client.execute({
     sql: `INSERT INTO principles (id, pillar_id, statement, is_non_negotiable, position, created_at)
-          VALUES (?, ?, ?, ?, ?, ?)`,
-    args: [
-      id,
-      data.pillarId,
-      data.statement,
-      data.isNonNegotiable ? 1 : 0,
-      position,
-      now,
-    ],
+          SELECT ?, parent.id, ?, ?,
+            (SELECT COALESCE(MAX(position), -1) + 1 FROM principles WHERE pillar_id = parent.id), ?
+          FROM pillars parent WHERE parent.id = ? AND parent.user_id = ?
+          RETURNING position`,
+    args: [id, data.statement, data.isNonNegotiable ? 1 : 0, now, data.pillarId, owner],
   })
+  if (!result.rows[0]) throw new Error("Pillar is no longer available")
 
   return {
     id,
     pillarId: data.pillarId,
     statement: data.statement,
     isNonNegotiable: data.isNonNegotiable ?? false,
-    position,
+    position: Number(result.rows[0].position),
     createdAt: now,
   }
 }
 
-export async function getPrinciplesForPillar(pillarId: string): Promise<Principle[]> {
+export async function getPrinciplesForPillar(pillarId: string, owner = HOUSEHOLD_PILLAR_OWNER): Promise<Principle[]> {
   await ensurePrincipleSchema()
   const client = getPersistenceClient()
 
   const result = await client.execute({
-    sql: "SELECT * FROM principles WHERE pillar_id = ? ORDER BY position ASC",
-    args: [pillarId],
+    sql: `SELECT p.* FROM principles p JOIN pillars parent ON parent.id = p.pillar_id
+          WHERE p.pillar_id = ? AND parent.user_id = ? ORDER BY p.position ASC`,
+    args: [pillarId, owner],
   })
 
   return result.rows.map(row => toPrinciple(row as Record<string, unknown>))
@@ -131,13 +123,15 @@ export async function getPrinciplesForPillar(pillarId: string): Promise<Principl
  *
  * @returns Map<pillarId, Principle[]> sorted by position within each pillar
  */
-export async function getAllPrinciples(): Promise<Map<string, Principle[]>> {
+export async function getAllPrinciples(personalOwner?: string): Promise<Map<string, Principle[]>> {
   await ensurePrincipleSchema()
   const client = getPersistenceClient()
 
-  const result = await client.execute(
-    "SELECT * FROM principles ORDER BY pillar_id, position ASC"
-  )
+  const result = await client.execute({
+    sql: `SELECT p.* FROM principles p JOIN pillars pl ON pl.id = p.pillar_id
+          WHERE pl.user_id IN (?, ?) ORDER BY p.pillar_id, p.position ASC`,
+    args: [HOUSEHOLD_PILLAR_OWNER, personalOwner ?? HOUSEHOLD_PILLAR_OWNER],
+  })
 
   const map = new Map<string, Principle[]>()
   for (const row of result.rows) {
@@ -153,9 +147,12 @@ export async function getNonNegotiablePrinciples(): Promise<Principle[]> {
   await ensurePrincipleSchema()
   const client = getPersistenceClient()
 
-  const result = await client.execute(
-    "SELECT p.* FROM principles p INNER JOIN pillars pl ON pl.id = p.pillar_id WHERE p.is_non_negotiable = 1 AND pl.is_active = 1 ORDER BY pl.weight DESC, p.position ASC LIMIT 15"
-  )
+  const result = await client.execute({
+    sql: `SELECT p.* FROM principles p JOIN pillars pl ON pl.id = p.pillar_id
+          WHERE p.is_non_negotiable = 1 AND pl.is_active = 1 AND pl.user_id = ?
+          ORDER BY pl.weight DESC, p.position ASC LIMIT 15`,
+    args: [HOUSEHOLD_PILLAR_OWNER],
+  })
 
   return result.rows.map(row => toPrinciple(row as Record<string, unknown>))
 }
@@ -168,6 +165,7 @@ export async function updatePrinciple(
     position: number
   }>,
   pillarId?: string,
+  owner = HOUSEHOLD_PILLAR_OWNER,
 ): Promise<boolean> {
   await ensurePrincipleSchema()
   const client = getPersistenceClient()
@@ -183,21 +181,24 @@ export async function updatePrinciple(
 
   args.push(id)
   if (pillarId !== undefined) args.push(pillarId)
+  args.push(owner)
   const result = await client.execute({
-    sql: `UPDATE principles SET ${sets.join(", ")} WHERE id = ?${pillarId === undefined ? "" : " AND pillar_id = ?"}`,
+    sql: `UPDATE principles SET ${sets.join(", ")} WHERE id = ?${pillarId === undefined ? "" : " AND pillar_id = ?"}
+          AND EXISTS (SELECT 1 FROM pillars WHERE pillars.id = principles.pillar_id AND user_id = ?)`,
     args,
   })
 
   return (result.rowsAffected ?? 0) > 0
 }
 
-export async function deletePrinciple(id: string, pillarId?: string): Promise<boolean> {
+export async function deletePrinciple(id: string, pillarId?: string, owner = HOUSEHOLD_PILLAR_OWNER): Promise<boolean> {
   await ensurePrincipleSchema()
   const client = getPersistenceClient()
 
   const result = await client.execute({
-    sql: `DELETE FROM principles WHERE id = ?${pillarId === undefined ? "" : " AND pillar_id = ?"}`,
-    args: pillarId === undefined ? [id] : [id, pillarId],
+    sql: `DELETE FROM principles WHERE id = ?${pillarId === undefined ? "" : " AND pillar_id = ?"}
+          AND EXISTS (SELECT 1 FROM pillars WHERE pillars.id = principles.pillar_id AND user_id = ?)`,
+    args: pillarId === undefined ? [id, owner] : [id, pillarId, owner],
   })
 
   return (result.rowsAffected ?? 0) > 0

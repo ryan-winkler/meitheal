@@ -18,7 +18,7 @@
 
 import { randomUUID } from "node:crypto"
 import { getPersistenceClient } from "../tasks/persistence/store"
-import { ensurePillarSchema, type Pillar } from "./pillar-service"
+import { ensurePillarSchema, HOUSEHOLD_PILLAR_OWNER, type Pillar } from "./pillar-service"
 
 // ── Schema ──────────────────────────────────────────────────────
 
@@ -150,10 +150,10 @@ export async function getPillarsForEntity(
     sql: `
       SELECT p.* FROM pillars p
       INNER JOIN pillar_associations pa ON pa.pillar_id = p.id
-      WHERE pa.entity_type = ? AND pa.entity_id = ? AND p.is_active = 1
+      WHERE pa.entity_type = ? AND pa.entity_id = ? AND p.is_active = 1 AND p.user_id = ?
       ORDER BY p.weight DESC, p.position ASC
     `,
-    args: [entityType, entityId],
+    args: [entityType, entityId, HOUSEHOLD_PILLAR_OWNER],
   })
 
   return result.rows.map(row => {

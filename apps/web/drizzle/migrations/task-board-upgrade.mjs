@@ -1,3 +1,4 @@
+import { PERSONAL_PILLAR_SCHEMA_VERSION } from "./0010_personal_pillars.mjs"
 import { applyTaskBoardStorage, taskBoardStorageObjectNames, validateTaskBoardStorage } from "./0009_task_boards.mjs"
 import { assertNoInboundReferences } from "./board-storage-schema.mjs"
 import { applyTaskBoardDraftStorage, taskBoardDraftStagingNames, validateTaskBoardDraftStorage } from "./task-board-drafts.mjs"
@@ -63,10 +64,10 @@ export function* taskBoardMigrationStateSteps() {
         throw new Error("The Meitheal database has an invalid schema version marker")
       }
       version = Number(value)
-      if (version > TASK_BOARD_SCHEMA_VERSION) {
-        throw new Error(`Meitheal database schema ${version} requires a newer App (this App supports ${TASK_BOARD_SCHEMA_VERSION})`)
+      if (version > PERSONAL_PILLAR_SCHEMA_VERSION) {
+        throw new Error(`Meitheal database schema ${version} requires a newer App (this App supports ${PERSONAL_PILLAR_SCHEMA_VERSION})`)
       }
-      if (version === TASK_BOARD_SCHEMA_VERSION && value !== String(TASK_BOARD_SCHEMA_VERSION)) {
+      if (version >= TASK_BOARD_SCHEMA_VERSION && value !== String(version)) {
         throw new Error("The Meitheal database has an invalid Board schema version marker")
       }
     }
@@ -84,7 +85,7 @@ export function* taskBoardMigrationStateSteps() {
     marked = ledger.rows.length === 1
   }
 
-  if (marked !== (version === TASK_BOARD_SCHEMA_VERSION)) throw new Error("The Meitheal Board schema markers disagree")
+  if (marked !== (version !== null && version >= TASK_BOARD_SCHEMA_VERSION)) throw new Error("The Meitheal Board schema markers disagree")
   if (marked) {
     if (reservedNames.some(name => name.endsWith("_board_migration") && found.has(name))) {
       throw new Error("The Meitheal Board schema has unfinished staging tables")
