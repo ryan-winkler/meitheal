@@ -1166,7 +1166,7 @@ test("member can opt into Home Assistant colors and keep the saved fallback", as
   await theme.selectOption("knight-rider")
   await expect(root).toHaveAttribute("data-theme", "knight-rider")
   const knightBackground = await token("--bg-primary-rgb")
-  expect(knightBackground).toBe("19 19 20")
+  expect(knightBackground).toBe(fallbackBackground)
   await match.check()
   await expect(root).toHaveAttribute("data-ha-match", "light")
   await expect(root).toHaveCSS("color-scheme", "light")
