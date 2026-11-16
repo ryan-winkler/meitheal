@@ -163,7 +163,6 @@ const handlerTest = test.extend<{ invoke: InvokeAgentRoute }>({
         } as unknown as Parameters<typeof GET>[0])
       })
     } finally {
-      getPersistenceClient().close()
       resetPersistenceForTests()
       if (previousDbUrl === undefined) {
         delete process.env.MEITHEAL_DB_URL

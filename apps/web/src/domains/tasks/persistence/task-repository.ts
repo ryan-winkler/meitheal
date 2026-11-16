@@ -14,6 +14,7 @@
  */
 
 import type { Client, InStatement, InValue, ResultSet } from "@libsql/client"
+import { nextHouseholdTicketNumberSql } from "../../../../drizzle/migrations/task-board-tickets.mjs"
 import { executeWriteWithRetry, runWriteTransaction } from "../../../../scripts/database-client.mjs"
 import { getStatusDef, isDoneStatus, normalizeStatus, STATUS } from "../../../lib/status-config"
 import { logApiError, logApiWarn } from "../../../lib/api-logger"
@@ -310,8 +311,7 @@ export function taskInsertStatement(data: TaskCreationData, createdAt: number, {
                              source, created_by,
                              idempotency_key, request_id, created_at, updated_at)
           SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                  (SELECT COALESCE(MAX(ticket_number), 0) + 1 FROM tasks), ?, ?, ?, ?, ?, ?, ?, ?,
-                  ?, ?,
+                  ${nextHouseholdTicketNumberSql}, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                   ?, ?, ?, ?
           ${guard ? `WHERE ${guard.sql}` : ""}
           RETURNING ticket_number`,
@@ -691,7 +691,8 @@ export class TaskRepository {
   /** Kanban lane definitions ordered by position */
   async getKanbanLanes(): Promise<KanbanLane[]> {
     const result = await this.client.execute(
-      "SELECT id, key, label, icon, position, wip_limit, includes, built_in FROM kanban_lanes ORDER BY position ASC",
+      `SELECT id, key, label, icon, position, wip_limit, includes, built_in FROM kanban_lanes
+       WHERE board_id = 'household' ORDER BY position ASC`,
     );
     return result.rows.map((r: Record<string, unknown>) => ({
       id: String(r.id),
@@ -1968,8 +1969,8 @@ export class TaskRepository {
                                checklists, custom_fields, ticket_number,
                                idempotency_key, request_id, created_at, updated_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    (SELECT id FROM projects WHERE id = ?), ?, ?, ?, ?, ?, ?,
-                    (SELECT COALESCE(MAX(ticket_number), 0) + 1 FROM tasks), ?, ?, ?, ?)
+                    (SELECT id FROM projects WHERE id = ?), ?, ?, ?, ?, ?,
+                    ${nextHouseholdTicketNumberSql}, ?, ?, ?, ?)
             RETURNING ticket_number`,
       args: [
         id,
@@ -2095,9 +2096,11 @@ export class TaskRepository {
               WHERE (
                 SELECT COUNT(*) = 2 AND MIN(is_promoted) = MAX(is_promoted) FROM tasks
                 WHERE id IN (requested.moved_id, requested.anchor_id)
-                  AND deferred_at IS NULL
+                  AND task_board_id IS NULL AND deferred_at IS NULL
                   AND status IN (
-                    SELECT value FROM json_each((SELECT includes FROM kanban_lanes WHERE key = requested.lane))
+                    SELECT value FROM json_each((
+                      SELECT includes FROM kanban_lanes WHERE board_id = 'household' AND key = requested.lane
+                    ))
                   )
               )
             ),
@@ -2106,7 +2109,7 @@ export class TaskRepository {
                 ORDER BY kanban_position ASC NULLS LAST, priority ASC, created_at DESC, id ASC
               ) AS position
               FROM tasks
-              WHERE EXISTS (SELECT 1 FROM allowed)
+              WHERE task_board_id IS NULL AND EXISTS (SELECT 1 FROM allowed)
             ),
             move AS MATERIALIZED (
               SELECT moved_id, source.position AS from_position,
@@ -2796,7 +2799,7 @@ export class TaskRepository {
                           ?, ?, ?, ?, ?, ?,
                           ?, ?, ?,
                           ?, '{}', 'synced', ?,
-                          '{}', ?, ?, (SELECT COALESCE(MAX(ticket_number), 0) + 1 FROM tasks),
+                          '{}', ?, ?, ${nextHouseholdTicketNumberSql},
                           ?, ?, ?, ?
                         ) RETURNING ticket_number`,
                   args: [

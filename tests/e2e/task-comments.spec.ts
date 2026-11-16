@@ -7,6 +7,8 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { expect, test } from "@playwright/test"
+import { openDatabase } from "../../apps/web/scripts/database-client.mjs"
+import { prepareTaskBoardPredecessor } from "../scripts/task-board-predecessor"
 
 // This spec injects a failed comment response with Playwright request routing.
 test.use({ serviceWorkers: "block" })
@@ -46,7 +48,12 @@ test("verified comment owners can edit and delete without claiming other comment
   const legacyAuthor = `Home Assistant member · ${createHash("sha256").update("comment-author:fixture-member").digest("hex").slice(0, 10)}`
   let server: ReturnType<typeof fork> | undefined
   try {
-    execFileSync(process.execPath, ["scripts/migrate.mjs"], { cwd: web, env })
+    const predecessor = openDatabase(env.MEITHEAL_DB_URL)
+    try {
+      await prepareTaskBoardPredecessor(predecessor)
+    } finally {
+      predecessor.close()
+    }
     execFileSync(process.execPath, ["--input-type=module", "-e", `
       import { createClient } from "@libsql/client"
       const client = createClient({ url: process.env.MEITHEAL_DB_URL })

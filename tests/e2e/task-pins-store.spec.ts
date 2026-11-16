@@ -4,9 +4,11 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { expect, test as base } from "@playwright/test"
+import { DATABASE_SCHEMA_VERSION, openDatabase } from "../../apps/web/scripts/database-client.mjs"
 import { ensureSchema, getPersistenceClient, getSchemaVersion, resetPersistenceForTests } from "../../apps/web/src/domains/tasks/persistence/store"
 import { TaskPinRepository } from "../../apps/web/src/domains/tasks/persistence/task-pin-repository"
 import { TaskRepository } from "../../apps/web/src/domains/tasks/persistence/task-repository"
+import { prepareTaskBoardPredecessor } from "../scripts/task-board-predecessor"
 
 const web = fileURLToPath(new URL("../../apps/web", import.meta.url))
 type Database = ReturnType<typeof getPersistenceClient>
@@ -17,11 +19,11 @@ const test = base.extend<{ db: Database }>({
     const dir = await mkdtemp(join(tmpdir(), "meitheal-pins-"))
     process.env.MEITHEAL_DB_URL = `file:${join(dir, "tasks.db")}`
     resetPersistenceForTests()
+    const db = openDatabase(process.env.MEITHEAL_DB_URL)
     try {
-      await use(getPersistenceClient())
+      await use(db)
     } finally {
-      const current = getPersistenceClient()
-      if (!current.closed) current.close()
+      db.close()
       resetPersistenceForTests()
       if (previous === undefined) delete process.env.MEITHEAL_DB_URL
       else process.env.MEITHEAL_DB_URL = previous
@@ -45,23 +47,20 @@ async function seed(db: Database, id: string, status = "pending") {
 }
 
 test("runtime-first and CLI-first paths reconcile the schema and preserve task data", async ({ db }) => {
-  expect(migrate()).toContain("Applied migration: 0005_task_pins.mjs")
-  await ensureSchema()
+  await prepareTaskBoardPredecessor(db)
+  await db.execute("ALTER TABLE tasks ADD COLUMN is_favorite INTEGER NOT NULL DEFAULT 0")
   await seed(db, "retained")
-  expect(getSchemaVersion()).toBe(18)
 
   // Recreate the state just before the pin migration on an existing database.
   await db.batch([
     "DROP TABLE task_pins",
     "DELETE FROM __meitheal_migrations WHERE name = '0005_task_pins.mjs'",
-    "UPDATE app_settings SET value = '13' WHERE key = 'schema_version'",
+    "INSERT INTO app_settings (key, value, updated_at) VALUES ('schema_version', '13', 1)",
   ], "write")
-  db.close()
-  resetPersistenceForTests()
-  await ensureSchema()
-  expect(getSchemaVersion()).toBe(18)
   expect(() => migrate("--check")).toThrow(/Pending migrations: 0005_task_pins.mjs/)
-  expect(migrate()).toContain("Applied migration: 0005_task_pins.mjs")
+  await ensureSchema()
+  expect(getSchemaVersion()).toBe(DATABASE_SCHEMA_VERSION)
+  expect(migrate()).toContain("No migrations to apply")
   expect(migrate("--check")).toContain("Migration check passed")
   expect((await new TaskRepository(getPersistenceClient()).findById("retained"))?.is_favorite).toBe(1)
 })

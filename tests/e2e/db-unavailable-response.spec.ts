@@ -42,9 +42,9 @@ for (const [name, handler, query] of [
     const work = await mkdtemp(join(tmpdir(), "meitheal-db503-"))
     process.env.MEITHEAL_DB_URL = `file:${join(work, "tasks.db")}`
     resetPersistenceForTests()
-    const client = getPersistenceClient()
     try {
       await ensureSchema()
+      const client = getPersistenceClient()
       await client.execute({
         sql: "INSERT INTO tasks (id,title,status,idempotency_key,request_id,created_at,updated_at) VALUES (?,?,?,?,?,1,1)",
         args: ["retained", "Retain this completed task", "complete", "retained", "retained"],
@@ -73,7 +73,6 @@ for (const [name, handler, query] of [
       expect(attempts).toBe(1)
       expect(await snapshot()).toEqual(before)
     } finally {
-      client.close()
       resetPersistenceForTests()
       if (previous === undefined) delete process.env.MEITHEAL_DB_URL
       else process.env.MEITHEAL_DB_URL = previous

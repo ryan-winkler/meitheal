@@ -2,6 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { expect, test } from "@playwright/test"
+import { openDatabase } from "../../apps/web/scripts/database-client.mjs"
 import { createLabel } from "../../apps/web/src/domains/labels"
 import { ensureSchema, getPersistenceClient, resetPersistenceForTests } from "../../apps/web/src/domains/tasks/persistence/store"
 import { GET, POST } from "../../apps/web/src/pages/api/labels"
@@ -23,14 +24,19 @@ test.afterEach(async () => {
 })
 
 test("the native API reads earlier labels and keeps their IDs and colours", async () => {
-  const client = getPersistenceClient()
-  await client.execute(
-    "CREATE TABLE vikunja_labels (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL UNIQUE, hex_color TEXT NOT NULL)",
-  )
-  await client.execute({
-    sql: "INSERT INTO vikunja_labels (id, title, hex_color) VALUES (?, ?, ?)",
-    args: [17, "Home", "abcdef"],
-  })
+  const client = openDatabase(`file:${join(directory, "labels.db")}`)
+  try {
+    await client.execute(
+      "CREATE TABLE vikunja_labels (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL UNIQUE, hex_color TEXT NOT NULL)",
+    )
+    await client.execute({
+      sql: "INSERT INTO vikunja_labels (id, title, hex_color) VALUES (?, ?, ?)",
+      args: [17, "Home", "abcdef"],
+    })
+  } finally {
+    client.close()
+  }
+  await ensureSchema()
 
   const listed = await GET({} as Parameters<typeof GET>[0])
   expect(await listed.json()).toEqual([{ id: 17, title: "Home", hex_color: "abcdef" }])

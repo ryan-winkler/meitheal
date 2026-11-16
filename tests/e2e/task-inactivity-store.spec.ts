@@ -5,6 +5,7 @@ import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 import { fileURLToPath } from "node:url"
 import { expect, test as base } from "@playwright/test"
+import { DATABASE_SCHEMA_VERSION } from "../../apps/web/scripts/database-client.mjs"
 import { ensureSchema, getPersistenceClient, getSchemaVersion, resetPersistenceForTests } from "../../apps/web/src/domains/tasks/persistence/store"
 import { inactivityDayMs as day, inactivityRuleActor } from "../../apps/web/src/domains/tasks/persistence/task-inactivity-query"
 import { TaskInactivityRepository } from "../../apps/web/src/domains/tasks/persistence/task-inactivity-repository"
@@ -66,7 +67,7 @@ async function setPolicy(repo: TaskInactivityRepository, areaId: string | null, 
 }
 
 test("starts off, applies elapsed day boundaries, and honors explicit scope", async ({ db, inactivity }) => {
-  expect(getSchemaVersion()).toBe(18)
+  expect(getSchemaVersion()).toBe(DATABASE_SCHEMA_VERSION)
   await insertArea(db, "other")
   await seed(db, "ready", new Date(now - 8 * day).toISOString())
   await seed(db, "upcoming", now - day, "default", "todo")

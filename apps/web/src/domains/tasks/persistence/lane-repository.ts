@@ -26,10 +26,11 @@ export interface LaneRow {
 export class LaneRepository {
   constructor(private client: Client) {}
 
-  /** List all lanes ordered by position */
+  /** List Household lanes ordered by position across all Areas */
   async findAll(): Promise<LaneRow[]> {
     const result = await this.client.execute(
-      "SELECT id, key, label, icon, position, wip_limit, includes, built_in, created_at, updated_at FROM kanban_lanes ORDER BY position ASC"
+      `SELECT id, key, label, icon, position, wip_limit, includes, built_in, created_at, updated_at
+       FROM kanban_lanes WHERE board_id = 'household' ORDER BY position ASC`
     )
     return result.rows as unknown as LaneRow[]
   }
@@ -37,7 +38,8 @@ export class LaneRepository {
   /** Find a lane by ID */
   async findById(id: string): Promise<LaneRow | null> {
     const result = await this.client.execute({
-      sql: "SELECT id, key, label, icon, position, wip_limit, includes, built_in, created_at, updated_at FROM kanban_lanes WHERE id = ? LIMIT 1",
+      sql: `SELECT id, key, label, icon, position, wip_limit, includes, built_in, created_at, updated_at
+            FROM kanban_lanes WHERE board_id = 'household' AND id = ? LIMIT 1`,
       args: [id],
     })
     return (result.rows[0] as unknown as LaneRow) ?? null
@@ -46,7 +48,7 @@ export class LaneRepository {
   /** Find a lane by ID with only id, built_in, key fields (for delete validation) */
   async findForDelete(id: string): Promise<{ id: unknown; built_in: unknown; key: unknown } | null> {
     const result = await this.client.execute({
-      sql: "SELECT id, built_in, key FROM kanban_lanes WHERE id = ? LIMIT 1",
+      sql: "SELECT id, built_in, key FROM kanban_lanes WHERE board_id = 'household' AND id = ? LIMIT 1",
       args: [id],
     })
     return (result.rows[0] as unknown as { id: unknown; built_in: unknown; key: unknown }) ?? null
@@ -55,7 +57,7 @@ export class LaneRepository {
   /** Check if a lane key already exists */
   async keyExists(key: string): Promise<boolean> {
     const result = await this.client.execute({
-      sql: "SELECT id FROM kanban_lanes WHERE key = ?",
+      sql: "SELECT id FROM kanban_lanes WHERE board_id = 'household' AND key = ?",
       args: [key],
     })
     return result.rows.length > 0
@@ -63,7 +65,7 @@ export class LaneRepository {
 
   /** Get the next available position */
   async getMaxPosition(): Promise<number> {
-    const result = await this.client.execute("SELECT MAX(position) as maxp FROM kanban_lanes")
+    const result = await this.client.execute("SELECT MAX(position) as maxp FROM kanban_lanes WHERE board_id = 'household'")
     return Number(result.rows[0]?.maxp ?? -1)
   }
 
@@ -74,7 +76,8 @@ export class LaneRepository {
   }): Promise<void> {
     const now = Date.now()
     await this.client.execute({
-      sql: "INSERT INTO kanban_lanes (id, key, label, icon, position, wip_limit, includes, built_in, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)",
+      sql: `INSERT INTO kanban_lanes (id, board_id, key, label, icon, position, wip_limit, includes, built_in, created_at, updated_at)
+            VALUES (?, 'household', ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
       args: [data.id, data.key, data.label, data.icon, data.position, data.wipLimit, data.includes, now, now] as InValue[],
     })
   }
@@ -95,7 +98,7 @@ export class LaneRepository {
     args.push(id)
 
     await this.client.execute({
-      sql: `UPDATE kanban_lanes SET ${updates.join(", ")} WHERE id = ?`,
+      sql: `UPDATE kanban_lanes SET ${updates.join(", ")} WHERE board_id = 'household' AND id = ?`,
       args,
     })
 
@@ -106,10 +109,11 @@ export class LaneRepository {
   async delete(id: string, laneKey: string): Promise<void> {
     await this.client.batch([
       {
-        sql: "UPDATE tasks SET status = ?, updated_at = ? WHERE status = ?",
-        args: [STATUS.PENDING, Date.now(), laneKey],
+        sql: `UPDATE tasks SET status = ?, updated_at = ? WHERE task_board_id IS NULL AND status = ?
+              AND EXISTS (SELECT 1 FROM kanban_lanes WHERE board_id = 'household' AND id = ? AND key = ?)`,
+        args: [STATUS.PENDING, Date.now(), laneKey, id, laneKey],
       },
-      { sql: "DELETE FROM kanban_lanes WHERE id = ?", args: [id] },
+      { sql: "DELETE FROM kanban_lanes WHERE board_id = 'household' AND id = ? AND key = ?", args: [id, laneKey] },
     ], "write")
   }
 }

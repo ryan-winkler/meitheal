@@ -1,9 +1,9 @@
-import { expect, test } from "@playwright/test"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { DatabaseSync } from "node:sqlite"
+import { expect, test } from "@playwright/test"
 
-// Exercise the actual health route with an injected SQLite integrity response.
 test("health readiness is degraded when a reachable database fails integrity", async () => {
   const directory = await mkdtemp(join(tmpdir(), "meitheal-health-"))
   const originalDb = process.env.MEITHEAL_DB_URL
@@ -11,16 +11,21 @@ test("health readiness is degraded when a reachable database fails integrity", a
   const store = await import("../../apps/web/src/domains/tasks/persistence/store")
   try {
     delete process.env.SUPERVISOR_TOKEN
-    process.env.MEITHEAL_DB_URL = `file:${join(directory, "test.db")}`
+    const path = join(directory, "test.db")
+    process.env.MEITHEAL_DB_URL = `file:${path}`
     store.resetPersistenceForTests()
-    const client = store.getPersistenceClient()
-    const execute = client.execute.bind(client)
-    client.execute = ((sql: Parameters<typeof client.execute>[0]) => {
-      if (sql === "PRAGMA integrity_check(1)") return Promise.resolve({ rows: [{ integrity_check: "fixture failure" }] })
-      return execute(sql)
-    }) as typeof client.execute
+    const seed = new DatabaseSync(path)
+    try {
+      seed.exec(`
+        CREATE TABLE integrity_fixture (positive INTEGER CHECK (positive > 0));
+        PRAGMA ignore_check_constraints = ON;
+        INSERT INTO integrity_fixture VALUES (-1);
+      `)
+    } finally {
+      seed.close()
+    }
+
     await store.ensureSchema()
-    client.execute = execute
     expect(store.getDbIntegrityStatus()).toBe(false)
     const { GET, HEAD } = await import("../../apps/web/src/pages/api/health")
     const response = await GET({} as never)

@@ -4,7 +4,6 @@ import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observa
 import { buildSecurityHeaders, isCsrfAllowed, resolveIngressContext } from "@domains/auth"
 import { initHAIntegrations } from "@domains/ha"
 import {
-  ensureDatabaseSchemaSupported,
   ensureSchema,
   getPersistenceClient,
   getSettingsRevision,
@@ -484,8 +483,7 @@ async function handleRequest({ request, locals, routePattern }: Parameters<Middl
 
   let databaseAvailable = true
   try {
-    const schemaCheck = ensureDatabaseSchemaSupported()
-    if (schemaCheck) await schemaCheck
+    await ensureSchema()
   } catch {
     if (!isHealthCheck) {
       return apiProblem({
@@ -515,7 +513,6 @@ async function handleRequest({ request, locals, routePattern }: Parameters<Middl
   } else if (databaseAvailable) {
     try {
       const settingsRevision = getSettingsRevision()
-      await ensureSchema();
       const db = getPersistenceClient();
       const res = await db.execute("SELECT key, value FROM settings WHERE key IN ('timezone', 'week_start', 'date_format')");
       for (const row of res.rows) {

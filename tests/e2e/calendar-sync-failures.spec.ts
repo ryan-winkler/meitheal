@@ -24,9 +24,10 @@ const test = base.extend<{ environment: { db: Database; ha: Fixture } }>({
     process.env.HA_TOKEN = "calendar-fixture"
     process.env.MEITHEAL_DB_URL = `file:${join(directory, "tasks.db")}`
     resetPersistenceForTests()
-    const db = getPersistenceClient()
+    let db: Database | undefined
     try {
       await ensureSchema()
+      db = getPersistenceClient()
       expect(await getHAConnection()).not.toBeNull()
       await use({ db, ha })
     } finally {
@@ -34,7 +35,7 @@ const test = base.extend<{ environment: { db: Database; ha: Fixture } }>({
       stopEntitySubscription()
       closeHAConnection()
       await ha.close()
-      db.close()
+      db?.close()
       resetPersistenceForTests()
       for (const [key, value] of Object.entries(previous)) {
         if (value === undefined) delete process.env[key]
@@ -77,7 +78,8 @@ test("five actual failed background merges reach backoff once each, and manual r
   expect(response.status).toBe(200)
   expect(await response.json()).toMatchObject({ ok: true, created: 1, total: 1, failures: [] })
   expect(getCalendarSyncStatus().lastSyncError).toBeNull()
-  expect((await db.execute("SELECT title FROM tasks")).rows).toEqual([expect.objectContaining({ title: "blocked-import" })])
+  expect((await db.execute("SELECT title, ticket_number FROM tasks")).rows)
+    .toEqual([{ title: "blocked-import", ticket_number: 1 }])
 })
 
 test("a partial event merge returns 502 with committed counts and retains the entity error", async ({ environment: { db, ha } }) => {

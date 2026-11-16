@@ -13,6 +13,7 @@
  * @see docs/decisions/ADR-007-hierarchy-model.md for terminology evolution.
  */
 import type { Client } from "@libsql/client"
+import { nextHouseholdTicketNumberSql } from "../../../../drizzle/migrations/task-board-tickets.mjs"
 import { STATUS } from "../../../lib/status-config"
 
 export interface RoutineTemplateRow {
@@ -330,7 +331,7 @@ export class TemplateRepository {
             due_date, checklists, custom_fields, area_id, source_template_id, ticket_number,
             framework_payload, calendar_sync_state, idempotency_key, request_id, created_at, updated_at)
             SELECT ?, ?, ?, ?, ?, ?, ?, 'routine_instance', ?, ?, ?, ?, ?,
-                   (SELECT COALESCE(MAX(ticket_number), 0) + 1 FROM tasks), '{}', 'pending', ?, ?, ?, ?
+                   ${nextHouseholdTicketNumberSql}, '{}', 'pending', ?, ?, ?, ?
             WHERE EXISTS (SELECT 1 FROM task_templates WHERE id = ? AND is_routine = 1 AND template_json = ?)
               AND (? = 'default' OR EXISTS (SELECT 1 FROM areas WHERE id = ?))
               AND NOT EXISTS (SELECT 1 FROM tasks WHERE source_template_id = ? AND due_date = ?)`,

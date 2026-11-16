@@ -21,6 +21,7 @@ import {
 } from "../ha";
 import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability";
 import type { SyncTaskMutation } from "@domains/tasks"
+import { nextHouseholdTicketNumberSql } from "../../../drizzle/migrations/task-board-tickets.mjs"
 import {
   haStatusToMeitheal,
   meithealStatusToHA,
@@ -36,6 +37,7 @@ const logger = createLogger({
 });
 const SYS_REQ = "ha-system";
 const NO_SYNC_LABEL = "no-sync";
+const unnumberedHouseholdTask = "task_board_id IS NULL AND ticket_number IS NULL AND ticket_ref IS NULL"
 
 import { sanitizeTodoTitle } from "@lib/cleanup-corrupt-titles";
 
@@ -295,15 +297,15 @@ async function mergeHATodoItems(entityId: string, items: HATodoItem[]): Promise<
     let updated = 0;
     let skipped = 0;
 
-    // Backfill: assign ticket_number to any existing tasks missing one
+    // Backfill tickets for existing unnumbered Household tasks.
     const orphans = await client.execute(
-      "SELECT id FROM tasks WHERE ticket_number IS NULL ORDER BY created_at ASC",
+      `SELECT id FROM tasks WHERE ${unnumberedHouseholdTask} ORDER BY created_at ASC`,
     );
     if (orphans.rows.length > 0) {
       for (const row of orphans.rows) {
         await client.execute({
-          sql: `UPDATE tasks SET ticket_number = (SELECT COALESCE(MAX(ticket_number), 0) + 1 FROM tasks)
-                WHERE id = ? AND ticket_number IS NULL`,
+          sql: `UPDATE tasks SET ticket_number = ${nextHouseholdTicketNumberSql}
+                WHERE id = ? AND ${unnumberedHouseholdTask}`,
           args: [row.id as string],
         });
       }

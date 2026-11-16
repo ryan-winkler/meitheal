@@ -14,29 +14,29 @@ test("Today reads full queue counts without materializing hidden rows", async ()
   const original = process.env.MEITHEAL_DB_URL
   process.env.MEITHEAL_DB_URL = `file:${join(work, "today.db")}`
   resetPersistenceForTests()
-  const client = getPersistenceClient()
   const date = "2026-11-09"
   const now = 1794250000000
   const dayStart = Date.parse(date)
 
-  async function addTask(id: string, options: {
-    status?: string
-    due?: string
-    favorite?: number
-    payload?: string
-    updated?: string | number
-  } = {}) {
-    await client.execute({
-      sql: `INSERT INTO tasks
-        (id, title, idempotency_key, request_id, created_at, updated_at, status, due_date, is_favorite, framework_payload)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      args: [id, id, id, id, now, options.updated ?? now, options.status ?? "pending",
-        options.due ?? null, options.favorite ?? 0, options.payload ?? "{}"],
-    })
-  }
-
   try {
     await ensureSchema()
+    const client = getPersistenceClient()
+    async function addTask(id: string, options: {
+      status?: string
+      due?: string
+      favorite?: number
+      payload?: string
+      updated?: string | number
+    } = {}) {
+      await client.execute({
+        sql: `INSERT INTO tasks
+          (id, title, idempotency_key, request_id, created_at, updated_at, status, due_date, is_favorite, framework_payload)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        args: [id, id, id, id, now, options.updated ?? now, options.status ?? "pending",
+          options.due ?? null, options.favorite ?? 0, options.payload ?? "{}"],
+      })
+    }
+
     await addTask("ordinary")
     await addTask("empty-date", { due: "" })
     await addTask("complete-iso", { status: "complete", updated: `${date}T01:00:00Z` })
@@ -82,7 +82,6 @@ test("Today reads full queue counts without materializing hidden rows", async ()
       dueToday: 0, completedToday: 3, carriedForward: 121, remaining: 123, completionPercent: 2,
     })
   } finally {
-    client.close()
     resetPersistenceForTests()
     if (original === undefined) delete process.env.MEITHEAL_DB_URL
     else process.env.MEITHEAL_DB_URL = original

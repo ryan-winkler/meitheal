@@ -11,7 +11,7 @@
  */
 import { hashToken, type AgentScope, type AgentTokenRecord } from "@meitheal/domain-auth"
 import { ensureAgentTokenSchema, getAgentTokenByHash, updateAgentTokenLastUsed } from "@domains/auth"
-import { ensureDatabaseSchemaSupported, ensureSchema, getPersistenceClient, TaskRepository, UserRepository } from "@domains/tasks"
+import { ensureSchema, getPersistenceClient, TaskRepository, UserRepository } from "@domains/tasks"
 import { apiError, apiProblem } from "./api-response"
 
 export interface ResolvedAgent {
@@ -76,8 +76,7 @@ export async function resolveAgentAuth(request: Request): Promise<ResolvedAgent 
 
   let record: AgentTokenRecord | null
   try {
-    const schemaCheck = ensureDatabaseSchemaSupported()
-    if (schemaCheck) await schemaCheck
+    await ensureSchema()
     schemaReady ??= ensureAgentTokenSchema()
     await schemaReady
     record = await getAgentTokenByHash(hashToken(plaintext))

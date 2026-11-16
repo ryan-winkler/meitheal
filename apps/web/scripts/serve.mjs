@@ -1,8 +1,13 @@
 /** Normalize Supervisor ingress requests before passing them to Astro. */
+import { mkdir } from "node:fs/promises"
 import http from "node:http"
+import path from "node:path"
 import { boardRouteSelection } from "./board-route-selection.mjs"
+import { isMemoryDatabase, openDatabaseForStartup, withStartupWriteTransaction } from "./database-client.mjs"
 import { runWithIngressTransport, waitForDownloadDrain } from "./ingress-transport.mjs"
 import { recordIngressStreamAbort } from "./runtime-counters.mjs"
+import { autoBackupDb } from "./startup-backup.mjs"
+import { applyStartupTaskSchema, validateStartupTaskSchema } from "./task-schema-startup.mjs"
 
 // Home Assistant's documented ingress transport peer. Forwarding headers and
 // Astro's clientAddress can describe the client, so neither establishes this.
@@ -18,6 +23,33 @@ const inactivityApiPath = "/api/task-inactivity"
 const labelCleanupPath = "/api/labels/cleanup"
 const inactivityPagePath = "/inactivity"
 const pinnedPagePath = "/pinned"
+
+async function prepareDatabase() {
+  const url = process.env.MEITHEAL_DB_URL ?? "file:./.data/meitheal.db"
+  // Astro initializes the process-owned in-memory database before serving its first request.
+  if (isMemoryDatabase(url)) return
+  const migrated = process.env.MEITHEAL_STARTUP_BACKUP_HANDLED === "1"
+  if (!migrated && url.startsWith("file:")) {
+    await mkdir(path.dirname(path.resolve(url.slice("file:".length))), { recursive: true })
+  }
+  const client = await openDatabaseForStartup(url, { readOnly: migrated })
+  try {
+    if (!migrated) {
+      await autoBackupDb(client)
+      await withStartupWriteTransaction(client, applyStartupTaskSchema)
+      process.env.MEITHEAL_STARTUP_BACKUP_HANDLED = "1"
+      return
+    }
+    const tx = await client.transaction("read")
+    try {
+      await validateStartupTaskSchema(tx)
+    } finally {
+      tx.close()
+    }
+  } finally {
+    client.close()
+  }
+}
 
 // Astro can decode escapes and redirect trailing separators before middleware.
 function privateRoutePath(pathname) {
@@ -66,6 +98,7 @@ if (supervisorToken && !identityHeadersSafe) {
 }
 
 // Prevent Astro standalone from auto-starting its own HTTP server.
+await prepareDatabase()
 process.env.ASTRO_NODE_AUTOSTART = "disabled"
 const { handler } = await import("../dist/server/entry.mjs")
 

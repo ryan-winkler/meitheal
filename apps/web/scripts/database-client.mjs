@@ -5,6 +5,9 @@ import { setTimeout as sleepMs } from "node:timers/promises"
 import { LibsqlBatchError, LibsqlError } from "@libsql/core/api"
 import { expandConfig, isInMemoryConfig } from "@libsql/core/config"
 import { ResultSetImpl } from "@libsql/core/util"
+import {
+  readTaskBoardMigrationState, taskBoardMigrationStateSteps,
+} from "../drizzle/migrations/task-board-upgrade.mjs"
 
 /** @typedef {import("@libsql/core/api").Client} Client */
 /** @typedef {import("@libsql/core/api").InArgs} InArgs */
@@ -60,7 +63,7 @@ export function resetDatabaseDiagnosticsForTests() {
   s.readLeaseSlowWarningsTotal = 0
 }
 
-export const DATABASE_SCHEMA_VERSION = 18
+export const DATABASE_SCHEMA_VERSION = 19
 
 const schemaMarkerTable = "SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = 'app_settings' COLLATE NOCASE"
 const schemaMarkerRows = "SELECT value AS value FROM app_settings WHERE key = 'schema_version' LIMIT 2"
@@ -170,11 +173,12 @@ function execute(db, input, args = []) {
     : Object.fromEntries(Object.entries(values).map(([key, value]) => [key.replace(/^[@$:]/, ""), bind(value)]))
   const statement = db.prepare(sql)
   statement.setReadBigInts(true)
-  const metadata = statement.columns()
-  if (metadata.length) {
+  if (statement.columns().length) {
     statement.setReturnArrays(true)
-    const columns = metadata.map(column => column.name)
     const rawRows = Array.isArray(bindings) ? statement.all(...bindings) : statement.all(bindings)
+    // SQLite may reprepare on the first step after another connection changes the schema.
+    const metadata = statement.columns()
+    const columns = metadata.map(column => column.name)
     const rows = /** @type {SQLOutputValue[][]} */ (/** @type {unknown} */ (rawRows)).map(values => {
       const row = /** @type {Row} */ ({})
       Object.defineProperty(row, "length", { value: values.length })
@@ -296,7 +300,7 @@ async function retryBusyOperation(runAttempt, isAcquired, signal) {
  */
 export async function runWriteTransaction(client, steps, options) {
   const signal = options?.signal
-  const local = localWriters.get(client)
+  const local = localWriters.get(client)?.run
   if (!local) {
     throwIfSignalAborted(signal)
     const tx = await client.transaction("write")
@@ -392,8 +396,13 @@ function emitSlowReadLeaseWarning() {
   process.stdout.write(`${line}\n`)
 }
 
-/** @param {string} path @param {boolean} memory @param {boolean} readOnly @returns {Client} */
-function openLocal(path, memory, readOnly) {
+/** @param {unknown} error */
+function needsJournalRecovery(error) {
+  return error instanceof LibsqlError && (error.rawCode === 264 || error.rawCode === 776)
+}
+
+/** @param {string} path @param {boolean} memory @param {boolean} readOnly @param {boolean} [inspectBoard] @returns {Client} */
+function openLocal(path, memory, readOnly, inspectBoard = false) {
   verifySQLite()
   // Deliberately do not wait inside SQLite; write retries happen asynchronously on the JS event loop.
   const connectRaw = (inspectOnly = readOnly) => sqliteOperation(() => new DatabaseSync(path, { timeout: 0, readOnly: inspectOnly }))
@@ -421,7 +430,13 @@ function openLocal(path, memory, readOnly) {
     sqliteOperation(() => {
       database.exec("BEGIN")
       try {
-        if (database.prepare(schemaMarkerTable).get()) checkSchemaMarker(database.prepare(schemaMarkerRows).all())
+        if (inspectBoard) {
+          const check = taskBoardMigrationStateSteps()
+          let state = check.next()
+          while (!state.done) state = check.next([execute(database, state.value[0])])
+        } else if (database.prepare(schemaMarkerTable).get()) {
+          checkSchemaMarker(database.prepare(schemaMarkerRows).all())
+        }
       } finally {
         if (database.isTransaction) database.exec("ROLLBACK")
       }
@@ -568,8 +583,8 @@ function openLocal(path, memory, readOnly) {
     )
   }
 
-  /** @param {TransactionMode} mode @returns {Transaction} */
-  function transaction(mode) {
+  /** @param {TransactionMode} mode @param {boolean} [exclusive] @returns {Transaction} */
+  function transaction(mode, exclusive = false) {
     const primary = idle()
     if (transactions.size >= 19) throw new LibsqlError("All SQLite transaction connections are in use", "TRANSACTION_ACTIVE")
 
@@ -646,7 +661,7 @@ function openLocal(path, memory, readOnly) {
         db.exec("PRAGMA query_only=ON")
         restoreReadOnly = true
       }
-      sqliteOperation(() => begin(db, mode))
+      sqliteOperation(() => exclusive ? db.exec("BEGIN EXCLUSIVE") : begin(db, mode))
       if (useReadPool) {
         slowLeaseTimer = globalThis.setTimeout(() => {
           slowLeaseTimer = undefined
@@ -741,23 +756,26 @@ function openLocal(path, memory, readOnly) {
       closed = false
     },
   }
-  localWriters.set(client, steps => onMain(db => {
-    begin(db, "write")
-    const program = steps()
-    let state = program.next()
-    while (!state.done) {
-      let batchResult
-      try {
-        batchResult = executeBatch(db, state.value)
-      } catch (stepError) {
-        state = program.throw(stepError)
-        continue
+  localWriters.set(client, {
+    run: steps => onMain(db => {
+      begin(db, "write")
+      const program = steps()
+      let state = program.next()
+      while (!state.done) {
+        let batchResult
+        try {
+          batchResult = executeBatch(db, state.value)
+        } catch (stepError) {
+          state = program.throw(stepError)
+          continue
+        }
+        state = program.next(batchResult)
       }
-      state = program.next(batchResult)
-    }
-    db.exec("COMMIT")
-    return state.value
-  }))
+      db.exec("COMMIT")
+      return state.value
+    }),
+    start: () => transaction("write", true),
+  })
   localExecutors.set(client, {
     executeStatement: executeStatementWithRetry,
     batchWrite: batchWriteWithRetry,
@@ -765,9 +783,8 @@ function openLocal(path, memory, readOnly) {
   return client
 }
 
-/** Open local SQLite or remote libSQL. The read-only option applies to local SQLite. */
-/** @param {string} url @param {{ readOnly?: boolean }} [options] @returns {Client} */
-export function openDatabase(url, { readOnly = false } = {}) {
+/** @param {string} url */
+function localDatabaseLocation(url) {
   if (/^file:/i.test(url) || url === ":memory:") {
     const config = expandConfig({ url }, true)
     const authority = config.authority
@@ -776,10 +793,126 @@ export function openDatabase(url, { readOnly = false } = {}) {
       throw new LibsqlError("Invalid authority in local SQLite URL", "URL_INVALID")
     }
     const memory = isInMemoryConfig(config)
-    return openLocal(memory ? `file:${config.path}` : config.path, memory, readOnly)
+    return { path: memory ? `file:${config.path}` : config.path, memory }
   }
+}
 
+/** @param {string} url */
+export function isMemoryDatabase(url) {
+  return localDatabaseLocation(url)?.memory === true
+}
+
+/** Open local SQLite or remote libSQL. The read-only option applies to local SQLite. */
+/** @param {string} url @param {{ readOnly?: boolean }} [options] @returns {Client} */
+export function openDatabase(url, { readOnly = false } = {}) {
+  const local = localDatabaseLocation(url)
+  if (local) return openLocal(local.path, local.memory, readOnly)
   // Use the remote-only entry point, so remote loading never activates the old native SQLite engine.
   const { createClient } = require("@libsql/client/web")
   return createClient({ url })
+}
+
+/** Retry lock acquisition only. Once a write transaction starts, its work runs once. */
+/** @template T @param {() => Promise<T>} operation @returns {Promise<T>} */
+async function retryStartupLock(operation) {
+  const deadline = performance.now() + 2_500
+  for (;;) {
+    try {
+      return await operation()
+    } catch (error) {
+      const remaining = deadline - performance.now()
+      const code = error instanceof Error && "code" in error ? error.code : undefined
+      if (remaining <= 0 || typeof code !== "string" ||
+        !["SQLITE_BUSY", "SQLITE_LOCKED", "TRANSACTION_ACTIVE"].includes(code)) throw error
+      await sleepMs(Math.min(50, remaining))
+    }
+  }
+}
+
+/** @param {Client} client */
+async function inspectStartupSchema(client) {
+  const tx = await client.transaction("read")
+  try {
+    if (await readTaskBoardMigrationState(tx) === "household-v19") {
+      const { validateStartupTaskSchema } = await import("./task-schema-startup.mjs")
+      await validateStartupTaskSchema(tx)
+    }
+  } finally {
+    tx.close()
+  }
+}
+
+/** Inspect an existing file read-only before opening it writable. */
+/** @param {string} url @param {{ readOnly?: boolean }} [options] @returns {Promise<Client>} */
+export function openDatabaseForStartup(url, { readOnly = false } = {}) {
+  return retryStartupLock(async () => {
+    const local = localDatabaseLocation(url)
+    if (!local || local.memory) {
+      const client = openDatabase(url, { readOnly })
+      try {
+        await inspectStartupSchema(client)
+        return client
+      } catch (error) {
+        client.close()
+        throw error
+      }
+    }
+    if (!readOnly && !statSync(local.path, { throwIfNoEntry: false })) {
+      return openLocal(local.path, false, false, true)
+    }
+
+    let inspection
+    let recovered = false
+    try {
+      inspection = openLocal(local.path, false, true, true)
+      await inspectStartupSchema(inspection)
+    } catch (error) {
+      inspection?.close()
+      if (readOnly || !needsJournalRecovery(error)) throw error
+      // SQLite may have to restore a hot journal before any read can succeed.
+      inspection = openLocal(local.path, false, false, true)
+      try {
+        await inspectStartupSchema(inspection)
+        recovered = true
+      } catch (recoveryError) {
+        inspection.close()
+        throw recoveryError
+      }
+    }
+    if (readOnly || recovered) return inspection
+    inspection.close()
+    return openLocal(local.path, false, false, true)
+  })
+}
+
+/** @param {Client} client */
+export function enableStartupWal(client) {
+  return retryStartupLock(() => client.execute("PRAGMA journal_mode=WAL"))
+}
+
+/** @template T @param {Client} client @param {(tx: Transaction) => Promise<T>} apply @returns {Promise<T>} */
+export async function withStartupWriteTransaction(client, apply) {
+  const tx = await retryStartupLock(async () => {
+    const local = localWriters.get(client)
+    if (local) {
+      // On a rollback journal, wait for readers before DDL can spill or commit.
+      return local.start()
+    }
+    const writer = await client.transaction("write")
+    try {
+      // Remote libSQL starts its transaction on the first statement.
+      await writer.execute("SELECT 1")
+      return writer
+    } catch (error) {
+      writer.close()
+      throw error
+    }
+  })
+  try {
+    const value = await apply(tx)
+    await tx.commit()
+    return value
+  } finally {
+    tx.close()
+  }
 }

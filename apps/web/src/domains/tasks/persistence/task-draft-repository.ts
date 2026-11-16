@@ -20,10 +20,12 @@ type Publish = Extract<TaskDraftWrite, { action: "publish" }>
 type Abandon = Extract<TaskDraftWrite, { action: "abandon-publish" }>
 type Resolution = { state: "saved" | "open" | "unavailable" } | { state: "published"; receipt: TaskDraftReceipt }
 
-const activeDraft = "SELECT * FROM task_drafts WHERE owner_id = ?"
-const matchesDraft = "owner_id = ? AND draft_id = ? AND revision = ?"
+const draftOwner = "owner_id = ? AND board_id = 'household'"
+const activeDraft = `SELECT * FROM task_drafts WHERE ${draftOwner}`
+const matchesDraft = `${draftOwner} AND draft_id = ? AND revision = ?`
+const receiptOwner = "r.owner_id = ? AND r.board_id = 'household'"
 const receiptSelect = `SELECT r.*, t.ticket_number FROM task_draft_receipts r
-                        LEFT JOIN tasks t ON t.id = r.task_id`
+                        LEFT JOIN tasks t ON t.id = r.task_id AND t.task_board_id IS NULL`
 
 function versionArgs(ownerId: string, version: TaskDraftVersion) {
   return [ownerId, version.draftId, version.revision]
@@ -69,7 +71,7 @@ export function isDraftWriterBusy(error: unknown): boolean {
 
 function exactReceipt(ownerId: string, version: TaskDraftVersion, attemptId: string): InStatement {
   return {
-    sql: `${receiptSelect} WHERE r.owner_id = ? AND r.draft_id = ? AND r.revision = ? AND r.attempt_id = ?`,
+    sql: `${receiptSelect} WHERE ${receiptOwner} AND r.draft_id = ? AND r.revision = ? AND r.attempt_id = ?`,
     args: [...versionArgs(ownerId, version), attemptId],
   }
 }
@@ -97,7 +99,7 @@ export class TaskDraftRepository {
     const statements: InStatement[] = [
       { sql: activeDraft, args: [ownerId] },
       {
-        sql: `${receiptSelect} WHERE r.owner_id = ? ORDER BY r.published_seq DESC LIMIT 1`,
+        sql: `${receiptSelect} WHERE ${receiptOwner} ORDER BY r.published_seq DESC LIMIT 1`,
         args: [ownerId],
       },
     ]
@@ -126,8 +128,8 @@ export class TaskDraftRepository {
               WHERE ${matchesDraft} AND save_attempt_id IS NOT ?`,
         args: [...values, ...versionArgs(ownerId, expected), attemptId],
       } : {
-        sql: `INSERT INTO task_drafts (owner_id, draft_id, revision, snapshot_json, updated_at, save_attempt_id, save_digest)
-              VALUES (?, ?, 1, ?, ?, ?, ?) ON CONFLICT(owner_id) DO NOTHING`,
+        sql: `INSERT INTO task_drafts (owner_id, board_id, draft_id, revision, snapshot_json, updated_at, save_attempt_id, save_digest)
+              VALUES (?, 'household', ?, 1, ?, ?, ?, ?) ON CONFLICT(owner_id, board_id) DO NOTHING`,
         args: [ownerId, crypto.randomUUID(), ...values],
       },
       { sql: activeDraft, args: [ownerId] },
@@ -182,8 +184,8 @@ export class TaskDraftRepository {
     const eventId = crypto.randomUUID()
     const writeGuard = {
       sql: `EXISTS (SELECT 1 FROM task_drafts WHERE ${matchesDraft})
-        AND NOT EXISTS (SELECT 1 FROM task_draft_receipts WHERE owner_id = ? AND attempt_id = ?)
-        AND EXISTS (SELECT 1 FROM kanban_lanes WHERE key = ?)
+        AND NOT EXISTS (SELECT 1 FROM task_draft_receipts r WHERE ${receiptOwner} AND r.attempt_id = ?)
+        AND EXISTS (SELECT 1 FROM kanban_lanes WHERE board_id = 'household' AND key = ?)
         AND (? <> 'backlog' OR COALESCE((
           SELECT CASE WHEN json_valid(value) THEN COALESCE(json_extract(value, '$'), 'unavailable')
                       ELSE 'unavailable' END FROM settings WHERE key = 'backlog_mode'
@@ -205,8 +207,9 @@ export class TaskDraftRepository {
     const [inserted, , , , , receiptRows, draftRows] = await this.write([
       taskInsertStatement(prepared, now, { idempotencyKey: eventId, requestId: eventId, guard: writeGuard }),
       {
-        sql: `INSERT INTO task_draft_receipts (owner_id, draft_id, revision, attempt_id, request_digest, task_id, event_id, published_at)
-              SELECT ?, ?, ?, ?, ?, id, ?, ? FROM tasks WHERE id = ? AND request_id = ?`,
+        sql: `INSERT INTO task_draft_receipts
+                (owner_id, board_id, draft_id, revision, attempt_id, request_digest, task_id, event_id, published_at)
+              SELECT ?, 'household', ?, ?, ?, ?, id, ?, ? FROM tasks WHERE id = ? AND request_id = ?`,
         args: [...versionArgs(ownerId, expected), attemptId, digest, eventId, now, prepared.id, eventId],
       },
       {

@@ -24,9 +24,9 @@ const test = base.extend<{ db: Database }>({
     const work = await mkdtemp(join(tmpdir(), "meitheal-task-list-eisenhower-"))
     process.env.MEITHEAL_DB_URL = `file:${join(work, "tasks.db")}`
     resetPersistenceForTests()
-    const db = getPersistenceClient()
     try {
       await ensureSchema()
+      const db = getPersistenceClient()
       for (const row of scores) {
         await db.execute({
           sql: `INSERT INTO tasks (id, title, idempotency_key, request_id, created_at, updated_at)
@@ -43,7 +43,6 @@ const test = base.extend<{ db: Database }>({
       }
       await use(db)
     } finally {
-      db.close()
       resetPersistenceForTests()
       if (previous === undefined) delete process.env.MEITHEAL_DB_URL
       else process.env.MEITHEAL_DB_URL = previous

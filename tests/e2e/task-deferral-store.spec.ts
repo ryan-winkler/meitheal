@@ -4,6 +4,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { expect, test as base } from "@playwright/test"
+import { DATABASE_SCHEMA_VERSION } from "../../apps/web/scripts/database-client.mjs"
 import {
   ensureSchema,
   getPersistenceClient,
@@ -20,17 +21,18 @@ const originalVersion = Date.parse("2026-11-09T20:30:00.123Z")
 const initialGuard = { updatedAt: originalVersion, revision: null }
 const revisionPattern = /^[a-f0-9]{32}$/
 
-const test = base.extend<{ database: ReturnType<typeof getPersistenceClient> }>({
+const test = base.extend<{ database: () => Promise<ReturnType<typeof getPersistenceClient>> }>({
   database: async ({}, use) => {
     const previous = process.env.MEITHEAL_DB_URL
     const dir = await mkdtemp(join(tmpdir(), "meitheal-deferral-"))
     process.env.MEITHEAL_DB_URL = `file:${join(dir, "tasks.db")}`
     resetPersistenceForTests()
-    const client = getPersistenceClient()
     try {
-      await use(client)
+      await use(async () => {
+        await ensureSchema()
+        return getPersistenceClient()
+      })
     } finally {
-      client.close()
       resetPersistenceForTests()
       if (previous === undefined) delete process.env.MEITHEAL_DB_URL
       else process.env.MEITHEAL_DB_URL = previous
@@ -53,26 +55,29 @@ function migrate(...args: string[]) {
   })
 }
 
-test("runtime bootstrap and CLI converge without changing existing task rows", async ({ database: db }) => {
+test("runtime bootstrap and CLI converge without changing existing task rows", async ({ database }) => {
   await Promise.all([ensureSchema(), ensureSchema()])
-  expect(getSchemaVersion()).toBe(18)
+  const db = await database()
+  expect(getSchemaVersion()).toBe(DATABASE_SCHEMA_VERSION)
   await seed(db, "retained")
-  expect(migrate()).toContain("Applied migration: 0004_task_deferral.mjs")
+  expect((await db.execute("SELECT name FROM __meitheal_migrations WHERE name = '0004_task_deferral.mjs'")).rows)
+    .toEqual([{ name: "0004_task_deferral.mjs" }])
+  expect(migrate()).toContain("No migrations to apply.")
   expect(migrate("--check")).toContain("Migration check passed")
   expect((await new TaskRepository(db).findById("retained"))?.deferred_at).toBeNull()
 })
 
-test("runtime validates the CLI-first migration and rejects conflicting schema", async ({ database: db }) => {
+test("runtime validates the CLI-first migration and rejects conflicting schema", async ({ database }) => {
   expect(migrate()).toContain("Applied migration: 0004_task_deferral.mjs")
-  await ensureSchema()
-  expect(getSchemaVersion()).toBe(18)
+  const db = await database()
+  expect(getSchemaVersion()).toBe(DATABASE_SCHEMA_VERSION)
   await db.execute("DROP INDEX tasks_deferred_order_idx")
   await db.execute("CREATE INDEX tasks_deferred_order_idx ON tasks (deferred_at ASC, id ASC)")
   expect(() => migrate("--check")).toThrow(/Unexpected task deferral index/)
 })
 
-test("one concurrent deferral wins without moving the provider clock or duplicating audit", async ({ database: db }) => {
-  await ensureSchema()
+test("one concurrent deferral wins without moving the provider clock or duplicating audit", async ({ database }) => {
+  const db = await database()
   await seed(db, "shared")
   const repo = new TaskRepository(db)
   const results = await Promise.all([
@@ -103,8 +108,8 @@ test("one concurrent deferral wins without moving the provider clock or duplicat
   expect(await repo.setDeferral("shared", true, initialGuard, actor)).toMatchObject({ errorCode: "conflict" })
 })
 
-test("audit failure rolls back and raw workflow changes retire a deferral revision", async ({ database: db }) => {
-  await ensureSchema()
+test("audit failure rolls back and raw workflow changes retire a deferral revision", async ({ database }) => {
+  const db = await database()
   await seed(db, "edited")
   const repo = new TaskRepository(db)
   await db.execute(`CREATE TRIGGER reject_test_activity BEFORE INSERT ON task_activity_log
@@ -138,9 +143,9 @@ test("audit failure rolls back and raw workflow changes retire a deferral revisi
   expect((await db.execute("SELECT id FROM task_activity_log")).rows).toHaveLength(1)
 })
 
-test("linked HA sync preserves deferred workflow on an open echo and commits completion with confirmation", async ({ database: db }) => {
+test("linked HA sync preserves deferred workflow on an open echo and commits completion with confirmation", async ({ database }) => {
   migrate()
-  await ensureSchema()
+  const db = await database()
   await seed(db, "linked", "backlog")
   const repo = new TaskRepository(db)
   const deferred = await repo.setDeferral("linked", true, initialGuard, actor)
@@ -183,8 +188,8 @@ test("linked HA sync preserves deferred workflow on an open echo and commits com
   expect(await repo.findById("linked")).toMatchObject({ status: "pending", deferred_at: null })
 })
 
-test("bulk reorder preserves hidden slots and never regresses the submitted workflow clock", async ({ database: db }) => {
-  await ensureSchema()
+test("bulk reorder preserves hidden slots and never regresses the submitted workflow clock", async ({ database }) => {
+  const db = await database()
   const repo = new TaskRepository(db)
   for (const id of ["left", "hidden", "right"]) await seed(db, id)
   await db.execute("UPDATE tasks SET kanban_position = CASE id WHEN 'left' THEN 1 WHEN 'hidden' THEN 2 ELSE 3 END")
@@ -206,8 +211,8 @@ test("bulk reorder preserves hidden slots and never regresses the submitted work
   expect(rows[2]?.updated_at).toBe(originalVersion + 2)
 })
 
-test("project active counts cover rows beyond the previous 500-task limit", async ({ database: db }) => {
-  await ensureSchema()
+test("project active counts cover rows beyond the previous 500-task limit", async ({ database }) => {
+  const db = await database()
   await db.execute(`
     WITH RECURSIVE seq(n) AS (VALUES(1) UNION ALL SELECT n + 1 FROM seq WHERE n < 501)
     INSERT INTO tasks (id, title, status, project_id, request_id, idempotency_key, created_at, updated_at, deferred_at)
