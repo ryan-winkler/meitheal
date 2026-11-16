@@ -281,10 +281,7 @@ test("Calendar reads configured sources as a household member and filters before
     await expect(page).toHaveURL(url => !url.searchParams.has("labels"))
     await expect(day).toHaveAccessibleName(/105 tasks$/)
 
-    const timezone = await api.put(base + "/api/settings", {
-      headers: headers("admin"), data: { key: "timezone", value: "America/New_York" },
-    })
-    expect(timezone.status()).toBe(200)
+    // The cached end came from a UTC-based sync, while this browser reads the household day in Los Angeles.
     const boundaryId = "linked-timezone-boundary"
     const start = "2031-07-20T23:30:00Z"
     insertLinkedTask.run(boundaryId, "Linked timed appointment", "pending", boundaryId, boundaryId, start)
@@ -292,7 +289,7 @@ test("Calendar reads configured sources as a household member and filters before
       occurrences: [{ start, end: "2031-07-21T01:00:00Z", effective_end: "2031-07-21" }],
     }))
     await page.goto(unfilteredMonth)
-    await expect(page.locator("#calendar-shell")).toHaveAttribute("data-timezone", "America/New_York")
+    await expect(page.locator("#calendar-shell")).toHaveAttribute("data-timezone", "America/Los_Angeles")
     const boundaryDay = page.locator('.cal-cell[data-date="2031-07-20"]')
     const followingDay = page.locator('.cal-cell[data-date="2031-07-21"]')
     await expect(boundaryDay).toHaveAccessibleName(/1 calendar event$/)
