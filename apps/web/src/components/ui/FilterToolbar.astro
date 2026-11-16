@@ -779,15 +779,12 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
     // advClearBtn logic
     advClearBtn?.addEventListener("click", () => {
       if (!advContainer) return
-      const rows = advContainer.querySelectorAll(".advanced-filter-row")
-      rows.forEach(r => r.remove())
-      checkEmptyState()
       advancedFilterState = null
+      if (prefix === "calendar" && !emitChange()) return
       readOnlyRules = false
       updateRulesMode()
-      checkEmptyState()
-      advToggleBtn?.classList.remove("filter-pill--active")
-      emitChange()
+      renderSavedRules()
+      if (prefix !== "calendar") emitChange()
     }, { signal })
 
     advApplyBtn?.addEventListener("click", () => {
@@ -1270,7 +1267,9 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
           "conditions" in condition || condition.operator === "between") ?? false
         renderInheritedFilters()
         updateRulesMode()
-        renderSavedRules()
+        if (advPanel && !advPanel.classList.contains("hidden")) {
+          advToggleBtn?.classList.toggle("filter-pill--active", Boolean(advancedFilterState?.conditions.length))
+        } else renderSavedRules()
         updateClearVisibility()
       }, { signal })
     }

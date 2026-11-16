@@ -459,6 +459,21 @@ test.describe("Calendar Shell", () => {
       await expect(trigger).toContainText("All Areas")
       await expect(all).toHaveAttribute("aria-selected", "true")
       expect(await page.evaluate(() => JSON.parse(localStorage.getItem("meitheal-selected-area") ?? "{}").areaId)).toBe(id)
+
+      await page.goto("/tasks?view=calendar&area=#calendar")
+      const advanced = page.locator("#calendar-advanced-toggle")
+      await advanced.click()
+      await page.getByRole("button", { name: "Condition", exact: true }).click()
+      const value = page.locator("#calendar-advanced-panel .adv-val")
+      const tooLong = "word".repeat(2050)
+      await value.fill(tooLong)
+      await page.getByRole("button", { name: "Apply Rules" }).click()
+      await expect(page.locator("[data-calendar-status]")).toContainText("Shorten the Calendar rules")
+      await expect(advanced).toHaveAttribute("aria-expanded", "true")
+      await expect(value).toHaveValue(tooLong)
+      await value.fill("workshop")
+      await page.getByRole("button", { name: "Apply Rules" }).click()
+      await expect(page).toHaveURL(url => url.searchParams.has("advancedFilter"))
     } finally {
       await request.delete(`/api/areas/${id}`, { headers })
     }

@@ -53,7 +53,7 @@ export default defineConfig({
       "astro:build:done": async ({ dir }) => {
         const worker = new URL("sw.js", dir)
         const { code } = await minify(readFileSync(worker, "utf8"), {
-          compress: false,
+          compress: true,
           mangle: { toplevel: true },
           format: { comments: "some" },
         })
