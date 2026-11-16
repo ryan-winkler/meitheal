@@ -6,7 +6,7 @@ description: "Implement client controls that work with the application lifecycle
 
 # Client-Side Patterns & HMR Gotchas
 
-> **Last updated:** 2026-11-09 | **Domain:** `apps/web/src/`
+> **Last updated:** 2026-11-13 | **Domain:** `apps/web/src/`
 
 ## Overview
 
@@ -65,9 +65,9 @@ Page-shell section labels use `--accent-text` on populated and empty pages. Run 
 
 The sidebar area button controls the project list named by its `aria-controls` attribute. Keep the action buttons alongside the disclosure. Update `aria-expanded` and the list's `inert` state together so collapsed project links stay out of keyboard navigation. Sidebar area actions are delegated to the persisted navigation. Dispose that listener on hot reload so Astro page swaps can keep using the existing navigation element.
 
-Use `--accent-text` for accent-colored labels on surfaces and keep the accent fill token for backgrounds. Keep the CSS and Tailwind text color channels aligned across themes. Use `--floating-action-bottom` for the Dashboard, Settings, and Habits scroll-to-top buttons. The mobile offset includes the tab bar and device safe area. Keyboard shortcut help is available with `?` and through **Settings → Personal → Keyboard Shortcuts**. Both render from `apps/web/src/lib/keyboard-shortcuts.ts`. Turn off **Enable letter, number and symbol shortcuts on this device** to disable shortcuts such as `/`, `?`, and the numbered Tasks views. The choice is stored in this browser. Tab, arrow keys, Enter, Space, and shortcuts such as Ctrl or Cmd + K still work.
+Use `--accent-text` for accent-colored labels on surfaces and keep the accent fill token for backgrounds. Keep the CSS and Tailwind text color channels aligned across themes. Use `--floating-action-bottom` for the Dashboard, Settings, and Habits scroll-to-top buttons. The mobile offset includes the tab bar and device safe area. Keyboard shortcut help is available with `?` and through **Settings → Navigation & Shortcuts → Keyboard shortcuts**. Both render from `apps/web/src/lib/keyboard-shortcuts.ts`. Turn off **Enable letter, number and symbol shortcuts on this device** to disable shortcuts such as `/`, `?`, and the numbered Tasks views. The choice is stored in this browser. Tab, arrow keys, Enter, Space, and shortcuts such as Ctrl or Cmd + K still work.
 
-Tailwind scans `apps/web/src` for complete utility class names. Keep new utility names in application templates or client code. Outfit headings use one self-hosted Latin variable font across weights 400 to 700. The preload and font-face must resolve to the same file. Check both standalone and Home Assistant ingress when changing font assets.
+Tailwind scans `apps/web/src` for complete utility class names. Keep new utility names in application templates or client code. Headings and body text use self-hosted `Geist Variable` (`Outfit` stays self-hosted for optional appearance customization). Keep the `Layout.astro` font preload and `@font-face` pointed at the same `geist-latin-wght-normal.woff2` asset, and check both standalone and Home Assistant ingress when changing font assets.
 
 Run `pnpm --filter @meitheal/tests test e2e/shared-shell-ux.spec.ts` against a disposable Meitheal instance. The check samples desktop and mobile in light and dark themes. It exercises Dashboard, Tasks, and the Settings navigation, rule labels, integration badges, and protocol links. The keyboard check creates and removes a synthetic sidebar area and project.
 
@@ -135,7 +135,7 @@ These are set during modal lifecycle and must be cleaned up on signal abort:
 
 ## Embedded navigation and generated controls
 
-Inside the same-origin Home Assistant panel, Meitheal keeps its current route in the outer address's `meitheal` query parameter. Opening that bookmark recreates the iframe at the saved route. Native page navigation and ticket history update the value. Direct ingress tabs keep their normal page URL.
+Inside the same-origin Home Assistant panel, Meitheal keeps its current route in the outer address's `meitheal` query parameter. Opening that bookmark recreates the iframe at the saved route. Native page navigation and ticket history update the value. If Home Assistant reloads the iframe during a shortcut or Search jump, Meitheal keeps the pending destination, including its filters and section. A Settings hash jump stays in the current document and a later section choice immediately updates the saved route. Direct ingress tabs keep their normal page URL.
 
 Controls appended by client code outside an Astro component need global CSS selectors. Check generated menus with real pointer and keyboard input near the viewport edge. Moving focus into a menu should keep its options reachable.
 ## Confirmation and prompt text

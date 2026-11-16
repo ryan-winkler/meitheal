@@ -27,5 +27,7 @@ test("agent route policy maps standard routes to primary scopes", () => {
   expect(resolveAgentRouteScope("/api/tasks", "DELETE")).toBe("tasks:delete")
   expect(resolveAgentRouteScope("/api/mcp", "POST")).toBe("mcp:execute")
   expect(resolveAgentRouteScope("/api/search", "GET")).toBe("search:read")
+  expect(resolveAgentRouteScope("/api/users", "GET")).toBe("tasks:read")
+  expect(resolveAgentRouteScope("/api/users/custom", "POST")).toBeUndefined()
   expect(resolveAgentRouteScope("/api/unknown", "GET")).toBeUndefined()
 })

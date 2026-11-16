@@ -4,6 +4,7 @@
  * @domain integrations/ha
  */
 
+import Icon from "../../ui/Icon.astro"
 import IntegrationCardHeader from "./IntegrationCardHeader.astro"
 import { t } from "../../../i18n/translations"
 import type { Locale } from "../../../lib/locale"
@@ -73,7 +74,7 @@ const locale = Astro.props.locale || "en"
     <!-- Advanced / Standalone Mode -->
     <details class="ha-advanced-section" id="ha-advanced-section">
       <summary class="ha-advanced-toggle">
-        <span>{t("settings.ha_advanced_title", locale)}</span>
+        <span class="inline-flex items-center gap-1.5"><Icon name="settings" size={14} sprite={true} /> {t("settings.ha_advanced_title", locale)}</span>
         <small>{t("settings.ha_advanced_desc", locale)}</small>
       </summary>
       <form id="ha-form" class="ha-advanced-form">
@@ -103,7 +104,8 @@ const locale = Astro.props.locale || "en"
         </div>
         <div class="integration-action-row">
           <button type="submit" class="btn btn-primary" id="save-ha">
-            💾 Save
+            <Icon name="database" size={14} sprite={true} />
+            {t("settings.save", locale)}
           </button>
         </div>
       </form>

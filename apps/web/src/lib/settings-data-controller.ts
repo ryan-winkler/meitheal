@@ -230,14 +230,38 @@ export function restoreDataSettings(settings: Record<string, unknown>): void {
         for (const field of fields) {
           const row = document.createElement("div")
           row.className = "custom-field-row"
-          row.innerHTML = `
-            <input type="text" class="form-input" aria-label="Field name" value="${escapeHtml(field.name)}" disabled />
-            <select class="form-select" aria-label="${escapeHtml(field.name)} field type" disabled>
-              <option value="${escapeHtml(field.type)}" selected>${escapeHtml(field.type.charAt(0).toUpperCase() + field.type.slice(1))}</option>
-            </select>
-            <span style="color: var(--text-muted); font-size: 12px;">Saved</span>
-            <button type="button" class="btn btn-ghost" style="padding: 4px 8px; color: var(--danger);" title="Remove field definition (data on existing tasks is preserved)">×</button>
-          `
+
+          const nameInput = document.createElement("input")
+          nameInput.type = "text"
+          nameInput.className = "form-input"
+          nameInput.setAttribute("aria-label", "Field name")
+          nameInput.value = field.name
+          nameInput.disabled = true
+
+          const typeSelect = document.createElement("select")
+          typeSelect.className = "form-select"
+          typeSelect.setAttribute("aria-label", `${field.name} field type`)
+          typeSelect.disabled = true
+          const opt = document.createElement("option")
+          opt.value = field.type
+          opt.selected = true
+          opt.textContent = field.type.charAt(0).toUpperCase() + field.type.slice(1)
+          typeSelect.appendChild(opt)
+
+          const savedSpan = document.createElement("span")
+          savedSpan.style.color = "var(--text-muted)"
+          savedSpan.style.fontSize = "12px"
+          savedSpan.textContent = "Saved"
+
+          const removeBtn = document.createElement("button")
+          removeBtn.type = "button"
+          removeBtn.className = "btn btn-ghost"
+          removeBtn.style.padding = "4px 8px"
+          removeBtn.style.color = "var(--danger)"
+          removeBtn.title = "Remove field definition (data on existing tasks is preserved)"
+          removeBtn.textContent = "×"
+
+          row.append(nameInput, typeSelect, savedSpan, removeBtn)
           const remove = row.querySelector("button")
           if (remove) pageLifecycle.on(remove, "click", async () => {
             remove.disabled = true

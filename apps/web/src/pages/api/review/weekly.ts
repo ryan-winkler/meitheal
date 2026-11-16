@@ -36,6 +36,7 @@
  */
 import type { APIRoute } from "astro"
 import { getTasksForView } from "../../../lib/task-queries"
+import { calendarDayFromInput, calendarToday, resolveTimezone, shiftCalendarDay } from "../../../lib/date"
 import { apiLogger, logApiError } from "../../../lib/api-logger"
 
 /** Shape of each day's velocity data point */
@@ -54,27 +55,17 @@ interface PriorityBreakdown {
   p5_lowest: number
 }
 
-export const GET: APIRoute = async () => {
+export const GET: APIRoute = async ({ locals }) => {
   try {
-    const { tasks } = await getTasksForView()
+    const timezone = resolveTimezone(locals.timezone)
+    const { tasks } = await getTasksForView({ timezone })
+    const todayStr = calendarToday(timezone)
+    const weekAgoStr = shiftCalendarDay(todayStr, -6)
 
-    const now = new Date()
-    const today = new Date(now)
-    today.setHours(0, 0, 0, 0)
-    const todayStr = today.toISOString().split("T")[0] ?? ""
-
-    // Calculate 7-day window
-    const weekAgo = new Date(today)
-    weekAgo.setDate(weekAgo.getDate() - 7)
-    const weekAgoStr = weekAgo.toISOString().split("T")[0] ?? ""
-
-    // Initialize daily velocity map (last 7 days)
     const velocityMap = new Map<string, DayVelocity>()
     for (let i = 6; i >= 0; i--) {
-      const d = new Date(today)
-      d.setDate(d.getDate() - i)
-      const ds = d.toISOString().split("T")[0] ?? ""
-      velocityMap.set(ds, { date: ds, completed: 0, created: 0 })
+      const day = shiftCalendarDay(todayStr, -i)
+      velocityMap.set(day, { date: day, completed: 0, created: 0 })
     }
 
     let totalCompleted = 0
@@ -92,11 +83,11 @@ export const GET: APIRoute = async () => {
     const areaCounts = new Map<string, number>()
 
     for (const task of tasks) {
-      const updatedDay = task.updated_at?.split("T")[0] ?? ""
-      const createdDay = task.created_at?.split("T")[0] ?? ""
+      const updatedDay = calendarDayFromInput(task.updated_at, timezone)
+      const createdDay = calendarDayFromInput(task.created_at, timezone)
 
       // Count completed this week
-      if (task.is_done && updatedDay >= weekAgoStr && updatedDay <= todayStr) {
+      if (task.is_done && updatedDay !== null && velocityMap.has(updatedDay)) {
         totalCompleted++
 
         // Daily velocity
@@ -139,20 +130,16 @@ export const GET: APIRoute = async () => {
       }
 
       // Count created this week
-      if (createdDay >= weekAgoStr && createdDay <= todayStr) {
+      if (createdDay !== null && velocityMap.has(createdDay)) {
         totalCreated++
         const dayEntry = velocityMap.get(createdDay)
         if (dayEntry) dayEntry.created++
       }
 
-      // Carried forward (not done, due before this week)
-      if (!task.is_done && task.deferred_at === null && task.due_date && task.due_date < weekAgoStr) {
-        carriedForward++
-      }
-
-      // Currently overdue (not done, due before today)
-      if (!task.is_done && task.deferred_at === null && task.due_date && task.due_date < todayStr) {
-        overdue++
+      if (!task.is_done && task.deferred_at === null) {
+        const dueDay = calendarDayFromInput(task.due_date, timezone)
+        if (dueDay !== null && dueDay < weekAgoStr) carriedForward++
+        if (task.is_overdue) overdue++
       }
     }
 

@@ -13,6 +13,10 @@ export interface IngressTransport {
   } | undefined
   waitForDatabaseDownloadDrain?: WaitForResponseDrain | undefined
   waitForHtmlDrain?: WaitForResponseDrain | undefined
+  behindIngress?: boolean | undefined
+  streamingIngressHtml?: boolean | undefined
+  abortRecorded?: boolean | undefined
+  rawPath?: string | undefined
 }
 
 export function runWithIngressTransport<T>(context: IngressTransport, handle: () => T): T

@@ -3,7 +3,8 @@
  * Grocy integration card sub-component.
  * @domain integrations/grocy
  */
-import HelpTooltip from "../../ui/HelpTooltip.astro";
+import HelpTooltip from "../../ui/HelpTooltip.astro"
+import Icon from "../../ui/Icon.astro"
 import IntegrationCardHeader from "./IntegrationCardHeader.astro"
 import { t } from "../../../i18n/translations"
 import type { Locale } from "../../../lib/locale"
@@ -28,7 +29,7 @@ const locale = Astro.props.locale || "en"
   <div class="integration-card__body" id="integration-grocy-body" inert>
     <!-- Grocy auto-detect callout -->
     <div id="grocy-auto-info" class="integration-callout integration-callout--success" style="display: none;" aria-live="polite">
-      <strong>{t("settings.grocy_detected", locale)}</strong>
+      <strong class="inline-flex items-center gap-1.5"><Icon name="check" size={14} sprite={true} /> {t("settings.grocy_detected", locale)}</strong>
       <div class="integration-callout__detail">
         {t("settings.grocy_detected_desc", locale)}
       </div>
@@ -58,11 +59,15 @@ const locale = Astro.props.locale || "en"
         </div>
         <div class="flex gap-2 items-center">
           <input type="password" class="form-input flex-1" id="grocy-key" placeholder="••••••••" />
-          <button type="button" class="btn btn-ghost" id="grocy-auto-key" style="font-size: 11px; white-space: nowrap; padding: 6px 10px;" title={t("settings.grocy_auto_key_title", locale)}>{t("settings.grocy_auto_key", locale)}</button>
+          <button type="button" class="btn btn-ghost" id="grocy-auto-key" style="font-size: 11px; white-space: nowrap; padding: 6px 10px;" title={t("settings.grocy_auto_key_title", locale)}>
+            <Icon name="automation" size={12} sprite={true} />
+            {t("settings.grocy_auto_key", locale)}
+          </button>
         </div>
       </div>
       <!-- Custom config toggle for auto-detected installs -->
       <button type="button" class="btn btn-ghost" id="grocy-custom-toggle" style="display: none; font-size: 12px; padding: 4px 8px; align-self: flex-start;">
+        <Icon name="settings" size={13} sprite={true} />
         {t("settings.grocy_custom_config", locale)}
       </button>
       <div class="form-group">

@@ -162,6 +162,21 @@ test("both Edit actions update the intended Pillar and return focus on cancel", 
     await expect(edit).toBeFocused()
 
     await firstCard.getByRole("button", { name: "View Pillar to edit details" }).click()
+    await expect(page.locator("#pillar-detail-overlay")).toHaveClass(/active/)
+    const surfaceStyles = await page.evaluate(() => {
+      const card = document.querySelector(".pillar-card")
+      const modal = document.querySelector("#pillar-detail-overlay .pillar-detail-modal")
+      const cardBg = card ? getComputedStyle(card).backgroundColor : null
+      const modalBg = modal ? getComputedStyle(modal).backgroundColor : null
+      return { cardBg, modalBg }
+    })
+    // Both surfaces must exist; an absent element must not satisfy the transparency checks.
+    expect(surfaceStyles.cardBg).not.toBeNull()
+    expect(surfaceStyles.modalBg).not.toBeNull()
+    expect(surfaceStyles.cardBg).not.toBe("rgba(0, 0, 0, 0)")
+    expect(surfaceStyles.cardBg).not.toBe("transparent")
+    expect(surfaceStyles.modalBg).not.toBe("rgba(0, 0, 0, 0)")
+    expect(surfaceStyles.modalBg).not.toBe("transparent")
     await page.locator("#pillar-detail-edit-btn").click()
     await expect(form.locator("#pillar-name")).toHaveValue("Pillar to edit")
     await form.locator("#pillar-name").fill("Edited same pillar")

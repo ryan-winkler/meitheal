@@ -45,9 +45,12 @@ test.describe("browser notification test in Settings", () => {
   async function openTroubleshooting(page: Page) {
     await page.context().addCookies([{ name: "feedback-fixture", value: "admin", url: origin }])
     await page.goto(scope + "settings")
+    await expect(page.locator("#settings-shell")).toHaveAttribute("data-settings-booted", "true")
     await expect(page.locator("#settings-panels")).not.toHaveAttribute("inert", "")
     await page.locator('[data-settings-nav="app-pwa-settings"]').click({ timeout: 5_000 })
+    await expect(page.locator("#app-pwa-settings")).toBeVisible()
     await page.getByText("troubleshooting", { exact: true }).click({ timeout: 5_000 })
+    await expect(page.locator("#pwa-troubleshoot")).toHaveAttribute("open", "")
     return page.getByRole("button", { name: "Send a test notification" })
   }
 
@@ -63,11 +66,16 @@ test.describe("browser notification test in Settings", () => {
   async function allowNotifications(page: Page) {
     await page.context().grantPermissions(["notifications"], { origin })
     await page.addInitScript(() => {
-      if (Notification.permission === "granted") return
-      // The headless shell used in CI has no notification service even with a permission override.
+      // The headless shell used in CI has no notification service even with a permission override, so always stub showNotification.
       const notifications: FixtureNotification[] = []
       ;(window as FixtureWindow).meithealFixtureNotifications = notifications
-      Object.defineProperty(Notification, "permission", { value: "granted" })
+      if (Notification.permission !== "granted") {
+        try {
+          Object.defineProperty(Notification, "permission", { configurable: true, value: "granted" })
+        } catch {
+          // Ignore if browser permission is locked to native state.
+        }
+      }
       ServiceWorkerRegistration.prototype.showNotification = async function (title, options) {
         notifications.push({
           title, body: options?.body ?? "", icon: options?.icon ?? "",
@@ -80,10 +88,22 @@ test.describe("browser notification test in Settings", () => {
   test("delivers a browser notification through the App worker", async ({ page }) => {
     await allowNotifications(page)
     const send = await openTroubleshooting(page)
-    await page.waitForFunction(async scope => {
-      const registration = await navigator.serviceWorker.getRegistration(scope)
-      return registration?.scope === scope && registration.active?.state === "activated"
-    }, scope, { timeout: 5_000 })
+    // Poll the resolved worker state. waitForFunction treats an unresolved Promise as truthy.
+    await expect.poll(() => page.evaluate(async scope => {
+      const workers = navigator.serviceWorker
+      const registration = await workers.getRegistration(scope)
+      return {
+        scope: registration?.scope,
+        script: registration?.active?.scriptURL,
+        state: registration?.active?.state,
+        controller: workers.controller?.scriptURL,
+      }
+    }, scope), { timeout: 15_000 }).toEqual({
+      scope,
+      script: scope + "sw.js",
+      state: "activated",
+      controller: scope + "sw.js",
+    })
     expect(await notifications(page)).toEqual([])
     await send.click()
     await expect(page.locator("#pwa-notification-result")).toHaveText(/Test notification sent/)
@@ -197,4 +217,41 @@ test("notification clicks focus or open only within the worker's App scope", asy
   await click("https://other.example.test/")
   await click("https://home.example.test/api/hassio_ingress/meitheal-sibling/settings")
   expect(opened).toEqual([target, scope, scope])
+})
+
+test("service worker message handler accepts only same-origin senders and rejects malformed source URLs", async () => {
+  const script = await readFile(new URL("../../apps/web/public/sw.js", import.meta.url), "utf8")
+  const origin = "https://home.example.test"
+  const handlers = new Map<string, (event: unknown) => void>()
+  let skippedWaiting = 0
+  runInNewContext(script, {
+    URL,
+    self: {
+      location: { origin },
+      registration: { scope: `${origin}/` },
+      skipWaiting: async () => { skippedWaiting++ },
+      addEventListener: (name: string, handler: (event: unknown) => void) => handlers.set(name, handler),
+    },
+  })
+  const onMessage = handlers.get("message")!
+  expect(onMessage).toBeDefined()
+
+  const replies: unknown[] = []
+  const port = { postMessage: (val: unknown) => { replies.push(val) } }
+
+  // Cross-origin, null source, and malformed relative source.url are ignored without throwing
+  onMessage({ origin: "https://evil.example.test", data: { type: "SKIP_WAITING" }, ports: [port], waitUntil: () => {} })
+  onMessage({ origin: "", source: null, data: { type: "TASK_PINS_IMPLEMENTED" }, ports: [port], waitUntil: () => {} })
+  onMessage({ origin: "", source: { url: "::not-a-valid-url" }, data: { type: "TASK_PINS_IMPLEMENTED" }, ports: [port], waitUntil: () => {} })
+  expect(skippedWaiting).toBe(0)
+  expect(replies).toEqual([])
+
+  // Same-origin via event.origin or valid event.source.url succeeds
+  let pending: Promise<unknown> | undefined
+  onMessage({ origin, data: { type: "SKIP_WAITING" }, ports: [], waitUntil: (work: Promise<unknown>) => { pending = work } })
+  await pending
+  expect(skippedWaiting).toBe(1)
+
+  onMessage({ origin: "", source: { url: `${origin}/settings` }, data: { type: "TASK_PINS_IMPLEMENTED" }, ports: [port], waitUntil: () => {} })
+  expect(replies).toEqual([true])
 })

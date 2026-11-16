@@ -47,8 +47,8 @@ const NAV_ITEMS: Record<string, NavItemDef> = {
     i18nKey: "nav.tasks",
     icon: "kanban",
   },
-  mentionInbox: { href: "/mention-inbox", i18nKey: "mention_inbox.title", icon: "today", matchExact: true },
-  activity: { href: "/activity", i18nKey: "recent_activity.title", icon: "today", matchExact: true },
+  mentionInbox: { href: "/mention-inbox", i18nKey: "mention_inbox.title", icon: "inbox", matchExact: true },
+  activity: { href: "/activity", i18nKey: "recent_activity.title", icon: "bolt", matchExact: true },
   progress: {
     href: "/progress",
     i18nKey: "nav.progress",
@@ -222,64 +222,76 @@ const remainingItems = areaPosition < 0 ? [] : navItems.slice(areaPosition + 1)
   role="navigation"
   aria-label="Main Navigation"
 >
+  <button
+    type="button"
+    class="sidebar-edge-toggle"
+    id="sidebar-edge-toggle"
+    aria-label="Collapse sidebar (Ctrl+B)"
+    aria-expanded="true"
+    title="Collapse sidebar (Ctrl+B)"
+  >
+    <span class="sidebar-edge-toggle__circle" aria-hidden="true">
+      <span class="sidebar-edge-toggle__icon">
+        <Icon name="chevron-down" size={14} class="rotate-90" />
+      </span>
+    </span>
+  </button>
+
   <div class="sidebar-header flex items-center gap-2 pb-4 mb-0 px-2">
+    <div class="sidebar-brand-group flex flex-col flex-1 min-w-0">
+      <a
+        href="/"
+        data-astro-prefetch="viewport"
+        class="sidebar-brand text-xl font-medium tracking-[-0.05em] text-text-primary hover:text-accent transition-colors flex items-center gap-2 no-underline overflow-hidden shrink min-w-0"
+        aria-label="Meitheal Home"
+        title="meitheal. — Keep track of the work your home needs"
+      >
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 64 64"
+          width="26"
+          height="26"
+          aria-hidden="true"
+          class="sidebar-logo-svg shrink-0"
+        >
+          <rect width="64" height="64" rx="13" fill="#10231b"></rect>
+          <path
+            d="M15 41V25m0 6c0-5 3-8 7-8s7 3 7 8v10m0-10c0-5 3-8 7-8s7 3 7 8v10"
+            fill="none"
+            stroke="#edf5ef"
+            stroke-linecap="round"
+            stroke-width="5"></path>
+          <circle cx="52" cy="40" r="3.8" fill="var(--accent, #75e9be)"></circle>
+        </svg>
+        <span class="sidebar-brand-text truncate">meitheal.</span>
+      </a>
+      <span class="sidebar-ipa" aria-hidden="true">/meh·hal/</span>
+    </div>
     <button
       type="button"
-      class="sidebar-toggle-top flex items-center justify-center p-1.5 rounded-md text-text-muted hover:text-text-primary hover:bg-bg-hover transition-colors shrink-0 relative w-8 h-8"
+      class="sidebar-toggle-top ml-auto flex items-center justify-center p-1.5 rounded-md text-text-muted hover:text-text-primary hover:bg-bg-hover transition-colors shrink-0 relative w-8 h-8"
       id="sidebar-toggle-btn"
       aria-label="Toggle sidebar (Ctrl+B)"
       title="Toggle sidebar (Ctrl+B)"
     >
-      <Icon name="menu-open" class="sidebar-icon-expanded w-5 h-5 shrink-0 absolute" />
-      <Icon name="menu" class="sidebar-icon-collapsed w-5 h-5 shrink-0 absolute hidden" />
+      <Icon name="layout-sidebar-left-collapse" class="sidebar-icon-expanded w-5 h-5 shrink-0 absolute" />
+      <Icon name="menu-2" class="sidebar-icon-collapsed w-5 h-5 shrink-0 absolute hidden" />
     </button>
-    <div class="sidebar-brand-group flex flex-col min-w-0">
-      <a
-        href="/"
-        data-astro-prefetch="viewport"
-        class="sidebar-brand text-xl font-bold tracking-tight text-text-primary hover:text-accent transition-colors flex items-center gap-2 no-underline overflow-hidden shrink min-w-0"
-        aria-label="Meitheal Home"
-        title="Ag Obair le Chéile — Working Together"
-      >
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          viewBox="0 0 100 100"
-          width="24"
-          height="24"
-          aria-hidden="true"
-          class="sidebar-logo-svg shrink-0"
-        >
-          <rect width="100" height="100" rx="22" fill="var(--bg-primary, #0F172A)"
-          ></rect>
-          <path
-            d="M25 65 L50 30 L75 65"
-            fill="none"
-            stroke="var(--accent, #6366F1)"
-            stroke-width="6"
-            stroke-linecap="round"
-            stroke-linejoin="round"></path>
-          <path
-            d="M35 65 L65 65"
-            fill="none"
-            stroke="var(--border, #334155)"
-            stroke-width="4"
-            stroke-dasharray="4 4"
-            stroke-linecap="round"></path>
-          <path
-            d="M50 35 L50 65"
-            fill="none"
-            stroke="var(--border, #334155)"
-            stroke-width="4"
-            stroke-dasharray="4 4"
-            stroke-linecap="round"></path>
-          <circle cx="50" cy="30" r="7" fill="#F59E0B"></circle>
-          <circle cx="25" cy="65" r="7" fill="var(--accent, #6366F1)"></circle>
-          <circle cx="75" cy="65" r="7" fill="var(--accent, #6366F1)"></circle>
-        </svg>
-        <span class="sidebar-brand-text truncate">Meitheal</span>
-      </a>
-      <span class="sidebar-ipa font-medium" aria-hidden="true">/ˈmʲɛhəlˠ/</span>
-    </div>
+  </div>
+
+  <div class="sidebar-cta-wrap">
+    <button
+      type="button"
+      id="sidebar-rail-new-task"
+      class="sidebar-rail-cta"
+      data-tooltip="New task"
+      aria-label="New task"
+    >
+      <span class="sidebar-rail-cta__icon" aria-hidden="true">
+        <Icon name="plus" size={18} />
+      </span>
+      <span class="sidebar-rail-cta__label">New task</span>
+    </button>
   </div>
 
   <div class="sidebar-scroll" data-nav-overflow="sidebar">
@@ -312,15 +324,136 @@ const remainingItems = areaPosition < 0 ? [] : navItems.slice(areaPosition + 1)
     display: flex;
     flex-direction: column;
     height: 100%;
-    background: rgba(var(--bg-secondary-rgb), 0.9);
-    backdrop-filter: blur(12px);
+    background: var(--bg-secondary);
     border-right: 1px solid var(--border);
-    transition: transform 300ms ease;
+    transition:
+      width 220ms cubic-bezier(0.23, 1, 0.32, 1),
+      box-shadow 220ms cubic-bezier(0.23, 1, 0.32, 1),
+      transform 220ms cubic-bezier(0.23, 1, 0.32, 1);
     width: var(--sidebar-width, 240px);
     position: fixed;
     z-index: 40;
-    padding: 1rem;
+    padding: 0.875rem 0.75rem;
+    overflow: visible;
+  }
+
+  .sidebar-edge-toggle {
+    position: absolute;
+    top: 56px;
+    right: -16px;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    z-index: 50;
+    color: var(--text-secondary);
+    transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+
+  .sidebar-edge-toggle__circle {
+    width: 28px;
+    height: 28px;
+    border-radius: 9999px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.16);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition:
+      background-color 180ms cubic-bezier(0.23, 1, 0.32, 1),
+      border-color 180ms cubic-bezier(0.23, 1, 0.32, 1),
+      color 180ms cubic-bezier(0.23, 1, 0.32, 1),
+      transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+
+  .sidebar-edge-toggle:hover .sidebar-edge-toggle__circle,
+  .sidebar-edge-toggle:focus-visible .sidebar-edge-toggle__circle {
+    background: var(--bg-hover);
+    border-color: var(--accent);
+    color: var(--text-primary);
+  }
+
+  .sidebar-edge-toggle:active .sidebar-edge-toggle__circle {
+    transform: scale(0.94);
+  }
+
+  .sidebar-edge-toggle__icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform 200ms cubic-bezier(0.23, 1, 0.32, 1);
+    transform: rotate(0deg);
+  }
+
+  :global(body.sidebar-collapsed) .sidebar-edge-toggle__icon {
+    transform: rotate(180deg);
+  }
+
+  @media (min-width: 769px) {
+    .sidebar-toggle-top {
+      display: none !important;
+    }
+  }
+
+  .sidebar-cta-wrap {
+    padding: 0 0.25rem 0.625rem;
+    flex-shrink: 0;
+  }
+
+  .sidebar-rail-cta {
+    width: 100%;
+    min-height: 38px;
+    padding: 0 0.75rem;
+    border-radius: 10px;
+    border: 1px solid rgb(var(--accent-rgb) / 0.38);
+    background: rgb(var(--accent-rgb) / 0.14);
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 0.625rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition:
+      background-color 180ms cubic-bezier(0.23, 1, 0.32, 1),
+      border-color 180ms cubic-bezier(0.23, 1, 0.32, 1),
+      transform 140ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+
+  .sidebar-rail-cta:hover,
+  .sidebar-rail-cta:focus-visible {
+    background: rgb(var(--accent-rgb) / 0.22);
+    border-color: var(--accent);
+  }
+
+  .sidebar-rail-cta:active {
+    transform: scale(0.97);
+  }
+
+  .sidebar-rail-cta__icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .sidebar-rail-cta__label {
+    white-space: nowrap;
     overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  @media (max-width: 768px) {
+    .sidebar-edge-toggle {
+      display: none !important;
+    }
   }
 
   /* Scope through .sidebar so this outranks the global .nav-link display. */
@@ -356,22 +489,22 @@ const remainingItems = areaPosition < 0 ? [] : navItems.slice(areaPosition + 1)
   }
 
   .sidebar-header {
-    margin-bottom: 1.5rem;
-    padding: 0 0.5rem;
+    margin-bottom: 0.625rem;
+    padding: 0 0.25rem;
     position: relative;
   }
 
   .sidebar-ipa {
     display: block;
-    font-size: 10px;
-    font-style: italic;
-    color: var(--text-secondary);
-    letter-spacing: 0.3px;
-    padding-inline-start: 2rem;
-    margin-top: 1px;
+    font-size: 9.5px;
+    font-style: normal;
+    color: var(--text-muted);
+    letter-spacing: 0.09em;
+    padding-inline-start: 2.125rem;
+    margin-top: 2px;
     line-height: 1;
     user-select: none;
-    font-family: "Noto Sans", system-ui, sans-serif;
+    font-family: "JetBrains Mono", ui-monospace, monospace;
   }
 
   .sidebar-tooltip {
@@ -412,18 +545,10 @@ const remainingItems = areaPosition < 0 ? [] : navItems.slice(areaPosition + 1)
     }
   }
 
-  /* Subtle amber pulse on the logo apex node when hovering the brand link */
-  .sidebar-brand:hover .sidebar-logo-svg circle[fill="#F59E0B"] {
-    animation: amber-pulse 1.5s ease-in-out infinite;
-  }
-
-  @keyframes amber-pulse {
-    0%,
-    100% {
-      filter: drop-shadow(0 0 0 transparent);
-    }
-    50% {
-      filter: drop-shadow(0 0 6px rgba(245, 158, 11, 0.5));
+  /* Subtle mint glow on the brand completion dot when hovering the brand link */
+  @media (hover: hover) and (pointer: fine) {
+    .sidebar-brand:hover .sidebar-logo-svg circle {
+      filter: drop-shadow(0 0 5px rgb(var(--accent-rgb) / 0.55));
     }
   }
 
@@ -441,23 +566,30 @@ const remainingItems = areaPosition < 0 ? [] : navItems.slice(areaPosition + 1)
     display: flex;
     align-items: center;
     justify-content: flex-start;
-    padding: 0.5rem 0.75rem;
+    gap: 0.625rem;
+    padding: 0.5rem 0.625rem;
     border-radius: var(--radius-sm, 6px);
     font-size: 0.875rem;
     font-weight: 500;
     color: var(--text-secondary);
-    transition: background 200ms ease, color 200ms ease, border-color 200ms ease, opacity 200ms ease, transform 200ms ease;
+    transition: background 160ms var(--ease-out, ease), color 160ms var(--ease-out, ease), border-color 160ms var(--ease-out, ease), opacity 160ms var(--ease-out, ease), transform 160ms var(--ease-out, ease);
     text-decoration: none;
   }
 
-  :global(.sidebar .nav-link:hover) {
-    background: var(--bg-hover);
-    color: var(--text-primary);
-    transform: translateX(0.25rem);
+  :global(.sidebar .nav-link:active) {
+    transform: scale(0.97);
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    :global(.sidebar .nav-link:hover) {
+      background: var(--bg-hover);
+      color: var(--text-primary);
+      transform: translateX(2px);
+    }
   }
 
   :global(.sidebar .nav-link.active) {
-    background: rgba(var(--accent-rgb), 0.1);
+    background: rgb(var(--accent-rgb) / 0.1);
     color: var(--accent-text);
   }
 
@@ -479,12 +611,12 @@ const remainingItems = areaPosition < 0 ? [] : navItems.slice(areaPosition + 1)
   :global(.sidebar .nav-badge) {
     margin-left: auto;
     background: var(--bg-primary);
-    color: var(--text-muted);
+    color: var(--text-secondary);
     font-size: 10px;
     font-weight: 700;
     padding: 0.125rem 0.5rem;
     border-radius: 9999px;
-    border: 1px solid rgba(var(--border-rgb), 0.5);
+    border: 1px solid rgb(var(--border-rgb) / 0.5);
     min-width: 20px;
     text-align: center;
   }
@@ -508,5 +640,13 @@ const remainingItems = areaPosition < 0 ? [] : navItems.slice(areaPosition + 1)
   .sidebar-gamification-wrapper {
     padding: 0.5rem 0.75rem;
     border-top: 1px solid var(--border, #334155);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .sidebar-rail-cta:active,
+    :global(.sidebar .nav-link:active),
+    :global(.sidebar .nav-link:hover) {
+      transform: none;
+    }
   }
 </style>

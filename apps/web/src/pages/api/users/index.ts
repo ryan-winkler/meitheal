@@ -1,7 +1,7 @@
 import type { APIRoute } from "astro"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
-import { UserRepository } from "@domains/tasks/persistence/user-repository"
-import { listHAUsers, type MeithealUser } from "@domains/ha/ha-users"
+import { customUserKind, UserRepository } from "@domains/tasks"
+import { listHAUsers, type MeithealUser } from "@domains/ha"
 
 /**
  * GET /api/users — Merged list of HA users + custom users.
@@ -17,6 +17,7 @@ export const GET: APIRoute = async () => {
     id: `ha_${u.id}`,
     name: u.name,
     source: "home_assistant" as const,
+    kind: "human" as const,
     is_owner: u.is_owner,
   }))
 
@@ -28,8 +29,8 @@ export const GET: APIRoute = async () => {
       id: String(r.id),
       name: String(r.name),
       source: "custom" as const,
+      kind: customUserKind(r.kind),
       color: typeof r.color === "string" ? r.color : "#6366f1",
-      kind: (r.kind === "agent" ? "agent" : "human") as "agent" | "human",
     }
   })
 

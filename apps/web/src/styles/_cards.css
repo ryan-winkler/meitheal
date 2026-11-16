@@ -7,17 +7,17 @@
  * ============================================= */
 /* --- Cards --- */
 .card {
-  @apply bg-bg-card/80 backdrop-blur-md border border-border rounded-lg p-5 shadow-sm transition-all;
+  @apply bg-bg-card border border-border rounded-lg p-5 shadow-sm transition-all;
 }
 
 .card:hover {
   @apply shadow-md border-border-focus/50;
   transform: translateY(-2px);
-  }
-  
-  .card:focus-within {
-    @apply shadow-md border-border-focus/60;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2), 0 0 0 1px var(--accent-light, rgba(99, 102, 241, 0.1));
+}
+
+.card:focus-within {
+  @apply shadow-md border-border-focus/60;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2), 0 0 0 1px var(--accent-light, rgb(var(--accent-rgb) / 0.12));
 }
 
 .card-header {
@@ -34,7 +34,7 @@
 }
 
 .status-dot.online {
-  @apply bg-accent;
+  background-color: var(--accent);
 }
 
 /* --- Badges --- */

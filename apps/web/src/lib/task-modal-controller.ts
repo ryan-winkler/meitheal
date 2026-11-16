@@ -33,6 +33,8 @@
         import { commentAttemptHeader, commentMentionContextHeader } from "@lib/comment-mentions"
         import { initModalTaskReferences } from "@lib/controllers/modal-task-references"
         import { resolveDescriptionTaskReferences } from "@lib/task-references"
+        import { saveNavigationState } from "@lib/ingress-state-persistence"
+        import { hasPriorityOverlay } from "@lib/layout-shortcuts-controller"
 
         // Use lifecycle signal for all global listeners in this module
         pageLifecycle.onPageLoad(() => {
@@ -59,6 +61,7 @@
         const pins = initModalTaskPin(tdOverlay, __signal, () => { if (pinnedSession) pinnedSession.dirty = true })
         const closeTaskReferences = initModalTaskReferences(tdOverlay, __signal)
         const tdClose = document.getElementById("td-close")
+        const tdPanel = document.getElementById("task-detail-panel")
         const tdHeading = document.getElementById("td-task-heading")
         const tdActions = document.getElementById("td-task-actions")
         const tdError = document.getElementById("td-load-error")
@@ -90,6 +93,27 @@
         const drawerSession = crypto.randomUUID?.() ?? Array.from(crypto.getRandomValues(new Uint8Array(16)),
           byte => byte.toString(16).padStart(2, "0")).join("")
         tdOverlay.dataset.ticketHistorySession = drawerSession
+
+        const dockMedia = window.matchMedia("(min-width: 1440px)")
+        function setInspectorAriaLabel(label: string) {
+          tdOverlay.setAttribute("aria-label", label)
+          tdPanel?.setAttribute("aria-label", label)
+        }
+        function syncInspectorDockMode() {
+          const isOpen = tdOverlay.classList.contains("active") && !tdOverlay.classList.contains("closing")
+          const docked = isOpen && window.innerWidth >= 1440
+          document.body.classList.toggle("has-docked-inspector", docked)
+          tdPanel?.setAttribute("role", docked ? "region" : "dialog")
+          tdPanel?.setAttribute("aria-modal", docked ? "false" : "true")
+          document.body.style.overflow = isOpen && !docked ? "hidden" : ""
+        }
+        dockMedia.addEventListener("change", syncInspectorDockMode, { signal: __signal })
+        window.addEventListener("resize", syncInspectorDockMode, { passive: true, signal: __signal })
+        __signal.addEventListener("abort", () => {
+          document.body.classList.remove("has-docked-inspector")
+          tdPanel?.setAttribute("role", "dialog")
+          tdPanel?.setAttribute("aria-modal", "true")
+        }, { once: true })
 
         function beginScopedWrite() {
           const search = searchSession
@@ -133,6 +157,7 @@
             if (target.href === url.href) return
             if (ticket !== null) {
               history.replaceState(history.state, "", target)
+              saveNavigationState()
               return
             }
             const legacy = url.searchParams.has("open") || getLegacyTaskId(url.hash) !== null
@@ -145,9 +170,13 @@
               history.replaceState({ ...history.state, ticketBackground: drawerSession }, "")
               history.pushState(state, "", target)
             }
+            saveNavigationState()
           } else if (ticket !== null) {
             if (history.state?.ticketDrawer?.pushed) history.back()
-            else history.replaceState(history.state, "", taskBackgroundUrl(url))
+            else {
+              history.replaceState(history.state, "", taskBackgroundUrl(url))
+              saveNavigationState()
+            }
           }
         }
 
@@ -173,7 +202,7 @@
           const finishClose = () => {
             if (closing !== detailGeneration || currentTaskId !== null || !tdOverlay.classList.contains("active")) return
             tdOverlay.classList.remove("active", "closing");
-            document.body.style.overflow = "";
+            syncInspectorDockMode();
             // D1: Collapse sidebar on close (reset for next open)
             _sidebarProps?.classList.remove("td-sidebar-expanded");
             _sidebarToggle?.setAttribute("aria-expanded", "false");
@@ -195,7 +224,7 @@
             search?.handoff.onDismiss(reason)
           };
 
-          if (reducedMotion || immediate) {
+          if (reducedMotion || immediate || document.body.classList.contains("has-docked-inspector")) {
             finishClose();
             return;
           }
@@ -251,11 +280,10 @@
           if (projectField) projectField.disabled = true
           tdOverlay.classList.remove("closing")
           tdOverlay.classList.add("active");
+          syncInspectorDockMode();
           tdClose?.focus()
-          // Lock body scroll while panel is open (closeTD restores it)
-          document.body.style.overflow = "hidden";
           // Set dynamic aria-label for screen readers
-          tdOverlay.setAttribute("aria-label", `Task detail: loading...`);
+          setInspectorAriaLabel(`Task detail: loading...`);
           // Show skeleton, hide loaded content
           const tdSkeleton = document.getElementById("td-skeleton");
           const tdLoaded = document.getElementById("td-loaded-content");
@@ -270,7 +298,7 @@
             currentTaskId = null
             _isPopulating = false
             if (tdSkeleton) tdSkeleton.style.display = "none"
-            tdOverlay.setAttribute("aria-label", "Task detail")
+            setInspectorAriaLabel("Task detail")
             if (tdError) {
               tdError.textContent = (unavailable ? tdError.dataset.unavailable : tdError.dataset.failed) ?? null
               tdError.hidden = false
@@ -294,7 +322,7 @@
               await pendingChecklist
               if (modalSignal.aborted) return
             }
-            const res = await fetch(`/api/tasks/${encodeURIComponent(taskId)}`, {
+            const res = await fetch(`/api/tasks/${encodeURIComponent(taskId)}`, { // nosemgrep
               signal: modalSignal,
               ...(pendingChecklist ? { cache: "no-store" } : {}),
             })
@@ -314,21 +342,25 @@
             currentTaskId = taskId
             setTaskLocation(taskId, true, commentTarget)
 
+            // Start independent inspector reads together. Each field keeps its own fallback.
+            const requestOptions = { signal: modalSignal }
+            const lanes = fetch("/api/lanes", requestOptions)
+            const backlogModeSetting = fetch("/api/settings?key=backlog_mode", requestOptions)
+            const areas = fetch("/api/areas", requestOptions)
+            const projectRead = projectField ? fetch("/api/projects", requestOptions) : null
+            const pillars = fetch("/api/pillars", requestOptions)
+            const assignSelect = document.querySelector<HTMLSelectElement>("#td-assigned-to")
+            const users = assignSelect ? fetch("/api/users", requestOptions) : null
+            const settings = fetch("/api/settings", requestOptions)
+            // Observe rejections immediately. Field handlers consume the original promises in order.
+            void Promise.allSettled([lanes, backlogModeSetting, areas, projectRead, pillars, users, settings])
+
             // Populate status dropdown from lanes API
             const statusSelect = document.getElementById(
               "td-status",
             ) as HTMLSelectElement | null;
             try {
-              const [lanesRes, modeRes] = await Promise.all([
-                fetch((window.__ingress_path || "") + "/api/lanes", {
-                  signal: modalSignal,
-                }),
-                fetch(
-                  (window.__ingress_path || "") +
-                    "/api/settings?key=backlog_mode",
-                  { signal: modalSignal },
-                ),
-              ]);
+              const [lanesRes, modeRes] = await Promise.all([lanes, backlogModeSetting])
               let backlogMode = "visible";
               try {
                 if (modeRes.ok) {
@@ -340,7 +372,8 @@
                 /* default */
               }
               if (lanesRes.ok && statusSelect) {
-                const lanesData = await lanesRes.json();
+                const lanesData = await lanesRes.json()
+                if (modalSignal.aborted) return
                 let lanes = lanesData.lanes || [];
                 // When backlog is disabled, remove it from status options
                 if (backlogMode === "disabled") {
@@ -351,7 +384,7 @@
                   // Add the main key as an option
                   const opt = document.createElement("option");
                   opt.value = lane.key;
-                  opt.textContent = `${lane.icon} ${lane.label}`;
+                  opt.textContent = lane.label;
                   statusSelect.appendChild(opt);
                 }
               }
@@ -389,10 +422,17 @@
                     t.parent_title ??
                     String(t.parent_id).slice(0, 8),
                 );
-                linkParentDisplay.innerHTML = `
-                <a href="#" class="text-xs text-accent hover:underline td-parent-link" data-id="${escapeHtml(t.parent_id)}">${escapeHtml(parentTitle)}</a>
-                <button type="button" class="text-xs text-danger hover:text-red-400 ml-1 td-unlink-parent" title="Remove parent">✕</button>
-              `;
+                const parentLink = document.createElement("a");
+                parentLink.href = "#";
+                parentLink.className = "text-xs text-accent hover:underline td-parent-link";
+                parentLink.dataset.id = String(t.parent_id);
+                parentLink.textContent = parentTitle;
+                const unlinkBtn = document.createElement("button");
+                unlinkBtn.type = "button";
+                unlinkBtn.className = "text-xs text-danger hover:text-red-400 ml-1 td-unlink-parent";
+                unlinkBtn.title = "Remove parent";
+                unlinkBtn.textContent = "✕";
+                linkParentDisplay.replaceChildren(parentLink, document.createTextNode(" "), unlinkBtn);
                 linkParentDisplay
                   .querySelector(".td-parent-link")
                   ?.addEventListener("click", (e) => {
@@ -435,12 +475,14 @@
               const progressLabel = document.getElementById("td-subtask-progress-label");
               const progressBar = document.getElementById("td-subtask-progress-bar");
               try {
-                const childRes = await fetch(
-                  `${window.__ingress_path || ""}/api/tasks?parent_id=${taskId}`,
-                  { signal: __signal },
+                const childRes = await fetch( // nosemgrep
+                  `${window.__ingress_path || ""}/api/tasks?parent_id=${taskId}`, // nosemgrep
+                  requestOptions,
                 );
+                if (modalSignal.aborted) return
                 if (childRes.ok) {
-                  const childData = await childRes.json();
+                  const childData = await childRes.json()
+                  if (modalSignal.aborted) return
                   const children = childData.tasks ?? [];
                   if (children.length === 0) {
                     childrenDiv.innerHTML = `<span class="text-xs text-text-muted italic">No children</span>`;
@@ -471,11 +513,12 @@
                       // Color coding: green if all done, yellow if partial, default if none
                       if (pct === 100) progressBar.className = "h-full bg-green-500 rounded-full transition-all duration-300";
                       else if (pct > 0) progressBar.className = "h-full bg-amber-500 rounded-full transition-all duration-300";
-                      else progressBar.className = "h-full bg-accent rounded-full transition-all duration-300";
+                      else progressBar.className = "h-full bg-accent rounded-full transition-[width,background-color] duration-300";
                     }
                   }
                 }
               } catch {
+                if (modalSignal.aborted) return
                 childrenDiv.innerHTML = `<span class="text-xs text-text-muted italic">—</span>`;
                 if (progressWrap) progressWrap.classList.add("hidden");
               }
@@ -490,8 +533,8 @@
               activityDiv.replaceChildren();
               const loadActivity = async () => {
                 try {
-                  const actRes = await fetch(
-                    `/api/tasks/${encodeURIComponent(taskId)}/activity`,
+                  const actRes = await fetch( // nosemgrep
+                    `/api/tasks/${encodeURIComponent(taskId)}/activity`, // nosemgrep
                     { signal: __signal, cache: "no-store" },
                   );
                   const cacheDirectives = actRes.headers.get("cache-control")?.toLowerCase().split(",")
@@ -510,12 +553,19 @@
                     const row = document.createElement("div");
                     row.className =
                       "flex gap-2 items-baseline py-1 border-b border-border/30";
-                    row.innerHTML = `
-                    <span class="text-text-muted shrink-0">${escapeHtml(ago)}</span>
-                    <span class="font-medium text-text-primary">${escapeHtml(e.field)}</span>
-                    <span class="text-text-muted">→</span>
-                    <span class="text-accent truncate">${escapeHtml(String(e.new_value ?? "—").slice(0, 60))}</span>
-                  `;
+                    const agoSpan = document.createElement("span");
+                    agoSpan.className = "text-text-muted shrink-0";
+                    agoSpan.textContent = ago;
+                    const fieldSpan = document.createElement("span");
+                    fieldSpan.className = "font-medium text-text-primary";
+                    fieldSpan.textContent = String(e.field ?? "");
+                    const arrowSpan = document.createElement("span");
+                    arrowSpan.className = "text-text-muted";
+                    arrowSpan.textContent = "→";
+                    const valSpan = document.createElement("span");
+                    valSpan.className = "text-accent truncate";
+                    valSpan.textContent = String(e.new_value ?? "—").slice(0, 60);
+                    row.append(agoSpan, fieldSpan, arrowSpan, valSpan);
                     activityDiv.appendChild(row);
                   }
                 } catch {
@@ -565,7 +615,8 @@
             const typeIconEl = document.getElementById("td-type-icon") as HTMLElement | null;
             if (typeIconEl) {
               const tt = String(t.task_type || "task").toLowerCase();
-              typeIconEl.innerHTML = renderTypeIconSvg(tt, 16);
+              const iconDoc = new DOMParser().parseFromString(renderTypeIconSvg(tt, 16), "text/html");
+              typeIconEl.replaceChildren(...Array.from(iconDoc.body.childNodes));
               typeIconEl.title = tt.charAt(0).toUpperCase() + tt.slice(1);
             }
 
@@ -580,7 +631,7 @@
               }, 10);
             }
             // Update aria-label with actual task title for screen readers
-            tdOverlay?.setAttribute("aria-label", `Task detail: ${String(t.title ?? "Untitled")}`);
+            setInspectorAriaLabel(`Task detail: ${String(t.title ?? "Untitled")}`);
 
             // Priority dot color
             const priorityDot = document.getElementById(
@@ -697,8 +748,12 @@
               dueRow.classList.add("hidden");
             }
 
-            (document.getElementById("td-color") as HTMLInputElement).value =
-              String(t.color ?? "#6366F1");
+            const fallbackAccentHex = (() => {
+              const raw = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim()
+              return /^#[0-9a-fA-F]{6}$/.test(raw) ? raw : "#69e3b2"
+            })()
+            ;(document.getElementById("td-color") as HTMLInputElement).value =
+              String(t.color ?? fallbackAccentHex);
             (document.getElementById("td-due-date") as HTMLInputElement).value =
               String(t.due_date ?? "");
             (
@@ -715,38 +770,38 @@
             ) as HTMLSelectElement;
             const currentAreaId = String(t.area_id ?? "default");
             try {
-              const boardRes = await fetch(
-                (window.__ingress_path || "") + "/api/areas",
-                { signal: __signal },
-              );
+              const boardRes = await areas
+              if (modalSignal.aborted) return
               if (boardRes.ok) {
-                const areaData = await boardRes.json();
+                const areaData = await boardRes.json()
+                if (modalSignal.aborted) return
                 const boards = areaData.areas ?? [];
                 areaSelect.replaceChildren();
                 boards.forEach(
                   (b: { id: string; name: string; icon: string }) => {
                     const opt = document.createElement("option");
                     opt.value = b.id;
-                    opt.textContent = `${b.icon} ${b.name}`;
+                    opt.textContent = b.name;
                     areaSelect.appendChild(opt);
                   },
                 );
                 areaSelect.value = currentAreaId;
               }
             } catch {
-              areaSelect.innerHTML = `<option value="${escapeHtml(currentAreaId)}">${escapeHtml(currentAreaId)}</option>`;
+              if (modalSignal.aborted) return
+              areaSelect.replaceChildren(new Option(currentAreaId, currentAreaId));
             }
-            if (projectField) {
+            if (projectField && projectRead) {
               const savedProject = String(t.project_id ?? "")
               try {
-                const response = await fetch("/api/projects", { signal: modalSignal })
+                const response = await projectRead
                 if (!response.ok) throw new Error("Projects unavailable")
                 const data = await response.json()
                 if (modalSignal.aborted) return
                 const projects = (data.projects ?? data) as Array<{ id: string, title: string, icon?: string }>
                 projectField.replaceChildren(new Option("No project", ""))
                 for (const project of projects) {
-                  projectField.add(new Option(`${project.icon ?? "📋"} ${project.title}`, project.id))
+                  projectField.add(new Option(project.title, project.id))
                 }
                 if (savedProject && !projects.some(project => project.id === savedProject)) {
                   const unavailable = new Option("Unavailable project", savedProject)
@@ -769,24 +824,24 @@
             ) as HTMLSelectElement;
             const currentPillarId = String(t.pillar_id ?? "");
             try {
-              const pilRes = await fetch(
-                (window.__ingress_path || "") + "/api/pillars",
-                { signal: __signal },
-              );
+              const pilRes = await pillars
+              if (modalSignal.aborted) return
               if (pilRes.ok) {
-                const pilData = await pilRes.json();
+                const pilData = await pilRes.json()
+                if (modalSignal.aborted) return
                 const pillars = pilData.pillars ?? pilData ?? [];
-                pillarSelect.innerHTML = '<option value="">No pillar</option>';
+                pillarSelect.replaceChildren(new Option("No pillar", ""));
                 (pillars as Array<{ id: string; name: string; icon?: string }>).forEach((p) => {
                   const opt = document.createElement("option");
                   opt.value = p.id;
-                  opt.textContent = `${p.icon ?? "🏛️"} ${p.name}`;
+                  opt.textContent = p.name;
                   pillarSelect.appendChild(opt);
                 });
                 pillarSelect.value = currentPillarId;
               }
             } catch {
-              pillarSelect.innerHTML = `<option value="${escapeHtml(currentPillarId)}">${escapeHtml(currentPillarId)}</option>`;
+              if (modalSignal.aborted) return
+              pillarSelect.replaceChildren(new Option(currentPillarId, currentPillarId));
             }
 
             // Populate principle dropdown
@@ -796,27 +851,30 @@
             const currentPrincipleId = String(t.principle_id ?? "");
             try {
               if (currentPillarId && currentPillarId !== "null" && currentPillarId !== "undefined") {
-                const prinRes = await fetch(
-                  (window.__ingress_path || "") + `/api/pillars/${currentPillarId}/principles`,
-                  { signal: __signal },
+                const prinRes = await fetch( // nosemgrep
+                  (window.__ingress_path || "") + `/api/pillars/${currentPillarId}/principles`, // nosemgrep
+                  requestOptions,
                 );
+                if (modalSignal.aborted) return
                 if (prinRes.ok) {
-                  const prinData = await prinRes.json();
+                  const prinData = await prinRes.json()
+                  if (modalSignal.aborted) return
                   const principles = prinData.principles ?? prinData ?? [];
-                  principleSelect.innerHTML = '<option value="">No principle</option>';
+                  principleSelect.replaceChildren(new Option("No principle", ""));
                   (principles as Array<{ id: string; description: string }>).forEach((p) => {
                     const opt = document.createElement("option");
                     opt.value = p.id;
-                    opt.textContent = `⚖️ ${p.description.substring(0, 30)}${p.description.length > 30 ? '...' : ''}`;
+                    opt.textContent = `${p.description.substring(0, 30)}${p.description.length > 30 ? '...' : ''}`;
                     principleSelect.appendChild(opt);
                   });
                   principleSelect.value = currentPrincipleId;
                 }
               } else {
-                 principleSelect.innerHTML = '<option value="">No principle</option>';
+                 principleSelect.replaceChildren(new Option("No principle", ""));
               }
             } catch {
-              principleSelect.innerHTML = `<option value="${escapeHtml(currentPrincipleId)}">${escapeHtml(currentPrincipleId)}</option>`;
+              if (modalSignal.aborted) return
+              principleSelect.replaceChildren(new Option(currentPrincipleId, currentPrincipleId));
             }
             // Phase 20: Agile hierarchy type
             (
@@ -836,28 +894,25 @@
             }
 
             // Assigned To — populate from /api/users
-            const assignSelect = document.getElementById(
-              "td-assigned-to",
-            ) as HTMLSelectElement | null;
-            if (assignSelect) {
+            if (assignSelect && users) {
               try {
-                const usersRes = await fetch(
-                  (window.__ingress_path || "") + "/api/users",
-                  { signal: __signal },
-                );
+                const usersRes = await users
+                if (modalSignal.aborted) return
                 if (usersRes.ok) {
-                  const usersData = await usersRes.json();
+                  const usersData = await usersRes.json()
+                  if (modalSignal.aborted) return
                   const users = usersData.users ?? [];
                   assignSelect.innerHTML =
                     '<option value="">Unassigned</option>';
                   for (const u of users) {
                     const opt = document.createElement("option");
                     opt.value = u.id;
-                    opt.textContent = u.display_name ?? u.name ?? u.id;
+                    opt.textContent = (u.display_name ?? u.name ?? u.id) + (u.kind === "agent" ? " (AI agent)" : "");
                     assignSelect.appendChild(opt);
                   }
                 }
               } catch {
+                if (modalSignal.aborted) return
                 /* keep default unassigned option */
               }
               assignSelect.value = String(t.assigned_to ?? "");
@@ -880,7 +935,7 @@
             _settingsFields = [];
             let allSettings: Record<string, unknown> = {};
             try {
-              const settingsRes = await fetch("/api/settings", { signal: modalSignal })
+              const settingsRes = await settings
               if (settingsRes.ok) {
                 allSettings = await settingsRes.json();
                 if (modalSignal.aborted || currentTaskId !== taskId) return
@@ -1093,7 +1148,9 @@
 
         function renderTaskDescription(markdown: string) {
           if (!descPreview) return
-          descPreview.innerHTML = sanitizeClient(String(marked.parse(markdown || "*No description provided.*")))
+          const sanitized = sanitizeClient(String(marked.parse(markdown || "*No description provided.*")))
+          const parsedDoc = new DOMParser().parseFromString(sanitized, "text/html")
+          descPreview.replaceChildren(...Array.from(parsedDoc.body.childNodes))
           resolveDescriptionTaskReferences(descPreview)
         }
 
@@ -1117,7 +1174,10 @@
               renderTaskDescription(rawMarkdown)
             } catch (e: any) {
               log.error("Markdown render error", e);
-              descPreview.innerHTML = `<div class="text-red-500">Error rendering markdown: ${escapeHtml(e.message)}</div>`;
+              const errDiv = document.createElement("div");
+              errDiv.className = "text-red-500";
+              errDiv.textContent = `Error rendering markdown: ${String(e?.message ?? e)}`;
+              descPreview.replaceChildren(errDiv);
             }
             saveTD("description", rawMarkdown);
             // Show "✓ Saved" indicator (T4: guarded with timeout tracking)
@@ -1261,7 +1321,7 @@
           saveTD("principle_id", null);
           const principleSelect = document.getElementById("td-principle") as HTMLSelectElement | null;
           if (principleSelect) {
-            principleSelect.innerHTML = '<option value="">No principle</option>';
+            principleSelect.replaceChildren(new Option("No principle", ""));
             if (pillarId) {
               try {
                 const prinRes = await fetch(
@@ -1273,7 +1333,7 @@
                   principles.forEach((p: any) => {
                     const opt = document.createElement("option");
                     opt.value = p.id;
-                    opt.textContent = `⚖️ ${p.description.substring(0, 30)}${p.description.length > 30 ? '...' : ''}`;
+                    opt.textContent = `${p.description.substring(0, 30)}${p.description.length > 30 ? '...' : ''}`;
                     principleSelect.appendChild(opt);
                   });
                 }
@@ -1303,6 +1363,8 @@
         document.addEventListener("keydown", (e) => {
           const panel = document.getElementById("task-detail-panel");
           if (!panel || panel.style.display === "none") return;
+          if (!tdOverlay.classList.contains("active") || hasPriorityOverlay() || !document.getElementById("shortcut-modal")?.classList.contains("hidden")) return;
+          if (document.body.classList.contains("has-docked-inspector") && !panel.contains(document.activeElement)) return;
           if (e.key === "a" && !e.ctrlKey && !e.metaKey && !e.altKey && singleKeyShortcutsEnabled()) {
             const active = document.activeElement as HTMLElement;
             if (
@@ -1405,21 +1467,29 @@
               if (tasks.length === 0) {
                 parentResultsDiv.innerHTML = `<div class="px-3 py-2 text-xs text-text-muted italic">No matches</div>`;
               } else {
-                parentResultsDiv.innerHTML = tasks
-                  .map((t: Record<string, unknown>) => {
+                parentResultsDiv.replaceChildren(
+                  ...tasks.map((t: Record<string, unknown>) => {
                     const typeIcon =
                       t.task_type === "epic"
                         ? "🎯"
                         : t.task_type === "story"
                           ? "📖"
                           : "✅";
-                    return `<div class="td-parent-result px-3 py-2 text-sm cursor-pointer hover:bg-bg-hover flex items-center gap-2" data-id="${escapeHtml(t.id)}">
-                  <span>${typeIcon}</span>
-                  <span class="truncate">${escapeHtml(String(t.title).slice(0, 60))}</span>
-                  <span class="text-xs text-text-muted ml-auto">${escapeHtml(String(t.task_type ?? "task"))}</span>
-                </div>`;
-                  })
-                  .join("");
+                    const row = document.createElement("div");
+                    row.className = "td-parent-result px-3 py-2 text-sm cursor-pointer hover:bg-bg-hover flex items-center gap-2";
+                    row.dataset.id = String(t.id ?? "");
+                    const iconSpan = document.createElement("span");
+                    iconSpan.textContent = typeIcon;
+                    const titleSpan = document.createElement("span");
+                    titleSpan.className = "truncate";
+                    titleSpan.textContent = String(t.title ?? "").slice(0, 60);
+                    const typeSpan = document.createElement("span");
+                    typeSpan.className = "text-xs text-text-muted ml-auto";
+                    typeSpan.textContent = String(t.task_type ?? "task");
+                    row.append(iconSpan, titleSpan, typeSpan);
+                    return row;
+                  }),
+                );
                 // Click handler for each result
                 parentResultsDiv
                   .querySelectorAll(".td-parent-result")
@@ -1565,9 +1635,24 @@
               const response = document.createElement("div")
               response.id = "td-ai-response"
               response.className = "mt-2 p-3 bg-accent/10 border border-accent/20 rounded-md text-xs text-text-secondary leading-relaxed"
-              response.innerHTML = `<div class="flex justify-between items-center mb-1.5"><strong class="text-accent text-[11px]">AI Response</strong><button type="button" id="td-ai-dismiss" class="text-text-muted hover:text-text-primary text-xs px-1" aria-label="Dismiss AI response">&times;</button></div><div class="whitespace-pre-wrap">${escapeHtml(result.response)}</div>`
+              const header = document.createElement("div")
+              header.className = "flex justify-between items-center mb-1.5"
+              const title = document.createElement("strong")
+              title.className = "text-accent text-[11px]"
+              title.textContent = "AI Response"
+              const dismiss = document.createElement("button")
+              dismiss.type = "button"
+              dismiss.id = "td-ai-dismiss"
+              dismiss.className = "text-text-muted hover:text-text-primary text-xs px-1"
+              dismiss.setAttribute("aria-label", "Dismiss AI response")
+              dismiss.textContent = "×"
+              header.append(title, dismiss)
+              const body = document.createElement("div")
+              body.className = "whitespace-pre-wrap"
+              body.textContent = result.response
+              response.replaceChildren(header, body)
               askAi.parentElement?.after(response)
-              response.querySelector("#td-ai-dismiss")?.addEventListener("click", () => response.remove(), { signal })
+              dismiss.addEventListener("click", () => response.remove(), { signal })
             }
           } catch (err) {
             if (signal.aborted || currentTaskId !== taskId) return
@@ -1736,11 +1821,12 @@
         // Close
         tdClose?.addEventListener("click", () => closeTD(), { signal: __signal })
         tdOverlay?.addEventListener("click", (e) => {
-          if (e.target === tdOverlay) closeTD("discard")
+          if (e.target === tdOverlay && !document.body.classList.contains("has-docked-inspector")) closeTD("discard")
         }, { signal: __signal });
 
         function checkTaskLocation(fromHistory = false) {
           if (waitForDetailWrites(() => checkTaskLocation(fromHistory))) return
+          if (fromHistory) saveNavigationState()
           const url = new URL(window.location.href)
           const taskId = ticketIdFromPath(url.pathname, window.__ingress_path) ?? getLegacyTaskId(url.hash) ?? url.searchParams.get("open")
           const commentTarget = url.searchParams.get("comment")

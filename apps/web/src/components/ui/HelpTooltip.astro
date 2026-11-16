@@ -99,7 +99,7 @@ const tooltipId = id || `help-${Math.random().toString(36).slice(2, 8)}`;
   .help-tooltip__trigger:hover,
   .help-tooltip__trigger:focus-visible {
     background: var(--accent);
-    color: #fff;
+    color: var(--personal-accent-foreground, var(--palette-on-accent, #07140f));
     border-color: var(--accent);
     outline: none;
   }

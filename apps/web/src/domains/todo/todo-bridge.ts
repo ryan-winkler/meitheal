@@ -20,7 +20,7 @@ import {
   type TodoItem,
 } from "../ha";
 import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability";
-import { applyInboundTodoUpdate } from "./todo-inbound-update"
+import type { SyncTaskMutation } from "@domains/tasks"
 import {
   haStatusToMeitheal,
   meithealStatusToHA,
@@ -55,6 +55,7 @@ export interface TodoSyncConfig {
 interface TodoSyncState {
   config: TodoSyncConfig;
   unsub: (() => void) | null;
+  fallbackTimer: ReturnType<typeof setTimeout> | null;
   lastSyncAt: number | null;
   itemCount: number;
   inboundSequence: number
@@ -89,11 +90,11 @@ function enqueueInboundSnapshot(state: TodoSyncState, sequence: number, items: H
 }
 
 // Cached persistence refs — avoids repeated dynamic imports in hot sync path
-let _storeModule: typeof import("@domains/tasks/persistence/store") | null = null;
+let _storeModule: typeof import("@domains/tasks") | null = null;
 let _todoTableEnsured = false;
 
 async function getStoreModule() {
-  if (!_storeModule) _storeModule = await import("@domains/tasks/persistence/store");
+  if (!_storeModule) _storeModule = await import("@domains/tasks");
   return _storeModule;
 }
 
@@ -132,13 +133,17 @@ async function getClient() {
 
 /**
  * Initialize todo sync with one or more HA todo entities.
+ * Deduplicates initial hydration by awaiting the first `todo/item/subscribe` snapshot
+ * (falling back to `syncTodoFromHA` only if no WS snapshot arrives within 3,000 ms).
  */
-export function startTodoSync(configs: TodoSyncConfig | TodoSyncConfig[]): void {
+export function startTodoSync(configs: TodoSyncConfig | TodoSyncConfig[]): Promise<void> {
   const configList = Array.isArray(configs) ? configs : [configs];
+  const initialHydrations: Promise<void>[] = [];
 
   for (const config of configList) {
     // Stop existing sync for this entity if active
     const existing = activeSyncs.get(config.entityId);
+    if (existing?.fallbackTimer) clearTimeout(existing.fallbackTimer);
     if (existing?.unsub) existing.unsub();
 
     if (!config.syncEnabled) {
@@ -149,6 +154,7 @@ export function startTodoSync(configs: TodoSyncConfig | TodoSyncConfig[]): void 
     const state: TodoSyncState = {
       config,
       unsub: null,
+      fallbackTimer: null,
       lastSyncAt: null,
       itemCount: 0,
       inboundSequence: 0,
@@ -156,34 +162,80 @@ export function startTodoSync(configs: TodoSyncConfig | TodoSyncConfig[]): void 
     };
     activeSyncs.set(config.entityId, state);
 
-    // Subscribe to real-time updates via WebSocket
+    // Subscribe to real-time updates via WebSocket (delivers initial snapshot without duplicate get_items)
     if (config.syncDirection !== "outbound") {
-      subscribeTodoItems(config.entityId, (items: TodoItem[]) => {
-        logger.log("info", {
-          event: "todo.sync.ws_update", domain: "todo", component: "todo-bridge",
-          request_id: SYS_REQ,
-          message: `Real-time update: ${items.length} items from ${config.entityId}`,
-        });
-        // The merge logs failures. Keep a callback rejection out of the WS client.
-        void enqueueInboundSnapshot(state, ++state.inboundSequence, items as HATodoItem[]).catch(() => {})
-      }).then((unsub: () => void) => {
-        if (activeSyncs.get(config.entityId) === state) state.unsub = unsub
-        else unsub()
-      }).catch((err: unknown) => {
-        logger.log("error", {
-          event: "todo.sync.subscribe_failed", domain: "todo", component: "todo-bridge",
-          request_id: SYS_REQ, message: `Failed to subscribe to ${config.entityId}: ${err}`,
-        });
-      });
-    }
+      const hydrationPromise = new Promise<void>((resolveInitial) => {
+        let initialSettled = false;
+        let snapshotReceived = false;
+        const finishInitial = () => {
+          if (!initialSettled) {
+            initialSettled = true;
+            resolveInitial();
+          }
+        };
 
-    // Initial full sync
-    syncTodoFromHA(config.entityId).catch((err) => {
-      logger.log("error", {
-        event: "todo.sync.initial_failed", domain: "todo", component: "todo-bridge",
-        request_id: SYS_REQ, message: `Initial todo sync failed for ${config.entityId}: ${err}`,
+        state.fallbackTimer = setTimeout(() => {
+          state.fallbackTimer = null;
+          if (!snapshotReceived && activeSyncs.get(config.entityId) === state) {
+            snapshotReceived = true;
+            syncTodoFromHA(config.entityId).catch((err) => {
+              logger.log("error", {
+                event: "todo.sync.initial_failed", domain: "todo", component: "todo-bridge",
+                request_id: SYS_REQ, message: `Initial todo sync failed for ${config.entityId}: ${err}`,
+              });
+            }).finally(finishInitial);
+          } else {
+            finishInitial();
+          }
+        }, 3_000);
+        state.fallbackTimer.unref?.();
+
+        subscribeTodoItems(config.entityId, (items: TodoItem[]) => {
+          const isFirst = !snapshotReceived;
+          snapshotReceived = true;
+          if (state.fallbackTimer) {
+            clearTimeout(state.fallbackTimer);
+            state.fallbackTimer = null;
+          }
+          logger.log("info", {
+            event: "todo.sync.ws_update", domain: "todo", component: "todo-bridge",
+            request_id: SYS_REQ,
+            message: `Real-time update: ${items.length} items from ${config.entityId}`,
+          });
+          // The merge logs failures. Keep a callback rejection out of the WS client.
+          const merged = enqueueInboundSnapshot(state, ++state.inboundSequence, items as HATodoItem[]).catch(() => false);
+          if (isFirst) void merged.finally(finishInitial);
+        }).then((unsub: () => void) => {
+          if (activeSyncs.get(config.entityId) === state) {
+            state.unsub = unsub;
+          } else {
+            unsub();
+            finishInitial();
+          }
+        }).catch((err: unknown) => {
+          logger.log("error", {
+            event: "todo.sync.subscribe_failed", domain: "todo", component: "todo-bridge",
+            request_id: SYS_REQ, message: `Failed to subscribe to ${config.entityId}: ${err}`,
+          });
+          if (!snapshotReceived && activeSyncs.get(config.entityId) === state) {
+            snapshotReceived = true;
+            if (state.fallbackTimer) {
+              clearTimeout(state.fallbackTimer);
+              state.fallbackTimer = null;
+            }
+            syncTodoFromHA(config.entityId).catch((syncErr) => {
+              logger.log("error", {
+                event: "todo.sync.initial_failed", domain: "todo", component: "todo-bridge",
+                request_id: SYS_REQ, message: `Initial todo sync failed for ${config.entityId}: ${syncErr}`,
+              });
+            }).finally(finishInitial);
+          } else {
+            finishInitial();
+          }
+        });
       });
-    });
+      initialHydrations.push(hydrationPromise);
+    }
 
     logger.log("info", {
       event: "todo.sync.started", domain: "todo", component: "todo-bridge",
@@ -191,6 +243,8 @@ export function startTodoSync(configs: TodoSyncConfig | TodoSyncConfig[]): void 
       message: `Todo sync started for ${config.entityId} (direction: ${config.syncDirection})`,
     });
   }
+
+  return Promise.allSettled(initialHydrations).then(() => {});
 }
 
 /**
@@ -234,6 +288,7 @@ export async function syncTodoFromHA(entityId?: string): Promise<{ synced: numbe
  */
 async function mergeHATodoItems(entityId: string, items: HATodoItem[]): Promise<void> {
   try {
+    const mod = await getStoreModule();
     const client = await getClient();
 
     let created = 0;
@@ -241,7 +296,6 @@ async function mergeHATodoItems(entityId: string, items: HATodoItem[]): Promise<
     let skipped = 0;
 
     // Backfill: assign ticket_number to any existing tasks missing one
-    // (e.g. synced tasks created before ticket_number was added to this path)
     const orphans = await client.execute(
       "SELECT id FROM tasks WHERE ticket_number IS NULL ORDER BY created_at ASC",
     );
@@ -251,7 +305,7 @@ async function mergeHATodoItems(entityId: string, items: HATodoItem[]): Promise<
           sql: `UPDATE tasks SET ticket_number = (SELECT COALESCE(MAX(ticket_number), 0) + 1 FROM tasks)
                 WHERE id = ? AND ticket_number IS NULL`,
           args: [row.id as string],
-        })
+        });
       }
       logger.log("info", {
         event: "todo.sync.backfill_tickets", domain: "todo", component: "todo-bridge",
@@ -260,121 +314,143 @@ async function mergeHATodoItems(entityId: string, items: HATodoItem[]): Promise<
       });
     }
 
-    for (const item of items) {
-      const uid = item.uid ?? `ha-todo-${entityId}-${item.summary}`;
-      const haStatus = item.status ?? "needs_action"
-      const meithealStatus = haStatusToMeitheal(haStatus);
+    const candidates: Array<{
+      item: HATodoItem;
+      uid: string;
+      haStatus: string;
+      meithealStatus: MeithealStatus;
+      cleanTitle: string;
+    }> = [];
 
-      // ── Loop prevention: skip items that Meitheal pushed outbound ──
-      // If we see our own attribution text, this item came from us via pushTaskToTodoList.
-      // Re-importing it would create a duplicate, closing the sync loop.
+    for (const item of items) {
       if (item.description && /Added from Meitheal$/i.test(item.description)) {
         skipped++;
         continue;
       }
-
-      // Sanitize the title upfront to strip any recursive MTH-NN prefixes
+      const uid = item.uid ?? `ha-todo-${entityId}-${item.summary}`;
+      const haStatus = item.status ?? "needs_action";
+      const meithealStatus = haStatusToMeitheal(haStatus);
       const cleanTitle = sanitizeTodoTitle(item.summary);
+      candidates.push({ item, uid, haStatus, meithealStatus, cleanTitle });
+    }
 
-      // Check if we already track this todo item (primary key: entity + uid)
-      const existing = await client.execute({
-        sql: "SELECT confirmation_id, task_id FROM todo_sync_confirmations WHERE ha_entity_id = ? AND ha_todo_uid = ?",
-        args: [entityId, uid],
+    if (candidates.length > 0) {
+      const existingMap = await mod.findTasksByExternalSyncIds({
+        source: "ha_todo",
+        entityId,
+        externalIds: candidates.map((c) => c.uid),
       });
 
-      // Fallback dedup: if UID lookup fails, check if a task with this title already exists.
-      // This catches items that were pushed outbound (different UID) coming back in.
-      if (existing.rows.length === 0 && cleanTitle) {
-        const titleMatch = await client.execute({
-          sql: "SELECT id FROM tasks WHERE title = ? AND status != 'complete' LIMIT 1",
-          args: [cleanTitle],
+      const unmatchedTitles = [
+        ...new Set(
+          candidates
+            .filter((c) => !existingMap.has(c.uid) && c.cleanTitle.length > 0)
+            .map((c) => c.cleanTitle),
+        ),
+      ];
+      const openTitleToTaskId = new Map<string, string>();
+      for (let offset = 0; offset < unmatchedTitles.length; offset += 200) {
+        const titleChunk = unmatchedTitles.slice(offset, offset + 200);
+        const placeholders = titleChunk.map(() => "?").join(", ");
+        const titleMatches = await client.execute({
+          sql: `SELECT id, title FROM tasks WHERE status != 'complete' AND title IN (${placeholders}) ORDER BY rowid ASC`,
+          args: titleChunk,
         });
-        if (titleMatch.rows.length > 0) {
-          // Found existing task by title — link it and skip creation
-          const matchedTaskId = titleMatch.rows[0]!.id as string;
-          const nowMs = Date.now();
-          await client.execute({
-            sql: `INSERT OR IGNORE INTO todo_sync_confirmations (
-              confirmation_id, task_id, request_id, ha_entity_id, ha_todo_uid,
-              source, sync_direction, payload, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, 'ha.todo_sync', 'inbound', ?, ?, ?)`,
-            args: [
-              crypto.randomUUID(), matchedTaskId, crypto.randomUUID(),
-              entityId, uid,
-              JSON.stringify({ summary: item.summary, status: item.status, due: item.due }),
-              nowMs, nowMs,
-            ],
+        for (const row of titleMatches.rows) {
+          const titleKey = String(row.title);
+          if (!openTitleToTaskId.has(titleKey)) {
+            openTitleToTaskId.set(titleKey, String(row.id));
+          }
+        }
+      }
+
+      const mutations: SyncTaskMutation[] = [];
+      const syncLabel = `synced from ${entityId}`;
+      const nowMs = Date.now();
+
+      for (const { item, uid, haStatus, meithealStatus, cleanTitle } of candidates) {
+        const payload = JSON.stringify({ summary: item.summary, status: item.status, due: item.due });
+        const existingMatch = existingMap.get(uid);
+
+        if (existingMatch) {
+          mutations.push({
+            kind: "update",
+            taskId: existingMatch.taskId,
+            title: cleanTitle,
+            status: meithealStatus,
+            openEcho: haStatus === "needs_action",
+            dueDate: item.due ?? null,
+            updateDueDate: true,
+            description: stripMeithealAttribution(item.description),
+            updatedAt: nowMs,
+            confirmation: {
+              source: "ha_todo",
+              confirmationId: existingMatch.confirmationId,
+              entityId,
+              externalId: uid,
+              payload,
+              requireUnmodifiedSinceSync: true,
+            },
+          });
+          continue;
+        }
+
+        const matchedTaskId = cleanTitle ? openTitleToTaskId.get(cleanTitle) : undefined;
+        if (matchedTaskId) {
+          mutations.push({
+            kind: "link",
+            taskId: matchedTaskId,
+            createdAt: nowMs,
+            confirmation: {
+              source: "ha_todo",
+              entityId,
+              externalId: uid,
+              syncDirection: "inbound",
+              payload,
+            },
           });
           skipped++;
           continue;
         }
+
+        const taskId = crypto.randomUUID();
+        if (cleanTitle) {
+          openTitleToTaskId.set(cleanTitle, taskId);
+        }
+        mutations.push({
+          kind: "create",
+          taskId,
+          idempotencyKey: `todo-sync-${uid}`,
+          title: cleanTitle,
+          description: stripMeithealAttribution(item.description) ?? "",
+          status: meithealStatus,
+          priority: 3,
+          dueDate: item.due ?? null,
+          labels: [syncLabel],
+          areaId: "default",
+          taskType: "task",
+          taskKind: "standard_action",
+          createdAt: nowMs,
+          confirmation: {
+            source: "ha_todo",
+            entityId,
+            externalId: uid,
+            syncDirection: "inbound",
+            payload,
+          },
+        });
       }
 
-      if (existing.rows.length > 0) {
-        const link = existing.rows[0]!
-        const applied = await applyInboundTodoUpdate(client, {
-          confirmationId: String(link.confirmation_id),
-          taskId: String(link.task_id),
-          entityId,
-          uid,
-          title: cleanTitle,
-          status: meithealStatus,
-          openEcho: haStatus === "needs_action",
-          due: item.due ?? null,
-          description: stripMeithealAttribution(item.description),
-          payload: JSON.stringify({ summary: item.summary, status: item.status, due: item.due }),
-        })
-        if (applied) updated++
-        else skipped++
-      } else {
-        // Create new task from todo item
-        const taskId = crypto.randomUUID();
-        const reqId = crypto.randomUUID();
-        const nowMs = Date.now();
-
-        const syncLabel = `synced from ${entityId}`;
-
-        await client.execute({
-          sql: `INSERT INTO tasks (id, title, description, status, priority, due_date,
-                  labels, framework_payload, calendar_sync_state, area_id,
-                  custom_fields, task_type, task_kind, ticket_number, idempotency_key, request_id,
-                  created_at, updated_at)
-                VALUES (?, ?, ?, ?, 3, ?, ?, '{}', 'synced', 'default',
-                  '{}', 'task', 'standard_action', (SELECT COALESCE(MAX(ticket_number), 0) + 1 FROM tasks),
-                  ?, ?, ?, ?)`,
-          args: [
-            taskId,
-            cleanTitle,
-            stripMeithealAttribution(item.description) ?? "",
-            meithealStatus,
-            item.due ?? null,
-            JSON.stringify([syncLabel]),
-            `todo-sync-${uid}`,
-            reqId,
-            nowMs,
-            nowMs,
-          ],
+      const commitResult = await mod.commitSyncMutationChunks(mutations);
+      created += commitResult.created;
+      updated += commitResult.updated;
+      skipped += commitResult.skipped;
+      for (const itemErr of commitResult.errors) {
+        logger.log("error", {
+          event: "todo.sync.item_error", domain: "todo", component: "todo-bridge",
+          request_id: SYS_REQ,
+          message: `Failed to merge todo item #${itemErr.index} from ${entityId}: ${itemErr.message}`,
         });
-
-        // Record sync confirmation for deduplication
-        await client.execute({
-          sql: `INSERT INTO todo_sync_confirmations (
-            confirmation_id, task_id, request_id, ha_entity_id, ha_todo_uid,
-            source, sync_direction, payload, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, 'ha.todo_sync', 'inbound', ?, ?, ?)`,
-          args: [
-            crypto.randomUUID(),
-            taskId,
-            reqId,
-            entityId,
-            uid,
-            JSON.stringify({ summary: item.summary, status: item.status, due: item.due }),
-            nowMs,
-            nowMs,
-          ],
-        });
-
-        created++;
       }
     }
 
@@ -624,10 +700,12 @@ export async function removeTaskFromTodoList(taskId: string): Promise<number> {
 export function stopTodoSync(entityId?: string): void {
   if (entityId) {
     const state = activeSyncs.get(entityId);
+    if (state?.fallbackTimer) clearTimeout(state.fallbackTimer);
     if (state?.unsub) state.unsub();
     activeSyncs.delete(entityId);
   } else {
     for (const [, state] of activeSyncs) {
+      if (state.fallbackTimer) clearTimeout(state.fallbackTimer);
       if (state.unsub) state.unsub();
     }
     activeSyncs.clear();

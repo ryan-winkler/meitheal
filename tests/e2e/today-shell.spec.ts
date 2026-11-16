@@ -17,10 +17,29 @@ test.describe("Today Shell", () => {
     await workLink.click()
 
     await expect(page).toHaveURL(/#today-work$/)
+    await expect(page.locator("#today-work")).toBeInViewport()
     await expect(workLink).toHaveClass(/is-active/)
     await expect(workLink).toHaveAttribute("aria-current", "location")
     await expect(workLink).not.toHaveAttribute("aria-selected")
-    await expect(page.locator("#today-work")).toBeVisible()
+
+    const work = page.locator("#today-work")
+    const habits = page.locator("#today-habits")
+    const habitsLink = page.locator('#today-bar-tabs [data-unified-bar-section="today-habits"]')
+    await habits.evaluate((section) => {
+      section.style.minHeight = "150vh"
+    })
+    await work.evaluate((section) => {
+      const bottom = section.getBoundingClientRect().bottom + window.scrollY
+      window.scrollTo({ top: bottom - 120, behavior: "instant" })
+    })
+    await expect(work).toBeInViewport()
+    await expect(habits).toBeInViewport()
+    await expect(workLink).toHaveAttribute("aria-current", "location")
+
+    await page.evaluate(() => window.scrollBy({ top: 240, behavior: "instant" }))
+    await expect(work).not.toBeInViewport()
+    await expect(habitsLink).toHaveAttribute("aria-current", "location")
+    await expect(workLink).toHaveAttribute("aria-current", "false")
   })
 
   test("search launcher opens SearchHub and Assist remains available", async ({ page }) => {

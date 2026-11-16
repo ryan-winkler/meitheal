@@ -30,12 +30,12 @@ The task list and completed-task cleanup return HTTP 503 when local storage is b
 **Fix**:
 
 1. Open the top bar search from Settings to find a field by name.
-2. Use `Settings → App & PWA` for companion URL handler and x-callback actions.
+2. Use `Settings → App & Companion` for companion URL handler and x-callback actions.
 3. See `docs/kcs/settings-troubleshooting.md` for the Settings-specific runbook.
 
 ### Restore an inline helper
 
-Dismissed helpers stay hidden on reload. When letter, number and symbol shortcuts are enabled, press `?` outside a text field to restore dismissed helpers. Press it again to open **Keyboard shortcuts**, which lists the same shortcuts as **Settings → Personal → Keyboard Shortcuts**. Focus moves to **Close shortcuts** and stays in the dialog while you tab. Press Escape or activate **Close shortcuts** to return focus to the control you were using. Use **Toggle helper** to expand or collapse the explanation without dismissing it.
+Dismissed helpers stay hidden on reload. When letter, number and symbol shortcuts are enabled, press `?` outside a text field to restore dismissed helpers. Press it again to open **Keyboard shortcuts**, which lists the same shortcuts as **Settings → Navigation & Shortcuts → Keyboard shortcuts**. Focus moves to **Close shortcuts** and stays in the dialog while you tab. Press Escape or activate **Close shortcuts** to return focus to the control you were using. Use **Toggle helper** to expand or collapse the explanation without dismissing it.
 
 ### IDB Quota Exceeded
 
@@ -91,6 +91,10 @@ Dismissed helpers stay hidden on reload. When letter, number and symbol shortcut
 1. Use `local_meitheal` as the default hostname for new setup.
 2. If your environment still uses legacy naming, `local_meitheal_hub` is tried automatically.
 3. If needed, set host manually in the config flow and verify `http://<host>:3000/api/health` responds with `200`.
+
+### Grocy sync unavailable after an App restart
+
+Meitheal needs Grocy App information from Home Assistant Supervisor to replace an older ingress URL. If Supervisor cannot return that information, Meitheal keeps the saved URL and retries startup up to three times. Check that the Grocy App is started, then retry the connection in Settings if the automatic retries have ended. Saving a different URL in Settings takes precedence over an automatic migration already in progress.
 
 ### Sync Queue Stuck
 

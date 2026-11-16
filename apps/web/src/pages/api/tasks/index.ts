@@ -1,22 +1,34 @@
 import type { APIRoute } from "astro"
+import type { ResultSet } from "@libsql/client"
 import { deriveEisenhowerQuadrant, VALID_TASK_TYPES, type TaskType } from "@meitheal/domain-tasks"
 import { normalizeLabelTitle, taskLabelInsert } from "@domains/labels"
-import { hasBoardSelection, rejectBoardSelectionInJson, unavailableBoardResponse } from "@domains/tasks/board-availability"
-import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
-import { taskAddedActivity } from "@domains/tasks/persistence/recent-activity"
-import { taskInsertStatement, TaskRepository } from "@domains/tasks/persistence/task-repository"
-import { dispatchTaskCreation, prepareTaskCreation, taskCreationPayload } from "@domains/tasks/task-creation-service"
+import {
+  dispatchTaskCreation,
+  ensureSchema,
+  getPersistenceClient,
+  hasBoardSelection,
+  prepareTaskCreation,
+  rejectBoardSelectionInJson,
+  taskAddedActivity,
+  taskCreationPayload,
+  taskInsertStatement,
+  TaskRepository,
+  unavailableBoardResponse,
+} from "@domains/tasks"
+import { runWriteTransaction } from "../../../../scripts/database-client.mjs"
 import { formatTicketKey } from "../../../lib/ticket-key"
 import { logApiError } from "../../../lib/api-logger"
 import { isDbUnavailable, db503Response } from "../../../lib/db-fallback"
 import { apiError } from "../../../lib/api-response"
 import { normalizeStatus } from "../../../lib/status-config"
+import { isValidTimezone } from "../../../lib/date"
+import { readStoredHouseholdTimezone } from "../../../lib/task-queries"
 import { resolveRecentActivityActor } from "../../../lib/recent-activity-actor"
 import { taskEventAuthorityHeaders } from "../../../lib/webhook-dispatcher"
 
 /** GET /api/tasks — list all tasks, POST /api/tasks — create a task */
 
-export const GET: APIRoute = async ({ url }) => {
+export const GET: APIRoute = async ({ url, locals }) => {
   try {
   await ensureSchema()
   const repo = new TaskRepository(getPersistenceClient())
@@ -48,7 +60,9 @@ export const GET: APIRoute = async ({ url }) => {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(dueDate) || !Number.isFinite(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== dueDate) {
       return apiError("due_date must be a valid date in YYYY-MM-DD format", 400)
     }
+    const timezone = locals?.timezone?.trim() ?? ""
     findOpts.dueDate = dueDate
+    findOpts.timezone = isValidTimezone(timezone) ? timezone : await readStoredHouseholdTimezone()
   }
   const priority = url.searchParams.get("priority")
   if (priority) {
@@ -138,14 +152,12 @@ export const POST: APIRoute = async ({ request, locals }) => {
   await ensureSchema()
   const client = getPersistenceClient()
   const repo = new TaskRepository(client)
-  const autoSource = request.headers.get("X-Automation-Source")
-  const agentId = request.headers.get("X-Agent-Id")
+  // Attribution comes only from verified identity. Unauthenticated X-Agent-Id headers and
+  // body fields are claims, so a caller cannot record a task as created by an agent or person.
   const effectiveSource = locals.agentToken
     ? "agent"
-    : (autoSource ?? (typeof body.source === "string" ? body.source : "user"))
-  const effectiveCreatedBy = locals.agentToken
-    ? locals.agentToken.tokenName
-    : (agentId ?? (typeof body.created_by === "string" ? body.created_by : null))
+    : (request.headers.has("X-Automation-Source") ? locals.automationSource : "user")
+  const effectiveCreatedBy = locals.agentToken ? locals.agentToken.tokenName : null
 
   const taskBody = {
     ...body,
@@ -156,7 +168,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
   if (!prepared.ok) return Response.json({ error: prepared.error }, { status: 400 })
 
   const now = Date.now()
-  const activity = taskAddedActivity(prepared.task.id, resolveRecentActivityActor(locals), now)
+  const activity = taskAddedActivity(prepared.task.id, resolveRecentActivityActor(locals, request), now)
   const statements = [taskInsertStatement(prepared.task, now), activity]
   if (body.new_labels !== undefined) {
     if (locals.agentToken) return apiError("Creating labels with a task requires a browser session.", 403)
@@ -170,7 +182,14 @@ export const POST: APIRoute = async ({ request, locals }) => {
     statements[0] = taskInsertStatement(prepared.task, now, { requestId })
     statements.push(...[...new Set<string>(labels)].map(name => taskLabelInsert(name, prepared.task.id, requestId)))
   }
-  const [inserted] = await client.batch(statements, "write")
+  const [inserted] = await runWriteTransaction(
+    client,
+    function* () {
+      const results: ResultSet[] = yield statements
+      return results
+    },
+    { signal: locals.writeAbortSignal },
+  )
   const ticketNumber = Number(inserted!.rows[0]!.ticket_number)
   const payload = taskCreationPayload(prepared.task, ticketNumber, now)
   const authority = await taskEventAuthorityHeaders(["task.created"])

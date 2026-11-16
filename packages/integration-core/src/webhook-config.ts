@@ -1,28 +1,22 @@
 import { createHmac } from "node:crypto"
+import { canonicalizeNetworkHost, classifyNetworkHost, isIpv4TranslationIpv6Host } from "./grocy-adapter"
 
 // --- URL Validation (reused by SSRF guard and webhook config) ---
 
-const PRIVATE_IP_RANGES = [
-  /^127\./,
-  /^10\./,
-  /^172\.(1[6-9]|2\d|3[01])\./,
-  /^192\.168\./,
-  /^0\./,
-  /^169\.254\./,
-  /^::1$/,
-  /^fc00:/,
-  /^fd/,
-  /^fe80:/,
-  /^localhost$/i,
-]
-
 export function isPrivateHost(hostname: string): boolean {
-  return PRIVATE_IP_RANGES.some((re) => re.test(hostname))
+  const host = canonicalizeNetworkHost(hostname)
+  if (!host || isIpv4TranslationIpv6Host(host)) {
+    return true
+  }
+  return classifyNetworkHost(host) !== null
 }
 
 export function isPrivateUrl(urlString: string): boolean {
   try {
     const parsed = new URL(urlString)
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return true
+    }
     return isPrivateHost(parsed.hostname)
   } catch {
     return true // invalid URLs are treated as private (rejected)

@@ -18,7 +18,7 @@
  * Plans: personal, household, commercial
  */
 
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs"
+import { readFileSync, writeFileSync, mkdirSync, unlinkSync } from "node:fs"
 import { generateKeyPairSync, createPrivateKey, sign } from "node:crypto"
 import { resolve, dirname } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -38,12 +38,6 @@ function base64url(buf) {
 }
 
 function generateKeypair() {
-  if (existsSync(PRIVATE_KEY_PATH)) {
-    console.error("❌ Keypair already exists at", KEYS_DIR)
-    console.error("   Delete .keys/ manually if you want to regenerate (this invalidates ALL existing keys)")
-    process.exit(1)
-  }
-
   mkdirSync(KEYS_DIR, { recursive: true })
 
   const { publicKey, privateKey } = generateKeyPairSync("ed25519", {
@@ -51,8 +45,33 @@ function generateKeypair() {
     privateKeyEncoding: { type: "pkcs8", format: "pem" }
   })
 
-  writeFileSync(PRIVATE_KEY_PATH, privateKey, { mode: 0o600 })
-  writeFileSync(PUBLIC_KEY_PATH, publicKey, { mode: 0o644 })
+  // "wx" creates the file only if it is absent, so an existing key is never replaced,
+  // even when another process creates one at the same time. No separate existence check is needed.
+  try {
+    writeFileSync(PRIVATE_KEY_PATH, privateKey, { mode: 0o600, flag: "wx" })
+  } catch (err) {
+    if (err instanceof Error && "code" in err && err.code === "EEXIST") {
+      console.error("❌ Keypair already exists at", KEYS_DIR)
+      console.error("   Delete .keys/ manually if you want to regenerate (this invalidates ALL existing keys)")
+      process.exit(1)
+    }
+    throw err
+  }
+  try {
+    writeFileSync(PUBLIC_KEY_PATH, publicKey, { mode: 0o644, flag: "wx" })
+  } catch (err) {
+    try {
+      unlinkSync(PRIVATE_KEY_PATH)
+    } catch {
+      // Ignore cleanup failure; preserve the existing public key untouched.
+    }
+    console.error("❌ Public key already exists or could not be written at", PUBLIC_KEY_PATH)
+    console.error("   Rolled back newly created private key so existing keys remain intact.")
+    if (err instanceof Error && "code" in err && err.code !== "EEXIST") {
+      throw err
+    }
+    process.exit(1)
+  }
 
   console.log("✅ Ed25519 keypair generated")
   console.log(`   Private key: ${PRIVATE_KEY_PATH}`)
@@ -64,11 +83,6 @@ function generateKeypair() {
 }
 
 function generateLicense({ email, plan, expires }) {
-  if (!existsSync(PRIVATE_KEY_PATH)) {
-    console.error("❌ No keypair found. Run with --init first")
-    process.exit(1)
-  }
-
   if (!email) {
     console.error("❌ --email is required")
     process.exit(1)
@@ -79,7 +93,16 @@ function generateLicense({ email, plan, expires }) {
     process.exit(1)
   }
 
-  const privateKeyPem = readFileSync(PRIVATE_KEY_PATH, "utf-8")
+  let privateKeyPem
+  try {
+    privateKeyPem = readFileSync(PRIVATE_KEY_PATH, "utf-8")
+  } catch (err) {
+    if (err instanceof Error && "code" in err && err.code === "ENOENT") {
+      console.error("❌ No keypair found. Run with --init first")
+      process.exit(1)
+    }
+    throw err
+  }
   const privateKey = createPrivateKey(privateKeyPem)
 
   const now = Math.floor(Date.now() / 1000)

@@ -8,22 +8,27 @@ import {
 import { TaskRepository } from "@domains/tasks/persistence/task-repository";
 import { STATUS } from "../../lib/status-config";
 import { CALENDAR_SECTIONS } from "../../lib/calendar-registry";
+import { calendarToday } from "../../lib/date";
 
-const { weekStart = "monday" } = Astro.locals;
+const { weekStart = "monday", timezone = "Europe/Dublin" } = Astro.locals;
+const tz = timezone || "Europe/Dublin";
+const todayStr = calendarToday(tz);
+const [todayYear, todayMonth] = todayStr.split("-").map(Number);
 
-// Get current month from query param or default to today
+// Get current month from query param or default to today in household timezone
 const url = new URL(Astro.request.url);
 const yearParam = url.searchParams.get("year");
 const monthParam = url.searchParams.get("month");
 
-const now = new Date();
-const year = yearParam ? parseInt(yearParam, 10) : now.getFullYear();
-const month = monthParam ? parseInt(monthParam, 10) : now.getMonth(); // 0-indexed
+const parsedYear = yearParam ? parseInt(yearParam, 10) : NaN;
+const parsedMonth = monthParam ? parseInt(monthParam, 10) : NaN;
+const year = Number.isInteger(parsedYear) ? parsedYear : todayYear!;
+const month = Number.isInteger(parsedMonth) && parsedMonth >= 0 && parsedMonth <= 11 ? parsedMonth : (todayMonth! - 1); // 0-indexed
 
-const firstDay = new Date(year, month, 1);
-const lastDay = new Date(year, month + 1, 0);
+const firstDay = new Date(Date.UTC(year, month, 1));
+const lastDay = new Date(Date.UTC(year, month + 1, 0));
 
-let startDayOfWeek = firstDay.getDay(); // 0=Sun
+let startDayOfWeek = firstDay.getUTCDay(); // 0=Sun
 let weekLabels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 let isWeekendFn: (dow: number) => boolean = (dow: number) =>
   dow === 0 || dow === 6;
@@ -38,11 +43,12 @@ if (weekStart === "monday") {
   isWeekendFn = (dow: number) => dow === 0 || dow === 1;
 }
 
-const daysInMonth = lastDay.getDate();
+const daysInMonth = lastDay.getUTCDate();
 
 const monthName = firstDay.toLocaleDateString("en-US", {
   month: "long",
   year: "numeric",
+  timeZone: "UTC",
 });
 
 // Prev/next month links
@@ -65,7 +71,7 @@ try {
   const monthStart = `${year}-${String(month + 1).padStart(2, "0")}-01`;
   const monthEnd = `${year}-${String(month + 1).padStart(2, "0")}-${String(daysInMonth).padStart(2, "0")}`;
 
-  const calendarData = await repo.getCalendarTaskCounts(monthStart, monthEnd);
+  const calendarData = await repo.getCalendarTaskCounts(monthStart, monthEnd, tz);
   for (const [dateStr, info] of Object.entries(calendarData)) {
     tasksByDay[dateStr] = {
       count: info.count,
@@ -76,7 +82,7 @@ try {
   }
 
   // Also query HA-synced event counts per day
-  const haData = await repo.getCalendarHAEventCounts(monthStart, monthEnd);
+  const haData = await repo.getCalendarHAEventCounts(monthStart, monthEnd, tz);
   for (const [dateStr, count] of Object.entries(haData)) {
     monthHAEvents += count;
     if (tasksByDay[dateStr]) {
@@ -104,7 +110,6 @@ interface CalDay {
 
 const grid: CalDay[][] = [];
 let currentDay = 1 - startDayOfWeek;
-const todayStr = now.toISOString().split("T")[0] ?? "";
 
 for (let week = 0; week < 6; week++) {
   const row: CalDay[] = [];
@@ -137,19 +142,22 @@ for (let week = 0; week < 6; week++) {
 }
 
 const scheduledDayCount = Object.keys(tasksByDay).length
+const itemWord = monthTotal === 1 ? "item" : "items"
+const dayWord = scheduledDayCount === 1 ? "day" : "days"
+const haEventWord = monthHAEvents === 1 ? "HA event" : "HA events"
 const calendarSignal =
   monthTotal === 0
     ? "No tasks or connected events on this month yet"
-    : `${monthTotal} items tracked across ${scheduledDayCount} days`
+    : `${monthTotal} ${itemWord} tracked across ${scheduledDayCount} ${dayWord}`
 ---
 
 <div id="tasks-view-calendar" class="tasks-view-container" data-task-view="calendar">
 
-  <div id="calendar-shell" class="page-shell">
+  <div id="calendar-shell" class="page-shell" data-timezone={tz}>
     <!-- Signal bar -->
     <SignalBar>
       <span id="calendar-signal-summary">
-        <strong>{monthTotal}</strong> items across <strong>{scheduledDayCount}</strong> days · <strong>{monthHAEvents}</strong> HA events
+        <strong>{monthTotal}</strong> {itemWord} across <strong>{scheduledDayCount}</strong> {dayWord} · <strong>{monthHAEvents}</strong> {haEventWord}
       </span>
     </SignalBar>
 
@@ -170,9 +178,13 @@ const calendarSignal =
         </a>
         <a href="/calendar" class="cal-today-btn">Today</a>
         <span class="cal-task-summary"
-          >{monthTotal}
-          {monthTotal === 1 ? "item" : "items"} this month{
-            monthHAEvents > 0 ? ` (${monthHAEvents} 📅)` : ""
+          >{monthTotal} {itemWord} this month{
+            monthHAEvents > 0 && (
+              <>
+                {" "}({monthHAEvents}{" "}
+                <svg class="inline-block align-text-bottom" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2v-12" /><path d="M16 3v4" /><path d="M8 3v4" /><path d="M4 11h16" /></svg>)
+              </>
+            )
           }</span
         >
       </div>
@@ -208,7 +220,7 @@ const calendarSignal =
                       </span>
                       {cell.haEventLabel && (
                         <span class="cal-ha-badge" title={cell.haEventLabel}>
-                          <span aria-hidden="true">📅</span>
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2v-12" /><path d="M16 3v4" /><path d="M8 3v4" /><path d="M4 11h16" /></svg>
                           <span class="sr-only">{cell.haEventLabel}</span>
                         </span>
                       )}
@@ -246,13 +258,19 @@ const calendarSignal =
         </div>
         <div class="day-drawer-content">
           <div class="day-drawer-section">
-            <h4 class="day-drawer-section-title">📅 Calendar Events</h4>
+            <h4 class="day-drawer-section-title flex items-center gap-1.5">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2v-12" /><path d="M16 3v4" /><path d="M8 3v4" /><path d="M4 11h16" /></svg>
+              Calendar Events
+            </h4>
             <div id="day-drawer-events" class="day-drawer-list">
               <span class="day-drawer-empty">Loading...</span>
             </div>
           </div>
           <div class="day-drawer-section">
-            <h4 class="day-drawer-section-title">📋 Tasks Due</h4>
+            <h4 class="day-drawer-section-title flex items-center gap-1.5">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5h-2a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-12a2 2 0 0 0 -2 -2h-2" /><path d="M9 3m0 2a2 2 0 0 1 2 -2h2a2 2 0 0 1 2 2v0a2 2 0 0 1 -2 2h-2a2 2 0 0 1 -2 -2z" /><path d="M9 12h6" /><path d="M9 16h6" /></svg>
+              Tasks Due
+            </h4>
             <div id="day-drawer-tasks" class="day-drawer-list">
               <span class="day-drawer-empty">Loading...</span>
             </div>
@@ -416,7 +434,7 @@ const calendarSignal =
   }
   .cal-day-today,
   .cal-task-badge {
-    color: var(--personal-accent-foreground, #fff);
+    color: var(--personal-accent-foreground, var(--palette-on-accent, #07140f));
     background: var(--personal-accent, var(--palette-accent-hover));
   }
   .cal-color-dots {

@@ -1,8 +1,8 @@
 name: "Meitheal"
-version: "0.0.1"
+version: "0.0.2"
 slug: "meitheal"
-description: "Your homelab's execution layer — centralize tasks, automate coordination, get out of the way of life"
-url: "https://github.com/ryan-winkler/meitheal-ha-addon"
+description: "Household tasks, routines and projects in Home Assistant. Your data stays on your own hardware."
+url: "https://meitheal.io"
 github: "ryan-winkler/meitheal-ha-addon"
 docs_url: "https://github.com/ryan-winkler/meitheal-ha-addon/tree/main/meitheal-hub/DOCS.md"
 image: "ghcr.io/ryan-winkler/meitheal-{arch}"
@@ -38,6 +38,12 @@ options:
     - tasks
     - integrations
     - observability
+    - ha
+    - calendar
+    - todo
+    - api
+    - security
+    - search
   log_redaction: true
   audit_enabled: true
   loki_url: ""

@@ -461,20 +461,50 @@ function applyGrouping(groupBy: string, subGroupBy: string, stats: TablePageStat
     headerCell.colSpan = TABLE_COLUMNS.length + 2
     headerCell.className = "group-header-cell"
     headerCell.setAttribute("aria-labelledby", groupId + "-label")
-    headerCell.innerHTML = `
-      <div class="group-header-content">
-        <button type="button" class="group-toggle" aria-label="Toggle group ${escapeHtml(display.label)}" aria-expanded="${!isCollapsed}">
-          <span class="group-toggle-arrow" aria-hidden="true">▾</span>
-        </button>
-        <span class="group-dot" aria-hidden="true" style="background: ${sanitizeCssColor(display.color)}"></span>
-        <span class="group-icon" aria-hidden="true">${escapeHtml(display.icon)}</span>
-        <span class="group-label" id="${groupId}-label">${escapeHtml(display.label)}</span>
-        <span class="group-count">${groupTotals.get(key)?.count ?? 0}</span>
-        <span class="group-checkbox-wrapper">
-          <input type="checkbox" class="group-select-all" data-group-key="${escapeHtml(key)}" aria-label="Select visible tasks in ${escapeHtml(display.label)} on this page" />
-        </span>
-      </div>
-    `
+    const contentDiv = document.createElement("div")
+    contentDiv.className = "group-header-content"
+
+    const toggleBtn = document.createElement("button")
+    toggleBtn.type = "button"
+    toggleBtn.className = "group-toggle"
+    toggleBtn.setAttribute("aria-label", `Toggle group ${display.label}`)
+    toggleBtn.setAttribute("aria-expanded", String(!isCollapsed))
+    const arrowSpan = document.createElement("span")
+    arrowSpan.className = "group-toggle-arrow"
+    arrowSpan.setAttribute("aria-hidden", "true")
+    arrowSpan.textContent = "▾"
+    toggleBtn.appendChild(arrowSpan)
+
+    const dotSpan = document.createElement("span")
+    dotSpan.className = "group-dot"
+    dotSpan.setAttribute("aria-hidden", "true")
+    dotSpan.style.background = sanitizeCssColor(display.color)
+
+    const iconSpan = document.createElement("span")
+    iconSpan.className = "group-icon"
+    iconSpan.setAttribute("aria-hidden", "true")
+    iconSpan.textContent = display.icon
+
+    const labelSpan = document.createElement("span")
+    labelSpan.className = "group-label"
+    labelSpan.id = `${groupId}-label`
+    labelSpan.textContent = display.label
+
+    const countSpan = document.createElement("span")
+    countSpan.className = "group-count"
+    countSpan.textContent = String(groupTotals.get(key)?.count ?? 0)
+
+    const cbWrapper = document.createElement("span")
+    cbWrapper.className = "group-checkbox-wrapper"
+    const cb = document.createElement("input")
+    cb.type = "checkbox"
+    cb.className = "group-select-all"
+    cb.dataset.groupKey = key
+    cb.setAttribute("aria-label", `Select visible tasks in ${display.label} on this page`)
+    cbWrapper.appendChild(cb)
+
+    contentDiv.append(toggleBtn, dotSpan, iconSpan, labelSpan, countSpan, cbWrapper)
+    headerCell.replaceChildren(contentDiv)
     const controlledRows = groupRows.map(row => row.id)
     headerRow.appendChild(headerCell)
     fragment.appendChild(headerRow)
@@ -516,17 +546,37 @@ function applyGrouping(groupBy: string, subGroupBy: string, stats: TablePageStat
         subCell.colSpan = TABLE_COLUMNS.length + 2
         subCell.className = "group-header-cell sub-group-header-cell"
         subCell.setAttribute("aria-labelledby", subgroupId + "-label")
-        subCell.innerHTML = `
-          <div class="group-header-content">
-            <button type="button" class="group-toggle sub-group-toggle" aria-label="Toggle sub-group ${escapeHtml(subDisplay.label)}"
-              aria-expanded="${!subIsCollapsed}" aria-controls="${subRows.map(row => row.id).join(" ")}">
-              <span class="group-toggle-arrow" aria-hidden="true">▾</span>
-            </button>
-            <span class="group-dot" aria-hidden="true" style="background: ${sanitizeCssColor(subDisplay.color)}"></span>
-            <span class="group-label" id="${subgroupId}-label">${escapeHtml(subDisplay.label)}</span>
-            <span class="group-count">${subgroupTotals.get(JSON.stringify([key, sk]))?.count ?? 0}</span>
-          </div>
-        `
+        const subContent = document.createElement("div")
+        subContent.className = "group-header-content"
+
+        const subToggleBtn = document.createElement("button")
+        subToggleBtn.type = "button"
+        subToggleBtn.className = "group-toggle sub-group-toggle"
+        subToggleBtn.setAttribute("aria-label", `Toggle sub-group ${subDisplay.label}`)
+        subToggleBtn.setAttribute("aria-expanded", String(!subIsCollapsed))
+        subToggleBtn.setAttribute("aria-controls", subRows.map(row => row.id).join(" "))
+        const subArrow = document.createElement("span")
+        subArrow.className = "group-toggle-arrow"
+        subArrow.setAttribute("aria-hidden", "true")
+        subArrow.textContent = "▾"
+        subToggleBtn.appendChild(subArrow)
+
+        const subDot = document.createElement("span")
+        subDot.className = "group-dot"
+        subDot.setAttribute("aria-hidden", "true")
+        subDot.style.background = sanitizeCssColor(subDisplay.color)
+
+        const subLabel = document.createElement("span")
+        subLabel.className = "group-label"
+        subLabel.id = `${subgroupId}-label`
+        subLabel.textContent = subDisplay.label
+
+        const subCount = document.createElement("span")
+        subCount.className = "group-count"
+        subCount.textContent = String(subgroupTotals.get(JSON.stringify([key, sk]))?.count ?? 0)
+
+        subContent.append(subToggleBtn, subDot, subLabel, subCount)
+        subCell.replaceChildren(subContent)
         subHeaderRow.appendChild(subCell)
         fragment.appendChild(subHeaderRow)
 
@@ -556,7 +606,7 @@ function applyGrouping(groupBy: string, subGroupBy: string, stats: TablePageStat
 function getGroupDisplayForKey(groupBy: string, key: string): { label: string, icon: string, color: string } {
   if (groupBy === "area" && areaMap[key]) {
     const b = areaMap[key]
-    return { label: b.name, icon: b.icon ?? "📋", color: (b.color ?? getComputedStyle(document.documentElement).getPropertyValue("--accent").trim()) || "#6366F1" }
+    return { label: b.name, icon: b.icon ?? "📋", color: (b.color ?? getComputedStyle(document.documentElement).getPropertyValue("--accent").trim()) || "#146C4E" }
   }
   return getGroupDisplay(groupBy, key)
 }
@@ -648,11 +698,16 @@ function renderSummaryRows(tbody: HTMLElement, groups: Map<string, TableGroupSta
     cell.colSpan = TABLE_COLUMNS.length + 2
     cell.className = grandTotal ? "grand-total-cell" : "group-summary-cell"
     const avgRice = stats.riceCount > 0 ? (stats.riceSum / stats.riceCount).toFixed(1) : "—"
-    cell.innerHTML = `
-      <span class="summary-label">${grandTotal ? "Total: " : ""}${stats.count} task${stats.count !== 1 ? "s" : ""}</span>
-      <span class="summary-separator">·</span>
-      <span class="summary-rice">Avg RICE: ${avgRice}</span>
-    `
+    const labelSpan = document.createElement("span")
+    labelSpan.className = "summary-label"
+    labelSpan.textContent = `${grandTotal ? "Total: " : ""}${stats.count} task${stats.count !== 1 ? "s" : ""}`
+    const sepSpan = document.createElement("span")
+    sepSpan.className = "summary-separator"
+    sepSpan.textContent = "·"
+    const riceSpan = document.createElement("span")
+    riceSpan.className = "summary-rice"
+    riceSpan.textContent = `Avg RICE: ${avgRice}`
+    cell.replaceChildren(labelSpan, sepSpan, riceSpan)
     return row
   }
 
@@ -679,7 +734,7 @@ function updateGroupHeaderLabels() {
       header.querySelector(".group-toggle")?.setAttribute("aria-label", `Toggle ${subgroup ? "sub-group" : "group"} ${areaMap[key].name}`)
       header.querySelector(".group-select-all")?.setAttribute("aria-label", `Select visible tasks in ${areaMap[key].name} on this page`)
       if (icon) icon.textContent = areaMap[key].icon ?? "📋"
-      if (dot) dot.style.background = (areaMap[key].color ?? getComputedStyle(document.documentElement).getPropertyValue("--accent").trim()) || "#6366F1"
+      if (dot) dot.style.background = (areaMap[key].color ?? getComputedStyle(document.documentElement).getPropertyValue("--accent").trim()) || "#146C4E"
     }
   })
 }

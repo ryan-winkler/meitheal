@@ -25,7 +25,7 @@ CalDAV accepts the URL stored by credential setup and the JSON string restored b
 
 ## Recover a missing AI handoff
 
-Today follows the saved AI provider. In Settings → Automation & AI, a current Home Assistant administrator can review a custom or Ollama URL and select **Share this reviewed URL with household members**. Remove any credentials from the URL before sharing. Saving with the box clear revokes sharing. If Settings reports that another save changed the provider, URL or sharing choice, reload the page and review the current values.
+Today follows the saved AI provider. In Settings → AI & Agent Access, a current Home Assistant administrator can review a custom or Ollama URL and select **Share this reviewed URL with household members**. Remove any credentials from the URL before sharing. Saving with the box clear revokes sharing. If Settings reports that another save changed the provider, URL or sharing choice, reload the page and review the current values.
 
 The browser asks before opening an external provider. Today identifies the task information sent to built-in providers. A custom URL opens as entered, without a task prompt in the URL. Home Assistant-only mode stays in Assist. If a member sees an administrator-access message for Assist, ask a current Home Assistant administrator to run the prompt.
 

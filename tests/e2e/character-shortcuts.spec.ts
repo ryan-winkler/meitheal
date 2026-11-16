@@ -3,7 +3,7 @@ import { shouldSkipBrowserSpecs } from "./_helpers"
 
 test.skip(shouldSkipBrowserSpecs(), "Set E2E_BASE_URL to run browser specs")
 
-const settingsPath = "/settings#personal-settings"
+const settingsPath = "/settings#navigation-settings"
 function timelinePath(search: string) {
   return `/tasks?${new URLSearchParams({ view: "timeline", search })}#timeline`
 }
@@ -32,7 +32,7 @@ async function blurActive(page: Page) {
 
 test("the Settings preference persists and preserves search with a modifier or a button", async ({ page, context }) => {
   await openSettings(page)
-  const settingsList = page.locator("#personal-settings")
+  const settingsList = page.locator("#navigation-settings")
   await expect(settingsList.getByRole("heading", { name: "Everywhere" })).toBeVisible()
   await expect(settingsList.getByRole("heading", { name: "On the Tasks page" })).toBeVisible()
   await expect(settingsList.locator("[data-shortcut-scope=global]")).toHaveText(GLOBAL_SHORTCUT_LABELS)
@@ -63,7 +63,7 @@ test("the Settings preference persists and preserves search with a modifier or a
   await page.keyboard.press("k")
   await expect(hub).toBeHidden()
   await expect(shortcuts).toBeHidden()
-  await expect(page).toHaveURL(/\/settings#personal-settings$/)
+  await expect(page).toHaveURL(/\/settings#navigation-settings$/)
 
   await page.keyboard.press("Control+k")
   await expect(page.locator("#search-hub-input")).toBeFocused()
@@ -204,7 +204,7 @@ test("shortcut help keeps Close visible on a landscape phone", async ({ page }) 
 })
 
 test("shortcut help waits until the native Settings wizard is closed", async ({ page }) => {
-  await page.goto("/settings#rules-lenses-settings")
+  await page.goto("/settings#scoring-settings")
   const launcher = page.locator("#fw-create-btn")
   const wizard = page.locator("#framework-wizard-dialog")
   const wizardClose = wizard.getByRole("button", { name: "Close", exact: true })
@@ -553,5 +553,29 @@ test("pressing lowercase c on a grouped board collapses and expands swimlanes wi
   } finally {
     if (firstId) await request.delete(`/api/tasks/${firstId}`, { headers })
     if (secondId) await request.delete(`/api/tasks/${secondId}`, { headers })
+  }
+})
+
+test("pressing c on an ungrouped board opens Calendar like everywhere else", async ({ page, request, baseURL }) => {
+  // Earlier cases in this file share one server and its 300/min API budget.
+  test.setTimeout(100_000)
+  const headers = { origin: new URL(baseURL!).origin }
+  const data = { title: "Ungrouped board task" }
+  let created = await request.post("/api/tasks", { headers, data })
+  if (created.status() === 429) {
+    const retryAfter = Number(created.headers()["retry-after"] ?? 60)
+    await page.waitForTimeout(Math.min(Math.max(retryAfter, 1), 61) * 1000)
+    created = await request.post("/api/tasks", { headers, data })
+  }
+  expect(created.status()).toBe(201)
+  const { id } = await created.json()
+  try {
+    await page.goto("/tasks?view=kanban#kanban")
+    await expect(page.locator(".swimlane-group:not([hidden]) .swimlane-toggle")).toHaveCount(0)
+    await page.locator(`[data-task-id="${id}"] .card-open-btn`).focus()
+    await page.keyboard.press("c")
+    await expect(page).toHaveURL(/\/tasks\?view=calendar#calendar$/)
+  } finally {
+    await request.delete(`/api/tasks/${id}`, { headers })
   }
 })

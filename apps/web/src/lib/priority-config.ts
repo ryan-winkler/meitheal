@@ -26,14 +26,14 @@ export interface PriorityDef {
 
 /**
  * Canonical priority definitions.
- * 1 = Critical (red), 2 = High (amber), 3 = Medium (blue), 4 = Low (indigo), 5 = Minimal (gray).
+ * 1 = Critical (red), 2 = High (amber), 3 = Medium (blue), 4 = Low (sky), 5 = Minimal (gray).
  * Icons provide color-blind accessible encoding per WCAG 2.2.
  */
 export const PRIORITY_CONFIG: readonly PriorityDef[] = [
   { value: 1, label: "Critical", i18nKey: "priority.critical", color: "#ef4444", cssClass: "priority-critical", icon: "▲" },
   { value: 2, label: "High",     i18nKey: "priority.high",     color: "#f59e0b", cssClass: "priority-high",     icon: "↑" },
   { value: 3, label: "Medium",   i18nKey: "priority.medium",   color: "#3b82f6", cssClass: "priority-medium",   icon: "→" },
-  { value: 4, label: "Low",      i18nKey: "priority.low",      color: "#6366F1", cssClass: "priority-low",      icon: "↓" },
+  { value: 4, label: "Low",      i18nKey: "priority.low",      color: "#0EA5E9", cssClass: "priority-low",      icon: "↓" },
   { value: 5, label: "Minimal",  i18nKey: "priority.minimal",  color: "#6b7280", cssClass: "priority-minimal",  icon: "·" },
 ] as const
 

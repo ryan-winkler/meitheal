@@ -11,6 +11,7 @@
  * @kcs PWA install requires HTTPS. Behind HA ingress over HTTP,
  * this banner never appears (graceful degradation).
  */
+import Icon from "../ui/Icon.astro"
 ---
 
 <div
@@ -23,7 +24,7 @@
   style="display: none;"
 >
   <div class="pwa-banner__content">
-    <div class="pwa-banner__icon">📲</div>
+    <div class="pwa-banner__icon"><Icon name="phone" size={24} sprite={true} /></div>
     <div class="pwa-banner__text">
       <strong>Install Meitheal</strong>
       <span>Get offline access, quick launch, and push notifications</span>
@@ -39,7 +40,7 @@
       class="pwa-banner__dismiss"
       aria-label="Dismiss install banner"
     >
-      ✕
+      <Icon name="x" size={16} sprite={true} />
     </button>
   </div>
 </div>
@@ -56,10 +57,8 @@
     justify-content: space-between;
     gap: 12px;
     padding: 10px 16px;
-    background: rgba(15, 23, 42, 0.95);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: var(--bg-card);
+    border: 1px solid var(--border);
     border-radius: 12px;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
     transform: translateY(-120%);
@@ -84,7 +83,9 @@
   }
 
   .pwa-banner__icon {
-    font-size: 28px;
+    display: inline-flex;
+    align-items: center;
+    color: var(--accent);
     flex-shrink: 0;
   }
 
@@ -98,12 +99,12 @@
   .pwa-banner__text strong {
     font-size: 14px;
     font-weight: 600;
-    color: var(--text-primary, #f1f5f9);
+    color: var(--text-primary);
   }
 
   .pwa-banner__text span {
     font-size: 12px;
-    color: var(--text-secondary, #94a3b8);
+    color: var(--text-secondary);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -120,8 +121,8 @@
     padding: 8px 20px;
     font-size: 13px;
     font-weight: 600;
-    color: #fff;
-    background: var(--accent, #6366F1);
+    color: var(--personal-accent-foreground, var(--palette-on-accent, #07140f));
+    background: var(--accent);
     border: none;
     border-radius: 8px;
     cursor: pointer;
@@ -132,7 +133,7 @@
   }
 
   .pwa-banner__install:hover {
-    background: var(--accent-hover, #059669);
+    background: var(--accent-hover);
     transform: scale(1.02);
   }
 

@@ -41,7 +41,7 @@ export function promptDialog(options: PromptOptions): Promise<string | null> {
     overlay.style.cssText = `
       position: fixed; inset: 0; z-index: 9999;
       display: flex; align-items: center; justify-content: center;
-      background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(4px);
+      background: rgba(0, 0, 0, 0.62);
       animation: confirmFadeIn 0.15s ease-out;
     `
 
@@ -92,8 +92,8 @@ export function promptDialog(options: PromptOptions): Promise<string | null> {
         "></button>
         <button type="button" id="prompt-ok" style="
           padding: 8px 20px; border-radius: 8px; font-size: 14px; cursor: pointer;
-          background: var(--accent, #6366f1); border: 1px solid var(--accent, #6366f1);
-          color: #fff; font-weight: 500;
+          background: var(--accent, #69e3b2); border: 1px solid var(--accent, #69e3b2);
+          color: var(--personal-accent-foreground, var(--palette-on-accent, #07140f)); font-weight: 500;
           transition: opacity 0.15s;
         "></button>
       </div>
@@ -176,7 +176,7 @@ export function promptDialog(options: PromptOptions): Promise<string | null> {
 
     // Focus border effect
     input.addEventListener("focus", () => {
-      input.style.borderColor = "var(--accent, #6366f1)"
+      input.style.borderColor = "var(--accent)"
     })
     input.addEventListener("blur", () => {
       input.style.borderColor = "var(--border, #334155)"

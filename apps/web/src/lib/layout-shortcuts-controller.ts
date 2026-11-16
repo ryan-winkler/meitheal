@@ -3,7 +3,9 @@ import { singleKeyShortcutsEnabled } from "@lib/single-key-shortcuts"
 
 export function hasPriorityOverlay(): boolean {
   return Boolean(
-    document.querySelector("dialog[open], #meitheal-confirm-overlay, #meitheal-prompt-overlay") ||
+    document.querySelector(
+      'dialog[open], #meitheal-confirm-overlay, #meitheal-prompt-overlay, #ask-ha-overlay.active, #ask-ha-overlay:not(.modal-overlay):not(.hidden), [role="dialog"][aria-modal="true"].active:not(#shortcut-modal)',
+    ) ||
     (typeof HTMLElement.prototype.showPopover === "function" && document.querySelector("[popover]:popover-open")),
   )
 }

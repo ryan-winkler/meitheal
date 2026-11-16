@@ -13,6 +13,7 @@
  * @see docs/decisions/ADR-017-pillars-domain.md
  */
 
+import { randomUUID } from "node:crypto"
 import { getPersistenceClient } from "../tasks/persistence/store"
 import { ensurePillarSchema } from "./pillar-service"
 
@@ -57,7 +58,7 @@ export interface Principle {
 // ── Helpers ─────────────────────────────────────────────────────
 
 function generateId(): string {
-  return `princ_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+  return `princ_${Date.now()}_${randomUUID().slice(0, 8)}`
 }
 
 function toPrinciple(row: Record<string, unknown>): Principle {

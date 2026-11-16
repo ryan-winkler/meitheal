@@ -24,13 +24,14 @@ test.describe("Settings users", () => {
     const original = await addUser(request, "Shared settings user")
     const calls = userRequests(page)
 
-    await page.goto("/settings#workflow-settings")
+    await page.goto("/settings#people-notifications-settings")
     await expect(page.locator("#settings-panels")).not.toHaveAttribute("inert", "")
     const select = page.getByRole("combobox", { name: "Default task assignee" })
     const notifications = page.locator("#notif-user-toggles")
     const originalToggle = notifications.locator(`input[data-user-id="${original}"]`)
     await expect(select.locator(`option[value="${original}"]`)).toHaveText("Shared settings user (Custom)")
     await expect(originalToggle).toBeChecked()
+    await expect(originalToggle).toHaveAccessibleName("Shared settings user (Custom)")
     expect(calls).toEqual(["GET /api/users"])
 
     // A custom-user refresh must not discard unsaved notification preferences.
@@ -92,7 +93,7 @@ test.describe("Settings users", () => {
     const calls = userRequests(page)
     await page.route("**/api/users", route => route.fulfill({ status: 503, json: {} }))
 
-    await page.goto("/settings#workflow-settings")
+    await page.goto("/settings#people-notifications-settings")
     await expect(page.locator("#settings-panels")).not.toHaveAttribute("inert", "")
     await expect(page.getByRole("combobox", { name: "Default task assignee" })).toHaveValue(user)
     await expect(page.locator("#custom-users-list")).toContainText("Fallback settings user")
@@ -100,4 +101,21 @@ test.describe("Settings users", () => {
     await expect(page.locator(`#notif-user-toggles input[data-user-id="${user}"]`)).toBeChecked()
     expect(calls.sort()).toEqual(["GET /api/users", "GET /api/users/custom", "GET /api/users/default"])
   })
+
+  test("keeps the stored assignee selected when the Home Assistant roster is unavailable", async ({ page }) => {
+    const storedAssignee = "saved-ha-user"
+    await page.route("**/api/users", route => route.fulfill({ status: 503, json: {} }))
+    await page.route("**/api/users/default", route =>
+      route.fulfill({ json: { default_assignee: storedAssignee } }))
+    await page.goto("/settings#people-notifications-settings")
+    const select = page.getByRole("combobox", { name: "Default task assignee" })
+    await expect(select.locator("option:checked")).toHaveText("Current assignee (unavailable)")
+    await expect(select).toHaveValue(storedAssignee)
+    const [save] = await Promise.all([
+      page.waitForRequest(request => request.method() === "PUT" && request.url().endsWith("/api/users/default")),
+      page.locator("#save-default-assignee").click(),
+    ])
+    expect(save.postDataJSON()).toEqual({ user_id: storedAssignee })
+  })
+
 })

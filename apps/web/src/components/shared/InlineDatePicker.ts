@@ -16,6 +16,8 @@
  * @usage new InlineDatePicker(container, { value, onChange, onClear })
  */
 
+import { createTablerSvgElement } from "../../lib/tabler-svg"
+
 export interface InlineDatePickerOptions {
   /** Current date value (null = no date set) */
   value: Date | null
@@ -154,7 +156,7 @@ export class InlineDatePicker {
     clear.className = "idp-clear-btn"
     clear.title = "Remove date"
     clear.setAttribute("aria-label", "Remove scheduled date")
-    clear.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>`
+    clear.replaceChildren(createTablerSvgElement("x", 14))
     clear.addEventListener("click", (e) => {
       e.stopPropagation()
       this.options.onClear()
@@ -176,28 +178,7 @@ export class InlineDatePicker {
     btn.className = "idp-trigger idp-placeholder"
     btn.title = "Set date"
 
-    // Calendar icon (SVG)
-    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg")
-    svg.setAttribute("width", "14")
-    svg.setAttribute("height", "14")
-    svg.setAttribute("viewBox", "0 0 14 14")
-    svg.setAttribute("fill", "none")
-    const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect")
-    rect.setAttribute("x", "1"); rect.setAttribute("y", "2")
-    rect.setAttribute("width", "12"); rect.setAttribute("height", "10")
-    rect.setAttribute("rx", "2")
-    rect.setAttribute("stroke", "currentColor"); rect.setAttribute("stroke-width", "1.2")
-    svg.appendChild(rect)
-    const line = document.createElementNS("http://www.w3.org/2000/svg", "line")
-    line.setAttribute("x1", "1"); line.setAttribute("y1", "5")
-    line.setAttribute("x2", "13"); line.setAttribute("y2", "5")
-    line.setAttribute("stroke", "currentColor"); line.setAttribute("stroke-width", "1.2")
-    svg.appendChild(line)
-    const dot = document.createElementNS("http://www.w3.org/2000/svg", "circle")
-    dot.setAttribute("cx", "7"); dot.setAttribute("cy", "9")
-    dot.setAttribute("r", "1.5"); dot.setAttribute("fill", "currentColor")
-    svg.appendChild(dot)
-    btn.appendChild(svg)
+    btn.appendChild(createTablerSvgElement("calendar", 14))
 
     btn.addEventListener("click", (e) => {
       e.stopPropagation()
@@ -216,28 +197,42 @@ export class InlineDatePicker {
     }
   }
 
+  private clampPanelPosition(panel: HTMLElement) {
+    const triggerRect = this.trigger?.getBoundingClientRect()
+    if (!triggerRect) return
+
+    const margin = 8
+    const panelRect = panel.getBoundingClientRect()
+    const panelWidth = panelRect.width || 420
+    const panelHeight = panelRect.height || 320
+
+    const preferredLeft = triggerRect.left
+    const maxLeft = Math.max(margin, window.innerWidth - panelWidth - margin)
+    const left = Math.max(margin, Math.min(preferredLeft, maxLeft))
+
+    const spaceBelow = window.innerHeight - triggerRect.bottom - margin
+    const spaceAbove = triggerRect.top - margin
+    let preferredTop = triggerRect.bottom + 4
+    if (spaceBelow < panelHeight && spaceAbove >= panelHeight) {
+      preferredTop = triggerRect.top - panelHeight - 4
+    }
+    const maxTop = Math.max(margin, window.innerHeight - panelHeight - margin)
+    const top = Math.max(margin, Math.min(preferredTop, maxTop))
+
+    panel.style.position = "fixed"
+    panel.style.left = `${left}px`
+    panel.style.top = `${top}px`
+    panel.style.bottom = ""
+    panel.style.zIndex = "10000"
+  }
+
   private openPanel() {
     this.closePanel()
 
     const panel = document.createElement("div")
     panel.className = "idp-panel"
-
-    // Position relative to trigger
-    const triggerRect = this.trigger?.getBoundingClientRect()
-    if (triggerRect) {
-      const spaceBelow = window.innerHeight - triggerRect.bottom
-      const panelHeight = 320
-
-      panel.style.position = "fixed"
-      panel.style.left = `${Math.max(8, triggerRect.left - 100)}px`
-      panel.style.zIndex = "10000"
-
-      if (spaceBelow >= panelHeight) {
-        panel.style.top = `${triggerRect.bottom + 4}px`
-      } else {
-        panel.style.bottom = `${window.innerHeight - triggerRect.top + 4}px`
-      }
-    }
+    panel.setAttribute("role", "dialog")
+    panel.setAttribute("aria-label", "Choose date")
 
     // Left side: Quick options
     const quickSide = document.createElement("div")
@@ -276,6 +271,10 @@ export class InlineDatePicker {
 
     this.panel = panel
     document.body.appendChild(panel)
+    this.clampPanelPosition(panel)
+    requestAnimationFrame(() => {
+      if (this.panel === panel) this.clampPanelPosition(panel)
+    })
 
     // Close on outside click
     const closeHandler = (e: MouseEvent) => {
@@ -404,6 +403,11 @@ export class InlineDatePicker {
     }
 
     container.appendChild(grid)
+    if (this.panel && this.panel.isConnected) {
+      requestAnimationFrame(() => {
+        if (this.panel && this.panel.isConnected) this.clampPanelPosition(this.panel)
+      })
+    }
   }
 
   private createDayCell(

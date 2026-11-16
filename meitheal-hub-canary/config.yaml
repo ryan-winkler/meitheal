@@ -1,8 +1,8 @@
 name: "Meitheal Canary"
 version: "309575d"
 slug: "meitheal_canary"
-description: "⚠️ Bleeding-edge development build of Meitheal — may be unstable, break, or lose data. For testing and development only."
-url: "https://github.com/ryan-winkler/meitheal-ha-addon"
+description: "0.0.2 Canary preview of Meitheal. Builds can be unstable and can lose data. Use the Stable app for everyday tasks."
+url: "https://meitheal.io"
 github: "ryan-winkler/meitheal-ha-addon"
 docs_url: "https://github.com/ryan-winkler/meitheal-ha-addon/tree/main/meitheal-hub-canary/DOCS.md"
 image: "ghcr.io/coolock-village/meitheal-canary-{arch}"
@@ -38,6 +38,12 @@ options:
     - tasks
     - integrations
     - observability
+    - ha
+    - calendar
+    - todo
+    - api
+    - security
+    - search
   log_redaction: true
   audit_enabled: true
   loki_url: ""

@@ -15,6 +15,7 @@
  * @see docs/kcs/hierarchy-glossary.md
  */
 
+import { randomUUID } from "node:crypto"
 import {
   ensureSchema,
   getPersistenceClient,
@@ -96,7 +97,7 @@ export interface Pillar {
 // ── Helpers ─────────────────────────────────────────────────────
 
 function generateId(): string {
-  return `pillar_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+  return `pillar_${Date.now()}_${randomUUID().slice(0, 8)}`
 }
 
 /**
@@ -138,7 +139,7 @@ async function generateUniqueSlug(
     if (existing.rows.length === 0) break
     counter++
     slug = `${base}-${counter}`
-    // eslint-disable-next-line no-console — slug collision is rare, server-side only
+    // eslint-disable-next-line no-console -- slug collision is rare, server-side only
     console.warn(`[pillars] Slug collision detected for "${name}" — using "${slug}"`)
   }
 

@@ -34,7 +34,7 @@ These anchors stay on the same route, which keeps the page ingress-safe in Home 
 ### Jump to the part of Today you need
 
 1. Open `Today`.
-2. Use the shell links to jump between Overview, Focus, Triage, Work, Habits, and Flow. The bar marks the current section.
+2. Use the shell links to jump between Overview, Focus, Triage, Work, Habits, and Flow. The bar marks the linked section as current during the jump and until you scroll past it.
 3. Use the title switcher on smaller screens when some links collapse.
 
 ### Capture work without leaving Today

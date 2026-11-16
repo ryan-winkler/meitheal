@@ -16,8 +16,9 @@ export {
   startCalDAVSync,
   stopCalDAVSync,
   syncCalDAVEvents,
+  isImportedCalendarTask,
   type CalendarSyncConfig,
   type CalendarSyncMode,
   type CalendarSyncStatusEntity,
   type TaskCalendarMeta,
-} from "./calendar-bridge";
+} from "./calendar-bridge"

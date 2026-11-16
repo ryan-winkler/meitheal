@@ -304,4 +304,33 @@ test.describe("Upcoming Shell", () => {
       await request.delete(`/api/tasks/${id}`, { headers })
     }
   })
+  test("day labels and assignee initials keep AA contrast in both themes", async ({ page, request, baseURL }) => {
+    const headers = { origin: new URL(baseURL!).origin }
+    const tomorrow = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10)
+    const created = await request.post("/api/tasks", { headers, data: { title: "Upcoming contrast fixture", due_date: tomorrow, assigned_to: "ha_household" } })
+    expect(created.status(), await created.text()).toBe(201)
+    const { id } = await created.json()
+    try {
+      for (const theme of ["light", "dark"]) {
+        await page.evaluate(value => localStorage.setItem("meitheal-theme", value), theme)
+        await page.reload()
+        await expect(page.locator("html")).toHaveAttribute("data-theme", theme)
+        await expect(page.locator(".day-empty").first()).toBeVisible()
+        await expect(page.locator(".avatar").first()).toBeVisible()
+        const { violations } = await new AxeBuilder({ page }).include(".upcoming-grid").withRules(["color-contrast"]).analyze()
+        expect(violations.flatMap(({ nodes }) => nodes.map(({ target }) => target.join(" "))), theme).toEqual([])
+        // Hovering an empty day lightens its background, so check its label again in that state.
+        // Not Today: its label keeps the accent colour, and axe skips the "—" placeholder.
+        const emptyHeader = page.locator(".day-empty:not(.day-card--today) .day-header").first()
+        await emptyHeader.hover()
+        await emptyHeader.evaluate(el => Promise.all(el.getAnimations().map(animation => animation.finished)))
+        const hovered = await new AxeBuilder({ page }).include(".day-empty .day-header:hover").withRules(["color-contrast"]).analyze()
+        expect(hovered.violations.flatMap(({ nodes }) => nodes.map(({ target }) => target.join(" "))), `${theme} hover`).toEqual([])
+        expect(hovered.passes.find(({ id }) => id === "color-contrast")?.nodes.length ?? 0, `${theme} hover`).toBeGreaterThan(0)
+        await page.mouse.move(0, 0)
+      }
+    } finally {
+      await request.delete(`/api/tasks/${id}`, { headers })
+    }
+  })
 })

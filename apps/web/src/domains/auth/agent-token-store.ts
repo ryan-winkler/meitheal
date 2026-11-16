@@ -8,7 +8,7 @@
  * @bounded-context agent-authorization
  * @kcs Token plaintext is never stored. Only SHA-256 hashes are persisted.
  */
-import { getPersistenceClient } from "@domains/tasks/persistence/store"
+import { getPersistenceClient } from "@domains/tasks"
 import type { AgentTokenRecord, AgentScope } from "@meitheal/domain-auth"
 
 // ── Schema Bootstrap ─────────────────────────────────────────────────────────
@@ -40,12 +40,14 @@ export async function ensureAgentTokenSchema(): Promise<void> {
     sql: `CREATE INDEX IF NOT EXISTS idx_agent_tokens_hash ON agent_tokens(token_hash)`,
     args: [],
   })
-
-  // Migration for existing tables missing assignee_id
-  const info = await db.execute("PRAGMA table_info(agent_tokens)")
-  const cols = new Set(info.rows.map(r => String(r.name)))
-  if (!cols.has("assignee_id")) {
-    await db.execute("ALTER TABLE agent_tokens ADD COLUMN assignee_id TEXT")
+  // Links a token to the assignee it acts as, so "my tasks" comes from the credential.
+  const columns = await db.execute("PRAGMA table_info(agent_tokens)")
+  if (!columns.rows.some(row => row.name === "assignee_id")) {
+    await db.execute("ALTER TABLE agent_tokens ADD COLUMN assignee_id TEXT").catch(async error => {
+      // A concurrent bootstrap may have added the column first.
+      const retry = await db.execute("PRAGMA table_info(agent_tokens)")
+      if (!retry.rows.some(row => row.name === "assignee_id")) throw error
+    })
   }
 }
 
@@ -120,6 +122,20 @@ export async function getAgentTokenByHash(tokenHash: string): Promise<AgentToken
           FROM agent_tokens
           WHERE token_hash = ?`,
     args: [tokenHash],
+  })
+
+  if (result.rows.length === 0) return null
+  return rowToRecord(result.rows[0]!)
+}
+
+/** Look up a token by its ID */
+export async function getAgentTokenById(id: string): Promise<AgentTokenRecord | null> {
+  const db = getPersistenceClient()
+  const result = await db.execute({
+    sql: `SELECT id, name, token_hash, token_prefix, scopes, assignee_id, created_at, expires_at, last_used_at, revoked
+          FROM agent_tokens
+          WHERE id = ?`,
+    args: [id],
   })
 
   if (result.rows.length === 0) return null
@@ -202,7 +218,7 @@ function rowToRecord(row: Record<string, unknown>): AgentTokenRecord {
     tokenHash: String(row.token_hash),
     tokenPrefix: String(row.token_prefix),
     scopes,
-    assigneeId: row.assignee_id ? String(row.assignee_id) : null,
+    assigneeId: typeof row.assignee_id === "string" && row.assignee_id ? row.assignee_id : null,
     createdAt: String(row.created_at),
     expiresAt: row.expires_at ? String(row.expires_at) : null,
     lastUsedAt: row.last_used_at ? String(row.last_used_at) : null,

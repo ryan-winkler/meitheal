@@ -51,18 +51,20 @@ test("only new verified human comments advance a spike across both comment write
     expect(readComments()).toEqual([{ id: firstBody.id, human: 1 }])
     expect(readSpike()).toBeNull()
 
-    await Promise.all(pages.map(page => page.goto(origin + prefix + "/tasks?open=" + taskId)))
-    const contexts = await Promise.all(pages.map(async page => {
+    const contexts: string[] = []
+    for (const page of pages) {
+      await page.goto(origin + prefix + "/tickets/" + taskId)
+      await expect(page.locator("#td-loaded-content")).toBeVisible()
       const picker = page.locator("#td-task-reference-picker")
       await expect(picker).toHaveAttribute("data-person-context", /^[A-Za-z0-9_-]{43}$/)
-      return (await picker.getAttribute("data-person-context"))!
-    }))
+      contexts.push((await picker.getAttribute("data-person-context"))!)
+    }
     const secondAttempt = `${Date.now()}.${randomUUID()}`
     const second = await admin.request.post(origin + path, {
       headers: { ...headers, referer: admin.url(), "x-meitheal-mention-context": contexts[0]!, "x-meitheal-comment-attempt": secondAttempt },
       data: { content: "Second ordinary comment through a durable attempt" },
     })
-    expect(second.status()).toBe(201)
+    expect(second.status(), await second.text()).toBe(201)
     expect(readComments().map(row => row.human)).toEqual([1, 1])
     expect(readSpike()).toBeNull()
 
@@ -70,7 +72,7 @@ test("only new verified human comments advance a spike across both comment write
     const content = "A mentioned reply " + commentMentionToken(commentPersonKey("fixture-admin"), "Admin")
     const mentionHeaders = { ...headers, referer: member.url(), "x-meitheal-mention-context": contexts[1]!, "x-meitheal-comment-attempt": thirdAttempt }
     const third = await member.request.post(origin + path, { headers: mentionHeaders, data: { content } })
-    expect(third.status()).toBe(201)
+    expect(third.status(), await third.text()).toBe(201)
     const thirdBody = await third.json()
     expect(thirdBody).not.toHaveProperty("inactivity_spike_human")
     expect(thirdBody).not.toHaveProperty("owner_key")

@@ -91,7 +91,7 @@
 }
 
 .field-picker-panel__search:focus {
-  border-color: var(--accent, #6366f1);
+  border-color: var(--accent);
 }
 
 /* ── Field List ─────────────────────────────────────────────────────────── */
@@ -143,7 +143,7 @@
 }
 
 .field-picker-panel__hide-all:hover {
-  color: var(--accent, #6366f1);
+  color: var(--accent);
 }
 
 /* ── Field Row ──────────────────────────────────────────────────────────── */
@@ -202,7 +202,7 @@
 }
 
 .field-picker-panel__toggle--on .field-picker-panel__toggle-track {
-  background: var(--accent, #6366f1);
+  background: var(--accent);
 }
 
 .field-picker-panel__toggle-knob {
@@ -219,7 +219,7 @@
 
 .field-picker-panel__toggle--on .field-picker-panel__toggle-knob {
   transform: translateX(16px);
-  background: #fff;
+  background: var(--personal-accent-foreground, var(--palette-on-accent, #07140f));
 }
 
 /* ── Empty State ────────────────────────────────────────────────────────── */

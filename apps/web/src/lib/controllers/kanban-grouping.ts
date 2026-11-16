@@ -63,7 +63,7 @@ export function initKanbanGrouping(board: HTMLElement): void {
           "5": cs.getPropertyValue("--prio-none").trim() || "#64748b",
         }
       : {}
-    const defaultAccent = cs.getPropertyValue("--accent").trim() || "#6366F1"
+    const defaultAccent = cs.getPropertyValue("--accent").trim() || "#146C4E"
 
     board.querySelectorAll(".kanban-column").forEach((col) => {
       const cardsContainer = col.querySelector(".kanban-cards")

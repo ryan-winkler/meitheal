@@ -2,7 +2,13 @@ import type { KanbanIndexRow, KanbanLane, TaskRepository } from "@domains/tasks/
 import { isTaskVisible } from "./filter-state"
 import { KANBAN_PAGE_SIZE, readKanbanFilters, readKanbanPage } from "./kanban-query"
 
-export async function loadKanbanBoard(repo: TaskRepository, lanes: KanbanLane[], cutoff: number, params: URLSearchParams) {
+export async function loadKanbanBoard(
+  repo: TaskRepository,
+  lanes: KanbanLane[],
+  cutoff: number,
+  params: URLSearchParams,
+  timezone?: string | undefined,
+) {
   return repo.withKanbanRead(async reader => {
     const filters = readKanbanFilters(params)
     const candidates = await repo.getKanbanIndex(
@@ -10,6 +16,7 @@ export async function loadKanbanBoard(repo: TaskRepository, lanes: KanbanLane[],
       {
         matchText: Boolean(filters.search || filters.labels?.length || filters.advancedFilter),
         matchOverdue: filters.status === "overdue",
+        timezone,
       },
       reader,
     )

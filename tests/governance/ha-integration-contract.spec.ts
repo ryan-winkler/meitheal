@@ -226,15 +226,105 @@ test("both Core CI profiles build this checkout before required App/native proto
     { core: "2026.10.4", requirements: "requirements-test-2026.10.txt" },
     { core: "2026.11.1", requirements: "requirements-test.txt" },
   ])
-  const pnpm = core.steps.findIndex(step => step.uses === "pnpm/action-setup@v6" && step.with?.version === "10.34.9")
-  const node = core.steps.findIndex(step => step.uses === "actions/setup-node@v7" && String(step.with?.["node-version"]) === "22")
+  const pnpm = core.steps.findIndex(
+    step =>
+      step.uses === "pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115" &&
+      /^pnpm\/action-setup@[0-9a-f]{40}$/.test(step.uses ?? "") &&
+      step.with?.version === "12.18.0",
+  )
+  const node = core.steps.findIndex(
+    step =>
+      step.uses === "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1" &&
+      /^actions\/setup-node@[0-9a-f]{40}$/.test(step.uses ?? "") &&
+      String(step.with?.["node-version"]) === "22",
+  )
   const install = core.steps.findIndex(step => step.run?.trim() === "pnpm install --frozen-lockfile")
   const build = core.steps.findIndex(step => step.run?.trim() === "pnpm --filter @meitheal/web build")
+  const uvSetup = core.steps.findIndex(
+    step =>
+      step.uses === "astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2" &&
+      /^astral-sh\/setup-uv@[0-9a-f]{40}$/.test(step.uses ?? "") &&
+      step.with?.version === "0.13.6" &&
+      step.with?.["enable-cache"] === true,
+  )
   const native = core.steps.findIndex(step => step.run?.includes("python -m pytest"))
   expect(pnpm).toBeGreaterThan(-1)
   expect(node).toBeGreaterThan(pnpm)
   expect(install).toBeGreaterThan(node)
   expect(build).toBeGreaterThan(install)
-  expect(native).toBeGreaterThan(build)
+  expect(uvSetup).toBeGreaterThan(build)
+  expect(native).toBeGreaterThan(uvSetup)
   expect(core.steps[native]!.env?.MEITHEAL_REQUIRE_APP_PROTOCOL).toBe("1")
+  const coreRun = core.steps[native]?.run ?? ""
+  expect(coreRun).not.toContain("python -m pip")
+  expect(coreRun).toContain("uv venv --python 3.14 \"$RUNNER_TEMP/ha-venv\"")
+  expect(coreRun).toContain(
+    "uv pip install --require-hashes --no-deps -r \"$TEST_REQUIREMENTS\"",
+  )
+  const idx202611 = coreRun.indexOf("\"$HA_CORE_VERSION\" = \"2026.11.1\"")
+  const idxCheck11 = coreRun.indexOf("uv pip check -q", idx202611)
+  const idx202610 = coreRun.indexOf("\"$HA_CORE_VERSION\" = \"2026.10.4\"", idxCheck11)
+  const idxCheck10 = coreRun.indexOf("uv pip check -q", idx202610)
+  const idxElse = coreRun.indexOf("\nelse\n", idxCheck10)
+  const idxCheckElse = coreRun.indexOf("uv pip check -q", idxElse)
+  expect(idx202611).toBeGreaterThan(-1)
+  expect(idxCheck11).toBeGreaterThan(idx202611)
+  expect(idx202610).toBeGreaterThan(idxCheck11)
+  expect(idxCheck10).toBeGreaterThan(idx202610)
+  expect(idxElse).toBeGreaterThan(idxCheck10)
+  expect(idxCheckElse).toBeGreaterThan(idxElse)
+})
+
+/** Extract PEP 440 version tokens for `pillow==...` pins with major version >= 13 using linear checks. */
+function extractPillowGe13Pins(content: string): string[] {
+  const pins: string[] = []
+  for (const rawLine of content.split(/\r?\n/)) {
+    const trimmed = rawLine.trimStart()
+    if (!trimmed.toLowerCase().startsWith("pillow==")) continue
+    const rest = trimmed.slice("pillow==".length)
+    let end = 0
+    while (end < rest.length && !" \t\\;#".includes(rest[end]!)) {
+      end += 1
+    }
+    const ver = rest.slice(0, end)
+    const dotIdx = ver.indexOf(".")
+    if (dotIdx <= 0) continue
+    const majorStr = ver.slice(0, dotIdx)
+    const tail = ver.slice(dotIdx + 1)
+    if (!/^[1-9]\d*$/.test(majorStr) || Number(majorStr) < 13) continue
+    if (!/^\d[0-9a-z._+-]*$/i.test(tail)) continue
+    pins.push(ver)
+  }
+  return pins
+}
+
+test("Core test lockfiles pin Pillow >= 13 and match the 2026.10 override", () => {
+  const haDir = path.join(repoRoot, "integrations/home-assistant")
+  const overridePath = path.join(haDir, "overrides-2026.10.txt")
+  expect(fs.existsSync(overridePath)).toBe(true)
+
+  const pillowLe12Line = /^[ \t]*pillow==(?:[0-9]|1[0-2])\./im
+  const allPillowLines = (content: string) => [...content.matchAll(/^[ \t]*pillow(?=[=<>!~;\s\[]|$)/gim)]
+
+  const overrideContent = fs.readFileSync(overridePath, "utf8")
+  expect(overrideContent, "overrides-2026.10.txt must not pin Pillow <= 12.x").not.toMatch(pillowLe12Line)
+  expect(allPillowLines(overrideContent), "overrides-2026.10.txt must declare exactly one Pillow requirement").toHaveLength(1)
+  const overridePins = extractPillowGe13Pins(overrideContent)
+  expect(overridePins, "overrides-2026.10.txt must pin Pillow >= 13").toHaveLength(1)
+  const overridePillowVersion = overridePins[0]!
+
+  const lock202610 = fs.readFileSync(path.join(haDir, "requirements-test-2026.10.txt"), "utf8")
+  const headerLines = lock202610.split(/\r?\n/).slice(0, 5).join("\n")
+  expect(headerLines).toMatch(/--overrides?\s+overrides-2026\.10\.txt/)
+
+  const lock202610Pins = extractPillowGe13Pins(lock202610)
+  expect(lock202610Pins, "requirements-test-2026.10.txt must pin Pillow >= 13").toHaveLength(1)
+  expect(lock202610Pins[0]).toBe(overridePillowVersion)
+
+  for (const lockfile of ["requirements-test-2026.10.txt", "requirements-test.txt"]) {
+    const content = fs.readFileSync(path.join(haDir, lockfile), "utf8")
+    expect(content, `${lockfile} must not pin Pillow <= 12.x`).not.toMatch(pillowLe12Line)
+    expect(allPillowLines(content), `${lockfile} must declare exactly one Pillow requirement`).toHaveLength(1)
+    expect(extractPillowGe13Pins(content), `${lockfile} must pin Pillow >= 13.x`).toHaveLength(1)
+  }
 })

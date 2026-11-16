@@ -38,7 +38,7 @@ interface Window {
   /** Filter visibility function exposed for cross-component use */
   __isTaskVisible?: (el: HTMLElement, state?: any) => boolean
   /** Backlog mode toggle */
-  __backlog_mode?: boolean
+  __backlog_mode?: string
 
   // ── Tasks ──
   /** Pre-fill date for task creation from calendar */
@@ -93,5 +93,9 @@ declare namespace App {
     taskRetryKey?: string | undefined;
     /** Resolved agent token info (present when authenticated via Bearer token) */
     agentToken?: import("./lib/agent-token-guard").ResolvedAgent | undefined;
+    /** Cooperative 25s abort signal for mutating /api/* requests */
+    writeAbortSignal?: AbortSignal | undefined;
+    /** Per-request set of sprited Tabler icon names registered during SSR */
+    usedIcons?: Set<string> | undefined;
   }
 }

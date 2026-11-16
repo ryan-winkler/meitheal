@@ -2,7 +2,7 @@
  * n8n Fetch Utilities — Shared helpers for n8n API communication
  *
  * DRYs up repeated patterns across health.ts, workflows.ts, and test-webhook.ts:
- * - TLS bypass for .internal domains in local dev
+ * - Outbound policy (blocked metadata/link-local/Supervisor targets, no implicit redirects)
  * - Base URL extraction from webhook URLs
  * - Timeout + abort controller setup
  * - JSON response helpers
@@ -10,7 +10,7 @@
  * @domain integrations
  * @bounded-context n8n
  */
-import { fetchWithDevelopmentTls } from "@meitheal/integration-core"
+import { fetchOutbound, type OutboundRequestInit } from "@meitheal/integration-core"
 
 /**
  * Extract the base URL (protocol + host) from a full webhook URL.
@@ -35,17 +35,17 @@ export function jsonResponse(data: unknown, status = 200): Response {
   })
 }
 
-/** Fetch with a timeout and the shared development-only TLS policy. */
+/** Fetch with a timeout under the shared outbound policy. */
 export async function n8nFetch(
   url: string,
-  options: RequestInit & { timeoutMs?: number } = {},
+  options: OutboundRequestInit & { timeoutMs?: number } = {},
 ): Promise<Response> {
   const { timeoutMs = 5000, ...fetchOptions } = options
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), timeoutMs)
 
   try {
-    return await fetchWithDevelopmentTls(url, { ...fetchOptions, signal: controller.signal })
+    return await fetchOutbound(url, { ...fetchOptions, signal: controller.signal })
   } finally {
     clearTimeout(timeout)
   }

@@ -3,7 +3,8 @@
  * Webhooks integration card sub-component.
  * @domain integrations/webhooks
  */
-import HelpTooltip from "../../ui/HelpTooltip.astro";
+import HelpTooltip from "../../ui/HelpTooltip.astro"
+import Icon from "../../ui/Icon.astro"
 import IntegrationCardHeader from "./IntegrationCardHeader.astro"
 import { t } from "../../../i18n/translations"
 import type { Locale } from "../../../lib/locale"
@@ -28,7 +29,7 @@ const locale = Astro.props.locale || "en"
   <div class="integration-card__body" id="integration-webhooks-body" inert>
     <!-- Differentiation callout -->
     <div class="integration-callout integration-callout--info mb-3">
-      <strong>{t("settings.webhooks_vs_ai", locale)}</strong>
+      <strong class="inline-flex items-center gap-1.5"><Icon name="pin" size={14} sprite={true} /> {t("settings.webhooks_vs_ai", locale)}</strong>
       <div class="integration-callout__detail">
         <span set:html={t("settings.webhooks_vs_ai_desc", locale)} />
       </div>

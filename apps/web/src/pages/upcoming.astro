@@ -8,6 +8,7 @@ import {
   getPersistenceClient,
 } from "@domains/tasks/persistence/store";
 import { TaskRepository } from "@domains/tasks/persistence/task-repository";
+import { calendarDayFromInput, calendarToday, shiftCalendarDay } from "../lib/date";
 
 interface DayGroup {
   date: string;
@@ -18,36 +19,35 @@ interface DayGroup {
 }
 
 const days: DayGroup[] = [];
+const upcomingTimeZone = Astro.locals.timezone || "Europe/Dublin";
 
 try {
   await ensureSchema();
   const repo = new TaskRepository(getPersistenceClient());
-  const today = new Date();
-  const todayStr = today.toISOString().split("T")[0] ?? "";
+  const todayStr = calendarToday(upcomingTimeZone);
 
   // Persona 9: Single query for all 7 days instead of 7 sequential queries
-  const endDate = new Date(today);
-  endDate.setDate(endDate.getDate() + 6);
-  const endStr = endDate.toISOString().split("T")[0] ?? "";
+  const endStr = shiftCalendarDay(todayStr, 6);
 
-  const allTasks = await repo.getTasksInRange(todayStr, endStr);
+  const allTasks = await repo.getTasksInRange(todayStr, endStr, upcomingTimeZone);
 
   const tasksByDate = new Map<string, Record<string, unknown>[]>();
   for (const row of allTasks) {
-    const d = String(row.due_date);
+    const d = calendarDayFromInput(row.due_date == null ? null : String(row.due_date), upcomingTimeZone);
+    if (!d) continue;
     if (!tasksByDate.has(d)) tasksByDate.set(d, []);
     tasksByDate.get(d)!.push(row);
   }
 
   for (let i = 0; i < 7; i++) {
-    const d = new Date(today);
-    d.setDate(d.getDate() + i);
-    const dateStr = d.toISOString().split("T")[0] ?? "";
+    const dateStr = shiftCalendarDay(todayStr, i);
+    const d = new Date(`${dateStr}T12:00:00Z`);
 
-    const weekday = d.toLocaleDateString("en-US", { weekday: "long" });
+    const weekday = d.toLocaleDateString("en-US", { weekday: "long", timeZone: "UTC" });
     const monthDay = d.toLocaleDateString("en-US", {
       month: "short",
       day: "numeric",
+      timeZone: "UTC",
     });
 
     let label = `${weekday}, ${monthDay}`;
@@ -417,7 +417,7 @@ function dayLabelClass(day: DayGroup): string {
   .day-count-badge {
     font-size: 11px;
     background: var(--personal-accent, var(--palette-accent-hover));
-    color: var(--personal-accent-foreground, #fff);
+    color: var(--personal-accent-foreground, var(--palette-on-accent, #07140f));
     padding: 1px 6px;
     border-radius: 8px;
     font-weight: 600;
@@ -434,12 +434,19 @@ function dayLabelClass(day: DayGroup): string {
   }
 
   /* ── Day empty state ── */
+  /* Quiet empty days with a muted colour, not opacity, so their labels keep AA contrast. */
   .day-empty {
-    opacity: 0.6;
     margin-bottom: 4px;
   }
-  .day-empty:hover {
-    opacity: 0.8;
+  .day-empty .day-label:not(.day-label--today),
+  .day-empty .day-count-empty,
+  .day-empty .chevron-icon {
+    color: var(--text-muted);
+  }
+  /* The hover background is lighter than the card in dark, so muted text drops below AA there. */
+  .day-empty .day-header:hover .day-label:not(.day-label--today),
+  .day-empty .day-header:hover .day-count-empty {
+    color: var(--text-primary);
   }
 
   /* ── Task item ── */
@@ -537,19 +544,19 @@ function dayLabelClass(day: DayGroup): string {
     flex-shrink: 0;
   }
   .status-badge--pending {
-    background: rgba(var(--info-rgb), 0.12);
+    background: rgb(var(--info-rgb) / 0.12);
     color: var(--info);
   }
   .status-badge--active {
-    background: rgba(var(--success-rgb), 0.12);
+    background: rgb(var(--success-rgb) / 0.12);
     color: var(--success);
   }
   .status-badge--backlog {
-    background: rgba(var(--text-muted-rgb), 0.12);
+    background: rgb(var(--text-muted-rgb) / 0.12);
     color: var(--text-muted);
   }
   .status-badge--complete {
-    background: rgba(var(--success-rgb), 0.15);
+    background: rgb(var(--success-rgb) / 0.15);
     color: var(--success);
   }
 

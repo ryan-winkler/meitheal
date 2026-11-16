@@ -1,7 +1,6 @@
 import type { APIRoute } from "astro"
+import { checkMcpAvailability, MCP_LEGACY_VERSION, MCP_SUPPORTED_VERSIONS } from "@domains/agents"
 import { apiJson } from "@lib/api-response"
-import { checkMcpAvailability } from "@lib/mcp-availability"
-import { MCP_LEGACY_VERSION, MCP_SUPPORTED_VERSIONS } from "@lib/mcp-versions"
 
 export const GET: APIRoute = async ({ locals }) => {
   const unavailable = await checkMcpAvailability()

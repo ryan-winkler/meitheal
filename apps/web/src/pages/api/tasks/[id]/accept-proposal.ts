@@ -1,15 +1,13 @@
 import type { APIRoute } from "astro"
 import { z } from "zod"
-import { verifyCurrentHAAdministrator } from "@domains/ha/current-admin"
-import { resolveRecentActivityActor } from "@lib/recent-activity-actor"
-import { verifiedIngressUser } from "@lib/verified-ingress-user"
-import { TaskHandoff } from "@domains/tasks/persistence/task-handoff"
-import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
-import { TaskRepository } from "@domains/tasks/persistence/task-repository"
+import { isCsrfAllowed } from "@domains/auth"
+import { verifyCurrentHAAdministrator } from "@domains/ha"
+import { ensureSchema, getPersistenceClient, TaskHandoff, TaskRepository } from "@domains/tasks"
 import { apiProblem } from "@lib/api-response"
 import { readHandoffRequest } from "@lib/handoff-request"
-import { isCsrfAllowed } from "@domains/auth/ingress-policy"
+import { resolveRecentActivityActor } from "@lib/recent-activity-actor"
 import { formatTicketKey } from "@lib/ticket-key"
+import { verifiedIngressUser } from "@lib/verified-ingress-user"
 import { dispatchTaskEvent } from "@lib/webhook-dispatcher"
 
 const inputSchema = z.strictObject({
@@ -44,7 +42,7 @@ export const POST: APIRoute = async ({ request, locals, params }) => {
     detail: authority === "unavailable" ? "Home Assistant could not verify administrator access. Try again." : "A current Home Assistant administrator must review the proposal.", extraHeaders: headers })
   if (request.signal.aborted) return apiProblem({ status: 499, detail: "Review request cancelled.", extraHeaders: headers })
   const client = getPersistenceClient()
-  const result = await new TaskHandoff(client).decide(params.id!, input.data.proposal_hash, input.data.action, resolveRecentActivityActor(locals), request.signal)
+  const result = await new TaskHandoff(client).decide(params.id!, input.data.proposal_hash, input.data.action, resolveRecentActivityActor(locals, request), request.signal)
   if (!result.ok) return apiProblem({ status: result.status, detail: result.error, extraHeaders: headers })
 
   // Record the activity and dispatch the usual task update event.

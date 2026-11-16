@@ -132,7 +132,7 @@ export function initDangerZoneSettings(): void {
     }
     try {
       const res = await fetch(
-        (window.__ingress_path || "") + "/api/tasks?purge=all",
+        "/api/tasks?purge=all",
         { method: "DELETE", signal: pageLifecycle.signal },
       )
       if (res.ok) {
@@ -162,7 +162,7 @@ export function initDangerZoneSettings(): void {
     if (!ok) return
     try {
       const res = await fetch(
-        (window.__ingress_path || "") + "/api/settings?reset=all",
+        "/api/settings?reset=all",
         { method: "DELETE", signal: pageLifecycle.signal },
       )
       if (res.ok) {
@@ -217,7 +217,7 @@ function initRetentionSettings(): void {
 
     try {
       const res = await fetch(
-        (window.__ingress_path || "") + `/api/tasks/delete-completed?months=${months}`,
+        `/api/tasks/delete-completed?months=${months}`,
         { signal: pageLifecycle.signal },
       )
       if (!res.ok) {
@@ -274,7 +274,7 @@ function initRetentionSettings(): void {
 
     try {
       const res = await fetch(
-        (window.__ingress_path || "") + `/api/tasks/delete-completed?months=${lastPreviewMonths}&confirm=true`,
+        `/api/tasks/delete-completed?months=${lastPreviewMonths}&confirm=true`,
         { method: "DELETE", signal: pageLifecycle.signal },
       )
       if (res.ok) {

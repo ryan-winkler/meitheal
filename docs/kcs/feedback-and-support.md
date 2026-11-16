@@ -6,7 +6,7 @@ description: Submit, review, and share feedback from a Meitheal installation.
 
 # Local feedback queue
 
-Open Meitheal from Home Assistant and choose **Settings → Personal → Help & Support → Share local feedback**. Settings opens the feedback card in **App & PWA** and moves keyboard focus to it. **Guides** opens the public documentation in a new tab.
+Open Meitheal from Home Assistant and choose **Settings → App & Companion → Help & Support → Share local feedback**. Settings opens the feedback card in the same section and moves keyboard focus to it. **Guides** opens the public documentation in a new tab.
 
 Choose a category and enter up to 4 KiB of plain text. You can opt in to include the app version and the Settings page category. Avoid credentials, addresses and other private details. The report, submitter ID and date stay in your installation. Meitheal displays a receipt after SQLite saves the report.
 
@@ -31,7 +31,7 @@ If SQLite remains busy, retry shortly with the same submission. If the queue is 
 
 Feedback requires Supervisor 2026.10.4 or later and a verified Home Assistant ingress user. The queue and its review actions require a verified administrator. Feedback responses bypass the service worker cache and report contents stay out of search, MCP tools and automation exports. The API checks the same-origin request marker on writes and limits the JSON request to 8 KiB before decoding it.
 
-The raw SQLite download in **Settings → App & PWA** is available to verified Home Assistant administrators. It contains private household data and feedback, so keep it private. Reopen the download from Settings if an old or edited URL returns 404. The download stays outside offline caches, and activating an app update removes older cached export URLs. Use Home Assistant's cold app backup for a recoverable database snapshot. A standalone operator can back up SQLite through the host filesystem, with Meitheal stopped and any SQLite sidecar files kept together. [Backup and restore](home-assistant-backup-and-restore.md).
+The **Raw DB** download in **Settings → Backups & Reset → Data Portability** is available to verified Home Assistant administrators. It contains private household data and feedback, so keep it private. Reopen the download from Settings if an old or edited URL returns 404. The download stays outside offline caches, and activating an app update removes older cached export URLs. Use Home Assistant's cold app backup for a recoverable database snapshot. A standalone operator can back up SQLite through the host filesystem, with Meitheal stopped and any SQLite sidecar files kept together. [Backup and restore](home-assistant-backup-and-restore.md).
 
 ## Verification
 

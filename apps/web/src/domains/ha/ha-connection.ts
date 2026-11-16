@@ -5,7 +5,7 @@
  * `home-assistant-js-websocket`. Uses `SUPERVISOR_TOKEN` for auth.
  *
  * Architecture:
- *   Addon Server → ws://supervisor/core/api/websocket → HA Core
+ *   Addon Server → supervisor/core/api/websocket (via Supervisor proxy) → HA Core
  *
  * @domain ha
  * @bounded-context integration
@@ -59,6 +59,71 @@ export async function getHAConfiguration(): Promise<HAConfiguration | null> {
   const repo = new SettingsRepository(getPersistenceClient())
   await repo.ensureSettingsTable()
   return resolveHAConfiguration(process.env, await repo.getByKeys(["ha_url", "ha_token"]))
+}
+
+const ALLOWED_HA_REST_PATH_RE = /^\/api\/[a-zA-Z0-9._%-]+(?:\/[a-zA-Z0-9._%-]+)*$/
+
+interface PendingHaRestCall {
+  readonly cleanPath: string
+  readonly options: RequestInit
+  readonly resolve: (response: Response | null) => void
+}
+
+const pendingHaRestCalls: PendingHaRestCall[] = []
+
+function dispatchPendingHaRestCalls(): void {
+  while (pendingHaRestCalls.length > 0) {
+    const next = pendingHaRestCalls.shift()
+    if (!next) continue
+    void (async () => {
+      try {
+        const config = await getHAConfiguration()
+        if (!config) {
+          next.resolve(null)
+          return
+        }
+        const base = new URL(config.baseUrl)
+        if (base.protocol !== "http:" && base.protocol !== "https:") {
+          next.resolve(null)
+          return
+        }
+        const basePrefix = base.pathname.replace(/\/+$/, "")
+        const target = new URL(`${basePrefix}${next.cleanPath}`, base.origin)
+        if (target.origin !== base.origin) {
+          next.resolve(null)
+          return
+        }
+        const response = await fetch(target.href, {
+          ...next.options,
+          headers: {
+            "content-type": "application/json",
+            ...(next.options.headers as Record<string, string> | undefined),
+            authorization: `Bearer ${config.token}`,
+          },
+          redirect: "error",
+          signal: next.options.signal ?? AbortSignal.timeout(5_000),
+        })
+        next.resolve(response)
+      } catch {
+        next.resolve(null)
+      }
+    })()
+  }
+}
+
+/**
+ * Perform an authenticated single-resource REST call against Home Assistant Core.
+ * Returns null if Home Assistant is unconfigured, path is disallowed, or Core is unreachable.
+ */
+export async function haRestFetch(path: string, options: RequestInit = {}): Promise<Response | null> {
+  const cleanPath = path.startsWith("/") ? path : `/${path}`
+  if (!ALLOWED_HA_REST_PATH_RE.test(cleanPath) || cleanPath.includes("..")) {
+    return null
+  }
+  return new Promise<Response | null>((resolve) => {
+    pendingHaRestCalls.push({ cleanPath, options, resolve })
+    dispatchPendingHaRestCalls()
+  })
 }
 let connecting = false;
 let connectingFingerprint: string | null = null
@@ -138,6 +203,7 @@ export async function getHAConnection(): Promise<Connection | null> {
     return completed && (connection || connecting) ? getHAConnection() : null
   }
 
+  if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null }
   connecting = true;
   connectingFingerprint = fingerprint
   const attemptGeneration = ++connectionGeneration
@@ -288,9 +354,14 @@ export async function getHAConnection(): Promise<Connection | null> {
     });
 
     const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), MAX_RECONNECT_DELAY_MS);
+    const scheduledGeneration = attemptGeneration
     // Cancel any pending reconnect to prevent timer accumulation on rapid failures
     if (reconnectTimer) clearTimeout(reconnectTimer);
-    reconnectTimer = setTimeout(() => { reconnectTimer = null; connection = null; connecting = false; getHAConnection().catch(() => {}); }, delay);
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = null
+      if (connectionGeneration !== scheduledGeneration || connecting || connection) return
+      getHAConnection().catch(() => {})
+    }, delay);
     return null;
   } finally {
     if (connectionGeneration === attemptGeneration) {

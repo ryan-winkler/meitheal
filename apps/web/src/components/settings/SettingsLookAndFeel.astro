@@ -1,0 +1,243 @@
+---
+import { t } from "../../i18n/translations"
+import { APPEARANCE_PREFERENCES, type AppearancePreferenceName } from "../../lib/appearance-preferences"
+import { INDIGO_SWATCH } from "../../lib/design-tokens"
+import type { Locale } from "../../lib/locale"
+import { SETTINGS_SECTIONS } from "../../lib/settings-registry"
+import { canManageSystemSettings } from "../../lib/settings-security"
+import SettingsDisclosure from "./SettingsDisclosure.astro"
+import SettingsPanelCard from "./SettingsPanelCard.astro"
+import SettingsSectionIntro from "./SettingsSectionIntro.astro"
+import Icon from "../ui/Icon.astro"
+
+interface Props {
+  locale: Locale
+}
+const { locale } = Astro.props
+const canManageTheme = canManageSystemSettings(Astro.request, Astro.locals)
+
+const lookAndFeelSection = SETTINGS_SECTIONS.find((section) => section.id === "look-and-feel-settings")!
+
+const VISUAL_PREFERENCE_KEYS: readonly AppearancePreferenceName[] = [
+  "font",
+  "base",
+  "radius",
+  "width",
+  "header",
+  "panelStyle",
+]
+---
+
+<section
+  id="look-and-feel-settings"
+  class="settings-shell__section"
+  data-settings-shell-section
+>
+  <SettingsSectionIntro section={lookAndFeelSection} />
+  <div class="settings-grid">
+    <SettingsPanelCard
+      title={t("settings.look_feel_theme_title", locale)}
+      subtitle={t("settings.look_feel_theme_subtitle", locale)}
+    >
+      <div class="form-group mt-3">
+        <label class="form-label" for="theme-select">{t("settings.theme_title", locale)}</label>
+        <select class="form-select settings-input-compact" id="theme-select">
+          <option value="dark">{t("settings.theme_dark", locale)}</option>
+          <option value="light">{t("settings.theme_light", locale)}</option>
+          <option value="auto">{t("settings.theme_auto", locale)}</option>
+          {canManageTheme && <option value="custom">{t("settings.theme_custom", locale)}</option>}
+        </select>
+      </div>
+
+      <!-- Accent Color -->
+      <div class="form-group mt-3">
+        <label class="form-label">{t("settings.accent_title", locale)}</label>
+        <div
+          style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;"
+        >
+          <button
+            type="button"
+            class="accent-swatch"
+            data-color="#69E3B2"
+            title={t("settings.accent_mint", locale)}
+            style="background: #69E3B2;"></button>
+          <button
+            type="button"
+            class="accent-swatch"
+            data-color={INDIGO_SWATCH}
+            title={t("settings.accent_indigo", locale)}
+            style={`background: ${INDIGO_SWATCH};`}></button>
+          <button
+            type="button"
+            class="accent-swatch"
+            data-color="#14b8a6"
+            title={t("settings.accent_teal", locale)}
+            style="background: #14b8a6;"></button>
+          <button
+            type="button"
+            class="accent-swatch"
+            data-color="#3b82f6"
+            title={t("settings.accent_blue", locale)}
+            style="background: #3b82f6;"></button>
+          <button
+            type="button"
+            class="accent-swatch"
+            data-color="#8b5cf6"
+            title={t("settings.accent_violet", locale)}
+            style="background: #8b5cf6;"></button>
+          <button
+            type="button"
+            class="accent-swatch"
+            data-color="#ec4899"
+            title={t("settings.accent_pink", locale)}
+            style="background: #ec4899;"></button>
+          <button
+            type="button"
+            class="accent-swatch"
+            data-color="#f59e0b"
+            title={t("settings.accent_amber", locale)}
+            style="background: #f59e0b;"></button>
+          <button
+            type="button"
+            class="accent-swatch"
+            data-color="#ef4444"
+            title={t("settings.accent_red", locale)}
+            style="background: #ef4444;"></button>
+          <input
+            type="color"
+            id="accent-color-custom"
+            title={t("settings.accent_custom", locale)}
+            style="width: 28px; height: 28px; border: 2px solid var(--border); border-radius: 50%; padding: 0; cursor: pointer; background: transparent;"
+          />
+          <button
+            type="button"
+            id="accent-reset"
+            class="btn btn-ghost"
+            style="font-size: 12px; padding: 4px 10px;">{t("settings.accent_reset", locale)}</button
+          >
+        </div>
+        <small class="settings-hint" style="display: block;"
+          >{t("settings.accent_hint", locale)}</small
+        >
+      </div>
+
+      {canManageTheme && (
+        <div
+          id="custom-theme-section"
+          class="form-group"
+          style="margin-top: 12px; display: none;"
+        >
+          <div
+            id="custom-theme-empty"
+            style="display: flex; align-items: center; gap: 8px;"
+          >
+            <label
+              class="settings-file-picker btn btn-secondary"
+              style="cursor: pointer; margin: 0; padding: 6px 16px; display: inline-flex; align-items: center; gap: 6px;"
+            >
+              {t("settings.theme_import", locale)}
+              <input
+                type="file"
+                id="custom-theme-input"
+                accept=".css"
+              />
+            </label>
+            <small class="settings-hint--sm"
+              >{t("settings.theme_import_hint", locale)}</small
+            >
+          </div>
+          <div
+            id="custom-theme-loaded"
+            style="display: none; align-items: center; gap: 8px; margin-top: 8px; padding: 8px 12px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: var(--radius-sm);"
+          >
+            <span class="inline-flex items-center text-accent" aria-hidden="true"><Icon name="palette" size={15} sprite={true} /></span>
+            <a
+              id="custom-theme-filename"
+              href="#"
+              style="flex: 1; font-size: 13px; font-weight: 500; color: var(--accent); cursor: pointer;"
+            ></a>
+            <button
+              type="button"
+              id="custom-theme-delete"
+              class="btn-icon"
+              style="color: var(--danger); padding: 4px;"
+              title={t("settings.theme_remove", locale)}
+              aria-label={t("settings.theme_remove", locale)}><Icon name="x" size={14} sprite={true} /></button
+            >
+          </div>
+        </div>
+      )}
+
+      <SettingsDisclosure id="appearance-settings" title={t("settings.appearance_customize", locale)} open={true}>
+        <form id="appearance-preferences-form" data-appearance-form class="appearance-preferences-form" aria-describedby="appearance-scope">
+          <p id="appearance-scope" class="settings-hint">{t("settings.appearance_scope", locale)}</p>
+          <div class="appearance-preferences-grid">
+            {VISUAL_PREFERENCE_KEYS.map((name) => {
+              const preference = APPEARANCE_PREFERENCES[name]
+              return (
+                <div class="form-group">
+                  <label class="form-label" for={`appearance-${name}`}>{t(`settings.appearance_${name}`, locale)}</label>
+                  <select class="form-select" id={`appearance-${name}`} name={name} aria-describedby={`appearance-${name}-help`}>
+                    {preference.options.map((value) => (
+                      <option value={value} selected={value === preference.defaultValue}>
+                        {t(`settings.appearance_${name}_${value.replace(".", "_")}`, locale)}
+                      </option>
+                    ))}
+                  </select>
+                  <p id={`appearance-${name}-help`} class="settings-hint">{t(`settings.appearance_${name}_help`, locale)}</p>
+                </div>
+              )
+            })}
+          </div>
+          <div class="flex flex-wrap gap-2">
+            <button type="reset" class="btn btn-secondary">{t("settings.appearance_reset", locale)}</button>
+            <button type="submit" class="btn btn-primary">{t("settings.appearance_save", locale)}</button>
+          </div>
+          <p
+            id="appearance-save-status"
+            data-appearance-status
+            class="settings-hint"
+            role="status"
+            data-saved={t("settings.appearance_saved", locale)}
+            data-reset={t("settings.appearance_reset_staged", locale)}
+            data-error={t("settings.appearance_save_error", locale)}
+          ></p>
+        </form>
+      </SettingsDisclosure>
+    </SettingsPanelCard>
+  </div>
+</section>
+
+<style>
+  .appearance-preferences-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+    gap: 8px 24px;
+  }
+  .appearance-preferences-grid .form-group { min-width: 0; }
+  .appearance-preferences-grid .form-select { min-height: 44px; width: 100%; }
+  .appearance-preferences-form > .flex { padding-top: 12px; border-top: 1px solid var(--border); }
+  .appearance-preferences-form .btn { min-height: 44px; }
+
+  .accent-swatch {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    border: 2px solid transparent;
+    cursor: pointer;
+    transition: background 0.2s, color 0.2s, border-color 0.2s, opacity 0.2s, transform 0.2s;
+    padding: 0;
+  }
+  @media (pointer: coarse) {
+    .accent-swatch {
+      width: 44px;
+      height: 44px;
+    }
+  }
+  .accent-swatch.active {
+    border-color: var(--text-primary);
+    box-shadow:
+      0 0 0 2px var(--bg-secondary),
+      0 0 0 4px currentColor;
+  }
+</style>

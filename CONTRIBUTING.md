@@ -53,12 +53,56 @@ A local Astro check covers web behavior. Changes to ingress, Supervisor, Home As
 
 ## Submit a pull request
 
+Target pull requests and automated pushes to `dev` (the primary branch). Keep `main` (beta channel, mostly unused) and `release` (full production release) reserved for explicit maintainer promotions, and keep version increments on `0.0.<single-digit>` (`+0.0.1` only when cutting a release).
+
 1. Explain the observed behavior, expected result, and affected domain. Link related issues and credit reused work. Keep applicable license notices.
 2. List the commands and results. For a UI change, show the affected state and explain how you checked keyboard use. For migration or compatibility changes, describe what happens to existing installations.
 3. Update the owning documentation. State which checks you skipped and why. Keep credentials, household data, and unredacted logs or captures out of the pull request.
 4. Get maintainer review. Address CodeRabbit findings or explain the rationale for declining them.
 
 Use descriptive commit messages. Keep release commands in the [release runbook](docs/kcs/releasing.md).
+
+## Coding standards
+
+Contributions must follow these style guides. CI checks the compiler and linter settings on pushes to `main`, `dev` and `release` and on pull requests into them, and fails on errors. Codacy reports findings on pushes and on pull requests from this repository; it does not block a merge, and the reviewer reads its findings and asks for fixes.
+
+| Language | Standard | How it is checked |
+| --- | --- | --- |
+| TypeScript and Astro | The strict compiler settings in [tsconfig.base.json](tsconfig.base.json) (`strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`), the [Astro project structure](https://docs.astro.build/en/basics/project-structure/), and the patterns in [client-side patterns](docs/kcs/client-side-patterns.md) and [DESIGN.md](DESIGN.md) | `tsc --noEmit` for each package and `astro check` in [CI](.github/workflows/ci.yml); ESLint and Semgrep rules in [Codacy](.github/workflows/codacy.yml) |
+| Python (Home Assistant integration) | [PEP 8](https://peps.python.org/pep-0008/), [Ruff](https://docs.astral.sh/ruff/) style and lint rules, type hints, and the [Home Assistant development guidelines](https://developers.home-assistant.io/docs/development_guidelines) | `ruff check` with the rules in [ruff.toml](integrations/home-assistant/ruff.toml) fails CI; Pylint, Prospector and Bandit in Codacy; Rust-based `uv` (`setup-uv`) + pytest against two Home Assistant Core releases in CI |
+| GitHub Actions | Actions pinned to a full commit SHA, least-privilege `permissions`, and no untrusted input in `run:` steps | CodeQL and OpenSSF Scorecard |
+| Documentation | Plain, short sentences. Pages under `docs/` carry front matter and appear in an index, except `log.md` files and non-root `index.md` files, which must not have front matter | The docs bundle test in [tests/governance](tests/governance) |
+
+## Test policy
+
+Every change in the *new capability, public API, default interaction, or migration* row of [Choose a starting point](#choose-a-starting-point) must add automated tests for that functionality in the same pull request. Every bug fix must add a regression test that fails without the fix, unless the pull request explains why one cannot be written. Pull requests without the required tests are not merged.
+
+- Web and API behavior: Playwright specs in [tests/e2e](tests/e2e), run in CI against a fresh server and database for each spec.
+- Pure functions and parsers: Playwright unit specs in [tests/unit](tests/unit).
+- Repository rules and release contracts: specs in [tests/governance](tests/governance).
+- Home Assistant integration: pytest in [integrations/home-assistant/tests](integrations/home-assistant/tests).
+
+Coverage is reported to [Codecov](https://codecov.io/gh/ryan-winkler/meitheal) for TypeScript and Python. Codecov flags pull requests whose new and changed lines fall below 80% coverage ([codecov.yml](codecov.yml)). Coverage is not reported for pull requests from forks. The reviewer decides whether a gap is acceptable.
+
+## Code review standard
+
+Every pull request is reviewed before it is merged. The maintainer reviews pull requests from contributors. When the project has more than one maintainer, a maintainer's own pull request is reviewed by a different maintainer; until then the maintainer reviews their own change against this list after the automated review finishes. Automated review (CodeRabbit, CodeQL, Codacy) supports human review but does not replace it.
+
+The reviewer checks that:
+
+1. The change solves the stated problem and fits the [roadmap](ROADMAP.md) and the owning domain.
+2. CI, CodeQL code scanning, dependency review and the CLA check pass.
+3. Tests follow the [test policy](#test-policy) and the commands listed in the pull request were actually run.
+4. Inputs from users, Home Assistant, integrations and agents are validated, access checks cover every new endpoint, and no secrets or household data appear in code, logs or fixtures.
+5. Existing installations keep working: migrations are tested, settings survive upgrades, and nothing is removed without a replacement and a migration path.
+6. User-facing changes work by keyboard, meet contrast requirements, and update the owning documentation.
+7. New dependencies are necessary, maintained, and licensed compatibly.
+
+A change is acceptable when every point is met or the pull request explains why a point does not apply. A reviewer who is not the author records approval as a GitHub review. When the maintainer merges their own pull request, they first post a comment confirming the checklist above. The maintainer then merges.
+
+## Find a first task
+
+Issues labelled [`good first issue`](https://github.com/ryan-winkler/meitheal/labels/good%20first%20issue) are small, self-contained tasks for new or casual contributors. Issues labelled [`help wanted`](https://github.com/ryan-winkler/meitheal/labels/help%20wanted) need more context but welcome outside help.
 
 ## Contributor License Agreement
 
@@ -70,4 +114,4 @@ Before a pull request can be merged, follow the CLA prompt on the pull request. 
 
 GitHub must associate each commit with its author’s account. If you open the pull request, include a commit under your own GitHub identity. Keep each pull request within 250 commits so the check covers the full contribution. Comment `recheck` to refresh the CLA status after a failed check.
 
-Offer changes through a pull request or contact the maintainer. Include a patch or branch and the steps needed to verify it. If you use automated tools, verify the change, check the source and license of any reused material, and test the result from the user’s perspective. For questions, bug reports, and private security disclosure, see [Support](SUPPORT.md).
+Please send security fixes, bug fixes, and improvements to Meitheal upstream so every household benefits. A separate program that only talks to Meitheal through its network APIs can stay with you. Offer changes through a pull request or contact the maintainer. Include a patch or branch and the steps needed to verify it. If you use automated tools, verify the change, check the source and license of any reused material, and test the result from the user’s perspective. For questions, bug reports, and private security disclosure, see [Support](SUPPORT.md).

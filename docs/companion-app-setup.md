@@ -17,7 +17,7 @@ Open Meitheal from the Home Assistant sidebar. Set up the [optional Core integra
 
 ## URL Handler and X-Callback-URL
 
-The redesigned `Settings → App & PWA` section now surfaces companion-safe deep links directly in the UI:
+The redesigned `Settings → App & Companion` section now surfaces companion-safe deep links directly in the UI:
 
 - `Open in Companion` uses Home Assistant's documented URL handler:
   `homeassistant://navigate/api/hassio_ingress/<TOKEN>/settings#app-pwa-settings`
@@ -65,7 +65,7 @@ Add a quick settings tile for common actions:
 Set up the optional Core integration so Home Assistant can call `meitheal.complete_task`. Import both blueprints to send the notification and handle its **Complete** action.
 
 1. **Settings → Automations → Blueprints → Import Blueprint**
-2. Import [Task Notification with Actions](https://github.com/ryan-winkler/meitheal/blob/main/integrations/home-assistant/blueprints/meitheal_task_notification.yaml) and [Complete Task from Notification](https://github.com/ryan-winkler/meitheal/blob/main/integrations/home-assistant/blueprints/meitheal_complete_from_notification.yaml).
+2. Import [Task Notification with Actions](https://github.com/ryan-winkler/meitheal/blob/dev/integrations/home-assistant/blueprints/meitheal_task_notification.yaml) and [Complete Task from Notification](https://github.com/ryan-winkler/meitheal/blob/dev/integrations/home-assistant/blueprints/meitheal_complete_from_notification.yaml).
 3. Create an automation from each blueprint. Choose the same notification device, then set the task event and ingress path in the sender.
 4. Save and enable both automations. Send a notification for a sample task and check that **Complete** marks it done.
 

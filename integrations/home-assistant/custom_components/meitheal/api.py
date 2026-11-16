@@ -1,8 +1,10 @@
 """Meitheal REST transport for the configured origin."""
 
-from collections.abc import Mapping
-from ipaddress import IPv6Address
 import re
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
+from contextvars import ContextVar
+from ipaddress import IPv6Address
 from typing import Any
 from urllib.parse import quote
 
@@ -12,11 +14,92 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from yarl import URL
 
-from .const import CONF_API_TOKEN, DEFAULT_HOST, DEFAULT_PORT
+from .const import DEFAULT_HOST, DEFAULT_PORT
 
 _APP_HOST = re.compile(r"(local|[a-f0-9]{8})-(meitheal(?:-canary|-hub)?)")
 _TOKEN = re.compile(r"mth_[a-f0-9]{64}")
 _TIMEOUT = aiohttp.ClientTimeout(total=10)
+_ORIGIN_KINDS = frozenset({
+    "conversation_agent",
+    "ha_automation",
+    "ha_script",
+    "webhook",
+    "mcp",
+    "agent_token",
+})
+_ORIGIN_HEADER_KEYS = frozenset({
+    "X-Meitheal-Origin-Kind",
+    "X-Meitheal-Origin-Name",
+    "X-Meitheal-Origin-Target",
+})
+_CURRENT_ORIGIN: ContextVar[dict[str, str] | None] = ContextVar("_CURRENT_ORIGIN", default=None)
+
+
+# Invisible and bidi formatting characters could reorder the token name shown beside the origin.
+_INVISIBLE_FORMAT_CHARS = re.compile("[\u00ad\u061c\u180e\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff\ufff9-\ufffb]")
+_ORIGIN_NAME_SAFE = "".join(chr(code) for code in range(0x20, 0x7F) if chr(code) != "%")
+
+
+def build_origin_headers(
+    origin_kind: str | None = None,
+    origin_name: str | None = None,
+    origin_target: str | None = None,
+) -> dict[str, str]:
+    """Build sanitized X-Meitheal-Origin-* headers when provenance is present."""
+    headers: dict[str, str] = {}
+    if isinstance(origin_kind, str):
+        kind = origin_kind.strip().lower()
+        if kind in _ORIGIN_KINDS:
+            headers["X-Meitheal-Origin-Kind"] = kind
+    if isinstance(origin_name, str):
+        visible = _INVISIBLE_FORMAT_CHARS.sub("", origin_name)
+        clean_name = re.sub(
+            r"\s+", " ", re.sub(r"[\r\n\t\x00-\x1f\x7f-\x9f\u2028\u2029]+", " ", visible)
+        ).strip()[:120].strip()
+        if clean_name:
+            # HTTP header values are Latin-1 on the Meitheal side, so percent-encode
+            # UTF-8 names. Printable ASCII other than "%" stays readable.
+            headers["X-Meitheal-Origin-Name"] = quote(clean_name, safe=_ORIGIN_NAME_SAFE)
+    if isinstance(origin_target, str):
+        clean_target = origin_target.strip()
+        if (
+            clean_target
+            and len(clean_target) <= 512
+            and clean_target.startswith("/")
+            and not clean_target.startswith("//")
+            and not clean_target.startswith("/\\")
+            and not re.search(r"[\r\n\x00-\x1f\x7f\\]", clean_target)
+            and not re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*:", clean_target)
+        ):
+            headers["X-Meitheal-Origin-Target"] = clean_target
+    return headers
+
+
+def resolve_origin_headers(
+    origin_kind: str | None = None,
+    origin_name: str | None = None,
+    origin_target: str | None = None,
+) -> dict[str, str]:
+    """Return explicit origin headers, or fall back to the active origin context."""
+    if origin_kind is not None or origin_name is not None or origin_target is not None:
+        return build_origin_headers(origin_kind, origin_name, origin_target)
+    current = _CURRENT_ORIGIN.get()
+    return dict(current) if current else {}
+
+
+@contextmanager
+def origin_scope(
+    origin_kind: str | None = None,
+    origin_name: str | None = None,
+    origin_target: str | None = None,
+) -> Iterator[None]:
+    """Bind verified provenance headers for mutations within the current async task."""
+    headers = build_origin_headers(origin_kind, origin_name, origin_target)
+    token = _CURRENT_ORIGIN.set(headers or None)
+    try:
+        yield
+    finally:
+        _CURRENT_ORIGIN.reset(token)
 
 
 class MeithealConnectionError(HomeAssistantError):
@@ -55,6 +138,23 @@ def task_path(task_id: str) -> str:
     if task_id in ("", ".", ".."):
         raise ValueError("Invalid Meitheal task identifier")
     return f"/api/tasks/{quote(task_id, safe='')}"
+
+
+def task_matches_identifier(data: object, task_id: str | None = None) -> bool:
+    """Return True when a task receipt has an ID matching the requested UUID or ticket key."""
+    if not isinstance(data, dict) or data.get("error"):
+        return False
+    resolved_id = data.get("id")
+    if not isinstance(resolved_id, str) or not resolved_id:
+        return False
+    if task_id is None:
+        return True
+    if not task_id:
+        return False
+    if resolved_id == task_id:
+        return True
+    ticket_key = data.get("ticket_key")
+    return isinstance(ticket_key, str) and bool(ticket_key) and ticket_key.upper() == task_id.upper()
 
 
 async def async_validate_transport(
@@ -109,10 +209,23 @@ class MeithealApi:
         payload: dict[str, Any] | None = None,
         read_json: bool = False,
         event_authority: set[str] | None = None,
+        extra_headers: Mapping[str, str] | None = None,
     ) -> Any:
         """Request a fixed API path without following redirects or exposing errors."""
         url = self.origin.with_path(path, encoded=True)
         headers = self._headers
+        origin_hdrs = (
+            extra_headers
+            if extra_headers is not None
+            else (_CURRENT_ORIGIN.get() if method in ("POST", "PUT", "PATCH", "DELETE") else None)
+        )
+        if origin_hdrs:
+            safe_origin = {
+                k: v for k, v in origin_hdrs.items()
+                if k in _ORIGIN_HEADER_KEYS and isinstance(v, str) and v
+            }
+            if safe_origin:
+                headers = {**headers, **safe_origin}
         if self._authorization and path != "/api/health":
             headers = {**headers, "Authorization": self._authorization}
         try:

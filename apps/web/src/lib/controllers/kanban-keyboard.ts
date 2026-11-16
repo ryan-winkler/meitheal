@@ -37,9 +37,10 @@ export function initKeyboardAndSearch(signal: AbortSignal): void {
 
     // C = toggle collapse all swimlane groups
     if (e.key === "c" || e.key === "C") {
-      e.preventDefault()
       const toggles = board.querySelectorAll<HTMLElement>(".swimlane-group:not([hidden]) .swimlane-toggle")
+      // Without swimlanes, leave the key to the global shortcut instead of swallowing it.
       if (toggles.length === 0) return
+      e.preventDefault()
       // Determine action: if most are open, collapse all; else expand all
       const openCount = board.querySelectorAll(".swimlane-group:not([hidden]):not(.swimlane-collapsed)").length
       const shouldCollapse = openCount > toggles.length / 2

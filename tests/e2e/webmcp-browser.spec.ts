@@ -19,8 +19,12 @@ test("WebMCP is off by default and searches real task titles with eight bounded 
     ids.push((await response.json()).id)
   }
   expect((await request.post("/api/tasks", { data: { title: "Description-only match", description: title } })).status()).toBe(201)
-  const searches: string[] = []
-  page.on("request", r => { if (new URL(r.url()).pathname.endsWith("/api/search")) searches.push(r.url()) })
+  const searches: { url: string; source: string | undefined }[] = []
+  page.on("request", r => {
+    if (new URL(r.url()).pathname.endsWith("/api/search")) {
+      searches.push({ url: r.url(), source: r.headers()["x-automation-source"] })
+    }
+  })
   await saveProtocols(page, true)
   await expectTools(page)
   await expect(page.locator("#webmcp-runtime-status")).toHaveText("Browser tools are registered.")
@@ -33,7 +37,8 @@ test("WebMCP is off by default and searches real task titles with eight bounded 
     expect(item.url).toMatch(new RegExp(`^${prefix}/tasks\\?open=`))
     expect(Object.keys(item).sort()).toEqual(["title", "url"])
   }
-  const url = new URL(searches[0]!)
+  const url = new URL(searches[0]!.url)
+  expect(searches[0]!.source).toBe("webmcp")
   expect(url.pathname).toBe(`${prefix}/api/search`)
   expect(Object.fromEntries(url.searchParams)).toEqual({ q: title, scope: "tasks", task_fields: "title", limit: "8" })
   expect(searches).toHaveLength(1)

@@ -27,6 +27,7 @@ test("task promotion is shared, typed, and independent of the stored manual orde
         PATH: process.env.PATH,
         NODE_ENV: "production",
         SUPERVISOR_TOKEN: "prominence-fixture-only",
+        MEITHEAL_ACTIVE_MEMBER_FIXTURE: "1",
         HA_BASE_URL: "http://127.0.0.1:1",
         MEITHEAL_DB_URL: `file:${file}`,
         MEITHEAL_INGRESS_FIXTURE_PORT: process.env.MEITHEAL_PROMINENCE_TEST_PORT,

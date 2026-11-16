@@ -1,0 +1,156 @@
+---
+import { t } from "../../i18n/translations"
+import type { Locale } from "../../lib/locale"
+import { SETTINGS_SECTIONS } from "../../lib/settings-registry"
+import SettingsActionRow from "./SettingsActionRow.astro"
+import SettingsLabels from "./SettingsLabels.astro"
+import SettingsPanelCard from "./SettingsPanelCard.astro"
+import SettingsSectionIntro from "./SettingsSectionIntro.astro"
+
+interface Props {
+  locale: Locale
+}
+const { locale } = Astro.props
+
+const tasksBoardsSection = SETTINGS_SECTIONS.find((section) => section.id === "tasks-boards-settings")!
+---
+
+<section
+  id="tasks-boards-settings"
+  class="settings-shell__section"
+  data-settings-shell-section
+  hidden
+>
+  <SettingsSectionIntro section={tasksBoardsSection} />
+  <div class="settings-grid">
+    <!-- Kanban Area -->
+    <SettingsPanelCard
+      title={t("settings.kanban_area_title", locale)}
+      subtitle={t("settings.kanban_area_subtitle", locale)}
+    >
+      <div class="settings-stack">
+        <!-- Backlog Mode -->
+        <div>
+          <label
+            for="backlog-mode-select"
+            class="settings-label"
+            >{t("settings.kanban_backlog_lane", locale)}</label
+          >
+          <SettingsActionRow>
+            <select
+              id="backlog-mode-select"
+              class="form-select settings-input-narrow"
+              aria-label={t("settings.kanban_backlog_lane_mode", locale)}
+            >
+              <option value="visible">{t("settings.kanban_backlog_visible", locale)}</option>
+              <option value="hidden">{t("settings.kanban_backlog_hidden", locale)}</option>
+              <option value="disabled">{t("settings.kanban_backlog_disabled", locale)}</option>
+            </select>
+            <button
+              type="button"
+              class="btn btn-primary settings-text-sm"
+              id="save-backlog-mode"
+              >{t("settings.save", locale)}</button
+            >
+          </SettingsActionRow>
+          <div
+            id="backlog-mode-help"
+            class="settings-hint"
+            data-mode-visible={t("triage.setting_visible", locale)}
+            data-mode-hidden={t("triage.setting_hidden", locale)}
+            data-mode-disabled={t("triage.setting_disabled", locale)}
+          >
+            {t("triage.setting_visible", locale)}
+          </div>
+        </div>
+
+        <div class="settings-section-divider"></div>
+
+        <div>
+          <label
+            for="completed-retention-select"
+            class="settings-label"
+            >{t("settings.kanban_retention", locale)}</label
+          >
+          <SettingsActionRow>
+            <select
+              id="completed-retention-select"
+              class="form-select settings-input-narrow"
+              aria-label={t("settings.kanban_retention_period", locale)}
+            >
+              <option value="7">{t("inactivity.interval", locale, { days: "7" })}</option>
+              <option value="14">{t("inactivity.interval", locale, { days: "14" })}</option>
+              <option value="30" selected>{t("inactivity.interval", locale, { days: "30" })}</option>
+              <option value="0">{t("settings.kanban_retention_never", locale)}</option>
+            </select>
+            <button
+              type="button"
+              class="btn btn-primary settings-text-sm"
+              id="save-completed-retention"
+              >{t("settings.save", locale)}</button
+            >
+          </SettingsActionRow>
+          <p class="settings-hint">
+            {t("settings.kanban_retention_hint", locale)}
+          </p>
+        </div>
+      </div>
+    </SettingsPanelCard>
+
+    <!-- Custom Fields -->
+    <SettingsPanelCard
+      title={t("settings.custom_fields_title", locale)}
+      subtitle={t("settings.custom_fields_subtitle", locale)}
+      padded={false}
+    >
+      <button type="button" class="btn btn-ghost" id="add-custom-field" slot="actions"
+        >{t("settings.add_field", locale)}</button
+      >
+      <div id="custom-fields-list">
+        <div class="custom-field-row">
+          <input
+            type="text"
+            class="form-input"
+            placeholder={t("settings.custom_field_name_label", locale)}
+            value="sprint"
+            disabled
+          />
+          <select class="form-select" aria-label={t("settings.custom_field_sprint_type", locale)} disabled>
+            <option value="text" selected>{t("settings.custom_field_type_text", locale)}</option>
+            <option value="number">{t("settings.custom_field_type_number", locale)}</option>
+            <option value="select">{t("settings.custom_field_type_select", locale)}</option>
+            <option value="date">{t("settings.custom_field_type_date", locale)}</option>
+            <option value="checkbox">{t("settings.custom_field_type_checkbox", locale)}</option>
+          </select>
+          <span class="settings-text-xs text-muted">{t("settings.built_in", locale)}</span>
+        </div>
+        <div class="custom-field-row">
+          <input
+            type="text"
+            class="form-input"
+            placeholder={t("settings.custom_field_name_label", locale)}
+            value="story_points"
+            disabled
+          />
+          <select class="form-select" aria-label={t("settings.custom_field_story_points_type", locale)} disabled>
+            <option value="number" selected>{t("settings.custom_field_type_number", locale)}</option>
+          </select>
+          <span class="settings-text-xs text-muted">{t("settings.built_in", locale)}</span>
+        </div>
+      </div>
+    </SettingsPanelCard>
+
+    <!-- Labels -->
+    <SettingsLabels locale={locale} />
+
+    <!-- Optional Features -->
+    <SettingsPanelCard
+      title={t("settings.features_title", locale)}
+      subtitle={t("settings.features_desc", locale)}
+    >
+      <div id="feature-toggles-container" class="settings-stack--sm" style="gap: 10px;" data-save-error={t("settings.feature_save_error", locale)}>
+        <span class="settings-description">{t("settings.features_loading", locale)}</span>
+      </div>
+    </SettingsPanelCard>
+  </div>
+</section>

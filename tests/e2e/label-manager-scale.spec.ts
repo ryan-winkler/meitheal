@@ -12,6 +12,11 @@ test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires built app and sim
 const name = (id: number) => id === 26 ? 'Café roof & "family" repairs' : `Household label ${String(id).padStart(4, "0")}`
 const row = (page: Page, id: number) => page.locator(`.label-settings-row[data-id="${id}"]`)
 
+async function waitForLabelsPageReady(page: Page, expectLabelsReady = true) {
+  await expect(page.locator("#settings-panels")).not.toHaveAttribute("inert", "")
+  if (expectLabelsReady) await expect(page.locator("[data-label-editor]")).toHaveAttribute("data-labels-ready", "true")
+}
+
 async function fixture(count: number, run: (f: { page: Page, origin: string, prefix: string }) => Promise<void>) {
   const work = await mkdtemp(join(tmpdir(), "meitheal-label-scale-"))
   const child = startCoreFixture(work)
@@ -33,7 +38,7 @@ async function fixture(count: number, run: (f: { page: Page, origin: string, pre
     const errors: string[] = []
     page.on("pageerror", error => errors.push(String(error)))
     await page.goto(origin + info.configuredPath + "/settings#workflow-settings")
-    await expect(page.locator("[data-label-editor]")).toHaveAttribute("data-labels-ready", "true")
+    await waitForLabelsPageReady(page)
     const db = new DatabaseSync(join(work, "pins.db"), { timeout: 5000 })
     try {
       const insert = db.prepare("INSERT INTO vikunja_labels (id,title,hex_color) VALUES (?,?,?)")
@@ -42,7 +47,7 @@ async function fixture(count: number, run: (f: { page: Page, origin: string, pre
       db.exec("COMMIT")
     } finally { db.close() }
     await page.reload()
-    await expect(page.locator("[data-label-editor]")).toHaveAttribute("data-labels-ready", "true")
+    await waitForLabelsPageReady(page)
     await run({ page, origin, prefix: info.configuredPath })
     expect(errors).toEqual([])
   } catch (error) {
@@ -284,6 +289,7 @@ test("a failed initial load reports unknown totals and retry enables the complet
       ? route.fulfill({ status: 503, contentType: "application/json", body: '{"ok":false,"errorCode":"unavailable"}' }) : route.continue()
     await page.route("**" + prefix + "/api/labels", failure)
     await page.reload()
+    await waitForLabelsPageReady(page, false)
     await expect(page.locator("[data-label-range]")).toHaveText("Could not load labels. Try again.")
     await expect(page.locator("[data-label-search]")).toBeDisabled()
     await expect(page.locator("#new-label-title")).toBeEditable()
@@ -325,6 +331,7 @@ test("search and pages remain labelled, keyboard reachable and readable with nar
     }
     await page.context().addCookies([{ name: "meitheal-locale", value: "ga", url: origin }])
     await page.reload()
+    await waitForLabelsPageReady(page)
     await expect(page.locator("html")).toHaveAttribute("lang", "ga")
     await expect(page.getByRole("searchbox", { name: "Cuardaigh lipéid", exact: true })).toBeVisible()
     await expect(page.locator("[data-label-range]")).toHaveText("Ag taispeáint 1–25. Meaitseálacha: 26. Iomlán: 26.")
@@ -406,6 +413,7 @@ test("a held failed initial list preserves an eventless draft in a newly created
     await page.route("**" + prefix + "/api/labels", handler)
     try {
       await page.reload()
+      await waitForLabelsPageReady(page, false)
       await expect.poll(() => captured).toBe(true)
       await page.locator("#new-label-title").fill("Household recovery label")
       await page.locator("#create-label-form button[type=submit]").click()

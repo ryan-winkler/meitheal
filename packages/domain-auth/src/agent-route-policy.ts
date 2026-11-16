@@ -1,4 +1,4 @@
-import type { AgentScope } from "./agent-tokens"
+import { hasScope, type AgentScope } from "./agent-tokens"
 
 type MethodScopes = Partial<Record<string, AgentScope>>
 
@@ -14,10 +14,14 @@ const routes = new Map<string, MethodScopes>([
   ["/api/tasks/reorder", taskCreate],
   ["/api/tasks/today-counts", taskRead],
   ["/api/tasks/reaction-counts", taskRead],
+  ["/api/users", { GET: "tasks:read" }],
   ["/api/projects", { GET: "projects:read", POST: "projects:write" }],
   ["/api/search", { GET: "search:read" }],
   ["/api/mcp", { GET: "mcp:execute", POST: "mcp:execute" }],
+  ["/.well-known/mcp.json", { GET: "mcp:execute" }],
   ["/api/a2a/agent-card", { GET: "a2a:execute" }],
+  ["/.well-known/agent-card.json", { GET: "a2a:execute" }],
+  ["/.well-known/agent.json", { GET: "a2a:execute" }],
   ["/api/a2a/message", { POST: "a2a:execute" }],
 ])
 const taskRoutes = new Map<string, MethodScopes>([
@@ -75,4 +79,26 @@ export function resolveAgentRouteScope(pathname: string, method: string): AgentS
   if (task) return taskRoutes.get(task[1] ?? "")?.[verb]
   if (/^\/api\/projects\/[\w-]+$/.test(pathname)) return project[verb]
   if (/^\/api\/a2a\/tasks\/[\w-]+$/.test(pathname)) return a2aTask[verb]
+  if (verb === "POST" && /^\/api\/a2a\/tasks\/[\w-]+:cancel$/.test(pathname)) return "a2a:execute"
+}
+
+export interface AgentRouteAccess {
+  /** Scope the route requires. Absent when agent credentials may never use it. */
+  scope: AgentScope | undefined
+  allowed: boolean
+  /** Task whose assignee must match the token before the request may continue. */
+  assignedTaskId?: string
+}
+
+/** Decide whether a token may use a route, including the assigned-only write grant. */
+export function resolveAgentRouteAccess(pathname: string, method: string, scopes: AgentScope[]): AgentRouteAccess {
+  const scope = resolveAgentRouteScope(pathname, method)
+  if (!scope) return { scope, allowed: false }
+  if (hasScope(scopes, scope)) return { scope, allowed: true }
+  if (scope !== "tasks:write" || !hasScope(scopes, "tasks:write:assigned")) return { scope, allowed: false }
+
+  // Each of these names one existing task, so its assignee can be checked.
+  const task = pathname.match(/^\/api\/tasks\/([\w-]+)(?:\/|$)/)
+  if (!task || !isAssignedTaskScopedRoute(pathname, method)) return { scope, allowed: false }
+  return { scope, allowed: true, assignedTaskId: task[1]! }
 }

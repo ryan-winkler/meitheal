@@ -7,6 +7,11 @@
  */
 import type { APIRoute } from "astro"
 import { getIngressTransport } from "../../../scripts/ingress-transport.mjs"
+import {
+  recordSseBackpressureDrop,
+  recordSseClientConnected,
+  recordSseClientDisconnected,
+} from "../../../scripts/runtime-counters.mjs"
 import { getCalendarEntities, getTodoEntities, onEntityChange } from "../../domains/ha"
 
 const BUFFER_BYTES = 64 * 1024
@@ -81,6 +86,7 @@ export const GET: APIRoute = ({ request }) => {
       const send = (frame: Uint8Array) => {
         // Bound queued bytes and let EventSource reconnect when the client falls behind.
         if (frame.byteLength + (socket?.writableLength ?? 0) > (controller.desiredSize ?? 0)) {
+          recordSseBackpressureDrop()
           disconnect()
           socket?.destroy()
           return
@@ -90,7 +96,9 @@ export const GET: APIRoute = ({ request }) => {
 
       cleanup = () => {
         lifetime.abort()
-        if (!clients.delete(send) || clients.size > 0) return
+        if (!clients.delete(send)) return
+        recordSseClientDisconnected()
+        if (clients.size > 0) return
         clearInterval(heartbeat)
         heartbeat = undefined
         for (const unsubscribe of entitySubscriptions.values()) unsubscribe()
@@ -98,6 +106,7 @@ export const GET: APIRoute = ({ request }) => {
       }
 
       clients.add(send)
+      recordSseClientConnected()
       request.signal.addEventListener("abort", disconnect, { signal: lifetime.signal, once: true })
       send(encodeEvent("connected", { ts: new Date().toISOString(), clients: clients.size }))
 

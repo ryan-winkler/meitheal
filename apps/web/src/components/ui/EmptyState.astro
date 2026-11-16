@@ -1,21 +1,35 @@
 ---
-import Icon from "./Icon.astro";
+import Icon from "./Icon.astro"
+import { isIconName } from "../../generated/icon-registry"
+
 interface Props {
-  title: string;
-  description: string;
-  actionText?: string;
-  actionHref?: string;
+  title: string
+  description: string
+  icon?: string | undefined
+  actionText?: string | undefined
+  actionHref?: string | undefined
   /** When set, renders a <button> that dispatches this custom event instead of an <a> link */
-  actionEvent?: string;
+  actionEvent?: string | undefined
 }
 
-const { title, description, actionText, actionHref, actionEvent } = Astro.props;
+const {
+  title,
+  description,
+  icon = "clipboard-list",
+  actionText,
+  actionHref,
+  actionEvent,
+} = Astro.props
 ---
 
 <div class="empty-state">
   <div class="empty-state-icon">
     <slot name="icon">
-      <Icon name="empty" size={48} class="text-text-muted/40" />
+      {isIconName(icon) ? (
+        <Icon name={icon} size={48} class="text-text-muted/40" />
+      ) : (
+        <span aria-hidden="true" style="font-size: 40px; line-height: 1;">{icon}</span>
+      )}
     </slot>
   </div>
   <h3 class="empty-state-title">{title}</h3>
@@ -42,14 +56,22 @@ const { title, description, actionText, actionHref, actionEvent } = Astro.props;
 </div>
 
 <script>
-  document
-    .querySelectorAll<HTMLButtonElement>("[data-empty-action]")
-    .forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const eventName = btn.dataset.emptyAction;
-        if (eventName) {
-          document.dispatchEvent(new CustomEvent(eventName));
-        }
-      });
-    });
+  import { pageLifecycle } from "@lib/page-lifecycle"
+
+  pageLifecycle.onPageLoad((signal) => {
+    document
+      .querySelectorAll<HTMLButtonElement>("[data-empty-action]")
+      .forEach((btn) => {
+        btn.addEventListener(
+          "click",
+          () => {
+            const eventName = btn.dataset.emptyAction
+            if (eventName) {
+              document.dispatchEvent(new CustomEvent(eventName))
+            }
+          },
+          { signal }
+        )
+      })
+  })
 </script>

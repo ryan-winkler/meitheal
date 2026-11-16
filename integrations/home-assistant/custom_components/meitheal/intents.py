@@ -26,15 +26,23 @@ Intents:
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import ClassVar
 
-from homeassistant.core import HomeAssistant
-from homeassistant.helpers import intent
 import voluptuous as vol
+from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import intent
 
+from .api import origin_scope
 from .coordinator import MeithealCoordinator
+from .helpers import assignee_for_user
 
 _LOGGER = logging.getLogger(__name__)
+_ASSIST_ORIGIN = (
+    "conversation_agent",
+    "Home Assistant Assist",
+    "/config/voice-assistants/assistants",
+)
 
 # ── Intent names ──
 INTENT_ADD_TASK = "MeithealAddTask"
@@ -64,7 +72,7 @@ def _get_coordinator(hass: HomeAssistant) -> MeithealCoordinator | None:
 class _MeithealAdminIntent(intent.IntentHandler):
     """Check the Core caller before using the shared integration credential."""
 
-    platforms = set()
+    platforms: ClassVar[set[str]] = set()
 
     async def async_handle(self, intent_obj: intent.Intent) -> intent.IntentResponse:
         """Require a current active administrator for Meitheal's custom intents."""
@@ -86,7 +94,7 @@ class MeithealAddTaskHandler(_MeithealAdminIntent):
     """Handle 'add X to my tasks' intent."""
 
     intent_type = INTENT_ADD_TASK
-    slot_schema = {
+    slot_schema: ClassVar[dict[vol.Required, type]] = {
         vol.Required("item"): str,
     }
 
@@ -104,11 +112,15 @@ class MeithealAddTaskHandler(_MeithealAdminIntent):
             return response
 
         try:
-            await coordinator.async_create_task(title=item)
+            with origin_scope(*_ASSIST_ORIGIN):
+                # "My tasks" means the speaker's: the base class has verified this user.
+                user_id = intent_obj.context.user_id
+                assigned_to = assignee_for_user(user_id) if user_id else None
+                await coordinator.async_create_task(title=item, assigned_to=assigned_to)
             response = intent_obj.create_response()
             response.async_set_speech(f"Added '{item}' to your tasks.")
             return response
-        except Exception as err:
+        except (HomeAssistantError, ValueError) as err:
             _LOGGER.error("Failed to create task via intent: %s", err)
             response = intent_obj.create_response()
             response.async_set_speech(f"Sorry, I couldn't add that task. {err}")
@@ -119,7 +131,7 @@ class MeithealDoneTaskHandler(_MeithealAdminIntent):
     """Handle 'mark X done' / 'done with X' intent."""
 
     intent_type = INTENT_DONE_TASK
-    slot_schema = {
+    slot_schema: ClassVar[dict[vol.Required, type]] = {
         vol.Required("item"): str,
     }
 
@@ -137,11 +149,12 @@ class MeithealDoneTaskHandler(_MeithealAdminIntent):
             return response
 
         try:
-            await coordinator.async_complete_task(title=item)
+            with origin_scope(*_ASSIST_ORIGIN):
+                await coordinator.async_complete_task(title=item)
             response = intent_obj.create_response()
             response.async_set_speech(f"Done! Marked '{item}' as complete.")
             return response
-        except Exception as err:
+        except (HomeAssistantError, ValueError) as err:
             _LOGGER.error("Failed to complete task via intent: %s", err)
             response = intent_obj.create_response()
             response.async_set_speech(f"Sorry, I couldn't complete that task. {err}")
@@ -310,7 +323,7 @@ class MeithealDeleteTaskHandler(_MeithealAdminIntent):
     """Handle 'delete X' / 'remove X from my list' intent."""
 
     intent_type = INTENT_DELETE_TASK
-    slot_schema = {
+    slot_schema: ClassVar[dict[vol.Required, type]] = {
         vol.Required("item"): str,
     }
 
@@ -329,11 +342,12 @@ class MeithealDeleteTaskHandler(_MeithealAdminIntent):
 
         try:
             task_id = coordinator.resolve_task_title(item)
-            await coordinator.async_delete_task(task_id)
+            with origin_scope(*_ASSIST_ORIGIN):
+                await coordinator.async_delete_task(task_id)
             response = intent_obj.create_response()
             response.async_set_speech(f"Deleted '{item}' from your tasks.")
             return response
-        except Exception as err:
+        except (HomeAssistantError, ValueError) as err:
             _LOGGER.error("Failed to delete task via intent: %s", err)
             response = intent_obj.create_response()
             response.async_set_speech(f"Sorry, I couldn't delete that task. {err}")

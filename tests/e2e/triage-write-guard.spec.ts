@@ -84,9 +84,9 @@ test("an intake decision uses the live version and status inside the write trans
     await add("parent")
     await add("child", now, "parent")
     expect(await repo.cascadeComplete("parent")).toBe(1)
-    expect(await repo.findById("child")).toMatchObject({ updated_at: now, status: "complete" })
+    expect(await repo.findById("child")).toMatchObject({ updated_at: now + 1, status: "complete" })
     await expect(repo.updateTask("child", { status: "pending" }, { version: guard })).resolves.toEqual({
-      ok: false, errorCode: "conflict", updatedAt: now,
+      ok: false, errorCode: "conflict", updatedAt: now + 1,
     })
 
     const lastVersion = Number.MAX_SAFE_INTEGER

@@ -20,7 +20,7 @@ Subject to the terms and conditions of this Agreement, You hereby grant to the M
 
 ## 4. Terms for this release
 
-The Maintainer may include and distribute Your Contributions under the [Meitheal source license](../LICENSE). Separately licensed components keep the terms stated in their own notices. The contributor retains copyright. Earlier signed agreements continue to govern the contributions they cover.
+The Maintainer may include and distribute Your Contributions under the [GNU Affero General Public License v3.0 only](../LICENSE) (`AGPL-3.0-only`). The Maintainer may also license Your Contributions, as part of Meitheal, under separate commercial terms, including in official binary images. Separately licensed components keep the terms stated in their own notices. The contributor retains copyright. Earlier signed agreements continue to govern the contributions they cover.
 
 ## 5. You Represent That…
 

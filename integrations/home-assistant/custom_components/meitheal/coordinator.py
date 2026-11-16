@@ -11,10 +11,21 @@ from typing import Any
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.util import dt as dt_util
 
-from .api import MeithealApi, MeithealConnectionError, MeithealResponseError, task_path
+from .api import (
+    MeithealApi,
+    MeithealConnectionError,
+    MeithealResponseError,
+    resolve_origin_headers,
+    task_matches_identifier,
+    task_path,
+)
 from .const import DOMAIN, SCAN_INTERVAL, STATUS_DONE, STATUS_IN_PROGRESS, STATUS_TODO
-from .repairs import async_create_addon_unreachable_issue, async_delete_addon_unreachable_issue
+from .repairs import (
+    async_create_addon_unreachable_issue,
+    async_delete_addon_unreachable_issue,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -40,6 +51,7 @@ class MeithealTask:
     """Representation of a Meitheal task."""
 
     def __init__(self, data: dict[str, Any]) -> None:
+        """Initialize a Meitheal task from raw API payload data."""
         self.id: str = str(data.get("id", ""))
         self.title: str = data.get("title", "")
         status = data.get("status", STATUS_TODO)
@@ -68,6 +80,18 @@ class MeithealTask:
         self.created_at = _timestamp(data.get("created_at") or data.get("createdAt"))
         self.updated_at = _timestamp(data.get("updated_at") or data.get("updatedAt"))
 
+    def is_due_on(self, local_now: datetime) -> bool:
+        """Check whether this open task is due on Home Assistant's local date."""
+        if self.status == STATUS_DONE or not isinstance(self.due_date, str):
+            return False
+        try:
+            due = datetime.fromisoformat(self.due_date)
+            if due.tzinfo is not None:
+                due = due.astimezone(local_now.tzinfo)
+        except (ValueError, OverflowError):
+            return False
+        return due.date() == local_now.date()
+
     @property
     def is_overdue(self) -> bool:
         """Check if task is overdue."""
@@ -84,17 +108,15 @@ class MeithealCoordinatorData:
     """Structured data from coordinator update."""
 
     def __init__(self, tasks: list[MeithealTask]) -> None:
+        """Compute active, overdue, and daily task summaries from fetched tasks."""
         self.tasks = tasks
         self.todo_tasks = [task for task in tasks if task.deferred_at is None]
         self.active_count = sum(1 for t in tasks if t.status != "done")
         self.overdue_count = sum(1 for t in tasks if t.is_overdue)
         self.total_count = len(tasks)
-        # Phase 8: additional computed stats
-        today_str = datetime.now().strftime("%Y-%m-%d")
-        self.due_today_count = sum(
-            1 for t in tasks
-            if t.due_date and t.due_date.startswith(today_str) and t.status != "done"
-        )
+        local_now = dt_util.now()
+        self.due_today_tasks = [task for task in tasks if task.is_due_on(local_now)]
+        self.due_today_count = len(self.due_today_tasks)
         # Streak and XP — populated by coordinator from gamification API
         self.streak: int | None = None
         self.total_points: int | None = None
@@ -106,6 +128,7 @@ class MeithealCoordinator(DataUpdateCoordinator[MeithealCoordinatorData]):
     """Coordinator to poll Meitheal addon REST API for tasks."""
 
     def __init__(self, hass: HomeAssistant, api: MeithealApi) -> None:
+        """Initialize the coordinator with Home Assistant and a Meitheal API client."""
         super().__init__(
             hass,
             _LOGGER,
@@ -118,6 +141,14 @@ class MeithealCoordinator(DataUpdateCoordinator[MeithealCoordinatorData]):
         self._was_available: bool = True
 
     # ── Event Bus Helpers ─────────────────────────────────────────────
+
+    def fire_event(self, event_type: str, data: dict[str, Any]) -> None:
+        """Fire a Meitheal event on the HA event bus."""
+        self._fire_event(event_type, data)
+
+    def fire_logbook(self, name: str, message: str, entity_id: str | None = None) -> None:
+        """Fire a logbook entry so Meitheal actions appear in HA history."""
+        self._fire_logbook(name, message, entity_id)
 
     def _fire_event(self, event_type: str, data: dict[str, Any]) -> None:
         """Fire a Meitheal event on the HA event bus.
@@ -241,22 +272,73 @@ class MeithealCoordinator(DataUpdateCoordinator[MeithealCoordinatorData]):
         self._previous_data = new_data
         return new_data
 
+    async def async_resolve_assignee(self, candidate: str) -> str:
+        """Resolve a user name or canonical ID to a single canonical assignee ID."""
+        cleaned = candidate.strip()
+        if not cleaned:
+            raise UpdateFailed("Assignee identifier cannot be empty")
+        if cleaned.startswith(("custom_", "ha_")):
+            return cleaned
+
+        payload = await self.api.async_request("GET", "/api/users", read_json=True)
+        users = payload.get("users") if isinstance(payload, dict) else None
+        if not isinstance(users, list):
+            raise UpdateFailed("Meitheal did not return an assignee directory")
+
+        exact_id = [u for u in users if isinstance(u, dict) and u.get("id") == cleaned]
+        if len(exact_id) == 1:
+            return str(exact_id[0]["id"])
+
+        needle = cleaned.casefold()
+        matches = [
+            str(u["id"])
+            for u in users
+            if isinstance(u, dict)
+            and isinstance(u.get("id"), str)
+            and isinstance(u.get("name"), str)
+            and u["name"].strip().casefold() == needle
+        ]
+        if len(matches) == 1:
+            return matches[0]
+        if len(matches) > 1:
+            raise UpdateFailed(
+                f"Multiple assignees match '{cleaned}'; provide an exact assignee ID"
+            )
+        raise UpdateFailed(f"No assignee found matching '{cleaned}'")
+
     async def async_create_task(
         self, title: str, description: str | None = None, *,
         priority: int | None = None, due_date: str | None = None,
         urgency: int | None = None, importance: int | None = None,
         assigned_to: str | None = None,
+        origin_kind: str | None = None, origin_name: str | None = None,
+        origin_target: str | None = None,
     ) -> None:
-        """Create a task through the authenticated native flat-response API."""
+        """Create a task through the authenticated native flat-response API.
+
+        Without assigned_to, Meitheal applies the household's default assignee.
+        """
+        resolved_assignee = (
+            await self.async_resolve_assignee(assigned_to)
+            if isinstance(assigned_to, str) and assigned_to.strip()
+            else None
+        )
         payload: dict[str, Any] = {"title": title}
         for key, value in {"description": description, "priority": priority,
                            "due_date": due_date, "urgency": urgency, "importance": importance,
-                           "assigned_to": assigned_to}.items():
+                           "assigned_to": resolved_assignee}.items():
             if value is not None:
                 payload[key] = value
         authority: set[str] = set()
-        result = await self.api.async_request("POST", "/api/tasks", payload=payload, read_json=True,
-                                              event_authority=authority)
+        origin_headers = resolve_origin_headers(origin_kind, origin_name, origin_target)
+        request_kwargs: dict[str, Any] = {
+            "payload": payload,
+            "read_json": True,
+            "event_authority": authority,
+        }
+        if origin_headers:
+            request_kwargs["extra_headers"] = origin_headers
+        result = await self.api.async_request("POST", "/api/tasks", **request_kwargs)
         if not isinstance(result, dict) or not isinstance(result.get("id"), str) or not result["id"] or result.get("error"):
             raise UpdateFailed("Meitheal did not acknowledge the created task")
         if "meitheal_task_created" not in authority:
@@ -276,7 +358,9 @@ class MeithealCoordinator(DataUpdateCoordinator[MeithealCoordinatorData]):
         return matches[0].id
 
     async def async_complete_task(
-        self, task_id: str | None = None, title: str | None = None
+        self, task_id: str | None = None, title: str | None = None, *,
+        origin_kind: str | None = None, origin_name: str | None = None,
+        origin_target: str | None = None,
     ) -> None:
         """Mark a task as done."""
         resolved_title = title
@@ -289,8 +373,8 @@ class MeithealCoordinator(DataUpdateCoordinator[MeithealCoordinatorData]):
             if task and task.status == STATUS_DONE:
                 # A cached completion may have been reopened or access revoked.
                 current = await self.api.async_request("GET", task_path(task_id), read_json=True)
-                if (not isinstance(current, dict) or current.get("id") != task_id
-                    or not isinstance(current.get("status"), str) or current.get("error")):
+                if (not isinstance(current, dict) or not task_matches_identifier(current, task_id)
+                    or not isinstance(current.get("status"), str)):
                     raise UpdateFailed("Meitheal did not confirm the task status")
                 if _TASK_STATUS_ALIASES.get(current["status"], current["status"]) == STATUS_DONE:
                     return
@@ -298,12 +382,21 @@ class MeithealCoordinator(DataUpdateCoordinator[MeithealCoordinatorData]):
                 resolved_title = task.title
 
         authority: set[str] = set()
-        result = await self.api.async_request(
-            "PUT", task_path(task_id), payload={"status": "done"}, read_json=True,
-            event_authority=authority,
-        )
-        if (not isinstance(result, dict) or result.get("id") != task_id
-            or result.get("status") not in (STATUS_DONE, "complete") or result.get("error")):
+        origin_headers = resolve_origin_headers(origin_kind, origin_name, origin_target)
+        request_kwargs: dict[str, Any] = {
+            "payload": {"status": "done"},
+            "read_json": True,
+            "event_authority": authority,
+        }
+        if origin_headers:
+            request_kwargs["extra_headers"] = origin_headers
+        result = await self.api.async_request("PUT", task_path(task_id), **request_kwargs)
+        if (
+            not isinstance(result, dict)
+            or not task_matches_identifier(result, task_id)
+            or result.get("status") not in (STATUS_DONE, "complete")
+            or result.get("error")
+        ):
             raise UpdateFailed("Meitheal did not acknowledge task completion")
 
         label = resolved_title or task_id
@@ -315,14 +408,21 @@ class MeithealCoordinator(DataUpdateCoordinator[MeithealCoordinatorData]):
         await self.async_request_refresh()
 
     async def async_complete_task_by_tag(
-        self, tag_id: str
+        self, tag_id: str, *,
+        origin_kind: str | None = None, origin_name: str | None = None,
+        origin_target: str | None = None,
     ) -> dict[str, Any]:
         """Complete a task by NFC tag ID."""
         authority: set[str] = set()
-        result = await self.api.async_request(
-            "POST", "/api/nfc/complete", payload={"tag_id": tag_id}, read_json=True,
-            event_authority=authority,
-        )
+        origin_headers = resolve_origin_headers(origin_kind, origin_name, origin_target)
+        request_kwargs: dict[str, Any] = {
+            "payload": {"tag_id": tag_id},
+            "read_json": True,
+            "event_authority": authority,
+        }
+        if origin_headers:
+            request_kwargs["extra_headers"] = origin_headers
+        result = await self.api.async_request("POST", "/api/nfc/complete", **request_kwargs)
 
         if (not isinstance(result, dict) or result.get("ok") is not True
             or not isinstance(result.get("task_id"), str) or not result["task_id"]
@@ -347,7 +447,7 @@ class MeithealCoordinator(DataUpdateCoordinator[MeithealCoordinatorData]):
         query: str = "",
         status: str | None = None,
         priority: int | None = None,
-        include_completed: bool = False,
+        include_completed: bool | None = None,
     ) -> dict[str, Any]:
         """Search tasks using Meitheal's universal search contract."""
         params: dict[str, str] = {
@@ -360,7 +460,11 @@ class MeithealCoordinator(DataUpdateCoordinator[MeithealCoordinatorData]):
             params["status"] = status
         if priority is not None:
             params["priority"] = str(priority)
-        if include_completed:
+        if include_completed is True or (
+            include_completed is None
+            and status is not None
+            and status.strip().lower() in (STATUS_DONE, "complete")
+        ):
             params["include_completed"] = "1"
 
         payload = await self.api.async_request(
@@ -391,7 +495,11 @@ class MeithealCoordinator(DataUpdateCoordinator[MeithealCoordinatorData]):
 
         return {"tasks": tasks, "count": len(tasks)}
 
-    async def async_delete_task(self, task_id: str) -> None:
+    async def async_delete_task(
+        self, task_id: str, *,
+        origin_kind: str | None = None, origin_name: str | None = None,
+        origin_target: str | None = None,
+    ) -> None:
         """Delete a task."""
         # Try to resolve title before deletion for logbook
         task_title = task_id
@@ -402,7 +510,11 @@ class MeithealCoordinator(DataUpdateCoordinator[MeithealCoordinatorData]):
                     break
 
         authority: set[str] = set()
-        await self.api.async_request("DELETE", task_path(task_id), event_authority=authority)
+        origin_headers = resolve_origin_headers(origin_kind, origin_name, origin_target)
+        request_kwargs: dict[str, Any] = {"event_authority": authority}
+        if origin_headers:
+            request_kwargs["extra_headers"] = origin_headers
+        await self.api.async_request("DELETE", task_path(task_id), **request_kwargs)
 
         if "meitheal_task_deleted" not in authority:
             self._fire_event("meitheal_task_deleted", {
@@ -411,18 +523,22 @@ class MeithealCoordinator(DataUpdateCoordinator[MeithealCoordinatorData]):
         self._fire_logbook("Meitheal", f"deleted task: {task_title}")
         await self.async_request_refresh()
 
-    async def async_update_task(self, task_id: str, updates: dict[str, Any]) -> None:
+    async def async_update_task(
+        self, task_id: str, updates: dict[str, Any], *,
+        origin_kind: str | None = None, origin_name: str | None = None,
+        origin_target: str | None = None,
+    ) -> None:
         """Update task fields."""
         path = task_path(task_id)
-        completing = updates.get("status") in (STATUS_DONE, "complete")
+        completing = str(updates.get("status") or "").lower() in (STATUS_DONE, "complete")
         was_done = False
         payload = updates
         if completing:
             # Poll data may be stale. Bind the mixed-field write to the same
             # snapshot used for the native fallback's transition decision.
             current = await self.api.async_request("GET", path, read_json=True)
-            if (not isinstance(current, dict) or current.get("error")
-                or current.get("id") != task_id or not isinstance(current.get("status"), str)):
+            if (not isinstance(current, dict) or not task_matches_identifier(current, task_id)
+                or not isinstance(current.get("status"), str)):
                 raise UpdateFailed("Meitheal did not confirm the task status")
             version = current.get("task_version", current.get("updated_at"))
             if type(version) is not int or not 0 <= version < 2**53:
@@ -431,11 +547,21 @@ class MeithealCoordinator(DataUpdateCoordinator[MeithealCoordinatorData]):
             payload = {**updates, "updated_at": version}
 
         authority: set[str] = set()
-        result = await self.api.async_request(
-            "PUT", path, payload=payload, read_json=completing, event_authority=authority,
-        )
-        if completing and (not isinstance(result, dict) or result.get("error")
-            or result.get("id") != task_id or result.get("status") not in (STATUS_DONE, "complete")):
+        origin_headers = resolve_origin_headers(origin_kind, origin_name, origin_target)
+        request_kwargs: dict[str, Any] = {
+            "payload": payload,
+            "read_json": completing,
+            "event_authority": authority,
+        }
+        if origin_headers:
+            request_kwargs["extra_headers"] = origin_headers
+        result = await self.api.async_request("PUT", path, **request_kwargs)
+        if completing and (
+            not isinstance(result, dict)
+            or result.get("error")
+            or not task_matches_identifier(result, task_id)
+            or result.get("status") not in (STATUS_DONE, "complete")
+        ):
             raise UpdateFailed("Meitheal did not acknowledge task completion")
 
         # Resolve title for logbook

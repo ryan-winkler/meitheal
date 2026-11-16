@@ -4,25 +4,52 @@ The credential suite exercises the managed authenticated HTTP client; these
 cases isolate adapter contracts without a device or a replacement HA runtime.
 """
 
-from datetime import date, datetime
 import json
+from datetime import date, datetime
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
+from zoneinfo import ZoneInfo
 
 import pytest
 import voluptuous as vol
 import yaml
 from hassil import Intents, recognize
 from homeassistant.components.todo import TodoItem
+from homeassistant.const import CONF_HOST, CONF_PORT, CONF_SSL
 from homeassistant.exceptions import ConfigEntryAuthFailed, HomeAssistantError
 from homeassistant.helpers.update_coordinator import UpdateFailed
+from homeassistant.util import dt as dt_util
 
-from custom_components.meitheal import CREATE_TASK_SCHEMA, SEARCH_TASKS_SCHEMA, COMPLETE_TASK_BY_TAG_SCHEMA
-from custom_components.meitheal.api import MeithealConnectionError, MeithealResponseError
-from custom_components.meitheal.coordinator import MeithealCoordinator, MeithealCoordinatorData, MeithealTask
+try:
+    from pytest_homeassistant.common import MockConfigEntry
+except ModuleNotFoundError as error:
+    if error.name != "pytest_homeassistant":
+        raise
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+from custom_components.meitheal import (
+    COMPLETE_TASK_BY_TAG_SCHEMA,
+    CREATE_TASK_SCHEMA,
+    SEARCH_TASKS_SCHEMA,
+    _resolve_service_origin,
+)
+from custom_components.meitheal.api import (
+    MeithealConnectionError,
+    MeithealResponseError,
+)
+from custom_components.meitheal.const import CONF_API_TOKEN, DOMAIN
+from custom_components.meitheal.coordinator import (
+    MeithealCoordinator,
+    MeithealCoordinatorData,
+    MeithealTask,
+)
 from custom_components.meitheal.device_trigger import async_attach_trigger
-from custom_components.meitheal.sensor import MeithealCompletedTodaySensor, MeithealStreakSensor
+from custom_components.meitheal.sensor import (
+    MeithealCompletedTodaySensor,
+    MeithealDueTodaySensor,
+    MeithealStreakSensor,
+)
 from custom_components.meitheal.todo import MeithealTodoListEntity
 
 COMPONENT = Path(__file__).resolve().parents[1] / "custom_components/meitheal"
@@ -112,6 +139,38 @@ async def test_native_creation_fields_and_flat_receipt(coordinator):
             "description": "Notes", "priority": 2, "due_date": "2026-12-02", "urgency": 0, "importance": 5}, read_json=True, event_authority=set())
         event.assert_called_once_with("meitheal_task_created", {"task_id": "created", "title": "Plan"})
     coordinator.async_request_refresh.assert_awaited_once()
+
+
+async def test_creation_sends_the_assignee_only_when_given(coordinator):
+    coordinator.async_request_refresh = AsyncMock()
+    coordinator.api.async_request.return_value = {"id": "created"}
+    with patch.object(coordinator, "_fire_event"):
+        await coordinator.async_create_task("For the agent", assigned_to="custom_1a2b3c4d")
+    assert coordinator.api.async_request.await_args.kwargs["payload"] == {
+        "title": "For the agent", "assigned_to": "custom_1a2b3c4d"}
+
+
+def test_create_task_assignee_fields_resolve_to_meitheal_ids(hass):
+    from custom_components.meitheal import CREATE_TASK_SCHEMA
+    from custom_components.meitheal.helpers import resolve_assignee
+    from homeassistant.exceptions import ServiceValidationError
+
+    hass.states.async_set("person.aoife", "home", {"user_id": "abc123"})
+    hass.states.async_set("person.visitor", "home", {"user_id": None})
+
+    # Neither field leaves the choice to Meitheal's default assignee.
+    assert resolve_assignee(hass, None, None) is None
+    assert resolve_assignee(hass, "person.aoife", None) == "ha_abc123"
+    assert resolve_assignee(hass, None, "custom_1a2b3c4d") == "custom_1a2b3c4d"
+    for person, assignee_id in (("person.visitor", None), ("person.missing", None),
+                                (None, "Claude"), (None, "custom_"), (None, "ha_../x")):
+        with pytest.raises(ServiceValidationError):
+            resolve_assignee(hass, person, assignee_id)
+
+    assert CREATE_TASK_SCHEMA({"title": "Plan", "assignee": "person.aoife"})["assignee"] == "person.aoife"
+    for invalid in ({"assignee": "light.kitchen"}, {"assignee": "person.aoife", "assignee_id": "custom_1a2b3c4d"}):
+        with pytest.raises(vol.Invalid):
+            CREATE_TASK_SCHEMA({"title": "Plan", **invalid})
 
 
 @pytest.mark.parametrize("result", [None, {}, {"task": {"id": "nested"}}, {"id": ""}, {"id": "one", "error": "Rejected"}])
@@ -221,7 +280,7 @@ def test_runtime_schemas_metadata_and_auth_translations_agree():
     with pytest.raises(vol.Invalid):
         CREATE_TASK_SCHEMA({"title": "Bad priority", "priority": 6})
     services = yaml.safe_load((COMPONENT / "services.yaml").read_text())
-    assert set(services["create_task"]["fields"]) == set(create)
+    assert set(services["create_task"]["fields"]) == {*create, "assignee", "assignee_id"}
     assert set(services["search_tasks"]["fields"]) == set(fields)
     strings = json.loads((COMPONENT / "strings.json").read_text())
     assert strings == json.loads((COMPONENT / "translations/en.json").read_text())
@@ -229,9 +288,9 @@ def test_runtime_schemas_metadata_and_auth_translations_agree():
 
 
 async def test_real_intent_dispatch_never_deletes_an_ambiguous_title(coordinator, hass, hass_owner_user):
+    from custom_components.meitheal import intents
     from homeassistant.core import Context
     from homeassistant.helpers import intent
-    from custom_components.meitheal import intents
 
     coordinator.data = MeithealCoordinatorData([MeithealTask(task("a", title="Milk")), MeithealTask(task("b", title="Milk"))])
     intents.async_register_intents(hass)
@@ -275,6 +334,24 @@ async def test_completion_rejects_bad_receipt_without_success_event(coordinator,
     with patch.object(coordinator, "_fire_event") as event, pytest.raises(UpdateFailed):
         await coordinator.async_complete_task(task_id="a")
     event.assert_not_called()
+
+
+async def test_completion_and_update_accept_ticket_key_case_insensitively(coordinator):
+    coordinator.api.async_request.return_value = {"id": "uuid-42", "ticket_key": "MTH-42", "status": "done"}
+    coordinator.async_request_refresh = AsyncMock()
+    await coordinator.async_complete_task(task_id="MTH-42")
+    assert coordinator.api.async_request.call_args.args[:2] == ("PUT", "/api/tasks/MTH-42")
+
+    coordinator.api.async_request.reset_mock()
+    coordinator.api.async_request.side_effect = [
+        {"id": "uuid-42", "ticket_key": "MTH-42", "status": "pending", "task_version": 7},
+        {"id": "uuid-42", "ticket_key": "MTH-42", "status": "done"},
+    ]
+    await coordinator.async_update_task("mth-42", {"status": "done"})
+    assert [call.args[:2] for call in coordinator.api.async_request.call_args_list] == [
+        ("GET", "/api/tasks/mth-42"),
+        ("PUT", "/api/tasks/mth-42"),
+    ]
 
 
 @pytest.mark.parametrize("repeated", [False, True])
@@ -397,3 +474,150 @@ async def test_actual_core_device_trigger_consumes_namespaced_app_overdue_event(
     hass.bus.async_fire(contract["event_type"], contract["event_data"])
     await hass.async_block_till_done()
     assert len(delivered) == 1
+
+
+def test_resolve_service_origin_variants(hass):
+    from homeassistant.core import Context
+
+    assert _resolve_service_origin(hass, SimpleNamespace(context=None)) == (None, None, None)
+
+    hass.states.async_set(
+        "automation.nightly_reset",
+        "on",
+        {"friendly_name": "Nightly Reset", "id": "nightly_reset"},
+        context=Context(id="ctx-auto-state"),
+    )
+    # The script editor opens scripts by registry unique_id. This one was renamed, so its
+    # entity id (script.kitchen_prep) differs from its configuration key (morning_prep).
+    from homeassistant.helpers import entity_registry as er
+
+    er.async_get(hass).async_get_or_create(
+        "script", "script", "morning_prep", suggested_object_id="kitchen_prep"
+    )
+    hass.states.async_set(
+        "script.kitchen_prep",
+        "off",
+        {"friendly_name": "Morning Prep"},
+        context=Context(id="ctx-script-state"),
+    )
+
+    # origin_event automation with matching entity state
+    auto_origin = SimpleNamespace(
+        event_type="automation_triggered",
+        data={"name": "Nightly Reset", "entity_id": "automation.nightly_reset"},
+    )
+    assert _resolve_service_origin(
+        hass,
+        SimpleNamespace(
+            context=SimpleNamespace(id="ctx-1", parent_id=None, origin_event=auto_origin)
+        ),
+    ) == ("ha_automation", "Nightly Reset", "/config/automation/edit/nightly_reset")
+
+    # origin_event automation without state fallback -> dashboard target
+    missing_auto_origin = SimpleNamespace(
+        event_type="automation_triggered",
+        data={"entity_id": "automation.missing"},
+    )
+    assert _resolve_service_origin(
+        hass,
+        SimpleNamespace(
+            context=SimpleNamespace(id="ctx-2", parent_id=None, origin_event=missing_auto_origin)
+        ),
+    ) == ("ha_automation", "automation.missing", "/config/automation/dashboard")
+
+    # origin_event script -> edit target
+    script_origin = SimpleNamespace(
+        event_type="script_started",
+        data={"name": "Morning Prep", "entity_id": "script.kitchen_prep"},
+    )
+    assert _resolve_service_origin(
+        hass,
+        SimpleNamespace(
+            context=SimpleNamespace(id="ctx-3", parent_id=None, origin_event=script_origin)
+        ),
+    ) == ("ha_script", "Morning Prep", "/config/script/edit/morning_prep")
+
+    # a script with no registry entry falls back to the dashboard
+    unregistered_script = SimpleNamespace(
+        event_type="script_started",
+        data={"name": "Ghost", "entity_id": "script.ghost"},
+    )
+    assert _resolve_service_origin(
+        hass,
+        SimpleNamespace(
+            context=SimpleNamespace(id="ctx-4", parent_id=None, origin_event=unregistered_script)
+        ),
+    ) == ("ha_script", "Ghost", "/config/script/dashboard")
+
+    # state-context parent_id fallback for automation and script
+    assert _resolve_service_origin(
+        hass, SimpleNamespace(context=Context(id="child-1", parent_id="ctx-auto-state"))
+    ) == ("ha_automation", "Nightly Reset", "/config/automation/edit/nightly_reset")
+    assert _resolve_service_origin(
+        hass, SimpleNamespace(context=Context(id="child-2", parent_id="ctx-script-state"))
+    ) == ("ha_script", "Morning Prep", "/config/script/edit/morning_prep")
+
+    # unmatched context -> no provenance
+    assert _resolve_service_origin(
+        hass, SimpleNamespace(context=Context(id="unmatched"))
+    ) == (None, None, None)
+
+
+async def test_due_today_sensor_uses_home_assistant_local_day(coordinator, monkeypatch):
+    """Count and list the same tasks when local and UTC dates differ."""
+    sensor = MeithealDueTodaySensor(coordinator, SimpleNamespace(entry_id="test"))
+    assert sensor.native_value is None
+    assert sensor.extra_state_attributes is None
+
+    now = datetime(2026, 1, 5, 21, tzinfo=ZoneInfo("America/New_York"))
+    monkeypatch.setattr(dt_util, "now", lambda: now)
+    coordinator.data = MeithealCoordinatorData(
+        [
+            MeithealTask(task("all-day", due_date="2026-01-05", priority=2)),
+            MeithealTask(task("local-time", due_date="2026-01-05T21:00:00", priority=3)),
+            MeithealTask(task("utc-time", due_date="2026-01-06T02:00:00Z", priority=4)),
+            MeithealTask(task("complete", due_date="2026-01-05", status="complete")),
+            MeithealTask(task("tomorrow", due_date="2026-01-06")),
+            MeithealTask(task("next-midnight", due_date="2026-01-06T05:00:00Z")),
+            MeithealTask(task("invalid-date", due_date="2026-01-05-invalid")),
+        ]
+    )
+    assert sensor.native_value == 3
+    assert sensor.extra_state_attributes == {
+        "task_titles": ["all-day", "local-time", "utc-time"],
+        "priorities": [2, 3, 4],
+    }
+
+
+async def test_setup_service_errors_and_optional_bootstrap_warnings(hass):
+    """Service calls translate domain errors and optional sentence/intent/LLM setup warnings do not block setup."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="Meitheal",
+        data={CONF_HOST: "tasks.example.test", CONF_PORT: 443, CONF_SSL: True, CONF_API_TOKEN: "mth_" + "a" * 64},
+    )
+    entry.add_to_hass(hass)
+
+    with (
+        patch("custom_components.meitheal._install_custom_sentences", side_effect=OSError("disk full")),
+        patch("custom_components.meitheal.intents.async_register_intents", side_effect=RuntimeError("intent fail")),
+        patch("custom_components.meitheal.async_register_llm_api", side_effect=HomeAssistantError("llm fail")),
+        patch.object(MeithealCoordinator, "async_config_entry_first_refresh", AsyncMock()),
+        patch.object(hass.config_entries, "async_forward_entry_setups", AsyncMock()),
+    ):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+
+    coord = entry.runtime_data
+    coord.async_create_task = AsyncMock(side_effect=ValueError("bad create"))
+    coord.async_complete_task = AsyncMock(side_effect=HomeAssistantError("bad complete"))
+    coord.async_request_refresh = AsyncMock(side_effect=HomeAssistantError("offline"))
+    coord.async_complete_task_by_tag = AsyncMock(side_effect=ValueError("bad tag"))
+
+    with pytest.raises(HomeAssistantError):
+        await hass.services.async_call(DOMAIN, "create_task", {"title": "Test"}, blocking=True)
+    with pytest.raises(HomeAssistantError):
+        await hass.services.async_call(DOMAIN, "complete_task", {"title": "Test"}, blocking=True)
+    with pytest.raises(HomeAssistantError):
+        await hass.services.async_call(DOMAIN, "sync_todo", {}, blocking=True)
+    with pytest.raises(HomeAssistantError):
+        await hass.services.async_call(DOMAIN, "complete_task_by_tag", {"tag_id": "tag-1"}, blocking=True)

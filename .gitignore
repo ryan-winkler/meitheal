@@ -4,6 +4,10 @@ node_modules
 .env.*
 dist
 coverage
+coverage-python.xml
+.coverage
+codacy-results.json
+codacy-results.sarif
 playwright-report
 test-results
 .DS_Store
@@ -40,3 +44,7 @@ egm_*.md
 *.review-receipt*
 /.claude/
 /.codex/
+
+__pycache__/
+*.pyc
+integrations/home-assistant/tests/testing_config/custom_sentences/

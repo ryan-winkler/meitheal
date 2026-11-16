@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import { execFile } from "node:child_process";
@@ -30,7 +31,8 @@ const expectedSchema = {
     "deferred_at",
     "deferral_revision",
     "inactivity_touched_at", "last_activity_spike_at",
-    "source"
+    "source",
+    "created_by"
   ],
   domain_events: ["event_id", "event_type", "task_id", "request_id", "idempotency_key", "payload", "created_at"],
   integration_attempts: [
@@ -59,7 +61,7 @@ const expectedSchema = {
 };
 
 async function main() {
-  const dbPath = path.join(os.tmpdir(), `meitheal-schema-drift-${Date.now()}-${Math.random()}.db`);
+  const dbPath = path.join(os.tmpdir(), `meitheal-schema-drift-${Date.now()}-${randomUUID()}.db`);
   const dbUrl = `file:${dbPath}`;
   const scriptDir = path.dirname(fileURLToPath(import.meta.url));
   const appRoot = path.resolve(scriptDir, "..");

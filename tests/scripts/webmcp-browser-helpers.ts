@@ -40,6 +40,7 @@ export async function searchTool(page: Page, query: unknown) {
 }
 
 export async function saveProtocols(page: Page, enabled: boolean) {
+  await expect(page.locator("#settings-panels")).not.toHaveAttribute("inert", "")
   await page.locator("#agent-webmcp-enabled").setChecked(enabled)
   await page.locator("#save-agent-protocols").click()
   await expect(page.locator("#save-agent-protocols")).toBeEnabled()

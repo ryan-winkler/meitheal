@@ -62,11 +62,11 @@ console.log(`   Potentially unsafe:         ${unsafeInnerHTML}`)
 // Transition: all
 const transitionAll = count("transition:\\s*all")
 console.log(`\n🎨 CSS`)
-console.log(`   transition: all:            ${transitionAll}`, transitionAll === 0 ? "✅" : "⚠️")
+console.log(`   transition: all:            ${transitionAll} ${transitionAll === 0 ? "✅" : "⚠️"}`)
 
 // Console.* calls
 const consoleCalls = countWithout("console\\.", "client-logger\\|eslint-disable\\|health-check", "lib/")
-console.log(`\n🗑️  console.* in lib/:          ${consoleCalls}`, consoleCalls === 0 ? "✅" : "⚠️")
+console.log(`\n🗑️  console.* in lib/:          ${consoleCalls} ${consoleCalls === 0 ? "✅" : "⚠️"}`)
 
 // Buttons without aria-label
 const btnNoAria = countWithout('<button', 'aria-label', "components/")

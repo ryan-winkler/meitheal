@@ -1,5 +1,6 @@
 ---
 import { getCollection } from "astro:content"
+import Icon from "../ui/Icon.astro"
 const frameworks = await getCollection("frameworks")
 ---
 
@@ -16,7 +17,7 @@ const frameworks = await getCollection("frameworks")
       <div class="ticket-scoring__actions">
         <output id="se-live-result" aria-live="off"></output>
         <button type="submit" id="se-save" class="btn btn-primary">Save score</button>
-        <button type="button" id="se-ask-ai" class="btn btn-secondary">Auto-score with Assist</button>
+        <button type="button" id="se-ask-ai" class="btn btn-secondary"><Icon name="sparkles" size={14} sprite={true} /> Auto-score with Assist</button>
       </div>
     </fieldset>
   </form>
