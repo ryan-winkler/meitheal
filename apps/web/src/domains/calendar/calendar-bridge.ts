@@ -1428,11 +1428,12 @@ async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState |
                        t.status AS task_status,
                        (json_valid(c.payload) AND json_type(c.payload, '$.occurrences') IS NOT NULL) AS has_occurrences
                 FROM calendar_confirmations c
-                LEFT JOIN tasks t ON t.id = c.task_id
+                JOIN tasks t ON t.id = c.task_id
                 WHERE c.source = 'ha.calendar_sync'
                   AND CASE WHEN json_valid(c.payload) THEN json_extract(c.payload, '$.entity_id') ELSE NULL END = ?`,
           args: [entityId],
         })
+        // Missing tasks leave a tombstone, even if the event disappears and returns.
         // Every key a present series can be known by is current, so legacy per-occurrence
         // confirmations grouped into a series are not completed as deleted events.
         const currentUids = new Set(seriesList.flatMap((s) => [s.seriesUid, ...s.legacyCandidateUids]))
