@@ -55,7 +55,7 @@ export async function safeFetch(
   try {
     const response = await fetch(url, { // nosemgrep
       ...fetchOptions,
-      signal: controller.signal,
+      signal: fetchOptions.signal ? AbortSignal.any([fetchOptions.signal, controller.signal]) : controller.signal,
     });
     return response;
   } catch (error) {

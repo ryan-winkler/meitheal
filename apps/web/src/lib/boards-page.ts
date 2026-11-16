@@ -1,6 +1,7 @@
 import { browserUuid } from "./browser-uuid"
 import { confirmDialog } from "./confirm-dialog"
 import { safeIngressHref } from "./ingress-navigation"
+import { safeFetch } from "./safe-fetch"
 
 class BoardRequestError extends Error {
   constructor(message: string, readonly status: number) { super(message) }
@@ -68,10 +69,10 @@ export function bindBoardPage(signal: AbortSignal) {
   dest?.addEventListener("change", showAssignment, { signal })
 
   async function jsonRequest(path: string, method: string, body: object) {
-    const response = await fetch("/api/" + path, {
+    const response = await safeFetch("/api/" + path, {
       method, body: JSON.stringify(body),
       headers: { "Content-Type": "application/json", "X-Meitheal-Board-Session": boardSession! },
-      signal: AbortSignal.any([signal, AbortSignal.timeout(10_000)]),
+      mode: "same-origin", redirect: "error", timeoutMs: 10_000, signal,
     })
     const data = await response.json().catch(() => ({})) as Record<string, unknown>
     if (!response.ok) {
