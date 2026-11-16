@@ -532,7 +532,7 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
   .stree__project:hover > .stree__actions,
   .stree__project:focus-within > .stree__actions,
   .stree__actions:focus-within {
-    max-width: 68px;
+    max-width: var(--stree-actions-expanded-width, 68px);
     opacity: 1;
     overflow: visible;
   }
@@ -959,7 +959,10 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
   }
 
   @media (max-width: 768px), (pointer: coarse) {
-    .stree { --stree-manage-size: 44px; }
+    .stree {
+      --stree-manage-size: 44px;
+      --stree-actions-expanded-width: none;
+    }
 
     .stree__header,
     .stree__area-toggle,
@@ -1420,8 +1423,9 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
       if (action === "manage") return // navigates via <a> href
       if (action === "rename") {
         ctrl.hideAll()
-        const nameEl = document.querySelector(`[data-area-toggle="${entityId}"] .stree__area-name`) as HTMLElement | null
-        if (!nameEl) return
+        const toggle = nav.querySelector<HTMLButtonElement>(`[data-area-toggle="${entityId}"]`)
+        const nameEl = toggle?.querySelector<HTMLElement>(".stree__area-name")
+        if (!toggle || !nameEl) return
         const container = nameEl.closest<HTMLElement>(".stree__area-row")!
         showInlineInput(
           container,
@@ -1430,8 +1434,22 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
           async (newName) => {
             try {
               const res = await fetch(`/api/areas/${entityId}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: newName }) })
-              if (res.ok) { nameEl.textContent = newName }
-              else showToast(i18n("sidebar.error_update_failed", "Failed to update"), "error")
+              if (res.ok) {
+                nameEl.textContent = newName
+                toggle.dataset.areaNameLabel = newName
+                toggle.setAttribute("aria-label", newName)
+                setAreaCollapsed(toggle, toggle.getAttribute("aria-expanded") === "false")
+                const menu = container.querySelector<HTMLButtonElement>("[data-area-menu]")
+                if (menu) {
+                  menu.dataset.areaName = newName
+                  menu.setAttribute("aria-label", `${menu.title} - ${newName}`)
+                }
+                const add = container.querySelector<HTMLButtonElement>("[data-area-add]")
+                if (add) {
+                  add.title = `New project in ${newName}`
+                  add.setAttribute("aria-label", add.title)
+                }
+              } else showToast(i18n("sidebar.error_update_failed", "Failed to update"), "error")
             } catch { showToast(i18n("sidebar.error_update_failed", "Failed to update"), "error") }
           },
         )

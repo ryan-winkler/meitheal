@@ -482,6 +482,7 @@ function initNotificationsPanel(signal: AbortSignal): ((users: WorkspaceUser[]) 
       checkbox.type = "checkbox"
       checkbox.checked = current.get(u.id) ?? !disabledSet.has(u.id)
       checkbox.dataset.userId = u.id
+      checkbox.setAttribute("aria-label", formatWorkspaceUserLabel(u))
 
       const slider = document.createElement("span")
       slider.className = "toggle-slider"
@@ -662,6 +663,12 @@ function initPeopleAndNotifications(signal: AbortSignal): void {
       select.appendChild(opt)
     }
     if (defaultAssignee) {
+      if (!allUsers.some(user => user.id === defaultAssignee)) {
+        const option = document.createElement("option")
+        option.value = defaultAssignee
+        option.textContent = select.dataset.unavailableAssignee ?? ""
+        select.appendChild(option)
+      }
       select.value = defaultAssignee
     }
 

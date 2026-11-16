@@ -55,6 +55,30 @@ test.describe("Responsive Navigation", () => {
     await expect(sidebar).toHaveCSS("pointer-events", "none");
   });
 
+  test("renaming a sidebar area also updates its accessible controls", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 960 })
+    await page.goto("/")
+    const row = page.locator(".stree__area-row").first()
+    const toggle = row.locator("[data-area-toggle]")
+    const menu = row.locator("[data-area-menu]")
+    const name = "Renamed fixture area"
+    const areaId = await toggle.getAttribute("data-area-toggle")
+    expect(areaId).toBeTruthy()
+    await page.route("**/api/areas/" + areaId, route => route.fulfill({ json: { name } }))
+    const initiallyExpanded = await toggle.getAttribute("aria-expanded") === "true"
+    await row.hover()
+    await menu.click()
+    await page.locator('#area-menu-dropdown [data-action="rename"]').click()
+    const input = row.locator(".stree__inline-input")
+    await input.fill(name)
+    await input.press("Enter")
+    await expect(toggle).toHaveAccessibleName(name)
+    await expect(menu).toHaveAccessibleName(new RegExp(name + "$"))
+    await expect(toggle).toHaveAttribute("title", (initiallyExpanded ? "Collapse " : "Expand ") + name)
+    await toggle.click()
+    await expect(toggle).toHaveAttribute("title", (initiallyExpanded ? "Expand " : "Collapse ") + name)
+  })
+
   test("Mobile: sidebar hierarchy actions are discoverable touch targets when opened", async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 812 });
     await page.goto("/");
@@ -66,6 +90,7 @@ test.describe("Responsive Navigation", () => {
     const actionCount = await page.locator(".stree__action-btn").count();
     test.skip(actionCount === 0, "No hierarchy action buttons in this fixture");
 
+    await firstAction.focus()
     const metrics = await firstAction.evaluate((action) => {
       const rect = action.getBoundingClientRect();
       const actionGroup = action.closest(".stree__actions");
@@ -73,9 +98,11 @@ test.describe("Responsive Navigation", () => {
         width: rect.width,
         height: rect.height,
         opacity: actionGroup ? getComputedStyle(actionGroup).opacity : "",
+        maxWidth: actionGroup ? getComputedStyle(actionGroup).maxWidth : "",
       };
     });
     expect(metrics.opacity).toBe("1");
+    expect(metrics.maxWidth).toBe("none")
     expect(metrics.width).toBeGreaterThanOrEqual(44);
     expect(metrics.height).toBeGreaterThanOrEqual(44);
   });
@@ -423,10 +450,13 @@ test.describe("Responsive Navigation", () => {
       await setNavigationLayout("navbar");
       await expect(page.locator("html")).toHaveAttribute("data-appearance-navigation", "navbar");
 
-      await page.setViewportSize({ width: 390, height: 844 });
-      await page.goto("/", { waitUntil: "networkidle" });
-      await expect(page.locator("html")).toHaveAttribute("data-appearance-navigation", "navbar");
-      await page.locator("#menu-toggle").click();
+      await expect(pinnedRow).toBeHidden()
+      await page.setViewportSize({ width: 390, height: 844 })
+      await expect(page.locator("html")).toHaveAttribute("data-appearance-navigation", "navbar")
+      await expect(page).toHaveURL(/settings#navigation-settings$/)
+      await expect(pinnedRow).toHaveCount(1)
+      await page.goto("/", { waitUntil: "networkidle" })
+      await page.locator("#menu-toggle").click()
       await expect(page.locator("#tasks-submenu-toggle")).toBeVisible();
       await expect(page.locator("#tasks-submenu-config-btn")).toBeVisible();
       await expect(pinnedRow).toBeVisible();

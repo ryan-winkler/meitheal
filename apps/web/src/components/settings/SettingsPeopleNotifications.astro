@@ -41,6 +41,7 @@ const peopleNotificationsSection = SETTINGS_SECTIONS.find((section) => section.i
               id="default-assignee-select"
               class="form-select settings-input-narrow"
               aria-label={t("settings.people_assignee_label", locale)}
+              data-unavailable-assignee={t("settings.people_unavailable_assignee", locale)}
             >
               <option value="">{t("settings.people_unassigned", locale)}</option>
             </select>

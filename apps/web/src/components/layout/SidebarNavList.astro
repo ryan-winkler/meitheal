@@ -769,9 +769,12 @@ function isExternal(href: string): boolean {
       { signal },
     )
 
+    let wasNavbar =
+      window.innerWidth > 768 && document.documentElement.dataset.appearanceNavigation === "navbar"
     const syncForViewportOrMode = () => {
       const nextIsNavbar =
         window.innerWidth > 768 && document.documentElement.dataset.appearanceNavigation === "navbar"
+      wasNavbar = nextIsNavbar
       if (nextIsNavbar && popover && !popover.hidden) {
         popover.hidden = true
         configBtn?.setAttribute("aria-expanded", "false")
@@ -789,17 +792,12 @@ function isExternal(href: string): boolean {
     })
     signal.addEventListener("abort", () => appearanceObserver.disconnect(), { once: true })
 
-    let wasNavbar =
-      window.innerWidth > 768 && document.documentElement.dataset.appearanceNavigation === "navbar"
     window.addEventListener(
       "resize",
       () => {
         const nextIsNavbar =
           window.innerWidth > 768 && document.documentElement.dataset.appearanceNavigation === "navbar"
-        if (wasNavbar !== nextIsNavbar) {
-          wasNavbar = nextIsNavbar
-          syncForViewportOrMode()
-        }
+        if (wasNavbar !== nextIsNavbar) syncForViewportOrMode()
       },
       { signal },
     )

@@ -1,5 +1,6 @@
+import { saveNavigationDestination } from "./ingress-state-persistence"
+
 const ROUTE_PARAM = "meitheal"
-const NAVIGATION_STATE_KEY = "meitheal-navigation-state"
 
 function ingressPrefix(): string {
   return (window.__ingress_path ?? "").replace(/\/+$/, "")
@@ -72,22 +73,7 @@ function reflectHostRoute(route: string): void {
 export function syncIngressDestination(appPath: string): void {
   const prefix = ingressPrefix()
   const route = normalizeDestinationRoute(appPath, prefix)
-  const routePath = route.split(/[?#]/)[0] || "/"
-
-  if (prefix) {
-    try {
-      sessionStorage.setItem(
-        NAVIGATION_STATE_KEY,
-        JSON.stringify({
-          path: routePath,
-          scrollY: 0,
-          timestamp: Date.now(),
-        }),
-      )
-    } catch {
-      // sessionStorage may be disabled in sandboxed contexts
-    }
-  }
+  if (prefix) saveNavigationDestination(route)
 
   reflectHostRoute(route)
 }

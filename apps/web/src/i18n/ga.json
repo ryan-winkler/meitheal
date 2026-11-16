@@ -682,6 +682,7 @@
     "people_assignment_title": "Úsáideoirí agus sannadh",
     "people_assignment_desc": "Bainistigh sannadh tascanna. Aimsítear úsáideoirí Home Assistant go huathoibríoch. Cuir úsáideoirí saincheaptha leis do bhaill den teaghlach nach n-úsáideann Home Assistant.",
     "people_assignee_label": "Sannaí réamhshocraithe tascanna",
+    "people_unavailable_assignee": "An sannaí reatha (níl sé ar fáil)",
     "people_unassigned": "Dada (gan sannadh)",
     "people_assignee_hint": "Sannfar tascanna nua don úsáideoir seo de réir réamhshocraithe.",
     "people_discovered": "Úsáideoirí aimsithe",

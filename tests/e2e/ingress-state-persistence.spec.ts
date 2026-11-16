@@ -23,6 +23,8 @@ const mockSessionStorage = {
 import {
   saveNavigationState,
   getNavigationState,
+  initStatePersistence,
+  saveNavigationDestination,
   shouldRestore,
 } from "../../apps/web/src/lib/ingress-state-persistence";
 
@@ -97,3 +99,34 @@ test("shouldRestore returns false when no saved state exists", () => {
   storageMap.clear();
   expect(shouldRestore("/", "/api/hassio_ingress/test-token")).toBe(false);
 });
+
+
+test("the old document cannot overwrite an intended ingress route on unload", () => {
+  storageMap.clear()
+  const prefix = "/api/hassio_ingress/fixture"
+  const location = { pathname: prefix + "/settings", search: "", hash: "" }
+  const windowFixture = Object.assign(new EventTarget(), { __ingress_path: prefix, location, scrollY: 18 })
+  const documentFixture = Object.assign(new EventTarget(), { visibilityState: "visible" })
+  const originalWindow = Object.getOwnPropertyDescriptor(globalThis, "window")
+  const originalDocument = Object.getOwnPropertyDescriptor(globalThis, "document")
+  try {
+    Object.defineProperty(globalThis, "window", { value: windowFixture, configurable: true })
+    Object.defineProperty(globalThis, "document", { value: documentFixture, configurable: true })
+    initStatePersistence()
+    saveNavigationDestination("/tasks?view=calendar#upcoming")
+    documentFixture.visibilityState = "hidden"
+    documentFixture.dispatchEvent(new Event("visibilitychange"))
+    windowFixture.dispatchEvent(new Event("beforeunload"))
+    expect(getNavigationState()).toMatchObject({ path: "/tasks?view=calendar#upcoming", scrollY: 0 })
+
+    Object.assign(location, { pathname: prefix + "/tasks", search: "?view=calendar", hash: "#upcoming" })
+    initStatePersistence()
+    expect(getNavigationState()).toMatchObject({ path: "/tasks?view=calendar#upcoming", scrollY: 18 })
+    windowFixture.dispatchEvent(new Event("beforeunload"))
+  } finally {
+    if (originalWindow) Object.defineProperty(globalThis, "window", originalWindow)
+    else Reflect.deleteProperty(globalThis, "window")
+    if (originalDocument) Object.defineProperty(globalThis, "document", originalDocument)
+    else Reflect.deleteProperty(globalThis, "document")
+  }
+})
