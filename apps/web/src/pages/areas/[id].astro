@@ -620,10 +620,12 @@ const tabs = [
   import { pageLifecycle } from "../../lib/page-lifecycle"
   import { showToast } from "../../lib/toast"
 
-  pageLifecycle.onPageLoad(signal => {
+  let activeSignal: AbortSignal | undefined
+  function initializeAreaEditor(signal: AbortSignal) {
     const form = document.querySelector<HTMLFormElement>("#edit-area-form")
     const areaId = form?.dataset.areaId
-    if (!form || !areaId) return
+    if (!form || !areaId || activeSignal === signal) return
+    activeSignal = signal
 
     const sections = Array.from(document.querySelectorAll<HTMLElement>(".area-section"))
     const links = document.querySelectorAll<HTMLAnchorElement>(".area-tab")
@@ -701,5 +703,11 @@ const tabs = [
         remove.textContent = "Delete Area"
       }
     }, { signal })
-  })
+  }
+
+  const pageWindow = window as Window & { __meithealAreaEditorBound?: boolean }
+  if (!pageWindow.__meithealAreaEditorBound) {
+    pageWindow.__meithealAreaEditorBound = true
+    pageLifecycle.onPageLoad(initializeAreaEditor)
+  }
 </script>
