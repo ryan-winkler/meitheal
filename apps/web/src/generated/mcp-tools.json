@@ -1397,16 +1397,22 @@
             "maxLength": 100
           },
           "manifesto": {
-            "type": "string",
-            "nullable": true
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "icon": {
-            "type": "string",
-            "nullable": true
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "colorHex": {
-            "type": "string",
-            "nullable": true
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "weight": {
             "type": "number",
@@ -1462,8 +1468,10 @@
             "maxLength": 100
           },
           "manifesto": {
-            "type": "string",
-            "nullable": true
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "icon": {
             "type": "string"

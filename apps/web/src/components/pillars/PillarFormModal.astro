@@ -248,7 +248,7 @@ const { personalForm } = Astro.props
         pillarSection.style.visibility = ""
         pillarSection.inert = false
       }
-      document.addEventListener("visibilitychange", async () => {
+      const recheckPersonal = async () => {
         activeRecheck?.abort()
         hidePersonal()
         if (document.hidden) return
@@ -275,7 +275,9 @@ const { personalForm } = Astro.props
         } finally {
           if (activeRecheck === recheck) activeRecheck = undefined
         }
-      }, { signal })
+      }
+      document.addEventListener("visibilitychange", recheckPersonal, { signal })
+      window.addEventListener("focus", recheckPersonal, { signal })
       window.addEventListener("offline", () => {
         activeRecheck?.abort()
         clearPersonal()

@@ -1648,9 +1648,9 @@ const paths = {
       operationId: "createPillar", tags: ["Pillars"], summary: "Create a Pillar",
       requestBody: { content: { "application/json": { schema: { type: "object", properties: {
         name: { type: "string", maxLength: 100 },
-        manifesto: { type: "string", nullable: true },
-        icon: { type: "string", nullable: true },
-        colorHex: { type: "string", nullable: true },
+        manifesto: { type: ["string", "null"] },
+        icon: { type: ["string", "null"] },
+        colorHex: { type: ["string", "null"] },
         weight: { type: "number", minimum: 1, maximum: 10 },
         audience: { type: "string", enum: ["household", "personal"], default: "household" },
         audienceProof: { type: "string", description: "Required for Personal creation. Issued to the current Home Assistant user in the Progress form." },
@@ -1667,7 +1667,7 @@ const paths = {
       parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
       requestBody: { content: { "application/json": { schema: { type: "object", properties: {
         name: { type: "string", maxLength: 100 },
-        manifesto: { type: "string", nullable: true },
+        manifesto: { type: ["string", "null"] },
         icon: { type: "string" },
         colorHex: { type: "string" },
         weight: { type: "number", minimum: 1, maximum: 10 },

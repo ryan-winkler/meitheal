@@ -180,29 +180,37 @@ test("configuration returning to a superseded database can initialize again", as
   expect(getPersistenceClient().closed).toBe(false)
 })
 
-test("concurrent configuration changes attempt each database's own pre-migration backup", async () => {
+test("concurrent configuration changes retain both pre-migration backups in the same directory", async () => {
+  const secondPath = join(directory, "other.db")
   seedSchemaMarker(predecessorVersion).close()
-  const secondDirectory = join(directory, "other")
-  await mkdir(secondDirectory)
-  const secondPath = join(secondDirectory, "meitheal.db")
   await copyFile(dbPath, secondPath)
+  for (const [db, probe] of [[dbPath, "first"], [secondPath, "second"]] as const) {
+    const source = new DatabaseSync(db)
+    source.exec("CREATE TABLE identity_probe (id TEXT NOT NULL)")
+    source.prepare("INSERT INTO identity_probe VALUES (?)").run(probe)
+    source.close()
+  }
 
   const first = ensureSchema()
   const firstRejected = expect(first).rejects.toThrow("database changed during startup")
   process.env.MEITHEAL_DB_URL = `file:${secondPath}`
   await ensureSchema()
   await firstRejected
-  for (const location of [directory, secondDirectory]) {
-    const backupDirectory = join(location, "backups")
-    const names = await readdir(backupDirectory)
-    expect(names).toHaveLength(1)
-    const backup = new DatabaseSync(join(backupDirectory, names[0]!), { readOnly: true })
+
+  const backupDirectory = join(directory, "backups")
+  const names = await readdir(backupDirectory)
+  expect(names).toHaveLength(2)
+  const identities = new Set()
+  for (const name of names) {
+    const backup = new DatabaseSync(join(backupDirectory, name), { readOnly: true })
     try {
       expect(backup.prepare("SELECT value FROM app_settings WHERE key = 'schema_version'").get()?.value).toBe(predecessorVersion)
+      identities.add(backup.prepare("SELECT id FROM identity_probe").get()?.id)
     } finally {
       backup.close()
     }
   }
+  expect(identities).toEqual(new Set(["first", "second"]))
 })
 
 test("migration check leaves missing storage and an untracked legacy database alone", async () => {

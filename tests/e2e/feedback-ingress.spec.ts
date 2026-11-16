@@ -443,7 +443,7 @@ coreTest("a superseded foreground check cannot restore Personal Pillars after an
     const cancelled = page.waitForEvent("requestfailed", request => request === superseded)
     await session("member-two")
     const fresh = page.waitForResponse(response => response.url() === endpoint && response.request().method() === "HEAD")
-    await foreground()
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")))
     expect((await fresh).status()).toBe(403)
     expect((await cancelled).failure()).not.toBeNull()
     releaseOldCheck()

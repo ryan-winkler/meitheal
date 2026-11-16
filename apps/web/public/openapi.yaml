@@ -4384,14 +4384,17 @@ paths:
                   type: string
                   maxLength: 100
                 manifesto:
-                  type: string
-                  nullable: true
+                  type:
+                    - string
+                    - "null"
                 icon:
-                  type: string
-                  nullable: true
+                  type:
+                    - string
+                    - "null"
                 colorHex:
-                  type: string
-                  nullable: true
+                  type:
+                    - string
+                    - "null"
                 weight:
                   type: number
                   minimum: 1
@@ -4472,8 +4475,9 @@ paths:
                   type: string
                   maxLength: 100
                 manifesto:
-                  type: string
-                  nullable: true
+                  type:
+                    - string
+                    - "null"
                 icon:
                   type: string
                 colorHex:
