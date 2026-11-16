@@ -1,4 +1,4 @@
-import { randomBytes, randomUUID } from "node:crypto"
+import { randomInt, randomUUID } from "node:crypto"
 import type { Client, Transaction } from "@libsql/client"
 import { isActiveAgentToken } from "@domains/auth"
 import { acquireWriteTransaction } from "../../../../scripts/database-client.mjs"
@@ -23,11 +23,9 @@ interface BoardAccess {
 const base32Symbols = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
 
 function boardTicketPrefix() {
-  let remainder = randomBytes(5).readUIntBE(0, 5)
   let prefix = ""
   for (let index = 0; index < 8; index++) {
-    prefix = base32Symbols[remainder % 32] + prefix
-    remainder = Math.floor(remainder / 32)
+    prefix += base32Symbols[randomInt(base32Symbols.length)]
   }
   return prefix
 }
