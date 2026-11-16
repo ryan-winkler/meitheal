@@ -28,7 +28,7 @@ test.describe("Progress Parent Page — /progress", () => {
     await page.goto("/progress")
   })
 
-  test("switches from Pillars to Routines with stat cards and helper", async ({ page }) => {
+  test("switches from Pillars to Routines and offers direct creation and browsing", async ({ page }) => {
     const pillars = page.locator("#progress-section-pillars")
     await expect(pillars).toHaveAttribute("aria-hidden", "false")
     await expect(pillars).toBeVisible()
@@ -41,17 +41,8 @@ test.describe("Progress Parent Page — /progress", () => {
     const section = page.locator("#progress-section-routines")
     await expect(section).toBeVisible()
 
-    // Helper visible
-    const helper = page.locator("[data-helper-id='progress-routines-explainer']")
-    await expect(helper).toBeVisible()
-
-    // Stat cards
-    const statCards = section.locator(".stat-card")
-    await expect(statCards.first()).toBeVisible()
-
-    // Deep link
-    const link = section.locator("a[href='/habits']")
-    await expect(link).toBeVisible()
+    await expect(section.getByRole("link", { name: "New Routine" })).toHaveAttribute("href", "/habits?new=1")
+    await expect(section.getByRole("link", { name: "View Routines" })).toHaveAttribute("href", "/habits")
   })
 
   test("navigating to goals hash shows goals section", async ({ page }) => {
@@ -61,9 +52,7 @@ test.describe("Progress Parent Page — /progress", () => {
     await expect(goalsSection).toHaveAttribute("aria-hidden", "false")
     await expect(goalsSection).toBeVisible()
 
-    // Goals helper
-    const helper = page.locator("[data-helper-id='progress-goals-explainer']")
-    await expect(helper).toBeVisible()
+    await expect(goalsSection.getByRole("button", { name: "+ New Goal" })).toBeVisible()
   })
 
   test("navigating to achievements hash shows achievements section", async ({ page }) => {
@@ -114,10 +103,10 @@ test.describe("Planning Parent Page — /planning", () => {
     await expect(triage).toHaveAttribute("aria-current", "location")
   })
 
-  test("renders planning helper with correct variant", async ({ page }) => {
-    const helper = page.locator("[data-helper-id='spaces-explainer']")
-    await expect(helper).toBeVisible()
-    await expect(helper).toHaveClass(/inline-helper--info/)
+  test("offers Area and Project creation in Planning", async ({ page }) => {
+    const spaces = page.locator("#planning-section-spaces")
+    await expect(spaces.getByRole("button", { name: "New Area" })).toBeVisible()
+    await expect(spaces.getByRole("button", { name: "New Project without an Area" })).toBeVisible()
   })
 
   test("eisenhower, triage, and rice sections are hidden by default", async ({ page }) => {

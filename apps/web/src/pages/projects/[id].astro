@@ -26,7 +26,7 @@ const cookieLocale = Astro.cookies.get("meitheal-locale")?.value;
 const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
 
 const projectId = Astro.params.id;
-const projectsPath = `${Astro.locals.ingressPath || ""}/projects`
+const projectsPath = `${Astro.locals.ingressPath || ""}/planning#spaces`
 if (!projectId) {
   return Astro.redirect(projectsPath);
 }

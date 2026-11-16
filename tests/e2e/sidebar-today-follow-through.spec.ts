@@ -65,7 +65,7 @@ test.describe("Sidebar and Today follow-through", () => {
     await toggle.press("Enter")
     await expect(group).not.toHaveAttribute("open")
     await expect(page.locator("#project-nav-content")).toBeHidden()
-    await expect(page.locator("#project-nav").getByRole("link", { name: "Manage areas & projects" })).toBeVisible()
+    await expect(page.locator("#sidebar").getByRole("link", { name: "Planning", exact: true })).toBeVisible()
     await expect.poll(() => page.evaluate(() => localStorage.getItem("meitheal_project_nav_group_collapsed"))).toBe("true")
     await page.reload({ waitUntil: "domcontentloaded" })
     await expect(group).not.toHaveAttribute("open")

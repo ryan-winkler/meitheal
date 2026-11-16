@@ -13,6 +13,9 @@ import {
 } from "@domains/tasks/persistence/store"
 import { HierarchyRepository, type AreaRow, type GoalRow, type ProjectRow } from "@domains/tasks/persistence/hierarchy-repository"
 import { TaskRepository } from "@domains/tasks/persistence/task-repository"
+import { TemplateRepository, type RoutineTemplateRow } from "@domains/tasks/persistence/template-repository"
+import GoalsTab from "../../components/progress/GoalsTab.astro"
+import { isFeatureEnabled } from "../../lib/feature-flags"
 
 const areaId = Astro.params.id
 const areasPath = `${Astro.locals.ingressPath || ""}/planning#spaces`
@@ -23,6 +26,8 @@ if (!areaId) {
 let area: AreaRow | null
 let goals: GoalRow[]
 let projects: ProjectRow[]
+let routines: RoutineTemplateRow[] = []
+let routinesEnabled = false
 let taskCountByProject: Map<string, { total: number; completed: number }>
 
 try {
@@ -42,6 +47,8 @@ try {
   ])
   goals = areaGoals
   projects = areaProjects
+  routinesEnabled = await isFeatureEnabled("habits")
+  if (routinesEnabled) routines = await new TemplateRepository(client).findRoutines(areaId)
   taskCountByProject = projects.length ? await taskRepo.getProjectTaskCounts() : new Map()
 } catch (error) {
   logApiError("areas", "Could not load Area details", error)
@@ -56,10 +63,13 @@ const formColor = /^#[0-9a-fA-F]{3}$/.test(areaColor)
   ? `#${[...areaColor.slice(1)].map(channel => channel.repeat(2)).join("")}`
   : areaColor
 
+const routinesPath = `/habits?area_id=${encodeURIComponent(areaId)}`
+
 const tabs = [
   { id: "overview", label: "Overview", icon: "📊" },
   { id: "goals", label: "Goals", icon: "🎯" },
   { id: "projects", label: "Projects", icon: "📋" },
+  ...(routinesEnabled ? [{ id: "routines", label: "Routines", icon: "🔁" }] : []),
   { id: "settings", label: "Settings", icon: "⚙️" },
 ];
 ---
@@ -91,87 +101,35 @@ const tabs = [
 
   {/* Overview Section */}
   <section id="section-overview" class="area-section active" data-section="overview">
-    <div class="area-header-card" style={`--area-accent: ${areaColor};`}>
-      <div class="area-header-top">
-        <div class="area-header-stats">
-          <div class="stat-block">
-            <div class="stat-value">{goals.length}</div>
-            <div class="stat-label">Goals</div>
-          </div>
-          <div class="stat-block">
-            <div class="stat-value">{projects.length}</div>
-            <div class="stat-label">Projects</div>
-          </div>
-        </div>
-      </div>
+    <div class="project-grid">
+      {[
+        { id: "projects", title: "Projects", count: projects.length, empty: "Group related work" },
+        { id: "goals", title: "Goals", count: goals.length, empty: "Define an outcome" },
+        ...(routinesEnabled ? [{ id: "routines", title: "Routines", count: routines.length, empty: "Schedule repeat work" }] : []),
+      ].map(({ id, title, count, empty }) => (
+        <a class="project-card" href={`#${id}`} data-astro-reload>
+          <h3 class="project-card-name">{title}</h3>
+          <p class="project-card-meta">{count ? `${count} in this Area` : empty}</p>
+        </a>
+      ))}
     </div>
-
-    {/* Quick summary cards */}
-    {goals.length > 0 && (
-      <div class="overview-section">
-        <h3 class="overview-heading">Recent Goals</h3>
-        <div class="overview-goal-list">
-          {goals.slice(0, 5).map((goal) => (
-            <div class="overview-goal-item">
-              <span class="overview-goal-icon">
-                {String(goal.status) === "completed" ? "✅" : "🎯"}
-              </span>
-              <span class="overview-goal-title">{String(goal.title)}</span>
-              <span class={`overview-goal-status status-${String(goal.status ?? "active")}`}>
-                {String(goal.status ?? "active")}
-              </span>
-            </div>
-          ))}
-        </div>
-        {goals.length > 5 && (
-          <a href="#goals" class="overview-more" data-astro-reload>
-            View all {goals.length} goals →
-          </a>
-        )}
-      </div>
-    )}
   </section>
 
-  {/* Goals Section */}
   <section id="section-goals" class="area-section" data-section="goals">
-    <div class="section-header">
-      <h2 class="section-title">Goals</h2>
-      <span class="section-count">{goals.length} total</span>
-      <a href={`/progress?area_id=${encodeURIComponent(areaId)}#goals`} class="btn btn-ghost btn-sm">Go to Goals</a>
-    </div>
-
-    {goals.length === 0 ? (
-      <div class="section-empty">
-        <p>No goals in this area yet. Create one from the Goals page.</p>
-      </div>
-    ) : (
-      <div class="goal-list">
-        {goals.map((goal) => {
-          const status = String(goal.status ?? "active");
-          const goalProjects = projects.filter((p) => String(p.goal_id) === String(goal.id));
-          return (
-            <div class="goal-card">
-              <div class="goal-card-header">
-                <span class="goal-card-icon">
-                  {status === "completed" ? "✅" : status === "archived" ? "📦" : "🎯"}
-                </span>
-                <div class="goal-card-info">
-                  <h3 class="goal-card-title">{String(goal.title)}</h3>
-                  {goal.description && <p class="goal-card-desc">{String(goal.description)}</p>}
-                </div>
-                <span class={`goal-status-badge status-${status}`}>{status}</span>
-              </div>
-              {goalProjects.length > 0 && (
-                <div class="goal-projects">
-                  <span class="goal-projects-label">{goalProjects.length} project{goalProjects.length !== 1 ? "s" : ""}</span>
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    )}
+    <GoalsTab {areaId} />
   </section>
+
+  {routinesEnabled && (
+    <section id="section-routines" class="area-section" data-section="routines">
+      <div class="section-header">
+        <h2 class="section-title">Routines</h2>
+        <a class="btn btn-ghost btn-sm" href={routinesPath}>View Routines</a>
+        <a class="btn btn-primary btn-sm" href={routinesPath + "&new=1"}>New Routine</a>
+      </div>
+      {routines.length ? <ul>{routines.map(routine => <li>{routine.icon} {routine.name} · {routine.cadence}</li>)}</ul>
+        : <p class="section-empty">No routines in this Area yet.</p>}
+    </section>
+  )}
 
   {/* Projects Section */}
   <section id="section-projects" class="area-section" data-section="projects">
@@ -295,93 +253,6 @@ const tabs = [
   .area-section.active { display: block; }
 
   /* Header card */
-  .area-header-card {
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-md);
-    padding: 1.5rem;
-    margin-bottom: 1.5rem;
-    position: relative;
-    overflow: hidden;
-  }
-  .area-header-card::before {
-    content: '';
-    position: absolute;
-    top: 0; left: 0; right: 0;
-    height: 3px;
-    background: var(--area-accent);
-  }
-  .area-header-top {
-    display: flex;
-    justify-content: flex-start;
-    align-items: flex-start;
-    gap: 1.5rem;
-  }
-
-  .area-header-stats { display: flex; gap: 1.5rem; }
-  .stat-block { text-align: center; }
-  .stat-value {
-    font-size: 1.5rem;
-    font-weight: 700;
-    color: var(--text-primary);
-  }
-  .stat-label {
-    font-size: 11px;
-    color: var(--text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-  }
-
-  /* Overview */
-  .overview-section { margin-top: 1.5rem; }
-  .overview-heading {
-    font-size: 0.875rem;
-    font-weight: 600;
-    color: var(--text-secondary);
-    margin: 0 0 0.75rem;
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-  }
-  .overview-goal-list {
-    display: flex;
-    flex-direction: column;
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-md);
-    overflow: hidden;
-  }
-  .overview-goal-item {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 0.625rem 1rem;
-    border-bottom: 1px solid rgb(var(--border-rgb) / 0.3);
-    font-size: 0.875rem;
-  }
-  .overview-goal-item:last-child { border-bottom: none; }
-  .overview-goal-icon { font-size: 0.875rem; }
-  .overview-goal-title { flex: 1; color: var(--text-primary); }
-  .overview-goal-status {
-    font-size: 11px;
-    font-weight: 600;
-    padding: 2px 8px;
-    border-radius: 9999px;
-    text-transform: capitalize;
-  }
-  .status-active { background: rgb(var(--success-rgb) / 0.1); color: var(--success); }
-  .status-completed { background: rgb(var(--accent-rgb) / 0.1); color: var(--accent); }
-  .status-archived { background: rgb(var(--text-muted-rgb) / 0.1); color: var(--text-muted); }
-
-  .overview-more {
-    display: inline-block;
-    margin-top: 0.75rem;
-    font-size: 0.8125rem;
-    color: var(--accent);
-    text-decoration: none;
-  }
-  .overview-more:hover { text-decoration: underline; }
-
-  /* Section header */
   .section-header {
     display: flex;
     justify-content: space-between;
@@ -404,56 +275,6 @@ const tabs = [
     font-size: 0.875rem;
   }
 
-  /* Goal cards */
-  .goal-list {
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-  }
-  .goal-card {
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-md);
-    padding: 1rem 1.25rem;
-  }
-  .goal-card-header {
-    display: flex;
-    align-items: flex-start;
-    gap: 10px;
-  }
-  .goal-card-icon { font-size: 1.25rem; flex-shrink: 0; margin-top: 2px; }
-  .goal-card-info { flex: 1; min-width: 0; }
-  .goal-card-title {
-    margin: 0;
-    font-size: 0.9375rem;
-    font-weight: 600;
-    color: var(--text-primary);
-  }
-  .goal-card-desc {
-    margin: 4px 0 0;
-    font-size: 0.8125rem;
-    color: var(--text-secondary);
-    line-height: 1.4;
-  }
-  .goal-status-badge {
-    font-size: 11px;
-    font-weight: 600;
-    padding: 2px 10px;
-    border-radius: 9999px;
-    text-transform: capitalize;
-    flex-shrink: 0;
-  }
-  .goal-projects {
-    margin-top: 0.5rem;
-    padding-top: 0.5rem;
-    border-top: 1px solid rgb(var(--border-rgb) / 0.3);
-  }
-  .goal-projects-label {
-    font-size: 0.75rem;
-    color: var(--text-muted);
-  }
-
-  /* Project grid */
   .project-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
@@ -609,8 +430,6 @@ const tabs = [
   .btn-danger:hover { opacity: 0.9; }
 
   @media (max-width: 640px) {
-    .area-header-top { flex-direction: column; }
-    .area-header-stats { justify-content: space-around; }
     .project-grid { grid-template-columns: 1fr; }
   }
 </style>

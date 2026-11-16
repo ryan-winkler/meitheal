@@ -1714,8 +1714,8 @@ const paths = {
 
   // ── Habits ──
   "/api/habits": {
-    get: { operationId: "listHabits", tags: ["Habits"], summary: "List all habits and routines", description: "Returns habit templates with current streak data, schedule, and completion history.", responses: { 200: { description: "Habits list" } } },
-    post: { operationId: "createHabit", tags: ["Habits"], summary: "Create a habit template", responses: { 201: { description: "Created" } } },
+    get: { operationId: "listHabits", tags: ["Habits"], summary: "List routine templates and streaks", parameters: [{ name: "area_id", in: "query", schema: { type: "string" }, description: "List Routines in an existing Area." }], responses: { 200: { description: "Routines list" } } },
+    post: { operationId: "createHabit", tags: ["Habits"], summary: "Create a Routine", description: "Pass an existing area_id to place new work from this Routine in that Area.", responses: { 201: { description: "Created" } } },
     put: { operationId: "updateHabit", tags: ["Habits"], summary: "Update a habit or record completion", description: "Send { complete: true } to record today's completion. Send other fields to update the template.", responses: { 200: { description: "Updated" } } },
     delete: { operationId: "deleteHabit", tags: ["Habits"], summary: "Delete a habit", responses: { 200: { description: "Deleted" } } },
   },

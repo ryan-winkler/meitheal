@@ -1586,15 +1586,20 @@
     },
     {
       "name": "listHabits",
-      "description": "Returns habit templates with current streak data, schedule, and completion history.",
+      "description": "List routine templates and streaks",
       "inputSchema": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "area_id": {
+            "type": "string",
+            "description": "List Routines in an existing Area."
+          }
+        }
       }
     },
     {
       "name": "createHabit",
-      "description": "Create a habit template",
+      "description": "Pass an existing area_id to place new work from this Routine in that Area.",
       "inputSchema": {
         "type": "object",
         "properties": {}
@@ -2897,7 +2902,9 @@
       "path": "/api/habits",
       "hasBody": false,
       "pathParams": [],
-      "queryParams": []
+      "queryParams": [
+        "area_id"
+      ]
     },
     "createHabit": {
       "method": "POST",

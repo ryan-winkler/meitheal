@@ -65,6 +65,25 @@ test("Area options open the editor and save within Home Assistant ingress", asyn
     await page.setViewportSize({ width: 320, height: 780 })
     await expect(save).toBeVisible()
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(321)
+
+    const project = await context.request.post(appUrl + "/api/projects", {
+      headers: { origin }, data: { title: "Tool storage", area_id: areaId },
+    })
+    expect(project.status()).toBe(201)
+    const { id: projectId } = await project.json() as { id: string }
+    await page.setViewportSize({ width: 1240, height: 780 })
+    await page.goto(appUrl + "/planning#spaces")
+    const plan = page.locator("#planning-section-spaces")
+    await plan.getByRole("link", { name: /Tool storage/ }).click()
+    await expect(page).toHaveURL(`${appUrl}/projects/${projectId}`)
+    await expect(page.locator("#section-overview")).toBeVisible()
+    await page.getByRole("button", { name: "Project options - Tool storage" }).press("Enter")
+    const editProject = page.getByRole("link", { name: "Edit Project", exact: true })
+    await expect(editProject).toHaveAttribute("href", `${prefix}/projects/${projectId}#settings`)
+    await expect(editProject).toBeFocused()
+    await editProject.press("Enter")
+    await expect(page).toHaveURL(`${appUrl}/projects/${projectId}#settings`)
+    await expect(page.getByRole("heading", { name: "Project Settings" })).toBeVisible()
   } finally {
     await browser?.close()
     if (child.exitCode === null && child.signalCode === null) {
@@ -108,7 +127,6 @@ test("Area and Project pages show associated Goals and keep the All Goals view",
     await expect(areaGoals.getByRole("heading", { name: "Finish the class " + stamp })).toBeVisible()
     await expect(areaGoals.getByRole("heading", { name: "Learn to cycle " + stamp })).toBeVisible()
     await expect(areaGoals.getByText("Keep the garden " + stamp)).toHaveCount(0)
-    await areaGoals.getByRole("link", { name: "Go to Goals" }).click()
     const goalList = page.locator("#goals-tab-root")
     await expect(goalList.locator(`[data-goal-id="${workGoal}"].goals-tab__card`)).toBeVisible()
     await expect(goalList.locator(`[data-goal-id="${homeGoal}"].goals-tab__card`)).toHaveCount(0)
@@ -120,6 +138,8 @@ test("Area and Project pages show associated Goals and keep the All Goals view",
     await goalList.getByRole("button", { name: "Create", exact: true }).click()
     const linkedGoal = await goalReceipt
     expect(linkedGoal.status()).toBe(201)
+    expect(linkedGoal.request().postDataJSON().area_id).toBe(work)
+    await expect(page).toHaveURL(new RegExp(`/areas/${work}#goals$`))
     const newCard = goalList.locator(".goals-tab__card").filter({ hasText: "Created within Work " + stamp })
     await expect(newCard).toBeVisible()
     goals.push((await newCard.getAttribute("data-goal-id"))!)
@@ -144,5 +164,45 @@ test("Area and Project pages show associated Goals and keep the All Goals view",
     if (projectId) await request.delete(`/api/projects/${projectId}`)
     for (const id of goals) await request.delete(`/api/goals/${id}`)
     for (const id of areas) await request.delete(`/api/areas/${id}`)
+  }
+})
+
+test("Area Routines open the existing editor in context and keep the generated task in that Area", async ({ page, request }) => {
+  const name = "Routine scope " + Date.now()
+  const created = await request.post("/api/areas", { data: { name } })
+  expect(created.status()).toBe(201)
+  const { id: area } = await created.json()
+  let routineId: string | undefined
+  let taskId: string | undefined
+  try {
+    await page.goto(`/areas/${area}#routines`)
+    await page.getByRole("link", { name: "New Routine", exact: true }).click()
+    const editor = page.getByRole("dialog", { name: "New Routine" })
+    await expect(editor.getByLabel("Area", { exact: true })).toHaveValue(area)
+    await editor.locator("#habit-name").fill(name)
+    const receipt = page.waitForResponse(response => response.url().endsWith("/api/habits") && response.request().method() === "POST")
+    await editor.locator("button[type=submit]").click()
+    const response = await receipt
+    expect(response.status()).toBe(201)
+    routineId = (await response.json()).id
+    await expect(editor).toBeHidden()
+    const scoped = await request.get(`/api/habits?area_id=${area}`)
+    expect((await scoped.json()).habits.map((routine: { id: string }) => routine.id)).toEqual([routineId])
+    const defaultArea = await request.get("/api/habits?area_id=default")
+    expect((await defaultArea.json()).habits.map((routine: { id: string }) => routine.id)).not.toContain(routineId)
+    const updated = await request.post("/api/habits", {
+      data: { action: "update", templateId: routineId, templateJson: { checklists: [] } },
+    })
+    expect(updated.ok()).toBe(true)
+    const completed = await request.post("/api/habits", { data: { action: "complete", templateId: routineId } })
+    expect(completed.ok()).toBe(true)
+    taskId = (await completed.json()).taskId
+    const task = await request.get(`/api/tasks/${taskId}`)
+    expect((await task.json()).area_id).toBe(area)
+    await expect(page.getByRole("link", { name: "All Routines" })).toBeVisible()
+  } finally {
+    if (taskId) await request.delete(`/api/tasks/${taskId}`)
+    if (routineId) await request.post("/api/habits", { data: { action: "delete", templateId: routineId } })
+    await request.delete(`/api/areas/${area}`)
   }
 })

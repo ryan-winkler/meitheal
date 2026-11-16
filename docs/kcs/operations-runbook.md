@@ -118,6 +118,8 @@ When changing translucent theme colors, check dropdown selection, task focus and
 
 Check the plain links back from Deferred, Inactivity and Triage in both themes, including pointer hover. In Planning, Progress and Habits, each visible section link is reachable with Tab. Enter opens the destination, and the current link announces its location. Verify arrow navigation and Planning history with `e2e/parent-page-shell.spec.ts` and `e2e/habits-shell.spec.ts`.
 
+In disposable Home Assistant ingress, open a Project from its Area group in Planning and confirm Overview. Use its sidebar **Edit Project** action to open Settings inside the same ingress. Run `e2e/area-management.spec.ts` against a built App to verify the Area editor, contextual Goal creation, and a Routine that creates work in the selected Area.
+
 ## Task Link Verification
 
 Open a task and select **Copy task link**. If the browser cannot access the clipboard, copy the selected link from the text field. Links use `/tickets/{id}` with the immutable task ID. Opening the ordinary task drawer updates the address bar. Comment links append `?comment={id}`. Recipients use their existing installation access.

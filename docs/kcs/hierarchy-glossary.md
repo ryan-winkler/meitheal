@@ -115,14 +115,16 @@ Open **Progress & Growth → Pillars**. Choose **Edit** on the card or in Detail
 
 ## Collapsing the sidebar Areas menu
 
-The Areas heading collapses the whole hierarchy independently of each area's project disclosure. Use Enter or Space on the heading. The choice is remembered in this browser and does not change sidebar visibility, order, saved labels, projects or tasks. The Manage areas link is a separate keyboard target and remains available when the group is closed. Browser storage restrictions do not prevent expanding or collapsing it. A folded main sidebar keeps its compact Planning link.
+The Areas heading collapses the whole hierarchy independently of each area's project disclosure. Use Enter or Space on the heading. The choice is remembered in this browser and does not change sidebar visibility, order, saved labels, projects or tasks. **Planning** remains available when the group is closed. Browser storage restrictions do not prevent expanding or collapsing it.
 
 ## Edit an Area and view related work
 
 Open the Area options menu in the sidebar and choose **Edit Area**. The Settings section opens inside Meitheal, including when entered from Home Assistant. Change the name, icon or color and choose **Save Changes**. If a save fails, the form keeps the values so you can retry. The **Areas** link returns to Planning. Open an Area card in **Planning → Areas & Projects** to see its overview.
 
-Set a Project’s Area and Goal from **Project → Settings**. A Project appears under its explicit Area. When the Area field is empty, Meitheal uses the linked Goal’s Area if it has one. An Area shows its directly linked Goals and the Goals of its Projects, once each. A Project shows its selected Goal in the breadcrumb. Its Goal selector lets you link an existing Goal.
+Choose **Edit Project** in the Project’s sidebar menu to open its Settings. From **Planning → Areas & Projects**, each Project link opens its overview. Planning groups Projects by their explicit Area or, if unset, their linked Goal’s Area. Projects without either association appear under **Projects without an Area**. Use **New Project** in an Area group to create a Project there.
 
-**Progress & Growth → Goals** shows all Goals. From an Area’s Goals section, **Go to Goals** opens the Area list and new Goals created there are linked to that Area. A Project’s breadcrumb links to its Goal. Use **All Goals** to return to the full list. API callers can use `GET /api/goals?area_id=…` or `GET /api/goals?project_id=…`. Combined filters match both associations.
+Open an Area’s **Goals** tab and select **New Goal** to create a Goal linked to that Area. The list includes its direct Goals and the Goals of its Projects, once each. A Project’s breadcrumb links to its selected Goal. **All Goals** opens the full list in Progress & Growth. API callers can use `GET /api/goals?area_id=…` or `GET /api/goals?project_id=…`. Combined filters match both associations.
+
+Open an Area’s **Routines** tab and choose **New Routine** to open the editor with that Area selected. Work created by the Routine keeps that Area. Progress & Growth also offers **New Routine** and **View Routines**. A Routine with a deleted Area needs a new Area before it can create more work.
 
 Area membership in this hierarchy and sidebar preferences organize work. Use board sharing rules when available to control who can view or change work.

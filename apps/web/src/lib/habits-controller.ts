@@ -39,6 +39,7 @@ function parseTemplatePayload(templateJson: unknown): {
   description: string
   priority: number
   checklists: HabitChecklistItem[]
+  areaId?: string | undefined
 } {
   if (typeof templateJson !== "string" || !templateJson.trim()) {
     return {
@@ -54,6 +55,7 @@ function parseTemplatePayload(templateJson: unknown): {
       description: String(parsed.description ?? "").trim(),
       priority: Number(parsed.priority ?? 3) || 3,
       checklists: normalizeChecklistItems(parsed.checklists),
+      areaId: typeof parsed.area_id === "string" ? parsed.area_id : undefined,
     }
   } catch {
     return {
@@ -94,6 +96,7 @@ function normalizeHabitData(raw: unknown): HabitData | null {
     totalCompletions: Number(record.totalCompletions ?? 0) || 0,
     description: templatePayload.description,
     priority: templatePayload.priority,
+    areaId: templatePayload.areaId,
     checklists: topLevelChecklists.length > 0 ? topLevelChecklists : templatePayload.checklists,
   }
 }
@@ -127,7 +130,8 @@ async function readErrorMessage(response: Response): Promise<string> {
 }
 
 async function refreshHabits(): Promise<void> {
-  const response = await fetch("/api/habits", {
+  const area = document.getElementById("habits-shell")?.dataset.areaId
+  const response = await fetch(area ? "/api/habits?area_id=" + encodeURIComponent(area) : "/api/habits", {
     signal: pageLifecycle.signal,
   })
   if (!response.ok) {
@@ -214,6 +218,8 @@ function initHabitsCrud(): void {
   const iconInput = document.getElementById("habit-icon") as HTMLInputElement | null
   const cadenceSelect = document.getElementById("habit-cadence") as HTMLSelectElement | null
   const prioritySelect = document.getElementById("habit-priority") as HTMLSelectElement | null
+  const areaSelect = document.querySelector<HTMLSelectElement>("#habit-area")
+  const shell = document.getElementById("habits-shell")
   const descInput = document.getElementById("habit-description") as HTMLTextAreaElement | null
   const checklistContainer = document.getElementById("checklist-items")
   const modalTitle = document.getElementById("habit-modal-title")
@@ -225,6 +231,7 @@ function initHabitsCrud(): void {
   if (
     !overlay ||
     !form ||
+    !areaSelect ||
     !editIdInput ||
     !nameInput ||
     !iconInput ||
@@ -254,11 +261,13 @@ function initHabitsCrud(): void {
 
   function openCreateModal(): void {
     editIdInput!.value = ""
-    modalTitle!.textContent = "New Habit"
+    modalTitle!.textContent = "New Routine"
     nameInput!.value = ""
     iconInput!.value = "✅"
     cadenceSelect!.value = "daily"
     prioritySelect!.value = "3"
+    areaSelect!.value = shell?.dataset.areaId ?? "default"
+    areaSelect!.disabled = Boolean(shell?.dataset.areaId)
     descInput!.value = ""
     resetChecklistBuilder()
     overlay!.classList.remove("hidden")
@@ -270,11 +279,13 @@ function initHabitsCrud(): void {
     if (!habit) return
 
     editIdInput!.value = habit.id
-    modalTitle!.textContent = "Edit Habit"
+    modalTitle!.textContent = "Edit Routine"
     nameInput!.value = habit.name
     iconInput!.value = habit.icon
     cadenceSelect!.value = habit.cadence
     prioritySelect!.value = String(habit.priority)
+    areaSelect!.value = habit.areaId ?? "default"
+    areaSelect!.disabled = false
     descInput!.value = habit.description
 
     resetChecklistBuilder()
@@ -296,6 +307,12 @@ function initHabitsCrud(): void {
     event.preventDefault()
     openCreateModal()
   })
+  if (shell?.dataset.openNew) {
+    const url = new URL(window.location.href)
+    url.searchParams.delete("new")
+    history.replaceState(history.state, "", url)
+    openCreateModal()
+  }
 
   if (modalClose) {
     pageLifecycle.on(modalClose, "click", closeModal)
@@ -347,12 +364,8 @@ function initHabitsCrud(): void {
           title: name,
           description: descInput!.value.trim(),
           priority: Number(prioritySelect!.value),
-          labels: ["routine"],
-          task_type: "task",
-        }
-
-        if (checklists.length > 0) {
-          templateJson.checklists = checklists
+          area_id: areaSelect.value,
+          checklists,
         }
 
         const response = await fetch("/api/habits", {
@@ -385,6 +398,7 @@ function initHabitsCrud(): void {
             cadence: cadenceSelect!.value,
             priority: Number(prioritySelect!.value),
             description: descInput!.value.trim(),
+            area_id: areaSelect.value,
             checklists: checklists.length > 0 ? checklists : undefined,
           }),
           signal: pageLifecycle.signal,
