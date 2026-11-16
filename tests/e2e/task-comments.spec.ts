@@ -8,6 +8,9 @@ import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { expect, test } from "@playwright/test"
 
+// This spec injects a failed comment response with Playwright request routing.
+test.use({ serviceWorkers: "block" })
+
 const web = fileURLToPath(new URL("../../apps/web", import.meta.url))
 const fixture = fileURLToPath(new URL("../scripts/feedback-ingress-fixture.mjs", import.meta.url))
 
