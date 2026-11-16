@@ -22,7 +22,7 @@ import { pageLifecycle } from "@lib/page-lifecycle"
 import { initPageShellNavigation } from "@lib/page-shell-controller"
 import { escapeHtml, sanitizeCssColor } from "@lib/safe-html"
 import { openTaskDetailHandoff } from "@lib/task-detail-handoff"
-import { taskBackgroundUrl } from "@lib/task-page-url"
+import { TASK_VIEW_LOCATION_EVENT, taskBackgroundUrl } from "@lib/task-page-url"
 import { parseTaskView, taskViewUrl } from "@lib/task-view-route"
 import { loadTableColumnPreferences, TABLE_COLUMNS, TABLE_SECTIONS } from "@lib/table-registry"
 import { getRememberedAreaId } from "@lib/area-selector-controller"
@@ -227,6 +227,7 @@ function init(signal: AbortSignal) {
       // Column visibility can change while the rows are loading.
       applied = { ...nextState, columns: desired.columns ?? initialColumns }
       saveTableFilterState(applied, Number(table.dataset.tablePage))
+      document.dispatchEvent(new Event(TASK_VIEW_LOCATION_EVENT))
       const background = taskBackgroundUrl(new URL(location.href))
       for (const link of document.querySelectorAll<HTMLAnchorElement>("[data-view-tab]")) {
         const view = parseTaskView(link.dataset.viewTab ?? null)

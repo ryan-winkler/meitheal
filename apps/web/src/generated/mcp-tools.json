@@ -366,7 +366,7 @@
     },
     {
       "name": "clearCompletedTasks",
-      "description": "Moves tasks counted as completed today by Today to the archived status. Returns the number changed.",
+      "description": "Moves every eligible Complete task to the archived status, including tasks outside the Today preview. Returns the number changed.",
       "inputSchema": {
         "type": "object",
         "properties": {

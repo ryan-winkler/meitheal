@@ -33,7 +33,8 @@ pageLifecycle.onPageLoad(signal => {
     const target = event.target instanceof Element ? event.target : null
     if (!target || mobileMenu.contains(target)) return
     const link = target.closest(".nav-link:not(.nav-link--external)")
-    if (!sidebar.contains(target) || link) closeDrawer()
+    if (!sidebar.contains(target)) closeDrawer(true)
+    else if (link) closeDrawer()
   }, { signal })
   document.addEventListener("keydown", event => {
     if (event.key === "Escape" && !event.defaultPrevented && !hasPriorityOverlay() && sidebar.classList.contains("open")) {

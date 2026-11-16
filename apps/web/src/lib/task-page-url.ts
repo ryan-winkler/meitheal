@@ -1,3 +1,5 @@
+export const TASK_VIEW_LOCATION_EVENT = "meitheal:task-view-location-changed"
+
 export function taskDetailPath(taskId: string, commentId?: number): string {
   const path = `/tickets/${encodeURIComponent(taskId)}`
   return commentId === undefined ? path : `${path}?${new URLSearchParams({ comment: String(commentId) })}`

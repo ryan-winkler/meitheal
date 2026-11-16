@@ -64,6 +64,13 @@ export function defaultTaskNavPrefs(): TaskNavPrefs {
   }
 }
 
+export function normalizeTaskTypeFilterValue(value: string | null): string {
+  if (!value) return ""
+  const kinds = value.split(",").map(kind => kind.trim()).filter(Boolean)
+    .map(kind => kind === "standard" ? "standard_action" : kind)
+  return [...new Set(kinds)].sort().join(",")
+}
+
 export function normalizeTaskNavPrefs(input: unknown): TaskNavPrefs {
   const defaults = defaultTaskNavPrefs()
   if (!input || typeof input !== "object") return defaults

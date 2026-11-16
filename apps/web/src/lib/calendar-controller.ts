@@ -7,7 +7,7 @@ import { createFocusTrap } from "@lib/focus-trap"
 import { updateKanbanFilters, type KanbanFilters } from "@lib/kanban-query"
 import { createTablerSvgElement, mapEntityEmojiToTabler, type TablerIconName } from "@lib/tabler-svg"
 import { openTaskDetailHandoff } from "@lib/task-detail-handoff"
-import { taskBackgroundUrl, ticketIdFromPath } from "@lib/task-page-url"
+import { TASK_VIEW_LOCATION_EVENT, taskBackgroundUrl, ticketIdFromPath } from "@lib/task-page-url"
 import { getStatusDef } from "@lib/status-config"
 
 interface CalendarEventRecord {
@@ -131,6 +131,7 @@ export function initCalendarPage(signal: AbortSignal): void {
         history.replaceState(history.state, "", url)
       }
       applied = new URL(url)
+      document.dispatchEvent(new Event(TASK_VIEW_LOCATION_EVENT))
       announce(rejectedFilterChange)
       if (activeDay || activeRetry) focusMonthDay(activeDay)
       previewEvents()
@@ -425,8 +426,9 @@ async function loadCalendarRange(
   const from = shiftCalendarDay(start, -1) + "T00:00:00Z"
   const through = shiftCalendarDay(end, 1) + "T00:00:00Z"
   const results = await Promise.allSettled(entities.slice(0, limit).map(async entity => {
-    const params = new URLSearchParams({ entity_id: entity, start: from, end: through })
-    const response = await fetch(`/api/ha/events?${params}`, { signal })
+    const feed = new URL("/api/ha/events", location.origin)
+    feed.search = new URLSearchParams({ entity_id: entity, start: from, end: through }).toString()
+    const response = await fetch(new Request(feed), { signal, mode: "same-origin", redirect: "error" })
     if (!response.ok) throw new Error("Calendar feed unavailable")
     const data = await response.json() as { events?: Array<Omit<CalendarEventRecord, "entity">> }
     if (!Array.isArray(data.events)) throw new Error("Invalid calendar feed")

@@ -28,7 +28,7 @@ Choose **Save Sidebar Config** to save and reload the current Settings section w
 
 Existing Shopping sidebar links that carry a task filter open Shopping in Kanban. The plain **Tasks** link remembers the last view.
 
-In the compact sidebar, open either menu from the chevron below its icon. With top navigation enabled, the Tasks toolbar shows creation shortcuts beside **New Task**. Scroll that shortcut group horizontally if there is little space. On mobile, both menus are in the navigation drawer.
+In the compact sidebar, open either menu from the chevron below its icon. With top navigation enabled, the Tasks toolbar shows creation shortcuts beside **New Task**. Other pages show the same shortcuts in the top navigation. Scroll the shortcut group horizontally if there is little space. On mobile, both menus are in the navigation drawer.
 
 The small status dot beside **Settings** reports app and storage health. Hover or use a screen reader to read its status. Home Assistant connectivity is shown separately in **Settings → Connected Services → Home Assistant**.
 
@@ -85,9 +85,9 @@ Select **Light**, **Emerald Isle**, or **Knight Rider** to keep that Meitheal pa
 
 In an administrator session, choose **Custom** to import a CSS file up to 50 KB. The imported palette becomes active after the file, filename and theme mode save together. Select the displayed filename to download the saved CSS. Light, Emerald Isle, Knight Rider and Auto update the installation's saved mode and keep the file available for later use. Choose **Remove custom theme** to clear the file and switch to Emerald Isle. A regular Home Assistant member gets the built-in modes. After an account change, a live navigation applies the current session's theme permissions.
 
-In **Look & Feel**, **Emerald Isle** is the name of the existing green dark theme. **Knight Rider** uses charcoal surfaces and blue controls. Active tasks have a rose fill in Today, Dashboard and Board task views. **Set color** tints the whole task surface and preserves the rose edge on active work. Knight Rider starts with the compact sidebar when this browser has no saved choice. Today shows up to 20 recent completed tasks in **Completed today**. **Archive completed** archives all tasks completed on that household calendar day. Refresh if the date changed since you opened Today.
+In **Look & Feel**, **Emerald Isle** is the name of the existing green dark theme. **Knight Rider** uses charcoal surfaces and blue controls. Active tasks have a rose fill in Today, Dashboard and Board task views. **Set color** tints the whole task surface and preserves the rose edge on active work. Knight Rider starts with the compact sidebar when this browser has no saved choice. **Completed today** previews up to 20 Complete tasks last updated on the household day. **Archive completed** includes every task eligible for that preview. Refresh if the date changed since you opened Today.
 
-Within the same Today visit, reopening a prioritized task from Work returns it to the Focus Stack. Completing an overdue task removes it from the **Overdue** filter. Reopening restores the overdue label when the deadline has passed.
+Within the same Today visit, reopening a task from Work restores its Focus Stack card if it was already loaded in that stack. Completing an overdue task removes it from the **Overdue** filter. Reopening restores the overdue label when the deadline has passed.
 
 An accent chosen in **Look & Feel** stays in this browser. The keyboard focus color comes from the current palette and stays visible even if the accent matches the page background. Use **Reset** beside the color swatches to return to the palette's default accent. Filled primary buttons choose readable dark or light text for a custom accent, including its hover state. Native date and select controls follow the same effective Light or Dark mode as the app. Form hints stay readable when the input receives focus.
 

@@ -10,7 +10,7 @@ Settings section links use local outline icons alongside their text labels. Choo
 
 Integration rows have separate controls: the heading expands the configuration, while the labeled information button opens an explanation. Escape closes that explanation and returns focus to the information button. The icon is decorative; the accessible name remains on the button.
 
-Disclosure summaries show their description once. Their touch target is at least 44 pixels high, and cards use the shared Settings inset. Theme choices remain **Auto (System)**, **Light**, **Dark** and **Custom**.
+Disclosure summaries show their description once. Their touch target is at least 44 pixels high, and cards use the shared Settings inset. Choose **Auto (System)**, **Light**, **Emerald Isle** or **Knight Rider**. Administrators can also import **Custom** CSS.
 
 Local feedback remains under **Settings → App & Companion** when opened through verified Home Assistant ingress. Its form, administrator queue, retry receipts and reviewed exports use the existing implementation. The underlined security reporting link remains available below the card. See [Feedback and support](feedback-and-support.md) for the permission and privacy boundaries.
 
@@ -31,7 +31,7 @@ The desktop sidebar keeps a single circular edge collapse control (`#sidebar-edg
 
 Use the desktop sidebar’s edge chevron or **Ctrl+B** to expand and collapse it. In the hover layout, move into the rail or focus one of its navigation items to reveal it. On a phone, use **Close sidebar** inside the open drawer. Keyboard focus returns to the menu button.
 
-Pin task types beside **Tasks** for quick access. The sidebar restores those links and the Tasks controls after returning from pages that hide the sidebar, such as Inactivity.
+Pin creation shortcuts from **New task → Task types**. Pin Calendar, Kanban, Timeline or Table from **Tasks → Task views**. The navigation restores those pins after returning from pages that hide the sidebar, such as Inactivity.
 
 ## Verification
 

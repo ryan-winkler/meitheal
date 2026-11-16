@@ -297,11 +297,12 @@ function isExternal(href: string): boolean {
   import {
     TASK_NAV_PREFS_EVENT,
     TASK_NAV_PREFS_KEY,
+    normalizeTaskTypeFilterValue,
     readTaskNavPrefs,
     toggleTaskViewPin,
     type TaskNavPrefs,
   } from "../../lib/task-nav-types"
-  import { taskBackgroundUrl } from "../../lib/task-page-url"
+  import { TASK_VIEW_LOCATION_EVENT, taskBackgroundUrl } from "../../lib/task-page-url"
   import { parseTaskView, taskViewUrl } from "../../lib/task-view-route"
 
   // A private page can remove the persisted sidebar. Rebind the new sidebar on its return.
@@ -331,23 +332,34 @@ function isExternal(href: string): boolean {
     const currentPath = appPath(current.pathname)
     const taskContext = currentPath === "/tasks" || currentPath.startsWith("/tickets/")
     const background = taskContext ? taskBackgroundUrl(current) : current
-    const view = parseTaskView(background.searchParams.get("view")) ?? parseTaskView(background.hash.slice(1)) ?? "kanban"
+    const viewFrom = (url: URL) => parseTaskView(url.searchParams.get("view")) ?? parseTaskView(url.hash.slice(1)) ?? "kanban"
+    const view = viewFrom(background)
+    const types = normalizeTaskTypeFilterValue(background.searchParams.get("types"))
+    const navLinks = [...document.querySelectorAll<HTMLAnchorElement>(".sidebar .nav-link:not(.nav-link--external)")]
+    const typedLink = types && navLinks.find(link => {
+      if (link.dataset.taskViewLink) return false
+      const target = new URL(link.href)
+      const href = appPath(target.pathname)
+      return href === appPath(background.pathname) &&
+        normalizeTaskTypeFilterValue(target.searchParams.get("types")) === types &&
+        (href === "/tasks" ? viewFrom(target) === view : !target.hash || target.hash === current.hash)
+    })
     const activeViewLink = document.querySelector(`[data-task-view-pinned-item="${view}"] .nav-link`)
       ?? document.querySelector(`#tasks-nav-submenu:not([hidden]) [data-task-view-link="${view}"]`)
-    document.querySelectorAll<HTMLAnchorElement>(".sidebar .nav-link").forEach(link => {
-      if (link.classList.contains("nav-link--external")) return
+    navLinks.forEach(link => {
       const child = link.dataset.taskViewLink
       if (child) refreshTaskViewLink(link, background)
       const url = new URL(link.href)
       const href = appPath(url.pathname)
-      const active = child
-        ? taskContext && child === view
-        : link.dataset.page === "tasks"
-          ? taskContext
-          : (href === currentPath && (!url.hash || url.hash === current.hash)) ||
-            (href !== "/" && currentPath.startsWith(href + "/"))
+      const isTasksLink = link.dataset.page === "tasks"
+      let active
+      if (child) active = taskContext && child === view && !typedLink
+      else if (isTasksLink) active = taskContext && !typedLink
+      else if (url.searchParams.has("types")) active = link === typedLink
+      else active = (href === currentPath && (!url.hash || url.hash === current.hash)) ||
+        (href !== "/" && currentPath.startsWith(href + "/"))
       link.classList.toggle("active", active)
-      const currentPage = active && (child ? link === activeViewLink : link.dataset.page !== "tasks" || !activeViewLink)
+      const currentPage = active && (child ? link === activeViewLink : !isTasksLink || !activeViewLink)
       if (currentPage && link.getAttribute("aria-current") !== "page") link.setAttribute("aria-current", "page")
       else if (!currentPage) link.removeAttribute("aria-current")
     })
@@ -450,5 +462,6 @@ function isExternal(href: string): boolean {
     updateActiveNavLink()
     window.addEventListener("popstate", updateActiveNavLink, { signal })
     window.addEventListener("hashchange", updateActiveNavLink, { signal })
+    document.addEventListener(TASK_VIEW_LOCATION_EVENT, updateActiveNavLink, { signal })
   })
 </script>

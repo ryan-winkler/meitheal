@@ -2213,8 +2213,9 @@ paths:
       operationId: clearCompletedTasks
       tags:
         - Tasks
-      summary: Archive tasks completed on the household day
-      description: Moves tasks counted as completed today by Today to the archived status. Returns the number changed.
+      summary: Archive Complete tasks last updated on the household day
+      description: Moves every eligible Complete task to the archived status, including tasks outside the Today preview.
+        Returns the number changed.
       parameters:
         - name: expected_day
           in: query

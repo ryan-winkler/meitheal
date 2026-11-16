@@ -41,7 +41,7 @@
   box-shadow: var(--focus-ring);
 }
 
-[data-theme="knight-rider"] :is(.form-input, .form-select):not(:focus):not([aria-invalid="true"]) {
+[data-theme="knight-rider"] :is(.form-input, .form-select):not(:focus, [aria-invalid="true"]) {
   border-color: var(--knight-control-border);
 }
 

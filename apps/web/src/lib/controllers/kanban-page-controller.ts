@@ -1,5 +1,5 @@
 import { getRememberedAreaId, getSelectedAreaId } from "@lib/area-selector-controller"
-import { taskBackgroundUrl, ticketIdFromPath } from "@lib/task-page-url"
+import { TASK_VIEW_LOCATION_EVENT, taskBackgroundUrl, ticketIdFromPath } from "@lib/task-page-url"
 import { DEFERRAL_RECONCILED, type DeferralReconciliation } from "@lib/deferral-client"
 import { initKanbanArea } from "@lib/kanban-controller"
 import { hydrateTaskAssignees } from "@lib/task-assignee-display"
@@ -120,6 +120,7 @@ export function initKanbanPage(signal: AbortSignal): void {
         if (ticketIdFromPath(current.pathname, window.__ingress_path) !== null) {
           history.replaceState({ ...history.state, ticketDrawer: { ...history.state?.ticketDrawer, returnTo: url.href } }, "")
         } else history.replaceState(history.state, "", url)
+        document.dispatchEvent(new Event(TASK_VIEW_LOCATION_EVENT))
       }
       board.scrollLeft = horizontal
       renderStatus("")

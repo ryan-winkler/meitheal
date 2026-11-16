@@ -89,4 +89,11 @@ test("sidebar can close again in desktop hover mode and on a phone", async ({ pa
   await close.press("Enter")
   await expect(menu).toHaveAttribute("aria-expanded", "false")
   await expect(menu).toBeFocused()
+
+  await menu.click()
+  await expect(menu).toHaveAttribute("aria-expanded", "true")
+  await close.focus()
+  await page.mouse.click(384, 400)
+  await expect(menu).toHaveAttribute("aria-expanded", "false")
+  await expect(menu).toBeFocused()
 })

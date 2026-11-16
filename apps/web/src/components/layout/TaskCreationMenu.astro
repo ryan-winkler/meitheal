@@ -165,30 +165,42 @@ const { id, variant, enabled = true } = Astro.props
   }
 
   .task-creation--toolbar .task-creation__options { inset-inline: auto 0; }
-  .task-creation--toolbar .task-creation__pins {
-    flex-direction: row;
-    max-inline-size: min(8.5rem, 14vw);
-    overflow-x: auto;
-    scrollbar-width: thin;
-  }
-  .task-creation--toolbar .task-creation__pins > li { flex: 0 0 auto; }
-  .task-creation--toolbar .task-creation__pins .task-creation__action { padding-inline: 7px; }
-  .task-creation--toolbar .task-creation__pins span { display: none; }
   .task-creation--toolbar:not(:has(.task-creation__pins li:not([hidden]))) { display: contents; }
 
   @media (min-width: 769px) {
-    :global(body.sidebar-collapsed) .task-creation--sidebar .task-creation__split {
+    :global(:root[data-appearance-navigation="navbar"]) .task-creation--sidebar {
+      flex-direction: row;
+      align-items: center;
+    }
+
+    .task-creation--toolbar .task-creation__pins,
+    :global(:root[data-appearance-navigation="navbar"]) .task-creation--sidebar .task-creation__pins {
+      flex-direction: row;
+      overflow-x: auto;
+      scrollbar-width: thin;
+    }
+
+    .task-creation--toolbar .task-creation__pins { max-inline-size: min(8.5rem, 14vw); }
+    :global(:root[data-appearance-navigation="navbar"]) .task-creation--sidebar .task-creation__pins { max-inline-size: 9rem; }
+
+    .task-creation--toolbar .task-creation__pins > li,
+    :global(:root[data-appearance-navigation="navbar"]) .task-creation--sidebar .task-creation__pins > li { flex: 0 0 auto; }
+    .task-creation--toolbar .task-creation__pins .task-creation__action,
+    :global(:root[data-appearance-navigation="navbar"]) .task-creation--sidebar .task-creation__pins .task-creation__action { padding-inline: 7px; }
+    .task-creation--toolbar .task-creation__pins span,
+    :global(:root[data-appearance-navigation="navbar"]) .task-creation--sidebar :is(.task-creation__pins span, .task-creation__unpin) { display: none; }
+
+    :global(:root:not([data-appearance-navigation="navbar"]) body.sidebar-collapsed) .task-creation--sidebar .task-creation__split {
       flex-direction: column;
     }
 
-    :global(body.sidebar-collapsed) .task-creation--sidebar :is(.task-creation__toggle, .task-creation__pins .task-creation__action) {
+    :global(:root:not([data-appearance-navigation="navbar"]) body.sidebar-collapsed) .task-creation--sidebar :is(.task-creation__toggle, .task-creation__pins .task-creation__action) {
       inline-size: 40px;
       justify-content: center;
     }
 
-    :global(body.sidebar-collapsed) .task-creation--sidebar .task-creation__pins span { display: none; }
-    :global(body.sidebar-collapsed) .task-creation--sidebar .task-creation__unpin { display: none; }
-    :global(body.sidebar-collapsed) .task-creation--sidebar .task-creation__options {
+    :global(:root:not([data-appearance-navigation="navbar"]) body.sidebar-collapsed) .task-creation--sidebar :is(.task-creation__pins span, .task-creation__unpin) { display: none; }
+    :global(:root:not([data-appearance-navigation="navbar"]) body.sidebar-collapsed) .task-creation--sidebar .task-creation__options {
       inset-block-start: 0;
       inset-inline-start: calc(100% + 8px);
     }
@@ -274,8 +286,10 @@ const { id, variant, enabled = true } = Astro.props
         trigger.setAttribute("aria-expanded", "false")
         options.hidden = true
       }
+      close()
       render()
 
+      matchMedia("(min-width: 769px)").addEventListener("change", () => close(), { signal })
       trigger.addEventListener("click", () => {
         if (!options.hidden) close()
         else {

@@ -1055,8 +1055,8 @@ const paths = {
     post: {
       operationId: "clearCompletedTasks",
       tags: ["Tasks"],
-      summary: "Archive tasks completed on the household day",
-      description: "Moves tasks counted as completed today by Today to the archived status. Returns the number changed.",
+      summary: "Archive Complete tasks last updated on the household day",
+      description: "Moves every eligible Complete task to the archived status, including tasks outside the Today preview. Returns the number changed.",
       parameters: [{ name: "expected_day", in: "query", schema: { type: "string", format: "date" }, description: "Household day the caller reviewed. A rollover returns 409 without changing any tasks." }],
       responses: { 409: { description: "The household day changed" }, 200: jsonContent({ type: "object", required: ["ok", "cleared"], properties: {
         ok: { type: "boolean" }, cleared: { type: "integer" }, message: { type: "string" },
