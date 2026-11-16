@@ -14,9 +14,10 @@
  * @domain ha
  * @bounded-context integration
  */
-import { initEntitySubscription } from "./ha-entities";
-import { getHAConnection, getHAConfiguration } from "./ha-connection";
-import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability";
+import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability"
+import { fetchOutbound } from "@meitheal/integration-core"
+import { getHAConnection, getHAConfiguration } from "./ha-connection"
+import { initEntitySubscription } from "./ha-entities"
 
 const logger = createLogger({
   service: "meitheal-web",
@@ -29,17 +30,17 @@ const logger = createLogger({
 const SYS_REQ = "ha-system";
 
 // Cached DB references — avoids 4x repeated dynamic import + ensureSchema
-let _dbReady = false;
-let _getPersistenceClient: (() => ReturnType<typeof import("@domains/tasks/persistence/store")["getPersistenceClient"]>) | null = null;
+let _dbReady = false
+let _getPersistenceClient: (() => ReturnType<typeof import("@domains/tasks")["getPersistenceClient"]>) | null = null
 
 async function getDB() {
   if (!_dbReady) {
-    const mod = await import("@domains/tasks/persistence/store");
-    await mod.ensureSchema();
-    _getPersistenceClient = mod.getPersistenceClient;
-    _dbReady = true;
+    const mod = await import("@domains/tasks")
+    await mod.ensureSchema()
+    _getPersistenceClient = mod.getPersistenceClient
+    _dbReady = true
   }
-  return _getPersistenceClient!();
+  return _getPersistenceClient!()
 }
 
 let initialized = false;
@@ -396,63 +397,150 @@ async function autoStartCalendarSync(): Promise<void> {
   }
 }
 
+const MAX_GROCY_STARTUP_RETRIES = 3
+const GROCY_STARTUP_RETRY_DELAY_MS = 30_000
+let grocyStartupRetryTimer: ReturnType<typeof setTimeout> | null = null
+let grocyStartupEpoch = 0
+let grocyStopHookRegistered = false
+
+function resetGrocyStartupRetryTimer(): void {
+  if (grocyStartupRetryTimer !== null) {
+    clearTimeout(grocyStartupRetryTimer)
+    grocyStartupRetryTimer = null
+  }
+}
+
+export function clearGrocyStartupRetry(): void {
+  grocyStartupEpoch++
+  resetGrocyStartupRetryTimer()
+}
+
+function redactUrlForLog(rawUrl: string): string {
+  try {
+    const parsed = new URL(rawUrl)
+    parsed.username = ""
+    parsed.password = ""
+    return parsed.toString()
+  } catch {
+    return "<invalid-url>"
+  }
+}
+
 /**
  * Read persisted Grocy sync settings from SQLite and auto-start sync.
  * Replaces the old validateGrocyConnection — now actually starts the sync
  * bridge instead of just pinging the API.
  */
-async function autoStartGrocySync(): Promise<void> {
+export async function autoStartGrocySync(
+  retryAttempt = 0,
+  retryDelayMs = GROCY_STARTUP_RETRY_DELAY_MS,
+): Promise<void> {
+  const runEpoch = grocyStartupEpoch
   try {
-    const client = await getDB();
+    const { getGrocySyncStatus, onGrocySyncStopped, startGrocySync } = await import("@domains/grocy")
+    if (!grocyStopHookRegistered) {
+      onGrocySyncStopped(clearGrocyStartupRetry)
+      grocyStopHookRegistered = true
+    }
+    const client = await getDB()
 
     // Read grocy sync settings
     const res = await client.execute({
       sql: "SELECT key, value FROM settings WHERE key IN ('grocy_url', 'grocy_api_key', 'grocy_sync_enabled', 'grocy_sync_mode', 'grocy_sync_interval')",
       args: [],
-    });
+    })
+    if (runEpoch !== grocyStartupEpoch) return
 
-    const settings: Record<string, string> = {};
+    const settings: Record<string, unknown> = {}
     for (const row of res.rows) {
       if (typeof row.key === "string" && typeof row.value === "string") {
         try {
-          settings[row.key] = JSON.parse(row.value);
+          settings[row.key] = JSON.parse(row.value)
         } catch {
-          settings[row.key] = row.value;
+          settings[row.key] = row.value
         }
       }
     }
 
     const enabled =
-      settings.grocy_sync_enabled === "true" || settings.grocy_sync_enabled === "1";
-    const url = settings.grocy_url;
-    const apiKey = settings.grocy_api_key;
-    const syncMode = (settings.grocy_sync_mode ?? "bidirectional") as
-      | "import"
-      | "export"
-      | "bidirectional";
-    const intervalMs = Number(settings.grocy_sync_interval) || 15 * 60 * 1000;
+      settings.grocy_sync_enabled === true ||
+      settings.grocy_sync_enabled === 1 ||
+      settings.grocy_sync_enabled === "true" ||
+      settings.grocy_sync_enabled === "1"
+    const url = typeof settings.grocy_url === "string" ? settings.grocy_url : ""
+    const apiKey =
+      typeof settings.grocy_api_key === "string"
+        ? settings.grocy_api_key
+        : typeof settings.grocy_api_key === "number" && Number.isFinite(settings.grocy_api_key)
+          ? String(settings.grocy_api_key)
+          : ""
+    const syncMode: "import" | "export" | "bidirectional" =
+      settings.grocy_sync_mode === "import" ||
+      settings.grocy_sync_mode === "export" ||
+      settings.grocy_sync_mode === "bidirectional"
+        ? settings.grocy_sync_mode
+        : "bidirectional"
+    const rawInterval =
+      settings.grocy_sync_interval !== undefined &&
+      settings.grocy_sync_interval !== null &&
+      settings.grocy_sync_interval !== ""
+        ? Number(settings.grocy_sync_interval)
+        : Number.NaN
+    const intervalMs = Number.isFinite(rawInterval) && rawInterval >= 0 ? rawInterval : 15 * 60 * 1000
 
     if (!enabled || !url || !apiKey) {
+      resetGrocyStartupRetryTimer()
       logger.log("info", {
         event: "ha.startup.grocy.skipped",
         domain: "integrations",
         component: "ha-startup",
         request_id: SYS_REQ,
         message: `Grocy sync not configured (enabled: ${enabled}, url: ${url ? "set" : "missing"}, key: ${apiKey ? "set" : "missing"})`,
-      });
-      return;
+      })
+      return
     }
 
-    // Import and start Grocy sync bridge
-    const { GrocyAdapter } = await import("@meitheal/integration-core");
-    const { startGrocySync } = await import("@domains/grocy");
+    // Validate & migrate Grocy URL through createGrocyClient before starting sync bridge
+    const { createGrocyClient, isLegacySupervisorIngressUrl } = await import("../../lib/grocy-client")
 
-    const adapter = new GrocyAdapter({ baseUrl: url, apiKey });
+    if (retryAttempt > 0 && getGrocySyncStatus().active) {
+      resetGrocyStartupRetryTimer()
+      return
+    }
 
+    const adapter = await createGrocyClient()
+    if (runEpoch !== grocyStartupEpoch) return
+
+    if (!adapter) {
+      const canRetryLegacy =
+        isLegacySupervisorIngressUrl(url) &&
+        retryAttempt < MAX_GROCY_STARTUP_RETRIES &&
+        grocyStartupRetryTimer === null
+      logger.log("warn", {
+        event: "ha.startup.grocy.skipped",
+        domain: "integrations",
+        component: "ha-startup",
+        request_id: SYS_REQ,
+        message: canRetryLegacy
+          ? `Grocy add-on not yet resolvable on boot; scheduling retry ${retryAttempt + 1}/${MAX_GROCY_STARTUP_RETRIES}`
+          : "Grocy sync skipped due to invalid or unresolvable Grocy configuration",
+      })
+      if (canRetryLegacy) {
+        grocyStartupRetryTimer = setTimeout(() => {
+          grocyStartupRetryTimer = null
+          if (runEpoch !== grocyStartupEpoch) return
+          void autoStartGrocySync(retryAttempt + 1, retryDelayMs)
+        }, retryDelayMs)
+        grocyStartupRetryTimer.unref?.()
+      }
+      return
+    }
+
+    resetGrocyStartupRetryTimer()
     startGrocySync(
       { syncEnabled: true, syncMode, intervalMs },
       adapter,
-    );
+    )
 
     logger.log("info", {
       event: "ha.startup.grocy.started",
@@ -460,7 +548,7 @@ async function autoStartGrocySync(): Promise<void> {
       component: "ha-startup",
       request_id: SYS_REQ,
       message: `Auto-started Grocy sync (mode: ${syncMode}, interval: ${intervalMs}ms)`,
-    });
+    })
   } catch (err) {
     logger.log("error", {
       event: "ha.startup.grocy.failed",
@@ -468,7 +556,7 @@ async function autoStartGrocySync(): Promise<void> {
       component: "ha-startup",
       request_id: SYS_REQ,
       message: `Failed to auto-start Grocy sync: ${err}`,
-    });
+    })
   }
 }
 
@@ -479,25 +567,26 @@ async function autoStartGrocySync(): Promise<void> {
  */
 async function validateWebhookEndpoints(): Promise<void> {
   try {
-    const client = await getDB();
+    const client = await getDB()
 
     const res = await client.execute({
       sql: "SELECT key, value FROM settings WHERE key IN ('webhook_endpoint', 'n8n_webhook_url')",
       args: [],
-    });
+    })
 
-    const endpoints: { name: string; url: string }[] = [];
+    const endpoints: { name: string; url: string }[] = []
     for (const row of res.rows) {
       if (typeof row.key === "string" && typeof row.value === "string") {
-        let url: string;
+        let url = ""
         try {
-          url = JSON.parse(row.value);
+          const parsed: unknown = JSON.parse(row.value)
+          if (typeof parsed === "string") url = parsed.trim()
         } catch {
-          url = row.value;
+          url = row.value.trim()
         }
         if (url) {
-          const name = row.key === "n8n_webhook_url" ? "n8n" : "webhook";
-          endpoints.push({ name, url });
+          const name = row.key === "n8n_webhook_url" ? "n8n" : "webhook"
+          endpoints.push({ name, url })
         }
       }
     }
@@ -509,37 +598,44 @@ async function validateWebhookEndpoints(): Promise<void> {
         component: "ha-startup",
         request_id: SYS_REQ,
         message: "No webhook endpoints configured",
-      });
-      return;
+      })
+      return
     }
 
-    // Validate each endpoint with a lightweight HEAD/GET request
+    // Validate each endpoint with a lightweight HEAD request under shared outbound policy
     for (const ep of endpoints) {
+      const safeUrl = redactUrlForLog(ep.url)
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), 5000)
+      timeout.unref?.()
       try {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 5000);
-        // Use HEAD to minimize payload; fall back to GET if HEAD fails
-        const response = await fetch(ep.url, {
+        const response = await fetchOutbound(ep.url, {
           method: "HEAD",
+          allowPrivate: true,
+          redirect: "error",
           signal: controller.signal,
-        });
-        clearTimeout(timeout);
+        })
+        await response.body?.cancel().catch(() => undefined)
 
         logger.log("info", {
           event: `ha.startup.${ep.name}.reachable`,
           domain: "integrations",
           component: "ha-startup",
           request_id: SYS_REQ,
-          message: `${ep.name} endpoint reachable (${response.status}): ${ep.url}`,
-        });
+          message: `${ep.name} endpoint reachable (${response.status}): ${safeUrl}`,
+        })
       } catch (fetchErr) {
+        const rawErr = fetchErr instanceof Error ? fetchErr.message : String(fetchErr)
+        const safeErr = ep.url ? rawErr.replaceAll(ep.url, safeUrl) : rawErr
         logger.log("warn", {
           event: `ha.startup.${ep.name}.unreachable`,
           domain: "integrations",
           component: "ha-startup",
           request_id: SYS_REQ,
-          message: `${ep.name} endpoint unreachable: ${ep.url} — ${fetchErr}`,
-        });
+          message: `${ep.name} endpoint unreachable: ${safeUrl} — ${safeErr}`,
+        })
+      } finally {
+        clearTimeout(timeout)
       }
     }
   } catch (err) {
@@ -549,7 +645,7 @@ async function validateWebhookEndpoints(): Promise<void> {
       component: "ha-startup",
       request_id: SYS_REQ,
       message: `Webhook validation failed: ${err}`,
-    });
+    })
   }
 }
 

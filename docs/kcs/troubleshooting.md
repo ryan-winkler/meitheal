@@ -92,6 +92,10 @@ Dismissed helpers stay hidden on reload. When letter, number and symbol shortcut
 2. If your environment still uses legacy naming, `local_meitheal_hub` is tried automatically.
 3. If needed, set host manually in the config flow and verify `http://<host>:3000/api/health` responds with `200`.
 
+### Grocy sync unavailable after an App restart
+
+Meitheal needs Grocy App information from Home Assistant Supervisor to replace an older ingress URL. If Supervisor cannot return that information, Meitheal keeps the saved URL and retries startup up to three times. Check that the Grocy App is started, then retry the connection in Settings if the automatic retries have ended. Saving a different URL in Settings takes precedence over an automatic migration already in progress.
+
 ### Sync Queue Stuck
 
 **Symptoms**: "Pending" indicator never clears, tasks don't sync.

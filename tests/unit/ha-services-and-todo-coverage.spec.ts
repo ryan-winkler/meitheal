@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process"
+import dns from "node:dns"
 import { mkdtempSync, rmSync } from "node:fs"
 import { createServer } from "node:http"
 import { createRequire } from "node:module"
@@ -86,6 +87,20 @@ test("HA connection, services, users, todo-bridge, and ha-startup work against l
         internal_url: "http://ha.local:8123",
         version: "2026.11.1",
       }))
+      return
+    }
+    if (urlPath === "/api/system/info") {
+      res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({
+        grocy_version: { Version: "4.2.0", ReleaseDate: "2026-01-01" },
+      }))
+      return
+    }
+    if (urlPath === "/api/chores" || urlPath === "/api/tasks" || urlPath === "/api/objects/shopping_list" || urlPath === "/api/objects/products") {
+      res.writeHead(200, { "content-type": "application/json" }).end("[]")
+      return
+    }
+    if (req.method === "HEAD" && urlPath === "/webhook-head") {
+      res.writeHead(204).end()
       return
     }
     res.writeHead(404).end()
@@ -232,7 +247,26 @@ test("HA connection, services, users, todo-bridge, and ha-startup work against l
   const haUsers = await import("../../apps/web/src/domains/ha/ha-users")
   const todoBridge = await import("../../apps/web/src/domains/todo/todo-bridge")
   const calendarBridge = await import("../../apps/web/src/domains/calendar/calendar-bridge")
+  const grocyBridge = await import("../../apps/web/src/domains/grocy")
   const haStartup = await import("../../apps/web/src/domains/ha/ha-startup")
+  const originalLookup = dns.lookup
+  dns.lookup = ((
+    hostname: string,
+    options: unknown,
+    callback?: (err: NodeJS.ErrnoException | null, address: unknown, family?: number) => void,
+  ) => {
+    const cb = typeof options === "function" ? (options as typeof callback) : callback
+    const opts = typeof options === "object" && options !== null ? (options as { all?: boolean }) : {}
+    if (hostname === "grocy.local") {
+      if (opts.all) {
+        queueMicrotask(() => cb?.(null, [{ address: "127.0.0.1", family: 4 }]))
+      } else {
+        queueMicrotask(() => cb?.(null, "127.0.0.1", 4))
+      }
+      return
+    }
+    return (originalLookup as (...args: unknown[]) => unknown)(hostname, options, callback)
+  }) as typeof dns.lookup
 
   try {
     // 1. HA connection + REST fetch + status emitter
@@ -351,11 +385,18 @@ test("HA connection, services, users, todo-bridge, and ha-startup work against l
     await calendarBridge.removeTaskCalendarEvent("todo-outbound-1")
     calendarBridge.stopCalendarSync()
 
-    // 5. ha-startup initialization end-to-end with persisted settings
+    // 5. ha-startup initialization end-to-end with persisted settings (Todo, Grocy, Webhooks)
     for (const [k, v] of [
       ["todo_sync_enabled", JSON.stringify(true)],
       ["todo_entities", JSON.stringify(["todo.household"])],
       ["todo_sync_direction", JSON.stringify("bidirectional")],
+      ["grocy_sync_enabled", JSON.stringify(true)],
+      ["grocy_url", JSON.stringify(`http://grocy.local:${port}`)],
+      ["grocy_api_key", "12345"],
+      ["grocy_sync_mode", JSON.stringify("import")],
+      ["grocy_sync_interval", JSON.stringify(0)],
+      ["webhook_endpoint", JSON.stringify(`http://grocy.local:${port}/webhook-head`)],
+      ["n8n_webhook_url", "http://169.254.169.254/latest/meta-data/"],
     ] as const) {
       await client.execute({
         sql: "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
@@ -363,11 +404,62 @@ test("HA connection, services, users, todo-bridge, and ha-startup work against l
       })
     }
     await haStartup.initHAIntegrations()
+    await grocyBridge.syncFromGrocy()
+    expect(grocyBridge.getGrocySyncStatus().active).toBe(true)
+    expect(grocyBridge.getActiveGrocySyncConfig()?.intervalMs).toBe(0)
     expect(recordedCommands.length).toBeGreaterThan(0)
+
+    // Bounded startup retry when a legacy Supervisor ingress URL is temporarily unresolvable on boot,
+    // and disabling Grocy sync cancels any pending retry so sync stays off even if URL becomes valid.
+    grocyBridge.stopGrocySync()
+    await client.execute({
+      sql: "UPDATE settings SET value = ?, updated_at = ? WHERE key = 'grocy_url'",
+      args: [JSON.stringify("http://supervisor/api/hassio_ingress/tok_retry"), now],
+    })
+    await haStartup.autoStartGrocySync(0, 20)
+    expect(grocyBridge.getGrocySyncStatus().active).toBe(false)
+    await client.execute({
+      sql: "UPDATE settings SET value = ?, updated_at = ? WHERE key = 'grocy_url'",
+      args: [JSON.stringify(`http://grocy.local:${port}`), now],
+    })
+    const { POST: postGrocySync } = await import("../../apps/web/src/pages/api/grocy/sync")
+    const disableRes = await postGrocySync({
+      request: new Request("http://localhost/api/grocy/sync", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "disable" }),
+      }),
+    } as unknown as Parameters<typeof postGrocySync>[0])
+    expect(disableRes.status).toBe(200)
+    await new Promise<void>((resolve) => setTimeout(resolve, 45))
+    expect(grocyBridge.getGrocySyncStatus().active).toBe(false)
+    haStartup.clearGrocyStartupRetry()
+
+    // A temporary lookup failure also has a recovery path when sync stays enabled.
+    await client.batch([
+      {
+        sql: "UPDATE settings SET value = 'true' WHERE key = 'grocy_sync_enabled'",
+        args: [],
+      },
+      {
+        sql: "UPDATE settings SET value = ? WHERE key = 'grocy_url'",
+        args: [JSON.stringify("http://supervisor/api/hassio_ingress/tok_retry")],
+      },
+    ])
+    await haStartup.autoStartGrocySync(0, 50)
+    expect(grocyBridge.getGrocySyncStatus().active).toBe(false)
+    await client.execute({
+      sql: "UPDATE settings SET value = ? WHERE key = 'grocy_url'",
+      args: [JSON.stringify(`http://grocy.local:${port}`)],
+    })
+    await expect.poll(() => grocyBridge.getGrocySyncStatus().active).toBe(true)
   } finally {
+    haStartup.clearGrocyStartupRetry()
+    grocyBridge.stopGrocySync()
     calendarBridge.stopCalendarSync()
     todoBridge.stopTodoSync()
     haConn.closeHAConnection()
+    dns.lookup = originalLookup
     if (prevSup === undefined) delete process.env.SUPERVISOR_TOKEN
     else process.env.SUPERVISOR_TOKEN = prevSup
     if (prevUrl === undefined) delete process.env.HA_BASE_URL
