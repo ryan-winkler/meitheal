@@ -1337,6 +1337,15 @@ test("CalDAV isolates same UID across distinct calendars without overwriting eit
       expect.objectContaining({ title: "Personal Dentists", due_date: tomorrowStr }),
       expect.objectContaining({ title: "Team Dentists (Updated)", due_date: todayStr }),
     ])
+    const links = await db.execute(`
+      SELECT t.title, c.provider_event_id AS uid, json_extract(c.payload, '$.calendar_href') AS calendar
+      FROM calendar_confirmations c JOIN tasks t ON t.id = c.task_id
+      WHERE c.source = 'caldav' ORDER BY calendar
+    `)
+    expect(links.rows).toEqual([
+      expect.objectContaining({ title: "Personal Dentists", uid: "shared-invite-uid", calendar: "/personal" }),
+      expect.objectContaining({ title: "Team Dentists (Updated)", uid: "shared-invite-uid", calendar: "/team" }),
+    ])
   } finally {
     stopCalDAVSync()
     globalThis.fetch = originalFetch
