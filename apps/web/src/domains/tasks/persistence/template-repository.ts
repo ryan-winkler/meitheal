@@ -111,19 +111,22 @@ export class TemplateRepository {
   /** Create a new template */
   async create(data: {
     id: string; name: string; templateJson: string; icon: string; position: number; isRoutine?: boolean; cadence?: string
+    areaId?: string | undefined
     /** @deprecated Use isRoutine */
     isHabit?: boolean
     /** @deprecated Use cadence */
     frequency?: string
-  }): Promise<void> {
+  }): Promise<boolean> {
     const now = Date.now()
     const isRoutine = data.isRoutine ?? data.isHabit ?? false
     const cadence = data.cadence ?? data.frequency ?? "daily"
-    await this.client.execute({
+    const inserted = await this.client.execute({
       sql: `INSERT INTO task_templates (id, name, template_json, icon, is_routine, cadence, position, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      args: [data.id, data.name, data.templateJson, data.icon, isRoutine ? 1 : 0, cadence, data.position, now, now],
+            SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
+            WHERE ? IS NULL OR EXISTS (SELECT 1 FROM areas WHERE id = ?)`,
+      args: [data.id, data.name, data.templateJson, data.icon, isRoutine ? 1 : 0, cadence, data.position, now, now, data.areaId ?? null, data.areaId ?? null],
     })
+    return inserted.rowsAffected !== 0
   }
 
   /** Delete a template by ID */
@@ -138,10 +141,11 @@ export class TemplateRepository {
   async update(id: string, data: {
     name?: string; templateJson?: string; icon?: string; cadence?: string
     templatePatch?: string
+    areaId?: string
     streak_freezes_used?: number; streak_freeze_limit?: number
     /** @deprecated Use cadence */
     frequency?: string
-  }): Promise<void> {
+  }): Promise<boolean> {
     const sets: string[] = []
     const args: (string | number)[] = []
 
@@ -157,16 +161,19 @@ export class TemplateRepository {
     if (data.streak_freezes_used !== undefined) { sets.push("streak_freezes_used = ?"); args.push(data.streak_freezes_used) }
     if (data.streak_freeze_limit !== undefined) { sets.push("streak_freeze_limit = ?"); args.push(data.streak_freeze_limit) }
 
-    if (sets.length === 0) return
+    if (sets.length === 0) return true
 
     sets.push("updated_at = ?")
     args.push(Date.now())
     args.push(id)
+    const areaCheck = data.areaId === undefined ? "" : "AND EXISTS (SELECT 1 FROM areas WHERE id = ?)"
+    if (data.areaId !== undefined) args.push(data.areaId)
 
-    await this.client.execute({
-      sql: `UPDATE task_templates SET ${sets.join(", ")} WHERE id = ?`,
+    const written = await this.client.execute({
+      sql: `UPDATE task_templates SET ${sets.join(", ")} WHERE id = ? ${areaCheck}`,
       args,
     })
+    return written.rowsAffected !== 0
   }
 
   // ── Routine-Specific Methods ────────────────────────────────────

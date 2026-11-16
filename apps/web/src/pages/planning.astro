@@ -111,9 +111,7 @@ try {
 }
 
 // Filter out Uncategorized if empty
-const groups = areas.filter(area =>
-  area.name !== "Uncategorized" || goalsByArea.has(area.id) || projectsByArea.has(area.id)
-).map(area => ({ area, projects: projectsByArea.get(area.id) ?? [] }))
+const groups = areas.map(area => ({ area, projects: projectsByArea.get(area.id) ?? [] }))
 const planningGroups: Array<{ area?: AreaRow; projects: ProjectRow[] }> = [...groups]
 if (unassigned.length) planningGroups.push({ projects: unassigned })
 ---
@@ -244,6 +242,7 @@ if (unassigned.length) planningGroups.push({ projects: unassigned })
     const spaces = document.getElementById("planning-section-spaces")
     if (!spaces || spaces.dataset.bound) return
     spaces.dataset.bound = "true"
+    const drafts = new WeakMap<HTMLButtonElement, string>()
     signal.addEventListener("abort", () => { delete spaces.dataset.bound }, { once: true })
     spaces.addEventListener("click", async event => {
       const button = (event.target as HTMLElement).closest<HTMLButtonElement>("#create-area-btn, [data-create-project]")
@@ -252,8 +251,9 @@ if (unassigned.length) planningGroups.push({ projects: unassigned })
       const entity = project === undefined ? "Area" : "Project"
       button.disabled = true
       try {
-        const name = await promptDialog({ title: "Create " + entity, required: true })
+        const name = await promptDialog({ title: "Create " + entity, required: true, defaultValue: drafts.get(button) ?? "" })
         if (!name) return
+        drafts.set(button, name)
         const response = await fetch(project === undefined ? "/api/areas" : "/api/projects", {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -261,6 +261,7 @@ if (unassigned.length) planningGroups.push({ projects: unassigned })
           signal,
         })
         if (!response.ok) throw new Error("Could not create " + entity)
+        drafts.delete(button)
         window.location.reload()
       } catch {
         if (!signal.aborted) window.showToast?.("Could not create the " + entity + ". Try again.", "error")

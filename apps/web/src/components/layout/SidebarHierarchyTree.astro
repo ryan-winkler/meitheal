@@ -1338,6 +1338,7 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
       }
       if (button.hasAttribute("data-area-add")) addProjectToArea(button)
       if (button.hasAttribute("data-area-menu")) showAreaMenu(button, event.detail === 0)
+      if (button.hasAttribute("data-project-menu")) showProjectMenu(button, event.detail === 0)
     }
 
     // The sidebar element persists across Astro page swaps.
@@ -1485,22 +1486,24 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
     })
 
     // ── 5. Project ⋯ menu ──
-    document.querySelectorAll<HTMLButtonElement>("[data-project-menu]").forEach((btn) => {
-      btn.addEventListener("click", (e) => {
-        e.stopPropagation()
-        if (!projectMenuDropdown) return
-        const isVisible = ctrl.isShowing(projectMenuDropdown) && activeEntityId === btn.dataset.projectMenu && activeEntityType === "project"
-        ctrl.hideAll()
-        if (isVisible) return
-        activeEntityType = "project"
-        activeEntityId = btn.dataset.projectMenu!
-        activeEntityName = btn.dataset.projectTitle || ""
-        const manageLink = projectMenuDropdown.querySelector<HTMLAnchorElement>("[data-action='manage']")
-        if (manageLink) manageLink.href = safeIngressHref(`/projects/${encodeURIComponent(activeEntityId)}#settings`)
-        ctrl.show(projectMenuDropdown, btn)
-        if (e.detail === 0) manageLink?.focus()
-      })
-    })
+    function showProjectMenu(btn: HTMLButtonElement, focusEdit: boolean) {
+      if (!projectMenuDropdown) return
+      const isVisible = ctrl.isShowing(projectMenuDropdown) && activeEntityId === btn.dataset.projectMenu && activeEntityType === "project"
+      ctrl.hideAll()
+      if (isVisible) return
+      activeEntityType = "project"
+      activeEntityId = btn.dataset.projectMenu!
+      activeEntityName = btn.dataset.projectTitle || ""
+      const editLink = projectMenuDropdown.querySelector<HTMLAnchorElement>("[data-action='manage']")
+      if (editLink) editLink.href = safeIngressHref(`/projects/${encodeURIComponent(activeEntityId)}#settings`)
+      ctrl.show(projectMenuDropdown, btn)
+      if (focusEdit) editLink?.focus()
+    }
+    projectMenuDropdown?.addEventListener("keydown", event => {
+      if (event.key === "Escape" && activeEntityId) {
+        nav.querySelector<HTMLButtonElement>(`[data-project-menu="${CSS.escape(activeEntityId)}"]`)?.focus()
+      }
+    }, { signal: areaActions.signal })
 
     projectMenuDropdown?.addEventListener("click", async (e) => {
       const target = (e.target as HTMLElement).closest<HTMLElement>("[data-action]")

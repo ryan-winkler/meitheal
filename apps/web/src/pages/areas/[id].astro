@@ -136,6 +136,7 @@ const tabs = [
     <div class="section-header">
       <h2 class="section-title">Projects</h2>
       <span class="section-count">{projects.length} total</span>
+      <button type="button" class="btn btn-primary btn-sm" id="area-new-project">New Project</button>
     </div>
 
     {projects.length === 0 ? (
@@ -437,6 +438,7 @@ const tabs = [
 <script>
   import { confirmDialog } from "../../lib/confirm-dialog"
   import { pageLifecycle } from "../../lib/page-lifecycle"
+  import { promptDialog } from "../../lib/prompt-dialog"
   import { showToast } from "../../lib/toast"
 
   let activeSignal: AbortSignal | undefined
@@ -471,6 +473,26 @@ const tabs = [
     const remove = document.querySelector<HTMLButtonElement>("#delete-area-btn")!
     const back = document.querySelector<HTMLAnchorElement>("#back-to-areas")!
     const endpoint = "/api/areas/" + encodeURIComponent(areaId)
+    const newProject = document.querySelector<HTMLButtonElement>("#area-new-project")
+    let projectDraft = ""
+    newProject?.addEventListener("click", async () => {
+      if (newProject.disabled) return
+      const title = await promptDialog({ title: "Create Project", required: true, defaultValue: projectDraft })
+      if (!title || signal.aborted) return
+      projectDraft = title
+      newProject.disabled = true
+      try {
+        const response = await fetch("/api/projects", {
+          method: "POST", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ title, area_id: areaId }), signal,
+        })
+        if (!response.ok) throw new Error("Project creation failed")
+        window.location.reload()
+      } catch {
+        if (!signal.aborted) showToast("Could not create the Project. Try again.", "error")
+        newProject.disabled = false
+      }
+    }, { signal })
 
     form.addEventListener("submit", async event => {
       event.preventDefault()

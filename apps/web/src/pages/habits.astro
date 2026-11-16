@@ -43,7 +43,7 @@ if (!isEnabled) {
 let habits: HabitViewModel[] = []
 let loadFailed = false
 let areas: AreaRow[] = []
-const areaId = Astro.url.searchParams.get("area_id") || undefined
+const areaId = Astro.url.searchParams.get("area_id")
 const openNew = Astro.url.searchParams.get("new") === "1"
 let area: AreaRow | undefined
 
@@ -94,7 +94,7 @@ try {
   const client = getPersistenceClient()
   areas = await new HierarchyRepository(client).findAllAreas()
   area = areaId ? areas.find(candidate => candidate.id === areaId) : undefined
-  if (areaId && !area) return Astro.redirect(`${Astro.locals.ingressPath || ""}/planning#spaces`)
+  if (areaId !== null && !area) return Astro.redirect(`${Astro.locals.ingressPath || ""}/planning#spaces`)
   const routines = await new TemplateRepository(client).getRoutinesWithStats(area?.id)
   habits = routines.map((routine) => ({
     ...routine,
@@ -143,6 +143,7 @@ const habitsBootstrap = serializeForScript({ habits })
       class="unified-bar__new-task-btn habits-shell__create-bar-btn"
       id="habits-bar-new-habit"
       data-open-habit-modal
+      disabled={loadFailed}
       title="New Routine"
       aria-label="New Routine"
     >
@@ -174,15 +175,9 @@ const habitsBootstrap = serializeForScript({ habits })
       data-habits-section
     >
       <div class="habits-hero">
-        <div class="habits-hero__eyebrow">Home Assistant Native Routines</div>
         <div class="habits-hero__title-row">
           <div class="habits-hero__copy">
-            <h1 class="habits-hero__title">Habits that turn into real work</h1>
-            <p class="habits-hero__description">
-              Build repeatable routines inside Meitheal, keep them local-first and
-              ingress-safe, and let every completion flow into Today, Kanban, Table,
-              and Upcoming without maintaining a second tracking system.
-            </p>
+            <h1 class="habits-hero__title">Routines</h1>
           </div>
 
           <div class="habits-hero__chips" aria-label="Habits quick jumps">
@@ -263,7 +258,7 @@ const habitsBootstrap = serializeForScript({ habits })
           </p>
         </div>
         <div class="habits-section__actions">
-          <button type="button" class="btn btn-primary" data-open-habit-modal>
+          <button type="button" class="btn btn-primary" data-open-habit-modal disabled={loadFailed}>
             New Habit
           </button>
         </div>
@@ -297,7 +292,7 @@ const habitsBootstrap = serializeForScript({ habits })
                 <p class="habits-empty__detail">
                   Habits create real tasks that surface in Today, Kanban, Table, and Upcoming.
                 </p>
-                <button type="button" class="btn btn-primary" data-open-habit-modal>
+                <button type="button" class="btn btn-primary" data-open-habit-modal disabled={loadFailed}>
                   Create Habit
                 </button>
               </div>
@@ -455,7 +450,7 @@ const habitsBootstrap = serializeForScript({ habits })
     </section>
 
     <div class="habit-modal-overlay hidden" id="habit-modal-overlay">
-      <div class="habit-modal" role="dialog" aria-labelledby="habit-modal-title">
+      <div class="habit-modal" role="dialog" aria-modal="true" aria-labelledby="habit-modal-title">
         <div class="habit-modal__header">
           <h2 id="habit-modal-title">New Routine</h2>
           <button class="btn-icon" id="habit-modal-close" aria-label="Close">×</button>

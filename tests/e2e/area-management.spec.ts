@@ -184,10 +184,11 @@ test("Area Routines open the existing editor in context and keep the generated t
     await editor.locator("button[type=submit]").click()
     const response = await receipt
     expect(response.status()).toBe(201)
-    routineId = (await response.json()).id
     await expect(editor).toBeHidden()
     const scoped = await request.get(`/api/habits?area_id=${area}`)
-    expect((await scoped.json()).habits.map((routine: { id: string }) => routine.id)).toEqual([routineId])
+    const routines = (await scoped.json()).habits as Array<{ id: string; name: string }>
+    expect(routines.map(routine => routine.name)).toEqual([name])
+    routineId = routines[0]?.id
     const defaultArea = await request.get("/api/habits?area_id=default")
     expect((await defaultArea.json()).habits.map((routine: { id: string }) => routine.id)).not.toContain(routineId)
     const updated = await request.post("/api/habits", {
@@ -199,7 +200,11 @@ test("Area Routines open the existing editor in context and keep the generated t
     taskId = (await completed.json()).taskId
     const task = await request.get(`/api/tasks/${taskId}`)
     expect((await task.json()).area_id).toBe(area)
-    await expect(page.getByRole("link", { name: "All Routines" })).toBeVisible()
+    await expect(page).toHaveURL(new RegExp(`/areas/${area}#routines$`))
+    await expect(page.locator("#section-routines").getByText(name, { exact: false })).toBeVisible()
+    await page.goto("/habits?area_id=&new=1")
+    await expect(page).toHaveURL(/\/planning#spaces$/)
+    await expect(page.getByRole("dialog", { name: "New Routine" })).toHaveCount(0)
   } finally {
     if (taskId) await request.delete(`/api/tasks/${taskId}`)
     if (routineId) await request.post("/api/habits", { data: { action: "delete", templateId: routineId } })

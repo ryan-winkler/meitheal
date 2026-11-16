@@ -1,6 +1,8 @@
 import { confirmDialog } from "@lib/confirm-dialog"
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { showToast } from "@lib/toast"
+import { createFocusTrap } from "@lib/focus-trap"
+import { safeIngressHref } from "@lib/ingress-navigation"
 import { createClientLogger } from "@lib/client-logger"
 import { initHabitsShellNav } from "@lib/controllers/habits-shell-nav"
 import {
@@ -212,6 +214,7 @@ async function deleteHabit(habitId: string): Promise<void> {
 
 function initHabitsCrud(): void {
   const overlay = document.getElementById("habit-modal-overlay")
+  const dialog = overlay?.querySelector<HTMLElement>("[role=dialog]")
   const form = document.getElementById("habit-form") as HTMLFormElement | null
   const editIdInput = document.getElementById("habit-edit-id") as HTMLInputElement | null
   const nameInput = document.getElementById("habit-name") as HTMLInputElement | null
@@ -227,9 +230,12 @@ function initHabitsCrud(): void {
   const modalCancel = document.getElementById("habit-cancel")
   const addChecklistItemButton = document.getElementById("add-checklist-item")
   const list = document.getElementById("habits-list")
+  const save = form?.querySelector<HTMLButtonElement>("button[type=submit]")
 
   if (
     !overlay ||
+    !dialog ||
+    !save ||
     !form ||
     !areaSelect ||
     !editIdInput ||
@@ -244,6 +250,13 @@ function initHabitsCrud(): void {
   ) {
     return
   }
+  const trap = createFocusTrap(dialog)
+  pageLifecycle.signal.addEventListener("abort", () => trap.deactivate(false), { once: true })
+  let initialArea = "default"
+  const initialScope = shell?.dataset.areaId
+  const returnPath = shell?.dataset.openNew
+    ? initialScope ? "/areas/" + encodeURIComponent(initialScope) + "#routines" : "/progress#routines"
+    : undefined
 
   function resetChecklistBuilder(): void {
     checklistContainer!.replaceChildren()
@@ -271,6 +284,7 @@ function initHabitsCrud(): void {
     descInput!.value = ""
     resetChecklistBuilder()
     overlay!.classList.remove("hidden")
+    trap.activate()
     nameInput!.focus()
   }
 
@@ -285,6 +299,7 @@ function initHabitsCrud(): void {
     cadenceSelect!.value = habit.cadence
     prioritySelect!.value = String(habit.priority)
     areaSelect!.value = habit.areaId ?? "default"
+    initialArea = habit.areaId ?? "default"
     areaSelect!.disabled = false
     descInput!.value = habit.description
 
@@ -292,19 +307,24 @@ function initHabitsCrud(): void {
     habit.checklists.forEach((item) => addChecklistItem(item.text))
 
     overlay!.classList.remove("hidden")
+    trap.activate()
     nameInput!.focus()
   }
 
   function closeModal(): void {
+    if (save?.disabled) return
     overlay!.classList.add("hidden")
+    trap.deactivate()
+    if (returnPath) window.location.assign(safeIngressHref(returnPath))
   }
 
   pageLifecycle.on(document, "click", (event) => {
     const target = event.target as HTMLElement
     const openButton = target.closest<HTMLElement>("[data-open-habit-modal]")
-    if (!openButton) return
+    if (!openButton || !areaSelect.options.length) return
 
     event.preventDefault()
+    if (save.disabled) return
     openCreateModal()
   })
   if (shell?.dataset.openNew) {
@@ -342,6 +362,7 @@ function initHabitsCrud(): void {
 
   pageLifecycle.on(form, "submit", async (event) => {
     event.preventDefault()
+    if (save.disabled) return
 
     const name = nameInput!.value.trim()
     if (!name) {
@@ -357,6 +378,7 @@ function initHabitsCrud(): void {
       .map((text) => ({ text, done: false }))
 
     const editId = editIdInput!.value
+    save.disabled = true
 
     try {
       if (editId) {
@@ -364,7 +386,7 @@ function initHabitsCrud(): void {
           title: name,
           description: descInput!.value.trim(),
           priority: Number(prioritySelect!.value),
-          area_id: areaSelect.value,
+          ...(areaSelect.value !== initialArea ? { area_id: areaSelect.value } : {}),
           checklists,
         }
 
@@ -411,11 +433,14 @@ function initHabitsCrud(): void {
         showToast("Habit created")
       }
 
+      save.disabled = false
       closeModal()
-      await refreshHabits()
+      if (!returnPath) await refreshHabits()
     } catch (error) {
       log.error("Failed to save habit", error)
       showToast((error as Error).message || "Failed to save habit", "error")
+    } finally {
+      save.disabled = false
     }
   })
 

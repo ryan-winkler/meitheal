@@ -1715,9 +1715,7 @@ const paths = {
   // ── Habits ──
   "/api/habits": {
     get: { operationId: "listHabits", tags: ["Habits"], summary: "List routine templates and streaks", parameters: [{ name: "area_id", in: "query", schema: { type: "string" }, description: "List Routines in an existing Area." }], responses: { 200: { description: "Routines list" } } },
-    post: { operationId: "createHabit", tags: ["Habits"], summary: "Create a Routine", description: "Pass an existing area_id to place new work from this Routine in that Area.", responses: { 201: { description: "Created" } } },
-    put: { operationId: "updateHabit", tags: ["Habits"], summary: "Update a habit or record completion", description: "Send { complete: true } to record today's completion. Send other fields to update the template.", responses: { 200: { description: "Updated" } } },
-    delete: { operationId: "deleteHabit", tags: ["Habits"], summary: "Delete a habit", responses: { 200: { description: "Deleted" } } },
+    post: { operationId: "createHabit", tags: ["Habits"], summary: "Manage a Routine", description: "Create with a name and optional existing area_id. Send templateId for complete, update, or delete.", requestBody: { content: { "application/json": { schema: { type: "object", properties: { action: { type: "string", enum: ["create", "complete", "update", "delete"], default: "create" }, templateId: { type: "string" }, name: { type: "string" }, area_id: { type: "string", description: "Area for work from a newly created Routine." }, templateJson: { type: "object", description: "Template fields to update." } } } } } }, responses: { 200: { description: "Routine action succeeded" }, 201: { description: "Created" } } },
   },
 
   // ── Settings ──

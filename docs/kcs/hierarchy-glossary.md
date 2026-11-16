@@ -125,6 +125,6 @@ Choose **Edit Project** in the Project’s sidebar menu to open its Settings. Fr
 
 Open an Area’s **Goals** tab and select **New Goal** to create a Goal linked to that Area. The list includes its direct Goals and the Goals of its Projects, once each. A Project’s breadcrumb links to its selected Goal. **All Goals** opens the full list in Progress & Growth. API callers can use `GET /api/goals?area_id=…` or `GET /api/goals?project_id=…`. Combined filters match both associations.
 
-Open an Area’s **Routines** tab and choose **New Routine** to open the editor with that Area selected. Work created by the Routine keeps that Area. Progress & Growth also offers **New Routine** and **View Routines**. A Routine with a deleted Area needs a new Area before it can create more work.
+Open an Area’s **Routines** tab and choose **New Routine** to open the editor with that Area selected. Saving or cancelling returns to the Area. Work created by the Routine keeps that Area. Progress & Growth also offers **New Routine** and **View Routines**. A Routine with a deleted Area needs a new Area before it can create more work.
 
 Area membership in this hierarchy and sidebar preferences organize work. Use board sharing rules when available to control who can view or change work.

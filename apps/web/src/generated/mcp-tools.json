@@ -1599,26 +1599,35 @@
     },
     {
       "name": "createHabit",
-      "description": "Pass an existing area_id to place new work from this Routine in that Area.",
+      "description": "Create with a name and optional existing area_id. Send templateId for complete, update, or delete.",
       "inputSchema": {
         "type": "object",
-        "properties": {}
-      }
-    },
-    {
-      "name": "updateHabit",
-      "description": "Send { complete: true } to record today's completion. Send other fields to update the template.",
-      "inputSchema": {
-        "type": "object",
-        "properties": {}
-      }
-    },
-    {
-      "name": "deleteHabit",
-      "description": "Delete a habit",
-      "inputSchema": {
-        "type": "object",
-        "properties": {}
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "create",
+              "complete",
+              "update",
+              "delete"
+            ],
+            "default": "create"
+          },
+          "templateId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "area_id": {
+            "type": "string",
+            "description": "Area for work from a newly created Routine."
+          },
+          "templateJson": {
+            "type": "object",
+            "description": "Template fields to update."
+          }
+        }
       }
     },
     {
@@ -2910,20 +2919,6 @@
       "method": "POST",
       "path": "/api/habits",
       "hasBody": true,
-      "pathParams": [],
-      "queryParams": []
-    },
-    "updateHabit": {
-      "method": "PUT",
-      "path": "/api/habits",
-      "hasBody": true,
-      "pathParams": [],
-      "queryParams": []
-    },
-    "deleteHabit": {
-      "method": "DELETE",
-      "path": "/api/habits",
-      "hasBody": false,
       "pathParams": [],
       "queryParams": []
     },

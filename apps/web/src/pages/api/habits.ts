@@ -84,7 +84,7 @@ export const POST: APIRoute = async ({ request }) => {
             .map(item => ({ text: String(item.text).trim(), done: false }))
         }
 
-        await repo.create({
+        const inserted = await repo.create({
           id,
           name,
           templateJson: JSON.stringify(templateJson),
@@ -92,7 +92,9 @@ export const POST: APIRoute = async ({ request }) => {
           position,
           isRoutine: true,
           cadence,
+          areaId: typeof body.area_id === "string" ? body.area_id : undefined,
         })
+        if (!inserted) return apiError("Choose an existing Area", 400)
 
         return apiJson({ id, name, icon, cadence, position }, 201)
       }
@@ -133,10 +135,11 @@ export const POST: APIRoute = async ({ request }) => {
         if (body.templateJson && typeof body.templateJson === "object" && !Array.isArray(body.templateJson)) {
           const patch = body.templateJson as Record<string, unknown>
           if (!await validArea(patch.area_id)) return apiError("Choose an existing Area", 400)
+          if (typeof patch.area_id === "string") updates.areaId = patch.area_id
           updates.templatePatch = JSON.stringify(patch)
         }
 
-        await repo.update(templateId, updates)
+        if (!await repo.update(templateId, updates)) return apiError("Routine or Area no longer available", 409)
         return apiJson({ ok: true })
       }
 

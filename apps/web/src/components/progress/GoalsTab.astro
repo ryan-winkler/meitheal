@@ -15,10 +15,12 @@ import { HierarchyRepository } from "@domains/tasks/persistence/hierarchy-reposi
 interface Props { areaId?: string }
 
 const embeddedArea = Astro.props.areaId
-const areaId = embeddedArea ?? (Astro.url.searchParams.get("area_id") || undefined)
-const projectId = embeddedArea ? undefined : Astro.url.searchParams.get("project_id") || undefined
+const areaId = embeddedArea ?? Astro.url.searchParams.get("area_id") ?? undefined
+const projectId = embeddedArea ? undefined : Astro.url.searchParams.get("project_id") ?? undefined
 let scopedAreaName: string | undefined
 let scopedProjectName: string | undefined
+let unavailable = false
+let scopeMissing = false
 
 let goals: Array<{
   id: string
@@ -37,10 +39,6 @@ try {
   await ensureSchema()
   const db = getPersistenceClient()
   const repo = new HierarchyRepository(db)
-  const rawGoals = await repo.findAllGoals({
-    ...(areaId ? { area_id: areaId } : {}),
-    ...(projectId ? { project_id: projectId } : {}),
-  })
   const areas = await repo.findAllAreas()
   const selectedProject = projectId ? await repo.findProjectById(projectId) : null
   const projects = projectId
@@ -50,6 +48,11 @@ try {
   const areaMap = new Map(areas.map((a) => [a.id, a]))
   scopedAreaName = areaId ? areaMap.get(areaId)?.name : undefined
   scopedProjectName = selectedProject?.title
+  scopeMissing = (areaId !== undefined && !scopedAreaName) || (projectId !== undefined && !selectedProject)
+  const rawGoals = scopeMissing ? [] : await repo.findAllGoals({
+    ...(areaId ? { area_id: areaId } : {}),
+    ...(projectId ? { project_id: projectId } : {}),
+  })
 
   for (const g of rawGoals) {
     const area = g.area_id ? areaMap.get(g.area_id as string) : null
@@ -71,11 +74,11 @@ try {
     })
   }
 } catch {
-  // Goals will be empty on error
+  unavailable = true
 }
 
 const scopeName = scopedProjectName ?? scopedAreaName
-const canCreate = !projectId && (!areaId || scopedAreaName)
+const canCreate = !unavailable && !scopeMissing && projectId === undefined
 const statusLabels: Record<string, string> = {
   active: "Active",
   completed: "Completed",
@@ -86,8 +89,8 @@ const statusLabels: Record<string, string> = {
 <div class="goals-tab" id="goals-tab-root" data-area-id={scopedAreaName ? areaId : undefined}>
   <header class="goals-tab__header">
     <div class="goals-tab__header-left">
-      <span class="goals-tab__count">{goals.length} goal{goals.length !== 1 ? "s" : ""}{scopeName && ` · ${scopeName}`}</span>
-      {(areaId || projectId) && <a href="/progress#goals">All Goals</a>}
+      {!unavailable && !scopeMissing && <span class="goals-tab__count">{goals.length} goal{goals.length !== 1 ? "s" : ""}{scopeName && ` · ${scopeName}`}</span>}
+      {(areaId !== undefined || projectId !== undefined) && <a href="/progress#goals">All Goals</a>}
     </div>
     {canCreate && <button type="button" class="btn btn-primary" id="goals-tab-new-btn">+ New Goal</button>}
   </header>
@@ -101,14 +104,13 @@ const statusLabels: Record<string, string> = {
     </form>
   )}
 
-  {goals.length === 0 ? (
+  {unavailable || scopeMissing ? (
+    <p role="alert">{scopeMissing ? "This Area or Project could not be found." : "Could not load Goals. Reload to try again."}</p>
+  ) : goals.length === 0 ? (
     <div class="goals-tab__empty">
       <div class="goals-tab__empty-icon">🎯</div>
       <h2 class="goals-tab__empty-title">No goals yet</h2>
       {canCreate && <p class="goals-tab__empty-desc">Create a goal to define an outcome for your work.</p>}
-      {canCreate && <button type="button" class="btn btn-primary" id="goals-tab-empty-btn">
-        Create Goal
-      </button>}
       {scopedProjectName && projectId && (
         <a href={`/projects/${encodeURIComponent(projectId)}#settings`}>Choose a Goal in Project settings</a>
       )}
@@ -255,6 +257,8 @@ const statusLabels: Record<string, string> = {
     margin-bottom: 0.375rem;
   }
   .goals-tab__card-title {
+    min-width: 0;
+    overflow-wrap: anywhere;
     font-size: 1rem;
     font-weight: 600;
     color: var(--text-primary);
@@ -307,12 +311,6 @@ const statusLabels: Record<string, string> = {
   .goals-tab__actions-row {
     display: flex;
     gap: 0.25rem;
-    opacity: 0;
-    transition: opacity 150ms;
-  }
-  .goals-tab__card:hover .goals-tab__actions-row,
-  .goals-tab__card:focus-within .goals-tab__actions-row {
-    opacity: 1;
   }
   .goals-tab__action-btn {
     display: flex;
@@ -352,29 +350,24 @@ const statusLabels: Record<string, string> = {
     signal.addEventListener("abort", () => { delete root.dataset.bound }, { once: true })
 
     const newButton = root.querySelector<HTMLButtonElement>("#goals-tab-new-btn")
-    const emptyButton = root.querySelector<HTMLButtonElement>("#goals-tab-empty-btn")
     const form = root.querySelector<HTMLFormElement>("#goals-tab-create-inline")
     const title = form?.querySelector<HTMLInputElement>("#goals-tab-create-input")
     const error = form?.querySelector<HTMLElement>("#goals-tab-create-error")
     const save = form?.querySelector<HTMLButtonElement>("button[type=submit]")
-    let trigger: HTMLButtonElement | null = null
 
     function dismiss() {
       if (!form) return
       form.hidden = true
       form.reset()
       if (error) error.textContent = ""
-      trigger?.focus()
+      newButton?.focus()
     }
 
-    for (const button of [newButton, emptyButton]) {
-      button?.addEventListener("click", () => {
-        if (!form) return
-        trigger = button
-        form.hidden = false
-        title?.focus()
-      }, { signal })
-    }
+    newButton?.addEventListener("click", () => {
+      if (!form) return
+      form.hidden = false
+      title?.focus()
+    }, { signal })
 
     form?.querySelector("#goals-tab-create-cancel")?.addEventListener("click", dismiss, { signal })
     form?.addEventListener("keydown", event => {
