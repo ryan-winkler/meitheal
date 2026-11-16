@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test"
 
 test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the disposable Meitheal browser fixture")
+test.use({ serviceWorkers: "block" })
 
 test("Knight Rider keeps the completed Today state and saved theme truthful", async ({ page, request }, testInfo) => {
   const saved = await request.put("/api/settings", { data: { key: "theme", value: "knight-rider" } })
@@ -104,6 +105,7 @@ test("Today keeps focus on a completion during polling and recovers when it disa
 
   completedTasks = [second]
   await page.clock.fastForward(30_100)
+  await expect(summary).toHaveText("Completed today (1)")
   await expect(focused).toHaveCount(0)
   await expect(summary).toBeFocused()
 
