@@ -298,7 +298,7 @@ if (process.env.MEITHEAL_TEST_CORE_USER_LOOKUP === "1") {
           name: "Fixture admin",
           is_active: role !== "inactive",
           system_generated: role === "system",
-          is_owner: role === "owner",
+          is_owner: role === "owner" || role === "allowed",
           group_ids: role === "demoted" || role === "owner" ? ["system-users"] : ["system-admin"],
         }
         const result = role === "missing" ? []

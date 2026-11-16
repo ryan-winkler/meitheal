@@ -1,3 +1,4 @@
+import { nextHouseholdTicketNumberSql } from "../../apps/web/drizzle/migrations/task-board-tickets.mjs"
 import { execFileSync } from "node:child_process"
 import dns from "node:dns"
 import { mkdtempSync, rmSync } from "node:fs"
@@ -347,7 +348,7 @@ test("HA connection, services, users, todo-bridge, and ha-startup work against l
     await client.execute({
       sql: `INSERT INTO tasks (id, title, description, status, priority, labels, task_type, area_id,
             ticket_number, framework_payload, calendar_sync_state, idempotency_key, request_id, created_at, updated_at)
-            VALUES (?, ?, ?, 'pending', 2, '[]', 'task', 'default', 99, '{}', 'pending', 'idem-todo-out', 'req-todo-out', ?, ?)`,
+            VALUES (?, ?, ?, 'pending', 2, '[]', 'task', 'default', ${nextHouseholdTicketNumberSql}, '{}', 'pending', 'idem-todo-out', 'req-todo-out', ?, ?)`,
       args: ["todo-outbound-1", "Test loft hatch", "Check insulation", now, now],
     })
     expect(await todoBridge.pushTaskToTodoList(

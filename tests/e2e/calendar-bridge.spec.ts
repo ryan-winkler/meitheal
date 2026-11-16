@@ -1,3 +1,4 @@
+import { nextHouseholdTicketNumberSql } from "../../apps/web/drizzle/migrations/task-board-tickets.mjs"
 /**
  * Calendar Bridge — Sync Logic Tests
  *
@@ -333,10 +334,10 @@ test("HA sync groups recurring occurrences (with and without UID), picks today o
   process.env.HA_TOKEN = "calendar-recurrence-fixture"
   process.env.MEITHEAL_DB_URL = `file:${join(directory, "tasks.db")}`
   resetPersistenceForTests()
+  await ensureSchema()
   const db = getPersistenceClient()
 
   try {
-    await ensureSchema()
     const settingsRepo = new SettingsRepository(db)
     await settingsRepo.ensureSettingsTable()
     await settingsRepo.upsert("timezone", "Europe/Dublin")
@@ -445,7 +446,7 @@ test("HA sync groups recurring occurrences (with and without UID), picks today o
     // A hand-made task with the same title as an event is never adopted.
     await db.execute({
       sql: `INSERT INTO tasks (id, title, description, status, priority, labels, framework_payload, area_id, custom_fields, task_type, idempotency_key, request_id, ticket_number, created_at, updated_at)
-            VALUES ('hand-made', 'Dentist', '', 'pending', 3, '[]', '{}', 'default', '{}', 'task', 'hand-made', 'hand-made', 900, 1, 1)`,
+            VALUES ('hand-made', 'Dentist', '', 'pending', 3, '[]', '{}', 'default', '{}', 'task', 'hand-made', 'hand-made', ${nextHouseholdTicketNumberSql}, 1, 1)`,
       args: [],
     })
     ha.setCalendarEvents([{ summary: "Dentist", start: `${d7}T09:00:00Z`, end: `${d7}T10:00:00Z` }])
@@ -582,10 +583,10 @@ test("HA sync keys ID-less series on HA wall clock, leaves unchanged tasks alone
   process.env.HA_TOKEN = "calendar-series-key-fixture"
   process.env.MEITHEAL_DB_URL = `file:${join(directory, "tasks.db")}`
   resetPersistenceForTests()
+  await ensureSchema()
   const db = getPersistenceClient()
 
   try {
-    await ensureSchema()
     const settingsRepo = new SettingsRepository(db)
     await settingsRepo.ensureSettingsTable()
     await settingsRepo.upsert("timezone", "Europe/Dublin")
@@ -619,7 +620,7 @@ test("HA sync keys ID-less series on HA wall clock, leaves unchanged tasks alone
     // A repeating Event task created in Meitheal that sync links by title keeps its own repeats.
     await db.execute({
       sql: `INSERT INTO tasks (id, title, description, status, priority, labels, framework_payload, area_id, custom_fields, task_type, task_kind, due_date, recurrence_rule, idempotency_key, request_id, ticket_number, created_at, updated_at)
-            VALUES ('bin-day', 'Bin day', '', 'pending', 3, '[]', '{}', 'default', '{}', 'task', 'calendar_event', ?, 'FREQ=WEEKLY', 'bin-day', 'bin-day', 901, 1, 1)`,
+            VALUES ('bin-day', 'Bin day', '', 'pending', 3, '[]', '{}', 'default', '{}', 'task', 'calendar_event', ?, 'FREQ=WEEKLY', 'bin-day', 'bin-day', ${nextHouseholdTicketNumberSql}, 1, 1)`,
       args: [d7],
     })
     ha.setCalendarEvents([
@@ -705,10 +706,10 @@ test("HA sync adopts an ID-less series saved under the earlier household-time ke
   process.env.HA_TOKEN = "calendar-prior-key-fixture"
   process.env.MEITHEAL_DB_URL = `file:${join(directory, "tasks.db")}`
   resetPersistenceForTests()
+  await ensureSchema()
   const db = getPersistenceClient()
 
   try {
-    await ensureSchema()
     const settingsRepo = new SettingsRepository(db)
     await settingsRepo.ensureSettingsTable()
     await settingsRepo.upsert("timezone", "Europe/Dublin")
@@ -769,10 +770,10 @@ test("HA sync keeps two ID-less series that share an earlier household-time key 
   process.env.HA_TOKEN = "calendar-alias-collision-fixture"
   process.env.MEITHEAL_DB_URL = `file:${join(directory, "tasks.db")}`
   resetPersistenceForTests()
+  await ensureSchema()
   const db = getPersistenceClient()
 
   try {
-    await ensureSchema()
     const settingsRepo = new SettingsRepository(db)
     await settingsRepo.ensureSettingsTable()
     await settingsRepo.upsert("timezone", "Europe/Dublin")
@@ -832,13 +833,14 @@ test("sync updates skip fields edited after the planner read its snapshot", asyn
   const directory = await mkdtemp(join(tmpdir(), "meitheal-sync-snapshot-"))
   process.env.MEITHEAL_DB_URL = `file:${join(directory, "tasks.db")}`
   resetPersistenceForTests()
+  await ensureSchema()
   const db = getPersistenceClient()
+
   try {
-    await ensureSchema()
     const repo = new TaskRepository(db)
     await db.execute({
       sql: `INSERT INTO tasks (id, title, description, status, priority, labels, framework_payload, area_id, custom_fields, task_type, task_kind, due_date, idempotency_key, request_id, ticket_number, created_at, updated_at)
-            VALUES ('snap-1', 'Edited by hand', '', 'pending', 3, '[]', '{}', 'default', '{}', 'task', 'calendar_event', '2026-12-01', 'cal-sync-snap', 'snap', 950, 1, 3000)`,
+            VALUES ('snap-1', 'Edited by hand', '', 'pending', 3, '[]', '{}', 'default', '{}', 'task', 'calendar_event', '2026-12-01', 'cal-sync-snap', 'snap', ${nextHouseholdTicketNumberSql}, 1, 3000)`,
       args: [],
     })
     // The user changed the title at 3000 after sync planned its update at 2000.
@@ -897,10 +899,10 @@ test("HA sync upgrades tasks saved by the per-occurrence release: due dates foll
   process.env.HA_TOKEN = "calendar-legacy-upgrade-fixture"
   process.env.MEITHEAL_DB_URL = `file:${join(directory, "tasks.db")}`
   resetPersistenceForTests()
+  await ensureSchema()
   const db = getPersistenceClient()
 
   try {
-    await ensureSchema()
     const settingsRepo = new SettingsRepository(db)
     await settingsRepo.ensureSettingsTable()
     await settingsRepo.upsert("timezone", "Europe/Dublin")
@@ -914,12 +916,11 @@ test("HA sync upgrades tasks saved by the per-occurrence release: due dates foll
     const d14 = shiftCalendarDay(todayStr, 14)
     const d28 = shiftCalendarDay(todayStr, 28)
     const legacyKey = (summary: string, start: string) => `ha-cal-${entity}-${summary}-${start}`
-    let ticket = 700
     const seedTask = async (id: string, title: string, dueDate: string, firstStart: string) => {
       await db.execute({
         sql: `INSERT INTO tasks (id, title, description, status, priority, labels, framework_payload, area_id, custom_fields, task_type, due_date, idempotency_key, request_id, ticket_number, created_at, updated_at)
-              VALUES (?, ?, '', 'pending', 3, '["calendar-sync"]', '{}', 'default', '{}', 'task', ?, ?, ?, ?, 1, 1)`,
-        args: [id, title, dueDate, `cal-sync-${legacyKey(title, firstStart)}`, id, ticket++],
+              VALUES (?, ?, '', 'pending', 3, '["calendar-sync"]', '{}', 'default', '{}', 'task', ?, ?, ?, ${nextHouseholdTicketNumberSql}, 1, 1)`,
+        args: [id, title, dueDate, `cal-sync-${legacyKey(title, firstStart)}`, id],
       })
     }
     const seedLink = async (taskId: string, summary: string, start: string, end: string) => {
@@ -1020,10 +1021,10 @@ test("HA sync keeps old completions closed, keeps user-added repeats, leaves del
   process.env.HA_TOKEN = "calendar-completed-fixture"
   process.env.MEITHEAL_DB_URL = `file:${join(directory, "tasks.db")}`
   resetPersistenceForTests()
+  await ensureSchema()
   const db = getPersistenceClient()
 
   try {
-    await ensureSchema()
     const settingsRepo = new SettingsRepository(db)
     await settingsRepo.ensureSettingsTable()
     await settingsRepo.upsert("timezone", "Europe/Dublin")
@@ -1040,7 +1041,7 @@ test("HA sync keeps old completions closed, keeps user-added repeats, leaves del
     const boilerStart = at(d7, "09:00")
     await db.execute({
       sql: `INSERT INTO tasks (id, title, description, status, priority, labels, framework_payload, area_id, custom_fields, task_type, due_date, recurrence_rule, idempotency_key, request_id, ticket_number, created_at, updated_at)
-            VALUES ('boiler', 'Boiler service', '', 'pending', 3, '["calendar-sync"]', '{}', 'default', '{}', 'task', ?, 'FREQ=YEARLY', ?, 'boiler', 9501, 1, 1)`,
+            VALUES ('boiler', 'Boiler service', '', 'pending', 3, '["calendar-sync"]', '{}', 'default', '{}', 'task', ?, 'FREQ=YEARLY', ?, 'boiler', ${nextHouseholdTicketNumberSql}, 1, 1)`,
       args: [boilerStart, `cal-sync-ha-cal-${entity}-Boiler service-${boilerStart}`],
     })
     await db.execute({
@@ -1052,7 +1053,7 @@ test("HA sync keeps old completions closed, keeps user-added repeats, leaves del
     const gymStart = at(todayStr, "06:00")
     await db.execute({
       sql: `INSERT INTO tasks (id, title, description, status, priority, labels, framework_payload, area_id, custom_fields, task_type, due_date, idempotency_key, request_id, ticket_number, created_at, updated_at)
-            VALUES ('gym', 'Gym', '', 'complete', 3, '["calendar-sync"]', '{}', 'default', '{}', 'task', ?, ?, 'gym', 9701, 1, 1)`,
+            VALUES ('gym', 'Gym', '', 'complete', 3, '["calendar-sync"]', '{}', 'default', '{}', 'task', ?, ?, 'gym', ${nextHouseholdTicketNumberSql}, 1, 1)`,
       args: [gymStart, `cal-sync-ha-cal-${entity}-Gym-${gymStart}`],
     })
     await db.execute({
@@ -1149,10 +1150,10 @@ test("a completed series keeps its last-applied baseline, so a provider rename s
   process.env.HA_TOKEN = "calendar-frozen-baseline-fixture"
   process.env.MEITHEAL_DB_URL = `file:${join(directory, "tasks.db")}`
   resetPersistenceForTests()
+  await ensureSchema()
   const db = getPersistenceClient()
 
   try {
-    await ensureSchema()
     const settingsRepo = new SettingsRepository(db)
     await settingsRepo.ensureSettingsTable()
     await settingsRepo.upsert("timezone", "Europe/Dublin")
@@ -1217,10 +1218,10 @@ test("HA sync turns separate same-title tasks into one series without duplicates
   process.env.HA_TOKEN = "calendar-two-to-three-fixture"
   process.env.MEITHEAL_DB_URL = `file:${join(directory, "tasks.db")}`
   resetPersistenceForTests()
+  await ensureSchema()
   const db = getPersistenceClient()
 
   try {
-    await ensureSchema()
     const settingsRepo = new SettingsRepository(db)
     await settingsRepo.ensureSettingsTable()
     await settingsRepo.upsert("timezone", "Europe/Dublin")
@@ -1284,7 +1285,7 @@ test("HA sync turns separate same-title tasks into one series without duplicates
     const legacyKey = (start: string) => `ha-cal-${entity}-Rent-${start}`
     await db.execute({
       sql: `INSERT INTO tasks (id, title, description, status, priority, labels, framework_payload, area_id, custom_fields, task_type, due_date, idempotency_key, request_id, ticket_number, created_at, updated_at)
-            VALUES ('legacy-rent', 'Rent', '', 'complete', 3, '["calendar-sync"]', '{}', 'default', '{}', 'task', ?, ?, 'legacy-rent', 9601, 1, 1)`,
+            VALUES ('legacy-rent', 'Rent', '', 'complete', 3, '["calendar-sync"]', '{}', 'default', '{}', 'task', ?, ?, 'legacy-rent', ${nextHouseholdTicketNumberSql}, 1, 1)`,
       args: [rentLater, `cal-sync-${legacyKey(rentEarlier)}`],
     })
     for (const start of [rentEarlier, rentLater]) {
@@ -1377,10 +1378,10 @@ test("CalDAV sync parses RRULE, EXDATE, colons in DESCRIPTION, exclusive all-day
   process.env.HA_TOKEN = "caldav-recur-key"
   process.env.MEITHEAL_DB_URL = `file:${join(directory, "tasks.db")}`
   resetPersistenceForTests()
+  await ensureSchema()
   const db = getPersistenceClient()
 
   try {
-    await ensureSchema()
     const settingsRepo = new SettingsRepository(db)
     await settingsRepo.ensureSettingsTable()
     await settingsRepo.upsert("timezone", "Europe/Dublin")
@@ -1519,10 +1520,10 @@ test("CalDAV isolates same UID across distinct calendars without overwriting eit
   process.env.HA_TOKEN = "caldav-multical-key"
   process.env.MEITHEAL_DB_URL = `file:${join(directory, "tasks.db")}`
   resetPersistenceForTests()
+  await ensureSchema()
   const db = getPersistenceClient()
 
   try {
-    await ensureSchema()
     const settingsRepo = new SettingsRepository(db)
     await settingsRepo.ensureSettingsTable()
     await settingsRepo.upsert("timezone", "Europe/Dublin")
@@ -1538,7 +1539,7 @@ test("CalDAV isolates same UID across distinct calendars without overwriting eit
     // Before collection paths were stored, the display name alone was ambiguous.
     await db.execute({
       sql: `INSERT INTO tasks (id, title, status, area_id, idempotency_key, request_id, ticket_number, created_at, updated_at)
-            VALUES ('legacy-caldav', 'Legacy dentist', 'pending', 'default', 'caldav-sync-shared-invite-uid', 'legacy-caldav', 9010, 1, 1)`,
+            VALUES ('legacy-caldav', 'Legacy dentist', 'pending', 'default', 'caldav-sync-shared-invite-uid', 'legacy-caldav', ${nextHouseholdTicketNumberSql}, 1, 1)`,
       args: [],
     })
     const legacyPayload = JSON.stringify({ calendar: "Shared", summary: "Legacy dentist", dtstart: todayStr })

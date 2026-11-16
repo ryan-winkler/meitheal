@@ -2,7 +2,6 @@
 export { AreaRepository } from "./persistence/area-repository"
 export {
   commitSyncMutationChunks,
-  ensureDatabaseSchemaSupported,
   ensureSchema,
   findTasksByExternalSyncIds,
   getLocalDataDirectory,

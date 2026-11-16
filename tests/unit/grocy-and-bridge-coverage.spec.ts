@@ -5,6 +5,7 @@ import type { AddressInfo } from "node:net"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { expect, test } from "@playwright/test"
+import { nextHouseholdTicketNumberSql } from "../../apps/web/drizzle/migrations/task-board-tickets.mjs"
 import { GrocyAdapter } from "../../packages/integration-core/src/grocy-adapter"
 
 const prevDbUrl = process.env.MEITHEAL_DB_URL
@@ -319,7 +320,7 @@ test("GrocyAdapter, GrocyBridge sync/push, webhook dispatcher, outbound sync, an
     await client.execute({
       sql: `INSERT INTO tasks (id, title, status, priority, due_date, labels, task_type, area_id,
             ticket_number, framework_payload, calendar_sync_state, idempotency_key, request_id, created_at, updated_at)
-            VALUES (?, ?, 'pending', 1, ?, '[]', 'task', 'default', 77, '{}', 'pending', 'idem-due-77', 'req-due-77', ?, ?)`,
+            VALUES (?, ?, 'pending', 1, ?, '[]', 'task', 'default', ${nextHouseholdTicketNumberSql}, '{}', 'pending', 'idem-due-77', 'req-due-77', ?, ?)`,
       args: ["due-soon-77", "Check boiler pressure", new Date(now + 20 * 60_000).toISOString(), now, now],
     })
     reminders.invalidateSettingsCache()

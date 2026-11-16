@@ -27,6 +27,7 @@ let schemaEnsured = false
 
 /** Recommended max active Pillars — cognitive load guardrail */
 export const MAX_RECOMMENDED_PILLARS = 7
+export const HOUSEHOLD_PILLAR_OWNER = "default"
 /** Suggested starting count for onboarding */
 export const SUGGESTED_PILLAR_COUNT = { min: 3, max: 5 }
 
@@ -34,23 +35,6 @@ export async function ensurePillarSchema(): Promise<void> {
   if (schemaEnsured) return
   await ensureSchema()
   const client = getPersistenceClient()
-
-  await client.execute(`
-    CREATE TABLE IF NOT EXISTS pillars (
-      id TEXT PRIMARY KEY,
-      user_id TEXT NOT NULL DEFAULT 'default',
-      name TEXT NOT NULL,
-      manifesto TEXT,
-      icon TEXT NOT NULL DEFAULT '🏛️',
-      color_hex TEXT NOT NULL DEFAULT '#6366f1',
-      weight INTEGER NOT NULL DEFAULT 1,
-      position INTEGER NOT NULL DEFAULT 0,
-      is_active INTEGER NOT NULL DEFAULT 1,
-      slug TEXT,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
-    )
-  `)
 
   await client.execute("CREATE INDEX IF NOT EXISTS pillars_position_idx ON pillars(position)")
   await client.execute("CREATE INDEX IF NOT EXISTS pillars_active_idx ON pillars(is_active)")
@@ -171,68 +155,59 @@ export async function createPillar(data: {
   icon?: string
   colorHex?: string
   weight?: number
-}): Promise<Pillar> {
+}, owner = HOUSEHOLD_PILLAR_OWNER): Promise<Pillar> {
   await ensurePillarSchema()
   const client = getPersistenceClient()
   const id = generateId()
-  const slug = await generateUniqueSlug(client, data.name)
+  const slug = owner === HOUSEHOLD_PILLAR_OWNER ? await generateUniqueSlug(client, data.name) : "~" + id
   const now = Date.now()
 
   const weight = Math.max(1, Math.min(10, data.weight ?? 1))
 
-  const posResult = await client.execute(
-    "SELECT COALESCE(MAX(position), -1) + 1 as next_pos FROM pillars WHERE is_active = 1"
-  )
-  const position = Number((posResult.rows[0] as Record<string, unknown>).next_pos)
-
-  await client.execute({
+  const inserted = await client.execute({
     sql: `INSERT INTO pillars (id, slug, user_id, name, manifesto, icon, color_hex, weight, position, is_active, created_at, updated_at)
-          VALUES (?, ?, 'default', ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
-    args: [
-      id,
-      slug,
-      data.name,
-      data.manifesto ?? null,
-      data.icon ?? "🏛️",
-      data.colorHex ?? "#6366f1",
-      weight,
-      position,
-      now, now,
-    ],
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?,
+            (SELECT COALESCE(MAX(position), -1) + 1 FROM pillars WHERE is_active = 1 AND user_id = ?),
+            1, ?, ?)
+          RETURNING position`,
+    args: [id, slug, owner, data.name, data.manifesto ?? null, data.icon ?? "🏛️",
+      data.colorHex ?? "#6366f1", weight, owner, now, now],
   })
 
   return {
     id,
     slug,
-    userId: "default",
+    userId: owner,
     name: data.name,
     manifesto: data.manifesto ?? null,
     icon: data.icon ?? "🏛️",
     colorHex: data.colorHex ?? "#6366f1",
     weight,
-    position,
+    position: Number(inserted.rows[0]?.position),
     isActive: true,
     createdAt: now,
     updatedAt: now,
   }
 }
 
-export async function getPillars(opts?: { includeInactive?: boolean }): Promise<Pillar[]> {
+export async function getPillars(opts?: { includeInactive?: boolean, personalOwner?: string | undefined }): Promise<Pillar[]> {
   await ensurePillarSchema()
   const client = getPersistenceClient()
-  const where = opts?.includeInactive ? "" : "WHERE is_active = 1"
-
-  const result = await client.execute(`SELECT * FROM pillars ${where} ORDER BY position ASC`)
+  const active = opts?.includeInactive ? "" : " AND is_active = 1"
+  const result = await client.execute({
+    sql: `SELECT * FROM pillars WHERE user_id IN (?, ?)${active} ORDER BY position ASC, id ASC`,
+    args: [HOUSEHOLD_PILLAR_OWNER, opts?.personalOwner ?? HOUSEHOLD_PILLAR_OWNER],
+  })
   return result.rows.map(row => toPillar(row as Record<string, unknown>))
 }
 
-export async function getPillarById(id: string): Promise<Pillar | null> {
+export async function getPillarById(id: string, personalOwner?: string): Promise<Pillar | null> {
   await ensurePillarSchema()
   const client = getPersistenceClient()
 
   const result = await client.execute({
-    sql: "SELECT * FROM pillars WHERE id = ?",
-    args: [id],
+    sql: "SELECT * FROM pillars WHERE id = ? AND user_id IN (?, ?)",
+    args: [id, HOUSEHOLD_PILLAR_OWNER, personalOwner ?? HOUSEHOLD_PILLAR_OWNER],
   })
 
   if (result.rows.length === 0) return null
@@ -249,7 +224,8 @@ export async function updatePillar(
     weight: number
     position: number
     isActive: boolean
-  }>
+  }>,
+  owner = HOUSEHOLD_PILLAR_OWNER
 ): Promise<boolean> {
   await ensurePillarSchema()
   const client = getPersistenceClient()
@@ -259,9 +235,10 @@ export async function updatePillar(
 
   if (data.name !== undefined) {
     sets.push("name = ?"); args.push(data.name)
-    // Regenerate slug when name changes
-    const newSlug = await generateUniqueSlug(client, data.name, id)
-    sets.push("slug = ?"); args.push(newSlug)
+    if (owner === HOUSEHOLD_PILLAR_OWNER) {
+      const newSlug = await generateUniqueSlug(client, data.name, id)
+      sets.push("slug = ?"); args.push(newSlug)
+    }
   }
   if (data.manifesto !== undefined) { sets.push("manifesto = ?"); args.push(data.manifesto) }
   if (data.icon !== undefined) { sets.push("icon = ?"); args.push(data.icon) }
@@ -274,10 +251,10 @@ export async function updatePillar(
 
   sets.push("updated_at = ?")
   args.push(Date.now())
-  args.push(id)
+  args.push(id, owner)
 
   const result = await client.execute({
-    sql: `UPDATE pillars SET ${sets.join(", ")} WHERE id = ?`,
+    sql: `UPDATE pillars SET ${sets.join(", ")} WHERE id = ? AND user_id = ?`,
     args,
   })
 
@@ -289,37 +266,40 @@ export async function getPillarBySlug(slug: string): Promise<Pillar | null> {
   const client = getPersistenceClient()
 
   const result = await client.execute({
-    sql: "SELECT * FROM pillars WHERE slug = ?",
-    args: [slug],
+    sql: "SELECT * FROM pillars WHERE slug = ? AND user_id = ?",
+    args: [slug, HOUSEHOLD_PILLAR_OWNER],
   })
 
   if (result.rows.length === 0) return null
   return toPillar(result.rows[0] as Record<string, unknown>)
 }
 
-export async function deletePillar(id: string, hard = false): Promise<boolean> {
+export async function deletePillar(id: string, hard = false, owner = HOUSEHOLD_PILLAR_OWNER): Promise<boolean> {
   await ensurePillarSchema()
   const client = getPersistenceClient()
 
   if (hard) {
     const result = await client.execute({
-      sql: "DELETE FROM pillars WHERE id = ?",
-      args: [id],
+      sql: "DELETE FROM pillars WHERE id = ? AND user_id = ?",
+      args: [id, owner],
     })
     return (result.rowsAffected ?? 0) > 0
   }
 
   const result = await client.execute({
-    sql: "UPDATE pillars SET is_active = 0, updated_at = ? WHERE id = ?",
-    args: [Date.now(), id],
+    sql: "UPDATE pillars SET is_active = 0, updated_at = ? WHERE id = ? AND user_id = ?",
+    args: [Date.now(), id, owner],
   })
   return (result.rowsAffected ?? 0) > 0
 }
 
-export async function countActivePillars(): Promise<number> {
+export async function countActivePillars(owner = HOUSEHOLD_PILLAR_OWNER): Promise<number> {
   await ensurePillarSchema()
   const client = getPersistenceClient()
-  const result = await client.execute("SELECT COUNT(*) as cnt FROM pillars WHERE is_active = 1")
+  const result = await client.execute({
+    sql: "SELECT COUNT(*) as cnt FROM pillars WHERE is_active = 1 AND user_id = ?",
+    args: [owner],
+  })
   return Number((result.rows[0] as Record<string, unknown>).cnt)
 }
 

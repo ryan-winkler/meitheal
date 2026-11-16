@@ -16,7 +16,7 @@ A Meitheal-only backup covers the selected app. Home Assistant Core settings, se
 
 Task and Settings downloads are portable exports. The Settings export includes eligible preferences, shortcuts, layouts, rules and framework overrides. Enter credentials separately when moving the exported settings to a fresh installation.
 
-The **Raw DB** action under **Settings → Backups & Reset → Data Portability** is available to verified Home Assistant administrators. It copies a consistent snapshot of the local SQLite database, including writes already committed in the WAL. It needs enough free space for one temporary copy on the database volume. Only one download can prepare or read that copy at a time. Retry after the first finishes or is cancelled. If the app loses power during a copy, a private `.meitheal-export-*` folder may remain beside the database. With Meitheal stopped, remove the incomplete temporary folder before retrying.
+The **Raw DB** action under **Settings → Backups & Reset → Data Portability** is available to Home Assistant's verified current owner. The download and Supervisor backups include all Personal Pillars and Principles. Keep copies with the system’s storage operator. A restore keeps Personal Pillars tied to their original Home Assistant user IDs. A user missing from the restored Home Assistant instance has no Personal Pillar access. It copies a consistent snapshot of the local SQLite database, including writes already committed in the WAL. It needs enough free space for one temporary copy on the database volume. Only one download can prepare or read that copy at a time. Retry after the first finishes or is cancelled. If the app loses power during a copy, a private `.meitheal-export-*` folder may remain beside the database. With Meitheal stopped, remove the incomplete temporary folder before retrying.
 
 Confirm the download in Settings. The browser submits a native form and saves the streamed attachment. If the app has restarted or Settings has been open for more than 15 minutes, refresh Settings before retrying. The form is tied to the signed-in administrator and direct links to the download endpoint return a method error.
 
@@ -28,7 +28,7 @@ The download needs an online connection to Home Assistant Core. Meitheal checks 
 
 For an existing nonempty local SQLite database, the migration runner saves a consistent snapshot before applying SQL changes. If you start the web server directly, its first schema initialization takes the snapshot instead. The packaged launchers coordinate so each successful startup makes one backup attempt.
 
-The snapshot includes committed WAL data. Meitheal publishes the completed file as `backups/meitheal-<timestamp>.db` beside the database and keeps the five newest named snapshots. If it cannot complete a snapshot, it logs the failure and continues startup. Fresh, in-memory and remote databases skip this local backup. Use a verified Supervisor backup for the complete App recovery point.
+The snapshot includes committed WAL data. Meitheal publishes the completed file as `backups/meitheal-<timestamp>-<unique-id>.db` beside the database and keeps the five newest named snapshots. If it cannot complete a snapshot, it logs the failure and continues startup. Fresh, in-memory and remote databases skip this local backup. Use a verified Supervisor backup for the complete App recovery point.
 
 ## Create a backup
 

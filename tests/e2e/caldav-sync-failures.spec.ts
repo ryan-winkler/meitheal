@@ -54,9 +54,10 @@ const test = base.extend<{ environment: { db: Database; dav: WebDAV } }>({
     process.env.HA_TOKEN = "caldav-fixture-encryption-key"
     process.env.MEITHEAL_DB_URL = `file:${join(directory, "tasks.db")}`
     resetPersistenceForTests()
-    const db = getPersistenceClient()
+    let db: Database | undefined
     try {
       await ensureSchema()
+      db = getPersistenceClient()
       const saved = await saveCredentials({ locals: { hassIsAdmin: true }, request: new Request("http://localhost/api/integrations/calendar/caldav-credentials", {
         method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "save", url: origin, username: "fixture-user", password: "fixture-password" }),
       }) } as unknown as Parameters<typeof saveCredentials>[0])
@@ -67,7 +68,7 @@ const test = base.extend<{ environment: { db: Database; dav: WebDAV } }>({
       globalThis.fetch = originalFetch
       server.closeAllConnections()
       await new Promise<void>(resolve => server.close(() => resolve()))
-      db.close()
+      db?.close()
       resetPersistenceForTests()
       for (const [key, value] of Object.entries(previous)) {
         if (value === undefined) delete process.env[key]

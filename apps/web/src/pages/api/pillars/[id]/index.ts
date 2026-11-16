@@ -1,8 +1,8 @@
 import type { APIRoute } from "astro"
+import { getVisiblePillar, readPillarBody } from "@lib/personal-pillar-access"
 import { apiJson, apiError } from "../../../../lib/api-response"
 import { logApiError } from "../../../../lib/api-logger"
 import {
-  getPillarById,
   updatePillar,
   deletePillar,
 } from "@domains/pillars/pillar-service"
@@ -17,12 +17,12 @@ import {
  * @domain pillars
  */
 
-export const GET: APIRoute = async ({ params }) => {
+export const GET: APIRoute = async ({ params, request, locals }) => {
   try {
     const id = params.id
     if (!id) return apiError("Pillar ID is required", 400)
 
-    const pillar = await getPillarById(id)
+    const pillar = await getVisiblePillar(id, locals, request.signal)
     if (!pillar) return apiError("Pillar not found", 404)
 
     return apiJson({ pillar })
@@ -32,12 +32,21 @@ export const GET: APIRoute = async ({ params }) => {
   }
 }
 
-export const PATCH: APIRoute = async ({ params, request }) => {
+export const PATCH: APIRoute = async ({ params, request, locals }) => {
   try {
     const id = params.id
     if (!id) return apiError("Pillar ID is required", 400)
 
-    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
+    const body = await readPillarBody(request)
+    if (body instanceof Response) return body
+
+    const pillar = await getVisiblePillar(id, locals, request.signal)
+    if (!pillar) return apiError("Pillar not found", 404)
+
+
+    if (body.audience !== undefined || body.userId !== undefined || body.user_id !== undefined) {
+      return apiError("The audience is set when the Pillar is created.", 400)
+    }
 
     if (body.weight !== undefined) {
       const weight = Number(body.weight)
@@ -61,7 +70,7 @@ export const PATCH: APIRoute = async ({ params, request }) => {
     if (typeof body.position === "number") updates.position = body.position
     if (typeof body.isActive === "boolean") updates.isActive = body.isActive
 
-    const updated = await updatePillar(id, updates)
+    const updated = await updatePillar(id, updates, pillar.userId)
 
     if (!updated) return apiError("Pillar not found or no changes", 404)
     return apiJson({ ok: true })
@@ -71,13 +80,16 @@ export const PATCH: APIRoute = async ({ params, request }) => {
   }
 }
 
-export const DELETE: APIRoute = async ({ params, url }) => {
+export const DELETE: APIRoute = async ({ params, url, request, locals }) => {
   try {
     const id = params.id
     if (!id) return apiError("Pillar ID is required", 400)
 
+    const pillar = await getVisiblePillar(id, locals, request.signal)
+    if (!pillar) return apiError("Pillar not found", 404)
+
     const hard = url.searchParams.get("hard") === "true"
-    const deleted = await deletePillar(id, hard)
+    const deleted = await deletePillar(id, hard, pillar.userId)
 
     if (!deleted) return apiError("Pillar not found", 404)
     return apiJson({ ok: true })

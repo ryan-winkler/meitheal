@@ -14,12 +14,11 @@ const test = base.extend<{ db: Database }>({
     const work = await mkdtemp(join(tmpdir(), "meitheal-task-read-contract-"))
     process.env.MEITHEAL_DB_URL = `file:${join(work, "tasks.db")}`
     resetPersistenceForTests()
-    const db = getPersistenceClient()
     try {
       await ensureSchema()
+      const db = getPersistenceClient()
       await use(db)
     } finally {
-      db.close()
       resetPersistenceForTests()
       if (previous === undefined) delete process.env.MEITHEAL_DB_URL
       else process.env.MEITHEAL_DB_URL = previous

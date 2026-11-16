@@ -1371,42 +1371,68 @@
     },
     {
       "name": "listPillars",
-      "description": "Pillars are the WHY layer — permanent motivational anchors representing who the user wants to be. Soft limit of 5-6 pillars.",
+      "description": "Returns Household Pillars by default. Personal Pillars are opt-in for the verified current Home Assistant user.",
       "inputSchema": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "include_inactive": {
+            "type": "boolean",
+            "description": "include_inactive parameter"
+          },
+          "include_personal": {
+            "type": "boolean",
+            "description": "include_personal parameter"
+          }
+        }
       }
     },
     {
       "name": "createPillar",
-      "description": "Create a pillar",
+      "description": "Create a Pillar",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "id": {
-            "type": "string"
-          },
           "name": {
-            "type": "string"
-          },
-          "identity_statement": {
             "type": "string",
-            "nullable": true
+            "maxLength": 100
+          },
+          "manifesto": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "icon": {
-            "type": "string",
-            "nullable": true
+            "type": [
+              "string",
+              "null"
+            ]
           },
-          "color": {
-            "type": "string",
-            "nullable": true
+          "colorHex": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
-          "sort_order": {
-            "type": "integer"
+          "weight": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 10
+          },
+          "audience": {
+            "type": "string",
+            "enum": [
+              "household",
+              "personal"
+            ],
+            "default": "household"
+          },
+          "audienceProof": {
+            "type": "string",
+            "description": "Required for Personal creation. Issued to the current Home Assistant user in the Progress form."
           }
         },
         "required": [
-          "id",
           "name"
         ]
       }
@@ -1429,35 +1455,44 @@
     },
     {
       "name": "updatePillar",
-      "description": "Update a pillar",
+      "description": "Its audience and owner are immutable.",
       "inputSchema": {
         "type": "object",
         "properties": {
           "id": {
-            "type": "string"
+            "type": "string",
+            "description": "id parameter"
           },
           "name": {
-            "type": "string"
-          },
-          "identity_statement": {
             "type": "string",
-            "nullable": true
+            "maxLength": 100
+          },
+          "manifesto": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "icon": {
-            "type": "string",
-            "nullable": true
+            "type": "string"
           },
-          "color": {
-            "type": "string",
-            "nullable": true
+          "colorHex": {
+            "type": "string"
           },
-          "sort_order": {
-            "type": "integer"
+          "weight": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 10
+          },
+          "position": {
+            "type": "number"
+          },
+          "isActive": {
+            "type": "boolean"
           }
         },
         "required": [
-          "id",
-          "name"
+          "id"
         ]
       }
     },
@@ -2868,7 +2903,10 @@
       "path": "/api/pillars",
       "hasBody": false,
       "pathParams": [],
-      "queryParams": []
+      "queryParams": [
+        "include_inactive",
+        "include_personal"
+      ]
     },
     "createPillar": {
       "method": "POST",
@@ -2887,7 +2925,7 @@
       "queryParams": []
     },
     "updatePillar": {
-      "method": "PUT",
+      "method": "PATCH",
       "path": "/api/pillars/{id}",
       "hasBody": true,
       "pathParams": [

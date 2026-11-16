@@ -57,7 +57,7 @@ test("fresh schema establishes a durable baseline without replaying historical o
   expect(await tick(START + 300_000)).toMatchObject({ observed: 0 })
   expect(await ledgerCount()).toBe(0)
   expect((await getPersistenceClient().execute({ sql: "SELECT value FROM app_settings WHERE key = ?", args: [OVERDUE_CHECKPOINT_KEY] })).rows[0]?.value).toBe(String(START + 300_000))
-  expect((await getPersistenceClient().execute("SELECT name FROM sqlite_master WHERE type='table' AND name='settings'")).rows).toHaveLength(0)
+  expect((await getPersistenceClient().execute("SELECT key FROM settings")).rows).toHaveLength(0)
 })
 
 test("ISO, date-only, offset and epoch deadlines cross once; terminal and invalid tasks are skipped", async () => {
@@ -95,6 +95,7 @@ test("bounded backlog drains across subsequent ticks and process restarts withou
   for (let i = 0; i < OVERDUE_BATCH_LIMIT * 2 + 3; i++) await addTask(`backlog-${i}`, new Date(START + 1_000).toISOString())
   expect(await tick(START + 2_000)).toMatchObject({ observed: OVERDUE_BATCH_LIMIT })
   resetPersistenceForTests() // Reopen the same SQLite file, retaining baseline and claims.
+  await ensureSchema()
   const results = await Promise.all([tick(START + 3_000), tick(START + 3_000)])
   expect(results.reduce((sum, result) => sum + result.observed, 0)).toBeLessThanOrEqual(OVERDUE_BATCH_LIMIT * 2)
   await tick(START + 4_000)
@@ -108,6 +109,7 @@ test("a failed best-effort delivery is durably observed and is not falsely retri
   await tick(START)
   expect(await tick(START + 2_000, async () => { throw new Error("HA unavailable") })).toEqual({ observed: 1, dispatchFailed: 1, baselineCreated: false })
   resetPersistenceForTests()
+  await ensureSchema()
   expect(await tick(START + 3_000)).toMatchObject({ observed: 0 })
   expect(events).toHaveLength(0)
   expect(await ledgerCount()).toBe(1)

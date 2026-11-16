@@ -8,6 +8,7 @@ import { join } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import { promisify } from "node:util"
 import { expect, test } from "@playwright/test"
+import { TASK_BOARD_SCHEMA_VERSION } from "../../apps/web/drizzle/migrations/task-board-upgrade.mjs"
 import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core"
 import {
   DATABASE_SCHEMA_VERSION,
@@ -114,9 +115,17 @@ test("opens an existing libSQL file, keeps transactions isolated and rolls back 
 })
 
 test("starts with remote transports unloaded and sends remote requests through libSQL", async () => {
-  type Command = { type: string; stmt?: { sql: string } }
-  const requests: Command[] = []
+  type Statement = { sql?: string; sql_id?: number; args?: unknown[] }
+  type Command = { type: "execute"; stmt: Statement }
+    | { type: "batch"; batch: { steps: { stmt: Statement }[] } }
+    | { type: "store_sql"; sql_id: number; sql: string }
+    | { type: "close" }
+  const requests: Array<{ baton: string | undefined; stmt: Statement }> = []
+  const storedSql = new Map<number, string>()
+  const catalogSql = /FROM main\.sqlite_schema AS objects/
+  const markerSql = /^SELECT value(?: AS value)? FROM (?:main\.)?app_settings/
   let version = DATABASE_SCHEMA_VERSION + 1
+  let refuseWriterOnce = false
   const server = createServer(async (request, response) => {
     if (request.url !== "/v2/pipeline") {
       response.writeHead(404).end()
@@ -124,22 +133,53 @@ test("starts with remote transports unloaded and sends remote requests through l
     }
     const chunks: Uint8Array[] = []
     for await (const chunk of request) chunks.push(chunk)
-    const { requests: commands } = JSON.parse(Buffer.concat(chunks).toString()) as { requests: Command[] }
-    requests.push(...commands)
-    const results = commands.map(command => {
-      if (command.type !== "execute") return { type: "ok", response: { type: "close" } }
-      const marker = command.stmt?.sql.startsWith("SELECT value AS value FROM app_settings")
-      const missingLedger = command.stmt?.sql.includes("name = '__meitheal_migrations'")
-      const cell = marker ? { type: "text", value: String(version) } : { type: "integer", value: "42" }
-      return {
-        type: "ok",
-        response: {
-          type: "execute",
-          result: { cols: [{ name: marker ? "value" : "answer" }], rows: missingLedger ? [] : [[cell]], affected_row_count: 0 },
-        },
+    const incoming = JSON.parse(Buffer.concat(chunks).toString()) as { baton?: string; requests: Command[] }
+    const textCell = (value: string) => ({ type: "text", value })
+    const result = (stmt: Statement) => {
+      const sql = stmt.sql ?? storedSql.get(stmt.sql_id!)
+      if (!sql) throw new Error("Missing fixture SQL")
+      requests.push({ baton: incoming.baton, stmt: { ...stmt, sql } })
+      let cols = ["answer"]
+      let rows = [[{ type: "integer", value: "42" }]]
+      if (catalogSql.test(sql)) {
+        cols = ["name", "type", "table_name"]
+        rows = [["app_settings", "table", "app_settings"].map(textCell)]
+      } else if (markerSql.test(sql)) {
+        cols = ["value"]
+        rows = [[textCell(String(version))]]
+      } else if (/pragma_table_xinfo|__meitheal_migrations|^BEGIN/.test(sql)) {
+        rows = []
       }
+      return { cols: cols.map(name => ({ name })), rows, affected_row_count: 0 }
+    }
+    const results = incoming.requests.map(command => {
+      if (command.type === "store_sql") {
+        storedSql.set(command.sql_id, command.sql)
+        return { type: "ok", response: { type: "store_sql" } }
+      }
+      if (command.type === "execute") return { type: "ok", response: { type: "execute", result: result(command.stmt) } }
+      if (command.type === "batch") {
+        const first = command.batch.steps[0]?.stmt
+        if (refuseWriterOnce && first?.sql === "BEGIN IMMEDIATE") {
+          refuseWriterOnce = false
+          result(first)
+          const stepErrors = command.batch.steps.map((_, i) => i === 0
+            ? { message: "Fixture writer busy", code: "SQLITE_BUSY" } : null)
+          return { type: "ok", response: { type: "batch", result: {
+            step_results: stepErrors.map(() => null), step_errors: stepErrors,
+          } } }
+        }
+        const stepResults = command.batch.steps.map(({ stmt }) => result(stmt))
+        return { type: "ok", response: { type: "batch", result: {
+          step_results: stepResults, step_errors: stepResults.map(() => null),
+        } } }
+      }
+      return { type: "ok", response: { type: "close" } }
     })
-    response.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ results }))
+    const closed = incoming.requests.some(command => command.type === "close")
+    response.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({
+      baton: closed ? undefined : "startup-read", results,
+    }))
   })
   server.listen(0, "127.0.0.1")
   await once(server, "listening")
@@ -166,33 +206,57 @@ test("starts with remote transports unloaded and sends remote requests through l
       assert.ok(loaded().every(path => !path.endsWith("sqlite3.js") && !path.endsWith(".node")))
     `], { timeout: 10_000 })
     expect(requests).toContainEqual(expect.objectContaining({
-      type: "execute",
       stmt: expect.objectContaining({ sql: "SELECT ? AS answer", args: [{ type: "integer", value: "42" }] }),
     }))
     expect(requests).toContainEqual(expect.objectContaining({
-      type: "execute",
-      stmt: expect.objectContaining({ sql: expect.stringMatching(/^SELECT value AS value FROM app_settings/) }),
+      stmt: expect.objectContaining({ sql: expect.stringMatching(markerSql) }),
     }))
 
     const script = fileURLToPath(new URL("../../apps/web/scripts/migrate.mjs", import.meta.url))
     const migrate = (...args: string[]) => execFileAsync(process.execPath, [script, ...args], {
       env: { PATH: process.env.PATH, MEITHEAL_DB_URL: url }, timeout: 10_000,
     })
+    const takeStatements = () => requests.splice(0).map(({ baton, stmt }) => [baton, stmt.sql])
     const markerReads = [
-      expect.stringMatching(/^SELECT 1 FROM sqlite_schema .*name = 'app_settings' COLLATE NOCASE$/),
-      expect.stringMatching(/^SELECT value AS value FROM app_settings/),
+      [undefined, expect.stringMatching(/^BEGIN.*READONLY$/)],
+      [undefined, expect.stringMatching(catalogSql)],
+      ["startup-read", expect.stringMatching(markerSql)],
     ]
-    const takeStatements = () => requests.splice(0).filter(command => command.type !== "close").map(command => command.stmt?.sql)
     requests.length = 0
     for (const args of [[], ["--check"]]) {
       await expect(migrate(...args)).rejects.toMatchObject({ code: 1, stderr: expect.stringMatching(/requires a newer App/) })
       expect(takeStatements()).toEqual(markerReads)
     }
-    version = DATABASE_SCHEMA_VERSION
+    version = TASK_BOARD_SCHEMA_VERSION - 1
     await expect(migrate("--check")).rejects.toMatchObject({ code: 1, stderr: expect.stringMatching(/Pending migrations/) })
     expect(takeStatements()).toEqual([
       ...markerReads,
-      expect.stringMatching(/^SELECT 1 FROM sqlite_schema .*name = '__meitheal_migrations' COLLATE NOCASE$/),
+      ["startup-read", expect.stringMatching(/pragma_table_xinfo/)],
+      ...markerReads,
+      ["startup-read", expect.stringMatching(/pragma_table_xinfo/)],
+      ["startup-read", expect.stringMatching(/^SELECT 1 FROM main\.sqlite_schema .*name = '__meitheal_migrations'/)],
+    ])
+
+    refuseWriterOnce = true
+    await execFileAsync(process.execPath, ["--input-type=module", "--eval", `
+      import assert from "node:assert/strict"
+      import { openDatabase, withStartupWriteTransaction } from ${JSON.stringify(modulePath)}
+      const client = openDatabase(${JSON.stringify(url)})
+      let calls = 0
+      try {
+        await withStartupWriteTransaction(client, async tx => {
+          calls++
+          await tx.execute("SELECT 2")
+        })
+        assert.equal(calls, 1)
+      } finally { client.close() }
+    `], { timeout: 10_000 })
+    expect(takeStatements()).toEqual([
+      [undefined, "BEGIN IMMEDIATE"],
+      [undefined, "BEGIN IMMEDIATE"],
+      [undefined, "SELECT 1"],
+      ["startup-read", "SELECT 2"],
+      ["startup-read", "COMMIT"],
     ])
   } finally {
     await new Promise<void>(resolve => server.close(() => resolve()))

@@ -7,7 +7,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
-function currentRole(result: unknown, userId: string): CurrentHARole {
+function currentRole(result: unknown, userId: string, ownerOnly = false): CurrentHARole {
   if (!Array.isArray(result)) return "unavailable"
   const matches = result.filter(user => isRecord(user) && user.id === userId)
   if (matches.length === 0) return "denied"
@@ -18,7 +18,7 @@ function currentRole(result: unknown, userId: string): CurrentHARole {
     || !user.group_ids.every(group => typeof group === "string")) return "unavailable"
 
   if (!user.is_active || user.system_generated) return "denied"
-  return user.is_owner || user.group_ids.includes("system-admin") ? "admin" : "member"
+  return user.is_owner || (!ownerOnly && user.group_ids.includes("system-admin")) ? "admin" : "member"
 }
 
 /** Resolve active membership and administrator status from the same Core response. */
@@ -36,4 +36,10 @@ export async function verifyCurrentHAAdministrator(userId: string, signal: Abort
 export async function verifyCurrentHAParticipant(userId: string, signal: AbortSignal): Promise<AdminVerification> {
   const role = await readCurrentHARole(userId, signal)
   return role === "admin" || role === "member" ? "allowed" : role
+}
+
+/** Whole-database custody is held by Home Assistant's current owner. */
+export async function verifyCurrentHAOwner(userId: string, signal: AbortSignal): Promise<AdminVerification> {
+  const role = currentRole(await readCurrentHACoreUsers(signal), userId, true)
+  return role === "admin" ? "allowed" : role === "unavailable" ? role : "denied"
 }

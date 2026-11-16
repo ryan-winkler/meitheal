@@ -130,3 +130,7 @@ Open an Area’s **Routines** tab and choose **New Routine** to open the editor 
 Area membership in this hierarchy and sidebar preferences organize work. Use board sharing rules when available to control who can view or change work.
 
 Changing a Routine’s Area affects tasks generated afterward. The existing task for today keeps its Area and remains the one completed by that Routine.
+
+### Personal Pillars
+
+In **Progress → Pillars → New Pillar**, choose **Household** or **Only me** before saving. Household Pillars remain shared as before. Only the active Home Assistant user who created a Personal Pillar can read or edit it and its Principles. The audience is fixed when the Pillar is saved. Personal Pillars are available online through Home Assistant. If the browser goes offline or changes accounts, Progress hides the previous view. Reconnect and refresh Progress to return. Personal Principles stay out of AI handoffs. Whole-database backups include them.

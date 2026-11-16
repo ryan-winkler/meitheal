@@ -155,8 +155,8 @@ for (const [table, json] of [
     await createLabel("Roof")
     const selected = (await candidates(cleanup)).labels
     if (table === "task_drafts") {
-      await db.execute({ sql: `INSERT INTO task_drafts (owner_id,draft_id,revision,snapshot_json,save_attempt_id,save_digest,updated_at)
-        VALUES ('owner','draft',1,?,'attempt','digest',1)`, args: [json] })
+      await db.execute({ sql: `INSERT INTO task_drafts (owner_id,board_id,draft_id,revision,snapshot_json,save_attempt_id,save_digest,updated_at)
+        VALUES ('owner','household','draft',1,?,'attempt','digest',1)`, args: [json] })
     } else {
       await db.execute({ sql: "INSERT INTO task_templates (id,name,template_json,created_at,updated_at) VALUES ('template','template',?,1,1)", args: [json] })
     }
@@ -170,8 +170,8 @@ test("retains private draft selections and templates without returning their pay
   for (const title of ["Draft", "New draft", "Template", "Unused"]) await createLabel(title)
   const snapshot = JSON.stringify({ version: 1, labels: ["Draft"], newLabels: ["New draft"], description: "Private capture ".repeat(10_000) })
   await db.execute({
-    sql: `INSERT INTO task_drafts (owner_id,draft_id,revision,snapshot_json,save_attempt_id,save_digest,updated_at)
-      VALUES ('private-owner','private-draft',1,?,'attempt','digest',1)`,
+    sql: `INSERT INTO task_drafts (owner_id,board_id,draft_id,revision,snapshot_json,save_attempt_id,save_digest,updated_at)
+      VALUES ('private-owner','household','private-draft',1,?,'attempt','digest',1)`,
     args: [snapshot],
   })
   await db.execute({
@@ -200,8 +200,8 @@ test("rejects unknown draft versions and malformed template envelopes", async ({
   await createLabel("Unused")
   const selected = (await candidates(cleanup)).labels
   await db.execute({
-    sql: `INSERT INTO task_drafts (owner_id,draft_id,revision,snapshot_json,save_attempt_id,save_digest,updated_at)
-      VALUES ('owner','draft',1,?,'attempt','digest',1)`,
+    sql: `INSERT INTO task_drafts (owner_id,board_id,draft_id,revision,snapshot_json,save_attempt_id,save_digest,updated_at)
+      VALUES ('owner','household','draft',1,?,'attempt','digest',1)`,
     args: [JSON.stringify({ version: 2, labels: [], newLabels: [] })],
   })
   expect(await cleanup.remove(selected)).toEqual({ ok: false, errorCode: "blocked" })

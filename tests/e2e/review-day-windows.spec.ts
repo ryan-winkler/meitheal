@@ -12,9 +12,10 @@ test("review reports bucket epoch timestamps by the household day", async () => 
   const directory = await mkdtemp(join(tmpdir(), "meitheal-review-days-"))
   process.env.MEITHEAL_DB_URL = `file:${join(directory, "tasks.db")}`
   resetPersistenceForTests()
+  await ensureSchema()
   const db = getPersistenceClient()
+
   try {
-    await ensureSchema()
     const timezone = "Pacific/Kiritimati"
     const today = calendarToday(timezone)
     const start = shiftCalendarDay(today, -6)

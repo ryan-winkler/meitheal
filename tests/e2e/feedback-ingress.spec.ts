@@ -310,7 +310,7 @@ coreTest("a household member opens only an approved destination from Today throu
   await expect(link).toHaveAttribute("rel", "noopener noreferrer")
 })
 
-coreTest("database download checks current Core role without reusing a stale administrator grant", async ({ playwright }) => {
+coreTest("database download checks current Core role without reusing a stale owner grant", async ({ playwright }) => {
   const api = await playwright.request.newContext({ baseURL: origin })
   const headers = { cookie: "feedback-fixture=admin", origin }
   const endpoint = `${prefix}/api/export/database.sqlite`
@@ -323,10 +323,10 @@ coreTest("database download checks current Core role without reusing a stale adm
     expect((await download()).status()).toBe(200)
     await expect.poll(snapshotDirs).toEqual([])
 
-    for (const role of ["demoted", "inactive", "system", "missing", "malformed", "oversized", "disconnected", "stalled"]) {
+    for (const role of ["delegated-admin", "demoted", "inactive", "system", "missing", "malformed", "oversized", "disconnected", "stalled"]) {
       await setDatabaseCoreRole(role)
       const denied = await download()
-      expect(denied.status(), role).toBe(["demoted", "inactive", "system", "missing"].includes(role) ? 403 : 503)
+      expect(denied.status(), role).toBe(["delegated-admin", "demoted", "inactive", "system", "missing"].includes(role) ? 403 : 503)
       expect(denied.headers()["cache-control"], role).toBe("no-store")
       expect(denied.headers()["content-disposition"], role).toBeUndefined()
       expect(await snapshotDirs(), role).toEqual([])
@@ -335,6 +335,140 @@ coreTest("database download checks current Core role without reusing a stale adm
     expect((await download()).status()).toBe(200)
   } finally {
     await api.dispose()
+  }
+})
+
+coreTest("Personal Pillars stay within the verified user across pages, APIs and a stale create form", async ({ playwright }) => {
+  const api = await playwright.request.newContext({ baseURL: origin })
+  const owner = { cookie: "feedback-fixture=member", origin }
+  const other = { cookie: "feedback-fixture=member-two", origin }
+  const admin = { cookie: "feedback-fixture=admin", origin }
+  const endpoint = prefix + "/api/pillars"
+  const page = prefix + "/progress"
+  try {
+    const household = await api.post(endpoint, { headers: admin, data: { name: "Household fixture" } })
+    expect(household.status(), await household.text()).toBe(201)
+    const progress = await api.get(page, { headers: owner })
+    expect(progress.headers()["cache-control"]).toBe("private, no-store")
+    const audienceProof = /data-audience-proof="([\w.-]+)"/.exec(await progress.text())?.[1]
+    expect(audienceProof).toBeTruthy()
+    const proof = { "X-Meitheal-Pillar-Session": audienceProof! }
+    expect((await api.head(endpoint, { headers: { ...owner, ...proof } })).status()).toBe(204)
+    expect((await api.head(endpoint, { headers: { ...other, ...proof } })).status()).toBe(403)
+    const label = "Private synthetic manifesto"
+    const data = { name: "Private fixture", manifesto: label, audience: "personal", audienceProof }
+    expect((await api.post(endpoint, { headers: other, data })).status()).toBe(409)
+
+    const result = await api.post(endpoint, { headers: owner, data })
+    expect(result.status(), await result.text()).toBe(201)
+    const { pillar } = await result.json()
+    const detail = endpoint + "/" + pillar.id
+    expect((await api.get(detail, { headers: owner })).status()).toBe(200)
+    const principle = await api.post(detail + "/principles", {
+      headers: owner, data: { statement: "Private synthetic principle", isNonNegotiable: true },
+    })
+    expect(principle.status(), await principle.text()).toBe(201)
+
+    for (const headers of [other, admin]) {
+      const unavailable = await api.get(detail, { headers })
+      expect(unavailable.status()).toBe(404)
+      expect(unavailable.headers()["cache-control"]).toBe("private, no-store")
+      expect((await api.patch(detail, { headers, data: { name: "Wrong account" } })).status()).toBe(404)
+      const deleteDenied = await api.delete(detail, { headers: { ...headers, "content-type": "application/json" } })
+      expect(deleteDenied.status(), await deleteDenied.text()).toBe(404)
+      expect((await api.get(detail + "/principles", { headers })).status()).toBe(404)
+      expect((await api.post(detail + "/principles", { headers, data: { statement: "Wrong account" } })).status()).toBe(404)
+      const theirPage = await (await api.get(page, { headers })).text()
+      expect(theirPage).not.toContain(label)
+      expect(theirPage).not.toContain("Private synthetic principle")
+      expect(theirPage).not.toContain(pillar.id)
+    }
+    const mine = await (await api.get(page, { headers: owner })).text()
+    expect(mine).toContain(label)
+    expect(mine).toContain("Private synthetic principle")
+    expect(await (await api.get(endpoint, { headers: owner })).text()).not.toContain(pillar.id)
+    expect(await (await api.get(endpoint + "?include_personal=true", { headers: owner })).text()).toContain(pillar.id)
+    expect((await api.get(detail + "/associations", { headers: owner })).status()).toBe(404)
+    expect((await api.patch(detail, { headers: owner, data: { audience: "household" } })).status()).toBe(400)
+    const removed = await api.delete(detail, { headers: { ...owner, "content-type": "application/json" } })
+    expect(removed.status(), await removed.text()).toBe(200)
+    expect(await (await api.get(page, { headers: owner })).text()).not.toContain(label)
+  } finally {
+    await api.dispose()
+  }
+})
+
+coreTest("a superseded foreground check cannot restore Personal Pillars after an account switch", async ({ browser }) => {
+  const context = await browser.newContext({ extraHTTPHeaders: {} })
+  const session = (value: string) => context.addCookies([{ name: "feedback-fixture", value, url: origin }])
+  const endpoint = origin + prefix + "/api/pillars"
+  const progress = origin + prefix + "/progress#pillars"
+  const page = await context.newPage()
+  let releaseOldCheck = () => {}
+  const waitForRelease = new Promise<void>(resolve => { releaseOldCheck = resolve })
+  try {
+    await session("member")
+    await page.goto(progress)
+    await page.getByRole("button", { name: "Create new Pillar" }).click()
+    const proof = await page.getByLabel("Visible to").getAttribute("data-audience-proof")
+    const title = "Synthetic private foreground fixture"
+    const created = await context.request.post(endpoint, {
+      headers: { origin }, data: { name: title, audience: "personal", audienceProof: proof },
+    })
+    expect(created.status(), await created.text()).toBe(201)
+    await page.reload()
+    const card = page.getByRole("button", { name: "View " + title + " details" })
+    await expect(card).toBeVisible()
+    let recordFirstStatus: (status: number) => void
+    const firstStatus = new Promise<number>(resolve => { recordFirstStatus = resolve })
+    let recordFinished: () => void
+    const oldRouteFinished = new Promise<void>(resolve => { recordFinished = resolve })
+    let checks = 0
+    await page.route(endpoint, async route => {
+      if (route.request().method() !== "HEAD" || ++checks !== 1) {
+        await route.continue()
+        return
+      }
+      const old = await route.fetch()
+      recordFirstStatus(old.status())
+      await waitForRelease
+      await route.fulfill({ response: old }).catch(() => {})
+      recordFinished()
+    })
+    const oldRequest = page.waitForRequest(request => request.url() === endpoint && request.method() === "HEAD")
+    const foreground = () => page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")))
+    await foreground()
+    expect(await firstStatus).toBe(204)
+    const superseded = await oldRequest
+    const cancelled = page.waitForEvent("requestfailed", request => request === superseded)
+    await session("member-two")
+    const fresh = page.waitForResponse(response => response.url() === endpoint && response.request().method() === "HEAD")
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")))
+    expect((await fresh).status()).toBe(403)
+    expect((await cancelled).failure()).not.toBeNull()
+    releaseOldCheck()
+    await oldRouteFinished
+    await expect(card).toHaveCount(0)
+  } finally {
+    releaseOldCheck()
+    await context.close()
+  }
+})
+
+coreTest("going offline closes the Pillar editor and releases page scrolling", async ({ browser }) => {
+  const context = await browser.newContext({ extraHTTPHeaders: {} })
+  try {
+    await context.addCookies([{ name: "feedback-fixture", value: "member", url: origin }])
+    const page = await context.newPage()
+    await page.goto(origin + prefix + "/progress#pillars")
+    await page.getByRole("button", { name: "Create new Pillar" }).click()
+    await expect(page.locator("#pillar-form-overlay.active")).toBeVisible()
+    await page.evaluate(() => document.body.style.setProperty("overflow", "hidden"))
+    await context.setOffline(true)
+    await expect(page.getByText("Reconnect and refresh Progress to see your Personal Pillars.")).toBeVisible()
+    expect(await page.evaluate(() => document.body.style.overflow)).toBe("")
+  } finally {
+    await context.close()
   }
 })
 
@@ -453,7 +587,7 @@ coreTest("a paused database download keeps one snapshot until cancelled", async 
   }
 })
 
-test("database download requires a valid administrator form and rejects cross-site submissions", async ({ playwright }) => {
+coreTest("database download requires a valid owner form and rejects cross-site submissions", async ({ playwright }) => {
   const api = await playwright.request.newContext({ baseURL: origin })
   const admin = { cookie: "feedback-fixture=admin", origin }
   const exportPath = `${prefix}/api/export/database.sqlite`
@@ -477,7 +611,7 @@ test("database download requires a valid administrator form and rejects cross-si
     expect((await readdir(work)).filter(name => name.startsWith(".meitheal-export-"))).toEqual([])
 
     await stopServer()
-    await startServer()
+    await startServer(true)
     const restarted = await api.post(origin + exportPath, { headers: { ...admin, origin }, form })
     expect(restarted.status()).toBe(403)
   } finally {

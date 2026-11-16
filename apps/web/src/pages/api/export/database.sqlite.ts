@@ -3,7 +3,7 @@ import { mkdtemp, open, rm, stat, statfs } from "node:fs/promises"
 import path from "node:path"
 import { Readable } from "node:stream"
 import type { APIRoute } from "astro"
-import { verifyCurrentHAAdministrator } from "@domains/ha/current-admin"
+import { verifyCurrentHAOwner } from "@domains/ha/current-admin"
 import { logApiError } from "@lib/api-logger"
 import { readWithinLimit } from "@lib/bounded-body"
 import { verifyDatabaseDownloadToken } from "@lib/database-download-token"
@@ -31,13 +31,13 @@ export const ALL: APIRoute = () => apiProblem({
 export const POST: APIRoute = async ({ locals, request }) => {
   const user = verifiedIngressUser(locals)
   if (!user?.isAdmin) {
-    return backupProblem(403, "Database download requires a verified Home Assistant administrator.")
+    return backupProblem(403, "Database download requires a verified Home Assistant owner.")
   }
 
   const site = request.headers.get("sec-fetch-site")
   const mode = request.headers.get("sec-fetch-mode")
   // HTTP LAN browsers may omit Fetch Metadata. Every request still needs the
-  // signed form from the verified administrator's Settings page.
+  // signed form from the verified owner's Settings page.
   if ((site !== null && site !== "same-origin") || (mode !== null && mode !== "navigate")) {
     return backupProblem(403, "Start the database download in the same Home Assistant browser window.")
   }
@@ -92,13 +92,13 @@ export const POST: APIRoute = async ({ locals, request }) => {
 
   try {
     signal.throwIfAborted()
-    const currentAdmin = await verifyCurrentHAAdministrator(user.id, signal)
+    const currentOwner = await verifyCurrentHAOwner(user.id, signal)
     signal.throwIfAborted()
-    if (currentAdmin === "unavailable") {
-      return backupProblem(503, "Could not verify current administrator access with Home Assistant. Try again when it is available.")
+    if (currentOwner === "unavailable") {
+      return backupProblem(503, "Could not verify current owner access with Home Assistant. Try again when it is available.")
     }
-    if (currentAdmin === "denied") {
-      return backupProblem(403, "Database download requires an active Home Assistant administrator.")
+    if (currentOwner === "denied") {
+      return backupProblem(403, "Database download requires an active Home Assistant owner.")
     }
     if (!(await stat(dbPath)).isFile()) {
       return backupProblem(404, "Database file not found on the server.")

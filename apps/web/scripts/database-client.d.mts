@@ -1,4 +1,4 @@
-import type { Client, InArgs, InStatement, ResultSet } from "@libsql/client"
+import type { Client, InArgs, InStatement, ResultSet, Transaction } from "@libsql/client"
 
 export interface DatabaseDiagnostics {
   sqliteBusyRetriesTotal: number
@@ -18,6 +18,10 @@ export function resetDatabaseDiagnosticsForTests(): void
 export function databaseSchemaCheckSteps(): Generator<[string], void, ResultSet[]>
 export function assertSupportedDatabaseSchema(client: Pick<Client, "execute">): Promise<void>
 export function openDatabase(url: string, options?: { readOnly?: boolean }): Client
+export function isMemoryDatabase(url: string): boolean
+export function openDatabaseForStartup(url: string, options?: { readOnly?: boolean }): Promise<Client>
+export function enableStartupWal(client: Client): Promise<ResultSet>
+export function withStartupWriteTransaction<T>(client: Client, apply: (tx: Transaction) => Promise<T>): Promise<T>
 export function runWriteTransaction<T>(
   client: Client,
   steps: () => Generator<InStatement[], T, ResultSet[]>,

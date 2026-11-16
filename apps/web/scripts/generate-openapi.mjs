@@ -231,10 +231,16 @@ const schemas = {
     properties: {
       id: { type: "string" },
       name: { type: "string" },
-      identity_statement: { type: "string", nullable: true },
-      icon: { type: "string", nullable: true },
-      color: { type: "string", nullable: true },
-      sort_order: { type: "integer" },
+      slug: { type: "string" },
+      userId: { type: "string" },
+      manifesto: { type: ["string", "null"] },
+      icon: { type: "string" },
+      colorHex: { type: "string" },
+      weight: { type: "number" },
+      position: { type: "number" },
+      isActive: { type: "boolean" },
+      createdAt: { type: "integer", format: "int64" },
+      updatedAt: { type: "integer", format: "int64" },
     },
     required: ["id", "name"],
   },
@@ -1622,12 +1628,54 @@ const paths = {
 
   // ── Pillars ──
   "/api/pillars": {
-    get: { operationId: "listPillars", tags: ["Pillars"], summary: "List all identity pillars", description: "Pillars are the WHY layer — permanent motivational anchors representing who the user wants to be. Soft limit of 5-6 pillars.", responses: { 200: jsonContent(arrOf("Pillar"), "Pillars") } },
-    post: { operationId: "createPillar", tags: ["Pillars"], summary: "Create a pillar", requestBody: { content: { "application/json": { schema: ref("Pillar") } } }, responses: { 201: jsonContent(ref("Pillar"), "Created") } },
+    head: {
+      operationId: "checkPersonalPillarSession", tags: ["Pillars"], summary: "Verify the current Personal Pillar viewer",
+      parameters: [{ name: "X-Meitheal-Pillar-Session", in: "header", schema: { type: "string" } }],
+      responses: { 200: { description: "Service available" }, 204: { description: "The Personal viewer still matches" }, 403: { description: "The viewer changed or verification is unavailable" } },
+    },
+    get: {
+      operationId: "listPillars", tags: ["Pillars"], summary: "List visible Pillars",
+      description: "Returns Household Pillars by default. Personal Pillars are opt-in for the verified current Home Assistant user.",
+      parameters: [
+        { name: "include_inactive", in: "query", schema: { type: "boolean" } },
+        { name: "include_personal", in: "query", schema: { type: "boolean" } },
+      ],
+      responses: { 200: jsonContent({
+        type: "object", properties: { pillars: arrOf("Pillar") }, required: ["pillars"],
+      }, "Pillars in the requested audience"), 403: { description: "A current Home Assistant user is required for Personal Pillars" } },
+    },
+    post: {
+      operationId: "createPillar", tags: ["Pillars"], summary: "Create a Pillar",
+      requestBody: { content: { "application/json": { schema: { type: "object", properties: {
+        name: { type: "string", maxLength: 100 },
+        manifesto: { type: ["string", "null"] },
+        icon: { type: ["string", "null"] },
+        colorHex: { type: ["string", "null"] },
+        weight: { type: "number", minimum: 1, maximum: 10 },
+        audience: { type: "string", enum: ["household", "personal"], default: "household" },
+        audienceProof: { type: "string", description: "Required for Personal creation. Issued to the current Home Assistant user in the Progress form." },
+      }, required: ["name"] } } } },
+      responses: { 201: jsonContent({
+        type: "object", properties: { pillar: ref("Pillar"), warning: { type: "string" } }, required: ["pillar"],
+      }, "Pillar created"), 409: { description: "Refresh Progress to confirm the current account" } },
+    },
   },
   "/api/pillars/{id}": {
-    get: { operationId: "getPillar", tags: ["Pillars"], summary: "Get pillar details", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: jsonContent(ref("Pillar"), "Pillar") } },
-    put: { operationId: "updatePillar", tags: ["Pillars"], summary: "Update a pillar", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], requestBody: { content: { "application/json": { schema: ref("Pillar") } } }, responses: { 200: jsonContent(ref("Pillar"), "Updated") } },
+    get: { operationId: "getPillar", tags: ["Pillars"], summary: "Get pillar details", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: jsonContent({ type: "object", properties: { pillar: ref("Pillar") }, required: ["pillar"] }, "Pillar") } },
+    patch: {
+      operationId: "updatePillar", tags: ["Pillars"], summary: "Update a Pillar", description: "Its audience and owner are immutable.",
+      parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+      requestBody: { content: { "application/json": { schema: { type: "object", properties: {
+        name: { type: "string", maxLength: 100 },
+        manifesto: { type: ["string", "null"] },
+        icon: { type: "string" },
+        colorHex: { type: "string" },
+        weight: { type: "number", minimum: 1, maximum: 10 },
+        position: { type: "number" },
+        isActive: { type: "boolean" },
+      } } } } },
+      responses: { 200: { description: "Pillar updated" }, 404: { description: "Pillar unavailable" } },
+    },
     delete: { operationId: "deletePillar", tags: ["Pillars"], summary: "Delete a pillar", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: { description: "Deleted" } } },
   },
   "/api/pillars/{id}/principles": {

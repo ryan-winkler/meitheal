@@ -14,21 +14,21 @@ test("an intake decision uses the live version and status inside the write trans
   const dbUrl = process.env.MEITHEAL_DB_URL
   process.env.MEITHEAL_DB_URL = `file:${join(dir, "tasks.db")}`
   resetPersistenceForTests()
-  const client = getPersistenceClient()
-  const repo = new TaskRepository(client)
   const clock = Date.now
   const now = Date.parse("2026-11-09T20:30:00.123Z")
 
-  async function add(id: string, version: number | string = now, parent: string | null = null) {
-    await client.execute({
-      sql: `INSERT INTO tasks (id, title, request_id, idempotency_key, status, created_at, updated_at, parent_id)
-            VALUES (?, ?, ?, ?, 'backlog', ?, ?, ?)`,
-      args: [id, id, id, id, now, version, parent],
-    })
-  }
-
   try {
     await ensureSchema()
+    const client = getPersistenceClient()
+    const repo = new TaskRepository(client)
+    async function add(id: string, version: number | string = now, parent: string | null = null) {
+      await client.execute({
+        sql: `INSERT INTO tasks (id, title, request_id, idempotency_key, status, created_at, updated_at, parent_id)
+              VALUES (?, ?, ?, ?, 'backlog', ?, ?, ?)`,
+        args: [id, id, id, id, now, version, parent],
+      })
+    }
+
     Date.now = () => now
     const guard = { updatedAt: now, expectedStatus: "backlog" } as const
 

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto"
 import { chmod, link, mkdir, mkdtemp, readdir, rm, stat, statfs, unlink } from "node:fs/promises"
 import path from "node:path"
 
@@ -49,7 +50,7 @@ export async function autoBackupDb(client) {
     await chmod(snapshotPath, 0o600)
     const size = (await stat(snapshotPath)).size
     const timestamp = new Date().toISOString().replace(/[:.]/g, "-")
-    const backupPath = path.join(backupDir, `meitheal-${timestamp}.db`)
+    const backupPath = path.join(backupDir, `meitheal-${timestamp}-${randomUUID()}.db`)
     // Publish a completed file without replacing an existing backup on a name collision.
     await link(snapshotPath, backupPath)
     console.log(`[meitheal] DB backup created: ${backupPath} (${size} bytes)`)
