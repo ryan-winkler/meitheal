@@ -251,7 +251,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
   import { privateIngressScope } from "@lib/network-only-worker"
   import { taskDraftText } from "@lib/task-draft-copy"
   import type { connectTaskDrafts } from "@lib/task-draft-controller"
-  import { getLegacyTaskId } from "@lib/task-detail-handoff"
+  import { getLegacyTaskId, openTaskDetailHandoff } from "@lib/task-detail-handoff"
   import type { TaskDraftSnapshot, TaskDraftPublication } from "@lib/task-draft-state"
 
   const log = createClientLogger("tasks", "new-task-modal");
@@ -575,6 +575,19 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
         cfAddBtn?.setAttribute("aria-expanded", "false")
       }, { signal });
     });
+    let calendarCaptureTask: string | undefined
+    function queueCreatedTask(taskId: string) {
+      if (document.querySelector("#calendar-shell[data-calendar-ready='true']")) {
+        calendarCaptureTask = taskId
+        return
+      }
+      const nextLocation = new URL(window.location.href)
+      nextLocation.searchParams.set("open", taskId)
+      nextLocation.searchParams.delete("comment")
+      if (getLegacyTaskId(nextLocation.hash) !== null) nextLocation.hash = ""
+      history.replaceState(history.state, "", nextLocation)
+    }
+
     function closeNewTaskModal() {
       if (!overlay?.classList.contains("active") || overlay.classList.contains("closing")) return
       captureOptionsRequest?.abort()
@@ -589,6 +602,11 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
         overlay.classList.remove("active", "closing")
         focusTrap.deactivate()
         clearCapture()
+        if (calendarCaptureTask) {
+          const taskId = calendarCaptureTask
+          calendarCaptureTask = undefined
+          openTaskDetailHandoff(taskId)
+        }
         if (draftPublicationNeedsRefresh) {
           draftPublicationNeedsRefresh = false
           document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "created" } }))
@@ -1052,11 +1070,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
         draftPublicationNeedsRefresh = true
       },
       openTask(receipt) {
-        const nextLocation = new URL(window.location.href)
-        nextLocation.searchParams.set("open", receipt.taskId)
-        nextLocation.searchParams.delete("comment")
-        if (getLegacyTaskId(nextLocation.hash) !== null) nextLocation.hash = ""
-        history.replaceState(history.state, "", nextLocation)
+        queueCreatedTask(receipt.taskId)
         draftPublicationNeedsRefresh = true
         closeNewTaskModal()
       },
@@ -1339,14 +1353,10 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
               title,
             );
 
-            closeNewTaskModal();
             if (created.id && created.task_kind !== "quick") {
-              const nextLocation = new URL(window.location.href)
-              nextLocation.searchParams.set("open", created.id)
-              nextLocation.searchParams.delete("comment")
-              if (getLegacyTaskId(nextLocation.hash) !== null) nextLocation.hash = ""
-              history.replaceState(history.state, "", nextLocation)
+              queueCreatedTask(created.id)
             }
+            closeNewTaskModal()
             document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", {
               detail: { action: "created" }
             }));

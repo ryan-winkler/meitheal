@@ -107,7 +107,8 @@ test("HA connection, services, users, todo-bridge, and ha-startup work against l
     res.writeHead(404).end()
   })
 
-  const wss = new WebSocketServer({ server: httpServer })
+  let acceptConnections = true
+  const wss = new WebSocketServer({ server: httpServer, verifyClient: () => acceptConnections })
   wss.on("connection", (socket: { send(v: string): void; on(e: string, cb: (raw: Buffer) => void): void }) => {
     sockets.add(socket)
     const send = (payload: unknown) => socket.send(JSON.stringify(payload))
@@ -324,13 +325,29 @@ test("HA connection, services, users, todo-bridge, and ha-startup work against l
     await haServices.callHAService("persistent_notification", "create", { message: "Ping" })
     expect(recordedCommands).toContain("call_service:persistent_notification.create")
 
-    // 3. HA users standalone paths
+    // 3. Verify roster recovery before the previous success TTL expires.
     haUsers.invalidateUserCache()
-    const users = await haUsers.listHAUsers()
-    expect(Array.isArray(users)).toBe(true)
-    await haUsers.getHAUserById("ha-user-1")
+    const initialDirectory = await haUsers.listHAUserDirectory()
+    expect(initialDirectory.verified).toBe(true)
+    expect(initialDirectory.users.map(user => user.id)).toEqual(["ha-user-1"])
+    expect(await haUsers.getHAUserById("ha-user-1")).toEqual(initialDirectory.users[0])
     expect(await haUsers.isCurrentActiveHAUser("ha-user-1", { fresh: true })).toBe(false)
     expect(await haUsers.getCurrentHAUserRoster("ha-user-1")).toBeUndefined()
+
+    haConn.closeHAConnection()
+    acceptConnections = false
+    expect(await haUsers.listHAUserDirectory()).toEqual({ users: initialDirectory.users, verified: false })
+    expect(haConn.getHAConnectionStatus().connected).toBe(false)
+    acceptConnections = true
+    expect(await haUsers.listHAUserDirectory()).toEqual(initialDirectory)
+    expect(haConn.getHAConnectionStatus().connected).toBe(true)
+
+    // A new credential cannot fall back to the disconnected source's names.
+    process.env.HA_TOKEN = "unit-ha-rotated-token"
+    acceptConnections = false
+    expect(await haUsers.listHAUserDirectory()).toEqual({ users: [], verified: false })
+    acceptConnections = true
+    expect(await haUsers.listHAUserDirectory()).toEqual(initialDirectory)
 
     // 4. Todo bridge start, inbound sync, outbound push/remove, stop
     await todoBridge.startTodoSync({

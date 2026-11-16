@@ -465,7 +465,7 @@ After enabling a policy, restart the App and allow one five-minute sweep. Verify
 
 Use HTTPS for Home Assistant ingress so the browser can send same-origin request metadata. If preview stays unavailable and the database integrity check reports a malformed inactivity policy, restore a verified App backup with a valid policy before re-enabling the rule.
 
-In **Assign User**, an unverified Home Assistant directory can still show cached and custom assignees. Use **Retry** to check the directory again. **No users configured** appears when the directory check succeeds and returns no people.
+In **Assign User**, an unverified Home Assistant directory can still show cached assignees from the current Home Assistant configuration, along with custom assignees. Use **Retry** to check the directory again. **No users configured** appears when the directory check succeeds and returns no people.
 
 For the Stalled cue, check the applicable Inactivity policy first. A qualifying assignment, reopen or at least three recent comments from two verified Home Assistant members creates the marker. The comment window is 33% of the configured inactivity period. Existing cards keep their original activity history and begin recording markers when qualifying events occur. On a disposable dataset, verify the Stalled filter, clear a cue by editing its card, and confirm a protected scheduled task stays out of automatic deferral.
 

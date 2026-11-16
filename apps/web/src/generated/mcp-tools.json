@@ -47,11 +47,6 @@
             "format": "date",
             "description": "Match the household calendar day (date-only, floating datetime, or zoned ISO timestamp in the configured household timezone). Invalid dates return 400."
           },
-          "calendar_filters": {
-            "type": "string",
-            "maxLength": 20000,
-            "description": "Optional Calendar view query string applied to due_date results before pagination. When present, including when empty, archived tasks are excluded. Includes search, status, priority, area, user, types, task_type, labels, promoted, rice, and advancedFilter."
-          },
           "parent_id": {
             "type": "string",
             "description": "Get subtasks of a parent"
@@ -2488,7 +2483,6 @@
         "assigned_to",
         "priority",
         "due_date",
-        "calendar_filters",
         "parent_id",
         "sort",
         "order",

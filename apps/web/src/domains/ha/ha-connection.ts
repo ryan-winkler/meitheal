@@ -10,7 +10,6 @@
  * @domain ha
  * @bounded-context integration
  */
-import { createHash } from "node:crypto"
 import {
   createConnection,
   createLongLivedTokenAuth,
@@ -24,7 +23,7 @@ import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observa
 // Polyfill WebSocket for Node.js server-side usage
 import WebSocket, { type ClientOptions } from "ws";
 import { supervisorFetch } from "../../lib/supervisor-fetch";
-import { resolveHAConfiguration, type HAConfiguration } from "./ha-configuration"
+import { fingerprintHAConfiguration, resolveHAConfiguration, type HAConfiguration } from "./ha-configuration"
 import { initEntitySubscription, resetEntityConnection } from "./ha-entities"
 (globalThis as Record<string, unknown>).WebSocket = WebSocket;
 const CORE_PROXY = "http://supervisor/core"
@@ -170,7 +169,7 @@ export async function getHAConnection(): Promise<Connection | null> {
     closeHAConnection()
     return null
   }
-  const fingerprint = config ? createHash("sha256").update(JSON.stringify(config)).digest("hex") : null
+  const fingerprint = config ? fingerprintHAConfiguration(config) : null
   if ((connection && configurationFingerprint !== fingerprint) ||
     (connecting && connectingFingerprint !== fingerprint)) {
     closeHAConnection()
@@ -212,7 +211,7 @@ export async function getHAConnection(): Promise<Connection | null> {
     const auth = createLongLivedTokenAuth(config.baseUrl, config.token);
     candidate = await createConnection({ auth });
     const currentConfig = await getHAConfiguration()
-    const currentFingerprint = currentConfig ? createHash("sha256").update(JSON.stringify(currentConfig)).digest("hex") : null
+    const currentFingerprint = currentConfig ? fingerprintHAConfiguration(currentConfig) : null
     if (attemptGeneration !== connectionGeneration || currentFingerprint !== fingerprint) {
       candidate.close()
       candidate = null
@@ -424,6 +423,10 @@ function stopHeartbeat(): void {
     retired.interval = null
     retired.timeout = null
   }
+}
+
+export function matchesCurrentHAConnection(fingerprint: string, expected?: Connection): boolean {
+  return connection?.connected === true && configurationFingerprint === fingerprint && (!expected || connection === expected)
 }
 
 export function getHAConnectionStatus() {

@@ -2,7 +2,7 @@ import type { TaskKind } from "@meitheal/domain-tasks"
 import { getRememberedAreaId } from "@lib/area-selector-controller"
 import { readCalendarTaskFilters } from "@lib/calendar-task-filter"
 import { createClientLogger } from "@lib/client-logger"
-import { calendarDayFromInput, formatTimeInZone, shiftCalendarDay } from "@lib/date"
+import { calendarDayFromInput, calendarOccurrenceStartKey, formatTimeInZone, shiftCalendarDay } from "@lib/date"
 import { createFocusTrap } from "@lib/focus-trap"
 import { updateKanbanFilters, type KanbanFilters } from "@lib/kanban-query"
 import { createTablerSvgElement, mapEntityEmojiToTabler, type TablerIconName } from "@lib/tabler-svg"
@@ -23,6 +23,7 @@ interface LinkedCalendarEvent {
   start: string
   entity: string | null
   uid: string | null
+  providerSummary: string | null
 }
 
 const log = createClientLogger("tasks", "calendar-shell")
@@ -182,7 +183,8 @@ export function initCalendarPage(signal: AbortSignal): void {
     const linked = AbortSignal.any([signal, currentRequest.signal, AbortSignal.timeout(10_000)])
     const closeButton = drawer!.querySelector<HTMLElement>("#day-drawer-close")
     const focused = document.activeElement as HTMLElement | null
-    const focusedTask = focused?.closest<HTMLElement>("[data-task-id]")?.dataset.taskId
+    const focusedTask = drawerTasks!.contains(focused) ? focused?.dataset.taskId : undefined
+    const focusedEvent = drawerEvents!.contains(focused) ? focused?.dataset.occurrenceKey : undefined
     const restoreMore = focused === moreTasks
     if (focused && (restoreMore || drawerTasks!.contains(focused) || drawerEvents!.contains(focused))) closeButton?.focus()
     const showEvents = month.dataset.calendarEvents === "true"
@@ -192,13 +194,13 @@ export function initCalendarPage(signal: AbortSignal): void {
     function renderConnectedEvents() {
       if (!showEvents || persisted === undefined && live === undefined) return
       const activeId = drawerEvents!.contains(document.activeElement)
-        ? (document.activeElement as HTMLElement).dataset.taskId : undefined
-      const items = (persisted ?? []).map(event => ({
-        start: event.start,
-        row: agendaItem("calendar-event", event.title, formatTimeInZone(event.start, timezone) ?? "All day", event.id),
-      }))
-      for (const event of live?.events ?? []) {
-        if (persisted?.some(link => matchesLinkedEvent(event, link))) continue
+        ? (document.activeElement as HTMLElement).dataset.occurrenceKey : undefined
+      const items = (persisted ?? []).map(event => {
+        const row = agendaItem("calendar-event", event.title, formatTimeInZone(event.start, timezone) ?? "All day", event.id)
+        row.dataset.occurrenceKey = event.id + "/" + calendarOccurrenceStartKey(event.start)
+        return { start: event.start, row }
+      })
+      for (const event of distinctLiveCalendarEvents(live?.events ?? [], persisted ?? [])) {
         items.push({ start: event.start, row: agendaItem("calendar-event", event.summary, formatTimeInZone(event.start, timezone) ?? "All day") })
       }
       items.sort((a, b) => a.start.localeCompare(b.start))
@@ -208,9 +210,9 @@ export function initCalendarPage(signal: AbortSignal): void {
       else if (live.partial) drawerEvents!.append(agendaMessage("Some connected calendar events couldn’t load."))
       else if (persisted && !items.length) drawerEvents!.append(agendaMessage("No calendar events"))
       if (persisted === null) drawerEvents!.append(agendaMessage("Saved calendar links couldn’t load."))
-      const restoreId = activeId ?? focusedTask
+      const restoreId = activeId ?? focusedEvent
       if (restoreId && (activeId || document.activeElement === closeButton)) {
-        const restore = items.find(item => item.row.dataset.taskId === restoreId)?.row ?? closeButton
+        const restore = items.find(item => item.row.dataset.occurrenceKey === restoreId)?.row ?? closeButton
         restore?.focus()
       }
     }
@@ -436,11 +438,30 @@ async function loadCalendarRange(
   }
 }
 
-function matchesLinkedEvent(live: CalendarEventRecord, linked: LinkedCalendarEvent): boolean {
-  if (!live.uid || linked.uid !== live.uid || linked.entity !== live.entity) return false
-  if (linked.start === live.start) return true
-  const zoned = /T.*(?:Z|[+-]\d{2}:?\d{2})$/i
-  return zoned.test(linked.start) && zoned.test(live.start) && Date.parse(linked.start) === Date.parse(live.start)
+function distinctLiveCalendarEvents(events: CalendarEventRecord[], linked: LinkedCalendarEvent[]): CalendarEventRecord[] {
+  if (!linked.length) return events
+  const key = (entity: string, start: string, identifier: string) =>
+    JSON.stringify([entity, calendarOccurrenceStartKey(start), identifier])
+  const byUid = new Set<string>()
+  const savedCounts = new Map<string, number>()
+  const liveCounts = new Map<string, number>()
+  for (const row of linked) {
+    if (!row.entity) continue
+    if (row.uid) byUid.add(key(row.entity, row.start, row.uid))
+    if (row.providerSummary) {
+      const match = key(row.entity, row.start, row.providerSummary)
+      savedCounts.set(match, (savedCounts.get(match) ?? 0) + 1)
+    }
+  }
+  for (const event of events) {
+    const match = key(event.entity, event.start, event.summary)
+    liveCounts.set(match, (liveCounts.get(match) ?? 0) + 1)
+  }
+  return events.filter(event => {
+    if (event.uid) return !byUid.has(key(event.entity, event.start, event.uid))
+    const match = key(event.entity, event.start, event.summary)
+    return savedCounts.get(match) !== 1 || liveCounts.get(match) !== 1
+  })
 }
 
 function agendaMessage(text: string) {

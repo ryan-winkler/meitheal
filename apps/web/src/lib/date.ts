@@ -112,6 +112,16 @@ export function formatTimeInZone(
   return clockFormatter.format.format(parsed)
 }
 
+/** Match the same Calendar occurrence across equivalent offset representations. */
+export function calendarOccurrenceStartKey(start: string): string {
+  const raw = start.trim()
+  if (/[T ].*(?:Z|[+-]\d{2}:?\d{2})$/i.test(raw)) {
+    const instant = Date.parse(raw)
+    if (Number.isFinite(instant)) return String(instant)
+  }
+  return raw
+}
+
 /** Whole calendar days from today to a date-only or timed ISO due date in the given timezone, or null if invalid. */
 export function calendarDaysFromToday(day: string, timezone = DEFAULT_TIMEZONE, now = new Date()): number | null {
   const targetDay = calendarDayFromInput(day, timezone);

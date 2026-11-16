@@ -1367,14 +1367,6 @@ paths:
             format: date
           description: Match the household calendar day (date-only, floating datetime, or zoned ISO timestamp in the configured
             household timezone). Invalid dates return 400.
-        - name: calendar_filters
-          in: query
-          schema:
-            type: string
-            maxLength: 20000
-          description: Optional Calendar view query string applied to due_date results before pagination. When present, including
-            when empty, archived tasks are excluded. Includes search, status, priority, area, user, types, task_type,
-            labels, promoted, rice, and advancedFilter.
         - name: parent_id
           in: query
           schema:
@@ -1620,6 +1612,7 @@ paths:
                         - start
                         - entity
                         - uid
+                        - providerSummary
                       properties:
                         id:
                           type: string
@@ -1632,6 +1625,10 @@ paths:
                             - string
                             - "null"
                         uid:
+                          type:
+                            - string
+                            - "null"
+                        providerSummary:
                           type:
                             - string
                             - "null"

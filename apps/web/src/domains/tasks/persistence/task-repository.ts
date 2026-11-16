@@ -20,7 +20,7 @@ import { getStatusDef, isDoneStatus, normalizeStatus, STATUS } from "../../../li
 import { logApiError, logApiWarn } from "../../../lib/api-logger"
 import { EXACT_TASK_IDENTIFIER_SCORE } from "../../../lib/task-search-score"
 import { readStoredCalendarDay } from "../../../lib/calendar-day"
-import { calendarDayFromInput, calendarToday, shiftCalendarDay, isDueOverdue } from "../../../lib/date"
+import { calendarDayFromInput, calendarOccurrenceStartKey, calendarToday, shiftCalendarDay, isDueOverdue } from "../../../lib/date"
 import { parseTicketKey } from "../../../lib/ticket-key"
 import { getNextOccurrence, parseRRule } from "../recurrence"
 import { deferralTerminalStatusesSql, isDeferralTerminalStatus } from "./task-deferral-status"
@@ -250,6 +250,7 @@ interface LinkedCalendarEvent {
   start: string
   entity: string | null
   uid: string | null
+  providerSummary: string | null
 }
 
 /** Kanban lane definition */
@@ -817,12 +818,12 @@ export class TaskRepository {
       const to = endDay < throughDay ? endDay : throughDay;
       if (from > to) return;
 
+      const key = task.id + "/" + calendarOccurrenceStartKey(startRaw)
       let cur = from;
       for (let guard = 0; guard < 62 && cur <= to; guard++) {
         let day = byDay.get(cur)
         if (!day) byDay.set(cur, day = new Map())
-        const previous = day.get(task.id)
-        if (!previous || startRaw < previous.start) day.set(task.id, { ...task, start: startRaw })
+        if (!day.has(key)) day.set(key, { ...task, start: startRaw })
         const next = shiftCalendarDay(cur, 1);
         if (next === cur) break;
         cur = next;
@@ -839,7 +840,11 @@ export class TaskRepository {
     });
 
     for (const row of result.rows) {
-      let payload: { entity_id?: unknown; occurrences?: Array<{ start?: unknown; end?: unknown; effective_end?: unknown }> } | null = null
+      let payload: {
+        entity_id?: unknown
+        summary?: unknown
+        occurrences?: Array<{ start?: unknown; end?: unknown; effective_end?: unknown }>
+      } | null = null
       try {
         if (typeof row.payload === "string") payload = JSON.parse(row.payload)
       } catch { /* Older or malformed payloads still have the task dates. */ }
@@ -847,6 +852,7 @@ export class TaskRepository {
       const task = {
         id: String(row.id), title: String(row.title), entity,
         uid: entity && typeof row.provider_event_id === "string" ? row.provider_event_id : null,
+        providerSummary: entity && typeof payload?.summary === "string" ? payload.summary : null,
       }
       if (Array.isArray(payload?.occurrences) && payload.occurrences.length) {
         for (const occurrence of payload.occurrences) {
@@ -1126,7 +1132,7 @@ export class TaskRepository {
     dueDate?: string | undefined;
     calendarDay?: string | undefined;
     timezone?: string | undefined;
-    matchDueTask?: ((task: CalendarFilterRow) => boolean) | undefined;
+    matchCalendarTask?: ((task: CalendarFilterRow) => boolean) | undefined;
     priority?: number;
     areaId?: string;
     projectId?: string;
@@ -1194,11 +1200,11 @@ export class TaskRepository {
       const snapshot = await this.client.transaction("read")
       try {
         const tz = opts.timezone || "Europe/Dublin"
-        const filterProjection = opts.matchDueTask ? `, ${CALENDAR_FILTER_COLUMNS}` : ""
+        const filterProjection = opts.matchCalendarTask ? `, ${CALENDAR_FILTER_COLUMNS}` : ""
         const candidates = await snapshot.execute({
           sql: `SELECT id, ${dateColumn} AS calendar_date, due_date${filterProjection} FROM tasks${where} ${ordering}`, args,
         })
-        const matches = opts.matchDueTask
+        const matches = opts.matchCalendarTask
         const ids = candidates.rows.filter(row => calendarDayFromInput(String(row.calendar_date), tz) === day &&
           (!matches || matches(row as unknown as CalendarFilterRow)))
         const page = ids.slice(offset, offset + limit)

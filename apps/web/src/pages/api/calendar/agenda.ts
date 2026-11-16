@@ -42,7 +42,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
     const filter = createCalendarTaskFilter(new URLSearchParams(filters), timezone)
     const repo = new TaskRepository(getPersistenceClient())
     const [{ tasks, total }, linkedEvents] = await Promise.all([
-      repo.findAll({ calendarDay: date, timezone, matchDueTask: filter.matchesAgenda, limit, offset }),
+      repo.findAll({ calendarDay: date, timezone, matchCalendarTask: filter.matchesAgenda, limit, offset }),
       filter.showConnectedEvents && offset === 0
         ? repo.getLinkedCalendarEvents(date, date, timezone).then(events => events[date] ?? [])
         : [],

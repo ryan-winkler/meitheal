@@ -54,16 +54,16 @@ test("Calendar reads configured sources as a household member and filters before
     }
     db.prepare("UPDATE tasks SET status = 'done' WHERE id = ?").run("calendar-fixture-105")
 
-    const query = new URLSearchParams({ due_date: date, calendar_filters: "search=matching+garden", limit: "100" })
-    const first = await api.get(base + "/api/tasks?" + query, { headers: headers("member") })
+    const agendaPath = base + "/api/calendar/agenda"
+    const query = { date, filters: "search=matching+garden", limit: 100, offset: 0 }
+    const first = await api.post(agendaPath, { headers: headers("member"), data: query })
     expect(first.status()).toBe(200)
     const { tasks, total } = await first.json()
     expect(total).toBe(101)
     expect(tasks).toHaveLength(100)
     expect(tasks[0].title).toBe("Matching garden task 100")
     expect(tasks[99].title).toBe("Matching garden task 1")
-    query.set("offset", "100")
-    const second = await api.get(base + "/api/tasks?" + query, { headers: headers("member") })
+    const second = await api.post(agendaPath, { headers: headers("member"), data: { ...query, offset: 100 } })
     expect(await second.json()).toMatchObject({ tasks: [{ title: "Matching garden task 0" }], total: 101 })
     const credential = await api.post(base + "/api/agent-tokens", {
       headers: headers("admin"), data: { name: "Calendar scope fixture", scopes: ["tasks:read"] },
@@ -71,7 +71,6 @@ test("Calendar reads configured sources as a household member and filters before
     expect(credential.status()).toBe(201)
     const { token } = await credential.json()
     const scoped = { ...headers("member"), authorization: `Bearer ${token}` }
-    const agendaPath = base + "/api/calendar/agenda"
     const agendaQuery = { date, filters: "", offset: 0, limit: 1 }
     expect((await api.get(base + "/api/tasks?limit=1", { headers: scoped })).status()).toBe(200)
     expect((await api.post(agendaPath, { headers: scoped, data: agendaQuery })).status()).toBe(403)
@@ -122,8 +121,20 @@ test("Calendar reads configured sources as a household member and filters before
       insertLinkedTask.run(id, title, status, id, id, "2031-07-11")
       const occurrences = source === "caldav"
         ? [{ start: "2031-07-13", end: "2031-07-15" }]
-        : [{ start: "2031-07-14T08:00:00Z", end: "2031-07-14T09:00:00Z" }]
+        : [
+            { start: "2031-07-14T08:00:00Z", end: "2031-07-14T09:00:00Z" },
+            { start: "2031-07-14T12:00:00Z", end: "2031-07-14T13:00:00Z" },
+            { start: "2031-07-14T13:00:00+01:00", end: "2031-07-14T14:00:00+01:00" },
+          ]
       insertConfirmation.run(id, id, id, uid, source, JSON.stringify({ entity_id: "calendar.household", occurrences }))
+    }
+    for (const [id, title, summary, start] of [
+      ["ha-idless", "Renamed household event", "Provider name without UID", "2031-07-14T14:00:00Z"],
+      ["ha-ambiguous", "Stored ambiguous event", "Ambiguous provider name", "2031-07-14T15:00:00Z"],
+    ] as const) {
+      insertLinkedTask.run(id, title, "pending", id, id, start)
+      insertConfirmation.run(id, id, id, `legacy-${id}`, "ha.calendar_sync",
+        JSON.stringify({ entity_id: "calendar.household", summary, occurrences: [{ start }] }))
     }
     let liveAvailable = true
     await page.route("**/api/ha/events?*", route => {
@@ -132,20 +143,27 @@ test("Calendar reads configured sources as a household member and filters before
       if (!liveAvailable) return route.fulfill({ status: 503 })
       return route.fulfill({ json: { events: [
         { uid: "linked-uid", summary: "Household live duplicate", start: "2031-07-14T09:00:00+01:00" },
+        { uid: "linked-uid", summary: "Household live duplicate", start: "2031-07-14T13:00:00+01:00" },
         { uid: "unlinked-uid", summary: "Live calendar only", start: "2031-07-14T10:00:00Z" },
+        { summary: "Provider name without UID", start: "2031-07-14T15:00:00+01:00" },
+        { summary: "Ambiguous provider name", start: "2031-07-14T15:00:00Z" },
+        { summary: "Ambiguous provider name", start: "2031-07-14T16:00:00+01:00" },
       ] } })
     })
     const unfilteredMonth = base + "/tasks?view=calendar&year=2031&month=6&area=#calendar"
     await page.goto(unfilteredMonth)
     const linkedCell = page.locator(`.cal-cell[data-date="${linkedDay}"]`)
     const connected = page.locator("#day-drawer-events")
-    await expect(linkedCell).toHaveAccessibleName(/2 calendar events$/)
+    await expect(linkedCell).toHaveAccessibleName(/5 calendar events$/)
     await expect(page.locator('.cal-cell[data-date="2031-07-15"]')).not.toHaveAccessibleName(/calendar event/)
     await linkedCell.press("Enter")
-    await expect(connected.getByRole("button", { name: /Household seed event/ })).toBeVisible()
+    await expect(connected.getByRole("button", { name: /Household seed event/ })).toHaveCount(2)
     await expect(connected.getByRole("button", { name: /Linked calendar retreat/ })).toBeVisible()
     await expect(connected.getByText("Live calendar only")).toBeVisible()
     await expect(connected.getByText("Household live duplicate")).toHaveCount(0)
+    await expect(connected.getByRole("button", { name: /Renamed household event/ })).toBeVisible()
+    await expect(connected.getByText("Provider name without UID")).toHaveCount(0)
+    await expect(connected.getByText("Ambiguous provider name")).toHaveCount(2)
     await expect(connected.getByText("Archived linked event")).toHaveCount(0)
     await connected.getByRole("button", { name: /Linked calendar retreat/ }).click()
     await expect(page.locator("#td-title")).toHaveValue("Linked calendar retreat")
@@ -154,7 +172,7 @@ test("Calendar reads configured sources as a household member and filters before
     liveAvailable = false
     await linkedCell.press("Enter")
     await expect(connected.getByText("Connected calendar events couldn’t load.")).toBeVisible()
-    await expect(connected.getByRole("button", { name: /Household seed event/ })).toBeVisible()
+    await expect(connected.getByRole("button", { name: /Household seed event/ })).toHaveCount(2)
     await expect(connected.getByRole("button", { name: /Linked calendar retreat/ })).toBeVisible()
     await page.keyboard.press("Escape")
     await page.getByRole("toolbar", { name: "Filter tasks" }).getByRole("button", { name: "Events", exact: true }).click()

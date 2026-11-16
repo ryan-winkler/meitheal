@@ -22,7 +22,6 @@ import { isDbUnavailable, db503Response } from "../../../lib/db-fallback"
 import { apiError } from "../../../lib/api-response"
 import { normalizeStatus } from "../../../lib/status-config"
 import { isValidTimezone } from "../../../lib/date"
-import { createCalendarTaskFilter } from "../../../lib/calendar-task-filter"
 import { readStoredHouseholdTimezone } from "../../../lib/task-queries"
 import { resolveRecentActivityActor } from "../../../lib/recent-activity-actor"
 import { taskEventAuthorityHeaders } from "../../../lib/webhook-dispatcher"
@@ -64,11 +63,6 @@ export const GET: APIRoute = async ({ url, locals }) => {
     const timezone = locals?.timezone?.trim() ?? ""
     findOpts.dueDate = dueDate
     findOpts.timezone = isValidTimezone(timezone) ? timezone : await readStoredHouseholdTimezone()
-    const calendarFilters = url.searchParams.get("calendar_filters")
-    if (calendarFilters !== null) {
-      if (calendarFilters.length > 20_000) return apiError("calendar_filters exceeds the supported size", 400)
-      findOpts.matchDueTask = createCalendarTaskFilter(new URLSearchParams(calendarFilters), findOpts.timezone).matchesAgenda
-    }
   }
   const priority = url.searchParams.get("priority")
   if (priority) {

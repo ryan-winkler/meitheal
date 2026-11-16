@@ -716,7 +716,6 @@ const paths = {
         { name: "assigned_to", in: "query", schema: { type: "string" } },
         { name: "priority", in: "query", schema: { type: "integer" } },
         { name: "due_date", in: "query", schema: { type: "string", format: "date" }, description: "Match the household calendar day (date-only, floating datetime, or zoned ISO timestamp in the configured household timezone). Invalid dates return 400." },
-        { name: "calendar_filters", in: "query", schema: { type: "string", maxLength: 20000 }, description: "Optional Calendar view query string applied to due_date results before pagination. When present, including when empty, archived tasks are excluded. Includes search, status, priority, area, user, types, task_type, labels, promoted, rice, and advancedFilter." },
         { name: "parent_id", in: "query", schema: { type: "string" }, description: "Get subtasks of a parent" },
         { name: "sort", in: "query", schema: { type: "string", enum: ["created_at", "updated_at", "title", "status", "priority", "due_date", "kanban_position"] }, description: "Equal values use task ID ascending; null values sort last." },
         { name: "order", in: "query", schema: { type: "string", enum: ["asc", "desc"], default: "desc" } },
@@ -792,10 +791,10 @@ const paths = {
             } },
             total: { type: "integer", minimum: 0 },
             linkedEvents: { type: "array", items: {
-              type: "object", required: ["id", "title", "start", "entity", "uid"],
+              type: "object", required: ["id", "title", "start", "entity", "uid", "providerSummary"],
               properties: {
                 id: { type: "string" }, title: { type: "string" }, start: { type: "string" },
-                entity: { type: ["string", "null"] }, uid: { type: ["string", "null"] },
+                entity: { type: ["string", "null"] }, uid: { type: ["string", "null"] }, providerSummary: { type: ["string", "null"] },
               },
             } },
           },

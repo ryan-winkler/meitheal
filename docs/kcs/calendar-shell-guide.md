@@ -16,13 +16,13 @@ Calendar opens within **Tasks** at `/tasks?view=calendar`. Older `/calendar` and
 
 1. Use **Previous month**, **Next month** or **Today** above the grid.
 2. Filter by title, task type, status, priority, label, area, or custom rules above the month. On phones, select **Filters** to open these controls. **Active** shows that filters still apply when the controls are closed. **Promoted cards only** narrows the task results to work moved to the top of a Kanban lane.
-3. Open any day in the displayed month to review matching due tasks and local Events that start that day. Connected calendar events have their own section and total. Household members can see the configured feed in Calendar. Administrators manage the sources in Settings. Task filters apply to Meitheal work. Turn off **Events** in the type filters to hide local Events and connected event previews and counts.
+3. Open any day in the displayed month to review matching due tasks and local Events that start that day. The month’s synced event total comes from saved calendar occurrences. The day drawer lists saved and live events in its connected section. Household members can see the configured feed in Calendar. Administrators manage the sources in Settings. Task filters apply to Meitheal work. Turn off **Events** in the type filters to hide local Events and connected event previews and counts.
 4. The month controls keep the active filters. Use **Clear all active filters** to start over.
 
 ### Open a day drawer and create follow-up work
 
 1. Select a day in the month grid using a pointer, Enter or Space.
-2. Review **Tasks and Events** and **Connected Calendar Events**. Local Event rows show their start time or **All day**. Task rows show the shared status label and icon. Saved Home Assistant and CalDAV events open their linked task and remain available if the live source is unavailable. Archived tasks are hidden. Without task filters, the agenda also shows completed tasks that are absent from the month count.
+2. Review **Tasks and Events** and **Connected Calendar Events**. Local Event rows show their start time or **All day**. Task rows show the shared status label and icon. Saved Home Assistant and CalDAV events open their linked task and remain available if the live source is unavailable. Multiple starts from a recurring event can appear on the same day. Archived tasks are hidden. Without task filters, the agenda also shows completed tasks that are absent from the month count.
 3. When more than 100 tasks match a day, use **Load more tasks** in its task list.
 4. Use **Add Task** to open the shared form with the selected due date, or **Add Event** to start an Event on that date. A newly created Event appears on its start day even with no calendar connection.
 
