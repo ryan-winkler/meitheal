@@ -362,7 +362,6 @@ export type SyncConfirmationTarget =
       previousExternalId?: string | undefined
       confirmationId?: string | undefined
       confirmationSource?: string | undefined
-      legacyCalendarName?: string | null | undefined
       payload: string
     }
   | {
@@ -3006,20 +3005,12 @@ export class TaskRepository {
                       if (mutation.confirmation.confirmationSource === "caldav") {
                         yield [{
                           sql: `UPDATE calendar_confirmations SET payload = ?
-                                WHERE task_id = ? AND provider_event_id = ? AND source = 'caldav'
-                                  AND (
-                                    CASE WHEN json_valid(payload) THEN COALESCE(json_extract(payload, '$.calendar_href'), json_extract(payload, '$.entity_id')) ELSE NULL END = ?
-                                    OR (
-                                      CASE WHEN json_valid(payload) THEN COALESCE(json_extract(payload, '$.calendar_href'), json_extract(payload, '$.entity_id')) ELSE NULL END IS NULL
-                                      AND CASE WHEN json_valid(payload) THEN json_extract(payload, '$.calendar') ELSE NULL END = ?
-                                    )
-                                  )`,
+                                WHERE confirmation_id = ? AND task_id = ? AND provider_event_id = ? AND source = 'caldav'`,
                           args: [
                             mutation.confirmation.payload,
+                            mutation.confirmation.confirmationId ?? null,
                             mutation.taskId,
                             mutation.confirmation.externalId,
-                            mutation.confirmation.entityId,
-                            mutation.confirmation.legacyCalendarName ?? null,
                           ],
                         }]
                       } else {
