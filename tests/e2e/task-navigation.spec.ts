@@ -206,11 +206,23 @@ test("pinned types fit narrow desktop top navigation and stay available in the m
   await expect(mobileTypeToggle).toHaveAttribute("aria-expanded", "false")
   await expect(mobileSidebar).toHaveClass(/open/)
   await expect(mobileSidebar.locator('[data-task-view-pinned-item="table"]')).toBeVisible()
-  await sidebarPins.getByRole("button", { name: "New checklist", exact: true }).click()
+  const checklist = sidebarPins.getByRole("button", { name: "New checklist", exact: true })
+  await checklist.click()
   await expect(overlay.locator("#new-task-kind")).toHaveValue("checklist")
   await expect(overlay).toBeVisible()
+  const title = overlay.locator("#new-task-title-input")
+  await title.click()
+  await expect(title).toBeFocused()
+  await page.keyboard.type("Pack supplies")
+  await expect(title).toHaveValue("Pack supplies")
   await page.keyboard.press("Escape")
   await expect(overlay).toBeHidden()
+  await expect(checklist).toBeFocused()
+  await expect(mobileSidebar).toHaveClass(/open/)
+  await page.keyboard.press("Escape")
+  await expect(mobileSidebar).not.toHaveClass(/open/)
+  await expect(page.locator("#menu-toggle")).toHaveAttribute("aria-expanded", "false")
+  await expect(page.locator("#menu-toggle")).toBeFocused()
 })
 
 for (const theme of ["light", "dark", "knight-rider", "auto", "custom"] as const) {
@@ -319,3 +331,52 @@ for (const theme of ["light", "dark", "knight-rider", "auto", "custom"] as const
     }
   })
 }
+
+test("Shopping links identify their own Area and follow applied Board filters", async ({ page, request, baseURL }) => {
+  const headers = { origin: new URL(baseURL!).origin }
+  const previous = (await (await request.get("/api/settings")).json()).sidebar_config
+  const names = ["Kitchen supplies", "Workshop supplies"]
+  const areas: string[] = []
+  const paths = ["/tasks?types=shopping_item"]
+  try {
+    for (const name of names) {
+      const response = await request.post("/api/areas", { headers, data: { name } })
+      expect(response.status()).toBe(201)
+      const { id } = await response.json()
+      areas.push(id)
+      paths.push("/tasks?" + new URLSearchParams({ types: "shopping_item", area: id }))
+    }
+    const shortcuts = ["All Shopping", ...names].map((label, index) => ({
+      id: `shopping-route-${index}`,
+      label,
+      href: paths[index],
+      icon: "shopping-cart",
+    }))
+    const save = await request.put("/api/settings", {
+      headers,
+      data: { key: "sidebar_config", value: {
+        order: ["dashboard", "tasks", ...shortcuts.map(shortcut => shortcut.id)],
+        customItems: shortcuts,
+      } },
+    })
+    expect(save.ok()).toBe(true)
+    await page.goto("/")
+    const sidebar = page.locator("#sidebar")
+    const current = sidebar.locator('[aria-current="page"][data-page^="shopping-route-"]')
+    const areaTrigger = page.locator("#area-selector-trigger")
+    await sidebar.getByRole("link", { name: names[0], exact: true }).click()
+    await expect(page).toHaveURL(url => url.searchParams.get("area") === areas[0])
+    await expect(current).toHaveText(names[0])
+    await areaTrigger.click()
+    await page.locator(`#area-selector-dropdown [data-area-id="${areas[1]}"]`).click()
+    await expect(page).toHaveURL(url => url.searchParams.get("area") === areas[1])
+    await expect(current).toHaveText(names[1])
+    await areaTrigger.click()
+    await page.locator('#area-selector-dropdown [data-area-id=""]').click()
+    await expect(page).toHaveURL(url => url.searchParams.get("area") === "")
+    await expect(current).toHaveText("All Shopping")
+  } finally {
+    await request.put("/api/settings", { headers, data: { key: "sidebar_config", value: previous ?? null } })
+    for (const id of areas) await request.delete(`/api/areas/${id}`, { headers })
+  }
+})

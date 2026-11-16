@@ -226,18 +226,12 @@
                 );
                 const taskPanel = document.getElementById("task-detail-panel");
                 const isDocked = document.body.classList.contains("has-docked-inspector");
-                const sidebar = document.getElementById("sidebar");
-
                 if (
                   taskOverlay &&
                   taskOverlay.classList.contains("active") &&
                   (!isDocked || taskPanel?.contains(document.activeElement))
                 ) {
                   document.getElementById("td-close")?.click()
-                  return;
-                }
-                if (sidebar?.classList.contains("open")) {
-                  sidebar.classList.remove("open");
                   return;
                 }
               }

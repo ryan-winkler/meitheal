@@ -297,6 +297,7 @@ function isExternal(href: string): boolean {
   import {
     TASK_NAV_PREFS_EVENT,
     TASK_NAV_PREFS_KEY,
+    matchingTaskShortcutCriteria,
     normalizeTaskTypeFilterValue,
     readTaskNavPrefs,
     toggleTaskViewPin,
@@ -336,14 +337,20 @@ function isExternal(href: string): boolean {
     const view = viewFrom(background)
     const types = normalizeTaskTypeFilterValue(background.searchParams.get("types"))
     const navLinks = [...document.querySelectorAll<HTMLAnchorElement>(".sidebar .nav-link:not(.nav-link--external)")]
-    const typedLink = types && navLinks.find(link => {
-      if (link.dataset.taskViewLink) return false
+    let typedLink: HTMLAnchorElement | undefined
+    let matchedCriteria = -1
+    if (types) for (const link of navLinks) {
+      if (link.dataset.taskViewLink) continue
       const target = new URL(link.href)
       const href = appPath(target.pathname)
-      return href === appPath(background.pathname) &&
-        normalizeTaskTypeFilterValue(target.searchParams.get("types")) === types &&
-        (href === "/tasks" ? viewFrom(target) === view : !target.hash || target.hash === current.hash)
-    })
+      if (href !== appPath(background.pathname) ||
+          normalizeTaskTypeFilterValue(target.searchParams.get("types")) !== types ||
+          (href === "/tasks" ? viewFrom(target) !== view : target.hash && target.hash !== current.hash)) continue
+      const criteria = matchingTaskShortcutCriteria(target.searchParams, background.searchParams)
+      if (criteria <= matchedCriteria) continue
+      matchedCriteria = criteria
+      typedLink = link
+    }
     const activeViewLink = document.querySelector(`[data-task-view-pinned-item="${view}"] .nav-link`)
       ?? document.querySelector(`#tasks-nav-submenu:not([hidden]) [data-task-view-link="${view}"]`)
     navLinks.forEach(link => {
@@ -352,7 +359,7 @@ function isExternal(href: string): boolean {
       const url = new URL(link.href)
       const href = appPath(url.pathname)
       const isTasksLink = link.dataset.page === "tasks"
-      let active
+      let active: boolean
       if (child) active = taskContext && child === view && !typedLink
       else if (isTasksLink) active = taskContext && !typedLink
       else if (url.searchParams.has("types")) active = link === typedLink

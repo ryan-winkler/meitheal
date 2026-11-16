@@ -378,7 +378,7 @@ test.describe("Responsive Navigation", () => {
     await expect(pinnedRow).toBeHidden();
   });
 
-  test("task-nav pinned items hide in navbar mode on desktop without reload and stay visible in mobile drawer", async ({ page }) => {
+  test("task-nav Shopping stays available after changing navigation layout and on mobile", async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 960 });
     await page.goto("/settings#navigation-settings", { waitUntil: "networkidle" });
 
@@ -405,7 +405,12 @@ test.describe("Responsive Navigation", () => {
 
       await setNavigationLayout("navbar");
       await expect(page.locator("html")).toHaveAttribute("data-appearance-navigation", "navbar");
-      await expect(pinnedRow).toBeHidden();
+      const pinnedShopping = pinnedRow.getByRole("button", { name: "New shopping list", exact: true });
+      await pinnedShopping.click();
+      await expect(page.locator("#new-task-kind")).toHaveValue("shopping_item");
+      await page.keyboard.press("Escape");
+      await expect(page.locator("#new-task-overlay")).toBeHidden();
+      await expect(pinnedShopping).toBeFocused();
 
       await setNavigationLayout("sidebar");
       await expect(page.locator("html")).toHaveAttribute("data-appearance-navigation", "sidebar");
@@ -414,7 +419,7 @@ test.describe("Responsive Navigation", () => {
       await setNavigationLayout("navbar");
       await expect(page.locator("html")).toHaveAttribute("data-appearance-navigation", "navbar");
 
-      await expect(pinnedRow).toBeHidden()
+      await expect(pinnedRow).toBeVisible()
       await page.setViewportSize({ width: 390, height: 844 })
       await expect(page.locator("html")).toHaveAttribute("data-appearance-navigation", "navbar")
       await expect(page).toHaveURL(/settings#navigation-settings$/)

@@ -71,6 +71,18 @@ export function normalizeTaskTypeFilterValue(value: string | null): string {
   return [...new Set(kinds)].sort().join(",")
 }
 
+export function matchingTaskShortcutCriteria(target: URLSearchParams, current: URLSearchParams): number {
+  const keys = new Set(target.keys())
+  keys.delete("types")
+  keys.delete("view")
+  for (const key of keys) {
+    const expected = target.getAll(key).sort()
+    const active = current.getAll(key).sort()
+    if (expected.length !== active.length || expected.some((value, index) => value !== active[index])) return -1
+  }
+  return keys.size
+}
+
 export function normalizeTaskNavPrefs(input: unknown): TaskNavPrefs {
   const defaults = defaultTaskNavPrefs()
   if (!input || typeof input !== "object") return defaults
