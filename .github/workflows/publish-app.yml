@@ -71,9 +71,12 @@ jobs:
     if: inputs.channel == 'stable'
     needs: [release-ref, amd64, aarch64]
     runs-on: ubuntu-24.04
+    name: Verify public Stable images and update discovery
     timeout-minutes: 15
     permissions:
       contents: read
+    env:
+      CAN_UPDATE_STORE: ${{ secrets.ADDON_REPO_TOKEN != '' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -97,13 +100,19 @@ jobs:
           }
           verify "$AMD64_IMAGE" "$AMD64_DIGEST" linux/amd64
           verify "$AARCH64_IMAGE" "$AARCH64_DIGEST" linux/arm64
+      - name: Record manual App Store publication
+        if: env.CAN_UPDATE_STORE != 'true'
+        run: |
+          printf '%s\n' 'Both public Stable images were verified. Follow the manual App Store publication steps in docs/kcs/releasing.md.' >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: env.CAN_UPDATE_STORE == 'true'
         with:
           repository: ryan-winkler/meitheal-ha-addon
           ref: main
           path: app-repository
           token: ${{ secrets.ADDON_REPO_TOKEN }}
       - name: Promote the verified stable release
+        if: env.CAN_UPDATE_STORE == 'true'
         env:
           VERSION: ${{ needs.release-ref.outputs.version }}
           AMD64_DIGEST: ${{ needs.amd64.outputs.digest }}

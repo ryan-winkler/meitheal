@@ -103,6 +103,15 @@ test("hosted canary checks cannot publish packages or advance App Store discover
   expect(shared).toContain('node scripts/app-release.mjs stage stable "$VERSION" app-repository')
 })
 
+test("Stable verifies public images before manual or automatic discovery publication", () => {
+  const shared = readFileSync(join(root, ".github/workflows/publish-app.yml"), "utf8")
+  expect(shared).toContain("CAN_UPDATE_STORE: ${{ secrets.ADDON_REPO_TOKEN != '' }}")
+  expect(shared).toMatch(/name: Verify both published images without registry credentials\n +env:/)
+  expect(shared).toMatch(/name: Record manual App Store publication\n +if: env\.CAN_UPDATE_STORE != 'true'/)
+  expect(shared).toMatch(/if: env\.CAN_UPDATE_STORE == 'true'\n +with:\n +repository: ryan-winkler\/meitheal-ha-addon/)
+  expect(shared).toMatch(/name: Promote the verified stable release\n +if: env\.CAN_UPDATE_STORE == 'true'/)
+})
+
 test("image metadata accepts only supported literal architectures and matching bases", () => {
   for (const arch of ["amd64", "aarch64"]) {
     const result = spawnSync(process.execPath, ["scripts/app-release.mjs", "image", "canary", arch, revision.slice(0, 12), revision], {
