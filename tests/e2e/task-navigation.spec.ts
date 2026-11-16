@@ -390,7 +390,11 @@ test("Shopping links identify their own Area and follow applied Board filters", 
     await expect(areaTrigger).toContainText(names[0])
 
     await sidebar.getByRole("link", { name: "Kitchen shopping calendar", exact: true }).click()
-    await page.getByRole("textbox", { name: "Filter by text" }).fill("pan")
+    const calendar = page.locator("#calendar-shell")
+    await expect(calendar).toHaveAttribute("data-calendar-ready", "true")
+    const calendarFilters = calendar.locator(".filter-toolbar")
+    await expect(calendarFilters).toHaveAttribute("data-initialized", "true")
+    await calendarFilters.getByRole("textbox", { name: "Filter by text" }).fill("pan")
     await expect(page).toHaveURL(url => url.searchParams.get("area") === areas[0] && url.searchParams.get("search") === "pan")
     await expect(current).toHaveText("Kitchen shopping calendar")
   } finally {
