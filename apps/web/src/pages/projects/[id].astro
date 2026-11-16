@@ -17,7 +17,7 @@ import {
   ensureSchema,
   getPersistenceClient,
 } from "@domains/tasks/persistence/store";
-import { HierarchyRepository, type GoalRow } from "@domains/tasks/persistence/hierarchy-repository"
+import { HierarchyRepository, type AreaRow, type GoalRow } from "@domains/tasks/persistence/hierarchy-repository"
 import { TaskRepository } from "@domains/tasks/persistence/task-repository";
 import { PRIORITY_ICONS, PRIORITY_COLORS } from "../../lib/priority-config";
 import { STATUS_LABELS } from "../../lib/status-config";
@@ -36,6 +36,7 @@ let goal: Record<string, unknown> | null = null;
 let area: Record<string, unknown> | null = null;
 let tasks: Record<string, unknown>[] = [];
 let goals: GoalRow[] = []
+let areas: AreaRow[] = []
 
 try {
   await ensureSchema();
@@ -51,13 +52,15 @@ try {
 
   if (project.goal_id) {
     goal = await repo.findGoalById(project.goal_id as string) as Record<string, unknown> | null;
-    if (goal?.area_id) {
-      area = await repo.findAreaById(goal.area_id as string) as Record<string, unknown> | null;
-    }
+  }
+  const areaId = project.area_id ?? goal?.area_id
+  if (typeof areaId === "string") {
+    area = await repo.findAreaById(areaId) as Record<string, unknown> | null
   }
 
   tasks = await taskRepo.findByProjectId(projectId);
   goals = await repo.findAllGoals({});
+  areas = await repo.findAllAreas()
 } catch {
   return Astro.redirect(projectsPath);
 }
@@ -101,6 +104,7 @@ const tabs = [
         class={`project-tab ${tab.id === "overview" ? "active" : ""}`}
         role="tab"
         data-tab={tab.id}
+        data-astro-reload
         aria-selected={tab.id === "overview" ? "true" : "false"}
       >
         <span class="tab-icon">{tab.icon}</span>
@@ -115,7 +119,7 @@ const tabs = [
     <nav class="project-breadcrumb" aria-label="Project breadcrumb">
       <a href="/projects">Projects</a>
       {area && <><span class="bc-sep">›</span><a href={`/areas/${String(area.id)}`}>{String(area.name)}</a></>}
-      {goal && <><span class="bc-sep">›</span><span>🎯 {String(goal.title)}</span></>}
+      {goal && <><span class="bc-sep">›</span><a href={`/progress?project_id=${encodeURIComponent(projectId)}#goals`}>🎯 {String(goal.title)}</a></>}
       <span class="bc-sep">›</span>
       <span class="bc-current">{projIcon} {projTitle}</span>
     </nav>
@@ -268,6 +272,15 @@ const tabs = [
           <option value="paused" selected={projStatus === "paused"}>Paused</option>
           <option value="completed" selected={projStatus === "completed"}>Completed</option>
           <option value="archived" selected={projStatus === "archived"}>Archived</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="edit-proj-area">Area</label>
+        <select id="edit-proj-area" class="form-select">
+          <option value="">Use the goal’s Area, if set</option>
+          {areas.map(option => (
+            <option value={option.id} selected={project?.area_id === option.id}>{option.name}</option>
+          ))}
         </select>
       </div>
       <div class="form-group">
@@ -740,6 +753,7 @@ const tabs = [
     const colorInput = document.getElementById("edit-proj-color");
     const statusSelect = document.getElementById("edit-proj-status");
     const goalSelect = document.getElementById("edit-proj-goal");
+    const areaSelect = document.getElementById("edit-proj-area")
 
     const title = titleInput?.value?.trim();
     if (!title) {
@@ -761,6 +775,7 @@ const tabs = [
           color: colorInput?.value || "#146C4E",
           status: statusSelect?.value || "active",
           goal_id: goalSelect?.value || null,
+          area_id: areaSelect?.value || null,
         }),
       });
 

@@ -146,12 +146,19 @@ export class HierarchyRepository {
 
   // ── Goals ────────────────────────────────────────────────────────
 
-  async findAllGoals(filters?: { area_id?: string; status?: string }): Promise<GoalRow[]> {
+  async findAllGoals(filters?: { area_id?: string; project_id?: string; status?: string }): Promise<GoalRow[]> {
     let sql = "SELECT * FROM goals"
     const conditions: string[] = []
     const args: string[] = []
 
-    if (filters?.area_id) { conditions.push("area_id = ?"); args.push(filters.area_id) }
+    if (filters?.area_id) {
+      conditions.push("(area_id = ? OR id IN (SELECT goal_id FROM projects WHERE area_id = ?))")
+      args.push(filters.area_id, filters.area_id)
+    }
+    if (filters?.project_id) {
+      conditions.push("id = (SELECT goal_id FROM projects WHERE id = ?)")
+      args.push(filters.project_id)
+    }
     if (filters?.status) { conditions.push("status = ?"); args.push(filters.status) }
 
     if (conditions.length > 0) sql += ` WHERE ${conditions.join(" AND ")}`
@@ -248,7 +255,10 @@ export class HierarchyRepository {
     const args: string[] = []
 
     if (filters?.goal_id) { conditions.push("goal_id = ?"); args.push(filters.goal_id) }
-    if (filters?.area_id) { conditions.push("area_id = ?"); args.push(filters.area_id) }
+    if (filters?.area_id) {
+      conditions.push("COALESCE(area_id, (SELECT goals.area_id FROM goals WHERE goals.id = projects.goal_id)) = ?")
+      args.push(filters.area_id)
+    }
     if (filters?.status) { conditions.push("status = ?"); args.push(filters.status) }
 
     if (conditions.length > 0) sql += ` WHERE ${conditions.join(" AND ")}`

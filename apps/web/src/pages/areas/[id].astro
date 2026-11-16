@@ -6,62 +6,55 @@
  * @phase 15 — Wave 4.5
  */
 import Layout from "../../layouts/Layout.astro";
-import Icon from "../../components/ui/Icon.astro";
-import ProgressRing from "../../components/ui/ProgressRing.astro";
-import { t } from "../../i18n/translations";
-import type { Locale } from "../../lib/locale";
+import { logApiError } from "../../lib/api-logger"
 import {
   ensureSchema,
   getPersistenceClient,
-} from "@domains/tasks/persistence/store";
-import { HierarchyRepository } from "@domains/tasks/persistence/hierarchy-repository";
-import { TaskRepository } from "@domains/tasks/persistence/task-repository";
+} from "@domains/tasks/persistence/store"
+import { HierarchyRepository, type AreaRow, type GoalRow, type ProjectRow } from "@domains/tasks/persistence/hierarchy-repository"
+import { TaskRepository } from "@domains/tasks/persistence/task-repository"
 
-const cookieLocale = Astro.cookies.get("meitheal-locale")?.value;
-const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
-
-const areaId = Astro.params.id;
+const areaId = Astro.params.id
+const areasPath = `${Astro.locals.ingressPath || ""}/planning#spaces`
 if (!areaId) {
-  return Astro.redirect("/areas");
+  return Astro.redirect(areasPath)
 }
 
-let area: Record<string, unknown> | null = null;
-let goals: any[] = [];
-let projects: any[] = [];
-let taskCountByProject = new Map<string, { total: number; completed: number }>();
+let area: AreaRow | null
+let goals: GoalRow[]
+let projects: ProjectRow[]
+let taskCountByProject: Map<string, { total: number; completed: number }>
 
 try {
-  await ensureSchema();
-  const client = getPersistenceClient();
-  const repo = new HierarchyRepository(client);
-  const taskRepo = new TaskRepository(client);
+  await ensureSchema()
+  const client = getPersistenceClient()
+  const repo = new HierarchyRepository(client)
+  const taskRepo = new TaskRepository(client)
 
-  area = await repo.findAreaById(areaId) as Record<string, unknown> | null;
+  area = await repo.findAreaById(areaId)
   if (!area) {
-    return Astro.redirect("/areas");
+    return Astro.redirect(areasPath)
   }
 
-  goals = await repo.findAllGoals({ area_id: areaId });
-  const allProjects = await repo.findAllProjects({});
-
-  // Get projects linked to goals in this area
-  const goalIds = new Set(goals.map((g) => String(g.id)));
-  projects = allProjects.filter((p) => p.goal_id && goalIds.has(String(p.goal_id)));
-
-  // Count tasks per project
-  for (const proj of projects) {
-    const tasks = await taskRepo.findByProjectId(String(proj.id));
-    const completed = tasks.filter((t) => String(t.status) === "complete").length;
-    taskCountByProject.set(String(proj.id), { total: tasks.length, completed });
-  }
-} catch {
-  return Astro.redirect("/areas");
+  const [areaGoals, areaProjects] = await Promise.all([
+    repo.findAllGoals({ area_id: areaId }),
+    repo.findProjectsByArea(areaId),
+  ])
+  goals = areaGoals
+  projects = areaProjects
+  taskCountByProject = projects.length ? await taskRepo.getProjectTaskCounts() : new Map()
+} catch (error) {
+  logApiError("areas", "Could not load Area details", error)
+  return new Response("Could not load this Area. Try again or check the Meitheal app log.", {
+    status: 503,
+    headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "private, no-store" },
+  })
 }
 
-const areaName = String(area?.name ?? "Area");
-const areaDesc = area?.description ? String(area.description) : null;
-const areaIcon = String(area?.icon ?? "🏠");
-const areaColor = String(area?.color ?? "#146C4E");
+const { name: areaName, icon: areaIcon, color: areaColor } = area
+const formColor = /^#[0-9a-fA-F]{3}$/.test(areaColor)
+  ? `#${[...areaColor.slice(1)].map(channel => channel.repeat(2)).join("")}`
+  : areaColor
 
 const tabs = [
   { id: "overview", label: "Overview", icon: "📊" },
@@ -77,18 +70,18 @@ const tabs = [
     {areaName}
   </span>
   <div slot="actions" class="flex gap-2">
-    <a href="/areas" class="btn btn-ghost">← Areas</a>
+    <a href="/planning#spaces" class="btn btn-ghost" id="back-to-areas">← Areas</a>
   </div>
 
   {/* Sub-menu tab bar */}
-  <nav class="area-tabs" role="tablist" aria-label="Area sections">
+  <nav class="area-tabs" aria-label="Area sections">
     {tabs.map((tab) => (
       <a
         href={`#${tab.id}`}
         class={`area-tab ${tab.id === "overview" ? "active" : ""}`}
-        role="tab"
         data-tab={tab.id}
-        aria-selected={tab.id === "overview" ? "true" : "false"}
+        data-astro-reload
+        aria-current={tab.id === "overview" ? "location" : undefined}
       >
         <span class="tab-icon">{tab.icon}</span>
         {tab.label}
@@ -100,10 +93,6 @@ const tabs = [
   <section id="section-overview" class="area-section active" data-section="overview">
     <div class="area-header-card" style={`--area-accent: ${areaColor};`}>
       <div class="area-header-top">
-        <div class="area-header-info">
-          {areaDesc && <p class="area-desc">{areaDesc}</p>}
-          {!areaDesc && <p class="area-desc area-desc-empty">No description set.</p>}
-        </div>
         <div class="area-header-stats">
           <div class="stat-block">
             <div class="stat-value">{goals.length}</div>
@@ -135,7 +124,7 @@ const tabs = [
           ))}
         </div>
         {goals.length > 5 && (
-          <a href="#goals" class="overview-more" data-tab-link="goals">
+          <a href="#goals" class="overview-more" data-astro-reload>
             View all {goals.length} goals →
           </a>
         )}
@@ -148,12 +137,12 @@ const tabs = [
     <div class="section-header">
       <h2 class="section-title">Goals</h2>
       <span class="section-count">{goals.length} total</span>
+      <a href={`/progress?area_id=${encodeURIComponent(areaId)}#goals`} class="btn btn-ghost btn-sm">Go to Goals</a>
     </div>
 
     {goals.length === 0 ? (
       <div class="section-empty">
         <p>No goals in this area yet. Create one from the Goals page.</p>
-        <a href="/progress#goals" class="btn btn-primary btn-sm">Go to Goals</a>
       </div>
     ) : (
       <div class="goal-list">
@@ -193,7 +182,7 @@ const tabs = [
 
     {projects.length === 0 ? (
       <div class="section-empty">
-        <p>No projects linked to goals in this area.</p>
+        <p>No projects in this area yet.</p>
       </div>
     ) : (
       <div class="project-grid">
@@ -231,33 +220,29 @@ const tabs = [
       <h2 class="section-title">Area Settings</h2>
     </div>
 
-    <div class="settings-card">
+    <form class="settings-card" id="edit-area-form" data-area-id={areaId}>
       <div class="form-group">
         <label for="edit-area-name">Name</label>
-        <input type="text" id="edit-area-name" value={areaName} maxlength="100" />
-      </div>
-      <div class="form-group">
-        <label for="edit-area-desc">Description</label>
-        <textarea id="edit-area-desc" rows="3" maxlength="500">{areaDesc ?? ""}</textarea>
+        <input type="text" id="edit-area-name" value={areaName} maxlength="100" required />
       </div>
       <div class="form-row">
         <div class="form-group form-group-sm">
           <label for="edit-area-icon">Icon</label>
-          <input type="text" id="edit-area-icon" value={areaIcon} maxlength="4" class="icon-input" />
+          <input type="text" id="edit-area-icon" value={areaIcon} maxlength="10" class="icon-input" />
         </div>
         <div class="form-group form-group-sm">
           <label for="edit-area-color">Color</label>
-          <input type="color" id="edit-area-color" value={areaColor} class="color-input" />
+          <input type="color" id="edit-area-color" value={formColor} class="color-input" />
         </div>
       </div>
       <div class="settings-actions">
-        <button type="button" class="btn btn-primary" id="save-area-btn">Save Changes</button>
+        <button type="submit" class="btn btn-primary" id="save-area-btn">Save Changes</button>
       </div>
-    </div>
+    </form>
 
     <div class="danger-zone">
       <h3 class="danger-title">Danger Zone</h3>
-      <p class="danger-desc">Deleting this area will unlink all goals. Goals and projects will remain but become uncategorised.</p>
+      <p class="danger-desc">Delete this Area and keep its tasks, goals and projects in Meitheal.</p>
       <button type="button" class="btn btn-danger" id="delete-area-btn">Delete Area</button>
     </div>
   </section>
@@ -328,18 +313,10 @@ const tabs = [
   }
   .area-header-top {
     display: flex;
-    justify-content: space-between;
+    justify-content: flex-start;
     align-items: flex-start;
     gap: 1.5rem;
   }
-  .area-header-info { flex: 1; }
-  .area-desc {
-    margin: 0;
-    color: var(--text-secondary);
-    font-size: 0.875rem;
-    line-height: 1.5;
-  }
-  .area-desc-empty { font-style: italic; color: var(--text-muted); }
 
   .area-header-stats { display: flex; gap: 1.5rem; }
   .stat-block { text-align: center; }
@@ -566,8 +543,7 @@ const tabs = [
     color: var(--text-secondary);
     margin-bottom: 6px;
   }
-  .form-group input[type="text"],
-  .form-group textarea {
+  .form-group input[type="text"] {
     width: 100%;
     padding: 0.5rem 0.75rem;
     font-size: 0.875rem;
@@ -579,8 +555,7 @@ const tabs = [
     font-family: inherit;
     transition: border-color 150ms;
   }
-  .form-group input:focus,
-  .form-group textarea:focus {
+  .form-group input:focus {
     border-color: var(--accent);
     box-shadow: 0 0 0 2px rgb(var(--accent-rgb) / 0.15);
   }
@@ -640,101 +615,91 @@ const tabs = [
   }
 </style>
 
-<script define:vars={{ areaId }}>
-  // --- Tab switching ---
-  const areaTabEls = Array.from(document.querySelectorAll(".area-tab"));
-  const areaSectionEls = Array.from(document.querySelectorAll(".area-section"));
+<script>
+  import { confirmDialog } from "../../lib/confirm-dialog"
+  import { pageLifecycle } from "../../lib/page-lifecycle"
+  import { showToast } from "../../lib/toast"
 
-  function switchTab(hash) {
-    const tabId = hash.replace("#", "") || "overview";
-    areaTabEls.forEach((t) => {
-      const isActive = t.dataset.tab === tabId;
-      t.classList.toggle("active", isActive);
-      t.setAttribute("aria-selected", isActive ? "true" : "false");
-    });
-    areaSectionEls.forEach((s) => {
-      s.classList.toggle("active", s.dataset.section === tabId);
-    });
-  }
+  pageLifecycle.onPageLoad(signal => {
+    const form = document.querySelector<HTMLFormElement>("#edit-area-form")
+    const areaId = form?.dataset.areaId
+    if (!form || !areaId) return
 
-  // Initial state from hash
-  if (window.location.hash) switchTab(window.location.hash);
-  window.addEventListener("hashchange", () => switchTab(window.location.hash));
-
-  // Tab link clicks within content (e.g. "View all goals →")
-  document.querySelectorAll("[data-tab-link]").forEach((link) => {
-    link.addEventListener("click", (e) => {
-      e.preventDefault();
-      const target = /** @type {HTMLElement} */ (link).dataset.tabLink;
-      window.location.hash = target || "";
-    });
-  });
-
-  // --- Settings: Save ---
-  const saveBtn = document.getElementById("save-area-btn");
-  saveBtn?.addEventListener("click", async () => {
-    const nameInput = document.getElementById("edit-area-name");
-    const descInput = document.getElementById("edit-area-desc");
-    const iconInput = document.getElementById("edit-area-icon");
-    const colorInput = document.getElementById("edit-area-color");
-
-    const name = nameInput?.value?.trim();
-    if (!name) {
-      nameInput?.focus();
-      return;
-    }
-
-    saveBtn.textContent = "Saving…";
-    saveBtn.disabled = true;
-
-    try {
-      const res = await fetch(`/api/areas/${areaId}`, {
-        method: "PUT",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          name,
-          description: descInput?.value?.trim() || null,
-          icon: iconInput?.value?.trim() || "🏠",
-          color: colorInput?.value || "#146C4E",
-        }),
-      });
-
-      if (res.ok) {
-        window.location.reload();
-      } else {
-        const data = await res.json().catch(() => ({}));
-        window.showToast?.(data.error || "Failed to save", "error");
-        saveBtn.textContent = "Save Changes";
-        saveBtn.disabled = false;
+    const sections = Array.from(document.querySelectorAll<HTMLElement>(".area-section"))
+    const links = document.querySelectorAll<HTMLAnchorElement>(".area-tab")
+    function updateSection() {
+      const hash = window.location.hash.slice(1)
+      const active = sections.find(section => section.dataset.section === hash)?.dataset.section ?? "overview"
+      for (const section of sections) {
+        section.classList.toggle("active", section.dataset.section === active)
       }
-    } catch {
-      saveBtn.textContent = "Save Changes";
-      saveBtn.disabled = false;
-    }
-  });
-
-  // --- Settings: Delete ---
-  const deleteBtn = document.getElementById("delete-area-btn");
-  deleteBtn?.addEventListener("click", async () => {
-    const confirmed = await window.confirmDialog?.({ message: `Delete "${document.getElementById("edit-area-name")?.value || "this area"}"? Goals and projects will become uncategorised.` });
-    if (!confirmed) return;
-
-    deleteBtn.disabled = true;
-    deleteBtn.textContent = "Deleting…";
-
-    try {
-      const res = await fetch(`/api/areas/${areaId}`, { method: "DELETE" });
-      if (res.ok) {
-        window.location.href = "/areas";
-      } else {
-        const data = await res.json().catch(() => ({}));
-        window.showToast?.(data.error || "Failed to delete", "error");
-        deleteBtn.textContent = "Delete Area";
-        deleteBtn.disabled = false;
+      for (const link of links) {
+        const isActive = link.dataset.tab === active
+        link.classList.toggle("active", isActive)
+        if (isActive) link.setAttribute("aria-current", "location")
+        else link.removeAttribute("aria-current")
       }
-    } catch {
-      deleteBtn.textContent = "Delete Area";
-      deleteBtn.disabled = false;
     }
-  });
+    updateSection()
+    window.addEventListener("hashchange", updateSection, { signal })
+
+    const name = form.querySelector<HTMLInputElement>("#edit-area-name")!
+    const icon = form.querySelector<HTMLInputElement>("#edit-area-icon")!
+    const color = form.querySelector<HTMLInputElement>("#edit-area-color")!
+    const save = form.querySelector<HTMLButtonElement>("#save-area-btn")!
+    const remove = document.querySelector<HTMLButtonElement>("#delete-area-btn")!
+    const back = document.querySelector<HTMLAnchorElement>("#back-to-areas")!
+    const endpoint = "/api/areas/" + encodeURIComponent(areaId)
+
+    form.addEventListener("submit", async event => {
+      event.preventDefault()
+      if (save.disabled) return
+      if (!name.value.trim()) {
+        name.focus()
+        showToast("Enter an Area name before saving.", "error")
+        return
+      }
+
+      save.disabled = true
+      save.textContent = "Saving…"
+      try {
+        const response = await fetch(endpoint, {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ name: name.value.trim(), icon: icon.value.trim() || "📁", color: color.value }),
+        })
+        if (!response.ok) throw new Error("Area update failed")
+        if (!signal.aborted) window.location.reload()
+      } catch {
+        if (signal.aborted) return
+        showToast("Could not save the Area. Your changes are still here. Try again.", "error")
+        save.disabled = false
+        save.textContent = "Save Changes"
+      }
+    }, { signal })
+
+    remove.addEventListener("click", async () => {
+      const confirmed = await confirmDialog({
+        title: "Delete Area",
+        message: "Delete this Area? Its tasks, goals and projects will stay in Meitheal.",
+        confirmText: "Delete Area",
+        variant: "danger",
+        signal,
+      })
+      if (!confirmed) return
+
+      remove.disabled = true
+      remove.textContent = "Deleting…"
+      try {
+        const response = await fetch(endpoint, { method: "DELETE" })
+        if (!response.ok) throw new Error("Area deletion failed")
+        if (!signal.aborted) window.location.assign(back.href)
+      } catch {
+        if (signal.aborted) return
+        showToast("Could not delete the Area. Try again.", "error")
+        remove.disabled = false
+        remove.textContent = "Delete Area"
+      }
+    }, { signal })
+  })
 </script>

@@ -8,7 +8,7 @@
  * Features:
  * - Two-level hierarchy: Area → Project with CSS tree connector lines
  * - "Home" area always visible (ungrouped projects merge in)
- * - Area row: ⋯ (Manage Space, Rename, Color & Icon, Delete) + (New Project)
+ * - Area row: ⋯ (Edit Area, Rename, Color & Icon, Delete) + (New Project)
  * - Project row: ⋯ (Manage Project, Rename, Icon & Color) + (Task kind picker)
  * - Pinned projects section (context menu)
  * - Collapse state per area (localStorage)
@@ -22,7 +22,7 @@ import {
   ensureSchema,
   getPersistenceClient,
 } from "@domains/tasks/persistence/store"
-import { HierarchyRepository } from "@domains/tasks/persistence/hierarchy-repository"
+import { HierarchyRepository, type AreaRow, type ProjectRow } from "@domains/tasks/persistence/hierarchy-repository"
 import { t } from "../../i18n/translations"
 import type { Locale } from "../../lib/locale"
 import Icon from "../ui/Icon.astro"
@@ -37,17 +37,19 @@ export interface Props {
 }
 const { locale, label } = Astro.props
 
-interface AreaRow { id: string; name: string; icon: string; color: string; position: number }
-interface ProjectRow { id: string; title: string; area_id: string | null; icon: string; color: string; status: string }
-
-let areas: AreaRow[] = []
+let areas: Pick<AreaRow, "id" | "name" | "icon" | "color" | "position">[] = []
 let projects: ProjectRow[] = []
+const goalAreas = new Map<string, string>()
 
 try {
   await ensureSchema()
   const repo = new HierarchyRepository(getPersistenceClient())
-  areas = (await repo.findAllAreas()) as unknown as AreaRow[]
-  projects = (await repo.findAllProjects({})) as unknown as ProjectRow[]
+  const [allAreas, allProjects, goals] = await Promise.all([
+    repo.findAllAreas(), repo.findAllProjects(), repo.findAllGoals(),
+  ])
+  areas = allAreas
+  projects = allProjects
+  for (const goal of goals) if (goal.area_id) goalAreas.set(goal.id, goal.area_id)
 } catch {
   // Schema may not exist yet — render empty
 }
@@ -57,10 +59,11 @@ const projectsByArea = new Map<string, ProjectRow[]>()
 const ungroupedProjects: ProjectRow[] = []
 
 for (const p of projects) {
-  if (p.area_id) {
-    const list = projectsByArea.get(String(p.area_id)) ?? []
+  const areaId = p.area_id ?? (p.goal_id ? goalAreas.get(p.goal_id) : null)
+  if (areaId) {
+    const list = projectsByArea.get(areaId) ?? []
     list.push(p)
-    projectsByArea.set(String(p.area_id), list)
+    projectsByArea.set(areaId, list)
   } else {
     ungroupedProjects.push(p)
   }
@@ -1001,6 +1004,7 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
 <script>
   import { singleKeyShortcutsEnabled } from "@lib/single-key-shortcuts"
   import { DropdownController } from "../../lib/dropdown-controller"
+  import { safeIngressHref } from "../../lib/ingress-navigation"
   import { sanitizeCssColor } from "../../lib/safe-html"
   import { createTablerSvgElement, renderIconOrCustomEmoji } from "../../lib/tabler-svg"
   import { showToast } from "../../lib/toast"
@@ -1357,7 +1361,7 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
         saveCollapsed()
       }
       if (button.hasAttribute("data-area-add")) addProjectToArea(button)
-      if (button.hasAttribute("data-area-menu")) showAreaMenu(button)
+      if (button.hasAttribute("data-area-menu")) showAreaMenu(button, event.detail === 0)
     }
 
     // The sidebar element persists across Astro page swaps.
@@ -1400,7 +1404,7 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
       )
     }
 
-    function showAreaMenu(btn: HTMLButtonElement) {
+    function showAreaMenu(btn: HTMLButtonElement, focusManage: boolean) {
       if (!areaMenuDropdown) return
       const isVisible = ctrl.isShowing(areaMenuDropdown) && activeEntityId === btn.dataset.areaMenu && activeEntityType === "area"
       ctrl.hideAll()
@@ -1409,9 +1413,15 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
       activeEntityId = btn.dataset.areaMenu!
       activeEntityName = btn.dataset.areaName || ""
       const manageLink = areaMenuDropdown.querySelector<HTMLAnchorElement>("[data-action='manage']")
-      if (manageLink) manageLink.href = `/areas/${activeEntityId}`
+      if (manageLink) manageLink.href = safeIngressHref(`/areas/${encodeURIComponent(activeEntityId)}#settings`)
       ctrl.show(areaMenuDropdown, btn)
+      if (focusManage) manageLink?.focus()
     }
+
+    areaMenuDropdown?.addEventListener("keydown", event => {
+      if (event.key !== "Escape" || !activeEntityId) return
+      nav.querySelector<HTMLButtonElement>(`[data-area-menu="${CSS.escape(activeEntityId)}"]`)?.focus()
+    }, { signal: areaActions.signal })
 
     areaMenuDropdown?.addEventListener("click", async (e) => {
       const target = (e.target as HTMLElement).closest<HTMLElement>("[data-action]")
@@ -1510,7 +1520,7 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
         activeEntityId = btn.dataset.projectMenu!
         activeEntityName = btn.dataset.projectTitle || ""
         const manageLink = projectMenuDropdown.querySelector<HTMLAnchorElement>("[data-action='manage']")
-        if (manageLink) manageLink.href = `/projects/${activeEntityId}`
+        if (manageLink) manageLink.href = safeIngressHref(`/projects/${encodeURIComponent(activeEntityId)}`)
         ctrl.show(projectMenuDropdown, btn)
       })
     })

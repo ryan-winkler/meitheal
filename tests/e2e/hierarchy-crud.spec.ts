@@ -263,6 +263,33 @@ test("findProjectsByArea convenience method", async () => {
   expect(sideProjects.map((p: { title: string }) => p.title).sort()).toEqual(["Side A", "Side B"])
 })
 
+test("Area and Project goal scopes follow direct and project associations", async () => {
+  createTestDb()
+  await setupDb()
+  const repo = await getRepo()
+
+  await repo.createArea({ id: "work", name: "Work" })
+  await repo.createArea({ id: "home", name: "Home" })
+  await repo.createGoal({ id: "work-goal", title: "Work goal", area_id: "work" })
+  await repo.createGoal({ id: "home-goal", title: "Home goal", area_id: "home" })
+  await repo.createGoal({ id: "project-goal", title: "Project goal" })
+  await repo.createGoal({ id: "unlinked-goal", title: "Unlinked goal" })
+  await repo.createProject({ id: "old-project", title: "Inherits Work", goal_id: "work-goal" })
+  await repo.createProject({ id: "shared-goal-project", title: "Explicitly Home", area_id: "home", goal_id: "work-goal" })
+  await repo.createProject({ id: "work-project", title: "Directly Work", area_id: "work", goal_id: "project-goal" })
+
+  expect((await repo.findProjectsByArea("work")).map(project => project.id).sort())
+    .toEqual(["old-project", "work-project"])
+  expect((await repo.findProjectsByArea("home")).map(project => project.id)).toEqual(["shared-goal-project"])
+  expect((await repo.findAllGoals({ area_id: "work" })).map(goal => goal.id).sort())
+    .toEqual(["project-goal", "work-goal"])
+  expect((await repo.findAllGoals({ area_id: "home" })).map(goal => goal.id).sort())
+    .toEqual(["home-goal", "work-goal"])
+  expect((await repo.findAllGoals({ project_id: "work-project" })).map(goal => goal.id)).toEqual(["project-goal"])
+  expect(await repo.findAllGoals({ area_id: "home", project_id: "work-project" })).toEqual([])
+  expect((await repo.findAllGoals()).map(goal => goal.id)).toContain("unlinked-goal")
+})
+
 test("can update a project", async () => {
   createTestDb()
   await setupDb()
