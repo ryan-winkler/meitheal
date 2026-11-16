@@ -29,6 +29,8 @@ UI emoji handling follows five explicit buckets:
 
 The desktop sidebar keeps a single circular edge collapse control (`#sidebar-edge-toggle`, with directional chevron flip and hover/ARIA state), while expandable navigation submenus (`Tasks`, `Areas`, and individual areas) use square disclosure buttons with dynamic `aria-expanded`, `aria-label`, and hover titles.
 
+Pin task types beside **Tasks** for quick access. The sidebar restores those links and the Tasks controls after returning from pages that hide the sidebar, such as Inactivity.
+
 ## Verification
 
 Run `tabler-settings-recovery.spec.ts` against a disposable local Astro dev server to check section navigation, outline rendering, keyboard help, icon and security-link contrast in Light and Dark, mobile navigation, disclosure text and shared card spacing. Verified feedback capture and queue operations retain their separate `feedback-ingress.spec.ts` fixture checks; standalone mode intentionally does not expose those controls.

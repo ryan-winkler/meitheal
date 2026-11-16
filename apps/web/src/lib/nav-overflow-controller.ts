@@ -61,7 +61,7 @@ export function initNavOverflow(root: HTMLElement, pageSignal: AbortSignal): voi
       source.items = source.items.filter(item => root.contains(item))
       primary.removeAttribute("data-nav-overflow-empty")
       const alreadyRestored = menu.childElementCount === 0
-        && source.items.every((item, idx) => item.parentElement === primary && primary.children[idx] === item)
+        && source.items.every(item => item.parentElement === primary)
       if (!alreadyRestored) {
         for (const item of source.items) primary.append(item)
       }

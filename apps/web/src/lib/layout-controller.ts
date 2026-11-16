@@ -11,7 +11,7 @@
         import { pageLifecycle } from "@lib/page-lifecycle";
         import { SINGLE_KEY_SHORTCUTS_STORAGE_KEY, singleKeyShortcutsEnabled } from "@lib/single-key-shortcuts"
         import { attachShortcutTooltips, injectShortcutStyles } from "@lib/shortcut-tooltip";
-        import { normalizeTaskTypeFilterValue } from "@lib/task-nav-types";
+        import { normalizeTaskTypeFilterValue } from "@lib/task-nav-types"
 
         const log = createClientLogger("app", "layout");
 
@@ -119,44 +119,44 @@
 
           const SHORTCUT_NAV = {
             dashboard: () => {
-              syncIngressDestination("/");
-              window.location.assign(safeIngressHref("/"));
+              syncIngressDestination("/")
+              window.location.assign(safeIngressHref("/"))
             },
             tasks: () => {
-              syncIngressDestination("/tasks");
-              window.location.assign(safeIngressHref("/tasks"));
+              syncIngressDestination("/tasks")
+              window.location.assign(safeIngressHref("/tasks"))
             },
             kanban: () => {
-              syncIngressDestination("/tasks#kanban");
-              window.location.assign(safeIngressHref("/tasks#kanban"));
+              syncIngressDestination("/tasks#kanban")
+              window.location.assign(safeIngressHref("/tasks#kanban"))
             },
             table: () => {
-              syncIngressDestination("/table");
-              window.location.assign(safeIngressHref("/table"));
+              syncIngressDestination("/table")
+              window.location.assign(safeIngressHref("/table"))
             },
             today: () => {
-              syncIngressDestination("/today");
-              window.location.assign(safeIngressHref("/today"));
+              syncIngressDestination("/today")
+              window.location.assign(safeIngressHref("/today"))
             },
             upcoming: () => {
-              syncIngressDestination("/upcoming");
-              window.location.assign(safeIngressHref("/upcoming"));
+              syncIngressDestination("/upcoming")
+              window.location.assign(safeIngressHref("/upcoming"))
             },
             calendar: () => {
-              syncIngressDestination("/calendar");
-              window.location.assign(safeIngressHref("/calendar"));
+              syncIngressDestination("/calendar")
+              window.location.assign(safeIngressHref("/calendar"))
             },
-          } as const;
+          } as const
 
           // The New Task modal ships in Layout, so open it directly. Clicking a page
           // button by id pattern used to match the modal's own Cancel button instead.
           function openNewTaskAction() {
-            const modalFn = (window as { openNewTaskModal?: () => void }).openNewTaskModal;
+            const modalFn = (window as { openNewTaskModal?: () => void }).openNewTaskModal
             if (typeof modalFn === "function") {
-              modalFn();
-              return;
+              modalFn()
+              return
             }
-            SHORTCUT_NAV.tasks();
+            SHORTCUT_NAV.tasks()
           }
 
           // Active nav link — strip ingress prefix so path comparison works behind HA ingress
@@ -167,23 +167,23 @@
               ? "/"
               : ip && rawPath.startsWith(ip + "/")
                 ? rawPath.slice(ip.length) || "/"
-                : rawPath;
+                : rawPath
           const currentTypes = normalizeTaskTypeFilterValue(
             new URLSearchParams(window.location.search).get("types"),
-          );
+          )
           document.querySelectorAll(".nav-link").forEach((link) => {
             const href = link.getAttribute("href") || "";
-            if (!href || href.startsWith("http")) return;
-            const linkUrl = new URL(href, window.location.origin);
-            const rawLinkPath = linkUrl.pathname;
+            if (!href || href.startsWith("http")) return
+            const linkUrl = new URL(href, window.location.origin)
+            const rawLinkPath = linkUrl.pathname
             const linkPath =
               ip && (rawLinkPath === ip || rawLinkPath === ip + "/")
                 ? "/"
                 : ip && rawLinkPath.startsWith(ip + "/")
                   ? rawLinkPath.slice(ip.length) || "/"
-                  : rawLinkPath;
-            const linkTypes = normalizeTaskTypeFilterValue(linkUrl.searchParams.get("types"));
-            const typesMatch = linkTypes ? linkTypes === currentTypes : currentTypes === "";
+                  : rawLinkPath
+            const linkTypes = normalizeTaskTypeFilterValue(linkUrl.searchParams.get("types"))
+            const typesMatch = linkTypes ? linkTypes === currentTypes : currentTypes === ""
             if (
               (linkPath === currentPath && typesMatch) ||
               (linkPath !== "/" && currentPath.startsWith(linkPath + "/") && !linkTypes) ||
@@ -195,46 +195,46 @@
           });
 
           // Collapsed-rail quick action + floating tooltips
-          const railNewTaskBtn = document.getElementById("sidebar-rail-new-task");
-          if (bindKeyboard) railNewTaskBtn?.addEventListener("click", openNewTaskAction, { signal });
+          const railNewTaskBtn = document.getElementById("sidebar-rail-new-task")
+          if (bindKeyboard) railNewTaskBtn?.addEventListener("click", openNewTaskAction, { signal })
 
           // Floating collapsed-rail tooltips rendered outside .sidebar-scroll overflow clipping
-          let railTooltip = document.getElementById("sidebar-rail-tooltip");
+          let railTooltip = document.getElementById("sidebar-rail-tooltip")
           if (!railTooltip) {
-            railTooltip = document.createElement("div");
-            railTooltip.id = "sidebar-rail-tooltip";
-            railTooltip.className = "sidebar-rail-tooltip";
-            railTooltip.setAttribute("role", "tooltip");
-            railTooltip.hidden = true;
-            document.body.appendChild(railTooltip);
+            railTooltip = document.createElement("div")
+            railTooltip.id = "sidebar-rail-tooltip"
+            railTooltip.className = "sidebar-rail-tooltip"
+            railTooltip.setAttribute("role", "tooltip")
+            railTooltip.hidden = true
+            document.body.appendChild(railTooltip)
           }
-          const sidebarEl = document.getElementById("sidebar");
+          const sidebarEl = document.getElementById("sidebar")
           const hideRailTooltip = () => {
-            if (railTooltip) railTooltip.hidden = true;
-          };
+            if (railTooltip) railTooltip.hidden = true
+          }
           if (bindKeyboard && sidebarEl) {
             const showRailTooltip = (target: EventTarget | null) => {
-              if (!railTooltip || !document.body.classList.contains("sidebar-collapsed")) return;
+              if (!railTooltip || !document.body.classList.contains("sidebar-collapsed")) return
               if (document.documentElement.dataset.appearanceSidebar === "hover" && sidebarEl.matches(":hover")) {
-                hideRailTooltip();
-                return;
+                hideRailTooltip()
+                return
               }
-              const el = target instanceof Element ? target.closest<HTMLElement>("[data-tooltip]") : null;
-              const text = el?.dataset.tooltip?.trim();
+              const el = target instanceof Element ? target.closest<HTMLElement>("[data-tooltip]") : null
+              const text = el?.dataset.tooltip?.trim()
               if (!el || !text) {
-                hideRailTooltip();
-                return;
+                hideRailTooltip()
+                return
               }
-              const rect = el.getBoundingClientRect();
-              railTooltip.textContent = text;
-              railTooltip.hidden = false;
-              railTooltip.style.top = `${Math.round(rect.top + rect.height / 2)}px`;
-              railTooltip.style.left = `${Math.round(rect.right + 10)}px`;
-            };
-            sidebarEl.addEventListener("pointerover", (event) => showRailTooltip(event.target), { signal });
-            sidebarEl.addEventListener("pointerleave", hideRailTooltip, { signal });
-            sidebarEl.addEventListener("focusin", (event) => showRailTooltip(event.target), { signal });
-            sidebarEl.addEventListener("focusout", hideRailTooltip, { signal });
+              const rect = el.getBoundingClientRect()
+              railTooltip.textContent = text
+              railTooltip.hidden = false
+              railTooltip.style.top = `${Math.round(rect.top + rect.height / 2)}px`
+              railTooltip.style.left = `${Math.round(rect.right + 10)}px`
+            }
+            sidebarEl.addEventListener("pointerover", (event) => showRailTooltip(event.target), { signal })
+            sidebarEl.addEventListener("pointerleave", hideRailTooltip, { signal })
+            sidebarEl.addEventListener("focusin", (event) => showRailTooltip(event.target), { signal })
+            sidebarEl.addEventListener("focusout", hideRailTooltip, { signal })
           }
 
           // EmptyState "New Task" buttons dispatch this event to open the modal
@@ -315,23 +315,23 @@
                 if (createBtn) {
                   createBtn.click();
                 } else {
-                  SHORTCUT_NAV.tasks();
+                  SHORTCUT_NAV.tasks()
                 }
               }
               if (e.key === "t" && !(isDockedInspector && document.getElementById("task-detail-panel")?.contains(document.activeElement))) {
-                SHORTCUT_NAV.table();
+                SHORTCUT_NAV.table()
               }
               if (e.key === "d") {
-                SHORTCUT_NAV.dashboard();
+                SHORTCUT_NAV.dashboard()
               }
               if (e.key === "y") {
-                SHORTCUT_NAV.today();
+                SHORTCUT_NAV.today()
               }
               if (e.key === "u") {
-                SHORTCUT_NAV.upcoming();
+                SHORTCUT_NAV.upcoming()
               }
               if (e.key === "c") {
-                SHORTCUT_NAV.calendar();
+                SHORTCUT_NAV.calendar()
               }
               if (e.key === "?" && !e.repeat && !e.altKey && openShortcutModal?.()) {
                 e.preventDefault()
@@ -400,13 +400,13 @@
                 // "All Areas" option first
                 const allOpt = document.createElement("option");
                 allOpt.value = "all";
-                allOpt.textContent = "All Areas";
+                allOpt.textContent = "All Areas"
                 select.appendChild(allOpt);
                 boards.forEach(
                   (b: { id: string; name: string; icon: string }) => {
                     const opt = document.createElement("option");
                     opt.value = b.id;
-                    opt.textContent = b.name;
+                    opt.textContent = b.name
                     select.appendChild(opt);
                   },
                 );

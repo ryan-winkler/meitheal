@@ -508,6 +508,7 @@ function isExternal(href: string): boolean {
 </style>
 
 <script>
+  import { pageLifecycle } from "../../lib/page-lifecycle"
   import {
     TASK_NAV_PREFS_EVENT,
     TASK_NAV_PREFS_KEY,
@@ -520,293 +521,298 @@ function isExternal(href: string): boolean {
     toggleTaskNavExpanded,
     toggleTaskNavPin,
     type TaskNavTypeId,
-  } from "../../lib/task-nav-types";
+  } from "../../lib/task-nav-types"
 
-  // The sidebar can persist across Astro swaps; update the original links in either list.
-  const runtime = window as unknown as { __meithealSidebarActive?: AbortController };
-  runtime.__meithealSidebarActive?.abort();
-  const controller = new AbortController();
-  runtime.__meithealSidebarActive = controller;
+  // A private page can remove the persisted sidebar. Rebind the new sidebar on its return.
+  const runtime = window as unknown as { __meithealSidebarActive?: AbortController }
+  runtime.__meithealSidebarActive?.abort()
+  const controller = new AbortController()
+  runtime.__meithealSidebarActive = controller
 
   function updateActiveNavLink() {
-    const ip = window.__ingress_path || "";
+    const ip = window.__ingress_path || ""
     const stripIngress = (path: string) =>
-      ip && (path === ip || path.startsWith(ip + "/")) ? path.slice(ip.length) || "/" : path;
-    const currentPath = stripIngress(location.pathname).replace(/\/$/, "") || "/";
-    const currentTypes = normalizeTaskTypeFilterValue(new URLSearchParams(location.search).get("types"));
+      ip && (path === ip || path.startsWith(ip + "/")) ? path.slice(ip.length) || "/" : path
+    const currentPath = stripIngress(location.pathname).replace(/\/$/, "") || "/"
+    const currentTypes = normalizeTaskTypeFilterValue(new URLSearchParams(location.search).get("types"))
 
     document.querySelectorAll<HTMLAnchorElement>(".sidebar .nav-link").forEach((link) => {
-      if (link.classList.contains("nav-link--external")) return;
-      const target = new URL(link.getAttribute("href") || "/", location.href);
-      const href = stripIngress(target.pathname).replace(/\/$/, "") || "/";
-      const targetTypes = normalizeTaskTypeFilterValue(target.searchParams.get("types"));
+      if (link.classList.contains("nav-link--external")) return
+      const target = new URL(link.getAttribute("href") || "/", location.href)
+      const href = stripIngress(target.pathname).replace(/\/$/, "") || "/"
+      const targetTypes = normalizeTaskTypeFilterValue(target.searchParams.get("types"))
 
       const pathMatches =
         (href === currentPath && (!target.hash || target.hash === location.hash)) ||
         (href !== "/" && currentPath.startsWith(href + "/") && !targetTypes) ||
-        (link.dataset.page === "tasks" && currentPath.startsWith("/tickets/"));
+        (link.dataset.page === "tasks" && currentPath.startsWith("/tickets/"))
 
       const typesMatch = targetTypes
         ? targetTypes === currentTypes
-        : currentTypes === "" || link.dataset.page !== "tasks";
+        : currentTypes === "" || link.dataset.page !== "tasks"
 
-      const active = pathMatches && typesMatch;
-      link.classList.toggle("active", active);
-      if (active) link.setAttribute("aria-current", "page");
-      else link.removeAttribute("aria-current");
-    });
+      const active = pathMatches && typesMatch
+      link.classList.toggle("active", active)
+      if (active) link.setAttribute("aria-current", "page")
+      else link.removeAttribute("aria-current")
+    })
   }
 
   function syncMountedSubmenu(expanded: boolean, isNavbar: boolean) {
-    const submenu = document.getElementById("tasks-nav-submenu");
-    const tpl = document.getElementById("tasks-nav-submenu-tpl") as HTMLTemplateElement | null;
-    if (!submenu || !tpl) return;
+    const submenu = document.getElementById("tasks-nav-submenu")
+    const tpl = document.getElementById("tasks-nav-submenu-tpl") as HTMLTemplateElement | null
+    if (!submenu || !tpl) return
 
     if (!expanded || isNavbar) {
-      submenu.hidden = true;
-      if (submenu.childElementCount > 0) submenu.replaceChildren();
-      return;
+      submenu.hidden = true
+      if (submenu.childElementCount > 0) submenu.replaceChildren()
+      return
     }
 
     if (submenu.childElementCount === 0) {
-      submenu.appendChild(tpl.content.cloneNode(true));
+      submenu.appendChild(tpl.content.cloneNode(true))
     }
-    submenu.hidden = false;
+    submenu.hidden = false
   }
 
   function syncMountedPinnedItems(pinned: TaskNavTypeId[], isNavbar: boolean) {
-    const navScope = document.querySelector<HTMLElement>('[data-nav-overflow="sidebar"]');
-    const tasksItem = navScope?.querySelector<HTMLElement>(".nav-item--tasks") ?? document.querySelector<HTMLElement>(".nav-item--tasks");
-    const list = tasksItem?.closest<HTMLElement>("[data-nav-overflow-primary]") ?? tasksItem?.parentElement ?? null;
-    const tpl = document.getElementById("tasks-nav-pinned-tpl") as HTMLTemplateElement | null;
-    if (!tasksItem || !list || !tpl) return;
+    const navScope = document.querySelector<HTMLElement>('[data-nav-overflow="sidebar"]')
+    const tasksItem = navScope?.querySelector<HTMLElement>(".nav-item--tasks") ?? document.querySelector<HTMLElement>(".nav-item--tasks")
+    const list = tasksItem?.closest<HTMLElement>("[data-nav-overflow-primary]") ?? tasksItem?.parentElement ?? null
+    const tpl = document.getElementById("tasks-nav-pinned-tpl") as HTMLTemplateElement | null
+    if (!tasksItem || !list || !tpl) return
 
-    let mutated = false;
-    const existing = new Map<string, HTMLElement>();
-    (navScope ?? list).querySelectorAll<HTMLElement>("[data-task-nav-pinned-item]").forEach((el) => {
-      const id = el.dataset.taskNavPinnedItem;
+    let mutated = false
+    const existing = new Map<string, HTMLElement>()
+    const scope = navScope ?? list
+    scope.querySelectorAll<HTMLElement>("[data-task-nav-pinned-item]").forEach((el) => {
+      const id = el.dataset.taskNavPinnedItem
       if (!id || isNavbar || !pinned.includes(id as TaskNavTypeId) || existing.has(id)) {
-        el.remove();
-        mutated = true;
+        el.remove()
+        mutated = true
       } else {
-        existing.set(id, el);
+        existing.set(id, el)
       }
-    });
+    })
 
     if (!isNavbar && pinned.length > 0 && tasksItem.parentElement === list) {
-      let anchor: HTMLElement = tasksItem;
+      let anchor: HTMLElement = tasksItem
       for (const id of pinned) {
-        let node = existing.get(id);
+        let node = existing.get(id)
         if (!node) {
-          const source = tpl.content.querySelector<HTMLElement>(`[data-task-nav-pinned-item="${id}"]`);
-          if (!source) continue;
-          node = source.cloneNode(true) as HTMLElement;
-          mutated = true;
+          const source = tpl.content.querySelector<HTMLElement>(`[data-task-nav-pinned-item="${id}"]`)
+          if (!source) continue
+          node = source.cloneNode(true) as HTMLElement
+          mutated = true
         }
         if (anchor.nextElementSibling !== node) {
-          anchor.after(node);
-          mutated = true;
+          anchor.after(node)
+          mutated = true
         }
-        anchor = node;
+        anchor = node
       }
     }
 
     if (mutated) {
-      window.dispatchEvent(new Event("meitheal:task-nav-dom-synced"));
+      window.dispatchEvent(new Event("meitheal:task-nav-dom-synced"))
     }
   }
 
   function renderTaskNavState() {
-    const prefs = readTaskNavPrefs();
+    const prefs = readTaskNavPrefs()
     const isNavbar =
-      window.innerWidth > 768 && document.documentElement.dataset.appearanceNavigation === "navbar";
-    const toggleBtn = document.getElementById("tasks-submenu-toggle");
-    const configBtn = document.getElementById("tasks-submenu-config-btn");
-    const anyChildVisible = TASK_NAV_TYPES.some((type) => isTaskNavTypeVisible(prefs, type.id));
-    const expanded = prefs.expanded && anyChildVisible;
+      window.innerWidth > 768 && document.documentElement.dataset.appearanceNavigation === "navbar"
+    const toggleBtn = document.getElementById("tasks-submenu-toggle")
+    const configBtn = document.getElementById("tasks-submenu-config-btn")
+    const anyChildVisible = TASK_NAV_TYPES.some((type) => isTaskNavTypeVisible(prefs, type.id))
+    const expanded = prefs.expanded && anyChildVisible
 
     if (toggleBtn) {
-      const label = expanded ? "Collapse task types" : "Expand task types";
-      toggleBtn.setAttribute("aria-expanded", String(expanded));
-      toggleBtn.hidden = prefs.mode === "none" && !anyChildVisible;
-      toggleBtn.title = label;
-      toggleBtn.setAttribute("aria-label", label);
+      const label = expanded ? "Collapse task types" : "Expand task types"
+      toggleBtn.setAttribute("aria-expanded", String(expanded))
+      toggleBtn.hidden = prefs.mode === "none" && !anyChildVisible
+      toggleBtn.title = label
+      toggleBtn.setAttribute("aria-label", label)
     }
 
-    syncMountedSubmenu(expanded, isNavbar);
-    syncMountedPinnedItems(prefs.pinned, isNavbar);
+    syncMountedSubmenu(expanded, isNavbar)
+    syncMountedPinnedItems(prefs.pinned, isNavbar)
 
-    const navScope = document.querySelector<HTMLElement>('[data-nav-overflow="sidebar"]');
+    const navScope = document.querySelector<HTMLElement>('[data-nav-overflow="sidebar"]')
     for (const type of TASK_NAV_TYPES) {
-      const visible = isTaskNavTypeVisible(prefs, type.id);
-      const pinned = prefs.pinned.includes(type.id);
+      const visible = isTaskNavTypeVisible(prefs, type.id)
+      const pinned = prefs.pinned.includes(type.id)
 
-      const subitem = navScope?.querySelector<HTMLElement>(`[data-task-nav-item="${type.id}"]`) ?? null;
-      if (subitem) subitem.hidden = !visible;
+      const subitem = navScope?.querySelector<HTMLElement>(`[data-task-nav-item="${type.id}"]`) ?? null
+      if (subitem) subitem.hidden = !visible
 
-      const switchBtn = navScope?.querySelector<HTMLElement>(`[data-task-nav-toggle="${type.id}"]`) ?? null;
-      switchBtn?.setAttribute("aria-checked", String(visible));
+      const switchBtn = navScope?.querySelector<HTMLElement>(`[data-task-nav-toggle="${type.id}"]`) ?? null
+      switchBtn?.setAttribute("aria-checked", String(visible))
 
       navScope?.querySelectorAll<HTMLElement>(`[data-task-nav-pin="${type.id}"]`).forEach((btn) => {
-        btn.setAttribute("aria-pressed", String(pinned));
+        btn.setAttribute("aria-pressed", String(pinned))
         const nextLabel = pinned
           ? `Unpin ${type.label} from primary navigation`
-          : `Pin ${type.label} to primary navigation`;
-        btn.setAttribute("aria-label", nextLabel);
-        btn.setAttribute("title", pinned ? `Unpin ${type.label}` : `Pin ${type.label}`);
-      });
+          : `Pin ${type.label} to primary navigation`
+        btn.setAttribute("aria-label", nextLabel)
+        btn.setAttribute("title", pinned ? `Unpin ${type.label}` : `Pin ${type.label}`)
+      })
     }
 
     navScope?.querySelectorAll<HTMLElement>("[data-task-nav-mode]").forEach((btn) => {
-      const mode = btn.dataset.taskNavMode;
-      btn.classList.toggle("is-selected", mode === prefs.mode);
-    });
+      const mode = btn.dataset.taskNavMode
+      btn.classList.toggle("is-selected", mode === prefs.mode)
+    })
 
     if (configBtn) {
-      const popover = document.getElementById("tasks-nav-config-popover");
-      configBtn.setAttribute("aria-expanded", String(Boolean(popover && !popover.hidden)));
+      const popover = document.getElementById("tasks-nav-config-popover")
+      configBtn.setAttribute("aria-expanded", String(Boolean(popover && !popover.hidden)))
     }
 
-    updateActiveNavLink();
+    updateActiveNavLink()
   }
 
   function bindTaskNavEvents(signal: AbortSignal) {
-    const toggleBtn = document.getElementById("tasks-submenu-toggle");
-    const configBtn = document.getElementById("tasks-submenu-config-btn");
-    const popover = document.getElementById("tasks-nav-config-popover");
+    const toggleBtn = document.getElementById("tasks-submenu-toggle")
+    const configBtn = document.getElementById("tasks-submenu-config-btn")
+    const popover = document.getElementById("tasks-nav-config-popover")
 
     toggleBtn?.addEventListener(
       "click",
       () => {
-        const prefs = readTaskNavPrefs();
-        const anyVisible = TASK_NAV_TYPES.some((type) => isTaskNavTypeVisible(prefs, type.id));
+        const prefs = readTaskNavPrefs()
+        const anyVisible = TASK_NAV_TYPES.some((type) => isTaskNavTypeVisible(prefs, type.id))
         if (!anyVisible) {
-          setTaskNavMode(prefs, "all");
+          setTaskNavMode(prefs, "all")
         } else {
-          toggleTaskNavExpanded(prefs);
+          toggleTaskNavExpanded(prefs)
         }
-        renderTaskNavState();
+        renderTaskNavState()
       },
       { signal },
-    );
+    )
 
     configBtn?.addEventListener(
       "click",
       () => {
-        if (!popover) return;
-        popover.hidden = !popover.hidden;
-        configBtn.setAttribute("aria-expanded", String(!popover.hidden));
+        if (!popover) return
+        popover.hidden = !popover.hidden
+        configBtn.setAttribute("aria-expanded", String(!popover.hidden))
       },
       { signal },
-    );
+    )
 
     document.addEventListener(
       "click",
       (event) => {
-        const target = event.target;
-        if (!(target instanceof Element)) return;
+        const target = event.target
+        if (!(target instanceof Element)) return
 
         if (target.closest('[data-nav-overflow="sidebar"]')) {
-          const modeBtn = target.closest<HTMLElement>("[data-task-nav-mode]");
+          const modeBtn = target.closest<HTMLElement>("[data-task-nav-mode]")
           if (modeBtn) {
-            const mode = modeBtn.dataset.taskNavMode;
+            const mode = modeBtn.dataset.taskNavMode
             if (mode === "all" || mode === "none") {
-              setTaskNavMode(readTaskNavPrefs(), mode);
-              renderTaskNavState();
+              setTaskNavMode(readTaskNavPrefs(), mode)
+              renderTaskNavState()
             }
-            return;
+            return
           }
 
-          const visBtn = target.closest<HTMLElement>("[data-task-nav-toggle]");
+          const visBtn = target.closest<HTMLElement>("[data-task-nav-toggle]")
           if (visBtn) {
-            const typeId = visBtn.dataset.taskNavToggle as TaskNavTypeId | undefined;
+            const typeId = visBtn.dataset.taskNavToggle as TaskNavTypeId | undefined
             if (typeId) {
-              toggleTaskNavChild(readTaskNavPrefs(), typeId);
-              renderTaskNavState();
+              toggleTaskNavChild(readTaskNavPrefs(), typeId)
+              renderTaskNavState()
             }
-            return;
+            return
           }
 
-          const pinBtn = target.closest<HTMLElement>("[data-task-nav-pin]");
+          const pinBtn = target.closest<HTMLElement>("[data-task-nav-pin]")
           if (pinBtn) {
-            const typeId = pinBtn.dataset.taskNavPin as TaskNavTypeId | undefined;
+            const typeId = pinBtn.dataset.taskNavPin as TaskNavTypeId | undefined
             if (typeId) {
-              toggleTaskNavPin(readTaskNavPrefs(), typeId);
-              renderTaskNavState();
+              toggleTaskNavPin(readTaskNavPrefs(), typeId)
+              renderTaskNavState()
             }
-            return;
+            return
           }
         }
 
         if (popover && !popover.hidden && !target.closest("#tasks-nav-config-popover") && !target.closest("#tasks-submenu-config-btn")) {
-          popover.hidden = true;
-          configBtn?.setAttribute("aria-expanded", "false");
+          popover.hidden = true
+          configBtn?.setAttribute("aria-expanded", "false")
         }
       },
       { signal },
-    );
+    )
 
     document.addEventListener(
       "keydown",
       (event) => {
         if (event.key === "Escape" && popover && !popover.hidden) {
-          popover.hidden = true;
-          configBtn?.setAttribute("aria-expanded", "false");
-          configBtn?.focus();
+          popover.hidden = true
+          configBtn?.setAttribute("aria-expanded", "false")
+          configBtn?.focus()
         }
       },
       { signal },
-    );
+    )
 
-    window.addEventListener(TASK_NAV_PREFS_EVENT, renderTaskNavState, { signal });
+    window.addEventListener(TASK_NAV_PREFS_EVENT, renderTaskNavState, { signal })
     window.addEventListener(
       "storage",
       (event) => {
-        if (event.key === TASK_NAV_PREFS_KEY || event.key === null) renderTaskNavState();
+        if (event.key === TASK_NAV_PREFS_KEY || event.key === null) renderTaskNavState()
       },
       { signal },
-    );
+    )
 
     const syncForViewportOrMode = () => {
       const nextIsNavbar =
-        window.innerWidth > 768 && document.documentElement.dataset.appearanceNavigation === "navbar";
+        window.innerWidth > 768 && document.documentElement.dataset.appearanceNavigation === "navbar"
       if (nextIsNavbar && popover && !popover.hidden) {
-        popover.hidden = true;
-        configBtn?.setAttribute("aria-expanded", "false");
+        popover.hidden = true
+        configBtn?.setAttribute("aria-expanded", "false")
       }
-      renderTaskNavState();
+      renderTaskNavState()
       requestAnimationFrame(() => {
-        if (!signal.aborted) renderTaskNavState();
-      });
-    };
+        if (!signal.aborted) renderTaskNavState()
+      })
+    }
 
-    const appearanceObserver = new MutationObserver(syncForViewportOrMode);
+    const appearanceObserver = new MutationObserver(syncForViewportOrMode)
     appearanceObserver.observe(document.documentElement, {
       attributes: true,
       attributeFilter: ["data-appearance-navigation"],
-    });
-    signal.addEventListener("abort", () => appearanceObserver.disconnect(), { once: true });
+    })
+    signal.addEventListener("abort", () => appearanceObserver.disconnect(), { once: true })
 
     let wasNavbar =
-      window.innerWidth > 768 && document.documentElement.dataset.appearanceNavigation === "navbar";
+      window.innerWidth > 768 && document.documentElement.dataset.appearanceNavigation === "navbar"
     window.addEventListener(
       "resize",
       () => {
         const nextIsNavbar =
-          window.innerWidth > 768 && document.documentElement.dataset.appearanceNavigation === "navbar";
+          window.innerWidth > 768 && document.documentElement.dataset.appearanceNavigation === "navbar"
         if (wasNavbar !== nextIsNavbar) {
-          wasNavbar = nextIsNavbar;
-          syncForViewportOrMode();
+          wasNavbar = nextIsNavbar
+          syncForViewportOrMode()
         }
       },
       { signal },
-    );
+    )
   }
 
-  renderTaskNavState();
-  bindTaskNavEvents(controller.signal);
-  document.addEventListener("astro:after-swap", updateActiveNavLink, { signal: controller.signal });
-  document.addEventListener("astro:page-load", updateActiveNavLink, { signal: controller.signal });
-  window.addEventListener("popstate", updateActiveNavLink, { signal: controller.signal });
-  window.addEventListener("hashchange", updateActiveNavLink, { signal: controller.signal });
+  let boundSignal: AbortSignal | undefined
+  pageLifecycle.onPageLoad((pageSignal) => {
+    if (controller.signal.aborted || boundSignal === pageSignal || !document.getElementById("sidebar")) return
+    boundSignal = pageSignal
+    const signal = AbortSignal.any([pageSignal, controller.signal])
+    renderTaskNavState()
+    bindTaskNavEvents(signal)
+    window.addEventListener("popstate", updateActiveNavLink, { signal })
+    window.addEventListener("hashchange", updateActiveNavLink, { signal })
+  })
 </script>
