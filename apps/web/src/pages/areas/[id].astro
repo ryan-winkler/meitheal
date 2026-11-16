@@ -26,6 +26,7 @@ if (!areaId) {
 
 let area: AreaRow | null
 let goalCount = 0
+let householdGoalCount = 0
 let sharedGoals: SharedGoalProgress[] = []
 let projects: ProjectRow[]
 let routines: RoutineTemplateRow[] = []
@@ -49,6 +50,7 @@ try {
     listSharedGoals(client, Astro.locals, Astro.request.signal, { areaId }),
   ])
   sharedGoals = receivedGoals
+  householdGoalCount = areaGoals.length
   goalCount = new Set([...areaGoals, ...receivedGoals].map(goal => goal.id)).size
   projects = areaProjects
   routinesEnabled = await isFeatureEnabled("habits")
@@ -120,6 +122,7 @@ const tabs = [
         <a class="project-card" href={`#${id}`} data-astro-reload>
           <h3 class="project-card-name">{title}</h3>
           <p class="project-card-meta" data-board-goal-projection={id === "goals" && sharedGoals.length ? "" : undefined}>{count ? `${count} in this Area` : empty}</p>
+          {id === "goals" && sharedGoals.length > 0 && <p class="project-card-meta" data-board-goal-fallback hidden>{householdGoalCount ? `${householdGoalCount} in this Area` : empty}</p>}
         </a>
       ))}
     </div>

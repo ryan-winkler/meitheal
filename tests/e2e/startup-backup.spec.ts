@@ -597,6 +597,7 @@ test("Household task reads and cleanup exclude a named Board even by exact ID", 
     "INSERT INTO board_goal_shares VALUES ('work-goal', 'default', 'household')",
     "INSERT INTO projects (id, goal_id, area_id, title, status, created_at, updated_at) VALUES ('home-project', 'work-goal', 'default', 'Home project', 'completed', 1, 1)",
     "INSERT INTO board_access_grants (board_id, principal_type, principal_id, role) VALUES ('work-fixture', 'ha_user', 'work-user', 'member')",
+    "INSERT INTO board_permissions (board_id) VALUES ('work-fixture')",
   ], "write")
   const home = await readSharedGoals(db, "home-user", { areaId: "default" }, revision)
   expect(home).toEqual([{ id: "work-goal", title: "Work goal", area_id: "default", project_count: 1, completed_project_count: 1 }])
@@ -605,6 +606,11 @@ test("Household task reads and cleanup exclude a named Board even by exact ID", 
   expect(await readSharedGoals(db, "home-user", { areaId: "default", projectId: "home-project" }, revision)).toEqual(home)
   expect(await readSharedGoals(db, "home-user", { areaId: "work-area", projectId: "home-project" }, revision)).toEqual([])
   expect(await readSharedGoals(db, "home-user", { projectId: "work-project" }, revision)).toEqual([])
+  await db.execute("INSERT INTO goals (id, area_id, title, description, owner_board_id, created_at, updated_at) VALUES ('work-unshared', 'work-area', 'Unshared Work Goal', 'For Work only', 'work-fixture', 1, 1)")
+  expect(await readSharedGoals(db, "home-user", { goalId: "work-unshared" }, revision)).toEqual([])
+  expect(await readSharedGoals(db, "work-user", { areaId: "work-area", goalId: "work-unshared" }, revision)).toMatchObject([
+    { id: "work-unshared", named: { description: "For Work only" }, project_count: 0 },
+  ])
   expect(await hierarchy.findProjectById("home-project")).toMatchObject({ goal_id: null, area_id: "default" })
   expect(await hierarchy.findAllProjects({ goal_id: "work-goal" })).toEqual([])
   expect(await hierarchy.updateProject("home-project", { goal_id: null })).toBe(false)

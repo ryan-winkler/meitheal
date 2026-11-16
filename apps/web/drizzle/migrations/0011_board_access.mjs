@@ -68,6 +68,37 @@ const objects = {
     BEFORE UPDATE OF task_board_id ON tasks
     WHEN NEW.task_board_id IS NULL AND EXISTS (SELECT 1 FROM board_task_planning WHERE task_id = OLD.id)
     BEGIN SELECT RAISE(ABORT, 'Remove named Board task planning before changing to Household'); END`,
+  board_intakes: `CREATE TABLE board_intakes (
+    id TEXT PRIMARY KEY NOT NULL,
+    board_id TEXT NOT NULL REFERENCES task_boards(id) ON DELETE RESTRICT,
+    lane_id TEXT NOT NULL REFERENCES kanban_lanes(id) ON DELETE RESTRICT,
+    label TEXT NOT NULL CHECK (length(label) BETWEEN 1 AND 100),
+    recipient_user_id TEXT,
+    enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1))
+  )`,
+  board_intake_senders: `CREATE TABLE board_intake_senders (
+    intake_id TEXT NOT NULL REFERENCES board_intakes(id) ON DELETE RESTRICT,
+    sender_kind TEXT NOT NULL CHECK (sender_kind IN ('ha_user', 'agent')),
+    sender_id TEXT NOT NULL,
+    PRIMARY KEY (intake_id, sender_kind, sender_id)
+  )`,
+  board_intake_requests: `CREATE TABLE board_intake_requests (
+    digest TEXT PRIMARY KEY NOT NULL,
+    intake_id TEXT NOT NULL REFERENCES board_intakes(id) ON DELETE RESTRICT,
+    sender_kind TEXT NOT NULL CHECK (sender_kind IN ('ha_user', 'agent')),
+    sender_id TEXT NOT NULL,
+    expires_at INTEGER NOT NULL,
+    task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL,
+    acknowledgement TEXT UNIQUE,
+    submitted_digest TEXT,
+    accepted_at INTEGER,
+    CHECK ((acknowledgement IS NULL) = (submitted_digest IS NULL)
+      AND (acknowledgement IS NULL) = (accepted_at IS NULL))
+  )`,
+  board_intake_requests_expiry_idx: `CREATE INDEX board_intake_requests_expiry_idx
+    ON board_intake_requests(expires_at)`,
+  board_intake_requests_sender_idx: `CREATE INDEX board_intake_requests_sender_idx
+    ON board_intake_requests(sender_kind, sender_id, expires_at)`,
   board_access_epoch: `CREATE TABLE board_access_epoch (
     singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
     revision TEXT NOT NULL CHECK (length(revision) = 36)

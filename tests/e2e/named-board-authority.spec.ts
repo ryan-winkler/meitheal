@@ -2,6 +2,7 @@ import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { expect, test } from "@playwright/test"
+import { BoardIntakeRepository } from "../../apps/web/src/domains/tasks/persistence/board-intake-repository"
 import { changeBoardGrants, readBoardGrantRevision } from "../../apps/web/src/domains/tasks/persistence/board-grant-fence"
 import { NamedBoardRepository, permitsBoardTaskAction } from "../../apps/web/src/domains/tasks/persistence/named-board-repository"
 import { NamedBoardTaskRepository } from "../../apps/web/src/domains/tasks/persistence/named-board-task-repository"
@@ -176,4 +177,60 @@ test("a child can move and edit a named ticket while completion and deletion rem
   expect(await tasks.delete(parent, home, task, completed.value.version)).toEqual({ ok: true, value: true })
   const afterDelete = await db.execute({ sql: "SELECT 1 FROM board_task_planning WHERE task_id = ?", args: [task] })
   expect(afterDelete.rows).toHaveLength(0)
+})
+
+test("send-only intake accepts once, returns opaque retries, and can assign without granting reads", async () => {
+  const db = getPersistenceClient()
+  const boards = new NamedBoardRepository(db, marker)
+  const intake = new BoardIntakeRepository(db, marker)
+  const sender = { kind: "ha_user", id: "sender" } as const
+  const work = await boards.create("owner", "Private Work")
+  if (work.status !== "committed") throw new Error("Expected Work Board")
+  const boardId = work.result.id
+  const { rows: [triage] } = await db.execute({
+    sql: "SELECT id FROM kanban_lanes WHERE board_id = ? AND key = 'pending'",
+    args: [boardId],
+  })
+  const destination = await intake.create("owner", boardId, {
+    label: "Send work to the owner", laneId: String(triage?.id), senders: [sender], recipientUserId: "owner",
+  })
+  if (destination.status !== "committed" || !destination.result) throw new Error("Expected intake destination")
+  const id = destination.result.id
+  const afterIssue = Date.now()
+  const permit = await intake.issue(sender, id, afterIssue)
+  const staleRecipientPermit = await intake.issue(sender, id, afterIssue)
+  const unusedPermit = await intake.issue(sender, id, afterIssue)
+  if (!permit.ok || !staleRecipientPermit.ok || !unusedPermit.ok) throw new Error("Expected sender permits")
+  const input = { title: "Check the issue", description: "Please review", assignToRecipient: true }
+
+  expect(await boards.findAccess(sender, boardId)).toBeNull()
+  expect(await intake.issue({ kind: "ha_user", id: "other" }, id)).toEqual({ ok: false, errorCode: "unavailable" })
+  expect(await intake.submit({ kind: "ha_user", id: "other" }, permit.value.token, input, ["owner"]))
+    .toEqual({ ok: false, errorCode: "unavailable" })
+
+  const [accepted, replay] = await Promise.all([
+    intake.submit(sender, permit.value.token, input, ["owner"]),
+    intake.submit(sender, permit.value.token, input, ["owner"]),
+  ])
+  if (!accepted.ok) throw new Error("Expected accepted work")
+  expect(Object.keys(accepted.value)).toEqual(["acknowledgement"])
+  expect(replay).toEqual(accepted)
+  expect(await intake.submit(sender, permit.value.token, { ...input, title: "Different work" }, ["owner"]))
+    .toEqual({ ok: false, errorCode: "conflict" })
+  const fallBack = await intake.submit(sender, staleRecipientPermit.value.token, { ...input, title: "Triage instead" }, [])
+  expect(fallBack.ok).toBe(true)
+  const { rows: tasks } = await db.execute({
+    sql: "SELECT title, assigned_to, board_column_id FROM tasks WHERE task_board_id = ? ORDER BY title",
+    args: [boardId],
+  })
+  expect(tasks).toMatchObject([
+    { title: "Check the issue", assigned_to: "ha_owner", board_column_id: triage?.id },
+    { title: "Triage instead", assigned_to: null, board_column_id: triage?.id },
+  ])
+
+  expect(await intake.setEnabled("owner", boardId, id, false)).toMatchObject({ status: "committed" })
+  expect(await intake.issue(sender, id)).toEqual({ ok: false, errorCode: "unavailable" })
+  expect(await intake.submit(sender, unusedPermit.value.token, input, ["owner"])).toEqual({ ok: false, errorCode: "unavailable" })
+  expect(await intake.submit(sender, permit.value.token, input, ["owner"])).toEqual(accepted)
+  expect(await intake.submit(sender, permit.value.token, input, ["owner"], permit.value.expiresAt)).toEqual({ ok: false, errorCode: "unavailable" })
 })

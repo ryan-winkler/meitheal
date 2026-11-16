@@ -1,7 +1,7 @@
 import type { APIRoute } from "astro"
 import { isValidGoalProgress } from "@meitheal/domain-tasks"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
-import { listSharedGoals } from "@domains/tasks/persistence/shared-goal-repository"
+import { listSharedGoals, serializeBoardGoal } from "@domains/tasks/persistence/shared-goal-repository"
 import { HierarchyRepository } from "@domains/tasks/persistence/hierarchy-repository"
 import { stripHtml } from "../../../lib/strip-html"
 import { apiError, apiJson } from "../../../lib/api-response"
@@ -28,7 +28,7 @@ export const GET: APIRoute = async ({ params, locals, request }) => {
       return apiJson({ ...goal, project_count: shared.project_count, completed_project_count: shared.completed_project_count })
     }
     if (goal) return apiJson(goal)
-    if (shared) return apiJson({ ...shared, status: "shared", shared: true })
+    if (shared) return apiJson(serializeBoardGoal(shared))
     return apiError("Goal not found", 404)
   } catch (error) {
     logApiError("goals", "GET detail error", error)

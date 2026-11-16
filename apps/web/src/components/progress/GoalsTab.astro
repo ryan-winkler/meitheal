@@ -10,7 +10,7 @@
  */
 import ProgressRing from "../ui/ProgressRing.astro"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
-import { listSharedGoals, sharedGoalProjectionKey, type SharedGoalProgress } from "@domains/tasks/persistence/shared-goal-repository"
+import { listSharedGoals, readNamedGoalScope, sharedGoalProjectionKey, type SharedGoalProgress } from "@domains/tasks/persistence/shared-goal-repository"
 import { HierarchyRepository, type AreaRow } from "@domains/tasks/persistence/hierarchy-repository"
 
 interface Props { areaId?: string; sharedGoals?: SharedGoalProgress[] }
@@ -22,7 +22,9 @@ let scopedAreaName: string | undefined
 let scopedProjectName: string | undefined
 let unavailable = false
 let scopeMissing = false
+let protectionIncludesScopeLabels = false
 let projectionKey: string | undefined
+let householdGoalCount = 0
 let areaOptions: AreaRow[] = []
 
 let goals: Array<{
@@ -37,6 +39,8 @@ let goals: Array<{
   projectCount: number
   completedProjectCount: number
   shared?: boolean
+  named?: boolean
+  householdProgress?: { total: number; complete: number }
 }> = []
 
 try {
@@ -53,12 +57,22 @@ try {
   const areaMap = new Map(areas.map((a) => [a.id, a]))
   scopedAreaName = areaId ? areaMap.get(areaId)?.name : undefined
   scopedProjectName = selectedProject?.title
-  scopeMissing = (areaId !== undefined && !scopedAreaName) || (projectId !== undefined && !selectedProject)
+  const scope = {
+    ...(areaId ? { areaId } : {}),
+    ...(projectId ? { projectId } : {}),
+  }
+  const names = (areaId && !scopedAreaName) || (projectId && !selectedProject)
+    ? await readNamedGoalScope(db, Astro.locals, Astro.request.signal, scope) : undefined
+  protectionIncludesScopeLabels = Boolean(names?.areaName || names?.projectName)
+  scopedAreaName ??= names?.areaName
+  scopedProjectName ??= names?.projectName
+  scopeMissing = (areaId !== undefined && !scopedAreaName) || (projectId !== undefined && !scopedProjectName)
   const rawGoals = scopeMissing ? [] : await repo.findAllGoals({
     ...(areaId ? { area_id: areaId } : {}),
     ...(projectId ? { project_id: projectId } : {}),
   })
 
+  householdGoalCount = rawGoals.length
   for (const g of rawGoals) {
     const area = g.area_id ? areaMap.get(g.area_id as string) : null
     const goalProjects = projects.filter((p) => String(p.goal_id) === String(g.id))
@@ -80,26 +94,26 @@ try {
   }
 
   if (!scopeMissing) {
-    const shared = Astro.props.sharedGoals ?? await listSharedGoals(db, Astro.locals, Astro.request.signal, {
-      ...(areaId ? { areaId } : {}),
-      ...(projectId ? { projectId } : {}),
-    })
-    projectionKey = sharedGoalProjectionKey(shared)
+    const shared = Astro.props.sharedGoals ?? await listSharedGoals(db, Astro.locals, Astro.request.signal, scope)
+    projectionKey = sharedGoalProjectionKey(shared, names)
     const ownedById = new Map(goals.map(goal => [goal.id, goal]))
     for (const goal of shared) {
       const owned = ownedById.get(goal.id)
       if (owned) {
+        if (goal.project_count !== owned.projectCount || goal.completed_project_count !== owned.completedProjectCount) {
+          owned.householdProgress = { total: owned.projectCount, complete: owned.completedProjectCount }
+        }
         owned.projectCount = goal.project_count
         owned.completedProjectCount = goal.completed_project_count
         continue
       }
       const area = goal.area_id ? areaMap.get(goal.area_id) : undefined
       goals.push({
-        id: goal.id, title: goal.title, area_id: goal.area_id, status: "shared",
-        description: null, target_date: null,
+        id: goal.id, title: goal.title, area_id: goal.area_id, status: goal.named?.status ?? "shared",
+        description: goal.named?.description ?? null, target_date: goal.named?.target_date ?? null,
         areaName: area?.name ?? null, areaIcon: area?.icon ?? null,
         projectCount: goal.project_count, completedProjectCount: goal.completed_project_count,
-        shared: true,
+        shared: !goal.named, named: Boolean(goal.named),
       })
     }
   }
@@ -108,7 +122,7 @@ try {
 }
 
 const scopeName = scopedProjectName ?? scopedAreaName
-const canCreate = !unavailable && !scopeMissing && projectId === undefined
+const canCreate = !unavailable && !scopeMissing && projectId === undefined && !protectionIncludesScopeLabels
 const statusLabels: Record<string, string> = {
   active: "Active",
   completed: "Completed",
@@ -118,10 +132,12 @@ const statusLabels: Record<string, string> = {
 ---
 
 <div class="goals-tab" id="goals-tab-root" data-area-id={scopedAreaName ? areaId : undefined}
-     data-projection-key={projectionKey} data-projection-project={projectionKey ? projectId : undefined}>
+     data-projection-key={projectionKey} data-projection-project={projectionKey ? projectId : undefined}
+     data-projection-labels={protectionIncludesScopeLabels ? "1" : undefined}>
   <header class="goals-tab__header">
     <div class="goals-tab__header-left">
       {!unavailable && !scopeMissing && <span class="goals-tab__count" data-board-goal-projection={projectionKey ? "" : undefined}>{goals.length} goal{goals.length !== 1 ? "s" : ""}{scopeName && ` · ${scopeName}`}</span>}
+      {projectionKey && <span class="goals-tab__count" data-board-goal-fallback hidden>{householdGoalCount} goal{householdGoalCount !== 1 ? "s" : ""}{!protectionIncludesScopeLabels && scopeName && ` · ${scopeName}`}</span>}
       {(areaId !== undefined || projectId !== undefined) && <a href="/progress#goals">All Goals</a>}
     </div>
     {canCreate && <button type="button" class="btn btn-primary" id="goals-tab-new-btn">+ New Goal</button>}
@@ -151,21 +167,21 @@ const statusLabels: Record<string, string> = {
       <div class="goals-tab__empty-icon">🎯</div>
       <h2 class="goals-tab__empty-title">No goals yet</h2>
       {canCreate && <p class="goals-tab__empty-desc">Create a goal to define an outcome for your work.</p>}
-      {scopedProjectName && projectId && (
+      {scopedProjectName && projectId && !protectionIncludesScopeLabels && (
         <a href={`/projects/${encodeURIComponent(projectId)}#settings`}>Choose a Goal in Project settings</a>
       )}
     </div>
   ) : (
-    <div class="goals-tab__list" data-board-goal-projection={projectionKey ? "" : undefined}>
+    <div class="goals-tab__list">
       {goals.map((goal) => (
-        <div class="goals-tab__card" data-goal-id={goal.id} data-goal-status={goal.status}>
+        <div class="goals-tab__card" data-goal-id={goal.id} data-goal-status={goal.status} data-board-goal-projection={goal.shared || goal.named ? "" : undefined}>
           <div class="goals-tab__card-header">
             <h3 class="goals-tab__card-title">{goal.title}</h3>
             <div class="goals-tab__card-actions">
               <span class={`goals-tab__status-badge status-${goal.status}`}>
                 {statusLabels[goal.status] ?? goal.status}
               </span>
-              {!goal.shared && <div class="goals-tab__actions-row">
+              {!goal.shared && !goal.named && <div class="goals-tab__actions-row">
                 {goal.status === "active" && (
                   <button type="button" class="goals-tab__action-btn goals-tab__complete-btn" data-goal-id={goal.id} title="Mark completed" aria-label="Mark goal completed">✓</button>
                 )}
@@ -180,6 +196,7 @@ const statusLabels: Record<string, string> = {
             <p class="goals-tab__card-desc">{goal.description.slice(0, 120)}{goal.description.length > 120 ? "…" : ""}</p>
           )}
           <div class="goals-tab__card-meta">
+            <span class="goals-tab__progress" data-board-goal-projection={goal.householdProgress ? "" : undefined}>
             {goal.projectCount > 0 && (
               <ProgressRing
                 percent={goal.projectCount > 0 ? Math.round((goal.completedProjectCount / goal.projectCount) * 100) : 0}
@@ -188,10 +205,20 @@ const statusLabels: Record<string, string> = {
                 label={`${goal.completedProjectCount}/${goal.projectCount} projects complete`}
               />
             )}
+            <span class="goals-tab__meta-projects">📋 {goal.projectCount} project{goal.projectCount !== 1 ? "s" : ""}</span>
+            </span>
+            {goal.householdProgress && <span class="goals-tab__progress" data-board-goal-fallback hidden>
+              {goal.householdProgress.total > 0 && <ProgressRing
+                percent={Math.round((goal.householdProgress.complete / goal.householdProgress.total) * 100)}
+                size={32}
+                strokeWidth={3}
+                label={`${goal.householdProgress.complete}/${goal.householdProgress.total} projects complete`}
+              />}
+              <span class="goals-tab__meta-projects">📋 {goal.householdProgress.total} project{goal.householdProgress.total !== 1 ? "s" : ""}</span>
+            </span>}
             {goal.areaName && (
               <span class="goals-tab__meta-area">{goal.areaIcon} {goal.areaName}</span>
             )}
-            <span class="goals-tab__meta-projects">📋 {goal.projectCount} project{goal.projectCount !== 1 ? "s" : ""}</span>
             {goal.target_date && (
               <span class="goals-tab__meta-date">📅 {goal.target_date}</span>
             )}
@@ -210,7 +237,8 @@ const statusLabels: Record<string, string> = {
     margin: 0 auto;
     padding: 0.5rem 0;
   }
-  [data-board-goal-projection][hidden] { display: none; }
+  [data-board-goal-fallback][hidden] { display: none; }
+  .goals-tab__progress { display: inline-flex; align-items: center; gap: 0.5rem; }
   .goals-tab__create-form:not([hidden]) {
     display: flex;
     flex-wrap: wrap;

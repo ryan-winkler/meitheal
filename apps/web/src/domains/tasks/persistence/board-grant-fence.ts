@@ -3,6 +3,7 @@ import { constants } from "node:fs"
 import { mkdir, open, rename, rm } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import type { Client, Transaction } from "@libsql/client"
+import { acquireWriteTransaction } from "../../../../scripts/database-client.mjs"
 
 const maxMarkerSize = 160
 export const boardGrantPath = "/data/meitheal-board-grants.json"
@@ -85,7 +86,7 @@ export async function currentBoardGrantRevision(
   if (revision === marker) return revision
   if (!revision || await readBoardGrantRevision(pendingFile(path, revision)) !== revision) return null
 
-  const tx = await db.transaction("write")
+  const tx = await acquireWriteTransaction(db)
   try {
     if (await databaseRevision(tx) !== revision) return null
     return await publishCommittedMarker(path, revision) ? revision : null
@@ -106,7 +107,7 @@ export async function changeBoardGrants<T>(
   change: (tx: Transaction, revision: string | null) => Promise<GrantChange<T>>,
   path = boardGrantPath,
 ): Promise<GrantChangeResult<T>> {
-  const transaction = await db.transaction("write")
+  const transaction = await acquireWriteTransaction(db)
   let next: string | undefined
   let commitAttempted = false
   let committed: T
@@ -141,7 +142,7 @@ export async function changeBoardGrants<T>(
 
   // Reacquire the writer before publication. Any later writer first publishes this revision.
   try {
-    const finalizer = await db.transaction("write")
+    const finalizer = await acquireWriteTransaction(db)
     try {
       const revision = await databaseRevision(finalizer)
       const published = revision !== next || await publishCommittedMarker(path, next)

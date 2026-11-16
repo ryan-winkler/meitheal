@@ -488,7 +488,9 @@ components:
         title:
           type: string
         area_id:
-          type: string
+          type:
+            - string
+            - "null"
         shared:
           type: boolean
           const: true
@@ -506,6 +508,45 @@ components:
         - title
         - area_id
         - shared
+        - status
+        - project_count
+        - completed_project_count
+      additionalProperties: false
+    NamedBoardGoal:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        area_id:
+          type:
+            - string
+            - "null"
+        named:
+          type: boolean
+          const: true
+        status:
+          type: string
+        description:
+          type:
+            - string
+            - "null"
+        target_date:
+          type:
+            - string
+            - "null"
+        project_count:
+          type: integer
+          minimum: 0
+        completed_project_count:
+          type: integer
+          minimum: 0
+      required:
+        - id
+        - title
+        - area_id
+        - named
         - status
         - project_count
         - completed_project_count
@@ -4111,9 +4152,10 @@ paths:
                   goals:
                     type: array
                     items:
-                      oneOf:
+                      anyOf:
                         - $ref: "#/components/schemas/Goal"
                         - $ref: "#/components/schemas/SharedGoal"
+                        - $ref: "#/components/schemas/NamedBoardGoal"
                 additionalProperties: false
     post:
       operationId: createGoal
@@ -4150,9 +4192,10 @@ paths:
           content:
             application/json:
               schema:
-                oneOf:
+                anyOf:
                   - $ref: "#/components/schemas/Goal"
                   - $ref: "#/components/schemas/SharedGoal"
+                  - $ref: "#/components/schemas/NamedBoardGoal"
     put:
       operationId: updateGoal
       tags:

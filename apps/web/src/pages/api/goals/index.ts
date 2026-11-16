@@ -1,6 +1,6 @@
 import type { APIRoute } from "astro"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
-import { listSharedGoals, sharedGoalProjectionKey } from "@domains/tasks/persistence/shared-goal-repository"
+import { listSharedGoals, readNamedGoalScope, serializeBoardGoal, sharedGoalProjectionKey } from "@domains/tasks/persistence/shared-goal-repository"
 import { HierarchyRepository } from "@domains/tasks/persistence/hierarchy-repository"
 import { stripHtml } from "../../../lib/strip-html"
 import { apiError, apiJson } from "../../../lib/api-response"
@@ -28,11 +28,14 @@ export const HEAD: APIRoute = async ({ url, locals, request }) => {
     await ensureSchema()
     const areaId = url.searchParams.get("area_id")
     const projectId = url.searchParams.get("project_id")
-    const goals = await listSharedGoals(getPersistenceClient(), locals, request.signal, {
-      ...(areaId ? { areaId } : {}),
-      ...(projectId ? { projectId } : {}),
-    })
-    const matches = sharedGoalProjectionKey(goals) === expected
+    const client = getPersistenceClient()
+    const scope = { ...(areaId ? { areaId } : {}), ...(projectId ? { projectId } : {}) }
+    const [goals, names] = await Promise.all([
+      listSharedGoals(client, locals, request.signal, scope),
+      url.searchParams.get("scope_labels") === "1"
+        ? readNamedGoalScope(client, locals, request.signal, scope) : undefined,
+    ])
+    const matches = sharedGoalProjectionKey(goals, names) === expected
     return new Response(null, { status: matches ? 204 : 409, headers })
   } catch {
     return new Response(null, { status: 503, headers })
@@ -66,7 +69,7 @@ export const GET: APIRoute = async ({ url, locals, request }) => {
         ...goal, project_count: progress.project_count, completed_project_count: progress.completed_project_count,
       } : goal
     })
-    const received = [...sharedById.values()].map(goal => ({ ...goal, status: "shared", shared: true }))
+    const received = [...sharedById.values()].map(serializeBoardGoal)
     return apiJson({ goals: [...projected, ...received] })
   } catch (error) {
     logApiError("goals", "GET error", error)

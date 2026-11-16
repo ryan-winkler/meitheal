@@ -1,5 +1,6 @@
 import { randomBytes, randomUUID } from "node:crypto"
 import type { Client, Transaction } from "@libsql/client"
+import { acquireWriteTransaction } from "../../../../scripts/database-client.mjs"
 import { boardGrantStillCurrent, changeBoardGrants, currentBoardGrantRevision, readBoardGrantRevision } from "./board-grant-fence"
 
 export type BoardActor = { kind: "ha_user" | "agent"; id: string }
@@ -171,7 +172,7 @@ export class NamedBoardRepository {
     if (actor.kind !== "ha_user") return false
     const revision = await readBoardGrantRevision(this.markerPath)
     if (!revision) return false
-    const tx = await this.db.transaction("write")
+    const tx = await acquireWriteTransaction(this.db)
     try {
       if (!await selectNamedBoardAccess(tx, actor, revision, id)) return false
       if (hidden) {

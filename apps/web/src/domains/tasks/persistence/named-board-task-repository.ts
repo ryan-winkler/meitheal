@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto"
 import type { Client, Transaction } from "@libsql/client"
+import { acquireWriteTransaction } from "../../../../scripts/database-client.mjs"
 import { isClosedStatus, isDoneStatus, normalizeStatus, STATUS } from "../../../lib/status-config"
 import { readBoardGrantRevision } from "./board-grant-fence"
 import { permitsBoardTaskAction, selectNamedBoardAccess, type BoardActor, type TaskBoardAction } from "./named-board-repository"
@@ -18,12 +19,39 @@ const unavailable = { ok: false, errorCode: "unavailable" } as const
 const denied = { ok: false, errorCode: "denied" } as const
 const stale = { ok: false, errorCode: "stale" } as const
 
+/** The caller authorizes the effect and establishes its lane in the current writer transaction. */
+export async function insertNamedTask(tx: Transaction, input: {
+  boardId: string
+  laneId: string
+  status: string
+  content: NamedTaskContent
+  assignedTo?: string
+}) {
+  const { rows: [ticket] } = await tx.execute({
+    sql: `UPDATE task_boards SET ticket_high_water = ticket_high_water + 1
+      WHERE id = ? AND ticket_high_water < 9007199254740991
+      RETURNING ticket_prefix || '-' || ticket_high_water AS key`,
+    args: [input.boardId],
+  })
+  if (!ticket) return null
+
+  const id = randomUUID()
+  const now = Date.now()
+  await tx.execute({
+    sql: `INSERT INTO tasks (id, title, description, status, area_id, task_board_id, assigned_to,
+      board_column_id, ticket_ref, idempotency_key, request_id, created_at, updated_at)
+      VALUES (?, ?, ?, ?, '__meitheal_no_area__', ?, ?, ?, ?, ?, ?, ?, ?)`,
+    args: [id, input.content.title, input.content.description, input.status, input.boardId,
+      input.assignedTo ?? null, input.laneId, String(ticket.key), id, id, now, now],
+  })
+  return { id, ticket: String(ticket.key), version: now }
+}
+
 /** Named ticket writes keep the Board grant, placement and task version in the same transaction. */
 export class NamedBoardTaskRepository {
   constructor(private readonly db: Client, private readonly markerPath?: string) {}
 
   async create(actor: BoardActor, boardId: string, content: NamedTaskContent, placement: NamedTaskPlacement) {
-    const id = randomUUID()
     return this.mutate(actor, boardId, "create", async (tx, allows) => {
       const lane = await this.readLane(tx, boardId, placement.laneId)
       if (!lane) return unavailable
@@ -46,29 +74,15 @@ export class NamedBoardTaskRepository {
         if (!rows.length) return unavailable
       }
 
-      const { rows: [ticket] } = await tx.execute({
-        sql: `UPDATE task_boards SET ticket_high_water = ticket_high_water + 1
-          WHERE id = ? AND ticket_high_water < 9007199254740991
-          RETURNING ticket_prefix || '-' || ticket_high_water AS key`,
-        args: [boardId],
-      })
-      if (!ticket) return unavailable
-
-      const now = Date.now()
-      await tx.execute({
-        sql: `INSERT INTO tasks (id, title, description, status, area_id, task_board_id,
-          board_column_id, ticket_ref, idempotency_key, request_id, created_at, updated_at)
-          VALUES (?, ?, ?, ?, '__meitheal_no_area__', ?, ?, ?, ?, ?, ?, ?)`,
-        args: [id, content.title, content.description, lane.status, boardId,
-          lane.id, String(ticket.key), id, id, now, now],
-      })
+      const task = await insertNamedTask(tx, { boardId, laneId: lane.id, content, status: lane.status })
+      if (!task) return unavailable
       if (areaId || projectId || goalId) {
         await tx.execute({
           sql: "INSERT INTO board_task_planning (task_id, area_id, project_id, goal_id) VALUES (?, ?, ?, ?)",
-          args: [id, areaId ?? null, projectId ?? null, goalId ?? null],
+          args: [task.id, areaId ?? null, projectId ?? null, goalId ?? null],
         })
       }
-      return { ok: true, value: { id, ticket: String(ticket.key), version: now } }
+      return { ok: true, value: task }
     })
   }
 
@@ -130,7 +144,7 @@ export class NamedBoardTaskRepository {
     operation: (tx: Transaction, allows: (effect: TaskBoardAction) => boolean) => Promise<Outcome<T>>): Promise<Outcome<T>> {
     const revision = await readBoardGrantRevision(this.markerPath)
     if (!revision) return unavailable
-    const tx = await this.db.transaction("write")
+    const tx = await acquireWriteTransaction(this.db)
     try {
       const access = await selectNamedBoardAccess(tx, actor, revision, boardId)
       if (!access) return unavailable

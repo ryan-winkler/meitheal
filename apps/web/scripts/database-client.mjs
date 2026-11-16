@@ -259,7 +259,7 @@ function isRetryableBusyError(error) {
  * Execute an attempt closure with async [5, 15, 30, 60, 120] ms backoff on SQLITE_BUSY / TRANSACTION_ACTIVE
  * whenever `isAcquired()` remains false (prior to BEGIN IMMEDIATE / commit effects).
  * @template T
- * @param {() => T} runAttempt
+ * @param {() => T | Promise<T>} runAttempt
  * @param {() => boolean} isAcquired
  * @param {AbortSignal | undefined} signal
  * @returns {Promise<T>}
@@ -268,7 +268,7 @@ async function retryBusyOperation(runAttempt, isAcquired, signal) {
   const diag = getDiagnosticsStore()
   throwIfSignalAborted(signal)
   try {
-    return runAttempt()
+    return await runAttempt()
   } catch (firstError) {
     if (isAcquired() || !isRetryableBusyError(firstError)) throw firstError
     let lastError = firstError
@@ -278,7 +278,7 @@ async function retryBusyOperation(runAttempt, isAcquired, signal) {
       await backoffSleep(delay, signal)
       throwIfSignalAborted(signal)
       try {
-        return runAttempt()
+        return await runAttempt()
       } catch (retryError) {
         if (isAcquired() || !isRetryableBusyError(retryError)) throw retryError
         lastError = retryError
@@ -287,6 +287,11 @@ async function retryBusyOperation(runAttempt, isAcquired, signal) {
     diag.sqliteBusyExhaustedTotal += 1
     throw lastError
   }
+}
+
+/** Retry only lock acquisition for a write that must coordinate with an external file. */
+export function acquireWriteTransaction(client, options) {
+  return retryBusyOperation(() => client.transaction("write"), () => false, options?.signal)
 }
 
 /**

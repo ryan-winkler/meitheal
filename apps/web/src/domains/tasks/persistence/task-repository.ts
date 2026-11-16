@@ -292,6 +292,15 @@ export type TaskCreationData = {
   source?: string; created_by?: string | null;
 }
 
+const noNamedBoardEpoch = "NOT EXISTS (SELECT 1 FROM board_access_epoch)"
+const householdAreaForWrite = `COALESCE((SELECT owner_board_id IS NULL FROM areas WHERE id = ?), ? = 'default' OR ${noNamedBoardEpoch})`
+const householdPlanningTarget = (table: "projects" | "goals") => `(? IS NULL OR COALESCE((
+  SELECT owner_board_id IS NULL FROM ${table} WHERE id = ?
+), ${noNamedBoardEpoch}))`
+const householdPlanningProjection = (table: "areas" | "projects", column: string) => `CASE WHEN EXISTS (
+  SELECT 1 FROM ${table} AS linked WHERE linked.id = ${column} AND linked.owner_board_id IS NOT NULL
+) THEN ${table === "areas" ? "'default'" : "NULL"} ELSE ${column} END`
+
 /** Use one statement for an ordinary insert or a conditional insert in a write batch. */
 export function taskInsertStatement(data: TaskCreationData, createdAt: number, {
   idempotencyKey = crypto.randomUUID(),
@@ -313,9 +322,8 @@ export function taskInsertStatement(data: TaskCreationData, createdAt: number, {
           SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                   ${nextHouseholdTicketNumberSql}, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                   ?, ?, ?, ?
-          WHERE NOT EXISTS (SELECT 1 FROM areas WHERE id = ? AND owner_board_id IS NOT NULL)
-            AND NOT EXISTS (SELECT 1 FROM projects WHERE id = ? AND owner_board_id IS NOT NULL)
-            AND NOT EXISTS (SELECT 1 FROM goals WHERE id = ? AND owner_board_id IS NOT NULL)
+          WHERE ${householdAreaForWrite} AND ${householdPlanningTarget("projects")} AND ${householdPlanningTarget("goals")}
+            AND (? IS NULL OR EXISTS (SELECT 1 FROM tasks AS parent WHERE parent.id = ? AND parent.task_board_id IS NULL))
             ${guard ? `AND (${guard.sql})` : ""}
           RETURNING ticket_number`,
     args: [
@@ -329,8 +337,8 @@ export function taskInsertStatement(data: TaskCreationData, createdAt: number, {
       data.effort_minutes ?? null, data.effort_type ?? null, data.blocked_by ?? null,
       data.source ?? "user", data.created_by ?? null,
       idempotencyKey, requestId, createdAt, createdAt,
-      data.area_id, data.project_id ?? null, data.goal_id ?? null,
-      ...(guard?.args ?? []),
+      data.area_id, data.area_id, data.project_id ?? null, data.project_id ?? null, data.goal_id ?? null, data.goal_id ?? null,
+      data.parent_id, data.parent_id, ...(guard?.args ?? []),
     ] as InValue[],
   }
 }
@@ -1019,9 +1027,9 @@ export class TaskRepository {
     const parsedTicketNum = parseTicketKey(idOrKey);
     const result = await this.client.execute({
       sql: `SELECT t.id, t.title, t.description, t.status, t.priority, t.due_date, t.labels,
-                   t.framework_payload, t.calendar_sync_state, t.area_id, t.custom_fields,
-                   t.parent_id, t.time_tracked, t.start_date, t.end_date, t.progress, t.color,
-                   t.is_favorite, t.is_promoted, t.task_type, t.task_kind, t.project_id, t.owner, t.handoff_state,
+                   t.framework_payload, t.calendar_sync_state, ${householdPlanningProjection("areas", "t.area_id")} AS area_id, t.custom_fields,
+                   p.id AS parent_id, t.time_tracked, t.start_date, t.end_date, t.progress, t.color,
+                   t.is_favorite, t.is_promoted, t.task_type, t.task_kind, ${householdPlanningProjection("projects", "t.project_id")} AS project_id, t.owner, t.handoff_state,
                    t.ticket_number, t.assigned_to, t.checklists,
                    t.urgency, t.importance, t.eisenhower_override,
                    t.effort_minutes, t.effort_type, t.blocked_by, t.nfc_tag_id, t.kanban_position,
@@ -1044,9 +1052,9 @@ export class TaskRepository {
   async exportAll(): Promise<TaskRow[]> {
     const result = await this.client.execute(
       `SELECT id, title, description, status, priority, due_date, labels,
-              framework_payload, calendar_sync_state, area_id, custom_fields,
+              framework_payload, calendar_sync_state, ${householdPlanningProjection("areas", "tasks.area_id")} AS area_id, custom_fields,
               parent_id, time_tracked, start_date, end_date, progress, color,
-              is_favorite, task_type, task_kind, project_id, owner, handoff_state,
+              is_favorite, task_type, task_kind, ${householdPlanningProjection("projects", "tasks.project_id")} AS project_id, owner, handoff_state,
               ticket_number, recurrence_rule,
               checklists, reminder_at, created_at, updated_at
        FROM tasks WHERE task_board_id IS NULL ORDER BY updated_at DESC`
@@ -1172,8 +1180,8 @@ export class TaskRepository {
       args.push(lowerBound, upperBound)
     }
     if (opts.priority != null) { conditions.push("priority = ?"); args.push(opts.priority); }
-    if (opts.areaId) { conditions.push("area_id = ?"); args.push(opts.areaId); }
-    if (opts.projectId) { conditions.push("project_id = ?"); args.push(opts.projectId); }
+    if (opts.areaId) { conditions.push(`(${householdPlanningProjection("areas", "tasks.area_id")}) = ?`); args.push(opts.areaId); }
+    if (opts.projectId) { conditions.push(`(${householdPlanningProjection("projects", "tasks.project_id")}) = ?`); args.push(opts.projectId); }
     if (opts.taskType) { conditions.push("task_type = ?"); args.push(opts.taskType); }
     if (opts.parentId) { conditions.push("parent_id = ?"); args.push(opts.parentId); }
     if (opts.search) { conditions.push("(title LIKE ? OR description LIKE ?)"); args.push(`%${opts.search}%`, `%${opts.search}%`); }
@@ -1186,8 +1194,8 @@ export class TaskRepository {
 
     const projection = `id, title, description, status, priority, due_date, labels,
                               framework_payload, calendar_sync_state, parent_id, time_tracked,
-                              area_id, custom_fields, start_date, end_date, progress, color,
-                              is_favorite, task_type, task_kind, project_id, owner, handoff_state,
+                              ${householdPlanningProjection("areas", "tasks.area_id")} AS area_id, custom_fields, start_date, end_date, progress, color,
+                              is_favorite, task_type, task_kind, ${householdPlanningProjection("projects", "tasks.project_id")} AS project_id, owner, handoff_state,
                               ticket_number, assigned_to, created_at, updated_at, deferred_at, deferral_revision,
                               urgency, importance, eisenhower_override,
                               effort_minutes, effort_type, blocked_by, nfc_tag_id, kanban_position,
@@ -1472,12 +1480,12 @@ export class TaskRepository {
     if (typeof projectId === "string") whereArgs.push(projectId)
     const planningGuards: string[] = []
     if (typeof fields.area_id === "string") {
-      planningGuards.push("NOT EXISTS (SELECT 1 FROM areas WHERE id = ? AND owner_board_id IS NOT NULL)")
-      whereArgs.push(fields.area_id)
+      planningGuards.push(householdAreaForWrite)
+      whereArgs.push(fields.area_id, fields.area_id)
     }
     if (typeof fields.goal_id === "string") {
-      planningGuards.push("NOT EXISTS (SELECT 1 FROM goals WHERE id = ? AND owner_board_id IS NOT NULL)")
-      whereArgs.push(fields.goal_id)
+      planningGuards.push(householdPlanningTarget("goals"))
+      whereArgs.push(fields.goal_id, fields.goal_id)
     }
     const checklistMatches = expectedChecklists === undefined ? "" : " AND checklists IS ?"
     if (expectedChecklists !== undefined) whereArgs.push(expectedChecklists)
@@ -2418,7 +2426,8 @@ export class TaskRepository {
       sql: `SELECT tl.id, tl.source_task_id, tl.target_task_id, tl.link_type, tl.created_at,
                    t.title AS target_title, t.task_type AS target_task_type, t.ticket_number AS target_ticket_number
             FROM task_links tl
-            JOIN tasks t ON t.id = tl.target_task_id
+            JOIN tasks t ON t.id = tl.target_task_id AND t.task_board_id IS NULL
+            JOIN tasks source ON source.id = tl.source_task_id AND source.task_board_id IS NULL
             WHERE tl.source_task_id = ?
             ORDER BY tl.created_at DESC`,
       args: [taskId],
@@ -2432,7 +2441,8 @@ export class TaskRepository {
       sql: `SELECT tl.id, tl.source_task_id, tl.target_task_id, tl.link_type, tl.created_at,
                    t.title AS source_title, t.task_type AS source_task_type, t.ticket_number AS source_ticket_number
             FROM task_links tl
-            JOIN tasks t ON t.id = tl.source_task_id
+            JOIN tasks t ON t.id = tl.source_task_id AND t.task_board_id IS NULL
+            JOIN tasks target ON target.id = tl.target_task_id AND target.task_board_id IS NULL
             WHERE tl.target_task_id = ?
             ORDER BY tl.created_at DESC`,
       args: [taskId],
@@ -2443,7 +2453,9 @@ export class TaskRepository {
   /** Check if a specific link already exists (idempotency) */
   async linkExists(sourceTaskId: string, targetTaskId: string, linkType: string): Promise<boolean> {
     const result = await this.client.execute({
-      sql: "SELECT id FROM task_links WHERE source_task_id = ? AND target_task_id = ? AND link_type = ?",
+      sql: `SELECT id FROM task_links WHERE source_task_id = ? AND target_task_id = ? AND link_type = ?
+        AND EXISTS (SELECT 1 FROM tasks WHERE id = task_links.source_task_id AND task_board_id IS NULL)
+        AND EXISTS (SELECT 1 FROM tasks WHERE id = task_links.target_task_id AND task_board_id IS NULL)`,
       args: [sourceTaskId, targetTaskId, linkType],
     });
     return result.rows.length > 0;
@@ -2461,7 +2473,7 @@ export class TaskRepository {
     const tx = await this.client.transaction("write")
     try {
       const res = await tx.execute({
-        sql: "SELECT id, assigned_to FROM tasks WHERE id IN (?, ?)",
+        sql: "SELECT id, assigned_to FROM tasks WHERE task_board_id IS NULL AND id IN (?, ?)",
         args: [sourceTaskId, targetTaskId],
       })
       const byId = new Map(res.rows.map(r => [String((r as Record<string, unknown>).id), (r as Record<string, unknown>).assigned_to]))
@@ -2493,7 +2505,9 @@ export class TaskRepository {
   /** Fetch endpoints for a task link belonging to the specified task */
   async getLinkEndpoints(linkId: string, taskId: string): Promise<{ source_task_id: string; target_task_id: string } | null> {
     const result = await this.client.execute({
-      sql: "SELECT source_task_id, target_task_id FROM task_links WHERE id = ? AND (source_task_id = ? OR target_task_id = ?)",
+      sql: `SELECT source_task_id, target_task_id FROM task_links WHERE id = ? AND (source_task_id = ? OR target_task_id = ?)
+        AND EXISTS (SELECT 1 FROM tasks WHERE id = task_links.source_task_id AND task_board_id IS NULL)
+        AND EXISTS (SELECT 1 FROM tasks WHERE id = task_links.target_task_id AND task_board_id IS NULL)`,
       args: [linkId, taskId, taskId],
     })
     const row = result.rows[0] as Record<string, unknown> | undefined
@@ -2514,7 +2528,9 @@ export class TaskRepository {
     try {
       if (expectedAssignedTo !== undefined) {
         const endpoints = await tx.execute({
-          sql: "SELECT source_task_id, target_task_id FROM task_links WHERE id = ? AND (source_task_id = ? OR target_task_id = ?)",
+          sql: `SELECT source_task_id, target_task_id FROM task_links WHERE id = ? AND (source_task_id = ? OR target_task_id = ?)
+        AND EXISTS (SELECT 1 FROM tasks WHERE id = task_links.source_task_id AND task_board_id IS NULL)
+        AND EXISTS (SELECT 1 FROM tasks WHERE id = task_links.target_task_id AND task_board_id IS NULL)`,
           args: [linkId, taskId, taskId],
         })
         const ep = endpoints.rows[0] as Record<string, unknown> | undefined
@@ -2525,7 +2541,7 @@ export class TaskRepository {
           return { deleted: 0, assigneeMismatch }
         }
         const taskRows = await tx.execute({
-          sql: "SELECT id, assigned_to FROM tasks WHERE id IN (?, ?)",
+          sql: "SELECT id, assigned_to FROM tasks WHERE task_board_id IS NULL AND id IN (?, ?)",
           args: [String(ep.source_task_id), String(ep.target_task_id)],
         })
         const owned = taskRows.rows.length === 2 && taskRows.rows.every(r => (r as Record<string, unknown>).assigned_to === expectedAssignedTo)
@@ -2535,7 +2551,9 @@ export class TaskRepository {
         }
       }
       const result = await tx.execute({
-        sql: "DELETE FROM task_links WHERE id = ? AND (source_task_id = ? OR target_task_id = ?)",
+        sql: `DELETE FROM task_links WHERE id = ? AND (source_task_id = ? OR target_task_id = ?)
+        AND EXISTS (SELECT 1 FROM tasks WHERE id = task_links.source_task_id AND task_board_id IS NULL)
+        AND EXISTS (SELECT 1 FROM tasks WHERE id = task_links.target_task_id AND task_board_id IS NULL)`,
         args: [linkId, taskId, taskId],
       })
       await tx.commit()
