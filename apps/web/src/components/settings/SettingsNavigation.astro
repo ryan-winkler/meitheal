@@ -122,8 +122,8 @@ const NAV_PREFERENCE_KEYS: readonly AppearancePreferenceName[] = [
 
     <!-- Sidebar Configuration -->
     <SettingsPanelCard
-      title="Sidebar Configuration"
-      subtitle="Configure visibility, order, and custom labels for navigation items."
+      title={t("settings.sidebar_config_title", locale)}
+      subtitle={t("settings.sidebar_config_desc", locale)}
     >
       <div>
         <div
@@ -133,14 +133,14 @@ const NAV_PREFERENCE_KEYS: readonly AppearancePreferenceName[] = [
           <!-- Populated by JS -->
         </div>
         <div class="settings-section-divider--spaced">
-          <div style="margin-bottom: 8px; font-weight: 500;">Custom Links</div>
+          <div style="margin-bottom: 8px; font-weight: 500;">{t("settings.sidebar_custom_links", locale)}</div>
           <div
             id="custom-links-list"
             style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px;"
           >
           </div>
           <button type="button" class="btn btn-ghost" id="add-custom-link-btn"
-            >+ Add Custom Link</button
+            >{t("settings.sidebar_add_custom_link", locale)}</button
           >
         </div>
         <SettingsActionRow class="mt-4">
@@ -148,13 +148,13 @@ const NAV_PREFERENCE_KEYS: readonly AppearancePreferenceName[] = [
             type="button"
             class="btn btn-primary settings-text-sm"
             id="save-sidebar"
-            >Save Sidebar Config</button
+            >{t("settings.sidebar_save_config", locale)}</button
           >
           <button
             type="button"
             class="btn btn-ghost settings-text-sm"
             id="reset-sidebar"
-            >Reset to Default</button
+            >{t("settings.sidebar_reset_default", locale)}</button
           >
         </SettingsActionRow>
       </div>

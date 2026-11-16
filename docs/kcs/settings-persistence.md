@@ -15,4 +15,10 @@ Rules export includes built-in framework configuration and custom definitions. I
 
 Native Settings imports report transport and application failures without reloading. Native Settings and Rules exports finish pending edits and download only a checked response. The framework wizard retains its fields and re-enables Save after rejection. YAML import continues to use the bounded server parser described in [Import a framework from YAML](framework-yaml-import.md).
 
+In **People & Notifications**, wait for saved preferences before making changes. If they fail to load, use **Retry notification preferences**. If Home Assistant cannot list Companion devices, other preferences can still be saved and existing device selections are kept. Use **Retry device discovery** to edit those selections once Home Assistant is available.
+
+In **Tasks & Boards**, an optional feature switch returns to its previous setting if the app cannot confirm a save. Try the switch again after the error clears.
+
+The license badge in **App & PWA** shows the result of offline key verification. If a configured key cannot be verified, check it in the Home Assistant App configuration and reopen Meitheal to check the badge again.
+
 For verification, use a disposable authenticated ingress fixture. Hold a checkbox or slider request, make another edit, and confirm its acknowledgement precedes a reset, export or navigation. Reject the request and confirm that edits remain visible with no success notification or download. Export, reset and import a configuration containing custom rules, labels, help text, weights, a formula and badges; confirm the stored configuration round trips. Repeat an ordinary edit and rejected retry in the default Astro development server, including ClientRouter navigation. These checks establish browser persistence behavior; native Home Assistant and installed-device acceptance remain separate.

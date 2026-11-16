@@ -141,7 +141,10 @@ function initFeatureToggles(signal: AbortSignal): void {
   }
 
   fetch("/api/features", { signal })
-    .then((r) => r.json())
+    .then((r) => {
+      if (!r.ok) throw new Error(`Features load failed: ${r.status}`)
+      return r.json()
+    })
     .then((data: { features?: FeatureItem[] }) => {
       if (signal.aborted || !data.features) return
       container.replaceChildren()
@@ -196,32 +199,45 @@ function initFeatureToggles(signal: AbortSignal): void {
           descEl.style.cssText = "font-size: 12px; color: var(--text-secondary);"
           descEl.textContent = f.description
 
-          body.append(titleEl, descEl)
+          const status = document.createElement("span")
+          status.className = "text-danger settings-text-xs"
+          status.setAttribute("role", "status")
+          body.append(titleEl, descEl, status)
           row.append(toggleLabel, body)
 
           checkbox.addEventListener(
             "change",
             () => {
-              const featureName = checkbox.dataset.feature ?? ""
               const enabled = checkbox.checked
+              checkbox.disabled = true
+              status.textContent = ""
 
               fetch("/api/features", {
                 method: "PUT",
                 headers: { "content-type": "application/json" },
-                body: JSON.stringify({ feature: featureName, enabled }),
+                body: JSON.stringify({ feature: f.name, enabled }),
                 signal,
               })
-                .then((r) => r.json())
-                .then(() => {
-                  window.showToast?.(`${enabled ? "Enabled" : "Disabled"}: ${f.label}`)
-                  if (window.__featureFlags && featureName) {
-                    window.__featureFlags[featureName] = enabled
+                .then((response) => {
+                  if (!response.ok) throw new Error(`Feature save failed: ${response.status}`)
+                  return response.json()
+                })
+                .then((result: { feature?: string; enabled?: boolean }) => {
+                  if (result.feature !== f.name || result.enabled !== enabled) {
+                    throw new Error("Feature save was not confirmed")
                   }
+                  if (signal.aborted) return
+                  window.showToast?.(`${enabled ? "Enabled" : "Disabled"}: ${f.label}`)
+                  if (window.__featureFlags) window.__featureFlags[f.name] = enabled
                 })
                 .catch(() => {
                   if (!signal.aborted) {
-                    window.showToast?.("Failed to update feature", "error")
+                    checkbox.checked = !enabled
+                    status.textContent = container.dataset.saveError ?? ""
                   }
+                })
+                .finally(() => {
+                  checkbox.disabled = false
                 })
             },
             { signal },
@@ -266,7 +282,7 @@ function makeAvatar(name: string | undefined, bg: string): HTMLElement {
   )
 }
 
-function initNotificationsPanel(signal: AbortSignal): ((users: WorkspaceUser[]) => Promise<void>) | undefined {
+function initNotificationsPanel(signal: AbortSignal): ((users: WorkspaceUser[]) => void) | undefined {
   const globalToggle = document.getElementById("notif-global-toggle") as HTMLInputElement | null
   const sidebarCb = document.getElementById("notif-channel-sidebar") as HTMLInputElement | null
   const mobileCb = document.getElementById("notif-channel-mobile") as HTMLInputElement | null
@@ -277,16 +293,15 @@ function initNotificationsPanel(signal: AbortSignal): ((users: WorkspaceUser[]) 
   const mobileTargetList = document.getElementById("notif-mobile-target-list")
   const userTogglesContainer = document.getElementById("notif-user-toggles")
   const saveBtn = document.getElementById("save-notif-prefs") as HTMLButtonElement | null
+  const prefsStatus = document.getElementById("notif-prefs-status")
+  const retryPrefs = document.getElementById("retry-notif-prefs")
+  const retryTargets = document.getElementById("retry-notif-mobile-targets")
   if (!globalToggle || !userTogglesContainer) return undefined
 
-  let prefs: NotificationPrefs = {
-    enabled: true,
-    disabled_users: [],
-    channels: { sidebar: true, mobile_push: false },
-    mobile_targets: [],
-    due_date_reminders: true,
-    reminder_window_minutes: 60,
-  }
+  let prefs: NotificationPrefs = {}
+  let prefsReady = false
+  let latestUsers: WorkspaceUser[] = []
+  const controls = [globalToggle, sidebarCb, mobileCb, remindersCb, reminderMinutesInput, saveBtn]
 
   const updateMobilePanel = (): void => {
     if (mobileTargetsPanel) {
@@ -302,73 +317,72 @@ function initNotificationsPanel(signal: AbortSignal): ((users: WorkspaceUser[]) 
   }
   remindersCb?.addEventListener("change", updateReminderPanel, { signal })
 
-  function discoverMobileTargets(savedTargets: string[]): void {
+  async function discoverMobileTargets(): Promise<void> {
     if (!mobileTargetList) return
-    fetch("/api/ha/services", { signal })
-      .then((r) => (r.ok ? r.json() : { services: [] }))
-      .catch(() => ({ services: [] }))
-      .then((data: { services?: Array<{ domain?: string; services?: Record<string, unknown> }> }) => {
-        if (signal.aborted) return
-        const services = data.services ?? (Array.isArray(data) ? data : [])
-        const mobileServices: Array<{ service: string; name: string }> = []
-        if (Array.isArray(services)) {
-          for (const domainObj of services) {
-            if (domainObj?.domain === "notify") {
-              for (const name of Object.keys(domainObj.services ?? {})) {
-                if (name.startsWith("mobile_app_")) {
-                  mobileServices.push({
-                    service: `notify.${name}`,
-                    name: name.replace("mobile_app_", "").replace(/_/g, " "),
-                  })
-                }
-              }
-            }
-          }
+    if (retryTargets) retryTargets.hidden = true
+    mobileTargetList.textContent = mobileTargetList.dataset.loading ?? ""
+    try {
+      const response = await fetch("/api/ha/services", { cache: "no-store", signal })
+      if (!response.ok) throw new Error(`Device discovery failed: ${response.status}`)
+      const data = await response.json() as { services?: Array<{ domain?: string; services?: Record<string, unknown> }>; error?: string }
+      if (data.error || !Array.isArray(data.services)) throw new Error("Device discovery unavailable")
+      if (signal.aborted) return
+      const mobileServices: Array<{ service: string; name: string }> = []
+      for (const domainObj of data.services) {
+        if (domainObj?.domain !== "notify") continue
+        for (const name of Object.keys(domainObj.services ?? {})) {
+          if (!name.startsWith("mobile_app_")) continue
+          mobileServices.push({
+            service: `notify.${name}`,
+            name: name.replace("mobile_app_", "").replace(/_/g, " "),
+          })
         }
+      }
 
-        mobileTargetList.replaceChildren()
-        if (mobileServices.length === 0) {
-          const empty = document.createElement("span")
-          empty.style.cssText = "color: var(--text-secondary); font-size: 12px; font-style: italic;"
-          empty.textContent =
-            "No HA Companion App devices found. Install the HA Companion App on your phone to enable mobile push."
-          mobileTargetList.appendChild(empty)
-          return
-        }
+      mobileTargetList.replaceChildren()
+      if (mobileServices.length === 0) {
+        const empty = document.createElement("span")
+        empty.style.cssText = "color: var(--text-secondary); font-size: 12px; font-style: italic;"
+        empty.textContent =
+          "No HA Companion App devices found. Install the HA Companion App on your phone to enable mobile push."
+        mobileTargetList.appendChild(empty)
+        return
+      }
 
-        const savedSet = new Set(savedTargets)
-        for (const svc of mobileServices) {
-          const row = document.createElement("div")
-          row.style.cssText = "display: flex; align-items: center; gap: 8px; padding: 4px 0;"
+      const savedSet = new Set(prefs.mobile_targets ?? [])
+      for (const svc of mobileServices) {
+        const row = document.createElement("div")
+        row.style.cssText = "display: flex; align-items: center; gap: 8px; padding: 4px 0;"
 
-          const cb = document.createElement("input")
-          cb.type = "checkbox"
-          cb.checked = savedTargets.length === 0 || savedSet.has(svc.service)
-          cb.dataset.mobileTarget = svc.service
-          cb.style.cssText = "accent-color: var(--accent);"
-          row.appendChild(cb)
+        const cb = document.createElement("input")
+        cb.type = "checkbox"
+        cb.checked = prefs.mobile_targets === undefined || savedSet.has(svc.service)
+        cb.dataset.mobileTarget = svc.service
+        cb.setAttribute("aria-label", svc.name)
+        cb.style.cssText = "accent-color: var(--accent);"
+        row.appendChild(cb)
 
-          const label = document.createElement("span")
-          label.style.cssText = "font-size: 13px;"
-          label.textContent = svc.name
-          row.appendChild(label)
+        const label = document.createElement("span")
+        label.style.cssText = "font-size: 13px;"
+        label.textContent = svc.name
+        row.appendChild(label)
 
-          const svcLabel = document.createElement("span")
-          svcLabel.style.cssText =
-            "font-size: 12px; color: var(--text-secondary); font-family: var(--font-mono);"
-          svcLabel.textContent = svc.service
-          row.appendChild(svcLabel)
+        const svcLabel = document.createElement("span")
+        svcLabel.style.cssText =
+          "font-size: 12px; color: var(--text-secondary); font-family: var(--font-mono);"
+        svcLabel.textContent = svc.service
+        row.appendChild(svcLabel)
 
-          mobileTargetList.appendChild(row)
-        }
-      })
+        mobileTargetList.appendChild(row)
+      }
+    } catch {
+      if (signal.aborted) return
+      mobileTargetList.textContent = mobileTargetList.dataset.error ?? ""
+      if (retryTargets) retryTargets.hidden = false
+    }
   }
 
-  function restorePrefs(savedPrefs: { value?: NotificationPrefs }): void {
-    if (savedPrefs.value && typeof savedPrefs.value === "object") {
-      prefs = savedPrefs.value
-    }
-
+  function restorePrefs(): void {
     if (globalToggle) globalToggle.checked = prefs.enabled !== false
     const channels = prefs.channels ?? { sidebar: true, mobile_push: false }
     if (sidebarCb) sidebarCb.checked = channels.sidebar !== false
@@ -381,15 +395,47 @@ function initNotificationsPanel(signal: AbortSignal): ((users: WorkspaceUser[]) 
     }
     updateReminderPanel()
 
-    discoverMobileTargets(prefs.mobile_targets ?? [])
+    void discoverMobileTargets()
   }
 
-  const prefsReady = fetch("/api/settings?key=notification_preferences", { signal })
-    .then((response) => (response.ok ? response.json() : {}))
-    .catch(() => ({}))
-    .then(restorePrefs)
+  async function loadPrefs(): Promise<void> {
+    for (const control of controls) if (control) control.disabled = true
+    if (retryPrefs) retryPrefs.hidden = true
+    if (prefsStatus) prefsStatus.textContent = prefsStatus.dataset.loading ?? ""
+    try {
+      const response = await fetch("/api/settings?key=notification_preferences", { signal })
+      if (!response.ok) throw new Error(`Notification preferences load failed: ${response.status}`)
+      const saved = await response.json() as { value?: NotificationPrefs | null }
+      if (saved.value !== null && (!saved.value || typeof saved.value !== "object" || Array.isArray(saved.value))) {
+        throw new Error("Unexpected notification preferences")
+      }
+      if (signal.aborted) return
+      prefs = saved.value ?? {}
+      for (const field of ["disabled_users", "mobile_targets"] as const) {
+        const values = prefs[field]
+        if (values !== undefined && (!Array.isArray(values) || values.some(value => typeof value !== "string"))) {
+          throw new Error("Unexpected notification target preferences")
+        }
+      }
+      prefsReady = true
+      restorePrefs()
+      renderUsers(latestUsers)
+      for (const control of controls) if (control) control.disabled = false
+      if (prefsStatus) prefsStatus.textContent = ""
+    } catch {
+      if (signal.aborted) return
+      if (prefsStatus) prefsStatus.textContent = prefsStatus.dataset.error ?? ""
+      if (retryPrefs) retryPrefs.hidden = false
+    }
+  }
+
+  retryPrefs?.addEventListener("click", () => void loadPrefs(), { signal })
+  retryTargets?.addEventListener("click", () => void discoverMobileTargets(), { signal })
+  void loadPrefs()
 
   function renderUsers(users: WorkspaceUser[]): void {
+    latestUsers = users
+    if (!prefsReady) return
     if (!userTogglesContainer || signal.aborted) return
     const current = new Map(
       Array.from(userTogglesContainer.querySelectorAll<HTMLInputElement>("input[data-user-id]"), (input) => [
@@ -451,22 +497,28 @@ function initNotificationsPanel(signal: AbortSignal): ((users: WorkspaceUser[]) 
   saveBtn?.addEventListener(
     "click",
     () => {
-      const disabled: string[] = []
+      if (!prefsReady || saveBtn.disabled) return
+      const disabled = new Set(prefs.disabled_users ?? [])
       userTogglesContainer.querySelectorAll<HTMLInputElement>("input[data-user-id]").forEach((cb) => {
-        if (!cb.checked && cb.dataset.userId) disabled.push(cb.dataset.userId)
+        if (!cb.dataset.userId) return
+        if (cb.checked) disabled.delete(cb.dataset.userId)
+        else disabled.add(cb.dataset.userId)
       })
-      const mobileTargets: string[] = []
+      const mobileTargets = new Set(prefs.mobile_targets ?? [])
       mobileTargetList?.querySelectorAll<HTMLInputElement>("input[data-mobile-target]").forEach((cb) => {
-        if (cb.checked && cb.dataset.mobileTarget) mobileTargets.push(cb.dataset.mobileTarget)
+        if (!cb.dataset.mobileTarget) return
+        if (cb.checked) mobileTargets.add(cb.dataset.mobileTarget)
+        else mobileTargets.delete(cb.dataset.mobileTarget)
       })
       const payload = {
+        ...prefs,
         enabled: globalToggle.checked,
-        disabled_users: disabled,
+        disabled_users: [...disabled],
         channels: {
           sidebar: sidebarCb ? sidebarCb.checked : true,
           mobile_push: mobileCb ? mobileCb.checked : false,
         },
-        mobile_targets: mobileTargets,
+        mobile_targets: [...mobileTargets],
         due_date_reminders: remindersCb ? remindersCb.checked : true,
         reminder_window_minutes: reminderMinutesInput
           ? Math.max(5, Math.min(1440, parseInt(reminderMinutesInput.value, 10) || 60))
@@ -486,6 +538,7 @@ function initNotificationsPanel(signal: AbortSignal): ((users: WorkspaceUser[]) 
       })
         .then((response) => {
           if (!response.ok) throw new Error(`Settings save failed: ${response.status}`)
+          prefs = payload
           saveBtn.textContent = "✓ Saved"
           window.showToast?.("Notification preferences saved")
           setTimeout(() => {
@@ -508,7 +561,7 @@ function initNotificationsPanel(signal: AbortSignal): ((users: WorkspaceUser[]) 
     { signal },
   )
 
-  return (users: WorkspaceUser[]) => prefsReady.then(() => renderUsers(users))
+  return renderUsers
 }
 
 function initPeopleAndNotifications(signal: AbortSignal): void {
@@ -662,7 +715,7 @@ function initPeopleAndNotifications(signal: AbortSignal): void {
 
     if (signal.aborted || read !== usersRead) return
     renderPeople(users ?? customUsersData, defaultAssigneeData, customUsersData, users === null)
-    await renderNotificationUsers?.(users ?? customUsersData)
+    renderNotificationUsers?.(users ?? customUsersData)
   }
 
   document.getElementById("save-default-assignee")?.addEventListener(

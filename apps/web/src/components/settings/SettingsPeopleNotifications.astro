@@ -1,4 +1,5 @@
 ---
+import { t } from "../../i18n/translations"
 import type { Locale } from "../../lib/locale"
 import { SETTINGS_SECTIONS } from "../../lib/settings-registry"
 import SettingsActionRow from "./SettingsActionRow.astro"
@@ -10,7 +11,6 @@ interface Props {
   locale: Locale
 }
 const { locale } = Astro.props
-void locale
 
 const peopleNotificationsSection = SETTINGS_SECTIONS.find((section) => section.id === "people-notifications-settings")!
 ---
@@ -25,8 +25,8 @@ const peopleNotificationsSection = SETTINGS_SECTIONS.find((section) => section.i
   <div class="settings-grid">
     <!-- Users & Assignment -->
     <SettingsPanelCard
-      title="Users & Assignment"
-      subtitle="Manage task assignees. Home Assistant users are discovered automatically. Add custom users for non-HA household members."
+      title={t("settings.people_assignment_title", locale)}
+      subtitle={t("settings.people_assignment_desc", locale)}
     >
       <div class="settings-stack">
         <!-- Default Assignee -->
@@ -34,38 +34,38 @@ const peopleNotificationsSection = SETTINGS_SECTIONS.find((section) => section.i
           <label
             for="default-assignee-select"
             class="settings-label"
-            >Default Assignee</label
+            >{t("settings.default_assignee", locale)}</label
           >
           <div style="display: flex; gap: 8px; align-items: center;">
             <select
               id="default-assignee-select"
               class="form-select settings-input-narrow"
-              aria-label="Default task assignee"
+              aria-label={t("settings.people_assignee_label", locale)}
             >
-              <option value="">None (unassigned)</option>
+              <option value="">{t("settings.people_unassigned", locale)}</option>
             </select>
             <button
               type="button"
               class="btn btn-primary settings-text-sm"
               id="save-default-assignee"
-              >Save</button
+              >{t("settings.save", locale)}</button
             >
           </div>
           <p class="settings-hint">
-            New tasks will be assigned to this user by default.
+            {t("settings.people_assignee_hint", locale)}
           </p>
         </div>
 
         <!-- Discovered Users -->
         <div>
           <div style="font-weight: 600; font-size: 13px; margin-bottom: 6px;">
-            Discovered Users
+            {t("settings.people_discovered", locale)}
           </div>
           <div
             id="discovered-users-list"
             class="settings-stack--xs"
           >
-            <span class="settings-description">Loading…</span>
+            <span class="settings-description">{t("settings.people_loading", locale)}</span>
           </div>
         </div>
 
@@ -74,7 +74,7 @@ const peopleNotificationsSection = SETTINGS_SECTIONS.find((section) => section.i
           <div
             style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;"
           >
-            <div style="font-weight: 600; font-size: 13px;">Custom Users</div>
+            <div style="font-weight: 600; font-size: 13px;">{t("settings.custom_users", locale)}</div>
           </div>
           <div
             id="custom-users-list"
@@ -86,15 +86,15 @@ const peopleNotificationsSection = SETTINGS_SECTIONS.find((section) => section.i
               type="text"
               id="new-custom-user-name"
               class="form-input"
-              placeholder="Name (e.g. Emma)"
+              placeholder={t("settings.people_name_placeholder", locale)}
               style="flex: 1; max-width: 200px;"
-              aria-label="New custom user name"
+              aria-label={t("settings.people_new_user_label", locale)}
             />
             <button
               type="button"
               class="btn btn-ghost settings-text-sm"
               id="add-custom-user-btn"
-              >+ Add User</button
+              >{t("settings.people_add_user", locale)}</button
             >
           </SettingsActionRow>
         </div>
@@ -103,8 +103,8 @@ const peopleNotificationsSection = SETTINGS_SECTIONS.find((section) => section.i
 
     <!-- Notifications -->
     <SettingsPanelCard
-      title="Notifications"
-      subtitle="Control how Meitheal sends notifications to Home Assistant. Toggle globally or per user."
+      title={t("settings.notif_workspace_title", locale)}
+      subtitle={t("settings.notif_workspace_desc", locale)}
     >
       <div class="settings-stack">
         <!-- Global toggle -->
@@ -115,11 +115,10 @@ const peopleNotificationsSection = SETTINGS_SECTIONS.find((section) => section.i
           </label>
           <div>
             <div id="notif-global-toggle-label" style="font-weight: 600; font-size: 13px;">
-              Enable notifications
+              {t("settings.notif_enable", locale)}
             </div>
             <div class="settings-hint--sm">
-              Task assignments, urgent escalations, and due-date reminders trigger
-              notifications.
+              {t("settings.notif_enable_desc", locale)}
             </div>
           </div>
         </div>
@@ -127,7 +126,7 @@ const peopleNotificationsSection = SETTINGS_SECTIONS.find((section) => section.i
         <!-- Notification Channels -->
         <div style="border-top: 1px solid var(--border); padding-top: 12px;">
           <div style="font-weight: 600; font-size: 13px; margin-bottom: 8px;">
-            Notification channels
+            {t("settings.notif_channels", locale)}
           </div>
           <div class="settings-stack--sm">
             <!-- Sidebar Bell -->
@@ -138,11 +137,10 @@ const peopleNotificationsSection = SETTINGS_SECTIONS.find((section) => section.i
               </label>
               <div class="flex-1">
                 <div id="notif-channel-sidebar-label" class="settings-label--inline inline-flex items-center gap-1.5">
-                  <Icon name="bell" size={14} /> HA Sidebar Bell
+                  <Icon name="bell" size={14} /> {t("settings.notif_sidebar_bell", locale)}
                 </div>
                 <div class="settings-hint--sm">
-                  Appears in the Home Assistant notification bell. Silent — no
-                  sound or vibration.
+                  {t("settings.notif_sidebar_bell_desc", locale)}
                 </div>
               </div>
             </div>
@@ -154,10 +152,10 @@ const peopleNotificationsSection = SETTINGS_SECTIONS.find((section) => section.i
               </label>
               <div class="flex-1">
                 <div id="notif-channel-mobile-label" class="settings-label--inline inline-flex items-center gap-1.5">
-                  <Icon name="phone" size={14} /> Mobile Push
+                  <Icon name="phone" size={14} /> {t("settings.notif_mobile_push", locale)}
                 </div>
                 <div class="settings-hint--sm">
-                  Push notification to HA Companion App with sound and vibration.
+                  {t("settings.notif_mobile_push_desc", locale)}
                 </div>
               </div>
             </div>
@@ -169,14 +167,20 @@ const peopleNotificationsSection = SETTINGS_SECTIONS.find((section) => section.i
               <div
                 style="font-size: 12px; color: var(--text-secondary); margin-bottom: 6px;"
               >
-                Select which devices receive push notifications:
+                {t("settings.notif_choose_devices", locale)}
               </div>
               <div
                 id="notif-mobile-target-list"
                 class="settings-stack--xs"
+                aria-live="polite"
+                data-loading={t("settings.notif_devices_loading", locale)}
+                data-error={t("settings.notif_devices_error", locale)}
               >
-                <span class="settings-description">Discovering devices…</span>
+                <span class="settings-description">{t("settings.notif_devices_loading", locale)}</span>
               </div>
+              <button type="button" id="retry-notif-mobile-targets" class="btn btn-ghost settings-text-sm" hidden>
+                {t("settings.notif_devices_retry", locale)}
+              </button>
             </div>
             <!-- Due-Date Reminders toggle (F12) -->
             <div class="settings-row">
@@ -186,11 +190,10 @@ const peopleNotificationsSection = SETTINGS_SECTIONS.find((section) => section.i
               </label>
               <div class="flex-1">
                 <div id="notif-channel-reminders-label" class="settings-label--inline inline-flex items-center gap-1.5">
-                  <Icon name="clock" size={14} /> Due-Date Reminders
+                  <Icon name="clock" size={14} /> {t("settings.notif_due_date", locale)}
                 </div>
                 <div class="settings-hint--sm">
-                  Sends reminder notifications for tasks due within the configured
-                  window.
+                  {t("settings.notif_due_date_desc", locale)}
                 </div>
               </div>
             </div>
@@ -199,7 +202,7 @@ const peopleNotificationsSection = SETTINGS_SECTIONS.find((section) => section.i
               <label
                 style="font-size: 12px; color: var(--text-secondary); display: flex; align-items: center; gap: 8px;"
               >
-                Remind
+                {t("settings.notif_remind_before", locale)}
                 <input
                   type="number"
                   id="notif-reminder-minutes"
@@ -208,7 +211,7 @@ const peopleNotificationsSection = SETTINGS_SECTIONS.find((section) => section.i
                   value="60"
                   style="width: 60px; padding: 3px 6px; border: 1px solid var(--border); border-radius: 4px; font-size: 12px; background: var(--bg-primary);"
                 />
-                minutes before due
+                {t("settings.notif_remind_minutes", locale)}
               </label>
             </div>
           </div>
@@ -220,18 +223,31 @@ const peopleNotificationsSection = SETTINGS_SECTIONS.find((section) => section.i
           style="display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--border); padding-top: 12px;"
         >
           <div style="font-weight: 600; font-size: 13px; margin-bottom: 4px;">
-            Per-user overrides
+            {t("settings.notif_per_user", locale)}
           </div>
-          <span class="settings-description">Loading users…</span>
+          <span class="settings-description">{t("settings.notif_users_loading", locale)}</span>
         </div>
 
+        <div>
+          <p
+            id="notif-prefs-status"
+            class="settings-description"
+            role="status"
+            data-loading={t("settings.notif_prefs_loading", locale)}
+            data-error={t("settings.notif_prefs_error", locale)}
+          ></p>
+          <button type="button" id="retry-notif-prefs" class="btn btn-ghost settings-text-sm" hidden>
+            {t("settings.notif_prefs_retry", locale)}
+          </button>
+        </div>
         <button
           type="button"
           class="btn btn-primary"
           id="save-notif-prefs"
+          disabled
           style="font-size: 13px; align-self: flex-start; min-width: 200px;"
         >
-          Save notification preferences
+          {t("settings.notif_save", locale)}
         </button>
       </div>
     </SettingsPanelCard>

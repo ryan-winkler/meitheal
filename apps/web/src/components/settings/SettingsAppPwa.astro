@@ -1,4 +1,5 @@
 ---
+import { verifyLicenseKey } from "@meitheal/domain-auth"
 import { t } from "../../i18n/translations"
 import type { Locale } from "../../lib/locale"
 import { SETTINGS_SECTIONS } from "../../lib/settings-registry"
@@ -26,6 +27,8 @@ const version =
     ? __MEITHEAL_VERSION__
     : "0.0.0-dev")
 const appPwaSection = SETTINGS_SECTIONS.find((section) => section.id === "app-pwa-settings")!
+const license = verifyLicenseKey(process.env.MEITHEAL_LICENSE_KEY)
+const licenseStatus = !license.valid ? "invalid" : "grace" in license ? "grace" : "verified"
 ---
 
 <section
@@ -55,7 +58,7 @@ const appPwaSection = SETTINGS_SECTIONS.find((section) => section.id === "app-pw
         {t("settings.pwa_version", locale)} <code>{version}</code>
         <span class="pwa-link-separator" aria-hidden="true">·</span>
         <span>{t("settings.app_license_label", locale)}</span>
-        <span id="app-license-status" class="badge badge-active" style="font-size: 12px; margin-left: 6px;">{t("settings.app_license_grace", locale)}</span>
+        <span id="app-license-status" class:list={["badge", license.valid ? "badge-active" : "badge-pending"]} style="font-size: 12px; margin-left: 6px;">{t(`settings.app_license_${licenseStatus}`, locale)}</span>
       </p>
       <div
         id="pwa-status-compact"

@@ -25,8 +25,8 @@ const tasksBoardsSection = SETTINGS_SECTIONS.find((section) => section.id === "t
   <div class="settings-grid">
     <!-- Kanban Area -->
     <SettingsPanelCard
-      title="Kanban Area"
-      subtitle="Configure Kanban board behaviour, including backlog visibility and completed task retention."
+      title={t("settings.kanban_area_title", locale)}
+      subtitle={t("settings.kanban_area_subtitle", locale)}
     >
       <div class="settings-stack">
         <!-- Backlog Mode -->
@@ -34,23 +34,23 @@ const tasksBoardsSection = SETTINGS_SECTIONS.find((section) => section.id === "t
           <label
             for="backlog-mode-select"
             class="settings-label"
-            >Backlog lane</label
+            >{t("settings.kanban_backlog_lane", locale)}</label
           >
           <SettingsActionRow>
             <select
               id="backlog-mode-select"
               class="form-select settings-input-narrow"
-              aria-label="Backlog lane mode"
+              aria-label={t("settings.kanban_backlog_lane_mode", locale)}
             >
-              <option value="visible">Visible (default)</option>
-              <option value="hidden">Hidden from Kanban</option>
-              <option value="disabled">Disabled</option>
+              <option value="visible">{t("settings.kanban_backlog_visible", locale)}</option>
+              <option value="hidden">{t("settings.kanban_backlog_hidden", locale)}</option>
+              <option value="disabled">{t("settings.kanban_backlog_disabled", locale)}</option>
             </select>
             <button
               type="button"
               class="btn btn-primary settings-text-sm"
               id="save-backlog-mode"
-              >Save</button
+              >{t("settings.save", locale)}</button
             >
           </SettingsActionRow>
           <div
@@ -70,29 +70,28 @@ const tasksBoardsSection = SETTINGS_SECTIONS.find((section) => section.id === "t
           <label
             for="completed-retention-select"
             class="settings-label"
-            >Completed task retention</label
+            >{t("settings.kanban_retention", locale)}</label
           >
           <SettingsActionRow>
             <select
               id="completed-retention-select"
               class="form-select settings-input-narrow"
-              aria-label="Completed task retention period"
+              aria-label={t("settings.kanban_retention_period", locale)}
             >
-              <option value="7">7 days</option>
-              <option value="14">14 days</option>
-              <option value="30" selected>30 days</option>
-              <option value="0">Never hide</option>
+              <option value="7">{t("inactivity.interval", locale, { days: "7" })}</option>
+              <option value="14">{t("inactivity.interval", locale, { days: "14" })}</option>
+              <option value="30" selected>{t("inactivity.interval", locale, { days: "30" })}</option>
+              <option value="0">{t("settings.kanban_retention_never", locale)}</option>
             </select>
             <button
               type="button"
               class="btn btn-primary settings-text-sm"
               id="save-completed-retention"
-              >Save</button
+              >{t("settings.save", locale)}</button
             >
           </SettingsActionRow>
           <p class="settings-hint">
-            Done tasks older than this will be hidden from the Kanban board but
-            remain in Table view.
+            {t("settings.kanban_retention_hint", locale)}
           </p>
         </div>
       </div>
@@ -105,38 +104,38 @@ const tasksBoardsSection = SETTINGS_SECTIONS.find((section) => section.id === "t
       padded={false}
     >
       <button type="button" class="btn btn-ghost" id="add-custom-field" slot="actions"
-        >+ Add Field</button
+        >{t("settings.add_field", locale)}</button
       >
       <div id="custom-fields-list">
         <div class="custom-field-row">
           <input
             type="text"
             class="form-input"
-            placeholder="Field name"
+            placeholder={t("settings.custom_field_name_label", locale)}
             value="sprint"
             disabled
           />
-          <select class="form-select" aria-label="Sprint field type" disabled>
-            <option value="text" selected>Text</option>
-            <option value="number">Number</option>
-            <option value="select">Select</option>
-            <option value="date">Date</option>
-            <option value="checkbox">Checkbox</option>
+          <select class="form-select" aria-label={t("settings.custom_field_sprint_type", locale)} disabled>
+            <option value="text" selected>{t("settings.custom_field_type_text", locale)}</option>
+            <option value="number">{t("settings.custom_field_type_number", locale)}</option>
+            <option value="select">{t("settings.custom_field_type_select", locale)}</option>
+            <option value="date">{t("settings.custom_field_type_date", locale)}</option>
+            <option value="checkbox">{t("settings.custom_field_type_checkbox", locale)}</option>
           </select>
-          <span class="settings-text-xs text-muted">Built-in</span>
+          <span class="settings-text-xs text-muted">{t("settings.built_in", locale)}</span>
         </div>
         <div class="custom-field-row">
           <input
             type="text"
             class="form-input"
-            placeholder="Field name"
+            placeholder={t("settings.custom_field_name_label", locale)}
             value="story_points"
             disabled
           />
-          <select class="form-select" aria-label="Story points field type" disabled>
-            <option value="number" selected>Number</option>
+          <select class="form-select" aria-label={t("settings.custom_field_story_points_type", locale)} disabled>
+            <option value="number" selected>{t("settings.custom_field_type_number", locale)}</option>
           </select>
-          <span class="settings-text-xs text-muted">Built-in</span>
+          <span class="settings-text-xs text-muted">{t("settings.built_in", locale)}</span>
         </div>
       </div>
     </SettingsPanelCard>
@@ -146,11 +145,11 @@ const tasksBoardsSection = SETTINGS_SECTIONS.find((section) => section.id === "t
 
     <!-- Optional Features -->
     <SettingsPanelCard
-      title="Optional Features"
-      subtitle="Enable or disable optional features. Disabled features are hidden from the UI and their APIs return 404. Core task management is never affected."
+      title={t("settings.features_title", locale)}
+      subtitle={t("settings.features_desc", locale)}
     >
-      <div id="feature-toggles-container" class="settings-stack--sm" style="gap: 10px;">
-        <span class="settings-description">Loading features…</span>
+      <div id="feature-toggles-container" class="settings-stack--sm" style="gap: 10px;" data-save-error={t("settings.feature_save_error", locale)}>
+        <span class="settings-description">{t("settings.features_loading", locale)}</span>
       </div>
     </SettingsPanelCard>
   </div>
