@@ -5,10 +5,11 @@ cases isolate adapter contracts without a device or a replacement HA runtime.
 """
 
 import json
-from datetime import UTC, date, datetime
+from datetime import date, datetime
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
+from zoneinfo import ZoneInfo
 
 import pytest
 import voluptuous as vol
@@ -18,6 +19,7 @@ from homeassistant.components.todo import TodoItem
 from homeassistant.const import CONF_HOST, CONF_PORT, CONF_SSL
 from homeassistant.exceptions import ConfigEntryAuthFailed, HomeAssistantError
 from homeassistant.helpers.update_coordinator import UpdateFailed
+from homeassistant.util import dt as dt_util
 
 try:
     from pytest_homeassistant.common import MockConfigEntry
@@ -561,22 +563,29 @@ def test_resolve_service_origin_variants(hass):
     ) == (None, None, None)
 
 
-async def test_due_today_sensor_extra_attributes_and_empty_state(coordinator):
-    """MeithealDueTodaySensor returns None without data and filters due-today open tasks with data."""
+async def test_due_today_sensor_uses_home_assistant_local_day(coordinator, monkeypatch):
+    """Count and list the same tasks when local and UTC dates differ."""
     sensor = MeithealDueTodaySensor(coordinator, SimpleNamespace(entry_id="test"))
+    assert sensor.native_value is None
     assert sensor.extra_state_attributes is None
 
-    today = datetime.now(UTC).strftime("%Y-%m-%d")
+    now = datetime(2026, 1, 5, 21, tzinfo=ZoneInfo("America/New_York"))
+    monkeypatch.setattr(dt_util, "now", lambda: now)
     coordinator.data = MeithealCoordinatorData(
         [
-            MeithealTask(task("due-now", due_date=f"{today}T09:00:00Z", priority=4)),
-            MeithealTask(task("due-done", due_date=today, status="done", priority=1)),
-            MeithealTask(task("other-day", due_date="2099-01-01", priority=2)),
+            MeithealTask(task("all-day", due_date="2026-01-05", priority=2)),
+            MeithealTask(task("local-time", due_date="2026-01-05T21:00:00", priority=3)),
+            MeithealTask(task("utc-time", due_date="2026-01-06T02:00:00Z", priority=4)),
+            MeithealTask(task("complete", due_date="2026-01-05", status="complete")),
+            MeithealTask(task("tomorrow", due_date="2026-01-06")),
+            MeithealTask(task("next-midnight", due_date="2026-01-06T05:00:00Z")),
+            MeithealTask(task("invalid-date", due_date="2026-01-05-invalid")),
         ]
     )
+    assert sensor.native_value == 3
     assert sensor.extra_state_attributes == {
-        "task_titles": ["due-now"],
-        "priorities": [4],
+        "task_titles": ["all-day", "local-time", "utc-time"],
+        "priorities": [2, 3, 4],
     }
 
 

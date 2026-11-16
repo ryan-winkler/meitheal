@@ -2972,7 +2972,7 @@ export class TaskRepository {
 
                   if (sets.length > 0) {
                     yield [{
-                      sql: `UPDATE tasks SET ${sets.join(", ")}, updated_at = ?
+                      sql: `UPDATE tasks SET ${sets.join(", ")}, updated_at = ${nextTaskTimestampMs("updated_at")}
                             WHERE id = ? AND (${changed.join(" OR ")})`,
                       args: [...args, nowMs, mutation.taskId, ...changedArgs],
                     }]
