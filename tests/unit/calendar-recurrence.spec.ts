@@ -1123,3 +1123,18 @@ test("a YEARLY year-relative ordinal weekday is only narrowed by BYMONTHDAY, nev
   // The year's first Monday is Jan 5 in 2026 and Jan 4 in 2027, so only 2026 matches the 5th.
   expect(first.map((o) => o.start)).toEqual(["2026-01-05"])
 })
+
+
+test("long-running daily rules skip old dates while retaining COUNT", () => {
+  const window = {
+    dtstart: "1990-01-01",
+    windowStart: new Date("2026-11-16T00:00:00Z"),
+    windowEnd: new Date("2026-11-17T23:59:59Z"),
+  }
+  const last = 1 + (Date.parse("2026-11-16") - Date.parse(window.dtstart)) / 86_400_000
+  expect(expandRRuleOccurrences({ ...window, rrule: `FREQ=DAILY;COUNT=${last}` }).map(occurrence => occurrence.start))
+    .toEqual(["2026-11-16"])
+  expect(expandRRuleOccurrences({ ...window, rrule: `FREQ=DAILY;COUNT=${last - 1}` })).toEqual([])
+  expect(() => expandRRuleOccurrences({ ...window, rrule: "FREQ=DAILY;BYMONTH=1;COUNT=20000" }))
+    .toThrow("Calendar recurrence search exceeded its scan limit")
+})

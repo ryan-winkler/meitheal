@@ -1923,23 +1923,25 @@ async function importCalDAVEvents(): Promise<CalendarSyncCounts> {
         // Batch dedup: pre-fetch existing UIDs scoped to this calendar in <= 200-param chunks
         const calUids = Array.from(groupedByUid.keys())
         const existingCalLinks = new Map<string, { taskId: string; confirmationId: string; payload: string | null }>()
-        for (let offset = 0; offset < calUids.length; offset += 198) {
-          const chunk = calUids.slice(offset, offset + 198)
+        for (let offset = 0; offset < calUids.length; offset += 197) {
+          const chunk = calUids.slice(offset, offset + 197)
           const uidPlaceholders = chunk.map(() => "?").join(", ")
           const existingCalRes = await client.execute({
-            sql: `SELECT provider_event_id, task_id, payload, confirmation_id
-                  FROM calendar_confirmations
-                  WHERE provider_event_id IN (${uidPlaceholders})
-                    AND source = 'caldav'
-                    AND (
-                      CASE WHEN json_valid(payload) THEN COALESCE(json_extract(payload, '$.calendar_href'), json_extract(payload, '$.entity_id')) ELSE NULL END = ?
-                      OR (
-                        CASE WHEN json_valid(payload) THEN COALESCE(json_extract(payload, '$.calendar_href'), json_extract(payload, '$.entity_id')) ELSE NULL END IS NULL
-                        AND CASE WHEN json_valid(payload) THEN json_extract(payload, '$.calendar') ELSE NULL END = ?
-                      )
-                    )
-                  ORDER BY CASE WHEN json_valid(payload) THEN COALESCE(json_extract(payload, '$.calendar_href'), json_extract(payload, '$.entity_id')) ELSE NULL END ASC NULLS FIRST`,
-            args: [...chunk, calendarKey, legacyCalendarName],
+            sql: `WITH candidates AS (
+                    SELECT provider_event_id, task_id, payload, confirmation_id,
+                      CASE WHEN json_valid(payload) THEN json_extract(payload, '$.calendar_href') END AS href,
+                      CASE WHEN json_valid(payload) THEN json_extract(payload, '$.entity_id') END AS entity_id,
+                      CASE WHEN json_valid(payload) THEN json_extract(payload, '$.calendar') END AS calendar_name
+                    FROM calendar_confirmations
+                    WHERE provider_event_id IN (${uidPlaceholders}) AND source = 'caldav'
+                  )
+                  SELECT provider_event_id, task_id, payload, confirmation_id FROM candidates
+                  WHERE COALESCE(href, entity_id) = ?
+                     OR (href IS NULL
+                       AND (entity_id IS NULL OR substr(entity_id, 1, 1) <> '/')
+                       AND COALESCE(calendar_name, entity_id) = ?)
+                  ORDER BY (COALESCE(href, entity_id) = ?) ASC NULLS FIRST`,
+            args: [...chunk, calendarKey, legacyCalendarName, calendarKey],
           })
           for (const row of existingCalRes.rows) {
             existingCalLinks.set(String(row.provider_event_id), {
@@ -1996,7 +1998,7 @@ async function importCalDAVEvents(): Promise<CalendarSyncCounts> {
 
           const existingLink = existingCalLinks.get(uid)
           const existingTaskId = existingLink?.taskId
-          if (existingTaskId) {
+          if (existingTaskId && existingLink) {
             const currentCalTask = currentCalTasks.get(existingTaskId)
             const calPreviousPayload = existingLink?.payload ?? null
             const calPlan = planInboundCalendarUpdate(
@@ -2017,7 +2019,7 @@ async function importCalDAVEvents(): Promise<CalendarSyncCounts> {
                 entityId: calendarKey,
                 externalId: uid,
                 confirmationSource: "caldav",
-                legacyCalendarName,
+                confirmationId: existingLink.confirmationId,
                 payload: baselinePayload(currentCalTask, calPlan, calPreviousPayload, payload),
               },
             })

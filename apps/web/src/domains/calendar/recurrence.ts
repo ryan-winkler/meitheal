@@ -713,16 +713,21 @@ export function expandRRuleOccurrences(input: ExpandRRuleInput): ExpandedOccurre
     cursor = first.done ? null : parseCalendarDay(first.value)
   }
 
-  // Without COUNT, instances before the window never matter, so jump a long-running DAILY or
-  // WEEKLY series close to the window instead of scanning from DTSTART until the scan budget
-  // runs out. The jump keeps the interval alignment and leaves a margin for time zones.
-  if (cursor && !monthDays && parsedRule.count === undefined && (parsedRule.freq === "DAILY" || parsedRule.freq === "WEEKLY")) {
+  // For a fixed cadence each skipped step still counts toward COUNT. For other
+  // daily or weekly rules, jumping is safe only if there is no COUNT to preserve.
+  const fixedCadence = !parsedRule.byDay?.length && !parsedRule.byMonth?.length && !parsedRule.byMonthDay?.length
+  let countedInstances = 0
+  if (cursor && !monthDays && (parsedRule.count === undefined || fixedCadence) &&
+      (parsedRule.freq === "DAILY" || parsedRule.freq === "WEEKLY")) {
     const windowDay = Date.parse(`${input.windowStart.toISOString().slice(0, 10)}T00:00:00Z`)
     const spanDays = allDay ? durationDays : Math.ceil(timedDurationMs / DAY_MS)
     const daysToWindow = Math.floor((windowDay - cursor.getTime()) / DAY_MS) - spanDays - 2
     const stepDays = parsedRule.freq === "DAILY" ? parsedRule.interval : 7 * parsedRule.interval
     const skipSteps = Math.floor((daysToWindow - (parsedRule.freq === "WEEKLY" ? stepDays : 0)) / stepDays)
-    if (skipSteps > 0) cursor = new Date(cursor.getTime() + skipSteps * stepDays * DAY_MS)
+    if (skipSteps > 0) {
+      cursor = new Date(cursor.getTime() + skipSteps * stepDays * DAY_MS)
+      if (parsedRule.count !== undefined) countedInstances = skipSteps
+    }
   }
 
   // COUNT counts every instance from DTSTART. The output cap counts only instances
@@ -731,9 +736,8 @@ export function expandRRuleOccurrences(input: ExpandRRuleInput): ExpandedOccurre
   // occStartMs > untilMs below enforces the exact zoned instant cutoff.
   const { until: _omitUntil, ...cursorRule } = parsedRule
   let totalGenerated = 0
-  let countedInstances = 0
 
-  while (cursor && occurrences.length < maxOccurrences && totalGenerated < maxScanIterations) {
+  while (cursor && occurrences.length < maxOccurrences) {
     if (parsedRule.count !== undefined && countedInstances >= parsedRule.count) break
 
     const occDay = cursor.toISOString().slice(0, 10)
@@ -746,6 +750,7 @@ export function expandRRuleOccurrences(input: ExpandRRuleInput): ExpandedOccurre
 
     if (untilMs !== null && !Number.isNaN(untilMs) && occStartMs > untilMs) break
     if (occStartMs > input.windowEnd.getTime()) break
+    if (totalGenerated >= maxScanIterations) throw new Error("Calendar recurrence search exceeded its scan limit")
 
     let occEnd: string | undefined
     let occInclusiveEnd: string | undefined

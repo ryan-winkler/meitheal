@@ -1245,6 +1245,7 @@ test("CalDAV isolates same UID across distinct calendars without overwriting eit
   const dtBasic = (day: string) => day.replace(/-/g, "")
 
   let teamTitle = "Team Dentists"
+  let teamCalendar = "Shared"
   const personalTitle = "Personal Dentists"
 
   const server = createServer(async (request, response) => {
@@ -1253,7 +1254,7 @@ test("CalDAV isolates same UID across distinct calendars without overwriting eit
     if (request.method === "PROPFIND") {
       response.writeHead(207).end(
         `<?xml version="1.0"?><d:multistatus xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">`
-        + `<d:response><d:href>/team/</d:href><d:propstat><d:prop><d:displayname>Shared</d:displayname><d:resourcetype><c:calendar/></d:resourcetype></d:prop></d:propstat></d:response>`
+        + `<d:response><d:href>/team/</d:href><d:propstat><d:prop><d:displayname>${teamCalendar}</d:displayname><d:resourcetype><c:calendar/></d:resourcetype></d:prop></d:propstat></d:response>`
         + `<d:response><d:href>/personal/</d:href><d:propstat><d:prop><d:displayname>Shared</d:displayname><d:resourcetype><c:calendar/></d:resourcetype></d:prop></d:propstat></d:response>`
         + `</d:multistatus>`,
       )
@@ -1359,6 +1360,22 @@ test("CalDAV isolates same UID across distinct calendars without overwriting eit
       expect.objectContaining({ title: "Personal Dentists", uid: "shared-invite-uid", calendar: "/personal" }),
       expect.objectContaining({ title: "Team Dentists (Updated)", uid: "shared-invite-uid", calendar: "/team" }),
     ])
+
+    teamCalendar = "Team"
+    const legacyTeamLink = await db.execute(`
+      UPDATE calendar_confirmations
+      SET payload = json_set(json_remove(payload, '$.calendar_href', '$.calendar'), '$.entity_id', 'Team')
+      WHERE source = 'caldav' AND json_extract(payload, '$.calendar_href') = '/team'
+      RETURNING confirmation_id
+    `)
+    teamTitle = "Team Dentists (Migrated)"
+    expect(await syncCalDAVEvents()).toEqual({ created: 0, updated: 2, total: 2 })
+    const migrated = await db.execute({
+      sql: `SELECT t.title, json_extract(c.payload, '$.calendar_href') AS calendar
+            FROM calendar_confirmations c JOIN tasks t ON t.id = c.task_id WHERE c.confirmation_id = ?`,
+      args: [String(legacyTeamLink.rows[0]?.confirmation_id)],
+    })
+    expect(migrated.rows).toEqual([expect.objectContaining({ title: teamTitle, calendar: "/team" })])
   } finally {
     stopCalDAVSync()
     globalThis.fetch = originalFetch
