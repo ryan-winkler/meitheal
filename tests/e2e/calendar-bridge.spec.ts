@@ -1313,13 +1313,25 @@ test("CalDAV isolates same UID across distinct calendars without overwriting eit
       }),
     } as unknown as Parameters<typeof saveCredentials>[0])
     expect(saved.status).toBe(200)
+    // Before collection paths were stored, the display name alone was ambiguous.
+    await db.execute({
+      sql: `INSERT INTO tasks (id, title, status, area_id, idempotency_key, request_id, ticket_number, created_at, updated_at)
+            VALUES ('legacy-caldav', 'Legacy dentist', 'pending', 'default', 'caldav-sync-shared-invite-uid', 'legacy-caldav', 9010, 1, 1)`,
+      args: [],
+    })
+    const legacyPayload = JSON.stringify({ calendar: "Shared", summary: "Legacy dentist", dtstart: todayStr })
+    await db.execute({
+      sql: `INSERT INTO calendar_confirmations (confirmation_id, task_id, request_id, provider_event_id, source, payload, created_at)
+            VALUES ('legacy-caldav', 'legacy-caldav', 'legacy-caldav', 'shared-invite-uid', 'caldav', ?, 1)`,
+      args: [legacyPayload],
+    })
 
     startCalDAVSync(origin, 0)
     await expect.poll(() => getCalendarSyncStatus().lastSyncAt).not.toBeNull()
     expect(getCalendarSyncStatus().lastSyncError).toBeNull()
     expect(getCalendarSyncStatus().lastSyncEventCount).toBe(2)
 
-    const tasksAfterFirst = (await db.execute({ sql: `SELECT title, due_date FROM tasks ORDER BY title ASC`, args: [] })).rows
+    const tasksAfterFirst = (await db.execute({ sql: `SELECT title, due_date FROM tasks WHERE id <> 'legacy-caldav' ORDER BY title ASC`, args: [] })).rows
     expect(tasksAfterFirst).toEqual([
       expect.objectContaining({ title: "Personal Dentists", due_date: tomorrowStr }),
       expect.objectContaining({ title: "Team Dentists", due_date: todayStr }),
@@ -1332,7 +1344,7 @@ test("CalDAV isolates same UID across distinct calendars without overwriting eit
     const second = await syncCalDAVEvents()
     expect(second).toEqual({ created: 0, updated: 2, total: 2 })
 
-    const tasksAfterSecond = (await db.execute({ sql: `SELECT title, due_date FROM tasks ORDER BY title ASC`, args: [] })).rows
+    const tasksAfterSecond = (await db.execute({ sql: `SELECT title, due_date FROM tasks WHERE id <> 'legacy-caldav' ORDER BY title ASC`, args: [] })).rows
     expect(tasksAfterSecond).toEqual([
       expect.objectContaining({ title: "Personal Dentists", due_date: tomorrowStr }),
       expect.objectContaining({ title: "Team Dentists (Updated)", due_date: todayStr }),
@@ -1343,6 +1355,7 @@ test("CalDAV isolates same UID across distinct calendars without overwriting eit
       WHERE c.source = 'caldav' ORDER BY calendar
     `)
     expect(links.rows).toEqual([
+      expect.objectContaining({ title: "Legacy dentist", uid: "shared-invite-uid", calendar: null }),
       expect.objectContaining({ title: "Personal Dentists", uid: "shared-invite-uid", calendar: "/personal" }),
       expect.objectContaining({ title: "Team Dentists (Updated)", uid: "shared-invite-uid", calendar: "/team" }),
     ])

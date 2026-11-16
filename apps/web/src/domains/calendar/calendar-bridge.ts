@@ -491,6 +491,9 @@ function baselinePayload(
     const latest = JSON.parse(nextPayload) as Record<string, unknown>
     if ("occurrences" in latest) kept.occurrences = latest.occurrences
     else delete kept.occurrences
+    for (const key of ["entity_id", "calendar_href", "calendar", "series"]) {
+      if (key in latest) kept[key] = latest[key]
+    }
     return JSON.stringify(kept)
   } catch {
     return nextPayload
@@ -1897,10 +1900,15 @@ async function importCalDAVEvents(): Promise<CalendarSyncCounts> {
     const todayStr = calendarToday(timezone, now)
 
     let failures = 0
+    const calendarNames = new Map<string, number>()
+    for (const calendar of calendars) {
+      calendarNames.set(calendar.displayName, (calendarNames.get(calendar.displayName) ?? 0) + 1)
+    }
 
     for (const cal of calendars) {
       try {
         const calendarKey = normalizeCalDAVCalendarKey(config.url, cal.href)
+        const legacyCalendarName = calendarNames.get(cal.displayName) === 1 ? cal.displayName : null
         const listed = await listCalDAVEvents(config, cal.href, start, end)
         // Events Meitheal itself wrote to a calendar are never imported back as new tasks.
         const events = listed.filter((evt) => !(evt.description && /Added from Meitheal/i.test(evt.description)))
@@ -1914,31 +1922,34 @@ async function importCalDAVEvents(): Promise<CalendarSyncCounts> {
 
         // Batch dedup: pre-fetch existing UIDs scoped to this calendar in <= 200-param chunks
         const calUids = Array.from(groupedByUid.keys())
-        const existingCalMap = new Map<string, string>()
-        const existingCalPayloads = new Map<string, string | null>()
+        const existingCalLinks = new Map<string, { taskId: string; confirmationId: string; payload: string | null }>()
         for (let offset = 0; offset < calUids.length; offset += 198) {
           const chunk = calUids.slice(offset, offset + 198)
           const uidPlaceholders = chunk.map(() => "?").join(", ")
           const existingCalRes = await client.execute({
-            sql: `SELECT provider_event_id, task_id, payload
+            sql: `SELECT provider_event_id, task_id, payload, confirmation_id
                   FROM calendar_confirmations
                   WHERE provider_event_id IN (${uidPlaceholders})
                     AND source = 'caldav'
                     AND (
                       CASE WHEN json_valid(payload) THEN COALESCE(json_extract(payload, '$.calendar_href'), json_extract(payload, '$.entity_id')) ELSE NULL END = ?
                       OR (
-                        CASE WHEN json_valid(payload) THEN json_extract(payload, '$.calendar_href') ELSE NULL END IS NULL
+                        CASE WHEN json_valid(payload) THEN COALESCE(json_extract(payload, '$.calendar_href'), json_extract(payload, '$.entity_id')) ELSE NULL END IS NULL
                         AND CASE WHEN json_valid(payload) THEN json_extract(payload, '$.calendar') ELSE NULL END = ?
                       )
-                    )`,
-            args: [...chunk, calendarKey, cal.displayName],
+                    )
+                  ORDER BY CASE WHEN json_valid(payload) THEN COALESCE(json_extract(payload, '$.calendar_href'), json_extract(payload, '$.entity_id')) ELSE NULL END ASC NULLS FIRST`,
+            args: [...chunk, calendarKey, legacyCalendarName],
           })
           for (const row of existingCalRes.rows) {
-            existingCalMap.set(String(row.provider_event_id), String(row.task_id))
-            existingCalPayloads.set(String(row.provider_event_id), row.payload == null ? null : String(row.payload))
+            existingCalLinks.set(String(row.provider_event_id), {
+              taskId: String(row.task_id),
+              confirmationId: String(row.confirmation_id),
+              payload: row.payload == null ? null : String(row.payload),
+            })
           }
         }
-        const currentCalTasks = await readSyncedTaskFields(client, [...existingCalMap.values()])
+        const currentCalTasks = await readSyncedTaskFields(client, Array.from(existingCalLinks.values(), link => link.taskId))
 
         const nowMs = Date.now()
         const calMutations: SyncTaskMutation[] = []
@@ -1983,10 +1994,11 @@ async function importCalDAVEvents(): Promise<CalendarSyncCounts> {
             })),
           })
 
-          const existingTaskId = existingCalMap.get(uid)
+          const existingLink = existingCalLinks.get(uid)
+          const existingTaskId = existingLink?.taskId
           if (existingTaskId) {
             const currentCalTask = currentCalTasks.get(existingTaskId)
-            const calPreviousPayload = existingCalPayloads.get(uid) ?? null
+            const calPreviousPayload = existingLink?.payload ?? null
             const calPlan = planInboundCalendarUpdate(
               currentCalTask,
               calPreviousPayload,
@@ -2005,11 +2017,11 @@ async function importCalDAVEvents(): Promise<CalendarSyncCounts> {
                 entityId: calendarKey,
                 externalId: uid,
                 confirmationSource: "caldav",
+                legacyCalendarName,
                 payload: baselinePayload(currentCalTask, calPlan, calPreviousPayload, payload),
               },
             })
           } else {
-            existingCalMap.set(uid, uid)
             calMutations.push({
               kind: "create",
               taskId: crypto.randomUUID(),
