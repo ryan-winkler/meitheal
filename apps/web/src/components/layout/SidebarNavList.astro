@@ -1,34 +1,34 @@
 ---
-import Icon from "../ui/Icon.astro";
-import { TASK_NAV_TYPES } from "../../lib/task-nav-types";
+import Icon from "../ui/Icon.astro"
+import { TASK_NAV_TYPES } from "../../lib/task-nav-types"
 
 export interface Props {
   navItems: {
-    key: string;
-    label: string;
-    isActive: boolean;
-    href: string;
-    icon: string;
-    showBadge?: boolean;
-  }[];
+    key: string
+    label: string
+    isActive: boolean
+    href: string
+    icon: string
+    showBadge?: boolean
+  }[]
   taskCounts: {
-    total: number;
-    active: number;
-    pending: number;
-  };
+    total: number
+    active: number
+    pending: number
+  }
 }
-const { navItems, taskCounts } = Astro.props;
+const { navItems, taskCounts } = Astro.props
 
 /** Check if a URL is external (absolute http/https) */
 function isExternal(href: string): boolean {
-  return /^https?:\/\//i.test(href);
+  return /^https?:\/\//i.test(href)
 }
 ---
 
 <ul class="nav-list nav-overflow__primary flex flex-col gap-1 list-none m-0 p-0 w-full" data-nav-overflow-primary>
   {
     navItems.map((item) => {
-      const external = isExternal(item.href);
+      const external = isExternal(item.href)
       if (item.key === "tasks") {
         return (
           <>
@@ -200,7 +200,7 @@ function isExternal(href: string): boolean {
               </template>
             </li>
           </>
-        );
+        )
       }
 
       return (
@@ -232,7 +232,7 @@ function isExternal(href: string): boolean {
             )}
           </a>
         </li>
-      );
+      )
     })
   }
 </ul>
