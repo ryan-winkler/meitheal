@@ -55,7 +55,7 @@ test("percentage save initializes its metric and survives API list/detail reads"
   const expected = { id, progress: 37.5, metric_type: "percentage", metric_target: 100, metric_current: 37.5 }
   const detail = await getGoal({
     params: { id }, locals: {}, request: new Request(`http://localhost/api/goals/${id}`),
-  } as Parameters<typeof getGoal>[0])
+  } as unknown as Parameters<typeof getGoal>[0])
   expect(await detail.json()).toMatchObject(expected)
   const url = new URL("http://localhost/api/goals")
   const list = await listGoals({ url, locals: {}, request: new Request(url) } as Parameters<typeof listGoals>[0])
