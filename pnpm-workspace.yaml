@@ -2,3 +2,18 @@ packages:
   - apps/*
   - packages/*
   - tests
+
+pmOnFail: error
+
+allowBuilds:
+  esbuild: false
+
+overrides:
+  "lodash": ">=4.17.23"
+  "svgo": "^4.1.0"
+  "undici@>=7.0.0 <7.30.2": "7.30.2"
+  "devalue": "^5.9.3"
+  "source-map-js@1": "^1.2.2"
+  "fast-uri@3": "^3.1.9"
+  "esbuild@<0.28.2": "0.28.2"
+  "h3": ">=1.15.6"

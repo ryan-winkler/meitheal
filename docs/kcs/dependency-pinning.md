@@ -22,7 +22,7 @@ The Home Assistant base images (`ghcr.io/home-assistant/{arch}-base`) stay on th
 
 ## Changing a pinned dependency
 
-- **pnpm version:** change `packageManager` in the root `package.json`, every `version:` under `pnpm/action-setup` in the workflows, `meitheal-hub/toolchain/package.json`, `.devcontainer/devcontainer.json`, and `tests/governance/ha-integration-contract.spec.ts`. Then run `npm install --package-lock-only --ignore-scripts` in `meitheal-hub/toolchain`.
+- **pnpm version:** change `packageManager` in the root `package.json`, every `version:` under `pnpm/action-setup` in the workflows, `meitheal-hub/toolchain/package.json`, `.devcontainer/devcontainer.json`, and `tests/governance/ha-integration-contract.spec.ts`. Run `npm install --package-lock-only --ignore-scripts` in `meitheal-hub/toolchain`, then use the new pnpm to run `pnpm install --lockfile-only --ignore-scripts` from the root. The workspace rejects a mismatched pnpm version instead of downloading it during the App build. Keep dependency overrides in `pnpm-workspace.yaml` and verify the frozen install and both App architectures before merging.
 - **Home Assistant test requirements:** edit the `.in` file (and `integrations/home-assistant/overrides-2026.10.txt` if changing an overridden pin such as `pillow` on Core `2026.10.4`), then regenerate the `.txt` lockfile with the command in its header:
 
   ```sh

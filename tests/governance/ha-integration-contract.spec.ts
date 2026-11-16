@@ -230,7 +230,7 @@ test("both Core CI profiles build this checkout before required App/native proto
     step =>
       step.uses === "pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115" &&
       /^pnpm\/action-setup@[0-9a-f]{40}$/.test(step.uses ?? "") &&
-      step.with?.version === "10.34.9",
+      step.with?.version === "12.18.0",
   )
   const node = core.steps.findIndex(
     step =>
