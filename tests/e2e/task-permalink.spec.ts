@@ -220,8 +220,9 @@ test("a comment link focuses the edited comment through ingress and recovers aft
   }
   const web = fileURLToPath(new URL("../../apps/web", import.meta.url))
   const fixture = fileURLToPath(new URL("../scripts/feedback-ingress-fixture.mjs", import.meta.url))
-  const source = await browser.newContext({ extraHTTPHeaders: {} })
-  const recipient = await browser.newContext({ extraHTTPHeaders: {} })
+  // The author test intercepts writes to simulate connection failures.
+  const source = await browser.newContext({ extraHTTPHeaders: {}, serviceWorkers: "block" })
+  const recipient = await browser.newContext({ extraHTTPHeaders: {}, serviceWorkers: "allow" })
   let server: ReturnType<typeof fork> | undefined
   try {
     execFileSync(process.execPath, ["scripts/migrate.mjs"], { cwd: web, env })
@@ -351,6 +352,11 @@ test("a comment link focuses the edited comment through ingress and recovers aft
     await expect(target).toBeFocused()
     await expect(target.getByRole("button", { name: "Edit comment" })).toHaveCount(0)
     await expect(target.getByRole("button", { name: "Delete comment" })).toHaveCount(0)
+    await page.waitForFunction(
+      script => navigator.serviceWorker.controller?.scriptURL === script,
+      entry + "/sw.js",
+      { timeout: 15_000 },
+    )
     await page.reload()
     await expect(target).toBeFocused()
 
