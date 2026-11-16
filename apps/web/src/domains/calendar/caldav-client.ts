@@ -28,7 +28,7 @@ import { formatInTimeZone, fromZonedTime } from "date-fns-tz"
 import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability"
 import { classifyNetworkHost, fetchOutbound, normalizeNetworkHost } from "@meitheal/integration-core"
 import { shiftCalendarDay } from "../../lib/date"
-import { expandRRuleOccurrences, normalizeRRule } from "./recurrence"
+import { expandRRuleOccurrences, normalizeRRule, RecurrenceScanLimitError } from "./recurrence"
 
 const logger = createLogger({
   service: "meitheal-web", env: process.env.NODE_ENV ?? "development",
@@ -748,6 +748,7 @@ export function expandCalDAVEventsInWindow(
   parsedEvents: CalDAVEvent[],
   start: Date,
   end: Date,
+  onScanLimit?: () => void,
 ): CalDAVEvent[] {
   const byUid = new Map<string, CalDAVEvent[]>()
   for (const evt of parsedEvents) {
@@ -758,7 +759,8 @@ export function expandCalDAVEventsInWindow(
 
   const expanded: CalDAVEvent[] = []
 
-  for (const [, group] of byUid) {
+  eventSeries: for (const group of byUid.values()) {
+    const startIndex = expanded.length
     const masters = group.filter(e => !e.recurrenceId)
     const overrides = group.filter(e => Boolean(e.recurrenceId))
 
@@ -808,17 +810,25 @@ export function expandCalDAVEventsInWindow(
         }, 0)
         const padMs = rangeOverrides.length > 0 ? maxShiftMs + maxSpanMs + 2 * 86_400_000 : 0
         const duration = master.allDay ? undefined : master.duration
-        const occs = expandRRuleOccurrences({
-          dtstart: master.dtstart,
-          dtend: master.dtend,
-          timedEndForStart: duration ? (start) => eventEndFromDuration(start, duration, false, timezone) : undefined,
-          rrule: master.rrule,
-          exdates: combinedExdates,
-          allDay: master.allDay,
-          timezone,
-          windowStart: new Date(start.getTime() - padMs),
-          windowEnd: new Date(end.getTime() + padMs),
-        })
+        let occs
+        try {
+          occs = expandRRuleOccurrences({
+            dtstart: master.dtstart,
+            dtend: master.dtend,
+            timedEndForStart: duration ? (start) => eventEndFromDuration(start, duration, false, timezone) : undefined,
+            rrule: master.rrule,
+            exdates: combinedExdates,
+            allDay: master.allDay,
+            timezone,
+            windowStart: new Date(start.getTime() - padMs),
+            windowEnd: new Date(end.getTime() + padMs),
+          })
+        } catch (error) {
+          if (!(error instanceof RecurrenceScanLimitError) || !onScanLimit) throw error
+          expanded.length = startIndex
+          onScanLimit()
+          continue eventSeries
+        }
         for (const occ of occs) {
           const occMs = Date.parse(occ.start)
           const range = [...rangeOverrides].reverse().find((o) => Date.parse(o.recurrenceId!) <= occMs)
@@ -983,7 +993,7 @@ export async function listCalDAVEvents(
   calendarHref: string,
   start: Date,
   end: Date,
-): Promise<CalDAVEvent[]> {
+): Promise<{ events: CalDAVEvent[]; skippedSeries: number }> {
   const validation = validateCalDAVUrl(config.url)
   if (!validation.valid) {
     throw new Error(`CalDAV URL validation failed: ${validation.error}`)
@@ -1039,7 +1049,8 @@ export async function listCalDAVEvents(
       }
     }
 
-    const events = expandCalDAVEventsInWindow(parsedEvents, start, end)
+    let skippedSeries = 0
+    const events = expandCalDAVEventsInWindow(parsedEvents, start, end, () => { skippedSeries++ })
 
     logger.log("info", {
       event: "caldav.sync.success",
@@ -1048,7 +1059,7 @@ export async function listCalDAVEvents(
       message: `Fetched ${events.length} events from CalDAV (${startStr} to ${endStr})`,
     })
 
-    return events
+    return { events, skippedSeries }
   } catch (err) {
     if (err instanceof Error && err.name === "AbortError") {
       throw new Error("CalDAV event fetch timed out (10s)")

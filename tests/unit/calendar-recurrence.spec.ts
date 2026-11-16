@@ -432,6 +432,7 @@ test.describe("timed ISO date helpers", () => {
     expect(calendarDayFromInput("2026-11-13T18:30:00", "America/New_York")).toBe("2026-11-13")
     // 2026-11-14T01:30:00Z is 2026-11-13 20:30 in New York (-05:00)
     expect(calendarDayFromInput("2026-11-14T01:30:00Z", "America/New_York")).toBe("2026-11-13")
+    expect(calendarDayFromInput(String(Date.parse("2026-11-14T01:30:00Z")), "America/New_York")).toBe("2026-11-13")
     // 2026-11-13T20:00:00Z is 2026-11-14 05:00 in Tokyo (+09:00)
     expect(calendarDayFromInput("2026-11-13T20:00:00Z", "Asia/Tokyo")).toBe("2026-11-14")
   })
@@ -1168,4 +1169,17 @@ test("long-running daily rules skip old dates while retaining COUNT", () => {
   expect(expandRRuleOccurrences({ ...window, rrule: `FREQ=DAILY;COUNT=${last - 1}` })).toEqual([])
   expect(() => expandRRuleOccurrences({ ...window, rrule: "FREQ=DAILY;BYMONTH=1;COUNT=20000" }))
     .toThrow("Calendar recurrence search exceeded its scan limit")
+})
+
+test("CalDAV can report one constrained series and still import other events", () => {
+  const start = new Date("2026-11-16T00:00:00Z")
+  const end = new Date("2026-11-17T23:59:59Z")
+  const events = parseVEvents([
+    "BEGIN:VEVENT", "UID:old-filtered", "SUMMARY:Historical repeat", "DTSTART;VALUE=DATE:19900101", "RRULE:FREQ=DAILY;BYMONTH=1;COUNT=20000", "END:VEVENT",
+    "BEGIN:VEVENT", "UID:in-window", "SUMMARY:Upcoming event", "DTSTART;VALUE=DATE:20261116", "END:VEVENT",
+  ].join("\r\n"), "/shared.ics")
+  let skippedSeries = 0
+  expect(expandCalDAVEventsInWindow(events, start, end, () => { skippedSeries++ }).map(event => event.uid))
+    .toEqual(["in-window"])
+  expect(skippedSeries).toBe(1)
 })

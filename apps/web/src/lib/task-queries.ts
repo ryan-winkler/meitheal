@@ -15,7 +15,7 @@ import {
 import { taskTimestampMs } from "@domains/tasks/persistence/task-timestamp";
 import type { InValue } from "@libsql/client";
 import { deriveEisenhowerQuadrant } from "@meitheal/domain-tasks";
-import { calendarDayFromInput, calendarToday, shiftCalendarDay, isDueOverdue } from "./date";
+import { calendarDayFromInput, calendarToday, isDueOverdue, isValidTimezone, resolveTimezone, shiftCalendarDay } from "./date"
 import { frameworkPayloadObject, readRiceInputs, riceLensScore } from "./rice-lens"
 
 // =============================================================================
@@ -400,17 +400,8 @@ const TODAY_COMPLETION_COUNT = `
   )
 `
 
-function isValidTimeZone(tz: string): boolean {
-  try {
-    new Intl.DateTimeFormat("en", { timeZone: tz })
-    return true
-  } catch {
-    return false
-  }
-}
-
 function todayCompletionArgs(today: string, timezone = "Europe/Dublin"): [number, number, number, number, string] {
-  const safeTz = isValidTimeZone(timezone) ? timezone : "Europe/Dublin"
+  const safeTz = resolveTimezone(timezone)
   const startMs = fromZonedTime(`${today}T00:00:00`, safeTz).getTime()
   const endMs = fromZonedTime(`${shiftCalendarDay(today, 1)}T00:00:00`, safeTz).getTime()
   return [startMs, endMs, startMs, endMs, today]
@@ -419,9 +410,8 @@ function todayCompletionArgs(today: string, timezone = "Europe/Dublin"): [number
 export function todayDueSection(
   dueDate: string,
   today: string,
-  timezoneOrLocalDayStart?: string | Date,
+  timezone = "Europe/Dublin",
 ): "due" | "carried" | null {
-  const timezone = typeof timezoneOrLocalDayStart === "string" ? timezoneOrLocalDayStart : "Europe/Dublin"
   const dueDay = calendarDayFromInput(dueDate, timezone)
   if (!dueDay) return null
   if (dueDay < today) return "carried"
@@ -451,8 +441,7 @@ export async function getTodayTaskRows(
 ) {
   try {
     await ensureSchema()
-    const trimmedTz = timezone.trim()
-    const resolvedTimezone = trimmedTz && isValidTimeZone(trimmedTz) ? trimmedTz : "Europe/Dublin"
+    const resolvedTimezone = resolveTimezone(timezone)
     const { rows } = await getPersistenceClient().execute({
       sql: `
         WITH totals AS (
@@ -488,7 +477,7 @@ export async function getTodayTaskRows(
   }
 }
 
-async function readStoredHouseholdTimezone(): Promise<string> {
+export async function readStoredHouseholdTimezone(): Promise<string> {
   try {
     const res = await getPersistenceClient().execute({
       sql: "SELECT value FROM settings WHERE key = 'timezone' LIMIT 1",
@@ -501,8 +490,7 @@ async function readStoredHouseholdTimezone(): Promise<string> {
       } catch {
         /* legacy plain-text setting */
       }
-      const trimmed = typeof raw === "string" ? raw.trim() : ""
-      if (trimmed && isValidTimeZone(trimmed)) return trimmed
+      if (typeof raw === "string") return resolveTimezone(raw)
     }
   } catch {
     /* ignore missing or unreadable setting */
@@ -514,7 +502,7 @@ async function readStoredHouseholdTimezone(): Promise<string> {
 export async function getTodayTaskCounts(now = new Date(), timezone?: string): Promise<TodayTaskCounts> {
   await ensureSchema()
   const trimmedTz = typeof timezone === "string" ? timezone.trim() : ""
-  const resolvedTimezone = trimmedTz && isValidTimeZone(trimmedTz)
+  const resolvedTimezone = trimmedTz && isValidTimezone(trimmedTz)
     ? trimmedTz
     : await readStoredHouseholdTimezone()
   const today = calendarToday(resolvedTimezone, now)

@@ -507,6 +507,12 @@ export function inferRRuleFromDates(
   return null
 }
 
+export class RecurrenceScanLimitError extends Error {
+  constructor() {
+    super("Calendar recurrence search exceeded its scan limit")
+  }
+}
+
 export interface ExpandedOccurrence {
   start: string
   end?: string | undefined
@@ -750,7 +756,7 @@ export function expandRRuleOccurrences(input: ExpandRRuleInput): ExpandedOccurre
 
     if (untilMs !== null && !Number.isNaN(untilMs) && occStartMs > untilMs) break
     if (occStartMs > input.windowEnd.getTime()) break
-    if (totalGenerated >= maxScanIterations) throw new Error("Calendar recurrence search exceeded its scan limit")
+    if (totalGenerated >= maxScanIterations) throw new RecurrenceScanLimitError()
 
     let occEnd: string | undefined
     let occInclusiveEnd: string | undefined

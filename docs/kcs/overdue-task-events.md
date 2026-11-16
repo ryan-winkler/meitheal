@@ -18,3 +18,5 @@ For a deadline with a UTC offset, the web app, the Home Assistant overdue sensor
 Web views keep a date-only deadline current through the end of that day in the household timezone. They also read a time without an offset in the household timezone. The event scheduler instead uses UTC and starts checking a date-only deadline at midnight. The Home Assistant overdue sensor uses Core's local clock for times without an offset, including midnight for a date without a time.
 
 For a disposable verification dataset, start the app before creating a task with a near-future deadline. Let the deadline pass with reminders off and verify one `task.overdue` event. Restart and confirm the event is not repeated. Move the deadline into the future and let it pass again to verify a new episode. Confirm an empty n8n selection suppresses delivery. A local harness proves these contracts; native Home Assistant and subscriber receipt require separate environment checks.
+
+The Today Focus Stack puts overdue timed tasks before future deadlines. Weekly Review and velocity use the household timezone for their day buckets, including task completion times.

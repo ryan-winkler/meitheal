@@ -12,14 +12,19 @@ const FLOATING_DATETIME = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}):(\d{2})(?::(\d{2})(?:
 const DAY_MS = 86_400_000;
 const DEFAULT_TIMEZONE = "Europe/Dublin";
 
-function resolveTimezone(timezone?: string): string {
-  const candidate = timezone?.trim() || DEFAULT_TIMEZONE;
+export function isValidTimezone(timezone: string): boolean {
+  if (!timezone) return false
   try {
-    new Intl.DateTimeFormat("en", { timeZone: candidate });
-    return candidate;
+    new Intl.DateTimeFormat("en", { timeZone: timezone })
+    return true
   } catch {
-    return DEFAULT_TIMEZONE;
+    return false
   }
+}
+
+export function resolveTimezone(timezone?: string): string {
+  const candidate = timezone?.trim() ?? ""
+  return isValidTimezone(candidate) ? candidate : DEFAULT_TIMEZONE
 }
 
 /** Today's calendar date in the given timezone, as YYYY-MM-DD. */
@@ -65,7 +70,7 @@ export function calendarDayFromInput(
       return parseCalendarDay(dayPart) ? dayPart : null;
     }
 
-    const parsed = new Date(trimmed);
+    const parsed = new Date(/^\d{12,}$/.test(trimmed) ? Number(trimmed) : trimmed)
     if (Number.isNaN(parsed.getTime())) return null;
     return calendarToday(tz, parsed);
   }

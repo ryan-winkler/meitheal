@@ -107,11 +107,8 @@ try {
       return dueDay !== null && dueDay <= todayStr
     })
     .sort((a, b) => {
-      const aDay = a.due_date ? calendarDayFromInput(a.due_date, todayTimeZone) : null
-      const bDay = b.due_date ? calendarDayFromInput(b.due_date, todayTimeZone) : null
-      const aOverdue = aDay && aDay < todayStr ? 1 : 0
-      const bOverdue = bDay && bDay < todayStr ? 1 : 0
-      if (aOverdue !== bOverdue) return bOverdue - aOverdue
+      const overdueOrder = Number(b.is_overdue) - Number(a.is_overdue)
+      if (overdueOrder) return overdueOrder
       const aPri = Number(a.priority ?? 3)
       const bPri = Number(b.priority ?? 3)
       if (aPri !== bPri) return aPri - bPri
