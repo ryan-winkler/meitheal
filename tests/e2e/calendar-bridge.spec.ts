@@ -1059,6 +1059,12 @@ test("HA sync keeps old completions closed, keeps user-added repeats, leaves del
     await db.execute({ sql: "DELETE FROM tasks WHERE title = 'Party'", args: [] })
     await syncFromHA(entity)
     expect((await db.execute({ sql: "SELECT id FROM tasks WHERE title = 'Party'", args: [] })).rows).toHaveLength(0)
+    // A partial calendar response must not discard the deletion record.
+    ha.setCalendarEvents(swimEvents)
+    await syncFromHA(entity)
+    ha.setCalendarEvents([...swimEvents, party])
+    await syncFromHA(entity)
+    expect((await db.execute({ sql: "SELECT id FROM tasks WHERE title = 'Party'", args: [] })).rows).toHaveLength(0)
     // When the series moves on to a later occurrence, that occurrence gets a new task.
     ha.setCalendarEvents([...[d7, d14, d21].map((day) => ({ summary: "Swim", start: at(day, "18:00"), end: at(day, "19:00") })), party])
     await syncFromHA(entity)
