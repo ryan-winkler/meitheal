@@ -22,6 +22,7 @@
  *   <FilterToolbar view="kanban" showGroupBy />
  */
 import { t } from "../../i18n/translations"
+import { KANBAN_SEARCH_LIMIT } from "@lib/kanban-query"
 import type { Locale } from "../../lib/locale"
 import LabelFilterBar from "./LabelFilterBar.astro"
 import Icon from "./Icon.astro"
@@ -150,6 +151,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
       aria-label="Filter by text"
       value={calendarState.search}
       disabled={prefix === "calendar"}
+      maxlength={prefix === "calendar" ? KANBAN_SEARCH_LIMIT : undefined}
     />
   )}
 

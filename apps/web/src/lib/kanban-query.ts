@@ -2,6 +2,7 @@ import type { FilterCondition, FilterGroup } from "./filter-engine"
 import { readFilterLabels, writeFilterLabels, type FilterState } from "./filter-state"
 
 export const KANBAN_PAGE_SIZE = 25
+export const KANBAN_SEARCH_LIMIT = 500
 const PAGE_PREFIX = "kp."
 export const KANBAN_GROUP_KEY = "meitheal-kanban-group-by"
 export type KanbanFilters = Partial<FilterState> & { promoted?: boolean }
@@ -35,7 +36,7 @@ function readRules(raw: string | null): FilterGroup | undefined {
 export function readKanbanFilters(params: URLSearchParams): KanbanFilters {
   return {
     area: params.get("area") ?? "",
-    search: (params.get("search") ?? "").trim().slice(0, 500),
+    search: (params.get("search") ?? "").trim().slice(0, KANBAN_SEARCH_LIMIT),
     user: params.get("user") ?? "",
     status: params.get("status") ?? "",
     priority: params.get("priority") ?? "",

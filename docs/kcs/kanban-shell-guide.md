@@ -109,7 +109,7 @@ The form keeps the title. Check the area selection and destination lane. If you 
 
 Use **Set card color** to choose the task color. Knight Rider tints the whole card while keeping the active-work indicator visible. Other palettes use the color at the card edge. Saving and reloading retain that choice. **Clear color** restores the default treatment. Rejected writes retain the saved color and report an error so you can retry.
 
-In the color picker, use the arrow keys to choose a swatch and Enter to save. Focus returns to the card’s **More actions** button during the save and after the board refreshes.
+In the color picker, use Up and Down to choose a swatch and Enter to save. Focus returns to the card’s **Task actions** button during the save and after the board refreshes.
 
 Cards keep their full height in a busy lane. The lane scrolls instead of
 compressing the cards. At widths from 769 to 1024 CSS px the sidebar narrows to

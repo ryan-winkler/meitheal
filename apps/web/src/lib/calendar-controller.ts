@@ -73,7 +73,7 @@ export function initCalendarPage(signal: AbortSignal): void {
     throw error
   })
 
-  function announce(message: string, failed = false) {
+  function announce(message: string, failed = Boolean(retryTarget)) {
     status!.hidden = !message
     status!.textContent = message
     retry!.hidden = !failed
@@ -109,7 +109,7 @@ export function initCalendarPage(signal: AbortSignal): void {
     desired = url
     month.setAttribute("aria-busy", "true")
     const activeRetry = document.activeElement === retry
-    announce("Loading calendar…")
+    announce("Loading calendar…", false)
 
     try {
       const requestUrl = new URL(url)
@@ -185,7 +185,7 @@ export function initCalendarPage(signal: AbortSignal): void {
     if (JSON.stringify(previous) === JSON.stringify(next)) {
       if (rejectedFilterChange) {
         rejectedFilterChange = ""
-        announce("")
+        announce(retryTarget ? refreshFailure : "")
       }
       return true
     }
@@ -353,6 +353,8 @@ export function initCalendarPage(signal: AbortSignal): void {
     const target = event.target as Element
     const monthLink = target.closest<HTMLAnchorElement>("[data-calendar-nav]")
     if (monthLink && desired.search !== applied.search) {
+      if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return
+      event.preventDefault()
       const destination = new URL(monthLink.href)
       const next = new URL(desired)
       for (const key of ["year", "month"]) {
@@ -361,7 +363,7 @@ export function initCalendarPage(signal: AbortSignal): void {
         else next.searchParams.set(key, value)
       }
       next.hash = destination.hash
-      monthLink.href = next.href
+      location.assign(next.href)
       return
     }
     if (target.closest("#day-drawer-close, #day-drawer-backdrop")) {

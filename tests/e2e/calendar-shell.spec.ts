@@ -327,6 +327,14 @@ test.describe("Calendar Shell", () => {
     await expect(month).not.toHaveAttribute("aria-busy")
     await expect(page).not.toHaveURL(/search=/)
 
+    await page.locator("#calendar-advanced-toggle").click()
+    await page.getByRole("button", { name: "Condition", exact: true }).click()
+    await page.locator("#calendar-advanced-panel .adv-val").fill("word".repeat(2050))
+    await page.getByRole("button", { name: "Apply Rules" }).click()
+    await expect(page.locator("[data-calendar-status]")).toContainText("Shorten the Calendar rules")
+    await expect(page.getByRole("button", { name: "Retry calendar" })).toBeVisible()
+    await page.getByRole("button", { name: "Close custom filters" }).click()
+
     fail = false
     const backgroundRefresh = page.waitForResponse(response => new URL(response.url()).searchParams.has("calendarRefresh"))
     await page.evaluate(() => document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "created" } })))
@@ -489,7 +497,15 @@ test.describe("Calendar Shell", () => {
     try {
       await page.getByRole("textbox", { name: "Filter by text" }).fill("roof")
       await expect(page.getByText("Loading calendar…")).toBeVisible()
-      await page.getByRole("link", { name: "Next month" }).click()
+      const next = page.getByRole("link", { name: "Next month" })
+      const canonicalHref = await next.getAttribute("href")
+      const opened = page.context().waitForEvent("page")
+      await next.click({ modifiers: ["Control"] })
+      const newTab = await opened
+      await expect(newTab).toHaveURL(url => url.searchParams.has("month") && !url.searchParams.has("search"))
+      await newTab.close()
+      await expect(next).toHaveAttribute("href", canonicalHref!)
+      await next.click()
       await expect(page).toHaveURL(/[?&]search=roof(?:&|#)/)
       await expect(page.getByRole("textbox", { name: "Filter by text" })).toHaveValue("roof")
     } finally {
