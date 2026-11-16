@@ -6,6 +6,7 @@
  * @phase 15 — Wave 4.5
  */
 import Layout from "../../layouts/Layout.astro";
+import { logApiError } from "../../lib/api-logger"
 import StatusBadge from "../../components/ui/StatusBadge.astro";
 import BotBadge from "../../components/ui/BotBadge.astro";
 import LabelBadges from "../../components/ui/LabelBadges.astro";
@@ -26,7 +27,7 @@ const cookieLocale = Astro.cookies.get("meitheal-locale")?.value;
 const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
 
 const projectId = Astro.params.id;
-const projectsPath = `${Astro.locals.ingressPath || ""}/projects`
+const projectsPath = `${Astro.locals.ingressPath || ""}/planning#spaces`
 if (!projectId) {
   return Astro.redirect(projectsPath);
 }
@@ -61,8 +62,11 @@ try {
   tasks = await taskRepo.findByProjectId(projectId);
   goals = await repo.findAllGoals({});
   areas = await repo.findAllAreas()
-} catch {
-  return Astro.redirect(projectsPath);
+} catch (error) {
+  logApiError("projects", "Could not load Project details", error)
+  return new Response("Could not load this Project. Reload to try again.", {
+    status: 503, headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "private, no-store" },
+  })
 }
 
 const projTitle = String(project?.title ?? "Project");
@@ -788,6 +792,7 @@ const tabs = [
         saveProjectBtn.disabled = false;
       }
     } catch {
+      window.showToast?.("Could not save the Project. Your changes are still here. Try again.", "error")
       saveProjectBtn.textContent = "Save Changes";
       saveProjectBtn.disabled = false;
     }
@@ -813,6 +818,7 @@ const tabs = [
         deleteProjectBtn.disabled = false;
       }
     } catch {
+      window.showToast?.("Could not delete the Project. Try again.", "error")
       deleteProjectBtn.textContent = "Delete Project";
       deleteProjectBtn.disabled = false;
     }

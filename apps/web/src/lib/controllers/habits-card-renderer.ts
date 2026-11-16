@@ -17,6 +17,7 @@ export interface HabitChecklistItem {
 }
 
 export interface HabitData {
+  areaId?: string | undefined
   id: string
   name: string
   icon: string

@@ -77,11 +77,13 @@ export class TemplateRepository {
   /** Create a task from a template */
   async instantiateFromTemplate(taskId: string, template: Record<string, unknown>): Promise<void> {
     const now = Date.now()
-    await this.client.execute({
+    const areaId = String(template.area_id ?? "default")
+    const inserted = await this.client.execute({
       sql: `INSERT INTO tasks (id, title, description, status, priority, labels, task_type,
             recurrence_rule, checklists, custom_fields, area_id, framework_payload,
             calendar_sync_state, idempotency_key, request_id, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '{}', ?, ?, ?, ?, ?)`,
+            SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '{}', ?, ?, ?, ?, ?
+            WHERE ? = 'default' OR EXISTS (SELECT 1 FROM areas WHERE id = ?)`,
       args: [
         taskId,
         String(template.title ?? "Untitled"),
@@ -93,32 +95,38 @@ export class TemplateRepository {
         template.recurrence_rule ? String(template.recurrence_rule) : null,
         JSON.stringify(template.checklists ?? []),
         JSON.stringify(template.custom_fields ?? {}),
-        String(template.area_id ?? "default"),
+        areaId,
         STATUS.PENDING,
         crypto.randomUUID(),
         crypto.randomUUID(),
         now,
         now,
+        areaId,
+        areaId,
       ],
     })
+    if (!inserted.rowsAffected) throw new Error("Template Area is unavailable")
   }
 
   /** Create a new template */
   async create(data: {
     id: string; name: string; templateJson: string; icon: string; position: number; isRoutine?: boolean; cadence?: string
+    areaId?: string | undefined
     /** @deprecated Use isRoutine */
     isHabit?: boolean
     /** @deprecated Use cadence */
     frequency?: string
-  }): Promise<void> {
+  }): Promise<boolean> {
     const now = Date.now()
     const isRoutine = data.isRoutine ?? data.isHabit ?? false
     const cadence = data.cadence ?? data.frequency ?? "daily"
-    await this.client.execute({
+    const inserted = await this.client.execute({
       sql: `INSERT INTO task_templates (id, name, template_json, icon, is_routine, cadence, position, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      args: [data.id, data.name, data.templateJson, data.icon, isRoutine ? 1 : 0, cadence, data.position, now, now],
+            SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
+            WHERE ? IS NULL OR EXISTS (SELECT 1 FROM areas WHERE id = ?)`,
+      args: [data.id, data.name, data.templateJson, data.icon, isRoutine ? 1 : 0, cadence, data.position, now, now, data.areaId ?? null, data.areaId ?? null],
     })
+    return inserted.rowsAffected !== 0
   }
 
   /** Delete a template by ID */
@@ -132,40 +140,51 @@ export class TemplateRepository {
   /** Update a template */
   async update(id: string, data: {
     name?: string; templateJson?: string; icon?: string; cadence?: string
+    templatePatch?: string
+    areaId?: string
     streak_freezes_used?: number; streak_freeze_limit?: number
     /** @deprecated Use cadence */
     frequency?: string
-  }): Promise<void> {
+  }): Promise<boolean> {
     const sets: string[] = []
     const args: (string | number)[] = []
 
     if (data.name !== undefined) { sets.push("name = ?"); args.push(data.name) }
     if (data.templateJson !== undefined) { sets.push("template_json = ?"); args.push(data.templateJson) }
+    else if (data.templatePatch !== undefined) {
+      sets.push("template_json = json_patch(CASE WHEN json_valid(template_json) THEN template_json ELSE '{}' END, ?)")
+      args.push(data.templatePatch)
+    }
     if (data.icon !== undefined) { sets.push("icon = ?"); args.push(data.icon) }
     const cadence = data.cadence ?? data.frequency
     if (cadence !== undefined) { sets.push("cadence = ?"); args.push(cadence) }
     if (data.streak_freezes_used !== undefined) { sets.push("streak_freezes_used = ?"); args.push(data.streak_freezes_used) }
     if (data.streak_freeze_limit !== undefined) { sets.push("streak_freeze_limit = ?"); args.push(data.streak_freeze_limit) }
 
-    if (sets.length === 0) return
+    if (sets.length === 0) return true
 
     sets.push("updated_at = ?")
     args.push(Date.now())
     args.push(id)
+    const areaCheck = data.areaId === undefined ? "" : "AND EXISTS (SELECT 1 FROM areas WHERE id = ?)"
+    if (data.areaId !== undefined) args.push(data.areaId)
 
-    await this.client.execute({
-      sql: `UPDATE task_templates SET ${sets.join(", ")} WHERE id = ?`,
+    const written = await this.client.execute({
+      sql: `UPDATE task_templates SET ${sets.join(", ")} WHERE id = ? ${areaCheck}`,
       args,
     })
+    return written.rowsAffected !== 0
   }
 
   // ── Routine-Specific Methods ────────────────────────────────────
 
   /** Find all routine templates */
-  async findRoutines(): Promise<RoutineTemplateRow[]> {
-    const result = await this.client.execute(
-      "SELECT * FROM task_templates WHERE is_routine = 1 ORDER BY position ASC, created_at ASC"
-    )
+  async findRoutines(areaId?: string): Promise<RoutineTemplateRow[]> {
+    const areaFilter = areaId ? "AND COALESCE(CASE WHEN json_valid(template_json) THEN json_extract(template_json, '$.area_id') END, 'default') = ?" : ""
+    const result = await this.client.execute({
+      sql: `SELECT * FROM task_templates WHERE is_routine = 1 ${areaFilter} ORDER BY position ASC, created_at ASC`,
+      args: areaId ? [areaId] : [],
+    })
     return result.rows.map(r => {
       const row = r as Record<string, unknown>
       return {
@@ -196,8 +215,8 @@ export class TemplateRepository {
    * - Total completions
    * - Checklists from template
    */
-  async getRoutinesWithStats(): Promise<RoutineWithStats[]> {
-    const routines = await this.findRoutines()
+  async getRoutinesWithStats(areaId?: string): Promise<RoutineWithStats[]> {
+    const routines = await this.findRoutines(areaId)
     const today = new Date().toISOString().split("T")[0]!
     const results: RoutineWithStats[] = []
 
@@ -271,20 +290,21 @@ export class TemplateRepository {
   async instantiateRoutineTask(templateId: string): Promise<{ taskId: string; alreadyExisted: boolean }> {
     const today = new Date().toISOString().split("T")[0]!
 
-    // Check if today's task already exists
-    const existing = await this.client.execute({
+    const findToday = {
       sql: `SELECT id FROM tasks WHERE source_template_id = ? AND due_date = ? LIMIT 1`,
       args: [templateId, today],
-    })
+    }
+    const existing = await this.client.execute(findToday)
     if (existing.rows.length > 0) {
       return { taskId: String((existing.rows[0] as Record<string, unknown>).id), alreadyExisted: true }
     }
 
     // Get template
     const tmpl = await this.findById(templateId)
-    if (!tmpl) throw new Error(`Template not found: ${templateId}`)
+    if (!tmpl?.is_routine) throw new Error("Routine not found")
 
     const template = JSON.parse(String(tmpl.template_json ?? "{}")) as Record<string, unknown>
+    const areaId = String(template.area_id ?? "default")
     const taskId = crypto.randomUUID()
     const now = Date.now()
 
@@ -305,12 +325,15 @@ export class TemplateRepository {
     const labels = Array.isArray(template.labels) ? [...template.labels] : []
     if (!labels.includes("routine")) labels.push("routine")
 
-    await this.client.execute({
+    const write = await this.client.execute({
       sql: `INSERT INTO tasks (id, title, description, status, priority, labels, task_type, task_kind,
             due_date, checklists, custom_fields, area_id, source_template_id, ticket_number,
             framework_payload, calendar_sync_state, idempotency_key, request_id, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 'routine_instance', ?, ?, ?, ?, ?,
-                    (SELECT COALESCE(MAX(ticket_number), 0) + 1 FROM tasks), '{}', 'pending', ?, ?, ?, ?)`,
+            SELECT ?, ?, ?, ?, ?, ?, ?, 'routine_instance', ?, ?, ?, ?, ?,
+                   (SELECT COALESCE(MAX(ticket_number), 0) + 1 FROM tasks), '{}', 'pending', ?, ?, ?, ?
+            WHERE EXISTS (SELECT 1 FROM task_templates WHERE id = ? AND is_routine = 1 AND template_json = ?)
+              AND (? = 'default' OR EXISTS (SELECT 1 FROM areas WHERE id = ?))
+              AND NOT EXISTS (SELECT 1 FROM tasks WHERE source_template_id = ? AND due_date = ?)`,
       args: [
         taskId,
         String(template.title ?? tmpl.name ?? "Routine"),
@@ -322,14 +345,25 @@ export class TemplateRepository {
         today,
         checklists,
         JSON.stringify(template.custom_fields ?? {}),
-        String(template.area_id ?? "default"),
+        areaId,
         templateId,
         crypto.randomUUID(),
         crypto.randomUUID(),
         now,
         now,
+        templateId,
+        String(tmpl.template_json),
+        areaId,
+        areaId,
+        templateId,
+        today,
       ],
     })
+    if (!write.rowsAffected) {
+      const concurrent = await this.client.execute(findToday)
+      if (concurrent.rows[0]) return { taskId: String(concurrent.rows[0].id), alreadyExisted: true }
+      throw new Error("Routine changed or its Area is unavailable. Reload and try again.")
+    }
 
     return { taskId, alreadyExisted: false }
   }

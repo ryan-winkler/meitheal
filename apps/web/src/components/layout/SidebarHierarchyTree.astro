@@ -226,15 +226,6 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
     </div>
     </div>
     </details>
-    <a
-      href="/areas"
-      data-astro-prefetch="viewport"
-      class="stree__manage-link"
-      title="Manage areas & projects"
-      aria-label="Manage areas & projects"
-    >
-      <Icon name="settings" size={12} />
-    </a>
   </div>
 )}
 
@@ -396,20 +387,6 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
     font-weight: 600;
     color: var(--text-secondary);
   }
-  .stree__manage-link {
-    position: absolute;
-    inset-inline-end: var(--stree-inline-padding);
-    inset-block-start: calc(var(--stree-block-padding) + (max(var(--stree-header-height), var(--stree-manage-size)) - var(--stree-manage-size)) / 2);
-    inline-size: var(--stree-manage-size);
-    block-size: var(--stree-manage-size);
-    color: var(--text-secondary);
-    transition: color 150ms, background 150ms;
-    display: grid;
-    place-items: center;
-    text-decoration: none;
-    border-radius: var(--radius-sm, 4px);
-  }
-  .stree__manage-link:hover { color: var(--accent); background: rgb(var(--accent-rgb) / 0.08); }
 
   /* ── Section labels ── */
   .stree__section-label {
@@ -951,7 +928,6 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
   .stree__project-link:focus-visible,
   .stree__action-btn:focus-visible,
   .stree__new-area:focus-visible,
-  .stree__manage-link:focus-visible,
   .stree__dropdown-item:focus-visible,
   .stree__emoji-tab:focus-visible,
   .stree__emoji-btn:focus-visible,
@@ -995,7 +971,7 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
   @media (prefers-reduced-motion: reduce) {
     .stree__children,
     .stree__toggle, .stree__area-toggle, .stree__project-link,
-    .stree__action-btn, .stree__manage-link,
+    .stree__action-btn,
     .stree__new-area, .stree__actions,
     .stree__dropdown, .stree__popover { transition: none; animation: none; }
   }
@@ -1104,7 +1080,7 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
       connector.append(lineV, lineH)
 
       const link = document.createElement("a")
-      link.href = `/projects/${encodeURIComponent(projectId)}`
+      link.href = safeIngressHref(`/projects/${encodeURIComponent(projectId)}`)
       link.className = "stree__project-link"
       link.dataset.projectId = projectId
       link.dataset.projectName = title
@@ -1362,6 +1338,7 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
       }
       if (button.hasAttribute("data-area-add")) addProjectToArea(button)
       if (button.hasAttribute("data-area-menu")) showAreaMenu(button, event.detail === 0)
+      if (button.hasAttribute("data-project-menu")) showProjectMenu(button, event.detail === 0)
     }
 
     // The sidebar element persists across Astro page swaps.
@@ -1509,21 +1486,24 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
     })
 
     // ── 5. Project ⋯ menu ──
-    document.querySelectorAll<HTMLButtonElement>("[data-project-menu]").forEach((btn) => {
-      btn.addEventListener("click", (e) => {
-        e.stopPropagation()
-        if (!projectMenuDropdown) return
-        const isVisible = ctrl.isShowing(projectMenuDropdown) && activeEntityId === btn.dataset.projectMenu && activeEntityType === "project"
-        ctrl.hideAll()
-        if (isVisible) return
-        activeEntityType = "project"
-        activeEntityId = btn.dataset.projectMenu!
-        activeEntityName = btn.dataset.projectTitle || ""
-        const manageLink = projectMenuDropdown.querySelector<HTMLAnchorElement>("[data-action='manage']")
-        if (manageLink) manageLink.href = safeIngressHref(`/projects/${encodeURIComponent(activeEntityId)}`)
-        ctrl.show(projectMenuDropdown, btn)
-      })
-    })
+    function showProjectMenu(btn: HTMLButtonElement, focusEdit: boolean) {
+      if (!projectMenuDropdown) return
+      const isVisible = ctrl.isShowing(projectMenuDropdown) && activeEntityId === btn.dataset.projectMenu && activeEntityType === "project"
+      ctrl.hideAll()
+      if (isVisible) return
+      activeEntityType = "project"
+      activeEntityId = btn.dataset.projectMenu!
+      activeEntityName = btn.dataset.projectTitle || ""
+      const editLink = projectMenuDropdown.querySelector<HTMLAnchorElement>("[data-action='manage']")
+      if (editLink) editLink.href = safeIngressHref(`/projects/${encodeURIComponent(activeEntityId)}#settings`)
+      ctrl.show(projectMenuDropdown, btn)
+      if (focusEdit) editLink?.focus()
+    }
+    projectMenuDropdown?.addEventListener("keydown", event => {
+      if (event.key === "Escape" && activeEntityId) {
+        nav.querySelector<HTMLButtonElement>(`[data-project-menu="${CSS.escape(activeEntityId)}"]`)?.focus()
+      }
+    }, { signal: areaActions.signal })
 
     projectMenuDropdown?.addEventListener("click", async (e) => {
       const target = (e.target as HTMLElement).closest<HTMLElement>("[data-action]")

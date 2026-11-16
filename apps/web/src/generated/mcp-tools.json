@@ -1586,34 +1586,96 @@
     },
     {
       "name": "listHabits",
-      "description": "Returns habit templates with current streak data, schedule, and completion history.",
+      "description": "List routine templates and streaks",
       "inputSchema": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "area_id": {
+            "type": "string",
+            "description": "List Routines in an existing Area, or use default for unassigned Routines."
+          }
+        }
       }
     },
     {
       "name": "createHabit",
-      "description": "Create a habit template",
+      "description": "Create with a name and optional area_id. Send templateId for complete, update, or delete.",
       "inputSchema": {
         "type": "object",
-        "properties": {}
-      }
-    },
-    {
-      "name": "updateHabit",
-      "description": "Send { complete: true } to record today's completion. Send other fields to update the template.",
-      "inputSchema": {
-        "type": "object",
-        "properties": {}
-      }
-    },
-    {
-      "name": "deleteHabit",
-      "description": "Delete a habit",
-      "inputSchema": {
-        "type": "object",
-        "properties": {}
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "create",
+              "complete",
+              "update",
+              "delete"
+            ],
+            "default": "create"
+          },
+          "templateId": {
+            "type": "string"
+          },
+          "habitId": {
+            "type": "string",
+            "description": "Legacy template identifier for complete and delete."
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "area_id": {
+            "type": "string",
+            "description": "Area for new work. Use default for unassigned work."
+          },
+          "cadence": {
+            "type": "string",
+            "enum": [
+              "daily",
+              "weekly"
+            ]
+          },
+          "frequency": {
+            "type": "string",
+            "enum": [
+              "daily",
+              "weekly"
+            ],
+            "description": "Legacy alias for cadence."
+          },
+          "icon": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "priority": {
+            "type": "number"
+          },
+          "checklists": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": "string"
+                },
+                "done": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "text"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "templateJson": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Template fields to update, including area_id."
+          }
+        }
       }
     },
     {
@@ -2897,26 +2959,14 @@
       "path": "/api/habits",
       "hasBody": false,
       "pathParams": [],
-      "queryParams": []
+      "queryParams": [
+        "area_id"
+      ]
     },
     "createHabit": {
       "method": "POST",
       "path": "/api/habits",
       "hasBody": true,
-      "pathParams": [],
-      "queryParams": []
-    },
-    "updateHabit": {
-      "method": "PUT",
-      "path": "/api/habits",
-      "hasBody": true,
-      "pathParams": [],
-      "queryParams": []
-    },
-    "deleteHabit": {
-      "method": "DELETE",
-      "path": "/api/habits",
-      "hasBody": false,
       "pathParams": [],
       "queryParams": []
     },

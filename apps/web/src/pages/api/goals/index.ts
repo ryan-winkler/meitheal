@@ -53,7 +53,13 @@ export const POST: APIRoute = async ({ request }) => {
     }
 
     const id = crypto.randomUUID()
+    if (body.area_id != null && typeof body.area_id !== "string") {
+      return apiError("Choose an existing Area", 400)
+    }
     const area_id = typeof body.area_id === "string" ? body.area_id : null
+    if (area_id !== null && !await repo.findAreaById(area_id)) {
+      return apiError("Choose an existing Area", 400)
+    }
     const description = typeof body.description === "string" ? body.description.slice(0, 2000) : null
     const status = typeof body.status === "string" && ["active", "completed", "archived"].includes(body.status) ? body.status : "active"
     const target_date = typeof body.target_date === "string" ? body.target_date : null

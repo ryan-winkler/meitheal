@@ -2,6 +2,7 @@ import { once } from "node:events"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { DatabaseSync } from "node:sqlite"
 
 import { expect, test } from "@playwright/test"
 import { launchPinBrowser, startCoreFixture } from "../scripts/task-pins-fixture"
@@ -57,6 +58,16 @@ test("Area options open the editor and save within Home Assistant ingress", asyn
     await expect(page.getByRole("heading", { name: /Workshop renamed/ })).toBeVisible()
     await expect(page).toHaveURL(editorUrl)
     await expect(name).toHaveValue("Workshop renamed")
+    const tabs = page.getByRole("tablist", { name: "Area sections" })
+    const settingsTab = tabs.getByRole("tab", { name: /Settings/ })
+    await expect(settingsTab).toHaveAttribute("aria-selected", "true")
+    await settingsTab.press("Home")
+    await expect(tabs.getByRole("tab", { name: /Overview/ })).toBeFocused()
+    const overview = page.getByRole("tabpanel", { name: /Overview/ })
+    await expect(overview).toBeVisible()
+    await overview.getByRole("link", { name: /Projects/ }).press("Enter")
+    await expect(page.getByRole("tabpanel", { name: /Projects/ })).toBeFocused()
+    await settingsTab.click()
 
     const missing = await context.request.get(appUrl + "/areas/nonexistent", { maxRedirects: 0 })
     expect(missing.status()).toBe(302)
@@ -65,6 +76,47 @@ test("Area options open the editor and save within Home Assistant ingress", asyn
     await page.setViewportSize({ width: 320, height: 780 })
     await expect(save).toBeVisible()
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(321)
+
+    const project = await context.request.post(appUrl + "/api/projects", {
+      headers: { origin }, data: { title: "Tool storage", area_id: areaId },
+    })
+    expect(project.status()).toBe(201)
+    const { id: projectId } = await project.json() as { id: string }
+    await page.setViewportSize({ width: 1240, height: 780 })
+    await page.goto(appUrl + "/planning#spaces")
+    const plan = page.locator("#planning-section-spaces")
+    await plan.getByRole("link", { name: /Tool storage/ }).click()
+    await expect(page).toHaveURL(`${appUrl}/projects/${projectId}`)
+    await expect(page.locator("#section-overview")).toBeVisible()
+    await page.getByRole("button", { name: "Project options - Tool storage" }).press("Enter")
+    const editProject = page.getByRole("link", { name: "Edit Project", exact: true })
+    await expect(editProject).toHaveAttribute("href", `${prefix}/projects/${projectId}#settings`)
+    await expect(editProject).toBeFocused()
+    await editProject.press("Enter")
+    await expect(page).toHaveURL(`${appUrl}/projects/${projectId}#settings`)
+    await expect(page.getByRole("heading", { name: "Project Settings" })).toBeVisible()
+
+    const db = new DatabaseSync(join(work, "pins.db"))
+    try {
+      db.exec("DELETE FROM areas WHERE id = 'default'")
+    } finally {
+      db.close()
+    }
+    expect((await context.request.get(appUrl + "/api/areas/default")).status()).toBe(404)
+    const unassigned = await context.request.post(appUrl + "/api/habits", {
+      headers: { origin }, data: { name: "Unassigned Routine", area_id: "default" },
+    })
+    expect(unassigned.status()).toBe(201)
+    const { id: unassignedId } = await unassigned.json()
+    const unassignedList = await context.request.get(appUrl + "/api/habits?area_id=default")
+    expect(unassignedList.status()).toBe(200)
+    expect((await unassignedList.json()).habits).toContainEqual(expect.objectContaining({ id: unassignedId }))
+    const unassignedCompletion = await context.request.post(appUrl + "/api/habits", {
+      headers: { origin }, data: { action: "complete", templateId: unassignedId },
+    })
+    expect(unassignedCompletion.status()).toBe(200)
+    await page.goto(appUrl + "/habits?new=1")
+    await expect(page.getByRole("dialog", { name: "New Routine" }).getByLabel("Area")).toHaveValue("default")
   } finally {
     await browser?.close()
     if (child.exitCode === null && child.signalCode === null) {
@@ -103,12 +155,11 @@ test("Area and Project pages show associated Goals and keep the All Goals view",
     projectId = await create("/api/projects", { title: "Start Tuesday " + stamp, area_id: work, goal_id: unlinkedGoal })
 
     await page.goto(`/areas/${work}`)
-    await page.getByRole("navigation", { name: "Area sections" }).getByRole("link", { name: /Goals/ }).click()
+    await page.getByRole("navigation", { name: "Area sections" }).getByRole("tab", { name: /Goals/ }).click()
     const areaGoals = page.locator("#section-goals")
     await expect(areaGoals.getByRole("heading", { name: "Finish the class " + stamp })).toBeVisible()
     await expect(areaGoals.getByRole("heading", { name: "Learn to cycle " + stamp })).toBeVisible()
     await expect(areaGoals.getByText("Keep the garden " + stamp)).toHaveCount(0)
-    await areaGoals.getByRole("link", { name: "Go to Goals" }).click()
     const goalList = page.locator("#goals-tab-root")
     await expect(goalList.locator(`[data-goal-id="${workGoal}"].goals-tab__card`)).toBeVisible()
     await expect(goalList.locator(`[data-goal-id="${homeGoal}"].goals-tab__card`)).toHaveCount(0)
@@ -120,6 +171,8 @@ test("Area and Project pages show associated Goals and keep the All Goals view",
     await goalList.getByRole("button", { name: "Create", exact: true }).click()
     const linkedGoal = await goalReceipt
     expect(linkedGoal.status()).toBe(201)
+    expect(linkedGoal.request().postDataJSON().area_id).toBe(work)
+    await expect(page).toHaveURL(new RegExp(`/areas/${work}#goals$`))
     const newCard = goalList.locator(".goals-tab__card").filter({ hasText: "Created within Work " + stamp })
     await expect(newCard).toBeVisible()
     goals.push((await newCard.getAttribute("data-goal-id"))!)
@@ -144,5 +197,63 @@ test("Area and Project pages show associated Goals and keep the All Goals view",
     if (projectId) await request.delete(`/api/projects/${projectId}`)
     for (const id of goals) await request.delete(`/api/goals/${id}`)
     for (const id of areas) await request.delete(`/api/areas/${id}`)
+  }
+})
+
+test("Area Routines open the existing editor in context and keep the generated task in that Area", async ({ page, request }) => {
+  const name = "Routine scope " + Date.now()
+  const created = await request.post("/api/areas", { data: { name } })
+  expect(created.status()).toBe(201)
+  const { id: area } = await created.json()
+  let routineId: string | undefined
+  let taskId: string | undefined
+  let nextArea: string | undefined
+  try {
+    await page.goto(`/areas/${area}#routines`)
+    await page.getByRole("link", { name: "New Routine", exact: true }).click()
+    const editor = page.getByRole("dialog", { name: "New Routine" })
+    await expect(editor.getByLabel("Area", { exact: true })).toHaveValue(area)
+    await editor.locator("#habit-name").fill(name)
+    const receipt = page.waitForResponse(response => response.url().endsWith("/api/habits") && response.request().method() === "POST")
+    await editor.locator("button[type=submit]").click()
+    const response = await receipt
+    expect(response.status()).toBe(201)
+    await expect(editor).toBeHidden()
+    const scoped = await request.get(`/api/habits?area_id=${area}`)
+    const routines = (await scoped.json()).habits as Array<{ id: string; name: string }>
+    expect(routines.map(routine => routine.name)).toEqual([name])
+    routineId = routines[0]?.id
+    const defaultArea = await request.get("/api/habits?area_id=default")
+    expect((await defaultArea.json()).habits.map((routine: { id: string }) => routine.id)).not.toContain(routineId)
+    await expect(page).toHaveURL(new RegExp(`/areas/${area}#routines$`))
+    await expect(page.locator("#section-routines").getByText(name, { exact: false })).toBeVisible()
+
+    const destination = await request.post("/api/areas", { data: { name: name + " destination" } })
+    expect(destination.status()).toBe(201)
+    nextArea = (await destination.json()).id
+    const moveRoutine = (areaId: string) => request.post("/api/habits", {
+      data: { action: "update", templateId: routineId, templateJson: { area_id: areaId, checklists: [] } },
+    })
+    const updated = await moveRoutine(nextArea!)
+
+    expect(updated.ok()).toBe(true)
+    const completed = await request.post("/api/habits", { data: { action: "complete", templateId: routineId } })
+    expect(completed.ok()).toBe(true)
+    taskId = (await completed.json()).taskId
+    const task = await request.get(`/api/tasks/${taskId}`)
+    expect((await task.json()).area_id).toBe(nextArea)
+    expect((await moveRoutine("default")).ok()).toBe(true)
+    const replay = await request.post("/api/habits", { data: { action: "complete", templateId: routineId } })
+    expect(await replay.json()).toMatchObject({ taskId, alreadyExisted: true })
+    const original = await request.get(`/api/tasks/${taskId}`)
+    expect((await original.json()).area_id).toBe(nextArea)
+    await page.goto("/habits?area_id=&new=1")
+    await expect(page).toHaveURL(/\/planning#spaces$/)
+    await expect(page.getByRole("dialog", { name: "New Routine" })).toHaveCount(0)
+  } finally {
+    if (taskId) await request.delete(`/api/tasks/${taskId}`)
+    if (routineId) await request.post("/api/habits", { data: { action: "delete", templateId: routineId } })
+    if (nextArea) await request.delete(`/api/areas/${nextArea}`)
+    await request.delete(`/api/areas/${area}`)
   }
 })

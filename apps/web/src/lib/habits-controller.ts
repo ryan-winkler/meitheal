@@ -1,6 +1,8 @@
 import { confirmDialog } from "@lib/confirm-dialog"
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { showToast } from "@lib/toast"
+import { createFocusTrap } from "@lib/focus-trap"
+import { safeIngressHref } from "@lib/ingress-navigation"
 import { createClientLogger } from "@lib/client-logger"
 import { initHabitsShellNav } from "@lib/controllers/habits-shell-nav"
 import {
@@ -39,6 +41,7 @@ function parseTemplatePayload(templateJson: unknown): {
   description: string
   priority: number
   checklists: HabitChecklistItem[]
+  areaId?: string | undefined
 } {
   if (typeof templateJson !== "string" || !templateJson.trim()) {
     return {
@@ -54,6 +57,7 @@ function parseTemplatePayload(templateJson: unknown): {
       description: String(parsed.description ?? "").trim(),
       priority: Number(parsed.priority ?? 3) || 3,
       checklists: normalizeChecklistItems(parsed.checklists),
+      areaId: typeof parsed.area_id === "string" ? parsed.area_id : undefined,
     }
   } catch {
     return {
@@ -94,6 +98,7 @@ function normalizeHabitData(raw: unknown): HabitData | null {
     totalCompletions: Number(record.totalCompletions ?? 0) || 0,
     description: templatePayload.description,
     priority: templatePayload.priority,
+    areaId: templatePayload.areaId,
     checklists: topLevelChecklists.length > 0 ? topLevelChecklists : templatePayload.checklists,
   }
 }
@@ -127,7 +132,8 @@ async function readErrorMessage(response: Response): Promise<string> {
 }
 
 async function refreshHabits(): Promise<void> {
-  const response = await fetch("/api/habits", {
+  const area = document.getElementById("habits-shell")?.dataset.areaId
+  const response = await fetch(area ? "/api/habits?area_id=" + encodeURIComponent(area) : "/api/habits", {
     signal: pageLifecycle.signal,
   })
   if (!response.ok) {
@@ -208,12 +214,15 @@ async function deleteHabit(habitId: string): Promise<void> {
 
 function initHabitsCrud(): void {
   const overlay = document.getElementById("habit-modal-overlay")
+  const dialog = overlay?.querySelector<HTMLElement>("[role=dialog]")
   const form = document.getElementById("habit-form") as HTMLFormElement | null
   const editIdInput = document.getElementById("habit-edit-id") as HTMLInputElement | null
   const nameInput = document.getElementById("habit-name") as HTMLInputElement | null
   const iconInput = document.getElementById("habit-icon") as HTMLInputElement | null
   const cadenceSelect = document.getElementById("habit-cadence") as HTMLSelectElement | null
   const prioritySelect = document.getElementById("habit-priority") as HTMLSelectElement | null
+  const areaSelect = document.querySelector<HTMLSelectElement>("#habit-area")
+  const shell = document.getElementById("habits-shell")
   const descInput = document.getElementById("habit-description") as HTMLTextAreaElement | null
   const checklistContainer = document.getElementById("checklist-items")
   const modalTitle = document.getElementById("habit-modal-title")
@@ -221,10 +230,14 @@ function initHabitsCrud(): void {
   const modalCancel = document.getElementById("habit-cancel")
   const addChecklistItemButton = document.getElementById("add-checklist-item")
   const list = document.getElementById("habits-list")
+  const save = form?.querySelector<HTMLButtonElement>("button[type=submit]")
 
   if (
     !overlay ||
+    !dialog ||
+    !save ||
     !form ||
+    !areaSelect ||
     !editIdInput ||
     !nameInput ||
     !iconInput ||
@@ -237,6 +250,13 @@ function initHabitsCrud(): void {
   ) {
     return
   }
+  const trap = createFocusTrap(dialog)
+  pageLifecycle.signal.addEventListener("abort", () => trap.deactivate(false), { once: true })
+  let initialArea = "default"
+  const initialScope = shell?.dataset.areaId
+  const returnPath = shell?.dataset.openNew
+    ? initialScope ? "/areas/" + encodeURIComponent(initialScope) + "#routines" : "/progress#routines"
+    : undefined
 
   function resetChecklistBuilder(): void {
     checklistContainer!.replaceChildren()
@@ -254,14 +274,17 @@ function initHabitsCrud(): void {
 
   function openCreateModal(): void {
     editIdInput!.value = ""
-    modalTitle!.textContent = "New Habit"
+    modalTitle!.textContent = "New Routine"
     nameInput!.value = ""
     iconInput!.value = "✅"
     cadenceSelect!.value = "daily"
     prioritySelect!.value = "3"
+    areaSelect!.value = shell?.dataset.areaId ?? "default"
+    areaSelect!.disabled = Boolean(shell?.dataset.areaId)
     descInput!.value = ""
     resetChecklistBuilder()
     overlay!.classList.remove("hidden")
+    trap.activate()
     nameInput!.focus()
   }
 
@@ -270,32 +293,46 @@ function initHabitsCrud(): void {
     if (!habit) return
 
     editIdInput!.value = habit.id
-    modalTitle!.textContent = "Edit Habit"
+    modalTitle!.textContent = "Edit Routine"
     nameInput!.value = habit.name
     iconInput!.value = habit.icon
     cadenceSelect!.value = habit.cadence
     prioritySelect!.value = String(habit.priority)
+    areaSelect!.value = habit.areaId ?? "default"
+    initialArea = habit.areaId ?? "default"
+    areaSelect!.disabled = false
     descInput!.value = habit.description
 
     resetChecklistBuilder()
     habit.checklists.forEach((item) => addChecklistItem(item.text))
 
     overlay!.classList.remove("hidden")
+    trap.activate()
     nameInput!.focus()
   }
 
   function closeModal(): void {
+    if (save?.disabled) return
     overlay!.classList.add("hidden")
+    trap.deactivate()
+    if (returnPath) window.location.assign(safeIngressHref(returnPath))
   }
 
   pageLifecycle.on(document, "click", (event) => {
     const target = event.target as HTMLElement
     const openButton = target.closest<HTMLElement>("[data-open-habit-modal]")
-    if (!openButton) return
+    if (!openButton || !areaSelect.options.length) return
 
     event.preventDefault()
+    if (save.disabled) return
     openCreateModal()
   })
+  if (shell?.dataset.openNew) {
+    const url = new URL(window.location.href)
+    url.searchParams.delete("new")
+    history.replaceState(history.state, "", url)
+    openCreateModal()
+  }
 
   if (modalClose) {
     pageLifecycle.on(modalClose, "click", closeModal)
@@ -325,6 +362,7 @@ function initHabitsCrud(): void {
 
   pageLifecycle.on(form, "submit", async (event) => {
     event.preventDefault()
+    if (save.disabled) return
 
     const name = nameInput!.value.trim()
     if (!name) {
@@ -340,6 +378,7 @@ function initHabitsCrud(): void {
       .map((text) => ({ text, done: false }))
 
     const editId = editIdInput!.value
+    save.disabled = true
 
     try {
       if (editId) {
@@ -347,12 +386,8 @@ function initHabitsCrud(): void {
           title: name,
           description: descInput!.value.trim(),
           priority: Number(prioritySelect!.value),
-          labels: ["routine"],
-          task_type: "task",
-        }
-
-        if (checklists.length > 0) {
-          templateJson.checklists = checklists
+          ...(areaSelect.value !== initialArea ? { area_id: areaSelect.value } : {}),
+          checklists,
         }
 
         const response = await fetch("/api/habits", {
@@ -385,6 +420,7 @@ function initHabitsCrud(): void {
             cadence: cadenceSelect!.value,
             priority: Number(prioritySelect!.value),
             description: descInput!.value.trim(),
+            area_id: areaSelect.value,
             checklists: checklists.length > 0 ? checklists : undefined,
           }),
           signal: pageLifecycle.signal,
@@ -397,11 +433,14 @@ function initHabitsCrud(): void {
         showToast("Habit created")
       }
 
+      save.disabled = false
       closeModal()
-      await refreshHabits()
+      if (!returnPath) await refreshHabits()
     } catch (error) {
       log.error("Failed to save habit", error)
       showToast((error as Error).message || "Failed to save habit", "error")
+    } finally {
+      save.disabled = false
     }
   })
 

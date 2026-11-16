@@ -1714,10 +1714,28 @@ const paths = {
 
   // ── Habits ──
   "/api/habits": {
-    get: { operationId: "listHabits", tags: ["Habits"], summary: "List all habits and routines", description: "Returns habit templates with current streak data, schedule, and completion history.", responses: { 200: { description: "Habits list" } } },
-    post: { operationId: "createHabit", tags: ["Habits"], summary: "Create a habit template", responses: { 201: { description: "Created" } } },
-    put: { operationId: "updateHabit", tags: ["Habits"], summary: "Update a habit or record completion", description: "Send { complete: true } to record today's completion. Send other fields to update the template.", responses: { 200: { description: "Updated" } } },
-    delete: { operationId: "deleteHabit", tags: ["Habits"], summary: "Delete a habit", responses: { 200: { description: "Deleted" } } },
+    get: { operationId: "listHabits", tags: ["Habits"], summary: "List routine templates and streaks", parameters: [{ name: "area_id", in: "query", schema: { type: "string" }, description: "List Routines in an existing Area, or use default for unassigned Routines." }], responses: { 200: { description: "Routines list" } } },
+    post: {
+      operationId: "createHabit", tags: ["Habits"], summary: "Manage a Routine",
+      description: "Create with a name and optional area_id. Send templateId for complete, update, or delete.",
+      requestBody: { content: { "application/json": { schema: { type: "object", properties: {
+        action: { type: "string", enum: ["create", "complete", "update", "delete"], default: "create" },
+        templateId: { type: "string" },
+        habitId: { type: "string", description: "Legacy template identifier for complete and delete." },
+        name: { type: "string", maxLength: 100 },
+        area_id: { type: "string", description: "Area for new work. Use default for unassigned work." },
+        cadence: { type: "string", enum: ["daily", "weekly"] },
+        frequency: { type: "string", enum: ["daily", "weekly"], description: "Legacy alias for cadence." },
+        icon: { type: "string" },
+        description: { type: "string" },
+        priority: { type: "number" },
+        checklists: { type: "array", items: { type: "object", properties: {
+          text: { type: "string" }, done: { type: "boolean" },
+        }, required: ["text"] } },
+        templateJson: { type: "object", additionalProperties: true, description: "Template fields to update, including area_id." },
+      } } } } },
+      responses: { 200: { description: "Routine action succeeded" }, 201: { description: "Created" } },
+    },
   },
 
   // ── Settings ──
