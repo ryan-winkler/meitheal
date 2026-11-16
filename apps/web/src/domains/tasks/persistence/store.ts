@@ -51,7 +51,7 @@ export interface PersistedTaskResponse {
 let clientSingleton: Client | null = null
 let schemaInitialization: Promise<void> | undefined
 let initializingDbUrl: string | null = null
-let startupBackupAttempted = false
+let startupBackupState = { attempted: false }
 
 /** Latest DB integrity check result — exposed via /api/health */
 let dbIntegrityOk = true
@@ -171,34 +171,31 @@ export function ensureSchema(): Promise<void> {
     clientSingleton?.close()
     clientSingleton = null
     currentSchemaVersion = 0
-    startupBackupAttempted = false
+    startupBackupState = { attempted: false }
     initializingDbUrl = url
   }
-  const pending = initializeSchema(url).then(
-    ({ client, integrityOk }) => {
-      if (schemaInitialization !== pending || resolveDbUrl() !== url) {
-        client.close()
-        throw new Error("Meitheal database changed during startup")
-      }
-      clientSingleton = client
-      dbIntegrityOk = integrityOk
-      currentSchemaVersion = DATABASE_SCHEMA_VERSION
-    },
-    error => {
-      if (schemaInitialization === pending) schemaInitialization = undefined
-      throw error
-    },
-  )
+  const pending = initializeSchema(url, startupBackupState).then(({ client, integrityOk }) => {
+    if (schemaInitialization !== pending || resolveDbUrl() !== url) {
+      client.close()
+      throw new Error("Meitheal database changed during startup")
+    }
+    clientSingleton = client
+    dbIntegrityOk = integrityOk
+    currentSchemaVersion = DATABASE_SCHEMA_VERSION
+  }).catch(error => {
+    if (schemaInitialization === pending) schemaInitialization = undefined
+    throw error
+  })
   schemaInitialization = pending
   return pending
 }
 
-async function initializeSchema(url: string): Promise<{ client: Client; integrityOk: boolean }> {
+async function initializeSchema(url: string, backupState: { attempted: boolean }): Promise<{ client: Client; integrityOk: boolean }> {
   ensureFileDbDirectory(url)
   const client = await openDatabaseForStartup(url)
   try {
-    if (!startupBackupAttempted && process.env.MEITHEAL_STARTUP_BACKUP_HANDLED !== "1") {
-      startupBackupAttempted = true
+    if (!backupState.attempted && process.env.MEITHEAL_STARTUP_BACKUP_HANDLED !== "1") {
+      backupState.attempted = true
       await autoBackupDb(client)
     }
 
@@ -1152,7 +1149,7 @@ export function resetPersistenceForTests(): void {
   clientSingleton = null;
   schemaInitialization = undefined
   initializingDbUrl = null
-  startupBackupAttempted = false
+  startupBackupState = { attempted: false }
   currentSchemaVersion = 0
   dbIntegrityOk = true
 }

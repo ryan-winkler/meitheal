@@ -487,17 +487,30 @@ components:
           type: string
         name:
           type: string
-        identity_statement:
+        slug:
           type: string
-          nullable: true
+        userId:
+          type: string
+        manifesto:
+          type:
+            - string
+            - "null"
         icon:
           type: string
-          nullable: true
-        color:
+        colorHex:
           type: string
-          nullable: true
-        sort_order:
+        weight:
+          type: number
+        position:
+          type: number
+        isActive:
+          type: boolean
+        createdAt:
           type: integer
+          format: int64
+        updatedAt:
+          type: integer
+          format: int64
       required:
         - id
         - name
@@ -4342,6 +4355,18 @@ paths:
       responses:
         "200":
           description: Pillars in the requested audience
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  pillars:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Pillar"
+                required:
+                  - pillars
+                additionalProperties: false
         "403":
           description: A current Home Assistant user is required for Personal Pillars
     post:
@@ -4386,6 +4411,18 @@ paths:
       responses:
         "201":
           description: Pillar created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  pillar:
+                    $ref: "#/components/schemas/Pillar"
+                  warning:
+                    type: string
+                required:
+                  - pillar
+                additionalProperties: false
         "409":
           description: Refresh Progress to confirm the current account
   /api/pillars/{id}:
@@ -4406,7 +4443,13 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Pillar"
+                type: object
+                properties:
+                  pillar:
+                    $ref: "#/components/schemas/Pillar"
+                required:
+                  - pillar
+                additionalProperties: false
     patch:
       operationId: updatePillar
       tags:

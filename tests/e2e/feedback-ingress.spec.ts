@@ -421,6 +421,8 @@ coreTest("a superseded foreground check cannot restore Personal Pillars after an
     await expect(card).toBeVisible()
     let recordFirstStatus: (status: number) => void
     const firstStatus = new Promise<number>(resolve => { recordFirstStatus = resolve })
+    let recordFinished: () => void
+    const oldRouteFinished = new Promise<void>(resolve => { recordFinished = resolve })
     let checks = 0
     await page.route(endpoint, async route => {
       if (route.request().method() !== "HEAD" || ++checks !== 1) {
@@ -431,15 +433,21 @@ coreTest("a superseded foreground check cannot restore Personal Pillars after an
       recordFirstStatus(old.status())
       await waitForRelease
       await route.fulfill({ response: old }).catch(() => {})
+      recordFinished()
     })
+    const oldRequest = page.waitForRequest(request => request.url() === endpoint && request.method() === "HEAD")
     const foreground = () => page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")))
     await foreground()
     expect(await firstStatus).toBe(204)
+    const superseded = await oldRequest
+    const cancelled = page.waitForEvent("requestfailed", request => request === superseded)
     await session("member-two")
     const fresh = page.waitForResponse(response => response.url() === endpoint && response.request().method() === "HEAD")
     await foreground()
     expect((await fresh).status()).toBe(403)
+    expect((await cancelled).failure()).not.toBeNull()
     releaseOldCheck()
+    await oldRouteFinished
     await expect(card).toHaveCount(0)
   } finally {
     releaseOldCheck()

@@ -169,6 +169,42 @@ test("a fresh database gets no startup backup", async () => {
   }
 })
 
+test("configuration returning to a superseded database can initialize again", async () => {
+  const firstUrl = process.env.MEITHEAL_DB_URL!
+  const first = ensureSchema()
+  process.env.MEITHEAL_DB_URL = `file:${join(directory, "other.db")}`
+  await expect(first).rejects.toThrow("database changed during startup")
+
+  process.env.MEITHEAL_DB_URL = firstUrl
+  await ensureSchema()
+  expect(getPersistenceClient().closed).toBe(false)
+})
+
+test("concurrent configuration changes attempt each database's own pre-migration backup", async () => {
+  seedSchemaMarker(predecessorVersion).close()
+  const secondDirectory = join(directory, "other")
+  await mkdir(secondDirectory)
+  const secondPath = join(secondDirectory, "meitheal.db")
+  await copyFile(dbPath, secondPath)
+
+  const first = ensureSchema()
+  const firstRejected = expect(first).rejects.toThrow("database changed during startup")
+  process.env.MEITHEAL_DB_URL = `file:${secondPath}`
+  await ensureSchema()
+  await firstRejected
+  for (const location of [directory, secondDirectory]) {
+    const backupDirectory = join(location, "backups")
+    const names = await readdir(backupDirectory)
+    expect(names).toHaveLength(1)
+    const backup = new DatabaseSync(join(backupDirectory, names[0]!), { readOnly: true })
+    try {
+      expect(backup.prepare("SELECT value FROM app_settings WHERE key = 'schema_version'").get()?.value).toBe(predecessorVersion)
+    } finally {
+      backup.close()
+    }
+  }
+})
+
 test("migration check leaves missing storage and an untracked legacy database alone", async () => {
   const missing = join(directory, "missing", "meitheal.db")
   await expect(execFileAsync(process.execPath, ["scripts/migrate.mjs", "--check"], {

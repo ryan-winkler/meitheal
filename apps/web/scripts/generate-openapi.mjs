@@ -231,10 +231,16 @@ const schemas = {
     properties: {
       id: { type: "string" },
       name: { type: "string" },
-      identity_statement: { type: "string", nullable: true },
-      icon: { type: "string", nullable: true },
-      color: { type: "string", nullable: true },
-      sort_order: { type: "integer" },
+      slug: { type: "string" },
+      userId: { type: "string" },
+      manifesto: { type: ["string", "null"] },
+      icon: { type: "string" },
+      colorHex: { type: "string" },
+      weight: { type: "number" },
+      position: { type: "number" },
+      isActive: { type: "boolean" },
+      createdAt: { type: "integer", format: "int64" },
+      updatedAt: { type: "integer", format: "int64" },
     },
     required: ["id", "name"],
   },
@@ -1634,7 +1640,9 @@ const paths = {
         { name: "include_inactive", in: "query", schema: { type: "boolean" } },
         { name: "include_personal", in: "query", schema: { type: "boolean" } },
       ],
-      responses: { 200: { description: "Pillars in the requested audience" }, 403: { description: "A current Home Assistant user is required for Personal Pillars" } },
+      responses: { 200: jsonContent({
+        type: "object", properties: { pillars: arrOf("Pillar") }, required: ["pillars"],
+      }, "Pillars in the requested audience"), 403: { description: "A current Home Assistant user is required for Personal Pillars" } },
     },
     post: {
       operationId: "createPillar", tags: ["Pillars"], summary: "Create a Pillar",
@@ -1647,11 +1655,13 @@ const paths = {
         audience: { type: "string", enum: ["household", "personal"], default: "household" },
         audienceProof: { type: "string", description: "Required for Personal creation. Issued to the current Home Assistant user in the Progress form." },
       }, required: ["name"] } } } },
-      responses: { 201: { description: "Pillar created" }, 409: { description: "Refresh Progress to confirm the current account" } },
+      responses: { 201: jsonContent({
+        type: "object", properties: { pillar: ref("Pillar"), warning: { type: "string" } }, required: ["pillar"],
+      }, "Pillar created"), 409: { description: "Refresh Progress to confirm the current account" } },
     },
   },
   "/api/pillars/{id}": {
-    get: { operationId: "getPillar", tags: ["Pillars"], summary: "Get pillar details", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: jsonContent(ref("Pillar"), "Pillar") } },
+    get: { operationId: "getPillar", tags: ["Pillars"], summary: "Get pillar details", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: jsonContent({ type: "object", properties: { pillar: ref("Pillar") }, required: ["pillar"] }, "Pillar") } },
     patch: {
       operationId: "updatePillar", tags: ["Pillars"], summary: "Update a Pillar", description: "Its audience and owner are immutable.",
       parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
