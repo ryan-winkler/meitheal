@@ -54,7 +54,7 @@ export default defineConfig({
         const worker = new URL("sw.js", dir)
         const { code } = await minify(readFileSync(worker, "utf8"), {
           compress: false,
-          mangle: false,
+          mangle: { toplevel: true },
           format: { comments: "some" },
         })
         writeFileSync(worker, code)
