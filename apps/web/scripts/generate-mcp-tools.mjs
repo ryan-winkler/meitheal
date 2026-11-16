@@ -39,6 +39,7 @@ export const EXCLUDED_OPS = new Set([
   "readTaskPins", "verifyTaskPinContext", "setTaskPin",
   "findCommentPeople", "useMentionInbox",
   "readTaskDraft", "verifyTaskDraftContext", "writeTaskDraft",
+  "checkPersonalPillarSession",
 ])
 
 /** Must match FRIENDLY_NAMES in apps/web/src/pages/api/mcp.ts */

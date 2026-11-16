@@ -133,4 +133,4 @@ Changing a Routine’s Area affects tasks generated afterward. The existing task
 
 ### Personal Pillars
 
-In **Progress → Pillars → New Pillar**, choose **Household** or **Only me** before saving. Household Pillars remain shared as before. Only the active Home Assistant user who created a Personal Pillar can read or edit it and its Principles. The audience is fixed when the Pillar is saved. Personal Pillars are available online through Home Assistant and their Principles stay out of AI handoffs. Whole-database backups include them.
+In **Progress → Pillars → New Pillar**, choose **Household** or **Only me** before saving. Household Pillars remain shared as before. Only the active Home Assistant user who created a Personal Pillar can read or edit it and its Principles. The audience is fixed when the Pillar is saved. Personal Pillars are available online through Home Assistant. If the browser goes offline or changes accounts, Progress hides the previous view. Reconnect and refresh Progress to return. Personal Principles stay out of AI handoffs. Whole-database backups include them.

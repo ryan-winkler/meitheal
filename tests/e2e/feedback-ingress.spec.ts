@@ -398,6 +398,55 @@ coreTest("Personal Pillars stay within the verified user across pages, APIs and 
   }
 })
 
+coreTest("a superseded foreground check cannot restore Personal Pillars after an account switch", async ({ browser }) => {
+  const context = await browser.newContext({ extraHTTPHeaders: {} })
+  const session = (value: string) => context.addCookies([{ name: "feedback-fixture", value, url: origin }])
+  const endpoint = origin + prefix + "/api/pillars"
+  const progress = origin + prefix + "/progress#pillars"
+  const page = await context.newPage()
+  let releaseOldCheck = () => {}
+  const waitForRelease = new Promise<void>(resolve => { releaseOldCheck = resolve })
+  try {
+    await session("member")
+    await page.goto(progress)
+    await page.getByRole("button", { name: "Create new Pillar" }).click()
+    const proof = await page.getByLabel("Visible to").getAttribute("data-audience-proof")
+    const title = "Synthetic private foreground fixture"
+    const created = await context.request.post(endpoint, {
+      headers: { origin }, data: { name: title, audience: "personal", audienceProof: proof },
+    })
+    expect(created.status(), await created.text()).toBe(201)
+    await page.reload()
+    const card = page.getByRole("button", { name: "View " + title + " details" })
+    await expect(card).toBeVisible()
+    let recordFirstStatus: (status: number) => void
+    const firstStatus = new Promise<number>(resolve => { recordFirstStatus = resolve })
+    let checks = 0
+    await page.route(endpoint, async route => {
+      if (route.request().method() !== "HEAD" || ++checks !== 1) {
+        await route.continue()
+        return
+      }
+      const old = await route.fetch()
+      recordFirstStatus(old.status())
+      await waitForRelease
+      await route.fulfill({ response: old }).catch(() => {})
+    })
+    const foreground = () => page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")))
+    await foreground()
+    expect(await firstStatus).toBe(204)
+    await session("member-two")
+    const fresh = page.waitForResponse(response => response.url() === endpoint && response.request().method() === "HEAD")
+    await foreground()
+    expect((await fresh).status()).toBe(403)
+    releaseOldCheck()
+    await expect(card).toHaveCount(0)
+  } finally {
+    releaseOldCheck()
+    await context.close()
+  }
+})
+
 coreTest("database download includes committed writes still in the WAL", async ({ playwright }) => {
   const api = await playwright.request.newContext({ baseURL: origin })
   const dbPath = path.join(work, "meitheal.db")

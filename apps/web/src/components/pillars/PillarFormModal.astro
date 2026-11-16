@@ -235,7 +235,7 @@ const { personalForm } = Astro.props
     const pillarSection = document.getElementById("progress-section-pillars")
     if (audience?.dataset.audienceProof && pillarSection) {
       const proof = audience.dataset.audienceProof
-      let pendingRecheck = false
+      let activeRecheck: AbortController | undefined
       const hidePersonal = () => {
         pillarSection.style.visibility = "hidden"
         pillarSection.inert = true
@@ -248,35 +248,39 @@ const { personalForm } = Astro.props
         pillarSection.inert = false
       }
       document.addEventListener("visibilitychange", async () => {
-        if (document.hidden) {
-          hidePersonal()
-          return
-        }
-        if (pendingRecheck) return
-        pendingRecheck = true
+        activeRecheck?.abort()
         hidePersonal()
+        if (document.hidden) return
+        const recheck = new AbortController()
+        activeRecheck = recheck
+        const requestSignal = AbortSignal.any([signal, recheck.signal])
         try {
           const response = await fetch("/api/pillars", {
             method: "HEAD",
             cache: "no-store",
             headers: { "X-Meitheal-Pillar-Session": proof },
-            signal,
+            signal: requestSignal,
           })
-          if (signal.aborted) return
+          if (requestSignal.aborted || document.hidden) return
           if (response.status !== 204) {
             clearPersonal()
             window.location.reload()
-          } else if (!document.hidden) {
+          } else {
             pillarSection.style.visibility = ""
             pillarSection.inert = false
           }
         } catch {
-          if (!signal.aborted) clearPersonal()
+          if (!requestSignal.aborted) clearPersonal()
         } finally {
-          pendingRecheck = false
+          if (activeRecheck === recheck) activeRecheck = undefined
         }
       }, { signal })
+      window.addEventListener("offline", () => {
+        activeRecheck?.abort()
+        clearPersonal()
+      }, { signal })
       window.addEventListener("pagehide", event => {
+        activeRecheck?.abort()
         if (event.persisted) {
           hidePersonal()
           pillarSection.replaceChildren()

@@ -1370,14 +1370,6 @@
       }
     },
     {
-      "name": "checkPersonalPillarSession",
-      "description": "Verify the current Personal Pillar viewer",
-      "inputSchema": {
-        "type": "object",
-        "properties": {}
-      }
-    },
-    {
       "name": "listPillars",
       "description": "Returns Household Pillars by default. Personal Pillars are opt-in for the verified current Home Assistant user.",
       "inputSchema": {
@@ -2889,13 +2881,6 @@
       "pathParams": [
         "id"
       ],
-      "queryParams": []
-    },
-    "checkPersonalPillarSession": {
-      "method": "HEAD",
-      "path": "/api/pillars",
-      "hasBody": false,
-      "pathParams": [],
       "queryParams": []
     },
     "listPillars": {

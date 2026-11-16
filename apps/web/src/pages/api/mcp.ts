@@ -99,6 +99,7 @@ const EXCLUDED_OPS = new Set([
   "readTaskPins", "verifyTaskPinContext", "setTaskPin", // Verified Home Assistant browser only
   "findCommentPeople", "useMentionInbox",
   "readTaskDraft", "verifyTaskDraftContext", "writeTaskDraft",
+  "checkPersonalPillarSession",
 ])
 
 /** Operations where method names should be used as-is (no camelCase conversion) */
