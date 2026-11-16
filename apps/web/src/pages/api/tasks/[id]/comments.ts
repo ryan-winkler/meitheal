@@ -17,7 +17,8 @@ export const GET: APIRoute = async ({ locals, params, request }) => {
     const repo = new TaskRepository(getPersistenceClient())
     const agent = locals.agentToken
     const owner = !agent || hasScope(agent.scopes, "tasks:write") ? resolveCommentAuthor(locals)?.owner ?? null : null
-    const taskId = (await repo.resolveTaskId(params.id!))?.id ?? params.id!
+    const taskId = (await repo.resolveTaskId(params.id!))?.id
+    if (!taskId) return commentJson({ comments: [] })
     const comments = await repo.getComments(taskId, owner)
     const privateMentions = locals.behindIngress && !agent && comments.some(comment => hasCommentMentionSelector(comment.content))
     if ((owner || privateMentions) && !await hasCurrentTaskParticipant(locals, request.signal, privateMentions)) {

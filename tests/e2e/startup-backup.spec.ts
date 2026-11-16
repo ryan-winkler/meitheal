@@ -12,6 +12,7 @@ import { expect, test } from "@playwright/test"
 import { PERSONAL_PILLAR_MIGRATION } from "../../apps/web/drizzle/migrations/0010_personal_pillars.mjs"
 import { TASK_BOARD_MIGRATION, TASK_BOARD_SCHEMA_VERSION } from "../../apps/web/drizzle/migrations/task-board-upgrade.mjs"
 import { DATABASE_SCHEMA_VERSION, openDatabase } from "../../apps/web/scripts/database-client.mjs"
+import { TaskRepository } from "../../apps/web/src/domains/tasks/persistence/task-repository"
 import { ensureSchema, getPersistenceClient, resetPersistenceForTests } from "../../apps/web/src/domains/tasks/persistence/store"
 import { prepareTaskBoardPredecessor, predecessorMigrationNames } from "../scripts/task-board-predecessor"
 
@@ -532,4 +533,31 @@ test("failure to create the backup directory leaves the data available", async (
     getPersistenceClient().close()
     writer.close()
   }
+})
+
+test("Household task reads and cleanup exclude a named Board even by exact ID", async () => {
+  await ensureSchema()
+  const db = getPersistenceClient()
+  const repo = new TaskRepository(db)
+  await db.execute(`INSERT INTO tasks (id, title, idempotency_key, request_id, ticket_number, created_at, updated_at)
+    SELECT 'household-task', 'Household fixture', 'household-fixture', 'fixture', ticket_high_water + 1, 1, 1
+    FROM task_boards WHERE id = 'household'`)
+  // A hypothetical successor removes these guards. Keep this storage disposable.
+  await db.execute("DROP TRIGGER task_boards_household_v19_insert")
+  await db.execute("DROP TRIGGER tasks_household_v19_insert")
+  await db.execute(`INSERT INTO task_boards (id, name, visibility, ticket_prefix, created_at, updated_at)
+    VALUES ('work-fixture', 'Work fixture', 'restricted', 'WFX', 1, 1)`)
+  await db.execute(`INSERT INTO tasks (id, title, task_board_id, area_id, status, idempotency_key, request_id, created_at, updated_at)
+    VALUES ('private-task', 'Private fixture', 'work-fixture', '__meitheal_no_area__', 'complete', 'private-fixture', 'fixture', 1, 1)`)
+
+  const listing = await repo.findAll({ limit: 1 })
+  expect(listing.total).toBe(1)
+  expect(listing.tasks.map(task => task.id)).toEqual(["household-task"])
+  expect(await repo.resolveTaskId("private-task")).toBeNull()
+  expect(await repo.findById("private-task")).toBeNull()
+  expect((await repo.exportAll()).map(task => task.id)).toEqual(["household-task"])
+  expect((await repo.getStatusCounts()).total).toBe(1)
+  expect(await repo.countCompletedBefore(2)).toBe(0)
+  await repo.deleteTask("private-task")
+  expect((await db.execute("SELECT id FROM tasks WHERE id = 'private-task'")).rows).toHaveLength(1)
 })
