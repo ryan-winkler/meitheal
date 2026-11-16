@@ -77,6 +77,11 @@ export function resolveAgentRouteScope(pathname: string, method: string): AgentS
   if (reaction) return (reaction[1] ? reactionItem : reactionList)[verb]
   const task = pathname.match(/^\/api\/tasks\/[\w-]+(?:\/([\w-]+))?$/)
   if (task) return taskRoutes.get(task[1] ?? "")?.[verb]
+  if (/^\/api\/boards\/[\w-]+$/.test(pathname)) return verb === "GET" ? "tasks:read" : undefined
+  if (/^\/api\/boards\/[\w-]+\/tickets$/.test(pathname)) return verb === "POST" ? "tasks:write" : undefined
+  if (/^\/api\/boards\/[\w-]+\/tickets\/[\w-]+$/.test(pathname)) {
+    return verb === "PATCH" ? "tasks:write" : verb === "DELETE" ? "tasks:delete" : undefined
+  }
   if (/^\/api\/projects\/[\w-]+$/.test(pathname)) return project[verb]
   if (/^\/api\/a2a\/tasks\/[\w-]+$/.test(pathname)) return a2aTask[verb]
   if (verb === "POST" && /^\/api\/a2a\/tasks\/[\w-]+:cancel$/.test(pathname)) return "a2a:execute"

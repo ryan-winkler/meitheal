@@ -21,3 +21,5 @@ When a Goal is shared with an Area, each viewer sees progress based on their rea
 Use Home Assistant App backups for the full instance. See [Home Assistant backups and restore](./home-assistant-backup-and-restore.md) for the Board revision lock and rollback procedure.
 
 Sender submissions are available on Boards under Recent submissions for up to 24 hours. If a connection drops, retry the original submission there. Accepted submissions remain marked Sent if an owner closes the destination. Board owners can close or reopen destinations in Board settings.
+
+To give an agent access, an administrator issues a scoped token and shares its ID with the Board owner. Add the ID under Board settings → Agent access. The agent needs an explicit Board grant and the scope for each ticket operation. Block deletion by agents applies even if a granted token has task deletion scope. Remove the grant from Board settings or revoke the token in Settings → Agent Tokens.

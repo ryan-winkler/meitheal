@@ -1,4 +1,5 @@
 import type { APIRoute } from "astro"
+import { ensureAgentTokenSchema } from "@domains/auth"
 import { NamedBoardRepository } from "@domains/tasks/persistence/named-board-repository"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import { boardViewResponse, readBoardView } from "@lib/board-view"
@@ -6,12 +7,15 @@ import { apiError, apiJson } from "@lib/api-response"
 import { boardSessionProof, currentBoardUser, readBoardRequest } from "@lib/named-board-request"
 
 export const GET: APIRoute = async ({ locals, request, params, url }) => {
-  const user = await currentBoardUser(locals, request.signal)
-  if (!user || !params.id) return apiError("Board unavailable", 404)
+  const agent = locals.agentToken
+  const user = agent ? null : await currentBoardUser(locals, request.signal)
+  const actor = agent ? { kind: "agent", id: agent.tokenId } as const : user?.actor
+  if (!actor || !params.id) return apiError("Board unavailable", 404)
   const offset = Number(url.searchParams.get("offset") ?? 0)
   if (!Number.isSafeInteger(offset) || offset < 0) return apiError("Choose a valid page", 400)
-  const view = await readBoardView(user.actor, params.id, offset)
+  const view = await readBoardView(actor, params.id, offset)
   if (!view) return apiError("Board unavailable", 404)
+  if (!user) return apiJson(view)
   const response = boardViewResponse(view, user.actor.id, {
     ...view,
     people: view.board.role === "owner" ? [...user.roster].map(([id, name]) => ({ id, name })) : [],
@@ -42,6 +46,14 @@ export const PATCH: APIRoute = async ({ locals, request, params }) => {
     })
     if (result.status === "locked") return apiError("Named Board access is temporarily locked.", 503)
     if (!result.result) return apiError("Board unavailable", 404)
+    return apiJson({ ok: true, accessPending: result.status === "committed-locked" })
+  }
+  if (body.action === "agent" && typeof body.tokenId === "string" &&
+      /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(body.tokenId) && typeof body.enabled === "boolean") {
+    await ensureAgentTokenSchema()
+    const result = await repository.updateAgent(user.actor.id, id, body.tokenId, body.enabled)
+    if (result.status === "locked") return apiError("Named Board access is temporarily locked.", 503)
+    if (!result.result) return apiError("Board or eligible agent token unavailable", 404)
     return apiJson({ ok: true, accessPending: result.status === "committed-locked" })
   }
   if (body.action === "member" && typeof body.memberId === "string") {

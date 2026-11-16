@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto"
 import type { Client, Transaction } from "@libsql/client"
+import { isActiveAgentToken } from "@domains/auth"
 import { acquireWriteTransaction } from "../../../../scripts/database-client.mjs"
 import { isClosedStatus, isDoneStatus, normalizeStatus, STATUS } from "../../../lib/status-config"
 import { boardGrantStillCurrent, currentBoardGrantRevision, readBoardGrantRevision } from "./board-grant-fence"
@@ -57,8 +58,8 @@ export class NamedBoardTaskRepository {
     const tx = await this.db.transaction("read")
     try {
       const access = await selectNamedBoardAccess(tx, actor, revision, boardId)
-      if (!access) return null
-      const [lanes, tasks, members, intakes] = await tx.batch([
+      if (!access || (actor.kind === "agent" && !await isActiveAgentToken(tx, actor.id, "tasks:read"))) return null
+      const [lanes, tasks, members, intakes, agents] = await tx.batch([
         {
           sql: "SELECT id, label, key FROM kanban_lanes WHERE board_id = ? ORDER BY position, id",
           args: [boardId],
@@ -80,6 +81,11 @@ export class NamedBoardTaskRepository {
           sql: "SELECT id, label, enabled FROM board_intakes WHERE board_id = ? AND ? = 'owner' ORDER BY label COLLATE NOCASE, id",
           args: [boardId, access.role],
         },
+        {
+          sql: `SELECT principal_id FROM board_access_grants
+            WHERE board_id = ? AND principal_type = 'agent' AND ? = 'owner' ORDER BY principal_id`,
+          args: [boardId, access.role],
+        },
       ])
       if (!await boardGrantStillCurrent(this.db, revision, this.markerPath)) return null
       return {
@@ -91,6 +97,7 @@ export class NamedBoardTaskRepository {
           assignedTo: typeof task.assigned_to === "string" ? task.assigned_to : null, version: Number(task.version),
         })),
         nextOffset: tasks!.rows.length > 50 ? offset + 50 : null,
+        agents: agents!.rows.map(agent => String(agent.principal_id)),
         intakes: intakes!.rows.map(intake => ({
           id: String(intake.id), label: String(intake.label), enabled: intake.enabled === 1,
         })),
@@ -200,7 +207,8 @@ export class NamedBoardTaskRepository {
     const tx = await acquireWriteTransaction(this.db)
     try {
       const access = await selectNamedBoardAccess(tx, actor, revision, boardId)
-      if (!access) return unavailable
+      if (!access || (actor.kind === "agent" &&
+        !await isActiveAgentToken(tx, actor.id, action === "delete" ? "tasks:delete" : "tasks:write"))) return unavailable
       const allows = (effect: TaskBoardAction) => permitsBoardTaskAction(access, effect)
       if (!allows(action)) return denied
       const result = await operation(tx, allows)

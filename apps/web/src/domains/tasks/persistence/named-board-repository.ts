@@ -1,5 +1,6 @@
 import { randomBytes, randomUUID } from "node:crypto"
 import type { Client, Transaction } from "@libsql/client"
+import { isActiveAgentToken } from "@domains/auth"
 import { acquireWriteTransaction } from "../../../../scripts/database-client.mjs"
 import { boardGrantStillCurrent, changeBoardGrants, currentBoardGrantRevision, readBoardGrantRevision } from "./board-grant-fence"
 
@@ -196,6 +197,23 @@ export class NamedBoardRepository {
         args: [id, memberId],
       })
       return outcome.rowsAffected ? { next: "saved" as const } : { unchanged: "saved" as const }
+    }, this.markerPath)
+  }
+
+  async updateAgent(ownerId: string, boardId: string, tokenId: string, enabled: boolean) {
+    return changeBoardGrants(this.db, async (tx, revision) => {
+      const owner = await this.getOwner(tx, ownerId, boardId, revision)
+      if (!owner || owner.state !== "active") return { unchanged: false }
+      if (enabled && !await isActiveAgentToken(tx, tokenId, "tasks:read")) return { unchanged: false }
+      const result = enabled ? await tx.execute({
+        sql: `INSERT OR IGNORE INTO board_access_grants (board_id, principal_type, principal_id, role)
+          VALUES (?, 'agent', ?, 'service')`,
+        args: [boardId, tokenId],
+      }) : await tx.execute({
+        sql: "DELETE FROM board_access_grants WHERE board_id = ? AND principal_type = 'agent' AND principal_id = ?",
+        args: [boardId, tokenId],
+      })
+      return result.rowsAffected ? { next: true } : { unchanged: true }
     }, this.markerPath)
   }
 

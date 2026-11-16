@@ -1,5 +1,10 @@
+import { browserUuid } from "./browser-uuid"
 import { confirmDialog } from "./confirm-dialog"
 import { safeIngressHref } from "./ingress-navigation"
+
+class BoardRequestError extends Error {
+  constructor(message: string, readonly status: number) { super(message) }
+}
 
 export function bindBoardPage(signal: AbortSignal) {
   const root = document.querySelector<HTMLElement>("[data-board-directory]")
@@ -71,7 +76,7 @@ export function bindBoardPage(signal: AbortSignal) {
     const data = await response.json().catch(() => ({})) as Record<string, unknown>
     if (!response.ok) {
       const message = typeof data.error === "string" ? data.error : (typeof data.detail === "string" ? data.detail : "")
-      throw new Error(message || "Could not save. Refresh your Board and try again.")
+      throw new BoardRequestError(message || "Could not save. Refresh your Board and try again.", response.status)
     }
     return data
   }
@@ -115,6 +120,9 @@ export function bindBoardPage(signal: AbortSignal) {
             denyCompletion: data.has("denyCompletion"), denyDeletion: data.has("denyDeletion"),
           })
           break
+        case "agent":
+          await jsonRequest(api, "PATCH", { action: "agent", tokenId: value("tokenId").trim(), enabled: value("enabled") === "true" })
+          break
         case "policy":
           await jsonRequest(api, "PATCH", {
             action: "policy", denyCompletion: data.has("denyCompletion"),
@@ -142,25 +150,32 @@ export function bindBoardPage(signal: AbortSignal) {
           await jsonRequest(api + "/intakes", "PATCH", { id: value("id"), enabled: value("enabled") === "true" })
           break
         case "send": {
+          if (!content.title.trim()) throw new Error("Enter a task title.")
           const payload = { ...content, id: value("destination"), assignToRecipient: !recipient?.hidden && data.has("assign") }
           const signature = JSON.stringify(payload)
           if (submission && submission.content !== signature) {
             throw new Error("Retry the original submission or refresh Boards to review it before starting another.")
           }
-          submission ??= { id: crypto.randomUUID(), content: signature }
-          await jsonRequest("/api/board-intake", "POST", { action: "prepare", ...payload, resumeId: submission.id })
-          await jsonRequest("/api/board-intake", "POST", { action: "retry", resumeId: submission.id })
+          submission ??= { id: browserUuid(), content: signature }
+          try {
+            await jsonRequest("/api/board-intake", "POST", { action: "prepare", ...payload, resumeId: submission.id })
+          } catch (error) {
+            if (error instanceof BoardRequestError && [400, 403, 404, 429].includes(error.status)) submission = undefined
+            throw error
+          }
+          const result = await jsonRequest("/api/board-intake", "POST", { action: "retry", resumeId: submission.id })
           submission = undefined
           form.reset()
           showAssignment()
-          if (feedback) feedback.textContent = "Task sent."
+          if (feedback) feedback.textContent = "Task sent. Receipt " + String(result.acknowledgement)
           return
         }
-        case "retry-send":
-          await jsonRequest("/api/board-intake", "POST", { action: "retry", resumeId: value("resumeId") })
-          if (feedback) feedback.textContent = "Task sent."
+        case "retry-send": {
+          const result = await jsonRequest("/api/board-intake", "POST", { action: "retry", resumeId: value("resumeId") })
+          if (feedback) feedback.textContent = "Task sent. Receipt " + String(result.acknowledgement)
           button.hidden = true
           return
+        }
         default:
           return
       }

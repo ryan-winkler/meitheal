@@ -1,4 +1,5 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto"
+import type { BoardActor } from "@domains/tasks/persistence/named-board-repository"
 import { getCurrentHAUserRoster } from "@domains/ha/ha-users"
 import { readWithinLimit } from "./bounded-body"
 import { verifiedIngressUser } from "./verified-ingress-user"
@@ -20,6 +21,11 @@ export async function currentBoardUser(locals: App.Locals, signal: AbortSignal, 
   const roster = await getCurrentHAUserRoster(user.id, signal)
   if (!roster) return null
   return { actor: { kind: "ha_user", id: user.id } as const, roster }
+}
+
+export async function currentBoardTaskActor(locals: App.Locals, request: Request, write = false): Promise<BoardActor | null> {
+  if (locals.agentToken) return { kind: "agent", id: locals.agentToken.tokenId }
+  return (await currentBoardUser(locals, request.signal, write ? request : undefined))?.actor ?? null
 }
 
 export async function readBoardRequest(request: Request): Promise<Record<string, unknown> | null> {

@@ -243,6 +243,10 @@ export function initAgentTokensSettings(): void {
       prefixEl.className = "agent-tokens__row-prefix"
       prefixEl.textContent = `${token.tokenPrefix}${token.tokenPrefix.includes("...") ? "" : "…"}`
       meta.appendChild(prefixEl)
+      const idEl = document.createElement("span")
+      idEl.className = "agent-tokens__row-prefix"
+      idEl.textContent = `ID: ${token.id}`
+      meta.append(idEl)
 
       for (const s of token.scopes) {
         const badge = document.createElement("span")

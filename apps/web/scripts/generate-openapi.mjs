@@ -598,6 +598,7 @@ const inactivityPolicy = inactivityObject({ days: inactivityDays, revision: inac
 const boardIdParam = { name: "id", in: "path", required: true, schema: { type: "string" } }
 const boardTicketParam = { name: "ticket", in: "path", required: true, schema: { type: "string" } }
 const boardSessionParam = { name: "X-Meitheal-Board-Session", in: "header", required: true, schema: { type: "string" } }
+const boardTicketSessionParam = { ...boardSessionParam, required: false, description: "Required for requests authenticated through Home Assistant ingress." }
 const boardJson = properties => ({
   required: true,
   content: { "application/json": { schema: { type: "object", properties } } },
@@ -605,8 +606,10 @@ const boardJson = properties => ({
 const boardString = { type: "string" }
 const boardBoolean = { type: "boolean" }
 const boardVersion = { type: "integer" }
-const boardOperation = (operationId, summary, parameters, responses, requestBody) => ({
+const boardOperation = (operationId, summary, parameters, responses, requestBody, agentScope) => ({
   operationId, summary, tags: ["Boards"], parameters, responses,
+  security: agentScope ? [...ingressSession, { bearerAuth: [] }] : ingressSession,
+  ...(agentScope ? { description: `An agent token needs ${agentScope} and an explicit service grant on this Board.` } : {}),
   ...(requestBody ? { requestBody } : {}),
 })
 const boardUnavailable = { description: "Board, ticket, or destination unavailable" }
@@ -625,30 +628,31 @@ const paths = {
   "/api/boards/{id}": {
     get: boardOperation("getPrivateBoard", "Read a Board and a page of its tickets", [boardIdParam, { name: "offset", in: "query", schema: boardVersion }], {
       200: { description: "Authorized Board, lanes, tickets and eligible owner settings" }, 404: boardUnavailable,
-    }),
+    }, undefined, "tasks:read"),
     head: boardOperation("verifyPrivateBoard", "Verify the current Board view", [boardIdParam, { name: "offset", in: "query", schema: boardVersion }], {
-      200: { description: "The current projection hash and session are in the response headers" }, 404: boardUnavailable,
-    }),
+      200: { description: "The current projection hash and session are returned to a Home Assistant browser" }, 404: boardUnavailable,
+    }, undefined, "tasks:read"),
     patch: boardOperation("changePrivateBoard", "Change a personal sidebar preference or manage a Board's access", [boardIdParam, boardSessionParam], {
       200: { description: "Saved" }, 404: boardUnavailable, 409: { description: "A Board must retain an active owner" },
     }, boardJson({
-      action: { type: "string", enum: ["sidebar", "policy", "member"] }, hidden: boardBoolean,
+      action: { type: "string", enum: ["sidebar", "policy", "member", "agent"] }, hidden: boardBoolean,
+      tokenId: boardString, enabled: boardBoolean,
       denyCompletion: boardBoolean, denyDeletion: boardBoolean, denyAgentDeletion: boardBoolean,
       memberId: boardString, role: { type: ["string", "null"], enum: ["owner", "member", "viewer", null] },
     })),
   },
   "/api/boards/{id}/tickets": {
-    post: boardOperation("createPrivateBoardTicket", "Create a ticket in an authorized Board column", [boardIdParam, boardSessionParam], {
+    post: boardOperation("createPrivateBoardTicket", "Create a ticket in an authorized Board column", [boardIdParam, boardTicketSessionParam], {
       201: { description: "Created ticket identifier, reference and edit version" }, 403: { description: "Ticket creation or completion is denied" }, 404: boardUnavailable,
-    }, boardJson({ title: boardString, description: boardString, laneId: boardString, areaId: boardString, projectId: boardString, goalId: boardString })),
+    }, boardJson({ title: boardString, description: boardString, laneId: boardString, areaId: boardString, projectId: boardString, goalId: boardString }), "tasks:write"),
   },
   "/api/boards/{id}/tickets/{ticket}": {
-    patch: boardOperation("changePrivateBoardTicket", "Edit a ticket or move it to a Board column", [boardIdParam, boardTicketParam, boardSessionParam], {
+    patch: boardOperation("changePrivateBoardTicket", "Edit a ticket or move it to a Board column", [boardIdParam, boardTicketParam, boardTicketSessionParam], {
       200: { description: "New ticket version" }, 403: { description: "A required effect is denied" }, 404: boardUnavailable, 409: { description: "Ticket version is stale" },
-    }, boardJson({ version: boardVersion, title: boardString, description: boardString, laneId: boardString })),
-    delete: boardOperation("deletePrivateBoardTicket", "Delete a ticket when the current Board and actor allow deletion", [boardIdParam, boardTicketParam, boardSessionParam], {
+    }, boardJson({ version: boardVersion, title: boardString, description: boardString, laneId: boardString }), "tasks:write"),
+    delete: boardOperation("deletePrivateBoardTicket", "Delete a ticket when the current Board and actor allow deletion", [boardIdParam, boardTicketParam, boardTicketSessionParam], {
       200: { description: "Deleted" }, 403: { description: "Deletion is denied" }, 404: boardUnavailable, 409: { description: "Ticket version or relationship changed" },
-    }, boardJson({ version: boardVersion })),
+    }, boardJson({ version: boardVersion }), "tasks:delete"),
   },
   "/api/boards/{id}/intakes": {
     post: boardOperation("createPrivateBoardIntake", "Create a send-only destination for selected people", [boardIdParam, boardSessionParam], {

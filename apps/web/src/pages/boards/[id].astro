@@ -117,6 +117,23 @@ const verifyPath = boardId ? `/api/boards/${encodeURIComponent(boardId)}?offset=
                 <button type="submit" class="btn btn-ghost">Add person</button>
               </form>
             </div>
+            <section aria-labelledby="board-agent-settings">
+              <h2 id="board-agent-settings">Agent access</h2>
+              {view.agents.map(tokenId => <form data-board-form="agent" class="board-form board-member">
+                <span class="board-note">{tokenId}</span>
+                <input type="hidden" name="tokenId" value={tokenId} />
+                <input type="hidden" name="enabled" value="false" />
+                <p role="status" data-board-feedback></p>
+                <button type="submit" class="btn btn-ghost">Remove token access</button>
+              </form>)}
+              <form data-board-form="agent" class="board-form">
+                <label>Agent token ID <input name="tokenId" maxlength="36" autocomplete="off" required /></label>
+                <p class="board-note">Use the ID from Settings → Agent Tokens. The token needs task read access.</p>
+                <input type="hidden" name="enabled" value="true" />
+                <p role="status" data-board-feedback></p>
+                <button type="submit" class="btn btn-ghost">Grant token access</button>
+              </form>
+            </section>
             <section aria-labelledby="board-intake-settings">
               <h2 id="board-intake-settings">Send-only access</h2>
               {view.intakes.map(intake => <form data-board-form="intake-toggle" class="board-form board-member">

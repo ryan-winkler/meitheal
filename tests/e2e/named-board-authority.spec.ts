@@ -2,6 +2,7 @@ import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { expect, test } from "@playwright/test"
+import { createAgentToken, ensureAgentTokenSchema, revokeAgentToken, updateAgentToken } from "../../apps/web/src/domains/auth/agent-token-store"
 import { BoardIntakeRepository } from "../../apps/web/src/domains/tasks/persistence/board-intake-repository"
 import { changeBoardGrants, readBoardGrantRevision } from "../../apps/web/src/domains/tasks/persistence/board-grant-fence"
 import { NamedBoardRepository, permitsBoardTaskAction } from "../../apps/web/src/domains/tasks/persistence/named-board-repository"
@@ -53,11 +54,14 @@ test("named grants are scoped to their Board, apply denials, and cannot remove t
     expect(permitsBoardTaskAction(memberAccess, action)).toBe(false)
   }
 
-  const agent = { kind: "agent", id: "fixture-token" } as const
-  await db.execute({
-    sql: "INSERT INTO board_access_grants (board_id, principal_type, principal_id, role) VALUES (?, 'agent', ?, 'service')",
-    args: [id, agent.id],
+  const agent = { kind: "agent", id: crypto.randomUUID() } as const
+  await ensureAgentTokenSchema()
+  await createAgentToken({
+    id: agent.id, name: "Fixture", tokenHash: crypto.randomUUID(), tokenPrefix: "test",
+    scopes: ["tasks:read", "tasks:write", "tasks:delete"],
   })
+  expect(await repo.updateAgent(member.id, id, agent.id, true)).toEqual({ status: "unchanged", result: false })
+  expect(await repo.updateAgent(creator.id, id, agent.id, true)).toEqual({ status: "committed", result: true })
   expect(await repo.updateRestrictions(creator.id, id, { denyCompletion: false, denyDeletion: false, denyAgentDeletion: true }))
     .toEqual({ status: "committed", result: true })
   const agentAccess = await repo.findAccess(agent, id)
@@ -67,6 +71,19 @@ test("named grants are scoped to their Board, apply denials, and cannot remove t
   expect(permitsBoardTaskAction(agentAccess, "delete")).toBe(false)
   expect(permitsBoardTaskAction(ownerAccess, "complete")).toBe(true)
   expect(permitsBoardTaskAction(ownerAccess, "delete")).toBe(true)
+
+  const tasks = new NamedBoardTaskRepository(db, marker)
+  expect(await tasks.view(agent, id)).toMatchObject({ board: { role: "service" }, agents: [], intakes: [], members: [] })
+  const inserted = await tasks.create(agent, id, { title: "Agent ticket", description: "" }, {})
+  if (!inserted.ok) throw new Error("Expected an authorized agent to create a ticket")
+  expect(await tasks.delete(agent, id, inserted.value.id, inserted.value.version)).toEqual({ ok: false, errorCode: "denied" })
+  await updateAgentToken(agent.id, { scopes: ["tasks:read", "tasks:write:assigned"] })
+  expect(await tasks.create(agent, id, { title: "Not created", description: "" }, {}))
+    .toEqual({ ok: false, errorCode: "unavailable" })
+  await revokeAgentToken(agent.id)
+  expect(await tasks.view(agent, id)).toBeNull()
+  expect(await repo.updateAgent(creator.id, id, agent.id, false)).toEqual({ status: "committed", result: true })
+
 })
 
 test("a restored, absent, or replaced grant marker fails closed", async () => {
@@ -230,7 +247,7 @@ test("send-only intake accepts once, returns opaque retries, and can assign with
     .toEqual({ ok: false, errorCode: "conflict" })
   const refreshed = new BoardIntakeRepository(db, marker)
   expect(await refreshed.findSubmissions(sender)).toEqual([
-    { id: pending.resumeId, title: pending.title, sent: false },
+    { id: pending.resumeId, title: pending.title, acknowledgement: null },
   ])
   const other = { kind: "ha_user", id: "other" } as const
   expect(await refreshed.findSubmissions(other)).toEqual([])
@@ -244,7 +261,7 @@ test("send-only intake accepts once, returns opaque retries, and can assign with
 
   expect(await intake.setEnabled("owner", boardId, id, false)).toMatchObject({ status: "committed" })
   expect(await refreshed.findSubmissions(sender)).toEqual([
-    { id: pending.resumeId, title: pending.title, sent: true },
+    { id: pending.resumeId, title: pending.title, acknowledgement: expect.any(String) },
   ])
   expect(await refreshed.issue(sender, id, afterIssue, pending)).toEqual(prepared)
   expect(await refreshed.retry(sender, pending.resumeId, ["owner"])).toEqual(recovered)

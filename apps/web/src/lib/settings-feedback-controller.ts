@@ -1,3 +1,4 @@
+import { browserUuid } from "./browser-uuid"
 import type { FeedbackCursor, FeedbackReceipt, FeedbackReport } from "@domains/support/feedback-queue"
 import { confirmDialog } from "@lib/confirm-dialog"
 import { pageLifecycle } from "@lib/page-lifecycle"
@@ -67,17 +68,6 @@ function reportError(status: HTMLElement, error: unknown, signal: AbortSignal): 
     : "Could not reach local feedback. Check your Home Assistant connection."
 }
 
-function submissionId(): string {
-  if (typeof crypto.randomUUID === "function") return crypto.randomUUID()
-
-  // Home Assistant also serves ingress on local HTTP, where only getRandomValues is available.
-  const bytes = crypto.getRandomValues(new Uint8Array(16))
-  bytes[6] = (bytes[6]! & 0x0f) | 0x40
-  bytes[8] = (bytes[8]! & 0x3f) | 0x80
-  const hex = Array.from(bytes, byte => byte.toString(16).padStart(2, "0")).join("")
-  return [hex.slice(0, 8), hex.slice(8, 12), hex.slice(12, 16), hex.slice(16, 20), hex.slice(20)].join("-")
-}
-
 function initSubmission(panel: HTMLElement, signal: AbortSignal): void {
   const form = panel.querySelector<HTMLFormElement>("[data-feedback-form]")!
   const status = panel.querySelector<HTMLElement>("[data-feedback-status]")!
@@ -105,7 +95,7 @@ function initSubmission(panel: HTMLElement, signal: AbortSignal): void {
     }
     const contents = JSON.stringify(payload)
     if (retry?.contents !== contents) {
-      retry = { contents, submissionId: submissionId() }
+      retry = { contents, submissionId: browserUuid() }
     }
 
     const focus = focusOwner(form, signal)

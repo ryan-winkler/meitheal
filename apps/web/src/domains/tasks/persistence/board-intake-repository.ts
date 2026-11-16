@@ -53,7 +53,7 @@ export class BoardIntakeRepository {
     })
     return rows.map(row => ({
       id: String(row.resume_id), title: String(row.draft_title),
-      sent: typeof row.acknowledgement === "string",
+      acknowledgement: typeof row.acknowledgement === "string" ? row.acknowledgement : null,
     }))
   }
 

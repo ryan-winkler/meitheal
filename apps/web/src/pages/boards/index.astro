@@ -82,7 +82,7 @@ const snapshot = user && directory ? boardViewKey(directory, user.actor.id) : un
         <ul>
           {submissions.map(submission => <li>
             <span>{submission.title}</span>
-            {submission.sent ? <span class="board-note">Sent</span> :
+            {submission.acknowledgement ? <span class="board-note">Sent · Receipt <code>{submission.acknowledgement}</code></span> :
               <form data-board-form="retry-send" class="board-preference">
                 <input type="hidden" name="resumeId" value={submission.id} />
                 <button type="submit" class="btn btn-ghost">Retry sending</button>
