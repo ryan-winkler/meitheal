@@ -960,6 +960,33 @@ test("CalDAV property lines split on the first colon outside quoted parameters",
   expect(event?.description).toBe("Meeting notes")
 })
 
+test("CalDAV keeps events with DURATION that started before the import window", () => {
+  const event = (uid: string, start: string, duration: string) => [
+    "BEGIN:VEVENT", `UID:${uid}`, `SUMMARY:${uid}`, start, `DURATION:${duration}`, "END:VEVENT",
+  ]
+  const ics = [
+    "BEGIN:VCALENDAR",
+    ...event("all-day", "DTSTART;VALUE=DATE:20260320", "P2W"),
+    ...event("timed", "DTSTART;TZID=Europe/Dublin:20260328T120000", "P1DT1H"),
+    ...event("ended", "DTSTART:20260320T140000Z", "P6D"),
+    ...event("floating", "DTSTART:20260328T230000", "PT3H"),
+    ...event("invalid", "DTSTART:20260320T140000Z", "P9999999999999999999D"),
+    "END:VCALENDAR",
+  ].join("\r\n")
+
+  const parsed = parseVEvents(ics, "/cal/duration.ics")
+  expect(parsed.find(({ uid }) => uid === "invalid")?.dtend).toBeUndefined()
+  const ongoing = expandCalDAVEventsInWindow(
+    parsed, new Date("2026-03-29T00:00:00Z"), new Date("2026-03-30T00:00:00Z"),
+  ).map(({ uid, dtend, inclusiveEndDate }) => ({ uid, dtend, inclusiveEndDate }))
+
+  expect(ongoing).toEqual([
+    { uid: "all-day", dtend: "2026-04-03", inclusiveEndDate: "2026-04-02" },
+    { uid: "timed", dtend: "2026-03-29T12:00:00Z", inclusiveEndDate: undefined },
+    { uid: "floating", dtend: "2026-03-29T02:00:00", inclusiveEndDate: undefined },
+  ])
+})
+
 test("RECURRENCE-ID RANGE=THISANDFUTURE moves every later instance, keeps earlier ones and survives DST", () => {
   const ics = [
     "BEGIN:VCALENDAR",
