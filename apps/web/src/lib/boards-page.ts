@@ -68,7 +68,7 @@ export function bindBoardPage(signal: AbortSignal) {
   dest?.addEventListener("change", showAssignment, { signal })
 
   async function jsonRequest(path: string, method: string, body: object) {
-    const response = await fetch(path, {
+    const response = await fetch("/api/" + path, {
       method, body: JSON.stringify(body),
       headers: { "Content-Type": "application/json", "X-Meitheal-Board-Session": boardSession! },
       signal: AbortSignal.any([signal, AbortSignal.timeout(10_000)]),
@@ -91,7 +91,7 @@ export function bindBoardPage(signal: AbortSignal) {
     const value = (name: string) => String(data.get(name) ?? "")
     const content = { title: value("title"), description: value("description") }
     const boardId = form.dataset.boardId || root.dataset.boardId
-    const api = boardId ? `/api/boards/${encodeURIComponent(boardId)}` : "/api/boards"
+    const api = boardId ? `boards/${encodeURIComponent(boardId)}` : "boards"
     const ticket = ticketId ? `${api}/tickets/${encodeURIComponent(ticketId)}` : api
     const feedback = form.querySelector<HTMLElement>("[data-board-feedback]")
     const button = form.querySelector<HTMLButtonElement>('[type="submit"]')
@@ -181,12 +181,12 @@ export function bindBoardPage(signal: AbortSignal) {
           }
           submission ??= { id: browserUuid(), content: signature }
           try {
-            await jsonRequest("/api/board-intake", "POST", { action: "prepare", ...payload, resumeId: submission.id })
+            await jsonRequest("board-intake", "POST", { action: "prepare", ...payload, resumeId: submission.id })
           } catch (error) {
             if (error instanceof BoardRequestError && [400, 403, 404, 429].includes(error.status)) submission = undefined
             throw error
           }
-          const result = await jsonRequest("/api/board-intake", "POST", { action: "retry", resumeId: submission.id })
+          const result = await jsonRequest("board-intake", "POST", { action: "retry", resumeId: submission.id })
           submission = undefined
           form.reset()
           showAssignment()
@@ -194,7 +194,7 @@ export function bindBoardPage(signal: AbortSignal) {
           return
         }
         case "retry-send": {
-          const result = await jsonRequest("/api/board-intake", "POST", { action: "retry", resumeId: value("resumeId") })
+          const result = await jsonRequest("board-intake", "POST", { action: "retry", resumeId: value("resumeId") })
           if (feedback) feedback.textContent = "Task sent. Receipt " + String(result.acknowledgement)
           button.hidden = true
           return
