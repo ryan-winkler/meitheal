@@ -31,6 +31,8 @@ test("Knight Rider persists and fills active work and task colors on Today and B
     await expect(accent).toHaveValue("#6495ed")
     const persisted = await request.get("/api/settings?key=theme")
     expect((await persisted.json()).value).toBe("knight-rider")
+    const invalid = await request.put("/api/settings", { data: { key: "theme", value: "unknown" } })
+    expect(invalid.status()).toBe(400)
     await page.reload()
     await expect(themeSelect).toHaveValue("knight-rider")
     await expect(root).toHaveAttribute("data-theme", "knight-rider")

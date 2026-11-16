@@ -115,11 +115,32 @@ export function formatTimeInZone(
 /** Match the same Calendar occurrence across equivalent offset representations. */
 export function calendarOccurrenceStartKey(start: string): string {
   const raw = start.trim()
-  if (/[T ].*(?:Z|[+-]\d{2}:?\d{2})$/i.test(raw)) {
-    const instant = Date.parse(raw)
-    if (Number.isFinite(instant)) return String(instant)
+  const instant = zonedCalendarInstant(raw)
+  return instant === null ? raw : String(instant)
+}
+
+export function normalizeCalendarEventSummary(summary: string): string {
+  return summary.trim().toLowerCase().replace(/\s+/g, " ")
+}
+
+/** The last household date covered by an event with an exclusive end. */
+export function calendarEventLastDay(end: string, timezone: string): string | null {
+  const raw = end.trim()
+  const instant = zonedCalendarInstant(raw)
+  if (instant !== null) return calendarDayFromInput(instant - 1, timezone)
+
+  const day = calendarDayFromInput(raw, timezone)
+  if (!day) return null
+  if (DATE_ONLY.test(raw) || /^\d{4}-\d{2}-\d{2}[T ]00:00(?::00(?:\.0+)?)?$/.test(raw)) {
+    return shiftCalendarDay(day, -1)
   }
-  return raw
+  return day
+}
+
+function zonedCalendarInstant(raw: string): number | null {
+  if (!/[T ].*(?:Z|[+-]\d{2}:?\d{2})$/i.test(raw)) return null
+  const instant = Date.parse(raw)
+  return Number.isFinite(instant) ? instant : null
 }
 
 /** Whole calendar days from today to a date-only or timed ISO due date in the given timezone, or null if invalid. */

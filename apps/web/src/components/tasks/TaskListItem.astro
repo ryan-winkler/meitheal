@@ -140,11 +140,9 @@ const customEntries = Object.entries(task.custom_fields).filter(
     <div class="tli__meta">
       <PriorityLabel priority={task.priority} />
       {task.due_date && (
-        <span class={task.is_overdue ? "tli__overdue-date" : ""}>
+        <span class="tli__due-date">
           · Due {task.due_date.split("T")[0]}
-          {task.is_overdue && (
-            <span class="tli__overdue-tag">overdue</span>
-          )}
+          <span class="tli__overdue-tag">overdue</span>
         </span>
       )}
       {task.calendar_sync_state === "confirmed" && (
@@ -433,8 +431,11 @@ const customEntries = Object.entries(task.custom_fields).filter(
     color: var(--text-muted);
   }
 
-  .tli__overdue-date {
+  .tli[data-overdue="true"] .tli__due-date {
     color: var(--danger-text);
+  }
+  .tli[data-overdue="false"] .tli__overdue-tag {
+    display: none;
   }
   .tli__overdue-tag {
     font-size: 10px;

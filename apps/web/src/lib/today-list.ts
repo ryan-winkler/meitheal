@@ -1,3 +1,4 @@
+import { isDueOverdue } from "./date"
 import { matchesRiceFilter, matchesStatusFilter } from "./filter-state"
 import { isActiveStatus, isDoneStatus, normalizeStatus, STATUS_LABELS } from "./status-config"
 import type { TaskViewItem } from "./task-queries"
@@ -117,6 +118,9 @@ export function syncTodayTaskStatus(container: HTMLElement, id: string, value: s
   const status = normalizeStatus(value)
   const done = isDoneStatus(status)
   const active = isActiveStatus(status)
+  const reference = container.querySelector<HTMLElement>("#page-shell") ?? container
+  const { todayDay, todayTimezone } = reference.dataset
+  const now = Date.now()
   const taskId = CSS.escape(id)
   for (const item of container.querySelectorAll<HTMLElement>(`.tli[data-id="${taskId}"], .focus-card[data-id="${taskId}"]`)) {
     item.dataset.status = status
@@ -128,6 +132,9 @@ export function syncTodayTaskStatus(container: HTMLElement, id: string, value: s
     }
     const checkbox = item.querySelector<HTMLInputElement>(".tli__checkbox")
     if (checkbox) {
+      const overdue = !done && isDueOverdue(item.dataset.due, todayTimezone, todayDay, now)
+      item.dataset.overdue = String(overdue)
+      item.classList.toggle("tli--overdue", overdue)
       checkbox.checked = done
       item.classList.toggle("tli--done", done)
       item.querySelector(".tli__title")?.classList.toggle("done", done)

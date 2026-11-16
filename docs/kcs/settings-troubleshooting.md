@@ -85,7 +85,7 @@ In an administrator session, choose **Custom** to import a CSS file up to 50 KB.
 
 In **Look & Feel**, **Emerald Isle** is the name of the existing green dark theme. **Knight Rider** uses charcoal surfaces and blue controls. Active tasks have a rose fill in Today, Dashboard and Board task views. **Set color** tints the whole task surface and preserves the rose edge on active work. Knight Rider starts with the compact sidebar when this browser has no saved choice. Today shows up to 20 recent completed tasks in **Completed today**. **Archive completed** archives all tasks completed on that household calendar day. Refresh if the date changed since you opened Today.
 
-Within the same Today visit, reopening a prioritized task from Work returns it to the Focus Stack.
+Within the same Today visit, reopening a prioritized task from Work returns it to the Focus Stack. Completing an overdue task removes it from the **Overdue** filter. Reopening restores the overdue label when the deadline has passed.
 
 An accent chosen in **Look & Feel** stays in this browser. The keyboard focus color comes from the current palette and stays visible even if the accent matches the page background. Use **Reset** beside the color swatches to return to the palette's default accent. Filled primary buttons choose readable dark or light text for a custom accent, including its hover state. Native date and select controls follow the same effective Light or Dark mode as the app. Form hints stay readable when the input receives focus.
 

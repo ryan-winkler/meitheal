@@ -20,7 +20,7 @@ import { getStatusDef, isDoneStatus, normalizeStatus, STATUS } from "../../../li
 import { logApiError, logApiWarn } from "../../../lib/api-logger"
 import { EXACT_TASK_IDENTIFIER_SCORE } from "../../../lib/task-search-score"
 import { readStoredCalendarDay } from "../../../lib/calendar-day"
-import { calendarDayFromInput, calendarOccurrenceStartKey, calendarToday, shiftCalendarDay, isDueOverdue } from "../../../lib/date"
+import { calendarDayFromInput, calendarEventLastDay, calendarOccurrenceStartKey, calendarToday, shiftCalendarDay, isDueOverdue } from "../../../lib/date"
 import { parseTicketKey } from "../../../lib/ticket-key"
 import { getNextOccurrence, parseRRule } from "../recurrence"
 import { deferralTerminalStatusesSql, isDeferralTerminalStatus } from "./task-deferral-status"
@@ -804,13 +804,7 @@ export class TaskRepository {
       if (typeof effectiveEndRaw === "string" && /^\d{4}-\d{2}-\d{2}$/.test(effectiveEndRaw.trim())) {
         endDay = effectiveEndRaw.trim();
       } else if (typeof endRaw === "string" && endRaw.trim()) {
-        const sTrim = startRaw.trim();
-        const eTrim = endRaw.trim();
-        if (/^\d{4}-\d{2}-\d{2}$/.test(sTrim) && /^\d{4}-\d{2}-\d{2}$/.test(eTrim) && eTrim > sTrim) {
-          endDay = shiftCalendarDay(eTrim, -1);
-        } else {
-          endDay = calendarDayFromInput(eTrim, timezone) ?? startDay;
-        }
+        endDay = calendarEventLastDay(endRaw, timezone) ?? startDay
       }
       if (endDay < startDay) endDay = startDay;
 

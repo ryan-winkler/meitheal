@@ -25,6 +25,10 @@ pageLifecycle.onPageLoad(signal => {
     const focusTarget = activeLink ?? sidebar.querySelector<HTMLElement>(".nav-link")
     focusTarget?.focus()
   }, { signal })
+  sidebar.querySelector("#sidebar-toggle-btn")?.addEventListener("click", () => closeDrawer(true), { signal })
+  matchMedia("(min-width: 769px)").addEventListener("change", event => {
+    if (event.matches) closeDrawer()
+  }, { signal })
   document.addEventListener("click", event => {
     const target = event.target instanceof Element ? event.target : null
     if (!target || mobileMenu.contains(target)) return

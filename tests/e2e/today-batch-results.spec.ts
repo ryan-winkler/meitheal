@@ -112,6 +112,39 @@ for (const action of ["complete", "snooze", "delete"] as const) {
   })
 }
 
+test("Today updates the Overdue filter and deadline when work is completed or reopened", async ({ page, request, baseURL }) => {
+  const headers = { origin: new URL(baseURL!).origin }
+  const due_date = new Date(Date.now() - 2 * 86_400_000).toISOString().slice(0, 10)
+  const created = await request.post("/api/tasks", { headers, data: { title: "Carried-forward deadline", due_date } })
+  expect(created.status(), await created.text()).toBe(201)
+  const { id } = await created.json()
+  try {
+    await page.goto("/today?status=overdue#today-work")
+    const row = page.locator(`#section-carried .tli[data-id="${id}"]`)
+    const filter = page.getByRole("combobox", { name: "Filter by status" })
+    const complete = row.locator(".tli__checkbox")
+    const overdue = row.getByText("overdue", { exact: true })
+    await expect(filter).toHaveValue("overdue")
+    await expect(overdue).toBeVisible()
+
+    await complete.press("Space")
+    await expect(row).toHaveAttribute("data-overdue", "false")
+    await expect(row).toBeHidden()
+    await filter.selectOption("")
+    await expect(row).toBeVisible()
+    await expect(row).toContainText(`Due ${due_date}`)
+    await expect(overdue).toBeHidden()
+
+    await complete.press("Space")
+    await expect(row).toHaveAttribute("data-overdue", "true")
+    await expect(overdue).toBeVisible()
+    await filter.selectOption("overdue")
+    await expect(row).toBeVisible()
+  } finally {
+    await request.delete(`/api/tasks/${id}`, { headers, data: {} })
+  }
+})
+
 test("Work reopens Focus cards before and after the cleared state", async ({ page, request, baseURL }) => {
   const headers = { origin: new URL(baseURL!).origin }
   const day = new Intl.DateTimeFormat("en-CA", { dateStyle: "short", timeZone: "Europe/Dublin" }).format(new Date())

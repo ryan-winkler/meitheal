@@ -37,15 +37,13 @@ export function readAppearancePreferences(): AppearancePreferences {
   })) as AppearancePreferences
 }
 
-function syncSidebarButtons(collapsed: boolean): void {
+function setSidebarCollapsed(collapsed: boolean): void {
+  document.body.classList.toggle("sidebar-collapsed", collapsed)
+  const button = document.getElementById("sidebar-edge-toggle")
   const label = collapsed ? "Expand sidebar (Ctrl+B)" : "Collapse sidebar (Ctrl+B)"
-  for (const id of ["sidebar-toggle-btn", "sidebar-edge-toggle"]) {
-    const btn = document.getElementById(id)
-    if (!btn) continue
-    btn.setAttribute("aria-expanded", String(!collapsed))
-    btn.setAttribute("aria-label", label)
-    btn.setAttribute("title", label)
-  }
+  button?.setAttribute("aria-expanded", String(!collapsed))
+  button?.setAttribute("aria-label", label)
+  button?.setAttribute("title", label)
 }
 
 function syncSidebarState(): void {
@@ -58,8 +56,7 @@ function syncSidebarState(): void {
       collapsed = remembered === "true" || (remembered === null && root.theme === "knight-rider")
     } catch { /* Open without storage. */ }
   }
-  document.body.classList.toggle("sidebar-collapsed", collapsed)
-  syncSidebarButtons(collapsed)
+  setSidebarCollapsed(collapsed)
 }
 
 export function applyAppearancePreferences(preferences: AppearancePreferences): void {
@@ -96,22 +93,16 @@ export function bindAppearanceNavigation(signal: AbortSignal): void {
   signal = AbortSignal.any([signal, controller.signal])
   syncNavbarAreas()
   let wasNavbar = innerWidth > 768 && document.documentElement.dataset.appearanceNavigation === "navbar"
-  const topButton = document.getElementById("sidebar-toggle-btn")
   const edgeButton = document.getElementById("sidebar-edge-toggle")
   const toggle = () => {
     const root = document.documentElement.dataset
-    if (innerWidth <= 768) {
-      document.getElementById("menu-toggle")?.click()
-      return
-    }
-    if (root.appearanceNavigation === "navbar") return
-    const collapsed = document.body.classList.toggle("sidebar-collapsed")
-    syncSidebarButtons(collapsed)
+    if (innerWidth <= 768 || root.appearanceNavigation === "navbar") return
+    const collapsed = !document.body.classList.contains("sidebar-collapsed")
+    setSidebarCollapsed(collapsed)
     if (root.appearanceSidebar === "remember") {
       try { localStorage.setItem("meitheal_sidebar_collapsed", String(collapsed)) } catch { /* Still usable without storage. */ }
     }
   }
-  topButton?.addEventListener("click", toggle, { signal })
   edgeButton?.addEventListener("click", toggle, { signal })
   document.addEventListener("keydown", event => {
     if (event.defaultPrevented || !(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== "b") return
@@ -120,22 +111,29 @@ export function bindAppearanceNavigation(signal: AbortSignal): void {
     event.preventDefault()
     toggle()
   }, { signal })
-  const syncHover = () => {
-    if (signal.aborted || innerWidth <= 768 || document.documentElement.dataset.appearanceNavigation !== "sidebar"
-      || document.documentElement.dataset.appearanceSidebar !== "hover" || !sidebar) return
-    const hovered = matchMedia("(any-hover: hover)").matches && sidebar.matches(":hover")
-    const collapsed = !hovered && !sidebar.contains(document.activeElement)
-    document.body.classList.toggle("sidebar-collapsed", collapsed)
-    syncSidebarButtons(collapsed)
+  const hoverEnabled = () => !signal.aborted && innerWidth > 768
+    && document.documentElement.dataset.appearanceNavigation === "sidebar"
+    && document.documentElement.dataset.appearanceSidebar === "hover"
+  const pointerInside = () => matchMedia("(any-hover: hover)").matches && sidebar?.matches(":hover")
+  const focusInside = () => sidebar?.contains(document.activeElement)
+  const closeHover = () => {
+    if (hoverEnabled() && !pointerInside() && !focusInside()) setSidebarCollapsed(true)
   }
-  sidebar?.addEventListener("pointerenter", syncHover, { signal })
-  sidebar?.addEventListener("pointerleave", syncHover, { signal })
-  sidebar?.addEventListener("focusin", syncHover, { signal })
-  sidebar?.addEventListener("focusout", () => queueMicrotask(syncHover), { signal })
+  // Hover or focus on the edge button itself must leave it in place for activation.
+  sidebar?.addEventListener("pointerenter", () => {
+    if (hoverEnabled() && pointerInside() && !edgeButton?.matches(":hover")) setSidebarCollapsed(false)
+  }, { signal })
+  sidebar?.addEventListener("pointerleave", closeHover, { signal })
+  sidebar?.addEventListener("focusin", event => {
+    if (hoverEnabled() && event.target !== edgeButton) setSidebarCollapsed(false)
+  }, { signal })
+  sidebar?.addEventListener("focusout", () => queueMicrotask(closeHover), { signal })
   window.addEventListener("meitheal:theme-changed", syncSidebarState, { signal })
   window.addEventListener("resize", () => {
     syncSidebarState()
-    syncHover()
+    if (hoverEnabled() && (pointerInside() || (focusInside() && document.activeElement !== edgeButton))) {
+      setSidebarCollapsed(false)
+    }
     const isNavbar = innerWidth > 768 && document.documentElement.dataset.appearanceNavigation === "navbar"
     if (wasNavbar !== isNavbar) syncNavbarAreas()
     wasNavbar = isNavbar

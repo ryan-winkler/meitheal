@@ -402,7 +402,7 @@ test.describe("Calendar Shell", () => {
     // An intercepted response never reaches fetch. Wait for the real AbortSignal deadline.
     await page.route("**/api/ha/events?*", async route => {
       const params = new URL(route.request().url()).searchParams
-      if (params.get("entity_id") === "calendar.garden" || (allFail && params.get("start") === day)) {
+      if (params.get("entity_id") === "calendar.garden" || (allFail && params.get("start") === "2031-07-07T00:00:00Z")) {
         await new Promise<void>(resolve => waiting.add(resolve))
         await route.abort().catch(() => {})
         return
@@ -423,6 +423,60 @@ test.describe("Calendar Shell", () => {
       await expect(events).toHaveText("Connected calendar events couldn’t load.", { timeout: 15_000 })
     } finally {
       for (const resolve of waiting) resolve()
+    }
+  })
+
+  test("Calendar includes the whole household day when the live Core calendar uses UTC", async ({ page, request }) => {
+    test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the disposable Meitheal fixture")
+    const { timezone: previousTimezone } = await (await request.get("/api/settings")).json()
+    const day = "2031-07-08"
+    const events = [
+      { summary: "UTC event on preceding household day", start: "2031-07-08T06:00:00Z", end: "2031-07-08T06:30:00Z" },
+      { summary: "Household all-day event", start: day, end: "2031-07-09" },
+      { summary: "Next UTC date on selected household day", start: "2031-07-09T01:00:00Z", end: "2031-07-09T02:00:00Z" },
+      { summary: "UTC event on following household day", start: "2031-07-09T07:00:00Z", end: "2031-07-09T08:00:00Z" },
+    ]
+    const bounds: string[] = []
+    await page.route("**/api/ha/calendars?configured=1", route => route.fulfill({
+      json: { entities: ["calendar.household"] },
+    }))
+    await page.route("**/api/ha/events?*", route => {
+      const params = new URL(route.request().url()).searchParams
+      const start = params.get("start") ?? ""
+      const end = params.get("end") ?? ""
+      bounds.push(`${start}/${end}`)
+      // A Core calendar set to UTC can only return events that overlap the provider query.
+      return route.fulfill({ json: { events: events.filter(event =>
+        Date.parse(event.start) < Date.parse(end) && Date.parse(event.end) > Date.parse(start)) } })
+    })
+    try {
+      const configured = await request.put("/api/settings", { data: { key: "timezone", value: "America/Los_Angeles" } })
+      expect(configured.status()).toBe(200)
+      await page.goto("/tasks?view=calendar&year=2031&month=6#calendar")
+      await expect(page.locator("#calendar-shell")).toHaveAttribute("data-timezone", "America/Los_Angeles")
+      const selected = page.locator(`.cal-cell[data-date="${day}"]`)
+      const following = page.locator('.cal-cell[data-date="2031-07-09"]')
+      const connected = page.locator("#day-drawer-events")
+      await expect(selected.getByText("Next UTC date on selected household day")).toBeVisible()
+      await expect(selected.getByText("Household all-day event")).toBeVisible()
+      await expect(selected.getByText("UTC event on preceding household day")).toHaveCount(0)
+      await selected.press("Enter")
+      await expect(connected.getByText("Next UTC date on selected household day")).toBeVisible()
+      await expect(connected.getByText("Household all-day event")).toBeVisible()
+      await expect(connected.getByText("UTC event on preceding household day")).toHaveCount(0)
+      await expect(connected.getByText("UTC event on following household day")).toHaveCount(0)
+      await page.keyboard.press("Escape")
+      await following.press("Enter")
+      await expect(connected.getByText("UTC event on following household day")).toBeVisible()
+      await expect(connected.getByText("Household all-day event")).toHaveCount(0)
+      await expect(connected.getByText("Next UTC date on selected household day")).toHaveCount(0)
+      expect(bounds).toEqual(expect.arrayContaining([
+        "2031-06-30T00:00:00Z/2031-08-02T00:00:00Z",
+        "2031-07-07T00:00:00Z/2031-07-10T00:00:00Z",
+        "2031-07-08T00:00:00Z/2031-07-11T00:00:00Z",
+      ]))
+    } finally {
+      await request.put("/api/settings", { data: { key: "timezone", value: previousTimezone ?? "Europe/Dublin" } })
     }
   })
 

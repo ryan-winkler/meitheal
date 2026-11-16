@@ -201,7 +201,7 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
     </button>
   </UnifiedBar>
 
-  <div id="page-shell" class="page-shell">
+  <div id="page-shell" class="page-shell" data-today-day={todayIsoDate} data-today-timezone={todayTimeZone}>
     <div id="today-rollover" class="alert alert-warning" role="status" hidden>
       Today has changed. <button type="button" class="btn btn-sm" data-today-refresh>Refresh Today</button>
     </div>

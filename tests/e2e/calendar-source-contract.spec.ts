@@ -139,15 +139,15 @@ test("Calendar reads configured sources as a household member and filters before
     let liveAvailable = true
     await page.route("**/api/ha/events?*", route => {
       const params = new URL(route.request().url()).searchParams
-      if (params.get("start") !== linkedDay) return route.fallback()
+      if (params.get("start") !== "2031-07-13T00:00:00Z" || params.get("end") !== "2031-07-16T00:00:00Z") return route.fallback()
       if (!liveAvailable) return route.fulfill({ status: 503 })
       return route.fulfill({ json: { events: [
         { uid: "linked-uid", summary: "Household live duplicate", start: "2031-07-14T09:00:00+01:00" },
         { uid: "linked-uid", summary: "Household live duplicate", start: "2031-07-14T13:00:00+01:00" },
         { uid: "unlinked-uid", summary: "Live calendar only", start: "2031-07-14T10:00:00Z" },
-        { summary: "Provider name without UID", start: "2031-07-14T15:00:00+01:00" },
-        { summary: "Ambiguous provider name", start: "2031-07-14T15:00:00Z" },
-        { summary: "Ambiguous provider name", start: "2031-07-14T16:00:00+01:00" },
+        { summary: "  PROVIDER  NAME without uid  ", start: "2031-07-14T15:00:00+01:00" },
+        { summary: "  AMBIGUOUS provider  name", start: "2031-07-14T15:00:00Z" },
+        { summary: "ambiguous PROVIDER name  ", start: "2031-07-14T16:00:00+01:00" },
       ] } })
     })
     const unfilteredMonth = base + "/tasks?view=calendar&year=2031&month=6&area=#calendar"
@@ -162,8 +162,11 @@ test("Calendar reads configured sources as a household member and filters before
     await expect(connected.getByText("Live calendar only")).toBeVisible()
     await expect(connected.getByText("Household live duplicate")).toHaveCount(0)
     await expect(connected.getByRole("button", { name: /Renamed household event/ })).toBeVisible()
-    await expect(connected.getByText("Provider name without UID")).toHaveCount(0)
-    await expect(connected.getByText("Ambiguous provider name")).toHaveCount(2)
+    const connectedTitles = connected.locator(".day-drawer-item-title")
+    const countTitle = (text: string) => connectedTitles.evaluateAll((titles, expected) =>
+      titles.filter(title => title.textContent?.trim().toLowerCase().replace(/\s+/g, " ") === expected).length, text)
+    await expect.poll(() => countTitle("ambiguous provider name")).toBe(2)
+    expect(await countTitle("provider name without uid")).toBe(0)
     await expect(connected.getByText("Archived linked event")).toHaveCount(0)
     await connected.getByRole("button", { name: /Linked calendar retreat/ }).click()
     await expect(page.locator("#td-title")).toHaveValue("Linked calendar retreat")

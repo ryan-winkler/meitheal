@@ -100,7 +100,8 @@
   },
   "topbar": {
     "search_placeholder": "Cuardaigh Meitheal...",
-    "toggle_menu": "Scoránaigh an roghchlár"
+    "toggle_menu": "Scoránaigh an roghchlár",
+    "close_menu": "Dún an barra taoibh"
   },
   "status": {
     "app_ready": "Meitheal réidh",

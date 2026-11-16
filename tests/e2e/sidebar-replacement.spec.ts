@@ -39,14 +39,54 @@ test("recreated sidebar restores pinned links and binds Tasks controls once", as
   await page.keyboard.press("Escape")
 
   const edge = page.locator("#sidebar-edge-toggle")
-  const top = page.locator("#sidebar-toggle-btn")
   for (const collapsed of [true, false]) {
     await edge.click()
     const label = `${collapsed ? "Expand" : "Collapse"} sidebar (Ctrl+B)`
-    for (const toggle of [edge, top]) {
-      await expect(toggle).toHaveAttribute("aria-expanded", String(!collapsed))
-      await expect(toggle).toHaveAttribute("aria-label", label)
-      await expect(toggle).toHaveAttribute("title", label)
-    }
+    await expect(edge).toHaveAttribute("aria-expanded", String(!collapsed))
+    await expect(edge).toHaveAttribute("aria-label", label)
+    await expect(edge).toHaveAttribute("title", label)
   }
+})
+
+test("sidebar can close again in desktop hover mode and on a phone", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 960 })
+  await page.addInitScript(() => {
+    localStorage.setItem("meitheal-theme", "knight-rider")
+    localStorage.setItem("meitheal-appearance", JSON.stringify({ sidebar: "hover" }))
+  })
+  await page.goto("/tasks")
+
+  const edge = page.locator("#sidebar-edge-toggle")
+  const sidebar = page.locator("#sidebar")
+  const body = page.locator("body")
+  const arrow = edge.locator(".sidebar-edge-toggle__icon")
+  await expect(edge).toHaveAttribute("aria-expanded", "false")
+  await edge.hover()
+  await expect(edge).toHaveAttribute("aria-expanded", "false")
+  await edge.click()
+  await expect(edge).toHaveAttribute("aria-expanded", "true")
+  await expect(body).not.toHaveClass(/sidebar-collapsed/)
+  await expect(arrow).toHaveCSS("transform", "matrix(0, 1, -1, 0, 0, 0)")
+  await edge.click()
+  await expect(edge).toHaveAttribute("aria-expanded", "false")
+  await expect(body).toHaveClass(/sidebar-collapsed/)
+  await expect(arrow).toHaveCSS("transform", "matrix(0, -1, 1, 0, 0, 0)")
+  await edge.press("Enter")
+  await expect(body).not.toHaveClass(/sidebar-collapsed/)
+  await page.keyboard.press("Control+b")
+  await expect(body).toHaveClass(/sidebar-collapsed/)
+
+  await page.setViewportSize({ width: 390, height: 844 })
+  const menu = page.locator("#menu-toggle")
+  const close = sidebar.getByRole("button", { name: "Close sidebar" })
+  await menu.click()
+  await expect(menu).toHaveAttribute("aria-expanded", "true")
+  await close.click()
+  await expect(menu).toHaveAttribute("aria-expanded", "false")
+  await expect(menu).toBeFocused()
+  await expect(sidebar).not.toHaveClass(/open/)
+  await menu.press("Enter")
+  await close.press("Enter")
+  await expect(menu).toHaveAttribute("aria-expanded", "false")
+  await expect(menu).toBeFocused()
 })

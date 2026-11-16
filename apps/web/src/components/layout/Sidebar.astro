@@ -229,11 +229,12 @@ const remainingItems = areaPosition < 0 ? [] : navItems.slice(areaPosition + 1)
     id="sidebar-edge-toggle"
     aria-label="Collapse sidebar (Ctrl+B)"
     aria-expanded="true"
+    aria-controls="sidebar"
     title="Collapse sidebar (Ctrl+B)"
   >
     <span class="sidebar-edge-toggle__circle" aria-hidden="true">
       <span class="sidebar-edge-toggle__icon">
-        <Icon name="chevron-down" size={14} class="rotate-90" />
+        <Icon name="chevron-down" size={14} />
       </span>
     </span>
   </button>
@@ -270,13 +271,13 @@ const remainingItems = areaPosition < 0 ? [] : navItems.slice(areaPosition + 1)
     </div>
     <button
       type="button"
-      class="sidebar-toggle-top ml-auto flex items-center justify-center p-1.5 rounded-md text-text-muted hover:text-text-primary hover:bg-bg-hover transition-colors shrink-0 relative w-8 h-8"
+      class="sidebar-toggle-top ml-auto flex items-center justify-center rounded-md text-text-muted hover:text-text-primary hover:bg-bg-hover transition-colors shrink-0 w-11 h-11"
       id="sidebar-toggle-btn"
-      aria-label="Toggle sidebar (Ctrl+B)"
-      title="Toggle sidebar (Ctrl+B)"
+      aria-controls="sidebar"
+      aria-label={t("topbar.close_menu", locale)}
+      title={t("topbar.close_menu", locale)}
     >
-      <Icon name="layout-sidebar-left-collapse" class="sidebar-icon-expanded w-5 h-5 shrink-0 absolute" />
-      <Icon name="menu-2" class="sidebar-icon-collapsed w-5 h-5 shrink-0 absolute hidden" />
+      <Icon name="x" size={20} />
     </button>
   </div>
 
@@ -391,11 +392,11 @@ const remainingItems = areaPosition < 0 ? [] : navItems.slice(areaPosition + 1)
     align-items: center;
     justify-content: center;
     transition: transform 200ms cubic-bezier(0.23, 1, 0.32, 1);
-    transform: rotate(0deg);
+    transform: rotate(90deg);
   }
 
   :global(body.sidebar-collapsed) .sidebar-edge-toggle__icon {
-    transform: rotate(180deg);
+    transform: rotate(-90deg);
   }
 
   @media (min-width: 769px) {

@@ -36,9 +36,15 @@ test("Knight Rider keeps the completed Today state and saved theme truthful", as
     if (route.request().method() === "PUT") return route.fulfill({ status: 503 })
     return route.continue()
   })
+  const rejectedTheme = page.waitForResponse(response =>
+    new URL(response.url()).pathname === "/api/settings" && response.request().method() === "PUT")
   await select.selectOption("light")
+  expect((await rejectedTheme).status()).toBe(503)
   await expect(select).toHaveValue("knight-rider")
   await expect(page.locator("html")).toHaveAttribute("data-theme", "knight-rider")
+  expect(await page.evaluate(() => localStorage.getItem("meitheal-theme"))).toBe("knight-rider")
+  const persisted = await request.get("/api/settings?key=theme")
+  expect((await persisted.json()).value).toBe("knight-rider")
   await page.unroute("**/api/settings")
 
   await page.goto("/today#today-work")

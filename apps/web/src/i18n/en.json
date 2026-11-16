@@ -101,7 +101,8 @@
   },
   "topbar": {
     "search_placeholder": "Search Meitheal...",
-    "toggle_menu": "Toggle menu"
+    "toggle_menu": "Toggle menu",
+    "close_menu": "Close sidebar"
   },
   "status": {
     "app_ready": "Meitheal ready",

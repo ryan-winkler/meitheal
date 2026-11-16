@@ -2,7 +2,7 @@ import type { TaskKind } from "@meitheal/domain-tasks"
 import { getRememberedAreaId } from "@lib/area-selector-controller"
 import { readCalendarTaskFilters } from "@lib/calendar-task-filter"
 import { createClientLogger } from "@lib/client-logger"
-import { calendarDayFromInput, calendarOccurrenceStartKey, formatTimeInZone, shiftCalendarDay } from "@lib/date"
+import { calendarDayFromInput, calendarEventLastDay, calendarOccurrenceStartKey, formatTimeInZone, normalizeCalendarEventSummary, shiftCalendarDay } from "@lib/date"
 import { createFocusTrap } from "@lib/focus-trap"
 import { updateKanbanFilters, type KanbanFilters } from "@lib/kanban-query"
 import { createTablerSvgElement, mapEntityEmojiToTabler, type TablerIconName } from "@lib/tabler-svg"
@@ -14,6 +14,7 @@ interface CalendarEventRecord {
   summary: string
   start: string
   entity: string
+  end?: string
   uid?: string
 }
 
@@ -218,7 +219,7 @@ export function initCalendarPage(signal: AbortSignal): void {
     }
     if (showEvents) {
       renderMessage(drawerEvents!, loading)
-      void loadCalendarRange(date, shiftCalendarDay(date, 1), 5, readCalendarSources, linked).then(result => {
+      void loadCalendarRange(date, shiftCalendarDay(date, 1), timezone, 5, readCalendarSources, linked).then(result => {
         if (drawerRequest !== currentRequest || currentRequest.signal.aborted || signal.aborted) return
         live = result
         renderConnectedEvents()
@@ -416,18 +417,27 @@ async function fetchCalendarEntities(signal: AbortSignal): Promise<string[]> {
 }
 
 async function loadCalendarRange(
-  start: string, end: string, limit: number, readSources: () => Promise<string[]>, signal: AbortSignal,
+  start: string, end: string, timezone: string, limit: number, readSources: () => Promise<string[]>, signal: AbortSignal,
 ) {
   const entities = await readSources()
   signal.throwIfAborted()
+  // Use explicit UTC bounds with room for the Core and household time zones.
+  const from = shiftCalendarDay(start, -1) + "T00:00:00Z"
+  const through = shiftCalendarDay(end, 1) + "T00:00:00Z"
   const results = await Promise.allSettled(entities.slice(0, limit).map(async entity => {
-    const params = new URLSearchParams({ entity_id: entity, start, end })
+    const params = new URLSearchParams({ entity_id: entity, start: from, end: through })
     const response = await fetch(`/api/ha/events?${params}`, { signal })
     if (!response.ok) throw new Error("Calendar feed unavailable")
     const data = await response.json() as { events?: Array<Omit<CalendarEventRecord, "entity">> }
     if (!Array.isArray(data.events)) throw new Error("Invalid calendar feed")
-    return data.events.filter(event => event && typeof event.start === "string" && typeof event.summary === "string")
-      .map(event => ({ ...event, entity }))
+    return data.events.filter(event => {
+      if (!event || typeof event.start !== "string" || typeof event.summary !== "string") return false
+      const firstDay = calendarDayFromInput(event.start, timezone)
+      if (!firstDay || firstDay >= end) return false
+      if (firstDay >= start) return true
+      const lastDay = typeof event.end === "string" ? calendarEventLastDay(event.end, timezone) : null
+      return lastDay !== null && lastDay >= start
+    }).map(event => ({ ...event, entity }))
   }))
   const events = results.flatMap(result => result.status === "fulfilled" ? result.value : [])
   events.sort((a, b) => a.start.localeCompare(b.start))
@@ -448,18 +458,19 @@ function distinctLiveCalendarEvents(events: CalendarEventRecord[], linked: Linke
   for (const row of linked) {
     if (!row.entity) continue
     if (row.uid) byUid.add(key(row.entity, row.start, row.uid))
-    if (row.providerSummary) {
-      const match = key(row.entity, row.start, row.providerSummary)
+    const summary = normalizeCalendarEventSummary(row.providerSummary ?? "")
+    if (summary) {
+      const match = key(row.entity, row.start, summary)
       savedCounts.set(match, (savedCounts.get(match) ?? 0) + 1)
     }
   }
   for (const event of events) {
-    const match = key(event.entity, event.start, event.summary)
+    const match = key(event.entity, event.start, normalizeCalendarEventSummary(event.summary))
     liveCounts.set(match, (liveCounts.get(match) ?? 0) + 1)
   }
   return events.filter(event => {
     if (event.uid) return !byUid.has(key(event.entity, event.start, event.uid))
-    const match = key(event.entity, event.start, event.summary)
+    const match = key(event.entity, event.start, normalizeCalendarEventSummary(event.summary))
     return savedCounts.get(match) !== 1 || liveCounts.get(match) !== 1
   })
 }
@@ -536,7 +547,7 @@ async function loadInlineEventPreviews(
 
   try {
     const deadline = AbortSignal.any([lifetime, AbortSignal.timeout(10_000)])
-    const { events } = await loadCalendarRange(start, shiftCalendarDay(lastDay, 1), 3, readSources, deadline)
+    const { events } = await loadCalendarRange(start, shiftCalendarDay(lastDay, 1), timezone, 3, readSources, deadline)
     if (lifetime.aborted) return
 
     const byDate = new Map<string, CalendarEventRecord[]>()
