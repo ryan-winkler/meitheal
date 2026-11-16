@@ -56,6 +56,20 @@ test("Today reads full queue counts without materializing hidden rows", async ()
     await addTask("rice-first", { payload })
     await addTask("rice-second", { payload })
     await addTask("archived", { status: "archived" })
+    const baselineRows = await getTodayTaskRows(date, true)
+    const baselineCounts = await getTodayTaskCounts(new Date(now))
+    const baselineView = await getTasksForView()
+    await client.batch([
+      "INSERT INTO task_boards (id, name, visibility, ticket_prefix, created_at, updated_at) VALUES ('work', 'Work', 'restricted', 'WORKABCD', 1, 1)",
+      "INSERT INTO kanban_lanes (id, key, label, board_id, created_at, updated_at) VALUES ('work-pending', 'pending', 'Pending', 'work', 1, 1)",
+      { sql: `INSERT INTO tasks (id, title, status, area_id, task_board_id, board_column_id, ticket_ref, is_favorite,
+          idempotency_key, request_id, created_at, updated_at)
+        VALUES ('private-work', 'Private Work ticket', 'pending', '__meitheal_no_area__',
+          'work', 'work-pending', 'WORKABCD-1', 1, 'work-key', 'work-req', ?, ?)`, args: [now, now] },
+    ], "write")
+    expect(await getTodayTaskRows(date, true)).toEqual(baselineRows)
+    expect(await getTodayTaskCounts(new Date(now))).toEqual(baselineCounts)
+    expect(await getTasksForView()).toEqual(baselineView)
     const full = await getTasksForView()
     const collapsed = await getTodayTaskRows(date, false)
     const expanded = await getTodayTaskRows(date, true)

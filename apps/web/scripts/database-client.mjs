@@ -5,7 +5,7 @@ import { setTimeout as sleepMs } from "node:timers/promises"
 import { LibsqlBatchError, LibsqlError } from "@libsql/core/api"
 import { expandConfig, isInMemoryConfig } from "@libsql/core/config"
 import { ResultSetImpl } from "@libsql/core/util"
-import { PERSONAL_PILLAR_SCHEMA_VERSION } from "../drizzle/migrations/0010_personal_pillars.mjs"
+import { BOARD_ACCESS_SCHEMA_VERSION } from "../drizzle/migrations/0011_board_access.mjs"
 import {
   readTaskBoardMigrationState, taskBoardMigrationStateSteps,
 } from "../drizzle/migrations/task-board-upgrade.mjs"
@@ -64,7 +64,7 @@ export function resetDatabaseDiagnosticsForTests() {
   s.readLeaseSlowWarningsTotal = 0
 }
 
-export const DATABASE_SCHEMA_VERSION = PERSONAL_PILLAR_SCHEMA_VERSION
+export const DATABASE_SCHEMA_VERSION = BOARD_ACCESS_SCHEMA_VERSION
 
 const schemaMarkerTable = "SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = 'app_settings' COLLATE NOCASE"
 const schemaMarkerRows = "SELECT value AS value FROM app_settings WHERE key = 'schema_version' LIMIT 2"
@@ -259,7 +259,7 @@ function isRetryableBusyError(error) {
  * Execute an attempt closure with async [5, 15, 30, 60, 120] ms backoff on SQLITE_BUSY / TRANSACTION_ACTIVE
  * whenever `isAcquired()` remains false (prior to BEGIN IMMEDIATE / commit effects).
  * @template T
- * @param {() => T} runAttempt
+ * @param {() => T | Promise<T>} runAttempt
  * @param {() => boolean} isAcquired
  * @param {AbortSignal | undefined} signal
  * @returns {Promise<T>}
@@ -268,7 +268,7 @@ async function retryBusyOperation(runAttempt, isAcquired, signal) {
   const diag = getDiagnosticsStore()
   throwIfSignalAborted(signal)
   try {
-    return runAttempt()
+    return await runAttempt()
   } catch (firstError) {
     if (isAcquired() || !isRetryableBusyError(firstError)) throw firstError
     let lastError = firstError
@@ -278,7 +278,7 @@ async function retryBusyOperation(runAttempt, isAcquired, signal) {
       await backoffSleep(delay, signal)
       throwIfSignalAborted(signal)
       try {
-        return runAttempt()
+        return await runAttempt()
       } catch (retryError) {
         if (isAcquired() || !isRetryableBusyError(retryError)) throw retryError
         lastError = retryError
@@ -287,6 +287,11 @@ async function retryBusyOperation(runAttempt, isAcquired, signal) {
     diag.sqliteBusyExhaustedTotal += 1
     throw lastError
   }
+}
+
+/** Retry only lock acquisition for a write that must coordinate with an external file. */
+export function acquireWriteTransaction(client, options) {
+  return retryBusyOperation(() => client.transaction("write"), () => false, options?.signal)
 }
 
 /**
@@ -836,7 +841,7 @@ async function inspectStartupSchema(client) {
   try {
     if (await readTaskBoardMigrationState(tx) === "household-v19") {
       const { validateStartupTaskSchema } = await import("./task-schema-startup.mjs")
-      await validateStartupTaskSchema(tx, { allowPendingPersonal: true })
+      await validateStartupTaskSchema(tx, { allowPending: true })
     }
   } finally {
     tx.close()

@@ -30,7 +30,7 @@ export const POST: APIRoute = async ({ request }) => {
     // Count completed tasks from today before clearing
     const countResult = await client.execute({
       sql: `SELECT COUNT(*) as cnt FROM tasks
-            WHERE status = 'complete'
+            WHERE task_board_id IS NULL AND status = 'complete'
               AND updated_at >= ?`,
       args: [`${todayStr}T00:00:00`],
     })
@@ -48,7 +48,7 @@ export const POST: APIRoute = async ({ request }) => {
     await client.execute({
       sql: `UPDATE tasks
             SET status = 'archived', updated_at = datetime('now')
-            WHERE status = 'complete'
+            WHERE task_board_id IS NULL AND status = 'complete'
               AND updated_at >= ?`,
       args: [`${todayStr}T00:00:00`],
     })

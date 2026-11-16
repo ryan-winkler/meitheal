@@ -1391,6 +1391,8 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
       activeEntityName = btn.dataset.areaName || ""
       const manageLink = areaMenuDropdown.querySelector<HTMLAnchorElement>("[data-action='manage']")
       if (manageLink) manageLink.href = safeIngressHref(`/areas/${encodeURIComponent(activeEntityId)}#settings`)
+      const deletion = areaMenuDropdown.querySelector<HTMLButtonElement>("[data-action='delete']")
+      if (deletion) deletion.style.display = activeEntityId === "default" ? "none" : ""
       ctrl.show(areaMenuDropdown, btn)
       if (focusManage) manageLink?.focus()
     }
@@ -1468,7 +1470,7 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
           i18n("sidebar.delete_confirm_btn", "Confirm Delete"),
           async () => {
             try {
-              const res = await fetch(`/api/areas/${entityId}`, { method: "DELETE" })
+              const res = await fetch(`/api/areas/${entityId}`, { method: "DELETE", headers: { "content-type": "application/json" } })
               if (res.ok) {
                 const areaGroup = document.querySelector(`[data-area-group="${entityId}"]`) as HTMLElement | null
                 if (areaGroup) {
@@ -1558,7 +1560,7 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
           i18n("sidebar.delete_confirm_btn", "Confirm Delete"),
           async () => {
             try {
-              const res = await fetch(`/api/projects/${entityId}`, { method: "DELETE" })
+              const res = await fetch(`/api/projects/${entityId}`, { method: "DELETE", headers: { "content-type": "application/json" } })
               if (res.ok) {
                 const projRow = document.querySelector(`[data-project-id="${entityId}"]`)?.closest(".stree__project") as HTMLElement | null
                 if (projRow) {

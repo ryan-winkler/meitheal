@@ -102,7 +102,8 @@ export async function rewriteLabelReferences(tx: Transaction, action: Rewrite): 
             CASE WHEN ${source.validClock} THEN ${source.clock} END AS clock,
             CASE WHEN ${source.validRevision} THEN 1 ELSE 0 END AS revision_valid,
             CASE WHEN ${source.validRevision} THEN ${source.revision} END AS revision
-            FROM ${source.table} WHERE (? IS NULL OR rowid > CAST(? AS INTEGER)) ORDER BY rowid LIMIT ${batchSize})`,
+            FROM ${source.table} WHERE (? IS NULL OR rowid > CAST(? AS INTEGER))
+              ${source.table === "tasks" ? "AND task_board_id IS NULL" : source.table === "task_templates" ? "AND owner_board_id IS NULL" : ""} ORDER BY rowid LIMIT ${batchSize})`,
         args: [cursor, cursor],
       })
       for (const row of rows) {
@@ -122,7 +123,7 @@ export async function rewriteLabelReferences(tx: Transaction, action: Rewrite): 
         const args: (string | number)[] = [selectionJson]
         let sql: string
         if (source.table === "tasks") {
-          sql = "UPDATE tasks SET labels=?, updated_at=? WHERE rowid=CAST(? AS INTEGER) RETURNING CAST(rowid AS TEXT) AS cursor"
+          sql = "UPDATE tasks SET labels=?, updated_at=? WHERE task_board_id IS NULL AND rowid=CAST(? AS INTEGER) RETURNING CAST(rowid AS TEXT) AS cursor"
           args.push(clock + 1, String(row.cursor))
         } else if (source.table === "task_drafts") {
           sql = `UPDATE task_drafts SET snapshot_json=json_set(snapshot_json,'$.labels',json(?),'$.newLabels',json(?)),
@@ -131,7 +132,7 @@ export async function rewriteLabelReferences(tx: Transaction, action: Rewrite): 
           args.push(extraJson, action.now, String(row.cursor))
         } else {
           sql = `UPDATE task_templates SET template_json=json_set(template_json,'$.labels',json(?)),
-            updated_at=MAX(updated_at+1,?) WHERE rowid=CAST(? AS INTEGER) RETURNING CAST(rowid AS TEXT) AS cursor`
+            updated_at=MAX(updated_at+1,?) WHERE owner_board_id IS NULL AND rowid=CAST(? AS INTEGER) RETURNING CAST(rowid AS TEXT) AS cursor`
           args.push(action.now, String(row.cursor))
         }
         const changed = await tx.execute({ sql, args })

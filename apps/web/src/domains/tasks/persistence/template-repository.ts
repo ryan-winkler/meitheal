@@ -53,7 +53,7 @@ export class TemplateRepository {
   /** List all templates ordered by position */
   async findAll() {
     const result = await this.client.execute(
-      "SELECT * FROM task_templates ORDER BY position ASC, created_at ASC"
+      "SELECT * FROM task_templates WHERE owner_board_id IS NULL ORDER BY position ASC, created_at ASC"
     )
     return result.rows
   }
@@ -61,7 +61,7 @@ export class TemplateRepository {
   /** Find a template by ID */
   async findById(id: string) {
     const result = await this.client.execute({
-      sql: "SELECT * FROM task_templates WHERE id = ?",
+      sql: "SELECT * FROM task_templates WHERE owner_board_id IS NULL AND id = ?",
       args: [id],
     })
     return (result.rows[0] as Record<string, unknown>) ?? null
@@ -70,7 +70,7 @@ export class TemplateRepository {
   /** Get next available template position */
   async getNextPosition(): Promise<number> {
     const result = await this.client.execute(
-      "SELECT COALESCE(MAX(position), -1) + 1 AS next_pos FROM task_templates"
+      "SELECT COALESCE(MAX(position), -1) + 1 AS next_pos FROM task_templates WHERE owner_board_id IS NULL"
     )
     return Number((result.rows[0] as Record<string, unknown>)?.next_pos ?? 0)
   }
@@ -84,7 +84,7 @@ export class TemplateRepository {
             recurrence_rule, checklists, custom_fields, area_id, framework_payload,
             calendar_sync_state, idempotency_key, request_id, created_at, updated_at)
             SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '{}', ?, ?, ?, ?, ?
-            WHERE ? = 'default' OR EXISTS (SELECT 1 FROM areas WHERE id = ?)`,
+            WHERE ? = 'default' OR EXISTS (SELECT 1 FROM areas WHERE id = ? AND owner_board_id IS NULL AND retired_at IS NULL)`,
       args: [
         taskId,
         String(template.title ?? "Untitled"),
@@ -124,7 +124,7 @@ export class TemplateRepository {
     const inserted = await this.client.execute({
       sql: `INSERT INTO task_templates (id, name, template_json, icon, is_routine, cadence, position, created_at, updated_at)
             SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
-            WHERE ? IS NULL OR EXISTS (SELECT 1 FROM areas WHERE id = ?)`,
+            WHERE ? IS NULL OR EXISTS (SELECT 1 FROM areas WHERE id = ? AND owner_board_id IS NULL AND retired_at IS NULL)`,
       args: [data.id, data.name, data.templateJson, data.icon, isRoutine ? 1 : 0, cadence, data.position, now, now, data.areaId ?? null, data.areaId ?? null],
     })
     return inserted.rowsAffected !== 0
@@ -133,7 +133,7 @@ export class TemplateRepository {
   /** Delete a template by ID */
   async delete(id: string): Promise<void> {
     await this.client.execute({
-      sql: "DELETE FROM task_templates WHERE id = ?",
+      sql: "DELETE FROM task_templates WHERE owner_board_id IS NULL AND id = ?",
       args: [id],
     })
   }
@@ -167,11 +167,11 @@ export class TemplateRepository {
     sets.push("updated_at = ?")
     args.push(Date.now())
     args.push(id)
-    const areaCheck = data.areaId === undefined ? "" : "AND EXISTS (SELECT 1 FROM areas WHERE id = ?)"
+    const areaCheck = data.areaId === undefined ? "" : "AND EXISTS (SELECT 1 FROM areas WHERE id = ? AND owner_board_id IS NULL AND retired_at IS NULL)"
     if (data.areaId !== undefined) args.push(data.areaId)
 
     const written = await this.client.execute({
-      sql: `UPDATE task_templates SET ${sets.join(", ")} WHERE id = ? ${areaCheck}`,
+      sql: `UPDATE task_templates SET ${sets.join(", ")} WHERE owner_board_id IS NULL AND id = ? ${areaCheck}`,
       args,
     })
     return written.rowsAffected !== 0
@@ -183,7 +183,7 @@ export class TemplateRepository {
   async findRoutines(areaId?: string): Promise<RoutineTemplateRow[]> {
     const areaFilter = areaId ? "AND COALESCE(CASE WHEN json_valid(template_json) THEN json_extract(template_json, '$.area_id') END, 'default') = ?" : ""
     const result = await this.client.execute({
-      sql: `SELECT * FROM task_templates WHERE is_routine = 1 ${areaFilter} ORDER BY position ASC, created_at ASC`,
+      sql: `SELECT * FROM task_templates WHERE owner_board_id IS NULL AND is_routine = 1 ${areaFilter} ORDER BY position ASC, created_at ASC`,
       args: areaId ? [areaId] : [],
     })
     return result.rows.map(r => {
@@ -225,7 +225,7 @@ export class TemplateRepository {
       // Today's task for this routine
       const todayTask = await this.client.execute({
         sql: `SELECT id, status FROM tasks
-              WHERE source_template_id = ? AND due_date = ?
+              WHERE task_board_id IS NULL AND source_template_id = ? AND due_date = ?
               ORDER BY created_at DESC LIMIT 1`,
         args: [routine.id, today],
       })
@@ -236,7 +236,7 @@ export class TemplateRepository {
       // Last completed date
       const lastCompleted = await this.client.execute({
         sql: `SELECT due_date FROM tasks
-              WHERE source_template_id = ? AND status = 'complete'
+              WHERE task_board_id IS NULL AND source_template_id = ? AND status = 'complete'
               ORDER BY due_date DESC LIMIT 1`,
         args: [routine.id],
       })
@@ -245,7 +245,7 @@ export class TemplateRepository {
 
       // Total completions
       const totalResult = await this.client.execute({
-        sql: "SELECT COUNT(*) as cnt FROM tasks WHERE source_template_id = ? AND status = 'complete'",
+        sql: "SELECT COUNT(*) as cnt FROM tasks WHERE task_board_id IS NULL AND source_template_id = ? AND status = 'complete'",
         args: [routine.id],
       })
       const totalCompletions = Number((totalResult.rows[0] as Record<string, unknown>).cnt)
@@ -292,7 +292,7 @@ export class TemplateRepository {
     const today = new Date().toISOString().split("T")[0]!
 
     const findToday = {
-      sql: `SELECT id FROM tasks WHERE source_template_id = ? AND due_date = ? LIMIT 1`,
+      sql: `SELECT id FROM tasks WHERE task_board_id IS NULL AND source_template_id = ? AND due_date = ? LIMIT 1`,
       args: [templateId, today],
     }
     const existing = await this.client.execute(findToday)
@@ -332,9 +332,9 @@ export class TemplateRepository {
             framework_payload, calendar_sync_state, idempotency_key, request_id, created_at, updated_at)
             SELECT ?, ?, ?, ?, ?, ?, ?, 'routine_instance', ?, ?, ?, ?, ?,
                    ${nextHouseholdTicketNumberSql}, '{}', 'pending', ?, ?, ?, ?
-            WHERE EXISTS (SELECT 1 FROM task_templates WHERE id = ? AND is_routine = 1 AND template_json = ?)
-              AND (? = 'default' OR EXISTS (SELECT 1 FROM areas WHERE id = ?))
-              AND NOT EXISTS (SELECT 1 FROM tasks WHERE source_template_id = ? AND due_date = ?)`,
+            WHERE EXISTS (SELECT 1 FROM task_templates WHERE owner_board_id IS NULL AND id = ? AND is_routine = 1 AND template_json = ?)
+              AND (? = 'default' OR EXISTS (SELECT 1 FROM areas WHERE id = ? AND owner_board_id IS NULL AND retired_at IS NULL))
+              AND NOT EXISTS (SELECT 1 FROM tasks WHERE task_board_id IS NULL AND source_template_id = ? AND due_date = ?)`,
       args: [
         taskId,
         String(template.title ?? tmpl.name ?? "Routine"),
@@ -381,7 +381,7 @@ export class TemplateRepository {
   private async calculateStreak(templateId: string): Promise<{ current: number; longest: number }> {
     const result = await this.client.execute({
       sql: `SELECT DISTINCT due_date FROM tasks
-            WHERE source_template_id = ? AND status = 'complete' AND due_date IS NOT NULL
+            WHERE task_board_id IS NULL AND source_template_id = ? AND status = 'complete' AND due_date IS NOT NULL
             ORDER BY due_date DESC`,
       args: [templateId],
     })

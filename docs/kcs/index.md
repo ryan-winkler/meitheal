@@ -14,6 +14,7 @@
 - [Review recent activity](recent-activity.md) - Find committed task changes by area and person.
 - [Task Lifecycle Glossary](task-lifecycle-glossary.md) - Find task status definitions and transition rules.
 - [Hierarchy Glossary — Meitheal Ubiquitous Language](hierarchy-glossary.md) - Find definitions for areas, goals, projects, and other planning terms.
+- [Named Boards](named-boards.md) - Set up private Boards, send-only access and scoped planning.
 - [Settings Shell Troubleshooting](settings-troubleshooting.md) - Find settings and diagnose navigation problems.
 - [Save and restore rules and framework settings](settings-persistence.md) - Finish pending edits and recover from rejected saves or imports.
 - [New ticket form](new-ticket-form.md) - Create tickets and preserve checklist and private draft values.

@@ -190,7 +190,9 @@ export const POST: APIRoute = async ({ request, locals }) => {
     },
     { signal: locals.writeAbortSignal },
   )
-  const ticketNumber = Number(inserted!.rows[0]!.ticket_number)
+  const ticket = inserted?.rows[0]
+  if (!ticket) return apiError("Choose available task relationships", 400)
+  const ticketNumber = Number(ticket.ticket_number)
   const payload = taskCreationPayload(prepared.task, ticketNumber, now)
   const authority = await taskEventAuthorityHeaders(["task.created"])
   dispatchTaskCreation(payload, typeof body.request_id === "string" ? body.request_id : undefined, undefined, authority)

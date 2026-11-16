@@ -192,7 +192,7 @@ export function taskAddedActivity(taskId: string, actor: RecentTaskActor, at: nu
     sql: `INSERT INTO task_activity_log
             (task_id, field, actor, actor_type, event_type, summary, created_at, feed_action, feed_person_key)
           SELECT id, 'created', ?, ?, 'created', ?, ?, 'added', ?
-          FROM tasks WHERE id = ?`,
+          FROM tasks WHERE id = ? AND task_board_id IS NULL`,
     args: [actor.kind, actor.kind, summary, at, actor.personKey, taskId],
   }
 }
@@ -237,7 +237,7 @@ export function taskChangedActivity(
     sql: `INSERT INTO task_activity_log
             (task_id, field, actor, actor_type, event_type, summary, correlation_id, created_at, feed_action, feed_person_key)
           SELECT id, 'activity', ?, ?, 'field_change', ?, ?, ?, ${action}, ?
-          FROM tasks ${where} AND (${changes.join(" OR ")})`,
+          FROM tasks ${where} AND task_board_id IS NULL AND (${changes.join(" OR ")})`,
     args,
   }
 }
@@ -258,7 +258,7 @@ export async function readRecentActivity(
   const conditions = ["activity.feed_action IN ('added', 'edited', 'closed', 'reopened')"]
   const args: InValue[] = []
   if (areaId) {
-    conditions.push("task.area_id = ?")
+    conditions.push("area.id = ?")
     args.push(areaId)
   }
   if (personKey) {
@@ -275,8 +275,8 @@ export async function readRecentActivity(
                  task.id AS task_id, task.title, task.ticket_number, task.created_by, task.source,
                  area.name AS area_name
           FROM task_activity_log AS activity
-          JOIN tasks AS task ON task.id = activity.task_id
-          LEFT JOIN areas AS area ON area.id = task.area_id
+          JOIN tasks AS task ON task.id = activity.task_id AND task.task_board_id IS NULL
+          LEFT JOIN areas AS area ON area.id = task.area_id AND area.owner_board_id IS NULL AND area.retired_at IS NULL
           WHERE ${conditions.join(" AND ")}
           ORDER BY activity.created_at DESC, activity.id DESC LIMIT ?`,
     args: [...args, size + 1],

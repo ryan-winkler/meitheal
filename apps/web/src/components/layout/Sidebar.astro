@@ -54,6 +54,7 @@ const NAV_ITEMS: Record<string, NavItemDef> = {
     i18nKey: "nav.progress",
     icon: "trophy",
   },
+  boards: { href: "/boards", i18nKey: "Boards", icon: "kanban" },
   areas: {
     href: "/planning#spaces",
     i18nKey: "sidebar.areas_header",
@@ -76,6 +77,7 @@ const DEFAULT_ORDER: NavKey[] = [
   "mentionInbox",
   "progress",
   "planning",
+  "boards",
   "areas",
 ];
 
@@ -97,6 +99,8 @@ interface SidebarConfig {
   /** Custom dynamically added nav items */
   customItems?: CustomNavItem[];
 }
+
+let namedBoardDirectoryExists = false
 
 let sidebarConfig: SidebarConfig = {
   dashboard: true,
@@ -128,6 +132,10 @@ if (gamificationEnabled) {
 try {
   await ensureSchema();
   const c = getPersistenceClient();
+  if (Astro.locals.hassUserId && hierarchyEnabled) {
+    const { rows } = await c.execute("SELECT 1 FROM board_access_epoch LIMIT 1")
+    namedBoardDirectoryExists = rows.length > 0
+  }
   const res = await c.execute(
     "SELECT value FROM settings WHERE key = 'sidebar_config'",
   );
@@ -191,13 +199,14 @@ const navItems = order
     if (!(key in NAV_ITEMS)) return false
     // Feature flag: hide progress parent page when all sub-features disabled
     if (key === "progress" && !gamificationEnabled && !habitsEnabled) return false
-    if ((key === "tasks" || key === "areas") && !hierarchyEnabled) return false
+    if (key === "boards" && !Astro.locals.hassUserId) return false
+    if ((key === "tasks" || key === "areas" || key === "boards") && !hierarchyEnabled) return false
     if ((key === "activity" || key === "mentionInbox") && !Astro.locals.hassUserId) return false
     return true
   })
   .map((key) => {
     const def = NAV_ITEMS[key]!;
-    const label = labels[key] || t(def.i18nKey, locale);
+    const label = labels[key] || (key === "boards" ? (locale === "ga" ? "Cláir" : "Boards") : t(def.i18nKey, locale));
     const isActive = def.matchExact
       ? currentPath === def.href
       : currentPath.startsWith(def.href);
@@ -305,6 +314,7 @@ const remainingItems = areaPosition < 0 ? [] : navItems.slice(areaPosition + 1)
       </div>
     )}
     {remainingItems.length > 0 && <SidebarNavList navItems={remainingItems} taskCounts={taskCounts} />}
+    {namedBoardDirectoryExists && <ul class="sidebar-board-shortcuts" data-sidebar-boards hidden aria-label="Visible Boards"></ul>}
     <NavOverflowMore id="sidebar-more-destinations" list locale={locale} />
   </div>
 
@@ -319,7 +329,17 @@ const remainingItems = areaPosition < 0 ? [] : navItems.slice(areaPosition + 1)
 
 </nav>
 
+<script>
+  import { pageLifecycle } from "@lib/page-lifecycle"
+  import { bindSidebarBoards } from "@lib/sidebar-boards"
+  pageLifecycle.onPageLoad(bindSidebarBoards)
+</script>
+
 <style>
+  .sidebar-board-shortcuts { list-style: none; margin: 0.25rem 0; padding-left: 1.5rem; }
+  .sidebar-board-shortcuts a { display: block; padding: 0.3rem 0; overflow-wrap: anywhere; }
+  .sidebar-board-shortcuts[hidden], :global(body.sidebar-collapsed) .sidebar-board-shortcuts { display: none; }
+
   .sidebar {
     display: flex;
     flex-direction: column;

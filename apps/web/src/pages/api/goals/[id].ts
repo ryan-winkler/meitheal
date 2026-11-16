@@ -1,7 +1,8 @@
 import type { APIRoute } from "astro"
 import { isValidGoalProgress } from "@meitheal/domain-tasks"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
-import { HierarchyRepository } from "@domains/tasks/persistence/hierarchy-repository"
+import { listSharedGoals, serializeBoardGoal } from "@domains/tasks/persistence/shared-goal-repository"
+import { HierarchyRepository, PlanningAccessLockedError } from "@domains/tasks/persistence/hierarchy-repository"
 import { stripHtml } from "../../../lib/strip-html"
 import { apiError, apiJson } from "../../../lib/api-response"
 import { logApiError } from "../../../lib/api-logger"
@@ -15,13 +16,20 @@ import { logApiError } from "../../../lib/api-logger"
 
 const VALID_STATUSES = ["active", "completed", "archived"]
 
-export const GET: APIRoute = async ({ params }) => {
+export const GET: APIRoute = async ({ params, locals, request }) => {
   try {
     await ensureSchema()
-    const repo = new HierarchyRepository(getPersistenceClient())
-    const goal = await repo.findGoalById(params.id!)
-    if (!goal) return apiError("Goal not found", 404)
-    return apiJson(goal)
+    const client = getPersistenceClient()
+    const repo = new HierarchyRepository(client)
+    const id = params.id!
+    const goal = await repo.findGoalById(id)
+    const [shared] = await listSharedGoals(client, locals, request.signal, { goalId: id })
+    if (goal && shared) {
+      return apiJson({ ...goal, project_count: shared.project_count, completed_project_count: shared.completed_project_count })
+    }
+    if (goal) return apiJson(goal)
+    if (shared) return apiJson(serializeBoardGoal(shared))
+    return apiError("Goal not found", 404)
   } catch (error) {
     logApiError("goals", "GET detail error", error)
     return apiError("Failed to get goal")
@@ -68,6 +76,7 @@ export const DELETE: APIRoute = async ({ params }) => {
     if (!deleted) return apiError("Goal not found", 404)
     return apiJson({ ok: true })
   } catch (error) {
+    if (error instanceof PlanningAccessLockedError) return apiError(error.message, 503)
     logApiError("goals", "DELETE error", error)
     return apiError("Failed to delete goal")
   }

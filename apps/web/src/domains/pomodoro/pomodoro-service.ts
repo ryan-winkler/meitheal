@@ -85,6 +85,12 @@ let timerState: PomodoroState = {
   sessionId: null,
 }
 
+export class PomodoroTaskUnavailableError extends Error {}
+
+const visibleSession = `NOT EXISTS (
+  SELECT 1 FROM tasks WHERE tasks.id = pomodoro_sessions.task_id AND task_board_id IS NOT NULL
+)`
+
 let timerInterval: ReturnType<typeof setInterval> | null = null
 let config: PomodoroConfig = { ...DEFAULT_POMODORO_CONFIG }
 
@@ -123,7 +129,7 @@ async function handlePhaseComplete(): Promise<void> {
       await ensurePomodoroSchema()
       const client = getPersistenceClient()
       await client.execute({
-        sql: "UPDATE pomodoro_sessions SET completed_at = ?, focus_count = ? WHERE id = ?",
+        sql: `UPDATE pomodoro_sessions SET completed_at = ?, focus_count = ? WHERE id = ? AND ${visibleSession}`,
         args: [new Date().toISOString(), timerState.focusCount, timerState.sessionId],
       })
 
@@ -131,13 +137,14 @@ async function handlePhaseComplete(): Promise<void> {
       if (timerState.taskId) {
         const entryId = generateId()
         await client.execute({
-          sql: "INSERT INTO time_entries(id, task_id, started_at, stopped_at, duration_seconds) VALUES(?, ?, ?, ?, ?)",
+          sql: `INSERT INTO time_entries(id, task_id, started_at, stopped_at, duration_seconds)
+            SELECT ?, id, ?, ?, ? FROM tasks WHERE id = ? AND task_board_id IS NULL`,
           args: [
             entryId,
-            timerState.taskId,
             new Date(Date.now() - config.focusMinutes * 60 * 1000).toISOString(),
             new Date().toISOString(),
             config.focusMinutes * 60,
+            timerState.taskId,
           ],
         })
       }
@@ -167,10 +174,12 @@ async function handlePhaseComplete(): Promise<void> {
     try {
       await ensurePomodoroSchema()
       const client = getPersistenceClient()
-      await client.execute({
-        sql: "INSERT INTO pomodoro_sessions(id, task_id, phase, started_at, duration_minutes, focus_count) VALUES(?, ?, 'focus', ?, ?, ?)",
+      const { rows: [saved] } = await client.execute({
+        sql: `INSERT INTO pomodoro_sessions(id, task_id, phase, started_at, duration_minutes, focus_count)
+          VALUES(?, (SELECT id FROM tasks WHERE id = ? AND task_board_id IS NULL), 'focus', ?, ?, ?) RETURNING task_id`,
         args: [sessionId, timerState.taskId, new Date().toISOString(), config.focusMinutes, timerState.focusCount],
       })
+      if (saved?.task_id === null) timerState.taskId = null
     } catch {
       // Non-critical
     }
@@ -194,10 +203,17 @@ export function getTimerState(): PomodoroState {
 export async function startFocus(taskId: string | null = null): Promise<PomodoroState> {
   await ensurePomodoroSchema()
 
-  // Cancel any existing session
-  stopCountdown()
-
   const sessionId = generateId()
+  const result = await getPersistenceClient().execute({
+    sql: `INSERT INTO pomodoro_sessions(id, task_id, phase, started_at, duration_minutes, focus_count)
+      SELECT ?, ?, 'focus', ?, ?, 0 WHERE ? IS NULL OR EXISTS (
+        SELECT 1 FROM tasks WHERE id = ? AND task_board_id IS NULL
+      )`,
+    args: [sessionId, taskId, new Date().toISOString(), config.focusMinutes, taskId, taskId],
+  })
+  if (!result.rowsAffected) throw new PomodoroTaskUnavailableError("Task unavailable")
+
+  stopCountdown()
   timerState = {
     phase: "focus",
     remaining: config.focusMinutes * 60,
@@ -206,13 +222,6 @@ export async function startFocus(taskId: string | null = null): Promise<Pomodoro
     taskId,
     sessionId,
   }
-
-  // Persist session start
-  const client = getPersistenceClient()
-  await client.execute({
-    sql: "INSERT INTO pomodoro_sessions(id, task_id, phase, started_at, duration_minutes, focus_count) VALUES(?, ?, 'focus', ?, ?, 0)",
-    args: [sessionId, taskId, new Date().toISOString(), config.focusMinutes],
-  })
 
   startCountdown()
   return getTimerState()
@@ -253,7 +262,7 @@ export async function cancelSession(): Promise<PomodoroState> {
       await ensurePomodoroSchema()
       const client = getPersistenceClient()
       await client.execute({
-        sql: "UPDATE pomodoro_sessions SET cancelled_at = ? WHERE id = ?",
+        sql: `UPDATE pomodoro_sessions SET cancelled_at = ? WHERE id = ? AND ${visibleSession}`,
         args: [new Date().toISOString(), timerState.sessionId],
       })
     } catch {
@@ -281,7 +290,7 @@ export async function getSessionHistory(limit = 20): Promise<PomodoroSession[]> 
   const client = getPersistenceClient()
 
   const result = await client.execute({
-    sql: "SELECT * FROM pomodoro_sessions WHERE completed_at IS NOT NULL ORDER BY completed_at DESC LIMIT ?",
+    sql: `SELECT * FROM pomodoro_sessions WHERE completed_at IS NOT NULL AND ${visibleSession} ORDER BY completed_at DESC LIMIT ?`,
     args: [limit],
   })
 
@@ -312,7 +321,7 @@ export async function getTodayStats(): Promise<{ sessionsCompleted: number, tota
     sql: `SELECT COUNT(*) as total, COALESCE(SUM(duration_minutes), 0) as minutes
           FROM pomodoro_sessions
           WHERE phase = 'focus' AND completed_at IS NOT NULL
-          AND date(completed_at) = ?`,
+          AND date(completed_at) = ? AND ${visibleSession}`,
     args: [today],
   })
 
@@ -334,11 +343,10 @@ async function checkTaskAssigneeTx(
   taskId: string,
   expectedAssignedTo?: string,
 ): Promise<"ok" | "not_found" | "assignee_mismatch"> {
-  if (expectedAssignedTo === undefined) return "ok"
-  const taskRow = await tx.execute({ sql: "SELECT assigned_to FROM tasks WHERE id = ?", args: [taskId] })
+  const taskRow = await tx.execute({ sql: "SELECT assigned_to FROM tasks WHERE id = ? AND task_board_id IS NULL", args: [taskId] })
   const row = taskRow.rows[0] as Record<string, unknown> | undefined
   if (!row) return "not_found"
-  return row.assigned_to === expectedAssignedTo ? "ok" : "assignee_mismatch"
+  return expectedAssignedTo === undefined || row.assigned_to === expectedAssignedTo ? "ok" : "assignee_mismatch"
 }
 
 async function stopRunningTimeEntryTx(

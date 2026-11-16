@@ -355,7 +355,7 @@ async function mergeHATodoItems(entityId: string, items: HATodoItem[]): Promise<
         const titleChunk = unmatchedTitles.slice(offset, offset + 200);
         const placeholders = titleChunk.map(() => "?").join(", ");
         const titleMatches = await client.execute({
-          sql: `SELECT id, title FROM tasks WHERE status != 'complete' AND title IN (${placeholders}) ORDER BY rowid ASC`,
+          sql: `SELECT id, title FROM tasks WHERE task_board_id IS NULL AND status != 'complete' AND title IN (${placeholders}) ORDER BY rowid ASC`,
           args: titleChunk,
         });
         for (const row of titleMatches.rows) {

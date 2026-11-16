@@ -735,7 +735,7 @@ async function cleanStaleTasks(seenEntityKeys: Set<string>): Promise<void> {
     if (!seenEntityKeys.has(key)) {
       // This entity no longer exists in Grocy — archive the task
       await client.execute({
-        sql: `UPDATE tasks SET status = '${STATUS.COMPLETE}', updated_at = ? WHERE id = ? AND status != '${STATUS.COMPLETE}'`,
+        sql: `UPDATE tasks SET status = '${STATUS.COMPLETE}', updated_at = ? WHERE id = ? AND task_board_id IS NULL AND status != '${STATUS.COMPLETE}'`,
         args: [nowMs, taskId],
       });
       await client.execute({

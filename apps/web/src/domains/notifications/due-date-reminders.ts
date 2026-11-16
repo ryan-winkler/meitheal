@@ -256,7 +256,8 @@ export async function checkDueDates(now = Date.now()): Promise<void> {
     const result = await client.execute({
       sql: `SELECT id, title, due_date, priority, ticket_number, assigned_to, status
             FROM tasks
-            WHERE status NOT IN ('${STATUS.COMPLETE}')
+            WHERE task_board_id IS NULL
+              AND status NOT IN ('${STATUS.COMPLETE}')
               AND deferred_at IS NULL
               AND due_date IS NOT NULL
               AND due_date != ''
@@ -271,7 +272,8 @@ export async function checkDueDates(now = Date.now()): Promise<void> {
     const epochResult = await client.execute({
       sql: `SELECT id, title, due_date, priority, ticket_number, assigned_to, status
             FROM tasks
-            WHERE status NOT IN ('${STATUS.COMPLETE}')
+            WHERE task_board_id IS NULL
+              AND status NOT IN ('${STATUS.COMPLETE}')
               AND deferred_at IS NULL
               AND due_date IS NOT NULL
               AND due_date != ''

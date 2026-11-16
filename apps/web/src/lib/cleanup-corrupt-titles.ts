@@ -64,7 +64,7 @@ export async function cleanupCorruptTitles(): Promise<number> {
   // The pattern: TWO OR MORE "📋 MTH-NN:" prefixes = definitely a loop duplicate.
   // A single prefix might be legitimate, but multiple nested is always corruption.
   const duplicates = await client.execute(
-    `SELECT id FROM tasks WHERE
+    `SELECT id FROM tasks WHERE task_board_id IS NULL AND
       title LIKE '%MTH-%:%MTH-%:%MTH-%:%'`,
   )
 
@@ -80,19 +80,19 @@ export async function cleanupCorruptTitles(): Promise<number> {
       sql: "DELETE FROM calendar_confirmations WHERE task_id = ?",
       args: [id],
     }).catch(() => { /* table may not exist */ })
-    await client.execute({
-      sql: "DELETE FROM tasks WHERE id = ?",
+    const deleted = await client.execute({
+      sql: "DELETE FROM tasks WHERE id = ? AND task_board_id IS NULL",
       args: [id],
     })
-    purged++
+    purged += deleted.rowsAffected
   }
 
   // Phase 2: Find remaining tasks with corruption patterns in their titles
   const result = await client.execute(
-    `SELECT id, title FROM tasks WHERE
-      title LIKE '%MTH-%:%MTH-%:%'
-      OR title LIKE '%— DUE — DUE%'
-      OR title LIKE '%📋 MTH-%'`,
+    `SELECT id, title FROM tasks WHERE task_board_id IS NULL AND
+      (title LIKE '%MTH-%:%MTH-%:%'
+        OR title LIKE '%— DUE — DUE%'
+        OR title LIKE '%📋 MTH-%')`,
   )
 
   let cleaned = 0
@@ -102,11 +102,11 @@ export async function cleanupCorruptTitles(): Promise<number> {
     const newTitle = sanitizeTodoTitle(oldTitle)
 
     if (newTitle !== oldTitle) {
-      await client.execute({
-        sql: "UPDATE tasks SET title = ?, updated_at = ? WHERE id = ?",
+      const updated = await client.execute({
+        sql: "UPDATE tasks SET title = ?, updated_at = ? WHERE id = ? AND task_board_id IS NULL",
         args: [newTitle, Date.now(), id],
       })
-      cleaned++
+      cleaned += updated.rowsAffected
     }
   }
 

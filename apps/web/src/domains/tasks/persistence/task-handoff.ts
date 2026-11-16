@@ -152,7 +152,7 @@ export class TaskHandoff {
   async queue(offset: number, limit: number) {
     const { rows } = await this.db.execute({
       sql: `SELECT id, ticket_number, title, description, status, proposal_json, proposal_hash, lock_expires_at
-            FROM tasks WHERE handoff_state = 'proposed' AND lock_expires_at > ?
+            FROM tasks WHERE task_board_id IS NULL AND handoff_state = 'proposed' AND lock_expires_at > ?
               AND proposal_json IS NOT NULL AND proposal_hash IS NOT NULL
             ORDER BY lock_expires_at DESC, id LIMIT ? OFFSET ?`,
       args: [Date.now(), limit, offset],

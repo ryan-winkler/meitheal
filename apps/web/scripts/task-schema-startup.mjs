@@ -11,6 +11,9 @@ import { applyTaskStallMigration, validateTaskStallSchema } from "../drizzle/mig
 import {
   applyPersonalPillarMigration, PERSONAL_PILLAR_MIGRATION, readPersonalPillarMigrationState,
 } from "../drizzle/migrations/0010_personal_pillars.mjs"
+import {
+  applyBoardAccessMigration, BOARD_ACCESS_MIGRATION, readBoardAccessMigrationState,
+} from "../drizzle/migrations/0011_board_access.mjs"
 import { assertNoInboundReferences } from "../drizzle/migrations/board-storage-schema.mjs"
 import { installTaskActivityTriggers, validateTaskActivityTriggers } from "../drizzle/migrations/task-activity-schema.mjs"
 import {
@@ -81,11 +84,11 @@ async function validateCommittedTaskSchema(tx) {
   const pending = boardMigrations.filter(name => !ledger.has(name))
   if (pending.length > 0) throw new Error(`Pending migrations: ${pending.join(", ")}`)
   await validateTaskMigrationShape(tx, true)
-  await validateTaskBoardUpgrade(tx)
+  await validateTaskBoardUpgrade(tx, { namedStorage: await readBoardAccessMigrationState(tx) })
 }
 
-/** @param {Transaction} tx @param {{ allowPendingPersonal?: boolean }} [options] */
-export async function validateStartupTaskSchema(tx, { allowPendingPersonal = false } = {}) {
+/** @param {Transaction} tx @param {{ allowPending?: boolean }} [options] */
+export async function validateStartupTaskSchema(tx, { allowPending = false } = {}) {
   if (await readTaskBoardMigrationState(tx) !== "household-v19") {
     const ledger = await readLedger(tx)
     const pending = boardMigrations.filter(name => !ledger.has(name))
@@ -93,8 +96,11 @@ export async function validateStartupTaskSchema(tx, { allowPendingPersonal = fal
     throw new Error(`Pending migrations: ${pending.join(", ")}`)
   }
   await validateCommittedTaskSchema(tx)
-  if (!await readPersonalPillarMigrationState(tx) && !allowPendingPersonal) {
-    throw new Error(`Pending migrations: ${PERSONAL_PILLAR_MIGRATION}`)
+  const personalReady = await readPersonalPillarMigrationState(tx)
+  const accessReady = await readBoardAccessMigrationState(tx)
+  if (!allowPending) {
+    const pending = [!personalReady && PERSONAL_PILLAR_MIGRATION, !accessReady && BOARD_ACCESS_MIGRATION].filter(Boolean)
+    if (pending.length) throw new Error(`Pending migrations: ${pending.join(", ")}`)
   }
 }
 
@@ -109,7 +115,10 @@ export async function applyStartupTaskSchema(tx, prepareRuntime) {
     await validateCommittedTaskSchema(tx)
     await seedHouseholdTaskPrerequisites(tx)
     await prepareRuntime?.(tx)
-    return await applyPersonalPillarMigration(tx) ? [PERSONAL_PILLAR_MIGRATION] : []
+    const applied = []
+    if (await applyPersonalPillarMigration(tx)) applied.push(PERSONAL_PILLAR_MIGRATION)
+    if (await applyBoardAccessMigration(tx)) applied.push(BOARD_ACCESS_MIGRATION)
+    return applied
   }
 
   await assertNoInboundReferences(tx, ["__meitheal_migrations", "app_settings"])
@@ -148,5 +157,6 @@ export async function applyStartupTaskSchema(tx, prepareRuntime) {
   }
   await applyTaskBoardUpgrade(tx, predecessorMigrations)
   await applyPersonalPillarMigration(tx)
-  return [...pending, TASK_BOARD_MIGRATION, PERSONAL_PILLAR_MIGRATION]
+  await applyBoardAccessMigration(tx)
+  return [...pending, TASK_BOARD_MIGRATION, PERSONAL_PILLAR_MIGRATION, BOARD_ACCESS_MIGRATION]
 }

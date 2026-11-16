@@ -1,0 +1,182 @@
+---
+import BoardPlanning from "../../components/boards/BoardPlanning.astro"
+import Layout from "../../layouts/Layout.astro"
+import "../../styles/boards.css"
+import { permitsBoardTaskAction } from "@domains/tasks/persistence/named-board-repository"
+import { boardViewKey, readBoardView } from "@lib/board-view"
+import { boardSessionProof, currentBoardUser } from "@lib/named-board-request"
+import { isFeatureEnabled } from "@lib/feature-flags"
+import { isDoneStatus } from "@lib/status-config"
+
+const boardId = Astro.params.id
+const user = await currentBoardUser(Astro.locals, Astro.request.signal)
+const rawOffset = Number(Astro.url.searchParams.get("offset") ?? 0)
+const offset = Number.isSafeInteger(rawOffset) && rawOffset >= 0 ? rawOffset : 0
+const view = boardId && user ? await readBoardView(user.actor, boardId, offset) : null
+if (!boardId || !user || !view) Astro.response.status = 404
+const policy = view?.board.policy
+const canEdit = view && permitsBoardTaskAction(view.board, "edit")
+const canDelete = view && permitsBoardTaskAction(view.board, "delete")
+const canComplete = view && permitsBoardTaskAction(view.board, "complete")
+const routinesEnabled = view ? await isFeatureEnabled("habits") : false
+const verifyPath = boardId ? `/api/boards/${encodeURIComponent(boardId)}?offset=${offset}` : ""
+---
+<Layout title="Board">
+  <span slot="page-title">Board</span>
+  <div class="boards-workspace">
+    <nav class="board-back" aria-label="Board navigation"><a href="/boards">← Boards</a></nav>
+    {!view || !boardId || !user ? <p>This Board is unavailable.</p> :
+      <div data-board-directory data-board-verify={verifyPath} data-board-key={boardViewKey(view, user.actor.id)}
+        data-board-session={boardSessionProof(user.actor.id)} data-board-id={boardId}>
+        <header class="boards-heading">
+          <div>
+            <h1>{view.board.name}</h1>
+            {view.board.state === "archived" && <p>Archived Board</p>}
+          </div>
+          {canEdit && <details class="board-add">
+            <summary class="btn btn-primary">New task</summary>
+            <form data-board-form="task-create" class="board-form">
+              <label>Title <input name="title" maxlength="500" required autocomplete="off" /></label>
+              <label>Details <textarea name="description" maxlength="10000" rows="3"></textarea></label>
+              <label>Column <select name="laneId">
+                {view.lanes.filter(lane => canComplete || !isDoneStatus(lane.key)).map(lane => <option value={lane.id}>{lane.label}</option>)}
+              </select></label>
+              {view.planning?.projects.length ? <label>Project <select name="projectId">
+                <option value="">No Project</option>
+                {view.planning.projects.filter(project => project.status !== "archived").map(project => <option value={project.id}>{project.title}</option>)}
+              </select></label> : null}
+              <p role="status" data-board-feedback></p>
+              <button type="submit" class="btn btn-primary">Create task</button>
+            </form>
+          </details>}
+        </header>
+
+        <section class="board-columns" aria-label="Tasks by column">
+          {view.lanes.map(lane => <section class="board-lane">
+            <h2>{lane.label}</h2>
+            {view.tasks.filter(task => task.laneId === lane.id).map(task => <article class="board-tile">
+              <span class="board-note">{task.ticket}</span>
+              {canEdit ? <details>
+                <summary class="board-name">{task.title}</summary>
+                <form data-board-form="task-edit" data-ticket-id={task.id} data-version={task.version} class="board-form">
+                  <label>Title <input name="title" value={task.title} maxlength="500" required /></label>
+                  <label>Details <textarea name="description" maxlength="10000" rows="3">{task.description}</textarea></label>
+                  <p role="status" data-board-feedback></p>
+                  <button type="submit" class="btn btn-ghost">Save changes</button>
+                </form>
+              </details> : <h3 class="board-name">{task.title}</h3>}
+              {task.assignedTo && <p class="board-note">Assigned to {user.roster.get(task.assignedTo.replace(/^ha_/, "")) || "an unavailable user"}</p>}
+              {task.description && <p>{task.description}</p>}
+              {canEdit && <form data-board-form="task-move" data-ticket-id={task.id} data-version={task.version} class="board-move">
+                <label>Move to <select name="laneId">
+                  {view.lanes.filter(target => canComplete || isDoneStatus(target.key) === isDoneStatus(lane.key))
+                    .map(target => <option value={target.id} selected={target.id === lane.id}>{target.label}</option>)}
+                </select></label>
+                <button type="submit" class="btn btn-ghost">Move</button>
+                <p role="status" data-board-feedback></p>
+              </form>}
+              {canDelete && !task.routine && <form data-board-form="task-delete" data-ticket-id={task.id} data-version={task.version}>
+                <button type="submit" class="btn btn-ghost board-danger">Delete task</button>
+                <span role="status" data-board-feedback></span>
+              </form>}
+            </article>)}
+          </section>)}
+        </section>
+        {(offset > 0 || view.nextOffset !== null) && <nav class="board-pages" aria-label="Board pages">
+          {offset > 0 && <a href={`?offset=${Math.max(0, offset - 50)}`}>Previous tasks</a>}
+          {view.nextOffset !== null && <a href={`?offset=${view.nextOffset}`}>More tasks</a>}
+        </nav>}
+
+        {view.planning && <BoardPlanning planning={view.planning} canManage={Boolean(policy) && view.board.state === "active"} canComplete={Boolean(canComplete)} routinesEnabled={routinesEnabled} tickets={view.tasks} />}
+        {policy && <details class="named-boards board-settings">
+          <summary>Board settings</summary>
+          <div class="board-settings-grid">
+            <form data-board-form="policy" class="board-form">
+              <h2>Ticket permissions</h2>
+              <label class="check"><input type="checkbox" name="denyCompletion" checked={policy.denyCompletion} /> Block marking tickets done or reopening them</label>
+              <label class="check"><input type="checkbox" name="denyDeletion" checked={policy.denyDeletion} /> Block ticket deletion</label>
+              <label class="check"><input type="checkbox" name="denyAgentDeletion" checked={policy.denyAgentDeletion} /> Block deletion by agents</label>
+              <p role="status" data-board-feedback></p>
+              <button type="submit" class="btn btn-ghost">Save permissions</button>
+            </form>
+            <div>
+              <h2>People with access</h2>
+              {view.members.map(member => <form data-board-form="member" class="board-form board-member">
+                <h3>{user.roster.get(member.id) || "Inactive Home Assistant user"}</h3>
+                <input type="hidden" name="memberId" value={member.id} />
+                <label>Role <select name="role">
+                  <option value="viewer" selected={member.role === "viewer"}>Viewer</option>
+                  <option value="member" selected={member.role === "member"}>Member</option>
+                  <option value="owner" selected={member.role === "owner"}>Owner</option>
+                  <option value="remove">Remove access</option>
+                </select></label>
+                <label class="check"><input type="checkbox" name="denyCompletion" checked={member.denyCompletion} /> Block marking done</label>
+                <label class="check"><input type="checkbox" name="denyDeletion" checked={member.denyDeletion} /> Block deletion</label>
+                <p role="status" data-board-feedback></p>
+                <button type="submit" class="btn btn-ghost">Save access</button>
+              </form>)}
+              <form data-board-form="member" class="board-form board-member">
+                <label>Add a person <select name="memberId" required>
+                  <option value="">Choose a person</option>
+                  {[...user.roster].filter(([id]) => !view.members.some(member => member.id === id)).map(([id, name]) => <option value={id}>{name}</option>)}
+                </select></label>
+                <label>Role <select name="role"><option value="viewer">Viewer</option><option value="member">Member</option><option value="owner">Owner</option></select></label>
+                <p role="status" data-board-feedback></p>
+                <button type="submit" class="btn btn-ghost">Add person</button>
+              </form>
+            </div>
+            <section aria-labelledby="board-agent-settings">
+              <h2 id="board-agent-settings">Agent access</h2>
+              {view.agents.map(tokenId => <form data-board-form="agent" class="board-form board-member">
+                <span class="board-note">{tokenId}</span>
+                <input type="hidden" name="tokenId" value={tokenId} />
+                <input type="hidden" name="enabled" value="false" />
+                <p role="status" data-board-feedback></p>
+                <button type="submit" class="btn btn-ghost">Remove token access</button>
+              </form>)}
+              <form data-board-form="agent" class="board-form">
+                <label>Agent token ID <input name="tokenId" maxlength="36" autocomplete="off" required /></label>
+                <p class="board-note">Use the ID from Settings → Agent Tokens. The token needs task read access.</p>
+                <input type="hidden" name="enabled" value="true" />
+                <p role="status" data-board-feedback></p>
+                <button type="submit" class="btn btn-ghost">Grant token access</button>
+              </form>
+            </section>
+            <section aria-labelledby="board-intake-settings">
+              <h2 id="board-intake-settings">Send-only access</h2>
+              {view.intakes.map(intake => <form data-board-form="intake-toggle" class="board-form board-member">
+                <h3>{intake.label}</h3>
+                <span class="board-note">{intake.enabled ? "Accepting tasks" : "Closed"}</span>
+                <input type="hidden" name="id" value={intake.id} />
+                <input type="hidden" name="enabled" value={intake.enabled ? "false" : "true"} />
+                <p role="status" data-board-feedback></p>
+                <button type="submit" class="btn btn-ghost">{intake.enabled ? "Close destination" : "Reopen destination"}</button>
+              </form>)}
+              <form data-board-form="intake-create" class="board-form">
+                <label>Destination name <input name="label" maxlength="100" required /></label>
+                <label>Triage column <select name="laneId" required>
+                  {view.lanes.filter(lane => !isDoneStatus(lane.key)).map(lane => <option value={lane.id}>{lane.label}</option>)}
+                </select></label>
+                <fieldset class="board-people"><legend>Allowed senders</legend>
+                  {[...user.roster].map(([id, name]) => <label class="check"><input type="checkbox" name="senderIds" value={id} /> {name}</label>)}
+                </fieldset>
+                <label>Allow assignment to <select name="recipientId">
+                  <option value="">No one</option>
+                  {view.members.filter(member => user.roster.has(member.id)).map(member => <option value={member.id}>{user.roster.get(member.id)}</option>)}
+                </select></label>
+                <p role="status" data-board-feedback></p>
+                <button type="submit" class="btn btn-ghost">Create destination</button>
+              </form>
+            </section>
+          </div>
+        </details>}
+      </div>}
+    <p hidden data-board-expired role="status">Your Board view changed. <button type="button" class="btn btn-ghost" data-board-refresh>Refresh Board</button></p>
+  </div>
+</Layout>
+
+<script>
+  import { pageLifecycle } from "@lib/page-lifecycle"
+  import { bindBoardPage } from "@lib/boards-page"
+  pageLifecycle.onPageLoad(bindBoardPage)
+</script>
