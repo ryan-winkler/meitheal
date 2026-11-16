@@ -838,24 +838,29 @@ test("sync updates skip fields edited after the planner read its snapshot", asyn
     const repo = new TaskRepository(db)
     await db.execute({
       sql: `INSERT INTO tasks (id, title, description, status, priority, labels, framework_payload, area_id, custom_fields, task_type, task_kind, due_date, idempotency_key, request_id, ticket_number, created_at, updated_at)
-            VALUES ('snap-1', 'Edited by hand', '', 'pending', 3, '[]', '{}', 'default', '{}', 'task', 'calendar_event', '2026-12-01', 'cal-sync-snap', 'snap', 950, 1, 1)`,
+            VALUES ('snap-1', 'Edited by hand', '', 'pending', 3, '[]', '{}', 'default', '{}', 'task', 'calendar_event', '2026-12-01', 'cal-sync-snap', 'snap', 950, 1, 3000)`,
       args: [],
     })
-    // The planner read "Calendar title" / 2026-11-30, then the user saved a new title before the commit.
-    const result = await repo.commitSyncMutationChunks([
-      {
-        kind: "update",
-        taskId: "snap-1",
-        title: "Provider title",
-        dueDate: "2026-12-02",
-        updateDueDate: true,
-        expected: { title: "Calendar title", dueDate: "2026-12-01" },
-      },
-    ])
+    // The user changed the title at 3000 after sync planned its update at 2000.
+    const mutation = {
+      kind: "update" as const,
+      taskId: "snap-1",
+      title: "Provider title",
+      dueDate: "2026-12-02",
+      updateDueDate: true,
+      expected: { title: "Calendar title", dueDate: "2026-12-01" },
+      updatedAt: 2000,
+    }
+    const result = await repo.commitSyncMutationChunks([mutation])
     expect(result.errors).toHaveLength(0)
-    const row = await db.execute({ sql: "SELECT title, due_date FROM tasks WHERE id = 'snap-1'", args: [] })
+    const selectTask = "SELECT title, due_date, updated_at FROM tasks WHERE id = 'snap-1'"
+    const row = await db.execute(selectTask)
     expect(String(row.rows[0]?.title)).toBe("Edited by hand")
     expect(String(row.rows[0]?.due_date)).toBe("2026-12-02")
+    expect(Number(row.rows[0]?.updated_at)).toBe(3001)
+
+    await repo.commitSyncMutationChunks([mutation])
+    expect(Number((await db.execute(selectTask)).rows[0]?.updated_at)).toBe(3001)
 
     // The task was open when the plan was made and has been completed since: the plan no
     // longer fits, so the update is skipped as a whole.

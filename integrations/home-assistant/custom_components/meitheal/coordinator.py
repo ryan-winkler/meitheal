@@ -11,6 +11,7 @@ from typing import Any
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.util import dt as dt_util
 
 from .api import (
     MeithealApi,
@@ -79,6 +80,18 @@ class MeithealTask:
         self.created_at = _timestamp(data.get("created_at") or data.get("createdAt"))
         self.updated_at = _timestamp(data.get("updated_at") or data.get("updatedAt"))
 
+    def is_due_on(self, local_now: datetime) -> bool:
+        """Check whether this open task is due on Home Assistant's local date."""
+        if self.status == STATUS_DONE or not isinstance(self.due_date, str):
+            return False
+        try:
+            due = datetime.fromisoformat(self.due_date)
+            if due.tzinfo is not None:
+                due = due.astimezone(local_now.tzinfo)
+        except (ValueError, OverflowError):
+            return False
+        return due.date() == local_now.date()
+
     @property
     def is_overdue(self) -> bool:
         """Check if task is overdue."""
@@ -101,12 +114,9 @@ class MeithealCoordinatorData:
         self.active_count = sum(1 for t in tasks if t.status != "done")
         self.overdue_count = sum(1 for t in tasks if t.is_overdue)
         self.total_count = len(tasks)
-        # Phase 8: additional computed stats
-        today_str = datetime.now(UTC).strftime("%Y-%m-%d")
-        self.due_today_count = sum(
-            1 for t in tasks
-            if t.due_date and t.due_date.startswith(today_str) and t.status != "done"
-        )
+        local_now = dt_util.now()
+        self.due_today_tasks = [task for task in tasks if task.is_due_on(local_now)]
+        self.due_today_count = len(self.due_today_tasks)
         # Streak and XP — populated by coordinator from gamification API
         self.streak: int | None = None
         self.total_points: int | None = None
