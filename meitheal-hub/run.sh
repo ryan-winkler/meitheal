@@ -58,7 +58,7 @@ if [ "${MEITHEAL_SOURCE_LIB_ONLY:-0}" = "1" ]; then
 fi
 
 if [ -z "${MEITHEAL_VERSION:-}" ]; then
-  export MEITHEAL_VERSION="0.0.1"
+  export MEITHEAL_VERSION="0.0.2"
 fi
 export NODE_ENV="production"
 STARTUP_TS=$(date -u +"%Y-%m-%dT%H:%M:%SZ")

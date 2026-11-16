@@ -1,5 +1,5 @@
 name: "Meitheal"
-version: "0.0.1"
+version: "0.0.2"
 slug: "meitheal"
 description: "Household tasks, routines and projects in Home Assistant. Your data stays on your own hardware."
 url: "https://meitheal.io"
