@@ -1454,30 +1454,37 @@
         "type": "object",
         "properties": {
           "id": {
-            "type": "string"
+            "type": "string",
+            "description": "id parameter"
           },
           "name": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 100
           },
-          "identity_statement": {
+          "manifesto": {
             "type": "string",
             "nullable": true
           },
           "icon": {
-            "type": "string",
-            "nullable": true
+            "type": "string"
           },
-          "color": {
-            "type": "string",
-            "nullable": true
+          "colorHex": {
+            "type": "string"
           },
-          "sort_order": {
-            "type": "integer"
+          "weight": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 10
+          },
+          "position": {
+            "type": "number"
+          },
+          "isActive": {
+            "type": "boolean"
           }
         },
         "required": [
-          "id",
-          "name"
+          "id"
         ]
       }
     },

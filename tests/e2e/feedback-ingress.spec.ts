@@ -447,6 +447,23 @@ coreTest("a superseded foreground check cannot restore Personal Pillars after an
   }
 })
 
+coreTest("going offline closes the Pillar editor and releases page scrolling", async ({ browser }) => {
+  const context = await browser.newContext({ extraHTTPHeaders: {} })
+  try {
+    await context.addCookies([{ name: "feedback-fixture", value: "member", url: origin }])
+    const page = await context.newPage()
+    await page.goto(origin + prefix + "/progress#pillars")
+    await page.getByRole("button", { name: "Create new Pillar" }).click()
+    await expect(page.locator("#pillar-form-overlay.active")).toBeVisible()
+    await page.evaluate(() => document.body.style.setProperty("overflow", "hidden"))
+    await context.setOffline(true)
+    await expect(page.getByText("Reconnect and refresh Progress to see your Personal Pillars.")).toBeVisible()
+    expect(await page.evaluate(() => document.body.style.overflow)).toBe("")
+  } finally {
+    await context.close()
+  }
+})
+
 coreTest("database download includes committed writes still in the WAL", async ({ playwright }) => {
   const api = await playwright.request.newContext({ baseURL: origin })
   const dbPath = path.join(work, "meitheal.db")

@@ -1,4 +1,3 @@
-import { PERSONAL_PILLAR_SCHEMA_VERSION } from "../drizzle/migrations/0010_personal_pillars.mjs"
 import { createRequire } from "node:module"
 import { statSync } from "node:fs"
 import { DatabaseSync } from "node:sqlite"
@@ -6,6 +5,7 @@ import { setTimeout as sleepMs } from "node:timers/promises"
 import { LibsqlBatchError, LibsqlError } from "@libsql/core/api"
 import { expandConfig, isInMemoryConfig } from "@libsql/core/config"
 import { ResultSetImpl } from "@libsql/core/util"
+import { PERSONAL_PILLAR_SCHEMA_VERSION } from "../drizzle/migrations/0010_personal_pillars.mjs"
 import {
   readTaskBoardMigrationState, taskBoardMigrationStateSteps,
 } from "../drizzle/migrations/task-board-upgrade.mjs"

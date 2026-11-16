@@ -1,4 +1,3 @@
-import { nextHouseholdTicketNumberSql } from "../../apps/web/drizzle/migrations/task-board-tickets.mjs"
 import { execFileSync } from "node:child_process"
 import { mkdtempSync, rmSync } from "node:fs"
 import { createServer } from "node:http"
@@ -6,6 +5,7 @@ import type { AddressInfo } from "node:net"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { expect, test } from "@playwright/test"
+import { nextHouseholdTicketNumberSql } from "../../apps/web/drizzle/migrations/task-board-tickets.mjs"
 import { GrocyAdapter } from "../../packages/integration-core/src/grocy-adapter"
 
 const prevDbUrl = process.env.MEITHEAL_DB_URL

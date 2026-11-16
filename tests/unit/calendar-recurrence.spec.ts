@@ -1,4 +1,3 @@
-import { nextHouseholdTicketNumberSql } from "../../apps/web/drizzle/migrations/task-board-tickets.mjs"
 /**
  * Calendar Recurrence, CalDAV iCal Compliance, Timed ISO Dates, & Query Tests
  *
@@ -13,6 +12,7 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { expect, test } from "@playwright/test"
+import { nextHouseholdTicketNumberSql } from "../../apps/web/drizzle/migrations/task-board-tickets.mjs"
 import {
   expandRRuleOccurrences,
   getNextOccurrence,

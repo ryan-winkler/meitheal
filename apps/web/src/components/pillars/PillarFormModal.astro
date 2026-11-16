@@ -241,6 +241,7 @@ const { personalForm } = Astro.props
         pillarSection.inert = true
       }
       const clearPersonal = () => {
+        if (pillarSection.querySelector(".modal-overlay.active")) document.body.style.overflow = ""
         const message = document.createElement("p")
         message.textContent = "Reconnect and refresh Progress to see your Personal Pillars."
         pillarSection.replaceChildren(message)

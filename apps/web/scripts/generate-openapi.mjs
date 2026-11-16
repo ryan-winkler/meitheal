@@ -1652,7 +1652,20 @@ const paths = {
   },
   "/api/pillars/{id}": {
     get: { operationId: "getPillar", tags: ["Pillars"], summary: "Get pillar details", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: jsonContent(ref("Pillar"), "Pillar") } },
-    patch: { operationId: "updatePillar", tags: ["Pillars"], summary: "Update a Pillar", description: "Its audience and owner are immutable.", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], requestBody: { content: { "application/json": { schema: ref("Pillar") } } }, responses: { 200: jsonContent(ref("Pillar"), "Updated") } },
+    patch: {
+      operationId: "updatePillar", tags: ["Pillars"], summary: "Update a Pillar", description: "Its audience and owner are immutable.",
+      parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+      requestBody: { content: { "application/json": { schema: { type: "object", properties: {
+        name: { type: "string", maxLength: 100 },
+        manifesto: { type: "string", nullable: true },
+        icon: { type: "string" },
+        colorHex: { type: "string" },
+        weight: { type: "number", minimum: 1, maximum: 10 },
+        position: { type: "number" },
+        isActive: { type: "boolean" },
+      } } } } },
+      responses: { 200: { description: "Pillar updated" }, 404: { description: "Pillar unavailable" } },
+    },
     delete: { operationId: "deletePillar", tags: ["Pillars"], summary: "Delete a pillar", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: { description: "Deleted" } } },
   },
   "/api/pillars/{id}/principles": {

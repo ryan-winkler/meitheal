@@ -15,14 +15,14 @@ export function tableDefinitions(sql) {
   let depth = 0
   let definitionStart = start + 1
   for (let index = definitionStart; index < tokens.length; index++) {
-    const token = tokens[index]
-    if (depth === 0 && (token === "," || token === ")")) {
+    const part = tokens[index]
+    if (depth === 0 && (part === "," || part === ")")) {
       definitions.push(tokens.slice(definitionStart, index).join(" "))
       definitionStart = index + 1
-      if (token === ")") break
-    } else if (token === "(") {
+      if (part === ")") break
+    } else if (part === "(") {
       depth++
-    } else if (token === ")") {
+    } else if (part === ")") {
       depth--
     }
   }
