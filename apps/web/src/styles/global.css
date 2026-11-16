@@ -32,6 +32,7 @@
 @import './_search.css';
 @import './_search-hub.css';
 @import './_modal.css';
+@import './inline-date-picker.css';
 @import './_labels.css';
 @import './_settings-shared.css';
 @import './settings-utilities.css';

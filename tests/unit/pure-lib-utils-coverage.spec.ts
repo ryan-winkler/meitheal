@@ -25,7 +25,8 @@ test("date helpers format calendar-only dates and zoned timestamps across all fo
   const pastDate = new Date(Date.now() - 2 * 3_600_000)
   expect(formatRegionalDate(pastDate, { format: "relative", timezone: "Europe/Dublin" })).toContain("ago")
   expect(formatRegionalDate(ref, { timezone: "Europe/Dublin", fallbackFormat: "yyyy/MM" })).toBe("2026/11")
-  expect(formatRegionalDate(ref, { format: "absolute-iso", timezone: "Invalid/Zone" })).toBe(String(ref))
+  // An unknown time zone falls back to the household default instead of failing.
+  expect(formatRegionalDate(ref, { format: "absolute-iso", timezone: "Invalid/Zone" })).toBe("2026-11-14")
 })
 
 test("filter-engine evaluates all operators, arrays, nested groups, and element datasets", () => {

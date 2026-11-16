@@ -37,6 +37,7 @@ const { tasks } = await getTasksForView({
   descriptionPreviewChars: 240,
   includeDeferred: false,
   excludeCompletedBeforeMs: todayStartMs,
+  timezone: Astro.locals.timezone || "Europe/Dublin",
 })
 const openTasks = tasks.filter((t) => !t.is_done && t.deferred_at === null)
 

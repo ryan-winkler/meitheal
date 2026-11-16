@@ -130,6 +130,9 @@ curl -X POST http://localhost:3000/api/tasks/create \
 
 - `X-Automation-Source`: Send an allowlisted value (`browser`, `webmcp`, `n8n`, `nodered`, `mcp`, `agent`, `a2a`, `ha`, `api`, `webhook`, `cron`). Meitheal logs this value in `metadata.automation_source`.
 - `X-Agent-Id`: Send up to 128 characters (`[A-Za-z0-9._-]`). Meitheal truncates longer values and logs the result in `metadata.agent_id`.
+- `X-Meitheal-Origin-Kind`: Authenticated `Bearer mth_...` callers only (ignored on spoofing/unauthenticated requests); origin kind reported by the token holder (`conversation_agent`, `ha_automation`, `ha_script`, `webhook`, `mcp`, `agent_token`) and stored in `task_activity_log` provenance next to the verified token name.
+- `X-Meitheal-Origin-Name`: Human-readable automation/conversation agent label (control chars stripped, max 120 chars; e.g., `Gemini Conversation`, `Nightly Kitchen Reset`). Percent-encode the UTF-8 value (for example with `encodeURIComponent`) so names such as `Oíche mhaith` survive HTTP headers; Meitheal decodes it.
+- `X-Meitheal-Origin-Target`: Optional root-relative deep-link path that matches the origin kind: `/config/automation/…` for `ha_automation`, `/config/script/…` for `ha_script`, `/config/voice-assistants/…` for `conversation_agent` (no query string or fragment), or a `/settings` path for any kind. Other targets are dropped.
 - `traceparent`: W3C format `00-<32-hex>-<16-hex>-<2-hex>`. Middleware generates a new trace context when `traceparent` is absent or invalid.
 - Outbound webhooks include CloudEvents (`ce-*`) headers and HMAC-SHA256 `x-meitheal-signature` over the JSON payload.
 

@@ -10,6 +10,7 @@
  */
 
 import { readTableFilterParams } from "./filter-state"
+import { renderIconOrCustomEmoji } from "./tabler-svg"
 
 const STORAGE_KEY = "meitheal-selected-area"
 
@@ -128,7 +129,7 @@ export function initAreaSelector(signal: AbortSignal): void {
   function selectArea(areaId: string, areaName: string, areaIcon: string, dispatch: boolean): void {
     // Update trigger display
     labelEl!.textContent = areaName
-    iconEl!.textContent = areaIcon
+    renderIconOrCustomEmoji(iconEl!, areaIcon, "folders", 15)
 
     // Update selected state on options
     const options = dropdown!.querySelectorAll<HTMLElement>("[data-area-id]")

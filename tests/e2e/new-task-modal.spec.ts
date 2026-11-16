@@ -306,9 +306,24 @@ test.describe("Due date capture compatibility", () => {
     await trigger.press("Enter")
     const picker = modal.locator(".nt-due-date-panel")
     await expect(picker).toBeVisible()
+    const pickerStyle = await picker.evaluate(el => {
+      const cs = getComputedStyle(el)
+      return {
+        backgroundColor: cs.backgroundColor,
+        borderTopWidth: cs.borderTopWidth,
+        borderRadius: cs.borderRadius,
+        boxShadow: cs.boxShadow,
+      }
+    })
+    expect(pickerStyle.backgroundColor).not.toBe("rgba(0, 0, 0, 0)")
+    expect(pickerStyle.backgroundColor).not.toBe("transparent")
+    expect(pickerStyle.borderTopWidth).not.toBe("0px")
+    expect(pickerStyle.boxShadow).not.toBe("none")
     const bounds = await picker.boundingBox()
     expect(bounds!.x).toBeGreaterThanOrEqual(0)
+    expect(bounds!.y).toBeGreaterThanOrEqual(0)
     expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(320)
+    expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(740)
     await page.keyboard.press("Escape")
     await expect(picker).toHaveCount(0)
     await expect(trigger).toBeFocused()

@@ -11,6 +11,8 @@
  * @prop streak - Current streak count
  * @prop compact - Use compact sizing for sidebar
  */
+import Icon from "../ui/Icon.astro"
+
 interface Props {
   streak: number
   compact?: boolean
@@ -25,7 +27,9 @@ const { streak, compact = false } = Astro.props
     title={`${streak} day${streak !== 1 ? "s" : ""} streak`}
     aria-label={`${streak} day completion streak`}
   >
-    <span class="streak-badge__icon">🔥</span>
+    <span class="streak-badge__icon inline-flex items-center" aria-hidden="true">
+      <Icon name="flame" size={compact ? 13 : 14} />
+    </span>
     <span class="streak-badge__count">{streak}</span>
     {!compact && <span class="streak-badge__label">day streak</span>}
   </div>

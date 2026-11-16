@@ -33,6 +33,7 @@ const { tasks } = await getTasksForView({
   slim: true,
   descriptionPreviewChars: 240,
   excludeStatuses: ["complete", "archived"],
+  timezone: Astro.locals.timezone || "Europe/Dublin",
 })
 
 // Derive Eisenhower quadrant counts

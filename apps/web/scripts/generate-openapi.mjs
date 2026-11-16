@@ -709,7 +709,7 @@ const paths = {
         { name: "project_id", in: "query", schema: { type: "string" } },
         { name: "assigned_to", in: "query", schema: { type: "string" } },
         { name: "priority", in: "query", schema: { type: "integer" } },
-        { name: "due_date", in: "query", schema: { type: "string", format: "date" }, description: "Match the stored calendar day, either a date-only value or the date written in a stored ISO timestamp. Invalid dates return 400." },
+        { name: "due_date", in: "query", schema: { type: "string", format: "date" }, description: "Match the household calendar day (date-only, floating datetime, or zoned ISO timestamp in the configured household timezone). Invalid dates return 400." },
         { name: "parent_id", in: "query", schema: { type: "string" }, description: "Get subtasks of a parent" },
         { name: "sort", in: "query", schema: { type: "string", enum: ["created_at", "updated_at", "title", "status", "priority", "due_date", "kanban_position"] }, description: "Equal values use task ID ascending; null values sort last." },
         { name: "order", in: "query", schema: { type: "string", enum: ["asc", "desc"], default: "desc" } },
