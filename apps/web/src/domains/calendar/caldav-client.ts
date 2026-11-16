@@ -480,10 +480,32 @@ function safeTimeZone(tzid?: string): string {
   return tzid && isValidTimeZone(tzid) ? tzid : "UTC"
 }
 
+function eventEndFromDuration(start: string, duration: string, allDay: boolean, timezone: string): string | undefined {
+  const parts = /^\+?P(?:(\d+)W|(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?)$/i.exec(duration)
+  if (!parts || /T$/i.test(duration) || (allDay && /T/i.test(duration))) return
+  const [, weeks = "0", days = "0", hours = "0", minutes = "0", seconds = "0"] = parts
+  const calendarDays = Number(weeks) * 7 + Number(days)
+  const clockMs = (Number(hours) * 3600 + Number(minutes) * 60 + Number(seconds)) * 1000
+  if (calendarDays === 0 && clockMs === 0) return
+
+  try {
+    // Weeks and days follow the calendar in the event's zone. The time part is elapsed time.
+    const afterDays = calendarDays > 0 ? shiftWallClock(start, calendarDays * 86_400_000, timezone, allDay) : start
+    if (clockMs === 0) return afterDays
+    const zoned = /Z$/i.test(afterDays)
+    const instant = Date.parse(zoned ? afterDays : `${afterDays}Z`)
+    const end = new Date(instant + clockMs).toISOString().slice(0, 19)
+    return zoned ? `${end}Z` : end
+  } catch {
+    // An out-of-range or malformed date must not discard the other events in the response.
+    return undefined
+  }
+}
+
 /**
  * Parse VEVENT blocks from iCalendar text.
  * Uses colon-safe property parsing (`indexOf(":")`), handles TZID, RRULE, EXDATE,
- * RECURRENCE-ID, nested subcomponents (VALARM), and exclusive all-day DTEND.
+ * RECURRENCE-ID, DURATION, nested subcomponents (VALARM), and exclusive all-day ends.
  */
 export function parseVEvents(ical: string, eventHref: string): CalDAVEvent[] {
   const events: CalDAVEvent[] = []
@@ -505,6 +527,7 @@ export function parseVEvents(ical: string, eventHref: string): CalDAVEvent[] {
     let dtstartParams: Record<string, string> = {}
     let dtendRaw: string | undefined
     let dtendParams: Record<string, string> = {}
+    let duration: string | undefined
     let description: string | undefined
     let location: string | undefined
     let rrule: string | undefined
@@ -547,6 +570,9 @@ export function parseVEvents(ical: string, eventHref: string): CalDAVEvent[] {
           dtendRaw = prop.value
           dtendParams = prop.params
           break
+        case "DURATION":
+          duration = prop.value
+          break
         case "DESCRIPTION":
           description = unescapeICalText(prop.value)
           break
@@ -588,19 +614,16 @@ export function parseVEvents(ical: string, eventHref: string): CalDAVEvent[] {
     const dtstart = formatICalDate(effectiveDtstartRaw, tzid, allDay)
 
     let dtend: string | undefined
-    let inclusiveEndDate: string | undefined
     if (dtendRaw) {
       const endAllDay =
         allDay ||
         dtendParams.VALUE?.toUpperCase() === "DATE" ||
         (/^\d{8}$/.test(dtendRaw) && !dtendRaw.includes("T"))
       dtend = formatICalDate(dtendRaw, dtendParams.TZID ?? tzid, endAllDay)
-      if (allDay) {
-        inclusiveEndDate = dtend > dtstart ? shiftCalendarDay(dtend, -1) : dtstart
-      }
-    } else if (allDay) {
-      inclusiveEndDate = dtstart
+    } else if (duration) {
+      dtend = eventEndFromDuration(dtstart, duration, allDay, safeTimeZone(tzid))
     }
+    const inclusiveEndDate = allDay ? (dtend && dtend > dtstart ? shiftCalendarDay(dtend, -1) : dtstart) : undefined
 
     let recurrenceId: string | undefined
     if (recurrenceIdRaw) {
