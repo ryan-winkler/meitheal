@@ -198,7 +198,7 @@ const priorityClasses: Record<number, string> = {
               </tr>
             </thead>
             <tbody>
-              {rows.map(({ task, depth, parentId, hasChildren, parentOutsidePage }) => {
+              {rows.map(({ task, depth, parentId, hasChildren, parentOutsidePage, epicGroup }) => {
                 const cfEntries = Object.entries(task.custom_fields).filter(
                   ([, v]) => v !== null && v !== undefined && v !== "",
                 );
@@ -217,6 +217,7 @@ const priorityClasses: Record<number, string> = {
                     data-labels={JSON.stringify(task.labels ?? [])}
                     data-title={task.title.toLowerCase()}
                     data-task-type={task.task_type}
+                    data-epic-group={epicGroup}
                     data-task-kind={task.task_kind ?? "standard_action"}
                     data-depth={String(depth)}
                     data-parent-id={parentId ?? ""}
