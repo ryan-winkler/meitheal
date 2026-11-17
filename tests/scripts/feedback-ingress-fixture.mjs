@@ -1,12 +1,28 @@
 import { AsyncLocalStorage } from "node:async_hooks"
 import { once } from "node:events"
 import { readFileSync } from "node:fs"
+import fs from "node:fs/promises"
 import http from "node:http"
 import https from "node:https"
-import { createRequire } from "node:module"
+import { createRequire, syncBuiltinESMExports } from "node:module"
 import { runWithIngressTransport, waitForDownloadDrain } from "../../apps/web/scripts/ingress-transport.mjs"
 
 const pinFixture = process.env.MEITHEAL_PIN_FIXTURE === "1"
+const boardDataDirectory = pinFixture && process.env.MEITHEAL_FIXTURE_BOARD_DATA
+if (boardDataDirectory) {
+  // Give this fixture the isolated grant journal the App normally gets from its /data mount.
+  const remap = value => typeof value === "string" &&
+    (value === "/data" || value === "/data/meitheal-board-grants.json" ||
+      /^\/data\/meitheal-board-grants-pending(?:\/|$)/.test(value))
+    ? boardDataDirectory + value.slice("/data".length) : value
+  for (const name of ["open", "mkdir", "rm"]) {
+    const original = fs[name]
+    fs[name] = (path, ...rest) => original(remap(path), ...rest)
+  }
+  const rename = fs.rename
+  fs.rename = (from, to) => rename(remap(from), remap(to))
+  syncBuiltinESMExports()
+}
 const activeMemberFixture = pinFixture || process.env.MEITHEAL_ACTIVE_MEMBER_FIXTURE === "1"
 const heldBodies = new AsyncLocalStorage()
 if (activeMemberFixture) {

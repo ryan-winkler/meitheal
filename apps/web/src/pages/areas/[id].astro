@@ -16,10 +16,21 @@ import { listSharedGoals, type SharedGoalProgress } from "@domains/tasks/persist
 import { TaskRepository } from "@domains/tasks/persistence/task-repository"
 import { TemplateRepository, type RoutineTemplateRow } from "@domains/tasks/persistence/template-repository"
 import GoalsTab from "../../components/progress/GoalsTab.astro"
+import { boardWorkspaceHref, HOUSEHOLD_BOARD_ID } from "@lib/board-workspace"
+import { buildTaskPath } from "@lib/task-detail-handoff"
 import { isFeatureEnabled } from "../../lib/feature-flags"
 
-const areaId = Astro.params.id
-const areasPath = `${Astro.locals.ingressPath || ""}/planning#spaces`
+const workspaceAreaId = Astro.props.workspaceAreaId as string | undefined
+const areaId = workspaceAreaId ?? Astro.params.id
+const rawOffset = Astro.url.searchParams.get("offset") ?? ""
+const taskOffset = /^\d{1,8}$/.test(rawOffset) ? Number(rawOffset) : 0
+const taskPage = (offset: number) => {
+  const query = new URLSearchParams(Astro.url.searchParams)
+  if (offset) query.set("offset", String(offset))
+  else query.delete("offset")
+  return Astro.url.pathname + "?" + query.toString() + "#tasks"
+}
+const areasPath = `${Astro.locals.ingressPath || ""}${workspaceAreaId ? "/boards/household?view=groups" : "/planning#spaces"}`
 if (!areaId) {
   return Astro.redirect(areasPath)
 }
@@ -31,6 +42,7 @@ let sharedGoals: SharedGoalProgress[] = []
 let projects: ProjectRow[]
 let routines: RoutineTemplateRow[] = []
 let routinesEnabled = false
+let workspaceTasks: Awaited<ReturnType<TaskRepository["findAll"]>> | null = null
 let taskCountByProject: Map<string, { total: number; completed: number }>
 
 try {
@@ -55,6 +67,7 @@ try {
   projects = areaProjects
   routinesEnabled = await isFeatureEnabled("habits")
   if (routinesEnabled) routines = await new TemplateRepository(client).findRoutines(areaId)
+  if (workspaceAreaId) workspaceTasks = await taskRepo.findAll({ workspaceAreaId: areaId, limit: 50, offset: taskOffset })
   taskCountByProject = projects.length ? await taskRepo.getProjectTaskCounts() : new Map()
 } catch (error) {
   logApiError("areas", "Could not load Area details", error)
@@ -71,12 +84,14 @@ const formColor = /^#[0-9a-fA-F]{3}$/.test(areaColor)
 
 const routinesPath = `/habits?area_id=${encodeURIComponent(areaId)}`
 
+const settingsTab = workspaceAreaId ? "group-settings" : "settings"
 const tabs = [
   { id: "overview", label: "Overview", icon: "📊" },
+  ...(workspaceAreaId ? [{ id: "tasks", label: "Tasks", icon: "✅" }] : []),
   { id: "goals", label: "Goals", icon: "🎯" },
   { id: "projects", label: "Projects", icon: "📋" },
   ...(routinesEnabled ? [{ id: "routines", label: "Routines", icon: "🔁" }] : []),
-  { id: "settings", label: "Settings", icon: "⚙️" },
+  { id: settingsTab, label: "Settings", icon: "⚙️" },
 ];
 ---
 
@@ -86,11 +101,11 @@ const tabs = [
     {areaName}
   </span>
   <div slot="actions" class="flex gap-2">
-    <a href="/planning#spaces" class="btn btn-ghost" id="back-to-areas">← Areas</a>
+    <a href={workspaceAreaId ? boardWorkspaceHref(HOUSEHOLD_BOARD_ID, { groups: true }) : "/planning#spaces"} class="btn btn-ghost" id="back-to-areas">← {workspaceAreaId ? "Household groups" : "Areas"}</a>
   </div>
 
   {/* Sub-menu tab bar */}
-  <nav aria-label="Area sections">
+  <nav aria-label={workspaceAreaId ? "Group sections" : "Area sections"}>
     <div class="area-tabs" role="tablist" aria-label="Area sections">
     {tabs.map((tab) => (
       <a
@@ -128,6 +143,28 @@ const tabs = [
     </div>
   </section>
 
+  {workspaceAreaId && <section id="section-tasks" class="area-section" data-section="tasks" role="tabpanel" aria-labelledby="area-tab-tasks" tabindex="0">
+    <div class="section-header">
+      <h2 class="section-title">Tasks</h2>
+      <span class="section-count">{workspaceTasks?.total ?? 0} total</span>
+      <details class="board-add">
+        <summary class="btn btn-primary btn-sm">New task</summary>
+        <form class="board-form" data-group-new-task={areaId}>
+          <label>Title <input name="title" maxlength="500" required /></label>
+          <p role="status" data-group-task-feedback></p>
+          <button type="submit" class="btn btn-primary">Create task</button>
+        </form>
+      </details>
+    </div>
+    {workspaceTasks?.tasks.length ? <ul>{workspaceTasks.tasks.map(task => <li>
+      <a href={buildTaskPath(task.id)}>{task.title}</a>
+    </li>)}</ul> : <p class="section-empty">No tasks in this group yet.</p>}
+    {workspaceTasks && (taskOffset > 0 || taskOffset + 50 < workspaceTasks.total) && <nav aria-label="Group task pages">
+      {taskOffset > 0 && <a class="btn btn-ghost" href={taskPage(Math.max(0, taskOffset - 50))}>Previous tasks</a>}
+      {taskOffset + 50 < workspaceTasks.total && <a class="btn btn-ghost" href={taskPage(taskOffset + 50)}>More tasks</a>}
+    </nav>}
+  </section>}
+
   <section id="section-goals" class="area-section" data-section="goals" role="tabpanel" aria-labelledby="area-tab-goals" tabindex="0">
     <GoalsTab {areaId} {sharedGoals} />
   </section>
@@ -164,7 +201,7 @@ const tabs = [
           const projColor = String(proj.color ?? "#146C4E");
           const projIcon = String(proj.icon ?? "📋");
           return (
-            <a href={`/projects/${String(proj.id)}`} class="project-card" style={`--project-accent: ${projColor};`}>
+            <a href={workspaceAreaId ? boardWorkspaceHref(HOUSEHOLD_BOARD_ID, { project: String(proj.id), fromArea: areaId }) : `/projects/${String(proj.id)}`} class="project-card" style={`--project-accent: ${projColor};`}>
               <div class="project-card-header">
                 <span class="project-card-icon">{projIcon}</span>
                 <h4 class="project-card-name">{String(proj.title)}</h4>
@@ -187,7 +224,7 @@ const tabs = [
   </section>
 
   {/* Settings Section */}
-  <section id="section-settings" class="area-section" data-section="settings" role="tabpanel" aria-labelledby="area-tab-settings" tabindex="0">
+  <section id={`section-${settingsTab}`} class="area-section" data-section={settingsTab} role="tabpanel" aria-labelledby={`area-tab-${settingsTab}`} tabindex="0">
     <div class="section-header">
       <h2 class="section-title">Area Settings</h2>
     </div>
@@ -449,6 +486,32 @@ const tabs = [
 </style>
 
 <script>
+  pageLifecycle.onPageLoad(signal => {
+    const form = document.querySelector<HTMLFormElement>("[data-group-new-task]")
+    const feedback = form?.querySelector("[data-group-task-feedback]")
+    const submit = form?.querySelector<HTMLButtonElement>('button[type="submit"]')
+    if (!form || !feedback || !submit) return
+    form.addEventListener("submit", async event => {
+      event.preventDefault()
+      if (submit.disabled) return
+      submit.disabled = true
+      const title = String(new FormData(form).get("title") ?? "")
+      try {
+        const response = await fetch("/api/tasks", {
+          method: "POST", headers: { "Content-Type": "application/json" }, signal,
+          body: JSON.stringify({ title, placement: { areaId: form.dataset.groupNewTask } }),
+        })
+        const data = await response.json()
+        if (!response.ok) throw new Error(data.error || "Could not create the task.")
+        window.location.reload()
+      } catch (error) {
+        if (!signal.aborted) feedback.textContent = error instanceof Error ? error.message : "Could not create the task."
+      } finally {
+        submit.disabled = false
+      }
+    }, { signal })
+  })
+
   import { confirmDialog } from "../../lib/confirm-dialog"
   import { pageLifecycle } from "../../lib/page-lifecycle"
   import { promptDialog } from "../../lib/prompt-dialog"

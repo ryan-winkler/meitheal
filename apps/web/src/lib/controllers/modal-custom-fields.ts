@@ -335,9 +335,11 @@ export function initCustomFields({ saveTD, getSettingsFields, signal }: CustomFi
           input.value = ""
         }
       }
-      if (e.key === "Escape") {
-        document.getElementById("td-add-cf-dropdown")!.style.display =
-          "none"
+      const dropdown = document.getElementById("td-add-cf-dropdown")
+      if (e.key === "Escape" && dropdown?.style.display === "block") {
+        e.preventDefault()
+        dropdown.style.display = "none"
+        document.getElementById("td-add-cf")?.focus()
       }
     }, opts)
 

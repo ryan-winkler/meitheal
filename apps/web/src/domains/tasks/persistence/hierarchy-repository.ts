@@ -85,6 +85,25 @@ export class HierarchyRepository {
     return result.rows.map(r => this.mapArea(r as Record<string, unknown>))
   }
 
+  async findAreaPage(after: string | null) {
+    const { rows } = await this.client.execute({
+      sql: `WITH marker AS (
+          SELECT position, name, id FROM areas WHERE id = ? AND owner_board_id IS NULL AND retired_at IS NULL
+        )
+        SELECT item.id, item.name FROM areas AS item
+        WHERE item.owner_board_id IS NULL AND item.retired_at IS NULL AND (
+          ? IS NULL OR EXISTS (
+            SELECT 1 FROM marker WHERE (item.position, item.name COLLATE NOCASE, item.id) >
+              (marker.position, marker.name COLLATE NOCASE, marker.id)
+          )
+        )
+        ORDER BY item.position, item.name COLLATE NOCASE, item.id LIMIT 31`,
+      args: [after, after],
+    })
+    const items = rows.slice(0, 30).map(row => ({ id: String(row.id), name: String(row.name) }))
+    return { items, next_cursor: rows.length > 30 ? items.at(-1)!.id : null }
+  }
+
   async findAreaById(id: string): Promise<AreaRow | null> {
     const result = await this.client.execute({
       sql: "SELECT * FROM areas WHERE id = ? AND owner_board_id IS NULL AND retired_at IS NULL",
