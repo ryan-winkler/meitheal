@@ -1,5 +1,5 @@
 import type { FilterCondition, FilterGroup } from "./filter-engine"
-import { readFilterLabels, readTaskKindFilter, writeFilterLabels, type FilterState } from "./filter-state"
+import { normalizeStatusRuleValue, readFilterLabels, readTaskKindFilter, writeFilterLabels, type FilterState } from "./filter-state"
 import { normalizeStatus } from "./status-config"
 
 export const KANBAN_PAGE_SIZE = 25
@@ -30,7 +30,7 @@ export function readKanbanRules(raw: string | null): FilterGroup | undefined {
         id: String(conditions.length),
         field: item.field,
         operator: item.operator,
-        value: item.value,
+        value: normalizeStatusRuleValue(item.field, item.operator, item.value),
         logic: item.logic === "OR" ? "OR" : "AND",
       })
     }

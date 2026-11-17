@@ -180,6 +180,10 @@ export function writeFilterLabels(params: URLSearchParams, labels: readonly stri
   }
 }
 
+export function normalizeStatusRuleValue(field: string, operator: string, value: string): string {
+  return field === "status" && (operator === "equals" || operator === "notEquals") ? normalizeStatus(value) : value
+}
+
 function ruleValue(value: unknown): value is string | number | boolean {
   return typeof value === "boolean" || (typeof value === "number" && Number.isFinite(value)) ||
     (typeof value === "string" && value.length <= 500)
@@ -211,9 +215,7 @@ export function normalizeTableRules(raw: unknown): FilterGroup | undefined {
         id: typeof item.id === "string" && item.id.length <= 100 ? item.id : String(count),
         field,
         operator: operator as FilterOperator,
-        value: field === "status" && typeof value === "string" && (operator === "equals" || operator === "notEquals")
-          ? normalizeStatus(value)
-          : value ?? "",
+        value: typeof value === "string" ? normalizeStatusRuleValue(field, operator, value) : value ?? "",
         ...(item.logic === "OR" || item.logic === "AND" ? { logic: item.logic } : {}),
       })
     }

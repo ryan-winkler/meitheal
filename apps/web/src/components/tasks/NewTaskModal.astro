@@ -1154,9 +1154,9 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
           showFieldError(taskDraftText("reference_required"))
           return
         }
-        const start = eventDateValue("nt-event-start")
-        const end = eventDateValue("nt-event-end")
-        const invalidDates = kindInput?.value === "calendar_event" && !!start && !!end && new Date(end) <= new Date(start)
+        const start = displayedDate(eventDateValue("nt-event-start"))
+        const end = displayedDate(eventDateValue("nt-event-end"))
+        const invalidDates = kindInput?.value === "calendar_event" && !!start && !!end && end <= start
         const dateError = document.getElementById("nt-date-error")
         if (dateError) dateError.hidden = !invalidDates
         if (invalidDates) {

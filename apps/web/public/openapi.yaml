@@ -1970,6 +1970,11 @@ paths:
             type: string
             format: date
           description: Household day shown by the caller. A rollover returns 409.
+        - name: expected_timezone
+          in: query
+          schema:
+            type: string
+          description: Household timezone shown by the caller. A timezone change returns 409.
       responses:
         "200":
           description: Today counters
@@ -2016,7 +2021,7 @@ paths:
                       additionalProperties: false
                 additionalProperties: false
         "409":
-          description: The household day changed
+          description: The household day or timezone changed
         "503":
           description: Today counters unavailable
           content:
@@ -2730,6 +2735,11 @@ paths:
             type: string
             format: date
           description: Household day the caller reviewed. A rollover returns 409 without changing any tasks.
+        - name: expected_timezone
+          in: query
+          schema:
+            type: string
+          description: Household timezone the caller reviewed. A timezone change returns 409 without changing any tasks.
       responses:
         "200":
           description: Count of archived tasks
@@ -2749,7 +2759,7 @@ paths:
                     type: string
                 additionalProperties: false
         "409":
-          description: The household day changed
+          description: The household day or timezone changed
   /api/tasks/delete-completed:
     get:
       operationId: previewDeleteCompletedTasks

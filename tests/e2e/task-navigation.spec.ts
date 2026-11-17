@@ -655,6 +655,20 @@ test("legacy Shopping type filters survive view switches and respect Table searc
     await views.getByRole("link", { name: "Kanban", exact: true }).click()
     await expect(page.locator("#kanban-shell").getByText(titles[0]!, { exact: true })).toBeVisible()
     await expect(page.locator("#kanban-shell").getByText(titles[1]!, { exact: true })).toHaveCount(0)
+
+    legacyStatus.delete("status")
+    legacyStatus.set("advancedFilter", JSON.stringify({
+      id: "root", logic: "AND",
+      conditions: [{ id: "status", field: "status", operator: "equals", value: "in_progress" }],
+    }))
+    await page.goto("/tasks?" + legacyStatus + "#calendar")
+    await page.locator(`.cal-cell[data-date="${due}"]`).press("Enter")
+    await expect(page.locator("#day-drawer-tasks").getByText(titles[0]!, { exact: true })).toBeVisible()
+    await expect(page.locator("#day-drawer-tasks").getByText(titles[1]!, { exact: true })).toHaveCount(0)
+    await page.keyboard.press("Escape")
+    await views.getByRole("link", { name: "Kanban", exact: true }).click()
+    await expect(page.locator("#kanban-shell").getByText(titles[0]!, { exact: true })).toBeVisible()
+    await expect(page.locator("#kanban-shell").getByText(titles[1]!, { exact: true })).toHaveCount(0)
   } finally {
     await request.put("/api/settings", { headers, data: { key: "sidebar_config", value: previous ?? null } })
     for (const id of ids) await request.delete(`/api/tasks/${id}`, { headers })

@@ -1,6 +1,7 @@
 import type { KanbanIndexRow, KanbanLane, TaskRepository } from "@domains/tasks/persistence/task-repository"
 import { isTaskVisible } from "./filter-state"
 import { KANBAN_PAGE_SIZE, readKanbanFilters, readKanbanPage } from "./kanban-query"
+import { normalizeStatus } from "./status-config"
 
 export async function loadKanbanBoard(
   repo: TaskRepository,
@@ -32,7 +33,7 @@ export async function loadKanbanBoard(
       const dataset = {
         title: task.title ?? "",
         search: task.title?.toLowerCase() ?? "",
-        status: task.status,
+        status: normalizeStatus(task.status),
         overdue: task.overdue === 1 ? "true" : undefined,
         priority: String(task.priority ?? 3),
         taskType: task.task_type ?? "task",

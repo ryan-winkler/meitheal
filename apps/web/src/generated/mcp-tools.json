@@ -105,6 +105,10 @@
             "type": "string",
             "format": "date",
             "description": "Household day shown by the caller. A rollover returns 409."
+          },
+          "expected_timezone": {
+            "type": "string",
+            "description": "Household timezone shown by the caller. A timezone change returns 409."
           }
         }
       }
@@ -374,6 +378,10 @@
             "type": "string",
             "format": "date",
             "description": "Household day the caller reviewed. A rollover returns 409 without changing any tasks."
+          },
+          "expected_timezone": {
+            "type": "string",
+            "description": "Household timezone the caller reviewed. A timezone change returns 409 without changing any tasks."
           }
         }
       }
@@ -2505,7 +2513,8 @@
       "pathParams": [],
       "queryParams": [
         "completed",
-        "expected_day"
+        "expected_day",
+        "expected_timezone"
       ]
     },
     "createTask": {
@@ -2564,7 +2573,8 @@
       "hasBody": true,
       "pathParams": [],
       "queryParams": [
-        "expected_day"
+        "expected_day",
+        "expected_timezone"
       ]
     },
     "previewDeleteCompletedTasks": {

@@ -123,7 +123,7 @@ interface CalDay {
   isToday: boolean;
   isWeekend: boolean;
   taskCount: number;
-  calendarEventLabel: string | undefined;
+  calendarEventCount: number;
   colors: string[];
 }
 
@@ -149,9 +149,7 @@ for (let week = 0; week < 6; week++) {
       isToday: dateStr === todayStr,
       isWeekend: isWeekendFn(dow),
       taskCount: (dayData?.count ?? 0) - scheduledEvents,
-      calendarEventLabel: calendarEventCount > 0
-        ? `${calendarEventCount} calendar event${calendarEventCount === 1 ? "" : "s"}`
-        : undefined,
+      calendarEventCount,
       colors: dayData?.colors ?? [],
     });
     currentDay++;
@@ -230,15 +228,15 @@ const agendaNote = filter.matches && !Object.values(tasksByDay).some(day => day.
                   >
                     {cell.day}<span class="sr-only">{` ${monthName}`}</span>
                   </span>
-                  {(cell.taskCount > 0 || cell.calendarEventLabel) && (
+                  {(cell.taskCount > 0 || cell.calendarEventCount > 0) && (
                     <div class="cal-task-indicator">
                       {cell.taskCount > 0 && <span class="cal-task-badge">
                         {cell.taskCount}<span class="sr-only">{cell.taskCount === 1 ? " task" : " tasks"}</span>
                       </span>}
-                      {cell.calendarEventLabel && (
-                        <span class="cal-ha-badge" title={cell.calendarEventLabel}>
+                      {cell.calendarEventCount > 0 && (
+                        <span class="cal-event-badge">
                           <Icon name="calendar-event" size={12} />
-                          <span class="sr-only">{cell.calendarEventLabel}</span>
+                          <span>{cell.calendarEventCount}<span class="sr-only">{cell.calendarEventCount === 1 ? " calendar event" : " calendar events"}</span></span>
                         </span>
                       )}
                       {cell.colors.length > 0 && (
@@ -475,7 +473,18 @@ const agendaNote = filter.matches && !Object.values(tasksByDay).some(day => day.
     border-radius: 50%;
     box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.2);
   }
-  .cal-ha-badge { display: inline-flex; color: var(--text-secondary); }
+  .cal-event-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    max-width: 100%;
+    color: var(--text-secondary);
+    font-size: 10px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    overflow-wrap: anywhere;
+  }
+  .cal-event-badge svg { flex-shrink: 0; }
 
   @media (max-width: 640px) {
     .calendar-navigation .btn { min-height: 44px; }
