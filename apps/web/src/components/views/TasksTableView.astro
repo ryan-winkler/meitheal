@@ -202,7 +202,7 @@ const priorityClasses: Record<number, string> = {
               </tr>
             </thead>
             <tbody>
-              {rows.map(({ task, depth, parentId, hasChildren, parentOutsidePage, workflowColumnId }) => {
+              {rows.map(({ task, depth, parentId, hasChildren, parentOutsidePage, workflowColumnId, epicGroup }) => {
                 const cfEntries = Object.entries(task.custom_fields).filter(
                   ([, v]) => v !== null && v !== undefined && v !== "",
                 );
@@ -223,6 +223,7 @@ const priorityClasses: Record<number, string> = {
                     data-task-type={task.task_type}
                     data-workflow-column-id={groupByWorkflow ? workflowColumnId || undefined : undefined}
                     data-workflow-label={groupByWorkflow ? workflowLabels.get(workflowColumnId) ?? noWorkflowLabel : undefined}
+                    data-epic-group={epicGroup}
                     data-task-kind={task.task_kind ?? "standard_action"}
                     data-depth={String(depth)}
                     data-parent-id={parentId ?? ""}

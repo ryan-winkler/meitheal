@@ -100,6 +100,7 @@ const defaultGroupByOptions = view === "table"
   ? [
       { value: "none", label: "No Grouping" },
       { value: "type", label: "Type" },
+      { value: "epic", label: t("table.group_epic", locale) },
       { value: "priority", label: "Priority" },
       { value: "area", label: "Area" },
       { value: "assignee", label: "Assignee" },
@@ -278,6 +279,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
           { value: "workflow", label: t("table.subgroup_workflow", locale) },
           { value: "priority", label: "Then by Priority" },
           { value: "type", label: "Then by Type" },
+          { value: "epic", label: t("table.subgroup_epic", locale) },
           { value: "area", label: "Then by Area" },
           { value: "assignee", label: "Then by Assignee" },
           { value: "rice", label: "Then by RICE" }

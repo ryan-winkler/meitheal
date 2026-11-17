@@ -2,6 +2,10 @@ import { expect, test } from "@playwright/test"
 
 import {
   isTaskVisible,
+  clearFilterState,
+  loadFilterState,
+  loadTableFilterState,
+  saveTableFilterState,
   normalizeSavedFilter,
   readTableFilterParams,
   tableNeedsWorkflowColumns,
@@ -145,4 +149,72 @@ test("Table workflow grouping round-trips and leaves other task views with compa
   writeTableFilterParams(url.searchParams, { subGroupBy: "workflow" })
   expect(tableNeedsWorkflowColumns(readTableFilterParams(url.searchParams))).toBe(false)
   expect(normalizeSavedFilter({ groupBy: "workflow", subGroupBy: "workflow" })).toEqual({ area: "", groupBy: "workflow" })
+})
+
+test("Epic Table presentation survives saved filters and URL normalization at both levels", () => {
+  for (const [groupBy, subGroupBy] of [["epic", "status"], ["priority", "epic"]]) {
+    const state = normalizeSavedFilter({ groupBy, subGroupBy, area: "kitchen" })!
+    const params = new URLSearchParams()
+    writeTableFilterParams(params, state)
+    expect(readTableFilterParams(params)).toEqual(state)
+  }
+  expect(normalizeSavedFilter({ groupBy: "epic", subGroupBy: "epic" })).toEqual({
+    area: "", groupBy: "epic",
+  })
+  expect(normalizeSavedFilter({ subGroupBy: "epic" })).toEqual({ area: "" })
+})
+
+
+test("Table restores its Epic presentation without leaking it into shared view filters", () => {
+  const names = ["window", "document", "location", "history", "localStorage"] as const
+  const previous = new Map(names.map(name => [name, Object.getOwnPropertyDescriptor(globalThis, name)]))
+  const values = new Map<string, string>()
+  let href = "http://localhost/tasks?view=table"
+  const install = (name: string, value: unknown) => Object.defineProperty(globalThis, name, { configurable: true, writable: true, value })
+  install("window", { __ingress_path: "" })
+  install("document", { dispatchEvent: () => true })
+  install("location", { get href() { return href } })
+  install("history", { state: null, replaceState: (_state: unknown, _unused: string, url?: string | URL) => { if (url) href = String(url) } })
+  install("localStorage", {
+    getItem: (key: string) => values.get(key) ?? null,
+    setItem: (key: string, value: string) => { values.set(key, value) },
+    removeItem: (key: string) => { values.delete(key) },
+  })
+  try {
+    for (const state of [
+      { groupBy: "epic", subGroupBy: "status" },
+      { groupBy: "priority", subGroupBy: "epic" },
+      { groupBy: "epic", subGroupBy: "workflow" },
+      { groupBy: "workflow", subGroupBy: "epic" },
+    ]) {
+      href = "http://localhost/tasks?view=table"
+      saveTableFilterState({ ...state, search: "pump" })
+      href = "http://localhost/tasks?view=table"
+      expect(loadTableFilterState()).toMatchObject({ ...state, search: "pump" })
+      href = "http://localhost/tasks?view=kanban"
+      const shared = loadFilterState()
+      expect(shared.groupBy).not.toBe("epic")
+      expect(shared.subGroupBy).not.toBe("epic")
+      expect(shared.groupBy).not.toBe("workflow")
+      expect(shared.subGroupBy).not.toBe("workflow")
+      href = "http://localhost/tasks?view=table&groupBy=status"
+      expect(loadTableFilterState()).toEqual({ groupBy: "status" })
+    }
+    href = "http://localhost/tasks?view=table"
+    saveTableFilterState({ groupBy: "status" })
+    href = "http://localhost/tasks?view=table"
+    expect(loadTableFilterState()).toEqual({ groupBy: "status" })
+    values.set("meitheal-table-grouping", "{broken")
+    expect(loadTableFilterState()).toEqual({ groupBy: "status" })
+    saveTableFilterState({ groupBy: "epic" })
+    clearFilterState()
+    expect(loadTableFilterState()).toEqual({})
+    expect(values.size).toBe(0)
+  } finally {
+    for (const name of names) {
+      const descriptor = previous.get(name)
+      if (descriptor) Object.defineProperty(globalThis, name, descriptor)
+      else Reflect.deleteProperty(globalThis, name)
+    }
+  }
 })

@@ -69,20 +69,22 @@ export function taskViewUrl(current: URL, view: TaskView, explicitFilters = fals
   } else {
     url.searchParams.set("view", view)
   }
-  if (view !== "table") url.searchParams.delete("tp")
+  if (view !== "table") {
+    const params = url.searchParams
+    const groupBy = params.get("groupBy")
+    const subGroupBy = params.get("subGroupBy")
+    if (groupBy === "epic" || groupBy === "workflow") {
+      params.delete("groupBy")
+      params.delete("subGroupBy")
+    } else if (subGroupBy === "epic" || subGroupBy === "workflow") {
+      params.delete("subGroupBy")
+    }
+    params.delete("tp")
+  }
   // An explicit empty search skips legacy stored filters without overriding the remembered Area.
   if (explicitFilters && (view === "table" || view === "timeline") &&
     !TASK_PERSISTED_FILTER_KEYS.some(key => url.searchParams.has(key))) {
     url.searchParams.set("search", "")
-  }
-  if (view !== "table") {
-    const params = url.searchParams
-    if (params.get("groupBy") === "workflow") {
-      params.delete("groupBy")
-      params.delete("subGroupBy")
-    } else if (params.get("subGroupBy") === "workflow") {
-      params.delete("subGroupBy")
-    }
   }
   url.hash = view
   return url
