@@ -1799,28 +1799,6 @@ try {
     flex-direction: column;
     margin-bottom: 0px;
   }
-  :global(#kanban-board .swimlane-header) {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 8px 12px;
-    border: 0;
-    text-align: start;
-    background: var(--bg-hover);
-    cursor: pointer;
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--text-secondary);
-    transition: background 200ms;
-    user-select: none;
-  }
-  :global(#kanban-board .swimlane-header:hover) {
-    background: var(--bg-secondary);
-  }
-  :global(#kanban-board .swimlane-header:focus-visible) {
-    outline: 2px solid var(--accent);
-    outline-offset: -2px;
-  }
   .swimlane-toggle {
     font-size: 10px;
     color: var(--text-muted);
@@ -1848,9 +1826,6 @@ try {
     display: flex;
     flex-direction: column;
     gap: 6px;
-  }
-  :global(#kanban-board .swimlane-collapsed .swimlane-toggle) {
-    transform: rotate(-90deg);
   }
 
   /* Accessibility: suppress transitions for reduced-motion users */

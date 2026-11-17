@@ -429,6 +429,35 @@
   @apply bg-bg-hover;
 }
 
+#kanban-board .swimlane-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border: 0;
+  text-align: start;
+  background: var(--bg-hover);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  transition: background 200ms;
+  user-select: none;
+}
+
+#kanban-board .swimlane-header:hover {
+  background: var(--bg-secondary);
+}
+
+#kanban-board .swimlane-header:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+#kanban-board .swimlane-collapsed .swimlane-toggle {
+  transform: rotate(-90deg);
+}
+
 #kanban-board .swimlane-cards[hidden] {
   display: none;
 }
