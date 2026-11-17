@@ -296,6 +296,8 @@
     "group_by_tooltip": "Grúpáil snámhlána de réir"
   },
   "table": {
+    "unavailable_area": "Réimse nach bhfuil ar fáil",
+    "area_catalog_failed": "Níorbh fhéidir ainmneacha na réimsí a lódáil.",
     "group_epic": "Eipic",
     "subgroup_epic": "Ansin de réir Eipice",
     "no_epic": "Gan Eipic",

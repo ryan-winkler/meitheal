@@ -225,6 +225,7 @@ function lanePageHref(key: string, page: number) {
 
 // SSR: fetch areas for the AreaSelector
 let areas: { id: string; name: string; icon: string; color: string }[] = [];
+let areaCatalogReady = false
 try {
   const rawAreas = await hierarchyRepo.findAllAreas();
   areas = rawAreas.map((a) => ({
@@ -233,6 +234,7 @@ try {
     icon: String(a.icon ?? "📁"),
     color: String(a.color ?? "var(--accent)"),
   }));
+  areaCatalogReady = true
 } catch {
   /* areas table may not exist yet */
 }
@@ -254,7 +256,7 @@ const kanbanAreas = new Map(areas.map(area => [area.id, area]))
       return { id: view, href: url.pathname + url.search + url.hash, label: TASK_VIEW_LABELS[view], icon: TASK_VIEW_ICONS[view], active: view === renderedView }
     })}
   >
-    <AreaSelector slot="context" areas={areas} />
+    <AreaSelector slot="context" areas={areas} catalogReady={areaCatalogReady} />
   </UnifiedBar>
   {householdWorkspace && <nav class="board-context-tabs" aria-label="Board workspace">
     <a class="btn btn-ghost" href="/boards">Boards</a>
