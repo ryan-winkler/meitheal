@@ -5,6 +5,8 @@ on:
   pull_request:
     paths:
       - "meitheal-hub/Dockerfile"
+      - "meitheal-hub/run.sh"
+      - "meitheal-hub/rootfs/etc/services.d/**"
       - "meitheal-hub/toolchain/**"
       - "meitheal-hub/build.json"
       - "meitheal-hub-canary/build.json"
