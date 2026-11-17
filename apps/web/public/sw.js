@@ -220,15 +220,16 @@ function isBoardRequest(path, params) {
 }
 
 const privateBoardPath = /^\/(?:api\/)?boards(?:\/|$)|^\/api\/board-intake$/
+const organizationApiPath = /^\/api\/(?:features|organization-features|organization-labels|habits|gamification|achievements|areas|projects|goals)(?:\/|$)/
 
 function privateResourcePath(url) {
   const privatePath = pathname => {
     const path = appRoutePath(pathname)
-    if (/^\/(?:planning|today|upcoming|habits)(?:\/|$)/.test(path) ||
-        /^\/api\/(?:features|organization-features|organization-labels|habits|gamification|achievements|areas|projects|goals)(?:\/|$)/.test(path) ||
+    if (/^\/(?:planning|today|upcoming|habits|areas|projects)(?:\/|$)/.test(path) ||
+        organizationApiPath.test(path) ||
         privateBoardPath.test(path) || path === "/api/export/database.sqlite" || path === "/api/task-pins" ||
         path === "/pinned" || path === "/activity" || path === "/api/search" ||
-        path === "/progress" || path === "/goals" || /^\/api\/goals(?:\/[^/]+)?$/.test(path) || /^\/areas\/[^/]+$/.test(path) ||
+        path === "/progress" || path === "/goals" ||
         /^\/(?:api\/)?pillars(?:\/|$)/.test(path) ||
         path === "/api/comment-people" || path === "/api/mention-inbox" || path === "/mention-inbox" ||
         path === "/api/saved-filters" || path === "/api/task-drafts" ||
@@ -332,7 +333,13 @@ self.addEventListener("fetch", (event) => {
   // Keep sensitive API routes out of Cache Storage, even before the worker receives an ingress path.
   const apiPath = url.pathname.replace(/^\/api\/hassio_ingress\/[^/]+/, "");
   const privatePath = privateResourcePath(url)
-  if (privatePath) {
+  const pagePath = appRoutePath(url.pathname)
+  if (isNetworkOnlyPage(pagePath, url.searchParams)) return
+  // Keep direct network reads for existing clients that own their offline handling.
+  if (privatePath && (privateBoardPath.test(privatePath) || taskHistoryPath.test(privatePath) ||
+      organizationApiPath.test(privatePath) ||
+      /^\/(?:planning|progress|activity|areas\/[^/]+)$/.test(privatePath) ||
+      (url.search && isBoardRequest(privatePath, url.searchParams)))) {
     const headers = { "cache-control": "private, no-store" }
     event.respondWith(fetch(event.request, { cache: "no-store" })
       .catch(() => privatePath.startsWith("/api/")
@@ -340,10 +347,7 @@ self.addEventListener("fetch", (event) => {
         : new Response("Offline", { status: 503, headers })))
     return
   }
-  if (/^\/api\/(?:settings|ha\/connection|feedback|agent-tokens|export\/database\.sqlite)(?:\/|$)/.test(apiPath)) return;
-
-  const pagePath = appRoutePath(url.pathname)
-  if (isNetworkOnlyPage(pagePath, url.searchParams)) return
+  if (privatePath || /^\/api\/(?:settings|ha\/connection|feedback|agent-tokens|export\/database\.sqlite)(?:\/|$)/.test(apiPath)) return;
   if (pagePath === "/planning") {
     event.respondWith(navigationHandler(event.request))
     return

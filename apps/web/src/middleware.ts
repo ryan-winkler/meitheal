@@ -227,7 +227,8 @@ export const onRequest: MiddlewareHandler = async (context, next) => {
   const boardPlanningRoute = /^\/(?:api\/)?boards(?:\/|$)/.test(routePattern) || routePattern === "/api/board-intake" || routePattern === "/goals" || routePattern === "/areas/[id]" || routePattern === "/api/goals" || routePattern === "/api/goals/[id]"
   const privateOrganizationRoute = routePattern === "/api/organization-labels" ||
     routePattern === "/api/organization-features" || routePattern === "/api/ha/areas" ||
-    routePattern.endsWith("/home-assistant-area")
+    routePattern.endsWith("/home-assistant-area") ||
+    /^\/(?:planning|today|upcoming|habits|areas|projects)(?:\/|$)/.test(routePattern)
   const privateTaskRoute = privateOrganizationRoute || pinRoute || draftRoute || inactivityApi || inactivityPage || mentionRoute || labelCleanup
   if (!privateTaskRoute && !onlineReadRoute && !taskHistoryRoute && !participantRoute && !privatePillars && !boardPlanningRoute) {
     return handleRequest(context, next, requestUrl)

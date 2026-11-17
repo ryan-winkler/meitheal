@@ -178,7 +178,7 @@ test("a missing Deferred Area stays visible on the Board until the user widens i
     await expect(area).toHaveValue(id)
     await page.getByRole("link", { name: "Back to Tasks" }).click()
     const trigger = page.locator("#area-selector-trigger")
-    await expect(trigger).toContainText("Unavailable Area")
+    await expect(trigger).toContainText("Group unavailable")
     const add = page.getByRole("button", { name: "Add task to Backlog" })
     await add.click()
     await expect(page.getByRole("alert")).toContainText("Choose an available Area or All Areas before adding a task.")
