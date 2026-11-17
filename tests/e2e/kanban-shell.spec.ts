@@ -88,6 +88,10 @@ test.describe("Tasks Shell (Kanban)", () => {
 
   test("retains the assigned Home Assistant identity when its directory cannot verify it", async ({ page, request, baseURL }) => {
     const idFromHa = "ha_0123456789abcdef0123456789abcdef"
+    await page.addInitScript(() => {
+      localStorage.setItem("meitheal-theme", "knight-rider")
+      localStorage.setItem("meitheal-accent-color", "#000000")
+    })
     const headers = { origin: new URL(baseURL!).origin }
     const response = await request.post("/api/tasks", { headers, data: {
       title: "Check assignee availability", assigned_to: idFromHa,
@@ -121,6 +125,7 @@ test.describe("Tasks Shell (Kanban)", () => {
       const dialog = page.getByRole("dialog", { name: "Assign User" })
       const retry = dialog.getByRole("button", { name: "Retry" })
       await expect(retry).toBeFocused()
+      await expect(retry).toHaveCSS("outline-color", "rgb(166, 192, 249)")
       directoryMode = "stale"
       await retry.press("Enter")
       await expect(dialog).toContainText("Home Assistant assignee not verified")
@@ -138,6 +143,11 @@ test.describe("Tasks Shell (Kanban)", () => {
       await expect(selected).toHaveText("Could not load assignee")
       await expect(selected).toHaveAttribute("value", idFromHa)
       await expect(page.locator(`#td-assigned-to option[value="${olderUser.id}"]`)).toHaveCount(0)
+      await page.keyboard.press("Escape")
+      await card.locator(".card-color-btn").press("Enter")
+      const blue = page.getByRole("radio", { name: "Set color: Blue" })
+      await blue.focus()
+      await expect(blue).toHaveCSS("outline-color", "rgb(166, 192, 249)")
     } finally {
       await request.delete(`/api/tasks/${id}`, { headers })
     }

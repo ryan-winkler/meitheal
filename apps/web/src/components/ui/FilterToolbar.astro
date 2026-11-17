@@ -1146,7 +1146,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
     // Add Escape key handler to clear filters if they are active
     document.addEventListener("keydown", (e) => {
       if (e.key !== "Escape" || e.defaultPrevented ||
-          (e.target as Element | null)?.closest?.('[role="dialog"], [role="alertdialog"]')) return
+          (e.target as Element | null)?.closest?.('#sidebar, [role="dialog"], [role="alertdialog"]')) return
       if (e.target instanceof Node && advPanel?.contains(e.target) && !advPanel.classList.contains("hidden")) {
         e.preventDefault()
         closeAdvancedPanel(true)

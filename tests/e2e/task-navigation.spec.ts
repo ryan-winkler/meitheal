@@ -88,6 +88,16 @@ test("old task pins and visibility move to New task while view pins navigate and
   await expect(viewToggle).toBeFocused()
   await expect(viewOptions).toBeHidden()
 
+  await page.goto("/tasks?types=shopping_item#kanban")
+  await viewToggle.press("Enter")
+  await viewOptions.getByRole("button", { name: "Pin Table to navigation" }).focus()
+  await page.keyboard.press("Tab")
+  await expect(viewOptions).toBeHidden()
+  await expect(viewToggle).toHaveAttribute("aria-expanded", "false")
+  await page.keyboard.press("Escape")
+  await expect(page).toHaveURL(url => url.searchParams.get("types") === "shopping_item")
+  await expect(page.locator('.filter-toolbar [data-type="shopping_item"]')).toHaveAttribute("aria-pressed", "true")
+
   const session = await page.context().newCDPSession(page)
   await session.send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 1 })
   await expect.poll(() => page.evaluate(() => matchMedia("(pointer: coarse)").matches)).toBe(true)

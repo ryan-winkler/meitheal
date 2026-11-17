@@ -430,6 +430,9 @@ function isExternal(href: string): boolean {
     render()
 
     trigger.addEventListener("click", () => setOpen(Boolean(submenu.hidden)), { signal })
+    group.addEventListener("focusout", event => {
+      if (!submenu.hidden && !group.contains(event.relatedTarget as Node | null)) setOpen(false)
+    }, { signal })
     group.addEventListener("keydown", event => {
       if (event.key === "Escape" && !submenu.hidden) {
         event.preventDefault()
