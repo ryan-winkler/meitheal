@@ -1,4 +1,5 @@
 import { pageLifecycle } from "@lib/page-lifecycle"
+import { applySidebarOrder, sidebarOrderChanged, SIDEBAR_ORDER_STORAGE_KEY } from "@lib/sidebar-order"
 
 interface OverflowBinding {
   pageSignal: AbortSignal
@@ -24,7 +25,8 @@ export function initNavOverflow(root: HTMLElement, pageSignal: AbortSignal): voi
   bindings.set(root, { pageSignal, controller })
   const signal = AbortSignal.any([pageSignal, controller.signal])
   // Nested disclosures keep native Tab order, including when their parent is in More.
-  const collectLinks = (items: HTMLElement[]) => items.flatMap(item => item.matches("a[href]") ? [item]
+  const collectLinks = (items: HTMLElement[]) => items
+    .filter(item => !item.hidden).flatMap(item => item.matches("a[href]") ? [item]
     : [...item.querySelectorAll<HTMLElement>("a[href]")].filter(link => !link.closest("[data-nav-overflow-submenu]")))
   let sources = primaries.map(primary => ({ primary, items: [...primary.children] as HTMLElement[] }))
   let items = sources.flatMap(source => source.items)
@@ -32,7 +34,9 @@ export function initNavOverflow(root: HTMLElement, pageSignal: AbortSignal): voi
   const originalTabs = new Map(links.map(link => [link, link.getAttribute("tabindex")]))
   let frame = 0
   let lastWidth = -1
-  let sourcesChanged = false
+  let sourcesChanged = true
+  const sidebar = root.hasAttribute("data-sidebar-default-order")
+  let sidebarOrderPending = sidebar
 
   function refreshSources() {
     sources = primaries.map(primary => ({ primary, items: [...primary.children] as HTMLElement[] }))
@@ -93,13 +97,18 @@ export function initNavOverflow(root: HTMLElement, pageSignal: AbortSignal): voi
     const enabled = getComputedStyle(root).getPropertyValue("--nav-overflow-enabled").trim() === "1" && root.clientWidth > 0
     root.setAttribute("data-nav-overflow-reflowing", "")
     restoreItems()
+    if (sidebarOrderPending) {
+      applySidebarOrder(root)
+      sidebarOrderPending = false
+    }
     if (sourcesChanged) {
       refreshSources()
       sourcesChanged = false
     }
     root.toggleAttribute("data-nav-overflow-active", enabled)
-    let visible = new Set(items)
-    if (enabled && items.length) {
+    const availableItems = items.filter(item => !item.hidden)
+    let visible = new Set(availableItems)
+    if (enabled && availableItems.length) {
       // Width is constrained by the parent, independently of the links or menu.
       more.hidden = false
       const style = getComputedStyle(root)
@@ -108,7 +117,7 @@ export function initNavOverflow(root: HTMLElement, pageSignal: AbortSignal): voi
       const fixed = [...root.children].filter((child): child is HTMLElement => child instanceof HTMLElement
         && child !== more && !primaries.includes(child) && getComputedStyle(child).display !== "none")
       const fixedWidth = fixed.reduce((sum, child) => sum + child.getBoundingClientRect().width, 0)
-      const widths = new Map(items.map(item => [item, item.getBoundingClientRect().width]))
+      const widths = new Map(availableItems.map(item => [item, item.getBoundingClientRect().width]))
       const moreWidth = more.getBoundingClientRect().width
       const required = (selection: Set<HTMLElement>, showMore: boolean) => {
         let width = fixedWidth + (showMore ? moreWidth : 0)
@@ -125,20 +134,20 @@ export function initNavOverflow(root: HTMLElement, pageSignal: AbortSignal): voi
       if (required(visible, false) > available + 0.5) {
         visible = new Set()
         // Keep the route and the focused destination visible whenever they fit.
-        for (const item of [items.find(currentItem), items.find(item => focused && item.contains(focused))]) {
+        for (const item of [availableItems.find(currentItem), availableItems.find(item => focused && item.contains(focused))]) {
           if (item && required(new Set([...visible, item]), true) <= available + 0.5) visible.add(item)
         }
         let overflowing = false
-        for (const item of items) {
+        for (const item of availableItems) {
           if (visible.has(item) || overflowing) continue
           if (required(new Set([...visible, item]), true) <= available + 0.5) visible.add(item)
           else overflowing = true
         }
-        for (const item of items) if (!visible.has(item)) menu.append(item)
+        for (const item of availableItems) if (!visible.has(item)) menu.append(item)
       }
     }
     for (const { primary, items: sourceItems } of sources) primary.toggleAttribute("data-nav-overflow-empty", !sourceItems.some(item => visible.has(item)))
-    more.hidden = !enabled || visible.size === items.length
+    more.hidden = !enabled || visible.size === availableItems.length
     if (more.hidden) more.open = false
     if (focused) {
       if (focused === toggle && more.hidden) {
@@ -168,11 +177,13 @@ export function initNavOverflow(root: HTMLElement, pageSignal: AbortSignal): voi
   }
   const appearance = new MutationObserver(syncTaskNavDom)
   const content = new MutationObserver(records => {
-    if (records.some(record => record.type !== "childList" || (record.target !== menu && !primaries.includes(record.target as HTMLElement)))) schedule()
+    if (records.some(record => record.attributeName === "hidden"
+      ? (record.target as Element).hasAttribute("data-sidebar-pin-presence")
+      : record.type !== "childList" || (record.target !== menu && !primaries.includes(record.target as HTMLElement)))) schedule()
   })
   resize.observe(root)
   appearance.observe(document.documentElement, { attributes: true, attributeFilter: ["data-appearance-navigation", "data-appearance-font", "data-appearance-radius"] })
-  content.observe(root, { subtree: true, characterData: true, childList: true, attributes: true, attributeFilter: ["aria-current", "aria-selected"] })
+  content.observe(root, { subtree: true, characterData: true, childList: true, attributes: true, attributeFilter: ["aria-current", "aria-selected", "hidden"] })
 
   root.addEventListener("keydown", event => {
     if (event.defaultPrevented) return
@@ -211,6 +222,16 @@ export function initNavOverflow(root: HTMLElement, pageSignal: AbortSignal): voi
   }, { signal })
   menu.addEventListener("click", event => {
     if (event.target instanceof Element && event.target.closest("a[href]")) closeMenu(true)
+  }, { signal })
+  root.addEventListener(sidebarOrderChanged, () => {
+    if (!menu.childElementCount) refreshSources()
+    schedule()
+  }, { signal })
+  if (sidebar) window.addEventListener("storage", event => {
+    if (event.key === SIDEBAR_ORDER_STORAGE_KEY || event.key === null) {
+      sidebarOrderPending = true
+      syncTaskNavDom()
+    }
   }, { signal })
   window.addEventListener("meitheal:view-changed", schedule, { signal })
   window.addEventListener("meitheal:task-nav-prefs-changed", syncTaskNavDom, { signal })

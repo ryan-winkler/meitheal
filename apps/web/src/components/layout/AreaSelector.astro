@@ -22,9 +22,10 @@ export interface AreaOption {
 
 interface Props {
   areas: AreaOption[]
+  catalogReady?: boolean
 }
 
-const { areas = [] } = Astro.props
+const { areas = [], catalogReady = true } = Astro.props
 ---
 
 <div class="area-selector" data-area-selector>
@@ -48,6 +49,7 @@ const { areas = [] } = Astro.props
   <div
     class="area-selector__dropdown"
     id="area-selector-dropdown"
+    data-area-catalog-ready={String(catalogReady)}
     role="listbox"
     aria-label="Available areas"
   >

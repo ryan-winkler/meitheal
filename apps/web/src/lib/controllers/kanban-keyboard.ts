@@ -10,7 +10,6 @@ import { getSelectedAreaId } from "@lib/area-selector-controller"
 import { singleKeyShortcutsEnabled } from "@lib/single-key-shortcuts"
 import { createClientLogger } from "@lib/client-logger"
 import { showToast } from "@lib/toast"
-import { setSwimlaneCollapsed, swimlanePreferenceKey } from "./kanban-grouping"
 
 const log = createClientLogger("kanban:keyboard")
 
@@ -39,7 +38,7 @@ export function initKeyboardAndSearch(signal: AbortSignal): void {
 
     // C = toggle collapse all swimlane groups
     if (e.key === "c" || e.key === "C") {
-      const toggles = board.querySelectorAll<HTMLElement>(".swimlane-group:not([hidden]) .swimlane-toggle")
+      const toggles = board.querySelectorAll<HTMLButtonElement>(".swimlane-group:not([hidden]) .swimlane-header")
       // Without swimlanes, leave the key to the global shortcut instead of swallowing it.
       if (toggles.length === 0) return
       e.preventDefault()
@@ -174,23 +173,9 @@ export function initKeyboardAndSearch(signal: AbortSignal): void {
 
   // T-1914: Keyboard navigation for kanban board
   ;(() => {
-    // Swimlane collapse event delegation
-    board.addEventListener("click", (e) => {
-      const target = e.target as HTMLElement
-      const header = target.closest<HTMLElement>(".swimlane-header")
-      const button = target.closest("button")
-      if (header && (!button || button === header)) {
-        const group = header.closest<HTMLElement>(".swimlane-group")
-        if (!group) return
-        const isCollapsed = !group.classList.contains("swimlane-collapsed")
-        setSwimlaneCollapsed(group, isCollapsed)
-        try { localStorage.setItem(swimlanePreferenceKey(board, group), isCollapsed ? "collapsed" : "expanded") } catch { /* Storage is optional. */ }
-      }
-    }, { signal })
-
     const visibleEntries = (column: Element) =>
       Array.from(column.querySelectorAll<HTMLButtonElement>(".card-open-btn"))
-        .filter(btn => btn.getClientRects().length > 0 && !btn.closest(".swimlane-cards.collapsed"))
+        .filter(btn => btn.getClientRects().length > 0)
 
     board.addEventListener("keydown", (e) => {
       if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return

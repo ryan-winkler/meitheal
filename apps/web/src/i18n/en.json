@@ -52,6 +52,13 @@
     "skip_to_content": "Skip to content"
   },
   "sidebar": {
+    "reorder": "Reorder sidebar",
+    "reorder_done": "Done",
+    "reorder_item": "Move {label}",
+    "reorder_up": "Move up",
+    "reorder_down": "Move down",
+    "reordered": "{label} moved to position {position} of {count}.",
+    "reorder_storage_error": "Your browser couldn’t save the sidebar order.",
     "board": "Board",
     "default_board": "Default",
     "create_board": "Create new board",
@@ -233,6 +240,8 @@
     "group_board": "Board",
     "group_priority": "By Priority",
     "group_area": "By Area",
+    "default_area": "Default Area",
+    "unavailable_area": "Unavailable Area",
     "group_assignee": "By Assignee",
     "group_status": "By Status",
     "group_rice": "By RICE Score",
@@ -293,6 +302,11 @@
     "group_by_tooltip": "Group swimlanes by"
   },
   "table": {
+    "unavailable_area": "Unavailable Area",
+    "area_catalog_failed": "Area names could not load.",
+    "group_epic": "Epic",
+    "subgroup_epic": "Then by Epic",
+    "no_epic": "No Epic",
     "filter_unassigned": "Unassigned",
     "filter_workflow_columns": "Workflow columns",
     "filter_columns_load_failed": "Workflow columns could not load.",
