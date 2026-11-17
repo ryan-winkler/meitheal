@@ -328,10 +328,7 @@ function isExternal(href: string): boolean {
   }
 
   function updateActiveNavLink() {
-    const current = new URL(location.href)
-    const currentPath = appPath(current.pathname)
-    const taskContext = currentPath === "/tasks" || currentPath.startsWith("/tickets/")
-    const background = taskContext ? taskBackgroundUrl(current) : current
+    const background = taskBackgroundUrl()
     const taskPath = (url: URL) => {
       const path = appPath(url.pathname)
       return parseTaskView(path.slice(1)) ? "/tasks" : path
@@ -340,6 +337,7 @@ function isExternal(href: string): boolean {
       parseTaskView(url.searchParams.get("view")) ?? parseTaskView(url.hash.slice(1)) ?? "kanban"
     const view = viewFrom(background)
     const backgroundPath = taskPath(background)
+    const taskContext = backgroundPath === "/tasks"
     const isFilteredShortcut = (url: URL) => url.searchParams.has("types") ||
       (taskPath(url) === "/tasks" && url.searchParams.has("task_type"))
     const navLinks = [...document.querySelectorAll<HTMLAnchorElement>(".sidebar .nav-link:not(.nav-link--external)")]
@@ -350,7 +348,7 @@ function isExternal(href: string): boolean {
       const target = new URL(link.href)
       const href = taskPath(target)
       if (!isFilteredShortcut(target) || href !== backgroundPath ||
-          (href === "/tasks" ? viewFrom(target) !== view : target.hash && target.hash !== current.hash)) continue
+          (href === "/tasks" ? viewFrom(target) !== view : target.hash && target.hash !== background.hash)) continue
       const criteria = matchingTaskShortcutCriteria(target.searchParams, background.searchParams, view)
       if (criteria <= matchedCriteria) continue
       matchedCriteria = criteria
@@ -368,8 +366,8 @@ function isExternal(href: string): boolean {
       if (child) active = taskContext && child === view && !typedLink
       else if (isTasksLink) active = taskContext && !typedLink
       else if (isFilteredShortcut(url)) active = link === typedLink
-      else active = (href === currentPath && (!url.hash || url.hash === current.hash)) ||
-        (href !== "/" && currentPath.startsWith(href + "/"))
+      else active = (href === backgroundPath && (!url.hash || url.hash === background.hash)) ||
+        (href !== "/" && backgroundPath.startsWith(href + "/"))
       link.classList.toggle("active", active)
       const currentPage = active && (child ? link === activeViewLink : !isTasksLink || !activeViewLink)
       if (currentPage && link.getAttribute("aria-current") !== "page") link.setAttribute("aria-current", "page")

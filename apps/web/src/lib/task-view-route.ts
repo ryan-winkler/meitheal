@@ -1,4 +1,5 @@
 import { normalizeTableRules, readTaskAreaParam, readTaskScalarParam, TASK_PERSISTED_FILTER_KEYS, TASK_SCALAR_FILTER_KEYS } from "./filter-state"
+import { readKanbanRules } from "./kanban-query"
 
 export const TASK_VIEWS = ["kanban", "table", "calendar", "timeline"] as const
 export type TaskView = (typeof TASK_VIEWS)[number]
@@ -21,6 +22,21 @@ export function parseTaskView(value: string | null): TaskView | undefined {
   return TASK_VIEWS.find(view => view === value)
 }
 
+export function appliedTaskRules(params: URLSearchParams, view: TaskView) {
+  if (view === "timeline") return
+  const values = params.getAll("advancedFilter")
+  if (view !== "kanban") {
+    const raw = values.at(-1)
+    const rules = normalizeTableRules(raw)
+    if (raw && rules) return { raw, rules }
+  }
+  if (view !== "table") {
+    const raw = values[0]
+    const rules = readKanbanRules(raw ?? null)
+    if (raw && rules) return { raw, rules }
+  }
+}
+
 export function taskViewUrl(current: URL, view: TaskView, explicitFilters = false): URL {
   const url = new URL(current)
   const previousView = parseTaskView(url.searchParams.get("view")) ?? parseTaskView(url.hash.slice(1)) ?? "kanban"
@@ -36,11 +52,10 @@ export function taskViewUrl(current: URL, view: TaskView, explicitFilters = fals
         url.searchParams.set(key, readTaskScalarParam(url.searchParams, key, previousView)!)
       }
     }
-    const rules = url.searchParams.getAll("advancedFilter")
-    if (rules.length > 1 && previousView !== "timeline") {
-      const last = rules.at(-1)!
-      const usesLast = previousView === "table" || (previousView === "calendar" && normalizeTableRules(last))
-      url.searchParams.set("advancedFilter", usesLast ? last : rules[0]!)
+    if (url.searchParams.getAll("advancedFilter").length > 1 && previousView !== "timeline") {
+      const applied = appliedTaskRules(url.searchParams, previousView)
+      if (applied?.rules.conditions.length) url.searchParams.set("advancedFilter", applied.raw)
+      else url.searchParams.delete("advancedFilter")
     }
   }
   if (view === "kanban") url.searchParams.delete("view")

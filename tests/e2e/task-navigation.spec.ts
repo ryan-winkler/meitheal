@@ -278,6 +278,58 @@ test("pinned types fit narrow desktop top navigation and stay available in the m
   await expect(page.locator("#menu-toggle")).toBeFocused()
 })
 
+test("short landscape sidebar keeps pinned types and view menus reachable", async ({ page }) => {
+  await page.setViewportSize({ width: 900, height: 280 })
+  const touch = await page.context().newCDPSession(page)
+  await touch.send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 1 })
+  await page.addInitScript(() => {
+    localStorage.setItem("meitheal-theme", "knight-rider")
+    localStorage.setItem("meitheal-appearance", JSON.stringify({ navigation: "sidebar", sidebar: "folded" }))
+    localStorage.setItem("meitheal-task-nav-prefs", JSON.stringify({
+      pinned: ["calendar_event", "shopping_item", "checklist", "standard"],
+    }))
+  })
+  await page.goto("/tasks")
+  await expect(page.locator("body")).toHaveClass(/sidebar-collapsed/)
+  const sidebar = page.locator("#sidebar")
+  const typeToggle = sidebar.getByRole("button", { name: "Task types", exact: true })
+  await typeToggle.click()
+  const settings = sidebar.getByRole("link", { name: "Choose visible types" })
+  await expect(settings).toBeVisible()
+  await page.keyboard.press("Escape")
+  const pins = sidebar.getByRole("list", { name: "Pinned task types" })
+  await pins.locator("li").last().getByRole("button").first().scrollIntoViewIfNeeded()
+  await expect.poll(() => pins.evaluate(list => list.scrollTop)).toBeGreaterThan(0)
+
+  await sidebar.getByRole("button", { name: "Task views", exact: true }).click()
+  const calendar = sidebar.locator("#tasks-nav-submenu").getByRole("link", { name: "Calendar", exact: true })
+  await calendar.click()
+  await expect(page).toHaveURL(url => url.searchParams.get("view") === "calendar")
+})
+
+test("docked task Details retains Today as the active navigation", async ({ page, request, baseURL }) => {
+  await page.setViewportSize({ width: 1600, height: 900 })
+  await page.addInitScript(() => localStorage.setItem("meitheal-task-nav-prefs", JSON.stringify({ pinnedViews: ["kanban"] })))
+  const headers = { origin: new URL(baseURL!).origin }
+  const title = "Docked Today navigation fixture"
+  const due_date = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Dublin", dateStyle: "short" }).format(new Date())
+  const created = await request.post("/api/tasks", { headers, data: { title, due_date } })
+  expect(created.status(), await created.text()).toBe(201)
+  const { id } = await created.json()
+  try {
+    await page.goto("/today#today-work")
+    await page.locator("#page-shell").getByText(title, { exact: true }).first().click()
+    await expect(page.locator("body")).toHaveClass(/has-docked-inspector/)
+    await expect(page).toHaveURL(/\/tickets\//)
+    const sidebar = page.locator("#sidebar")
+    await sidebar.getByRole("button", { name: "Task views", exact: true }).click()
+    await expect(sidebar.locator('a[data-page="today"]')).toHaveAttribute("aria-current", "page")
+    await expect(sidebar.locator('[data-task-view-pinned-item="kanban"] a')).not.toHaveAttribute("aria-current", "page")
+  } finally {
+    await request.delete(`/api/tasks/${id}`, { headers })
+  }
+})
+
 test("mobile task type settings dismiss the sidebar and focus the destination", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto("/today")
@@ -655,6 +707,13 @@ test("legacy Shopping type filters survive view switches and respect Table searc
         icon: "shopping-cart",
       })
     }
+    const calendarShopping = new URLSearchParams({ ...query, view: "calendar", search: suffix, promoted: "1" })
+    shortcuts.push({
+      id: "promoted-shopping",
+      label: "Promoted shopping",
+      href: "/tasks?" + calendarShopping + "#calendar",
+      icon: "shopping-cart",
+    })
     const save = await request.put("/api/settings", { headers, data: { key: "sidebar_config", value: {
       order: ["tasks", ...shortcuts.map(shortcut => shortcut.id)], customItems: shortcuts,
     } } })
@@ -792,6 +851,28 @@ test("legacy Shopping type filters survive view switches and respect Table searc
     await expect(page).toHaveURL(url => url.searchParams.getAll("status").join() === "in_progress")
     await expect(page.locator("#kanban-shell").getByText(titles[0]!, { exact: true })).toBeVisible()
     await expect(page.locator("#kanban-shell").getByText(titles[1]!, { exact: true })).toHaveCount(0)
+
+    const promote = await request.patch(`/api/tasks/${ids[0]}`, { headers, data: { is_promoted: true } })
+    expect(promote.ok(), await promote.text()).toBe(true)
+    await page.goto("/tasks?" + calendarShopping + "&promoted=0#calendar")
+    await expect(page.locator('#sidebar [data-page="promoted-shopping"]')).toHaveAttribute("aria-current", "page")
+    await expect(calendar.locator(`.cal-cell[data-date="${due}"]`)).toHaveAccessibleName(/1 task$/)
+    await views.getByRole("link", { name: "Kanban", exact: true }).click()
+    await expect(page).toHaveURL(url => url.searchParams.getAll("promoted").join() === "1")
+    await expect(page.locator("#kanban-shell").getByText(titles[0]!, { exact: true })).toBeVisible()
+    await expect(page.locator("#kanban-shell").getByText(titles[1]!, { exact: true })).toHaveCount(0)
+
+    calendarShopping.delete("promoted")
+    calendarShopping.set("advancedFilter", JSON.stringify({
+      id: "range", logic: "AND",
+      conditions: [{ id: "priority", field: "priority", operator: "between", value: ["1", "2"] }],
+    }))
+    calendarShopping.append("advancedFilter", "{invalid")
+    await page.goto("/tasks?" + calendarShopping + "#calendar")
+    await expect(calendar.locator(`.cal-cell[data-date="${due}"]`)).toHaveAccessibleName(/2 tasks$/)
+    await views.getByRole("link", { name: "Table", exact: true }).click()
+    await expect(page).not.toHaveURL(/advancedFilter=/)
+    for (const title of titles) await expect(table.getByText(title, { exact: true })).toBeVisible()
   } finally {
     await request.put("/api/settings", { headers, data: { key: "sidebar_config", value: previous ?? null } })
     for (const id of ids) await request.delete(`/api/tasks/${id}`, { headers })

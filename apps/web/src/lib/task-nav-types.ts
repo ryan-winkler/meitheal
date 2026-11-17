@@ -1,8 +1,8 @@
 import type { FilterGroup } from "./filter-engine"
-import { normalizeTableRules, readFilterLabels, readTableTaskKindFilter, readTableTaskTypeParam, readTaskAreaParam, readTaskKindFilter, readTaskScalarParam, TASK_SCALAR_FILTER_KEYS } from "./filter-state"
-import { readKanbanRules, readKanbanSearch } from "./kanban-query"
+import { readFilterLabels, readTableTaskKindFilter, readTableTaskTypeParam, readTaskAreaParam, readTaskKindFilter, readTaskScalarParam, TASK_SCALAR_FILTER_KEYS } from "./filter-state"
+import { readKanbanSearch } from "./kanban-query"
 import { normalizeStatus } from "./status-config"
-import { parseTaskView, type TaskView } from "./task-view-route"
+import { appliedTaskRules, parseTaskView, type TaskView } from "./task-view-route"
 
 export type TaskNavTypeId = "standard" | "shopping_item" | "checklist" | "calendar_event"
 
@@ -88,8 +88,7 @@ function effectiveRules(group: FilterGroup): unknown[] {
 }
 
 function ruleSignature(params: URLSearchParams, view: TaskView): string | undefined {
-  const rules = (view !== "kanban" ? normalizeTableRules(params.getAll("advancedFilter").at(-1)) : undefined)
-    ?? (view !== "table" ? readKanbanRules(params.get("advancedFilter")) : undefined)
+  const rules = appliedTaskRules(params, view)?.rules
   if (rules?.conditions.length) return JSON.stringify(effectiveRules(rules))
 }
 
@@ -130,6 +129,7 @@ export function matchingTaskShortcutCriteria(target: URLSearchParams, current: U
     const read = (params: URLSearchParams) => {
       if (!TASK_SCALAR_FILTER_KEYS.some(filter => filter === key)) return params.getAll(key)
       const value = readTaskScalarParam(params, key, view)
+      if (key === "promoted" && (view === "calendar" || view === "kanban")) return [String(value === "1")]
       if (key === "search") {
         return [(view === "calendar" || view === "kanban" ? readKanbanSearch(value) : value ?? "").toLowerCase()]
       }

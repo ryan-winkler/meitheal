@@ -121,10 +121,10 @@ const ARRAY_KEYS = ["types", "labels"] as const
 const JSON_KEYS = ["advancedFilter", "columns"] as const
 const ALL_KEYS = [...SCALAR_KEYS, ...ARRAY_KEYS, ...JSON_KEYS] as const
 export const TASK_PERSISTED_FILTER_KEYS = ALL_KEYS
-export { SCALAR_KEYS as TASK_SCALAR_FILTER_KEYS }
+export const TASK_SCALAR_FILTER_KEYS = [...SCALAR_KEYS, "promoted"] as const
 
 export function readTaskScalarParam(params: URLSearchParams, key: string, view: string): string | null {
-  return view === "table" || (view === "calendar" && key === "task_type")
+  return view === "table" && key !== "promoted" || (view === "calendar" && key === "task_type")
     ? params.getAll(key).at(-1) ?? null : params.get(key)
 }
 

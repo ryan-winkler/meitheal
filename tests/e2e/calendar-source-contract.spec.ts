@@ -459,9 +459,20 @@ test("Calendar reads configured sources as a household member and filters before
     } finally {
       db.exec("ALTER TABLE tasks RENAME COLUMN unavailable_description TO description")
     }
-    await page.getByRole("button", { name: "Retry agenda" }).press("Enter")
+    db.exec("ALTER TABLE calendar_confirmations RENAME TO unavailable_calendar_confirmations")
+    try {
+      await page.getByRole("button", { name: "Retry agenda" }).press("Enter")
+      await expect(agenda.getByRole("button", { name: /Local agenda recovery task/ })).toBeVisible()
+      await expect(connected.getByRole("button", { name: /Linked calendar retreat/ })).toBeVisible()
+      await expect(connected.getByText("Saved calendar links couldn’t load. Reopen the day to retry.")).toBeVisible()
+      await page.keyboard.press("Escape")
+    } finally {
+      db.exec("ALTER TABLE unavailable_calendar_confirmations RENAME TO calendar_confirmations")
+    }
+    await linkedCell.press("Enter")
     await expect(agenda.getByRole("button", { name: /Local agenda recovery task/ })).toBeVisible()
     await expect(connected.getByRole("button", { name: /Linked calendar retreat/ })).toBeVisible()
+    await expect(connected.getByText("Saved calendar links couldn’t load", { exact: false })).toHaveCount(0)
   } catch (error) {
     console.log("Calendar browser diagnostics", pageErrors)
     throw error

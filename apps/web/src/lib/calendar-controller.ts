@@ -225,6 +225,7 @@ export function initCalendarPage(signal: AbortSignal): void {
     eventsSection!.hidden = !showEvents
     let live: Awaited<ReturnType<typeof loadCalendarRange>> | undefined
     let persisted: LinkedCalendarEvent[] | null | undefined
+    let savedUnavailable = false
     function renderConnectedEvents() {
       if (!showEvents || persisted === undefined && live === undefined) return
       const activeId = drawerEvents!.contains(document.activeElement)
@@ -254,7 +255,7 @@ export function initCalendarPage(signal: AbortSignal): void {
         (live.available ? "Some live" : "Live") + " Home Assistant calendars couldn’t refresh. Reopen the day to retry.",
       ))
       else if (persisted && !items.length) drawerEvents!.append(agendaMessage("No calendar events"))
-      if (persisted === null) drawerEvents!.append(agendaMessage("Saved calendar links couldn’t load. Reopen the day to retry."))
+      if (savedUnavailable) drawerEvents!.append(agendaMessage("Saved calendar links couldn’t load. Reopen the day to retry."))
       const restoreId = activeId ?? focusedEvent
       if (restoreId && (activeId || document.activeElement === closeButton)) {
         const restore = items.find(item => item.row.dataset.occurrenceKey === restoreId)?.row ?? closeButton
@@ -292,11 +293,14 @@ export function initCalendarPage(signal: AbortSignal): void {
       moreTasks.setAttribute("aria-disabled", "true")
       drawerTaskStatus!.textContent = offset ? loading : ""
       const taskSignal = AbortSignal.any([signal, currentRequest.signal, AbortSignal.timeout(10_000)])
+      let received = false
       try {
         const { rows, total, linkedEvents } = await loadDrawerTasks({ date, filters, offset, limit }, timezone, taskSignal)
         if (taskSignal.aborted) return
+        received = true
         if (!offset) {
           drawerTasks!.replaceChildren()
+          savedUnavailable = linkedEvents === null
           persisted = linkedEvents ?? persisted ?? null
           renderConnectedEvents()
         }
@@ -328,7 +332,10 @@ export function initCalendarPage(signal: AbortSignal): void {
         log.warn("Could not load due tasks", error)
         if (!offset) {
           renderMessage(drawerTasks!, "Couldn’t load this day’s agenda.")
-          persisted ??= null
+          if (!received) {
+            savedUnavailable = true
+            persisted ??= null
+          }
           renderConnectedEvents()
         } else drawerTaskStatus!.textContent = "Couldn’t load more items."
         moreTasks.hidden = false

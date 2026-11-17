@@ -2,24 +2,24 @@ import { VALID_TASK_KINDS } from "@meitheal/domain-tasks"
 import type { CalendarFilterRow } from "@domains/tasks/persistence/task-repository"
 import { calendarToday, isDueOverdue } from "./date"
 import type { FilterGroup } from "./filter-engine"
-import { isTaskVisible, readTableFilterParams } from "./filter-state"
+import { isTaskVisible, readTableTaskTypeParam, readTaskAreaParam } from "./filter-state"
 import { readKanbanFilters, type KanbanFilters } from "./kanban-query"
 import { frameworkPayloadObject, readRiceInputs, riceLensScore } from "./rice-lens"
 import { isClosedStatus, isDoneStatus, normalizeStatus } from "./status-config"
+import { appliedTaskRules } from "./task-view-route"
 
 export const CALENDAR_FILTER_STATE_EVENT = "meitheal:calendar-filter-state"
 
 export function readCalendarTaskFilters(params: URLSearchParams): KanbanFilters {
   const filters = readKanbanFilters(params)
-  delete filters.area
   if (VALID_TASK_KINDS.every(kind => filters.types?.includes(kind))) filters.types = []
-  const inherited = readTableFilterParams(params)
-  return {
-    ...filters,
-    ...(inherited.area !== undefined && { area: inherited.area }),
-    ...(inherited.advancedFilter && { advancedFilter: inherited.advancedFilter }),
-    ...(inherited.task_type && { task_type: inherited.task_type }),
-  }
+  const area = readTaskAreaParam(params)
+  if (area !== null && area.length <= 500) filters.area = area
+  else delete filters.area
+  const taskType = readTableTaskTypeParam(params)
+  if (taskType) filters.task_type = taskType
+  filters.advancedFilter = appliedTaskRules(params, "calendar")?.rules ?? null
+  return filters
 }
 
 function rulesUseRice(group: FilterGroup): boolean {
