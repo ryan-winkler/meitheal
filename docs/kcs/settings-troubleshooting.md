@@ -83,7 +83,7 @@ If the URL does not change to `#ai-agents-settings`, capture the browser console
 2. Change the theme once and wait for the UI to update.
 3. Re-open Settings.
 
-Select **Light**, **Emerald Isle**, or **Knight Rider** to keep that Meitheal palette. **Auto** follows the appearance of a same-origin Home Assistant panel as it changes. A direct ingress page and a panel whose appearance cannot be read follow the device preference.
+Select **Light**, **Emerald Isle**, or **Knight Rider** to keep that Meitheal palette. **Auto** follows the appearance of a same-origin Home Assistant panel as it changes. A direct ingress page and a panel whose appearance cannot be read follow the device preference. A browser with an unrecognized cached theme uses **Auto** until a supported theme is selected.
 
 Turn on **Match Home Assistant theme** to use the colors Home Assistant has set when you open Meitheal from its Home Assistant sidebar entry. The checkbox is off by default and saves in the current browser. The **Theme** selector still sets the fallback. You can turn matching off any time to return to that theme, including your saved accent and custom theme.
 

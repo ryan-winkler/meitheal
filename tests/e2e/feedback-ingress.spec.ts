@@ -1182,6 +1182,31 @@ test("member can opt into Home Assistant colors and keep the saved fallback", as
   await expect.poll(() => token("--bg-primary-rgb")).toBe(knightBackground)
 })
 
+test("ingress Auto follows Home Assistant when the cached theme is invalid", async ({ page, context }) => {
+  await context.setExtraHTTPHeaders({})
+  await context.addCookies([{ name: "feedback-fixture", value: "member", url: origin }])
+  await page.emulateMedia({ colorScheme: "dark" })
+  await page.addInitScript(() => localStorage.setItem("meitheal-theme", "outdated-theme"))
+  const target = origin + prefix + "/today"
+  const panel = origin + "/invalid-theme-panel-fixture"
+  await page.route(panel, route => route.fulfill({
+    contentType: "text/html",
+    body: `<!doctype html><html lang="en" style="--primary-background-color: #fafafa">
+      <title>Home Assistant theme fixture</title>
+      <iframe src="${target}" title="Meitheal"></iframe></html>`,
+  }))
+  await page.goto(panel)
+  const root = page.frameLocator("iframe").locator("html")
+  const background = () => root.evaluate(element => getComputedStyle(element).getPropertyValue("--bg-secondary").trim().toLowerCase())
+  await expect(root).toHaveAttribute("data-theme", "auto")
+  await expect(root).toHaveAttribute("data-ha-theme", "light")
+  await expect.poll(background).toBe("#ecebe4")
+  await page.evaluate(() => document.documentElement.style.setProperty("--primary-background-color", "#16202a"))
+  await expect(root).toHaveAttribute("data-ha-theme", "dark")
+  await expect(root).toHaveAttribute("data-theme", "auto")
+  await expect.poll(background).toBe("#171a18")
+})
+
 test("ingress Auto follows device preference when its parent is cross-origin", async ({ page, context }) => {
   await context.setExtraHTTPHeaders({})
   await context.addCookies([{ name: "feedback-fixture", value: "member", url: origin }])

@@ -58,6 +58,8 @@ test("Today completion predicate excludes the rollback into yesterday", () => {
     insert.run("2010-11-07")
     insert.run("2010-11-08T04:00:00Z")
     db.prepare("INSERT INTO tasks (status, updated_at, task_board_id) VALUES ('complete', ?, 'private')").run("2010-11-07")
+    insert.run("2010-11-07Z")
+    insert.run("2010-11-07 junk")
 
     const filter = todayCompletionFilter("2010-11-07", "America/Goose_Bay")
     const selected = db.prepare(`UPDATE tasks SET status = 'archived' WHERE ${filter.sql} RETURNING id`).all(...filter.args)
@@ -96,6 +98,7 @@ test("Today uses one household day for mixed completion snapshots and archive", 
     insert.run("today-legacy-date", "Date-only row", "today-legacy-date", "today-legacy-date", midnight, today)
     insert.run("previous-day", "Late yesterday", "previous-day", "previous-day", midnight - 1, midnight - 1)
     insert.run("next-day", "Tomorrow", "next-day", "next-day", midnight + 86400000, midnight + 86400000)
+    insert.run("invalid-date", "Legacy date with a suffix", "invalid-date", "invalid-date", midnight, today + " junk")
 
     const legacy = await api.get(base + "/api/tasks/today-counts", { headers })
     expect(legacy.status()).toBe(200)
@@ -117,7 +120,7 @@ test("Today uses one household day for mixed completion snapshots and archive", 
     expect(changedDay.status(), await changedDay.text()).toBe(409)
     const stale = await api.post(base + "/api/tasks/clear-completed?expected_day=" + previousDay, { headers })
     expect(stale.status(), await stale.text()).toBe(409)
-    expect(db.prepare("SELECT COUNT(*) AS total FROM tasks WHERE status = 'complete'").get()?.total).toBe(25)
+    expect(db.prepare("SELECT COUNT(*) AS total FROM tasks WHERE status = 'complete'").get()?.total).toBe(26)
 
     const scope = new URLSearchParams({ expected_day: today, expected_timezone: timezone })
     const differentTimezone = ["Asia/Kolkata", "Pacific/Guam"].find(candidate => dayIn(candidate) === today)!
@@ -127,14 +130,14 @@ test("Today uses one household day for mixed completion snapshots and archive", 
     expect(changedZoneCounts.status(), await changedZoneCounts.text()).toBe(409)
     const changedZoneArchive = await api.post(base + "/api/tasks/clear-completed?" + scope, { headers })
     expect(changedZoneArchive.status(), await changedZoneArchive.text()).toBe(409)
-    expect(db.prepare("SELECT COUNT(*) AS total FROM tasks WHERE status = 'complete'").get()?.total).toBe(25)
+    expect(db.prepare("SELECT COUNT(*) AS total FROM tasks WHERE status = 'complete'").get()?.total).toBe(26)
 
     expect((await api.put(base + "/api/settings", { headers, data: { key: "timezone", value: timezone } })).ok()).toBe(true)
     const archive = await api.post(base + "/api/tasks/clear-completed?" + scope, { headers })
     expect(archive.status(), await archive.text()).toBe(200)
     expect(await archive.json()).toMatchObject({ ok: true, cleared: 23 })
     const remaining = db.prepare("SELECT id FROM tasks WHERE status = 'complete' ORDER BY id").all()
-    expect(remaining.map(row => row.id)).toEqual(["next-day", "previous-day"])
+    expect(remaining.map(row => row.id)).toEqual(["invalid-date", "next-day", "previous-day"])
     const noChanges = await api.post(base + "/api/tasks/clear-completed", { headers })
     expect(noChanges.status()).toBe(200)
     expect(await noChanges.json()).toMatchObject({ ok: true, cleared: 0, message: "No completed tasks to clear" })

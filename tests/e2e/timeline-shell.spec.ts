@@ -186,6 +186,17 @@ test.describe("Tasks Shell (Timeline/GANTT)", () => {
       expect((await paneToggle.boundingBox())?.height).toBeGreaterThanOrEqual(44)
       expect((await chart.locator(".gantt-scroll-wrapper").boundingBox())?.width).toBeGreaterThan(240)
 
+      const legend = page.locator(".timeline-legend")
+      await legend.getByText("Legend", { exact: true }).click()
+      const legendPanel = legend.locator(".timeline-legend-panel")
+      await expect(legendPanel.getByText("Critical (P1)")).toBeVisible()
+      expect(await legendPanel.evaluate(panel => {
+        const rect = panel.getBoundingClientRect()
+        const viewport = panel.closest("#tasks-view-timeline")!.getBoundingClientRect()
+        return rect.left >= viewport.left && rect.right <= Math.min(innerWidth, viewport.right)
+      })).toBe(true)
+      await legend.getByText("Legend", { exact: true }).click()
+
       await disclosure.press("Enter")
       await page.keyboard.press("Tab")
       const search = toolbar.getByRole("textbox", { name: "Filter by text" })

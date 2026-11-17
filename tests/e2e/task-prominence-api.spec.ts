@@ -143,6 +143,7 @@ test("task promotion is shared, typed, and independent of the stored manual orde
     await expect(target.getByRole("link", { name: /Paging card 25.*Promoted/ })).toBeVisible()
 
     const filter = page.getByRole("button", { name: "Promoted cards only" })
+    await expect(filter).toHaveAttribute("title", "Show only cards promoted to the top of their lane.")
     await filter.press("Enter")
     await expect(filter).toHaveAttribute("aria-pressed", "true")
     await expect(page).toHaveURL(/promoted=1/)

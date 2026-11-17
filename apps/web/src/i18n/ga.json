@@ -271,6 +271,7 @@
     "promoted": "Bogtha chun tosaigh",
     "promoted_only": "Cártaí ardaithe amháin",
     "promoted_filter_explanation": "Ní thaispeántar ach cártaí a ardaíodh go barr a lána.",
+    "promoted_filter_hint": "Ná taispeáin ach na cártaí a ardaíodh go barr a lána.",
     "promote_card": "Bog chun tosaigh",
     "demote_card": "Cuir ar ais san ord bunaidh",
     "card_promoted": "Bogtha go barr an lána",

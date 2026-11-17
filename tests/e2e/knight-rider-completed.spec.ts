@@ -31,9 +31,17 @@ test("Knight Rider keeps the completed Today state and saved theme truthful", as
   await expect(empty.getByRole("heading")).toHaveText("Today’s tasks are complete")
   const disclosure = page.locator(".today-completed-tasks")
   await disclosure.locator("summary").click()
-  await expect(disclosure.getByRole("link", { name: "Put the spare valves away" })).toHaveCSS("text-decoration-line", "line-through")
+  const completedLink = disclosure.getByRole("link", { name: "Put the spare valves away" })
+  await expect(completedLink).toHaveCSS("text-decoration-line", "line-through")
   await empty.scrollIntoViewIfNeeded()
   await page.screenshot({ path: testInfo.outputPath("knight-rider-completed.png"), animations: "disabled" })
+  await page.setViewportSize({ width: 320, height: 840 })
+  expect((await completedLink.boundingBox())!.height).toBeGreaterThanOrEqual(44)
+  expect((await disclosure.getByRole("button", { name: "Archive completed" }).boundingBox())!.height).toBeGreaterThanOrEqual(44)
+  await completedLink.click({ position: { x: 8, y: 22 } })
+  await expect(page.locator("#td-title")).toHaveValue("Put the spare valves away")
+  await page.keyboard.press("Escape")
+  await page.setViewportSize({ width: 1440, height: 900 })
 
   await page.goto("/settings#look-and-feel-settings")
   const select = page.locator("#theme-select")
@@ -249,6 +257,7 @@ test("Today holds the displayed date and counts together after rollover", async 
 })
 
 test("Today keeps focus on a completion during polling and recovers when it disappears", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 840 })
   await page.addInitScript(() => localStorage.setItem("meitheal-theme", "knight-rider"))
   await page.clock.install()
   const first = { id: "completed-poll-one", title: "Finished kitchen task" }
@@ -266,6 +275,7 @@ test("Today keeps focus on a completion during polling and recovers when it disa
   await summary.focus()
   await page.keyboard.press("Enter")
   const focused = disclosure.getByRole("link", { name: first.title })
+  expect((await focused.boundingBox())!.height).toBeGreaterThanOrEqual(44)
   await focused.focus()
 
   completedTasks = [second, first]

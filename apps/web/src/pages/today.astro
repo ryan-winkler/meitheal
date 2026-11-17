@@ -514,8 +514,10 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
         <ul>
           {completedTaskSummaries.map(task => (
             <li>
-              <Icon name="checkbox" size={17} />
-              <a href={buildTaskPath(task.id)} data-task-detail-link={task.id}>{task.title}</a>
+              <a href={buildTaskPath(task.id)} data-task-detail-link={task.id}>
+                <Icon name="checkbox" size={17} />
+                <span>{task.title}</span>
+              </a>
             </li>
           ))}
         </ul>
@@ -890,6 +892,7 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
   .today-completed-tasks summary {
     cursor: pointer;
     padding: 12px 0;
+    min-block-size: 44px;
     font-weight: 600;
   }
   .today-completed-tasks ul {
@@ -897,11 +900,7 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
     padding: 0;
     list-style: none;
   }
-  .today-completed-tasks li {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 10px 12px;
+  .today-completed-tasks :global(li) {
     border-block-start: 1px solid var(--border);
   }
   :global([data-theme="knight-rider"]:has(.today-completed-tasks[open]:not([hidden]))) .today-shell__clear-btn {
@@ -913,11 +912,20 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
     padding-block: 16px 8px;
     border-block-start: 1px solid var(--border);
   }
-  .today-completed-tasks a {
+  .today-completed-tasks__actions button {
+    min-block-size: 44px;
+  }
+  .today-completed-tasks :global(a) {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    min-block-size: 44px;
     color: var(--text-muted);
     text-decoration: line-through;
     overflow-wrap: anywhere;
   }
+  .today-completed-tasks :global(a > svg) { flex: none; }
 
   .today-section__header:focus-visible {
     outline-offset: -3px;

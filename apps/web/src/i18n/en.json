@@ -274,6 +274,7 @@
     "promoted": "Promoted",
     "promoted_only": "Promoted cards only",
     "promoted_filter_explanation": "Showing only cards promoted to the top of their lane.",
+    "promoted_filter_hint": "Show only cards promoted to the top of their lane.",
     "promote_card": "Promote to top",
     "demote_card": "Remove promotion",
     "card_promoted": "Promoted to the top of the lane",

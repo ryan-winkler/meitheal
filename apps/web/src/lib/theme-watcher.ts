@@ -7,7 +7,7 @@
  * Bounded context: lib (cross-domain utility)
  */
 
-import { type ThemeMode } from "./theme-mode"
+import { isThemeMode, type ThemeMode } from "./theme-mode"
 
 const STORAGE_KEY = "meitheal-theme"
 const CUSTOM_CSS_KEY = "meitheal-custom-theme-css"
@@ -21,10 +21,14 @@ export function readAppearanceValue(key: string): string | null {
   }
 }
 
-export function getEffectiveTheme(): "light" | "dark" {
+function storedThemeMode(): ThemeMode {
+  const value = readAppearanceValue(STORAGE_KEY)
+  return isThemeMode(value) ? value : "auto"
+}
+
+export function getEffectiveTheme(stored = storedThemeMode()): "light" | "dark" {
   const matched = document.documentElement.dataset.haMatch
   if (matched === "light" || matched === "dark") return matched
-  const stored = readAppearanceValue(STORAGE_KEY)
   if (stored === "light" || stored === "dark") return stored
   // Custom themes layer on top of dark base
   if (stored === "custom" || stored === "knight-rider") return "dark"
@@ -41,10 +45,10 @@ export function setTheme(mode: ThemeMode): void {
 }
 
 export function applyTheme(): void {
-  const stored = readAppearanceValue(STORAGE_KEY) ?? "auto"
+  const stored = storedThemeMode()
   const root = document.documentElement
   const matched = root.dataset.haMatch === "light" || root.dataset.haMatch === "dark"
-  const theme = getEffectiveTheme()
+  const theme = getEffectiveTheme(stored)
   root.dataset.theme = !matched && (stored === "auto" || stored === "knight-rider") ? stored : theme
   root.classList.toggle("dark", theme === "dark")
   root.classList.toggle("light", theme === "light")
@@ -80,9 +84,6 @@ export function initThemeWatcher(): void {
   applyTheme()
   const mq = window.matchMedia("(prefers-color-scheme: dark)")
   mq.addEventListener("change", () => {
-    const current = readAppearanceValue(STORAGE_KEY)
-    if (!current || current === "auto") {
-      applyTheme()
-    }
+    if (storedThemeMode() === "auto") applyTheme()
   })
 }

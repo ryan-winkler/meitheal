@@ -426,7 +426,7 @@ export function todayCompletionFilter(today: string, timezone = "Europe/Dublin")
         OR (typeof(updated_at) = 'text' AND (
           ((updated_at LIKE '%T%' OR updated_at LIKE '%:%') AND strftime('%s', updated_at) IS NOT NULL
             AND (${matchesDay("CAST(strftime('%s', updated_at) AS INTEGER) * 1000")}))
-          OR (updated_at NOT LIKE '%T%' AND updated_at NOT LIKE '%:%' AND substr(updated_at, 1, 10) = ?)
+          OR updated_at = ?
         ))
       )`,
     args: [...bounds, ...bounds, today],

@@ -322,7 +322,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
       type="button"
       class:list={["filter-pill", { "filter-pill--active": Astro.url.searchParams.get("promoted") === "1" }]}
       data-filter-promoted
-      title={t("kanban.promoted_filter_explanation", locale)}
+      title={t("kanban.promoted_filter_hint", locale)}
       aria-pressed={Astro.url.searchParams.get("promoted") === "1" ? "true" : "false"}
     >
       <Icon name="rocket" size={14} />

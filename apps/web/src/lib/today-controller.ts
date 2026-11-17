@@ -329,7 +329,7 @@ function setupEventDelegation(container: HTMLElement) {
       if (archive?.getAttribute("aria-disabled") === "true") return
       const ok = await confirmDialog({
         title: "Archive completed tasks?",
-        message: "This archives all Household Board tasks marked Complete and last updated today, including tasks outside the preview.",
+        message: "This archives all Household Board tasks marked Complete and last updated today.",
         variant: "warning",
         confirmText: "Archive",
       })
@@ -984,14 +984,16 @@ function renderCompletedTasks(container: HTMLElement, counts: TodayTaskCounts): 
   // Keep existing links and focus during polling when the data is unchanged.
   const previous = Array.from(list?.querySelectorAll<HTMLAnchorElement>("a") ?? [])
   if (previous.length !== tasks.length || !tasks.every((task, index) =>
-    previous[index]?.dataset.taskDetailLink === task.id && previous[index]?.textContent === task.title)) {
+    previous[index]?.dataset.taskDetailLink === task.id && previous[index]?.querySelector("span")?.textContent === task.title)) {
     list?.replaceChildren(...tasks.map(task => {
       const row = document.createElement("li")
       const link = document.createElement("a")
       link.href = buildTaskPath(task.id)
       link.dataset.taskDetailLink = task.id
-      link.textContent = task.title
-      row.append(createSpriteIconElement("checkbox", { size: 17 }), link)
+      const title = document.createElement("span")
+      title.textContent = task.title
+      link.append(createSpriteIconElement("checkbox", { size: 17 }), title)
+      row.append(link)
       return row
     }))
   }

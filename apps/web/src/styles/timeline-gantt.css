@@ -76,6 +76,7 @@
 @media (max-width: 640px) {
   .timeline-controls-bar {
     flex-wrap: wrap;
+    position: relative;
   }
   .timeline-ctrl-btn {
     min-width: 44px;
@@ -271,6 +272,15 @@
   box-shadow: var(--shadow-lg, 0 8px 32px rgba(0, 0, 0, 0.3));
   z-index: 100;
   font-size: 12px;
+}
+
+@media (max-width: 640px) {
+  .timeline-legend { position: static; }
+  .timeline-legend-panel {
+    inset-inline: 0 auto;
+    inline-size: min(240px, 100%);
+    min-width: 0;
+  }
 }
 
 .legend-section {
