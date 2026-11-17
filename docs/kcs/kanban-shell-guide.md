@@ -81,6 +81,12 @@ Use Tab to move between visible task views. If a view moves into **More**, open 
 
 Open **Timeline** to narrow the chart by text, status, priority, task type, or area. Use **Group by** to organize dated tasks. The URL keeps these choices when you reload or move between task views. On phones, open **Filters** to adjust the chart. The task pane starts closed unless you saved a preference. Select **Task pane** to open or close it. The control becomes available when tasks match the filters.
 
+### Group cards by status
+
+Choose **Group by → By Status** to split each workflow column into status groups. Each heading counts the cards on the current page. The column total still counts the full result. Overlapping columns keep their own cards. Changing only the grouping keeps the current page. Changing a filter starts at page one.
+
+Use Enter or Space on a heading to collapse its cards. A status group remembers its collapsed state separately in each column. Sharing the URL includes the grouping and current column page.
+
 ## Troubleshooting
 
 ### Board pages or filters fail to load

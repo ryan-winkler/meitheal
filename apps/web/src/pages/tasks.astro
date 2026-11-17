@@ -991,14 +991,7 @@ try {
 
 <style>
   @reference "../../src/styles/global.css";
-  .kanban-shell__manage-btn {
-    min-height: 40px;
-    padding: 0 14px;
-  }
 
-  .kanban-shell__fields-card {
-    padding: 16px 18px;
-  }
 
   /* Signal bar CSS now in SignalBar.astro */
   #kanban-shell {
@@ -1113,15 +1106,6 @@ try {
       max-height: none;
       gap: 12px;
     }
-    .user-filters {
-      /* Responsive layout for user filters */
-      flex-direction: column;
-      align-items: stretch;
-    }
-    .user-filters > * {
-      width: 100%;
-      margin-bottom: 8px;
-    }
   }
 
   /* The open area picker overlays the filter row, which has its own stacking context. */
@@ -1223,36 +1207,6 @@ try {
     box-shadow: none;
   }
 
-  /* ── Card density modes (Phase 16.4) ── */
-  .kanban-board.density-compact .kanban-card {
-    padding: 6px 8px;
-    gap: 4px;
-  }
-  .kanban-board.density-compact .kanban-card-title {
-    font-size: 0.8rem;
-    line-height: 1.2;
-  }
-  .kanban-board.density-compact .kanban-card-meta,
-  .kanban-board.density-compact .kanban-card-desc,
-  .kanban-board.density-compact .kanban-progress,
-  .kanban-board.density-compact .label-badges,
-  .kanban-board.density-compact .kanban-custom-fields {
-    display: none;
-  }
-  .kanban-board.density-compact .kanban-cards {
-    gap: 4px;
-  }
-
-  .kanban-board.density-spacious .kanban-card {
-    padding: 16px;
-    gap: 10px;
-  }
-  .kanban-board.density-spacious .kanban-card-title {
-    font-size: 0.95rem;
-  }
-  .kanban-board.density-spacious .kanban-cards {
-    gap: 12px;
-  }
   .kanban-card:focus-visible {
     outline: 2px solid var(--border-focus);
     outline-offset: 2px;
@@ -1721,14 +1675,6 @@ try {
     color: var(--info);
   }
 
-  /* Labels on cards */
-  .kanban-labels {
-    display: flex;
-    gap: 4px;
-    flex-wrap: wrap;
-    margin-top: 6px;
-  }
-
   /* Custom fields on cards */
   .kanban-custom-fields {
     display: flex;
@@ -1753,9 +1699,6 @@ try {
     color: var(--accent-text);
   }
 
-  .kanban-card.user-filtered-out {
-    display: none !important;
-  }
   .kanban-inline-add {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;

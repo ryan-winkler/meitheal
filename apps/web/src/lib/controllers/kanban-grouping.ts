@@ -3,6 +3,34 @@
  * @domain kanban
  */
 
+import { CANONICAL_STATUSES, getStatusDef, normalizeStatus, STATUS } from "../status-config"
+
+export function swimlanePreferenceKey(board: HTMLElement, group: HTMLElement): string {
+  const key = group.dataset.swimlaneType || group.dataset.swimlaneValue || "dynamic"
+  if (board.dataset.groupBy !== "status") return `meitheal-swimlane-${key}`
+  const column = group.closest<HTMLElement>(".kanban-column")
+  return `meitheal-swimlane-v2-${JSON.stringify(["status", column?.dataset.laneId, key])}`
+}
+
+export function setSwimlaneCollapsed(group: HTMLElement, collapsed: boolean): void {
+  const header = group.querySelector<HTMLElement>(".swimlane-header")
+  const cards = group.querySelector<HTMLElement>(".swimlane-cards")
+  if (!header || !cards) return
+
+  const toggle = header.querySelector(".swimlane-toggle")
+  if (toggle) {
+    toggle.classList.toggle("collapsed", collapsed)
+    toggle.textContent = collapsed ? "▶" : "▼"
+  }
+  cards.classList.toggle("collapsed", collapsed)
+  group.classList.toggle("swimlane-collapsed", collapsed)
+  if (header instanceof HTMLButtonElement) {
+    if (collapsed && cards.contains(document.activeElement)) header.focus({ preventScroll: true })
+    cards.hidden = collapsed
+    header.setAttribute("aria-expanded", String(!collapsed))
+  }
+}
+
 /** Group the server-selected page without replacing authoritative lane totals. */
 export function initKanbanGrouping(board: HTMLElement): void {
   const mode = board.dataset.groupBy ?? "none"
@@ -36,9 +64,8 @@ export function initKanbanGrouping(board: HTMLElement): void {
           if (countEl) countEl.textContent = String(cards.length)
         })
     })
-  } else if (mode === "area" || mode === "priority") {
-    // Dynamic swimlane generation for board/priority
-    const dataAttr = mode === "area" ? "area" : "priority"
+  } else if (mode === "area" || mode === "priority" || mode === "status") {
+    const byStatus = mode === "status"
     const icons: Record<string, string> =
       mode === "priority"
         ? {
@@ -65,42 +92,47 @@ export function initKanbanGrouping(board: HTMLElement): void {
       : {}
     const defaultAccent = cs.getPropertyValue("--accent").trim() || "#146C4E"
 
-    board.querySelectorAll(".kanban-column").forEach((col) => {
+    board.querySelectorAll(".kanban-column").forEach((col, columnIndex) => {
       const cardsContainer = col.querySelector(".kanban-cards")
       if (!cardsContainer) return
       const flatCards = Array.from(
-        cardsContainer.querySelectorAll(".flat-card"),
+        cardsContainer.querySelectorAll<HTMLElement>(".flat-card"),
       )
 
       // Collect unique values
       const groups = new Map<string, Element[]>()
       flatCards.forEach((card) => {
-        const val =
-          (card as HTMLElement).dataset[dataAttr] ||
-          (mode === "priority" ? "3" : "default")
+        const value = card.dataset[mode]
+        const val = byStatus ? normalizeStatus(value || STATUS.PENDING)
+          : value || (mode === "priority" ? "3" : "default")
         if (!groups.has(val)) groups.set(val, [])
         groups.get(val)!.push(card)
       })
 
-      // Sort: priority by number, board alphabetically
+      const rank = (key: string) => {
+        const index = CANONICAL_STATUSES.indexOf(key)
+        return index < 0 ? CANONICAL_STATUSES.length : index
+      }
       const sortedKeys = Array.from(groups.keys()).sort((a, b) => {
         if (mode === "priority") return Number(a) - Number(b)
-        return a.localeCompare(b)
+        return (byStatus ? rank(a) - rank(b) : 0) || a.localeCompare(b)
       })
 
-      sortedKeys.forEach((key) => {
+      sortedKeys.forEach((key, groupIndex) => {
         const cards = groups.get(key)!
         const group = document.createElement("div")
         group.className = "swimlane-group dynamic-group"
         group.dataset.swimlaneType = key
 
-        const accentColor = colorMap[key] || defaultAccent
+        const accentColor = (!byStatus && colorMap[key]) || defaultAccent
         group.style.borderTop = `3px solid ${accentColor}`
 
-        const header = document.createElement("div")
+        const header = document.createElement(byStatus ? "button" : "div")
         header.className = "swimlane-header"
-        const label =
-          icons[key] || (mode === "area" ? (areaTitleMap[key] || `📋 ${key}`) : defaultLabel)
+        const status = byStatus ? getStatusDef(key) : undefined
+        const label = byStatus
+          ? status ? (window.mI18n?.get(status.i18nKey) ?? status.label) : key
+          : icons[key] || (mode === "area" ? (areaTitleMap[key] || `📋 ${key}`) : defaultLabel)
         const toggleSpan = document.createElement("span")
         toggleSpan.className = "swimlane-toggle"
         toggleSpan.textContent = "▼"
@@ -123,6 +155,14 @@ export function initKanbanGrouping(board: HTMLElement): void {
 
         const swimlaneCards = document.createElement("div")
         swimlaneCards.className = "swimlane-cards"
+        if (header instanceof HTMLButtonElement) {
+          header.type = "button"
+          header.setAttribute("aria-expanded", "true")
+          toggleSpan.setAttribute("aria-hidden", "true")
+          swimlaneCards.id = `status-swimlane-${columnIndex}-${groupIndex}`
+          header.setAttribute("aria-controls", swimlaneCards.id)
+          labelSpan.title = label
+        }
         cards.forEach((card) => {
           card.classList.remove("flat-card")
           card.classList.add("grouped-card")
@@ -133,35 +173,14 @@ export function initKanbanGrouping(board: HTMLElement): void {
         group.appendChild(swimlaneCards)
         cardsContainer.appendChild(group)
 
-        // Restore saved collapse state for dynamic swimlane
-        const collapseKey = `meitheal-swimlane-${key}`
-        if (localStorage.getItem(collapseKey) === "collapsed") {
-          swimlaneCards.classList.add("collapsed")
-          toggleSpan.classList.add("collapsed")
-          toggleSpan.textContent = "▶"
-          group.classList.add("swimlane-collapsed")
-        }
-      }) // end sortedKeys.forEach
-    }) // end col.forEach
-  } // end else if
-  // Swimlane header collapse toggle — CSS animation + localStorage persistence
-  board.querySelectorAll(".swimlane-header[data-type]").forEach((header) => {
-    const group = header.closest(".swimlane-group")
-    if (!group) return
-    const cards = group.querySelector(".swimlane-cards")
-    const toggle = header.querySelector(".swimlane-toggle")
-    const type = (header as HTMLElement).dataset.type || "unknown"
-    const storageKey = `meitheal-swimlane-${type}`
-
-    // Restore saved collapse state
-    const saved = localStorage.getItem(storageKey)
-    if (saved === "collapsed" && cards) {
-      cards.classList.add("collapsed")
-      if (toggle) {
-        toggle.classList.add("collapsed")
-        toggle.textContent = "▶"
+      })
+    })
+  }
+  for (const group of board.querySelectorAll<HTMLElement>(".swimlane-group:not([hidden])")) {
+    try {
+      if (localStorage.getItem(swimlanePreferenceKey(board, group)) === "collapsed") {
+        setSwimlaneCollapsed(group, true)
       }
-      group.classList.add("swimlane-collapsed")
-    }
-  })
+    } catch { /* Storage is optional. */ }
+  }
 }
