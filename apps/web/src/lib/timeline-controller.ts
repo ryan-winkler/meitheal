@@ -7,7 +7,7 @@ import { FieldPickerPanel, TASK_FIELD_DEFS, loadVisibleFields } from "./field-pi
 import { loadFilterState } from "./filter-state"
 import { isDoneStatus as isComplete, normalizeStatus } from "./status-config"
 import { replaceTaskBackgroundUrl, taskBackgroundUrl } from "./task-page-url"
-import type { TimelineProjectLabel } from "./timeline-project-grouping"
+import type { HouseholdProjectLabel } from "./household-project-grouping"
 /**
  * Timeline/GANTT Controller — native SVG GANTT renderer.
  * @domain Task Visualization
@@ -96,7 +96,7 @@ interface ZoomConfig {
 
 // ── Area/Project name lookups (populated from SSR data) ──────────────────
 let areaLookup: Record<string, string> = {}
-let projectLookup: Record<string, TimelineProjectLabel> = {}
+let projectLookup: Record<string, HouseholdProjectLabel> = {}
 
 // ── Unscheduled section collapse state ─────────────────────────────────────
 const UNSCHEDULED_COLLAPSED_KEY = "meitheal-gantt-unscheduled-collapsed"
@@ -642,7 +642,7 @@ function buildHierarchy(bars: GanttBar[], groupByKey: string = "none"): Hierarch
     const groupKey = groupByKey
     
     // Group bars
-    const grouped = new Map<string, TimelineProjectLabel & { bars: GanttBar[] }>()
+    const grouped = new Map<string, HouseholdProjectLabel & { bars: GanttBar[] }>()
     for (const bar of bars) {
       let key: string | undefined
       let qualifier: string | undefined

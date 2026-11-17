@@ -24,7 +24,7 @@ import {
 import { TaskRepository } from "@domains/tasks/persistence/task-repository";
 import { HierarchyRepository } from "@domains/tasks/persistence/hierarchy-repository";
 import { serializeForScript } from "@lib/safe-html"
-import { getTimelineProjectGroup, getTimelineProjectLabels } from "@lib/timeline-project-grouping"
+import { getHouseholdProjectGroup, getHouseholdProjectLabels } from "@lib/household-project-grouping"
 
 interface TaskRecord {
   id: string;
@@ -51,7 +51,7 @@ interface TaskRecord {
 
 let tasks: TaskRecord[] = [];
 let areaMap: Record<string, string> = {};
-let projectMap = getTimelineProjectLabels([], {});
+let projectMap = getHouseholdProjectLabels([], {});
 let fetchError = false;
 try {
   await ensureSchema();
@@ -62,23 +62,20 @@ try {
   const hierarchy = new HierarchyRepository(client)
   const [areas, projects] = await Promise.allSettled([
     repo.getAreas(),
-    hierarchy.findAllProjects(),
+    hierarchy.findProjectGroups(),
   ])
   if (areas.status === "fulfilled") {
     areaMap = Object.fromEntries(Object.entries(areas.value).map(([id, info]) => [id, info.name]))
   }
   if (projects.status === "fulfilled") {
-    const needsGoalAreas = Object.keys(areaMap).length && projects.value.some(project => !project.area_id && project.goal_id)
-    const goals = needsGoalAreas ? await hierarchy.findAllGoals().catch(() => []) : []
-    const goalAreas = new Map(goals.map(goal => [goal.id, goal.area_id]))
-    projectMap = getTimelineProjectLabels(projects.value, areaMap, goalAreas)
+    projectMap = getHouseholdProjectLabels(projects.value, areaMap)
   }
 } catch (e) {
   fetchError = true;
 }
 
 const timelineTasks = tasks.map(({ project_id, ...task }) => ({
-  ...task, project_group: getTimelineProjectGroup(project_id, projectMap),
+  ...task, project_group: getHouseholdProjectGroup(project_id, projectMap),
 }))
 const datedTasks = tasks.filter(t => t.start_date || t.due_date);
 const taskCount = datedTasks.length;
