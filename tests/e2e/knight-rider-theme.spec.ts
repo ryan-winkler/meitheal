@@ -203,6 +203,8 @@ test("Knight Rider persists and fills active work and task colors on Today and B
     await expect(recent(idleId)).toHaveCSS("border-left-color", "rgb(239, 68, 68)")
     await expect(recent(mediumId)).toHaveCSS("border-left-color", "rgb(234, 179, 8)")
     await expect(recent(coloredId)).toHaveCSS("border-left-width", "1px")
+    await recent(idleId).hover()
+    await expect(recent(idleId)).toHaveCSS("border-left-color", "rgb(239, 68, 68)")
     const queue = page.locator("#dashboard-open")
     const queueIdle = queue.locator(`.task-item[data-id="${idleId}"]`)
     await expect(queueIdle).toBeVisible()

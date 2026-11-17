@@ -298,6 +298,19 @@ test.describe("Calendar Shell", () => {
       await dayCell.press("Enter")
       await expect(agenda.getByRole("button", { name: /roof supplies/ })).toBeVisible()
       await expect(agenda.getByText(/roof checklist|roof inspection/)).toHaveCount(0)
+
+      await page.goto("/tasks?view=calendar&year=2031&month=6&status=pending&search=roof#calendar")
+      await expect(page.locator("#calendar-shell")).toHaveAttribute("data-calendar-ready", "true")
+      await expect(dayCell).toHaveAccessibleName(/1 task$/)
+      await dayCell.press("Enter")
+      await agenda.getByRole("button", { name: /roof supplies/ }).click()
+      const detailStatus = page.locator("#td-status")
+      await expect(detailStatus).toBeEnabled()
+      await detailStatus.selectOption("complete")
+      await expect(dayCell).toHaveAccessibleName("8 July 2031")
+      await page.getByRole("button", { name: "Close detail" }).click()
+      await dayCell.press("Enter")
+      await expect(agenda).toContainText("No matching tasks or local events")
     } finally {
       for (const id of createdIds) await request.delete(`/api/tasks/${id}`, { data: {} })
     }

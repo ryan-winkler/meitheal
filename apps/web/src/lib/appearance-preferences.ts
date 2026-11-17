@@ -120,8 +120,9 @@ export function bindAppearanceNavigation(signal: AbortSignal): void {
     if (hoverEnabled() && !pointerInside() && !focusInside()) setSidebarCollapsed(true)
   }
   // Hover or focus on the edge button itself must leave it in place for activation.
-  sidebar?.addEventListener("pointerenter", () => {
-    if (hoverEnabled() && pointerInside() && !edgeButton?.matches(":hover")) setSidebarCollapsed(false)
+  sidebar?.addEventListener("pointermove", event => {
+    if (document.body.classList.contains("sidebar-collapsed") && hoverEnabled() && pointerInside() &&
+      !edgeButton?.contains(event.target as Node)) setSidebarCollapsed(false)
   }, { signal })
   sidebar?.addEventListener("pointerleave", closeHover, { signal })
   sidebar?.addEventListener("focusin", event => {

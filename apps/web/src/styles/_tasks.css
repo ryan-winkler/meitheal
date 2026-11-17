@@ -301,6 +301,10 @@
       0 2px 8px rgba(0, 0, 0, 0.2);
   }
 
+  .dashboard-task-card:hover {
+    border-left-color: var(--dashboard-task-accent);
+  }
+
   .bento-card-stripe {
     width: 4px;
     flex-shrink: 0;

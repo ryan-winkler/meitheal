@@ -23,7 +23,7 @@ Calendar opens within **Tasks** at `/tasks?view=calendar`. Older `/calendar` and
 
 1. Select a day in the month grid using a pointer, Enter or Space.
 2. Review **Tasks and Events** and **Connected Calendar Events**. Local Event rows show their start time or **All day**. Task rows show the shared status label and icon. Connected timed events that span midnight show their original start date on days when they continue. Saved Home Assistant and CalDAV events open their linked task and remain available if the live source is unavailable. Multiple starts from a recurring event can appear on the same day. Archived tasks are hidden. Without task filters, the agenda also shows completed tasks that are absent from the month count.
-3. When more than 100 tasks match a day, use **Load more tasks** in its task list.
+3. When more than 100 tasks match a day, use **Load more tasks** in its task list. Changing a task’s status from Details refreshes the month counts under the current filters.
 4. Use **Add Task** to open the shared form with the selected due date, or **Add Event** to start an Event on that date. A newly created Event appears on its start day even with no calendar connection.
 
 Assistive technology announces the visible day number first, followed by the month and year and the task count when a badge is shown. The current date is identified as today. Weekend headings and the current date remain distinct in light and dark themes. On narrow touch screens, the month grid uses more of the screen width so neighboring days have separate tap targets.

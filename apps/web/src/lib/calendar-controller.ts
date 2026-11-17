@@ -430,7 +430,9 @@ export function initCalendarPage(signal: AbortSignal): void {
     const area = (event as CustomEvent<{ areaId: string }>).detail.areaId
     applyFilters({ area })
   }, { signal })
-  document.addEventListener("meitheal:tasks-changed", () => void refresh(new URL(desired), true), { signal })
+  const refreshTasks = () => void refresh(new URL(desired), true)
+  document.addEventListener("meitheal:tasks-changed", refreshTasks, { signal })
+  document.addEventListener("meitheal:task-status-saved", refreshTasks, { signal })
   signal.addEventListener("abort", () => {
     delete shell.dataset.calendarReady
     closeDrawer(false)

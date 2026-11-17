@@ -75,6 +75,12 @@ test("sidebar can close again in desktop hover mode and on a phone", async ({ pa
   await expect(body).not.toHaveClass(/sidebar-collapsed/)
   await page.keyboard.press("Control+b")
   await expect(body).toHaveClass(/sidebar-collapsed/)
+  await edge.hover()
+  await expect(body).toHaveClass(/sidebar-collapsed/)
+  await sidebar.locator('a[data-page="dashboard"]').hover()
+  await expect(body).not.toHaveClass(/sidebar-collapsed/)
+  await edge.click()
+  await expect(body).toHaveClass(/sidebar-collapsed/)
 
   await page.setViewportSize({ width: 390, height: 844 })
   const menu = page.locator("#menu-toggle")
