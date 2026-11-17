@@ -129,6 +129,20 @@ test("Knight Rider persists and fills active work and task colors on Today and B
     await expect.poll(() => root.evaluate(el => getComputedStyle(el).getPropertyValue("--border").trim())).toBe("rgb(119 119 123)")
     await page.emulateMedia({ contrast: "no-preference" })
 
+    const favorite = await request.put(`/api/tasks/${coloredId}`, { data: { is_favorite: 1 } })
+    expect(favorite.ok()).toBe(true)
+    await page.goto("/")
+    const queue = page.locator("#dashboard-open")
+    const queueIdle = queue.locator(`.task-item[data-id="${idleId}"]`)
+    await expect(queueIdle).toBeVisible()
+    const neutral = await queueIdle.evaluate(el => getComputedStyle(el).backgroundColor)
+    for (const section of ["#dashboard-open", "#dashboard-momentum"]) {
+      const row = page.locator(`${section} .task-item[data-id="${coloredId}"]`)
+      await expect(row).toBeVisible()
+      await expect(row).toHaveAttribute("data-task-color", "")
+      expect(await row.evaluate(el => getComputedStyle(el).backgroundColor)).not.toBe(neutral)
+    }
+
     await page.goto("/settings#look-and-feel-settings")
     await themeSelect.selectOption("dark")
     await expect(root).toHaveAttribute("data-theme", "dark")

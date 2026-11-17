@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test"
 
 import { sanitizeTodoTitle } from "../../apps/web/src/lib/cleanup-corrupt-titles"
-import { calendarDaysFromToday, calendarToday } from "../../apps/web/src/lib/date"
+import { calendarDaysFromToday, calendarToday, compareCalendarStarts } from "../../apps/web/src/lib/date"
 import { formatRegionalDate } from "../../apps/web/src/lib/regional-date"
 import { evaluateFilterGroup, extractDataFromElement, passesAdvancedFilter, type FilterGroup } from "../../apps/web/src/lib/filter-engine"
 
@@ -28,6 +28,25 @@ test("date helpers format calendar-only dates and zoned timestamps across all fo
   expect(formatRegionalDate(ref, { timezone: "Europe/Dublin", fallbackFormat: "yyyy/MM" })).toBe("2026/11")
   // An unknown time zone falls back to the household default instead of failing.
   expect(formatRegionalDate(ref, { format: "absolute-iso", timezone: "Invalid/Zone" })).toBe("2026-11-14")
+})
+
+test("Calendar orders floating times in the household timezone on both sides of a clock change", () => {
+  const original = process.env.TZ
+  try {
+    for (const runtime of ["UTC", "America/New_York"]) {
+      process.env.TZ = runtime
+      const timezone = "Europe/Dublin"
+      const firstOccurrence = "2031-10-26T01:30:00"
+      expect(compareCalendarStarts(firstOccurrence, "2031-10-26T00:15:00Z", timezone)).toBeGreaterThan(0)
+      expect(compareCalendarStarts(firstOccurrence, "2031-10-26T01:00:00Z", timezone)).toBeLessThan(0)
+      const skippedTime = "2031-03-30T01:30:00"
+      expect(compareCalendarStarts(skippedTime, "2031-03-30T01:29:00Z", timezone)).toBeGreaterThan(0)
+      expect(compareCalendarStarts(skippedTime, "2031-03-30T01:31:00Z", timezone)).toBeLessThan(0)
+    }
+  } finally {
+    if (original === undefined) delete process.env.TZ
+    else process.env.TZ = original
+  }
 })
 
 test("filter-engine evaluates all operators, arrays, nested groups, and element datasets", () => {

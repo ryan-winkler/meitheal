@@ -14,7 +14,7 @@ import {
 import { taskTimestampMs } from "@domains/tasks/persistence/task-timestamp";
 import type { InValue, Row } from "@libsql/client";
 import { deriveEisenhowerQuadrant } from "@meitheal/domain-tasks";
-import { calendarDayFromInput, calendarToday, isDueOverdue, isValidTimezone, resolveTimezone, shiftCalendarDay } from "./date"
+import { calendarDayFromInput, calendarToday, isDueOverdue, isValidTimezone, resolveTimezone, shiftCalendarDay, timezoneOffsetAt } from "./date"
 import { frameworkPayloadObject, readRiceInputs, riceLensScore } from "./rice-lens"
 
 // =============================================================================
@@ -402,16 +402,7 @@ function householdDayRanges(day: string, timezone: string): [number, number][] {
   const dayMs = 86_400_000
   const localStart = Date.parse(`${day}T00:00:00Z`)
   const localEnd = localStart + dayMs
-  const formatter = new Intl.DateTimeFormat("en", { timeZone: timezone, timeZoneName: "longOffset" })
-
-  function offsetAt(instant: number): number {
-    const name = formatter.formatToParts(instant).find(part => part.type === "timeZoneName")?.value
-    if (name === "GMT") return 0
-    const match = name?.match(/^GMT([+-])(\d{2}):(\d{2})(?::(\d{2}))?$/u)
-    if (!match) throw new Error("Could not determine household UTC offset")
-    const seconds = Number(match[2]) * 3600 + Number(match[3]) * 60 + Number(match[4] ?? 0)
-    return (match[1] === "-" ? -1 : 1) * seconds * 1000
-  }
+  const offsetAt = (instant: number) => timezoneOffsetAt(instant, timezone)
 
   // All IANA offsets are within 24 hours of UTC and there is at most one
   // offset transition in this three-day window. With a constant offset the

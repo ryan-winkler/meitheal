@@ -25,6 +25,7 @@ export function resolveTimezone(timezone?: string): string {
 
 let calendarFormatter: { timeZone: string; format: Intl.DateTimeFormat } | undefined
 let clockFormatter: { timeZone: string; format: Intl.DateTimeFormat } | undefined
+let offsetFormatter: { timeZone: string; format: Intl.DateTimeFormat } | undefined
 
 /** Today's calendar date in the given timezone, as YYYY-MM-DD. */
 export function calendarToday(timezone = DEFAULT_TIMEZONE, now = new Date()): string {
@@ -112,11 +113,34 @@ export function formatTimeInZone(
   return clockFormatter.format.format(parsed)
 }
 
-/** Order zoned starts by instant and read floating starts in the household timezone. */
+/** UTC offset of a timezone at an absolute instant. */
+export function timezoneOffsetAt(instant: number, timeZone: string): number {
+  if (offsetFormatter?.timeZone !== timeZone) {
+    offsetFormatter = { timeZone, format: new Intl.DateTimeFormat("en", { timeZone, timeZoneName: "longOffset" }) }
+  }
+  const name = offsetFormatter.format.formatToParts(instant).find(part => part.type === "timeZoneName")?.value
+  if (name === "GMT") return 0
+  const match = name?.match(/^GMT([+-])(\d{2}):(\d{2})(?::(\d{2}))?$/u)
+  if (!match) throw new Error("Could not determine household UTC offset")
+  const seconds = Number(match[2]) * 3600 + Number(match[3]) * 60 + Number(match[4] ?? 0)
+  return (match[1] === "-" ? -1 : 1) * seconds * 1000
+}
+
+/** Order connected events by instant. Read floating dates and times in the household timezone. */
 export function compareCalendarStarts(left: string, right: string, timezone: string): number {
   const instant = (value: string) => {
     const raw = value.trim()
-    return parseDueTime(DATE_ONLY.test(raw) ? raw + "T00:00" : raw, timezone)
+    const wallTime = DATE_ONLY.test(raw) ? raw + "T00:00" : raw
+    if (!FLOATING_DATETIME.test(wallTime)) return parseDueTime(raw, timezone)
+    const wall = Date.parse(wallTime.replace(" ", "T") + "Z")
+    if (!Number.isFinite(wall)) return NaN
+    const offset = timezoneOffsetAt(wall - DAY_MS, timezone)
+    const earlier = wall - offset
+    // Prefer the first occurrence of a repeated time. Use the pre-transition offset in a gap.
+    if (timezoneOffsetAt(earlier, timezone) === offset) return earlier
+    const newOffset = timezoneOffsetAt(wall + DAY_MS, timezone)
+    const later = wall - newOffset
+    return timezoneOffsetAt(later, timezone) === newOffset ? later : earlier
   }
   return instant(left) - instant(right) ||
     Number(DATE_ONLY.test(right.trim())) - Number(DATE_ONLY.test(left.trim())) ||

@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test"
+import { calendarToday, shiftCalendarDay } from "../../apps/web/src/lib/date"
 
 test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the disposable Meitheal browser fixture")
 test.use({ serviceWorkers: "block" })
@@ -19,7 +20,11 @@ test("Knight Rider keeps the completed Today state and saved theme truthful", as
   await empty.getByRole("button", { name: "Add a task" }).click()
   await expect(page.locator("#new-task-title-input")).toBeFocused()
 
-  const { id } = await (await request.post("/api/tasks", { data: { title: "Put the spare valves away", due_date: new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Dublin", dateStyle: "short" }).format(new Date()), is_favorite: 1 } })).json()
+  const create = await request.post("/api/tasks", { data: {
+    title: "Put the spare valves away", due_date: shiftCalendarDay(calendarToday(), -1), is_favorite: 1,
+  } })
+  expect(create.status()).toBe(201)
+  const { id } = await create.json()
   const complete = await request.put(`/api/tasks/${id}`, { data: { status: "complete" } })
   expect(complete.ok()).toBe(true)
   await page.reload()
@@ -56,6 +61,12 @@ test("Knight Rider keeps the completed Today state and saved theme truthful", as
   expect(await (await archived).json()).toMatchObject({ ok: true, cleared: 1 })
   await expect(disclosure).toBeHidden()
   await expect(page.locator("#clear-completed-btn")).toBeVisible()
+  await page.goto("/")
+  for (const section of ["#dashboard-open", "#dashboard-momentum", "#dashboard-recent"]) {
+    await expect(page.locator(section).getByText("Put the spare valves away")).toHaveCount(0)
+  }
+  await expect(page.locator("#dashboard-stat-open-count")).toHaveText("0")
+  await expect(page.locator("#stat-overdue .stat-value")).toHaveText("0")
   await request.delete(`/api/tasks/${id}`)
 })
 

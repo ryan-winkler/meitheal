@@ -536,7 +536,7 @@ export class TaskRepository {
   async getRecentTasks(limit = 10): Promise<TaskRow[]> {
     const result = await this.client.execute(
       `SELECT id, title, description, status, priority, due_date, labels, calendar_sync_state, is_favorite, area_id, color, ticket_number, task_type, task_kind, project_id, owner, handoff_state, created_at, updated_at, deferred_at
-       FROM tasks WHERE task_board_id IS NULL ORDER BY created_at DESC LIMIT ${limit}`,
+       FROM tasks WHERE task_board_id IS NULL AND status <> 'archived' ORDER BY created_at DESC LIMIT ${limit}`,
     );
     return result.rows as unknown as TaskRow[];
   }
@@ -578,8 +578,8 @@ export class TaskRepository {
   /** Favorited, non-complete tasks */
   async getFavoriteTasks(limit = 5): Promise<TaskRow[]> {
     const result = await this.client.execute({
-      sql: `SELECT id, title, status, priority, due_date, is_favorite
-            FROM tasks WHERE task_board_id IS NULL AND is_favorite = 1 AND status != ? AND deferred_at IS NULL
+      sql: `SELECT id, title, status, priority, due_date, is_favorite, color, ticket_number
+            FROM tasks WHERE task_board_id IS NULL AND is_favorite = 1 AND status NOT IN (?, 'archived') AND deferred_at IS NULL
             ORDER BY updated_at DESC LIMIT ${limit}`,
       args: [STATUS.COMPLETE],
     });
@@ -589,8 +589,8 @@ export class TaskRepository {
   /** Open (non-complete) tasks ordered by priority then due date */
   async getOpenTasks(limit = 15): Promise<TaskRow[]> {
     const result = await this.client.execute({
-      sql: `SELECT id, title, status, priority, due_date, assigned_to, area_id, ticket_number, task_type, task_kind, project_id, owner, handoff_state
-            FROM tasks WHERE task_board_id IS NULL AND status NOT IN (?) AND deferred_at IS NULL
+      sql: `SELECT id, title, status, priority, due_date, assigned_to, area_id, ticket_number, task_type, task_kind, project_id, owner, handoff_state, color
+            FROM tasks WHERE task_board_id IS NULL AND status NOT IN (?, 'archived') AND deferred_at IS NULL
             ORDER BY priority ASC, due_date ASC NULLS LAST, updated_at DESC
             LIMIT ${limit}`,
       args: [STATUS.COMPLETE],
@@ -601,7 +601,7 @@ export class TaskRepository {
   /** Count tasks grouped by status for dashboard stats */
   async getStatusCounts(): Promise<DashboardStats> {
     const result = await this.client.execute(
-      "SELECT status, COUNT(*) AS cnt, COUNT(*) FILTER (WHERE deferred_at IS NULL) AS open_count FROM tasks WHERE task_board_id IS NULL GROUP BY status",
+      "SELECT status, COUNT(*) AS cnt, COUNT(*) FILTER (WHERE deferred_at IS NULL) AS open_count FROM tasks WHERE task_board_id IS NULL AND status <> 'archived' GROUP BY status",
     );
     const stats: DashboardStats = { total: 0, open: 0, active: 0, completed: 0, overdue: 0 };
     for (const row of result.rows) {
@@ -626,7 +626,7 @@ export class TaskRepository {
       sql: `SELECT due_date FROM tasks
             WHERE task_board_id IS NULL AND due_date IS NOT NULL AND due_date <> ''
               AND substr(due_date, 1, 10) < ?
-              AND status != ?
+              AND status NOT IN (?, 'archived')
               AND deferred_at IS NULL`,
       args: [upperBound, STATUS.COMPLETE],
     });
