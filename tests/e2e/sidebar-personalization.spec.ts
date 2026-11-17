@@ -96,3 +96,23 @@ test("the mobile drawer reorders via touch and keeps its close control", async (
     await context.close()
   }
 })
+
+test("a drop keeps its destination when a descendant clears the visual marker", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.goto("/today")
+  const sidebar = page.locator("#sidebar")
+  await sidebar.getByRole("button", { name: "Reorder sidebar" }).press("Enter")
+  const areas = sidebar.getByRole("button", { name: "Move Areas", exact: true })
+  const dashboard = sidebar.getByRole("button", { name: "Move Dashboard", exact: true })
+  const target = await dashboard.boundingBox()
+  expect(target).not.toBeNull()
+  const transfer = await page.evaluateHandle(() => new DataTransfer())
+  const position = { clientX: target!.x + 12, clientY: target!.y + 4, dataTransfer: transfer }
+  await areas.dispatchEvent("dragstart", position)
+  await dashboard.dispatchEvent("dragover", position)
+  await expect(sidebar.locator('[data-sidebar-group="dashboard"]')).toHaveAttribute("data-sidebar-drop", "before")
+  await dashboard.dispatchEvent("dragleave", { ...position, relatedTarget: null })
+  await expect(sidebar.locator("[data-sidebar-drop]")).toHaveCount(0)
+  await dashboard.dispatchEvent("drop", position)
+  await expect(sidebar.locator("[data-sidebar-group]").first()).toHaveAttribute("data-sidebar-group", "areas")
+})

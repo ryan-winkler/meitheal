@@ -199,10 +199,13 @@ export function bindSidebarReorder(sidebar: HTMLElement, signal: AbortSignal): v
     marker?.setAttribute("data-sidebar-drop", after ? "after" : "before")
   }, { signal })
   root.addEventListener("drop", event => {
-    if (!dragged || !marker) return
+    const item = itemFrom(event.target)
+    if (!dragged || !item || itemKey(item) === dragged) return
     event.preventDefault()
-    const group = visibleGroups().find(item => itemKey(item) === itemKey(marker!))
-    if (group) move(dragged, group, marker.dataset.sidebarDrop === "after")
+    // A descendant dragleave can clear the marker before the drop arrives.
+    const group = visibleGroups().find(group => itemKey(group) === itemKey(item))
+    const bounds = item.getBoundingClientRect()
+    if (group) move(dragged, group, event.clientY > bounds.top + bounds.height / 2)
     stopDrag()
   }, { signal })
   root.addEventListener("dragend", stopDrag, { signal })
