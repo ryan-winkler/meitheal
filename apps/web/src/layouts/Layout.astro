@@ -1,4 +1,5 @@
 ---
+import { organizationNeedsVerification } from "../lib/organization-request-context"
 import { readRequestOrganizationLabels, renderedLabelsProof } from "@lib/organization-labels"
 import { verifiedIngressUser } from "@lib/verified-ingress-user"
 import "../styles/global.css";
@@ -37,7 +38,8 @@ const featureFlags = await getFeatureFlags();
 const organizationState = await readRequestOrganizationLabels(Astro)
 const organizationUser = verifiedIngressUser(Astro.locals)
 const organizationSettings = Astro.url.pathname === "/settings"
-const organizationProof = organizationUser && organizationState ? renderedLabelsProof(organizationUser.id, locale, organizationState, organizationSettings) : null
+const organizationProof = organizationUser && organizationState &&
+  (organizationSettings || Object.keys(organizationState.forms).length > 0 || organizationNeedsVerification()) ? renderedLabelsProof(organizationUser.id, locale, organizationState, organizationSettings) : null
 if (organizationProof) Astro.response.headers.set("Cache-Control", "private, no-store")
 const featureFlagsJson = JSON.stringify(featureFlags);
 const showConfetti = !!featureFlags.confetti;

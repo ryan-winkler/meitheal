@@ -63,7 +63,7 @@ export function labelsProof(userId: string, locale: Locale): string {
 
 export function renderedLabelsProof(userId: string, locale: Locale, state: OrganizationLabelState, settings: boolean) {
   return createHmac("sha256", formSecret)
-    .update(JSON.stringify(["rendered-labels", userId, locale, ...(settings ? [] : [state.revision, state.visible])]))
+    .update(JSON.stringify(["rendered-labels", userId, locale, ...(settings ? [] : [state.revision, state.visible, state.capabilities])]))
     .digest("base64url")
 }
 
@@ -90,6 +90,7 @@ export interface OrganizationLabelState {
   forms: OrganizationAliases
   revision: string
   visible: OrganizationTerm[]
+  capabilities?: string[]
 }
 
 export async function readOrganizationLabelState(userId: string, locale: Locale): Promise<OrganizationLabelState> {
@@ -104,7 +105,10 @@ export async function readOrganizationLabelState(userId: string, locale: Locale)
   const row = result.rows[0]
   const forms = row ? parseOrganizationAliases(JSON.parse(String(row.forms))) : {}
   if (!forms) throw new Error("Invalid stored organization labels")
-  return { forms, revision: String(row?.revision ?? ""), visible: visibleOrganizationTerms(flags) }
+  return {
+    forms, revision: String(row?.revision ?? ""), visible: visibleOrganizationTerms(flags),
+    capabilities: Object.keys(flags).filter(key => flags[key]).sort(),
+  }
 }
 
 export async function saveOrganizationLabelState(

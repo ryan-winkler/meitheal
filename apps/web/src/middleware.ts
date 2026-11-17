@@ -578,7 +578,7 @@ async function handleRequest({ request, locals, routePattern }: Parameters<Middl
           ? await withOrganizationAvailability(availability, () =>
             retryKey ? replayTaskRequest(retryKey, next, locals.writeAbortSignal) : next())
           : apiProblem({ status: 404, detail: "This feature is unavailable.", extraHeaders: { "cache-control": "private, no-store" } })
-        response.headers.set("cache-control", "private, no-store")
+        if (availability.needsVerification) response.headers.set("cache-control", "private, no-store")
       }
     } catch (error) {
       if (!apiRoute) throw error

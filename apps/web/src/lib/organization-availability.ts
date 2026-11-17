@@ -28,6 +28,7 @@ const byRequest = new WeakMap<App.Locals, Promise<OrganizationAvailability>>()
 
 export interface OrganizationAvailability {
   locked: boolean
+  needsVerification: boolean
   includes: (feature: OrganizationFeature) => boolean
   revision: (feature: OrganizationFeature) => string | null
 }
@@ -49,12 +50,13 @@ export function resolveOrganizationAvailability(
   if (!available.has("pillars")) available.delete("principles")
   return {
     locked: false,
+    needsVerification: policies.some(policy => policy.audience !== "everyone"),
     includes: feature => available.has(feature),
     revision: feature => decisions.get(feature)?.revision ?? null,
   }
 }
 
-const unavailable: OrganizationAvailability = { locked: true, includes: () => false, revision: () => null }
+const unavailable: OrganizationAvailability = { locked: true, needsVerification: true, includes: () => false, revision: () => null }
 
 export function getOrganizationAvailability(context: AccessContext): Promise<OrganizationAvailability> {
   const previous = byRequest.get(context.locals)

@@ -27,3 +27,8 @@ export function effectiveOrganizationFlags(flags: Record<string, boolean>) {
     gamification: availability.includes("achievements"),
   }
 }
+
+
+export function organizationNeedsVerification(): boolean {
+  return context.getStore()?.needsVerification ?? false
+}

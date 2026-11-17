@@ -40,9 +40,19 @@ Each Home Assistant account can save different names for English and Gaeilge. A 
 
 If a save fails, keep the page open and try again. If another window saved first, review the current values displayed alongside your edits before saving again. Reopen Meitheal when changing Home Assistant accounts. Use Home Assistant backups for databases containing personal labels. The Settings configuration export contains installation settings.
 
-## Offer the Home Assistant Area task field
+## Choose who can use organization features
 
-A verified Home Assistant administrator can open **Settings → Tasks & Boards → Home Assistant Area** and choose **Everyone**, **Selected people**, or **Nobody**. Everyone refers to active household accounts with Home Assistant ingress. Save availability and reopen the work page. An empty Selected people list makes the field unavailable.
+A verified Home Assistant administrator can open **Settings → Tasks & Boards → Organization features** and choose an audience for **Boards organizer**, **Groups**, **Projects**, **Planning**, **Goals**, **Routines**, **Pillars**, **Principles**, **Achievements**, or **Home Assistant Area**. Select the feature, choose **Everyone**, **Selected people**, or **Nobody**, then choose **Save availability**. An empty Selected people list saves as Nobody. Reopen the work page to see the change. Principles also require Pillars to be available.
+
+After an audience is explicitly saved for Routines or Achievements, its corresponding legacy **Habit Tracker** or **Gamification** switch reports an HTTP 409 conflict. A Settings import containing that legacy switch also reports a conflict. Use **Organization features** to change the audience.
+
+The Boards organizer contains Groups and Projects. The previous `/planning#spaces` bookmark opens Boards when Planning is available to you. Personal display labels are configured under **Navigation & Shortcuts → Labels**. Existing tasks remain reachable through their Boards with the permissions you have there.
+
+Feature audiences also apply to direct API and page links. Governed feature reads require a connection. Activating the service worker update removes older feature responses from its caches.
+
+## Use the Home Assistant Area task field
+
+To offer the location field, select **Home Assistant Area** in **Organization features**, choose its audience and save availability.
 
 Use the location picker while capturing a task or under **Metadata** in its details. A Board or Group organizes the work. **Home Assistant Area** records its physical location. Choose **None** and save to clear a location. When the registry is unavailable, other task inputs are still usable. A deleted area appears as **Saved location unavailable** and can be replaced or cleared.
 
@@ -238,11 +248,3 @@ Calendar sync distinguishes an empty successful response from a missing or faile
 Credential changes during initial authentication retire the pending attempt; it cannot publish an old connection after a newer configuration takes over. Removing or rejecting credentials clears the previous entity snapshot immediately. Registered application listeners remain available for the next successful connection. A populated-cache rotation check covers these cases separately from the ordinary empty-snapshot connection check.
 
 If Home Assistant’s user list cannot load, People & Notifications keeps the saved default assignee selected as **Current assignee (unavailable)**. Use **None (unassigned)** when you want to clear it.
-
-
-Under Tasks & Boards, Home Assistant administrators can use Organization features to choose Everyone, Selected people, or Nobody for each organizing function. Choose a feature, set its audience, and save. Existing tasks remain reachable through their Boards. The legacy Habit Tracker and Gamification switches report a conflict after an audience has been configured. Use Organization features to change that audience.
-
-The Boards organizer contains groups and Projects. The previous Planning spaces bookmark opens Boards. Personal display labels are still configured under Navigation & Shortcuts → Labels.
-
-
-Feature audiences apply to direct API and page links. Governed feature reads require a connection. On activation, the service worker removes older feature responses from its caches.

@@ -8,7 +8,7 @@ description: "Back up, restore, and verify Meitheal with the Home Assistant Supe
 
 Stable and canary use Supervisor-managed cold backups. Supervisor stops a running Meitheal app before archiving its data and starts it again afterward. The app is unavailable during the snapshot. [Home Assistant app backup configuration](https://contributors.home-assistant.io/apps/reference/configuration/#backups)
 
-Use the Home Assistant backup controls for a database that contains a named Board, Personal Pillar, personal display label, selected audience, or task location. Named Board access uses a separate revision file and a pending publication directory excluded from the App backup. A live interruption can finish publishing an exact matching committed revision from that directory. A restored App whose database and current revision disagree keeps named Board access closed.
+Use the Home Assistant backup controls for a database that contains a named Board, Personal Pillar, personal display label, Selected people or Nobody audience, or task location. Changing a restricted audience back to Everyone keeps the database protected from raw download. Named Board access uses a separate revision file and a pending publication directory excluded from the App backup. A live interruption can finish publishing an exact matching committed revision from that directory. A restored App whose database and current revision disagree keeps named Board access closed.
 
 ## What is protected
 
@@ -87,4 +87,4 @@ In the editor-managed Home Assistant devcontainer, seed a task, related data and
 Before updating the Green, rehearse the older app and data rollback on a disposable Supervisor. A locally tested archive proves file recovery. It takes a Supervisor rehearsal to verify the lifecycle and a Green run to verify device acceptance.
 
 
-Schema 24 adds protection for hidden organization features and fixes the calendar date of a generated Routine occurrence. It upgrades existing schema 23 data in place and keeps the previous migration ledger entries. Use the matching App and data backup when restoring an earlier schema.
+Schema 24 adds raw-download protection for Nobody audiences and prevents changing or clearing a generated Routine occurrence's saved date when one is present. It upgrades existing schema 23 data in place and keeps the previous migration ledger entries. Use the matching App and data backup when restoring an earlier schema.
