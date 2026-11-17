@@ -121,10 +121,12 @@ export function initKanbanPage(signal: AbortSignal): void {
 
       if (!dataOnly && shouldFocus && (focus || active === retry)) {
         const card = focus?.taskId ? board.querySelector<HTMLElement>(`.kanban-card[data-id="${CSS.escape(focus.taskId)}"] .card-more-btn`) : null
+        const collapsedGroup = card?.closest(".swimlane-collapsed")
+        const control = collapsedGroup ? collapsedGroup.querySelector<HTMLElement>(".swimlane-header") : card
         const lane = focus?.lane ? board.querySelector<HTMLElement>(`.kanban-column[data-status="${CSS.escape(focus.lane)}"]`) : null
         const range = lane && (lane.querySelector<HTMLElement>("[data-kanban-range]") ??
           lane.querySelector<HTMLElement>(".kanban-column-header"))
-        ;(card || range || board.querySelector<HTMLElement>(".kanban-column-header"))?.focus()
+        ;(control || range || board.querySelector<HTMLElement>(".kanban-column-header"))?.focus()
       }
     } catch {
       if (!request.signal.aborted && !signal.aborted) {

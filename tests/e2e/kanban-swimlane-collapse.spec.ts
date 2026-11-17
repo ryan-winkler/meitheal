@@ -59,6 +59,18 @@ test("Kanban swimlane headings collapse and remember each lane independently", a
     await expect(activePriority).toHaveAttribute("aria-expanded", "false")
     await openGrouping("type")
     await expect(activeCard).toBeVisible()
+
+    const activeType = heading(active, "task")
+    await activeType.press("Space")
+    await pendingCard.locator(".card-more-btn").press("Enter")
+    await page.getByRole("group", { name: "Task actions", exact: true })
+      .getByRole("button", { name: "In Progress" }).press("Enter")
+    const movedCard = active.locator(`.kanban-card[data-id="${ids[0]}"]`)
+    await expect(movedCard).toHaveCount(1)
+    await expect(movedCard).toBeHidden()
+    await expect(activeType).toBeFocused()
+    await activeType.press("Enter")
+    await expect(movedCard).toBeVisible()
   } finally {
     for (const id of ids) await request.delete(`/api/tasks/${id}`)
   }
