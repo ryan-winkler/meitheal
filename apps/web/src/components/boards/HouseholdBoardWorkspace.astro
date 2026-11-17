@@ -6,7 +6,7 @@ import HouseholdProject from "../../pages/projects/[id].astro"
 import Tasks from "../../pages/tasks.astro"
 import { HierarchyRepository } from "@domains/tasks/persistence/hierarchy-repository"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
-import { boardWorkspaceHref, HOUSEHOLD_BOARD_ID, readBoardWorkspaceSelection } from "@lib/board-workspace"
+import { boardWorkspaceHref, DEFAULT_GROUP_COLOR, HOUSEHOLD_BOARD_ID, readBoardWorkspaceSelection } from "@lib/board-workspace"
 import "../../styles/boards.css"
 
 const label = await organizationLabelsFor(Astro)
@@ -51,7 +51,7 @@ if (!available) Astro.response.status = 404
           <form class="board-form" data-household-group-create>
             <label>Name <input name="name" maxlength="100" required /></label>
             <label>Icon <input name="icon" maxlength="10" value="📁" /></label>
-            <label>Color <input type="color" name="color" value="#6366f1" /></label>
+            <label>Color <input type="color" name="color" value={DEFAULT_GROUP_COLOR} /></label>
             <p role="status" data-group-feedback></p>
             <button type="submit" class="btn btn-primary">Create group</button>
           </form>

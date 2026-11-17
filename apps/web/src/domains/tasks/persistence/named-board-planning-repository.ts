@@ -1,3 +1,4 @@
+import { DEFAULT_GROUP_COLOR } from "../../../lib/board-workspace"
 import { randomUUID } from "node:crypto"
 import type { Client, Transaction } from "@libsql/client"
 import { readBoardPillars, saveBoardPillarChange, type BoardPillarChange } from "../../pillars/named-board-pillar-service"
@@ -256,7 +257,7 @@ export class NamedBoardPlanningRepository {
           args: [input.title, input.icon ?? null, input.color ?? null, now, input.id, boardId],
         }) : await tx.execute({
           sql: "INSERT INTO areas (id, owner_board_id, name, icon, color, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-          args: [id, boardId, input.title, input.icon ?? "📁", input.color ?? "#6366F1", now, now],
+          args: [id, boardId, input.title, input.icon ?? "📁", input.color ?? DEFAULT_GROUP_COLOR, now, now],
         })
         return result.rowsAffected > 0
       }
