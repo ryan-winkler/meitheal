@@ -214,11 +214,12 @@ function init(signal: AbortSignal) {
         current!.hidden = fresh!.hidden
         if (current!.matches("#task-summary, #table-pagination, #table-empty")) current!.replaceChildren(...fresh!.childNodes)
       }
-      const workflowOptions = shell.querySelector("[data-table-workflow-options]")
+      const workflowOptions = shell.querySelector<HTMLElement>("[data-table-workflow-options]")
       const freshWorkflowOptions = html.querySelector('[data-table-workflow-options="ready"]')
       if (workflowOptions && freshWorkflowOptions) {
         const lane = focused instanceof HTMLInputElement && workflowOptions.contains(focused) ? focused.value : null
         workflowOptions.replaceChildren(...freshWorkflowOptions.childNodes)
+        workflowOptions.dataset.tableWorkflowOptions = "ready"
         if (lane !== null) {
           const control = workflowOptions.querySelector<HTMLInputElement>(`[data-table-lane][value="${CSS.escape(lane)}"]`)
           const summary = workflowOptions.parentElement?.querySelector("summary")
@@ -251,7 +252,9 @@ function init(signal: AbortSignal) {
     } catch {
       if (request.signal.aborted || signal.aborted || pending !== request) return
       status.classList.remove("sr-only")
-      message.textContent = status.dataset.tableFailure ?? ""
+      const groupingChanged = (nextState.groupBy ?? "none") !== (applied.groupBy ?? "none") ||
+        (nextState.subGroupBy ?? "none") !== (applied.subGroupBy ?? "none")
+      message.textContent = (groupingChanged ? status.dataset.tableSelectionPending : status.dataset.tableFailure) ?? ""
       status.hidden = false
       retry.hidden = false
     } finally {
@@ -444,7 +447,7 @@ function applyGrouping(groupBy: string, subGroupBy: string, stats: TablePageStat
   for (const [index, key] of groupOrder.entries()) {
     const groupId = `table-group-heading-${index}`
     const groupRows = groups.get(key) ?? []
-    const display = getGroupDisplayForKey(groupBy, key)
+    const display = getGroupDisplayForKey(groupBy, key, groupRows[0])
     const isCollapsed = collapsedGroups.includes(key)
 
     // Create group header row
@@ -524,7 +527,7 @@ function applyGrouping(groupBy: string, subGroupBy: string, stats: TablePageStat
       for (const [subIndex, sk] of subOrder.entries()) {
         const subgroupId = `${groupId}-sub-${subIndex}`
         const subRows = subGroups.get(sk) ?? []
-        const subDisplay = getGroupDisplayForKey(subGroupBy, sk)
+        const subDisplay = getGroupDisplayForKey(subGroupBy, sk, subRows[0])
         const subIsCollapsed = collapsedSubs.includes(sk)
 
         const subHeaderRow = document.createElement("tr")
@@ -600,7 +603,8 @@ function applyGrouping(groupBy: string, subGroupBy: string, stats: TablePageStat
   renderSummaryRows(tbody, groupTotals, stats.total)
 }
 
-function getGroupDisplayForKey(groupBy: string, key: string): { label: string, icon: string, color: string } {
+function getGroupDisplayForKey(groupBy: string, key: string, row?: HTMLElement): { label: string, icon: string, color: string } {
+  if (groupBy === "workflow") return { label: row?.dataset.workflowLabel ?? "", icon: "📋", color: "var(--accent)" }
   if (groupBy === "area" && areaMap[key]) {
     const b = areaMap[key]
     return { label: b.name, icon: b.icon ?? "📋", color: (b.color ?? getComputedStyle(document.documentElement).getPropertyValue("--accent").trim()) || "#146C4E" }

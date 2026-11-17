@@ -29,7 +29,7 @@ import Icon from "../components/ui/Icon.astro";
 import TaskTypeIcon from "../components/ui/TaskTypeIcon.astro";
 import BotBadge from "../components/ui/BotBadge.astro";
 import TasksTableView from "../components/views/TasksTableView.astro";
-import { readTableFilterParams } from "../lib/filter-state"
+import { readTableFilterParams, tableNeedsWorkflowColumns } from "../lib/filter-state"
 import { getTasksForView, type TaskViewItem } from "../lib/task-queries"
 import TasksCalendarView from "../components/views/TasksCalendarView.astro";
 import TasksTimelineView from "../components/views/TasksTimelineView.astro";
@@ -111,20 +111,20 @@ if (renderedView === "table" && workflowColumnsUnavailable) {
   Astro.response.headers.set("Cache-Control", "no-store")
 }
 
+const tableFilters = renderedView === "table" ? readTableFilterParams(Astro.url.searchParams) : undefined
+const workflowResultsUnavailable = workflowColumnsUnavailable && tableFilters && tableNeedsWorkflowColumns(tableFilters)
 // Keep the last applied results when a requested workflow lookup fails during a refresh.
-if (renderedView === "table" && workflowColumnsUnavailable &&
-    Astro.url.searchParams.has("tableRefresh") && readTableFilterParams(Astro.url.searchParams).laneIds?.length) {
-  return new Response("Workflow columns could not load.", { status: 503, headers: { "Cache-Control": "no-store" } })
+if (workflowResultsUnavailable && Astro.url.searchParams.has("tableRefresh")) {
+  return new Response(t("table.filter_columns_load_failed", locale), { status: 503, headers: { "Cache-Control": "no-store" } })
 }
 
 let tableTasks: TaskViewItem[] = []
 let tableCreationTimezone: string | undefined
 let tableReadFailed = false
-if (renderedView === "table") {
-  const filters = readTableFilterParams(Astro.url.searchParams)
+if (tableFilters && !workflowResultsUnavailable) {
   try {
     tableTasks = (await getTasksForView({ requireAvailable: true, slim: true, timezone })).tasks
-    if (filters.createdFrom || filters.createdThrough) {
+    if (tableFilters.createdFrom || tableFilters.createdThrough) {
       const { timezone } = await new SettingsRepository(db).getByKeys(["timezone"])
       if (typeof timezone === "string") tableCreationTimezone = timezone
     }

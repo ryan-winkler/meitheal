@@ -30,7 +30,7 @@ export class LaneRepository {
   async findAll(): Promise<LaneRow[]> {
     const result = await this.client.execute(
       `SELECT id, key, label, icon, position, wip_limit, includes, built_in, created_at, updated_at
-       FROM kanban_lanes WHERE board_id = 'household' ORDER BY position ASC`
+       FROM kanban_lanes WHERE board_id = 'household' ORDER BY position ASC, id ASC`
     )
     return result.rows as unknown as LaneRow[]
   }

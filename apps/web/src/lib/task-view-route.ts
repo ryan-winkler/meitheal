@@ -66,6 +66,15 @@ export function taskViewUrl(current: URL, view: TaskView, explicitFilters = fals
     !TASK_PERSISTED_FILTER_KEYS.some(key => url.searchParams.has(key))) {
     url.searchParams.set("search", "")
   }
+  if (view !== "table") {
+    const params = url.searchParams
+    if (params.get("groupBy") === "workflow") {
+      params.delete("groupBy")
+      params.delete("subGroupBy")
+    } else if (params.get("subGroupBy") === "workflow") {
+      params.delete("subGroupBy")
+    }
+  }
   url.hash = view
   return url
 }

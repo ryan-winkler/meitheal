@@ -104,6 +104,7 @@ const defaultGroupByOptions = view === "table"
       { value: "area", label: "Area" },
       { value: "assignee", label: "Assignee" },
       { value: "status", label: "Status" },
+      { value: "workflow", label: t("table.group_workflow", locale) },
       { value: "rice", label: "RICE" },
     ]
   : [
@@ -264,7 +265,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
 
   {/* Sub-group-by selector — only for table view with groupBy active */}
   {showGroupBy && view === "table" && (
-    <details class="timeline-zoom-dropdown filter-dropdown text-xs" id={`${prefix}-sub-group-by-dropdown`} aria-label="Sub-group tasks by">
+    <details class="timeline-zoom-dropdown filter-dropdown text-xs" id={`${prefix}-sub-group-by-dropdown`} aria-label="Sub-group tasks by" hidden={!tableState.groupBy}>
       <summary class="timeline-ctrl-btn timeline-zoom-trigger" id={`${prefix}-sub-group-by-label`}>
         <span class="filter-dropdown__value">No sub-group</span>
         <svg width="10" height="6" viewBox="0 0 10 6" fill="none"><path d="M1 1l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
@@ -274,6 +275,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
         {[
           { value: "none", label: "No sub-group" },
           { value: "status", label: "Then by Status" },
+          { value: "workflow", label: t("table.subgroup_workflow", locale) },
           { value: "priority", label: "Then by Priority" },
           { value: "type", label: "Then by Type" },
           { value: "area", label: "Then by Area" },
@@ -496,6 +498,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
     const areaSel = toolbar.querySelector<HTMLSelectElement>(`#${prefix}-area-filter`)
     const groupBySel = toolbar.querySelector<HTMLSelectElement>(`#${prefix}-group-by`)
     const subGroupBySel = toolbar.querySelector<HTMLSelectElement>(`#${prefix}-sub-group-by`)
+    const subGroupMenu = toolbar.querySelector<HTMLDetailsElement>(`#${prefix}-sub-group-by-dropdown`)
     const sortBySel = toolbar.querySelector<HTMLSelectElement>(`#${prefix}-sort-by`)
     const clearBtn = toolbar.querySelector<HTMLButtonElement>(`#${prefix}-clear-filters`)
     const promotedToggle = toolbar.querySelector<HTMLButtonElement>("[data-filter-promoted]")
@@ -879,6 +882,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
     if (createdDate) document.addEventListener("meitheal:table-filters-applied", updateClearVisibility, { signal })
 
     function emitChange(clear = false, editRules = false) {
+      syncSubGroupMenu()
       const state = gatherState()
       const accepted = document.dispatchEvent(
         new CustomEvent("meitheal:filter-change", {
@@ -982,45 +986,62 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
 
     signal.addEventListener("abort", () => clearTimeout(searchTimer), { once: true })
 
-    // Custom dropdown listeners
+    function syncDropdown(details: HTMLDetailsElement, value: string) {
+      const label = details.querySelector(".filter-dropdown__value")
+      for (const option of details.querySelectorAll<HTMLButtonElement>(".filter-dropdown__option")) {
+        const active = option.dataset.value === value
+        option.classList.toggle("timeline-zoom-option--active", active)
+        if (active && label) label.textContent = option.querySelector("span")?.textContent ?? option.textContent
+      }
+    }
+
+    function syncSubGroupMenu() {
+      if (!subGroupMenu || !subGroupBySel) return
+      const primary = groupBySel?.value ?? "none"
+      subGroupMenu.hidden = primary === "none"
+      if (subGroupMenu.hidden) subGroupMenu.open = false
+      if (subGroupMenu.hidden || subGroupBySel.value === primary) subGroupBySel.value = "none"
+      for (const option of subGroupMenu.querySelectorAll<HTMLButtonElement>(".filter-dropdown__option")) {
+        option.hidden = option.dataset.value === primary && primary !== "none"
+      }
+      syncDropdown(subGroupMenu, subGroupBySel.value)
+    }
+
     const dropdowns = toolbar.querySelectorAll<HTMLDetailsElement>(".filter-dropdown")
-    dropdowns.forEach((details) => {
-      details.addEventListener("click", () => {
-        // Close other dropdowns when one is clicked
-        dropdowns.forEach(d => {
-          if (d !== details) d.removeAttribute("open")
-        })
+    for (const details of dropdowns) {
+      const summary = details.querySelector("summary")
+      const close = () => {
+        details.open = false
+        summary?.focus()
+      }
+      details.addEventListener("keydown", event => {
+        if (!details.open || event.key !== "Escape") return
+        event.preventDefault()
+        close()
       }, { signal })
-      
-      const options = details.querySelectorAll<HTMLButtonElement>(".filter-dropdown__option")
-      const summaryValue = details.querySelector(".filter-dropdown__value")
-      
-      options.forEach(btn => {
-        btn.addEventListener("click", (e) => {
-          e.preventDefault()
-          e.stopPropagation()
-          
-          options.forEach(b => b.classList.remove("timeline-zoom-option--active"))
-          btn.classList.add("timeline-zoom-option--active")
-          
-          if (summaryValue) {
-            summaryValue.textContent = btn.querySelector("span")?.textContent || btn.textContent
+      details.addEventListener("click", () => {
+        for (const other of dropdowns) {
+          if (other !== details) other.open = false
+        }
+      }, { signal })
+
+      for (const button of details.querySelectorAll<HTMLButtonElement>(".filter-dropdown__option")) {
+        button.addEventListener("click", event => {
+          event.preventDefault()
+          event.stopPropagation()
+          if (button.hidden) return
+          const value = button.dataset.value ?? ""
+          const control = document.getElementById(button.dataset.select ?? "") as HTMLInputElement | null
+          syncDropdown(details, value)
+          if (control && control.value !== value) {
+            control.value = value
+            emitChange()
           }
-          
-          const hiddenInputId = btn.dataset.select
-          if (hiddenInputId) {
-            const hiddenInput = document.getElementById(hiddenInputId) as HTMLInputElement
-            if (hiddenInput && hiddenInput.value !== btn.dataset.value) {
-              hiddenInput.value = btn.dataset.value || ""
-              emitChange()
-            }
-          }
-          
-          details.removeAttribute("open")
+          close()
         }, { signal })
-      })
-    })
-    
+      }
+    }
+
     // Close dropdowns when clicking outside
     document.addEventListener("click", (e) => {
       const target = e.target as Node
@@ -1080,28 +1101,13 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
       if (subGroupBySel) subGroupBySel.value = "none"
       if (sortBySel) sortBySel.value = "none"
       
-      // Update custom dropdowns visually
-      dropdowns.forEach(d => {
-        const firstOpt = d.querySelector<HTMLButtonElement>(".filter-dropdown__option")
-        if (!firstOpt) return
-        const hiddenInputId = firstOpt.dataset.select
-        if (hiddenInputId) {
-          const hiddenInput = document.getElementById(hiddenInputId) as HTMLInputElement
-          const val = hiddenInput ? hiddenInput.value : "none"
-          
-          const options = d.querySelectorAll<HTMLButtonElement>(".filter-dropdown__option")
-          options.forEach(btn => {
-            if (btn.dataset.value === val) {
-              btn.classList.add("timeline-zoom-option--active")
-              const summaryValue = d.querySelector(".filter-dropdown__value")
-              if (summaryValue) summaryValue.textContent = btn.querySelector("span")?.textContent || btn.textContent
-            } else {
-              btn.classList.remove("timeline-zoom-option--active")
-            }
-          })
-        }
-      })
-      
+      for (const details of dropdowns) {
+        const option = details.querySelector<HTMLButtonElement>(".filter-dropdown__option")
+        if (!option?.dataset.select) continue
+        const control = document.getElementById(option.dataset.select) as HTMLInputElement | null
+        syncDropdown(details, control?.value ?? "none")
+      }
+
       typeToggles.forEach((btn) => {
         btn.classList.add("active")
         btn.setAttribute("aria-pressed", "true")
@@ -1231,6 +1237,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
           groupControl.value = "none"
         }
       }
+      syncSubGroupMenu()
       renderSavedRules()
       updateLaneCount()
       updateClearVisibility()

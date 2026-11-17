@@ -109,8 +109,8 @@ test("Table uses canonical status for filters, groups and row values and keeps c
 
 test("workflow columns match before Table paging and intersect existing filters", () => {
   const columns = [
-    { id: "lane-todo", label: "Todo", includes: ["todo"] },
-    { id: "lane-active", label: "In Progress", includes: ["active", null, "Waiting"] },
+    { id: "lane-todo", key: "pending", label: "Todo", includes: ["todo"] },
+    { id: "lane-active", key: "active", label: "In Progress", includes: ["active", null, "Waiting"] },
   ]
   const tasks = Array.from({ length: 2_000 }, (_, index) => task(String(index).padStart(4, "0"), {
     status: ["pending", "in_progress", "Waiting", "complete"][index % 4]!,
@@ -127,4 +127,70 @@ test("workflow columns match before Table paging and intersect existing filters"
   expect(getTablePage(tasks, { ...filters, status: "active" }, null, columns).stats.total.count).toBe(250)
   expect(getTablePage(tasks, { laneIds: ["removed"] }, null, columns).rows).toEqual([])
   expect(getTablePage(tasks, { laneIds: ["removed", "lane-todo"] }, null, columns).stats.total.count).toBe(500)
+})
+
+test("workflow grouping projects each status once and prefers a matching exact column key", () => {
+  const columns = [
+    { id: "first", key: "mixed", label: "Zebra", includes: ["todo", "in_progress", "Waiting", null] },
+    { id: "pending", key: "pending", label: "Todo", includes: ["pending"] },
+    { id: "last", key: "other", label: "Alpha", includes: ["active", "Waiting"] },
+    { id: "unrelated", key: "active", label: "Does not include active", includes: [] },
+  ]
+  const tasks = [
+    task("finished", { status: "done" }),
+    task("queued", { status: "todo" }),
+    task("working", { status: "active" }),
+    task("delivery", { status: "Waiting" }),
+  ]
+
+  const page = getTablePage(tasks, { groupBy: "workflow", sort: "title-asc" }, null, columns)
+  expect(page.rows.map(row => [row.task.id, row.workflowColumnId])).toEqual([
+    ["delivery", "first"], ["working", "first"], ["queued", "pending"], ["finished", ""],
+  ])
+  expect(page.stats.groups.map(([key, stats]) => [key, stats.count])).toEqual([
+    ["first", 2], ["pending", 1], ["", 1],
+  ])
+  expect(page.stats.total.count).toBe(tasks.length)
+
+  const selected = getTablePage(tasks, { groupBy: "workflow", laneIds: ["last", "first", "deleted"] }, null, columns)
+  expect(selected.rows.map(row => [row.task.id, row.workflowColumnId])).toEqual([
+    ["queued", "first"], ["working", "first"], ["delivery", "first"],
+  ])
+  expect(selected.stats.groups.map(([key, stats]) => [key, stats.count])).toEqual([["first", 3]])
+  expect(getTablePage(tasks, { groupBy: "workflow", laneIds: ["deleted"] }, null, columns).stats.total.count).toBe(0)
+  expect(getTablePage(tasks, { groupBy: "workflow" }, null).stats.groups).toEqual([
+    ["", { count: tasks.length, riceCount: 0, riceSum: 0 }],
+  ])
+})
+
+test("nested workflow groups sort before paging and retain counts across page boundaries", () => {
+  const columns = [
+    { id: "working", key: "active", label: "Working", includes: ["active"] },
+    { id: "queued", key: "pending", label: "Queued", includes: ["pending"] },
+  ]
+  const tasks = [
+    task("unmatched", { area_id: "area-a", status: "custom" }),
+    task("queued first", { area_id: "area-a", status: "pending" }),
+    ...Array.from({ length: 51 }, (_, index) => task(String(index).padStart(2, "0"), {
+      area_id: "area-a", status: "in_progress", rice: 3,
+    })).reverse(),
+    task("other area", { area_id: "area-b", status: "active" }),
+  ]
+  const filters = { groupBy: "area", subGroupBy: "workflow", sort: "title-asc" }
+  const first = getTablePage(tasks, filters, null, columns)
+  const second = getTablePage(tasks, filters, "2", columns)
+  const areaAWorkingKey = JSON.stringify(["area-a", "working"])
+  const areaAWorkingStats = { count: 51, riceCount: 51, riceSum: 153 }
+
+  expect(first.rows.map(row => row.task.id)).toEqual(
+    Array.from({ length: 50 }, (_, index) => String(index).padStart(2, "0")),
+  )
+  expect(first.stats.subgroups).toEqual([[areaAWorkingKey, areaAWorkingStats]])
+  expect(second.rows.map(row => [row.task.id, row.workflowColumnId])).toEqual([
+    ["50", "working"], ["queued first", "queued"], ["unmatched", ""], ["other area", "working"],
+  ])
+  expect(second.stats.subgroups.map(([key]) => JSON.parse(key))).toEqual([
+    ["area-a", "working"], ["area-a", "queued"], ["area-a", ""], ["area-b", "working"],
+  ])
+  expect(second.stats.subgroups[0]).toEqual([areaAWorkingKey, areaAWorkingStats])
 })
