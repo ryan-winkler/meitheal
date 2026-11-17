@@ -139,9 +139,13 @@ export function initLabelsAndSubtasks({ saveTD, getCurrentTaskId, openTaskDetail
     addSubSubmit.addEventListener("click", submitSubtask, opts)
     addSubInput.addEventListener("keydown", (e) => {
       if (e.key === "Enter") submitSubtask()
-      if (e.key === "Escape") {
+    }, opts)
+    addSubForm.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && !addSubForm.classList.contains("hidden")) {
+        e.preventDefault()
         addSubForm.classList.add("hidden")
         addSubBtn.classList.remove("hidden")
+        addSubBtn.focus()
       }
     }, opts)
   }
