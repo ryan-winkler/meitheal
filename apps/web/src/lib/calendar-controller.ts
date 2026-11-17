@@ -3,7 +3,7 @@ import { CALENDAR_AREA_APPLIED_EVENT, CALENDAR_AREA_REQUEST_EVENT, getRemembered
 import { CALENDAR_FILTER_STATE_EVENT, readCalendarTaskFilters } from "@lib/calendar-task-filter"
 import { createClientLogger } from "@lib/client-logger"
 import { calendarEventDay, calendarEventInterval, calendarIntervalOverlaps, calendarOccurrenceStartKey, compareCalendarStarts, formatCalendarEventTime, formatTimeInZone, normalizeCalendarEventSummary, shiftCalendarDay } from "@lib/date"
-import { createFocusTrap } from "@lib/focus-trap"
+import { containTabFocus } from "@lib/focus-trap"
 import { updateKanbanFilters, type KanbanFilters } from "@lib/kanban-query"
 import { createTablerSvgElement, mapEntityEmojiToTabler, type TablerIconName } from "@lib/tabler-svg"
 import { openTaskDetailHandoff } from "@lib/task-detail-handoff"
@@ -32,30 +32,32 @@ const loading = "Loading…"
 // Node's 16 KiB request-header limit also includes the request target and
 // browser headers. Leave room for ingress headers and the refresh marker.
 const monthTargetLimit = 14_000
+const dayButton = ".cal-cell[role=button]"
 
 export function initCalendarPage(signal: AbortSignal): void {
-  const shell = document.getElementById("calendar-shell")
-  const initialMonth = shell?.querySelector<HTMLElement>("[data-calendar-month]")
-  const status = shell?.querySelector<HTMLElement>("[data-calendar-status]")
-  const retry = shell?.querySelector<HTMLButtonElement>("[data-calendar-retry]")
-  const ruleError = shell?.querySelector<HTMLElement>("[data-calendar-rule-error]")
-  const drawer = document.getElementById("day-drawer")
-  const closeButton = document.getElementById("day-drawer-close")
+  const byId = (id: string) => document.getElementById(id)
+  const shell = byId("calendar-shell")
+  if (!shell) return
+  const initialMonth = shell.querySelector<HTMLElement>("[data-calendar-month]")
+  const status = shell.querySelector<HTMLElement>("[data-calendar-status]")
+  const retry = shell.querySelector<HTMLButtonElement>("[data-calendar-retry]")
+  const ruleError = shell.querySelector<HTMLElement>("[data-calendar-rule-error]")
+  const drawer = byId("day-drawer")
+  const closeButton = byId("day-drawer-close")
   const panel = drawer?.querySelector<HTMLElement>('[role="dialog"]')
-  const drawerTitle = document.getElementById("day-drawer-title")
-  const drawerEvents = document.getElementById("day-drawer-event-items")
-  const drawerTasks = document.getElementById("day-drawer-task-items")
-  const drawerEventStatus = document.getElementById("day-drawer-event-status")
-  const drawerTaskStatus = document.getElementById("day-drawer-task-status")
-  const queryMoreTasks = document.querySelector<HTMLButtonElement>("#day-drawer-more-tasks")
+  const drawerTitle = byId("day-drawer-title")
+  const drawerEvents = byId("day-drawer-event-items")
+  const drawerTasks = byId("day-drawer-task-items")
+  const drawerEventStatus = byId("day-drawer-event-status")
+  const drawerTaskStatus = byId("day-drawer-task-status")
+  const queryMoreTasks = byId("day-drawer-more-tasks") as HTMLButtonElement | null
   const eventsSection = drawer?.querySelector<HTMLElement>("[data-calendar-events-section]")
-  if (!shell || !initialMonth || !status || !retry || !drawer || !panel || !drawerTitle ||
+  if (!initialMonth || !status || !retry || !drawer || !panel || !closeButton || !drawerTitle ||
     !drawerEvents || !drawerTasks || !drawerEventStatus || !drawerTaskStatus ||
     !queryMoreTasks || !eventsSection || shell.dataset.calendarReady === "true") return
   const moreTasks = queryMoreTasks
 
   shell.dataset.calendarReady = "true"
-  const trap = createFocusTrap(panel)
   let timezone = shell.dataset.timezone || "Europe/Dublin"
   let month = initialMonth
   let desired = taskBackgroundUrl()
@@ -65,6 +67,7 @@ export function initCalendarPage(signal: AbortSignal): void {
   let previewsRequest: AbortController | undefined
   let drawerRequest: AbortController | undefined
   let drawerDate = ""
+  let drawerFocusFrame = 0
   let loadMoreDueTasks: (() => void) | undefined
   let previousOverflow = ""
   let refreshCount = 0
@@ -354,9 +357,9 @@ export function initCalendarPage(signal: AbortSignal): void {
   }
 
   function openCell(target: EventTarget | null) {
-    const cell = (target as Element | null)?.closest<HTMLElement>(".cal-cell[role='button']")
+    const cell = (target as Element | null)?.closest<HTMLElement>(dayButton)
     const date = cell?.dataset.date
-    if (!date) return
+    if (!date || drawerDate) return
     drawerDate = date
     drawerTitle!.textContent = new Date(`${date}T00:00:00Z`).toLocaleDateString("en-US", {
       weekday: "long", month: "long", day: "numeric", timeZone: "UTC",
@@ -364,8 +367,14 @@ export function initCalendarPage(signal: AbortSignal): void {
     previousOverflow = document.body.style.overflow
     document.body.style.overflow = "hidden"
     drawer!.setAttribute("aria-hidden", "false")
-    trap.activate()
-    closeButton?.focus({ preventScroll: true })
+    function focusClose(remaining: number) {
+      if (signal.aborted || drawerDate !== date || panel!.contains(document.activeElement)) return
+      closeButton!.focus({ preventScroll: true })
+      if (remaining && document.activeElement !== closeButton) {
+        drawerFocusFrame = requestAnimationFrame(() => focusClose(remaining - 1))
+      }
+    }
+    focusClose(2)
     startDrawerRead(date)
   }
 
@@ -373,11 +382,11 @@ export function initCalendarPage(signal: AbortSignal): void {
     if (!drawerDate) return
     const closedDay = drawerDate
     drawerDate = ""
+    cancelAnimationFrame(drawerFocusFrame)
     drawerRequest?.abort()
     loadMoreDueTasks = undefined
     drawer!.setAttribute("aria-hidden", "true")
     document.body.style.overflow = previousOverflow
-    trap.deactivate(false)
     if (restoreFocus) focusMonthDay(closedDay)
   }
 
@@ -409,7 +418,7 @@ export function initCalendarPage(signal: AbortSignal): void {
       window.__prefillTaskDate = drawerDate
       closeDrawer()
       if (window.openNewTaskModal) window.openNewTaskModal(kind)
-      else (document.getElementById("kanban-bar-new-task") as HTMLButtonElement | null)?.click()
+      else byId("kanban-bar-new-task")?.click()
       return
     }
     const taskId = target.closest<HTMLElement>("#day-drawer-tasks [data-task-id], #day-drawer-events [data-task-id]")?.dataset.taskId
@@ -426,7 +435,9 @@ export function initCalendarPage(signal: AbortSignal): void {
     if (event.key === "Escape" && drawerDate) {
       event.preventDefault()
       closeDrawer()
-    } else if ((event.key === "Enter" || event.key === " ") && (event.target as Element).matches(".cal-cell[role='button']")) {
+    } else if (drawerDate) {
+      containTabFocus(panel, event)
+    } else if ((event.key === "Enter" || event.key === " ") && (event.target as Element).matches(dayButton)) {
       event.preventDefault()
       openCell(event.target)
     }

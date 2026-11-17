@@ -49,23 +49,28 @@ test.describe("Calendar Shell", () => {
     await expect(page.locator("#day-drawer-title")).toHaveText("Friday, December 30")
   })
 
-  test("opening a day moves focus into its drawer while visibility settles", async ({ page }) => {
-    await page.evaluate(() => {
-      const checkVisibility = Element.prototype.checkVisibility
-      let opening = true
-      Element.prototype.checkVisibility = function (options) {
-        if (opening && this.closest("#day-drawer")) {
-          requestAnimationFrame(() => { opening = false })
-          return false
-        }
-        return checkVisibility.call(this, options)
-      }
-    })
+  test("opening a day retries focus when Close is initially disabled", async ({ page }) => {
     const day = page.locator('.cal-cell[data-date]:not(.cal-other)').first()
     const drawer = page.locator("#day-drawer")
+    const close = page.locator("#day-drawer-close")
+    await day.evaluate(day => {
+      const drawer = document.querySelector<HTMLElement>("#day-drawer")!
+      const close = document.querySelector<HTMLButtonElement>("#day-drawer-close")!
+      close.disabled = true
+      const observer = new MutationObserver(() => {
+        observer.disconnect()
+        drawer.dataset.openedFromGrid = String(close.disabled && document.activeElement === day)
+        requestAnimationFrame(() => { close.disabled = false })
+      })
+      observer.observe(drawer, { attributeFilter: ["aria-hidden"] })
+    })
     await day.press("Enter")
     await expect(drawer).toHaveAttribute("aria-hidden", "false")
-    await expect(page.locator("#day-drawer-close")).toBeFocused()
+    await expect(drawer).toHaveAttribute("data-opened-from-grid", "true")
+    await expect(close).toBeFocused()
+    await day.focus()
+    await page.keyboard.press("Tab")
+    await expect(close).toBeFocused()
     await day.focus()
     await page.keyboard.press("Escape")
     await expect(drawer).toHaveAttribute("aria-hidden", "true")

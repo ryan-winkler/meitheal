@@ -137,7 +137,9 @@ try {
   totalOpenCount = carriedForwardTasks.length + todayTasks.length + unscheduledAfterSuggestions
   unscheduledCount = unscheduledAfterSuggestions - pinnedTasks.filter(task => !task.due_date && !suggestedIds.has(task.id)).length
 } catch (error) {
-  if (reopening) return db503Response("today-refresh", error)
+  if (reopening || Astro.request.headers.get("x-meitheal-refresh") === "1") {
+    return db503Response("today-refresh", error)
+  }
 }
 
 // G36: Fetch gamification stats for streak/XP display

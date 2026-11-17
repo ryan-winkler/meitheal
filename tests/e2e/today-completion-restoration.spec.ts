@@ -168,6 +168,52 @@ test("reopening a due favorite keeps its original Focus Stack card", async ({ pa
   }
 })
 
+test("a failed Today refresh keeps the expanded Unscheduled rows", async ({ page, request }) => {
+  await page.addInitScript(() => localStorage.setItem("meitheal-theme", "knight-rider"))
+  const reopenedTitle = "Reopen while Unscheduled is expanded"
+  const retainedTitle = "Keep this Unscheduled row"
+  const ids: string[] = []
+  try {
+    for (const title of [reopenedTitle, retainedTitle]) {
+      const created = await request.post("/api/tasks", { data: { title } })
+      expect(created.status()).toBe(201)
+      ids.push((await created.json()).id)
+    }
+    const [reopenedId] = ids
+    const completed = await request.put(`/api/tasks/${reopenedId}`, { data: { status: "complete" } })
+    expect(completed.ok()).toBe(true)
+    await page.goto("/today?unscheduledPage=1#today-work")
+    const section = page.locator("#section-unscheduled")
+    const retained = section.getByRole("link", { name: retainedTitle })
+    await expect(retained).toBeVisible()
+
+    await page.route(url => url.pathname === "/today" && url.searchParams.has("unscheduledPage"), route => {
+      const serverUrl = new URL(route.request().url())
+      if (serverUrl.searchParams.has("todayRefresh") || route.request().headers()["x-meitheal-refresh"] === "1") {
+        return route.fulfill({ status: 503 })
+      }
+      // A normal document request can render an empty Unscheduled page after a failed read.
+      return route.fulfill({
+        contentType: "text/html",
+        body: '<div id="today-unscheduled-page" data-page="1">No unscheduled tasks match these filters</div>',
+      })
+    })
+
+    const disclosure = page.locator(".today-completed-tasks")
+    await disclosure.locator("summary").press("Enter")
+    await disclosure.getByRole("link", { name: reopenedTitle }).press("Enter")
+    const status = page.locator("#td-status")
+    await expect(status).toHaveValue("complete")
+    await status.selectOption("active")
+    await expect(page.getByText("Couldn’t refresh Today’s tasks. Reload Today to see the saved changes.")).toBeVisible()
+    await expect(section.locator("#today-unscheduled-status")).toHaveText("Could not load unscheduled tasks. Try again.")
+    await expect(section.getByRole("button", { name: "Retry" })).toBeVisible()
+    await expect(retained).toBeVisible()
+  } finally {
+    for (const id of ids) await request.delete(`/api/tasks/${id}`, { data: {} })
+  }
+})
+
 for (const { name, sectionId, task } of [
   { name: "Carried Forward", sectionId: "section-carried", task: { due_date: shiftCalendarDay(calendarToday(), -1) } },
   { name: "Suggested", sectionId: "section-suggested", task: { due_date: shiftCalendarDay(calendarToday(), 1), priority: 1 } },
