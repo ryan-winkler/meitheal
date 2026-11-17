@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test"
 
 import { getGroupDisplay, readTableFilterParams } from "../../apps/web/src/lib/filter-state"
-import { getTablePage } from "../../apps/web/src/lib/table-page"
+import { getTablePage, getTableWorkflowColumns } from "../../apps/web/src/lib/table-page"
 import type { TaskViewItem } from "../../apps/web/src/lib/task-queries"
 
 function task(id: string, fields: Partial<TaskViewItem> = {}): TaskViewItem {
@@ -127,6 +127,25 @@ test("workflow columns match before Table paging and intersect existing filters"
   expect(getTablePage(tasks, { ...filters, status: "active" }, null, columns).stats.total.count).toBe(250)
   expect(getTablePage(tasks, { laneIds: ["removed"] }, null, columns).rows).toEqual([])
   expect(getTablePage(tasks, { laneIds: ["removed", "lane-todo"] }, null, columns).stats.total.count).toBe(500)
+})
+
+test("Table gives workflow columns distinct labels while preserving their identity and order", () => {
+  const noWorkflowLabel = "No workflow column"
+  const columns = [
+    { id: "todo", key: "pending", label: " Re\u0301ady  now ", includes: ["pending"] },
+    { id: "working", key: "active", label: "Réady now", includes: ["active"] },
+    { id: "named", key: "waiting", label: "Réady now (pending)", includes: ["Waiting"] },
+    { id: "done", key: "complete", label: noWorkflowLabel, includes: ["complete"] },
+    { id: "queued", key: "backlog", label: "   ", includes: ["backlog"] },
+  ]
+
+  expect(getTableWorkflowColumns(columns, noWorkflowLabel)).toEqual([
+    { ...columns[0], label: "Réady now (pending) ·" },
+    { ...columns[1], label: "Réady now (active)" },
+    columns[2],
+    { ...columns[3], label: "No workflow column (complete)" },
+    { ...columns[4], label: "backlog" },
+  ])
 })
 
 test("workflow grouping projects each status once and prefers a matching exact column key", () => {
