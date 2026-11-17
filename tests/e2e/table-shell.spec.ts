@@ -25,7 +25,7 @@ const test = base.extend<{ tableTasks: [TableTask, TableTask] }>({
       await use([await createTask("active", 1), await createTask("complete", 3)])
     } finally {
       for (const task of tasks) {
-        await request.delete(`/api/tasks/${task.id}`, { headers })
+        expect((await request.delete(`/api/tasks/${task.id}`, { headers, data: {} })).status()).toBe(204)
       }
     }
   },
