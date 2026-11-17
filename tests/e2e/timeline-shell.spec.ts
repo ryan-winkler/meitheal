@@ -120,6 +120,155 @@ test.describe("Tasks Shell (Timeline/GANTT)", () => {
     }
   })
 
+  test("Timeline keeps same-name projects and unassigned tasks in separate groups", async ({ page, request, baseURL }) => {
+    test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires a disposable built app")
+
+    const headers = { origin: new URL(baseURL!).origin, "content-type": "application/json" }
+    const token = crypto.randomUUID().slice(0, 8)
+    const prefix = `Timeline projects ${token}`
+    const title = `Renovation ${token} with the shared collection of household repairs, maintenance, materials and schedules`
+    const kitchen = `Kitchen ${token}`
+    const garden = `Garden ${token}`
+    const start = Date.now()
+    const dates = {
+      start_date: new Date(start).toISOString().slice(0, 10),
+      due_date: new Date(start + 86_400_000).toISOString().slice(0, 10),
+    }
+    const cleanup: string[] = []
+    async function create(path: string, data: object): Promise<string> {
+      const response = await request.post(path, { headers, data })
+      expect(response.status(), await response.text()).toBe(201)
+      const { id } = await response.json() as { id: string }
+      cleanup.push(`${path}/${id}`)
+      return id
+    }
+
+    try {
+      const kitchenId = await create("/api/areas", { name: kitchen })
+      const gardenId = await create("/api/areas", { name: garden })
+      const firstProject = await create("/api/projects", { title, area_id: kitchenId })
+      const secondProject = await create("/api/projects", { title, area_id: gardenId })
+      const reservedProject = await create("/api/projects", { title: "No Project", area_id: kitchenId })
+      const firstTask = await create("/api/tasks", { ...dates, title: `${prefix} Shelves`, area_id: kitchenId, project_id: firstProject })
+      const secondTask = await create("/api/tasks", { ...dates, title: `${prefix} Planters`, area_id: gardenId, project_id: secondProject })
+      const reservedTask = await create("/api/tasks", { ...dates, title: `${prefix} Tiles`, area_id: kitchenId, project_id: reservedProject })
+      const unassignedTask = await create("/api/tasks", { ...dates, title: `${prefix} Windows` })
+
+      const query = new URLSearchParams({ view: "timeline", search: prefix, area: "", groupBy: "project" })
+      await page.setViewportSize({ width: 1440, height: 900 })
+      await page.goto(`/tasks?${query}#timeline`)
+      const timeline = page.locator("#tasks-view-timeline")
+      const paneToggle = timeline.getByRole("button", { name: "Task pane" })
+      await expect(paneToggle).toBeEnabled()
+      if (await paneToggle.getAttribute("aria-expanded") === "false") await paneToggle.press("Enter")
+      const projectRow = (id: string) => timeline.locator(`.gantt-sidebar-row[data-task-id="group-project-${id}"]`)
+      const label = (id: string) => projectRow(id).locator(".gantt-sidebar-row-title")
+      const qualifier = (id: string) => projectRow(id).locator(".gantt-sidebar-group-qualifier")
+      const bar = (id: string) => timeline.locator(`.gantt-bar[data-task-id="${id}"]`)
+      const firstToggle = projectRow(firstProject).getByRole("button")
+      const secondToggle = projectRow(secondProject).getByRole("button")
+      await expect(projectRow(firstProject)).toHaveAttribute("aria-label", `Group: ${title} · ${kitchen}`)
+      await expect(projectRow(secondProject)).toHaveAttribute("aria-label", `Group: ${title} · ${garden}`)
+      await expect(projectRow(reservedProject)).toHaveAttribute("aria-label", `Group: No Project · ${kitchen}`)
+      await expect(qualifier(firstProject)).toHaveText(kitchen)
+      await expect(qualifier(firstProject)).toBeInViewport()
+      await expect(qualifier(secondProject)).toHaveText(garden)
+      await expect(qualifier(secondProject)).toBeInViewport()
+      await expect(label("")).toHaveText("No Project")
+      for (const id of [firstTask, secondTask, reservedTask, unassignedTask]) await expect(bar(id)).toBeVisible()
+
+      await firstToggle.focus()
+      await page.keyboard.press("Shift+Tab")
+      await expect(firstToggle).not.toBeFocused()
+      await page.keyboard.press("Tab")
+      await expect(firstToggle).toBeFocused()
+      await page.keyboard.press("Enter")
+      await expect(firstToggle).toHaveAttribute("aria-expanded", "false")
+      await expect(firstToggle).toBeFocused()
+      await expect(secondToggle).toHaveAttribute("aria-expanded", "true")
+      await expect(bar(firstTask)).toHaveCount(0)
+      for (const id of [secondTask, reservedTask, unassignedTask]) await expect(bar(id)).toBeVisible()
+
+      const search = timeline.getByRole("textbox", { name: "Filter by text" })
+      await search.fill(`${prefix} Planters`)
+      await expect(projectRow(firstProject)).toHaveCount(0)
+      await expect(projectRow(secondProject)).toHaveAttribute("aria-label", `Group: ${title} · ${garden}`)
+      await search.fill(prefix)
+      await expect(firstToggle).toHaveAttribute("aria-expanded", "false")
+      await expect(bar(firstTask)).toHaveCount(0)
+      await firstToggle.press("Space")
+      await expect(firstToggle).toHaveAttribute("aria-expanded", "true")
+      await expect(firstToggle).toBeFocused()
+      await expect(bar(firstTask)).toBeVisible()
+
+      const renamedTitle = `Cabinets ${token}`
+      const renamed = await request.put(`/api/projects/${firstProject}`, { headers, data: { title: renamedTitle } })
+      expect(renamed.ok(), await renamed.text()).toBe(true)
+      await page.reload()
+      await expect(label(firstProject)).toHaveText(renamedTitle)
+      await expect(label(secondProject)).toHaveText(title)
+      await expect(bar(firstTask)).toBeVisible()
+      await expect(bar(secondTask)).toBeVisible()
+
+      // Put the second project beyond the first virtual window.
+      const extraTasks = 22
+      for (let index = 1; index <= extraTasks; index++) {
+        const day = start + index * 86_400_000
+        await create("/api/tasks", {
+          title: `${prefix} Cabinet ${index}`, area_id: kitchenId, project_id: firstProject,
+          start_date: new Date(day).toISOString().slice(0, 10),
+          due_date: new Date(day + 86_400_000).toISOString().slice(0, 10),
+        })
+      }
+      // Exercise an Area label that produces the same header ID as the real project.
+      const renamedArea = await request.put(`/api/areas/${gardenId}`, { headers, data: { name: `project-${secondProject}` } })
+      expect(renamedArea.ok(), await renamedArea.text()).toBe(true)
+      await page.setViewportSize({ width: 1440, height: 620 })
+      await page.reload()
+      await expect(firstToggle).toBeVisible()
+      await expect(projectRow(secondProject)).toHaveCount(0)
+      await firstToggle.focus()
+      // Navigate the first project's tasks and the two groups between the projects.
+      for (let step = 0; step < extraTasks + 6; step++) await page.keyboard.press("ArrowDown")
+      await expect(secondToggle).toBeFocused()
+      await page.keyboard.press("Enter")
+      await expect(secondToggle).toHaveAttribute("aria-expanded", "false")
+      await expect(secondToggle).toBeFocused()
+      await expect(bar(secondTask)).toHaveCount(0)
+      await page.keyboard.press("ArrowUp")
+      await expect(bar(reservedTask)).toBeFocused()
+      await page.keyboard.press("j")
+      await expect(secondToggle).toBeFocused()
+      await expect(secondToggle).toHaveAttribute("aria-expanded", "false")
+      await page.keyboard.press("Equal")
+      await expect(timeline.locator("#timeline-zoom-label")).toHaveText("Day")
+      await expect(secondToggle).toBeFocused()
+      await expect(secondToggle).toHaveAttribute("aria-expanded", "false")
+
+      await search.fill(`${prefix} Planters`)
+      await expect(firstToggle).toHaveCount(0)
+      const groupBy = timeline.locator('details[aria-label="Group tasks by"]')
+      await groupBy.locator("summary").click()
+      await groupBy.getByRole("button", { name: "By Area", exact: true }).click()
+      await expect(secondToggle).toHaveAttribute("aria-expanded", "true")
+      await expect(bar(secondTask)).toBeVisible()
+      await groupBy.locator("summary").click()
+      await groupBy.getByRole("button", { name: "By Project", exact: true }).click()
+      await expect(secondToggle).toHaveAttribute("aria-expanded", "false")
+      await expect(bar(secondTask)).toHaveCount(0)
+      await secondToggle.press("Space")
+      await expect(secondToggle).toHaveAttribute("aria-expanded", "true")
+      await expect(bar(secondTask)).toBeVisible()
+    } finally {
+      const failures: string[] = []
+      for (const path of cleanup.reverse()) {
+        const response = await request.delete(path, { headers, data: {} })
+        if (!response.ok()) failures.push(`${path} returned ${response.status()} ${await response.text()}`)
+      }
+      expect(failures).toEqual([])
+    }
+  })
+
   test("Timeline filters stay in the background URL with Details docked", async ({ page, request, baseURL }) => {
     await page.setViewportSize({ width: 1600, height: 900 })
     await page.evaluate(() => localStorage.setItem("meitheal-task-nav-prefs", JSON.stringify({ pinnedViews: ["table"] })))
