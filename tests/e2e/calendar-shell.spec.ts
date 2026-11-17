@@ -334,6 +334,11 @@ test.describe("Calendar Shell", () => {
     await expect(page.locator("[data-calendar-status]")).toContainText("Shorten the Calendar rules")
     await expect(page.getByRole("button", { name: "Retry calendar" })).toBeVisible()
     await page.getByRole("button", { name: "Close custom filters" }).click()
+    const retryCalendar = page.getByRole("button", { name: "Retry calendar" })
+    const retryFailure = page.waitForResponse(response => new URL(response.url()).searchParams.has("calendarRefresh"))
+    await retryCalendar.press("Enter")
+    expect((await retryFailure).status()).toBe(503)
+    await expect(retryCalendar).toBeFocused()
 
     fail = false
     const backgroundRefresh = page.waitForResponse(response => new URL(response.url()).searchParams.has("calendarRefresh"))
@@ -380,6 +385,37 @@ test.describe("Calendar Shell", () => {
     await retry.click()
     await expect(page.locator("[data-calendar-month]")).toHaveAttribute("data-calendar-available", "true")
     await expect(retry).toBeHidden()
+    const status = page.locator("[data-calendar-status]")
+    await expect(status).toHaveText("Shorten the Calendar rules or remove a condition.")
+    await advanced.press("Enter")
+    await expect(page.locator("[data-calendar-rule-error]")).toHaveText("Shorten the Calendar rules or remove a condition.")
+    await expect(page.locator("#calendar-advanced-panel .adv-val")).toHaveValue("word".repeat(2050))
+  })
+
+  test("Calendar Retry leaves focus in an agenda opened during the request", async ({ page }) => {
+    let fail = true
+    let release = () => {}
+    const pending = new Promise<void>(resolve => { release = resolve })
+    await page.route(url => url.searchParams.has("calendarRefresh"), async route => {
+      if (fail) return route.fulfill({ status: 503, body: "Calendar service unavailable" })
+      await pending
+      await route.continue()
+    })
+    await page.getByRole("textbox", { name: "Filter by text" }).fill("roof")
+    const retry = page.getByRole("button", { name: "Retry calendar" })
+    await expect(retry).toBeVisible()
+    fail = false
+    try {
+      await retry.press("Enter")
+      await page.locator('.cal-cell[data-date]:not(.cal-other)').first().press("Enter")
+      const close = page.locator("#day-drawer-close")
+      await expect(close).toBeFocused()
+      release()
+      await expect(page).toHaveURL(/search=roof/)
+      await expect(close).toBeFocused()
+    } finally {
+      release()
+    }
   })
 
   test("pending and failed Calendar refreshes retain accepted Area and Events states", async ({ page, request }) => {

@@ -325,7 +325,7 @@ function setupEventDelegation(container: HTMLElement) {
       if (archive?.getAttribute("aria-disabled") === "true") return
       const ok = await confirmDialog({
         title: "Archive completed tasks?",
-        message: "This archives every Complete task last updated today, including tasks outside the preview.",
+        message: "This archives all Household Board tasks marked Complete and last updated today, including tasks outside the preview.",
         variant: "warning",
         confirmText: "Archive",
       })

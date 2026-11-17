@@ -1264,7 +1264,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
     if (prefix === "calendar") {
       if (search) search.disabled = false
       document.addEventListener(CALENDAR_FILTER_STATE_EVENT, event => {
-        const filters = (event as CustomEvent<KanbanFilters & { keepSearch: boolean }>).detail
+        const filters = (event as CustomEvent<KanbanFilters & { keepSearch: boolean; keepRulesDraft: boolean }>).detail
         ;({ status = "", priority = "", rice = "", user = "", task_type = "", labels = [] } = filters)
         if (search && !searchTimer && !filters.keepSearch) search.value = filters.search ?? ""
         if (statusSel) statusSel.value = status
@@ -1276,7 +1276,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
           "conditions" in condition || condition.operator === "between") ?? false
         renderInheritedFilters()
         updateRulesMode()
-        if (advPanel && !advPanel.classList.contains("hidden")) {
+        if (filters.keepRulesDraft || advPanel && !advPanel.classList.contains("hidden")) {
           advToggleBtn?.classList.toggle("filter-pill--active", Boolean(advancedFilterState?.conditions.length))
         } else renderSavedRules()
         updateClearVisibility()

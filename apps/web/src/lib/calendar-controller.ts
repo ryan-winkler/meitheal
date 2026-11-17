@@ -95,7 +95,7 @@ export function initCalendarPage(signal: AbortSignal): void {
 
   function restoreFilterControls(url = applied, keepSearch = false) {
     document.dispatchEvent(new CustomEvent(CALENDAR_FILTER_STATE_EVENT, {
-      detail: { ...readCalendarTaskFilters(url.searchParams), keepSearch },
+      detail: { ...readCalendarTaskFilters(url.searchParams), keepSearch, keepRulesDraft: ruleError?.hidden === false },
     }))
   }
 
@@ -111,6 +111,7 @@ export function initCalendarPage(signal: AbortSignal): void {
     desired = url
     month.setAttribute("aria-busy", "true")
     const activeRetry = document.activeElement === retry
+    const canRestoreRetryFocus = () => activeRetry && (document.activeElement === retry || document.activeElement === document.body)
     announce("Loading calendar…", false)
 
     try {
@@ -155,7 +156,7 @@ export function initCalendarPage(signal: AbortSignal): void {
       document.dispatchEvent(new Event(TASK_VIEW_LOCATION_EVENT))
       if (preserveRetry) announce(refreshFailure(), true)
       else announce(rejectedFilterChange)
-      if (activeDay || activeRetry) focusMonthDay(activeDay)
+      if (activeDay || canRestoreRetryFocus()) focusMonthDay(activeDay)
       previewEvents()
       if (drawerDate) startDrawerRead(drawerDate)
     } catch {
@@ -164,6 +165,7 @@ export function initCalendarPage(signal: AbortSignal): void {
         desired = new URL(applied)
         restoreFilterControls()
         announce(refreshFailure(), true)
+        if (canRestoreRetryFocus()) retry!.focus()
       }
     } finally {
       if (request === refreshRequest) {
@@ -175,13 +177,14 @@ export function initCalendarPage(signal: AbortSignal): void {
 
   function rejectFilters(message: string): false {
     const recovery = month.dataset.calendarAvailable === "false" ? unavailable : "The previous results are still shown."
-    rejectedFilterChange = `${message} ${recovery}`
-    if (ruleError) {
+    rejectedFilterChange = message
+    if (ruleError?.closest(".filter-toolbar__advanced-panel:not(.hidden)")) {
       ruleError.hidden = false
-      ruleError.textContent = retryTarget ? `${message} Retry calendar repeats the earlier request.` : message
+      ruleError.textContent = message
     }
     restoreFilterControls(desired, true)
-    announce(rejectedFilterChange)
+    const retryHint = retryTarget ? " Retry calendar repeats the earlier request." : ""
+    announce(`${message} ${recovery}${retryHint}`)
     return false
   }
 
