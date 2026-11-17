@@ -2,7 +2,8 @@ import { randomUUID } from "node:crypto"
 import type { Client, Transaction } from "@libsql/client"
 import { isActiveAgentToken } from "@domains/auth"
 import { acquireWriteTransaction } from "../../../../scripts/database-client.mjs"
-import { isClosedStatus, isDoneStatus, normalizeStatus, STATUS } from "../../../lib/status-config"
+import type { BoardWorkspaceSelection } from "../../../lib/board-workspace"
+import { isClosedStatus, isDoneStatus, normalizeStatus, STATUS, STATUS_CONFIG } from "../../../lib/status-config"
 import { boardGrantStillCurrent, currentBoardGrantRevision, readBoardGrantRevision } from "./board-grant-fence"
 import { namedRoutinePeriod, readNamedBoardPlanning } from "./named-board-planning-repository"
 import { permitsBoardTaskAction, selectNamedBoardAccess, type BoardActor, type TaskBoardAction } from "./named-board-repository"
@@ -15,7 +16,12 @@ type NamedTaskPlacement = {
   areaId?: string
   projectId?: string
   goalId?: string
+  local?: boolean
 }
+
+const scopedTaskJoin = `LEFT JOIN board_task_planning AS placement ON placement.task_id = tasks.id
+  LEFT JOIN projects AS project ON project.id = placement.project_id
+    AND project.owner_board_id = tasks.task_board_id AND project.retired_at IS NULL`
 
 const unavailable = { ok: false, errorCode: "unavailable" } as const
 const denied = { ok: false, errorCode: "denied" } as const
@@ -55,24 +61,37 @@ export async function insertNamedTask(tx: Transaction, input: {
 export class NamedBoardTaskRepository {
   constructor(private readonly db: Client, private readonly markerPath?: string) {}
 
-  async view(actor: BoardActor, boardId: string, offset = 0) {
+  async view(actor: BoardActor, boardId: string, offset = 0, selection?: BoardWorkspaceSelection) {
     const revision = await currentBoardGrantRevision(this.db, this.markerPath)
     if (!revision) return null
     const tx = await this.db.transaction("read")
     try {
       const access = await selectNamedBoardAccess(tx, actor, revision, boardId)
       if (!access || (actor.kind === "agent" && !await isActiveAgentToken(tx, actor.id, "tasks:read"))) return null
+      const context = selection ? await this.readWorkspaceContext(tx, boardId, selection) : undefined
+      if (context === null) return null
+      const taskFilter = selection?.ticketId ? "AND tasks.id = ?"
+        : context?.project ? "AND project.id = ?"
+        : context?.area ? "AND CASE WHEN project.id IS NOT NULL THEN project.area_id ELSE placement.area_id END = ?"
+        : ""
+      const filterId = selection?.ticketId ?? context?.project?.id ?? context?.area?.id
       const [lanes, tasks, members, intakes, agents] = await tx.batch([
         {
           sql: "SELECT id, label, key FROM kanban_lanes WHERE board_id = ? ORDER BY position, id",
           args: [boardId],
         },
         {
-          sql: `SELECT id, title, description, status, ticket_ref, board_column_id AS lane_id,
-              assigned_to, source_template_id IS NOT NULL AS routine, ${taskTimestampMs("updated_at")} AS version
-            FROM tasks WHERE task_board_id = ?
-            ORDER BY created_at DESC, id DESC LIMIT 51 OFFSET ?`,
-          args: [boardId, offset],
+          sql: `SELECT tasks.id, tasks.title, tasks.description, tasks.status, tasks.ticket_ref,
+              tasks.board_column_id AS lane_id, tasks.assigned_to, tasks.source_template_id IS NOT NULL AS routine,
+              ${selection?.ticketId ? "ticket_area.id AS area_id, project.id AS project_id," : ""}
+              ${taskTimestampMs("tasks.updated_at")} AS version
+            FROM tasks ${taskFilter ? scopedTaskJoin : ""}
+            ${selection?.ticketId ? `LEFT JOIN areas AS ticket_area
+              ON ticket_area.id = CASE WHEN project.id IS NOT NULL THEN project.area_id ELSE placement.area_id END
+                AND ticket_area.owner_board_id = tasks.task_board_id AND ticket_area.retired_at IS NULL` : ""}
+            WHERE tasks.task_board_id = ? ${taskFilter}
+            ORDER BY tasks.created_at DESC, tasks.id DESC LIMIT 51 OFFSET ?`,
+          args: [boardId, ...(taskFilter ? [filterId!] : []), selection?.ticketId ? 0 : offset],
         },
         {
           sql: `SELECT principal_id, role, deny_completion, deny_deletion
@@ -90,17 +109,28 @@ export class NamedBoardTaskRepository {
           args: [boardId, access.role],
         },
       ])
-      const planning = await readNamedBoardPlanning(tx, actor, access)
+      if (selection?.ticketId && !tasks!.rows.length) return null
+      const closedStatuses = STATUS_CONFIG.filter(status => status.isDone).flatMap(status => [status.canonical, ...status.aliases])
+        .concat(["archived", "cancelled", "canceled"])
+      const summary = context?.project ? await this.readProjectTaskSummary(tx, boardId, context.project.id, closedStatuses) : null
+      const planning = !selection || selection.planning ? await readNamedBoardPlanning(tx, actor, access) : null
       if (!await boardGrantStillCurrent(this.db, revision, this.markerPath)) return null
       return {
         board: access,
         planning,
+        ...(context ? { context, summary } : {}),
         lanes: lanes!.rows.map(lane => ({ id: String(lane.id), label: String(lane.label), key: String(lane.key) })),
         tasks: tasks!.rows.slice(0, 50).map(task => ({
           id: String(task.id), title: String(task.title), description: String(task.description ?? ""),
           status: String(task.status), ticket: String(task.ticket_ref), laneId: String(task.lane_id),
           assignedTo: typeof task.assigned_to === "string" ? task.assigned_to : null,
           routine: task.routine === 1, version: Number(task.version),
+          ...(selection?.ticketId ? {
+            placement: {
+              areaId: typeof task.area_id === "string" ? task.area_id : null,
+              projectId: typeof task.project_id === "string" ? task.project_id : null,
+            },
+          } : {}),
         })),
         nextOffset: tasks!.rows.length > 50 ? offset + 50 : null,
         agents: agents!.rows.map(agent => String(agent.principal_id)),
@@ -117,14 +147,104 @@ export class NamedBoardTaskRepository {
     }
   }
 
+  private async readProjectTaskSummary(tx: Transaction, boardId: string, projectId: string, closedStatuses: string[]) {
+    const { rows: [summary] } = await tx.execute({
+      sql: `WITH open_tasks AS (
+          SELECT tasks.id, tasks.title, tasks.created_at, tasks.blocked_by, tasks.status FROM tasks
+          JOIN board_task_planning AS placement ON placement.task_id = tasks.id
+          WHERE tasks.task_board_id = ? AND placement.project_id = ?
+            AND lower(tasks.status) NOT IN (SELECT value FROM json_each(?))
+        )
+        SELECT COUNT(*) AS count,
+          (SELECT id FROM open_tasks WHERE blocked_by IS NULL AND status <> 'stalled' ORDER BY created_at DESC, id DESC LIMIT 1) AS next_id,
+          (SELECT title FROM open_tasks WHERE blocked_by IS NULL AND status <> 'stalled' ORDER BY created_at DESC, id DESC LIMIT 1) AS next_title
+        FROM open_tasks`,
+      args: [boardId, projectId, JSON.stringify(closedStatuses)],
+    })
+    return {
+      count: Number(summary?.count ?? 0),
+      next: typeof summary?.next_id === "string" ? { id: summary.next_id, title: String(summary.next_title) } : null,
+    }
+  }
+
+  private async readWorkspaceContext(tx: Transaction, boardId: string, selection: BoardWorkspaceSelection) {
+    const { projectId, areaId } = selection
+    const { rows: [project] } = projectId ? await tx.execute({
+      sql: `SELECT project.id, project.title, project.status, area.id AS area_id
+        FROM projects AS project LEFT JOIN areas AS area
+          ON area.id = project.area_id AND area.owner_board_id = ? AND area.retired_at IS NULL
+        WHERE project.id = ? AND project.owner_board_id = ? AND project.retired_at IS NULL`,
+      args: [boardId, projectId, boardId],
+    }) : { rows: [] }
+    if (projectId && !project) return null
+    if (project && areaId && project.area_id !== areaId) return null
+    const effectiveAreaId = areaId ?? project?.area_id
+    const { rows: [area] } = typeof effectiveAreaId === "string" ? await tx.execute({
+      sql: "SELECT id, name FROM areas WHERE id = ? AND owner_board_id = ? AND retired_at IS NULL",
+      args: [effectiveAreaId, boardId],
+    }) : { rows: [] }
+    if (areaId && !area) return null
+    return {
+      area: area ? { id: String(area.id), name: String(area.name) } : null,
+      project: project ? { id: String(project.id), title: String(project.title), status: String(project.status) } : null,
+    }
+  }
+
+  async groups(actor: BoardActor, boardId: string, after: string | null, selectedId: string | null = null) {
+    const revision = await currentBoardGrantRevision(this.db, this.markerPath)
+    if (!revision) return null
+    const tx = await this.db.transaction("read")
+    try {
+      const access = await selectNamedBoardAccess(tx, actor, revision, boardId)
+      if (!access || actor.kind !== "ha_user") return null
+      const { rows } = await tx.execute({
+        sql: `WITH marker AS (
+            SELECT position, name, id FROM areas
+            WHERE id = ? AND owner_board_id = ? AND retired_at IS NULL
+          )
+          SELECT item.id, item.name, item.icon, item.color FROM areas AS item
+          WHERE item.owner_board_id = ? AND item.retired_at IS NULL AND (
+            ? IS NULL OR EXISTS (
+              SELECT 1 FROM marker WHERE (item.position, item.name COLLATE NOCASE, item.id) >
+                (marker.position, marker.name COLLATE NOCASE, marker.id)
+            )
+          )
+          ORDER BY item.position, item.name COLLATE NOCASE, item.id LIMIT 31`,
+        args: [after, boardId, boardId, after],
+      })
+      const { rows: [selected] } = selectedId ? await tx.execute({
+        sql: "SELECT id, name, icon, color FROM areas WHERE id = ? AND owner_board_id = ? AND retired_at IS NULL",
+        args: [selectedId, boardId],
+      }) : { rows: [] }
+      if (!await boardGrantStillCurrent(this.db, revision, this.markerPath)) return null
+      const items = rows.slice(0, 30).map(row => ({
+        id: String(row.id), name: String(row.name), icon: String(row.icon), color: String(row.color),
+      }))
+      return { items, selected: selected ? {
+        id: String(selected.id), name: String(selected.name), icon: String(selected.icon), color: String(selected.color),
+      } : null, next_cursor: rows.length > 30 ? items.at(-1)!.id : null }
+    } finally {
+      tx.close()
+    }
+  }
+
   async create(actor: BoardActor, boardId: string, content: NamedTaskContent, placement: NamedTaskPlacement) {
     return this.mutate(actor, boardId, "create", async (tx, allows) => {
       const lane = await this.readLane(tx, boardId, placement.laneId)
       if (!lane) return unavailable
       if (isDoneStatus(lane.status) && !allows("complete")) return denied
 
-      const { areaId, projectId, goalId } = placement
-      const scopes = [["areas", areaId], ["projects", projectId], ["goals", goalId]] as const
+      const { projectId, goalId } = placement
+      let areaId = placement.areaId
+      if (placement.local) {
+        const context = await this.readWorkspaceContext(tx, boardId, {
+          areaId: areaId ?? null, projectId: projectId ?? null, ticketId: null, planning: false,
+        })
+        if (!context || (context.project && context.project.status !== "active")) return unavailable
+        areaId = context.area?.id
+      }
+      const scopes = [["areas", placement.local ? undefined : areaId],
+        ["projects", placement.local ? undefined : projectId], ["goals", goalId]] as const
       for (const [table, target] of scopes) {
         if (!target) continue
         const { rows } = await tx.execute({
@@ -149,6 +269,45 @@ export class NamedBoardTaskRepository {
         })
       }
       return { ok: true, value: task }
+    })
+  }
+
+  async file(actor: BoardActor, boardId: string, id: string, version: number, areaId?: string | null, projectId?: string | null) {
+    return this.mutate(actor, boardId, "edit", async tx => {
+      const { rows: [existing] } = await tx.execute({
+        sql: `SELECT placement.area_id, placement.project_id FROM tasks
+          LEFT JOIN board_task_planning AS placement ON placement.task_id = tasks.id
+          WHERE tasks.id = ? AND tasks.task_board_id = ? AND ${taskTimestampMs("tasks.updated_at")} = ?
+            AND NOT (tasks.task_kind = 'routine_instance' AND tasks.source_template_id IS NOT NULL)`,
+        args: [id, boardId, version],
+      })
+      if (!existing) return stale
+      const effectiveProjectId = projectId === undefined && typeof existing.project_id === "string" ? existing.project_id : projectId ?? null
+      const effectiveAreaId = areaId === undefined && !effectiveProjectId && typeof existing.area_id === "string" ? existing.area_id : areaId ?? null
+      const context = await this.readWorkspaceContext(tx, boardId, {
+        areaId: effectiveAreaId, projectId: effectiveProjectId, ticketId: null, planning: false,
+      })
+      if (!context || (context.project && context.project.status !== "active")) return unavailable
+      const { rows: [task] } = await tx.execute({
+        sql: `UPDATE tasks SET updated_at = ${nextTaskTimestampMs("updated_at")}
+          WHERE id = ? AND task_board_id = ? AND NOT (task_kind = 'routine_instance' AND source_template_id IS NOT NULL)
+            AND ${taskTimestampMs("updated_at")} = ? AND ${canAdvanceTaskTimestampMs("updated_at")}
+          RETURNING updated_at AS version`,
+        args: [Date.now(), id, boardId, version],
+      })
+      if (!task) return stale
+      const groupId = context.area?.id ?? null
+      if (!groupId && !effectiveProjectId) {
+        await tx.execute({ sql: "DELETE FROM board_task_planning WHERE task_id = ? AND goal_id IS NULL", args: [id] })
+        await tx.execute({ sql: "UPDATE board_task_planning SET area_id = NULL, project_id = NULL WHERE task_id = ?", args: [id] })
+      } else {
+        await tx.execute({
+          sql: `INSERT INTO board_task_planning (task_id, area_id, project_id) VALUES (?, ?, ?)
+            ON CONFLICT(task_id) DO UPDATE SET area_id = excluded.area_id, project_id = excluded.project_id`,
+          args: [id, groupId, effectiveProjectId],
+        })
+      }
+      return { ok: true, value: { version: Number(task.version) } }
     })
   }
 
