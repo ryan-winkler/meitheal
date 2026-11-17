@@ -296,6 +296,8 @@
     "group_by_tooltip": "Grúpáil snámhlána de réir"
   },
   "table": {
+    "unavailable_area": "Réimse nach bhfuil ar fáil",
+    "area_catalog_failed": "Níorbh fhéidir ainmneacha na réimsí a lódáil.",
     "group_epic": "Eipic",
     "subgroup_epic": "Ansin de réir Eipice",
     "no_epic": "Gan Eipic",
@@ -345,8 +347,8 @@
     "bulk_delete_failed": "Theip ar scriosadh ollmhór"
   },
   "task_detail": {
-    "unavailable_area": "Réimse nach bhfuil ar fáil",
-    "area_load_failed": "Níorbh fhéidir na réimsí a lódáil",
+    "unavailable_group_selection": "Níl an rogha shábháilte ar fáil",
+    "group_options_load_failed": "Níorbh fhéidir na roghanna a lódáil",
     "description": "Cur Síos",
     "description_placeholder": "Cuir cur síos leis...",
     "linked_tickets": "Ticéid Nasctha",
@@ -961,7 +963,7 @@
     "download_csv": "Download CSV",
     "raw_db": "Raw DB",
     "export_hint": "Export your tasks to JSON or CSV.",
-    "export_hint_admin": "Export tasks to JSON or CSV, or download the raw SQLite database. It contains all local data, including Personal Pillars and feedback.",
+    "export_hint_admin": "Export tasks to JSON or CSV, or download the raw SQLite database. Use Home Assistant backups for personal and restricted workspaces.",
     "settings_config": "Settings Configuration",
     "export_config": "Export Config",
     "import_config": "Import Config",
@@ -2173,5 +2175,22 @@
     "review": "Réamhamharc",
     "admin": "Ní féidir ach le riarthóir polasaithe neamhghníomhaíochta a athrú.",
     "secure_origin": "Oscail Home Assistant trí HTTPS chun polasaithe neamhghníomhaíochta a úsáid."
+  },
+  "organization_labels": {
+    "title": "Lipéid",
+    "description": "Roghnaigh na focail a fheiceann tú do chláir, do thionscadail agus do chodanna eile de Meitheal. Baineann na lipéid seo le do chuntas Home Assistant agus do theanga reatha.",
+    "singular": "Uatha",
+    "plural": "Iolra",
+    "use_default": "Úsáid an réamhshocrú",
+    "saved": "Lipéad sábháilte",
+    "reset_all": "Úsáid na réamhshocruithe go léir",
+    "save": "Sábháil na lipéid",
+    "error": "Níorbh fhéidir na lipéid a shábháil. Tá do chuid athruithe fós anseo.",
+    "conflict": "Athraíodh lipéid i bhfuinneog eile. Seiceáil na luachanna sábháilte sula sábhálann tú arís.",
+    "reload": "Athraíodh na gnéithe atá ar fáil. Oscail na socruithe arís roimh shábháil.",
+    "duplicate": "Tá roinnt lipéad cosúil le chéile. Bíonn an nascleanúint níos éasca le hainmneacha éagsúla.",
+    "unavailable": "Níl lipéid phearsanta ar fáil faoi láthair.",
+    "needed": "Oscail Meitheal trí Home Assistant chun do lipéid a shaincheapadh.",
+    "preview": "Réamhamharc"
   }
 }

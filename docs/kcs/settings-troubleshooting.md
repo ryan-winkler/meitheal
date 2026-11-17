@@ -34,6 +34,30 @@ In the compact sidebar, open either menu from the chevron below its icon. With t
 
 The small status dot beside **Settings** reports app and storage health. Hover or use a screen reader to read its status. Home Assistant connectivity is shown separately in **Settings → Connected Services → Home Assistant**.
 
+## Give Boards and other features personal names
+
+Open **Settings → Navigation & Shortcuts → Labels** through Home Assistant. For example, enter **Workspace** and **Workspaces** for Board, then choose **Save labels**. The sidebar, Boards page and new Board action use your chosen forms. Search finds the page by either name. Existing links and the names of individual Boards, Groups, Projects and Tasks keep working.
+
+Each Home Assistant account can save different names for English and Gaeilge. A blank input uses the default for that form. Choose **Use default** for one term or **Use all defaults** for the visible terms, then save. A disabled feature's label is available again when the feature returns.
+
+If a save fails, keep the page open and try again. If another window saved first, review the current values displayed alongside your edits before saving again. Reopen Meitheal when changing Home Assistant accounts. Use Home Assistant backups for databases containing personal labels. The Settings configuration export contains installation settings.
+
+## Choose who can use organization features
+
+A verified Home Assistant administrator can open **Settings → Tasks & Boards → Organization features** and choose an audience for **Boards organizer**, **Groups**, **Projects**, **Planning**, **Goals**, **Routines**, **Pillars**, **Principles**, **Achievements**, or **Home Assistant Area**. Select the feature, choose **Everyone**, **Selected people**, or **Nobody**, then choose **Save availability**. An empty Selected people list saves as Nobody. Reopen the work page to see the change. Principles also require Pillars to be available.
+
+After an audience is explicitly saved for Routines or Achievements, its corresponding legacy **Habit Tracker** or **Gamification** switch reports an HTTP 409 conflict. A Settings import containing that legacy switch also reports a conflict. Use **Organization features** to change the audience.
+
+The Boards organizer contains Groups and Projects. The previous `/planning#spaces` bookmark opens Boards when Planning is available to you. Personal display labels are configured under **Navigation & Shortcuts → Labels**. Existing tasks remain reachable through their Boards with the permissions you have there.
+
+Feature audiences also apply to direct API and page links. Governed feature reads require a connection. Activating the service worker update removes older feature responses from its caches.
+
+## Use the Home Assistant Area task field
+
+To offer the location field, select **Home Assistant Area** in **Organization features**, choose its audience and save availability.
+
+Use the location picker while capturing a task or under **Metadata** in its details. A Board or Group organizes the work. **Home Assistant Area** records its physical location. Choose **None** and save to clear a location. When the registry is unavailable, other task inputs are still usable. A deleted area appears as **Saved location unavailable** and can be replaced or cleared.
+
 ## Check Home Assistant
 
 Open **Settings → Connected Services → Home Assistant** and choose **Test Connection** to check the App’s live Supervisor connection. A standalone instance reports **Standalone**. Its Advanced form still saves standalone settings separately.

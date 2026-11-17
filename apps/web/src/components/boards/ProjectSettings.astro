@@ -1,5 +1,7 @@
 ---
+import { isOrganizationFeatureAvailable as available } from "@lib/organization-request-context"
 import type { readNamedBoardPlanning } from "@domains/tasks/persistence/named-board-planning-repository"
+import { organizationLabelsFor } from "@lib/organization-labels"
 import RetirePlanningForm from "./RetirePlanningForm.astro"
 
 type Planning = NonNullable<Awaited<ReturnType<typeof readNamedBoardPlanning>>>
@@ -10,10 +12,11 @@ interface Props {
   canManage: boolean
 }
 const { project, goals, selected, canManage } = Astro.props
+const label = await organizationLabelsFor(Astro)
 ---
 
 {canManage && <details id={selected ? "project-settings" : undefined}>
-  <summary>Edit Project</summary>
+  <summary>Edit {label("project")}</summary>
   <form data-board-form="planning" class="board-form">
     <input type="hidden" name="action" value="project-edit" />
     <input type="hidden" name="id" value={project.id} />
@@ -22,7 +25,7 @@ const { project, goals, selected, canManage } = Astro.props
     <p role="status" data-board-feedback></p>
     <button type="submit" class="btn btn-ghost">Save Project</button>
   </form>
-  <form data-board-form="planning" class="board-form">
+  {available("goals") && <form data-board-form="planning" class="board-form">
     <input type="hidden" name="action" value="project-goal" />
     <input type="hidden" name="id" value={project.id} />
     <label>Goal <select name="goalId">
@@ -32,7 +35,7 @@ const { project, goals, selected, canManage } = Astro.props
     </select></label>
     <p role="status" data-board-feedback></p>
     <button type="submit" class="btn btn-ghost">Save Goal link</button>
-  </form>
+  </form>}
   <RetirePlanningForm entity="project" id={project.id} />
 </details>}
 {canManage ? <form data-board-form="planning" class="board-form">

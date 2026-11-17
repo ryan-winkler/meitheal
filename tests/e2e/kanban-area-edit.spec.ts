@@ -44,7 +44,7 @@ test("Area changes update the Kanban groups and preserve the board context throu
     const catalog = app + "/api/areas"
     const board = page.locator("#kanban-board")
     const drawer = page.locator("#task-detail-overlay")
-    const select = drawer.getByLabel("Area", { exact: true })
+    const select = drawer.getByLabel("Group", { exact: true })
     const close = drawer.getByRole("button", { name: "Close detail", exact: true })
     const group = (area: string) => board.locator(`.swimlane-group[data-swimlane-type="${area}"]`)
     const card = (id: string) => board.locator(`.kanban-card[data-id="${id}"] .card-open-btn`)
@@ -247,14 +247,14 @@ test("Area changes update the Kanban groups and preserve the board context throu
     await expect(drawer).toBeHidden()
     await page.route(catalog, route => route.fulfill({ status: 503, json: {} }), { times: 1 })
     await card(other).click()
-    await expect(select.locator("option")).toHaveText(["Areas could not load"])
+    await expect(select.locator("option")).toHaveText(["Options could not load"])
     await expect(select).toBeDisabled()
     await close.click()
     await expect(drawer).toBeHidden()
 
     expect((await context.request.delete(app + "/api/areas/" + original, { headers })).ok()).toBe(true)
     await card(other).click()
-    await expect(select.locator("option:checked")).toHaveText("Unavailable Area")
+    await expect(select.locator("option:checked")).toHaveText("Saved selection unavailable")
     await expect(select.locator("option:checked")).toBeDisabled()
     await expect(select).toBeEnabled()
 

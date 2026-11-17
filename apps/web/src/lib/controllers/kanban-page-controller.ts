@@ -239,6 +239,9 @@ export function initKanbanPage(signal: AbortSignal): void {
   document.addEventListener("kanban:detail-changed", () => {
     queueBackgroundRead({ afterAreaSave: true })
   }, { signal })
+  document.addEventListener("meitheal:home-assistant-area-saved", () => {
+    if (new URLSearchParams(location.search).has("home_assistant_area_id")) void refresh()
+  }, { signal })
   document.addEventListener("meitheal:area-changed", () => {
     syncAreaLinks(getSelectedAreaId())
     filter({})

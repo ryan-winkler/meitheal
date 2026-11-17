@@ -274,7 +274,7 @@ function initHabitsCrud(): void {
 
   function openCreateModal(): void {
     editIdInput!.value = ""
-    modalTitle!.textContent = "New Routine"
+    modalTitle!.textContent = modalTitle!.dataset.createTitle ?? "New Routine"
     nameInput!.value = ""
     iconInput!.value = "✅"
     cadenceSelect!.value = "daily"
@@ -293,7 +293,7 @@ function initHabitsCrud(): void {
     if (!habit) return
 
     editIdInput!.value = habit.id
-    modalTitle!.textContent = "Edit Routine"
+    modalTitle!.textContent = modalTitle!.dataset.editTitle ?? "Edit Routine"
     nameInput!.value = habit.name
     iconInput!.value = habit.icon
     cadenceSelect!.value = habit.cadence

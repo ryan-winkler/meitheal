@@ -1,4 +1,4 @@
-import { BOARD_ACCESS_SCHEMA_VERSION } from "./0011_board_access.mjs"
+import { ORGANIZATION_FEATURE_SCHEMA_VERSION } from "./0014_organization_features.mjs"
 import { applyTaskBoardStorage, taskBoardStorageObjectNames, validateTaskBoardStorage } from "./0009_task_boards.mjs"
 import { assertNoInboundReferences } from "./board-storage-schema.mjs"
 import { applyTaskBoardDraftStorage, taskBoardDraftStagingNames, validateTaskBoardDraftStorage } from "./task-board-drafts.mjs"
@@ -64,8 +64,8 @@ export function* taskBoardMigrationStateSteps() {
         throw new Error("The Meitheal database has an invalid schema version marker")
       }
       version = Number(value)
-      if (version > BOARD_ACCESS_SCHEMA_VERSION) {
-        throw new Error(`Meitheal database schema ${version} requires a newer App (this App supports ${BOARD_ACCESS_SCHEMA_VERSION})`)
+      if (version > ORGANIZATION_FEATURE_SCHEMA_VERSION) {
+        throw new Error(`Meitheal database schema ${version} requires a newer App (this App supports ${ORGANIZATION_FEATURE_SCHEMA_VERSION})`)
       }
       if (version >= TASK_BOARD_SCHEMA_VERSION && value !== String(version)) {
         throw new Error("The Meitheal database has an invalid Board schema version marker")

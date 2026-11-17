@@ -324,6 +324,7 @@
           // Abort any in-flight fetches
           if (_modalAbortController) { _modalAbortController.abort(); _modalAbortController = null; }
           currentTaskId = null;
+          document.dispatchEvent(new CustomEvent("meitheal:ha-location-task"))
           sessionTicketId = null
           currentTicketNumber = null
           pendingDescriptionSave = undefined
@@ -439,6 +440,7 @@
           pins.opening()
           // P3-4: Store focus origin for restore on close
           if (newSession) _previouslyFocused = search ? null : document.activeElement
+          document.dispatchEvent(new CustomEvent("meitheal:ha-location-task"))
           currentTaskId = taskId
           if (!sameTicket) {
             sessionTicketId = null
@@ -540,6 +542,7 @@
             }
             taskId = String(t.id)
             currentTaskId = taskId
+            document.dispatchEvent(new CustomEvent("meitheal:ha-location-task", { detail: taskId }))
             sessionTicketId = taskId
             currentTicketNumber = typeof t.ticket_number === "number" ? t.ticket_number : null
             setTaskLocation(taskId, true, commentTarget)
@@ -548,7 +551,7 @@
             const requestOptions = { signal: modalSignal }
             const lanes = fetch("/api/lanes", requestOptions)
             const backlogModeSetting = fetch("/api/settings?key=backlog_mode", requestOptions)
-            const areas = fetch("/api/areas", requestOptions)
+            const areas = areaField ? fetch("/api/areas", requestOptions) : null
             const projectRead = projectField ? fetch("/api/projects", requestOptions) : null
             const pillars = fetch("/api/pillars", requestOptions)
             const assignSelect = document.querySelector<HTMLSelectElement>("#td-assigned-to")
@@ -970,30 +973,30 @@
             })()
             ;(document.getElementById("td-color") as HTMLInputElement).value =
               String(t.color ?? fallbackAccentHex);
-            (document.getElementById("td-due-date") as HTMLInputElement).value =
-              String(t.due_date ?? "");
-            (
-              document.getElementById("td-start-date") as HTMLInputElement
-            ).value = String(t.start_date ?? "");
-            (document.getElementById("td-end-date") as HTMLInputElement).value =
-              String(t.end_date ?? "");
-            (
-              document.getElementById("td-time-tracked") as HTMLInputElement
-            ).value = String(t.time_tracked ?? 0);
-            if (areaField) {
+            const dueInput = document.getElementById("td-due-date") as HTMLInputElement
+            dueInput.value = String(t.due_date ?? "")
+            dueInput.disabled = Number(t.routine_occurrence) === 1
+            document.getElementById("td-routine-date-hint")?.toggleAttribute("hidden", !dueInput.disabled)
+            const startInput = document.getElementById("td-start-date") as HTMLInputElement
+            startInput.value = String(t.start_date ?? "")
+            const endInput = document.getElementById("td-end-date") as HTMLInputElement
+            endInput.value = String(t.end_date ?? "")
+            const trackedInput = document.getElementById("td-time-tracked") as HTMLInputElement
+            trackedInput.value = String(t.time_tracked ?? 0)
+            if (areaField && areas) {
               const savedArea = String(t.area_id ?? "default")
               try {
                 const response = await areas
-                if (!response.ok) throw new Error("Areas unavailable")
+                if (!response.ok) throw new Error("Groups unavailable")
                 const { areas: choices } = await response.json() as { areas: { id: string; name: string }[] }
                 if (modalSignal.aborted) return
                 if (!Array.isArray(choices) || choices.some(area => typeof area?.id !== "string" || !area.id || typeof area.name !== "string")) {
-                  throw new Error("Invalid Areas")
+                  throw new Error("Invalid Groups")
                 }
                 areaField.replaceChildren(...choices.map(({ id, name }) => new Option(name, id)))
                 if (!choices.some(area => area.id === savedArea)) {
-                  const label = savedArea === "default" ? "Default Area" :
-                    window.mI18n?.get("task_detail.unavailable_area") ?? "Unavailable Area"
+                  const label = savedArea === "default" ? "Default" :
+                    window.mI18n?.get("task_detail.unavailable_group_selection") ?? "Saved selection unavailable"
                   const unavailable = new Option(label, savedArea)
                   unavailable.disabled = true
                   areaField.add(unavailable)
@@ -1001,7 +1004,7 @@
                 areaFieldReady = choices.length > 0
               } catch {
                 if (modalSignal.aborted) return
-                areaField.replaceChildren(new Option(window.mI18n?.get("task_detail.area_load_failed") ?? "Areas could not load", savedArea))
+                areaField.replaceChildren(new Option(window.mI18n?.get("task_detail.group_options_load_failed") ?? "Options could not load", savedArea))
               }
               areaField.value = savedArea
               areaField.dataset.savedArea = savedArea
@@ -1041,7 +1044,7 @@
             try {
               const pilRes = await pillars
               if (modalSignal.aborted) return
-              if (pilRes.ok) {
+              if (pilRes.ok && pillarSelect) {
                 const pilData = await pilRes.json()
                 if (modalSignal.aborted) return
                 const pillars = pilData.pillars ?? pilData ?? [];
@@ -1056,7 +1059,7 @@
               }
             } catch {
               if (modalSignal.aborted) return
-              pillarSelect.replaceChildren(new Option(currentPillarId, currentPillarId));
+              pillarSelect?.replaceChildren(new Option(currentPillarId, currentPillarId));
             }
 
             // Populate principle dropdown
@@ -1064,7 +1067,7 @@
               "td-principle",
             ) as HTMLSelectElement;
             const currentPrincipleId = String(t.principle_id ?? "");
-            try {
+            if (principleSelect) try {
               if (currentPillarId && currentPillarId !== "null" && currentPillarId !== "undefined") {
                 const prinRes = await fetch( // nosemgrep
                   (window.__ingress_path || "") + `/api/pillars/${currentPillarId}/principles`, // nosemgrep

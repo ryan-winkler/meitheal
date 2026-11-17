@@ -61,7 +61,7 @@ The board remains usable when reaction counts are unavailable. A denied request 
 
 Each lane shows up to 25 cards. Its count includes every task matching the current area and filters. The range below the lane shows which cards are loaded. Use **Previous** or **Next** to page within that lane. Use **Filter by text** or the filter builder to find a task anywhere in the board, including other pages. Changing the area or filters returns the lanes to their first page.
 
-To move a task to another Area, open its **Details** and choose the destination in **Area**. When the save succeeds, the card appears in its new group after Details closes. If the destination group is collapsed, focus returns to its heading. If the board is filtered to the original Area, the card leaves the results and the filter stays selected. A failed save restores the previous selection.
+To move a task to another Board Group, open its **Details** and choose the destination in **Group**. When the save succeeds, the card appears in its new group after Details closes. If the destination group is collapsed, focus returns to its heading. If the board is filtered to the original group, the card leaves the results and the filter stays selected. A failed save restores the previous selection. Use the **Home Assistant Area** control in Details to edit the task's location when it is available.
 
 Open **Overdue** from Dashboard to filter tasks across every Kanban page. The board matches Dashboard’s due-date and completion rules.
 
@@ -128,4 +128,4 @@ compressing the cards. At widths from 769 to 1024 CSS px the sidebar narrows to
 200 px, and the page content starts at the sidebar edge. Both read
 `--sidebar-width`, so a change to one width moves the other.
 
-When reopening Details while an Area save is pending, the drawer waits for that save and then reads the current task. A later edit from another client remains authoritative.
+When reopening Details while a Board Group save is pending, the drawer waits for that save and then reads the current task. A later edit from another client remains authoritative.

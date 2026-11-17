@@ -299,6 +299,8 @@
     "group_by_tooltip": "Group swimlanes by"
   },
   "table": {
+    "unavailable_area": "Unavailable Area",
+    "area_catalog_failed": "Area names could not load.",
     "group_epic": "Epic",
     "subgroup_epic": "Then by Epic",
     "no_epic": "No Epic",
@@ -348,8 +350,8 @@
     "bulk_delete_failed": "Bulk delete failed"
   },
   "task_detail": {
-    "unavailable_area": "Unavailable Area",
-    "area_load_failed": "Areas could not load",
+    "unavailable_group_selection": "Saved selection unavailable",
+    "group_options_load_failed": "Options could not load",
     "description": "Description",
     "description_placeholder": "Add a description...",
     "linked_tickets": "Linked Tickets",
@@ -964,7 +966,7 @@
     "download_csv": "Download CSV",
     "raw_db": "Raw DB",
     "export_hint": "Export your tasks to JSON or CSV.",
-    "export_hint_admin": "Export tasks to JSON or CSV, or download the raw SQLite database. It contains all local data, including Personal Pillars and feedback.",
+    "export_hint_admin": "Export tasks to JSON or CSV, or download the raw SQLite database. Use Home Assistant backups for personal and restricted workspaces.",
     "settings_config": "Settings Configuration",
     "export_config": "Export Config",
     "import_config": "Import Config",
@@ -2188,5 +2190,22 @@
     "review": "Preview",
     "admin": "Only an administrator can change inactivity policies.",
     "secure_origin": "Open Home Assistant over HTTPS to use inactivity policies."
+  },
+  "organization_labels": {
+    "title": "Labels",
+    "description": "Choose the words you see for Boards, Projects, and other parts of Meitheal. These labels apply to your Home Assistant account and current language.",
+    "singular": "Singular",
+    "plural": "Plural",
+    "use_default": "Use default",
+    "saved": "Saved label",
+    "reset_all": "Use all defaults",
+    "save": "Save labels",
+    "error": "Could not save labels. Your edits are still here.",
+    "conflict": "Labels changed in another window. Review the saved values, then save again to apply your edits.",
+    "reload": "Available features changed. Open Settings again before saving.",
+    "duplicate": "Some labels look alike. Distinct names make navigation easier.",
+    "unavailable": "Personal labels are temporarily unavailable.",
+    "needed": "Open Meitheal through Home Assistant to customize your labels.",
+    "preview": "Preview"
   }
 }

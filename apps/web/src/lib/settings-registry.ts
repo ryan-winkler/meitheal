@@ -277,6 +277,13 @@ export const SETTINGS_FIELDS: SettingsFieldDescriptor[] = [
     keywords: ["navigation", "sidebar", "top bar", "navbar", "hover", "folded", "expanded", "edges", "color"],
   },
   {
+    id: "field-organization-labels",
+    label: "Personal Labels",
+    anchorId: "organization-labels-settings",
+    sectionId: "navigation-settings",
+    keywords: ["labels", "alias", "relabel", "rename", "terminology", "board", "project", "group"],
+  },
+  {
     id: "field-sidebar",
     label: "Sidebar Items & Custom Links",
     anchorId: "sidebar-item-list",
