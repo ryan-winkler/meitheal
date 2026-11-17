@@ -25,10 +25,10 @@ function badgeContrast(badge: Locator, surfaceSelector: string) {
 test("Knight Rider persists and fills active work and task colors on Today and Board", async ({ page, request }, testInfo) => {
   await page.emulateMedia({ colorScheme: "light", reducedMotion: "reduce" })
   const dueDate = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Dublin", dateStyle: "short" }).format(new Date())
-  async function create(title: string, status: string, color?: string): Promise<string> {
-    const framework_payload = JSON.stringify({ reach: 2, impact: 2, confidence: 1, effort: 1 })
+  async function create(title: string, status: string, color?: string, rice = 4): Promise<string> {
+    const framework_payload = JSON.stringify({ reach: rice, impact: 1, confidence: 1, effort: 1 })
     const response = await request.post("/api/tasks", {
-      data: { title, due_date: dueDate, status, color, priority: color ? 3 : 1, framework_payload },
+      data: { title, due_date: dueDate, status, color, priority: color || rice > 4 ? 3 : 1, framework_payload },
     })
     expect(response.status()).toBe(201)
     return (await response.json()).id
@@ -38,6 +38,8 @@ test("Knight Rider persists and fills active work and task colors on Today and B
   const coloredId = await create("Update automation notes", "pending", "#21a366")
   const idleId = await create("Review design feedback", "pending")
   const paleId = await create("Prime the new workshop controller", "active", "#fff")
+  const mediumId = await create("Check the meter readings", "active", undefined, 10)
+  const highId = await create("Send the maintenance schedule", "active", undefined, 16)
   const themeSelect = page.locator("#theme-select")
   const root = page.locator("html")
   const themeColor = page.locator('meta[name="theme-color"]')
@@ -82,6 +84,11 @@ test("Knight Rider persists and fills active work and task colors on Today and B
     const todayBadge = active.getByText("RICE: 4", { exact: true })
     await expect(todayBadge).toBeVisible()
     expect(await badgeContrast(todayBadge, ".tli")).toBeGreaterThanOrEqual(4.5)
+    for (const [id, label] of [[mediumId, "RICE: 10"], [highId, "RICE: 16"]] as const) {
+      const badge = page.locator(`.tli[data-id="${id}"]`).getByText(label, { exact: true })
+      await expect(badge).toBeVisible()
+      expect(await badgeContrast(badge, ".tli")).toBeGreaterThanOrEqual(4.5)
+    }
     await expect(idle).toHaveCSS("background-color", /(?:transparent|0\s*\))/)
     await expect(colored.locator(".tli__color")).toBeHidden()
     expect(await colored.evaluate(el => getComputedStyle(el).backgroundColor))
@@ -180,7 +187,7 @@ test("Knight Rider persists and fills active work and task colors on Today and B
     await expect(card(coloredId)).toHaveCSS("border-inline-start-width", "3px")
     await expect(card(coloredId)).toHaveCSS("border-inline-start-color", "rgb(33, 163, 102)")
   } finally {
-    for (const id of [activeId, coloredId, idleId, paleId]) await request.delete(`/api/tasks/${id}`)
+    for (const id of [activeId, coloredId, idleId, paleId, mediumId, highId]) await request.delete(`/api/tasks/${id}`)
     await request.put("/api/settings", { data: { key: "theme", value: "dark" } })
   }
 })

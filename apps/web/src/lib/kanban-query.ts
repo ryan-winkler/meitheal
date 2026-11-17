@@ -13,7 +13,7 @@ export function storedKanbanGroup(): string {
 const fields = new Set(["title", "status", "priority", "rice", "type", "assigned", "labels", "area"])
 const operators = new Set(["equals", "notEquals", "contains", "notContains", "greaterThan", "lessThan", "isEmpty", "isNotEmpty"])
 
-function readRules(raw: string | null): FilterGroup | undefined {
+export function readKanbanRules(raw: string | null): FilterGroup | undefined {
   if (!raw || raw.length > 8000) return
   try {
     const rules = JSON.parse(raw.startsWith("%") ? decodeURIComponent(raw) : raw) as { conditions?: unknown }
@@ -49,7 +49,7 @@ export function readKanbanFilters(params: URLSearchParams): KanbanFilters {
       .map(type => (type === "standard" ? "standard_action" : type))
       .slice(0, 50),
     labels: readFilterLabels(params),
-    advancedFilter: readRules(params.get("advancedFilter")) ?? null,
+    advancedFilter: readKanbanRules(params.get("advancedFilter")) ?? null,
   }
 }
 

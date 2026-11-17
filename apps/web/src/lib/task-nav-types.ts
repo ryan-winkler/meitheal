@@ -1,4 +1,5 @@
-import { readFilterLabels } from "./filter-state"
+import { normalizeTableRules, readFilterLabels } from "./filter-state"
+import { readKanbanRules } from "./kanban-query"
 import { parseTaskView, readTaskAreaParam, type TaskView } from "./task-view-route"
 
 export type TaskNavTypeId = "standard" | "shopping_item" | "checklist" | "calendar_event"
@@ -78,6 +79,14 @@ function sameFilterValues(expected: string[], active: string[]): boolean {
   return expected.sort().every((value, index) => value === active[index])
 }
 
+function ruleSignature(params: URLSearchParams, view: TaskView): string {
+  const raw = params.get("advancedFilter")
+  const rules = (view !== "kanban" ? normalizeTableRules(raw) : undefined)
+    ?? (view !== "table" ? readKanbanRules(raw) : undefined)
+  // The filter editor and the route assign different IDs to the same conditions.
+  return JSON.stringify(rules?.conditions.length ? rules : null, (key, value) => key === "id" ? undefined : value)
+}
+
 export function matchingTaskShortcutCriteria(target: URLSearchParams, current: URLSearchParams, view: TaskView): number {
   const keys = new Set(target.keys())
   keys.delete("types")
@@ -88,6 +97,8 @@ export function matchingTaskShortcutCriteria(target: URLSearchParams, current: U
     keys.delete("label")
     keys.delete("labels")
   }
+  const matchedRules = view !== "timeline" && keys.delete("advancedFilter")
+  if (matchedRules && ruleSignature(target, view) !== ruleSignature(current, view)) return -1
   let matchedArea = false
   if (view === "calendar" || view === "table") {
     const area = readTaskAreaParam(target)
@@ -98,7 +109,7 @@ export function matchingTaskShortcutCriteria(target: URLSearchParams, current: U
   for (const key of keys) {
     if (!sameFilterValues(target.getAll(key), current.getAll(key))) return -1
   }
-  return keys.size + Number(matchedArea) + Number(matchedLabels)
+  return keys.size + Number(matchedArea) + Number(matchedLabels) + Number(matchedRules)
 }
 
 export function normalizeTaskNavPrefs(input: unknown): TaskNavPrefs {

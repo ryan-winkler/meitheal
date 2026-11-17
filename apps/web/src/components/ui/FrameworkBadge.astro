@@ -57,13 +57,13 @@ const label = framework ? `${framework}: ${score}` : String(score)
 
   .framework-badge--high {
     background: color-mix(in srgb, var(--color-success, #22c55e) 15%, transparent);
-    color: var(--color-success, #22c55e);
+    color: var(--success-text, #22c55e);
     border: 1px solid color-mix(in srgb, var(--color-success, #22c55e) 25%, transparent);
   }
 
   .framework-badge--med {
     background: color-mix(in srgb, var(--color-warning, #f59e0b) 15%, transparent);
-    color: var(--color-warning, #f59e0b);
+    color: var(--warning-text, color-mix(in srgb, var(--warning) 60%, var(--text-primary)));
     border: 1px solid color-mix(in srgb, var(--color-warning, #f59e0b) 25%, transparent);
   }
 

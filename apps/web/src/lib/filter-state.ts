@@ -181,7 +181,7 @@ function ruleValue(value: unknown): value is string | number | boolean {
     (typeof value === "string" && value.length <= 500)
 }
 
-function normalizeTableRules(raw: unknown): FilterGroup | undefined {
+export function normalizeTableRules(raw: unknown): FilterGroup | undefined {
   const root = decodeFilterJson(raw)
   let count = 0
   function group(node: unknown, depth: number): FilterGroup | undefined {

@@ -415,8 +415,13 @@ test("Shopping links identify their own Area and follow applied Board filters", 
       view: "calendar", types: "shopping_item", area_id: areas[0]!, area: areas[1]!,
     })
     const groceryParams = new URLSearchParams({ types: "shopping_item", area: areas[0]!, label: "groceries" })
-    paths.push("/tasks?" + calendarParams + "#calendar", "/tasks?" + groceryParams)
-    const shortcuts = ["All Shopping", ...names, "Kitchen shopping calendar", "Grocery shopping"].map((label, index) => ({
+    const ruleParams = new URLSearchParams(groceryParams)
+    ruleParams.set("advancedFilter", JSON.stringify({
+      id: "saved-shopping-group", logic: "AND",
+      conditions: [{ id: "saved-grocery-rule", field: "title", operator: "contains", value: "grocery" }],
+    }))
+    paths.push("/tasks?" + calendarParams + "#calendar", "/tasks?" + groceryParams, "/tasks?" + ruleParams)
+    const shortcuts = ["All Shopping", ...names, "Kitchen shopping calendar", "Grocery shopping", "Grocery rule"].map((label, index) => ({
       id: `shopping-route-${index}`,
       label,
       href: paths[index],
@@ -471,6 +476,14 @@ test("Shopping links identify their own Area and follow applied Board filters", 
     await page.getByRole("textbox", { name: "Filter by text" }).fill("pan")
     await expect(page).toHaveURL(url => url.searchParams.get("labels") === "groceries" && url.searchParams.get("search") === "pan")
     await expect(current).toHaveText("Grocery shopping")
+
+    await sidebar.getByRole("link", { name: "Grocery rule", exact: true }).click()
+    await expect(current).toHaveText("Grocery rule")
+    await expect(board).toHaveAttribute("data-kanban-booted", "true")
+    await page.getByRole("textbox", { name: "Filter by text" }).fill("bread")
+    await expect(page).toHaveURL(url => url.searchParams.get("search") === "bread" &&
+      decodeURIComponent(url.searchParams.get("advancedFilter") ?? "").includes('"value":"grocery"'))
+    await expect(current).toHaveText("Grocery rule")
   } finally {
     await request.put("/api/settings", { headers, data: { key: "sidebar_config", value: previous ?? null } })
     for (const id of areas) await request.delete(`/api/areas/${id}`, { headers })

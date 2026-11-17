@@ -2,7 +2,7 @@
  * _filter-toolbar.css — Shared FilterToolbar component styles
  *
  * Domain: tasks (view-layer shared component)
- * Owns: filter-toolbar, type-toggles, type-dots, user-pills, selects
+ * Owns: filter toolbar, type toggles, filter pills and selects
  * Does NOT own: data-table (_table.css), kanban board (_kanban.css)
  * ============================================= */
 
@@ -25,9 +25,8 @@
   flex: 0 1 150px;
 }
 
-/* ---- Type toggle & User Pills buttons ---- */
-.filter-toolbar__type-toggles,
-.filter-toolbar__user-pills {
+/* ---- Type toggles ---- */
+.filter-toolbar__type-toggles {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
@@ -38,8 +37,7 @@
   background: var(--bg-secondary);
 }
 
-.filter-toolbar__type-btn,
-.filter-toolbar__user-btn {
+.filter-toolbar__type-btn {
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -55,20 +53,17 @@
   white-space: nowrap;
 }
 
-.filter-toolbar__type-btn.active,
-.filter-toolbar__user-btn.active {
+.filter-toolbar__type-btn.active {
   background: var(--bg-card);
   color: var(--text-primary);
   box-shadow: inset 0 0 0 1px var(--text-muted);
 }
 
-.filter-toolbar__type-btn:not(.active):hover,
-.filter-toolbar__user-btn:not(.active):hover {
+.filter-toolbar__type-btn:not(.active):hover {
   background: var(--bg-hover);
   color: var(--text-primary);
 }
 
-.filter-toolbar__type-btn:not(.active):hover,
 .filter-toolbar__advanced-toggle[aria-expanded="true"] {
   background-color: var(--bg-hover);
   border-color: var(--text-muted);
@@ -98,36 +93,6 @@ details.filter-dropdown summary::-webkit-details-marker {
 .filter-dropdown__trigger svg {
   flex-shrink: 0;
   margin-top: 1px;
-}
-
-/* Type dots */
-.filter-toolbar__type-dot {
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-
-.filter-toolbar__type-dot--epic {
-  background: var(--epic-color, #ef4444);
-}
-
-.filter-toolbar__type-dot--story {
-  background: var(--story-color, #3b82f6);
-}
-
-.filter-toolbar__type-dot--task {
-  background: var(--task-color, #22c55e);
-}
-
-/* ---- Search Input Wrapper ---- */
-.filter-toolbar__search-wrapper {
-  position: relative;
-  display: flex;
-  align-items: center;
-  flex: 0 1 200px;
-  min-width: 140px;
 }
 
 /* ---- Filter Pills ---- */
@@ -166,32 +131,8 @@ details.filter-dropdown summary::-webkit-details-marker {
   [data-filter-promoted] { min-block-size: 44px; }
 }
 
-.filter-pill--display {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  color: var(--text-primary);
-}
-
 .filter-pill__label {
   font-weight: 500;
-}
-
-.filter-pill__val {
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.filter-pill--active .filter-pill__val {
-  color: var(--accent-text);
-}
-
-.filter-pill__chevron {
-  margin-left: -2px;
-  transition: transform 0.2s ease;
-}
-
-.glass-dropdown__trigger[aria-expanded="true"] .filter-pill__chevron {
-  transform: rotate(180deg);
 }
 
 /* ---- Clear button ---- */
@@ -237,23 +178,6 @@ details.filter-dropdown summary::-webkit-details-marker {
     flex-wrap: wrap !important;
     gap: 8px !important;
     min-width: 0;
-  }
-
-  .filter-toolbar__search-wrapper {
-    min-width: 100px;
-    max-width: none;
-    flex: 1;
-  }
-
-  .filter-toolbar__pills-container {
-    width: 100%;
-    overflow-x: auto;
-    padding-bottom: 4px;
-    scrollbar-width: none;
-  }
-  
-  .filter-toolbar__pills-container::-webkit-scrollbar {
-    display: none;
   }
 
   .filter-toolbar__type-toggles {
