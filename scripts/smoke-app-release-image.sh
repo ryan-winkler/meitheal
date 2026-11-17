@@ -12,7 +12,7 @@ VERSION=$6
 "$engine" image inspect "$image" |
   bash scripts/check-app-release-image.sh "$revision" "$ARCHITECTURE" "$platform" "$VERSION" "${7:-}"
 
-container="$("$engine" run --detach --pull=never --platform "$platform" --network none \
+container="$("$engine" run --detach --pull=never --platform "$platform" --network none --cap-drop KILL \
   --env "EXPECTED_VERSION=$VERSION" --env MEITHEAL_DB_URL=file:/data/smoke.db "$image")"
 cleanup() {
   local status=$?
@@ -33,6 +33,9 @@ trap cleanup EXIT
       status_file="${command_line%/cmdline}/status"
       grep -Eq "^Uid:[[:space:]]+$service_uid[[:space:]]+$service_uid[[:space:]]" "$status_file"
       grep -Eq "^CapEff:[[:space:]]+0+$" "$status_file"
+      parent=$(awk '\''$1 == "PPid:" { print $2 }'\'' "$status_file")
+      test "$parent" -gt 1
+      tr "\000" "\n" < "/proc/$parent/cmdline" | grep -Fx /run.sh >/dev/null
       web_processes=$((web_processes + 1))
     fi
   done
@@ -51,3 +54,5 @@ trap cleanup EXIT
     node -e '\''const task = JSON.parse(require("node:fs").readFileSync(0)); if (!task.id || task.title !== "Release smoke fixture") process.exit(1)'\''
 '
 "$engine" exec --user meitheal --workdir /opt/meitheal/apps/web "$container" node scripts/migrate.mjs --check
+"$engine" stop --time 20 "$container" >/dev/null
+"$engine" logs "$container" 2>&1 | grep -F '"event":"addon.stopped","graceful":true' >/dev/null

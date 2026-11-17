@@ -141,37 +141,71 @@ export PORT="${PORT:-3000}"
 apply_resolved_node_options
 HEALTHCHECK_URL="http://127.0.0.1:${PORT}/api/health"
 
+WEB_PID=""
+
+signal_web() {
+  [ -n "${WEB_PID}" ] || return 1
+  # The protected App lacks CAP_KILL. The launcher starts as root, then
+  # s6-setuidgid replaces it with the web process under the meitheal UID.
+  kill "-$1" "${WEB_PID}" 2>/dev/null ||
+    s6-setuidgid meitheal kill "-$1" "${WEB_PID}" 2>/dev/null
+}
+
+stop_web() {
+  if signal_web TERM; then
+    for _ in $(seq 1 10); do
+      if ! signal_web 0; then
+        echo "{\"event\":\"addon.stopped\",\"graceful\":true,\"time\":\"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\"}"
+        break
+      fi
+      sleep 1
+    done
+    if signal_web KILL; then
+      echo "{\"event\":\"addon.stopped\",\"graceful\":false,\"reason\":\"force_kill_after_10s\",\"time\":\"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\"}"
+    fi
+  fi
+  if [ -n "${WEB_PID}" ]; then
+    wait "${WEB_PID}" 2>/dev/null || true
+  fi
+}
+
+graceful_shutdown() {
+  echo "{\"event\":\"addon.stopping\",\"signal\":\"$1\",\"time\":\"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\"}"
+  exit 0
+}
+
+trap stop_web EXIT
+trap 'graceful_shutdown SIGTERM' SIGTERM
+trap 'graceful_shutdown SIGINT' SIGINT
+
 if [ -f /opt/meitheal/apps/web/package.json ]; then
-  (
-    cd /opt/meitheal/apps/web
-    export HOME=/data
-    s6-setuidgid meitheal node scripts/migrate.mjs || {
-      exit_code=$?
-      echo "Database migration failed: 'node scripts/migrate.mjs' exited with ${exit_code}" >&2
-      exit "${exit_code}"
-    }
-    export MEITHEAL_STARTUP_BACKUP_HANDLED=1
-    if [ ! -f dist/server/entry.mjs ]; then
-      echo "Missing Astro server entry at dist/server/entry.mjs"
-      exit 1
-    fi
-    echo "{\"event\":\"web.starting\",\"host\":\"${HOST}\",\"port\":\"${PORT}\",\"time\":\"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\"}"
-    # Use ingress-safe wrapper to normalize double slashes from HA Supervisor
-    # before they reach Astro's routing layer (prevents 301 redirect loop).
-    if [ -f scripts/serve.mjs ]; then
-      exec s6-setuidgid meitheal node scripts/serve.mjs
-    else
-      exec s6-setuidgid meitheal node dist/server/entry.mjs
-    fi
-  ) &
+  cd /opt/meitheal/apps/web
+  export HOME=/data
+  s6-setuidgid meitheal node scripts/migrate.mjs || {
+    exit_code=$?
+    echo "Database migration failed: 'node scripts/migrate.mjs' exited with ${exit_code}" >&2
+    exit "${exit_code}"
+  }
+  export MEITHEAL_STARTUP_BACKUP_HANDLED=1
+  if [ ! -f dist/server/entry.mjs ]; then
+    echo "Missing Astro server entry at dist/server/entry.mjs"
+    exit 1
+  fi
+  echo "{\"event\":\"web.starting\",\"host\":\"${HOST}\",\"port\":\"${PORT}\",\"time\":\"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\"}"
+  # Normalize double slashes from HA Supervisor before routing the request.
+  if [ -f scripts/serve.mjs ]; then
+    s6-setuidgid meitheal node scripts/serve.mjs &
+  else
+    s6-setuidgid meitheal node dist/server/entry.mjs &
+  fi
   WEB_PID=$!
 
   for attempt in $(seq 1 45); do
-    if ! kill -0 "${WEB_PID}" 2>/dev/null; then
+    if ! signal_web 0; then
       echo "Meitheal web process (${WEB_PID}) exited prematurely during startup (attempt ${attempt})" >&2
       exit 1
     fi
-    if curl -fsS "${HEALTHCHECK_URL}" >/dev/null 2>&1; then
+    if curl -fsS "${HEALTHCHECK_URL}" >/dev/null 2>&1 && signal_web 0; then
       echo "{\"event\":\"healthcheck.passed\",\"attempt\":${attempt},\"time\":\"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\"}"
       break
     fi
@@ -221,30 +255,4 @@ if [ -f /opt/meitheal/meitheal-hub/rootfs/etc/alloy/config.river ]; then
   echo "Alloy config present at /opt/meitheal/meitheal-hub/rootfs/etc/alloy/config.river"
 fi
 
-# ── Graceful shutdown ──
-# HA Supervisor sends SIGTERM on addon stop/restart. Trap it to
-# gracefully terminate the Node process and allow in-flight requests
-# to complete (up to 10s timeout).
-graceful_shutdown() {
-  echo "{\"event\":\"addon.stopping\",\"signal\":\"$1\",\"time\":\"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\"}"
-  if [ -n "${WEB_PID:-}" ] && kill -0 "${WEB_PID}" 2>/dev/null; then
-    kill -TERM "${WEB_PID}" 2>/dev/null || true
-    # Wait up to 10s for graceful exit
-    for _ in $(seq 1 10); do
-      if ! kill -0 "${WEB_PID}" 2>/dev/null; then
-        echo "{\"event\":\"addon.stopped\",\"graceful\":true,\"time\":\"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\"}"
-        exit 0
-      fi
-      sleep 1
-    done
-    # Force kill after 10s
-    kill -9 "${WEB_PID}" 2>/dev/null || true
-    echo "{\"event\":\"addon.stopped\",\"graceful\":false,\"reason\":\"force_kill_after_10s\",\"time\":\"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\"}"
-  fi
-  exit 0
-}
-
-trap 'graceful_shutdown SIGTERM' SIGTERM
-trap 'graceful_shutdown SIGINT' SIGINT
-
-wait -n
+wait "${WEB_PID:?Meitheal web process was not started}"
