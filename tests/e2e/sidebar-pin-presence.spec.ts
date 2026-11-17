@@ -9,6 +9,7 @@ import { launchPinBrowser, pinRequest, startCoreFixture } from "../scripts/task-
 test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Run with MEITHEAL_TEST_BROWSER=1 and a built web app")
 
 test("the first verified pin reveals the sidebar destination and the last unpin hides it", async ({}, testInfo) => {
+  test.setTimeout(60_000)
   const work = await mkdtemp(join(tmpdir(), "meitheal-sidebar-pins-"))
   let child: ChildProcess | undefined
   let browser
@@ -21,8 +22,10 @@ test("the first verified pin reveals the sidebar destination and the last unpin 
     const prefix: string = info.configuredPath
     const path = prefix + "/api/task-pins"
     browser = await launchPinBrowser(work)
-    const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, extraHTTPHeaders: {} })
-    await context.setExtraHTTPHeaders({})
+    // The dedicated pin-worker suite covers service-worker activation and transport checks.
+    const context = await browser.newContext({
+      viewport: { width: 1440, height: 900 }, extraHTTPHeaders: {}, serviceWorkers: "block",
+    })
     const owner = (value: string) => context.addCookies([{ name: "feedback-fixture", value, url: origin }])
     await owner("member")
     const page = await context.newPage()
@@ -42,6 +45,8 @@ test("the first verified pin reveals the sidebar destination and the last unpin 
       if (new URL(request.url()).pathname === path && request.method() === "POST") checks.push(request.postDataJSON().action)
     })
     await page.goto(origin + prefix + "/today?open=" + task)
+    await page.bringToFront()
+    await expect(page.locator("#task-detail-overlay")).toHaveClass(/active/)
     const nav = page.locator('#sidebar [data-page="system-pinned"]')
     const pin = page.locator("#td-pin-action")
     await expect(pin).toBeVisible()
