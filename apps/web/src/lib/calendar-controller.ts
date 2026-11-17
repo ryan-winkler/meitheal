@@ -7,7 +7,7 @@ import { createFocusTrap } from "@lib/focus-trap"
 import { updateKanbanFilters, type KanbanFilters } from "@lib/kanban-query"
 import { createTablerSvgElement, mapEntityEmojiToTabler, type TablerIconName } from "@lib/tabler-svg"
 import { openTaskDetailHandoff } from "@lib/task-detail-handoff"
-import { TASK_VIEW_LOCATION_EVENT, replaceTaskBackgroundUrl, taskBackgroundUrl } from "@lib/task-page-url"
+import { replaceTaskBackgroundUrl, taskBackgroundUrl } from "@lib/task-page-url"
 import { getStatusDef } from "@lib/status-config"
 
 interface CalendarEventRecord {
@@ -145,7 +145,6 @@ export function initCalendarPage(signal: AbortSignal): void {
         retryTarget = undefined
         restoreFilterControls()
       }
-      document.dispatchEvent(new Event(TASK_VIEW_LOCATION_EVENT))
       const hadRetryFocus = document.activeElement === retry
       announce(preserveRetry ? refreshFailure() : rejectedFilterChange)
       if (activeDay || hadRetryFocus && retry!.hidden) focusMonthDay(activeDay)

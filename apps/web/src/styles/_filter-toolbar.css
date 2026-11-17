@@ -156,15 +156,14 @@ details.filter-dropdown summary::-webkit-details-marker {
   color: var(--text-primary);
 }
 
-.filter-pill--active {
-  background: var(--accent-transparent, rgba(138, 180, 248, 0.15));
-  border: 1px solid var(--accent-transparent, rgba(138, 180, 248, 0.3));
+.filter-pill.filter-pill--active {
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg-secondary));
+  border-color: var(--accent-text);
   color: var(--accent-text);
 }
 
-.filter-pill--active:hover {
-  background: var(--accent-transparent, rgba(138, 180, 248, 0.25));
-  border-color: var(--accent, #8ab4f8);
+@media (max-width: 768px), (pointer: coarse) {
+  [data-filter-promoted] { min-block-size: 44px; }
 }
 
 .filter-pill--display {

@@ -236,7 +236,7 @@
     --type-task: #8AB0FA;
     --prio-low: #76C99B;
     --prio-none: #A4A4AA;
-    --knight-control-border: #88888C;
+    --control-border: #88888C;
     --knight-active-fill: #593541;
     --knight-active-indicator: #FF5E92;
     --danger-text: #FFADB1;
@@ -390,7 +390,7 @@
       --border-rgb: 119 119 123;
       --border: rgb(var(--border-rgb));
       --palette-accent-light: rgb(var(--accent-rgb) / 0.25);
-      --knight-control-border: #ADADB3;
+      --control-border: #ADADB3;
     }
 
     :is([data-theme="light"], [data-theme="auto"][data-ha-theme="light"]) {

@@ -336,6 +336,10 @@ for (const theme of ["light", "dark", "knight-rider", "auto", "custom"] as const
       await pinnedShopping.click()
       await expect(overlay.locator("#new-task-kind")).toHaveValue("shopping_item")
       await expect(overlay).toBeVisible()
+      if (theme === "knight-rider") {
+        await expect(overlay.locator("#new-task-title-input")).toHaveCSS("border-top-color", "rgb(136, 136, 140)")
+        await expect(overlay.locator(".nt-kind-pill[aria-pressed=false]").first()).toHaveCSS("border-top-color", "rgb(136, 136, 140)")
+      }
       await page.keyboard.press("Escape")
       await expect(overlay).toBeHidden()
       await createMenu.getByRole("button", { name: "Task types", exact: true }).click()
@@ -410,8 +414,9 @@ test("Shopping links identify their own Area and follow applied Board filters", 
     const calendarParams = new URLSearchParams({
       view: "calendar", types: "shopping_item", area_id: areas[0]!, area: areas[1]!,
     })
-    paths.push("/tasks?" + calendarParams + "#calendar")
-    const shortcuts = ["All Shopping", ...names, "Kitchen shopping calendar"].map((label, index) => ({
+    const groceryParams = new URLSearchParams({ types: "shopping_item", area: areas[0]!, label: "groceries" })
+    paths.push("/tasks?" + calendarParams + "#calendar", "/tasks?" + groceryParams)
+    const shortcuts = ["All Shopping", ...names, "Kitchen shopping calendar", "Grocery shopping"].map((label, index) => ({
       id: `shopping-route-${index}`,
       label,
       href: paths[index],
@@ -458,6 +463,14 @@ test("Shopping links identify their own Area and follow applied Board filters", 
     await calendarFilters.getByRole("textbox", { name: "Filter by text" }).fill("pan")
     await expect(page).toHaveURL(url => url.searchParams.get("area") === areas[0] && url.searchParams.get("search") === "pan")
     await expect(current).toHaveText("Kitchen shopping calendar")
+
+    await sidebar.getByRole("link", { name: "Grocery shopping", exact: true }).click()
+    await expect(current).toHaveText("Grocery shopping")
+    const board = page.locator("#kanban-shell")
+    await expect(board).toHaveAttribute("data-kanban-booted", "true")
+    await page.getByRole("textbox", { name: "Filter by text" }).fill("pan")
+    await expect(page).toHaveURL(url => url.searchParams.get("labels") === "groceries" && url.searchParams.get("search") === "pan")
+    await expect(current).toHaveText("Grocery shopping")
   } finally {
     await request.put("/api/settings", { headers, data: { key: "sidebar_config", value: previous ?? null } })
     for (const id of areas) await request.delete(`/api/areas/${id}`, { headers })

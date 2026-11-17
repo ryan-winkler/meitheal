@@ -5,7 +5,7 @@ import { isDisabledCharacterShortcut } from "@lib/single-key-shortcuts"
 import { createClientLogger } from "@lib/client-logger"
 import { FieldPickerPanel, TASK_FIELD_DEFS, loadVisibleFields } from "./field-picker-panel"
 import { loadFilterState } from "./filter-state"
-import { TASK_VIEW_LOCATION_EVENT, replaceTaskBackgroundUrl, taskBackgroundUrl } from "./task-page-url"
+import { replaceTaskBackgroundUrl, taskBackgroundUrl } from "./task-page-url"
 /**
  * Timeline/GANTT Controller — native SVG GANTT renderer.
  * @domain Task Visualization
@@ -2927,7 +2927,6 @@ export function initTimelineController(signal: AbortSignal) {
     else url.searchParams.delete("types")
     url.searchParams.set("area", currentFilter.area)
     replaceTaskBackgroundUrl(url)
-    document.dispatchEvent(new Event(TASK_VIEW_LOCATION_EVENT))
     doRender(currentZoom)
   }
 

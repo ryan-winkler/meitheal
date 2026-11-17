@@ -151,8 +151,13 @@ test("task promotion is shared, typed, and independent of the stored manual orde
     await expect(lane).toHaveAttribute("data-total", "29")
 
     const otherPage = await adminBrowser.newPage()
+    await otherPage.addInitScript(() => localStorage.setItem("meitheal-theme", "knight-rider"))
     await otherPage.goto(page.url())
     await expect(otherPage.locator("#kanban-shell")).toHaveAttribute("data-kanban-booted", "true")
+    const narrowFilter = otherPage.getByRole("button", { name: "Promoted cards only" })
+    await expect(narrowFilter).toHaveAttribute("aria-pressed", "true")
+    await expect(narrowFilter).toHaveCSS("min-block-size", "44px")
+    await expect(narrowFilter).toHaveCSS("border-top-color", "rgb(172, 197, 252)")
     const otherLane = otherPage.locator('.kanban-column[data-status="pending"]')
     await expect(otherLane.locator(".kanban-card")).toHaveCount(1)
     await otherLane.getByRole("button", { name: "Task actions for Paging card 25" }).click()

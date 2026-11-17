@@ -109,7 +109,7 @@ const customEntries = Object.entries(task.custom_fields).filter(
     type="button"
     class:list={["tli__fav", { "is-fav": task.is_favorite }]}
     data-id={task.id}
-    aria-label={task.is_favorite ? "Remove from favorites" : "Add to favorites"}
+    aria-label="Favorite"
     title={task.is_favorite ? "Remove from favorites" : "Add to favorites"}
     aria-pressed={task.is_favorite}
   >

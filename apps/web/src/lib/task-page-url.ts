@@ -42,18 +42,18 @@ export function restoreTaskBackgroundUrl(): void {
 }
 
 export function replaceTaskBackgroundUrl(url: URL): void {
+  const ticket = ticketIdFromPath(location.pathname, window.__ingress_path) !== null
+  if (!ticket) {
+    const current = new URLSearchParams(location.search)
+    for (const key of ["open", "comment"]) {
+      const value = current.get(key)
+      if (value === null) url.searchParams.delete(key)
+      else url.searchParams.set(key, value)
+    }
+  }
   const key = history.state?.ticketBackground
-  if (ticketIdFromPath(location.pathname, window.__ingress_path) !== null) {
-    if (history.state?.ticketDrawer?.pushed && key) backgroundUpdate = { key, href: url.href }
-    writeTicketReturnTo(url.href)
-    return
-  }
-  const current = new URLSearchParams(location.search)
-  for (const key of ["open", "comment"]) {
-    const value = current.get(key)
-    if (value === null) url.searchParams.delete(key)
-    else url.searchParams.set(key, value)
-  }
-  if (key) backgroundUpdate = { key, href: url.href }
-  history.replaceState(history.state, "", url)
+  if (key && (!ticket || history.state?.ticketDrawer?.pushed)) backgroundUpdate = { key, href: url.href }
+  if (ticket) writeTicketReturnTo(url.href)
+  else history.replaceState(history.state, "", url)
+  document.dispatchEvent(new Event(TASK_VIEW_LOCATION_EVENT))
 }

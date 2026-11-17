@@ -1,3 +1,4 @@
+import { readFilterLabels } from "./filter-state"
 import { parseTaskView, readTaskAreaParam, type TaskView } from "./task-view-route"
 
 export type TaskNavTypeId = "standard" | "shopping_item" | "checklist" | "calendar_event"
@@ -71,10 +72,22 @@ export function normalizeTaskTypeFilterValue(value: string | null): string {
   return [...new Set(kinds)].sort().join(",")
 }
 
+function sameFilterValues(expected: string[], active: string[]): boolean {
+  if (expected.length !== active.length) return false
+  active.sort()
+  return expected.sort().every((value, index) => value === active[index])
+}
+
 export function matchingTaskShortcutCriteria(target: URLSearchParams, current: URLSearchParams, view: TaskView): number {
   const keys = new Set(target.keys())
   keys.delete("types")
   keys.delete("view")
+  const matchedLabels = keys.has("label") || keys.has("labels")
+  if (matchedLabels) {
+    if (!sameFilterValues(readFilterLabels(target), readFilterLabels(current))) return -1
+    keys.delete("label")
+    keys.delete("labels")
+  }
   let matchedArea = false
   if (view === "calendar" || view === "table") {
     const area = readTaskAreaParam(target)
@@ -83,11 +96,9 @@ export function matchingTaskShortcutCriteria(target: URLSearchParams, current: U
     for (const alias of ["area", "area_id", "board"]) keys.delete(alias)
   }
   for (const key of keys) {
-    const expected = target.getAll(key).sort()
-    const active = current.getAll(key).sort()
-    if (expected.length !== active.length || expected.some((value, index) => value !== active[index])) return -1
+    if (!sameFilterValues(target.getAll(key), current.getAll(key))) return -1
   }
-  return keys.size + Number(matchedArea)
+  return keys.size + Number(matchedArea) + Number(matchedLabels)
 }
 
 export function normalizeTaskNavPrefs(input: unknown): TaskNavPrefs {

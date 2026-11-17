@@ -1,5 +1,5 @@
 import { getRememberedAreaId, getSelectedAreaId } from "@lib/area-selector-controller"
-import { TASK_VIEW_LOCATION_EVENT, replaceTaskBackgroundUrl, taskBackgroundUrl } from "@lib/task-page-url"
+import { replaceTaskBackgroundUrl, taskBackgroundUrl } from "@lib/task-page-url"
 import { DEFERRAL_RECONCILED, type DeferralReconciliation } from "@lib/deferral-client"
 import { initKanbanArea } from "@lib/kanban-controller"
 import { hydrateTaskAssignees } from "@lib/task-assignee-display"
@@ -109,10 +109,7 @@ export function initKanbanPage(signal: AbortSignal): void {
       }
       // A view or task-detail navigation can change the hash while a board request is in flight.
       url.hash = taskBackgroundUrl().hash
-      if (!dataOnly) {
-        replaceTaskBackgroundUrl(url)
-        document.dispatchEvent(new Event(TASK_VIEW_LOCATION_EVENT))
-      }
+      if (!dataOnly) replaceTaskBackgroundUrl(url)
       board.scrollLeft = horizontal
       renderStatus("")
 

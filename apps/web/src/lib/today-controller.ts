@@ -211,9 +211,7 @@ function setupEventDelegation(container: HTMLElement) {
 
       function renderFavorite(favorite: boolean): void {
         el.classList.toggle("is-fav", favorite)
-        const label = favorite ? "Remove from favorites" : "Add to favorites"
-        el.title = label
-        el.setAttribute("aria-label", label)
+        el.title = favorite ? "Remove from favorites" : "Add to favorites"
         el.setAttribute("aria-pressed", String(favorite))
       }
       renderFavorite(newFav)

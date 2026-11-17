@@ -96,6 +96,19 @@ test.describe("Table Shell", () => {
     await expect(page).toHaveURL(url => url.pathname === "/tasks" && url.searchParams.get("search") === other.title)
   })
 
+  test("Table column choices keep the links to other views current", async ({ page }) => {
+    await page.goto("/table")
+    const columns = page.getByRole("button", { name: "Customize visible columns" })
+    await columns.click()
+    await page.getByRole("checkbox", { name: "Priority", exact: true }).uncheck()
+    await expect(page.locator("#task-table")).toHaveClass(/hide-col-priority/)
+    const calendar = page.getByRole("navigation", { name: "Task views" }).locator('[data-view-tab="calendar"]')
+    const persisted = new URL(page.url()).searchParams.get("columns")
+    expect(JSON.parse(persisted!)).not.toContain("priority")
+    await expect.poll(() => calendar.evaluate(link => new URL((link as HTMLAnchorElement).href).searchParams.get("columns"))).toBe(persisted)
+    await expect(page.locator("#task-table th.col-priority")).toBeHidden()
+  })
+
   test("filtered empty state can clear criteria and return to the task list", async ({ page, tableTasks }) => {
     const missing = randomUUID()
     await page.goto(`/tasks?view=table&search=${missing}#table`)
