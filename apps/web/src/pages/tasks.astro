@@ -248,7 +248,7 @@ try {
   /* areas table may not exist yet */
 }
 const kanbanAreas = new Map(areas.map(area => [area.id, area]))
-const groupByProject = renderedView === "kanban" && kanbanFilters.groupBy === "project"
+const groupByProject = renderedView === "kanban" && kanbanFilters.groupBy === "project" && available("projects")
 const projectFallbacks = { none: t("kanban.no_project", locale), unknown: t("kanban.unknown_project", locale) }
 let projectLabels = getHouseholdProjectLabels([], Object.fromEntries(areas.map(area => [area.id, area.name])), undefined, projectFallbacks)
 let projectCatalogUnavailable = false
