@@ -106,7 +106,6 @@ export function initTodayPage(options?: Partial<TodayControllerOptions>) {
     sectionLinkSelectors: ["[data-today-section-link]"],
   })
 
-  setupEventDelegation(container)
   setupQuickAdd(container)
   setupKeyboardNav(container)
   setupSectionCollapse(container)
@@ -132,6 +131,7 @@ export function initTodayPage(options?: Partial<TodayControllerOptions>) {
     renderEffortIndicators(list)
     void hydrateTaskAssignees(list, lm.signal)
   })
+  setupEventDelegation(container, refreshReopened)
   lm.on(document, "meitheal:task-status-saved", event => {
     const { id, status } = (event as CustomEvent<{ id: string; status: string }>).detail
     if (typeof status !== "string") return
@@ -166,7 +166,7 @@ export function initTodayPage(options?: Partial<TodayControllerOptions>) {
 
 // ── Event Delegation ──────────────────────────────────────────────────────
 
-function setupEventDelegation(container: HTMLElement) {
+function setupEventDelegation(container: HTMLElement, refreshReopened: (id: string, status: string) => void) {
   lm.on(container, "click", async (e: Event) => {
     const origin = e.target as HTMLElement
     const target = origin.closest("button") ?? origin
@@ -197,6 +197,7 @@ function setupEventDelegation(container: HTMLElement) {
 
       try {
         const completed = await taskApi.updateTask(id, { status: newStatus })
+        if (!completing) refreshReopened(id, newStatus)
         syncTodayTaskStatus(container, id, newStatus)
         showToast(completing ? "common.task_completed" : "common.task_reopened")
         if (completing) onTaskCompleted(completed)
@@ -947,7 +948,8 @@ function setupReopenedTodayTasks(
     if (isClosedStatus(status)) {
       if (!reopened.delete(id)) return
     } else {
-      if (!reopened.has(id) && container.querySelector(`.tli:not(.tli--done)[data-id="${CSS.escape(id)}"]`)) return
+      const row = container.querySelector<HTMLElement>(`.tli[data-id="${CSS.escape(id)}"]`)
+      if (!reopened.has(id) && row && !isClosedStatus(row.dataset.status ?? "")) return
       reopened.add(id)
     }
     request?.abort()

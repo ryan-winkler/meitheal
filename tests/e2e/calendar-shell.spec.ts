@@ -17,13 +17,21 @@ test.describe("Calendar Shell", () => {
     const views = page.getByRole("navigation", { name: "Task views" })
     await expect(views.getByRole("link", { name: "Calendar" })).toHaveAttribute("aria-current", "page")
 
-    await page.locator('.cal-cell[data-date]:not(.cal-other)').first().press("Enter")
-
-    await expect(page.locator("#day-drawer")).toHaveAttribute("aria-hidden", "false")
-    await expect(page.locator("#day-drawer-close")).toBeFocused()
-    await page.keyboard.press("Escape")
-    await expect(page.locator("#day-drawer")).toHaveAttribute("aria-hidden", "true")
-    await expect(page.locator('.cal-cell[data-date]:not(.cal-other)').first()).toBeFocused()
+    const day = page.locator('.cal-cell[data-date]:not(.cal-other)').first()
+    const drawer = page.locator("#day-drawer")
+    const close = drawer.getByRole("button", { name: "Close", exact: true })
+    for (const pointer of [false, true]) {
+      if (pointer) await day.click()
+      else await day.press("Enter")
+      await expect(drawer).toHaveAttribute("aria-hidden", "false")
+      await expect(close).toBeFocused()
+      const target = await close.boundingBox()
+      expect(target?.width).toBeGreaterThanOrEqual(44)
+      expect(target?.height).toBeGreaterThanOrEqual(44)
+      await page.keyboard.press("Escape")
+      await expect(drawer).toHaveAttribute("aria-hidden", "true")
+      await expect(day).toBeFocused()
+    }
   })
 
   test("Calendar renders supported years with fewer than four digits", async ({ page }) => {

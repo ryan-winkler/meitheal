@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test"
+import { expect, test, type Route } from "@playwright/test"
 import { calendarToday, shiftCalendarDay } from "../../apps/web/src/lib/date"
 
 test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the disposable Meitheal browser fixture")
@@ -126,16 +126,31 @@ test("reopening a due favorite keeps its original Focus Stack card", async ({ pa
       await expect(status).toHaveValue("complete")
       await expect(status).toBeEnabled()
       const dueDate = reschedule ? shiftCalendarDay(today, 1) : today
+      let captureRefresh!: (route: Route) => void
+      const refresh = new Promise<Route>(resolve => { captureRefresh = resolve })
       if (reschedule) {
         const saved = page.waitForResponse(response => response.request().method() === "PUT" &&
           new URL(response.url()).pathname === `/api/tasks/${id}` && response.request().postDataJSON()?.due_date === dueDate)
         await page.locator("#td-due-date").fill(dueDate)
         expect((await saved).status()).toBe(200)
+        await page.route(url => url.searchParams.has("todayRefresh"), captureRefresh, { times: 1 })
       }
 
       // Wait for the refreshed Today row to replace the immediate status update.
       await favorite.evaluate(row => row.setAttribute("data-before-reopen", ""))
       await status.selectOption("active")
+      if (reschedule) {
+        const pending = await refresh
+        try {
+          await expect(focusCard).toBeHidden()
+        } finally {
+          await pending.abort()
+        }
+        await expect(page.getByText("Couldn’t refresh Today’s tasks. Reload Today to see the saved changes.")).toBeVisible()
+        await expect(focusCard).toBeHidden()
+        await expect(status).not.toHaveAttribute("aria-disabled", "true")
+        await status.selectOption("pending")
+      }
       await expect(page.locator("#today-pinned-list [data-before-reopen]")).toHaveCount(0)
       await expect(favorite).toHaveAttribute("data-due", dueDate)
       if (reschedule) await expect(focusCard).toBeHidden()
