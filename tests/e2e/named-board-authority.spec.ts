@@ -390,7 +390,7 @@ test("named Board owners link Projects to shared Goals without publishing privat
   const completedTicket = (await tasks.view(workUser, workBoard))?.tasks.find(ticket => ticket.id === completion.value.id)
   if (!completedTicket) throw new Error("Expected the visible routine ticket")
   expect(await tasks.edit(workUser, workBoard, completedTicket.id, completedTicket.version, { dueDate: null }))
-    .toMatchObject({ ok: false, errorCode: "denied" })
+    .toMatchObject({ ok: false, errorCode: "stale", reason: "routine-date" })
   expect(await tasks.delete(homeUser, workBoard, completedTicket.id, completedTicket.version)).toEqual({ ok: false, errorCode: "denied" })
   expect(await tasks.delete(workUser, workBoard, completedTicket.id, completedTicket.version)).toEqual({ ok: false, errorCode: "denied" })
   expect(await tasks.completeRoutine(workUser, workBoard, workRoutine)).toEqual(completion)

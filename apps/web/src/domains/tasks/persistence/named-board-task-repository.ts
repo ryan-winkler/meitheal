@@ -12,7 +12,7 @@ import { namedRoutinePeriod, readNamedBoardPlanning } from "./named-board-planni
 import { permitsBoardTaskAction, selectNamedBoardAccess, type BoardActor, type TaskBoardAction } from "./named-board-repository"
 import { canAdvanceTaskTimestampMs, nextTaskTimestampMs, taskTimestampMs } from "./task-timestamp"
 
-type Outcome<T> = { ok: true; value: T } | { ok: false; errorCode: "unavailable" | "denied" | "stale" }
+type Outcome<T> = { ok: true; value: T } | { ok: false; errorCode: "unavailable" | "denied" | "stale"; reason?: "routine-date" }
 type NamedTaskContent = { title: string; description: string; dueDate?: string | null }
 type NamedTaskPlacement = {
   laneId?: string
@@ -463,7 +463,7 @@ export class NamedBoardTaskRepository {
           args: [id, boardId],
         })
         if (!task) return unavailable
-        if (task.task_kind === "routine_instance" && task.source_template_id != null && content.dueDate !== task.due_date) return denied
+        if (task.task_kind === "routine_instance" && task.source_template_id != null && content.dueDate !== task.due_date) return { ok: false, errorCode: "stale", reason: "routine-date" }
       }
       const { rows: [updated] } = await tx.execute({
         sql: `UPDATE tasks SET title = COALESCE(?, title), description = COALESCE(?, description),

@@ -47,6 +47,10 @@ export function resolveOrganizationAvailability(
     const policy = decisions.get(feature)
     return policy ? allowsOrganizationAudience(policy, activeUserId) : inheritedOrganizationAvailability(feature, flags)
   }))
+  if (!available.has("organizer")) {
+    available.delete("groups")
+    available.delete("projects")
+  }
   if (!available.has("pillars")) available.delete("principles")
   return {
     locked: false,

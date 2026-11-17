@@ -208,7 +208,6 @@ const navItems = order
     if (sidebarConfig[key] === false) return false
     if (!(key in NAV_ITEMS)) return false
     // Feature flag: hide progress parent page when all sub-features disabled
-    if (key === "progress" && !gamificationEnabled && !habitsEnabled) return false
     if (key === "areas") return false
     if (key === "planning" && ff.planning === false) return false
     if (key === "progress" && ff.pillars === false && ff.goals === false && ff.habits === false && ff.gamification === false) return false

@@ -79,6 +79,11 @@ export const POST: APIRoute = async ({ locals, params, request }) => {
     return apiError("Board or Routine unavailable", 404)
   }
   const change = parseChange(body)
+  if (change && (
+    ((change.action === "project-goal" || change.action === "project" && change.goalId !== null) && !available("goals")) ||
+    (change.action === "pillar-link" && change.entityType === "goal" && !available("goals")) ||
+    (change.action === "pillar-link" && change.entityType === "routine" && !available("routines"))
+  )) return apiError("This organizing feature is unavailable.", 404)
   if (!change) return apiError("Choose a planning action and enter valid details.", 400)
   await ensureSchema()
   const repository = new NamedBoardPlanningRepository(getPersistenceClient())

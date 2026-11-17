@@ -144,6 +144,9 @@ export class NamedBoardPlanningRepository {
   constructor(private readonly db: Client, private readonly markerPath?: string) {}
 
   async save(ownerId: string, boardId: string, input: Change): Promise<boolean> {
+    if (((input.action === "project-goal" || input.action === "project" && input.goalId !== null) && !available("goals")) ||
+      (input.action === "pillar-link" && input.entityType === "goal" && !available("goals")) ||
+      (input.action === "pillar-link" && input.entityType === "routine" && !available("routines"))) return false
     if (input.action === "goal-share" || input.action === "retire") {
       const outcome = await this.saveVisibility(ownerId, boardId, input)
       return outcome.status !== "locked" && outcome.result === "saved"

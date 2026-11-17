@@ -109,6 +109,60 @@ test("Administrators choose who can use each organization feature", async () => 
     await workerContext.close()
     await setFeature("routines", "everyone")
     expect((await other.request.get(app + "/api/habits")).status()).toBe(200)
+
+    for (const feature of ["groups", "projects", "goals", "routines", "pillars"]) await setFeature(feature, "everyone")
+    const directory = await member.request.get(app + "/api/boards")
+    const boardHeaders = { ...headers, "x-meitheal-board-session": directory.headers()["x-meitheal-board-session"]! }
+    const boardCreated = await member.request.post(app + "/api/boards", { headers: boardHeaders, data: { name: "Feature authority fixture" } })
+    expect(boardCreated.status()).toBe(201)
+    const boardId = (await boardCreated.json()).id
+    const planning = app + "/api/boards/" + boardId + "/planning"
+    const change = (data: object) => member.request.post(planning, { headers: boardHeaders, data })
+    expect((await change({ action: "area", title: "Operations" })).status()).toBe(200)
+    let model = await (await member.request.get(app + "/api/boards/" + boardId)).json()
+    const areaId = model.planning.areas[0].id
+    for (const data of [
+      { action: "goal", title: "Known goal", description: "", areaId },
+      { action: "project", title: "Known project", description: "", areaId, goalId: null },
+      { action: "routine", title: "Known routine", description: "", areaId, cadence: "daily" },
+      { action: "pillar", title: "Known pillar", description: "" },
+    ]) expect((await change(data)).status()).toBe(200)
+    model = await (await member.request.get(app + "/api/boards/" + boardId)).json()
+    const goalId = model.planning.goals[0].id
+    const projectId = model.planning.projects[0].id
+    const routine = model.planning.routines[0]
+    const pillarId = model.planning.pillars[0].id
+    const linkGoal = { action: "project-goal", id: projectId, goalId }
+    const pillarGoal = { action: "pillar-link", pillarId, entityType: "goal", id: goalId, enabled: true }
+    const pillarRoutine = { action: "pillar-link", pillarId, entityType: "routine", id: routine.id, enabled: true }
+    for (const data of [linkGoal, pillarGoal, pillarRoutine]) expect((await change(data)).status()).toBe(200)
+    await setFeature("goals", "nobody")
+    await setFeature("routines", "nobody")
+    await setFeature("achievements", "nobody")
+    for (const data of [linkGoal, pillarGoal, pillarRoutine,
+      { action: "project", title: "Hidden goal link", description: "", areaId, goalId },
+    ]) expect((await change(data)).status()).toBe(404)
+    await page.goto(app + "/progress")
+    await expect(page.locator('#sidebar a[data-page="progress"]')).toBeVisible()
+    await setFeature("routines", "everyone")
+    await setFeature("organizer", "nobody")
+    expect((await member.request.get(app + "/api/areas")).status()).toBe(404)
+    expect((await member.request.get(app + "/api/projects")).status()).toBe(404)
+    for (const data of [
+      { action: "area", title: "Unavailable organizer group" },
+      { action: "project", title: "Unavailable organizer project", description: "", areaId, goalId: null },
+    ]) expect((await change(data)).status()).toBe(404)
+    // The independent library can still complete an eligible Routine.
+    const checked = await change({ action: "routine-complete", id: routine.id, period: routine.period })
+    expect(checked.status()).toBe(200)
+    const occurrenceId = (await checked.json()).id
+    const taskView = await (await member.request.get(app + "/api/boards/" + boardId)).json()
+    const occurrence = taskView.tasks.find((task: { id: string }) => task.id === occurrenceId)
+    const changedDate = await member.request.patch(app + "/api/boards/" + boardId + "/tickets/" + occurrenceId, {
+      headers: boardHeaders, data: { version: occurrence.version, due_date: "2000-01-01" },
+    })
+    expect(changedDate.status()).toBe(409)
+    expect(await changedDate.text()).toContain("original occurrence date")
   } finally {
     await browser?.close()
     if (child.exitCode === null && child.signalCode === null) {
