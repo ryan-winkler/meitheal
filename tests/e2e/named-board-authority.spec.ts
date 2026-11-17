@@ -432,10 +432,23 @@ test("workspace groups, Projects and task filing stay within the owning Board", 
   const group = (await tasks.groups(actor, board, null))!.items[0]!
   const foreign = (await tasks.groups(actor, other, null))!.items[0]!
   expect(group.name).toBe("Operations")
+  expect(await tasks.groups(actor, board, null, group.id)).toMatchObject({ selected: { id: group.id, name: "Operations" } })
+  expect(await tasks.groups(actor, board, null, foreign.id)).toMatchObject({ selected: null })
+  await db.batch(Array.from({ length: 31 }, (_, index) => ({
+    sql: "INSERT INTO areas (id, name, owner_board_id, position, created_at, updated_at) VALUES (?, ?, ?, ?, 1, 1)",
+    args: ["extra-group-" + index, "Group " + index, board, index + 1],
+  })), "write")
+  const firstGroups = await tasks.groups(actor, board, null)
+  expect(firstGroups?.items).toHaveLength(30)
+  expect(firstGroups?.next_cursor).toBeTruthy()
+  const lastGroups = await tasks.groups(actor, board, firstGroups!.next_cursor)
+  expect(lastGroups?.items).toHaveLength(2)
+  expect(lastGroups?.next_cursor).toBeNull()
+  expect(new Set([...firstGroups!.items, ...lastGroups!.items].map(item => item.id)).size).toBe(32)
   expect(await tasks.groups({ kind: "ha_user", id: "outsider" }, board, null)).toBeNull()
   expect(await planning.save(actor.id, board, { action: "project", title: "Handoff", description: "", areaId: group.id, goalId: null })).toBe(true)
   const directory = await tasks.view(actor, board)
-  expect(directory?.planning?.areas).toEqual([{ id: group.id, name: group.name, icon: "🛠", color: "#abcdef" }])
+  expect(directory?.planning?.areas).toContainEqual({ id: group.id, name: group.name, icon: "🛠", color: "#abcdef" })
   const project = directory!.planning!.projects[0]!
   const workspace = { areaId: group.id, projectId: null, ticketId: null, planning: false }
   const ordinary = await tasks.create(actor, board, { title: "Write a handoff", description: "" }, { local: true })
