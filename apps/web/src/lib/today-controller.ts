@@ -123,7 +123,7 @@ export function initTodayPage(options?: Partial<TodayControllerOptions>) {
     void hydrateTaskAssignees(scope, lm.signal)
   })
   setupFilters(container, refreshUnscheduled)
-  const refreshReopened = setupReopenedDueTasks(container, row => {
+  const refreshReopened = setupReopenedTodayTasks(container, row => {
     enableDragReorder(row)
     const list = row.parentElement
     if (!list) return
@@ -930,8 +930,8 @@ function todayScopeParams(container: HTMLElement): URLSearchParams {
   return params
 }
 
-function setupReopenedDueTasks(container: HTMLElement, mountRow: (row: HTMLElement) => void) {
-  const list = container.querySelector<HTMLElement>("#today-due-list")
+function setupReopenedTodayTasks(container: HTMLElement, mountRow: (row: HTMLElement) => void) {
+  const lists = container.querySelectorAll<HTMLElement>("[data-today-task-list]")
   const shell = container.querySelector<HTMLElement>("#page-shell")
   const signal = lm.signal
   const reopened = new Set<string>()
@@ -939,11 +939,10 @@ function setupReopenedDueTasks(container: HTMLElement, mountRow: (row: HTMLEleme
   let refreshNumber = 0
 
   return (id: string, status: string) => {
-    if (!list || !shell) return
-    const row = `.tli[data-id="${CSS.escape(id)}"]`
+    if (!shell) return
     const completed = container.querySelector(`.today-completed-tasks a[data-task-detail-link="${CSS.escape(id)}"]`)
     if (!completed && !reopened.has(id)) return
-    if (isClosedStatus(status) || list.querySelector(row)) reopened.delete(id)
+    if (isClosedStatus(status)) reopened.delete(id)
     else reopened.add(id)
     request?.abort()
     if (!reopened.size) return
@@ -964,23 +963,46 @@ function setupReopenedDueTasks(container: HTMLElement, mountRow: (row: HTMLEleme
       if (incoming.dataset.todayDay !== shell.dataset.todayDay || incoming.dataset.todayTimezone !== shell.dataset.todayTimezone) {
         showTodayRollover(container)
       } else {
-        for (const taskId of reopened) {
-          const selector = `.tli[data-id="${CSS.escape(taskId)}"]`
-          const task = incoming.querySelector<HTMLElement>(`#today-due-list ${selector}`)
-          if (!task || list.querySelector(selector)) continue
-          list.append(task)
-          mountRow(task)
+        for (const list of lists) {
+          const refreshedList = incoming.querySelector(`#${CSS.escape(list.id)}`)
+          const refreshedRows = Array.from(refreshedList?.querySelectorAll<HTMLElement>(".tli[data-id]") ?? [])
+          const restoredRows = refreshedRows.filter(row => reopened.has(row.dataset.id ?? ""))
+          const section = list.closest<HTMLElement>(".today-section")
+          if (!section || !restoredRows.length) continue
+          section.hidden = false
+          const suggested = list.id === "today-suggested-list"
+          for (const row of suggested ? refreshedRows : restoredRows) {
+            if (list.querySelector(`.tli[data-id="${CSS.escape(row.dataset.id ?? "")}"]`)) continue
+            list.append(row)
+            mountRow(row)
+          }
+          if (suggested) {
+            const suggestedIds = new Set(refreshedRows.map(row => row.dataset.id))
+            for (const row of list.querySelectorAll<HTMLElement>(".tli:not(.tli--done)")) {
+              if (suggestedIds.has(row.dataset.id)) continue
+              if (row.contains(document.activeElement)) section.querySelector<HTMLElement>(".today-section__toggle")?.focus()
+              row.remove()
+            }
+          }
+          const count = section.querySelector(".today-section__count")
+          if (count) count.textContent = String(list.querySelectorAll(".tli:not(.tli--done)").length)
+          list.querySelector("[data-today-due-empty]")?.setAttribute("hidden", "")
+          if (list.id === "today-carried-list") container.querySelector("[data-today-carried-empty]")?.setAttribute("hidden", "")
         }
-        const count = container.querySelector("#today-due-list-count")
-        if (count) count.textContent = String(list.querySelectorAll(".tli:not(.tli--done)").length)
-        const empty = list.querySelector<HTMLElement>("[data-today-due-empty]")
-        if (empty && list.querySelector(".tli:not(.tli--done)")) empty.hidden = true
+        const unscheduled = container.querySelector<HTMLElement>("#section-unscheduled")
+        const refreshedUnscheduled = incoming.querySelector<HTMLElement>("#section-unscheduled")
+        if (unscheduled && refreshedUnscheduled) {
+          unscheduled.hidden = refreshedUnscheduled.hidden
+          const count = unscheduled.querySelector(".today-section__count")
+          const refreshedCount = refreshedUnscheduled.querySelector(".today-section__count")?.textContent
+          if (count && refreshedCount !== undefined) count.textContent = refreshedCount
+        }
         applyFilters(container)
       }
       reopened.clear()
     }).catch(() => {
       if (!signal.aborted && !current.signal.aborted) {
-        showToast("Couldn’t refresh due tasks. Reload Today to see the saved changes.", "warning")
+        showToast("Couldn’t refresh Today’s tasks. Reload Today to see the saved changes.", "warning")
       }
     })
   }

@@ -398,43 +398,38 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
 
       <div id="migration-prompt" class="today-section" style="display: none;"></div>
 
-      {carriedForwardTasks.length > 0 ? (
-        <div class="today-section" id="section-carried">
-          <button type="button" class="today-section__header today-section__toggle"
-            aria-controls="today-carried-list" aria-expanded="true">
-            <Icon name="chevron-down" size={14} class="today-section__icon" />
-            <span class="today-section__title" style="color: var(--warning-text, var(--warning));">
-              <Icon name="refresh" size={16} /> Carried Forward
-            </span>
-            <span class="today-section__count" id="today-carried-list-count">{carriedForwardTasks.length}</span>
-          </button>
-          <div class="today-section__list" id="today-carried-list">
-            {carriedForwardTasks.map(task => (
-              <TaskListItem task={task} showSnooze showActions section="Carried Forward" />
-            ))}
-          </div>
+      <div class="today-section" id="section-carried" hidden={carriedForwardTasks.length === 0}>
+        <button type="button" class="today-section__header today-section__toggle"
+          aria-controls="today-carried-list" aria-expanded="true">
+          <Icon name="chevron-down" size={14} class="today-section__icon" />
+          <span class="today-section__title" style="color: var(--warning-text, var(--warning));">
+            <Icon name="refresh" size={16} /> Carried Forward
+          </span>
+          <span class="today-section__count" id="today-carried-list-count">{carriedForwardTasks.length}</span>
+        </button>
+        <div class="today-section__list" id="today-carried-list" data-today-task-list>
+          {carriedForwardTasks.map(task => (
+            <TaskListItem task={task} showSnooze showActions section="Carried Forward" />
+          ))}
         </div>
-      ) : (
-        <div class="today-shell__empty card">No carried-forward work is waiting on you.</div>
-      )}
+      </div>
+      <div class="today-shell__empty card" data-today-carried-empty hidden={carriedForwardTasks.length > 0}>No carried-forward work is waiting on you.</div>
 
-      {suggestedTasks.length > 0 && (
-        <div class="today-section" id="section-suggested">
-          <button type="button" class="today-section__header today-section__toggle"
-            aria-controls="today-suggested-list" aria-expanded="true">
-            <Icon name="chevron-down" size={14} class="today-section__icon" />
-            <span class="today-section__title" style="color: var(--accent-text);">
-              <Icon name="sparkles" size={16} /> Suggested
-            </span>
-            <span class="today-section__count" id="today-suggested-list-count">{suggestedTasks.length}</span>
-          </button>
-          <div class="today-section__list" id="today-suggested-list">
-            {suggestedTasks.map(task => (
-              <TaskListItem task={task} showFocusToday showActions section="Suggested" />
-            ))}
-          </div>
+      <div class="today-section" id="section-suggested" hidden={suggestedTasks.length === 0}>
+        <button type="button" class="today-section__header today-section__toggle"
+          aria-controls="today-suggested-list" aria-expanded="true">
+          <Icon name="chevron-down" size={14} class="today-section__icon" />
+          <span class="today-section__title" style="color: var(--accent-text);">
+            <Icon name="sparkles" size={16} /> Suggested
+          </span>
+          <span class="today-section__count" id="today-suggested-list-count">{suggestedTasks.length}</span>
+        </button>
+        <div class="today-section__list" id="today-suggested-list" data-today-task-list>
+          {suggestedTasks.map(task => (
+            <TaskListItem task={task} showFocusToday showActions section="Suggested" />
+          ))}
         </div>
-      )}
+      </div>
     </section>
 
     <section id="today-work" class="page-shell__section" data-today-section>
@@ -464,23 +459,21 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
         </div>
       </div>
 
-      {pinnedTasks.length > 0 && (
-        <div class="today-section" id="section-pinned">
-          <button type="button" class="today-section__header today-section__toggle"
-            aria-controls="today-pinned-list" aria-expanded="true">
-            <Icon name="chevron-down" size={14} class="today-section__icon" />
-            <span class="today-section__title">
-              <Icon name="star" size={16} /> Shared favorites
-            </span>
-            <span class="today-section__count" id="today-pinned-list-count">{pinnedTasks.length}</span>
-          </button>
-          <div class="today-section__list" id="today-pinned-list">
-            {pinnedTasks.map(task => (
-              <TaskListItem task={task} showSnooze showActions section="Shared favorites" />
-            ))}
-          </div>
+      <div class="today-section" id="section-pinned" hidden={pinnedTasks.length === 0}>
+        <button type="button" class="today-section__header today-section__toggle"
+          aria-controls="today-pinned-list" aria-expanded="true">
+          <Icon name="chevron-down" size={14} class="today-section__icon" />
+          <span class="today-section__title">
+            <Icon name="star" size={16} /> Shared favorites
+          </span>
+          <span class="today-section__count" id="today-pinned-list-count">{pinnedTasks.length}</span>
+        </button>
+        <div class="today-section__list" id="today-pinned-list" data-today-task-list>
+          {pinnedTasks.map(task => (
+            <TaskListItem task={task} showSnooze showActions section="Shared favorites" />
+          ))}
         </div>
-      )}
+      </div>
 
       <div class="today-section" id="section-today">
         <button type="button" class="today-section__header today-section__toggle"
@@ -491,7 +484,7 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
           </span>
           <span class="today-section__count" id="today-due-list-count">{todayTasks.length}</span>
         </button>
-        <div class="today-section__list" id="today-due-list">
+        <div class="today-section__list" id="today-due-list" data-today-task-list>
           <div data-today-due-empty hidden={todayTasks.length > 0}>
             <EmptyState
               title={remainingCount === 0 && completedTodayCount > 0 ? "Today’s tasks are complete" : "Nothing due today"}
@@ -528,42 +521,40 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
         </div>
       </details>
 
-      {(unscheduledCount > 0 || unscheduled) && (
-        <div class:list={["today-section", { "today-section--collapsed": !unscheduled }]} id="section-unscheduled">
-          <button type="button" class="today-section__header today-section__toggle"
-            aria-controls="today-unscheduled-list" aria-expanded={Boolean(unscheduled)}>
-            <Icon name="chevron-down" size={14} class="today-section__icon" />
-            <span class="today-section__title">
-              <Icon name="pin" size={16} /> Unscheduled
-            </span>
-            <span class="today-section__count" id="today-unscheduled-list-count">{unscheduledCount}</span>
-          </button>
-          <div class="today-section__list" id="today-unscheduled-list" hidden={!unscheduled}>
-            <div id="today-unscheduled-page" data-page={unscheduled?.number ?? 0}>
-              {unscheduled && (
-                <>
-                  <p class="today-unscheduled-pagination" role="status" tabindex="-1" data-unscheduled-range>
-                    {unscheduled.total ? `Showing ${unscheduled.first}–${unscheduled.last} of ${unscheduled.total}` : "No unscheduled tasks match these filters"}
-                  </p>
-                  {unscheduled.items.map(task => (
-                    <TaskListItem task={task} showActions section="Unscheduled" />
-                  ))}
-                  {unscheduled.pages > 1 && <nav class="today-unscheduled-pagination" aria-label="Unscheduled tasks pages">
-                    {unscheduled.number > 1 && (
-                      <a class="btn btn-sm" href={unscheduledLink(unscheduled.number - 1)} data-unscheduled-page={unscheduled.number - 1}>Previous</a>
-                    )}
-                    {unscheduled.number < unscheduled.pages && (
-                      <a class="btn btn-sm" href={unscheduledLink(unscheduled.number + 1)} data-unscheduled-page={unscheduled.number + 1}>Next</a>
-                    )}
-                  </nav>}
-                </>
-              )}
-            </div>
-            <p role="status" id="today-unscheduled-status" hidden></p>
-            <button type="button" class="btn btn-sm" id="today-unscheduled-retry" hidden>Retry</button>
+      <div class:list={["today-section", { "today-section--collapsed": !unscheduled }]} id="section-unscheduled" hidden={!unscheduled && unscheduledCount <= 0}>
+        <button type="button" class="today-section__header today-section__toggle"
+          aria-controls="today-unscheduled-list" aria-expanded={Boolean(unscheduled)}>
+          <Icon name="chevron-down" size={14} class="today-section__icon" />
+          <span class="today-section__title">
+            <Icon name="pin" size={16} /> Unscheduled
+          </span>
+          <span class="today-section__count" id="today-unscheduled-list-count">{unscheduledCount}</span>
+        </button>
+        <div class="today-section__list" id="today-unscheduled-list" hidden={!unscheduled}>
+          <div id="today-unscheduled-page" data-page={unscheduled?.number ?? 0}>
+            {unscheduled && (
+              <>
+                <p class="today-unscheduled-pagination" role="status" tabindex="-1" data-unscheduled-range>
+                  {unscheduled.total ? `Showing ${unscheduled.first}–${unscheduled.last} of ${unscheduled.total}` : "No unscheduled tasks match these filters"}
+                </p>
+                {unscheduled.items.map(task => (
+                  <TaskListItem task={task} showActions section="Unscheduled" />
+                ))}
+                {unscheduled.pages > 1 && <nav class="today-unscheduled-pagination" aria-label="Unscheduled tasks pages">
+                  {unscheduled.number > 1 && (
+                    <a class="btn btn-sm" href={unscheduledLink(unscheduled.number - 1)} data-unscheduled-page={unscheduled.number - 1}>Previous</a>
+                  )}
+                  {unscheduled.number < unscheduled.pages && (
+                    <a class="btn btn-sm" href={unscheduledLink(unscheduled.number + 1)} data-unscheduled-page={unscheduled.number + 1}>Next</a>
+                  )}
+                </nav>}
+              </>
+            )}
           </div>
+          <p role="status" id="today-unscheduled-status" hidden></p>
+          <button type="button" class="btn btn-sm" id="today-unscheduled-retry" hidden>Retry</button>
         </div>
-      )}
+      </div>
     </section>
 
     <section id="today-habits" class="page-shell__section" data-today-section>

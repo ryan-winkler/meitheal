@@ -223,7 +223,9 @@
               : previousCard ? document.querySelector<HTMLElement>(`.card-open-btn[data-id="${CSS.escape(previousCard.dataset.id ?? "")}"]`)
               : previousDay ? document.querySelector<HTMLElement>(`.cal-cell[data-date="${CSS.escape(previousDay)}"]`) ??
                 document.querySelector<HTMLElement>("#calendar-shell .cal-today-btn")
-              : previousCompletion ? document.querySelector<HTMLElement>(`#today-due-list a[data-task-detail-link="${CSS.escape(previousCompletion)}"]`) : null
+              : previousCompletion ? Array.from(document.querySelectorAll<HTMLElement>(
+                `.today-section__list a[data-task-detail-link="${CSS.escape(previousCompletion)}"]`,
+              )).find(link => !link.closest("[hidden], [inert], .filtered-out")) : null
             if (!search && origin instanceof HTMLElement && origin !== document.body &&
                 !origin.closest("[hidden], [inert], .filtered-out")) {
               origin.focus()
