@@ -329,6 +329,10 @@ function init(signal: AbortSignal) {
     void refresh({ ...desired, area: areaId }, true)
   }, { signal })
 
+  document.addEventListener("meitheal:task-hierarchy-changed", () => {
+    if (desired.groupBy === "epic" || desired.subGroupBy === "epic") void refresh()
+  }, { signal })
+
   document.addEventListener("meitheal:columns-change", event => {
     const { visible } = (event as CustomEvent<{ visible: string[] }>).detail
     const columns = normalizeTableColumns(visible)
@@ -408,6 +412,7 @@ function applyGrouping(groupBy: string, subGroupBy: string, stats: TablePageStat
   if (groupBy === "none") return
   const groupTotals = new Map(stats.groups)
   const subgroupTotals = new Map(stats.subgroups)
+  const epicLabels = new Map(stats.epicLabels)
 
   // Collect rows and compute groups
   const rows = Array.from(tbody.querySelectorAll<HTMLElement>(".table-row"))
@@ -444,7 +449,7 @@ function applyGrouping(groupBy: string, subGroupBy: string, stats: TablePageStat
   for (const [index, key] of groupOrder.entries()) {
     const groupId = `table-group-heading-${index}`
     const groupRows = groups.get(key) ?? []
-    const display = getGroupDisplayForKey(groupBy, key)
+    const display = getGroupDisplayForKey(groupBy, key, epicLabels)
     const isCollapsed = collapsedGroups.includes(key)
 
     // Create group header row
@@ -524,7 +529,7 @@ function applyGrouping(groupBy: string, subGroupBy: string, stats: TablePageStat
       for (const [subIndex, sk] of subOrder.entries()) {
         const subgroupId = `${groupId}-sub-${subIndex}`
         const subRows = subGroups.get(sk) ?? []
-        const subDisplay = getGroupDisplayForKey(subGroupBy, sk)
+        const subDisplay = getGroupDisplayForKey(subGroupBy, sk, epicLabels)
         const subIsCollapsed = collapsedSubs.includes(sk)
 
         const subHeaderRow = document.createElement("tr")
@@ -600,7 +605,11 @@ function applyGrouping(groupBy: string, subGroupBy: string, stats: TablePageStat
   renderSummaryRows(tbody, groupTotals, stats.total)
 }
 
-function getGroupDisplayForKey(groupBy: string, key: string): { label: string, icon: string, color: string } {
+function getGroupDisplayForKey(groupBy: string, key: string, epicLabels: Map<string, string>): { label: string, icon: string, color: string } {
+  if (groupBy === "epic") return {
+    label: epicLabels.get(key) ?? window.mI18n?.get("table.no_epic") ?? "No Epic",
+    icon: "🎯", color: "var(--type-epic, #8b5cf6)",
+  }
   if (groupBy === "area" && areaMap[key]) {
     const b = areaMap[key]
     return { label: b.name, icon: b.icon ?? "📋", color: (b.color ?? getComputedStyle(document.documentElement).getPropertyValue("--accent").trim()) || "#146C4E" }

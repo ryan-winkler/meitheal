@@ -92,12 +92,17 @@ export function bindAppearanceNavigation(signal: AbortSignal): void {
   runtime.__meithealAppearanceNavigation = { sidebar, pageSignal: signal, controller }
   signal = AbortSignal.any([signal, controller.signal])
   syncNavbarAreas()
-  let wasNavbar = innerWidth > 768 && document.documentElement.dataset.appearanceNavigation === "navbar"
+  let wasDesktop = innerWidth > 768
   const edgeButton = document.getElementById("sidebar-edge-toggle")
+  // A manual collapse wins over hover and focus until that input leaves the rail.
+  let suppressPointer = false
+  let collapsedFocus: Element | null = null
   const toggle = () => {
     const root = document.documentElement.dataset
     if (innerWidth <= 768 || root.appearanceNavigation === "navbar") return
     const collapsed = !document.body.classList.contains("sidebar-collapsed")
+    suppressPointer = collapsed && hoverEnabled() && Boolean(pointerInside())
+    collapsedFocus = collapsed && hoverEnabled() ? document.activeElement : null
     setSidebarCollapsed(collapsed)
     if (root.appearanceSidebar === "remember") {
       try { localStorage.setItem("meitheal_sidebar_collapsed", String(collapsed)) } catch { /* Still usable without storage. */ }
@@ -105,7 +110,7 @@ export function bindAppearanceNavigation(signal: AbortSignal): void {
   }
   edgeButton?.addEventListener("click", toggle, { signal })
   document.addEventListener("keydown", event => {
-    if (event.defaultPrevented || !(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== "b") return
+    if (event.defaultPrevented || !(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== "b" || event.repeat) return
     if ((event.target as HTMLElement)?.closest("input, textarea, select, [contenteditable=true]")) return
     if (innerWidth <= 768 || document.documentElement.dataset.appearanceNavigation === "navbar") return
     event.preventDefault()
@@ -121,25 +126,32 @@ export function bindAppearanceNavigation(signal: AbortSignal): void {
   }
   // Hover or focus on the edge button itself must leave it in place for activation.
   sidebar?.addEventListener("pointermove", event => {
-    if (document.body.classList.contains("sidebar-collapsed") && hoverEnabled() && pointerInside() &&
+    if (!suppressPointer && document.body.classList.contains("sidebar-collapsed") && hoverEnabled() &&
+      event.pointerType !== "touch" && pointerInside() &&
       !edgeButton?.contains(event.target as Node)) setSidebarCollapsed(false)
   }, { signal })
-  sidebar?.addEventListener("pointerleave", closeHover, { signal })
-  sidebar?.addEventListener("focusin", event => {
-    if (hoverEnabled() && event.target !== edgeButton) setSidebarCollapsed(false)
+  sidebar?.addEventListener("pointerleave", () => {
+    suppressPointer = false
+    closeHover()
   }, { signal })
-  sidebar?.addEventListener("focusout", () => queueMicrotask(closeHover), { signal })
+  sidebar?.addEventListener("focusin", event => {
+    if (hoverEnabled() && event.target !== edgeButton && event.target !== collapsedFocus) setSidebarCollapsed(false)
+  }, { signal })
+  sidebar?.addEventListener("focusout", () => queueMicrotask(() => {
+    if (document.activeElement !== collapsedFocus) collapsedFocus = null
+    closeHover()
+  }), { signal })
   window.addEventListener("meitheal:theme-changed", () => {
     if (document.documentElement.dataset.appearanceSidebar === "remember") syncSidebarState()
   }, { signal })
   window.addEventListener("resize", () => {
+    const desktop = innerWidth > 768
+    if (wasDesktop === desktop) return
+    wasDesktop = desktop
+    suppressPointer = false
+    collapsedFocus = null
     syncSidebarState()
-    if (hoverEnabled() && (pointerInside() || (focusInside() && document.activeElement !== edgeButton))) {
-      setSidebarCollapsed(false)
-    }
-    const isNavbar = innerWidth > 768 && document.documentElement.dataset.appearanceNavigation === "navbar"
-    if (wasNavbar !== isNavbar) syncNavbarAreas()
-    wasNavbar = isNavbar
+    syncNavbarAreas()
   }, { signal })
   window.addEventListener("storage", event => {
     if ([APPEARANCE_STORAGE_KEY, "meitheal_sidebar_collapsed", null].includes(event.key)) applyAppearancePreferences(readAppearancePreferences())
