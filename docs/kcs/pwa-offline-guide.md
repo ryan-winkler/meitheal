@@ -158,6 +158,8 @@ The `beforeinstallprompt` event is captured in `Layout.astro` and stored on `win
 
 ## Service Worker Update Flow
 
+Development serves the readable worker from `apps/web/public/sw.js`. Production builds compact it at the same URL for both standalone and HA ingress.
+
 1. SW checks for updates every **5 minutes** (reduced from 60s for addon context)
 2. When a new SW is found waiting, a toast appears: "Update available — Refresh"
 3. **Refresh**, **update available**, and **Force SW Update** wait for the selected worker to finish activation and control the current page before reloading. This lets the worker finish its cache cleanup before navigation.

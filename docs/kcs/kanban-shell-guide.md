@@ -26,13 +26,13 @@ Choose **Group → By Area** to group the current page of cards within each lane
 
 The task key is part of the card button’s accessible name. When one quick action replaces another, only the current dialog accepts keyboard input.
 
-Quick actions sit below the task details and wrap within the card. They stay visible on narrow screens and touch devices. On desktop, hover over the card or move keyboard focus into it to reveal them.
+Quick actions sit below the task details and wrap within the card.
 
 Tab and Shift+Tab stay inside task detail while it loads and while you edit. Press Escape to close it and return to the card. When a confirmation is open, Escape dismisses the confirmation first.
 
 ### Promote a card
 
-Open a card’s **Task actions** and choose **Promote to top** to move it above ordinary cards in the same lane. Everyone using the board can see the **Promoted** badge. Use **Promoted only** to filter the board, and bookmark the resulting URL to reopen that filter. Work-in-progress counts still include all cards in the lane.
+Open a card’s **Task actions** and choose **Promote to top** to move it above ordinary cards in the same lane. Everyone using the board can see the **Promoted** badge. Use **Promoted cards only** to see just those cards. The count strip confirms the filter is active. Bookmark the resulting URL to reopen that filter. Work-in-progress counts still include all cards in the lane.
 
 Choose **Remove promotion** from the same menu to return the card to its normal position. Promotion leaves the task’s priority and favorite setting intact. Drag to reorder within either group, or move a card to another lane to carry its promotion with it.
 
@@ -47,12 +47,12 @@ The board remains usable when reaction counts are unavailable. A denied request 
 ### Manage lanes without leaving the board
 
 1. Open `Kanban`.
-2. Use the shell `Manage Lanes` action.
+2. Open **Lanes**. On a phone, open **Board actions** first.
 3. Keep the board visible while editing lane structure and WIP limits.
 
 ### Change card density without fighting the shell
 
-1. Open **Fields**.
+1. Open **Fields**. On a phone, open **Board actions** first.
 2. Use the card customizer there instead of expecting field toggles in the shell.
 3. Compact density hides secondary card rows such as description, metadata, labels, progress, and custom fields so dense boards stay scannable.
 4. Close **Fields** to return to the board.
@@ -73,21 +73,25 @@ Dates due today appear in amber. The light palette uses a darker shade on white 
 2. Use the route-level view pills to move to Calendar, Table, or Timeline.
 3. The route preserves the existing filters and adds a `view` parameter for Table, Calendar, or Timeline. Existing hash bookmarks still open their view. The server loads the selected view when you open it. Label names with commas or brackets keep their literal spelling when shared from Table to Kanban. Kanban uses the compatible board filters. Apply a full saved Table preset in Table to use Table grouping, columns and nested rules.
 
-On mobile, the view pills remain as a horizontal touch strip below the unified bar actions. The bottom app navigation opens Tasks, while the in-page strip switches between Kanban, Calendar, Table, and Timeline.
+On mobile, use the Task views below the toolbar actions. Open **More** if a view does not fit. The bottom app navigation opens Tasks, and the in-page links switch between Kanban, Calendar, Table, and Timeline.
 
-On narrow screens the filter toolbar wraps its type toggles and right-aligned action capsule (`Deferred`, `Inactivity`, `Fields`, and `Lanes`) cleanly across rows inside `.tasks-filter-row` so controls never overlap. Board cards and table rows appear as soon as the view renders, including when the device requests reduced motion.
+On wide screens **New Task**, **Search Meitheal**, and **Ask Home Assistant** sit at the upper right. The row below holds **Deferred**, **Inactivity**, **Fields**, and **Lanes**. On phones, open **Board actions** to reach that group. The first two links carry the current area to their respective views. If an area was deleted, returning from Deferred keeps that scope visible as **Unavailable Area**. Choose an available area or **All Areas** from the area menu before adding a task in a lane.
 
 ### Filter and group Timeline
 
 Use Tab to move between visible task views. If a view moves into **More**, open that control and use the arrow keys to choose it.
 
-Open **Timeline** to narrow the chart by text, status, priority, task type, or area. Use **Group by** to organize dated tasks. The URL keeps these choices when you reload or move between task views.
+Open **Timeline** to narrow the chart by text, status, priority, task type, or area. Use **Group by** to organize dated tasks. The URL keeps these choices when you reload or move between task views. On phones, open **Filters** to adjust the chart. The task pane starts closed unless you saved a preference. Select **Task pane** to open or close it. The control becomes available when tasks match the filters.
 
 ## Troubleshooting
 
 ### Board pages or filters fail to load
 
 The existing cards stay visible while Meitheal loads the requested page or applies a filter. Use **Retry board** after an error. If it repeats, check the browser network log for the Tasks request and confirm the URL retains its ingress prefix.
+
+### An assignee is unavailable
+
+**Assign User** shows **No users configured** when the directory is empty, including standalone installations without a Home Assistant connection. If the Home Assistant roster could not be verified, check the connection in **Settings → Connected Services** and use **Retry**. Standalone connections need both a URL and a token. Any custom users and cached names from that Home Assistant connection remain available while the roster recovers. Table resolves the same display names after a page or filter change. If a name is unavailable, open Details to check the assignment.
 
 ### A task stays in its original lane
 
@@ -102,16 +106,16 @@ The form keeps the title. Check the area selection and destination lane. If you 
 1. Inspect the browser console for `kanban` client logger warnings.
 2. Confirm client fetches are using bare `/api/...` paths and not double-prefixed ingress URLs.
 
-### Manage Lanes does not open
+### Lanes does not open
 
-1. Confirm `#lane-mgmt` drops the `hidden` class after clicking `Manage Lanes`.
+1. Confirm `#lane-mgmt` drops the `hidden` class after opening **Lanes**.
 2. If the button responds but the panel stays hidden, capture the browser console and the current filter state.
 
 ## Card colors
 
-Use **Set card color** to choose the card edge accent. Saving and reloading the board retain that choice. **Clear color** restores the task type accent. Rejected writes retain the saved color and report an error so you can retry.
+Use **Set card color** to choose the task color. Knight Rider tints the whole card while keeping the active-work indicator visible. Other palettes use the color at the card edge. Saving and reloading retain that choice. **Clear color** restores the default treatment. Rejected writes retain the saved color and report an error so you can retry. A Board refresh from a Details status save waits while you edit an inline title or draft. If the Board cannot refresh after a successful Details status save, it keeps its last loaded lane and card state and offers Retry.
 
-In the color picker, use the arrow keys to choose a swatch and Enter to save. Focus returns to the card’s **More actions** button during the save and after the board refreshes.
+In the color picker, use Up and Down to choose a swatch and Enter to save. Focus returns to the card’s **Task actions** button during the save and after the board refreshes.
 
 Cards keep their full height in a busy lane. The lane scrolls instead of
 compressing the cards. At widths from 769 to 1024 CSS px the sidebar narrows to

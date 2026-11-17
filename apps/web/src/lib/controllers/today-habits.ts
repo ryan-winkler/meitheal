@@ -8,6 +8,7 @@
  * in the Today page habits section.
  */
 
+import { createSpriteIconElement } from "../../generated/icon-registry"
 import type { ListenerManager } from "../managed-listeners"
 import { showToast } from "../toast"
 import { onTaskCompleted } from "../gamification-hook"
@@ -31,7 +32,7 @@ export function setupHabitsSection(
 
     // Optimistic UI
     btn.disabled = true
-    btn.textContent = "✅ Done"
+    btn.replaceChildren(createSpriteIconElement("check", { size: 14 }), document.createTextNode(" Done"))
     card.classList.add("habit-card--done")
 
     try {
@@ -41,7 +42,7 @@ export function setupHabitsSection(
         body: JSON.stringify({ action: "complete", templateId: habitId }),
       })
       if (!res.ok) throw new Error("Failed")
-      showToast("Habit completed! 🎉", "success")
+      showToast("Habit completed!", "success")
 
       // Trigger gamification
       try { onTaskCompleted() } catch { /* optional */ }
@@ -76,7 +77,7 @@ export async function saveTaskAsHabit(
       }),
     })
     if (!res.ok) throw new Error("Failed")
-    showToast(`"${title}" saved as daily habit! 🔄`, "success")
+    showToast(`"${title}" saved as daily habit!`, "success")
   } catch {
     showToast("Failed to save habit", "error")
   }

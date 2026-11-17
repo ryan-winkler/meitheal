@@ -1,395 +1,648 @@
+import type { TaskKind } from "@meitheal/domain-tasks"
+import { CALENDAR_AREA_APPLIED_EVENT, CALENDAR_AREA_REQUEST_EVENT, getRememberedAreaId } from "@lib/area-selector-controller"
+import { CALENDAR_FILTER_STATE_EVENT, readCalendarTaskFilters } from "@lib/calendar-task-filter"
 import { createClientLogger } from "@lib/client-logger"
-import { calendarDayFromInput, formatTimeInZone, shiftCalendarDay } from "@lib/date"
-import { initPageShellNavigation } from "@lib/page-shell-controller"
-import { pageLifecycle } from "@lib/page-lifecycle"
-import { escapeHtml } from "@lib/safe-html"
-import { taskApi } from "@lib/task-api-client"
+import { calendarEventDay, calendarEventInterval, calendarIntervalOverlaps, calendarOccurrenceStartKey, compareCalendarStarts, formatCalendarEventTime, formatTimeInZone, normalizeCalendarEventSummary, shiftCalendarDay } from "@lib/date"
+import { createFocusTrap } from "@lib/focus-trap"
+import { updateKanbanFilters, type KanbanFilters } from "@lib/kanban-query"
+import { createTablerSvgElement, mapEntityEmojiToTabler, type TablerIconName } from "@lib/tabler-svg"
 import { openTaskDetailHandoff } from "@lib/task-detail-handoff"
-import { showToast } from "@lib/toast"
-import { CALENDAR_SECTIONS } from "@lib/calendar-registry"
+import { replaceTaskBackgroundUrl, taskBackgroundUrl } from "@lib/task-page-url"
 import { getStatusDef } from "@lib/status-config"
 
 interface CalendarEventRecord {
   summary: string
   start: string
-  end: string
-  entity_id?: string
+  entity: string
+  end?: string
+  uid?: string
+}
+
+interface LinkedCalendarEvent {
+  id: string
+  title: string
+  start: string
+  entity: string | null
+  uid: string | null
+  providerSummary: string | null
 }
 
 const log = createClientLogger("tasks", "calendar-shell")
-let currentDrawerDate = ""
+const loading = "Loading…"
+// Node's 16 KiB request-header limit also includes the request target and
+// browser headers. Leave room for ingress headers and the refresh marker.
+const monthTargetLimit = 14_000
 
-function getCalendarTimezone(): string {
-  return document.getElementById("calendar-shell")?.dataset.timezone || "Europe/Dublin"
-}
-
-export function initCalendarPage(): void {
-  if (document.getElementById("calendar-bar")) {
-    initPageShellNavigation({
-      barId: "calendar-bar",
-      shellId: "calendar-shell",
-      sectionSelector: "[data-calendar-section]",
-      sectionIds: CALENDAR_SECTIONS.map((section) => section.id),
-      defaultSectionId: "calendar-overview",
-      flashClass: "page-shell__section--flash",
-      sectionLinkSelectors: ["[data-calendar-section-link]"],
-    })
-  }
-
-  initCalendarCells()
-  initDrawerControls()
-  initSyncButton()
-  void loadInlineEventPreviews()
-}
-
-function initCalendarCells(): void {
-  document.querySelectorAll<HTMLElement>(".cal-cell[data-date]").forEach((cell) => {
-    const openCell = () => {
-      const date = cell.dataset.date
-      if (date) {
-        openDrawer(date)
-      }
-    }
-
-    pageLifecycle.on(cell, "click", openCell)
-    pageLifecycle.on(cell, "keydown", (event) => {
-      const keyboardEvent = event as KeyboardEvent
-      if (keyboardEvent.key !== "Enter" && keyboardEvent.key !== " ") {
-        return
-      }
-
-      keyboardEvent.preventDefault()
-      openCell()
-    })
-  })
-}
-
-function initDrawerControls(): void {
+export function initCalendarPage(signal: AbortSignal): void {
+  const shell = document.getElementById("calendar-shell")
+  const initialMonth = shell?.querySelector<HTMLElement>("[data-calendar-month]")
+  const status = shell?.querySelector<HTMLElement>("[data-calendar-status]")
+  const retry = shell?.querySelector<HTMLButtonElement>("[data-calendar-retry]")
+  const ruleError = shell?.querySelector<HTMLElement>("[data-calendar-rule-error]")
   const drawer = document.getElementById("day-drawer")
-  const closeButton = document.getElementById("day-drawer-close")
-  const backdrop = document.getElementById("day-drawer-backdrop")
-  const addEventButton = document.getElementById("day-drawer-add-event")
-  const addTaskButton = document.getElementById("day-drawer-add-task")
-  const drawerTasks = document.getElementById("day-drawer-tasks")
-
-  if (!drawer || !closeButton || !backdrop || !addEventButton || !addTaskButton) {
-    return
-  }
-
-  pageLifecycle.on(closeButton, "click", closeDrawer)
-  pageLifecycle.on(backdrop, "click", closeDrawer)
-  pageLifecycle.on(document, "keydown", (event) => {
-    const keyboardEvent = event as KeyboardEvent
-    if (keyboardEvent.key === "Escape" && drawer.getAttribute("aria-hidden") === "false") {
-      closeDrawer()
-    }
-  })
-
-  const openNewTaskForCurrentDate = () => {
-    if (!currentDrawerDate) return
-    window.__prefillTaskDate = currentDrawerDate
-
-    if (typeof window.openNewTaskModal === "function") {
-      window.openNewTaskModal()
-      return
-    }
-
-    const fallback = document.getElementById("calendar-bar-new-task") as HTMLButtonElement | null
-    fallback?.click()
-  }
-
-  pageLifecycle.on(addEventButton, "click", openNewTaskForCurrentDate)
-  pageLifecycle.on(addTaskButton, "click", openNewTaskForCurrentDate)
-
-  if (drawerTasks) {
-    pageLifecycle.on(drawerTasks, "click", (event) => {
-      const item = (event.target as HTMLElement).closest<HTMLElement>("[data-task-id]")
-      const taskId = item?.dataset.taskId
-      if (!taskId) return
-
-      openTaskDetailHandoff(taskId)
-    })
-  }
-}
-
-function initSyncButton(): void {
-  const button = document.getElementById("sync-cal-btn") as HTMLButtonElement | null
-  if (!button) return
-
-  pageLifecycle.on(button, "click", async () => {
-    const originalLabel = button.querySelector(".unified-bar__new-task-label")?.textContent || "Sync"
-    button.disabled = true
-    const label = button.querySelector(".unified-bar__new-task-label")
-    if (label) label.textContent = "Syncing…"
-
-    try {
-      const response = await taskApi.raw("/api/integrations/calendar/sync", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action: "sync" }),
-      })
-      const data = (await response.json()) as { ok?: boolean }
-
-      if (data.ok) {
-        showToast("Calendar sync requested", "success")
-        document.dispatchEvent(
-          new CustomEvent("meitheal:navigation-changed", {
-            detail: { action: "calendar-sync" },
-          }),
-        )
-      } else {
-        showToast("Calendar sync failed", "error")
-      }
-    } catch (error) {
-      log.error("Calendar sync failed", error)
-      showToast("Calendar sync failed", "error")
-    } finally {
-      if (label) label.textContent = originalLabel
-      button.disabled = false
-    }
-  })
-}
-
-function openDrawer(dateStr: string): void {
-  const drawer = document.getElementById("day-drawer")
+  const panel = drawer?.querySelector<HTMLElement>('[role="dialog"]')
   const drawerTitle = document.getElementById("day-drawer-title")
-  const drawerEvents = document.getElementById("day-drawer-events")
-  const drawerTasks = document.getElementById("day-drawer-tasks")
-  if (!drawer || !drawerTitle || !drawerEvents || !drawerTasks) return
+  const drawerEvents = document.getElementById("day-drawer-event-items")
+  const drawerTasks = document.getElementById("day-drawer-task-items")
+  const drawerEventStatus = document.getElementById("day-drawer-event-status")
+  const drawerTaskStatus = document.getElementById("day-drawer-task-status")
+  const queryMoreTasks = document.querySelector<HTMLButtonElement>("#day-drawer-more-tasks")
+  const eventsSection = drawer?.querySelector<HTMLElement>("[data-calendar-events-section]")
+  if (!shell || !initialMonth || !status || !retry || !drawer || !panel || !drawerTitle ||
+    !drawerEvents || !drawerTasks || !drawerEventStatus || !drawerTaskStatus ||
+    !queryMoreTasks || !eventsSection || shell.dataset.calendarReady === "true") return
+  const moreTasks = queryMoreTasks
 
-  currentDrawerDate = dateStr
-  const date = new Date(`${dateStr}T00:00:00`)
-  drawerTitle.textContent = date.toLocaleDateString("en-US", {
-    weekday: "long",
-    month: "long",
-    day: "numeric",
+  shell.dataset.calendarReady = "true"
+  const trap = createFocusTrap(panel)
+  let timezone = shell.dataset.timezone || "Europe/Dublin"
+  let month = initialMonth
+  let desired = taskBackgroundUrl()
+  let applied = new URL(desired)
+  let retryTarget = initialMonth.dataset.calendarAvailable === "false" ? new URL(applied) : undefined
+  let refreshRequest: AbortController | undefined
+  let previewsRequest: AbortController | undefined
+  let drawerRequest: AbortController | undefined
+  let drawerDate = ""
+  let loadMoreDueTasks: (() => void) | undefined
+  let previousOverflow = ""
+  let refreshCount = 0
+  let rejectedFilterChange = ""
+  let calendarSources: Promise<string[]> | undefined
+  const readCalendarSources = () => calendarSources ??= fetchCalendarEntities(
+    AbortSignal.any([signal, AbortSignal.timeout(10_000)]),
+  ).finally(() => {
+    calendarSources = undefined
   })
-  drawer.setAttribute("aria-hidden", "false")
-  const loadingEvents = document.createElement("span")
-  loadingEvents.className = "day-drawer-empty"
-  loadingEvents.textContent = "Loading..."
-  drawerEvents.textContent = ""
-  drawerEvents.appendChild(loadingEvents)
-  const loadingTasks = document.createElement("span")
-  loadingTasks.className = "day-drawer-empty"
-  loadingTasks.textContent = "Loading..."
-  drawerTasks.textContent = ""
-  drawerTasks.appendChild(loadingTasks)
-  document.body.style.overflow = "hidden"
 
-  void loadDrawerData(dateStr)
-}
-
-function closeDrawer(): void {
-  const drawer = document.getElementById("day-drawer")
-  if (!drawer) return
-
-  drawer.setAttribute("aria-hidden", "true")
-  document.body.style.overflow = ""
-  currentDrawerDate = ""
-}
-
-async function fetchCalendarEntities(): Promise<string[]> {
-  try {
-    const response = await fetch("/api/settings?key=calendar-entities")
-    if (!response.ok) return []
-
-    const data = await response.json()
-    const rawValue = data?.value
-    if (!rawValue) return []
-
-    return typeof rawValue === "string" ? JSON.parse(rawValue) : rawValue
-  } catch (error) {
-    log.warn("Could not load calendar entities", error)
-    return []
+  function announce(message: string) {
+    status!.hidden = !message
+    status!.textContent = message
+    retry!.hidden = !retryTarget
   }
-}
 
-async function loadDrawerData(dateStr: string): Promise<void> {
-  const drawerEvents = document.getElementById("day-drawer-events")
-  const drawerTasks = document.getElementById("day-drawer-tasks")
-  if (!drawerEvents || !drawerTasks) return
+  function previewEvents() {
+    previewsRequest?.abort()
+    if (month.dataset.calendarEvents !== "true") return
+    previewsRequest = new AbortController()
+    const lifetime = AbortSignal.any([signal, previewsRequest.signal])
+    void loadInlineEventPreviews(month, timezone, readCalendarSources, lifetime)
+  }
 
-  try {
-    const tz = getCalendarTimezone()
-    const endStr = shiftCalendarDay(dateStr, 1)
-    const entities = await fetchCalendarEntities()
-    const events: CalendarEventRecord[] = []
+  function focusMonthDay(date?: string) {
+    const cell = date && month.querySelector<HTMLElement>(`.cal-cell[data-date="${CSS.escape(date)}"]`)
+    const target = cell || month.querySelector<HTMLElement>(".cal-today-btn")
+    target?.focus()
+  }
 
-    for (const entityId of entities.slice(0, 5)) {
-      try {
-        const response = await fetch(
-          `/api/ha/events?entity_id=${encodeURIComponent(entityId)}&start=${encodeURIComponent(dateStr)}&end=${encodeURIComponent(endStr)}`,
-        )
-        if (!response.ok) continue
+  function restoreFilterControls(url = applied, keepSearch = false) {
+    document.dispatchEvent(new CustomEvent(CALENDAR_FILTER_STATE_EVENT, {
+      detail: { ...readCalendarTaskFilters(url.searchParams), keepSearch, keepRulesDraft: ruleError?.hidden === false },
+    }))
+  }
 
-        const data = await response.json()
-        if (Array.isArray(data?.events)) {
-          events.push(
-            ...data.events.map((event: CalendarEventRecord) => ({
-              ...event,
-              entity_id: entityId,
-            })),
-          )
-        }
-      } catch (error) {
-        log.warn("Skipping failing calendar entity", entityId, error)
+  const unavailable = "Calendar data could not load."
+  const refreshFailure = () => month.dataset.calendarAvailable === "false"
+    ? unavailable : "Couldn’t apply calendar changes. The previous results are still shown."
+
+  async function refresh(url: URL, background = false) {
+    const preserveRetry = background && url.search === applied.search && retryTarget && retryTarget.search !== url.search
+    refreshRequest?.abort()
+    const request = new AbortController()
+    refreshRequest = request
+    desired = url
+    month.setAttribute("aria-busy", "true")
+    retry!.setAttribute("aria-disabled", "true")
+    announce("Loading calendar…")
+
+    try {
+      const requestUrl = new URL(url)
+      requestUrl.hash = ""
+      requestUrl.searchParams.set("calendarRefresh", `${performance.timeOrigin}-${++refreshCount}`)
+      const response = await fetch(requestUrl, {
+        signal: AbortSignal.any([signal, request.signal, AbortSignal.timeout(10_000)]),
+        redirect: "error",
+        cache: "no-store",
+      })
+      if (!response.ok) throw new Error("Calendar request failed")
+      const html = new DOMParser().parseFromString(await response.text(), "text/html")
+      const nextShell = html.querySelector<HTMLElement>("#calendar-shell")
+      const nextMonth = nextShell?.querySelector<HTMLElement>('[data-calendar-month][data-calendar-available="true"]')
+      if (request.signal.aborted || signal.aborted) return
+      if (!nextMonth) throw new Error("Calendar response unavailable")
+      timezone = nextShell?.dataset.timezone || timezone
+      shell!.dataset.timezone = timezone
+      const active = document.activeElement
+      const activeDay = active?.closest<HTMLElement>(".cal-cell")?.dataset.date
+      const activeNavigation = active?.closest<HTMLElement>("[data-calendar-nav]")?.dataset.calendarNav
+      month.replaceWith(nextMonth)
+      month = nextMonth
+
+      replaceTaskBackgroundUrl(url)
+      const previousArea = readCalendarTaskFilters(applied.searchParams).area
+      applied = new URL(url)
+      const area = readCalendarTaskFilters(applied.searchParams).area
+      if (area !== undefined && area !== previousArea) {
+        document.dispatchEvent(new CustomEvent(CALENDAR_AREA_APPLIED_EVENT, { detail: area }))
+      }
+      if (retryTarget && !preserveRetry) {
+        retryTarget = undefined
+        restoreFilterControls()
+      }
+      const hadRetryFocus = document.activeElement === retry
+      announce(preserveRetry ? refreshFailure() : rejectedFilterChange)
+      if (activeNavigation) month.querySelector<HTMLElement>(`[data-calendar-nav="${CSS.escape(activeNavigation)}"]`)?.focus()
+      else if (activeDay || hadRetryFocus && retry!.hidden) focusMonthDay(activeDay)
+      previewEvents()
+      if (drawerDate) startDrawerRead(drawerDate)
+    } catch {
+      if (!request.signal.aborted && !signal.aborted) {
+        if (!preserveRetry) retryTarget = new URL(url)
+        desired = new URL(applied)
+        restoreFilterControls()
+        announce(refreshFailure())
+      }
+    } finally {
+      if (request === refreshRequest) {
+        refreshRequest = undefined
+        retry!.removeAttribute("aria-disabled")
+        month.removeAttribute("aria-busy")
       }
     }
-
-    if (events.length === 0) {
-      const emptyEvents = document.createElement("span")
-      emptyEvents.className = "day-drawer-empty"
-      emptyEvents.textContent = "No calendar events"
-      drawerEvents.textContent = ""
-      drawerEvents.appendChild(emptyEvents)
-    } else {
-      drawerEvents.replaceChildren(
-        ...events.map((event) => {
-          const time = formatTimeInZone(event.start, tz) ?? "All day"
-          const item = document.createElement("div")
-          item.className = "day-drawer-item"
-          const icon = document.createElement("span")
-          icon.className = "day-drawer-item-icon"
-          icon.textContent = "📅"
-          const content = document.createElement("div")
-          content.className = "day-drawer-item-content"
-          const title = document.createElement("div")
-          title.className = "day-drawer-item-title"
-          title.textContent = event.summary
-          const meta = document.createElement("div")
-          meta.className = "day-drawer-item-meta"
-          meta.textContent = time
-          content.append(title, meta)
-          item.append(icon, content)
-          return item
-        }),
-      )
-    }
-  } catch (error) {
-    log.error("Failed to load calendar drawer events", error)
-    const errEvents = document.createElement("span")
-    errEvents.className = "day-drawer-empty"
-    errEvents.textContent = "Failed to load events"
-    drawerEvents.textContent = ""
-    drawerEvents.appendChild(errEvents)
   }
 
-  try {
-    const response = await fetch(`/api/tasks?due_date=${encodeURIComponent(dateStr)}`)
-    if (!response.ok) throw new Error(`Task query failed: ${response.status}`)
+  function rejectFilters(message: string, editRules: boolean): false {
+    const recovery = month.dataset.calendarAvailable === "false" ? unavailable : "The previous results are still shown."
+    rejectedFilterChange = message
+    if (editRules && ruleError?.closest(".filter-toolbar__advanced-panel:not(.hidden)")) {
+      ruleError.hidden = false
+      ruleError.textContent = message
+    }
+    restoreFilterControls(desired, true)
+    const retryHint = retryTarget ? " Retry calendar repeats the earlier request." : ""
+    announce(`${message} ${recovery}${retryHint}`)
+    return false
+  }
 
-    const data = await response.json()
-    const tasks = data?.tasks ?? data ?? []
-    if (!Array.isArray(tasks) || tasks.length === 0) {
-      const emptyTasks = document.createElement("span")
-      emptyTasks.className = "day-drawer-empty"
-      emptyTasks.textContent = "No tasks due"
-      drawerTasks.textContent = ""
-      drawerTasks.appendChild(emptyTasks)
+  function applyFilters(values: KanbanFilters, editRules = false): boolean {
+    if (editRules && ruleError) ruleError.hidden = true
+    const url = new URL(desired)
+    const previous = readCalendarTaskFilters(url.searchParams)
+    const next = { ...previous, ...values }
+    if (JSON.stringify(previous) === JSON.stringify(next)) {
+      if (rejectedFilterChange) {
+        rejectedFilterChange = ""
+        announce(retryTarget ? refreshFailure() : "")
+      }
+      return true
+    }
+    const sameRules = JSON.stringify(previous.advancedFilter) === JSON.stringify(next.advancedFilter)
+    const savedRules = url.searchParams.getAll("advancedFilter")
+    writeCalendarTaskFilters(url, next, sameRules && savedRules.length === 1 ? savedRules[0]! : null)
+    const accepted = readCalendarTaskFilters(url.searchParams)
+    if (next.advancedFilter?.conditions.length && !accepted.advancedFilter) {
+      return rejectFilters("Shorten the Calendar rules or remove a condition.", editRules)
+    }
+    if (url.pathname.length + url.search.length > monthTargetLimit ||
+      (next.labels?.length ?? 0) !== (accepted.labels?.length ?? 0)) {
+      return rejectFilters("Remove a Calendar filter or shorten its values.", editRules)
+    }
+    rejectedFilterChange = ""
+    void refresh(url)
+    return true
+  }
+
+  function startDrawerRead(date: string) {
+    drawerRequest?.abort()
+    const currentRequest = new AbortController()
+    drawerRequest = currentRequest
+    const linked = AbortSignal.any([signal, currentRequest.signal, AbortSignal.timeout(10_000)])
+    const closeButton = drawer!.querySelector<HTMLElement>("#day-drawer-close")
+    const focused = document.activeElement as HTMLElement | null
+    const focusedTask = drawerTasks!.contains(focused) ? focused?.dataset.taskId : undefined
+    const focusedEvent = drawerEvents!.contains(focused) ? focused?.dataset.occurrenceKey : undefined
+    const restoreMore = focused === moreTasks
+    if (focused && (restoreMore || drawerTasks!.contains(focused) || drawerEvents!.contains(focused))) closeButton?.focus()
+    const showEvents = month.dataset.calendarEvents === "true"
+    eventsSection!.hidden = !showEvents
+    let live: Awaited<ReturnType<typeof loadCalendarRange>> | undefined
+    let persisted: LinkedCalendarEvent[] | null | undefined
+    let savedUnavailable = false
+    function renderConnectedEvents() {
+      if (!showEvents || persisted === undefined && live === undefined) return
+      const activeId = drawerEvents!.contains(document.activeElement)
+        ? (document.activeElement as HTMLElement).dataset.occurrenceKey : undefined
+      const eventLabel = (start: string) => {
+        const time = formatCalendarEventTime(start, timezone)
+        if (!time) return "All day"
+        const day = calendarEventDay(start, timezone)
+        if (!day || day === date) return time
+        const startDate = new Date(day + "T00:00:00Z").toLocaleDateString("en-US", {
+          month: "short", day: "numeric", timeZone: "UTC",
+        })
+        return `Continues · Started ${startDate}, ${time}`
+      }
+      const items = (persisted ?? []).map(event => {
+        const row = agendaItem("calendar-event", event.title, eventLabel(event.start), event.id)
+        row.dataset.occurrenceKey = event.id + "/" + calendarOccurrenceStartKey(event.start, timezone)
+        return { start: event.start, row }
+      })
+      for (const event of distinctLiveCalendarEvents(live?.events ?? [], persisted ?? [], timezone)) {
+        items.push({ start: event.start, row: agendaItem("calendar-event", event.summary, eventLabel(event.start)) })
+      }
+      items.sort((a, b) => compareCalendarStarts(a.start, b.start, timezone))
+      drawerEvents!.replaceChildren(...items.map(item => item.row))
+      const notes: string[] = []
+      if (!live || persisted === undefined) notes.push(loading)
+      else if (!live.available || live.partial) notes.push(
+        (live.available ? "Some live" : "Live") + " Home Assistant calendars couldn’t refresh. Reopen the day to retry.",
+      )
+      else if (!savedUnavailable && !items.length) notes.push("No calendar events")
+      if (savedUnavailable) notes.push("Saved calendar links couldn’t load. Reopen the day to retry.")
+      const feedback = notes.join("\n")
+      if (drawerEventStatus!.textContent !== feedback) drawerEventStatus!.textContent = feedback
+      const restoreId = activeId ?? focusedEvent
+      if (restoreId && (activeId || document.activeElement === closeButton)) {
+        const restore = items.find(item => item.row.dataset.occurrenceKey === restoreId)?.row ?? closeButton
+        restore?.focus()
+      }
+    }
+    if (showEvents) {
+      drawerEvents!.replaceChildren()
+      drawerEventStatus!.textContent = loading
+      const ranges = month.querySelector<HTMLElement>(`.cal-cell[data-date="${CSS.escape(date)}"]`)?.dataset.dayRanges
+      void loadCalendarRange(date, shiftCalendarDay(date, 1), timezone, 5, readCalendarSources, linked,
+        ranges ? JSON.parse(ranges) : undefined).then(result => {
+        if (drawerRequest !== currentRequest || currentRequest.signal.aborted || signal.aborted) return
+        live = result
+        renderConnectedEvents()
+      }).catch(() => {
+        if (drawerRequest === currentRequest && !currentRequest.signal.aborted && !signal.aborted) {
+          live = { events: [], available: false, partial: false }
+          renderConnectedEvents()
+        }
+      })
+    }
+
+    drawerTasks!.replaceChildren()
+    const filters = new URLSearchParams([...applied.searchParams].filter(([key]) => agendaFilterKeys.has(key))).toString()
+    moreTasks.hidden = true
+    moreTasks.removeAttribute("aria-disabled")
+    let offset = 0
+    let busy = false
+    const seen = new Set<string>()
+    const limit = 100
+    const loadDueTasks = async () => {
+      if (busy || drawerRequest !== currentRequest || currentRequest.signal.aborted) return
+      busy = true
+      moreTasks.setAttribute("aria-disabled", "true")
+      drawerTaskStatus!.textContent = loading
+      const taskSignal = AbortSignal.any([signal, currentRequest.signal, AbortSignal.timeout(10_000)])
+      let received = false
+      try {
+        const { rows, total, linkedEvents } = await loadDrawerTasks({ date, filters, offset, limit }, timezone, taskSignal)
+        if (taskSignal.aborted) return
+        received = true
+        if (!offset) {
+          drawerTasks!.replaceChildren()
+          savedUnavailable = linkedEvents === null
+          persisted = linkedEvents ?? persisted ?? null
+          renderConnectedEvents()
+        }
+        if (!rows) throw new Error("Scheduled work unavailable")
+        const fresh = rows.filter(row => {
+          const id = row.dataset.taskId ?? ""
+          if (seen.has(id)) return false
+          seen.add(id)
+          return true
+        })
+        drawerTasks!.append(...fresh)
+        offset += rows.length
+        const canLoadMore = rows.length > 0 && total > offset
+        if (document.activeElement === moreTasks && (fresh.length || !canLoadMore)) {
+          (fresh[0] ?? drawerTasks!.querySelector<HTMLElement>("[data-task-id]") ??
+            closeButton)?.focus()
+        }
+        moreTasks.hidden = !canLoadMore
+        moreTasks.textContent = canLoadMore ? `Load more items (${total - offset} remaining)` : "Load more items"
+        if (offset === rows.length && document.activeElement === closeButton) {
+          const restore = restoreMore && canLoadMore ? moreTasks : fresh.find(row => row.dataset.taskId === focusedTask)
+          restore?.focus()
+        }
+        drawerTaskStatus!.textContent = !offset ? "No matching tasks or local events"
+          : offset > rows.length && fresh.length ? `${fresh.length} more item${fresh.length === 1 ? '' : 's'} loaded` : ""
+      } catch (error) {
+        if (drawerRequest !== currentRequest || currentRequest.signal.aborted || signal.aborted) return
+        log.warn("Could not load due tasks", error)
+        if (!offset) {
+          drawerTaskStatus!.textContent = "Couldn’t load this day’s agenda."
+          if (!received) {
+            savedUnavailable = true
+            persisted ??= null
+          }
+          renderConnectedEvents()
+        } else drawerTaskStatus!.textContent = "Couldn’t load more items."
+        moreTasks.hidden = false
+        moreTasks.textContent = "Retry agenda"
+      } finally {
+        if (drawerRequest === currentRequest) moreTasks.removeAttribute("aria-disabled")
+        busy = false
+      }
+    }
+    loadMoreDueTasks = () => void loadDueTasks()
+    loadMoreDueTasks()
+  }
+
+  function openCell(target: EventTarget | null) {
+    const cell = (target as Element | null)?.closest<HTMLElement>(".cal-cell[role='button']")
+    const date = cell?.dataset.date
+    if (!date) return
+    drawerDate = date
+    drawerTitle!.textContent = new Date(`${date}T00:00:00Z`).toLocaleDateString("en-US", {
+      weekday: "long", month: "long", day: "numeric", timeZone: "UTC",
+    })
+    previousOverflow = document.body.style.overflow
+    document.body.style.overflow = "hidden"
+    drawer!.setAttribute("aria-hidden", "false")
+    trap.activate()
+    startDrawerRead(date)
+  }
+
+  function closeDrawer(restoreFocus = true) {
+    if (!drawerDate) return
+    const closedDay = drawerDate
+    drawerDate = ""
+    drawerRequest?.abort()
+    loadMoreDueTasks = undefined
+    drawer!.setAttribute("aria-hidden", "true")
+    document.body.style.overflow = previousOverflow
+    trap.deactivate(false)
+    if (restoreFocus) focusMonthDay(closedDay)
+  }
+
+  shell.addEventListener("click", event => {
+    if (event.defaultPrevented) return
+    const target = event.target as Element
+    const monthLink = target.closest<HTMLAnchorElement>("[data-calendar-nav]")
+    if (monthLink && desired.search !== applied.search) {
+      if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return
+      event.preventDefault()
+      const destination = new URL(monthLink.href)
+      const next = new URL(desired)
+      for (const key of ["year", "month"]) {
+        const value = destination.searchParams.get(key)
+        if (value === null) next.searchParams.delete(key)
+        else next.searchParams.set(key, value)
+      }
+      next.hash = destination.hash
+      location.assign(next.href)
       return
     }
+    if (target.closest("#day-drawer-close, #day-drawer-backdrop")) {
+      closeDrawer()
+      return
+    }
+    const action = target.closest("#day-drawer-add-event, #day-drawer-add-task")
+    if (action && drawerDate) {
+      const kind: TaskKind = action.id === "day-drawer-add-event" ? "calendar_event" : "standard_action"
+      window.__prefillTaskDate = drawerDate
+      closeDrawer()
+      if (window.openNewTaskModal) window.openNewTaskModal(kind)
+      else (document.getElementById("kanban-bar-new-task") as HTMLButtonElement | null)?.click()
+      return
+    }
+    const taskId = target.closest<HTMLElement>("#day-drawer-tasks [data-task-id], #day-drawer-events [data-task-id]")?.dataset.taskId
+    if (taskId) {
+      closeDrawer()
+      openTaskDetailHandoff(taskId)
+      return
+    }
+    openCell(target)
+  }, { signal })
 
-    drawerTasks.replaceChildren(
-      ...tasks.map((task: Record<string, unknown>) => {
-        const status = String(task.status ?? "")
-        const definition = getStatusDef(status)
-        const deferredLabel = task.deferred_at != null ? ` · ${window.mI18n?.get("deferral.title") ?? "Deferred"}` : ""
-        const item = document.createElement("div")
-        item.className = "day-drawer-item"
-        item.dataset.taskId = String(task.id)
-        item.style.cursor = "pointer"
-        const icon = document.createElement("span")
-        icon.className = "day-drawer-item-icon"
-        icon.setAttribute("aria-hidden", "true")
-        icon.textContent = definition?.icon ?? "⬜"
-        const content = document.createElement("div")
-        content.className = "day-drawer-item-content"
-        const title = document.createElement("div")
-        title.className = "day-drawer-item-title"
-        title.textContent = String(task.title ?? "Untitled task")
-        const meta = document.createElement("div")
-        meta.className = "day-drawer-item-meta"
-        meta.textContent = `${definition?.label ?? status}${task.priority ? ` • P${String(task.priority)}` : ""}${deferredLabel}`
-        content.append(title, meta)
-        item.append(icon, content)
-        return item
-      }),
-    )
-  } catch (error) {
-    log.error("Failed to load calendar drawer tasks", error)
-    const errTasks = document.createElement("span")
-    errTasks.className = "day-drawer-empty"
-    errTasks.textContent = "Failed to load tasks"
-    drawerTasks.textContent = ""
-    drawerTasks.appendChild(errTasks)
+  shell.addEventListener("keydown", event => {
+    if (event.defaultPrevented) return
+    if (event.key === "Escape" && drawerDate && drawer.contains(event.target as Node)) {
+      event.preventDefault()
+      closeDrawer()
+    } else if ((event.key === "Enter" || event.key === " ") && (event.target as Element).matches(".cal-cell[role='button']")) {
+      event.preventDefault()
+      openCell(event.target)
+    }
+  }, { signal })
+
+  moreTasks.addEventListener("click", () => loadMoreDueTasks?.(), { signal })
+  retry.addEventListener("click", () => {
+    if (!refreshRequest && retryTarget) void refresh(new URL(retryTarget))
+  }, { signal })
+  document.addEventListener("meitheal:filter-change", event => {
+    const detail = (event as CustomEvent<{ view: string; clear?: boolean; editRules?: boolean } & KanbanFilters>).detail
+    if (detail?.view !== "calendar") return
+    const { search, status, priority, rice, user, task_type, types, labels, promoted, advancedFilter } = detail
+    const area = detail.clear ? { area: "" } : {}
+    if (!applyFilters({ ...area, search, status, priority, rice, user, task_type, types, labels, promoted, advancedFilter } as KanbanFilters, detail.clear || detail.editRules)) {
+      event.preventDefault()
+    }
+  }, { signal })
+  document.addEventListener(CALENDAR_AREA_REQUEST_EVENT, event => {
+    const area = (event as CustomEvent<{ areaId: string }>).detail.areaId
+    applyFilters({ area })
+  }, { signal })
+  const refreshTasks = () => void refresh(new URL(desired), true)
+  document.addEventListener("meitheal:tasks-changed", refreshTasks, { signal })
+  document.addEventListener("meitheal:task-status-saved", refreshTasks, { signal })
+  signal.addEventListener("abort", () => {
+    delete shell.dataset.calendarReady
+    closeDrawer(false)
+  }, { once: true })
+
+  const rememberedArea = readCalendarTaskFilters(desired.searchParams).area === undefined ? getRememberedAreaId() : ""
+  previewEvents()
+  if (rememberedArea) applyFilters({ area: rememberedArea })
+}
+
+const agendaFilterKeys = new Set(["area", "area_id", "board", "search", "user", "status", "priority",
+  "rice", "types", "task_type", "label", "labels", "promoted", "advancedFilter"])
+
+function writeCalendarTaskFilters(url: URL, filters: KanbanFilters, rawRules: string | null) {
+  updateKanbanFilters(url, filters)
+  if (filters.advancedFilter?.conditions.length) {
+    url.searchParams.set("advancedFilter", rawRules ?? JSON.stringify(filters.advancedFilter))
+  }
+  url.searchParams.delete("area_id")
+  if (filters.task_type) url.searchParams.set("task_type", filters.task_type)
+  else url.searchParams.delete("task_type")
+}
+
+async function fetchCalendarEntities(signal: AbortSignal): Promise<string[]> {
+  const response = await fetch("/api/ha/calendars?configured=1", { signal })
+  if (!response.ok) throw new Error("Calendar source configuration unavailable")
+  const { entities } = await response.json() as { entities?: string[] }
+  if (!Array.isArray(entities)) throw new Error("Invalid calendar source configuration")
+  return entities
+}
+
+async function loadCalendarRange(
+  start: string, end: string, timezone: string, limit: number, readSources: () => Promise<string[]>, signal: AbortSignal,
+  dayRanges?: [number, number][],
+) {
+  const entities = await readSources()
+  signal.throwIfAborted()
+  // Use explicit UTC bounds with room for the Core and household time zones.
+  const from = shiftCalendarDay(start, -1) + "T00:00:00Z"
+  const through = shiftCalendarDay(end, 1) + "T00:00:00Z"
+  const results = await Promise.allSettled(entities.slice(0, limit).map(async entity => {
+    const feed = new URL("/api/ha/events", location.origin)
+    feed.search = new URLSearchParams({ entity_id: entity, start: from, end: through }).toString()
+    const response = await fetch(new Request(feed), { signal, mode: "same-origin", redirect: "error" })
+    if (!response.ok) throw new Error("Calendar feed unavailable")
+    const data = await response.json() as { events?: Array<Omit<CalendarEventRecord, "entity">> }
+    if (!Array.isArray(data.events)) throw new Error("Invalid calendar feed")
+    return data.events.filter(event => {
+      if (!event || typeof event.start !== "string" || typeof event.summary !== "string") return false
+      if (dayRanges && typeof event.end === "string") {
+        const interval = calendarEventInterval(event.start, event.end, timezone)
+        if (interval) return calendarIntervalOverlaps(interval, dayRanges)
+      }
+      const firstDay = calendarEventDay(event.start, timezone)
+      if (!firstDay || firstDay >= end) return false
+      if (firstDay >= start) return true
+      const lastDay = typeof event.end === "string" ? calendarEventDay(event.end, timezone, "exclusive-end") : null
+      return lastDay !== null && lastDay >= start
+    }).map(event => ({ ...event, entity }))
+  }))
+  const events = results.flatMap(result => result.status === "fulfilled" ? result.value : [])
+  events.sort((a, b) => compareCalendarStarts(a.start, b.start, timezone))
+  return {
+    events,
+    partial: results.some(result => result.status === "rejected"),
+    available: results.length === 0 || results.some(result => result.status === "fulfilled"),
   }
 }
 
-async function loadInlineEventPreviews(): Promise<void> {
-  const entities = await fetchCalendarEntities()
-  if (entities.length === 0) return
+function distinctLiveCalendarEvents(events: CalendarEventRecord[], linked: LinkedCalendarEvent[], timezone: string): CalendarEventRecord[] {
+  if (!linked.length) return events
+  const key = (entity: string, start: string, identifier: string) =>
+    JSON.stringify([entity, calendarOccurrenceStartKey(start, timezone), identifier])
+  const byUid = new Set<string>()
+  const savedCounts = new Map<string, number>()
+  const liveCounts = new Map<string, number>()
+  for (const row of linked) {
+    if (!row.entity) continue
+    const uid = row.uid?.trim()
+    if (uid) byUid.add(key(row.entity, row.start, uid))
+    const summary = normalizeCalendarEventSummary(row.providerSummary ?? "")
+    if (summary) {
+      const match = key(row.entity, row.start, summary)
+      savedCounts.set(match, (savedCounts.get(match) ?? 0) + 1)
+    }
+  }
+  for (const event of events) {
+    const match = key(event.entity, event.start, normalizeCalendarEventSummary(event.summary))
+    liveCounts.set(match, (liveCounts.get(match) ?? 0) + 1)
+  }
+  return events.filter(event => {
+    const uid = typeof event.uid === "string" ? event.uid.trim() : ""
+    if (uid) return !byUid.has(key(event.entity, event.start, uid))
+    const match = key(event.entity, event.start, normalizeCalendarEventSummary(event.summary))
+    return savedCounts.get(match) !== 1 || liveCounts.get(match) !== 1
+  })
+}
 
-  const cells = document.querySelectorAll<HTMLElement>(".cal-cell[data-date]")
-  const dates = Array.from(cells)
-    .map((cell) => cell.dataset.date)
-    .filter((date): date is string => Boolean(date))
-  if (dates.length === 0) return
+function agendaItem(icon: TablerIconName, title: string, meta: string, taskId?: string) {
+  const item = document.createElement(taskId ? "button" : "div")
+  item.className = "day-drawer-item"
+  if (taskId) {
+    item.dataset.taskId = taskId
+    item.setAttribute("type", "button")
+  }
+  const content = document.createElement("span")
+  content.className = "day-drawer-item-content"
+  const heading = document.createElement("span")
+  heading.className = "day-drawer-item-title"
+  heading.textContent = title
+  const caption = document.createElement("span")
+  caption.className = "day-drawer-item-meta"
+  caption.textContent = meta
+  content.append(heading, caption)
+  item.append(createTablerSvgElement(icon, 16, "day-drawer-item-icon"), content)
+  return item
+}
 
-  const tz = getCalendarTimezone()
-  const start = dates[0]
-  const lastDay = dates[dates.length - 1]
-  const end = lastDay ? shiftCalendarDay(lastDay, 1) : ""
-  if (!start || !end) return
+async function loadDrawerTasks(
+  query: { date: string; filters: string; offset: number; limit: number },
+  timezone: string,
+  signal: AbortSignal,
+) {
+  const response = await fetch("/api/calendar/agenda", {
+    method: "POST",
+    mode: "same-origin",
+    redirect: "error",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(query),
+    signal,
+  })
+  if (!response.ok) throw new Error(`Task query failed: ${response.status}`)
+  const data = await response.json() as {
+    tasks?: Record<string, unknown>[] | null; total?: number | null; linkedEvents?: LinkedCalendarEvent[] | null
+  }
+  if (data.tasks !== null && !Array.isArray(data.tasks)) throw new Error("Invalid task list")
 
-  const allEvents: CalendarEventRecord[] = []
-  for (const entityId of entities.slice(0, 3)) {
-    try {
-      const response = await fetch(
-        `/api/ha/events?entity_id=${encodeURIComponent(entityId)}&start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`,
-      )
-      if (!response.ok) continue
+  const rows = data.tasks?.map(task => {
+    const status = String(task.status ?? "")
+    const definition = getStatusDef(status)
+    const deferred = task.deferred_at != null ? ` · ${window.mI18n?.get("deferral.title") ?? "Deferred"}` : ""
+    const priority = task.priority ? ` · P${String(task.priority)}` : ""
+    const isEvent = task.task_kind === "calendar_event"
+    const eventTime = isEvent && typeof task.start_date === "string" && formatTimeInZone(task.start_date, timezone)
+    const meta = isEvent && task.start_date ? `${eventTime || "All day"} · ${definition?.label ?? status}` : definition?.label ?? status
+    const icon = isEvent ? "calendar-event" : definition ? mapEntityEmojiToTabler(definition.icon) ?? "checkbox" : "checkbox"
+    return agendaItem(icon, String(task.title ?? "Untitled task"), `${meta}${priority}${deferred}`, String(task.id))
+  })
+  return { rows, total: data.total ?? rows?.length ?? 0, linkedEvents: data.linkedEvents === undefined ? [] : data.linkedEvents }
+}
 
-      const data = await response.json()
-      if (Array.isArray(data?.events)) {
-        allEvents.push(...data.events)
+async function loadInlineEventPreviews(
+  month: HTMLElement, timezone: string, readSources: () => Promise<string[]>, lifetime: AbortSignal,
+): Promise<void> {
+  const cells = Array.from(month.querySelectorAll<HTMLElement>("[data-inline-date]"))
+  const start = cells[0]?.dataset.inlineDate
+  const lastDay = cells.at(-1)?.dataset.inlineDate
+  if (!start || !lastDay) return
+
+  try {
+    const deadline = AbortSignal.any([lifetime, AbortSignal.timeout(10_000)])
+    const { events } = await loadCalendarRange(start, shiftCalendarDay(lastDay, 1), timezone, 3, readSources, deadline)
+    if (lifetime.aborted) return
+
+    const byDate = new Map<string, CalendarEventRecord[]>()
+    for (const event of events) {
+      const date = calendarEventDay(event.start, timezone)
+      if (!date) continue
+      const group = byDate.get(date) ?? []
+      group.push(event)
+      byDate.set(date, group)
+    }
+
+    for (const container of cells) {
+      const events = byDate.get(container.dataset.inlineDate ?? "") ?? []
+      const items = events.slice(0, 2).map(event => {
+        const time = formatCalendarEventTime(event.start, timezone)
+        const row = document.createElement("div")
+        row.className = "cal-inline-event cal-inline-ha"
+        row.title = event.summary
+        row.textContent = time ? `${time} ${event.summary}` : event.summary
+        return row
+      })
+      container.replaceChildren(...items)
+      if (events.length > items.length) {
+        const more = document.createElement("span")
+        more.className = "cal-inline-more"
+        more.textContent = `+${events.length - items.length} more`
+        container.append(more)
       }
-    } catch (error) {
-      log.warn("Skipping inline preview entity", entityId, error)
     }
-  }
-
-  const byDate = new Map<string, CalendarEventRecord[]>()
-  for (const event of allEvents) {
-    const dateKey = calendarDayFromInput(event.start, tz)
-    if (!dateKey) continue
-
-    if (!byDate.has(dateKey)) {
-      byDate.set(dateKey, [])
-    }
-    byDate.get(dateKey)?.push(event)
-  }
-
-  for (const [dateKey, events] of byDate) {
-    const container = document.querySelector<HTMLElement>(`[data-inline-date="${dateKey}"]`)
-    if (!container) continue
-
-    const shown = events.slice(0, 2)
-    const nodes: HTMLElement[] = shown.map((event) => {
-      const time = formatTimeInZone(event.start, tz) ?? "☀"
-      const div = document.createElement("div")
-      div.className = "cal-inline-event cal-inline-ha"
-      div.title = event.summary
-      div.textContent = `${time} ${event.summary}`
-      return div
-    })
-
-    if (events.length > shown.length) {
-      const more = document.createElement("span")
-      more.className = "cal-inline-more"
-      more.textContent = `+${events.length - shown.length} more`
-      nodes.push(more)
-    }
-    container.replaceChildren(...nodes)
+  } catch (error) {
+    if (!lifetime.aborted) log.warn("Could not load calendar previews", error)
   }
 }

@@ -26,7 +26,7 @@ import {
 import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability"
 import type { SyncTaskMutation } from "@domains/tasks"
 import { isClosedStatus, isDoneStatus, STATUS } from "../../lib/status-config"
-import { calendarDayFromInput, calendarToday, formatTimeInZone, shiftCalendarDay } from "../../lib/date"
+import { calendarDayFromInput, calendarToday, formatTimeInZone, normalizeCalendarEventSummary, shiftCalendarDay } from "../../lib/date"
 import { expandRRuleOccurrences, inferRRuleFromDates, normalizeRRule } from "./recurrence"
 
 const logger = createLogger({
@@ -763,7 +763,7 @@ export function seriesWallClockKey(start: string, timezone: string): string {
 
 /** Series key (title and wall-clock time) of an HA event without an ID. */
 function haSeriesKey(evt: CalendarEvent, timezone: string): string {
-  const normSummary = (evt.summary ?? "").trim().toLowerCase().replace(/\s+/g, " ")
+  const normSummary = normalizeCalendarEventSummary(evt.summary ?? "")
   const isAllDay = DATE_ONLY_PATTERN.test(evt.start.trim())
   const timeKey = isAllDay ? "all-day" : seriesWallClockKey(evt.start, timezone)
   return `${normSummary}::${timeKey}`
@@ -830,7 +830,7 @@ function groupHAEventsIntoSeries(
       continue
     }
 
-    const normSummary = (evt.summary ?? "").trim().toLowerCase().replace(/\s+/g, " ")
+    const normSummary = normalizeCalendarEventSummary(evt.summary ?? "")
     const isAllDay = DATE_ONLY_PATTERN.test(evt.start.trim())
     const key = haSeriesKey(evt, timezone)
     const group = withoutUid.get(key) ?? []

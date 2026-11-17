@@ -19,6 +19,7 @@ test.describe("Theme accent and keyboard focus", () => {
       await page.locator("#theme-select").selectOption(theme)
       await expect(page.locator("html")).toHaveAttribute("data-theme", theme)
       const picker = page.locator("#accent-color-custom")
+      const mintSwatch = page.getByRole("button", { name: "Mint", exact: true })
       const tokens = () => page.locator("html").evaluate(root => {
         const style = getComputedStyle(root)
         return {
@@ -31,7 +32,7 @@ test.describe("Theme accent and keyboard focus", () => {
       expect(focusRgb).toHaveLength(3)
       await picker.fill(surface)
       await expect.poll(tokens).toEqual({ accent: surface, focus: baseline.focus })
-      await expect(page.getByRole("button", { name: "Mint (Default)" })).toHaveAttribute("aria-pressed", "false")
+      await expect(mintSwatch).toHaveAttribute("aria-pressed", "false")
 
       await page.getByRole("link", { name: "Today", exact: true }).first().click()
       await expect(page).toHaveURL(/\/today$/)
@@ -66,7 +67,8 @@ test.describe("Theme accent and keyboard focus", () => {
       await expect(reset).toHaveCSS("outline-width", "2px")
       await page.keyboard.press("Enter")
       await expect.poll(tokens).toEqual(baseline)
-      await expect(page.getByRole("button", { name: "Mint (Default)" })).toHaveAttribute("aria-pressed", "true")
+      await expect(mintSwatch).toHaveAttribute("aria-pressed", String(theme === "dark"))
+      await expect(picker).toHaveValue(baseline.accent)
     })
   }
 });

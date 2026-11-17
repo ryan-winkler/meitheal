@@ -73,7 +73,6 @@ const NAV_PREFERENCE_KEYS: readonly AppearancePreferenceName[] = [
       </form>
     </SettingsPanelCard>
 
-    <!-- Tasks Menu & Pinned Task Types -->
     <SettingsPanelCard
       title={t("settings.task_nav_prefs_title", locale)}
       subtitle={t("settings.task_nav_prefs_subtitle", locale)}
@@ -110,6 +109,7 @@ const NAV_PREFERENCE_KEYS: readonly AppearancePreferenceName[] = [
                 class="btn btn-ghost settings-text-sm task-nav-pin-btn"
                 data-task-nav-pin={entry.id}
                 aria-pressed="false"
+                aria-label={`${t("settings.task_nav_pin", locale)} · ${entry.label}`}
               >
                 {t("settings.task_nav_pin", locale)}
               </button>

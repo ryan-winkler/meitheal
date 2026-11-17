@@ -41,12 +41,13 @@ for (const enabled of [false, true]) {
       await expect(input).toBeVisible()
       await input.fill(literal)
       await expect(preview).toBeVisible()
-      if (enabled) {
-        await expect(preview).toHaveText("📅 Due: 2030-06-11 · 🔴 Priority: P1 · 🏷️ household · 👤 ryan")
-      } else {
-        // Soft assertions preserve both preview and submit evidence on the old
-        // controller; any mismatch still fails the test.
-        await expect.soft(preview).toHaveText("📅 Due: Today (default)")
+      const feedback: Array<[icon: string, label: string]> = enabled
+        ? [["calendar-event", "Due: 2030-06-11"], ["alert-triangle", "Priority: P1"], ["tag", "household"], ["user", "ryan"]]
+        : [["calendar-event", "Due: Today (default)"]]
+      const parts = preview.locator(".quick-add-feedback-part")
+      await expect(parts).toHaveText(feedback.map(([, label]) => label))
+      for (const [index, [icon]] of feedback.entries()) {
+        await expect(parts.nth(index).locator("svg[aria-hidden=true] use")).toHaveAttribute("href", `#mt-icon-${icon}`)
       }
       expect(posts).toHaveLength(0)
       const submitted = page.waitForResponse(response => response.request().method() === "POST" &&

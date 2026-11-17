@@ -170,18 +170,6 @@
     margin-left: auto;
   }
 
-  .task-delete,
-  .task-duplicate,
-  .task-ask-ai {
-    display: none !important;
-  }
-
-  .task-item:active .task-delete,
-  .task-item:active .task-duplicate,
-  .task-item:active .task-ask-ai {
-    display: inline-flex !important;
-  }
-
     /* Mobile: compact search input */
     .search-input {
     font-size: 13px;

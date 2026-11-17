@@ -251,7 +251,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
   import { privateIngressScope } from "@lib/network-only-worker"
   import { taskDraftText } from "@lib/task-draft-copy"
   import type { connectTaskDrafts } from "@lib/task-draft-controller"
-  import { getLegacyTaskId } from "@lib/task-detail-handoff"
+  import { getLegacyTaskId, openTaskDetailHandoff } from "@lib/task-detail-handoff"
   import type { TaskDraftSnapshot, TaskDraftPublication } from "@lib/task-draft-state"
 
   const log = createClientLogger("tasks", "new-task-modal");
@@ -297,7 +297,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
     let captureSession = 0
     let preserveAssignee = false
     let isHydrating = false
-    let draftPublicationNeedsRefresh = false
+    let refreshAfterCaptureClose = false
     let drafts: ReturnType<typeof connectTaskDrafts> | undefined
     let draftLoading = false
     let editedWhileLoading = false
@@ -575,6 +575,19 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
         cfAddBtn?.setAttribute("aria-expanded", "false")
       }, { signal });
     });
+    let calendarCaptureTask: string | undefined
+    function queueCreatedTask(taskId: string) {
+      if (document.querySelector("#calendar-shell[data-calendar-ready='true']")) {
+        calendarCaptureTask = taskId
+        return
+      }
+      const nextLocation = new URL(window.location.href)
+      nextLocation.searchParams.set("open", taskId)
+      nextLocation.searchParams.delete("comment")
+      if (getLegacyTaskId(nextLocation.hash) !== null) nextLocation.hash = ""
+      history.replaceState(history.state, "", nextLocation)
+    }
+
     function closeNewTaskModal() {
       if (!overlay?.classList.contains("active") || overlay.classList.contains("closing")) return
       captureOptionsRequest?.abort()
@@ -589,8 +602,13 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
         overlay.classList.remove("active", "closing")
         focusTrap.deactivate()
         clearCapture()
-        if (draftPublicationNeedsRefresh) {
-          draftPublicationNeedsRefresh = false
+        if (calendarCaptureTask) {
+          const taskId = calendarCaptureTask
+          calendarCaptureTask = undefined
+          openTaskDetailHandoff(taskId)
+        }
+        if (refreshAfterCaptureClose) {
+          refreshAfterCaptureClose = false
           document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "created" } }))
         }
       }
@@ -625,7 +643,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
     }, { signal });
 
     // Expose global open method
-    window.openNewTaskModal = () => {
+    window.openNewTaskModal = (kind) => {
       if (signal.aborted || overlay.classList.contains("active")) return
       // If the detail panel is open, close it to avoid dual modal
       document.getElementById("task-detail-panel")?.classList.remove("open");
@@ -633,9 +651,13 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
       document.body.classList.remove("has-docked-inspector");
 
       clearCapture()
+      if (kind && [...kindTabs].some(tab => (tab as HTMLElement).dataset.kind === kind)) selectKind(kind)
       const contextualDate = window.__prefillTaskDate
       delete window.__prefillTaskDate
-      if (contextualDate) restoreDue(contextualDate)
+      if (contextualDate) {
+        if (kind === "calendar_event") restoreEventDate("nt-event-start", contextualDate)
+        else restoreDue(contextualDate)
+      }
       preserveAssignee = false
       captureSession++
       overlay.classList.add("active")
@@ -830,10 +852,6 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
       if (saved && control?.value === saved.display) return saved.raw
       return control?.value ? new Date(control.value).toISOString() : ""
     }
-    function publicationDate(raw: string): string {
-      return dateOnly.test(raw) ? new Date(raw).toISOString() : raw
-    }
-
     // Goals Loader
     async function loadGoals(requestSignal: AbortSignal) {
       if (!goalSelect) return
@@ -1049,15 +1067,11 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
         showSubmit(bound, disabled)
       },
       taskPublished() {
-        draftPublicationNeedsRefresh = true
+        refreshAfterCaptureClose = true
       },
       openTask(receipt) {
-        const nextLocation = new URL(window.location.href)
-        nextLocation.searchParams.set("open", receipt.taskId)
-        nextLocation.searchParams.delete("comment")
-        if (getLegacyTaskId(nextLocation.hash) !== null) nextLocation.hash = ""
-        history.replaceState(history.state, "", nextLocation)
-        draftPublicationNeedsRefresh = true
+        queueCreatedTask(receipt.taskId)
+        refreshAfterCaptureClose = true
         closeNewTaskModal()
       },
     } satisfies Parameters<typeof connectTaskDrafts>[1]
@@ -1101,12 +1115,14 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
     }
 
     form?.addEventListener("input", event => {
-      if (event.target === assignee) preserveAssignee = true
-      if (!(event.target as HTMLElement).matches(".label-picker__input")) markEdited()
+      const target = event.target as HTMLElement
+      eventDates.delete(target.id)
+      if (target === assignee) preserveAssignee = true
+      if (!target.matches(".label-picker__input")) markEdited()
     }, { signal })
     form?.addEventListener("change", event => {
       const target = event.target as HTMLElement
-      if (target.matches("input[type=hidden]")) markEdited()
+      if (eventDates.delete(target.id) || target.matches("input[type=hidden]")) markEdited()
     }, { signal })
     form?.addEventListener("invalid", event => {
       if (event.target === qtyEl && kindInput?.value === "shopping_item") showFieldError(taskDraftText("quantity"))
@@ -1140,9 +1156,9 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
           showFieldError(taskDraftText("reference_required"))
           return
         }
-        const start = eventDateValue("nt-event-start")
-        const end = eventDateValue("nt-event-end")
-        const invalidDates = kindInput?.value === "calendar_event" && !!start && !!end && new Date(end) <= new Date(start)
+        const start = displayedDate(eventDateValue("nt-event-start"))
+        const end = displayedDate(eventDateValue("nt-event-end"))
+        const invalidDates = kindInput?.value === "calendar_event" && !!start && !!end && end <= start
         const dateError = document.getElementById("nt-date-error")
         if (dateError) dateError.hidden = !invalidDates
         if (invalidDates) {
@@ -1231,7 +1247,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
           if (!finalTitle) finalTitle = titleInput.value.trim();
 
           const explicitDue = (document.getElementById("nt-contextual-due") as HTMLInputElement)?.value;
-          const finalDue = explicitDue ? publicationDate(explicitDue) : extractedDue;
+          const finalDue = explicitDue || extractedDue;
 
           const kindInputEl = document.getElementById("new-task-kind") as HTMLInputElement | null;
           const descInputEl = document.getElementById("new-task-desc-input") as HTMLTextAreaElement | null;
@@ -1281,8 +1297,8 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
           if (body.task_kind === "calendar_event") {
             const start = eventDateValue("nt-event-start")
             const end = eventDateValue("nt-event-end")
-            if (start) body.start_date = publicationDate(start)
-            if (end) body.end_date = publicationDate(end)
+            if (start) body.start_date = start
+            if (end) body.end_date = end
           }
 
           // Custom fields
@@ -1339,15 +1355,13 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
               title,
             );
 
-            closeNewTaskModal();
             if (created.id && created.task_kind !== "quick") {
-              const nextLocation = new URL(window.location.href)
-              nextLocation.searchParams.set("open", created.id)
-              nextLocation.searchParams.delete("comment")
-              if (getLegacyTaskId(nextLocation.hash) !== null) nextLocation.hash = ""
-              history.replaceState(history.state, "", nextLocation)
+              queueCreatedTask(created.id)
             }
-            document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", {
+            const calendar = document.querySelector("#calendar-shell[data-calendar-ready='true']")
+            if (calendar) refreshAfterCaptureClose = true
+            closeNewTaskModal()
+            if (!calendar) document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", {
               detail: { action: "created" }
             }));
 

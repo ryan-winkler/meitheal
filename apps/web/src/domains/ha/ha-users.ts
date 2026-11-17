@@ -8,9 +8,10 @@
  * @domain ha
  * @bounded-context users
  */
-import { readCurrentHACoreUsers } from "./core-user-lookup"
-import { getHAConnection } from "./ha-connection";
-import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability";
+import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability"
+import { readConfiguredHACoreUsers, readCurrentHACoreUsers } from "./core-user-lookup"
+import { fingerprintHAConfiguration, resolveHAConfiguration, type HAConfiguration } from "./ha-configuration"
+import { getHAConfiguration, matchesCurrentHAConnection } from "./ha-connection"
 
 const logger = createLogger({
   service: "meitheal-web", env: process.env.NODE_ENV ?? "development",
@@ -40,9 +41,40 @@ export interface MeithealUser {
 
 // ── Cache ──
 
-let cachedUsers: HAUser[] | null = null;
-let cacheTimestamp = 0;
-const CACHE_TTL_MS = 60_000; // 60s
+let cachedRoster: { users: HAUser[]; fingerprint: string; expiresAt: number } | undefined
+let rosterRead: { fingerprint: string; result: Promise<unknown> } | undefined
+const CACHE_TTL_MS = 60_000
+type CoreUser = Pick<HAUser, "id" | "is_active"> & { system_generated: boolean; is_owner?: unknown; name?: unknown }
+
+function parseCoreUserRoster(users: unknown): CoreUser[] | undefined {
+  if (!Array.isArray(users)) return
+  const seen = new Set<string>()
+  for (const user of users) {
+    if (!user || typeof user !== "object" || typeof user.id !== "string" || !user.id.trim()
+      || typeof user.is_active !== "boolean" || typeof user.system_generated !== "boolean"
+      || seen.has(user.id)) return
+    seen.add(user.id)
+  }
+  return users
+}
+
+async function readRosterConfiguration(): Promise<HAConfiguration | null | undefined> {
+  try {
+    return await getHAConfiguration({ requireComplete: true })
+  } catch {
+    // The configured identity is needed before a cached roster can be reused.
+    return undefined
+  }
+}
+
+function readConfiguredRoster(configuration: HAConfiguration, fingerprint: string): Promise<unknown> {
+  if (rosterRead?.fingerprint === fingerprint) return rosterRead.result
+  const result = readConfiguredHACoreUsers(configuration).finally(() => {
+    if (rosterRead?.result === result) rosterRead = undefined
+  })
+  rosterRead = { fingerprint, result }
+  return result
+}
 
 function sanitizeHAUserName(value: unknown): string {
   const name = typeof value === "string" ? value : ""
@@ -60,68 +92,74 @@ function sanitizeHAUserName(value: unknown): string {
 // ── Public API ──
 
 /**
- * List HA users via WebSocket `config/auth/list`.
- * Cached for 60s. Returns [] in standalone mode (no SUPERVISOR_TOKEN).
+ * List assignees from HA. A successful directory is fresh for up to 60 seconds
+ * while its connection is live. An outage leaves same-source names available.
  */
-export async function listHAUsers(): Promise<HAUser[]> {
-  const now = Date.now();
-  if (cachedUsers && (now - cacheTimestamp) < CACHE_TTL_MS) {
-    return cachedUsers;
+export async function listHAUserDirectory(): Promise<{ users: HAUser[]; verified: boolean }> {
+  const configuration = await readRosterConfiguration()
+  if (!configuration) {
+    if (configuration === null) invalidateUserCache()
+    return { users: [], verified: configuration === null }
   }
+  const fingerprint = fingerprintHAConfiguration(configuration)
+  if (cachedRoster?.fingerprint !== fingerprint) invalidateUserCache()
 
-  const conn = await getHAConnection();
-  if (!conn) {
-    // Standalone mode — no HA connection available
-    cachedUsers = [];
-    cacheTimestamp = now;
-    return [];
+  if (cachedRoster && Date.now() < cachedRoster.expiresAt && matchesCurrentHAConnection(fingerprint)) {
+    return { users: cachedRoster.users, verified: true }
   }
+  if (cachedRoster) cachedRoster.expiresAt = 0
 
   try {
-    const result = await conn.sendMessagePromise<HAUser[]>({
-      type: "config/auth/list",
-    });
+    const reply = await readConfiguredRoster(configuration, fingerprint)
+    const current = await readRosterConfiguration()
+    if (!current || fingerprintHAConfiguration(current) !== fingerprint) return { users: [], verified: false }
+    const result = parseCoreUserRoster(reply)
 
     // Filter out system-generated accounts (e.g. homeassistant, supervisor)
-    const users = (result ?? []).filter(
-      (u) => !((u as unknown as Record<string, unknown>).system_generated) && u.is_active
-    ).map((u) => ({
-      ...u,
+    if (!result) throw new Error("Invalid Home Assistant user directory")
+    const users = result.filter(u => !u.system_generated && u.is_active).map(u => ({
+      is_active: u.is_active,
+      is_owner: u.is_owner === true,
       name: sanitizeHAUserName(u.name),
       // Validate ID is clean alphanumeric — prefix with ha_ for downstream validation compat
       id: /^[a-zA-Z0-9_-]+$/.test(u.id) ? u.id : `ha_sanitized_${u.id.replace(/[^a-zA-Z0-9]/g, "")}`,
     }));
 
-    cachedUsers = users;
-    cacheTimestamp = now;
+    cachedRoster = { users, fingerprint, expiresAt: Date.now() + CACHE_TTL_MS }
 
     logger.log("info", {
       event: "ha.users.discovered", domain: "ha", component: "ha-users",
       request_id: SYS_REQ, message: `Discovered ${users.length} HA user(s)`,
     });
 
-    return users;
+    return { users, verified: true };
   } catch (err) {
     logger.log("error", {
       event: "ha.users.discovery_failed", domain: "ha", component: "ha-users",
       request_id: SYS_REQ, message: `Failed to list HA users: ${err}`,
     });
-    // Return cached if available, otherwise empty
-    return cachedUsers ?? [];
+    return { users: cachedRoster?.fingerprint === fingerprint ? cachedRoster.users : [], verified: false }
   }
+}
+
+export async function listHAUsers(): Promise<HAUser[]> {
+  return (await listHAUserDirectory()).users;
 }
 
 /**
  * Invalidate the cached user list. Call after user management changes.
  */
 export function invalidateUserCache(): void {
-  cachedUsers = null;
-  cacheTimestamp = 0;
+  cachedRoster = undefined
 }
 
-/** Resolve a display name without waiting for a live Home Assistant call. */
+/** Resolve an ingress author's display name from the Supervisor roster. */
 export function getCachedHAUserName(userId: string): string | undefined {
-  return cachedUsers?.find(user => user.id === userId)?.name
+  if (!cachedRoster || !process.env.SUPERVISOR_TOKEN) return
+  const configuration = resolveHAConfiguration(process.env)
+  if (configuration && cachedRoster.fingerprint === fingerprintHAConfiguration(configuration)) {
+    return cachedRoster.users.find(user => user.id === userId)?.name
+  }
 }
 
 /**
@@ -142,14 +180,10 @@ let latestLookup = 0
 let latestCompletedLookup = 0
 
 function parseActiveUserRoster(users: unknown): ActiveHARoster | undefined {
-  if (!Array.isArray(users)) return
-  const seen = new Set<string>()
+  const roster = parseCoreUserRoster(users)
+  if (!roster) return
   const active = new Map<string, string>()
-  for (const user of users) {
-    if (!user || typeof user !== "object" || typeof user.id !== "string" || !user.id.trim()
-      || typeof user.is_active !== "boolean" || typeof user.system_generated !== "boolean"
-      || seen.has(user.id)) return
-    seen.add(user.id)
+  for (const user of roster) {
     if (user.is_active && !user.system_generated) {
       active.set(user.id, typeof user.name === "string" ? user.name : "")
     }
