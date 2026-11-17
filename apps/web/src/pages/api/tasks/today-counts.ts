@@ -1,11 +1,15 @@
 import type { APIRoute } from "astro"
 import { apiError } from "../../../lib/api-response"
-import { getTodayTaskCounts } from "../../../lib/task-queries"
+import { calendarToday, isValidTimezone } from "../../../lib/date"
+import { getTodayTaskCounts, readStoredHouseholdTimezone, todayScopeProblem } from "../../../lib/task-queries"
 
-export const GET: APIRoute = async ({ locals }) => {
+export const GET: APIRoute = async ({ locals, url }) => {
   try {
-    const timezone = typeof locals?.timezone === "string" && locals.timezone ? locals.timezone : undefined
-    return Response.json(await getTodayTaskCounts(new Date(), timezone), {
+    const timezone = locals.timezone && isValidTimezone(locals.timezone) ? locals.timezone : await readStoredHouseholdTimezone()
+    const now = new Date()
+    const problem = todayScopeProblem(url.searchParams, timezone, calendarToday(timezone, now))
+    if (problem) return apiError(problem.error, problem.status)
+    return Response.json(await getTodayTaskCounts(now, timezone, url.searchParams.get("completed") === "1"), {
       headers: { "cache-control": "private, no-store" },
     })
   } catch {

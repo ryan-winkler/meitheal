@@ -17,7 +17,9 @@ test.describe("Tasks Page — /tasks default view", () => {
   test("opens the Kanban view by default", async ({ page }) => {
     await page.goto("/tasks")
     await expect(page).toHaveURL(/\/tasks#kanban$/)
-    await expect(page.getByRole("toolbar", { name: "Kanban view actions" })).toBeVisible()
+    await expect(page.locator("#tasks-view-kanban")).toBeVisible()
+    const actions = page.locator("#tasks-filter-row").getByRole("group", { name: "Kanban board actions" })
+    await expect(actions.getByRole("link", { name: "Deferred", exact: true })).toBeVisible()
   })
 })
 

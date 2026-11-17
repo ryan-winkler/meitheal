@@ -1,7 +1,8 @@
 import { getRememberedAreaId, getSelectedAreaId } from "@lib/area-selector-controller"
-import { taskBackgroundUrl, ticketIdFromPath } from "@lib/task-page-url"
+import { replaceTaskBackgroundUrl, taskBackgroundUrl } from "@lib/task-page-url"
 import { DEFERRAL_RECONCILED, type DeferralReconciliation } from "@lib/deferral-client"
 import { initKanbanArea } from "@lib/kanban-controller"
+import { hydrateTaskAssignees } from "@lib/task-assignee-display"
 import { KANBAN_GROUP_KEY, readKanbanFilters, setKanbanPage, storedKanbanGroup, updateKanbanFilters, type KanbanFilters } from "@lib/kanban-query"
 import { initKanbanInactivity } from "./kanban-inactivity"
 import { initLaneManagementPanel } from "./kanban-lanes"
@@ -11,6 +12,20 @@ export interface KanbanRefreshFocus {
   lane?: string | undefined
   taskId?: string | undefined
   firstPage?: boolean
+  afterStatusSave?: boolean
+}
+
+function matchBoardFocus(active: HTMLElement, replacement: HTMLElement) {
+  const cardId = active.closest<HTMLElement>(".kanban-card")?.dataset.id
+  const laneId = active.closest<HTMLElement>(".kanban-column")?.dataset.status
+  const card = cardId && replacement.querySelector<HTMLElement>(`.kanban-card[data-id="${CSS.escape(cardId)}"]`)
+  const lane = laneId && replacement.querySelector<HTMLElement>(`.kanban-column[data-status="${CSS.escape(laneId)}"]`)
+  const scope = card || lane
+  if (!scope) return null
+  const matches = Array.from(scope.querySelectorAll<HTMLElement>(active.localName))
+    .filter(element => element.className === active.className && element.matches("a[href], button, [tabindex]"))
+  return (matches.length === 1 ? matches[0] : null) ||
+    (card ? card.querySelector<HTMLElement>(".card-open-btn") : scope.querySelector<HTMLElement>(".kanban-column-header"))
 }
 
 export function initKanbanPage(signal: AbortSignal): void {
@@ -24,25 +39,51 @@ export function initKanbanPage(signal: AbortSignal): void {
   let board = initialBoard
   let boardLifetime = new AbortController()
   let pending: AbortController | undefined
-  let desired = taskBackgroundUrl(new URL(location.href))
+  let desired = taskBackgroundUrl()
   let lastFocus: KanbanRefreshFocus | undefined
   let resetScroll = false
   let requestNumber = 0
-  const inactivityLink = document.querySelector<HTMLAnchorElement>("[data-inactivity-link]")
-  const syncInactivityLink = (area: string) => {
-    if (!inactivityLink) return
-    const url = new URL(inactivityLink.href)
-    if (area) url.searchParams.set("area", area)
-    else url.searchParams.delete("area")
-    inactivityLink.href = url.href
+  const areaLinks = document.querySelectorAll<HTMLAnchorElement>("[data-deferred-link], [data-inactivity-link]")
+  const syncAreaLinks = (area: string) => {
+    for (const link of areaLinks) {
+      const url = new URL(link.href)
+      if (area) url.searchParams.set("area", area)
+      else url.searchParams.delete("area")
+      link.href = url.href
+    }
   }
   const initialArea = desired.searchParams.get("area") ?? (getSelectedAreaId() || getRememberedAreaId())
-  syncInactivityLink(initialArea)
+  syncAreaLinks(initialArea)
 
   const renderStatus = (message: string, failed = false) => {
     status.hidden = !message
     status.textContent = message
     retry.hidden = !failed
+  }
+
+  let queuedBackgroundRead: { focus: KanbanRefreshFocus | undefined; dataOnly: boolean } | undefined
+
+  function boardInteractionActive() {
+    return board.querySelector('.kanban-inline-add, [contenteditable="true"], .kanban-card.dragging, .kanban-card[aria-busy="true"], [data-title-saving]') ||
+      document.querySelector("#kanban-card-menu:not([hidden]), .quick-action-popover:not([inert])")
+  }
+
+  const interactionObserver = new MutationObserver(resumeBackgroundRead)
+  function resumeBackgroundRead() {
+    if (signal.aborted || !queuedBackgroundRead || pending || boardInteractionActive()) return
+    const { focus, dataOnly } = queuedBackgroundRead
+    queuedBackgroundRead = undefined
+    interactionObserver.disconnect()
+    void load(new URL(desired), focus, false, dataOnly)
+  }
+
+  function queueBackgroundRead(focus?: KanbanRefreshFocus, dataOnly = false) {
+    if (!queuedBackgroundRead || !dataOnly) queuedBackgroundRead = { focus, dataOnly }
+    interactionObserver.observe(document.body, {
+      childList: true, subtree: true, attributes: true,
+      attributeFilter: ["hidden", "inert", "class", "aria-busy", "contenteditable", "data-title-saving"],
+    })
+    resumeBackgroundRead()
   }
 
   async function load(url: URL, focus?: KanbanRefreshFocus, reset = false, dataOnly = false): Promise<void> {
@@ -75,9 +116,16 @@ export function initKanbanPage(signal: AbortSignal): void {
         return
       }
       if (!replacement) throw new Error("Board response unavailable")
+      if ((focus?.afterStatusSave || dataOnly) && (queuedBackgroundRead || boardInteractionActive())) {
+        if (!queuedBackgroundRead) queueBackgroundRead(focus, dataOnly)
+        renderStatus("")
+        return
+      }
 
       const active = document.activeElement
       const shouldFocus = active === retry || board.contains(active) || (Boolean(focus) && active === document.body)
+      const retainedControl = focus?.afterStatusSave && active instanceof HTMLElement && board.contains(active)
+        ? matchBoardFocus(active, replacement) : null
       const scroll = new Map(Array.from(board.querySelectorAll<HTMLElement>(".kanban-column"), lane =>
         [lane.dataset.status, lane.querySelector(".kanban-cards")?.scrollTop ?? 0] as const))
       const horizontal = board.scrollLeft
@@ -90,6 +138,7 @@ export function initKanbanPage(signal: AbortSignal): void {
       board = replacement
       boardLifetime = new AbortController()
       initKanbanArea(boardLifetime.signal, refresh)
+      void hydrateTaskAssignees(board, boardLifetime.signal)
       initKanbanReactionCounts(board, boardLifetime.signal)
       initKanbanInactivity(board, boardLifetime.signal)
 
@@ -97,25 +146,16 @@ export function initKanbanPage(signal: AbortSignal): void {
       const label = shell?.querySelector("[data-kanban-visible-label]")
       if (total) total.textContent = html.querySelector("[data-kanban-visible-count]")?.textContent ?? ""
       if (label) label.textContent = html.querySelector("[data-kanban-visible-label]")?.textContent ?? ""
+      const promotedNote = shell?.querySelector<HTMLElement>("[data-kanban-promoted-note]")
+      if (promotedNote) promotedNote.hidden = html.querySelector("[data-kanban-promoted-note]")?.hasAttribute("hidden") !== false
       for (const lane of board.querySelectorAll<HTMLElement>(".kanban-column")) {
         if (lane.dataset.status) setKanbanPage(url, lane.dataset.status, Number(lane.dataset.page))
         const list = lane.querySelector(".kanban-cards")
         if (list && !reset && lane.dataset.status !== focus?.lane) list.scrollTop = scroll.get(lane.dataset.status) ?? 0
       }
       // A view or task-detail navigation can change the hash while a board request is in flight.
-      const current = new URL(location.href)
-      const background = taskBackgroundUrl(current)
-      for (const key of ["open", "comment"]) {
-        const value = background.searchParams.get(key)
-        if (value === null) url.searchParams.delete(key)
-        else url.searchParams.set(key, value)
-      }
-      url.hash = background.hash
-      if (!dataOnly) {
-        if (ticketIdFromPath(current.pathname, window.__ingress_path) !== null) {
-          history.replaceState({ ...history.state, ticketDrawer: { ...history.state?.ticketDrawer, returnTo: url.href } }, "")
-        } else history.replaceState(history.state, "", url)
-      }
+      url.hash = taskBackgroundUrl().hash
+      if (!dataOnly) replaceTaskBackgroundUrl(url)
       board.scrollLeft = horizontal
       renderStatus("")
 
@@ -124,16 +164,18 @@ export function initKanbanPage(signal: AbortSignal): void {
         const lane = focus?.lane ? board.querySelector<HTMLElement>(`.kanban-column[data-status="${CSS.escape(focus.lane)}"]`) : null
         const range = lane && (lane.querySelector<HTMLElement>("[data-kanban-range]") ??
           lane.querySelector<HTMLElement>(".kanban-column-header"))
-        ;(card || range || board.querySelector<HTMLElement>(".kanban-column-header"))?.focus()
+        ;(retainedControl || card || range || board.querySelector<HTMLElement>(".kanban-column-header"))?.focus()
       }
     } catch {
       if (!request.signal.aborted && !signal.aborted) {
-        renderStatus(window.mI18n?.get("kanban.board_load_failed") ?? "Couldn’t load the board.", true)
+        const message = window.mI18n?.get("kanban.board_load_failed") ?? "Couldn’t load the board."
+        renderStatus(focus?.afterStatusSave ? `Status saved. ${message}` : message, true)
       }
     } finally {
       if (pending === request) {
         pending = undefined
         board.removeAttribute("aria-busy")
+        resumeBackgroundRead()
       }
     }
   }
@@ -154,8 +196,13 @@ export function initKanbanPage(signal: AbortSignal): void {
     if (url.search !== before) void load(url, undefined, true)
   }
 
+  const toolsToggle = document.getElementById("kanban-tools-toggle")
+  toolsToggle?.addEventListener("click", () => {
+    toolsToggle.setAttribute("aria-expanded", String(toolsToggle.getAttribute("aria-expanded") !== "true"))
+  }, { signal })
   initLaneManagementPanel()
   initKanbanArea(boardLifetime.signal, refresh)
+  void hydrateTaskAssignees(board, boardLifetime.signal)
   initKanbanReactionCounts(board, boardLifetime.signal)
 
   shell.addEventListener("click", event => {
@@ -177,7 +224,7 @@ export function initKanbanPage(signal: AbortSignal): void {
   window.addEventListener(DEFERRAL_RECONCILED, event => {
     const { taskId, changedIds, dataOnly } = (event as CustomEvent<DeferralReconciliation>).detail ?? {}
     if (dataOnly) {
-      void load(new URL(desired), undefined, false, true)
+      queueBackgroundRead(undefined, true)
       return
     }
     const origin = taskId ? board.querySelector<HTMLElement>(`.kanban-card[data-id="${CSS.escape(taskId)}"]`) : null
@@ -191,8 +238,12 @@ export function initKanbanPage(signal: AbortSignal): void {
   window.addEventListener("pageshow", event => {
     if (event.persisted) void refresh()
   }, { signal })
+  document.addEventListener("meitheal:task-status-saved", event => {
+    const { id, status } = (event as CustomEvent<{ id: string; status: string }>).detail
+    if (typeof status === "string") queueBackgroundRead({ taskId: id, lane: status, afterStatusSave: true })
+  }, { signal })
   document.addEventListener("meitheal:area-changed", () => {
-    syncInactivityLink(getSelectedAreaId())
+    syncAreaLinks(getSelectedAreaId())
     filter({})
   }, { signal })
   document.addEventListener("meitheal:filter-change", event => {
@@ -203,7 +254,10 @@ export function initKanbanPage(signal: AbortSignal): void {
     }
     filter(values)
   }, { signal })
-  signal.addEventListener("abort", () => boardLifetime.abort(), { once: true })
+  signal.addEventListener("abort", () => {
+    boardLifetime.abort()
+    interactionObserver.disconnect()
+  }, { once: true })
   if (board.dataset.available !== "true") {
     renderStatus(window.mI18n?.get("kanban.board_load_failed") ?? "Couldn’t load the board.", true)
   } else {

@@ -6,12 +6,12 @@
  */
 import { APPEARANCE_PREFERENCES, APPEARANCE_STORAGE_KEY, appearanceAttribute, applyAppearancePreferences, type AppearancePreferences } from "@lib/appearance-preferences"
 import { pageLifecycle } from "@lib/page-lifecycle"
-import { DEFAULT_ACCENT } from "@lib/design-tokens"
 import { applyPersonalAccent } from "@lib/accent-colors"
 import { refreshHAThemeMatch } from "@lib/ha-theme-bridge"
 import { HA_THEME_MATCH_KEY } from "@lib/ha-theme-palette"
 import { showToast } from "@lib/toast"
-import { readAppearanceValue, setTheme, type ThemeMode } from "@lib/theme-watcher"
+import { isThemeMode } from "@lib/theme-mode"
+import { readAppearanceValue, readStoredThemeMode, setTheme } from "@lib/theme-watcher"
 import { attachShortcutTooltips } from "@lib/shortcut-tooltip"
 import { SINGLE_KEY_SHORTCUTS_STORAGE_KEY, setSingleKeyShortcuts, singleKeyShortcutsEnabled } from "@lib/single-key-shortcuts"
 import { settingsStore } from "@lib/settings-store"
@@ -69,8 +69,16 @@ function initAccentSettings(): void {
     updateSelection(color)
   }
 
-  const stored = readAppearanceValue(ACCENT_KEY)
-  updateSelection(stored && /^#[0-9a-f]{6}$/i.test(stored) ? stored : DEFAULT_ACCENT)
+  function syncSelection(): void {
+    const stored = readAppearanceValue(ACCENT_KEY)
+    const defaultAccent = matchesHaPalette()
+      ? root.style.getPropertyValue("--personal-accent").trim()
+      : getComputedStyle(root).getPropertyValue("--palette-accent").trim()
+    updateSelection(stored && /^#[0-9a-f]{6}$/i.test(stored) ? stored : defaultAccent)
+  }
+
+  syncSelection()
+  pageLifecycle.on(window, "meitheal:theme-changed", syncSelection)
   for (const swatch of swatches) {
     pageLifecycle.on(swatch, "click", () => setAccent(swatch.dataset.color ?? ""))
   }
@@ -79,7 +87,7 @@ function initAccentSettings(): void {
     pageLifecycle.on(reset, "click", () => {
       localStorage.removeItem(ACCENT_KEY)
       if (!matchesHaPalette()) applyPersonalAccent(root, null)
-      updateSelection(DEFAULT_ACCENT)
+      syncSelection()
     })
   }
 }
@@ -215,7 +223,7 @@ export function initThemeSettings(): void {
   // Theme Config — init select from localStorage
   const themeSelect = document.getElementById("theme-select") as HTMLSelectElement
   if (themeSelect) {
-    themeSelect.value = readAppearanceValue("meitheal-theme") || "dark"
+    themeSelect.value = readStoredThemeMode()
     showCustomThemeSection(themeSelect.value === "custom")
   }
 
@@ -225,6 +233,7 @@ export function initThemeSettings(): void {
 
     pageLifecycle.on(select, "change", async () => {
       const value = select.value
+      const previousTheme = key === "theme" ? readStoredThemeMode() : null
       if (key === "theme") {
         showCustomThemeSection(value === "custom")
         if (value === "custom" && !readAppearanceValue("meitheal-custom-theme-css")) return
@@ -238,6 +247,10 @@ export function initThemeSettings(): void {
       } catch (error) {
         const settings = await settingsStore.load().catch(() => null)
         if (settings) restoreThemeSettings(settings)
+        else if (previousTheme) {
+          select.value = previousTheme
+          showCustomThemeSection(previousTheme === "custom")
+        }
         showSettingsSaveError(error)
       } finally {
         select.disabled = false
@@ -246,7 +259,9 @@ export function initThemeSettings(): void {
     })
   }
 
-  bindPreference("theme-select", "theme", mode => setTheme(mode as ThemeMode))
+  bindPreference("theme-select", "theme", mode => {
+    if (isThemeMode(mode)) setTheme(mode)
+  })
   bindPreference("locale-select", "locale", (locale) => {
     localStorage.setItem("meitheal-locale", locale)
     document.cookie = `meitheal-locale=${locale};path=/;max-age=31536000;SameSite=Lax`
@@ -303,7 +318,7 @@ export function initThemeSettings(): void {
 
   pageLifecycle.on(remove, "click", async () => {
     const { confirmDialog } = await import("@lib/confirm-dialog")
-    if (await confirmDialog({ message: "Remove custom theme? The app will revert to Dark mode.", variant: "warning" })) {
+    if (await confirmDialog({ message: "Remove custom theme? The app will switch to Emerald Isle.", variant: "warning" })) {
       if (await saveFile("", "")) themeSelect.focus()
     }
   })
@@ -325,14 +340,14 @@ export function initThemeSettings(): void {
 
 function restoreTheme(settings: Record<string, unknown>): boolean {
   try {
-    const savedTheme = settings.theme ?? readAppearanceValue("meitheal-theme")
+    const savedTheme = settings.theme ?? readStoredThemeMode()
     const themeEl = document.querySelector<HTMLSelectElement>("#theme-select")
     const css = document.getElementById("custom-theme-input") && typeof settings.custom_theme_css === "string"
       ? sanitizeCSS(settings.custom_theme_css) : ""
     const hasCSS = Boolean(css.trim())
     if (hasCSS) localStorage.setItem("meitheal-custom-theme-css", css)
     else localStorage.removeItem("meitheal-custom-theme-css")
-    const mode = savedTheme === "light" || savedTheme === "auto" || (savedTheme === "custom" && hasCSS)
+    const mode = isThemeMode(savedTheme) && (savedTheme !== "custom" || hasCSS)
       ? savedTheme : "dark"
     if (themeEl) themeEl.value = mode
     setTheme(mode)

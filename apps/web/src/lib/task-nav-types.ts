@@ -1,21 +1,25 @@
+import type { FilterGroup } from "./filter-engine"
+import { effectiveCalendarKinds, readFilterLabels, readTableTaskKindFilter, readTableTaskTypeParam, readTaskAreaParam, readTaskKindFilter, readTaskScalarParam, TASK_SCALAR_FILTER_KEYS } from "./filter-state"
+import { readKanbanSearch } from "./kanban-query"
+import { normalizeStatus } from "./status-config"
+import { appliedTaskRules, parseTaskView, type TaskView } from "./task-view-route"
+
 export type TaskNavTypeId = "standard" | "shopping_item" | "checklist" | "calendar_event"
 
 export type TaskNavDisplayMode = "all" | "none" | "custom"
 
 export interface TaskNavTypeEntry {
   id: TaskNavTypeId
-  filterKind: "standard_action" | "shopping_item" | "checklist" | "calendar_event"
+  kind: "standard_action" | "shopping_item" | "checklist" | "calendar_event"
   label: string
-  shortLabel: string
-  href: string
-  icon: "inbox" | "shopping-cart" | "list-check" | "calendar-event"
+  icon: "checkbox" | "shopping-cart" | "list-check" | "calendar-event"
 }
 
 export interface TaskNavPrefs {
   mode: TaskNavDisplayMode
-  expanded: boolean
   visible: Record<TaskNavTypeId, boolean>
   pinned: TaskNavTypeId[]
+  pinnedViews: TaskView[]
 }
 
 export const TASK_NAV_PREFS_KEY = "meitheal-task-nav-prefs"
@@ -24,34 +28,26 @@ export const TASK_NAV_PREFS_EVENT = "meitheal:task-nav-prefs-changed"
 export const TASK_NAV_TYPES: readonly TaskNavTypeEntry[] = [
   {
     id: "standard",
-    filterKind: "standard_action",
-    label: "Standard Tasks",
-    shortLabel: "Tasks",
-    href: "/tasks?types=standard_action",
-    icon: "inbox",
+    kind: "standard_action",
+    label: "Task",
+    icon: "checkbox",
   },
   {
     id: "shopping_item",
-    filterKind: "shopping_item",
-    label: "Shopping",
-    shortLabel: "Shopping",
-    href: "/tasks?types=shopping_item",
+    kind: "shopping_item",
+    label: "Shopping list",
     icon: "shopping-cart",
   },
   {
     id: "checklist",
-    filterKind: "checklist",
-    label: "Checklists",
-    shortLabel: "Checklists",
-    href: "/tasks?types=checklist",
+    kind: "checklist",
+    label: "Checklist",
     icon: "list-check",
   },
   {
     id: "calendar_event",
-    filterKind: "calendar_event",
-    label: "Events",
-    shortLabel: "Events",
-    href: "/tasks?types=calendar_event",
+    kind: "calendar_event",
+    label: "Event",
     icon: "calendar-event",
   },
 ] as const
@@ -61,7 +57,6 @@ const VALID_TYPE_IDS = new Set<TaskNavTypeId>(TASK_NAV_TYPES.map((item) => item.
 export function defaultTaskNavPrefs(): TaskNavPrefs {
   return {
     mode: "all",
-    expanded: false,
     visible: {
       standard: true,
       shopping_item: true,
@@ -69,17 +64,84 @@ export function defaultTaskNavPrefs(): TaskNavPrefs {
       calendar_event: true,
     },
     pinned: [],
+    pinnedViews: [],
   }
 }
 
-export function normalizeTaskTypeFilterValue(value: string | null | undefined): string {
-  if (!value) return ""
-  const parts = value
-    .split(",")
-    .map((part) => part.trim())
-    .filter(Boolean)
-    .map((part) => (part === "standard" ? "standard_action" : part))
-  return Array.from(new Set(parts)).sort().join(",")
+function taskKinds(params: URLSearchParams, view: TaskView): string[] {
+  const raw = readTaskScalarParam(params, "types", view)
+  const kinds = view === "table" ? readTableTaskKindFilter(raw) : readTaskKindFilter(raw)
+  return [...new Set(kinds)]
+}
+
+function sameFilterValues(expected: string[], active: string[]): boolean {
+  if (expected.length !== active.length) return false
+  active.sort()
+  return expected.sort().every((value, index) => value === active[index])
+}
+
+function effectiveRules(group: FilterGroup): unknown[] {
+  return group.conditions.map((node, index) => [
+    index === 0 ? null : node.logic ?? group.logic,
+    "conditions" in node ? effectiveRules(node) : [node.field, node.operator, node.value],
+  ])
+}
+
+function ruleSignature(params: URLSearchParams, view: TaskView): string | undefined {
+  const rules = appliedTaskRules(params, view)?.rules
+  if (rules?.conditions.length) return JSON.stringify(effectiveRules(rules))
+}
+
+export function matchingTaskShortcutCriteria(target: URLSearchParams, current: URLSearchParams, view: TaskView): number {
+  const keys = new Set(target.keys())
+  let matchedKinds = false
+  if (keys.delete("types")) {
+    const explicit = taskKinds(target, view)
+    if (!explicit.length) return -1
+    const kinds = view === "calendar" ? effectiveCalendarKinds(explicit) : explicit
+    const active = taskKinds(current, view)
+    if (!sameFilterValues(kinds, view === "calendar" ? effectiveCalendarKinds(active) : active)) return -1
+    matchedKinds = kinds.length > 0
+  }
+  const matchedTaskType = keys.delete("task_type")
+  if (matchedTaskType) {
+    if (view !== "table" && view !== "calendar") return -1
+    const type = readTableTaskTypeParam(target)
+    if (!type || type !== readTableTaskTypeParam(current)) return -1
+  }
+  keys.delete("view")
+  const matchedLabels = keys.has("label") || keys.has("labels")
+  if (matchedLabels) {
+    const labels = (params: URLSearchParams) => readFilterLabels(params).map(label => label.toLowerCase())
+    if (!sameFilterValues(labels(target), labels(current))) return -1
+    keys.delete("label")
+    keys.delete("labels")
+  }
+  const matchedRules = view !== "timeline" && keys.delete("advancedFilter")
+  if (matchedRules) {
+    const expected = ruleSignature(target, view)
+    if (!expected || expected !== ruleSignature(current, view)) return -1
+  }
+  let matchedArea = false
+  if (view === "calendar" || view === "table") {
+    const area = readTaskAreaParam(target)
+    if (area !== null && area !== readTaskAreaParam(current)) return -1
+    matchedArea = area !== null
+    for (const alias of ["area", "area_id", "board"]) keys.delete(alias)
+  }
+  for (const key of keys) {
+    const read = (params: URLSearchParams) => {
+      if (!TASK_SCALAR_FILTER_KEYS.some(filter => filter === key)) return params.getAll(key)
+      const value = readTaskScalarParam(params, key, view)
+      if (key === "promoted" && (view === "calendar" || view === "kanban")) return [String(value === "1")]
+      if (key === "search") {
+        return [(view === "calendar" || view === "kanban" ? readKanbanSearch(value) : value ?? "").toLowerCase()]
+      }
+      return value === null ? [] : [key === "status" ? normalizeStatus(value) : value]
+    }
+    if (!sameFilterValues(read(target), read(current))) return -1
+  }
+  return keys.size + Number(matchedKinds) + Number(matchedTaskType) + Number(matchedArea) + Number(matchedLabels) + Number(matchedRules)
 }
 
 export function normalizeTaskNavPrefs(input: unknown): TaskNavPrefs {
@@ -88,8 +150,6 @@ export function normalizeTaskNavPrefs(input: unknown): TaskNavPrefs {
   const raw = input as Record<string, unknown>
   const mode: TaskNavDisplayMode =
     raw.mode === "all" || raw.mode === "none" || raw.mode === "custom" ? raw.mode : "all"
-  const expanded = typeof raw.expanded === "boolean" ? raw.expanded : defaults.expanded
-
   const visibleRaw = raw.visible && typeof raw.visible === "object" ? (raw.visible as Record<string, unknown>) : {}
   const visible: Record<TaskNavTypeId, boolean> = {
     standard: typeof visibleRaw.standard === "boolean" ? visibleRaw.standard : true,
@@ -102,7 +162,14 @@ export function normalizeTaskNavPrefs(input: unknown): TaskNavPrefs {
     ? Array.from(new Set(raw.pinned.filter((id): id is TaskNavTypeId => typeof id === "string" && VALID_TYPE_IDS.has(id as TaskNavTypeId))))
     : []
 
-  return { mode, expanded, visible, pinned }
+  const pinnedViews = Array.isArray(raw.pinnedViews)
+    ? [...new Set(raw.pinnedViews.flatMap(entry => {
+      const view = parseTaskView(typeof entry === "string" ? entry : null)
+      return view ? [view] : []
+    }))]
+    : []
+
+  return { mode, visible, pinned, pinnedViews }
 }
 
 export function readTaskNavPrefs(): TaskNavPrefs {
@@ -142,7 +209,6 @@ export function setTaskNavMode(prefs: TaskNavPrefs, mode: TaskNavDisplayMode): T
     return writeTaskNavPrefs({
       ...prefs,
       mode: "all",
-      expanded: true,
       visible: {
         standard: true,
         shopping_item: true,
@@ -155,7 +221,6 @@ export function setTaskNavMode(prefs: TaskNavPrefs, mode: TaskNavDisplayMode): T
     return writeTaskNavPrefs({
       ...prefs,
       mode: "none",
-      expanded: false,
       visible: {
         standard: false,
         shopping_item: false,
@@ -165,11 +230,6 @@ export function setTaskNavMode(prefs: TaskNavPrefs, mode: TaskNavDisplayMode): T
     })
   }
   return writeTaskNavPrefs({ ...prefs, mode: "custom" })
-}
-
-export function toggleTaskNavExpanded(prefs: TaskNavPrefs, force?: boolean): TaskNavPrefs {
-  const expanded = typeof force === "boolean" ? force : !prefs.expanded
-  return writeTaskNavPrefs({ ...prefs, expanded })
 }
 
 export function toggleTaskNavChild(prefs: TaskNavPrefs, id: TaskNavTypeId): TaskNavPrefs {
@@ -187,7 +247,6 @@ export function toggleTaskNavChild(prefs: TaskNavPrefs, id: TaskNavTypeId): Task
   return writeTaskNavPrefs({
     ...prefs,
     mode,
-    expanded: allOff ? false : prefs.expanded,
     visible,
   })
 }
@@ -201,6 +260,13 @@ export function toggleTaskNavPin(prefs: TaskNavPrefs, id: TaskNavTypeId, force?:
       : [...prefs.pinned, id]
     : prefs.pinned.filter((entry) => entry !== id)
   return writeTaskNavPrefs({ ...prefs, pinned })
+}
+
+export function toggleTaskViewPin(prefs: TaskNavPrefs, view: TaskView): TaskNavPrefs {
+  const pinnedViews = prefs.pinnedViews.includes(view)
+    ? prefs.pinnedViews.filter(entry => entry !== view)
+    : [...prefs.pinnedViews, view]
+  return writeTaskNavPrefs({ ...prefs, pinnedViews })
 }
 
 export function getTaskNavTypeById(id: string): TaskNavTypeEntry | undefined {

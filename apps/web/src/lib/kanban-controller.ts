@@ -281,7 +281,7 @@ export function initKanbanArea(
 
         const card = titleSpan.closest(".kanban-card")
         const taskId = titleSpan.dataset.taskId
-        if (!taskId) return
+        if (!taskId || card?.hasAttribute("data-title-saving")) return
 
         // Save original for revert
         const originalText = titleSpan.textContent
@@ -315,6 +315,7 @@ export function initKanbanArea(
             return
           }
 
+          card?.setAttribute("data-title-saving", "")
           try {
             const res = await fetch(buildTaskApiUrl(taskId!), { // nosemgrep
               method: "PUT",
@@ -326,6 +327,8 @@ export function initKanbanArea(
           } catch {
             titleSpan.textContent = originalText
             if (window.showToast) window.showToast("Failed to save title", "error")
+          } finally {
+            card?.removeAttribute("data-title-saving")
           }
         }
 
