@@ -273,7 +273,8 @@ test("a bound draft is withdrawn during real history restoration until the accou
         if (event.persisted) document.documentElement.dataset.draftHistoryRestored = "true"
       })
     })
-    await page.goto(origin + prefix + "/today")
+    // Today is served with no-store. Exercise restoration from a cache-eligible composer host.
+    await page.goto(origin + prefix + "/tasks")
     await openCapture(page)
     const title = page.locator("#new-task-title-input")
     await title.fill("History private sentinel")
