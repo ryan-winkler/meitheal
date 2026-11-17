@@ -141,47 +141,68 @@ export PORT="${PORT:-3000}"
 apply_resolved_node_options
 HEALTHCHECK_URL="http://127.0.0.1:${PORT}/api/health"
 
-WEB_PID=""
+child_pid=""
+launching_child=0
+shutdown_signal=""
 
-signal_web() {
-  [ -n "${WEB_PID}" ] || return 1
-  # The protected App lacks CAP_KILL. The launcher starts as root, then
-  # s6-setuidgid replaces it with the web process under the meitheal UID.
-  kill "-$1" "${WEB_PID}" 2>/dev/null ||
-    s6-setuidgid meitheal kill "-$1" "${WEB_PID}" 2>/dev/null
+signal_child() {
+  [ -n "${child_pid}" ] || return 1
+  # Protection mode can deny root's cross-UID signals. s6-setuidgid
+  # replaces the launcher's child with a process under the meitheal UID.
+  kill "-$1" "${child_pid}" 2>/dev/null ||
+    s6-setuidgid meitheal kill "-$1" "${child_pid}" 2>/dev/null
 }
 
-stop_web() {
-  if signal_web TERM; then
-    for _ in $(seq 1 10); do
-      if ! signal_web 0; then
-        echo "{\"event\":\"addon.stopped\",\"graceful\":true,\"time\":\"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\"}"
-        break
-      fi
+wait_for_child() {
+  local result=0
+  wait "${child_pid}" || result=$?
+  child_pid=""
+  return "${result}"
+}
+
+stop_child() {
+  trap '' SIGTERM SIGINT
+  if signal_child TERM; then
+    local forced=false
+    for _ in 1 2; do
+      signal_child 0 || break
       sleep 1
     done
-    if signal_web KILL; then
-      echo "{\"event\":\"addon.stopped\",\"graceful\":false,\"reason\":\"force_kill_after_10s\",\"time\":\"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\"}"
-    fi
-  fi
-  if [ -n "${WEB_PID}" ]; then
-    wait "${WEB_PID}" 2>/dev/null || true
+    if signal_child 0 && signal_child KILL; then forced=true; fi
+    wait_for_child || true
+    echo "{\"event\":\"addon.stopped\",\"forced\":${forced},\"time\":\"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\"}"
+  elif [ -n "${child_pid}" ]; then
+    wait_for_child || true
   fi
 }
 
-graceful_shutdown() {
+request_shutdown() {
+  if [ "${launching_child}" -eq 1 ]; then
+    shutdown_signal=$1
+    return
+  fi
+  trap '' SIGTERM SIGINT
   echo "{\"event\":\"addon.stopping\",\"signal\":\"$1\",\"time\":\"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\"}"
   exit 0
 }
 
-trap stop_web EXIT
-trap 'graceful_shutdown SIGTERM' SIGTERM
-trap 'graceful_shutdown SIGINT' SIGINT
+start_child() {
+  launching_child=1
+  s6-setuidgid meitheal "$@" &
+  child_pid=$!
+  launching_child=0
+  if [ -n "${shutdown_signal}" ]; then request_shutdown "${shutdown_signal}"; fi
+}
+
+trap stop_child EXIT
+trap 'request_shutdown SIGTERM' SIGTERM
+trap 'request_shutdown SIGINT' SIGINT
 
 if [ -f /opt/meitheal/apps/web/package.json ]; then
   cd /opt/meitheal/apps/web
   export HOME=/data
-  s6-setuidgid meitheal node scripts/migrate.mjs || {
+  start_child node scripts/migrate.mjs
+  wait_for_child || {
     exit_code=$?
     echo "Database migration failed: 'node scripts/migrate.mjs' exited with ${exit_code}" >&2
     exit "${exit_code}"
@@ -194,18 +215,17 @@ if [ -f /opt/meitheal/apps/web/package.json ]; then
   echo "{\"event\":\"web.starting\",\"host\":\"${HOST}\",\"port\":\"${PORT}\",\"time\":\"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\"}"
   # Normalize double slashes from HA Supervisor before routing the request.
   if [ -f scripts/serve.mjs ]; then
-    s6-setuidgid meitheal node scripts/serve.mjs &
+    start_child node scripts/serve.mjs
   else
-    s6-setuidgid meitheal node dist/server/entry.mjs &
+    start_child node dist/server/entry.mjs
   fi
-  WEB_PID=$!
 
   for attempt in $(seq 1 45); do
-    if ! signal_web 0; then
-      echo "Meitheal web process (${WEB_PID}) exited prematurely during startup (attempt ${attempt})" >&2
+    if ! signal_child 0; then
+      echo "Meitheal web process (${child_pid}) exited prematurely during startup (attempt ${attempt})" >&2
       exit 1
     fi
-    if curl -fsS "${HEALTHCHECK_URL}" >/dev/null 2>&1 && signal_web 0; then
+    if curl -fsS --max-time 2 "${HEALTHCHECK_URL}" >/dev/null 2>&1 && signal_child 0; then
       echo "{\"event\":\"healthcheck.passed\",\"attempt\":${attempt},\"time\":\"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\"}"
       break
     fi
@@ -229,7 +249,7 @@ if [ -f /opt/meitheal/apps/web/package.json ]; then
     DISCOVERY_PAYLOAD="{\"service\":\"meitheal\",\"config\":{\"host\":\"${ADDON_HOSTNAME:-local-meitheal}\",\"port\":${PORT}}}"
     DISC_SUCCESS=false
     for disc_attempt in 1 2 3; do
-      DISC_RESULT=$(curl -fsS -X POST \
+      DISC_RESULT=$(curl -fsS --max-time 2 -X POST \
         -H "Authorization: Bearer ${SUPERVISOR_TOKEN}" \
         -H "Content-Type: application/json" \
         -d "${DISCOVERY_PAYLOAD}" \
@@ -241,7 +261,8 @@ if [ -f /opt/meitheal/apps/web/package.json ]; then
         break
       fi
       echo "{\"event\":\"discovery.registration.retry\",\"attempt\":${disc_attempt},\"time\":\"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\"}" >&2
-      sleep 5
+      sleep 5 &
+      wait "$!"
     done
     if [ "${DISC_SUCCESS}" != "true" ]; then
       echo "{\"event\":\"discovery.registration.failed\",\"attempts\":3,\"time\":\"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\"}" >&2
@@ -255,4 +276,5 @@ if [ -f /opt/meitheal/meitheal-hub/rootfs/etc/alloy/config.river ]; then
   echo "Alloy config present at /opt/meitheal/meitheal-hub/rootfs/etc/alloy/config.river"
 fi
 
-wait "${WEB_PID:?Meitheal web process was not started}"
+[ -n "${child_pid}" ] || exit 1
+wait_for_child
