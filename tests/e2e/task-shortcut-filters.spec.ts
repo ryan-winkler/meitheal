@@ -4,6 +4,23 @@ import { shouldSkipBrowserSpecs } from "./_helpers"
 test.skip(shouldSkipBrowserSpecs(), "Set E2E_BASE_URL to run browser specs")
 test.use({ serviceWorkers: "block" })
 
+test("explicit Kanban survives conflicting fragments without a hierarchy filter", async ({ page }) => {
+  const board = page.locator("#kanban-shell")
+  const isExplicitKanban = (url: URL) => url.searchParams.get("view") === "kanban" && url.hash === "#kanban"
+  for (const suffix of ["", "#kanban"]) {
+    await page.goto("about:blank")
+    await page.goto("/tasks?view=kanban" + suffix)
+    await expect(page).toHaveURL(isExplicitKanban)
+    await expect(page.locator("[data-view-tabs]")).toHaveAttribute("data-switcher-ready", "true")
+    await board.evaluate(shell => { shell.dataset.originalDocument = "true" })
+    for (const hash of ["calendar", "timeline"]) {
+      await page.evaluate(hash => { location.hash = hash }, hash)
+      await expect(page).toHaveURL(isExplicitKanban)
+      await expect(board).toHaveAttribute("data-original-document", "true")
+    }
+  }
+})
+
 test("legacy Shopping type filters survive view switches and respect Table search spacing", async ({ page, request, baseURL }) => {
   const headers = { origin: new URL(baseURL!).origin }
   const previous = (await (await request.get("/api/settings")).json()).sidebar_config

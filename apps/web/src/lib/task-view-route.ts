@@ -63,8 +63,12 @@ export function taskViewUrl(current: URL, view: TaskView, explicitFilters = fals
       else url.searchParams.delete("advancedFilter")
     }
   }
-  if (view === "kanban" && !readTableTaskTypeParam(url.searchParams)) url.searchParams.delete("view")
-  else url.searchParams.set("view", view)
+  if (view === "kanban" && url.searchParams.get("view") !== "kanban" &&
+    !readTableTaskTypeParam(url.searchParams)) {
+    url.searchParams.delete("view")
+  } else {
+    url.searchParams.set("view", view)
+  }
   if (view !== "table") url.searchParams.delete("tp")
   // An explicit empty search skips legacy stored filters without overriding the remembered Area.
   if (explicitFilters && (view === "table" || view === "timeline") &&
