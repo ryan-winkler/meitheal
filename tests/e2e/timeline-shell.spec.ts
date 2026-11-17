@@ -228,6 +228,13 @@ test.describe("Tasks Shell (Timeline/GANTT)", () => {
         expect(contrast.length).toBeGreaterThanOrEqual(2)
         expect(Math.min(...contrast), theme).toBeGreaterThanOrEqual(3)
       }
+      const past = new Date(Date.now() - 2 * 86_400_000).toISOString().slice(0, 10)
+      const reschedule = await request.patch(`/api/tasks/${id}`, { headers, data: { start_date: past, due_date: past } })
+      expect(reschedule.ok(), await reschedule.text()).toBe(true)
+      await page.reload()
+      await expect(chart.getByRole("button", { name: new RegExp(title + ", overdue") })).toBeVisible()
+      await expect(milestone).toHaveCSS("fill", "rgb(0, 0, 68)")
+      await expect(milestone).toHaveCSS("stroke-width", "2px")
     } finally {
       await request.delete(`/api/tasks/${id}`, { headers })
     }

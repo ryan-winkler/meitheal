@@ -575,3 +575,73 @@ test("Shopping links identify their own Area and follow applied Board filters", 
     for (const id of areas) await request.delete(`/api/areas/${id}`, { headers })
   }
 })
+
+test("legacy Shopping type filters survive view switches and respect Table search spacing", async ({ page, request, baseURL }) => {
+  const headers = { origin: new URL(baseURL!).origin }
+  const previous = (await (await request.get("/api/settings")).json()).sidebar_config
+  const suffix = crypto.randomUUID()
+  const titles = [`Pantry ${suffix}`, `Frying pan ${suffix}`]
+  const due = "2031-07-27"
+  const ids: string[] = []
+  try {
+    for (const [index, title] of titles.entries()) {
+      const created = await request.post("/api/tasks", { headers, data: {
+        title, task_kind: "shopping_item", start_date: `2031-07-${25 + index}`, due_date: due,
+      } })
+      expect(created.ok(), await created.text()).toBe(true)
+      ids.push((await created.json()).id)
+    }
+    const query = { view: "table", area: "", types: '["shopping_item"]', year: "2031", month: "6" }
+    const labels = ["All pantry search", "Word pantry search"] as const
+    const shortcuts = labels.map((label, index) => ({
+      id: `legacy-shopping-${index}`,
+      label,
+      href: "/tasks?" + new URLSearchParams({ ...query, search: (index ? " " : "") + "pan" }) + "#table",
+      icon: "shopping-cart",
+    }))
+    const save = await request.put("/api/settings", { headers, data: { key: "sidebar_config", value: {
+      order: ["tasks", ...shortcuts.map(shortcut => shortcut.id)], customItems: shortcuts,
+    } } })
+    expect(save.ok()).toBe(true)
+    await page.goto(shortcuts[1]!.href)
+    await expect(page.locator('#sidebar [data-page="legacy-shopping-1"]')).toHaveAttribute("aria-current", "page")
+    const table = page.locator("#table-shell")
+    await expect(table.getByText(titles[1]!, { exact: true })).toBeVisible()
+    await expect(table.getByText(titles[0]!, { exact: true })).toHaveCount(0)
+    await page.getByRole("link", { name: labels[0], exact: true }).click()
+    await expect(page.locator('#sidebar [data-page="legacy-shopping-0"]')).toHaveAttribute("aria-current", "page")
+    await expect(table.getByText(titles[0]!, { exact: true })).toBeVisible()
+    await expect(table.getByText(titles[1]!, { exact: true })).toBeVisible()
+
+    const views = page.getByRole("navigation", { name: "Task views" })
+    const shopping = page.locator('.filter-toolbar [data-type="shopping_item"]')
+    await views.getByRole("link", { name: "Calendar", exact: true }).click()
+    await expect(shopping).toHaveAttribute("aria-pressed", "true")
+    await page.locator(`.cal-cell[data-date="${due}"]`).press("Enter")
+    for (const title of titles) await expect(page.locator("#day-drawer-tasks").getByText(title, { exact: true })).toBeVisible()
+    await page.keyboard.press("Escape")
+    await views.getByRole("link", { name: "Timeline (Gantt)", exact: true }).click()
+    for (const id of ids) await expect(page.locator(`.gantt-bar[data-task-id="${id}"]`)).toBeAttached()
+    await views.getByRole("link", { name: "Kanban", exact: true }).click()
+    await expect(shopping).toHaveAttribute("aria-pressed", "true")
+    for (const title of titles) await expect(page.locator("#kanban-shell").getByText(title, { exact: true })).toBeVisible()
+
+    await page.goto("/tasks?view=calendar&types=quick_capture&status=backlog#calendar")
+    await views.getByRole("link", { name: "Timeline (Gantt)", exact: true }).click()
+    const timeline = page.locator("#timeline-filter-bar")
+    await expect(timeline.locator('[data-type="quick_capture"]')).toHaveAttribute("aria-pressed", "true")
+    await expect(timeline.getByRole("combobox", { name: "Filter by status" })).toHaveValue("backlog")
+    await timeline.getByRole("combobox", { name: "Filter by priority" }).selectOption("3")
+    await expect(page).toHaveURL(url => url.searchParams.get("types") === "quick_capture" &&
+      url.searchParams.get("status") === "backlog" && url.searchParams.get("priority") === "3")
+    await views.getByRole("link", { name: "Kanban", exact: true }).click()
+    const filters = page.locator("#kanban-filter-bar")
+    await expect(filters.locator('[data-type="quick_capture"]')).toHaveAttribute("aria-pressed", "true")
+    await filters.getByRole("textbox", { name: "Filter by text" }).fill("receipt")
+    await expect(page).toHaveURL(url => url.searchParams.get("types") === "quick_capture" &&
+      url.searchParams.get("status") === "backlog" && url.searchParams.get("search") === "receipt")
+  } finally {
+    await request.put("/api/settings", { headers, data: { key: "sidebar_config", value: previous ?? null } })
+    for (const id of ids) await request.delete(`/api/tasks/${id}`, { headers })
+  }
+})

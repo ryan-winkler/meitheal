@@ -225,13 +225,23 @@ export function initCalendarPage(signal: AbortSignal): void {
       if (!showEvents || persisted === undefined && live === undefined) return
       const activeId = drawerEvents!.contains(document.activeElement)
         ? (document.activeElement as HTMLElement).dataset.occurrenceKey : undefined
+      const eventLabel = (start: string) => {
+        const time = formatCalendarEventTime(start, timezone)
+        if (!time) return "All day"
+        const day = calendarEventDay(start, timezone)
+        if (!day || day === date) return time
+        const startDate = new Date(day + "T00:00:00Z").toLocaleDateString("en-US", {
+          month: "short", day: "numeric", timeZone: "UTC",
+        })
+        return `Continues · Started ${startDate}, ${time}`
+      }
       const items = (persisted ?? []).map(event => {
-        const row = agendaItem("calendar-event", event.title, formatCalendarEventTime(event.start, timezone) ?? "All day", event.id)
+        const row = agendaItem("calendar-event", event.title, eventLabel(event.start), event.id)
         row.dataset.occurrenceKey = event.id + "/" + calendarOccurrenceStartKey(event.start, timezone)
         return { start: event.start, row }
       })
       for (const event of distinctLiveCalendarEvents(live?.events ?? [], persisted ?? [], timezone)) {
-        items.push({ start: event.start, row: agendaItem("calendar-event", event.summary, formatCalendarEventTime(event.start, timezone) ?? "All day") })
+        items.push({ start: event.start, row: agendaItem("calendar-event", event.summary, eventLabel(event.start)) })
       }
       items.sort((a, b) => compareCalendarStarts(a.start, b.start, timezone))
       drawerEvents!.replaceChildren(...items.map(item => item.row))

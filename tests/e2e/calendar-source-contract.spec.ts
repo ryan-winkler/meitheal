@@ -328,6 +328,26 @@ test("Calendar reads configured sources as a household member and filters before
     await expect(connected.getByRole("button", { name: /Legacy linked CalDAV trip/ })).toBeVisible()
     await page.keyboard.press("Escape")
 
+    const overnight = { start: "2031-07-27T23:30:00-07:00", end: "2031-07-28T01:00:00-07:00" }
+    const overnightId = "linked-overnight-event"
+    insertLinkedTask.run(overnightId, "Saved overnight event", "pending", overnightId, overnightId, overnight.start)
+    insertConfirmation.run(overnightId, overnightId, overnightId, "overnight-saved", "caldav", JSON.stringify(overnight))
+    const enableFeed = await api.put(base + "/api/settings", { headers: headers("admin"),
+      data: { key: "calendar_entities", value: '["calendar.household"]' },
+    })
+    expect(enableFeed.status(), await enableFeed.text()).toBe(200)
+    await page.route("**/api/ha/events?*", route => route.fulfill({ json: {
+      events: [{ uid: "overnight-live", summary: "Live overnight event", ...overnight }],
+    } }))
+    await page.goto(unfilteredMonth)
+    for (const [date, label] of [["2031-07-27", "23:30"], ["2031-07-28", "Continues · Started Jul 27, 23:30"]] as const) {
+      await page.locator(`.cal-cell[data-date="${date}"]`).press("Enter")
+      for (const title of ["Saved overnight event", "Live overnight event"]) {
+        await expect(connected.locator(".day-drawer-item").filter({ hasText: title }).locator(".day-drawer-item-meta")).toHaveText(label)
+      }
+      await page.keyboard.press("Escape")
+    }
+
     for (const [key, value] of [["timezone", "America/Nuuk"], ["calendar_entities", '["calendar.household"]']]) {
       const result = await api.put(base + "/api/settings", { headers: headers("admin"), data: { key, value } })
       expect(result.status(), await result.text()).toBe(200)

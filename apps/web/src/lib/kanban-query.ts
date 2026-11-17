@@ -1,5 +1,5 @@
 import type { FilterCondition, FilterGroup } from "./filter-engine"
-import { readFilterLabels, writeFilterLabels, type FilterState } from "./filter-state"
+import { readFilterLabels, readTaskKindFilter, writeFilterLabels, type FilterState } from "./filter-state"
 
 export const KANBAN_PAGE_SIZE = 25
 export const KANBAN_SEARCH_LIMIT = 500
@@ -12,6 +12,10 @@ export function storedKanbanGroup(): string {
 }
 const fields = new Set(["title", "status", "priority", "rice", "type", "assigned", "labels", "area"])
 const operators = new Set(["equals", "notEquals", "contains", "notContains", "greaterThan", "lessThan", "isEmpty", "isNotEmpty"])
+
+export function readKanbanSearch(value: string | null): string {
+  return (value ?? "").trim().slice(0, KANBAN_SEARCH_LIMIT)
+}
 
 export function readKanbanRules(raw: string | null): FilterGroup | undefined {
   if (!raw || raw.length > 8000) return
@@ -36,18 +40,14 @@ export function readKanbanRules(raw: string | null): FilterGroup | undefined {
 export function readKanbanFilters(params: URLSearchParams): KanbanFilters {
   return {
     area: params.get("area") ?? "",
-    search: (params.get("search") ?? "").trim().slice(0, KANBAN_SEARCH_LIMIT),
+    search: readKanbanSearch(params.get("search")),
     user: params.get("user") ?? "",
     status: params.get("status") ?? "",
     priority: params.get("priority") ?? "",
     promoted: params.get("promoted") === "1",
     rice: params.get("rice") ?? "",
     groupBy: params.get("groupBy") ?? "none",
-    types: (params.get("types") ?? "")
-      .split(",")
-      .filter(Boolean)
-      .map(type => (type === "standard" ? "standard_action" : type))
-      .slice(0, 50),
+    types: readTaskKindFilter(params.get("types")),
     labels: readFilterLabels(params),
     advancedFilter: readKanbanRules(params.get("advancedFilter")) ?? null,
   }

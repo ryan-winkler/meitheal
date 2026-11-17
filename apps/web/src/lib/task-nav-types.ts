@@ -1,6 +1,6 @@
 import type { FilterGroup } from "./filter-engine"
-import { normalizeTableRules, readFilterLabels } from "./filter-state"
-import { readKanbanRules } from "./kanban-query"
+import { normalizeTableRules, readFilterLabels, readTaskKindFilter } from "./filter-state"
+import { readKanbanRules, readKanbanSearch } from "./kanban-query"
 import { normalizeStatus } from "./status-config"
 import { parseTaskView, readTaskAreaParam, type TaskView } from "./task-view-route"
 
@@ -69,10 +69,7 @@ export function defaultTaskNavPrefs(): TaskNavPrefs {
 }
 
 export function normalizeTaskTypeFilterValue(value: string | null): string {
-  if (!value) return ""
-  const kinds = value.split(",").map(kind => kind.trim()).filter(Boolean)
-    .map(kind => kind === "standard" ? "standard_action" : kind)
-  return [...new Set(kinds)].sort().join(",")
+  return [...new Set(readTaskKindFilter(value))].sort().join(",")
 }
 
 function sameFilterValues(expected: string[], active: string[]): boolean {
@@ -120,9 +117,12 @@ export function matchingTaskShortcutCriteria(target: URLSearchParams, current: U
   }
   for (const key of keys) {
     const read = (params: URLSearchParams) => {
+      if (key === "search") {
+        const value = view === "table" ? params.getAll(key).at(-1) ?? "" : params.get(key) ?? ""
+        return [(view === "calendar" || view === "kanban" ? readKanbanSearch(value) : value).toLowerCase()]
+      }
       const values = params.getAll(key)
-      return key === "status" ? values.map(normalizeStatus)
-        : key === "search" ? values.map(value => value.trim().toLowerCase()) : values
+      return key === "status" ? values.map(normalizeStatus) : values
     }
     if (!sameFilterValues(read(target), read(current))) return -1
   }

@@ -161,6 +161,10 @@ function stringList(value: unknown): string[] {
   ))].slice(0, FILTER_LIST_LIMIT)
 }
 
+export function readTaskKindFilter(value: unknown): string[] {
+  return normalizeTaskKindAliases(stringList(value))
+}
+
 export function readFilterLabels(params: URLSearchParams): string[] {
   return stringList(params.has("label") ? params.getAll("label") : params.get("labels"))
 }
@@ -266,7 +270,7 @@ function normalizeTableValues(input: Record<string, unknown>): Partial<FilterSta
     const laneIds = stringList(input.laneIds)
     if (laneIds.length) result.laneIds = laneIds
   }
-  const kindValues = normalizeTaskKindAliases(stringList(input.types))
+  const kindValues = readTaskKindFilter(input.types)
   const types = kindValues.filter(kind => VALID_TASK_KINDS.some(valid => valid === kind))
   if (types.length) result.types = types
   const labels = stringList(input.labels)
@@ -418,7 +422,7 @@ export function loadFilterState(): Partial<FilterState> {
       sort: urlParams.get("sort") ?? DEFAULT_SORT,
       user: urlParams.get("user") ?? "",
       area: urlParams.get("area") ?? "",
-      types: normalizeTaskKindAliases(deserializeArray(urlParams.get("types"))),
+      types: readTaskKindFilter(urlParams.get("types")),
       groupBy: urlParams.get("groupBy") ?? "none",
       subGroupBy: urlParams.get("subGroupBy") ?? "none",
       labels: deserializeArray(urlParams.get("labels")),

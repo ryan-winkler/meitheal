@@ -86,10 +86,10 @@ const compactOnPhone = view === "calendar" || view === "timeline"
 const tableState = view === "table" ? readTableFilterParams(Astro.url.searchParams) : {}
 const calendarState = view === "calendar" ? readCalendarTaskFilters(Astro.url.searchParams) : {}
 const calendarStatus = calendarState.status ?? ""
-const calendarStatuses = [...STATUS_CONFIG.map(status => ({ value: status.canonical, label: t(status.i18nKey, locale) })),
+const statuses = [...STATUS_CONFIG.map(status => ({ value: status.canonical, label: t(status.i18nKey, locale) })),
   { value: "overdue", label: t("dashboard.overdue_label", locale) }]
-if (calendarStatus && !calendarStatuses.some(status => status.value === calendarStatus)) {
-  calendarStatuses.push({ value: calendarStatus, label: calendarStatus })
+if (calendarStatus && !statuses.some(status => status.value === calendarStatus)) {
+  statuses.push({ value: calendarStatus, label: calendarStatus })
 }
 const selectedLaneIds = new Set(tableState.laneIds)
 const availableLaneIds = new Set(workflowColumns.map(column => column.id))
@@ -158,10 +158,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
   {view === "timeline" && <>
     <select class="form-select" id="timeline-filter-status" aria-label="Filter by status">
       <option value="">{t("tasks.all_statuses", locale)}</option>
-      {["pending", "active", "complete"].map(status => (
-        <option value={status}>{t(`task_status.${status}`, locale)}</option>
-      ))}
-      <option value="overdue">{t("dashboard.overdue_label", locale)}</option>
+      {statuses.map(status => <option value={status.value}>{status.label}</option>)}
     </select>
     <select class="form-select" id="timeline-filter-priority" aria-label="Filter by priority">
       <option value="">{t("tasks.all_priorities", locale)}</option>
@@ -174,7 +171,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
   {view === "calendar" && <>
     <select class="form-select filter-toolbar__select" id="calendar-filter-status" aria-label="Filter by status">
       <option value="">{t("tasks.all_statuses", locale)}</option>
-      {calendarStatuses.map(status => <option value={status.value} selected={status.value === calendarStatus}>{status.label}</option>)}
+      {statuses.map(status => <option value={status.value} selected={status.value === calendarStatus}>{status.label}</option>)}
     </select>
     <select class="form-select filter-toolbar__select" id="calendar-filter-priority" aria-label="Filter by priority">
       <option value="">{t("tasks.all_priorities", locale)}</option>
@@ -236,12 +233,10 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
       <Icon name="calendar-event" size={14} />
       Events
     </button>
-    {(view === "table" || view === "calendar") && (
-      <button type="button" class="filter-toolbar__type-btn active" data-type="quick_capture" aria-pressed="true">
-        <Icon name="bolt" size={14} />
-        Quick capture
-      </button>
-    )}
+    <button type="button" class="filter-toolbar__type-btn active" data-type="quick_capture" aria-pressed="true">
+      <Icon name="bolt" size={14} />
+      Quick capture
+    </button>
   </div>
 
   {/* Area filter — populated client-side from /api/areas (hidden when AreaSelector is used) */}
@@ -468,7 +463,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
   // Expose global for inline views (kanban)
   import { getRememberedAreaId } from "@lib/area-selector-controller"
   import { CALENDAR_FILTER_STATE_EVENT, readCalendarTaskFilters } from "@lib/calendar-task-filter"
-  import { FILTER_LIST_LIMIT, isTaskVisible, loadFilterState, loadTableFilterState, normalizeTableCreationRange } from "@lib/filter-state"
+  import { FILTER_LIST_LIMIT, isTaskVisible, loadFilterState, loadTableFilterState, normalizeTableCreationRange, readTaskKindFilter } from "@lib/filter-state"
   import { pageLifecycle } from "@lib/page-lifecycle"
   import { readKanbanFilters, storedKanbanGroup, type KanbanFilters } from "../../lib/kanban-query"
   declare global {
@@ -519,10 +514,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
     const initial = prefix === "kanban" ? readKanbanFilters(params)
       : prefix === "calendar" ? readCalendarTaskFilters(params)
       : prefix === "table" ? loadTableFilterState() : loadFilterState()
-    const rawUrlTypes = (params.get("types") ?? "")
-      .split(",")
-      .filter(Boolean)
-      .map(type => (type === "standard" ? "standard_action" : type))
+    const rawUrlTypes = readTaskKindFilter(params.get("types"))
     const initialTypes = rawUrlTypes.length > 0 && (!initial.types || initial.types.length === 0)
       ? rawUrlTypes
       : (initial.types ?? [])
@@ -612,7 +604,10 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
     }, { signal })
     let promoted = promotedToggle?.getAttribute("aria-pressed") === "true"
     if (prefix === "timeline") {
-      if (statusSel) statusSel.value = status
+      if (statusSel) {
+        if (!Array.from(statusSel.options).some(option => option.value === status)) statusSel.add(new Option(status, status))
+        statusSel.value = status
+      }
       if (prioritySel) prioritySel.value = priority
     }
     {

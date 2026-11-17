@@ -46,6 +46,8 @@ Manage integration credentials, outbound integration tests, Node-RED deployment,
 
 Settings downloads exclude credential values. Settings imports also skip credential fields in older files. After an import, re-enter integration secrets separately in Settings. A masked value in Settings means the existing value is kept if the mask is submitted unchanged.
 
+An imported theme keeps its saved mode when Meitheal recognizes it. An empty or unrecognized theme in the backup restores Emerald Isle while the rest of the settings import proceeds.
+
 ## Recover from an error
 
 - If Settings cannot load, choose **Try again**. The controls are paused until Meitheal can read the stored values.

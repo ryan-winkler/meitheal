@@ -1887,13 +1887,13 @@ function renderGantt(
         "aria-rowindex": rowIndex + 1,
         tabindex: 0,
         role: "button",
-        "aria-label": `Milestone: ${bar.name}`,
+        "aria-label": `Milestone: ${bar.name}${bar.isOverdue ? ", overdue" : ""}`,
       })
       milestoneGroup.style.cursor = "pointer"
       milestoneGroup.appendChild(
         svgEl("polygon", {
           points: `${mx},${my - ms} ${mx + ms},${my} ${mx},${my + ms} ${mx - ms},${my}`,
-          fill: bar.colour,
+          fill: bar.original.color || bar.colour,
           "fill-opacity": bar.isComplete ? 0.4 : 1,
           stroke: bar.isOverdue ? "var(--danger-text, var(--text-secondary))" : "var(--text-secondary)",
           "stroke-width": bar.isOverdue ? 2 : 1.5,
