@@ -46,4 +46,4 @@ Expand a named Board from the sidebar to open one of its groups. Household's gro
 
 A named Board member with task edit access can open **File task**, choose a group or Project in that Board and save. It keeps the ticket and workflow column. If the destination or task has changed, refresh the Board before retrying. Owner settings and send-only access continue to use the existing Board rules.
 
-Set a shared due date when you add a task, or open the task's edit form to change or clear it. People who can read the task can see its due date. A generated Routine ticket keeps the date of its original occurrence. Edit the Routine's schedule to change future occurrences.
+With task edit access, set **Shared due date** when you add a task, or select an existing task's title to change it. Clear the field and choose **Save changes** to remove the date. People who can read the task can see its due date. A generated Routine ticket keeps the date of its original occurrence and shows it as **Scheduled for** in the edit form.
