@@ -101,8 +101,13 @@ export function initKanbanGrouping(board: HTMLElement): void {
       const groups = new Map<string, Element[]>()
       flatCards.forEach((card) => {
         const value = card.dataset[mode]
-        const val = byAssignee ? card.dataset.assigneeKey ? JSON.parse(card.dataset.assigneeKey) as string : value ?? ""
-          : value || (mode === "priority" ? "3" : "default")
+        let val = byAssignee ? value ?? "" : value || (mode === "priority" ? "3" : "default")
+        if (byAssignee && card.dataset.assigneeKey) {
+          try {
+            const key: unknown = JSON.parse(card.dataset.assigneeKey)
+            if (typeof key === "string") val = key
+          } catch { /* Keep the unencoded identity when metadata is malformed. */ }
+        }
         if (!groups.has(val)) groups.set(val, [])
         groups.get(val)!.push(card)
       })

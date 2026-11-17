@@ -146,6 +146,14 @@ test("Household Kanban keeps distinct assignees through roster recovery and quic
     await expect(label(reservedTask)).toHaveText("Níl an sannaí ar fáil")
     await expect(label(unassignedTask)).toHaveText("Gan Sannta")
     await expect(group(unassignedTask).locator(cardSelector(haTask))).toBeVisible()
+
+    const removedHeader = await heading(localTask).elementHandle()
+    await heading(localTask).focus()
+    expect((await request.put(`/api/tasks/${localTask}`, { headers, data: { assigned_to: null } })).ok()).toBe(true)
+    await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true })))
+    await expect.poll(() => removedHeader!.evaluate(element => element.isConnected)).toBe(false)
+    await expect(lane.locator(".kanban-column-header")).toBeFocused()
+    await expect(group(unassignedTask).locator(cardSelector(localTask))).toBeVisible()
   } finally {
     for (const taskId of taskIds) {
       const deleted = await request.delete(`/api/tasks/${taskId}`, { headers })
@@ -226,5 +234,36 @@ test("a refreshed assignee board resolves names while its old directory response
       const deleted = await request.delete(`/api/tasks/${taskId}`, { headers })
       expect.soft(deleted.ok(), `Delete fixture task: ${await deleted.text()}`).toBe(true)
     }
+  }
+})
+
+test("unreadable or missing assignment keys keep all cards grouped", async ({ page, request }) => {
+  const prefix = `Assignment metadata ${randomUUID()}`
+  const ids: string[] = []
+  const failures: string[] = []
+  page.on("pageerror", error => failures.push(error.message))
+  await page.route("**/api/users", route => route.fulfill({ json: { users: [], ha_connected: false } }))
+  try {
+    for (let index = 0; index < 3; index++) {
+      const response = await request.post("/api/tasks", {
+        data: { title: `${prefix} ${index}`, assigned_to: `custom_metadata_${index}` },
+      })
+      expect(response.status()).toBe(201)
+      ids.push((await response.json()).id)
+    }
+    await page.route("**/tasks?**", async route => {
+      const response = await route.fetch()
+      let index = 0
+      const body = (await response.text()).replace(/data-assignee-key="[^"]*"/g, () =>
+        ["data-assignee-key=\"broken\"", "data-assignee-key=\"null\"", ""][index++] ?? "")
+      await route.fulfill({ response, body })
+    }, { times: 1 })
+    await page.goto(`/tasks?view=kanban&area=&search=${encodeURIComponent(prefix)}&groupBy=assigned#kanban`)
+    const lane = page.locator('.kanban-column[data-status="pending"]')
+    await expect(lane.locator(".dynamic-group")).toHaveCount(3)
+    for (const id of ids) await expect(lane.locator(`.dynamic-group .kanban-card[data-id="${id}"]`)).toBeVisible()
+    expect(failures).toEqual([])
+  } finally {
+    for (const id of ids) await request.delete(`/api/tasks/${id}`)
   }
 })
