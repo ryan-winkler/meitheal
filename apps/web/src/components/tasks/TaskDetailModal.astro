@@ -262,6 +262,8 @@ const mentionUser = verifiedIngressUser(Astro.locals)
                     <select id="td-area" class="form-select py-1.5 px-2 bg-bg-card hover:bg-bg-hover border border-border cursor-pointer transition-colors focus:ring-1 focus:ring-accent font-medium text-text-primary w-full min-w-0"></select>
                   </div>}
 
+                  <HomeAssistantAreaField mode="edit" layoutItem="home-assistant-area" />
+
                   {available("projects") && <div class="grid grid-cols-[100px_minmax(0,1fr)] items-center gap-2 min-w-0" data-layout-item="project">
                     <label for="td-project" class="text-xs text-text-secondary font-medium truncate">{organization("project")}</label>
                     <select id="td-project" disabled class="form-select py-1.5 px-2 bg-bg-card hover:bg-bg-hover border border-border cursor-pointer transition-colors focus:ring-1 focus:ring-accent font-medium text-text-primary w-full min-w-0">
@@ -354,7 +356,6 @@ const mentionUser = verifiedIngressUser(Astro.locals)
                     <input id="td-color" type="color" class="w-11 h-9 rounded cursor-pointer border border-border bg-transparent p-1" />
                   </div>
 
-                  <HomeAssistantAreaField mode="edit" />
                   <div class="min-w-0" data-layout-item="custom-fields">
                     <span class="text-xs text-text-secondary font-medium mb-2 block">Custom Fields</span>
                     <div id="td-custom-fields" class="space-y-2 mb-2"></div>

@@ -68,9 +68,11 @@ test("Home Assistant Area is optional, versioned and available only to the selec
     })).status()).toBe(409)
 
     const page = await member.newPage()
+    await page.addInitScript(() => localStorage.setItem("meitheal:task-detail-layout:v1", JSON.stringify({ properties: ["home-assistant-area", "status"] })))
     await page.goto(app + "/tasks?open=" + item.id)
     const location = page.locator('#task-detail-overlay [data-ha-area-field="edit"]').filter({ visible: true })
     await expect(location.getByLabel("Home Assistant Area")).toHaveValue("fixture_kitchen")
+    await expect(page.locator('#td-section-properties [data-layout-order="properties"] > [data-layout-item]').first()).toHaveAttribute("data-layout-item", "home-assistant-area")
     await location.getByLabel("Home Assistant Area").selectOption("fixture_yard")
     const receipt = page.waitForResponse(response => response.url().endsWith("/home-assistant-area") && response.request().method() === "PUT", { timeout: 8_000 })
     await location.getByRole("button", { name: "Save location" }).click()

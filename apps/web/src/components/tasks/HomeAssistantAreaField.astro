@@ -8,8 +8,9 @@ interface Props {
   publishOnly?: boolean
   endpoint?: string
   boardSession?: string
+  layoutItem?: string
 }
-const { mode = "capture", endpoint, boardSession, initialId, readOnly, publishOnly } = Astro.props
+const { mode = "capture", endpoint, boardSession, initialId, readOnly, publishOnly, layoutItem } = Astro.props
 const available = await homeAssistantAreaAccess(Astro)
 const proof = available && homeAssistantAreaProof(Astro, available)
 ---
@@ -17,6 +18,7 @@ const proof = available && homeAssistantAreaProof(Astro, available)
 {proof && (
   <div
     class="min-w-0"
+    data-layout-item={layoutItem}
     data-ha-area-field={mode}
     data-ha-area-proof={proof}
     data-ha-area-read-only={readOnly || undefined}

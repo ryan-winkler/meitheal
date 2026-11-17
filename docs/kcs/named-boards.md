@@ -61,3 +61,5 @@ An administrator uses **Settings → Tasks & Boards → Organization features** 
 The optional **Home Assistant Area** field identifies a task’s physical location, such as Kitchen. Groups organize responsibility and Projects organize related tasks. An administrator can offer the location field through Organization features without changing the task’s Board, Group or Project.
 
 Older `/areas/{id}` and `/projects/{id}` bookmarks open the matching Household Board context. Supported section bookmarks, including settings, keep their destination. `/planning#spaces` opens the Boards directory when Planning is available. Task filters use the Group label and support your personal display name from Settings.
+
+Home Assistant Area participates in the task inspector’s reorderable Properties fields. Move it in the ticket layout editor or Settings. Existing saved field orders retain their sequence and add the new field.
