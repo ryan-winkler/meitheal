@@ -247,10 +247,13 @@ test("Details completion clears Knight Rider active work on Dashboard and Board"
   const link = card.locator(".card-open-btn")
   let refreshHeld = false
   let failRefresh = false
+  let snapshotRefresh = false
+  let boardReads = 0
   let releaseRefresh = () => {}
   let waitingRefresh: Promise<void> | undefined
-  function holdNextRefresh() {
+  function holdNextRefresh(snapshot = false) {
     refreshHeld = false
+    snapshotRefresh = snapshot
     waitingRefresh = new Promise<void>(resolve => { releaseRefresh = resolve })
   }
   function releaseHeldRefresh() {
@@ -258,10 +261,25 @@ test("Details completion clears Knight Rider active work on Dashboard and Board"
     releaseRefresh()
   }
   await page.route(url => url.searchParams.has("boardRefresh"), async route => {
+    boardReads++
     if (failRefresh) return route.fulfill({ status: 503 })
-    if (waitingRefresh) {
+    const held = waitingRefresh
+    if (held) {
+      const response = snapshotRefresh ? await route.fetch() : undefined
       refreshHeld = true
-      await waitingRefresh
+      await held
+      if (response) return route.fulfill({ response })
+    }
+    return route.continue()
+  })
+  let holdTitle = false
+  let titleRequestHeld = false
+  let releaseTitle = () => {}
+  const waitingTitle = new Promise<void>(resolve => { releaseTitle = resolve })
+  await page.route(`**/api/tasks/${otherId}`, async route => {
+    if (holdTitle && route.request().method() === "PUT" && route.request().postDataJSON()?.title) {
+      titleRequestHeld = true
+      await waitingTitle
     }
     return route.continue()
   })
@@ -356,9 +374,15 @@ test("Details completion clears Knight Rider active work on Dashboard and Board"
     await expect(titleEdit).toBeFocused()
     await expect(titleEdit).toHaveText("An unsent title edit")
     await expect(card).toHaveAttribute("data-status", "active")
-    await titleEdit.press("Escape")
+    holdTitle = true
+    await titleEdit.press("Enter")
+    await expect.poll(() => titleRequestHeld).toBe(true)
+    await expect(card).toHaveAttribute("data-status", "active")
+    await expect(page.locator(`.kanban-card[data-id="${otherId}"]`)).toHaveAttribute("data-title-saving", "")
+    holdTitle = false
+    releaseTitle()
     await expect(card).toHaveAttribute("data-status", "complete")
-    await expect(titleEdit).toHaveText("Another Board card")
+    await expect(titleEdit).toHaveText("An unsent title edit")
 
     await page.goto(`/tasks?status=active&open=${id}#kanban`)
     await expect(status).toHaveValue("complete")
@@ -366,10 +390,24 @@ test("Details completion clears Knight Rider active work on Dashboard and Board"
     await status.selectOption("active")
     await expect(card).toHaveAttribute("data-status", "active")
     await expect(card).toHaveAttribute("data-work-active", "")
+
+    const priorReads = boardReads
+    holdNextRefresh(true)
+    await done.click()
+    await expect(status).toHaveValue("complete")
+    await expect.poll(() => refreshHeld).toBe(true)
+    await status.selectOption("active")
+    await expect(status).toHaveAttribute("data-saved-status", "active")
+    releaseHeldRefresh()
+    await expect.poll(() => boardReads).toBeGreaterThanOrEqual(priorReads + 2)
+    await expect(page.locator("#kanban-board")).not.toHaveAttribute("aria-busy", "true")
+    await expect(card).toHaveAttribute("data-status", "active")
+    await expect(card).toHaveAttribute("data-work-active", "")
     await close.click()
     await expect(page.locator("#task-detail-overlay")).toBeHidden()
     await expect(page).toHaveURL(url => url.searchParams.get("status") === "active" && url.hash === "#kanban")
   } finally {
+    releaseTitle()
     releaseHeldRefresh()
     await request.delete(`/api/tasks/${otherId}`)
     await request.delete(`/api/tasks/${id}`)

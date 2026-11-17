@@ -23,7 +23,7 @@ function matchBoardFocus(active: HTMLElement, replacement: HTMLElement) {
   const scope = card || lane
   if (!scope) return null
   const matches = Array.from(scope.querySelectorAll<HTMLElement>(active.localName))
-    .filter(element => element.className === active.className)
+    .filter(element => element.className === active.className && element.matches("a[href], button, [tabindex]"))
   return (matches.length === 1 ? matches[0] : null) ||
     (card ? card.querySelector<HTMLElement>(".card-open-btn") : scope.querySelector<HTMLElement>(".kanban-column-header"))
 }
@@ -61,29 +61,29 @@ export function initKanbanPage(signal: AbortSignal): void {
     retry.hidden = !failed
   }
 
-  let queuedStatusRefresh: KanbanRefreshFocus | undefined
+  let queuedBackgroundRead: { focus: KanbanRefreshFocus | undefined; dataOnly: boolean } | undefined
 
   function boardInteractionActive() {
-    return board.querySelector('.kanban-inline-add, [contenteditable="true"], .kanban-card.dragging, .kanban-card[aria-busy="true"]') ||
+    return board.querySelector('.kanban-inline-add, [contenteditable="true"], .kanban-card.dragging, .kanban-card[aria-busy="true"], [data-title-saving]') ||
       document.querySelector("#kanban-card-menu:not([hidden]), .quick-action-popover:not([inert])")
   }
 
-  const interactionObserver = new MutationObserver(resumeStatusRefresh)
-  function resumeStatusRefresh() {
-    if (signal.aborted || !queuedStatusRefresh || pending || boardInteractionActive()) return
-    const focus = queuedStatusRefresh
-    queuedStatusRefresh = undefined
+  const interactionObserver = new MutationObserver(resumeBackgroundRead)
+  function resumeBackgroundRead() {
+    if (signal.aborted || !queuedBackgroundRead || pending || boardInteractionActive()) return
+    const { focus, dataOnly } = queuedBackgroundRead
+    queuedBackgroundRead = undefined
     interactionObserver.disconnect()
-    void refresh(focus)
+    void load(new URL(desired), focus, false, dataOnly)
   }
 
-  function queueStatusRefresh(focus: KanbanRefreshFocus) {
-    queuedStatusRefresh = focus
+  function queueBackgroundRead(focus?: KanbanRefreshFocus, dataOnly = false) {
+    if (!queuedBackgroundRead || !dataOnly) queuedBackgroundRead = { focus, dataOnly }
     interactionObserver.observe(document.body, {
       childList: true, subtree: true, attributes: true,
-      attributeFilter: ["hidden", "inert", "class", "aria-busy", "contenteditable"],
+      attributeFilter: ["hidden", "inert", "class", "aria-busy", "contenteditable", "data-title-saving"],
     })
-    resumeStatusRefresh()
+    resumeBackgroundRead()
   }
 
   async function load(url: URL, focus?: KanbanRefreshFocus, reset = false, dataOnly = false): Promise<void> {
@@ -116,8 +116,8 @@ export function initKanbanPage(signal: AbortSignal): void {
         return
       }
       if (!replacement) throw new Error("Board response unavailable")
-      if (focus?.afterStatusSave && boardInteractionActive()) {
-        if (!queuedStatusRefresh) queueStatusRefresh(focus)
+      if ((focus?.afterStatusSave || dataOnly) && (queuedBackgroundRead || boardInteractionActive())) {
+        if (!queuedBackgroundRead) queueBackgroundRead(focus, dataOnly)
         renderStatus("")
         return
       }
@@ -175,7 +175,7 @@ export function initKanbanPage(signal: AbortSignal): void {
       if (pending === request) {
         pending = undefined
         board.removeAttribute("aria-busy")
-        resumeStatusRefresh()
+        resumeBackgroundRead()
       }
     }
   }
@@ -224,7 +224,7 @@ export function initKanbanPage(signal: AbortSignal): void {
   window.addEventListener(DEFERRAL_RECONCILED, event => {
     const { taskId, changedIds, dataOnly } = (event as CustomEvent<DeferralReconciliation>).detail ?? {}
     if (dataOnly) {
-      void load(new URL(desired), undefined, false, true)
+      queueBackgroundRead(undefined, true)
       return
     }
     const origin = taskId ? board.querySelector<HTMLElement>(`.kanban-card[data-id="${CSS.escape(taskId)}"]`) : null
@@ -240,9 +240,7 @@ export function initKanbanPage(signal: AbortSignal): void {
   }, { signal })
   document.addEventListener("meitheal:task-status-saved", event => {
     const { id, status } = (event as CustomEvent<{ id: string; status: string }>).detail
-    const card = board.querySelector<HTMLElement>(`.kanban-card[data-id="${CSS.escape(id)}"]`)
-    if (typeof status !== "string" || card?.dataset.status === status) return
-    queueStatusRefresh({ taskId: id, lane: status, afterStatusSave: true })
+    if (typeof status === "string") queueBackgroundRead({ taskId: id, lane: status, afterStatusSave: true })
   }, { signal })
   document.addEventListener("meitheal:area-changed", () => {
     syncAreaLinks(getSelectedAreaId())
