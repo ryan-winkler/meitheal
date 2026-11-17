@@ -15,6 +15,7 @@ import { renderIconOrCustomEmoji } from "./tabler-svg"
 const STORAGE_KEY = "meitheal-selected-area"
 export const CALENDAR_AREA_REQUEST_EVENT = "meitheal:calendar-area-request"
 export const CALENDAR_AREA_APPLIED_EVENT = "meitheal:calendar-area-applied"
+export const TABLE_AREA_CATALOG_EVENT = "meitheal:table-area-catalog"
 
 interface AreaChangedDetail {
   areaId: string
@@ -75,6 +76,18 @@ export function initAreaSelector(signal: AbortSignal): void {
   }
   if (table) {
     document.addEventListener("meitheal:table-area-reset", () => selectArea("", allGroups, "🗂"), { signal })
+    document.addEventListener(TABLE_AREA_CATALOG_EVENT, event => {
+      const catalog = (event as CustomEvent<HTMLElement>).detail
+      const selected = trigger.dataset.selectedAreaId ?? ""
+      const focused = document.activeElement instanceof HTMLElement && dropdown.contains(document.activeElement)
+        ? document.activeElement.closest<HTMLElement>("[data-area-id]")?.dataset.areaId : undefined
+      dropdown.replaceChildren(...catalog.children)
+      dropdown.dataset.areaCatalogReady = "true"
+      const options = [...dropdown.querySelectorAll<HTMLElement>("[data-area-id]")]
+      const option = options.find(item => item.dataset.areaId === selected)
+      selectArea(selected, option?.dataset.areaName ?? (selected ? unavailableGroup : allGroups), option?.dataset.areaIcon ?? "🗂")
+      if (focused !== undefined) (options.find(item => item.dataset.areaId === focused) ?? trigger).focus()
+    }, { signal })
   } else if (calendar) {
     document.addEventListener(CALENDAR_AREA_APPLIED_EVENT, event => {
       const areaId = (event as CustomEvent<string>).detail

@@ -23,9 +23,10 @@ export interface AreaOption {
 
 interface Props {
   areas: AreaOption[]
+  catalogReady?: boolean
 }
 
-const { areas = [] } = Astro.props
+const { areas = [], catalogReady = true } = Astro.props
 const organization = await organizationLabelsFor(Astro)
 const allGroups = organizationLocale(Astro) === "ga" ? `${organization("group", true)} ar fad` : `All ${organization("group", true)}`
 const unavailableGroup = `${organization("group")} unavailable`
@@ -52,6 +53,7 @@ const unavailableGroup = `${organization("group")} unavailable`
   <div
     class="area-selector__dropdown"
     id="area-selector-dropdown"
+    data-area-catalog-ready={String(catalogReady)}
     role="listbox"
     aria-label={`Available ${organization("group", true)}`}
   >

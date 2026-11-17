@@ -233,6 +233,7 @@ function lanePageHref(key: string, page: number) {
 
 // SSR: fetch areas for the AreaSelector
 let areas: { id: string; name: string; icon: string; color: string }[] = [];
+let areaCatalogReady = false
 try {
   const rawAreas = available("groups") ? await hierarchyRepo.findAllAreas() : [];
   areas = rawAreas.map((a) => ({
@@ -241,6 +242,7 @@ try {
     icon: String(a.icon ?? "📁"),
     color: String(a.color ?? "var(--accent)"),
   }));
+  areaCatalogReady = true
 } catch {
   /* areas table may not exist yet */
 }
@@ -264,7 +266,7 @@ const kanbanAreas = new Map(areas.map(area => [area.id, area]))
     })}
   >
     <Fragment slot="context">
-      {available("groups") && <AreaSelector areas={areas} />}
+      {available("groups") && <AreaSelector areas={areas} catalogReady={areaCatalogReady} />}
       {renderedView === "kanban" && <HomeAssistantAreaField mode="filter" initialId={homeAreaFilter?.id ?? ""} />}
     </Fragment>
   </UnifiedBar>
@@ -478,8 +480,9 @@ const kanbanAreas = new Map(areas.map(area => [area.id, area]))
                     data-swimlane-type={type}
                     hidden
                   >
-                    <div class="swimlane-header" data-type={type}>
+                    <button type="button" class="swimlane-header" aria-expanded="true">
                       <span
+                        aria-hidden="true"
                         class={`swimlane-toggle ${count === 0 ? "opacity-30 pointer-events-none" : ""}`}
                       >
                         ▼
@@ -487,7 +490,7 @@ const kanbanAreas = new Map(areas.map(area => [area.id, area]))
                       <TaskTypeIcon type={type} size={16} />
                       <span class="swimlane-label">{tc.label}</span>
                       <span class="swimlane-count">{count}</span>
-                    </div>
+                    </button>
                     <div class="swimlane-cards">
                       {/* Cards moved here by JS when grouping is active */}
                     </div>
@@ -1817,22 +1820,6 @@ const kanbanAreas = new Map(areas.map(area => [area.id, area]))
     flex-direction: column;
     margin-bottom: 0px;
   }
-  .swimlane-header {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 8px 12px;
-    background: var(--bg-hover);
-    cursor: pointer;
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--text-secondary);
-    transition: background 200ms;
-    user-select: none;
-  }
-  .swimlane-header:hover {
-    background: var(--bg-secondary);
-  }
   .swimlane-toggle {
     font-size: 10px;
     color: var(--text-muted);
@@ -1860,9 +1847,6 @@ const kanbanAreas = new Map(areas.map(area => [area.id, area]))
     display: flex;
     flex-direction: column;
     gap: 6px;
-  }
-  .swimlane-collapsed .swimlane-toggle {
-    transform: rotate(-90deg);
   }
 
   /* Accessibility: suppress transitions for reduced-motion users */
