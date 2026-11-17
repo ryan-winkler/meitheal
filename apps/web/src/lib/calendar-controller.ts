@@ -104,7 +104,7 @@ export function initCalendarPage(signal: AbortSignal): void {
     ? unavailable : "Couldn’t apply calendar changes. The previous results are still shown."
 
   async function refresh(url: URL, background = false) {
-    const preserveRetry = background && retryTarget && retryTarget.search !== url.search
+    const preserveRetry = background && url.search === applied.search && retryTarget && retryTarget.search !== url.search
     refreshRequest?.abort()
     const request = new AbortController()
     refreshRequest = request
@@ -309,7 +309,7 @@ export function initCalendarPage(signal: AbortSignal): void {
         offset += rows.length
         if (!offset) renderMessage(drawerTasks!, "No matching tasks or local events")
         const canLoadMore = rows.length > 0 && total > offset
-        if (!canLoadMore && document.activeElement === moreTasks) {
+        if (document.activeElement === moreTasks && (fresh.length || !canLoadMore)) {
           (fresh[0] ?? drawerTasks!.querySelector<HTMLElement>("[data-task-id]") ??
             closeButton)?.focus()
         }
@@ -319,7 +319,8 @@ export function initCalendarPage(signal: AbortSignal): void {
           const restore = restoreMore && canLoadMore ? moreTasks : fresh.find(row => row.dataset.taskId === focusedTask)
           restore?.focus()
         }
-        drawerTaskStatus!.textContent = ""
+        drawerTaskStatus!.textContent = offset > rows.length && fresh.length
+          ? `${fresh.length} more tasks loaded` : ""
       } catch (error) {
         if (drawerRequest !== currentRequest || currentRequest.signal.aborted || signal.aborted) return
         log.warn("Could not load due tasks", error)

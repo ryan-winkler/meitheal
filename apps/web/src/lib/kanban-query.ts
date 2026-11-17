@@ -21,8 +21,9 @@ export function readKanbanSearch(value: string | null): string {
 export function readKanbanRules(raw: string | null): FilterGroup | undefined {
   if (!raw || raw.length > 8000) return
   try {
-    const rules = JSON.parse(raw.startsWith("%") ? decodeURIComponent(raw) : raw) as { conditions?: unknown }
+    const rules = JSON.parse(raw.startsWith("%") ? decodeURIComponent(raw) : raw) as { conditions?: unknown; logic?: unknown }
     if (!Array.isArray(rules.conditions) || rules.conditions.length > 40) return
+    const logic = rules.logic === "OR" ? "OR" : "AND"
     const conditions: FilterCondition[] = []
     for (const item of rules.conditions) {
       if (!item || !fields.has(item.field) || !operators.has(item.operator) || typeof item.value !== "string") return
@@ -31,10 +32,10 @@ export function readKanbanRules(raw: string | null): FilterGroup | undefined {
         field: item.field,
         operator: item.operator,
         value: normalizeStatusRuleValue(item.field, item.operator, item.value),
-        logic: item.logic === "OR" ? "OR" : "AND",
+        logic: item.logic === "OR" || item.logic === "AND" ? item.logic : logic,
       })
     }
-    return { id: "root", logic: "AND", conditions }
+    return { id: "root", logic, conditions }
   } catch { /* ignore malformed URL input */ }
 }
 

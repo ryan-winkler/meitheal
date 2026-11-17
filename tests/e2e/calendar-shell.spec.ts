@@ -416,6 +416,36 @@ test.describe("Calendar Shell", () => {
     await expect(search).toHaveValue("temporarily unavailable")
   })
 
+  test("a successful newer Calendar refresh retires the earlier failed filter", async ({ page }) => {
+    let release = () => {}
+    let blocked = false
+    const pending = new Promise<void>(resolve => { release = resolve })
+    await page.route(url => url.searchParams.has("calendarRefresh"), async route => {
+      const value = new URL(route.request().url()).searchParams.get("search")
+      if (value === "first attempt") return route.fulfill({ status: 503 })
+      if (!blocked && value === "new search") {
+        blocked = true
+        await pending
+        return route.abort().catch(() => {})
+      }
+      return route.continue()
+    })
+    const search = page.getByRole("textbox", { name: "Filter by text" })
+    const retry = page.getByRole("button", { name: "Retry calendar" })
+    try {
+      await search.fill("first attempt")
+      await expect(retry).toBeVisible()
+      await search.fill("new search")
+      await expect.poll(() => blocked).toBe(true)
+      await page.evaluate(() => document.dispatchEvent(new Event("meitheal:tasks-changed")))
+      await expect(page).toHaveURL(/search=new\+search/)
+      await expect(retry).toBeHidden()
+      await expect(page.locator("[data-calendar-status]")).toBeHidden()
+    } finally {
+      release()
+    }
+  })
+
   test("invalid rule leaves Retry available after an initial Calendar outage", async ({ page }) => {
     await page.route(url => url.pathname === "/tasks" && url.searchParams.get("view") === "calendar"
       && !url.searchParams.has("calendarRefresh"), async route => {
@@ -854,7 +884,8 @@ test.describe("Calendar Shell", () => {
       await page.keyboard.press("Escape")
       allFail = true
       await cell.press("Enter")
-      await expect(events).toHaveText("Connected calendar events couldn’t load.", { timeout: 15_000 })
+      await expect(events.getByText("Connected calendar events couldn’t load.", { exact: true }))
+        .toBeVisible({ timeout: 15_000 })
     } finally {
       for (const resolve of waiting) resolve()
     }

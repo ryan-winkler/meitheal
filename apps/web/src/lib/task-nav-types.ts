@@ -1,8 +1,8 @@
 import type { FilterGroup } from "./filter-engine"
-import { normalizeTableRules, readFilterLabels, readTableTaskKindFilter, readTableTaskTypeParam, readTaskKindFilter } from "./filter-state"
+import { normalizeTableRules, readFilterLabels, readTableTaskKindFilter, readTableTaskTypeParam, readTaskAreaParam, readTaskKindFilter } from "./filter-state"
 import { readKanbanRules, readKanbanSearch } from "./kanban-query"
 import { normalizeStatus } from "./status-config"
-import { parseTaskView, readTaskAreaParam, type TaskView } from "./task-view-route"
+import { parseTaskView, type TaskView } from "./task-view-route"
 
 export type TaskNavTypeId = "standard" | "shopping_item" | "checklist" | "calendar_event"
 

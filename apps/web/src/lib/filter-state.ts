@@ -18,8 +18,6 @@ import { evaluateFilterGroup, extractDataFromElement, normalizeStatusRuleValue, 
 import { normalizeStatus } from "./status-config"
 import { TABLE_COLUMNS } from "./table-registry"
 import { replaceTaskBackgroundUrl, taskBackgroundUrl } from "./task-page-url"
-import { readTaskAreaParam, TASK_ARRAY_FILTER_KEYS as ARRAY_KEYS, TASK_JSON_FILTER_KEYS as JSON_KEYS,
-  TASK_PERSISTED_FILTER_KEYS as ALL_KEYS, TASK_SCALAR_FILTER_KEYS as SCALAR_KEYS } from "./task-view-route"
 
 // =============================================================================
 // Types
@@ -117,6 +115,16 @@ function parseJsonParam(val: string | null | undefined): any | null {
 // =============================================================================
 // Persistence
 // =============================================================================
+
+const SCALAR_KEYS = ["search", "status", "priority", "rice", "sort", "user", "area", "groupBy", "subGroupBy"] as const
+const ARRAY_KEYS = ["types", "labels"] as const
+const JSON_KEYS = ["advancedFilter", "columns"] as const
+const ALL_KEYS = [...SCALAR_KEYS, ...ARRAY_KEYS, ...JSON_KEYS] as const
+export const TASK_PERSISTED_FILTER_KEYS = ALL_KEYS
+
+export function readTaskAreaParam(params: URLSearchParams): string | null {
+  return params.get("area_id") ?? params.get("area") ?? params.get("board")
+}
 
 const TABLE_DATE_KEYS = ["createdFrom", "createdThrough"] as const
 const TABLE_KEYS = [...ALL_KEYS, "task_type", "label", "area_id", "board", "lane", ...TABLE_DATE_KEYS] as const

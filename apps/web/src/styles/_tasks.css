@@ -73,20 +73,6 @@
 /* --- Task & Table UX Enhancements --- */
   /* --- Task & Table UX Enhancements (Phase 55) --- */
 
-  /* Task count summary bar */
-  .filter-summary-bar {
-    @apply flex items-center gap-3 text-sm text-text-secondary py-2;
-  }
-
-  .filter-summary-bar .summary-count {
-    @apply font-semibold text-text-primary;
-  }
-
-  .filter-summary-bar .summary-overdue {
-    @apply font-semibold;
-    color: var(--danger-text);
-  }
-
   /* Hover-reveal action buttons on task list items */
   .task-actions {
     @apply flex items-center gap-1 opacity-0 transition-opacity;
@@ -305,12 +291,6 @@
     border-left-color: var(--dashboard-task-accent);
   }
 
-  .bento-card-stripe {
-    width: 4px;
-    flex-shrink: 0;
-    border-radius: 10px 0 0 10px;
-  }
-
   .bento-card-body {
     flex: 1;
     padding: 12px 14px;
@@ -348,12 +328,6 @@
     font-size: 0.65rem;
     color: var(--text-muted);
     white-space: nowrap;
-  }
-
-  .bento-card-labels {
-    display: flex;
-    gap: 4px;
-    flex-wrap: wrap;
   }
 
       .bento-card-header {

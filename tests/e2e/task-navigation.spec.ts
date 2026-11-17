@@ -691,6 +691,7 @@ test("legacy Shopping type filters survive view switches and respect Table searc
     await views.getByRole("link", { name: "Kanban", exact: true }).click()
     await expect(page.locator("#kanban-shell").getByText(titles[0]!, { exact: true })).toBeVisible()
     await expect(page.locator("#kanban-shell").getByText(titles[1]!, { exact: true })).toHaveCount(0)
+
     const stories = page.locator('#sidebar [data-page="legacy-task-type-story"]')
     const epics = page.locator('#sidebar [data-page="legacy-task-type-epic"]')
     await stories.click()
@@ -734,6 +735,21 @@ test("legacy Shopping type filters survive view switches and respect Table searc
     await views.getByRole("link", { name: "Kanban", exact: true }).click()
     await expect(page.locator("#kanban-shell").getByText(titles[0]!, { exact: true })).toBeVisible()
     await expect(page.locator("#kanban-shell").getByText(titles[1]!, { exact: true })).toHaveCount(0)
+
+    legacyStatus.set("advancedFilter", "{invalid")
+    legacyStatus.append("advancedFilter", JSON.stringify({
+      id: "legacy-or", logic: "OR",
+      conditions: [
+        { id: "pantry", field: "title", operator: "contains", value: "pantry" },
+        { id: "frying", field: "title", operator: "contains", value: "frying pan" },
+      ],
+    }))
+    await page.goto("/tasks?" + legacyStatus + "#calendar")
+    await expect(calendar.locator(`.cal-cell[data-date="${due}"]`)).toHaveAccessibleName(/2 tasks$/)
+    await views.getByRole("link", { name: "Kanban", exact: true }).click()
+    await expect(page).toHaveURL(url => url.searchParams.getAll("advancedFilter").length === 1 &&
+      url.searchParams.get("advancedFilter")?.includes('"logic":"OR"') === true)
+    for (const title of titles) await expect(page.locator("#kanban-shell").getByText(title, { exact: true })).toBeVisible()
   } finally {
     await request.put("/api/settings", { headers, data: { key: "sidebar_config", value: previous ?? null } })
     for (const id of ids) await request.delete(`/api/tasks/${id}`, { headers })

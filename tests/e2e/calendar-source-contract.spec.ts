@@ -47,24 +47,27 @@ test("Calendar reads configured sources as a household member and filters before
     const date = "2031-07-08"
     const insert = db.prepare(`INSERT INTO tasks (id, title, status, idempotency_key, request_id, due_date, created_at, updated_at)
       VALUES (?, ?, 'pending', ?, ?, ?, ?, ?)`)
-    for (let index = 0; index < 106; index++) {
+    for (let index = 0; index < 206; index++) {
       const id = `calendar-fixture-${index}`
-      const title = index < 101 ? `Matching garden task ${index}` : `Excluded indoor task ${index}`
+      const title = index < 201 ? `Matching garden task ${index}` : `Excluded indoor task ${index}`
       insert.run(id, title, id, id, date, 100_000 + index, 100_000 + index)
     }
-    db.prepare("UPDATE tasks SET status = 'done' WHERE id = ?").run("calendar-fixture-105")
+    db.prepare("UPDATE tasks SET status = 'done' WHERE id = ?").run("calendar-fixture-205")
 
     const agendaPath = base + "/api/calendar/agenda"
     const query = { date, filters: "search=matching+garden", limit: 100, offset: 0 }
     const first = await api.post(agendaPath, { headers: headers("member"), data: query })
     expect(first.status()).toBe(200)
     const { tasks, total } = await first.json()
-    expect(total).toBe(101)
+    expect(total).toBe(201)
     expect(tasks).toHaveLength(100)
-    expect(tasks[0].title).toBe("Matching garden task 100")
-    expect(tasks[99].title).toBe("Matching garden task 1")
+    expect(tasks[0].title).toBe("Matching garden task 200")
+    expect(tasks[99].title).toBe("Matching garden task 101")
     const second = await api.post(agendaPath, { headers: headers("member"), data: { ...query, offset: 100 } })
-    expect(await second.json()).toMatchObject({ tasks: [{ title: "Matching garden task 0" }], total: 101 })
+    const secondPage = await second.json()
+    expect(secondPage.total).toBe(201)
+    expect(secondPage.tasks).toHaveLength(100)
+    expect(secondPage.tasks[0].title).toBe("Matching garden task 100")
     const credential = await api.post(base + "/api/agent-tokens", {
       headers: headers("admin"), data: { name: "Calendar scope fixture", scopes: ["tasks:read"] },
     })
@@ -83,14 +86,22 @@ test("Calendar reads configured sources as a household member and filters before
     await page.route("**/api/ha/events?*", route => route.fulfill({ json: { events: [] } }))
     await page.goto(base + "/tasks?view=calendar&year=2031&month=6&search=matching+garden#calendar")
     const day = page.locator(`.cal-cell[data-date="${date}"]`)
-    await expect(day).toHaveAccessibleName(/101 tasks$/)
+    await expect(day).toHaveAccessibleName(/201 tasks$/)
     await expect(page.locator("#calendar-shell")).toHaveAttribute("data-calendar-ready", "true")
     await day.press("Enter")
     await expect(page.locator("#day-drawer")).toHaveAttribute("aria-hidden", "false")
     const agenda = page.locator("#day-drawer-tasks")
     await expect(agenda.getByRole("button")).toHaveCount(100, { timeout: 12_000 })
-    await page.getByRole("button", { name: "Load more tasks" }).press("Enter")
-    await expect(agenda.getByRole("button")).toHaveCount(101)
+    const moreTasks = page.getByRole("button", { name: "Load more tasks" })
+    await moreTasks.press("Enter")
+    await expect(agenda.getByRole("button")).toHaveCount(200)
+    await expect(agenda.getByRole("button").nth(100)).toBeFocused()
+    await expect(page.locator("#day-drawer-task-status")).toHaveText("100 more tasks loaded")
+    await page.keyboard.press("Tab")
+    await expect(agenda.getByRole("button").nth(101)).toBeFocused()
+    await moreTasks.press("Enter")
+    await expect(agenda.getByRole("button")).toHaveCount(201)
+    await expect(agenda.getByRole("button").last()).toBeFocused()
     await expect(agenda.getByRole("button").last()).toContainText("Matching garden task 0")
 
     const advanced = JSON.stringify({ id: "root", logic: "AND", conditions: Array.from({ length: 39 }, (_, index) => ({
@@ -199,7 +210,7 @@ test("Calendar reads configured sources as a household member and filters before
     await expect(connected.getByText("Connected calendar events couldn’t load.")).toHaveCount(0)
     await page.keyboard.press("Escape")
     await expect(page.locator("#calendar-shell")).toHaveAttribute("data-timezone", "America/Los_Angeles")
-    await expect(day).toHaveAccessibleName(/105 tasks$/)
+    await expect(day).toHaveAccessibleName(/205 tasks$/)
     const eventDay = page.locator('.cal-cell[data-date="2031-07-09"]')
     await eventDay.press("Enter")
     await page.getByRole("button", { name: "Add Event" }).click()
@@ -224,7 +235,7 @@ test("Calendar reads configured sources as a household member and filters before
     await expect(page.locator("html")).toHaveAttribute("data-fixture-calendar", "mounted")
     await expect(eventDay).toHaveAccessibleName(/1 calendar event$/)
     expect(await eventDay.locator(".cal-event-badge > span").evaluate(count => count.firstChild?.textContent)).toBe("1")
-    await expect(day).toHaveAccessibleName(/105 tasks$/)
+    await expect(day).toHaveAccessibleName(/205 tasks$/)
     await eventDay.press("Enter")
     await expect(agenda.getByRole("button", { name: /Native patio gathering/ })).toContainText("All day")
     await expect(agenda.locator(".day-drawer-item-icon use")).toHaveAttribute("href", "#mt-icon-calendar-event")
@@ -288,7 +299,7 @@ test("Calendar reads configured sources as a household member and filters before
     await page.getByText("Labels (23)", { exact: true }).click()
     await page.getByRole("button", { name: "Clear all active filters" }).click()
     await expect(page).toHaveURL(url => !url.searchParams.has("labels"))
-    await expect(day).toHaveAccessibleName(/105 tasks$/)
+    await expect(day).toHaveAccessibleName(/205 tasks$/)
 
     // The cached end came from a UTC-based sync, while this browser reads the household day in Los Angeles.
     const boundaryId = "linked-timezone-boundary"
