@@ -314,7 +314,7 @@ test.describe("Saved Table filters", () => {
 
       await page.goto("/table?" + new URLSearchParams({ search: key, area: "" }))
       await expect(visible).toHaveCount(4)
-      await expect(page.locator("[data-area-label]")).toHaveText("All Areas")
+      await expect(page.locator("[data-area-label]")).toHaveText("All Groups")
       await page.goto("/table?" + new URLSearchParams({ search: key }))
       await expect(visible).toHaveCount(1)
       await expect(visible.first()).toHaveAttribute("data-id", ids[2]!)

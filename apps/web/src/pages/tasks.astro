@@ -263,7 +263,7 @@ try {
     })}
   >
     <Fragment slot="context">
-      <AreaSelector areas={areas} />
+      {available("groups") && <AreaSelector areas={areas} />}
       {renderedView === "kanban" && <HomeAssistantAreaField mode="filter" initialId={homeAreaFilter?.id ?? ""} />}
     </Fragment>
   </UnifiedBar>

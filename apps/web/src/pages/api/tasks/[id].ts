@@ -202,11 +202,12 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
   const expectedActor = agentActivityActor(locals)?.actor
   const denied = isAssignedWriteOnly(agentToken) ? await checkAssignedTask(resolvedId, agentToken!) : null
   if (denied) return (await replayedAgentReassignment(repo, agentToken, resolvedId, body, expectedActor)) ?? denied
-  if (body.due_date !== undefined) {
+  if (body.due_date !== undefined || body.task_kind !== undefined) {
     const current = await repo.findById(resolvedId)
-    if (current?.task_kind === "routine_instance" && current.source_template_id != null &&
-      current.due_date != null && body.due_date !== current.due_date) {
-      return apiError("A generated Routine task keeps its original date. Complete its existing occurrence.", 409)
+    if (current?.routine_occurrence === 1 &&
+      ((body.due_date !== undefined && current.due_date != null && body.due_date !== current.due_date) ||
+        (body.task_kind !== undefined && body.task_kind !== "routine_instance"))) {
+      return apiError("A generated Routine task keeps its original date and type. Complete its existing occurrence.", 409)
     }
   }
 

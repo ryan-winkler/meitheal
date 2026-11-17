@@ -6,6 +6,8 @@ import { newOrganizationLabel, organizationLabelsFor, organizationLocale } from 
  * @page /areas/[id]
  * @phase 15 — Wave 4.5
  */
+import LegacyBoardBridge from "../../components/boards/LegacyBoardBridge.astro"
+import { isOrganizationFeatureAvailable as available } from "@lib/organization-request-context"
 import Layout from "../../layouts/Layout.astro";
 import { logApiError } from "../../lib/api-logger"
 import {
@@ -58,9 +60,9 @@ try {
   }
 
   const [areaGoals, areaProjects, receivedGoals] = await Promise.all([
-    repo.findAllGoals({ area_id: areaId }),
-    repo.findProjectsByArea(areaId),
-    listSharedGoals(client, Astro.locals, Astro.request.signal, { areaId }),
+    available("goals") ? repo.findAllGoals({ area_id: areaId }) : [],
+    available("projects") ? repo.findProjectsByArea(areaId) : [],
+    available("goals") ? listSharedGoals(client, Astro.locals, Astro.request.signal, { areaId }) : [],
   ])
   sharedGoals = receivedGoals
   householdGoalCount = areaGoals.length
@@ -90,14 +92,15 @@ const organization = await organizationLabelsFor(Astro)
 const tabs = [
   { id: "overview", label: "Overview", icon: "📊" },
   ...(workspaceAreaId ? [{ id: "tasks", label: organization("task", true), icon: "✅" }] : []),
-  { id: "goals", label: organization("goal", true), icon: "🎯" },
-  { id: "projects", label: organization("project", true), icon: "📋" },
+  ...(available("goals") ? [{ id: "goals", label: organization("goal", true), icon: "🎯" }] : []),
+  ...(available("projects") ? [{ id: "projects", label: organization("project", true), icon: "📋" }] : []),
   ...(routinesEnabled ? [{ id: "routines", label: organization("routine", true), icon: "🔁" }] : []),
   { id: settingsTab, label: "Settings", icon: "⚙️" },
 ];
 ---
 
-<Layout title={`Meitheal — ${areaName}`}>
+{!workspaceAreaId ? <LegacyBoardBridge href={boardWorkspaceHref(HOUSEHOLD_BOARD_ID, { area: areaId })} kind="group"
+  fragments={{ overview: "overview", tasks: "tasks", goals: "goals", projects: "projects", routines: "routines", settings: "group-settings" }} /> : <Layout title={`Meitheal — ${areaName}`}>
   <span slot="page-title">
     <span style={`color: ${areaColor}; margin-right: 6px;`}>{areaIcon}</span>
     {areaName}
@@ -107,8 +110,8 @@ const tabs = [
   </div>
 
   {/* Sub-menu tab bar */}
-  <nav aria-label={workspaceAreaId ? "Group sections" : "Area sections"}>
-    <div class="area-tabs" role="tablist" aria-label="Area sections">
+  <nav aria-label={`${organization("group")} sections`}>
+    <div class="area-tabs" role="tablist" aria-label={`${organization("group")} sections`}>
     {tabs.map((tab) => (
       <a
         href={`#${tab.id}`}
@@ -167,9 +170,9 @@ const tabs = [
     </nav>}
   </section>}
 
-  <section id="section-goals" class="area-section" data-section="goals" role="tabpanel" aria-labelledby="area-tab-goals" tabindex="0">
+  {available("goals") && <section id="section-goals" class="area-section" data-section="goals" role="tabpanel" aria-labelledby="area-tab-goals" tabindex="0">
     <GoalsTab {areaId} {sharedGoals} />
-  </section>
+  </section>}
 
   {routinesEnabled && (
     <section id="section-routines" class="area-section" data-section="routines" role="tabpanel" aria-labelledby="area-tab-routines" tabindex="0">
@@ -184,7 +187,7 @@ const tabs = [
   )}
 
   {/* Projects Section */}
-  <section id="section-projects" class="area-section" data-section="projects" role="tabpanel" aria-labelledby="area-tab-projects" tabindex="0">
+  {available("projects") && <section id="section-projects" class="area-section" data-section="projects" role="tabpanel" aria-labelledby="area-tab-projects" tabindex="0">
     <div class="section-header">
       <h2 class="section-title">{organization("project", true)}</h2>
       <span class="section-count">{projects.length} total</span>
@@ -223,7 +226,7 @@ const tabs = [
         })}
       </div>
     )}
-  </section>
+  </section>}
 
   {/* Settings Section */}
   <section id={`section-${settingsTab}`} class="area-section" data-section={settingsTab} role="tabpanel" aria-labelledby={`area-tab-${settingsTab}`} tabindex="0">
@@ -265,7 +268,7 @@ const tabs = [
     role="status"
     data-no-scroll-lock="true"
   ></div>
-</Layout>
+</Layout>}
 
 <style>
   @reference "../../styles/global.css";

@@ -47,3 +47,6 @@ Expand a named Board from the sidebar to open one of its groups. Household's gro
 A named Board member with task edit access can open **File task**, choose a group or Project in that Board and save. It keeps the ticket and workflow column. If the destination or task has changed, refresh the Board before retrying. Owner settings and send-only access continue to use the existing Board rules.
 
 Set a shared due date when you add a task, or open the task's edit form to change or clear it. People who can read the task can see its due date. A generated Routine ticket keeps the date of its original occurrence. Edit the Routine's schedule to change future occurrences.
+
+
+Older Area and Project bookmarks open the matching Household Board context. Supported section bookmarks, including settings, keep their destination. Task filters use the Group label and support your personal display name from Settings.

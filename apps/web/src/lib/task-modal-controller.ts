@@ -805,16 +805,16 @@
             })()
             ;(document.getElementById("td-color") as HTMLInputElement).value =
               String(t.color ?? fallbackAccentHex);
-            (document.getElementById("td-due-date") as HTMLInputElement).value =
-              String(t.due_date ?? "");
-            (
-              document.getElementById("td-start-date") as HTMLInputElement
-            ).value = String(t.start_date ?? "");
-            (document.getElementById("td-end-date") as HTMLInputElement).value =
-              String(t.end_date ?? "");
-            (
-              document.getElementById("td-time-tracked") as HTMLInputElement
-            ).value = String(t.time_tracked ?? 0);
+            const dueInput = document.getElementById("td-due-date") as HTMLInputElement
+            dueInput.value = String(t.due_date ?? "")
+            dueInput.disabled = Number(t.routine_occurrence) === 1
+            document.getElementById("td-routine-date-hint")?.toggleAttribute("hidden", !dueInput.disabled)
+            const startInput = document.getElementById("td-start-date") as HTMLInputElement
+            startInput.value = String(t.start_date ?? "")
+            const endInput = document.getElementById("td-end-date") as HTMLInputElement
+            endInput.value = String(t.end_date ?? "")
+            const trackedInput = document.getElementById("td-time-tracked") as HTMLInputElement
+            trackedInput.value = String(t.time_tracked ?? 0)
             // Populate board dropdown
             const areaSelect = document.getElementById(
               "td-area",

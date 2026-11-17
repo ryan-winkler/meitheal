@@ -7,6 +7,7 @@ import { organizationLabelsFor } from "@lib/organization-labels"
  * @page /projects/[id]
  * @phase 15 — Wave 4.5
  */
+import LegacyBoardBridge from "../../components/boards/LegacyBoardBridge.astro"
 import Layout from "../../layouts/Layout.astro";
 import { logApiError } from "../../lib/api-logger"
 import StatusBadge from "../../components/ui/StatusBadge.astro";
@@ -98,7 +99,8 @@ const tabs = [
 ];
 ---
 
-<Layout title={`Meitheal — ${projTitle}`}>
+{!workspaceProjectId ? <LegacyBoardBridge href={boardWorkspaceHref(HOUSEHOLD_BOARD_ID, { project: projectId })} kind="project"
+  fragments={{ overview: "overview", tasks: "tasks", settings: "project-settings", fields: "fields" }} /> : <Layout title={`Meitheal — ${projTitle}`}>
   <span slot="page-title">
     <span style={`color: ${projColor}; margin-right: 6px;`}>{projIcon}</span>
     {projTitle}
@@ -293,9 +295,9 @@ const tabs = [
         </select>
       </div>
       <div class="form-group">
-        <label for="edit-proj-area">Area</label>
+        <label for="edit-proj-area">{organization("group")}</label>
         <select id="edit-proj-area" class="form-select">
-          <option value="">Use the goal’s Area, if set</option>
+          <option value="">Use the Goal’s Group, if set</option>
           {areas.map(option => (
             <option value={option.id} selected={project?.area_id === option.id}>{option.name}</option>
           ))}
@@ -334,7 +336,7 @@ const tabs = [
     role="status"
     data-no-scroll-lock="true"
   ></div>
-</Layout>
+</Layout>}
 
 <style>
   @reference "../../styles/global.css";

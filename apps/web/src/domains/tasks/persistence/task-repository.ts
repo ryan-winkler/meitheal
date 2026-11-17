@@ -124,6 +124,7 @@ export interface TaskRow {
   checklists: string | null
   reminder_at: string | null
   source_template_id: string | null
+  routine_occurrence?: number
   ticket_number: number | null
   assigned_to: string | null
   kanban_position: number | null
@@ -1058,6 +1059,7 @@ export class TaskRepository {
                    t.urgency, t.importance, t.eisenhower_override,
                    t.effort_minutes, t.effort_type, t.blocked_by, t.nfc_tag_id, t.kanban_position,
                    t.recurrence_rule, t.created_at, t.updated_at, t.deferred_at, t.deferral_revision,
+                   (t.task_kind = 'routine_instance' AND t.source_template_id IS NOT NULL) AS routine_occurrence,
                    ${taskTimestampMs("t.updated_at")} AS task_version,
                    p.title as parent_title, p.task_type as parent_task_type, p.ticket_number as parent_ticket_number
             FROM tasks t

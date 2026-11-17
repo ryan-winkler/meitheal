@@ -134,6 +134,7 @@ const statusLabels: Record<string, string> = {
 }
 ---
 
+{available("goals") && <>
 <div class="goals-tab" id="goals-tab-root" data-area-id={scopedAreaName ? areaId : undefined}
      data-projection-key={projectionKey} data-projection-project={projectionKey ? projectId : undefined}
      data-projection-labels={protectionIncludesScopeLabels ? "1" : undefined}>
@@ -231,6 +232,8 @@ const statusLabels: Record<string, string> = {
     </div>
   )}
 </div>
+
+</>}
 
 <style>
   @reference "../../styles/global.css";

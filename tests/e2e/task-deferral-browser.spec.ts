@@ -192,7 +192,7 @@ test("a missing Deferred Area stays visible on the Board until the user widens i
     await expect(card).toHaveCount(0)
     await trigger.click()
     await page.locator('#area-selector-dropdown [data-area-id=""]').click()
-    await expect(trigger).toContainText("All Areas")
+    await expect(trigger).toContainText("All Groups")
     await expect(page).toHaveURL(url => url.searchParams.get("area") === "")
     await expect(card).toBeVisible()
     await add.click()
