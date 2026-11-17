@@ -8,6 +8,8 @@ import { initSettingsShell } from "@lib/settings-shell-controller"
 import { initSettingsLabels } from "@lib/settings-labels-controller"
 import { initSettingsLabelCleanup } from "@lib/settings-label-cleanup-controller"
 import { initSettingsTaskNav } from "@lib/settings-task-nav-controller"
+import { initOrganizationLabels } from "@lib/settings-organization-labels"
+import { initSettingsHomeAssistantArea } from "@lib/settings-home-assistant-area"
 import { initSettingsWorkspace } from "@lib/settings-workspace-controller"
 
 function initPwaNotificationTest(): void {
@@ -59,6 +61,8 @@ function bootSettingsPage(): void {
   initSettingsLabelCleanup()
   initSettingsTaskNav(pageLifecycle.signal)
   initSettingsWorkspace(pageLifecycle.signal)
+  initOrganizationLabels(pageLifecycle.signal)
+  initSettingsHomeAssistantArea(pageLifecycle.signal)
   const taskLayout = document.querySelector<HTMLElement>("#settings-task-detail-layout [data-task-layout-editor]")
   if (taskLayout) initTaskDetailLayoutEditor(taskLayout, pageLifecycle.signal)
   initPwaNotificationTest()

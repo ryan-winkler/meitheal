@@ -3,6 +3,7 @@ import { BoardIntakeRepository } from "@domains/tasks/persistence/board-intake-r
 import { NamedBoardRepository, type BoardActor } from "@domains/tasks/persistence/named-board-repository"
 import { NamedBoardTaskRepository } from "@domains/tasks/persistence/named-board-task-repository"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
+import type { HomeAssistantAreaFilter } from "./home-assistant-area-access"
 import type { BoardWorkspaceSelection } from "./board-workspace"
 import { apiJson } from "./api-response"
 
@@ -26,7 +27,7 @@ export async function readBoardDirectory(actor: BoardActor) {
   return { boards, destinations }
 }
 
-export async function readBoardView(actor: BoardActor, id: string, offset: number, selection?: BoardWorkspaceSelection) {
+export async function readBoardView(actor: BoardActor, id: string, offset: number, selection?: BoardWorkspaceSelection, location?: HomeAssistantAreaFilter) {
   await ensureSchema()
-  return new NamedBoardTaskRepository(getPersistenceClient()).view(actor, id, offset, selection)
+  return new NamedBoardTaskRepository(getPersistenceClient()).view(actor, id, offset, selection, location)
 }

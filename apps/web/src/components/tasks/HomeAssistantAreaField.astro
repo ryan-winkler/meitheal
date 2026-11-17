@@ -1,0 +1,47 @@
+---
+import { homeAssistantAreaAccess, homeAssistantAreaProof } from "@lib/home-assistant-area-access"
+
+interface Props {
+  mode?: "capture" | "edit" | "filter"
+  initialId?: string
+  readOnly?: boolean
+  publishOnly?: boolean
+  endpoint?: string
+  boardSession?: string
+  layoutItem?: string
+}
+const { mode = "capture", endpoint, boardSession, initialId, readOnly, publishOnly, layoutItem } = Astro.props
+const available = await homeAssistantAreaAccess(Astro)
+const proof = available && homeAssistantAreaProof(Astro, available)
+---
+
+{proof && (
+  <div
+    class="min-w-0"
+    data-layout-item={layoutItem}
+    data-ha-area-field={mode}
+    data-ha-area-proof={proof}
+    data-ha-area-read-only={readOnly || undefined}
+    data-ha-area-endpoint={endpoint}
+    data-ha-area-session={boardSession}
+    data-ha-area-initial-id={initialId}
+    hidden={mode === "edit" && !endpoint}
+  >
+    <label class="form-label">{mode === "filter" ? "Filter by Home Assistant Area" : "Home Assistant Area"}
+      <select class="form-select" name="home_assistant_area_id" disabled>
+        <option value="">{mode === "filter" ? "All locations" : "None"}</option>
+      </select>
+    </label>
+    {mode === "filter" && <button type="button" class="btn btn-ghost btn-sm" data-ha-area-filter disabled>Apply location filter</button>}
+    {mode === "edit" && !readOnly && <button type="button" class="btn btn-ghost btn-sm" data-ha-area-save disabled>Save location</button>}
+    {publishOnly && <p class="settings-hint">Choose a location when you publish the task.</p>}
+    <button type="button" class="btn btn-ghost btn-sm" data-ha-area-retry hidden>Reload location choices</button>
+    <p role="status" class="settings-hint" data-ha-area-status></p>
+  </div>
+)}
+
+<script>
+  import { initHomeAssistantAreaFields } from "@lib/home-assistant-area-fields"
+  import { pageLifecycle } from "@lib/page-lifecycle"
+  pageLifecycle.onPageLoad(initHomeAssistantAreaFields)
+</script>

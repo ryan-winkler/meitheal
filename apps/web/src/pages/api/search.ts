@@ -8,6 +8,7 @@ import {
   type TaskSearchField,
 } from "@domains/search"
 import { apiError, apiJson, apiProblem } from "../../lib/api-response"
+import { organizationLabelsFor } from "@lib/organization-labels"
 import { logApiError } from "../../lib/api-logger"
 
 const DEFAULT_FIELDS: TaskSearchField[] = [
@@ -38,7 +39,8 @@ function parseTaskFields(value: string | null): TaskSearchField[] {
   return fields.length > 0 ? fields : DEFAULT_FIELDS
 }
 
-export const GET: APIRoute = async ({ url }) => {
+export const GET: APIRoute = async (context) => {
+  const { url } = context
   const rawLimit = url.searchParams.get("limit")
   const parsedLimit = Number(rawLimit ?? 8)
   if ((rawLimit !== null && !/^[0-9]+$/.test(rawLimit)) || !Number.isSafeInteger(parsedLimit) || parsedLimit < 1) {
@@ -76,8 +78,10 @@ export const GET: APIRoute = async ({ url }) => {
     if (assignedTo) options.assignedTo = assignedTo
     if (parsedPriority != null) options.priority = parsedPriority
 
-    const result = await searchMeithealCatalog(options)
-    return apiJson(result)
+    const result = await searchMeithealCatalog(options, await organizationLabelsFor(context))
+    const response = apiJson(result)
+    response.headers.set("cache-control", "private, no-store")
+    return response
   } catch (error) {
     logApiError("search", "GET error", error)
     return apiError("Failed to search Meitheal", 500)

@@ -40,6 +40,7 @@ export interface SearchResultItem {
   actionId?: string
   icon?: string
   color?: string | null
+  keywords?: string[]
   meta?: Record<string, unknown>
 }
 

@@ -50,7 +50,9 @@ async function addTask(db: Database, id: string, fields: {
 
 const search = (params: string) => GET({
   url: new URL("http://localhost/api/search?" + params),
-} as Parameters<typeof GET>[0])
+  cookies: { get: () => undefined },
+  locals: {},
+} as unknown as Parameters<typeof GET>[0])
 
 async function results(params: Record<string, string>) {
   const response = await search(new URLSearchParams({ scope: "tasks", ...params }).toString())

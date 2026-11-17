@@ -21,7 +21,7 @@ export function readBoardWorkspaceSelection(params: URLSearchParams): BoardWorks
 
 export function boardWorkspaceHref(
   board: string,
-  context: { area?: string | undefined; project?: string | undefined; ticket?: string; groups?: boolean; offset?: number; fromArea?: string | undefined } = {},
+  context: { area?: string | undefined; project?: string | undefined; ticket?: string; groups?: boolean; offset?: number; fromArea?: string | undefined; homeArea?: string | undefined } = {},
   fragment = "",
 ): string {
   const query = new URLSearchParams()
@@ -30,6 +30,7 @@ export function boardWorkspaceHref(
   if (context.project) query.set("project", context.project)
   if (context.fromArea) query.set("from", context.fromArea)
   if (context.ticket) query.set("ticket", context.ticket)
+  if (context.homeArea) query.set("home_assistant_area_id", context.homeArea)
   if (context.offset) query.set("offset", String(context.offset))
   const search = query.toString()
   return `/boards/${encodeURIComponent(board)}${search ? `?${search}` : ""}${fragment ? `#${fragment}` : ""}`

@@ -50,7 +50,7 @@ function getStaticRegistry(): StaticRegistry {
 function itemMatchesQuery(item: SearchResultItem, query: string): boolean {
   if (!query) return true
   const needle = query.toLowerCase()
-  return [item.title, item.subtitle, item.description]
+  return [item.title, item.subtitle, item.description, ...(item.keywords ?? [])]
     .filter(Boolean)
     .join(" ")
     .toLowerCase()

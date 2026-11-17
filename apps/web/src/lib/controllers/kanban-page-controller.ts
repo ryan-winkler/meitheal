@@ -161,10 +161,13 @@ export function initKanbanPage(signal: AbortSignal): void {
 
       if (!dataOnly && shouldFocus && (focus || active === retry)) {
         const card = focus?.taskId ? board.querySelector<HTMLElement>(`.kanban-card[data-id="${CSS.escape(focus.taskId)}"] .card-more-btn`) : null
+        const target = retainedControl || card
+        const collapsedGroup = target?.closest(".swimlane-cards[hidden]")?.closest(".swimlane-group")
+        const control = collapsedGroup ? collapsedGroup.querySelector<HTMLButtonElement>(".swimlane-header") : target
         const lane = focus?.lane ? board.querySelector<HTMLElement>(`.kanban-column[data-status="${CSS.escape(focus.lane)}"]`) : null
         const range = lane && (lane.querySelector<HTMLElement>("[data-kanban-range]") ??
           lane.querySelector<HTMLElement>(".kanban-column-header"))
-        ;(retainedControl || card || range || board.querySelector<HTMLElement>(".kanban-column-header"))?.focus()
+        ;(control || range || board.querySelector<HTMLElement>(".kanban-column-header"))?.focus()
       }
     } catch {
       if (!request.signal.aborted && !signal.aborted) {
@@ -241,6 +244,9 @@ export function initKanbanPage(signal: AbortSignal): void {
   document.addEventListener("meitheal:task-status-saved", event => {
     const { id, status } = (event as CustomEvent<{ id: string; status: string }>).detail
     if (typeof status === "string") queueBackgroundRead({ taskId: id, lane: status, afterStatusSave: true })
+  }, { signal })
+  document.addEventListener("meitheal:home-assistant-area-saved", () => {
+    if (new URLSearchParams(location.search).has("home_assistant_area_id")) void refresh()
   }, { signal })
   document.addEventListener("meitheal:area-changed", () => {
     syncAreaLinks(getSelectedAreaId())

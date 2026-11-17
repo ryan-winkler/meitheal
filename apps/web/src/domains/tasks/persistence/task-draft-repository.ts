@@ -1,3 +1,5 @@
+import type { HomeAssistantAreaSelection } from "../../../lib/home-assistant-area-access"
+import { readHomeAssistantAreaPolicyRevision } from "./home-assistant-task-area"
 import { createHash } from "node:crypto"
 import { setTimeout } from "node:timers/promises"
 import type { Client, InStatement, Row } from "@libsql/client"
@@ -164,7 +166,7 @@ export class TaskDraftRepository {
     return row?.request_digest === fingerprint(task) ? receiptFromRow(row) : null
   }
 
-  async publish(ownerId: string, input: Publish, prepared: TaskCreationData | null, now = Date.now()) {
+  async publish(ownerId: string, input: Publish, prepared: TaskCreationData | null, now = Date.now(), area?: HomeAssistantAreaSelection) {
     const { expected, attemptId, task } = input
     const exact = exactReceipt(ownerId, expected, attemptId)
     const current: InStatement = { sql: activeDraft, args: [ownerId] }
@@ -203,6 +205,11 @@ export class TaskDraftRepository {
       ],
     }
 
+    if (area) {
+      const policy = readHomeAssistantAreaPolicyRevision(area.revision)
+      writeGuard.sql += ` AND EXISTS (${policy.sql})`
+      writeGuard.args.push(...policy.args)
+    }
     // Every side effect is gated by the UUID of this insert, so a replay can only read its receipt.
     const [inserted, , , , , receiptRows, draftRows] = await this.write([
       taskInsertStatement(prepared, now, { idempotencyKey: eventId, requestId: eventId, guard: writeGuard }),
@@ -233,6 +240,10 @@ export class TaskDraftRepository {
       exact,
       current,
       ...newLabels.map(name => taskLabelInsert(name, prepared.id, eventId)),
+      ...(area?.id ? [{
+        sql: "INSERT INTO home_assistant_task_areas (task_id, area_id) SELECT id, ? FROM tasks WHERE id = ? AND request_id = ?",
+        args: [area.id, prepared.id, eventId],
+      }] : []),
     ])
     const row = receiptRows?.rows[0]
     const ticket = inserted?.rows[0]?.ticket_number
