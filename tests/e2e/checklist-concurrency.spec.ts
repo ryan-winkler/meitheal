@@ -351,7 +351,7 @@ test("a historical SQL NULL checklist can be edited and distinguished from an em
     const taskPath = `/api/tasks/${id}`
     const url = origin + taskPath
     const read = async () => {
-      const response = await request.get(url)
+      const response = await request.get(url, { maxRetries: 1 })
       expect(response.status()).toBe(200)
       return response.json()
     }
