@@ -723,7 +723,7 @@ body.has-docked-inspector #task-detail-panel {
 }
 
 /* Task descriptions keep Markdown structure at every inspector width. */
-#td-title:not(:focus):not(:hover) { background: transparent; }
+#td-title:not(:focus, :hover) { background: transparent; }
 #td-desc-preview { color: var(--text-primary); line-height: 1.6; }
 #td-desc-preview > * + * { margin-block-start: .625em; }
 #td-desc-preview :is(h1, h2, h3, h4, h5, h6) { font-weight: 650; line-height: 1.3; }

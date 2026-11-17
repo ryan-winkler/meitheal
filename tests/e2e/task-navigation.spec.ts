@@ -4,6 +4,7 @@ import { shouldSkipBrowserSpecs } from "./_helpers"
 test.skip(shouldSkipBrowserSpecs(), "Set E2E_BASE_URL to run browser specs")
 test.use({ serviceWorkers: "block" })
 
+
 test("old task pins and visibility move to New task while view pins navigate and preserve filters", async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 1440, height: 950 })
   await page.addInitScript(() => {
@@ -680,7 +681,9 @@ test("Shopping links identify their own Area and follow applied Board filters", 
 })
 
 test("legacy Shopping type filters survive view switches and respect Table search spacing", async ({ page, request, baseURL }) => {
-  const headers = { origin: new URL(baseURL!).origin }
+  // Model this browser's client separately from earlier tests on the shared server.
+  const headers = { origin: new URL(baseURL!).origin, "x-forwarded-for": "127.0.0.2" }
+  await page.context().setExtraHTTPHeaders(headers)
   const previous = (await (await request.get("/api/settings")).json()).sidebar_config
   const suffix = crypto.randomUUID()
   const titles = [`Pantry ${suffix}`, `Frying pan ${suffix}`]

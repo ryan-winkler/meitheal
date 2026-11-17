@@ -142,7 +142,9 @@ Custom choice in Settings still takes priority.
 
 Description appears immediately after the title by default. Select a section
 heading to collapse or reopen that section. Use **Save** or **Cancel** in the
-Description editor. A failed save keeps your draft available for retry.
+Description editor. Closing the inspector or switching tickets saves your
+Description draft first. A failed save keeps the current ticket and draft
+available for retry.
 Activity Log starts closed and loads
 when you open it. If the request fails, use **Retry** in Activity Log.
 

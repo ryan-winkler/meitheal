@@ -258,7 +258,12 @@ test("Dashboard Focus Queue selects open work before applying its row limit", as
   }
 })
 
-test("Details completion clears Knight Rider active work on Dashboard and Board", async ({ page, request }) => {
+test("Details completion clears Knight Rider active work on Dashboard and Board", async ({ page, request, baseURL }) => {
+  // Isolate this browser's requests from earlier scenarios on the fixture server.
+  await page.context().setExtraHTTPHeaders({
+    origin: new URL(baseURL!).origin,
+    "x-forwarded-for": "127.0.0.3",
+  })
   await page.addInitScript(() => localStorage.setItem("meitheal-theme", "knight-rider"))
   await page.emulateMedia({ reducedMotion: "reduce" })
   const title = "Finish the active card from Details"
@@ -428,7 +433,11 @@ test("Details completion clears Knight Rider active work on Dashboard and Board"
     await done.click()
     await expect(status).toHaveValue("complete")
     await expect.poll(() => refreshHeld).toBe(true)
+    const reopened = page.waitForResponse(response => response.request().method() === "PUT" &&
+      new URL(response.url()).pathname === `/api/tasks/${id}` && response.request().postDataJSON()?.status === "active")
     await status.selectOption("active")
+    const response = await reopened
+    expect(response.ok(), await response.text()).toBe(true)
     await expect(status).toHaveAttribute("data-saved-status", "active")
     releaseHeldRefresh()
     await expect.poll(() => boardReads).toBeGreaterThanOrEqual(priorReads + 2)

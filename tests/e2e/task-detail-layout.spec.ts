@@ -310,3 +310,44 @@ test.describe("touch layout", () => {
     expect((await ids(page.locator("#td-sections"))).slice(0, 2)).toEqual(["properties", "description"])
   })
 })
+
+test("switch and Close wait for the Description draft and retain it after failure", async ({ page, request }) => {
+  const id = await createTicket(request, "Draft before switch")
+  const other = await createTicket(request, "Destination after save")
+  let finish!: () => void
+  const pending = new Promise<void>(resolve => { finish = resolve })
+  let writes = 0
+  await page.route(`**/api/tasks/${id}`, async route => {
+    if (route.request().method() !== "PUT") return route.continue()
+    writes++
+    if (writes === 1) {
+      await pending
+      return route.fulfill({ status: 400, json: { error: "Fixture failed draft write" } })
+    }
+    return route.continue()
+  })
+  await page.goto(`/tickets/${id}`)
+  await page.getByRole("button", { name: "Edit description" }).click()
+  const editor = page.locator("#td-description")
+  await editor.fill("Retain this draft when switching")
+  await expect(page.locator("#td-desc-save-btn")).toBeEnabled()
+  await page.evaluate(id => { void window.openTaskDetail?.(id) }, other)
+  try {
+    await expect.poll(() => writes).toBe(1)
+    await expect(page.locator("#td-title")).toHaveValue("Draft before switch")
+  } finally {
+    finish()
+  }
+  await expect(editor).toBeFocused()
+  await expect(editor).toHaveValue("Retain this draft when switching")
+  await page.evaluate(id => { void window.openTaskDetail?.(id) }, other)
+  await expect(page.locator("#td-title")).toHaveValue("Destination after save")
+  const saved = await request.get(`/api/tasks/${id}`)
+  expect((await saved.json()).description).toBe("Retain this draft when switching")
+  await page.getByRole("button", { name: "Edit description" }).click()
+  await editor.fill("Save this draft when closing")
+  await page.getByRole("button", { name: "Close detail" }).click()
+  await expect(page.locator("#task-detail-overlay")).not.toHaveClass(/active/)
+  expect((await (await request.get(`/api/tasks/${other}`)).json()).description)
+    .toBe("Save this draft when closing")
+})

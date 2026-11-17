@@ -79,6 +79,7 @@
         let sessionTicketId: string | null = null
         let currentTicketNumber: number | null = null
         let pendingDescriptionSave: Promise<boolean> | undefined
+        let queuedDescriptionTransition: (() => void) | undefined
         let currentCommentTarget: string | null = null
         let commentsReady: Promise<void> = Promise.resolve()
         let _modalAbortController: AbortController | null = null;
@@ -272,11 +273,28 @@
           }
         }
 
+        function waitForDescriptionWrite(next: () => void): boolean {
+          const dirty = currentTaskId && !descEditContainer?.classList.contains("hidden") &&
+            tdDescription.value !== _descOriginalValue
+          if (!pendingDescriptionSave && !dirty) return false
+          if (dirty && _isPopulating) {
+            queuedDescriptionTransition = next
+            return true
+          }
+          const generation = detailGeneration
+          const write = pendingDescriptionSave ?? exitDescEdit(true)
+          void write.then(saved => {
+            if (saved && !__signal.aborted && generation === detailGeneration) next()
+          })
+          return true
+        }
+
         function closeTD(reason: SearchDetailDismissal = "dismiss", updateLocation = true) {
           const search = searchSession
           const immediate = reason === "history" && Boolean(search)
           if (!tdOverlay?.classList.contains("active") || (!immediate && tdOverlay.classList.contains("closing"))) return
           if (!immediate && waitForDetailWrites(() => closeTD(reason, updateLocation))) return
+          if (waitForDescriptionWrite(() => closeTD(reason, updateLocation))) return
           const closing = ++detailGeneration
           const previousCard = _previouslyFocused?.closest<HTMLElement>(".kanban-card")
           const previousDay = _previouslyFocused?.closest<HTMLElement>(".cal-cell")?.dataset.date
@@ -292,6 +310,7 @@
           sessionTicketId = null
           currentTicketNumber = null
           pendingDescriptionSave = undefined
+          queuedDescriptionTransition = undefined
           taskLoaded = false
           currentCommentTarget = null
           delete tdOverlay.dataset.openTaskId
@@ -383,6 +402,9 @@
           const requestedTicket = /^MTH-(\d+)$/i.exec(taskId)
           const sameTicket = !newSession && (taskId === (sessionTicketId ?? currentTaskId) ||
             (requestedTicket !== null && Number(requestedTicket[1]) === currentTicketNumber))
+          if (!sameTicket && waitForDescriptionWrite(() => {
+            void openTaskDetail(taskId, commentTarget, search, updateLocation)
+          })) return
           if (sameTicket && pendingDescriptionSave) {
             const generation = detailGeneration
             await pendingDescriptionSave
@@ -822,6 +844,7 @@
             const keepDescriptionDraft = sameTicket && !descEditContainer?.classList.contains("hidden") &&
               tdDescription.value !== _descOriginalValue
             setDescriptionSaving(false)
+            if (descSaveBtn) descSaveBtn.disabled = true
             if (descSavedIndicator) descSavedIndicator.style.display = "none"
             try {
               renderTaskDescription(description)
@@ -1215,10 +1238,14 @@
             setTimeout(() => {
               if (modalSignal.aborted) return
               _isPopulating = false
+              if (descSaveBtn && !pendingDescriptionSave) descSaveBtn.disabled = false
               setStatusLoading(false)
               if (projectField) projectField.disabled = !projectFieldReady
               deferral.loaded(taskId, typeof t.project_id === "string" ? t.project_id : null, t.deferred_at != null, modalSignal, Boolean(searchSession))
               pins.loaded(taskId, modalSignal)
+              const transition = queuedDescriptionTransition
+              queuedDescriptionTransition = undefined
+              transition?.()
             }, 100)
           } catch (e) {
             if (modalSignal.aborted) return
@@ -1311,8 +1338,8 @@
           }
         }
 
-        async function exitDescEdit(save: boolean) {
-          if (!tdDescription || descSaveBtn?.disabled) return
+        async function exitDescEdit(save: boolean): Promise<boolean> {
+          if (!tdDescription || descSaveBtn?.disabled) return false
           closeTaskReferences()
           if (save) {
             const generation = detailGeneration
@@ -1322,12 +1349,13 @@
             pendingDescriptionSave = write
             const saved = await write
             if (pendingDescriptionSave === write) pendingDescriptionSave = undefined
-            if (__signal.aborted || generation !== detailGeneration) return
+            if (__signal.aborted || generation !== detailGeneration) return false
             setDescriptionSaving(false)
             if (!saved) {
               tdDescription.focus()
-              return
+              return false
             }
+            _descOriginalValue = raw
             renderTaskDescription(raw)
             if (descSavedIndicator) {
               descSavedIndicator.style.display = ""
@@ -1340,6 +1368,7 @@
           descEditContainer?.classList.add("hidden")
           descView?.classList.remove("hidden")
           descEditBtnHover?.focus({ preventScroll: true })
+          return true
         }
 
         descEditBtnHover?.addEventListener("click", () => enterDescEdit(), { signal: __signal });
