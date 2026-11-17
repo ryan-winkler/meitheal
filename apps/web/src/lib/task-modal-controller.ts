@@ -283,6 +283,13 @@
           document.dispatchEvent(new CustomEvent("kanban:detail-changed", { detail: "area" }))
         }
 
+        let epicGroupingDirty = false
+        function reconcileEpicGrouping() {
+          if (!epicGroupingDirty || __signal.aborted) return
+          epicGroupingDirty = false
+          document.dispatchEvent(new Event("meitheal:task-hierarchy-changed"))
+        }
+
         function waitForDescriptionWrite(next: () => void): boolean {
           const dirty = currentTaskId && !descEditContainer?.classList.contains("hidden") &&
             tdDescription.value !== _descOriginalValue
@@ -360,6 +367,7 @@
             if (search?.dirty && !search.pending && !deferralChanged) deferral.reconcileSearch()
             search?.handoff.onDismiss(reason)
             reconcileAreaGrouping()
+            reconcileEpicGrouping()
           };
 
           if (reducedMotion || immediate || focusMode || document.body.classList.contains("has-docked-inspector")) {
@@ -611,6 +619,7 @@
             const linkParentDisplay = document.getElementById(
               "td-link-parent-display",
             ) as HTMLElement;
+            let unlinkParentButton: HTMLButtonElement | undefined
             if (linkParentDisplay) {
               if (t.parent_id) {
                 const parentTitle = String(
@@ -624,6 +633,8 @@
                 parentLink.dataset.id = String(t.parent_id);
                 parentLink.textContent = parentTitle;
                 const unlinkBtn = document.createElement("button");
+                unlinkParentButton = unlinkBtn
+                unlinkBtn.disabled = true
                 unlinkBtn.type = "button";
                 unlinkBtn.className = "text-xs text-danger hover:text-red-400 ml-1 td-unlink-parent";
                 unlinkBtn.title = "Remove parent";
@@ -1264,6 +1275,7 @@
               if (descSaveBtn && !pendingDescriptionSave) descSaveBtn.disabled = false
               setStatusLoading(false)
               if (areaField) areaField.disabled = !areaFieldReady
+              if (unlinkParentButton) unlinkParentButton.disabled = false
               if (projectField) projectField.disabled = !projectFieldReady
               deferral.loaded(taskId, typeof t.project_id === "string" ? t.project_id : null, t.deferred_at != null, modalSignal, Boolean(searchSession))
               pins.loaded(taskId, modalSignal)
@@ -1303,6 +1315,9 @@
                     (tdOverlay.dataset.openTaskId && generation !== detailGeneration)) {
                   reconcileAreaGrouping()
                 }
+              } else if (field === "parent_id" || field === "task_type" || field === "title") {
+                epicGroupingDirty = true
+                if (!tdOverlay.classList.contains("active")) reconcileEpicGrouping()
               }
               notifyInactivityTaskChanged(field === "status" ? undefined : taskId)
               if (field === "status") {
