@@ -287,6 +287,9 @@
     "group_by_tooltip": "Grúpáil snámhlána de réir"
   },
   "table": {
+    "group_epic": "Eipic",
+    "subgroup_epic": "Ansin de réir Eipice",
+    "no_epic": "Gan Eipic",
     "filter_unassigned": "Neamhshannta",
     "filter_workflow_columns": "Colúin sreafa oibre",
     "filter_columns_load_failed": "Níorbh fhéidir na colúin sreafa oibre a lódáil.",

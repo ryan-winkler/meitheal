@@ -60,6 +60,14 @@ The server applies normalized filters, grouping, and sorting to the complete eli
 
 Choose **Retry** to fetch the current filter selection again. The previous results and address remain visible while the refresh fails. A Table refresh uses a unique `tableRefresh` marker, a no-store response, and the active worker's network-only path. The marker stays out of shared links.
 
+## Group tasks by Epic
+
+Choose **Group by → Epic** to see each task with its nearest Household Epic, including when that Epic is outside your filters or the current page. An Epic belongs to its own group. A nested Epic starts a separate group. Tasks with missing or cyclic ancestry appear in **No Epic**.
+
+Choose **Then by Epic** to split another group by Epic. The group count covers all matching tasks, and page selection affects the displayed rows. Save a preset or share the Table URL to restore the grouping. Epic headings include their ticket reference to distinguish matching titles.
+
+After changing a title, type or parent in Details, close Details to refresh the groups. If the refresh fails, the previous results stay visible and **Retry** loads the current hierarchy again.
+
 ## Troubleshooting
 
 ### Saved filters are unavailable

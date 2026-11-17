@@ -115,3 +115,17 @@ test("hierarchy and kind intersect and compound rules see real label arrays", ()
   expect(isTaskVisible({ dataset: { ...epic.dataset, taskKind: "standard_action" } }, state)).toBe(false)
   expect(isTaskVisible({ dataset: { ...epic.dataset, labels: "[]" } }, state)).toBe(false)
 })
+
+
+test("Epic Table presentation survives saved filters and URL normalization at both levels", () => {
+  for (const [groupBy, subGroupBy] of [["epic", "status"], ["priority", "epic"]]) {
+    const state = normalizeSavedFilter({ groupBy, subGroupBy, area: "kitchen" })!
+    const params = new URLSearchParams()
+    writeTableFilterParams(params, state)
+    expect(readTableFilterParams(params)).toEqual(state)
+  }
+  expect(normalizeSavedFilter({ groupBy: "epic", subGroupBy: "epic" })).toEqual({
+    area: "", groupBy: "epic",
+  })
+  expect(normalizeSavedFilter({ subGroupBy: "epic" })).toEqual({ area: "" })
+})

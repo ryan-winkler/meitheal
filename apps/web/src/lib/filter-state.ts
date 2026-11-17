@@ -68,6 +68,7 @@ export const STATUS_VALUES = ["pending", "active", "complete", "overdue"] as con
 export const GROUP_BY_OPTIONS = [
   "none",
   "type",
+  "epic",
   "priority",
   "area",
   "assignee",
@@ -384,6 +385,12 @@ export function loadTableFilterState(): Partial<FilterState> {
 export function saveTableFilterState(state: Partial<FilterState>, page?: number): void {
   try {
     const { laneIds: _laneIds, createdFrom: _createdFrom, createdThrough: _createdThrough, ...sharedState } = state
+    if (sharedState.groupBy === "epic") {
+      delete sharedState.groupBy
+      delete sharedState.subGroupBy
+    } else if (sharedState.subGroupBy === "epic") {
+      delete sharedState.subGroupBy
+    }
     localStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(sharedState))
   } catch { /* storage unavailable */ }
   const url = taskBackgroundUrl()
@@ -618,6 +625,8 @@ export function getGroupKey(el: Pick<HTMLElement, "dataset">, groupBy: string): 
   switch (groupBy) {
     case "type":
       return el.dataset.taskType ?? el.dataset.task_type ?? "task"
+    case "epic":
+      return el.dataset.epicGroup || "epic:none"
     case "priority":
       return el.dataset.priority ?? "3"
     case "area":
