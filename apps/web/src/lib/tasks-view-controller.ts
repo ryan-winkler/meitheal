@@ -5,7 +5,7 @@
 import { singleKeyShortcutsEnabled } from "@lib/single-key-shortcuts"
 import { hasPriorityOverlay } from "@lib/layout-shortcuts-controller"
 import { getLegacyTaskId, openTaskDetailHandoff } from "@lib/task-detail-handoff"
-import { parseTaskView, TASK_VIEWS, taskViewUrl, type TaskView } from "@lib/task-view-route"
+import { parseTaskView, requestedTaskView, TASK_VIEWS, taskViewUrl, type TaskView } from "@lib/task-view-route"
 import { TASK_VIEW_LOCATION_EVENT, taskBackgroundUrl, ticketIdFromPath } from "@lib/task-page-url"
 
 const STORAGE_KEY = "meitheal:tasks-last-view"
@@ -20,7 +20,7 @@ export function initTasksViewSwitcher(rendered: TaskView, signal: AbortSignal): 
     const url = new URL(location.href)
     if (ticketIdFromPath(url.pathname, window.__ingress_path) !== null) return true
     const legacyTask = getLegacyTaskId(url.hash)
-    let requested = parseTaskView(url.hash.slice(1))
+    let requested = requestedTaskView(url.searchParams, url.hash)
     if (initial && !url.hash && !url.search) {
       try { requested = parseTaskView(localStorage.getItem(STORAGE_KEY)) } catch { /* storage unavailable */ }
     }

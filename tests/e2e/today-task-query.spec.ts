@@ -104,6 +104,11 @@ test("Today reads full queue counts without materializing hidden rows", async ()
     await expect(getTodayTaskCounts(new Date(now))).resolves.toEqual({
       dueToday: 0, completedToday: 3, carriedForward: 121, remaining: 123, completionPercent: 2,
     })
+
+    await test.step("a failed Today read rejects", async () => {
+      await client.execute("ALTER TABLE tasks RENAME COLUMN description TO unavailable_description")
+      await expect(getTodayTaskRows(date, false)).rejects.toThrow(/no such column: description/)
+    })
   } finally {
     resetPersistenceForTests()
     if (original === undefined) delete process.env.MEITHEAL_DB_URL

@@ -4,6 +4,23 @@ import { shouldSkipBrowserSpecs } from "./_helpers"
 test.skip(shouldSkipBrowserSpecs(), "Set E2E_BASE_URL to run browser specs")
 test.use({ serviceWorkers: "block" })
 
+test("explicit Kanban survives conflicting fragments without a hierarchy filter", async ({ page }) => {
+  const board = page.locator("#kanban-shell")
+  const isExplicitKanban = (url: URL) => url.searchParams.get("view") === "kanban" && url.hash === "#kanban"
+  for (const suffix of ["", "#kanban"]) {
+    await page.goto("about:blank")
+    await page.goto("/tasks?view=kanban" + suffix)
+    await expect(page).toHaveURL(isExplicitKanban)
+    await expect(page.locator("[data-view-tabs]")).toHaveAttribute("data-switcher-ready", "true")
+    await board.evaluate(shell => { shell.dataset.originalDocument = "true" })
+    for (const hash of ["calendar", "timeline"]) {
+      await page.evaluate(hash => { location.hash = hash }, hash)
+      await expect(page).toHaveURL(isExplicitKanban)
+      await expect(board).toHaveAttribute("data-original-document", "true")
+    }
+  }
+})
+
 test("legacy Shopping type filters survive view switches and respect Table search spacing", async ({ page, request, baseURL }) => {
   const headers = { origin: new URL(baseURL!).origin }
   const previous = (await (await request.get("/api/settings")).json()).sidebar_config
@@ -32,7 +49,7 @@ test("legacy Shopping type filters survive view switches and respect Table searc
       shortcuts.push({
         id: `legacy-task-type-${taskType}`,
         label: taskType === "story" ? "Stories" : "Epics",
-        href: `/table?area=&task_type=${taskType}`,
+        href: taskType === "story" ? "/tasks?area=&task_type=story" : "/table?area=&task_type=epic",
         icon: "checkbox",
       })
     }
@@ -129,6 +146,16 @@ test("legacy Shopping type filters survive view switches and respect Table searc
 
     const stories = page.locator('#sidebar [data-page="legacy-task-type-story"]')
     const epics = page.locator('#sidebar [data-page="legacy-task-type-epic"]')
+    const legacyBoard = await request.get("/kanban?task_type=story", { maxRedirects: 0 })
+    expect(legacyBoard.status()).toBe(301)
+    const boardLocation = new URL(legacyBoard.headers().location!, baseURL)
+    expect(boardLocation.searchParams.get("task_type")).toBe("story")
+    const firstDocument = await request.get(boardLocation.href)
+    expect(firstDocument.ok()).toBe(true)
+    expect(await firstDocument.text()).toContain('id="kanban-shell"')
+    const firstTableDocument = await request.get("/tasks?area=&task_type=story")
+    expect(firstTableDocument.ok()).toBe(true)
+    expect(await firstTableDocument.text()).toContain('id="table-shell"')
     await stories.click()
     await expect(page).toHaveURL(url => url.pathname === "/tasks" && url.hash === "#table" && url.searchParams.get("task_type") === "story")
     await expect(stories).toHaveAttribute("aria-current", "page")
@@ -136,9 +163,19 @@ test("legacy Shopping type filters survive view switches and respect Table searc
     await expect(page.locator('#sidebar [data-page="tasks"]')).not.toHaveAttribute("aria-current", "page")
     await expect(table.getByText(titles[0]!, { exact: true })).toBeVisible()
     await expect(table.getByText(titles[1]!, { exact: true })).toHaveCount(0)
+    await expect(page).toHaveURL(url => url.searchParams.get("view") === "table")
+    await table.evaluate(shell => { shell.dataset.originalDocument = "true" })
+    await page.evaluate(() => { location.hash = "calendar" })
+    await expect(page).toHaveURL(url => url.searchParams.get("view") === "table" && url.hash === "#table")
+    await expect(table).toHaveAttribute("data-original-document", "true")
     await table.locator('.filter-toolbar [data-type="standard_action"]').click()
     await expect(page).toHaveURL(url => url.searchParams.has("types") && url.searchParams.get("task_type") === "story")
     await expect(stories).toHaveAttribute("aria-current", "page")
+    await views.getByRole("link", { name: "Kanban", exact: true }).click()
+    await expect(page).toHaveURL(url => url.hash === "#kanban" &&
+      url.searchParams.get("view") === "kanban" && url.searchParams.get("task_type") === "story")
+    await expect(page.locator("#kanban-shell")).toBeVisible()
+    await expect(stories).not.toHaveAttribute("aria-current", "page")
     await page.goto("/tasks?view=table&area=&task_type=story&task_type=epic#table")
     await expect(epics).toHaveAttribute("aria-current", "page")
     await expect(table.getByText(titles[1]!, { exact: true })).toBeVisible()
