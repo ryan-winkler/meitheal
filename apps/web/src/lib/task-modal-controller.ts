@@ -450,7 +450,7 @@
           statusSelect?.removeAttribute("data-saved-status")
           setStatusBusy(false)
           const areaField = document.querySelector<HTMLSelectElement>("#td-area")
-          const areaWritesAtOpen = new Map(pendingAreaWrites)
+          const areaWriteAtOpen = pendingAreaWrites.get(taskId)
           let areaFieldReady = false
           if (areaField) {
             areaField.disabled = true
@@ -511,9 +511,13 @@
               await pendingChecklist
               if (modalSignal.aborted) return
             }
+            if (areaWriteAtOpen) {
+              await areaWriteAtOpen
+              if (modalSignal.aborted) return
+            }
             const res = await fetch(`/api/tasks/${encodeURIComponent(taskId)}`, { // nosemgrep
               signal: modalSignal,
-              ...(pendingChecklist ? { cache: "no-store" } : {}),
+              ...(pendingChecklist || areaWriteAtOpen ? { cache: "no-store" } : {}),
             })
             if (modalSignal.aborted) return
             if (!res.ok) {
@@ -966,9 +970,7 @@
               document.getElementById("td-time-tracked") as HTMLInputElement
             ).value = String(t.time_tracked ?? 0);
             if (areaField) {
-              const recentArea = await areaWritesAtOpen.get(taskId)
-              if (modalSignal.aborted) return
-              const savedArea = recentArea ?? String(t.area_id ?? "default")
+              const savedArea = String(t.area_id ?? "default")
               try {
                 const response = await areas
                 if (!response.ok) throw new Error("Areas unavailable")

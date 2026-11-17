@@ -2,7 +2,7 @@ import { once } from "node:events"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { expect, test } from "@playwright/test"
+import { expect, test, type Route } from "@playwright/test"
 
 import { launchPinBrowser, startCoreFixture } from "../scripts/task-pins-fixture"
 
@@ -57,13 +57,14 @@ test("Area changes update the Kanban groups and preserve the board context throu
       const started = new Promise<void>(resolve => { entered = resolve })
       const release = new Promise<void>(resolve => { releasePending = resolve })
       releases.push(releasePending)
-      await page.route(taskApi, async route => {
+      const hold = async (route: Route) => {
         if (route.request().method() !== "PUT") return route.continue()
         expect(route.request().postDataJSON()).toMatchObject({ area_id: area })
         entered()
         await release
         await route.continue()
-      })
+      }
+      await page.route(taskApi, hold)
       const response = page.waitForResponse(res => res.url() === taskApi && res.request().method() === "PUT")
       await select.selectOption(area)
       await started
@@ -71,7 +72,7 @@ test("Area changes update the Kanban groups and preserve the board context throu
       return async () => {
         releasePending()
         expect((await response).ok()).toBe(true)
-        await page.unroute(taskApi)
+        await page.unroute(taskApi, hold)
       }
     }
 
@@ -183,9 +184,9 @@ test("Area changes update the Kanban groups and preserve the board context throu
     await expect(drawer).toBeHidden()
     const oldAreaRead = page.waitForResponse(res => res.url() === api && res.request().method() === "GET")
     await card(task).click()
-    expect((await (await oldAreaRead).json()).area_id).toBe(destination)
     await expect(select).toBeDisabled()
     await lateReopen()
+    expect((await (await oldAreaRead).json()).area_id).toBe(original)
     await savedValue(original)
     await expect(select).toBeEnabled()
     await close.click()
@@ -194,6 +195,27 @@ test("Area changes update the Kanban groups and preserve the board context throu
     await expect(page).toHaveURL(url => url.searchParams.get("area") === destination && url.searchParams.get("groupBy") === "area")
     await expect(page.locator(`#area-selector-dropdown [data-area-id="${destination}"]`)).toHaveAttribute("aria-selected", "true")
     expect(await rememberedArea()).toBe(remembered)
+
+    // A reopened drawer must read after its pending save, then accept a newer external edit.
+    await page.goto(boardUrl(""))
+    await expect(card(task)).toBeVisible()
+    await card(task).click()
+    await savedValue(original)
+    const acknowledgeDestination = await holdMove(destination)
+    await close.click()
+    await expect(drawer).toBeHidden()
+    await page.route(api, async route => {
+      if (route.request().method() !== "GET") return route.continue()
+      expect((await context.request.put(api, { headers, data: { area_id: original } })).ok()).toBe(true)
+      await route.continue()
+    }, { times: 1 })
+    await card(task).click()
+    await expect(select).toBeDisabled()
+    await acknowledgeDestination()
+    await savedValue(original)
+    await expect(select).toBeEnabled()
+    await close.click()
+    await expect(drawer).toBeHidden()
 
     await page.goto(boardUrl(""))
     await expect(card(task)).toBeVisible()

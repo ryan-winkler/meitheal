@@ -123,3 +123,5 @@ Cards keep their full height in a busy lane. The lane scrolls instead of
 compressing the cards. At widths from 769 to 1024 CSS px the sidebar narrows to
 200 px, and the page content starts at the sidebar edge. Both read
 `--sidebar-width`, so a change to one width moves the other.
+
+When reopening Details while an Area save is pending, the drawer waits for that save and then reads the current task. A later edit from another client remains authoritative.
