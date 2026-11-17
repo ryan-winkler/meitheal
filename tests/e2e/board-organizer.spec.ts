@@ -108,7 +108,25 @@ test("Named Board disclosures follow the selected Group and current Home Assista
     await projectSettings.getByRole("textbox", { name: "Name", exact: true }).fill("Updated unfiled fixture")
     await projectSettings.getByRole("button", { name: "Save Project", exact: true }).click()
     await expect(page.getByRole("heading", { name: "Updated unfiled fixture", exact: true }).first()).toBeVisible()
+    const due = await owner.request.post(app + "/api" + path + "/tickets", {
+      headers, data: { title: "Due Board work", due_date: "2000-01-01", placement: {} },
+    })
+    expect(due.status(), await due.text()).toBe(201)
+    const task = await due.json()
+    const dueList = await owner.request.get(app + "/api/boards/due-today")
+    expect(dueList.status()).toBe(200)
+    expect((await dueList.json()).items).toContainEqual(expect.objectContaining({ id: task.id, title: "Due Board work" }))
+    await page.goto(app + "/today")
+    const boardWork = page.locator("[data-today-board-work]")
+    await expect(boardWork.getByRole("link", { name: "Due Board work" })).toHaveAttribute("href", fixture.configuredPath + path + "?ticket=" + task.id)
+    expect(await boardWork.locator('input,button,[data-task-id]').count()).toBe(0)
+    const clearedDue = await owner.request.patch(app + "/api" + path + "/tickets/" + task.id, {
+      headers, data: { version: task.version, due_date: null },
+    })
+    expect(clearedDue.status(), await clearedDue.text()).toBe(200)
+    expect((await (await owner.request.get(app + "/api/boards/due-today")).json()).items).toEqual([])
     await owner.addCookies([{ name: "feedback-fixture", value: "member-two", url: origin }])
+    expect((await (await owner.request.get(app + "/api/boards/due-today")).json()).items).toEqual([])
     const inaccessible = await owner.request.get(app + "/api" + path + "?view=groups&selected=" + selected)
     expect(inaccessible.status()).toBe(404)
     await page.goto(app + "/boards")
