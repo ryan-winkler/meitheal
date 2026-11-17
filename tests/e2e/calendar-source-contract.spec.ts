@@ -8,6 +8,7 @@ import { launchPinBrowser, startCoreFixture } from "../scripts/task-pins-fixture
 
 test("Calendar reads configured sources as a household member and filters before pagination", async ({ playwright }, testInfo) => {
   test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires a built App and authenticated ingress")
+  test.slow()
   const work = await mkdtemp(join(tmpdir(), "meitheal-calendar-filter-"))
   const child = startCoreFixture(work)
   child.stdout?.resume()

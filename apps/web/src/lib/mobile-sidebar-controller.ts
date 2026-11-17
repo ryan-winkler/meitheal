@@ -39,7 +39,8 @@ pageLifecycle.onPageLoad(signal => {
     else if (link && sidebar.contains(target)) closeDrawer(false, !link.matches(".task-creation__settings"))
   }, { signal })
   document.addEventListener("keydown", event => {
-    if (!sidebar.classList.contains("open") || event.defaultPrevented || hasPriorityOverlay()) return
+    if (!sidebar.classList.contains("open") || event.defaultPrevented || hasPriorityOverlay()
+      || document.querySelector("#search-hub-overlay:not(.hidden)")) return
     if (event.key === "Escape") {
       event.preventDefault()
       closeDrawer(true)

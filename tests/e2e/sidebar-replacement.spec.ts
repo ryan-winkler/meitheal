@@ -103,6 +103,13 @@ test("sidebar can close again in desktop hover mode and on a phone", async ({ pa
     await page.keyboard.press(key)
     expect(await sidebar.evaluate(drawer => drawer.contains(document.activeElement))).toBe(true)
   }
+  await page.keyboard.press("Control+k")
+  await expect(page.locator("#search-hub-input")).toBeFocused()
+  await page.keyboard.press("Tab")
+  expect(await page.locator("#search-hub-overlay").evaluate(overlay => overlay.contains(document.activeElement))).toBe(true)
+  await page.keyboard.press("Escape")
+  await expect(page.locator("#search-hub-overlay")).toBeHidden()
+  await expect(menu).toHaveAttribute("aria-expanded", "true")
   await close.press("Enter")
   await expect(menu).toHaveAttribute("aria-expanded", "false")
   await expect(menu).toBeFocused()
