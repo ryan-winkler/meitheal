@@ -1,9 +1,11 @@
 ---
+import "../../styles/_sidebar-reorder.css"
 import { t } from "../../i18n/translations";
 import type { Locale } from "../../lib/locale";
 import Icon from "../ui/Icon.astro";
 import SidebarHierarchyTree from "./SidebarHierarchyTree.astro"
 import SidebarNavList from "./SidebarNavList.astro";
+import SidebarReorderHandle from "./SidebarReorderHandle.astro";
 import TaskCreationMenu from "./TaskCreationMenu.astro";
 import NavOverflowMore from "./NavOverflowMore.astro";
 import SidebarFooter from "./SidebarFooter.astro";
@@ -184,7 +186,7 @@ const rawOrder: NavKey[] =
     : [];
 // Fall back to defaults if saved order is empty / invalid, then append any missing defaults
 const order: NavKey[] = rawOrder.length > 0
-  ? rawOrder.map(key => key === "areas" && !rawOrder.includes("boards") ? "boards" : key)
+  ? [...new Set(rawOrder.map(key => key === "areas" && !rawOrder.includes("boards") ? "boards" : key))]
   : [...DEFAULT_ORDER];
 DEFAULT_ORDER.forEach((k) => {
   if (!order.includes(k)) order.push(k);
@@ -224,10 +226,12 @@ navItems.splice(pinIndex, 0, {
 })
 
 const boardPosition = navItems.findIndex(item => item.key === "boards")
-const primaryItems = boardPosition < 0 ? navItems : navItems.slice(0, boardPosition + 1)
 const householdGroups = hierarchyEnabled && sidebarConfig.areas !== false
 const householdGroupLabel = labels.areas || (locale === "ga" ? "Grúpaí" : "Groups")
-const remainingItems = boardPosition < 0 ? [] : navItems.slice(boardPosition + 1)
+const primaryItems = !householdGroups || boardPosition < 0 ? navItems : navItems.slice(0, boardPosition + 1)
+const remainingItems = !householdGroups || boardPosition < 0 ? [] : navItems.slice(boardPosition + 1)
+const sidebarDefaultOrder = navItems.map(item => item.key)
+if (householdGroups) sidebarDefaultOrder.splice(boardPosition < 0 ? sidebarDefaultOrder.length : boardPosition + 1, 0, "areas")
 ---
 
 <nav
@@ -312,18 +316,46 @@ const remainingItems = boardPosition < 0 ? [] : navItems.slice(boardPosition + 1
       </TaskCreationMenu>
     </div>
 
-    <div class="sidebar-scroll" data-nav-overflow="sidebar">
-      {primaryItems.length > 0 && <SidebarNavList navItems={primaryItems} taskCounts={taskCounts} />}
+    <div class="sidebar-scroll" data-nav-overflow="sidebar" data-sidebar-default-order={JSON.stringify(sidebarDefaultOrder)}>
+      <SidebarNavList navItems={primaryItems} taskCounts={taskCounts}>
+        {showNamedBoardShortcuts && primaryItems.some(item => item.key === "boards") &&
+          <ul slot="boards" class="sidebar-board-shortcuts" data-sidebar-boards hidden aria-label="Visible Boards"></ul>}
+      </SidebarNavList>
       {householdGroups && (
-        <section class="sidebar-household" id="sidebar-hierarchy-panel" aria-label="Household Board">
+        <section class="sidebar-household" id="sidebar-hierarchy-panel" data-sidebar-group="areas" aria-label="Household Board">
           <a class="nav-link sidebar-household-link" href="/boards/household">Household</a>
           <SidebarHierarchyTree locale={locale} label={householdGroupLabel} />
+          <SidebarReorderHandle label={householdGroupLabel} locale={locale} />
         </section>
       )}
-      {boardPosition >= 0 && showNamedBoardShortcuts && <ul class="sidebar-board-shortcuts" data-sidebar-boards hidden aria-label="Visible Boards"></ul>}
-      {remainingItems.length > 0 && <SidebarNavList navItems={remainingItems} taskCounts={taskCounts} />}
+      {householdGroups && (
+        <SidebarNavList navItems={remainingItems} taskCounts={taskCounts}>
+          {showNamedBoardShortcuts && remainingItems.some(item => item.key === "boards") &&
+            <ul slot="boards" class="sidebar-board-shortcuts" data-sidebar-boards hidden aria-label="Visible Boards"></ul>}
+        </SidebarNavList>
+      )}
       <NavOverflowMore id="sidebar-more-destinations" list locale={locale} />
     </div>
+  </div>
+
+  <div class="sidebar-reorder-tools" data-sidebar-reorder-tools hidden
+    data-moved={t("sidebar.reordered", locale)} data-storage-error={t("sidebar.reorder_storage_error", locale)}>
+    <button type="button" class="sidebar-reorder-button" aria-pressed="false" data-sidebar-reorder-toggle
+      data-start-label={t("sidebar.reorder", locale)} data-done-label={t("sidebar.reorder_done", locale)}>
+      <Icon name="adjustments-horizontal" size={16} />
+      <span>{t("sidebar.reorder", locale)}</span>
+    </button>
+    <div class="sidebar-reorder-moves" data-sidebar-reorder-moves hidden>
+      <button type="button" class="sidebar-reorder-button" data-sidebar-move="-1"
+        aria-label={t("sidebar.reorder_up", locale)} title={t("sidebar.reorder_up", locale)} disabled>
+        <Icon name="chevron-down" size={16} class="rotate-180" />
+      </button>
+      <button type="button" class="sidebar-reorder-button" data-sidebar-move="1"
+        aria-label={t("sidebar.reorder_down", locale)} title={t("sidebar.reorder_down", locale)} disabled>
+        <Icon name="chevron-down" size={16} />
+      </button>
+    </div>
+    <span role="status" class="sr-only" data-sidebar-reorder-status></span>
   </div>
 
   {gamificationEnabled && (
@@ -340,7 +372,26 @@ const remainingItems = boardPosition < 0 ? [] : navItems.slice(boardPosition + 1
 <script>
   import { pageLifecycle } from "@lib/page-lifecycle"
   import { bindSidebarBoards } from "@lib/sidebar-boards"
-  pageLifecycle.onPageLoad(bindSidebarBoards)
+  import { bindSidebarReorder } from "@lib/sidebar-order"
+  import { bindSidebarPinPresence } from "@lib/sidebar-pin-presence"
+
+  const runtime = window as Window & { __meithealSidebarController?: AbortController }
+  runtime.__meithealSidebarController?.abort()
+  const controller = new AbortController()
+  runtime.__meithealSidebarController = controller
+  let boundSignal: AbortSignal | undefined
+  pageLifecycle.onPageLoad(pageSignal => {
+    if (controller.signal.aborted || boundSignal === pageSignal) return
+    boundSignal = pageSignal
+    const signal = AbortSignal.any([pageSignal, controller.signal])
+    bindSidebarBoards(signal)
+    const sidebar = document.getElementById("sidebar")
+    if (sidebar) {
+      // Recent activity restores through guarded browser history.
+      bindSidebarPinPresence(sidebar, signal, Boolean(document.querySelector("[data-recent-activity]")))
+      bindSidebarReorder(sidebar, signal)
+    }
+  })
 </script>
 
 <style>

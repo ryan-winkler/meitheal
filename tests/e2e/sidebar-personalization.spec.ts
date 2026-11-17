@@ -1,0 +1,118 @@
+import { expect, test } from "@playwright/test"
+import { shouldSkipBrowserSpecs } from "./_helpers"
+
+test.skip(shouldSkipBrowserSpecs(), "Requires a disposable local Meitheal server")
+
+test("a manual collapse beats pointer movement inside the hover rail", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.emulateMedia({ reducedMotion: "reduce" })
+  await page.addInitScript(() => {
+    localStorage.setItem("meitheal-appearance", JSON.stringify({ sidebar: "hover" }))
+  })
+  await page.goto("/today")
+  const edge = page.locator("#sidebar-edge-toggle")
+  await expect(edge).toHaveAttribute("aria-expanded", "false")
+  await edge.click()
+  await expect(edge).toHaveAttribute("aria-expanded", "true")
+  await edge.click()
+  await expect(edge).toHaveAttribute("aria-expanded", "false")
+
+  // Ctrl+B can close the sidebar while the pointer is still inside its compact bounds.
+  await page.mouse.move(280, 140)
+  await page.mouse.move(30, 140)
+  await expect(edge).toHaveAttribute("aria-expanded", "true")
+  await page.keyboard.press("Control+b")
+  await page.mouse.move(32, 142, { steps: 4 })
+  await expect(edge).toHaveAttribute("aria-expanded", "false")
+  await page.setViewportSize({ width: 1430, height: 890 })
+  await expect(edge).toHaveAttribute("aria-expanded", "false")
+  await page.mouse.move(280, 140)
+  await page.mouse.move(30, 140)
+  await expect(edge).toHaveAttribute("aria-expanded", "true")
+})
+
+test("drag and keyboard reorder keep the Household group tree intact", async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.emulateMedia({ reducedMotion: "reduce" })
+  await page.addInitScript(() => {
+    localStorage.setItem("meitheal-task-nav-prefs", JSON.stringify({ pinnedViews: ["table"] }))
+  })
+  const errors: string[] = []
+  page.on("pageerror", error => errors.push(error.message))
+  await page.goto("/today")
+  const sidebar = page.locator("#sidebar")
+  await expect(sidebar.getByRole("link", { name: "Pinned tasks", exact: true })).toBeHidden()
+  const order = () => sidebar.locator("[data-sidebar-group]").evaluateAll(items =>
+    items.filter(item => !item.hasAttribute("hidden")).map(item => item.getAttribute("data-sidebar-group")))
+  const reorder = sidebar.getByRole("button", { name: "Reorder sidebar" })
+  await reorder.press("Enter")
+  await expect(sidebar.getByRole("button", { name: "Move Dashboard" })).toBeFocused()
+
+  const groups = sidebar.getByRole("button", { name: "Move Groups", exact: true })
+  const dashboard = sidebar.getByRole("button", { name: "Move Dashboard", exact: true })
+  await groups.dragTo(dashboard, { targetPosition: { x: 12, y: 4 } })
+  await expect.poll(order).toEqual(["areas", "dashboard", "today", "upcoming", "tasks", "tasks", "progress", "planning", "boards"])
+  const tasks = sidebar.getByRole("button", { name: "Move Tasks", exact: true })
+  for (let move = 0; move < 4; move++) await tasks.press("ArrowUp")
+  await expect.poll(order).toEqual(["tasks", "tasks", "areas", "dashboard", "today", "upcoming", "progress", "planning", "boards"])
+  await expect(tasks).toBeFocused()
+  await page.screenshot({ path: testInfo.outputPath("reordered-desktop.png") })
+  await tasks.press("Escape")
+  await expect(reorder).toBeFocused()
+  await page.reload()
+  await expect.poll(order).toEqual(["tasks", "tasks", "areas", "dashboard", "today", "upcoming", "progress", "planning", "boards"])
+  await sidebar.locator('[data-page="planning"]').click()
+  await expect(page).toHaveURL(/\/planning/)
+  await expect.poll(order).toEqual(["tasks", "tasks", "areas", "dashboard", "today", "upcoming", "progress", "planning", "boards"])
+  await expect(sidebar.locator('[data-task-view-pinned-item="table"]')).toBeVisible()
+  expect(errors).toEqual([])
+})
+
+test("the mobile drawer reorders via touch and keeps its close control", async ({ browser, baseURL }, testInfo) => {
+  const context = await browser.newContext({ viewport: { width: 320, height: 680 }, hasTouch: true, isMobile: true })
+  try {
+    const page = await context.newPage()
+    await page.goto(new URL("/today", baseURL).href)
+    const sidebar = page.locator("#sidebar")
+    const menu = page.locator("#menu-toggle")
+    await menu.tap()
+    await sidebar.getByRole("button", { name: "Reorder sidebar" }).tap()
+    const handle = sidebar.getByRole("button", { name: "Move Upcoming", exact: true })
+    await handle.tap()
+    const up = sidebar.getByRole("button", { name: "Move up", exact: true })
+    const target = await up.boundingBox()
+    expect(target?.width).toBeGreaterThanOrEqual(44)
+    expect(target?.height).toBeGreaterThanOrEqual(44)
+    await up.tap()
+    await expect(sidebar.locator("[data-sidebar-group]").nth(1)).toHaveAttribute("data-sidebar-group", "upcoming")
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(321)
+    await page.screenshot({ path: testInfo.outputPath("reordered-mobile.png") })
+    await sidebar.getByRole("button", { name: "Close sidebar" }).tap()
+    await expect(menu).toHaveAttribute("aria-expanded", "false")
+    await menu.tap()
+    await expect(sidebar.getByRole("button", { name: "Reorder sidebar" })).toBeVisible()
+    await expect(sidebar.locator("[data-sidebar-group]").nth(1)).toHaveAttribute("data-sidebar-group", "upcoming")
+  } finally {
+    await context.close()
+  }
+})
+
+test("a drop keeps its destination when a descendant clears the visual marker", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.goto("/today")
+  const sidebar = page.locator("#sidebar")
+  await sidebar.getByRole("button", { name: "Reorder sidebar" }).press("Enter")
+  const groups = sidebar.getByRole("button", { name: "Move Groups", exact: true })
+  const dashboard = sidebar.getByRole("button", { name: "Move Dashboard", exact: true })
+  const target = await dashboard.boundingBox()
+  expect(target).not.toBeNull()
+  const transfer = await page.evaluateHandle(() => new DataTransfer())
+  const position = { clientX: target!.x + 12, clientY: target!.y + 4, dataTransfer: transfer }
+  await groups.dispatchEvent("dragstart", position)
+  await dashboard.dispatchEvent("dragover", position)
+  await expect(sidebar.locator('[data-sidebar-group="dashboard"]')).toHaveAttribute("data-sidebar-drop", "before")
+  await dashboard.dispatchEvent("dragleave", { ...position, relatedTarget: null })
+  await expect(sidebar.locator("[data-sidebar-drop]")).toHaveCount(0)
+  await dashboard.dispatchEvent("drop", position)
+  await expect(sidebar.locator("[data-sidebar-group]").first()).toHaveAttribute("data-sidebar-group", "areas")
+})

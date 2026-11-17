@@ -9,16 +9,16 @@ import { formatTicketKey } from "./ticket-key"
 
 export const TABLE_PAGE_SIZE = 50
 
-export interface TableGroupStats {
+export interface TableGroupStats<RiceSum = number> {
   count: number
-  riceSum: number
+  riceSum: RiceSum
   riceCount: number
 }
 
-export interface TablePageStats {
-  total: TableGroupStats
-  groups: [string, TableGroupStats][]
-  subgroups: [string, TableGroupStats][]
+export interface TablePageStats<RiceSum = number> {
+  total: TableGroupStats<RiceSum>
+  groups: [string, TableGroupStats<RiceSum>][]
+  subgroups: [string, TableGroupStats<RiceSum>][]
   epicLabels: [string, string][]
 }
 

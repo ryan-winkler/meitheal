@@ -10,6 +10,7 @@ import { pageLifecycle } from "@lib/page-lifecycle"
 import { showToast } from "@lib/toast"
 import { saveSetting, showSettingsSaveError, log } from "@lib/settings-utils"
 import { settingsStore } from "@lib/settings-store"
+import { SIDEBAR_ORDER_STORAGE_KEY } from "@lib/sidebar-order"
 
 // ───── Constants ─────
 
@@ -81,6 +82,7 @@ export function initSidebarSettings(): void {
     config.customItems = finalCustomItems
 
     await saveSetting("sidebar_config", config)
+    try { localStorage.removeItem(SIDEBAR_ORDER_STORAGE_KEY) } catch { /* Storage may be blocked. */ }
     showToast("settings.sidebar_saved")
     settingsStore.invalidate()
     window.location.reload()
@@ -97,6 +99,7 @@ export function initSidebarSettings(): void {
     })
     if (!confirmed) return
     await saveSetting("sidebar_config", null)
+    try { localStorage.removeItem(SIDEBAR_ORDER_STORAGE_KEY) } catch { /* Storage may be blocked. */ }
     showToast("Sidebar reset to defaults")
     settingsStore.invalidate()
     window.location.reload()
