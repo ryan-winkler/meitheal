@@ -57,6 +57,7 @@ export interface FilterState {
 
 /** Shared localStorage key — so switching between tasks/table preserves filters */
 export const FILTER_STORAGE_KEY = "meitheal-task-view-filters"
+const TABLE_GROUPING_STORAGE_KEY = "meitheal-table-grouping"
 
 /** Default sort order for task lists */
 export const DEFAULT_SORT = "created_at-desc"
@@ -375,7 +376,15 @@ export function writeTableFilterParams(params: URLSearchParams, state: Partial<F
 export function loadTableFilterState(): Partial<FilterState> {
   const params = taskBackgroundUrl().searchParams
   if (TABLE_KEYS.some(key => params.has(key))) return readTableFilterParams(params)
-  const state = normalizeTableValues({ ...loadFilterState() })
+  const shared = loadFilterState()
+  try {
+    const stored = decodeFilterJson(localStorage.getItem(TABLE_GROUPING_STORAGE_KEY))
+    if (isPlainRecord(stored)) {
+      const grouping = normalizeTableValues({ groupBy: stored.groupBy, subGroupBy: stored.subGroupBy })
+      if (grouping.groupBy === "epic" || grouping.subGroupBy === "epic") Object.assign(shared, grouping)
+    }
+  } catch { /* storage unavailable */ }
+  const state = normalizeTableValues({ ...shared })
   delete state.area
   delete state.laneIds
   for (const key of TABLE_DATE_KEYS) delete state[key]
@@ -392,6 +401,9 @@ export function saveTableFilterState(state: Partial<FilterState>, page?: number)
       delete sharedState.subGroupBy
     }
     localStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(sharedState))
+    if (state.groupBy === "epic" || state.subGroupBy === "epic") {
+      localStorage.setItem(TABLE_GROUPING_STORAGE_KEY, JSON.stringify({ groupBy: state.groupBy, subGroupBy: state.subGroupBy }))
+    } else localStorage.removeItem(TABLE_GROUPING_STORAGE_KEY)
   } catch { /* storage unavailable */ }
   const url = taskBackgroundUrl()
   writeTableFilterParams(url.searchParams, state)
@@ -480,6 +492,7 @@ export function loadFilterState(): Partial<FilterState> {
  */
 export function clearFilterState(): void {
   localStorage.removeItem(FILTER_STORAGE_KEY)
+  localStorage.removeItem(TABLE_GROUPING_STORAGE_KEY)
   const url = taskBackgroundUrl()
   for (const key of ALL_KEYS) {
     url.searchParams.delete(key)
