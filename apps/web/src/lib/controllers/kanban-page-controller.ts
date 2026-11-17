@@ -17,15 +17,26 @@ export interface KanbanRefreshFocus {
 
 function matchBoardFocus(active: HTMLElement, replacement: HTMLElement) {
   const cardId = active.closest<HTMLElement>(".kanban-card")?.dataset.id
-  const laneId = active.closest<HTMLElement>(".kanban-column")?.dataset.status
-  const card = cardId && replacement.querySelector<HTMLElement>(`.kanban-card[data-id="${CSS.escape(cardId)}"]`)
-  const lane = laneId && replacement.querySelector<HTMLElement>(`.kanban-column[data-status="${CSS.escape(laneId)}"]`)
+  const laneId = active.closest<HTMLElement>(".kanban-column")?.dataset.laneId
+  const lane = laneId ? replacement.querySelector<HTMLElement>(`.kanban-column[data-lane-id="${CSS.escape(laneId)}"]`) : null
+  const selector = cardId && `.kanban-card[data-id="${CSS.escape(cardId)}"]`
+  const card = selector && (lane?.querySelector<HTMLElement>(selector) ?? replacement.querySelector<HTMLElement>(selector))
   const scope = card || lane
   if (!scope) return null
   const matches = Array.from(scope.querySelectorAll<HTMLElement>(active.localName))
     .filter(element => element.className === active.className && element.matches("a[href], button, [tabindex]"))
   return (matches.length === 1 ? matches[0] : null) ||
     (card ? card.querySelector<HTMLElement>(".card-open-btn") : scope.querySelector<HTMLElement>(".kanban-column-header"))
+}
+
+function findAssigneeGroupFocus(board: HTMLElement, group: HTMLElement) {
+  const laneId = group.closest<HTMLElement>(".kanban-column")?.dataset.laneId
+  const key = group.dataset.swimlaneType
+  const lane = laneId && board.querySelector(`.kanban-column[data-lane-id="${CSS.escape(laneId)}"]`)
+  const target = lane && [...lane.querySelectorAll<HTMLElement>(".dynamic-group")]
+    .find(candidate => candidate.dataset.swimlaneType === key)
+  return (target && target.querySelector<HTMLElement>(".swimlane-header")) ||
+    (lane || board).querySelector<HTMLElement>(".kanban-column-header")
 }
 
 export function initKanbanPage(signal: AbortSignal): void {
@@ -123,6 +134,8 @@ export function initKanbanPage(signal: AbortSignal): void {
       }
 
       const active = document.activeElement
+      const assigneeGroup = board.dataset.groupBy === "assigned" && board.contains(active) &&
+        active?.matches("button.swimlane-header") ? active.closest<HTMLElement>(".swimlane-group") : null
       const shouldFocus = active === retry || board.contains(active) || (Boolean(focus) && active === document.body)
       const retainedControl = focus?.afterStatusSave && active instanceof HTMLElement && board.contains(active)
         ? matchBoardFocus(active, replacement) : null
@@ -159,12 +172,19 @@ export function initKanbanPage(signal: AbortSignal): void {
       board.scrollLeft = horizontal
       renderStatus("")
 
-      if (!dataOnly && shouldFocus && (focus || active === retry)) {
-        const card = focus?.taskId ? board.querySelector<HTMLElement>(`.kanban-card[data-id="${CSS.escape(focus.taskId)}"] .card-more-btn`) : null
+      if (assigneeGroup && board.dataset.groupBy === "assigned") {
+        findAssigneeGroupFocus(board, assigneeGroup)?.focus({ preventScroll: true })
+      } else if (!dataOnly && shouldFocus && (focus || active === retry)) {
         const lane = focus?.lane ? board.querySelector<HTMLElement>(`.kanban-column[data-status="${CSS.escape(focus.lane)}"]`) : null
+        const card = focus?.taskId ? (lane || board).querySelector<HTMLElement>(
+          `.kanban-card[data-id="${CSS.escape(focus.taskId)}"] .card-more-btn`,
+        ) : null
+        const target = retainedControl || card
+        const collapsedGroup = target?.closest(".swimlane-cards[hidden]")?.closest(".swimlane-group")
+        const control = collapsedGroup ? collapsedGroup.querySelector<HTMLButtonElement>(".swimlane-header") : target
         const range = lane && (lane.querySelector<HTMLElement>("[data-kanban-range]") ??
           lane.querySelector<HTMLElement>(".kanban-column-header"))
-        ;(retainedControl || card || range || board.querySelector<HTMLElement>(".kanban-column-header"))?.focus()
+        ;(control || range || board.querySelector<HTMLElement>(".kanban-column-header"))?.focus()
       }
     } catch {
       if (!request.signal.aborted && !signal.aborted) {
@@ -192,8 +212,8 @@ export function initKanbanPage(signal: AbortSignal): void {
     const previous = readKanbanFilters(url.searchParams)
     const next = { ...previous, ...values, area }
     if (JSON.stringify(previous) === JSON.stringify(next)) return
-    updateKanbanFilters(url, next)
-    if (url.search !== before) void load(url, undefined, true)
+    const resetPage = updateKanbanFilters(url, next, true)
+    if (url.search !== before) void load(url, undefined, resetPage)
   }
 
   const toolsToggle = document.getElementById("kanban-tools-toggle")

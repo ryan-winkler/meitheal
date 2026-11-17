@@ -81,6 +81,12 @@ Use Tab to move between visible task views. If a view moves into **More**, open 
 
 Open **Timeline** to narrow the chart by text, status, priority, task type, or area. Use **Group by** to organize dated tasks. The URL keeps these choices when you reload or move between task views. On phones, open **Filters** to adjust the chart. The task pane starts closed unless you saved a preference. Select **Task pane** to open or close it. The control becomes available when tasks match the filters.
 
+### Group cards by assignee
+
+Choose **Group by → By Assignee** to see who owns the cards on each workflow column page. The column total counts the full result. **Unassigned** contains tasks with no assignee. When different people or unavailable assignments share the same label, a number distinguishes their headings. Their cards and collapse preferences stay separate.
+
+If the Home Assistant roster cannot be verified, the board shows a cached name when one is available from the same connection. Otherwise it shows that the assignee could not be verified. Reload the board to check the directory again. Choose **Unassigned** from a card's **Assign User** control to move it into that group in the same workflow column.
+
 ## Troubleshooting
 
 ### Board pages or filters fail to load
