@@ -90,10 +90,11 @@ export const POST: APIRoute = async ({ locals, request }) => {
   const body = await readBody(request)
   if (body instanceof Response) return body
   const isList = body.action === "list"
+  const isPresence = body.action === "presence" && Object.keys(body).length === 1
   const page = isList && !Object.hasOwn(body, "page") ? 1 : body.page
-  if (isList ? (Object.keys(body).some(key => key !== "action" && key !== "page") ||
+  if (!isPresence && (isList ? (Object.keys(body).some(key => key !== "action" && key !== "page") ||
       typeof page !== "number" || !Number.isSafeInteger(page) || page < 1) :
-      (body.action !== "detail" || !validTaskIdentifier(body.task) || Object.keys(body).length !== 2)) {
+      (body.action !== "detail" || !validTaskIdentifier(body.task) || Object.keys(body).length !== 2))) {
     return problem(400, "Choose a page or provide a valid task identifier.")
   }
   if (!await isCurrentActiveHAUser(owner.id)) return problem(403, "Home Assistant could not verify this account.")
@@ -103,6 +104,7 @@ export const POST: APIRoute = async ({ locals, request }) => {
     const client = getPersistenceClient()
     const pins = new TaskPinRepository(client)
     const context = taskPinContext(owner.id)
+    if (isPresence) return json({ context, hasPins: await pins.hasAny(owner.id) })
     if (isList && typeof page === "number") {
       const result = await pins.list(owner.id, page)
       const items = result.items.map(({ ticket_number, ...item }) => ({
