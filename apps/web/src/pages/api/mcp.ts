@@ -102,10 +102,15 @@ const EXCLUDED_OPS = new Set([
   "readTaskDraft", "verifyTaskDraftContext", "writeTaskDraft",
   "checkPersonalPillarSession",
   "checkSharedGoalProjection",
-  "listPrivateBoards", "verifyBoardDirectory", "createPrivateBoard", "getPrivateBoard", "verifyPrivateBoard", "changePrivateBoard",
+  "listPrivateBoards", "listPrivateBoardRoutines", "listPrivateBoardDueWork", "verifyBoardDirectory", "createPrivateBoard", "getPrivateBoard", "verifyPrivateBoard", "changePrivateBoard",
   "createPrivateBoardTicket", "changePrivateBoardTicket", "deletePrivateBoardTicket",
   "createPrivateBoardIntake", "changePrivateBoardIntake", "listPrivateBoardIntakes", "submitPrivateBoardIntake",
   "savePrivateBoardPlanning",
+  "getOrganizationFeatureAvailability", "saveOrganizationFeatureAvailability", "verifyOrganizationFeatureAdministration",
+  "verifyHomeAssistantAreaContext",
+  "getHouseholdTaskHomeAssistantArea", "setHouseholdTaskHomeAssistantArea",
+  "getNamedBoardTaskHomeAssistantArea", "setNamedBoardTaskHomeAssistantArea",
+  "getPersonalOrganizationLabels", "savePersonalOrganizationLabels", "verifyPersonalOrganizationLabels", "getHomeAssistantAreaChoices",
 ])
 
 /** Operations where method names should be used as-is (no camelCase conversion) */

@@ -1,3 +1,6 @@
+import { getOrganizationAvailability } from "./lib/organization-availability"
+import { withOrganizationAvailability } from "./lib/organization-request-context"
+import { organizationRouteAvailable } from "./lib/organization-route-access"
 import type { MiddlewareHandler } from "astro"
 import { resolveAgentRouteAccess } from "@meitheal/domain-auth"
 import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability"
@@ -222,7 +225,11 @@ export const onRequest: MiddlewareHandler = async (context, next) => {
   const participantRoute = commentPaths.has(routePattern) || reactionPaths.has(routePattern)
   const privatePillars = routePattern === "/progress" || pillarPagePath.test(routePattern) || pillarApiPath.test(routePattern)
   const boardPlanningRoute = /^\/(?:api\/)?boards(?:\/|$)/.test(routePattern) || routePattern === "/api/board-intake" || routePattern === "/goals" || routePattern === "/areas/[id]" || routePattern === "/api/goals" || routePattern === "/api/goals/[id]"
-  const privateTaskRoute = pinRoute || draftRoute || inactivityApi || inactivityPage || mentionRoute || labelCleanup
+  const privateOrganizationRoute = routePattern === "/api/organization-labels" ||
+    routePattern === "/api/organization-features" || routePattern === "/api/ha/areas" ||
+    routePattern.endsWith("/home-assistant-area") ||
+    /^\/(?:planning|today|upcoming|habits|areas|projects)(?:\/|$)/.test(routePattern)
+  const privateTaskRoute = privateOrganizationRoute || pinRoute || draftRoute || inactivityApi || inactivityPage || mentionRoute || labelCleanup
   if (!privateTaskRoute && !onlineReadRoute && !taskHistoryRoute && !participantRoute && !privatePillars && !boardPlanningRoute) {
     return handleRequest(context, next, requestUrl)
   }
@@ -563,7 +570,17 @@ async function handleRequest({ request, locals, routePattern }: Parameters<Middl
     // API callers parse JSON, so an error that would render the HTML error page answers with a problem document instead.
     const apiRoute = url.pathname.startsWith("/api/")
     try {
-      response = retryKey ? await replayTaskRequest(retryKey, next, locals.writeAbortSignal) : await next()
+      if (isHealthCheck || url.pathname.startsWith("/_astro/")) {
+        response = await next()
+      } else {
+        const availability = await getOrganizationAvailability({ locals, request })
+        response = organizationRouteAvailable(url.pathname, availability, url.searchParams) &&
+          organizationRouteAvailable(routePattern, availability, url.searchParams)
+          ? await withOrganizationAvailability(availability, () =>
+            retryKey ? replayTaskRequest(retryKey, next, locals.writeAbortSignal) : next())
+          : apiProblem({ status: 404, detail: "This feature is unavailable.", extraHeaders: { "cache-control": "private, no-store" } })
+        if (availability.needsVerification) response.headers.set("cache-control", "private, no-store")
+      }
     } catch (error) {
       if (!apiRoute) throw error
       logger.log("error", {

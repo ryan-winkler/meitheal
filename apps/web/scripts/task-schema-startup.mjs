@@ -1,3 +1,6 @@
+import {
+  applyOrganizationFeatureMigration, ORGANIZATION_FEATURE_MIGRATION, readOrganizationFeatureMigrationState,
+} from "../drizzle/migrations/0014_organization_features.mjs"
 import { existsSync } from "node:fs"
 import { readFile } from "node:fs/promises"
 import path from "node:path"
@@ -14,6 +17,12 @@ import {
 import {
   applyBoardAccessMigration, BOARD_ACCESS_MIGRATION, readBoardAccessMigrationState,
 } from "../drizzle/migrations/0011_board_access.mjs"
+import {
+  applyOrganizationAccessMigration, ORGANIZATION_ACCESS_MIGRATION, readOrganizationAccessMigrationState,
+} from "../drizzle/migrations/0013_organization_access.mjs"
+import {
+  applyOrganizationLabelMigration, ORGANIZATION_LABEL_MIGRATION, readOrganizationLabelMigrationState,
+} from "../drizzle/migrations/0012_organization_labels.mjs"
 import { assertNoInboundReferences } from "../drizzle/migrations/board-storage-schema.mjs"
 import { installTaskActivityTriggers, validateTaskActivityTriggers } from "../drizzle/migrations/task-activity-schema.mjs"
 import {
@@ -98,8 +107,17 @@ export async function validateStartupTaskSchema(tx, { allowPending = false } = {
   await validateCommittedTaskSchema(tx)
   const personalReady = await readPersonalPillarMigrationState(tx)
   const accessReady = await readBoardAccessMigrationState(tx)
+  const labelsReady = await readOrganizationLabelMigrationState(tx)
+  const organizationAccessReady = await readOrganizationAccessMigrationState(tx)
+  const featuresReady = await readOrganizationFeatureMigrationState(tx)
   if (!allowPending) {
-    const pending = [!personalReady && PERSONAL_PILLAR_MIGRATION, !accessReady && BOARD_ACCESS_MIGRATION].filter(Boolean)
+    const pending = [
+      !personalReady && PERSONAL_PILLAR_MIGRATION,
+      !accessReady && BOARD_ACCESS_MIGRATION,
+      !labelsReady && ORGANIZATION_LABEL_MIGRATION,
+      !organizationAccessReady && ORGANIZATION_ACCESS_MIGRATION,
+      !featuresReady && ORGANIZATION_FEATURE_MIGRATION,
+    ].filter(Boolean)
     if (pending.length) throw new Error(`Pending migrations: ${pending.join(", ")}`)
   }
 }
@@ -118,6 +136,9 @@ export async function applyStartupTaskSchema(tx, prepareRuntime) {
     const applied = []
     if (await applyPersonalPillarMigration(tx)) applied.push(PERSONAL_PILLAR_MIGRATION)
     if (await applyBoardAccessMigration(tx)) applied.push(BOARD_ACCESS_MIGRATION)
+    if (await applyOrganizationLabelMigration(tx)) applied.push(ORGANIZATION_LABEL_MIGRATION)
+    if (await applyOrganizationAccessMigration(tx)) applied.push(ORGANIZATION_ACCESS_MIGRATION)
+    if (await applyOrganizationFeatureMigration(tx)) applied.push(ORGANIZATION_FEATURE_MIGRATION)
     return applied
   }
 
@@ -158,5 +179,8 @@ export async function applyStartupTaskSchema(tx, prepareRuntime) {
   await applyTaskBoardUpgrade(tx, predecessorMigrations)
   await applyPersonalPillarMigration(tx)
   await applyBoardAccessMigration(tx)
-  return [...pending, TASK_BOARD_MIGRATION, PERSONAL_PILLAR_MIGRATION, BOARD_ACCESS_MIGRATION]
+  await applyOrganizationLabelMigration(tx)
+  await applyOrganizationAccessMigration(tx)
+  await applyOrganizationFeatureMigration(tx)
+  return [...pending, TASK_BOARD_MIGRATION, PERSONAL_PILLAR_MIGRATION, BOARD_ACCESS_MIGRATION, ORGANIZATION_LABEL_MIGRATION, ORGANIZATION_ACCESS_MIGRATION, ORGANIZATION_FEATURE_MIGRATION]
 }

@@ -1,21 +1,25 @@
 ---
+import { organizationLabelsFor, newOrganizationLabel, organizationLocale } from "@lib/organization-labels"
 import { BoardIntakeRepository } from "@domains/tasks/persistence/board-intake-repository"
 import { getPersistenceClient } from "@domains/tasks/persistence/store"
+import { isOrganizationFeatureAvailable as available } from "@lib/organization-request-context"
 import Layout from "../../layouts/Layout.astro"
 import "../../styles/boards.css"
 import { boardViewKey, readBoardDirectory } from "@lib/board-view"
 import { boardSessionProof, currentBoardUser } from "@lib/named-board-request"
 
+const label = await organizationLabelsFor(Astro)
+const newLabel = (name: Parameters<typeof label>[0], fallback?: string) => newOrganizationLabel(label(name, false, fallback), organizationLocale(Astro))
 const user = await currentBoardUser(Astro.locals, Astro.request.signal)
 const directory = user ? await readBoardDirectory(user.actor) : null
 const submissions = user ? await new BoardIntakeRepository(getPersistenceClient()).findSubmissions(user.actor) : []
 const snapshot = user && directory ? boardViewKey(directory, user.actor.id) : undefined
 ---
-<Layout title="Boards">
-  <span slot="page-title">Boards</span>
+<Layout title={label("board", true)}>
+  <span slot="page-title">{label("board", true)}</span>
   <div class="boards-workspace">
-    <nav class="board-back" aria-label="Planning">
-      <a class="btn btn-ghost" href="/planning">Planning</a>
+    <nav class="board-back" aria-label={label("planning")}>
+      <a class="btn btn-ghost" href="/planning">{label("planning")}</a>
     </nav>
 
     <section class="boards-list" aria-label="Household">
@@ -31,17 +35,17 @@ const snapshot = user && directory ? boardViewKey(directory, user.actor.id) : un
       <section class="named-boards" aria-labelledby="private-heading">
         <header class="boards-heading">
           <div>
-            <h2 id="private-heading">Your Boards</h2>
+            <h2 id="private-heading">{organizationLocale(Astro) === "ga" ? `Do ${label("board", true)}` : `Your ${label("board", true)}`}</h2>
             <p>Each Board has its own members and permissions.</p>
           </div>
-          <details class="board-add">
-            <summary class="btn btn-primary">New Board</summary>
+          {available("organizer") && <details class="board-add">
+            <summary class="btn btn-primary">{newLabel("board")}</summary>
             <form data-board-form="create" class="board-form">
-              <label>Board name <input name="name" required maxlength="100" autocomplete="off" /></label>
+              <label>{label("board")} <input name="name" required maxlength="100" autocomplete="off" /></label>
               <p role="status" data-board-feedback></p>
-              <button type="submit" class="btn btn-primary">Create Board</button>
+              <button type="submit" class="btn btn-primary">{organizationLocale(Astro) === "en" ? `Create ${label("board")}` : newLabel("board")}</button>
             </form>
-          </details>
+          </details>}
         </header>
         {directory.boards.length ? <div class="boards-list">
           {directory.boards.map(board => <article class="board-tile">

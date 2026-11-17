@@ -85,10 +85,13 @@ test.describe("Sidebar and Today follow-through", () => {
     await home.press("Enter")
     await expect(home).toHaveAttribute("aria-expanded", "true")
 
+    // A sidebar-to-drawer resize keeps the current disclosure even with a stale saved value.
+    await page.evaluate(() => localStorage.setItem("meitheal_project_nav_group_collapsed", "true"))
     await page.setViewportSize({ width: 320, height: 812 })
     await expect(page.locator("#menu-toggle")).toBeEnabled()
     await page.locator("#menu-toggle").click()
     await expect(toggle).toBeInViewport()
+    await expect(group).toHaveAttribute("open", "")
     await toggle.press("Enter")
     await expect(group).not.toHaveAttribute("open")
     await toggle.press("Space")

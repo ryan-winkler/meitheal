@@ -1,4 +1,5 @@
 ---
+import BoardRoutineCheckins from "../components/boards/BoardRoutineCheckins.astro"
 /**
  * Today Page — Smart Daily Cockpit
  *
@@ -35,6 +36,7 @@ import { calendarDayFromInput, calendarToday, formatRelativeDue, shiftCalendarDa
 import { db503Response } from "../lib/db-fallback"
 import { isFeatureEnabled } from "../lib/feature-flags"
 import { TODAY_SECTIONS } from "../lib/today-registry"
+import { verifiedIngressUser } from "../lib/verified-ingress-user"
 import { getUnscheduledPage, requestedUnscheduledPage, setUnscheduledPage } from "../lib/today-list"
 
 let carriedForwardTasks: TaskViewItem[] = []
@@ -52,6 +54,7 @@ let currentStreak = 0
 let todayXP = 0
 let habits: HabitWithStats[] = []
 let habitsEnabled = false
+let showBoardWork = false
 const todayTimeZone = Astro.locals.timezone || "Europe/Dublin"
 const todayDate = new Date()
 const todayIsoDate = calendarToday(todayTimeZone, todayDate)
@@ -142,6 +145,12 @@ try {
   }
 }
 
+if (verifiedIngressUser(Astro.locals)) {
+  try {
+    const { rows } = await getPersistenceClient().execute("SELECT 1 FROM board_access_epoch LIMIT 1")
+    showBoardWork = rows.length > 0
+  } catch { /* named Boards may be unavailable */ }
+}
 // G36: Fetch gamification stats for streak/XP display
 try {
   const { getStats, getWeeklyData } = await import("@domains/gamification")
@@ -507,6 +516,13 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
           ))}
         </div>
       </div>
+
+      <BoardRoutineCheckins />
+      {showBoardWork && <section class="today-section" data-today-board-work aria-labelledby="today-board-work-heading" hidden>
+        <h3 id="today-board-work-heading" class="today-section__title">Due on other Boards</h3>
+        <ul class="list-group" data-today-board-links></ul>
+        <p data-today-board-more hidden>Showing 30 tasks. <a href="/boards">Open Boards</a> to see the rest.</p>
+      </section>}
 
       <details class="today-completed-tasks" hidden={completedTaskSummaries.length === 0}>
         <summary>Completed today ({completedTodayCount})</summary>
@@ -1541,7 +1557,10 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
   import { initTodayPage } from "../lib/today-controller"
   import { pageLifecycle } from "../lib/page-lifecycle"
 
-  pageLifecycle.onPageLoad(() => {
+  import { setupTodayBoardWork } from "../lib/controllers/today-board-work"
+
+  pageLifecycle.onPageLoad(signal => {
     initTodayPage()
+    setupTodayBoardWork(signal)
   })
 </script>

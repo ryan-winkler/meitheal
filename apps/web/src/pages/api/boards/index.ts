@@ -1,3 +1,4 @@
+import { isOrganizationFeatureAvailable as available } from "@lib/organization-request-context"
 import type { APIRoute } from "astro"
 import { NamedBoardRepository } from "@domains/tasks/persistence/named-board-repository"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
@@ -21,6 +22,7 @@ export const POST: APIRoute = async ({ locals, request }) => {
   const body = await readBoardRequest(request)
   const name = typeof body?.name === "string" ? stripHtml(body.name.trim()) : ""
   if (!name || name.length > 100) return apiError("Enter a Board name of 1 to 100 characters.", 400)
+  if (!available("organizer")) return apiError("The Boards organizer is unavailable.", 404)
   const user = await currentBoardUser(locals, request.signal, request)
   if (!user) return apiError("Open Meitheal through Home Assistant to create a Board.", 403)
   await ensureSchema()

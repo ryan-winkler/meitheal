@@ -1,3 +1,4 @@
+import { isOrganizationFeatureAvailable as available } from "../../../lib/organization-request-context"
 import { DEFAULT_GROUP_COLOR } from "../../../lib/board-workspace"
 import { randomUUID } from "node:crypto"
 import type { Client, Transaction } from "@libsql/client"
@@ -19,7 +20,7 @@ type Change = BoardPillarChange | VisibilityChange
   | { action: "project-edit"; id: string; title: string; description: string }
   | { action: "project-goal"; id: string; goalId: string | null }
   | { action: "project-status"; id: string; status: ProjectStatus }
-  | { action: "routine"; title: string; description: string; areaId: string; cadence: "daily" | "weekly"; id?: string }
+  | { action: "routine"; title: string; description: string; areaId: string; cadence: "daily" | "weekly"; id?: string; projectId?: string | null }
 
 function readableBoards(userId: string) {
   return {
@@ -97,6 +98,7 @@ export async function readNamedBoardPlanning(tx: Transaction, actor: BoardActor,
     {
       sql: `SELECT routine.id, routine.name, routine.cadence, json_extract(routine.template_json, '$.area_id') AS area_id,
           json_extract(routine.template_json, '$.description') AS description,
+          json_extract(routine.template_json, '$.project_id') AS project_id,
           EXISTS (SELECT 1 FROM tasks AS completion WHERE completion.task_board_id = routine.owner_board_id
             AND completion.source_template_id = routine.id AND completion.status = 'complete'
             AND completion.due_date = CASE WHEN routine.cadence = 'weekly' THEN ? ELSE ? END) AS complete
@@ -107,29 +109,31 @@ export async function readNamedBoardPlanning(tx: Transaction, actor: BoardActor,
       args: [namedRoutinePeriod("weekly"), namedRoutinePeriod("daily"), board.id],
     },
   ])
-  const pillars = await readBoardPillars(tx, board.id)
+  const pillars = available("pillars") ? await readBoardPillars(tx, board.id) : []
+  if (!available("principles")) for (const pillar of pillars) pillar.principles = []
   return {
-    areas: areas!.rows.map(area => ({ id: String(area.id), name: String(area.name), icon: String(area.icon), color: String(area.color) })),
-    projects: projects!.rows.map(project => ({
+    areas: areas!.rows.filter(() => available("groups")).map(area => ({ id: String(area.id), name: String(area.name), icon: String(area.icon), color: String(area.color) })),
+    projects: projects!.rows.filter(() => available("projects")).map(project => ({
       id: String(project.id), title: String(project.title), description: String(project.description ?? ""),
       status: String(project.status), areaId: typeof project.area_id === "string" ? project.area_id : null,
       goalId: linkable!.rows.some(goal => goal.id === project.goal_id && (goal.shared_area_id === null || goal.shared_area_id === project.area_id))
         ? String(project.goal_id) : null,
     })),
-    goals: goals!.rows.map(goal => ({
+    goals: goals!.rows.filter(() => available("goals")).map(goal => ({
       id: String(goal.id), title: String(goal.title), description: String(goal.description ?? ""), areaId: typeof goal.area_id === "string" ? goal.area_id : null,
     })),
     pillars,
-    destinations: destinations!.rows.map(area => ({ id: String(area.id), name: String(area.name), board: String(area.board_name) })),
-    linkableGoals: linkable!.rows.map(goal => ({
+    destinations: destinations!.rows.filter(() => available("groups")).map(area => ({ id: String(area.id), name: String(area.name), board: String(area.board_name) })),
+    linkableGoals: linkable!.rows.filter(() => available("goals")).map(goal => ({
       id: String(goal.id), title: String(goal.title), sharedAreaId: typeof goal.shared_area_id === "string" ? goal.shared_area_id : null,
     })),
-    routines: routines!.rows.map(routine => ({
+    routines: routines!.rows.filter(() => available("routines")).map(routine => ({
       id: String(routine.id), name: String(routine.name), cadence: String(routine.cadence),
+      projectId: available("projects") && typeof routine.project_id === "string" ? routine.project_id : null,
       areaId: String(routine.area_id), complete: routine.complete === 1, description: String(routine.description ?? ""),
       period: namedRoutinePeriod(String(routine.cadence)),
     })),
-    shares: shares!.rows.map(share => ({
+    shares: shares!.rows.filter(() => available("goals")).map(share => ({
       goalId: String(share.goal_id), areaId: String(share.area_id),
       areaName: typeof share.area_name === "string" ? share.area_name : null,
     })),
@@ -140,10 +144,19 @@ export class NamedBoardPlanningRepository {
   constructor(private readonly db: Client, private readonly markerPath?: string) {}
 
   async save(ownerId: string, boardId: string, input: Change): Promise<boolean> {
+    if (((input.action === "project-goal" || input.action === "project" && input.goalId !== null) && !available("goals")) ||
+      (input.action === "pillar-link" && input.entityType === "goal" && !available("goals")) ||
+      (input.action === "pillar-link" && input.entityType === "routine" && !available("routines"))) return false
     if (input.action === "goal-share" || input.action === "retire") {
       const outcome = await this.saveVisibility(ownerId, boardId, input)
       return outcome.status !== "locked" && outcome.result === "saved"
     }
+    const feature = input.action === "area" ? "groups"
+      : input.action.startsWith("project") ? "projects"
+      : input.action.startsWith("goal") ? "goals"
+      : input.action.startsWith("routine") ? "routines"
+      : input.action === "pillar-principle" ? "principles" : "pillars"
+    if (!available(feature)) return false
     const revision = await readBoardGrantRevision(this.markerPath)
     if (!revision) return false
     const tx = await acquireWriteTransaction(this.db)
@@ -309,7 +322,24 @@ export class NamedBoardPlanningRepository {
         return result.rowsAffected > 0
       }
       case "routine": {
-        const template = JSON.stringify({ title: input.title, description: input.description, area_id: input.areaId })
+        let projectId = input.projectId ?? null
+        if (input.id && input.projectId === undefined) {
+          const { rows: [previous] } = await tx.execute({
+            sql: "SELECT json_extract(template_json, '$.project_id') AS project_id FROM task_templates WHERE id = ? AND owner_board_id = ? AND is_routine = 1 AND retired_at IS NULL",
+            args: [input.id, boardId],
+          })
+          if (!previous) return false
+          projectId = typeof previous.project_id === "string" ? previous.project_id : null
+        }
+        if (projectId) {
+          if (!available("projects")) return false
+          const { rows: [project] } = await tx.execute({
+            sql: "SELECT id FROM projects WHERE id = ? AND owner_board_id = ? AND area_id = ? AND status = 'active' AND retired_at IS NULL",
+            args: [projectId, boardId, input.areaId],
+          })
+          if (!project) return false
+        }
+        const template = JSON.stringify({ title: input.title, description: input.description, area_id: input.areaId, project_id: projectId })
         const result = input.id ? await tx.execute({
           sql: `UPDATE task_templates SET name = ?, template_json = ?, updated_at = ?
             WHERE id = ? AND owner_board_id = ? AND is_routine = 1 AND retired_at IS NULL

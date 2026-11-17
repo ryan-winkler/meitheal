@@ -1,7 +1,8 @@
 import { resolveTaskEpics, type KanbanIndexRow, type KanbanLane, type TaskRepository } from "@domains/tasks"
-import { isTaskVisible } from "./filter-state"
-import { KANBAN_PAGE_SIZE, readKanbanFilters, readKanbanPage } from "./kanban-query"
 import { getEpicGroupLabel } from "./epic-group-labels"
+import { isTaskVisible } from "./filter-state"
+import type { HomeAssistantAreaFilter } from "./home-assistant-area-access"
+import { KANBAN_PAGE_SIZE, readKanbanFilters, readKanbanPage } from "./kanban-query"
 
 export async function loadKanbanBoard(
   repo: TaskRepository,
@@ -9,6 +10,7 @@ export async function loadKanbanBoard(
   cutoff: number,
   params: URLSearchParams,
   timezone?: string | undefined,
+  location?: HomeAssistantAreaFilter,
 ) {
   return repo.withKanbanRead(async reader => {
     const filters = readKanbanFilters(params)
@@ -17,7 +19,7 @@ export async function loadKanbanBoard(
       {
         matchText: Boolean(filters.search || filters.labels?.length || filters.advancedFilter),
         matchOverdue: filters.status === "overdue",
-        timezone,
+        timezone, location,
       },
       reader,
     )

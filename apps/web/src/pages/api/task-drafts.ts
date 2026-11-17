@@ -1,4 +1,5 @@
 import type { APIRoute } from "astro"
+import { resolveHomeAssistantAreaSelection } from "@lib/home-assistant-area-access"
 import { isCurrentActiveHAUser } from "@domains/ha/ha-users"
 import { boardDraftHeader, hasBoardSelection, unavailableBoardResponse } from "@domains/tasks/board-availability"
 import { SettingsRepository } from "@domains/tasks/persistence/settings-repository"
@@ -102,7 +103,8 @@ export const POST: APIRoute = async ({ locals, request }) => {
   }
 }
 
-export const PUT: APIRoute = async ({ locals, request }) => {
+export const PUT: APIRoute = async context => {
+  const { locals, request } = context
   const ownerId = await authorize(locals, request)
   if (!ownerId) return denied()
   if (request.headers.has(boardDraftHeader)) return unavailableBoardResponse()
@@ -133,6 +135,8 @@ export const PUT: APIRoute = async ({ locals, request }) => {
     const replay = await drafts.replay(ownerId, action)
     if (replay) return json({ receipt: replay })
     const { task } = action
+    const area = await resolveHomeAssistantAreaSelection(context, task.home_assistant_area_id)
+    if (!area.ok) return problem(area.status, area.detail)
     const repo = new TaskRepository(client)
     const prepared = await prepareTaskCreation(repo, {
       ...task,
@@ -147,7 +151,7 @@ export const PUT: APIRoute = async ({ locals, request }) => {
     await new SettingsRepository(client).ensureSettingsTable()
     const now = Date.now()
     const data = prepared.ok && assigneeValid ? prepared.task : null
-    const result = await drafts.publish(ownerId, action, data, now)
+    const result = await drafts.publish(ownerId, action, data, now, area.selection)
     if (result.receipt) {
       if (data && result.eventId && result.ticketNumber !== null) {
         dispatchTaskCreation(taskCreationPayload(data, result.ticketNumber, now), result.eventId, result.eventId)

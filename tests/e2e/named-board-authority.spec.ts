@@ -389,6 +389,8 @@ test("named Board owners link Projects to shared Goals without publishing privat
   if (!completion.ok) throw new Error("Expected a completed routine ticket")
   const completedTicket = (await tasks.view(workUser, workBoard))?.tasks.find(ticket => ticket.id === completion.value.id)
   if (!completedTicket) throw new Error("Expected the visible routine ticket")
+  expect(await tasks.edit(workUser, workBoard, completedTicket.id, completedTicket.version, { dueDate: null }))
+    .toMatchObject({ ok: false, errorCode: "stale", reason: "routine-date" })
   expect(await tasks.delete(homeUser, workBoard, completedTicket.id, completedTicket.version)).toEqual({ ok: false, errorCode: "denied" })
   expect(await tasks.delete(workUser, workBoard, completedTicket.id, completedTicket.version)).toEqual({ ok: false, errorCode: "denied" })
   expect(await tasks.completeRoutine(workUser, workBoard, workRoutine)).toEqual(completion)
@@ -451,7 +453,9 @@ test("workspace groups, Projects and task filing stay within the owning Board", 
   expect(directory?.planning?.areas).toContainEqual({ id: group.id, name: group.name, icon: "🛠", color: "#abcdef" })
   const project = directory!.planning!.projects[0]!
   const workspace = { areaId: group.id, projectId: null, ticketId: null, planning: false }
-  const ordinary = await tasks.create(actor, board, { title: "Write a handoff", description: "" }, { local: true })
+  const ordinary = await tasks.create(actor, board, {
+    title: "Write a handoff", description: "", dueDate: "2026-11-17",
+  }, { local: true })
   if (!ordinary.ok) throw new Error("Expected an unfiled task")
 
   expect(await tasks.view(actor, board, 0, workspace)).toMatchObject({
@@ -467,5 +471,60 @@ test("workspace groups, Projects and task filing stay within the owning Board", 
   expect(await tasks.file(actor, board, ordinary.value.id, ordinary.value.version, null, null))
     .toMatchObject({ ok: false, errorCode: "stale" })
   expect((await tasks.view(actor, board, 0, { ...workspace, projectId: project.id }))?.tasks)
-    .toMatchObject([{ id: ordinary.value.id, ticket: ordinary.value.ticket }])
+    .toMatchObject([{ id: ordinary.value.id, ticket: ordinary.value.ticket, dueDate: "2026-11-17" }])
+  if (!filed.ok) throw new Error("Expected the task to be filed")
+  expect(await tasks.dueWork(actor, "2026-11-16")).toEqual([])
+  expect(await tasks.dueWork({ kind: "ha_user", id: "outsider" }, "2026-11-17")).toEqual([])
+  expect(await tasks.dueWork({ kind: "agent", id: actor.id }, "2026-11-17")).toEqual([])
+  expect(await tasks.dueWork(actor, "2026-11-17")).toMatchObject([
+    { id: ordinary.value.id, title: "Write a handoff", dueDate: "2026-11-17", boardId: board, boardName: "Work" },
+  ])
+  const cleared = await tasks.edit(actor, board, ordinary.value.id, filed.value.version, { dueDate: null })
+  expect(cleared.ok).toBe(true)
+  expect((await tasks.view(actor, board, 0, { ...workspace, projectId: project.id }))?.tasks)
+    .toMatchObject([{ id: ordinary.value.id, title: "Write a handoff", dueDate: null }])
+})
+
+
+test("Project Routine check-ins retain placement, completion identity, and current Board authority", async () => {
+  const db = getPersistenceClient()
+  const boards = new NamedBoardRepository(db, marker)
+  const planning = new NamedBoardPlanningRepository(db, marker)
+  const tasks = new NamedBoardTaskRepository(db, marker)
+  const owner = { kind: "ha_user", id: "routine-owner" } as const
+  const outsider = { kind: "ha_user", id: "routine-outsider" } as const
+  const created = await boards.create(owner.id, "Project routines")
+  if (created.status !== "committed") throw new Error("Expected Board")
+  const board = created.result.id
+  expect(await planning.save(owner.id, board, { action: "area", title: "Operations" })).toBe(true)
+  const area = (await tasks.view(owner, board))!.planning!.areas[0]!.id
+  expect(await planning.save(owner.id, board, { action: "project", title: "House checks", description: "", areaId: area, goalId: null })).toBe(true)
+  const project = (await tasks.view(owner, board))!.planning!.projects[0]!.id
+  expect(await planning.save(owner.id, board, {
+    action: "routine", title: "Inspect filters", description: "", areaId: area, projectId: "foreign", cadence: "daily",
+  })).toBe(false)
+  expect(await planning.save(owner.id, board, {
+    action: "routine", title: "Inspect filters", description: "", areaId: area, projectId: project, cadence: "daily",
+  })).toBe(true)
+  const routine = (await tasks.view(owner, board))!.planning!.routines[0]!
+  expect(routine.projectId).toBe(project)
+  expect(await tasks.routineLibrary(outsider)).toEqual([])
+  expect(await tasks.routineLibrary(owner)).toMatchObject([{ id: routine.id, canComplete: true, complete: false }])
+  expect(await planning.save(owner.id, board, {
+    action: "routine", id: routine.id, title: "Inspect filters again", description: "Updated", areaId: area, cadence: "daily",
+  })).toBe(true)
+  expect((await tasks.view(owner, board))!.planning!.routines[0]!.projectId).toBe(project)
+  const completion = await tasks.completeRoutine(owner, board, routine.id, routine.period)
+  if (!completion.ok) throw new Error("Expected check-in")
+  const placement = await db.execute({ sql: "SELECT area_id, project_id FROM board_task_planning WHERE task_id = ?", args: [completion.value.id] })
+  expect(placement.rows[0]).toMatchObject({ area_id: area, project_id: project })
+  expect(await tasks.routineLibrary(owner)).toMatchObject([{ id: routine.id, complete: true }])
+  expect(await planning.save(owner.id, board, { action: "project-status", id: project, status: "completed" })).toBe(true)
+  expect(await tasks.completeRoutine(owner, board, routine.id, routine.period)).toEqual(completion)
+  expect(await tasks.routineLibrary(owner)).toMatchObject([{ id: routine.id, canComplete: false }])
+  expect(await boards.updateMember(owner.id, board, outsider.id, { role: "viewer", denyCompletion: false, denyDeletion: false }, [owner.id, outsider.id])).toMatchObject({ result: "saved" })
+  expect(await tasks.routineLibrary(outsider)).toMatchObject([{ id: routine.id, canComplete: false }])
+  expect(await tasks.completeRoutine(outsider, board, routine.id, routine.period)).toEqual({ ok: false, errorCode: "denied" })
+  expect(await boards.updateMember(owner.id, board, outsider.id, null, [owner.id, outsider.id])).toMatchObject({ result: "saved" })
+  expect(await tasks.routineLibrary(outsider)).toEqual([])
 })
