@@ -236,6 +236,7 @@ try {
 } catch {
   /* areas table may not exist yet */
 }
+const kanbanAreas = new Map(areas.map(area => [area.id, area]))
 ---
 
 <Layout title={`Meitheal — ${householdWorkspace ? "Household · " : ""}${heading}`}>
@@ -408,6 +409,8 @@ try {
     data-inactivity-upcoming={t("inactivity.upcoming", locale)}
     data-inactivity-stalled={t("inactivity.stalled", locale)}
     data-group-by={kanbanFilters.groupBy}
+    data-default-area-label={t("kanban.default_area", locale)}
+    data-unavailable-area-label={t("kanban.unavailable_area", locale)}
     data-backlog-mode={backlogMode}
     data-reaction-count-label={t("reactions.card_count", locale)}
     style={`padding: 0 0 8px; grid-template-columns: repeat(${columns.length}, 1fr);`}
@@ -495,6 +498,8 @@ try {
                 const ticketKey = formatTicketKey(Number(task.ticket_number));
                 const tt = String(task.task_type ?? "task");
                 const tc = (typeConfig[tt] || typeConfig.task)!;
+                const areaId = String(task.area_id ?? "default")
+                const cardArea = kanbanAreas?.get(areaId)
                 const promoted = Number(task.is_promoted) === 1
                 const fp =
                   typeof task.framework_payload === "string"
@@ -554,7 +559,9 @@ try {
                     data-deferral-revision={task.deferral_revision ?? ""}
                     data-task-type={tt}
                     data-task-kind={String(task.task_kind ?? "standard_action")}
-                    data-area={String(task.area_id ?? "default")}
+                    data-area={areaId}
+                    data-area-name={cardArea?.name}
+                    data-area-icon={cardArea?.icon}
                     data-assigned={String(task.assigned_to ?? "")}
                     data-labels={String(task.labels ?? "[]")}
                     data-task-id={task.id}
