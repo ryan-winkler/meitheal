@@ -98,6 +98,11 @@ test("sidebar can close again in desktop hover mode and on a phone", async ({ pa
   await expect(menu).toBeFocused()
   await expect(sidebar).not.toHaveClass(/open/)
   await menu.press("Enter")
+  await close.focus()
+  for (const key of ["Shift+Tab", ...Array<string>(24).fill("Tab")]) {
+    await page.keyboard.press(key)
+    expect(await sidebar.evaluate(drawer => drawer.contains(document.activeElement))).toBe(true)
+  }
   await close.press("Enter")
   await expect(menu).toHaveAttribute("aria-expanded", "false")
   await expect(menu).toBeFocused()

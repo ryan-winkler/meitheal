@@ -212,7 +212,7 @@ function init(signal: AbortSignal) {
       void hydrateTaskAssignees(tbody, signal)
       for (const [current, fresh] of fragments) {
         current!.hidden = fresh!.hidden
-        if (current!.matches("#task-summary, #table-pagination")) current!.replaceChildren(...fresh!.childNodes)
+        if (current!.matches("#task-summary, #table-pagination, #table-empty")) current!.replaceChildren(...fresh!.childNodes)
       }
       const workflowOptions = shell.querySelector("[data-table-workflow-options]")
       const freshWorkflowOptions = html.querySelector('[data-table-workflow-options="ready"]')

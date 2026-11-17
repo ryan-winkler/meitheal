@@ -64,6 +64,8 @@ Today refreshes the counters and progress bar after confirmed task changes and e
 
 Turn on multi-select in **Focus**, select the task checkboxes, then choose **Complete**, **Snooze** or **Delete**. If only some changes are confirmed, Today refreshes the task rows and counters and keeps the remaining tasks selected. Check those tasks before retrying. If Today cannot confirm any of the changes, the current selection stays available for review.
 
+The Dashboard **Focus Queue** and **Favorites** refresh after you save a task’s status in Details. Closed work leaves these lists, and the next eligible task can fill the open slot.
+
 ### Browse a large unscheduled queue
 
 The collapsed queue counts tasks without loading their full rows. The counts and visible Today sections use the same database snapshot.

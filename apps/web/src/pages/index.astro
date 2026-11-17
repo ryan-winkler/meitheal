@@ -299,9 +299,7 @@ const heroHintHref =
           />
         </div>
 
-        {
-          favorites.length > 0 && (
-            <div class="card dashboard-card">
+            <div class="card dashboard-card" id="dashboard-favorites" hidden={favorites.length === 0}>
               <div class="card-header">
                 <div>
                   <div class="card-title">{t("dashboard.favorites", locale)}</div>
@@ -354,8 +352,6 @@ const heroHintHref =
                 })}
               </div>
             </div>
-          )
-        }
       </div>
     </section>
 
@@ -451,6 +447,7 @@ const heroHintHref =
                   {...taskSurface(String(task.status), task.color)}
                   data-id={String(task.id)}
                   data-assigned={String(task.assigned_to ?? "")}
+                  data-status={String(task.status)}
                 >
                   <div class="task-title">
                     <span class="priority-dot" style={`background: ${priorityColor}`} />

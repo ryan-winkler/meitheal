@@ -30,6 +30,8 @@ A saved Calendar shortcut with all task kinds is marked current only when Calend
 
 Assistive technology announces the visible day number first, followed by the month and year and the task count when a badge is shown. The current date is identified as today. Weekend headings and the current date remain distinct in light and dark themes. On narrow touch screens, the month grid uses more of the screen width so neighboring days have separate tap targets.
 
+An older linked event keeps its saved final day when its confirmation has a provider start but no usable end.
+
 ### Switch to another task view without dropping filters
 
 1. Apply the filters you want on Calendar.

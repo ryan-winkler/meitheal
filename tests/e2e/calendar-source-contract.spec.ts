@@ -322,6 +322,12 @@ test("Calendar reads configured sources as a household member and filters before
     insertConfirmation.run(legacyCalDAV, legacyCalDAV, legacyCalDAV, "older-caldav-uid", "caldav", JSON.stringify({
       dtstart: "2031-07-25", dtend: "2031-07-27",
     }))
+    const legacyWithoutEnd = "legacy-provider-start-without-end"
+    insertLinkedTask.run(legacyWithoutEnd, "Legacy overnight visit", "pending", legacyWithoutEnd, legacyWithoutEnd, "2031-07-16")
+    db.prepare("UPDATE tasks SET end_date = ? WHERE id = ?").run("2031-07-17T14:00:00Z", legacyWithoutEnd)
+    insertConfirmation.run(legacyWithoutEnd, legacyWithoutEnd, legacyWithoutEnd, "legacy-missing-end", "caldav", JSON.stringify({
+      dtstart: "2031-07-16T22:00:00Z", effective_end: "invalid",
+    }))
     await page.reload()
     await expect(page.locator("#calendar-shell")).toHaveAttribute("data-timezone", "America/Los_Angeles")
     const boundaryDay = page.locator('.cal-cell[data-date="2031-07-20"]')
@@ -347,6 +353,11 @@ test("Calendar reads configured sources as a household member and filters before
     await expect(page.locator('.cal-cell[data-date="2031-07-27"]')).not.toHaveAccessibleName(/calendar event/)
     await calDAVLastDay.press("Enter")
     await expect(connected.getByRole("button", { name: /Legacy linked CalDAV trip/ })).toBeVisible()
+    await page.keyboard.press("Escape")
+    const visitLastDay = page.locator('.cal-cell[data-date="2031-07-17"]')
+    await expect(visitLastDay).toHaveAccessibleName(/1 calendar event$/)
+    await visitLastDay.press("Enter")
+    await expect(connected.getByRole("button", { name: /Legacy overnight visit/ })).toBeVisible()
     await page.keyboard.press("Escape")
 
     const overnight = { start: "2031-07-27T23:30:00-07:00", end: "2031-07-28T01:00:00-07:00" }

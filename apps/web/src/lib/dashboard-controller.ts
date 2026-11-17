@@ -380,6 +380,12 @@ function initOpenTaskFilter(): (() => void) | undefined {
         if (lifetime.aborted) return
         if (!replacement) throw new Error("Open queue unavailable")
         list.replaceChildren(...replacement.childNodes)
+        const favorites = document.querySelector<HTMLElement>("#dashboard-favorites")
+        const refreshedFavorites = html.querySelector<HTMLElement>("#dashboard-favorites")
+        if (favorites && refreshedFavorites) {
+          favorites.hidden = refreshedFavorites.hidden
+          favorites.replaceChildren(...refreshedFavorites.childNodes)
+        }
         loadFailed = false
         applyOpenFilter()
       })

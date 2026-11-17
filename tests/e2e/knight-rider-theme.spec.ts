@@ -230,11 +230,37 @@ test("Knight Rider persists and fills active work and task colors on Today and B
 })
 
 
+test("Dashboard Focus Queue selects open work before applying its row limit", async ({ page, request }) => {
+  const ids: string[] = []
+  try {
+    for (let index = 0; index < 15; index++) {
+      const task = await request.post("/api/tasks", { data: { title: `Cancelled inspection ${index}`, priority: 1 } })
+      expect(task.status()).toBe(201)
+      const { id } = await task.json()
+      ids.push(id)
+      const closed = await request.put(`/api/tasks/${id}`, { data: { status: "cancelled" } })
+      expect(closed.ok()).toBe(true)
+    }
+    const task = await request.post("/api/tasks", { data: { title: "Open inspection", status: "pending", priority: 3 } })
+    expect(task.status()).toBe(201)
+    const { id } = await task.json()
+    ids.push(id)
+    await page.goto("/")
+    const queue = page.locator("#my-open-list")
+    await expect(queue.locator(`[data-id="${id}"]`)).toContainText("Open inspection")
+    await expect(queue.getByText(/Cancelled inspection/)).toHaveCount(0)
+    await expect(page.locator("#my-open-count")).toHaveText("1 open task")
+    await expect(page.locator("#dashboard-stat-open-count")).toHaveText("1")
+  } finally {
+    for (const id of ids) await request.delete(`/api/tasks/${id}`, { data: {} })
+  }
+})
+
 test("Details completion clears Knight Rider active work on Dashboard and Board", async ({ page, request }) => {
   await page.addInitScript(() => localStorage.setItem("meitheal-theme", "knight-rider"))
   await page.emulateMedia({ reducedMotion: "reduce" })
   const title = "Finish the active card from Details"
-  const created = await request.post("/api/tasks", { data: { title, status: "active" } })
+  const created = await request.post("/api/tasks", { data: { title, status: "active", is_favorite: true } })
   expect(created.status()).toBe(201)
   const { id } = await created.json()
   const other = await request.post("/api/tasks", { data: { title: "Another Board card" } })
@@ -287,8 +313,10 @@ test("Details completion clears Knight Rider active work on Dashboard and Board"
     await page.goto("/")
     const dashboard = page.locator(`#dashboard-recent .bento-card[data-id="${id}"]`)
     const openQueue = page.locator(`#my-open-list [data-id="${id}"]`)
+    const favorite = page.locator(`#dashboard-favorites [data-id="${id}"]`)
     await expect(dashboard).toHaveAttribute("data-work-active", "")
     await expect(openQueue).toBeVisible()
+    await expect(favorite).toBeVisible()
     const edit = dashboard.getByRole("button", { name: "Edit task" })
     await edit.click()
     await expect(status).toHaveValue("active")
@@ -297,6 +325,7 @@ test("Details completion clears Knight Rider active work on Dashboard and Board"
     await expect(dashboard).not.toHaveAttribute("data-work-active", "")
     await expect(dashboard.locator(".task-badge")).toHaveText("Done")
     await expect(openQueue).toBeHidden()
+    await expect(favorite).toHaveCount(0)
     await expect(page.locator("#my-open-empty")).toHaveText("No open tasks for this selection.")
     await close.click()
     await expect(edit).toBeFocused()
@@ -304,6 +333,7 @@ test("Details completion clears Knight Rider active work on Dashboard and Board"
     await expect(status).toHaveValue("complete")
     await status.selectOption("active")
     await expect(openQueue).toBeVisible()
+    await expect(favorite).toBeVisible()
     await expect(openQueue).toHaveAttribute("data-work-active", "")
     await done.click()
     await expect(status).toHaveValue("complete")

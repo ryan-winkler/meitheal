@@ -1,5 +1,6 @@
 import { pageLifecycle } from "./page-lifecycle"
 import { hasPriorityOverlay } from "./layout-shortcuts-controller"
+import { containTabFocus } from "./focus-trap"
 
 pageLifecycle.onPageLoad(signal => {
   const mobileMenu = document.querySelector<HTMLButtonElement>("#menu-toggle")
@@ -38,10 +39,11 @@ pageLifecycle.onPageLoad(signal => {
     else if (link && sidebar.contains(target)) closeDrawer(false, !link.matches(".task-creation__settings"))
   }, { signal })
   document.addEventListener("keydown", event => {
-    if (event.key === "Escape" && !event.defaultPrevented && !hasPriorityOverlay() && sidebar.classList.contains("open")) {
+    if (!sidebar.classList.contains("open") || event.defaultPrevented || hasPriorityOverlay()) return
+    if (event.key === "Escape") {
       event.preventDefault()
       closeDrawer(true)
-    }
+    } else containTabFocus(sidebar, event)
   }, { signal })
   mobileMenu.disabled = false
   signal.addEventListener("abort", () => {

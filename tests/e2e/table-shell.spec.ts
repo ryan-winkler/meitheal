@@ -109,6 +109,19 @@ test.describe("Table Shell", () => {
     await expect(page.locator("#task-table th.col-priority")).toBeHidden()
   })
 
+  test("an empty Table updates its action when search is applied and cleared", async ({ page }) => {
+    await page.goto("/tasks?view=table#table")
+    const empty = page.locator("#table-empty")
+    const search = page.getByRole("textbox", { name: "Filter by text" })
+    await expect(empty.getByRole("button", { name: /New Task/ })).toBeVisible()
+    await search.fill(randomUUID())
+    await expect(empty.getByText("No tasks match these filters", { exact: true })).toBeVisible()
+    await empty.getByRole("button", { name: "Clear All", exact: true }).click()
+    await expect(search).toHaveValue("")
+    await expect(empty.getByRole("button", { name: /New Task/ })).toBeVisible()
+    await expect(search).toBeFocused()
+  })
+
   test("filtered empty state can clear criteria and return to the task list", async ({ page, tableTasks }) => {
     const missing = randomUUID()
     await page.goto(`/tasks?view=table&search=${missing}#table`)

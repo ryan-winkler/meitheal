@@ -29,7 +29,7 @@ UI emoji handling follows five explicit buckets:
 
 The desktop sidebar keeps a single circular edge collapse control (`#sidebar-edge-toggle`, with directional chevron flip and hover/ARIA state), while expandable navigation submenus (`Tasks`, `Areas`, and individual areas) use square disclosure buttons with dynamic `aria-expanded`, `aria-label`, and hover titles.
 
-Use the desktop sidebar’s edge chevron or **Ctrl+B** to expand and collapse it. In the hover layout, move into the rail or focus one of its navigation items to reveal it. On a phone, use **Close sidebar** inside the open drawer. Keyboard focus returns to the menu button.
+Use the desktop sidebar’s edge chevron or **Ctrl+B** to expand and collapse it. In the hover layout, move into the rail or focus one of its navigation items to reveal it. On a phone, Tab stays inside the open drawer. Use Escape or **Close sidebar** to return focus to the menu button.
 
 Pin creation shortcuts from **New task → Task types**. Pin Calendar, Kanban, Timeline or Table from **Tasks → Task views**. The navigation restores those pins after returning from pages that hide the sidebar, such as Inactivity.
 

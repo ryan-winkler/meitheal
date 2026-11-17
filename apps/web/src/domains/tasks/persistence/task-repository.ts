@@ -16,7 +16,7 @@
 import type { Client, InStatement, InValue, ResultSet } from "@libsql/client"
 import { nextHouseholdTicketNumberSql } from "../../../../drizzle/migrations/task-board-tickets.mjs"
 import { executeWriteWithRetry, runWriteTransaction } from "../../../../scripts/database-client.mjs"
-import { getStatusDef, isDoneStatus, normalizeStatus, STATUS } from "../../../lib/status-config"
+import { CLOSED_TASK_STATUSES, getStatusDef, isClosedStatus, isDoneStatus, normalizeStatus, STATUS } from "../../../lib/status-config"
 import { logApiError, logApiWarn } from "../../../lib/api-logger"
 import { EXACT_TASK_IDENTIFIER_SCORE } from "../../../lib/task-search-score"
 import { readStoredCalendarDay } from "../../../lib/calendar-day"
@@ -44,6 +44,7 @@ function isTaskOverdueOnDay(
   return isDueOverdue(dueDate, timezone, resolvedToday)
 }
 const taskHistoryPredicate = "(feed_action IS NULL OR field <> 'activity')"
+const openStatusPredicate = `lower(status) NOT IN (${CLOSED_TASK_STATUSES.map(() => "?").join(", ")})`
 // Agent "added" rows keep Recent Activity provenance as JSON in `summary`. The task
 // activity and timeline APIs (and their MCP tools) keep returning readable text.
 const PUBLIC_ACTIVITY_SUMMARY = `CASE WHEN field = 'created' AND summary LIKE '{"v":1,%' THEN 'Task added' ELSE summary END`
@@ -575,25 +576,25 @@ export class TaskRepository {
     return counts
   }
 
-  /** Favorited, non-complete tasks */
+  /** Favorited open tasks */
   async getFavoriteTasks(limit = 5): Promise<TaskRow[]> {
     const result = await this.client.execute({
       sql: `SELECT id, title, status, priority, due_date, is_favorite, color
-            FROM tasks WHERE task_board_id IS NULL AND is_favorite = 1 AND status NOT IN (?, 'archived') AND deferred_at IS NULL
+            FROM tasks WHERE task_board_id IS NULL AND is_favorite = 1 AND ${openStatusPredicate} AND deferred_at IS NULL
             ORDER BY updated_at DESC LIMIT ${limit}`,
-      args: [STATUS.COMPLETE],
+      args: CLOSED_TASK_STATUSES,
     });
     return result.rows as unknown as TaskRow[];
   }
 
-  /** Open (non-complete) tasks ordered by priority then due date */
+  /** Open tasks ordered by priority then due date */
   async getOpenTasks(limit = 15): Promise<TaskRow[]> {
     const result = await this.client.execute({
       sql: `SELECT id, title, status, priority, due_date, assigned_to, area_id, ticket_number, task_type, task_kind, project_id, owner, handoff_state, color
-            FROM tasks WHERE task_board_id IS NULL AND status NOT IN (?, 'archived') AND deferred_at IS NULL
+            FROM tasks WHERE task_board_id IS NULL AND ${openStatusPredicate} AND deferred_at IS NULL
             ORDER BY priority ASC, due_date ASC NULLS LAST, updated_at DESC
             LIMIT ${limit}`,
-      args: [STATUS.COMPLETE],
+      args: CLOSED_TASK_STATUSES,
     });
     return result.rows as unknown as TaskRow[];
   }
@@ -606,13 +607,13 @@ export class TaskRepository {
     const stats: DashboardStats = { total: 0, open: 0, active: 0, completed: 0, overdue: 0 };
     for (const row of result.rows) {
       const r = row as Record<string, unknown>;
-      const s = String(r.status);
+      const s = normalizeStatus(String(r.status));
       const c = Number(r.cnt);
       const open = Number(r.open_count)
       stats.total += c;
       if (s === STATUS.ACTIVE) stats.active += open
       if (s === STATUS.COMPLETE) stats.completed += c;
-      else stats.open += open
+      else if (!isClosedStatus(s)) stats.open += open
     }
     return stats;
   }
@@ -626,9 +627,9 @@ export class TaskRepository {
       sql: `SELECT due_date FROM tasks
             WHERE task_board_id IS NULL AND due_date IS NOT NULL AND due_date <> ''
               AND substr(due_date, 1, 10) < ?
-              AND status NOT IN (?, 'archived')
+              AND ${openStatusPredicate}
               AND deferred_at IS NULL`,
-      args: [upperBound, STATUS.COMPLETE],
+      args: [upperBound, ...CLOSED_TASK_STATUSES],
     });
     let count = 0;
     for (const row of result.rows) {
@@ -817,6 +818,7 @@ export class TaskRepository {
     }
     const addSpan = (
       task: Omit<LinkedCalendarEvent, "start">, startRaw: unknown, endRaw?: unknown, effectiveEndRaw?: unknown,
+      taskEndDay?: string | null,
     ) => {
       if (typeof startRaw !== "string" || !startRaw.trim()) return;
       const startDay = calendarEventDay(startRaw, timezone);
@@ -825,7 +827,7 @@ export class TaskRepository {
       const providerEnd = typeof endRaw === "string" ? calendarEventDay(endRaw, timezone, "exclusive-end") : null
       const storedEnd = typeof effectiveEndRaw === "string" && /^\d{4}-\d{2}-\d{2}$/.test(effectiveEndRaw.trim())
         ? calendarDayFromInput(effectiveEndRaw, timezone) : null
-      const endDay = providerEnd ?? storedEnd ?? startDay
+      const endDay = providerEnd ?? storedEnd ?? taskEndDay ?? startDay
 
       const interval = typeof endRaw === "string" ? calendarEventInterval(startRaw, endRaw, timezone) : null
       const lastDay = endDay < startDay ? startDay : endDay
@@ -884,11 +886,13 @@ export class TaskRepository {
         for (const occurrence of payload.occurrences) {
           addSpan(task, occurrence?.start, occurrence?.end, occurrence?.effective_end)
         }
-      } else if (typeof providerStart === "string" && calendarEventDay(providerStart, timezone)) {
-        addSpan(task, providerStart, payload?.end ?? payload?.dtend, payload?.effective_end)
       } else {
-        const endDay = typeof row.end_date === "string" ? calendarEventDay(row.end_date, timezone) : undefined
-        addSpan(task, row.start_date ?? row.due_date, undefined, endDay)
+        const taskEndDay = typeof row.end_date === "string" ? calendarEventDay(row.end_date, timezone) : null
+        if (typeof providerStart === "string" && calendarEventDay(providerStart, timezone)) {
+          addSpan(task, providerStart, payload?.end ?? payload?.dtend, payload?.effective_end, taskEndDay)
+        } else {
+          addSpan(task, row.start_date ?? row.due_date, undefined, undefined, taskEndDay)
+        }
       }
     }
     return Object.fromEntries([...byDay].map(([day, events]) =>
