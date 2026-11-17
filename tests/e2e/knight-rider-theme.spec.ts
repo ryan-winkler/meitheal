@@ -237,11 +237,27 @@ test("Details completion clears Knight Rider active work on Dashboard and Board"
   const created = await request.post("/api/tasks", { data: { title, status: "active" } })
   expect(created.status()).toBe(201)
   const { id } = await created.json()
+  const other = await request.post("/api/tasks", { data: { title: "Another Board card" } })
+  expect(other.status()).toBe(201)
+  const { id: otherId } = await other.json()
   const status = page.locator("#td-status")
   const done = page.locator("#td-toggle-done")
   const close = page.getByRole("button", { name: "Close detail" })
   const card = page.locator(`.kanban-card[data-id="${id}"]`)
   const link = card.locator(".card-open-btn")
+  let holdRefresh = false
+  let refreshHeld = false
+  let failRefresh = false
+  let releaseRefresh = () => {}
+  const waitingRefresh = new Promise<void>(resolve => { releaseRefresh = resolve })
+  await page.route(url => url.searchParams.has("boardRefresh"), async route => {
+    if (failRefresh) return route.fulfill({ status: 503 })
+    if (holdRefresh) {
+      refreshHeld = true
+      await waitingRefresh
+    }
+    return route.continue()
+  })
   try {
     await page.goto("/")
     const dashboard = page.locator(`#dashboard-recent .bento-card[data-id="${id}"]`)
@@ -259,20 +275,60 @@ test("Details completion clears Knight Rider active work on Dashboard and Board"
     await expect(page.locator("#my-open-empty")).toHaveText("No open tasks for this selection.")
     await close.click()
     await expect(edit).toBeFocused()
+    await edit.press("Enter")
+    await expect(status).toHaveValue("complete")
+    await status.selectOption("active")
+    await expect(openQueue).toBeVisible()
+    await expect(openQueue).toHaveAttribute("data-work-active", "")
+    await done.click()
+    await expect(status).toHaveValue("complete")
+    await expect(openQueue).toBeHidden()
+    await close.click()
 
     await page.goto("/tasks#kanban")
     await expect(card).toHaveAttribute("data-status", "complete")
     await link.press("Enter")
     await expect(status).toHaveValue("complete")
+    failRefresh = true
     await status.selectOption("active")
-    await expect(card).toHaveAttribute("data-status", "active")
-    await expect(card).toHaveAttribute("data-work-active", "")
-    await done.click()
+    await expect(status).toHaveValue("active")
+    await expect(page.locator("[data-kanban-loading]")).toContainText("Status saved.")
     await expect(card).toHaveAttribute("data-status", "complete")
     await expect(card).not.toHaveAttribute("data-work-active", "")
     await close.click()
     await expect(link).toBeFocused()
+    failRefresh = false
+    await page.locator("[data-kanban-retry]").click()
+    await expect(card).toHaveAttribute("data-status", "active")
+    await expect(card).toHaveAttribute("data-work-active", "")
+
+    await link.press("Enter")
+    await expect(status).toHaveValue("active")
+    holdRefresh = true
+    await done.click()
+    await expect(status).toHaveValue("complete")
+    await expect.poll(() => refreshHeld).toBe(true)
+    await close.click()
+    await expect(link).toBeFocused()
+    const newerFocus = page.locator(`.kanban-card[data-id="${otherId}"] .card-open-btn`)
+    await newerFocus.focus()
+    holdRefresh = false
+    releaseRefresh()
+    await expect(card).toHaveAttribute("data-status", "complete")
+    await expect(card).not.toHaveAttribute("data-work-active", "")
+    await expect(newerFocus).toBeFocused()
+
+    await page.goto(`/tasks?status=active&open=${id}#kanban`)
+    await expect(status).toHaveValue("complete")
+    await expect(card).toHaveCount(0)
+    await status.selectOption("active")
+    await expect(card).toHaveAttribute("data-status", "active")
+    await expect(card).toHaveAttribute("data-work-active", "")
+    await close.click()
+    await expect(page).toHaveURL(url => url.searchParams.get("status") === "active" && !url.searchParams.has("open"))
   } finally {
+    releaseRefresh()
+    await request.delete(`/api/tasks/${otherId}`)
     await request.delete(`/api/tasks/${id}`)
   }
 })

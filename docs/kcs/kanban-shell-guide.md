@@ -111,7 +111,7 @@ The form keeps the title. Check the area selection and destination lane. If you 
 
 ## Card colors
 
-Use **Set card color** to choose the task color. Knight Rider tints the whole card while keeping the active-work indicator visible. Other palettes use the color at the card edge. Saving and reloading retain that choice. **Clear color** restores the default treatment. Rejected writes retain the saved color and report an error so you can retry.
+Use **Set card color** to choose the task color. Knight Rider tints the whole card while keeping the active-work indicator visible. Other palettes use the color at the card edge. Saving and reloading retain that choice. **Clear color** restores the default treatment. Rejected writes retain the saved color and report an error so you can retry. If the Board cannot refresh after a successful Details status save, it keeps its last loaded lane and card state and offers Retry.
 
 In the color picker, use Up and Down to choose a swatch and Enter to save. Focus returns to the card’s **Task actions** button during the save and after the board refreshes.
 

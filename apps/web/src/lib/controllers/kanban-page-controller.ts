@@ -2,7 +2,6 @@ import { getRememberedAreaId, getSelectedAreaId } from "@lib/area-selector-contr
 import { replaceTaskBackgroundUrl, taskBackgroundUrl } from "@lib/task-page-url"
 import { DEFERRAL_RECONCILED, type DeferralReconciliation } from "@lib/deferral-client"
 import { initKanbanArea } from "@lib/kanban-controller"
-import { isActiveStatus } from "@lib/status-config"
 import { hydrateTaskAssignees } from "@lib/task-assignee-display"
 import { KANBAN_GROUP_KEY, readKanbanFilters, setKanbanPage, storedKanbanGroup, updateKanbanFilters, type KanbanFilters } from "@lib/kanban-query"
 import { initKanbanInactivity } from "./kanban-inactivity"
@@ -13,6 +12,20 @@ export interface KanbanRefreshFocus {
   lane?: string | undefined
   taskId?: string | undefined
   firstPage?: boolean
+  afterStatusSave?: boolean
+}
+
+function matchBoardFocus(active: HTMLElement, replacement: HTMLElement) {
+  const cardId = active.closest<HTMLElement>(".kanban-card")?.dataset.id
+  const laneId = active.closest<HTMLElement>(".kanban-column")?.dataset.status
+  const card = cardId && replacement.querySelector<HTMLElement>(`.kanban-card[data-id="${CSS.escape(cardId)}"]`)
+  const lane = laneId && replacement.querySelector<HTMLElement>(`.kanban-column[data-status="${CSS.escape(laneId)}"]`)
+  const scope = card || lane
+  if (!scope) return null
+  const matches = Array.from(scope.querySelectorAll<HTMLElement>(active.localName))
+    .filter(element => element.className === active.className)
+  return (matches.length === 1 ? matches[0] : null) ||
+    (card ? card.querySelector<HTMLElement>(".card-open-btn") : scope.querySelector<HTMLElement>(".kanban-column-header"))
 }
 
 export function initKanbanPage(signal: AbortSignal): void {
@@ -81,6 +94,8 @@ export function initKanbanPage(signal: AbortSignal): void {
 
       const active = document.activeElement
       const shouldFocus = active === retry || board.contains(active) || (Boolean(focus) && active === document.body)
+      const retainedControl = focus?.afterStatusSave && active instanceof HTMLElement && board.contains(active)
+        ? matchBoardFocus(active, replacement) : null
       const scroll = new Map(Array.from(board.querySelectorAll<HTMLElement>(".kanban-column"), lane =>
         [lane.dataset.status, lane.querySelector(".kanban-cards")?.scrollTop ?? 0] as const))
       const horizontal = board.scrollLeft
@@ -119,11 +134,12 @@ export function initKanbanPage(signal: AbortSignal): void {
         const lane = focus?.lane ? board.querySelector<HTMLElement>(`.kanban-column[data-status="${CSS.escape(focus.lane)}"]`) : null
         const range = lane && (lane.querySelector<HTMLElement>("[data-kanban-range]") ??
           lane.querySelector<HTMLElement>(".kanban-column-header"))
-        ;(card || range || board.querySelector<HTMLElement>(".kanban-column-header"))?.focus()
+        ;(retainedControl || card || range || board.querySelector<HTMLElement>(".kanban-column-header"))?.focus()
       }
     } catch {
       if (!request.signal.aborted && !signal.aborted) {
-        renderStatus(window.mI18n?.get("kanban.board_load_failed") ?? "Couldn’t load the board.", true)
+        const message = window.mI18n?.get("kanban.board_load_failed") ?? "Couldn’t load the board."
+        renderStatus(focus?.afterStatusSave ? `Status saved. ${message}` : message, true)
       }
     } finally {
       if (pending === request) {
@@ -194,9 +210,8 @@ export function initKanbanPage(signal: AbortSignal): void {
   document.addEventListener("meitheal:task-status-saved", event => {
     const { id, status } = (event as CustomEvent<{ id: string; status: string }>).detail
     const card = board.querySelector<HTMLElement>(`.kanban-card[data-id="${CSS.escape(id)}"]`)
-    if (!card || typeof status !== "string" || card.dataset.status === status) return
-    card.toggleAttribute("data-work-active", isActiveStatus(status))
-    void refresh({ taskId: id, lane: status })
+    if (typeof status !== "string" || card?.dataset.status === status) return
+    void refresh({ taskId: id, lane: status, afterStatusSave: true })
   }, { signal })
   document.addEventListener("meitheal:area-changed", () => {
     syncAreaLinks(getSelectedAreaId())
