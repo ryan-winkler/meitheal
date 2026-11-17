@@ -16,7 +16,7 @@ test("Timeline shows unavailable projects without revealing their IDs or labels"
   let child: ChildProcess | undefined
   let browser: Browser | undefined
   try {
-    child = startCoreFixture(work)
+    child = startCoreFixture(work, false, undefined, undefined, work)
     child.stdout?.resume()
     child.stderr?.resume()
     const [fixture] = await once(child, "message", { signal: AbortSignal.timeout(10_000) })
@@ -43,6 +43,11 @@ test("Timeline shows unavailable projects without revealing their IDs or labels"
     const prefix = "Timeline catalog scope"
     const retiredTask = await create("/api/tasks", { ...dates, title: `${prefix} retired`, project_id: retiredProject })
     const danglingTask = await create("/api/tasks", { ...dates, title: `${prefix} missing` })
+    const groupName = "Timeline feature access group"
+    const projectTitle = "Timeline feature access project"
+    const group = await create("/api/areas", { name: groupName })
+    const project = await create("/api/projects", { title: projectTitle, area_id: group })
+    const assigned = await create("/api/tasks", { ...dates, title: `${prefix} assigned`, project_id: project })
     const db = new DatabaseSync(join(work, "pins.db"))
     try {
       // The public project lifecycle clears associations. Seed legacy references directly.
@@ -57,6 +62,8 @@ test("Timeline shows unavailable projects without revealing their IDs or labels"
     await page.goto(`${app}/tasks?${query}#timeline`)
     const data = (await page.locator("#timeline-data").textContent())!
     const labels = (await page.locator("#timeline-projects").textContent())!
+    expect(labels).toContain(projectTitle)
+    expect(await page.locator("#timeline-areas").textContent()).toContain(groupName)
     for (const value of [retiredProject, retiredTitle, missingProject]) {
       expect(data).not.toContain(value)
       expect(labels).not.toContain(value)
@@ -72,6 +79,34 @@ test("Timeline shows unavailable projects without revealing their IDs or labels"
     await expect(paneToggle).toBeEnabled()
     if (await paneToggle.getAttribute("aria-expanded") === "false") await paneToggle.press("Enter")
     await expect(page.getByRole("heading", { name: "Group: Unknown Project", exact: true })).toBeVisible()
+
+    const admin = await browser.newContext({ ignoreHTTPSErrors: true, extraHTTPHeaders: {} })
+    await admin.addCookies([{ name: "feedback-fixture", value: "admin", url: origin }])
+    const endpoint = app + "/api/organization-features"
+    for (const feature of ["projects", "groups"]) {
+      const current = await admin.request.get(endpoint)
+      expect(current.status()).toBe(200)
+      const settings = await current.json()
+      const saved = await admin.request.put(endpoint, {
+        headers: { origin, "x-meitheal-area-admin": current.headers()["x-meitheal-area-admin"]! },
+        data: { feature, audience: "nobody", users: [], revision: settings.features[feature].revision },
+      })
+      expect(saved.status(), await saved.text()).toBe(204)
+    }
+    expect((await context.request.get(app + "/api/projects")).status()).toBe(404)
+    expect((await context.request.get(app + "/api/boards/household?view=groups")).status()).toBe(404)
+
+    await page.reload()
+    const restrictedProjects = (await page.locator("#timeline-projects").textContent())!
+    const restrictedAreas = (await page.locator("#timeline-areas").textContent())!
+    const restrictedData = (await page.locator("#timeline-data").textContent())!
+    expect(restrictedProjects).not.toContain(projectTitle)
+    expect(restrictedProjects).not.toContain(project)
+    expect(restrictedAreas).not.toContain(groupName)
+    expect(restrictedData).not.toContain(project)
+    const visibleTask = (JSON.parse(restrictedData) as typeof tasks).find(task => task.id === assigned)
+    expect(visibleTask?.project_group).toBe("unavailable-project")
+    await expect(page.locator(`.gantt-bar[data-task-id="${assigned}"]`)).toBeVisible()
   } finally {
     await browser?.close()
     if (child && child.exitCode === null && child.signalCode === null) {

@@ -24,6 +24,7 @@ import {
 import { TaskRepository } from "@domains/tasks/persistence/task-repository";
 import { HierarchyRepository } from "@domains/tasks/persistence/hierarchy-repository";
 import { serializeForScript } from "@lib/safe-html"
+import { isOrganizationFeatureAvailable } from "@lib/organization-request-context"
 import { getHouseholdProjectGroup, getHouseholdProjectLabels } from "@lib/household-project-grouping"
 import { t } from "../../i18n/translations"
 
@@ -64,13 +65,13 @@ try {
   // Resolve labels from the scoped catalog even when task filters change.
   const hierarchy = new HierarchyRepository(client)
   const [areas, projects] = await Promise.allSettled([
-    repo.getAreas(),
-    hierarchy.findProjectGroups(),
+    isOrganizationFeatureAvailable("groups") ? repo.getAreas() : undefined,
+    isOrganizationFeatureAvailable("projects") ? hierarchy.findProjectGroups() : undefined,
   ])
-  if (areas.status === "fulfilled") {
+  if (areas.status === "fulfilled" && areas.value) {
     areaMap = Object.fromEntries(Object.entries(areas.value).map(([id, info]) => [id, info.name]))
   }
-  if (projects.status === "fulfilled") {
+  if (projects.status === "fulfilled" && projects.value) {
     projectMap = getHouseholdProjectLabels(projects.value, areaMap, undefined, projectFallbacks)
   }
 } catch (e) {

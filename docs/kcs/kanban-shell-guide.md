@@ -89,6 +89,8 @@ Open **Timeline** to narrow the chart by text, status, priority, task type, or a
 
 When you group by **Project**, each project has its own section. If project names match, the heading adds the project's Area when available. A project with no direct Area inherits its linked Goal's available Area. If a direct Area reference is unavailable, its group uses a stable qualifier until that reference is repaired. **No Project** contains unassigned tasks. **Unknown Project** contains tasks whose assigned project is unavailable. Open **Task pane** to see the groups. Use Tab to reach a group button and Space or Enter to collapse or expand it. Use the Up and Down arrows to move between bars and group buttons. Collapsed groups stay collapsed while you filter the chart.
 
+Timeline loads Project and Group labels according to your organization access.
+
 ## Troubleshooting
 
 ### Board pages or filters fail to load
