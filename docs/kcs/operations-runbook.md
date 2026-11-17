@@ -465,7 +465,7 @@ Card quick-action menus use viewport-bounded positions and 44-pixel color target
 
 ### Kanban assignment troubleshooting
 
-In **Assign User**, a failed directory request shows **Could not load assignees**. The Home Assistant lookup waits up to three seconds for the Core roster. During an unverified lookup, cached names from the current source and custom assignees remain selectable. An uncached saved Home Assistant assignee is marked unverified. Use **Retry** after a failed or unverified lookup. A confirmed missing assignee shows **Assignee unavailable**. A verified empty directory shows **No users configured** when the card has no unresolved assignment. These messages preserve the saved assignee.
+In **Assign User**, a failed directory request shows **Could not load assignees**. The Home Assistant lookup waits up to three seconds for the Core roster. During an unverified lookup, cached names from the current source and custom assignees remain selectable. An uncached saved Home Assistant assignee is marked unverified. Use **Retry** after a failed or unverified lookup. The Board keeps the choices already shown selectable while it checks again. A confirmed missing assignee shows **Assignee unavailable**. A verified empty directory shows **No users configured** when the card has no unresolved assignment. These messages preserve the saved assignee.
 
 ## Checklist edits from multiple sessions
 

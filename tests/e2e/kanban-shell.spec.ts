@@ -100,11 +100,16 @@ test.describe("Tasks Shell (Kanban)", () => {
     const { id } = await response.json()
     const olderUser = { id: "ha_old_account", name: "A cached Home Assistant user" }
     const currentUser = { id: idFromHa, name: "Home Assistant housemate" }
+    const localUser = { id: "local_account", name: "Custom assignee" }
     let directoryMode: "verified" | "stale" | "failed" = "stale"
-    await page.route("**/api/users", route => {
+    let resolveDirectory: () => void = () => {}
+    const heldDirectory = new Promise<void>(resolve => { resolveDirectory = resolve })
+    let holdRetry = false
+    await page.route("**/api/users", async route => {
+      if (holdRetry) await heldDirectory
       if (directoryMode === "failed") return route.fulfill({ status: 503, json: { error: "Unavailable" } })
       return route.fulfill({ json: {
-        users: directoryMode === "verified" ? [olderUser, currentUser] : [olderUser],
+        users: directoryMode === "verified" ? [olderUser, localUser, currentUser] : [olderUser, localUser],
         ha_connected: true, ha_roster_verified: directoryMode === "verified",
       } })
     })
@@ -129,6 +134,21 @@ test.describe("Tasks Shell (Kanban)", () => {
       directoryMode = "stale"
       await retry.press("Enter")
       await expect(dialog).toContainText("Home Assistant assignee not verified")
+
+      holdRetry = true
+      directoryMode = "failed"
+      await retry.press("Enter")
+      await expect(dialog.getByRole("status")).toHaveText("Checking assignees…")
+      await expect(retry).toHaveAttribute("aria-disabled", "true")
+      await expect(dialog.getByRole("menuitem", { name: olderUser.name })).toBeEnabled()
+      const localChoice = dialog.getByRole("menuitem", { name: localUser.name })
+      await localChoice.focus()
+      await expect(localChoice).toBeFocused()
+      holdRetry = false
+      resolveDirectory()
+      await expect(dialog.getByRole("status")).toHaveText("Could not load assignees")
+      await expect(localChoice).toBeFocused()
+
       await page.keyboard.press("Escape")
       await expect(trigger).toBeFocused()
 

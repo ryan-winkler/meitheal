@@ -1,4 +1,4 @@
-import type { CalendarFilterRow } from "@domains/tasks/persistence/task-repository"
+import type { CalendarFilterRow } from "@domains/tasks"
 import { calendarToday, isDueOverdue } from "./date"
 import type { FilterGroup } from "./filter-engine"
 import { effectiveCalendarKinds, isTaskVisible, readTableTaskTypeParam, readTaskAreaParam } from "./filter-state"

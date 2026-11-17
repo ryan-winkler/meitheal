@@ -249,100 +249,112 @@ export function initQuickActions(
       content.append(skel1, skel2)
       const popover = _qa.open(btn, content, "Assign User")
 
-      // Fetch users
-      const directory = await taskApi.listUserDirectory(__signal).catch(() => null)
-      const users = directory?.users ?? []
+      let users: Awaited<ReturnType<typeof taskApi.listUserDirectory>>["users"] = []
 
-      // Replace skeleton with real content
-      if (activePopover !== popover) return
-      content.replaceChildren()
+      async function loadDirectory() {
+        const directory = await taskApi.listUserDirectory(__signal).catch(() => null)
+        if (activePopover !== popover || __signal.aborted) return
+        users = directory?.users ?? users
+        const focused = document.activeElement as HTMLElement | null
+        const restoreFocus = focused === btn || content.contains(focused)
+        const focusedAssignee = focused?.dataset.assigneeOption
+        content.replaceChildren()
 
-      // Unassign option
-      const unassignItem = document.createElement("button")
-      unassignItem.className = "popover-item" + (!currentAssigned ? " active" : "")
-      unassignItem.setAttribute("role", "menuitem")
-      unassignItem.append(createSpriteIconElement("x", { size: 14 }), document.createTextNode(" Unassigned"))
-      unassignItem.addEventListener("click", async () => {
-        _qa.close(true)
-        try {
-          const res = await fetch(buildTaskApiUrl(taskId), { // nosemgrep
-            method: "PUT",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ assigned_to: null }),
-          })
-          if (res.ok) {
-            _qa.toast("Unassigned", "success")
-            await refreshBoard({ taskId })
-          } else { _qa.toast("Failed to unassign", "error") }
-        } catch { _qa.toast("Failed to unassign", "error") }
-      })
-      content.appendChild(unassignItem)
-
-      // User list with colored dots (P2-7)
-      users.forEach((user: any) => {
-        const userId = user.id || user.name
-        const item = document.createElement("button")
-        item.className = "popover-item" + (currentAssigned === userId ? " active" : "")
-        item.setAttribute("role", "menuitem")
-        // P2-7: Colored dot for user recognition
-        if (user.color) {
-          const dot = document.createElement("span")
-          dot.style.cssText = `display:inline-block;width:8px;height:8px;border-radius:50%;background:${sanitizeCssColor(user.color)};margin-right:6px;vertical-align:middle`
-          item.appendChild(dot)
-        } else {
-          item.append(createSpriteIconElement("user", { size: 14 }), document.createTextNode(" "))
-        }
-        const name = user.display_name || user.name || user.id
-        item.appendChild(document.createTextNode(name + (user.kind === "agent" ? " (AI agent)" : "")))
-        item.addEventListener("click", async () => {
+        // Unassign option
+        const unassignItem = document.createElement("button")
+        unassignItem.className = "popover-item" + (!currentAssigned ? " active" : "")
+        unassignItem.setAttribute("role", "menuitem")
+        unassignItem.dataset.assigneeOption = ""
+        unassignItem.append(createSpriteIconElement("x", { size: 14 }), document.createTextNode(" Unassigned"))
+        unassignItem.addEventListener("click", async () => {
           _qa.close(true)
           try {
             const res = await fetch(buildTaskApiUrl(taskId), { // nosemgrep
               method: "PUT",
               headers: { "content-type": "application/json" },
-              body: JSON.stringify({ assigned_to: userId }),
+              body: JSON.stringify({ assigned_to: null }),
             })
             if (res.ok) {
-              _qa.toast(`Assigned to ${name}`, "success")
+              _qa.toast("Unassigned", "success")
               await refreshBoard({ taskId })
-            } else { _qa.toast("Failed to assign", "error") }
-          } catch { _qa.toast("Failed to assign", "error") }
+            } else { _qa.toast("Failed to unassign", "error") }
+          } catch { _qa.toast("Failed to unassign", "error") }
         })
-        content.appendChild(item)
-      })
+        content.appendChild(unassignItem)
 
-      const currentMissing = currentAssigned && !users.some(user => user.id === currentAssigned)
-      const rosterUnverified = (directory?.ha_roster_verified ?? directory?.ha_connected) === false
-      const directoryMessage = !directory ? "Could not load assignees"
-        : currentMissing ? assigneeFallback(currentAssigned, directory)
-        : rosterUnverified ? "Home Assistant assignees could not be verified"
-        : !users.length ? "No users configured" : ""
-      if (directoryMessage) {
+        // User list with colored dots (P2-7)
+        users.forEach(user => {
+          const userId = user.id || user.name
+          const item = document.createElement("button")
+          item.className = "popover-item" + (currentAssigned === userId ? " active" : "")
+          item.setAttribute("role", "menuitem")
+          item.dataset.assigneeOption = userId
+          // P2-7: Colored dot for user recognition
+          if (user.color) {
+            const dot = document.createElement("span")
+            dot.style.cssText = `display:inline-block;width:8px;height:8px;border-radius:50%;background:${sanitizeCssColor(user.color)};margin-right:6px;vertical-align:middle`
+            item.appendChild(dot)
+          } else {
+            item.append(createSpriteIconElement("user", { size: 14 }), document.createTextNode(" "))
+          }
+          const name = user.display_name || user.name || user.id
+          item.appendChild(document.createTextNode(name + (user.kind === "agent" ? " (AI agent)" : "")))
+          item.addEventListener("click", async () => {
+            _qa.close(true)
+            try {
+              const res = await fetch(buildTaskApiUrl(taskId), { // nosemgrep
+                method: "PUT",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ assigned_to: userId }),
+              })
+              if (res.ok) {
+                _qa.toast(`Assigned to ${name}`, "success")
+                await refreshBoard({ taskId })
+              } else { _qa.toast("Failed to assign", "error") }
+            } catch { _qa.toast("Failed to assign", "error") }
+          })
+          content.appendChild(item)
+        })
+
+        const currentMissing = currentAssigned && !users.some(user => user.id === currentAssigned)
+        const rosterUnverified = (directory?.ha_roster_verified ?? directory?.ha_connected) === false
+        const directoryMessage = !directory ? "Could not load assignees"
+          : currentMissing ? assigneeFallback(currentAssigned, directory)
+          : rosterUnverified ? "Home Assistant assignees could not be verified"
+          : !users.length ? "No users configured" : ""
         const empty = document.createElement("div")
-        empty.className = "popover-item"
-        empty.style.color = "var(--text-muted)"
-        empty.setAttribute("role", "status")
-        empty.textContent = directoryMessage
-        content.appendChild(empty)
+        if (directoryMessage) {
+          empty.className = "popover-item"
+          empty.style.color = "var(--text-muted)"
+          empty.setAttribute("role", "status")
+          empty.textContent = directoryMessage
+          content.appendChild(empty)
+        }
+        if (!directory || rosterUnverified) {
+          const retry = document.createElement("button")
+          retry.type = "button"
+          retry.className = "popover-item"
+          retry.dataset.assigneeRetry = ""
+          retry.textContent = "Retry"
+          retry.addEventListener("click", (event) => {
+            event.stopPropagation()
+            if (retry.getAttribute("aria-disabled") === "true") return
+            retry.setAttribute("aria-disabled", "true")
+            empty.textContent = "Checking assignees…"
+            void loadDirectory()
+          }, { signal: __signal })
+          content.appendChild(retry)
+        }
+        if (restoreFocus) {
+          const sameAssignee = [...content.querySelectorAll<HTMLElement>("[data-assignee-option]")]
+            .find(item => item.dataset.assigneeOption === focusedAssignee)
+          const first = sameAssignee ?? content.querySelector<HTMLElement>("[data-assignee-retry]") ??
+            content.querySelector<HTMLElement>(".active") ?? content.querySelector("button")
+          first?.focus({ preventScroll: true })
+        }
       }
-      if (!directory || rosterUnverified) {
-        const retry = document.createElement("button")
-        retry.type = "button"
-        retry.className = "popover-item"
-        retry.dataset.assigneeRetry = ""
-        retry.textContent = "Retry"
-        retry.addEventListener("click", (event) => {
-          event.stopPropagation()
-          btn.focus({ preventScroll: true })
-          btn.click()
-        }, { signal: __signal })
-        content.appendChild(retry)
-      }
-      if (document.activeElement === btn) {
-        const first = content.querySelector<HTMLElement>("[data-assignee-retry]") ??
-          content.querySelector<HTMLElement>(".active") ?? content.querySelector("button")
-        first?.focus({ preventScroll: true })
-      }
+
+      await loadDirectory()
     }, { signal: __signal })
   })
 
