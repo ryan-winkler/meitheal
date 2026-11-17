@@ -17,13 +17,30 @@ test.describe("Calendar Shell", () => {
     const views = page.getByRole("navigation", { name: "Task views" })
     await expect(views.getByRole("link", { name: "Calendar" })).toHaveAttribute("aria-current", "page")
 
-    await page.locator('.cal-cell[data-date]:not(.cal-other)').first().press("Enter")
-
-    await expect(page.locator("#day-drawer")).toHaveAttribute("aria-hidden", "false")
-    await expect(page.locator("#day-drawer-close")).toBeFocused()
-    await page.keyboard.press("Escape")
-    await expect(page.locator("#day-drawer")).toHaveAttribute("aria-hidden", "true")
-    await expect(page.locator('.cal-cell[data-date]:not(.cal-other)').first()).toBeFocused()
+    const day = page.locator('.cal-cell[data-date]:not(.cal-other)').first()
+    const drawer = page.locator("#day-drawer")
+    const close = drawer.getByRole("button", { name: "Close", exact: true })
+    for (const pointer of [false, true]) {
+      if (pointer) await day.click()
+      else await day.press("Enter")
+      await expect(drawer).toHaveAttribute("aria-hidden", "false")
+      await expect(close).toBeFocused()
+      const target = await close.boundingBox()
+      expect(target?.width).toBeGreaterThanOrEqual(44)
+      expect(target?.height).toBeGreaterThanOrEqual(44)
+      if (pointer) {
+        const heading = drawer.locator("#day-drawer-title")
+        await heading.click()
+        await expect(page.locator("body")).toBeFocused()
+        await page.keyboard.press("Tab")
+        await expect(close).toBeFocused()
+        await heading.click()
+        await expect(page.locator("body")).toBeFocused()
+      }
+      await page.keyboard.press("Escape")
+      await expect(drawer).toHaveAttribute("aria-hidden", "true")
+      await expect(day).toBeFocused()
+    }
   })
 
   test("Calendar renders supported years with fewer than four digits", async ({ page }) => {
@@ -39,6 +56,34 @@ test.describe("Calendar Shell", () => {
     await page.goto("/tasks?view=calendar&year=2011&month=11#calendar")
     await page.locator('.cal-cell[data-date="2011-12-30"]').press("Enter")
     await expect(page.locator("#day-drawer-title")).toHaveText("Friday, December 30")
+  })
+
+  test("opening a day retries focus when Close is initially disabled", async ({ page }) => {
+    const day = page.locator('.cal-cell[data-date]:not(.cal-other)').first()
+    const drawer = page.locator("#day-drawer")
+    const close = page.locator("#day-drawer-close")
+    await day.evaluate(day => {
+      const drawer = document.querySelector<HTMLElement>("#day-drawer")!
+      const close = document.querySelector<HTMLButtonElement>("#day-drawer-close")!
+      close.disabled = true
+      const observer = new MutationObserver(() => {
+        observer.disconnect()
+        drawer.dataset.openedFromGrid = String(close.disabled && document.activeElement === day)
+        requestAnimationFrame(() => { close.disabled = false })
+      })
+      observer.observe(drawer, { attributeFilter: ["aria-hidden"] })
+    })
+    await day.press("Enter")
+    await expect(drawer).toHaveAttribute("aria-hidden", "false")
+    await expect(drawer).toHaveAttribute("data-opened-from-grid", "true")
+    await expect(close).toBeFocused()
+    await day.focus()
+    await page.keyboard.press("Tab")
+    await expect(close).toBeFocused()
+    await day.focus()
+    await page.keyboard.press("Escape")
+    await expect(drawer).toHaveAttribute("aria-hidden", "true")
+    await expect(day).toBeFocused()
   })
 
   test("phone filters stay compact, accessible and marked when active", async ({ page }) => {
