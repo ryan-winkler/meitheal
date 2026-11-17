@@ -273,7 +273,9 @@ test("legacy Shopping type filters survive view switches and respect Table searc
     }))
     await page.goto("/tasks?" + calendarShopping + "#timeline")
     for (const id of ids) await expect(page.locator(`.gantt-bar[data-task-id="${id}"]`)).toBeAttached()
-    await views.getByRole("link", { name: "Calendar", exact: true }).click()
+    const calendarLink = views.getByRole("link", { name: "Calendar", exact: true })
+    if (!(await calendarLink.isVisible())) await views.locator("[data-nav-overflow-more] summary").click()
+    await calendarLink.click()
     await expect(page).not.toHaveURL(/advancedFilter=/)
     await expect(calendar.locator(`.cal-cell[data-date="${due}"]`)).toHaveAccessibleName(/2 tasks$/)
 

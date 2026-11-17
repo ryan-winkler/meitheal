@@ -1,10 +1,13 @@
 ---
+import { isOrganizationFeatureAvailable as available } from "@lib/organization-request-context"
+import { organizationLabelsFor } from "@lib/organization-labels"
 /**
  * Project Detail — shows project metadata + tabbed sections for Tasks, Fields, Settings.
  * Uses hash-based sub-menu tabs matching the parent page shell pattern.
  * @page /projects/[id]
  * @phase 15 — Wave 4.5
  */
+import LegacyBoardBridge from "../../components/boards/LegacyBoardBridge.astro"
 import Layout from "../../layouts/Layout.astro";
 import { logApiError } from "../../lib/api-logger"
 import StatusBadge from "../../components/ui/StatusBadge.astro";
@@ -53,17 +56,17 @@ try {
     return Astro.redirect(projectsPath);
   }
 
-  if (project.goal_id) {
+  if (project.goal_id && available("goals")) {
     goal = await repo.findGoalById(project.goal_id as string) as Record<string, unknown> | null;
   }
   const areaId = project.area_id ?? goal?.area_id
-  if (typeof areaId === "string") {
+  if (typeof areaId === "string" && available("groups")) {
     area = await repo.findAreaById(areaId) as Record<string, unknown> | null
   }
 
   tasks = await taskRepo.findByProjectId(projectId);
-  goals = await repo.findAllGoals({});
-  areas = await repo.findAllAreas()
+  goals = available("goals") ? await repo.findAllGoals({}) : [];
+  areas = available("groups") ? await repo.findAllAreas() : []
 } catch (error) {
   logApiError("projects", "Could not load Project details", error)
   return new Response("Could not load this Project. Reload to try again.", {
@@ -87,15 +90,17 @@ const progress = tasks.length > 0 ? Math.round((completedCount / tasks.length) *
 
 const { timezone, dateFormat } = Astro.locals;
 
+const organization = await organizationLabelsFor(Astro)
 const tabs = [
   { id: "overview", label: "Overview", icon: "📊" },
-  { id: "tasks", label: "Tasks", icon: "✅" },
+  { id: "tasks", label: organization("task", true), icon: "✅" },
   { id: "fields", label: "Fields", icon: "🏷️" },
   { id: settingsTab, label: "Settings", icon: "⚙️" },
 ];
 ---
 
-<Layout title={`Meitheal — ${projTitle}`}>
+{!workspaceProjectId ? <LegacyBoardBridge href={boardWorkspaceHref(HOUSEHOLD_BOARD_ID, { project: projectId })} kind="project"
+  fragments={{ overview: "overview", tasks: "tasks", settings: "project-settings", fields: "fields" }} /> : <Layout title={`Meitheal — ${projTitle}`}>
   <span slot="page-title">
     <span style={`color: ${projColor}; margin-right: 6px;`}>{projIcon}</span>
     {projTitle}
@@ -128,7 +133,7 @@ const tabs = [
   <section id="section-overview" class="project-section active" data-section="overview">
     {/* Breadcrumb */}
     <nav class="project-breadcrumb" aria-label="Project breadcrumb">
-      <a href={workspaceProjectId ? boardWorkspaceHref(HOUSEHOLD_BOARD_ID) : "/projects"}>{workspaceProjectId ? "Household" : "Projects"}</a>
+      <a href={workspaceProjectId ? boardWorkspaceHref(HOUSEHOLD_BOARD_ID) : "/projects"}>{workspaceProjectId ? "Household" : organization("project", true)}</a>
       {area && <><span class="bc-sep">›</span><a href={workspaceProjectId ? boardWorkspaceHref(HOUSEHOLD_BOARD_ID, { area: String(area.id) }) : `/areas/${String(area.id)}`}>{String(area.name)}</a></>}
       {goal && <><span class="bc-sep">›</span><a href={`/progress?project_id=${encodeURIComponent(projectId)}#goals`}>🎯 {String(goal.title)}</a></>}
       <span class="bc-sep">›</span>
@@ -170,7 +175,7 @@ const tabs = [
   {/* ── Tasks Section ── */}
   <section id="section-tasks" class="project-section" data-section="tasks">
     <div class="section-header">
-      <h2 class="section-title">Tasks</h2>
+      <h2 class="section-title">{organization("task", true)}</h2>
       <span class="text-sm text-text-muted">{tasks.length} total</span>
     </div>
 
@@ -258,7 +263,7 @@ const tabs = [
   {/* ── Settings Section ── */}
   <section id={`section-${settingsTab}`} class="project-section" data-section={settingsTab}>
     <div class="section-header">
-      <h2 class="section-title">Project Settings</h2>
+      <h2 class="section-title">{organization("project")} Settings</h2>
     </div>
 
     <div class="settings-card">
@@ -289,16 +294,16 @@ const tabs = [
           <option value="archived" selected={projStatus === "archived"}>Archived</option>
         </select>
       </div>
-      <div class="form-group">
-        <label for="edit-proj-area">Area</label>
+      {available("groups") && <div class="form-group">
+        <label for="edit-proj-area">{organization("group")}</label>
         <select id="edit-proj-area" class="form-select">
-          <option value="">Use the goal’s Area, if set</option>
+          <option value="">Use the Goal’s Group, if set</option>
           {areas.map(option => (
             <option value={option.id} selected={project?.area_id === option.id}>{option.name}</option>
           ))}
         </select>
-      </div>
-      <div class="form-group">
+      </div>}
+      {available("goals") && <div class="form-group">
         <label for="edit-proj-goal">Goal</label>
         <select id="edit-proj-goal" class="form-select">
           <option value="">No goal</option>
@@ -311,7 +316,7 @@ const tabs = [
             </option>
           ))}
         </select>
-      </div>
+      </div>}
       <div class="settings-actions">
         <button type="button" class="btn btn-primary" id="save-proj-btn">Save Changes</button>
       </div>
@@ -331,7 +336,7 @@ const tabs = [
     role="status"
     data-no-scroll-lock="true"
   ></div>
-</Layout>
+</Layout>}
 
 <style>
   @reference "../../styles/global.css";

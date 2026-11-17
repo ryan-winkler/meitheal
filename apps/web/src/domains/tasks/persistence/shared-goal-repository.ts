@@ -1,3 +1,4 @@
+import { isOrganizationFeatureAvailable as available } from "../../../lib/organization-request-context"
 import { createHash } from "node:crypto"
 import type { Client } from "@libsql/client"
 import { verifyCurrentHAParticipant } from "@domains/ha/current-admin"
@@ -157,7 +158,7 @@ export async function readNamedGoalScope(
         SELECT (SELECT name FROM areas WHERE id = ? AND retired_at IS NULL AND owner_board_id IN (SELECT id FROM scoped_boards)) AS area_name,
                (SELECT title FROM projects WHERE id = ? AND retired_at IS NULL AND owner_board_id IN (SELECT id FROM scoped_boards)) AS project_name
         WHERE EXISTS (SELECT 1 FROM board_access_epoch WHERE singleton = 1 AND revision = ?)`,
-    args: [viewer.id, scope.areaId ?? null, scope.projectId ?? null, revision],
+    args: [viewer.id, available("groups") ? scope.areaId ?? null : null, available("projects") ? scope.projectId ?? null : null, revision],
   })
   if (signal.aborted || !await boardGrantStillCurrent(db, revision)) return {}
   return {

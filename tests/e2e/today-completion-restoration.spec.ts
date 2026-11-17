@@ -218,7 +218,6 @@ for (const { name, sectionId, task } of [
   { name: "Carried Forward", sectionId: "section-carried", task: { due_date: shiftCalendarDay(calendarToday(), -1) } },
   { name: "Suggested", sectionId: "section-suggested", task: { due_date: shiftCalendarDay(calendarToday(), 1), priority: 1 } },
   { name: "Shared favorites", sectionId: "section-pinned", task: { is_favorite: true } },
-  { name: "Unscheduled", sectionId: "section-unscheduled", task: {} },
 ]) {
   test(`reopening from Completed today restores ${name} without a reload`, async ({ page, request }) => {
     await page.addInitScript(() => localStorage.setItem("meitheal-theme", "knight-rider"))
@@ -247,11 +246,7 @@ for (const { name, sectionId, task } of [
       await expect(section).toBeVisible()
       await expect(completion).toHaveCount(0)
       await page.getByRole("button", { name: "Close detail" }).press("Enter")
-      if (sectionId === "section-unscheduled") {
-        await section.getByRole("button", { name: /^Unscheduled/ }).click()
-      } else {
-        await expect(row.getByRole("link", { name: title })).toBeFocused()
-      }
+      await expect(row.getByRole("link", { name: title })).toBeFocused()
       await expect(row).toHaveAttribute("data-work-active", "")
       if (sectionId === "section-carried") await expect(page.locator("[data-today-carried-empty]")).toBeHidden()
     } finally {

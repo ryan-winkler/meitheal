@@ -48,9 +48,13 @@ if (activeMemberFixture) {
   const core = new WebSocketServer({ host: "127.0.0.1", port: 0 })
   await once(core, "listening")
   const users = ["admin", "member", "member-two"].map(user => ({
-    id: `fixture-${user}`, is_active: true, system_generated: false,
+    id: `fixture-${user}`, name: `Fixture ${user}`, is_active: true, system_generated: false,
     is_owner: user === "admin", group_ids: [user === "admin" ? "system-admin" : "system-users"],
   }))
+  let registry = [
+    { area_id: "fixture_kitchen", name: "Fixture Kitchen", aliases: ["Private alias"], floor_id: "upstairs" },
+    { area_id: "fixture_yard", name: "Fixture Yard" },
+  ]
   let unavailable = false
   let resultOverride
   let membershipQueries = 0
@@ -70,7 +74,13 @@ if (activeMemberFixture) {
       else {
         const isMembership = message.type === "config/auth/list"
         if (isMembership) membershipQueries++
-        const result = isMembership ? structuredClone(resultOverride === undefined ? users : resultOverride) : []
+        const areaRequest = message.type === "config/area_registry/list"
+        if (areaRequest && registry === null) {
+          socket.send(JSON.stringify({ type: "result", id: message.id, success: false, error: { code: "unavailable" } }))
+          return
+        }
+        const result = isMembership ? structuredClone(resultOverride === undefined ? users : resultOverride)
+          : areaRequest ? structuredClone(registry) : []
         const reply = value => {
           if (socket.readyState !== socket.OPEN) return
           socket.send(JSON.stringify({
@@ -97,6 +107,11 @@ if (activeMemberFixture) {
   }
   process.env.SUPERVISOR_TOKEN ??= "synthetic-pin-fixture"
   process.on("message", message => {
+    if (message?.type === "fixture-area-registry") {
+      registry = message.registry
+      process.send({ registryChanged: true })
+      return
+    }
     if (message?.type === "fixture-core-metrics") {
       process.send({ membershipQueries, lookupStillHeld: heldLookup?.readyState === heldLookup?.OPEN && Boolean(heldLookup) })
       return

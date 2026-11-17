@@ -315,6 +315,7 @@
           // Abort any in-flight fetches
           if (_modalAbortController) { _modalAbortController.abort(); _modalAbortController = null; }
           currentTaskId = null;
+          document.dispatchEvent(new CustomEvent("meitheal:ha-location-task"))
           sessionTicketId = null
           currentTicketNumber = null
           pendingDescriptionSave = undefined
@@ -428,6 +429,7 @@
           pins.opening()
           // P3-4: Store focus origin for restore on close
           if (newSession) _previouslyFocused = search ? null : document.activeElement
+          document.dispatchEvent(new CustomEvent("meitheal:ha-location-task"))
           currentTaskId = taskId
           if (!sameTicket) {
             sessionTicketId = null
@@ -517,6 +519,7 @@
             }
             taskId = String(t.id)
             currentTaskId = taskId
+            document.dispatchEvent(new CustomEvent("meitheal:ha-location-task", { detail: taskId }))
             sessionTicketId = taskId
             currentTicketNumber = typeof t.ticket_number === "number" ? t.ticket_number : null
             setTaskLocation(taskId, true, commentTarget)
@@ -947,16 +950,16 @@
             })()
             ;(document.getElementById("td-color") as HTMLInputElement).value =
               String(t.color ?? fallbackAccentHex);
-            (document.getElementById("td-due-date") as HTMLInputElement).value =
-              String(t.due_date ?? "");
-            (
-              document.getElementById("td-start-date") as HTMLInputElement
-            ).value = String(t.start_date ?? "");
-            (document.getElementById("td-end-date") as HTMLInputElement).value =
-              String(t.end_date ?? "");
-            (
-              document.getElementById("td-time-tracked") as HTMLInputElement
-            ).value = String(t.time_tracked ?? 0);
+            const dueInput = document.getElementById("td-due-date") as HTMLInputElement
+            dueInput.value = String(t.due_date ?? "")
+            dueInput.disabled = Number(t.routine_occurrence) === 1
+            document.getElementById("td-routine-date-hint")?.toggleAttribute("hidden", !dueInput.disabled)
+            const startInput = document.getElementById("td-start-date") as HTMLInputElement
+            startInput.value = String(t.start_date ?? "")
+            const endInput = document.getElementById("td-end-date") as HTMLInputElement
+            endInput.value = String(t.end_date ?? "")
+            const trackedInput = document.getElementById("td-time-tracked") as HTMLInputElement
+            trackedInput.value = String(t.time_tracked ?? 0)
             // Populate board dropdown
             const areaSelect = document.getElementById(
               "td-area",
@@ -965,7 +968,7 @@
             try {
               const boardRes = await areas
               if (modalSignal.aborted) return
-              if (boardRes.ok) {
+              if (boardRes.ok && areaSelect) {
                 const areaData = await boardRes.json()
                 if (modalSignal.aborted) return
                 const boards = areaData.areas ?? [];
@@ -982,7 +985,7 @@
               }
             } catch {
               if (modalSignal.aborted) return
-              areaSelect.replaceChildren(new Option(currentAreaId, currentAreaId));
+              areaSelect?.replaceChildren(new Option(currentAreaId, currentAreaId));
             }
             if (projectField && projectRead) {
               const savedProject = String(t.project_id ?? "")
@@ -1019,7 +1022,7 @@
             try {
               const pilRes = await pillars
               if (modalSignal.aborted) return
-              if (pilRes.ok) {
+              if (pilRes.ok && pillarSelect) {
                 const pilData = await pilRes.json()
                 if (modalSignal.aborted) return
                 const pillars = pilData.pillars ?? pilData ?? [];
@@ -1034,7 +1037,7 @@
               }
             } catch {
               if (modalSignal.aborted) return
-              pillarSelect.replaceChildren(new Option(currentPillarId, currentPillarId));
+              pillarSelect?.replaceChildren(new Option(currentPillarId, currentPillarId));
             }
 
             // Populate principle dropdown
@@ -1042,7 +1045,7 @@
               "td-principle",
             ) as HTMLSelectElement;
             const currentPrincipleId = String(t.principle_id ?? "");
-            try {
+            if (principleSelect) try {
               if (currentPillarId && currentPillarId !== "null" && currentPillarId !== "undefined") {
                 const prinRes = await fetch( // nosemgrep
                   (window.__ingress_path || "") + `/api/pillars/${currentPillarId}/principles`, // nosemgrep

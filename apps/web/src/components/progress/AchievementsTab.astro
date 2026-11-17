@@ -1,4 +1,6 @@
 ---
+import { organizationLabelsFor } from "@lib/organization-labels"
+const organization = await organizationLabelsFor(Astro)
 /**
  * AchievementsTab — Inline Gamification/Achievements for Progress & Growth shell
  *
@@ -210,7 +212,7 @@ const categories: readonly { key: string; label: string; icon: IconName }[] = [
       <div class="achievements-tab__stat-card">
         <span class="achievements-tab__stat-icon"><Icon name="star" size={20} sprite={true} /></span>
         <span class="achievements-tab__stat-value">{achievementData.unlocked} / {achievementData.total}</span>
-        <span class="achievements-tab__stat-label">Achievements</span>
+        <span class="achievements-tab__stat-label">{organization("achievement", true)}</span>
       </div>
       <div class="achievements-tab__stat-card">
         <span class="achievements-tab__stat-icon"><Icon name="calendar" size={20} sprite={true} /></span>
@@ -254,7 +256,7 @@ const categories: readonly { key: string; label: string; icon: IconName }[] = [
     <!-- Achievement Gallery -->
     <section class="achievements-tab__section">
       <h2 class="achievements-tab__section-title">
-        <Icon name="trophy" size={18} sprite={true} /> Achievements
+        <Icon name="trophy" size={18} sprite={true} /> {organization("achievement", true)}
         <span class="achievements-tab__section-count">{achievementData.unlocked} / {achievementData.total}</span>
       </h2>
       {categories.map(({ key, label, icon }) => {

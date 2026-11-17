@@ -83,7 +83,7 @@ test.describe("Native navigation overflow", () => {
       expect(await row.locator("a[data-page]").count()).toBe(count)
       await planning.evaluate((link, href) => link.setAttribute("href", href!), originalHref)
       await planning.click()
-      await expect(page).toHaveURL(/\/planning(?:#spaces)?$/)
+      await expect(page).toHaveURL(/\/planning#eisenhower$/)
       await expect(page.locator('[data-nav-overflow="sidebar"] a[data-page="planning"]')).toHaveAttribute("aria-current", "page")
       await expect(page.locator("#sidebar-more-destinations")).toHaveCount(1)
       expect(errors).toEqual([])

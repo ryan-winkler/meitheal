@@ -151,7 +151,7 @@ export function bindAppearanceNavigation(signal: AbortSignal): void {
     suppressPointer = false
     collapsedFocus = null
     syncSidebarState()
-    syncNavbarAreas()
+    if (document.documentElement.dataset.appearanceNavigation === "navbar") syncNavbarAreas()
   }, { signal })
   window.addEventListener("storage", event => {
     if ([APPEARANCE_STORAGE_KEY, "meitheal_sidebar_collapsed", null].includes(event.key)) applyAppearancePreferences(readAppearancePreferences())

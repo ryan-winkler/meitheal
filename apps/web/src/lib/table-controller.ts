@@ -133,13 +133,14 @@ function init(signal: AbortSignal) {
   const retry = status?.querySelector<HTMLButtonElement>("[data-table-retry]")
   if (!table || !container || !tbody || !status || !message || !retry) return
   const bulkArea = document.querySelector<HTMLSelectElement>("#bulk-area")
+  const areaSelector = document.getElementById("area-selector-dropdown")
   const areaPicker = "#area-selector-dropdown[data-area-catalog-ready='true']"
   const initialAreaCatalog = document.querySelector(areaPicker)
   let areas = applyAreaCatalog(initialAreaCatalog, bulkArea)
   void hydrateTaskAssignees(tbody, signal)
 
   const initial = loadTableFilterState()
-  initial.area ??= getRememberedAreaId()
+  initial.area = areaSelector ? initial.area ?? getRememberedAreaId() : ""
   const initialColumns = initial.columns ?? loadTableColumnPreferences()
   initial.columns = initialColumns
   const rendered = JSON.parse(shell.dataset.tableFilters ?? "{}") as Partial<FilterState>
@@ -199,10 +200,10 @@ function init(signal: AbortSignal) {
       const html = new DOMParser().parseFromString(await response.text(), "text/html")
       if (request.signal.aborted || signal.aborted || pending !== request) return
       const replacement = html.querySelector<HTMLTableElement>("#task-table")
-      const areaCatalog = html.querySelector(areaPicker)
+      const areaCatalog = areaSelector ? html.querySelector<HTMLElement>(areaPicker) : null
       const fragments = ["#task-summary", "#table-pagination", "#table-empty", ".table-container", "#table-workflow-notice"].map(selector =>
         [shell.querySelector<HTMLElement>(selector), html.querySelector<HTMLElement>(selector)] as const)
-      if (!replacement?.tBodies[0] || !areaCatalog || fragments.some(([current, fresh]) => !current || !fresh)) {
+      if (!replacement?.tBodies[0] || (areaSelector && !areaCatalog) || fragments.some(([current, fresh]) => !current || !fresh)) {
         throw new Error("Table refresh missing content")
       }
       const page = Number(replacement.dataset.tablePage)
@@ -228,7 +229,7 @@ function init(signal: AbortSignal) {
       table.dataset.tableStats = replacement.dataset.tableStats
       tbody.replaceChildren(...replacement.tBodies[0].children)
       areas = applyAreaCatalog(areaCatalog, bulkArea)
-      document.dispatchEvent(new CustomEvent(TABLE_AREA_CATALOG_EVENT, { detail: areaCatalog }))
+      if (areaCatalog) document.dispatchEvent(new CustomEvent(TABLE_AREA_CATALOG_EVENT, { detail: areaCatalog }))
       void hydrateTaskAssignees(tbody, signal)
       for (const [current, fresh] of fragments) {
         current!.hidden = fresh!.hidden

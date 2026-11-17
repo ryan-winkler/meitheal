@@ -123,7 +123,7 @@ export async function readBoardAccessMigrationState(db) {
     sql: "SELECT name FROM main.__meitheal_migrations WHERE name = ? COLLATE NOCASE LIMIT 2",
     args: [BOARD_ACCESS_MIGRATION],
   })
-  const applied = version?.value === String(BOARD_ACCESS_SCHEMA_VERSION)
+  const applied = Number(version?.value) >= BOARD_ACCESS_SCHEMA_VERSION
   if ((applied ? 1 : 0) !== ledger.length || (applied && ledger[0]?.name !== BOARD_ACCESS_MIGRATION)) {
     throw new Error("The Meitheal Board access schema markers disagree")
   }

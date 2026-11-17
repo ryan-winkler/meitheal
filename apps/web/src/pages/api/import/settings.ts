@@ -1,3 +1,4 @@
+import { organizationLegacyFeatureWrite } from "@lib/organization-legacy-feature-write"
 import type { APIRoute } from "astro"
 import { restoreCustomFramework } from "@domains/strategy/custom-framework-repository"
 import { saveOverrides } from "@domains/strategy/framework-repository"
@@ -86,6 +87,8 @@ export const POST: APIRoute = async ({ request, locals }) => {
         const customFrameworks: FrameworkConfig[] = []
         const settingsData = isV2 ? payload.settings ?? {} : payload
         if (!settingsData || typeof settingsData !== "object" || Array.isArray(settingsData)) return invalid("settings must be an object")
+        const policyDenied = await organizationLegacyFeatureWrite(request, locals, Object.keys(settingsData))
+        if (policyDenied) return policyDenied
         try {
             if (isV2 && payload.rules !== undefined) {
                 if (!Array.isArray(payload.rules) || payload.rules.length > 1000) return invalid("rules must contain at most 1000 rules")
