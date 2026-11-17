@@ -368,7 +368,7 @@ export function initCalendarPage(signal: AbortSignal): void {
     document.body.style.overflow = "hidden"
     drawer!.setAttribute("aria-hidden", "false")
     function focusClose(remaining: number) {
-      if (signal.aborted || drawerDate !== date || panel!.contains(document.activeElement)) return
+      if (drawerDate !== date || panel!.contains(document.activeElement)) return
       closeButton!.focus({ preventScroll: true })
       if (remaining && document.activeElement !== closeButton) {
         drawerFocusFrame = requestAnimationFrame(() => focusClose(remaining - 1))
@@ -430,16 +430,19 @@ export function initCalendarPage(signal: AbortSignal): void {
     openCell(target)
   }, { signal })
 
-  shell.addEventListener("keydown", event => {
-    if (event.defaultPrevented) return
-    if (event.key === "Escape" && drawerDate) {
+  window.addEventListener("keydown", event => {
+    const target = event.target
+    if (event.defaultPrevented || !(target instanceof Element) || target !== document.body && !shell.contains(target)) return
+    if (drawerDate) {
+      if (event.key === "Escape") {
+        event.preventDefault()
+        closeDrawer()
+      } else {
+        containTabFocus(panel, event)
+      }
+    } else if ((event.key === "Enter" || event.key === " ") && target.matches(dayButton)) {
       event.preventDefault()
-      closeDrawer()
-    } else if (drawerDate) {
-      containTabFocus(panel, event)
-    } else if ((event.key === "Enter" || event.key === " ") && (event.target as Element).matches(dayButton)) {
-      event.preventDefault()
-      openCell(event.target)
+      openCell(target)
     }
   }, { signal })
 

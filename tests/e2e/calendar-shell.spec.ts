@@ -28,6 +28,15 @@ test.describe("Calendar Shell", () => {
       const target = await close.boundingBox()
       expect(target?.width).toBeGreaterThanOrEqual(44)
       expect(target?.height).toBeGreaterThanOrEqual(44)
+      if (pointer) {
+        const heading = drawer.locator("#day-drawer-title")
+        await heading.click()
+        await expect(page.locator("body")).toBeFocused()
+        await page.keyboard.press("Tab")
+        await expect(close).toBeFocused()
+        await heading.click()
+        await expect(page.locator("body")).toBeFocused()
+      }
       await page.keyboard.press("Escape")
       await expect(drawer).toHaveAttribute("aria-hidden", "true")
       await expect(day).toBeFocused()
