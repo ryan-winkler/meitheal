@@ -609,11 +609,21 @@ function applyFilters(container: HTMLElement) {
   }
 
   for (const list of container.querySelectorAll<HTMLElement>(".today-section__list:not(#today-unscheduled-list)")) {
+    const focused = list.contains(document.activeElement) ? document.activeElement as HTMLElement : null
     const items = Array.from(list.querySelectorAll<HTMLElement>(".tli"))
     for (const item of items) item.classList.toggle("filtered-out", !matchesTodayFilters(item, filters))
-    items.filter(item => !item.classList.contains("filtered-out"))
-      .sort((left, right) => compareTodayRows(left, right, filters.sort))
-      .forEach(item => list.appendChild(item))
+    const visible = items.filter(item => !item.classList.contains("filtered-out"))
+    const sorted = [...visible].sort((left, right) => compareTodayRows(left, right, filters.sort))
+    if (sorted.some((item, index) => item !== visible[index])) {
+      sorted.forEach(item => list.appendChild(item))
+    }
+    if (focused?.closest(".filtered-out")) {
+      const next = sorted[0]?.querySelector<HTMLElement>(".tli__checkbox")
+        ?? list.closest(".today-section")?.querySelector<HTMLElement>(".today-section__header")
+      next?.focus()
+    } else if (focused && document.activeElement === document.body) {
+      focused.focus({ preventScroll: true })
+    }
   }
 
   saveFilterState(filters)

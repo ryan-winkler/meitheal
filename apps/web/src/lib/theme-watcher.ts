@@ -21,12 +21,12 @@ export function readAppearanceValue(key: string): string | null {
   }
 }
 
-function storedThemeMode(): ThemeMode {
+export function readStoredThemeMode(): ThemeMode {
   const value = readAppearanceValue(STORAGE_KEY)
   return isThemeMode(value) ? value : "auto"
 }
 
-export function getEffectiveTheme(stored = storedThemeMode()): "light" | "dark" {
+export function getEffectiveTheme(stored = readStoredThemeMode()): "light" | "dark" {
   const matched = document.documentElement.dataset.haMatch
   if (matched === "light" || matched === "dark") return matched
   if (stored === "light" || stored === "dark") return stored
@@ -45,7 +45,7 @@ export function setTheme(mode: ThemeMode): void {
 }
 
 export function applyTheme(): void {
-  const stored = storedThemeMode()
+  const stored = readStoredThemeMode()
   const root = document.documentElement
   const matched = root.dataset.haMatch === "light" || root.dataset.haMatch === "dark"
   const theme = getEffectiveTheme(stored)
@@ -84,6 +84,6 @@ export function initThemeWatcher(): void {
   applyTheme()
   const mq = window.matchMedia("(prefers-color-scheme: dark)")
   mq.addEventListener("change", () => {
-    if (storedThemeMode() === "auto") applyTheme()
+    if (readStoredThemeMode() === "auto") applyTheme()
   })
 }

@@ -11,7 +11,7 @@ import { refreshHAThemeMatch } from "@lib/ha-theme-bridge"
 import { HA_THEME_MATCH_KEY } from "@lib/ha-theme-palette"
 import { showToast } from "@lib/toast"
 import { isThemeMode } from "@lib/theme-mode"
-import { readAppearanceValue, setTheme } from "@lib/theme-watcher"
+import { readAppearanceValue, readStoredThemeMode, setTheme } from "@lib/theme-watcher"
 import { attachShortcutTooltips } from "@lib/shortcut-tooltip"
 import { SINGLE_KEY_SHORTCUTS_STORAGE_KEY, setSingleKeyShortcuts, singleKeyShortcutsEnabled } from "@lib/single-key-shortcuts"
 import { settingsStore } from "@lib/settings-store"
@@ -223,7 +223,7 @@ export function initThemeSettings(): void {
   // Theme Config — init select from localStorage
   const themeSelect = document.getElementById("theme-select") as HTMLSelectElement
   if (themeSelect) {
-    themeSelect.value = readAppearanceValue("meitheal-theme") || "dark"
+    themeSelect.value = readStoredThemeMode()
     showCustomThemeSection(themeSelect.value === "custom")
   }
 
@@ -341,7 +341,7 @@ export function initThemeSettings(): void {
 
 function restoreTheme(settings: Record<string, unknown>): boolean {
   try {
-    const savedTheme = settings.theme ?? readAppearanceValue("meitheal-theme")
+    const savedTheme = settings.theme ?? readStoredThemeMode()
     const themeEl = document.querySelector<HTMLSelectElement>("#theme-select")
     const css = document.getElementById("custom-theme-input") && typeof settings.custom_theme_css === "string"
       ? sanitizeCSS(settings.custom_theme_css) : ""

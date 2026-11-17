@@ -1,6 +1,18 @@
 import { test, expect } from "@playwright/test";
 import { shouldSkipBrowserSpecs } from "./_helpers";
 
+test("an invalid browser theme stays Auto when Settings has no saved theme", async ({ page }) => {
+  test.skip(shouldSkipBrowserSpecs(), "Set E2E_BASE_URL to run browser specs")
+  await page.emulateMedia({ colorScheme: "light" })
+  await page.addInitScript(() => localStorage.setItem("meitheal-theme", "outdated-theme"))
+  await page.route("**/api/settings", route => route.fulfill({ json: {} }))
+  await page.goto("/settings#look-and-feel-settings")
+  await expect(page.locator("#settings-panels")).not.toHaveAttribute("inert", "")
+  await expect(page.locator("#theme-select")).toHaveValue("auto")
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "auto")
+  expect(await page.evaluate(() => localStorage.getItem("meitheal-theme"))).toBe("auto")
+})
+
 test.describe("Theme Settings", () => {
   test.skip(shouldSkipBrowserSpecs(), "Set E2E_BASE_URL to run browser specs");
 

@@ -327,3 +327,34 @@ test("keyboard completion keeps a focus target when the Active filter removes a 
     for (const id of tasks) await request.delete(`/api/tasks/${id}`, { data: {} })
   }
 })
+
+test("Today keeps the newer Tab position after a pending task completion", async ({ page, request }) => {
+  const ids: string[] = []
+  let release: (() => void) | undefined
+  try {
+    for (const title of ["Close the first inspection", "Open the second inspection"]) {
+      const response = await request.post("/api/tasks", { data: { title, due_date: calendarToday(), status: "active" } })
+      expect(response.status()).toBe(201)
+      ids.push((await response.json()).id)
+    }
+    await page.route(`**/api/tasks/${ids[0]}`, async route => {
+      if (route.request().method() === "PUT") await new Promise<void>(resolve => { release = resolve })
+      await route.continue()
+    })
+    await page.goto("/today#today-work")
+    const item = page.locator(`#today-due-list .tli[data-id="${ids[0]}"]`)
+    const checkbox = item.locator(".tli__checkbox")
+    await checkbox.press("Space")
+    await expect(checkbox).toHaveAttribute("aria-disabled", "true")
+    await page.keyboard.press("Tab")
+    const detail = item.getByRole("link", { name: "Close the first inspection" })
+    await expect(detail).toBeFocused()
+    await expect.poll(() => Boolean(release)).toBe(true)
+    release?.()
+    await expect(checkbox).not.toHaveAttribute("aria-disabled")
+    await expect(detail).toBeFocused()
+  } finally {
+    release?.()
+    for (const id of ids) await request.delete(`/api/tasks/${id}`, { data: {} })
+  }
+})
