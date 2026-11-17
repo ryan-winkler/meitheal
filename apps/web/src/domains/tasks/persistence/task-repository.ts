@@ -578,7 +578,7 @@ export class TaskRepository {
   /** Favorited, non-complete tasks */
   async getFavoriteTasks(limit = 5): Promise<TaskRow[]> {
     const result = await this.client.execute({
-      sql: `SELECT id, title, status, priority, due_date, is_favorite, color, ticket_number
+      sql: `SELECT id, title, status, priority, due_date, is_favorite, color
             FROM tasks WHERE task_board_id IS NULL AND is_favorite = 1 AND status NOT IN (?, 'archived') AND deferred_at IS NULL
             ORDER BY updated_at DESC LIMIT ${limit}`,
       args: [STATUS.COMPLETE],
@@ -824,7 +824,7 @@ export class TaskRepository {
       const to = lastDay < throughDay ? lastDay : throughDay;
       if (from > to) return;
 
-      const key = task.id + "/" + calendarOccurrenceStartKey(startRaw)
+      const key = task.id + "/" + calendarOccurrenceStartKey(startRaw, timezone)
       let cur = from;
       for (let guard = 0; guard < 62 && cur <= to; guard++) {
         let day = byDay.get(cur)

@@ -126,32 +126,38 @@ export function timezoneOffsetAt(instant: number, timeZone: string): number {
   return (match[1] === "-" ? -1 : 1) * seconds * 1000
 }
 
-/** Order connected events by instant. Read floating dates and times in the household timezone. */
+function calendarStartInstant(raw: string, timezone: string): number {
+  const wallTime = DATE_ONLY.test(raw) ? raw + "T00:00" : raw
+  if (!FLOATING_DATETIME.test(wallTime)) return parseDueTime(raw, timezone)
+  const wall = Date.parse(wallTime.replace(" ", "T") + "Z")
+  if (!Number.isFinite(wall)) return NaN
+  const offset = timezoneOffsetAt(wall - DAY_MS, timezone)
+  const earlier = wall - offset
+  // Prefer the first occurrence of a repeated time. Use the pre-transition offset in a gap.
+  if (timezoneOffsetAt(earlier, timezone) === offset) return earlier
+  const newOffset = timezoneOffsetAt(wall + DAY_MS, timezone)
+  const later = wall - newOffset
+  return timezoneOffsetAt(later, timezone) === newOffset ? later : earlier
+}
+
+/** Order connected events by instant. Read floating starts in the household timezone. */
 export function compareCalendarStarts(left: string, right: string, timezone: string): number {
-  const instant = (value: string) => {
-    const raw = value.trim()
-    const wallTime = DATE_ONLY.test(raw) ? raw + "T00:00" : raw
-    if (!FLOATING_DATETIME.test(wallTime)) return parseDueTime(raw, timezone)
-    const wall = Date.parse(wallTime.replace(" ", "T") + "Z")
-    if (!Number.isFinite(wall)) return NaN
-    const offset = timezoneOffsetAt(wall - DAY_MS, timezone)
-    const earlier = wall - offset
-    // Prefer the first occurrence of a repeated time. Use the pre-transition offset in a gap.
-    if (timezoneOffsetAt(earlier, timezone) === offset) return earlier
-    const newOffset = timezoneOffsetAt(wall + DAY_MS, timezone)
-    const later = wall - newOffset
-    return timezoneOffsetAt(later, timezone) === newOffset ? later : earlier
-  }
-  return instant(left) - instant(right) ||
+  return calendarStartInstant(left.trim(), timezone) - calendarStartInstant(right.trim(), timezone) ||
     Number(DATE_ONLY.test(right.trim())) - Number(DATE_ONLY.test(left.trim())) ||
     left.localeCompare(right)
 }
 
-/** Match the same Calendar occurrence across equivalent offset representations. */
-export function calendarOccurrenceStartKey(start: string): string {
+/** Match timed occurrences by instant while keeping all-day starts distinct. */
+export function calendarOccurrenceStartKey(start: string, timezone: string): string {
   const raw = start.trim()
-  const instant = zonedCalendarInstant(raw)
-  return instant === null ? raw : String(instant)
+  if (DATE_ONLY.test(raw)) return raw
+  const instant = calendarStartInstant(raw, timezone)
+  return Number.isFinite(instant) ? String(instant) : raw
+}
+
+export function formatCalendarEventTime(start: string, timezone: string): string | null {
+  const raw = start.trim()
+  return DATE_ONLY.test(raw) ? null : formatTimeInZone(calendarStartInstant(raw, timezone), timezone)
 }
 
 export function normalizeCalendarEventSummary(summary: string): string {

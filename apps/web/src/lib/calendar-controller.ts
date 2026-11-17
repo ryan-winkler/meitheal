@@ -2,7 +2,7 @@ import type { TaskKind } from "@meitheal/domain-tasks"
 import { CALENDAR_AREA_APPLIED_EVENT, CALENDAR_AREA_REQUEST_EVENT, getRememberedAreaId } from "@lib/area-selector-controller"
 import { CALENDAR_FILTER_STATE_EVENT, readCalendarTaskFilters } from "@lib/calendar-task-filter"
 import { createClientLogger } from "@lib/client-logger"
-import { calendarDayFromInput, calendarEventLastDay, calendarOccurrenceStartKey, compareCalendarStarts, formatTimeInZone, normalizeCalendarEventSummary, shiftCalendarDay } from "@lib/date"
+import { calendarDayFromInput, calendarEventLastDay, calendarOccurrenceStartKey, compareCalendarStarts, formatCalendarEventTime, formatTimeInZone, normalizeCalendarEventSummary, shiftCalendarDay } from "@lib/date"
 import { createFocusTrap } from "@lib/focus-trap"
 import { updateKanbanFilters, type KanbanFilters } from "@lib/kanban-query"
 import { createTablerSvgElement, mapEntityEmojiToTabler, type TablerIconName } from "@lib/tabler-svg"
@@ -237,12 +237,12 @@ export function initCalendarPage(signal: AbortSignal): void {
       const activeId = drawerEvents!.contains(document.activeElement)
         ? (document.activeElement as HTMLElement).dataset.occurrenceKey : undefined
       const items = (persisted ?? []).map(event => {
-        const row = agendaItem("calendar-event", event.title, formatTimeInZone(event.start, timezone) ?? "All day", event.id)
-        row.dataset.occurrenceKey = event.id + "/" + calendarOccurrenceStartKey(event.start)
+        const row = agendaItem("calendar-event", event.title, formatCalendarEventTime(event.start, timezone) ?? "All day", event.id)
+        row.dataset.occurrenceKey = event.id + "/" + calendarOccurrenceStartKey(event.start, timezone)
         return { start: event.start, row }
       })
-      for (const event of distinctLiveCalendarEvents(live?.events ?? [], persisted ?? [])) {
-        items.push({ start: event.start, row: agendaItem("calendar-event", event.summary, formatTimeInZone(event.start, timezone) ?? "All day") })
+      for (const event of distinctLiveCalendarEvents(live?.events ?? [], persisted ?? [], timezone)) {
+        items.push({ start: event.start, row: agendaItem("calendar-event", event.summary, formatCalendarEventTime(event.start, timezone) ?? "All day") })
       }
       items.sort((a, b) => compareCalendarStarts(a.start, b.start, timezone))
       drawerEvents!.replaceChildren(...items.map(item => item.row))
@@ -494,10 +494,10 @@ async function loadCalendarRange(
   }
 }
 
-function distinctLiveCalendarEvents(events: CalendarEventRecord[], linked: LinkedCalendarEvent[]): CalendarEventRecord[] {
+function distinctLiveCalendarEvents(events: CalendarEventRecord[], linked: LinkedCalendarEvent[], timezone: string): CalendarEventRecord[] {
   if (!linked.length) return events
   const key = (entity: string, start: string, identifier: string) =>
-    JSON.stringify([entity, calendarOccurrenceStartKey(start), identifier])
+    JSON.stringify([entity, calendarOccurrenceStartKey(start, timezone), identifier])
   const byUid = new Set<string>()
   const savedCounts = new Map<string, number>()
   const liveCounts = new Map<string, number>()
@@ -608,7 +608,7 @@ async function loadInlineEventPreviews(
     for (const container of cells) {
       const events = byDate.get(container.dataset.inlineDate ?? "") ?? []
       const items = events.slice(0, 2).map(event => {
-        const time = formatTimeInZone(event.start, timezone)
+        const time = formatCalendarEventTime(event.start, timezone)
         const row = document.createElement("div")
         row.className = "cal-inline-event cal-inline-ha"
         row.title = event.summary

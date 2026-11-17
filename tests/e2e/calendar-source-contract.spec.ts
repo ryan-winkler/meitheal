@@ -122,7 +122,7 @@ test("Calendar reads configured sources as a household member and filters before
       const occurrences = source === "caldav"
         ? [{ start: "2031-07-13", end: "2031-07-15" }]
         : [
-            { start: "2031-07-14T08:00:00Z", end: "2031-07-14T09:00:00Z" },
+            { start: "2031-07-14T09:00:00", end: "2031-07-14T10:00:00" },
             { start: "2031-07-14T12:00:00Z", end: "2031-07-14T13:00:00Z" },
             { start: "2031-07-14T13:00:00+01:00", end: "2031-07-14T14:00:00+01:00" },
           ]

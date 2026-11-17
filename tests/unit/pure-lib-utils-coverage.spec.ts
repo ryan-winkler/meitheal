@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test"
 
 import { sanitizeTodoTitle } from "../../apps/web/src/lib/cleanup-corrupt-titles"
-import { calendarDaysFromToday, calendarToday, compareCalendarStarts } from "../../apps/web/src/lib/date"
+import { calendarDaysFromToday, calendarOccurrenceStartKey, calendarToday, compareCalendarStarts, formatCalendarEventTime } from "../../apps/web/src/lib/date"
 import { formatRegionalDate } from "../../apps/web/src/lib/regional-date"
 import { evaluateFilterGroup, extractDataFromElement, passesAdvancedFilter, type FilterGroup } from "../../apps/web/src/lib/filter-engine"
 
@@ -42,6 +42,13 @@ test("Calendar orders floating times in the household timezone on both sides of 
       const skippedTime = "2031-03-30T01:30:00"
       expect(compareCalendarStarts(skippedTime, "2031-03-30T01:29:00Z", timezone)).toBeGreaterThan(0)
       expect(compareCalendarStarts(skippedTime, "2031-03-30T01:31:00Z", timezone)).toBeLessThan(0)
+      expect(formatCalendarEventTime(skippedTime, timezone)).toBe("02:30")
+      expect(calendarOccurrenceStartKey("2031-07-14T09:00:00", timezone)).toBe(
+        calendarOccurrenceStartKey("2031-07-14T08:00:00Z", timezone),
+      )
+      expect(calendarOccurrenceStartKey("2031-07-14", timezone)).not.toBe(
+        calendarOccurrenceStartKey("2031-07-14T00:00:00", timezone),
+      )
     }
   } finally {
     if (original === undefined) delete process.env.TZ
