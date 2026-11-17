@@ -483,6 +483,29 @@ test.describe("Calendar Shell", () => {
     }
   })
 
+  test("Calendar restores month navigation focus after a pending filter refresh", async ({ page }) => {
+    let release = () => {}
+    const pending = new Promise<void>(resolve => { release = resolve })
+    const refresh = (url: URL) => url.searchParams.has("calendarRefresh")
+    await page.route(refresh, async route => {
+      await pending
+      await route.continue()
+    })
+    try {
+      const requested = page.waitForRequest(request => refresh(new URL(request.url())))
+      await page.getByRole("textbox", { name: "Filter by text" }).fill("roof")
+      await requested
+      const next = page.getByRole("link", { name: "Next month" })
+      await next.focus()
+      await expect(next).toBeFocused()
+      release()
+      await expect(page).toHaveURL(/search=roof/)
+      await expect(next).toBeFocused()
+    } finally {
+      release()
+    }
+  })
+
   test("a background refresh replacing Calendar Retry preserves its focus on failure", async ({ page }) => {
     let hold = false
     let release = () => {}

@@ -130,7 +130,9 @@ export function initCalendarPage(signal: AbortSignal): void {
       if (!nextMonth) throw new Error("Calendar response unavailable")
       timezone = nextShell?.dataset.timezone || timezone
       shell!.dataset.timezone = timezone
-      const activeDay = (document.activeElement as HTMLElement | null)?.closest<HTMLElement>(".cal-cell")?.dataset.date
+      const active = document.activeElement
+      const activeDay = active?.closest<HTMLElement>(".cal-cell")?.dataset.date
+      const activeNavigation = active?.closest<HTMLElement>("[data-calendar-nav]")?.dataset.calendarNav
       month.replaceWith(nextMonth)
       month = nextMonth
 
@@ -147,7 +149,8 @@ export function initCalendarPage(signal: AbortSignal): void {
       }
       const hadRetryFocus = document.activeElement === retry
       announce(preserveRetry ? refreshFailure() : rejectedFilterChange)
-      if (activeDay || hadRetryFocus && retry!.hidden) focusMonthDay(activeDay)
+      if (activeNavigation) month.querySelector<HTMLElement>(`[data-calendar-nav="${CSS.escape(activeNavigation)}"]`)?.focus()
+      else if (activeDay || hadRetryFocus && retry!.hidden) focusMonthDay(activeDay)
       previewEvents()
       if (drawerDate) startDrawerRead(drawerDate)
     } catch {
@@ -192,7 +195,8 @@ export function initCalendarPage(signal: AbortSignal): void {
       return true
     }
     const sameRules = JSON.stringify(previous.advancedFilter) === JSON.stringify(next.advancedFilter)
-    writeCalendarTaskFilters(url, next, sameRules ? url.searchParams.get("advancedFilter") : null)
+    const savedRules = url.searchParams.getAll("advancedFilter")
+    writeCalendarTaskFilters(url, next, sameRules && savedRules.length === 1 ? savedRules[0]! : null)
     const accepted = readCalendarTaskFilters(url.searchParams)
     if (next.advancedFilter?.conditions.length && !accepted.advancedFilter) {
       return rejectFilters("Shorten the Calendar rules or remove a condition.", editRules)

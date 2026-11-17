@@ -87,9 +87,8 @@ function effectiveRules(group: FilterGroup): unknown[] {
 }
 
 function ruleSignature(params: URLSearchParams, view: TaskView): string | undefined {
-  const raw = params.get("advancedFilter")
-  const rules = (view !== "kanban" ? normalizeTableRules(raw) : undefined)
-    ?? (view !== "table" ? readKanbanRules(raw) : undefined)
+  const rules = (view !== "kanban" ? normalizeTableRules(params.getAll("advancedFilter").at(-1)) : undefined)
+    ?? (view !== "table" ? readKanbanRules(params.get("advancedFilter")) : undefined)
   if (rules?.conditions.length) return JSON.stringify(effectiveRules(rules))
 }
 

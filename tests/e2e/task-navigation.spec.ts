@@ -558,6 +558,19 @@ test("Shopping links identify their own Area and follow applied Board filters", 
         return Boolean(rule && JSON.parse(decodeURIComponent(rule)).conditions[0]?.logic === "AND")
       })
       await expect(current).toHaveText(name)
+      const duplicateRule = new URL(page.url())
+      const savedRule = duplicateRule.searchParams.get("advancedFilter")!
+      duplicateRule.searchParams.set("advancedFilter", "{invalid")
+      duplicateRule.searchParams.append("advancedFilter", savedRule)
+      await page.goto(duplicateRule.href)
+      await expect(current).toHaveText(name)
+      if (name === "Grocery Calendar rule") {
+        await filters.getByRole("combobox", { name: "Filter by priority" }).selectOption("3")
+        await expect(page).toHaveURL(url => url.searchParams.get("priority") === "3" &&
+          url.searchParams.getAll("advancedFilter").length === 1 &&
+          decodeURIComponent(url.searchParams.get("advancedFilter") ?? "").includes('"value":"grocery"'))
+        await expect(current).toHaveText(name)
+      }
     }
 
     await sidebar.getByRole("link", { name: "Invalid Grocery rule", exact: true }).click()
