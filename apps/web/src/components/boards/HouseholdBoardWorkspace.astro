@@ -1,0 +1,107 @@
+---
+import Layout from "../../layouts/Layout.astro"
+import HouseholdGroup from "../../pages/areas/[id].astro"
+import HouseholdProject from "../../pages/projects/[id].astro"
+import Tasks from "../../pages/tasks.astro"
+import { HierarchyRepository } from "@domains/tasks/persistence/hierarchy-repository"
+import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
+import { boardWorkspaceHref, HOUSEHOLD_BOARD_ID, readBoardWorkspaceSelection } from "@lib/board-workspace"
+import "../../styles/boards.css"
+
+const selection = readBoardWorkspaceSelection(Astro.url.searchParams)
+const household = boardWorkspaceHref(HOUSEHOLD_BOARD_ID)
+let areas: Awaited<ReturnType<HierarchyRepository["findAllAreas"]>> = []
+let unfiled: Awaited<ReturnType<HierarchyRepository["findAllProjects"]>> = []
+let available = true
+
+if (selection.areaId || selection.projectId || selection.planning) {
+  await ensureSchema()
+  const hierarchy = new HierarchyRepository(getPersistenceClient())
+  if (selection.projectId) {
+    const project = await hierarchy.findProjectById(selection.projectId)
+    available = Boolean(project && (!selection.areaId || selection.areaId === project.area_id))
+  } else if (selection.areaId) {
+    available = Boolean(await hierarchy.findAreaById(selection.areaId))
+  } else {
+    areas = await hierarchy.findAllAreas()
+    const projects = await hierarchy.findAllProjects()
+    const goals = await hierarchy.findAllGoals({})
+    const areaIds = new Set(areas.map(area => area.id))
+    const goalAreas = new Map(goals.map(goal => [goal.id, goal.area_id]))
+    unfiled = projects.filter(project => !project.is_default && !areaIds.has(project.area_id ?? goalAreas.get(project.goal_id ?? "") ?? ""))
+  }
+}
+if (!available) Astro.response.status = 404
+---
+{!available ? <Layout title="Board unavailable"><p class="boards-workspace">This Board context is unavailable.</p></Layout>
+  : selection.projectId ? <HouseholdProject workspaceProjectId={selection.projectId} />
+  : selection.areaId ? <HouseholdGroup workspaceAreaId={selection.areaId} />
+  : !selection.planning ? <Tasks householdWorkspace />
+  : <Layout title="Household groups">
+    <span slot="page-title">Household</span>
+    <div class="boards-workspace">
+      <nav class="board-back" aria-label="Board navigation"><a href="/boards">Boards</a> › <a href={household}>Household</a></nav>
+      <header class="boards-heading">
+        <div><h1>Groups</h1><p>Organize Projects and related work within Household.</p></div>
+        <details class="board-add">
+          <summary class="btn btn-primary">New group</summary>
+          <form class="board-form" data-household-group-create>
+            <label>Name <input name="name" maxlength="100" required /></label>
+            <label>Icon <input name="icon" maxlength="10" value="📁" /></label>
+            <label>Color <input type="color" name="color" value="#6366f1" /></label>
+            <p role="status" data-group-feedback></p>
+            <button type="submit" class="btn btn-primary">Create group</button>
+          </form>
+        </details>
+      </header>
+      <div class="boards-list">
+        {areas.map(area => <article class="board-tile">
+          <a class="board-name" href={boardWorkspaceHref(HOUSEHOLD_BOARD_ID, { area: area.id })}>{area.icon} {area.name}</a>
+          <a class="board-note" href={boardWorkspaceHref(HOUSEHOLD_BOARD_ID, { area: area.id }, "projects")}>Projects</a>
+        </article>)}
+      </div>
+      {!areas.length && <p class="board-empty">Create your first group to organize related work.</p>}
+      {unfiled.length > 0 && <section class="named-boards" aria-labelledby="unfiled-projects">
+        <h2 id="unfiled-projects">Unfiled Projects</h2>
+        <div class="boards-list">
+          {unfiled.map(project => <a class="board-tile board-name" href={boardWorkspaceHref(HOUSEHOLD_BOARD_ID, { project: project.id })}>{project.title}</a>)}
+        </div>
+      </section>}
+    </div>
+  </Layout>}
+
+<script>
+  import { HOUSEHOLD_BOARD_ID, boardWorkspaceHref } from "@lib/board-workspace"
+  import { safeIngressHref } from "@lib/ingress-navigation"
+  import { pageLifecycle } from "@lib/page-lifecycle"
+  import { safeFetch } from "@lib/safe-fetch"
+
+  pageLifecycle.onPageLoad(signal => {
+    const form = document.querySelector<HTMLFormElement>("[data-household-group-create]")
+    const feedback = form?.querySelector("[data-group-feedback]")
+    const submit = form?.querySelector<HTMLButtonElement>('button[type="submit"]')
+    if (!form || !feedback || !submit) return
+
+    form.addEventListener("submit", async event => {
+      event.preventDefault()
+      if (submit.disabled) return
+      submit.disabled = true
+      feedback.textContent = ""
+      try {
+        const response = await safeFetch("/api/areas", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(Object.fromEntries(new FormData(form))),
+          signal,
+        })
+        const data = await response.json()
+        if (!response.ok || typeof data.id !== "string") throw new Error(data.error || "Could not create the group.")
+        window.location.href = safeIngressHref(boardWorkspaceHref(HOUSEHOLD_BOARD_ID, { area: data.id }))
+      } catch (error) {
+        if (!signal.aborted) feedback.textContent = error instanceof Error ? error.message : "Could not create the group."
+      } finally {
+        submit.disabled = false
+      }
+    }, { signal })
+  })
+</script>

@@ -12,7 +12,7 @@ type VisibilityChange =
   | { action: "retire"; entity: "area" | "goal" | "project" | "routine"; id: string }
 
 type Change = BoardPillarChange | VisibilityChange
-  | { action: "area"; title: string; id?: string }
+  | { action: "area"; title: string; id?: string; icon?: string; color?: string }
   | { action: "goal"; title: string; description: string; areaId: string; id?: string }
   | { action: "project"; title: string; description: string; areaId: string; goalId: string | null }
   | { action: "project-edit"; id: string; title: string; description: string }
@@ -43,7 +43,7 @@ export async function readNamedBoardPlanning(tx: Transaction, actor: BoardActor,
   const { sql: readable, args } = readableBoards(actor.id)
   const [areas, projects, goals, destinations, linkable, shares, routines] = await tx.batch([
     {
-      sql: `SELECT id, name FROM areas WHERE owner_board_id = ? AND retired_at IS NULL ORDER BY position, name, id`,
+      sql: `SELECT id, name, icon, color FROM areas WHERE owner_board_id = ? AND retired_at IS NULL ORDER BY position, name, id`,
       args: [board.id],
     },
     {
@@ -108,7 +108,7 @@ export async function readNamedBoardPlanning(tx: Transaction, actor: BoardActor,
   ])
   const pillars = await readBoardPillars(tx, board.id)
   return {
-    areas: areas!.rows.map(area => ({ id: String(area.id), name: String(area.name) })),
+    areas: areas!.rows.map(area => ({ id: String(area.id), name: String(area.name), icon: String(area.icon), color: String(area.color) })),
     projects: projects!.rows.map(project => ({
       id: String(project.id), title: String(project.title), description: String(project.description ?? ""),
       status: String(project.status), areaId: typeof project.area_id === "string" ? project.area_id : null,
@@ -252,11 +252,11 @@ export class NamedBoardPlanningRepository {
     switch (input.action) {
       case "area": {
         const result = input.id ? await tx.execute({
-          sql: "UPDATE areas SET name = ?, updated_at = ? WHERE id = ? AND owner_board_id = ? AND retired_at IS NULL",
-          args: [input.title, now, input.id, boardId],
+          sql: "UPDATE areas SET name = ?, icon = COALESCE(?, icon), color = COALESCE(?, color), updated_at = ? WHERE id = ? AND owner_board_id = ? AND retired_at IS NULL",
+          args: [input.title, input.icon ?? null, input.color ?? null, now, input.id, boardId],
         }) : await tx.execute({
-          sql: "INSERT INTO areas (id, owner_board_id, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-          args: [id, boardId, input.title, now, now],
+          sql: "INSERT INTO areas (id, owner_board_id, name, icon, color, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+          args: [id, boardId, input.title, input.icon ?? "📁", input.color ?? "#6366F1", now, now],
         })
         return result.rowsAffected > 0
       }

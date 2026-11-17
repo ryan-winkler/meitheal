@@ -2,9 +2,9 @@
 import { t } from "../../i18n/translations";
 import type { Locale } from "../../lib/locale";
 import Icon from "../ui/Icon.astro";
+import SidebarHierarchyTree from "./SidebarHierarchyTree.astro"
 import SidebarNavList from "./SidebarNavList.astro";
 import NavOverflowMore from "./NavOverflowMore.astro";
-import SidebarHierarchyTree from "./SidebarHierarchyTree.astro";
 import SidebarFooter from "./SidebarFooter.astro";
 import StreakBadge from "../gamification/StreakBadge.astro";
 import {
@@ -100,7 +100,6 @@ interface SidebarConfig {
   customItems?: CustomNavItem[];
 }
 
-let namedBoardDirectoryExists = false
 
 let sidebarConfig: SidebarConfig = {
   dashboard: true,
@@ -132,10 +131,6 @@ if (gamificationEnabled) {
 try {
   await ensureSchema();
   const c = getPersistenceClient();
-  if (Astro.locals.hassUserId && hierarchyEnabled) {
-    const { rows } = await c.execute("SELECT 1 FROM board_access_epoch LIMIT 1")
-    namedBoardDirectoryExists = rows.length > 0
-  }
   const res = await c.execute(
     "SELECT value FROM settings WHERE key = 'sidebar_config'",
   );
@@ -199,8 +194,8 @@ const navItems = order
     if (!(key in NAV_ITEMS)) return false
     // Feature flag: hide progress parent page when all sub-features disabled
     if (key === "progress" && !gamificationEnabled && !habitsEnabled) return false
-    if (key === "boards" && !Astro.locals.hassUserId) return false
-    if ((key === "tasks" || key === "areas" || key === "boards") && !hierarchyEnabled) return false
+    if (key === "areas") return false
+    if (key === "boards" && !hierarchyEnabled) return false
     if ((key === "activity" || key === "mentionInbox") && !Astro.locals.hassUserId) return false
     return true
   })
@@ -219,10 +214,11 @@ navItems.splice(pinIndex, 0, {
   icon: "pin", isActive: currentPath === "/pinned", matchExact: true,
 })
 
-const areaPosition = navItems.findIndex(item => item.key === "areas")
-const areaLabel = labels.areas || t("sidebar.areas_header", locale)
-const primaryItems = areaPosition < 0 ? navItems : navItems.slice(0, areaPosition)
-const remainingItems = areaPosition < 0 ? [] : navItems.slice(areaPosition + 1)
+const boardPosition = navItems.findIndex(item => item.key === "boards")
+const primaryItems = boardPosition < 0 ? navItems : navItems.slice(0, boardPosition + 1)
+const householdGroups = hierarchyEnabled && sidebarConfig.areas !== false
+const householdGroupLabel = labels.areas || (locale === "ga" ? "Grúpaí teaghlaigh" : "Household groups")
+const remainingItems = boardPosition < 0 ? [] : navItems.slice(boardPosition + 1)
 ---
 
 <nav
@@ -305,16 +301,14 @@ const remainingItems = areaPosition < 0 ? [] : navItems.slice(areaPosition + 1)
 
   <div class="sidebar-scroll" data-nav-overflow="sidebar">
     {primaryItems.length > 0 && <SidebarNavList navItems={primaryItems} taskCounts={taskCounts} />}
-    {areaPosition >= 0 && (
-      <div id="sidebar-hierarchy-panel">
-        <a href="/planning#spaces" class="nav-link sidebar-compact-areas" data-tooltip={areaLabel} aria-label={areaLabel}>
-          <span class="nav-icon"><Icon name="folder" /></span>
-        </a>
-        <SidebarHierarchyTree locale={locale} label={areaLabel} />
-      </div>
+    {boardPosition >= 0 && householdGroups && (
+      <section class="sidebar-household" id="sidebar-hierarchy-panel" aria-label="Household Board">
+        <a class="nav-link" href="/boards/household">Household</a>
+        <SidebarHierarchyTree locale={locale} label={householdGroupLabel} />
+      </section>
     )}
+    {boardPosition >= 0 && <ul class="sidebar-board-shortcuts" data-sidebar-boards hidden aria-label="Visible Boards"></ul>}
     {remainingItems.length > 0 && <SidebarNavList navItems={remainingItems} taskCounts={taskCounts} />}
-    {namedBoardDirectoryExists && <ul class="sidebar-board-shortcuts" data-sidebar-boards hidden aria-label="Visible Boards"></ul>}
     <NavOverflowMore id="sidebar-more-destinations" list locale={locale} />
   </div>
 
@@ -336,8 +330,14 @@ const remainingItems = areaPosition < 0 ? [] : navItems.slice(areaPosition + 1)
 </script>
 
 <style>
+  .sidebar-household { margin-left: 1rem; }
+  :global(body.sidebar-collapsed) .sidebar-household { display: none; }
   .sidebar-board-shortcuts { list-style: none; margin: 0.25rem 0; padding-left: 1.5rem; }
-  .sidebar-board-shortcuts a { display: block; padding: 0.3rem 0; overflow-wrap: anywhere; }
+  .sidebar-board-shortcuts :global(a) { display: block; padding: 0.3rem 0; overflow-wrap: anywhere; }
+  .sidebar-board-shortcuts :global(.sidebar-board-row) { display: flex; align-items: center; }
+  .sidebar-board-shortcuts :global(.sidebar-board-row .nav-link) { flex: 1; min-width: 0; }
+  .sidebar-board-shortcuts :global(.sidebar-board-toggle[aria-expanded="true"]) { transform: rotate(90deg); }
+  .sidebar-board-shortcuts :global([data-board-groups]) { list-style: none; padding-left: 1rem; }
   .sidebar-board-shortcuts[hidden], :global(body.sidebar-collapsed) .sidebar-board-shortcuts { display: none; }
 
   .sidebar {

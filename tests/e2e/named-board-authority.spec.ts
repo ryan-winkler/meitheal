@@ -393,3 +393,44 @@ test("named Board owners link Projects to shared Goals without publishing privat
   await writeFile(marker, preRevokeSnapshot)
   expect(await tasks.view(workUser, workBoard)).toBeNull()
 })
+
+test("workspace groups, Projects and task filing stay within the owning Board", async () => {
+  const db = getPersistenceClient()
+  const boards = new NamedBoardRepository(db, marker)
+  const planning = new NamedBoardPlanningRepository(db, marker)
+  const tasks = new NamedBoardTaskRepository(db, marker)
+  const actor = { kind: "ha_user", id: "owner" } as const
+  const work = await boards.create(actor.id, "Work")
+  const house = await boards.create(actor.id, "House")
+  if (work.status !== "committed" || house.status !== "committed") throw new Error("Expected both Boards")
+  const board = work.result.id
+  const other = house.result.id
+  expect(await planning.save(actor.id, board, { action: "area", title: "Operations", icon: "🛠", color: "#abcdef" })).toBe(true)
+  expect(await planning.save(actor.id, other, { action: "area", title: "Yard" })).toBe(true)
+  const group = (await tasks.groups(actor, board, null))!.items[0]!
+  const foreign = (await tasks.groups(actor, other, null))!.items[0]!
+  expect(group.name).toBe("Operations")
+  expect(await tasks.groups({ kind: "ha_user", id: "outsider" }, board, null)).toBeNull()
+  expect(await planning.save(actor.id, board, { action: "project", title: "Handoff", description: "", areaId: group.id, goalId: null })).toBe(true)
+  const directory = await tasks.view(actor, board)
+  expect(directory?.planning?.areas).toEqual([{ id: group.id, name: group.name, icon: "🛠", color: "#abcdef" }])
+  const project = directory!.planning!.projects[0]!
+  const workspace = { areaId: group.id, projectId: null, ticketId: null, planning: false }
+  const ordinary = await tasks.create(actor, board, { title: "Write a handoff", description: "" }, { local: true })
+  if (!ordinary.ok) throw new Error("Expected an unfiled task")
+
+  expect(await tasks.view(actor, board, 0, workspace)).toMatchObject({
+    planning: null, context: { area: { id: group.id, name: group.name }, project: null }, tasks: [],
+  })
+  expect(await tasks.view(actor, board, 0, { ...workspace, areaId: foreign.id })).toBeNull()
+  expect(await tasks.create(actor, board, { title: "Foreign placement", description: "" }, { local: true, areaId: foreign.id }))
+    .toMatchObject({ ok: false, errorCode: "unavailable" })
+  expect(await tasks.file(actor, board, ordinary.value.id, ordinary.value.version, foreign.id, null))
+    .toMatchObject({ ok: false, errorCode: "unavailable" })
+  const filed = await tasks.file(actor, board, ordinary.value.id, ordinary.value.version, group.id, project.id)
+  expect(filed.ok).toBe(true)
+  expect(await tasks.file(actor, board, ordinary.value.id, ordinary.value.version, null, null))
+    .toMatchObject({ ok: false, errorCode: "stale" })
+  expect((await tasks.view(actor, board, 0, { ...workspace, projectId: project.id }))?.tasks)
+    .toMatchObject([{ id: ordinary.value.id, ticket: ordinary.value.ticket }])
+})

@@ -17,7 +17,7 @@ test.describe("Sidebar and Today follow-through", () => {
     }
   })
 
-  test("Areas visibility, label and order persist, with one custom link per click", async ({ page }) => {
+  test("Household groups remain under Boards with legacy visibility and label settings", async ({ page }) => {
     await page.goto("/settings#navigation-settings")
     await expect(page.getByRole("checkbox", { name: "Show Areas in sidebar" })).toBeVisible()
     await page.getByRole("textbox", { name: "Custom label for Areas" }).fill("Household areas")
@@ -35,7 +35,7 @@ test.describe("Sidebar and Today follow-through", () => {
       const targets = Array.from(scroll.querySelectorAll("a[data-page], #sidebar-hierarchy-panel"))
       return targets.map(target => target.id === "sidebar-hierarchy-panel" ? "areas" : target.getAttribute("data-page"))
     })
-    expect(sidebarOrder.indexOf("areas")).toBeLessThan(sidebarOrder.indexOf("progress"))
+    expect(sidebarOrder.indexOf("areas")).toBe(sidebarOrder.indexOf("boards") + 1)
     await expect(page.locator("#sidebar").getByRole("link", { name: "Notes", exact: true })).toBeVisible()
     await expect(page.locator('#sidebar [data-page="system-pinned"]')).toHaveAttribute("href", "/pinned")
     await expect(page.locator('#sidebar [data-page="system-pinned"]')).toHaveCount(1)

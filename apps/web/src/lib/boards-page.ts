@@ -1,6 +1,6 @@
 import { browserUuid } from "./browser-uuid"
 import { confirmDialog } from "./confirm-dialog"
-import { safeIngressHref } from "./ingress-navigation"
+import { safeIngressHref, syncIngressDestination } from "./ingress-navigation"
 import { safeFetch } from "./safe-fetch"
 
 class BoardRequestError extends Error {
@@ -82,6 +82,70 @@ export function bindBoardPage(signal: AbortSignal) {
     return data
   }
 
+  const fragment = location.hash.slice(1)
+  const current = new URL(location.href)
+  if (root.dataset.boardId && ["groups", "projects", "goals", "routines", "group-settings", "project-settings"].includes(fragment)
+      && current.searchParams.get("view") !== "groups") {
+    current.searchParams.set("view", "groups")
+    const target = current.pathname + current.search + current.hash
+    syncIngressDestination(target)
+    location.replace(target)
+    return
+  }
+  const panel = document.getElementById(fragment)
+  if (panel instanceof HTMLDetailsElement) {
+    panel.open = true
+    panel.querySelector("summary")?.focus()
+  }
+
+  root.addEventListener("toggle", async event => {
+    const disclosure = event.target
+    if (!(disclosure instanceof HTMLDetailsElement) || !disclosure.matches("[data-board-filing]") ||
+        !disclosure.open || disclosure.dataset.loaded || !root.dataset.boardId) return
+    const form = disclosure.querySelector<HTMLFormElement>("form")!
+    const areas = form.querySelector<HTMLSelectElement>('[name="areaId"]')!
+    const projects = form.querySelector<HTMLSelectElement>('[name="projectId"]')!
+    const status = form.querySelector<HTMLElement>("[data-board-feedback]")!
+    const save = form.querySelector<HTMLButtonElement>('button[type="submit"]')!
+    disclosure.dataset.loaded = "loading"
+    try {
+      const response = await fetch(`/api/boards/${encodeURIComponent(root.dataset.boardId)}?view=tasks&planning=1&ticket=${encodeURIComponent(form.dataset.ticketId ?? "")}`, {
+        cache: "no-store", signal: AbortSignal.any([signal, AbortSignal.timeout(4_000)]),
+      })
+      if (!response.ok) throw new Error("Could not load placement choices.")
+      const { planning, tasks } = await response.json() as {
+        tasks?: Array<{ placement?: { areaId?: string; projectId?: string } }>
+        planning?: {
+          areas: Array<{ id: string; name: string }>
+          projects: Array<{ id: string; title: string; status: string; areaId: string | null }>
+        }
+      }
+      if (signal.aborted || expired) return
+      if (!planning) throw new Error("Could not load placement choices.")
+      const placement = tasks?.[0]?.placement
+      const placedProject = planning.projects.find(project => project.id === placement?.projectId)
+      const currentGroup = placedProject?.areaId ?? placement?.areaId
+      for (const area of planning.areas) areas.add(new Option(area.name, area.id, false, currentGroup === area.id))
+      const renderProjects = () => {
+        const selected = projects.value
+        projects.replaceChildren(new Option("No Project", ""))
+        for (const project of planning.projects) {
+          if (project.status !== "active" || (areas.value && project.areaId !== areas.value)) continue
+          projects.add(new Option(project.title, project.id, false, selected === project.id))
+        }
+      }
+      renderProjects()
+      if (placedProject) projects.value = placedProject.id
+      areas.addEventListener("change", renderProjects, { signal })
+      areas.disabled = projects.disabled = save.disabled = false
+      disclosure.dataset.loaded = "true"
+      status.textContent = ""
+    } catch {
+      delete disclosure.dataset.loaded
+      if (!signal.aborted && !expired) status.textContent = "Could not load placement choices. Close and reopen to try again."
+    }
+  }, { capture: true, signal })
+
   root.addEventListener("submit", async event => {
     const form = event.target
     if (!(form instanceof HTMLFormElement) || !form.dataset.boardForm) return
@@ -133,11 +197,16 @@ export function bindBoardPage(signal: AbortSignal) {
           break
         case "task-create":
           await jsonRequest(api + "/tickets", "POST", {
-            ...content, laneId: value("laneId"), ...(value("projectId") ? { projectId: value("projectId") } : {}),
+            ...content, laneId: value("laneId"), placement: { areaId: value("areaId") || null, projectId: value("projectId") || null },
           })
           break
         case "task-edit":
           await jsonRequest(ticket, "PATCH", { ...content, version: Number(version) })
+          break
+        case "task-file":
+          await jsonRequest(ticket, "PATCH", {
+            action: "file", version: Number(version), areaId: value("areaId") || null, projectId: value("projectId") || null,
+          })
           break
         case "task-move":
           await jsonRequest(ticket, "PATCH", { laneId: value("laneId"), version: Number(version) })
@@ -156,6 +225,8 @@ export function bindBoardPage(signal: AbortSignal) {
             ...(data.has("enabled") ? { enabled: value("enabled") === "true" } : {}),
             ...(data.has("entity") ? { entity: value("entity") } : {}),
             ...(data.has("status") ? { status: value("status") } : {}),
+            ...(data.has("icon") ? { icon: value("icon") } : {}),
+            ...(data.has("color") ? { color: value("color") } : {}),
             ...(data.has("cadence") ? { cadence: value("cadence") } : {}),
             ...(data.has("period") ? { period: value("period") } : {}),
           })

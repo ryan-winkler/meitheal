@@ -45,6 +45,7 @@ const {
 // i18n: resolve locale from cookie
 const cookieLocale = Astro.cookies.get("meitheal-locale")?.value;
 const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
+const householdWorkspace = Astro.props.householdWorkspace === true
 const renderedView = parseTaskView(Astro.url.searchParams.get("view")) ?? "kanban"
 const viewLabels = { kanban: "Kanban", table: "Table", calendar: "Calendar", timeline: "Timeline" }
 const viewIcons = { kanban: "kanban", table: "table", calendar: "calendar", timeline: "timeline" }
@@ -52,7 +53,7 @@ const heading = renderedView === "kanban" ? t("kanban.title", locale)
   : renderedView === "table" ? "Table View" : viewLabels[renderedView]
 const currentUrl = new URL(Astro.url)
 // The HTML ingress rewriter adds the mount path to these root-relative links.
-currentUrl.pathname = "/tasks"
+currentUrl.pathname = householdWorkspace ? "/boards/household" : "/tasks"
 if (currentUrl.searchParams.has("boardRefresh") ||
     (renderedView === "table" && currentUrl.searchParams.has("tableRefresh"))) {
   currentUrl.searchParams.delete("boardRefresh")
@@ -235,10 +236,10 @@ try {
 }
 ---
 
-<Layout title={`Meitheal — ${heading}`}>
+<Layout title={`Meitheal — ${householdWorkspace ? "Household · " : ""}${heading}`}>
 
   <UnifiedBar
-    title={heading}
+    title={householdWorkspace ? "Household" : heading}
     titleIcon={viewIcons[renderedView]}
     tabs={[]}
     searchPlaceholder="Search Meitheal…"
@@ -252,6 +253,11 @@ try {
   >
     <AreaSelector slot="context" areas={areas} />
   </UnifiedBar>
+  {householdWorkspace && <nav class="board-context-tabs" aria-label="Board workspace">
+    <a class="btn btn-ghost" href="/boards">Boards</a>
+    <a class="btn btn-ghost" href="/boards/household" aria-current="page">Tasks</a>
+    <a class="btn btn-ghost" href="/boards/household?view=groups" data-astro-reload>Groups</a>
+  </nav>}
 
   {renderedView === "kanban" && <>
   <!-- Kanban controls and board are rendered only for the selected view. -->
