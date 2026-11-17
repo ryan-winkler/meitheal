@@ -20,3 +20,17 @@ export function taskBackgroundUrl(current: URL): URL {
   return url.origin === current.origin && url.pathname.startsWith(`${window.__ingress_path || ""}/`)
     ? url : new URL(fallback, current.origin)
 }
+
+export function replaceTaskBackgroundUrl(url: URL): void {
+  if (ticketIdFromPath(location.pathname, window.__ingress_path) !== null) {
+    history.replaceState({ ...history.state, ticketDrawer: { ...history.state?.ticketDrawer, returnTo: url.href } }, "")
+    return
+  }
+  const current = new URLSearchParams(location.search)
+  for (const key of ["open", "comment"]) {
+    const value = current.get(key)
+    if (value === null) url.searchParams.delete(key)
+    else url.searchParams.set(key, value)
+  }
+  history.replaceState(history.state, "", url)
+}

@@ -1,4 +1,5 @@
 import type { ListenerManager } from "../managed-listeners"
+import { replaceTaskBackgroundUrl, taskBackgroundUrl } from "../task-page-url"
 import { setUnscheduledPage } from "../today-list"
 
 export function setupUnscheduledSection(
@@ -17,6 +18,7 @@ export function setupUnscheduledSection(
   let timer = 0
   let requestedPage = 1
   let focusRange = false
+  const background = () => taskBackgroundUrl(new URL(location.href))
   const currentPage = () => Number(list.querySelector<HTMLElement>("#today-unscheduled-page")?.dataset.page ?? 0)
   const isOpen = () => !section.classList.contains("today-section--collapsed")
 
@@ -37,7 +39,7 @@ export function setupUnscheduledSection(
     focusRange = focus
     const controller = new AbortController()
     pending = controller
-    const url = setUnscheduledPage(new URL(window.location.href), page)
+    const url = setUnscheduledPage(background(), page)
     list.setAttribute("aria-busy", "true")
     setStatus("Loading unscheduled tasks…")
     try {
@@ -60,8 +62,7 @@ export function setupUnscheduledSection(
       const count = html.querySelector("#section-unscheduled .today-section__count")?.textContent
       const total = section.querySelector(".today-section__count")
       if (count && total) total.textContent = count
-      const currentUrl = setUnscheduledPage(new URL(window.location.href), currentPage())
-      history.replaceState(history.state, "", currentUrl)
+      replaceTaskBackgroundUrl(setUnscheduledPage(background(), currentPage()))
       setStatus("")
       if (shouldFocus) replacement.querySelector<HTMLElement>("[data-unscheduled-range]")?.focus()
     } catch {
@@ -84,8 +85,7 @@ export function setupUnscheduledSection(
     } else {
       pending?.abort()
       window.clearTimeout(timer)
-      const url = setUnscheduledPage(new URL(window.location.href), 0)
-      history.replaceState(history.state, "", url)
+      replaceTaskBackgroundUrl(setUnscheduledPage(background(), 0))
     }
   })
   lm.on(list, "click", (event: Event) => {

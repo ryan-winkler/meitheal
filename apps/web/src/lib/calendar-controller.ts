@@ -7,7 +7,7 @@ import { createFocusTrap } from "@lib/focus-trap"
 import { updateKanbanFilters, type KanbanFilters } from "@lib/kanban-query"
 import { createTablerSvgElement, mapEntityEmojiToTabler, type TablerIconName } from "@lib/tabler-svg"
 import { openTaskDetailHandoff } from "@lib/task-detail-handoff"
-import { TASK_VIEW_LOCATION_EVENT, taskBackgroundUrl, ticketIdFromPath } from "@lib/task-page-url"
+import { TASK_VIEW_LOCATION_EVENT, replaceTaskBackgroundUrl, taskBackgroundUrl } from "@lib/task-page-url"
 import { getStatusDef } from "@lib/status-config"
 
 interface CalendarEventRecord {
@@ -134,17 +134,7 @@ export function initCalendarPage(signal: AbortSignal): void {
       month.replaceWith(nextMonth)
       month = nextMonth
 
-      const current = new URL(location.href)
-      if (ticketIdFromPath(current.pathname, window.__ingress_path) !== null) {
-        history.replaceState({ ...history.state, ticketDrawer: { ...history.state?.ticketDrawer, returnTo: url.href } }, "")
-      } else {
-        for (const key of ["open", "comment"]) {
-          const value = current.searchParams.get(key)
-          if (value === null) url.searchParams.delete(key)
-          else url.searchParams.set(key, value)
-        }
-        history.replaceState(history.state, "", url)
-      }
+      replaceTaskBackgroundUrl(url)
       const previousArea = readCalendarTaskFilters(applied.searchParams).area
       applied = new URL(url)
       const area = readCalendarTaskFilters(applied.searchParams).area

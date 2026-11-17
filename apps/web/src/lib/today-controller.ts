@@ -29,6 +29,7 @@ import { hydrateTaskAssignees } from "./task-assignee-display"
 import { showToast } from "./toast"
 import { confirmDialog } from "./confirm-dialog"
 import { onTaskCompleted } from "./gamification-hook"
+import { taskBackgroundUrl } from "./task-page-url"
 import { householdDayFromToday, householdToday, parseQuickTask, quickAddPayload } from "./quick-add"
 import {
   saveFilterState,
@@ -125,10 +126,9 @@ export function initTodayPage(options?: Partial<TodayControllerOptions>) {
     const { id, status } = (event as CustomEvent<{ id: string; status: string }>).detail
     if (typeof status === "string") syncTodayTaskStatus(container, id, status)
   })
-  lm.on(container, "meitheal:today-status-committed", event => {
+  lm.on(container, "meitheal:today-status-committed", () => {
     applyFilters(container)
-    const id = (event as CustomEvent<{ id: string }>).detail.id
-    if (container.querySelector(`#today-unscheduled-list .tli[data-id="${CSS.escape(id)}"]`)) refreshUnscheduled(true)
+    refreshUnscheduled(true)
   })
   if (window.location.search !== initialSearch) refreshUnscheduled()
   setupHabitsSection(container, lm)    // G38
@@ -319,7 +319,7 @@ function setupEventDelegation(container: HTMLElement) {
 
     // ── Clear completed ──
     if (target.closest("[data-today-refresh]")) {
-      location.reload()
+      location.assign(taskBackgroundUrl(new URL(location.href)).href)
       return
     }
     const archive = target.closest<HTMLElement>("[data-today-archive]")

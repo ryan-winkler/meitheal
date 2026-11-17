@@ -28,6 +28,28 @@ test.describe("Tasks Shell (Kanban)", () => {
     await expect(page.locator("#search-hub-input")).toBeFocused()
   })
 
+  test("card previews show plain text for descriptions saved in Details", async ({ page, request, baseURL }) => {
+    const headers = { origin: new URL(baseURL!).origin }
+    const create = await request.post("/api/tasks", { headers, data: { title: "Check the supply controller", description: "Original description." } })
+    expect(create.status()).toBe(201)
+    const { id } = await create.json()
+    try {
+      await page.reload()
+      const card = page.locator(`.kanban-card[data-id="${id}"]`)
+      await card.locator(".card-open-btn").click()
+      await expect(page.locator("#td-status")).toBeEnabled()
+      await page.locator("#td-desc-preview-container").click()
+      await page.locator("#td-description").fill("Check **replacement controller**. Read [the manual](https://example.com/).")
+      const saved = page.waitForResponse(response => response.request().method() === "PUT" && new URL(response.url()).pathname === `/api/tasks/${id}`)
+      await page.locator("#td-desc-save-btn").click()
+      expect((await saved).ok()).toBe(true)
+      await page.goto("/tasks#kanban")
+      await expect(card.locator(".kanban-card-desc")).toHaveText("Check replacement controller. Read the manual.")
+    } finally {
+      await request.delete(`/api/tasks/${id}`, { headers })
+    }
+  })
+
   test("card names include the key and only the newest quick action accepts input", async ({ page, request, baseURL }) => {
     const title = "Check kitchen tap"
     const headers = { origin: new URL(baseURL!).origin }

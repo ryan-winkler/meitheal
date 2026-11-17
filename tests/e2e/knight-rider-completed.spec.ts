@@ -67,7 +67,7 @@ test("Knight Rider keeps the completed Today state and saved theme truthful", as
   }
   await expect(page.locator("#dashboard-stat-open-count")).toHaveText("0")
   await expect(page.locator("#stat-overdue .stat-value")).toHaveText("0")
-  await request.delete(`/api/tasks/${id}`)
+  await request.delete(`/api/tasks/${id}`, { data: {} })
 })
 
 test("Today reflects task detail completion and reopening without a reload", async ({ page, request }) => {
@@ -122,7 +122,7 @@ test("Today reflects task detail completion and reopening without a reload", asy
     await expect(focus).toBeVisible()
     await expect(completed).toBeHidden()
   } finally {
-    await request.delete(`/api/tasks/${id}`)
+    await request.delete(`/api/tasks/${id}`, { data: {} })
   }
 })
 
@@ -161,7 +161,45 @@ test("docked Details shares the Today status lock and reflects a row save", asyn
     await expect(done).toHaveText("Mark as Undone")
   } finally {
     release()
-    await request.delete(`/api/tasks/${id}`)
+    await request.delete(`/api/tasks/${id}`, { data: {} })
+  }
+})
+
+test("Unscheduled and Refresh Today keep their route with Details docked", async ({ page, request }) => {
+  await page.setViewportSize({ width: 1600, height: 900 })
+  await page.addInitScript(() => localStorage.setItem("meitheal-theme", "knight-rider"))
+  const title = "Check the unscheduled work"
+  const response = await request.post("/api/tasks", { data: { title } })
+  expect(response.status()).toBe(201)
+  const { id } = await response.json()
+  try {
+    await page.goto("/today?unscheduledPage=1#today-work")
+    const row = page.locator(`#today-unscheduled-list .tli[data-id="${id}"]`)
+    await row.getByRole("link", { name: title }).click()
+    await expect(page).toHaveURL(/\/tickets\//)
+    const status = page.locator("#td-status")
+    await expect(status).toBeEnabled()
+    const done = page.locator("#td-toggle-done")
+    await done.click()
+    await expect(status).toHaveValue("complete")
+    await expect(row).toHaveCount(0)
+    await expect(page).toHaveURL(/\/tickets\//)
+    await expect(page.locator("#today-unscheduled-retry")).toBeHidden()
+
+    await done.click()
+    await expect(status).toHaveValue("pending")
+    await expect(row).toBeVisible()
+    await expect(page).toHaveURL(/\/tickets\//)
+
+    await page.route(url => url.pathname === "/api/tasks/today-counts", route => route.fulfill({ status: 409 }))
+    await status.selectOption("active")
+    const refresh = page.getByRole("button", { name: "Refresh Today" })
+    await expect(refresh).toBeVisible()
+    await refresh.click()
+    await expect(page).toHaveURL(url => url.pathname === "/today" && url.searchParams.get("unscheduledPage") === "1")
+    await expect(page.locator("#task-detail-overlay")).toBeHidden()
+  } finally {
+    await request.delete(`/api/tasks/${id}`, { data: {} })
   }
 })
 
@@ -250,6 +288,6 @@ test("keyboard completion keeps a focus target when the Active filter removes a 
     await expect(other!.locator(".tli__checkbox")).toBeFocused()
   } finally {
     release?.()
-    for (const id of tasks) await request.delete(`/api/tasks/${id}`)
+    for (const id of tasks) await request.delete(`/api/tasks/${id}`, { data: {} })
   }
 })

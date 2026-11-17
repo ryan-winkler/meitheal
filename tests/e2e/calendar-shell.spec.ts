@@ -43,7 +43,8 @@ test.describe("Calendar Shell", () => {
     await expect(disclosure).toHaveAttribute("aria-expanded", "false")
     await expect(toolbar).toBeHidden()
     await expect(page.getByRole("heading", { name: "July 2031" })).toBeInViewport()
-    expect((await disclosure.boundingBox())?.height).toBeGreaterThanOrEqual(44)
+    await expect(disclosure).toHaveCSS("min-height", "44px")
+    expect((await disclosure.boundingBox())?.height).toBeGreaterThanOrEqual(43.99)
 
     await disclosure.press("Enter")
     await expect(toolbar).toBeVisible()

@@ -17,6 +17,7 @@ import { parseCalendarDay } from "./calendar-day"
 import { evaluateFilterGroup, extractDataFromElement, type FilterGroup, type FilterOperator } from "./filter-engine"
 import { normalizeStatus } from "./status-config"
 import { TABLE_COLUMNS } from "./table-registry"
+import { replaceTaskBackgroundUrl, taskBackgroundUrl } from "./task-page-url"
 import { readTaskAreaParam } from "./task-view-route"
 
 // =============================================================================
@@ -377,7 +378,7 @@ export function saveTableFilterState(state: Partial<FilterState>, page?: number)
 export function saveFilterState(state: Partial<FilterState>): void {
   localStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(state))
 
-  const url = new URL(window.location.href)
+  const url = taskBackgroundUrl(new URL(location.href))
   for (const key of SCALAR_KEYS) {
     const val = state[key]
     if (typeof val === "string" && val && val !== DEFAULT_SORT) {
@@ -402,7 +403,7 @@ export function saveFilterState(state: Partial<FilterState>): void {
       url.searchParams.delete(key)
     }
   }
-  window.history.replaceState(null, "", url.toString())
+  replaceTaskBackgroundUrl(url)
 }
 
 /**
@@ -410,7 +411,7 @@ export function saveFilterState(state: Partial<FilterState>): void {
  * Returns a partial state — callers apply only the fields they support.
  */
 export function loadFilterState(): Partial<FilterState> {
-  const urlParams = new URLSearchParams(window.location.search)
+  const urlParams = taskBackgroundUrl(new URL(location.href)).searchParams
   const hasUrlFilters = ALL_KEYS.some((k) => urlParams.has(k))
 
   if (hasUrlFilters) {
@@ -447,11 +448,11 @@ export function loadFilterState(): Partial<FilterState> {
  */
 export function clearFilterState(): void {
   localStorage.removeItem(FILTER_STORAGE_KEY)
-  const url = new URL(window.location.href)
+  const url = taskBackgroundUrl(new URL(location.href))
   for (const key of ALL_KEYS) {
     url.searchParams.delete(key)
   }
-  window.history.replaceState(null, "", url.toString())
+  replaceTaskBackgroundUrl(url)
 }
 
 // =============================================================================
