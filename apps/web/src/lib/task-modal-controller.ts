@@ -957,7 +957,7 @@
             try {
               const boardRes = await areas
               if (modalSignal.aborted) return
-              if (boardRes.ok) {
+              if (boardRes.ok && areaSelect) {
                 const areaData = await boardRes.json()
                 if (modalSignal.aborted) return
                 const boards = areaData.areas ?? [];
@@ -974,7 +974,7 @@
               }
             } catch {
               if (modalSignal.aborted) return
-              areaSelect.replaceChildren(new Option(currentAreaId, currentAreaId));
+              areaSelect?.replaceChildren(new Option(currentAreaId, currentAreaId));
             }
             if (projectField && projectRead) {
               const savedProject = String(t.project_id ?? "")
@@ -1011,7 +1011,7 @@
             try {
               const pilRes = await pillars
               if (modalSignal.aborted) return
-              if (pilRes.ok) {
+              if (pilRes.ok && pillarSelect) {
                 const pilData = await pilRes.json()
                 if (modalSignal.aborted) return
                 const pillars = pilData.pillars ?? pilData ?? [];
@@ -1026,7 +1026,7 @@
               }
             } catch {
               if (modalSignal.aborted) return
-              pillarSelect.replaceChildren(new Option(currentPillarId, currentPillarId));
+              pillarSelect?.replaceChildren(new Option(currentPillarId, currentPillarId));
             }
 
             // Populate principle dropdown
@@ -1034,7 +1034,7 @@
               "td-principle",
             ) as HTMLSelectElement;
             const currentPrincipleId = String(t.principle_id ?? "");
-            try {
+            if (principleSelect) try {
               if (currentPillarId && currentPillarId !== "null" && currentPillarId !== "undefined") {
                 const prinRes = await fetch( // nosemgrep
                   (window.__ingress_path || "") + `/api/pillars/${currentPillarId}/principles`, // nosemgrep
