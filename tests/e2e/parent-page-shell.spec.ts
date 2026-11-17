@@ -73,46 +73,46 @@ test.describe("Planning Parent Page — /planning", () => {
     await page.goto("/planning")
   })
 
-  test("renders spaces section as default view", async ({ page }) => {
-    const spacesSection = page.locator("#planning-section-spaces")
-    await expect(spacesSection).toHaveAttribute("aria-hidden", "false")
-    await expect(spacesSection).toBeVisible()
+  test("renders Eisenhower as the default planning view", async ({ page }) => {
+    const matrix = page.locator("#planning-section-eisenhower")
+    await expect(matrix).toHaveAttribute("aria-hidden", "false")
+    await expect(matrix).toBeVisible()
   })
 
   test("section links keep native Tab order and announce the current location", async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 960 })
     const navigation = page.locator("#planning-bar-tabs")
-    const spaces = navigation.locator('a[href="#spaces"]')
     const eisenhower = navigation.locator('a[href="#eisenhower"]')
     const triage = navigation.locator('a[href="#triage"]')
+    const rice = navigation.locator('a[href="#rice"]')
 
-    await expect(spaces).toHaveAttribute("aria-current", "location")
-    await expect(navigation.locator("a[aria-selected]")).toHaveCount(0)
-    await spaces.focus()
-    await page.keyboard.press("Tab")
-    await expect(eisenhower).toBeFocused()
-    await page.keyboard.press("Enter")
     await expect(eisenhower).toHaveAttribute("aria-current", "location")
-    await expect(page.locator("#planning-section-eisenhower")).toBeVisible()
+    await expect(navigation.locator("a[aria-selected]")).toHaveCount(0)
+    await eisenhower.focus()
+    await page.keyboard.press("Tab")
+    await expect(triage).toBeFocused()
+    await page.keyboard.press("Enter")
+    await expect(triage).toHaveAttribute("aria-current", "location")
+    await expect(page.locator("#planning-section-triage")).toBeVisible()
 
     await page.keyboard.press("ArrowRight")
-    await expect(triage).toBeFocused()
-    await expect(triage).toHaveAttribute("aria-current", "location")
+    await expect(rice).toBeFocused()
+    await expect(rice).toHaveAttribute("aria-current", "location")
     await expect(navigation.locator('a[aria-current="location"]')).toHaveCount(1)
     await page.goBack()
-    await expect(eisenhower).toHaveAttribute("aria-current", "location")
-    await page.goForward()
     await expect(triage).toHaveAttribute("aria-current", "location")
+    await page.goForward()
+    await expect(rice).toHaveAttribute("aria-current", "location")
   })
 
-  test("offers Area and Project creation in Planning", async ({ page }) => {
-    const spaces = page.locator("#planning-section-spaces")
-    await expect(spaces.getByRole("button", { name: "New Area" })).toBeVisible()
-    await expect(spaces.getByRole("button", { name: "New Project without an Area" })).toBeVisible()
+  test("opens the Boards directory from a legacy Spaces bookmark", async ({ page }) => {
+    await page.goto("/planning#spaces")
+    await expect(page).toHaveURL(/\/boards$/)
+    await expect(page.getByRole("link", { name: "Household" }).first()).toBeVisible()
   })
 
-  test("eisenhower, triage, and rice sections are hidden by default", async ({ page }) => {
-    await expect(page.locator("#planning-section-eisenhower")).toHaveAttribute("hidden", "")
+  test("only the default section is visible on first load", async ({ page }) => {
+    await expect(page.locator("#planning-section-spaces")).toHaveAttribute("hidden", "")
     await expect(page.locator("#planning-section-triage")).toHaveAttribute("hidden", "")
     await expect(page.locator("#planning-section-rice")).toHaveAttribute("hidden", "")
   })

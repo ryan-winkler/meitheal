@@ -1,4 +1,7 @@
 ---
+import { organizationNeedsVerification } from "../lib/organization-request-context"
+import { readRequestOrganizationLabels, renderedLabelsProof } from "@lib/organization-labels"
+import { verifiedIngressUser } from "@lib/verified-ingress-user"
 import "../styles/global.css";
 import Confetti from "../components/gamification/Confetti.astro";
 import PomodoroTimer from "../components/pomodoro/PomodoroTimer.astro";
@@ -32,6 +35,12 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
 
 // Feature flags — read from settings DB (SSR)
 const featureFlags = await getFeatureFlags();
+const organizationState = await readRequestOrganizationLabels(Astro)
+const organizationUser = verifiedIngressUser(Astro.locals)
+const organizationSettings = Astro.url.pathname === "/settings"
+const organizationProof = organizationUser && organizationState &&
+  (organizationSettings || Object.keys(organizationState.forms).length > 0 || organizationNeedsVerification()) ? renderedLabelsProof(organizationUser.id, locale, organizationState, organizationSettings) : null
+if (organizationProof) Astro.response.headers.set("Cache-Control", "private, no-store")
 const featureFlagsJson = JSON.stringify(featureFlags);
 const showConfetti = !!featureFlags.confetti;
 const showPomodoro = !!featureFlags.pomodoro;
@@ -522,6 +531,44 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
         if (e.persisted) hideLoading();
       });
     </script>
+
+    {organizationProof && <script define:vars={{ organizationProof, organizationSettings }}>
+      let labelCheck
+      let frozen = false
+      const freezeLabels = () => {
+        frozen = true
+        labelCheck?.abort()
+        document.body.style.visibility = "hidden"
+      }
+      async function checkLabels() {
+        labelCheck?.abort()
+        const pending = new AbortController()
+        labelCheck = pending
+        try {
+          const suffix = organizationSettings ? "?settings" : ""
+          const response = await fetch("/api/organization-labels" + suffix, {
+            method: "HEAD", cache: "no-store",
+            signal: AbortSignal.any([pending.signal, AbortSignal.timeout(4_000)]),
+          })
+          if (pending.signal.aborted) return
+          if (response.headers.get("x-meitheal-rendered-labels") !== organizationProof) {
+            freezeLabels()
+            window.location.reload()
+            return
+          }
+          if (frozen) document.body.style.removeProperty("visibility")
+          frozen = false
+        } catch {
+          if (!pending.signal.aborted) {
+            freezeLabels()
+            window.location.reload()
+          }
+        }
+      }
+      window.addEventListener("pagehide", freezeLabels)
+      window.addEventListener("pageshow", event => { if (event.persisted) void checkLabels() })
+      window.addEventListener("focus", () => { if (!document.hidden) void checkLabels() })
+    </script>}
 
     <!-- Sidebar collapse: restore state immediately to avoid FOUC -->
     <script is:inline>

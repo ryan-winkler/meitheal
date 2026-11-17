@@ -1,4 +1,5 @@
 ---
+import { newOrganizationLabel, organizationLabelsFor, type OrganizationTerm } from "@lib/organization-labels"
 import "../../styles/_sidebar-reorder.css"
 import { t } from "../../i18n/translations";
 import type { Locale } from "../../lib/locale";
@@ -120,7 +121,7 @@ let sidebarConfig: SidebarConfig = {
 const ff = await getFeatureFlags();
 const gamificationEnabled = ff.gamification !== false;
 const habitsEnabled = ff.habits !== false;
-const hierarchyEnabled = ff.hierarchy !== false;
+const hierarchyEnabled = ff.hierarchy !== false && ff.organizer !== false;
 
 /** Fetch streak data for sidebar badge */
 let currentStreak = 0;
@@ -199,20 +200,28 @@ Object.keys(NAV_ITEMS).forEach((k) => {
 const labels: Record<string, string> =
   (sidebarConfig.labels as Record<string, string>) ?? {};
 
+const resolveLabel = await organizationLabelsFor(Astro)
+const quickCreate = newOrganizationLabel(resolveLabel("task", false, locale === "en" ? "task" : undefined), locale)
+const terminology: Partial<Record<string, OrganizationTerm>> = {
+  boards: "board", tasks: "task", planning: "planning", progress: "progress",
+}
 const navItems = order
   .filter((key) => {
     if (sidebarConfig[key] === false) return false
     if (!(key in NAV_ITEMS)) return false
     // Feature flag: hide progress parent page when all sub-features disabled
-    if (key === "progress" && !gamificationEnabled && !habitsEnabled) return false
     if (key === "areas") return false
+    if (key === "planning" && ff.planning === false) return false
+    if (key === "progress" && ff.pillars === false && ff.goals === false && ff.habits === false && ff.gamification === false) return false
     if (key === "boards" && !hierarchyEnabled) return false
     if ((key === "activity" || key === "mentionInbox") && !Astro.locals.hassUserId) return false
     return true
   })
   .map((key) => {
     const def = NAV_ITEMS[key]!;
-    const label = labels[key] || (key === "boards" ? (locale === "ga" ? "Cláir" : "Boards") : t(def.i18nKey, locale));
+    const term = terminology[key];
+    const defaultLabel = labels[key] || (key === "boards" ? (locale === "ga" ? "Cláir" : "Boards") : t(def.i18nKey, locale));
+    const label = term ? resolveLabel(term, true, defaultLabel) : defaultLabel;
     const isActive = def.matchExact
       ? currentPath === def.href
       : currentPath.startsWith(def.href);
@@ -226,8 +235,8 @@ navItems.splice(pinIndex, 0, {
 })
 
 const boardPosition = navItems.findIndex(item => item.key === "boards")
-const householdGroups = hierarchyEnabled && sidebarConfig.areas !== false
-const householdGroupLabel = labels.areas || (locale === "ga" ? "Grúpaí" : "Groups")
+const householdGroups = hierarchyEnabled && sidebarConfig.areas !== false && ff.organizer !== false && ff.groups !== false
+const householdGroupLabel = resolveLabel("group", true, labels.areas || (locale === "ga" ? "Grúpaí" : "Groups"))
 const primaryItems = !householdGroups || boardPosition < 0 ? navItems : navItems.slice(0, boardPosition + 1)
 const remainingItems = !householdGroups || boardPosition < 0 ? [] : navItems.slice(boardPosition + 1)
 const sidebarDefaultOrder = navItems.map(item => item.key)
@@ -305,13 +314,13 @@ if (householdGroups) sidebarDefaultOrder.splice(boardPosition < 0 ? sidebarDefau
           type="button"
           id="sidebar-rail-new-task"
           class="sidebar-rail-cta"
-          data-tooltip="New task"
-          aria-label="New task"
+          data-tooltip={quickCreate}
+          aria-label={quickCreate}
         >
           <span class="sidebar-rail-cta__icon" aria-hidden="true">
             <Icon name="plus" size={18} />
           </span>
-          <span class="sidebar-rail-cta__label">New task</span>
+          <span class="sidebar-rail-cta__label">{quickCreate}</span>
         </button>
       </TaskCreationMenu>
     </div>
@@ -319,7 +328,7 @@ if (householdGroups) sidebarDefaultOrder.splice(boardPosition < 0 ? sidebarDefau
     <div class="sidebar-scroll" data-nav-overflow="sidebar" data-sidebar-default-order={JSON.stringify(sidebarDefaultOrder)}>
       <SidebarNavList navItems={primaryItems} taskCounts={taskCounts}>
         {showNamedBoardShortcuts && primaryItems.some(item => item.key === "boards") &&
-          <ul slot="boards" class="sidebar-board-shortcuts" data-sidebar-boards hidden aria-label="Visible Boards"></ul>}
+          <ul slot="boards" class="sidebar-board-shortcuts" data-sidebar-boards data-board-group-label={resolveLabel("group", true)} hidden aria-label={resolveLabel("board", true)}></ul>}
       </SidebarNavList>
       {householdGroups && (
         <section class="sidebar-household" id="sidebar-hierarchy-panel" data-sidebar-group="areas" aria-label="Household Board">
@@ -331,7 +340,7 @@ if (householdGroups) sidebarDefaultOrder.splice(boardPosition < 0 ? sidebarDefau
       {householdGroups && (
         <SidebarNavList navItems={remainingItems} taskCounts={taskCounts}>
           {showNamedBoardShortcuts && remainingItems.some(item => item.key === "boards") &&
-            <ul slot="boards" class="sidebar-board-shortcuts" data-sidebar-boards hidden aria-label="Visible Boards"></ul>}
+            <ul slot="boards" class="sidebar-board-shortcuts" data-sidebar-boards data-board-group-label={resolveLabel("group", true)} hidden aria-label={resolveLabel("board", true)}></ul>}
         </SidebarNavList>
       )}
       <NavOverflowMore id="sidebar-more-destinations" list locale={locale} />

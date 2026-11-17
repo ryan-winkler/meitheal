@@ -15,6 +15,7 @@ import { renderIconOrCustomEmoji } from "./tabler-svg"
 const STORAGE_KEY = "meitheal-selected-area"
 export const CALENDAR_AREA_REQUEST_EVENT = "meitheal:calendar-area-request"
 export const CALENDAR_AREA_APPLIED_EVENT = "meitheal:calendar-area-applied"
+export const TABLE_AREA_CATALOG_EVENT = "meitheal:table-area-catalog"
 
 interface AreaChangedDetail {
   areaId: string
@@ -46,6 +47,8 @@ export function initAreaSelector(signal: AbortSignal): void {
   const iconEl = container.querySelector<HTMLElement>("[data-area-icon]")
 
   if (!trigger || !dropdown || !labelEl || !iconEl) return
+  const allGroups = container.dataset.allGroupsLabel || "All Groups"
+  const unavailableGroup = container.dataset.unavailableGroupLabel || "Group unavailable"
   container.dataset.areaSelectorReady = "true"
   signal.addEventListener("abort", () => {
     delete container.dataset.areaSelectorReady
@@ -60,9 +63,9 @@ export function initAreaSelector(signal: AbortSignal): void {
     const option = Array.from(dropdown.querySelectorAll<HTMLElement>("[data-area-id]"))
       .find(item => item.dataset.areaId === requested)
     if (option) {
-      selectArea(requested, option.dataset.areaName ?? "All Areas", option.dataset.areaIcon ?? "🗂")
+      selectArea(requested, option.dataset.areaName ?? allGroups, option.dataset.areaIcon ?? "🗂")
     } else if (table || calendar || document.getElementById("kanban-shell")) {
-      selectArea(requested, "Unavailable Area", "🗂")
+      selectArea(requested, unavailableGroup, "🗂")
     }
   } else if (!calendar) {
     const saved = loadSavedArea()
@@ -72,14 +75,26 @@ export function initAreaSelector(signal: AbortSignal): void {
     }
   }
   if (table) {
-    document.addEventListener("meitheal:table-area-reset", () => selectArea("", "All Areas", "🗂"), { signal })
+    document.addEventListener("meitheal:table-area-reset", () => selectArea("", allGroups, "🗂"), { signal })
+    document.addEventListener(TABLE_AREA_CATALOG_EVENT, event => {
+      const catalog = (event as CustomEvent<HTMLElement>).detail
+      const selected = trigger.dataset.selectedAreaId ?? ""
+      const focused = document.activeElement instanceof HTMLElement && dropdown.contains(document.activeElement)
+        ? document.activeElement.closest<HTMLElement>("[data-area-id]")?.dataset.areaId : undefined
+      dropdown.replaceChildren(...catalog.children)
+      dropdown.dataset.areaCatalogReady = "true"
+      const options = [...dropdown.querySelectorAll<HTMLElement>("[data-area-id]")]
+      const option = options.find(item => item.dataset.areaId === selected)
+      selectArea(selected, option?.dataset.areaName ?? (selected ? unavailableGroup : allGroups), option?.dataset.areaIcon ?? "🗂")
+      if (focused !== undefined) (options.find(item => item.dataset.areaId === focused) ?? trigger).focus()
+    }, { signal })
   } else if (calendar) {
     document.addEventListener(CALENDAR_AREA_APPLIED_EVENT, event => {
       const areaId = (event as CustomEvent<string>).detail
       const option = [...dropdown.querySelectorAll<HTMLElement>("[data-area-id]")]
         .find(item => item.dataset.areaId === areaId)
       if (option) {
-        selectArea(areaId, option.dataset.areaName ?? "All Areas", option.dataset.areaIcon ?? "🗂", "calendar")
+        selectArea(areaId, option.dataset.areaName ?? allGroups, option.dataset.areaIcon ?? "🗂", "calendar")
       }
     }, { signal })
   }
@@ -101,7 +116,7 @@ export function initAreaSelector(signal: AbortSignal): void {
     if (!option) return
 
     const areaId = option.dataset.areaId ?? ""
-    const areaName = option.dataset.areaName ?? "All Areas"
+    const areaName = option.dataset.areaName ?? allGroups
     const areaIcon = option.dataset.areaIcon ?? "🗂"
 
     selectArea(areaId, areaName, areaIcon, "user")

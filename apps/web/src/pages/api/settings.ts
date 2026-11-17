@@ -1,3 +1,4 @@
+import { organizationLegacyFeatureWrite } from "@lib/organization-legacy-feature-write"
 import type { APIRoute } from "astro"
 import {
   AI_HANDOFF_SETTING_KEYS,
@@ -155,6 +156,8 @@ export const PUT: APIRoute = async ({ request, locals }) => {
       return apiError("key must be 1-100 alphanumeric/hyphen/underscore characters", 400)
     }
 
+    const policyDenied = await organizationLegacyFeatureWrite(request, locals, [key])
+    if (policyDenied) return policyDenied
     const secret = isSecretSetting(key)
     if (key === "theme" && !isThemeMode(body.value)) {
       return apiProblem({ status: 400, detail: "Choose Emerald Isle, Knight Rider, Light, Auto, or Custom." })
@@ -286,6 +289,8 @@ export const DELETE: APIRoute = async ({ request, url, locals }) => {
     await ensureSchema()
     const repo = new SettingsRepository(getPersistenceClient())
     await repo.ensureSettingsTable()
+    const policyDenied = await organizationLegacyFeatureWrite(request, locals, ["feature_habits", "feature_gamification"])
+    if (policyDenied) return policyDenied
     await repo.deleteAll()
 
     logger.audit({

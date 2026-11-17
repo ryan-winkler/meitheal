@@ -1,3 +1,4 @@
+import { isOrganizationFeatureAvailable as available } from "@lib/organization-request-context"
 import type { APIRoute } from "astro"
 import { NamedBoardPlanningRepository } from "@domains/tasks/persistence/named-board-planning-repository"
 import { NamedBoardTaskRepository } from "@domains/tasks/persistence/named-board-task-repository"
@@ -9,7 +10,7 @@ import { stripHtml } from "@lib/strip-html"
 
 function parseChange(body: Record<string, unknown> | null): Parameters<NamedBoardPlanningRepository["save"]>[2] | null {
   if (!body) return null
-  const { action, id, areaId, goalId, enabled, status, cadence, entity, pillarId, entityType } = body
+  const { action, id, areaId, projectId, goalId, enabled, status, cadence, entity, pillarId, entityType } = body
   if (action === "project-status" && typeof id === "string" &&
       (status === "active" || status === "completed" || status === "archived")) return { action, id, status }
   if (action === "goal-share" && typeof id === "string" && typeof areaId === "string" && typeof enabled === "boolean") {
@@ -42,8 +43,8 @@ function parseChange(body: Record<string, unknown> | null): Parameters<NamedBoar
     return { action, title, description, areaId, goalId }
   }
   if (action === "routine" && typeof areaId === "string" && (cadence === "daily" || cadence === "weekly") &&
-      (id === undefined || typeof id === "string")) {
-    return { action, title, description, areaId, cadence, ...(id === undefined ? {} : { id }) }
+      (id === undefined || typeof id === "string") && (projectId === undefined || projectId === null || typeof projectId === "string")) {
+    return { action, title, description, areaId, cadence, ...(projectId === undefined ? {} : { projectId }), ...(id === undefined ? {} : { id }) }
   }
   if (action === "pillar" && (id === undefined || typeof id === "string")) {
     return { action, title, description, ...(id === undefined ? {} : { id }) }
@@ -58,6 +59,13 @@ export const POST: APIRoute = async ({ locals, params, request }) => {
   const user = await currentBoardUser(locals, request.signal, request)
   if (!user || !params.id) return apiError("Board unavailable", 404)
   const body = await readBoardRequest(request)
+  const action = typeof body?.action === "string" ? body.action : ""
+  const entity = action === "retire" ? body?.entity : action.split("-")[0]
+  const feature = entity === "routine" ? "routines" : entity === "goal" ? "goals"
+    : entity === "project" ? "projects" : entity === "area" ? "groups"
+    : action === "pillar-principle" ? "principles" : entity === "pillar" ? "pillars" : undefined
+  if (feature && !available(feature)) return apiError("This feature is unavailable.", 404)
+
   if (body?.action === "routine" || body?.action === "routine-complete") {
     if (!await isFeatureEnabled("habits")) return apiError("Routines are disabled in settings.", 404)
   }
@@ -71,6 +79,11 @@ export const POST: APIRoute = async ({ locals, params, request }) => {
     return apiError("Board or Routine unavailable", 404)
   }
   const change = parseChange(body)
+  if (change && (
+    ((change.action === "project-goal" || change.action === "project" && change.goalId !== null) && !available("goals")) ||
+    (change.action === "pillar-link" && change.entityType === "goal" && !available("goals")) ||
+    (change.action === "pillar-link" && change.entityType === "routine" && !available("routines"))
+  )) return apiError("This organizing feature is unavailable.", 404)
   if (!change) return apiError("Choose a planning action and enter valid details.", 400)
   await ensureSchema()
   const repository = new NamedBoardPlanningRepository(getPersistenceClient())

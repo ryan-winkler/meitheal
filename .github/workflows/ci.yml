@@ -93,8 +93,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    # The isolated spec loop reached spec 211 of 215 at the 25-minute limit.
-    timeout-minutes: 35
+    # The isolated spec loop reached spec 251 of 282 at the 35-minute limit.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

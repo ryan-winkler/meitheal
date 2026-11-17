@@ -27,6 +27,7 @@ async function fixture(prefix: string) {
     }
 
     const isPrivate = path === "/settings" || path === "/review" || path.startsWith(privatePath) ||
+      path === "/projects/private-fixture" ||
       (path === "/today" && url.searchParams.has("unscheduledPage"))
     response.writeHead(200, {
       "content-type": "text/html",
@@ -99,7 +100,9 @@ test("no-store responses stay out of navigation and fetch caches", async ({ brow
   }
 })
 
-for (const [route, label] of [[unscheduledPath, "Unscheduled Today"], ["/review", "Proposal Review"]]) {
+for (const [route, label] of [
+  [unscheduledPath, "Unscheduled Today"], ["/review", "Proposal Review"], ["/projects/private-fixture", "Legacy Project"],
+]) {
   for (const prefix of ["", "/api/hassio_ingress/synthetic-worker"]) {
     test(`${label} cannot replay stale pages in ${prefix ? "ingress" : "standalone"}`, async ({ browser }) => {
       const server = await fixture(prefix)
@@ -145,6 +148,7 @@ for (const prefix of ["", "/api/hassio_ingress/synthetic-worker"]) {
     try {
       const page = await context.newPage()
       const scoped = [
+        "/planning?board=fixture",
         "/api/tasks?board_id=fixture",
         "/api/tasks?board_name=fixture",
         "/api/tasks/card?board_id=",
@@ -166,7 +170,6 @@ for (const prefix of ["", "/api/hassio_ingress/synthetic-worker"]) {
       const householdPage = server.base + "/tasks?view=kanban"
       const retained = [
         householdApi, householdPage,
-        server.base + "/planning?board=fixture",
         server.base + "/api/tasks-archive?board_id=fixture",
       ]
       const cacheNames = ["api", "nav", "precache", "static"].map(bucket => `meitheal-${bucket}-v0.0.1`)

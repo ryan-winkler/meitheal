@@ -1,22 +1,26 @@
+import { isOrganizationFeatureAvailable as available } from "../../../lib/organization-request-context"
 import { randomUUID } from "node:crypto"
 import type { Client, Transaction } from "@libsql/client"
 import { isActiveAgentToken } from "@domains/auth"
 import { acquireWriteTransaction } from "../../../../scripts/database-client.mjs"
+import type { HomeAssistantAreaFilter, HomeAssistantAreaSelection } from "../../../lib/home-assistant-area-access"
 import type { BoardWorkspaceSelection } from "../../../lib/board-workspace"
 import { isClosedStatus, isDoneStatus, normalizeStatus, STATUS, STATUS_CONFIG } from "../../../lib/status-config"
 import { boardGrantStillCurrent, currentBoardGrantRevision, readBoardGrantRevision } from "./board-grant-fence"
+import { homeAssistantTaskAreaCondition, editTaskHomeAssistantArea, findTaskHomeAssistantArea, readHomeAssistantAreaPolicyRevision, setTaskHomeAssistantArea } from "./home-assistant-task-area"
 import { namedRoutinePeriod, readNamedBoardPlanning } from "./named-board-planning-repository"
 import { permitsBoardTaskAction, selectNamedBoardAccess, type BoardActor, type TaskBoardAction } from "./named-board-repository"
 import { canAdvanceTaskTimestampMs, nextTaskTimestampMs, taskTimestampMs } from "./task-timestamp"
 
-type Outcome<T> = { ok: true; value: T } | { ok: false; errorCode: "unavailable" | "denied" | "stale" }
-type NamedTaskContent = { title: string; description: string }
+type Outcome<T> = { ok: true; value: T } | { ok: false; errorCode: "unavailable" | "denied" | "stale"; reason?: "routine-date" }
+type NamedTaskContent = { title: string; description: string; dueDate?: string | null }
 type NamedTaskPlacement = {
   laneId?: string
   areaId?: string
   projectId?: string
   goalId?: string
   local?: boolean
+  homeAssistantArea?: HomeAssistantAreaSelection
 }
 
 const scopedTaskJoin = `LEFT JOIN board_task_planning AS placement ON placement.task_id = tasks.id
@@ -52,7 +56,7 @@ export async function insertNamedTask(tx: Transaction, input: {
       VALUES (?, ?, ?, ?, '__meitheal_no_area__', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     args: [id, input.content.title, input.content.description, input.status, input.boardId,
       input.assignedTo ?? null, input.laneId, String(ticket.key), id, id, now, now,
-      input.routine?.templateId ?? null, input.routine?.period ?? null, input.routine ? "routine_instance" : "standard_action"],
+      input.routine?.templateId ?? null, input.routine?.period ?? input.content.dueDate ?? null, input.routine ? "routine_instance" : "standard_action"],
   })
   return { id, ticket: String(ticket.key), version: now }
 }
@@ -61,7 +65,70 @@ export async function insertNamedTask(tx: Transaction, input: {
 export class NamedBoardTaskRepository {
   constructor(private readonly db: Client, private readonly markerPath?: string) {}
 
-  async view(actor: BoardActor, boardId: string, offset = 0, selection?: BoardWorkspaceSelection) {
+  async routineLibrary(actor: BoardActor) {
+    if (actor.kind !== "ha_user" || !available("routines")) return []
+    const revision = await currentBoardGrantRevision(this.db, this.markerPath)
+    if (!revision) return []
+    const now = new Date()
+    const { rows } = await this.db.execute({
+      sql: `SELECT routine.id, routine.name, routine.cadence,
+          board.id AS board_id, board.name AS board_name,
+          CASE WHEN routine.cadence = 'weekly' THEN ? ELSE ? END AS period,
+          EXISTS (SELECT 1 FROM tasks AS occurrence WHERE occurrence.task_board_id = board.id
+            AND occurrence.source_template_id = routine.id AND occurrence.status = 'complete'
+            AND occurrence.due_date = CASE WHEN routine.cadence = 'weekly' THEN ? ELSE ? END) AS complete,
+          (access.role IN ('owner', 'member') AND access.deny_completion = 0
+            AND permissions.deny_completion = 0 AND (project.id IS NULL OR project.status = 'active')) AS can_complete
+        FROM task_templates AS routine
+        JOIN task_boards AS board ON board.id = routine.owner_board_id AND board.state = 'active'
+        JOIN board_access_grants AS access ON access.board_id = board.id
+          AND access.principal_type = 'ha_user' AND access.principal_id = ?
+        JOIN board_permissions AS permissions ON permissions.board_id = board.id
+        JOIN areas AS area ON area.id = json_extract(routine.template_json, '$.area_id')
+          AND area.owner_board_id = board.id AND area.retired_at IS NULL
+        LEFT JOIN projects AS project ON project.id = json_extract(routine.template_json, '$.project_id')
+          AND project.owner_board_id = board.id AND project.area_id = area.id AND project.retired_at IS NULL
+        WHERE routine.is_routine = 1 AND routine.retired_at IS NULL AND board.id <> 'household'
+          AND (json_extract(routine.template_json, '$.project_id') IS NULL OR project.id IS NOT NULL)
+          AND EXISTS (SELECT 1 FROM board_access_epoch WHERE singleton = 1 AND revision = ?)
+        ORDER BY board.name COLLATE NOCASE, routine.position, routine.name, routine.id LIMIT 101`,
+      args: [namedRoutinePeriod("weekly", now), namedRoutinePeriod("daily", now),
+        namedRoutinePeriod("weekly", now), namedRoutinePeriod("daily", now), actor.id, revision],
+    })
+    if (!await boardGrantStillCurrent(this.db, revision, this.markerPath)) return []
+    return rows.map(row => ({
+      id: String(row.id), name: String(row.name), cadence: String(row.cadence), period: String(row.period),
+      boardId: String(row.board_id), boardName: String(row.board_name),
+      complete: row.complete === 1, canComplete: row.can_complete === 1,
+    }))
+  }
+
+  async dueWork(actor: BoardActor, day: string) {
+    if (actor.kind !== "ha_user") return []
+    const revision = await currentBoardGrantRevision(this.db, this.markerPath)
+    if (!revision) return []
+    const { rows } = await this.db.execute({
+      sql: `SELECT task.id, task.title, task.due_date, board.id AS board_id, board.name AS board_name
+        FROM board_access_grants AS grant_row
+        JOIN task_boards AS board ON board.id = grant_row.board_id
+        JOIN board_permissions AS permissions ON permissions.board_id = board.id
+        JOIN tasks AS task ON task.task_board_id = board.id
+        WHERE grant_row.principal_type = 'ha_user' AND grant_row.principal_id = ?
+          AND board.id <> 'household' AND board.state = 'active'
+          AND task.due_date > '' AND task.due_date <= ? AND task.deferred_at IS NULL
+          AND task.status NOT IN ('complete', 'archived')
+          AND EXISTS (SELECT 1 FROM board_access_epoch WHERE singleton = 1 AND revision = ?)
+        ORDER BY task.due_date, task.id LIMIT 31`,
+      args: [actor.id, day, revision],
+    })
+    if (!await boardGrantStillCurrent(this.db, revision, this.markerPath)) return []
+    return rows.map(row => ({
+      id: String(row.id), title: String(row.title), dueDate: String(row.due_date),
+      boardId: String(row.board_id), boardName: String(row.board_name),
+    }))
+  }
+
+  async view(actor: BoardActor, boardId: string, offset = 0, selection?: BoardWorkspaceSelection, location?: HomeAssistantAreaFilter) {
     const revision = await currentBoardGrantRevision(this.db, this.markerPath)
     if (!revision) return null
     const tx = await this.db.transaction("read")
@@ -74,6 +141,7 @@ export class NamedBoardTaskRepository {
         : context?.project ? "AND project.id = ?"
         : context?.area ? "AND CASE WHEN project.id IS NOT NULL THEN project.area_id ELSE placement.area_id END = ?"
         : ""
+      const locationFilter = location && !selection?.ticketId ? homeAssistantTaskAreaCondition(location) : null
       const filterId = selection?.ticketId ?? context?.project?.id ?? context?.area?.id
       const [lanes, tasks, members, intakes, agents] = await tx.batch([
         {
@@ -82,16 +150,17 @@ export class NamedBoardTaskRepository {
         },
         {
           sql: `SELECT tasks.id, tasks.title, tasks.description, tasks.status, tasks.ticket_ref,
-              tasks.board_column_id AS lane_id, tasks.assigned_to, tasks.source_template_id IS NOT NULL AS routine,
+              tasks.board_column_id AS lane_id, tasks.assigned_to, tasks.due_date,
+              (tasks.task_kind = 'routine_instance' AND tasks.source_template_id IS NOT NULL) AS routine,
               ${selection?.ticketId ? "ticket_area.id AS area_id, project.id AS project_id," : ""}
               ${taskTimestampMs("tasks.updated_at")} AS version
             FROM tasks ${taskFilter ? scopedTaskJoin : ""}
             ${selection?.ticketId ? `LEFT JOIN areas AS ticket_area
               ON ticket_area.id = CASE WHEN project.id IS NOT NULL THEN project.area_id ELSE placement.area_id END
                 AND ticket_area.owner_board_id = tasks.task_board_id AND ticket_area.retired_at IS NULL` : ""}
-            WHERE tasks.task_board_id = ? ${taskFilter}
+            WHERE tasks.task_board_id = ? ${taskFilter} ${locationFilter ? "AND " + locationFilter.sql : ""}
             ORDER BY tasks.created_at DESC, tasks.id DESC LIMIT 51 OFFSET ?`,
-          args: [boardId, ...(taskFilter ? [filterId!] : []), selection?.ticketId ? 0 : offset],
+          args: [boardId, ...(taskFilter ? [filterId!] : []), ...(locationFilter?.args ?? []), selection?.ticketId ? 0 : offset],
         },
         {
           sql: `SELECT principal_id, role, deny_completion, deny_deletion
@@ -124,6 +193,7 @@ export class NamedBoardTaskRepository {
           id: String(task.id), title: String(task.title), description: String(task.description ?? ""),
           status: String(task.status), ticket: String(task.ticket_ref), laneId: String(task.lane_id),
           assignedTo: typeof task.assigned_to === "string" ? task.assigned_to : null,
+          dueDate: typeof task.due_date === "string" ? task.due_date : null,
           routine: task.routine === 1, version: Number(task.version),
           ...(selection?.ticketId ? {
             placement: {
@@ -260,6 +330,8 @@ export class NamedBoardTaskRepository {
         if (!rows.length) return unavailable
       }
 
+      const homeArea = placement.homeAssistantArea
+      if (homeArea && !(await tx.execute(readHomeAssistantAreaPolicyRevision(homeArea.revision))).rows.length) return denied
       const task = await insertNamedTask(tx, { boardId, laneId: lane.id, content, status: lane.status })
       if (!task) return unavailable
       if (areaId || projectId || goalId) {
@@ -268,8 +340,33 @@ export class NamedBoardTaskRepository {
           args: [task.id, areaId ?? null, projectId ?? null, goalId ?? null],
         })
       }
+      if (homeArea?.id) await tx.execute(setTaskHomeAssistantArea(task.id, homeArea.id))
       return { ok: true, value: task }
     })
+  }
+
+  async homeAssistantArea(actor: BoardActor, boardId: string, id: string, policyRevision: string) {
+    const revision = await currentBoardGrantRevision(this.db, this.markerPath)
+    if (!revision) return null
+    const tx = await this.db.transaction("read")
+    try {
+      const access = await selectNamedBoardAccess(tx, actor, revision, boardId)
+      if (!access || !(await tx.execute(readHomeAssistantAreaPolicyRevision(policyRevision))).rows.length) return null
+      const { rows: [task] } = await tx.execute({
+        sql: `SELECT ${taskTimestampMs("updated_at")} AS version FROM tasks WHERE id = ? AND task_board_id = ?`,
+        args: [id, boardId],
+      })
+      if (!task) return null
+      const area = await findTaskHomeAssistantArea(tx, id)
+      if (!await boardGrantStillCurrent(this.db, revision, this.markerPath)) return null
+      return { ...area, version: Number(task.version) }
+    } finally {
+      tx.close()
+    }
+  }
+
+  async changeHomeAssistantArea(actor: BoardActor, boardId: string, id: string, version: number, locationRevision: number, selection: HomeAssistantAreaSelection) {
+    return this.mutate(actor, boardId, "edit", tx => editTaskHomeAssistantArea(tx, id, boardId, version, locationRevision, selection))
   }
 
   async file(actor: BoardActor, boardId: string, id: string, version: number, areaId?: string | null, projectId?: string | null) {
@@ -313,9 +410,10 @@ export class NamedBoardTaskRepository {
 
   async completeRoutine(actor: BoardActor, boardId: string, routineId: string, requestedPeriod?: string) {
     return this.mutate(actor, boardId, "complete", async (tx, allows) => {
-      if (!allows("create")) return denied
+      if (!available("routines") || !allows("create")) return denied
       const { rows: [routine] } = await tx.execute({
         sql: `SELECT routine.name, routine.cadence, area.id AS area_id,
+            json_extract(routine.template_json, '$.project_id') AS project_id,
             json_extract(routine.template_json, '$.description') AS description,
             (SELECT id FROM kanban_lanes WHERE board_id = ? AND key = 'complete' LIMIT 1) AS lane_id
           FROM task_templates AS routine
@@ -325,8 +423,8 @@ export class NamedBoardTaskRepository {
         args: [boardId, routineId, boardId],
       })
       if (!routine || typeof routine.lane_id !== "string") return unavailable
-      const period = namedRoutinePeriod(String(routine.cadence))
-      if (requestedPeriod !== undefined && requestedPeriod !== period) return stale
+      const currentPeriod = namedRoutinePeriod(String(routine.cadence))
+      const period = requestedPeriod ?? currentPeriod
       const { rows: [existing] } = await tx.execute({
         sql: `SELECT id, status FROM tasks WHERE task_board_id = ? AND source_template_id = ? AND due_date = ? LIMIT 1`,
         args: [boardId, routineId, period],
@@ -335,6 +433,14 @@ export class NamedBoardTaskRepository {
         if (existing.status !== STATUS.COMPLETE) return stale
         return { ok: true, value: { id: String(existing.id) } }
       }
+      if (period !== currentPeriod) return stale
+      if (typeof routine.project_id === "string") {
+        const { rows: [project] } = await tx.execute({
+          sql: "SELECT id FROM projects WHERE id = ? AND owner_board_id = ? AND area_id = ? AND status = 'active' AND retired_at IS NULL",
+          args: [routine.project_id, boardId, String(routine.area_id)],
+        })
+        if (!project) return unavailable
+      }
       const task = await insertNamedTask(tx, {
         boardId, laneId: routine.lane_id, status: STATUS.COMPLETE,
         content: { title: String(routine.name), description: String(routine.description ?? "") },
@@ -342,21 +448,31 @@ export class NamedBoardTaskRepository {
       })
       if (!task) return unavailable
       await tx.execute({
-        sql: "INSERT INTO board_task_planning (task_id, area_id) VALUES (?, ?)",
-        args: [task.id, String(routine.area_id)],
+        sql: "INSERT INTO board_task_planning (task_id, area_id, project_id) VALUES (?, ?, ?)",
+        args: [task.id, String(routine.area_id), typeof routine.project_id === "string" ? routine.project_id : null],
       })
       return { ok: true, value: { id: task.id } }
     })
   }
 
-  async edit(actor: BoardActor, boardId: string, id: string, version: number, content: NamedTaskContent) {
+  async edit(actor: BoardActor, boardId: string, id: string, version: number, content: Partial<NamedTaskContent>) {
     return this.mutate(actor, boardId, "edit", async tx => {
+      if (content.dueDate !== undefined) {
+        const { rows: [task] } = await tx.execute({
+          sql: `SELECT due_date, task_kind, source_template_id FROM tasks WHERE id = ? AND task_board_id = ?`,
+          args: [id, boardId],
+        })
+        if (!task) return unavailable
+        if (task.task_kind === "routine_instance" && task.source_template_id != null && content.dueDate !== task.due_date) return { ok: false, errorCode: "stale", reason: "routine-date" }
+      }
       const { rows: [updated] } = await tx.execute({
-        sql: `UPDATE tasks SET title = ?, description = ?, updated_at = ${nextTaskTimestampMs("updated_at")}
+        sql: `UPDATE tasks SET title = COALESCE(?, title), description = COALESCE(?, description),
+          due_date = CASE WHEN ? THEN ? ELSE due_date END,
+          updated_at = ${nextTaskTimestampMs("updated_at")}
           WHERE id = ? AND task_board_id = ? AND ${taskTimestampMs("updated_at")} = ?
             AND (${canAdvanceTaskTimestampMs("updated_at")})
           RETURNING updated_at AS version`,
-        args: [content.title, content.description, Date.now(), id, boardId, version],
+        args: [content.title ?? null, content.description ?? null, Number(content.dueDate !== undefined), content.dueDate ?? null, Date.now(), id, boardId, version],
       })
       return updated ? { ok: true, value: { version: Number(updated.version) } } : stale
     })
@@ -394,10 +510,10 @@ export class NamedBoardTaskRepository {
   async delete(actor: BoardActor, boardId: string, id: string, version: number) {
     return this.mutate(actor, boardId, "delete", async tx => {
       const { rows: [task] } = await tx.execute({
-        sql: "SELECT source_template_id FROM tasks WHERE id = ? AND task_board_id = ?",
+        sql: "SELECT source_template_id, task_kind FROM tasks WHERE id = ? AND task_board_id = ?",
         args: [id, boardId],
       })
-      if (task?.source_template_id != null) return denied
+      if (task?.task_kind === "routine_instance" && task.source_template_id != null) return denied
       const { rows } = await tx.execute({
         sql: `DELETE FROM tasks WHERE id = ? AND task_board_id = ? AND ${taskTimestampMs("updated_at")} = ?
           AND NOT EXISTS (SELECT 1 FROM tasks AS child WHERE child.parent_id = tasks.id)
