@@ -20,7 +20,7 @@ Generated outputs (under `apps/web/`):
 - `public/openapi.yaml` - OpenAPI 3.1 contract (post-processing sets `additionalProperties: false` and `x-strict: true`)
 - `public/.well-known/jsondoc.json` - OpenAPI 3.1 JSON with ingress-aware relative server URL
 - `src/generated/mcp-tools.json` - Precompiled MCP tool catalog derived from `public/openapi.yaml`
-- `src/generated/icon-registry.ts` - Typed 64-icon `1.75px` Tabler outline SVG catalog
+- `src/generated/icon-registry.ts` - Typed `1.75px` Tabler outline SVG catalog
 - `public/asyncapi.yaml` - AsyncAPI 2.6 event contract
 - `dist/` - Built production server bundle
 

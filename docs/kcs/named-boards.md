@@ -37,3 +37,11 @@ Use Home Assistant App backups for the full instance. See [Home Assistant backup
 Sender submissions are available on Boards under Recent submissions for up to 24 hours. If a connection drops, retry the original submission there. Accepted submissions remain marked Sent if an owner closes the destination. Board owners can close or reopen destinations in Board settings.
 
 To give an agent access, an administrator issues a scoped token and shares its ID with the Board owner. Add the ID under Board settings → Agent access. The agent needs an explicit Board grant and the scope for each ticket operation. Block deletion by agents applies even if a granted token has task deletion scope. Remove the grant from Board settings or revoke the token in Settings → Agent Tokens.
+
+## Organize work within a Board
+
+Open **Boards** and select **Household** or a named Board. The Board opens its tasks. Open **Groups** to manage ongoing responsibilities such as Kitchen or Operations. A group can contain standalone tasks and Projects. Open a Project to see its tasks and add work in that context. Quick capture from an unfiltered Board can leave a task Unfiled.
+
+Expand a named Board from the sidebar to open one of its groups. Household's group shortcuts still include the existing Project pins and planning actions. The original Area and Project links continue to open existing work.
+
+A named Board member with task edit access can open **File task**, choose a group or Project in that Board and save. It keeps the ticket and workflow column. If the destination or task has changed, refresh the Board before retrying. Owner settings and send-only access continue to use the existing Board rules.

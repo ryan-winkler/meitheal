@@ -1,79 +1,62 @@
 ---
 import type { readNamedBoardPlanning } from "@domains/tasks/persistence/named-board-planning-repository"
 
+import { boardWorkspaceHref, DEFAULT_GROUP_COLOR } from "@lib/board-workspace"
+
 import RetirePlanningForm from "./RetirePlanningForm.astro"
+import ProjectSettings from "./ProjectSettings.astro"
 
 interface Props {
+  boardId: string
+  areaId?: string | undefined
+  projectId?: string | undefined
   planning: NonNullable<Awaited<ReturnType<typeof readNamedBoardPlanning>>>
   canManage: boolean
   canComplete: boolean
   routinesEnabled: boolean
   tickets: { id: string; title: string }[]
 }
-const { planning, canManage, canComplete, routinesEnabled, tickets } = Astro.props
+const { boardId, areaId, projectId, planning, canManage, canComplete, routinesEnabled, tickets } = Astro.props
 const goalHref = (filter: string, id: string) => `/progress?${filter}=${encodeURIComponent(id)}#goals`
 const showRoutines = routinesEnabled && (canManage || planning.routines.length > 0)
+const visibleAreas = areaId ? planning.areas.filter(area => area.id === areaId) : planning.areas
+const formColor = (color: string) => /^#[0-9a-f]{6}$/i.test(color) ? color : DEFAULT_GROUP_COLOR
 const ownedAreaIds = new Set(planning.areas.map(area => area.id))
 ---
 
-<section class="named-boards board-settings" aria-labelledby="board-planning-title">
-  <h2 id="board-planning-title">Planning</h2>
-  {planning.areas.length === 0 && <p class="board-empty">Add an Area to group Projects and Goals on this Board.</p>}
+<section class="named-boards board-settings" id="groups" aria-labelledby="board-planning-title">
+  <h2 id="board-planning-title">{projectId ? "Project planning" : areaId ? "Group planning" : "Groups"}</h2>
+  {!areaId && planning.projects.some(project => !project.areaId) && <section aria-labelledby="unfiled-projects">
+    <h3 id="unfiled-projects">Unfiled Projects</h3>
+    <ul>{planning.projects.filter(project => !project.areaId && (!projectId || projectId === project.id))
+      .map(project => <li><a href={boardWorkspaceHref(boardId, { project: project.id })}>{project.title}</a></li>)}</ul>
+  </section>}
+  {planning.areas.length === 0 && <p class="board-empty">Add a group to organize Projects and Goals on this Board.</p>}
   <div class="board-settings-grid">
-    {planning.areas.map(area => <section class="board-tile">
-      <h3 class="board-name">{area.name}</h3>
-      {canManage && <details>
-        <summary>Rename Area</summary>
+    {visibleAreas.map(area => <section class="board-tile">
+      <h3 class="board-name"><a href={boardWorkspaceHref(boardId, { area: area.id })}>{area.icon} {area.name}</a></h3>
+      {canManage && <details id={areaId === area.id && !projectId ? "group-settings" : undefined}>
+        <summary>Group settings</summary>
         <form data-board-form="planning" class="board-form">
           <input type="hidden" name="action" value="area" />
           <input type="hidden" name="id" value={area.id} />
           <label>Name <input name="title" value={area.name} maxlength="150" required /></label>
+          <label>Icon <input name="icon" value={area.icon} maxlength="24" /></label>
+          <label>Color <input name="color" type="color" value={formColor(area.color)} /></label>
           <p role="status" data-board-feedback></p>
-          <button type="submit" class="btn btn-ghost">Save Area</button>
+          <button type="submit" class="btn btn-ghost">Save group</button>
         </form>
         <RetirePlanningForm entity="area" id={area.id} />
       </details>}
       <a href={goalHref("area_id", area.id)}>View Goals</a>
       <div>
         <strong>Projects</strong>
-        {planning.projects.filter(project => project.areaId === area.id).map(project => <article class="board-tile">
-          <h4 class="board-name">{project.title}</h4>
+        {planning.projects.filter(project => project.areaId === area.id && (!projectId || project.id === projectId)).map(project => <article class="board-tile">
+          <h4 class="board-name"><a href={boardWorkspaceHref(boardId, { project: project.id, fromArea: area.id })}>{project.title}</a></h4>
           <a href={goalHref("project_id", project.id)}>View Project Goals</a>
           {project.description && <p>{project.description}</p>}
-          {canManage && <details>
-            <summary>Edit Project</summary>
-            <form data-board-form="planning" class="board-form">
-              <input type="hidden" name="action" value="project-edit" />
-              <input type="hidden" name="id" value={project.id} />
-              <label>Name <input name="title" value={project.title} maxlength="150" required /></label>
-              <label>Details <textarea name="description" rows="2" maxlength="10000">{project.description}</textarea></label>
-              <p role="status" data-board-feedback></p>
-              <button type="submit" class="btn btn-ghost">Save Project</button>
-            </form>
-            <form data-board-form="planning" class="board-form">
-              <input type="hidden" name="action" value="project-goal" />
-              <input type="hidden" name="id" value={project.id} />
-              <label>Goal <select name="goalId">
-                <option value="">No Goal</option>
-                {planning.linkableGoals.filter(goal => goal.sharedAreaId === null || goal.sharedAreaId === area.id)
-                  .map(goal => <option value={goal.id} selected={goal.id === project.goalId}>{goal.title}</option>)}
-              </select></label>
-              <p role="status" data-board-feedback></p>
-              <button type="submit" class="btn btn-ghost">Save Goal link</button>
-            </form>
-            <RetirePlanningForm entity="project" id={project.id} />
-          </details>}
-          {canManage ? <form data-board-form="planning" class="board-form">
-            <input type="hidden" name="action" value="project-status" />
-            <input type="hidden" name="id" value={project.id} />
-            <label>Project status <select name="status">
-              <option value="active" selected={project.status === "active"}>Active</option>
-              <option value="completed" selected={project.status === "completed"}>Completed</option>
-              <option value="archived" selected={project.status === "archived"}>Archived</option>
-            </select></label>
-            <p role="status" data-board-feedback></p>
-            <button type="submit" class="btn btn-ghost">Save status</button>
-          </form> : <p class="board-note">{project.status}</p>}
+          <ProjectSettings {project} selected={projectId === project.id} {canManage}
+            goals={planning.linkableGoals.filter(goal => goal.sharedAreaId === null || goal.sharedAreaId === area.id)} />
         </article>)}
       </div>
       {canManage && <details>
@@ -160,18 +143,22 @@ const ownedAreaIds = new Set(planning.areas.map(area => area.id))
         </details>}
       </div>}
     </section>)}
-    {planning.projects.filter(project => !project.areaId || !ownedAreaIds.has(project.areaId)).map(project => <article class="board-tile">
+    {planning.projects.filter(project => (!projectId || project.id === projectId) && (!project.areaId || !ownedAreaIds.has(project.areaId))).map(project => <article class="board-tile">
       <h3 class="board-name">{project.title}</h3>
       {project.description && <p>{project.description}</p>}
       <a href={goalHref("project_id", project.id)}>View Project Goals</a>
+      <ProjectSettings {project} selected={projectId === project.id} {canManage}
+        goals={planning.linkableGoals.filter(goal => goal.sharedAreaId === null)} />
     </article>)}
     {canManage && <details class="board-tile">
-      <summary>New Area</summary>
+      <summary>New group</summary>
       <form data-board-form="planning" class="board-form">
         <input type="hidden" name="action" value="area" />
         <label>Name <input name="title" maxlength="150" required /></label>
-        <p role="status" data-board-feedback></p>
-        <button type="submit" class="btn btn-ghost">Create Area</button>
+        <label>Icon <input name="icon" value="📁" maxlength="24" /></label>
+          <label>Color <input name="color" type="color" value={DEFAULT_GROUP_COLOR} /></label>
+          <p role="status" data-board-feedback></p>
+        <button type="submit" class="btn btn-ghost">Create group</button>
       </form>
     </details>}
   </div>
