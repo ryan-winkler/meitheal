@@ -95,8 +95,17 @@ if (command === "image" && args.includes("--format")) {
     Config: { Labels: { "org.opencontainers.image.licenses": "LicenseRef-Proprietary", "org.opencontainers.image.revision": arch === "aarch64" && process.env.FIXTURE_ARM_REVISION || revision,
       "io.hass.version": revision.slice(0, 12), "io.hass.arch": arch, "io.hass.type": "addon" } } }]))
 } else if (command === "run") {
-  if (!args.includes("--pull=never") || option("--network") !== "none") process.exit(98)
+  if (!args.includes("--pull=never") || option("--network") !== "none" || option("--cap-drop") !== "KILL") process.exit(98)
   console.log("fixture-container")
+} else if (command === "stop") {
+  if (target !== "fixture-container" || option("--time") !== "20") process.exit(98)
+} else if (command === "inspect") {
+  if (target !== "fixture-container" || option("--format") !== "{{.State.Status}} {{.State.ExitCode}}") process.exit(98)
+  console.log("exited 0")
+} else if (command === "logs") {
+  if (target !== "fixture-container" || !args.includes("--since")) process.exit(98)
+  console.log('{"event":"addon.stopping","signal":"SIGTERM"}')
+  console.log('{"event":"addon.stopped","forced":false}')
 } else if (command === "login") {
   if (readFileSync(0, "utf8").trim() !== "fixture-token") process.exit(98)
   writeFileSync(option("--authfile"), '{"auths":{"fixture":{}}}')
