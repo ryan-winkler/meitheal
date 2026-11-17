@@ -25,7 +25,7 @@ import { openTaskDetailHandoff } from "@lib/task-detail-handoff"
 import { hydrateTaskAssignees } from "@lib/task-assignee-display"
 import { replaceTaskBackgroundUrl, taskBackgroundUrl } from "@lib/task-page-url"
 import { loadTableColumnPreferences, TABLE_COLUMNS, TABLE_SECTIONS } from "@lib/table-registry"
-import { getRememberedAreaId } from "@lib/area-selector-controller"
+import { getRememberedAreaId, TABLE_AREA_CATALOG_EVENT } from "@lib/area-selector-controller"
 import {
   saveTableFilterState,
   loadTableFilterState,
@@ -226,6 +226,7 @@ function init(signal: AbortSignal) {
       table.dataset.tableStats = replacement.dataset.tableStats
       tbody.replaceChildren(...replacement.tBodies[0].children)
       areas = applyAreaCatalog(areaCatalog, bulkArea)
+      document.dispatchEvent(new CustomEvent(TABLE_AREA_CATALOG_EVENT, { detail: areaCatalog }))
       void hydrateTaskAssignees(tbody, signal)
       for (const [current, fresh] of fragments) {
         current!.hidden = fresh!.hidden
