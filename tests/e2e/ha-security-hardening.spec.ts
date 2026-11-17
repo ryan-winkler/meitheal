@@ -90,8 +90,9 @@ test.describe("Phase 27: HA Security Hardening", () => {
             expect(content).toContain("addgroup -S -g 10001 meitheal")
             expect(content).toContain("-u 10001 -G meitheal meitheal")
             const startup = await fs.readFile(path.join(path.dirname(dockerPath), "run.sh"), "utf-8")
-            expect(startup).toContain("s6-setuidgid meitheal node scripts/migrate.mjs")
-            expect(startup).toContain("s6-setuidgid meitheal node scripts/serve.mjs")
+            expect(startup).toContain('s6-setuidgid meitheal "$@" &')
+            expect(startup).toContain("start_child node scripts/migrate.mjs")
+            expect(startup).toContain("start_child node scripts/serve.mjs")
 
             // HEALTHCHECK for Supervisor watchdog integration
             expect(content).toContain("HEALTHCHECK");
