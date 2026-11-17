@@ -223,6 +223,8 @@
     "group_board": "Clár",
     "group_priority": "De réir Tosaíochta",
     "group_area": "De réir Réimse",
+    "default_area": "Réimse réamhshocraithe",
+    "unavailable_area": "Réimse nach bhfuil ar fáil",
     "group_assignee": "De réir Sannaí",
     "group_status": "De réir Stádais",
     "group_rice": "De réir Scór RICE",

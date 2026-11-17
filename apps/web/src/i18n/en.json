@@ -226,6 +226,8 @@
     "group_board": "Board",
     "group_priority": "By Priority",
     "group_area": "By Area",
+    "default_area": "Default Area",
+    "unavailable_area": "Unavailable Area",
     "group_assignee": "By Assignee",
     "group_status": "By Status",
     "group_rice": "By RICE Score",

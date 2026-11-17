@@ -183,7 +183,7 @@ export function initKeyboardAndSearch(signal: AbortSignal): void {
           toggle.textContent = isCollapsed ? "▶" : "▼"
         }
         group.classList.toggle("swimlane-collapsed", isCollapsed)
-        const type = (group as HTMLElement).dataset.swimlaneType || (group as HTMLElement).dataset.swimlaneValue || "dynamic"
+        const type = (group as HTMLElement).dataset.swimlaneType ?? (group as HTMLElement).dataset.swimlaneValue ?? "dynamic"
         localStorage.setItem(`meitheal-swimlane-${type}`, isCollapsed ? "collapsed" : "expanded")
       }
     }, { signal })

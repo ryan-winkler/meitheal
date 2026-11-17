@@ -6,10 +6,6 @@
 /** Group the server-selected page without replacing authoritative lane totals. */
 export function initKanbanGrouping(board: HTMLElement): void {
   const mode = board.dataset.groupBy ?? "none"
-  const areaTitleMap: Record<string, string> = { default: "📋 Default" }
-  for (const option of document.querySelectorAll<HTMLElement>("#area-selector-dropdown [data-area-id]")) {
-    if (option.dataset.areaId) areaTitleMap[option.dataset.areaId] = `${option.dataset.areaIcon ?? "📋"} ${option.dataset.areaName ?? ""}`
-  }
 
   if (mode === "type") {
     // Use the pre-rendered type swimlane groups
@@ -37,7 +33,7 @@ export function initKanbanGrouping(board: HTMLElement): void {
         })
     })
   } else if (mode === "area" || mode === "priority") {
-    // Dynamic swimlane generation for board/priority
+    // Dynamic swimlane generation for Area or priority.
     const dataAttr = mode === "area" ? "area" : "priority"
     const icons: Record<string, string> =
       mode === "priority"
@@ -49,8 +45,9 @@ export function initKanbanGrouping(board: HTMLElement): void {
             "5": "⚪ P5 — Minimal",
           }
         : {}
-    const defaultLabel =
-      mode === "priority" ? "🟡 P3 — Medium" : "📋 Default"
+    const areaLabel = (key: string, card: HTMLElement | undefined) => card?.dataset.areaName || (key === "default"
+      ? board.dataset.defaultAreaLabel ?? "Default Area"
+      : board.dataset.unavailableAreaLabel ?? "Unavailable Area")
 
     // O1: Hoist getComputedStyle outside column loop
     const cs = getComputedStyle(document.documentElement)
@@ -69,23 +66,26 @@ export function initKanbanGrouping(board: HTMLElement): void {
       const cardsContainer = col.querySelector(".kanban-cards")
       if (!cardsContainer) return
       const flatCards = Array.from(
-        cardsContainer.querySelectorAll(".flat-card"),
+        cardsContainer.querySelectorAll<HTMLElement>(".flat-card"),
       )
 
       // Collect unique values
-      const groups = new Map<string, Element[]>()
+      const groups = new Map<string, HTMLElement[]>()
       flatCards.forEach((card) => {
         const val =
-          (card as HTMLElement).dataset[dataAttr] ||
+          card.dataset[dataAttr] ||
           (mode === "priority" ? "3" : "default")
-        if (!groups.has(val)) groups.set(val, [])
-        groups.get(val)!.push(card)
+        // Empty Area IDs map to Default, leaving the empty key for unavailable Areas.
+        const key = mode === "area" && val !== "default" && !card.dataset.areaName ? "" : val
+        if (!groups.has(key)) groups.set(key, [])
+        groups.get(key)!.push(card)
       })
 
-      // Sort: priority by number, board alphabetically
       const sortedKeys = Array.from(groups.keys()).sort((a, b) => {
         if (mode === "priority") return Number(a) - Number(b)
-        return a.localeCompare(b)
+        const labelA = areaLabel(a, groups.get(a)?.[0])
+        const labelB = areaLabel(b, groups.get(b)?.[0])
+        return labelA.localeCompare(labelB, document.documentElement.lang || undefined) || a.localeCompare(b)
       })
 
       sortedKeys.forEach((key) => {
@@ -99,8 +99,7 @@ export function initKanbanGrouping(board: HTMLElement): void {
 
         const header = document.createElement("div")
         header.className = "swimlane-header"
-        const label =
-          icons[key] || (mode === "area" ? (areaTitleMap[key] || `📋 ${key}`) : defaultLabel)
+        const label = mode === "area" ? areaLabel(key, cards[0]) : icons[key] || "🟡 P3 — Medium"
         const toggleSpan = document.createElement("span")
         toggleSpan.className = "swimlane-toggle"
         toggleSpan.textContent = "▼"
@@ -112,7 +111,7 @@ export function initKanbanGrouping(board: HTMLElement): void {
 
         const labelSpan = document.createElement("span")
         labelSpan.className = "swimlane-label"
-        labelSpan.textContent = label
+        labelSpan.textContent = mode === "area" ? `${cards[0]?.dataset.areaIcon || "📋"} ${label}` : label
         const countSpan = document.createElement("span")
         countSpan.className = "swimlane-count"
         countSpan.textContent = String(cards.length)
