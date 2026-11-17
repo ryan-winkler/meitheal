@@ -81,7 +81,10 @@ const PRECACHE_PATHS = [
  * When standalone (no ingress), ingressPath is "" so paths stay as-is.
  */
 function getPrecacheUrls() {
-  return PRECACHE_PATHS.map((p) => `${ingressPath}${p}`);
+  const paths = ingressPath
+    ? PRECACHE_PATHS.filter(path => path === "/offline" || path === "/manifest.webmanifest" || path === "/icon-192.png")
+    : PRECACHE_PATHS
+  return paths.map((p) => `${ingressPath}${p}`);
 }
 
 function hasNoStore(response) {
@@ -190,6 +193,7 @@ self.addEventListener("install", (event) => {
               const request = new Request(url, { redirect: "error" });
               const response = await fetch(request);
               if (response.ok && !hasNoStore(response)) await cache.put(request, response);
+              else await response.body?.cancel();
             } catch {
               // Ignore individual failures (e.g. SSR pages that 404 during install)
             }
@@ -216,13 +220,16 @@ function isBoardRequest(path, params) {
 }
 
 const privateBoardPath = /^\/(?:api\/)?boards(?:\/|$)|^\/api\/board-intake$/
+const organizationApiPath = /^\/api\/(?:features|organization-features|organization-labels|habits|gamification|achievements|areas|projects|goals)(?:\/|$)/
 
 function privateResourcePath(url) {
   const privatePath = pathname => {
     const path = appRoutePath(pathname)
-    if (privateBoardPath.test(path) || path === "/api/export/database.sqlite" || path === "/api/task-pins" ||
+    if (/^\/(?:planning|today|upcoming|habits|areas|projects)(?:\/|$)/.test(path) ||
+        organizationApiPath.test(path) ||
+        privateBoardPath.test(path) || path === "/api/export/database.sqlite" || path === "/api/task-pins" ||
         path === "/pinned" || path === "/activity" || path === "/api/search" ||
-        path === "/progress" || path === "/goals" || /^\/api\/goals(?:\/[^/]+)?$/.test(path) || /^\/areas\/[^/]+$/.test(path) ||
+        path === "/progress" || path === "/goals" ||
         /^\/(?:api\/)?pillars(?:\/|$)/.test(path) ||
         path === "/api/comment-people" || path === "/api/mention-inbox" || path === "/mention-inbox" ||
         path === "/api/saved-filters" || path === "/api/task-drafts" ||
@@ -326,8 +333,12 @@ self.addEventListener("fetch", (event) => {
   // Keep sensitive API routes out of Cache Storage, even before the worker receives an ingress path.
   const apiPath = url.pathname.replace(/^\/api\/hassio_ingress\/[^/]+/, "");
   const privatePath = privateResourcePath(url)
+  const pagePath = appRoutePath(url.pathname)
+  if (isNetworkOnlyPage(pagePath, url.searchParams)) return
+  // Keep direct network reads for existing clients that own their offline handling.
   if (privatePath && (privateBoardPath.test(privatePath) || taskHistoryPath.test(privatePath) ||
-      /^\/(?:progress|api\/goals(?:\/[^/]+)?|areas\/[^/]+)$/.test(privatePath) ||
+      organizationApiPath.test(privatePath) ||
+      /^\/(?:planning|progress|activity|areas\/[^/]+)$/.test(privatePath) ||
       (url.search && isBoardRequest(privatePath, url.searchParams)))) {
     const headers = { "cache-control": "private, no-store" }
     event.respondWith(fetch(event.request, { cache: "no-store" })
@@ -337,9 +348,6 @@ self.addEventListener("fetch", (event) => {
     return
   }
   if (privatePath || /^\/api\/(?:settings|ha\/connection|feedback|agent-tokens|export\/database\.sqlite)(?:\/|$)/.test(apiPath)) return;
-
-  const pagePath = appRoutePath(url.pathname)
-  if (isNetworkOnlyPage(pagePath, url.searchParams)) return
   if (pagePath === "/planning") {
     event.respondWith(navigationHandler(event.request))
     return

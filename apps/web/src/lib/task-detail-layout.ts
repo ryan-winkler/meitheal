@@ -2,7 +2,7 @@ export const taskDetailSections = [
   { id: "description", label: "Description", icon: "file-text" },
   { id: "properties", label: "Properties", icon: "adjustments-horizontal", fields: [
     ["status", "Status"], ["type", "Type"], ["priority", "Priority"], ["urgency", "Urgency"],
-    ["importance", "Importance"], ["assignee", "Assignee"], ["area", "Area"], ["project", "Project"],
+    ["importance", "Importance"], ["assignee", "Assignee"], ["area", "Group"], ["home-assistant-area", "Home Assistant Area"], ["project", "Project"],
     ["pillar", "Pillar"], ["principle", "Principle"],
   ] },
   { id: "scheduling", label: "Scheduling", icon: "clock", fields: [

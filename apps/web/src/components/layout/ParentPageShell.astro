@@ -1,4 +1,5 @@
 ---
+import { organizationLabelsFor, type OrganizationTerm } from "@lib/organization-labels"
 /**
  * ParentPageShell — Reusable shell for parent pages (Tasks, Progress & Growth, Planning)
  *
@@ -19,6 +20,7 @@
  * @phase 15 — Hierarchy Architecture Overhaul
  */
 
+import { isOrganizationFeatureAvailable } from "@lib/organization-request-context"
 import UnifiedBar from "./UnifiedBar.astro"
 import { PARENT_PAGES, type ParentPageId } from "@lib/parent-page-registry"
 
@@ -34,11 +36,24 @@ if (!page) throw new Error(`Unknown parent page: ${pageId}`)
 const shellId = `${pageId}-shell`
 const barId = `${pageId}-bar`
 
-const tabs = page.subViews.map((sv) => ({
-  id: sv.hash,
-  label: sv.label,
-  icon: sv.icon,
-}))
+const organization = await organizationLabelsFor(Astro)
+const pageTitle = organization(pageId === "tasks" ? "task" : pageId, true, page.label)
+const subViewTerm: Partial<Record<string, OrganizationTerm>> = {
+  pillars: "pillar", routines: "routine", goals: "goal", achievements: "achievement",
+}
+const allowedSubViews = page.subViews.filter(view =>
+  !["pillars", "routines", "goals", "achievements"].includes(view.id) ||
+    isOrganizationFeatureAvailable(view.id as "pillars" | "routines" | "goals" | "achievements"))
+const tabs = allowedSubViews.map((sv) => {
+  const term = subViewTerm[sv.id]
+  return {
+    id: sv.hash,
+    label: sv.id === "spaces"
+      ? organization("board", true)
+      : term ? organization(term, true, sv.label) : sv.label,
+    icon: sv.icon,
+  }
+})
 ---
 
 <div
@@ -48,21 +63,21 @@ const tabs = page.subViews.map((sv) => ({
   data-parent-config={JSON.stringify({
     shellId,
     barId,
-    sectionIds: page.subViews.map((sv) => sv.hash),
-    defaultSectionId: page.defaultHash,
+    sectionIds: allowedSubViews.map((sv) => sv.hash),
+    defaultSectionId: allowedSubViews.some(view => view.hash === page.defaultHash) ? page.defaultHash : allowedSubViews[0]?.hash,
   })}
 >
   <UnifiedBar
-    title={page.label}
+    title={pageTitle}
     titleIcon={page.icon}
     tabs={tabs}
     barId={barId}
-    searchPlaceholder={`Search ${page.label.toLowerCase()}…`}
+    searchPlaceholder={`Search ${pageTitle.toLowerCase()}…`}
     searchScope={pageId}
   />
 
   <div class="parent-page-shell__content">
-    <h1 class="sr-only">{page.label}</h1>
+    <h1 class="sr-only">{pageTitle}</h1>
     <slot />
   </div>
 </div>

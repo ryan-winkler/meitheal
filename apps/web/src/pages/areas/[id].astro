@@ -1,10 +1,13 @@
 ---
+import { newOrganizationLabel, organizationLabelsFor, organizationLocale } from "@lib/organization-labels"
 /**
  * Area Detail — shows area metadata + tabbed sections for Goals, Projects, Settings.
  * Uses hash-based sub-menu tabs matching the parent page shell pattern.
  * @page /areas/[id]
  * @phase 15 — Wave 4.5
  */
+import LegacyBoardBridge from "../../components/boards/LegacyBoardBridge.astro"
+import { isOrganizationFeatureAvailable as available } from "@lib/organization-request-context"
 import Layout from "../../layouts/Layout.astro";
 import { logApiError } from "../../lib/api-logger"
 import {
@@ -57,9 +60,9 @@ try {
   }
 
   const [areaGoals, areaProjects, receivedGoals] = await Promise.all([
-    repo.findAllGoals({ area_id: areaId }),
-    repo.findProjectsByArea(areaId),
-    listSharedGoals(client, Astro.locals, Astro.request.signal, { areaId }),
+    available("goals") ? repo.findAllGoals({ area_id: areaId }) : [],
+    available("projects") ? repo.findProjectsByArea(areaId) : [],
+    available("goals") ? listSharedGoals(client, Astro.locals, Astro.request.signal, { areaId }) : [],
   ])
   sharedGoals = receivedGoals
   householdGoalCount = areaGoals.length
@@ -85,28 +88,30 @@ const formColor = /^#[0-9a-fA-F]{3}$/.test(areaColor)
 const routinesPath = `/habits?area_id=${encodeURIComponent(areaId)}`
 
 const settingsTab = workspaceAreaId ? "group-settings" : "settings"
+const organization = await organizationLabelsFor(Astro)
 const tabs = [
   { id: "overview", label: "Overview", icon: "📊" },
-  ...(workspaceAreaId ? [{ id: "tasks", label: "Tasks", icon: "✅" }] : []),
-  { id: "goals", label: "Goals", icon: "🎯" },
-  { id: "projects", label: "Projects", icon: "📋" },
-  ...(routinesEnabled ? [{ id: "routines", label: "Routines", icon: "🔁" }] : []),
+  ...(workspaceAreaId ? [{ id: "tasks", label: organization("task", true), icon: "✅" }] : []),
+  ...(available("goals") ? [{ id: "goals", label: organization("goal", true), icon: "🎯" }] : []),
+  ...(available("projects") ? [{ id: "projects", label: organization("project", true), icon: "📋" }] : []),
+  ...(routinesEnabled ? [{ id: "routines", label: organization("routine", true), icon: "🔁" }] : []),
   { id: settingsTab, label: "Settings", icon: "⚙️" },
 ];
 ---
 
-<Layout title={`Meitheal — ${areaName}`}>
+{!workspaceAreaId ? <LegacyBoardBridge href={boardWorkspaceHref(HOUSEHOLD_BOARD_ID, { area: areaId })} kind="group"
+  fragments={{ overview: "overview", tasks: "tasks", goals: "goals", projects: "projects", routines: "routines", settings: "group-settings" }} /> : <Layout title={`Meitheal — ${areaName}`}>
   <span slot="page-title">
     <span style={`color: ${areaColor}; margin-right: 6px;`}>{areaIcon}</span>
     {areaName}
   </span>
   <div slot="actions" class="flex gap-2">
-    <a href={workspaceAreaId ? boardWorkspaceHref(HOUSEHOLD_BOARD_ID, { groups: true }) : "/planning#spaces"} class="btn btn-ghost" id="back-to-areas">← {workspaceAreaId ? "Household groups" : "Areas"}</a>
+    <a href={workspaceAreaId ? boardWorkspaceHref(HOUSEHOLD_BOARD_ID, { groups: true }) : "/planning#spaces"} class="btn btn-ghost" id="back-to-areas">← {organization("group", true, workspaceAreaId ? "Household groups" : "Areas")}</a>
   </div>
 
   {/* Sub-menu tab bar */}
-  <nav aria-label={workspaceAreaId ? "Group sections" : "Area sections"}>
-    <div class="area-tabs" role="tablist" aria-label="Area sections">
+  <nav aria-label={`${organization("group")} sections`}>
+    <div class="area-tabs" role="tablist" aria-label={`${organization("group")} sections`}>
     {tabs.map((tab) => (
       <a
         href={`#${tab.id}`}
@@ -130,9 +135,9 @@ const tabs = [
   <section id="section-overview" class="area-section active" data-section="overview" role="tabpanel" aria-labelledby="area-tab-overview" tabindex="0">
     <div class="project-grid">
       {[
-        { id: "projects", title: "Projects", count: projects.length, empty: "Group related work" },
-        { id: "goals", title: "Goals", count: goalCount, empty: "Define an outcome" },
-        ...(routinesEnabled ? [{ id: "routines", title: "Routines", count: routines.length, empty: "Schedule repeat work" }] : []),
+        ...(available("projects") ? [{ id: "projects", title: organization("project", true), count: projects.length, empty: "Group related work" }] : []),
+        ...(available("goals") ? [{ id: "goals", title: organization("goal", true), count: goalCount, empty: "Define an outcome" }] : []),
+        ...(routinesEnabled ? [{ id: "routines", title: organization("routine", true), count: routines.length, empty: "Schedule repeat work" }] : []),
       ].map(({ id, title, count, empty }) => (
         <a class="project-card" href={`#${id}`} data-astro-reload>
           <h3 class="project-card-name">{title}</h3>
@@ -145,10 +150,10 @@ const tabs = [
 
   {workspaceAreaId && <section id="section-tasks" class="area-section" data-section="tasks" role="tabpanel" aria-labelledby="area-tab-tasks" tabindex="0">
     <div class="section-header">
-      <h2 class="section-title">Tasks</h2>
+      <h2 class="section-title">{organization("task", true)}</h2>
       <span class="section-count">{workspaceTasks?.total ?? 0} total</span>
       <details class="board-add">
-        <summary class="btn btn-primary btn-sm">New task</summary>
+        <summary class="btn btn-primary btn-sm">{newOrganizationLabel(organization("task", false, organizationLocale(Astro) === "en" ? "task" : undefined), organizationLocale(Astro))}</summary>
         <form class="board-form" data-group-new-task={areaId}>
           <label>Title <input name="title" maxlength="500" required /></label>
           <p role="status" data-group-task-feedback></p>
@@ -165,16 +170,16 @@ const tabs = [
     </nav>}
   </section>}
 
-  <section id="section-goals" class="area-section" data-section="goals" role="tabpanel" aria-labelledby="area-tab-goals" tabindex="0">
+  {available("goals") && <section id="section-goals" class="area-section" data-section="goals" role="tabpanel" aria-labelledby="area-tab-goals" tabindex="0">
     <GoalsTab {areaId} {sharedGoals} />
-  </section>
+  </section>}
 
   {routinesEnabled && (
     <section id="section-routines" class="area-section" data-section="routines" role="tabpanel" aria-labelledby="area-tab-routines" tabindex="0">
       <div class="section-header">
-        <h2 class="section-title">Routines</h2>
+        <h2 class="section-title">{organization("routine", true)}</h2>
         <a class="btn btn-ghost btn-sm" href={routinesPath}>View Routines</a>
-        <a class="btn btn-primary btn-sm" href={routinesPath + "&new=1"}>New Routine</a>
+        <a class="btn btn-primary btn-sm" href={routinesPath + "&new=1"}>{newOrganizationLabel(organization("routine"), organizationLocale(Astro))}</a>
       </div>
       {routines.length ? <ul>{routines.map(routine => <li>{routine.icon} {routine.name} · {routine.cadence}</li>)}</ul>
         : <p class="section-empty">No routines in this Area yet.</p>}
@@ -182,11 +187,11 @@ const tabs = [
   )}
 
   {/* Projects Section */}
-  <section id="section-projects" class="area-section" data-section="projects" role="tabpanel" aria-labelledby="area-tab-projects" tabindex="0">
+  {available("projects") && <section id="section-projects" class="area-section" data-section="projects" role="tabpanel" aria-labelledby="area-tab-projects" tabindex="0">
     <div class="section-header">
-      <h2 class="section-title">Projects</h2>
+      <h2 class="section-title">{organization("project", true)}</h2>
       <span class="section-count">{projects.length} total</span>
-      <button type="button" class="btn btn-primary btn-sm" id="area-new-project">New Project</button>
+      <button type="button" class="btn btn-primary btn-sm" id="area-new-project">{newOrganizationLabel(organization("project"), organizationLocale(Astro))}</button>
     </div>
 
     {projects.length === 0 ? (
@@ -221,12 +226,12 @@ const tabs = [
         })}
       </div>
     )}
-  </section>
+  </section>}
 
   {/* Settings Section */}
   <section id={`section-${settingsTab}`} class="area-section" data-section={settingsTab} role="tabpanel" aria-labelledby={`area-tab-${settingsTab}`} tabindex="0">
     <div class="section-header">
-      <h2 class="section-title">Area Settings</h2>
+      <h2 class="section-title">{organization("group", false, "Area")} Settings</h2>
     </div>
 
     <form class="settings-card" id="edit-area-form" data-area-id={areaId}>
@@ -263,7 +268,7 @@ const tabs = [
     role="status"
     data-no-scroll-lock="true"
   ></div>
-</Layout>
+</Layout>}
 
 <style>
   @reference "../../styles/global.css";
@@ -574,7 +579,7 @@ const tabs = [
     let projectDraft = ""
     newProject?.addEventListener("click", async () => {
       if (newProject.disabled) return
-      const title = await promptDialog({ title: "Create Project", required: true, defaultValue: projectDraft })
+      const title = await promptDialog({ title: newProject?.textContent?.trim() || "Create Project", required: true, defaultValue: projectDraft })
       if (!title || signal.aborted) return
       projectDraft = title
       newProject.disabled = true

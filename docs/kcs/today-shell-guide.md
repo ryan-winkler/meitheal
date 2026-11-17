@@ -52,6 +52,10 @@ These anchors stay on the same route, which keeps the page ingress-safe in Home 
 2. Review carried-forward tasks first.
 3. Move back to `Work` or `Focus` with the shell tabs instead of reloading another route.
 
+### Review due work across Boards
+
+When you sign in through Home Assistant, **Work → Due on other Boards** lists open tasks due today or earlier on active named Boards you can access. Today uses the household timezone from Settings and shows the earliest due dates first. Open a task to work in its Board with the permissions you have there. The list shows up to 30 task links and offers **Open Boards** when more are available.
+
 ### Read the daily counters
 
 **Due Today** and **Carried Fwd** reflect their respective sections. **Remaining** includes both sections and shared favorites. **Completed** counts Household Board tasks marked Complete and last updated on the current date in the household timezone. Open **Pinned tasks** from the sidebar to see your personal pins.

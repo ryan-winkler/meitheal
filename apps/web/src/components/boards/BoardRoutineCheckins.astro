@@ -1,0 +1,16 @@
+---
+import { organizationLabelsFor } from "@lib/organization-labels"
+import { isOrganizationFeatureAvailable as available } from "@lib/organization-request-context"
+const label = await organizationLabelsFor(Astro)
+---
+{available("routines") && <section class="card" data-board-routine-checkins hidden aria-labelledby="board-routine-checkins-heading">
+  <div class="card-header"><h3 id="board-routine-checkins-heading" class="card-title">{label("routine", true)} on your {label("board", true)}</h3></div>
+  <ul class="list-group list-group-flush" data-board-routine-list></ul>
+  <p class="card-body" data-board-routine-more hidden>Showing 100 routines. Open a Board to see the rest.</p>
+  <p class="card-body" role="status" data-board-routine-feedback></p>
+</section>}
+<script>
+  import { pageLifecycle } from "@lib/page-lifecycle"
+  import { setupBoardRoutineCheckins } from "@lib/controllers/board-routine-checkins"
+  pageLifecycle.onPageLoad(signal => setupBoardRoutineCheckins(signal))
+</script>

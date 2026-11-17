@@ -177,7 +177,11 @@ test("HTTPS ingress history bypasses offline cache and activation purges legacy 
     expect(offline.reads).toEqual(replayPaths.map(() => [503, noStore, { error: "offline" }]))
     expect(offline.task).toEqual([200, newDescription])
 
-    expect(await page.evaluate(path => fetch(path).then(response => response.status).catch(() => null), activityFeed)).toBeNull()
+    const unavailableFeed = await page.evaluate(async path => {
+      const response = await fetch(path)
+      return [response.status, response.headers.get("cache-control"), await response.text()]
+    }, activityFeed)
+    expect(unavailableFeed).toEqual([503, noStore, "Offline"])
     await context.setOffline(false)
     const feed = await page.evaluate(async path => {
       const response = await fetch(path)

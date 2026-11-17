@@ -625,6 +625,14 @@ const paths = {
       201: { description: "The owned Board ID" }, 202: { description: "The Board was saved, and access verification is pending" }, 503: { description: "Board access is locked" },
     }, boardJson({ name: boardString })),
   },
+  "/api/boards/routines": {
+    get: boardOperation("listPrivateBoardRoutines", "List eligible named Board Routine check-ins for the current period", [], { 200: { description: "Up to 100 current actor-scoped Routines and whether there are more" } }),
+  },
+  "/api/boards/due-today": {
+    get: boardOperation("listPrivateBoardDueWork", "List open tasks due today or earlier on eligible named Boards", [], {
+      200: { description: "Up to 30 eligible tasks and whether there are more" },
+    }),
+  },
   "/api/boards/{id}": {
     get: boardOperation("getPrivateBoard", "Read a Board and a page of its tickets", [boardIdParam,
       { name: "offset", in: "query", schema: boardVersion },
@@ -663,13 +671,15 @@ const paths = {
     post: boardOperation("createPrivateBoardTicket", "Create a ticket in an authorized Board column", [boardIdParam, boardTicketSessionParam], {
       201: { description: "Created ticket identifier, reference and edit version" }, 403: { description: "Ticket creation or completion is denied" }, 404: boardUnavailable,
     }, boardJson({ title: boardString, description: boardString, laneId: boardString, areaId: boardString, projectId: boardString, goalId: boardString,
+      due_date: { type: ["string", "null"], format: "date" },
       placement: { type: "object", properties: { areaId: { type: ["string", "null"] }, projectId: { type: ["string", "null"] } } },
     }), "tasks:write"),
   },
   "/api/boards/{id}/tickets/{ticket}": {
-    patch: boardOperation("changePrivateBoardTicket", "Edit a ticket or move it to a Board column", [boardIdParam, boardTicketParam, boardTicketSessionParam], {
+    patch: boardOperation("changePrivateBoardTicket", "Edit, schedule or move a ticket", [boardIdParam, boardTicketParam, boardTicketSessionParam], {
       200: { description: "New ticket version" }, 403: { description: "A required effect is denied" }, 404: boardUnavailable, 409: { description: "Ticket version is stale" },
     }, boardJson({ version: boardVersion, title: boardString, description: boardString, laneId: boardString,
+      due_date: { type: ["string", "null"], format: "date" },
       action: { type: "string", enum: ["file"] }, areaId: { type: ["string", "null"] }, projectId: { type: ["string", "null"] },
     }), "tasks:write"),
     delete: boardOperation("deletePrivateBoardTicket", "Delete a ticket when the current Board and actor allow deletion", [boardIdParam, boardTicketParam, boardTicketSessionParam], {
@@ -690,7 +700,7 @@ const paths = {
       409: { description: "A Routine period changed or an Area still has active planning records" },
     }, boardJson({
       action: { type: "string", enum: ["area", "goal", "project", "project-edit", "project-goal", "project-status", "goal-share", "retire", "pillar", "pillar-principle", "pillar-link", "routine", "routine-complete"] },
-      title: boardString, description: boardString, icon: boardString, color: boardString, id: boardString, areaId: boardString, goalId: { type: ["string", "null"] },
+      title: boardString, description: boardString, icon: boardString, color: boardString, id: boardString, areaId: boardString, projectId: { type: ["string", "null"] }, goalId: { type: ["string", "null"] },
       status: { type: "string", enum: ["active", "completed", "archived"] }, enabled: boardBoolean,
       cadence: { type: "string", enum: ["daily", "weekly"] }, period: { type: "string", format: "date" },
       entity: { type: "string", enum: ["area", "goal", "project", "routine"] },
@@ -2000,6 +2010,99 @@ const paths = {
   },
 
   // ── Settings ──
+  "/api/ha/areas": {
+    head: {
+      operationId: "verifyHomeAssistantAreaContext", tags: ["Home Assistant"], summary: "Revalidate task location field access",
+      responses: { 204: { description: "Field access proof in the response header" }, 404: { description: "Field unavailable for this account" } },
+    },
+    get: {
+      operationId: "getHomeAssistantAreaChoices", tags: ["Home Assistant"],
+      summary: "List optional Home Assistant Area choices for an eligible signed-in household user",
+      responses: {
+        200: jsonContent({ type: "object", required: ["areas"], properties: {
+          areas: { type: "array", items: { type: "object", required: ["id", "name"], properties: {
+            id: { type: "string" }, name: { type: "string" },
+          } } },
+        } }),
+        404: { description: "Field unavailable for this account" },
+        503: { description: "Home Assistant area registry unavailable" },
+      },
+    },
+  },
+  "/api/organization-features": {
+    head: {
+      operationId: "verifyOrganizationFeatureAdministration", tags: ["Settings"], summary: "Revalidate the current administrator session",
+      responses: { 204: { description: "Administrator proof in the response header" }, 403: { description: "Current administrator required" } },
+    },
+    get: {
+      operationId: "getOrganizationFeatureAvailability", tags: ["Settings"], summary: "Read organization feature audiences and eligible people",
+      responses: { 200: { description: "Audience and verified Home Assistant roster" }, 403: { description: "Current administrator required" } },
+    },
+    put: {
+      operationId: "saveOrganizationFeatureAvailability", tags: ["Settings"], summary: "Set who can use an organization feature",
+      requestBody: { required: true, content: { "application/json": { schema: {
+        type: "object", required: ["feature", "audience", "users", "revision"],
+        properties: {
+          feature: { enum: ["organizer", "groups", "projects", "planning", "goals", "routines", "pillars", "principles", "achievements", "home_assistant_area"] }, audience: { enum: ["everyone", "selected", "nobody"] },
+          users: { type: "array", items: { type: "string" } }, revision: { type: ["string", "null"] },
+        },
+      } } } },
+      responses: { 204: { description: "Saved" }, 403: { description: "Current administrator required" }, 409: { description: "Settings changed" } },
+    },
+  },
+  "/api/tasks/{id}/home-assistant-area": {
+    get: {
+      operationId: "getHouseholdTaskHomeAssistantArea", tags: ["Tasks"], summary: "Read a visible task's optional Home Assistant Area and version",
+      responses: { 200: { description: "Optional area registry ID, current task version and private location revision" }, 404: { description: "Task or field unavailable" } },
+    },
+    put: {
+      operationId: "setHouseholdTaskHomeAssistantArea", tags: ["Tasks"], summary: "Set or clear a task's Home Assistant Area with its current version",
+      requestBody: { required: true, content: { "application/json": { schema: {
+        type: "object", required: ["version", "locationRevision", "home_assistant_area_id"],
+        properties: { version: { type: "integer" }, locationRevision: { type: "integer" }, home_assistant_area_id: { type: ["string", "null"] } },
+      } } } },
+      responses: { 200: { description: "Saved with a new location revision" }, 404: { description: "Task or field unavailable" }, 409: { description: "Task changed" } },
+    },
+  },
+  "/api/boards/{id}/tickets/{ticket}/home-assistant-area": {
+    get: {
+      operationId: "getNamedBoardTaskHomeAssistantArea", tags: ["Tasks"], summary: "Read a visible task's optional Home Assistant Area and version",
+      responses: { 200: { description: "Optional area registry ID, current task version and private location revision" }, 404: { description: "Task or field unavailable" } },
+    },
+    put: {
+      operationId: "setNamedBoardTaskHomeAssistantArea", tags: ["Tasks"], summary: "Set or clear a task's Home Assistant Area with its current version",
+      requestBody: { required: true, content: { "application/json": { schema: {
+        type: "object", required: ["version", "locationRevision", "home_assistant_area_id"],
+        properties: { version: { type: "integer" }, locationRevision: { type: "integer" }, home_assistant_area_id: { type: ["string", "null"] } },
+      } } } },
+      responses: { 200: { description: "Saved with a new location revision" }, 404: { description: "Task or field unavailable" }, 409: { description: "Task changed" } },
+    },
+  },
+  "/api/organization-labels": {
+    get: {
+      operationId: "getPersonalOrganizationLabels", tags: ["Settings"], summary: "Read personal labels for the current Home Assistant account and language",
+      responses: { 200: { description: "Visible label forms, revision, terms and form proof" }, 403: { description: "Verified Home Assistant account required" } },
+    },
+    head: {
+      operationId: "verifyPersonalOrganizationLabels", tags: ["Settings"], summary: "Revalidate the current personalized page context",
+      responses: { 204: { description: "Current render proof in the response header" }, 403: { description: "Verified Home Assistant account required" } },
+    },
+    put: {
+      operationId: "savePersonalOrganizationLabels", tags: ["Settings"], summary: "Save visible personal labels for the active display language",
+      requestBody: { required: true, content: { "application/json": { schema: {
+        type: "object", required: ["proof", "revision", "terms", "forms"],
+        properties: {
+          proof: { type: "string" }, revision: { type: "string" },
+          terms: { type: "array", items: { type: "string" } },
+          forms: { type: "object", additionalProperties: { type: "array", items: { type: "string", maxLength: 40 } } },
+        },
+      } } } },
+      responses: { 204: { description: "Saved" }, 400: { description: "Invalid label forms" },
+        403: { description: "Verified Home Assistant account required" },
+        409: { description: "Previously saved labels or available features changed" },
+        412: { description: "Account or language changed" } },
+    },
+  },
   "/api/settings": {
     get: {
       operationId: "getSettings", tags: ["Settings"], summary: "Read application settings",

@@ -83,7 +83,7 @@ test("Kanban color picker is visible, saves, reloads, rejects failed changes and
   }
 })
 
-test("legacy Projects stays inside ingress and reaches Areas and Projects", async ({ browser }) => {
+test("legacy Projects stays inside ingress and reaches Boards", async ({ browser }) => {
   for (const route of ["/projects", "/projects/no-such-project", "/areas"]) {
     const response = await request.get(origin + prefix + route, { maxRedirects: 0 })
     expect(response.status()).toBe(302)
@@ -94,8 +94,8 @@ test("legacy Projects stays inside ingress and reaches Areas and Projects", asyn
     const page = await context.newPage()
     const response = await page.goto(origin + prefix + "/projects")
     expect(response!.status()).toBe(200)
-    await expect(page).toHaveURL(origin + prefix + "/planning#spaces")
-    await expect(page.locator("#planning-section-spaces")).toBeVisible()
+    await expect(page).toHaveURL(origin + prefix + "/boards")
+    await expect(page.getByRole("heading", { name: "Boards", exact: true })).toBeVisible()
     await page.locator("#sidebar").getByRole("link", { name: "Today", exact: true }).click()
     await expect(page).toHaveURL(new RegExp(prefix + "/today"))
   } finally { await context.close() }

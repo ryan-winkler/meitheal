@@ -1126,6 +1126,28 @@ paths:
                 name: &a8
                   type: string
               additionalProperties: false
+  /api/boards/routines:
+    get:
+      operationId: listPrivateBoardRoutines
+      summary: List eligible named Board Routine check-ins for the current period
+      tags:
+        - Boards
+      parameters: []
+      responses:
+        "200":
+          description: Up to 100 current actor-scoped Routines and whether there are more
+      security: *a7
+  /api/boards/due-today:
+    get:
+      operationId: listPrivateBoardDueWork
+      summary: List open tasks due today or earlier on eligible named Boards
+      tags:
+        - Boards
+      parameters: []
+      responses:
+        "200":
+          description: Up to 30 eligible tasks and whether there are more
+      security: *a7
   /api/boards/{id}:
     get:
       operationId: getPrivateBoard
@@ -1310,6 +1332,11 @@ paths:
                 areaId: *a8
                 projectId: *a8
                 goalId: *a8
+                due_date:
+                  type:
+                    - string
+                    - "null"
+                  format: date
                 placement:
                   type: object
                   properties:
@@ -1326,7 +1353,7 @@ paths:
   /api/boards/{id}/tickets/{ticket}:
     patch:
       operationId: changePrivateBoardTicket
-      summary: Edit a ticket or move it to a Board column
+      summary: Edit, schedule or move a ticket
       tags:
         - Boards
       parameters:
@@ -1361,6 +1388,11 @@ paths:
                 title: *a8
                 description: *a8
                 laneId: *a8
+                due_date:
+                  type:
+                    - string
+                    - "null"
+                  format: date
                 action:
                   type: string
                   enum:
@@ -1502,6 +1534,10 @@ paths:
                 color: *a8
                 id: *a8
                 areaId: *a8
+                projectId:
+                  type:
+                    - string
+                    - "null"
                 goalId:
                   type:
                     - string
@@ -6216,6 +6252,271 @@ paths:
           description: Routine action succeeded
         "201":
           description: Created
+  /api/ha/areas:
+    head:
+      operationId: verifyHomeAssistantAreaContext
+      tags:
+        - Home Assistant
+      summary: Revalidate task location field access
+      responses:
+        "204":
+          description: Field access proof in the response header
+        "404":
+          description: Field unavailable for this account
+    get:
+      operationId: getHomeAssistantAreaChoices
+      tags:
+        - Home Assistant
+      summary: List optional Home Assistant Area choices for an eligible signed-in household user
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - areas
+                properties:
+                  areas:
+                    type: array
+                    items:
+                      type: object
+                      required:
+                        - id
+                        - name
+                      properties:
+                        id:
+                          type: string
+                        name:
+                          type: string
+                      additionalProperties: false
+                additionalProperties: false
+        "404":
+          description: Field unavailable for this account
+        "503":
+          description: Home Assistant area registry unavailable
+  /api/organization-features:
+    head:
+      operationId: verifyOrganizationFeatureAdministration
+      tags:
+        - Settings
+      summary: Revalidate the current administrator session
+      responses:
+        "204":
+          description: Administrator proof in the response header
+        "403":
+          description: Current administrator required
+    get:
+      operationId: getOrganizationFeatureAvailability
+      tags:
+        - Settings
+      summary: Read organization feature audiences and eligible people
+      responses:
+        "200":
+          description: Audience and verified Home Assistant roster
+        "403":
+          description: Current administrator required
+    put:
+      operationId: saveOrganizationFeatureAvailability
+      tags:
+        - Settings
+      summary: Set who can use an organization feature
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - feature
+                - audience
+                - users
+                - revision
+              properties:
+                feature:
+                  enum:
+                    - organizer
+                    - groups
+                    - projects
+                    - planning
+                    - goals
+                    - routines
+                    - pillars
+                    - principles
+                    - achievements
+                    - home_assistant_area
+                audience:
+                  enum:
+                    - everyone
+                    - selected
+                    - nobody
+                users:
+                  type: array
+                  items:
+                    type: string
+                revision:
+                  type:
+                    - string
+                    - "null"
+              additionalProperties: false
+      responses:
+        "204":
+          description: Saved
+        "403":
+          description: Current administrator required
+        "409":
+          description: Settings changed
+  /api/tasks/{id}/home-assistant-area:
+    get:
+      operationId: getHouseholdTaskHomeAssistantArea
+      tags:
+        - Tasks
+      summary: Read a visible task's optional Home Assistant Area and version
+      responses:
+        "200":
+          description: Optional area registry ID, current task version and private location revision
+        "404":
+          description: Task or field unavailable
+    put:
+      operationId: setHouseholdTaskHomeAssistantArea
+      tags:
+        - Tasks
+      summary: Set or clear a task's Home Assistant Area with its current version
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - version
+                - locationRevision
+                - home_assistant_area_id
+              properties:
+                version:
+                  type: integer
+                locationRevision:
+                  type: integer
+                home_assistant_area_id:
+                  type:
+                    - string
+                    - "null"
+              additionalProperties: false
+      responses:
+        "200":
+          description: Saved with a new location revision
+        "404":
+          description: Task or field unavailable
+        "409":
+          description: Task changed
+  /api/boards/{id}/tickets/{ticket}/home-assistant-area:
+    get:
+      operationId: getNamedBoardTaskHomeAssistantArea
+      tags:
+        - Tasks
+      summary: Read a visible task's optional Home Assistant Area and version
+      responses:
+        "200":
+          description: Optional area registry ID, current task version and private location revision
+        "404":
+          description: Task or field unavailable
+    put:
+      operationId: setNamedBoardTaskHomeAssistantArea
+      tags:
+        - Tasks
+      summary: Set or clear a task's Home Assistant Area with its current version
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - version
+                - locationRevision
+                - home_assistant_area_id
+              properties:
+                version:
+                  type: integer
+                locationRevision:
+                  type: integer
+                home_assistant_area_id:
+                  type:
+                    - string
+                    - "null"
+              additionalProperties: false
+      responses:
+        "200":
+          description: Saved with a new location revision
+        "404":
+          description: Task or field unavailable
+        "409":
+          description: Task changed
+  /api/organization-labels:
+    get:
+      operationId: getPersonalOrganizationLabels
+      tags:
+        - Settings
+      summary: Read personal labels for the current Home Assistant account and language
+      responses:
+        "200":
+          description: Visible label forms, revision, terms and form proof
+        "403":
+          description: Verified Home Assistant account required
+    head:
+      operationId: verifyPersonalOrganizationLabels
+      tags:
+        - Settings
+      summary: Revalidate the current personalized page context
+      responses:
+        "204":
+          description: Current render proof in the response header
+        "403":
+          description: Verified Home Assistant account required
+    put:
+      operationId: savePersonalOrganizationLabels
+      tags:
+        - Settings
+      summary: Save visible personal labels for the active display language
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - proof
+                - revision
+                - terms
+                - forms
+              properties:
+                proof:
+                  type: string
+                revision:
+                  type: string
+                terms:
+                  type: array
+                  items:
+                    type: string
+                forms:
+                  type: object
+                  additionalProperties:
+                    type: array
+                    items:
+                      type: string
+                      maxLength: 40
+              additionalProperties: false
+      responses:
+        "204":
+          description: Saved
+        "400":
+          description: Invalid label forms
+        "403":
+          description: Verified Home Assistant account required
+        "409":
+          description: Previously saved labels or available features changed
+        "412":
+          description: Account or language changed
   /api/settings:
     get:
       operationId: getSettings

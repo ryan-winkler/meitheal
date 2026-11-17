@@ -245,6 +245,9 @@ export function initKanbanPage(signal: AbortSignal): void {
     const { id, status } = (event as CustomEvent<{ id: string; status: string }>).detail
     if (typeof status === "string") queueBackgroundRead({ taskId: id, lane: status, afterStatusSave: true })
   }, { signal })
+  document.addEventListener("meitheal:home-assistant-area-saved", () => {
+    if (new URLSearchParams(location.search).has("home_assistant_area_id")) void refresh()
+  }, { signal })
   document.addEventListener("meitheal:area-changed", () => {
     syncAreaLinks(getSelectedAreaId())
     filter({})
