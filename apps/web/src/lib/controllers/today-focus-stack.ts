@@ -20,9 +20,9 @@ import { lockTodayTaskStatus, syncTodayTaskStatus } from "../today-list"
 export function setupFocusStack(
   container: HTMLElement,
   lm: ListenerManager,
-): void {
+) {
   const stack = container.querySelector<HTMLElement>("#section-focus-stack")
-  if (!stack) return
+  if (!stack) return () => {}
   const header = stack.querySelector<HTMLElement>(".focus-stack__header")
   const count = header?.querySelector(".focus-stack__subtitle")
   const cards = [...stack.querySelectorAll<HTMLElement>(".focus-card[data-id]")]
@@ -117,4 +117,9 @@ export function setupFocusStack(
       }
     }
   })
+
+  return (id: string, eligible: boolean) => {
+    const card = cards.find(item => item.dataset.id === id)
+    if (card) settleCard(card, !eligible)
+  }
 }

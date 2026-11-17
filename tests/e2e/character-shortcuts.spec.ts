@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test"
+import { FILTER_STORAGE_KEY } from "../../apps/web/src/lib/filter-state"
 import { shouldSkipBrowserSpecs } from "./_helpers"
 
 test.skip(shouldSkipBrowserSpecs(), "Set E2E_BASE_URL to run browser specs")
@@ -153,6 +154,7 @@ test("shortcut help contains focus and restores its opener after Escape and afte
   await page.evaluate(() => {
     document.addEventListener("astro:after-swap", () => { document.body.dataset.shortcutTestSwapped = "true" }, { once: true })
   })
+  await page.evaluate(key => localStorage.setItem(key, JSON.stringify({ search: "old task filter" })), FILTER_STORAGE_KEY)
   await table.click()
   await expect(page.locator("body")).toHaveAttribute("data-shortcut-test-swapped", "true")
   await expect(page.locator("[data-view-tabs]")).toHaveAttribute("data-switcher-ready", "true")
@@ -160,10 +162,11 @@ test("shortcut help contains focus and restores its opener after Escape and afte
   await expect(close).toBeFocused()
   await viewHelp.click()
   await page.keyboard.press("k")
-  await expect(page).toHaveURL(/\/tasks\?view=table#table$/)
+  await expect(page).toHaveURL(/\/tasks\?view=table&search=#table$/)
   await page.keyboard.press("Enter")
   await expect(dialog).toBeHidden()
   await expect(table).toBeFocused()
+  await expect(page.locator("#table-shell").getByRole("textbox", { name: "Filter by text" })).toHaveValue("")
 
   await table.press("Shift+Slash")
   await expect(close).toBeFocused()
@@ -354,8 +357,10 @@ test("disabling shortcuts covers sidebar capture, the Kanban board, task details
     await expect(page.locator("#td-assigned-to")).toBeFocused()
     await page.keyboard.press("Escape")
     await expect(detail).toBeHidden()
+    await page.evaluate(key => localStorage.setItem(key, JSON.stringify({ search: "old task filter" })), FILTER_STORAGE_KEY)
     await card.press("4")
-    await expect(page).toHaveURL(/view=timeline#timeline$/)
+    await expect(page).toHaveURL(/\/tasks\?view=timeline&search=#timeline$/)
+    await expect(page.locator("#timeline-filter-bar").getByRole("textbox", { name: "Filter by text" })).toHaveValue("")
   } finally {
     if (id) await request.delete(`/api/tasks/${id}`, { headers })
     await request.delete(`/api/projects/${projectId}`, { headers })

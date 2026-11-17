@@ -550,10 +550,14 @@ test("Shopping links identify their own Area and follow applied Board filters", 
     const ruleWithView = (view: string) => "/tasks?" + new URLSearchParams({ ...Object.fromEntries(ruleParams), view })
     const invalidRule = new URLSearchParams({ types: "shopping_item", area: areas[0]!, advancedFilter: "{invalid" })
     const completedCalendar = new URLSearchParams({ ...Object.fromEntries(calendarParams), status: "done" })
+    const allCalendarKinds = new URLSearchParams({
+      view: "calendar", area: "", types: "standard_action,shopping_item,checklist,routine_instance,calendar_event,quick_capture",
+    })
     paths.push("/tasks?" + calendarParams + "#calendar", "/tasks?" + groceryParams, "/tasks?" + ruleParams,
-      ruleWithView("calendar"), ruleWithView("table"), "/tasks?" + invalidRule, "/tasks?" + completedCalendar)
+      ruleWithView("calendar"), ruleWithView("table"), "/tasks?" + invalidRule, "/tasks?" + completedCalendar,
+      "/tasks?" + allCalendarKinds + "#calendar")
     const shortcuts = ["All Shopping", ...names, "Kitchen shopping calendar", "Grocery shopping", "Grocery rule",
-      "Grocery Calendar rule", "Grocery Table rule", "Invalid Grocery rule", "Completed shopping calendar"].map((label, index) => ({
+      "Grocery Calendar rule", "Grocery Table rule", "Invalid Grocery rule", "Completed shopping calendar", "All Calendar kinds"].map((label, index) => ({
       id: `shopping-route-${index}`,
       label,
       href: paths[index],
@@ -660,6 +664,15 @@ test("Shopping links identify their own Area and follow applied Board filters", 
     await views.getByRole("link", { name: "Calendar", exact: true }).click()
     await expect(page).toHaveURL(url => url.searchParams.get("area") === areas[0] && !url.searchParams.has("area_id"))
     await expect(page.locator("#area-selector-trigger")).toContainText(names[0]!)
+
+    await page.goto("/tasks?view=calendar&area=&types=shopping_item#calendar")
+    await expect(calendarFilters.locator('[data-type="shopping_item"]')).toHaveAttribute("aria-pressed", "true")
+    await expect(current).toHaveCount(0)
+    await expect(sidebar.locator('[data-page="tasks"]')).toHaveAttribute("aria-current", "page")
+    await sidebar.getByRole("link", { name: "All Calendar kinds" }).click()
+    await expect(current).toHaveText("All Calendar kinds")
+    await page.goto("/tasks?view=calendar&area=#calendar")
+    await expect(current).toHaveText("All Calendar kinds")
   } finally {
     await request.put("/api/settings", { headers, data: { key: "sidebar_config", value: previous ?? null } })
     for (const id of areas) await request.delete(`/api/areas/${id}`, { headers })

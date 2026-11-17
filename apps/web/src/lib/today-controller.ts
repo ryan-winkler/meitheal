@@ -123,7 +123,8 @@ export function initTodayPage(options?: Partial<TodayControllerOptions>) {
     void hydrateTaskAssignees(scope, lm.signal)
   })
   setupFilters(container, refreshUnscheduled)
-  const refreshReopened = setupReopenedTodayTasks(container, row => {
+  const setFocusEligibility = setupFocusStack(container, lm) // PRA-02
+  const refreshReopened = setupReopenedTodayTasks(container, setFocusEligibility, row => {
     enableDragReorder(row)
     const list = row.parentElement
     if (!list) return
@@ -137,7 +138,9 @@ export function initTodayPage(options?: Partial<TodayControllerOptions>) {
     refreshReopened(id, status)
     syncTodayTaskStatus(container, id, status)
   })
-  lm.on(container, "meitheal:today-status-committed", () => {
+  lm.on(container, "meitheal:today-status-committed", event => {
+    const { id, status } = (event as CustomEvent<{ id: string; status: string }>).detail
+    if (isClosedStatus(status)) refreshReopened(id, status)
     applyFilters(container)
     refreshUnscheduled(true)
   })
@@ -146,7 +149,6 @@ export function initTodayPage(options?: Partial<TodayControllerOptions>) {
   setupCalendarEvents(lm)              // G28
   setupMigrationPrompt(container)  // G27
   setupContextGrouping(container)  // G29
-  setupFocusStack(container, lm)       // PRA-02
 
   // Hash deep-link: #task-{id} scroll into view
   const hash = window.location.hash
@@ -930,7 +932,11 @@ function todayScopeParams(container: HTMLElement): URLSearchParams {
   return params
 }
 
-function setupReopenedTodayTasks(container: HTMLElement, mountRow: (row: HTMLElement) => void) {
+function setupReopenedTodayTasks(
+  container: HTMLElement,
+  setFocusEligibility: (id: string, eligible: boolean) => void,
+  mountRow: (row: HTMLElement) => void,
+) {
   const lists = container.querySelectorAll<HTMLElement>("[data-today-task-list]")
   const shell = container.querySelector<HTMLElement>("#page-shell")
   const signal = lm.signal
@@ -965,32 +971,45 @@ function setupReopenedTodayTasks(container: HTMLElement, mountRow: (row: HTMLEle
       if (incoming.dataset.todayDay !== shell.dataset.todayDay || incoming.dataset.todayTimezone !== shell.dataset.todayTimezone) {
         showTodayRollover(container)
       } else {
+        const eligibleForFocus = new Set<string>()
         for (const list of lists) {
-          const refreshedList = incoming.querySelector(`#${CSS.escape(list.id)}`)
-          const refreshedRows = Array.from(refreshedList?.querySelectorAll<HTMLElement>(".tli[data-id]") ?? [])
-          const restoredRows = refreshedRows.filter(row => reopened.has(row.dataset.id ?? ""))
+          const refreshedRows = incoming.querySelectorAll<HTMLElement>(`#${CSS.escape(list.id)} .tli[data-id]`)
+          const currentRows = Array.from(list.querySelectorAll<HTMLElement>(".tli[data-id]"))
+          const affected = (row: HTMLElement) => reopened.has(row.dataset.id ?? "")
           const section = list.closest<HTMLElement>(".today-section")
-          if (!section || !restoredRows.length) continue
-          section.hidden = false
+          if (!section || (!Array.from(refreshedRows).some(affected) && !currentRows.some(affected))) continue
           const suggested = list.id === "today-suggested-list"
-          for (const row of suggested ? refreshedRows : restoredRows) {
-            if (list.querySelector(`.tli[data-id="${CSS.escape(row.dataset.id ?? "")}"]`)) continue
-            list.append(row)
-            mountRow(row)
+          const rows = new Map([...refreshedRows].filter(row => suggested || affected(row)).map(row => [row.dataset.id, row]))
+          if (list.id === "today-due-list" || list.id === "today-carried-list") {
+            for (const id of rows.keys()) if (id) eligibleForFocus.add(id)
           }
-          if (suggested) {
-            const suggestedIds = new Set(refreshedRows.map(row => row.dataset.id))
-            for (const row of list.querySelectorAll<HTMLElement>(".tli:not(.tli--done)")) {
-              if (suggestedIds.has(row.dataset.id)) continue
-              if (row.contains(document.activeElement)) section.querySelector<HTMLElement>(".today-section__toggle")?.focus()
+          for (const row of currentRows) {
+            const replacement = rows.get(row.dataset.id)
+            rows.delete(row.dataset.id)
+            const focused = row.contains(document.activeElement) ? document.activeElement : null
+            if (replacement && affected(row)) {
+              const selector = "a, button, input"
+              const index = focused ? [...row.querySelectorAll(selector)].indexOf(focused) : -1
+              row.replaceWith(replacement)
+              mountRow(replacement)
+              replacement.querySelectorAll<HTMLElement>(selector)[index]?.focus({ preventScroll: true })
+            } else if (!replacement && (affected(row) || (suggested && !row.classList.contains("tli--done")))) {
+              if (focused) section.querySelector<HTMLElement>(".today-section__toggle")?.focus()
               row.remove()
             }
           }
+          for (const row of rows.values()) {
+            list.append(row)
+            mountRow(row)
+          }
+          const openCount = list.querySelectorAll(".tli:not(.tli--done)").length
           const count = section.querySelector(".today-section__count")
-          if (count) count.textContent = String(list.querySelectorAll(".tli:not(.tli--done)").length)
-          list.querySelector("[data-today-due-empty]")?.setAttribute("hidden", "")
-          if (list.id === "today-carried-list") container.querySelector("[data-today-carried-empty]")?.setAttribute("hidden", "")
+          if (count) count.textContent = String(openCount)
+          if (list.id !== "today-due-list") section.hidden = !list.querySelector(".tli")
+          list.querySelector("[data-today-due-empty]")?.toggleAttribute("hidden", openCount > 0)
+          if (list.id === "today-carried-list") container.querySelector("[data-today-carried-empty]")?.toggleAttribute("hidden", Boolean(openCount))
         }
+        for (const id of reopened) setFocusEligibility(id, eligibleForFocus.has(id))
         const unscheduled = container.querySelector<HTMLElement>("#section-unscheduled")
         const refreshedUnscheduled = incoming.querySelector<HTMLElement>("#section-unscheduled")
         if (unscheduled && refreshedUnscheduled) {

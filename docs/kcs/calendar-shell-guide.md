@@ -10,6 +10,8 @@ description: "Understand the calendar view and its controls."
 
 Calendar opens within **Tasks** at `/tasks?view=calendar`. Older `/calendar` and `/tasks#calendar` bookmarks still open that view and keep their query parameters. The **Task views** navigation marks the current view and links to Kanban, Table, Calendar and Timeline. Use Tab to reach each link and Enter to open it with the current filters. The bottom navigation highlights Calendar on mobile.
 
+A saved Calendar shortcut with all task kinds is marked current only when Calendar is showing all kinds. A shortcut for Shopping or another subset uses the corresponding kind filter to determine its current state.
+
 ## Common Jobs
 
 ### Move around the month without losing the shell context

@@ -851,10 +851,11 @@ test("a 2,000-task Table keeps its paged results, assets and views inside ingres
   await expect(filters).toHaveAttribute("aria-expanded", "true")
 
   const calendar = page.getByRole("navigation", { name: "Task views" }).getByRole("link", { name: "Calendar" })
-  await expect(calendar).toHaveAttribute("href", prefix + "/tasks?view=calendar#calendar")
+  const calendarUrl = origin + prefix + "/tasks?view=calendar#calendar"
+  await expect.poll(() => calendar.evaluate((link: HTMLAnchorElement) => link.href)).toBe(calendarUrl)
   await calendar.click()
   await expect(page.locator("#tasks-view-calendar")).toBeVisible()
-  expect(new URL(page.url()).pathname).toBe(prefix + "/tasks")
+  await expect(page).toHaveURL(calendarUrl)
   expect(escaped).toEqual([])
 
   await page.goto(origin + prefix + "/tasks?view=table#table")
@@ -863,7 +864,7 @@ test("a 2,000-task Table keeps its paged results, assets and views inside ingres
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
   await page.keyboard.press("3")
   await expect(page.locator("#tasks-view-calendar")).toBeVisible()
-  expect(new URL(page.url()).pathname).toBe(prefix + "/tasks")
+  await expect(page).toHaveURL(calendarUrl)
   expect(escaped).toEqual([])
 })
 

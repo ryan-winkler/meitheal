@@ -99,8 +99,9 @@ export function matchingTaskShortcutCriteria(target: URLSearchParams, current: U
     const explicit = taskKinds(target, view)
     if (!explicit.length) return -1
     const kinds = view === "calendar" ? effectiveCalendarKinds(explicit) : explicit
+    const active = taskKinds(current, view)
+    if (!sameFilterValues(kinds, view === "calendar" ? effectiveCalendarKinds(active) : active)) return -1
     matchedKinds = kinds.length > 0
-    if (matchedKinds && !sameFilterValues(kinds, taskKinds(current, view))) return -1
   }
   const matchedTaskType = keys.delete("task_type")
   if (matchedTaskType) {
