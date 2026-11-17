@@ -122,8 +122,8 @@ export function initTodayPage(options?: Partial<TodayControllerOptions>) {
     void hydrateTaskAssignees(scope, lm.signal)
   })
   setupFilters(container, refreshUnscheduled)
-  const setFocusEligibility = setupFocusStack(container, lm) // PRA-02
-  const refreshReopened = setupReopenedTodayTasks(container, setFocusEligibility, row => {
+  const restoreFocusCard = setupFocusStack(container, lm) // PRA-02
+  const refreshReopened = setupReopenedTodayTasks(container, restoreFocusCard, row => {
     enableDragReorder(row)
     const list = row.parentElement
     if (!list) return
@@ -933,7 +933,7 @@ function todayScopeParams(container: HTMLElement): URLSearchParams {
 
 function setupReopenedTodayTasks(
   container: HTMLElement,
-  setFocusEligibility: (id: string, eligible: boolean) => void,
+  restoreFocusCard: (id: string, row?: HTMLElement) => void,
   mountRow: (row: HTMLElement) => void,
 ) {
   const lists = container.querySelectorAll<HTMLElement>("[data-today-task-list]")
@@ -971,7 +971,7 @@ function setupReopenedTodayTasks(
       if (incoming.dataset.todayDay !== shell.dataset.todayDay || incoming.dataset.todayTimezone !== shell.dataset.todayTimezone) {
         showTodayRollover(container)
       } else {
-        const eligibleForFocus = new Set<string>()
+        const focusRows = new Map<string, HTMLElement>()
         for (const list of lists) {
           const refreshedRows = incoming.querySelectorAll<HTMLElement>(`#${CSS.escape(list.id)} .tli[data-id]`)
           const currentRows = Array.from(list.querySelectorAll<HTMLElement>(".tli[data-id]"))
@@ -980,8 +980,7 @@ function setupReopenedTodayTasks(
           if (!section || (!Array.from(refreshedRows).some(affected) && !currentRows.some(affected))) continue
           const suggested = list.id === "today-suggested-list"
           const rows = new Map([...refreshedRows].filter(row => suggested || affected(row)).map(row => [row.dataset.id, row]))
-          const due = list.id === "today-due-list" || list.id === "today-carried-list"
-          for (const [id, row] of rows) if (id && (due || row.hasAttribute("data-focus-eligible"))) eligibleForFocus.add(id)
+          for (const [id, row] of rows) if (id && row.dataset.focusDueLabel) focusRows.set(id, row)
           for (const row of currentRows) {
             const replacement = rows.get(row.dataset.id)
             rows.delete(row.dataset.id)
@@ -1008,7 +1007,7 @@ function setupReopenedTodayTasks(
           list.querySelector("[data-today-due-empty]")?.toggleAttribute("hidden", openCount > 0)
           if (list.id === "today-carried-list") container.querySelector("[data-today-carried-empty]")?.toggleAttribute("hidden", Boolean(openCount))
         }
-        for (const id of reopened) setFocusEligibility(id, eligibleForFocus.has(id))
+        for (const id of reopened) restoreFocusCard(id, focusRows.get(id))
         const unscheduled = container.querySelector<HTMLElement>("#section-unscheduled")
         const refreshedUnscheduled = incoming.querySelector<HTMLElement>("#section-unscheduled")
         if (unscheduled && refreshedUnscheduled) {

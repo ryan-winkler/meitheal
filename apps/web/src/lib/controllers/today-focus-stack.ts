@@ -117,8 +117,17 @@ export function setupFocusStack(
     }
   })
 
-  return (id: string, eligible: boolean) => {
+  return (id: string, row?: HTMLElement) => {
     const card = cards.find(item => item.dataset.id === id)
-    if (card) settleCard(card, !eligible)
+    if (!card) return
+    if (row) {
+      const overdue = row.dataset.overdue === "true"
+      card.classList.toggle("focus-card--overdue", overdue)
+      card.querySelector(".focus-card__due")?.replaceChildren(
+        createSpriteIconElement(overdue ? "alert-triangle" : "calendar-event", { size: 12 }),
+        row.dataset.focusDueLabel!,
+      )
+    }
+    settleCard(card, !row)
   }
 }

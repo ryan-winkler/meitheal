@@ -31,8 +31,8 @@ interface Props {
   showSnooze?: boolean
   /** Show "Focus Today" button. Default: false (Suggested section) */
   showFocusToday?: boolean
-  /** Due today or overdue when listed under Today favorites. */
-  focusEligible?: boolean
+  /** Focus Stack deadline for a task eligible to return after reopening. */
+  focusDueLabel?: string
   /** Compact mode — less padding, smaller text. Default: false */
   compact?: boolean
   /** Section context for ARIA labels */
@@ -44,7 +44,7 @@ const {
   showActions = true,
   showSnooze = false,
   showFocusToday = false,
-  focusEligible = false,
+  focusDueLabel,
   compact = false,
   section = "",
 } = Astro.props
@@ -99,7 +99,7 @@ const customEntries = Object.entries(task.custom_fields).filter(
   data-title={task.title.toLowerCase()}
   data-search={searchText}
   data-due={task.due_date ?? ""}
-  data-focus-eligible={focusEligible ? "" : undefined}
+  data-focus-due-label={focusDueLabel}
   role="group"
   aria-label={`${task.title}, priority ${task.priority}${task.due_date ? `, due ${task.due_date}` : ""}${section ? `, in ${section}` : ""}`}
 >

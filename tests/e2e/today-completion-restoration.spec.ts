@@ -116,7 +116,7 @@ test("reopening a due favorite keeps its original Focus Stack card", async ({ pa
     await expect(focusCard).toBeVisible()
     await expect(page.locator(`#today-due-list .tli[data-id="${id}"]`)).toHaveCount(0)
 
-    for (const reschedule of [false, true]) {
+    for (const offset of [0, -1, 1]) {
       await favorite.getByRole("checkbox", { name: `Complete ${title}` }).press("Space")
       await expect(focusCard).toBeHidden()
       await expect(disclosure).toBeVisible()
@@ -125,27 +125,28 @@ test("reopening a due favorite keeps its original Focus Stack card", async ({ pa
       await completed.press("Enter")
       await expect(status).toHaveValue("complete")
       await expect(status).toBeEnabled()
-      const dueDate = reschedule ? shiftCalendarDay(today, 1) : today
+      const dueDate = shiftCalendarDay(today, offset)
       let captureRefresh!: (route: Route) => void
       const refresh = new Promise<Route>(resolve => { captureRefresh = resolve })
-      if (reschedule) {
+      if (offset) {
         const saved = page.waitForResponse(response => response.request().method() === "PUT" &&
           new URL(response.url()).pathname === `/api/tasks/${id}` && response.request().postDataJSON()?.due_date === dueDate)
         await page.locator("#td-due-date").fill(dueDate)
         expect((await saved).status()).toBe(200)
-        await page.route(url => url.searchParams.has("todayRefresh"), captureRefresh, { times: 1 })
       }
+      await page.route(url => url.searchParams.has("todayRefresh"), captureRefresh, { times: 1 })
 
       // Wait for the refreshed Today row to replace the immediate status update.
       await favorite.evaluate(row => row.setAttribute("data-before-reopen", ""))
       await status.selectOption("active")
-      if (reschedule) {
-        const pending = await refresh
-        try {
-          await expect(focusCard).toBeHidden()
-        } finally {
-          await pending.abort()
-        }
+      const pending = await refresh
+      try {
+        await expect(focusCard).toBeHidden()
+      } finally {
+        if (offset > 0) await pending.abort()
+        else await pending.continue()
+      }
+      if (offset > 0) {
         await expect(page.getByText("Couldn’t refresh Today’s tasks. Reload Today to see the saved changes.")).toBeVisible()
         await expect(focusCard).toBeHidden()
         await expect(status).not.toHaveAttribute("aria-disabled", "true")
@@ -153,8 +154,12 @@ test("reopening a due favorite keeps its original Focus Stack card", async ({ pa
       }
       await expect(page.locator("#today-pinned-list [data-before-reopen]")).toHaveCount(0)
       await expect(favorite).toHaveAttribute("data-due", dueDate)
-      if (reschedule) await expect(focusCard).toBeHidden()
-      else await expect(focusCard).toBeVisible()
+      if (offset > 0) await expect(focusCard).toBeHidden()
+      else {
+        await expect(focusCard).toBeVisible()
+        await expect(focusCard.locator(".focus-card__due")).toHaveText(offset < 0 ? "Overdue" : "Due today")
+        if (offset < 0) await expect(focusCard).toHaveClass(/focus-card--overdue/)
+      }
       await page.getByRole("button", { name: "Close detail" }).press("Enter")
     }
   } finally {
