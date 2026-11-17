@@ -113,7 +113,10 @@ test("People can change personal display labels without changing routes, account
     await expect(singular).toHaveValue("Workshop")
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(321)
     await board.getByRole("button", { name: "Use default" }).click()
-    await page.getByRole("button", { name: "Save labels" }).click()
+    await Promise.all([
+      page.waitForEvent("framenavigated", { predicate: frame => frame === page.mainFrame() && frame.url() === settings }),
+      page.getByRole("button", { name: "Save labels" }).click(),
+    ])
     await expect.poll(async () => (await read(context.request)).forms).toEqual({ task: ["Action", "Actions"], routine: ["Practice", "Practices"] })
 
     await expect(singular).toHaveValue("")
@@ -125,7 +128,10 @@ test("People can change personal display labels without changing routes, account
     await expect(page.locator("[data-label-status]")).toContainText("Review the saved values")
     await expect(project).toHaveValue("Initiative")
     await expect(page.locator('[data-label-term="goal"]').getByRole("textbox", { name: "Singular" })).toHaveValue("Outcome")
-    await page.getByRole("button", { name: "Save labels" }).click()
+    await Promise.all([
+      page.waitForEvent("framenavigated", { predicate: frame => frame === page.mainFrame() && frame.url() === settings }),
+      page.getByRole("button", { name: "Save labels" }).click(),
+    ])
     await expect.poll(async () => (await read(context.request)).forms).toEqual({
       task: ["Action", "Actions"], routine: ["Practice", "Practices"], goal: ["Outcome", "Outcomes"], project: ["Initiative", ""],
     })
