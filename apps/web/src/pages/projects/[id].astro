@@ -21,12 +21,14 @@ import {
 import { HierarchyRepository, type AreaRow, type GoalRow } from "@domains/tasks/persistence/hierarchy-repository"
 import { TaskRepository } from "@domains/tasks/persistence/task-repository";
 import { PRIORITY_ICONS, PRIORITY_COLORS } from "../../lib/priority-config";
-import { STATUS_LABELS } from "../../lib/status-config";
+import { boardWorkspaceHref, HOUSEHOLD_BOARD_ID } from "@lib/board-workspace"
+import { isClosedStatus, STATUS_LABELS } from "../../lib/status-config";
 
 const cookieLocale = Astro.cookies.get("meitheal-locale")?.value;
 const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
 
-const projectId = Astro.params.id;
+const workspaceProjectId = Astro.props.workspaceProjectId as string | undefined
+const projectId = workspaceProjectId ?? Astro.params.id;
 const projectsPath = `${Astro.locals.ingressPath || ""}/planning#spaces`
 if (!projectId) {
   return Astro.redirect(projectsPath);
@@ -74,6 +76,11 @@ const projDesc = project?.description ? String(project.description) : null;
 const projIcon = String(project?.icon ?? "📋");
 const projColor = String(project?.color ?? "#146C4E");
 const projStatus = String(project?.status ?? "active");
+const openTasks = workspaceProjectId ? tasks.filter(task => !isClosedStatus(String(task.status))) : []
+const nextAction = openTasks.find(task => !task.blocked_by && task.status !== "stalled")
+const fromArea = workspaceProjectId && area && Astro.url.searchParams.get("from") === area.id ? String(area.id) : undefined
+const settingsTab = workspaceProjectId ? "project-settings" : "settings"
+
 
 const completedCount = tasks.filter((t) => String(t.status) === "complete").length;
 const progress = tasks.length > 0 ? Math.round((completedCount / tasks.length) * 100) : 0;
@@ -84,7 +91,7 @@ const tabs = [
   { id: "overview", label: "Overview", icon: "📊" },
   { id: "tasks", label: "Tasks", icon: "✅" },
   { id: "fields", label: "Fields", icon: "🏷️" },
-  { id: "settings", label: "Settings", icon: "⚙️" },
+  { id: settingsTab, label: "Settings", icon: "⚙️" },
 ];
 ---
 
@@ -94,7 +101,7 @@ const tabs = [
     {projTitle}
   </span>
   <div slot="actions" class="flex gap-2">
-    <a href="/projects" class="btn btn-ghost">← Projects</a>
+    <a href={workspaceProjectId ? boardWorkspaceHref(HOUSEHOLD_BOARD_ID, fromArea ? { area: fromArea } : {}) : "/projects"} class="btn btn-ghost">← {workspaceProjectId ? (fromArea ? String(area?.name) : "Household") : "Projects"}</a>
     <button type="button" class="btn btn-primary" id="add-task-to-project-btn">
       + Add Task
     </button>
@@ -121,8 +128,8 @@ const tabs = [
   <section id="section-overview" class="project-section active" data-section="overview">
     {/* Breadcrumb */}
     <nav class="project-breadcrumb" aria-label="Project breadcrumb">
-      <a href="/projects">Projects</a>
-      {area && <><span class="bc-sep">›</span><a href={`/areas/${String(area.id)}`}>{String(area.name)}</a></>}
+      <a href={workspaceProjectId ? boardWorkspaceHref(HOUSEHOLD_BOARD_ID) : "/projects"}>{workspaceProjectId ? "Household" : "Projects"}</a>
+      {area && <><span class="bc-sep">›</span><a href={workspaceProjectId ? boardWorkspaceHref(HOUSEHOLD_BOARD_ID, { area: String(area.id) }) : `/areas/${String(area.id)}`}>{String(area.name)}</a></>}
       {goal && <><span class="bc-sep">›</span><a href={`/progress?project_id=${encodeURIComponent(projectId)}#goals`}>🎯 {String(goal.title)}</a></>}
       <span class="bc-sep">›</span>
       <span class="bc-current">{projIcon} {projTitle}</span>
@@ -133,6 +140,10 @@ const tabs = [
       <div class="project-header-top">
         <div class="project-header-info">
           <span class={`project-status-badge status-${projStatus}`}>{projStatus}</span>
+          {workspaceProjectId && <p>{openTasks.length} open · {nextAction
+            ? <a href={`/tickets/${encodeURIComponent(String(nextAction.id))}`}>Next action: {String(nextAction.title)}</a>
+            : "No next action"}</p>}
+
           {projDesc && <p class="project-desc">{projDesc}</p>}
         </div>
         <div class="project-header-stats">
@@ -245,7 +256,7 @@ const tabs = [
   </section>
 
   {/* ── Settings Section ── */}
-  <section id="section-settings" class="project-section" data-section="settings">
+  <section id={`section-${settingsTab}`} class="project-section" data-section={settingsTab}>
     <div class="section-header">
       <h2 class="section-title">Project Settings</h2>
     </div>
@@ -711,7 +722,9 @@ const tabs = [
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         title,
-        project_id: projectId,
+        ...(location.pathname.includes("/boards/household")
+          ? { placement: { projectId } }
+          : { project_id: projectId }),
       }),
     })
       .then((r) => {

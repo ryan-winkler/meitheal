@@ -26,7 +26,14 @@ function parseChange(body: Record<string, unknown> | null): Parameters<NamedBoar
   const title = typeof body.title === "string" ? stripHtml(body.title).trim() : ""
   const description = typeof body.description === "string" ? stripHtml(body.description).trim() : ""
   if (!title || title.length > 150 || description.length > 10000) return null
-  if (action === "area" && (id === undefined || typeof id === "string")) return { action, title, ...(id === undefined ? {} : { id }) }
+  if (action === "area" && (id === undefined || typeof id === "string")) {
+    const { icon, color } = body
+    if (icon !== undefined && (typeof icon !== "string" || icon.length > 24)) return null
+    if (color !== undefined && (typeof color !== "string" || !/^#[0-9a-f]{6}$/i.test(color))) return null
+    return { action, title, ...(id === undefined ? {} : { id }),
+      ...(typeof icon === "string" ? { icon: stripHtml(icon) } : {}),
+      ...(typeof color === "string" ? { color } : {}) }
+  }
   if (action === "goal" && typeof areaId === "string" && (id === undefined || typeof id === "string")) {
     return { action, title, description, areaId, ...(id === undefined ? {} : { id }) }
   }
