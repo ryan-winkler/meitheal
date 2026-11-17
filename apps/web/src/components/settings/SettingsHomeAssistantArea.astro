@@ -7,11 +7,25 @@ const eligible = verifiedIngressUser(Astro.locals)?.isAdmin === true
 
 {eligible && (
   <SettingsPanelCard
-    title="Home Assistant Area"
-    subtitle="Give eligible people a location field on their tasks. The choices come from the Home Assistant area registry."
+    title="Organization features"
+    subtitle="Choose which parts of Meitheal are available to each person."
   >
     <form id="ha-area-feature-form" class="settings-stack">
       <fieldset class="settings-stack" disabled>
+        <label class="form-label">Feature
+          <select name="feature" class="form-select">
+            <option value="organizer">Boards organizer</option>
+            <option value="groups">Groups</option>
+            <option value="projects">Projects</option>
+            <option value="planning">Planning</option>
+            <option value="goals">Goals</option>
+            <option value="routines">Routines</option>
+            <option value="pillars">Pillars</option>
+            <option value="principles">Principles</option>
+            <option value="achievements">Achievements</option>
+            <option value="home_assistant_area" selected>Home Assistant Area</option>
+          </select>
+        </label>
         <label class="form-label">Available to
           <select name="audience" class="form-select">
             <option value="everyone">Everyone</option>

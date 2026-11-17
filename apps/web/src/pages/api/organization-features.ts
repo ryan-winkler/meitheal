@@ -5,10 +5,12 @@ import { OrganizationAccessRepository, type OrganizationAudience } from "@domain
 import { apiJson, apiProblem } from "@lib/api-response"
 import { currentSettingsAccess } from "@lib/current-settings-access"
 import { boardSessionProof, readBoardRequest } from "@lib/named-board-request"
+import { ORGANIZATION_FEATURES, inheritedOrganizationAvailability, type OrganizationFeature } from "@lib/organization-availability"
+import { getStoredFeatureFlags } from "@lib/feature-flags"
 import { verifiedIngressUser } from "@lib/verified-ingress-user"
 
 const noStore = { "cache-control": "private, no-store" }
-const field = { scope: "feature", id: "home_assistant_area", boardId: "" } as const
+
 
 function problem(status: number, detail: string) {
   return apiProblem({ status, detail, extraHeaders: noStore })
@@ -37,9 +39,18 @@ export const GET: APIRoute = async context => {
   await ensureSchema()
   const records = await new OrganizationAccessRepository(getPersistenceClient()).policies("feature", "")
   if (records.status === "locked") return problem(503, "Feature access is locked. Check the Home Assistant backup restore status.")
-  const policy = records.policies.find(item => item.scope.id === field.id)
+  const flags = await getStoredFeatureFlags()
+  const features = Object.fromEntries(Object.entries(ORGANIZATION_FEATURES).map(([id, definition]) => {
+    const policy = records.policies.find(item => item.scope.id === id)
+    return [id, {
+      label: definition.label,
+      audience: policy?.audience ?? (inheritedOrganizationAvailability(id as OrganizationFeature, flags) ? "everyone" : "nobody"),
+      users: policy?.users ?? [], revision: policy?.revision ?? null,
+    }]
+  }))
   const response = apiJson({
-    home_assistant_area: { audience: policy?.audience ?? "nobody", users: policy?.users ?? [], revision: policy?.revision ?? null },
+    features,
+    home_assistant_area: features.home_assistant_area,
     roster: [...roster].map(([id, name]) => ({ id, name: name || "Home Assistant user" })),
   })
   response.headers.set("cache-control", noStore["cache-control"])
@@ -55,7 +66,7 @@ export const PUT: APIRoute = async context => {
     return problem(412, "The Home Assistant administrator session changed. Reopen Settings.")
   }
   const body = await readBoardRequest(context.request)
-  if (!body || body.feature !== field.id ||
+  if (!body || typeof body.feature !== "string" || !Object.hasOwn(ORGANIZATION_FEATURES, body.feature) ||
     (body.revision !== null && (typeof body.revision !== "string" || !/^[0-9a-f-]{36}$/.test(body.revision))) ||
     (body.audience !== "everyone" && body.audience !== "selected" && body.audience !== "nobody") ||
     !Array.isArray(body.users) || body.users.length > 256 ||
@@ -69,7 +80,9 @@ export const PUT: APIRoute = async context => {
     choice = { audience: body.audience === "everyone" ? "everyone" : "nobody", users: [] }
   }
   await ensureSchema()
-  const saved = await new OrganizationAccessRepository(getPersistenceClient()).change(field, body.revision, choice)
+  const saved = await new OrganizationAccessRepository(getPersistenceClient()).change({
+    scope: "feature", id: body.feature, boardId: "",
+  }, body.revision, choice)
   if (saved.status === "locked" || saved.status === "committed-locked") {
     return problem(503, "Feature access is locked. Check the Home Assistant backup restore status.")
   }

@@ -17,6 +17,7 @@
  * 3. The settings UI auto-discovers features from this registry
  */
 
+import { effectiveOrganizationFlags } from "./organization-request-context"
 import { SettingsRepository } from "@domains/tasks/persistence/settings-repository"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 
@@ -102,6 +103,10 @@ const CACHE_TTL_MS = 100
 
 /** Get all feature flags (server-side — reads from DB, cached per request) */
 export async function getFeatureFlags(): Promise<FeatureFlags> {
+  return effectiveOrganizationFlags(await getStoredFeatureFlags())
+}
+
+export async function getStoredFeatureFlags(): Promise<FeatureFlags> {
   // Return cached result if within TTL
   const now = Date.now()
   if (_cachedFlags && (now - _cacheTimestamp) < CACHE_TTL_MS) {

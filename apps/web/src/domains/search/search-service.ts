@@ -1,3 +1,4 @@
+import { isOrganizationFeatureAvailable } from "../../lib/organization-request-context"
 import {
   AreaRepository,
   getPersistenceClient,
@@ -98,7 +99,7 @@ export async function searchMeithealCatalog(
   }
 
   if (options.scope === "all" || options.scope === "views") {
-    const areas = await areaRepo.findAll()
+    const areas = isOrganizationFeatureAvailable("groups") ? await areaRepo.findAll() : []
     const areaItems = filterByQuery(
       areas.map((area) => ({
         id: String(area.id),

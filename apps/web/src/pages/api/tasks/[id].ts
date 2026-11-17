@@ -1,3 +1,4 @@
+import { organizationPlacementAvailable } from "@lib/organization-placement-access"
 import type { APIRoute } from "astro"
 import type { InValue } from "@libsql/client"
 import { VALID_TASK_TYPES } from "@meitheal/domain-tasks"
@@ -174,6 +175,7 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
     return apiError("Request body must be a JSON object", 400)
   }
   const body = rawBody as Record<string, unknown>
+  if (!organizationPlacementAvailable(body)) return apiError("This organizing feature is unavailable.", 404)
   if (hasBoardSelection(body)) return unavailableBoardResponse()
   let clientVersion: number | undefined
   if (body.updated_at !== undefined) {
@@ -200,6 +202,13 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
   const expectedActor = agentActivityActor(locals)?.actor
   const denied = isAssignedWriteOnly(agentToken) ? await checkAssignedTask(resolvedId, agentToken!) : null
   if (denied) return (await replayedAgentReassignment(repo, agentToken, resolvedId, body, expectedActor)) ?? denied
+  if (body.due_date !== undefined) {
+    const current = await repo.findById(resolvedId)
+    if (current?.task_kind === "routine_instance" && current.source_template_id != null &&
+      current.due_date != null && body.due_date !== current.due_date) {
+      return apiError("A generated Routine task keeps its original date. Complete its existing occurrence.", 409)
+    }
+  }
 
   if (body.action === "file") {
     const { areaId, projectId, version } = body

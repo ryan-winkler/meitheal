@@ -1,4 +1,5 @@
 ---
+import { isOrganizationFeatureAvailable as available } from "@lib/organization-request-context"
 import HomeAssistantAreaField from "../components/tasks/HomeAssistantAreaField.astro"
 import { readHomeAssistantAreaFilter } from "@lib/home-assistant-area-access"
 import { newOrganizationLabel, organizationLabelsFor } from "@lib/organization-labels"
@@ -233,7 +234,7 @@ function lanePageHref(key: string, page: number) {
 // SSR: fetch areas for the AreaSelector
 let areas: { id: string; name: string; icon: string; color: string }[] = [];
 try {
-  const rawAreas = await hierarchyRepo.findAllAreas();
+  const rawAreas = available("groups") ? await hierarchyRepo.findAllAreas() : [];
   areas = rawAreas.map((a) => ({
     id: String(a.id ?? ""),
     name: String(a.name ?? ""),

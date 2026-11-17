@@ -1,3 +1,4 @@
+import { isOrganizationFeatureAvailable as availableFeature } from "@lib/organization-request-context"
 import { readHomeAssistantAreaFilter } from "@lib/home-assistant-area-access"
 import type { APIRoute } from "astro"
 import { ensureAgentTokenSchema } from "@domains/auth"
@@ -14,6 +15,7 @@ export const GET: APIRoute = async context => {
   const { locals, request, params, url } = context
   const selector = url.searchParams.get("view")
   const agent = locals.agentToken
+  if (selector === "groups" && !availableFeature("groups")) return apiError("Groups are unavailable.", 404)
   if (selector === "groups" && params.id === HOUSEHOLD_BOARD_ID && !agent) {
     await ensureSchema()
     const projection = await new HierarchyRepository(getPersistenceClient()).findAreaPage(url.searchParams.get("after"))

@@ -1,3 +1,4 @@
+import { isOrganizationFeatureAvailable as available } from "../../../lib/organization-request-context"
 import { DEFAULT_GROUP_COLOR } from "../../../lib/board-workspace"
 import { randomUUID } from "node:crypto"
 import type { Client, Transaction } from "@libsql/client"
@@ -107,29 +108,30 @@ export async function readNamedBoardPlanning(tx: Transaction, actor: BoardActor,
       args: [namedRoutinePeriod("weekly"), namedRoutinePeriod("daily"), board.id],
     },
   ])
-  const pillars = await readBoardPillars(tx, board.id)
+  const pillars = available("pillars") ? await readBoardPillars(tx, board.id) : []
+  if (!available("principles")) for (const pillar of pillars) pillar.principles = []
   return {
-    areas: areas!.rows.map(area => ({ id: String(area.id), name: String(area.name), icon: String(area.icon), color: String(area.color) })),
-    projects: projects!.rows.map(project => ({
+    areas: areas!.rows.filter(() => available("groups")).map(area => ({ id: String(area.id), name: String(area.name), icon: String(area.icon), color: String(area.color) })),
+    projects: projects!.rows.filter(() => available("projects")).map(project => ({
       id: String(project.id), title: String(project.title), description: String(project.description ?? ""),
       status: String(project.status), areaId: typeof project.area_id === "string" ? project.area_id : null,
       goalId: linkable!.rows.some(goal => goal.id === project.goal_id && (goal.shared_area_id === null || goal.shared_area_id === project.area_id))
         ? String(project.goal_id) : null,
     })),
-    goals: goals!.rows.map(goal => ({
+    goals: goals!.rows.filter(() => available("goals")).map(goal => ({
       id: String(goal.id), title: String(goal.title), description: String(goal.description ?? ""), areaId: typeof goal.area_id === "string" ? goal.area_id : null,
     })),
     pillars,
-    destinations: destinations!.rows.map(area => ({ id: String(area.id), name: String(area.name), board: String(area.board_name) })),
-    linkableGoals: linkable!.rows.map(goal => ({
+    destinations: destinations!.rows.filter(() => available("groups")).map(area => ({ id: String(area.id), name: String(area.name), board: String(area.board_name) })),
+    linkableGoals: linkable!.rows.filter(() => available("goals")).map(goal => ({
       id: String(goal.id), title: String(goal.title), sharedAreaId: typeof goal.shared_area_id === "string" ? goal.shared_area_id : null,
     })),
-    routines: routines!.rows.map(routine => ({
+    routines: routines!.rows.filter(() => available("routines")).map(routine => ({
       id: String(routine.id), name: String(routine.name), cadence: String(routine.cadence),
       areaId: String(routine.area_id), complete: routine.complete === 1, description: String(routine.description ?? ""),
       period: namedRoutinePeriod(String(routine.cadence)),
     })),
-    shares: shares!.rows.map(share => ({
+    shares: shares!.rows.filter(() => available("goals")).map(share => ({
       goalId: String(share.goal_id), areaId: String(share.area_id),
       areaName: typeof share.area_name === "string" ? share.area_name : null,
     })),
@@ -144,6 +146,12 @@ export class NamedBoardPlanningRepository {
       const outcome = await this.saveVisibility(ownerId, boardId, input)
       return outcome.status !== "locked" && outcome.result === "saved"
     }
+    const feature = input.action === "area" ? "groups"
+      : input.action.startsWith("project") ? "projects"
+      : input.action.startsWith("goal") ? "goals"
+      : input.action.startsWith("routine") ? "routines"
+      : input.action === "pillar-principle" ? "principles" : "pillars"
+    if (!available(feature)) return false
     const revision = await readBoardGrantRevision(this.markerPath)
     if (!revision) return false
     const tx = await acquireWriteTransaction(this.db)

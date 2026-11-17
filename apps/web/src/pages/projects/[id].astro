@@ -1,4 +1,5 @@
 ---
+import { isOrganizationFeatureAvailable as available } from "@lib/organization-request-context"
 import { organizationLabelsFor } from "@lib/organization-labels"
 /**
  * Project Detail — shows project metadata + tabbed sections for Tasks, Fields, Settings.
@@ -54,17 +55,17 @@ try {
     return Astro.redirect(projectsPath);
   }
 
-  if (project.goal_id) {
+  if (project.goal_id && available("goals")) {
     goal = await repo.findGoalById(project.goal_id as string) as Record<string, unknown> | null;
   }
   const areaId = project.area_id ?? goal?.area_id
-  if (typeof areaId === "string") {
+  if (typeof areaId === "string" && available("groups")) {
     area = await repo.findAreaById(areaId) as Record<string, unknown> | null
   }
 
   tasks = await taskRepo.findByProjectId(projectId);
-  goals = await repo.findAllGoals({});
-  areas = await repo.findAllAreas()
+  goals = available("goals") ? await repo.findAllGoals({}) : [];
+  areas = available("groups") ? await repo.findAllAreas() : []
 } catch (error) {
   logApiError("projects", "Could not load Project details", error)
   return new Response("Could not load this Project. Reload to try again.", {

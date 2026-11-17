@@ -119,7 +119,7 @@ let sidebarConfig: SidebarConfig = {
 const ff = await getFeatureFlags();
 const gamificationEnabled = ff.gamification !== false;
 const habitsEnabled = ff.habits !== false;
-const hierarchyEnabled = ff.hierarchy !== false;
+const hierarchyEnabled = ff.hierarchy !== false && ff.organizer !== false;
 
 /** Fetch streak data for sidebar badge */
 let currentStreak = 0;
@@ -210,6 +210,8 @@ const navItems = order
     // Feature flag: hide progress parent page when all sub-features disabled
     if (key === "progress" && !gamificationEnabled && !habitsEnabled) return false
     if (key === "areas") return false
+    if (key === "planning" && ff.planning === false) return false
+    if (key === "progress" && ff.pillars === false && ff.goals === false && ff.habits === false && ff.gamification === false) return false
     if (key === "boards" && !hierarchyEnabled) return false
     if ((key === "activity" || key === "mentionInbox") && !Astro.locals.hassUserId) return false
     return true
@@ -233,7 +235,7 @@ navItems.splice(pinIndex, 0, {
 
 const boardPosition = navItems.findIndex(item => item.key === "boards")
 const primaryItems = boardPosition < 0 ? navItems : navItems.slice(0, boardPosition + 1)
-const householdGroups = hierarchyEnabled && sidebarConfig.areas !== false
+const householdGroups = hierarchyEnabled && sidebarConfig.areas !== false && ff.organizer !== false && ff.groups !== false
 const householdGroupLabel = resolveLabel("group", true, labels.areas || (locale === "ga" ? "Grúpaí" : "Groups"))
 const remainingItems = boardPosition < 0 ? [] : navItems.slice(boardPosition + 1)
 ---

@@ -1,3 +1,6 @@
+import {
+  applyOrganizationFeatureMigration, ORGANIZATION_FEATURE_MIGRATION, readOrganizationFeatureMigrationState,
+} from "../drizzle/migrations/0014_organization_features.mjs"
 import { existsSync } from "node:fs"
 import { readFile } from "node:fs/promises"
 import path from "node:path"
@@ -106,12 +109,14 @@ export async function validateStartupTaskSchema(tx, { allowPending = false } = {
   const accessReady = await readBoardAccessMigrationState(tx)
   const labelsReady = await readOrganizationLabelMigrationState(tx)
   const organizationAccessReady = await readOrganizationAccessMigrationState(tx)
+  const featuresReady = await readOrganizationFeatureMigrationState(tx)
   if (!allowPending) {
     const pending = [
       !personalReady && PERSONAL_PILLAR_MIGRATION,
       !accessReady && BOARD_ACCESS_MIGRATION,
       !labelsReady && ORGANIZATION_LABEL_MIGRATION,
       !organizationAccessReady && ORGANIZATION_ACCESS_MIGRATION,
+      !featuresReady && ORGANIZATION_FEATURE_MIGRATION,
     ].filter(Boolean)
     if (pending.length) throw new Error(`Pending migrations: ${pending.join(", ")}`)
   }
@@ -133,6 +138,7 @@ export async function applyStartupTaskSchema(tx, prepareRuntime) {
     if (await applyBoardAccessMigration(tx)) applied.push(BOARD_ACCESS_MIGRATION)
     if (await applyOrganizationLabelMigration(tx)) applied.push(ORGANIZATION_LABEL_MIGRATION)
     if (await applyOrganizationAccessMigration(tx)) applied.push(ORGANIZATION_ACCESS_MIGRATION)
+    if (await applyOrganizationFeatureMigration(tx)) applied.push(ORGANIZATION_FEATURE_MIGRATION)
     return applied
   }
 
@@ -175,5 +181,6 @@ export async function applyStartupTaskSchema(tx, prepareRuntime) {
   await applyBoardAccessMigration(tx)
   await applyOrganizationLabelMigration(tx)
   await applyOrganizationAccessMigration(tx)
-  return [...pending, TASK_BOARD_MIGRATION, PERSONAL_PILLAR_MIGRATION, BOARD_ACCESS_MIGRATION, ORGANIZATION_LABEL_MIGRATION, ORGANIZATION_ACCESS_MIGRATION]
+  await applyOrganizationFeatureMigration(tx)
+  return [...pending, TASK_BOARD_MIGRATION, PERSONAL_PILLAR_MIGRATION, BOARD_ACCESS_MIGRATION, ORGANIZATION_LABEL_MIGRATION, ORGANIZATION_ACCESS_MIGRATION, ORGANIZATION_FEATURE_MIGRATION]
 }

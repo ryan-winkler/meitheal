@@ -1,4 +1,5 @@
 ---
+import { isOrganizationFeatureAvailable as available } from "@lib/organization-request-context"
 import type { readNamedBoardPlanning } from "@domains/tasks/persistence/named-board-planning-repository"
 import { organizationLabelsFor } from "@lib/organization-labels"
 import RetirePlanningForm from "./RetirePlanningForm.astro"
@@ -24,7 +25,7 @@ const label = await organizationLabelsFor(Astro)
     <p role="status" data-board-feedback></p>
     <button type="submit" class="btn btn-ghost">Save Project</button>
   </form>
-  <form data-board-form="planning" class="board-form">
+  {available("goals") && <form data-board-form="planning" class="board-form">
     <input type="hidden" name="action" value="project-goal" />
     <input type="hidden" name="id" value={project.id} />
     <label>Goal <select name="goalId">
@@ -34,7 +35,7 @@ const label = await organizationLabelsFor(Astro)
     </select></label>
     <p role="status" data-board-feedback></p>
     <button type="submit" class="btn btn-ghost">Save Goal link</button>
-  </form>
+  </form>}
   <RetirePlanningForm entity="project" id={project.id} />
 </details>}
 {canManage ? <form data-board-form="planning" class="board-form">

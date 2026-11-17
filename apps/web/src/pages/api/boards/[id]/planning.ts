@@ -1,3 +1,4 @@
+import { isOrganizationFeatureAvailable as available } from "@lib/organization-request-context"
 import type { APIRoute } from "astro"
 import { NamedBoardPlanningRepository } from "@domains/tasks/persistence/named-board-planning-repository"
 import { NamedBoardTaskRepository } from "@domains/tasks/persistence/named-board-task-repository"
@@ -58,6 +59,13 @@ export const POST: APIRoute = async ({ locals, params, request }) => {
   const user = await currentBoardUser(locals, request.signal, request)
   if (!user || !params.id) return apiError("Board unavailable", 404)
   const body = await readBoardRequest(request)
+  const action = typeof body?.action === "string" ? body.action : ""
+  const entity = action === "retire" ? body?.entity : action.split("-")[0]
+  const feature = entity === "routine" ? "routines" : entity === "goal" ? "goals"
+    : entity === "project" ? "projects" : entity === "area" ? "groups"
+    : action === "pillar-principle" ? "principles" : entity === "pillar" ? "pillars" : undefined
+  if (feature && !available(feature)) return apiError("This feature is unavailable.", 404)
+
   if (body?.action === "routine" || body?.action === "routine-complete") {
     if (!await isFeatureEnabled("habits")) return apiError("Routines are disabled in settings.", 404)
   }

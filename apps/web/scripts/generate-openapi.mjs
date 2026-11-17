@@ -2029,15 +2029,15 @@ const paths = {
       responses: { 204: { description: "Administrator proof in the response header" }, 403: { description: "Current administrator required" } },
     },
     get: {
-      operationId: "getOrganizationFeatureAvailability", tags: ["Settings"], summary: "Read current Home Assistant Area availability and eligible people",
+      operationId: "getOrganizationFeatureAvailability", tags: ["Settings"], summary: "Read organization feature audiences and eligible people",
       responses: { 200: { description: "Audience and verified Home Assistant roster" }, 403: { description: "Current administrator required" } },
     },
     put: {
-      operationId: "saveOrganizationFeatureAvailability", tags: ["Settings"], summary: "Set who can use the Home Assistant Area task field",
+      operationId: "saveOrganizationFeatureAvailability", tags: ["Settings"], summary: "Set who can use an organization feature",
       requestBody: { required: true, content: { "application/json": { schema: {
         type: "object", required: ["feature", "audience", "users", "revision"],
         properties: {
-          feature: { const: "home_assistant_area" }, audience: { enum: ["everyone", "selected", "nobody"] },
+          feature: { enum: ["organizer", "groups", "projects", "planning", "goals", "routines", "pillars", "principles", "achievements", "home_assistant_area"] }, audience: { enum: ["everyone", "selected", "nobody"] },
           users: { type: "array", items: { type: "string" } }, revision: { type: ["string", "null"] },
         },
       } } } },

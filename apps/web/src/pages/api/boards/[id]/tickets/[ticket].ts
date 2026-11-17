@@ -1,3 +1,4 @@
+import { organizationPlacementAvailable } from "@lib/organization-placement-access"
 import type { APIRoute } from "astro"
 import { NamedBoardTaskRepository } from "@domains/tasks/persistence/named-board-task-repository"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
@@ -14,6 +15,7 @@ function rejected(error: "denied" | "stale" | "unavailable") {
 
 export const PATCH: APIRoute = async ({ locals, request, params }) => {
   const body = await readBoardRequest(request)
+  if (body && !organizationPlacementAvailable(body)) return apiError("This organizing feature is unavailable.", 404)
   if (!body || typeof body.version !== "number" || !Number.isSafeInteger(body.version)) return apiError("Use a current task version.", 400)
   const actor = await currentBoardTaskActor(locals, request, true)
   if (!actor || !params.id || !params.ticket) return apiError("Board or task unavailable", 404)
@@ -48,6 +50,7 @@ export const PATCH: APIRoute = async ({ locals, request, params }) => {
 
 export const DELETE: APIRoute = async ({ locals, request, params }) => {
   const body = await readBoardRequest(request)
+  if (body && !organizationPlacementAvailable(body)) return apiError("This organizing feature is unavailable.", 404)
   if (!body || typeof body.version !== "number" || !Number.isSafeInteger(body.version)) return apiError("Use a current task version.", 400)
   const actor = await currentBoardTaskActor(locals, request, true)
   if (!actor || !params.id || !params.ticket) return apiError("Board or task unavailable", 404)

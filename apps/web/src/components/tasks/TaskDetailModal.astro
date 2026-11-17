@@ -1,4 +1,5 @@
 ---
+import { isOrganizationFeatureAvailable as available } from "@lib/organization-request-context"
 import HomeAssistantAreaField from "./HomeAssistantAreaField.astro"
 import { mentionInboxContext } from "@lib/mention-inbox-context"
 import { verifiedIngressUser } from "@lib/verified-ingress-user"
@@ -219,19 +220,19 @@ const mentionUser = verifiedIngressUser(Astro.locals)
                     </select>
                   </div>
 
-                  <div class="grid grid-cols-[100px_minmax(0,1fr)] items-center gap-2 min-w-0">
+                  {available("groups") && <div class="grid grid-cols-[100px_minmax(0,1fr)] items-center gap-2 min-w-0">
                     <label for="td-area" class="text-xs text-text-secondary font-medium truncate">Area</label>
                     <select id="td-area" class="form-select py-1.5 px-2 bg-bg-card hover:bg-bg-hover border border-border cursor-pointer transition-colors focus:ring-1 focus:ring-accent font-medium text-text-primary w-full min-w-0"></select>
-                  </div>
+                  </div>}
 
-                  <div class="grid grid-cols-[100px_minmax(0,1fr)] items-center gap-2 min-w-0">
+                  {available("projects") && <div class="grid grid-cols-[100px_minmax(0,1fr)] items-center gap-2 min-w-0">
                     <label for="td-project" class="text-xs text-text-secondary font-medium truncate">Project</label>
                     <select id="td-project" disabled class="form-select py-1.5 px-2 bg-bg-card hover:bg-bg-hover border border-border cursor-pointer transition-colors focus:ring-1 focus:ring-accent font-medium text-text-primary w-full min-w-0">
                       <option value="">No project</option>
                     </select>
-                  </div>
+                  </div>}
 
-                  <div class="grid grid-cols-[100px_minmax(0,1fr)] items-center gap-2 min-w-0">
+                  {available("pillars") && <div class="grid grid-cols-[100px_minmax(0,1fr)] items-center gap-2 min-w-0">
                     <label for="td-pillar" class="text-xs text-text-secondary font-medium flex items-center gap-1.5 truncate" title="Pillar">
                       <Icon name="target" size={13} sprite={true} />
                       Pillar
@@ -239,9 +240,9 @@ const mentionUser = verifiedIngressUser(Astro.locals)
                     <select id="td-pillar" class="form-select py-1.5 px-2 bg-bg-card hover:bg-bg-hover border border-border cursor-pointer transition-colors focus:ring-1 focus:ring-accent font-medium text-text-primary w-full min-w-0">
                       <option value="">No pillar</option>
                     </select>
-                  </div>
+                  </div>}
 
-                  <div class="grid grid-cols-[100px_minmax(0,1fr)] items-center gap-2 min-w-0">
+                  {available("principles") && <div class="grid grid-cols-[100px_minmax(0,1fr)] items-center gap-2 min-w-0">
                     <label for="td-principle" class="text-xs text-text-secondary font-medium flex items-center gap-1.5 truncate" title="Principle">
                       <Icon name="book" size={13} sprite={true} />
                       Principle
@@ -249,7 +250,7 @@ const mentionUser = verifiedIngressUser(Astro.locals)
                     <select id="td-principle" class="form-select py-1.5 px-2 bg-bg-card hover:bg-bg-hover border border-border cursor-pointer transition-colors focus:ring-1 focus:ring-accent font-medium text-text-primary w-full min-w-0">
                       <option value="">No principle</option>
                     </select>
-                  </div>
+                  </div>}
 
                 </div>
               </section>

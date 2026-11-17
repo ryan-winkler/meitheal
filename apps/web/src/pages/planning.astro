@@ -1,5 +1,5 @@
 ---
-import { organizationLabelsFor, newOrganizationLabel, organizationLocale } from "@lib/organization-labels"
+import { organizationLabelsFor } from "@lib/organization-labels"
 /**
  * /planning — Parent page for Planning views
  *
@@ -19,15 +19,16 @@ import type { Locale } from "../lib/locale"
 import { getTasksForView } from "../lib/task-queries"
 import TriageIntake from "../components/planning/TriageIntake.astro"
 import PlanningRice from "../components/planning/PlanningRice.astro"
-import {
-  ensureSchema,
-  getPersistenceClient,
-} from "@domains/tasks/persistence/store"
-import { HierarchyRepository, type AreaRow, type ProjectRow } from "@domains/tasks/persistence/hierarchy-repository"
+import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import { TaskRepository } from "@domains/tasks/persistence/task-repository"
 
+let taskRepo: TaskRepository | undefined
+try {
+  await ensureSchema()
+  taskRepo = new TaskRepository(getPersistenceClient())
+} catch { /* the task list renders its existing unavailable state */ }
+
 const label = await organizationLabelsFor(Astro)
-const newLabel = (name: Parameters<typeof label>[0], fallback?: string) => newOrganizationLabel(label(name, false, fallback), organizationLocale(Astro))
 const cookieLocale = Astro.cookies.get("meitheal-locale")?.value
 const locale: Locale = cookieLocale === "ga" ? "ga" : "en"
 
@@ -52,71 +53,7 @@ for (const task of tasks) {
   }
 }
 
-// ─── Spaces data: Areas & Projects ─────────────────────────────────
-let taskRepo: TaskRepository | undefined
-let areas: AreaRow[] = []
-let projects: ProjectRow[] = []
-let spacesUnavailable = false
-const goalsByArea = new Map<string, Set<string>>()
-const projectsByArea = new Map<string, ProjectRow[]>()
-const unassigned: ProjectRow[] = []
-let taskCountByProject = new Map<string, { total: number; completed: number }>()
 
-try {
-  await ensureSchema()
-  const client = getPersistenceClient()
-  const repo = new HierarchyRepository(client)
-  taskRepo = new TaskRepository(client)
-
-  areas = await repo.findAllAreas()
-  const goals = await repo.findAllGoals({})
-  projects = await repo.findAllProjects({})
-
-  // Goal counts per area
-  for (const g of goals) {
-    if (g.area_id) {
-      const ids = goalsByArea.get(g.area_id) ?? new Set<string>()
-      ids.add(g.id)
-      goalsByArea.set(g.area_id, ids)
-    }
-  }
-
-  // Project counts per area: direct area link first, then via the project's goal
-  const goalToArea = new Map<string, string>()
-  for (const g of goals) {
-    if (g.area_id) goalToArea.set(String(g.id), String(g.area_id))
-  }
-  const knownAreas = new Set(areas.map(area => area.id))
-  for (const p of projects) {
-    const areaId = p.area_id ? String(p.area_id) : p.goal_id ? goalToArea.get(String(p.goal_id)) : null
-    if (areaId && knownAreas.has(areaId)) {
-      const group = projectsByArea.get(areaId) ?? []
-      group.push(p)
-      projectsByArea.set(areaId, group)
-      if (p.goal_id) {
-        const ids = goalsByArea.get(areaId) ?? new Set<string>()
-        ids.add(p.goal_id)
-        goalsByArea.set(areaId, ids)
-      }
-    } else {
-      unassigned.push(p)
-    }
-  }
-
-  // Task counts per project (single grouped SQL query)
-  const countsByProject = await taskRepo.getProjectTaskCounts()
-  for (const proj of projects) {
-    const projId = String(proj.id)
-    taskCountByProject.set(projId, countsByProject.get(projId) ?? { total: 0, completed: 0 })
-  }
-} catch {
-  spacesUnavailable = true
-}
-
-// Filter out Uncategorized if empty
-const groups = areas.map(area => ({ area, projects: projectsByArea.get(area.id) ?? [] }))
-const planningGroups: Array<{ area?: AreaRow; projects: ProjectRow[] }> = [...groups]
-if (unassigned.length) planningGroups.push({ projects: unassigned })
 ---
 
 <Layout title={`Meitheal — ${label("planning", false, t("nav.planning", locale))}`} hideSearchHub={true} hideGlobalSearch={true}>
@@ -124,47 +61,8 @@ if (unassigned.length) planningGroups.push({ projects: unassigned })
   <Fragment slot="custom-header" />
   <ParentPageShell pageId="planning">
 
-    {/* ─── Spaces: Areas & Projects ─── */}
     <section data-parent-section="spaces" id="planning-section-spaces">
-      {spacesUnavailable ? <p role="alert" class="spaces-empty">Could not load Areas and Projects. Reload to try again.</p> : (
-        <>
-          <header class="spaces-toolbar">
-            <h2>{label("group", true)} &amp; {label("project", true)}</h2>
-            <button type="button" class="btn btn-primary" id="create-area-btn">{newLabel("group", "Area")}</button>
-          </header>
-          {planningGroups.length === 0 && <p class="spaces-empty">Create an Area to organize the Projects and Goals you want to follow.</p>}
-          <div class="spaces-grid">
-            {planningGroups.map(({ area, projects: items }) => (
-              <section class="spaces-group" style={`--card-accent: ${area?.color ?? "var(--accent)"};`}>
-                <header class="spaces-group__header">
-                  <div>
-                    <h3>
-                      {area ? <a href={`/areas/${encodeURIComponent(area.id)}`}>{area.icon} {area.name}</a> : "Projects without an Area"}
-                    </h3>
-                    {area && <p>{items.length} {items.length === 1 ? "project" : "projects"} · {goalsByArea.get(area.id)?.size ?? 0} goals</p>}
-                  </div>
-                  <button type="button" class="btn btn-ghost btn-sm" data-create-project={area?.id ?? ""} aria-label={area ? "New Project in " + area.name : "New Project without an Area"}>{newLabel("project")}</button>
-                </header>
-                {items.length ? <ul class="spaces-projects">
-                  {items.map(project => {
-                    const counts = taskCountByProject.get(project.id) ?? { total: 0, completed: 0 }
-                    return <li>
-                      <a class="spaces-project" href={`/projects/${encodeURIComponent(project.id)}`}>
-                        <span aria-hidden="true">{project.icon ?? "📋"}</span>
-                        <span class="spaces-project__name">{project.title}</span>
-                        <span class="spaces-project__progress">
-                          {counts.total ? `${counts.completed}/${counts.total} done` : "No tasks"}
-                        </span>
-                      </a>
-                    </li>
-                  })}
-                </ul> : <p class="spaces-empty">No projects yet.</p>}
-              </section>
-            ))}
-          </div>
-          {!unassigned.length && <button type="button" class="btn btn-ghost btn-sm" data-create-project="">New Project without an Area</button>}
-        </>
-      )}
+      <a class="btn btn-primary" href="/boards">Open {label("board", true)}</a>
     </section>
 
     {/* ─── Eisenhower ─── */}
@@ -196,81 +94,18 @@ if (unassigned.length) planningGroups.push({ projects: unassigned })
   </ParentPageShell>
 </Layout>
 
-<style>
-  .spaces-toolbar, .spaces-group__header, .spaces-project {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-  }
-  .spaces-toolbar { margin-bottom: 1rem; }
-  .spaces-toolbar h2, .spaces-group h3 { margin: 0; }
-  .spaces-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 21rem), 1fr));
-    align-items: start;
-    gap: 1rem;
-    margin-bottom: 0.75rem;
-  }
-  .spaces-group {
-    min-width: 0;
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-top: 3px solid var(--card-accent);
-    border-radius: var(--radius-md);
-  }
-  .spaces-group__header, .spaces-empty { padding: 0.75rem 1rem; }
-  .spaces-group__header a, .spaces-project { color: inherit; }
-  .spaces-group__header a, .spaces-project__name { overflow-wrap: anywhere; }
-  .spaces-group__header p, .spaces-project__progress, .spaces-empty {
-    margin: 0;
-    color: var(--text-secondary);
-    font-size: 0.875rem;
-  }
-  .spaces-projects { list-style: none; padding: 0; margin: 0; }
-  .spaces-project {
-    padding: 0.625rem 1rem;
-    border-top: 1px solid var(--border);
-  }
-  .spaces-project:hover { background: var(--bg-hover); }
-  .spaces-project__name { flex: 1; min-width: 0; }
-</style>
+
 
 <script>
   import { pageLifecycle } from "@lib/page-lifecycle"
-  import { promptDialog } from "@lib/prompt-dialog"
+  import { safeIngressHref } from "@lib/ingress-navigation"
 
   pageLifecycle.onPageLoad(signal => {
-    const spaces = document.getElementById("planning-section-spaces")
-    if (!spaces || spaces.dataset.bound) return
-    spaces.dataset.bound = "true"
-    const drafts = new WeakMap<HTMLButtonElement, string>()
-    signal.addEventListener("abort", () => { delete spaces.dataset.bound }, { once: true })
-    spaces.addEventListener("click", async event => {
-      const button = (event.target as HTMLElement).closest<HTMLButtonElement>("#create-area-btn, [data-create-project]")
-      if (!button || button.disabled) return
-      const project = button.dataset.createProject
-      const entity = project === undefined ? "Area" : "Project"
-      button.disabled = true
-      try {
-        const name = await promptDialog({ title: "Create " + entity, required: true, defaultValue: drafts.get(button) ?? "" })
-        if (!name) return
-        drafts.set(button, name)
-        const response = await fetch(project === undefined ? "/api/areas" : "/api/projects", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(project === undefined ? { name } : { title: name, area_id: project || undefined }),
-          signal,
-        })
-        if (!response.ok) throw new Error("Could not create " + entity)
-        drafts.delete(button)
-        window.location.reload()
-      } catch {
-        if (!signal.aborted) window.showToast?.("Could not create the " + entity + ". Try again.", "error")
-      } finally {
-        if (!signal.aborted) button.disabled = false
-      }
-    }, { signal })
+    const bridge = () => {
+      if (location.hash === "#spaces") location.replace(safeIngressHref("/boards"))
+    }
+    bridge()
+    window.addEventListener("hashchange", bridge, { signal })
   })
+
 </script>

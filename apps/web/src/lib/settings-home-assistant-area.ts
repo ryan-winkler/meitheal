@@ -1,18 +1,19 @@
 import { safeFetch } from "./safe-fetch"
 
 interface AreaPolicySettings {
-  home_assistant_area: { audience: string; revision: string | null; users: string[] }
+  features: Record<string, { audience: string; revision: string | null; users: string[] }>
   roster: { id: string; name: string }[]
 }
 
 export function initSettingsHomeAssistantArea(signal: AbortSignal) {
   const form = document.querySelector<HTMLFormElement>("#ha-area-feature-form")
+  const feature = form?.querySelector<HTMLSelectElement>('select[name="feature"]')
   const fields = form?.querySelector<HTMLFieldSetElement>("fieldset")
   const select = form?.querySelector<HTMLSelectElement>('select[name="audience"]')
   const roster = form?.querySelector<HTMLFieldSetElement>("[data-ha-area-roster]")
   const users = form?.querySelector("[data-ha-area-users]")
   const status = form?.querySelector<HTMLElement>("[data-ha-area-policy-status]")
-  if (!form || !fields || !select || !roster || !users || !status) return
+  if (!form || !feature || !fields || !select || !roster || !users || !status) return
 
   const path = "/api/organization-features"
   const ready = fields
@@ -22,6 +23,17 @@ export function initSettingsHomeAssistantArea(signal: AbortSignal) {
   let revision: string | null = null
   let proof: string | null = null
   let refreshing = false
+  let settings: AreaPolicySettings | undefined
+  const featureChoice = feature
+  const showFeature = () => {
+    const policy = settings?.features[featureChoice.value]
+    if (!policy) return
+    revision = policy.revision
+    choice.value = policy.audience
+    for (const input of people.querySelectorAll<HTMLInputElement>("input")) input.checked = policy.users.includes(input.value)
+    setRosterVisibility()
+  }
+  feature.addEventListener("change", showFeature, { signal })
 
   const setRosterVisibility = () => { roster.hidden = select.value !== "selected" }
   select.addEventListener("change", setRosterVisibility, { signal })
@@ -32,7 +44,8 @@ export function initSettingsHomeAssistantArea(signal: AbortSignal) {
     const data: AreaPolicySettings = await response.json()
     if (signal.aborted) return
     proof = response.headers.get("x-meitheal-area-admin")
-    const policy = data.home_assistant_area
+    settings = data
+    const policy = data.features[featureChoice.value]!
     revision = policy.revision
     choice.value = policy.audience
     people.replaceChildren(...data.roster.map(user => {
@@ -61,7 +74,7 @@ export function initSettingsHomeAssistantArea(signal: AbortSignal) {
       const response = await safeFetch(path, {
         method: "PUT", signal, headers: { "content-type": "application/json", "x-meitheal-area-admin": proof ?? "" },
         body: JSON.stringify({
-          feature: "home_assistant_area", revision, audience: choice.value,
+          feature: featureChoice.value, revision, audience: choice.value,
           users: choice.value === "selected" ? selected : [],
         }),
       })

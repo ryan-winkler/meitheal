@@ -20,6 +20,7 @@ import { organizationLabelsFor, type OrganizationTerm } from "@lib/organization-
  * @phase 15 — Hierarchy Architecture Overhaul
  */
 
+import { isOrganizationFeatureAvailable } from "@lib/organization-request-context"
 import UnifiedBar from "./UnifiedBar.astro"
 import { PARENT_PAGES, type ParentPageId } from "@lib/parent-page-registry"
 
@@ -40,12 +41,15 @@ const pageTitle = organization(pageId === "tasks" ? "task" : pageId, true, page.
 const subViewTerm: Partial<Record<string, OrganizationTerm>> = {
   pillars: "pillar", routines: "routine", goals: "goal", achievements: "achievement",
 }
-const tabs = page.subViews.map((sv) => {
+const allowedSubViews = page.subViews.filter(view =>
+  !["pillars", "routines", "goals", "achievements"].includes(view.id) ||
+    isOrganizationFeatureAvailable(view.id as "pillars" | "routines" | "goals" | "achievements"))
+const tabs = allowedSubViews.map((sv) => {
   const term = subViewTerm[sv.id]
   return {
     id: sv.hash,
     label: sv.id === "spaces"
-      ? `${organization("group", true, "Areas")} & ${organization("project", true)}`
+      ? organization("board", true)
       : term ? organization(term, true, sv.label) : sv.label,
     icon: sv.icon,
   }
@@ -59,8 +63,8 @@ const tabs = page.subViews.map((sv) => {
   data-parent-config={JSON.stringify({
     shellId,
     barId,
-    sectionIds: page.subViews.map((sv) => sv.hash),
-    defaultSectionId: page.defaultHash,
+    sectionIds: allowedSubViews.map((sv) => sv.hash),
+    defaultSectionId: allowedSubViews.some(view => view.hash === page.defaultHash) ? page.defaultHash : allowedSubViews[0]?.hash,
   })}
 >
   <UnifiedBar

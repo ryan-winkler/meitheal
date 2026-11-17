@@ -38,12 +38,12 @@ test("Planning reads the live queue and saves a score inside managed ingress", a
     await page.goto(origin + prefix + "/planning#triage")
     const queue = await queueRequest
     expect(new URL(queue.url()).pathname).toBe(prefix + "/triage")
-    expect(queue.headers()["cache-control"]).toBe("no-store")
+    expect(queue.headers()["cache-control"]).toContain("no-store")
     await expect(page.locator(`[data-triage-card="${id}"]`)).toBeVisible()
 
     await context.setOffline(true)
     const navigation = page.getByRole("navigation", { name: "Planning quick navigation" })
-    await navigation.getByRole("link", { name: "Areas & Projects" }).click()
+    await navigation.getByRole("link", { name: "Eisenhower" }).click()
     await navigation.getByRole("link", { name: "Triage" }).click()
     await expect(page.locator("[data-triage-status]")).toContainText("Triage needs a connection")
     await expect(page.locator("[data-triage-card]")).toHaveCount(0)

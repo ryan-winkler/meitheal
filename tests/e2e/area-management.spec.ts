@@ -83,10 +83,7 @@ test("Area options open the editor and save within Home Assistant ingress", asyn
     expect(project.status()).toBe(201)
     const { id: projectId } = await project.json() as { id: string }
     await page.setViewportSize({ width: 1240, height: 780 })
-    await page.goto(appUrl + "/planning#spaces")
-    const plan = page.locator("#planning-section-spaces")
-    await plan.getByRole("link", { name: /Tool storage/ }).click()
-    await expect(page).toHaveURL(`${appUrl}/projects/${projectId}`)
+    await page.goto(`${appUrl}/projects/${projectId}`)
     await expect(page.locator("#section-overview")).toBeVisible()
     await page.getByRole("button", { name: "Project options - Tool storage" }).press("Enter")
     const editProject = page.getByRole("link", { name: "Edit Project", exact: true })
@@ -248,7 +245,7 @@ test("Area Routines open the existing editor in context and keep the generated t
     const original = await request.get(`/api/tasks/${taskId}`)
     expect((await original.json()).area_id).toBe(nextArea)
     await page.goto("/habits?area_id=&new=1")
-    await expect(page).toHaveURL(/\/planning#spaces$/)
+    await expect(page).toHaveURL(/\/boards$/)
     await expect(page.getByRole("dialog", { name: "New Routine" })).toHaveCount(0)
   } finally {
     if (taskId) await request.delete(`/api/tasks/${taskId}`)

@@ -4,7 +4,7 @@ import {
   allowsOrganizationAudience, OrganizationAccessRepository, type OrganizationPolicy,
 } from "@domains/tasks/persistence/organization-access-repository"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks"
-import { getFeatureFlags, type FeatureFlags } from "./feature-flags"
+import { getStoredFeatureFlags, type FeatureFlags } from "./feature-flags"
 import { verifiedIngressUser } from "./verified-ingress-user"
 
 export const ORGANIZATION_FEATURES = {
@@ -67,7 +67,7 @@ export function getOrganizationAvailability(context: AccessContext): Promise<Org
 async function loadOrganizationAvailability(context: AccessContext): Promise<OrganizationAvailability> {
   await ensureSchema()
   const repository = new OrganizationAccessRepository(getPersistenceClient())
-  const [policies, flags] = await Promise.all([repository.policies("feature", ""), getFeatureFlags()])
+  const [policies, flags] = await Promise.all([repository.policies("feature", ""), getStoredFeatureFlags()])
   if (policies.status === "locked") return unavailable
   const user = verifiedIngressUser(context.locals)
   const selected = user && policies.policies.some(policy => policy.audience === "selected" && policy.users.includes(user.id))

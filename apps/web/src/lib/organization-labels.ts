@@ -34,6 +34,13 @@ export function defaultOrganizationLabel(term: OrganizationTerm, locale: Locale,
 export function visibleOrganizationTerms(flags: FeatureFlags): OrganizationTerm[] {
   return termNames.filter((term) => {
     switch (term) {
+      case "board": return true
+      case "group": return flags.groups !== false
+      case "project": return flags.projects !== false
+      case "goal": return flags.goals !== false
+      case "pillar": return flags.pillars !== false
+      case "principle": return flags.pillars !== false && flags.principles !== false
+      case "planning": return flags.planning !== false
       case "routine": return flags.habits !== false
       case "achievement": return flags.gamification !== false
       default: return true

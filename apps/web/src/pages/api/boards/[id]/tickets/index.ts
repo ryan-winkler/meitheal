@@ -1,3 +1,4 @@
+import { organizationPlacementAvailable } from "@lib/organization-placement-access"
 import { resolveHomeAssistantAreaSelection } from "@lib/home-assistant-area-access"
 import type { APIRoute } from "astro"
 import { NamedBoardTaskRepository } from "@domains/tasks/persistence/named-board-task-repository"
@@ -11,6 +12,7 @@ import { stripHtml } from "@lib/strip-html"
 export const POST: APIRoute = async (context) => {
   const { locals, request, params } = context
   const body = await readBoardRequest(request)
+  if (body && !organizationPlacementAvailable(body)) return apiError("This organizing feature is unavailable.", 404)
   const dueDate = body?.due_date
   if (dueDate !== undefined && dueDate !== null && (typeof dueDate !== "string" || !parseCalendarDay(dueDate))) {
     return apiError("Choose a valid due date.", 400)

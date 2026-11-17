@@ -85,3 +85,6 @@ When draft capture is enabled, make a second App-only checkpoint with a saved dr
 In the editor-managed Home Assistant devcontainer, seed a task, related data and settings, then create a Supervisor backup while Meitheal runs. Observe a stop before archiving and a restart afterward. Make a second write, restore the backup and verify that the first write survived, the second is absent, and ingress and database integrity pass. Repeat with the app already stopped and confirm backup leaves it stopped. Record the image digest and outage.
 
 Before updating the Green, rehearse the older app and data rollback on a disposable Supervisor. A locally tested archive proves file recovery. It takes a Supervisor rehearsal to verify the lifecycle and a Green run to verify device acceptance.
+
+
+Schema 24 adds protection for hidden organization features and fixes the calendar date of a generated Routine occurrence. It upgrades existing schema 23 data in place and keeps the previous migration ledger entries. Use the matching App and data backup when restoring an earlier schema.

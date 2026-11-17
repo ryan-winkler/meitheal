@@ -2,6 +2,7 @@
 import { organizationLabelsFor, newOrganizationLabel, organizationLocale } from "@lib/organization-labels"
 import { BoardIntakeRepository } from "@domains/tasks/persistence/board-intake-repository"
 import { getPersistenceClient } from "@domains/tasks/persistence/store"
+import { isOrganizationFeatureAvailable as available } from "@lib/organization-request-context"
 import Layout from "../../layouts/Layout.astro"
 import "../../styles/boards.css"
 import { boardViewKey, readBoardDirectory } from "@lib/board-view"
@@ -37,14 +38,14 @@ const snapshot = user && directory ? boardViewKey(directory, user.actor.id) : un
             <h2 id="private-heading">{organizationLocale(Astro) === "ga" ? `Do ${label("board", true)}` : `Your ${label("board", true)}`}</h2>
             <p>Each Board has its own members and permissions.</p>
           </div>
-          <details class="board-add">
+          {available("organizer") && <details class="board-add">
             <summary class="btn btn-primary">{newLabel("board")}</summary>
             <form data-board-form="create" class="board-form">
               <label>{label("board")} <input name="name" required maxlength="100" autocomplete="off" /></label>
               <p role="status" data-board-feedback></p>
               <button type="submit" class="btn btn-primary">{organizationLocale(Astro) === "en" ? `Create ${label("board")}` : newLabel("board")}</button>
             </form>
-          </details>
+          </details>}
         </header>
         {directory.boards.length ? <div class="boards-list">
           {directory.boards.map(board => <article class="board-tile">

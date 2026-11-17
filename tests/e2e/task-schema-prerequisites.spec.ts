@@ -11,6 +11,7 @@ import { PERSONAL_PILLAR_MIGRATION } from "../../apps/web/drizzle/migrations/001
 import { BOARD_ACCESS_MIGRATION } from "../../apps/web/drizzle/migrations/0011_board_access.mjs"
 import { ORGANIZATION_LABEL_MIGRATION } from "../../apps/web/drizzle/migrations/0012_organization_labels.mjs"
 import { ORGANIZATION_ACCESS_MIGRATION } from "../../apps/web/drizzle/migrations/0013_organization_access.mjs"
+import { ORGANIZATION_FEATURE_MIGRATION } from "../../apps/web/drizzle/migrations/0014_organization_features.mjs"
 import { TASK_BOARD_MIGRATION } from "../../apps/web/drizzle/migrations/task-board-upgrade.mjs"
 import { reconcileTaskSchemaPrerequisites } from "../../apps/web/drizzle/migrations/task-schema-prerequisites.mjs"
 import { assertSupportedDatabaseSchema, DATABASE_SCHEMA_VERSION, openDatabase } from "../../apps/web/scripts/database-client.mjs"
@@ -224,7 +225,7 @@ test("CLI check detects missing predecessor prerequisites without writing", asyn
   await migrate(databasePath)
   await migrate(databasePath, "--check")
   withDatabase(databasePath, database => {
-    expect(database.prepare("SELECT name, applied_at FROM __meitheal_migrations WHERE name NOT IN (?, ?, ?, ?, ?) ORDER BY name").all(TASK_BOARD_MIGRATION, PERSONAL_PILLAR_MIGRATION, BOARD_ACCESS_MIGRATION, ORGANIZATION_LABEL_MIGRATION, ORGANIZATION_ACCESS_MIGRATION))
+    expect(database.prepare("SELECT name, applied_at FROM __meitheal_migrations WHERE name NOT IN (?, ?, ?, ?, ?, ?) ORDER BY name").all(TASK_BOARD_MIGRATION, PERSONAL_PILLAR_MIGRATION, BOARD_ACCESS_MIGRATION, ORGANIZATION_LABEL_MIGRATION, ORGANIZATION_ACCESS_MIGRATION, ORGANIZATION_FEATURE_MIGRATION))
       .toEqual(ledger)
     expect(lanes(database).map(lane => lane.key)).toEqual(["backlog", "pending", "active", "complete"])
   })

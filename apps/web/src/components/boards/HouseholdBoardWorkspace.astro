@@ -1,5 +1,6 @@
 ---
 import { organizationLabelsFor, newOrganizationLabel, organizationLocale } from "@lib/organization-labels"
+import { isOrganizationFeatureAvailable as availableFeature } from "@lib/organization-request-context"
 import Layout from "../../layouts/Layout.astro"
 import HouseholdGroup from "../../pages/areas/[id].astro"
 import HouseholdProject from "../../pages/projects/[id].astro"
@@ -26,8 +27,8 @@ if (selection.areaId || selection.projectId || selection.planning) {
   } else if (selection.areaId) {
     available = Boolean(await hierarchy.findAreaById(selection.areaId))
   } else {
-    areas = await hierarchy.findAllAreas()
-    const projects = await hierarchy.findAllProjects()
+    areas = availableFeature("groups") ? await hierarchy.findAllAreas() : []
+    const projects = availableFeature("projects") ? await hierarchy.findAllProjects() : []
     const goals = await hierarchy.findAllGoals({})
     const areaIds = new Set(areas.map(area => area.id))
     const goalAreas = new Map(goals.map(goal => [goal.id, goal.area_id]))
@@ -46,7 +47,7 @@ if (!available) Astro.response.status = 404
       <nav class="board-back" aria-label="Board navigation"><a href="/boards">{label("board", true)}</a> › <a href={household}>Household</a></nav>
       <header class="boards-heading">
         <div><h1>{label("group", true)}</h1><p>Organize Projects and related work within Household.</p></div>
-        <details class="board-add">
+        {availableFeature("groups") && <details class="board-add">
           <summary class="btn btn-primary">{newLabel("group", organizationLocale(Astro) === "en" ? "group" : undefined)}</summary>
           <form class="board-form" data-household-group-create>
             <label>Name <input name="name" maxlength="100" required /></label>
@@ -55,7 +56,7 @@ if (!available) Astro.response.status = 404
             <p role="status" data-group-feedback></p>
             <button type="submit" class="btn btn-primary">Create group</button>
           </form>
-        </details>
+        </details>}
       </header>
       <div class="boards-list">
         {areas.map(area => <article class="board-tile">

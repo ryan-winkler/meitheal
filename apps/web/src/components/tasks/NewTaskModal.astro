@@ -1,4 +1,5 @@
 ---
+import { isOrganizationFeatureAvailable as available } from "@lib/organization-request-context"
 import HomeAssistantAreaField from "./HomeAssistantAreaField.astro"
 import { newOrganizationLabel, organizationLabelsFor } from "@lib/organization-labels"
 import { t } from "../../i18n/translations";
@@ -149,10 +150,10 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
         <summary>{t("task_modal.more_options", locale)}</summary>
         <div class="nt-options-content">
           <div class="nt-form-grid">
-            <div class="nt-field">
+            {available("goals") && <div class="nt-field">
               <label for="new-task-goal">{t("task_modal.goal_label", locale)}</label>
               <select id="new-task-goal" name="goal_id" class="form-select"><option value="">{t("task_modal.goal_none", locale)}</option></select>
-            </div>
+            </div>}
             <div class="nt-field">
               <label for="new-task-recurrence">{t("task_modal.repeat_label", locale)}</label>
               <select id="new-task-recurrence" name="recurrence_rule" class="form-select">

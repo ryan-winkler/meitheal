@@ -17,6 +17,15 @@ test("access policy snapshots fail closed when restored separately from the gran
     await ensureSchema()
     const db = getPersistenceClient()
     const repository = new OrganizationAccessRepository(db, marker)
+    await db.execute(`INSERT INTO tasks (id, title, status, task_kind, source_template_id, due_date,
+      area_id, idempotency_key, request_id, created_at, updated_at)
+      VALUES ('occurrence-fixture', 'Fixed Routine day', 'complete', 'routine_instance', 'routine-fixture', '2026-11-17',
+        'default', 'occurrence-fixture', 'occurrence-fixture', 1, 1)`)
+    await expect(db.execute("UPDATE tasks SET due_date = NULL WHERE id = 'occurrence-fixture'"))
+      .rejects.toThrow("A Routine occurrence keeps its original date")
+    expect((await db.execute("SELECT due_date FROM tasks WHERE id = 'occurrence-fixture'")).rows)
+      .toEqual([{ due_date: "2026-11-17" }])
+
     const feature = { scope: "feature", id: "goals", boardId: "" } as const
     expect(await repository.policies("feature", "")).toEqual({ status: "current", policies: [] })
     expect(await repository.change(feature, null, { audience: "selected", users: ["alex", "blake", "alex"] }))

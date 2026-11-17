@@ -238,3 +238,11 @@ Calendar sync distinguishes an empty successful response from a missing or faile
 Credential changes during initial authentication retire the pending attempt; it cannot publish an old connection after a newer configuration takes over. Removing or rejecting credentials clears the previous entity snapshot immediately. Registered application listeners remain available for the next successful connection. A populated-cache rotation check covers these cases separately from the ordinary empty-snapshot connection check.
 
 If Home Assistant’s user list cannot load, People & Notifications keeps the saved default assignee selected as **Current assignee (unavailable)**. Use **None (unassigned)** when you want to clear it.
+
+
+Under Tasks & Boards, Home Assistant administrators can use Organization features to choose Everyone, Selected people, or Nobody for each organizing function. Choose a feature, set its audience, and save. Existing tasks remain reachable through their Boards. The legacy Habit Tracker and Gamification switches report a conflict after an audience has been configured. Use Organization features to change that audience.
+
+The Boards organizer contains groups and Projects. The previous Planning spaces bookmark opens Boards. Personal display labels are still configured under Navigation & Shortcuts → Labels.
+
+
+Feature audiences apply to direct API and page links. Governed feature reads require a connection. On activation, the service worker removes older feature responses from its caches.

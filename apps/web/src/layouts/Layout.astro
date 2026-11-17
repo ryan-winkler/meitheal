@@ -37,9 +37,7 @@ const featureFlags = await getFeatureFlags();
 const organizationState = await readRequestOrganizationLabels(Astro)
 const organizationUser = verifiedIngressUser(Astro.locals)
 const organizationSettings = Astro.url.pathname === "/settings"
-const organizationProof = organizationUser && organizationState &&
-  (organizationSettings || Object.keys(organizationState.forms).length)
-  ? renderedLabelsProof(organizationUser.id, locale, organizationState, organizationSettings) : null
+const organizationProof = organizationUser && organizationState ? renderedLabelsProof(organizationUser.id, locale, organizationState, organizationSettings) : null
 if (organizationProof) Astro.response.headers.set("Cache-Control", "private, no-store")
 const featureFlagsJson = JSON.stringify(featureFlags);
 const showConfetti = !!featureFlags.confetti;

@@ -1,4 +1,5 @@
 ---
+import { isOrganizationFeatureAvailable as available } from "@lib/organization-request-context"
 import { organizationLabelsFor, newOrganizationLabel, organizationLocale } from "@lib/organization-labels"
 import type { readNamedBoardPlanning } from "@domains/tasks/persistence/named-board-planning-repository"
 
@@ -38,7 +39,7 @@ const ownedAreaIds = new Set(planning.areas.map(area => area.id))
   <div class="board-settings-grid">
     {visibleAreas.map(area => <section class="board-tile">
       <h3 class="board-name"><a href={boardWorkspaceHref(boardId, { area: area.id })}>{area.icon} {area.name}</a></h3>
-      {canManage && <details id={areaId === area.id && !projectId ? "group-settings" : undefined}>
+      {canManage && available("groups") && <details id={areaId === area.id && !projectId ? "group-settings" : undefined}>
         <summary>{label("group")} settings</summary>
         <form data-board-form="planning" class="board-form">
           <input type="hidden" name="action" value="area" />
@@ -62,7 +63,7 @@ const ownedAreaIds = new Set(planning.areas.map(area => area.id))
             goals={planning.linkableGoals.filter(goal => goal.sharedAreaId === null || goal.sharedAreaId === area.id)} />
         </article>)}
       </div>
-      {canManage && <details>
+      {canManage && available("projects") && <details>
         <summary>{newLabel("project")}</summary>
         <form data-board-form="planning" class="board-form">
           <input type="hidden" name="action" value="project" />
@@ -81,8 +82,8 @@ const ownedAreaIds = new Set(planning.areas.map(area => area.id))
       {planning.goals.filter(goal => goal.areaId === area.id).map(goal => <article class="board-tile">
         <h4 class="board-name">{goal.title}</h4>
         {goal.description && <p>{goal.description}</p>}
-        {canManage && <details>
-          <summary>Edit Goal</summary>
+        {canManage && available("goals") && <details>
+        <summary>Edit Goal</summary>
           <form data-board-form="planning" class="board-form">
             <input type="hidden" name="action" value="goal" />
             <input type="hidden" name="id" value={goal.id} />
@@ -95,7 +96,7 @@ const ownedAreaIds = new Set(planning.areas.map(area => area.id))
           <RetirePlanningForm entity="goal" id={goal.id} />
         </details>}
       </article>)}
-      {canManage && <details>
+      {canManage && available("goals") && <details>
         <summary>{newLabel("goal")}</summary>
         <form data-board-form="planning" class="board-form">
           <input type="hidden" name="action" value="goal" />
@@ -117,8 +118,8 @@ const ownedAreaIds = new Set(planning.areas.map(area => area.id))
             <p role="status" data-board-feedback></p>
             <button type="submit" class="btn btn-ghost">Mark routine done</button>
           </form>}
-          {canManage && <details>
-            <summary>Edit Routine</summary>
+          {canManage && available("routines") && <details>
+        <summary>Edit Routine</summary>
             <form data-board-form="planning" class="board-form">
               <input type="hidden" name="action" value="routine" />
               <input type="hidden" name="id" value={routine.id} />
@@ -132,8 +133,8 @@ const ownedAreaIds = new Set(planning.areas.map(area => area.id))
             <RetirePlanningForm entity="routine" id={routine.id} />
           </details>}
         </article>)}
-        {canManage && <details>
-          <summary>{newLabel("routine")}</summary>
+        {canManage && available("routines") && <details>
+        <summary>{newLabel("routine")}</summary>
           <form data-board-form="planning" class="board-form">
             <input type="hidden" name="action" value="routine" />
             <input type="hidden" name="areaId" value={area.id} />
@@ -153,8 +154,8 @@ const ownedAreaIds = new Set(planning.areas.map(area => area.id))
       <ProjectSettings {project} selected={projectId === project.id} {canManage}
         goals={planning.linkableGoals.filter(goal => goal.sharedAreaId === null)} />
     </article>)}
-    {canManage && <details class="board-tile">
-      <summary>{newLabel("group", organizationLocale(Astro) === "en" ? "group" : undefined)}</summary>
+    {canManage && available("groups") && <details class="board-tile">
+        <summary>{newLabel("group", organizationLocale(Astro) === "en" ? "group" : undefined)}</summary>
       <form data-board-form="planning" class="board-form">
         <input type="hidden" name="action" value="area" />
         <label>Name <input name="title" maxlength="150" required /></label>
@@ -202,8 +203,8 @@ const ownedAreaIds = new Set(planning.areas.map(area => area.id))
         {pillar.principles.length > 0 && <ul>
           {pillar.principles.map(principle => <li>
             {principle.statement}{principle.nonNegotiable && " (Non-negotiable)"}
-            {canManage && <details>
-              <summary>Edit Principle</summary>
+            {canManage && available("principles") && <details>
+        <summary>Edit Principle</summary>
               <form data-board-form="planning" class="board-form">
                 <input type="hidden" name="action" value="pillar-principle" />
                 <input type="hidden" name="pillarId" value={pillar.id} />
@@ -230,8 +231,8 @@ const ownedAreaIds = new Set(planning.areas.map(area => area.id))
             </form>}
           </li>)}
         </ul>}
-        {canManage && <details>
-          <summary>Add Principle</summary>
+        {canManage && available("principles") && <details>
+        <summary>Add Principle</summary>
           <form data-board-form="planning" class="board-form">
             <input type="hidden" name="action" value="pillar-principle" />
             <input type="hidden" name="pillarId" value={pillar.id} />
@@ -263,8 +264,8 @@ const ownedAreaIds = new Set(planning.areas.map(area => area.id))
             <button type="submit" class="btn btn-ghost">Link to Pillar</button>
           </form>
         </details>}
-        {canManage && <details>
-          <summary>Edit Pillar</summary>
+        {canManage && available("pillars") && <details>
+        <summary>Edit Pillar</summary>
           <form data-board-form="planning" class="board-form">
             <input type="hidden" name="action" value="pillar" />
             <input type="hidden" name="id" value={pillar.id} />
@@ -276,8 +277,8 @@ const ownedAreaIds = new Set(planning.areas.map(area => area.id))
         </details>}
       </article>)}
     </div>
-    {canManage && <details class="board-tile">
-      <summary>{organizationLocale(Astro) === "en" ? `New ${label("board")} ${label("pillar")}` : newLabel("pillar")}</summary>
+    {canManage && available("pillars") && <details class="board-tile">
+        <summary>{organizationLocale(Astro) === "en" ? `New ${label("board")} ${label("pillar")}` : newLabel("pillar")}</summary>
       <form data-board-form="planning" class="board-form">
         <input type="hidden" name="action" value="pillar" />
         <label>Name <input name="title" maxlength="150" required /></label>

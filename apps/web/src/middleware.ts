@@ -1,3 +1,6 @@
+import { getOrganizationAvailability } from "./lib/organization-availability"
+import { withOrganizationAvailability } from "./lib/organization-request-context"
+import { organizationRouteAvailable } from "./lib/organization-route-access"
 import type { MiddlewareHandler } from "astro"
 import { resolveAgentRouteAccess } from "@meitheal/domain-auth"
 import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability"
@@ -566,7 +569,17 @@ async function handleRequest({ request, locals, routePattern }: Parameters<Middl
     // API callers parse JSON, so an error that would render the HTML error page answers with a problem document instead.
     const apiRoute = url.pathname.startsWith("/api/")
     try {
-      response = retryKey ? await replayTaskRequest(retryKey, next, locals.writeAbortSignal) : await next()
+      if (isHealthCheck || url.pathname.startsWith("/_astro/")) {
+        response = await next()
+      } else {
+        const availability = await getOrganizationAvailability({ locals, request })
+        response = organizationRouteAvailable(url.pathname, availability, url.searchParams) &&
+          organizationRouteAvailable(routePattern, availability, url.searchParams)
+          ? await withOrganizationAvailability(availability, () =>
+            retryKey ? replayTaskRequest(retryKey, next, locals.writeAbortSignal) : next())
+          : apiProblem({ status: 404, detail: "This feature is unavailable.", extraHeaders: { "cache-control": "private, no-store" } })
+        response.headers.set("cache-control", "private, no-store")
+      }
     } catch (error) {
       if (!apiRoute) throw error
       logger.log("error", {

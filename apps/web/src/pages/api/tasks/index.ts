@@ -1,3 +1,4 @@
+import { organizationPlacementAvailable } from "@lib/organization-placement-access"
 import { readHomeAssistantAreaPolicyRevision, setTaskHomeAssistantArea } from "@domains/tasks/persistence/home-assistant-task-area"
 import { readHomeAssistantAreaFilter, resolveHomeAssistantAreaSelection } from "@lib/home-assistant-area-access"
 import { HierarchyRepository } from "@domains/tasks/persistence/hierarchy-repository"
@@ -160,6 +161,7 @@ export const GET: APIRoute = async context => {
 export const POST: APIRoute = async (context) => {
   const { request, locals } = context
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
+  if (!organizationPlacementAvailable(body)) return apiError("This organizing feature is unavailable.", 404)
   if (hasBoardSelection(body)) return unavailableBoardResponse()
   await ensureSchema()
   const client = getPersistenceClient()

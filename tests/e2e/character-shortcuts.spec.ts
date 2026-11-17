@@ -246,22 +246,16 @@ test("shortcut help waits until the narrow Table columns popover is closed", asy
   await expect(help.getByRole("button", { name: "Close shortcuts" })).toBeFocused()
 })
 
-test("shortcut help waits for the Planning prompt to close", async ({ page }) => {
-  await page.goto("/planning#spaces")
-  await page.locator("#create-area-btn").click()
-  const prompt = page.getByRole("dialog", { name: "Create Area" })
-  const cancel = prompt.getByRole("button", { name: "Cancel" })
-  const help = page.getByRole("dialog", { name: "Keyboard shortcuts" })
-
-  await expect(prompt.locator("#prompt-input")).toBeFocused()
-  await cancel.press("Shift+Slash")
-  await expect(cancel).toBeFocused()
-  await expect(help).toBeHidden()
-  await page.keyboard.press("k")
-  await expect(cancel).toBeFocused()
-  await page.keyboard.press("Escape")
-  await expect(prompt).toBeHidden()
-  await expect(page).toHaveURL(/\/planning#spaces$/)
+test("character shortcuts leave Board group names editable", async ({ page }) => {
+  await page.goto("/boards/household?view=groups")
+  await page.getByText("New group", { exact: true }).click()
+  const name = page.getByRole("textbox", { name: "Name", exact: true })
+  await name.fill("Workshop")
+  await name.press("Shift+Slash")
+  await expect(name).toBeFocused()
+  await expect(page.getByRole("dialog", { name: "Keyboard shortcuts" })).toBeHidden()
+  await name.press("k")
+  await expect(name).toHaveValue("Workshop?k")
 })
 
 test("the numbered shortcut labels remain reachable in Irish on a short screen", async ({ page, context, baseURL }) => {

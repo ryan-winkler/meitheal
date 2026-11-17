@@ -3,6 +3,7 @@ import { readHomeAssistantAreaFilter } from "@lib/home-assistant-area-access"
 import HomeAssistantAreaField from "../tasks/HomeAssistantAreaField.astro"
 import { organizationLabelsFor, newOrganizationLabel, organizationLocale } from "@lib/organization-labels"
 import BoardPlanning from "./BoardPlanning.astro"
+import { isOrganizationFeatureAvailable as available } from "@lib/organization-request-context"
 import Layout from "../../layouts/Layout.astro"
 import "../../styles/boards.css"
 import { permitsBoardTaskAction } from "@domains/tasks/persistence/named-board-repository"
@@ -79,7 +80,7 @@ const nextAction = view?.summary?.next
 
         {!selection.ticketId && <nav class="board-context-tabs" aria-label="Board workspace">
           <a class="btn btn-ghost" aria-current={!selection.planning ? "page" : undefined} href={boardWorkspaceHref(boardId, { ...grouping, groups: false })}>{label("task", true)}</a>
-          <a class="btn btn-ghost" aria-current={selection.planning ? "page" : undefined} href={boardWorkspaceHref(boardId, { ...grouping, groups: true }, scope?.project ? "project-settings" : scope?.area ? "group-settings" : "groups")}>{scope?.project ? `${label("project")} settings` : scope?.area ? `${label("group")} planning` : label("group", true)}</a>
+          {available("organizer") && <a class="btn btn-ghost" aria-current={selection.planning ? "page" : undefined} href={boardWorkspaceHref(boardId, { ...grouping, groups: true }, scope?.project ? "project-settings" : scope?.area ? "group-settings" : "groups")}>{scope?.project ? `${label("project")} settings` : scope?.area ? `${label("group")} planning` : label("group", true)}</a>}
           {!scope?.area && !scope?.project && policy && <a class="btn btn-ghost" href="#settings">{label("board")} settings</a>}
         </nav>}
         {scope?.area && !scope.project && !selection.planning && <p>
