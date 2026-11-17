@@ -317,7 +317,9 @@ function setupEventDelegation(container: HTMLElement) {
 
     // ── Clear completed ──
     if (target.closest("[data-today-refresh]")) {
-      location.assign(taskBackgroundUrl().href)
+      const background = taskBackgroundUrl().href
+      if (background === location.href) location.reload()
+      else location.assign(background)
       return
     }
     const archive = target.closest<HTMLElement>("[data-today-archive]")

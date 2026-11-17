@@ -294,13 +294,11 @@ function isExternal(href: string): boolean {
 </style>
 
 <script>
-  import { VALID_TASK_TYPES } from "@meitheal/domain-tasks"
   import { pageLifecycle } from "../../lib/page-lifecycle"
   import {
     TASK_NAV_PREFS_EVENT,
     TASK_NAV_PREFS_KEY,
     matchingTaskShortcutCriteria,
-    normalizeTaskTypeFilterValue,
     readTaskNavPrefs,
     toggleTaskViewPin,
     type TaskNavPrefs,
@@ -336,20 +334,16 @@ function isExternal(href: string): boolean {
     const background = taskContext ? taskBackgroundUrl(current) : current
     const viewFrom = (url: URL) => parseTaskView(url.searchParams.get("view")) ?? parseTaskView(url.hash.slice(1)) ?? "kanban"
     const view = viewFrom(background)
-    const types = normalizeTaskTypeFilterValue(background.searchParams.get("types"))
     const isFilteredShortcut = (url: URL) => url.searchParams.has("types") ||
       (appPath(url.pathname) === "/tasks" && url.searchParams.has("task_type"))
-    const legacyType = background.searchParams.get("task_type")
-    const hasLegacyType = (view === "calendar" || view === "table") && VALID_TASK_TYPES.some(type => type === legacyType)
     const navLinks = [...document.querySelectorAll<HTMLAnchorElement>(".sidebar .nav-link:not(.nav-link--external)")]
     let typedLink: HTMLAnchorElement | undefined
     let matchedCriteria = -1
-    if (types || hasLegacyType) for (const link of navLinks) {
+    for (const link of navLinks) {
       if (link.dataset.taskViewLink) continue
       const target = new URL(link.href)
       const href = appPath(target.pathname)
       if (!isFilteredShortcut(target) || href !== appPath(background.pathname) ||
-          normalizeTaskTypeFilterValue(target.searchParams.get("types")) !== types ||
           (href === "/tasks" ? viewFrom(target) !== view : target.hash && target.hash !== current.hash)) continue
       const criteria = matchingTaskShortcutCriteria(target.searchParams, background.searchParams, view)
       if (criteria <= matchedCriteria) continue

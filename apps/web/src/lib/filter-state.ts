@@ -165,6 +165,15 @@ export function readTaskKindFilter(value: unknown): string[] {
   return normalizeTaskKindAliases(stringList(value))
 }
 
+export function readTableTaskKindFilter(value: unknown): string[] {
+  return readTaskKindFilter(value).filter(kind => VALID_TASK_KINDS.some(valid => valid === kind))
+}
+
+export function readTableTaskTypeParam(params: URLSearchParams) {
+  const value = params.getAll("task_type").at(-1)
+  return VALID_TASK_TYPES.find(type => type === value)
+}
+
 export function readFilterLabels(params: URLSearchParams): string[] {
   return stringList(params.has("label") ? params.getAll("label") : params.get("labels"))
 }
@@ -268,8 +277,7 @@ function normalizeTableValues(input: Record<string, unknown>): Partial<FilterSta
     const laneIds = stringList(input.laneIds)
     if (laneIds.length) result.laneIds = laneIds
   }
-  const kindValues = readTaskKindFilter(input.types)
-  const types = kindValues.filter(kind => VALID_TASK_KINDS.some(valid => valid === kind))
+  const types = readTableTaskKindFilter(input.types)
   if (types.length) result.types = types
   const labels = stringList(input.labels)
   if (labels.length) result.labels = labels
@@ -322,6 +330,7 @@ export function readTableFilterParams(params: URLSearchParams): Partial<FilterSt
     area,
     area_id: undefined,
     board: undefined,
+    task_type: readTableTaskTypeParam(params),
     labels: readFilterLabels(params),
     laneIds: params.getAll("lane"),
     createdFrom: params.getAll("createdFrom").length > 1 ? null : params.get("createdFrom") ?? undefined,

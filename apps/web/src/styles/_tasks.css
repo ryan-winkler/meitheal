@@ -520,7 +520,7 @@
 }
 
 /* Filled task surfaces share the same color precedence across list and card views. */
-:root[data-theme="knight-rider"] .dashboard-task-card {
+:root[data-theme="knight-rider"] .dashboard-task-card[data-task-color] {
   border-left: 1px solid var(--border);
 }
 

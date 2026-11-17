@@ -1,5 +1,5 @@
 import type { FilterGroup } from "./filter-engine"
-import { normalizeTableRules, readFilterLabels, readTaskKindFilter } from "./filter-state"
+import { normalizeTableRules, readFilterLabels, readTableTaskKindFilter, readTableTaskTypeParam, readTaskKindFilter } from "./filter-state"
 import { readKanbanRules, readKanbanSearch } from "./kanban-query"
 import { normalizeStatus } from "./status-config"
 import { parseTaskView, readTaskAreaParam, type TaskView } from "./task-view-route"
@@ -68,8 +68,9 @@ export function defaultTaskNavPrefs(): TaskNavPrefs {
   }
 }
 
-export function normalizeTaskTypeFilterValue(value: string | null): string {
-  return [...new Set(readTaskKindFilter(value))].sort().join(",")
+function taskKinds(params: URLSearchParams, view: TaskView): string[] {
+  const kinds = view === "table" ? readTableTaskKindFilter(params.getAll("types").at(-1)) : readTaskKindFilter(params.get("types"))
+  return [...new Set(kinds)]
 }
 
 function sameFilterValues(expected: string[], active: string[]): boolean {
@@ -94,7 +95,17 @@ function ruleSignature(params: URLSearchParams, view: TaskView): string | undefi
 
 export function matchingTaskShortcutCriteria(target: URLSearchParams, current: URLSearchParams, view: TaskView): number {
   const keys = new Set(target.keys())
-  keys.delete("types")
+  const matchedKinds = keys.delete("types")
+  if (matchedKinds) {
+    const kinds = taskKinds(target, view)
+    if (!kinds.length || !sameFilterValues(kinds, taskKinds(current, view))) return -1
+  }
+  const matchedTaskType = keys.delete("task_type")
+  if (matchedTaskType) {
+    if (view !== "table" && view !== "calendar") return -1
+    const type = readTableTaskTypeParam(target)
+    if (!type || type !== readTableTaskTypeParam(current)) return -1
+  }
   keys.delete("view")
   const matchedLabels = keys.has("label") || keys.has("labels")
   if (matchedLabels) {
@@ -126,7 +137,7 @@ export function matchingTaskShortcutCriteria(target: URLSearchParams, current: U
     }
     if (!sameFilterValues(read(target), read(current))) return -1
   }
-  return keys.size + Number(matchedArea) + Number(matchedLabels) + Number(matchedRules)
+  return keys.size + Number(matchedKinds) + Number(matchedTaskType) + Number(matchedArea) + Number(matchedLabels) + Number(matchedRules)
 }
 
 export function normalizeTaskNavPrefs(input: unknown): TaskNavPrefs {

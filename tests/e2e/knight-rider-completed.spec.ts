@@ -224,7 +224,7 @@ test("Unscheduled and Refresh Today keep their route with Details docked", async
 test("Today holds the displayed date and counts together after rollover", async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem("meitheal-theme", "knight-rider"))
   await page.clock.install()
-  await page.goto("/today")
+  await page.goto("/today#today-work")
   const date = await page.locator(".today-summary__date time").getAttribute("datetime")
   const count = page.locator('[data-today-count="completedToday"]')
   const originalCount = await count.textContent()
@@ -240,6 +240,12 @@ test("Today holds the displayed date and counts together after rollover", async 
   await expect(page.locator("#clear-completed-btn")).toHaveAttribute("aria-disabled", "true")
   await expect(count).toHaveText(originalCount!)
   await expect(page.locator(".today-summary__date time")).toHaveAttribute("datetime", date!)
+  const documentRequest = page.waitForResponse(response => response.request().resourceType() === "document" &&
+    new URL(response.url()).pathname === "/today")
+  await page.getByRole("button", { name: "Refresh Today" }).click()
+  expect((await documentRequest).ok()).toBe(true)
+  await expect(page).toHaveURL(/\/today#today-work$/)
+  await expect(page.getByRole("button", { name: "Refresh Today" })).toBeHidden()
 })
 
 test("Today keeps focus on a completion during polling and recovers when it disappears", async ({ page }) => {

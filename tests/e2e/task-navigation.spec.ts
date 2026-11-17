@@ -608,6 +608,18 @@ test("legacy Shopping type filters survive view switches and respect Table searc
         icon: "checkbox",
       })
     }
+    const nonStandardKinds = "shopping_item,checklist,routine_instance,calendar_event,quick_capture"
+    shortcuts.push({
+      id: "legacy-task-type-epic-kinds",
+      label: "Epics by kind",
+      href: `/tasks?view=table&area=&task_type=epic&types=${nonStandardKinds}#table`,
+      icon: "checkbox",
+    }, {
+      id: "legacy-calendar-stories",
+      label: "Calendar stories",
+      href: "/tasks?view=calendar&area=&task_type=story#calendar",
+      icon: "calendar-event",
+    })
     const save = await request.put("/api/settings", { headers, data: { key: "sidebar_config", value: {
       order: ["tasks", ...shortcuts.map(shortcut => shortcut.id)], customItems: shortcuts,
     } } })
@@ -674,6 +686,24 @@ test("legacy Shopping type filters survive view switches and respect Table searc
     await expect(page.locator('#sidebar [data-page="tasks"]')).not.toHaveAttribute("aria-current", "page")
     await expect(table.getByText(titles[0]!, { exact: true })).toBeVisible()
     await expect(table.getByText(titles[1]!, { exact: true })).toHaveCount(0)
+    await table.locator('.filter-toolbar [data-type="standard_action"]').click()
+    await expect(page).toHaveURL(url => url.searchParams.has("types") && url.searchParams.get("task_type") === "story")
+    await expect(stories).toHaveAttribute("aria-current", "page")
+    await page.goto("/tasks?view=table&area=&task_type=story&task_type=epic#table")
+    await expect(epics).toHaveAttribute("aria-current", "page")
+    await expect(table.getByText(titles[1]!, { exact: true })).toBeVisible()
+    await expect(table.getByText(titles[0]!, { exact: true })).toHaveCount(0)
+    await table.locator('.filter-toolbar [data-type="standard_action"]').click()
+    await expect(page.locator('#sidebar [data-page="legacy-task-type-epic-kinds"]')).toHaveAttribute("aria-current", "page")
+    await expect(epics).not.toHaveAttribute("aria-current", "page")
+
+    await page.goto("/tasks?view=calendar&area=&task_type=story&year=2031&month=6#calendar")
+    const calendarStories = page.locator('#sidebar [data-page="legacy-calendar-stories"]')
+    await expect(calendarStories).toHaveAttribute("aria-current", "page")
+    await expect(calendar).toHaveAttribute("data-calendar-ready", "true")
+    await calendar.locator('.filter-toolbar [data-type="standard_action"]').click()
+    await expect(page).toHaveURL(url => url.searchParams.has("types") && url.searchParams.get("task_type") === "story")
+    await expect(calendarStories).toHaveAttribute("aria-current", "page")
 
     legacyStatus.delete("status")
     legacyStatus.set("advancedFilter", JSON.stringify({
