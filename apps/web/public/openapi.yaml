@@ -6375,6 +6375,16 @@ paths:
           description: Visible label forms, revision, terms and form proof
         "403":
           description: Verified Home Assistant account required
+    head:
+      operationId: verifyPersonalOrganizationLabels
+      tags:
+        - Settings
+      summary: Revalidate the current personalized page context
+      responses:
+        "204":
+          description: Current render proof in the response header
+        "403":
+          description: Verified Home Assistant account required
     put:
       operationId: savePersonalOrganizationLabels
       tags:

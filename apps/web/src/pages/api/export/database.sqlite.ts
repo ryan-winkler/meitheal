@@ -119,7 +119,7 @@ export const POST: APIRoute = async ({ locals, request }) => {
       if (source.prepare("SELECT 1 FROM task_boards WHERE id <> 'household' LIMIT 1").get()) {
         return backupProblem(403, "Download is unavailable for databases with named Boards. Use the Home Assistant backup controls.")
       }
-      if (source.prepare("SELECT 1 FROM organization_label_preferences WHERE forms <> '{}' LIMIT 1").get()) {
+      if (source.prepare("SELECT 1 FROM app_settings WHERE key = 'private_organization_data' LIMIT 1").get()) {
         return backupProblem(403, "Use Home Assistant backups for databases containing personal labels.")
       }
       if (source.prepare(`SELECT 1 FROM organization_access_policies WHERE audience = 'selected' OR scope <> 'feature'

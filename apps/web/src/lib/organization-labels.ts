@@ -34,10 +34,8 @@ export function defaultOrganizationLabel(term: OrganizationTerm, locale: Locale,
 export function visibleOrganizationTerms(flags: FeatureFlags): OrganizationTerm[] {
   return termNames.filter((term) => {
     switch (term) {
-      case "board": case "group": case "project": return flags.hierarchy !== false
       case "routine": return flags.habits !== false
       case "achievement": return flags.gamification !== false
-      case "progress": return flags.gamification !== false || flags.habits !== false
       default: return true
     }
   })
@@ -54,6 +52,12 @@ export function organizationLocale(context: OrganizationLabelContext): Locale {
 
 export function labelsProof(userId: string, locale: Locale): string {
   return createHmac("sha256", formSecret).update(JSON.stringify([userId, locale])).digest("base64url")
+}
+
+export function renderedLabelsProof(userId: string, locale: Locale, state: OrganizationLabelState, settings: boolean) {
+  return createHmac("sha256", formSecret)
+    .update(JSON.stringify(["rendered-labels", userId, locale, ...(settings ? [] : [state.revision, state.visible])]))
+    .digest("base64url")
 }
 
 export function matchesLabelsProof(proof: unknown, userId: string, locale: Locale): boolean {

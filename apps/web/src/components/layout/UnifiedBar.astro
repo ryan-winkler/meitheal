@@ -1,4 +1,5 @@
 ---
+import { newOrganizationLabel, organizationLabelResolver, organizationLocale, readRequestOrganizationLabels } from "@lib/organization-labels"
 import Icon from "../ui/Icon.astro"
 import NavOverflowMore from "./NavOverflowMore.astro"
 import TaskCreationMenu from "./TaskCreationMenu.astro"
@@ -78,7 +79,7 @@ const {
   showSearch = true,
   searchScope = "",
   showNewTask = true,
-  newTaskLabel = "New Task",
+  newTaskLabel: suppliedNewTaskLabel,
   viewTabs = [],
   barId = "settings-bar",
 } = Astro.props
@@ -140,6 +141,9 @@ function resolveUnifiedIcon(raw?: string): IconName | "timeline" | "pillars" | n
   const mapped = Object.hasOwn(ICON_MAP, raw) ? ICON_MAP[raw] : undefined
   return mapped ?? (isIconName(raw) ? raw : null)
 }
+const localeForLabels = organizationLocale(Astro)
+const taskLabel = organizationLabelResolver(await readRequestOrganizationLabels(Astro), localeForLabels)("task")
+const newTaskLabel = suppliedNewTaskLabel ?? newOrganizationLabel(taskLabel, localeForLabels)
 ---
 
 <header

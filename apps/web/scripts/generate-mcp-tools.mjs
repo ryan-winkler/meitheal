@@ -49,7 +49,7 @@ export const EXCLUDED_OPS = new Set([
   "getOrganizationFeatureAvailability", "saveOrganizationFeatureAvailability",
   "getHouseholdTaskHomeAssistantArea", "setHouseholdTaskHomeAssistantArea",
   "getNamedBoardTaskHomeAssistantArea", "setNamedBoardTaskHomeAssistantArea",
-  "getPersonalOrganizationLabels", "savePersonalOrganizationLabels", "getHomeAssistantAreaChoices",
+  "getPersonalOrganizationLabels", "savePersonalOrganizationLabels", "verifyPersonalOrganizationLabels", "getHomeAssistantAreaChoices",
 ])
 
 /** Must match FRIENDLY_NAMES in apps/web/src/pages/api/mcp.ts */

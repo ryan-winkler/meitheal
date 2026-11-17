@@ -130,7 +130,7 @@ if (unassigned.length) planningGroups.push({ projects: unassigned })
         <>
           <header class="spaces-toolbar">
             <h2>{label("group", true)} &amp; {label("project", true)}</h2>
-            <button type="button" class="btn btn-primary" id="create-area-btn">New Area</button>
+            <button type="button" class="btn btn-primary" id="create-area-btn">{newLabel("group", "Area")}</button>
           </header>
           {planningGroups.length === 0 && <p class="spaces-empty">Create an Area to organize the Projects and Goals you want to follow.</p>}
           <div class="spaces-grid">

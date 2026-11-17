@@ -76,7 +76,13 @@ const staticConfig = {
       const plural = "plural" in options
       return {
         id: `page-${id}`, kind: "page", title: organization(term, plural), href,
-        keywords: [defaultOrganizationLabel(term, locale, plural), defaultOrganizationLabel(term, "en", plural)],
+        keywords: [...new Set([
+          organization(term),
+          defaultOrganizationLabel(term, locale),
+          defaultOrganizationLabel(term, locale, plural),
+          defaultOrganizationLabel(term, "en"),
+          defaultOrganizationLabel(term, "en", plural),
+        ])],
       }
     }),
   ],

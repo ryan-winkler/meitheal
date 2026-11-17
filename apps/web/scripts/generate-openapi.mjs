@@ -2062,6 +2062,10 @@ const paths = {
       operationId: "getPersonalOrganizationLabels", tags: ["Settings"], summary: "Read personal labels for the current Home Assistant account and language",
       responses: { 200: { description: "Visible label forms, revision, terms and form proof" }, 403: { description: "Verified Home Assistant account required" } },
     },
+    head: {
+      operationId: "verifyPersonalOrganizationLabels", tags: ["Settings"], summary: "Revalidate the current personalized page context",
+      responses: { 204: { description: "Current render proof in the response header" }, 403: { description: "Verified Home Assistant account required" } },
+    },
     put: {
       operationId: "savePersonalOrganizationLabels", tags: ["Settings"], summary: "Save visible personal labels for the active display language",
       requestBody: { required: true, content: { "application/json": { schema: {
