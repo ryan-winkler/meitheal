@@ -604,7 +604,7 @@ test("legacy Shopping type filters survive view switches and respect Table searc
       shortcuts.push({
         id: `legacy-task-type-${taskType}`,
         label: taskType === "story" ? "Stories" : "Epics",
-        href: `/tasks?view=table&area=&task_type=${taskType}#table`,
+        href: `/table?area=&task_type=${taskType}`,
         icon: "checkbox",
       })
     }
@@ -617,7 +617,7 @@ test("legacy Shopping type filters survive view switches and respect Table searc
     }, {
       id: "legacy-calendar-stories",
       label: "Calendar stories",
-      href: "/tasks?view=calendar&area=&task_type=story#calendar",
+      href: "/calendar?area=&task_type=story&year=2031&month=6",
       icon: "calendar-event",
     })
     const save = await request.put("/api/settings", { headers, data: { key: "sidebar_config", value: {
@@ -681,6 +681,7 @@ test("legacy Shopping type filters survive view switches and respect Table searc
     const stories = page.locator('#sidebar [data-page="legacy-task-type-story"]')
     const epics = page.locator('#sidebar [data-page="legacy-task-type-epic"]')
     await stories.click()
+    await expect(page).toHaveURL(url => url.pathname === "/tasks" && url.hash === "#table" && url.searchParams.get("task_type") === "story")
     await expect(stories).toHaveAttribute("aria-current", "page")
     await expect(epics).not.toHaveAttribute("aria-current", "page")
     await expect(page.locator('#sidebar [data-page="tasks"]')).not.toHaveAttribute("aria-current", "page")
@@ -697,8 +698,9 @@ test("legacy Shopping type filters survive view switches and respect Table searc
     await expect(page.locator('#sidebar [data-page="legacy-task-type-epic-kinds"]')).toHaveAttribute("aria-current", "page")
     await expect(epics).not.toHaveAttribute("aria-current", "page")
 
-    await page.goto("/tasks?view=calendar&area=&task_type=story&year=2031&month=6#calendar")
     const calendarStories = page.locator('#sidebar [data-page="legacy-calendar-stories"]')
+    await calendarStories.click()
+    await expect(page).toHaveURL(url => url.pathname === "/tasks" && url.hash === "#calendar" && url.searchParams.get("task_type") === "story")
     await expect(calendarStories).toHaveAttribute("aria-current", "page")
     await expect(calendar).toHaveAttribute("data-calendar-ready", "true")
     await calendar.locator('.filter-toolbar [data-type="standard_action"]').click()

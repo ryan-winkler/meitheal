@@ -58,7 +58,7 @@ These anchors stay on the same route, which keeps the page ingress-safe in Home 
 
 Task rows label their current status. When changing status badge colors, verify the labels in light and dark themes on Today, Upcoming, Eisenhower, and the Tasks tab of a project, both at rest and on hover. Completed project tasks keep a struck-through title and a readable **Done** badge. Run `MEITHEAL_TEST_BROWSER=1 pnpm --filter @meitheal/tests test e2e/status-badge-contrast.spec.ts` after building the app.
 
-Today refreshes the counters and progress bar after confirmed task changes and every 30 seconds. In Knight Rider, expand **Completed Tasks** to see up to 20 recent completions. **Archive completed** applies to every completion counted for the displayed household day. Reload the page to refresh the task rows after an external change.
+Today refreshes the counters and progress bar after confirmed task changes and every 30 seconds. In Knight Rider, expand **Completed today** to see up to 20 recent completions. **Archive completed** applies to every completion counted for the displayed household day. Reload the page to refresh the task rows after an external change.
 
 ### Update several tasks
 

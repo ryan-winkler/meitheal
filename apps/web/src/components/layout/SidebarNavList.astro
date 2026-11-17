@@ -332,18 +332,24 @@ function isExternal(href: string): boolean {
     const currentPath = appPath(current.pathname)
     const taskContext = currentPath === "/tasks" || currentPath.startsWith("/tickets/")
     const background = taskContext ? taskBackgroundUrl(current) : current
-    const viewFrom = (url: URL) => parseTaskView(url.searchParams.get("view")) ?? parseTaskView(url.hash.slice(1)) ?? "kanban"
+    const taskPath = (url: URL) => {
+      const path = appPath(url.pathname)
+      return parseTaskView(path.slice(1)) ? "/tasks" : path
+    }
+    const viewFrom = (url: URL) => parseTaskView(appPath(url.pathname).slice(1)) ??
+      parseTaskView(url.searchParams.get("view")) ?? parseTaskView(url.hash.slice(1)) ?? "kanban"
     const view = viewFrom(background)
+    const backgroundPath = taskPath(background)
     const isFilteredShortcut = (url: URL) => url.searchParams.has("types") ||
-      (appPath(url.pathname) === "/tasks" && url.searchParams.has("task_type"))
+      (taskPath(url) === "/tasks" && url.searchParams.has("task_type"))
     const navLinks = [...document.querySelectorAll<HTMLAnchorElement>(".sidebar .nav-link:not(.nav-link--external)")]
     let typedLink: HTMLAnchorElement | undefined
     let matchedCriteria = -1
     for (const link of navLinks) {
       if (link.dataset.taskViewLink) continue
       const target = new URL(link.href)
-      const href = appPath(target.pathname)
-      if (!isFilteredShortcut(target) || href !== appPath(background.pathname) ||
+      const href = taskPath(target)
+      if (!isFilteredShortcut(target) || href !== backgroundPath ||
           (href === "/tasks" ? viewFrom(target) !== view : target.hash && target.hash !== current.hash)) continue
       const criteria = matchingTaskShortcutCriteria(target.searchParams, background.searchParams, view)
       if (criteria <= matchedCriteria) continue
