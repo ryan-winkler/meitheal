@@ -106,8 +106,11 @@ test("Table assigns each task once and restores workflow subgroups under Area", 
     const presetName = `Workflow columns by Area ${token}`
     const presetToggle = page.getByRole("button", { name: "Saved filter presets" })
     const presets = page.getByRole("region", { name: "Saved Filter Presets" })
+    await expect(table).not.toHaveAttribute("aria-busy", "true")
     await presetToggle.press("Enter")
-    await presets.getByRole("button", { name: "Save Current Filters" }).press("Enter")
+    const saveCurrent = presets.getByRole("button", { name: "Save Current Filters" })
+    await expect(saveCurrent).toBeEnabled()
+    await saveCurrent.press("Enter")
     const dialog = page.getByRole("dialog", { name: "Save Filter Preset" })
     await dialog.getByRole("textbox").fill(presetName)
     const savedResponse = page.waitForResponse(response =>
