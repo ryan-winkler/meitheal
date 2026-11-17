@@ -14,9 +14,7 @@ import { POST as importSettings } from "../../apps/web/src/pages/api/import/sett
 const origin = "http://caldav-fixture.example"
 const xml = (body: string) => `<?xml version="1.0"?><d:multistatus xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">${body}</d:multistatus>`
 const calendar = (name: string) => `<d:response><d:href>/${name}/</d:href><d:propstat><d:prop><d:displayname>${name}</d:displayname><d:resourcetype><c:calendar/></d:resourcetype></d:prop></d:propstat></d:response>`
-const fixtureStart = Date.now() + 24 * 60 * 60 * 1000
-const calendarTimestamp = (timestamp: number) => new Date(timestamp).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z")
-const event = (uid: string) => `<d:response><d:href>/${uid}.ics</d:href><d:propstat><d:prop><c:calendar-data>BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nUID:${uid}\r\nSUMMARY:${uid}\r\nDTSTART:${calendarTimestamp(fixtureStart)}\r\nDTEND:${calendarTimestamp(fixtureStart + 60 * 60 * 1000)}\r\nEND:VEVENT\r\nEND:VCALENDAR</c:calendar-data></d:prop></d:propstat></d:response>`
+const event = (uid: string, day: string) => `<d:response><d:href>/${uid}.ics</d:href><d:propstat><d:prop><c:calendar-data>BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nUID:${uid}\r\nSUMMARY:${uid}\r\nDTSTART:${day}T100000Z\r\nDTEND:${day}T110000Z\r\nEND:VEVENT\r\nEND:VCALENDAR</c:calendar-data></d:prop></d:propstat></d:response>`
 type Database = ReturnType<typeof getPersistenceClient>
 type WebDAV = { calendars: string[]; events: Record<string, string[]>; failures: Set<string>; propfindStatus: number; propfinds: number; reports: number }
 const test = base.extend<{ environment: { db: Database; dav: WebDAV } }>({
@@ -24,6 +22,8 @@ const test = base.extend<{ environment: { db: Database; dav: WebDAV } }>({
     const directory = await mkdtemp(join(tmpdir(), "meitheal-caldav-failure-"))
     const previous = Object.fromEntries(["MEITHEAL_DB_URL", "SUPERVISOR_TOKEN", "HA_TOKEN"].map(key => [key, process.env[key]]))
     const originalFetch = globalThis.fetch
+    // Keep these events inside the production sync window on every test run.
+    const day = new Date().toISOString().slice(0, 10).replaceAll("-", "")
     const dav: WebDAV = { calendars: ["good", "bad"], events: {}, failures: new Set(), propfindStatus: 207, propfinds: 0, reports: 0 }
     const server = createServer(async (request, response) => {
       for await (const _ of request) { /* consume the real XML request */ }
@@ -38,7 +38,7 @@ const test = base.extend<{ environment: { db: Database; dav: WebDAV } }>({
       } else if (request.method === "REPORT") {
         dav.reports++
         const name = request.url!.split("/")[1]!
-        response.writeHead(dav.failures.has(name) ? 503 : 207).end(xml((dav.events[name] ?? []).map(event).join("")))
+        response.writeHead(dav.failures.has(name) ? 503 : 207).end(xml((dav.events[name] ?? []).map(uid => event(uid, day)).join("")))
       } else response.writeHead(405).end()
     })
     await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve))

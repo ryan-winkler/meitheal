@@ -32,6 +32,7 @@ import { TemplateRepository } from "@domains/tasks/persistence/template-reposito
 import type { HabitWithStats } from "@domains/tasks/persistence/template-repository"
 import { getTodayTaskRows, todayCompletionPercent, todayDueSection, type TaskViewItem } from "../lib/task-queries"
 import { calendarDayFromInput, calendarToday, formatRelativeDue, shiftCalendarDay } from "../lib/date"
+import { db503Response } from "../lib/db-fallback"
 import { isFeatureEnabled } from "../lib/feature-flags"
 import { TODAY_SECTIONS } from "../lib/today-registry"
 import { getUnscheduledPage, requestedUnscheduledPage, setUnscheduledPage } from "../lib/today-list"
@@ -42,6 +43,7 @@ let todayTasks: TaskViewItem[] = []
 let noDueTasks: TaskViewItem[] = []
 let suggestedTasks: TaskViewItem[] = []
 let focusStackTasks: TaskViewItem[] = []
+let focusCandidateIds = new Set<string>()
 let completedTodayCount = 0
 let completedTaskSummaries: Awaited<ReturnType<typeof getTodayTaskRows>>["completedTasks"] = []
 let unscheduledCount = 0
@@ -53,6 +55,12 @@ let habitsEnabled = false
 const todayTimeZone = Astro.locals.timezone || "Europe/Dublin"
 const todayDate = new Date()
 const todayIsoDate = calendarToday(todayTimeZone, todayDate)
+const reopening = Astro.url.searchParams.has("todayRefresh")
+
+function focusDueLabel(task: TaskViewItem): string | undefined {
+  if (!task.due_date) return
+  return task.is_overdue ? "Overdue" : formatRelativeDue(task.due_date, todayTimeZone, todayDate)
+}
 
 try {
   const todayStr = todayIsoDate
@@ -123,33 +131,36 @@ try {
       return 0
     })
   focusStackTasks = focusCandidates.slice(0, 3)
+  if (reopening) focusCandidateIds = new Set(focusCandidates.map(task => task.id))
 
   const unscheduledAfterSuggestions = openUnscheduledCount - suggestedIds.size
   totalOpenCount = carriedForwardTasks.length + todayTasks.length + unscheduledAfterSuggestions
   unscheduledCount = unscheduledAfterSuggestions - pinnedTasks.filter(task => !task.due_date && !suggestedIds.has(task.id)).length
-
-  // G36: Fetch gamification stats for streak/XP display
-  try {
-    const { getStats, getWeeklyData } = await import("@domains/gamification")
-    const stats = await getStats()
-    currentStreak = stats.currentStreak ?? 0
-    // Get today's points from weekly data
-    const weekly = await getWeeklyData()
-    const todayRecord = weekly[weekly.length - 1]
-    todayXP = todayRecord?.points ?? 0
-  } catch { /* gamification may not be initialized */ }
-
-  // G38: Fetch habits for Today section
-  try {
-    habitsEnabled = await isFeatureEnabled("habits")
-    if (habitsEnabled) {
-      const repo = new TemplateRepository(getPersistenceClient())
-      habits = await repo.getHabitsWithStats()
-    }
-  } catch { /* habits may not be available */ }
-} catch {
-  /* DB not available */
+} catch (error) {
+  if (reopening || Astro.request.headers.get("x-meitheal-refresh") === "1") {
+    return db503Response("today-refresh", error)
+  }
 }
+
+// G36: Fetch gamification stats for streak/XP display
+try {
+  const { getStats, getWeeklyData } = await import("@domains/gamification")
+  const stats = await getStats()
+  currentStreak = stats.currentStreak ?? 0
+  // Get today's points from weekly data
+  const weekly = await getWeeklyData()
+  const todayRecord = weekly[weekly.length - 1]
+  todayXP = todayRecord?.points ?? 0
+} catch { /* gamification may not be initialized */ }
+
+// G38: Fetch habits for Today section
+try {
+  habitsEnabled = await isFeatureEnabled("habits")
+  if (habitsEnabled) {
+    const repo = new TemplateRepository(getPersistenceClient())
+    habits = await repo.getHabitsWithStats()
+  }
+} catch { /* habits may not be available */ }
 
 // Remove pinned duplicates from other sections (keep in Pinned section)
 const pinnedIds = new Set(pinnedTasks.map(t => t.id))
@@ -314,11 +325,9 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
                     )}
                     <span class="focus-card__work-status"><StatusBadge status={task.status} /></span>
                     {task.due_date && (
-                      <span
-                        class={`focus-card__due ${task.is_overdue ? "focus-card__due--overdue" : ""}`}
-                      >
+                      <span class="focus-card__due">
                         <Icon name={task.is_overdue ? "alert-triangle" : "calendar-event"} size={12} />
-                        {task.is_overdue ? "Overdue" : formatRelativeDue(task.due_date, todayTimeZone)}
+                        {focusDueLabel(task)}
                       </span>
                     )}
                   </div>
@@ -409,7 +418,7 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
         </button>
         <div class="today-section__list" id="today-carried-list" data-today-task-list>
           {carriedForwardTasks.map(task => (
-            <TaskListItem task={task} showSnooze showActions section="Carried Forward" />
+            <TaskListItem task={task} showSnooze showActions focusDueLabel={reopening ? focusDueLabel(task) : undefined} section="Carried Forward" />
           ))}
         </div>
       </div>
@@ -470,7 +479,7 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
         </button>
         <div class="today-section__list" id="today-pinned-list" data-today-task-list>
           {pinnedTasks.map(task => (
-            <TaskListItem task={task} showSnooze showActions section="Shared favorites" />
+            <TaskListItem task={task} showSnooze showActions focusDueLabel={focusCandidateIds.has(task.id) ? focusDueLabel(task) : undefined} section="Shared favorites" />
           ))}
         </div>
       </div>
@@ -494,7 +503,7 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
             />
           </div>
           {todayTasks.map(task => (
-            <TaskListItem task={task} showSnooze showActions section="Due Today" />
+            <TaskListItem task={task} showSnooze showActions focusDueLabel={reopening ? focusDueLabel(task) : undefined} section="Due Today" />
           ))}
         </div>
       </div>
@@ -1388,7 +1397,7 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
     color: var(--accent-text);
     box-shadow: none;
   }
-  :global([data-theme="knight-rider"]) :is(.focus-card__due--overdue, .focus-card__priority[data-pri="1"]) {
+  :global([data-theme="knight-rider"]) :is(.focus-card--overdue .focus-card__due, .focus-card__priority[data-pri="1"]) {
     color: var(--danger-text);
   }
   :global([data-theme="knight-rider"]) .focus-card__complete {
@@ -1446,16 +1455,13 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
     align-items: center;
     gap: 4px;
   }
+  .focus-card--overdue .focus-card__due,
   .focus-card__priority[data-pri="1"] {
     color: var(--danger);
     font-weight: 600;
   }
   .focus-card__priority[data-pri="2"] {
     color: var(--warning);
-    font-weight: 600;
-  }
-  .focus-card__due--overdue {
-    color: var(--danger);
     font-weight: 600;
   }
 
