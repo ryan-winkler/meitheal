@@ -1433,11 +1433,13 @@ const paths = {
     post: {
       operationId: "readTaskPins",
       tags: ["Tasks"],
-      summary: "Read your personal pins or check one task",
+      summary: "Read your personal pins, check whether you have any, or check one task",
       description: "Requires a verified Home Assistant browser session. Private reads use POST to avoid legacy worker caches. Send at most 1 KiB of JSON.",
       requestBody: { required: true, content: { "application/json": { schema: { oneOf: [
         { type: "object", required: ["action"], additionalProperties: false,
           properties: { action: { const: "list" }, page: { type: "integer", minimum: 1, maximum: Number.MAX_SAFE_INTEGER, default: 1 } } },
+        { type: "object", required: ["action"], additionalProperties: false,
+          properties: { action: { const: "presence" } } },
         { type: "object", required: ["action", "task"], additionalProperties: false,
           properties: { action: { const: "detail" }, task: pinTaskIdentifier } },
       ] } } } },
@@ -1451,6 +1453,7 @@ const paths = {
                 status: { type: "string" }, deferred_at: { type: ["integer", "null"] }, pinned_at: { type: "integer" },
               } } },
           } },
+          { type: "object", required: ["context", "hasPins"], properties: { context: pinContext, hasPins: { type: "boolean" } } },
           { type: "object", required: ["context", ...Object.keys(pinState)], properties: { context: pinContext, ...pinState } },
         ] }, "Personal results and the account context required for a subsequent HEAD verification"),
         400: problemContent("Invalid pin request"), 401: problemContent("Ingress authentication required"),
