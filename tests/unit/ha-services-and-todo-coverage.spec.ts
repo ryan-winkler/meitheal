@@ -107,7 +107,14 @@ test("HA connection, services, users, todo-bridge, and ha-startup work against l
     res.writeHead(404).end()
   })
 
-  const wss = new WebSocketServer({ server: httpServer })
+  let acceptConnections = true
+  const coreUsers = [
+    { id: "ha-user-1", name: "Ryan", is_owner: true, is_active: true, system_generated: false },
+    { id: "ha-user-2", name: "System", is_owner: false, is_active: false, system_generated: true },
+  ]
+  let rosterResult: unknown = coreUsers
+  let waitForRoster = false
+  const wss = new WebSocketServer({ server: httpServer, verifyClient: () => acceptConnections })
   wss.on("connection", (socket: { send(v: string): void; on(e: string, cb: (raw: Buffer) => void): void }) => {
     sockets.add(socket)
     const send = (payload: unknown) => socket.send(JSON.stringify(payload))
@@ -144,14 +151,12 @@ test("HA connection, services, users, todo-bridge, and ha-startup work against l
       }
 
       if (msg.type === "config/auth/list") {
+        if (waitForRoster) return
         send({
           id: msg.id,
           type: "result",
           success: true,
-          result: [
-            { id: "ha-user-1", name: "Ryan", is_owner: true, is_active: true },
-            { id: "ha-user-2", name: "System", is_owner: false, is_active: false },
-          ],
+          result: rosterResult,
         })
         return
       }
@@ -324,13 +329,74 @@ test("HA connection, services, users, todo-bridge, and ha-startup work against l
     await haServices.callHAService("persistent_notification", "create", { message: "Ping" })
     expect(recordedCommands).toContain("call_service:persistent_notification.create")
 
-    // 3. HA users standalone paths
+    // 3. Verify roster recovery before the previous success TTL expires.
     haUsers.invalidateUserCache()
-    const users = await haUsers.listHAUsers()
-    expect(Array.isArray(users)).toBe(true)
-    await haUsers.getHAUserById("ha-user-1")
+    const initialDirectory = await haUsers.listHAUserDirectory()
+    expect(initialDirectory.verified).toBe(true)
+    expect(initialDirectory.users.map(user => user.id)).toEqual(["ha-user-1"])
+    expect(await haUsers.getHAUserById("ha-user-1")).toEqual(initialDirectory.users[0])
     expect(await haUsers.isCurrentActiveHAUser("ha-user-1", { fresh: true })).toBe(false)
     expect(await haUsers.getCurrentHAUserRoster("ha-user-1")).toBeUndefined()
+
+    const nowBeforeStall = Date.now
+    const { UserRepository } = await import("../../apps/web/src/domains/tasks/persistence/user-repository")
+    const { GET: getAssignees } = await import("../../apps/web/src/pages/api/users/index")
+    await new UserRepository(client).createCustomUser("custom-roster-test", "Local assignee", "#6366f1")
+    waitForRoster = true
+    try {
+      Date.now = () => nowBeforeStall() + 61_000
+      const start = performance.now()
+      const [directory, response] = await Promise.all([
+        haUsers.listHAUserDirectory(),
+        getAssignees({} as Parameters<typeof getAssignees>[0]),
+      ])
+      expect(directory).toEqual({ users: initialDirectory.users, verified: false })
+      expect(response.status).toBe(200)
+      expect(await response.json()).toMatchObject({
+        ha_roster_verified: false,
+        users: [
+          expect.objectContaining({ id: "ha_ha-user-1", source: "home_assistant" }),
+          expect.objectContaining({ id: "custom-roster-test", source: "custom" }),
+        ],
+      })
+      expect(performance.now() - start).toBeLessThan(5_000)
+      expect(haConn.getHAConnectionStatus().connected).toBe(true)
+    } finally {
+      Date.now = nowBeforeStall
+      waitForRoster = false
+    }
+    expect(await haUsers.listHAUserDirectory()).toEqual(initialDirectory)
+
+    haConn.closeHAConnection()
+    rosterResult = [{ id: "ha-user-1", name: "Ryan", system_generated: false }]
+    expect(await haUsers.listHAUserDirectory()).toEqual({ users: initialDirectory.users, verified: false })
+    rosterResult = []
+    expect(await haUsers.listHAUserDirectory()).toEqual({ users: [], verified: true })
+    haConn.closeHAConnection()
+    rosterResult = coreUsers
+    expect(await haUsers.listHAUserDirectory()).toEqual(initialDirectory)
+
+    const savedToken = process.env.HA_TOKEN
+    haConn.closeHAConnection()
+    delete process.env.HA_TOKEN
+    expect(await haUsers.listHAUserDirectory()).toEqual({ users: [], verified: false })
+    process.env.HA_TOKEN = savedToken
+    expect(await haUsers.listHAUserDirectory()).toEqual(initialDirectory)
+
+    haConn.closeHAConnection()
+    acceptConnections = false
+    expect(await haUsers.listHAUserDirectory()).toEqual({ users: initialDirectory.users, verified: false })
+    expect(haConn.getHAConnectionStatus().connected).toBe(false)
+    acceptConnections = true
+    expect(await haUsers.listHAUserDirectory()).toEqual(initialDirectory)
+    expect((await haConn.getHAConnection())?.connected).toBe(true)
+
+    // A new credential cannot fall back to the disconnected source's names.
+    process.env.HA_TOKEN = "unit-ha-rotated-token"
+    acceptConnections = false
+    expect(await haUsers.listHAUserDirectory()).toEqual({ users: [], verified: false })
+    acceptConnections = true
+    expect(await haUsers.listHAUserDirectory()).toEqual(initialDirectory)
 
     // 4. Todo bridge start, inbound sync, outbound push/remove, stop
     await todoBridge.startTodoSync({

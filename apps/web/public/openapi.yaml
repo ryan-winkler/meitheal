@@ -1955,7 +1955,26 @@ paths:
       tags:
         - Tasks
       summary: Get the Today page task counters
-      description: Returns counts over the full task database using the Today page rules. No task rows are returned.
+      description: Returns counts over the full task database using the Today page rules. The optional completed=1 parameter
+        also returns up to 20 completed task summaries for the household day.
+      parameters:
+        - name: completed
+          in: query
+          schema:
+            type: string
+            enum:
+              - "1"
+        - name: expected_day
+          in: query
+          schema:
+            type: string
+            format: date
+          description: Household day shown by the caller. A rollover returns 409.
+        - name: expected_timezone
+          in: query
+          schema:
+            type: string
+          description: Household timezone shown by the caller. A timezone change returns 409.
       responses:
         "200":
           description: Today counters
@@ -1986,9 +2005,186 @@ paths:
                     type: integer
                     minimum: 0
                     maximum: 100
+                  completedTasks:
+                    type: array
+                    maxItems: 20
+                    items:
+                      type: object
+                      required:
+                        - id
+                        - title
+                      properties:
+                        id:
+                          type: string
+                        title:
+                          type: string
+                      additionalProperties: false
                 additionalProperties: false
+        "409":
+          description: The household day or timezone changed
         "503":
           description: Today counters unavailable
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+  /api/calendar/agenda:
+    post:
+      operationId: readCalendarAgenda
+      tags:
+        - Tasks
+      summary: Read the Calendar agenda for a household day
+      description: Read-only browser operation. Returns due tasks and native events that start on the selected day, applying
+        Calendar filters before pagination. The first page also returns saved linked Home Assistant and CalDAV
+        occurrences when Events is selected. If one first-page read fails, its fields are null and the other result is
+        returned. Live Home Assistant events are read separately.
+      security: *a7
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+              required:
+                - date
+                - filters
+                - limit
+                - offset
+              properties:
+                date:
+                  type: string
+                  format: date
+                filters:
+                  type: string
+                  maxLength: 20000
+                  description: Encoded Calendar query without its leading question mark.
+                limit:
+                  type: integer
+                  minimum: 1
+                  maximum: 100
+                offset:
+                  type: integer
+                  minimum: 0
+      responses:
+        "200":
+          description: Scheduled work page and matching total
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - tasks
+                  - total
+                  - linkedEvents
+                properties:
+                  tasks:
+                    type:
+                      - array
+                      - "null"
+                    items:
+                      type: object
+                      required:
+                        - id
+                        - title
+                        - status
+                        - priority
+                        - task_kind
+                        - start_date
+                        - deferred_at
+                      properties:
+                        id:
+                          type: string
+                        title:
+                          type: string
+                        status:
+                          type: string
+                        priority:
+                          type: integer
+                        task_kind:
+                          type:
+                            - string
+                            - "null"
+                        start_date:
+                          type:
+                            - string
+                            - "null"
+                        deferred_at:
+                          type:
+                            - integer
+                            - "null"
+                      additionalProperties: false
+                  total:
+                    type:
+                      - integer
+                      - "null"
+                    minimum: 0
+                  linkedEvents:
+                    type:
+                      - array
+                      - "null"
+                    items:
+                      type: object
+                      required:
+                        - id
+                        - title
+                        - start
+                        - entity
+                        - uid
+                        - providerSummary
+                      properties:
+                        id:
+                          type: string
+                        title:
+                          type: string
+                        start:
+                          type: string
+                        entity:
+                          type:
+                            - string
+                            - "null"
+                        uid:
+                          type:
+                            - string
+                            - "null"
+                        providerSummary:
+                          type:
+                            - string
+                            - "null"
+                      additionalProperties: false
+                additionalProperties: false
+        "400":
+          description: Invalid Calendar query
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+        "408":
+          description: Calendar query timed out
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+        "413":
+          description: Calendar query too large
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+        "415":
+          description: Expected JSON
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+        "500":
+          description: Calendar agenda read failed
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+        "503":
+          description: Calendar agenda unavailable
           content:
             application/problem+json:
               schema:
@@ -2542,8 +2738,21 @@ paths:
       operationId: clearCompletedTasks
       tags:
         - Tasks
-      summary: Archive all completed tasks
-      description: Moves all tasks with status 'complete' to 'archived'. Use this in daily/weekly cleanup automations.
+      summary: Archive Complete tasks last updated on the household day
+      description: Moves every eligible Complete task to the archived status, including tasks outside the Today preview.
+        Returns the number changed.
+      parameters:
+        - name: expected_day
+          in: query
+          schema:
+            type: string
+            format: date
+          description: Household day the caller reviewed. A rollover returns 409 without changing any tasks.
+        - name: expected_timezone
+          in: query
+          schema:
+            type: string
+          description: Household timezone the caller reviewed. A timezone change returns 409 without changing any tasks.
       responses:
         "200":
           description: Count of archived tasks
@@ -2551,10 +2760,19 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                  - ok
+                  - cleared
                 properties:
-                  archived:
+                  ok:
+                    type: boolean
+                  cleared:
                     type: integer
+                  message:
+                    type: string
                 additionalProperties: false
+        "409":
+          description: The household day or timezone changed
   /api/tasks/delete-completed:
     get:
       operationId: previewDeleteCompletedTasks
@@ -6187,7 +6405,8 @@ paths:
       tags:
         - Users
       summary: List all users (HA + custom)
-      description: Returns users from Home Assistant integration combined with any custom-defined users.
+      description: Returns Home Assistant and custom users. ha_roster_verified indicates whether the Home Assistant roster is
+        verified and can distinguish an absent user from an unavailable roster.
       responses:
         "200":
           description: User list
@@ -6623,6 +6842,14 @@ paths:
       tags:
         - HomeAssistant
       summary: List HA calendar entities
+      parameters:
+        - name: configured
+          in: query
+          schema:
+            type: integer
+            enum:
+              - 1
+          description: Return only configured calendar entity IDs in the entities array.
       responses:
         "200":
           description: Calendars

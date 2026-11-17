@@ -13,6 +13,8 @@ import { readTableFilterParams } from "./filter-state"
 import { renderIconOrCustomEmoji } from "./tabler-svg"
 
 const STORAGE_KEY = "meitheal-selected-area"
+export const CALENDAR_AREA_REQUEST_EVENT = "meitheal:calendar-area-request"
+export const CALENDAR_AREA_APPLIED_EVENT = "meitheal:calendar-area-applied"
 
 interface AreaChangedDetail {
   areaId: string
@@ -27,7 +29,7 @@ export function getRememberedAreaId(): string {
 }
 
 export function getSelectedAreaId(): string {
-  return document.querySelector<HTMLElement>('#area-selector-dropdown [aria-selected="true"]')?.dataset.areaId ?? ""
+  return document.querySelector<HTMLElement>("#area-selector-trigger")?.dataset.selectedAreaId ?? ""
 }
 
 /**
@@ -52,24 +54,34 @@ export function initAreaSelector(signal: AbortSignal): void {
   // Restore saved area on init
   const params = new URLSearchParams(location.search)
   const table = Boolean(document.getElementById("table-shell"))
-  const requested = table ? readTableFilterParams(params).area : params.get("area") ?? undefined
+  const calendar = Boolean(document.getElementById("calendar-shell"))
+  const requested = table || calendar ? readTableFilterParams(params).area : params.get("area") ?? undefined
   if (requested !== undefined) {
     const option = Array.from(dropdown.querySelectorAll<HTMLElement>("[data-area-id]"))
       .find(item => item.dataset.areaId === requested)
     if (option) {
-      selectArea(requested, option.dataset.areaName ?? "All Areas", option.dataset.areaIcon ?? "🗂", false)
-    } else if (table) {
-      selectArea(requested, "Unavailable Area", "🗂", false)
+      selectArea(requested, option.dataset.areaName ?? "All Areas", option.dataset.areaIcon ?? "🗂")
+    } else if (table || calendar || document.getElementById("kanban-shell")) {
+      selectArea(requested, "Unavailable Area", "🗂")
     }
-  } else {
+  } else if (!calendar) {
     const saved = loadSavedArea()
     if (saved.areaId && Array.from(dropdown.querySelectorAll<HTMLElement>("[data-area-id]"))
       .some(option => option.dataset.areaId === saved.areaId)) {
-      selectArea(saved.areaId, saved.areaName, saved.areaIcon, false)
+      selectArea(saved.areaId, saved.areaName, saved.areaIcon)
     }
   }
   if (table) {
-    document.addEventListener("meitheal:table-area-reset", () => selectArea("", "All Areas", "🗂", false), { signal })
+    document.addEventListener("meitheal:table-area-reset", () => selectArea("", "All Areas", "🗂"), { signal })
+  } else if (calendar) {
+    document.addEventListener(CALENDAR_AREA_APPLIED_EVENT, event => {
+      const areaId = (event as CustomEvent<string>).detail
+      const option = [...dropdown.querySelectorAll<HTMLElement>("[data-area-id]")]
+        .find(item => item.dataset.areaId === areaId)
+      if (option) {
+        selectArea(areaId, option.dataset.areaName ?? "All Areas", option.dataset.areaIcon ?? "🗂", "calendar")
+      }
+    }, { signal })
   }
 
   // Toggle dropdown on trigger click
@@ -92,7 +104,7 @@ export function initAreaSelector(signal: AbortSignal): void {
     const areaName = option.dataset.areaName ?? "All Areas"
     const areaIcon = option.dataset.areaIcon ?? "🗂"
 
-    selectArea(areaId, areaName, areaIcon, true)
+    selectArea(areaId, areaName, areaIcon, "user")
     closeDropdown()
     trigger.focus()
   }, { signal })
@@ -126,8 +138,15 @@ export function initAreaSelector(signal: AbortSignal): void {
     dropdown!.classList.remove("is-open")
   }
 
-  function selectArea(areaId: string, areaName: string, areaIcon: string, dispatch: boolean): void {
+  function selectArea(areaId: string, areaName: string, areaIcon: string, source: "restore" | "user" | "calendar" = "restore"): void {
+    const detail: AreaChangedDetail = { areaId, areaName, areaIcon }
+    if (source === "user" && calendar) {
+      document.dispatchEvent(new CustomEvent(CALENDAR_AREA_REQUEST_EVENT, { detail }))
+      return
+    }
+
     // Update trigger display
+    trigger!.dataset.selectedAreaId = areaId
     labelEl!.textContent = areaName
     renderIconOrCustomEmoji(iconEl!, areaIcon, "folders", 15)
 
@@ -140,16 +159,14 @@ export function initAreaSelector(signal: AbortSignal): void {
     })
 
     // Save to localStorage
-    if (dispatch || !table) saveArea(areaId, areaName, areaIcon)
+    if (source !== "restore" || !table && [...options].some(option => option.dataset.areaId === areaId)) {
+      saveArea(areaId, areaName, areaIcon)
+    }
 
     // Sync all FilterToolbar area selects across views
     if (!table) syncFilterToolbarAreas(areaId)
 
-    // Dispatch global event
-    if (dispatch) {
-      const detail: AreaChangedDetail = { areaId, areaName, areaIcon }
-      document.dispatchEvent(new CustomEvent("meitheal:area-changed", { detail }))
-    }
+    if (source !== "restore") document.dispatchEvent(new CustomEvent("meitheal:area-changed", { detail }))
   }
 
   function syncFilterToolbarAreas(areaId: string): void {

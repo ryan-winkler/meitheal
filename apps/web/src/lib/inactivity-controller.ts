@@ -2,6 +2,7 @@ import type { InactivityFilter } from "@domains/tasks/persistence/task-inactivit
 import { t, type Locale } from "../i18n/client"
 import { InactivityRequestError, requestInactivity, type InactivityPreview } from "./inactivity-client"
 import { pageLifecycle } from "./page-lifecycle"
+import { createTablerSvgElement } from "./tabler-svg"
 
 pageLifecycle.onPageLoad(signal => {
   const root = document.querySelector<HTMLElement>("[data-inactivity-page]")
@@ -23,6 +24,7 @@ pageLifecycle.onPageLoad(signal => {
   const save = select<HTMLButtonElement>("save")
   const retry = select<HTMLButtonElement>("retry")
   const rows = select<HTMLUListElement>("rows")
+  const results = select<HTMLElement>("results")
   const empty = select<HTMLParagraphElement>("empty")
   const previous = select<HTMLButtonElement>("previous")
   const next = select<HTMLButtonElement>("next")
@@ -74,6 +76,7 @@ pageLifecycle.onPageLoad(signal => {
     snapshot = undefined
     setMode(0)
     content.hidden = true
+    results.removeAttribute("aria-busy")
     rows.replaceChildren()
     select<HTMLElement>("policy").textContent = ""
     while (area.options.length > 1) area.remove(1)
@@ -92,8 +95,7 @@ pageLifecycle.onPageLoad(signal => {
     }
     history.replaceState(history.state, "", url)
     const tasks = new URL(back.href)
-    if (scope) tasks.searchParams.set("area", scope)
-    else tasks.searchParams.delete("area")
+    tasks.searchParams.set("area", scope ?? "")
     back.href = tasks.href
   }
 
@@ -118,10 +120,13 @@ pageLifecycle.onPageLoad(signal => {
     rows.replaceChildren()
     for (const task of preview.tasks) {
       const row = document.createElement("li")
+      row.className = "work-queue-row"
+      const body = document.createElement("div")
       const title = document.createElement("h3")
       title.dir = "auto"
       title.textContent = task.title
       const summary = document.createElement("p")
+      summary.className = "work-queue-subtle"
       const appendCue = (key: string, timestamp: number) => {
         const time = document.createElement("time")
         time.dateTime = new Date(timestamp).toISOString()
@@ -137,11 +142,13 @@ pageLifecycle.onPageLoad(signal => {
       const target = new URL(back.href)
       target.searchParams.set("area", task.area_id)
       target.searchParams.set("open", task.id)
+      target.hash = ""
       details.href = target.href
       details.dataset.astroPrefetch = "false"
       details.className = "btn btn-outline"
-      details.textContent = t("triage.details", locale)
-      row.append(title, summary, details)
+      details.append(createTablerSvgElement("file-text", 18), t("triage.details", locale))
+      body.append(title, summary)
+      row.append(body, details)
       rows.append(row)
     }
 
@@ -166,6 +173,7 @@ pageLifecycle.onPageLoad(signal => {
     rows.replaceChildren()
     empty.hidden = true
     pagination.hidden = true
+    results.setAttribute("aria-busy", "true")
     retry.hidden = true
     status.textContent = label("loading")
 
@@ -197,7 +205,10 @@ pageLifecycle.onPageLoad(signal => {
       status.textContent = label(code === 403 ? "denied" : "failed")
       retry.hidden = false
     } finally {
-      if (pending === request) pending = undefined
+      if (pending === request) {
+        pending = undefined
+        results.removeAttribute("aria-busy")
+      }
     }
   }
 

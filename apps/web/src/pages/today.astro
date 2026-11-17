@@ -18,11 +18,14 @@
  * @kcs This page uses the shared TaskListItem component for all task rendering.
  * The inline script is replaced by today-controller.ts module.
  */
+import Icon from "../components/ui/Icon.astro"
 import Layout from "../layouts/Layout.astro"
 import UnifiedBar from "../components/layout/UnifiedBar.astro"
 import EmptyState from "../components/ui/EmptyState.astro"
 import InlineHelper from "../components/ui/InlineHelper.astro"
 import TaskListItem from "../components/tasks/TaskListItem.astro"
+import StatusBadge from "../components/ui/StatusBadge.astro"
+import { taskSurface } from "../lib/task-surface"
 import { buildTaskPath } from "../lib/task-detail-handoff"
 import { getPersistenceClient } from "@domains/tasks/persistence/store"
 import { TemplateRepository } from "@domains/tasks/persistence/template-repository"
@@ -40,6 +43,7 @@ let noDueTasks: TaskViewItem[] = []
 let suggestedTasks: TaskViewItem[] = []
 let focusStackTasks: TaskViewItem[] = []
 let completedTodayCount = 0
+let completedTaskSummaries: Awaited<ReturnType<typeof getTodayTaskRows>>["completedTasks"] = []
 let unscheduledCount = 0
 let totalOpenCount = 0
 let currentStreak = 0
@@ -47,12 +51,15 @@ let todayXP = 0
 let habits: HabitWithStats[] = []
 let habitsEnabled = false
 const todayTimeZone = Astro.locals.timezone || "Europe/Dublin"
+const todayDate = new Date()
+const todayIsoDate = calendarToday(todayTimeZone, todayDate)
 
 try {
-  const todayStr = calendarToday(todayTimeZone)
+  const todayStr = todayIsoDate
   const includeUnscheduled = requestedUnscheduledPage(Astro.url.searchParams) !== null
-  const { tasks, completedTodayCount: completed, openUnscheduledCount } = await getTodayTaskRows(todayStr, includeUnscheduled, todayTimeZone)
+  const { tasks, completedTodayCount: completed, openUnscheduledCount, completedTasks } = await getTodayTaskRows(todayStr, includeUnscheduled, todayTimeZone)
   completedTodayCount = completed
+  completedTaskSummaries = completedTasks
 
   // Partition tasks into sections
   for (const task of tasks) {
@@ -159,20 +166,18 @@ function unscheduledLink(page: number): string {
 
 const remainingCount = carriedForwardTasks.length + todayTasks.length + pinnedTasks.length
 const todayHeroSignal = `${todayTasks.length} due today · ${carriedForwardTasks.length} carried forward`
-const todayDate = new Date()
 const locale = Astro.cookies.get("meitheal-locale")?.value === "ga" ? "ga-IE" : "en-IE"
 const todayDateLabel = new Intl.DateTimeFormat(locale, {
   weekday: "long", day: "numeric", month: "long",
   timeZone: todayTimeZone,
 }).format(todayDate)
-const todayIsoDate = calendarToday(todayTimeZone, todayDate)
 const completionPercent = todayCompletionPercent(completedTodayCount, remainingCount)
 ---
 
 <Layout title="Meitheal — Today">
   <UnifiedBar
     title="Today"
-    titleIcon="☀️"
+    titleIcon="today"
     tabs={TODAY_SECTIONS.map((section) => ({
       id: section.id,
       label: section.label,
@@ -188,14 +193,18 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
       type="button"
       class="unified-bar__new-task-btn today-shell__clear-btn"
       id="clear-completed-btn"
-      title="Clear completed tasks"
-      aria-label="Clear Done"
+      data-today-archive={todayIsoDate}
+      title="Archive Complete Household Board tasks last updated today"
+      aria-label="Archive completed"
     >
-      <span class="unified-bar__new-task-label">Clear Done</span>
+      <span class="unified-bar__new-task-label">Archive completed</span>
     </button>
   </UnifiedBar>
 
-  <div id="page-shell" class="page-shell">
+  <div id="page-shell" class="page-shell" data-today-day={todayIsoDate} data-today-timezone={todayTimeZone}>
+    <div id="today-rollover" class="alert alert-warning" role="status" hidden>
+      Today has changed. <button type="button" class="btn btn-sm" data-today-refresh>Refresh Today</button>
+    </div>
     <section
       id="today-overview"
       class="page-shell__section page-shell__section--overview"
@@ -221,7 +230,7 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
           </div>
           <a href="#today-triage" class="stat-item" data-today-section-link>
             <span class="stat-value" data-today-count="carriedForward">{carriedForwardTasks.length}</span>
-            <span class="stat-label stat-danger">Carried Fwd</span>
+            <span class="stat-label stat-danger">Carried forward</span>
           </a>
           <div class="stat-item">
             <span class="stat-value" data-today-count="remaining">{remainingCount}</span>
@@ -229,7 +238,7 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
           </div>
           {currentStreak > 0 && (
             <div class="stat-item stat-streak">
-              <span class="stat-value">🔥{currentStreak}</span>
+              <span class="stat-value"><Icon name="flame" size={16} />{currentStreak}</span>
               <span class="stat-label">Streak</span>
             </div>
           )}
@@ -291,6 +300,7 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
               <div
                 class={`focus-card ${task.is_overdue ? "focus-card--overdue" : ""}`}
                 data-id={task.id}
+                {...taskSurface(task.status, task.color)}
                 data-focus-index={i}
               >
                 <span class="focus-card__step">{i + 1}</span>
@@ -302,11 +312,13 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
                         {task.priority === 1 ? "▲ Critical" : "↑ High"}
                       </span>
                     )}
+                    <span class="focus-card__work-status"><StatusBadge status={task.status} /></span>
                     {task.due_date && (
                       <span
                         class={`focus-card__due ${task.is_overdue ? "focus-card__due--overdue" : ""}`}
                       >
-                        {task.is_overdue ? "⚠ Overdue" : `📅 ${formatRelativeDue(task.due_date, todayTimeZone)}`}
+                        <Icon name={task.is_overdue ? "alert-triangle" : "calendar-event"} size={12} />
+                        {task.is_overdue ? "Overdue" : formatRelativeDue(task.due_date, todayTimeZone)}
                       </span>
                     )}
                   </div>
@@ -369,10 +381,10 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
           <option value="title-asc">Title A-Z</option>
           <option value="title-desc">Title Z-A</option>
         </select>
-        <button type="button" id="today-clear-filters" class="btn btn-sm" title="Clear filters">
-          ✕
+        <button type="button" id="today-clear-filters" class="btn btn-sm" title="Clear filters" aria-label="Clear filters">
+          <Icon name="x" size={16} />
         </button>
-        <button type="button" id="batch-mode-toggle" class="btn btn-sm" title="Toggle multi-select mode" aria-pressed="false" hidden>☑</button>
+        <button type="button" id="batch-mode-toggle" class="btn btn-sm" title="Toggle multi-select mode" aria-pressed="false" hidden><Icon name="checkbox" size={16} /></button>
       </div>
     </section>
 
@@ -386,43 +398,38 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
 
       <div id="migration-prompt" class="today-section" style="display: none;"></div>
 
-      {carriedForwardTasks.length > 0 ? (
-        <div class="today-section" id="section-carried">
-          <button type="button" class="today-section__header today-section__toggle"
-            aria-controls="today-carried-list" aria-expanded="true">
-            <span class="today-section__icon" aria-hidden="true">▶</span>
-            <span class="today-section__title" style="color: var(--warning-text, var(--warning));">
-              <span aria-hidden="true">🔄</span> Carried Forward
-            </span>
-            <span class="today-section__count" id="today-carried-list-count">{carriedForwardTasks.length}</span>
-          </button>
-          <div class="today-section__list" id="today-carried-list">
-            {carriedForwardTasks.map(task => (
-              <TaskListItem task={task} showSnooze showActions section="Carried Forward" />
-            ))}
-          </div>
+      <div class="today-section" id="section-carried" hidden={carriedForwardTasks.length === 0}>
+        <button type="button" class="today-section__header today-section__toggle"
+          aria-controls="today-carried-list" aria-expanded="true">
+          <Icon name="chevron-down" size={14} class="today-section__icon" />
+          <span class="today-section__title" style="color: var(--warning-text, var(--warning));">
+            <Icon name="refresh" size={16} /> Carried Forward
+          </span>
+          <span class="today-section__count" id="today-carried-list-count">{carriedForwardTasks.length}</span>
+        </button>
+        <div class="today-section__list" id="today-carried-list" data-today-task-list>
+          {carriedForwardTasks.map(task => (
+            <TaskListItem task={task} showSnooze showActions section="Carried Forward" />
+          ))}
         </div>
-      ) : (
-        <div class="today-shell__empty card">No carried-forward work is waiting on you.</div>
-      )}
+      </div>
+      <div class="today-shell__empty card" data-today-carried-empty hidden={carriedForwardTasks.length > 0}>No carried-forward work is waiting on you.</div>
 
-      {suggestedTasks.length > 0 && (
-        <div class="today-section" id="section-suggested">
-          <button type="button" class="today-section__header today-section__toggle"
-            aria-controls="today-suggested-list" aria-expanded="true">
-            <span class="today-section__icon" aria-hidden="true">▶</span>
-            <span class="today-section__title" style="color: var(--accent-text);">
-              <span aria-hidden="true">💡</span> Suggested
-            </span>
-            <span class="today-section__count" id="today-suggested-list-count">{suggestedTasks.length}</span>
-          </button>
-          <div class="today-section__list" id="today-suggested-list">
-            {suggestedTasks.map(task => (
-              <TaskListItem task={task} showFocusToday showActions section="Suggested" />
-            ))}
-          </div>
+      <div class="today-section" id="section-suggested" hidden={suggestedTasks.length === 0}>
+        <button type="button" class="today-section__header today-section__toggle"
+          aria-controls="today-suggested-list" aria-expanded="true">
+          <Icon name="chevron-down" size={14} class="today-section__icon" />
+          <span class="today-section__title" style="color: var(--accent-text);">
+            <Icon name="sparkles" size={16} /> Suggested
+          </span>
+          <span class="today-section__count" id="today-suggested-list-count">{suggestedTasks.length}</span>
+        </button>
+        <div class="today-section__list" id="today-suggested-list" data-today-task-list>
+          {suggestedTasks.map(task => (
+            <TaskListItem task={task} showFocusToday showActions section="Suggested" />
+          ))}
         </div>
-      )}
+      </div>
     </section>
 
     <section id="today-work" class="page-shell__section" data-today-section>
@@ -439,9 +446,9 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
       <div class="today-section" id="section-calendar-events" style="display: none;">
         <button type="button" class="today-section__header today-section__toggle"
           aria-controls="calendar-events-list" aria-expanded="true">
-          <span class="today-section__icon" aria-hidden="true">▶</span>
+          <Icon name="chevron-down" size={14} class="today-section__icon" />
           <span class="today-section__title" style="color: var(--info, #60a5fa);">
-            <span aria-hidden="true">📅</span> Calendar Events
+            <Icon name="calendar-event" size={16} /> Calendar Events
           </span>
           <span class="today-section__count" id="calendar-events-count">0</span>
         </button>
@@ -452,83 +459,102 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
         </div>
       </div>
 
-      {pinnedTasks.length > 0 && (
-        <div class="today-section" id="section-pinned">
-          <button type="button" class="today-section__header today-section__toggle"
-            aria-controls="today-pinned-list" aria-expanded="true">
-            <span class="today-section__icon" aria-hidden="true">▶</span>
-            <span class="today-section__title">
-              <span aria-hidden="true">⭐</span> Shared favorites
-            </span>
-            <span class="today-section__count" id="today-pinned-list-count">{pinnedTasks.length}</span>
-          </button>
-          <div class="today-section__list" id="today-pinned-list">
-            {pinnedTasks.map(task => (
-              <TaskListItem task={task} showSnooze showActions section="Shared favorites" />
-            ))}
-          </div>
+      <div class="today-section" id="section-pinned" hidden={pinnedTasks.length === 0}>
+        <button type="button" class="today-section__header today-section__toggle"
+          aria-controls="today-pinned-list" aria-expanded="true">
+          <Icon name="chevron-down" size={14} class="today-section__icon" />
+          <span class="today-section__title">
+            <Icon name="star" size={16} /> Shared favorites
+          </span>
+          <span class="today-section__count" id="today-pinned-list-count">{pinnedTasks.length}</span>
+        </button>
+        <div class="today-section__list" id="today-pinned-list" data-today-task-list>
+          {pinnedTasks.map(task => (
+            <TaskListItem task={task} showSnooze showActions section="Shared favorites" />
+          ))}
         </div>
-      )}
+      </div>
 
       <div class="today-section" id="section-today">
         <button type="button" class="today-section__header today-section__toggle"
           aria-controls="today-due-list" aria-expanded="true">
-          <span class="today-section__icon" aria-hidden="true">▶</span>
+          <Icon name="chevron-down" size={14} class="today-section__icon" />
           <span class="today-section__title">
-            <span aria-hidden="true">☀️</span> Due Today
+            <Icon name="sun" size={16} /> Due Today
           </span>
           <span class="today-section__count" id="today-due-list-count">{todayTasks.length}</span>
         </button>
-        <div class="today-section__list" id="today-due-list">
-          {todayTasks.length === 0 ? (
+        <div class="today-section__list" id="today-due-list" data-today-task-list>
+          <div data-today-due-empty hidden={todayTasks.length > 0}>
             <EmptyState
-              title="Nothing due today"
-              description="You're on top of things! 🎉"
+              title={remainingCount === 0 && completedTodayCount > 0 ? "Today’s tasks are complete" : "Nothing due today"}
+              icon="check"
+              actionText="Add a task"
+              actionEvent="meitheal:new-task"
             />
-          ) : (
-            todayTasks.map(task => (
-              <TaskListItem task={task} showSnooze showActions section="Due Today" />
-            ))
-          )}
+          </div>
+          {todayTasks.map(task => (
+            <TaskListItem task={task} showSnooze showActions section="Due Today" />
+          ))}
         </div>
       </div>
 
-      {(unscheduledCount > 0 || unscheduled) && (
-        <div class:list={["today-section", { "today-section--collapsed": !unscheduled }]} id="section-unscheduled">
-          <button type="button" class="today-section__header today-section__toggle"
-            aria-controls="today-unscheduled-list" aria-expanded={Boolean(unscheduled)}>
-            <span class="today-section__icon" aria-hidden="true">▶</span>
-            <span class="today-section__title">
-              <span aria-hidden="true">📌</span> Unscheduled
-            </span>
-            <span class="today-section__count" id="today-unscheduled-list-count">{unscheduledCount}</span>
+      <details class="today-completed-tasks" hidden={completedTaskSummaries.length === 0}>
+        <summary>Completed today ({completedTodayCount})</summary>
+        <p hidden={completedTaskSummaries.length >= completedTodayCount}>
+          Showing {completedTaskSummaries.length} of {completedTodayCount} completions. Archive applies to all {completedTodayCount}.
+        </p>
+        <ul>
+          {completedTaskSummaries.map(task => (
+            <li>
+              <a href={buildTaskPath(task.id)} data-task-detail-link={task.id} data-today-completion>
+                <Icon name="checkbox" size={17} />
+                <span>{task.title}</span>
+              </a>
+            </li>
+          ))}
+        </ul>
+        <div class="today-completed-tasks__actions">
+          <button type="button" class="btn btn-outline" data-today-archive={todayIsoDate}>
+            <Icon name="check" size={16} /> Archive completed
           </button>
-          <div class="today-section__list" id="today-unscheduled-list" hidden={!unscheduled}>
-            <div id="today-unscheduled-page" data-page={unscheduled?.number ?? 0}>
-              {unscheduled && (
-                <>
-                  <p class="today-unscheduled-pagination" role="status" tabindex="-1" data-unscheduled-range>
-                    {unscheduled.total ? `Showing ${unscheduled.first}–${unscheduled.last} of ${unscheduled.total}` : "No unscheduled tasks match these filters"}
-                  </p>
-                  {unscheduled.items.map(task => (
-                    <TaskListItem task={task} showActions section="Unscheduled" />
-                  ))}
-                  {unscheduled.pages > 1 && <nav class="today-unscheduled-pagination" aria-label="Unscheduled tasks pages">
-                    {unscheduled.number > 1 && (
-                      <a class="btn btn-sm" href={unscheduledLink(unscheduled.number - 1)} data-unscheduled-page={unscheduled.number - 1}>Previous</a>
-                    )}
-                    {unscheduled.number < unscheduled.pages && (
-                      <a class="btn btn-sm" href={unscheduledLink(unscheduled.number + 1)} data-unscheduled-page={unscheduled.number + 1}>Next</a>
-                    )}
-                  </nav>}
-                </>
-              )}
-            </div>
-            <p role="status" id="today-unscheduled-status" hidden></p>
-            <button type="button" class="btn btn-sm" id="today-unscheduled-retry" hidden>Retry</button>
-          </div>
         </div>
-      )}
+      </details>
+
+      <div class:list={["today-section", { "today-section--collapsed": !unscheduled }]} id="section-unscheduled" hidden={!unscheduled && unscheduledCount <= 0}>
+        <button type="button" class="today-section__header today-section__toggle"
+          aria-controls="today-unscheduled-list" aria-expanded={Boolean(unscheduled)}>
+          <Icon name="chevron-down" size={14} class="today-section__icon" />
+          <span class="today-section__title">
+            <Icon name="pin" size={16} /> Unscheduled
+          </span>
+          <span class="today-section__count" id="today-unscheduled-list-count">{unscheduledCount}</span>
+        </button>
+        <div class="today-section__list" id="today-unscheduled-list" hidden={!unscheduled}>
+          <div id="today-unscheduled-page" data-page={unscheduled?.number ?? 0}>
+            {unscheduled && (
+              <>
+                <p class="today-unscheduled-pagination" role="status" tabindex="-1" data-unscheduled-range>
+                  {unscheduled.total ? `Showing ${unscheduled.first}–${unscheduled.last} of ${unscheduled.total}` : "No unscheduled tasks match these filters"}
+                </p>
+                {unscheduled.items.map(task => (
+                  <TaskListItem task={task} showActions section="Unscheduled" />
+                ))}
+                {unscheduled.pages > 1 && <nav class="today-unscheduled-pagination" aria-label="Unscheduled tasks pages">
+                  {unscheduled.number > 1 && (
+                    <a class="btn btn-sm" href={unscheduledLink(unscheduled.number - 1)} data-unscheduled-page={unscheduled.number - 1}>Previous</a>
+                  )}
+                  {unscheduled.number < unscheduled.pages && (
+                    <a class="btn btn-sm" href={unscheduledLink(unscheduled.number + 1)} data-unscheduled-page={unscheduled.number + 1}>Next</a>
+                  )}
+                </nav>}
+              </>
+            )}
+          </div>
+          <p role="status" id="today-unscheduled-status" hidden></p>
+          <button type="button" class="btn btn-sm" id="today-unscheduled-retry" hidden>Retry</button>
+        </div>
+      </div>
     </section>
 
     <section id="today-habits" class="page-shell__section" data-today-section>
@@ -542,9 +568,9 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
       <div class="today-section" id="section-habits">
         <button type="button" class="today-section__header today-section__toggle"
           aria-controls="today-habits-list" aria-expanded="true">
-          <span class="today-section__icon" aria-hidden="true">▶</span>
+          <Icon name="chevron-down" size={14} class="today-section__icon" />
           <span class="today-section__title" style="color: var(--accent-text);">
-            <span aria-hidden="true">🔄</span> Habits / Routines
+            <Icon name="repeat" size={16} /> Habits / Routines
           </span>
           <span class="today-section__count" id="today-habits-list-count">{habits.length}</span>
         </button>
@@ -560,7 +586,7 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
                 <div class="habit-card__info">
                   <span class="habit-card__name">{habit.name}</span>
                   <span class="habit-card__meta">
-                    {habit.currentStreak > 0 && <span class="habit-card__streak">🔥{habit.currentStreak}</span>}
+                    {habit.currentStreak > 0 && <span class="habit-card__streak"><Icon name="flame" size={14} />{habit.currentStreak}</span>}
                     <span class="habit-card__total">{habit.totalCompletions} total</span>
                   </span>
                 </div>
@@ -569,7 +595,7 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
                   class="habit-card__complete btn btn-sm"
                   disabled={habit.todayCompleted}
                 >
-                  {habit.todayCompleted ? "✅ Done" : "Complete"}
+                  {habit.todayCompleted ? <><Icon name="check" size={14} /> Done</> : "Complete"}
                 </button>
               </div>
             ))
@@ -592,29 +618,29 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
         </div>
       </div>
 
-      <InlineHelper helperId="today-flow-explainer" title="Navigation & Context" icon="🧭" variant="tip">
+      <InlineHelper helperId="today-flow-explainer" title="Navigation & Context" icon="inbox" variant="tip">
         <p>Open <strong>Tasks Hub</strong> for Kanban, Calendar, Table or Timeline. Use <strong>Planning</strong> to prioritise and <strong>Progress</strong> to review routines and goals.</p>
       </InlineHelper>
 
       <div class="page-flow-grid">
         <a class="card page-flow-card" href="/upcoming">
-          <strong>📅 Upcoming</strong>
+          <strong><Icon name="calendar-event" size={14} /> Upcoming</strong>
           <p>See what’s due in the next seven days.</p>
         </a>
         <a class="card page-flow-card" href="/tasks?view=calendar#calendar">
-          <strong>🗓️ Calendar</strong>
+          <strong><Icon name="calendar" size={14} /> Calendar</strong>
           <p>See tasks and events by date.</p>
         </a>
         <a class="card page-flow-card" href="/planning#eisenhower">
-          <strong>⚡ Eisenhower</strong>
+          <strong><Icon name="eisenhower" size={14} /> Eisenhower</strong>
           <p>Sort tasks by urgency and importance.</p>
         </a>
         <a class="card page-flow-card" href="/tasks#kanban">
-          <strong>📊 Kanban</strong>
+          <strong><Icon name="kanban" size={14} /> Kanban</strong>
           <p>Move tasks between status columns.</p>
         </a>
         <a class="card page-flow-card" href="/progress#routines">
-          <strong>🏆 Progress</strong>
+          <strong><Icon name="trophy" size={14} /> Progress</strong>
           <p>Track routines, goals, and achievements in one place.</p>
         </a>
       </div>
@@ -623,8 +649,8 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
   <div id="batch-action-bar" hidden>
     <span></span>
     <button type="button" class="btn btn-sm" value="complete">✓ Complete</button>
-    <button type="button" class="btn btn-sm" value="snooze" title="Snooze selected +1 day">⏰ Snooze</button>
-    <button type="button" class="btn btn-sm" value="delete">🗑 Delete</button>
+    <button type="button" class="btn btn-sm" value="snooze" title="Snooze selected +1 day"><Icon name="clock" size={14} /> Snooze</button>
+    <button type="button" class="btn btn-sm" value="delete"><Icon name="trash" size={14} /> Delete</button>
     <button type="button" class="btn btn-sm" value="deselect">Deselect all</button>
   </div>
 </Layout>
@@ -633,6 +659,12 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
   /* Shared section and flow styles are in _page-shell.css. */
   #page-shell {
     gap: 1.5rem;
+    padding-block-start: 12px;
+  }
+
+  :global([data-theme="knight-rider"][data-appearance-width="default"]) #page-shell {
+    max-width: 960px;
+    margin-inline: auto;
   }
 
   .today-summary {
@@ -677,6 +709,15 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
     transform: none;
     border-color: var(--border);
   }
+  #quick-add-feedback {
+    flex-wrap: wrap;
+    gap: 4px 12px;
+  }
+  :global(.quick-add-feedback-part) {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
   .quick-add-form {
     display: flex;
     gap: 8px;
@@ -702,6 +743,10 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
     color: var(--text-primary);
   }
 
+  [data-today-archive][aria-disabled="true"] {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
   .today-shell__clear-btn:hover {
     background: color-mix(in srgb, var(--warning) 18%, transparent);
     border-color: color-mix(in srgb, var(--warning) 50%, var(--border));
@@ -749,7 +794,7 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
     transition: border-color 0.2s ease;
   }
   .today-filter-bar .form-select:focus {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--border-focus);
     outline-offset: -1px;
   }
 
@@ -803,18 +848,88 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
     background: rgba(255, 255, 255, 0.05);
   }
 
+  :global([data-theme="knight-rider"]) .today-section {
+    background: transparent;
+    border: 0;
+    border-block-start: 1px solid var(--border);
+    border-radius: 0;
+  }
+  :global([data-theme="knight-rider"]) .today-section__header:not(:hover) {
+    background: transparent;
+  }
+
+  :global([data-theme="knight-rider"]) #today-due-list :global(.empty-state) {
+    border: 0;
+    background: transparent;
+    margin-block: 12px;
+    padding-block: 24px;
+  }
+  :global([data-theme="knight-rider"]) #today-due-list :global(.empty-state-icon) {
+    margin-block-end: 10px;
+  }
+  :global([data-theme="knight-rider"]) #today-due-list :global(.empty-state-actions .btn-primary:not(:hover)) {
+    background: transparent;
+    border-color: var(--control-border);
+    color: var(--text-primary);
+  }
+
+  .today-completed-tasks {
+    display: none;
+  }
+  :global([data-theme="knight-rider"]) .today-completed-tasks:not([hidden]) {
+    display: block;
+    color: var(--text-muted);
+  }
+  .today-completed-tasks summary {
+    cursor: pointer;
+    padding: 12px 0;
+    min-block-size: 44px;
+    font-weight: 600;
+  }
+  .today-completed-tasks ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .today-completed-tasks :global(li) {
+    border-block-start: 1px solid var(--border);
+  }
+  :global([data-theme="knight-rider"]:has(.today-completed-tasks[open]:not([hidden]))) .today-shell__clear-btn {
+    display: none;
+  }
+  .today-completed-tasks__actions {
+    display: flex;
+    justify-content: center;
+    padding-block: 16px 8px;
+    border-block-start: 1px solid var(--border);
+  }
+  .today-completed-tasks__actions button {
+    min-block-size: 44px;
+  }
+  .today-completed-tasks :global(a) {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    min-block-size: 44px;
+    color: var(--text-muted);
+    text-decoration: line-through;
+    overflow-wrap: anywhere;
+  }
+  .today-completed-tasks :global(a > svg) { flex: none; }
+
   .today-section__header:focus-visible {
     outline-offset: -3px;
   }
   .today-section__icon {
     color: var(--text-muted);
     font-size: 10px;
-    transform: rotate(90deg);
+    flex: 0 0 auto;
     display: inline-block;
     transition: transform 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
   }
   .today-section--collapsed .today-section__icon {
-    transform: rotate(0deg);
+    transform: rotate(-90deg);
   }
 
   .today-section__title {
@@ -822,6 +937,9 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
     font-weight: 600;
     flex: 1;
     letter-spacing: -0.01em;
+    display: flex;
+    align-items: center;
+    gap: 6px;
   }
 
   .today-section__count {
@@ -994,6 +1112,9 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
     font-size: 1rem;
   }
   .stat-streak .stat-value {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
     color: var(--warning, #f59e0b);
   }
 
@@ -1203,6 +1324,11 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
     gap: 8px;
   }
 
+  .focus-stack__header[hidden],
+  .focus-card[hidden] {
+    display: none;
+  }
+
   .focus-card {
     display: flex;
     align-items: center;
@@ -1226,6 +1352,47 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
     opacity: 0;
     transform: translateX(40px) scale(0.95);
     transition: opacity 300ms ease, transform 300ms ease;
+  }
+
+  .focus-card__work-status {
+    display: none;
+  }
+  :global([data-theme="knight-rider"]) .focus-card[data-work-active] .focus-card__work-status {
+    display: inline-flex;
+  }
+  :global([data-theme="knight-rider"]) .focus-stack {
+    background: transparent;
+    border: 0;
+    border-block-start: 1px solid var(--border);
+    padding-inline: 0;
+    border-radius: 0;
+  }
+  :global([data-theme="knight-rider"]) .focus-stack::before {
+    content: none;
+  }
+  :global([data-theme="knight-rider"]) .focus-stack__cards {
+    gap: 0;
+  }
+  :global([data-theme="knight-rider"]) .focus-card {
+    background: transparent;
+    border: 0;
+    border-bottom: 1px solid var(--border);
+    border-radius: 0;
+  }
+  :global([data-theme="knight-rider"]) .focus-card:hover {
+    transform: none;
+    box-shadow: none;
+  }
+  :global([data-theme="knight-rider"]) .focus-card__step {
+    background: var(--bg-hover);
+    color: var(--accent-text);
+    box-shadow: none;
+  }
+  :global([data-theme="knight-rider"]) :is(.focus-card__due--overdue, .focus-card__priority[data-pri="1"]) {
+    color: var(--danger-text);
+  }
+  :global([data-theme="knight-rider"]) .focus-card__complete {
+    border-color: var(--text-muted);
   }
 
   .focus-card__step {
@@ -1256,13 +1423,28 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
     overflow: hidden;
     text-overflow: ellipsis;
   }
+  @media (max-width: 768px) {
+    .focus-card__title {
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      white-space: normal;
+      overflow-wrap: anywhere;
+    }
+  }
   .focus-card__meta {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 8px;
+    gap: 4px 8px;
     margin-top: 2px;
     font-size: 0.6875rem;
     color: var(--text-muted);
+  }
+  .focus-card__due {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
   }
   .focus-card__priority[data-pri="1"] {
     color: var(--danger);
@@ -1293,6 +1475,12 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
     flex-shrink: 0;
     transition: border-color var(--transition), color var(--transition), background var(--transition), box-shadow var(--transition);
     padding: 0;
+  }
+  @media (max-width: 768px), (pointer: coarse) {
+    .focus-card__complete {
+      min-width: 44px;
+      min-height: 44px;
+    }
   }
   .focus-card__complete:hover {
     border-color: var(--success);

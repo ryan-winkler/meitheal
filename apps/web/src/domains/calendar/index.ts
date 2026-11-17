@@ -22,3 +22,4 @@ export {
   type CalendarSyncStatusEntity,
   type TaskCalendarMeta,
 } from "./calendar-bridge"
+export { CALENDAR_ENTITY_SETTINGS, configuredCalendarEntityIds } from "./resolve-calendar-entities"

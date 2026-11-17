@@ -1,7 +1,9 @@
-import type { FilterCondition, FilterGroup } from "./filter-engine"
-import { readFilterLabels, writeFilterLabels, type FilterState } from "./filter-state"
+import { normalizeStatusRuleValue, type FilterCondition, type FilterGroup } from "./filter-engine"
+import { readFilterLabels, readTaskKindFilter, writeFilterLabels, type FilterState } from "./filter-state"
+import { normalizeStatus } from "./status-config"
 
 export const KANBAN_PAGE_SIZE = 25
+export const KANBAN_SEARCH_LIMIT = 500
 const PAGE_PREFIX = "kp."
 export const KANBAN_GROUP_KEY = "meitheal-kanban-group-by"
 export type KanbanFilters = Partial<FilterState> & { promoted?: boolean }
@@ -12,11 +14,16 @@ export function storedKanbanGroup(): string {
 const fields = new Set(["title", "status", "priority", "rice", "type", "assigned", "labels", "area"])
 const operators = new Set(["equals", "notEquals", "contains", "notContains", "greaterThan", "lessThan", "isEmpty", "isNotEmpty"])
 
-function readRules(raw: string | null): FilterGroup | undefined {
+export function readKanbanSearch(value: string | null): string {
+  return (value ?? "").trim().slice(0, KANBAN_SEARCH_LIMIT)
+}
+
+export function readKanbanRules(raw: string | null): FilterGroup | undefined {
   if (!raw || raw.length > 8000) return
   try {
-    const rules = JSON.parse(raw.startsWith("%") ? decodeURIComponent(raw) : raw) as { conditions?: unknown }
+    const rules = JSON.parse(raw.startsWith("%") ? decodeURIComponent(raw) : raw) as { conditions?: unknown; logic?: unknown }
     if (!Array.isArray(rules.conditions) || rules.conditions.length > 40) return
+    const logic = rules.logic === "OR" ? "OR" : "AND"
     const conditions: FilterCondition[] = []
     for (const item of rules.conditions) {
       if (!item || !fields.has(item.field) || !operators.has(item.operator) || typeof item.value !== "string") return
@@ -24,31 +31,27 @@ function readRules(raw: string | null): FilterGroup | undefined {
         id: String(conditions.length),
         field: item.field,
         operator: item.operator,
-        value: item.value,
-        logic: item.logic === "OR" ? "OR" : "AND",
+        value: normalizeStatusRuleValue(item.field, item.operator, item.value),
+        logic: item.logic === "OR" || item.logic === "AND" ? item.logic : logic,
       })
     }
-    return { id: "root", logic: "AND", conditions }
+    return { id: "root", logic, conditions }
   } catch { /* ignore malformed URL input */ }
 }
 
 export function readKanbanFilters(params: URLSearchParams): KanbanFilters {
   return {
     area: params.get("area") ?? "",
-    search: (params.get("search") ?? "").trim().slice(0, 500),
+    search: readKanbanSearch(params.get("search")),
     user: params.get("user") ?? "",
-    status: params.get("status") ?? "",
+    status: normalizeStatus(params.get("status") ?? ""),
     priority: params.get("priority") ?? "",
     promoted: params.get("promoted") === "1",
     rice: params.get("rice") ?? "",
     groupBy: params.get("groupBy") ?? "none",
-    types: (params.get("types") ?? "")
-      .split(",")
-      .filter(Boolean)
-      .map(type => (type === "standard" ? "standard_action" : type))
-      .slice(0, 50),
+    types: readTaskKindFilter(params.get("types")),
     labels: readFilterLabels(params),
-    advancedFilter: readRules(params.get("advancedFilter")) ?? null,
+    advancedFilter: readKanbanRules(params.get("advancedFilter")) ?? null,
   }
 }
 

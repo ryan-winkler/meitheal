@@ -28,6 +28,37 @@ test.describe("Tasks Shell (Kanban)", () => {
     await expect(page.locator("#search-hub-input")).toBeFocused()
   })
 
+  test("card previews show plain text for descriptions saved in Details", async ({ page, request, baseURL }) => {
+    const headers = { origin: new URL(baseURL!).origin }
+    const create = await request.post("/api/tasks", { headers, data: { title: "Check the supply controller", description: "Original description." } })
+    expect(create.status()).toBe(201)
+    const { id } = await create.json()
+    try {
+      await page.reload()
+      const card = page.locator(`.kanban-card[data-id="${id}"]`)
+      await card.locator(".card-open-btn").click()
+      await expect(page.locator("#td-status")).toBeEnabled()
+      await page.locator("#td-desc-preview-container").click()
+      await page.locator("#td-description").fill("Check **replacement controller**. Read [the manual](https://example.com/).")
+      const saved = page.waitForResponse(response => response.request().method() === "PUT" && new URL(response.url()).pathname === `/api/tasks/${id}`)
+      await page.locator("#td-desc-save-btn").click()
+      expect((await saved).ok()).toBe(true)
+      await page.goto("/tasks#kanban")
+      await expect(card.locator(".kanban-card-desc")).toHaveText("Check replacement controller. Read the manual.")
+      for (const [description, preview] of [
+        ["<table><tr><td>Morning</td><td>Meeting</td></tr></table>", "Morning Meeting"],
+        ["- Collect the supplies", "Collect the supplies"],
+      ] as const) {
+        const update = await request.put(`/api/tasks/${id}`, { headers, data: { description } })
+        expect(update.ok()).toBe(true)
+        await page.reload()
+        await expect(card.locator(".kanban-card-desc")).toHaveText(preview)
+      }
+    } finally {
+      await request.delete(`/api/tasks/${id}`, { headers })
+    }
+  })
+
   test("card names include the key and only the newest quick action accepts input", async ({ page, request, baseURL }) => {
     const title = "Check kitchen tap"
     const headers = { origin: new URL(baseURL!).origin }
@@ -52,6 +83,127 @@ test.describe("Tasks Shell (Kanban)", () => {
       await expect(page.getByRole("dialog", { name: "Assign User" })).toHaveCount(1)
     } finally {
       await request.delete(`/api/tasks/${id}`, { headers })
+    }
+  })
+
+  test("retains the assigned Home Assistant identity when its directory cannot verify it", async ({ page, request, baseURL }) => {
+    const idFromHa = "ha_0123456789abcdef0123456789abcdef"
+    await page.addInitScript(() => {
+      localStorage.setItem("meitheal-theme", "knight-rider")
+      localStorage.setItem("meitheal-accent-color", "#000000")
+    })
+    const headers = { origin: new URL(baseURL!).origin }
+    const response = await request.post("/api/tasks", { headers, data: {
+      title: "Check assignee availability", assigned_to: idFromHa,
+    } })
+    expect(response.status()).toBe(201)
+    const { id } = await response.json()
+    const olderUser = { id: "ha_old_account", name: "A cached Home Assistant user" }
+    const currentUser = { id: idFromHa, name: "Home Assistant housemate" }
+    const localUser = { id: "local_account", name: "Custom assignee" }
+    let directoryMode: "verified" | "stale" | "failed" = "stale"
+    let resolveDirectory: () => void = () => {}
+    const heldDirectory = new Promise<void>(resolve => { resolveDirectory = resolve })
+    let holdRetry = false
+    await page.route("**/api/users", async route => {
+      if (holdRetry) await heldDirectory
+      if (directoryMode === "failed") return route.fulfill({ status: 503, json: { error: "Unavailable" } })
+      return route.fulfill({ json: {
+        users: directoryMode === "verified" ? [olderUser, localUser, currentUser] : [olderUser, localUser],
+        ha_connected: true, ha_roster_verified: directoryMode === "verified",
+      } })
+    })
+    const card = page.locator(`.kanban-card[data-id="${id}"]`)
+    const selected = page.locator("#td-assigned-to option:checked")
+    try {
+      await page.reload()
+      await expect(card.locator("[data-task-assignee]")).toHaveText("Home Assistant assignee not verified")
+      await card.locator(".card-open-btn").click()
+      await expect(selected).toHaveText("Home Assistant assignee not verified")
+      await expect(selected).toHaveAttribute("value", idFromHa)
+
+      directoryMode = "failed"
+      await page.goto("/tasks")
+      await expect(card.locator("[data-task-assignee]")).toHaveText("Could not load assignee")
+      const trigger = card.locator(".card-assign-btn")
+      await trigger.press("Enter")
+      const dialog = page.getByRole("dialog", { name: "Assign User" })
+      const retry = dialog.getByRole("button", { name: "Retry" })
+      await expect(retry).toBeFocused()
+      await expect(retry).toHaveCSS("outline-color", "rgb(166, 192, 249)")
+      directoryMode = "stale"
+      await retry.press("Enter")
+      await expect(dialog).toContainText("Home Assistant assignee not verified")
+
+      holdRetry = true
+      directoryMode = "failed"
+      await retry.press("Enter")
+      await expect(dialog.getByRole("status")).toHaveText("Checking assignees…")
+      await expect(retry).toHaveAttribute("aria-disabled", "true")
+      await expect(dialog.getByRole("menuitem", { name: olderUser.name })).toBeEnabled()
+      const localChoice = dialog.getByRole("menuitem", { name: localUser.name })
+      await localChoice.focus()
+      await expect(localChoice).toBeFocused()
+      holdRetry = false
+      resolveDirectory()
+      await expect(dialog.getByRole("status")).toHaveText("Could not load assignees")
+      await expect(localChoice).toBeFocused()
+
+      await page.keyboard.press("Escape")
+      await expect(trigger).toBeFocused()
+
+      directoryMode = "verified"
+      await card.locator(".card-open-btn").click()
+      await expect(selected).toHaveText(currentUser.name)
+      await page.keyboard.press("Escape")
+      await expect(page.locator("#task-detail-overlay")).toBeHidden()
+
+      directoryMode = "failed"
+      await card.locator(".card-open-btn").click()
+      await expect(selected).toHaveText("Could not load assignee")
+      await expect(selected).toHaveAttribute("value", idFromHa)
+      await expect(page.locator(`#td-assigned-to option[value="${olderUser.id}"]`)).toHaveCount(0)
+      await page.keyboard.press("Escape")
+      await card.locator(".card-color-btn").press("Enter")
+      const blue = page.getByRole("radio", { name: "Set color: Blue" })
+      await blue.focus()
+      await expect(blue).toHaveCSS("outline-color", "rgb(166, 192, 249)")
+    } finally {
+      await request.delete(`/api/tasks/${id}`, { headers })
+    }
+  })
+
+  test("offers a retry when an empty assignment directory is unverified", async ({ page, request }) => {
+    const created = await request.post("/api/tasks", { data: { title: "Check empty assignment directory" } })
+    expect(created.status()).toBe(201)
+    const { id } = await created.json()
+    let verified = false
+    try {
+      await page.reload()
+      const trigger = page.locator(`.kanban-card[data-id="${id}"] .card-assign-btn`)
+      await trigger.press("Enter")
+      const dialog = page.getByRole("dialog", { name: "Assign User" })
+      const retry = dialog.getByRole("button", { name: "Retry" })
+      await expect(dialog).toContainText("No users configured")
+      await expect(retry).toHaveCount(0)
+      await page.keyboard.press("Escape")
+      await page.route("**/api/users", route => route.fulfill({ json: {
+        users: [], ha_connected: true, ha_roster_verified: verified,
+      } }))
+      await page.reload()
+      await trigger.press("Enter")
+      await expect(dialog).toContainText("Home Assistant assignees could not be verified")
+      await expect(dialog.getByText("No users configured")).toHaveCount(0)
+      await expect(retry).toBeFocused()
+
+      verified = true
+      await retry.press("Enter")
+      await expect(dialog).toContainText("No users configured")
+      await expect(retry).toHaveCount(0)
+      await page.keyboard.press("Escape")
+      await expect(trigger).toBeFocused()
+    } finally {
+      await request.delete(`/api/tasks/${id}`)
     }
   })
 
@@ -181,7 +333,7 @@ test.describe("Tasks Shell (Kanban)", () => {
   test("narrow screens keep all task type filters inside the toolbar", async ({ page }) => {
     const toolbar = page.locator("#kanban-filter-bar")
     const types = toolbar.locator(".filter-toolbar__type-btn")
-    await expect(types).toHaveCount(5)
+    await expect(types).toHaveCount(6)
     for (const width of [320, 390]) {
       await page.setViewportSize({ width, height: 844 })
       await expect.poll(() => toolbar.evaluate(element => {
@@ -196,7 +348,7 @@ test.describe("Tasks Shell (Kanban)", () => {
     }
   })
 
-  test("quick actions stay below card details on narrow screens and reveal on desktop", async ({ page, request, baseURL }) => {
+  test("quick actions stay reachable below card details at narrow and desktop widths", async ({ page, request, baseURL }) => {
     const title = "Kanban fixture with a long household task title that wraps onto multiple lines"
     const headers = { origin: new URL(baseURL!).origin }
     const response = await request.post("/api/tasks", {
@@ -233,8 +385,8 @@ test.describe("Tasks Shell (Kanban)", () => {
 
       await page.setViewportSize({ width: 1440, height: 900 })
       await page.mouse.move(0, 0)
-      await expect(actions).toHaveCSS("opacity", "0")
-      await expect(actions).toHaveCSS("pointer-events", "none")
+      await expect(actions).toHaveCSS("opacity", "1")
+      await expect(actions).toHaveCSS("pointer-events", "auto")
       await card.locator(".card-open-btn").focus()
       await page.keyboard.press("Tab")
       const more = card.getByRole("button", { name: `Task actions for ${title}` })
@@ -243,7 +395,7 @@ test.describe("Tasks Shell (Kanban)", () => {
       await expect(actions).toHaveCSS("pointer-events", "auto")
       await expect.poll(hasRoom).toBe(true)
       await more.blur()
-      await expect(actions).toHaveCSS("opacity", "0")
+      await expect(actions).toHaveCSS("opacity", "1")
       await card.hover()
       await expect(actions).toHaveCSS("opacity", "1")
     } finally {

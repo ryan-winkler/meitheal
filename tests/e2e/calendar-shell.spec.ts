@@ -4,6 +4,7 @@ import { shouldSkipBrowserSpecs } from "./_helpers"
 
 test.describe("Calendar Shell", () => {
   test.skip(shouldSkipBrowserSpecs(), "Set E2E_BASE_URL to run browser specs")
+  test.use({ serviceWorkers: "block" })
 
   test.beforeEach(async ({ page }) => {
     await page.goto("/calendar")
@@ -19,9 +20,92 @@ test.describe("Calendar Shell", () => {
     await page.locator('.cal-cell[data-date]:not(.cal-other)').first().press("Enter")
 
     await expect(page.locator("#day-drawer")).toHaveAttribute("aria-hidden", "false")
+    await expect(page.locator("#day-drawer-close")).toBeFocused()
+    await page.keyboard.press("Escape")
+    await expect(page.locator("#day-drawer")).toHaveAttribute("aria-hidden", "true")
+    await expect(page.locator('.cal-cell[data-date]:not(.cal-other)').first()).toBeFocused()
   })
 
-  test("day controls announce the visible number and retain contrast in both themes", async ({ page }) => {
+  test("Calendar renders supported years with fewer than four digits", async ({ page }) => {
+    const response = await page.goto("/tasks?view=calendar&year=999&month=0#calendar")
+    expect(response?.status()).toBe(200)
+    const first = page.locator('.cal-cell[data-date="0999-01-01"]')
+    await expect(first).toHaveAccessibleName(/1 January 999/)
+    await first.press("Enter")
+    await expect(page.locator("#day-drawer-close")).toBeFocused()
+
+    const session = await page.context().newCDPSession(page)
+    await session.send("Emulation.setTimezoneOverride", { timezoneId: "Pacific/Apia" })
+    await page.goto("/tasks?view=calendar&year=2011&month=11#calendar")
+    await page.locator('.cal-cell[data-date="2011-12-30"]').press("Enter")
+    await expect(page.locator("#day-drawer-title")).toHaveText("Friday, December 30")
+  })
+
+  test("phone filters stay compact, accessible and marked when active", async ({ page }) => {
+    await page.setViewportSize({ width: 320, height: 780 })
+    const touch = await page.context().newCDPSession(page)
+    await touch.send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 1 })
+    await page.goto("/tasks?view=calendar&year=2031&month=6#calendar")
+    await expect.poll(() => page.evaluate(() => matchMedia("(pointer: coarse)").matches)).toBe(true)
+    const days = page.locator(".calendar-grid .cal-cell")
+    await expect.poll(() => days.evaluateAll(cells => cells.slice(7, 14).map(cell => {
+      const rect = cell.getBoundingClientRect()
+      const y = rect.top + rect.height / 2
+      return rect.width >= 43.99 && [rect.left + 1, rect.right - 1].every(x =>
+        cell.contains(document.elementFromPoint(x, y)),
+      )
+    }))).toEqual(Array(7).fill(true))
+    const disclosure = page.getByRole("button", { name: "Filters", exact: true })
+    const toolbar = page.locator("#calendar-filter-bar")
+    await expect(disclosure).toHaveAttribute("aria-expanded", "false")
+    await expect(toolbar).toBeHidden()
+    await expect(page.getByRole("heading", { name: "July 2031" })).toBeInViewport()
+    await expect(disclosure).toHaveCSS("min-height", "44px")
+    expect((await disclosure.boundingBox())?.height).toBeGreaterThanOrEqual(43.99)
+
+    await disclosure.press("Enter")
+    await expect(toolbar).toBeVisible()
+    await page.keyboard.press("Tab")
+    const search = toolbar.getByRole("textbox", { name: "Filter by text" })
+    await expect(search).toBeFocused()
+    await search.fill("phone calendar filter")
+    await expect(page).toHaveURL(/search=phone\+calendar\+filter/)
+    await page.keyboard.press("Escape")
+    const active = page.getByRole("button", { name: "Filters Active" })
+    await expect(active).toBeFocused()
+    await expect(active).toHaveAttribute("aria-expanded", "false")
+    await expect(toolbar).toBeHidden()
+
+    await page.setViewportSize({ width: 1100, height: 780 })
+    await expect(active).toBeHidden()
+    await expect(toolbar).toBeVisible()
+    await expect(search).toHaveValue("phone calendar filter")
+
+    await page.setViewportSize({ width: 320, height: 780 })
+    await active.click()
+    await toolbar.getByRole("button", { name: "Toggle filter builder" }).click()
+    const builder = toolbar.getByRole("region", { name: "Custom Filter Builder" })
+    const addCondition = builder.getByRole("button", { name: "Condition", exact: true })
+    await addCondition.click()
+    await addCondition.click()
+    const conditions = builder.getByRole("group", { name: "Filter condition" })
+    await expect(conditions).toHaveCount(2)
+    await expect(conditions.first().getByRole("combobox", { name: "Field", exact: true })).toBeVisible()
+    await expect(conditions.last().getByRole("combobox", { name: "Operator", exact: true })).toBeVisible()
+    expect(await conditions.last().locator("button, select, input").evaluateAll(controls => controls.every(control => {
+      const rect = control.getBoundingClientRect()
+      return rect.width >= 43.99 && rect.height >= 43.99 && rect.right <= innerWidth + 1
+    }))).toBe(true)
+    await conditions.last().getByRole("button", { name: "Remove condition" }).press("Enter")
+    await expect(conditions).toHaveCount(1)
+    await expect(conditions.first().getByRole("combobox", { name: "Field", exact: true })).toBeFocused()
+    await conditions.first().getByRole("textbox", { name: "Value", exact: true }).fill("accessible mobile rules")
+    await builder.getByRole("button", { name: "Apply Rules" }).click()
+    await expect(page).toHaveURL(url => decodeURIComponent(url.searchParams.get("advancedFilter") ?? "").includes("accessible mobile rules"))
+    await expect(search).toHaveValue("phone calendar filter")
+  })
+
+  test("day controls announce the visible number and retain contrast in the built-in light and dark themes", async ({ page }) => {
     const firstDay = page.locator('.cal-cell[data-date$="-01"]')
     const monthStart = new Date(`${await firstDay.getAttribute("data-date")}T12:00:00Z`)
     const month = monthStart.toLocaleDateString("en-US", {
@@ -30,7 +114,7 @@ test.describe("Calendar Shell", () => {
     await expect(firstDay).toHaveAccessibleName(new RegExp(`^1 ${month}`))
     await expect(page.locator(".cal-cell.cal-today")).toHaveAttribute("aria-current", "date")
 
-    for (const theme of ["light", "dark"]) {
+    for (const theme of ["light", "dark", "knight-rider"]) {
       await page.evaluate(value => localStorage.setItem("meitheal-theme", value), theme)
       await page.reload()
       await expect(page.locator("html")).toHaveAttribute("data-theme", theme)
@@ -42,6 +126,40 @@ test.describe("Calendar Shell", () => {
           .withRules(["color-contrast", "label-content-name-mismatch"])
           .analyze()
         expect(violations.map(({ id, nodes }) => [id, nodes.map(({ target }) => target)]), `${width}px ${theme}`).toEqual([])
+      }
+    }
+  })
+
+  test("Calendar label chips retain contrast on hover across theme modes", async ({ page }) => {
+    test.slow()
+    await page.setViewportSize({ width: 1440, height: 860 })
+    await page.emulateMedia({ reducedMotion: "reduce", colorScheme: "dark" })
+    await page.route("**/api/labels", route => route.fulfill({
+      json: { labels: [{ title: "Review" }, { title: "Household" }] },
+    }))
+    await page.addInitScript(() => {
+      const theme = new URLSearchParams(location.search).get("probeTheme")
+      if (!theme) return
+      localStorage.setItem("meitheal-theme", theme)
+      if (theme === "custom") localStorage.setItem("meitheal-custom-theme-css", ":root { --bg-hover: #252526; }")
+    })
+    for (const theme of ["light", "dark", "knight-rider", "auto", "custom"]) {
+      await page.goto(`/tasks?view=calendar&label=Review&probeTheme=${theme}#calendar`)
+      await expect(page.locator("html")).toHaveAttribute("data-theme", theme === "custom" ? "dark" : theme)
+      const panel = page.locator("#calendar-filter-bar .label-filter-panel")
+      await panel.locator("summary").click()
+      const selected = panel.getByRole("button", { name: "Review", exact: true })
+      const ordinary = panel.getByRole("button", { name: "Household", exact: true })
+      await expect(selected).toHaveAttribute("aria-pressed", "true")
+      await expect(ordinary).toHaveAttribute("aria-pressed", "false")
+      for (const chip of [selected, ordinary]) {
+        await chip.hover()
+        const { violations, passes } = await new AxeBuilder({ page })
+          .include("#calendar-filter-bar .label-filter__chip")
+          .withRules(["color-contrast"])
+          .analyze()
+        expect(violations, theme).toEqual([])
+        expect(passes.find(({ id }) => id === "color-contrast")?.nodes, theme).toHaveLength(3)
       }
     }
   })
@@ -75,10 +193,14 @@ test.describe("Calendar Shell", () => {
       const drawer = page.locator("#day-drawer-tasks")
       const completeRow = drawer.locator("[data-task-id]").filter({ hasText: "Calendar completed task" })
       await expect(completeRow).toContainText("Done")
-      await expect(completeRow.locator(".day-drawer-item-icon")).toHaveText("✅")
+      await expect(completeRow.locator(".day-drawer-item-icon use")).toHaveAttribute("href", "#mt-icon-checkbox")
       const activeRow = drawer.locator("[data-task-id]").filter({ hasText: "Calendar active task" })
       await expect(activeRow).toContainText("In Progress")
-      await expect(activeRow.locator(".day-drawer-item-icon")).toHaveText("⚡")
+      await expect(activeRow).toHaveAccessibleName(/Calendar active task In Progress/)
+      const heading = await activeRow.locator(".day-drawer-item-title").boundingBox()
+      const caption = await activeRow.locator(".day-drawer-item-meta").boundingBox()
+      expect(caption!.y).toBeGreaterThanOrEqual(heading!.y + heading!.height)
+      await expect(activeRow.locator(".day-drawer-item-icon use")).toHaveAttribute("href", "#mt-icon-bolt")
       await expect(drawer.getByText("Calendar task on another day")).toHaveCount(0)
     } finally {
       for (const id of createdIds) await request.delete(`/api/tasks/${id}`, { data: {} })
@@ -101,6 +223,46 @@ test.describe("Calendar Shell", () => {
 
     await expect(page.locator("#new-task-overlay")).toHaveClass(/active/)
     await expect(page.locator("#new-task-title-input")).toBeFocused()
+    const date = await page.locator('.cal-cell[data-date]:not(.cal-other)').first().getAttribute("data-date")
+    await expect(page.locator("#nt-contextual-due")).toHaveValue(date ?? "")
+    await page.keyboard.press("Escape")
+    await expect(page.locator("#new-task-overlay")).toBeHidden()
+    await page.locator('.cal-cell[data-date]:not(.cal-other)').first().press("Enter")
+    await page.locator("#day-drawer-add-event").click()
+    await expect(page.locator("#new-task-overlay")).toHaveClass(/active/)
+    await expect(page.locator("#nt-event-start")).toHaveValue(new RegExp(`^${date}T`))
+  })
+
+  test("editing a Calendar Event back to midnight saves a timed start", async ({ page, request }) => {
+    let id: string | undefined
+    try {
+      const session = await page.context().newCDPSession(page)
+      await session.send("Emulation.setTimezoneOverride", { timezoneId: "Europe/Dublin" })
+      await page.goto("/tasks?view=calendar&year=2031&month=6#calendar")
+      const cell = page.locator('.cal-cell[data-date]:not(.cal-other)').first()
+      const date = await cell.getAttribute("data-date")
+      await cell.press("Enter")
+      await page.locator("#day-drawer-add-event").click()
+      const start = page.locator("#nt-event-start")
+      const end = page.locator("#nt-event-end")
+      await expect(start).toHaveValue(`${date}T00:00`)
+      await start.fill(`${date}T00:01`)
+      await start.fill(`${date}T00:00`)
+      await end.fill(`${date}T01:00`)
+      const expectedStart = await start.evaluate((control: HTMLInputElement) => new Date(control.value).toISOString())
+      const expectedEnd = await end.evaluate((control: HTMLInputElement) => new Date(control.value).toISOString())
+      await page.locator("#new-task-title-input").fill("Calendar timed midnight start")
+      const created = page.waitForResponse(response => new URL(response.url()).pathname === "/api/tasks" &&
+        response.request().method() === "POST")
+      await page.locator("#submit-new-task-btn").click()
+      const response = await created
+      expect(response.status()).toBe(201)
+      const task = await response.json()
+      id = task.id
+      expect(task).toMatchObject({ task_kind: "calendar_event", start_date: expectedStart, end_date: expectedEnd })
+    } finally {
+      if (id) await request.delete(`/api/tasks/${id}`, { data: {} })
+    }
   })
 
   test("view links preserve query string when switching routes", async ({ page }) => {
@@ -108,9 +270,15 @@ test.describe("Calendar Shell", () => {
     await page.waitForLoadState("networkidle")
 
     const table = page.getByRole("navigation", { name: "Task views" }).getByRole("link", { name: "Table" })
+    await page.getByRole("toolbar", { name: "Filter tasks" }).getByRole("textbox", { name: "Filter by text" }).fill("heating")
+    await expect(page).toHaveURL(url => url.searchParams.get("search") === "heating")
+    await expect.poll(() => table.evaluate(link => new URL((link as HTMLAnchorElement).href).searchParams.get("search"))).toBe("heating")
     await table.click()
 
-    await expect(page).toHaveURL(/\/tasks\?status=active&priority=1&view=table#table$/)
+    await expect(page).toHaveURL(url =>
+      url.pathname === "/tasks" && url.hash === "#table" && url.searchParams.get("search") === "heating" &&
+      url.searchParams.get("status") === "active" && url.searchParams.get("priority") === "1",
+    )
     await expect(table).toHaveAttribute("aria-current", "page")
   })
 
@@ -132,49 +300,163 @@ test.describe("Calendar Shell", () => {
       expect(summaryText).toMatch(/\b1 item across 1 day\b/)
       expect(summaryText).not.toMatch(/\b1 items\b/)
       expect(summaryText).not.toMatch(/\b1 days\b/)
-      expect(summaryText).not.toMatch(/\b1 HA events\b/)
+      expect(summaryText).not.toMatch(/\b1 synced events\b/)
     } finally {
       await request.delete(`/api/tasks/${taskId}`, { data: {} })
     }
   })
 
-  test("calendar task counts bucket timed UTC due dates in household timezone", async ({ page, request }) => {
+  test("Calendar filters apply to the month and drawer, survive month navigation, and clear together", async ({ page, request }) => {
     test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the disposable Meitheal fixture")
-
-    const beforeSettings = await (await request.get("/api/settings")).json()
-    const prevTz = typeof beforeSettings.timezone === "string" ? beforeSettings.timezone : "Europe/Dublin"
-    let taskId: string | undefined
+    const day = "2031-07-08"
+    const createdIds: string[] = []
     try {
-      expect((await request.put("/api/settings", {
-        data: { key: "timezone", value: "America/Los_Angeles" },
-      })).status()).toBe(200)
-
-      const created = await request.post("/api/tasks", {
-        data: { title: "LA Evening Timed Task", status: "pending", due_date: "2027-06-16T02:00:00Z" },
-      })
-      expect(created.status(), await created.text()).toBe(201)
-      taskId = (await created.json()).id
-
-      await page.goto("/tasks?view=calendar&year=2027&month=5#calendar")
-      await page.waitForLoadState("networkidle")
-
-      await expect(page.locator('.cal-cell[data-date="2027-06-15"]')).toHaveAccessibleName(/1 task$/)
-      await expect(page.locator('.cal-cell[data-date="2027-06-16"]')).not.toHaveAccessibleName(/\btasks?$/)
-
-      await page.locator('.cal-cell[data-date="2027-06-15"]').click()
-      await expect(page.locator("#day-drawer")).toHaveAttribute("aria-hidden", "false")
-      await expect(page.locator("#day-drawer-tasks")).toContainText("LA Evening Timed Task")
-      await page.locator("#day-drawer-close").click()
-      await expect(page.locator("#day-drawer")).toHaveAttribute("aria-hidden", "true")
-
-      await page.locator('.cal-cell[data-date="2027-06-16"]').click()
-      await expect(page.locator("#day-drawer-tasks")).toContainText("No tasks due")
-      await expect(page.locator("#day-drawer-tasks").getByText("LA Evening Timed Task")).toHaveCount(0)
-    } finally {
-      await request.put("/api/settings", { data: { key: "timezone", value: prevTz } })
-      if (taskId) {
-        await request.delete(`/api/tasks/${taskId}`, { data: {} })
+      for (const [title, priority, status, task_kind] of [
+        ["Calendar filter: roof inspection", 1, "active", "standard_action"],
+        ["Calendar filter: roof supplies", 2, "pending", "shopping_item"],
+        ["Calendar filter: roof checklist", 1, "complete", "checklist"],
+      ] as const) {
+        const response = await request.post("/api/tasks", { data: {
+          title, priority, status, task_kind, due_date: day,
+          ...(status === "pending" && { framework_payload: JSON.stringify({ rice: { reach: 10, impact: 5, confidence: 1, effort: 2 } }) }),
+        } })
+        expect(response.status(), await response.text()).toBe(201)
+        createdIds.push((await response.json()).id)
       }
+
+      await page.goto("/tasks?view=calendar&year=2031&month=6#calendar")
+      const filterBar = page.getByRole("toolbar", { name: "Filter tasks" })
+      const search = filterBar.getByRole("textbox", { name: "Filter by text" })
+      const status = filterBar.getByRole("combobox", { name: "Filter by status" })
+      const priority = filterBar.getByRole("combobox", { name: "Filter by priority" })
+      const shopping = filterBar.getByRole("button", { name: "Shopping", exact: true })
+      const dayCell = page.locator(`.cal-cell[data-date="${day}"]`)
+      await expect(dayCell).toHaveAccessibleName(/2 tasks$/)
+      await search.fill("roof")
+      await page.waitForURL(/search=roof/)
+      await expect(dayCell).toHaveAccessibleName(/2 tasks$/)
+      await dayCell.press("Enter")
+      const agenda = page.locator("#day-drawer-tasks")
+      await expect(agenda.getByRole("button", { name: /roof inspection/ })).toBeVisible()
+      await expect(agenda.getByRole("button", { name: /roof supplies/ })).toBeVisible()
+      await expect(agenda.getByText(/roof checklist/)).toHaveCount(0)
+      await page.keyboard.press("Escape")
+      await shopping.click()
+      await priority.selectOption("1")
+      await status.selectOption("active")
+      await expect(page).toHaveURL(/status=active/)
+      await expect(dayCell).toHaveAccessibleName(/1 task$/)
+
+      await dayCell.press("Enter")
+      await expect(agenda.getByRole("button", { name: /roof inspection/ })).toBeVisible()
+      await expect(agenda.getByText(/roof supplies|roof checklist/)).toHaveCount(0)
+      await page.keyboard.press("Escape")
+      await expect(dayCell).toBeFocused()
+
+      await status.selectOption("complete")
+      await expect(page).toHaveURL(/status=complete/)
+      await expect(dayCell).toHaveAccessibleName(/1 task$/)
+      await page.getByRole("link", { name: "Next month" }).click()
+      await expect(page.getByRole("heading", { name: "August 2031" })).toBeVisible()
+      await expect(search).toHaveValue("roof")
+      await expect(status).toHaveValue("complete")
+      await expect(shopping).toHaveAttribute("aria-pressed", "false")
+      await expect(page.getByText("No tasks match these filters this month.")).toBeVisible()
+      await page.getByRole("link", { name: "Previous month" }).click()
+      await dayCell.press("Enter")
+      await expect(agenda.getByRole("button", { name: /roof checklist/ })).toBeVisible()
+      await expect(agenda.getByText(/roof inspection|roof supplies/)).toHaveCount(0)
+      await page.keyboard.press("Escape")
+      await filterBar.getByRole("button", { name: "Clear all active filters" }).click()
+      await expect(search).toBeFocused()
+      await expect(dayCell).toHaveAccessibleName(/2 tasks$/)
+      await expect(status).toHaveValue("")
+      await expect(shopping).toHaveAttribute("aria-pressed", "true")
+      await expect(page).not.toHaveURL(/(?:search|status|priority|types)=/)
+
+      const nested = { id: "root", logic: "AND", conditions: [
+        { id: "inner", logic: "AND", conditions: [{ id: "rice", field: "rice", operator: "greaterThan", value: 20 }] },
+      ] }
+      const nestedQuery = new URLSearchParams({ view: "calendar", year: "2031", month: "6", advancedFilter: JSON.stringify(nested) })
+      await page.goto(`/tasks?${nestedQuery}#calendar`)
+      await expect(dayCell).toHaveAccessibleName(/1 task$/)
+      await dayCell.press("Enter")
+      await expect(agenda.getByRole("button", { name: /roof supplies/ })).toBeVisible()
+      await expect(agenda.getByText(/roof checklist|roof inspection/)).toHaveCount(0)
+
+      await page.goto("/tasks?view=calendar&year=2031&month=6&status=pending&search=roof#calendar")
+      await expect(page.locator("#calendar-shell")).toHaveAttribute("data-calendar-ready", "true")
+      await expect(dayCell).toHaveAccessibleName(/1 task$/)
+      await dayCell.press("Enter")
+      await agenda.getByRole("button", { name: /roof supplies/ }).click()
+      const detailStatus = page.locator("#td-status")
+      await expect(detailStatus).toBeEnabled()
+      await detailStatus.selectOption("complete")
+      await expect(dayCell).toHaveAccessibleName("8 July 2031")
+      await page.getByRole("button", { name: "Close detail" }).click()
+      await expect(dayCell).toBeFocused()
+      await page.keyboard.press("Enter")
+      await expect(agenda).toContainText("No matching tasks or local events")
+    } finally {
+      for (const id of createdIds) await request.delete(`/api/tasks/${id}`, { data: {} })
+    }
+  })
+
+  test("Calendar honors legacy Table areas and keeps today's archived work out of the agenda", async ({ page, request }) => {
+    test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the disposable Meitheal fixture")
+    const day = "2031-07-08"
+    const response = await request.post("/api/areas", { data: { name: "Calendar legacy area" } })
+    expect(response.status(), await response.text()).toBe(201)
+    const { id: areaId } = await response.json()
+    const ids: string[] = []
+    try {
+      for (const draft of [
+        { title: "Calendar active in the legacy area", area_id: areaId, status: "active" },
+        { title: "Calendar completed in the legacy area", area_id: areaId, status: "complete" },
+        { title: "Calendar active outside the legacy area", status: "active" },
+      ]) {
+        const task = await request.post("/api/tasks", { data: { ...draft, due_date: day } })
+        expect(task.status(), await task.text()).toBe(201)
+        ids.push((await task.json()).id)
+      }
+
+      await page.goto(`/tasks?view=table&area_id=${areaId}&year=2031&month=6#table`)
+      await page.getByRole("navigation", { name: "Task views" }).getByRole("link", { name: "Calendar" }).click()
+      const cell = page.locator(`.cal-cell[data-date="${day}"]`)
+      const agenda = page.locator("#day-drawer-tasks")
+      await expect(page.locator("[data-area-label]")).toHaveText("Calendar legacy area")
+      await expect(cell).toHaveAccessibleName(/1 task$/)
+      await cell.press("Enter")
+      await expect(agenda.getByText("Calendar active in the legacy area")).toBeVisible()
+      await expect(agenda.getByText("Calendar active outside the legacy area")).toHaveCount(0)
+
+      const allTypes = "standard_action,shopping_item,checklist,routine_instance,calendar_event,quick_capture"
+      await page.goto(`/tasks?view=calendar&year=2031&month=6&area=&types=${allTypes}#calendar`)
+      await expect(page.locator('#calendar-filter-bar [data-type][aria-pressed="true"]')).toHaveCount(6)
+      await expect(page.getByRole("button", { name: "Clear All", exact: true })).toBeHidden()
+      await cell.press("Enter")
+      await expect(agenda.getByText("Calendar completed in the legacy area")).toBeVisible()
+
+      await page.goto("/today")
+      await page.getByRole("button", { name: "Archive completed", exact: true }).click()
+      const submitted = page.waitForResponse(response => new URL(response.url()).pathname === "/api/tasks/clear-completed")
+      await page.getByRole("button", { name: "Archive", exact: true }).click()
+      const archive = await submitted
+      expect(archive.status(), await archive.text()).toBe(200)
+      expect(await archive.json()).toMatchObject({ ok: true, cleared: 1 })
+      await page.goto("/tasks?view=calendar&year=2031&month=6&area=#calendar")
+      await expect(cell).toHaveAccessibleName(/2 tasks$/)
+      await cell.press("Enter")
+      await expect(agenda.getByText("Calendar active in the legacy area")).toBeVisible()
+      await expect(agenda.getByText("Calendar active outside the legacy area")).toBeVisible()
+      await expect(agenda.getByText("Calendar completed in the legacy area")).toHaveCount(0)
+      const unfilteredApi = await request.get(`/api/tasks?due_date=${day}`)
+      expect((await unfilteredApi.json()).tasks).toEqual(expect.arrayContaining([
+        expect.objectContaining({ id: ids[1], status: "archived" }),
+      ]))
+    } finally {
+      for (const id of ids) await request.delete(`/api/tasks/${id}`, { data: {} })
+      await request.delete(`/api/areas/${areaId}`, { data: {} })
     }
   })
 })

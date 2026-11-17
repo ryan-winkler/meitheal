@@ -22,8 +22,8 @@ import { pageLifecycle } from "@lib/page-lifecycle"
 import { initPageShellNavigation } from "@lib/page-shell-controller"
 import { escapeHtml, sanitizeCssColor } from "@lib/safe-html"
 import { openTaskDetailHandoff } from "@lib/task-detail-handoff"
-import { taskBackgroundUrl } from "@lib/task-page-url"
-import { parseTaskView, taskViewUrl } from "@lib/task-view-route"
+import { hydrateTaskAssignees } from "@lib/task-assignee-display"
+import { replaceTaskBackgroundUrl, taskBackgroundUrl } from "@lib/task-page-url"
 import { loadTableColumnPreferences, TABLE_COLUMNS, TABLE_SECTIONS } from "@lib/table-registry"
 import { getRememberedAreaId } from "@lib/area-selector-controller"
 import {
@@ -123,6 +123,7 @@ function init(signal: AbortSignal) {
   const message = status?.querySelector<HTMLElement>("[data-table-refresh-message]")
   const retry = status?.querySelector<HTMLButtonElement>("[data-table-retry]")
   if (!table || !container || !tbody || !status || !message || !retry) return
+  void hydrateTaskAssignees(tbody, signal)
 
   const initial = loadTableFilterState()
   initial.area ??= getRememberedAreaId()
@@ -168,7 +169,7 @@ function init(signal: AbortSignal) {
     status.hidden = true
     retry.hidden = true
 
-    const url = new URL(location.href)
+    const url = taskBackgroundUrl()
     writeTableFilterParams(url.searchParams, nextState)
     for (const key of ["open", "comment"]) url.searchParams.delete(key)
     if (resetPage) url.searchParams.delete("tp")
@@ -208,9 +209,10 @@ function init(signal: AbortSignal) {
       table.dataset.tablePage = replacement.dataset.tablePage
       table.dataset.tableStats = replacement.dataset.tableStats
       tbody.replaceChildren(...replacement.tBodies[0].children)
+      void hydrateTaskAssignees(tbody, signal)
       for (const [current, fresh] of fragments) {
         current!.hidden = fresh!.hidden
-        if (current!.matches("#task-summary, #table-pagination")) current!.replaceChildren(...fresh!.childNodes)
+        if (current!.matches("#task-summary, #table-pagination, #table-empty")) current!.replaceChildren(...fresh!.childNodes)
       }
       const workflowOptions = shell.querySelector("[data-table-workflow-options]")
       const freshWorkflowOptions = html.querySelector('[data-table-workflow-options="ready"]')
@@ -227,11 +229,6 @@ function init(signal: AbortSignal) {
       // Column visibility can change while the rows are loading.
       applied = { ...nextState, columns: desired.columns ?? initialColumns }
       saveTableFilterState(applied, Number(table.dataset.tablePage))
-      const background = taskBackgroundUrl(new URL(location.href))
-      for (const link of document.querySelectorAll<HTMLAnchorElement>("[data-view-tab]")) {
-        const view = parseTaskView(link.dataset.viewTab ?? null)
-        if (view) link.href = taskViewUrl(background, view).href
-      }
       const count = renderRows()
       resetPageOnRetry = false
 
@@ -292,7 +289,7 @@ function init(signal: AbortSignal) {
     const page = Number(table.dataset.tablePage)
     if (page > 1) url.searchParams.set("tp", String(page))
     else url.searchParams.delete("tp")
-    if (url.href !== location.href) history.replaceState(history.state, "", url)
+    if (url.href !== location.href) replaceTaskBackgroundUrl(url)
   }
 
   document.addEventListener("meitheal:filter-change", event => {

@@ -34,10 +34,10 @@ import {
   calendarDayFromInput,
   calendarDaysFromToday,
   calendarToday,
-  formatRegionalDate,
   formatRelativeDue,
   shiftCalendarDay,
 } from "../../apps/web/src/lib/date"
+import { formatRegionalDate } from "../../apps/web/src/lib/regional-date"
 import {
   ensureSchema,
   getPersistenceClient,
@@ -917,16 +917,17 @@ test("GET /api/tasks/today-counts and getTodayTaskCounts evaluate counters in th
     })
     await settings.upsert("timezone", "Etc/GMT+12")
 
-    const behindResp = await getTodayCountsRoute({ locals: { timezone: "Etc/GMT+12" } } as unknown as Parameters<typeof getTodayCountsRoute>[0])
+    const url = new URL("http://localhost/api/tasks/today-counts")
+    const behindResp = await getTodayCountsRoute({ locals: { timezone: "Etc/GMT+12" }, url } as unknown as Parameters<typeof getTodayCountsRoute>[0])
     expect(behindResp.status).toBe(200)
     await expect(behindResp.json()).resolves.toMatchObject({ dueToday: 1, carriedForward: 0 })
 
     // Even if locals.timezone is unset, the route honors persisted household timezone in settings
-    const fallbackResp = await getTodayCountsRoute({ locals: {} } as unknown as Parameters<typeof getTodayCountsRoute>[0])
+    const fallbackResp = await getTodayCountsRoute({ locals: {}, url } as unknown as Parameters<typeof getTodayCountsRoute>[0])
     expect(fallbackResp.status).toBe(200)
     await expect(fallbackResp.json()).resolves.toMatchObject({ dueToday: 1, carriedForward: 0 })
 
-    const aheadResp = await getTodayCountsRoute({ locals: { timezone: "Pacific/Kiritimati" } } as unknown as Parameters<typeof getTodayCountsRoute>[0])
+    const aheadResp = await getTodayCountsRoute({ locals: { timezone: "Pacific/Kiritimati" }, url } as unknown as Parameters<typeof getTodayCountsRoute>[0])
     expect(aheadResp.status).toBe(200)
     await expect(aheadResp.json()).resolves.toMatchObject({ dueToday: 0, carriedForward: 1 })
   } finally {
