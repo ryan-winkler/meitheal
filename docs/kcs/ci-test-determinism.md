@@ -37,6 +37,10 @@ The security header tests check that the deprecated browser XSS filter stays off
 
 Treat a failed assertion as a product or test-contract finding. Inspect the failing request and fixture state before changing the expectation. A CI fixture covers standalone behavior. Supervisor, ingress, and Home Assistant acceptance still use the project's dedicated verification environments.
 
+## Temporary Picomatch advisory handling
+
+Through November 23, 2026, the security audit can accept GHSA-fc5q-39xc-vjpf for build tooling when `pnpm -r why --prod picomatch --json` returns an empty array. It records the exception in the disposable CI checkout, then runs `pnpm audit` for all remaining advisories. Failed dependency queries, invalid JSON and registry errors fail the job. A production Picomatch dependency or November 24 restores the complete audit. The finding remains open until an upstream fix is adopted. See [the decision](../decisions/0023-temporary-build-only-picomatch-audit.md).
+
 <!-- coderabbit-ai-generated:v1 -->
 
 <!-- coderabbit-ai-generated-section:v1:1143f82af125b69f37f941558f7a5a2438270f6a4ff4c1a2ccefe86e52283eee -->
