@@ -381,7 +381,10 @@ export function loadTableFilterState(): Partial<FilterState> {
     const stored = decodeFilterJson(localStorage.getItem(TABLE_GROUPING_STORAGE_KEY))
     if (isPlainRecord(stored)) {
       const grouping = normalizeTableValues({ groupBy: stored.groupBy, subGroupBy: stored.subGroupBy })
-      if (grouping.groupBy === "epic" || grouping.subGroupBy === "epic") Object.assign(shared, grouping)
+      if (grouping.groupBy === "epic" || grouping.subGroupBy === "epic") {
+        if (grouping.groupBy !== undefined) shared.groupBy = grouping.groupBy
+        if (grouping.subGroupBy !== undefined) shared.subGroupBy = grouping.subGroupBy
+      }
     }
   } catch { /* storage unavailable */ }
   const state = normalizeTableValues({ ...shared })
