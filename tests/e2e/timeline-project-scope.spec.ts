@@ -82,3 +82,83 @@ test("Timeline shows unavailable projects without revealing their IDs or labels"
     await rm(work, { recursive: true, force: true })
   }
 })
+
+
+test("Timeline remounts project rows in visual keyboard order and keeps long-Area identity visible", async ({ page, request, baseURL }) => {
+  test.setTimeout(90_000)
+  const headers = { origin: new URL(baseURL!).origin, "content-type": "application/json", "sec-fetch-site": "same-origin" }
+  const prefix = `Timeline ordered ${randomUUID()}`
+  const cleanup: string[] = []
+  const cleanupFailures: string[] = []
+  async function create(path: string, data: object): Promise<string> {
+    const response = await request.post(path, { headers, data })
+    expect(response.status(), await response.text()).toBe(201)
+    const id = (await response.json() as { id: string }).id
+    cleanup.push(`${path}/${id}`)
+    return id
+  }
+  try {
+    const area = await create("/api/areas", { name: "A long household Area name that must not conceal the distinguishing project identity token" })
+    const start_date = new Date().toISOString().slice(0, 10)
+    const due_date = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10)
+    const ids: string[] = []
+    for (let index = 0; index < 45; index++) {
+      const project = await create("/api/projects", { title: index < 2 ? "A shared project" : `Ordered project ${String(index).padStart(2, "0")}`, area_id: area })
+      ids.push(project)
+      await create("/api/tasks", { title: `${prefix} ${index}`, project_id: project, start_date, due_date })
+    }
+    await page.goto(`/tasks?view=timeline&search=${encodeURIComponent(prefix)}&area=&groupBy=project#timeline`)
+    const pane = page.getByRole("button", { name: "Task pane" })
+    if (await pane.getAttribute("aria-expanded") === "false") await pane.click()
+    const headings = page.locator('.gantt-sidebar-row[role="heading"]')
+    await expect(headings.first()).toBeVisible()
+    const shared = headings.filter({ hasText: "A shared project" })
+    await expect(shared).toHaveCount(2)
+    const qualifiers = shared.locator(".gantt-sidebar-group-qualifier")
+    expect(await qualifiers.allTextContents()).toEqual(expect.arrayContaining(ids.slice(0, 2).map(id => expect.stringContaining(`#${id.slice(-8)} · `))))
+    for (const element of await qualifiers.all()) {
+      expect(await element.evaluate(node => {
+        const range = document.createRange()
+        range.setStart(node.firstChild!, 0)
+        range.setEnd(node.firstChild!, 9)
+        return range.getBoundingClientRect().right <= node.getBoundingClientRect().right + 1
+      })).toBe(true)
+    }
+    const firstToggle = headings.first().locator("button")
+    await firstToggle.focus()
+    const firstNode = await firstToggle.elementHandle()
+    await page.locator(".gantt-scroll-wrapper").evaluate(node => { node.scrollTop = node.scrollHeight; node.dispatchEvent(new Event("scroll")) })
+    await expect.poll(() => page.locator('.gantt-sidebar-row[data-row-index="88"]').count()).toBe(1)
+    await expect(firstToggle).toBeFocused()
+    const remounted = await page.locator(".gantt-scroll-wrapper").evaluate(node => {
+      node.scrollTop = Math.max(0, node.scrollTop - node.clientHeight / 2)
+      const height = document.querySelector<HTMLElement>(".gantt-sidebar-row")!.getBoundingClientRect().height
+      node.dispatchEvent(new Event("scroll"))
+      return Math.max(0, Math.floor(node.scrollTop / height) - 8)
+    })
+    await expect.poll(() => page.locator(`.gantt-sidebar-row[data-row-index="${remounted}"]`).count()).toBe(1)
+    const order = await page.locator(".gantt-sidebar-row").evaluateAll(nodes => nodes.map(node => Number((node as HTMLElement).dataset.rowIndex)))
+    expect(order).toEqual([...order].sort((a, b) => a - b))
+    expect(await firstNode!.evaluate(node => node.isConnected)).toBe(true)
+    await page.locator(".gantt-scroll-wrapper").evaluate(node => { node.scrollTop = 0; node.dispatchEvent(new Event("scroll")) })
+    await expect.poll(() => page.locator('.gantt-sidebar-row[data-row-index="1"]').count()).toBe(1)
+    await expect(headings.nth(1)).toBeVisible()
+    await firstToggle.press("Tab")
+    await expect(page.locator('.gantt-sidebar-row[data-row-index="1"]')).toBeFocused()
+    const secondToggle = headings.nth(1).locator("button")
+    const stops = await page.locator('.gantt-sidebar-row[data-row-index="1"]').locator('button, input, select, textarea, a[href], [tabindex="0"]').count() + 2
+    for (let index = 0; index < stops && !await secondToggle.evaluate(node => node === document.activeElement); index++) {
+      await page.keyboard.press("Tab")
+      const row = await page.evaluate(() => document.activeElement?.closest<HTMLElement>(".gantt-sidebar-row")?.dataset.rowIndex)
+      expect(row).toBeDefined()
+      expect(Number(row)).toBeLessThanOrEqual(2)
+    }
+    await expect(secondToggle).toBeFocused()
+  } finally {
+    for (const path of cleanup.reverse()) {
+      const response = await request.delete(path, { headers })
+      if (!response.ok()) cleanupFailures.push(`${path}: ${response.status()} ${await response.text()}`)
+    }
+  }
+  expect(cleanupFailures).toEqual([])
+})

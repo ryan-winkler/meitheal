@@ -123,3 +123,5 @@ Cards keep their full height in a busy lane. The lane scrolls instead of
 compressing the cards. At widths from 769 to 1024 CSS px the sidebar narrows to
 200 px, and the page content starts at the sidebar edge. Both read
 `--sidebar-width`, so a change to one width moves the other.
+
+Timeline Project headings show a short identity token before the Area for duplicate or reserved names. Missing and unavailable assignments use the current language’s labels. Scrolling away and back keeps Sidebar rows in visual keyboard order.

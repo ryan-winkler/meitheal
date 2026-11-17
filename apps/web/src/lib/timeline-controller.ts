@@ -2114,10 +2114,13 @@ function renderGantt(
     for (const idx of wanted) {
       if (!mountedRows.has(idx)) {
         const mounted = mountDisplayRow(idx, sidebarFrag, svgFrag)
-        if (mounted) mountedRows.set(idx, mounted)
+        if (mounted) {
+          const next = [...mountedRows].filter(([index]) => index > idx).sort(([a], [b]) => a - b)[0]?.[1]
+          sidebarTrack.insertBefore(mounted.sidebarEl, next?.sidebarEl ?? null)
+          mountedRows.set(idx, mounted)
+        }
       }
     }
-    if (sidebarFrag.childNodes.length > 0) sidebarTrack.appendChild(sidebarFrag)
     if (svgFrag.childNodes.length > 0) barsGroup.appendChild(svgFrag)
 
     // Mount dependency <path> connectors whenever at least one endpoint row is mounted

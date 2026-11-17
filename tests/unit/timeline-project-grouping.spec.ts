@@ -18,11 +18,11 @@ test("Timeline labels keep reserved and disambiguated titles distinct", () => {
   expect(labels).toEqual({
     "project-": { title: "No Project" },
     "unavailable-project": { title: "Unknown Project" },
-    "project-1": { title: "Repairs", qualifier: "Workshop · 1" },
-    "project-2": { title: "REPAIRS", qualifier: "Home" },
+    "project-1": { title: "Repairs", qualifier: "#1 · Workshop" },
+    "project-2": { title: "REPAIRS", qualifier: "#2 · Home" },
     "project-3": { title: "Repairs · Workshop" },
-    "project-4": { title: "No Project", qualifier: "Home" },
-    "project-5": { title: "Unknown Project", qualifier: "5" },
+    "project-4": { title: "No Project", qualifier: "#4 · Home" },
+    "project-5": { title: "Unknown Project", qualifier: "#5" },
     "project-6": { title: "Safe" },
   })
   expect(getHouseholdProjectLabels([...projects].reverse(), areas, goals)).toEqual(labels)

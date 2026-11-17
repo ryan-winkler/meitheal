@@ -25,6 +25,7 @@ import { TaskRepository } from "@domains/tasks/persistence/task-repository";
 import { HierarchyRepository } from "@domains/tasks/persistence/hierarchy-repository";
 import { serializeForScript } from "@lib/safe-html"
 import { getHouseholdProjectGroup, getHouseholdProjectLabels } from "@lib/household-project-grouping"
+import { t } from "../../i18n/translations"
 
 interface TaskRecord {
   id: string;
@@ -51,7 +52,9 @@ interface TaskRecord {
 
 let tasks: TaskRecord[] = [];
 let areaMap: Record<string, string> = {};
-let projectMap = getHouseholdProjectLabels([], {});
+const locale = Astro.cookies.get("meitheal-locale")?.value === "ga" ? "ga" : "en"
+const projectFallbacks = { none: t("kanban.no_project", locale), unknown: t("kanban.unknown_project", locale) }
+let projectMap = getHouseholdProjectLabels([], {}, undefined, projectFallbacks);
 let fetchError = false;
 try {
   await ensureSchema();
@@ -68,7 +71,7 @@ try {
     areaMap = Object.fromEntries(Object.entries(areas.value).map(([id, info]) => [id, info.name]))
   }
   if (projects.status === "fulfilled") {
-    projectMap = getHouseholdProjectLabels(projects.value, areaMap)
+    projectMap = getHouseholdProjectLabels(projects.value, areaMap, undefined, projectFallbacks)
   }
 } catch (e) {
   fetchError = true;
