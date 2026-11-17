@@ -221,13 +221,6 @@
   border-radius: 4px;
 }
 
-.search-highlight {
-  background: rgb(var(--accent-rgb) / 0.2);
-  color: var(--accent);
-  border-radius: 2px;
-  padding: 0 2px;
-}
-
 .kanban-ticket-key {
   font-size: 11px;
   font-family: 'JetBrains Mono', monospace;
@@ -361,20 +354,6 @@
   background: linear-gradient(180deg, rgba(255,255,255,0.04) 0%, transparent 100%);
 }
 
-.kanban-add-task {
-  @apply text-sm text-text-muted cursor-pointer px-4 py-2.5 transition-all;
-  border-top: 1px dashed var(--border);
-  text-align: center;
-  font-weight: 500;
-}
-
-.kanban-add-task:hover {
-  @apply text-accent;
-  background: rgb(var(--accent-rgb) / 0.06);
-  border-top-color: var(--accent);
-  border-top-style: solid;
-}
-
 .swimlane-add-btn {
   margin-top: 8px;
   font-size: 13px;
@@ -407,10 +386,6 @@
   @apply bg-bg-card border border-border rounded-xl shadow-lg w-full max-w-md mx-4 p-6;
 }
 
-.lane-item {
-  @apply flex items-center gap-2 py-1;
-}
-
 .lane-edit,
 .lane-remove {
   @apply bg-transparent border-none cursor-pointer text-text-muted text-sm;
@@ -431,11 +406,6 @@
 
 .cp-item:hover {
   @apply bg-bg-hover;
-}
-
-/* --- Misc --- */
-.n8n-event {
-  @apply flex items-center justify-between py-2 px-3 bg-bg-secondary/50 rounded-md text-sm;
 }
 
 /* --- Swimlane collapse animation --- */
@@ -466,7 +436,6 @@
   .swimlane-cards,
   .swimlane-toggle,
   .swimlane-add-btn,
-  .kanban-add-task,
   .kanban-context-menu,
   .kanban-card::before {
     transition: none !important;

@@ -6,7 +6,7 @@
           buildTaskPermalink, findKanbanDetailFocus, getLegacyTaskId, type SearchDetailDismissal, type SearchDetailHandoff,
         } from "@lib/task-detail-handoff"
         import { buildIngressPagePath } from "@lib/page-shell-links"
-        import { taskDetailPath, ticketIdFromPath, taskBackgroundUrl } from "@lib/task-page-url"
+        import { restoreTaskBackgroundUrl, taskDetailPath, ticketIdFromPath, taskBackgroundUrl } from "@lib/task-page-url"
 
         const log = createClientLogger("tasks", "detail-modal");
         import { saveAttachment } from "@domains/offline/offline-store";
@@ -35,6 +35,8 @@
         import { resolveDescriptionTaskReferences } from "@lib/task-references"
         import { saveNavigationState } from "@lib/ingress-state-persistence"
         import { hasPriorityOverlay } from "@lib/layout-shortcuts-controller"
+        import { lockTaskStatusWrite, taskApi } from "@lib/task-api-client"
+        import { assigneeFallback } from "@lib/task-assignee-display"
 
         // Use lifecycle signal for all global listeners in this module
         pageLifecycle.onPageLoad(() => {
@@ -64,6 +66,8 @@
         const tdPanel = document.getElementById("task-detail-panel")
         const tdHeading = document.getElementById("td-task-heading")
         const tdActions = document.getElementById("td-task-actions")
+        const statusSelect = document.querySelector<HTMLSelectElement>("#td-status")
+        const doneButton = document.querySelector<HTMLButtonElement>("#td-toggle-done")
         const tdError = document.getElementById("td-load-error")
         const copyFallback = document.getElementById("td-copy-link-fallback")
         const copyValue = document.querySelector<HTMLInputElement>("#td-copy-link-value")
@@ -92,6 +96,7 @@
         const RICE_KEYS = ["Reach", "Impact", "Confidence", "Effort"];
         const drawerSession = crypto.randomUUID?.() ?? Array.from(crypto.getRandomValues(new Uint8Array(16)),
           byte => byte.toString(16).padStart(2, "0")).join("")
+        let drawerEntry = 0
         tdOverlay.dataset.ticketHistorySession = drawerSession
 
         const dockMedia = window.matchMedia("(min-width: 1440px)")
@@ -167,8 +172,9 @@
             const state = { ...history.state, ticketDrawer: { returnTo: url.href, session: drawerSession, pushed: !legacy && !replace } }
             if (legacy || replace) history.replaceState(state, "", target)
             else {
-              history.replaceState({ ...history.state, ticketBackground: drawerSession }, "")
-              history.pushState(state, "", target)
+              const ticketBackground = `${drawerSession}-${++drawerEntry}`
+              history.replaceState({ ...history.state, ticketBackground }, "")
+              history.pushState({ ...state, ticketBackground }, "", target)
             }
             saveNavigationState()
           } else if (ticket !== null) {
@@ -195,6 +201,10 @@
           if (!tdOverlay?.classList.contains("active") || (!immediate && tdOverlay.classList.contains("closing"))) return
           if (!immediate && waitForDetailWrites(() => closeTD(reason, updateLocation))) return
           const closing = ++detailGeneration
+          const previousCard = _previouslyFocused?.closest<HTMLElement>(".kanban-card")
+          const previousDay = _previouslyFocused?.closest<HTMLElement>(".cal-cell")?.dataset.date
+          const previousCompletion = _previouslyFocused instanceof HTMLAnchorElement &&
+            _previouslyFocused.hasAttribute("data-today-completion") ? _previouslyFocused.dataset.taskDetailLink : undefined
           closeTaskReferences()
           search?.lifetime.abort()
           deferral.opening(false)
@@ -217,12 +227,20 @@
             _sidebarToggle?.setAttribute("aria-expanded", "false");
             _sidebarChevron?.classList.remove("td-chevron-open");
             // P3-4: Restore focus to the element that triggered the panel
-            if (!search) {
-              const opener = _previouslyFocused
-              const board = document.getElementById("kanban-board")
-              const focus = opener instanceof HTMLElement && opener !== document.body && opener.isConnected
-                ? opener : opener && board && findKanbanDetailFocus(board, opener)
-              ;(focus || document.querySelector<HTMLElement>('[data-view-tab][aria-current="page"], #triage-heading, #deferred-heading, #pinned-heading'))?.focus()
+            const kanban = document.getElementById("kanban-board")
+            const origin = _previouslyFocused?.isConnected ? _previouslyFocused
+              : _previouslyFocused?.id ? document.getElementById(_previouslyFocused.id)
+              : previousCard && kanban && _previouslyFocused ? findKanbanDetailFocus(kanban, _previouslyFocused)
+              : previousDay ? document.querySelector<HTMLElement>(`.cal-cell[data-date="${CSS.escape(previousDay)}"]`) ??
+                document.querySelector<HTMLElement>("#calendar-shell .cal-today-btn")
+              : previousCompletion ? Array.from(document.querySelectorAll<HTMLElement>(
+                `.today-section__list a[data-task-detail-link="${CSS.escape(previousCompletion)}"]`,
+              )).find(link => !link.closest("[hidden], [inert], .filtered-out")) : null
+            if (!search && origin instanceof HTMLElement && origin !== document.body &&
+                !origin.closest("[hidden], [inert], .filtered-out")) {
+              origin.focus()
+            } else if (!search) {
+              document.querySelector<HTMLElement>('[data-view-tab][aria-current="page"], #triage-heading, #deferred-heading, #pinned-heading, #today-filter-status')?.focus()
             }
             _previouslyFocused = null
             const closed = pinnedSession
@@ -262,6 +280,31 @@
           _sidebarChevron?.classList.toggle("td-chevron-open", expanded);
         }, { signal: __signal });
 
+        function setStatusLoading(locked: boolean) {
+          if (statusSelect) statusSelect.disabled = locked
+          if (doneButton) doneButton.disabled = locked
+        }
+
+        function setStatusBusy(busy: boolean) {
+          for (const control of [statusSelect, doneButton]) {
+            if (busy) control?.setAttribute("aria-disabled", "true")
+            else control?.removeAttribute("aria-disabled")
+          }
+        }
+
+        function renderSavedStatus(status: string) {
+          if (statusSelect) {
+            statusSelect.value = status
+            statusSelect.dataset.savedStatus = status
+          }
+          if (doneButton) doneButton.textContent = status === "complete" ? "Mark as Undone" : "Mark as Done"
+        }
+
+        document.addEventListener("meitheal:today-status-committed", event => {
+          const { id, status } = (event as CustomEvent<{ id: string; status: string }>).detail
+          if (currentTaskId === id) renderSavedStatus(status)
+        }, { signal: __signal })
+
         async function openTaskDetail(taskId: string, commentTarget: string | null = null, search?: SearchDetailHandoff, updateLocation = true) {
           if (!tdOverlay?.isConnected || __signal.aborted) return
           const newSession = !tdOverlay.classList.contains("active")
@@ -286,6 +329,9 @@
           const modalSignal = _modalAbortController.signal
           document.getElementById("td-ai-response")?.remove()
           _isPopulating = true;
+          setStatusLoading(true)
+          statusSelect?.removeAttribute("data-saved-status")
+          setStatusBusy(false)
           const areaField = document.querySelector<HTMLSelectElement>("#td-area")
           const areaWritesAtOpen = new Map(pendingAreaWrites)
           let areaFieldReady = false
@@ -369,15 +415,17 @@
             const projectRead = projectField ? fetch("/api/projects", requestOptions) : null
             const pillars = fetch("/api/pillars", requestOptions)
             const assignSelect = document.querySelector<HTMLSelectElement>("#td-assigned-to")
-            const users = assignSelect ? fetch("/api/users", requestOptions) : null
+            const assigned = String(t.assigned_to ?? "")
+            if (assignSelect) {
+              assignSelect.replaceChildren(new Option("Unassigned", ""))
+              if (assigned) assignSelect.add(new Option("Loading assignee…", assigned, true, true))
+            }
+            const users = assignSelect ? taskApi.listUserDirectory(modalSignal).catch(() => null) : null
             const settings = fetch("/api/settings", requestOptions)
             // Observe rejections immediately. Field handlers consume the original promises in order.
             void Promise.allSettled([lanes, backlogModeSetting, areas, projectRead, pillars, users, settings])
 
             // Populate status dropdown from lanes API
-            const statusSelect = document.getElementById(
-              "td-status",
-            ) as HTMLSelectElement | null;
             try {
               const [lanesRes, modeRes] = await Promise.all([lanes, backlogModeSetting])
               let backlogMode = "visible";
@@ -670,7 +718,7 @@
             }
 
             // If the task's status isn't in the dropdown, add it as an option
-            const taskStatus = String(t.status ?? "pending");
+            const taskStatus = statusSelect?.dataset.savedStatus ?? String(t.status ?? "pending");
             if (
               statusSelect &&
               !statusSelect.querySelector(`option[value="${taskStatus}"]`)
@@ -680,7 +728,7 @@
               opt.textContent = taskStatus;
               statusSelect.appendChild(opt);
             }
-            if (statusSelect) statusSelect.value = taskStatus;
+            renderSavedStatus(taskStatus)
             const tdDesc = document.getElementById(
               "td-description",
             ) as HTMLTextAreaElement;
@@ -913,29 +961,18 @@
               }
             }
 
-            // Assigned To — populate from /api/users
             if (assignSelect && users) {
-              try {
-                const usersRes = await users
-                if (modalSignal.aborted) return
-                if (usersRes.ok) {
-                  const usersData = await usersRes.json()
-                  if (modalSignal.aborted) return
-                  const users = usersData.users ?? [];
-                  assignSelect.innerHTML =
-                    '<option value="">Unassigned</option>';
-                  for (const u of users) {
-                    const opt = document.createElement("option");
-                    opt.value = u.id;
-                    opt.textContent = (u.display_name ?? u.name ?? u.id) + (u.kind === "agent" ? " (AI agent)" : "");
-                    assignSelect.appendChild(opt);
-                  }
-                }
-              } catch {
-                if (modalSignal.aborted) return
-                /* keep default unassigned option */
+              const directory = await users
+              if (modalSignal.aborted) return
+              assignSelect.replaceChildren(new Option(directory ? "Unassigned" : "Could not load assignees", ""))
+              for (const user of directory?.users ?? []) {
+                const name = user.display_name || user.name || user.id
+                assignSelect.add(new Option(name + (user.kind === "agent" ? " (AI agent)" : ""), user.id))
               }
-              assignSelect.value = String(t.assigned_to ?? "");
+              if (assigned && !Array.from(assignSelect.options).some(option => option.value === assigned)) {
+                assignSelect.add(new Option(assigneeFallback(assigned, directory), assigned))
+              }
+              assignSelect.value = assigned
             }
 
             const isFav = Number(t.is_favorite ?? 0);
@@ -944,12 +981,6 @@
               favBtn.textContent = isFav
                 ? "★ Favorited"
                 : "⭐ Add to Favorites";
-            const isDone = String(t.status) === "complete";
-            const tdToggleDone = document.getElementById("td-toggle-done");
-            if (tdToggleDone)
-              tdToggleDone.textContent = isDone
-                ? "↩ Mark as Undone"
-                : "✓ Mark as Done";
 
             // Load settings-defined custom fields
             _settingsFields = [];
@@ -1100,6 +1131,7 @@
             setTimeout(() => {
               if (modalSignal.aborted) return
               _isPopulating = false
+              setStatusLoading(false)
               if (areaField) areaField.disabled = !areaFieldReady
               if (projectField) projectField.disabled = !projectFieldReady
               deferral.loaded(taskId, typeof t.project_id === "string" ? t.project_id : null, t.deferred_at != null, modalSignal, Boolean(searchSession))
@@ -1139,8 +1171,10 @@
                 }
               }
               notifyInactivityTaskChanged(field === "status" ? undefined : taskId)
-              if (field === "status" && value === "complete" && (!search || generation === detailGeneration)) {
-                onTaskCompleted(await response.json())
+              if (field === "status") {
+                const task = await response.json()
+                document.dispatchEvent(new CustomEvent("meitheal:task-status-saved", { detail: { id: taskId, status: task.status, deferred: task.deferred_at != null } }))
+                if (value === "complete" && (!search || generation === detailGeneration)) onTaskCompleted(task)
               }
               return field === "area_id" || !search || generation === detailGeneration
             }
@@ -1290,17 +1324,28 @@
             input.value = "";
           }, { signal: __signal });
 
-        document.getElementById("td-status")
-          ?.addEventListener("change", (e) => {
-            const newVal = (e.target as HTMLSelectElement).value;
-            saveTD("status", newVal);
-            const isDone = newVal === "complete";
-            const doneBtn = document.getElementById("td-toggle-done");
-            if (doneBtn)
-              doneBtn.textContent = isDone
-                ? "↩ Mark as Undone"
-                : "✓ Mark as Done";
-          }, { signal: __signal });
+        async function saveDetailStatus(next: string) {
+          const id = currentTaskId
+          if (!id || !statusSelect || statusSelect.disabled) return
+          const previous = statusSelect.dataset.savedStatus ?? statusSelect.value
+          const unlock = lockTaskStatusWrite(id)
+          if (!unlock) {
+            statusSelect.value = previous
+            showToast("A status change is still saving.")
+            return
+          }
+          const generation = detailGeneration
+          setStatusBusy(true)
+          try {
+            const saved = await saveTaskField("status", next)
+            if (generation === detailGeneration) renderSavedStatus(saved ? next : previous)
+          } finally {
+            unlock()
+            if (generation === detailGeneration) setStatusBusy(false)
+          }
+        }
+
+        statusSelect?.addEventListener("change", () => void saveDetailStatus(statusSelect.value), { signal: __signal })
         document
           .getElementById("td-priority")
           ?.addEventListener("change", (e) =>
@@ -1574,24 +1619,9 @@
         const loadRelatedLinks = relatedLinksApi.loadRelatedLinks
 
 
-        // Toggle done
-        document
-          .getElementById("td-toggle-done")
-          ?.addEventListener("click", () => {
-            const statusEl = document.getElementById(
-              "td-status",
-            ) as HTMLSelectElement;
-            const newStatus =
-              statusEl.value === "complete" ? "pending" : "complete";
-            statusEl.value = newStatus;
-            saveTD("status", newStatus);
-            const tdDoneBtn = document.getElementById("td-toggle-done");
-            if (tdDoneBtn)
-              tdDoneBtn.textContent =
-                newStatus === "complete"
-                  ? "↩ Mark as Undone"
-                  : "✓ Mark as Done";
-          }, { signal: __signal });
+        doneButton?.addEventListener("click", () => {
+          if (statusSelect) void saveDetailStatus(statusSelect.value === "complete" ? "pending" : "complete")
+        }, { signal: __signal })
 
         // Toggle favorite
         document
@@ -1869,7 +1899,10 @@
 
         function checkTaskLocation(fromHistory = false) {
           if (waitForDetailWrites(() => checkTaskLocation(fromHistory))) return
-          if (fromHistory) saveNavigationState()
+          if (fromHistory) {
+            restoreTaskBackgroundUrl()
+            saveNavigationState()
+          }
           const url = new URL(window.location.href)
           const taskId = ticketIdFromPath(url.pathname, window.__ingress_path) ?? getLegacyTaskId(url.hash) ?? url.searchParams.get("open")
           const commentTarget = url.searchParams.get("comment")

@@ -124,9 +124,30 @@ test("Area changes update the Kanban groups and preserve the board context throu
     await expect(drawer).toBeHidden()
     const grouping = page.locator("#kanban-group-by-dropdown > summary")
     await grouping.focus()
+    let boardEntered!: () => void
+    let releaseBoard!: () => void
+    const boardStarted = new Promise<void>(resolve => { boardEntered = resolve })
+    const boardGate = new Promise<void>(resolve => { releaseBoard = resolve })
+    releases.push(releaseBoard)
+    await page.route(url => url.pathname === configuredPath + "/tasks" && url.searchParams.has("boardRefresh"),
+      async route => {
+        boardEntered()
+        await boardGate
+        await route.continue()
+      }, { times: 1 })
     await lateReturn()
+    await boardStarted
+    const otherMore = board.locator(`.kanban-card[data-id="${other}"] .card-more-btn`)
+    const menu = page.locator("#kanban-card-menu")
+    await otherMore.press("Enter")
+    await expect(menu).toBeVisible()
+    releaseBoard()
+    await expect(board).not.toHaveAttribute("aria-busy", "true")
+    await expect(menu).toBeVisible()
+    await expect(group(destination).locator(`.kanban-card[data-id="${task}"]`)).toBeVisible()
+    await page.keyboard.press("Escape")
     await expect(group(original).locator(`.kanban-card[data-id="${task}"]`)).toBeVisible()
-    await expect(grouping).toBeFocused()
+    await expect(otherMore).toBeFocused()
 
     // A different drawer can open while a previous task's save is still pending.
     await card(task).click()

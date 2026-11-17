@@ -11,6 +11,12 @@ export interface SearchDetailHandoff {
   onDismiss(reason: SearchDetailDismissal): void
 }
 
+function matchingKanbanControl(scope: Element | null | undefined, previous: Element): HTMLElement | null {
+  const matches = Array.from(scope?.querySelectorAll<HTMLElement>("a[href], button, [tabindex]") ?? [])
+    .filter(element => element.localName === previous.localName && element.className === previous.className)
+  return matches.length === 1 ? matches[0] ?? null : null
+}
+
 /** Find the equivalent control in a board that replaced the focused control's DOM. */
 export function findKanbanDetailFocus(board: ParentNode, previous: Element): HTMLElement | null {
   const laneId = previous.closest<HTMLElement>(".kanban-column")?.dataset.laneId
@@ -22,19 +28,19 @@ export function findKanbanDetailFocus(board: ParentNode, previous: Element): HTM
     const selector = `.kanban-card[data-id="${CSS.escape(taskId)}"]`
     const card = lane?.querySelector(selector) ?? board.querySelector(selector)
     const collapsed = card?.closest(".swimlane-collapsed")
-    const control = [...previous.classList].find(name => /^card-.*-btn$/.test(name) && name !== "card-action-btn")
-    const action = control ? `.${CSS.escape(control)}` : ".card-open-btn"
-    return (collapsed ?? card)?.querySelector<HTMLElement>(collapsed ? "button.swimlane-header" : action) ?? fallback
+    if (collapsed) return collapsed.querySelector<HTMLElement>("button.swimlane-header") ?? fallback
+    return matchingKanbanControl(card, previous) ?? card?.querySelector<HTMLElement>(".card-open-btn") ?? fallback
   }
   if (!lane) return null
-  const group = previous.closest("button.swimlane-header")?.closest<HTMLElement>(".swimlane-group")?.dataset.swimlaneType
+  const group = previous.closest<HTMLElement>(".swimlane-group")?.dataset.swimlaneType
   if (group !== undefined) {
-    return lane.querySelector<HTMLElement>(`.swimlane-group[data-swimlane-type="${CSS.escape(group)}"] button.swimlane-header`) ?? fallback
+    const section = lane.querySelector(`.swimlane-group[data-swimlane-type="${CSS.escape(group)}"]`)
+    return matchingKanbanControl(section, previous) ?? fallback
   }
   const direction = previous.closest<HTMLAnchorElement>("[data-kanban-page-lane]")?.rel
   if (direction) return lane.querySelector<HTMLElement>(`a[data-kanban-page-lane][rel="${CSS.escape(direction)}"]`) ?? fallback
   if (previous.hasAttribute("data-kanban-range")) return lane.querySelector<HTMLElement>("[data-kanban-range]") ?? fallback
-  return fallback
+  return matchingKanbanControl(lane, previous) ?? fallback
 }
 
 export function buildTaskPath(taskId: string, commentId?: number): string {

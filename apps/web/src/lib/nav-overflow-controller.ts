@@ -23,17 +23,21 @@ export function initNavOverflow(root: HTMLElement, pageSignal: AbortSignal): voi
   const controller = new AbortController()
   bindings.set(root, { pageSignal, controller })
   const signal = AbortSignal.any([pageSignal, controller.signal])
+  // Nested disclosures keep native Tab order, including when their parent is in More.
+  const collectLinks = (items: HTMLElement[]) => items.flatMap(item => item.matches("a[href]") ? [item]
+    : [...item.querySelectorAll<HTMLElement>("a[href]")].filter(link => !link.closest("[data-nav-overflow-submenu]")))
   let sources = primaries.map(primary => ({ primary, items: [...primary.children] as HTMLElement[] }))
   let items = sources.flatMap(source => source.items)
-  let links = items.flatMap(item => item.matches("a[href]") ? [item] : [...item.querySelectorAll<HTMLElement>("a[href]")])
+  let links = collectLinks(items)
   const originalTabs = new Map(links.map(link => [link, link.getAttribute("tabindex")]))
   let frame = 0
   let lastWidth = -1
+  let sourcesChanged = false
 
   function refreshSources() {
     sources = primaries.map(primary => ({ primary, items: [...primary.children] as HTMLElement[] }))
     items = sources.flatMap(source => source.items)
-    links = items.flatMap(item => item.matches("a[href]") ? [item] : [...item.querySelectorAll<HTMLElement>("a[href]")])
+    links = collectLinks(items)
     for (const link of links) {
       if (!originalTabs.has(link)) originalTabs.set(link, link.getAttribute("tabindex"))
     }
@@ -67,7 +71,7 @@ export function initNavOverflow(root: HTMLElement, pageSignal: AbortSignal): voi
       }
     }
     items = sources.flatMap(source => source.items)
-    links = items.flatMap(item => item.matches("a[href]") ? [item] : [...item.querySelectorAll<HTMLElement>("a[href]")])
+    links = collectLinks(items)
   }
   function focusDestination(target: HTMLElement | undefined) {
     if (!target) return
@@ -87,7 +91,12 @@ export function initNavOverflow(root: HTMLElement, pageSignal: AbortSignal): voi
     if (signal.aborted || !root.isConnected) return
     const focused = document.activeElement instanceof HTMLElement && root.contains(document.activeElement) ? document.activeElement : null
     const enabled = getComputedStyle(root).getPropertyValue("--nav-overflow-enabled").trim() === "1" && root.clientWidth > 0
+    root.setAttribute("data-nav-overflow-reflowing", "")
     restoreItems()
+    if (sourcesChanged) {
+      refreshSources()
+      sourcesChanged = false
+    }
     root.toggleAttribute("data-nav-overflow-active", enabled)
     let visible = new Set(items)
     if (enabled && items.length) {
@@ -141,6 +150,7 @@ export function initNavOverflow(root: HTMLElement, pageSignal: AbortSignal): voi
     }
     syncTabStops()
     // Ignore our own synchronous reparenting, while still observing label changes.
+    root.removeAttribute("data-nav-overflow-reflowing")
     content.takeRecords()
   }
   const schedule = () => {
@@ -152,11 +162,11 @@ export function initNavOverflow(root: HTMLElement, pageSignal: AbortSignal): voi
     lastWidth = width
     schedule()
   })
-  const appearance = new MutationObserver(() => {
-    restoreItems()
-    refreshSources()
+  const syncTaskNavDom = () => {
+    sourcesChanged = true
     schedule()
-  })
+  }
+  const appearance = new MutationObserver(syncTaskNavDom)
   const content = new MutationObserver(records => {
     if (records.some(record => record.type !== "childList" || (record.target !== menu && !primaries.includes(record.target as HTMLElement)))) schedule()
   })
@@ -203,11 +213,6 @@ export function initNavOverflow(root: HTMLElement, pageSignal: AbortSignal): voi
     if (event.target instanceof Element && event.target.closest("a[href]")) closeMenu(true)
   }, { signal })
   window.addEventListener("meitheal:view-changed", schedule, { signal })
-  const syncTaskNavDom = () => {
-    restoreItems()
-    refreshSources()
-    schedule()
-  }
   window.addEventListener("meitheal:task-nav-prefs-changed", syncTaskNavDom, { signal })
   window.addEventListener("meitheal:task-nav-dom-synced", syncTaskNavDom, { signal })
   document.fonts?.addEventListener("loadingdone", schedule, { signal })

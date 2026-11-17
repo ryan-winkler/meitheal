@@ -14,37 +14,37 @@ export const TODAY_SECTIONS = defineSections<TodaySectionId>([
   {
     id: "today-overview",
     label: "Overview",
-    icon: "☀️",
+    icon: "sun",
     description: "Daily signal, quick capture, and the shortest path into work.",
   },
   {
     id: "today-focus",
     label: "Focus",
-    icon: "🎯",
+    icon: "target",
     description: "Focus stack and the next actions that deserve attention first.",
   },
   {
     id: "today-triage",
     label: "Triage",
-    icon: "🧭",
+    icon: "inbox",
     description: "Carried-forward work, suggested tasks, and cleanup decisions.",
   },
   {
     id: "today-work",
     label: "Work",
-    icon: "📋",
+    icon: "list-check",
     description: "Pinned, due-today, and unscheduled work on one operational surface.",
   },
   {
     id: "today-habits",
     label: "Habits",
-    icon: "🔁",
+    icon: "repeat",
     description: "Routine completions that flow back into shared task execution.",
   },
   {
     id: "today-flow",
     label: "Flow",
-    icon: "🔀",
+    icon: "arrows-left-right",
     description: "Switch context to the planning or execution view that fits your next move.",
   },
 ])

@@ -3,7 +3,7 @@ import Layout from "../layouts/Layout.astro";
 
 import UnifiedBar from "../components/layout/UnifiedBar.astro";
 import SignalBar from "../components/layout/SignalBar.astro";
-import { parseTaskView, taskViewUrl, TASK_VIEWS } from "../lib/task-view-route"
+import { parseTaskView, taskViewUrl, TASK_VIEWS, TASK_VIEW_LABELS, TASK_VIEW_ICONS } from "../lib/task-view-route"
 import { loadKanbanBoard } from "../lib/kanban-board-data"
 import { readKanbanFilters, setKanbanPage } from "../lib/kanban-query"
 import LabelBadges from "../components/ui/LabelBadges.astro";
@@ -11,8 +11,11 @@ import FilterToolbar from "../components/ui/FilterToolbar.astro";
 import CardCustomizer from "../components/ui/CardCustomizer.astro";
 import { t } from "../i18n/translations";
 import type { Locale } from "../lib/locale";
-import { calendarDaysFromToday, formatRegionalDate, isDueOverdue } from "../lib/date";
+import { calendarDaysFromToday, isDueOverdue } from "../lib/date";
+import { formatRegionalDate } from "../lib/regional-date";
 import { formatTicketKey } from "../lib/ticket-key";
+import { taskSurface } from "../lib/task-surface"
+import { taskDescriptionPreview } from "../lib/task-description-preview"
 import { buildTaskPath } from "../lib/task-detail-handoff"
 import {
   ensureSchema,
@@ -46,10 +49,8 @@ const {
 const cookieLocale = Astro.cookies.get("meitheal-locale")?.value;
 const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
 const renderedView = parseTaskView(Astro.url.searchParams.get("view")) ?? "kanban"
-const viewLabels = { kanban: "Kanban", table: "Table", calendar: "Calendar", timeline: "Timeline" }
-const viewIcons = { kanban: "kanban", table: "table", calendar: "calendar", timeline: "timeline" }
 const heading = renderedView === "kanban" ? t("kanban.title", locale)
-  : renderedView === "table" ? "Table View" : viewLabels[renderedView]
+  : renderedView === "table" ? "Table View" : TASK_VIEW_LABELS[renderedView]
 const currentUrl = new URL(Astro.url)
 // The HTML ingress rewriter adds the mount path to these root-relative links.
 currentUrl.pathname = "/tasks"
@@ -212,6 +213,7 @@ const kanbanPages = renderedView === "kanban"
   : null
 const inactivityEnabled = renderedView === "kanban" &&
   await new TaskInactivityRepository(db).hasEnabledPolicy(kanbanFilters.area || null).catch(() => false)
+const boardAreaQuery = kanbanFilters.area ? `?area=${encodeURIComponent(kanbanFilters.area)}` : ""
 const kanbanTaskCount = Array.from(kanbanPages?.values() ?? []).reduce((sum, lane) => sum + lane.matches, 0)
 
 function lanePageHref(key: string, page: number) {
@@ -239,15 +241,15 @@ try {
 
   <UnifiedBar
     title={heading}
-    titleIcon={viewIcons[renderedView]}
+    titleIcon={TASK_VIEW_ICONS[renderedView]}
     tabs={[]}
     searchPlaceholder="Search Meitheal…"
     searchScope="all"
     barId="kanban-bar"
     slot="custom-header"
     viewTabs={TASK_VIEWS.map(view => {
-      const url = taskViewUrl(currentUrl, view)
-      return { id: view, href: url.pathname + url.search + url.hash, label: viewLabels[view], icon: viewIcons[view], active: view === renderedView }
+      const url = taskViewUrl(currentUrl, view, true)
+      return { id: view, href: url.pathname + url.search + url.hash, label: TASK_VIEW_LABELS[view], icon: TASK_VIEW_ICONS[view], active: view === renderedView }
     })}
   >
     <AreaSelector slot="context" areas={areas} />
@@ -264,42 +266,27 @@ try {
       showUserFilter
       showUserPills={false}
     />
-    <!-- Kanban-specific toolbar buttons (Fields, Lanes) — shown/hidden by view controller -->
-    <div class="kanban-toolbar-right" id="kanban-toolbar-actions" role="toolbar" aria-label="Kanban view actions">
-      <a href="/deferred" class="kanban-toolbar-btn" title="View deferred tasks" data-astro-prefetch="false">
-        <Icon name="clock" size={14} />
-        <span>{t("deferral.title", locale)}</span>
+    <button id="kanban-tools-toggle" class="btn btn-sm kanban-tools-toggle" type="button" aria-controls="kanban-toolbar-actions" aria-expanded="false">
+      <Icon name="adjustments-horizontal" size={16} /> Board actions
+    </button>
+    <div class="kanban-toolbar-right" id="kanban-toolbar-actions" role="group" aria-label="Kanban board actions">
+      <a href={`/deferred${boardAreaQuery}`} class="btn btn-outline btn-sm kanban-toolbar-btn"
+        data-deferred-link data-astro-prefetch="false">
+        <Icon name="clock" size={16} />
+        {t("deferral.title", locale)}
       </a>
-      <a href={kanbanFilters.area ? `/inactivity?area=${encodeURIComponent(kanbanFilters.area)}` : "/inactivity"}
-        class="kanban-toolbar-btn" title="View inactivity rules and stalled tasks" data-inactivity-link data-astro-prefetch="false">
-        <Icon name="clock" size={14} />
-        <span>{t("inactivity.title", locale)}</span>
+      <a href={`/inactivity${boardAreaQuery}`} class="btn btn-outline btn-sm kanban-toolbar-btn"
+        data-inactivity-link data-astro-prefetch="false">
+        <Icon name="alert-triangle" size={16} />
+        {t("inactivity.title", locale)}
       </a>
-      <button
-        type="button"
-        class="kanban-toolbar-btn"
-        id="toggle-fields-btn"
-        title="Card fields"
-        aria-label="Customize card fields"
-        aria-pressed="false"
-      >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect>
-        </svg>
-        <span class="kanban-toolbar-btn__label">Fields</span>
+      <button type="button" class="btn btn-outline btn-sm kanban-toolbar-btn" id="toggle-fields-btn"
+        aria-label="Customize card fields" aria-controls="kanban-fields-panel" aria-expanded="false">
+        <Icon name="layout-grid" size={16} /> Fields
       </button>
-      <button
-        type="button"
-        class="kanban-toolbar-btn"
-        id="manage-lanes-btn"
-        title={t("kanban.manage_swimlanes", locale)}
-        aria-label="Lanes"
-        aria-pressed="false"
-      >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line>
-        </svg>
-        <span class="kanban-toolbar-btn__label">Lanes</span>
+      <button type="button" class="btn btn-outline btn-sm kanban-toolbar-btn" id="manage-lanes-btn"
+        aria-label="Lanes" aria-controls="lane-mgmt" aria-expanded="false">
+        <Icon name="list-check" size={16} /> Lanes
       </button>
     </div>
   </div>
@@ -308,9 +295,14 @@ try {
   <div id="kanban-shell" class="page-shell">
     <!-- Stats signal bar (non-dismissable) -->
     <SignalBar id="kanban-signal-bar">
-      <strong data-kanban-visible-count>{kanbanTaskCount}</strong>
-      <span data-kanban-visible-label>{kanbanTaskCount === 1 ? t("kanban.task_singular", locale) : t("kanban.task_plural", locale)}</span>
-      <strong>{columns.length}</strong> {t("kanban.lanes", locale)}
+      <div class="kanban-summary" aria-live="polite">
+        <span>
+          <strong data-kanban-visible-count>{kanbanTaskCount}</strong>
+          <span data-kanban-visible-label>{kanbanTaskCount === 1 ? t("kanban.task_singular", locale) : t("kanban.task_plural", locale)}</span>
+          <strong>{columns.length}</strong> {t("kanban.lanes", locale)}
+        </span>
+        <span data-kanban-promoted-note hidden={!kanbanFilters.promoted}>{t("kanban.promoted_filter_explanation", locale)}</span>
+      </div>
     </SignalBar>
 
     <div class="kanban-loading-status" data-kanban-loading role="status" hidden></div>
@@ -534,9 +526,12 @@ try {
                         ? "today"
                         : "upcoming"
                   : null;
+                const description = taskDescriptionPreview(task.description)
+                const { style: taskColorStyle, ...surface } = taskSurface(String(task.status), task.color)
                 return (
                   <div
                     class={`kanban-card flat-card`}
+                    {...surface}
                     draggable="true"
                     data-id={String(task.id)}
                     data-title={String(task.title)}
@@ -557,7 +552,7 @@ try {
                     data-labels={String(task.labels ?? "[]")}
                     data-task-id={task.id}
                     data-area-id={task.project_id}
-                    style={`--card-accent: ${task.color ? String(task.color) : tc.color};`}
+                    style={`--card-accent: ${task.color ? String(task.color) : tc.color};${taskColorStyle ?? ""}`}
                   >
                     <div class="kanban-card-header">
                       <div class="kanban-card-title">
@@ -601,7 +596,8 @@ try {
                         ⋯
                       </button>
                     </div>
-                    {promoted && <span class="kanban-promoted" aria-hidden="true">↑ {t("kanban.promoted", locale)}</span>}
+                    <span class="kanban-work-status"><StatusBadge status={String(task.status)} /></span>
+                    {promoted && <span class="kanban-promoted" aria-hidden="true"><Icon name="rocket" size={12} sprite /> {t("kanban.promoted", locale)}</span>}
                     {/* Attachment Placeholder */}
                     <img
                       class="kanban-attachment hidden"
@@ -610,12 +606,7 @@ try {
                       loading="lazy"
                     />
 
-                    {task.description && String(task.description).trim() && (
-                      <div class="kanban-card-desc">
-                        {String(task.description).slice(0, 80)}
-                        {String(task.description).length > 80 ? "…" : ""}
-                      </div>
-                    )}
+                    {description && <div class="kanban-card-desc">{description}</div>}
                     <div data-inactivity-slot></div>
                     <div class="kanban-card-meta">
                       <span
@@ -697,16 +688,10 @@ try {
                           <Icon name="message-circle" size={12} /> {Number(task.comment_count ?? 0)}
                         </span>
                       )}
-                      {task.assigned_to && (
-                        <span
-                          class="kanban-assignee-badge"
-                          title={`Assigned: ${String(task.assigned_to).replace(/^(ha_|custom_)/, "")}`}
-                          aria-label={`Assigned to ${String(task.assigned_to).replace(/^(ha_|custom_)/, "")}`}
-                        >
-                          {String(task.assigned_to)
-                            .replace(/^(ha_|custom_)/, "")
-                            .slice(0, 2)
-                            .toUpperCase()}
+                                      {task.assigned_to && (
+                        <span class="kanban-assignee-badge" title="Loading assignee">
+                          <Icon name="user" size={14} />
+                          <span class="kanban-assignee-name" dir="auto" data-task-assignee={String(task.assigned_to)}>Loading assignee…</span>
                         </span>
                       )}
                       <BotBadge
@@ -962,12 +947,12 @@ try {
 
         const hideFieldsPanel = () => {
           fieldsPanel?.classList.add("hidden")
-          fieldsBtn?.setAttribute("aria-pressed", "false")
+          fieldsBtn?.setAttribute("aria-expanded", "false")
         }
 
         fieldsBtn?.addEventListener("click", () => {
           const isHidden = fieldsPanel?.classList.toggle("hidden")
-          fieldsBtn?.setAttribute("aria-pressed", String(!isHidden))
+          fieldsBtn?.setAttribute("aria-expanded", String(!isHidden))
         }, { signal: fieldsSignal })
 
         // Close button inside the CardCustomizer panel (event delegation — robust against timing)
@@ -975,6 +960,7 @@ try {
           if ((e.target as HTMLElement).closest("#card-customizer-close")) {
             e.stopPropagation()
             hideFieldsPanel()
+            fieldsBtn?.focus()
           }
         }, { signal: fieldsSignal })
 
@@ -1015,59 +1001,63 @@ try {
   }
 
   /* Signal bar CSS now in SignalBar.astro */
-  /* ── Toolbar right: Grouped actions aligned right (Gestalt Common Region) ── */
+  #kanban-shell {
+    gap: 12px;
+  }
+
+  @media (min-width: 769px) {
+    /* Match the outer board inset and the filter island's inner end gutter. */
+    :global(#kanban-bar) {
+      padding-inline-start: 24px;
+      padding-inline-end: 37px;
+    }
+  }
+
+  .kanban-tools-toggle { display: none; }
+
   .kanban-toolbar-right {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 4px;
-    margin-left: auto;
-    flex: 0 0 auto;
+    gap: 6px;
     max-width: 100%;
-    padding: 3px;
-    background: var(--bg-secondary);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-md, 8px);
+    margin-inline-start: auto;
   }
 
-  /* ── Toolbar buttons: compact icon + label toggles ── */
   .kanban-toolbar-btn {
     display: inline-flex;
     align-items: center;
     gap: 5px;
-    min-height: 28px;
-    padding: 4px 10px;
     white-space: nowrap;
     text-decoration: none;
-    background: transparent;
-    border: 1px solid transparent;
-    border-radius: var(--radius-sm, 6px);
-    color: var(--text-secondary);
-    cursor: pointer;
-    font-size: 12px;
-    font-weight: 500;
-    transition: color 150ms, background 150ms, border-color 150ms;
   }
-  .kanban-toolbar-btn:hover {
-    color: var(--text-primary);
-    background: var(--bg-hover);
-    border-color: var(--border);
-  }
-  .kanban-toolbar-btn:focus-visible {
-    outline: 2px solid var(--border-focus, var(--accent));
-    outline-offset: 2px;
-  }
-  .kanban-toolbar-btn[aria-pressed="true"] {
-    color: var(--accent-text, var(--accent));
+
+  .kanban-toolbar-btn[aria-expanded="true"] {
+    color: var(--accent-text);
     border-color: var(--accent);
-    background: rgb(var(--accent-rgb, 105 227 178) / 0.08);
+    background: var(--accent-6-bg);
   }
-  .kanban-toolbar-btn__label {
-    display: none;
+
+  .kanban-summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 12px;
   }
-  @media (min-width: 640px) {
-    .kanban-toolbar-btn__label {
-      display: inline;
+
+  @media (max-width: 768px) {
+    .kanban-tools-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      min-height: 44px;
+      margin-inline-start: auto;
+    }
+    .tasks-filter-row:has(.kanban-tools-toggle[aria-expanded="false"]) .kanban-toolbar-right {
+      display: none;
+    }
+    .kanban-toolbar-right {
+      justify-content: flex-end;
+      flex-basis: 100%;
     }
   }
 
@@ -1075,10 +1065,9 @@ try {
   .tasks-filter-row {
     display: flex;
     align-items: center;
-    justify-content: space-between;
     flex-wrap: wrap;
     gap: 8px 12px;
-    margin-bottom: 14px;
+    margin-block: 12px;
     background: var(--bg-card); /* Opaque background */
     border: 1px solid var(--border);
     border-radius: var(--radius-lg, 12px);
@@ -1104,7 +1093,7 @@ try {
   }
   .kanban-board {
     display: flex;
-    gap: 10px;
+    gap: 12px;
     min-height: 320px;
     max-height: calc(100dvh - 280px);
     max-width: 100%;
@@ -1118,6 +1107,8 @@ try {
     .kanban-board {
       flex-direction: column;
       overflow-x: hidden;
+      overflow-y: auto;
+      height: auto;
       min-height: auto;
       max-height: none;
       gap: 12px;
@@ -1148,6 +1139,7 @@ try {
     background: var(--bg-secondary);
     border-radius: var(--radius-md);
     min-width: 280px;
+    max-width: none;
     flex: 1 0 280px;
     display: flex;
     flex-direction: column;
@@ -1159,12 +1151,6 @@ try {
     padding: 12px;
   }
   @media (max-width: 768px) {
-    .kanban-board {
-      flex-direction: column;
-      overflow-x: hidden;
-      overflow-y: auto;
-      height: auto;
-    }
     .kanban-column {
       flex: 0 0 auto;
       min-width: 100%;
@@ -1212,7 +1198,7 @@ try {
     display: flex;
     flex-direction: column;
     flex-shrink: 0;
-    gap: 8px;
+    gap: 6px;
     box-shadow: var(--shadow-sm);
     cursor: grab;
     transition:
@@ -1222,6 +1208,19 @@ try {
       opacity 200ms cubic-bezier(0.4, 0, 0.2, 1);
     position: relative;
     overflow: hidden;
+  }
+
+  :global([data-theme="knight-rider"]) .kanban-card {
+    border-inline-start: 1px solid var(--border);
+    box-shadow: none;
+  }
+  :global([data-theme="knight-rider"]) .kanban-card:hover {
+    border-color: var(--border-focus);
+    transform: none;
+  }
+  :global([data-theme="knight-rider"]) .kanban-card:has(.card-open-btn:focus-visible) {
+    outline-color: var(--border-focus);
+    box-shadow: none;
   }
 
   /* ── Card density modes (Phase 16.4) ── */
@@ -1255,7 +1254,7 @@ try {
     gap: 12px;
   }
   .kanban-card:focus-visible {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--border-focus);
     outline-offset: 2px;
     box-shadow: 0 0 0 4px rgb(var(--accent-rgb, 105 227 178) / 0.15);
   }
@@ -1334,7 +1333,7 @@ try {
     gap: 2px;
   }
   .kanban-meta-checklist.checklist-complete {
-    color: var(--color-green-500, #22c55e);
+    color: var(--success-text);
   }
   .kanban-meta-comments {
     gap: 3px;
@@ -1392,9 +1391,9 @@ try {
   .kanban-card-desc {
     font-size: 12px;
     color: var(--text-muted);
-    margin-bottom: 8px;
     line-height: 1.4;
     overflow: hidden;
+    overflow-wrap: anywhere;
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
@@ -1412,47 +1411,46 @@ try {
   }
   /* kanban-card-due defined in _kanban.css — scoped override for badge styling */
   .kanban-card-due {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    white-space: nowrap;
     font-size: 11px;
     background: rgba(255, 255, 255, 0.05);
     padding: 1px 6px;
     border-radius: 4px;
   }
+  .kanban-work-status {
+    display: none;
+  }
+  :global([data-theme="knight-rider"]) .kanban-card[data-work-active] .kanban-work-status {
+    display: flex;
+  }
+  :global([data-theme="knight-rider"]) .priority-label.priority-critical {
+    color: var(--danger-text);
+  }
   .kanban-assignee-badge {
     display: inline-flex;
     align-items: center;
-    justify-content: center;
-    width: 22px;
-    height: 22px;
-    border-radius: 50%;
-    background: var(--accent);
-    color: var(--personal-accent-foreground, var(--palette-on-accent, #07140f));
-    font-size: 9px;
-    font-weight: 700;
-    letter-spacing: 0.5px;
+    gap: 4px;
+    min-width: 0;
+    max-width: 100%;
+    color: var(--text-secondary);
+    font-size: 11px;
+  }
+  .kanban-assignee-badge svg {
     flex-shrink: 0;
-    margin-left: auto;
-    cursor: default;
+  }
+  .kanban-assignee-name {
+    overflow-wrap: anywhere;
+    font-size: 12px;
   }
   .kanban-card-actions {
     display: flex;
     flex-wrap: wrap;
     gap: 4px;
     border-top: 1px solid var(--border);
-    padding-block-start: 8px;
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 150ms;
-  }
-  .kanban-card:hover .kanban-card-actions,
-  .kanban-card:focus-within .kanban-card-actions {
-    opacity: 1;
-    pointer-events: auto;
-  }
-  @media (max-width: 768px), (hover: none), (pointer: coarse) {
-    .kanban-card-actions {
-      opacity: 1;
-      pointer-events: auto;
-    }
+    padding-block-start: 5px;
   }
   .card-action-btn {
     background: var(--bg-hover);
@@ -1615,7 +1613,7 @@ try {
     box-shadow: 0 0 8px rgba(0, 0, 0, 0.2);
   }
   :global(.color-swatch:focus-visible) {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--border-focus);
     outline-offset: 2px;
   }
   :global(.color-swatch.swatch-active) {
@@ -1643,15 +1641,9 @@ try {
     font-size: 12px;
   }
   :global(.popover-item:focus-visible) {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--border-focus);
     outline-offset: -2px;
   }
-  @media (max-width: 768px) {
-    .kanban-board {
-      flex-direction: column;
-    }
-  }
-
   /* Card header with favorite */
   .kanban-card-header {
     display: flex;
@@ -1719,7 +1711,7 @@ try {
   /* RICE + sync badges */
   .kanban-rice-badge {
     font-size: 11px;
-    color: var(--accent);
+    color: var(--accent-text);
     background: rgba(99, 102, 241, 0.1);
     padding: 1px 6px;
     border-radius: 4px;
@@ -1757,131 +1749,12 @@ try {
     text-overflow: ellipsis;
   }
 
-  /* Phase 20: Type toolbar */
-  .type-toolbar {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 8px 0; /* horizontal padding handled by global .content */
-    margin-bottom: 8px;
-  }
-  .type-filters {
-    display: flex;
-    gap: 6px;
-    align-items: center;
-    flex-wrap: wrap;
-  }
-  .filter-toolbar__type-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    padding: 5px 12px;
-    border: 1px solid var(--border);
-    border-radius: 20px;
-    background: transparent;
-    color: var(--text-muted);
-    font-size: 12px;
-    font-weight: 500;
-    cursor: pointer;
-    transition:
-      background 200ms,
-      color 200ms,
-      border-color 200ms,
-      opacity 200ms,
-      transform 200ms;
-    white-space: nowrap;
-  }
-  .filter-toolbar__type-btn:hover {
-    border-color: var(--accent);
-    color: var(--text-primary);
-  }
-  .filter-toolbar__type-btn.active {
-    background: var(--accent-light);
-    border-color: var(--accent);
-    color: var(--accent);
+  :global([data-theme="knight-rider"]) .kanban-cf-chip {
+    color: var(--accent-text);
   }
 
-  /* Phase 32: User filter pills */
-  .user-filters {
-    display: flex;
-    gap: 6px;
-    align-items: center;
-    flex-wrap: wrap;
-    border-left: 1px solid var(--border);
-    padding-left: 12px;
-    margin-left: 4px;
-  }
-  @media (max-width: 768px) {
-    .user-filters {
-      border-left: none;
-      padding-left: 0;
-      margin-left: 0;
-      width: 100%;
-      border-top: 1px solid var(--border);
-      padding-top: 8px;
-      margin-top: 4px;
-    }
-  }
-  .filter-toolbar__user-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    padding: 4px 10px;
-    border: 1px solid var(--border);
-    border-radius: 20px;
-    background: transparent;
-    color: var(--text-muted);
-    font-size: 12px;
-    font-weight: 500;
-    cursor: pointer;
-    transition:
-      background 200ms,
-      color 200ms,
-      border-color 200ms,
-      opacity 200ms,
-      transform 200ms;
-    white-space: nowrap;
-  }
-  .filter-toolbar__user-btn:hover {
-    border-color: var(--accent);
-    color: var(--text-primary);
-  }
-  .filter-toolbar__user-btn.active {
-    background: var(--accent-light);
-    border-color: var(--accent);
-    color: var(--accent);
-  }
-  .user-avatar-pill {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 20px;
-    height: 20px;
-    border-radius: 50%;
-    color: #fff;
-    font-size: 9px;
-    font-weight: 700;
-    letter-spacing: 0.5px;
-    flex-shrink: 0;
-  }
   .kanban-card.user-filtered-out {
     display: none !important;
-  }
-  .filter-clear-btn {
-    @apply text-xs px-3 py-1 rounded-md;
-    background: color-mix(in srgb, var(--danger) 10%, transparent);
-    color: var(--danger);
-    border: 1px solid color-mix(in srgb, var(--danger) 20%, transparent);
-    cursor: pointer;
-    transition:
-      background 0.15s ease,
-      border-color 0.15s ease;
-    white-space: nowrap;
-    flex-shrink: 0;
-  }
-  .filter-clear-btn:hover {
-    background: color-mix(in srgb, var(--danger) 20%, transparent);
-    border-color: color-mix(in srgb, var(--danger) 40%, transparent);
   }
   .kanban-inline-add {
     display: grid;
@@ -1909,11 +1782,6 @@ try {
   .kanban-inline-add .quick-add-error:empty {
     display: none;
   }
-  /* Hide actions visually to prevent overlapping with content */
-  .kanban-quick-actions[aria-hidden="true"] {
-    display: none;
-  }
-
   /* Phase 20: Swimlane groups */
   .swimlane-group {
     background: var(--surface);
@@ -1972,22 +1840,8 @@ try {
     transform: rotate(-90deg);
   }
 
-  @media (max-width: 768px) {
-    .type-toolbar {
-      flex-direction: column;
-      gap: 8px;
-      align-items: flex-start;
-    }
-    .type-filters {
-      flex-wrap: wrap;
-    }
-  }
-
   /* Accessibility: suppress transitions for reduced-motion users */
   @media (prefers-reduced-motion: reduce) {
-    .filter-toolbar__type-btn,
-    .filter-toolbar__user-btn,
-    .filter-clear-btn,
     .kanban-title-text,
     .kanban-progress-bar,
     .kanban-card-title,
@@ -2035,7 +1889,7 @@ try {
 
   /* T-1914: Keyboard focus ring */
   .kanban-card:has(.card-open-btn:focus-visible) {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--border-focus);
     outline-offset: 2px;
     box-shadow: 0 0 12px rgba(99, 102, 241, 0.3);
   }

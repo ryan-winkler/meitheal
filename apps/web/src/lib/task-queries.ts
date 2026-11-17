@@ -7,15 +7,15 @@
  * Bounded Context: Tasks (persistence query)
  */
 
-import { fromZonedTime } from "date-fns-tz"
 import {
   ensureSchema,
   getPersistenceClient,
 } from "@domains/tasks/persistence/store";
 import { taskTimestampMs } from "@domains/tasks/persistence/task-timestamp";
-import type { InValue } from "@libsql/client";
+import type { InValue, Row } from "@libsql/client";
 import { deriveEisenhowerQuadrant } from "@meitheal/domain-tasks";
-import { calendarDayFromInput, calendarToday, isDueOverdue, isValidTimezone, resolveTimezone, shiftCalendarDay } from "./date"
+import { parseCalendarDay } from "./calendar-day"
+import { calendarDayFromInput, calendarToday, householdDayRanges, isDueOverdue, isValidTimezone, resolveTimezone, shiftCalendarDay } from "./date"
 import { frameworkPayloadObject, readRiceInputs, riceLensScore } from "./rice-lens"
 
 // =============================================================================
@@ -385,26 +385,53 @@ function toTaskViewItem(row: Record<string, unknown>, slim = false, timezone = "
   return item;
 }
 
-const TODAY_COMPLETION_COUNT = `
-  COUNT(*) FILTER (
-    WHERE status = 'complete'
+function completedTodayQuery(filter: ReturnType<typeof todayCompletionFilter>) {
+  return {
+    sql: `SELECT id, title FROM tasks WHERE ${filter.sql}
+          ORDER BY CASE WHEN typeof(updated_at) = 'text' AND updated_at NOT LIKE '%T%' AND updated_at NOT LIKE '%:%'
+            THEN ? ELSE ${taskTimestampMs("updated_at")} END DESC, rowid DESC
+          LIMIT 20`,
+    args: [...filter.args, filter.firstInstant],
+  }
+}
+
+function completedTodaySummaries(rows: Row[]) {
+  return rows.map(row => ({ id: String(row.id), title: String(row.title) }))
+}
+
+export function todayScopeProblem(params: URLSearchParams, timezone: string, day: string) {
+  const expectedDay = params.get("expected_day")
+  const expectedTimezone = params.get("expected_timezone")
+  if (expectedDay !== null && !parseCalendarDay(expectedDay)) {
+    return { status: 400, error: "expected_day must be a calendar date" }
+  }
+  if (expectedTimezone !== null && !isValidTimezone(expectedTimezone)) {
+    return { status: 400, error: "expected_timezone must be a valid timezone" }
+  }
+  if (expectedDay !== null && expectedDay !== day || expectedTimezone !== null && expectedTimezone !== timezone) {
+    return { status: 409, error: "Today has changed. Refresh the view." }
+  }
+  return null
+}
+
+export function todayCompletionFilter(today: string, timezone = "Europe/Dublin") {
+  const ranges = householdDayRanges(today, resolveTimezone(timezone))
+  const matchesDay = (column: string) =>
+    ranges.map(() => `(${column} >= ? AND ${column} < ?)`).join(" OR ") || "0"
+  const bounds = ranges.flat()
+  return {
+    sql: `task_board_id IS NULL AND status = 'complete'
       AND (
-        (typeof(updated_at) IN ('integer', 'real') AND updated_at >= ? AND updated_at < ?)
+        (typeof(updated_at) IN ('integer', 'real') AND (${matchesDay("updated_at")}))
         OR (typeof(updated_at) = 'text' AND (
           ((updated_at LIKE '%T%' OR updated_at LIKE '%:%') AND strftime('%s', updated_at) IS NOT NULL
-            AND CAST(strftime('%s', updated_at) AS INTEGER) * 1000 >= ?
-            AND CAST(strftime('%s', updated_at) AS INTEGER) * 1000 < ?)
-          OR (updated_at NOT LIKE '%T%' AND updated_at NOT LIKE '%:%' AND substr(updated_at, 1, 10) = ?)
+            AND (${matchesDay("CAST(strftime('%s', updated_at) AS INTEGER) * 1000")}))
+          OR updated_at = ?
         ))
-      )
-  )
-`
-
-function todayCompletionArgs(today: string, timezone = "Europe/Dublin"): [number, number, number, number, string] {
-  const safeTz = resolveTimezone(timezone)
-  const startMs = fromZonedTime(`${today}T00:00:00`, safeTz).getTime()
-  const endMs = fromZonedTime(`${shiftCalendarDay(today, 1)}T00:00:00`, safeTz).getTime()
-  return [startMs, endMs, startMs, endMs, today]
+      )`,
+    args: [...bounds, ...bounds, today],
+    firstInstant: ranges[0]?.[0] ?? null,
+  }
 }
 
 export function todayDueSection(
@@ -428,6 +455,7 @@ export interface TodayTaskCounts {
   carriedForward: number
   remaining: number
   completionPercent: number
+  completedTasks?: Array<{ id: string; title: string }>
 }
 
 /** Count the complete queue and read its renderable rows from one SQLite snapshot.
@@ -442,19 +470,21 @@ export async function getTodayTaskRows(
   try {
     await ensureSchema()
     const resolvedTimezone = resolveTimezone(timezone)
-    const { rows } = await getPersistenceClient().execute({
+    const client = getPersistenceClient()
+    const completionFilter = todayCompletionFilter(today, resolvedTimezone)
+    const tasksQuery = {
       sql: `
         WITH totals AS (
-          SELECT ${TODAY_COMPLETION_COUNT} AS completed_today,
+          SELECT COUNT(*) FILTER (WHERE ${completionFilter.sql}) AS completed_today,
                  COUNT(*) FILTER (
-                   WHERE status IS NOT 'complete' AND deferred_at IS NULL AND (due_date IS NULL OR due_date = '')
+                   WHERE status IS NOT 'complete' AND status IS NOT 'archived' AND deferred_at IS NULL AND (due_date IS NULL OR due_date = '')
                  ) AS open_unscheduled
           FROM tasks WHERE task_board_id IS NULL
         )
         SELECT ${TASK_VIEW_COLUMNS}, completed_today, open_unscheduled
         FROM totals
         LEFT JOIN tasks
-          ON tasks.task_board_id IS NULL AND status IS NOT 'complete'
+          ON tasks.task_board_id IS NULL AND status IS NOT 'complete' AND status IS NOT 'archived'
           AND deferred_at IS NULL
           AND (
             ? = 1
@@ -464,16 +494,19 @@ export async function getTodayTaskRows(
           )
         ORDER BY created_at DESC, tasks.rowid DESC
       `,
-      args: [...todayCompletionArgs(today, resolvedTimezone), includeUnscheduled ? 1 : 0],
-    })
+      args: [...completionFilter.args, includeUnscheduled ? 1 : 0],
+    }
+    const [taskResult, completed] = await client.batch([tasksQuery, completedTodayQuery(completionFilter)], "read")
+    const rows = taskResult?.rows ?? []
 
     return {
+      completedTasks: completedTodaySummaries(completed?.rows ?? []),
       completedTodayCount: Number(rows[0]?.completed_today ?? 0),
       openUnscheduledCount: Number(rows[0]?.open_unscheduled ?? 0),
       tasks: rows.filter(row => row.id !== null).map(row => toTaskViewItem(row as Record<string, unknown>, false, resolvedTimezone)),
     }
   } catch {
-    return { completedTodayCount: 0, openUnscheduledCount: 0, tasks: [] }
+    return { completedTodayCount: 0, openUnscheduledCount: 0, tasks: [], completedTasks: [] }
   }
 }
 
@@ -498,29 +531,35 @@ export async function readStoredHouseholdTimezone(): Promise<string> {
   return "Europe/Dublin"
 }
 
-/** Refresh the visible counters without reading or serializing individual tasks. */
-export async function getTodayTaskCounts(now = new Date(), timezone?: string): Promise<TodayTaskCounts> {
+/** Refresh visible counters, with the bounded completed list when requested. */
+export async function getTodayTaskCounts(now = new Date(), timezone?: string, includeCompleted = false): Promise<TodayTaskCounts> {
   await ensureSchema()
   const trimmedTz = typeof timezone === "string" ? timezone.trim() : ""
   const resolvedTimezone = trimmedTz && isValidTimezone(trimmedTz)
     ? trimmedTz
     : await readStoredHouseholdTimezone()
   const today = calendarToday(resolvedTimezone, now)
-  const { rows } = await getPersistenceClient().execute({
+  const client = getPersistenceClient()
+  const completionFilter = todayCompletionFilter(today, resolvedTimezone)
+  const countsQuery = {
     sql: `
-      SELECT NULL AS due_date, ${TODAY_COMPLETION_COUNT} AS completed_today,
-             COUNT(*) FILTER (WHERE status IS NOT 'complete' AND deferred_at IS NULL AND is_favorite NOT IN (0, '')) AS pinned_count,
+      SELECT NULL AS due_date, COUNT(*) FILTER (WHERE ${completionFilter.sql}) AS completed_today,
+             COUNT(*) FILTER (WHERE status IS NOT 'complete' AND status IS NOT 'archived' AND deferred_at IS NULL AND is_favorite NOT IN (0, '')) AS pinned_count,
              0 AS dated_count
       FROM tasks WHERE task_board_id IS NULL
       UNION ALL
       SELECT due_date, 0, 0, COUNT(*)
       FROM tasks
-      WHERE task_board_id IS NULL AND status IS NOT 'complete' AND deferred_at IS NULL AND COALESCE(is_favorite, 0) IN (0, '')
+      WHERE task_board_id IS NULL AND status IS NOT 'complete' AND status IS NOT 'archived' AND deferred_at IS NULL AND COALESCE(is_favorite, 0) IN (0, '')
         AND due_date IS NOT NULL AND due_date <> ''
       GROUP BY due_date
     `,
-    args: todayCompletionArgs(today, resolvedTimezone),
-  })
+    args: completionFilter.args,
+  }
+  const [countResult, completed] = includeCompleted
+    ? await client.batch([countsQuery, completedTodayQuery(completionFilter)], "read")
+    : [await client.execute(countsQuery)]
+  const rows = countResult?.rows ?? []
 
   let dueToday = 0
   let carriedForward = 0
@@ -542,5 +581,8 @@ export async function getTodayTaskCounts(now = new Date(), timezone?: string): P
   return {
     dueToday, completedToday, carriedForward, remaining,
     completionPercent: todayCompletionPercent(completedToday, remaining),
+    ...(includeCompleted ? {
+      completedTasks: completedTodaySummaries(completed?.rows ?? []),
+    } : {}),
   }
 }

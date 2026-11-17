@@ -7,7 +7,7 @@
  * Bounded context: lib (cross-domain utility)
  */
 
-export type ThemeMode = "light" | "dark" | "auto" | "custom"
+import { isThemeMode, type ThemeMode } from "./theme-mode"
 
 const STORAGE_KEY = "meitheal-theme"
 const CUSTOM_CSS_KEY = "meitheal-custom-theme-css"
@@ -21,13 +21,17 @@ export function readAppearanceValue(key: string): string | null {
   }
 }
 
-export function getEffectiveTheme(): "light" | "dark" {
+export function readStoredThemeMode(): ThemeMode {
+  const value = readAppearanceValue(STORAGE_KEY)
+  return isThemeMode(value) ? value : "auto"
+}
+
+export function getEffectiveTheme(stored = readStoredThemeMode()): "light" | "dark" {
   const matched = document.documentElement.dataset.haMatch
   if (matched === "light" || matched === "dark") return matched
-  const stored = readAppearanceValue(STORAGE_KEY)
   if (stored === "light" || stored === "dark") return stored
   // Custom themes layer on top of dark base
-  if (stored === "custom") return "dark"
+  if (stored === "custom" || stored === "knight-rider") return "dark"
   if (stored === "auto") {
     const appearance = document.documentElement.dataset.haTheme
     if (appearance === "light" || appearance === "dark") return appearance
@@ -41,11 +45,11 @@ export function setTheme(mode: ThemeMode): void {
 }
 
 export function applyTheme(): void {
-  const stored = readAppearanceValue(STORAGE_KEY) ?? "auto"
+  const stored = readStoredThemeMode()
   const root = document.documentElement
   const matched = root.dataset.haMatch === "light" || root.dataset.haMatch === "dark"
-  const theme = getEffectiveTheme()
-  root.dataset.theme = !matched && stored === "auto" ? "auto" : theme
+  const theme = getEffectiveTheme(stored)
+  root.dataset.theme = !matched && (stored === "auto" || stored === "knight-rider") ? stored : theme
   root.classList.toggle("dark", theme === "dark")
   root.classList.toggle("light", theme === "light")
   applyCustomTheme(!matched && stored === "custom" && root.hasAttribute("data-custom-theme-admin")
@@ -53,8 +57,9 @@ export function applyTheme(): void {
   const metaTheme = document.querySelector('meta[name="theme-color"]')
   if (metaTheme) {
     const color = matched ? getComputedStyle(root).getPropertyValue("--bg-primary").trim() : ""
-    metaTheme.setAttribute("content", color || (theme === "dark" ? "#1a1a2e" : "#ffffff"))
+    metaTheme.setAttribute("content", color || (root.dataset.theme === "knight-rider" ? "#131314" : theme === "dark" ? "#1a1a2e" : "#ffffff"))
   }
+  window.dispatchEvent(new CustomEvent("meitheal:theme-changed", { detail: { theme } }))
 }
 
 /**
@@ -79,12 +84,6 @@ export function initThemeWatcher(): void {
   applyTheme()
   const mq = window.matchMedia("(prefers-color-scheme: dark)")
   mq.addEventListener("change", () => {
-    const current = readAppearanceValue(STORAGE_KEY)
-    if (!current || current === "auto") {
-      applyTheme()
-      window.dispatchEvent(new CustomEvent("meitheal:theme-changed", {
-        detail: { theme: getEffectiveTheme() },
-      }))
-    }
+    if (readStoredThemeMode() === "auto") applyTheme()
   })
 }

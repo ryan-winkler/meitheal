@@ -265,7 +265,7 @@ test.describe("Responsive Navigation", () => {
     }
   });
 
-  test("Desktop: Task Types menu and pins work when Tasks is ordered after Areas", async ({ page, request, baseURL }) => {
+  test("Desktop: Task view menu and pins work when Tasks is ordered after Areas", async ({ page, request, baseURL }) => {
     const headers = { origin: new URL(baseURL!).origin };
     const before = await (await request.get("/api/settings")).json();
     const prevSidebar = before.sidebar_config;
@@ -283,12 +283,12 @@ test.describe("Responsive Navigation", () => {
       await page.evaluate(() => localStorage.removeItem("meitheal-task-nav-prefs"));
       await page.reload({ waitUntil: "networkidle" });
 
-      await page.locator("#tasks-submenu-config-btn").click();
-      await expect(page.locator("#tasks-nav-config-popover")).toBeVisible();
-      const pinBtn = page.locator('#tasks-nav-config-popover [data-task-nav-pin="shopping_item"]').first();
+      await page.locator("#tasks-submenu-toggle").click();
+      await expect(page.locator("#tasks-nav-submenu")).toBeVisible();
+      const pinBtn = page.locator('#tasks-nav-submenu [data-task-view-pin="calendar"]');
       await pinBtn.click();
       await expect(pinBtn).toHaveAttribute("aria-pressed", "true");
-      await expect(page.locator('#sidebar [data-task-nav-pinned-item="shopping_item"]')).toBeVisible();
+      await expect(page.locator('.nav-item--tasks + [data-task-view-pinned-item="calendar"]')).toBeVisible();
     } finally {
       await page.evaluate(() => localStorage.removeItem("meitheal-task-nav-prefs")).catch(() => {});
       await request.put("/api/settings", {
@@ -339,49 +339,10 @@ test.describe("Responsive Navigation", () => {
     await expect(badge).toBeHidden();
   });
 
-  test("Task Types submenu toggle, visibility config, pinning, and Events filter work end-to-end", async ({ page }) => {
-    await page.setViewportSize({ width: 1440, height: 960 });
-    await page.addInitScript(() => localStorage.removeItem("meitheal-task-nav-prefs"));
-    await page.goto("/", { waitUntil: "networkidle" });
-
-    await page.locator("#tasks-submenu-toggle").click();
-    const submenu = page.locator("#tasks-nav-submenu");
-    await expect(submenu).toBeVisible();
-    await expect(submenu.locator('[data-task-nav-item="standard"]')).toBeVisible();
-    await expect(submenu.locator('[data-task-nav-item="shopping_item"]')).toBeVisible();
-    await expect(submenu.locator('[data-task-nav-item="checklist"]')).toBeVisible();
-    await expect(submenu.locator('[data-task-nav-item="calendar_event"]')).toBeVisible();
-
-    await page.locator("#tasks-submenu-config-btn").click();
-    const popover = page.locator("#tasks-nav-config-popover");
-    await expect(popover).toBeVisible();
-    await popover.locator('[data-task-nav-mode="none"]').click();
-    await expect(submenu).toBeHidden();
-
-    await popover.locator('[data-task-nav-mode="all"]').click();
-    await expect(submenu).toBeVisible();
-
-    await popover.locator('[data-task-nav-toggle="shopping_item"]').click();
-    await expect(submenu.locator('[data-task-nav-item="shopping_item"]')).toBeHidden();
-    await popover.locator('[data-task-nav-toggle="shopping_item"]').click();
-    await expect(submenu.locator('[data-task-nav-item="shopping_item"]')).toBeVisible();
-    await page.keyboard.press("Escape");
-    await expect(popover).toBeHidden();
-
-    await submenu.locator('[data-task-nav-item="calendar_event"] [data-task-nav-pin="calendar_event"]').click();
-    const pinnedRow = page.locator('[data-task-nav-pinned-item="calendar_event"]');
-    await expect(pinnedRow).toBeVisible();
-
-    await pinnedRow.locator('[data-task-nav-pinned-link="calendar_event"]').click();
-    await expect(page).toHaveURL(/\/tasks\?types=calendar_event/);
-
-    await expect(pinnedRow.locator('[data-task-nav-pinned-link="calendar_event"]')).toHaveClass(/active/);
-    await expect(page.locator('.sidebar .nav-link[data-page="tasks"]')).not.toHaveClass(/active/);
+  test("Kanban type filters still open a filtered task list", async ({ page }) => {
+    await page.goto("/tasks?types=calendar_event#kanban", { waitUntil: "networkidle" });
     await expect(page.locator('.filter-toolbar__type-btn[data-type="calendar_event"]').first()).toHaveAttribute("aria-pressed", "true");
     await expect(page.locator('.filter-toolbar__type-btn[data-type="shopping_item"]').first()).toHaveAttribute("aria-pressed", "false");
-
-    await pinnedRow.locator(".task-nav-unpin-btn").click();
-    await expect(pinnedRow).toBeHidden();
   });
 
   test("Settings Navigation pins and task nav modes apply once without double-toggling", async ({ page }) => {
@@ -397,7 +358,7 @@ test.describe("Responsive Navigation", () => {
 
     const navSection = page.locator("#navigation-settings");
     const pinBtn = navSection.locator('[data-task-nav-pin="calendar_event"]');
-    const pinnedRow = page.locator('[data-nav-overflow-primary] [data-task-nav-pinned-item="calendar_event"]');
+    const pinnedRow = page.locator('#sidebar-task-types [data-task-nav-pinned-item="calendar_event"]');
 
     await expect(pinBtn).toHaveAttribute("aria-pressed", "false");
     await pinBtn.click();
@@ -417,7 +378,7 @@ test.describe("Responsive Navigation", () => {
     await expect(pinnedRow).toBeHidden();
   });
 
-  test("task-nav pinned items hide in navbar mode on desktop without reload and stay visible in mobile drawer", async ({ page }) => {
+  test("task-nav Shopping stays available after changing navigation layout and on mobile", async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 960 });
     await page.goto("/settings#navigation-settings", { waitUntil: "networkidle" });
 
@@ -444,7 +405,12 @@ test.describe("Responsive Navigation", () => {
 
       await setNavigationLayout("navbar");
       await expect(page.locator("html")).toHaveAttribute("data-appearance-navigation", "navbar");
-      await expect(pinnedRow).toBeHidden();
+      const pinnedShopping = pinnedRow.getByRole("button", { name: "New shopping list", exact: true });
+      await pinnedShopping.click();
+      await expect(page.locator("#new-task-kind")).toHaveValue("shopping_item");
+      await page.keyboard.press("Escape");
+      await expect(page.locator("#new-task-overlay")).toBeHidden();
+      await expect(pinnedShopping).toBeFocused();
 
       await setNavigationLayout("sidebar");
       await expect(page.locator("html")).toHaveAttribute("data-appearance-navigation", "sidebar");
@@ -453,7 +419,7 @@ test.describe("Responsive Navigation", () => {
       await setNavigationLayout("navbar");
       await expect(page.locator("html")).toHaveAttribute("data-appearance-navigation", "navbar");
 
-      await expect(pinnedRow).toBeHidden()
+      await expect(pinnedRow).toBeVisible()
       await page.setViewportSize({ width: 390, height: 844 })
       await expect(page.locator("html")).toHaveAttribute("data-appearance-navigation", "navbar")
       await expect(page).toHaveURL(/settings#navigation-settings$/)
@@ -461,7 +427,7 @@ test.describe("Responsive Navigation", () => {
       await page.goto("/", { waitUntil: "networkidle" })
       await page.locator("#menu-toggle").click()
       await expect(page.locator("#tasks-submenu-toggle")).toBeVisible();
-      await expect(page.locator("#tasks-submenu-config-btn")).toBeVisible();
+      await expect(page.locator("#sidebar-task-types [data-task-creation-toggle]")).toBeVisible();
       await expect(pinnedRow).toBeVisible();
     } finally {
       await page.evaluate(() => {

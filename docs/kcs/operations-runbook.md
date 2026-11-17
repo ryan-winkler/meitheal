@@ -189,7 +189,9 @@ In a disposable ingress session, open **Planning → RICE**. Edit an open task, 
 
 ## Deferred Work Verification
 
-In a disposable ingress session, defer an open card from the Kanban menu. Confirm the lane count and active sidebar update, and find the task through search or Table. Open **Tasks → Deferred**, resume the card, and confirm focus moves to the next row or queue heading. Complete a deferred task in Details and verify that its badge and queue row disappear. Use **Reload Deferred** to activate a waiting service worker before opening the live queue.
+In a disposable ingress session, defer an open card from the Kanban menu. Confirm the lane count and active sidebar update, and find the task through search or Table. Return to Kanban and select **Deferred**. On narrow screens, open **Board actions** first. Resume the card and confirm focus moves to the next row or queue heading. Complete a deferred task in Details and verify that its badge and queue row disappear. Use **Reload Deferred** to activate a waiting service worker before opening the live queue.
+
+Open **Deferred** from a board with an Area selected. Check that the queue and its count cover that Area, then choose **All areas → Apply area** to include the rest of the Household Board. **Back to Tasks** returns to Kanban with the displayed Area selection.
 
 Use the most recent `task_version` and `deferral_revision` from task Details for `PATCH /api/tasks/{id}/deferral`. On `TASK_VERSION_CONFLICT` or an interrupted response, refresh the task and inspect its current state before making another decision. `TASK_BLOCKED` includes the open prerequisites and leaves the task deferred.
 
@@ -202,12 +204,6 @@ In a disposable ingress session, open **Planning → Triage**. Confirm the queue
 ## Planning RICE Verification
 
 In a disposable ingress session, open **Planning → RICE**. Edit an open task, check the live estimate, and save it. Confirm the task appears in Ranked work with the new score. Open the editor in two sessions and save in one. Verify the other offers **Reload score** and the first score is retained. See [Rank work with RICE](planning-rice.md).
-
-## Deferred Work Verification
-
-In a disposable ingress session, defer an open card from the Kanban menu. Confirm the lane count and active sidebar update, and find the task through search or Table. Open **Tasks → Deferred**, resume the card, and confirm focus moves to the next row or queue heading. Complete a deferred task in Details and verify that its badge and queue row disappear. Use **Reload Deferred** to activate a waiting service worker before opening the live queue.
-
-Use the most recent `task_version` and `deferral_revision` from task Details for `PATCH /api/tasks/{id}/deferral`. On `TASK_VERSION_CONFLICT` or an interrupted response, refresh the task and inspect its current state before making another decision. `TASK_BLOCKED` includes the open prerequisites and leaves the task deferred.
 
 ## Table Shell Verification
 
@@ -457,6 +453,8 @@ Use HTTPS Home Assistant ingress and a current administrator session. An unavail
 
 Use a disposable dataset. Confirm the shared policy starts Off and a specific Area can remain Off under an enabled default. Preview a change, verify the ready and upcoming counts, and confirm a stale preview cannot save after another administrator changes the policy. A stale or denied browser session should show a retry state with no preview rows.
 
+Open **Inactivity** from Kanban (under **Board actions** on narrow screens). Confirm the selected Area carries over, then change the Area and use **Back to Tasks** to return to the board with that selection.
+
 After enabling a policy, restart the App and allow one five-minute sweep. Verify up to 25 eligible cards move and protected or recently edited cards stay in place. Confirm each move has one system audit event and appears in **Deferred** with the inactivity label. Resume one card and confirm its status is preserved and its next inactivity deadline uses the new activity window. App-only SQLite backups retain the policy, including explicit Area inheritance and its revision.
 
 Use HTTPS for Home Assistant ingress so the browser can send same-origin request metadata. If preview stays unavailable and the database integrity check reports a malformed inactivity policy, restore a verified App backup with a valid policy before re-enabling the rule.
@@ -464,6 +462,10 @@ Use HTTPS for Home Assistant ingress so the browser can send same-origin request
 For the Stalled cue, check the applicable Inactivity policy first. A qualifying assignment, reopen or at least three recent comments from two verified Home Assistant members creates the marker. The comment window is 33% of the configured inactivity period. Existing cards keep their original activity history and begin recording markers when qualifying events occur. On a disposable dataset, verify the Stalled filter, clear a cue by editing its card, and confirm a protected scheduled task stays out of automatic deferral.
 
 Card quick-action menus use viewport-bounded positions and 44-pixel color targets. Check a color change at a 320-pixel viewport when verifying board cues. The menu styles cover elements created by the client controller.
+
+### Kanban assignment troubleshooting
+
+In **Assign User**, a failed directory request shows **Could not load assignees**. The Home Assistant lookup waits up to three seconds for the Core roster. During an unverified lookup, cached names from the current source and custom assignees remain selectable. An uncached saved Home Assistant assignee is marked unverified. Use **Retry** after a failed or unverified lookup. The Board keeps the choices already shown selectable while it checks again. A confirmed missing assignee shows **Assignee unavailable**. A verified empty directory shows **No users configured** when the card has no unresolved assignment. These messages preserve the saved assignee.
 
 ## Checklist edits from multiple sessions
 

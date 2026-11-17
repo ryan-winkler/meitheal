@@ -555,16 +555,6 @@ body.has-docked-inspector #task-detail-panel {
   stroke: var(--accent-text);
 }
 
-/* --- NewTask Section Labels --- */
-.nt-section-label {
-  font-size: 0.6875rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--color-text-muted, #a1a1aa);
-  margin-bottom: 0.5rem;
-}
-
 /* --- NewTask Status Pills (matching filter-pill design) --- */
 .nt-status-pill {
   display: inline-flex;
