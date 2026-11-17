@@ -146,6 +146,19 @@ test("Household Kanban groups the current column page by status and keeps its co
     await button.press("Space")
     await expect(button).toHaveAttribute("aria-expanded", "true")
     await expect(pendingCards).toBeVisible()
+
+    const taskId = tasks[0]!.id
+    const card = lane.locator(`.kanban-card[data-id="${taskId}"]`)
+    const cardLink = card.locator(".card-open-btn")
+    const saved = await request.put(`/api/tasks/${taskId}`, { headers, data: { status: "active" } })
+    expect(saved.ok(), await saved.text()).toBe(true)
+    await cardLink.focus()
+    // The detail drawer has already restored focus by the time this refresh applies.
+    await page.evaluate(id => document.dispatchEvent(new CustomEvent("meitheal:task-status-saved", {
+      detail: { id, status: "active" },
+    })), taskId)
+    await expect(card).toHaveAttribute("data-status", "active")
+    await expect(cardLink).toBeFocused()
   } finally {
     for (const path of cleanup.reverse()) {
       const removed = await request.delete(path, { headers })

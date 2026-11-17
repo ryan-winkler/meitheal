@@ -17,9 +17,11 @@ export interface KanbanRefreshFocus {
 
 function matchBoardFocus(active: HTMLElement, replacement: HTMLElement) {
   const cardId = active.closest<HTMLElement>(".kanban-card")?.dataset.id
-  const laneId = active.closest<HTMLElement>(".kanban-column")?.dataset.status
-  const card = cardId && replacement.querySelector<HTMLElement>(`.kanban-card[data-id="${CSS.escape(cardId)}"]`)
-  const lane = laneId && replacement.querySelector<HTMLElement>(`.kanban-column[data-status="${CSS.escape(laneId)}"]`)
+  const laneId = active.closest<HTMLElement>(".kanban-column")?.dataset.laneId
+  const lane = laneId ? replacement.querySelector<HTMLElement>(`.kanban-column[data-lane-id="${CSS.escape(laneId)}"]`) : null
+  const cardSelector = cardId && `.kanban-card[data-id="${CSS.escape(cardId)}"]`
+  const card = cardSelector && (lane?.querySelector<HTMLElement>(cardSelector) ??
+    replacement.querySelector<HTMLElement>(cardSelector))
   const scope = card || lane
   if (!scope) return null
   const matches = Array.from(scope.querySelectorAll<HTMLElement>(active.localName))
