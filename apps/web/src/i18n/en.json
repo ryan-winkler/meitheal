@@ -283,6 +283,8 @@
     "group_by_tooltip": "Group swimlanes by"
   },
   "table": {
+    "unavailable_area": "Unavailable Area",
+    "area_catalog_failed": "Area names could not load.",
     "filter_unassigned": "Unassigned",
     "filter_workflow_columns": "Workflow columns",
     "filter_columns_load_failed": "Workflow columns could not load.",

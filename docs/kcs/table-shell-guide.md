@@ -22,6 +22,8 @@ Scroll sideways within the table to reach more columns. With a keyboard, focus t
 4. Use **Previous** and **Next** above the table to move through 50 matching rows at a time. Keyboard paging returns focus to the page controls, which report the current range. Group counts cover all matches. Select-all and bulk actions apply to visible rows on the current page.
 5. Focus a group or subgroup toggle and press Enter or Space to expand or collapse its rows. The Title cell is associated with its column, group, and subgroup headings.
 
+Group or sub-group by **Area** to see the Area names, icons, and colors. An Area that has been removed appears as **Unavailable Area**. When a refresh cannot load the Area catalog, Table keeps the current rows and bulk Area choices. Use **Retry** to refresh them together.
+
 ### Save a working view
 
 1. Set the filters, grouping, sort and visible columns you want. Use **Labels** for label selection, **Columns** to choose fields and a column header to sort. **Title** is always visible.

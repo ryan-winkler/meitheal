@@ -280,6 +280,8 @@
     "group_by_tooltip": "Grúpáil snámhlána de réir"
   },
   "table": {
+    "unavailable_area": "Réimse nach bhfuil ar fáil",
+    "area_catalog_failed": "Níorbh fhéidir ainmneacha na réimsí a lódáil.",
     "filter_unassigned": "Neamhshannta",
     "filter_workflow_columns": "Colúin sreafa oibre",
     "filter_columns_load_failed": "Níorbh fhéidir na colúin sreafa oibre a lódáil.",

@@ -46,25 +46,29 @@ import { reconcileTableDeferral } from "@lib/controllers/table-deferral"
 // Types
 // =============================================================================
 
-interface AreaInfo {
-  id: string
-  name: string
-  icon?: string
-  color?: string
-}
+type AreaDisplay = ReturnType<typeof getGroupDisplay>
 
 // =============================================================================
 // State
 // =============================================================================
 
 let currentGroupBy = "none"
-let areaMap: Record<string, AreaInfo> = {}
 
 // =============================================================================
 // Initialization
 // =============================================================================
 
 const PAGE_FOCUS_KEY = "meitheal:table-page-focus"
+
+function hasTablePageStats(stats: TablePageStats | null): stats is TablePageStats {
+  const hasTotals = (totals: TableGroupStats) =>
+    Number.isFinite(totals?.count) && Number.isFinite(totals?.riceSum) && Number.isFinite(totals?.riceCount)
+  return Boolean(stats && hasTotals(stats.total) && [stats.groups, stats.subgroups].every(entries =>
+    Array.isArray(entries) && entries.every(entry =>
+      Array.isArray(entry) && typeof entry[0] === "string" && hasTotals(entry[1]),
+    ),
+  ))
+}
 
 function focusTablePage(shell: HTMLElement, direction: string) {
   const pager = shell.querySelector<HTMLElement>("#table-pagination:not([hidden])")
@@ -103,7 +107,6 @@ function init(signal: AbortSignal) {
   if (!shell || shell.dataset.tableReady === "true") return
   shell.dataset.tableReady = "true"
   signal.addEventListener("abort", () => { delete shell.dataset.tableReady }, { once: true })
-  areaMap = Object.create(null)
   if (document.getElementById("table-bar")) {
     initPageShellNavigation({
       barId: "table-bar",
@@ -123,6 +126,10 @@ function init(signal: AbortSignal) {
   const message = status?.querySelector<HTMLElement>("[data-table-refresh-message]")
   const retry = status?.querySelector<HTMLButtonElement>("[data-table-retry]")
   if (!table || !container || !tbody || !status || !message || !retry) return
+  const bulkArea = document.querySelector<HTMLSelectElement>("#bulk-area")
+  const areaPicker = "#area-selector-dropdown[data-area-catalog-ready='true']"
+  const initialAreaCatalog = document.querySelector(areaPicker)
+  let areas = applyAreaCatalog(initialAreaCatalog, bulkArea)
 
   const initial = loadTableFilterState()
   initial.area ??= getRememberedAreaId()
@@ -136,10 +143,9 @@ function init(signal: AbortSignal) {
   let resetPageOnRetry = false
   const replacedTitleEditors = new WeakSet<HTMLElement>()
 
-  const renderRows = () => {
-    const stats = JSON.parse(table.dataset.tableStats ?? "{}") as TablePageStats
+  const renderRows = (stats = JSON.parse(table.dataset.tableStats ?? "{}") as TablePageStats) => {
     currentGroupBy = applied.groupBy ?? "none"
-    applyGrouping(currentGroupBy, applied.subGroupBy ?? "none", stats)
+    applyGrouping(currentGroupBy, applied.subGroupBy ?? "none", stats, areas)
     applyColumns(applied.columns)
     updateTableSort(applied.sort)
     shell.dataset.tableFilters = JSON.stringify(applied)
@@ -186,10 +192,16 @@ function init(signal: AbortSignal) {
       const html = new DOMParser().parseFromString(await response.text(), "text/html")
       if (request.signal.aborted || signal.aborted || pending !== request) return
       const replacement = html.querySelector<HTMLTableElement>("#task-table")
+      const areaCatalog = html.querySelector(areaPicker)
       const fragments = ["#task-summary", "#table-pagination", "#table-empty", ".table-container", "#table-workflow-notice"].map(selector =>
         [shell.querySelector<HTMLElement>(selector), html.querySelector<HTMLElement>(selector)] as const)
-      if (!replacement?.tBodies[0] || fragments.some(([current, fresh]) => !current || !fresh)) {
+      if (!replacement?.tBodies[0] || !areaCatalog || fragments.some(([current, fresh]) => !current || !fresh)) {
         throw new Error("Table refresh missing content")
+      }
+      const page = Number(replacement.dataset.tablePage)
+      const stats = JSON.parse(replacement.dataset.tableStats ?? "null") as TablePageStats | null
+      if (!Number.isSafeInteger(page) || page < 1 || !hasTablePageStats(stats)) {
+        throw new Error("Table refresh missing pagination or group totals")
       }
 
       const focused = document.activeElement
@@ -208,6 +220,7 @@ function init(signal: AbortSignal) {
       table.dataset.tablePage = replacement.dataset.tablePage
       table.dataset.tableStats = replacement.dataset.tableStats
       tbody.replaceChildren(...replacement.tBodies[0].children)
+      areas = applyAreaCatalog(areaCatalog, bulkArea)
       for (const [current, fresh] of fragments) {
         current!.hidden = fresh!.hidden
         if (current!.matches("#task-summary, #table-pagination")) current!.replaceChildren(...fresh!.childNodes)
@@ -226,13 +239,13 @@ function init(signal: AbortSignal) {
       }
       // Column visibility can change while the rows are loading.
       applied = { ...nextState, columns: desired.columns ?? initialColumns }
-      saveTableFilterState(applied, Number(table.dataset.tablePage))
+      saveTableFilterState(applied, page)
       const background = taskBackgroundUrl(new URL(location.href))
       for (const link of document.querySelectorAll<HTMLAnchorElement>("[data-view-tab]")) {
         const view = parseTaskView(link.dataset.viewTab ?? null)
         if (view) link.href = taskViewUrl(background, view).href
       }
-      const count = renderRows()
+      const count = renderRows(stats)
       resetPageOnRetry = false
 
       status.classList.add("sr-only")
@@ -277,8 +290,12 @@ function init(signal: AbortSignal) {
     shell.querySelector<HTMLElement>("#table-search")?.focus()
     void refresh(desired, resetPageOnRetry)
   }, { signal })
-  void loadAreas(signal)
   renderRows()
+  if (!initialAreaCatalog && retry.hidden) {
+    status.hidden = false
+    retry.hidden = false
+    message.textContent = window.mI18n?.get("table.area_catalog_failed") ?? "Area names could not load."
+  }
 
   const rowParams = (state: Partial<FilterState>) => {
     const params = new URLSearchParams()
@@ -364,47 +381,29 @@ function applyColumns(columns: readonly string[] | undefined) {
 // Area Data Loading
 // =============================================================================
 
-async function loadAreas(signal: AbortSignal) {
-  try {
-    const res = await fetch("/api/areas", { signal })
-    if (!res.ok) return
-    const data = await res.json()
-    if (signal.aborted) return
-    const boards: AreaInfo[] = data.areas || []
-
-    boards.forEach((b) => {
-      areaMap[b.id] = b
+function applyAreaCatalog(catalog: Element | null, bulkArea: HTMLSelectElement | null): Map<string, AreaDisplay> {
+  const areas = new Map<string, AreaDisplay>()
+  for (const { dataset } of catalog?.querySelectorAll<HTMLElement>("[data-area-id]") ?? []) {
+    const { areaId, areaName, areaIcon, areaColor } = dataset
+    if (areaId && areaName) areas.set(areaId, {
+      label: areaName, icon: areaIcon || "📋", color: areaColor || "var(--accent)",
     })
-
-    // NOTE: Area filter <select> is populated by FilterToolbar's client script
-    // We only populate the bulk board selector and update group headers here
-
-    // Populate bulk board selector
-    const bulkArea = document.getElementById("bulk-area") as HTMLSelectElement | null
-    if (bulkArea) {
-      boards.forEach((b) => {
-        const opt = document.createElement("option")
-        opt.value = b.id
-        opt.textContent = `${b.icon ?? "📋"} ${b.name}`
-        bulkArea.appendChild(opt)
-      })
-    }
-
-    // Update group headers with board names if grouped by board
-    if (currentGroupBy === "area") {
-      updateGroupHeaderLabels()
-    }
-
-  } catch {
-    /* offline fallback — board filter stays as-is */
   }
+  const prompt = bulkArea?.options[0]
+  if (bulkArea && prompt) {
+    const selected = bulkArea.value
+    const options = Array.from(areas, ([id, area]) => new Option(`${area.icon} ${area.label}`, id))
+    bulkArea.replaceChildren(prompt, ...options)
+    bulkArea.value = areas.has(selected) ? selected : ""
+  }
+  return areas
 }
 
 // =============================================================================
 // Row Grouping Engine
 // =============================================================================
 
-function applyGrouping(groupBy: string, subGroupBy: string, stats: TablePageStats) {
+function applyGrouping(groupBy: string, subGroupBy: string, stats: TablePageStats, areas: Map<string, AreaDisplay>) {
   const tbody = document.querySelector<HTMLElement>("#task-table tbody")
   if (!tbody) return
 
@@ -447,7 +446,7 @@ function applyGrouping(groupBy: string, subGroupBy: string, stats: TablePageStat
   for (const [index, key] of groupOrder.entries()) {
     const groupId = `table-group-heading-${index}`
     const groupRows = groups.get(key) ?? []
-    const display = getGroupDisplayForKey(groupBy, key)
+    const display = getGroupDisplayForKey(groupBy, key, areas)
     const isCollapsed = collapsedGroups.includes(key)
 
     // Create group header row
@@ -527,7 +526,7 @@ function applyGrouping(groupBy: string, subGroupBy: string, stats: TablePageStat
       for (const [subIndex, sk] of subOrder.entries()) {
         const subgroupId = `${groupId}-sub-${subIndex}`
         const subRows = subGroups.get(sk) ?? []
-        const subDisplay = getGroupDisplayForKey(subGroupBy, sk)
+        const subDisplay = getGroupDisplayForKey(subGroupBy, sk, areas)
         const subIsCollapsed = collapsedSubs.includes(sk)
 
         const subHeaderRow = document.createElement("tr")
@@ -575,7 +574,15 @@ function applyGrouping(groupBy: string, subGroupBy: string, stats: TablePageStat
         subCount.className = "group-count"
         subCount.textContent = String(subgroupTotals.get(JSON.stringify([key, sk]))?.count ?? 0)
 
-        subContent.append(subToggleBtn, subDot, subLabel, subCount)
+        subContent.append(subToggleBtn, subDot)
+        if (subGroupBy === "area") {
+          const icon = document.createElement("span")
+          icon.className = "group-icon"
+          icon.setAttribute("aria-hidden", "true")
+          icon.textContent = subDisplay.icon
+          subContent.append(icon)
+        }
+        subContent.append(subLabel, subCount)
         subCell.replaceChildren(subContent)
         subHeaderRow.appendChild(subCell)
         fragment.appendChild(subHeaderRow)
@@ -603,10 +610,13 @@ function applyGrouping(groupBy: string, subGroupBy: string, stats: TablePageStat
   renderSummaryRows(tbody, groupTotals, stats.total)
 }
 
-function getGroupDisplayForKey(groupBy: string, key: string): { label: string, icon: string, color: string } {
-  if (groupBy === "area" && areaMap[key]) {
-    const b = areaMap[key]
-    return { label: b.name, icon: b.icon ?? "📋", color: (b.color ?? getComputedStyle(document.documentElement).getPropertyValue("--accent").trim()) || "#146C4E" }
+function getGroupDisplayForKey(groupBy: string, key: string, areas: Map<string, AreaDisplay>): AreaDisplay {
+  if (groupBy === "area") {
+    const area = areas.get(key)
+    if (area) return area
+    if (key !== "default") return {
+      label: window.mI18n?.get("table.unavailable_area") ?? "Unavailable Area", icon: "📋", color: "var(--accent)",
+    }
   }
   return getGroupDisplay(groupBy, key)
 }
@@ -719,24 +729,6 @@ function renderSummaryRows(tbody: HTMLElement, groups: Map<string, TableGroupSta
     tbody.insertBefore(summary(stats), next)
   }
   if (total.count > 0) tbody.append(summary(total, true))
-}
-
-function updateGroupHeaderLabels() {
-  // Called after boards load — updates board group header labels
-  document.querySelectorAll<HTMLElement>(".group-header-row[data-group-by='area']").forEach((header) => {
-    const key = header.dataset.groupKey ?? ""
-    if (areaMap[key]) {
-      const label = header.querySelector<HTMLElement>(".group-label")
-      const icon = header.querySelector<HTMLElement>(".group-icon")
-      const dot = header.querySelector<HTMLElement>(".group-dot")
-      if (label) label.textContent = areaMap[key].name
-      const subgroup = header.classList.contains("sub-group-header-row")
-      header.querySelector(".group-toggle")?.setAttribute("aria-label", `Toggle ${subgroup ? "sub-group" : "group"} ${areaMap[key].name}`)
-      header.querySelector(".group-select-all")?.setAttribute("aria-label", `Select visible tasks in ${areaMap[key].name} on this page`)
-      if (icon) icon.textContent = areaMap[key].icon ?? "📋"
-      if (dot) dot.style.background = (areaMap[key].color ?? getComputedStyle(document.documentElement).getPropertyValue("--accent").trim()) || "#146C4E"
-    }
-  })
 }
 
 // =============================================================================
