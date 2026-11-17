@@ -18,7 +18,7 @@ export function setupUnscheduledSection(
   let timer = 0
   let requestedPage = 1
   let focusRange = false
-  const background = () => taskBackgroundUrl(new URL(location.href))
+  const background = () => taskBackgroundUrl()
   const currentPage = () => Number(list.querySelector<HTMLElement>("#today-unscheduled-page")?.dataset.page ?? 0)
   const isOpen = () => !section.classList.contains("today-section--collapsed")
 

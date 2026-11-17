@@ -453,7 +453,7 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
         window.addEventListener("popstate", event => {
           const session = document.getElementById("task-detail-overlay")?.dataset.ticketHistorySession
           const state = history.state
-          if (session && (state?.ticketBackground === session || state?.ticketDrawer?.session === session)) {
+          if (session && (state?.ticketBackground?.startsWith(session + "-") || state?.ticketDrawer?.session === session)) {
             event.stopImmediatePropagation()
             window.dispatchEvent(new Event("meitheal:ticket-history"))
           }

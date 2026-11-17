@@ -319,7 +319,7 @@ function setupEventDelegation(container: HTMLElement) {
 
     // ── Clear completed ──
     if (target.closest("[data-today-refresh]")) {
-      location.assign(taskBackgroundUrl(new URL(location.href)).href)
+      location.assign(taskBackgroundUrl().href)
       return
     }
     const archive = target.closest<HTMLElement>("[data-today-archive]")

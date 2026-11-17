@@ -23,7 +23,6 @@ import { initPageShellNavigation } from "@lib/page-shell-controller"
 import { escapeHtml, sanitizeCssColor } from "@lib/safe-html"
 import { openTaskDetailHandoff } from "@lib/task-detail-handoff"
 import { TASK_VIEW_LOCATION_EVENT, taskBackgroundUrl } from "@lib/task-page-url"
-import { parseTaskView, taskViewUrl } from "@lib/task-view-route"
 import { loadTableColumnPreferences, TABLE_COLUMNS, TABLE_SECTIONS } from "@lib/table-registry"
 import { getRememberedAreaId } from "@lib/area-selector-controller"
 import {
@@ -168,7 +167,7 @@ function init(signal: AbortSignal) {
     status.hidden = true
     retry.hidden = true
 
-    const url = taskBackgroundUrl(new URL(location.href))
+    const url = taskBackgroundUrl()
     writeTableFilterParams(url.searchParams, nextState)
     for (const key of ["open", "comment"]) url.searchParams.delete(key)
     if (resetPage) url.searchParams.delete("tp")
@@ -228,11 +227,6 @@ function init(signal: AbortSignal) {
       applied = { ...nextState, columns: desired.columns ?? initialColumns }
       saveTableFilterState(applied, Number(table.dataset.tablePage))
       document.dispatchEvent(new Event(TASK_VIEW_LOCATION_EVENT))
-      const background = taskBackgroundUrl(new URL(location.href))
-      for (const link of document.querySelectorAll<HTMLAnchorElement>("[data-view-tab]")) {
-        const view = parseTaskView(link.dataset.viewTab ?? null)
-        if (view) link.href = taskViewUrl(background, view, true).href
-      }
       const count = renderRows()
       resetPageOnRetry = false
 

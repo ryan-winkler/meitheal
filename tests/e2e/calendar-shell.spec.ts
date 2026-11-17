@@ -160,9 +160,15 @@ test.describe("Calendar Shell", () => {
     await page.waitForLoadState("networkidle")
 
     const table = page.getByRole("navigation", { name: "Task views" }).getByRole("link", { name: "Table" })
+    await page.getByRole("toolbar", { name: "Filter tasks" }).getByRole("textbox", { name: "Filter by text" }).fill("heating")
+    await expect(page).toHaveURL(url => url.searchParams.get("search") === "heating")
+    await expect.poll(() => table.evaluate(link => new URL((link as HTMLAnchorElement).href).searchParams.get("search"))).toBe("heating")
     await table.click()
 
-    await expect(page).toHaveURL(/\/tasks\?status=active&priority=1&view=table#table$/)
+    await expect(page).toHaveURL(url =>
+      url.pathname === "/tasks" && url.hash === "#table" && url.searchParams.get("search") === "heating" &&
+      url.searchParams.get("status") === "active" && url.searchParams.get("priority") === "1",
+    )
     await expect(table).toHaveAttribute("aria-current", "page")
   })
 
@@ -692,10 +698,12 @@ test.describe("Calendar Shell", () => {
     await page.goto("/tasks?view=calendar&year=2031&month=6&types=calendar_event#calendar")
     await expect(during.getByText("Household calendar preview")).toBeVisible()
     const events = types.getByRole("button", { name: "Events", exact: true })
+    await expect(events).toHaveCSS("box-shadow", /1px inset$/)
     await events.click()
     await expect(events).toHaveAttribute("aria-pressed", "false")
     await page.mouse.move(0, 0)
     await expect(events).toHaveCSS("opacity", "1")
+    await expect(events).toHaveCSS("box-shadow", "none")
     await expect(during.getByText("Household calendar preview")).toHaveCount(0)
   })
 

@@ -83,6 +83,17 @@ test.describe("Table Shell", () => {
     await page.locator("#td-close").click()
     await expect(page).toHaveURL(url => url.pathname === "/tasks" && url.searchParams.get("search") === matching.title)
     await expect(table.getByRole("row").filter({ hasText: matching.title })).toBeVisible()
+
+    await page.getByRole("textbox", { name: "Filter by text" }).fill(other.title)
+    await expect(page).toHaveURL(url => url.searchParams.get("search") === other.title)
+    await expect(table.getByRole("row").filter({ hasText: matching.title })).toBeHidden()
+    await page.evaluate(() => history.forward())
+    await expect(page).toHaveURL(/\/tickets\/[^?]+$/)
+    await expect(page.locator("#td-status")).toBeEnabled()
+    const calendar = page.getByRole("navigation", { name: "Task views" }).locator('[data-view-tab="calendar"]')
+    await expect.poll(() => calendar.evaluate(link => new URL((link as HTMLAnchorElement).href).searchParams.get("search"))).toBe(other.title)
+    await page.locator("#td-close").click()
+    await expect(page).toHaveURL(url => url.pathname === "/tasks" && url.searchParams.get("search") === other.title)
   })
 
   test("filtered empty state can clear criteria and return to the task list", async ({ page, tableTasks }) => {

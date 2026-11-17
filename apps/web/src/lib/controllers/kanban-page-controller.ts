@@ -25,7 +25,7 @@ export function initKanbanPage(signal: AbortSignal): void {
   let board = initialBoard
   let boardLifetime = new AbortController()
   let pending: AbortController | undefined
-  let desired = taskBackgroundUrl(new URL(location.href))
+  let desired = taskBackgroundUrl()
   let lastFocus: KanbanRefreshFocus | undefined
   let resetScroll = false
   let requestNumber = 0
@@ -108,7 +108,7 @@ export function initKanbanPage(signal: AbortSignal): void {
         if (list && !reset && lane.dataset.status !== focus?.lane) list.scrollTop = scroll.get(lane.dataset.status) ?? 0
       }
       // A view or task-detail navigation can change the hash while a board request is in flight.
-      url.hash = taskBackgroundUrl(new URL(location.href)).hash
+      url.hash = taskBackgroundUrl().hash
       if (!dataOnly) {
         replaceTaskBackgroundUrl(url)
         document.dispatchEvent(new Event(TASK_VIEW_LOCATION_EVENT))

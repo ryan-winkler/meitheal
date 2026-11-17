@@ -96,6 +96,7 @@
         const RICE_KEYS = ["Reach", "Impact", "Confidence", "Effort"];
         const drawerSession = crypto.randomUUID?.() ?? Array.from(crypto.getRandomValues(new Uint8Array(16)),
           byte => byte.toString(16).padStart(2, "0")).join("")
+        let drawerEntry = 0
         tdOverlay.dataset.ticketHistorySession = drawerSession
 
         const dockMedia = window.matchMedia("(min-width: 1440px)")
@@ -171,8 +172,9 @@
             const state = { ...history.state, ticketDrawer: { returnTo: url.href, session: drawerSession, pushed: !legacy && !replace } }
             if (legacy || replace) history.replaceState(state, "", target)
             else {
-              history.replaceState({ ...history.state, ticketBackground: drawerSession }, "")
-              history.pushState(state, "", target)
+              const ticketBackground = `${drawerSession}-${++drawerEntry}`
+              history.replaceState({ ...history.state, ticketBackground }, "")
+              history.pushState({ ...state, ticketBackground }, "", target)
             }
             saveNavigationState()
           } else if (ticket !== null) {

@@ -2917,7 +2917,7 @@ export function initTimelineController(signal: AbortSignal) {
   }) as EventListener, { signal })
 
   function applyFilters(): void {
-    const url = taskBackgroundUrl(new URL(location.href))
+    const url = taskBackgroundUrl()
     for (const key of ["search", "status", "priority", "groupBy"] as const) {
       const value = currentFilter[key]
       if (value && value !== "none") url.searchParams.set(key, value)

@@ -12,7 +12,7 @@ export function ticketIdFromPath(pathname: string, ingressPath = ""): string | n
   try { return decodeURIComponent(match[1]) } catch { return null }
 }
 
-export function taskBackgroundUrl(current: URL): URL {
+export function taskBackgroundUrl(current = new URL(location.href)): URL {
   if (ticketIdFromPath(current.pathname, window.__ingress_path) === null) return new URL(current)
   const returnTo = history.state?.ticketDrawer?.returnTo
   const fallback = `${window.__ingress_path || ""}/tasks#kanban`
@@ -21,20 +21,31 @@ export function taskBackgroundUrl(current: URL): URL {
     ? url : new URL(fallback, current.origin)
 }
 
-// The prior history entry can only be updated once it becomes active again.
-let pendingBackground: { session: string; href: string } | undefined
+// Keep the last changed URL until either companion history entry becomes active.
+let backgroundUpdate: { key: string; href: string } | undefined
+
+function writeTicketReturnTo(href: string): void {
+  history.replaceState({ ...history.state, ticketDrawer: { ...history.state?.ticketDrawer, returnTo: href } }, "")
+}
 
 export function restoreTaskBackgroundUrl(): void {
-  if (!pendingBackground || history.state?.ticketBackground !== pendingBackground.session) return
-  history.replaceState(history.state, "", pendingBackground.href)
-  pendingBackground = undefined
+  if (!backgroundUpdate || history.state?.ticketBackground !== backgroundUpdate.key) return
+  const { href } = backgroundUpdate
+  if (ticketIdFromPath(location.pathname, window.__ingress_path) !== null) {
+    if (history.state?.ticketDrawer?.returnTo === href) return
+    writeTicketReturnTo(href)
+  } else {
+    if (location.href === href) return
+    history.replaceState(history.state, "", href)
+  }
+  document.dispatchEvent(new Event(TASK_VIEW_LOCATION_EVENT))
 }
 
 export function replaceTaskBackgroundUrl(url: URL): void {
+  const key = history.state?.ticketBackground
   if (ticketIdFromPath(location.pathname, window.__ingress_path) !== null) {
-    const drawer = history.state?.ticketDrawer
-    if (drawer?.pushed) pendingBackground = { session: drawer.session, href: url.href }
-    history.replaceState({ ...history.state, ticketDrawer: { ...drawer, returnTo: url.href } }, "")
+    if (history.state?.ticketDrawer?.pushed && key) backgroundUpdate = { key, href: url.href }
+    writeTicketReturnTo(url.href)
     return
   }
   const current = new URLSearchParams(location.search)
@@ -43,5 +54,6 @@ export function replaceTaskBackgroundUrl(url: URL): void {
     if (value === null) url.searchParams.delete(key)
     else url.searchParams.set(key, value)
   }
+  if (key) backgroundUpdate = { key, href: url.href }
   history.replaceState(history.state, "", url)
 }

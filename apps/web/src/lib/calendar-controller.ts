@@ -55,7 +55,7 @@ export function initCalendarPage(signal: AbortSignal): void {
   const trap = createFocusTrap(panel)
   let timezone = shell.dataset.timezone || "Europe/Dublin"
   let month = initialMonth
-  let desired = taskBackgroundUrl(new URL(location.href))
+  let desired = taskBackgroundUrl()
   let applied = new URL(desired)
   let retryTarget = initialMonth.dataset.calendarAvailable === "false" ? new URL(applied) : undefined
   let refreshRequest: AbortController | undefined

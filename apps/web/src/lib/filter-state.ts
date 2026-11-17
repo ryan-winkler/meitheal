@@ -343,7 +343,7 @@ export function writeTableFilterParams(params: URLSearchParams, state: Partial<F
 }
 
 export function loadTableFilterState(): Partial<FilterState> {
-  const params = taskBackgroundUrl(new URL(location.href)).searchParams
+  const params = taskBackgroundUrl().searchParams
   if (TABLE_KEYS.some(key => params.has(key))) return readTableFilterParams(params)
   const state = normalizeTableValues({ ...loadFilterState() })
   delete state.area
@@ -357,7 +357,7 @@ export function saveTableFilterState(state: Partial<FilterState>, page?: number)
     const { laneIds: _laneIds, createdFrom: _createdFrom, createdThrough: _createdThrough, ...sharedState } = state
     localStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(sharedState))
   } catch { /* storage unavailable */ }
-  const url = taskBackgroundUrl(new URL(location.href))
+  const url = taskBackgroundUrl()
   writeTableFilterParams(url.searchParams, state)
   if (page !== undefined) {
     if (page > 1) url.searchParams.set("tp", String(page))
@@ -373,7 +373,7 @@ export function saveTableFilterState(state: Partial<FilterState>, page?: number)
 export function saveFilterState(state: Partial<FilterState>): void {
   localStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(state))
 
-  const url = taskBackgroundUrl(new URL(location.href))
+  const url = taskBackgroundUrl()
   for (const key of SCALAR_KEYS) {
     const val = state[key]
     if (typeof val === "string" && val && val !== DEFAULT_SORT) {
@@ -406,7 +406,7 @@ export function saveFilterState(state: Partial<FilterState>): void {
  * Returns a partial state — callers apply only the fields they support.
  */
 export function loadFilterState(): Partial<FilterState> {
-  const urlParams = taskBackgroundUrl(new URL(location.href)).searchParams
+  const urlParams = taskBackgroundUrl().searchParams
   const hasUrlFilters = ALL_KEYS.some((k) => urlParams.has(k))
 
   if (hasUrlFilters) {
@@ -443,7 +443,7 @@ export function loadFilterState(): Partial<FilterState> {
  */
 export function clearFilterState(): void {
   localStorage.removeItem(FILTER_STORAGE_KEY)
-  const url = taskBackgroundUrl(new URL(location.href))
+  const url = taskBackgroundUrl()
   for (const key of ALL_KEYS) {
     url.searchParams.delete(key)
   }
