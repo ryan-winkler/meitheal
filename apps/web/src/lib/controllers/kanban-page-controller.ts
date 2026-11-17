@@ -2,6 +2,7 @@ import { getRememberedAreaId, getSelectedAreaId } from "@lib/area-selector-contr
 import { replaceTaskBackgroundUrl, taskBackgroundUrl } from "@lib/task-page-url"
 import { DEFERRAL_RECONCILED, type DeferralReconciliation } from "@lib/deferral-client"
 import { initKanbanArea } from "@lib/kanban-controller"
+import { isActiveStatus } from "@lib/status-config"
 import { hydrateTaskAssignees } from "@lib/task-assignee-display"
 import { KANBAN_GROUP_KEY, readKanbanFilters, setKanbanPage, storedKanbanGroup, updateKanbanFilters, type KanbanFilters } from "@lib/kanban-query"
 import { initKanbanInactivity } from "./kanban-inactivity"
@@ -189,6 +190,13 @@ export function initKanbanPage(signal: AbortSignal): void {
   }, { signal })
   window.addEventListener("pageshow", event => {
     if (event.persisted) void refresh()
+  }, { signal })
+  document.addEventListener("meitheal:task-status-saved", event => {
+    const { id, status } = (event as CustomEvent<{ id: string; status: string }>).detail
+    const card = board.querySelector<HTMLElement>(`.kanban-card[data-id="${CSS.escape(id)}"]`)
+    if (!card || typeof status !== "string" || card.dataset.status === status) return
+    card.toggleAttribute("data-work-active", isActiveStatus(status))
+    void refresh({ taskId: id, lane: status })
   }, { signal })
   document.addEventListener("meitheal:area-changed", () => {
     syncAreaLinks(getSelectedAreaId())

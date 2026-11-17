@@ -1,6 +1,7 @@
 import { DASHBOARD_SECTIONS, type DashboardSectionId } from "@lib/dashboard-registry"
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { quickAddPayload } from "@lib/quick-add"
+import { getStatusLabel, isActiveStatus, isClosedStatus, isDoneStatus } from "@lib/status-config"
 import { taskApi } from "@lib/task-api-client"
 import { showToast } from "@lib/toast"
 import {
@@ -273,10 +274,11 @@ function initQuickAddForm(): void {
   })
 }
 
-function initOpenTaskFilter(): void {
+function initOpenTaskFilter(): (() => void) | undefined {
   const openSelect = document.getElementById("my-open-user-filter") as HTMLSelectElement | null
   const openList = document.getElementById("my-open-list")
   const openCount = document.getElementById("my-open-count")
+  const empty = document.getElementById("my-open-empty")
   const titleEl = document.getElementById("open-tasks-title")
   const kanbanLink = document.getElementById("kanban-link") as HTMLAnchorElement | null
   if (!openSelect || !openList) return
@@ -297,11 +299,13 @@ function initOpenTaskFilter(): void {
 
         if (value === "__unassigned__") show = !assigned
         else if (value !== "all") show = assigned === value
+        show &&= !isClosedStatus(item.dataset.status ?? "")
 
         item.style.display = show ? "" : "none"
         if (show) visible += 1
       })
 
+    if (empty) empty.hidden = visible !== 0
     if (openCount) {
       openCount.textContent = `${visible} open task${visible !== 1 ? "s" : ""}`
     }
@@ -351,6 +355,7 @@ function initOpenTaskFilter(): void {
     localStorage.setItem("meitheal-dashboard-user-filter", select.value)
     applyOpenFilter()
   })
+  return applyOpenFilter
 }
 
 function initTaskDetailLaunchers(): void {
@@ -385,8 +390,24 @@ function bootDashboardPage(): void {
 
   initDashboardShell()
   initQuickAddForm()
-  initOpenTaskFilter()
+  const updateOpenQueue = initOpenTaskFilter()
   initTaskDetailLaunchers()
+  pageLifecycle.on(document, "meitheal:task-status-saved", event => {
+    const { id, status, deferred } = (event as CustomEvent<{ id: string; status: string; deferred?: boolean }>).detail
+    if (typeof status !== "string") return
+    const done = isDoneStatus(status)
+    for (const card of shell.querySelectorAll<HTMLElement>(`:is(.task-item, .bento-card)[data-id="${CSS.escape(id)}"]`)) {
+      card.toggleAttribute("data-work-active", isActiveStatus(status))
+      card.dataset.status = status
+      card.querySelector(".bento-card-title")?.classList.toggle("done", done)
+      const badge = card.querySelector(".task-badge")
+      if (!badge) continue
+      badge.className = "task-badge badge-" + (done ? "complete" : status)
+      badge.textContent = getStatusLabel(status) + (deferred && card.classList.contains("bento-card")
+        ? " · " + (window.mI18n?.get("deferral.title") ?? "Deferred") : "")
+    }
+    updateOpenQueue?.()
+  })
 }
 
 bootDashboardPage()

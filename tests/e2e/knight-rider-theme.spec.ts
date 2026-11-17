@@ -228,3 +228,51 @@ test("Knight Rider persists and fills active work and task colors on Today and B
     await request.put("/api/settings", { data: { key: "theme", value: "dark" } })
   }
 })
+
+
+test("Details completion clears Knight Rider active work on Dashboard and Board", async ({ page, request }) => {
+  await page.addInitScript(() => localStorage.setItem("meitheal-theme", "knight-rider"))
+  await page.emulateMedia({ reducedMotion: "reduce" })
+  const title = "Finish the active card from Details"
+  const created = await request.post("/api/tasks", { data: { title, status: "active" } })
+  expect(created.status()).toBe(201)
+  const { id } = await created.json()
+  const status = page.locator("#td-status")
+  const done = page.locator("#td-toggle-done")
+  const close = page.getByRole("button", { name: "Close detail" })
+  const card = page.locator(`.kanban-card[data-id="${id}"]`)
+  const link = card.locator(".card-open-btn")
+  try {
+    await page.goto("/")
+    const dashboard = page.locator(`#dashboard-recent .bento-card[data-id="${id}"]`)
+    const openQueue = page.locator(`#my-open-list [data-id="${id}"]`)
+    await expect(dashboard).toHaveAttribute("data-work-active", "")
+    await expect(openQueue).toBeVisible()
+    const edit = dashboard.getByRole("button", { name: "Edit task" })
+    await edit.click()
+    await expect(status).toHaveValue("active")
+    await done.click()
+    await expect(status).toHaveValue("complete")
+    await expect(dashboard).not.toHaveAttribute("data-work-active", "")
+    await expect(dashboard.locator(".task-badge")).toHaveText("Done")
+    await expect(openQueue).toBeHidden()
+    await expect(page.locator("#my-open-empty")).toHaveText("No open tasks for this selection.")
+    await close.click()
+    await expect(edit).toBeFocused()
+
+    await page.goto("/tasks#kanban")
+    await expect(card).toHaveAttribute("data-status", "complete")
+    await link.press("Enter")
+    await expect(status).toHaveValue("complete")
+    await status.selectOption("active")
+    await expect(card).toHaveAttribute("data-status", "active")
+    await expect(card).toHaveAttribute("data-work-active", "")
+    await done.click()
+    await expect(card).toHaveAttribute("data-status", "complete")
+    await expect(card).not.toHaveAttribute("data-work-active", "")
+    await close.click()
+    await expect(link).toBeFocused()
+  } finally {
+    await request.delete(`/api/tasks/${id}`)
+  }
+})

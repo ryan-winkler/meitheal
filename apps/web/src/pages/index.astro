@@ -436,49 +436,46 @@ const heroHintHref =
 
         <div class="task-list" id="my-open-list">
           {
-            openTasks.length === 0 ? (
-              <div class="dashboard-empty-note">
-                Everything is caught up here - no open tasks at the moment.
-              </div>
-            ) : (
-              openTasks.map((task) => {
-                const priority = Number(task.priority ?? 3)
-                const priorityColor = getPriorityColor(priority)
-                const ticketNumber = task.ticket_number
-                  ? `MTH-${String(task.ticket_number).padStart(3, "0")}`
-                  : null
-                const statusLabel =
-                  statusLabels[String(task.status)] ?? String(task.status)
+            openTasks.map((task) => {
+              const priority = Number(task.priority ?? 3)
+              const priorityColor = getPriorityColor(priority)
+              const ticketNumber = task.ticket_number
+                ? `MTH-${String(task.ticket_number).padStart(3, "0")}`
+                : null
+              const statusLabel =
+                statusLabels[String(task.status)] ?? String(task.status)
 
-                return (
-                  <div
-                    class="task-item cursor-pointer"
-                    {...taskSurface(String(task.status), task.color)}
-                    data-id={String(task.id)}
-                    data-assigned={String(task.assigned_to ?? "")}
-                  >
-                    <div class="task-title">
-                      <span class="priority-dot" style={`background: ${priorityColor}`} />
-                      {ticketNumber && (
-                        <span class="dashboard-ticket-key">{ticketNumber}</span>
-                      )}
-                      {String(task.title)}
-                    </div>
-                    <div class="dashboard-task-meta">
-                      <span class={`task-badge badge-${String(task.status)}`}>
-                        {statusLabel}
-                      </span>
-                      {task.due_date && (
-                        <span class="text-xs text-text-muted">
-                          {relativeTime(String(task.due_date))}
-                        </span>
-                      )}
-                    </div>
+              return (
+                <div
+                  class="task-item cursor-pointer"
+                  {...taskSurface(String(task.status), task.color)}
+                  data-id={String(task.id)}
+                  data-assigned={String(task.assigned_to ?? "")}
+                >
+                  <div class="task-title">
+                    <span class="priority-dot" style={`background: ${priorityColor}`} />
+                    {ticketNumber && (
+                      <span class="dashboard-ticket-key">{ticketNumber}</span>
+                    )}
+                    {String(task.title)}
                   </div>
-                )
-              })
-            )
+                  <div class="dashboard-task-meta">
+                    <span class={`task-badge badge-${String(task.status)}`}>
+                      {statusLabel}
+                    </span>
+                    {task.due_date && (
+                      <span class="text-xs text-text-muted">
+                        {relativeTime(String(task.due_date))}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )
+            })
           }
+        </div>
+        <div class="dashboard-empty-note" id="my-open-empty" hidden={openTasks.length > 0}>
+          No open tasks for this selection.
         </div>
       </div>
     </section>

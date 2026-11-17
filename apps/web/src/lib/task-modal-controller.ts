@@ -192,6 +192,7 @@
           if (!tdOverlay?.classList.contains("active") || (!immediate && tdOverlay.classList.contains("closing"))) return
           if (!immediate && waitForDetailWrites(() => closeTD(reason, updateLocation))) return
           const closing = ++detailGeneration
+          const previousCard = _previouslyFocused?.closest<HTMLElement>(".kanban-card")
           closeTaskReferences()
           search?.lifetime.abort()
           deferral.opening(false)
@@ -215,7 +216,8 @@
             _sidebarChevron?.classList.remove("td-chevron-open");
             // P3-4: Restore focus to the element that triggered the panel
             const origin = _previouslyFocused?.isConnected ? _previouslyFocused
-              : _previouslyFocused?.id ? document.getElementById(_previouslyFocused.id) : null
+              : _previouslyFocused?.id ? document.getElementById(_previouslyFocused.id)
+              : previousCard ? document.querySelector<HTMLElement>(`.card-open-btn[data-id="${CSS.escape(previousCard.dataset.id ?? "")}"]`) : null
             if (!search && origin instanceof HTMLElement && origin !== document.body &&
                 !origin.closest("[hidden], [inert], .filtered-out")) {
               origin.focus()
@@ -1135,7 +1137,7 @@
               notifyInactivityTaskChanged(field === "status" ? undefined : taskId)
               if (field === "status") {
                 const task = await response.json()
-                document.dispatchEvent(new CustomEvent("meitheal:task-status-saved", { detail: { id: taskId, status: task.status } }))
+                document.dispatchEvent(new CustomEvent("meitheal:task-status-saved", { detail: { id: taskId, status: task.status, deferred: task.deferred_at != null } }))
                 if (value === "complete" && (!search || generation === detailGeneration)) onTaskCompleted(task)
               }
               return !search || generation === detailGeneration
