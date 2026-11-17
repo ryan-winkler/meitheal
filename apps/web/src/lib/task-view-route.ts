@@ -8,7 +8,10 @@ export function parseTaskView(value: string | null): TaskView | undefined {
 export function taskViewUrl(current: URL, view: TaskView): URL {
   const url = new URL(current)
   if (view === "kanban") url.searchParams.delete("view")
-  else url.searchParams.set("view", view)
+  else {
+    url.searchParams.set("view", view)
+    if (url.searchParams.get("groupBy") === "epic") url.searchParams.delete("groupBy")
+  }
   if (view !== "table") url.searchParams.delete("tp")
   url.hash = view
   return url

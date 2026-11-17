@@ -11,6 +11,7 @@ export interface KanbanRefreshFocus {
   lane?: string | undefined
   taskId?: string | undefined
   firstPage?: boolean
+  detail?: boolean
 }
 
 export function initKanbanPage(signal: AbortSignal): void {
@@ -120,11 +121,15 @@ export function initKanbanPage(signal: AbortSignal): void {
       renderStatus("")
 
       if (!dataOnly && shouldFocus && (focus || active === retry)) {
-        const card = focus?.taskId ? board.querySelector<HTMLElement>(`.kanban-card[data-id="${CSS.escape(focus.taskId)}"] .card-more-btn`) : null
         const lane = focus?.lane ? board.querySelector<HTMLElement>(`.kanban-column[data-status="${CSS.escape(focus.lane)}"]`) : null
+        const card = focus?.taskId && (focus.detail ? lane ?? board : board).querySelector<HTMLElement>(
+          `.kanban-card[data-id="${CSS.escape(focus.taskId)}"] ${focus.detail ? ".card-open-btn" : ".card-more-btn"}`,
+        )
         const range = lane && (lane.querySelector<HTMLElement>("[data-kanban-range]") ??
           lane.querySelector<HTMLElement>(".kanban-column-header"))
-        ;(card || range || board.querySelector<HTMLElement>(".kanban-column-header"))?.focus()
+        const collapsed = card && card.closest(".swimlane-collapsed")
+        const target = collapsed ? collapsed.querySelector<HTMLButtonElement>("button.swimlane-header") : card
+        ;(target || range || board.querySelector<HTMLElement>(".kanban-column-header"))?.focus()
       }
     } catch {
       if (!request.signal.aborted && !signal.aborted) {
@@ -190,6 +195,12 @@ export function initKanbanPage(signal: AbortSignal): void {
   }, { signal })
   window.addEventListener("pageshow", event => {
     if (event.persisted) void refresh()
+  }, { signal })
+  document.addEventListener("kanban:epic-change", () => {
+    if (desired.searchParams.get("groupBy") !== "epic") return
+    const card = document.activeElement?.closest<HTMLElement>(".kanban-card")
+    const lane = card?.closest<HTMLElement>(".kanban-column")
+    void refresh(card ? { lane: lane?.dataset.status, taskId: card.dataset.id, detail: true } : undefined)
   }, { signal })
   document.addEventListener("meitheal:area-changed", () => {
     syncInactivityLink(getSelectedAreaId())

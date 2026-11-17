@@ -36,9 +36,7 @@ export function initKanbanGrouping(board: HTMLElement): void {
           if (countEl) countEl.textContent = String(cards.length)
         })
     })
-  } else if (mode === "area" || mode === "priority") {
-    // Dynamic swimlane generation for board/priority
-    const dataAttr = mode === "area" ? "area" : "priority"
+  } else if (mode === "area" || mode === "priority" || mode === "epic") {
     const icons: Record<string, string> =
       mode === "priority"
         ? {
@@ -73,18 +71,19 @@ export function initKanbanGrouping(board: HTMLElement): void {
       )
 
       // Collect unique values
-      const groups = new Map<string, Element[]>()
+      const groups = new Map<string, HTMLElement[]>()
       flatCards.forEach((card) => {
         const val =
-          (card as HTMLElement).dataset[dataAttr] ||
-          (mode === "priority" ? "3" : "default")
+          card.dataset[mode] ||
+          (mode === "priority" ? "3" : mode === "epic" ? "epic:none" : "default")
         if (!groups.has(val)) groups.set(val, [])
         groups.get(val)!.push(card)
       })
 
-      // Sort: priority by number, board alphabetically
+      const epicLabel = (key: string) => groups.get(key)?.[0]?.dataset.epicLabel || board.dataset.noEpicLabel || "No Epic"
       const sortedKeys = Array.from(groups.keys()).sort((a, b) => {
         if (mode === "priority") return Number(a) - Number(b)
+        if (mode === "epic") return epicLabel(a).localeCompare(epicLabel(b))
         return a.localeCompare(b)
       })
 
@@ -99,8 +98,9 @@ export function initKanbanGrouping(board: HTMLElement): void {
 
         const header = document.createElement("div")
         header.className = "swimlane-header"
-        const label =
-          icons[key] || (mode === "area" ? (areaTitleMap[key] || `📋 ${key}`) : defaultLabel)
+        const label = mode === "epic"
+          ? epicLabel(key)
+          : icons[key] || (mode === "area" ? (areaTitleMap[key] || `📋 ${key}`) : defaultLabel)
         const toggleSpan = document.createElement("span")
         toggleSpan.className = "swimlane-toggle"
         toggleSpan.textContent = "▼"

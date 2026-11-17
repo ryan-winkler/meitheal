@@ -410,6 +410,7 @@ try {
     data-inactivity-upcoming={t("inactivity.upcoming", locale)}
     data-inactivity-stalled={t("inactivity.stalled", locale)}
     data-group-by={kanbanFilters.groupBy}
+    data-no-epic-label={t("kanban.group_no_epic", locale)}
     data-backlog-mode={backlogMode}
     data-reaction-count-label={t("reactions.card_count", locale)}
     style={`padding: 0 0 8px; grid-template-columns: repeat(${columns.length}, 1fr);`}
@@ -492,6 +493,7 @@ try {
               })}
               {/* Flat (non-grouped) card rendering */}
               {colTasks.map((task) => {
+                const epicGroup = lane?.epicsByCard.get(task.id)
                 const p = Number(task.priority ?? 3);
                 const ticketKey = formatTicketKey(Number(task.ticket_number));
                 const tt = String(task.task_type ?? "task");
@@ -553,6 +555,8 @@ try {
                     data-task-type={tt}
                     data-task-kind={String(task.task_kind ?? "standard_action")}
                     data-area={String(task.area_id ?? "default")}
+                    data-epic={epicGroup?.id}
+                    data-epic-label={epicGroup?.label}
                     data-assigned={String(task.assigned_to ?? "")}
                     data-labels={String(task.labels ?? "[]")}
                     data-task-id={task.id}

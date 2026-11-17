@@ -44,6 +44,8 @@ export { TaskHandoff } from "./persistence/task-handoff"
 export {
   taskInsertStatement,
   TaskRepository,
+  type KanbanIndexRow,
+  type KanbanLane,
   type ReassignmentReplayState,
   type TaskCatalogRow,
 } from "./persistence/task-repository"
@@ -55,6 +57,7 @@ export {
   taskLabelsJson,
 } from "./task-creation-service"
 export { startInactivityScheduler } from "./task-inactivity-scheduler"
+export { resolveTaskEpics } from "./task-epic-groups"
 export {
   boardDraftHeader,
   hasBoardSelection,

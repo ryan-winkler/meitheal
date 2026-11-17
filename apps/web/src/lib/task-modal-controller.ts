@@ -180,6 +180,13 @@
           }
         }
 
+        let epicGroupingDirty = false
+        function reconcileEpicGrouping() {
+          if (!epicGroupingDirty || __signal.aborted) return
+          epicGroupingDirty = false
+          document.dispatchEvent(new Event("kanban:epic-change"))
+        }
+
         function closeTD(reason: SearchDetailDismissal = "dismiss", updateLocation = true) {
           const search = searchSession
           const immediate = reason === "history" && Boolean(search)
@@ -222,6 +229,7 @@
             if (closed && (closed.dirty || deferralChanged)) closed.reconcile()
             if (search?.dirty && !search.pending && !deferralChanged) deferral.reconcileSearch()
             search?.handoff.onDismiss(reason)
+            reconcileEpicGrouping()
           };
 
           if (reducedMotion || immediate || document.body.classList.contains("has-docked-inspector")) {
@@ -1110,6 +1118,10 @@
             })
             saved = response.ok
             if (saved) {
+              if (field === "parent_id" || field === "task_type" || field === "title") {
+                epicGroupingDirty = true
+                if (!tdOverlay.classList.contains("active")) reconcileEpicGrouping()
+              }
               notifyInactivityTaskChanged(field === "status" ? undefined : taskId)
               if (field === "status" && value === "complete" && (!search || generation === detailGeneration)) {
                 onTaskCompleted(await response.json())

@@ -1,6 +1,11 @@
-import type { KanbanIndexRow, KanbanLane, TaskRepository } from "@domains/tasks/persistence/task-repository"
+import sanitizeHtml from "sanitize-html"
+
+import { resolveTaskEpics, type KanbanIndexRow, type KanbanLane, type TaskRepository } from "@domains/tasks"
 import { isTaskVisible } from "./filter-state"
 import { KANBAN_PAGE_SIZE, readKanbanFilters, readKanbanPage } from "./kanban-query"
+import { formatTicketKey } from "./ticket-key"
+
+const titleCharacters = { amp: "&", lt: "<", gt: ">" }
 
 export async function loadKanbanBoard(
   repo: TaskRepository,
@@ -55,10 +60,31 @@ export async function loadKanbanBoard(
       const offset = (page - 1) * KANBAN_PAGE_SIZE
       return { key: lane.key, total, matches: matches.length, pageCount, page, offset, ids: matches.slice(offset, offset + KANBAN_PAGE_SIZE).map(task => task.id) }
     })
-    const cards = new Map((await repo.getKanbanCards([...new Set(pages.flatMap(page => page.ids))], cutoff, reader)).map(task => [task.id, task]))
+    const visibleIds = [...new Set(pages.flatMap(page => page.ids))]
+    const cards = new Map((await repo.getKanbanCards(visibleIds, cutoff, reader)).map(task => [task.id, task]))
+    const epicsByCard = new Map<string, { id: string; label: string }>()
+    if (filters.groupBy === "epic" && visibleIds.length) {
+      const links = resolveTaskEpics(await repo.getHouseholdEpicLinks(reader))
+      const labels = new Map<string, string>()
+      for (const id of visibleIds) {
+        const epic = links.get(id)
+        if (!epic) continue
+        let label = labels.get(epic.id)
+        if (!label) {
+          const title = sanitizeHtml(epic.title ?? "", { allowedTags: [], allowedAttributes: {} })
+            .replace(/&(amp|lt|gt);/g, (_, entity: keyof typeof titleCharacters) => titleCharacters[entity])
+            .replace(/\s+/g, " ").trim()
+          const reference = formatTicketKey(epic.ticket_number) ?? `#${epic.id.slice(0, 8)}`
+          label = title ? `${title} (${reference})` : reference
+          labels.set(epic.id, label)
+        }
+        epicsByCard.set(id, { id: `epic:${epic.id}`, label })
+      }
+    }
     return new Map(pages.map(page => [page.key, {
       ...page,
       cards: page.ids.flatMap(id => cards.get(id) ?? []),
+      epicsByCard,
     }]))
   })
 }
