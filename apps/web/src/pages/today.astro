@@ -42,6 +42,7 @@ let todayTasks: TaskViewItem[] = []
 let noDueTasks: TaskViewItem[] = []
 let suggestedTasks: TaskViewItem[] = []
 let focusStackTasks: TaskViewItem[] = []
+let focusCandidateIds = new Set<string>()
 let completedTodayCount = 0
 let completedTaskSummaries: Awaited<ReturnType<typeof getTodayTaskRows>>["completedTasks"] = []
 let unscheduledCount = 0
@@ -123,6 +124,7 @@ try {
       return 0
     })
   focusStackTasks = focusCandidates.slice(0, 3)
+  focusCandidateIds = new Set(focusCandidates.map(task => task.id))
 
   const unscheduledAfterSuggestions = openUnscheduledCount - suggestedIds.size
   totalOpenCount = carriedForwardTasks.length + todayTasks.length + unscheduledAfterSuggestions
@@ -470,7 +472,7 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
         </button>
         <div class="today-section__list" id="today-pinned-list" data-today-task-list>
           {pinnedTasks.map(task => (
-            <TaskListItem task={task} showSnooze showActions section="Shared favorites" />
+            <TaskListItem task={task} showSnooze showActions focusEligible={focusCandidateIds.has(task.id)} section="Shared favorites" />
           ))}
         </div>
       </div>

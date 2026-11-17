@@ -95,6 +95,58 @@ test("reopening from Completed today moves a rescheduled task out of its old lis
   }
 })
 
+test("reopening a due favorite keeps its original Focus Stack card", async ({ page, request }) => {
+  await page.addInitScript(() => localStorage.setItem("meitheal-theme", "knight-rider"))
+  await page.emulateMedia({ reducedMotion: "reduce" })
+  const title = "Review a favorite due today"
+  const today = calendarToday()
+  const created = await request.post("/api/tasks", {
+    data: { title, due_date: today, priority: 1, is_favorite: true },
+  })
+  expect(created.status()).toBe(201)
+  const { id } = await created.json()
+  try {
+    await page.goto("/today#today-focus")
+    const focusCard = page.locator(`.focus-card[data-id="${id}"]`)
+    const favorite = page.locator(`#today-pinned-list .tli[data-id="${id}"]`)
+    const disclosure = page.locator(".today-completed-tasks")
+    const completed = disclosure.getByRole("link", { name: title })
+    const status = page.locator("#td-status")
+
+    await expect(focusCard).toBeVisible()
+    await expect(page.locator(`#today-due-list .tli[data-id="${id}"]`)).toHaveCount(0)
+
+    for (const reschedule of [false, true]) {
+      await favorite.getByRole("checkbox", { name: `Complete ${title}` }).press("Space")
+      await expect(focusCard).toBeHidden()
+      await expect(disclosure).toBeVisible()
+      if (await disclosure.getAttribute("open") === null) await disclosure.locator("summary").press("Enter")
+      await expect(completed).toBeVisible()
+      await completed.press("Enter")
+      await expect(status).toHaveValue("complete")
+      await expect(status).toBeEnabled()
+      const dueDate = reschedule ? shiftCalendarDay(today, 1) : today
+      if (reschedule) {
+        const saved = page.waitForResponse(response => response.request().method() === "PUT" &&
+          new URL(response.url()).pathname === `/api/tasks/${id}` && response.request().postDataJSON()?.due_date === dueDate)
+        await page.locator("#td-due-date").fill(dueDate)
+        expect((await saved).status()).toBe(200)
+      }
+
+      // Wait for the refreshed Today row to replace the immediate status update.
+      await favorite.evaluate(row => row.setAttribute("data-before-reopen", ""))
+      await status.selectOption("active")
+      await expect(page.locator("#today-pinned-list [data-before-reopen]")).toHaveCount(0)
+      await expect(favorite).toHaveAttribute("data-due", dueDate)
+      if (reschedule) await expect(focusCard).toBeHidden()
+      else await expect(focusCard).toBeVisible()
+      await page.getByRole("button", { name: "Close detail" }).press("Enter")
+    }
+  } finally {
+    await request.delete(`/api/tasks/${id}`, { data: {} })
+  }
+})
+
 for (const { name, sectionId, task } of [
   { name: "Carried Forward", sectionId: "section-carried", task: { due_date: shiftCalendarDay(calendarToday(), -1) } },
   { name: "Suggested", sectionId: "section-suggested", task: { due_date: shiftCalendarDay(calendarToday(), 1), priority: 1 } },

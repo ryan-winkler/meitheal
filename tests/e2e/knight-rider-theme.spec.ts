@@ -428,6 +428,7 @@ test("Details completion clears Knight Rider active work on Dashboard and Board"
     await done.click()
     await expect(status).toHaveValue("complete")
     await expect.poll(() => refreshHeld).toBe(true)
+    await expect(status).not.toHaveAttribute("aria-disabled", "true")
     await status.selectOption("active")
     await expect(status).toHaveAttribute("data-saved-status", "active")
     releaseHeldRefresh()

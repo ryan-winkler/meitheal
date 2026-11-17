@@ -40,6 +40,7 @@ export function initCalendarPage(signal: AbortSignal): void {
   const retry = shell?.querySelector<HTMLButtonElement>("[data-calendar-retry]")
   const ruleError = shell?.querySelector<HTMLElement>("[data-calendar-rule-error]")
   const drawer = document.getElementById("day-drawer")
+  const closeButton = document.getElementById("day-drawer-close")
   const panel = drawer?.querySelector<HTMLElement>('[role="dialog"]')
   const drawerTitle = document.getElementById("day-drawer-title")
   const drawerEvents = document.getElementById("day-drawer-event-items")
@@ -217,7 +218,6 @@ export function initCalendarPage(signal: AbortSignal): void {
     const currentRequest = new AbortController()
     drawerRequest = currentRequest
     const linked = AbortSignal.any([signal, currentRequest.signal, AbortSignal.timeout(10_000)])
-    const closeButton = drawer!.querySelector<HTMLElement>("#day-drawer-close")
     const focused = document.activeElement as HTMLElement | null
     const focusedTask = drawerTasks!.contains(focused) ? focused?.dataset.taskId : undefined
     const focusedEvent = drawerEvents!.contains(focused) ? focused?.dataset.occurrenceKey : undefined
@@ -365,6 +365,7 @@ export function initCalendarPage(signal: AbortSignal): void {
     document.body.style.overflow = "hidden"
     drawer!.setAttribute("aria-hidden", "false")
     trap.activate()
+    closeButton?.focus({ preventScroll: true })
     startDrawerRead(date)
   }
 
@@ -422,7 +423,7 @@ export function initCalendarPage(signal: AbortSignal): void {
 
   shell.addEventListener("keydown", event => {
     if (event.defaultPrevented) return
-    if (event.key === "Escape" && drawerDate && drawer.contains(event.target as Node)) {
+    if (event.key === "Escape" && drawerDate) {
       event.preventDefault()
       closeDrawer()
     } else if ((event.key === "Enter" || event.key === " ") && (event.target as Element).matches(".cal-cell[role='button']")) {

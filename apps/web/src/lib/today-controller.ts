@@ -978,9 +978,8 @@ function setupReopenedTodayTasks(
           if (!section || (!Array.from(refreshedRows).some(affected) && !currentRows.some(affected))) continue
           const suggested = list.id === "today-suggested-list"
           const rows = new Map([...refreshedRows].filter(row => suggested || affected(row)).map(row => [row.dataset.id, row]))
-          if (list.id === "today-due-list" || list.id === "today-carried-list") {
-            for (const id of rows.keys()) if (id) eligibleForFocus.add(id)
-          }
+          const due = list.id === "today-due-list" || list.id === "today-carried-list"
+          for (const [id, row] of rows) if (id && (due || row.hasAttribute("data-focus-eligible"))) eligibleForFocus.add(id)
           for (const row of currentRows) {
             const replacement = rows.get(row.dataset.id)
             rows.delete(row.dataset.id)

@@ -41,6 +41,29 @@ test.describe("Calendar Shell", () => {
     await expect(page.locator("#day-drawer-title")).toHaveText("Friday, December 30")
   })
 
+  test("opening a day moves focus into its drawer while visibility settles", async ({ page }) => {
+    await page.evaluate(() => {
+      const checkVisibility = Element.prototype.checkVisibility
+      let opening = true
+      Element.prototype.checkVisibility = function (options) {
+        if (opening && this.closest("#day-drawer")) {
+          requestAnimationFrame(() => { opening = false })
+          return false
+        }
+        return checkVisibility.call(this, options)
+      }
+    })
+    const day = page.locator('.cal-cell[data-date]:not(.cal-other)').first()
+    const drawer = page.locator("#day-drawer")
+    await day.press("Enter")
+    await expect(drawer).toHaveAttribute("aria-hidden", "false")
+    await expect(page.locator("#day-drawer-close")).toBeFocused()
+    await day.focus()
+    await page.keyboard.press("Escape")
+    await expect(drawer).toHaveAttribute("aria-hidden", "true")
+    await expect(day).toBeFocused()
+  })
+
   test("phone filters stay compact, accessible and marked when active", async ({ page }) => {
     await page.setViewportSize({ width: 320, height: 780 })
     const touch = await page.context().newCDPSession(page)

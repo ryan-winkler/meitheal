@@ -73,6 +73,8 @@ Dates due today appear in amber. The light palette uses a darker shade on white 
 
 On mobile, use the Task views below the toolbar actions. Open **More** if a view does not fit. The bottom app navigation opens Tasks, and the in-page links switch between Kanban, Calendar, Table, and Timeline.
 
+Older Tasks bookmarks and sidebar shortcuts that specify a hierarchy type such as `task_type=story` open in Table when they omit a view. Plain Tasks still remembers your last view.
+
 On wide screens **New Task**, **Search Meitheal**, and **Ask Home Assistant** sit at the upper right. The row below holds **Deferred**, **Inactivity**, **Fields**, and **Lanes**. On phones, open **Board actions** to reach that group. The first two links carry the current area to their respective views. If an area was deleted, returning from Deferred keeps that scope visible as **Unavailable Area**. Choose an available area or **All Areas** from the area menu before adding a task in a lane.
 
 ### Filter and group Timeline

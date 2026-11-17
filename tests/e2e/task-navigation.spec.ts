@@ -707,7 +707,7 @@ test("legacy Shopping type filters survive view switches and respect Table searc
       shortcuts.push({
         id: `legacy-task-type-${taskType}`,
         label: taskType === "story" ? "Stories" : "Epics",
-        href: `/table?area=&task_type=${taskType}`,
+        href: taskType === "story" ? "/tasks?area=&task_type=story" : "/table?area=&task_type=epic",
         icon: "checkbox",
       })
     }
@@ -814,6 +814,11 @@ test("legacy Shopping type filters survive view switches and respect Table searc
     await table.locator('.filter-toolbar [data-type="standard_action"]').click()
     await expect(page).toHaveURL(url => url.searchParams.has("types") && url.searchParams.get("task_type") === "story")
     await expect(stories).toHaveAttribute("aria-current", "page")
+    await views.getByRole("link", { name: "Kanban", exact: true }).click()
+    await expect(page).toHaveURL(url => url.hash === "#kanban" &&
+      url.searchParams.get("view") === "kanban" && url.searchParams.get("task_type") === "story")
+    await expect(page.locator("#kanban-shell")).toBeVisible()
+    await expect(stories).not.toHaveAttribute("aria-current", "page")
     await page.goto("/tasks?view=table&area=&task_type=story&task_type=epic#table")
     await expect(epics).toHaveAttribute("aria-current", "page")
     await expect(table.getByText(titles[1]!, { exact: true })).toBeVisible()
