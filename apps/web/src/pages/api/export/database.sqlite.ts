@@ -122,6 +122,11 @@ export const POST: APIRoute = async ({ locals, request }) => {
       if (source.prepare("SELECT 1 FROM organization_label_preferences WHERE forms <> '{}' LIMIT 1").get()) {
         return backupProblem(403, "Use Home Assistant backups for databases containing personal labels.")
       }
+      if (source.prepare(`SELECT 1 FROM organization_access_policies WHERE audience = 'selected' OR scope <> 'feature'
+        UNION ALL SELECT 1 FROM home_assistant_task_areas
+        UNION ALL SELECT 1 FROM pillars WHERE user_id <> 'default' LIMIT 1`).get()) {
+        return backupProblem(403, "Use Home Assistant backups for databases with restricted organization data.")
+      }
       const pages = Number(source.prepare("PRAGMA page_count").get()?.page_count)
       const pageSize = Number(source.prepare("PRAGMA page_size").get()?.page_size)
       const free = await statfs(directory)

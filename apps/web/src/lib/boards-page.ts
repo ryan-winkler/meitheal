@@ -197,7 +197,9 @@ export function bindBoardPage(signal: AbortSignal) {
           break
         case "task-create":
           await jsonRequest(api + "/tickets", "POST", {
-            ...content, laneId: value("laneId"), placement: { areaId: value("areaId") || null, projectId: value("projectId") || null },
+            ...content, laneId: value("laneId"),
+            ...(value("home_assistant_area_id") ? { home_assistant_area_id: value("home_assistant_area_id") } : {}),
+            placement: { areaId: value("areaId") || null, projectId: value("projectId") || null },
           })
           break
         case "task-edit":

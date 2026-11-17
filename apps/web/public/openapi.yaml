@@ -6200,6 +6200,170 @@ paths:
           description: Routine action succeeded
         "201":
           description: Created
+  /api/ha/areas:
+    get:
+      operationId: getHomeAssistantAreaChoices
+      tags:
+        - Home Assistant
+      summary: List optional Home Assistant Area choices for an eligible signed-in household user
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - areas
+                properties:
+                  areas:
+                    type: array
+                    items:
+                      type: object
+                      required:
+                        - id
+                        - name
+                      properties:
+                        id:
+                          type: string
+                        name:
+                          type: string
+                      additionalProperties: false
+                additionalProperties: false
+        "404":
+          description: Field unavailable for this account
+        "503":
+          description: Home Assistant area registry unavailable
+  /api/organization-features:
+    get:
+      operationId: getOrganizationFeatureAvailability
+      tags:
+        - Settings
+      summary: Read current Home Assistant Area availability and eligible people
+      responses:
+        "200":
+          description: Audience and verified Home Assistant roster
+        "403":
+          description: Current administrator required
+    put:
+      operationId: saveOrganizationFeatureAvailability
+      tags:
+        - Settings
+      summary: Set who can use the Home Assistant Area task field
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - feature
+                - audience
+                - users
+                - revision
+              properties:
+                feature:
+                  const: home_assistant_area
+                audience:
+                  enum:
+                    - everyone
+                    - selected
+                    - nobody
+                users:
+                  type: array
+                  items:
+                    type: string
+                revision:
+                  type:
+                    - string
+                    - "null"
+              additionalProperties: false
+      responses:
+        "204":
+          description: Saved
+        "403":
+          description: Current administrator required
+        "409":
+          description: Settings changed
+  /api/tasks/{id}/home-assistant-area:
+    get:
+      operationId: getHouseholdTaskHomeAssistantArea
+      tags:
+        - Tasks
+      summary: Read a visible task's optional Home Assistant Area and version
+      responses:
+        "200":
+          description: Optional area registry ID and current task version
+        "404":
+          description: Task or field unavailable
+    put:
+      operationId: setHouseholdTaskHomeAssistantArea
+      tags:
+        - Tasks
+      summary: Set or clear a task's Home Assistant Area with its current version
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - version
+                - home_assistant_area_id
+              properties:
+                version:
+                  type: integer
+                home_assistant_area_id:
+                  type:
+                    - string
+                    - "null"
+              additionalProperties: false
+      responses:
+        "200":
+          description: Saved with a new task version
+        "404":
+          description: Task or field unavailable
+        "409":
+          description: Task changed
+  /api/boards/{id}/tickets/{ticket}/home-assistant-area:
+    get:
+      operationId: getNamedBoardTaskHomeAssistantArea
+      tags:
+        - Tasks
+      summary: Read a visible task's optional Home Assistant Area and version
+      responses:
+        "200":
+          description: Optional area registry ID and current task version
+        "404":
+          description: Task or field unavailable
+    put:
+      operationId: setNamedBoardTaskHomeAssistantArea
+      tags:
+        - Tasks
+      summary: Set or clear a task's Home Assistant Area with its current version
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - version
+                - home_assistant_area_id
+              properties:
+                version:
+                  type: integer
+                home_assistant_area_id:
+                  type:
+                    - string
+                    - "null"
+              additionalProperties: false
+      responses:
+        "200":
+          description: Saved with a new task version
+        "404":
+          description: Task or field unavailable
+        "409":
+          description: Task changed
   /api/organization-labels:
     get:
       operationId: getPersonalOrganizationLabels

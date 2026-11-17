@@ -1,4 +1,5 @@
 ---
+import HomeAssistantAreaField from "./HomeAssistantAreaField.astro"
 import { mentionInboxContext } from "@lib/mention-inbox-context"
 import { verifiedIngressUser } from "@lib/verified-ingress-user"
 // Task Detail Modal Component
@@ -322,6 +323,7 @@ const mentionUser = verifiedIngressUser(Astro.locals)
                     <input id="td-label-input" class="form-input text-xs py-1.5 bg-bg-card border border-border hover:border-border-focus w-full transition-colors" placeholder="Add label (press enter)..." autocomplete="off" />
                   </div>
 
+                  <HomeAssistantAreaField mode="edit" />
                   <div class="min-w-0">
                     <span class="text-xs text-text-secondary font-medium mb-2 block">Custom Fields</span>
                     <div id="td-custom-fields" class="space-y-2 mb-2"></div>

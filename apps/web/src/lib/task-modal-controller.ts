@@ -203,6 +203,7 @@
           // Abort any in-flight fetches
           if (_modalAbortController) { _modalAbortController.abort(); _modalAbortController = null; }
           currentTaskId = null;
+          document.dispatchEvent(new CustomEvent("meitheal:ha-location-task"))
           currentCommentTarget = null
           delete tdOverlay.dataset.openTaskId
           if (updateLocation) setTaskLocation(null)
@@ -310,6 +311,7 @@
           // P3-4: Store focus origin for restore on close
           if (newSession) _previouslyFocused = search ? null : document.activeElement
           currentTaskId = taskId;
+          document.dispatchEvent(new CustomEvent("meitheal:ha-location-task"))
           currentCommentTarget = commentTarget
           tdOverlay.dataset.openTaskId = taskId
           if (updateLocation) setTaskLocation(taskId, false, commentTarget)
@@ -386,6 +388,7 @@
             }
             taskId = String(t.id)
             currentTaskId = taskId
+            document.dispatchEvent(new CustomEvent("meitheal:ha-location-task", { detail: taskId }))
             setTaskLocation(taskId, true, commentTarget)
 
             // Start independent inspector reads together. Each field keeps its own fallback.

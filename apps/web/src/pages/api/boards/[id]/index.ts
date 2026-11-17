@@ -1,3 +1,4 @@
+import { readHomeAssistantAreaFilter } from "@lib/home-assistant-area-access"
 import type { APIRoute } from "astro"
 import { ensureAgentTokenSchema } from "@domains/auth"
 import { HierarchyRepository } from "@domains/tasks/persistence/hierarchy-repository"
@@ -9,7 +10,8 @@ import { HOUSEHOLD_BOARD_ID, readBoardWorkspaceSelection } from "@lib/board-work
 import { apiError, apiJson } from "@lib/api-response"
 import { boardGroupCursor, boardSessionProof, currentBoardUser, readBoardGroupCursor, readBoardRequest } from "@lib/named-board-request"
 
-export const GET: APIRoute = async ({ locals, request, params, url }) => {
+export const GET: APIRoute = async context => {
+  const { locals, request, params, url } = context
   const selector = url.searchParams.get("view")
   const agent = locals.agentToken
   if (selector === "groups" && params.id === HOUSEHOLD_BOARD_ID && !agent) {
@@ -42,7 +44,8 @@ export const GET: APIRoute = async ({ locals, request, params, url }) => {
   const offset = Number(url.searchParams.get("offset") ?? 0)
   if (!Number.isSafeInteger(offset) || offset < 0) return apiError("Choose a valid page", 400)
   const view = await readBoardView(actor, params.id, offset,
-    selector === "tasks" ? readBoardWorkspaceSelection(url.searchParams) : undefined)
+    selector === "tasks" ? readBoardWorkspaceSelection(url.searchParams) : undefined,
+    selector === "tasks" ? await readHomeAssistantAreaFilter(context, url.searchParams) : undefined)
   if (!view) return apiError("Board unavailable", 404)
   if (!user) return apiJson(view)
   const response = boardViewResponse(view, user.actor.id, {

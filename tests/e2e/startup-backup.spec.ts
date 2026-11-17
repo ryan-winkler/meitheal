@@ -11,6 +11,7 @@ import { promisify } from "node:util"
 import { expect, test } from "@playwright/test"
 import { PERSONAL_PILLAR_MIGRATION } from "../../apps/web/drizzle/migrations/0010_personal_pillars.mjs"
 import { BOARD_ACCESS_MIGRATION } from "../../apps/web/drizzle/migrations/0011_board_access.mjs"
+import { ORGANIZATION_ACCESS_MIGRATION } from "../../apps/web/drizzle/migrations/0012_organization_access.mjs"
 import { TASK_BOARD_MIGRATION, TASK_BOARD_SCHEMA_VERSION } from "../../apps/web/drizzle/migrations/task-board-upgrade.mjs"
 import { DATABASE_SCHEMA_VERSION, openDatabase } from "../../apps/web/scripts/database-client.mjs"
 import { cancelSession, ensurePomodoroSchema, getSessionHistory, getTimerState, getTodayStats, resetPomodoroForTests, skipToBreak, startFocus } from "../../apps/web/src/domains/pomodoro/index"
@@ -339,9 +340,9 @@ for (const lock of ["reader", "writer"]) {
     const client = getPersistenceClient()
     expect((await client.execute("SELECT value FROM app_settings WHERE key = 'schema_version'")).rows).toEqual([{ value: String(DATABASE_SCHEMA_VERSION) }])
     const ledger = await client.execute("SELECT name, applied_at FROM __meitheal_migrations ORDER BY name")
-    expect(ledger.rows).toHaveLength(predecessorMigrationNames.length + 3)
-    expect(ledger.rows.slice(-3).map(row => row.name)).toEqual([TASK_BOARD_MIGRATION, PERSONAL_PILLAR_MIGRATION, BOARD_ACCESS_MIGRATION])
-    expect(ledger.rows.slice(0, -3).every(row => row.applied_at === 1)).toBe(true)
+    expect(ledger.rows).toHaveLength(predecessorMigrationNames.length + 4)
+    expect(ledger.rows.slice(-4).map(row => row.name)).toEqual([TASK_BOARD_MIGRATION, PERSONAL_PILLAR_MIGRATION, BOARD_ACCESS_MIGRATION, ORGANIZATION_ACCESS_MIGRATION])
+    expect(ledger.rows.slice(0, -4).every(row => row.applied_at === 1)).toBe(true)
     expect((await client.execute("SELECT title FROM tasks")).rows).toEqual([{ title: "Retained startup task" }])
     await expect(migrate("--check")).resolves.toMatchObject({ stdout: expect.stringContaining("Migration check passed") })
   })

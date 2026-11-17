@@ -1,0 +1,83 @@
+import { safeFetch } from "./safe-fetch"
+
+interface AreaPolicySettings {
+  home_assistant_area: { audience: string; revision: string | null; users: string[] }
+  roster: { id: string; name: string }[]
+}
+
+export function initSettingsHomeAssistantArea(signal: AbortSignal) {
+  const form = document.querySelector<HTMLFormElement>("#ha-area-feature-form")
+  const fields = form?.querySelector<HTMLFieldSetElement>("fieldset")
+  const select = form?.querySelector<HTMLSelectElement>('select[name="audience"]')
+  const roster = form?.querySelector<HTMLFieldSetElement>("[data-ha-area-roster]")
+  const users = form?.querySelector("[data-ha-area-users]")
+  const status = form?.querySelector<HTMLElement>("[data-ha-area-policy-status]")
+  if (!form || !fields || !select || !roster || !users || !status) return
+
+  const path = "/api/organization-features"
+  const ready = fields
+  const choice = select
+  const people = users
+  const message = status
+  let revision: string | null = null
+
+  const setRosterVisibility = () => { roster.hidden = select.value !== "selected" }
+  select.addEventListener("change", setRosterVisibility, { signal })
+
+  async function refresh() {
+    const response = await safeFetch(path, { signal, cache: "no-store" })
+    if (!response.ok) throw new Error("Could not check feature availability.")
+    const data: AreaPolicySettings = await response.json()
+    if (signal.aborted) return
+    const policy = data.home_assistant_area
+    revision = policy.revision
+    choice.value = policy.audience
+    people.replaceChildren(...data.roster.map(user => {
+      const label = document.createElement("label")
+      label.className = "form-check"
+      const input = document.createElement("input")
+      input.type = "checkbox"
+      input.name = "people"
+      input.value = user.id
+      input.checked = policy.users.includes(user.id)
+      label.append(input, document.createTextNode(user.name))
+      return label
+    }))
+    setRosterVisibility()
+    ready.disabled = false
+    message.textContent = ""
+  }
+
+  form.addEventListener("submit", async event => {
+    event.preventDefault()
+    if (ready.disabled) return
+    const selected = new FormData(form).getAll("people")
+    ready.disabled = true
+    message.textContent = ""
+    try {
+      const response = await safeFetch(path, {
+        method: "PUT", signal, headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          feature: "home_assistant_area", revision, audience: choice.value,
+          users: choice.value === "selected" ? selected : [],
+        }),
+      })
+      if (response.status === 409) {
+        await refresh()
+        if (!signal.aborted) message.textContent = "Availability changed. Review the current selection and try again."
+        return
+      }
+      if (!response.ok) throw new Error("Could not save feature availability.")
+      await refresh()
+      if (!signal.aborted) message.textContent = "Availability saved."
+    } catch {
+      if (!signal.aborted) message.textContent = "Could not confirm the save. Check your connection and retry."
+    } finally {
+      if (!signal.aborted) ready.disabled = false
+    }
+  }, { signal })
+
+  void refresh().catch(() => {
+    if (!signal.aborted) message.textContent = "Could not check current availability. Reopen Settings to try again."
+  })
+}

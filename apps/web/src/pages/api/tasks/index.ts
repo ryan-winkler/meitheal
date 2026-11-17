@@ -1,3 +1,5 @@
+import { readHomeAssistantAreaPolicyRevision, setTaskHomeAssistantArea } from "@domains/tasks/persistence/home-assistant-task-area"
+import { readHomeAssistantAreaFilter, resolveHomeAssistantAreaSelection } from "@lib/home-assistant-area-access"
 import { HierarchyRepository } from "@domains/tasks/persistence/hierarchy-repository"
 import { parseBoardPlacement } from "@lib/board-workspace"
 import type { APIRoute } from "astro"
@@ -30,7 +32,8 @@ import { taskEventAuthorityHeaders } from "../../../lib/webhook-dispatcher"
 
 /** GET /api/tasks — list all tasks, POST /api/tasks — create a task */
 
-export const GET: APIRoute = async ({ url, locals }) => {
+export const GET: APIRoute = async context => {
+  const { url, locals } = context
   try {
   await ensureSchema()
   const repo = new TaskRepository(getPersistenceClient())
@@ -85,6 +88,11 @@ export const GET: APIRoute = async ({ url, locals }) => {
   const label = url.searchParams.get("label")
   if (label) findOpts.label = label
 
+  if (url.searchParams.has("home_assistant_area_id")) {
+    const filter = await readHomeAssistantAreaFilter(context, url.searchParams)
+    if (!filter) return apiError("Home Assistant Area filter unavailable.", 404)
+    findOpts.homeAssistantArea = filter
+  }
   const { tasks: rawTasks, total } = await repo.findAll(findOpts)
 
   const tasks = rawTasks.map((r) => {
@@ -136,6 +144,7 @@ export const GET: APIRoute = async ({ url, locals }) => {
     headers: {
       "content-type": "application/json",
       "content-length": String(Buffer.byteLength(body, "utf8")),
+      ...(findOpts.homeAssistantArea ? { "cache-control": "private, no-store" } : {}),
     },
   })
   } catch (err) {
@@ -148,7 +157,8 @@ export const GET: APIRoute = async ({ url, locals }) => {
   }
 }
 
-export const POST: APIRoute = async ({ request, locals }) => {
+export const POST: APIRoute = async (context) => {
+  const { request, locals } = context
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
   if (hasBoardSelection(body)) return unavailableBoardResponse()
   await ensureSchema()
@@ -181,6 +191,9 @@ export const POST: APIRoute = async ({ request, locals }) => {
     args: [placementArea, placementArea, placement.projectId, placement.projectId, placementArea],
   } : undefined
 
+  const homeLocation = await resolveHomeAssistantAreaSelection(context, body.home_assistant_area_id)
+  if (!homeLocation.ok) return apiError(homeLocation.detail, homeLocation.status)
+
   const taskBody = {
     ...body,
     ...(placement ? { area_id: placementArea, project_id: placement.projectId } : {}),
@@ -205,15 +218,24 @@ export const POST: APIRoute = async ({ request, locals }) => {
     statements[0] = taskInsertStatement(prepared.task, now, { requestId, ...(guard ? { guard } : {}) })
     statements.push(...[...new Set<string>(labels)].map(name => taskLabelInsert(name, prepared.task.id, requestId)))
   }
-  const [inserted] = await runWriteTransaction(
+  const result = await runWriteTransaction(
     client,
     function* () {
-      const results: ResultSet[] = yield statements
-      return results
+      if (homeLocation.selection) {
+        const [policy]: ResultSet[] = yield [readHomeAssistantAreaPolicyRevision(homeLocation.selection.revision)]
+        if (!policy?.rows.length) return { allowed: false } as const
+      }
+      const [inserted]: ResultSet[] = yield statements
+      const ticket = inserted?.rows[0]
+      if (ticket && homeLocation.selection?.id) {
+        yield [setTaskHomeAssistantArea(prepared.task.id, homeLocation.selection.id)]
+      }
+      return { allowed: true, ticket } as const
     },
     { signal: locals.writeAbortSignal },
   )
-  const ticket = inserted?.rows[0]
+  if (!result.allowed) return apiError("Home Assistant Area access changed. Refresh the form and try again.", 403)
+  const ticket = result.ticket
   if (!ticket) return placement ? apiError("Household placement unavailable", 404) : apiError("Choose available task relationships", 400)
   const ticketNumber = Number(ticket.ticket_number)
   const payload = taskCreationPayload(prepared.task, ticketNumber, now)

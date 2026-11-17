@@ -1,4 +1,6 @@
 ---
+import HomeAssistantAreaField from "../components/tasks/HomeAssistantAreaField.astro"
+import { readHomeAssistantAreaFilter } from "@lib/home-assistant-area-access"
 import { newOrganizationLabel, organizationLabelsFor } from "@lib/organization-labels"
 import Layout from "../layouts/Layout.astro";
 
@@ -55,6 +57,9 @@ const organization = await organizationLabelsFor(Astro)
 const heading = renderedView === "kanban" ? organization("task", true, t("kanban.title", locale))
   : renderedView === "table" ? "Table View" : TASK_VIEW_LABELS[renderedView]
 const currentUrl = new URL(Astro.url)
+const homeAreaFilter = renderedView === "kanban" ? await readHomeAssistantAreaFilter(Astro, currentUrl.searchParams) : undefined
+if (!homeAreaFilter) currentUrl.searchParams.delete("home_assistant_area_id")
+if (homeAreaFilter) Astro.response.headers.set("cache-control", "private, no-store")
 // The HTML ingress rewriter adds the mount path to these root-relative links.
 currentUrl.pathname = householdWorkspace ? "/boards/household" : "/tasks"
 if (currentUrl.searchParams.has("boardRefresh") ||
@@ -212,7 +217,7 @@ const typeConfig: Record<string, { label: string; color: string }> = {
 };
 const kanbanFilters = readKanbanFilters(currentUrl.searchParams)
 const kanbanPages = renderedView === "kanban"
-  ? await loadKanbanBoard(repo, columns, completedCutoffMs, currentUrl.searchParams, timezone).catch(() => null)
+  ? await loadKanbanBoard(repo, columns, completedCutoffMs, currentUrl.searchParams, timezone, homeAreaFilter).catch(() => null)
   : null
 const inactivityEnabled = renderedView === "kanban" &&
   await new TaskInactivityRepository(db).hasEnabledPolicy(kanbanFilters.area || null).catch(() => false)
@@ -256,7 +261,10 @@ try {
       return { id: view, href: url.pathname + url.search + url.hash, label: TASK_VIEW_LABELS[view], icon: TASK_VIEW_ICONS[view], active: view === renderedView }
     })}
   >
-    <AreaSelector slot="context" areas={areas} />
+    <Fragment slot="context">
+      <AreaSelector areas={areas} />
+      {renderedView === "kanban" && <HomeAssistantAreaField mode="filter" initialId={homeAreaFilter?.id ?? ""} />}
+    </Fragment>
   </UnifiedBar>
   {householdWorkspace && <nav class="board-context-tabs" aria-label="Board workspace">
     <a class="btn btn-ghost" href="/boards">Boards</a>

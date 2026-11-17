@@ -40,6 +40,12 @@ Each Home Assistant account can save different names for English and Gaeilge. A 
 
 If a save fails, keep the page open and try again. If another window saved first, review the current values displayed alongside your edits before saving again. Reopen Meitheal when changing Home Assistant accounts. Use Home Assistant backups for databases containing personal labels. The Settings configuration export contains installation settings.
 
+## Offer the Home Assistant Area task field
+
+A verified Home Assistant administrator can open **Settings → Tasks & Boards → Home Assistant Area** and choose **Everyone**, **Selected people**, or **Nobody**. Everyone refers to active household accounts with Home Assistant ingress. Save availability and reopen the work page. An empty Selected people list makes the field unavailable.
+
+Use the location picker while capturing a task or under **Metadata** in its details. A Board or Group organizes the work. **Home Assistant Area** records its physical location. Choose **None** and save to clear a location. When the registry is unavailable, other task inputs are still usable. A deleted area appears as **Saved location unavailable** and can be replaced or cleared.
+
 ## Check Home Assistant
 
 Open **Settings → Connected Services → Home Assistant** and choose **Test Connection** to check the App’s live Supervisor connection. A standalone instance reports **Standalone**. Its Advanced form still saves standalone settings separately.

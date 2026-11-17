@@ -1,0 +1,39 @@
+---
+import { homeAssistantAreaAccess } from "@lib/home-assistant-area-access"
+
+interface Props {
+  mode?: "capture" | "edit" | "filter"
+  initialId?: string
+  endpoint?: string
+  boardSession?: string
+}
+const { mode = "capture", endpoint, boardSession, initialId } = Astro.props
+const available = await homeAssistantAreaAccess(Astro)
+---
+
+{available && (
+  <div
+    class="min-w-0"
+    data-ha-area-field={mode}
+    data-ha-area-endpoint={endpoint}
+    data-ha-area-session={boardSession}
+    data-ha-area-initial-id={initialId}
+    hidden={mode === "edit" && !endpoint}
+  >
+    <label class="form-label">{mode === "filter" ? "Filter by Home Assistant Area" : "Home Assistant Area"}
+      <select class="form-select" name="home_assistant_area_id" disabled>
+        <option value="">{mode === "filter" ? "All locations" : "None"}</option>
+      </select>
+    </label>
+    {mode === "filter" && <button type="button" class="btn btn-ghost btn-sm" data-ha-area-filter disabled>Apply location filter</button>}
+    {mode === "edit" && <button type="button" class="btn btn-ghost btn-sm" data-ha-area-save disabled>Save location</button>}
+    <button type="button" class="btn btn-ghost btn-sm" data-ha-area-retry hidden>Reload location choices</button>
+    <p role="status" class="settings-hint" data-ha-area-status></p>
+  </div>
+)}
+
+<script>
+  import { initHomeAssistantAreaFields } from "@lib/home-assistant-area-fields"
+  import { pageLifecycle } from "@lib/page-lifecycle"
+  pageLifecycle.onPageLoad(initHomeAssistantAreaFields)
+</script>

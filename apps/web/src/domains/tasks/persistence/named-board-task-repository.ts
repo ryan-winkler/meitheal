@@ -2,9 +2,11 @@ import { randomUUID } from "node:crypto"
 import type { Client, Transaction } from "@libsql/client"
 import { isActiveAgentToken } from "@domains/auth"
 import { acquireWriteTransaction } from "../../../../scripts/database-client.mjs"
+import type { HomeAssistantAreaFilter, HomeAssistantAreaSelection } from "../../../lib/home-assistant-area-access"
 import type { BoardWorkspaceSelection } from "../../../lib/board-workspace"
 import { isClosedStatus, isDoneStatus, normalizeStatus, STATUS, STATUS_CONFIG } from "../../../lib/status-config"
 import { boardGrantStillCurrent, currentBoardGrantRevision, readBoardGrantRevision } from "./board-grant-fence"
+import { homeAssistantTaskAreaCondition, editTaskHomeAssistantArea, findTaskHomeAssistantArea, readHomeAssistantAreaPolicyRevision, setTaskHomeAssistantArea } from "./home-assistant-task-area"
 import { namedRoutinePeriod, readNamedBoardPlanning } from "./named-board-planning-repository"
 import { permitsBoardTaskAction, selectNamedBoardAccess, type BoardActor, type TaskBoardAction } from "./named-board-repository"
 import { canAdvanceTaskTimestampMs, nextTaskTimestampMs, taskTimestampMs } from "./task-timestamp"
@@ -17,6 +19,7 @@ type NamedTaskPlacement = {
   projectId?: string
   goalId?: string
   local?: boolean
+  homeAssistantArea?: HomeAssistantAreaSelection
 }
 
 const scopedTaskJoin = `LEFT JOIN board_task_planning AS placement ON placement.task_id = tasks.id
@@ -61,7 +64,7 @@ export async function insertNamedTask(tx: Transaction, input: {
 export class NamedBoardTaskRepository {
   constructor(private readonly db: Client, private readonly markerPath?: string) {}
 
-  async view(actor: BoardActor, boardId: string, offset = 0, selection?: BoardWorkspaceSelection) {
+  async view(actor: BoardActor, boardId: string, offset = 0, selection?: BoardWorkspaceSelection, location?: HomeAssistantAreaFilter) {
     const revision = await currentBoardGrantRevision(this.db, this.markerPath)
     if (!revision) return null
     const tx = await this.db.transaction("read")
@@ -74,6 +77,7 @@ export class NamedBoardTaskRepository {
         : context?.project ? "AND project.id = ?"
         : context?.area ? "AND CASE WHEN project.id IS NOT NULL THEN project.area_id ELSE placement.area_id END = ?"
         : ""
+      const locationFilter = location && !selection?.ticketId ? homeAssistantTaskAreaCondition(location) : null
       const filterId = selection?.ticketId ?? context?.project?.id ?? context?.area?.id
       const [lanes, tasks, members, intakes, agents] = await tx.batch([
         {
@@ -89,9 +93,9 @@ export class NamedBoardTaskRepository {
             ${selection?.ticketId ? `LEFT JOIN areas AS ticket_area
               ON ticket_area.id = CASE WHEN project.id IS NOT NULL THEN project.area_id ELSE placement.area_id END
                 AND ticket_area.owner_board_id = tasks.task_board_id AND ticket_area.retired_at IS NULL` : ""}
-            WHERE tasks.task_board_id = ? ${taskFilter}
+            WHERE tasks.task_board_id = ? ${taskFilter} ${locationFilter ? "AND " + locationFilter.sql : ""}
             ORDER BY tasks.created_at DESC, tasks.id DESC LIMIT 51 OFFSET ?`,
-          args: [boardId, ...(taskFilter ? [filterId!] : []), selection?.ticketId ? 0 : offset],
+          args: [boardId, ...(taskFilter ? [filterId!] : []), ...(locationFilter?.args ?? []), selection?.ticketId ? 0 : offset],
         },
         {
           sql: `SELECT principal_id, role, deny_completion, deny_deletion
@@ -260,6 +264,8 @@ export class NamedBoardTaskRepository {
         if (!rows.length) return unavailable
       }
 
+      const homeArea = placement.homeAssistantArea
+      if (homeArea && !(await tx.execute(readHomeAssistantAreaPolicyRevision(homeArea.revision))).rows.length) return denied
       const task = await insertNamedTask(tx, { boardId, laneId: lane.id, content, status: lane.status })
       if (!task) return unavailable
       if (areaId || projectId || goalId) {
@@ -268,8 +274,33 @@ export class NamedBoardTaskRepository {
           args: [task.id, areaId ?? null, projectId ?? null, goalId ?? null],
         })
       }
+      if (homeArea?.id) await tx.execute(setTaskHomeAssistantArea(task.id, homeArea.id))
       return { ok: true, value: task }
     })
+  }
+
+  async homeAssistantArea(actor: BoardActor, boardId: string, id: string, policyRevision: string) {
+    const revision = await currentBoardGrantRevision(this.db, this.markerPath)
+    if (!revision) return null
+    const tx = await this.db.transaction("read")
+    try {
+      const access = await selectNamedBoardAccess(tx, actor, revision, boardId)
+      if (!access || !(await tx.execute(readHomeAssistantAreaPolicyRevision(policyRevision))).rows.length) return null
+      const { rows: [task] } = await tx.execute({
+        sql: `SELECT ${taskTimestampMs("updated_at")} AS version FROM tasks WHERE id = ? AND task_board_id = ?`,
+        args: [id, boardId],
+      })
+      if (!task) return null
+      const area = await findTaskHomeAssistantArea(tx, id)
+      if (!await boardGrantStillCurrent(this.db, revision, this.markerPath)) return null
+      return { id: area, version: Number(task.version) }
+    } finally {
+      tx.close()
+    }
+  }
+
+  async changeHomeAssistantArea(actor: BoardActor, boardId: string, id: string, version: number, selection: HomeAssistantAreaSelection) {
+    return this.mutate(actor, boardId, "edit", tx => editTaskHomeAssistantArea(tx, id, boardId, version, selection))
   }
 
   async file(actor: BoardActor, boardId: string, id: string, version: number, areaId?: string | null, projectId?: string | null) {

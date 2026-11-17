@@ -1,4 +1,5 @@
 ---
+import SettingsHomeAssistantArea from "./SettingsHomeAssistantArea.astro"
 import { t } from "../../i18n/translations"
 import type { Locale } from "../../lib/locale"
 import { SETTINGS_SECTIONS } from "../../lib/settings-registry"
@@ -152,5 +153,6 @@ const tasksBoardsSection = SETTINGS_SECTIONS.find((section) => section.id === "t
         <span class="settings-description">{t("settings.features_loading", locale)}</span>
       </div>
     </SettingsPanelCard>
+    <SettingsHomeAssistantArea />
   </div>
 </section>

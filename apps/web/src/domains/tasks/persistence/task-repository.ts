@@ -13,6 +13,8 @@
  *   const created = await repo.createTask({ id: '...', title: 'New', ... });
  */
 
+import type { HomeAssistantAreaFilter } from "../../../lib/home-assistant-area-access"
+import { homeAssistantTaskAreaCondition } from "./home-assistant-task-area"
 import type { Client, InStatement, InValue, ResultSet } from "@libsql/client"
 import { nextHouseholdTicketNumberSql } from "../../../../drizzle/migrations/task-board-tickets.mjs"
 import { acquireWriteTransaction, executeWriteWithRetry, runWriteTransaction } from "../../../../scripts/database-client.mjs"
@@ -670,16 +672,18 @@ export class TaskRepository {
   async getKanbanIndex(
     statuses: string[],
     cutoff: number,
-    { matchText, matchOverdue, today, timezone = "Europe/Dublin" }: {
+    { matchText, matchOverdue, today, timezone = "Europe/Dublin", location }: {
       matchText: boolean
       matchOverdue: boolean
       today?: string | undefined
       timezone?: string | undefined
+      location?: HomeAssistantAreaFilter | undefined
     },
     reader: Pick<Client, "execute">,
   ): Promise<KanbanIndexRow[]> {
     if (!statuses.length) return []
     const resolvedToday = today ?? calendarToday(timezone)
+    const filter = location ? homeAssistantTaskAreaCondition(location) : null
     const result = await reader.execute({
       sql: `SELECT id, status, priority, task_type, task_kind, area_id, assigned_to, is_promoted
                   ${matchText ? ", title, labels" : ""}
@@ -687,9 +691,10 @@ export class TaskRepository {
             FROM tasks
             WHERE task_board_id IS NULL AND status IN (SELECT value FROM json_each(?))
               AND deferred_at IS NULL
+              ${filter ? "AND " + filter.sql : ""}
               AND (? = 0 OR lower(status) != 'complete' OR updated_at >= ?)
             ORDER BY is_promoted DESC, kanban_position ASC NULLS LAST, priority ASC, created_at DESC, id ASC`,
-      args: [JSON.stringify(statuses), cutoff, cutoff],
+      args: [JSON.stringify(statuses), ...(filter?.args ?? []), cutoff, cutoff],
     })
     const rows = result.rows as unknown as KanbanIndexRow[]
     if (!matchOverdue) return rows
@@ -1169,6 +1174,7 @@ export class TaskRepository {
     priority?: number;
     areaId?: string;
     workspaceAreaId?: string;
+    homeAssistantArea?: HomeAssistantAreaFilter;
     projectId?: string;
     taskType?: string;
     parentId?: string;
@@ -1206,6 +1212,11 @@ export class TaskRepository {
       if (opts.calendarDay) conditions.push(CALENDAR_LOCAL_ITEM)
       conditions.push(`substr(${dateColumn}, 1, 10) BETWEEN ? AND ?`)
       args.push(lowerBound, upperBound)
+    }
+    if (opts.homeAssistantArea) {
+      const filter = homeAssistantTaskAreaCondition(opts.homeAssistantArea)
+      conditions.push(filter.sql)
+      args.push(...filter.args)
     }
     if (opts.priority != null) { conditions.push("priority = ?"); args.push(opts.priority); }
     if (opts.areaId) { conditions.push(`(${householdPlanningProjection("areas", "tasks.area_id")}) = ?`); args.push(opts.areaId); }

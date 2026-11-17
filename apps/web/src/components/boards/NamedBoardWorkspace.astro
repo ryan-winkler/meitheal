@@ -1,4 +1,6 @@
 ---
+import { readHomeAssistantAreaFilter } from "@lib/home-assistant-area-access"
+import HomeAssistantAreaField from "../tasks/HomeAssistantAreaField.astro"
 import { organizationLabelsFor, newOrganizationLabel, organizationLocale } from "@lib/organization-labels"
 import BoardPlanning from "./BoardPlanning.astro"
 import Layout from "../../layouts/Layout.astro"
@@ -17,7 +19,8 @@ const selection = readBoardWorkspaceSelection(Astro.url.searchParams)
 const user = await currentBoardUser(Astro.locals, Astro.request.signal)
 const rawOffset = Number(Astro.url.searchParams.get("offset") ?? 0)
 const offset = Number.isSafeInteger(rawOffset) && rawOffset >= 0 ? rawOffset : 0
-const view = boardId && user ? await readBoardView(user.actor, boardId, offset, selection) : null
+const homeFilter = await readHomeAssistantAreaFilter(Astro, Astro.url.searchParams)
+const view = boardId && user ? await readBoardView(user.actor, boardId, offset, selection, homeFilter) : null
 if (!boardId || !user || !view) Astro.response.status = 404
 const policy = view?.board.policy
 const canEdit = view && permitsBoardTaskAction(view.board, "edit")
@@ -25,6 +28,7 @@ const canDelete = view && permitsBoardTaskAction(view.board, "delete")
 const canComplete = view && permitsBoardTaskAction(view.board, "complete")
 const routinesEnabled = view ? await isFeatureEnabled("habits") : false
 const verify = new URLSearchParams(Astro.url.searchParams)
+if (!homeFilter) verify.delete("home_assistant_area_id")
 verify.set("view", "tasks")
 verify.set("offset", String(offset))
 if (selection.planning) verify.set("planning", "1")
@@ -62,6 +66,7 @@ const nextAction = view?.summary?.next
               <label>Column <select name="laneId">
                 {view.lanes.filter(lane => canComplete || !isDoneStatus(lane.key)).map(lane => <option value={lane.id}>{lane.label}</option>)}
               </select></label>
+              <HomeAssistantAreaField />
               {scope?.area && <input type="hidden" name="areaId" value={scope.area.id} />}
               {scope?.project && <input type="hidden" name="projectId" value={scope.project.id} />}
               <p class="board-note">{scope?.project?.title ?? scope?.area?.name ?? "Unfiled"}</p>
@@ -79,6 +84,7 @@ const nextAction = view?.summary?.next
         {scope?.area && !scope.project && !selection.planning && <p>
           <a href={boardWorkspaceHref(boardId, { area: scope.area.id, groups: true }, "projects")}>{label("project", true)} in {scope.area.name}</a>
         </p>}
+        {!selection.planning && !selection.ticketId && <HomeAssistantAreaField mode="filter" initialId={homeFilter?.id ?? ""} />}
         {!selection.planning && <section class="board-columns" aria-label="Tasks by column">
           {view.lanes.map(lane => <section class="board-lane">
             <h2>{lane.label}</h2>
@@ -92,6 +98,11 @@ const nextAction = view?.summary?.next
                   <p role="status" data-board-feedback></p>
                   <button type="submit" class="btn btn-ghost">Save changes</button>
                 </form>
+                <HomeAssistantAreaField
+                  mode="edit"
+                  endpoint={`/api/boards/${encodeURIComponent(boardId)}/tickets/${encodeURIComponent(task.id)}/home-assistant-area`}
+                  boardSession={boardSessionProof(user.actor.id)}
+                />
               </details> : <h3 class="board-name">{task.title}</h3>}
               {task.assignedTo && <p class="board-note">Assigned to {user.roster.get(task.assignedTo.replace(/^ha_/, "")) || "an unavailable user"}</p>}
               {task.description && <p>{task.description}</p>}
