@@ -73,6 +73,10 @@
 details.filter-dropdown {
   position: relative;
 }
+details.filter-dropdown[hidden],
+.filter-dropdown__option[hidden] {
+  display: none;
+}
 details.filter-dropdown summary {
   list-style: none;
   cursor: pointer;
