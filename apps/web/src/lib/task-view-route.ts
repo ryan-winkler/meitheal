@@ -1,4 +1,4 @@
-import { normalizeTableRules, readTaskAreaParam, TASK_PERSISTED_FILTER_KEYS } from "./filter-state"
+import { normalizeTableRules, readTaskAreaParam, readTaskScalarParam, TASK_PERSISTED_FILTER_KEYS, TASK_SCALAR_FILTER_KEYS } from "./filter-state"
 
 export const TASK_VIEWS = ["kanban", "table", "calendar", "timeline"] as const
 export type TaskView = (typeof TASK_VIEWS)[number]
@@ -31,6 +31,11 @@ export function taskViewUrl(current: URL, view: TaskView, explicitFilters = fals
     if (area !== null) url.searchParams.set("area", area)
     url.searchParams.delete("area_id")
     url.searchParams.delete("board")
+    for (const key of [...TASK_SCALAR_FILTER_KEYS, "types", "task_type"]) {
+      if (key !== "area" && url.searchParams.getAll(key).length > 1) {
+        url.searchParams.set(key, readTaskScalarParam(url.searchParams, key, previousView)!)
+      }
+    }
     const rules = url.searchParams.getAll("advancedFilter")
     if (rules.length > 1 && previousView !== "timeline") {
       const last = rules.at(-1)!

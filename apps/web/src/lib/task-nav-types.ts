@@ -1,5 +1,5 @@
 import type { FilterGroup } from "./filter-engine"
-import { normalizeTableRules, readFilterLabels, readTableTaskKindFilter, readTableTaskTypeParam, readTaskAreaParam, readTaskKindFilter } from "./filter-state"
+import { normalizeTableRules, readFilterLabels, readTableTaskKindFilter, readTableTaskTypeParam, readTaskAreaParam, readTaskKindFilter, readTaskScalarParam, TASK_SCALAR_FILTER_KEYS } from "./filter-state"
 import { readKanbanRules, readKanbanSearch } from "./kanban-query"
 import { normalizeStatus } from "./status-config"
 import { parseTaskView, type TaskView } from "./task-view-route"
@@ -69,7 +69,8 @@ export function defaultTaskNavPrefs(): TaskNavPrefs {
 }
 
 function taskKinds(params: URLSearchParams, view: TaskView): string[] {
-  const kinds = view === "table" ? readTableTaskKindFilter(params.getAll("types").at(-1)) : readTaskKindFilter(params.get("types"))
+  const raw = readTaskScalarParam(params, "types", view)
+  const kinds = view === "table" ? readTableTaskKindFilter(raw) : readTaskKindFilter(raw)
   return [...new Set(kinds)]
 }
 
@@ -127,12 +128,12 @@ export function matchingTaskShortcutCriteria(target: URLSearchParams, current: U
   }
   for (const key of keys) {
     const read = (params: URLSearchParams) => {
+      if (!TASK_SCALAR_FILTER_KEYS.some(filter => filter === key)) return params.getAll(key)
+      const value = readTaskScalarParam(params, key, view)
       if (key === "search") {
-        const value = view === "table" ? params.getAll(key).at(-1) ?? "" : params.get(key) ?? ""
-        return [(view === "calendar" || view === "kanban" ? readKanbanSearch(value) : value).toLowerCase()]
+        return [(view === "calendar" || view === "kanban" ? readKanbanSearch(value) : value ?? "").toLowerCase()]
       }
-      const values = params.getAll(key)
-      return key === "status" ? values.map(normalizeStatus) : values
+      return value === null ? [] : [key === "status" ? normalizeStatus(value) : value]
     }
     if (!sameFilterValues(read(target), read(current))) return -1
   }

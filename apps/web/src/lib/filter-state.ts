@@ -121,6 +121,12 @@ const ARRAY_KEYS = ["types", "labels"] as const
 const JSON_KEYS = ["advancedFilter", "columns"] as const
 const ALL_KEYS = [...SCALAR_KEYS, ...ARRAY_KEYS, ...JSON_KEYS] as const
 export const TASK_PERSISTED_FILTER_KEYS = ALL_KEYS
+export { SCALAR_KEYS as TASK_SCALAR_FILTER_KEYS }
+
+export function readTaskScalarParam(params: URLSearchParams, key: string, view: string): string | null {
+  return view === "table" || (view === "calendar" && key === "task_type")
+    ? params.getAll(key).at(-1) ?? null : params.get(key)
+}
 
 export function readTaskAreaParam(params: URLSearchParams): string | null {
   return params.get("area_id") ?? params.get("area") ?? params.get("board")
@@ -178,7 +184,7 @@ export function readTableTaskKindFilter(value: unknown): string[] {
 }
 
 export function readTableTaskTypeParam(params: URLSearchParams) {
-  const value = params.getAll("task_type").at(-1)
+  const value = readTaskScalarParam(params, "task_type", "table")
   return VALID_TASK_TYPES.find(type => type === value)
 }
 

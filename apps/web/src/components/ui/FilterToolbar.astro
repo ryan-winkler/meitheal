@@ -1277,12 +1277,14 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
         if (prioritySel) prioritySel.value = priority
         setTypeButtons(filters.types ?? [])
         setPromoted(filters.promoted ?? false)
-        advancedFilterState = filters.advancedFilter ?? null
+        const restoredRules = filters.advancedFilter ?? null
+        const rulesChanged = JSON.stringify(advancedFilterState) !== JSON.stringify(restoredRules)
+        advancedFilterState = restoredRules
         readOnlyRules = advancedFilterState?.conditions.some(condition =>
           "conditions" in condition || condition.operator === "between") ?? false
         renderInheritedFilters()
         updateRulesMode()
-        if (filters.keepRulesDraft || advPanel && !advPanel.classList.contains("hidden")) {
+        if (filters.keepRulesDraft || (!rulesChanged && advPanel && !advPanel.classList.contains("hidden"))) {
           advToggleBtn?.classList.toggle("filter-pill--active", Boolean(advancedFilterState?.conditions.length))
         } else renderSavedRules()
         updateClearVisibility()

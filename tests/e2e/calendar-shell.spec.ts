@@ -425,6 +425,55 @@ test.describe("Calendar Shell", () => {
     await expect(search).toHaveValue("temporarily unavailable")
   })
 
+  test("failed Clear Rules restores the applied rules in the open Calendar editor", async ({ page, request }) => {
+    test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the disposable Meitheal fixture")
+    const day = "2031-07-24"
+    const ids: string[] = []
+    try {
+      for (const title of ["Replace roof", "Paint fence"]) {
+        const task = await request.post("/api/tasks", { data: { title, due_date: day } })
+        expect(task.status(), await task.text()).toBe(201)
+        ids.push((await task.json()).id)
+      }
+      const params = new URLSearchParams({
+        view: "calendar", year: "2031", month: "6", area: "",
+        advancedFilter: JSON.stringify({
+          id: "root", logic: "AND",
+          conditions: [{ id: "roof", field: "title", operator: "contains", value: "roof" }],
+        }),
+      })
+      let fail = true
+      await page.route(url => url.searchParams.has("calendarRefresh"), route => fail
+        ? route.fulfill({ status: 503 })
+        : route.continue())
+      await page.goto("/tasks?" + params + "#calendar")
+      const cell = page.locator(`.cal-cell[data-date="${day}"]`)
+      await expect(cell).toHaveAccessibleName(/1 task$/)
+      await page.locator("#calendar-advanced-toggle").click()
+      const value = page.getByRole("textbox", { name: "Value", exact: true })
+      await expect(value).toHaveValue("roof")
+      await page.getByRole("button", { name: "Clear Rules" }).click()
+
+      const retry = page.getByRole("button", { name: "Retry calendar" })
+      await expect(retry).toBeVisible()
+      await expect(value).toBeVisible()
+      await expect(value).toHaveValue("roof")
+      await expect(cell).toHaveAccessibleName(/1 task$/)
+      expect(new URL(page.url()).searchParams.get("advancedFilter")).toBe(params.get("advancedFilter"))
+
+      fail = false
+      await page.getByRole("button", { name: "Close custom filters" }).click()
+      await retry.click()
+      await expect(retry).toBeHidden()
+      await page.locator("#calendar-advanced-toggle").click()
+      await expect(value).toHaveCount(0)
+      await expect(cell).toHaveAccessibleName(/2 tasks$/)
+      await expect(page).not.toHaveURL(/advancedFilter=/)
+    } finally {
+      for (const id of ids) await request.delete(`/api/tasks/${id}`, { data: {} })
+    }
+  })
+
   test("a successful newer Calendar refresh retires the earlier failed filter", async ({ page }) => {
     let release = () => {}
     let blocked = false
@@ -887,13 +936,13 @@ test.describe("Calendar Shell", () => {
       const cell = page.locator(`.cal-cell[data-date="${day}"]`)
       const events = page.locator("#day-drawer-events")
       await cell.press("Enter")
-      await expect(events).toContainText("Some live Home Assistant calendars couldn’t refresh.", { timeout: 15_000 })
+      await expect(events).toContainText("Some live Home Assistant calendars couldn’t refresh. Reopen the day to retry.", { timeout: 15_000 })
       await expect(events).toContainText("Household feed result")
       await expect(cell.getByText("Household feed result")).toBeVisible()
       await page.keyboard.press("Escape")
       allFail = true
       await cell.press("Enter")
-      await expect(events.getByText("Live Home Assistant calendars couldn’t refresh.", { exact: true }))
+      await expect(events.getByText("Live Home Assistant calendars couldn’t refresh. Reopen the day to retry.", { exact: true }))
         .toBeVisible({ timeout: 15_000 })
     } finally {
       for (const resolve of waiting) resolve()
@@ -1011,9 +1060,10 @@ test.describe("Calendar Shell", () => {
     await page.locator(`.cal-cell[data-date="${day}"]`).press("Enter")
     const drawer = page.locator("#day-drawer-tasks")
     await expect(drawer.getByRole("button")).toHaveCount(100)
-    await page.getByRole("button", { name: "Load more tasks (1 remaining)" }).press("Enter")
+    await page.getByRole("button", { name: "Load more items (1 remaining)" }).press("Enter")
     await expect(drawer.getByRole("button")).toHaveCount(101)
     await expect(drawer.getByRole("button", { name: /Fitted roof task 101/ })).toBeFocused()
+    await expect(page.locator("#day-drawer-task-status")).toHaveText("1 more item loaded")
     expect(filtersByPage).toEqual(["roof", "roof"])
   })
 

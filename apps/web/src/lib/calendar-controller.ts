@@ -250,8 +250,9 @@ export function initCalendarPage(signal: AbortSignal): void {
       items.sort((a, b) => compareCalendarStarts(a.start, b.start, timezone))
       drawerEvents!.replaceChildren(...items.map(item => item.row))
       if (!live || persisted === undefined) drawerEvents!.append(agendaMessage(loading))
-      else if (!live.available) drawerEvents!.append(agendaMessage("Live Home Assistant calendars couldn’t refresh."))
-      else if (live.partial) drawerEvents!.append(agendaMessage("Some live Home Assistant calendars couldn’t refresh."))
+      else if (!live.available || live.partial) drawerEvents!.append(agendaMessage(
+        (live.available ? "Some live" : "Live") + " Home Assistant calendars couldn’t refresh. Reopen the day to retry.",
+      ))
       else if (persisted && !items.length) drawerEvents!.append(agendaMessage("No calendar events"))
       if (persisted === null) drawerEvents!.append(agendaMessage("Saved calendar links couldn’t load."))
       const restoreId = activeId ?? focusedEvent
@@ -314,23 +315,23 @@ export function initCalendarPage(signal: AbortSignal): void {
             closeButton)?.focus()
         }
         moreTasks.hidden = !canLoadMore
-        moreTasks.textContent = canLoadMore ? `Load more tasks (${total - offset} remaining)` : "Load more tasks"
+        moreTasks.textContent = canLoadMore ? `Load more items (${total - offset} remaining)` : "Load more items"
         if (offset === rows.length && document.activeElement === closeButton) {
           const restore = restoreMore && canLoadMore ? moreTasks : fresh.find(row => row.dataset.taskId === focusedTask)
           restore?.focus()
         }
         drawerTaskStatus!.textContent = offset > rows.length && fresh.length
-          ? `${fresh.length} more task${fresh.length === 1 ? '' : 's'} loaded` : ""
+          ? `${fresh.length} more item${fresh.length === 1 ? '' : 's'} loaded` : ""
       } catch (error) {
         if (drawerRequest !== currentRequest || currentRequest.signal.aborted || signal.aborted) return
         log.warn("Could not load due tasks", error)
         if (!offset) {
-          renderMessage(drawerTasks!, "Couldn’t load tasks for this day.")
+          renderMessage(drawerTasks!, "Couldn’t load this day’s agenda.")
           persisted = null
           renderConnectedEvents()
-        } else drawerTaskStatus!.textContent = "Couldn’t load more tasks."
+        } else drawerTaskStatus!.textContent = "Couldn’t load more items."
         moreTasks.hidden = false
-        moreTasks.textContent = "Retry tasks"
+        moreTasks.textContent = "Retry agenda"
       } finally {
         if (drawerRequest === currentRequest) moreTasks.removeAttribute("aria-disabled")
         busy = false

@@ -633,6 +633,15 @@ test("legacy Shopping type filters survive view switches and respect Table searc
       href: "/calendar?area=&task_type=story&year=2031&month=6",
       icon: "calendar-event",
     })
+    const scopedShopping = new URLSearchParams({ ...query, search: suffix })
+    for (const active of [false, true]) {
+      shortcuts.push({
+        id: active ? "active-shopping" : "all-shopping",
+        label: active ? "Active shopping" : "All shopping by name",
+        href: "/tasks?" + scopedShopping + (active ? "&status=active" : "") + "#table",
+        icon: "shopping-cart",
+      })
+    }
     const save = await request.put("/api/settings", { headers, data: { key: "sidebar_config", value: {
       order: ["tasks", ...shortcuts.map(shortcut => shortcut.id)], customItems: shortcuts,
     } } })
@@ -760,6 +769,16 @@ test("legacy Shopping type filters survive view switches and respect Table searc
     const target = await page.evaluate(html => new DOMParser().parseFromString(html, "text/html")
       .querySelector('[data-view-tab="table"]')?.getAttribute("href"), await defaultBoard.text())
     expect(new URL(target!, baseURL).searchParams.getAll("advancedFilter")).toEqual([appliedRule])
+
+    await page.goto("/tasks?" + scopedShopping + "&status=pending&status=in_progress#table")
+    await expect(page.locator('#sidebar [data-page="active-shopping"]')).toHaveAttribute("aria-current", "page")
+    await expect(page.locator('#sidebar [data-page="all-shopping"]')).not.toHaveAttribute("aria-current", "page")
+    await expect(table.getByText(titles[0]!, { exact: true })).toBeVisible()
+    await expect(table.getByText(titles[1]!, { exact: true })).toHaveCount(0)
+    await views.getByRole("link", { name: "Kanban", exact: true }).click()
+    await expect(page).toHaveURL(url => url.searchParams.getAll("status").join() === "in_progress")
+    await expect(page.locator("#kanban-shell").getByText(titles[0]!, { exact: true })).toBeVisible()
+    await expect(page.locator("#kanban-shell").getByText(titles[1]!, { exact: true })).toHaveCount(0)
   } finally {
     await request.put("/api/settings", { headers, data: { key: "sidebar_config", value: previous ?? null } })
     for (const id of ids) await request.delete(`/api/tasks/${id}`, { headers })
