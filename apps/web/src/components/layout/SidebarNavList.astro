@@ -125,7 +125,7 @@ function isExternal(href: string): boolean {
       }
 
       return (
-        <li data-sidebar-group={item.key}>
+        <li data-sidebar-group={item.key} data-sidebar-pin-presence={item.key === "system-pinned" || undefined} hidden={item.key === "system-pinned"}>
           <a
             href={item.href}
             class={`nav-link ${item.isActive ? "active" : ""} ${external ? "nav-link--external" : ""}`}

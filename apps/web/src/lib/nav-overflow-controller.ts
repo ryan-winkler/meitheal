@@ -177,11 +177,13 @@ export function initNavOverflow(root: HTMLElement, pageSignal: AbortSignal): voi
   }
   const appearance = new MutationObserver(syncTaskNavDom)
   const content = new MutationObserver(records => {
-    if (records.some(record => record.type !== "childList" || (record.target !== menu && !primaries.includes(record.target as HTMLElement)))) schedule()
+    if (records.some(record => record.attributeName === "hidden"
+      ? (record.target as Element).hasAttribute("data-sidebar-pin-presence")
+      : record.type !== "childList" || (record.target !== menu && !primaries.includes(record.target as HTMLElement)))) schedule()
   })
   resize.observe(root)
   appearance.observe(document.documentElement, { attributes: true, attributeFilter: ["data-appearance-navigation", "data-appearance-font", "data-appearance-radius"] })
-  content.observe(root, { subtree: true, characterData: true, childList: true, attributes: true, attributeFilter: ["aria-current", "aria-selected"] })
+  content.observe(root, { subtree: true, characterData: true, childList: true, attributes: true, attributeFilter: ["aria-current", "aria-selected", "hidden"] })
 
   root.addEventListener("keydown", event => {
     if (event.defaultPrevented) return

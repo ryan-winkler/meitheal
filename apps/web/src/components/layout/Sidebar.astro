@@ -368,14 +368,21 @@ const remainingItems = areaPosition < 0 ? [] : navItems.slice(areaPosition + 1)
   import { pageLifecycle } from "@lib/page-lifecycle"
   import { bindSidebarBoards } from "@lib/sidebar-boards"
   import { bindSidebarReorder } from "@lib/sidebar-order"
+  import { bindSidebarPinPresence } from "@lib/sidebar-pin-presence"
 
+  const runtime = window as Window & { __meithealSidebarController?: AbortController }
+  runtime.__meithealSidebarController?.abort()
+  const controller = new AbortController()
+  runtime.__meithealSidebarController = controller
   let boundSignal: AbortSignal | undefined
-  pageLifecycle.onPageLoad(signal => {
-    if (boundSignal === signal) return
-    boundSignal = signal
+  pageLifecycle.onPageLoad(pageSignal => {
+    if (controller.signal.aborted || boundSignal === pageSignal) return
+    boundSignal = pageSignal
+    const signal = AbortSignal.any([pageSignal, controller.signal])
     bindSidebarBoards(signal)
     const sidebar = document.getElementById("sidebar")
     if (sidebar) {
+      bindSidebarPinPresence(sidebar, signal)
       bindSidebarReorder(sidebar, signal)
     }
   })
