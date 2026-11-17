@@ -236,7 +236,7 @@ try {
 } catch {
   /* areas table may not exist yet */
 }
-const kanbanAreas = kanbanFilters.groupBy === "area" ? new Map(areas.map(area => [area.id, area])) : null
+const kanbanAreas = new Map(areas.map(area => [area.id, area]))
 ---
 
 <Layout title={`Meitheal — ${householdWorkspace ? "Household · " : ""}${heading}`}>
