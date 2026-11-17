@@ -438,25 +438,8 @@
   @apply flex items-center justify-between py-2 px-3 bg-bg-secondary/50 rounded-md text-sm;
 }
 
-/* --- Swimlane collapse animation --- */
-.swimlane-cards {
-  transition: max-height 0.3s ease-out, opacity 0.2s ease, padding 0.2s ease;
-  overflow: hidden;
-}
-
-.swimlane-cards.collapsed {
-  max-height: 0 !important;
-  opacity: 0;
-  padding: 0;
-}
-
-.swimlane-toggle {
-  transition: transform 0.2s ease;
-  display: inline-block;
-}
-
-.swimlane-toggle.collapsed {
-  transform: rotate(-90deg);
+#kanban-board .swimlane-cards[hidden] {
+  display: none;
 }
 
 /* --- Accessibility: respect motion preferences --- */

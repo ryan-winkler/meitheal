@@ -465,8 +465,9 @@ try {
                     data-swimlane-type={type}
                     hidden
                   >
-                    <div class="swimlane-header" data-type={type}>
+                    <button type="button" class="swimlane-header" aria-expanded="true">
                       <span
+                        aria-hidden="true"
                         class={`swimlane-toggle ${count === 0 ? "opacity-30 pointer-events-none" : ""}`}
                       >
                         ▼
@@ -474,7 +475,7 @@ try {
                       <TaskTypeIcon type={type} size={16} />
                       <span class="swimlane-label">{tc.label}</span>
                       <span class="swimlane-count">{count}</span>
-                    </div>
+                    </button>
                     <div class="swimlane-cards">
                       {/* Cards moved here by JS when grouping is active */}
                     </div>
@@ -2005,11 +2006,13 @@ try {
     flex-direction: column;
     margin-bottom: 0px;
   }
-  .swimlane-header {
+  :global(#kanban-board .swimlane-header) {
     display: flex;
     align-items: center;
     gap: 6px;
     padding: 8px 12px;
+    border: 0;
+    text-align: start;
     background: var(--bg-hover);
     cursor: pointer;
     font-size: 12px;
@@ -2018,8 +2021,12 @@ try {
     transition: background 200ms;
     user-select: none;
   }
-  .swimlane-header:hover {
+  :global(#kanban-board .swimlane-header:hover) {
     background: var(--bg-secondary);
+  }
+  :global(#kanban-board .swimlane-header:focus-visible) {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
   }
   .swimlane-toggle {
     font-size: 10px;
@@ -2049,7 +2056,7 @@ try {
     flex-direction: column;
     gap: 6px;
   }
-  .swimlane-collapsed .swimlane-toggle {
+  :global(#kanban-board .swimlane-collapsed .swimlane-toggle) {
     transform: rotate(-90deg);
   }
 

@@ -62,7 +62,7 @@ export function initKanbanArea(
       return `/api/tasks/${encodeURIComponent(normalizedTaskId)}${suffix}`
     }
 
-    initKanbanGrouping(board)
+    initKanbanGrouping(board, __signal)
 
     async function moveTask(card: HTMLElement, lane: HTMLElement, dropGroup?: HTMLElement) {
       const taskId = card.dataset.id
