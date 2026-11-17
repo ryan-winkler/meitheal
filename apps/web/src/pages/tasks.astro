@@ -1,4 +1,5 @@
 ---
+import { newOrganizationLabel, organizationLabelsFor } from "@lib/organization-labels"
 import Layout from "../layouts/Layout.astro";
 
 import UnifiedBar from "../components/layout/UnifiedBar.astro";
@@ -50,7 +51,8 @@ const cookieLocale = Astro.cookies.get("meitheal-locale")?.value;
 const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
 const householdWorkspace = Astro.props.householdWorkspace === true
 const renderedView = parseTaskView(Astro.url.searchParams.get("view")) ?? "kanban"
-const heading = renderedView === "kanban" ? t("kanban.title", locale)
+const organization = await organizationLabelsFor(Astro)
+const heading = renderedView === "kanban" ? organization("task", true, t("kanban.title", locale))
   : renderedView === "table" ? "Table View" : TASK_VIEW_LABELS[renderedView]
 const currentUrl = new URL(Astro.url)
 // The HTML ingress rewriter adds the mount path to these root-relative links.
@@ -242,6 +244,7 @@ try {
 
   <UnifiedBar
     title={householdWorkspace ? "Household" : heading}
+    newTaskLabel={newOrganizationLabel(organization("task"), locale)}
     titleIcon={TASK_VIEW_ICONS[renderedView]}
     tabs={[]}
     searchPlaceholder="Search Meitheal…"

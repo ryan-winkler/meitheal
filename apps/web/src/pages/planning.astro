@@ -1,4 +1,5 @@
 ---
+import { organizationLabelsFor, newOrganizationLabel, organizationLocale } from "@lib/organization-labels"
 /**
  * /planning — Parent page for Planning views
  *
@@ -25,6 +26,8 @@ import {
 import { HierarchyRepository, type AreaRow, type ProjectRow } from "@domains/tasks/persistence/hierarchy-repository"
 import { TaskRepository } from "@domains/tasks/persistence/task-repository"
 
+const label = await organizationLabelsFor(Astro)
+const newLabel = (name: Parameters<typeof label>[0], fallback?: string) => newOrganizationLabel(label(name, false, fallback), organizationLocale(Astro))
 const cookieLocale = Astro.cookies.get("meitheal-locale")?.value
 const locale: Locale = cookieLocale === "ga" ? "ga" : "en"
 
@@ -116,7 +119,7 @@ const planningGroups: Array<{ area?: AreaRow; projects: ProjectRow[] }> = [...gr
 if (unassigned.length) planningGroups.push({ projects: unassigned })
 ---
 
-<Layout title={`Meitheal — ${t("nav.planning", locale)}`} hideSearchHub={true} hideGlobalSearch={true}>
+<Layout title={`Meitheal — ${label("planning", false, t("nav.planning", locale))}`} hideSearchHub={true} hideGlobalSearch={true}>
   {/* Suppress TopNavigation — ParentPageShell provides its own UnifiedBar */}
   <Fragment slot="custom-header" />
   <ParentPageShell pageId="planning">
@@ -126,7 +129,7 @@ if (unassigned.length) planningGroups.push({ projects: unassigned })
       {spacesUnavailable ? <p role="alert" class="spaces-empty">Could not load Areas and Projects. Reload to try again.</p> : (
         <>
           <header class="spaces-toolbar">
-            <h2>Areas &amp; Projects</h2>
+            <h2>{label("group", true)} &amp; {label("project", true)}</h2>
             <button type="button" class="btn btn-primary" id="create-area-btn">New Area</button>
           </header>
           {planningGroups.length === 0 && <p class="spaces-empty">Create an Area to organize the Projects and Goals you want to follow.</p>}
@@ -140,7 +143,7 @@ if (unassigned.length) planningGroups.push({ projects: unassigned })
                     </h3>
                     {area && <p>{items.length} {items.length === 1 ? "project" : "projects"} · {goalsByArea.get(area.id)?.size ?? 0} goals</p>}
                   </div>
-                  <button type="button" class="btn btn-ghost btn-sm" data-create-project={area?.id ?? ""} aria-label={area ? "New Project in " + area.name : "New Project without an Area"}>New Project</button>
+                  <button type="button" class="btn btn-ghost btn-sm" data-create-project={area?.id ?? ""} aria-label={area ? "New Project in " + area.name : "New Project without an Area"}>{newLabel("project")}</button>
                 </header>
                 {items.length ? <ul class="spaces-projects">
                   {items.map(project => {

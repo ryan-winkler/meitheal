@@ -1,4 +1,6 @@
 ---
+import { newOrganizationLabel, organizationLabelsFor, organizationLocale } from "@lib/organization-labels"
+const organization = await organizationLabelsFor(Astro)
 /**
  * GoalsTab — Inline Goals content for the Progress & Growth shell
  *
@@ -140,7 +142,7 @@ const statusLabels: Record<string, string> = {
       {projectionKey && <span class="goals-tab__count" data-board-goal-fallback hidden>{householdGoalCount} goal{householdGoalCount !== 1 ? "s" : ""}{!protectionIncludesScopeLabels && scopeName && ` · ${scopeName}`}</span>}
       {(areaId !== undefined || projectId !== undefined) && <a href="/progress#goals">All Goals</a>}
     </div>
-    {canCreate && <button type="button" class="btn btn-primary" id="goals-tab-new-btn">+ New Goal</button>}
+    {canCreate && <button type="button" class="btn btn-primary" id="goals-tab-new-btn">+ {newOrganizationLabel(organization("goal"), organizationLocale(Astro))}</button>}
   </header>
 
   {projectionKey && <p id="shared-goal-projection-status" hidden role="status">Goal access or progress changed. <button type="button" class="btn btn-ghost">Refresh Goals</button></p>}

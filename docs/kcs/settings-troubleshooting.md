@@ -32,6 +32,14 @@ In the compact sidebar, open either menu from the chevron below its icon. With t
 
 The small status dot beside **Settings** reports app and storage health. Hover or use a screen reader to read its status. Home Assistant connectivity is shown separately in **Settings → Connected Services → Home Assistant**.
 
+## Give Boards and other features personal names
+
+Open **Settings → Navigation & Shortcuts → Labels** through Home Assistant. For example, enter **Workspace** and **Workspaces** for Board, then choose **Save labels**. The sidebar, Boards page and new Board action use your chosen forms. Search finds the page by either name. Existing links and the names of individual Boards, Groups, Projects and Tasks keep working.
+
+Each Home Assistant account can save different names for English and Gaeilge. A blank input uses the default for that form. Choose **Use default** for one term or **Use all defaults** for the visible terms, then save. A disabled feature's label is available again when the feature returns.
+
+If a save fails, keep the page open and try again. If another window saved first, review the current values displayed alongside your edits before saving again. Reopen Meitheal when changing Home Assistant accounts. Use Home Assistant backups for databases containing personal labels. The Settings configuration export contains installation settings.
+
 ## Check Home Assistant
 
 Open **Settings → Connected Services → Home Assistant** and choose **Test Connection** to check the App’s live Supervisor connection. A standalone instance reports **Standalone**. Its Advanced form still saves standalone settings separately.

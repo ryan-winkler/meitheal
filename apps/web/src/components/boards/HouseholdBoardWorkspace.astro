@@ -1,4 +1,5 @@
 ---
+import { organizationLabelsFor, newOrganizationLabel, organizationLocale } from "@lib/organization-labels"
 import Layout from "../../layouts/Layout.astro"
 import HouseholdGroup from "../../pages/areas/[id].astro"
 import HouseholdProject from "../../pages/projects/[id].astro"
@@ -8,6 +9,8 @@ import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/s
 import { boardWorkspaceHref, HOUSEHOLD_BOARD_ID, readBoardWorkspaceSelection } from "@lib/board-workspace"
 import "../../styles/boards.css"
 
+const label = await organizationLabelsFor(Astro)
+const newLabel = (name: Parameters<typeof label>[0], fallback?: string) => newOrganizationLabel(label(name, false, fallback), organizationLocale(Astro))
 const selection = readBoardWorkspaceSelection(Astro.url.searchParams)
 const household = boardWorkspaceHref(HOUSEHOLD_BOARD_ID)
 let areas: Awaited<ReturnType<HierarchyRepository["findAllAreas"]>> = []
@@ -40,11 +43,11 @@ if (!available) Astro.response.status = 404
   : <Layout title="Household groups">
     <span slot="page-title">Household</span>
     <div class="boards-workspace">
-      <nav class="board-back" aria-label="Board navigation"><a href="/boards">Boards</a> › <a href={household}>Household</a></nav>
+      <nav class="board-back" aria-label="Board navigation"><a href="/boards">{label("board", true)}</a> › <a href={household}>Household</a></nav>
       <header class="boards-heading">
-        <div><h1>Groups</h1><p>Organize Projects and related work within Household.</p></div>
+        <div><h1>{label("group", true)}</h1><p>Organize Projects and related work within Household.</p></div>
         <details class="board-add">
-          <summary class="btn btn-primary">New group</summary>
+          <summary class="btn btn-primary">{newLabel("group", organizationLocale(Astro) === "en" ? "group" : undefined)}</summary>
           <form class="board-form" data-household-group-create>
             <label>Name <input name="name" maxlength="100" required /></label>
             <label>Icon <input name="icon" maxlength="10" value="📁" /></label>
@@ -57,12 +60,12 @@ if (!available) Astro.response.status = 404
       <div class="boards-list">
         {areas.map(area => <article class="board-tile">
           <a class="board-name" href={boardWorkspaceHref(HOUSEHOLD_BOARD_ID, { area: area.id })}>{area.icon} {area.name}</a>
-          <a class="board-note" href={boardWorkspaceHref(HOUSEHOLD_BOARD_ID, { area: area.id }, "projects")}>Projects</a>
+          <a class="board-note" href={boardWorkspaceHref(HOUSEHOLD_BOARD_ID, { area: area.id }, "projects")}>{label("project", true)}</a>
         </article>)}
       </div>
       {!areas.length && <p class="board-empty">Create your first group to organize related work.</p>}
       {unfiled.length > 0 && <section class="named-boards" aria-labelledby="unfiled-projects">
-        <h2 id="unfiled-projects">Unfiled Projects</h2>
+        <h2 id="unfiled-projects">Unfiled {label("project", true)}</h2>
         <div class="boards-list">
           {unfiled.map(project => <a class="board-tile board-name" href={boardWorkspaceHref(HOUSEHOLD_BOARD_ID, { project: project.id })}>{project.title}</a>)}
         </div>

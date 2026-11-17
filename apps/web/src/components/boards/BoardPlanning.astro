@@ -1,4 +1,5 @@
 ---
+import { organizationLabelsFor, newOrganizationLabel, organizationLocale } from "@lib/organization-labels"
 import type { readNamedBoardPlanning } from "@domains/tasks/persistence/named-board-planning-repository"
 
 import { boardWorkspaceHref } from "@lib/board-workspace"
@@ -16,6 +17,8 @@ interface Props {
   tickets: { id: string; title: string }[]
 }
 const { boardId, areaId, projectId, planning, canManage, canComplete, routinesEnabled, tickets } = Astro.props
+const label = await organizationLabelsFor(Astro)
+const newLabel = (name: Parameters<typeof label>[0], fallback?: string) => newOrganizationLabel(label(name, false, fallback), organizationLocale(Astro))
 const goalHref = (filter: string, id: string) => `/progress?${filter}=${encodeURIComponent(id)}#goals`
 const showRoutines = routinesEnabled && (canManage || planning.routines.length > 0)
 const visibleAreas = areaId ? planning.areas.filter(area => area.id === areaId) : planning.areas
@@ -24,7 +27,7 @@ const ownedAreaIds = new Set(planning.areas.map(area => area.id))
 ---
 
 <section class="named-boards board-settings" id="groups" aria-labelledby="board-planning-title">
-  <h2 id="board-planning-title">{projectId ? "Project planning" : areaId ? "Group planning" : "Groups"}</h2>
+  <h2 id="board-planning-title">{projectId ? `${label("project")} planning` : areaId ? `${label("group")} planning` : label("group", true)}</h2>
   {!areaId && planning.projects.some(project => !project.areaId) && <section aria-labelledby="unfiled-projects">
     <h3 id="unfiled-projects">Unfiled Projects</h3>
     <ul>{planning.projects.filter(project => !project.areaId && (!projectId || projectId === project.id))
@@ -35,7 +38,7 @@ const ownedAreaIds = new Set(planning.areas.map(area => area.id))
     {visibleAreas.map(area => <section class="board-tile">
       <h3 class="board-name"><a href={boardWorkspaceHref(boardId, { area: area.id })}>{area.icon} {area.name}</a></h3>
       {canManage && <details id={areaId === area.id && !projectId ? "group-settings" : undefined}>
-        <summary>Group settings</summary>
+        <summary>{label("group")} settings</summary>
         <form data-board-form="planning" class="board-form">
           <input type="hidden" name="action" value="area" />
           <input type="hidden" name="id" value={area.id} />
@@ -47,15 +50,15 @@ const ownedAreaIds = new Set(planning.areas.map(area => area.id))
         </form>
         <RetirePlanningForm entity="area" id={area.id} />
       </details>}
-      <a href={goalHref("area_id", area.id)}>View Goals</a>
+      <a href={goalHref("area_id", area.id)}>View {label("goal", true)}</a>
       <div>
-        <strong>Projects</strong>
+        <strong>{label("project", true)}</strong>
         {planning.projects.filter(project => project.areaId === area.id && (!projectId || project.id === projectId)).map(project => <article class="board-tile">
           <h4 class="board-name"><a href={boardWorkspaceHref(boardId, { project: project.id, fromArea: area.id })}>{project.title}</a></h4>
-          <a href={goalHref("project_id", project.id)}>View Project Goals</a>
+          <a href={goalHref("project_id", project.id)}>View {label("project")} {label("goal", true)}</a>
           {project.description && <p>{project.description}</p>}
           {canManage && <details id={projectId === project.id ? "project-settings" : undefined}>
-            <summary>Edit Project</summary>
+            <summary>Edit {label("project")}</summary>
             <form data-board-form="planning" class="board-form">
               <input type="hidden" name="action" value="project-edit" />
               <input type="hidden" name="id" value={project.id} />
@@ -91,7 +94,7 @@ const ownedAreaIds = new Set(planning.areas.map(area => area.id))
         </article>)}
       </div>
       {canManage && <details>
-        <summary>New Project</summary>
+        <summary>{newLabel("project")}</summary>
         <form data-board-form="planning" class="board-form">
           <input type="hidden" name="action" value="project" />
           <input type="hidden" name="areaId" value={area.id} />
@@ -124,7 +127,7 @@ const ownedAreaIds = new Set(planning.areas.map(area => area.id))
         </details>}
       </article>)}
       {canManage && <details>
-        <summary>New Goal</summary>
+        <summary>{newLabel("goal")}</summary>
         <form data-board-form="planning" class="board-form">
           <input type="hidden" name="action" value="goal" />
           <input type="hidden" name="areaId" value={area.id} />
@@ -161,7 +164,7 @@ const ownedAreaIds = new Set(planning.areas.map(area => area.id))
           </details>}
         </article>)}
         {canManage && <details>
-          <summary>New Routine</summary>
+          <summary>{newLabel("routine")}</summary>
           <form data-board-form="planning" class="board-form">
             <input type="hidden" name="action" value="routine" />
             <input type="hidden" name="areaId" value={area.id} />
@@ -177,10 +180,10 @@ const ownedAreaIds = new Set(planning.areas.map(area => area.id))
     {planning.projects.filter(project => !project.areaId || !ownedAreaIds.has(project.areaId)).map(project => <article class="board-tile">
       <h3 class="board-name">{project.title}</h3>
       {project.description && <p>{project.description}</p>}
-      <a href={goalHref("project_id", project.id)}>View Project Goals</a>
+      <a href={goalHref("project_id", project.id)}>View {label("project")} {label("goal", true)}</a>
     </article>)}
     {canManage && <details class="board-tile">
-      <summary>New group</summary>
+      <summary>{newLabel("group", organizationLocale(Astro) === "en" ? "group" : undefined)}</summary>
       <form data-board-form="planning" class="board-form">
         <input type="hidden" name="action" value="area" />
         <label>Name <input name="title" maxlength="150" required /></label>
@@ -220,7 +223,7 @@ const ownedAreaIds = new Set(planning.areas.map(area => area.id))
     </section>)}
   </details>}
   <section class="named-boards" aria-labelledby="board-pillars-title">
-    <h2 id="board-pillars-title">Board Pillars</h2>
+    <h2 id="board-pillars-title">{label("board")} {label("pillar", true)}</h2>
     <div class="boards-list">
       {planning.pillars.map(pillar => <article class="board-tile">
         <h3 class="board-name">{pillar.name}</h3>
@@ -303,7 +306,7 @@ const ownedAreaIds = new Set(planning.areas.map(area => area.id))
       </article>)}
     </div>
     {canManage && <details class="board-tile">
-      <summary>New Board Pillar</summary>
+      <summary>{organizationLocale(Astro) === "en" ? `New ${label("board")} ${label("pillar")}` : newLabel("pillar")}</summary>
       <form data-board-form="planning" class="board-form">
         <input type="hidden" name="action" value="pillar" />
         <label>Name <input name="title" maxlength="150" required /></label>

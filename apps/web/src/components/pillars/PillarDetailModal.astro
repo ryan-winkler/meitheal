@@ -1,4 +1,6 @@
 ---
+import { organizationLabelsFor } from "@lib/organization-labels"
+const organization = await organizationLabelsFor(Astro)
 /**
  * PillarDetailModal — Full-screen overlay for viewing/editing a Pillar
  *
@@ -57,7 +59,7 @@
       <div class="pillar-detail-modal__section-header">
         <h4 class="pillar-detail-modal__section-title">
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-          Principles
+          {organization("principle", true)}
         </h4>
         <button type="button" class="btn btn-secondary btn-sm pillar-detail-modal__add-principle-btn" id="pillar-detail-add-principle" aria-expanded="false" aria-controls="pillar-detail-principle-form">
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Add principle
@@ -66,7 +68,7 @@
       <p id="pillar-detail-status" class="pillar-detail-modal__status" role="status"></p>
       <ul class="pillar-detail-modal__principles" id="pillar-detail-principles"></ul>
       <form class="pillar-detail-modal__principle-form" id="pillar-detail-principle-form" hidden>
-        <label for="pillar-detail-principle-input">Principle</label>
+        <label for="pillar-detail-principle-input">{organization("principle")}</label>
         <input type="text" class="form-input bg-bg-input pillar-detail-modal__principle-input" id="pillar-detail-principle-input" placeholder="e.g. No screens after 9 PM" maxlength="500" required />
         <label class="pillar-detail-modal__nn-label">
           <input type="checkbox" class="pillar-detail-modal__nn-check" id="pillar-detail-nn-check" />

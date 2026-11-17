@@ -1997,6 +1997,27 @@ const paths = {
   },
 
   // ── Settings ──
+  "/api/organization-labels": {
+    get: {
+      operationId: "getPersonalOrganizationLabels", tags: ["Settings"], summary: "Read personal labels for the current Home Assistant account and language",
+      responses: { 200: { description: "Visible label forms, revision, terms and form proof" }, 403: { description: "Verified Home Assistant account required" } },
+    },
+    put: {
+      operationId: "savePersonalOrganizationLabels", tags: ["Settings"], summary: "Save visible personal labels for the active display language",
+      requestBody: { required: true, content: { "application/json": { schema: {
+        type: "object", required: ["proof", "revision", "terms", "forms"],
+        properties: {
+          proof: { type: "string" }, revision: { type: "string" },
+          terms: { type: "array", items: { type: "string" } },
+          forms: { type: "object", additionalProperties: { type: "array", items: { type: "string", maxLength: 40 } } },
+        },
+      } } } },
+      responses: { 204: { description: "Saved" }, 400: { description: "Invalid label forms" },
+        403: { description: "Verified Home Assistant account required" },
+        409: { description: "Previously saved labels or available features changed" },
+        412: { description: "Account or language changed" } },
+    },
+  },
   "/api/settings": {
     get: {
       operationId: "getSettings", tags: ["Settings"], summary: "Read application settings",

@@ -7,6 +7,7 @@ import { initSettingsShell } from "@lib/settings-shell-controller"
 import { initSettingsLabels } from "@lib/settings-labels-controller"
 import { initSettingsLabelCleanup } from "@lib/settings-label-cleanup-controller"
 import { initSettingsTaskNav } from "@lib/settings-task-nav-controller"
+import { initOrganizationLabels } from "@lib/settings-organization-labels"
 import { initSettingsWorkspace } from "@lib/settings-workspace-controller"
 
 function initPwaNotificationTest(): void {
@@ -58,6 +59,7 @@ function bootSettingsPage(): void {
   initSettingsLabelCleanup()
   initSettingsTaskNav(pageLifecycle.signal)
   initSettingsWorkspace(pageLifecycle.signal)
+  initOrganizationLabels(pageLifecycle.signal)
   initPwaNotificationTest()
 }
 

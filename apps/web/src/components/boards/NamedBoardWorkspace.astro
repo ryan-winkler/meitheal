@@ -1,4 +1,5 @@
 ---
+import { organizationLabelsFor, newOrganizationLabel, organizationLocale } from "@lib/organization-labels"
 import BoardPlanning from "./BoardPlanning.astro"
 import Layout from "../../layouts/Layout.astro"
 import "../../styles/boards.css"
@@ -9,6 +10,8 @@ import { boardSessionProof, currentBoardUser } from "@lib/named-board-request"
 import { isFeatureEnabled } from "@lib/feature-flags"
 import { isDoneStatus } from "@lib/status-config"
 
+const label = await organizationLabelsFor(Astro)
+const newLabel = (name: Parameters<typeof label>[0], fallback?: string) => newOrganizationLabel(label(name, false, fallback), organizationLocale(Astro))
 const boardId: string = Astro.props.boardId
 const selection = readBoardWorkspaceSelection(Astro.url.searchParams)
 const user = await currentBoardUser(Astro.locals, Astro.request.signal)
@@ -32,14 +35,14 @@ const grouping = { area: scope?.project ? undefined : scope?.area?.id, project: 
 const title = scope?.project?.title ?? scope?.area?.name ?? view?.board.name ?? "Board"
 const nextAction = view?.summary?.next
 ---
-<Layout title="Board">
-  <span slot="page-title">Board</span>
+<Layout title={label("board")}>
+  <span slot="page-title">{label("board")}</span>
   <div class="boards-workspace">
     {!view || !boardId || !user ? <p>This Board is unavailable.</p> :
       <div data-board-directory data-board-verify={verifyPath} data-board-key={boardViewKey(view, user.actor.id)}
         data-board-session={boardSessionProof(user.actor.id)} data-board-id={boardId}>
         <nav class="board-back" aria-label="Board navigation">
-          <a href="/boards">Boards</a>
+          <a href="/boards">{label("board", true)}</a>
           <span aria-hidden="true">›</span><a href={boardWorkspaceHref(boardId)}>{view.board.name}</a>
           {scope?.area && (!scope.project || fromArea) && <><span aria-hidden="true">›</span><a href={boardWorkspaceHref(boardId, { area: scope.area.id })}>{scope.area.name}</a></>}
         </nav>
@@ -52,7 +55,7 @@ const nextAction = view?.summary?.next
             {view.board.state === "archived" && <p>Archived Board</p>}
           </div>
           {canEdit && (!scope?.project || scope.project.status === "active") && !selection.ticketId && <details class="board-add">
-            <summary class="btn btn-primary">New task</summary>
+            <summary class="btn btn-primary">{newLabel("task", organizationLocale(Astro) === "en" ? "task" : undefined)}</summary>
             <form data-board-form="task-create" class="board-form">
               <label>Title <input name="title" maxlength="500" required autocomplete="off" /></label>
               <label>Details <textarea name="description" maxlength="10000" rows="3"></textarea></label>
@@ -69,12 +72,12 @@ const nextAction = view?.summary?.next
         </header>
 
         {!selection.ticketId && <nav class="board-context-tabs" aria-label="Board workspace">
-          <a class="btn btn-ghost" aria-current={!selection.planning ? "page" : undefined} href={boardWorkspaceHref(boardId, { ...grouping, groups: false })}>Tasks</a>
-          <a class="btn btn-ghost" aria-current={selection.planning ? "page" : undefined} href={boardWorkspaceHref(boardId, { ...grouping, groups: true }, scope?.project ? "project-settings" : scope?.area ? "group-settings" : "groups")}>{scope?.project ? "Project settings" : scope?.area ? "Group planning" : "Groups"}</a>
-          {!scope?.area && !scope?.project && policy && <a class="btn btn-ghost" href="#settings">Board settings</a>}
+          <a class="btn btn-ghost" aria-current={!selection.planning ? "page" : undefined} href={boardWorkspaceHref(boardId, { ...grouping, groups: false })}>{label("task", true)}</a>
+          <a class="btn btn-ghost" aria-current={selection.planning ? "page" : undefined} href={boardWorkspaceHref(boardId, { ...grouping, groups: true }, scope?.project ? "project-settings" : scope?.area ? "group-settings" : "groups")}>{scope?.project ? `${label("project")} settings` : scope?.area ? `${label("group")} planning` : label("group", true)}</a>
+          {!scope?.area && !scope?.project && policy && <a class="btn btn-ghost" href="#settings">{label("board")} settings</a>}
         </nav>}
         {scope?.area && !scope.project && !selection.planning && <p>
-          <a href={boardWorkspaceHref(boardId, { area: scope.area.id, groups: true }, "projects")}>Projects in {scope.area.name}</a>
+          <a href={boardWorkspaceHref(boardId, { area: scope.area.id, groups: true }, "projects")}>{label("project", true)} in {scope.area.name}</a>
         </p>}
         {!selection.planning && <section class="board-columns" aria-label="Tasks by column">
           {view.lanes.map(lane => <section class="board-lane">
@@ -103,8 +106,8 @@ const nextAction = view?.summary?.next
               {canEdit && !task.routine && <details data-board-filing>
                 <summary>File task</summary>
                 <form data-board-form="task-file" data-ticket-id={task.id} data-version={task.version} class="board-form">
-                  <label>Group <select name="areaId" disabled><option value="">Unfiled</option></select></label>
-                  <label>Project <select name="projectId" disabled><option value="">No Project</option></select></label>
+                  <label>{label("group")} <select name="areaId" disabled><option value="">Unfiled</option></select></label>
+                  <label>{label("project")} <select name="projectId" disabled><option value="">No Project</option></select></label>
                   <p role="status" data-board-feedback></p>
                   <button type="submit" class="btn btn-ghost" disabled>Save placement</button>
                 </form>

@@ -1,9 +1,11 @@
 ---
+import { newOrganizationLabel, organizationLabelsFor } from "@lib/organization-labels"
 import { t } from "../../i18n/translations";
 import type { Locale } from "../../lib/locale";
 import Icon from "../ui/Icon.astro";
 import LabelPicker from "../ui/LabelPicker.astro";
 
+const organization = await organizationLabelsFor(Astro)
 const cookieLocale = Astro.cookies.get("meitheal-locale")?.value;
 const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
 ---
@@ -11,7 +13,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
 <div id="new-task-overlay" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="new-task-title">
   <div class="modal-content nt-modal">
     <header class="nt-header">
-      <h2 id="new-task-title">{t("tasks.new_task_modal", locale)}</h2>
+      <h2 id="new-task-title">{newOrganizationLabel(organization("task"), locale)}</h2>
       <button type="button" class="btn btn-ghost nt-icon-button" id="close-new-task-modal" aria-label="Close" title="Close">
         <Icon name="x" size={18} sprite={true} />
       </button>
@@ -26,7 +28,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
       <fieldset class="nt-group">
         <legend>{t("task_modal.type_label", locale)}</legend>
         <div class="nt-kind-grid" id="nt-kind-tabs">
-          <button type="button" class="nt-kind-pill active inline-flex items-center justify-center gap-1.5" data-kind="standard_action" aria-pressed="true"><Icon name="checkbox" size={15} /><span>{t("task_modal.kind_task", locale)}</span></button>
+          <button type="button" class="nt-kind-pill active inline-flex items-center justify-center gap-1.5" data-kind="standard_action" aria-pressed="true"><Icon name="checkbox" size={15} /><span>{organization("task", false, t("task_modal.kind_task", locale))}</span></button>
           <button type="button" class="nt-kind-pill inline-flex items-center justify-center gap-1.5" data-kind="shopping_item" aria-pressed="false"><Icon name="shopping-cart" size={15} /><span>{t("task_modal.kind_shopping_list", locale)}</span></button>
           <button type="button" class="nt-kind-pill inline-flex items-center justify-center gap-1.5" data-kind="checklist" aria-pressed="false"><Icon name="list-check" size={15} /><span>{t("task_modal.kind_checklist", locale)}</span></button>
           <button type="button" class="nt-kind-pill inline-flex items-center justify-center gap-1.5" data-kind="calendar_event" aria-pressed="false"><Icon name="calendar-event" size={15} /><span>{t("task_modal.kind_event", locale)}</span></button>

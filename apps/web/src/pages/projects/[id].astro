@@ -1,4 +1,5 @@
 ---
+import { organizationLabelsFor } from "@lib/organization-labels"
 /**
  * Project Detail — shows project metadata + tabbed sections for Tasks, Fields, Settings.
  * Uses hash-based sub-menu tabs matching the parent page shell pattern.
@@ -87,9 +88,10 @@ const progress = tasks.length > 0 ? Math.round((completedCount / tasks.length) *
 
 const { timezone, dateFormat } = Astro.locals;
 
+const organization = await organizationLabelsFor(Astro)
 const tabs = [
   { id: "overview", label: "Overview", icon: "📊" },
-  { id: "tasks", label: "Tasks", icon: "✅" },
+  { id: "tasks", label: organization("task", true), icon: "✅" },
   { id: "fields", label: "Fields", icon: "🏷️" },
   { id: settingsTab, label: "Settings", icon: "⚙️" },
 ];
@@ -128,7 +130,7 @@ const tabs = [
   <section id="section-overview" class="project-section active" data-section="overview">
     {/* Breadcrumb */}
     <nav class="project-breadcrumb" aria-label="Project breadcrumb">
-      <a href={workspaceProjectId ? boardWorkspaceHref(HOUSEHOLD_BOARD_ID) : "/projects"}>{workspaceProjectId ? "Household" : "Projects"}</a>
+      <a href={workspaceProjectId ? boardWorkspaceHref(HOUSEHOLD_BOARD_ID) : "/projects"}>{workspaceProjectId ? "Household" : organization("project", true)}</a>
       {area && <><span class="bc-sep">›</span><a href={workspaceProjectId ? boardWorkspaceHref(HOUSEHOLD_BOARD_ID, { area: String(area.id) }) : `/areas/${String(area.id)}`}>{String(area.name)}</a></>}
       {goal && <><span class="bc-sep">›</span><a href={`/progress?project_id=${encodeURIComponent(projectId)}#goals`}>🎯 {String(goal.title)}</a></>}
       <span class="bc-sep">›</span>
@@ -170,7 +172,7 @@ const tabs = [
   {/* ── Tasks Section ── */}
   <section id="section-tasks" class="project-section" data-section="tasks">
     <div class="section-header">
-      <h2 class="section-title">Tasks</h2>
+      <h2 class="section-title">{organization("task", true)}</h2>
       <span class="text-sm text-text-muted">{tasks.length} total</span>
     </div>
 
@@ -258,7 +260,7 @@ const tabs = [
   {/* ── Settings Section ── */}
   <section id={`section-${settingsTab}`} class="project-section" data-section={settingsTab}>
     <div class="section-header">
-      <h2 class="section-title">Project Settings</h2>
+      <h2 class="section-title">{organization("project")} Settings</h2>
     </div>
 
     <div class="settings-card">

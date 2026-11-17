@@ -1,4 +1,5 @@
 ---
+import { readRequestOrganizationLabels } from "@lib/organization-labels"
 import "../styles/global.css";
 import Confetti from "../components/gamification/Confetti.astro";
 import PomodoroTimer from "../components/pomodoro/PomodoroTimer.astro";
@@ -32,6 +33,10 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
 
 // Feature flags — read from settings DB (SSR)
 const featureFlags = await getFeatureFlags();
+const organizationState = await readRequestOrganizationLabels(Astro)
+if (organizationState && Object.keys(organizationState.forms).length) {
+  Astro.response.headers.set("Cache-Control", "private, no-store")
+}
 const featureFlagsJson = JSON.stringify(featureFlags);
 const showConfetti = !!featureFlags.confetti;
 const showPomodoro = !!featureFlags.pomodoro;

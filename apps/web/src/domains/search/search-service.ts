@@ -5,6 +5,7 @@ import {
   TaskRepository,
   type TaskCatalogRow,
 } from "@domains/tasks"
+import type { OrganizationTerm } from "@lib/organization-labels"
 import { normalizeSavedFilter, writeTableFilterParams } from "@lib/filter-state"
 import {
   SETTINGS_SECTIONS,
@@ -59,7 +60,10 @@ function filterByQuery<T extends SearchResultItem>(items: T[], query: string): T
   )
 }
 
-export async function searchMeithealCatalog(options: SearchQueryOptions): Promise<SearchResponse> {
+export async function searchMeithealCatalog(
+  options: SearchQueryOptions,
+  organization?: (term: OrganizationTerm, plural: boolean, fallback: string) => string,
+): Promise<SearchResponse> {
   const client = getPersistenceClient()
   const taskRepo = new TaskRepository(client)
   const areaRepo = new AreaRepository(client)
@@ -87,7 +91,7 @@ export async function searchMeithealCatalog(options: SearchQueryOptions): Promis
     if (taskItems.length > 0) {
       sections.push({
         id: "tasks",
-        label: options.query ? "Tasks" : "Recent tasks",
+        label: organization?.("task", true, options.query ? "Tasks" : "Recent tasks") ?? (options.query ? "Tasks" : "Recent tasks"),
         items: taskItems,
       })
     }
@@ -111,7 +115,7 @@ export async function searchMeithealCatalog(options: SearchQueryOptions): Promis
     if (areaItems.length > 0) {
       sections.push({
         id: "areas",
-        label: "Areas",
+        label: organization?.("group", true, "Areas") ?? "Areas",
         items: areaItems,
       })
     }

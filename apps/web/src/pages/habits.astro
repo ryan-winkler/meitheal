@@ -1,4 +1,5 @@
 ---
+import { newOrganizationLabel, organizationLabelsFor } from "@lib/organization-labels"
 /**
  * Habits Page — Routine Template Control Surface
  *
@@ -118,13 +119,15 @@ const cadenceSummary =
   activeCount === 0
     ? "Create your first habit to begin a consistent routine."
     : `${dailyCount} daily · ${weeklyCount} weekly routines`
+const organization = await organizationLabelsFor(Astro)
+const newRoutine = newOrganizationLabel(organization("routine"), locale)
 const habitsBootstrap = serializeForScript({ habits })
 ---
 
-<Layout title={`${t("nav.habits", locale)} — Meitheal`}>
+<Layout title={`${organization("routine", true, t("nav.habits", locale))} — Meitheal`}>
 
   <UnifiedBar
-    title={t("nav.habits", locale)}
+    title={organization("routine", true, t("nav.habits", locale))}
     titleIcon="🔁"
     tabs={HABITS_SECTIONS.map((section) => ({
       id: section.id,
@@ -144,8 +147,8 @@ const habitsBootstrap = serializeForScript({ habits })
       id="habits-bar-new-habit"
       data-open-habit-modal
       disabled={loadFailed}
-      title="New Routine"
-      aria-label="New Routine"
+      title={newRoutine}
+      aria-label={newRoutine}
     >
       <svg
         class="unified-bar__new-task-icon"
@@ -160,7 +163,7 @@ const habitsBootstrap = serializeForScript({ habits })
       >
         <path d="M12 5v14M5 12h14" />
       </svg>
-      <span class="unified-bar__new-task-label">New Routine</span>
+      <span class="unified-bar__new-task-label">{newRoutine}</span>
     </button>
   </UnifiedBar>
 
@@ -177,7 +180,7 @@ const habitsBootstrap = serializeForScript({ habits })
       <div class="habits-hero">
         <div class="habits-hero__title-row">
           <div class="habits-hero__copy">
-            <h1 class="habits-hero__title">Routines</h1>
+            <h1 class="habits-hero__title">{organization("routine", true)}</h1>
           </div>
 
           <div class="habits-hero__chips" aria-label="Habits quick jumps">
@@ -452,7 +455,7 @@ const habitsBootstrap = serializeForScript({ habits })
     <div class="habit-modal-overlay hidden" id="habit-modal-overlay">
       <div class="habit-modal" role="dialog" aria-modal="true" aria-labelledby="habit-modal-title">
         <div class="habit-modal__header">
-          <h2 id="habit-modal-title">New Routine</h2>
+          <h2 id="habit-modal-title" data-create-title={newRoutine} data-edit-title={`Edit ${organization("routine")}`}>{newRoutine}</h2>
           <button class="btn-icon" id="habit-modal-close" aria-label="Close">×</button>
         </div>
 
