@@ -12,11 +12,13 @@
  * Any visual change to how tasks appear in list views should be made HERE,
  * not duplicated across page files.
  */
+import Icon from "../ui/Icon.astro"
 import StatusBadge from "../ui/StatusBadge.astro"
 import PriorityLabel from "../ui/PriorityLabel.astro"
 import FrameworkBadge from "../ui/FrameworkBadge.astro"
 import LabelBadges from "../ui/LabelBadges.astro"
 import TaskTypeIcon from "../ui/TaskTypeIcon.astro"
+import { taskSurface } from "../../lib/task-surface"
 import { formatTicketKey } from "../../lib/ticket-key"
 import { buildTaskPath } from "../../lib/task-detail-handoff"
 import type { TaskViewItem } from "../../lib/task-queries"
@@ -85,6 +87,7 @@ const customEntries = Object.entries(task.custom_fields).filter(
   ]}
   data-id={task.id}
   data-status={task.status}
+  {...taskSurface(task.status, task.color)}
   data-priority={String(task.priority)}
   data-rice={task.rice !== null ? String(task.rice) : ""}
   data-area={task.area_id}
@@ -106,20 +109,23 @@ const customEntries = Object.entries(task.custom_fields).filter(
     type="button"
     class:list={["tli__fav", { "is-fav": task.is_favorite }]}
     data-id={task.id}
-    aria-label={task.is_favorite ? "Remove from favorites" : "Add to favorites"}
-    title={task.is_favorite ? "★ Favorited" : "☆ Favorite"}
+    aria-label="Favorite"
+    title={task.is_favorite ? "Remove from favorites" : "Add to favorites"}
+    aria-pressed={task.is_favorite}
   >
-    {task.is_favorite ? "★" : "☆"}
+    <Icon name="star" size={15} />
   </button>
 
   {/* Checkbox */}
-  <input
-    type="checkbox"
-    class="tli__checkbox"
-    checked={task.is_done}
-    data-id={task.id}
-    aria-label={`Complete ${task.title}`}
-  />
+  <label class="tli__completion">
+    <input
+      type="checkbox"
+      class="tli__checkbox"
+      checked={task.is_done}
+      data-id={task.id}
+      aria-label={`Complete ${task.title}`}
+    />
+  </label>
 
   {/* Content */}
   <div class="tli__content">
@@ -128,21 +134,19 @@ const customEntries = Object.entries(task.custom_fields).filter(
         <span class="tli__ticket">{ticketKey}</span>
       )}
       <TaskTypeIcon type={task.task_type} size={14} role="img" />
-      <a class="tli__title-text" href={buildTaskPath(task.id)} data-task-detail-link={task.id}>{task.title}</a>
+      <a class="tli__title-text" title={task.title} href={buildTaskPath(task.id)} data-task-detail-link={task.id}>{task.title}</a>
     </div>
 
     <div class="tli__meta">
       <PriorityLabel priority={task.priority} />
       {task.due_date && (
-        <span class={task.is_overdue ? "tli__overdue-date" : ""}>
+        <span class="tli__due-date">
           · Due {task.due_date.split("T")[0]}
-          {task.is_overdue && (
-            <span class="tli__overdue-tag">overdue</span>
-          )}
+          <span class="tli__overdue-tag">overdue</span>
         </span>
       )}
       {task.calendar_sync_state === "confirmed" && (
-        <span title="Synced to calendar">· 📅</span>
+        <span title="Synced to calendar"><Icon name="calendar-event" size={14} /></span>
       )}
       {task.rice !== null && <span>·</span>}
       <FrameworkBadge score={task.rice} framework="RICE" />
@@ -170,7 +174,7 @@ const customEntries = Object.entries(task.custom_fields).filter(
     {checklistTotal > 0 && (
       <span
         class="tli__checklist"
-        style={`color: ${checklistDone === checklistTotal ? "var(--color-green-500, #22c55e)" : "var(--text-muted)"}`}
+        style={`color: ${checklistDone === checklistTotal ? "var(--success-text)" : "var(--text-muted)"}`}
         title={`Checklist: ${checklistDone}/${checklistTotal}`}
       >
         ✓ {checklistDone}/{checklistTotal}
@@ -192,17 +196,17 @@ const customEntries = Object.entries(task.custom_fields).filter(
   {/* Recurrence badge */}
   {task.checklists && false /* placeholder — checklists already shown above */}
   {(task as any).recurrence_rule && (
-    <span class="tli__recurrence" title="Recurring task">🔁</span>
+    <span class="tli__recurrence" title="Recurring task"><Icon name="repeat" size={14} /></span>
   )}
 
   {/* Assignee badge */}
   {task.assigned_to && (
     <span
       class="tli__assignee"
-      title={`Assigned to ${task.assigned_to}`}
-      aria-label={`Assigned to ${task.assigned_to}`}
+      title="Loading assignee"
     >
-      {task.assigned_to.replace(/^(ha_|custom_)/, "").slice(0, 2).toUpperCase()}
+      <Icon name="user" size={14} />
+      <span dir="auto" data-task-assignee={task.assigned_to}>Loading assignee…</span>
     </span>
   )}
 
@@ -230,7 +234,7 @@ const customEntries = Object.entries(task.custom_fields).filter(
       title="Snooze / Reschedule"
       aria-label={`Snooze ${task.title}`}
     >
-      ▿
+      <Icon name="chevron-down" size={14} />
     </button>
   )}
 
@@ -244,7 +248,7 @@ const customEntries = Object.entries(task.custom_fields).filter(
         title="Duplicate task"
         aria-label="Duplicate task"
       >
-        ⧉
+        <Icon name="clipboard-list" size={14} />
       </button>
       <button
         type="button"
@@ -256,7 +260,7 @@ const customEntries = Object.entries(task.custom_fields).filter(
         title="Ask AI"
         aria-label="Ask AI"
       >
-        🤖
+        <Icon name="message-chatbot" size={14} />
       </button>
       <button
         type="button"
@@ -265,7 +269,7 @@ const customEntries = Object.entries(task.custom_fields).filter(
         title="Delete task"
         aria-label="Delete task"
       >
-        ×
+        <Icon name="x" size={14} />
       </button>
     </div>
   )}
@@ -285,6 +289,31 @@ const customEntries = Object.entries(task.custom_fields).filter(
   .tli:hover {
     background: var(--bg-hover);
   }
+  :global([data-theme="knight-rider"]) .tli[data-work-active]:not(.tli--done) .tli__progress-fill {
+    background-color: var(--knight-active-indicator);
+  }
+  :global([data-theme="knight-rider"]) .tli:is(:focus-visible, .tli--focused) {
+    outline-color: var(--border-focus);
+  }
+  :global([data-theme="knight-rider"]) .tli[data-task-color] .tli__color,
+  :global([data-theme="knight-rider"]) .tli[data-work-active]:not(.tli--done) .tli__color {
+    display: none;
+  }
+  :global([data-theme="knight-rider"]) .tli.tli--done {
+    opacity: 1;
+  }
+
+  .tli__completion {
+    display: inline-grid;
+    place-items: center;
+    flex-shrink: 0;
+    cursor: pointer;
+  }
+  :global([data-theme="knight-rider"]) .tli__checkbox:not(:focus-visible) {
+    outline: 1px solid var(--text-muted);
+    border-radius: 2px;
+  }
+
   .tli:focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: -2px;
@@ -343,6 +372,9 @@ const customEntries = Object.entries(task.custom_fields).filter(
   .tli__fav.is-fav {
     color: var(--warning);
   }
+  .tli__fav.is-fav :global(svg) {
+    fill: currentColor;
+  }
 
   /* ── Content area ──────────────────────────────────────────────── */
   .tli__content {
@@ -373,6 +405,12 @@ const customEntries = Object.entries(task.custom_fields).filter(
     opacity: 0.7;
   }
 
+  :global([data-theme="knight-rider"]) .tli--done .tli__title-text {
+    opacity: 1;
+    color: var(--text-muted);
+    text-decoration: line-through;
+  }
+
   .tli__ticket {
     font-size: 11px;
     font-family: "JetBrains Mono", monospace;
@@ -394,8 +432,11 @@ const customEntries = Object.entries(task.custom_fields).filter(
     color: var(--text-muted);
   }
 
-  .tli__overdue-date {
+  .tli[data-overdue="true"] .tli__due-date {
     color: var(--danger-text);
+  }
+  .tli[data-overdue="false"] .tli__overdue-tag {
+    display: none;
   }
   .tli__overdue-tag {
     font-size: 10px;
@@ -466,17 +507,22 @@ const customEntries = Object.entries(task.custom_fields).filter(
   }
 
   .tli__assignee {
-    font-size: 10px;
-    font-weight: 700;
+    font-size: 12px;
+    font-weight: 500;
     display: inline-flex;
     align-items: center;
-    justify-content: center;
-    width: 24px;
-    height: 24px;
-    border-radius: 50%;
-    background: var(--accent);
-    color: var(--personal-accent-foreground, var(--palette-on-accent, #07140f));
+    gap: 4px;
+    min-width: 0;
+    max-width: min(11rem, 100%);
+    color: var(--text-secondary);
+  }
+  .tli__assignee :global(svg) {
     flex-shrink: 0;
+  }
+  .tli__assignee span {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   /* ── Focus Today button ────────────────────────────────────────── */
@@ -544,4 +590,53 @@ const customEntries = Object.entries(task.custom_fields).filter(
     color: var(--danger);
     border-color: var(--danger);
   }
+  @media (max-width: 420px) {
+    .tli__title {
+      flex-wrap: wrap;
+      column-gap: 4px;
+      row-gap: 2px;
+    }
+    .tli__title-text {
+      flex-basis: 100%;
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 3;
+    }
+  }
+  @media (max-width: 768px), (pointer: coarse) {
+    .tli {
+      flex-wrap: wrap;
+    }
+    .tli__content {
+      flex: 1 1 calc(100% - 7rem);
+    }
+    .tli__title-text {
+      white-space: normal;
+      overflow-wrap: anywhere;
+    }
+    .tli__actions {
+      opacity: 1;
+      flex-wrap: wrap;
+      max-width: 100%;
+    }
+    .tli__assignee {
+      flex-shrink: 0;
+      max-width: 100%;
+    }
+    .tli__assignee span {
+      white-space: normal;
+      overflow-wrap: anywhere;
+    }
+    .tli__completion,
+    .tli__fav,
+    .tli__snooze-btn,
+    .tli__focus-btn,
+    .tli__action {
+      min-width: 44px;
+      min-height: 44px;
+      display: inline-grid;
+      place-items: center;
+    }
+  }
+
 </style>

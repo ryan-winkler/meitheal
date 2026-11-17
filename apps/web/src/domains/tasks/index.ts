@@ -44,6 +44,7 @@ export { TaskHandoff } from "./persistence/task-handoff"
 export {
   taskInsertStatement,
   TaskRepository,
+  type CalendarFilterRow,
   type KanbanIndexRow,
   type KanbanLane,
   type ReassignmentReplayState,

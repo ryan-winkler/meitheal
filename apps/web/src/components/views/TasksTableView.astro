@@ -2,6 +2,7 @@
 
 import SignalBar from "../layout/SignalBar.astro";
 import EmptyState from "../ui/EmptyState.astro";
+import Icon from "../ui/Icon.astro"
 import TaskTypeIcon from "../ui/TaskTypeIcon.astro";
 import FrameworkBadge from "../ui/FrameworkBadge.astro";
 import LabelBadges from "../ui/LabelBadges.astro";
@@ -10,9 +11,10 @@ import ColumnCustomizer from "../ui/ColumnCustomizer.astro"
 import SavedFilterPresets from "../ui/SavedFilterPresets.astro";
 import { t } from "../../i18n/translations";
 import type { Locale } from "../../lib/locale";
-import { formatRegionalDate } from "../../lib/date";
+import { formatRegionalDate } from "../../lib/regional-date";
 import { formatTicketKey } from "../../lib/ticket-key";
 import { buildTaskPath } from "../../lib/task-detail-handoff"
+import { taskDescriptionPreview } from "../../lib/task-description-preview"
 import type { TaskViewItem } from "../../lib/task-queries"
 import { CANONICAL_STATUSES, STATUS_CONFIG } from "../../lib/status-config";
 import { readTableFilterParams } from "../../lib/filter-state"
@@ -37,6 +39,9 @@ const params = new URLSearchParams(Astro.url.search)
 const filters = readTableFilterParams(params)
 const laneSelectionUnapplied = workflowColumnsUnavailable && Boolean(filters.laneIds?.length)
 const resultsUnavailable = tableReadFailed || laneSelectionUnapplied
+const hasTaskCriteria = Boolean(filters.search || filters.area || filters.user || filters.status ||
+  filters.priority || filters.rice || filters.task_type || filters.types?.length || filters.labels?.length ||
+  filters.laneIds?.length || filters.advancedFilter?.conditions.length || filters.createdFrom || filters.createdThrough)
 const { rows, page, pageCount, offset, stats, active, overdue } = getTablePage(
   tableReadFailed ? [] : tasks, filters, params.get("tp"), workflowColumns, creationTimezone,
 )
@@ -96,10 +101,9 @@ const priorityClasses: Record<number, string> = {
 
     <div id="table-empty" hidden={resultsUnavailable || tasks.length > 0}>
       <EmptyState
-        title={t("table.no_tasks", locale)}
-        description={t("table.no_tasks", locale)}
-        actionText={t("tasks.new_task", locale)}
-        actionEvent="meitheal:new-task"
+        title={t(hasTaskCriteria ? "table.no_filter_matches" : "table.no_tasks", locale)}
+        actionText={t(hasTaskCriteria ? "tasks.clear_filters" : "tasks.new_task", locale)}
+        actionEvent={hasTaskCriteria ? "meitheal:table-clear-filters" : "meitheal:new-task"}
       />
     </div>
 
@@ -174,14 +178,16 @@ const priorityClasses: Record<number, string> = {
                   scope="col"
                   class="col-calendar"
                   title={t("table.col_calendar", locale)}
+                  aria-label={t("table.col_calendar", locale)}
                 >
-                  📅
+                  <Icon name="calendar-event" size={16} />
                 </th>
                 <th scope="col" class="col-custom-fields">
                   {t("table.col_custom_fields", locale)}
                 </th>
-                <th scope="col" class="col-assigned" title="Assigned To">
-                  👤
+                <th scope="col" class="col-assigned"
+                  title={t("task_modal.assignee_label", locale)} aria-label={t("task_modal.assignee_label", locale)}>
+                  <Icon name="user" size={16} />
                 </th>
                 <th scope="col" class="col-labels">
                   {t("table.col_labels", locale)}
@@ -197,6 +203,7 @@ const priorityClasses: Record<number, string> = {
                   ([, v]) => v !== null && v !== undefined && v !== "",
                 );
                 const ticketKey = formatTicketKey(task.ticket_number ?? 0) ?? `#${task.id.slice(0, 8)}`
+                const description = taskDescriptionPreview(task.description)
                 return (
                   <tr
                     data-id={task.id}
@@ -270,9 +277,9 @@ const priorityClasses: Record<number, string> = {
                           {t("table.subtask_of", locale)} {parentOutsidePage.title}
                         </a>
                       )}
-                      {task.description && (
+                      {description && (
                         <div class="cell-description" style={depth > 0 ? `margin-left: ${depth * 20}px` : undefined}>
-                          {task.description.slice(0, 60)}
+                          {description.slice(0, 60)}
                         </div>
                       )}
                     </td>
@@ -365,12 +372,12 @@ const priorityClasses: Record<number, string> = {
                     </td>
                     <td class="cell-center col-calendar">
                       {task.calendar_sync_state === "confirmed" ? (
-                        <span title="Calendar synced" class="text-accent">
-                          ✅
+                        <span title="Calendar synced" class="text-accent" role="img" aria-label="Calendar synced">
+                          <Icon name="check" size={16} />
                         </span>
                       ) : task.calendar_sync_state === "pending" ? (
-                        <span title="Sync pending" class="text-warning">
-                          ⏳
+                        <span title="Sync pending" class="text-warning" role="img" aria-label="Sync pending">
+                          <Icon name="clock" size={16} />
                         </span>
                       ) : (
                         <span title="Not synced" class="text-muted">
@@ -385,15 +392,8 @@ const priorityClasses: Record<number, string> = {
                     </td>
                     <td class="cell-center col-assigned">
                       {task.assigned_to ? (
-                        <span
-                          class="table-assignee-badge"
-                          title={`Assigned: ${String(task.assigned_to).replace(/^(ha_|custom_)/, "")}`}
-                          aria-label={`Assigned to ${String(task.assigned_to).replace(/^(ha_|custom_)/, "")}`}
-                        >
-                          {String(task.assigned_to)
-                            .replace(/^(ha_|custom_)/, "")
-                            .slice(0, 2)
-                            .toUpperCase()}
+                        <span class="table-assignee-badge" title="Loading assignee">
+                          <span dir="auto" data-task-assignee={task.assigned_to}>Loading assignee…</span>
                         </span>
                       ) : (
                         <span class="text-muted">—</span>
@@ -410,7 +410,7 @@ const priorityClasses: Record<number, string> = {
                         title={t("tasks.delete", locale)}
                         aria-label={`Delete ${task.title}`}
                       >
-                        🗑
+                        <Icon name="trash" size={16} />
                       </button>
                     </td>
                   </tr>
@@ -418,7 +418,12 @@ const priorityClasses: Record<number, string> = {
               })}
               <tr class="no-results-row" hidden={rows.length !== 0}>
                 <td colspan="13" class="cell-center text-muted" style="padding: 40px 20px; font-size: 14px;">
-                  {t("table.no_results", locale)}
+                  <div class="inline-flex flex-wrap items-center justify-center gap-2">
+                    <span>{t("table.no_filter_matches", locale)}</span>
+                    {hasTaskCriteria && <button type="button" class="btn btn-outline btn-sm" data-empty-action="meitheal:table-clear-filters">
+                      {t("tasks.clear_filters", locale)}
+                    </button>}
+                  </div>
                 </td>
               </tr>
             </tbody>
@@ -456,9 +461,10 @@ const priorityClasses: Record<number, string> = {
     <button
       type="button"
       class="btn bulk-delete-btn"
-      id="bulk-delete">🗑 {t("table.delete_selected", locale)}</button
-    >
-    <button type="button" class="btn bulk-close-btn" id="bulk-close" aria-label="Close bulk actions">✕</button>
+      id="bulk-delete"><Icon name="trash" size={16} /> {t("table.delete_selected", locale)}</button>
+    <button type="button" class="btn bulk-close-btn" id="bulk-close" aria-label="Close bulk actions">
+      <Icon name="x" size={16} />
+    </button>
   </div>
 
   <div
@@ -762,18 +768,12 @@ const priorityClasses: Record<number, string> = {
     text-align: center;
   }
   .table-assignee-badge {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 24px;
-    height: 24px;
-    border-radius: 50%;
-    background: var(--accent);
-    color: var(--personal-accent-foreground, var(--palette-on-accent, #07140f));
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0.5px;
-    cursor: default;
+    display: block;
+    max-inline-size: 10rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-secondary);
   }
   .sortable {
     cursor: pointer;

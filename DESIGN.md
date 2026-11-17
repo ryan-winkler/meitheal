@@ -85,9 +85,13 @@ spacing:
 
 ### Color & Contrast Architecture
 
-- **Dark Mode (Default — Evergreen Carbon + Living Mint)**:
+- **Emerald Isle (Dark — Evergreen Carbon + Living Mint)**:
   - Surfaces step cleanly by luminance: `--bg-input: #0D0F0E` → `--bg-primary: #101210` → `--bg-secondary: #171A18` → `--bg-card: #1D211F` → `#252B28` (hover), framed by `--border: #344039` hairline borders.
   - Primary Brand Accent `--accent: #69E3B2` pairs with deep forest ink `--palette-on-accent: #07140F` (11.9:1 contrast) on filled buttons and badges, and `--accent-text: #ADF8D7` on dark surfaces; Warning `#F0B86D`, Danger `#EF4444`.
+- **Knight Rider (Charcoal + Cornflower Blue)**:
+  - Near-black `#131314` canvas, low-contrast dividers, and blue actions and focus. Form controls use a stronger border than dividers.
+  - Idle Today rows sit on the canvas. An Active task fills its row or Board card with rose. Choosing a task color tints its full surface, with the rose bottom edge identifying active work. The task status label remains visible.
+  - Theme choice is saved as `knight-rider`. Personal neutral and accent choices still override preset defaults.
 - **Light Mode (Warm Architectural Paper + Forest Emerald)**:
   - Warm paper canvas `--bg-primary: #F6F5F0` with `--bg-secondary: #ECEBE4` chrome, crisp `--bg-card: #FFFFFF` cards, and `--border: #C9D1CB` borders.
   - Deep Forest Emerald `--accent: #146C4E` and `--accent-hover` / `--accent-text: #0E533B` pair with `--palette-on-accent: #FFFFFF` (6.4:1–8.9:1 contrast) so every text link, badge, and filled primary action passes WCAG AA 4.5:1; Warning `#B45309`, Danger `#DC2626`.

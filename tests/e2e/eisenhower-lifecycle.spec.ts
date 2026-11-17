@@ -112,6 +112,7 @@ for (const [action, otherAction, status] of [
 ] as const) {
   test(`Q4 ${status} keeps unconfirmed tasks visible and retries only those tasks`, async ({ page, request, baseURL }) => {
     const headers = { origin: new URL(baseURL!).origin }
+    const initialStatus = status === "backlog" ? "active" : "pending"
     const ids: string[] = []
     const writes: Array<{ id: string; status: string }> = []
     let reject = true
@@ -119,7 +120,7 @@ for (const [action, otherAction, status] of [
     try {
       for (const result of ["accepted", "rejected"]) {
         const response = await request.post("/api/tasks", { headers, data: {
-          title: `Q4 ${status} ${result}`, urgency: 1, importance: 1,
+          title: `Q4 ${status} ${result}`, urgency: 1, importance: 1, status: initialStatus,
         } })
         expect(response.status(), await response.text()).toBe(201)
         ids.push((await response.json()).id)
@@ -133,6 +134,7 @@ for (const [action, otherAction, status] of [
         if (reject && id === rejected) return route.fulfill({ status: 503, json: { error: "Write rejected" } })
         return route.continue()
       })
+      if (status === "backlog") await page.addInitScript(() => localStorage.setItem("meitheal-theme", "knight-rider"))
       await page.goto("/eisenhower")
       await expect(page.locator("[data-quadrant-tabs-ready]")).toBeAttached()
       const quadrant = page.locator('[data-quadrant="not-now"]')
@@ -146,12 +148,15 @@ for (const [action, otherAction, status] of [
           await expect(row).toHaveCount(0)
         } else {
           await expect(row).toHaveAttribute("data-status", "backlog")
+          await expect(row).not.toHaveAttribute("data-work-active", "")
+          await expect(row).not.toHaveCSS("background-color", "rgb(89, 53, 65)")
           await expect(row.locator(".status-badge")).toHaveAttribute("data-badge-status", "backlog")
           await expect(row.locator(".status-badge")).toHaveText("Backlog")
         }
       }
       await expect(acceptedRow).toBeVisible()
       await expect(rejectedRow).toBeVisible()
+      if (status === "backlog") await expect(acceptedRow).toHaveCSS("background-color", "rgb(89, 53, 65)")
       await button.focus()
       await page.keyboard.press("Enter")
       await expect.poll(() => Boolean(release)).toBe(true)
@@ -162,14 +167,14 @@ for (const [action, otherAction, status] of [
       release?.()
 
       await expectChanged(acceptedRow)
-      await expect(rejectedRow).toHaveAttribute("data-status", "pending")
+      await expect(rejectedRow).toHaveAttribute("data-status", initialStatus)
       const mixedCount = status === "complete" ? "1" : "2"
       await expect(quadrant.locator(".quadrant__count")).toHaveText(mixedCount)
       await expect(tabCount).toHaveText(mixedCount)
       await expect(page.getByText("Saved changes for 1 of 2 tasks. Check the remaining tasks before retrying.")).toBeVisible()
       await expect(button).toBeFocused()
       expect(await (await request.get(`/api/tasks/${accepted}`)).json()).toMatchObject({ status })
-      expect(await (await request.get(`/api/tasks/${rejected}`)).json()).toMatchObject({ status: "pending" })
+      expect(await (await request.get(`/api/tasks/${rejected}`)).json()).toMatchObject({ status: initialStatus })
       expect(writes.map(write => write.id).sort()).toEqual([...ids].sort())
       expect(writes.every(write => write.status === status)).toBe(true)
 

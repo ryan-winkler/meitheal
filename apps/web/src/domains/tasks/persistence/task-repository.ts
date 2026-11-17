@@ -16,11 +16,11 @@
 import type { Client, InStatement, InValue, ResultSet } from "@libsql/client"
 import { nextHouseholdTicketNumberSql } from "../../../../drizzle/migrations/task-board-tickets.mjs"
 import { executeWriteWithRetry, runWriteTransaction } from "../../../../scripts/database-client.mjs"
-import { getStatusDef, isDoneStatus, normalizeStatus, STATUS } from "../../../lib/status-config"
+import { CLOSED_TASK_STATUSES, getStatusDef, isClosedStatus, isDoneStatus, normalizeStatus, STATUS } from "../../../lib/status-config"
 import { logApiError, logApiWarn } from "../../../lib/api-logger"
 import { EXACT_TASK_IDENTIFIER_SCORE } from "../../../lib/task-search-score"
 import { readStoredCalendarDay } from "../../../lib/calendar-day"
-import { calendarDayFromInput, calendarToday, shiftCalendarDay, isDueOverdue } from "../../../lib/date"
+import { calendarDayFromInput, calendarEventDay, calendarEventInterval, calendarIntervalOverlaps, calendarOccurrenceStartKey, calendarToday, compareCalendarStarts, householdDayRanges, shiftCalendarDay, isDueOverdue } from "../../../lib/date"
 import { parseTicketKey } from "../../../lib/ticket-key"
 import { getNextOccurrence, parseRRule } from "../recurrence"
 import type { TaskEpicLink } from "../task-epic-groups"
@@ -45,6 +45,7 @@ function isTaskOverdueOnDay(
   return isDueOverdue(dueDate, timezone, resolvedToday)
 }
 const taskHistoryPredicate = "(feed_action IS NULL OR field <> 'activity')"
+const openStatusPredicate = `lower(status) NOT IN (${CLOSED_TASK_STATUSES.map(() => "?").join(", ")})`
 // Agent "added" rows keep Recent Activity provenance as JSON in `summary`. The task
 // activity and timeline APIs (and their MCP tools) keep returning readable text.
 const PUBLIC_ACTIVITY_SUMMARY = `CASE WHEN field = 'created' AND summary LIKE '{"v":1,%' THEN 'Task added' ELSE summary END`
@@ -228,12 +229,29 @@ export interface AreaInfo {
   color: string;
 }
 
+export type CalendarFilterRow = Pick<TaskRow,
+  "status" | "title" | "priority" | "task_type" | "task_kind" | "area_id" | "assigned_to" |
+  "is_promoted" | "labels" | "due_date" | "deferred_at" | "framework_payload">
+
+const CALENDAR_ITEM_DATE = "CASE WHEN task_kind = 'calendar_event' THEN COALESCE(NULLIF(start_date, ''), due_date) ELSE due_date END"
+const CALENDAR_LOCAL_ITEM = "(task_kind IS NOT 'calendar_event' OR calendar_sync_state IS NOT 'synced')"
+
 /** Calendar day task aggregate */
 export interface CalendarDayInfo {
   dueDate: string;
   count: number;
   colors: string[];
+  scheduledEvents: number;
   haEvents: number;
+}
+
+interface LinkedCalendarEvent {
+  id: string
+  title: string
+  start: string
+  entity: string | null
+  uid: string | null
+  providerSummary: string | null
 }
 
 /** Kanban lane definition */
@@ -508,6 +526,9 @@ async function ensureGrocySyncConfirmationTable(client: Client): Promise<void> {
   ensuredGrocySyncClients.add(client)
 }
 
+const CALENDAR_FILTER_COLUMNS = `status, title, priority, task_type, task_kind,
+  ${householdPlanningProjection("areas", "tasks.area_id")} AS area_id, assigned_to, is_promoted, labels, deferred_at, framework_payload`
+
 export class TaskRepository {
   constructor(private readonly client: Client) {}
 
@@ -517,7 +538,7 @@ export class TaskRepository {
   async getRecentTasks(limit = 10): Promise<TaskRow[]> {
     const result = await this.client.execute(
       `SELECT id, title, description, status, priority, due_date, labels, calendar_sync_state, is_favorite, area_id, color, ticket_number, task_type, task_kind, project_id, owner, handoff_state, created_at, updated_at, deferred_at
-       FROM tasks WHERE task_board_id IS NULL ORDER BY created_at DESC LIMIT ${limit}`,
+       FROM tasks WHERE task_board_id IS NULL AND status <> 'archived' ORDER BY created_at DESC LIMIT ${limit}`,
     );
     return result.rows as unknown as TaskRow[];
   }
@@ -556,25 +577,25 @@ export class TaskRepository {
     return counts
   }
 
-  /** Favorited, non-complete tasks */
+  /** Favorited open tasks */
   async getFavoriteTasks(limit = 5): Promise<TaskRow[]> {
     const result = await this.client.execute({
-      sql: `SELECT id, title, status, priority, due_date, is_favorite
-            FROM tasks WHERE task_board_id IS NULL AND is_favorite = 1 AND status != ? AND deferred_at IS NULL
+      sql: `SELECT id, title, status, priority, due_date, is_favorite, color
+            FROM tasks WHERE task_board_id IS NULL AND is_favorite = 1 AND ${openStatusPredicate} AND deferred_at IS NULL
             ORDER BY updated_at DESC LIMIT ${limit}`,
-      args: [STATUS.COMPLETE],
+      args: CLOSED_TASK_STATUSES,
     });
     return result.rows as unknown as TaskRow[];
   }
 
-  /** Open (non-complete) tasks ordered by priority then due date */
+  /** Open tasks ordered by priority then due date */
   async getOpenTasks(limit = 15): Promise<TaskRow[]> {
     const result = await this.client.execute({
-      sql: `SELECT id, title, status, priority, due_date, assigned_to, area_id, ticket_number, task_type, task_kind, project_id, owner, handoff_state
-            FROM tasks WHERE task_board_id IS NULL AND status NOT IN (?) AND deferred_at IS NULL
+      sql: `SELECT id, title, status, priority, due_date, assigned_to, area_id, ticket_number, task_type, task_kind, project_id, owner, handoff_state, color
+            FROM tasks WHERE task_board_id IS NULL AND ${openStatusPredicate} AND deferred_at IS NULL
             ORDER BY priority ASC, due_date ASC NULLS LAST, updated_at DESC
             LIMIT ${limit}`,
-      args: [STATUS.COMPLETE],
+      args: CLOSED_TASK_STATUSES,
     });
     return result.rows as unknown as TaskRow[];
   }
@@ -582,18 +603,18 @@ export class TaskRepository {
   /** Count tasks grouped by status for dashboard stats */
   async getStatusCounts(): Promise<DashboardStats> {
     const result = await this.client.execute(
-      "SELECT status, COUNT(*) AS cnt, COUNT(*) FILTER (WHERE deferred_at IS NULL) AS open_count FROM tasks WHERE task_board_id IS NULL GROUP BY status",
+      "SELECT status, COUNT(*) AS cnt, COUNT(*) FILTER (WHERE deferred_at IS NULL) AS open_count FROM tasks WHERE task_board_id IS NULL AND status <> 'archived' GROUP BY status",
     );
     const stats: DashboardStats = { total: 0, open: 0, active: 0, completed: 0, overdue: 0 };
     for (const row of result.rows) {
       const r = row as Record<string, unknown>;
-      const s = String(r.status);
+      const s = normalizeStatus(String(r.status));
       const c = Number(r.cnt);
       const open = Number(r.open_count)
       stats.total += c;
       if (s === STATUS.ACTIVE) stats.active += open
       if (s === STATUS.COMPLETE) stats.completed += c;
-      else stats.open += open
+      else if (!isClosedStatus(s)) stats.open += open
     }
     return stats;
   }
@@ -607,9 +628,9 @@ export class TaskRepository {
       sql: `SELECT due_date FROM tasks
             WHERE task_board_id IS NULL AND due_date IS NOT NULL AND due_date <> ''
               AND substr(due_date, 1, 10) < ?
-              AND status != ?
+              AND ${openStatusPredicate}
               AND deferred_at IS NULL`,
-      args: [upperBound, STATUS.COMPLETE],
+      args: [upperBound, ...CLOSED_TASK_STATUSES],
     });
     let count = 0;
     for (const row of result.rows) {
@@ -746,35 +767,38 @@ export class TaskRepository {
 
   // ── Calendar (calendar.astro) ───────────────────────────────────────
 
-  /** Task counts per day for a given month (non-complete) */
+  /** Local tasks and scheduled event starts per day for a given month. */
   async getCalendarTaskCounts(
     monthStart: string,
     monthEnd: string,
     timezone = "Europe/Dublin",
+    options: { matches?: ((task: CalendarFilterRow) => boolean) | undefined; includeCompleted?: boolean } = {},
   ): Promise<Record<string, CalendarDayInfo>> {
     const lowerBound = shiftCalendarDay(monthStart, -2);
     const upperBound = shiftCalendarDay(monthEnd, 2);
     const result = await this.client.execute({
-      sql: `SELECT due_date, color
+      sql: `SELECT ${CALENDAR_ITEM_DATE} AS calendar_date, due_date, color, ${options.matches ? CALENDAR_FILTER_COLUMNS : "status, task_kind"}
             FROM tasks
-            WHERE task_board_id IS NULL AND due_date IS NOT NULL AND due_date <> ''
-              AND substr(due_date, 1, 10) >= ? AND substr(due_date, 1, 10) <= ?
-              AND status NOT IN (?)`,
-      args: [lowerBound, upperBound, STATUS.COMPLETE],
+            WHERE task_board_id IS NULL AND ${CALENDAR_LOCAL_ITEM} AND status <> 'archived'
+              AND substr(${CALENDAR_ITEM_DATE}, 1, 10) BETWEEN ? AND ?`,
+      args: [lowerBound, upperBound],
     });
 
     const tasksByDay: Record<string, CalendarDayInfo> = {};
     for (const row of result.rows) {
-      const r = row as Record<string, unknown>;
-      const day = calendarDayFromInput(String(r.due_date ?? ""), timezone);
-      if (!day || day < monthStart || day > monthEnd) continue;
+      const r = row as unknown as CalendarFilterRow & { calendar_date: string; color: string | null };
+      if (!options.includeCompleted && isDoneStatus(r.status)) continue
+      const day = calendarDayFromInput(r.calendar_date, timezone);
+      if (!day || day < monthStart || day > monthEnd || (options.matches && !options.matches(r))) continue;
       const existing = tasksByDay[day] ?? {
         dueDate: day,
         count: 0,
         colors: [],
+        scheduledEvents: 0,
         haEvents: 0,
       };
       existing.count += 1;
+      if (r.task_kind === "calendar_event") existing.scheduledEvents += 1
       const color = typeof r.color === "string" ? r.color.trim() : "";
       if (color && existing.colors.length < 3) {
         existing.colors.push(color);
@@ -790,106 +814,101 @@ export class TaskRepository {
     monthEnd: string,
     timezone = "Europe/Dublin",
   ): Promise<Record<string, number>> {
-    const taskDays = new Map<string, Set<string>>();
+    const byDay = await this.getLinkedCalendarEvents(monthStart, monthEnd, timezone)
+    return Object.fromEntries(Object.entries(byDay).map(([day, events]) => [day, events?.length ?? 0]))
+  }
 
-    const addSpan = (taskId: string, startRaw: unknown, endRaw?: unknown, effectiveEndRaw?: unknown) => {
+  async getLinkedCalendarEvents(fromDay: string, throughDay: string, timezone: string): Promise<Partial<Record<string, LinkedCalendarEvent[]>>> {
+    const byDay = new Map<string, Map<string, LinkedCalendarEvent>>()
+    const dayRanges = new Map<string, [number, number][]>()
+    const rangesForDay = (day: string) => {
+      const existing = dayRanges.get(day)
+      if (existing) return existing
+      const ranges = householdDayRanges(day, timezone)
+      dayRanges.set(day, ranges)
+      return ranges
+    }
+    const addSpan = (
+      task: Omit<LinkedCalendarEvent, "start">, startRaw: unknown, endRaw?: unknown, effectiveEndRaw?: unknown,
+      taskEndDay?: string | null,
+    ) => {
       if (typeof startRaw !== "string" || !startRaw.trim()) return;
-      const startDay = calendarDayFromInput(startRaw, timezone);
+      const startDay = calendarEventDay(startRaw, timezone);
       if (!startDay) return;
 
-      let endDay = startDay;
-      if (typeof effectiveEndRaw === "string" && /^\d{4}-\d{2}-\d{2}$/.test(effectiveEndRaw.trim())) {
-        endDay = effectiveEndRaw.trim();
-      } else if (typeof endRaw === "string" && endRaw.trim()) {
-        const sTrim = startRaw.trim();
-        const eTrim = endRaw.trim();
-        if (/^\d{4}-\d{2}-\d{2}$/.test(sTrim) && /^\d{4}-\d{2}-\d{2}$/.test(eTrim) && eTrim > sTrim) {
-          endDay = shiftCalendarDay(eTrim, -1);
-        } else {
-          endDay = calendarDayFromInput(eTrim, timezone) ?? startDay;
-        }
-      }
-      if (endDay < startDay) endDay = startDay;
+      const providerEnd = typeof endRaw === "string" ? calendarEventDay(endRaw, timezone, "exclusive-end") : null
+      const storedEnd = typeof effectiveEndRaw === "string" && /^\d{4}-\d{2}-\d{2}$/.test(effectiveEndRaw.trim())
+        ? calendarDayFromInput(effectiveEndRaw, timezone) : null
+      const endDay = providerEnd ?? storedEnd ?? taskEndDay ?? startDay
 
-      const from = startDay > monthStart ? startDay : monthStart;
-      const to = endDay < monthEnd ? endDay : monthEnd;
+      const interval = typeof endRaw === "string" ? calendarEventInterval(startRaw, endRaw, timezone) : null
+      const lastDay = endDay < startDay ? startDay : endDay
+      // A rollback near midnight can cover a day outside the endpoint dates.
+      const first = interval ? shiftCalendarDay(startDay, -1) : startDay
+      const last = interval ? shiftCalendarDay(lastDay, 1) : lastDay
+      const from = first > fromDay ? first : fromDay
+      const to = last < throughDay ? last : throughDay
       if (from > to) return;
 
-      let set = taskDays.get(taskId);
-      if (!set) {
-        set = new Set<string>();
-        taskDays.set(taskId, set);
-      }
+      const key = task.id + "/" + calendarOccurrenceStartKey(startRaw, timezone)
       let cur = from;
       for (let guard = 0; guard < 62 && cur <= to; guard++) {
-        set.add(cur);
+        if (!interval || calendarIntervalOverlaps(interval, rangesForDay(cur))) {
+          let day = byDay.get(cur)
+          if (!day) byDay.set(cur, day = new Map())
+          if (!day.has(key)) day.set(key, { ...task, start: startRaw })
+        }
         const next = shiftCalendarDay(cur, 1);
         if (next === cur) break;
         cur = next;
       }
     };
 
-    const confirmationsRes = await this.client.execute({
-      sql: `SELECT cc.task_id, cc.payload, t.due_date, t.start_date, t.end_date
-            FROM calendar_confirmations cc
-            INNER JOIN tasks t ON t.id = cc.task_id
-            WHERE cc.source IN ('ha.calendar_sync', 'caldav')
-              AND t.task_board_id IS NULL AND t.calendar_sync_state = 'synced'`,
+    const result = await this.client.execute({
+      sql: `SELECT t.id, t.title, t.due_date, t.start_date, t.end_date, cc.payload, cc.source, cc.provider_event_id
+            FROM tasks t
+            LEFT JOIN calendar_confirmations cc ON cc.task_id = t.id AND cc.source IN ('ha.calendar_sync', 'caldav')
+            WHERE t.task_board_id IS NULL AND t.calendar_sync_state = 'synced' AND t.status IS NOT 'archived'
+            ORDER BY cc.created_at DESC, cc.confirmation_id ASC`,
       args: [],
     });
 
-    const confirmedTaskIds = new Set<string>();
-    for (const row of confirmationsRes.rows) {
-      const r = row as Record<string, unknown>;
-      const taskId = String(r.task_id ?? "");
-      if (!taskId) continue;
-      confirmedTaskIds.add(taskId);
-
-      let expandedFromPayload = false;
-      if (typeof r.payload === "string" && r.payload.trim()) {
-        try {
-          const parsed = JSON.parse(r.payload) as {
-            occurrences?: Array<{ start?: unknown; end?: unknown; effective_end?: unknown }>;
-          };
-          if (Array.isArray(parsed.occurrences) && parsed.occurrences.length > 0) {
-            expandedFromPayload = true;
-            for (const occ of parsed.occurrences) {
-              addSpan(taskId, occ?.start, occ?.end, occ?.effective_end);
-            }
-          }
-        } catch {
-          // Malformed confirmation payload falls back to task dates below
+    for (const row of result.rows) {
+      let payload: {
+        entity_id?: unknown
+        summary?: unknown
+        start?: unknown
+        end?: unknown
+        dtstart?: unknown
+        dtend?: unknown
+        effective_end?: unknown
+        occurrences?: Array<{ start?: unknown; end?: unknown; effective_end?: unknown }>
+      } | null = null
+      try {
+        if (typeof row.payload === "string") payload = JSON.parse(row.payload)
+      } catch { /* Older or malformed payloads still have the task dates. */ }
+      const entity = row.source === "ha.calendar_sync" && typeof payload?.entity_id === "string" ? payload.entity_id : null
+      const task = {
+        id: String(row.id), title: String(row.title), entity,
+        uid: entity && typeof row.provider_event_id === "string" ? row.provider_event_id : null,
+        providerSummary: entity && typeof payload?.summary === "string" ? payload.summary : null,
+      }
+      const providerStart = payload?.start ?? payload?.dtstart
+      if (Array.isArray(payload?.occurrences) && payload.occurrences.length) {
+        for (const occurrence of payload.occurrences) {
+          addSpan(task, occurrence?.start, occurrence?.end, occurrence?.effective_end)
+        }
+      } else {
+        const taskEndDay = typeof row.end_date === "string" ? calendarEventDay(row.end_date, timezone) : null
+        if (typeof providerStart === "string" && calendarEventDay(providerStart, timezone)) {
+          addSpan(task, providerStart, payload?.end ?? payload?.dtend, payload?.effective_end, taskEndDay)
+        } else {
+          addSpan(task, row.start_date ?? row.due_date, undefined, undefined, taskEndDay)
         }
       }
-
-      if (!expandedFromPayload) {
-        const startVal = r.start_date ?? r.due_date;
-        addSpan(taskId, startVal, undefined, typeof r.end_date === "string" ? calendarDayFromInput(r.end_date, timezone) : undefined);
-      }
     }
-
-    const syncedTasksRes = await this.client.execute({
-      sql: `SELECT id, due_date, start_date, end_date
-            FROM tasks
-            WHERE task_board_id IS NULL AND calendar_sync_state = 'synced'`,
-      args: [],
-    });
-    for (const row of syncedTasksRes.rows) {
-      const r = row as Record<string, unknown>;
-      const taskId = String(r.id ?? "");
-      if (!taskId || confirmedTaskIds.has(taskId)) continue;
-      const startVal = r.start_date ?? r.due_date;
-      const endDay = typeof r.end_date === "string" ? calendarDayFromInput(r.end_date, timezone) : undefined;
-      addSpan(taskId, startVal, undefined, endDay ?? undefined);
-    }
-
-    const counts: Record<string, number> = {};
-    for (const days of taskDays.values()) {
-      for (const day of days) {
-        counts[day] = (counts[day] ?? 0) + 1;
-      }
-    }
-    return counts;
+    return Object.fromEntries([...byDay].map(([day, events]) =>
+      [day, [...events.values()].sort((left, right) => compareCalendarStarts(left.start, right.start, timezone) || left.id.localeCompare(right.id))]))
   }
 
   // ── Timeline (timeline.astro) ─────────────────────────────────────────
@@ -1113,32 +1132,35 @@ export class TaskRepository {
     }
   }
 
-  /** List tasks with optional filters, pagination, and sorting. */
-  async findDeferredPage(requestedPage: number): Promise<{
+  /** List deferred tasks within the selected Area or across all Areas. */
+  async findDeferredPage(requestedPage: number, areaId = ""): Promise<{
     page: number
     total: number
     tasks: Array<DeferralState & Pick<TaskRow, "title" | "project_id" | "ticket_number"> & { automatic: boolean }>
   }> {
     const page = Number.isSafeInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1
+    const scope = areaId ? ` AND (${householdPlanningProjection("areas", "tasks.area_id")}) = ?` : ""
+    const areaArgs = areaId ? [areaId] : []
     const { rows } = await this.client.execute({
       sql: `WITH totals AS (
-              SELECT COUNT(*) AS total FROM tasks WHERE task_board_id IS NULL AND deferred_at IS NOT NULL
+              SELECT COUNT(*) AS total FROM tasks WHERE task_board_id IS NULL AND deferred_at IS NOT NULL${scope}
             ), bounds AS (
               SELECT total, MAX(1, MIN(?, (total + 24) / 25)) AS page FROM totals
             ), items AS (
-              SELECT id, title, project_id, status, ticket_number, deferred_at, deferral_revision,
+              SELECT id, title, ${householdPlanningProjection("projects", "tasks.project_id")} AS project_id,
+                     status, ticket_number, deferred_at, deferral_revision,
                      ${taskTimestampMs("updated_at")} AS updated_at,
                      COALESCE((SELECT actor = '${inactivityRuleActor}' AND actor_type = 'system'
                       FROM task_activity_log WHERE task_id = tasks.id AND field = 'deferred_at'
                         AND new_value = CAST(tasks.deferred_at AS TEXT) ORDER BY id DESC LIMIT 1), 0) AS automatic
-              FROM tasks WHERE task_board_id IS NULL AND deferred_at IS NOT NULL
+              FROM tasks WHERE task_board_id IS NULL AND deferred_at IS NOT NULL${scope}
               ORDER BY deferred_at DESC, id ASC
               LIMIT 25 OFFSET (SELECT (page - 1) * 25 FROM bounds)
             )
             SELECT bounds.total, bounds.page, items.*
             FROM bounds LEFT JOIN items ON TRUE
             ORDER BY items.deferred_at DESC, items.id ASC`,
-      args: [page],
+      args: [...areaArgs, page, ...areaArgs],
     })
     return {
       page: Number(rows[0]?.page ?? 1),
@@ -1153,7 +1175,9 @@ export class TaskRepository {
   async findAll(opts: {
     status?: string;
     dueDate?: string | undefined;
+    calendarDay?: string | undefined;
     timezone?: string | undefined;
+    matchCalendarTask?: ((task: CalendarFilterRow) => boolean) | undefined;
     priority?: number;
     areaId?: string;
     projectId?: string;
@@ -1174,6 +1198,8 @@ export class TaskRepository {
     const order = opts.order ?? "DESC";
     const limit = Math.min(500, Math.max(1, opts.limit ?? 100));
     const offset = Math.max(0, opts.offset ?? 0);
+    const day = opts.calendarDay ?? opts.dueDate
+    const dateColumn = opts.calendarDay ? CALENDAR_ITEM_DATE : "due_date"
 
     const conditions = ["task_board_id IS NULL"];
     const args: InValue[] = [];
@@ -1184,11 +1210,12 @@ export class TaskRepository {
       conditions.push(`status IN (${statuses.map(() => "?").join(", ")})`)
       args.push(...statuses)
     }
-    if (opts.dueDate) {
+    if (day) {
       // Widen by ±2 days in SQL (offset-bearing timestamps can sit two calendar days away), then match in the configured household timezone.
-      const lowerBound = shiftCalendarDay(opts.dueDate, -2)
-      const upperBound = shiftCalendarDay(opts.dueDate, 2)
-      conditions.push("due_date IS NOT NULL AND due_date <> '' AND substr(due_date, 1, 10) >= ? AND substr(due_date, 1, 10) <= ?")
+      const lowerBound = shiftCalendarDay(day, -2)
+      const upperBound = shiftCalendarDay(day, 2)
+      if (opts.calendarDay) conditions.push(CALENDAR_LOCAL_ITEM)
+      conditions.push(`substr(${dateColumn}, 1, 10) BETWEEN ? AND ?`)
       args.push(lowerBound, upperBound)
     }
     if (opts.priority != null) { conditions.push("priority = ?"); args.push(opts.priority); }
@@ -1214,12 +1241,17 @@ export class TaskRepository {
                               ${taskTimestampMs("updated_at")} AS task_version`
     const ordering = `ORDER BY ${sortCol} ${order} NULLS LAST, id ASC`
 
-    if (opts.dueDate) {
+    if (day) {
       const snapshot = await this.client.transaction("read")
       try {
         const tz = opts.timezone || "Europe/Dublin"
-        const candidates = await snapshot.execute({ sql: `SELECT id, due_date FROM tasks${where} ${ordering}`, args })
-        const ids = candidates.rows.filter(row => calendarDayFromInput(String(row.due_date), tz) === opts.dueDate)
+        const filterProjection = opts.matchCalendarTask ? `, ${CALENDAR_FILTER_COLUMNS}` : ""
+        const candidates = await snapshot.execute({
+          sql: `SELECT id, ${dateColumn} AS calendar_date, due_date${filterProjection} FROM tasks${where} ${ordering}`, args,
+        })
+        const matches = opts.matchCalendarTask
+        const ids = candidates.rows.filter(row => calendarDayFromInput(String(row.calendar_date), tz) === day &&
+          (!matches || matches(row as unknown as CalendarFilterRow)))
         const page = ids.slice(offset, offset + limit)
         if (page.length === 0) return { tasks: [], total: ids.length }
         const result = await snapshot.execute({
@@ -1566,7 +1598,7 @@ export class TaskRepository {
     }
     const assigneeDiagIndex = reassigning ? diagnostics.length : -1
     if (reassigning) {
-      diagnostics.push({ sql: "SELECT assigned_to FROM tasks WHERE id = ? AND task_board_id IS NULL AND task_board_id IS NULL", args: [id] })
+      diagnostics.push({ sql: "SELECT assigned_to FROM tasks WHERE id = ? AND task_board_id IS NULL", args: [id] })
     }
 
     const writeIndex = diagnostics.length + (activity ? 1 : 0)

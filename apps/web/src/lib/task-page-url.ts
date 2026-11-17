@@ -1,3 +1,5 @@
+export const TASK_VIEW_LOCATION_EVENT = "meitheal:task-view-location-changed"
+
 export function taskDetailPath(taskId: string, commentId?: number): string {
   const path = `/tickets/${encodeURIComponent(taskId)}`
   return commentId === undefined ? path : `${path}?${new URLSearchParams({ comment: String(commentId) })}`
@@ -10,11 +12,48 @@ export function ticketIdFromPath(pathname: string, ingressPath = ""): string | n
   try { return decodeURIComponent(match[1]) } catch { return null }
 }
 
-export function taskBackgroundUrl(current: URL): URL {
+export function taskBackgroundUrl(current = new URL(location.href)): URL {
   if (ticketIdFromPath(current.pathname, window.__ingress_path) === null) return new URL(current)
   const returnTo = history.state?.ticketDrawer?.returnTo
   const fallback = `${window.__ingress_path || ""}/tasks#kanban`
   const url = new URL(typeof returnTo === "string" ? returnTo : fallback, current.origin)
   return url.origin === current.origin && url.pathname.startsWith(`${window.__ingress_path || ""}/`)
     ? url : new URL(fallback, current.origin)
+}
+
+// Keep the last changed URL until either companion history entry becomes active.
+let backgroundUpdate: { key: string; href: string } | undefined
+
+function writeTicketReturnTo(href: string): void {
+  history.replaceState({ ...history.state, ticketDrawer: { ...history.state?.ticketDrawer, returnTo: href } }, "")
+}
+
+export function restoreTaskBackgroundUrl(): void {
+  if (!backgroundUpdate || history.state?.ticketBackground !== backgroundUpdate.key) return
+  const { href } = backgroundUpdate
+  if (ticketIdFromPath(location.pathname, window.__ingress_path) !== null) {
+    if (history.state?.ticketDrawer?.returnTo === href) return
+    writeTicketReturnTo(href)
+  } else {
+    if (location.href === href) return
+    history.replaceState(history.state, "", href)
+  }
+  document.dispatchEvent(new Event(TASK_VIEW_LOCATION_EVENT))
+}
+
+export function replaceTaskBackgroundUrl(url: URL): void {
+  const ticket = ticketIdFromPath(location.pathname, window.__ingress_path) !== null
+  if (!ticket) {
+    const current = new URLSearchParams(location.search)
+    for (const key of ["open", "comment"]) {
+      const value = current.get(key)
+      if (value === null) url.searchParams.delete(key)
+      else url.searchParams.set(key, value)
+    }
+  }
+  const key = history.state?.ticketBackground
+  if (key && (!ticket || history.state?.ticketDrawer?.pushed)) backgroundUpdate = { key, href: url.href }
+  if (ticket) writeTicketReturnTo(url.href)
+  else history.replaceState(history.state, "", url)
+  document.dispatchEvent(new Event(TASK_VIEW_LOCATION_EVENT))
 }
