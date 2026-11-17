@@ -940,10 +940,12 @@ function setupReopenedTodayTasks(container: HTMLElement, mountRow: (row: HTMLEle
 
   return (id: string, status: string) => {
     if (!shell) return
-    const completed = container.querySelector(`.today-completed-tasks a[data-task-detail-link="${CSS.escape(id)}"]`)
-    if (!completed && !reopened.has(id)) return
-    if (isClosedStatus(status)) reopened.delete(id)
-    else reopened.add(id)
+    if (isClosedStatus(status)) {
+      if (!reopened.delete(id)) return
+    } else {
+      if (!reopened.has(id) && container.querySelector(`.tli:not(.tli--done)[data-id="${CSS.escape(id)}"]`)) return
+      reopened.add(id)
+    }
     request?.abort()
     if (!reopened.size) return
     request = new AbortController()

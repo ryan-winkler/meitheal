@@ -65,6 +65,7 @@ export function setupUnscheduledSection(
       const inside = previous.contains(focused)
       const row = focus === "row" && inside ? focused?.closest<HTMLElement>(".tli[data-id]") : null
       const controlIndex = row && focused ? Array.from(row.querySelectorAll(rowControls)).indexOf(focused) : -1
+      const pager = focus === "row" && inside && focused instanceof HTMLAnchorElement ? focused.dataset.unscheduledPage : undefined
       previous.replaceWith(replacement)
       addBatchCheckboxes(replacement)
       requestedPage = currentPage()
@@ -78,7 +79,8 @@ export function setupUnscheduledSection(
         const retainedRow = row?.dataset.id
           ? replacement.querySelector(`.tli[data-id="${CSS.escape(row.dataset.id)}"]`) : null
         const retained = retainedRow?.querySelectorAll<HTMLElement>(rowControls)[controlIndex]
-        ;(retained ?? replacement.querySelector<HTMLElement>("[data-unscheduled-range]"))?.focus()
+        const retainedPager = pager ? replacement.querySelector<HTMLElement>(`[data-unscheduled-page="${CSS.escape(pager)}"]`) : null
+        ;(retained ?? retainedPager ?? replacement.querySelector<HTMLElement>("[data-unscheduled-range]"))?.focus()
       }
     } catch {
       if (!controller.signal.aborted && !lm.signal.aborted) {

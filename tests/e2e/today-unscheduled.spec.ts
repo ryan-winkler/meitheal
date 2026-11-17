@@ -112,7 +112,7 @@ test("a status refresh preserves focus on another Unscheduled row", async ({ pag
   }
 })
 
-test("Unscheduled status refresh preserves explicit pagination in either request order", async ({ page, request, baseURL }) => {
+test("Unscheduled status refresh preserves explicit pagination and focus on the pager", async ({ page, request, baseURL }) => {
   test.skip(shouldSkipBrowserSpecs(), "Requires a disposable Meitheal server")
   const headers = { origin: new URL(baseURL!).origin }
   const prefix = `Unscheduled paging race ${crypto.randomUUID()}`
@@ -176,6 +176,27 @@ test("Unscheduled status refresh preserves explicit pagination in either request
       const reset = await request.put(`/api/tasks/${taskId}`, { headers, data: { status: "pending" } })
       expect(reset.ok(), await reset.text()).toBe(true)
     }
+
+    await page.goto(`/today?search=${encodeURIComponent(prefix)}&unscheduledPage=1#today-work`)
+    const section = page.locator("#section-unscheduled")
+    const range = section.locator("[data-unscheduled-range]")
+    const next = section.getByRole("link", { name: "Next" })
+    let refreshWaiting = false
+    await page.route(url => url.pathname === "/today" && url.searchParams.get("unscheduledPage") === "1", async route => {
+      refreshWaiting = true
+      await new Promise<void>(resolve => { releasePage = resolve })
+      await route.continue()
+    })
+    const saved = page.waitForResponse(res => res.request().method() === "PUT" && new URL(res.url()).pathname.startsWith("/api/tasks/"))
+    await section.locator(".tli__checkbox").first().press("Space")
+    expect((await saved).ok()).toBe(true)
+    await expect(section.locator(".tli--done")).toHaveCount(1)
+    await page.clock.fastForward(250)
+    await expect.poll(() => refreshWaiting).toBe(true)
+    await next.focus()
+    releasePage()
+    await expect(range).toHaveText("Showing 1–50 of 51")
+    await expect(next).toBeFocused()
   } finally {
     releaseSave()
     releasePage()

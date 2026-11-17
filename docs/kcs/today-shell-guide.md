@@ -58,7 +58,7 @@ These anchors stay on the same route, which keeps the page ingress-safe in Home 
 
 Task rows label their current status. Custom statuses keep their stored value after a save or reload. When changing status badge colors, verify the labels in light and dark themes on Today, Upcoming, Eisenhower, and the Tasks tab of a project, both at rest and on hover. Completed project tasks keep a struck-through title and a readable **Done** badge. Run `MEITHEAL_TEST_BROWSER=1 pnpm --filter @meitheal/tests test e2e/status-badge-contrast.spec.ts` after building the app.
 
-Today refreshes the counters and progress bar after confirmed task changes and every 30 seconds. In Knight Rider, expand **Completed today** to see up to 20 recent completions. Select a completed row anywhere on the row to open Details. To keep Today open, open the completed task link in a new tab. Reopen a task from Details to return it to the Today lists it qualifies for. **Archive completed** applies to every completion counted for the displayed household day. Reload the page to refresh the task rows after an external change.
+Today refreshes the counters and progress bar after confirmed task changes and every 30 seconds. In Knight Rider, expand **Completed today** to see up to 20 recent completions. Select a completed row anywhere on the row to open Details. To keep Today open, open the completed task link in a new tab. Reopen a task from Details to return it to the Today lists it qualifies for, even if newer completions have pushed it out of the preview. **Archive completed** applies to every completion counted for the displayed household day. Reload the page to refresh the task rows after an external change.
 
 ### Update several tasks
 
@@ -69,7 +69,7 @@ Turn on multi-select in **Focus**, select the task checkboxes, then choose **Com
 The collapsed queue counts tasks without loading their full rows. The counts and visible Today sections use the same database snapshot.
 
 1. In **Work**, select the **Unscheduled** heading or focus it and press Enter. Today shows the full queue count and loads up to 50 task rows. A task created by a Home Assistant automation without a due date appears here.
-2. Use **Next** and **Previous** to reach the rest of the queue. Keyboard focus moves to the matching range above the rows. During a status update, keyboard focus stays on the current task control when that task is still listed. In **Focus**, search the full queue or use **Filter by status**, **Filter by priority**, **Filter by RICE score**, and **Sort tasks**. Reload keeps the open page and filters.
+2. Use **Next** and **Previous** to reach the rest of the queue. Keyboard focus moves to the matching range above the rows. During a status refresh, keyboard focus stays on the current task control or pager link while it remains available. In **Focus**, search the full queue or use **Filter by status**, **Filter by priority**, **Filter by RICE score**, and **Sort tasks**. Reload keeps the open page and filters.
 3. To change a card's manual board position, open the board in **Tasks**. Unscheduled pages use the selected sort order.
 4. If a page fails to load, use **Retry** in the section. The last loaded page stays visible while you retry.
 

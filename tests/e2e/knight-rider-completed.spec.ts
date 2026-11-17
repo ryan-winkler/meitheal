@@ -394,6 +394,47 @@ test("reopening a completed Today task restores its due row and focus", async ({
   }
 })
 
+test("reopening from Completed today restores a due task evicted from the preview", async ({ page, request }) => {
+  await page.addInitScript(() => localStorage.setItem("meitheal-theme", "knight-rider"))
+  await page.emulateMedia({ reducedMotion: "reduce" })
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.clock.install()
+  const title = "Restore a due task after preview eviction"
+  const ids: string[] = []
+  async function completeTask(taskTitle: string) {
+    const created = await request.post("/api/tasks", { data: { title: taskTitle, due_date: calendarToday() } })
+    expect(created.status()).toBe(201)
+    const { id } = await created.json()
+    ids.push(id)
+    const completed = await request.put(`/api/tasks/${id}`, { data: { status: "complete" } })
+    expect(completed.ok()).toBe(true)
+    return id
+  }
+  try {
+    const id = await completeTask(title)
+    for (let i = 1; i < 20; i++) await completeTask(`Newer completion ${i}`)
+    await page.goto("/today#today-work")
+    const disclosure = page.locator(".today-completed-tasks")
+    await disclosure.locator("summary").press("Enter")
+    const completedLink = disclosure.getByRole("link", { name: title })
+    const due = page.locator(`#today-due-list .tli[data-id="${id}"]`)
+    await expect(due).toHaveCount(0)
+    await completedLink.press("Enter")
+    await expect(page.locator("#td-title")).toHaveValue(title)
+
+    await completeTask("Completion that displaces the first")
+    await page.clock.fastForward(30_100)
+    await expect(disclosure.locator("summary")).toHaveText("Completed today (21)")
+    await expect(completedLink).toHaveCount(0)
+    await page.getByRole("button", { name: "Mark as Undone" }).click()
+    await expect(due.getByRole("checkbox", { name: `Complete ${title}` })).not.toBeChecked()
+    await page.getByRole("button", { name: "Close detail" }).press("Enter")
+    await expect(due.getByRole("link", { name: title })).toBeFocused()
+  } finally {
+    for (const id of ids) await request.delete(`/api/tasks/${id}`)
+  }
+})
+
 for (const { name, sectionId, task } of [
   { name: "Carried Forward", sectionId: "section-carried", task: { due_date: shiftCalendarDay(calendarToday(), -1) } },
   { name: "Suggested", sectionId: "section-suggested", task: { due_date: shiftCalendarDay(calendarToday(), 1), priority: 1 } },
