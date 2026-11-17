@@ -190,7 +190,7 @@
         function reconcileEpicGrouping() {
           if (!epicGroupingDirty || __signal.aborted) return
           epicGroupingDirty = false
-          document.dispatchEvent(new Event("kanban:epic-change"))
+          document.dispatchEvent(new Event("meitheal:task-hierarchy-changed"))
         }
 
         function closeTD(reason: SearchDetailDismissal = "dismiss", updateLocation = true) {

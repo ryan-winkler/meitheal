@@ -241,7 +241,7 @@ export function initKanbanPage(signal: AbortSignal): void {
   window.addEventListener("pageshow", event => {
     if (event.persisted) void refresh()
   }, { signal })
-  document.addEventListener("kanban:epic-change", () => {
+  document.addEventListener("meitheal:task-hierarchy-changed", () => {
     if (desired.searchParams.get("groupBy") === "epic") queueBackgroundRead({ afterSave: "epic" })
   }, { signal })
   document.addEventListener("meitheal:task-status-saved", event => {

@@ -1,4 +1,4 @@
-import { normalizeTableRules, readTaskAreaParam, readTaskScalarParam, TASK_PERSISTED_FILTER_KEYS, TASK_SCALAR_FILTER_KEYS } from "./filter-state"
+import { normalizeTableRules, readTableTaskTypeParam, readTaskAreaParam, readTaskScalarParam, TASK_PERSISTED_FILTER_KEYS, TASK_SCALAR_FILTER_KEYS } from "./filter-state"
 import { readKanbanRules } from "./kanban-query"
 
 export const TASK_VIEWS = ["kanban", "table", "calendar", "timeline"] as const
@@ -22,6 +22,11 @@ export function parseTaskView(value: string | null): TaskView | undefined {
   return TASK_VIEWS.find(view => view === value)
 }
 
+export function requestedTaskView(params: URLSearchParams, hash = ""): TaskView | undefined {
+  return parseTaskView(params.get("view")) ?? parseTaskView(hash.slice(1)) ??
+    (readTableTaskTypeParam(params) ? "table" : undefined)
+}
+
 export function appliedTaskRules(params: URLSearchParams, view: TaskView) {
   if (view === "timeline") return
   const values = params.getAll("advancedFilter")
@@ -39,7 +44,7 @@ export function appliedTaskRules(params: URLSearchParams, view: TaskView) {
 
 export function taskViewUrl(current: URL, view: TaskView, explicitFilters = false): URL {
   const url = new URL(current)
-  const previousView = parseTaskView(url.searchParams.get("view")) ?? parseTaskView(url.hash.slice(1)) ?? "kanban"
+  const previousView = requestedTaskView(url.searchParams, url.hash) ?? "kanban"
   if (previousView !== view) {
     const area = previousView === "calendar" || previousView === "table"
       ? readTaskAreaParam(url.searchParams)
@@ -58,10 +63,12 @@ export function taskViewUrl(current: URL, view: TaskView, explicitFilters = fals
       else url.searchParams.delete("advancedFilter")
     }
   }
-  if (view === "kanban") url.searchParams.delete("view")
-  else {
+  if (view === "kanban" && url.searchParams.get("view") !== "kanban" &&
+    !readTableTaskTypeParam(url.searchParams)) {
+    url.searchParams.delete("view")
+  } else {
     url.searchParams.set("view", view)
-    if (url.searchParams.get("groupBy") === "epic") url.searchParams.delete("groupBy")
+    if (view !== "kanban" && url.searchParams.get("groupBy") === "epic") url.searchParams.delete("groupBy")
   }
   if (view !== "table") url.searchParams.delete("tp")
   // An explicit empty search skips legacy stored filters without overriding the remembered Area.
