@@ -1115,12 +1115,14 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
     }
 
     form?.addEventListener("input", event => {
-      if (event.target === assignee) preserveAssignee = true
-      if (!(event.target as HTMLElement).matches(".label-picker__input")) markEdited()
+      const target = event.target as HTMLElement
+      eventDates.delete(target.id)
+      if (target === assignee) preserveAssignee = true
+      if (!target.matches(".label-picker__input")) markEdited()
     }, { signal })
     form?.addEventListener("change", event => {
       const target = event.target as HTMLElement
-      if (target.matches("input[type=hidden]")) markEdited()
+      if (eventDates.delete(target.id) || target.matches("input[type=hidden]")) markEdited()
     }, { signal })
     form?.addEventListener("invalid", event => {
       if (event.target === qtyEl && kindInput?.value === "shopping_item") showFieldError(taskDraftText("quantity"))

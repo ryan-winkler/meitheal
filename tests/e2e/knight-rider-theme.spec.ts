@@ -245,14 +245,21 @@ test("Details completion clears Knight Rider active work on Dashboard and Board"
   const close = page.getByRole("button", { name: "Close detail" })
   const card = page.locator(`.kanban-card[data-id="${id}"]`)
   const link = card.locator(".card-open-btn")
-  let holdRefresh = false
   let refreshHeld = false
   let failRefresh = false
   let releaseRefresh = () => {}
-  const waitingRefresh = new Promise<void>(resolve => { releaseRefresh = resolve })
+  let waitingRefresh: Promise<void> | undefined
+  function holdNextRefresh() {
+    refreshHeld = false
+    waitingRefresh = new Promise<void>(resolve => { releaseRefresh = resolve })
+  }
+  function releaseHeldRefresh() {
+    waitingRefresh = undefined
+    releaseRefresh()
+  }
   await page.route(url => url.searchParams.has("boardRefresh"), async route => {
     if (failRefresh) return route.fulfill({ status: 503 })
-    if (holdRefresh) {
+    if (waitingRefresh) {
       refreshHeld = true
       await waitingRefresh
     }
@@ -304,7 +311,7 @@ test("Details completion clears Knight Rider active work on Dashboard and Board"
 
     await link.press("Enter")
     await expect(status).toHaveValue("active")
-    holdRefresh = true
+    holdNextRefresh()
     await done.click()
     await expect(status).toHaveValue("complete")
     await expect.poll(() => refreshHeld).toBe(true)
@@ -312,11 +319,46 @@ test("Details completion clears Knight Rider active work on Dashboard and Board"
     await expect(link).toBeFocused()
     const newerFocus = page.locator(`.kanban-card[data-id="${otherId}"] .card-open-btn`)
     await newerFocus.focus()
-    holdRefresh = false
-    releaseRefresh()
+    releaseHeldRefresh()
     await expect(card).toHaveAttribute("data-status", "complete")
     await expect(card).not.toHaveAttribute("data-work-active", "")
     await expect(newerFocus).toBeFocused()
+
+    await link.press("Enter")
+    await expect(status).toHaveValue("complete")
+    holdNextRefresh()
+    await status.selectOption("active")
+    await expect.poll(() => refreshHeld).toBe(true)
+    await close.click()
+    await page.locator('.kanban-column[data-status="pending"] > .kanban-add-btn').click()
+    const draft = page.getByRole("textbox", { name: "New task title" })
+    await draft.fill("An unsent inline draft")
+    releaseHeldRefresh()
+    await expect(page.locator("#kanban-board")).not.toHaveAttribute("aria-busy", "true")
+    await expect(draft).toBeFocused()
+    await expect(draft).toHaveValue("An unsent inline draft")
+    await expect(card).toHaveAttribute("data-status", "complete")
+    await draft.press("Escape")
+    await expect(draft).toHaveCount(0)
+    await expect(card).toHaveAttribute("data-status", "active")
+
+    await link.press("Enter")
+    await expect(status).toHaveValue("active")
+    holdNextRefresh()
+    await done.click()
+    await expect.poll(() => refreshHeld).toBe(true)
+    await close.click()
+    const titleEdit = page.locator(`.kanban-card[data-id="${otherId}"] .kanban-title-text`)
+    await titleEdit.dispatchEvent("dblclick")
+    await titleEdit.fill("An unsent title edit")
+    releaseHeldRefresh()
+    await expect(page.locator("#kanban-board")).not.toHaveAttribute("aria-busy", "true")
+    await expect(titleEdit).toBeFocused()
+    await expect(titleEdit).toHaveText("An unsent title edit")
+    await expect(card).toHaveAttribute("data-status", "active")
+    await titleEdit.press("Escape")
+    await expect(card).toHaveAttribute("data-status", "complete")
+    await expect(titleEdit).toHaveText("Another Board card")
 
     await page.goto(`/tasks?status=active&open=${id}#kanban`)
     await expect(status).toHaveValue("complete")
@@ -325,9 +367,10 @@ test("Details completion clears Knight Rider active work on Dashboard and Board"
     await expect(card).toHaveAttribute("data-status", "active")
     await expect(card).toHaveAttribute("data-work-active", "")
     await close.click()
-    await expect(page).toHaveURL(url => url.searchParams.get("status") === "active" && !url.searchParams.has("open"))
+    await expect(page.locator("#task-detail-overlay")).toBeHidden()
+    await expect(page).toHaveURL(url => url.searchParams.get("status") === "active" && url.hash === "#kanban")
   } finally {
-    releaseRefresh()
+    releaseHeldRefresh()
     await request.delete(`/api/tasks/${otherId}`)
     await request.delete(`/api/tasks/${id}`)
   }

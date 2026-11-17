@@ -61,6 +61,31 @@ export function initKanbanPage(signal: AbortSignal): void {
     retry.hidden = !failed
   }
 
+  let queuedStatusRefresh: KanbanRefreshFocus | undefined
+
+  function boardInteractionActive() {
+    return board.querySelector('.kanban-inline-add, [contenteditable="true"], .kanban-card.dragging, .kanban-card[aria-busy="true"]') ||
+      document.querySelector("#kanban-card-menu:not([hidden]), .quick-action-popover:not([inert])")
+  }
+
+  const interactionObserver = new MutationObserver(resumeStatusRefresh)
+  function resumeStatusRefresh() {
+    if (signal.aborted || !queuedStatusRefresh || pending || boardInteractionActive()) return
+    const focus = queuedStatusRefresh
+    queuedStatusRefresh = undefined
+    interactionObserver.disconnect()
+    void refresh(focus)
+  }
+
+  function queueStatusRefresh(focus: KanbanRefreshFocus) {
+    queuedStatusRefresh = focus
+    interactionObserver.observe(document.body, {
+      childList: true, subtree: true, attributes: true,
+      attributeFilter: ["hidden", "inert", "class", "aria-busy", "contenteditable"],
+    })
+    resumeStatusRefresh()
+  }
+
   async function load(url: URL, focus?: KanbanRefreshFocus, reset = false, dataOnly = false): Promise<void> {
     pending?.abort()
     const request = new AbortController()
@@ -91,6 +116,11 @@ export function initKanbanPage(signal: AbortSignal): void {
         return
       }
       if (!replacement) throw new Error("Board response unavailable")
+      if (focus?.afterStatusSave && boardInteractionActive()) {
+        if (!queuedStatusRefresh) queueStatusRefresh(focus)
+        renderStatus("")
+        return
+      }
 
       const active = document.activeElement
       const shouldFocus = active === retry || board.contains(active) || (Boolean(focus) && active === document.body)
@@ -145,6 +175,7 @@ export function initKanbanPage(signal: AbortSignal): void {
       if (pending === request) {
         pending = undefined
         board.removeAttribute("aria-busy")
+        resumeStatusRefresh()
       }
     }
   }
@@ -211,7 +242,7 @@ export function initKanbanPage(signal: AbortSignal): void {
     const { id, status } = (event as CustomEvent<{ id: string; status: string }>).detail
     const card = board.querySelector<HTMLElement>(`.kanban-card[data-id="${CSS.escape(id)}"]`)
     if (typeof status !== "string" || card?.dataset.status === status) return
-    void refresh({ taskId: id, lane: status, afterStatusSave: true })
+    queueStatusRefresh({ taskId: id, lane: status, afterStatusSave: true })
   }, { signal })
   document.addEventListener("meitheal:area-changed", () => {
     syncAreaLinks(getSelectedAreaId())
@@ -225,7 +256,10 @@ export function initKanbanPage(signal: AbortSignal): void {
     }
     filter(values)
   }, { signal })
-  signal.addEventListener("abort", () => boardLifetime.abort(), { once: true })
+  signal.addEventListener("abort", () => {
+    boardLifetime.abort()
+    interactionObserver.disconnect()
+  }, { once: true })
   if (board.dataset.available !== "true") {
     renderStatus(window.mI18n?.get("kanban.board_load_failed") ?? "Couldn’t load the board.", true)
   } else {

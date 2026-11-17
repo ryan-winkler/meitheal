@@ -1644,36 +1644,6 @@ try {
     outline: 2px solid var(--border-focus);
     outline-offset: -2px;
   }
-  .view-switcher {
-    display: flex;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    overflow: hidden;
-  }
-  .view-btn {
-    padding: 6px 12px;
-    text-decoration: none;
-    color: var(--text-secondary);
-    font-size: 16px;
-    transition:
-      background 200ms,
-      color 200ms,
-      border-color 200ms,
-      opacity 200ms,
-      transform 200ms;
-    border-right: 1px solid var(--border);
-  }
-  .view-btn:last-child {
-    border-right: none;
-  }
-  .view-btn:hover {
-    background: var(--bg-hover);
-    color: var(--text-primary);
-  }
-  .view-btn.active {
-    background: var(--accent-light);
-    color: var(--accent);
-  }
   /* Card header with favorite */
   .kanban-card-header {
     display: flex;
@@ -1798,22 +1768,6 @@ try {
   }
   .kanban-card.user-filtered-out {
     display: none !important;
-  }
-  .filter-clear-btn {
-    @apply text-xs px-3 py-1 rounded-md;
-    background: color-mix(in srgb, var(--danger) 10%, transparent);
-    color: var(--danger);
-    border: 1px solid color-mix(in srgb, var(--danger) 20%, transparent);
-    cursor: pointer;
-    transition:
-      background 0.15s ease,
-      border-color 0.15s ease;
-    white-space: nowrap;
-    flex-shrink: 0;
-  }
-  .filter-clear-btn:hover {
-    background: color-mix(in srgb, var(--danger) 20%, transparent);
-    border-color: color-mix(in srgb, var(--danger) 40%, transparent);
   }
   .kanban-inline-add {
     display: grid;
@@ -1957,7 +1911,6 @@ try {
 
   /* Accessibility: suppress transitions for reduced-motion users */
   @media (prefers-reduced-motion: reduce) {
-    .filter-clear-btn,
     .kanban-title-text,
     .kanban-progress-bar,
     .kanban-card-title,

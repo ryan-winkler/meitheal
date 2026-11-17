@@ -233,6 +233,38 @@ test.describe("Calendar Shell", () => {
     await expect(page.locator("#nt-event-start")).toHaveValue(new RegExp(`^${date}T`))
   })
 
+  test("editing a Calendar Event back to midnight saves a timed start", async ({ page, request }) => {
+    let id: string | undefined
+    try {
+      const session = await page.context().newCDPSession(page)
+      await session.send("Emulation.setTimezoneOverride", { timezoneId: "Europe/Dublin" })
+      await page.goto("/tasks?view=calendar&year=2031&month=6#calendar")
+      const cell = page.locator('.cal-cell[data-date]:not(.cal-other)').first()
+      const date = await cell.getAttribute("data-date")
+      await cell.press("Enter")
+      await page.locator("#day-drawer-add-event").click()
+      const start = page.locator("#nt-event-start")
+      const end = page.locator("#nt-event-end")
+      await expect(start).toHaveValue(`${date}T00:00`)
+      await start.fill(`${date}T00:01`)
+      await start.fill(`${date}T00:00`)
+      await end.fill(`${date}T01:00`)
+      const expectedStart = await start.evaluate((control: HTMLInputElement) => new Date(control.value).toISOString())
+      const expectedEnd = await end.evaluate((control: HTMLInputElement) => new Date(control.value).toISOString())
+      await page.locator("#new-task-title-input").fill("Calendar timed midnight start")
+      const created = page.waitForResponse(response => new URL(response.url()).pathname === "/api/tasks" &&
+        response.request().method() === "POST")
+      await page.locator("#submit-new-task-btn").click()
+      const response = await created
+      expect(response.status()).toBe(201)
+      const task = await response.json()
+      id = task.id
+      expect(task).toMatchObject({ task_kind: "calendar_event", start_date: expectedStart, end_date: expectedEnd })
+    } finally {
+      if (id) await request.delete(`/api/tasks/${id}`, { data: {} })
+    }
+  })
+
   test("view links preserve query string when switching routes", async ({ page }) => {
     await page.goto("/calendar?status=active&priority=1")
     await page.waitForLoadState("networkidle")
