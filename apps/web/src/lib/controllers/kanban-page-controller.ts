@@ -79,7 +79,7 @@ export function initKanbanPage(signal: AbortSignal): void {
       if (!replacement) throw new Error("Board response unavailable")
 
       const active = document.activeElement
-      const shouldFocus = active === retry || board.contains(active) || (Boolean(focus) && active === document.body)
+      const shouldFocus = active === retry || board.contains(active) || (focus && !focus.detail && active === document.body)
       const previousDetailFocus = focus?.detail && active && board.contains(active) ? active : null
       const scroll = new Map(Array.from(board.querySelectorAll<HTMLElement>(".kanban-column"), lane =>
         [lane.dataset.status, lane.querySelector(".kanban-cards")?.scrollTop ?? 0] as const))

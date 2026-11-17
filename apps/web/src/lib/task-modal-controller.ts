@@ -300,7 +300,7 @@
           tdOverlay.classList.add("active");
           syncInspectorDockMode();
           tdClose?.focus()
-          if (changedAreaTask && changedAreaTask !== taskId) reconcileAreaGrouping()
+          reconcileAreaGrouping()
           // Set dynamic aria-label for screen readers
           setInspectorAriaLabel(`Task detail: loading...`);
           // Show skeleton, hide loaded content
@@ -1133,7 +1133,8 @@
             if (saved) {
               if (field === "area_id") {
                 changedAreaTask = taskId
-                if (!tdOverlay.classList.contains("active") || (currentTaskId && currentTaskId !== taskId)) {
+                if (!tdOverlay.classList.contains("active") ||
+                    (tdOverlay.dataset.openTaskId && generation !== detailGeneration)) {
                   reconcileAreaGrouping()
                 }
               }
