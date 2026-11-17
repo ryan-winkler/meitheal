@@ -309,13 +309,15 @@ jobs:
         run: |
           production_paths=$(pnpm -r why --prod picomatch --json)
           jq -e 'type == "array"' <<< "$production_paths" >/dev/null
+          ignore_status=0
           if [ "$(date -u +%s)" -lt "$(date -u -d 2026-11-24T00:00:00Z +%s)" ] &&
              jq -e 'length == 0' <<< "$production_paths" >/dev/null; then
             echo '::warning::Temporary build-only exception for GHSA-fc5q-39xc-vjpf expires 2026-11-24 UTC. See ADR 0023.'
-            pnpm audit --ignore GHSA-fc5q-39xc-vjpf
+            pnpm audit --ignore GHSA-fc5q-39xc-vjpf || ignore_status=$?
           fi
-          # --ignore only saves the ID in this disposable checkout. Run the audit.
+          # Print the complete advisory report even if the first audit failed.
           pnpm audit
+          exit "$ignore_status"
 
   coverage-reporting:
     name: Report coverage (advisory)
