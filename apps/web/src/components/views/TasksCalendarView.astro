@@ -3,7 +3,7 @@
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import { TaskRepository, type CalendarDayInfo } from "@domains/tasks/persistence/task-repository"
 import { createCalendarTaskFilter } from "../../lib/calendar-task-filter"
-import { calendarToday } from "../../lib/date"
+import { calendarOccurrenceStartKey, calendarToday, householdDayRanges } from "../../lib/date"
 import { sanitizeCssColor } from "../../lib/safe-html"
 import { taskViewUrl } from "../../lib/task-view-route"
 import SignalBar from "../layout/SignalBar.astro"
@@ -97,16 +97,18 @@ try {
     monthTotal += info.count;
   }
 
-  // Also query HA-synced event counts per day
-  const haData = filter.showConnectedEvents ? await repo.getCalendarHAEventCounts(monthStart, monthEnd, tz) : {};
-  for (const [dateStr, count] of Object.entries(haData)) {
-    monthHAEvents += count;
+  const haData = filter.showConnectedEvents ? await repo.getLinkedCalendarEvents(monthStart, monthEnd, tz) : {}
+  const syncedOccurrences = new Set<string>()
+  for (const [dateStr, events] of Object.entries(haData)) {
+    if (!events?.length) continue
+    for (const event of events) syncedOccurrences.add(event.id + "/" + calendarOccurrenceStartKey(event.start, tz))
     if (tasksByDay[dateStr]) {
-      tasksByDay[dateStr].haEvents = count;
+      tasksByDay[dateStr].haEvents = events.length
     } else {
-      tasksByDay[dateStr] = { count: 0, colors: [], haEvents: count, scheduledEvents: 0 };
+      tasksByDay[dateStr] = { count: 0, colors: [], haEvents: events.length, scheduledEvents: 0 }
     }
   }
+  monthHAEvents = syncedOccurrences.size
 } catch {
   calendarAvailable = false
   Astro.response.headers.set("Cache-Control", "no-store")
@@ -210,10 +212,12 @@ const agendaNote = filter.matches && !Object.values(tasksByDay).some(day => day.
           ))
         }
         {
-          grid.flat().map((cell) => (
-            <div
+          grid.flat().map((cell) => {
+            const ranges = cell.isCurrentMonth && filter.showConnectedEvents ? householdDayRanges(cell.dateStr, tz) : undefined
+            return <div
               class={`cal-cell ${cell.isToday ? "cal-today" : ""} ${!cell.isCurrentMonth ? "cal-other" : ""} ${cell.isWeekend && cell.isCurrentMonth ? "cal-weekend" : ""} ${cell.taskCount > 0 ? "cal-has-tasks" : ""}`}
               data-date={cell.dateStr}
+              data-day-ranges={ranges?.length === 1 ? undefined : JSON.stringify(ranges)}
               role={cell.isCurrentMonth ? "button" : undefined}
               tabindex={cell.isCurrentMonth ? "0" : undefined}
               aria-current={cell.isToday ? "date" : undefined}
@@ -252,7 +256,7 @@ const agendaNote = filter.matches && !Object.values(tasksByDay).some(day => day.
                 </div>
               )}
             </div>
-          ))
+          })
         }
       </div>
 

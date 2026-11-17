@@ -121,6 +121,10 @@ export function initTodayPage(options?: Partial<TodayControllerOptions>) {
     void hydrateTaskAssignees(scope, lm.signal)
   })
   setupFilters(container, refreshUnscheduled)
+  lm.on(document, "meitheal:task-status-saved", event => {
+    const { id, status } = (event as CustomEvent<{ id: string; status: string }>).detail
+    if (typeof status === "string") syncTodayTaskStatus(container, id, status)
+  })
   lm.on(container, "meitheal:today-status-committed", event => {
     applyFilters(container)
     const id = (event as CustomEvent<{ id: string }>).detail.id

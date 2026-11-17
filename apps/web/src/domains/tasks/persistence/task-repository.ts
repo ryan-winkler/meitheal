@@ -20,7 +20,7 @@ import { getStatusDef, isDoneStatus, normalizeStatus, STATUS } from "../../../li
 import { logApiError, logApiWarn } from "../../../lib/api-logger"
 import { EXACT_TASK_IDENTIFIER_SCORE } from "../../../lib/task-search-score"
 import { readStoredCalendarDay } from "../../../lib/calendar-day"
-import { calendarDayFromInput, calendarEventDay, calendarOccurrenceStartKey, calendarToday, compareCalendarStarts, shiftCalendarDay, isDueOverdue } from "../../../lib/date"
+import { calendarDayFromInput, calendarEventDay, calendarEventInterval, calendarIntervalOverlaps, calendarOccurrenceStartKey, calendarToday, compareCalendarStarts, householdDayRanges, shiftCalendarDay, isDueOverdue } from "../../../lib/date"
 import { parseTicketKey } from "../../../lib/ticket-key"
 import { getNextOccurrence, parseRRule } from "../recurrence"
 import { deferralTerminalStatusesSql, isDeferralTerminalStatus } from "./task-deferral-status"
@@ -807,6 +807,14 @@ export class TaskRepository {
 
   async getLinkedCalendarEvents(fromDay: string, throughDay: string, timezone: string): Promise<Partial<Record<string, LinkedCalendarEvent[]>>> {
     const byDay = new Map<string, Map<string, LinkedCalendarEvent>>()
+    const dayRanges = new Map<string, [number, number][]>()
+    const rangesForDay = (day: string) => {
+      const existing = dayRanges.get(day)
+      if (existing) return existing
+      const ranges = householdDayRanges(day, timezone)
+      dayRanges.set(day, ranges)
+      return ranges
+    }
     const addSpan = (
       task: Omit<LinkedCalendarEvent, "start">, startRaw: unknown, endRaw?: unknown, effectiveEndRaw?: unknown,
     ) => {
@@ -819,17 +827,23 @@ export class TaskRepository {
         ? calendarDayFromInput(effectiveEndRaw, timezone) : null
       const endDay = providerEnd ?? storedEnd ?? startDay
 
-      const from = startDay > fromDay ? startDay : fromDay;
+      const interval = typeof endRaw === "string" ? calendarEventInterval(startRaw, endRaw, timezone) : null
       const lastDay = endDay < startDay ? startDay : endDay
-      const to = lastDay < throughDay ? lastDay : throughDay;
+      // A rollback near midnight can cover a day outside the endpoint dates.
+      const first = interval ? shiftCalendarDay(startDay, -1) : startDay
+      const last = interval ? shiftCalendarDay(lastDay, 1) : lastDay
+      const from = first > fromDay ? first : fromDay
+      const to = last < throughDay ? last : throughDay
       if (from > to) return;
 
       const key = task.id + "/" + calendarOccurrenceStartKey(startRaw, timezone)
       let cur = from;
       for (let guard = 0; guard < 62 && cur <= to; guard++) {
-        let day = byDay.get(cur)
-        if (!day) byDay.set(cur, day = new Map())
-        if (!day.has(key)) day.set(key, { ...task, start: startRaw })
+        if (!interval || calendarIntervalOverlaps(interval, rangesForDay(cur))) {
+          let day = byDay.get(cur)
+          if (!day) byDay.set(cur, day = new Map())
+          if (!day.has(key)) day.set(key, { ...task, start: startRaw })
+        }
         const next = shiftCalendarDay(cur, 1);
         if (next === cur) break;
         cur = next;

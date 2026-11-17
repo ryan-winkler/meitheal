@@ -66,6 +66,8 @@
         const tdPanel = document.getElementById("task-detail-panel")
         const tdHeading = document.getElementById("td-task-heading")
         const tdActions = document.getElementById("td-task-actions")
+        const statusSelect = document.querySelector<HTMLSelectElement>("#td-status")
+        const doneButton = document.querySelector<HTMLButtonElement>("#td-toggle-done")
         const tdError = document.getElementById("td-load-error")
         const copyFallback = document.getElementById("td-copy-link-fallback")
         const copyValue = document.querySelector<HTMLInputElement>("#td-copy-link-value")
@@ -253,6 +255,15 @@
           _sidebarChevron?.classList.toggle("td-chevron-open", expanded);
         }, { signal: __signal });
 
+        function setStatusLocked(locked: boolean) {
+          if (statusSelect) statusSelect.disabled = locked
+          if (doneButton) doneButton.disabled = locked
+        }
+
+        function updateDoneLabel(status: string) {
+          if (doneButton) doneButton.textContent = status === "complete" ? "Mark as Undone" : "Mark as Done"
+        }
+
         async function openTaskDetail(taskId: string, commentTarget: string | null = null, search?: SearchDetailHandoff, updateLocation = true) {
           if (!tdOverlay?.isConnected || __signal.aborted) return
           const newSession = !tdOverlay.classList.contains("active")
@@ -277,6 +288,7 @@
           const modalSignal = _modalAbortController.signal
           document.getElementById("td-ai-response")?.remove()
           _isPopulating = true;
+          setStatusLocked(true)
           const projectField = document.querySelector<HTMLSelectElement>("#td-project")
           let projectFieldReady = false
           if (projectField) projectField.disabled = true
@@ -363,9 +375,6 @@
             void Promise.allSettled([lanes, backlogModeSetting, areas, projectRead, pillars, users, settings])
 
             // Populate status dropdown from lanes API
-            const statusSelect = document.getElementById(
-              "td-status",
-            ) as HTMLSelectElement | null;
             try {
               const [lanesRes, modeRes] = await Promise.all([lanes, backlogModeSetting])
               let backlogMode = "visible";
@@ -668,7 +677,10 @@
               opt.textContent = taskStatus;
               statusSelect.appendChild(opt);
             }
-            if (statusSelect) statusSelect.value = taskStatus;
+            if (statusSelect) {
+              statusSelect.value = taskStatus
+              statusSelect.dataset.savedStatus = taskStatus
+            }
             const tdDesc = document.getElementById(
               "td-description",
             ) as HTMLTextAreaElement;
@@ -920,12 +932,7 @@
               favBtn.textContent = isFav
                 ? "★ Favorited"
                 : "⭐ Add to Favorites";
-            const isDone = String(t.status) === "complete";
-            const tdToggleDone = document.getElementById("td-toggle-done");
-            if (tdToggleDone)
-              tdToggleDone.textContent = isDone
-                ? "↩ Mark as Undone"
-                : "✓ Mark as Done";
+            updateDoneLabel(taskStatus)
 
             // Load settings-defined custom fields
             _settingsFields = [];
@@ -1076,6 +1083,7 @@
             setTimeout(() => {
               if (modalSignal.aborted) return
               _isPopulating = false
+              setStatusLocked(false)
               if (projectField) projectField.disabled = !projectFieldReady
               deferral.loaded(taskId, typeof t.project_id === "string" ? t.project_id : null, t.deferred_at != null, modalSignal, Boolean(searchSession))
               pins.loaded(taskId, modalSignal)
@@ -1107,8 +1115,10 @@
             saved = response.ok
             if (saved) {
               notifyInactivityTaskChanged(field === "status" ? undefined : taskId)
-              if (field === "status" && value === "complete" && (!search || generation === detailGeneration)) {
-                onTaskCompleted(await response.json())
+              if (field === "status") {
+                const task = await response.json()
+                document.dispatchEvent(new CustomEvent("meitheal:task-status-saved", { detail: { id: taskId, status: task.status } }))
+                if (value === "complete" && (!search || generation === detailGeneration)) onTaskCompleted(task)
               }
               return !search || generation === detailGeneration
             }
@@ -1258,17 +1268,20 @@
             input.value = "";
           }, { signal: __signal });
 
-        document.getElementById("td-status")
-          ?.addEventListener("change", (e) => {
-            const newVal = (e.target as HTMLSelectElement).value;
-            saveTD("status", newVal);
-            const isDone = newVal === "complete";
-            const doneBtn = document.getElementById("td-toggle-done");
-            if (doneBtn)
-              doneBtn.textContent = isDone
-                ? "↩ Mark as Undone"
-                : "✓ Mark as Done";
-          }, { signal: __signal });
+        async function saveDetailStatus(next: string) {
+          if (!statusSelect || statusSelect.disabled) return
+          const generation = detailGeneration
+          setStatusLocked(true)
+          const saved = await saveTaskField("status", next)
+          if (generation !== detailGeneration) return
+          const status = saved ? next : statusSelect.dataset.savedStatus ?? statusSelect.value
+          statusSelect.value = status
+          statusSelect.dataset.savedStatus = status
+          updateDoneLabel(status)
+          setStatusLocked(false)
+        }
+
+        statusSelect?.addEventListener("change", () => void saveDetailStatus(statusSelect.value), { signal: __signal })
         document
           .getElementById("td-priority")
           ?.addEventListener("change", (e) =>
@@ -1527,24 +1540,9 @@
         const loadRelatedLinks = relatedLinksApi.loadRelatedLinks
 
 
-        // Toggle done
-        document
-          .getElementById("td-toggle-done")
-          ?.addEventListener("click", () => {
-            const statusEl = document.getElementById(
-              "td-status",
-            ) as HTMLSelectElement;
-            const newStatus =
-              statusEl.value === "complete" ? "pending" : "complete";
-            statusEl.value = newStatus;
-            saveTD("status", newStatus);
-            const tdDoneBtn = document.getElementById("td-toggle-done");
-            if (tdDoneBtn)
-              tdDoneBtn.textContent =
-                newStatus === "complete"
-                  ? "↩ Mark as Undone"
-                  : "✓ Mark as Done";
-          }, { signal: __signal });
+        doneButton?.addEventListener("click", () => {
+          if (statusSelect) void saveDetailStatus(statusSelect.value === "complete" ? "pending" : "complete")
+        }, { signal: __signal })
 
         // Toggle favorite
         document

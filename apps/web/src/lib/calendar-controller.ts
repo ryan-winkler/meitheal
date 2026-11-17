@@ -2,7 +2,7 @@ import type { TaskKind } from "@meitheal/domain-tasks"
 import { CALENDAR_AREA_APPLIED_EVENT, CALENDAR_AREA_REQUEST_EVENT, getRememberedAreaId } from "@lib/area-selector-controller"
 import { CALENDAR_FILTER_STATE_EVENT, readCalendarTaskFilters } from "@lib/calendar-task-filter"
 import { createClientLogger } from "@lib/client-logger"
-import { calendarEventDay, calendarOccurrenceStartKey, compareCalendarStarts, formatCalendarEventTime, formatTimeInZone, normalizeCalendarEventSummary, shiftCalendarDay } from "@lib/date"
+import { calendarEventDay, calendarEventInterval, calendarIntervalOverlaps, calendarOccurrenceStartKey, compareCalendarStarts, formatCalendarEventTime, formatTimeInZone, normalizeCalendarEventSummary, shiftCalendarDay } from "@lib/date"
 import { createFocusTrap } from "@lib/focus-trap"
 import { updateKanbanFilters, type KanbanFilters } from "@lib/kanban-query"
 import { createTablerSvgElement, mapEntityEmojiToTabler, type TablerIconName } from "@lib/tabler-svg"
@@ -259,7 +259,9 @@ export function initCalendarPage(signal: AbortSignal): void {
     }
     if (showEvents) {
       renderMessage(drawerEvents!, loading)
-      void loadCalendarRange(date, shiftCalendarDay(date, 1), timezone, 5, readCalendarSources, linked).then(result => {
+      const ranges = month.querySelector<HTMLElement>(`.cal-cell[data-date="${CSS.escape(date)}"]`)?.dataset.dayRanges
+      void loadCalendarRange(date, shiftCalendarDay(date, 1), timezone, 5, readCalendarSources, linked,
+        ranges ? JSON.parse(ranges) : undefined).then(result => {
         if (drawerRequest !== currentRequest || currentRequest.signal.aborted || signal.aborted) return
         live = result
         renderConnectedEvents()
@@ -463,6 +465,7 @@ async function fetchCalendarEntities(signal: AbortSignal): Promise<string[]> {
 
 async function loadCalendarRange(
   start: string, end: string, timezone: string, limit: number, readSources: () => Promise<string[]>, signal: AbortSignal,
+  dayRanges?: [number, number][],
 ) {
   const entities = await readSources()
   signal.throwIfAborted()
@@ -478,6 +481,10 @@ async function loadCalendarRange(
     if (!Array.isArray(data.events)) throw new Error("Invalid calendar feed")
     return data.events.filter(event => {
       if (!event || typeof event.start !== "string" || typeof event.summary !== "string") return false
+      if (dayRanges && typeof event.end === "string") {
+        const interval = calendarEventInterval(event.start, event.end, timezone)
+        if (interval) return calendarIntervalOverlaps(interval, dayRanges)
+      }
       const firstDay = calendarEventDay(event.start, timezone)
       if (!firstDay || firstDay >= end) return false
       if (firstDay >= start) return true

@@ -70,6 +70,48 @@ test("Knight Rider keeps the completed Today state and saved theme truthful", as
   await request.delete(`/api/tasks/${id}`)
 })
 
+test("Today reflects task detail completion and reopening without a reload", async ({ page, request }) => {
+  await page.addInitScript(() => localStorage.setItem("meitheal-theme", "knight-rider"))
+  const title = "Schedule the heating service"
+  const response = await request.post("/api/tasks", { data: { title, status: "active", due_date: calendarToday() } })
+  expect(response.status()).toBe(201)
+  const { id } = await response.json()
+  try {
+    await page.goto("/today#today-work")
+    const item = page.locator(`#today-due-list .tli[data-id="${id}"]`)
+    const focus = page.locator(`.focus-card[data-id="${id}"]`)
+    const done = page.locator("#td-toggle-done")
+    const completed = page.locator(".today-completed-tasks")
+    await expect(item).toHaveAttribute("data-work-active", "")
+    await expect(focus).toBeVisible()
+    await item.getByRole("link", { name: title }).click()
+    await expect(page.locator("#td-title")).toHaveValue(title)
+    await expect(done).toBeEnabled()
+    await done.click()
+    await expect(item.locator(".tli__checkbox")).toBeChecked()
+    await page.getByRole("button", { name: "Close detail" }).click()
+    await expect(item).not.toHaveAttribute("data-work-active", "")
+    await expect(focus).toBeHidden()
+    await expect(completed.locator("summary")).toHaveText("Completed today (1)")
+
+    await item.getByRole("link", { name: title }).click()
+    const status = page.locator("#td-status")
+    await expect(status).toHaveValue("complete")
+    await expect(status).toBeEnabled()
+    await page.route(`**/api/tasks/${id}`, route => route.fulfill({ status: 503 }), { times: 1 })
+    await status.selectOption("active")
+    await expect(status).toHaveValue("complete")
+    await expect(item).not.toHaveAttribute("data-work-active", "")
+    await status.selectOption("active")
+    await expect(item).toHaveAttribute("data-work-active", "")
+    await page.getByRole("button", { name: "Close detail" }).click()
+    await expect(focus).toBeVisible()
+    await expect(completed).toBeHidden()
+  } finally {
+    await request.delete(`/api/tasks/${id}`)
+  }
+})
+
 test("Today holds the displayed date and counts together after rollover", async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem("meitheal-theme", "knight-rider"))
   await page.clock.install()

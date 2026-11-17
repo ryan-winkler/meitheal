@@ -155,6 +155,7 @@ test("Calendar reads configured sources as a household member and filters before
     const linkedCell = page.locator(`.cal-cell[data-date="${linkedDay}"]`)
     const connected = page.locator("#day-drawer-events")
     await expect(linkedCell).toHaveAccessibleName(/5 calendar events$/)
+    await expect(page.locator("#calendar-signal-summary")).toContainText("5 synced events")
     await expect(page.locator('.cal-cell[data-date="2031-07-15"]')).not.toHaveAccessibleName(/calendar event/)
     await linkedCell.press("Enter")
     await expect(connected.getByRole("button", { name: /Household seed event/ })).toHaveCount(2)
@@ -348,6 +349,30 @@ test("Calendar reads configured sources as a household member and filters before
     await shifted.press("Enter")
     await expect(connected.getByRole("button", { name: /Saved midnight transition.*00:30/ })).toBeVisible()
     await expect(connected.getByText("Live midnight transition")).toHaveCount(0)
+
+    const rollbackZone = await api.put(base + "/api/settings", { headers: headers("admin"), data: { key: "timezone", value: "America/Goose_Bay" } })
+    expect(rollbackZone.status(), await rollbackZone.text()).toBe(200)
+    const rollbackId = "linked-midnight-rollback"
+    const rollback = { start: "2010-11-07T03:00:30Z", end: "2010-11-07T03:15:00Z" }
+    insertLinkedTask.run(rollbackId, "Saved rollback appointment", "pending", rollbackId, rollbackId, null)
+    insertConfirmation.run(rollbackId, rollbackId, rollbackId, "rollback-uid", "ha.calendar_sync", JSON.stringify({
+      entity_id: "calendar.household", ...rollback,
+    }))
+    await page.route("**/api/ha/events?*", route => route.fulfill({ json: { events: [
+      { uid: "rollback-uid", summary: "Linked rollback feed entry", ...rollback },
+      { uid: "live-rollback-uid", summary: "Live rollback appointment", ...rollback },
+    ] } }))
+    await page.goto(base + "/tasks?view=calendar&year=2010&month=10#calendar")
+    await expect(page.locator("#calendar-signal-summary")).toContainText("1 synced event")
+    for (const date of ["2010-11-06", "2010-11-07"]) {
+      const cell = page.locator(`.cal-cell[data-date="${date}"]`)
+      await expect(cell).toHaveAccessibleName(/\b1 calendar event\b/)
+      await cell.press("Enter")
+      await expect(connected.getByRole("button", { name: /Saved rollback appointment/ })).toBeVisible()
+      await expect(connected.getByText("Live rollback appointment")).toBeVisible()
+      await expect(connected.getByText("Linked rollback feed entry")).toHaveCount(0)
+      await page.keyboard.press("Escape")
+    }
   } catch (error) {
     console.log("Calendar browser diagnostics", pageErrors)
     throw error

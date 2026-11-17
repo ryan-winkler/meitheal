@@ -169,18 +169,8 @@
   }
 
   /* Filter result transitions */
-  .task-item,
   .data-table tbody tr {
     transition: opacity 200ms ease, max-height 200ms ease;
-  }
-
-  .task-item.filtered-out {
-    opacity: 0;
-    max-height: 0;
-    overflow: hidden;
-    padding: 0;
-    margin: 0;
-    border: none;
   }
 
 /* --- Task Detail Panel Enhancements --- */

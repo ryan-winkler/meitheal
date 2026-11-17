@@ -126,6 +126,53 @@ export function timezoneOffsetAt(instant: number, timeZone: string): number {
   return (match[1] === "-" ? -1 : 1) * seconds * 1000
 }
 
+export function householdDayRanges(day: string, timezone: string): [number, number][] {
+  const localStart = Date.parse(`${day}T00:00:00Z`)
+  const localEnd = localStart + DAY_MS
+  const offsetAt = (instant: number) => timezoneOffsetAt(instant, timezone)
+
+  // All IANA offsets are within 24 hours of UTC and there is at most one
+  // offset transition in this three-day window. With a constant offset the
+  // local date translates directly to a UTC interval.
+  const windowStart = localStart - DAY_MS
+  const windowEnd = localEnd + DAY_MS
+  const firstOffset = offsetAt(windowStart)
+  const lastOffset = offsetAt(windowEnd - 1)
+  if (firstOffset === lastOffset) return [[localStart - firstOffset, localEnd - firstOffset]]
+
+  let before = windowStart
+  let after = windowEnd - 1
+  while (after - before > 1) {
+    const middle = Math.floor((before + after) / 2)
+    if (offsetAt(middle) === firstOffset) before = middle
+    else after = middle
+  }
+
+  // Intersect the requested local date with each constant-offset segment.
+  // A rollback just after midnight can leave a gap between the two ranges.
+  const ranges: [number, number][] = []
+  for (const [from, to, offset] of [[windowStart, after, firstOffset], [after, windowEnd, lastOffset]] as const) {
+    const start = Math.max(from, localStart - offset)
+    const end = Math.min(to, localEnd - offset)
+    if (start >= end) continue
+    const previous = ranges.at(-1)
+    if (previous?.[1] === start) previous[1] = end
+    else ranges.push([start, end])
+  }
+  return ranges
+}
+
+export function calendarEventInterval(start: string, end: string, timezone: string): [number, number] | null {
+  if (DATE_ONLY.test(start.trim())) return null
+  const first = calendarStartInstant(start.trim(), timezone)
+  const last = calendarStartInstant(end.trim(), timezone)
+  return last > first ? [first, last] : null
+}
+
+export function calendarIntervalOverlaps(interval: [number, number], ranges: [number, number][]): boolean {
+  return ranges.some(([first, last]) => interval[0] < last && interval[1] > first)
+}
+
 function calendarStartInstant(raw: string, timezone: string): number {
   const wallTime = DATE_ONLY.test(raw) ? raw + "T00:00" : raw
   if (!FLOATING_DATETIME.test(wallTime)) return parseDueTime(raw, timezone)
