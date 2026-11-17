@@ -2,6 +2,7 @@
 import { t } from "../../i18n/translations"
 import type { Locale } from "../../lib/locale"
 import { SETTINGS_SECTIONS } from "../../lib/settings-registry"
+import TaskDetailLayoutEditor from "../tasks/TaskDetailLayoutEditor.astro"
 import SettingsActionRow from "./SettingsActionRow.astro"
 import SettingsLabels from "./SettingsLabels.astro"
 import SettingsPanelCard from "./SettingsPanelCard.astro"
@@ -151,6 +152,11 @@ const tasksBoardsSection = SETTINGS_SECTIONS.find((section) => section.id === "t
       <div id="feature-toggles-container" class="settings-stack--sm" style="gap: 10px;" data-save-error={t("settings.feature_save_error", locale)}>
         <span class="settings-description">{t("settings.features_loading", locale)}</span>
       </div>
+    </SettingsPanelCard>
+  </div>
+  <div id="settings-task-detail-layout" class="mt-6">
+    <SettingsPanelCard title={t("task_layout.layout", locale)} subtitle={t("task_layout.settings_subtitle", locale)}>
+      <TaskDetailLayoutEditor locale={locale} />
     </SettingsPanelCard>
   </div>
 </section>

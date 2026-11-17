@@ -201,13 +201,13 @@
   box-shadow: var(--shadow-lg);
 }
 
-[data-appearance-panel-style="floating"] body:not(.has-docked-inspector) #task-detail-overlay {
+[data-appearance-panel-style="floating"] body:not(.has-docked-inspector) #task-detail-overlay:not([data-focus-mode]) {
   align-items: stretch;
   justify-content: flex-end;
   padding: 8px;
 }
 
-[data-appearance-panel-style="floating"] body:not(.has-docked-inspector) #task-detail-panel {
+[data-appearance-panel-style="floating"] body:not(.has-docked-inspector) #task-detail-overlay:not([data-focus-mode]) #task-detail-panel {
   width: min(58rem, 100%);
   height: auto;
   max-height: none;
@@ -319,7 +319,7 @@
     position: relative;
     flex: none;
     min-inline-size: 0;
-    max-inline-size: min(14rem, 45%);
+    max-inline-size: min(12rem, 34%);
   }
   :root[data-appearance-navigation="navbar"] #project-nav {
     --stree-block-padding: 0px;
