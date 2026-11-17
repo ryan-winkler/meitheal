@@ -102,7 +102,11 @@ test("Kanban groups Household descendants by named Epic and skips outside-Board 
     await expect(drawer.locator("#td-title")).toHaveValue("Displayed card nested")
     await drawer.getByTitle("Remove parent").click()
     const unlink = page.getByRole("alertdialog", { name: "Unlink" })
+    const unlinkResponse = page.waitForResponse(response =>
+      new URL(response.url()).pathname.endsWith(`/api/tasks/${nested.id}`) && response.request().method() === "PUT",
+    )
     await unlink.getByRole("button", { name: "Confirm" }).click()
+    expect((await unlinkResponse).ok()).toBe(true)
     await expect(drawer.locator("#td-link-parent-display")).toHaveText("None")
     await drawer.getByRole("button", { name: "Close detail" }).click()
     await expect(noEpic.locator(`.kanban-card[data-id="${nested.id}"]`)).toBeVisible()

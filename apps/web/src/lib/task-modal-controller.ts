@@ -423,6 +423,7 @@
             const linkParentDisplay = document.getElementById(
               "td-link-parent-display",
             ) as HTMLElement;
+            let unlinkParentButton: HTMLButtonElement | undefined
             if (linkParentDisplay) {
               if (t.parent_id) {
                 const parentTitle = String(
@@ -436,7 +437,9 @@
                 parentLink.dataset.id = String(t.parent_id);
                 parentLink.textContent = parentTitle;
                 const unlinkBtn = document.createElement("button");
+                unlinkParentButton = unlinkBtn
                 unlinkBtn.type = "button";
+                unlinkBtn.disabled = true
                 unlinkBtn.className = "text-xs text-danger hover:text-red-400 ml-1 td-unlink-parent";
                 unlinkBtn.title = "Remove parent";
                 unlinkBtn.textContent = "✕";
@@ -1088,6 +1091,7 @@
             setTimeout(() => {
               if (modalSignal.aborted) return
               _isPopulating = false
+              if (unlinkParentButton) unlinkParentButton.disabled = false
               if (projectField) projectField.disabled = !projectFieldReady
               deferral.loaded(taskId, typeof t.project_id === "string" ? t.project_id : null, t.deferred_at != null, modalSignal, Boolean(searchSession))
               pins.loaded(taskId, modalSignal)

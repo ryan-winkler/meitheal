@@ -67,7 +67,7 @@ export function initKanbanGrouping(board: HTMLElement): void {
       const cardsContainer = col.querySelector(".kanban-cards")
       if (!cardsContainer) return
       const flatCards = Array.from(
-        cardsContainer.querySelectorAll(".flat-card"),
+        cardsContainer.querySelectorAll<HTMLElement>(".flat-card"),
       )
 
       // Collect unique values
