@@ -2005,6 +2005,10 @@ const paths = {
 
   // ── Settings ──
   "/api/ha/areas": {
+    head: {
+      operationId: "verifyHomeAssistantAreaContext", tags: ["Home Assistant"], summary: "Revalidate task location field access",
+      responses: { 204: { description: "Field access proof in the response header" }, 404: { description: "Field unavailable for this account" } },
+    },
     get: {
       operationId: "getHomeAssistantAreaChoices", tags: ["Home Assistant"],
       summary: "List optional Home Assistant Area choices for an eligible signed-in household user",
@@ -2020,6 +2024,10 @@ const paths = {
     },
   },
   "/api/organization-features": {
+    head: {
+      operationId: "verifyOrganizationFeatureAdministration", tags: ["Settings"], summary: "Revalidate the current administrator session",
+      responses: { 204: { description: "Administrator proof in the response header" }, 403: { description: "Current administrator required" } },
+    },
     get: {
       operationId: "getOrganizationFeatureAvailability", tags: ["Settings"], summary: "Read current Home Assistant Area availability and eligible people",
       responses: { 200: { description: "Audience and verified Home Assistant roster" }, 403: { description: "Current administrator required" } },
@@ -2039,35 +2047,39 @@ const paths = {
   "/api/tasks/{id}/home-assistant-area": {
     get: {
       operationId: "getHouseholdTaskHomeAssistantArea", tags: ["Tasks"], summary: "Read a visible task's optional Home Assistant Area and version",
-      responses: { 200: { description: "Optional area registry ID and current task version" }, 404: { description: "Task or field unavailable" } },
+      responses: { 200: { description: "Optional area registry ID, current task version and private location revision" }, 404: { description: "Task or field unavailable" } },
     },
     put: {
       operationId: "setHouseholdTaskHomeAssistantArea", tags: ["Tasks"], summary: "Set or clear a task's Home Assistant Area with its current version",
       requestBody: { required: true, content: { "application/json": { schema: {
-        type: "object", required: ["version", "home_assistant_area_id"],
-        properties: { version: { type: "integer" }, home_assistant_area_id: { type: ["string", "null"] } },
+        type: "object", required: ["version", "locationRevision", "home_assistant_area_id"],
+        properties: { version: { type: "integer" }, locationRevision: { type: "integer" }, home_assistant_area_id: { type: ["string", "null"] } },
       } } } },
-      responses: { 200: { description: "Saved with a new task version" }, 404: { description: "Task or field unavailable" }, 409: { description: "Task changed" } },
+      responses: { 200: { description: "Saved with a new location revision" }, 404: { description: "Task or field unavailable" }, 409: { description: "Task changed" } },
     },
   },
   "/api/boards/{id}/tickets/{ticket}/home-assistant-area": {
     get: {
       operationId: "getNamedBoardTaskHomeAssistantArea", tags: ["Tasks"], summary: "Read a visible task's optional Home Assistant Area and version",
-      responses: { 200: { description: "Optional area registry ID and current task version" }, 404: { description: "Task or field unavailable" } },
+      responses: { 200: { description: "Optional area registry ID, current task version and private location revision" }, 404: { description: "Task or field unavailable" } },
     },
     put: {
       operationId: "setNamedBoardTaskHomeAssistantArea", tags: ["Tasks"], summary: "Set or clear a task's Home Assistant Area with its current version",
       requestBody: { required: true, content: { "application/json": { schema: {
-        type: "object", required: ["version", "home_assistant_area_id"],
-        properties: { version: { type: "integer" }, home_assistant_area_id: { type: ["string", "null"] } },
+        type: "object", required: ["version", "locationRevision", "home_assistant_area_id"],
+        properties: { version: { type: "integer" }, locationRevision: { type: "integer" }, home_assistant_area_id: { type: ["string", "null"] } },
       } } } },
-      responses: { 200: { description: "Saved with a new task version" }, 404: { description: "Task or field unavailable" }, 409: { description: "Task changed" } },
+      responses: { 200: { description: "Saved with a new location revision" }, 404: { description: "Task or field unavailable" }, 409: { description: "Task changed" } },
     },
   },
   "/api/organization-labels": {
     get: {
       operationId: "getPersonalOrganizationLabels", tags: ["Settings"], summary: "Read personal labels for the current Home Assistant account and language",
       responses: { 200: { description: "Visible label forms, revision, terms and form proof" }, 403: { description: "Verified Home Assistant account required" } },
+    },
+    head: {
+      operationId: "verifyPersonalOrganizationLabels", tags: ["Settings"], summary: "Revalidate the current personalized page context",
+      responses: { 204: { description: "Current render proof in the response header" }, 403: { description: "Verified Home Assistant account required" } },
     },
     put: {
       operationId: "savePersonalOrganizationLabels", tags: ["Settings"], summary: "Save visible personal labels for the active display language",

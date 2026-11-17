@@ -46,10 +46,11 @@ export const EXCLUDED_OPS = new Set([
   "createPrivateBoardTicket", "changePrivateBoardTicket", "deletePrivateBoardTicket",
   "createPrivateBoardIntake", "changePrivateBoardIntake", "listPrivateBoardIntakes", "submitPrivateBoardIntake",
   "savePrivateBoardPlanning",
-  "getOrganizationFeatureAvailability", "saveOrganizationFeatureAvailability",
+  "getOrganizationFeatureAvailability", "saveOrganizationFeatureAvailability", "verifyOrganizationFeatureAdministration",
+  "verifyHomeAssistantAreaContext",
   "getHouseholdTaskHomeAssistantArea", "setHouseholdTaskHomeAssistantArea",
   "getNamedBoardTaskHomeAssistantArea", "setNamedBoardTaskHomeAssistantArea",
-  "getPersonalOrganizationLabels", "savePersonalOrganizationLabels", "getHomeAssistantAreaChoices",
+  "getPersonalOrganizationLabels", "savePersonalOrganizationLabels", "verifyPersonalOrganizationLabels", "getHomeAssistantAreaChoices",
 ])
 
 /** Must match FRIENDLY_NAMES in apps/web/src/pages/api/mcp.ts */

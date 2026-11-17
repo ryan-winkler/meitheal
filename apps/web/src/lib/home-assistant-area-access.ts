@@ -1,3 +1,4 @@
+import { createHmac, randomBytes } from "node:crypto"
 import type { APIContext } from "astro"
 import { listHomeAssistantAreas } from "@domains/ha/ha-area-registry"
 import { getCurrentHAUserRoster } from "@domains/ha/ha-users"
@@ -11,6 +12,7 @@ export interface HomeAssistantAreaSelection {
   revision: string
 }
 
+const contextSecret = randomBytes(32)
 const requestAccess = new WeakMap<App.Locals, Promise<string | null>>()
 
 export function homeAssistantAreaAccess(context: AccessContext): Promise<string | null> {
@@ -22,6 +24,11 @@ export function homeAssistantAreaAccess(context: AccessContext): Promise<string 
   return pending
 }
 
+export function homeAssistantAreaProof(context: AccessContext, revision: string) {
+  const user = verifiedIngressUser(context.locals)
+  return user ? createHmac("sha256", contextSecret).update(JSON.stringify([user.id, revision])).digest("base64url") : null
+}
+
 async function resolveAccess(context: AccessContext): Promise<string | null> {
   const user = verifiedIngressUser(context.locals)
   if (!user) return null
@@ -30,7 +37,6 @@ async function resolveAccess(context: AccessContext): Promise<string | null> {
   const active = await getCurrentHAUserRoster(user.id, context.request.signal)
   return active ? availability.revision("home_assistant_area") : null
 }
-
 
 export async function resolveHomeAssistantAreaSelection(
   context: AccessContext, value: unknown,

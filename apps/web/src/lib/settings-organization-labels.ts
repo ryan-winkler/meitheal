@@ -3,11 +3,18 @@ import { safeFetch } from "./safe-fetch"
 export function initOrganizationLabels(signal: AbortSignal): void {
   const form = document.querySelector<HTMLFormElement>("#organization-labels-form")
   if (!form) return
-  const rows = Array.from(form.querySelectorAll<HTMLElement>("[data-label-term]"))
+  const rows = Array.from(form.querySelectorAll<HTMLFieldSetElement>("[data-label-term]"))
   const status = form.querySelector<HTMLElement>("[data-label-status]")!
   const warning = form.querySelector<HTMLElement>("[data-label-warning]")!
   const submit = form.querySelector<HTMLButtonElement>("button[type=submit]")!
   const inputs = (row: HTMLElement) => Array.from(row.querySelectorAll<HTMLInputElement>("[data-label-form]"))
+  const baseline = new Map(rows.flatMap(row => inputs(row).map(input => [input, input.value] as const)))
+  const resetAll = form.querySelector<HTMLButtonElement>("[data-label-clear-all]")!
+  const setLocked = (locked: boolean) => {
+    submit.disabled = locked
+    resetAll.disabled = locked
+    for (const row of rows) row.disabled = locked
+  }
   const terms = rows.map(row => row.dataset.labelTerm!)
   const endpoint = "/api/organization-labels"
 
@@ -53,7 +60,7 @@ export function initOrganizationLabels(signal: AbortSignal): void {
   form.addEventListener("submit", async (event) => {
     event.preventDefault()
     if (submit.disabled) return
-    submit.disabled = true
+    setLocked(true)
     status.textContent = ""
     try {
       const forms = Object.fromEntries(rows.map(row =>
@@ -82,11 +89,18 @@ export function initOrganizationLabels(signal: AbortSignal): void {
         }
         form.dataset.revision = latest.revision
         for (const row of rows) {
-          for (const [index, hint] of Array.from(row.querySelectorAll<HTMLElement>("[data-label-saved]")).entries()) {
-            hint.textContent = `${hint.dataset.caption}: ${latest.forms?.[row.dataset.labelTerm!]?.[index] || inputs(row)[index]?.placeholder}`
-            hint.hidden = false
+          const hints = row.querySelectorAll<HTMLElement>("[data-label-saved]")
+          for (const [index, input] of inputs(row).entries()) {
+            const current: string = latest.forms?.[row.dataset.labelTerm!]?.[index] ?? ""
+            const edited = input.value.trim() !== baseline.get(input)
+            if (!edited) input.value = current
+            baseline.set(input, current)
+            const hint = hints[index]!
+            hint.textContent = `${hint.dataset.caption}: ${current || input.placeholder}`
+            hint.hidden = !edited
           }
         }
+        refresh()
         status.textContent = form.dataset.conflict ?? ""
         return
       }
@@ -94,7 +108,7 @@ export function initOrganizationLabels(signal: AbortSignal): void {
     } catch {
       if (!signal.aborted) status.textContent = form.dataset.error ?? ""
     } finally {
-      if (!signal.aborted) submit.disabled = false
+      if (!signal.aborted) setLocked(false)
     }
   }, { signal })
 

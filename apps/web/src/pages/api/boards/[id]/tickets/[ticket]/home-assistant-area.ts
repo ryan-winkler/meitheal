@@ -22,6 +22,7 @@ export const PUT: APIRoute = async context => {
   if (!actor || !params.id || !params.ticket) return homeAssistantAreaProblem(404, "Task or Home Assistant Area unavailable.")
   const body = await readBoardRequest(request)
   if (!body || typeof body.version !== "number" || !Number.isSafeInteger(body.version) || body.version < 0 ||
+    typeof body.locationRevision !== "number" || !Number.isSafeInteger(body.locationRevision) || body.locationRevision < 0 ||
     body.home_assistant_area_id === undefined) {
     return homeAssistantAreaProblem(400, "Choose a Home Assistant Area and provide the current task version.")
   }
@@ -30,7 +31,7 @@ export const PUT: APIRoute = async context => {
   if (!field.selection) return homeAssistantAreaProblem(400, "Choose a Home Assistant Area.")
   await ensureSchema()
   const result = await new NamedBoardTaskRepository(getPersistenceClient()).changeHomeAssistantArea(
-    actor, params.id, params.ticket, body.version, field.selection,
+    actor, params.id, params.ticket, body.version, body.locationRevision, field.selection,
   )
   return homeAssistantAreaMutationResponse(result)
 }

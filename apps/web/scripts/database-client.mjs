@@ -5,7 +5,7 @@ import { setTimeout as sleepMs } from "node:timers/promises"
 import { LibsqlBatchError, LibsqlError } from "@libsql/core/api"
 import { expandConfig, isInMemoryConfig } from "@libsql/core/config"
 import { ResultSetImpl } from "@libsql/core/util"
-import { ORGANIZATION_ACCESS_SCHEMA_VERSION } from "../drizzle/migrations/0012_organization_access.mjs"
+import { ORGANIZATION_ACCESS_SCHEMA_VERSION } from "../drizzle/migrations/0013_organization_access.mjs"
 import {
   readTaskBoardMigrationState, taskBoardMigrationStateSteps,
 } from "../drizzle/migrations/task-board-upgrade.mjs"

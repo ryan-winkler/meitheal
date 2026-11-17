@@ -320,14 +320,14 @@ export class NamedBoardTaskRepository {
       if (!task) return null
       const area = await findTaskHomeAssistantArea(tx, id)
       if (!await boardGrantStillCurrent(this.db, revision, this.markerPath)) return null
-      return { id: area, version: Number(task.version) }
+      return { ...area, version: Number(task.version) }
     } finally {
       tx.close()
     }
   }
 
-  async changeHomeAssistantArea(actor: BoardActor, boardId: string, id: string, version: number, selection: HomeAssistantAreaSelection) {
-    return this.mutate(actor, boardId, "edit", tx => editTaskHomeAssistantArea(tx, id, boardId, version, selection))
+  async changeHomeAssistantArea(actor: BoardActor, boardId: string, id: string, version: number, locationRevision: number, selection: HomeAssistantAreaSelection) {
+    return this.mutate(actor, boardId, "edit", tx => editTaskHomeAssistantArea(tx, id, boardId, version, locationRevision, selection))
   }
 
   async file(actor: BoardActor, boardId: string, id: string, version: number, areaId?: string | null, projectId?: string | null) {

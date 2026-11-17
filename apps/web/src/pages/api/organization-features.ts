@@ -4,7 +4,7 @@ import { ensureSchema, getPersistenceClient } from "@domains/tasks"
 import { OrganizationAccessRepository, type OrganizationAudience } from "@domains/tasks/persistence/organization-access-repository"
 import { apiJson, apiProblem } from "@lib/api-response"
 import { currentSettingsAccess } from "@lib/current-settings-access"
-import { readBoardRequest } from "@lib/named-board-request"
+import { boardSessionProof, readBoardRequest } from "@lib/named-board-request"
 import { verifiedIngressUser } from "@lib/verified-ingress-user"
 
 const noStore = { "cache-control": "private, no-store" }
@@ -19,13 +19,21 @@ async function administrator(context: APIContext) {
   if (!user?.isAdmin) return problem(403, "Only a current Home Assistant administrator can set feature availability.")
   const access = await currentSettingsAccess(context.request, context.locals, true)
   if (access instanceof Response) return access
-  return await getCurrentHAUserRoster(user.id, context.request.signal) ??
-    problem(503, "Could not check the Home Assistant user list. Try again later.")
+  const roster = await getCurrentHAUserRoster(user.id, context.request.signal)
+  return roster ? { roster, proof: boardSessionProof(user.id) }
+    : problem(503, "Could not check the Home Assistant user list. Try again later.")
+}
+
+export const HEAD: APIRoute = async context => {
+  const admin = await administrator(context)
+  if (admin instanceof Response) return new Response(null, { status: admin.status, headers: noStore })
+  return new Response(null, { status: 204, headers: { ...noStore, "x-meitheal-area-admin": admin.proof } })
 }
 
 export const GET: APIRoute = async context => {
-  const roster = await administrator(context)
-  if (roster instanceof Response) return roster
+  const admin = await administrator(context)
+  if (admin instanceof Response) return admin
+  const { roster, proof } = admin
   await ensureSchema()
   const records = await new OrganizationAccessRepository(getPersistenceClient()).policies("feature", "")
   if (records.status === "locked") return problem(503, "Feature access is locked. Check the Home Assistant backup restore status.")
@@ -35,12 +43,17 @@ export const GET: APIRoute = async context => {
     roster: [...roster].map(([id, name]) => ({ id, name: name || "Home Assistant user" })),
   })
   response.headers.set("cache-control", noStore["cache-control"])
+  response.headers.set("x-meitheal-area-admin", proof)
   return response
 }
 
 export const PUT: APIRoute = async context => {
-  const roster = await administrator(context)
-  if (roster instanceof Response) return roster
+  const admin = await administrator(context)
+  if (admin instanceof Response) return admin
+  const { roster, proof } = admin
+  if (context.request.headers.get("x-meitheal-area-admin") !== proof) {
+    return problem(412, "The Home Assistant administrator session changed. Reopen Settings.")
+  }
   const body = await readBoardRequest(context.request)
   if (!body || body.feature !== field.id ||
     (body.revision !== null && (typeof body.revision !== "string" || !/^[0-9a-f-]{36}$/.test(body.revision))) ||

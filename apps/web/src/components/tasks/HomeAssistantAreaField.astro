@@ -1,20 +1,25 @@
 ---
-import { homeAssistantAreaAccess } from "@lib/home-assistant-area-access"
+import { homeAssistantAreaAccess, homeAssistantAreaProof } from "@lib/home-assistant-area-access"
 
 interface Props {
   mode?: "capture" | "edit" | "filter"
   initialId?: string
+  readOnly?: boolean
+  publishOnly?: boolean
   endpoint?: string
   boardSession?: string
 }
-const { mode = "capture", endpoint, boardSession, initialId } = Astro.props
+const { mode = "capture", endpoint, boardSession, initialId, readOnly, publishOnly } = Astro.props
 const available = await homeAssistantAreaAccess(Astro)
+const proof = available && homeAssistantAreaProof(Astro, available)
 ---
 
-{available && (
+{proof && (
   <div
     class="min-w-0"
     data-ha-area-field={mode}
+    data-ha-area-proof={proof}
+    data-ha-area-read-only={readOnly || undefined}
     data-ha-area-endpoint={endpoint}
     data-ha-area-session={boardSession}
     data-ha-area-initial-id={initialId}
@@ -26,7 +31,8 @@ const available = await homeAssistantAreaAccess(Astro)
       </select>
     </label>
     {mode === "filter" && <button type="button" class="btn btn-ghost btn-sm" data-ha-area-filter disabled>Apply location filter</button>}
-    {mode === "edit" && <button type="button" class="btn btn-ghost btn-sm" data-ha-area-save disabled>Save location</button>}
+    {mode === "edit" && !readOnly && <button type="button" class="btn btn-ghost btn-sm" data-ha-area-save disabled>Save location</button>}
+    {publishOnly && <p class="settings-hint">Choose a location when you publish the task.</p>}
     <button type="button" class="btn btn-ghost btn-sm" data-ha-area-retry hidden>Reload location choices</button>
     <p role="status" class="settings-hint" data-ha-area-status></p>
   </div>

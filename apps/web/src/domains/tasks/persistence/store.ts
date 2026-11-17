@@ -220,14 +220,6 @@ async function initializeSchema(url: string, backupState: { attempted: boolean }
 }
 
 async function initializeRuntimeTables(client: Transaction): Promise<void> {
-  await client.execute(`CREATE TABLE IF NOT EXISTS organization_label_preferences (
-    user_id TEXT NOT NULL,
-    locale TEXT NOT NULL,
-    forms TEXT NOT NULL CHECK (json_valid(forms) AND json_type(forms) = 'object'),
-    revision TEXT NOT NULL,
-    PRIMARY KEY (user_id, locale)
-  ) STRICT`)
-
   // Keep the original table names so existing labels and references retain their IDs.
   await client.execute(`
     CREATE TABLE IF NOT EXISTS vikunja_labels (

@@ -1,25 +1,23 @@
 import type { Client, Transaction } from "@libsql/client"
 import type { HomeAssistantAreaSelection } from "../../../lib/home-assistant-area-access"
-import { canAdvanceTaskTimestampMs, nextTaskTimestampMs, taskTimestampMs } from "./task-timestamp"
+import { taskTimestampMs } from "./task-timestamp"
 
 export function setTaskHomeAssistantArea(taskId: string, areaId: string | null) {
-  return areaId === null
-    ? { sql: "DELETE FROM home_assistant_task_areas WHERE task_id = ?", args: [taskId] }
-    : {
-      sql: `INSERT INTO home_assistant_task_areas (task_id, area_id) VALUES (?, ?)
-        ON CONFLICT (task_id) DO UPDATE SET area_id = excluded.area_id`,
-      args: [taskId, areaId],
-    }
+  return {
+    sql: `INSERT INTO home_assistant_task_areas (task_id, area_id) VALUES (?, ?)
+      ON CONFLICT (task_id) DO UPDATE SET area_id = excluded.area_id, revision = home_assistant_task_areas.revision + 1
+      RETURNING revision`,
+    args: [taskId, areaId],
+  }
 }
 
-export async function findTaskHomeAssistantArea(db: Pick<Client, "execute">, taskId: string): Promise<string | null> {
+export async function findTaskHomeAssistantArea(db: Pick<Client, "execute">, taskId: string) {
   const { rows: [row] } = await db.execute({
-    sql: "SELECT area_id FROM home_assistant_task_areas WHERE task_id = ?",
+    sql: "SELECT area_id, revision FROM home_assistant_task_areas WHERE task_id = ?",
     args: [taskId],
   })
-  return typeof row?.area_id === "string" ? row.area_id : null
+  return { id: typeof row?.area_id === "string" ? row.area_id : null, locationRevision: Number(row?.revision ?? 0) }
 }
-
 
 export function readHomeAssistantAreaPolicyRevision(revision: string) {
   return {
@@ -29,23 +27,22 @@ export function readHomeAssistantAreaPolicyRevision(revision: string) {
   }
 }
 
-
 export async function editTaskHomeAssistantArea(
-  tx: Transaction, taskId: string, boardId: string | null, version: number, selection: HomeAssistantAreaSelection,
+  tx: Transaction, taskId: string, boardId: string | null, version: number, locationRevision: number, selection: HomeAssistantAreaSelection,
 ) {
   if (!(await tx.execute(readHomeAssistantAreaPolicyRevision(selection.revision))).rows.length) {
     return { ok: false, errorCode: "denied" } as const
   }
   const { rows: [task] } = await tx.execute({
-    sql: `UPDATE tasks SET updated_at = ${nextTaskTimestampMs("updated_at")}
-      WHERE id = ? AND task_board_id IS ? AND ${taskTimestampMs("updated_at")} = ?
-        AND (${canAdvanceTaskTimestampMs("updated_at")})
-      RETURNING updated_at AS version`,
-    args: [Date.now(), taskId, boardId, version],
+    sql: `SELECT ${taskTimestampMs("updated_at")} AS version FROM tasks WHERE id = ? AND task_board_id IS ?`,
+    args: [taskId, boardId],
   })
-  if (!task) return { ok: false, errorCode: "stale" } as const
-  await tx.execute(setTaskHomeAssistantArea(taskId, selection.id))
-  return { ok: true, value: { version: Number(task.version) } } as const
+  if (!task) return { ok: false, errorCode: "unavailable" } as const
+  const previous = await findTaskHomeAssistantArea(tx, taskId)
+  if (Number(task.version) !== version || previous.locationRevision !== locationRevision ||
+    locationRevision >= Number.MAX_SAFE_INTEGER) return { ok: false, errorCode: "stale" } as const
+  const { rows: [updated] } = await tx.execute(setTaskHomeAssistantArea(taskId, selection.id))
+  return { ok: true, value: { version, locationRevision: Number(updated!.revision) } } as const
 }
 
 export function homeAssistantTaskAreaCondition(filter: { id: string; revision: string }) {

@@ -49,7 +49,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
         <textarea class="form-input" id="new-task-desc-input" name="description" rows="2" maxlength="10000"
           placeholder={t("task_modal.description_placeholder", locale)}></textarea>
       </div>
-      <HomeAssistantAreaField />
+      <HomeAssistantAreaField publishOnly />
       <div id="nt-contextual-fields" class="nt-context hidden">
         <fieldset id="nt-contextual-checklist" class="nt-group hidden">
           <legend>{t("task_modal.checklist_items", locale)}</legend>

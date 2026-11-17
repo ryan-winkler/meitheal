@@ -109,6 +109,11 @@ const nextAction = view?.summary?.next
                 />
               </details> : <h3 class="board-name">{task.title}</h3>}
               {!canEdit && task.dueDate && <p class="board-note">Due {task.dueDate}</p>}
+              {!canEdit && <HomeAssistantAreaField
+                mode="edit"
+                endpoint={`/api/boards/${encodeURIComponent(boardId)}/tickets/${encodeURIComponent(task.id)}/home-assistant-area`}
+                readOnly
+              />}
               {task.assignedTo && <p class="board-note">Assigned to {user.roster.get(task.assignedTo.replace(/^ha_/, "")) || "an unavailable user"}</p>}
               {task.description && <p>{task.description}</p>}
               {canEdit && <form data-board-form="task-move" data-ticket-id={task.id} data-version={task.version} class="board-move">
@@ -136,13 +141,13 @@ const nextAction = view?.summary?.next
           </section>)}
         </section>}
         {!selection.planning && !selection.ticketId && (offset > 0 || view.nextOffset !== null) && <nav class="board-pages" aria-label="Board pages">
-          {offset > 0 && <a href={boardWorkspaceHref(boardId, { ...grouping, offset: Math.max(0, offset - 50) })}>Previous tasks</a>}
-          {view.nextOffset !== null && <a href={boardWorkspaceHref(boardId, { ...grouping, offset: view.nextOffset })}>More tasks</a>}
+          {offset > 0 && <a href={boardWorkspaceHref(boardId, { ...grouping, offset: Math.max(0, offset - 50), homeArea: homeFilter?.id })}>Previous tasks</a>}
+          {view.nextOffset !== null && <a href={boardWorkspaceHref(boardId, { ...grouping, offset: view.nextOffset, homeArea: homeFilter?.id })}>More tasks</a>}
         </nav>}
 
         {view.planning && <BoardPlanning boardId={boardId} areaId={scope?.area?.id} projectId={scope?.project?.id} planning={view.planning} canManage={Boolean(policy) && view.board.state === "active"} canComplete={Boolean(canComplete)} routinesEnabled={routinesEnabled} tickets={view.tasks} />}
         {policy && !scope?.area && !scope?.project && !selection.ticketId && <details id="settings" class="named-boards board-settings">
-          <summary>Board settings</summary>
+          <summary>{label("board")} settings</summary>
           <div class="board-settings-grid">
             <form data-board-form="policy" class="board-form">
               <h2>Ticket permissions</h2>

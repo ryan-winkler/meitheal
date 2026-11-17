@@ -4,7 +4,7 @@ import { logApiError } from "@lib/api-logger"
 import { readBoardRequest } from "@lib/named-board-request"
 import {
   labelsProof, matchesLabelsProof, organizationLocale, parseOrganizationAliases,
-  readOrganizationLabelState, saveOrganizationLabelState, type OrganizationLabelState,
+  readOrganizationLabelState, renderedLabelsProof, saveOrganizationLabelState, type OrganizationLabelState,
 } from "@lib/organization-labels"
 import { verifiedIngressUser } from "@lib/verified-ingress-user"
 
@@ -30,6 +30,21 @@ export const GET: APIRoute = async (context) => {
   } catch (error) {
     logApiError("organization-labels", "Failed to load organization labels", error)
     return problem(503, "Personal labels are temporarily unavailable.")
+  }
+}
+
+export const HEAD: APIRoute = async (context) => {
+  const user = verifiedIngressUser(context.locals)
+  if (!user) return new Response(null, { status: 403, headers: noStore })
+  const locale = organizationLocale(context)
+  try {
+    const state = await readOrganizationLabelState(user.id, locale)
+    return new Response(null, {
+      status: 204,
+      headers: { ...noStore, "x-meitheal-rendered-labels": renderedLabelsProof(user.id, locale, state, context.url.searchParams.has("settings")) },
+    })
+  } catch {
+    return new Response(null, { status: 503, headers: noStore })
   }
 }
 
