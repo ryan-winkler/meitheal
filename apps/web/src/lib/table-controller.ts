@@ -9,7 +9,7 @@
  * - Bulk actions (status, priority, board, delete)
  * - Column sorting (within groups when grouped)
  * - Table scroll shadow detection
- * - Area selector population from /api/areas
+ * - Area choices and grouping labels from the accepted Table response
  *
  * @domain tasks
  * @bounded-context tasks (view-layer controller)
@@ -22,8 +22,8 @@ import { pageLifecycle } from "@lib/page-lifecycle"
 import { initPageShellNavigation } from "@lib/page-shell-controller"
 import { escapeHtml, sanitizeCssColor } from "@lib/safe-html"
 import { openTaskDetailHandoff } from "@lib/task-detail-handoff"
-import { taskBackgroundUrl } from "@lib/task-page-url"
-import { parseTaskView, taskViewUrl } from "@lib/task-view-route"
+import { hydrateTaskAssignees } from "@lib/task-assignee-display"
+import { replaceTaskBackgroundUrl, taskBackgroundUrl } from "@lib/task-page-url"
 import { loadTableColumnPreferences, TABLE_COLUMNS, TABLE_SECTIONS } from "@lib/table-registry"
 import { getRememberedAreaId } from "@lib/area-selector-controller"
 import {
@@ -134,6 +134,7 @@ function init(signal: AbortSignal) {
   const areaPicker = "#area-selector-dropdown[data-area-catalog-ready='true']"
   const initialAreaCatalog = document.querySelector(areaPicker)
   let areas = applyAreaCatalog(initialAreaCatalog, bulkArea)
+  void hydrateTaskAssignees(tbody, signal)
 
   const initial = loadTableFilterState()
   initial.area ??= getRememberedAreaId()
@@ -178,7 +179,7 @@ function init(signal: AbortSignal) {
     status.hidden = true
     retry.hidden = true
 
-    const url = new URL(location.href)
+    const url = taskBackgroundUrl()
     writeTableFilterParams(url.searchParams, nextState)
     for (const key of ["open", "comment"]) url.searchParams.delete(key)
     if (resetPage) url.searchParams.delete("tp")
@@ -225,9 +226,10 @@ function init(signal: AbortSignal) {
       table.dataset.tableStats = replacement.dataset.tableStats
       tbody.replaceChildren(...replacement.tBodies[0].children)
       areas = applyAreaCatalog(areaCatalog, bulkArea)
+      void hydrateTaskAssignees(tbody, signal)
       for (const [current, fresh] of fragments) {
         current!.hidden = fresh!.hidden
-        if (current!.matches("#task-summary, #table-pagination")) current!.replaceChildren(...fresh!.childNodes)
+        if (current!.matches("#task-summary, #table-pagination, #table-empty")) current!.replaceChildren(...fresh!.childNodes)
       }
       const workflowOptions = shell.querySelector("[data-table-workflow-options]")
       const freshWorkflowOptions = html.querySelector('[data-table-workflow-options="ready"]')
@@ -244,11 +246,6 @@ function init(signal: AbortSignal) {
       // Column visibility can change while the rows are loading.
       applied = { ...nextState, columns: desired.columns ?? initialColumns }
       saveTableFilterState(applied, page)
-      const background = taskBackgroundUrl(new URL(location.href))
-      for (const link of document.querySelectorAll<HTMLAnchorElement>("[data-view-tab]")) {
-        const view = parseTaskView(link.dataset.viewTab ?? null)
-        if (view) link.href = taskViewUrl(background, view).href
-      }
       const count = renderRows(stats)
       resetPageOnRetry = false
 
@@ -313,7 +310,7 @@ function init(signal: AbortSignal) {
     const page = Number(table.dataset.tablePage)
     if (page > 1) url.searchParams.set("tp", String(page))
     else url.searchParams.delete("tp")
-    if (url.href !== location.href) history.replaceState(history.state, "", url)
+    if (url.href !== location.href) replaceTaskBackgroundUrl(url)
   }
 
   document.addEventListener("meitheal:filter-change", event => {
@@ -407,6 +404,14 @@ function applyAreaCatalog(catalog: Element | null, bulkArea: HTMLSelectElement |
 // Row Grouping Engine
 // =============================================================================
 
+function groupDecoration(className: string, text = "") {
+  const span = document.createElement("span")
+  span.className = className
+  span.setAttribute("aria-hidden", "true")
+  span.textContent = text
+  return span
+}
+
 function applyGrouping(groupBy: string, subGroupBy: string, stats: RenderPageStats, areas: Map<string, AreaDisplay>) {
   const tbody = document.querySelector<HTMLElement>("#task-table tbody")
   if (!tbody) return
@@ -472,21 +477,12 @@ function applyGrouping(groupBy: string, subGroupBy: string, stats: RenderPageSta
     toggleBtn.className = "group-toggle"
     toggleBtn.setAttribute("aria-label", `Toggle group ${display.label}`)
     toggleBtn.setAttribute("aria-expanded", String(!isCollapsed))
-    const arrowSpan = document.createElement("span")
-    arrowSpan.className = "group-toggle-arrow"
-    arrowSpan.setAttribute("aria-hidden", "true")
-    arrowSpan.textContent = "▾"
-    toggleBtn.appendChild(arrowSpan)
+    toggleBtn.append(groupDecoration("group-toggle-arrow", "▾"))
 
-    const dotSpan = document.createElement("span")
-    dotSpan.className = "group-dot"
-    dotSpan.setAttribute("aria-hidden", "true")
+    const dotSpan = groupDecoration("group-dot")
     dotSpan.style.background = sanitizeCssColor(display.color)
 
-    const iconSpan = document.createElement("span")
-    iconSpan.className = "group-icon"
-    iconSpan.setAttribute("aria-hidden", "true")
-    iconSpan.textContent = display.icon
+    const iconSpan = groupDecoration("group-icon", display.icon)
 
     const labelSpan = document.createElement("span")
     labelSpan.className = "group-label"
@@ -558,15 +554,9 @@ function applyGrouping(groupBy: string, subGroupBy: string, stats: RenderPageSta
         subToggleBtn.setAttribute("aria-label", `Toggle sub-group ${subDisplay.label}`)
         subToggleBtn.setAttribute("aria-expanded", String(!subIsCollapsed))
         subToggleBtn.setAttribute("aria-controls", subRows.map(row => row.id).join(" "))
-        const subArrow = document.createElement("span")
-        subArrow.className = "group-toggle-arrow"
-        subArrow.setAttribute("aria-hidden", "true")
-        subArrow.textContent = "▾"
-        subToggleBtn.appendChild(subArrow)
+        subToggleBtn.append(groupDecoration("group-toggle-arrow", "▾"))
 
-        const subDot = document.createElement("span")
-        subDot.className = "group-dot"
-        subDot.setAttribute("aria-hidden", "true")
+        const subDot = groupDecoration("group-dot")
         subDot.style.background = sanitizeCssColor(subDisplay.color)
 
         const subLabel = document.createElement("span")
@@ -579,13 +569,7 @@ function applyGrouping(groupBy: string, subGroupBy: string, stats: RenderPageSta
         subCount.textContent = String(subgroupTotals.get(JSON.stringify([key, sk]))?.count ?? 0)
 
         subContent.append(subToggleBtn, subDot)
-        if (subGroupBy === "area") {
-          const icon = document.createElement("span")
-          icon.className = "group-icon"
-          icon.setAttribute("aria-hidden", "true")
-          icon.textContent = subDisplay.icon
-          subContent.append(icon)
-        }
+        if (subGroupBy === "area") subContent.append(groupDecoration("group-icon", subDisplay.icon))
         subContent.append(subLabel, subCount)
         subCell.replaceChildren(subContent)
         subHeaderRow.appendChild(subCell)

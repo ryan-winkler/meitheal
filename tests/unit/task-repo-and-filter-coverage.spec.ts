@@ -22,6 +22,8 @@ test("filter-state and appearance-preferences cover filtering, serialization, gr
 
   const prevWindow = (globalThis as Record<string, unknown>).window
   const prevDocument = (globalThis as Record<string, unknown>).document
+  const prevLocation = (globalThis as Record<string, unknown>).location
+  const prevHistory = (globalThis as Record<string, unknown>).history
   const prevStorage = (globalThis as Record<string, unknown>).localStorage
   const prevMatchMedia = (globalThis as Record<string, unknown>).matchMedia
   const prevInnerWidth = (globalThis as Record<string, unknown>).innerWidth
@@ -42,6 +44,7 @@ test("filter-state and appearance-preferences cover filtering, serialization, gr
   const fakeWindow = {
     location: {
       get href() { return href },
+      get pathname() { return new URL(href).pathname },
       get search() { return new URL(href).search },
     },
     history: {
@@ -81,11 +84,17 @@ test("filter-state and appearance-preferences cover filtering, serialization, gr
     getElementById: () => null,
     querySelector: () => null,
     addEventListener: addListener,
+    dispatchEvent: (event: Event) => {
+      listeners.get(event.type)?.forEach(listener => listener(event))
+      return true
+    },
   }
 
   Object.assign(globalThis, {
     window: fakeWindow,
     document: fakeDocument,
+    location: fakeWindow.location,
+    history: fakeWindow.history,
     localStorage: fakeStorage,
     matchMedia: () => ({ matches: true }),
     innerWidth: 1280,
@@ -207,6 +216,8 @@ test("filter-state and appearance-preferences cover filtering, serialization, gr
     Object.assign(globalThis, {
       window: prevWindow,
       document: prevDocument,
+      location: prevLocation,
+      history: prevHistory,
       localStorage: prevStorage,
       matchMedia: prevMatchMedia,
       innerWidth: prevInnerWidth,

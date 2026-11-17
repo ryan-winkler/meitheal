@@ -59,7 +59,7 @@ export async function safeFetch(
     });
     return response;
   } catch (error) {
-    if (error instanceof DOMException && error.name === "AbortError") {
+    if (controller.signal.aborted && !fetchOptions.signal?.aborted) {
       throw new Error(`safeFetch: request to ${endpoint} timed out after ${timeoutMs}ms`);
     }
     throw error;

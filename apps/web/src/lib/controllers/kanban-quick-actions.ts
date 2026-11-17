@@ -5,9 +5,12 @@
  * @kcs Extracted from kanban-controller.ts for decomposition.
  *      Manages the shared popover system and all quick-action card buttons.
  */
+import { createSpriteIconElement } from "../../generated/icon-registry"
 import { createClientLogger } from "@lib/client-logger"
 import { notifyInactivityTaskChanged } from "@lib/inactivity-client"
 import { sanitizeCssColor } from "@lib/safe-html"
+import { taskApi } from "@lib/task-api-client"
+import { assigneeFallback } from "@lib/task-assignee-display"
 import { showToast } from "@lib/toast"
 import type { KanbanRefreshFocus } from "./kanban-page-controller"
 
@@ -120,8 +123,13 @@ export function initQuickActions(
       popover.style.top = `${Math.max(8, Math.min(rect.bottom + 4, window.innerHeight - box.height - 8))}px`
     }
     requestAnimationFrame(position)
+    const resize = new ResizeObserver(position)
+    resize.observe(popover)
     window.addEventListener("scroll", position, { capture: true, passive: true, signal: __signal })
-    _scrollCleanup = () => window.removeEventListener("scroll", position, true)
+    _scrollCleanup = () => {
+      resize.disconnect()
+      window.removeEventListener("scroll", position, true)
+    }
 
     const focusAtOpen = document.activeElement
     requestAnimationFrame(() => {
@@ -144,7 +152,7 @@ export function initQuickActions(
     if (!activePopover) return
     if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); close(true); return }
     // Arrow key navigation within popover items (P1-1)
-    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+    if ((e.key === "ArrowDown" || e.key === "ArrowUp") && activePopover.contains(document.activeElement)) {
       e.preventDefault()
       const items = [...activePopover.querySelectorAll("button.popover-item, button.color-swatch")]
       if (!items.length) return
@@ -229,6 +237,7 @@ export function initQuickActions(
       const taskId = btn.dataset.id
       const currentAssigned = btn.dataset.assigned || ""
       if (!taskId) return
+      const taskUrl = buildTaskApiUrl(taskId)
 
       // P1-5: Show popover immediately with loading skeleton
       const content = document.createElement("div")
@@ -241,89 +250,112 @@ export function initQuickActions(
       content.append(skel1, skel2)
       const popover = _qa.open(btn, content, "Assign User")
 
-      // Fetch users
-      let users: any[] = []
-      try {
-        const res = await fetch("/api/users")
-        if (res.ok) {
-          const data = await res.json()
-          users = data.users || []
-        }
-      } catch { /* fallback to empty */ }
+      let users: Awaited<ReturnType<typeof taskApi.listUserDirectory>>["users"] = []
 
-      // Replace skeleton with real content
-      if (activePopover !== popover) return
-      content.replaceChildren()
+      async function loadDirectory() {
+        const directory = await taskApi.listUserDirectory(__signal).catch(() => null)
+        if (activePopover !== popover || __signal.aborted) return
+        users = directory?.users ?? users
+        const focused = document.activeElement as HTMLElement | null
+        const restoreFocus = focused === btn || content.contains(focused)
+        const focusedAssignee = focused?.dataset.assigneeOption
+        content.replaceChildren()
 
-      // Unassign option
-      const unassignItem = document.createElement("button")
-      unassignItem.className = "popover-item" + (!currentAssigned ? " active" : "")
-      unassignItem.setAttribute("role", "menuitem")
-      unassignItem.textContent = "∅ Unassigned"
-      unassignItem.addEventListener("click", async () => {
-        // P3-4: Optimistic update
-        btn.dataset.assigned = ""
-        const card = btn.closest(".kanban-card")
-        if (card) (card as HTMLElement).dataset.assigned = ""
-        _qa.close()
-        try {
-          const res = await fetch(buildTaskApiUrl(taskId), { // nosemgrep
-            method: "PUT",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ assigned_to: null }),
-          })
-          if (res.ok) {
-            _qa.toast("Unassigned", "success")
-            await refreshBoard()
-          } else { btn.dataset.assigned = currentAssigned; _qa.toast("Failed to unassign", "error") }
-        } catch { btn.dataset.assigned = currentAssigned; _qa.toast("Failed to unassign", "error") }
-      })
-      content.appendChild(unassignItem)
-
-      // User list with colored dots (P2-7)
-      users.forEach((user: any) => {
-        const userId = user.id || user.name
-        const item = document.createElement("button")
-        item.className = "popover-item" + (currentAssigned === userId ? " active" : "")
-        item.setAttribute("role", "menuitem")
-        // P2-7: Colored dot for user recognition
-        if (user.color) {
-          const dot = document.createElement("span")
-          dot.style.cssText = `display:inline-block;width:8px;height:8px;border-radius:50%;background:${sanitizeCssColor(user.color)};margin-right:6px;vertical-align:middle`
-          item.appendChild(dot)
-        } else {
-          item.appendChild(document.createTextNode("👤 "))
-        }
-        item.appendChild(document.createTextNode((user.name || user.id) + (user.kind === "agent" ? " (AI agent)" : "")))
-        item.addEventListener("click", async () => {
-          // P3-4: Optimistic update
-          btn.dataset.assigned = userId
-          const card = btn.closest(".kanban-card")
-          if (card) (card as HTMLElement).dataset.assigned = userId
-          _qa.close()
+        // Unassign option
+        const unassignItem = document.createElement("button")
+        unassignItem.className = "popover-item" + (!currentAssigned ? " active" : "")
+        unassignItem.setAttribute("role", "menuitem")
+        unassignItem.dataset.assigneeOption = ""
+        unassignItem.append(createSpriteIconElement("x", { size: 14 }), document.createTextNode(" Unassigned"))
+        unassignItem.addEventListener("click", async () => {
+          _qa.close(true)
           try {
-            const res = await fetch(buildTaskApiUrl(taskId), { // nosemgrep
+            const res = await fetch(taskUrl, { // nosemgrep
               method: "PUT",
               headers: { "content-type": "application/json" },
-              body: JSON.stringify({ assigned_to: userId }),
+              body: JSON.stringify({ assigned_to: null }),
             })
             if (res.ok) {
-              _qa.toast(`Assigned to ${(user.name || userId).replace(/^(ha_|custom_)/, "")}`, "success")
-              await refreshBoard()
-            } else { btn.dataset.assigned = currentAssigned; _qa.toast("Failed to assign", "error") }
-          } catch { btn.dataset.assigned = currentAssigned; _qa.toast("Failed to assign", "error") }
+              _qa.toast("Unassigned", "success")
+              await refreshBoard({ taskId })
+            } else { _qa.toast("Failed to unassign", "error") }
+          } catch { _qa.toast("Failed to unassign", "error") }
         })
-        content.appendChild(item)
-      })
+        content.appendChild(unassignItem)
 
-      if (!users.length) {
+        // User list with colored dots (P2-7)
+        users.forEach(user => {
+          const userId = user.id || user.name
+          const item = document.createElement("button")
+          item.className = "popover-item" + (currentAssigned === userId ? " active" : "")
+          item.setAttribute("role", "menuitem")
+          item.dataset.assigneeOption = userId
+          // P2-7: Colored dot for user recognition
+          if (user.color) {
+            const dot = document.createElement("span")
+            dot.style.cssText = `display:inline-block;width:8px;height:8px;border-radius:50%;background:${sanitizeCssColor(user.color)};margin-right:6px;vertical-align:middle`
+            item.appendChild(dot)
+          } else {
+            item.append(createSpriteIconElement("user", { size: 14 }), document.createTextNode(" "))
+          }
+          const name = user.display_name || user.name || user.id
+          item.appendChild(document.createTextNode(name + (user.kind === "agent" ? " (AI agent)" : "")))
+          item.addEventListener("click", async () => {
+            _qa.close(true)
+            try {
+              const res = await fetch(taskUrl, { // nosemgrep
+                method: "PUT",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ assigned_to: userId }),
+              })
+              if (res.ok) {
+                _qa.toast(`Assigned to ${name}`, "success")
+                await refreshBoard({ taskId })
+              } else { _qa.toast("Failed to assign", "error") }
+            } catch { _qa.toast("Failed to assign", "error") }
+          })
+          content.appendChild(item)
+        })
+
+        const currentMissing = currentAssigned && !users.some(user => user.id === currentAssigned)
+        const rosterUnverified = (directory?.ha_roster_verified ?? directory?.ha_connected) === false
+        const directoryMessage = !directory ? "Could not load assignees"
+          : currentMissing ? assigneeFallback(currentAssigned, directory)
+          : rosterUnverified ? "Home Assistant assignees could not be verified"
+          : !users.length ? "No users configured" : ""
         const empty = document.createElement("div")
-        empty.className = "popover-item"
-        empty.style.color = "var(--text-muted)"
-        empty.style.fontStyle = "italic"
-        empty.textContent = "No users configured"
-        content.appendChild(empty)
+        if (directoryMessage) {
+          empty.className = "popover-item"
+          empty.style.color = "var(--text-muted)"
+          empty.setAttribute("role", "status")
+          empty.textContent = directoryMessage
+          content.appendChild(empty)
+        }
+        if (!directory || rosterUnverified) {
+          const retry = document.createElement("button")
+          retry.type = "button"
+          retry.className = "popover-item"
+          retry.dataset.assigneeRetry = ""
+          retry.textContent = "Retry"
+          retry.addEventListener("click", (event) => {
+            event.stopPropagation()
+            if (retry.getAttribute("aria-disabled") === "true") return
+            retry.setAttribute("aria-disabled", "true")
+            empty.textContent = "Checking assignees…"
+            void loadDirectory()
+          }, { signal: __signal })
+          content.appendChild(retry)
+        }
+        if (restoreFocus) {
+          const sameAssignee = [...content.querySelectorAll<HTMLElement>("[data-assignee-option]")]
+            .find(item => item.dataset.assigneeOption === focusedAssignee)
+          const first = sameAssignee ?? content.querySelector<HTMLElement>("[data-assignee-retry]") ??
+            content.querySelector<HTMLElement>(".active") ?? content.querySelector("button")
+          first?.focus({ preventScroll: true })
+        }
       }
+
+      await loadDirectory()
     }, { signal: __signal })
   })
 

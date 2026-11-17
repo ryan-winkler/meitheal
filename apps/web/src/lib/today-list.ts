@@ -1,5 +1,8 @@
+import { isDueOverdue } from "./date"
 import { matchesRiceFilter, matchesStatusFilter } from "./filter-state"
+import { getStatusLabel, isActiveStatus, isDoneStatus, normalizeStatus } from "./status-config"
 import type { TaskViewItem } from "./task-queries"
+import { lockTaskStatusWrite } from "./task-api-client"
 
 const PAGE_SIZE = 50
 const PAGE_PARAM = "unscheduledPage"
@@ -77,4 +80,62 @@ export function setUnscheduledPage(url: URL, page: number): URL {
   if (page > 0) url.searchParams.set(PAGE_PARAM, String(page))
   else url.searchParams.delete(PAGE_PARAM)
   return url
+}
+
+export function lockTodayTaskStatus(container: HTMLElement, id: string): (() => void) | null {
+  const unlock = lockTaskStatusWrite(id)
+  if (!unlock) return null
+  const focused = document.activeElement
+  const taskId = CSS.escape(id)
+  const controls = [...container.querySelectorAll<HTMLInputElement | HTMLButtonElement>(
+    `.tli__checkbox[data-id="${taskId}"], .focus-card__complete[data-id="${taskId}"]`,
+  )].filter(control => !control.disabled && !control.hasAttribute("aria-disabled"))
+  controls.forEach(control => control.setAttribute("aria-disabled", "true"))
+  const section = focused?.closest(".today-section, .focus-stack")
+  return () => {
+    unlock()
+    controls.forEach(control => control.removeAttribute("aria-disabled"))
+    if (!controls.includes(focused as HTMLInputElement) ||
+        (document.activeElement !== focused && document.activeElement !== document.body)) return
+    if (focused instanceof HTMLElement && focused.isConnected && !focused.closest(".filtered-out, [hidden], [inert]")) {
+      if (document.activeElement !== focused) focused.focus({ preventScroll: true })
+      return
+    }
+    const next = section?.querySelector<HTMLElement>(
+      ".tli:not(.filtered-out) .tli__checkbox, .focus-card:not([hidden], [inert]) .focus-card__complete",
+    ) ?? section?.querySelector<HTMLElement>(".today-section__header")
+    const fallback = container.querySelector<HTMLElement>("#today-filter-status")
+    if (next) next.focus()
+    else fallback?.focus()
+  }
+}
+
+/** Keep status, controls and filters consistent across visible copies of a Today task. */
+export function syncTodayTaskStatus(container: HTMLElement, id: string, value: string): void {
+  const status = normalizeStatus(value)
+  const done = isDoneStatus(status)
+  const active = isActiveStatus(status)
+  const reference = container.querySelector<HTMLElement>("#page-shell") ?? container
+  const { todayDay, todayTimezone } = reference.dataset
+  const now = Date.now()
+  const taskId = CSS.escape(id)
+  for (const item of container.querySelectorAll<HTMLElement>(`.tli[data-id="${taskId}"], .focus-card[data-id="${taskId}"]`)) {
+    item.dataset.status = status
+    item.toggleAttribute("data-work-active", active)
+    const badge = item.querySelector<HTMLElement>("[data-badge-status]")
+    if (badge) {
+      badge.dataset.badgeStatus = status
+      badge.textContent = getStatusLabel(status)
+    }
+    const checkbox = item.querySelector<HTMLInputElement>(".tli__checkbox")
+    if (checkbox) {
+      const overdue = !done && isDueOverdue(item.dataset.due, todayTimezone, todayDay, now)
+      item.dataset.overdue = String(overdue)
+      item.classList.toggle("tli--overdue", overdue)
+      checkbox.checked = done
+      item.classList.toggle("tli--done", done)
+      item.querySelector(".tli__title")?.classList.toggle("done", done)
+    }
+  }
+  container.dispatchEvent(new CustomEvent("meitheal:today-status-committed", { detail: { id, status }, bubbles: true }))
 }

@@ -246,7 +246,7 @@ export const SETTINGS_FIELDS: SettingsFieldDescriptor[] = [
     label: "Theme",
     anchorId: "theme-select",
     sectionId: "look-and-feel-settings",
-    keywords: ["theme", "dark", "light", "auto", "custom theme", "appearance", "accent"],
+    keywords: ["theme", "dark", "light", "auto", "custom theme", "appearance", "accent", "emerald isle", "knight rider"],
   },
   {
     id: "field-appearance-customize",
@@ -285,7 +285,7 @@ export const SETTINGS_FIELDS: SettingsFieldDescriptor[] = [
   },
   {
     id: "field-task-nav-prefs",
-    label: "Tasks Menu & Pinned Types",
+    label: "New task types",
     anchorId: "task-nav-prefs-card",
     sectionId: "navigation-settings",
     keywords: ["tasks menu", "submenu", "pinned", "standard", "shopping", "checklists", "events"],

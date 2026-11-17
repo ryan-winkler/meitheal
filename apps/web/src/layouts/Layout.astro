@@ -22,6 +22,7 @@ import { APPEARANCE_PREFERENCES, APPEARANCE_STORAGE_KEY } from "../lib/appearanc
 import { applyPersonalAccent } from "../lib/accent-colors"
 import { applyHAThemePalette, HA_THEME_MATCH_KEY, readHAThemePalette } from "../lib/ha-theme-palette"
 import { canManageSystemSettings } from "../lib/settings-security"
+import { THEME_MODES } from "../lib/theme-mode"
 
 import geistWoff2 from '@fontsource-variable/geist/files/geist-latin-wght-normal.woff2?url';
 
@@ -311,11 +312,12 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
       })();
     </script>
 
+    <meta name="theme-color" content="#10231b" />
     <!-- Restore appearance before a full load or an Astro document swap. -->
     <script is:inline set:html={`window.__meithealApplyAccent = ${applyPersonalAccent.toString()};
       window.__meithealReadHATheme = ${readHAThemePalette.toString()};
       window.__meithealApplyHATheme = ${applyHAThemePalette.toString()};`} />
-    <script is:inline define:vars={{ APPEARANCE_PREFERENCES, APPEARANCE_STORAGE_KEY, HA_THEME_MATCH_KEY }}>
+    <script is:inline define:vars={{ APPEARANCE_PREFERENCES, APPEARANCE_STORAGE_KEY, HA_THEME_MATCH_KEY, THEME_MODES }}>
       (function () {
         function restoreAppearance(doc) {
           function stored(key) {
@@ -323,7 +325,11 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
           }
           var theme = stored("meitheal-theme");
           var root = doc.documentElement;
-          root.dataset.theme = theme === "custom" ? "dark" : ["light", "dark"].includes(theme) ? theme : "auto";
+          root.dataset.theme = theme === "custom" ? "dark" : THEME_MODES.includes(theme) ? theme : "auto";
+          if (theme === "knight-rider") {
+            root.classList.add("dark");
+            doc.querySelector('meta[name="theme-color"]')?.setAttribute("content", "#131314");
+          }
           var appearance;
           try {
             appearance = JSON.parse(stored(APPEARANCE_STORAGE_KEY) ?? "{}");
@@ -332,17 +338,24 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
             var value = appearance?.[name];
             root.setAttribute("data-appearance-" + name.replace(/[A-Z]/g, function (letter) { return "-" + letter.toLowerCase(); }), preference.options.includes(value) ? value : preference.defaultValue);
           }
-          if (doc.body) {
-            var desktopSidebar = innerWidth > 768 && root.dataset.appearanceNavigation !== "navbar";
-            var sidebarMode = root.dataset.appearanceSidebar;
-            var collapsed = desktopSidebar && (["folded", "hover"].includes(sidebarMode)
-              || (sidebarMode === "remember" && stored("meitheal_sidebar_collapsed") === "true"));
-            doc.body.classList.toggle("sidebar-collapsed", collapsed);
-          }
           var accent = stored("meitheal-accent-color");
           window.__meithealApplyAccent(root, accent);
           var match = window.__meithealReadHATheme(stored(HA_THEME_MATCH_KEY) === "1", Boolean(window.__ingress_path));
           window.__meithealApplyHATheme(root, match, accent, window.__meithealApplyAccent);
+          if (match.state === "active") {
+            root.classList.toggle("dark", match.palette.scheme === "dark");
+            root.classList.toggle("light", match.palette.scheme === "light");
+            doc.querySelector('meta[name="theme-color"]')?.setAttribute("content", match.palette.tokens["--bg-primary"]);
+          }
+          if (doc.body) {
+            var desktopSidebar = innerWidth > 768 && root.dataset.appearanceNavigation !== "navbar";
+            var sidebarMode = root.dataset.appearanceSidebar;
+            var rememberedSidebar = stored("meitheal_sidebar_collapsed");
+            var collapsed = desktopSidebar && (["folded", "hover"].includes(sidebarMode)
+              || (sidebarMode === "remember" && (rememberedSidebar === "true"
+                || (rememberedSidebar === null && root.dataset.theme === "knight-rider"))));
+            doc.body.classList.toggle("sidebar-collapsed", collapsed);
+          }
           var themeAdmin = root.hasAttribute("data-custom-theme-admin");
           if (!themeAdmin) {
             try { localStorage.removeItem("meitheal-custom-theme-css"); } catch {}
@@ -422,7 +435,6 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
       crossorigin="use-credentials"
     />
     <link rel="apple-touch-icon" href="/icon-192.png" />
-    <meta name="theme-color" content="#10231b" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta
       name="apple-mobile-web-app-status-bar-style"
@@ -441,7 +453,7 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
         window.addEventListener("popstate", event => {
           const session = document.getElementById("task-detail-overlay")?.dataset.ticketHistorySession
           const state = history.state
-          if (session && (state?.ticketBackground === session || state?.ticketDrawer?.session === session)) {
+          if (session && (state?.ticketBackground?.startsWith(session + "-") || state?.ticketDrawer?.session === session)) {
             event.stopImmediatePropagation()
             window.dispatchEvent(new Event("meitheal:ticket-history"))
           }
@@ -523,7 +535,10 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
         var desktopSidebar = innerWidth > 768 && appearance.appearanceNavigation !== "navbar";
         var collapsed = desktopSidebar && ["folded", "hover"].includes(appearance.appearanceSidebar);
         if (desktopSidebar && appearance.appearanceSidebar === "remember") {
-          try { collapsed = localStorage.getItem("meitheal_sidebar_collapsed") === "true"; } catch {}
+          try {
+            var remembered = localStorage.getItem("meitheal_sidebar_collapsed");
+            collapsed = remembered === "true" || (remembered === null && appearance.theme === "knight-rider");
+          } catch {}
         }
         document.body.classList.toggle("sidebar-collapsed", collapsed);
       })();

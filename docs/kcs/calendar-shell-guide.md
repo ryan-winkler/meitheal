@@ -10,20 +10,27 @@ description: "Understand the calendar view and its controls."
 
 Calendar opens within **Tasks** at `/tasks?view=calendar`. Older `/calendar` and `/tasks#calendar` bookmarks still open that view and keep their query parameters. The **Task views** navigation marks the current view and links to Kanban, Table, Calendar and Timeline. Use Tab to reach each link and Enter to open it with the current filters. The bottom navigation highlights Calendar on mobile.
 
+A saved Calendar shortcut with all task kinds is marked current only when Calendar is showing all kinds. A shortcut for Shopping or another subset uses the corresponding kind filter to determine its current state.
+
 ## Common Jobs
 
 ### Move around the month without losing the shell context
 
 1. Use **Previous month**, **Next month** or **Today** above the grid.
-2. Open any day in the displayed month to review its events and due tasks.
+2. Filter by title, task type, status, priority, label, area, or custom rules above the month. **Overdue** shows open tasks past their due date and skips deferred work. On phones, select **Filters** to open these controls, then **Filter** to edit custom rules. **Active** shows that filters still apply when the controls are closed. **Promoted cards only** narrows the task results to work moved to the top of a Kanban lane.
+3. Open any day in the displayed month to review matching due tasks and local Events that start that day. The number beside the calendar icon counts local Event starts and saved calendar occurrences for that day. The month totals each saved calendar occurrence once, even if it appears on several days. The day drawer lists saved and live events in its connected section using Meitheal’s household timezone. All-day events stay on their calendar dates. Household members can see the configured feed in Calendar. Administrators manage the sources in Settings. Tasks and local Events come from the Household Board. Open a named Board to see its tickets. Turn off **Events** in the type filters to hide local Events and connected event previews and counts.
+4. The month controls keep the active filters. Use **Clear All** to start over. Its accessible name is **Clear all active filters**.
 
 ### Open a day drawer and create follow-up work
 
 1. Select a day in the month grid using a pointer, Enter or Space.
-2. Review tasks due on that date and HA events. Task rows show the shared status label and icon.
-3. Use `Add Task` to open the shared task modal with the current drawer date prefilled.
+2. Review **Scheduled items** and **Connected Calendar Events**. Local Event rows show their start time or **All day**. **Add Event** starts with the selected date. Editing the Start time saves a timed Event, including when you select midnight. Close the newly created task’s Details to return keyboard focus to the selected day. Task rows show the shared status label and icon. Connected timed events that span midnight show their original start date on days when they continue. Saved Home Assistant and CalDAV events open their linked task and remain available if the live source is unavailable. Multiple starts from a recurring event can appear on the same day. Archived tasks are hidden. Without task filters, the agenda also shows completed tasks that are absent from the month count.
+3. When more than 100 tasks and local events match a day, use **Load more items** in the agenda. Changing a task’s status from Details refreshes the month counts under the current filters.
+4. Use **Add Task** to open the shared form with the selected due date, or **Add Event** to start an Event on that date. A newly created Event appears on its start day even with no calendar connection.
 
-Assistive technology announces the visible day number first, followed by the month and year and the task count when a badge is shown. The current date is identified as today. Weekend headings and the current date remain distinct in light and dark themes.
+Assistive technology announces the visible day number first, followed by the month and year and the task count when a badge is shown. The current date is identified as today. Weekend headings and the current date remain distinct in light and dark themes. On narrow touch screens, the month grid uses more of the screen width so neighboring days have separate tap targets.
+
+An older linked event keeps its saved final day when its confirmation has a provider start but no usable end.
 
 ### Switch to another task view without dropping filters
 
@@ -36,6 +43,8 @@ Assistive technology announces the visible day number first, followed by the mon
 ### Calendar sync reports incomplete work or stops retrying
 
 Open **Settings → Connected Services → Calendar Sync** and check the selected entity and its last sync error. A failed event import or stale-event reconciliation keeps the entity in an error state. Manual sync returns an incomplete result (HTTP 502), including counts for imports already saved; those saved tasks remain available.
+
+Clearing all selected Home Assistant calendars also stops the App from picking up an older saved calendar after a restart. Choose a current source to resume its sync.
 
 Repair the reported Home Assistant or database problem, then use **Sync now** to retry. Manual sync resets that entity's failure backoff and clears its error only after a successful attempt. Background sync pauses after five consecutive failed attempts; each attempt counts once, even when several events fail. A concurrent or export-only sync is skipped rather than reported as a completed import. Disabling and re-enabling sync also starts a fresh entity session.
 
@@ -104,10 +113,14 @@ Known differences:
 
 ### The drawer opens but tasks or events stay empty
 
-1. Confirm the day drawer title updates to the selected date.
-2. Check `GET /api/tasks?due_date=YYYY-MM-DD`. The date must exist on the calendar. The response filters before pagination, and `total` counts tasks due on that date. Date-only values match directly, whereas an ISO timestamp with a time and offset matches the resulting calendar day in the household time zone.
-3. When a task status looks wrong, compare the list result with the status sent on creation. Known aliases such as `done` become the built-in status `complete`. Custom statuses keep their names. A list filtered by either alias or built-in status includes older rows saved with the alias.
-4. If HA events are missing, inspect Home Assistant calendar entity settings and the browser console for `calendar-shell` warnings.
+1. Confirm the day drawer title updates to the selected date. Read failures appear in the affected section and are announced without moving keyboard focus.
+2. If the drawer can’t load the first or next agenda page, select **Retry agenda**. If **Saved calendar links couldn’t load**, reopen the day. The first page reports independently whether scheduled work and saved links loaded. Successful results stay visible if the other read fails. If the retry fails, inspect the read-only `POST /api/calendar/agenda` request in the Network panel. The response applies filters before pagination and returns a matching `total` when scheduled work loads. Date-only values match directly. A timestamp with a time and offset matches the resulting day in the household time zone.
+3. The default month badge excludes Complete and Archived work. By default the drawer includes completed work, including when an old link lists every task type. Ordinary task filters exclude Complete and Archived in both places. Choose **Complete** or apply custom rules to include matching completed work in both places. When a task status looks wrong, compare the list result with the status sent on creation. Known aliases such as `done` become the built-in status `complete`. Custom statuses keep their names.
+4. **Live Home Assistant calendars couldn’t refresh** means the app could not load the configured source list or every requested live feed failed. **Some live Home Assistant calendars couldn’t refresh** means some feeds failed and the remaining feeds responded, even if they had no events. Reopen the day to retry live feeds. Month previews read the first three configured sources and show up to two live events per day before the overflow count. The day drawer reads the first five sources. The month totals each saved occurrence once. Day badges count the saved occurrences covering that day. Check the configured entities and use the Network panel to identify a failed request.
+
+### Calendar changes could not be applied
+
+If Calendar had already loaded, it keeps the last successful results. Select **Retry calendar** to repeat the failed request. Month navigation after a failure keeps the last applied filters. If the rule editor asks you to shorten a rule, edit the draft and select **Apply Rules**, or select **Clear Rules** to remove the draft and any applied rules. Whenever **Retry calendar** appears, it repeats the earlier failed request. Correct the draft and apply it separately. To reset all applied filters, use **Clear All**.
 
 ### View switching loses the current filters
 
@@ -116,4 +129,4 @@ Known differences:
 
 ## Virtualized Timeline View (`/tasks?view=timeline`)
 
-The sibling Timeline view (`/tasks?view=timeline`) renders scheduled bars, milestones, and unscheduled rows through synchronized `requestAnimationFrame` vertical row windowing across `.gantt-sidebar-track` and `svg.gantt-native` (`<= 60` mounted bar groups and `<= 450` timeline DOM nodes on 500-task schedules). `Day` and `Week` zoom modes use a repeating SVG `<pattern>` background grid, while `Month` zoom renders exact 1st-of-month `<line>` dividers. Active pointer drags and focused rows remain mounted when scrolled outside the viewport window, `ArrowDown`/`ArrowUp` and `j`/`k` navigate across `displayRows` by row index (`role="grid"`, `aria-rowcount`, `aria-rowindex`), narrow bars (`< 96px`) render external right-hand labels, and PNG schedule exports compute sidebar row offsets from `data-row-index` at any scroll position.
+The sibling Timeline view (`/tasks?view=timeline`) renders scheduled bars, milestones, and unscheduled rows through synchronized `requestAnimationFrame` vertical row windowing across `.gantt-sidebar-track` and `svg.gantt-native` (`<= 60` mounted bar groups and `<= 450` timeline DOM nodes on 500-task schedules). A milestone keeps its chosen task color. An overdue milestone adds a danger outline and an overdue label for assistive technology. `Day` and `Week` zoom modes use a repeating SVG `<pattern>` background grid, while `Month` zoom renders exact 1st-of-month `<line>` dividers. Active pointer drags and focused rows remain mounted when scrolled outside the viewport window, `ArrowDown`/`ArrowUp` and `j`/`k` navigate across `displayRows` by row index (`role="grid"`, `aria-rowcount`, `aria-rowindex`), narrow bars (`< 96px`) render external right-hand labels, and PNG schedule exports compute sidebar row offsets from `data-row-index` at any scroll position.

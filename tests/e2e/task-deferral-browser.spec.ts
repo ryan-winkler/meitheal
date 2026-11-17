@@ -9,8 +9,8 @@ test.use({
   ...(useDev && process.env.E2E_BASE_URL ? { extraHTTPHeaders: { origin: process.env.E2E_BASE_URL } } : {}),
 })
 
-async function seed(request: APIRequestContext, title: string, parentId?: string) {
-  const response = await request.post("/api/tasks", { data: { title, status: "pending", parent_id: parentId } })
+async function seed(request: APIRequestContext, title: string, parentId?: string, areaId?: string) {
+  const response = await request.post("/api/tasks", { data: { title, status: "pending", parent_id: parentId, area_id: areaId } })
   expect(response.ok()).toBe(true)
   const task = await response.json() as { id: string; ticket_key: string }
   const detail = await request.get(`/api/tasks/${task.id}`)
@@ -137,4 +137,67 @@ test("deferred rows remain visible in Table and a terminal status clears the bad
   await row.locator('select[data-field="status"]').selectOption("pending")
   await expect(row).toHaveAttribute("data-status", "pending")
   await expect(badge).toBeHidden()
+})
+
+test("Deferred preserves the Board Area and can widen to all Areas", async ({ page, request }) => {
+  const area = await request.post("/api/areas", { data: { name: "Deferred Area" } })
+  expect(area.status()).toBe(201)
+  const { id: areaId } = await area.json()
+  const local = await seed(request, "Deferred in selected area", undefined, areaId)
+  const elsewhere = await seed(request, "Deferred in another area")
+  await defer(request, local)
+  await defer(request, elsewhere)
+
+  await page.goto(`/tasks?area=${areaId}#kanban`)
+  await page.getByRole("link", { name: "Deferred", exact: true }).click()
+  const areaFilter = page.getByRole("combobox", { name: "Area", exact: true })
+  await expect(areaFilter).toHaveValue(areaId)
+  await expect(page.locator(`[data-deferred-card="${local.id}"]`)).toBeVisible()
+  await expect(page.locator(`[data-deferred-card="${elsewhere.id}"]`)).toHaveCount(0)
+  await expect(page.locator("[data-deferred-count]")).toContainText("1 deferred task")
+  await expect(page.getByRole("link", { name: "Back to Tasks" })).toHaveAttribute("href", `/tasks?area=${areaId}#kanban`)
+  await expect(page.getByRole("link", { name: "Reload Deferred" })).toBeHidden()
+
+  await areaFilter.selectOption({ label: "All areas" })
+  await page.getByRole("button", { name: "Apply area" }).click()
+  await expect(areaFilter).toHaveValue("")
+  await expect(page.locator(`[data-deferred-card="${elsewhere.id}"]`)).toBeVisible()
+  await expect(page.locator(`[data-deferred-card="${local.id}"]`)).toBeVisible()
+  await page.getByRole("link", { name: "Back to Tasks" }).click()
+  await expect(page).toHaveURL(/\/tasks\?area=#kanban$/)
+
+  for (const task of [local, elsewhere]) await request.delete(`/api/tasks/${task.id}`, { data: {} })
+})
+
+test("a missing Deferred Area stays visible on the Board until the user widens it", async ({ page, request }) => {
+  const id = crypto.randomUUID()
+  const task = await seed(request, "Recover an open task")
+  try {
+    await page.goto(`/deferred?area=${id}`)
+    const area = page.getByRole("combobox", { name: "Area", exact: true })
+    await expect(area).toHaveValue(id)
+    await page.getByRole("link", { name: "Back to Tasks" }).click()
+    const trigger = page.locator("#area-selector-trigger")
+    await expect(trigger).toContainText("Unavailable Area")
+    const add = page.getByRole("button", { name: "Add task to Backlog" })
+    await add.click()
+    await expect(page.getByRole("alert")).toContainText("Choose an available Area or All Areas before adding a task.")
+    await expect(trigger).toBeFocused()
+    await expect(page.locator(".kanban-inline-add")).toHaveCount(0)
+    await expect(page).toHaveURL(url => url.searchParams.get("area") === id)
+    const card = page.locator(`.kanban-card[data-id="${task.id}"]`)
+    await expect(card).toHaveCount(0)
+    await page.getByRole("textbox", { name: "Filter by text" }).fill("Recover")
+    await expect(page).toHaveURL(url => url.searchParams.get("area") === id && url.searchParams.get("search") === "Recover")
+    await expect(card).toHaveCount(0)
+    await trigger.click()
+    await page.locator('#area-selector-dropdown [data-area-id=""]').click()
+    await expect(trigger).toContainText("All Areas")
+    await expect(page).toHaveURL(url => url.searchParams.get("area") === "")
+    await expect(card).toBeVisible()
+    await add.click()
+    await expect(page.getByRole("textbox", { name: "New task title" })).toBeVisible()
+  } finally {
+    await request.delete(`/api/tasks/${task.id}`, { data: {} })
+  }
 })
