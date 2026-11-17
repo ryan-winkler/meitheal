@@ -700,13 +700,17 @@ export class TaskRepository {
   }
 
   /** Load full cards and their indexed counts only for the rendered pages. */
-  async getKanbanCards(ids: string[], cutoff: number, reader: Pick<Client, "execute">): Promise<TaskRow[]> {
+  async getKanbanCards(ids: string[], cutoff: number, reader: Pick<Client, "execute">): Promise<Array<TaskRow & { project_assigned: number }>> {
     if (!ids.length) return []
     const result = await reader.execute({
       sql: `SELECT task.id, task.title, task.description, task.status, task.priority, task.due_date,
                    task.labels, task.framework_payload, task.calendar_sync_state, task.area_id,
                    task.custom_fields, task.progress, task.color, task.is_favorite, task.is_promoted, task.task_type,
-                   task.task_kind, task.project_id, task.owner, task.handoff_state, task.ticket_number,
+                   task.task_kind,
+                   (SELECT project.id FROM projects AS project WHERE project.id = task.project_id
+                     AND project.owner_board_id IS NULL AND project.retired_at IS NULL) AS project_id,
+                   CASE WHEN task.project_id IS NOT NULL AND task.project_id <> '' THEN 1 ELSE 0 END AS project_assigned,
+                   task.owner, task.handoff_state, task.ticket_number,
                    task.assigned_to, task.recurrence_rule, task.checklists,
                    task.urgency, task.importance, task.eisenhower_override,
                    task.effort_minutes, task.effort_type, task.blocked_by, task.nfc_tag_id, task.kanban_position,
@@ -718,7 +722,7 @@ export class TaskRepository {
             WHERE task.task_board_id IS NULL AND task.deferred_at IS NULL`,
       args: [cutoff, cutoff, JSON.stringify(ids)],
     })
-    return result.rows as unknown as TaskRow[]
+    return result.rows as unknown as Array<TaskRow & { project_assigned: number }>
   }
 
   /** Kanban lane definitions ordered by position */

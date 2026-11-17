@@ -83,6 +83,14 @@ Use Tab to move between visible task views. If a view moves into **More**, open 
 
 Open **Timeline** to narrow the chart by text, status, priority, task type, or area. Use **Group by** to organize dated tasks. The URL keeps these choices when you reload or move between task views. On phones, open **Filters** to adjust the chart. The task pane starts closed unless you saved a preference. Select **Task pane** to open or close it. The control becomes available when tasks match the filters.
 
+### Group cards by project
+
+Choose **Group by → By Project** to split the current column page into project groups. Separate projects with the same name have separate groups. A second heading line shows the project's Area when it helps distinguish the name. Projects with no direct Area can use their Goal's Area.
+
+**No Project** contains tasks with no project. **Unknown Project** contains assignments that are unavailable to the Household. If project names fail to load, the board explains why assigned tasks are in Unknown Project. Reload to check again. Column counts and cards remain available while names are unavailable.
+
+Use Enter or Space on a heading to collapse its cards. Each column remembers its own project groups. Changing only Group by keeps the current page.
+
 ## Troubleshooting
 
 ### Board pages or filters fail to load

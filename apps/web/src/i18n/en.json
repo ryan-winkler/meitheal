@@ -217,6 +217,7 @@
     "assign_hint": "Tip: Use @name in the title to auto-assign"
   },
   "kanban": {
+    "project_catalog_failed": "Project names could not load. Assigned tasks are shown under Unknown Project. Reload to check again.",
     "title": "Kanban Board",
     "manage_lanes": "Lanes",
     "new_task": "+ New Task",

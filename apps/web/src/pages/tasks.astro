@@ -5,6 +5,7 @@ import UnifiedBar from "../components/layout/UnifiedBar.astro";
 import SignalBar from "../components/layout/SignalBar.astro";
 import { requestedTaskView, taskViewUrl, TASK_VIEWS, TASK_VIEW_LABELS, TASK_VIEW_ICONS } from "../lib/task-view-route"
 import { loadKanbanBoard } from "../lib/kanban-board-data"
+import { getHouseholdProjectGroup, getHouseholdProjectLabels } from "../lib/household-project-grouping"
 import { readKanbanFilters, setKanbanPage } from "../lib/kanban-query"
 import LabelBadges from "../components/ui/LabelBadges.astro";
 import FilterToolbar from "../components/ui/FilterToolbar.astro";
@@ -235,6 +236,21 @@ try {
 } catch {
   /* areas table may not exist yet */
 }
+const groupByProject = renderedView === "kanban" && kanbanFilters.groupBy === "project"
+let projectLabels = getHouseholdProjectLabels([], Object.fromEntries(areas.map(area => [area.id, area.name])))
+let projectCatalogUnavailable = false
+if (groupByProject) {
+  try {
+    projectLabels = getHouseholdProjectLabels(
+      await hierarchyRepo.findProjectGroups(),
+      Object.fromEntries(areas.map(area => [area.id, area.name])),
+    )
+  } catch {
+    projectCatalogUnavailable = true
+    Astro.response.headers.set("Cache-Control", "no-store")
+  }
+}
+
 ---
 
 <Layout title={`Meitheal — ${heading}`}>
@@ -393,6 +409,9 @@ try {
     </defs>
   </svg>
 
+  <p class="kanban-project-notice" role="status" data-project-catalog-unavailable hidden={!projectCatalogUnavailable}>
+    {t("kanban.project_catalog_failed", locale)}
+  </p>
   <div
     id="kanban-board"
     class="kanban-board"
@@ -495,6 +514,10 @@ try {
                     : {};
                 // Phase 20: Sub-task indicator (ADHD Optimization)
                 const childCount = Number(task.child_count ?? 0);
+                const projectGroup = groupByProject ? getHouseholdProjectGroup(
+                  task.project_id, projectLabels, Boolean(task.project_assigned),
+                ) : undefined
+                const projectLabel = projectGroup ? projectLabels[projectGroup] : undefined
                 const rice =
                   fp.reach && fp.impact && fp.confidence && fp.effort
                     ? Math.round(
@@ -551,6 +574,9 @@ try {
                     data-assigned={String(task.assigned_to ?? "")}
                     data-labels={String(task.labels ?? "[]")}
                     data-task-id={task.id}
+                    data-project-group={projectGroup}
+                    data-project-label={projectLabel?.title}
+                    data-project-qualifier={projectLabel?.qualifier}
                     data-area-id={task.project_id}
                     style={`--card-accent: ${task.color ? String(task.color) : tc.color};${taskColorStyle ?? ""}`}
                   >
@@ -991,14 +1017,7 @@ try {
 
 <style>
   @reference "../../src/styles/global.css";
-  .kanban-shell__manage-btn {
-    min-height: 40px;
-    padding: 0 14px;
-  }
 
-  .kanban-shell__fields-card {
-    padding: 16px 18px;
-  }
 
   /* Signal bar CSS now in SignalBar.astro */
   #kanban-shell {
@@ -1113,15 +1132,6 @@ try {
       max-height: none;
       gap: 12px;
     }
-    .user-filters {
-      /* Responsive layout for user filters */
-      flex-direction: column;
-      align-items: stretch;
-    }
-    .user-filters > * {
-      width: 100%;
-      margin-bottom: 8px;
-    }
   }
 
   /* The open area picker overlays the filter row, which has its own stacking context. */
@@ -1223,36 +1233,6 @@ try {
     box-shadow: none;
   }
 
-  /* ── Card density modes (Phase 16.4) ── */
-  .kanban-board.density-compact .kanban-card {
-    padding: 6px 8px;
-    gap: 4px;
-  }
-  .kanban-board.density-compact .kanban-card-title {
-    font-size: 0.8rem;
-    line-height: 1.2;
-  }
-  .kanban-board.density-compact .kanban-card-meta,
-  .kanban-board.density-compact .kanban-card-desc,
-  .kanban-board.density-compact .kanban-progress,
-  .kanban-board.density-compact .label-badges,
-  .kanban-board.density-compact .kanban-custom-fields {
-    display: none;
-  }
-  .kanban-board.density-compact .kanban-cards {
-    gap: 4px;
-  }
-
-  .kanban-board.density-spacious .kanban-card {
-    padding: 16px;
-    gap: 10px;
-  }
-  .kanban-board.density-spacious .kanban-card-title {
-    font-size: 0.95rem;
-  }
-  .kanban-board.density-spacious .kanban-cards {
-    gap: 12px;
-  }
   .kanban-card:focus-visible {
     outline: 2px solid var(--border-focus);
     outline-offset: 2px;
@@ -1722,12 +1702,6 @@ try {
   }
 
   /* Labels on cards */
-  .kanban-labels {
-    display: flex;
-    gap: 4px;
-    flex-wrap: wrap;
-    margin-top: 6px;
-  }
 
   /* Custom fields on cards */
   .kanban-custom-fields {
@@ -1753,9 +1727,6 @@ try {
     color: var(--accent-text);
   }
 
-  .kanban-card.user-filtered-out {
-    display: none !important;
-  }
   .kanban-inline-add {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;

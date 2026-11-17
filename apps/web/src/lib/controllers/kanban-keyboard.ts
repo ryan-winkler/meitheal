@@ -10,6 +10,7 @@ import { getSelectedAreaId } from "@lib/area-selector-controller"
 import { singleKeyShortcutsEnabled } from "@lib/single-key-shortcuts"
 import { createClientLogger } from "@lib/client-logger"
 import { showToast } from "@lib/toast"
+import { setSwimlaneCollapsed, swimlanePreferenceKey } from "./kanban-grouping"
 
 const log = createClientLogger("kanban:keyboard")
 
@@ -176,21 +177,14 @@ export function initKeyboardAndSearch(signal: AbortSignal): void {
     // Swimlane collapse event delegation
     board.addEventListener("click", (e) => {
       const target = e.target as HTMLElement
-      const header = target.closest(".swimlane-header")
-      if (header && !target.closest("button")) {
-        const group = header.closest(".swimlane-group")
+      const header = target.closest<HTMLElement>(".swimlane-header")
+      const button = target.closest("button")
+      if (header && (!button || button === header)) {
+        const group = header.closest<HTMLElement>(".swimlane-group")
         if (!group) return
-        const cardsEl = group.querySelector(".swimlane-cards")
-        const toggle = header.querySelector(".swimlane-toggle")
-        if (!cardsEl) return
-        const isCollapsed = cardsEl.classList.toggle("collapsed")
-        if (toggle) {
-          toggle.classList.toggle("collapsed", isCollapsed)
-          toggle.textContent = isCollapsed ? "▶" : "▼"
-        }
-        group.classList.toggle("swimlane-collapsed", isCollapsed)
-        const type = (group as HTMLElement).dataset.swimlaneType || (group as HTMLElement).dataset.swimlaneValue || "dynamic"
-        localStorage.setItem(`meitheal-swimlane-${type}`, isCollapsed ? "collapsed" : "expanded")
+        const isCollapsed = !group.classList.contains("swimlane-collapsed")
+        setSwimlaneCollapsed(group, isCollapsed)
+        try { localStorage.setItem(swimlanePreferenceKey(board, group), isCollapsed ? "collapsed" : "expanded") } catch { /* Storage is optional. */ }
       }
     }, { signal })
 
