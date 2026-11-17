@@ -224,7 +224,9 @@ test("Knight Rider persists and fills active work and task colors on Today and B
     await expect(card(coloredId)).toHaveCSS("border-inline-start-width", "3px")
     await expect(card(coloredId)).toHaveCSS("border-inline-start-color", "rgb(33, 163, 102)")
   } finally {
-    for (const id of [activeId, coloredId, idleId, paleId, mediumId, highId]) await request.delete(`/api/tasks/${id}`)
+    for (const id of [activeId, coloredId, idleId, paleId, mediumId, highId]) {
+      expect((await request.delete(`/api/tasks/${id}`, { data: {} })).status()).toBe(204)
+    }
     await request.put("/api/settings", { data: { key: "theme", value: "dark" } })
   }
 })
@@ -439,7 +441,7 @@ test("Details completion clears Knight Rider active work on Dashboard and Board"
   } finally {
     releaseTitle()
     releaseHeldRefresh()
-    await request.delete(`/api/tasks/${otherId}`)
-    await request.delete(`/api/tasks/${id}`)
+    await request.delete(`/api/tasks/${otherId}`, { data: {} })
+    await request.delete(`/api/tasks/${id}`, { data: {} })
   }
 })
