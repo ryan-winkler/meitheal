@@ -1,4 +1,5 @@
 export const HOUSEHOLD_BOARD_ID = "household"
+export const DEFAULT_GROUP_COLOR = "#64748b"
 
 export interface BoardWorkspaceSelection {
   areaId: string | null
