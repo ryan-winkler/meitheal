@@ -27,7 +27,6 @@ export function readHomeAssistantAreaPolicyRevision(revision: string) {
   }
 }
 
-
 export async function editTaskHomeAssistantArea(
   tx: Transaction, taskId: string, boardId: string | null, version: number, locationRevision: number, selection: HomeAssistantAreaSelection,
 ) {

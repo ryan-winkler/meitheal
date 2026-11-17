@@ -38,7 +38,6 @@ async function resolveAccess(context: AccessContext): Promise<string | null> {
   return active ? availability.revision("home_assistant_area") : null
 }
 
-
 export async function resolveHomeAssistantAreaSelection(
   context: AccessContext, value: unknown,
 ): Promise<{ ok: true; selection: HomeAssistantAreaSelection | undefined } |

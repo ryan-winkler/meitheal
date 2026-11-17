@@ -72,7 +72,10 @@ test("Home Assistant Area is optional, versioned and available only to the selec
     const location = page.locator('#task-detail-overlay [data-ha-area-field="edit"]').filter({ visible: true })
     await expect(location.getByLabel("Home Assistant Area")).toHaveValue("fixture_kitchen")
     await location.getByLabel("Home Assistant Area").selectOption("fixture_yard")
+    const receipt = page.waitForResponse(response => response.url().endsWith("/home-assistant-area") && response.request().method() === "PUT", { timeout: 8_000 })
     await location.getByRole("button", { name: "Save location" }).click()
+    const savedResponse = await receipt
+    expect(savedResponse.status()).toBe(200)
     await expect(location.getByRole("status")).toHaveText("Location saved.")
     const current = await (await member.request.get(endpoint)).json()
     expect(current.id).toBe("fixture_yard")

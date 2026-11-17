@@ -1998,6 +1998,10 @@ const paths = {
 
   // ── Settings ──
   "/api/ha/areas": {
+    head: {
+      operationId: "verifyHomeAssistantAreaContext", tags: ["Home Assistant"], summary: "Revalidate task location field access",
+      responses: { 204: { description: "Field access proof in the response header" }, 404: { description: "Field unavailable for this account" } },
+    },
     get: {
       operationId: "getHomeAssistantAreaChoices", tags: ["Home Assistant"],
       summary: "List optional Home Assistant Area choices for an eligible signed-in household user",
@@ -2013,6 +2017,10 @@ const paths = {
     },
   },
   "/api/organization-features": {
+    head: {
+      operationId: "verifyOrganizationFeatureAdministration", tags: ["Settings"], summary: "Revalidate the current administrator session",
+      responses: { 204: { description: "Administrator proof in the response header" }, 403: { description: "Current administrator required" } },
+    },
     get: {
       operationId: "getOrganizationFeatureAvailability", tags: ["Settings"], summary: "Read current Home Assistant Area availability and eligible people",
       responses: { 200: { description: "Audience and verified Home Assistant roster" }, 403: { description: "Current administrator required" } },

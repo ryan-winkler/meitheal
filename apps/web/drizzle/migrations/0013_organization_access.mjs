@@ -30,8 +30,9 @@ const protectionTriggers = [
 ].map(([name, event, table, test]) => [name, `CREATE TRIGGER ${name} AFTER ${event} ON ${table}
   WHEN ${test}
   BEGIN
-    INSERT OR IGNORE INTO app_settings (key, value, updated_at)
-    VALUES ('private_organization_data', '1', 0);
+    INSERT INTO app_settings (key, value, updated_at)
+    SELECT 'private_organization_data', '1', 0
+    WHERE NOT EXISTS (SELECT 1 FROM app_settings WHERE key = 'private_organization_data');
   END`])
 
 /** @param {Pick<import("@libsql/client").Client, "execute">} db */
