@@ -467,46 +467,42 @@ export async function getTodayTaskRows(
   includeUnscheduled: boolean,
   timezone = "Europe/Dublin",
 ) {
-  try {
-    await ensureSchema()
-    const resolvedTimezone = resolveTimezone(timezone)
-    const client = getPersistenceClient()
-    const completionFilter = todayCompletionFilter(today, resolvedTimezone)
-    const tasksQuery = {
-      sql: `
-        WITH totals AS (
-          SELECT COUNT(*) FILTER (WHERE ${completionFilter.sql}) AS completed_today,
-                 COUNT(*) FILTER (
-                   WHERE status IS NOT 'complete' AND status IS NOT 'archived' AND deferred_at IS NULL AND (due_date IS NULL OR due_date = '')
-                 ) AS open_unscheduled
-          FROM tasks WHERE task_board_id IS NULL
+  await ensureSchema()
+  const resolvedTimezone = resolveTimezone(timezone)
+  const client = getPersistenceClient()
+  const completionFilter = todayCompletionFilter(today, resolvedTimezone)
+  const tasksQuery = {
+    sql: `
+      WITH totals AS (
+        SELECT COUNT(*) FILTER (WHERE ${completionFilter.sql}) AS completed_today,
+               COUNT(*) FILTER (
+                 WHERE status IS NOT 'complete' AND status IS NOT 'archived' AND deferred_at IS NULL AND (due_date IS NULL OR due_date = '')
+               ) AS open_unscheduled
+        FROM tasks WHERE task_board_id IS NULL
+      )
+      SELECT ${TASK_VIEW_COLUMNS}, completed_today, open_unscheduled
+      FROM totals
+      LEFT JOIN tasks
+        ON tasks.task_board_id IS NULL AND status IS NOT 'complete' AND status IS NOT 'archived'
+        AND deferred_at IS NULL
+        AND (
+          ? = 1
+          OR (due_date IS NOT NULL AND due_date <> '')
+          OR is_favorite NOT IN (0, '')
+          OR framework_payload NOT IN ('{}', '')
         )
-        SELECT ${TASK_VIEW_COLUMNS}, completed_today, open_unscheduled
-        FROM totals
-        LEFT JOIN tasks
-          ON tasks.task_board_id IS NULL AND status IS NOT 'complete' AND status IS NOT 'archived'
-          AND deferred_at IS NULL
-          AND (
-            ? = 1
-            OR (due_date IS NOT NULL AND due_date <> '')
-            OR is_favorite NOT IN (0, '')
-            OR framework_payload NOT IN ('{}', '')
-          )
-        ORDER BY created_at DESC, tasks.rowid DESC
-      `,
-      args: [...completionFilter.args, includeUnscheduled ? 1 : 0],
-    }
-    const [taskResult, completed] = await client.batch([tasksQuery, completedTodayQuery(completionFilter)], "read")
-    const rows = taskResult?.rows ?? []
+      ORDER BY created_at DESC, tasks.rowid DESC
+    `,
+    args: [...completionFilter.args, includeUnscheduled ? 1 : 0],
+  }
+  const [taskResult, completed] = await client.batch([tasksQuery, completedTodayQuery(completionFilter)], "read")
+  const rows = taskResult?.rows ?? []
 
-    return {
-      completedTasks: completedTodaySummaries(completed?.rows ?? []),
-      completedTodayCount: Number(rows[0]?.completed_today ?? 0),
-      openUnscheduledCount: Number(rows[0]?.open_unscheduled ?? 0),
-      tasks: rows.filter(row => row.id !== null).map(row => toTaskViewItem(row as Record<string, unknown>, false, resolvedTimezone)),
-    }
-  } catch {
-    return { completedTodayCount: 0, openUnscheduledCount: 0, tasks: [], completedTasks: [] }
+  return {
+    completedTasks: completedTodaySummaries(completed?.rows ?? []),
+    completedTodayCount: Number(rows[0]?.completed_today ?? 0),
+    openUnscheduledCount: Number(rows[0]?.open_unscheduled ?? 0),
+    tasks: rows.filter(row => row.id !== null).map(row => toTaskViewItem(row as Record<string, unknown>, false, resolvedTimezone)),
   }
 }
 

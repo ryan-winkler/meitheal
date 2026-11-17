@@ -1,3 +1,4 @@
+import { DatabaseSync } from "node:sqlite"
 import { once } from "node:events"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -25,6 +26,9 @@ test("Household Groups organize capture and Projects inside the Board", async ({
   await taskPanel.getByText("New task", { exact: true }).click()
   await taskPanel.getByRole("textbox", { name: "Title" }).fill("Replace workshop light")
   await taskPanel.getByRole("button", { name: "Create task" }).click()
+  await expect(taskPanel.getByRole("link", { name: "Replace workshop light" })).toBeVisible()
+  await page.goto(`/boards/household?area=${groupId}&offset=1#tasks`)
+  await taskPanel.getByRole("link", { name: "Previous tasks" }).click()
   await expect(taskPanel.getByRole("link", { name: "Replace workshop light" })).toBeVisible()
 
   const projectResponse = await request.post("/api/projects", {
@@ -91,6 +95,19 @@ test("Named Board disclosures follow the selected Group and current Home Assista
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(321)
 
     const selected = new URL(page.url()).searchParams.get("area")!
+    const legacy = new DatabaseSync(join(work, "pins.db"))
+    try {
+      legacy.prepare("INSERT INTO projects (id, owner_board_id, title, created_at, updated_at) VALUES (?, ?, ?, 1, 1)")
+        .run("unfiled-fixture", id, "Unfiled fixture")
+    } finally {
+      legacy.close()
+    }
+    await page.goto(app + path + "?project=unfiled-fixture&view=groups#project-settings")
+    const projectSettings = page.locator("#project-settings")
+    await expect(projectSettings).toBeVisible()
+    await projectSettings.getByRole("textbox", { name: "Name", exact: true }).fill("Updated unfiled fixture")
+    await projectSettings.getByRole("button", { name: "Save Project", exact: true }).click()
+    await expect(page.getByRole("heading", { name: "Updated unfiled fixture", exact: true }).first()).toBeVisible()
     await owner.addCookies([{ name: "feedback-fixture", value: "member-two", url: origin }])
     const inaccessible = await owner.request.get(app + "/api" + path + "?view=groups&selected=" + selected)
     expect(inaccessible.status()).toBe(404)
