@@ -205,6 +205,17 @@ test("pinned types fit narrow desktop top navigation and stay available in the m
   await toolbarTypeToggle.click()
   await expect(toolbarTypeToggle).toHaveAttribute("aria-expanded", "true")
 
+  await page.goto("/tasks?types=shopping_item#kanban")
+  await toolbarTypeToggle.press("Enter")
+  await toolbar.getByRole("link", { name: "Choose visible types", exact: true }).focus()
+  await page.keyboard.press("Tab")
+  await expect(toolbarTypeToggle).toHaveAttribute("aria-expanded", "false")
+  await expect(shortcut).toBeFocused()
+  await page.keyboard.press("Escape")
+  await expect(page).toHaveURL(url => url.searchParams.get("types") === "shopping_item")
+  await expect(page.locator('.filter-toolbar [data-type="shopping_item"]')).toHaveAttribute("aria-pressed", "true")
+  await toolbarTypeToggle.press("Enter")
+
   await page.setViewportSize({ width: 390, height: 844 })
   await expect(toolbarTypeToggle).toHaveAttribute("aria-expanded", "false")
   await page.locator("#menu-toggle").click()

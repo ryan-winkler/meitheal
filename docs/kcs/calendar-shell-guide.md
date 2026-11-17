@@ -26,7 +26,7 @@ Calendar opens within **Tasks** at `/tasks?view=calendar`. Older `/calendar` and
 3. When more than 100 tasks match a day, use **Load more tasks** in its task list.
 4. Use **Add Task** to open the shared form with the selected due date, or **Add Event** to start an Event on that date. A newly created Event appears on its start day even with no calendar connection.
 
-Assistive technology announces the visible day number first, followed by the month and year and the task count when a badge is shown. The current date is identified as today. Weekend headings and the current date remain distinct in light and dark themes.
+Assistive technology announces the visible day number first, followed by the month and year and the task count when a badge is shown. The current date is identified as today. Weekend headings and the current date remain distinct in light and dark themes. On narrow touch screens, the month grid uses more of the screen width so neighboring days have separate tap targets.
 
 ### Switch to another task view without dropping filters
 

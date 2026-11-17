@@ -371,6 +371,21 @@ const agendaNote = filter.matches && !Object.values(tasksByDay).some(day => day.
     border-block: 1px solid var(--border);
   }
 
+  @media (pointer: coarse) {
+    .calendar-grid {
+      grid-template-columns: repeat(7, minmax(44px, 1fr));
+      overflow-x: auto;
+      touch-action: pan-x pan-y;
+    }
+  }
+  @media (pointer: coarse) and (max-width: 380px) {
+    .calendar-card {
+      max-width: none;
+      margin-inline: -10px;
+      padding-inline: 0;
+    }
+  }
+
   .cal-header {
     padding: 8px;
     text-align: center;

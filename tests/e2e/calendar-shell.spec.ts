@@ -37,7 +37,18 @@ test.describe("Calendar Shell", () => {
 
   test("phone filters stay compact, accessible and marked when active", async ({ page }) => {
     await page.setViewportSize({ width: 320, height: 780 })
+    const touch = await page.context().newCDPSession(page)
+    await touch.send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 1 })
     await page.goto("/tasks?view=calendar&year=2031&month=6#calendar")
+    await expect.poll(() => page.evaluate(() => matchMedia("(pointer: coarse)").matches)).toBe(true)
+    const days = page.locator(".calendar-grid .cal-cell")
+    await expect.poll(() => days.evaluateAll(cells => cells.slice(7, 14).map(cell => {
+      const rect = cell.getBoundingClientRect()
+      const y = rect.top + rect.height / 2
+      return rect.width >= 43.99 && [rect.left + 1, rect.right - 1].every(x =>
+        cell.contains(document.elementFromPoint(x, y)),
+      )
+    }))).toEqual(Array(7).fill(true))
     const disclosure = page.getByRole("button", { name: "Filters", exact: true })
     const toolbar = page.locator("#calendar-filter-bar")
     await expect(disclosure).toHaveAttribute("aria-expanded", "false")
