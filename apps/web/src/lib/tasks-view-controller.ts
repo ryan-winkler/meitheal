@@ -20,7 +20,7 @@ export function initTasksViewSwitcher(rendered: TaskView, signal: AbortSignal): 
     const url = new URL(location.href)
     if (ticketIdFromPath(url.pathname, window.__ingress_path) !== null) return true
     const legacyTask = getLegacyTaskId(url.hash)
-    let requested = initial ? requestedTaskView(url.searchParams, url.hash) : parseTaskView(url.hash.slice(1))
+    let requested = requestedTaskView(url.searchParams, url.hash)
     if (initial && !url.hash && !url.search) {
       try { requested = parseTaskView(localStorage.getItem(STORAGE_KEY)) } catch { /* storage unavailable */ }
     }
