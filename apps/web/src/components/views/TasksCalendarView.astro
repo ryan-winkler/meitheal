@@ -319,6 +319,10 @@ const agendaNote = filter.matches && !Object.values(tasksByDay).some(day => day.
   [data-calendar-retry]:not([hidden]) {
     justify-self: start;
   }
+  [data-calendar-retry][aria-disabled="true"] {
+    opacity: .65;
+    cursor: wait;
+  }
   .calendar-card {
     overflow: hidden;
     min-width: 0;

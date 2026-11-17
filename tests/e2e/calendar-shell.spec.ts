@@ -346,7 +346,8 @@ test.describe("Calendar Shell", () => {
     expect((await backgroundRefresh).status()).toBe(200)
     await expect(month).not.toHaveAttribute("aria-busy")
     await expect(page).not.toHaveURL(/search=/)
-    await page.getByRole("button", { name: "Retry calendar" }).click()
+    await expect(retryCalendar).toBeFocused()
+    await retryCalendar.click()
     await expect(page).toHaveURL(/search=temporarily\+unavailable/)
     await expect(page.getByText("No tasks match these filters this month.")).toBeVisible()
     await expect(page.getByRole("link", { name: "Today", exact: true }).and(page.locator(".cal-today-btn"))).toBeFocused()
@@ -447,9 +448,9 @@ test.describe("Calendar Shell", () => {
       const retryRequest = page.waitForRequest(request => new URL(request.url()).searchParams.has("calendarRefresh"))
       await retry.press("Enter")
       await retryRequest
-      await expect(retry).toBeHidden()
+      await expect(retry).toHaveAttribute("aria-disabled", "true")
       await page.evaluate(() => document.dispatchEvent(new CustomEvent("meitheal:tasks-changed")))
-      await expect(retry).toBeVisible()
+      await expect(retry).toBeEnabled()
       await expect(retry).toBeFocused()
     } finally {
       release()

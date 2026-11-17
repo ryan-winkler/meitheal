@@ -50,7 +50,7 @@ The board remains usable when reaction counts are unavailable. A denied request 
 
 ### Change card density without fighting the shell
 
-1. Open **Fields**.
+1. Open **Fields**. On a phone, open **Board actions** first.
 2. Use the card customizer there instead of expecting field toggles in the shell.
 3. Compact density hides secondary card rows such as description, metadata, labels, progress, and custom fields so dense boards stay scannable.
 4. Close **Fields** to return to the board.
@@ -71,7 +71,7 @@ Dates due today appear in amber. The light palette uses a darker shade on white 
 2. Use the route-level view pills to move to Calendar, Table, or Timeline.
 3. The route preserves the existing filters and adds a `view` parameter for Table, Calendar, or Timeline. Existing hash bookmarks still open their view. The server loads the selected view when you open it. Label names with commas or brackets keep their literal spelling when shared from Table to Kanban. Kanban uses the compatible board filters. Apply a full saved Table preset in Table to use Table grouping, columns and nested rules.
 
-On mobile, the view pills remain as a horizontal touch strip below the unified bar actions. The bottom app navigation opens Tasks, while the in-page strip switches between Kanban, Calendar, Table, and Timeline.
+On mobile, use the Task views below the toolbar actions. Open **More** if a view does not fit. The bottom app navigation opens Tasks, and the in-page links switch between Kanban, Calendar, Table, and Timeline.
 
 On wide screens **New Task**, **Search Meitheal**, and **Ask Home Assistant** sit at the upper right. The row below holds **Deferred**, **Inactivity**, **Fields**, and **Lanes**. On phones, open **Board actions** to reach that group. The first two links carry the current area to their respective views.
 

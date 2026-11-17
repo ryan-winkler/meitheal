@@ -59,7 +59,6 @@ export function initCalendarPage(signal: AbortSignal): void {
   let applied = new URL(desired)
   let retryTarget = initialMonth.dataset.calendarAvailable === "false" ? new URL(applied) : undefined
   let refreshRequest: AbortController | undefined
-  let retryFocusUrl = ""
   let previewsRequest: AbortController | undefined
   let drawerRequest: AbortController | undefined
   let drawerDate = ""
@@ -74,10 +73,10 @@ export function initCalendarPage(signal: AbortSignal): void {
     calendarSources = undefined
   })
 
-  function announce(message: string, failed = Boolean(retryTarget)) {
+  function announce(message: string) {
     status!.hidden = !message
     status!.textContent = message
-    retry!.hidden = !failed
+    retry!.hidden = !retryTarget
   }
 
   function previewEvents() {
@@ -111,10 +110,8 @@ export function initCalendarPage(signal: AbortSignal): void {
     refreshRequest = request
     desired = url
     month.setAttribute("aria-busy", "true")
-    const activeRetry = document.activeElement === retry || (background && retryFocusUrl === url.href)
-    retryFocusUrl = activeRetry ? url.href : ""
-    const canRestoreRetryFocus = () => activeRetry && (document.activeElement === retry || document.activeElement === document.body)
-    announce("Loading calendar…", false)
+    retry!.setAttribute("aria-disabled", "true")
+    announce("Loading calendar…")
 
     try {
       const requestUrl = new URL(url)
@@ -159,9 +156,9 @@ export function initCalendarPage(signal: AbortSignal): void {
         restoreFilterControls()
       }
       document.dispatchEvent(new Event(TASK_VIEW_LOCATION_EVENT))
-      if (preserveRetry) announce(refreshFailure(), true)
-      else announce(rejectedFilterChange)
-      if (activeDay || canRestoreRetryFocus()) focusMonthDay(activeDay)
+      const hadRetryFocus = document.activeElement === retry
+      announce(preserveRetry ? refreshFailure() : rejectedFilterChange)
+      if (activeDay || hadRetryFocus && retry!.hidden) focusMonthDay(activeDay)
       previewEvents()
       if (drawerDate) startDrawerRead(drawerDate)
     } catch {
@@ -169,13 +166,12 @@ export function initCalendarPage(signal: AbortSignal): void {
         if (!preserveRetry) retryTarget = new URL(url)
         desired = new URL(applied)
         restoreFilterControls()
-        announce(refreshFailure(), true)
-        if (canRestoreRetryFocus()) retry!.focus()
+        announce(refreshFailure())
       }
     } finally {
       if (request === refreshRequest) {
         refreshRequest = undefined
-        retryFocusUrl = ""
+        retry!.removeAttribute("aria-disabled")
         month.removeAttribute("aria-busy")
       }
     }
@@ -417,7 +413,9 @@ export function initCalendarPage(signal: AbortSignal): void {
   }, { signal })
 
   moreTasks.addEventListener("click", () => loadMoreDueTasks?.(), { signal })
-  retry.addEventListener("click", () => void refresh(new URL(retryTarget ?? desired)), { signal })
+  retry.addEventListener("click", () => {
+    if (!refreshRequest && retryTarget) void refresh(new URL(retryTarget))
+  }, { signal })
   document.addEventListener("meitheal:filter-change", event => {
     const detail = (event as CustomEvent<{ view: string; clear?: boolean; editRules?: boolean } & KanbanFilters>).detail
     if (detail?.view !== "calendar") return
