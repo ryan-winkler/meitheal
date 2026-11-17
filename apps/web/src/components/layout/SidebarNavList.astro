@@ -195,7 +195,8 @@ function isExternal(href: string): boolean {
   .task-view-disclosure[aria-expanded="true"] svg { rotate: 180deg; }
   .task-view-pin[aria-pressed="true"] {
     background: rgb(var(--accent-rgb) / 0.14);
-    color: var(--accent);
+    color: var(--text-primary);
+    border-color: currentColor;
   }
 
   .task-view-submenu {
@@ -323,7 +324,7 @@ function isExternal(href: string): boolean {
     if (!view) return
     const fromTasks = appPath(background.pathname) === "/tasks"
     const tasks = fromTasks ? background : new URL(`${window.__ingress_path || ""}/tasks`, background)
-    const href = taskViewUrl(tasks, view, !fromTasks).href
+    const href = taskViewUrl(tasks, view, true).href
     if (link.href !== href) link.href = href
   }
 

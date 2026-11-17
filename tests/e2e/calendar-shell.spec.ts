@@ -694,6 +694,8 @@ test.describe("Calendar Shell", () => {
     const events = types.getByRole("button", { name: "Events", exact: true })
     await events.click()
     await expect(events).toHaveAttribute("aria-pressed", "false")
+    await page.mouse.move(0, 0)
+    await expect(events).toHaveCSS("opacity", "1")
     await expect(during.getByText("Household calendar preview")).toHaveCount(0)
   })
 

@@ -18,7 +18,8 @@ import { evaluateFilterGroup, extractDataFromElement, type FilterGroup, type Fil
 import { normalizeStatus } from "./status-config"
 import { TABLE_COLUMNS } from "./table-registry"
 import { replaceTaskBackgroundUrl, taskBackgroundUrl } from "./task-page-url"
-import { readTaskAreaParam } from "./task-view-route"
+import { readTaskAreaParam, TASK_ARRAY_FILTER_KEYS as ARRAY_KEYS, TASK_JSON_FILTER_KEYS as JSON_KEYS,
+  TASK_PERSISTED_FILTER_KEYS as ALL_KEYS, TASK_SCALAR_FILTER_KEYS as SCALAR_KEYS } from "./task-view-route"
 
 // =============================================================================
 // Types
@@ -116,12 +117,6 @@ function parseJsonParam(val: string | null | undefined): any | null {
 // =============================================================================
 // Persistence
 // =============================================================================
-
-/** All persisted filter keys (scalar + array) */
-const SCALAR_KEYS = ["search", "status", "priority", "rice", "sort", "user", "area", "groupBy", "subGroupBy"] as const
-const ARRAY_KEYS = ["types", "labels"] as const
-const JSON_KEYS = ["advancedFilter", "columns"] as const
-const ALL_KEYS = [...SCALAR_KEYS, ...ARRAY_KEYS, ...JSON_KEYS] as const
 
 const TABLE_DATE_KEYS = ["createdFrom", "createdThrough"] as const
 const TABLE_KEYS = [...ALL_KEYS, "task_type", "label", "area_id", "board", "lane", ...TABLE_DATE_KEYS] as const

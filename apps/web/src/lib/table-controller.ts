@@ -231,7 +231,7 @@ function init(signal: AbortSignal) {
       const background = taskBackgroundUrl(new URL(location.href))
       for (const link of document.querySelectorAll<HTMLAnchorElement>("[data-view-tab]")) {
         const view = parseTaskView(link.dataset.viewTab ?? null)
-        if (view) link.href = taskViewUrl(background, view).href
+        if (view) link.href = taskViewUrl(background, view, true).href
       }
       const count = renderRows()
       resetPageOnRetry = false

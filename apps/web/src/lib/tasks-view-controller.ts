@@ -43,7 +43,7 @@ export function initTasksViewSwitcher(rendered: TaskView, signal: AbortSignal): 
     if (!view) return
     link.addEventListener("click", () => {
       // Other views can update query filters without re-rendering the links.
-      const url = taskViewUrl(taskBackgroundUrl(new URL(location.href)), view)
+      const url = taskViewUrl(taskBackgroundUrl(new URL(location.href)), view, true)
       link.href = url.href
     }, { signal })
   })
@@ -57,7 +57,7 @@ export function initTasksViewSwitcher(rendered: TaskView, signal: AbortSignal): 
     const view = TASK_VIEWS[Number(e.key) - 1]
     if (view && view !== rendered) {
       e.preventDefault()
-      location.assign(taskViewUrl(taskBackgroundUrl(new URL(location.href)), view))
+      location.assign(taskViewUrl(taskBackgroundUrl(new URL(location.href)), view, true))
     }
   }, { signal })
   window.addEventListener("meitheal:open-task", event => {

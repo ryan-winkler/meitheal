@@ -248,7 +248,7 @@ try {
     barId="kanban-bar"
     slot="custom-header"
     viewTabs={TASK_VIEWS.map(view => {
-      const url = taskViewUrl(currentUrl, view)
+      const url = taskViewUrl(currentUrl, view, true)
       return { id: view, href: url.pathname + url.search + url.hash, label: TASK_VIEW_LABELS[view], icon: TASK_VIEW_ICONS[view], active: view === renderedView }
     })}
   >

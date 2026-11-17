@@ -129,7 +129,8 @@ const { id, variant, enabled = true } = Astro.props
 
   .task-creation__pin[aria-pressed="true"] {
     background: rgb(var(--accent-rgb) / 0.14);
-    color: var(--accent);
+    color: var(--text-primary);
+    border-color: currentColor;
   }
 
   .task-creation__options {

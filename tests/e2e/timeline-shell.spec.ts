@@ -120,6 +120,45 @@ test.describe("Tasks Shell (Timeline/GANTT)", () => {
     }
   })
 
+  test("Timeline filters stay in the background URL with Details docked", async ({ page, request, baseURL }) => {
+    await page.setViewportSize({ width: 1600, height: 900 })
+    await page.evaluate(() => localStorage.setItem("meitheal-task-nav-prefs", JSON.stringify({ pinnedViews: ["table"] })))
+    const title = "Inspect the heating system"
+    const start = Date.now()
+    const headers = { origin: new URL(baseURL!).origin }
+    const response = await request.post("/api/tasks", { headers, data: {
+      title, start_date: new Date(start).toISOString(), due_date: new Date(start + 86_400_000).toISOString(),
+    } })
+    expect(response.status()).toBe(201)
+    const { id } = await response.json()
+    try {
+      await page.reload()
+      const bar = page.locator(`.gantt-bar[data-task-id="${id}"]`)
+      const search = page.locator("#timeline-filter-bar").getByRole("textbox", { name: "Filter by text" })
+      const openDetails = async () => {
+        await bar.press("Enter")
+        await page.getByRole("button", { name: "View Details", exact: false }).click()
+        await expect(page.locator("#td-status")).toBeEnabled()
+        await expect(page).toHaveURL(/\/tickets\/[^?]+$/)
+      }
+      await openDetails()
+      await search.fill(title)
+      await expect.poll(() => page.evaluate(() => new URL(history.state.ticketDrawer.returnTo).searchParams.get("search"))).toBe(title)
+      await page.locator("#td-close").click()
+      await expect(page).toHaveURL(url => url.hash === "#timeline" && url.searchParams.get("search") === title)
+
+      await openDetails()
+      await search.fill("heating system")
+      await expect.poll(() => page.evaluate(() => new URL(history.state.ticketDrawer.returnTo).searchParams.get("search"))).toBe("heating system")
+      const pinned = page.locator('#sidebar [data-task-view-pinned-item="table"]').getByRole("link", { name: "Table" })
+      await pinned.click()
+      await expect(page).toHaveURL(url => url.hash === "#table" && url.searchParams.get("search") === "heating system")
+      await expect(page.locator("#table-shell").getByRole("textbox", { name: "Filter by text" })).toHaveValue("heating system")
+    } finally {
+      await request.delete(`/api/tasks/${id}`, { headers, data: {} })
+    }
+  })
+
   test("phone Timeline discloses filters and the task pane without crowding the chart", async ({ page, request, baseURL }) => {
     const title = "Phone Timeline milestone " + crypto.randomUUID()
     const date = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10)

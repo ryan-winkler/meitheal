@@ -244,22 +244,45 @@ test("mobile task type settings dismiss the sidebar and focus the destination", 
   await expect(destination).toBeInViewport()
 })
 
-test("pinned Table and Timeline start without stored filters when opened from Dashboard", async ({ page }) => {
+test("selected menu pins remain visible with a black personal accent", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 950 })
   await page.addInitScript(() => {
-    if (sessionStorage.getItem("clean-entry-seeded")) return
-    sessionStorage.setItem("clean-entry-seeded", "true")
+    localStorage.setItem("meitheal-theme", "knight-rider")
+    localStorage.setItem("meitheal-accent-color", "#000000")
+    localStorage.setItem("meitheal_sidebar_collapsed", "false")
+  })
+  await page.goto("/today")
+  const sidebar = page.locator("#sidebar")
+  const creation = sidebar.getByRole("button", { name: "Task types", exact: true })
+  const views = sidebar.getByRole("button", { name: "Task views", exact: true })
+  for (const [toggle, name] of [[creation, "Pin new event"], [views, "Pin Table to navigation"]] as const) {
+    await toggle.click()
+    const pin = sidebar.getByRole("button", { name, exact: true })
+    await pin.click()
+    await expect(pin).toHaveAttribute("aria-pressed", "true")
+    await expect(pin).toHaveCSS("color", "rgb(230, 230, 230)")
+    await expect(pin).toHaveCSS("border-top-color", "rgb(230, 230, 230)")
+    await page.keyboard.press("Escape")
+  }
+})
+
+test("pinned Table and Timeline keep the current workspace filters", async ({ page }) => {
+  await page.addInitScript(() => {
+    if (sessionStorage.getItem("task-entry-seeded")) return
+    sessionStorage.setItem("task-entry-seeded", "true")
     localStorage.setItem("meitheal-task-nav-prefs", JSON.stringify({ pinnedViews: ["table", "timeline"] }))
     localStorage.setItem("meitheal-task-view-filters", JSON.stringify({ search: "previous workspace search" }))
   })
   await page.setViewportSize({ width: 1440, height: 950 })
-  await page.goto("/")
-  for (const [view, title] of [["timeline", "Timeline (Gantt)"], ["table", "Table"]] as const) {
-    const link = page.locator(`#sidebar [data-task-view-pinned-item="${view}"]`).getByRole("link", { name: title, exact: true })
-    await link.click()
-    await expect(page).toHaveURL(url => url.pathname === "/tasks" && url.searchParams.get("view") === view)
-    await expect(page.locator(view === "table" ? "#table-shell" : "#tasks-view-timeline").getByRole("textbox", { name: "Filter by text" })).toHaveValue("")
-    await page.locator('#sidebar .nav-link[data-page="dashboard"]').click()
-    await expect(page).toHaveURL(url => url.pathname === "/")
+  for (const from of ["/", "/tasks#kanban"]) {
+    for (const [view, title] of [["timeline", "Timeline (Gantt)"], ["table", "Table"]] as const) {
+      await page.goto(from)
+      const link = page.locator(`#sidebar [data-task-view-pinned-item="${view}"]`).getByRole("link", { name: title, exact: true })
+      await link.click()
+      await expect(page).toHaveURL(url => url.pathname === "/tasks" && url.searchParams.get("view") === view)
+      await expect(page.locator(view === "table" ? "#table-shell" : "#tasks-view-timeline")
+        .getByRole("textbox", { name: "Filter by text" })).toHaveValue("")
+    }
   }
 })
 
