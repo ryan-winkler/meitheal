@@ -2,7 +2,7 @@ import type { TaskKind } from "@meitheal/domain-tasks"
 import { CALENDAR_AREA_APPLIED_EVENT, CALENDAR_AREA_REQUEST_EVENT, getRememberedAreaId } from "@lib/area-selector-controller"
 import { CALENDAR_FILTER_STATE_EVENT, readCalendarTaskFilters } from "@lib/calendar-task-filter"
 import { createClientLogger } from "@lib/client-logger"
-import { calendarDayFromInput, calendarEventLastDay, calendarOccurrenceStartKey, formatTimeInZone, normalizeCalendarEventSummary, shiftCalendarDay } from "@lib/date"
+import { calendarDayFromInput, calendarEventLastDay, calendarOccurrenceStartKey, compareCalendarStarts, formatTimeInZone, normalizeCalendarEventSummary, shiftCalendarDay } from "@lib/date"
 import { createFocusTrap } from "@lib/focus-trap"
 import { updateKanbanFilters, type KanbanFilters } from "@lib/kanban-query"
 import { createTablerSvgElement, mapEntityEmojiToTabler, type TablerIconName } from "@lib/tabler-svg"
@@ -244,7 +244,7 @@ export function initCalendarPage(signal: AbortSignal): void {
       for (const event of distinctLiveCalendarEvents(live?.events ?? [], persisted ?? [])) {
         items.push({ start: event.start, row: agendaItem("calendar-event", event.summary, formatTimeInZone(event.start, timezone) ?? "All day") })
       }
-      items.sort((a, b) => a.start.localeCompare(b.start))
+      items.sort((a, b) => compareCalendarStarts(a.start, b.start, timezone))
       drawerEvents!.replaceChildren(...items.map(item => item.row))
       if (!live || persisted === undefined) drawerEvents!.append(agendaMessage(loading))
       else if (!live.available) drawerEvents!.append(agendaMessage("Connected calendar events couldn’t load."))
@@ -486,7 +486,7 @@ async function loadCalendarRange(
     }).map(event => ({ ...event, entity }))
   }))
   const events = results.flatMap(result => result.status === "fulfilled" ? result.value : [])
-  events.sort((a, b) => a.start.localeCompare(b.start))
+  events.sort((a, b) => compareCalendarStarts(a.start, b.start, timezone))
   return {
     events,
     partial: results.some(result => result.status === "rejected"),

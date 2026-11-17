@@ -20,7 +20,7 @@ import { getStatusDef, isDoneStatus, normalizeStatus, STATUS } from "../../../li
 import { logApiError, logApiWarn } from "../../../lib/api-logger"
 import { EXACT_TASK_IDENTIFIER_SCORE } from "../../../lib/task-search-score"
 import { readStoredCalendarDay } from "../../../lib/calendar-day"
-import { calendarDayFromInput, calendarEventLastDay, calendarOccurrenceStartKey, calendarToday, shiftCalendarDay, isDueOverdue } from "../../../lib/date"
+import { calendarDayFromInput, calendarEventLastDay, calendarOccurrenceStartKey, calendarToday, compareCalendarStarts, shiftCalendarDay, isDueOverdue } from "../../../lib/date"
 import { parseTicketKey } from "../../../lib/ticket-key"
 import { getNextOccurrence, parseRRule } from "../recurrence"
 import { deferralTerminalStatusesSql, isDeferralTerminalStatus } from "./task-deferral-status"
@@ -878,7 +878,7 @@ export class TaskRepository {
       }
     }
     return Object.fromEntries([...byDay].map(([day, events]) =>
-      [day, [...events.values()].sort((left, right) => left.start.localeCompare(right.start) || left.id.localeCompare(right.id))]))
+      [day, [...events.values()].sort((left, right) => compareCalendarStarts(left.start, right.start, timezone) || left.id.localeCompare(right.id))]))
   }
 
   // ── Timeline (timeline.astro) ─────────────────────────────────────────

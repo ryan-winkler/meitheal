@@ -715,6 +715,30 @@ test.describe("Calendar Shell", () => {
     await expect(cell.getByText("Household calendar preview")).toBeVisible()
   })
 
+  test("Calendar orders live and saved entries across offsets before clipping previews", async ({ page }) => {
+    const day = "2031-01-08"
+    await page.route("**/api/ha/calendars?configured=1", route => route.fulfill({ json: { entities: ["calendar.household"] } }))
+    await page.route("**/api/ha/events?*", route => route.fulfill({ json: { events: [
+      { summary: "Late live event", start: day + "T09:00:00-06:00" },
+      { summary: "Middle live event", start: day + "T12:00:00Z" },
+      { summary: "Early live event", start: day + "T10:00:00Z" },
+    ] } }))
+    await page.route("**/api/calendar/agenda", route => route.fulfill({ json: { tasks: [], total: 0, linkedEvents: [
+      { id: "floating", title: "Saved floating event", start: day + "T11:00:00", entity: null, uid: null, providerSummary: null },
+      { id: "all-day", title: "Saved all-day event", start: day, entity: null, uid: null, providerSummary: null },
+    ] } }))
+    await page.goto("/tasks?view=calendar&year=2031&month=0#calendar")
+    const cell = page.locator(`.cal-cell[data-date="${day}"]`)
+    await expect(cell.locator(".cal-inline-ha")).toHaveText(["10:00 Early live event", "12:00 Middle live event"])
+    await expect(cell.locator(".cal-inline-more")).toHaveText("+1 more")
+    await cell.press("Enter")
+    const connected = page.locator("#day-drawer-events")
+    await expect(connected.locator(".day-drawer-item-title")).toHaveText([
+      "Saved all-day event", "Early live event", "Saved floating event", "Middle live event", "Late live event",
+    ])
+    await expect(connected.locator(".day-drawer-item-meta")).toHaveText(["All day", "10:00", "11:00", "12:00", "15:00"])
+  })
+
   test("month and day feed timeouts preserve available events and report a fully unavailable day", async ({ page }) => {
     test.slow()
     const day = "2031-07-08"

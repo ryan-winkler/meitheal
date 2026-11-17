@@ -112,6 +112,17 @@ export function formatTimeInZone(
   return clockFormatter.format.format(parsed)
 }
 
+/** Order zoned starts by instant and read floating starts in the household timezone. */
+export function compareCalendarStarts(left: string, right: string, timezone: string): number {
+  const instant = (value: string) => {
+    const raw = value.trim()
+    return parseDueTime(DATE_ONLY.test(raw) ? raw + "T00:00" : raw, timezone)
+  }
+  return instant(left) - instant(right) ||
+    Number(DATE_ONLY.test(right.trim())) - Number(DATE_ONLY.test(left.trim())) ||
+    left.localeCompare(right)
+}
+
 /** Match the same Calendar occurrence across equivalent offset representations. */
 export function calendarOccurrenceStartKey(start: string): string {
   const raw = start.trim()
