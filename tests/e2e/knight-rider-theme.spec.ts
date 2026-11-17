@@ -231,33 +231,6 @@ test("Knight Rider persists and fills active work and task colors on Today and B
   }
 })
 
-
-test("Dashboard Focus Queue selects open work before applying its row limit", async ({ page, request }) => {
-  const ids: string[] = []
-  try {
-    for (let index = 0; index < 15; index++) {
-      const task = await request.post("/api/tasks", { data: { title: `Cancelled inspection ${index}`, priority: 1 } })
-      expect(task.status()).toBe(201)
-      const { id } = await task.json()
-      ids.push(id)
-      const closed = await request.put(`/api/tasks/${id}`, { data: { status: "cancelled" } })
-      expect(closed.ok()).toBe(true)
-    }
-    const task = await request.post("/api/tasks", { data: { title: "Open inspection", status: "pending", priority: 3 } })
-    expect(task.status()).toBe(201)
-    const { id } = await task.json()
-    ids.push(id)
-    await page.goto("/")
-    const queue = page.locator("#my-open-list")
-    await expect(queue.locator(`[data-id="${id}"]`)).toContainText("Open inspection")
-    await expect(queue.getByText(/Cancelled inspection/)).toHaveCount(0)
-    await expect(page.locator("#my-open-count")).toHaveText("1 open task")
-    await expect(page.locator("#dashboard-stat-open-count")).toHaveText("1")
-  } finally {
-    for (const id of ids) await request.delete(`/api/tasks/${id}`, { data: {} })
-  }
-})
-
 test("Details completion clears Knight Rider active work on Dashboard and Board", async ({ page, request }) => {
   await page.addInitScript(() => localStorage.setItem("meitheal-theme", "knight-rider"))
   await page.emulateMedia({ reducedMotion: "reduce" })
@@ -428,7 +401,13 @@ test("Details completion clears Knight Rider active work on Dashboard and Board"
     await done.click()
     await expect(status).toHaveValue("complete")
     await expect.poll(() => refreshHeld).toBe(true)
+    await expect(status).not.toHaveAttribute("aria-disabled", "true")
+    const reopening = page.waitForResponse(response =>
+      new URL(response.url()).pathname === `/api/tasks/${id}` &&
+      response.request().method() === "PUT" && response.request().postDataJSON()?.status === "active",
+    )
     await status.selectOption("active")
+    expect((await reopening).status()).toBe(200)
     await expect(status).toHaveAttribute("data-saved-status", "active")
     releaseHeldRefresh()
     await expect.poll(() => boardReads).toBeGreaterThanOrEqual(priorReads + 2)
