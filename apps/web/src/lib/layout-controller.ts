@@ -11,7 +11,6 @@
         import { pageLifecycle } from "@lib/page-lifecycle";
         import { SINGLE_KEY_SHORTCUTS_STORAGE_KEY, singleKeyShortcutsEnabled } from "@lib/single-key-shortcuts"
         import { attachShortcutTooltips, injectShortcutStyles } from "@lib/shortcut-tooltip";
-        import { normalizeTaskTypeFilterValue } from "@lib/task-nav-types"
 
         const log = createClientLogger("app", "layout");
 
@@ -159,41 +158,6 @@
             SHORTCUT_NAV.tasks()
           }
 
-          // Active nav link — strip ingress prefix so path comparison works behind HA ingress
-          const rawPath = window.location.pathname;
-          const ip = window.__ingress_path || "";
-          const currentPath =
-            ip && (rawPath === ip || rawPath === ip + "/")
-              ? "/"
-              : ip && rawPath.startsWith(ip + "/")
-                ? rawPath.slice(ip.length) || "/"
-                : rawPath
-          const currentTypes = normalizeTaskTypeFilterValue(
-            new URLSearchParams(window.location.search).get("types"),
-          )
-          document.querySelectorAll(".nav-link").forEach((link) => {
-            const href = link.getAttribute("href") || "";
-            if (!href || href.startsWith("http")) return
-            const linkUrl = new URL(href, window.location.origin)
-            const rawLinkPath = linkUrl.pathname
-            const linkPath =
-              ip && (rawLinkPath === ip || rawLinkPath === ip + "/")
-                ? "/"
-                : ip && rawLinkPath.startsWith(ip + "/")
-                  ? rawLinkPath.slice(ip.length) || "/"
-                  : rawLinkPath
-            const linkTypes = normalizeTaskTypeFilterValue(linkUrl.searchParams.get("types"))
-            const typesMatch = linkTypes ? linkTypes === currentTypes : currentTypes === ""
-            if (
-              (linkPath === currentPath && typesMatch) ||
-              (linkPath !== "/" && currentPath.startsWith(linkPath + "/") && !linkTypes) ||
-              (currentPath === "/" &&
-                link.getAttribute("data-page") === "dashboard")
-            ) {
-              link.classList.add("active");
-            }
-          });
-
           // Collapsed-rail quick action + floating tooltips
           const railNewTaskBtn = document.getElementById("sidebar-rail-new-task")
           if (bindKeyboard) railNewTaskBtn?.addEventListener("click", openNewTaskAction, { signal })
@@ -262,18 +226,12 @@
                 );
                 const taskPanel = document.getElementById("task-detail-panel");
                 const isDocked = document.body.classList.contains("has-docked-inspector");
-                const sidebar = document.getElementById("sidebar");
-
                 if (
                   taskOverlay &&
                   taskOverlay.classList.contains("active") &&
                   (!isDocked || taskPanel?.contains(document.activeElement))
                 ) {
                   document.getElementById("td-close")?.click()
-                  return;
-                }
-                if (sidebar?.classList.contains("open")) {
-                  sidebar.classList.remove("open");
                   return;
                 }
               }
@@ -514,6 +472,8 @@
         pageLifecycle.onPageLoad((signal) => {
           const reloadOnEvent = () => window.location.reload()
           document.addEventListener("meitheal:tasks-changed", event => {
+            // Calendar already refreshes its month and open day on this event.
+            if (document.querySelector("#calendar-shell[data-calendar-ready='true']")) return
             if (!(event as CustomEvent<{ dataOnly?: boolean }>).detail?.dataOnly) reloadOnEvent()
           }, { signal })
           document.addEventListener("meitheal:navigation-changed", reloadOnEvent, { signal })

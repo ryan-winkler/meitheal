@@ -43,6 +43,7 @@ const VISUAL_PREFERENCE_KEYS: readonly AppearancePreferenceName[] = [
         <label class="form-label" for="theme-select">{t("settings.theme_title", locale)}</label>
         <select class="form-select settings-input-compact" id="theme-select">
           <option value="dark">{t("settings.theme_dark", locale)}</option>
+          <option value="knight-rider">{t("settings.theme_knight_rider", locale)}</option>
           <option value="light">{t("settings.theme_light", locale)}</option>
           <option value="auto">{t("settings.theme_auto", locale)}</option>
           {canManageTheme && <option value="custom">{t("settings.theme_custom", locale)}</option>}
@@ -95,6 +96,12 @@ const VISUAL_PREFERENCE_KEYS: readonly AppearancePreferenceName[] = [
             data-color="#3b82f6"
             title={t("settings.accent_blue", locale)}
             style="background: #3b82f6;"></button>
+          <button
+            type="button"
+            class="accent-swatch"
+            data-color="#6495ed"
+            title={t("settings.accent_cornflower", locale)}
+            style="background: #6495ed;"></button>
           <button
             type="button"
             class="accent-swatch"

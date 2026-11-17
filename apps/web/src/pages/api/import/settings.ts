@@ -13,6 +13,7 @@ import { FEATURE_DEFAULTS } from "../../../lib/feature-flags"
 import { isLegacySupervisorIngressUrl, resolveSupervisorGrocyAddon } from "../../../lib/grocy-client"
 import { validateSafeId } from "../../../lib/sanitize-id"
 import { isSecretSetting } from "../../../lib/settings-security"
+import { isThemeMode } from "../../../lib/theme-mode"
 
 /** Known safe setting keys — only these will be imported.
  * IMPORTANT: Update this set when adding new saveSetting() calls.
@@ -147,6 +148,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
             if (legacyEncoded && typeof value === "string") {
                 try { decoded = JSON.parse(value) } catch { /* Preserve legacy plain text. */ }
             }
+            if (key === "theme" && !isThemeMode(decoded)) decoded = "dark"
             if (key === "grocy_url" && decoded !== null && decoded !== "") {
                 if (typeof decoded !== "string") {
                     return invalid("Invalid grocy_url: must be a string")

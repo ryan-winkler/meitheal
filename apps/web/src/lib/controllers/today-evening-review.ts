@@ -8,6 +8,7 @@
  * Offers "snooze all to tomorrow" or dismiss.
  */
 
+import { createSpriteIconElement } from "../../generated/icon-registry"
 import type { ListenerManager } from "../managed-listeners"
 import { taskApi } from "../task-api-client"
 import { showToast } from "../toast"
@@ -51,7 +52,7 @@ export function setupEveningReview(
   const iconSpan = document.createElement("span")
   iconSpan.style.fontSize = "20px"
   iconSpan.setAttribute("aria-hidden", "true")
-  iconSpan.textContent = "🌙"
+  iconSpan.append(createSpriteIconElement("clock", { size: 20 }))
 
   const bodyDiv = document.createElement("div")
   bodyDiv.style.cssText = "flex: 1 1 12rem; min-width: 0;"

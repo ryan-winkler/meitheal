@@ -1,7 +1,9 @@
 import { DASHBOARD_SECTIONS, type DashboardSectionId } from "@lib/dashboard-registry"
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { quickAddPayload } from "@lib/quick-add"
+import { getStatusLabel, isActiveStatus, isClosedStatus, isDoneStatus } from "@lib/status-config"
 import { taskApi } from "@lib/task-api-client"
+import { taskBackgroundUrl } from "@lib/task-page-url"
 import { showToast } from "@lib/toast"
 import {
   initUnifiedBarNewTaskButton,
@@ -273,10 +275,11 @@ function initQuickAddForm(): void {
   })
 }
 
-function initOpenTaskFilter(): void {
+function initOpenTaskFilter(): (() => void) | undefined {
   const openSelect = document.getElementById("my-open-user-filter") as HTMLSelectElement | null
   const openList = document.getElementById("my-open-list")
   const openCount = document.getElementById("my-open-count")
+  const empty = document.getElementById("my-open-empty")
   const titleEl = document.getElementById("open-tasks-title")
   const kanbanLink = document.getElementById("kanban-link") as HTMLAnchorElement | null
   if (!openSelect || !openList) return
@@ -284,6 +287,10 @@ function initOpenTaskFilter(): void {
   // Capture narrowed references for use in closures (TS can't narrow across function boundaries)
   const select = openSelect
   const list = openList
+  const signal = pageLifecycle.signal
+  let refreshRequest: AbortController | undefined
+  let refreshNumber = 0
+  let loadFailed = false
 
   function applyOpenFilter(): void {
     const value = select.value
@@ -297,11 +304,16 @@ function initOpenTaskFilter(): void {
 
         if (value === "__unassigned__") show = !assigned
         else if (value !== "all") show = assigned === value
+        show &&= !isClosedStatus(item.dataset.status ?? "")
 
         item.style.display = show ? "" : "none"
         if (show) visible += 1
       })
 
+    if (empty) {
+      empty.textContent = loadFailed ? "Couldn’t refresh open work. Reload to try again." : "No open tasks for this selection."
+      empty.hidden = !loadFailed && visible !== 0
+    }
     if (openCount) {
       openCount.textContent = `${visible} open task${visible !== 1 ? "s" : ""}`
     }
@@ -351,6 +363,38 @@ function initOpenTaskFilter(): void {
     localStorage.setItem("meitheal-dashboard-user-filter", select.value)
     applyOpenFilter()
   })
+  return () => {
+    applyOpenFilter()
+    refreshRequest?.abort()
+    const request = new AbortController()
+    refreshRequest = request
+    const lifetime = AbortSignal.any([signal, request.signal, AbortSignal.timeout(10_000)])
+    const url = taskBackgroundUrl()
+    url.hash = ""
+    url.searchParams.set("dashboardQueueRefresh", `${performance.timeOrigin}-${++refreshNumber}`)
+    void fetch(url, { signal: lifetime, redirect: "error", cache: "no-store" })
+      .then(async response => {
+        if (!response.ok) throw new Error("Dashboard request failed")
+        const html = new DOMParser().parseFromString(await response.text(), "text/html")
+        const replacement = html.querySelector("#my-open-list")
+        if (lifetime.aborted) return
+        if (!replacement) throw new Error("Open queue unavailable")
+        list.replaceChildren(...replacement.childNodes)
+        const favorites = document.querySelector<HTMLElement>("#dashboard-favorites")
+        const refreshedFavorites = html.querySelector<HTMLElement>("#dashboard-favorites")
+        if (favorites && refreshedFavorites) {
+          favorites.hidden = refreshedFavorites.hidden
+          favorites.replaceChildren(...refreshedFavorites.childNodes)
+        }
+        loadFailed = false
+        applyOpenFilter()
+      })
+      .catch(() => {
+        if (signal.aborted || request.signal.aborted) return
+        loadFailed = true
+        applyOpenFilter()
+      })
+  }
 }
 
 function initTaskDetailLaunchers(): void {
@@ -385,8 +429,24 @@ function bootDashboardPage(): void {
 
   initDashboardShell()
   initQuickAddForm()
-  initOpenTaskFilter()
+  const updateOpenQueue = initOpenTaskFilter()
   initTaskDetailLaunchers()
+  pageLifecycle.on(document, "meitheal:task-status-saved", event => {
+    const { id, status, deferred } = (event as CustomEvent<{ id: string; status: string; deferred?: boolean }>).detail
+    if (typeof status !== "string") return
+    const done = isDoneStatus(status)
+    for (const card of shell.querySelectorAll<HTMLElement>(`:is(.task-item, .bento-card)[data-id="${CSS.escape(id)}"]`)) {
+      card.toggleAttribute("data-work-active", isActiveStatus(status))
+      card.dataset.status = status
+      card.querySelector(".bento-card-title")?.classList.toggle("done", done)
+      const badge = card.querySelector(".task-badge")
+      if (!badge) continue
+      badge.className = "task-badge badge-" + (done ? "complete" : status)
+      badge.textContent = getStatusLabel(status) + (deferred && card.classList.contains("bento-card")
+        ? " · " + (window.mI18n?.get("deferral.title") ?? "Deferred") : "")
+    }
+    updateOpenQueue?.()
+  })
 }
 
 bootDashboardPage()

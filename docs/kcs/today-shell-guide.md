@@ -54,22 +54,24 @@ These anchors stay on the same route, which keeps the page ingress-safe in Home 
 
 ### Read the daily counters
 
-**Due Today** and **Carried Fwd** reflect their respective sections. **Remaining** includes both sections and shared favorites. **Completed** counts tasks marked complete and updated on the current UTC date, including older records with ISO timestamps. Open **Pinned tasks** from the sidebar to see your personal pins.
+**Due Today** and **Carried Fwd** reflect their respective sections. **Remaining** includes both sections and shared favorites. **Completed** counts Household Board tasks marked Complete and last updated on the current date in the household timezone. Open **Pinned tasks** from the sidebar to see your personal pins.
 
-Task rows label their current status. When changing status badge colors, verify the labels in light and dark themes on Today, Upcoming, Eisenhower, and the Tasks tab of a project, both at rest and on hover. Completed project tasks keep a struck-through title and a readable **Done** badge. Run `MEITHEAL_TEST_BROWSER=1 pnpm --filter @meitheal/tests test e2e/status-badge-contrast.spec.ts` after building the app.
+Task rows label their current status. Custom statuses keep their stored value after a save or reload. When changing status badge colors, verify the labels in light and dark themes on Today, Upcoming, Eisenhower, and the Tasks tab of a project, both at rest and on hover. Completed project tasks keep a struck-through title and a readable **Done** badge. Run `MEITHEAL_TEST_BROWSER=1 pnpm --filter @meitheal/tests test e2e/status-badge-contrast.spec.ts` after building the app.
 
-While Today is open, the counters and progress bar refresh every 30 seconds. The refresh reads aggregate counts across the full task store. Reload the page to refresh the task rows after an external change.
+Today refreshes the counters and progress bar after confirmed task changes and every 30 seconds. In Knight Rider, expand **Completed today** to see up to 20 recent completions. Select a completed row anywhere on the row to open Details. To keep Today open, open the completed task link in a new tab. Reopen a task from Details to return it to the Today lists it qualifies for, even if newer completions have pushed it out of the preview. A rescheduled task returns to the lists that match its saved date. **Archive completed** applies to every completion counted for the displayed household day. Reload the page to refresh the task rows after an external change.
 
 ### Update several tasks
 
 Turn on multi-select in **Focus**, select the task checkboxes, then choose **Complete**, **Snooze** or **Delete**. If only some changes are confirmed, Today refreshes the task rows and counters and keeps the remaining tasks selected. Check those tasks before retrying. If Today cannot confirm any of the changes, the current selection stays available for review.
+
+The Dashboard **Focus Queue** and **Favorites** refresh after you save a task’s status in Details. Closed work leaves these lists, and the next eligible task can fill the open slot.
 
 ### Browse a large unscheduled queue
 
 The collapsed queue counts tasks without loading their full rows. The counts and visible Today sections use the same database snapshot.
 
 1. In **Work**, select the **Unscheduled** heading or focus it and press Enter. Today shows the full queue count and loads up to 50 task rows. A task created by a Home Assistant automation without a due date appears here.
-2. Use **Next** and **Previous** to reach the rest of the queue. In **Focus**, search the full queue or use **Filter by status**, **Filter by priority**, **Filter by RICE score**, and **Sort tasks**. The count above the rows shows the matching range. Reload keeps the open page and filters.
+2. Use **Next** and **Previous** to reach the rest of the queue. Keyboard focus moves to the matching range above the rows. During a status refresh, keyboard focus stays on the current task control or pager link while it remains available. In **Focus**, search the full queue or use **Filter by status**, **Filter by priority**, **Filter by RICE score**, and **Sort tasks**. Reload keeps the open page and filters.
 3. To change a card's manual board position, open the board in **Tasks**. Unscheduled pages use the selected sort order.
 4. If a page fails to load, use **Retry** in the section. The last loaded page stays visible while you retry.
 
@@ -90,3 +92,5 @@ The collapsed queue counts tasks without loading their full rows. The counts and
 ### Counters are slow to reflect a change
 
 Wait for the next 30-second refresh or reload Today. If the counts stay stale, check the browser's Network panel for `GET /api/tasks/today-counts`. An HTTP 503 means the counts are temporarily unavailable. Today keeps the last values and retries on the next interval.
+
+If the household date or timezone has changed, select **Refresh Today** to load the new completion list and counts. An archive attempt from the earlier view leaves tasks in place.

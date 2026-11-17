@@ -18,7 +18,7 @@ test("native Settings exports and historical exports restore decoded values with
     const base = origin + info.configuredPath
     const headers = { origin, cookie: "feedback-fixture=admin", "content-type": "application/json" }
     const expected: Record<string, unknown> = {
-      theme: "light", "ai-provider": "ha", n8n_events: ["task.completed"], n8n_mode: "webhook",
+      theme: "knight-rider", "ai-provider": "ha", n8n_events: ["task.completed"], n8n_mode: "webhook",
       notification_preferences: { push: false }, "ha-assist-agent": "conversation.fixture",
       "calendar-entities": null, completed_auto_hide_days: 21, feature_nfc: false,
       todo_entities: ["todo.household", "todo.shopping"], calendar_sync_mode: "import",
@@ -75,7 +75,13 @@ test("native Settings exports and historical exports restore decoded values with
     }
     const invalid = { _version: 2, _settingsEncoding: "future", settings: { theme: "dark" } }
     expect((await api.post(base + "/api/import/settings", { headers, data: invalid })).status()).toBe(400)
-    await verify({ theme: "light" })
+    await verify({ theme: "knight-rider" })
+    for (const theme of ["dark", "retired-theme", null]) {
+      await changeDestination()
+      const payload = { _version: 2, _settingsEncoding: "json-values", settings: { theme } }
+      expect((await api.post(base + "/api/import/settings", { headers, data: payload })).status()).toBe(200)
+      await verify({ theme: "dark" })
+    }
   } finally {
     await api.dispose()
     if (child.exitCode === null) {

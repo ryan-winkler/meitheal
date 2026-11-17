@@ -34,7 +34,7 @@ test.describe("Tabler Settings recovery", () => {
 
   test("outline directory keeps canonical section links, theme choices and mobile keyboard navigation", async ({ page }) => {
     await openSettings(page)
-    expect((await page.locator("#theme-select option").allTextContents()).sort()).toEqual(["Auto (System)", "Light", "Dark", "Custom"].sort())
+    expect((await page.locator("#theme-select option").allTextContents()).sort()).toEqual(["Auto (System)", "Light", "Emerald Isle", "Knight Rider", "Custom"].sort())
     const directory = page.getByRole("navigation", { name: "Sections", exact: true })
     for (const section of SETTINGS_SECTIONS) {
       const link = directory.getByRole("link", { name: section.label, exact: true })

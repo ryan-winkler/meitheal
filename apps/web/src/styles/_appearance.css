@@ -258,7 +258,18 @@
     border-right: 0;
     border-bottom: 1px solid var(--border);
   }
-  :root[data-appearance-navigation="navbar"] #sidebar :is(.sidebar-toggle-top, .sidebar-edge-toggle, .sidebar-cta-wrap, .sidebar-rail-cta, .sidebar-ipa, .sidebar-compact-areas, .sidebar-gamification-wrapper) { display: none; }
+  :root[data-appearance-navigation="navbar"] #sidebar :is(.sidebar-toggle-top, .sidebar-edge-toggle, .sidebar-ipa, .sidebar-compact-areas, .sidebar-gamification-wrapper) { display: none; }
+  :root[data-appearance-navigation="navbar"] #sidebar .sidebar-cta-wrap { padding: 0; }
+  :root[data-appearance-navigation="navbar"]:has(#taskbar-task-types) #sidebar .sidebar-cta-wrap { display: none; }
+  :root[data-appearance-navigation="navbar"] #sidebar .sidebar-rail-cta {
+    width: auto;
+    min-inline-size: 38px;
+    justify-content: center;
+  }
+  @media (max-width: 960px) {
+    :root[data-appearance-navigation="navbar"] #sidebar .sidebar-rail-cta { padding-inline: 8px; }
+    :root[data-appearance-navigation="navbar"] #sidebar .sidebar-rail-cta__label { display: none; }
+  }
   :root[data-appearance-navigation="navbar"] #sidebar .sidebar-header {
     flex: none;
     margin: 0;
