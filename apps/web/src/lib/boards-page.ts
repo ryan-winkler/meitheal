@@ -230,6 +230,7 @@ export function bindBoardPage(signal: AbortSignal) {
             ...(data.has("icon") ? { icon: value("icon") } : {}),
             ...(data.has("color") ? { color: value("color") } : {}),
             ...(data.has("cadence") ? { cadence: value("cadence") } : {}),
+            ...(data.has("projectId") ? { projectId: value("projectId") || null } : {}),
             ...(data.has("period") ? { period: value("period") } : {}),
           })
           if (result.accessPending && feedback) {

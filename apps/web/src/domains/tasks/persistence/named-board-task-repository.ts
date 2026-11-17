@@ -1,3 +1,4 @@
+import { isOrganizationFeatureAvailable as available } from "../../../lib/organization-request-context"
 import { randomUUID } from "node:crypto"
 import type { Client, Transaction } from "@libsql/client"
 import { isActiveAgentToken } from "@domains/auth"
@@ -63,6 +64,44 @@ export async function insertNamedTask(tx: Transaction, input: {
 /** Named ticket writes keep the Board grant, placement and task version in the same transaction. */
 export class NamedBoardTaskRepository {
   constructor(private readonly db: Client, private readonly markerPath?: string) {}
+
+  async routineLibrary(actor: BoardActor) {
+    if (actor.kind !== "ha_user" || !available("routines")) return []
+    const revision = await currentBoardGrantRevision(this.db, this.markerPath)
+    if (!revision) return []
+    const now = new Date()
+    const { rows } = await this.db.execute({
+      sql: `SELECT routine.id, routine.name, routine.cadence,
+          board.id AS board_id, board.name AS board_name,
+          CASE WHEN routine.cadence = 'weekly' THEN ? ELSE ? END AS period,
+          EXISTS (SELECT 1 FROM tasks AS occurrence WHERE occurrence.task_board_id = board.id
+            AND occurrence.source_template_id = routine.id AND occurrence.status = 'complete'
+            AND occurrence.due_date = CASE WHEN routine.cadence = 'weekly' THEN ? ELSE ? END) AS complete,
+          (access.role IN ('owner', 'member') AND access.deny_completion = 0
+            AND permissions.deny_completion = 0 AND (project.id IS NULL OR project.status = 'active')) AS can_complete
+        FROM task_templates AS routine
+        JOIN task_boards AS board ON board.id = routine.owner_board_id AND board.state = 'active'
+        JOIN board_access_grants AS access ON access.board_id = board.id
+          AND access.principal_type = 'ha_user' AND access.principal_id = ?
+        JOIN board_permissions AS permissions ON permissions.board_id = board.id
+        JOIN areas AS area ON area.id = json_extract(routine.template_json, '$.area_id')
+          AND area.owner_board_id = board.id AND area.retired_at IS NULL
+        LEFT JOIN projects AS project ON project.id = json_extract(routine.template_json, '$.project_id')
+          AND project.owner_board_id = board.id AND project.area_id = area.id AND project.retired_at IS NULL
+        WHERE routine.is_routine = 1 AND routine.retired_at IS NULL AND board.id <> 'household'
+          AND (json_extract(routine.template_json, '$.project_id') IS NULL OR project.id IS NOT NULL)
+          AND EXISTS (SELECT 1 FROM board_access_epoch WHERE singleton = 1 AND revision = ?)
+        ORDER BY board.name COLLATE NOCASE, routine.position, routine.name, routine.id LIMIT 101`,
+      args: [namedRoutinePeriod("weekly", now), namedRoutinePeriod("daily", now),
+        namedRoutinePeriod("weekly", now), namedRoutinePeriod("daily", now), actor.id, revision],
+    })
+    if (!await boardGrantStillCurrent(this.db, revision, this.markerPath)) return []
+    return rows.map(row => ({
+      id: String(row.id), name: String(row.name), cadence: String(row.cadence), period: String(row.period),
+      boardId: String(row.board_id), boardName: String(row.board_name),
+      complete: row.complete === 1, canComplete: row.can_complete === 1,
+    }))
+  }
 
   async dueWork(actor: BoardActor, day: string) {
     if (actor.kind !== "ha_user") return []
@@ -371,9 +410,10 @@ export class NamedBoardTaskRepository {
 
   async completeRoutine(actor: BoardActor, boardId: string, routineId: string, requestedPeriod?: string) {
     return this.mutate(actor, boardId, "complete", async (tx, allows) => {
-      if (!allows("create")) return denied
+      if (!available("routines") || !allows("create")) return denied
       const { rows: [routine] } = await tx.execute({
         sql: `SELECT routine.name, routine.cadence, area.id AS area_id,
+            json_extract(routine.template_json, '$.project_id') AS project_id,
             json_extract(routine.template_json, '$.description') AS description,
             (SELECT id FROM kanban_lanes WHERE board_id = ? AND key = 'complete' LIMIT 1) AS lane_id
           FROM task_templates AS routine
@@ -383,8 +423,8 @@ export class NamedBoardTaskRepository {
         args: [boardId, routineId, boardId],
       })
       if (!routine || typeof routine.lane_id !== "string") return unavailable
-      const period = namedRoutinePeriod(String(routine.cadence))
-      if (requestedPeriod !== undefined && requestedPeriod !== period) return stale
+      const currentPeriod = namedRoutinePeriod(String(routine.cadence))
+      const period = requestedPeriod ?? currentPeriod
       const { rows: [existing] } = await tx.execute({
         sql: `SELECT id, status FROM tasks WHERE task_board_id = ? AND source_template_id = ? AND due_date = ? LIMIT 1`,
         args: [boardId, routineId, period],
@@ -393,6 +433,14 @@ export class NamedBoardTaskRepository {
         if (existing.status !== STATUS.COMPLETE) return stale
         return { ok: true, value: { id: String(existing.id) } }
       }
+      if (period !== currentPeriod) return stale
+      if (typeof routine.project_id === "string") {
+        const { rows: [project] } = await tx.execute({
+          sql: "SELECT id FROM projects WHERE id = ? AND owner_board_id = ? AND area_id = ? AND status = 'active' AND retired_at IS NULL",
+          args: [routine.project_id, boardId, String(routine.area_id)],
+        })
+        if (!project) return unavailable
+      }
       const task = await insertNamedTask(tx, {
         boardId, laneId: routine.lane_id, status: STATUS.COMPLETE,
         content: { title: String(routine.name), description: String(routine.description ?? "") },
@@ -400,8 +448,8 @@ export class NamedBoardTaskRepository {
       })
       if (!task) return unavailable
       await tx.execute({
-        sql: "INSERT INTO board_task_planning (task_id, area_id) VALUES (?, ?)",
-        args: [task.id, String(routine.area_id)],
+        sql: "INSERT INTO board_task_planning (task_id, area_id, project_id) VALUES (?, ?, ?)",
+        args: [task.id, String(routine.area_id), typeof routine.project_id === "string" ? routine.project_id : null],
       })
       return { ok: true, value: { id: task.id } }
     })

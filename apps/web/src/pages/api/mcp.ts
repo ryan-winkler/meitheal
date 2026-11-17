@@ -102,7 +102,7 @@ const EXCLUDED_OPS = new Set([
   "readTaskDraft", "verifyTaskDraftContext", "writeTaskDraft",
   "checkPersonalPillarSession",
   "checkSharedGoalProjection",
-  "listPrivateBoards", "listPrivateBoardDueWork", "verifyBoardDirectory", "createPrivateBoard", "getPrivateBoard", "verifyPrivateBoard", "changePrivateBoard",
+  "listPrivateBoards", "listPrivateBoardRoutines", "listPrivateBoardDueWork", "verifyBoardDirectory", "createPrivateBoard", "getPrivateBoard", "verifyPrivateBoard", "changePrivateBoard",
   "createPrivateBoardTicket", "changePrivateBoardTicket", "deletePrivateBoardTicket",
   "createPrivateBoardIntake", "changePrivateBoardIntake", "listPrivateBoardIntakes", "submitPrivateBoardIntake",
   "savePrivateBoardPlanning",

@@ -52,12 +52,12 @@ const ownedAreaIds = new Set(planning.areas.map(area => area.id))
         </form>
         <RetirePlanningForm entity="area" id={area.id} />
       </details>}
-      <a href={goalHref("area_id", area.id)}>View {label("goal", true)}</a>
+      {available("goals") && <a href={goalHref("area_id", area.id)}>View {label("goal", true)}</a>}
       <div>
-        <strong>{label("project", true)}</strong>
+        {available("projects") && <strong>{label("project", true)}</strong>}
         {planning.projects.filter(project => project.areaId === area.id && (!projectId || project.id === projectId)).map(project => <article class="board-tile">
           <h4 class="board-name"><a href={boardWorkspaceHref(boardId, { project: project.id, fromArea: area.id })}>{project.title}</a></h4>
-          <a href={goalHref("project_id", project.id)}>View {label("project")} {label("goal", true)}</a>
+          {available("goals") && <a href={goalHref("project_id", project.id)}>View {label("project")} {label("goal", true)}</a>}
           {project.description && <p>{project.description}</p>}
           <ProjectSettings {project} selected={projectId === project.id} {canManage}
             goals={planning.linkableGoals.filter(goal => goal.sharedAreaId === null || goal.sharedAreaId === area.id)} />
@@ -70,11 +70,11 @@ const ownedAreaIds = new Set(planning.areas.map(area => area.id))
           <input type="hidden" name="areaId" value={area.id} />
           <label>Name <input name="title" maxlength="150" required /></label>
           <label>Details <textarea name="description" rows="2" maxlength="10000"></textarea></label>
-          <label>Goal <select name="goalId">
+          {available("goals") ? <label>Goal <select name="goalId">
             <option value="">No Goal</option>
             {planning.linkableGoals.filter(goal => goal.sharedAreaId === null || goal.sharedAreaId === area.id)
               .map(goal => <option value={goal.id}>{goal.title}</option>)}
-          </select></label>
+          </select></label> : <input type="hidden" name="goalId" value="" />}
           <p role="status" data-board-feedback></p>
           <button type="submit" class="btn btn-ghost">Create Project</button>
         </form>
@@ -108,7 +108,7 @@ const ownedAreaIds = new Set(planning.areas.map(area => area.id))
         </form>
       </details>}
       {showRoutines && <div class="named-boards">
-        {planning.routines.filter(routine => routine.areaId === area.id).map(routine => <article class="board-tile">
+        {planning.routines.filter(routine => routine.areaId === area.id && (!projectId || routine.projectId === projectId)).map(routine => <article class="board-tile">
           <h4 class="board-name">{routine.name}</h4>
           <p class="board-note">{routine.cadence}{routine.complete ? " · Done" : ""}</p>
           {canComplete && !routine.complete && <form data-board-form="planning" class="board-form">
@@ -125,6 +125,7 @@ const ownedAreaIds = new Set(planning.areas.map(area => area.id))
               <input type="hidden" name="id" value={routine.id} />
               <input type="hidden" name="areaId" value={area.id} />
               <input type="hidden" name="cadence" value={routine.cadence} />
+              {routine.projectId && <input type="hidden" name="projectId" value={routine.projectId} />}
               <label>Title <input name="title" value={routine.name} maxlength="150" required /></label>
               <label>Details <textarea name="description" rows="2" maxlength="10000">{routine.description}</textarea></label>
               <p role="status" data-board-feedback></p>
@@ -138,6 +139,7 @@ const ownedAreaIds = new Set(planning.areas.map(area => area.id))
           <form data-board-form="planning" class="board-form">
             <input type="hidden" name="action" value="routine" />
             <input type="hidden" name="areaId" value={area.id} />
+            {projectId && <input type="hidden" name="projectId" value={projectId} />}
             <label>Title <input name="title" maxlength="150" required /></label>
             <label>Details <textarea name="description" rows="2" maxlength="10000"></textarea></label>
             <label>Frequency <select name="cadence"><option value="daily">Daily</option><option value="weekly">Weekly</option></select></label>
@@ -150,7 +152,7 @@ const ownedAreaIds = new Set(planning.areas.map(area => area.id))
     {planning.projects.filter(project => (!projectId || project.id === projectId) && (!project.areaId || !ownedAreaIds.has(project.areaId))).map(project => <article class="board-tile">
       <h3 class="board-name">{project.title}</h3>
       {project.description && <p>{project.description}</p>}
-      <a href={goalHref("project_id", project.id)}>View {label("project")} {label("goal", true)}</a>
+      {available("goals") && <a href={goalHref("project_id", project.id)}>View {label("project")} {label("goal", true)}</a>}
       <ProjectSettings {project} selected={projectId === project.id} {canManage}
         goals={planning.linkableGoals.filter(goal => goal.sharedAreaId === null)} />
     </article>)}

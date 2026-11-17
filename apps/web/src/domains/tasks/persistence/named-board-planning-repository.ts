@@ -20,7 +20,7 @@ type Change = BoardPillarChange | VisibilityChange
   | { action: "project-edit"; id: string; title: string; description: string }
   | { action: "project-goal"; id: string; goalId: string | null }
   | { action: "project-status"; id: string; status: ProjectStatus }
-  | { action: "routine"; title: string; description: string; areaId: string; cadence: "daily" | "weekly"; id?: string }
+  | { action: "routine"; title: string; description: string; areaId: string; cadence: "daily" | "weekly"; id?: string; projectId?: string | null }
 
 function readableBoards(userId: string) {
   return {
@@ -98,6 +98,7 @@ export async function readNamedBoardPlanning(tx: Transaction, actor: BoardActor,
     {
       sql: `SELECT routine.id, routine.name, routine.cadence, json_extract(routine.template_json, '$.area_id') AS area_id,
           json_extract(routine.template_json, '$.description') AS description,
+          json_extract(routine.template_json, '$.project_id') AS project_id,
           EXISTS (SELECT 1 FROM tasks AS completion WHERE completion.task_board_id = routine.owner_board_id
             AND completion.source_template_id = routine.id AND completion.status = 'complete'
             AND completion.due_date = CASE WHEN routine.cadence = 'weekly' THEN ? ELSE ? END) AS complete
@@ -128,6 +129,7 @@ export async function readNamedBoardPlanning(tx: Transaction, actor: BoardActor,
     })),
     routines: routines!.rows.filter(() => available("routines")).map(routine => ({
       id: String(routine.id), name: String(routine.name), cadence: String(routine.cadence),
+      projectId: available("projects") && typeof routine.project_id === "string" ? routine.project_id : null,
       areaId: String(routine.area_id), complete: routine.complete === 1, description: String(routine.description ?? ""),
       period: namedRoutinePeriod(String(routine.cadence)),
     })),
@@ -317,7 +319,24 @@ export class NamedBoardPlanningRepository {
         return result.rowsAffected > 0
       }
       case "routine": {
-        const template = JSON.stringify({ title: input.title, description: input.description, area_id: input.areaId })
+        let projectId = input.projectId ?? null
+        if (input.id && input.projectId === undefined) {
+          const { rows: [previous] } = await tx.execute({
+            sql: "SELECT json_extract(template_json, '$.project_id') AS project_id FROM task_templates WHERE id = ? AND owner_board_id = ? AND is_routine = 1 AND retired_at IS NULL",
+            args: [input.id, boardId],
+          })
+          if (!previous) return false
+          projectId = typeof previous.project_id === "string" ? previous.project_id : null
+        }
+        if (projectId) {
+          if (!available("projects")) return false
+          const { rows: [project] } = await tx.execute({
+            sql: "SELECT id FROM projects WHERE id = ? AND owner_board_id = ? AND area_id = ? AND status = 'active' AND retired_at IS NULL",
+            args: [projectId, boardId, input.areaId],
+          })
+          if (!project) return false
+        }
+        const template = JSON.stringify({ title: input.title, description: input.description, area_id: input.areaId, project_id: projectId })
         const result = input.id ? await tx.execute({
           sql: `UPDATE task_templates SET name = ?, template_json = ?, updated_at = ?
             WHERE id = ? AND owner_board_id = ? AND is_routine = 1 AND retired_at IS NULL

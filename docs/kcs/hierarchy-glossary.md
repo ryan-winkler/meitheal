@@ -1,32 +1,36 @@
 ---
 type: "Reference"
 title: "Hierarchy Glossary — Meitheal Ubiquitous Language"
-description: "Find definitions for areas, goals, projects, and other planning terms."
+description: "Understand Boards, Groups, Projects and the optional planning features."
 ---
 
 # Hierarchy Glossary — Meitheal Ubiquitous Language
 
-> **Phase 15** established the four-level hierarchy model. **Phase 17** added
-> Pillars as identity-based motivational anchors. This glossary defines each
-> term as it's used in code, UI, and documentation.
+Open a Board, choose a Group, then open a Project for its related tasks. Tasks can also stay directly in a Group or Unfiled on their Board. Goals, Routines, Pillars and Principles provide additional planning relationships.
 
-## Core Hierarchy (top → bottom)
+## Organization and planning terms
 
 | Term | Definition | Has Deadline? | Tracking |
 |------|-----------|:------------:|----------|
+| **Board** | A workspace with its own workflow. Named Boards have explicit members and permissions. Household contains the existing shared work. | ❌ | Members, columns and tasks |
+| **Group** | An ongoing responsibility within a Board, such as Kitchen or Operations. Groups can contain tasks, Projects, Goals and Routines. Existing storage and API fields use `area` for this concept. | ❌ | Name, icon, color and related work |
 | **Pillar** | Identity-based motivational anchor — the WHY behind everything. Permanent, never completed. "I am someone who..." | ❌ | Linked Goals, Routines (counts only — no failure states) |
-| **Area** | Broad responsibility or body of work such as Home, Work or Class. | ❌ | Name, icon, color and links |
-| **Goal** | Desired outcome. A Goal can link directly to an Area, serve as the Goal for one or more Projects, or stand on its own. | Optional | Metric progress (%, count) |
-| **Project** | Collection of related tasks. A Project can link directly to an Area and can also link to a Goal. | Optional | Status, description, icon |
-| **Task** | Atomic unit of work. Can belong to a Project (or "Every Day" by default). | Optional | Priority, RICE, status, labels |
+| **Goal** | Desired outcome. A Goal can link directly to a Group, serve as the Goal for one or more Projects, or stand on its own. | Optional | Metric progress (%, count) |
+| **Project** | Related tasks within a Board, optionally organized in a Group and linked to a Goal. | Optional | Status, description, icon |
+| **Task** | A piece of work on a Board. It can belong to a Group or Project or remain Unfiled. | Optional | Priority, RICE, status, labels |
+| **Home Assistant Area** | An optional task field for a physical location from Home Assistant’s registry. Administrators choose who can use it. | ❌ | Physical location |
+
+Personal labels in **Settings → Navigation & Shortcuts → Labels** change display terms for the verified Home Assistant account and language. Search recognizes canonical and personal names. Routes, record IDs and individual record names retain their identities.
+
+Named Board grants govern access to the Board’s work. Administrators choose module availability in **Settings → Tasks & Boards → Organization features**. Those audiences apply to organizing features such as Groups and Projects. See [Named Boards](named-boards.md) for the current permission and organization journeys.
 
 ## System Entities
 
 | Term | Definition |
 |------|-----------|
-| **Every Day** | The default Project that catches tasks without an explicit Project assignment. Cannot be renamed or deleted. |
-| **Routine** | A recurring template that auto-creates daily/weekly Tasks. Tracks streaks and contributes to gamification XP. Formerly called "Habit" (deprecated term). |
-| **Routine Instance** | A Task created by a Routine template for a specific date. Carries `task_kind = 'routine_instance'` and `source_template_id`. |
+| **Every Day** | The protected legacy default Project for Household tasks. |
+| **Routine** | A template for repeated work. Household Routines use the existing task-generation flow. A named Board check-in creates one completed occurrence per UTC day or week. The older Household library also uses the label Habit. |
+| **Routine Instance** | A Task created by a Routine template for a specific period. Carries `task_kind = 'routine_instance'` and `source_template_id`. Named Board occurrences retain their Group and optional Project and keep their original date. |
 | **Principle** | A behavioral boundary within a Pillar. "No screens after 9 PM." Can be marked Non-Negotiable for AI enforcement. |
 | **Non-Negotiable** | A Principle with `isNonNegotiable = true`. Injected into LLM system prompts via `fetchPillarContext()`. Capped at 15 in prompts. |
 | **Manifesto** | A Pillar's WHY statement using identity framing: "I am someone who builds lasting health." Displayed as the hero element on PillarCard. |
@@ -37,19 +41,27 @@ description: "Find definitions for areas, goals, projects, and other planning te
 
 | Parent Page | Sub-Views | Route |
 |------------|-----------|-------|
-| **Tasks** | Kanban, Calendar, Table, Timeline | `/tasks#kanban` |
-| **Planning** | Spaces, Eisenhower, Triage, RICE | `/planning#eisenhower` |
-| **Progress & Growth** | Routines, Goals, Achievements | `/progress#routines` |
+| **Boards** | Household and accessible named Boards, then Groups and Projects | `/boards` |
+| **Tasks** | Kanban, Calendar, Table, Timeline | `/tasks?view=kanban` |
+| **Planning** | Eisenhower, Triage, RICE; the old Spaces bookmark opens Boards | `/planning#eisenhower` |
+| **Progress & Growth** | Pillars, Routines, Goals, Achievements | `/progress#pillars` |
+
+Existing `/areas/{id}` and `/projects/{id}` bookmarks open the matching Household Board context. Supported section fragments, including settings, are preserved. `/planning#spaces` opens `/boards` when Planning is available.
 
 ## Deprecated Terms
 
 | Old Term | New Term | ADR Reference |
 |----------|----------|---------------|
+| Area as an organizing responsibility | Group | Existing `area` storage and API names are retained |
 | Habit | Routine | ADR-007 |
 | Gamification | Achievements | Phase 15 |
 | Standalone pages (e.g. `/kanban`) | Sub-views under parent pages | Phase 15 |
 
-## Hierarchy in Code
+## Organization in storage
+
+`task_boards` stores Boards. Named tasks use `tasks.task_board_id`, and named planning records use `owner_board_id`. `board_task_planning` stores a named ticket’s Group and Project placement. `home_assistant_task_areas` stores the separate physical location.
+
+The Household storage relationships below retain the earlier Area field names. A Project can link directly to its Group, so a Goal is optional.
 
 ```
 Pillar (pillars table) ←—M2M—→ Goal, Routine (pillar_associations)
@@ -75,9 +87,9 @@ Area (areas table)
 - `goals.pillar_id` → Direct Goal → Pillar FK (primary association)
 - `tasks.pillar_id` → Direct Task → Pillar FK (or inherited from Goal)
 - `task_templates.pillar_id` → Direct Routine → Pillar FK
-- `areas.id` → Area
-- `goals.area_id` → Goal → Area link
-- `projects.area_id` → Project → explicit Area link
+- `areas.id` → Group (legacy Area identifier)
+- `goals.area_id` → Goal → Group link
+- `projects.area_id` → Project → explicit Group link
 - `projects.goal_id` → Project → Goal link
 - `projects.is_default` → "Every Day" marker
 - `tasks.project_id` → Task → Project link
@@ -95,7 +107,7 @@ The Project **Custom Fields** section reports that project-specific field config
 
 ## Move a task to another project
 
-Open the task, then choose its **Project** in the details panel. Choose **No project** to clear the assignment. The task keeps its existing area, status and ticket key. If the destination was deleted, reopen the task to refresh the project list and choose another destination.
+For a Household task, open the task and choose its **Project** in the details panel. Choose **No project** to clear the assignment. The task keeps its existing Group, status and ticket key. If the destination was deleted, reopen the task to refresh the Project list and choose another destination. For a named Board ticket, use **File task** within its Board to select a Group or Project.
 
 Integrations can use `PUT /api/tasks/{id}` or `PATCH /api/tasks/{id}` with `project_id` set to a project ID or `null`. Deleting a project clears its tasks’ project assignment and preserves the tasks.
 
@@ -113,23 +125,23 @@ and restorable via the <kbd>?</kbd> keyboard shortcut.
 
 Open **Progress & Growth → Pillars**. Choose **Edit** on the card or in Details to change the Pillar's identity and weight. **Add principle** opens a form for a boundary. Select **Non-Negotiable** when it should guide supported automation prompts. **Save principle** updates the detail list and card count after the App confirms the write. If saving fails, the form keeps the statement and checkbox for retry.
 
-## Collapsing the sidebar Areas menu
+## Collapsing the sidebar Groups menu
 
-The Areas heading collapses the whole hierarchy independently of each area's project disclosure. Use Enter or Space on the heading. The choice is remembered in this browser and does not change sidebar visibility, order, saved labels, projects or tasks. **Planning** remains available when the group is closed. Browser storage restrictions do not prevent expanding or collapsing it.
+The Household Groups heading collapses its tree independently of each Group’s Project disclosure. Use Enter or Space on the heading. The choice is remembered in this browser and preserves the saved sidebar configuration. Named Board disclosures open their own Groups. Browser storage restrictions do not prevent expanding or collapsing the tree.
 
-## Edit an Area and view related work
+## Edit a Group and view related work
 
-Open the Area options menu in the sidebar and choose **Edit Area**. The Settings section opens inside Meitheal, including when entered from Home Assistant. Change the name, icon or color and choose **Save Changes**. If a save fails, the form keeps the values so you can retry. The **Areas** link returns to Planning. Open an Area card in **Planning → Areas & Projects** to see its overview.
+Open **Boards → Household → Groups** or a named Board’s **Groups**. Open a Group and its settings to change the name, icon or color. If a save fails, the form keeps the values so you can retry. Older **Edit Area** links open the matching Household Group settings inside Home Assistant ingress.
 
-Choose **Edit Project** in the Project’s sidebar menu to open its Settings. From **Planning → Areas & Projects**, each Project link opens its overview. Planning groups Projects by their explicit Area or, if unset, their linked Goal’s Area. Projects without either association appear under **Projects without an Area**. Use **New Project** in an Area group to create a Project there.
+Open a Project from its Group to see its tasks. **Project settings** opens its edit controls. Use **New Project** in a Group to create related work there. A named Board also keeps unfiled Projects reachable from its Groups view.
 
-Open an Area’s **Goals** tab and select **New Goal** to create a Goal linked to that Area. The list includes its direct Goals and the Goals of its Projects, once each. A Project’s breadcrumb links to its selected Goal. **All Goals** opens the full list in Progress & Growth. API callers can use `GET /api/goals?area_id=…` or `GET /api/goals?project_id=…`. Combined filters match both associations.
+Open a Household Group’s **Goals** tab and select **New Goal** to create a Goal linked to that Group. The list includes its direct Goals and the Goals of its Projects, once each. A Project’s breadcrumb links to its selected Goal. **All Goals** opens the full list in Progress & Growth. API callers can use `GET /api/goals?area_id=…` or `GET /api/goals?project_id=…`. Combined filters match both associations.
 
-Open an Area’s **Routines** tab and choose **New Routine** to open the editor with that Area selected. Saving or cancelling returns to the Area. Work created by the Routine keeps that Area. Progress & Growth also offers **New Routine** and **View Routines**. A Routine with a deleted Area needs a new Area before it can create more work.
+Open a Household Group’s **Routines** tab and choose **New Routine** to open the editor with that Group selected. Saving or cancelling returns to the Group. Work created by the Routine keeps that Group. Progress & Growth also offers **New Routine** and **View Routines**. A Routine with a deleted Group needs a valid Group before it can create more work.
 
-Area membership in this hierarchy and sidebar preferences organize work. Use board sharing rules when available to control who can view or change work.
+For a named Board, create a Routine under its Group or within Project settings. Project-bound occurrences keep both placements. Closing or removing the Project prevents new occurrences. Existing completed occurrences retain their identity on a permitted retry. See the [Routine library guide](habits-shell-guide.md#check-in-on-a-named-board-routine).
 
-Changing a Routine’s Area affects tasks generated afterward. The existing task for today keeps its Area and remains the one completed by that Routine.
+Changing a Household Routine’s Group affects tasks generated afterward. The existing task for today keeps its Group and remains the one completed by that Routine.
 
 ### Personal Pillars
 

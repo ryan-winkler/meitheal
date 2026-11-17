@@ -10,7 +10,7 @@ import { stripHtml } from "@lib/strip-html"
 
 function parseChange(body: Record<string, unknown> | null): Parameters<NamedBoardPlanningRepository["save"]>[2] | null {
   if (!body) return null
-  const { action, id, areaId, goalId, enabled, status, cadence, entity, pillarId, entityType } = body
+  const { action, id, areaId, projectId, goalId, enabled, status, cadence, entity, pillarId, entityType } = body
   if (action === "project-status" && typeof id === "string" &&
       (status === "active" || status === "completed" || status === "archived")) return { action, id, status }
   if (action === "goal-share" && typeof id === "string" && typeof areaId === "string" && typeof enabled === "boolean") {
@@ -43,8 +43,8 @@ function parseChange(body: Record<string, unknown> | null): Parameters<NamedBoar
     return { action, title, description, areaId, goalId }
   }
   if (action === "routine" && typeof areaId === "string" && (cadence === "daily" || cadence === "weekly") &&
-      (id === undefined || typeof id === "string")) {
-    return { action, title, description, areaId, cadence, ...(id === undefined ? {} : { id }) }
+      (id === undefined || typeof id === "string") && (projectId === undefined || projectId === null || typeof projectId === "string")) {
+    return { action, title, description, areaId, cadence, ...(projectId === undefined ? {} : { projectId }), ...(id === undefined ? {} : { id }) }
   }
   if (action === "pillar" && (id === undefined || typeof id === "string")) {
     return { action, title, description, ...(id === undefined ? {} : { id }) }

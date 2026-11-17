@@ -87,8 +87,10 @@ Use this after changing habits shell, shell navigation, or the habits controller
 - `#habits-library`
 - `#habits-flow`
 
-4. Confirm the shell `New Habit` button opens the shared habits modal.
+4. Confirm the shell **New Routine** button opens the Household Routine modal. The Household library retains its **New Habit** action.
 5. Confirm the shell search launcher still opens SearchHub instead of a page-local search surface.
+
+Through Home Assistant, also verify **Routines on your Boards** in the library and Today. Use the named Board verification below to check permissions, Project placement and repeat completion.
 
 ## Today Shell Verification
 
@@ -118,7 +120,7 @@ When changing translucent theme colors, check dropdown selection, task focus and
 
 Check the plain links back from Deferred, Inactivity and Triage in both themes, including pointer hover. In Planning, Progress and Habits, each visible section link is reachable with Tab. Enter opens the destination, and the current link announces its location. Verify arrow navigation and Planning history with `e2e/parent-page-shell.spec.ts` and `e2e/habits-shell.spec.ts`.
 
-In disposable Home Assistant ingress, open a Project from its Area group in Planning and confirm Overview. Use its sidebar **Edit Project** action to open Settings inside the same ingress. Run `e2e/area-management.spec.ts` against a built App to verify the Area editor, contextual Goal creation, and a Routine that creates work in the selected Area.
+In disposable Home Assistant ingress, open **Boards → Household → Groups**, then open a Group and Project. Confirm its task view and settings stay inside ingress. Repeat an older Area and Project bookmark, including a supported settings fragment, and verify the matching Household context. Run `e2e/area-management.spec.ts` against a built App to verify the Group editor, contextual Goal creation and a Household Routine that creates work in the selected Group.
 
 ## Task Link Verification
 
@@ -286,7 +288,7 @@ Stop App writers before replacing or upgrading their database, including Apps sh
 
 The migration command and web startup share the Board and Personal Pillar migrations. One transaction reconciles task prerequisites and activity triggers, scopes Household lanes and drafts, and commits `app_settings.schema_version` together with the `0009_task_boards.mjs` ledger entry. Existing tasks, Areas, drafts, publication receipts, and ticket numbers are retained. New Household tickets advance from the highest valid number in retained tasks or task creation events. Deleting a task leaves the counter intact.
 
-Run `node scripts/migrate.mjs --check` after the upgrade. A valid result confirms the marker pair, task prerequisites, activity triggers and Household storage. The same transaction installs immutable Personal Pillar ownership and records `0010_personal_pillars.mjs`. The health endpoint reports schema 20 after web initialization completes. If SQLite reports a busy writer, let that writer finish before restarting. If the check reports mismatched markers or an unexpected table or index, retain the database and inspect it in a disposable copy. To roll back, stop the candidate, keep its closed database separately, and restore the exact predecessor App and its matching cold backup.
+Run `node scripts/migrate.mjs --check` after the upgrade. A valid result confirms the marker pair, task prerequisites, activity triggers and Household storage. The same transaction installs immutable Personal Pillar ownership and records `0010_personal_pillars.mjs`. The current health endpoint reports schema 24 after web initialization completes. If SQLite reports a busy writer, let that writer finish before restarting. If the check reports mismatched markers or an unexpected table or index, retain the database and inspect it in a disposable copy. To roll back, stop the candidate, keep its closed database separately, and restore the exact predecessor App and its matching cold backup.
 
 The add-on defaults to `file:/data/meitheal.db`. Startup and migrations open file and in-memory databases with Node’s built-in SQLite. Verify the SQLite version in the actual runtime with `node -e 'console.log(new (require("node:sqlite").DatabaseSync)(":memory:").prepare("SELECT sqlite_version() AS version").get().version)'`. The app requires 3.51.3 or newer for safe WAL writes. An explicit remote database URL still selects the standard libSQL network client. [SQLite WAL fix](https://sqlite.org/wal.html#the_wal_reset_bug).
 
@@ -549,7 +551,7 @@ MCP completion acknowledgements require the expected task ID or exact ticket key
 
 For Feedback 503, check the Home Assistant Core connection and current account availability before investigating local storage/quota.403 requires an active nonsystem account for submission and a current administrator for queue access. Reopen Settings after correcting permissions.408 indicates the 8KiB JSON body did not arrive within five seconds; retry the unchanged form to retain its submission receipt.499 indicates cancellation. Optional app-version context accepts the published 12-character lowercase Canary version or the existing bounded release-context format; source hash abbreviations/full hashes are rejected. Administrator review drafts remain local to the current Settings lifecycle and export previews must be prepared again after refresh.
 
-Household task lists, Project counts, direct ticket routes, task exports routine cleanup, Calendar and Todo matching, and due-date reminders operate on Household records. Named Board storage remains closed until readers, actions, deliveries and recovery all enforce current grants.
+Household task lists, task exports, Routine cleanup, Calendar and Todo matching, and due-date reminders operate on Household records. Today separately links authorized due work from named Boards. Named Board task and Routine endpoints check current grants, and their ticket links open the owning Board.
 
 ### Board access storage
 
@@ -558,3 +560,15 @@ Schema 21 records ownership for Areas, Projects, Goals and Pillars. It adds name
 ### Named Board access
 
 Use [Named Boards](./named-boards.md) to verify owner, member, viewer and send-only journeys after a schema upgrade. Exercise an active Home Assistant administrator outside the Board as well as a member with completion and deletion denied. Use [Home Assistant backups and restore](./home-assistant-backup-and-restore.md) for revision mismatches and App restore. Confirm that an interrupted live revision publication recovers and that a restored revision remains closed pending verified recovery.
+
+### Board organization and Routine verification
+
+After building the App, run `MEITHEAL_TEST_BROWSER=1 pnpm --filter @meitheal/tests test e2e/board-organizer.spec.ts e2e/named-board-authority.spec.ts`. Use disposable Home Assistant ingress for the complete browser journey.
+
+1. Open a named Board, create a Group and Project, then create a task in that Project. Use **File task** to change placement within the Board and verify the ticket key and column survive.
+2. Give Board and Group personal display names in **Settings → Navigation & Shortcuts → Labels**. Verify navigation, headings and search in the same account and language. Open a second account to check its own terms and repeat the saved links.
+3. In **Tasks & Boards → Organization features**, exercise Everyone, Selected people and Nobody for the ten available modules. Verify the selected account’s page and API access. Board membership still governs the work on each named Board. See [Settings troubleshooting](settings-troubleshooting.md#choose-who-can-use-organization-features) for the choices and legacy-switch conflicts.
+4. Offer **Home Assistant Area** to a test account. Set and clear a task’s physical location and confirm its Board, Group and Project placement stays intact.
+5. Open `/planning#spaces`, an existing `/areas/{id}` bookmark and an existing `/projects/{id}` bookmark. Check the canonical Boards destinations, supported section fragments and ingress prefixes.
+6. From an active named Project’s settings, submit **New Routine** through the browser. Verify the saved template and its first completed ticket retain that Project and Group. Check the Routine in both its library and Today, mark it done once and verify the same occurrence is shown as Done. A viewer can read the row and a completion-denied member cannot mark it done.
+7. Close the Project and verify a new occurrence cannot be created. Retry a previously completed period with current Board permissions and confirm it returns the original ticket. Revoke Board access or change the signed-in account and confirm the Routine list clears after revalidation. Reconnect and refresh after a failed check-in before retrying.

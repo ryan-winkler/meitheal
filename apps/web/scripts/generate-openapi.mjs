@@ -625,6 +625,9 @@ const paths = {
       201: { description: "The owned Board ID" }, 202: { description: "The Board was saved, and access verification is pending" }, 503: { description: "Board access is locked" },
     }, boardJson({ name: boardString })),
   },
+  "/api/boards/routines": {
+    get: boardOperation("listPrivateBoardRoutines", "List eligible named Board Routine check-ins for the current period", [], { 200: { description: "Up to 100 current actor-scoped Routines and whether there are more" } }),
+  },
   "/api/boards/due-today": {
     get: boardOperation("listPrivateBoardDueWork", "List open tasks due today or earlier on eligible named Boards", [], {
       200: { description: "Up to 30 eligible tasks and whether there are more" },
@@ -697,7 +700,7 @@ const paths = {
       409: { description: "A Routine period changed or an Area still has active planning records" },
     }, boardJson({
       action: { type: "string", enum: ["area", "goal", "project", "project-edit", "project-goal", "project-status", "goal-share", "retire", "pillar", "pillar-principle", "pillar-link", "routine", "routine-complete"] },
-      title: boardString, description: boardString, icon: boardString, color: boardString, id: boardString, areaId: boardString, goalId: { type: ["string", "null"] },
+      title: boardString, description: boardString, icon: boardString, color: boardString, id: boardString, areaId: boardString, projectId: { type: ["string", "null"] }, goalId: { type: ["string", "null"] },
       status: { type: "string", enum: ["active", "completed", "archived"] }, enabled: boardBoolean,
       cadence: { type: "string", enum: ["daily", "weekly"] }, period: { type: "string", format: "date" },
       entity: { type: "string", enum: ["area", "goal", "project", "routine"] },

@@ -294,7 +294,7 @@ const tabs = [
           <option value="archived" selected={projStatus === "archived"}>Archived</option>
         </select>
       </div>
-      <div class="form-group">
+      {available("groups") && <div class="form-group">
         <label for="edit-proj-area">{organization("group")}</label>
         <select id="edit-proj-area" class="form-select">
           <option value="">Use the Goal’s Group, if set</option>
@@ -302,8 +302,8 @@ const tabs = [
             <option value={option.id} selected={project?.area_id === option.id}>{option.name}</option>
           ))}
         </select>
-      </div>
-      <div class="form-group">
+      </div>}
+      {available("goals") && <div class="form-group">
         <label for="edit-proj-goal">Goal</label>
         <select id="edit-proj-goal" class="form-select">
           <option value="">No goal</option>
@@ -316,7 +316,7 @@ const tabs = [
             </option>
           ))}
         </select>
-      </div>
+      </div>}
       <div class="settings-actions">
         <button type="button" class="btn btn-primary" id="save-proj-btn">Save Changes</button>
       </div>

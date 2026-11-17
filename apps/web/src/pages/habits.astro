@@ -1,4 +1,5 @@
 ---
+import BoardRoutineCheckins from "../components/boards/BoardRoutineCheckins.astro"
 import { newOrganizationLabel, organizationLabelsFor } from "@lib/organization-labels"
 /**
  * Habits Page — Routine Template Control Surface
@@ -250,6 +251,7 @@ const habitsBootstrap = serializeForScript({ habits })
       </div>
     </section>
 
+    <BoardRoutineCheckins />
     <section id="habits-library" class="habits-shell__section" data-habits-section>
       <div class="habits-section__intro">
         <div>

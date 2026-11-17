@@ -135,8 +135,8 @@ const tabs = [
   <section id="section-overview" class="area-section active" data-section="overview" role="tabpanel" aria-labelledby="area-tab-overview" tabindex="0">
     <div class="project-grid">
       {[
-        { id: "projects", title: organization("project", true), count: projects.length, empty: "Group related work" },
-        { id: "goals", title: organization("goal", true), count: goalCount, empty: "Define an outcome" },
+        ...(available("projects") ? [{ id: "projects", title: organization("project", true), count: projects.length, empty: "Group related work" }] : []),
+        ...(available("goals") ? [{ id: "goals", title: organization("goal", true), count: goalCount, empty: "Define an outcome" }] : []),
         ...(routinesEnabled ? [{ id: "routines", title: organization("routine", true), count: routines.length, empty: "Schedule repeat work" }] : []),
       ].map(({ id, title, count, empty }) => (
         <a class="project-card" href={`#${id}`} data-astro-reload>

@@ -1,4 +1,5 @@
 ---
+import BoardRoutineCheckins from "../components/boards/BoardRoutineCheckins.astro"
 /**
  * Today Page — Smart Daily Cockpit
  *
@@ -516,6 +517,7 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
         </div>
       </div>
 
+      <BoardRoutineCheckins />
       {showBoardWork && <section class="today-section" data-today-board-work aria-labelledby="today-board-work-heading" hidden>
         <h3 id="today-board-work-heading" class="today-section__title">Due on other Boards</h3>
         <ul class="list-group" data-today-board-links></ul>

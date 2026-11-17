@@ -1126,6 +1126,17 @@ paths:
                 name: &a8
                   type: string
               additionalProperties: false
+  /api/boards/routines:
+    get:
+      operationId: listPrivateBoardRoutines
+      summary: List eligible named Board Routine check-ins for the current period
+      tags:
+        - Boards
+      parameters: []
+      responses:
+        "200":
+          description: Up to 100 current actor-scoped Routines and whether there are more
+      security: *a7
   /api/boards/due-today:
     get:
       operationId: listPrivateBoardDueWork
@@ -1523,6 +1534,10 @@ paths:
                 color: *a8
                 id: *a8
                 areaId: *a8
+                projectId:
+                  type:
+                    - string
+                    - "null"
                 goalId:
                   type:
                     - string

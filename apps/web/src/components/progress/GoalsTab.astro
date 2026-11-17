@@ -19,8 +19,8 @@ import { HierarchyRepository, type AreaRow } from "@domains/tasks/persistence/hi
 interface Props { areaId?: string; sharedGoals?: SharedGoalProgress[] }
 
 const embeddedArea = Astro.props.areaId
-const areaId = embeddedArea ?? Astro.url.searchParams.get("area_id") ?? undefined
-const projectId = embeddedArea ? undefined : Astro.url.searchParams.get("project_id") ?? undefined
+const areaId = available("groups") ? embeddedArea ?? Astro.url.searchParams.get("area_id") ?? undefined : undefined
+const projectId = embeddedArea || !available("projects") ? undefined : Astro.url.searchParams.get("project_id") ?? undefined
 let scopedAreaName: string | undefined
 let scopedProjectName: string | undefined
 let unavailable = false

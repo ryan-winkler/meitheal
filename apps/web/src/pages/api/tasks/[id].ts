@@ -205,7 +205,7 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
   if (body.due_date !== undefined || body.task_kind !== undefined) {
     const current = await repo.findById(resolvedId)
     if (current?.routine_occurrence === 1 &&
-      ((body.due_date !== undefined && current.due_date != null && body.due_date !== current.due_date) ||
+      ((body.due_date !== undefined && body.due_date !== current.due_date) ||
         (body.task_kind !== undefined && body.task_kind !== "routine_instance"))) {
       return apiError("A generated Routine task keeps its original date and type. Complete its existing occurrence.", 409)
     }
