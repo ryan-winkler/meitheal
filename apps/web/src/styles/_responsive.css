@@ -86,23 +86,6 @@
     min-height: 22px;
   }
 
-  /* Mobile: task detail title input — proper mobile sizing */
-  #td-title {
-    font-size: 1.25rem !important;
-    padding: 6px 8px !important;
-  }
-
-  /* Mobile: task detail header — allow close button to wrap */
-  #task-detail-panel .flex.items-center.justify-between {
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-
-  /* Mobile: task detail header — don't push close button off-screen */
-  #task-detail-panel .flex.items-center.gap-4.w-full {
-    margin-right: 0 !important;
-  }
-
   /* Mobile: stack stats grid 2x2 */
   .stats-grid {
     grid-template-columns: repeat(2, 1fr) !important;
