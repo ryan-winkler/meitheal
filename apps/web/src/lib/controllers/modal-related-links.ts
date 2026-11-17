@@ -235,6 +235,7 @@ export function initRelatedLinks({ getCurrentTaskId, openTaskDetail, saveTD, sig
         )
         if (!res.ok || !linkSearchResults) return
         const data = await res.json()
+        if (linkSearchInput.value.trim() !== q) return
         const currentId = getCurrentTaskId()
         const tasks = (data.tasks ?? []).filter(
           (t: Record<string, unknown>) => t.id !== currentId,
@@ -332,8 +333,11 @@ export function initRelatedLinks({ getCurrentTaskId, openTaskDetail, saveTD, sig
   }, opts)
 
   linkSearchInput?.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && linkSearchResults) {
+    if (e.key === "Escape" && linkSearchResults?.style.display === "block") {
+      e.preventDefault()
+      clearTimeout(linkSearchTimer)
       linkSearchResults.style.display = "none"
+      linkSearchInput.setAttribute("aria-expanded", "false")
       linkSearchInput.value = ""
     }
   }, opts)

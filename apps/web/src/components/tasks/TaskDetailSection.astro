@@ -1,0 +1,20 @@
+---
+import Icon from "../ui/Icon.astro"
+import { taskDetailSections, type TaskDetailSection } from "@lib/task-detail-layout"
+
+interface Props {
+  name: TaskDetailSection
+}
+const { name } = Astro.props
+const section = taskDetailSections.find(section => section.id === name)!
+---
+<details id={`td-section-${name}`} class="td-section" data-layout-item={name} open={name !== "activity"}>
+  <summary class="td-section__summary">
+    <Icon name={section.icon} size={18} />
+    <span>{section.label}</span>
+    <Icon name="chevron-down" size={16} class="td-section__chevron" />
+  </summary>
+  <div class="td-section__body">
+    <slot />
+  </div>
+</details>

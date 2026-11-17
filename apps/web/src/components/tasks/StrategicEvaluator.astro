@@ -1,11 +1,13 @@
 ---
 import { getCollection } from "astro:content"
 import Icon from "../ui/Icon.astro"
+interface Props { embedded?: boolean }
+const { embedded = false } = Astro.props
 const frameworks = await getCollection("frameworks")
 ---
 
-<section id="strategic-evaluator-inline" class="ticket-scoring" data-frameworks={JSON.stringify(frameworks)} aria-labelledby="se-title">
-  <h3 id="se-title">Scoring & frameworks</h3>
+<section id="strategic-evaluator-inline" class:list={["ticket-scoring", { "ticket-scoring--embedded": embedded }]} data-frameworks={JSON.stringify(frameworks)} aria-labelledby="se-title">
+  <h3 id="se-title" class:list={{ "sr-only": embedded }}>Scoring & frameworks</h3>
   <p class="settings-hint">Choose a framework, enter your estimates, and save the evaluation.</p>
   <label for="se-framework">Scoring framework</label>
   <select id="se-framework" class="form-select" disabled>
@@ -30,6 +32,7 @@ const frameworks = await getCollection("frameworks")
 
 <style>
   .ticket-scoring { display: grid; gap: .75rem; min-width: 0; border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1rem; background: var(--bg-card); }
+  .ticket-scoring--embedded { padding: 0; border: 0; background: transparent; }
   .ticket-scoring h3 { margin: 0; font-size: 1rem; }
   .ticket-scoring fieldset { min-width: 0; border: 0; padding: 0; margin: 0; }
   .ticket-scoring__fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: 1rem; }

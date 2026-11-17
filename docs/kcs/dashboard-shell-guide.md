@@ -138,6 +138,31 @@ A browser with no saved theme uses Auto. Auto follows the Home Assistant theme
 inside ingress and the system appearance outside it. An explicit Light, Dark or
 Custom choice in Settings still takes priority.
 
+## Task detail layout
+
+Description appears immediately after the title by default. Select a section
+heading to collapse or reopen that section. Use **Save** or **Cancel** in the
+Description editor. A failed save keeps your draft available for retry.
+Activity Log starts closed and loads
+when you open it. If the request fails, use **Retry** in Activity Log.
+
+Select **Focus mode** in a ticket to use the full app window. The same task and
+drafts stay open. **Exit Focus** or **Escape** returns to the docked inspector or
+centered dialog for the current window size. Use **Close detail** to go back to
+the page you opened the ticket from.
+
+Open **Task detail layout** from the ticket toolbar or from **Settings →
+Tasks & Boards**. Drag a section by its grip or move it using the arrows. Open
+**Fields** next to Properties, Scheduling or Metadata to arrange the fields in
+that group. **Reset layout** restores the original order from either entry
+point.
+
+The layout applies to all tickets in the current browser storage context.
+Another browser profile, a direct app address, or an embedded Home Assistant
+session can have its own layout. If the browser blocks storage, the ticket keeps
+the previous layout and the editor displays a save error. Allow site storage
+and try the move again.
+
 ## Docked Task Inspector and Ingress Reload Persistence
 
 At inner widths of `1440px` or wider (including `1920x1080` monitors with the Home Assistant sidebar expanded), opening a task docks `#task-detail-overlay` as a `420px` right workspace pane (`body.has-docked-inspector`) styled via CSS `@container` queries (`container-name: task-inspector`). While docked, `body` scroll stays unlocked, `#task-detail-panel` uses `role="region"` and `aria-modal="false"`, and SearchHub plus single-key shortcuts remain active whenever focus is outside editable panel inputs. Below `1440px`, the inspector switches back to a modal dialog (`role="dialog"`, `aria-modal="true"`) without discarding unsaved title, description, or checklist edits.
