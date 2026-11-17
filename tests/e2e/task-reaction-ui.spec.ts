@@ -134,7 +134,6 @@ test("reactions load on demand through ingress and update only rendered card cou
     const otherTaskPanel = otherPage.locator('[data-reaction-panel="task"]')
     const otherCommentPanel = otherPage.locator(`#td-comment-${commentId} [data-reaction-panel]`)
     await otherTaskPanel.locator("summary").press("Enter")
-    await otherPage.locator("#td-sidebar-toggle").press("Enter")
     await otherCommentPanel.locator("summary").press("Enter")
     await expect(otherTaskPanel.getByRole("listitem")).toContainText(literalText)
     await expect(otherCommentPanel.getByRole("listitem")).toContainText("👍")

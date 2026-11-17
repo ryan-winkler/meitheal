@@ -232,6 +232,9 @@ importers:
       sanitize-html:
         specifier: ^2.18.1
         version: 2.18.1
+      sortablejs:
+        specifier: 1.15.7
+        version: 1.15.7
       undici:
         specifier: ^8.12.4
         version: 8.12.4
@@ -252,9 +255,6 @@ importers:
         specifier: ^11.1.12
         version: 11.1.12(astro@7.4.10(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.46.0)(tsx@4.23.15)(yaml@2.9.1))
       '@fontsource-variable/geist':
-        specifier: ^5.3.0
-        version: 5.3.0
-      '@fontsource-variable/inter':
         specifier: ^5.3.0
         version: 5.3.0
       '@fontsource-variable/jetbrains-mono':
@@ -278,6 +278,9 @@ importers:
       '@types/sanitize-html':
         specifier: ^2.16.2
         version: 2.16.2
+      '@types/sortablejs':
+        specifier: 1.15.9
+        version: 1.15.9
       '@types/ws':
         specifier: ^8.18.2
         version: 8.18.2
@@ -818,9 +821,6 @@ packages:
   '@fontsource-variable/geist@5.3.0':
     resolution: {integrity: sha512-j0m+vLQuG5XAYoHtGCVu0spvlGreR3EzpECUVzkFmI1mTVnAO38l/NEPDCFgZ177JxzYJCLSmTQibIiYPilGrA==}
 
-  '@fontsource-variable/inter@5.3.0':
-    resolution: {integrity: sha512-OupL48va4JNofb97w6NYeF9S7W/kHNKM0Er8Dem5nqi4jeOLrVJDoE8tZEpnMJmtkvNbB1EIPPwHcdkF6b1oUA==}
-
   '@fontsource-variable/jetbrains-mono@5.3.0':
     resolution: {integrity: sha512-F32xpS2NsGYoQi2ADSkKTgpJj7ozajsGgDJ8woTnqjmIB+dxDIqImjl4pXZVEExu8UFZ2ndhmX18EBS/hdz3Lw==}
 
@@ -1348,6 +1348,9 @@ packages:
 
   '@types/sanitize-html@2.16.2':
     resolution: {integrity: sha512-kuAbgDCFv418flrp3z4o/4ufLA/5ovmXRH0L419iZCPGO7w00znjeDI5Wy/KZWNIBpDQc7hucCK+J5almB6FyA==}
+
+  '@types/sortablejs@1.15.9':
+    resolution: {integrity: sha512-7HP+rZGE2p886PKV9c9OJzLBI6BBJu1O7lJGYnPyG3fS4/duUCcngkNCjsLwIMV+WMqANe3tt4irrXHSIe68OQ==}
 
   '@types/trusted-types@2.0.7':
     resolution: {integrity: sha512-ScaPdn1dQczgbl0QFTeTOmVHFULt394XJgOQNoyVhZ6r2vLnMLJfBPd53SB52T/3G36VI1/g2MZaX0cwDuXsfw==}
@@ -2401,6 +2404,9 @@ packages:
     resolution: {integrity: sha512-j7WyPdf0CJoutMzMoPLF/bVXHtKZIT9Rb4eGeEbWw8X2t5oirjPgpL+OpaENZrILYaXqYwnVH+qgUwVbl+pUJQ==}
     engines: {node: '>= 18'}
 
+  sortablejs@1.15.7:
+    resolution: {integrity: sha512-Kk8wLQPlS+yi1ZEf48a4+fzHa4yxjC30M/Sr2AnQu+f/MPwvvX9XjZ6OWejiz8crBsLwSq8GHqaxaET7u6ux0A==}
+
   source-map-js@1.2.2:
     resolution: {integrity: sha512-KGj/8Y43x35aZVDtt+J4mK1hoLGHULMYfSkODJNQjNDC3oW1PqPoxMwo0pLUsWM/UEGzON/NxeHywEfNXNP3Vw==}
     engines: {node: '>=0.10.0'}
@@ -3196,8 +3202,6 @@ snapshots:
 
   '@fontsource-variable/geist@5.3.0': {}
 
-  '@fontsource-variable/inter@5.3.0': {}
-
   '@fontsource-variable/jetbrains-mono@5.3.0': {}
 
   '@fontsource-variable/outfit@5.3.0': {}
@@ -3612,6 +3616,8 @@ snapshots:
   '@types/sanitize-html@2.16.2':
     dependencies:
       htmlparser2: 12.0.0
+
+  '@types/sortablejs@1.15.9': {}
 
   '@types/trusted-types@2.0.7':
     optional: true
@@ -4605,6 +4611,8 @@ snapshots:
   sisteransi@2.0.0: {}
 
   smol-toml@1.9.1: {}
+
+  sortablejs@1.15.7: {}
 
   source-map-js@1.2.2: {}
 

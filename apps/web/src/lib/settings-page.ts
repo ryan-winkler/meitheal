@@ -1,5 +1,6 @@
 import { requestNotificationPermission, showTaskNotification } from "@domains/offline/notifications"
 import { isPwaSupported } from "@domains/offline/sw-register"
+import { initTaskDetailLayoutEditor } from "@lib/task-detail-layout-controller"
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { initSettingsFeedback } from "@lib/settings-feedback-controller"
 import { initSettingsController } from "@lib/settings-controller"
@@ -62,6 +63,8 @@ function bootSettingsPage(): void {
   initSettingsWorkspace(pageLifecycle.signal)
   initOrganizationLabels(pageLifecycle.signal)
   initSettingsHomeAssistantArea(pageLifecycle.signal)
+  const taskLayout = document.querySelector<HTMLElement>("#settings-task-detail-layout [data-task-layout-editor]")
+  if (taskLayout) initTaskDetailLayoutEditor(taskLayout, pageLifecycle.signal)
   initPwaNotificationTest()
 }
 

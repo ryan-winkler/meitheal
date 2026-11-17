@@ -453,7 +453,6 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
     <!-- Resource Hints: Preload critical fonts to prevent layout shift -->
     <link rel="preload" href={geistWoff2} as="font" type="font/woff2" crossorigin="anonymous" />
     
-    <!-- Inter font self-hosted via @fontsource-variable/inter (imported in global.css) -->
     {!behindIngress && <script is:inline>
       // Register before ClientRouter: drawer history belongs to the current DOM.
       if (!window.__meithealTicketHistoryGuard) {

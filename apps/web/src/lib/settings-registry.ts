@@ -291,6 +291,13 @@ export const SETTINGS_FIELDS: SettingsFieldDescriptor[] = [
     keywords: ["sidebar", "navigation", "custom links", "menu", "order", "visibility"],
   },
   {
+    id: "field-task-detail-layout",
+    label: "Task detail layout",
+    anchorId: "settings-task-detail-layout",
+    sectionId: "tasks-boards-settings",
+    keywords: ["ticket", "task details", "sections", "reorder", "focus mode", "description"],
+  },
+  {
     id: "field-task-nav-prefs",
     label: "New task types",
     anchorId: "task-nav-prefs-card",
