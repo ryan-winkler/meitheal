@@ -120,9 +120,9 @@ function isDueDayOverdue(dueDate: string | null, today: string, timezone = "Euro
   return isDueOverdue(dueDate, timezone, today);
 }
 
-function isOverdue(dueDate: string | null, isDone: boolean, timezone = "Europe/Dublin"): boolean {
+function isOverdue(dueDate: string | null, isDone: boolean, timezone: string, now: Date): boolean {
   if (isDone) return false;
-  return isDueDayOverdue(dueDate, calendarToday(timezone), timezone);
+  return isDueOverdue(dueDate, timezone, calendarToday(timezone, now), now.getTime())
 }
 
 // =============================================================================
@@ -326,7 +326,7 @@ export async function getTasksForView(options: TaskViewOptions = {}): Promise<Ta
   }
 }
 
-function toTaskViewItem(row: Record<string, unknown>, slim = false, timezone = "Europe/Dublin"): TaskViewItem {
+function toTaskViewItem(row: Record<string, unknown>, slim = false, timezone = "Europe/Dublin", now = new Date()): TaskViewItem {
   const status = String(row.status ?? "pending");
   const priority = Number(row.priority ?? 3);
   const isDone = status === "complete";
@@ -335,7 +335,7 @@ function toTaskViewItem(row: Record<string, unknown>, slim = false, timezone = "
   const riceInputs = readRiceInputs(fp)
   const rice = riceInputs ? riceLensScore(riceInputs) : null
   const deferredAt = row.deferred_at == null ? null : Number(row.deferred_at)
-  const overdue = deferredAt === null && isOverdue(dueDate, isDone, timezone);
+  const overdue = deferredAt === null && isOverdue(dueDate, isDone, timezone, now)
 
   const item: TaskViewItem = {
     id: String(row.id),
@@ -466,6 +466,7 @@ export async function getTodayTaskRows(
   today: string,
   includeUnscheduled: boolean,
   timezone = "Europe/Dublin",
+  now = new Date(),
 ) {
   await ensureSchema()
   const resolvedTimezone = resolveTimezone(timezone)
@@ -502,7 +503,7 @@ export async function getTodayTaskRows(
     completedTasks: completedTodaySummaries(completed?.rows ?? []),
     completedTodayCount: Number(rows[0]?.completed_today ?? 0),
     openUnscheduledCount: Number(rows[0]?.open_unscheduled ?? 0),
-    tasks: rows.filter(row => row.id !== null).map(row => toTaskViewItem(row as Record<string, unknown>, false, resolvedTimezone)),
+    tasks: rows.filter(row => row.id !== null).map(row => toTaskViewItem(row as Record<string, unknown>, false, resolvedTimezone, now)),
   }
 }
 
