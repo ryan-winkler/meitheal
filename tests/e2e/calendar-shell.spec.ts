@@ -309,7 +309,8 @@ test.describe("Calendar Shell", () => {
       await detailStatus.selectOption("complete")
       await expect(dayCell).toHaveAccessibleName("8 July 2031")
       await page.getByRole("button", { name: "Close detail" }).click()
-      await dayCell.press("Enter")
+      await expect(dayCell).toBeFocused()
+      await page.keyboard.press("Enter")
       await expect(agenda).toContainText("No matching tasks or local events")
     } finally {
       for (const id of createdIds) await request.delete(`/api/tasks/${id}`, { data: {} })

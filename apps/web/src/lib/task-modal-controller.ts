@@ -214,10 +214,11 @@
             _sidebarToggle?.setAttribute("aria-expanded", "false");
             _sidebarChevron?.classList.remove("td-chevron-open");
             // P3-4: Restore focus to the element that triggered the panel
-            if (!search && _previouslyFocused instanceof HTMLElement &&
-                _previouslyFocused !== document.body && _previouslyFocused.isConnected &&
-                !_previouslyFocused.closest("[hidden], [inert], .filtered-out")) {
-              _previouslyFocused.focus()
+            const origin = _previouslyFocused?.isConnected ? _previouslyFocused
+              : _previouslyFocused?.id ? document.getElementById(_previouslyFocused.id) : null
+            if (!search && origin instanceof HTMLElement && origin !== document.body &&
+                !origin.closest("[hidden], [inert], .filtered-out")) {
+              origin.focus()
             } else if (!search) {
               document.querySelector<HTMLElement>('[data-view-tab][aria-current="page"], #triage-heading, #deferred-heading, #pinned-heading, #today-filter-status')?.focus()
             }

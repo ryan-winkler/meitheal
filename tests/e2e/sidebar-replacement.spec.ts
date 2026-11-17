@@ -53,6 +53,7 @@ test("sidebar can close again in desktop hover mode and on a phone", async ({ pa
   await page.addInitScript(() => {
     localStorage.setItem("meitheal-theme", "knight-rider")
     localStorage.setItem("meitheal-appearance", JSON.stringify({ sidebar: "hover" }))
+    localStorage.setItem("meitheal-task-nav-prefs", JSON.stringify({ pinnedViews: ["table"] }))
   })
   await page.goto("/tasks")
 
@@ -78,6 +79,11 @@ test("sidebar can close again in desktop hover mode and on a phone", async ({ pa
   await edge.hover()
   await expect(body).toHaveClass(/sidebar-collapsed/)
   await sidebar.locator('a[data-page="dashboard"]').hover()
+  await expect(body).not.toHaveClass(/sidebar-collapsed/)
+  const unpin = sidebar.locator('[data-task-view-pinned-item="table"]').getByRole("button", { name: "Unpin Table from navigation" })
+  await unpin.focus()
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent("meitheal:theme-changed")))
+  await expect(unpin).toBeFocused()
   await expect(body).not.toHaveClass(/sidebar-collapsed/)
   await edge.click()
   await expect(body).toHaveClass(/sidebar-collapsed/)

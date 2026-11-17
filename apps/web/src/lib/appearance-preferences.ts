@@ -129,7 +129,9 @@ export function bindAppearanceNavigation(signal: AbortSignal): void {
     if (hoverEnabled() && event.target !== edgeButton) setSidebarCollapsed(false)
   }, { signal })
   sidebar?.addEventListener("focusout", () => queueMicrotask(closeHover), { signal })
-  window.addEventListener("meitheal:theme-changed", syncSidebarState, { signal })
+  window.addEventListener("meitheal:theme-changed", () => {
+    if (document.documentElement.dataset.appearanceSidebar === "remember") syncSidebarState()
+  }, { signal })
   window.addEventListener("resize", () => {
     syncSidebarState()
     if (hoverEnabled() && (pointerInside() || (focusInside() && document.activeElement !== edgeButton))) {

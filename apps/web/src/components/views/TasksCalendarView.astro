@@ -214,6 +214,7 @@ const agendaNote = filter.matches && !Object.values(tasksByDay).some(day => day.
           grid.flat().map((cell) => {
             const ranges = cell.isCurrentMonth && filter.showConnectedEvents ? householdDayRanges(cell.dateStr, tz) : undefined
             return <div
+              id={cell.isCurrentMonth ? `calendar-day-${cell.dateStr}` : undefined}
               class={`cal-cell ${cell.isToday ? "cal-today" : ""} ${!cell.isCurrentMonth ? "cal-other" : ""} ${cell.isWeekend && cell.isCurrentMonth ? "cal-weekend" : ""} ${cell.taskCount > 0 ? "cal-has-tasks" : ""}`}
               data-date={cell.dateStr}
               data-day-ranges={ranges?.length === 1 ? undefined : JSON.stringify(ranges)}
