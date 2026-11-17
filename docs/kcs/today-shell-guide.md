@@ -66,6 +66,8 @@ Today refreshes the counters and progress bar after confirmed task changes and e
 
 If Today reports that it could not refresh after reopening a task, reload Today to see the saved status and deadline. If the expanded Unscheduled list cannot refresh, it keeps the current rows and offers **Retry**.
 
+Today uses one request time for its household day, Focus deadlines and overdue styling. A refresh that crosses midnight keeps these values consistent until the next request.
+
 ### Update several tasks
 
 Turn on multi-select in **Focus**, select the task checkboxes, then choose **Complete**, **Snooze** or **Delete**. If only some changes are confirmed, Today refreshes the task rows and counters and keeps the remaining tasks selected. Check those tasks before retrying. If Today cannot confirm any of the changes, the current selection stays available for review.

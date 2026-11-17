@@ -68,7 +68,7 @@ function focusDueLabel(task: TaskViewItem): string | undefined {
 try {
   const todayStr = todayIsoDate
   const includeUnscheduled = requestedUnscheduledPage(Astro.url.searchParams) !== null
-  const { tasks, completedTodayCount: completed, openUnscheduledCount, completedTasks } = await getTodayTaskRows(todayStr, includeUnscheduled, todayTimeZone)
+  const { tasks, completedTodayCount: completed, openUnscheduledCount, completedTasks } = await getTodayTaskRows(todayStr, includeUnscheduled, todayTimeZone, todayDate)
   completedTodayCount = completed
   completedTaskSummaries = completedTasks
 
