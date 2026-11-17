@@ -10,6 +10,19 @@ export function boardSessionProof(id: string) {
   return createHmac("sha256", boardSessionSecret).update(id).digest("hex")
 }
 
+export function boardGroupCursor(actorId: string, boardId: string, after: string): string {
+  const proof = createHmac("sha256", boardSessionSecret).update(JSON.stringify(["group-page", actorId, boardId, after])).digest("hex")
+  return `${after}.${proof}`
+}
+
+export function readBoardGroupCursor(actorId: string, boardId: string, cursor: string): string | null {
+  const id = cursor.slice(0, cursor.lastIndexOf("."))
+  if (!id || id.length > 150) return null
+  const expected = Buffer.from(boardGroupCursor(actorId, boardId, id))
+  const actual = Buffer.from(cursor)
+  return actual.length === expected.length && timingSafeEqual(actual, expected) ? id : null
+}
+
 export async function currentBoardUser(locals: App.Locals, signal: AbortSignal, writeRequest?: Request) {
   const user = verifiedIngressUser(locals)
   if (!user) return null

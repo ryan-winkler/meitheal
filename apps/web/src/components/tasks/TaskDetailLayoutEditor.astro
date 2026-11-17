@@ -1,0 +1,72 @@
+---
+import Icon from "../ui/Icon.astro"
+import { taskDetailSections } from "@lib/task-detail-layout"
+import { t, type Locale } from "../../i18n/translations"
+
+interface Props {
+  locale: Locale
+}
+const { locale } = Astro.props
+const moveControls = (label: string) => ({
+  up: `${t("task_layout.move_up", locale)} · ${label}`,
+  down: `${t("task_layout.move_down", locale)} · ${label}`,
+})
+---
+<div class="td-layout-editor" data-task-layout-editor
+  data-moved={t("task_layout.moved", locale)}
+  data-reset={t("task_layout.reset_done", locale)}
+  data-save-failed={t("task_layout.save_failed", locale)}
+  data-drag-failed={t("task_layout.drag_failed", locale)}
+>
+  <div class="td-layout-editor__intro">
+    <p>{t("task_layout.instructions", locale)}</p>
+    <button type="button" class="btn btn-secondary" data-layout-reset>{t("task_layout.reset", locale)}</button>
+  </div>
+  <p class="td-layout-editor__error" data-layout-error hidden></p>
+  <p class="sr-only" role="status" data-layout-status></p>
+  <ol class="td-layout-editor__list" data-layout-order="sections" aria-label={t("task_layout.sections", locale)}>
+    {taskDetailSections.map(section => (
+      <li data-layout-item={section.id} class="td-layout-editor__item">
+        <div class="td-layout-editor__row">
+          <span class="td-layout-editor__handle" data-layout-handle aria-hidden="true">
+            <Icon name="grip-vertical" size={20} />
+          </span>
+          <span class="td-layout-editor__label" data-layout-label>{section.label}</span>
+          <button type="button" class="td-layout-icon-btn" data-layout-move="up"
+            title={moveControls(section.label).up} aria-label={moveControls(section.label).up}>
+            <Icon name="arrow-up" size={18} />
+          </button>
+          <button type="button" class="td-layout-icon-btn" data-layout-move="down"
+            title={moveControls(section.label).down} aria-label={moveControls(section.label).down}>
+            <Icon name="arrow-down" size={18} />
+          </button>
+        </div>
+        {"fields" in section && (
+          <details class="td-layout-editor__fields">
+            <summary>{t("task_layout.fields", locale)} · {section.label}</summary>
+            <ol class="td-layout-editor__list" data-layout-order={section.id} aria-label={section.label}>
+              {section.fields.map(([id, label]) => (
+                <li data-layout-item={id} class="td-layout-editor__item">
+                  <div class="td-layout-editor__row">
+                    <span class="td-layout-editor__handle" data-layout-handle aria-hidden="true">
+                      <Icon name="grip-vertical" size={20} />
+                    </span>
+                    <span class="td-layout-editor__label" data-layout-label>{label}</span>
+                    <button type="button" class="td-layout-icon-btn" data-layout-move="up"
+                      title={moveControls(label).up} aria-label={moveControls(label).up}>
+                      <Icon name="arrow-up" size={18} />
+                    </button>
+                    <button type="button" class="td-layout-icon-btn" data-layout-move="down"
+                      title={moveControls(label).down} aria-label={moveControls(label).down}>
+                      <Icon name="arrow-down" size={18} />
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          </details>
+        )}
+      </li>
+    ))}
+  </ol>
+</div>
