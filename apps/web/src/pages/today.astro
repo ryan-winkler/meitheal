@@ -514,7 +514,7 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
         <ul>
           {completedTaskSummaries.map(task => (
             <li>
-              <a href={buildTaskPath(task.id)} data-task-detail-link={task.id}>
+              <a href={buildTaskPath(task.id)} data-task-detail-link={task.id} data-today-completion>
                 <Icon name="checkbox" size={17} />
                 <span>{task.title}</span>
               </a>

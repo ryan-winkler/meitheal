@@ -297,7 +297,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
     let captureSession = 0
     let preserveAssignee = false
     let isHydrating = false
-    let draftPublicationNeedsRefresh = false
+    let refreshAfterCaptureClose = false
     let drafts: ReturnType<typeof connectTaskDrafts> | undefined
     let draftLoading = false
     let editedWhileLoading = false
@@ -607,8 +607,8 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
           calendarCaptureTask = undefined
           openTaskDetailHandoff(taskId)
         }
-        if (draftPublicationNeedsRefresh) {
-          draftPublicationNeedsRefresh = false
+        if (refreshAfterCaptureClose) {
+          refreshAfterCaptureClose = false
           document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "created" } }))
         }
       }
@@ -1067,11 +1067,11 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
         showSubmit(bound, disabled)
       },
       taskPublished() {
-        draftPublicationNeedsRefresh = true
+        refreshAfterCaptureClose = true
       },
       openTask(receipt) {
         queueCreatedTask(receipt.taskId)
-        draftPublicationNeedsRefresh = true
+        refreshAfterCaptureClose = true
         closeNewTaskModal()
       },
     } satisfies Parameters<typeof connectTaskDrafts>[1]
@@ -1358,8 +1358,10 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
             if (created.id && created.task_kind !== "quick") {
               queueCreatedTask(created.id)
             }
+            const calendar = document.querySelector("#calendar-shell[data-calendar-ready='true']")
+            if (calendar) refreshAfterCaptureClose = true
             closeNewTaskModal()
-            document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", {
+            if (!calendar) document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", {
               detail: { action: "created" }
             }));
 

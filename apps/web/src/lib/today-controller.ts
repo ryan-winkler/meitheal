@@ -27,6 +27,7 @@ import { isDisabledCharacterShortcut } from "@lib/single-key-shortcuts"
 import { taskApi } from "./task-api-client"
 import { hydrateTaskAssignees } from "./task-assignee-display"
 import { showToast } from "./toast"
+import { isClosedStatus } from "./status-config"
 import { confirmDialog } from "./confirm-dialog"
 import { onTaskCompleted } from "./gamification-hook"
 import { taskBackgroundUrl } from "./task-page-url"
@@ -111,7 +112,7 @@ export function initTodayPage(options?: Partial<TodayControllerOptions>) {
   setupSectionCollapse(container)
   const initialSearch = window.location.search
   restoreFilterState()
-  setupDragReorder(container)     // G31
+  const enableDragReorder = setupDragReorder(container) // G31
   setupWipLimit(container)        // G32
   setupAutoRefresh(container)     // G33
   setupEveningReview(container, lm)   // G34
@@ -122,9 +123,19 @@ export function initTodayPage(options?: Partial<TodayControllerOptions>) {
     void hydrateTaskAssignees(scope, lm.signal)
   })
   setupFilters(container, refreshUnscheduled)
+  const refreshReopened = setupReopenedDueTasks(container, row => {
+    enableDragReorder(row)
+    const list = row.parentElement
+    if (!list) return
+    addBatchCheckboxes(list)
+    renderEffortIndicators(list)
+    void hydrateTaskAssignees(list, lm.signal)
+  })
   lm.on(document, "meitheal:task-status-saved", event => {
     const { id, status } = (event as CustomEvent<{ id: string; status: string }>).detail
-    if (typeof status === "string") syncTodayTaskStatus(container, id, status)
+    if (typeof status !== "string") return
+    refreshReopened(id, status)
+    syncTodayTaskStatus(container, id, status)
   })
   lm.on(container, "meitheal:today-status-committed", () => {
     applyFilters(container)
@@ -773,88 +784,88 @@ function setupDragReorder(container: HTMLElement) {
   let dragSource: HTMLElement | null = null
   let reorderPending = false
 
-  // A page of unscheduled rows cannot safely overwrite board-wide positions.
-  container.querySelectorAll<HTMLElement>(".today-section__list:not(#today-unscheduled-list)").forEach(list => {
-    list.querySelectorAll<HTMLElement>(".tli").forEach(item => {
-      item.setAttribute("draggable", "true")
+  function enable(item: HTMLElement) {
+    item.setAttribute("draggable", "true")
 
-      lm.on(item, "dragstart", (e: Event) => {
-        if (reorderPending) {
-          e.preventDefault()
-          return
-        }
-        const de = e as DragEvent
-        dragSource = item
-        item.classList.add("tli--dragging")
-        de.dataTransfer?.setData("text/plain", item.dataset.id ?? "")
-        if (de.dataTransfer) de.dataTransfer.effectAllowed = "move"
-      })
-
-      lm.on(item, "dragend", () => {
-        item.classList.remove("tli--dragging")
-        dragSource = null
-        // Remove all drop indicators
-        container.querySelectorAll(".tli--drag-over").forEach(el =>
-          el.classList.remove("tli--drag-over")
-        )
-      })
-
-      lm.on(item, "dragover", (e: Event) => {
+    lm.on(item, "dragstart", (e: Event) => {
+      if (reorderPending) {
         e.preventDefault()
-        const de = e as DragEvent
-        if (de.dataTransfer) de.dataTransfer.dropEffect = "move"
-        item.classList.add("tli--drag-over")
-      })
-
-      lm.on(item, "dragleave", () => {
-        item.classList.remove("tli--drag-over")
-      })
-
-      lm.on(item, "drop", async (e: Event) => {
-        e.preventDefault()
-        const de = e as DragEvent
-        item.classList.remove("tli--drag-over")
-        if (reorderPending || !dragSource || dragSource === item) return
-
-        // Only allow reorder within same section list
-        const sourceList = dragSource.closest(".today-section__list")
-        const targetList = item.closest(".today-section__list")
-        if (!sourceList || sourceList !== targetList) return
-
-        const priorOrder = Array.from(sourceList.children)
-        // Move DOM element
-        const rect = item.getBoundingClientRect()
-        const midY = rect.top + rect.height / 2
-        if (de.clientY < midY) {
-          item.parentNode?.insertBefore(dragSource, item)
-        } else {
-          item.parentNode?.insertBefore(dragSource, item.nextSibling)
-        }
-
-        // Persist new order via API
-        const orderedIds = Array.from(
-          (sourceList as HTMLElement).querySelectorAll<HTMLElement>(".tli")
-        ).map(el => el.dataset.id).filter(Boolean) as string[]
-
-        reorderPending = true
-        try {
-          const result = await taskApi.raw("/api/tasks/reorder", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ ordered_ids: orderedIds }),
-          })
-          if (!result.ok) throw new Error("Task order rejected")
-        } catch {
-          if (sourceList.isConnected) {
-            sourceList.append(...priorOrder)
-            showToast("common.order_retry", "error")
-          }
-        } finally {
-          reorderPending = false
-        }
-      })
+        return
+      }
+      const de = e as DragEvent
+      dragSource = item
+      item.classList.add("tli--dragging")
+      de.dataTransfer?.setData("text/plain", item.dataset.id ?? "")
+      if (de.dataTransfer) de.dataTransfer.effectAllowed = "move"
     })
-  })
+
+    lm.on(item, "dragend", () => {
+      item.classList.remove("tli--dragging")
+      dragSource = null
+      // Remove all drop indicators
+      container.querySelectorAll(".tli--drag-over").forEach(el =>
+        el.classList.remove("tli--drag-over")
+      )
+    })
+
+    lm.on(item, "dragover", (e: Event) => {
+      e.preventDefault()
+      const de = e as DragEvent
+      if (de.dataTransfer) de.dataTransfer.dropEffect = "move"
+      item.classList.add("tli--drag-over")
+    })
+
+    lm.on(item, "dragleave", () => {
+      item.classList.remove("tli--drag-over")
+    })
+
+    lm.on(item, "drop", async (e: Event) => {
+      e.preventDefault()
+      const de = e as DragEvent
+      item.classList.remove("tli--drag-over")
+      if (reorderPending || !dragSource || dragSource === item) return
+
+      // Only allow reorder within same section list
+      const sourceList = dragSource.closest(".today-section__list")
+      const targetList = item.closest(".today-section__list")
+      if (!sourceList || sourceList !== targetList) return
+
+      const priorOrder = Array.from(sourceList.children)
+      // Move DOM element
+      const rect = item.getBoundingClientRect()
+      const midY = rect.top + rect.height / 2
+      if (de.clientY < midY) {
+        item.parentNode?.insertBefore(dragSource, item)
+      } else {
+        item.parentNode?.insertBefore(dragSource, item.nextSibling)
+      }
+
+      // Persist new order via API
+      const orderedIds = Array.from(
+        (sourceList as HTMLElement).querySelectorAll<HTMLElement>(".tli")
+      ).map(el => el.dataset.id).filter(Boolean) as string[]
+
+      reorderPending = true
+      try {
+        const result = await taskApi.raw("/api/tasks/reorder", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ ordered_ids: orderedIds }),
+        })
+        if (!result.ok) throw new Error("Task order rejected")
+      } catch {
+        if (sourceList.isConnected) {
+          sourceList.append(...priorOrder)
+          showToast("common.order_retry", "error")
+        }
+      } finally {
+        reorderPending = false
+      }
+    })
+  }
+  // A page of unscheduled rows cannot safely overwrite board-wide positions.
+  container.querySelectorAll<HTMLElement>(".today-section__list:not(#today-unscheduled-list) .tli").forEach(enable)
+  return enable
 }
 
 // ── G32: WIP Limit Warning ────────────────────────────────────────────────
@@ -917,6 +928,62 @@ function todayScopeParams(container: HTMLElement): URLSearchParams {
   if (todayDay) params.set("expected_day", todayDay)
   if (todayTimezone) params.set("expected_timezone", todayTimezone)
   return params
+}
+
+function setupReopenedDueTasks(container: HTMLElement, mountRow: (row: HTMLElement) => void) {
+  const list = container.querySelector<HTMLElement>("#today-due-list")
+  const shell = container.querySelector<HTMLElement>("#page-shell")
+  const signal = lm.signal
+  const reopened = new Set<string>()
+  let request: AbortController | undefined
+  let refreshNumber = 0
+
+  return (id: string, status: string) => {
+    if (!list || !shell) return
+    const row = `.tli[data-id="${CSS.escape(id)}"]`
+    const completed = container.querySelector(`.today-completed-tasks a[data-task-detail-link="${CSS.escape(id)}"]`)
+    if (!completed && !reopened.has(id)) return
+    if (isClosedStatus(status) || list.querySelector(row)) reopened.delete(id)
+    else reopened.add(id)
+    request?.abort()
+    if (!reopened.size) return
+    request = new AbortController()
+    const current = request
+    const url = taskBackgroundUrl()
+    url.hash = ""
+    url.searchParams.set("todayRefresh", `${performance.timeOrigin}-${++refreshNumber}`)
+    void fetch(url, {
+      signal: AbortSignal.any([signal, current.signal, AbortSignal.timeout(10_000)]),
+      cache: "no-store", redirect: "error",
+    }).then(async response => {
+      if (!response.ok) throw new Error("Today request failed")
+      const html = new DOMParser().parseFromString(await response.text(), "text/html")
+      const incoming = html.querySelector<HTMLElement>("#page-shell")
+      if (signal.aborted || current.signal.aborted) return
+      if (!incoming) throw new Error("Today response unavailable")
+      if (incoming.dataset.todayDay !== shell.dataset.todayDay || incoming.dataset.todayTimezone !== shell.dataset.todayTimezone) {
+        showTodayRollover(container)
+      } else {
+        for (const taskId of reopened) {
+          const selector = `.tli[data-id="${CSS.escape(taskId)}"]`
+          const task = incoming.querySelector<HTMLElement>(`#today-due-list ${selector}`)
+          if (!task || list.querySelector(selector)) continue
+          list.append(task)
+          mountRow(task)
+        }
+        const count = container.querySelector("#today-due-list-count")
+        if (count) count.textContent = String(list.querySelectorAll(".tli:not(.tli--done)").length)
+        const empty = list.querySelector<HTMLElement>("[data-today-due-empty]")
+        if (empty && list.querySelector(".tli:not(.tli--done)")) empty.hidden = true
+        applyFilters(container)
+      }
+      reopened.clear()
+    }).catch(() => {
+      if (!signal.aborted && !current.signal.aborted) {
+        showToast("Couldn’t refresh due tasks. Reload Today to see the saved changes.", "warning")
+      }
+    })
+  }
 }
 
 function setupAutoRefresh(container: HTMLElement) {
@@ -1000,6 +1067,7 @@ function renderCompletedTasks(container: HTMLElement, counts: TodayTaskCounts): 
       const link = document.createElement("a")
       link.href = buildTaskPath(task.id)
       link.dataset.taskDetailLink = task.id
+      link.dataset.todayCompletion = ""
       const title = document.createElement("span")
       title.textContent = task.title
       link.append(createSpriteIconElement("checkbox", { size: 17 }), title)
@@ -1010,7 +1078,7 @@ function renderCompletedTasks(container: HTMLElement, counts: TodayTaskCounts): 
   if (focused && (completed.hidden || !focused.isConnected)) {
     const id = focused instanceof HTMLAnchorElement ? focused.dataset.taskDetailLink : undefined
     const retained = id ? list?.querySelector<HTMLElement>(`a[data-task-detail-link="${CSS.escape(id)}"]`) : null
-    const fallback = completed.hidden ? container.querySelector<HTMLElement>("#clear-completed-btn") : summary
+    const fallback = completed.hidden ? container.querySelector<HTMLElement>("#today-filter-status") : summary
     ;(retained ?? fallback)?.focus({ preventScroll: true })
   }
   const empty = container.querySelector<HTMLElement>("[data-today-due-empty]")

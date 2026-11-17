@@ -1753,19 +1753,6 @@ try {
     color: var(--accent-text);
   }
 
-  .user-avatar-pill {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 20px;
-    height: 20px;
-    border-radius: 50%;
-    color: #fff;
-    font-size: 9px;
-    font-weight: 700;
-    letter-spacing: 0.5px;
-    flex-shrink: 0;
-  }
   .kanban-card.user-filtered-out {
     display: none !important;
   }
@@ -1795,62 +1782,6 @@ try {
   .kanban-inline-add .quick-add-error:empty {
     display: none;
   }
-  .type-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    display: inline-block;
-    flex-shrink: 0;
-  }
-  .type-dot-epic {
-    background: var(--type-epic);
-  }
-  .type-dot-story {
-    background: var(--type-story);
-  }
-  .type-dot-task {
-    background: var(--type-task);
-  }
-  .type-group-btn.active {
-    background: var(--accent-light);
-    border-color: var(--accent);
-    color: var(--accent);
-  }
-
-  /* Phase 20: Type badge on cards */
-  .type-badge {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 11px;
-    padding: 1px 5px;
-    border-radius: 4px;
-    border: 1px solid;
-    margin-right: 4px;
-    flex-shrink: 0;
-    line-height: 1;
-  }
-  .type-badge-epic {
-    background: color-mix(in srgb, var(--type-epic) 12%, transparent);
-    color: var(--type-epic);
-    border-color: color-mix(in srgb, var(--type-epic) 25%, transparent);
-  }
-  .type-badge-story {
-    background: color-mix(in srgb, var(--type-story) 12%, transparent);
-    color: var(--type-story);
-    border-color: color-mix(in srgb, var(--type-story) 25%, transparent);
-  }
-  .type-badge-task {
-    background: color-mix(in srgb, var(--type-task) 12%, transparent);
-    color: var(--type-task);
-    border-color: color-mix(in srgb, var(--type-task) 25%, transparent);
-  }
-
-  /* Hide actions visually to prevent overlapping with content */
-  .kanban-quick-actions[aria-hidden="true"] {
-    display: none;
-  }
-
   /* Phase 20: Swimlane groups */
   .swimlane-group {
     background: var(--surface);

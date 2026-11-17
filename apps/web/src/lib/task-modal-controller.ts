@@ -193,6 +193,9 @@
           if (!immediate && waitForDetailWrites(() => closeTD(reason, updateLocation))) return
           const closing = ++detailGeneration
           const previousCard = _previouslyFocused?.closest<HTMLElement>(".kanban-card")
+          const previousDay = _previouslyFocused?.closest<HTMLElement>(".cal-cell")?.dataset.date
+          const previousCompletion = _previouslyFocused instanceof HTMLAnchorElement &&
+            _previouslyFocused.hasAttribute("data-today-completion") ? _previouslyFocused.dataset.taskDetailLink : undefined
           closeTaskReferences()
           search?.lifetime.abort()
           deferral.opening(false)
@@ -217,7 +220,10 @@
             // P3-4: Restore focus to the element that triggered the panel
             const origin = _previouslyFocused?.isConnected ? _previouslyFocused
               : _previouslyFocused?.id ? document.getElementById(_previouslyFocused.id)
-              : previousCard ? document.querySelector<HTMLElement>(`.card-open-btn[data-id="${CSS.escape(previousCard.dataset.id ?? "")}"]`) : null
+              : previousCard ? document.querySelector<HTMLElement>(`.card-open-btn[data-id="${CSS.escape(previousCard.dataset.id ?? "")}"]`)
+              : previousDay ? document.querySelector<HTMLElement>(`.cal-cell[data-date="${CSS.escape(previousDay)}"]`) ??
+                document.querySelector<HTMLElement>("#calendar-shell .cal-today-btn")
+              : previousCompletion ? document.querySelector<HTMLElement>(`#today-due-list a[data-task-detail-link="${CSS.escape(previousCompletion)}"]`) : null
             if (!search && origin instanceof HTMLElement && origin !== document.body &&
                 !origin.closest("[hidden], [inert], .filtered-out")) {
               origin.focus()
