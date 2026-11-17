@@ -1,8 +1,15 @@
+import { createHash } from "node:crypto"
+
 /** Resolve credentials without exposing them through status or logs. */
 export interface HAConfiguration {
   baseUrl: string
   token: string
   source: "supervisor" | "settings" | "environment"
+}
+
+/** Compare configured sources without retaining raw credentials in display caches. */
+export function fingerprintHAConfiguration(config: HAConfiguration): string {
+  return createHash("sha256").update(JSON.stringify(config)).digest("hex")
 }
 
 export function resolveHAConfiguration(

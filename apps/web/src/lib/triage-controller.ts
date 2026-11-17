@@ -6,7 +6,7 @@ import { workerAllowsNetworkOnly } from "./network-only-worker"
 const cacheModes = new Set(["visible", "hidden", "disabled", "unavailable"])
 
 function queueUrl(): URL {
-  const url = taskBackgroundUrl(new URL(location.href))
+  const url = taskBackgroundUrl()
   url.searchParams.delete("open")
   url.searchParams.delete("comment")
   return url

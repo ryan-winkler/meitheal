@@ -135,14 +135,18 @@ export function initLaneManagementPanel(): void {
 
   const closeLaneMgmt = (): void => {
     laneMgmt.classList.add("hidden")
+    manageLanesBtn.setAttribute("aria-expanded", "false")
+    manageLanesBtn.focus()
   }
 
   pageLifecycle.on(manageLanesBtn, "click", () => {
     const isOpen = !laneMgmt.classList.contains("hidden")
     log.debug("Toggling lane management panel", { isOpen })
-    laneMgmt.classList.toggle("hidden", isOpen)
-
-    if (!isOpen) {
+    if (isOpen) closeLaneMgmt()
+    else {
+      laneMgmt.classList.remove("hidden")
+      manageLanesBtn.setAttribute("aria-expanded", "true")
+      laneMgmtClose?.focus()
       void renderLaneList()
     }
   })

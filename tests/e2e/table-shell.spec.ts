@@ -25,7 +25,7 @@ const test = base.extend<{ tableTasks: [TableTask, TableTask] }>({
       await use([await createTask("active", 1), await createTask("complete", 3)])
     } finally {
       for (const task of tasks) {
-        await request.delete(`/api/tasks/${task.id}`, { headers })
+        expect((await request.delete(`/api/tasks/${task.id}`, { headers, data: {} })).status()).toBe(204)
       }
     }
   },
@@ -66,6 +66,77 @@ test.describe("Table Shell", () => {
     await expect(page).toHaveURL(/advancedFilter=/)
     await expect(match).toBeVisible()
     await expect(excluded).toBeHidden()
+  })
+
+  test("Table search while Details is docked updates the background route", async ({ page, tableTasks }) => {
+    await page.setViewportSize({ width: 1600, height: 900 })
+    await page.goto("/table")
+    const [matching, other] = tableTasks
+    const table = page.getByRole("table")
+    await table.getByRole("link", { name: `${matching.ticket_key} — ${matching.title}`, exact: true }).click()
+    await expect(page.locator("#td-status")).toBeEnabled()
+    await expect(page).toHaveURL(/\/tickets\//)
+
+    await page.getByRole("textbox", { name: "Filter by text" }).fill(matching.title)
+    await expect(table.getByRole("row").filter({ hasText: other.title })).toBeHidden()
+    await expect(page).toHaveURL(/\/tickets\/[^?]+$/)
+    await page.locator("#td-close").click()
+    await expect(page).toHaveURL(url => url.pathname === "/tasks" && url.searchParams.get("search") === matching.title)
+    await expect(table.getByRole("row").filter({ hasText: matching.title })).toBeVisible()
+
+    await page.getByRole("textbox", { name: "Filter by text" }).fill(other.title)
+    await expect(page).toHaveURL(url => url.searchParams.get("search") === other.title)
+    await expect(table.getByRole("row").filter({ hasText: matching.title })).toBeHidden()
+    await page.evaluate(() => history.forward())
+    await expect(page).toHaveURL(/\/tickets\/[^?]+$/)
+    await expect(page.locator("#td-status")).toBeEnabled()
+    const calendar = page.getByRole("navigation", { name: "Task views" }).locator('[data-view-tab="calendar"]')
+    await expect.poll(() => calendar.evaluate(link => new URL((link as HTMLAnchorElement).href).searchParams.get("search"))).toBe(other.title)
+    await page.locator("#td-close").click()
+    await expect(page).toHaveURL(url => url.pathname === "/tasks" && url.searchParams.get("search") === other.title)
+  })
+
+  test("Table column choices keep the links to other views current", async ({ page }) => {
+    await page.goto("/table")
+    const columns = page.getByRole("button", { name: "Customize visible columns" })
+    await columns.click()
+    await page.getByRole("checkbox", { name: "Priority", exact: true }).uncheck()
+    await expect(page.locator("#task-table")).toHaveClass(/hide-col-priority/)
+    const calendar = page.getByRole("navigation", { name: "Task views" }).locator('[data-view-tab="calendar"]')
+    const persisted = new URL(page.url()).searchParams.get("columns")
+    expect(JSON.parse(persisted!)).not.toContain("priority")
+    await expect.poll(() => calendar.evaluate(link => new URL((link as HTMLAnchorElement).href).searchParams.get("columns"))).toBe(persisted)
+    await expect(page.locator("#task-table th.col-priority")).toBeHidden()
+  })
+
+  test("an empty Table updates its action when search is applied and cleared", async ({ page }) => {
+    await page.goto("/tasks?view=table#table")
+    const empty = page.locator("#table-empty")
+    const search = page.getByRole("textbox", { name: "Filter by text" })
+    await expect(empty.getByRole("button", { name: /New Task/ })).toBeVisible()
+    await search.fill(randomUUID())
+    await expect(empty.getByText("No tasks match these filters", { exact: true })).toBeVisible()
+    await empty.getByRole("button", { name: "Clear All", exact: true }).click()
+    await expect(search).toHaveValue("")
+    await expect(empty.getByRole("button", { name: /New Task/ })).toBeVisible()
+    await expect(search).toBeFocused()
+  })
+
+  test("filtered empty state can clear criteria and return to the task list", async ({ page, tableTasks }) => {
+    const missing = randomUUID()
+    await page.goto(`/tasks?view=table&search=${missing}#table`)
+    const empty = page.locator(".no-results-row")
+    await expect(empty.getByText("No tasks match these filters", { exact: true })).toBeVisible()
+    await empty.getByRole("button", { name: "Clear All", exact: true }).press("Enter")
+    await expect(empty).toBeHidden()
+    await expect(page.getByRole("row").filter({ hasText: tableTasks[0].title })).toBeVisible()
+    const search = page.getByRole("textbox", { name: "Filter by text" })
+    await expect(search).toBeFocused()
+    await search.fill(missing)
+    await expect(empty.getByText("No tasks match these filters", { exact: true })).toBeVisible()
+    await empty.getByRole("button", { name: "Clear All", exact: true }).press("Enter")
+    await expect(empty).toBeHidden()
+    await expect(search).toBeFocused()
   })
 
   test("the shared search and Assist launchers open their respective panels", async ({ page }) => {

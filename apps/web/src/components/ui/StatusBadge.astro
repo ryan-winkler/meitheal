@@ -1,5 +1,5 @@
 ---
-import { normalizeStatus, STATUS_LABELS } from "../../lib/status-config"
+import { getStatusLabel, normalizeStatus } from "../../lib/status-config"
 
 interface Props {
   status: string | null | undefined
@@ -7,7 +7,7 @@ interface Props {
 
 const { status } = Astro.props
 const normalizedStatus = normalizeStatus(status || "")
-const label = STATUS_LABELS[normalizedStatus] || STATUS_LABELS.backlog
+const label = getStatusLabel(normalizedStatus)
 ---
 
 <span

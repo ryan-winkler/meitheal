@@ -7,6 +7,7 @@ import { BoardIntakeRepository } from "../../apps/web/src/domains/tasks/persiste
 import { changeBoardGrants, readBoardGrantRevision } from "../../apps/web/src/domains/tasks/persistence/board-grant-fence"
 import { NamedBoardRepository, permitsBoardTaskAction } from "../../apps/web/src/domains/tasks/persistence/named-board-repository"
 import { NamedBoardPlanningRepository } from "../../apps/web/src/domains/tasks/persistence/named-board-planning-repository"
+import { TaskRepository } from "../../apps/web/src/domains/tasks/persistence/task-repository"
 import { TemplateRepository } from "../../apps/web/src/domains/tasks/persistence/template-repository"
 import { readSharedGoals } from "../../apps/web/src/domains/tasks/persistence/shared-goal-repository"
 import { NamedBoardTaskRepository } from "../../apps/web/src/domains/tasks/persistence/named-board-task-repository"
@@ -28,6 +29,27 @@ test.afterEach(async () => {
   if (originalDatabase === undefined) delete process.env.MEITHEAL_DB_URL
   else process.env.MEITHEAL_DB_URL = originalDatabase
   await rm(directory, { recursive: true, force: true })
+})
+
+test("household Calendar and Deferred queues exclude named Board tickets", async () => {
+  const db = getPersistenceClient()
+  await db.batch([
+    "INSERT INTO task_boards (id, name, visibility, ticket_prefix, created_at, updated_at) VALUES ('work', 'Work', 'restricted', 'WORKABCD', 1, 1)",
+    "INSERT INTO kanban_lanes (id, key, label, board_id, created_at, updated_at) VALUES ('work-pending', 'pending', 'Pending', 'work', 1, 1)",
+    `INSERT INTO tasks (id, title, status, area_id, task_board_id, board_column_id, ticket_ref, due_date,
+        idempotency_key, request_id, created_at, updated_at)
+      VALUES ('work-local', 'Private scheduled ticket', 'pending', '__meitheal_no_area__', 'work', 'work-pending',
+        'WORKABCD-1', '2031-07-08', 'work-local', 'work-local', 1, 1)`,
+    `INSERT INTO tasks (id, title, status, area_id, task_board_id, board_column_id, ticket_ref, due_date,
+        calendar_sync_state, deferred_at, idempotency_key, request_id, created_at, updated_at)
+      VALUES ('work-linked', 'Private linked ticket', 'pending', '__meitheal_no_area__', 'work', 'work-pending',
+        'WORKABCD-2', '2031-07-08', 'synced', 1, 'work-linked', 'work-linked', 1, 1)`,
+  ], "write")
+  const repo = new TaskRepository(db)
+  expect(await repo.getCalendarTaskCounts("2031-07-01", "2031-07-31")).toEqual({})
+  expect(await repo.getLinkedCalendarEvents("2031-07-01", "2031-07-31", "Europe/Dublin")).toEqual({})
+  expect(await repo.findAll({ calendarDay: "2031-07-08" })).toEqual({ tasks: [], total: 0 })
+  expect(await repo.findDeferredPage(1)).toEqual({ page: 1, total: 0, tasks: [] })
 })
 
 test("named grants are scoped to their Board, apply denials, and cannot remove the last active owner", async () => {

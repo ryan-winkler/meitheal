@@ -4,6 +4,8 @@
  * Supports nested filter groups and various operators for advanced querying.
  */
 
+import { normalizeStatus } from "./status-config"
+
 export type LogicOperator = "AND" | "OR"
 export type FilterOperator = 
   | "equals" 
@@ -30,12 +32,18 @@ export interface FilterGroup {
   conditions: (FilterCondition | FilterGroup)[]
 }
 
+export function normalizeStatusRuleValue(field: string, operator: string, value: string): string {
+  return field === "status" && (operator === "equals" || operator === "notEquals") ? normalizeStatus(value) : value
+}
+
 /**
  * Evaluates a single condition against a dataset (row attributes, etc.)
  */
 function evaluateCondition(condition: FilterCondition, data: Record<string, any>): boolean {
-  const { field, operator, value } = condition
-  const dataValue = data[field]
+  const { field, operator } = condition
+  const raw = data[field]
+  const dataValue = typeof raw === "string" ? normalizeStatusRuleValue(field, operator, raw) : raw
+  const value = typeof condition.value === "string" ? normalizeStatusRuleValue(field, operator, condition.value) : condition.value
 
   switch (operator) {
     case "equals":

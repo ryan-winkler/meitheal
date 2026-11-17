@@ -1,7 +1,9 @@
 ---
 import Icon from "../ui/Icon.astro"
 import NavOverflowMore from "./NavOverflowMore.astro"
+import TaskCreationMenu from "./TaskCreationMenu.astro"
 import { t } from "../../i18n/translations"
+import { isIconName, type IconName } from "../../generated/icon-registry"
 
 /**
  * UnifiedBar — Reusable top navigation bar with tab pills and title-based section switcher.
@@ -85,27 +87,7 @@ const hasSections = tabs.length > 0
 const TitleControl = hasSections ? "button" : "h1"
 const locale = Astro.cookies.get("meitheal-locale")?.value === "ga" ? "ga" : "en"
 
-type StandardIconName =
-  | "dashboard"
-  | "kanban"
-  | "tasks"
-  | "table"
-  | "today"
-  | "upcoming"
-  | "calendar"
-  | "settings"
-  | "trophy"
-  | "habit"
-  | "folder"
-  | "target"
-  | "eisenhower"
-  | "sliders"
-  | "plug"
-  | "sparkles"
-  | "home"
-  | "inbox"
-
-const ICON_MAP: Record<string, StandardIconName | "timeline" | "pillars"> = {
+const ICON_MAP: Record<string, IconName | "timeline" | "pillars"> = {
   gear: "settings",
   settings: "settings",
   "⚙️": "settings",
@@ -153,9 +135,10 @@ const ICON_MAP: Record<string, StandardIconName | "timeline" | "pillars"> = {
   sparkles: "sparkles",
 }
 
-function resolveUnifiedIcon(raw?: string): StandardIconName | "timeline" | "pillars" | null {
+function resolveUnifiedIcon(raw?: string): IconName | "timeline" | "pillars" | null {
   if (!raw) return null
-  return ICON_MAP[raw] ?? null
+  const mapped = Object.hasOwn(ICON_MAP, raw) ? ICON_MAP[raw] : undefined
+  return mapped ?? (isIconName(raw) ? raw : null)
 }
 ---
 
@@ -321,61 +304,59 @@ function resolveUnifiedIcon(raw?: string): StandardIconName | "timeline" | "pill
           </a>
         )
       })}
-    </nav> : <div class="unified-bar__tabs unified-bar__tabs--spacer" aria-hidden="true"></div>}
+    </nav> : null}
 
-    <!-- Right actions — order matches HA: +, Search, Assist -->
+    <div class="unified-bar__actions">
+      <!-- Right actions — order matches HA: +, Search, Assist -->
 
-    <!-- + New task button -->
-    {showNewTask && (
-      <button
-        type="button"
-        class="unified-bar__new-task-btn"
-        id={`${barId}-new-task`}
-        title={newTaskLabel}
-        aria-label={newTaskLabel}
-      >
-        <svg class="unified-bar__new-task-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true">
-          <path d="M12 5v14M5 12h14"/>
-        </svg>
-        <span class="unified-bar__new-task-label">{newTaskLabel}</span>
-      </button>
-    )}
+      <!-- + New task button -->
+      {showNewTask && (
+        <TaskCreationMenu id="taskbar-task-types" variant="toolbar" enabled={barId === "kanban-bar"}>
+          <button
+            type="button"
+            class="unified-bar__new-task-btn"
+            id={`${barId}-new-task`}
+            title={newTaskLabel}
+            aria-label={newTaskLabel}
+          >
+            <Icon name="plus" class="unified-bar__new-task-icon" size={18} />
+            <span class="unified-bar__new-task-label">{newTaskLabel}</span>
+          </button>
+        </TaskCreationMenu>
+      )}
 
-    <!-- Search launcher (opens SearchHub modal) -->
-    {showSearch && (
-      <button
-        type="button"
-        class="unified-bar__search-launcher"
-        id={`${barId}-search-launcher`}
-        data-search-scope={searchScope || undefined}
-        aria-label={searchPlaceholder}
-        aria-keyshortcuts="/"
-      >
-        <svg class="unified-bar__search-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-          <circle cx="7" cy="7" r="5"/><path d="M11 11L14 14" stroke-linecap="round"/>
-        </svg>
-        <span class="unified-bar__search-text">{searchPlaceholder}</span>
-        <kbd class="unified-bar__search-kbd" aria-hidden="true">/</kbd>
-      </button>
-    )}
+      <!-- Search launcher (opens SearchHub modal) -->
+      {showSearch && (
+        <button
+          type="button"
+          class="unified-bar__search-launcher"
+          id={`${barId}-search-launcher`}
+          data-search-scope={searchScope || undefined}
+          aria-label={searchPlaceholder}
+          aria-keyshortcuts="/"
+        >
+          <Icon name="search" class="unified-bar__search-icon" size={16} />
+          <span class="unified-bar__search-text">{searchPlaceholder}</span>
+          <kbd class="unified-bar__search-kbd" aria-hidden="true">/</kbd>
+        </button>
+      )}
 
-    <!-- Assist (AI) button -->
-    {showAiButton && (
-      <button
-        type="button"
-        class="unified-bar__ai-btn"
-        id="ask-ha-btn"
-        title={aiButtonLabel}
-        aria-label={aiButtonLabel}
-      >
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M12 3l1.912 5.813a2 2 0 001.275 1.275L21 12l-5.813 1.912a2 2 0 00-1.275 1.275L12 21l-1.912-5.813a2 2 0 00-1.275-1.275L3 12l5.813-1.912a2 2 0 001.275-1.275L12 3z"/>
-        </svg>
-      </button>
-    )}
+      <!-- Assist (AI) button -->
+      {showAiButton && (
+        <button
+          type="button"
+          class="unified-bar__ai-btn"
+          id="ask-ha-btn"
+          title={aiButtonLabel}
+          aria-label={aiButtonLabel}
+        >
+          <Icon name="sparkles" size={20} />
+        </button>
+      )}
 
-    <!-- Optional extra actions slot -->
-    <slot name="actions" />
+      <!-- Optional extra actions slot -->
+      <slot name="actions" />
+    </div>
   </div>
 </header>
 
@@ -515,10 +496,11 @@ function resolveUnifiedIcon(raw?: string): StandardIconName | "timeline" | "pill
     align-items: center;
     margin: 0 4px;
   }
-  .unified-bar__tabs--spacer {
-    flex: 1 0 0px;
-    min-width: 0;
-    margin: 0;
+  .unified-bar__actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-inline-start: auto;
   }
   .unified-bar__tab {
     display: inline-flex;
@@ -570,12 +552,7 @@ function resolveUnifiedIcon(raw?: string): StandardIconName | "timeline" | "pill
     border-color: var(--accent-50-border);
     color: var(--text-secondary);
   }
-  .unified-bar__search-launcher:focus-visible {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 20%, transparent);
-    outline: none;
-  }
-  .unified-bar__search-icon {
+  :global(.unified-bar__search-icon) {
     flex-shrink: 0;
   }
   .unified-bar__search-text {
@@ -654,12 +631,7 @@ function resolveUnifiedIcon(raw?: string): StandardIconName | "timeline" | "pill
     color: var(--accent-text);
     background: var(--accent-6-bg);
   }
-  .unified-bar__new-task-btn:focus-visible {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 20%, transparent);
-    outline: none;
-  }
-  .unified-bar__new-task-icon {
+  :global(.unified-bar__new-task-icon) {
     flex-shrink: 0;
   }
   .unified-bar__new-task-label {

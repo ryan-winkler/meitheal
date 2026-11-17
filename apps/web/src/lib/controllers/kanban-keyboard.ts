@@ -9,6 +9,7 @@
 import { getSelectedAreaId } from "@lib/area-selector-controller"
 import { singleKeyShortcutsEnabled } from "@lib/single-key-shortcuts"
 import { createClientLogger } from "@lib/client-logger"
+import { showToast } from "@lib/toast"
 
 const log = createClientLogger("kanban:keyboard")
 
@@ -54,6 +55,11 @@ export function initKeyboardAndSearch(signal: AbortSignal): void {
 
   board.querySelectorAll<HTMLButtonElement>(".kanban-add-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
+      if (getSelectedAreaId() && !document.querySelector('#area-selector-dropdown [aria-selected="true"]')) {
+        document.getElementById("area-selector-trigger")?.focus()
+        showToast("kanban.quick_add_area_unavailable", "warning")
+        return
+      }
       const existing = btn.previousElementSibling
       if (existing?.classList.contains("kanban-inline-add")) {
         existing.querySelector("input")?.focus()

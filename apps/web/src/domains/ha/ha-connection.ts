@@ -10,7 +10,6 @@
  * @domain ha
  * @bounded-context integration
  */
-import { createHash } from "node:crypto"
 import {
   createConnection,
   createLongLivedTokenAuth,
@@ -24,15 +23,15 @@ import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observa
 // Polyfill WebSocket for Node.js server-side usage
 import WebSocket, { type ClientOptions } from "ws";
 import { supervisorFetch } from "../../lib/supervisor-fetch";
-import { resolveHAConfiguration, type HAConfiguration } from "./ha-configuration"
+import { fingerprintHAConfiguration, resolveHAConfiguration, type HAConfiguration } from "./ha-configuration"
 import { initEntitySubscription, resetEntityConnection } from "./ha-entities"
 (globalThis as Record<string, unknown>).WebSocket = WebSocket;
 const CORE_PROXY = "http://supervisor/core"
 
 /** Open an isolated socket to Core with caller-specific transport limits. */
-export function openHACoreSocket(token: string, options: ClientOptions): WebSocket {
+export function openHACoreSocket(token: string, options: ClientOptions, baseUrl = CORE_PROXY): WebSocket {
   const Socket = globalThis.WebSocket as unknown as typeof WebSocket
-  return new Socket(createLongLivedTokenAuth(CORE_PROXY, token).wsUrl, options)
+  return new Socket(createLongLivedTokenAuth(baseUrl, token).wsUrl, options)
 }
 
 const logger = createLogger({
@@ -51,14 +50,20 @@ const SYS_REQ = "ha-system"; // sentinel request_id for background operations
 let connection: Connection | null = null;
 let configurationFingerprint: string | null = null
 
-export async function getHAConfiguration(): Promise<HAConfiguration | null> {
+export async function getHAConfiguration({ requireComplete = false } = {}): Promise<HAConfiguration | null> {
   if (process.env.SUPERVISOR_TOKEN) return resolveHAConfiguration(process.env)
   const { ensureSchema, getPersistenceClient } = await import("../tasks/persistence/store")
   const { SettingsRepository } = await import("../tasks/persistence/settings-repository")
   await ensureSchema()
   const repo = new SettingsRepository(getPersistenceClient())
   await repo.ensureSettingsTable()
-  return resolveHAConfiguration(process.env, await repo.getByKeys(["ha_url", "ha_token"]))
+  const settings = await repo.getByKeys(["ha_url", "ha_token"])
+  const configuration = resolveHAConfiguration(process.env, settings)
+  if (!configuration && requireComplete && [settings.ha_url, settings.ha_token, process.env.HA_BASE_URL, process.env.HA_TOKEN]
+    .some(value => typeof value === "string" && value.trim())) {
+    throw new Error("Home Assistant requires both a URL and a token")
+  }
+  return configuration
 }
 
 const ALLOWED_HA_REST_PATH_RE = /^\/api\/[a-zA-Z0-9._%-]+(?:\/[a-zA-Z0-9._%-]+)*$/
@@ -170,7 +175,7 @@ export async function getHAConnection(): Promise<Connection | null> {
     closeHAConnection()
     return null
   }
-  const fingerprint = config ? createHash("sha256").update(JSON.stringify(config)).digest("hex") : null
+  const fingerprint = config ? fingerprintHAConfiguration(config) : null
   if ((connection && configurationFingerprint !== fingerprint) ||
     (connecting && connectingFingerprint !== fingerprint)) {
     closeHAConnection()
@@ -212,7 +217,7 @@ export async function getHAConnection(): Promise<Connection | null> {
     const auth = createLongLivedTokenAuth(config.baseUrl, config.token);
     candidate = await createConnection({ auth });
     const currentConfig = await getHAConfiguration()
-    const currentFingerprint = currentConfig ? createHash("sha256").update(JSON.stringify(currentConfig)).digest("hex") : null
+    const currentFingerprint = currentConfig ? fingerprintHAConfiguration(currentConfig) : null
     if (attemptGeneration !== connectionGeneration || currentFingerprint !== fingerprint) {
       candidate.close()
       candidate = null
@@ -424,6 +429,10 @@ function stopHeartbeat(): void {
     retired.interval = null
     retired.timeout = null
   }
+}
+
+export function matchesCurrentHAConnection(fingerprint: string, expected?: Connection): boolean {
+  return connection?.connected === true && configurationFingerprint === fingerprint && (!expected || connection === expected)
 }
 
 export function getHAConnectionStatus() {

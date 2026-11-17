@@ -72,6 +72,22 @@
   background: var(--bg-secondary, rgba(255,255,255,0.06));
   color: var(--text-primary);
 }
+.timeline-ctrl-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+@media (max-width: 640px) {
+  .timeline-controls-bar {
+    flex-wrap: wrap;
+    position: relative;
+  }
+  .timeline-ctrl-btn {
+    min-width: 44px;
+    min-height: 44px;
+    justify-content: center;
+  }
+}
 
 /* ── Column Toggle Dropdown ───────────────────────────────── */
 
@@ -262,6 +278,15 @@
   font-size: 12px;
 }
 
+@media (max-width: 640px) {
+  .timeline-legend { position: static; }
+  .timeline-legend-panel {
+    inset-inline: 0 auto;
+    inline-size: min(240px, 100%);
+    min-width: 0;
+  }
+}
+
 .legend-section {
   margin-bottom: 10px;
 }
@@ -296,11 +321,11 @@
 }
 
 .legend-diamond {
-  font-size: 10px;
-  color: var(--accent);
   width: 8px;
-  text-align: center;
+  height: 8px;
+  border: 1.5px solid var(--danger-text);
   flex-shrink: 0;
+  transform: rotate(45deg);
 }
 
 /* ── Skeleton ───────────────────────────────────────────────────────────── */
@@ -442,13 +467,13 @@
 }
 
 .gantt-sidebar-row:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--border-focus);
   outline-offset: -2px;
   background: var(--bg-secondary, rgba(255, 255, 255, 0.04)) !important;
 }
 
 .gantt-sidebar-row--focused {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--border-focus);
   outline-offset: -2px;
   background: var(--bg-secondary, rgba(255, 255, 255, 0.06)) !important;
 }
@@ -466,7 +491,7 @@
 }
 
 .gantt-bar:focus {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--border-focus);
   outline-offset: 2px;
   border-radius: var(--radius-sm, 4px);
 }
@@ -478,7 +503,7 @@
 }
 
 .gantt-milestone:focus {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--border-focus);
   outline-offset: 2px;
 }
 
@@ -488,7 +513,7 @@
 }
 
 .gantt-today-fab:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--border-focus);
   outline-offset: 2px;
 }
 
@@ -522,7 +547,7 @@
 }
 
 .timeline-export-btn:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--border-focus);
   outline-offset: 2px;
 }
 

@@ -7,7 +7,8 @@ const privatePath = "/fixture-no-store"
 const unscheduledPath = "/today?unscheduledPage=1"
 
 async function fixture(prefix: string) {
-  const worker = await readFile(new URL("../../apps/web/public/sw.js", import.meta.url), "utf8")
+  const source = process.env.MEITHEAL_TEST_BROWSER === "1" ? "dist/client" : "public"
+  const worker = await readFile(new URL(`../../apps/web/${source}/sw.js`, import.meta.url), "utf8")
   let boardRequests = 0
   const server = createServer((request, response) => {
     const url = new URL(request.url ?? "/", "http://localhost")

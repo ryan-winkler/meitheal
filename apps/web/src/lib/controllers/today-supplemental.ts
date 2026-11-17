@@ -11,6 +11,7 @@
  * - Recurrence management (G40-G42) — post-complete and cancel actions
  */
 
+import { createSpriteIconElement, type IconName } from "../../generated/icon-registry"
 import type { ListenerManager } from "../managed-listeners"
 import { showToast } from "../toast"
 import { confirmDialog } from "../confirm-dialog"
@@ -46,7 +47,8 @@ export function setupMigrationPrompt(container: HTMLElement): void {
   const countStrong = document.createElement("strong")
   countStrong.textContent = String(carriedCount)
   textSpan.append(
-    document.createTextNode("☀️ Good morning! You have "),
+    createSpriteIconElement("sun", { size: 14 }),
+    document.createTextNode(" Good morning! You have "),
     countStrong,
     document.createTextNode(` carried forward task${carriedCount === 1 ? "" : "s"}. Triage them to keep your day focused.`),
   )
@@ -110,22 +112,22 @@ export function setupContextGrouping(container: HTMLElement): void {
   // Only apply grouping if there are at least 2 different contexts
   if (groups.size < 2) return
 
-  const contextIcons: Record<string, string> = {
-    home: "🏠",
-    work: "💼",
-    errands: "🏃",
-    personal: "👤",
-    health: "💪",
+  const contextIcons: Record<string, IconName> = {
+    home: "home",
+    work: "folder",
+    errands: "list-check",
+    personal: "user",
+    health: "flame",
   }
 
   // Rebuild the list with context headers
   todaySection.replaceChildren()
 
   for (const [ctx, ctxTasks] of groups) {
-    const icon = contextIcons[ctx.toLowerCase()] ?? "📌"
+    const icon = contextIcons[ctx.toLowerCase()] ?? "pin"
     const header = document.createElement("div")
     header.className = "context-group-header"
-    header.textContent = `${icon} @${ctx} (${ctxTasks.length})`
+    header.append(createSpriteIconElement(icon, { size: 14 }), document.createTextNode(` @${ctx} (${ctxTasks.length})`))
     todaySection.appendChild(header)
     ctxTasks.forEach(t => todaySection.appendChild(t))
   }
@@ -133,7 +135,7 @@ export function setupContextGrouping(container: HTMLElement): void {
   if (ungrouped.length > 0) {
     const header = document.createElement("div")
     header.className = "context-group-header"
-    header.textContent = `📌 Other (${ungrouped.length})`
+    header.append(createSpriteIconElement("pin", { size: 14 }), document.createTextNode(` Other (${ungrouped.length})`))
     todaySection.appendChild(header)
     ungrouped.forEach(t => todaySection.appendChild(t))
   }
@@ -148,20 +150,20 @@ export function renderEffortIndicators(container: HTMLElement): void {
     if (existing) return
 
     let label: string
-    let emoji: string
+    let icon: IconName
     let color: string
 
     if (priority <= 2) {
       label = "Deep"
-      emoji = "🔴"
+      icon = "flame"
       color = "rgba(239, 68, 68, 0.15)"
     } else if (priority === 3) {
       label = "Regular"
-      emoji = "🟡"
+      icon = "clock"
       color = "rgba(245, 158, 11, 0.15)"
     } else {
       label = "Quick"
-      emoji = "🟢"
+      icon = "bolt"
       color = "rgba(34, 197, 94, 0.15)"
     }
 
@@ -173,7 +175,7 @@ export function renderEffortIndicators(container: HTMLElement): void {
       background: ${color}; color: var(--text-secondary); display: inline-flex; align-items: center;
       gap: 2px; white-space: nowrap; margin-left: 4px;
     `
-    chip.textContent = `${emoji} ${label}`
+    chip.append(createSpriteIconElement(icon, { size: 12 }), document.createTextNode(label))
 
     const metaRow = el.querySelector(".tli__meta")
     if (metaRow) {

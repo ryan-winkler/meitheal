@@ -114,7 +114,7 @@ test.describe("Today Page — Structure & Sections", () => {
     const headers = { origin, "Content-Type": "application/json" }
     const stats = page.locator("#daily-stats")
     const due = stats.locator(".stat-item").filter({ hasText: "Due Today" }).locator(".stat-value")
-    const carried = stats.locator(".stat-item").filter({ hasText: "Carried Fwd" }).locator(".stat-value")
+    const carried = stats.locator(".stat-item").filter({ hasText: "Carried forward" }).locator(".stat-value")
     const initialDue = Number(await due.innerText())
     const initialCarried = Number(await carried.innerText())
     const dates = [
@@ -374,7 +374,7 @@ test.describe("Today Page — Wave 4: Advanced", () => {
   test("G36: streak stat renders when streak active", async ({ page }) => {
     const streak = page.locator(".stat-streak")
     if (await streak.count() > 0) {
-      await expect(streak.locator(".stat-value")).toContainText("🔥")
+      await expect(streak.locator(".stat-value svg")).toBeVisible()
     }
   })
 

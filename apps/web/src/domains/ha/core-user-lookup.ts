@@ -1,4 +1,5 @@
 import { openHACoreSocket } from "./ha-connection"
+import type { HAConfiguration } from "./ha-configuration"
 
 const timeoutMs = 3_000
 const maxReplyBytes = 256 * 1024
@@ -8,12 +9,21 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /** Read the current Core users over a dedicated, time- and size-bounded socket. */
-export async function readCurrentHACoreUsers(signal?: AbortSignal): Promise<unknown> {
+export function readCurrentHACoreUsers(signal?: AbortSignal): Promise<unknown> {
   const token = process.env.SUPERVISOR_TOKEN
-  if (!token || signal?.aborted) return undefined
+  return token ? readCoreUsers(token, signal) : Promise.resolve(undefined)
+}
+
+/** Read assignee names from the configured source with the same bounded transport. */
+export function readConfiguredHACoreUsers(config: HAConfiguration): Promise<unknown> {
+  return readCoreUsers(config.token, undefined, config.baseUrl)
+}
+
+async function readCoreUsers(token: string, signal?: AbortSignal, baseUrl?: string): Promise<unknown> {
+  if (signal?.aborted) return undefined
 
   try {
-    const socket = openHACoreSocket(token, { maxPayload: maxReplyBytes, perMessageDeflate: false })
+    const socket = openHACoreSocket(token, { maxPayload: maxReplyBytes, perMessageDeflate: false }, baseUrl)
     return await new Promise<unknown>(resolve => {
       let phase: "challenge" | "auth" | "result" = "challenge"
       let settled = false

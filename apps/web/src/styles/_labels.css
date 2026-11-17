@@ -68,42 +68,42 @@
 }
 
 /* Dark theme overrides */
-[data-theme="dark"] .label-badge--default {
+:is([data-theme="dark"], [data-theme="knight-rider"]) .label-badge--default {
   background: hsl(220 14% 22%);
   color: hsl(220 14% 78%);
 }
 
-[data-theme="dark"] .label-badge--blue {
+:is([data-theme="dark"], [data-theme="knight-rider"]) .label-badge--blue {
   background: hsl(217 60% 22%);
   color: hsl(217 80% 78%);
 }
 
-[data-theme="dark"] .label-badge--green {
+:is([data-theme="dark"], [data-theme="knight-rider"]) .label-badge--green {
   background: hsl(142 50% 18%);
   color: hsl(142 70% 72%);
 }
 
-[data-theme="dark"] .label-badge--amber {
+:is([data-theme="dark"], [data-theme="knight-rider"]) .label-badge--amber {
   background: hsl(38 60% 20%);
   color: hsl(38 80% 75%);
 }
 
-[data-theme="dark"] .label-badge--red {
+:is([data-theme="dark"], [data-theme="knight-rider"]) .label-badge--red {
   background: hsl(0 50% 20%);
   color: hsl(0 70% 75%);
 }
 
-[data-theme="dark"] .label-badge--purple {
+:is([data-theme="dark"], [data-theme="knight-rider"]) .label-badge--purple {
   background: hsl(270 50% 20%);
   color: hsl(270 70% 78%);
 }
 
-[data-theme="dark"] .label-badge--teal {
+:is([data-theme="dark"], [data-theme="knight-rider"]) .label-badge--teal {
   background: hsl(175 50% 18%);
   color: hsl(175 70% 72%);
 }
 
-[data-theme="dark"] .label-badge--pink {
+:is([data-theme="dark"], [data-theme="knight-rider"]) .label-badge--pink {
   background: hsl(330 50% 20%);
   color: hsl(330 70% 75%);
 }
@@ -258,13 +258,14 @@
 }
 
 .label-filter__chip:hover {
-  background: var(--hover-bg, hsl(220 14% 96%));
+  background: var(--bg-hover);
 }
 
-.label-filter__chip--active {
-  background: var(--accent-color, hsl(234 89% 63%));
-  color: white;
-  border-color: var(--accent-color, hsl(234 89% 63%));
+.label-filter__chip--active,
+.label-filter__chip--active:hover {
+  background: var(--bg-hover);
+  color: var(--accent-text);
+  border-color: var(--accent-text);
 }
 
 /* --- Reduced motion --- */
