@@ -36,6 +36,11 @@ test("Table keeps Area group names and bulk choices in sync with accepted rows",
 
     await page.route("**/api/areas", route => route.fulfill({ status: 503, json: {} }))
     const query = new URLSearchParams({ view: "table", area: "", search: term, groupBy: "area" })
+    await page.route("**/tasks?**", async route => {
+      const response = await route.fetch()
+      const body = (await response.text()).replace('data-area-catalog-ready="true"', 'data-area-catalog-ready="false"')
+      await route.fulfill({ response, body })
+    }, { times: 1 })
     await page.goto(`/tasks?${query}#table`)
 
     const rows = page.locator("#task-table .table-row")
@@ -43,6 +48,11 @@ test("Table keeps Area group names and bulk choices in sync with accepted rows",
     const named = header(areaId)
     const bulk = page.locator("#bulk-area")
     const option = bulk.locator(`option[value="${areaId}"]`)
+    const retry = page.getByRole("button", { name: "Retry" })
+    await expect(named.getByRole("button", { name: "Toggle group Unavailable Area" })).toBeVisible()
+    await expect(page.locator("[data-table-refresh-message]")).toHaveText("Area names could not load.")
+    await expect(option).toHaveCount(0)
+    await retry.click()
     await expect(named.getByRole("button", { name: `Toggle group ${known}` })).toBeVisible()
     await expect(named.getByRole("checkbox", { name: `Select visible tasks in ${known} on this page` })).toBeVisible()
     await expect(named.locator(".group-icon")).toHaveText("⚡")
@@ -96,7 +106,6 @@ test("Table keeps Area group names and bulk choices in sync with accepted rows",
       } else await route.continue()
     })
 
-    const retry = page.getByRole("button", { name: "Retry" })
     const onlyNamed = `${term} n`
     try {
       await input.fill(`${term} retired`)
