@@ -3595,7 +3595,7 @@ paths:
       operationId: readTaskPins
       tags:
         - Tasks
-      summary: Read your personal pins or check one task
+      summary: Read your personal pins, check whether you have any, or check one task
       description: Requires a verified Home Assistant browser session. Private reads use POST to avoid legacy worker caches.
         Send at most 1 KiB of JSON.
       requestBody:
@@ -3616,6 +3616,13 @@ paths:
                       minimum: 1
                       maximum: 9007199254740991
                       default: 1
+                - type: object
+                  required:
+                    - action
+                  additionalProperties: false
+                  properties:
+                    action:
+                      const: presence
                 - type: object
                   required:
                     - action
@@ -3678,6 +3685,15 @@ paths:
                             pinned_at:
                               type: integer
                           additionalProperties: false
+                    additionalProperties: false
+                  - type: object
+                    required:
+                      - context
+                      - hasPins
+                    properties:
+                      context: *a30
+                      hasPins:
+                        type: boolean
                     additionalProperties: false
                   - type: object
                     required:

@@ -1,0 +1,78 @@
+#sidebar .sidebar-reorder-tools {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-block-start: 4px;
+}
+
+#sidebar .sidebar-reorder-tools[hidden],
+#sidebar [data-sidebar-reorder-moves][hidden],
+#sidebar .sidebar-reorder-handle {
+  display: none;
+}
+
+#sidebar[data-sidebar-reordering] .sidebar-reorder-handle {
+  display: inline-flex;
+  position: absolute;
+  inset-block-start: 2px;
+  inset-inline-end: 0;
+  cursor: grab;
+}
+
+#sidebar[data-sidebar-reordering] [data-sidebar-group]:has(> .sidebar-reorder-handle) {
+  position: relative;
+  padding-inline-end: var(--sidebar-reorder-target, 30px);
+  min-block-size: var(--sidebar-reorder-target, 30px);
+}
+
+#sidebar [data-sidebar-reorder-status]:not(.sr-only) {
+  flex-basis: 100%;
+  color: var(--text-secondary);
+  font-size: .75rem;
+}
+#sidebar[data-sidebar-reordering] #sidebar-hierarchy-panel {
+  padding-inline-end: 0;
+}
+#sidebar[data-sidebar-reordering] #sidebar-hierarchy-panel #project-nav-group-toggle {
+  padding-inline-end: var(--sidebar-reorder-target, 30px);
+}
+
+#sidebar .sidebar-reorder-moves { display: flex; gap: 2px; }
+#sidebar :is(.sidebar-reorder-button, .sidebar-reorder-handle) {
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-inline-size: var(--sidebar-reorder-target, 30px);
+  min-block-size: var(--sidebar-reorder-target, 30px);
+  padding-inline: 4px;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+}
+#sidebar .sidebar-reorder-button { display: inline-flex; cursor: pointer; }
+#sidebar .sidebar-reorder-button:disabled { opacity: .4; cursor: default; }
+#sidebar :is(.sidebar-reorder-button, .sidebar-reorder-handle):is(:hover:enabled, :focus-visible, [aria-pressed="true"]) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+#sidebar :is(.sidebar-reorder-button, .sidebar-reorder-handle):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+#sidebar .sidebar-reorder-handle:active { cursor: grabbing; }
+#sidebar :is(.sidebar-reorder-button, .sidebar-reorder-handle):active:enabled { transform: scale(.97); }
+#sidebar [data-sidebar-drop="before"] { box-shadow: inset 0 2px var(--accent); }
+#sidebar [data-sidebar-drop="after"] { box-shadow: inset 0 -2px var(--accent); }
+
+@media (min-width: 769px) {
+  body.sidebar-collapsed #sidebar .sidebar-reorder-tools,
+  :root[data-appearance-navigation="navbar"] #sidebar .sidebar-reorder-tools {
+    display: none;
+  }
+}
+
+@media (pointer: coarse) {
+  #sidebar { --sidebar-reorder-target: 44px; }
+}
