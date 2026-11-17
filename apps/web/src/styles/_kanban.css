@@ -418,45 +418,47 @@
   @apply bg-bg-hover;
 }
 
-/* --- Swimlane collapse animation --- */
-.swimlane-cards {
-  transition: max-height 0.3s ease-out, opacity 0.2s ease, padding 0.2s ease;
-  overflow: hidden;
+#kanban-board .swimlane-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border: 0;
+  text-align: start;
+  background: var(--bg-hover);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  transition: background 200ms;
+  user-select: none;
 }
 
-.swimlane-cards.collapsed {
-  max-height: 0 !important;
-  opacity: 0;
-  padding: 0;
+#kanban-board .swimlane-header:hover {
+  background: var(--bg-secondary);
 }
 
-.swimlane-toggle {
-  transition: transform 0.2s ease;
-  display: inline-block;
+#kanban-board .swimlane-header:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 
-.swimlane-toggle.collapsed {
+#kanban-board .swimlane-collapsed .swimlane-toggle {
   transform: rotate(-90deg);
+}
+
+#kanban-board .swimlane-cards[hidden] {
+  display: none;
 }
 
 /* Client-rendered status group controls */
 #kanban-board[data-group-by="status"] .swimlane-header {
-  display: flex;
-  align-items: center;
-  gap: 6px;
   width: 100%;
   min-height: 44px;
-  padding: 8px 12px;
-  text-align: start;
-  background: var(--bg-hover);
-  color: var(--text-secondary);
-  font-size: 12px;
-  font-weight: 600;
 }
 
 #kanban-board[data-group-by="status"] .swimlane-header:focus-visible {
-  outline: 2px solid var(--border-focus);
-  outline-offset: -2px;
+  outline-color: var(--border-focus);
 }
 
 #kanban-board[data-group-by="status"] .swimlane-label {

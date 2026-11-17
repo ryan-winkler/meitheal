@@ -236,6 +236,7 @@ try {
 } catch {
   /* areas table may not exist yet */
 }
+const kanbanAreas = new Map(areas.map(area => [area.id, area]))
 ---
 
 <Layout title={`Meitheal — ${householdWorkspace ? "Household · " : ""}${heading}`}>
@@ -408,6 +409,8 @@ try {
     data-inactivity-upcoming={t("inactivity.upcoming", locale)}
     data-inactivity-stalled={t("inactivity.stalled", locale)}
     data-group-by={kanbanFilters.groupBy}
+    data-default-area-label={t("kanban.default_area", locale)}
+    data-unavailable-area-label={t("kanban.unavailable_area", locale)}
     data-backlog-mode={backlogMode}
     data-reaction-count-label={t("reactions.card_count", locale)}
     style={`padding: 0 0 8px; grid-template-columns: repeat(${columns.length}, 1fr);`}
@@ -463,8 +466,9 @@ try {
                     data-swimlane-type={type}
                     hidden
                   >
-                    <div class="swimlane-header" data-type={type}>
+                    <button type="button" class="swimlane-header" aria-expanded="true">
                       <span
+                        aria-hidden="true"
                         class={`swimlane-toggle ${count === 0 ? "opacity-30 pointer-events-none" : ""}`}
                       >
                         ▼
@@ -472,7 +476,7 @@ try {
                       <TaskTypeIcon type={type} size={16} />
                       <span class="swimlane-label">{tc.label}</span>
                       <span class="swimlane-count">{count}</span>
-                    </div>
+                    </button>
                     <div class="swimlane-cards">
                       {/* Cards moved here by JS when grouping is active */}
                     </div>
@@ -494,6 +498,8 @@ try {
                 const ticketKey = formatTicketKey(Number(task.ticket_number));
                 const tt = String(task.task_type ?? "task");
                 const tc = (typeConfig[tt] || typeConfig.task)!;
+                const areaId = String(task.area_id ?? "default")
+                const cardArea = kanbanAreas?.get(areaId)
                 const promoted = Number(task.is_promoted) === 1
                 const fp =
                   typeof task.framework_payload === "string"
@@ -553,7 +559,9 @@ try {
                     data-deferral-revision={task.deferral_revision ?? ""}
                     data-task-type={tt}
                     data-task-kind={String(task.task_kind ?? "standard_action")}
-                    data-area={String(task.area_id ?? "default")}
+                    data-area={areaId}
+                    data-area-name={cardArea?.name}
+                    data-area-icon={cardArea?.icon}
                     data-assigned={String(task.assigned_to ?? "")}
                     data-labels={String(task.labels ?? "[]")}
                     data-task-id={task.id}
@@ -1741,22 +1749,6 @@ try {
     flex-direction: column;
     margin-bottom: 0px;
   }
-  .swimlane-header {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 8px 12px;
-    background: var(--bg-hover);
-    cursor: pointer;
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--text-secondary);
-    transition: background 200ms;
-    user-select: none;
-  }
-  .swimlane-header:hover {
-    background: var(--bg-secondary);
-  }
   .swimlane-toggle {
     font-size: 10px;
     color: var(--text-muted);
@@ -1784,9 +1776,6 @@ try {
     display: flex;
     flex-direction: column;
     gap: 6px;
-  }
-  .swimlane-collapsed .swimlane-toggle {
-    transform: rotate(-90deg);
   }
 
   /* Accessibility: suppress transitions for reduced-motion users */

@@ -55,6 +55,8 @@ test("Household Groups organize capture and Projects inside the Board", async ({
 })
 
 test("Named Board disclosures follow the selected Group and current Home Assistant account", async () => {
+  // This ingress journey loads multiple pages and authenticates two household members.
+  test.setTimeout(60_000)
   const work = await mkdtemp(join(tmpdir(), "board-sidebar-"))
   const child = startCoreFixture(work, false, undefined, undefined, work)
   child.stdout?.resume()
@@ -80,6 +82,8 @@ test("Named Board disclosures follow the selected Group and current Home Assista
     expect(createGroup.ok(), await createGroup.text()).toBe(true)
 
     const page = await owner.newPage()
+    page.setDefaultTimeout(8_000)
+    page.setDefaultNavigationTimeout(10_000)
     await page.goto(app + "/boards")
     const disclosure = page.getByRole("button", { name: "Groups in Workshop Board" })
     await expect(disclosure).toBeVisible()

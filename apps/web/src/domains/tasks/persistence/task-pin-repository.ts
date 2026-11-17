@@ -20,6 +20,16 @@ export interface TaskPinRow {
 export class TaskPinRepository {
   constructor(private readonly client: Client) {}
 
+  async hasAny(ownerId: string): Promise<boolean> {
+    const { rows } = await this.client.execute({
+      sql: `SELECT 1 FROM task_pins AS pin
+            JOIN tasks AS task ON task.id = pin.task_id AND task.task_board_id IS NULL
+            WHERE pin.owner_id = ? LIMIT 1`,
+      args: [ownerId],
+    })
+    return rows.length > 0
+  }
+
   async list(ownerId: string, requestedPage: number): Promise<{ page: number; total: number; items: TaskPinRow[] }> {
     const snapshot = await this.client.transaction("read")
     try {
