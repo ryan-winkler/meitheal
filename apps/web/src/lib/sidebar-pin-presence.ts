@@ -1,5 +1,5 @@
 import {
-  pinsChanged, pinsInvalidated, readPinPresence, supportsPersonalPins, watchPinLease,
+  PinAccessError, pinsChanged, pinsInvalidated, readPinPresence, supportsPersonalPins, watchPinLease,
 } from "./task-pin-client"
 
 export function bindSidebarPinPresence(sidebar: HTMLElement, signal: AbortSignal, waitForSidebarInteraction: boolean): void {
@@ -12,7 +12,7 @@ export function bindSidebarPinPresence(sidebar: HTMLElement, signal: AbortSignal
     && (desktop.matches || sidebar.classList.contains("open"))
   let request: AbortController | undefined
   let stopLease: (() => void) | undefined
-  let checked = false
+  let nextCheckAt = 0
   let lastInteraction = performance.now()
 
   function hide(restoreFocus = false) {
@@ -31,7 +31,7 @@ export function bindSidebarPinPresence(sidebar: HTMLElement, signal: AbortSignal
     request = undefined
     stopLease?.()
     stopLease = undefined
-    checked = false
+    nextCheckAt = 0
     hide(restoreFocus)
   }
 
@@ -46,17 +46,19 @@ export function bindSidebarPinPresence(sidebar: HTMLElement, signal: AbortSignal
       if (request !== current || !foreground()) return
       stopLease?.()
       stopLease = undefined
-      checked = true
+      // Refresh a verified result on the next interaction after a minute.
+      nextCheckAt = performance.now() + 60_000
       if (result.value.hasPins !== true) {
         hide(true)
         return
       }
       item!.hidden = false
       stopLease = watchPinLease(result.lease, signal, () => lastInteraction, () => {}, () => suspend(true))
-    } catch {
+    } catch (error) {
       if (request === current) {
         suspend(true)
-        checked = true
+        const requiresNewSession = error instanceof PinAccessError && error.kind !== "network"
+        nextCheckAt = requiresNewSession ? Infinity : performance.now() + 5_000
       }
     } finally {
       if (request === current) request = undefined
@@ -65,7 +67,7 @@ export function bindSidebarPinPresence(sidebar: HTMLElement, signal: AbortSignal
 
   function syncVisibility() {
     if (!foreground()) suspend()
-    else if (!request && !checked) void refresh()
+    else if (!request && performance.now() >= nextCheckAt) void refresh()
   }
 
   function restart() {
@@ -79,11 +81,12 @@ export function bindSidebarPinPresence(sidebar: HTMLElement, signal: AbortSignal
   window.addEventListener("focus", syncVisibility, { signal })
   window.addEventListener("blur", syncVisibility, { signal })
   window.addEventListener("pageshow", syncVisibility, { signal })
+  window.addEventListener("online", syncVisibility, { signal })
   window.addEventListener("pagehide", () => suspend(), { signal })
   window.addEventListener(pinsChanged, () => void refresh(), { signal })
   window.addEventListener(pinsInvalidated, () => {
     suspend(true)
-    checked = true
+    nextCheckAt = Infinity
   }, { signal })
   sidebar.addEventListener("focusin", () => {
     if (sidebarActivated) return

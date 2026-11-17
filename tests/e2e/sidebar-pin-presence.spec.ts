@@ -61,8 +61,21 @@ test("the first verified pin reveals the sidebar destination and the last unpin 
     await owner("member")
     await page.goto(origin + prefix + "/activity")
     await expect(nav).toBeHidden()
+    let failPresence = true
+    await page.route(origin + path, route => {
+      const request = route.request()
+      if (!failPresence || request.method() !== "POST" || request.postDataJSON()?.action !== "presence") return route.continue()
+      failPresence = false
+      return route.fulfill({ status: 503, headers: { "cache-control": "private, no-store" } })
+    })
+    const failedPresence = page.waitForResponse(response => response.url() === origin + path && response.status() === 503)
     await page.locator("#sidebar .sidebar-brand").focus()
-    await expect(nav).toBeVisible()
+    await failedPresence
+    await expect(nav).toBeHidden()
+    await expect.poll(async () => {
+      await page.keyboard.press("Shift")
+      return nav.isVisible()
+    }, { timeout: 8_000 }).toBe(true)
     await nav.click()
     const remove = page.getByRole("button", { name: "Unpin Replace the hall light" })
     await expect(remove).toBeVisible()
