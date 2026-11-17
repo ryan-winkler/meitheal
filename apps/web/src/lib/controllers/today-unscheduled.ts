@@ -52,14 +52,15 @@ export function setupUnscheduledSection(
         signal: AbortSignal.any([lm.signal, controller.signal, AbortSignal.timeout(10_000)]),
         redirect: "error",
         cache: "no-store",
+        headers: { "x-meitheal-refresh": "1" },
       })
-      if (!response.ok) throw new Error("Could not load unscheduled tasks")
+      if (!response.ok) throw new Error()
       const html = new DOMParser().parseFromString(await response.text(), "text/html")
       const replacement = html.querySelector<HTMLElement>("#today-unscheduled-page")
       const previous = list.querySelector("#today-unscheduled-page")
       if (controller.signal.aborted || lm.signal.aborted || !isOpen()) return
       if (!replacement || !(Number(replacement.dataset.page) > 0) || !previous) {
-        throw new Error("Unscheduled task page unavailable")
+        throw new Error()
       }
       const focused = document.activeElement
       const inside = previous.contains(focused)

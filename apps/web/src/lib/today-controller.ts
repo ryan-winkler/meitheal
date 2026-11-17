@@ -106,7 +106,6 @@ export function initTodayPage(options?: Partial<TodayControllerOptions>) {
     sectionLinkSelectors: ["[data-today-section-link]"],
   })
 
-  setupEventDelegation(container)
   setupQuickAdd(container)
   setupKeyboardNav(container)
   setupSectionCollapse(container)
@@ -123,8 +122,8 @@ export function initTodayPage(options?: Partial<TodayControllerOptions>) {
     void hydrateTaskAssignees(scope, lm.signal)
   })
   setupFilters(container, refreshUnscheduled)
-  const setFocusEligibility = setupFocusStack(container, lm) // PRA-02
-  const refreshReopened = setupReopenedTodayTasks(container, setFocusEligibility, row => {
+  const restoreFocusCard = setupFocusStack(container, lm) // PRA-02
+  const refreshReopened = setupReopenedTodayTasks(container, restoreFocusCard, row => {
     enableDragReorder(row)
     const list = row.parentElement
     if (!list) return
@@ -132,6 +131,7 @@ export function initTodayPage(options?: Partial<TodayControllerOptions>) {
     renderEffortIndicators(list)
     void hydrateTaskAssignees(list, lm.signal)
   })
+  setupEventDelegation(container, refreshReopened)
   lm.on(document, "meitheal:task-status-saved", event => {
     const { id, status } = (event as CustomEvent<{ id: string; status: string }>).detail
     if (typeof status !== "string") return
@@ -166,7 +166,7 @@ export function initTodayPage(options?: Partial<TodayControllerOptions>) {
 
 // ── Event Delegation ──────────────────────────────────────────────────────
 
-function setupEventDelegation(container: HTMLElement) {
+function setupEventDelegation(container: HTMLElement, refreshReopened: (id: string, status: string) => void) {
   lm.on(container, "click", async (e: Event) => {
     const origin = e.target as HTMLElement
     const target = origin.closest("button") ?? origin
@@ -197,6 +197,7 @@ function setupEventDelegation(container: HTMLElement) {
 
       try {
         const completed = await taskApi.updateTask(id, { status: newStatus })
+        if (!completing) refreshReopened(id, newStatus)
         syncTodayTaskStatus(container, id, newStatus)
         showToast(completing ? "common.task_completed" : "common.task_reopened")
         if (completing) onTaskCompleted(completed)
@@ -932,7 +933,7 @@ function todayScopeParams(container: HTMLElement): URLSearchParams {
 
 function setupReopenedTodayTasks(
   container: HTMLElement,
-  setFocusEligibility: (id: string, eligible: boolean) => void,
+  restoreFocusCard: (id: string, row?: HTMLElement) => void,
   mountRow: (row: HTMLElement) => void,
 ) {
   const lists = container.querySelectorAll<HTMLElement>("[data-today-task-list]")
@@ -947,7 +948,8 @@ function setupReopenedTodayTasks(
     if (isClosedStatus(status)) {
       if (!reopened.delete(id)) return
     } else {
-      if (!reopened.has(id) && container.querySelector(`.tli:not(.tli--done)[data-id="${CSS.escape(id)}"]`)) return
+      const row = container.querySelector<HTMLElement>(`.tli[data-id="${CSS.escape(id)}"]`)
+      if (!reopened.has(id) && row && !isClosedStatus(row.dataset.status ?? "")) return
       reopened.add(id)
     }
     request?.abort()
@@ -969,7 +971,7 @@ function setupReopenedTodayTasks(
       if (incoming.dataset.todayDay !== shell.dataset.todayDay || incoming.dataset.todayTimezone !== shell.dataset.todayTimezone) {
         showTodayRollover(container)
       } else {
-        const eligibleForFocus = new Set<string>()
+        const focusRows = new Map<string, HTMLElement>()
         for (const list of lists) {
           const refreshedRows = incoming.querySelectorAll<HTMLElement>(`#${CSS.escape(list.id)} .tli[data-id]`)
           const currentRows = Array.from(list.querySelectorAll<HTMLElement>(".tli[data-id]"))
@@ -978,9 +980,7 @@ function setupReopenedTodayTasks(
           if (!section || (!Array.from(refreshedRows).some(affected) && !currentRows.some(affected))) continue
           const suggested = list.id === "today-suggested-list"
           const rows = new Map([...refreshedRows].filter(row => suggested || affected(row)).map(row => [row.dataset.id, row]))
-          if (list.id === "today-due-list" || list.id === "today-carried-list") {
-            for (const id of rows.keys()) if (id) eligibleForFocus.add(id)
-          }
+          for (const [id, row] of rows) if (id && row.dataset.focusDueLabel) focusRows.set(id, row)
           for (const row of currentRows) {
             const replacement = rows.get(row.dataset.id)
             rows.delete(row.dataset.id)
@@ -1007,7 +1007,7 @@ function setupReopenedTodayTasks(
           list.querySelector("[data-today-due-empty]")?.toggleAttribute("hidden", openCount > 0)
           if (list.id === "today-carried-list") container.querySelector("[data-today-carried-empty]")?.toggleAttribute("hidden", Boolean(openCount))
         }
-        for (const id of reopened) setFocusEligibility(id, eligibleForFocus.has(id))
+        for (const id of reopened) restoreFocusCard(id, focusRows.get(id))
         const unscheduled = container.querySelector<HTMLElement>("#section-unscheduled")
         const refreshedUnscheduled = incoming.querySelector<HTMLElement>("#section-unscheduled")
         if (unscheduled && refreshedUnscheduled) {
