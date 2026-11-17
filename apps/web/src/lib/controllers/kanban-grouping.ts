@@ -126,7 +126,7 @@ export function initKanbanGrouping(board: HTMLElement): void {
         header.className = "swimlane-header"
         const first = cards[0] as HTMLElement
         const label = byProject
-          ? first.dataset.projectLabel ?? "Unknown Project"
+          ? first.dataset.projectLabel ?? window.mI18n?.get("kanban.unknown_project") ?? "Unknown Project"
           : icons[key] || (mode === "area" ? (areaTitleMap[key] || `📋 ${key}`) : defaultLabel)
         const toggleSpan = document.createElement("span")
         toggleSpan.className = "swimlane-toggle"

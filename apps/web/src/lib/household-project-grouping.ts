@@ -13,6 +13,7 @@ export function getHouseholdProjectLabels(
   projects: readonly CatalogProject[],
   areas: Readonly<Record<string, string>>,
   goalAreas?: ReadonlyMap<string, string | null>,
+  fallbacks = { none: NO_PROJECT, unknown: UNKNOWN_PROJECT },
 ): Record<string, HouseholdProjectLabel> {
   const ordered = projects.filter(project => project.id).sort((a, b) => a.id.localeCompare(b.id))
   const counts = new Map<string, number>()
@@ -22,7 +23,12 @@ export function getHouseholdProjectLabels(
     counts.set(key, (counts.get(key) ?? 0) + 1)
   }
 
-  const fallbackTitles = new Set([NO_PROJECT, UNKNOWN_PROJECT].map(titleKey))
+  const fallbackTitles = new Set([fallbacks.none, fallbacks.unknown].map(titleKey))
+  const tokens = new Map<string, number>()
+  for (const { id } of ordered) {
+    const token = id.slice(-8)
+    tokens.set(token, (tokens.get(token) ?? 0) + 1)
+  }
   const used = new Set([...fallbackTitles, ...counts.keys()])
   const entries = ordered.map(({ id, title, area_id, goal_id }): [string, HouseholdProjectLabel] => {
     const group = `project-${id}`
@@ -31,16 +37,16 @@ export function getHouseholdProjectLabels(
 
     const areaId = area_id ?? (goal_id ? goalAreas?.get(goal_id) : null)
     const area = areaId && Object.hasOwn(areas, areaId) ? areas[areaId] : ""
-    let qualifier = area || id
+    const token = tokens.get(id.slice(-8)) === 1 ? id.slice(-8) : id
+    let qualifier = `#${token}${area ? ` · ${area}` : ""}`
     const displayKey = () => titleKey(`${title} · ${qualifier}`)
-    if (area && used.has(displayKey())) qualifier += ` · ${id}`
     while (used.has(displayKey())) qualifier += " ·"
     used.add(displayKey())
     return [group, { title, qualifier }]
   })
   return Object.fromEntries([
-    [NO_PROJECT_GROUP, { title: NO_PROJECT }],
-    [UNKNOWN_PROJECT_GROUP, { title: UNKNOWN_PROJECT }],
+    [NO_PROJECT_GROUP, { title: fallbacks.none }],
+    [UNKNOWN_PROJECT_GROUP, { title: fallbacks.unknown }],
     ...entries,
   ])
 }

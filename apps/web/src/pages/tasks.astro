@@ -238,13 +238,14 @@ try {
   /* areas table may not exist yet */
 }
 const groupByProject = renderedView === "kanban" && kanbanFilters.groupBy === "project"
-let projectLabels = getHouseholdProjectLabels([], Object.fromEntries(areas.map(area => [area.id, area.name])))
+const projectFallbacks = { none: t("kanban.no_project", locale), unknown: t("kanban.unknown_project", locale) }
+let projectLabels = getHouseholdProjectLabels([], Object.fromEntries(areas.map(area => [area.id, area.name])), undefined, projectFallbacks)
 let projectCatalogUnavailable = false
 if (groupByProject) {
   try {
     projectLabels = getHouseholdProjectLabels(
       await hierarchyRepo.findProjectGroups(),
-      Object.fromEntries(areas.map(area => [area.id, area.name])),
+      Object.fromEntries(areas.map(area => [area.id, area.name])), undefined, projectFallbacks,
     )
   } catch {
     projectCatalogUnavailable = true

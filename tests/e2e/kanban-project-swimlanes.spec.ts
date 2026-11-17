@@ -18,7 +18,7 @@ test("Household Kanban keeps Project identity, qualifiers and the current column
   const token = randomUUID().slice(0, 8)
   const prefix = `Project grouping ${token}`
   const title = `A long household project title that needs its Area kept visible ${token}`
-  const kitchen = `Kitchen ${token}`
+  const kitchen = `Kitchen with an unusually long Area name for the household workshop ${token}`
   const garden = `Garden ${token}`
   const cleanup: string[] = []
   async function create(path: string, data: object): Promise<string> {
@@ -71,12 +71,18 @@ test("Household Kanban keeps Project identity, qualifiers and the current column
     await expect(pending).toHaveAttribute("data-total", total!)
     await expect(label(direct)).toContainText(title)
     await expect(label(inherited)).toContainText(title)
-    await expect(qualifier(direct)).toHaveText(kitchen)
-    await expect(qualifier(inherited)).toHaveText(garden)
+    await expect(qualifier(direct)).toHaveText(`#${direct.slice(-8)} · ${kitchen}`)
+    await expect(qualifier(inherited)).toHaveText(`#${inherited.slice(-8)} · ${garden}`)
     await expect(qualifier(direct)).toBeInViewport()
     await expect(qualifier(inherited)).toBeInViewport()
+    expect(await qualifier(direct).evaluate(element => {
+      const range = document.createRange()
+      range.setStart(element.firstChild!, 0)
+      range.setEnd(element.firstChild!, 9)
+      return range.getBoundingClientRect().right <= element.getBoundingClientRect().right + 1
+    })).toBe(true)
     await expect(label(reserved)).toContainText("No Project")
-    await expect(qualifier(reserved)).toHaveText(kitchen)
+    await expect(qualifier(reserved)).toHaveText(`#${reserved.slice(-8)} · ${kitchen}`)
     await expect(label("")).toHaveText("No Project")
     for (const [id, project] of [[directTask, direct], [inheritedTask, inherited], [reservedTask, reserved], [unassignedTask, ""]]) {
       await expect(group(pending, project!).locator(`.kanban-card[data-id="${id}"]`)).toHaveCount(1)
@@ -120,6 +126,14 @@ test("Household Kanban keeps Project identity, qualifiers and the current column
     await expect(label(inherited)).toContainText(title)
     await expect(cards).toHaveCount(4)
     await expect(pending).toHaveAttribute("data-total", total!)
+    await header(direct).press("Enter")
+    await expect(header(direct)).toHaveAttribute("aria-expanded", "false")
+    expect((await request.delete(`/api/projects/${direct}`, { headers })).ok()).toBe(true)
+    cleanup.splice(cleanup.indexOf(`/api/projects/${direct}`), 1)
+    await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true })))
+    await expect(header(direct)).toHaveCount(0)
+    await expect(pending.locator(".kanban-column-header")).toBeFocused()
+    await expect(group(pending, "").locator(`.kanban-card[data-id="${directTask}"]`)).toBeVisible()
   } finally {
     const failures: string[] = []
     for (const path of cleanup.reverse()) {
@@ -196,9 +210,9 @@ test("Ingress Kanban hides unavailable Project references and recovers its catal
     await expect(directGroup.locator(".swimlane-label")).toHaveText(sharedTitle)
     await expect(inheritedGroup.locator(".swimlane-label")).toHaveText(sharedTitle)
     // A present but unavailable direct Area must suppress Goal inheritance.
-    await expect(directGroup.locator(".swimlane-qualifier")).toHaveText(invalidDirectProject)
+    await expect(directGroup.locator(".swimlane-qualifier")).toHaveText(`#${invalidDirectProject.slice(-8)}`)
     await expect(directGroup).not.toContainText("Inherited project Area")
-    await expect(inheritedGroup.locator(".swimlane-qualifier")).toHaveText("Inherited project Area")
+    await expect(inheritedGroup.locator(".swimlane-qualifier")).toHaveText(`#${inheritedProject.slice(-8)} · Inherited project Area`)
     const total = await lane.getAttribute("data-total")
 
     // Break just the catalog's ordering query. Card visibility still uses IDs and scope.
@@ -218,6 +232,10 @@ test("Ingress Kanban hides unavailable Project references and recovers its catal
     await expect(unknown.locator(".swimlane-count")).toHaveText("2")
     await expect(cards).toHaveCount(6)
     await expect(lane).toHaveAttribute("data-total", total!)
+    await context.addCookies([{ name: "meitheal-locale", value: "ga", url: origin }])
+    await page.reload()
+    await expect(unknown.locator(".swimlane-label")).toHaveText("Tionscadal Anaithnid")
+    await expect(lane.locator('.dynamic-group[data-swimlane-type="project-"] .swimlane-label')).toHaveText("Gan Tionscadal")
   } finally {
     db?.close()
     await browser?.close()
