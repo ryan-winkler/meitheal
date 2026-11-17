@@ -2,12 +2,13 @@ import {
   pinsChanged, pinsInvalidated, readPinPresence, supportsPersonalPins, watchPinLease,
 } from "./task-pin-client"
 
-export function bindSidebarPinPresence(sidebar: HTMLElement, signal: AbortSignal): void {
+export function bindSidebarPinPresence(sidebar: HTMLElement, signal: AbortSignal, waitForSidebarInteraction: boolean): void {
   const item = sidebar.querySelector<HTMLElement>("[data-sidebar-pin-presence]")
   if (!item || !supportsPersonalPins()) return
 
   const desktop = matchMedia("(min-width: 769px)")
-  const foreground = () => !signal.aborted && document.visibilityState !== "hidden" && document.hasFocus()
+  let sidebarActivated = !waitForSidebarInteraction
+  const foreground = () => sidebarActivated && !signal.aborted && document.visibilityState !== "hidden" && document.hasFocus()
     && (desktop.matches || sidebar.classList.contains("open"))
   let request: AbortController | undefined
   let stopLease: (() => void) | undefined
@@ -84,8 +85,14 @@ export function bindSidebarPinPresence(sidebar: HTMLElement, signal: AbortSignal
     suspend(true)
     checked = true
   }, { signal })
-  for (const type of ["pointerdown", "keydown"]) document.addEventListener(type, () => {
+  sidebar.addEventListener("focusin", () => {
+    if (sidebarActivated) return
+    sidebarActivated = true
+    syncVisibility()
+  }, { signal })
+  for (const type of ["pointerdown", "keydown"]) document.addEventListener(type, event => {
     lastInteraction = performance.now()
+    if (event.target instanceof Node && sidebar.contains(event.target)) sidebarActivated = true
     syncVisibility()
   }, { signal })
   document.addEventListener("visibilitychange", syncVisibility, { signal })

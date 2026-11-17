@@ -382,7 +382,8 @@ const remainingItems = areaPosition < 0 ? [] : navItems.slice(areaPosition + 1)
     bindSidebarBoards(signal)
     const sidebar = document.getElementById("sidebar")
     if (sidebar) {
-      bindSidebarPinPresence(sidebar, signal)
+      // Recent activity restores through guarded browser history.
+      bindSidebarPinPresence(sidebar, signal, Boolean(document.querySelector("[data-recent-activity]")))
       bindSidebarReorder(sidebar, signal)
     }
   })

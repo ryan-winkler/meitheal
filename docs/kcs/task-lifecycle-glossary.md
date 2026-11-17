@@ -63,7 +63,7 @@ The saved link follows the task’s ID when the title changes. It opens in the c
 
 A personal pin is a relationship between one household user and one task. It survives changes to the task's workflow, including deferral and completion, and disappears when the task is permanently deleted. Shared favorites continue to drive the existing household views.
 
-Open a task’s Details and choose the **Pin task** thumbtack. **Pinned tasks** appears in the sidebar or mobile menu after you pin your first task. Use the thumbtack in Details or **Unpin** in the list to remove a pin. Removing the last pin hides **Pinned tasks** from navigation. Use the Home Assistant app panel over HTTPS.
+Open a task’s Details and choose the **Pin task** thumbtack. **Pinned tasks** appears in the sidebar or mobile menu after you pin your first task. Use the thumbtack in Details or **Unpin** in the list to remove a pin. Removing the last pin hides **Pinned tasks** from navigation. On **Recent activity**, interact with the sidebar to check your pins. This preserves the activity page’s browser history behavior during ordinary reading. Use the Home Assistant app panel over HTTPS.
 
 ### Choose a Status or Goal When Creating a Task
 
