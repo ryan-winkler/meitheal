@@ -912,6 +912,42 @@ test("a Settings section chosen after a search jump is remembered inside ingress
   expect(saved).toMatchObject({ path: "/settings#navigation-settings" })
 })
 
+test("ingress Today keeps refreshed completion links in the App", async ({ page, context }) => {
+  const title = "Complete from the ingress Today fixture"
+  const created = await page.request.post(origin + prefix + "/api/tasks", {
+    headers: { cookie: "feedback-fixture=admin", origin },
+    data: { title, due_date: new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Europe/Dublin", dateStyle: "short",
+    }).format(new Date()) },
+  })
+  expect(created.status()).toBe(201)
+  const { id } = await created.json()
+  await context.setExtraHTTPHeaders({})
+  await context.addCookies([{ name: "feedback-fixture", value: "member", url: origin }])
+  await page.addInitScript(() => localStorage.setItem("meitheal-theme", "knight-rider"))
+  await page.goto(origin + prefix + "/today")
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "knight-rider")
+  const row = page.locator(`#today-due-list .tli[data-id="${id}"]`)
+  await expect(row).toHaveAttribute("draggable", "true")
+  const [saved] = await Promise.all([
+    page.waitForResponse(response => response.url() === origin + prefix + "/api/tasks/" + id &&
+      response.request().method() === "PUT", { timeout: 5000 }),
+    row.getByRole("checkbox", { name: `Complete ${title}` }).check(),
+  ])
+  expect(saved.status(), await saved.text()).toBe(200)
+  const disclosure = page.locator(".today-completed-tasks")
+  await disclosure.locator("summary").click()
+  const link = disclosure.getByRole("link", { name: title })
+  const expected = origin + prefix + "/tickets/" + id
+  await expect(link).toHaveJSProperty("href", expected)
+  const [newTab] = await Promise.all([
+    context.waitForEvent("page", { timeout: 5000 }),
+    link.click({ modifiers: ["ControlOrMeta"] }),
+  ])
+  await expect(newTab).toHaveURL(expected)
+  await newTab.close()
+})
+
 test("ingress Settings keeps readable palettes and resolves Auto from the panel or system", async ({ page, context }) => {
   // Two entry points, three themes, and two contrast scans per theme.
   test.setTimeout(90_000)

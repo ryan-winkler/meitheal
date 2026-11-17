@@ -38,7 +38,7 @@ import {
 } from "./filter-state"
 import { createListenerManager, installPageCleanup } from "./managed-listeners"
 import { initPageShellNavigation } from "./page-shell-controller"
-import { buildTaskPath, openTaskDetailHandoff } from "./task-detail-handoff"
+import { buildTaskPermalink, openTaskDetailHandoff } from "./task-detail-handoff"
 import type { TodayTaskCounts } from "./task-queries"
 import { TODAY_SECTIONS } from "./today-registry"
 import { compareTodayRows, matchesTodayFilters, lockTodayTaskStatus, syncTodayTaskStatus, type TodayFilters } from "./today-list"
@@ -1065,7 +1065,7 @@ function renderCompletedTasks(container: HTMLElement, counts: TodayTaskCounts): 
     list?.replaceChildren(...tasks.map(task => {
       const row = document.createElement("li")
       const link = document.createElement("a")
-      link.href = buildTaskPath(task.id)
+      link.href = buildTaskPermalink(task.id)
       link.dataset.taskDetailLink = task.id
       link.dataset.todayCompletion = ""
       const title = document.createElement("span")
@@ -1078,7 +1078,7 @@ function renderCompletedTasks(container: HTMLElement, counts: TodayTaskCounts): 
   if (focused && (completed.hidden || !focused.isConnected)) {
     const id = focused instanceof HTMLAnchorElement ? focused.dataset.taskDetailLink : undefined
     const retained = id ? list?.querySelector<HTMLElement>(`a[data-task-detail-link="${CSS.escape(id)}"]`) : null
-    const fallback = completed.hidden ? container.querySelector<HTMLElement>("#today-filter-status") : summary
+    const fallback = completed.hidden ? container.querySelector<HTMLElement>("#clear-completed-btn") : summary
     ;(retained ?? fallback)?.focus({ preventScroll: true })
   }
   const empty = container.querySelector<HTMLElement>("[data-today-due-empty]")
