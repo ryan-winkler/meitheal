@@ -201,6 +201,20 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
   const denied = isAssignedWriteOnly(agentToken) ? await checkAssignedTask(resolvedId, agentToken!) : null
   if (denied) return (await replayedAgentReassignment(repo, agentToken, resolvedId, body, expectedActor)) ?? denied
 
+  if (body.action === "file") {
+    const { areaId, projectId, version } = body
+    if (typeof version !== "number" || !Number.isSafeInteger(version) || version < 0 ||
+        (areaId != null && typeof areaId !== "string") || (projectId != null && typeof projectId !== "string")) {
+      return apiError("Choose a valid Household placement and task version.", 400)
+    }
+    if (agentToken) return apiError("Household filing requires a person’s session.", 403)
+    const change = await repo.fileHouseholdTask(resolvedId, version, {
+      ...(areaId !== undefined ? { areaId } : {}), ...(projectId !== undefined ? { projectId } : {}),
+    })
+    return change.ok ? Response.json(change.task)
+      : apiError(change.stale ? "Refresh the task before filing it." : "Household placement unavailable", change.stale ? 409 : 404)
+  }
+
   if (body.expected_status !== undefined && (
     body.expected_status !== STATUS.BACKLOG || clientVersion === undefined ||
     (body.status !== STATUS.PENDING && body.status !== STATUS.ACTIVE)

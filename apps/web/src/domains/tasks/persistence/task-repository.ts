@@ -15,7 +15,7 @@
 
 import type { Client, InStatement, InValue, ResultSet } from "@libsql/client"
 import { nextHouseholdTicketNumberSql } from "../../../../drizzle/migrations/task-board-tickets.mjs"
-import { executeWriteWithRetry, runWriteTransaction } from "../../../../scripts/database-client.mjs"
+import { acquireWriteTransaction, executeWriteWithRetry, runWriteTransaction } from "../../../../scripts/database-client.mjs"
 import { CLOSED_TASK_STATUSES, getStatusDef, isClosedStatus, isDoneStatus, normalizeStatus, STATUS } from "../../../lib/status-config"
 import { logApiError, logApiWarn } from "../../../lib/api-logger"
 import { EXACT_TASK_IDENTIFIER_SCORE } from "../../../lib/task-search-score"
@@ -25,7 +25,7 @@ import { parseTicketKey } from "../../../lib/ticket-key"
 import { getNextOccurrence, parseRRule } from "../recurrence"
 import { deferralTerminalStatusesSql, isDeferralTerminalStatus } from "./task-deferral-status"
 import { discardUnappliedTaskActivity, taskChangedActivity, type RecentTaskActor } from "./recent-activity"
-import { nextTaskTimestampMs, taskTimestampMs } from "./task-timestamp"
+import { canAdvanceTaskTimestampMs, nextTaskTimestampMs, taskTimestampMs } from "./task-timestamp"
 import { inactivityRuleActor, inactivityWriteGuard } from "./task-inactivity-query"
 import { openTaskDependencies } from "./task-dependencies"
 
@@ -1168,6 +1168,7 @@ export class TaskRepository {
     matchCalendarTask?: ((task: CalendarFilterRow) => boolean) | undefined;
     priority?: number;
     areaId?: string;
+    workspaceAreaId?: string;
     projectId?: string;
     taskType?: string;
     parentId?: string;
@@ -1208,6 +1209,14 @@ export class TaskRepository {
     }
     if (opts.priority != null) { conditions.push("priority = ?"); args.push(opts.priority); }
     if (opts.areaId) { conditions.push(`(${householdPlanningProjection("areas", "tasks.area_id")}) = ?`); args.push(opts.areaId); }
+    if (opts.workspaceAreaId) {
+      conditions.push(`(CASE
+        WHEN EXISTS (SELECT 1 FROM projects WHERE id = tasks.project_id AND owner_board_id IS NULL AND retired_at IS NULL AND is_default = 0)
+        THEN (SELECT area_id FROM projects WHERE id = tasks.project_id)
+        ELSE (${householdPlanningProjection("areas", "tasks.area_id")})
+      END) = ?`)
+      args.push(opts.workspaceAreaId)
+    }
     if (opts.projectId) { conditions.push(`(${householdPlanningProjection("projects", "tasks.project_id")}) = ?`); args.push(opts.projectId); }
     if (opts.taskType) { conditions.push("task_type = ?"); args.push(opts.taskType); }
     if (opts.parentId) { conditions.push("parent_id = ?"); args.push(opts.parentId); }
@@ -1466,6 +1475,47 @@ export class TaskRepository {
           created_at: Number(activityRow.created_at),
         }
         : null,
+    }
+  }
+
+  async fileHouseholdTask(id: string, version: number, placement: { areaId?: string | null; projectId?: string | null }) {
+    const tx = await acquireWriteTransaction(this.client)
+    try {
+      const { rows: [task] } = await tx.execute({
+        sql: `SELECT area_id, project_id FROM tasks WHERE id = ? AND task_board_id IS NULL
+          AND ${taskTimestampMs("updated_at")} = ?
+          AND NOT (task_kind = 'routine_instance' AND source_template_id IS NOT NULL)`,
+        args: [id, version],
+      })
+      if (!task) return { ok: false, stale: true } as const
+      const projectId = placement.projectId === undefined && typeof task.project_id === "string" ? task.project_id : placement.projectId ?? null
+      let areaId = placement.areaId === undefined && typeof task.area_id === "string" ? task.area_id : placement.areaId ?? "default"
+      if (projectId) {
+        const { rows: [project] } = await tx.execute({
+          sql: "SELECT area_id FROM projects WHERE id = ? AND owner_board_id IS NULL AND retired_at IS NULL AND status = 'active'",
+          args: [projectId],
+        })
+        if (!project || (placement.areaId && placement.areaId !== project.area_id)) return { ok: false, stale: false } as const
+        areaId = typeof project.area_id === "string" ? project.area_id : "default"
+      }
+      if (areaId !== "default") {
+        const { rows } = await tx.execute({
+          sql: "SELECT id FROM areas WHERE id = ? AND owner_board_id IS NULL AND retired_at IS NULL",
+          args: [areaId],
+        })
+        if (!rows.length) return { ok: false, stale: false } as const
+      }
+      const { rows: [result] } = await tx.execute({
+        sql: `UPDATE tasks SET area_id = ?, project_id = ?, updated_at = ${nextTaskTimestampMs("updated_at")}
+          WHERE id = ? AND task_board_id IS NULL AND ${canAdvanceTaskTimestampMs("updated_at")}
+          RETURNING id, area_id, project_id, updated_at AS task_version`,
+        args: [areaId, projectId, Date.now(), id],
+      })
+      if (!result) return { ok: false, stale: true } as const
+      await tx.commit()
+      return { ok: true, task: result } as const
+    } finally {
+      tx.close()
     }
   }
 
