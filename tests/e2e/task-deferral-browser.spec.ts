@@ -168,3 +168,29 @@ test("Deferred preserves the Board Area and can widen to all Areas", async ({ pa
 
   for (const task of [local, elsewhere]) await request.delete(`/api/tasks/${task.id}`, { data: {} })
 })
+
+test("a missing Deferred Area stays visible on the Board until the user widens it", async ({ page, request }) => {
+  const id = crypto.randomUUID()
+  const task = await seed(request, "Recover an open task")
+  try {
+    await page.goto(`/deferred?area=${id}`)
+    const area = page.getByRole("combobox", { name: "Area", exact: true })
+    await expect(area).toHaveValue(id)
+    await page.getByRole("link", { name: "Back to Tasks" }).click()
+    const trigger = page.locator("#area-selector-trigger")
+    await expect(trigger).toContainText("Unavailable Area")
+    await expect(page).toHaveURL(url => url.searchParams.get("area") === id)
+    const card = page.locator(`.kanban-card[data-id="${task.id}"]`)
+    await expect(card).toHaveCount(0)
+    await page.getByRole("textbox", { name: "Filter by text" }).fill("Recover")
+    await expect(page).toHaveURL(url => url.searchParams.get("area") === id && url.searchParams.get("search") === "Recover")
+    await expect(card).toHaveCount(0)
+    await trigger.click()
+    await page.locator('#area-selector-dropdown [data-area-id=""]').click()
+    await expect(trigger).toContainText("All Areas")
+    await expect(page).toHaveURL(url => url.searchParams.get("area") === "")
+    await expect(card).toBeVisible()
+  } finally {
+    await request.delete(`/api/tasks/${task.id}`, { data: {} })
+  }
+})

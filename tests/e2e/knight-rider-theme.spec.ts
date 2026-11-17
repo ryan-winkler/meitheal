@@ -40,6 +40,9 @@ test("Knight Rider persists and fills active work and task colors on Today and B
   const paleId = await create("Prime the new workshop controller", "active", "#fff")
   const mediumId = await create("Check the meter readings", "active", undefined, 10)
   const highId = await create("Send the maintenance schedule", "active", undefined, 16)
+  expect((await request.put(`/api/tasks/${paleId}`, { data: {
+    checklists: JSON.stringify([{ text: "Check stock", done: true }]),
+  } })).ok()).toBe(true)
   const themeSelect = page.locator("#theme-select")
   const root = page.locator("html")
   const themeColor = page.locator('meta[name="theme-color"]')
@@ -164,6 +167,16 @@ test("Knight Rider persists and fills active work and task colors on Today and B
     await expect.poll(() => root.evaluate(el => getComputedStyle(el).getPropertyValue("--text-muted").trim())).toBe("rgb(215 213 220)")
     await expect.poll(() => root.evaluate(el => getComputedStyle(el).getPropertyValue("--border").trim())).toBe("rgb(119 119 123)")
     await page.emulateMedia({ contrast: "no-preference" })
+
+    await page.evaluate(() => localStorage.setItem("meitheal-appearance", JSON.stringify({ base: "mist" })))
+    for (const [path, surface] of [["/today#today-work", ".tli"], ["/tasks#kanban", ".kanban-card"]] as const) {
+      await page.goto(path)
+      await expect(root).toHaveAttribute("data-appearance-base", "mist")
+      const checklist = page.locator(`${surface}[data-id="${paleId}"]`).getByText("✓ 1/1", { exact: true })
+      await expect(checklist).toBeVisible()
+      expect(await badgeContrast(checklist, surface)).toBeGreaterThanOrEqual(4.5)
+    }
+    await page.evaluate(() => localStorage.removeItem("meitheal-appearance"))
 
     const favorite = await request.put(`/api/tasks/${coloredId}`, { data: { is_favorite: 1 } })
     expect(favorite.ok()).toBe(true)

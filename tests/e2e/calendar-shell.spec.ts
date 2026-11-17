@@ -63,6 +63,16 @@ test.describe("Calendar Shell", () => {
     await expect(active).toBeHidden()
     await expect(toolbar).toBeVisible()
     await expect(search).toHaveValue("phone calendar filter")
+
+    await page.setViewportSize({ width: 320, height: 780 })
+    await active.click()
+    await toolbar.getByRole("button", { name: "Toggle filter builder" }).click()
+    const builder = toolbar.getByRole("region", { name: "Custom Filter Builder" })
+    await builder.getByRole("button", { name: "Condition", exact: true }).click()
+    await builder.getByPlaceholder("Value...").fill("accessible mobile rules")
+    await builder.getByRole("button", { name: "Apply Rules" }).click()
+    await expect(page).toHaveURL(url => decodeURIComponent(url.searchParams.get("advancedFilter") ?? "").includes("accessible mobile rules"))
+    await expect(search).toHaveValue("phone calendar filter")
   })
 
   test("day controls announce the visible number and retain contrast in the built-in light and dark themes", async ({ page }) => {

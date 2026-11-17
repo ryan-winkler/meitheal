@@ -174,7 +174,7 @@ const customEntries = Object.entries(task.custom_fields).filter(
     {checklistTotal > 0 && (
       <span
         class="tli__checklist"
-        style={`color: ${checklistDone === checklistTotal ? "var(--color-green-500, #22c55e)" : "var(--text-muted)"}`}
+        style={`color: ${checklistDone === checklistTotal ? "var(--success-text)" : "var(--text-muted)"}`}
         title={`Checklist: ${checklistDone}/${checklistTotal}`}
       >
         ✓ {checklistDone}/{checklistTotal}

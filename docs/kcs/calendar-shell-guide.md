@@ -15,7 +15,7 @@ Calendar opens within **Tasks** at `/tasks?view=calendar`. Older `/calendar` and
 ### Move around the month without losing the shell context
 
 1. Use **Previous month**, **Next month** or **Today** above the grid.
-2. Filter by title, task type, status, priority, label, area, or custom rules above the month. On phones, select **Filters** to open these controls. **Active** shows that filters still apply when the controls are closed. **Promoted cards only** narrows the task results to work moved to the top of a Kanban lane.
+2. Filter by title, task type, status, priority, label, area, or custom rules above the month. On phones, select **Filters** to open these controls, then **Filter** to edit custom rules. **Active** shows that filters still apply when the controls are closed. **Promoted cards only** narrows the task results to work moved to the top of a Kanban lane.
 3. Open any day in the displayed month to review matching due tasks and local Events that start that day. The month totals each saved calendar occurrence once, even if it appears on several days. The day drawer lists saved and live events in its connected section using Meitheal’s household timezone. All-day events stay on their calendar dates. Household members can see the configured feed in Calendar. Administrators manage the sources in Settings. Tasks and local Events come from the Household Board. Open a named Board to see its tickets. Turn off **Events** in the type filters to hide local Events and connected event previews and counts.
 4. The month controls keep the active filters. Use **Clear All** to start over. Its accessible name is **Clear all active filters**.
 

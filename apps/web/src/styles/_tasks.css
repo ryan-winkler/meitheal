@@ -525,16 +525,21 @@
 }
 
 :root[data-theme="knight-rider"] :is(.tli, .focus-card, .kanban-card, .bento-card, .task-item)[data-task-color] {
-  --knight-selected-task-fill: color-mix(in srgb, var(--knight-task-color) 18%, var(--bg-secondary));
+  --knight-selected-task-fill: color-mix(in srgb, var(--knight-task-color) 13%, var(--bg-secondary));
   background-color: var(--knight-selected-task-fill);
+  --knight-tinted-task-muted-rgb: var(--text-secondary-rgb);
+  --text-muted-rgb: var(--knight-tinted-task-muted-rgb);
+  --text-muted: var(--text-secondary);
+  --control-border: var(--text-secondary);
 }
 
 :root[data-theme="knight-rider"] :is(.tli, .focus-card, .kanban-card, .bento-card, .task-item)[data-work-active]:not(.tli--done) {
   background-color: var(--knight-selected-task-fill, var(--knight-active-fill));
   border-bottom-color: var(--knight-active-indicator);
-  --text-muted-rgb: var(--knight-task-muted-rgb);
+  --text-muted-rgb: var(--knight-tinted-task-muted-rgb, var(--knight-task-muted-rgb));
   --text-muted: rgb(var(--text-muted-rgb));
 }
+
 
 :root[data-theme="knight-rider"] .tli__custom-chip {
   color: var(--accent-text);

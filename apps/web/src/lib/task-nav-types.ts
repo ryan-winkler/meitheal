@@ -1,3 +1,4 @@
+import type { FilterGroup } from "./filter-engine"
 import { normalizeTableRules, readFilterLabels } from "./filter-state"
 import { readKanbanRules } from "./kanban-query"
 import { parseTaskView, readTaskAreaParam, type TaskView } from "./task-view-route"
@@ -79,12 +80,18 @@ function sameFilterValues(expected: string[], active: string[]): boolean {
   return expected.sort().every((value, index) => value === active[index])
 }
 
-function ruleSignature(params: URLSearchParams, view: TaskView): string {
+function effectiveRules(group: FilterGroup): unknown[] {
+  return group.conditions.map((node, index) => [
+    index === 0 ? null : node.logic ?? group.logic,
+    "conditions" in node ? effectiveRules(node) : [node.field, node.operator, node.value],
+  ])
+}
+
+function ruleSignature(params: URLSearchParams, view: TaskView): string | undefined {
   const raw = params.get("advancedFilter")
   const rules = (view !== "kanban" ? normalizeTableRules(raw) : undefined)
     ?? (view !== "table" ? readKanbanRules(raw) : undefined)
-  // The filter editor and the route assign different IDs to the same conditions.
-  return JSON.stringify(rules?.conditions.length ? rules : null, (key, value) => key === "id" ? undefined : value)
+  if (rules?.conditions.length) return JSON.stringify(effectiveRules(rules))
 }
 
 export function matchingTaskShortcutCriteria(target: URLSearchParams, current: URLSearchParams, view: TaskView): number {
@@ -98,7 +105,10 @@ export function matchingTaskShortcutCriteria(target: URLSearchParams, current: U
     keys.delete("labels")
   }
   const matchedRules = view !== "timeline" && keys.delete("advancedFilter")
-  if (matchedRules && ruleSignature(target, view) !== ruleSignature(current, view)) return -1
+  if (matchedRules) {
+    const expected = ruleSignature(target, view)
+    if (!expected || expected !== ruleSignature(current, view)) return -1
+  }
   let matchedArea = false
   if (view === "calendar" || view === "table") {
     const area = readTaskAreaParam(target)

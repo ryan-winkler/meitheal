@@ -420,8 +420,12 @@ test("Shopping links identify their own Area and follow applied Board filters", 
       id: "saved-shopping-group", logic: "AND",
       conditions: [{ id: "saved-grocery-rule", field: "title", operator: "contains", value: "grocery" }],
     }))
-    paths.push("/tasks?" + calendarParams + "#calendar", "/tasks?" + groceryParams, "/tasks?" + ruleParams)
-    const shortcuts = ["All Shopping", ...names, "Kitchen shopping calendar", "Grocery shopping", "Grocery rule"].map((label, index) => ({
+    const ruleWithView = (view: string) => "/tasks?" + new URLSearchParams({ ...Object.fromEntries(ruleParams), view })
+    const invalidRule = new URLSearchParams({ types: "shopping_item", area: areas[0]!, advancedFilter: "{invalid" })
+    paths.push("/tasks?" + calendarParams + "#calendar", "/tasks?" + groceryParams, "/tasks?" + ruleParams,
+      ruleWithView("calendar"), ruleWithView("table"), "/tasks?" + invalidRule)
+    const shortcuts = ["All Shopping", ...names, "Kitchen shopping calendar", "Grocery shopping", "Grocery rule",
+      "Grocery Calendar rule", "Grocery Table rule", "Invalid Grocery rule"].map((label, index) => ({
       id: `shopping-route-${index}`,
       label,
       href: paths[index],
@@ -484,6 +488,22 @@ test("Shopping links identify their own Area and follow applied Board filters", 
     await expect(page).toHaveURL(url => url.searchParams.get("search") === "bread" &&
       decodeURIComponent(url.searchParams.get("advancedFilter") ?? "").includes('"value":"grocery"'))
     await expect(current).toHaveText("Grocery rule")
+
+    for (const name of ["Grocery Calendar rule", "Grocery Table rule"]) {
+      await sidebar.getByRole("link", { name, exact: true }).click()
+      await expect(current).toHaveText(name)
+      const filters = page.getByRole("toolbar", { name: "Filter tasks" })
+      await filters.getByRole("button", { name: "Toggle filter builder" }).click()
+      await filters.getByRole("button", { name: "Apply Rules" }).click()
+      await expect(page).toHaveURL(url => {
+        const rule = url.searchParams.get("advancedFilter")
+        return Boolean(rule && JSON.parse(decodeURIComponent(rule)).conditions[0]?.logic === "AND")
+      })
+      await expect(current).toHaveText(name)
+    }
+
+    await sidebar.getByRole("link", { name: "Invalid Grocery rule", exact: true }).click()
+    await expect(current).toHaveText(names[0]!)
   } finally {
     await request.put("/api/settings", { headers, data: { key: "sidebar_config", value: previous ?? null } })
     for (const id of areas) await request.delete(`/api/areas/${id}`, { headers })

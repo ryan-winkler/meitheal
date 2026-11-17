@@ -29,7 +29,7 @@ export function getRememberedAreaId(): string {
 }
 
 export function getSelectedAreaId(): string {
-  return document.querySelector<HTMLElement>('#area-selector-dropdown [aria-selected="true"]')?.dataset.areaId ?? ""
+  return document.querySelector<HTMLElement>("#area-selector-trigger")?.dataset.selectedAreaId ?? ""
 }
 
 /**
@@ -61,7 +61,7 @@ export function initAreaSelector(signal: AbortSignal): void {
       .find(item => item.dataset.areaId === requested)
     if (option) {
       selectArea(requested, option.dataset.areaName ?? "All Areas", option.dataset.areaIcon ?? "🗂")
-    } else if (table || calendar) {
+    } else if (table || calendar || document.getElementById("kanban-shell")) {
       selectArea(requested, "Unavailable Area", "🗂")
     }
   } else if (!calendar) {
@@ -146,6 +146,7 @@ export function initAreaSelector(signal: AbortSignal): void {
     }
 
     // Update trigger display
+    trigger!.dataset.selectedAreaId = areaId
     labelEl!.textContent = areaName
     renderIconOrCustomEmoji(iconEl!, areaIcon, "folders", 15)
 
@@ -158,7 +159,9 @@ export function initAreaSelector(signal: AbortSignal): void {
     })
 
     // Save to localStorage
-    if (source !== "restore" || !table) saveArea(areaId, areaName, areaIcon)
+    if (source !== "restore" || !table && [...options].some(option => option.dataset.areaId === areaId)) {
+      saveArea(areaId, areaName, areaIcon)
+    }
 
     // Sync all FilterToolbar area selects across views
     if (!table) syncFilterToolbarAreas(areaId)
