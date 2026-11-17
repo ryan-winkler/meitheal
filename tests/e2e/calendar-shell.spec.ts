@@ -33,6 +33,12 @@ test.describe("Calendar Shell", () => {
     await expect(first).toHaveAccessibleName(/1 January 999/)
     await first.press("Enter")
     await expect(page.locator("#day-drawer-close")).toBeFocused()
+
+    const session = await page.context().newCDPSession(page)
+    await session.send("Emulation.setTimezoneOverride", { timezoneId: "Pacific/Apia" })
+    await page.goto("/tasks?view=calendar&year=2011&month=11#calendar")
+    await page.locator('.cal-cell[data-date="2011-12-30"]').press("Enter")
+    await expect(page.locator("#day-drawer-title")).toHaveText("Friday, December 30")
   })
 
   test("phone filters stay compact, accessible and marked when active", async ({ page }) => {
@@ -86,6 +92,10 @@ test.describe("Calendar Shell", () => {
     await expect(conditions).toHaveCount(2)
     await expect(conditions.first().getByRole("combobox", { name: "Field", exact: true })).toBeVisible()
     await expect(conditions.last().getByRole("combobox", { name: "Operator", exact: true })).toBeVisible()
+    expect(await conditions.last().locator("button, select, input").evaluateAll(controls => controls.every(control => {
+      const rect = control.getBoundingClientRect()
+      return rect.width >= 43.99 && rect.height >= 43.99 && rect.right <= innerWidth + 1
+    }))).toBe(true)
     await conditions.last().getByRole("button", { name: "Remove condition" }).press("Enter")
     await expect(conditions).toHaveCount(1)
     await expect(conditions.first().getByRole("combobox", { name: "Field", exact: true })).toBeFocused()
@@ -116,6 +126,40 @@ test.describe("Calendar Shell", () => {
           .withRules(["color-contrast", "label-content-name-mismatch"])
           .analyze()
         expect(violations.map(({ id, nodes }) => [id, nodes.map(({ target }) => target)]), `${width}px ${theme}`).toEqual([])
+      }
+    }
+  })
+
+  test("Calendar label chips retain contrast on hover across theme modes", async ({ page }) => {
+    test.slow()
+    await page.setViewportSize({ width: 1440, height: 860 })
+    await page.emulateMedia({ reducedMotion: "reduce", colorScheme: "dark" })
+    await page.route("**/api/labels", route => route.fulfill({
+      json: { labels: [{ title: "Review" }, { title: "Household" }] },
+    }))
+    await page.addInitScript(() => {
+      const theme = new URLSearchParams(location.search).get("probeTheme")
+      if (!theme) return
+      localStorage.setItem("meitheal-theme", theme)
+      if (theme === "custom") localStorage.setItem("meitheal-custom-theme-css", ":root { --bg-hover: #252526; }")
+    })
+    for (const theme of ["light", "dark", "knight-rider", "auto", "custom"]) {
+      await page.goto(`/tasks?view=calendar&label=Review&probeTheme=${theme}#calendar`)
+      await expect(page.locator("html")).toHaveAttribute("data-theme", theme === "custom" ? "dark" : theme)
+      const panel = page.locator("#calendar-filter-bar .label-filter-panel")
+      await panel.locator("summary").click()
+      const selected = panel.getByRole("button", { name: "Review", exact: true })
+      const ordinary = panel.getByRole("button", { name: "Household", exact: true })
+      await expect(selected).toHaveAttribute("aria-pressed", "true")
+      await expect(ordinary).toHaveAttribute("aria-pressed", "false")
+      for (const chip of [selected, ordinary]) {
+        await chip.hover()
+        const { violations, passes } = await new AxeBuilder({ page })
+          .include("#calendar-filter-bar .label-filter__chip")
+          .withRules(["color-contrast"])
+          .analyze()
+        expect(violations, theme).toEqual([])
+        expect(passes.find(({ id }) => id === "color-contrast")?.nodes, theme).toHaveLength(3)
       }
     }
   })

@@ -354,8 +354,8 @@ export function initCalendarPage(signal: AbortSignal): void {
     const date = cell?.dataset.date
     if (!date) return
     drawerDate = date
-    drawerTitle!.textContent = new Date(`${date}T00:00:00`).toLocaleDateString("en-US", {
-      weekday: "long", month: "long", day: "numeric",
+    drawerTitle!.textContent = new Date(`${date}T00:00:00Z`).toLocaleDateString("en-US", {
+      weekday: "long", month: "long", day: "numeric", timeZone: "UTC",
     })
     previousOverflow = document.body.style.overflow
     document.body.style.overflow = "hidden"

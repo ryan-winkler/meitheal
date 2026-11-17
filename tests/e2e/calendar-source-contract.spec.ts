@@ -56,7 +56,7 @@ test("Calendar reads configured sources as a household member and filters before
 
     const agendaPath = base + "/api/calendar/agenda"
     const query = { date, filters: "search=matching+garden", limit: 100, offset: 0 }
-    const first = await api.post(agendaPath, { headers: headers("member"), data: query })
+    const first = await api.post(agendaPath, { headers: headers("member"), data: { ...query, ignored: true } })
     expect(first.status()).toBe(200)
     const { tasks, total } = await first.json()
     expect(total).toBe(201)

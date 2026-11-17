@@ -668,14 +668,6 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
           const isAnd = logicBtn.dataset.logic === "AND"
           logicBtn.dataset.logic = isAnd ? "OR" : "AND"
           logicBtn.textContent = isAnd ? "OR" : "AND"
-          // Toggle styling for visual distinction
-          if (isAnd) {
-            logicBtn.classList.remove("text-accent")
-            logicBtn.classList.add("text-indigo-400")
-          } else {
-            logicBtn.classList.add("text-accent")
-            logicBtn.classList.remove("text-indigo-400")
-          }
         }, { signal })
         row.appendChild(logicBtn)
       }
@@ -1327,7 +1319,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
       font-size: 0.75rem;
       font-weight: 600;
     }
-    :is(.filter-toolbar--calendar, .filter-toolbar--timeline) :is(button, select, input, summary) {
+    :is(.filter-toolbar--calendar, .filter-toolbar--timeline) :global(:is(button, select, input, summary)) {
       min-height: 44px;
     }
   }
@@ -1339,7 +1331,8 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
     outline-offset: 2px;
   }
   @media (pointer: coarse) {
-    .filter-toolbar--calendar :is(button, select, input, summary) { min-height: 44px; }
+    .filter-toolbar--calendar :global(:is(button, select, input, summary)) { min-height: 44px; }
+    .filter-toolbar--calendar :global(.advanced-filter-row button) { min-inline-size: 44px; }
   }
   .table-workflow-filter { min-inline-size: 0; max-inline-size: 100%; }
   .table-workflow-filter > summary, .table-unassigned-filter { min-block-size: 44px; height: auto; }

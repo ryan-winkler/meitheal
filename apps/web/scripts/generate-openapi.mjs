@@ -890,7 +890,7 @@ const paths = {
       description: "Read-only browser operation. Returns due tasks and native events that start on the selected day, applying Calendar filters before pagination. The first page also returns saved linked Home Assistant and CalDAV occurrences when Events is selected. If one first-page read fails, its fields are null and the other result is returned. Live Home Assistant events are read separately.",
       security: ingressSession,
       requestBody: { required: true, content: { "application/json": { schema: {
-        type: "object", required: ["date", "filters", "limit", "offset"], properties: {
+        type: "object", additionalProperties: true, required: ["date", "filters", "limit", "offset"], properties: {
           date: { type: "string", format: "date" },
           filters: { type: "string", maxLength: 20000, description: "Encoded Calendar query without its leading question mark." },
           limit: { type: "integer", minimum: 1, maximum: 100 },
@@ -921,6 +921,7 @@ const paths = {
         408: problemContent("Calendar query timed out"),
         413: problemContent("Calendar query too large"),
         415: problemContent("Expected JSON"),
+        500: problemContent("Calendar agenda read failed"),
         503: problemContent("Calendar agenda unavailable"),
       },
     },

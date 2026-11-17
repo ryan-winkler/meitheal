@@ -258,13 +258,14 @@
 }
 
 .label-filter__chip:hover {
-  background: var(--hover-bg, hsl(220 14% 96%));
+  background: var(--bg-hover);
 }
 
-.label-filter__chip--active {
-  background: var(--accent-color, hsl(234 89% 63%));
-  color: white;
-  border-color: var(--accent-color, hsl(234 89% 63%));
+.label-filter__chip--active,
+.label-filter__chip--active:hover {
+  background: var(--bg-hover);
+  color: var(--accent-text);
+  border-color: var(--accent-text);
 }
 
 /* --- Reduced motion --- */

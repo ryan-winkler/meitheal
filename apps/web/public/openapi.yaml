@@ -2045,6 +2045,7 @@ paths:
           application/json:
             schema:
               type: object
+              additionalProperties: true
               required:
                 - date
                 - filters
@@ -2065,7 +2066,6 @@ paths:
                 offset:
                   type: integer
                   minimum: 0
-              additionalProperties: false
       responses:
         "200":
           description: Scheduled work page and matching total
@@ -2173,6 +2173,12 @@ paths:
                 $ref: "#/components/schemas/ProblemDetail"
         "415":
           description: Expected JSON
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+        "500":
+          description: Calendar agenda read failed
           content:
             application/problem+json:
               schema:
