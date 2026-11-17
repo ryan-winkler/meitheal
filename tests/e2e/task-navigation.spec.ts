@@ -750,6 +750,16 @@ test("legacy Shopping type filters survive view switches and respect Table searc
     await expect(page).toHaveURL(url => url.searchParams.getAll("advancedFilter").length === 1 &&
       url.searchParams.get("advancedFilter")?.includes('"logic":"OR"') === true)
     for (const title of titles) await expect(page.locator("#kanban-shell").getByText(title, { exact: true })).toBeVisible()
+
+    const appliedRule = legacyStatus.getAll("advancedFilter").at(-1)!
+    legacyStatus.delete("view")
+    legacyStatus.set("advancedFilter", appliedRule)
+    legacyStatus.append("advancedFilter", "{invalid")
+    const defaultBoard = await request.get("/tasks?" + legacyStatus)
+    expect(defaultBoard.ok()).toBe(true)
+    const target = await page.evaluate(html => new DOMParser().parseFromString(html, "text/html")
+      .querySelector('[data-view-tab="table"]')?.getAttribute("href"), await defaultBoard.text())
+    expect(new URL(target!, baseURL).searchParams.getAll("advancedFilter")).toEqual([appliedRule])
   } finally {
     await request.put("/api/settings", { headers, data: { key: "sidebar_config", value: previous ?? null } })
     for (const id of ids) await request.delete(`/api/tasks/${id}`, { headers })

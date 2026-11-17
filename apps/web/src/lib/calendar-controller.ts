@@ -250,8 +250,8 @@ export function initCalendarPage(signal: AbortSignal): void {
       items.sort((a, b) => compareCalendarStarts(a.start, b.start, timezone))
       drawerEvents!.replaceChildren(...items.map(item => item.row))
       if (!live || persisted === undefined) drawerEvents!.append(agendaMessage(loading))
-      else if (!live.available) drawerEvents!.append(agendaMessage("Connected calendar events couldn’t load."))
-      else if (live.partial) drawerEvents!.append(agendaMessage("Some connected calendar events couldn’t load."))
+      else if (!live.available) drawerEvents!.append(agendaMessage("Live Home Assistant calendars couldn’t refresh."))
+      else if (live.partial) drawerEvents!.append(agendaMessage("Some live Home Assistant calendars couldn’t refresh."))
       else if (persisted && !items.length) drawerEvents!.append(agendaMessage("No calendar events"))
       if (persisted === null) drawerEvents!.append(agendaMessage("Saved calendar links couldn’t load."))
       const restoreId = activeId ?? focusedEvent
@@ -320,7 +320,7 @@ export function initCalendarPage(signal: AbortSignal): void {
           restore?.focus()
         }
         drawerTaskStatus!.textContent = offset > rows.length && fresh.length
-          ? `${fresh.length} more tasks loaded` : ""
+          ? `${fresh.length} more task${fresh.length === 1 ? '' : 's'} loaded` : ""
       } catch (error) {
         if (drawerRequest !== currentRequest || currentRequest.signal.aborted || signal.aborted) return
         log.warn("Could not load due tasks", error)

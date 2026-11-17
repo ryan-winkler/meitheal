@@ -188,7 +188,7 @@ test("Calendar reads configured sources as a household member and filters before
     await expect(page.locator("#task-detail-overlay")).toBeHidden()
     liveAvailable = false
     await linkedCell.press("Enter")
-    await expect(connected.getByText("Connected calendar events couldn’t load.")).toBeVisible()
+    await expect(connected.getByText("Live Home Assistant calendars couldn’t refresh.")).toBeVisible()
     await expect(connected.getByRole("button", { name: /Household seed event/ })).toHaveCount(2)
     await expect(connected.getByRole("button", { name: /Linked calendar retreat/ })).toBeVisible()
     await page.keyboard.press("Escape")
@@ -207,7 +207,7 @@ test("Calendar reads configured sources as a household member and filters before
     await page.evaluate(() => { document.documentElement.dataset.fixtureCalendar = "mounted" })
     await linkedCell.press("Enter")
     await expect(connected.getByRole("button", { name: /Linked calendar retreat/ })).toBeVisible()
-    await expect(connected.getByText("Connected calendar events couldn’t load.")).toHaveCount(0)
+    await expect(connected.getByText("Live Home Assistant calendars couldn’t refresh.")).toHaveCount(0)
     await page.keyboard.press("Escape")
     await expect(page.locator("#calendar-shell")).toHaveAttribute("data-timezone", "America/Los_Angeles")
     await expect(day).toHaveAccessibleName(/205 tasks$/)

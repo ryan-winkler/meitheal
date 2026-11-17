@@ -23,7 +23,7 @@ export function parseTaskView(value: string | null): TaskView | undefined {
 
 export function taskViewUrl(current: URL, view: TaskView, explicitFilters = false): URL {
   const url = new URL(current)
-  const previousView = parseTaskView(url.searchParams.get("view")) ?? parseTaskView(url.hash.slice(1))
+  const previousView = parseTaskView(url.searchParams.get("view")) ?? parseTaskView(url.hash.slice(1)) ?? "kanban"
   if (previousView !== view) {
     const area = previousView === "calendar" || previousView === "table"
       ? readTaskAreaParam(url.searchParams)
@@ -32,7 +32,7 @@ export function taskViewUrl(current: URL, view: TaskView, explicitFilters = fals
     url.searchParams.delete("area_id")
     url.searchParams.delete("board")
     const rules = url.searchParams.getAll("advancedFilter")
-    if (rules.length > 1 && previousView && previousView !== "timeline") {
+    if (rules.length > 1 && previousView !== "timeline") {
       const last = rules.at(-1)!
       const usesLast = previousView === "table" || (previousView === "calendar" && normalizeTableRules(last))
       url.searchParams.set("advancedFilter", usesLast ? last : rules[0]!)

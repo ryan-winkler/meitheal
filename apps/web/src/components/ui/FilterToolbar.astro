@@ -465,6 +465,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
   import { CALENDAR_FILTER_STATE_EVENT, readCalendarTaskFilters } from "@lib/calendar-task-filter"
   import { FILTER_LIST_LIMIT, isTaskVisible, loadFilterState, loadTableFilterState, normalizeTableCreationRange, readTaskKindFilter } from "@lib/filter-state"
   import { pageLifecycle } from "@lib/page-lifecycle"
+  import { createTablerSvgElement } from "@lib/tabler-svg"
   import { readKanbanFilters, storedKanbanGroup, type KanbanFilters } from "../../lib/kanban-query"
   declare global {
     interface Window {
@@ -652,6 +653,8 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
       const row = document.createElement("div")
       row.className = "advanced-filter-row flex gap-2 items-center mb-2"
       row.dataset.type = "condition"
+      row.setAttribute("role", "group")
+      row.setAttribute("aria-label", "Filter condition")
 
       const hasRows = advContainer && advContainer.querySelectorAll(".advanced-filter-row").length > 0
       
@@ -678,6 +681,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
       }
 
       const fieldSel = document.createElement("select")
+      fieldSel.setAttribute("aria-label", "Field")
       fieldSel.className = "adv-field form-select flex-1 text-xs py-1.5 min-h-[30px] bg-bg-primary border border-border focus:border-border-focus rounded"
       fields.forEach(f => {
         const opt = document.createElement("option")
@@ -687,6 +691,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
       })
 
       const opSel = document.createElement("select")
+      opSel.setAttribute("aria-label", "Operator")
       opSel.className = "adv-op form-select flex-1 text-xs py-1.5 min-h-[30px] bg-bg-primary border border-border focus:border-border-focus rounded"
       operators.forEach(o => {
         const opt = document.createElement("option")
@@ -699,6 +704,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
       valInput.className = "adv-val form-input flex-1 text-xs py-1.5 min-h-[30px] px-2 bg-bg-primary border border-border focus:border-border-focus rounded"
       valInput.type = "text"
       valInput.placeholder = "Value..."
+      valInput.setAttribute("aria-label", "Value")
 
       // Hide value input for empty/not-empty operators
       opSel.addEventListener("change", () => {
@@ -711,9 +717,12 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
 
       const removeBtn = document.createElement("button")
       removeBtn.type = "button"
+      removeBtn.setAttribute("aria-label", "Remove condition")
       removeBtn.className = "btn-icon p-1.5 ml-1 text-text-muted hover:text-red-400 hover:bg-red-400/10 rounded"
-      removeBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>`
-      removeBtn.addEventListener("click", () => {
+      removeBtn.append(createTablerSvgElement("trash", 14))
+      removeBtn.addEventListener("click", event => {
+        event.stopPropagation()
+        const sibling = row.nextElementSibling ?? row.previousElementSibling
         row.remove()
         
         // Ensure first remaining row doesn't have a logic button
@@ -727,6 +736,8 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
         
         checkEmptyState()
         updateClearVisibility()
+        const focus = sibling?.querySelector<HTMLElement>(".adv-field") ?? advAddCondBtn
+        focus?.focus()
       }, { signal })
 
       row.append(fieldSel, opSel, valInput, removeBtn)
