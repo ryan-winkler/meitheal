@@ -2,6 +2,9 @@ import type { ListenerManager } from "../managed-listeners"
 import { replaceTaskBackgroundUrl, taskBackgroundUrl } from "../task-page-url"
 import { setUnscheduledPage } from "../today-list"
 
+type PageFocus = "none" | "range" | "row"
+const rowControls = "a, button, input"
+
 export function setupUnscheduledSection(
   container: HTMLElement,
   lm: ListenerManager,
@@ -17,7 +20,6 @@ export function setupUnscheduledSection(
   let pending: AbortController | undefined
   let timer = 0
   let requestedPage = 1
-  let focusRange = false
   const background = () => taskBackgroundUrl()
   const currentPage = () => Number(list.querySelector<HTMLElement>("#today-unscheduled-page")?.dataset.page ?? 0)
   const isOpen = () => !section.classList.contains("today-section--collapsed")
@@ -33,13 +35,13 @@ export function setupUnscheduledSection(
     retry.hidden = !failed
   }
 
-  const loadPage = async (page: number, focus: boolean) => {
+  const loadPage = async (page: number, focus: PageFocus) => {
     pending?.abort()
     requestedPage = page
-    focusRange = focus
     const controller = new AbortController()
     pending = controller
     const url = setUnscheduledPage(background(), page)
+    const retrying = document.activeElement === retry
     list.setAttribute("aria-busy", "true")
     setStatus("Loading unscheduled tasks…")
     try {
@@ -56,7 +58,10 @@ export function setupUnscheduledSection(
       if (!replacement || !(Number(replacement.dataset.page) > 0) || !previous) {
         throw new Error("Unscheduled task page unavailable")
       }
-      const shouldFocus = focus && (previous.contains(document.activeElement) || document.activeElement === retry)
+      const focused = document.activeElement
+      const inside = previous.contains(focused)
+      const row = focus === "row" && inside ? focused?.closest<HTMLElement>(".tli[data-id]") : null
+      const controlIndex = row && focused ? Array.from(row.querySelectorAll(rowControls)).indexOf(focused) : -1
       previous.replaceWith(replacement)
       addBatchCheckboxes(replacement)
       const count = html.querySelector("#section-unscheduled .today-section__count")?.textContent
@@ -64,7 +69,12 @@ export function setupUnscheduledSection(
       if (count && total) total.textContent = count
       replaceTaskBackgroundUrl(setUnscheduledPage(background(), currentPage()))
       setStatus("")
-      if (shouldFocus) replacement.querySelector<HTMLElement>("[data-unscheduled-range]")?.focus()
+      if (focus !== "none" && (inside || retrying && (focused === retry || focused === document.body))) {
+        const retainedRow = row?.dataset.id
+          ? replacement.querySelector(`.tli[data-id="${CSS.escape(row.dataset.id)}"]`) : null
+        const retained = retainedRow?.querySelectorAll<HTMLElement>(rowControls)[controlIndex]
+        ;(retained ?? replacement.querySelector<HTMLElement>("[data-unscheduled-range]"))?.focus()
+      }
     } catch {
       if (!controller.signal.aborted && !lm.signal.aborted) {
         setStatus("Could not load unscheduled tasks. Try again.", true)
@@ -81,7 +91,7 @@ export function setupUnscheduledSection(
     section.classList.toggle("today-section--collapsed")
     syncExpanded()
     if (isOpen()) {
-      void loadPage(currentPage() || 1, false)
+      void loadPage(currentPage() || 1, "none")
     } else {
       pending?.abort()
       window.clearTimeout(timer)
@@ -93,9 +103,9 @@ export function setupUnscheduledSection(
     const link = (event.target as Element)?.closest<HTMLElement>("[data-unscheduled-page]")
     if (!link) return
     event.preventDefault()
-    void loadPage(Number(link.dataset.unscheduledPage), true)
+    void loadPage(Number(link.dataset.unscheduledPage), "range")
   })
-  lm.on(retry, "click", () => void loadPage(requestedPage, focusRange))
+  lm.on(retry, "click", () => void loadPage(requestedPage, "range"))
   syncExpanded()
 
   return (keepPage = false) => {
@@ -103,7 +113,7 @@ export function setupUnscheduledSection(
     pending?.abort()
     window.clearTimeout(timer)
     timer = window.setTimeout(() => {
-      if (!lm.disposed && isOpen()) void loadPage(keepPage ? currentPage() || 1 : 1, keepPage)
+      if (!lm.disposed && isOpen()) void loadPage(keepPage ? currentPage() || 1 : 1, keepPage ? "row" : "none")
     }, 200)
   }
 }

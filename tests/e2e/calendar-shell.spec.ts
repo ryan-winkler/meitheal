@@ -989,8 +989,10 @@ test.describe("Calendar Shell", () => {
       const cell = page.locator(`.cal-cell[data-date="${day}"]`)
       const events = page.locator("#day-drawer-events")
       await cell.press("Enter")
-      await expect(events).toContainText("Some live Home Assistant calendars couldn’t refresh. Reopen the day to retry.", { timeout: 15_000 })
+      await expect(events.getByRole("status"))
+        .toContainText("Some live Home Assistant calendars couldn’t refresh. Reopen the day to retry.", { timeout: 15_000 })
       await expect(events).toContainText("Household feed result")
+      await expect(page.locator("#day-drawer-close")).toBeFocused()
       await expect(cell.getByText("Household feed result")).toBeVisible()
       await page.keyboard.press("Escape")
       allFail = true

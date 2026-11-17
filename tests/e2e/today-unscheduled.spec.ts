@@ -79,3 +79,35 @@ test("pages a large unscheduled queue and filters across every page", async ({ p
     for (const id of ids) await request.delete(`/api/tasks/${id}`, { headers })
   }
 })
+
+test("a status refresh preserves focus on another Unscheduled row", async ({ page, request, baseURL }) => {
+  test.skip(shouldSkipBrowserSpecs(), "Requires a disposable Meitheal server")
+  const headers = { origin: new URL(baseURL!).origin }
+  const prefix = `Unscheduled focus ${crypto.randomUUID()}`
+  const ids: string[] = []
+  let release: (() => void) | undefined
+  try {
+    for (const title of [`${prefix} first`, `${prefix} second`]) {
+      const response = await request.post("/api/tasks", { headers, data: { title } })
+      expect(response.status(), await response.text()).toBe(201)
+      ids.push((await response.json()).id)
+    }
+    await page.route(`**/api/tasks/${ids[0]}`, async route => {
+      if (route.request().method() === "PUT") await new Promise<void>(resolve => { release = resolve })
+      await route.continue()
+    })
+    await page.goto(`/today?search=${encodeURIComponent(prefix)}&unscheduledPage=1#today-work`)
+    const list = page.locator("#today-unscheduled-list")
+    const first = list.locator(`.tli[data-id="${ids[0]}"]`)
+    const next = list.locator(`.tli[data-id="${ids[1]}"] .tli__checkbox`)
+    await first.locator(".tli__checkbox").press("Space")
+    await expect.poll(() => Boolean(release)).toBe(true)
+    await next.focus()
+    release?.()
+    await expect(first).toHaveCount(0)
+    await expect(next).toBeFocused()
+  } finally {
+    release?.()
+    for (const id of ids) await request.delete(`/api/tasks/${id}`, { headers })
+  }
+})

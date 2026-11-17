@@ -279,8 +279,9 @@ const agendaNote = filter.matches && !Object.values(tasksByDay).some(day => day.
               <Icon name="calendar-event" size={14} />
               Connected Calendar Events
             </h4>
-            <div id="day-drawer-events" class="day-drawer-list">
-              <span class="day-drawer-empty">Loading...</span>
+            <div id="day-drawer-events">
+              <div id="day-drawer-event-items" class="day-drawer-list"></div>
+              <div id="day-drawer-event-status" class="day-drawer-read-status" role="status"></div>
             </div>
           </div>
           <div class="day-drawer-section">
@@ -288,10 +289,10 @@ const agendaNote = filter.matches && !Object.values(tasksByDay).some(day => day.
               <Icon name="clipboard-list" size={14} />
               Scheduled items
             </h4>
-            <div id="day-drawer-tasks" class="day-drawer-list">
-              <span class="day-drawer-empty">Loading...</span>
+            <div id="day-drawer-tasks">
+              <div id="day-drawer-task-items" class="day-drawer-list"></div>
+              <div id="day-drawer-task-status" class="day-drawer-read-status" role="status"></div>
             </div>
-            <div id="day-drawer-task-status" class="day-drawer-task-status" role="status"></div>
             <button type="button" class="btn btn-outline day-drawer-more" id="day-drawer-more-tasks" hidden>Load more items</button>
           </div>
           <div class="day-drawer-actions">
@@ -654,15 +655,11 @@ const agendaNote = filter.matches && !Object.values(tasksByDay).some(day => day.
     font-size: 11px;
     color: var(--text-muted);
   }
-  :global(.day-drawer-empty) {
-    font-size: 12px;
-    color: var(--text-muted);
-    font-style: italic;
-    padding: 8px 0;
-  }
-  .day-drawer-task-status {
+  .day-drawer-read-status:not(:empty) {
+    padding-block: 8px 0;
     color: var(--text-muted);
     font-size: 12px;
+    white-space: pre-line;
   }
   .day-drawer-more:not([hidden]) {
     margin-block-start: 8px;

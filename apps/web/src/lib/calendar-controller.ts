@@ -42,13 +42,15 @@ export function initCalendarPage(signal: AbortSignal): void {
   const drawer = document.getElementById("day-drawer")
   const panel = drawer?.querySelector<HTMLElement>('[role="dialog"]')
   const drawerTitle = document.getElementById("day-drawer-title")
-  const drawerEvents = document.getElementById("day-drawer-events")
-  const drawerTasks = document.getElementById("day-drawer-tasks")
+  const drawerEvents = document.getElementById("day-drawer-event-items")
+  const drawerTasks = document.getElementById("day-drawer-task-items")
+  const drawerEventStatus = document.getElementById("day-drawer-event-status")
   const drawerTaskStatus = document.getElementById("day-drawer-task-status")
   const queryMoreTasks = document.querySelector<HTMLButtonElement>("#day-drawer-more-tasks")
   const eventsSection = drawer?.querySelector<HTMLElement>("[data-calendar-events-section]")
   if (!shell || !initialMonth || !status || !retry || !drawer || !panel || !drawerTitle ||
-    !drawerEvents || !drawerTasks || !drawerTaskStatus || !queryMoreTasks || !eventsSection || shell.dataset.calendarReady === "true") return
+    !drawerEvents || !drawerTasks || !drawerEventStatus || !drawerTaskStatus ||
+    !queryMoreTasks || !eventsSection || shell.dataset.calendarReady === "true") return
   const moreTasks = queryMoreTasks
 
   shell.dataset.calendarReady = "true"
@@ -250,12 +252,15 @@ export function initCalendarPage(signal: AbortSignal): void {
       }
       items.sort((a, b) => compareCalendarStarts(a.start, b.start, timezone))
       drawerEvents!.replaceChildren(...items.map(item => item.row))
-      if (!live || persisted === undefined) drawerEvents!.append(agendaMessage(loading))
-      else if (!live.available || live.partial) drawerEvents!.append(agendaMessage(
+      const notes: string[] = []
+      if (!live || persisted === undefined) notes.push(loading)
+      else if (!live.available || live.partial) notes.push(
         (live.available ? "Some live" : "Live") + " Home Assistant calendars couldn’t refresh. Reopen the day to retry.",
-      ))
-      else if (!savedUnavailable && !items.length) drawerEvents!.append(agendaMessage("No calendar events"))
-      if (savedUnavailable) drawerEvents!.append(agendaMessage("Saved calendar links couldn’t load. Reopen the day to retry."))
+      )
+      else if (!savedUnavailable && !items.length) notes.push("No calendar events")
+      if (savedUnavailable) notes.push("Saved calendar links couldn’t load. Reopen the day to retry.")
+      const feedback = notes.join("\n")
+      if (drawerEventStatus!.textContent !== feedback) drawerEventStatus!.textContent = feedback
       const restoreId = activeId ?? focusedEvent
       if (restoreId && (activeId || document.activeElement === closeButton)) {
         const restore = items.find(item => item.row.dataset.occurrenceKey === restoreId)?.row ?? closeButton
@@ -263,7 +268,8 @@ export function initCalendarPage(signal: AbortSignal): void {
       }
     }
     if (showEvents) {
-      renderMessage(drawerEvents!, loading)
+      drawerEvents!.replaceChildren()
+      drawerEventStatus!.textContent = loading
       const ranges = month.querySelector<HTMLElement>(`.cal-cell[data-date="${CSS.escape(date)}"]`)?.dataset.dayRanges
       void loadCalendarRange(date, shiftCalendarDay(date, 1), timezone, 5, readCalendarSources, linked,
         ranges ? JSON.parse(ranges) : undefined).then(result => {
@@ -278,11 +284,10 @@ export function initCalendarPage(signal: AbortSignal): void {
       })
     }
 
-    renderMessage(drawerTasks!, loading)
+    drawerTasks!.replaceChildren()
     const filters = new URLSearchParams([...applied.searchParams].filter(([key]) => agendaFilterKeys.has(key))).toString()
     moreTasks.hidden = true
     moreTasks.removeAttribute("aria-disabled")
-    drawerTaskStatus!.textContent = ""
     let offset = 0
     let busy = false
     const seen = new Set<string>()
@@ -291,7 +296,7 @@ export function initCalendarPage(signal: AbortSignal): void {
       if (busy || drawerRequest !== currentRequest || currentRequest.signal.aborted) return
       busy = true
       moreTasks.setAttribute("aria-disabled", "true")
-      drawerTaskStatus!.textContent = offset ? loading : ""
+      drawerTaskStatus!.textContent = loading
       const taskSignal = AbortSignal.any([signal, currentRequest.signal, AbortSignal.timeout(10_000)])
       let received = false
       try {
@@ -313,7 +318,6 @@ export function initCalendarPage(signal: AbortSignal): void {
         })
         drawerTasks!.append(...fresh)
         offset += rows.length
-        if (!offset) renderMessage(drawerTasks!, "No matching tasks or local events")
         const canLoadMore = rows.length > 0 && total > offset
         if (document.activeElement === moreTasks && (fresh.length || !canLoadMore)) {
           (fresh[0] ?? drawerTasks!.querySelector<HTMLElement>("[data-task-id]") ??
@@ -325,13 +329,13 @@ export function initCalendarPage(signal: AbortSignal): void {
           const restore = restoreMore && canLoadMore ? moreTasks : fresh.find(row => row.dataset.taskId === focusedTask)
           restore?.focus()
         }
-        drawerTaskStatus!.textContent = offset > rows.length && fresh.length
-          ? `${fresh.length} more item${fresh.length === 1 ? '' : 's'} loaded` : ""
+        drawerTaskStatus!.textContent = !offset ? "No matching tasks or local events"
+          : offset > rows.length && fresh.length ? `${fresh.length} more item${fresh.length === 1 ? '' : 's'} loaded` : ""
       } catch (error) {
         if (drawerRequest !== currentRequest || currentRequest.signal.aborted || signal.aborted) return
         log.warn("Could not load due tasks", error)
         if (!offset) {
-          renderMessage(drawerTasks!, "Couldn’t load this day’s agenda.")
+          drawerTaskStatus!.textContent = "Couldn’t load this day’s agenda."
           if (!received) {
             savedUnavailable = true
             persisted ??= null
@@ -543,17 +547,6 @@ function distinctLiveCalendarEvents(events: CalendarEventRecord[], linked: Linke
     const match = key(event.entity, event.start, normalizeCalendarEventSummary(event.summary))
     return savedCounts.get(match) !== 1 || liveCounts.get(match) !== 1
   })
-}
-
-function agendaMessage(text: string) {
-  const span = document.createElement("span")
-  span.className = "day-drawer-empty"
-  span.textContent = text
-  return span
-}
-
-function renderMessage(container: HTMLElement, text: string) {
-  container.replaceChildren(agendaMessage(text))
 }
 
 function agendaItem(icon: TablerIconName, title: string, meta: string, taskId?: string) {

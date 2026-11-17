@@ -452,10 +452,11 @@ test("Calendar reads configured sources as a household member and filters before
     db.exec("ALTER TABLE tasks RENAME COLUMN description TO unavailable_description")
     try {
       await linkedCell.press("Enter")
-      await expect(agenda.getByText("Couldn’t load this day’s agenda.")).toBeVisible()
+      await expect(agenda.getByRole("status")).toHaveText("Couldn’t load this day’s agenda.")
       await expect(connected.getByRole("button", { name: /Linked calendar retreat/ })).toBeVisible()
       await expect(connected.getByText("Available live feed")).toBeVisible()
       await expect(connected.getByText("Saved calendar links couldn’t load", { exact: false })).toHaveCount(0)
+      await expect(page.locator("#day-drawer-close")).toBeFocused()
     } finally {
       db.exec("ALTER TABLE tasks RENAME COLUMN unavailable_description TO description")
     }
@@ -464,7 +465,7 @@ test("Calendar reads configured sources as a household member and filters before
       await page.getByRole("button", { name: "Retry agenda" }).press("Enter")
       await expect(agenda.getByRole("button", { name: /Local agenda recovery task/ })).toBeVisible()
       await expect(connected.getByRole("button", { name: /Linked calendar retreat/ })).toBeVisible()
-      await expect(connected.getByText("Saved calendar links couldn’t load. Reopen the day to retry.")).toBeVisible()
+      await expect(connected.getByRole("status")).toHaveText("Saved calendar links couldn’t load. Reopen the day to retry.")
       await page.keyboard.press("Escape")
     } finally {
       db.exec("ALTER TABLE unavailable_calendar_confirmations RENAME TO calendar_confirmations")

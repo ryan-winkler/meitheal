@@ -233,7 +233,7 @@ export function initThemeSettings(): void {
 
     pageLifecycle.on(select, "change", async () => {
       const value = select.value
-      const previousTheme = key === "theme" ? readAppearanceValue("meitheal-theme") : null
+      const previousTheme = key === "theme" ? readStoredThemeMode() : null
       if (key === "theme") {
         showCustomThemeSection(value === "custom")
         if (value === "custom" && !readAppearanceValue("meitheal-custom-theme-css")) return
@@ -247,10 +247,9 @@ export function initThemeSettings(): void {
       } catch (error) {
         const settings = await settingsStore.load().catch(() => null)
         if (settings) restoreThemeSettings(settings)
-        else if (key === "theme") {
-          const confirmed = isThemeMode(previousTheme) ? previousTheme : "dark"
-          select.value = confirmed
-          showCustomThemeSection(confirmed === "custom")
+        else if (previousTheme) {
+          select.value = previousTheme
+          showCustomThemeSection(previousTheme === "custom")
         }
         showSettingsSaveError(error)
       } finally {

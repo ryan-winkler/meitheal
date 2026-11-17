@@ -18,6 +18,7 @@ for (const theme of themes) {
       due_date: `${date}T20:00:00Z`,
       assigned_to: assigneeId,
       status: "active",
+      priority: 1,
       color: "#abc",
     } })
     expect(response.status()).toBe(201)
@@ -89,6 +90,16 @@ for (const theme of themes) {
       const focusTarget = await completeInFocus.boundingBox()
       expect(focusTarget!.width).toBeGreaterThanOrEqual(44)
       expect(focusTarget!.height).toBeGreaterThanOrEqual(44)
+      if (theme === "knight-rider") {
+        await page.locator("html").evaluate(root => { root.style.fontSize = "200%" })
+        const card = page.locator(`.focus-card[data-id="${id}"]`)
+        expect(await card.evaluate(el => {
+          const edge = el.querySelector(".focus-card__complete")!.getBoundingClientRect().left
+          return Array.from(el.querySelectorAll(".focus-card__meta > *"))
+            .every(item => item.getBoundingClientRect().right <= edge)
+        })).toBe(true)
+        await page.locator("html").evaluate(root => { root.style.removeProperty("font-size") })
+      }
       expect((await row.locator("[data-task-assignee]").boundingBox())!.width).toBeGreaterThan(64)
       await row.scrollIntoViewIfNeeded()
       if (theme === "light" || theme === "knight-rider") {
