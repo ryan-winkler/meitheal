@@ -70,7 +70,7 @@ test.describe("Track D — @container Docked Task Inspector, Ingress Reload Pers
       await expect(overlay).toHaveClass(/active/)
       await expect(page.locator("body")).toHaveClass(/has-docked-inspector/)
       await expect(panel).toHaveAttribute("role", "region")
-      await expect(panel).toHaveAttribute("aria-modal", "false")
+      await expect(panel).not.toHaveAttribute("aria-modal")
       await expect(titleInput).toHaveValue("Docked inspector baseline task")
 
       // Body scroll stays unlocked when docked, and @container stacks single-column at 420px width
@@ -132,7 +132,7 @@ test.describe("Track D — @container Docked Task Inspector, Ingress Reload Pers
       await page.setViewportSize({ width: 1600, height: 900 })
       await expect(page.locator("body")).toHaveClass(/has-docked-inspector/)
       await expect(panel).toHaveAttribute("role", "region")
-      await expect(panel).toHaveAttribute("aria-modal", "false")
+      await expect(panel).not.toHaveAttribute("aria-modal")
       await expect(titleInput).toHaveValue("Unsaved docked draft title")
       await expect(descInput).toHaveValue("Unsaved docked markdown body")
       await expect(checklistInput).toHaveValue("Unsaved checklist item draft")

@@ -30,7 +30,7 @@ const mentionUser = verifiedIngressUser(Astro.locals)
         class="modal-content w-full max-w-[1000px] h-[90vh] max-h-[900px] bg-bg-card border border-border shadow-2xl rounded-2xl flex flex-col overflow-hidden relative m-4 md:m-8"
       >
         <!-- Sticky Header Bar -->
-        <header class="td-toolbar flex-none bg-bg-card z-20">
+        <div class="td-toolbar flex-none bg-bg-card z-20">
           <div class="td-toolbar__top">
           <div id="td-task-heading" class="invisible flex min-w-0 items-center gap-3">
             <span id="td-priority-dot" class="td-priority-dot text-lg" title="Priority">●</span>
@@ -84,7 +84,7 @@ const mentionUser = verifiedIngressUser(Astro.locals)
             </div>
             <button id="td-toggle-done" type="button" class="btn btn-primary td-done-btn">Mark as Done</button>
           </div>
-        </header>
+        </div>
 
         <!-- Progress bar -->
         <div id="td-progress-bar-container" class="w-full h-1 bg-bg-input hidden">
@@ -455,7 +455,7 @@ const mentionUser = verifiedIngressUser(Astro.locals)
                   </div>
                   <div id="td-link-live" aria-live="polite" class="sr-only"></div>
                   <div class="flex flex-col gap-2">
-                    <select id="td-link-type-select" class="form-select text-sm py-1.5 bg-bg-input w-full shrink-0">
+                    <select id="td-link-type-select" aria-label={t("task_layout.relationship_type", locale)} class="form-select text-sm py-1.5 bg-bg-input w-full shrink-0">
                       <option value="related_to">Related to</option>
                       <option value="blocked_by">Blocked by</option>
                       <option value="blocks">Blocks</option>

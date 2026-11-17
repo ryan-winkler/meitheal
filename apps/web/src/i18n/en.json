@@ -1961,6 +1961,7 @@
     "write_error": "The mention could not be saved. Check the people selected, or copy the text before starting a new comment."
   },
   "task_layout": {
+    "relationship_type": "Relationship type",
     "saving": "Saving…",
     "settings_subtitle": "Arrange how sections and fields appear when you open a ticket.",
     "layout": "Task detail layout",

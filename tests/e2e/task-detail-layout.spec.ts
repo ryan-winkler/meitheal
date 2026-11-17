@@ -1,3 +1,4 @@
+import AxeBuilder from "@axe-core/playwright"
 import { test, expect, type APIRequestContext, type Locator } from "@playwright/test"
 
 const layoutKey = "meitheal:task-detail-layout:v1"
@@ -84,6 +85,8 @@ test("Focus fills the viewport and preserves current edits, history, and Escape 
   await expect(title).toHaveValue("Focus layout fixture")
   await expect(panel).toHaveAttribute("role", "region")
   await expect(enter).toBeVisible()
+  const audit = await new AxeBuilder({ page }).include("#task-detail-panel").analyze()
+  expect(audit.violations.map(({ id, nodes }) => ({ id, targets: nodes.map(({ target }) => target) }))).toEqual([])
   const historyLength = await page.evaluate(() => history.length)
   await page.waitForFunction(() => !document.querySelector<HTMLSelectElement>("#td-status")?.disabled)
   const writes: string[] = []

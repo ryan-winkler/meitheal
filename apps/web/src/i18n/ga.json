@@ -1946,6 +1946,7 @@
     "write_error": "Níorbh fhéidir an tagairt a shábháil. Seiceáil na daoine a roghnaigh tú, nó cóipeáil an téacs sula dtosaíonn tú nóta nua."
   },
   "task_layout": {
+    "relationship_type": "Cineál caidrimh",
     "saving": "Á shábháil…",
     "settings_subtitle": "Socraigh ord na rannán agus na réimsí nuair a osclaíonn tú ticéad.",
     "layout": "Leagan amach sonraí an taisc",

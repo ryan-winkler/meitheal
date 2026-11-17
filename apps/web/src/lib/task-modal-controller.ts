@@ -128,7 +128,8 @@
           document.body.classList.toggle("has-docked-inspector", docked)
           tdOverlay.toggleAttribute("data-focus-mode", focusMode)
           tdPanel?.setAttribute("role", docked ? "region" : "dialog")
-          tdPanel?.setAttribute("aria-modal", docked ? "false" : "true")
+          if (docked) tdPanel?.removeAttribute("aria-modal")
+          else tdPanel?.setAttribute("aria-modal", "true")
           document.body.style.overflow = isOpen && !docked ? "hidden" : ""
           if (loadedActions) loadedActions.hidden = !taskLoaded && !focusMode
           if (layoutToggle) layoutToggle.hidden = !taskLoaded

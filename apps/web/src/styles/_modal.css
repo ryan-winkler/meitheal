@@ -421,7 +421,7 @@ body:has(dialog[open], #meitheal-confirm-overlay, #meitheal-prompt-overlay) .sho
   container-name: task-inspector;
 }
 
-#task-detail-panel > header {
+#task-detail-panel > .td-toolbar {
   background: var(--bg-card);
   border-bottom: 1px solid var(--border);
 }
