@@ -61,6 +61,8 @@ Each lane shows up to 25 cards. Its count includes every task matching the curre
 
 Open **Overdue** from Dashboard to filter tasks across every Kanban page. The board matches Dashboard’s due-date and completion rules.
 
+Select **No grouping** from a grouped board before copying a link to the flat board. Opening that link shows the flat board even in a browser that has saved a different grouping preference.
+
 The work-in-progress count uses all eligible cards in the lane. Reordering a card preserves the relative order of all other cards across area filters and overlapping custom lanes. After a move, the destination lane may show a different page from the one containing the moved card.
 
 Dates due today appear in amber. The light palette uses a darker shade on white cards, including when Auto selects light. A due date without a time is a calendar day in the timezone set in **Settings → Language & Time**. The relative format shows it as today, tomorrow, yesterday or a number of days, weeks or months. Absolute formats keep the same day in every timezone.
