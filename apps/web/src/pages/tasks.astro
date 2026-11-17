@@ -1107,6 +1107,8 @@ try {
     .kanban-board {
       flex-direction: column;
       overflow-x: hidden;
+      overflow-y: auto;
+      height: auto;
       min-height: auto;
       max-height: none;
       gap: 12px;
@@ -1149,12 +1151,6 @@ try {
     padding: 12px;
   }
   @media (max-width: 768px) {
-    .kanban-board {
-      flex-direction: column;
-      overflow-x: hidden;
-      overflow-y: auto;
-      height: auto;
-    }
     .kanban-column {
       flex: 0 0 auto;
       min-width: 100%;

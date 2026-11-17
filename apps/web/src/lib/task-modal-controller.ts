@@ -35,7 +35,7 @@
         import { resolveDescriptionTaskReferences } from "@lib/task-references"
         import { saveNavigationState } from "@lib/ingress-state-persistence"
         import { hasPriorityOverlay } from "@lib/layout-shortcuts-controller"
-        import { taskApi } from "@lib/task-api-client"
+        import { lockTaskStatusWrite, taskApi } from "@lib/task-api-client"
         import { assigneeFallback } from "@lib/task-assignee-display"
 
         // Use lifecycle signal for all global listeners in this module
@@ -213,10 +213,11 @@
             _sidebarChevron?.classList.remove("td-chevron-open");
             // P3-4: Restore focus to the element that triggered the panel
             if (!search && _previouslyFocused instanceof HTMLElement &&
-                _previouslyFocused !== document.body && _previouslyFocused.isConnected) {
+                _previouslyFocused !== document.body && _previouslyFocused.isConnected &&
+                !_previouslyFocused.closest("[hidden], [inert], .filtered-out")) {
               _previouslyFocused.focus()
             } else if (!search) {
-              document.querySelector<HTMLElement>('[data-view-tab][aria-current="page"], #triage-heading, #deferred-heading, #pinned-heading')?.focus()
+              document.querySelector<HTMLElement>('[data-view-tab][aria-current="page"], #triage-heading, #deferred-heading, #pinned-heading, #today-filter-status')?.focus()
             }
             _previouslyFocused = null
             const closed = pinnedSession
@@ -255,14 +256,30 @@
           _sidebarChevron?.classList.toggle("td-chevron-open", expanded);
         }, { signal: __signal });
 
-        function setStatusLocked(locked: boolean) {
+        function setStatusLoading(locked: boolean) {
           if (statusSelect) statusSelect.disabled = locked
           if (doneButton) doneButton.disabled = locked
         }
 
-        function updateDoneLabel(status: string) {
+        function setStatusBusy(busy: boolean) {
+          for (const control of [statusSelect, doneButton]) {
+            if (busy) control?.setAttribute("aria-disabled", "true")
+            else control?.removeAttribute("aria-disabled")
+          }
+        }
+
+        function renderSavedStatus(status: string) {
+          if (statusSelect) {
+            statusSelect.value = status
+            statusSelect.dataset.savedStatus = status
+          }
           if (doneButton) doneButton.textContent = status === "complete" ? "Mark as Undone" : "Mark as Done"
         }
+
+        document.addEventListener("meitheal:today-status-committed", event => {
+          const { id, status } = (event as CustomEvent<{ id: string; status: string }>).detail
+          if (currentTaskId === id) renderSavedStatus(status)
+        }, { signal: __signal })
 
         async function openTaskDetail(taskId: string, commentTarget: string | null = null, search?: SearchDetailHandoff, updateLocation = true) {
           if (!tdOverlay?.isConnected || __signal.aborted) return
@@ -288,7 +305,9 @@
           const modalSignal = _modalAbortController.signal
           document.getElementById("td-ai-response")?.remove()
           _isPopulating = true;
-          setStatusLocked(true)
+          setStatusLoading(true)
+          statusSelect?.removeAttribute("data-saved-status")
+          setStatusBusy(false)
           const projectField = document.querySelector<HTMLSelectElement>("#td-project")
           let projectFieldReady = false
           if (projectField) projectField.disabled = true
@@ -667,7 +686,7 @@
             }
 
             // If the task's status isn't in the dropdown, add it as an option
-            const taskStatus = String(t.status ?? "pending");
+            const taskStatus = statusSelect?.dataset.savedStatus ?? String(t.status ?? "pending");
             if (
               statusSelect &&
               !statusSelect.querySelector(`option[value="${taskStatus}"]`)
@@ -677,10 +696,7 @@
               opt.textContent = taskStatus;
               statusSelect.appendChild(opt);
             }
-            if (statusSelect) {
-              statusSelect.value = taskStatus
-              statusSelect.dataset.savedStatus = taskStatus
-            }
+            renderSavedStatus(taskStatus)
             const tdDesc = document.getElementById(
               "td-description",
             ) as HTMLTextAreaElement;
@@ -932,7 +948,6 @@
               favBtn.textContent = isFav
                 ? "★ Favorited"
                 : "⭐ Add to Favorites";
-            updateDoneLabel(taskStatus)
 
             // Load settings-defined custom fields
             _settingsFields = [];
@@ -1083,7 +1098,7 @@
             setTimeout(() => {
               if (modalSignal.aborted) return
               _isPopulating = false
-              setStatusLocked(false)
+              setStatusLoading(false)
               if (projectField) projectField.disabled = !projectFieldReady
               deferral.loaded(taskId, typeof t.project_id === "string" ? t.project_id : null, t.deferred_at != null, modalSignal, Boolean(searchSession))
               pins.loaded(taskId, modalSignal)
@@ -1269,16 +1284,24 @@
           }, { signal: __signal });
 
         async function saveDetailStatus(next: string) {
-          if (!statusSelect || statusSelect.disabled) return
+          const id = currentTaskId
+          if (!id || !statusSelect || statusSelect.disabled) return
+          const previous = statusSelect.dataset.savedStatus ?? statusSelect.value
+          const unlock = lockTaskStatusWrite(id)
+          if (!unlock) {
+            statusSelect.value = previous
+            showToast("A status change is still saving.")
+            return
+          }
           const generation = detailGeneration
-          setStatusLocked(true)
-          const saved = await saveTaskField("status", next)
-          if (generation !== detailGeneration) return
-          const status = saved ? next : statusSelect.dataset.savedStatus ?? statusSelect.value
-          statusSelect.value = status
-          statusSelect.dataset.savedStatus = status
-          updateDoneLabel(status)
-          setStatusLocked(false)
+          setStatusBusy(true)
+          try {
+            const saved = await saveTaskField("status", next)
+            if (generation === detailGeneration) renderSavedStatus(saved ? next : previous)
+          } finally {
+            unlock()
+            if (generation === detailGeneration) setStatusBusy(false)
+          }
         }
 
         statusSelect?.addEventListener("change", () => void saveDetailStatus(statusSelect.value), { signal: __signal })

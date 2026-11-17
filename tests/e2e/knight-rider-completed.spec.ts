@@ -72,6 +72,7 @@ test("Knight Rider keeps the completed Today state and saved theme truthful", as
 
 test("Today reflects task detail completion and reopening without a reload", async ({ page, request }) => {
   await page.addInitScript(() => localStorage.setItem("meitheal-theme", "knight-rider"))
+  await page.emulateMedia({ reducedMotion: "reduce" })
   const title = "Schedule the heating service"
   const response = await request.post("/api/tasks", { data: { title, status: "active", due_date: calendarToday() } })
   expect(response.status()).toBe(201)
@@ -84,12 +85,25 @@ test("Today reflects task detail completion and reopening without a reload", asy
     const completed = page.locator(".today-completed-tasks")
     await expect(item).toHaveAttribute("data-work-active", "")
     await expect(focus).toBeVisible()
-    await item.getByRole("link", { name: title }).click()
+    await focus.getByRole("link", { name: title }).press("Enter")
     await expect(page.locator("#td-title")).toHaveValue(title)
     await expect(done).toBeEnabled()
-    await done.click()
+    let release = () => {}
+    const pending = new Promise<void>(resolve => { release = resolve })
+    await page.route(`**/api/tasks/${id}`, async route => {
+      await pending
+      await route.continue()
+    }, { times: 1 })
+    try {
+      await done.press("Enter")
+      await expect(done).toHaveAttribute("aria-disabled", "true")
+      await expect(done).toBeFocused()
+    } finally {
+      release()
+    }
     await expect(item.locator(".tli__checkbox")).toBeChecked()
     await page.getByRole("button", { name: "Close detail" }).click()
+    await expect(page.locator("#today-filter-status")).toBeFocused()
     await expect(item).not.toHaveAttribute("data-work-active", "")
     await expect(focus).toBeHidden()
     await expect(completed.locator("summary")).toHaveText("Completed today (1)")
@@ -108,6 +122,45 @@ test("Today reflects task detail completion and reopening without a reload", asy
     await expect(focus).toBeVisible()
     await expect(completed).toBeHidden()
   } finally {
+    await request.delete(`/api/tasks/${id}`)
+  }
+})
+
+test("docked Details shares the Today status lock and reflects a row save", async ({ page, request }) => {
+  await page.setViewportSize({ width: 1600, height: 900 })
+  await page.addInitScript(() => localStorage.setItem("meitheal-theme", "knight-rider"))
+  const title = "Check the boiler schedule"
+  const response = await request.post("/api/tasks", { data: { title, status: "active", due_date: calendarToday() } })
+  expect(response.status()).toBe(201)
+  const { id } = await response.json()
+  let release = () => {}
+  const pending = new Promise<void>(resolve => { release = resolve })
+  let writes = 0
+  try {
+    await page.goto("/today#today-work")
+    const item = page.locator(`#today-due-list .tli[data-id="${id}"]`)
+    await item.getByRole("link", { name: title }).click()
+    const status = page.locator("#td-status")
+    const done = page.locator("#td-toggle-done")
+    await expect(status).toHaveValue("active")
+    await expect(status).toBeEnabled()
+    await page.route(`**/api/tasks/${id}`, async route => {
+      if (route.request().method() !== "PUT") return route.continue()
+      writes++
+      await pending
+      await route.continue()
+    })
+    await item.locator(".tli__checkbox").click()
+    await expect.poll(() => writes).toBe(1)
+    await status.selectOption("pending")
+    await expect(status).toHaveValue("active")
+    await expect(page.getByText("A status change is still saving.")).toBeVisible()
+    expect(writes).toBe(1)
+    release()
+    await expect(status).toHaveValue("complete")
+    await expect(done).toHaveText("Mark as Undone")
+  } finally {
+    release()
     await request.delete(`/api/tasks/${id}`)
   }
 })

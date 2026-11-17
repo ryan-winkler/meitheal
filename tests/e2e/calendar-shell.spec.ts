@@ -26,6 +26,15 @@ test.describe("Calendar Shell", () => {
     await expect(page.locator('.cal-cell[data-date]:not(.cal-other)').first()).toBeFocused()
   })
 
+  test("Calendar renders supported years with fewer than four digits", async ({ page }) => {
+    const response = await page.goto("/tasks?view=calendar&year=999&month=0#calendar")
+    expect(response?.status()).toBe(200)
+    const first = page.locator('.cal-cell[data-date="0999-01-01"]')
+    await expect(first).toHaveAccessibleName(/1 January 999/)
+    await first.press("Enter")
+    await expect(page.locator("#day-drawer-close")).toBeFocused()
+  })
+
   test("phone filters stay compact, accessible and marked when active", async ({ page }) => {
     await page.setViewportSize({ width: 320, height: 780 })
     await page.goto("/tasks?view=calendar&year=2031&month=6#calendar")

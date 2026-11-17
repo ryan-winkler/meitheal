@@ -2,6 +2,7 @@ import { isDueOverdue } from "./date"
 import { matchesRiceFilter, matchesStatusFilter } from "./filter-state"
 import { isActiveStatus, isDoneStatus, normalizeStatus, STATUS_LABELS } from "./status-config"
 import type { TaskViewItem } from "./task-queries"
+import { lockTaskStatusWrite } from "./task-api-client"
 
 const PAGE_SIZE = 50
 const PAGE_PARAM = "unscheduledPage"
@@ -81,13 +82,9 @@ export function setUnscheduledPage(url: URL, page: number): URL {
   return url
 }
 
-const pendingStatusWrites = new WeakMap<HTMLElement, Set<string>>()
-
 export function lockTodayTaskStatus(container: HTMLElement, id: string): (() => void) | null {
-  const pending = pendingStatusWrites.get(container) ?? new Set<string>()
-  if (pending.has(id)) return null
-  pendingStatusWrites.set(container, pending)
-  pending.add(id)
+  const unlock = lockTaskStatusWrite(id)
+  if (!unlock) return null
   const focused = document.activeElement
   const taskId = CSS.escape(id)
   const controls = [...container.querySelectorAll<HTMLInputElement | HTMLButtonElement>(
@@ -96,7 +93,7 @@ export function lockTodayTaskStatus(container: HTMLElement, id: string): (() => 
   controls.forEach(control => control.setAttribute("aria-disabled", "true"))
   const section = focused?.closest(".today-section, .focus-stack")
   return () => {
-    pending.delete(id)
+    unlock()
     controls.forEach(control => control.removeAttribute("aria-disabled"))
     if (!controls.includes(focused as HTMLInputElement) ||
         (document.activeElement !== focused && document.activeElement !== document.body)) return
@@ -140,5 +137,5 @@ export function syncTodayTaskStatus(container: HTMLElement, id: string, value: s
       item.querySelector(".tli__title")?.classList.toggle("done", done)
     }
   }
-  container.dispatchEvent(new CustomEvent("meitheal:today-status-committed", { detail: { id } }))
+  container.dispatchEvent(new CustomEvent("meitheal:today-status-committed", { detail: { id, status }, bubbles: true }))
 }

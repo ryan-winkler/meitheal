@@ -78,6 +78,7 @@ let calendarAvailable = true
 if (url.searchParams.has("calendarRefresh")) Astro.response.headers.set("Cache-Control", "no-store")
 
 // Query task counts per day for this month
+const monthPrefix = `${String(year).padStart(4, "0")}-${String(month + 1).padStart(2, "0")}`
 const tasksByDay: Record<string, Pick<CalendarDayInfo, "count" | "colors" | "haEvents" | "scheduledEvents">> = {};
 let monthTotal = 0;
 let monthHAEvents = 0;
@@ -85,8 +86,8 @@ let monthHAEvents = 0;
 try {
   await ensureSchema();
   const repo = new TaskRepository(getPersistenceClient());
-  const monthStart = `${year}-${String(month + 1).padStart(2, "0")}-01`;
-  const monthEnd = `${year}-${String(month + 1).padStart(2, "0")}-${String(daysInMonth).padStart(2, "0")}`;
+  const monthStart = `${monthPrefix}-01`;
+  const monthEnd = `${monthPrefix}-${String(daysInMonth).padStart(2, "0")}`;
 
   const calendarData = await repo.getCalendarTaskCounts(monthStart, monthEnd, tz, {
     matches: filter.matches,
@@ -135,7 +136,7 @@ for (let week = 0; week < 6; week++) {
     const d = currentDay;
     const isCurrentMonth = d >= 1 && d <= daysInMonth;
     const dateStr = isCurrentMonth
-      ? `${year}-${String(month + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`
+      ? `${monthPrefix}-${String(d).padStart(2, "0")}`
       : "";
     const dayData = tasksByDay[dateStr];
     const scheduledEvents = dayData?.scheduledEvents ?? 0;

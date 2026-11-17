@@ -20,6 +20,14 @@
 
 import { safeFetch, type SafeFetchOptions } from "./safe-fetch"
 
+const pendingStatusWrites = new Set<string>()
+
+export function lockTaskStatusWrite(id: string): (() => void) | null {
+  if (pendingStatusWrites.has(id)) return null
+  pendingStatusWrites.add(id)
+  return () => { pendingStatusWrites.delete(id) }
+}
+
 // ── Types ──────────────────────────────────────────────────────────────────
 
 export interface AssigneeDirectory {
