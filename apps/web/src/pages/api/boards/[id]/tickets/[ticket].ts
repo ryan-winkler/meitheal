@@ -3,6 +3,7 @@ import { NamedBoardTaskRepository } from "@domains/tasks/persistence/named-board
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import { apiError, apiJson } from "@lib/api-response"
 import { currentBoardTaskActor, readBoardRequest } from "@lib/named-board-request"
+import { parseCalendarDay } from "@lib/calendar-day"
 import { stripHtml } from "@lib/strip-html"
 
 function rejected(error: "denied" | "stale" | "unavailable") {
@@ -30,10 +31,18 @@ export const PATCH: APIRoute = async ({ locals, request, params }) => {
     const result = await repository.move(actor, params.id, params.ticket, body.laneId, body.version)
     return result.ok ? apiJson(result.value) : rejected(result.errorCode)
   }
+  const dueDate = body.due_date
+  if (dueDate !== undefined && dueDate !== null && (typeof dueDate !== "string" || !parseCalendarDay(dueDate))) {
+    return apiError("Choose a valid due date.", 400)
+  }
+  if (dueDate !== undefined && body.title === undefined && body.description === undefined) {
+    const result = await repository.edit(actor, params.id, params.ticket, body.version, { dueDate })
+    return result.ok ? apiJson(result.value) : rejected(result.errorCode)
+  }
   const title = typeof body.title === "string" ? stripHtml(body.title.trim()) : ""
   const description = typeof body.description === "string" ? stripHtml(body.description.trim()) : ""
   if (!title || title.length > 500 || description.length > 10_000) return apiError("Enter a valid task title and description.", 400)
-  const result = await repository.edit(actor, params.id, params.ticket, body.version, { title, description })
+  const result = await repository.edit(actor, params.id, params.ticket, body.version, { title, description, ...(dueDate !== undefined ? { dueDate } : {}) })
   return result.ok ? apiJson(result.value) : rejected(result.errorCode)
 }
 

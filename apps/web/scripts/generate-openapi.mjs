@@ -625,6 +625,11 @@ const paths = {
       201: { description: "The owned Board ID" }, 202: { description: "The Board was saved, and access verification is pending" }, 503: { description: "Board access is locked" },
     }, boardJson({ name: boardString })),
   },
+  "/api/boards/due-today": {
+    get: boardOperation("listPrivateBoardDueWork", "List open tasks due today or earlier on eligible named Boards", [], {
+      200: { description: "Up to 30 eligible tasks and whether there are more" },
+    }),
+  },
   "/api/boards/{id}": {
     get: boardOperation("getPrivateBoard", "Read a Board and a page of its tickets", [boardIdParam,
       { name: "offset", in: "query", schema: boardVersion },
@@ -663,13 +668,15 @@ const paths = {
     post: boardOperation("createPrivateBoardTicket", "Create a ticket in an authorized Board column", [boardIdParam, boardTicketSessionParam], {
       201: { description: "Created ticket identifier, reference and edit version" }, 403: { description: "Ticket creation or completion is denied" }, 404: boardUnavailable,
     }, boardJson({ title: boardString, description: boardString, laneId: boardString, areaId: boardString, projectId: boardString, goalId: boardString,
+      due_date: { type: ["string", "null"], format: "date" },
       placement: { type: "object", properties: { areaId: { type: ["string", "null"] }, projectId: { type: ["string", "null"] } } },
     }), "tasks:write"),
   },
   "/api/boards/{id}/tickets/{ticket}": {
-    patch: boardOperation("changePrivateBoardTicket", "Edit a ticket or move it to a Board column", [boardIdParam, boardTicketParam, boardTicketSessionParam], {
+    patch: boardOperation("changePrivateBoardTicket", "Edit, schedule or move a ticket", [boardIdParam, boardTicketParam, boardTicketSessionParam], {
       200: { description: "New ticket version" }, 403: { description: "A required effect is denied" }, 404: boardUnavailable, 409: { description: "Ticket version is stale" },
     }, boardJson({ version: boardVersion, title: boardString, description: boardString, laneId: boardString,
+      due_date: { type: ["string", "null"], format: "date" },
       action: { type: "string", enum: ["file"] }, areaId: { type: ["string", "null"] }, projectId: { type: ["string", "null"] },
     }), "tasks:write"),
     delete: boardOperation("deletePrivateBoardTicket", "Delete a ticket when the current Board and actor allow deletion", [boardIdParam, boardTicketParam, boardTicketSessionParam], {

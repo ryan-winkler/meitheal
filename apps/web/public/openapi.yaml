@@ -1126,6 +1126,17 @@ paths:
                 name: &a8
                   type: string
               additionalProperties: false
+  /api/boards/due-today:
+    get:
+      operationId: listPrivateBoardDueWork
+      summary: List open tasks due today or earlier on eligible named Boards
+      tags:
+        - Boards
+      parameters: []
+      responses:
+        "200":
+          description: Up to 30 eligible tasks and whether there are more
+      security: *a7
   /api/boards/{id}:
     get:
       operationId: getPrivateBoard
@@ -1310,6 +1321,11 @@ paths:
                 areaId: *a8
                 projectId: *a8
                 goalId: *a8
+                due_date:
+                  type:
+                    - string
+                    - "null"
+                  format: date
                 placement:
                   type: object
                   properties:
@@ -1326,7 +1342,7 @@ paths:
   /api/boards/{id}/tickets/{ticket}:
     patch:
       operationId: changePrivateBoardTicket
-      summary: Edit a ticket or move it to a Board column
+      summary: Edit, schedule or move a ticket
       tags:
         - Boards
       parameters:
@@ -1361,6 +1377,11 @@ paths:
                 title: *a8
                 description: *a8
                 laneId: *a8
+                due_date:
+                  type:
+                    - string
+                    - "null"
+                  format: date
                 action:
                   type: string
                   enum:

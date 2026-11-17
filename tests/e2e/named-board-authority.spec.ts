@@ -389,6 +389,8 @@ test("named Board owners link Projects to shared Goals without publishing privat
   if (!completion.ok) throw new Error("Expected a completed routine ticket")
   const completedTicket = (await tasks.view(workUser, workBoard))?.tasks.find(ticket => ticket.id === completion.value.id)
   if (!completedTicket) throw new Error("Expected the visible routine ticket")
+  expect(await tasks.edit(workUser, workBoard, completedTicket.id, completedTicket.version, { dueDate: null }))
+    .toMatchObject({ ok: false, errorCode: "denied" })
   expect(await tasks.delete(homeUser, workBoard, completedTicket.id, completedTicket.version)).toEqual({ ok: false, errorCode: "denied" })
   expect(await tasks.delete(workUser, workBoard, completedTicket.id, completedTicket.version)).toEqual({ ok: false, errorCode: "denied" })
   expect(await tasks.completeRoutine(workUser, workBoard, workRoutine)).toEqual(completion)
@@ -438,7 +440,9 @@ test("workspace groups, Projects and task filing stay within the owning Board", 
   expect(directory?.planning?.areas).toEqual([{ id: group.id, name: group.name, icon: "🛠", color: "#abcdef" }])
   const project = directory!.planning!.projects[0]!
   const workspace = { areaId: group.id, projectId: null, ticketId: null, planning: false }
-  const ordinary = await tasks.create(actor, board, { title: "Write a handoff", description: "" }, { local: true })
+  const ordinary = await tasks.create(actor, board, {
+    title: "Write a handoff", description: "", dueDate: "2026-11-17",
+  }, { local: true })
   if (!ordinary.ok) throw new Error("Expected an unfiled task")
 
   expect(await tasks.view(actor, board, 0, workspace)).toMatchObject({
@@ -454,5 +458,16 @@ test("workspace groups, Projects and task filing stay within the owning Board", 
   expect(await tasks.file(actor, board, ordinary.value.id, ordinary.value.version, null, null))
     .toMatchObject({ ok: false, errorCode: "stale" })
   expect((await tasks.view(actor, board, 0, { ...workspace, projectId: project.id }))?.tasks)
-    .toMatchObject([{ id: ordinary.value.id, ticket: ordinary.value.ticket }])
+    .toMatchObject([{ id: ordinary.value.id, ticket: ordinary.value.ticket, dueDate: "2026-11-17" }])
+  if (!filed.ok) throw new Error("Expected the task to be filed")
+  expect(await tasks.dueWork(actor, "2026-11-16")).toEqual([])
+  expect(await tasks.dueWork({ kind: "ha_user", id: "outsider" }, "2026-11-17")).toEqual([])
+  expect(await tasks.dueWork({ kind: "agent", id: actor.id }, "2026-11-17")).toEqual([])
+  expect(await tasks.dueWork(actor, "2026-11-17")).toMatchObject([
+    { id: ordinary.value.id, title: "Write a handoff", dueDate: "2026-11-17", boardId: board, boardName: "Work" },
+  ])
+  const cleared = await tasks.edit(actor, board, ordinary.value.id, filed.value.version, { dueDate: null })
+  expect(cleared.ok).toBe(true)
+  expect((await tasks.view(actor, board, 0, { ...workspace, projectId: project.id }))?.tasks)
+    .toMatchObject([{ id: ordinary.value.id, title: "Write a handoff", dueDate: null }])
 })

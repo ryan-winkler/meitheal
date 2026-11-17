@@ -45,3 +45,5 @@ Open **Boards** and select **Household** or a named Board. The Board opens its t
 Expand a named Board from the sidebar to open one of its groups. Household's group shortcuts still include the existing Project pins and planning actions. The original Area and Project links continue to open existing work.
 
 A named Board member with task edit access can open **File task**, choose a group or Project in that Board and save. It keeps the ticket and workflow column. If the destination or task has changed, refresh the Board before retrying. Owner settings and send-only access continue to use the existing Board rules.
+
+Set a shared due date when you add a task, or open the task's edit form to change or clear it. People who can read the task can see its due date. A generated Routine ticket keeps the date of its original occurrence. Edit the Routine's schedule to change future occurrences.

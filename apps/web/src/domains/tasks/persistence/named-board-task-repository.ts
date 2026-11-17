@@ -12,7 +12,7 @@ import { permitsBoardTaskAction, selectNamedBoardAccess, type BoardActor, type T
 import { canAdvanceTaskTimestampMs, nextTaskTimestampMs, taskTimestampMs } from "./task-timestamp"
 
 type Outcome<T> = { ok: true; value: T } | { ok: false; errorCode: "unavailable" | "denied" | "stale" }
-type NamedTaskContent = { title: string; description: string }
+type NamedTaskContent = { title: string; description: string; dueDate?: string | null }
 type NamedTaskPlacement = {
   laneId?: string
   areaId?: string
@@ -55,7 +55,7 @@ export async function insertNamedTask(tx: Transaction, input: {
       VALUES (?, ?, ?, ?, '__meitheal_no_area__', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     args: [id, input.content.title, input.content.description, input.status, input.boardId,
       input.assignedTo ?? null, input.laneId, String(ticket.key), id, id, now, now,
-      input.routine?.templateId ?? null, input.routine?.period ?? null, input.routine ? "routine_instance" : "standard_action"],
+      input.routine?.templateId ?? null, input.routine?.period ?? input.content.dueDate ?? null, input.routine ? "routine_instance" : "standard_action"],
   })
   return { id, ticket: String(ticket.key), version: now }
 }
@@ -63,6 +63,31 @@ export async function insertNamedTask(tx: Transaction, input: {
 /** Named ticket writes keep the Board grant, placement and task version in the same transaction. */
 export class NamedBoardTaskRepository {
   constructor(private readonly db: Client, private readonly markerPath?: string) {}
+
+  async dueWork(actor: BoardActor, day: string) {
+    if (actor.kind !== "ha_user") return []
+    const revision = await currentBoardGrantRevision(this.db, this.markerPath)
+    if (!revision) return []
+    const { rows } = await this.db.execute({
+      sql: `SELECT task.id, task.title, task.due_date, board.id AS board_id, board.name AS board_name
+        FROM board_access_grants AS grant_row
+        JOIN task_boards AS board ON board.id = grant_row.board_id
+        JOIN board_permissions AS permissions ON permissions.board_id = board.id
+        JOIN tasks AS task ON task.task_board_id = board.id
+        WHERE grant_row.principal_type = 'ha_user' AND grant_row.principal_id = ?
+          AND board.id <> 'household' AND board.state = 'active'
+          AND task.due_date > '' AND task.due_date <= ? AND task.deferred_at IS NULL
+          AND task.status NOT IN ('complete', 'archived')
+          AND EXISTS (SELECT 1 FROM board_access_epoch WHERE singleton = 1 AND revision = ?)
+        ORDER BY task.due_date, task.id LIMIT 31`,
+      args: [actor.id, day, revision],
+    })
+    if (!await boardGrantStillCurrent(this.db, revision, this.markerPath)) return []
+    return rows.map(row => ({
+      id: String(row.id), title: String(row.title), dueDate: String(row.due_date),
+      boardId: String(row.board_id), boardName: String(row.board_name),
+    }))
+  }
 
   async view(actor: BoardActor, boardId: string, offset = 0, selection?: BoardWorkspaceSelection, location?: HomeAssistantAreaFilter) {
     const revision = await currentBoardGrantRevision(this.db, this.markerPath)
@@ -86,7 +111,8 @@ export class NamedBoardTaskRepository {
         },
         {
           sql: `SELECT tasks.id, tasks.title, tasks.description, tasks.status, tasks.ticket_ref,
-              tasks.board_column_id AS lane_id, tasks.assigned_to, tasks.source_template_id IS NOT NULL AS routine,
+              tasks.board_column_id AS lane_id, tasks.assigned_to, tasks.due_date,
+              (tasks.task_kind = 'routine_instance' AND tasks.source_template_id IS NOT NULL) AS routine,
               ${selection?.ticketId ? "ticket_area.id AS area_id, project.id AS project_id," : ""}
               ${taskTimestampMs("tasks.updated_at")} AS version
             FROM tasks ${taskFilter ? scopedTaskJoin : ""}
@@ -128,6 +154,7 @@ export class NamedBoardTaskRepository {
           id: String(task.id), title: String(task.title), description: String(task.description ?? ""),
           status: String(task.status), ticket: String(task.ticket_ref), laneId: String(task.lane_id),
           assignedTo: typeof task.assigned_to === "string" ? task.assigned_to : null,
+          dueDate: typeof task.due_date === "string" ? task.due_date : null,
           routine: task.routine === 1, version: Number(task.version),
           ...(selection?.ticketId ? {
             placement: {
@@ -380,14 +407,24 @@ export class NamedBoardTaskRepository {
     })
   }
 
-  async edit(actor: BoardActor, boardId: string, id: string, version: number, content: NamedTaskContent) {
+  async edit(actor: BoardActor, boardId: string, id: string, version: number, content: Partial<NamedTaskContent>) {
     return this.mutate(actor, boardId, "edit", async tx => {
+      if (content.dueDate !== undefined) {
+        const { rows: [task] } = await tx.execute({
+          sql: `SELECT due_date, task_kind, source_template_id FROM tasks WHERE id = ? AND task_board_id = ?`,
+          args: [id, boardId],
+        })
+        if (!task) return unavailable
+        if (task.task_kind === "routine_instance" && task.source_template_id != null && content.dueDate !== task.due_date) return denied
+      }
       const { rows: [updated] } = await tx.execute({
-        sql: `UPDATE tasks SET title = ?, description = ?, updated_at = ${nextTaskTimestampMs("updated_at")}
+        sql: `UPDATE tasks SET title = COALESCE(?, title), description = COALESCE(?, description),
+          due_date = CASE WHEN ? THEN ? ELSE due_date END,
+          updated_at = ${nextTaskTimestampMs("updated_at")}
           WHERE id = ? AND task_board_id = ? AND ${taskTimestampMs("updated_at")} = ?
             AND (${canAdvanceTaskTimestampMs("updated_at")})
           RETURNING updated_at AS version`,
-        args: [content.title, content.description, Date.now(), id, boardId, version],
+        args: [content.title ?? null, content.description ?? null, Number(content.dueDate !== undefined), content.dueDate ?? null, Date.now(), id, boardId, version],
       })
       return updated ? { ok: true, value: { version: Number(updated.version) } } : stale
     })
@@ -425,10 +462,10 @@ export class NamedBoardTaskRepository {
   async delete(actor: BoardActor, boardId: string, id: string, version: number) {
     return this.mutate(actor, boardId, "delete", async tx => {
       const { rows: [task] } = await tx.execute({
-        sql: "SELECT source_template_id FROM tasks WHERE id = ? AND task_board_id = ?",
+        sql: "SELECT source_template_id, task_kind FROM tasks WHERE id = ? AND task_board_id = ?",
         args: [id, boardId],
       })
-      if (task?.source_template_id != null) return denied
+      if (task?.task_kind === "routine_instance" && task.source_template_id != null) return denied
       const { rows } = await tx.execute({
         sql: `DELETE FROM tasks WHERE id = ? AND task_board_id = ? AND ${taskTimestampMs("updated_at")} = ?
           AND NOT EXISTS (SELECT 1 FROM tasks AS child WHERE child.parent_id = tasks.id)

@@ -5,11 +5,16 @@ import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/s
 import { parseBoardPlacement } from "@lib/board-workspace"
 import { apiError, apiJson } from "@lib/api-response"
 import { currentBoardTaskActor, readBoardRequest } from "@lib/named-board-request"
+import { parseCalendarDay } from "@lib/calendar-day"
 import { stripHtml } from "@lib/strip-html"
 
 export const POST: APIRoute = async (context) => {
   const { locals, request, params } = context
   const body = await readBoardRequest(request)
+  const dueDate = body?.due_date
+  if (dueDate !== undefined && dueDate !== null && (typeof dueDate !== "string" || !parseCalendarDay(dueDate))) {
+    return apiError("Choose a valid due date.", 400)
+  }
   const title = typeof body?.title === "string" ? stripHtml(body.title.trim()) : ""
   const description = typeof body?.description === "string" ? stripHtml(body.description.trim()) : ""
   if (!body || !title || title.length > 500 || description.length > 10_000) return apiError("Enter a valid task title and description.", 400)
@@ -23,7 +28,7 @@ export const POST: APIRoute = async (context) => {
   if (!homeLocation.ok) return apiError(homeLocation.detail, homeLocation.status)
   await ensureSchema()
   const repository = new NamedBoardTaskRepository(getPersistenceClient())
-  const result = await repository.create(actor, params.id, { title, description }, {
+  const result = await repository.create(actor, params.id, { title, description, ...(dueDate !== undefined ? { dueDate } : {}) }, {
     ...(homeLocation.selection ? { homeAssistantArea: homeLocation.selection } : {}),
     ...(typeof body.laneId === "string" ? { laneId: body.laneId } : {}),
     ...(scopes ? { ...(scopes.areaId ? { areaId: scopes.areaId } : {}), ...(scopes.projectId ? { projectId: scopes.projectId } : {}), local: true } : {

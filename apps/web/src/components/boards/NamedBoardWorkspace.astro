@@ -66,6 +66,7 @@ const nextAction = view?.summary?.next
               <label>Column <select name="laneId">
                 {view.lanes.filter(lane => canComplete || !isDoneStatus(lane.key)).map(lane => <option value={lane.id}>{lane.label}</option>)}
               </select></label>
+              <label>Shared due date <input type="date" name="due_date" /></label>
               <HomeAssistantAreaField />
               {scope?.area && <input type="hidden" name="areaId" value={scope.area.id} />}
               {scope?.project && <input type="hidden" name="projectId" value={scope.project.id} />}
@@ -95,6 +96,9 @@ const nextAction = view?.summary?.next
                 <form data-board-form="task-edit" data-ticket-id={task.id} data-version={task.version} class="board-form">
                   <label>Title <input name="title" value={task.title} maxlength="500" required /></label>
                   <label>Details <textarea name="description" maxlength="10000" rows="3">{task.description}</textarea></label>
+                  {task.routine
+                    ? task.dueDate && <p class="board-note">Scheduled for {task.dueDate}</p>
+                    : <label>Shared due date <input type="date" name="due_date" value={task.dueDate ?? ""} /></label>}
                   <p role="status" data-board-feedback></p>
                   <button type="submit" class="btn btn-ghost">Save changes</button>
                 </form>
@@ -104,6 +108,7 @@ const nextAction = view?.summary?.next
                   boardSession={boardSessionProof(user.actor.id)}
                 />
               </details> : <h3 class="board-name">{task.title}</h3>}
+              {!canEdit && task.dueDate && <p class="board-note">Due {task.dueDate}</p>}
               {task.assignedTo && <p class="board-note">Assigned to {user.roster.get(task.assignedTo.replace(/^ha_/, "")) || "an unavailable user"}</p>}
               {task.description && <p>{task.description}</p>}
               {canEdit && <form data-board-form="task-move" data-ticket-id={task.id} data-version={task.version} class="board-move">

@@ -197,13 +197,13 @@ export function bindBoardPage(signal: AbortSignal) {
           break
         case "task-create":
           await jsonRequest(api + "/tickets", "POST", {
-            ...content, laneId: value("laneId"),
+            ...content, laneId: value("laneId"), ...(value("due_date") ? { due_date: value("due_date") } : {}),
             ...(value("home_assistant_area_id") ? { home_assistant_area_id: value("home_assistant_area_id") } : {}),
             placement: { areaId: value("areaId") || null, projectId: value("projectId") || null },
           })
           break
         case "task-edit":
-          await jsonRequest(ticket, "PATCH", { ...content, version: Number(version) })
+          await jsonRequest(ticket, "PATCH", { ...content, version: Number(version), ...(data.has("due_date") ? { due_date: value("due_date") || null } : {}) })
           break
         case "task-file":
           await jsonRequest(ticket, "PATCH", {
