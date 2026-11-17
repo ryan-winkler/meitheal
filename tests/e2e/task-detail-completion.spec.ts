@@ -172,11 +172,13 @@ test("Details completion clears Knight Rider active work on Dashboard and Board"
     await done.click()
     await expect(status).toHaveValue("complete")
     await expect.poll(() => refreshHeld).toBe(true)
-    const reopened = page.waitForResponse(response => response.request().method() === "PUT" &&
-      new URL(response.url()).pathname === `/api/tasks/${id}` && response.request().postDataJSON()?.status === "active")
+    await expect(status).not.toHaveAttribute("aria-disabled", "true")
+    const reopening = page.waitForResponse(response =>
+      new URL(response.url()).pathname === `/api/tasks/${id}` &&
+      response.request().method() === "PUT" && response.request().postDataJSON()?.status === "active",
+    )
     await status.selectOption("active")
-    const response = await reopened
-    expect(response.ok(), await response.text()).toBe(true)
+    expect((await reopening).status()).toBe(200)
     await expect(status).toHaveAttribute("data-saved-status", "active")
     releaseHeldRefresh()
     await expect.poll(() => boardReads).toBeGreaterThanOrEqual(priorReads + 2)

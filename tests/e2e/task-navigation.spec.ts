@@ -4,7 +4,6 @@ import { shouldSkipBrowserSpecs } from "./_helpers"
 test.skip(shouldSkipBrowserSpecs(), "Set E2E_BASE_URL to run browser specs")
 test.use({ serviceWorkers: "block" })
 
-
 test("old task pins and visibility move to New task while view pins navigate and preserve filters", async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 1440, height: 950 })
   await page.addInitScript(() => {

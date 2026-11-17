@@ -304,7 +304,7 @@ function isExternal(href: string): boolean {
     type TaskNavPrefs,
   } from "../../lib/task-nav-types"
   import { TASK_VIEW_LOCATION_EVENT, taskBackgroundUrl } from "../../lib/task-page-url"
-  import { parseTaskView, taskViewUrl } from "../../lib/task-view-route"
+  import { parseTaskView, requestedTaskView, taskViewUrl } from "../../lib/task-view-route"
 
   // A private page can remove the persisted sidebar. Rebind the new sidebar on its return.
   const runtime = window as typeof window & { __meithealSidebarActive?: AbortController }
@@ -334,7 +334,7 @@ function isExternal(href: string): boolean {
       return parseTaskView(path.slice(1)) ? "/tasks" : path
     }
     const viewFrom = (url: URL) => parseTaskView(appPath(url.pathname).slice(1)) ??
-      parseTaskView(url.searchParams.get("view")) ?? parseTaskView(url.hash.slice(1)) ?? "kanban"
+      requestedTaskView(url.searchParams, url.hash) ?? "kanban"
     const view = viewFrom(background)
     const backgroundPath = taskPath(background)
     const taskContext = backgroundPath === "/tasks"
