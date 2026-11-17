@@ -314,7 +314,7 @@ const remainingItems = boardPosition < 0 ? [] : navItems.slice(boardPosition + 1
 
     <div class="sidebar-scroll" data-nav-overflow="sidebar">
       {primaryItems.length > 0 && <SidebarNavList navItems={primaryItems} taskCounts={taskCounts} />}
-      {boardPosition >= 0 && householdGroups && (
+      {householdGroups && (
         <section class="sidebar-household" id="sidebar-hierarchy-panel" aria-label="Household Board">
           <a class="nav-link sidebar-household-link" href="/boards/household">Household</a>
           <SidebarHierarchyTree locale={locale} label={householdGroupLabel} />

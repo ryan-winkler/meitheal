@@ -17,6 +17,16 @@ test.describe("Sidebar and Today follow-through", () => {
     }
   })
 
+  test("Household group shortcuts follow their own visibility setting", async ({ page, request, baseURL }) => {
+    const headers = { origin: new URL(baseURL!).origin }
+    expect((await request.put("/api/settings", {
+      headers, data: { key: "sidebar_config", value: { boards: false, areas: true } },
+    })).ok()).toBe(true)
+    await page.goto("/tasks")
+    await expect(page.locator('#sidebar [data-page="boards"]')).toHaveCount(0)
+    await expect(page.locator("#sidebar-hierarchy-panel")).toBeVisible()
+  })
+
   test("Household groups remain under Boards with legacy visibility and label settings", async ({ page }) => {
     await page.goto("/settings#navigation-settings")
     await expect(page.getByRole("checkbox", { name: "Show Areas in sidebar" })).toBeVisible()

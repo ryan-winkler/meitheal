@@ -4,6 +4,7 @@ import type { readNamedBoardPlanning } from "@domains/tasks/persistence/named-bo
 import { boardWorkspaceHref, DEFAULT_GROUP_COLOR } from "@lib/board-workspace"
 
 import RetirePlanningForm from "./RetirePlanningForm.astro"
+import ProjectSettings from "./ProjectSettings.astro"
 
 interface Props {
   boardId: string
@@ -54,40 +55,8 @@ const ownedAreaIds = new Set(planning.areas.map(area => area.id))
           <h4 class="board-name"><a href={boardWorkspaceHref(boardId, { project: project.id, fromArea: area.id })}>{project.title}</a></h4>
           <a href={goalHref("project_id", project.id)}>View Project Goals</a>
           {project.description && <p>{project.description}</p>}
-          {canManage && <details id={projectId === project.id ? "project-settings" : undefined}>
-            <summary>Edit Project</summary>
-            <form data-board-form="planning" class="board-form">
-              <input type="hidden" name="action" value="project-edit" />
-              <input type="hidden" name="id" value={project.id} />
-              <label>Name <input name="title" value={project.title} maxlength="150" required /></label>
-              <label>Details <textarea name="description" rows="2" maxlength="10000">{project.description}</textarea></label>
-              <p role="status" data-board-feedback></p>
-              <button type="submit" class="btn btn-ghost">Save Project</button>
-            </form>
-            <form data-board-form="planning" class="board-form">
-              <input type="hidden" name="action" value="project-goal" />
-              <input type="hidden" name="id" value={project.id} />
-              <label>Goal <select name="goalId">
-                <option value="">No Goal</option>
-                {planning.linkableGoals.filter(goal => goal.sharedAreaId === null || goal.sharedAreaId === area.id)
-                  .map(goal => <option value={goal.id} selected={goal.id === project.goalId}>{goal.title}</option>)}
-              </select></label>
-              <p role="status" data-board-feedback></p>
-              <button type="submit" class="btn btn-ghost">Save Goal link</button>
-            </form>
-            <RetirePlanningForm entity="project" id={project.id} />
-          </details>}
-          {canManage ? <form data-board-form="planning" class="board-form">
-            <input type="hidden" name="action" value="project-status" />
-            <input type="hidden" name="id" value={project.id} />
-            <label>Project status <select name="status">
-              <option value="active" selected={project.status === "active"}>Active</option>
-              <option value="completed" selected={project.status === "completed"}>Completed</option>
-              <option value="archived" selected={project.status === "archived"}>Archived</option>
-            </select></label>
-            <p role="status" data-board-feedback></p>
-            <button type="submit" class="btn btn-ghost">Save status</button>
-          </form> : <p class="board-note">{project.status}</p>}
+          <ProjectSettings {project} selected={projectId === project.id} {canManage}
+            goals={planning.linkableGoals.filter(goal => goal.sharedAreaId === null || goal.sharedAreaId === area.id)} />
         </article>)}
       </div>
       {canManage && <details>
@@ -174,10 +143,12 @@ const ownedAreaIds = new Set(planning.areas.map(area => area.id))
         </details>}
       </div>}
     </section>)}
-    {planning.projects.filter(project => !project.areaId || !ownedAreaIds.has(project.areaId)).map(project => <article class="board-tile">
+    {planning.projects.filter(project => (!projectId || project.id === projectId) && (!project.areaId || !ownedAreaIds.has(project.areaId))).map(project => <article class="board-tile">
       <h3 class="board-name">{project.title}</h3>
       {project.description && <p>{project.description}</p>}
       <a href={goalHref("project_id", project.id)}>View Project Goals</a>
+      <ProjectSettings {project} selected={projectId === project.id} {canManage}
+        goals={planning.linkableGoals.filter(goal => goal.sharedAreaId === null)} />
     </article>)}
     {canManage && <details class="board-tile">
       <summary>New group</summary>

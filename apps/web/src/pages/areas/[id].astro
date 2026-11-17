@@ -22,6 +22,14 @@ import { isFeatureEnabled } from "../../lib/feature-flags"
 
 const workspaceAreaId = Astro.props.workspaceAreaId as string | undefined
 const areaId = workspaceAreaId ?? Astro.params.id
+const rawOffset = Astro.url.searchParams.get("offset") ?? ""
+const taskOffset = /^\d{1,8}$/.test(rawOffset) ? Number(rawOffset) : 0
+const taskPage = (offset: number) => {
+  const query = new URLSearchParams(Astro.url.searchParams)
+  if (offset) query.set("offset", String(offset))
+  else query.delete("offset")
+  return Astro.url.pathname + "?" + query.toString() + "#tasks"
+}
 const areasPath = `${Astro.locals.ingressPath || ""}${workspaceAreaId ? "/boards/household?view=groups" : "/planning#spaces"}`
 if (!areaId) {
   return Astro.redirect(areasPath)
@@ -59,7 +67,7 @@ try {
   projects = areaProjects
   routinesEnabled = await isFeatureEnabled("habits")
   if (routinesEnabled) routines = await new TemplateRepository(client).findRoutines(areaId)
-  if (workspaceAreaId) workspaceTasks = await taskRepo.findAll({ workspaceAreaId: areaId, limit: 50 })
+  if (workspaceAreaId) workspaceTasks = await taskRepo.findAll({ workspaceAreaId: areaId, limit: 50, offset: taskOffset })
   taskCountByProject = projects.length ? await taskRepo.getProjectTaskCounts() : new Map()
 } catch (error) {
   logApiError("areas", "Could not load Area details", error)
@@ -151,6 +159,10 @@ const tabs = [
     {workspaceTasks?.tasks.length ? <ul>{workspaceTasks.tasks.map(task => <li>
       <a href={buildTaskPath(task.id)}>{task.title}</a>
     </li>)}</ul> : <p class="section-empty">No tasks in this group yet.</p>}
+    {workspaceTasks && (taskOffset > 0 || taskOffset + 50 < workspaceTasks.total) && <nav aria-label="Group task pages">
+      {taskOffset > 0 && <a class="btn btn-ghost" href={taskPage(Math.max(0, taskOffset - 50))}>Previous tasks</a>}
+      {taskOffset + 50 < workspaceTasks.total && <a class="btn btn-ghost" href={taskPage(taskOffset + 50)}>More tasks</a>}
+    </nav>}
   </section>}
 
   <section id="section-goals" class="area-section" data-section="goals" role="tabpanel" aria-labelledby="area-tab-goals" tabindex="0">
