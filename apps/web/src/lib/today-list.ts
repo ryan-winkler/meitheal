@@ -1,6 +1,6 @@
 import { isDueOverdue } from "./date"
 import { matchesRiceFilter, matchesStatusFilter } from "./filter-state"
-import { isActiveStatus, isDoneStatus, normalizeStatus, STATUS_LABELS } from "./status-config"
+import { getStatusLabel, isActiveStatus, isDoneStatus, normalizeStatus } from "./status-config"
 import type { TaskViewItem } from "./task-queries"
 import { lockTaskStatusWrite } from "./task-api-client"
 
@@ -125,7 +125,7 @@ export function syncTodayTaskStatus(container: HTMLElement, id: string, value: s
     const badge = item.querySelector<HTMLElement>("[data-badge-status]")
     if (badge) {
       badge.dataset.badgeStatus = status
-      badge.textContent = STATUS_LABELS[status] ?? status
+      badge.textContent = getStatusLabel(status)
     }
     const checkbox = item.querySelector<HTMLInputElement>(".tli__checkbox")
     if (checkbox) {

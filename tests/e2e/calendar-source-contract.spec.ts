@@ -154,7 +154,7 @@ test("Calendar reads configured sources as a household member and filters before
       if (!liveAvailable) return route.fulfill({ status: 503 })
       return route.fulfill({ json: { events: [
         { uid: "linked-uid", summary: "Household live duplicate", start: "2031-07-14T09:00:00+01:00" },
-        { uid: "linked-uid", summary: "Household live duplicate", start: "2031-07-14T13:00:00+01:00" },
+        { uid: " linked-uid ", summary: "Household live duplicate", start: "2031-07-14T13:00:00+01:00" },
         { uid: "unlinked-uid", summary: "Live calendar only", start: "2031-07-14T10:00:00Z" },
         { summary: "  PROVIDER  NAME without uid  ", start: "2031-07-14T15:00:00+01:00" },
         { summary: "  AMBIGUOUS provider  name", start: "2031-07-14T15:00:00Z" },
@@ -473,6 +473,25 @@ test("Calendar reads configured sources as a household member and filters before
     await expect(agenda.getByRole("button", { name: /Local agenda recovery task/ })).toBeVisible()
     await expect(connected.getByRole("button", { name: /Linked calendar retreat/ })).toBeVisible()
     await expect(connected.getByText("Saved calendar links couldn’t load", { exact: false })).toHaveCount(0)
+    await page.keyboard.press("Escape")
+
+    db.exec("ALTER TABLE tasks RENAME COLUMN description TO unavailable_description")
+    try {
+      await day.press("Enter")
+      await expect(agenda.getByText("Couldn’t load this day’s agenda.")).toBeVisible()
+      await expect(connected.getByText("No calendar events", { exact: true })).toBeVisible()
+    } finally {
+      db.exec("ALTER TABLE tasks RENAME COLUMN unavailable_description TO description")
+    }
+    db.exec("ALTER TABLE calendar_confirmations RENAME TO unavailable_calendar_confirmations")
+    try {
+      await page.getByRole("button", { name: "Retry agenda" }).press("Enter")
+      await expect(agenda.getByRole("button", { name: /Matching garden task/ }).first()).toBeVisible()
+      await expect(connected.getByText("Saved calendar links couldn’t load. Reopen the day to retry.")).toBeVisible()
+      await expect(connected.getByText("No calendar events", { exact: true })).toHaveCount(0)
+    } finally {
+      db.exec("ALTER TABLE unavailable_calendar_confirmations RENAME TO calendar_confirmations")
+    }
   } catch (error) {
     console.log("Calendar browser diagnostics", pageErrors)
     throw error

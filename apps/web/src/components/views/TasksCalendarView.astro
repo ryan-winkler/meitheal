@@ -165,7 +165,7 @@ const dayWord = scheduledDayCount === 1 ? "day" : "days"
 const haEventWord = monthHAEvents === 1 ? "synced event" : "synced events"
 const agendaNote = filter.matches && !Object.values(tasksByDay).some(day => day.count)
   ? "No tasks match these filters this month."
-  : "Select a day to see its tasks and events."
+  : "Open a day to see its agenda."
 ---
 
 <div id="tasks-view-calendar" class="tasks-view-container" data-task-view="calendar">
@@ -286,7 +286,7 @@ const agendaNote = filter.matches && !Object.values(tasksByDay).some(day => day.
           <div class="day-drawer-section">
             <h4 class="day-drawer-section-title flex items-center gap-1.5">
               <Icon name="clipboard-list" size={14} />
-              Tasks and Events
+              Scheduled items
             </h4>
             <div id="day-drawer-tasks" class="day-drawer-list">
               <span class="day-drawer-empty">Loading...</span>

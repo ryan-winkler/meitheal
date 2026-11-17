@@ -52,7 +52,7 @@ export function taskViewUrl(current: URL, view: TaskView, explicitFilters = fals
         url.searchParams.set(key, readTaskScalarParam(url.searchParams, key, previousView)!)
       }
     }
-    if (url.searchParams.getAll("advancedFilter").length > 1 && previousView !== "timeline") {
+    if (url.searchParams.getAll("advancedFilter").length > 1) {
       const applied = appliedTaskRules(url.searchParams, previousView)
       if (applied?.rules.conditions.length) url.searchParams.set("advancedFilter", applied.raw)
       else url.searchParams.delete("advancedFilter")

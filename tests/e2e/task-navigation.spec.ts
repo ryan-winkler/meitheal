@@ -307,7 +307,7 @@ test("short landscape sidebar keeps pinned types and view menus reachable", asyn
   await expect(page).toHaveURL(url => url.searchParams.get("view") === "calendar")
 })
 
-test("docked task Details retains Today as the active navigation", async ({ page, request, baseURL }) => {
+test("docked task Details retains Today as the active navigation and syncs a custom status", async ({ page, request, baseURL }) => {
   await page.setViewportSize({ width: 1600, height: 900 })
   await page.addInitScript(() => localStorage.setItem("meitheal-task-nav-prefs", JSON.stringify({ pinnedViews: ["kanban"] })))
   const headers = { origin: new URL(baseURL!).origin }
@@ -316,7 +316,11 @@ test("docked task Details retains Today as the active navigation", async ({ page
   const created = await request.post("/api/tasks", { headers, data: { title, due_date } })
   expect(created.status(), await created.text()).toBe(201)
   const { id } = await created.json()
+  let laneId: string | undefined
   try {
+    const lane = await request.post("/api/lanes", { headers, data: { label: "Waiting for review", key: "waiting_review" } })
+    expect(lane.status(), await lane.text()).toBe(201)
+    laneId = (await lane.json()).id
     await page.goto("/today#today-work")
     await page.locator("#page-shell").getByText(title, { exact: true }).first().click()
     await expect(page.locator("body")).toHaveClass(/has-docked-inspector/)
@@ -325,8 +329,16 @@ test("docked task Details retains Today as the active navigation", async ({ page
     await sidebar.getByRole("button", { name: "Task views", exact: true }).click()
     await expect(sidebar.locator('a[data-page="today"]')).toHaveAttribute("aria-current", "page")
     await expect(sidebar.locator('[data-task-view-pinned-item="kanban"] a')).not.toHaveAttribute("aria-current", "page")
+    await page.keyboard.press("Escape")
+    const status = page.locator("#td-status")
+    await status.selectOption({ label: "Waiting for review" })
+    const badge = page.locator(`.tli[data-id="${id}"] [data-badge-status]`).first()
+    await expect(badge).toHaveText("waiting_review")
+    await page.goto("/today#today-work")
+    await expect(badge).toHaveText("waiting_review")
   } finally {
     await request.delete(`/api/tasks/${id}`, { headers })
+    if (laneId) await request.delete(`/api/lanes/${laneId}`, { headers })
   }
 })
 
@@ -873,6 +885,18 @@ test("legacy Shopping type filters survive view switches and respect Table searc
     await views.getByRole("link", { name: "Table", exact: true }).click()
     await expect(page).not.toHaveURL(/advancedFilter=/)
     for (const title of titles) await expect(table.getByText(title, { exact: true })).toBeVisible()
+
+    calendarShopping.set("view", "timeline")
+    calendarShopping.delete("advancedFilter")
+    for (const title of titles) calendarShopping.append("advancedFilter", JSON.stringify({
+      id: "legacy-title", logic: "AND",
+      conditions: [{ id: "title", field: "title", operator: "equals", value: title }],
+    }))
+    await page.goto("/tasks?" + calendarShopping + "#timeline")
+    for (const id of ids) await expect(page.locator(`.gantt-bar[data-task-id="${id}"]`)).toBeAttached()
+    await views.getByRole("link", { name: "Calendar", exact: true }).click()
+    await expect(page).not.toHaveURL(/advancedFilter=/)
+    await expect(calendar.locator(`.cal-cell[data-date="${due}"]`)).toHaveAccessibleName(/2 tasks$/)
   } finally {
     await request.put("/api/settings", { headers, data: { key: "sidebar_config", value: previous ?? null } })
     for (const id of ids) await request.delete(`/api/tasks/${id}`, { headers })

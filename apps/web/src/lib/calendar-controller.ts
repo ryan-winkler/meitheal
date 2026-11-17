@@ -254,7 +254,7 @@ export function initCalendarPage(signal: AbortSignal): void {
       else if (!live.available || live.partial) drawerEvents!.append(agendaMessage(
         (live.available ? "Some live" : "Live") + " Home Assistant calendars couldn’t refresh. Reopen the day to retry.",
       ))
-      else if (persisted && !items.length) drawerEvents!.append(agendaMessage("No calendar events"))
+      else if (!savedUnavailable && !items.length) drawerEvents!.append(agendaMessage("No calendar events"))
       if (savedUnavailable) drawerEvents!.append(agendaMessage("Saved calendar links couldn’t load. Reopen the day to retry."))
       const restoreId = activeId ?? focusedEvent
       if (restoreId && (activeId || document.activeElement === closeButton)) {
@@ -525,7 +525,8 @@ function distinctLiveCalendarEvents(events: CalendarEventRecord[], linked: Linke
   const liveCounts = new Map<string, number>()
   for (const row of linked) {
     if (!row.entity) continue
-    if (row.uid) byUid.add(key(row.entity, row.start, row.uid))
+    const uid = row.uid?.trim()
+    if (uid) byUid.add(key(row.entity, row.start, uid))
     const summary = normalizeCalendarEventSummary(row.providerSummary ?? "")
     if (summary) {
       const match = key(row.entity, row.start, summary)
@@ -537,7 +538,8 @@ function distinctLiveCalendarEvents(events: CalendarEventRecord[], linked: Linke
     liveCounts.set(match, (liveCounts.get(match) ?? 0) + 1)
   }
   return events.filter(event => {
-    if (event.uid) return !byUid.has(key(event.entity, event.start, event.uid))
+    const uid = typeof event.uid === "string" ? event.uid.trim() : ""
+    if (uid) return !byUid.has(key(event.entity, event.start, uid))
     const match = key(event.entity, event.start, normalizeCalendarEventSummary(event.summary))
     return savedCounts.get(match) !== 1 || liveCounts.get(match) !== 1
   })

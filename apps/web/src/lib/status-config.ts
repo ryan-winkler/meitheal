@@ -137,6 +137,12 @@ export function getStatusDef(status: string): StatusDef | undefined {
   return STATUS_CONFIG.find((s) => s.canonical === canonical);
 }
 
+/** Display a built-in label or the stored status when no built-in definition exists. */
+export function getStatusLabel(status: string): string {
+  const value = status || "backlog"
+  return getStatusDef(value)?.label ?? value
+}
+
 /** Lookup maps for SSR templates */
 export const STATUS_LABELS: Record<string, string> = Object.fromEntries(
   STATUS_CONFIG.flatMap((s) => [

@@ -853,6 +853,7 @@ test.describe("Calendar Shell", () => {
     await expect(types.getByRole("textbox", { name: "Filter by text" })).toHaveValue("roof")
     await during.press("Enter")
     await expect(page.getByRole("heading", { name: "Connected Calendar Events" })).toHaveCount(0)
+    await expect(page.getByRole("heading", { name: "Scheduled items", exact: true })).toBeVisible()
     await expect(page.locator("#day-drawer-tasks")).toContainText("No matching tasks or local events")
 
     await page.keyboard.press("Escape")
