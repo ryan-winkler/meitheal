@@ -11,6 +11,30 @@ export interface SearchDetailHandoff {
   onDismiss(reason: SearchDetailDismissal): void
 }
 
+/** Find the equivalent control in a board that replaced the focused control's DOM. */
+export function findKanbanDetailFocus(board: ParentNode, previous: Element): HTMLElement | null {
+  const laneId = previous.closest<HTMLElement>(".kanban-column")?.dataset.laneId
+  if (!laneId) return null
+  const lane = board.querySelector<HTMLElement>(`.kanban-column[data-lane-id="${CSS.escape(laneId)}"]`)
+  if (!lane) return null
+  const fallback = lane.querySelector<HTMLElement>(".kanban-column-header")
+  const taskId = previous.closest<HTMLElement>(".kanban-card")?.dataset.id
+  if (taskId) {
+    const card = lane.querySelector(`.kanban-card[data-id="${CSS.escape(taskId)}"]`)
+    const collapsed = card?.closest(".swimlane-collapsed")
+    const control = previous.matches(".card-more-btn") ? ".card-more-btn" : ".card-open-btn"
+    return (collapsed ?? card)?.querySelector<HTMLElement>(collapsed ? "button.swimlane-header" : control) ?? fallback
+  }
+  const group = previous.closest("button.swimlane-header")?.closest<HTMLElement>(".swimlane-group")?.dataset.swimlaneType
+  if (group !== undefined) {
+    return lane.querySelector<HTMLElement>(`.swimlane-group[data-swimlane-type="${CSS.escape(group)}"] button.swimlane-header`) ?? fallback
+  }
+  const direction = previous.closest<HTMLAnchorElement>("[data-kanban-page-lane]")?.rel
+  if (direction) return lane.querySelector<HTMLElement>(`a[data-kanban-page-lane][rel="${CSS.escape(direction)}"]`) ?? fallback
+  if (previous.hasAttribute("data-kanban-range")) return lane.querySelector<HTMLElement>("[data-kanban-range]") ?? fallback
+  return fallback
+}
+
 export function buildTaskPath(taskId: string, commentId?: number): string {
   return taskDetailPath(taskId, commentId)
 }

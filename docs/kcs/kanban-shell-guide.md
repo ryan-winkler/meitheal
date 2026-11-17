@@ -59,6 +59,8 @@ The board remains usable when reaction counts are unavailable. A denied request 
 
 Each lane shows up to 25 cards. Its count includes every task matching the current area and filters. The range below the lane shows which cards are loaded. Use **Previous** or **Next** to page within that lane. Use **Filter by text** or the filter builder to find a task anywhere in the board, including other pages. Changing the area or filters returns the lanes to their first page.
 
+To move a task to another Area, open its **Details** and choose the destination in **Area**. When the save succeeds, the card appears in its new group after Details closes. If the board is filtered to the original Area, the card leaves the results and the filter stays selected. A failed save restores the previous selection.
+
 Open **Overdue** from Dashboard to filter tasks across every Kanban page. The board matches Dashboard’s due-date and completion rules.
 
 The work-in-progress count uses all eligible cards in the lane. Reordering a card preserves the relative order of all other cards across area filters and overlapping custom lanes. After a move, the destination lane may show a different page from the one containing the moved card.

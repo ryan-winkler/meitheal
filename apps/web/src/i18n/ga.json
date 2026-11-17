@@ -325,6 +325,8 @@
     "bulk_delete_failed": "Theip ar scriosadh ollmhór"
   },
   "task_detail": {
+    "unavailable_area": "Réimse nach bhfuil ar fáil",
+    "area_load_failed": "Níorbh fhéidir na réimsí a lódáil",
     "description": "Cur Síos",
     "description_placeholder": "Cuir cur síos leis...",
     "linked_tickets": "Ticéid Nasctha",

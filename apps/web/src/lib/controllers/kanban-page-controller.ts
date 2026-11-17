@@ -1,5 +1,6 @@
 import { getRememberedAreaId, getSelectedAreaId } from "@lib/area-selector-controller"
 import { taskBackgroundUrl, ticketIdFromPath } from "@lib/task-page-url"
+import { findKanbanDetailFocus } from "@lib/task-detail-handoff"
 import { DEFERRAL_RECONCILED, type DeferralReconciliation } from "@lib/deferral-client"
 import { initKanbanArea } from "@lib/kanban-controller"
 import { KANBAN_GROUP_KEY, readKanbanFilters, setKanbanPage, storedKanbanGroup, updateKanbanFilters, type KanbanFilters } from "@lib/kanban-query"
@@ -11,6 +12,7 @@ export interface KanbanRefreshFocus {
   lane?: string | undefined
   taskId?: string | undefined
   firstPage?: boolean
+  detail?: boolean
 }
 
 export function initKanbanPage(signal: AbortSignal): void {
@@ -78,6 +80,7 @@ export function initKanbanPage(signal: AbortSignal): void {
 
       const active = document.activeElement
       const shouldFocus = active === retry || board.contains(active) || (Boolean(focus) && active === document.body)
+      const previousDetailFocus = focus?.detail && active && board.contains(active) ? active : null
       const scroll = new Map(Array.from(board.querySelectorAll<HTMLElement>(".kanban-column"), lane =>
         [lane.dataset.status, lane.querySelector(".kanban-cards")?.scrollTop ?? 0] as const))
       const horizontal = board.scrollLeft
@@ -120,11 +123,14 @@ export function initKanbanPage(signal: AbortSignal): void {
       renderStatus("")
 
       if (!dataOnly && shouldFocus && (focus || active === retry)) {
-        const card = focus?.taskId ? board.querySelector<HTMLElement>(`.kanban-card[data-id="${CSS.escape(focus.taskId)}"] .card-more-btn`) : null
         const lane = focus?.lane ? board.querySelector<HTMLElement>(`.kanban-column[data-status="${CSS.escape(focus.lane)}"]`) : null
+        const card = focus?.taskId ? board.querySelector<HTMLElement>(`.kanban-card[data-id="${CSS.escape(focus.taskId)}"] .card-more-btn`) : null
         const range = lane && (lane.querySelector<HTMLElement>("[data-kanban-range]") ??
           lane.querySelector<HTMLElement>(".kanban-column-header"))
-        ;(card || range || board.querySelector<HTMLElement>(".kanban-column-header"))?.focus()
+        const collapsed = card && card.closest(".swimlane-collapsed")
+        const target = collapsed ? collapsed.querySelector<HTMLButtonElement>("button.swimlane-header") : card
+        const detailTarget = previousDetailFocus && findKanbanDetailFocus(board, previousDetailFocus)
+        ;(detailTarget || target || range || board.querySelector<HTMLElement>(".kanban-column-header"))?.focus()
       }
     } catch {
       if (!request.signal.aborted && !signal.aborted) {
@@ -142,6 +148,21 @@ export function initKanbanPage(signal: AbortSignal): void {
     const url = new URL(desired)
     if (focus?.lane && focus.firstPage) setKanbanPage(url, focus.lane, 1)
     return load(url, focus)
+  }
+
+  let queuedDrawerRefresh: "detail" | "data" | undefined
+  function refreshAfterDrawer(mode: "detail" | "data") {
+    const alreadyQueued = Boolean(queuedDrawerRefresh)
+    if (mode === "detail" || (pending && lastFocus?.detail)) queuedDrawerRefresh = "detail"
+    else queuedDrawerRefresh ??= "data"
+    if (alreadyQueued) return
+    queueMicrotask(() => {
+      const refreshMode = queuedDrawerRefresh
+      queuedDrawerRefresh = undefined
+      if (signal.aborted) return
+      if (refreshMode === "detail") void refresh({ detail: true })
+      else void load(new URL(desired), undefined, false, true)
+    })
   }
 
   function filter(values: KanbanFilters, area = getSelectedAreaId()) {
@@ -177,7 +198,7 @@ export function initKanbanPage(signal: AbortSignal): void {
   window.addEventListener(DEFERRAL_RECONCILED, event => {
     const { taskId, changedIds, dataOnly } = (event as CustomEvent<DeferralReconciliation>).detail ?? {}
     if (dataOnly) {
-      void load(new URL(desired), undefined, false, true)
+      refreshAfterDrawer("data")
       return
     }
     const origin = taskId ? board.querySelector<HTMLElement>(`.kanban-card[data-id="${CSS.escape(taskId)}"]`) : null
@@ -187,6 +208,9 @@ export function initKanbanPage(signal: AbortSignal): void {
   }, { signal })
   window.addEventListener("online", () => {
     if (board.dataset.inactivityEnabled === "true") void refresh()
+  }, { signal })
+  document.addEventListener("kanban:detail-changed", () => {
+    refreshAfterDrawer("detail")
   }, { signal })
   window.addEventListener("pageshow", event => {
     if (event.persisted) void refresh()

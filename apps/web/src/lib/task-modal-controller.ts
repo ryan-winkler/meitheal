@@ -3,7 +3,7 @@
         import { copyToClipboard } from "@lib/clipboard"
         import { singleKeyShortcutsEnabled } from "@lib/single-key-shortcuts"
         import {
-          buildTaskPermalink, getLegacyTaskId, type SearchDetailDismissal, type SearchDetailHandoff,
+          buildTaskPermalink, findKanbanDetailFocus, getLegacyTaskId, type SearchDetailDismissal, type SearchDetailHandoff,
         } from "@lib/task-detail-handoff"
         import { buildIngressPagePath } from "@lib/page-shell-links"
         import { taskDetailPath, ticketIdFromPath, taskBackgroundUrl } from "@lib/task-page-url"
@@ -180,6 +180,15 @@
           }
         }
 
+        const pendingAreaWrites = new Map<string, Promise<string | null>>()
+        let changedAreaTask: string | null = null
+
+        function reconcileAreaGrouping() {
+          if (!changedAreaTask || __signal.aborted) return
+          changedAreaTask = null
+          document.dispatchEvent(new CustomEvent("kanban:detail-changed", { detail: "area" }))
+        }
+
         function closeTD(reason: SearchDetailDismissal = "dismiss", updateLocation = true) {
           const search = searchSession
           const immediate = reason === "history" && Boolean(search)
@@ -208,11 +217,12 @@
             _sidebarToggle?.setAttribute("aria-expanded", "false");
             _sidebarChevron?.classList.remove("td-chevron-open");
             // P3-4: Restore focus to the element that triggered the panel
-            if (!search && _previouslyFocused instanceof HTMLElement &&
-                _previouslyFocused !== document.body && _previouslyFocused.isConnected) {
-              _previouslyFocused.focus()
-            } else if (!search) {
-              document.querySelector<HTMLElement>('[data-view-tab][aria-current="page"], #triage-heading, #deferred-heading, #pinned-heading')?.focus()
+            if (!search) {
+              const opener = _previouslyFocused
+              const board = document.getElementById("kanban-board")
+              const focus = opener instanceof HTMLElement && opener !== document.body && opener.isConnected
+                ? opener : opener && board && findKanbanDetailFocus(board, opener)
+              ;(focus || document.querySelector<HTMLElement>('[data-view-tab][aria-current="page"], #triage-heading, #deferred-heading, #pinned-heading'))?.focus()
             }
             _previouslyFocused = null
             const closed = pinnedSession
@@ -222,6 +232,7 @@
             if (closed && (closed.dirty || deferralChanged)) closed.reconcile()
             if (search?.dirty && !search.pending && !deferralChanged) deferral.reconcileSearch()
             search?.handoff.onDismiss(reason)
+            reconcileAreaGrouping()
           };
 
           if (reducedMotion || immediate || document.body.classList.contains("has-docked-inspector")) {
@@ -275,6 +286,13 @@
           const modalSignal = _modalAbortController.signal
           document.getElementById("td-ai-response")?.remove()
           _isPopulating = true;
+          const areaField = document.querySelector<HTMLSelectElement>("#td-area")
+          const areaWritesAtOpen = new Map(pendingAreaWrites)
+          let areaFieldReady = false
+          if (areaField) {
+            areaField.disabled = true
+            areaField.replaceChildren()
+          }
           const projectField = document.querySelector<HTMLSelectElement>("#td-project")
           let projectFieldReady = false
           if (projectField) projectField.disabled = true
@@ -282,6 +300,7 @@
           tdOverlay.classList.add("active");
           syncInspectorDockMode();
           tdClose?.focus()
+          if (changedAreaTask && changedAreaTask !== taskId) reconcileAreaGrouping()
           // Set dynamic aria-label for screen readers
           setInspectorAriaLabel(`Task detail: loading...`);
           // Show skeleton, hide loaded content
@@ -764,32 +783,33 @@
             (
               document.getElementById("td-time-tracked") as HTMLInputElement
             ).value = String(t.time_tracked ?? 0);
-            // Populate board dropdown
-            const areaSelect = document.getElementById(
-              "td-area",
-            ) as HTMLSelectElement;
-            const currentAreaId = String(t.area_id ?? "default");
-            try {
-              const boardRes = await areas
+            if (areaField) {
+              const recentArea = await areaWritesAtOpen.get(taskId)
               if (modalSignal.aborted) return
-              if (boardRes.ok) {
-                const areaData = await boardRes.json()
+              const savedArea = recentArea ?? String(t.area_id ?? "default")
+              try {
+                const response = await areas
+                if (!response.ok) throw new Error("Areas unavailable")
+                const { areas: choices } = await response.json() as { areas: { id: string; name: string }[] }
                 if (modalSignal.aborted) return
-                const boards = areaData.areas ?? [];
-                areaSelect.replaceChildren();
-                boards.forEach(
-                  (b: { id: string; name: string; icon: string }) => {
-                    const opt = document.createElement("option");
-                    opt.value = b.id;
-                    opt.textContent = b.name;
-                    areaSelect.appendChild(opt);
-                  },
-                );
-                areaSelect.value = currentAreaId;
+                if (!Array.isArray(choices) || choices.some(area => typeof area?.id !== "string" || !area.id || typeof area.name !== "string")) {
+                  throw new Error("Invalid Areas")
+                }
+                areaField.replaceChildren(...choices.map(({ id, name }) => new Option(name, id)))
+                if (!choices.some(area => area.id === savedArea)) {
+                  const label = savedArea === "default" ? "Default Area" :
+                    window.mI18n?.get("task_detail.unavailable_area") ?? "Unavailable Area"
+                  const unavailable = new Option(label, savedArea)
+                  unavailable.disabled = true
+                  areaField.add(unavailable)
+                }
+                areaFieldReady = choices.length > 0
+              } catch {
+                if (modalSignal.aborted) return
+                areaField.replaceChildren(new Option(window.mI18n?.get("task_detail.area_load_failed") ?? "Areas could not load", savedArea))
               }
-            } catch {
-              if (modalSignal.aborted) return
-              areaSelect.replaceChildren(new Option(currentAreaId, currentAreaId));
+              areaField.value = savedArea
+              areaField.dataset.savedArea = savedArea
             }
             if (projectField && projectRead) {
               const savedProject = String(t.project_id ?? "")
@@ -1080,6 +1100,7 @@
             setTimeout(() => {
               if (modalSignal.aborted) return
               _isPopulating = false
+              if (areaField) areaField.disabled = !areaFieldReady
               if (projectField) projectField.disabled = !projectFieldReady
               deferral.loaded(taskId, typeof t.project_id === "string" ? t.project_id : null, t.deferred_at != null, modalSignal, Boolean(searchSession))
               pins.loaded(taskId, modalSignal)
@@ -1099,22 +1120,28 @@
           const taskId = currentTaskId
           const search = searchSession
           const completeDeferralWrite = deferral.nativeWrite(field, value)
-          const scopedWrite = search || ["title", "status", "project_id", "framework_payload"].includes(field) ? beginScopedWrite() : undefined
+          const scopedWrite = search || ["title", "status", "area_id", "project_id", "framework_payload"].includes(field) ? beginScopedWrite() : undefined
           let saved = false
           try {
             const response = await fetch(`/api/tasks/${taskId}`, {
               method: "PUT",
               headers: { "content-type": "application/json" },
               body: JSON.stringify({ [field]: value, ...(updatedAt === undefined ? {} : { updated_at: updatedAt }) }),
-              ...(scopedWrite ? { signal: scopedWrite.signal } : {}),
+              ...(scopedWrite ? { signal: scopedWrite.signal } : field === "area_id" ? { signal: AbortSignal.timeout(7_000) } : {}),
             })
             saved = response.ok
             if (saved) {
+              if (field === "area_id") {
+                changedAreaTask = taskId
+                if (!tdOverlay.classList.contains("active") || (currentTaskId && currentTaskId !== taskId)) {
+                  reconcileAreaGrouping()
+                }
+              }
               notifyInactivityTaskChanged(field === "status" ? undefined : taskId)
               if (field === "status" && value === "complete" && (!search || generation === detailGeneration)) {
                 onTaskCompleted(await response.json())
               }
-              return !search || generation === detailGeneration
+              return field === "area_id" || !search || generation === detailGeneration
             }
             log.warn(`Failed to save ${field}:`, response.status)
           } catch (err) {
@@ -1296,10 +1323,25 @@
           ?.addEventListener("change", (e) => {
             saveTD("task_type", (e.target as HTMLSelectElement).value);
           }, { signal: __signal });
-        // Phase 26: board change auto-save
-        document.getElementById("td-area")?.addEventListener("change", (e) => {
-          saveTD("area_id", (e.target as HTMLSelectElement).value);
-        }, { signal: __signal });
+        document.getElementById("td-area")?.addEventListener("change", async event => {
+          const select = event.currentTarget as HTMLSelectElement
+          const modalSignal = _modalAbortController?.signal
+          const taskId = currentTaskId
+          const areaId = select.value
+          const previous = select.dataset.savedArea
+          if (!taskId || !modalSignal || select.disabled || !areaId || areaId === previous) return
+          const hadFocus = document.activeElement === select
+          select.disabled = true
+          const write = saveTaskField("area_id", areaId).then(saved => saved ? areaId : null)
+          pendingAreaWrites.set(taskId, write)
+          const savedArea = await write
+          pendingAreaWrites.delete(taskId)
+          if (modalSignal.aborted) return
+          if (savedArea) select.dataset.savedArea = savedArea
+          else select.value = previous ?? ""
+          select.disabled = false
+          if (hadFocus && document.activeElement === document.body) select.focus({ preventScroll: true })
+        }, { signal: __signal })
         // Project change auto-save
         document.getElementById("td-project")?.addEventListener("change", async (event) => {
           const select = event.currentTarget as HTMLSelectElement

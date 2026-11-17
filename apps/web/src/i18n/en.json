@@ -328,6 +328,8 @@
     "bulk_delete_failed": "Bulk delete failed"
   },
   "task_detail": {
+    "unavailable_area": "Unavailable Area",
+    "area_load_failed": "Areas could not load",
     "description": "Description",
     "description_placeholder": "Add a description...",
     "linked_tickets": "Linked Tickets",

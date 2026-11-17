@@ -864,8 +864,8 @@ try {
                   {t("kanban.page_range", locale, { start: String(lane.offset + 1), end: String(lane.offset + colTasks.length), count: String(matches) })}
                 </span>
                 <div class="kanban-page-actions">
-                  {lane.page > 1 && <a class="btn btn-outline" href={lanePageHref(col.key, lane.page - 1)} data-kanban-page-lane={col.key} data-astro-prefetch="false">{t("kanban.previous_page", locale)}</a>}
-                  {lane.page < lane.pageCount && <a class="btn btn-outline" href={lanePageHref(col.key, lane.page + 1)} data-kanban-page-lane={col.key} data-astro-prefetch="false">{t("kanban.next_page", locale)}</a>}
+                  {lane.page > 1 && <a class="btn btn-outline" href={lanePageHref(col.key, lane.page - 1)} rel="prev" data-kanban-page-lane={col.key} data-astro-prefetch="false">{t("kanban.previous_page", locale)}</a>}
+                  {lane.page < lane.pageCount && <a class="btn btn-outline" href={lanePageHref(col.key, lane.page + 1)} rel="next" data-kanban-page-lane={col.key} data-astro-prefetch="false">{t("kanban.next_page", locale)}</a>}
                 </div>
               </nav>
             )}
@@ -1646,36 +1646,6 @@ try {
     outline: 2px solid var(--accent);
     outline-offset: -2px;
   }
-  .view-switcher {
-    display: flex;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    overflow: hidden;
-  }
-  .view-btn {
-    padding: 6px 12px;
-    text-decoration: none;
-    color: var(--text-secondary);
-    font-size: 16px;
-    transition:
-      background 200ms,
-      color 200ms,
-      border-color 200ms,
-      opacity 200ms,
-      transform 200ms;
-    border-right: 1px solid var(--border);
-  }
-  .view-btn:last-child {
-    border-right: none;
-  }
-  .view-btn:hover {
-    background: var(--bg-hover);
-    color: var(--text-primary);
-  }
-  .view-btn.active {
-    background: var(--accent-light);
-    color: var(--accent);
-  }
   @media (max-width: 768px) {
     .kanban-board {
       flex-direction: column;
@@ -1939,57 +1909,6 @@ try {
   .kanban-inline-add .quick-add-error:empty {
     display: none;
   }
-  .type-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    display: inline-block;
-    flex-shrink: 0;
-  }
-  .type-dot-epic {
-    background: var(--type-epic);
-  }
-  .type-dot-story {
-    background: var(--type-story);
-  }
-  .type-dot-task {
-    background: var(--type-task);
-  }
-  .type-group-btn.active {
-    background: var(--accent-light);
-    border-color: var(--accent);
-    color: var(--accent);
-  }
-
-  /* Phase 20: Type badge on cards */
-  .type-badge {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 11px;
-    padding: 1px 5px;
-    border-radius: 4px;
-    border: 1px solid;
-    margin-right: 4px;
-    flex-shrink: 0;
-    line-height: 1;
-  }
-  .type-badge-epic {
-    background: color-mix(in srgb, var(--type-epic) 12%, transparent);
-    color: var(--type-epic);
-    border-color: color-mix(in srgb, var(--type-epic) 25%, transparent);
-  }
-  .type-badge-story {
-    background: color-mix(in srgb, var(--type-story) 12%, transparent);
-    color: var(--type-story);
-    border-color: color-mix(in srgb, var(--type-story) 25%, transparent);
-  }
-  .type-badge-task {
-    background: color-mix(in srgb, var(--type-task) 12%, transparent);
-    color: var(--type-task);
-    border-color: color-mix(in srgb, var(--type-task) 25%, transparent);
-  }
-
   /* Hide actions visually to prevent overlapping with content */
   .kanban-quick-actions[aria-hidden="true"] {
     display: none;
