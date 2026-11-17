@@ -109,7 +109,12 @@ test("Table keeps Area group names and bulk choices in sync with accepted rows",
       } else if (invalidStatsNext) {
         invalidStatsNext = false
         const response = await route.fetch()
-        const invalidStats = JSON.stringify({ total: { count: 1, riceSum: 0, riceCount: 0 }, groups: [null], subgroups: [] })
+        const invalidStats = JSON.stringify({
+          total: { count: 1, riceSum: 0, riceCount: 0 },
+          groups: [null],
+          subgroups: [],
+          epicLabels: [],
+        })
         const body = (await response.text()).replace(/data-table-stats="[^"]*"/, `data-table-stats='${invalidStats}'`).replaceAll(renamed, "Rejected catalog")
         await route.fulfill({ response, body })
       } else await route.continue()

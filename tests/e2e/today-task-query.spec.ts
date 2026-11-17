@@ -7,7 +7,72 @@ import {
   getPersistenceClient,
   resetPersistenceForTests,
 } from "../../apps/web/src/domains/tasks/persistence/store"
-import { getTasksForView, getTodayTaskCounts, getTodayTaskRows } from "../../apps/web/src/lib/task-queries"
+import { getTasksForView, getTodayTaskCounts, getTodayTaskRows, todayDueSection } from "../../apps/web/src/lib/task-queries"
+import { calendarToday, formatRelativeDue } from "../../apps/web/src/lib/date"
+
+for (const [timezone, midnight] of [
+  ["Europe/Dublin", "2031-06-30T23:00:00.000Z"],
+  ["America/Los_Angeles", "2031-07-01T07:00:00.000Z"],
+  ["Pacific/Auckland", "2030-12-31T11:00:00.000Z"],
+] as const) {
+  test(`Today keeps one request clock across midnight in ${timezone}`, async () => {
+    const directory = await mkdtemp(join(tmpdir(), "meitheal-today-midnight-"))
+    const original = process.env.MEITHEAL_DB_URL
+    process.env.MEITHEAL_DB_URL = `file:${join(directory, "today.db")}`
+    resetPersistenceForTests()
+    const boundary = Date.parse(midnight)
+    const before = new Date(boundary - 1000)
+    const after = new Date(boundary + 1000)
+    const today = calendarToday(timezone, before)
+    const tomorrow = calendarToday(timezone, after)
+    const timedDue = new Date(boundary - 500).toISOString()
+
+    try {
+      await ensureSchema()
+      const client = getPersistenceClient()
+      for (const [id, due] of [["date-only", today], ["timed", timedDue], ["tomorrow", tomorrow]] as const) {
+        await client.execute({
+          sql: `INSERT INTO tasks
+            (id, title, idempotency_key, request_id, status, due_date, is_favorite, created_at, updated_at)
+            VALUES (?, ?, ?, ?, 'pending', ?, 1, 1, 1)`,
+          args: [id, id, id, id, due],
+        })
+      }
+      const read = async (now: Date) => {
+        const day = calendarToday(timezone, now)
+        const result = await getTodayTaskRows(day, false, timezone, now)
+        return new Map(result.tasks.map(task => [task.id, {
+          overdue: task.is_overdue,
+          section: todayDueSection(task.due_date!, day, timezone),
+          label: task.is_overdue ? "Overdue" : formatRelativeDue(task.due_date!, timezone, now),
+        }]))
+      }
+
+      const first = await read(before)
+      expect(first.get("date-only")).toEqual({ overdue: false, section: "due", label: "Due today" })
+      expect(first.get("timed")).toMatchObject({ overdue: false, section: "due" })
+      expect(first.get("tomorrow")).toEqual({ overdue: false, section: null, label: "Due tomorrow" })
+
+      // The timed deadline passes while the captured household day stays the same.
+      const deadlinePassed = await read(new Date(boundary - 250))
+      expect(deadlinePassed.get("timed")).toEqual({ overdue: true, section: "due", label: "Overdue" })
+      expect(deadlinePassed.get("date-only")).toEqual(first.get("date-only"))
+
+      const nextDay = await read(after)
+      expect(nextDay.get("date-only")).toEqual({ overdue: true, section: "carried", label: "Overdue" })
+      expect(nextDay.get("timed")).toEqual({ overdue: true, section: "carried", label: "Overdue" })
+      expect(nextDay.get("tomorrow")).toEqual({ overdue: false, section: "due", label: "Due today" })
+
+      // Reusing the captured request time after later reads retains its original presentation.
+      expect(await read(before)).toEqual(first)
+    } finally {
+      resetPersistenceForTests()
+      if (original === undefined) delete process.env.MEITHEAL_DB_URL
+      else process.env.MEITHEAL_DB_URL = original
+      await rm(directory, { recursive: true, force: true })
+    }
+  })
+}
 
 test("Today reads full queue counts without materializing hidden rows", async () => {
   const work = await mkdtemp(join(tmpdir(), "meitheal-today-query-"))

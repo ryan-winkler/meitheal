@@ -67,7 +67,9 @@ function hasTablePageStats(stats: RenderPageStats | null): stats is RenderPageSt
   const hasTotals = (totals: RenderGroupStats) =>
     Number.isFinite(totals?.count) && Number.isFinite(totals?.riceCount) &&
     (totals.riceSum === null || Number.isFinite(totals.riceSum))
-  return Boolean(stats && hasTotals(stats.total) && [stats.groups, stats.subgroups].every(entries =>
+  return Boolean(stats && Array.isArray(stats.epicLabels) && stats.epicLabels.every(entry =>
+    Array.isArray(entry) && entry.length === 2 && entry.every(value => typeof value === "string"),
+  ) && hasTotals(stats.total) && [stats.groups, stats.subgroups].every(entries =>
     Array.isArray(entries) && entries.every(entry =>
       Array.isArray(entry) && entry.length === 2 && typeof entry[0] === "string" && hasTotals(entry[1]),
     ),
@@ -351,6 +353,10 @@ function init(signal: AbortSignal) {
     void refresh({ ...desired, area: areaId }, true)
   }, { signal })
 
+  document.addEventListener("meitheal:task-hierarchy-changed", () => {
+    if (desired.groupBy === "epic" || desired.subGroupBy === "epic") void refresh()
+  }, { signal })
+
   document.addEventListener("meitheal:columns-change", event => {
     const { visible } = (event as CustomEvent<{ visible: string[] }>).detail
     const columns = normalizeTableColumns(visible)
@@ -420,6 +426,7 @@ function applyGrouping(groupBy: string, subGroupBy: string, stats: RenderPageSta
   if (groupBy === "none") return
   const groupTotals = new Map(stats.groups)
   const subgroupTotals = new Map(stats.subgroups)
+  const epicLabels = new Map(stats.epicLabels)
 
   // Collect rows and compute groups
   const rows = Array.from(tbody.querySelectorAll<HTMLElement>(".table-row"))
@@ -456,7 +463,7 @@ function applyGrouping(groupBy: string, subGroupBy: string, stats: RenderPageSta
   for (const [index, key] of groupOrder.entries()) {
     const groupId = `table-group-heading-${index}`
     const groupRows = groups.get(key) ?? []
-    const display = getGroupDisplayForKey(groupBy, key, areas)
+    const display = getGroupDisplayForKey(groupBy, key, areas, epicLabels)
     const isCollapsed = collapsedGroups.includes(key)
 
     // Create group header row
@@ -527,7 +534,7 @@ function applyGrouping(groupBy: string, subGroupBy: string, stats: RenderPageSta
       for (const [subIndex, sk] of subOrder.entries()) {
         const subgroupId = `${groupId}-sub-${subIndex}`
         const subRows = subGroups.get(sk) ?? []
-        const subDisplay = getGroupDisplayForKey(subGroupBy, sk, areas)
+        const subDisplay = getGroupDisplayForKey(subGroupBy, sk, areas, epicLabels)
         const subIsCollapsed = collapsedSubs.includes(sk)
 
         const subHeaderRow = document.createElement("tr")
@@ -599,7 +606,11 @@ function applyGrouping(groupBy: string, subGroupBy: string, stats: RenderPageSta
   renderSummaryRows(tbody, groupTotals, stats.total)
 }
 
-function getGroupDisplayForKey(groupBy: string, key: string, areas: Map<string, AreaDisplay>): AreaDisplay {
+function getGroupDisplayForKey(groupBy: string, key: string, areas: Map<string, AreaDisplay>, epicLabels: Map<string, string>): AreaDisplay {
+  if (groupBy === "epic") return {
+    label: epicLabels.get(key) ?? window.mI18n?.get("table.no_epic") ?? "No Epic",
+    icon: "🎯", color: "var(--type-epic, #8b5cf6)",
+  }
   if (groupBy === "area") {
     const area = areas.get(key)
     if (area) return area

@@ -54,6 +54,8 @@ Select **Workflow columns** to include tasks in any selected column. Other filte
 
 Open **Created date** and enter either or both dates, then choose **Apply dates**. The range includes both selected days in the app's configured timezone. It combines with the other Table filters and starts at page one. Use **Clear dates** to remove the range while keeping the other filters. Escape discards a draft. A failed refresh leaves the previous rows and address in place, and **Retry** applies the requested dates again.
 
+Table remembers primary or secondary Epic grouping on this browser when you return to Table without explicit filters. That presentation stays separate from the shared task filters used by other views. An explicit Table link or saved preset takes priority; choosing another grouping or clearing the filters replaces the remembered Epic presentation.
+
 Table shares these dates as `createdFrom` and `createdThrough` in YYYY-MM-DD format. Presets and their Search links use the same date range. Other task views ignore these parameters and carry them back to Table when using the view tabs. An invalid bookmarked range is ignored and the other URL filters still apply.
 
 The server applies normalized filters, grouping, and sorting to the complete eligible task set before taking a page. Older status values such as `todo` appear with their current status. Custom statuses keep their names. Filter, group, and sort changes reset `tp`. Columns preserve the page and take effect without a network request. An initial link with no explicit filters can reconcile browser preferences once the page loads.
@@ -61,6 +63,14 @@ The server applies normalized filters, grouping, and sorting to the complete eli
 ### Table rows could not update
 
 Choose **Retry** to fetch the current filter selection again. The previous results and address remain visible while the refresh fails. A Table refresh uses a unique `tableRefresh` marker, a no-store response, and the active worker's network-only path. The marker stays out of shared links.
+
+## Group tasks by Epic
+
+Choose **Group by → Epic** to see each task with its nearest Household Epic, including when that Epic is outside your filters or the current page. An Epic belongs to its own group. A nested Epic starts a separate group. Tasks with missing or cyclic ancestry appear in **No Epic**.
+
+Choose **Then by Epic** to split another group by Epic. The group count covers all matching tasks, and page selection affects the displayed rows. Save a preset or share the Table URL to restore the grouping. Epic headings include their ticket reference to distinguish matching titles.
+
+After changing a title, type or parent in Details, close Details to refresh the groups. If the refresh fails, the previous results stay visible and **Retry** loads the current hierarchy again.
 
 ## Troubleshooting
 

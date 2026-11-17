@@ -230,6 +230,8 @@
     "group_board": "Board",
     "group_priority": "By Priority",
     "group_area": "By Area",
+    "default_area": "Default Area",
+    "unavailable_area": "Unavailable Area",
     "group_assignee": "By Assignee",
     "group_status": "By Status",
     "group_rice": "By RICE Score",
@@ -292,6 +294,9 @@
   "table": {
     "unavailable_area": "Unavailable Area",
     "area_catalog_failed": "Area names could not load.",
+    "group_epic": "Epic",
+    "subgroup_epic": "Then by Epic",
+    "no_epic": "No Epic",
     "filter_unassigned": "Unassigned",
     "filter_workflow_columns": "Workflow columns",
     "filter_columns_load_failed": "Workflow columns could not load.",
