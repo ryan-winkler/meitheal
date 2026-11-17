@@ -84,7 +84,7 @@
   "features": {
     "ghcr.io/devcontainers/features/node:2": {
       "version": "26",
-      "pnpmVersion": "12.18.0",
+      "pnpmVersion": "12.21.0",
       "nodeGypDependencies": false
     }
   }
