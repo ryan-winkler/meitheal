@@ -58,6 +58,8 @@ Before Green qualification, verify that both exact images have Alpine zlib versi
 
 Both App directories receive the same profile from `meitheal-hub/apparmor.txt`. Supervisor loads it under each installed App ID. Check the effective profile on a host with AppArmor enforcement and keep Protection mode enabled during qualification. [AppArmor in Home Assistant](https://contributors.home-assistant.io/apps/guides/security/#apparmor).
 
+The release smoke test drops `CAP_KILL` to match Supervisor Protection mode. It checks that the web process remains a child of the App launcher under the `meitheal` account and exits after `SIGTERM`. If the App logs repeated `addon.startup` and `EADDRINUSE` messages while the health endpoint stays green, check the web process parent. A listening process adopted by PID 1 can still answer health requests while the launcher restarts.
+
 Distributed App images carry the OCI license label `LicenseRef-Proprietary`; this is separate from the source license files shipped for attribution. Both local and hosted build scripts preserve that label.
 
 Both workflows use standard GitHub-hosted Linux runners on both architectures. GitHub makes these runners available without compute charges for public repositories. Private use draws from the account’s included Actions minutes. [Runner reference](https://docs.github.com/en/actions/reference/runners/github-hosted-runners) · [Actions billing](https://docs.github.com/en/billing/concepts/product-billing/github-actions)
