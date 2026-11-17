@@ -9,7 +9,7 @@ import { expect, test, type APIRequestContext } from "@playwright/test"
 import { launchPinBrowser, startCoreFixture } from "../scripts/task-pins-fixture"
 
 test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires a disposable built app")
-test.use({ serviceWorkers: "block" })
+test.use({ actionTimeout: 5_000, serviceWorkers: "block" })
 
 async function create(request: APIRequestContext, url: string, data: object, origin?: string) {
   const response = await request.post(url, { headers: origin ? { origin } : {}, data })
@@ -22,7 +22,7 @@ async function updateColumn(request: APIRequestContext, id: string, data: object
   expect(response.ok(), await response.text()).toBe(true)
 }
 
-test("Table assigns each task once and restores workflow subgroups under Area", async ({ page, request }) => {
+test("Table assigns each task once and restores workflow subgroups under Area", async ({ page, request, baseURL }) => {
   const cleanup: string[] = []
   const fixture = async (path: string, data: object) => {
     const id = await create(request, path, data)
@@ -35,6 +35,7 @@ test("Table assigns each task once and restores workflow subgroups under Area", 
     const firstKey = `staging_${token}`
     const secondKey = `ready_${token}`
     const sharedLabel = `Review ${token}`
+    const renamedLabel = `Ready now ${token}`
     const firstName = `${sharedLabel} (${firstKey})`
     const secondName = `${sharedLabel} (${secondKey})`
     const first = await fixture("/api/lanes", { key: firstKey, label: sharedLabel, position: 40 })
@@ -93,14 +94,14 @@ test("Table assigns each task once and restores workflow subgroups under Area", 
     await expect(rows).toHaveCount(2)
     await readyChoice.press("Escape")
 
-    await updateColumn(request, second, { label: "Ready now", position: 39 })
+    await updateColumn(request, second, { label: renamedLabel, position: 39 })
     await columns.locator("summary").press("Enter")
     await columns.getByRole("checkbox", { name: firstName }).check()
-    await expect(groups.locator(".group-label")).toHaveText(["Ready now", sharedLabel])
+    await expect(groups.locator(".group-label")).toHaveText([renamedLabel, sharedLabel])
     await columns.getByRole("checkbox", { name: sharedLabel, exact: true }).press("Escape")
     await selectGroup("area")
     await selectGroup("workflow", "table-sub-group-by")
-    await expect(subgroups.locator(".group-label")).toHaveText(["Ready now", sharedLabel])
+    await expect(subgroups.locator(".group-label")).toHaveText([renamedLabel, sharedLabel])
 
     const presetName = `Workflow columns by Area ${token}`
     const presetToggle = page.getByRole("button", { name: "Saved filter presets" })
@@ -128,7 +129,7 @@ test("Table assigns each task once and restores workflow subgroups under Area", 
     await expect(page).toHaveURL(url => url.searchParams.get("groupBy") === "workflow" && !url.searchParams.has("subGroupBy"))
     await presetToggle.press("Enter")
     await presets.getByRole("button", { name: `Apply ${presetName}` }).press("Enter")
-    await expect(subgroups.locator(".group-label")).toHaveText(["Ready now", sharedLabel])
+    await expect(subgroups.locator(".group-label")).toHaveText([renamedLabel, sharedLabel])
     await expect(subgroups.locator(".group-count")).toHaveText(["2", "1"])
     await expect(rows).toHaveCount(3)
     await expect(row(todo)).toHaveAttribute("data-sub-group-value", second)
@@ -142,15 +143,21 @@ test("Table assigns each task once and restores workflow subgroups under Area", 
       ?.items.find((candidate: { id: string }) => candidate.id === presetId)
     expect(item?.href).toBeDefined()
     await page.goto(item.href)
-    await expect(subgroups.locator(".group-label")).toHaveText(["Ready now", sharedLabel])
+    await expect(subgroups.locator(".group-label")).toHaveText([renamedLabel, sharedLabel])
     const groupedUrl = page.url()
     await page.getByRole("navigation", { name: "Task views" }).getByRole("link", { name: "Kanban" }).click()
     await expect(page).toHaveURL(url => url.hash === "#kanban" && url.searchParams.get("groupBy") === "area" && !url.searchParams.has("subGroupBy"))
     await page.goBack()
     await expect(page).toHaveURL(groupedUrl)
-    await expect(subgroups.locator(".group-label")).toHaveText(["Ready now", sharedLabel])
+    await expect(subgroups.locator(".group-label")).toHaveText([renamedLabel, sharedLabel])
   } finally {
-    for (const path of cleanup.reverse()) await request.delete(path)
+    const headers = { origin: baseURL!, "content-type": "application/json" }
+    const failed: string[] = []
+    for (const path of cleanup.reverse()) {
+      const response = await request.delete(path, { headers })
+      if (!response.ok()) failed.push(`${path}: ${response.status()} ${await response.text()}`)
+    }
+    expect(failed).toEqual([])
   }
 })
 
