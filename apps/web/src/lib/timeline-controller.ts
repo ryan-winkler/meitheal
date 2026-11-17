@@ -5,6 +5,7 @@ import { isDisabledCharacterShortcut } from "@lib/single-key-shortcuts"
 import { createClientLogger } from "@lib/client-logger"
 import { FieldPickerPanel, TASK_FIELD_DEFS, loadVisibleFields } from "./field-picker-panel"
 import { loadFilterState } from "./filter-state"
+import { isDoneStatus as isComplete, normalizeStatus } from "./status-config"
 import { replaceTaskBackgroundUrl, taskBackgroundUrl } from "./task-page-url"
 /**
  * Timeline/GANTT Controller — native SVG GANTT renderer.
@@ -293,10 +294,6 @@ function statusLabel(status: string): string {
     done: "Done",
   }
   return map[status] ?? status
-}
-
-function isComplete(status: string): boolean {
-  return status === "complete" || status === "done"
 }
 
 // ── SVG Helper ─────────────────────────────────────────────────────────────
@@ -600,7 +597,7 @@ function filterBars(bars: GanttBar[], filter: TimelineFilterState): GanttBar[] {
       if (filter.status === "overdue") {
         if (!bar.isOverdue) return false
       } else {
-        if (bar.original.status !== filter.status) return false
+        if (normalizeStatus(bar.original.status) !== filter.status) return false
       }
     }
     // Priority
@@ -2762,7 +2759,7 @@ export function initTimelineController(signal: AbortSignal) {
       if (currentFilter.status === "overdue") {
         result = result.filter(t => t.is_overdue)
       } else {
-        result = result.filter(t => t.status === currentFilter.status)
+        result = result.filter(t => normalizeStatus(t.status) === currentFilter.status)
       }
     }
     if (currentFilter.priority) {

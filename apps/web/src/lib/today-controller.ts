@@ -333,7 +333,7 @@ function setupEventDelegation(container: HTMLElement) {
       })
       if (!ok) return
       try {
-        const params = new URLSearchParams({ expected_day: archiveDay })
+        const params = todayScopeParams(container)
         const response = await taskApi.raw(`/api/tasks/clear-completed?${params}`, { method: "POST" })
         if (response.status === 409) {
           showTodayRollover(container)
@@ -899,13 +899,20 @@ function showTodayRollover(container: HTMLElement): void {
   }
 }
 
+function todayScopeParams(container: HTMLElement): URLSearchParams {
+  const { todayDay, todayTimezone } = container.querySelector<HTMLElement>("#page-shell")?.dataset ?? {}
+  const params = new URLSearchParams()
+  if (todayDay) params.set("expected_day", todayDay)
+  if (todayTimezone) params.set("expected_timezone", todayTimezone)
+  return params
+}
+
 function setupAutoRefresh(container: HTMLElement) {
   const stats = container.querySelector("#daily-stats-container")
   if (!stats) return
   const counters = stats.querySelectorAll<HTMLElement>("[data-today-count]")
   const fill = stats.querySelector<HTMLElement>(".daily-stats-progress-fill")
   const signal = lm.signal
-  const displayedDay = container.querySelector<HTMLElement>("[data-today-archive]")?.dataset.todayArchive
   let pending = false
   let dayChanged = false
 
@@ -919,8 +926,7 @@ function setupAutoRefresh(container: HTMLElement) {
     }
     pending = true
     try {
-      const params = new URLSearchParams()
-      if (displayedDay) params.set("expected_day", displayedDay)
+      const params = todayScopeParams(container)
       if (document.documentElement.dataset.theme === "knight-rider") params.set("completed", "1")
       const resp = await fetch(`/api/tasks/today-counts?${params}`, { signal })
       if (resp.status === 409) {

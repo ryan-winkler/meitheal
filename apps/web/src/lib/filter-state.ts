@@ -416,7 +416,7 @@ export function loadFilterState(): Partial<FilterState> {
   if (hasUrlFilters) {
     return {
       search: urlParams.get("search") ?? "",
-      status: urlParams.get("status") ?? "",
+      status: normalizeStatus(urlParams.get("status") ?? ""),
       priority: urlParams.get("priority") ?? "",
       rice: urlParams.get("rice") ?? "",
       sort: urlParams.get("sort") ?? DEFAULT_SORT,
@@ -435,6 +435,7 @@ export function loadFilterState(): Partial<FilterState> {
     // Ensure array fields are arrays after parse
     if (stored.types && !Array.isArray(stored.types)) stored.types = []
     else if (Array.isArray(stored.types)) stored.types = normalizeTaskKindAliases(stored.types)
+    if (typeof stored.status === "string") stored.status = normalizeStatus(stored.status)
     if (stored.labels && !Array.isArray(stored.labels)) stored.labels = []
     return stored
   } catch {
@@ -470,7 +471,7 @@ export function matchesStatusFilter(
   if (statusFilter === "overdue") {
     return el.dataset.overdue === "true"
   }
-  return el.dataset.status === statusFilter
+  return normalizeStatus(el.dataset.status ?? "") === normalizeStatus(statusFilter)
 }
 
 /**

@@ -90,3 +90,5 @@ The collapsed queue counts tasks without loading their full rows. The counts and
 ### Counters are slow to reflect a change
 
 Wait for the next 30-second refresh or reload Today. If the counts stay stale, check the browser's Network panel for `GET /api/tasks/today-counts`. An HTTP 503 means the counts are temporarily unavailable. Today keeps the last values and retries on the next interval.
+
+If the household date or timezone has changed, select **Refresh Today** to load the new completion list and counts. An archive attempt from the earlier view leaves tasks in place.

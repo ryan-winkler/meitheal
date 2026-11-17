@@ -586,7 +586,8 @@ test("legacy Shopping type filters survive view switches and respect Table searc
   try {
     for (const [index, title] of titles.entries()) {
       const created = await request.post("/api/tasks", { headers, data: {
-        title, task_kind: "shopping_item", start_date: `2031-07-${25 + index}`, due_date: due,
+        title, status: index === 0 ? "active" : "pending", task_kind: "shopping_item",
+        start_date: `2031-07-${25 + index}`, due_date: due,
       } })
       expect(created.ok(), await created.text()).toBe(true)
       ids.push((await created.json()).id)
@@ -640,6 +641,20 @@ test("legacy Shopping type filters survive view switches and respect Table searc
     await filters.getByRole("textbox", { name: "Filter by text" }).fill("receipt")
     await expect(page).toHaveURL(url => url.searchParams.get("types") === "quick_capture" &&
       url.searchParams.get("status") === "backlog" && url.searchParams.get("search") === "receipt")
+
+    const legacyStatus = new URLSearchParams({ ...query, view: "calendar", search: suffix, status: "in_progress" })
+    await page.goto("/tasks?" + legacyStatus + "#calendar")
+    await page.locator(`.cal-cell[data-date="${due}"]`).press("Enter")
+    await expect(page.locator("#day-drawer-tasks").getByText(titles[0]!, { exact: true })).toBeVisible()
+    await expect(page.locator("#day-drawer-tasks").getByText(titles[1]!, { exact: true })).toHaveCount(0)
+    await page.keyboard.press("Escape")
+    await views.getByRole("link", { name: "Timeline (Gantt)", exact: true }).click()
+    await expect(timeline.getByRole("combobox", { name: "Filter by status" })).toHaveValue("active")
+    await expect(page.locator(`.gantt-bar[data-task-id="${ids[0]}"]`)).toBeAttached()
+    await expect(page.locator(`.gantt-bar[data-task-id="${ids[1]}"]`)).toHaveCount(0)
+    await views.getByRole("link", { name: "Kanban", exact: true }).click()
+    await expect(page.locator("#kanban-shell").getByText(titles[0]!, { exact: true })).toBeVisible()
+    await expect(page.locator("#kanban-shell").getByText(titles[1]!, { exact: true })).toHaveCount(0)
   } finally {
     await request.put("/api/settings", { headers, data: { key: "sidebar_config", value: previous ?? null } })
     for (const id of ids) await request.delete(`/api/tasks/${id}`, { headers })

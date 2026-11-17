@@ -348,6 +348,20 @@ test("Calendar reads configured sources as a household member and filters before
       await page.keyboard.press("Escape")
     }
 
+    const pastDay = "2020-08-17"
+    insert.run("overdue-calendar", "Overdue calendar task", "overdue-calendar", "overdue-calendar", pastDay, 100, 100)
+    insert.run("deferred-calendar", "Deferred calendar task", "deferred-calendar", "deferred-calendar", pastDay, 100, 100)
+    db.prepare("UPDATE tasks SET deferred_at = 200 WHERE id = ?").run("deferred-calendar")
+    await page.goto(base + "/tasks?view=calendar&year=2020&month=7#calendar")
+    const overdueDay = page.locator(`.cal-cell[data-date="${pastDay}"]`)
+    await expect(overdueDay).toHaveAccessibleName(/2 tasks$/)
+    await page.getByRole("combobox", { name: "Filter by status" }).selectOption("overdue")
+    await expect(overdueDay).toHaveAccessibleName(/1 task$/)
+    await overdueDay.press("Enter")
+    await expect(agenda.getByRole("button", { name: /Overdue calendar task/ })).toBeVisible()
+    await expect(agenda.getByRole("button", { name: /Deferred calendar task/ })).toHaveCount(0)
+    await page.keyboard.press("Escape")
+
     for (const [key, value] of [["timezone", "America/Nuuk"], ["calendar_entities", '["calendar.household"]']]) {
       const result = await api.put(base + "/api/settings", { headers: headers("admin"), data: { key, value } })
       expect(result.status(), await result.text()).toBe(200)

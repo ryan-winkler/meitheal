@@ -14,6 +14,7 @@ import {
 import { taskTimestampMs } from "@domains/tasks/persistence/task-timestamp";
 import type { InValue, Row } from "@libsql/client";
 import { deriveEisenhowerQuadrant } from "@meitheal/domain-tasks";
+import { parseCalendarDay } from "./calendar-day"
 import { calendarDayFromInput, calendarToday, householdDayRanges, isDueOverdue, isValidTimezone, resolveTimezone, shiftCalendarDay } from "./date"
 import { frameworkPayloadObject, readRiceInputs, riceLensScore } from "./rice-lens"
 
@@ -396,6 +397,21 @@ function completedTodayQuery(filter: ReturnType<typeof todayCompletionFilter>) {
 
 function completedTodaySummaries(rows: Row[]) {
   return rows.map(row => ({ id: String(row.id), title: String(row.title) }))
+}
+
+export function todayScopeProblem(params: URLSearchParams, timezone: string, day: string) {
+  const expectedDay = params.get("expected_day")
+  const expectedTimezone = params.get("expected_timezone")
+  if (expectedDay !== null && !parseCalendarDay(expectedDay)) {
+    return { status: 400, error: "expected_day must be a calendar date" }
+  }
+  if (expectedTimezone !== null && !isValidTimezone(expectedTimezone)) {
+    return { status: 400, error: "expected_timezone must be a valid timezone" }
+  }
+  if (expectedDay !== null && expectedDay !== day || expectedTimezone !== null && expectedTimezone !== timezone) {
+    return { status: 409, error: "Today has changed. Refresh the view." }
+  }
+  return null
 }
 
 export function todayCompletionFilter(today: string, timezone = "Europe/Dublin") {

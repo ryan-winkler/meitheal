@@ -860,6 +860,7 @@ const paths = {
       parameters: [
         { name: "completed", in: "query", schema: { type: "string", enum: ["1"] } },
         { name: "expected_day", in: "query", schema: { type: "string", format: "date" }, description: "Household day shown by the caller. A rollover returns 409." },
+        { name: "expected_timezone", in: "query", schema: { type: "string" }, description: "Household timezone shown by the caller. A timezone change returns 409." },
       ],
       responses: {
         200: jsonContent({
@@ -876,7 +877,7 @@ const paths = {
             } },
           },
         }, "Today counters"),
-        409: { description: "The household day changed" },
+        409: { description: "The household day or timezone changed" },
         503: problemContent("Today counters unavailable"),
       },
     },
@@ -1174,8 +1175,11 @@ const paths = {
       tags: ["Tasks"],
       summary: "Archive Complete tasks last updated on the household day",
       description: "Moves every eligible Complete task to the archived status, including tasks outside the Today preview. Returns the number changed.",
-      parameters: [{ name: "expected_day", in: "query", schema: { type: "string", format: "date" }, description: "Household day the caller reviewed. A rollover returns 409 without changing any tasks." }],
-      responses: { 409: { description: "The household day changed" }, 200: jsonContent({ type: "object", required: ["ok", "cleared"], properties: {
+      parameters: [
+        { name: "expected_day", in: "query", schema: { type: "string", format: "date" }, description: "Household day the caller reviewed. A rollover returns 409 without changing any tasks." },
+        { name: "expected_timezone", in: "query", schema: { type: "string" }, description: "Household timezone the caller reviewed. A timezone change returns 409 without changing any tasks." },
+      ],
+      responses: { 409: { description: "The household day or timezone changed" }, 200: jsonContent({ type: "object", required: ["ok", "cleared"], properties: {
         ok: { type: "boolean" }, cleared: { type: "integer" }, message: { type: "string" },
       } }, "Count of archived tasks") },
     },

@@ -17,7 +17,6 @@ export function readCalendarTaskFilters(params: URLSearchParams): KanbanFilters 
     ...(inherited.area !== undefined && { area: inherited.area }),
     ...(inherited.advancedFilter && { advancedFilter: inherited.advancedFilter }),
     ...(inherited.task_type && { task_type: inherited.task_type }),
-    status: filters.status ? normalizeStatus(filters.status) : "",
   }
 }
 
@@ -47,7 +46,7 @@ export function createCalendarTaskFilter(params: URLSearchParams, timezone: stri
       title: task.title,
       search: task.title.toLowerCase(),
       status,
-      overdue: filters.status === "overdue" && !isClosedStatus(status) &&
+      overdue: filters.status === "overdue" && task.deferred_at === null && !isClosedStatus(status) &&
         isDueOverdue(task.due_date, timezone, today) ? "true" : undefined,
       priority: String(task.priority ?? 3),
       taskType: task.task_type ?? "task",

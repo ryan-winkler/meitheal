@@ -229,7 +229,7 @@ export interface AreaInfo {
 
 export type CalendarFilterRow = Pick<TaskRow,
   "status" | "title" | "priority" | "task_type" | "task_kind" | "area_id" | "assigned_to" |
-  "is_promoted" | "labels" | "due_date" | "framework_payload">
+  "is_promoted" | "labels" | "due_date" | "deferred_at" | "framework_payload">
 
 const CALENDAR_ITEM_DATE = "CASE WHEN task_kind = 'calendar_event' THEN COALESCE(NULLIF(start_date, ''), due_date) ELSE due_date END"
 const CALENDAR_LOCAL_ITEM = "(task_kind IS NOT 'calendar_event' OR calendar_sync_state IS NOT 'synced')"
@@ -525,7 +525,7 @@ async function ensureGrocySyncConfirmationTable(client: Client): Promise<void> {
 }
 
 const CALENDAR_FILTER_COLUMNS = `status, title, priority, task_type, task_kind,
-  ${householdPlanningProjection("areas", "tasks.area_id")} AS area_id, assigned_to, is_promoted, labels, framework_payload`
+  ${householdPlanningProjection("areas", "tasks.area_id")} AS area_id, assigned_to, is_promoted, labels, deferred_at, framework_payload`
 
 export class TaskRepository {
   constructor(private readonly client: Client) {}

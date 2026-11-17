@@ -191,6 +191,8 @@ details.filter-dropdown summary::-webkit-details-marker {
     min-height: 44px;
     padding-inline: 4px;
     justify-content: center;
+    text-align: center;
+    white-space: normal;
   }
 }
 

@@ -235,6 +235,14 @@ test.describe("Tasks Shell (Timeline/GANTT)", () => {
       await expect(chart.getByRole("button", { name: new RegExp(title + ", overdue") })).toBeVisible()
       await expect(milestone).toHaveCSS("fill", "rgb(0, 0, 68)")
       await expect(milestone).toHaveCSS("stroke-width", "2px")
+      await page.evaluate(() => {
+        localStorage.setItem("meitheal-theme", "knight-rider")
+        localStorage.setItem("meitheal-accent-color", "#242424")
+      })
+      await page.reload()
+      const milestoneControl = chart.getByRole("button", { name: new RegExp(title + ", overdue") })
+      await milestoneControl.focus()
+      await expect(milestoneControl).toHaveCSS("outline-color", "rgb(166, 192, 249)")
     } finally {
       await request.delete(`/api/tasks/${id}`, { headers })
     }

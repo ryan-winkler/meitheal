@@ -1,5 +1,6 @@
 import type { FilterCondition, FilterGroup } from "./filter-engine"
 import { readFilterLabels, readTaskKindFilter, writeFilterLabels, type FilterState } from "./filter-state"
+import { normalizeStatus } from "./status-config"
 
 export const KANBAN_PAGE_SIZE = 25
 export const KANBAN_SEARCH_LIMIT = 500
@@ -42,7 +43,7 @@ export function readKanbanFilters(params: URLSearchParams): KanbanFilters {
     area: params.get("area") ?? "",
     search: readKanbanSearch(params.get("search")),
     user: params.get("user") ?? "",
-    status: params.get("status") ?? "",
+    status: normalizeStatus(params.get("status") ?? ""),
     priority: params.get("priority") ?? "",
     promoted: params.get("promoted") === "1",
     rice: params.get("rice") ?? "",

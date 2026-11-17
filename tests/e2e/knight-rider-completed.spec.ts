@@ -233,7 +233,9 @@ test("Today holds the displayed date and counts together after rollover", async 
   }))
   const refresh = page.waitForRequest(request => new URL(request.url()).pathname === "/api/tasks/today-counts")
   await page.clock.fastForward(30_100)
-  expect(new URL((await refresh).url()).searchParams.get("expected_day")).toBe(date)
+  const scope = new URL((await refresh).url()).searchParams
+  expect(scope.get("expected_day")).toBe(date)
+  expect(scope.get("expected_timezone")).toBe(await page.locator("#page-shell").getAttribute("data-today-timezone"))
   await expect(page.getByRole("button", { name: "Refresh Today" })).toBeVisible()
   await expect(page.locator("#clear-completed-btn")).toHaveAttribute("aria-disabled", "true")
   await expect(count).toHaveText(originalCount!)

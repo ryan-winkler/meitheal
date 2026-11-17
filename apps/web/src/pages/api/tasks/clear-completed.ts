@@ -15,10 +15,9 @@ import {
   ensureSchema,
   getPersistenceClient,
 } from "@domains/tasks/persistence/store"
-import { parseCalendarDay } from "../../../lib/calendar-day"
 import { apiError } from "../../../lib/api-response"
 import { calendarToday, isValidTimezone } from "../../../lib/date"
-import { readStoredHouseholdTimezone, todayCompletionFilter } from "../../../lib/task-queries"
+import { readStoredHouseholdTimezone, todayCompletionFilter, todayScopeProblem } from "../../../lib/task-queries"
 import { apiLogger, logApiError } from "../../../lib/api-logger"
 
 export const POST: APIRoute = async ({ request, url, locals }) => {
@@ -29,11 +28,8 @@ export const POST: APIRoute = async ({ request, url, locals }) => {
     const client = getPersistenceClient()
     const timezone = locals.timezone && isValidTimezone(locals.timezone) ? locals.timezone : await readStoredHouseholdTimezone()
     const today = calendarToday(timezone)
-    const expectedDay = url.searchParams.get("expected_day")
-    if (expectedDay !== null) {
-      if (!parseCalendarDay(expectedDay)) return apiError("expected_day must be a calendar date", 400)
-      if (expectedDay !== today) return apiError("Today has changed. Review the completed tasks before archiving.", 409)
-    }
+    const problem = todayScopeProblem(url.searchParams, timezone, today)
+    if (problem) return apiError(problem.error, problem.status)
     const filter = todayCompletionFilter(today, timezone)
     const result = await client.execute({
       sql: `UPDATE tasks SET status = 'archived', updated_at = ? WHERE ${filter.sql}`,

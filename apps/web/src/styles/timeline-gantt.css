@@ -453,13 +453,13 @@
 }
 
 .gantt-sidebar-row:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--border-focus);
   outline-offset: -2px;
   background: var(--bg-secondary, rgba(255, 255, 255, 0.04)) !important;
 }
 
 .gantt-sidebar-row--focused {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--border-focus);
   outline-offset: -2px;
   background: var(--bg-secondary, rgba(255, 255, 255, 0.06)) !important;
 }
@@ -477,7 +477,7 @@
 }
 
 .gantt-bar:focus {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--border-focus);
   outline-offset: 2px;
   border-radius: var(--radius-sm, 4px);
 }
@@ -489,7 +489,7 @@
 }
 
 .gantt-milestone:focus {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--border-focus);
   outline-offset: 2px;
 }
 
@@ -499,7 +499,7 @@
 }
 
 .gantt-today-fab:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--border-focus);
   outline-offset: 2px;
 }
 
@@ -533,7 +533,7 @@
 }
 
 .timeline-export-btn:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--border-focus);
   outline-offset: 2px;
 }
 

@@ -82,7 +82,9 @@ test("Today uses one household day for mixed completion snapshots and archive", 
     const headers = { origin, cookie: "feedback-fixture=admin", "sec-fetch-site": "same-origin" }
     const timezone = "Asia/Tokyo"
     expect((await api.put(base + "/api/settings", { headers, data: { key: "timezone", value: timezone } })).ok()).toBe(true)
-    const today = new Intl.DateTimeFormat("en-CA", { timeZone: timezone, dateStyle: "short" }).format(new Date())
+    const now = new Date()
+    const dayIn = (timeZone: string) => new Intl.DateTimeFormat("en-CA", { timeZone, dateStyle: "short" }).format(now)
+    const today = dayIn(timezone)
     const midnight = new Date(`${today}T00:00:00+09:00`).getTime()
     const insert = db.prepare(`INSERT INTO tasks (id, title, status, idempotency_key, request_id, created_at, updated_at)
       VALUES (?, ?, 'complete', ?, ?, ?, ?)`)
@@ -116,7 +118,19 @@ test("Today uses one household day for mixed completion snapshots and archive", 
     const stale = await api.post(base + "/api/tasks/clear-completed?expected_day=" + previousDay, { headers })
     expect(stale.status(), await stale.text()).toBe(409)
     expect(db.prepare("SELECT COUNT(*) AS total FROM tasks WHERE status = 'complete'").get()?.total).toBe(25)
-    const archive = await api.post(base + "/api/tasks/clear-completed?expected_day=" + today, { headers })
+
+    const scope = new URLSearchParams({ expected_day: today, expected_timezone: timezone })
+    const differentTimezone = ["Asia/Kolkata", "Pacific/Guam"].find(candidate => dayIn(candidate) === today)!
+    expect(differentTimezone).toBeTruthy()
+    expect((await api.put(base + "/api/settings", { headers, data: { key: "timezone", value: differentTimezone } })).ok()).toBe(true)
+    const changedZoneCounts = await api.get(base + "/api/tasks/today-counts?completed=1&" + scope, { headers })
+    expect(changedZoneCounts.status(), await changedZoneCounts.text()).toBe(409)
+    const changedZoneArchive = await api.post(base + "/api/tasks/clear-completed?" + scope, { headers })
+    expect(changedZoneArchive.status(), await changedZoneArchive.text()).toBe(409)
+    expect(db.prepare("SELECT COUNT(*) AS total FROM tasks WHERE status = 'complete'").get()?.total).toBe(25)
+
+    expect((await api.put(base + "/api/settings", { headers, data: { key: "timezone", value: timezone } })).ok()).toBe(true)
+    const archive = await api.post(base + "/api/tasks/clear-completed?" + scope, { headers })
     expect(archive.status(), await archive.text()).toBe(200)
     expect(await archive.json()).toMatchObject({ ok: true, cleared: 23 })
     const remaining = db.prepare("SELECT id FROM tasks WHERE status = 'complete' ORDER BY id").all()
