@@ -220,6 +220,7 @@
                 (e.target as HTMLElement)?.contentEditable === "true";
 
               if (e.key === "Escape") {
+                if (hasPriorityOverlay()) return
                 // Search owns Escape inside its panel.
                 const taskOverlay = document.getElementById(
                   "task-detail-overlay",
@@ -231,17 +232,22 @@
                   taskOverlay.classList.contains("active") &&
                   (!isDocked || taskPanel?.contains(document.activeElement))
                 ) {
-                  document.getElementById("td-close")?.click()
+                  const layout = document.getElementById("td-toggle-layout")
+                  if (layout?.getAttribute("aria-expanded") === "true") layout.click()
+                  else if (taskOverlay.hasAttribute("data-focus-mode")) document.getElementById("td-toggle-focus")?.click()
+                  else document.getElementById("td-close")?.click()
+                  e.preventDefault()
                   return;
                 }
               }
 
               if (e.key === "Tab") {
+                if (hasPriorityOverlay()) return
                 const task = document.body.classList.contains("has-docked-inspector")
                   ? null
                   : document.querySelector<HTMLElement>("#task-detail-overlay.active")
                 const search = document.querySelector<HTMLElement>("#search-hub-overlay:not(.hidden)")
-                const activeOverlay = task ?? search
+                const activeOverlay = search ?? task
                 if (activeOverlay) containTabFocus(activeOverlay, e)
                 return
               }

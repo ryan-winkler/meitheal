@@ -65,12 +65,12 @@ test.describe("Track D — @container Docked Task Inspector, Ingress Reload Pers
       const titleInput = page.locator("#td-title")
       const descInput = page.locator("#td-description")
       const checklistInput = page.locator('#td-checklists [data-checklist-row="0"] textarea')
-      const sidebarToggle = page.locator("#td-sidebar-toggle")
+      const commentsDisclosure = page.locator("#td-section-comments > summary")
 
       await expect(overlay).toHaveClass(/active/)
       await expect(page.locator("body")).toHaveClass(/has-docked-inspector/)
       await expect(panel).toHaveAttribute("role", "region")
-      await expect(panel).toHaveAttribute("aria-modal", "false")
+      await expect(panel).not.toHaveAttribute("aria-modal")
       await expect(titleInput).toHaveValue("Docked inspector baseline task")
 
       // Body scroll stays unlocked when docked, and @container stacks single-column at 420px width
@@ -88,7 +88,7 @@ test.describe("Track D — @container Docked Task Inspector, Ingress Reload Pers
       expect(dockedMetrics.panelWidth).toBeLessThanOrEqual(420)
       expect(dockedMetrics.mainMarginRight).toBe("420px")
       expect(dockedMetrics.aiPlaceholderCount).toBe(0)
-      await expect(sidebarToggle).toBeVisible()
+      await expect(commentsDisclosure).toBeVisible()
 
       // SearchHub "/" opens when focus is outside editable panel inputs while docked
       await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
@@ -116,7 +116,7 @@ test.describe("Track D — @container Docked Task Inspector, Ingress Reload Pers
       await expect(page.locator("body")).not.toHaveClass(/has-docked-inspector/)
       await expect(panel).toHaveAttribute("role", "dialog")
       await expect(panel).toHaveAttribute("aria-modal", "true")
-      await expect(sidebarToggle).toBeHidden()
+      await expect(commentsDisclosure).toBeVisible()
 
       const modalState = await page.evaluate(() => ({
         bodyOverflow: getComputedStyle(document.body).overflow,
@@ -132,13 +132,13 @@ test.describe("Track D — @container Docked Task Inspector, Ingress Reload Pers
       await page.setViewportSize({ width: 1600, height: 900 })
       await expect(page.locator("body")).toHaveClass(/has-docked-inspector/)
       await expect(panel).toHaveAttribute("role", "region")
-      await expect(panel).toHaveAttribute("aria-modal", "false")
+      await expect(panel).not.toHaveAttribute("aria-modal")
       await expect(titleInput).toHaveValue("Unsaved docked draft title")
       await expect(descInput).toHaveValue("Unsaved docked markdown body")
       await expect(checklistInput).toHaveValue("Unsaved checklist item draft")
 
       // Escape closes docked inspector when focus resides inside #task-detail-panel
-      await sidebarToggle.focus()
+      await commentsDisclosure.focus()
       await page.keyboard.press("Escape")
       await expect(overlay).not.toHaveClass(/active/)
       await expect(page.locator("body")).not.toHaveClass(/has-docked-inspector/)
