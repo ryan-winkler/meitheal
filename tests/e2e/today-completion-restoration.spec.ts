@@ -143,12 +143,13 @@ test("reopening a due favorite keeps its original Focus Stack card", async ({ pa
       try {
         await expect(focusCard).toBeHidden()
       } finally {
-        if (offset > 0) await pending.abort()
+        if (offset > 0) await pending.fulfill({ status: 503 })
         else await pending.continue()
       }
       if (offset > 0) {
         await expect(page.getByText("Couldn’t refresh Today’s tasks. Reload Today to see the saved changes.")).toBeVisible()
         await expect(focusCard).toBeHidden()
+        await expect(favorite).toHaveAttribute("data-before-reopen", "")
         await expect(status).not.toHaveAttribute("aria-disabled", "true")
         await status.selectOption("pending")
       }

@@ -32,6 +32,7 @@ import { TemplateRepository } from "@domains/tasks/persistence/template-reposito
 import type { HabitWithStats } from "@domains/tasks/persistence/template-repository"
 import { getTodayTaskRows, todayCompletionPercent, todayDueSection, type TaskViewItem } from "../lib/task-queries"
 import { calendarDayFromInput, calendarToday, formatRelativeDue, shiftCalendarDay } from "../lib/date"
+import { db503Response } from "../lib/db-fallback"
 import { isFeatureEnabled } from "../lib/feature-flags"
 import { TODAY_SECTIONS } from "../lib/today-registry"
 import { getUnscheduledPage, requestedUnscheduledPage, setUnscheduledPage } from "../lib/today-list"
@@ -135,29 +136,29 @@ try {
   const unscheduledAfterSuggestions = openUnscheduledCount - suggestedIds.size
   totalOpenCount = carriedForwardTasks.length + todayTasks.length + unscheduledAfterSuggestions
   unscheduledCount = unscheduledAfterSuggestions - pinnedTasks.filter(task => !task.due_date && !suggestedIds.has(task.id)).length
-
-  // G36: Fetch gamification stats for streak/XP display
-  try {
-    const { getStats, getWeeklyData } = await import("@domains/gamification")
-    const stats = await getStats()
-    currentStreak = stats.currentStreak ?? 0
-    // Get today's points from weekly data
-    const weekly = await getWeeklyData()
-    const todayRecord = weekly[weekly.length - 1]
-    todayXP = todayRecord?.points ?? 0
-  } catch { /* gamification may not be initialized */ }
-
-  // G38: Fetch habits for Today section
-  try {
-    habitsEnabled = await isFeatureEnabled("habits")
-    if (habitsEnabled) {
-      const repo = new TemplateRepository(getPersistenceClient())
-      habits = await repo.getHabitsWithStats()
-    }
-  } catch { /* habits may not be available */ }
-} catch {
-  /* DB not available */
+} catch (error) {
+  if (reopening) return db503Response("today-refresh", error)
 }
+
+// G36: Fetch gamification stats for streak/XP display
+try {
+  const { getStats, getWeeklyData } = await import("@domains/gamification")
+  const stats = await getStats()
+  currentStreak = stats.currentStreak ?? 0
+  // Get today's points from weekly data
+  const weekly = await getWeeklyData()
+  const todayRecord = weekly[weekly.length - 1]
+  todayXP = todayRecord?.points ?? 0
+} catch { /* gamification may not be initialized */ }
+
+// G38: Fetch habits for Today section
+try {
+  habitsEnabled = await isFeatureEnabled("habits")
+  if (habitsEnabled) {
+    const repo = new TemplateRepository(getPersistenceClient())
+    habits = await repo.getHabitsWithStats()
+  }
+} catch { /* habits may not be available */ }
 
 // Remove pinned duplicates from other sections (keep in Pinned section)
 const pinnedIds = new Set(pinnedTasks.map(t => t.id))

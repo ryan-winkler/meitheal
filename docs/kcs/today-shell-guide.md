@@ -60,6 +60,8 @@ Task rows label their current status. Custom statuses keep their stored value af
 
 Today refreshes the counters and progress bar after confirmed task changes and every 30 seconds. In Knight Rider, expand **Completed today** to see up to 20 recent completions. Select a completed row anywhere on the row to open Details. To keep Today open, open the completed task link in a new tab. Reopen a task from Details to return it to the Today lists it qualifies for, even if newer completions have pushed it out of the preview. If the task was already in the Focus Stack, its card returns with the current deadline when the saved date is due today or overdue. This applies to shared favorites too. A rescheduled task returns to the lists that match its saved date. **Archive completed** applies to every completion counted for the displayed household day. Reload the page to refresh the task rows after an external change.
 
+If Today reports that it could not refresh after reopening a task, reload Today to see the saved status and deadline.
+
 ### Update several tasks
 
 Turn on multi-select in **Focus**, select the task checkboxes, then choose **Complete**, **Snooze** or **Delete**. If only some changes are confirmed, Today refreshes the task rows and counters and keeps the remaining tasks selected. Check those tasks before retrying. If Today cannot confirm any of the changes, the current selection stays available for review.
