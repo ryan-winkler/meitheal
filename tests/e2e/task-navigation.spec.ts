@@ -586,7 +586,7 @@ test("legacy Shopping type filters survive view switches and respect Table searc
   try {
     for (const [index, title] of titles.entries()) {
       const created = await request.post("/api/tasks", { headers, data: {
-        title, status: index === 0 ? "active" : "pending", task_kind: "shopping_item",
+        title, status: index === 0 ? "active" : "pending", task_kind: "shopping_item", task_type: index === 0 ? "story" : "epic",
         start_date: `2031-07-${25 + index}`, due_date: due,
       } })
       expect(created.ok(), await created.text()).toBe(true)
@@ -594,12 +594,20 @@ test("legacy Shopping type filters survive view switches and respect Table searc
     }
     const query = { view: "table", area: "", types: '["shopping_item"]', year: "2031", month: "6" }
     const labels = ["All pantry search", "Word pantry search"] as const
-    const shortcuts = labels.map((label, index) => ({
+    const shortcuts: Array<{ id: string; label: string; href: string; icon: string }> = labels.map((label, index) => ({
       id: `legacy-shopping-${index}`,
       label,
       href: "/tasks?" + new URLSearchParams({ ...query, search: (index ? " " : "") + "pan" }) + "#table",
       icon: "shopping-cart",
     }))
+    for (const taskType of ["story", "epic"]) {
+      shortcuts.push({
+        id: `legacy-task-type-${taskType}`,
+        label: taskType === "story" ? "Stories" : "Epics",
+        href: `/tasks?view=table&area=&task_type=${taskType}#table`,
+        icon: "checkbox",
+      })
+    }
     const save = await request.put("/api/settings", { headers, data: { key: "sidebar_config", value: {
       order: ["tasks", ...shortcuts.map(shortcut => shortcut.id)], customItems: shortcuts,
     } } })
@@ -616,9 +624,11 @@ test("legacy Shopping type filters survive view switches and respect Table searc
 
     const views = page.getByRole("navigation", { name: "Task views" })
     const shopping = page.locator('.filter-toolbar [data-type="shopping_item"]')
+    const calendar = page.locator("#calendar-shell")
     await views.getByRole("link", { name: "Calendar", exact: true }).click()
     await expect(shopping).toHaveAttribute("aria-pressed", "true")
-    await page.locator(`.cal-cell[data-date="${due}"]`).press("Enter")
+    await expect(calendar).toHaveAttribute("data-calendar-ready", "true")
+    await calendar.locator(`.cal-cell[data-date="${due}"]`).press("Enter")
     for (const title of titles) await expect(page.locator("#day-drawer-tasks").getByText(title, { exact: true })).toBeVisible()
     await page.keyboard.press("Escape")
     await views.getByRole("link", { name: "Timeline (Gantt)", exact: true }).click()
@@ -644,7 +654,8 @@ test("legacy Shopping type filters survive view switches and respect Table searc
 
     const legacyStatus = new URLSearchParams({ ...query, view: "calendar", search: suffix, status: "in_progress" })
     await page.goto("/tasks?" + legacyStatus + "#calendar")
-    await page.locator(`.cal-cell[data-date="${due}"]`).press("Enter")
+    await expect(calendar).toHaveAttribute("data-calendar-ready", "true")
+    await calendar.locator(`.cal-cell[data-date="${due}"]`).press("Enter")
     await expect(page.locator("#day-drawer-tasks").getByText(titles[0]!, { exact: true })).toBeVisible()
     await expect(page.locator("#day-drawer-tasks").getByText(titles[1]!, { exact: true })).toHaveCount(0)
     await page.keyboard.press("Escape")
@@ -655,6 +666,14 @@ test("legacy Shopping type filters survive view switches and respect Table searc
     await views.getByRole("link", { name: "Kanban", exact: true }).click()
     await expect(page.locator("#kanban-shell").getByText(titles[0]!, { exact: true })).toBeVisible()
     await expect(page.locator("#kanban-shell").getByText(titles[1]!, { exact: true })).toHaveCount(0)
+    const stories = page.locator('#sidebar [data-page="legacy-task-type-story"]')
+    const epics = page.locator('#sidebar [data-page="legacy-task-type-epic"]')
+    await stories.click()
+    await expect(stories).toHaveAttribute("aria-current", "page")
+    await expect(epics).not.toHaveAttribute("aria-current", "page")
+    await expect(page.locator('#sidebar [data-page="tasks"]')).not.toHaveAttribute("aria-current", "page")
+    await expect(table.getByText(titles[0]!, { exact: true })).toBeVisible()
+    await expect(table.getByText(titles[1]!, { exact: true })).toHaveCount(0)
 
     legacyStatus.delete("status")
     legacyStatus.set("advancedFilter", JSON.stringify({
@@ -662,7 +681,8 @@ test("legacy Shopping type filters survive view switches and respect Table searc
       conditions: [{ id: "status", field: "status", operator: "equals", value: "in_progress" }],
     }))
     await page.goto("/tasks?" + legacyStatus + "#calendar")
-    await page.locator(`.cal-cell[data-date="${due}"]`).press("Enter")
+    await expect(calendar).toHaveAttribute("data-calendar-ready", "true")
+    await calendar.locator(`.cal-cell[data-date="${due}"]`).press("Enter")
     await expect(page.locator("#day-drawer-tasks").getByText(titles[0]!, { exact: true })).toBeVisible()
     await expect(page.locator("#day-drawer-tasks").getByText(titles[1]!, { exact: true })).toHaveCount(0)
     await page.keyboard.press("Escape")

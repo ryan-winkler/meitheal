@@ -50,14 +50,20 @@ const SYS_REQ = "ha-system"; // sentinel request_id for background operations
 let connection: Connection | null = null;
 let configurationFingerprint: string | null = null
 
-export async function getHAConfiguration(): Promise<HAConfiguration | null> {
+export async function getHAConfiguration({ requireComplete = false } = {}): Promise<HAConfiguration | null> {
   if (process.env.SUPERVISOR_TOKEN) return resolveHAConfiguration(process.env)
   const { ensureSchema, getPersistenceClient } = await import("../tasks/persistence/store")
   const { SettingsRepository } = await import("../tasks/persistence/settings-repository")
   await ensureSchema()
   const repo = new SettingsRepository(getPersistenceClient())
   await repo.ensureSettingsTable()
-  return resolveHAConfiguration(process.env, await repo.getByKeys(["ha_url", "ha_token"]))
+  const settings = await repo.getByKeys(["ha_url", "ha_token"])
+  const configuration = resolveHAConfiguration(process.env, settings)
+  if (!configuration && requireComplete && [settings.ha_url, settings.ha_token, process.env.HA_BASE_URL, process.env.HA_TOKEN]
+    .some(value => typeof value === "string" && value.trim())) {
+    throw new Error("Home Assistant requires both a URL and a token")
+  }
+  return configuration
 }
 
 const ALLOWED_HA_REST_PATH_RE = /^\/api\/[a-zA-Z0-9._%-]+(?:\/[a-zA-Z0-9._%-]+)*$/

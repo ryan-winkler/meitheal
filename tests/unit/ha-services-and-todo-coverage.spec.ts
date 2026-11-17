@@ -108,6 +108,11 @@ test("HA connection, services, users, todo-bridge, and ha-startup work against l
   })
 
   let acceptConnections = true
+  const coreUsers = [
+    { id: "ha-user-1", name: "Ryan", is_owner: true, is_active: true, system_generated: false },
+    { id: "ha-user-2", name: "System", is_owner: false, is_active: false, system_generated: true },
+  ]
+  let rosterResult: unknown = coreUsers
   const wss = new WebSocketServer({ server: httpServer, verifyClient: () => acceptConnections })
   wss.on("connection", (socket: { send(v: string): void; on(e: string, cb: (raw: Buffer) => void): void }) => {
     sockets.add(socket)
@@ -149,10 +154,7 @@ test("HA connection, services, users, todo-bridge, and ha-startup work against l
           id: msg.id,
           type: "result",
           success: true,
-          result: [
-            { id: "ha-user-1", name: "Ryan", is_owner: true, is_active: true },
-            { id: "ha-user-2", name: "System", is_owner: false, is_active: false },
-          ],
+          result: rosterResult,
         })
         return
       }
@@ -333,6 +335,22 @@ test("HA connection, services, users, todo-bridge, and ha-startup work against l
     expect(await haUsers.getHAUserById("ha-user-1")).toEqual(initialDirectory.users[0])
     expect(await haUsers.isCurrentActiveHAUser("ha-user-1", { fresh: true })).toBe(false)
     expect(await haUsers.getCurrentHAUserRoster("ha-user-1")).toBeUndefined()
+
+    haConn.closeHAConnection()
+    rosterResult = [{ id: "ha-user-1", name: "Ryan", system_generated: false }]
+    expect(await haUsers.listHAUserDirectory()).toEqual({ users: initialDirectory.users, verified: false })
+    rosterResult = []
+    expect(await haUsers.listHAUserDirectory()).toEqual({ users: [], verified: true })
+    haConn.closeHAConnection()
+    rosterResult = coreUsers
+    expect(await haUsers.listHAUserDirectory()).toEqual(initialDirectory)
+
+    const savedToken = process.env.HA_TOKEN
+    haConn.closeHAConnection()
+    delete process.env.HA_TOKEN
+    expect(await haUsers.listHAUserDirectory()).toEqual({ users: [], verified: false })
+    process.env.HA_TOKEN = savedToken
+    expect(await haUsers.listHAUserDirectory()).toEqual(initialDirectory)
 
     haConn.closeHAConnection()
     acceptConnections = false

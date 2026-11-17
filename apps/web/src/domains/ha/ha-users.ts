@@ -43,10 +43,23 @@ export interface MeithealUser {
 
 let cachedRoster: { users: HAUser[]; fingerprint: string; expiresAt: number } | undefined
 const CACHE_TTL_MS = 60_000
+type CoreUser = Pick<HAUser, "id" | "is_active"> & { system_generated: boolean; is_owner?: unknown; name?: unknown }
+
+function parseCoreUserRoster(users: unknown): CoreUser[] | undefined {
+  if (!Array.isArray(users)) return
+  const seen = new Set<string>()
+  for (const user of users) {
+    if (!user || typeof user !== "object" || typeof user.id !== "string" || !user.id.trim()
+      || typeof user.is_active !== "boolean" || typeof user.system_generated !== "boolean"
+      || seen.has(user.id)) return
+    seen.add(user.id)
+  }
+  return users
+}
 
 async function readRosterFingerprint(): Promise<string | null | undefined> {
   try {
-    const configuration = await getHAConfiguration()
+    const configuration = await getHAConfiguration({ requireComplete: true })
     return configuration ? fingerprintHAConfiguration(configuration) : null
   } catch {
     // The configured identity is needed before a cached roster can be reused.
@@ -93,16 +106,15 @@ export async function listHAUserDirectory(): Promise<{ users: HAUser[]; verified
   if (!conn || !matchesCurrentHAConnection(fingerprint, conn)) return unverified()
 
   try {
-    const result = await conn.sendMessagePromise<HAUser[]>({
+    const result = parseCoreUserRoster(await conn.sendMessagePromise<unknown>({
       type: "config/auth/list",
-    });
+    }))
 
     // Filter out system-generated accounts (e.g. homeassistant, supervisor)
-    if (!Array.isArray(result)) throw new Error("Invalid Home Assistant user directory")
-    const users = result.filter(
-      (u) => !((u as unknown as Record<string, unknown>).system_generated) && u.is_active
-    ).map((u) => ({
-      ...u,
+    if (!result) throw new Error("Invalid Home Assistant user directory")
+    const users = result.filter(u => !u.system_generated && u.is_active).map(u => ({
+      is_active: u.is_active,
+      is_owner: u.is_owner === true,
       name: sanitizeHAUserName(u.name),
       // Validate ID is clean alphanumeric — prefix with ha_ for downstream validation compat
       id: /^[a-zA-Z0-9_-]+$/.test(u.id) ? u.id : `ha_sanitized_${u.id.replace(/[^a-zA-Z0-9]/g, "")}`,
@@ -164,14 +176,10 @@ let latestLookup = 0
 let latestCompletedLookup = 0
 
 function parseActiveUserRoster(users: unknown): ActiveHARoster | undefined {
-  if (!Array.isArray(users)) return
-  const seen = new Set<string>()
+  const roster = parseCoreUserRoster(users)
+  if (!roster) return
   const active = new Map<string, string>()
-  for (const user of users) {
-    if (!user || typeof user !== "object" || typeof user.id !== "string" || !user.id.trim()
-      || typeof user.is_active !== "boolean" || typeof user.system_generated !== "boolean"
-      || seen.has(user.id)) return
-    seen.add(user.id)
+  for (const user of roster) {
     if (user.is_active && !user.system_generated) {
       active.set(user.id, typeof user.name === "string" ? user.name : "")
     }
