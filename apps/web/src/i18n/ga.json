@@ -257,6 +257,7 @@
     "quick_add_title": "Teideal an taisc nua",
     "quick_add_save": "Cuir leis",
     "quick_add_saving": "Á chur leis…",
+    "quick_add_area_unavailable": "Roghnaigh Réimse atá ar fáil nó Gach Réimse sula gcuireann tú tasc leis.",
     "quick_add_required": "Cuir isteach teideal an taisc.",
     "quick_add_too_long": "Úsáid 500 carachtar nó níos lú.",
     "reorder_failed": "Níorbh fhéidir ord na gcártaí a shábháil. Bain triail eile as.",

@@ -202,6 +202,16 @@ test("pinned types fit narrow desktop top navigation and stay available in the m
   const mobileTypeToggle = mobileSidebar.locator("#sidebar-task-types").getByRole("button", { name: "Task types", exact: true })
   await mobileTypeToggle.click()
   await expect(mobileTypeToggle).toHaveAttribute("aria-expanded", "true")
+  const firstPin = sidebarPins.getByRole("button", { name: "New event", exact: true })
+  await mobileSidebar.getByRole("link", { name: "Choose visible types", exact: true }).focus()
+  await page.keyboard.press("Tab")
+  await expect(mobileTypeToggle).toHaveAttribute("aria-expanded", "false")
+  await expect(firstPin).toBeFocused()
+  expect(await firstPin.evaluate(button => {
+    const rect = button.getBoundingClientRect()
+    return button.contains(document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2))
+  })).toBe(true)
+  await mobileTypeToggle.click()
   await page.keyboard.press("Escape")
   await expect(mobileTypeToggle).toHaveAttribute("aria-expanded", "false")
   await expect(mobileSidebar).toHaveClass(/open/)
@@ -263,6 +273,16 @@ test("selected menu pins remain visible with a black personal accent", async ({ 
     await expect(pin).toHaveCSS("color", "rgb(230, 230, 230)")
     await expect(pin).toHaveCSS("border-top-color", "rgb(230, 230, 230)")
     await page.keyboard.press("Escape")
+  }
+
+  await page.goto("/tasks?view=calendar#calendar")
+  await page.keyboard.press("Tab")
+  const header = page.getByRole("banner")
+  for (const action of [header.getByRole("button", { name: "New Task", exact: true }),
+    header.getByRole("button", { name: "Search Meitheal…", exact: true })]) {
+    await action.focus()
+    await expect(action).toHaveCSS("outline-style", "solid")
+    await expect(action).toHaveCSS("outline-color", "rgb(166, 192, 249)")
   }
 })
 
@@ -494,7 +514,7 @@ test("Shopping links identify their own Area and follow applied Board filters", 
       await expect(current).toHaveText(name)
       const filters = page.getByRole("toolbar", { name: "Filter tasks" })
       await filters.getByRole("button", { name: "Toggle filter builder" }).click()
-      await filters.getByRole("button", { name: "Apply Rules" }).click()
+      await filters.getByRole("button", { name: "Apply Rules" }).press("Enter")
       await expect(page).toHaveURL(url => {
         const rule = url.searchParams.get("advancedFilter")
         return Boolean(rule && JSON.parse(decodeURIComponent(rule)).conditions[0]?.logic === "AND")

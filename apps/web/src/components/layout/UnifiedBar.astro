@@ -552,11 +552,6 @@ function resolveUnifiedIcon(raw?: string): IconName | "timeline" | "pillars" | n
     border-color: var(--accent-50-border);
     color: var(--text-secondary);
   }
-  .unified-bar__search-launcher:focus-visible {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 20%, transparent);
-    outline: none;
-  }
   :global(.unified-bar__search-icon) {
     flex-shrink: 0;
   }
@@ -635,11 +630,6 @@ function resolveUnifiedIcon(raw?: string): IconName | "timeline" | "pillars" | n
     border-color: var(--accent-50-border);
     color: var(--accent-text);
     background: var(--accent-6-bg);
-  }
-  .unified-bar__new-task-btn:focus-visible {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 20%, transparent);
-    outline: none;
   }
   :global(.unified-bar__new-task-icon) {
     flex-shrink: 0;

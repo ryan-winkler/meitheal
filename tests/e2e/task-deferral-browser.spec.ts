@@ -179,6 +179,11 @@ test("a missing Deferred Area stays visible on the Board until the user widens i
     await page.getByRole("link", { name: "Back to Tasks" }).click()
     const trigger = page.locator("#area-selector-trigger")
     await expect(trigger).toContainText("Unavailable Area")
+    const add = page.getByRole("button", { name: "Add task to Backlog" })
+    await add.click()
+    await expect(page.getByRole("alert")).toContainText("Choose an available Area or All Areas before adding a task.")
+    await expect(trigger).toBeFocused()
+    await expect(page.locator(".kanban-inline-add")).toHaveCount(0)
     await expect(page).toHaveURL(url => url.searchParams.get("area") === id)
     const card = page.locator(`.kanban-card[data-id="${task.id}"]`)
     await expect(card).toHaveCount(0)
@@ -190,6 +195,8 @@ test("a missing Deferred Area stays visible on the Board until the user widens i
     await expect(trigger).toContainText("All Areas")
     await expect(page).toHaveURL(url => url.searchParams.get("area") === "")
     await expect(card).toBeVisible()
+    await add.click()
+    await expect(page.getByRole("textbox", { name: "New task title" })).toBeVisible()
   } finally {
     await request.delete(`/api/tasks/${task.id}`, { data: {} })
   }

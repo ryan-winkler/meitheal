@@ -260,6 +260,7 @@
     "quick_add_title": "New task title",
     "quick_add_save": "Add",
     "quick_add_saving": "Adding…",
+    "quick_add_area_unavailable": "Choose an available Area or All Areas before adding a task.",
     "quick_add_required": "Enter a task title.",
     "quick_add_too_long": "Use 500 characters or fewer.",
     "reorder_failed": "Couldn’t save the card order. Try again.",

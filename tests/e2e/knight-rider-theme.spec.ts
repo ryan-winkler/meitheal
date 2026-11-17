@@ -42,6 +42,7 @@ test("Knight Rider persists and fills active work and task colors on Today and B
   const highId = await create("Send the maintenance schedule", "active", undefined, 16)
   expect((await request.put(`/api/tasks/${paleId}`, { data: {
     checklists: JSON.stringify([{ text: "Check stock", done: true }]),
+    custom_fields: JSON.stringify({ Place: "Cabinet" }),
   } })).ok()).toBe(true)
   const themeSelect = page.locator("#theme-select")
   const root = page.locator("html")
@@ -175,6 +176,22 @@ test("Knight Rider persists and fills active work and task colors on Today and B
       const checklist = page.locator(`${surface}[data-id="${paleId}"]`).getByText("✓ 1/1", { exact: true })
       await expect(checklist).toBeVisible()
       expect(await badgeContrast(checklist, surface)).toBeGreaterThanOrEqual(4.5)
+      if (surface === ".kanban-card") {
+        const field = card(paleId).locator(".kanban-cf-chip").filter({ hasText: "Cabinet" })
+        await expect(field).toBeVisible()
+        expect(await badgeContrast(field, surface)).toBeGreaterThanOrEqual(4.5)
+      } else {
+        const task = page.locator(`.tli[data-id="${paleId}"]`)
+        const toggle = task.locator(".tli__checkbox")
+        await toggle.click()
+        const title = task.locator(".tli__title-text")
+        await expect(task).toHaveClass(/tli--done/)
+        await expect(title).toHaveCSS("opacity", "1")
+        expect(await badgeContrast(title, surface)).toBeGreaterThanOrEqual(4.5)
+        await expect(task.locator(".status-badge")).toHaveText("Done")
+        await toggle.click()
+        await expect(task.locator(".status-badge")).toHaveText("Todo")
+      }
     }
     await page.evaluate(() => localStorage.removeItem("meitheal-appearance"))
 
