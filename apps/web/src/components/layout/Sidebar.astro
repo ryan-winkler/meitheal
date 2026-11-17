@@ -13,6 +13,7 @@ import {
   getPersistenceClient,
 } from "@domains/tasks/persistence/store";
 import { getStats as getGamificationStats } from "@domains/gamification";
+import { verifiedIngressUser } from "../../lib/verified-ingress-user"
 import { getFeatureFlags } from "../../lib/feature-flags";
 
 const currentPath = Astro.url.pathname;
@@ -102,6 +103,7 @@ interface SidebarConfig {
 }
 
 
+let showNamedBoardShortcuts = false
 let sidebarConfig: SidebarConfig = {
   dashboard: true,
   today: true,
@@ -132,6 +134,10 @@ if (gamificationEnabled) {
 try {
   await ensureSchema();
   const c = getPersistenceClient();
+  if (hierarchyEnabled && verifiedIngressUser(Astro.locals)) {
+    const epoch = await c.execute("SELECT 1 FROM board_access_epoch LIMIT 1")
+    showNamedBoardShortcuts = epoch.rows.length > 0
+  }
   const res = await c.execute(
     "SELECT value FROM settings WHERE key = 'sidebar_config'",
   );
@@ -177,7 +183,9 @@ const rawOrder: NavKey[] =
     ? (sidebarConfig.order as string[]).filter((k: string) => k in NAV_ITEMS)
     : [];
 // Fall back to defaults if saved order is empty / invalid, then append any missing defaults
-const order: NavKey[] = rawOrder.length > 0 ? rawOrder : [...DEFAULT_ORDER];
+const order: NavKey[] = rawOrder.length > 0
+  ? rawOrder.map(key => key === "areas" && !rawOrder.includes("boards") ? "boards" : key)
+  : [...DEFAULT_ORDER];
 DEFAULT_ORDER.forEach((k) => {
   if (!order.includes(k)) order.push(k);
 });
@@ -218,7 +226,7 @@ navItems.splice(pinIndex, 0, {
 const boardPosition = navItems.findIndex(item => item.key === "boards")
 const primaryItems = boardPosition < 0 ? navItems : navItems.slice(0, boardPosition + 1)
 const householdGroups = hierarchyEnabled && sidebarConfig.areas !== false
-const householdGroupLabel = labels.areas || (locale === "ga" ? "Grúpaí teaghlaigh" : "Household groups")
+const householdGroupLabel = labels.areas || (locale === "ga" ? "Grúpaí" : "Groups")
 const remainingItems = boardPosition < 0 ? [] : navItems.slice(boardPosition + 1)
 ---
 
@@ -308,11 +316,11 @@ const remainingItems = boardPosition < 0 ? [] : navItems.slice(boardPosition + 1
       {primaryItems.length > 0 && <SidebarNavList navItems={primaryItems} taskCounts={taskCounts} />}
       {boardPosition >= 0 && householdGroups && (
         <section class="sidebar-household" id="sidebar-hierarchy-panel" aria-label="Household Board">
-          <a class="nav-link" href="/boards/household">Household</a>
+          <a class="nav-link sidebar-household-link" href="/boards/household">Household</a>
           <SidebarHierarchyTree locale={locale} label={householdGroupLabel} />
         </section>
       )}
-      {boardPosition >= 0 && <ul class="sidebar-board-shortcuts" data-sidebar-boards hidden aria-label="Visible Boards"></ul>}
+      {boardPosition >= 0 && showNamedBoardShortcuts && <ul class="sidebar-board-shortcuts" data-sidebar-boards hidden aria-label="Visible Boards"></ul>}
       {remainingItems.length > 0 && <SidebarNavList navItems={remainingItems} taskCounts={taskCounts} />}
       <NavOverflowMore id="sidebar-more-destinations" list locale={locale} />
     </div>
@@ -336,7 +344,9 @@ const remainingItems = boardPosition < 0 ? [] : navItems.slice(boardPosition + 1
 </script>
 
 <style>
-  .sidebar-household { margin-left: 1rem; }
+  .sidebar-household { margin-inline-start: 1rem; }
+  :global(:root[data-appearance-navigation="navbar"]) .sidebar-household { margin-inline-start: 0; }
+  :global(:root[data-appearance-navigation="navbar"]) .sidebar-household-link { display: none; }
   :global(body.sidebar-collapsed) .sidebar-household { display: none; }
   .sidebar-board-shortcuts { list-style: none; margin: 0.25rem 0; padding-left: 1.5rem; }
   .sidebar-board-shortcuts :global(a) { display: block; padding: 0.3rem 0; overflow-wrap: anywhere; }

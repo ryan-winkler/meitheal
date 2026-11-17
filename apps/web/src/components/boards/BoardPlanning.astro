@@ -1,7 +1,7 @@
 ---
 import type { readNamedBoardPlanning } from "@domains/tasks/persistence/named-board-planning-repository"
 
-import { boardWorkspaceHref } from "@lib/board-workspace"
+import { boardWorkspaceHref, DEFAULT_GROUP_COLOR } from "@lib/board-workspace"
 
 import RetirePlanningForm from "./RetirePlanningForm.astro"
 
@@ -19,7 +19,7 @@ const { boardId, areaId, projectId, planning, canManage, canComplete, routinesEn
 const goalHref = (filter: string, id: string) => `/progress?${filter}=${encodeURIComponent(id)}#goals`
 const showRoutines = routinesEnabled && (canManage || planning.routines.length > 0)
 const visibleAreas = areaId ? planning.areas.filter(area => area.id === areaId) : planning.areas
-const formColor = (color: string) => /^#[0-9a-f]{6}$/i.test(color) ? color : "#6366f1"
+const formColor = (color: string) => /^#[0-9a-f]{6}$/i.test(color) ? color : DEFAULT_GROUP_COLOR
 const ownedAreaIds = new Set(planning.areas.map(area => area.id))
 ---
 
@@ -185,7 +185,7 @@ const ownedAreaIds = new Set(planning.areas.map(area => area.id))
         <input type="hidden" name="action" value="area" />
         <label>Name <input name="title" maxlength="150" required /></label>
         <label>Icon <input name="icon" value="📁" maxlength="24" /></label>
-          <label>Color <input name="color" type="color" value="#6366f1" /></label>
+          <label>Color <input name="color" type="color" value={DEFAULT_GROUP_COLOR} /></label>
           <p role="status" data-board-feedback></p>
         <button type="submit" class="btn btn-ghost">Create group</button>
       </form>
