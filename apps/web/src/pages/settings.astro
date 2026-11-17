@@ -24,7 +24,7 @@ import { verifiedIngressUser } from "../lib/verified-ingress-user"
 const user = verifiedIngressUser(Astro.locals)
 const mayDownloadDatabase = user?.isAdmin && await verifyCurrentHAOwner(user.id, Astro.request.signal) === "allowed"
 const protectedBackup = mayDownloadDatabase && await ensureSchema().then(async () =>
-  (await getPersistenceClient().execute("SELECT 1 FROM task_boards WHERE id <> 'household' UNION ALL SELECT 1 FROM organization_label_preferences WHERE forms <> '{}' LIMIT 1")).rows.length > 0
+  (await getPersistenceClient().execute("SELECT 1 FROM task_boards WHERE id <> 'household' UNION ALL SELECT 1 FROM app_settings WHERE key = 'private_organization_data' LIMIT 1")).rows.length > 0
 ).catch(() => true)
 const databaseDownloadToken = mayDownloadDatabase && !protectedBackup ? issueDatabaseDownloadToken(user.id) : undefined
 if (user) Astro.response.headers.set("Cache-Control", "private, no-store")

@@ -142,7 +142,7 @@ const tabs = [
       <h2 class="section-title">{organization("task", true)}</h2>
       <span class="section-count">{workspaceTasks?.total ?? 0} total</span>
       <details class="board-add">
-        <summary class="btn btn-primary btn-sm">New task</summary>
+        <summary class="btn btn-primary btn-sm">{newOrganizationLabel(organization("task", false, organizationLocale(Astro) === "en" ? "task" : undefined), organizationLocale(Astro))}</summary>
         <form class="board-form" data-group-new-task={areaId}>
           <label>Title <input name="title" maxlength="500" required /></label>
           <p role="status" data-group-task-feedback></p>
@@ -164,7 +164,7 @@ const tabs = [
       <div class="section-header">
         <h2 class="section-title">{organization("routine", true)}</h2>
         <a class="btn btn-ghost btn-sm" href={routinesPath}>View Routines</a>
-        <a class="btn btn-primary btn-sm" href={routinesPath + "&new=1"}>New Routine</a>
+        <a class="btn btn-primary btn-sm" href={routinesPath + "&new=1"}>{newOrganizationLabel(organization("routine"), organizationLocale(Astro))}</a>
       </div>
       {routines.length ? <ul>{routines.map(routine => <li>{routine.icon} {routine.name} · {routine.cadence}</li>)}</ul>
         : <p class="section-empty">No routines in this Area yet.</p>}

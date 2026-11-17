@@ -126,7 +126,7 @@ const nextAction = view?.summary?.next
 
         {view.planning && <BoardPlanning boardId={boardId} areaId={scope?.area?.id} projectId={scope?.project?.id} planning={view.planning} canManage={Boolean(policy) && view.board.state === "active"} canComplete={Boolean(canComplete)} routinesEnabled={routinesEnabled} tickets={view.tasks} />}
         {policy && !scope?.area && !scope?.project && !selection.ticketId && <details id="settings" class="named-boards board-settings">
-          <summary>Board settings</summary>
+          <summary>{label("board")} settings</summary>
           <div class="board-settings-grid">
             <form data-board-form="policy" class="board-form">
               <h2>Ticket permissions</h2>
