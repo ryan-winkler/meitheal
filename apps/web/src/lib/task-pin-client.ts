@@ -7,6 +7,7 @@ const contextPattern = /^[A-Za-z0-9_-]{43}$/
 const leaseDurationMs = 10_000
 const renewalDelayMs = 5_000
 const idleDurationMs = 60_000
+export const pinsChanged = "meitheal:task-pins-changed"
 export const pinsInvalidated = "meitheal:task-pins-invalidated"
 
 export class PinAccessError extends Error {
@@ -113,6 +114,10 @@ async function verifiedRead<T>(body: object, signal: AbortSignal, expected?: Pin
   return { value, lease }
 }
 
+export function readPinPresence(signal: AbortSignal) {
+  return verifiedRead<{ hasPins: boolean }>({ action: "presence" }, signal)
+}
+
 export function readPinPage(page: number, signal: AbortSignal, expected?: PinLease) {
   return verifiedRead<PinPage>({ action: "list", page }, signal, expected)
 }
@@ -124,6 +129,7 @@ export function readTaskPin(task: string, signal: AbortSignal, expected?: PinLea
 export async function setTaskPin(task: string, pinned: boolean, lease: PinLease, signal: AbortSignal) {
   if (performance.now() >= lease.verifiedAt + leaseDurationMs) throw new PinAccessError("account")
   await request(lease.transport, "PUT", signal, { task, pinned }, lease.context)
+  window.dispatchEvent(new Event(pinsChanged))
 }
 
 /** Keep only a verified foreground lease. The deadline is measured from HEAD dispatch. */

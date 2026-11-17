@@ -16,6 +16,8 @@ The Tasks view uses the Household board. A bookmark for an unavailable Board sho
 
 Use **All Areas** above the board to select a specific area. The card and lane counts follow that selection and the task filters. **Add Task** at the bottom of a lane captures a task in the selected area and lane. Press Enter or choose **Add** to save. If the save fails, the form keeps the title available for retry. **Cancel** or Escape closes the form.
 
+Choose **Group → By Area** to group the current page of cards within each lane. Groups sort by the displayed Area name. Tasks that refer to retired Areas stay visible together under **Unavailable Area**. Open a task to move it to an available Area.
+
 ### Move or open a card
 
 - Select the card's task key, such as **MTH-42**, to open the full task. With a task key focused, use Up and Down within a lane, Left and Right between lanes, and Enter or Space to open. Press N to open quick capture in that lane.
@@ -61,7 +63,9 @@ Each lane shows up to 25 cards. Its count includes every task matching the curre
 
 Open **Overdue** from Dashboard to filter tasks across every Kanban page. The board matches Dashboard’s due-date and completion rules.
 
-Choose **Group by → By Epic** to organize each workflow lane of Household Kanban. A card uses the nearest Epic in its parent chain, even when that Epic is outside the current filter or page. Cards without a readable Epic appear under **No Epic**. Headings sort by name and include ticket numbers to distinguish matching names. Group counts reflect the current page of each lane. Close Details after changing a parent to see the card in its new group. Copy the board URL to preserve the grouping.
+Use a swimlane’s group heading to show or hide its cards with a click, Enter, or Space. The board remembers expanded and collapsed groups on this browser for each grouping choice and workflow lane. With single-key shortcuts enabled, press **C** while the board has focus to toggle all its visible groups.
+
+Choose **Group by → By Epic** to organize each workflow lane of Household Kanban. A card uses the nearest Epic in its parent chain, even when that Epic is outside the current filter or page. Cards without a readable Epic appear under **No Epic**. Headings sort by name and include ticket numbers to distinguish matching names. Group counts reflect the current page of each lane. Close Details after changing a parent to see the card in its new group. Copy the board URL to preserve the grouping. Switching between Kanban and Table preserves Epic grouping.
 
 The work-in-progress count uses all eligible cards in the lane. Reordering a card preserves the relative order of all other cards across area filters and overlapping custom lanes. After a move, the destination lane may show a different page from the one containing the moved card.
 

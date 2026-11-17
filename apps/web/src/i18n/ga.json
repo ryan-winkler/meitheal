@@ -51,6 +51,13 @@
     "skip_to_content": "Léim go dtí an t-ábhar"
   },
   "sidebar": {
+    "reorder": "Athordaigh an barra taoibh",
+    "reorder_done": "Déanta",
+    "reorder_item": "Bog {label}",
+    "reorder_up": "Bog suas",
+    "reorder_down": "Bog síos",
+    "reordered": "Bogadh {label} go suíomh {position} as {count}.",
+    "reorder_storage_error": "Níorbh fhéidir le do bhrabhsálaí ord an bharra taoibh a shábháil.",
     "board": "Clár",
     "default_board": "Réamhshocraithe",
     "create_board": "Cruthaigh clár nua",
@@ -229,6 +236,8 @@
     "group_board": "Clár",
     "group_priority": "De réir Tosaíochta",
     "group_area": "De réir Réimse",
+    "default_area": "Réimse réamhshocraithe",
+    "unavailable_area": "Réimse nach bhfuil ar fáil",
     "group_assignee": "De réir Sannaí",
     "group_status": "De réir Stádais",
     "group_rice": "De réir Scór RICE",
@@ -289,6 +298,9 @@
     "group_by_tooltip": "Grúpáil snámhlána de réir"
   },
   "table": {
+    "group_epic": "Eipic",
+    "subgroup_epic": "Ansin de réir Eipice",
+    "no_epic": "Gan Eipic",
     "filter_unassigned": "Neamhshannta",
     "filter_workflow_columns": "Colúin sreafa oibre",
     "filter_columns_load_failed": "Níorbh fhéidir na colúin sreafa oibre a lódáil.",

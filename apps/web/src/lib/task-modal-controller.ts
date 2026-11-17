@@ -611,8 +611,8 @@
                 parentLink.textContent = parentTitle;
                 const unlinkBtn = document.createElement("button");
                 unlinkParentButton = unlinkBtn
-                unlinkBtn.type = "button";
                 unlinkBtn.disabled = true
+                unlinkBtn.type = "button";
                 unlinkBtn.className = "text-xs text-danger hover:text-red-400 ml-1 td-unlink-parent";
                 unlinkBtn.title = "Remove parent";
                 unlinkBtn.textContent = "✕";

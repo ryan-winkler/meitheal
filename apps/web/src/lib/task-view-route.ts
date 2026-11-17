@@ -68,7 +68,13 @@ export function taskViewUrl(current: URL, view: TaskView, explicitFilters = fals
     url.searchParams.delete("view")
   } else {
     url.searchParams.set("view", view)
-    if (view !== "kanban" && url.searchParams.get("groupBy") === "epic") url.searchParams.delete("groupBy")
+  }
+  if (view !== "table" && url.searchParams.get("subGroupBy") === "epic") {
+    url.searchParams.delete("subGroupBy")
+  }
+  if (view !== "table" && view !== "kanban" && url.searchParams.get("groupBy") === "epic") {
+    url.searchParams.delete("groupBy")
+    url.searchParams.delete("subGroupBy")
   }
   if (view !== "table") url.searchParams.delete("tp")
   // An explicit empty search skips legacy stored filters without overriding the remembered Area.

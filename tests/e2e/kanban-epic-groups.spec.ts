@@ -97,6 +97,9 @@ test("Kanban groups Household descendants by named Epic and skips outside-Board 
     await expect(group(`epic:${inner.id}`).locator(`.kanban-card[data-id="${nested.id}"]`)).toBeVisible()
 
     const card = board.locator(`.kanban-card[data-id="${nested.id}"] .card-open-btn`)
+    const noEpicHeader = noEpic.locator("button.swimlane-header")
+    await noEpicHeader.press("Enter")
+    await expect(noEpicHeader).toHaveAttribute("aria-expanded", "false")
     await card.click()
     const drawer = page.locator("#task-detail-overlay")
     await expect(drawer.locator("#td-title")).toHaveValue("Displayed card nested")
@@ -109,12 +112,18 @@ test("Kanban groups Household descendants by named Epic and skips outside-Board 
     expect((await unlinkResponse).ok()).toBe(true)
     await expect(drawer.locator("#td-link-parent-display")).toHaveText("None")
     await drawer.getByRole("button", { name: "Close detail" }).click()
-    await expect(noEpic.locator(`.kanban-card[data-id="${nested.id}"]`)).toBeVisible()
-    await expect(card).toBeFocused()
+    await expect(noEpic.locator(`.kanban-card[data-id="${nested.id}"]`)).toHaveCount(1)
+    await expect(card).toBeHidden()
+    await expect(noEpicHeader).toBeFocused()
+    await noEpicHeader.press("Space")
+    await expect(card).toBeVisible()
 
     await page.getByRole("navigation", { name: "Task views" }).getByRole("link", { name: "Table" }).click()
     await expect(page.locator("#tasks-view-table")).toBeVisible()
-    await expect(page).toHaveURL(url => !url.searchParams.has("groupBy"))
+    await expect(page).toHaveURL(url => url.searchParams.get("groupBy") === "epic")
+    await page.getByRole("navigation", { name: "Task views" }).getByRole("link", { name: "Kanban" }).click()
+    await expect(page).toHaveURL(url => url.searchParams.get("groupBy") === "epic")
+    await expect(noEpic.locator(`.kanban-card[data-id="${nested.id}"]`)).toBeVisible()
   } finally {
     await browser?.close()
     if (fixture.exitCode === null && fixture.signalCode === null) {

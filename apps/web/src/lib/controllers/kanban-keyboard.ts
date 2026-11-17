@@ -38,7 +38,7 @@ export function initKeyboardAndSearch(signal: AbortSignal): void {
 
     // C = toggle collapse all swimlane groups
     if (e.key === "c" || e.key === "C") {
-      const toggles = board.querySelectorAll<HTMLElement>(".swimlane-group:not([hidden]) .swimlane-toggle")
+      const toggles = board.querySelectorAll<HTMLButtonElement>(".swimlane-group:not([hidden]) .swimlane-header")
       // Without swimlanes, leave the key to the global shortcut instead of swallowing it.
       if (toggles.length === 0) return
       e.preventDefault()
@@ -173,30 +173,9 @@ export function initKeyboardAndSearch(signal: AbortSignal): void {
 
   // T-1914: Keyboard navigation for kanban board
   ;(() => {
-    // Swimlane collapse event delegation
-    board.addEventListener("click", (e) => {
-      const target = e.target as HTMLElement
-      const header = target.closest(".swimlane-header")
-      if (header && !target.closest("button")) {
-        const group = header.closest(".swimlane-group")
-        if (!group) return
-        const cardsEl = group.querySelector(".swimlane-cards")
-        const toggle = header.querySelector(".swimlane-toggle")
-        if (!cardsEl) return
-        const isCollapsed = cardsEl.classList.toggle("collapsed")
-        if (toggle) {
-          toggle.classList.toggle("collapsed", isCollapsed)
-          toggle.textContent = isCollapsed ? "▶" : "▼"
-        }
-        group.classList.toggle("swimlane-collapsed", isCollapsed)
-        const type = (group as HTMLElement).dataset.swimlaneType || (group as HTMLElement).dataset.swimlaneValue || "dynamic"
-        localStorage.setItem(`meitheal-swimlane-${type}`, isCollapsed ? "collapsed" : "expanded")
-      }
-    }, { signal })
-
     const visibleEntries = (column: Element) =>
       Array.from(column.querySelectorAll<HTMLButtonElement>(".card-open-btn"))
-        .filter(btn => btn.getClientRects().length > 0 && !btn.closest(".swimlane-cards.collapsed"))
+        .filter(btn => btn.getClientRects().length > 0)
 
     board.addEventListener("keydown", (e) => {
       if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return
