@@ -14,7 +14,7 @@
 import { VALID_TASK_KINDS, VALID_TASK_TYPES } from "@meitheal/domain-tasks"
 
 import { parseCalendarDay } from "./calendar-day"
-import { evaluateFilterGroup, extractDataFromElement, type FilterGroup, type FilterOperator } from "./filter-engine"
+import { evaluateFilterGroup, extractDataFromElement, normalizeStatusRuleValue, type FilterGroup, type FilterOperator } from "./filter-engine"
 import { normalizeStatus } from "./status-config"
 import { TABLE_COLUMNS } from "./table-registry"
 import { replaceTaskBackgroundUrl, taskBackgroundUrl } from "./task-page-url"
@@ -178,10 +178,6 @@ export function writeFilterLabels(params: URLSearchParams, labels: readonly stri
   } else {
     params.set("labels", labels.join(","))
   }
-}
-
-export function normalizeStatusRuleValue(field: string, operator: string, value: string): string {
-  return field === "status" && (operator === "equals" || operator === "notEquals") ? normalizeStatus(value) : value
 }
 
 function ruleValue(value: unknown): value is string | number | boolean {

@@ -87,6 +87,10 @@ Open **Timeline** to narrow the chart by text, status, priority, task type, or a
 
 The existing cards stay visible while Meitheal loads the requested page or applies a filter. Use **Retry board** after an error. If it repeats, check the browser network log for the Tasks request and confirm the URL retains its ingress prefix.
 
+### An assignee is unavailable
+
+**Assign User** shows **No users configured** when the directory is empty, including standalone installations without a Home Assistant connection. If a configured Home Assistant roster could not be verified, use **Retry**. Any custom users and cached names from that Home Assistant connection remain available while the roster recovers.
+
 ### A task stays in its original lane
 
 Check the message after the move. If the destination is at its work-in-progress limit, free a place before retrying. If dependencies are blocking progress, open the task and check its linked work. If the connection failed, refresh to confirm the saved lane before trying again.

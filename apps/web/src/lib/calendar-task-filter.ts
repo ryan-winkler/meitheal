@@ -45,7 +45,7 @@ export function createCalendarTaskFilter(params: URLSearchParams, timezone: stri
     return isTaskVisible({ dataset: {
       title: task.title,
       search: task.title.toLowerCase(),
-      status,
+      status: task.status,
       overdue: filters.status === "overdue" && task.deferred_at === null && !isClosedStatus(status) &&
         isDueOverdue(task.due_date, timezone, today) ? "true" : undefined,
       priority: String(task.priority ?? 3),

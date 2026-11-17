@@ -76,7 +76,7 @@ function sanitizeHAUserName(value: unknown): string {
 export async function listHAUserDirectory(): Promise<{ users: HAUser[]; verified: boolean }> {
   const fingerprint = await readRosterFingerprint()
   if (fingerprint !== undefined && cachedRoster?.fingerprint !== fingerprint) invalidateUserCache()
-  if (!fingerprint) return { users: [], verified: false }
+  if (!fingerprint) return { users: [], verified: fingerprint === null }
 
   if (cachedRoster && Date.now() < cachedRoster.expiresAt && matchesCurrentHAConnection(fingerprint)) {
     return { users: cachedRoster.users, verified: true }

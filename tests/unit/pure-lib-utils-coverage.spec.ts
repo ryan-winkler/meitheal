@@ -106,6 +106,14 @@ test("filter-engine evaluates all operators, arrays, nested groups, and element 
   expect(passesAdvancedFilter(el, matchingGroup)).toBe(true)
   expect(passesAdvancedFilter(el, null)).toBe(true)
   expect(evaluateFilterGroup({ id: "empty", logic: "AND", conditions: [] }, data)).toBe(true)
+  for (const [operator, value, expected] of [
+    ["equals", "active", true], ["notEquals", "active", false],
+    ["contains", "in_progress", true], ["notContains", "in_progress", false],
+  ] as const) {
+    expect(evaluateFilterGroup({
+      id: "status", logic: "AND", conditions: [{ id: "c", field: "status", operator, value }],
+    }, { status: "in_progress" })).toBe(expected)
+  }
   expect(evaluateFilterGroup({
     id: "g3",
     logic: "AND",

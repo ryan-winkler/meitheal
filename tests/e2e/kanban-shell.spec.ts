@@ -158,15 +158,20 @@ test.describe("Tasks Shell (Kanban)", () => {
     expect(created.status()).toBe(201)
     const { id } = await created.json()
     let verified = false
-    await page.route("**/api/users", route => route.fulfill({ json: {
-      users: [], ha_connected: true, ha_roster_verified: verified,
-    } }))
     try {
       await page.reload()
       const trigger = page.locator(`.kanban-card[data-id="${id}"] .card-assign-btn`)
       await trigger.press("Enter")
       const dialog = page.getByRole("dialog", { name: "Assign User" })
       const retry = dialog.getByRole("button", { name: "Retry" })
+      await expect(dialog).toContainText("No users configured")
+      await expect(retry).toHaveCount(0)
+      await page.keyboard.press("Escape")
+      await page.route("**/api/users", route => route.fulfill({ json: {
+        users: [], ha_connected: true, ha_roster_verified: verified,
+      } }))
+      await page.reload()
+      await trigger.press("Enter")
       await expect(dialog).toContainText("Home Assistant assignees could not be verified")
       await expect(dialog.getByText("No users configured")).toHaveCount(0)
       await expect(retry).toBeFocused()

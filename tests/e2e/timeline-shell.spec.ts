@@ -243,6 +243,8 @@ test.describe("Tasks Shell (Timeline/GANTT)", () => {
       const milestoneControl = chart.getByRole("button", { name: new RegExp(title + ", overdue") })
       await milestoneControl.focus()
       await expect(milestoneControl).toHaveCSS("outline-color", "rgb(166, 192, 249)")
+      await page.getByText("Legend", { exact: true }).click()
+      await expect(page.getByText("Overdue milestone", { exact: true })).toBeVisible()
     } finally {
       await request.delete(`/api/tasks/${id}`, { headers })
     }

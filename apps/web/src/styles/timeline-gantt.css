@@ -307,11 +307,11 @@
 }
 
 .legend-diamond {
-  font-size: 10px;
-  color: var(--accent);
   width: 8px;
-  text-align: center;
+  height: 8px;
+  border: 1.5px solid var(--danger-text);
   flex-shrink: 0;
+  transform: rotate(45deg);
 }
 
 /* ── Skeleton ───────────────────────────────────────────────────────────── */

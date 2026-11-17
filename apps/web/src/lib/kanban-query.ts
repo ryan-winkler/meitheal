@@ -1,5 +1,5 @@
-import type { FilterCondition, FilterGroup } from "./filter-engine"
-import { normalizeStatusRuleValue, readFilterLabels, readTaskKindFilter, writeFilterLabels, type FilterState } from "./filter-state"
+import { normalizeStatusRuleValue, type FilterCondition, type FilterGroup } from "./filter-engine"
+import { readFilterLabels, readTaskKindFilter, writeFilterLabels, type FilterState } from "./filter-state"
 import { normalizeStatus } from "./status-config"
 
 export const KANBAN_PAGE_SIZE = 25
