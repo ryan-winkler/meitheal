@@ -3,6 +3,7 @@ import { t } from "../../i18n/translations";
 import type { Locale } from "../../lib/locale";
 import Icon from "../ui/Icon.astro";
 import SidebarNavList from "./SidebarNavList.astro";
+import SidebarReorderHandle from "./SidebarReorderHandle.astro";
 import TaskCreationMenu from "./TaskCreationMenu.astro";
 import NavOverflowMore from "./NavOverflowMore.astro";
 import SidebarHierarchyTree from "./SidebarHierarchyTree.astro";
@@ -182,7 +183,7 @@ const rawOrder: NavKey[] =
     ? (sidebarConfig.order as string[]).filter((k: string) => k in NAV_ITEMS)
     : [];
 // Fall back to defaults if saved order is empty / invalid, then append any missing defaults
-const order: NavKey[] = rawOrder.length > 0 ? rawOrder : [...DEFAULT_ORDER];
+const order: NavKey[] = rawOrder.length > 0 ? [...new Set(rawOrder)] : [...DEFAULT_ORDER];
 DEFAULT_ORDER.forEach((k) => {
   if (!order.includes(k)) order.push(k);
 });
@@ -308,20 +309,48 @@ const remainingItems = areaPosition < 0 ? [] : navItems.slice(areaPosition + 1)
       </TaskCreationMenu>
     </div>
 
-    <div class="sidebar-scroll" data-nav-overflow="sidebar">
-      {primaryItems.length > 0 && <SidebarNavList navItems={primaryItems} taskCounts={taskCounts} />}
+    <div class="sidebar-scroll" data-nav-overflow="sidebar" data-sidebar-default-order={JSON.stringify(navItems.map(item => item.key))}>
+      <SidebarNavList navItems={primaryItems} taskCounts={taskCounts}>
+        {namedBoardDirectoryExists && primaryItems.some(item => item.key === "boards") &&
+          <ul slot="boards" class="sidebar-board-shortcuts" data-sidebar-boards hidden aria-label="Visible Boards"></ul>}
+      </SidebarNavList>
       {areaPosition >= 0 && (
-        <div id="sidebar-hierarchy-panel">
+        <div id="sidebar-hierarchy-panel" data-sidebar-group="areas">
           <a href="/planning#spaces" class="nav-link sidebar-compact-areas" data-tooltip={areaLabel} aria-label={areaLabel}>
             <span class="nav-icon"><Icon name="folder" /></span>
           </a>
           <SidebarHierarchyTree locale={locale} label={areaLabel} />
+          <SidebarReorderHandle label={areaLabel} locale={locale} />
         </div>
       )}
-      {remainingItems.length > 0 && <SidebarNavList navItems={remainingItems} taskCounts={taskCounts} />}
-      {namedBoardDirectoryExists && <ul class="sidebar-board-shortcuts" data-sidebar-boards hidden aria-label="Visible Boards"></ul>}
+      {areaPosition >= 0 && (
+        <SidebarNavList navItems={remainingItems} taskCounts={taskCounts}>
+          {namedBoardDirectoryExists && remainingItems.some(item => item.key === "boards") &&
+            <ul slot="boards" class="sidebar-board-shortcuts" data-sidebar-boards hidden aria-label="Visible Boards"></ul>}
+        </SidebarNavList>
+      )}
       <NavOverflowMore id="sidebar-more-destinations" list locale={locale} />
     </div>
+  </div>
+
+  <div class="sidebar-reorder-tools" data-sidebar-reorder-tools hidden
+    data-moved={t("sidebar.reordered", locale)} data-storage-error={t("sidebar.reorder_storage_error", locale)}>
+    <button type="button" class="sidebar-reorder-button" aria-pressed="false" data-sidebar-reorder-toggle
+      data-start-label={t("sidebar.reorder", locale)} data-done-label={t("sidebar.reorder_done", locale)}>
+      <Icon name="adjustments-horizontal" size={16} />
+      <span>{t("sidebar.reorder", locale)}</span>
+    </button>
+    <div class="sidebar-reorder-moves" data-sidebar-reorder-moves hidden>
+      <button type="button" class="sidebar-reorder-button" data-sidebar-move="-1"
+        aria-label={t("sidebar.reorder_up", locale)} title={t("sidebar.reorder_up", locale)} disabled>
+        <Icon name="chevron-down" size={16} class="rotate-180" />
+      </button>
+      <button type="button" class="sidebar-reorder-button" data-sidebar-move="1"
+        aria-label={t("sidebar.reorder_down", locale)} title={t("sidebar.reorder_down", locale)} disabled>
+        <Icon name="chevron-down" size={16} />
+      </button>
+    </div>
+    <span role="status" class="sr-only" data-sidebar-reorder-status></span>
   </div>
 
   {gamificationEnabled && (
@@ -338,7 +367,18 @@ const remainingItems = areaPosition < 0 ? [] : navItems.slice(areaPosition + 1)
 <script>
   import { pageLifecycle } from "@lib/page-lifecycle"
   import { bindSidebarBoards } from "@lib/sidebar-boards"
-  pageLifecycle.onPageLoad(bindSidebarBoards)
+  import { bindSidebarReorder } from "@lib/sidebar-order"
+
+  let boundSignal: AbortSignal | undefined
+  pageLifecycle.onPageLoad(signal => {
+    if (boundSignal === signal) return
+    boundSignal = signal
+    bindSidebarBoards(signal)
+    const sidebar = document.getElementById("sidebar")
+    if (sidebar) {
+      bindSidebarReorder(sidebar, signal)
+    }
+  })
 </script>
 
 <style>
@@ -687,5 +727,86 @@ const remainingItems = areaPosition < 0 ? [] : navItems.slice(areaPosition + 1)
     :global(.sidebar .nav-link:hover) {
       transform: none;
     }
+  }
+</style>
+
+<style is:global>
+  #sidebar .sidebar-reorder-tools {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-block-start: 4px;
+  }
+
+  #sidebar .sidebar-reorder-tools[hidden],
+  #sidebar [data-sidebar-reorder-moves][hidden],
+  #sidebar .sidebar-reorder-handle {
+    display: none;
+  }
+
+  #sidebar[data-sidebar-reordering] .sidebar-reorder-handle {
+    display: inline-flex;
+    position: absolute;
+    inset-block-start: 2px;
+    inset-inline-end: 0;
+    cursor: grab;
+  }
+
+  #sidebar[data-sidebar-reordering] [data-sidebar-group]:has(> .sidebar-reorder-handle) {
+    position: relative;
+    padding-inline-end: var(--sidebar-reorder-target, 30px);
+    min-block-size: var(--sidebar-reorder-target, 30px);
+  }
+
+  #sidebar [data-sidebar-reorder-status]:not(.sr-only) {
+    flex-basis: 100%;
+    color: var(--text-secondary);
+    font-size: .75rem;
+  }
+  #sidebar[data-sidebar-reordering] #sidebar-hierarchy-panel {
+    padding-inline-end: 0;
+  }
+  #sidebar[data-sidebar-reordering] #sidebar-hierarchy-panel #project-nav-group-toggle {
+    padding-inline-end: var(--sidebar-reorder-target, 30px);
+  }
+
+  #sidebar .sidebar-reorder-moves { display: flex; gap: 2px; }
+  #sidebar :is(.sidebar-reorder-button, .sidebar-reorder-handle) {
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-inline-size: var(--sidebar-reorder-target, 30px);
+    min-block-size: var(--sidebar-reorder-target, 30px);
+    padding-inline: 4px;
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+  }
+  #sidebar .sidebar-reorder-button { display: inline-flex; cursor: pointer; }
+  #sidebar .sidebar-reorder-button:disabled { opacity: .4; cursor: default; }
+  #sidebar :is(.sidebar-reorder-button, .sidebar-reorder-handle):is(:hover:enabled, :focus-visible, [aria-pressed="true"]) {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+  }
+  #sidebar :is(.sidebar-reorder-button, .sidebar-reorder-handle):focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+  }
+  #sidebar .sidebar-reorder-handle:active { cursor: grabbing; }
+  #sidebar :is(.sidebar-reorder-button, .sidebar-reorder-handle):active:enabled { transform: scale(.97); }
+  #sidebar [data-sidebar-drop="before"] { box-shadow: inset 0 2px var(--accent); }
+  #sidebar [data-sidebar-drop="after"] { box-shadow: inset 0 -2px var(--accent); }
+
+  @media (min-width: 769px) {
+    body.sidebar-collapsed #sidebar .sidebar-reorder-tools,
+    :root[data-appearance-navigation="navbar"] #sidebar .sidebar-reorder-tools {
+      display: none;
+    }
+  }
+
+  @media (pointer: coarse) {
+    #sidebar { --sidebar-reorder-target: 44px; }
   }
 </style>
