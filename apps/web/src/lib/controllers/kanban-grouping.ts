@@ -3,18 +3,49 @@
  * @domain kanban
  */
 
-function restoreCollapse(group: Element, cards: Element | null, toggle: Element | null, key: string): void {
-  if (localStorage.getItem(`meitheal-swimlane-${key}`) !== "collapsed" || !cards) return
-  cards.classList.add("collapsed")
-  if (toggle) {
-    toggle.classList.add("collapsed")
-    toggle.textContent = "▶"
-  }
-  group.classList.add("swimlane-collapsed")
+function collapseKey(board: HTMLElement, group: HTMLElement): string {
+  const column = group.closest<HTMLElement>(".kanban-column")
+  return `meitheal-swimlane-v2-${JSON.stringify([board.dataset.groupBy, column?.dataset.laneId, group.dataset.swimlaneType])}`
+}
+
+function setCollapsed(group: HTMLElement, collapsed: boolean): void {
+  const header = group.querySelector<HTMLButtonElement>(".swimlane-header")
+  const cards = group.querySelector<HTMLElement>(".swimlane-cards")
+  if (!header || !cards) return
+
+  if (collapsed && cards.contains(document.activeElement)) header.focus({ preventScroll: true })
+  cards.hidden = collapsed
+  group.classList.toggle("swimlane-collapsed", collapsed)
+  header.setAttribute("aria-expanded", String(!collapsed))
+}
+
+function initCollapse(board: HTMLElement, signal: AbortSignal): void {
+  const groups = board.querySelectorAll<HTMLElement>(".swimlane-group:not([hidden])")
+  groups.forEach((group, index) => {
+    const header = group.querySelector<HTMLButtonElement>(".swimlane-header")
+    const cards = group.querySelector<HTMLElement>(".swimlane-cards")
+    if (!header || !cards) return
+
+    cards.id = `kanban-swimlane-cards-${index}`
+    header.setAttribute("aria-controls", cards.id)
+    const key = collapseKey(board, group)
+    try {
+      const stored = localStorage.getItem(key)
+        ?? localStorage.getItem(`meitheal-swimlane-${group.dataset.swimlaneType}`)
+      setCollapsed(group, stored === "collapsed")
+    } catch {
+      setCollapsed(group, false)
+    }
+    header.addEventListener("click", () => {
+      const collapsed = !cards.hidden
+      setCollapsed(group, collapsed)
+      try { localStorage.setItem(key, collapsed ? "collapsed" : "expanded") } catch { /* Storage is optional. */ }
+    }, { signal })
+  })
 }
 
 /** Group the server-selected page without replacing authoritative lane totals. */
-export function initKanbanGrouping(board: HTMLElement): void {
+export function initKanbanGrouping(board: HTMLElement, signal: AbortSignal): void {
   const mode = board.dataset.groupBy ?? "none"
 
   if (mode === "type") {
@@ -106,11 +137,13 @@ export function initKanbanGrouping(board: HTMLElement): void {
         const accentColor = colorMap[key] || defaultAccent
         group.style.borderTop = `3px solid ${accentColor}`
 
-        const header = document.createElement("div")
+        const header = document.createElement("button")
+        header.type = "button"
         header.className = "swimlane-header"
         const label = mode === "area" ? areaLabel(key, cards[0]) : icons[key] || "🟡 P3 — Medium"
         const toggleSpan = document.createElement("span")
         toggleSpan.className = "swimlane-toggle"
+        toggleSpan.setAttribute("aria-hidden", "true")
         toggleSpan.textContent = "▼"
 
         // Color dot (matches static .swimlane-type-dot)
@@ -126,9 +159,6 @@ export function initKanbanGrouping(board: HTMLElement): void {
         countSpan.textContent = String(cards.length)
         header.append(toggleSpan, dotSpan, labelSpan, countSpan)
 
-        // Collapse toggle — matches static swimlane CSS class pattern
-        header.style.cursor = "pointer"
-
         const swimlaneCards = document.createElement("div")
         swimlaneCards.className = "swimlane-cards"
         cards.forEach((card) => {
@@ -140,18 +170,8 @@ export function initKanbanGrouping(board: HTMLElement): void {
         group.appendChild(header)
         group.appendChild(swimlaneCards)
         cardsContainer.appendChild(group)
-
-        // Restore saved collapse state for dynamic swimlane
-        restoreCollapse(group, swimlaneCards, toggleSpan, key)
       }) // end sortedKeys.forEach
     }) // end col.forEach
   } // end else if
-  // Swimlane header collapse toggle — CSS animation + localStorage persistence
-  board.querySelectorAll<HTMLElement>(".swimlane-header[data-type]").forEach((header) => {
-    const group = header.closest(".swimlane-group")
-    if (!group) return
-    const cards = group.querySelector(".swimlane-cards")
-    const toggle = header.querySelector(".swimlane-toggle")
-    restoreCollapse(group, cards, toggle, header.dataset.type || "unknown")
-  })
+  initCollapse(board, signal)
 }

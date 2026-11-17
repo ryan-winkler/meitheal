@@ -1,0 +1,13 @@
+---
+import { t } from "../../i18n/translations"
+import type { Locale } from "../../lib/locale"
+import Icon from "../ui/Icon.astro"
+
+const { label, locale } = Astro.props as { label: string; locale: Locale }
+const name = t("sidebar.reorder_item", locale, { label })
+---
+
+<button type="button" class="sidebar-reorder-handle" data-sidebar-reorder-handle={label}
+  draggable="true" aria-keyshortcuts="ArrowUp ArrowDown" aria-label={name} title={name} aria-pressed="false">
+  <Icon name="menu-2" size={16} />
+</button>

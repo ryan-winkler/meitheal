@@ -52,6 +52,13 @@
     "skip_to_content": "Skip to content"
   },
   "sidebar": {
+    "reorder": "Reorder sidebar",
+    "reorder_done": "Done",
+    "reorder_item": "Move {label}",
+    "reorder_up": "Move up",
+    "reorder_down": "Move down",
+    "reordered": "{label} moved to position {position} of {count}.",
+    "reorder_storage_error": "Your browser couldn’t save the sidebar order.",
     "board": "Board",
     "default_board": "Default",
     "create_board": "Create new board",

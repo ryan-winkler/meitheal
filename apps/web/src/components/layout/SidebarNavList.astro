@@ -1,5 +1,6 @@
 ---
 import Icon from "../ui/Icon.astro"
+import SidebarReorderHandle from "./SidebarReorderHandle.astro"
 import { t } from "../../i18n/translations"
 import { TASK_VIEW_ICONS, TASK_VIEW_LABELS, taskViewUrl, type TaskView } from "../../lib/task-view-route"
 
@@ -40,7 +41,7 @@ function isExternal(href: string): boolean {
       if (item.key === "tasks") {
         return (
           <>
-            <li class="nav-item nav-item--tasks relative">
+            <li class="nav-item nav-item--tasks relative" data-sidebar-group={item.key}>
               <div class="nav-row flex items-center gap-1 min-w-0">
                 <a
                   href={item.href}
@@ -101,7 +102,7 @@ function isExternal(href: string): boolean {
               </ul>
               <template id="tasks-view-pinned-tpl">
                 {views.map(view => (
-                  <li class="task-view-pinned" data-task-view-pinned-item={view.id}>
+                  <li class="task-view-pinned" data-task-view-pinned-item={view.id} data-sidebar-group="tasks">
                     <span class="task-view-pinned-label">{t("nav.pinned_views", locale)}</span>
                     <div class="nav-row flex items-center gap-1 min-w-0">
                       <a href={view.href} class="nav-link flex-1 min-w-0" data-task-view-link={view.id}
@@ -117,13 +118,14 @@ function isExternal(href: string): boolean {
                   </li>
                 ))}
               </template>
+              <SidebarReorderHandle label={item.label} locale={locale} />
             </li>
           </>
         )
       }
 
       return (
-        <li>
+        <li data-sidebar-group={item.key} data-sidebar-pin-presence={item.key === "system-pinned" || undefined} hidden={item.key === "system-pinned"}>
           <a
             href={item.href}
             class={`nav-link ${item.isActive ? "active" : ""} ${external ? "nav-link--external" : ""}`}
@@ -150,6 +152,8 @@ function isExternal(href: string): boolean {
               <span class="nav-external-icon" aria-hidden="true">↗</span>
             )}
           </a>
+          {item.key === "boards" && <slot name="boards" />}
+          <SidebarReorderHandle label={item.label} locale={locale} />
         </li>
       )
     })
@@ -378,13 +382,14 @@ function isExternal(href: string): boolean {
   function bindTaskViews(signal: AbortSignal) {
     const nav = document.querySelector<HTMLElement>('[data-nav-overflow="sidebar"]')
     const group = nav?.querySelector<HTMLElement>(".nav-item--tasks")
-    const primaryList = nav?.querySelector<HTMLElement>("[data-task-views-primary]")
     const template = group?.querySelector<HTMLTemplateElement>("#tasks-view-pinned-tpl")
     const submenu = group?.querySelector<HTMLElement>("#tasks-nav-submenu")
     const trigger = group?.querySelector<HTMLButtonElement>("#tasks-submenu-toggle")
-    if (!nav || !group || !primaryList || !template || !submenu || !trigger) return
+    if (!nav || !group || !template || !submenu || !trigger) return
 
     const render = (prefs = readTaskNavPrefs()) => {
+      const primaryList = nav.querySelector<HTMLElement>("[data-task-views-primary]")
+      if (!primaryList) return
       const existing = new Map<string, HTMLElement>()
       let mutated = false
       for (const item of nav.querySelectorAll<HTMLElement>("[data-task-view-pinned-item]")) {

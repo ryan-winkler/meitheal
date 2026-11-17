@@ -201,6 +201,12 @@ The timestamp returned when creating a task is its initial stored version. Use i
 
 In a disposable ingress session, open **Planning → Triage**. Confirm the queue is paged, then open Details and accept a card using the keyboard. Reload the queue in Hidden mode and check that it displays the Table handoff. If an older service worker controls the browser, use **Reload Triage** before verifying the live queue. See [Triage household tasks](triage-workflow.md).
 
+### Verify sidebar navigation and task pins
+
+In a disposable browser session, select **Expand on hover or focus**, open the rail with the edge arrow, and close it with the arrow. Move the pointer within the rail after closing with **Ctrl+B**, then leave and re-enter to verify hover expansion. Reorder **Tasks** and the Household **Groups** in the sidebar, reload, and check that the task views and project tree move with their groups. On a phone, use **Move up** or **Move down** in the drawer.
+
+In disposable HTTPS ingress, pin a Household task in Details. Open **Pinned tasks** from the sidebar and use the row’s thumbtack to remove the last pin. The sidebar destination should disappear. Switch to a second Home Assistant user and confirm their navigation uses their own pins. Run `e2e/sidebar-personalization.spec.ts` and `e2e/sidebar-pin-presence.spec.ts` against a built App for browser coverage.
+
 ## Planning RICE Verification
 
 In a disposable ingress session, open **Planning → RICE**. Edit an open task, check the live estimate, and save it. Confirm the task appears in Ranked work with the new score. Open the editor in two sessions and save in one. Verify the other offers **Reload score** and the first score is retained. See [Rank work with RICE](planning-rice.md).

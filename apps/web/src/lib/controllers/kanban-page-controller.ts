@@ -149,12 +149,16 @@ export function initKanbanPage(signal: AbortSignal): void {
       renderStatus("")
 
       if (!dataOnly && shouldFocus && (focus || active === retry)) {
+        const retainedControl = previousDetailFocus && findKanbanDetailFocus(board, previousDetailFocus)
         const card = focus?.taskId ? board.querySelector<HTMLElement>(`.kanban-card[data-id="${CSS.escape(focus.taskId)}"] .card-more-btn`) : null
+        const collapsedGroup = card?.closest(".swimlane-cards[hidden]")?.closest(".swimlane-group")
+        const control = retainedControl ||
+          (collapsedGroup ? collapsedGroup.querySelector<HTMLButtonElement>(".swimlane-header") : card)
         const lane = focus?.lane ? board.querySelector<HTMLElement>(`.kanban-column[data-status="${CSS.escape(focus.lane)}"]`) : null
         const range = lane && (lane.querySelector<HTMLElement>("[data-kanban-range]") ??
           lane.querySelector<HTMLElement>(".kanban-column-header"))
-        const retainedControl = previousDetailFocus && findKanbanDetailFocus(board, previousDetailFocus)
-        ;(retainedControl || card || range || board.querySelector<HTMLElement>(".kanban-column-header"))?.focus()
+        const destination = control || range || board.querySelector<HTMLElement>(".kanban-column-header")
+        destination?.focus()
       }
     } catch {
       if (!request.signal.aborted && !signal.aborted) {

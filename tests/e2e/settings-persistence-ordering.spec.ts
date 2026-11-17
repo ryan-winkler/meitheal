@@ -72,7 +72,12 @@ test("invalid custom definitions are rejected before any configuration mutation"
   const before = await (await request.get("/api/rules")).json()
   const writes: string[] = []
   await page.route("**/api/**", route => {
-    if (route.request().method() !== "GET") writes.push(route.request().url())
+    const request = route.request()
+    const method = request.method()
+    const path = new URL(request.url()).pathname
+    const readsPinPresence = method === "POST" && path.endsWith("/api/task-pins") &&
+      request.postDataJSON()?.action === "presence"
+    if (method !== "GET" && method !== "HEAD" && !readsPinPresence) writes.push(request.url())
     return route.continue()
   })
   await page.goto("/settings#rules-lenses-settings")
