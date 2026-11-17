@@ -63,3 +63,15 @@
   .boards-list .board-tile { max-width: none; }
   .board-lane { flex-basis: 100%; }
 }
+
+.board-context-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-block: 0.75rem;
+}
+
+.board-context-tabs a[aria-current="page"] {
+  font-weight: 600;
+  color: var(--accent);
+}

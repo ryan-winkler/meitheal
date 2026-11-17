@@ -49,12 +49,13 @@ const {
 // i18n: resolve locale from cookie
 const cookieLocale = Astro.cookies.get("meitheal-locale")?.value;
 const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
+const householdWorkspace = Astro.props.householdWorkspace === true
 const renderedView = requestedTaskView(Astro.url.searchParams) ?? "kanban"
 const heading = renderedView === "kanban" ? t("kanban.title", locale)
   : renderedView === "table" ? "Table View" : TASK_VIEW_LABELS[renderedView]
 const currentUrl = new URL(Astro.url)
 // The HTML ingress rewriter adds the mount path to these root-relative links.
-currentUrl.pathname = "/tasks"
+currentUrl.pathname = householdWorkspace ? "/boards/household" : "/tasks"
 if (currentUrl.searchParams.has("boardRefresh") ||
     (renderedView === "table" && currentUrl.searchParams.has("tableRefresh"))) {
   currentUrl.searchParams.delete("boardRefresh")
@@ -253,10 +254,10 @@ if (groupByProject) {
 
 ---
 
-<Layout title={`Meitheal — ${heading}`}>
+<Layout title={`Meitheal — ${householdWorkspace ? "Household · " : ""}${heading}`}>
 
   <UnifiedBar
-    title={heading}
+    title={householdWorkspace ? "Household" : heading}
     titleIcon={TASK_VIEW_ICONS[renderedView]}
     tabs={[]}
     searchPlaceholder="Search Meitheal…"
@@ -270,6 +271,11 @@ if (groupByProject) {
   >
     <AreaSelector slot="context" areas={areas} />
   </UnifiedBar>
+  {householdWorkspace && <nav class="board-context-tabs" aria-label="Board workspace">
+    <a class="btn btn-ghost" href="/boards">Boards</a>
+    <a class="btn btn-ghost" href="/boards/household" aria-current="page">Tasks</a>
+    <a class="btn btn-ghost" href="/boards/household?view=groups" data-astro-reload>Groups</a>
+  </nav>}
 
   {renderedView === "kanban" && <>
   <!-- Kanban controls and board are rendered only for the selected view. -->
