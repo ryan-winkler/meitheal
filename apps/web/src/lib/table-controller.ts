@@ -47,6 +47,8 @@ import { reconcileTableDeferral } from "@lib/controllers/table-deferral"
 // =============================================================================
 
 type AreaDisplay = ReturnType<typeof getGroupDisplay>
+type RenderGroupStats = TableGroupStats<number | null>
+type RenderPageStats = TablePageStats<number | null>
 
 // =============================================================================
 // State
@@ -60,12 +62,14 @@ let currentGroupBy = "none"
 
 const PAGE_FOCUS_KEY = "meitheal:table-page-focus"
 
-function hasTablePageStats(stats: TablePageStats | null): stats is TablePageStats {
-  const hasTotals = (totals: TableGroupStats) =>
-    Number.isFinite(totals?.count) && Number.isFinite(totals?.riceSum) && Number.isFinite(totals?.riceCount)
+function hasTablePageStats(stats: RenderPageStats | null): stats is RenderPageStats {
+  // JSON serializes an overflowing RICE sum as null.
+  const hasTotals = (totals: RenderGroupStats) =>
+    Number.isFinite(totals?.count) && Number.isFinite(totals?.riceCount) &&
+    (totals.riceSum === null || Number.isFinite(totals.riceSum))
   return Boolean(stats && hasTotals(stats.total) && [stats.groups, stats.subgroups].every(entries =>
     Array.isArray(entries) && entries.every(entry =>
-      Array.isArray(entry) && typeof entry[0] === "string" && hasTotals(entry[1]),
+      Array.isArray(entry) && entry.length === 2 && typeof entry[0] === "string" && hasTotals(entry[1]),
     ),
   ))
 }
@@ -143,7 +147,7 @@ function init(signal: AbortSignal) {
   let resetPageOnRetry = false
   const replacedTitleEditors = new WeakSet<HTMLElement>()
 
-  const renderRows = (stats = JSON.parse(table.dataset.tableStats ?? "{}") as TablePageStats) => {
+  const renderRows = (stats = JSON.parse(table.dataset.tableStats ?? "{}") as RenderPageStats) => {
     currentGroupBy = applied.groupBy ?? "none"
     applyGrouping(currentGroupBy, applied.subGroupBy ?? "none", stats, areas)
     applyColumns(applied.columns)
@@ -199,7 +203,7 @@ function init(signal: AbortSignal) {
         throw new Error("Table refresh missing content")
       }
       const page = Number(replacement.dataset.tablePage)
-      const stats = JSON.parse(replacement.dataset.tableStats ?? "null") as TablePageStats | null
+      const stats = JSON.parse(replacement.dataset.tableStats ?? "null") as RenderPageStats | null
       if (!Number.isSafeInteger(page) || page < 1 || !hasTablePageStats(stats)) {
         throw new Error("Table refresh missing pagination or group totals")
       }
@@ -403,7 +407,7 @@ function applyAreaCatalog(catalog: Element | null, bulkArea: HTMLSelectElement |
 // Row Grouping Engine
 // =============================================================================
 
-function applyGrouping(groupBy: string, subGroupBy: string, stats: TablePageStats, areas: Map<string, AreaDisplay>) {
+function applyGrouping(groupBy: string, subGroupBy: string, stats: RenderPageStats, areas: Map<string, AreaDisplay>) {
   const tbody = document.querySelector<HTMLElement>("#task-table tbody")
   if (!tbody) return
 
@@ -700,14 +704,15 @@ function setupGroupHeaderListeners(tbody: HTMLElement, signal: AbortSignal) {
   }, { signal })
 }
 
-function renderSummaryRows(tbody: HTMLElement, groups: Map<string, TableGroupStats>, total: TableGroupStats) {
-  function summary(stats: TableGroupStats, grandTotal = false) {
+function renderSummaryRows(tbody: HTMLElement, groups: Map<string, RenderGroupStats>, total: RenderGroupStats) {
+  function summary(stats: RenderGroupStats, grandTotal = false) {
     const row = document.createElement("tr")
     row.className = grandTotal ? "grand-total-row" : "group-summary-row"
     const cell = row.insertCell()
     cell.colSpan = TABLE_COLUMNS.length + 2
     cell.className = grandTotal ? "grand-total-cell" : "group-summary-cell"
-    const avgRice = stats.riceCount > 0 ? (stats.riceSum / stats.riceCount).toFixed(1) : "—"
+    const avgRice = stats.riceCount > 0 && stats.riceSum !== null
+      ? (stats.riceSum / stats.riceCount).toFixed(1) : "—"
     const labelSpan = document.createElement("span")
     labelSpan.className = "summary-label"
     labelSpan.textContent = `${grandTotal ? "Total: " : ""}${stats.count} task${stats.count !== 1 ? "s" : ""}`

@@ -24,7 +24,11 @@ test("Table keeps Area group names and bulk choices in sync with accepted rows",
     const areaId = await createArea(known)
     const retiredId = await createArea("Retired room")
     for (const [area_id, suffix] of [[areaId, "named"], [retiredId, "retired"], ["default", "default"]]) {
-      const response = await request.post("/api/tasks", { headers, data: { title: `${term} ${suffix}`, area_id } })
+      // The scores are finite individually, but their sum overflows when both rows match.
+      const framework_payload = suffix === "default" ? {} : { rice: { reach: 1e308, impact: 1, confidence: 1, effort: 1 } }
+      const response = await request.post("/api/tasks", {
+        headers, data: { title: `${term} ${suffix}`, area_id, framework_payload: JSON.stringify(framework_payload) },
+      })
       expect(response.status(), await response.text()).toBe(201)
       taskIds.push((await response.json()).id)
     }
@@ -119,6 +123,7 @@ test("Table keeps Area group names and bulk choices in sync with accepted rows",
     await expect(named.locator(".group-label")).toHaveText(renamed)
     await expect(option).toHaveText(`⚡ ${renamed}`)
     await expect(bulk).toHaveValue(areaId)
+    await expect(page.locator(".grand-total-row .summary-rice")).toHaveText("Avg RICE: 1e+308")
 
     invalidStatsNext = true
     await input.fill(`${term} default`)
@@ -144,6 +149,7 @@ test("Table keeps Area group names and bulk choices in sync with accepted rows",
     await expect(named.getByRole("button", { name: "Toggle sub-group Unavailable Area" })).toBeVisible()
     await expect(option).toHaveCount(0)
     await expect(bulk).toHaveValue("")
+    await expect(page.locator(".grand-total-row .summary-rice")).toHaveText("Avg RICE: —")
     await expect(bulk).not.toHaveAttribute("data-changed-during-refresh")
     expect(writes).toEqual([])
   } finally {
