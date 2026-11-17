@@ -381,8 +381,8 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
           <option value="title-asc">Title A-Z</option>
           <option value="title-desc">Title Z-A</option>
         </select>
-        <button type="button" id="today-clear-filters" class="btn btn-sm" title="Clear filters">
-          ✕
+        <button type="button" id="today-clear-filters" class="btn btn-sm" title="Clear filters" aria-label="Clear filters">
+          <Icon name="x" size={16} />
         </button>
         <button type="button" id="batch-mode-toggle" class="btn btn-sm" title="Toggle multi-select mode" aria-pressed="false" hidden><Icon name="checkbox" size={16} /></button>
       </div>

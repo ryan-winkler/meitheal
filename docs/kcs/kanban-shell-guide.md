@@ -89,7 +89,7 @@ The existing cards stay visible while Meitheal loads the requested page or appli
 
 ### An assignee is unavailable
 
-**Assign User** shows **No users configured** when the directory is empty, including standalone installations without a Home Assistant connection. If the Home Assistant roster could not be verified, check the connection in **Settings → Connected Services** and use **Retry**. Standalone connections need both a URL and a token. Any custom users and cached names from that Home Assistant connection remain available while the roster recovers.
+**Assign User** shows **No users configured** when the directory is empty, including standalone installations without a Home Assistant connection. If the Home Assistant roster could not be verified, check the connection in **Settings → Connected Services** and use **Retry**. Standalone connections need both a URL and a token. Any custom users and cached names from that Home Assistant connection remain available while the roster recovers. Table resolves the same display names after a page or filter change. If a name is unavailable, open Details to check the assignment.
 
 ### A task stays in its original lane
 

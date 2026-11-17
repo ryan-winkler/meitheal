@@ -22,6 +22,7 @@ import { pageLifecycle } from "@lib/page-lifecycle"
 import { initPageShellNavigation } from "@lib/page-shell-controller"
 import { escapeHtml, sanitizeCssColor } from "@lib/safe-html"
 import { openTaskDetailHandoff } from "@lib/task-detail-handoff"
+import { hydrateTaskAssignees } from "@lib/task-assignee-display"
 import { replaceTaskBackgroundUrl, taskBackgroundUrl } from "@lib/task-page-url"
 import { loadTableColumnPreferences, TABLE_COLUMNS, TABLE_SECTIONS } from "@lib/table-registry"
 import { getRememberedAreaId } from "@lib/area-selector-controller"
@@ -122,6 +123,7 @@ function init(signal: AbortSignal) {
   const message = status?.querySelector<HTMLElement>("[data-table-refresh-message]")
   const retry = status?.querySelector<HTMLButtonElement>("[data-table-retry]")
   if (!table || !container || !tbody || !status || !message || !retry) return
+  void hydrateTaskAssignees(tbody, signal)
 
   const initial = loadTableFilterState()
   initial.area ??= getRememberedAreaId()
@@ -207,6 +209,7 @@ function init(signal: AbortSignal) {
       table.dataset.tablePage = replacement.dataset.tablePage
       table.dataset.tableStats = replacement.dataset.tableStats
       tbody.replaceChildren(...replacement.tBodies[0].children)
+      void hydrateTaskAssignees(tbody, signal)
       for (const [current, fresh] of fragments) {
         current!.hidden = fresh!.hidden
         if (current!.matches("#task-summary, #table-pagination")) current!.replaceChildren(...fresh!.childNodes)

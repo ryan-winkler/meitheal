@@ -5,7 +5,7 @@ test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the disposable Me
 const themes = ["light", "dark", "knight-rider", "auto", "custom"] as const
 
 for (const theme of themes) {
-  test(`Today and Board keep names, dates, and controls readable in ${theme}`, async ({ page, request }, testInfo) => {
+  test(`Today, Board and Table keep names, dates, and controls readable in ${theme}`, async ({ page, request }, testInfo) => {
     const assignee = `Aleksandra Wiśniewska-Kowalczyk (${theme})`
     const person = await request.post("/api/users/custom", { data: { name: assignee } })
     expect(person.status()).toBe(201)
@@ -124,6 +124,22 @@ for (const theme of themes) {
         })
       })).toBe(true)
       await page.screenshot({ path: testInfo.outputPath(`${theme}-board-mobile.png`), animations: "disabled" })
+
+      await page.setViewportSize({ width: 1680, height: 900 })
+      await page.goto("/tasks?view=table#table")
+      const tableRow = page.locator(`#task-table .table-row[data-id="${id}"]`)
+      const tableAssignee = tableRow.locator("[data-task-assignee]")
+      await expect(tableAssignee).toHaveText(assignee)
+      await expect(tableRow.locator(".cell-description")).toContainText("Check the replacement controller & wiring.")
+      await tableRow.hover()
+      await expect(tableRow.getByRole("button", { name: /^Delete Replace the controllers/ }).locator("svg")).toHaveCount(1)
+      if (theme === "knight-rider") {
+        const filter = page.getByRole("textbox", { name: "Filter by text" })
+        await filter.fill("a different task that does not exist")
+        await expect(tableRow).toHaveCount(0)
+        await filter.fill("greenhouse irrigation")
+        await expect(tableAssignee).toHaveText(assignee)
+      }
     } finally {
       await request.delete(`/api/tasks/${id}`)
       await request.delete(`/api/users/custom?id=${encodeURIComponent(assigneeId)}`)

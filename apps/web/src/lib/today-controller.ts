@@ -887,9 +887,7 @@ function setupWipLimit(container: HTMLElement) {
     font-size: 13px; color: var(--warning, #f59e0b); display: flex;
     align-items: center; gap: 8px;
   `
-  const iconSpan = document.createElement("span")
-  iconSpan.style.fontSize = "16px"
-  iconSpan.textContent = "⚠️"
+  const icon = createSpriteIconElement("alert-triangle", { size: 16 })
   const textSpan = document.createElement("span")
   const countStrong = document.createElement("strong")
   countStrong.textContent = `${todayTasks.length} tasks`
@@ -903,7 +901,7 @@ function setupWipLimit(container: HTMLElement) {
   dismissBtn.style.cssText = "margin-left: auto; font-size: 11px; padding: 2px 8px;"
   dismissBtn.textContent = "Dismiss"
   dismissBtn.addEventListener("click", () => banner.remove(), { once: true })
-  banner.replaceChildren(iconSpan, textSpan, dismissBtn)
+  banner.replaceChildren(icon, textSpan, dismissBtn)
 
   const statsContainer = container.querySelector("#daily-stats-container")
   if (statsContainer) {
