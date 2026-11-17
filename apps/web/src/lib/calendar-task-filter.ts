@@ -1,3 +1,4 @@
+import { VALID_TASK_KINDS } from "@meitheal/domain-tasks"
 import type { CalendarFilterRow } from "@domains/tasks/persistence/task-repository"
 import { calendarToday, isDueOverdue } from "./date"
 import type { FilterGroup } from "./filter-engine"
@@ -11,6 +12,7 @@ export const CALENDAR_FILTER_STATE_EVENT = "meitheal:calendar-filter-state"
 export function readCalendarTaskFilters(params: URLSearchParams): KanbanFilters {
   const filters = readKanbanFilters(params)
   delete filters.area
+  if (VALID_TASK_KINDS.every(kind => filters.types?.includes(kind))) filters.types = []
   const inherited = readTableFilterParams(params)
   return {
     ...filters,

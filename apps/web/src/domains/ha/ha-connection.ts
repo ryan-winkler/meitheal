@@ -29,9 +29,9 @@ import { initEntitySubscription, resetEntityConnection } from "./ha-entities"
 const CORE_PROXY = "http://supervisor/core"
 
 /** Open an isolated socket to Core with caller-specific transport limits. */
-export function openHACoreSocket(token: string, options: ClientOptions): WebSocket {
+export function openHACoreSocket(token: string, options: ClientOptions, baseUrl = CORE_PROXY): WebSocket {
   const Socket = globalThis.WebSocket as unknown as typeof WebSocket
-  return new Socket(createLongLivedTokenAuth(CORE_PROXY, token).wsUrl, options)
+  return new Socket(createLongLivedTokenAuth(baseUrl, token).wsUrl, options)
 }
 
 const logger = createLogger({

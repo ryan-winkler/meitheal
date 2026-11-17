@@ -2036,7 +2036,8 @@ paths:
       summary: Read the Calendar agenda for a household day
       description: Read-only browser operation. Returns due tasks and native events that start on the selected day, applying
         Calendar filters before pagination. The first page also returns saved linked Home Assistant and CalDAV
-        occurrences when Events is selected. Live Home Assistant events are read separately.
+        occurrences when Events is selected. If one first-page read fails, its fields are null and the other result is
+        returned. Live Home Assistant events are read separately.
       security: *a7
       requestBody:
         required: true
@@ -2078,7 +2079,9 @@ paths:
                   - linkedEvents
                 properties:
                   tasks:
-                    type: array
+                    type:
+                      - array
+                      - "null"
                     items:
                       type: object
                       required:
@@ -2112,10 +2115,14 @@ paths:
                             - "null"
                       additionalProperties: false
                   total:
-                    type: integer
+                    type:
+                      - integer
+                      - "null"
                     minimum: 0
                   linkedEvents:
-                    type: array
+                    type:
+                      - array
+                      - "null"
                     items:
                       type: object
                       required:

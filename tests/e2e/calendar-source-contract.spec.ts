@@ -426,6 +426,42 @@ test("Calendar reads configured sources as a household member and filters before
       await expect(connected.getByText("Linked rollback feed entry")).toHaveCount(0)
       await page.keyboard.press("Escape")
     }
+
+    // Force each query to fail in isolation in this disposable database.
+    const localId = "local-agenda-recovery"
+    insert.run(localId, "Local agenda recovery task", localId, localId, linkedDay, 100_010, 100_010)
+    liveAvailable = true
+    await page.unroute("**/api/ha/events?*")
+    await page.route("**/api/ha/events?*", route => route.fulfill({ json: { events: [
+      { summary: "Available live feed", start: linkedDay },
+    ] } }))
+    await page.goto(unfilteredMonth)
+    await expect(page.locator("#calendar-shell")).toHaveAttribute("data-calendar-ready", "true")
+    db.exec("ALTER TABLE calendar_confirmations RENAME TO unavailable_calendar_confirmations")
+    try {
+      await linkedCell.press("Enter")
+      await expect(agenda.getByRole("button", { name: /Local agenda recovery task/ })).toBeVisible()
+      await expect(connected.getByText("Available live feed")).toBeVisible()
+      await expect(connected.getByText("Saved calendar links couldn’t load. Reopen the day to retry.")).toBeVisible()
+      await expect(page.getByRole("button", { name: "Retry agenda" })).toBeHidden()
+      await page.keyboard.press("Escape")
+    } finally {
+      db.exec("ALTER TABLE unavailable_calendar_confirmations RENAME TO calendar_confirmations")
+    }
+
+    db.exec("ALTER TABLE tasks RENAME COLUMN description TO unavailable_description")
+    try {
+      await linkedCell.press("Enter")
+      await expect(agenda.getByText("Couldn’t load this day’s agenda.")).toBeVisible()
+      await expect(connected.getByRole("button", { name: /Linked calendar retreat/ })).toBeVisible()
+      await expect(connected.getByText("Available live feed")).toBeVisible()
+      await expect(connected.getByText("Saved calendar links couldn’t load", { exact: false })).toHaveCount(0)
+    } finally {
+      db.exec("ALTER TABLE tasks RENAME COLUMN unavailable_description TO description")
+    }
+    await page.getByRole("button", { name: "Retry agenda" }).press("Enter")
+    await expect(agenda.getByRole("button", { name: /Local agenda recovery task/ })).toBeVisible()
+    await expect(connected.getByRole("button", { name: /Linked calendar retreat/ })).toBeVisible()
   } catch (error) {
     console.log("Calendar browser diagnostics", pageErrors)
     throw error

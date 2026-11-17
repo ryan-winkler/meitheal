@@ -41,18 +41,24 @@ export const POST: APIRoute = async ({ request, locals }) => {
     const timezone = isValidTimezone(configuredTimezone) ? configuredTimezone : await readStoredHouseholdTimezone()
     const filter = createCalendarTaskFilter(new URLSearchParams(filters), timezone)
     const repo = new TaskRepository(getPersistenceClient())
-    const [{ tasks, total }, linkedEvents] = await Promise.all([
+    const readLinks = filter.showConnectedEvents && offset === 0
+    const [work, links] = await Promise.allSettled([
       repo.findAll({ calendarDay: date, timezone, matchCalendarTask: filter.matchesAgenda, limit, offset }),
-      filter.showConnectedEvents && offset === 0
+      readLinks
         ? repo.getLinkedCalendarEvents(date, date, timezone).then(events => events[date] ?? [])
         : [],
-    ])
+    ] as const)
+    if (work.status === "rejected") {
+      if (!readLinks || links.status === "rejected") throw work.reason
+      logApiError("calendar-agenda", "Could not load scheduled work", work.reason)
+    }
+    if (links.status === "rejected") logApiError("calendar-agenda", "Could not load saved calendar links", links.reason)
     return Response.json({
-      tasks: tasks.map(({ id, title, status, priority, task_kind, start_date, deferred_at }) => ({
+      tasks: work.status === "fulfilled" ? work.value.tasks.map(({ id, title, status, priority, task_kind, start_date, deferred_at }) => ({
         id, title, status, priority: Number(priority ?? 3), task_kind, start_date, deferred_at,
-      })),
-      total,
-      linkedEvents,
+      })) : null,
+      total: work.status === "fulfilled" ? work.value.total : null,
+      linkedEvents: links.status === "fulfilled" ? links.value : null,
     }, { headers: { "cache-control": "no-store" } })
   } catch (error) {
     if (isDbUnavailable(error)) return db503Response("calendar-agenda", error)

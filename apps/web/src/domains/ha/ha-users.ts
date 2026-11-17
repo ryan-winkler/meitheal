@@ -9,9 +9,9 @@
  * @bounded-context users
  */
 import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability"
-import { readCurrentHACoreUsers } from "./core-user-lookup"
-import { fingerprintHAConfiguration, resolveHAConfiguration } from "./ha-configuration"
-import { getHAConfiguration, getHAConnection, matchesCurrentHAConnection } from "./ha-connection"
+import { readConfiguredHACoreUsers, readCurrentHACoreUsers } from "./core-user-lookup"
+import { fingerprintHAConfiguration, resolveHAConfiguration, type HAConfiguration } from "./ha-configuration"
+import { getHAConfiguration, matchesCurrentHAConnection } from "./ha-connection"
 
 const logger = createLogger({
   service: "meitheal-web", env: process.env.NODE_ENV ?? "development",
@@ -42,6 +42,7 @@ export interface MeithealUser {
 // ── Cache ──
 
 let cachedRoster: { users: HAUser[]; fingerprint: string; expiresAt: number } | undefined
+let rosterRead: { fingerprint: string; result: Promise<unknown> } | undefined
 const CACHE_TTL_MS = 60_000
 type CoreUser = Pick<HAUser, "id" | "is_active"> & { system_generated: boolean; is_owner?: unknown; name?: unknown }
 
@@ -57,14 +58,22 @@ function parseCoreUserRoster(users: unknown): CoreUser[] | undefined {
   return users
 }
 
-async function readRosterFingerprint(): Promise<string | null | undefined> {
+async function readRosterConfiguration(): Promise<HAConfiguration | null | undefined> {
   try {
-    const configuration = await getHAConfiguration({ requireComplete: true })
-    return configuration ? fingerprintHAConfiguration(configuration) : null
+    return await getHAConfiguration({ requireComplete: true })
   } catch {
     // The configured identity is needed before a cached roster can be reused.
     return undefined
   }
+}
+
+function readConfiguredRoster(configuration: HAConfiguration, fingerprint: string): Promise<unknown> {
+  if (rosterRead?.fingerprint === fingerprint) return rosterRead.result
+  const result = readConfiguredHACoreUsers(configuration).finally(() => {
+    if (rosterRead?.result === result) rosterRead = undefined
+  })
+  rosterRead = { fingerprint, result }
+  return result
 }
 
 function sanitizeHAUserName(value: unknown): string {
@@ -87,28 +96,24 @@ function sanitizeHAUserName(value: unknown): string {
  * while its connection is live. An outage leaves same-source names available.
  */
 export async function listHAUserDirectory(): Promise<{ users: HAUser[]; verified: boolean }> {
-  const fingerprint = await readRosterFingerprint()
-  if (fingerprint !== undefined && cachedRoster?.fingerprint !== fingerprint) invalidateUserCache()
-  if (!fingerprint) return { users: [], verified: fingerprint === null }
+  const configuration = await readRosterConfiguration()
+  if (!configuration) {
+    if (configuration === null) invalidateUserCache()
+    return { users: [], verified: configuration === null }
+  }
+  const fingerprint = fingerprintHAConfiguration(configuration)
+  if (cachedRoster?.fingerprint !== fingerprint) invalidateUserCache()
 
   if (cachedRoster && Date.now() < cachedRoster.expiresAt && matchesCurrentHAConnection(fingerprint)) {
     return { users: cachedRoster.users, verified: true }
   }
   if (cachedRoster) cachedRoster.expiresAt = 0
 
-  const unverified = async () => ({
-    users: await readRosterFingerprint() === fingerprint && cachedRoster?.fingerprint === fingerprint
-      ? cachedRoster.users : [],
-    verified: false,
-  })
-
-  const conn = await getHAConnection()
-  if (!conn || !matchesCurrentHAConnection(fingerprint, conn)) return unverified()
-
   try {
-    const result = parseCoreUserRoster(await conn.sendMessagePromise<unknown>({
-      type: "config/auth/list",
-    }))
+    const reply = await readConfiguredRoster(configuration, fingerprint)
+    const current = await readRosterConfiguration()
+    if (!current || fingerprintHAConfiguration(current) !== fingerprint) return { users: [], verified: false }
+    const result = parseCoreUserRoster(reply)
 
     // Filter out system-generated accounts (e.g. homeassistant, supervisor)
     if (!result) throw new Error("Invalid Home Assistant user directory")
@@ -120,7 +125,6 @@ export async function listHAUserDirectory(): Promise<{ users: HAUser[]; verified
       id: /^[a-zA-Z0-9_-]+$/.test(u.id) ? u.id : `ha_sanitized_${u.id.replace(/[^a-zA-Z0-9]/g, "")}`,
     }));
 
-    if (await readRosterFingerprint() !== fingerprint || !matchesCurrentHAConnection(fingerprint, conn)) return unverified()
     cachedRoster = { users, fingerprint, expiresAt: Date.now() + CACHE_TTL_MS }
 
     logger.log("info", {
@@ -134,7 +138,7 @@ export async function listHAUserDirectory(): Promise<{ users: HAUser[]; verified
       event: "ha.users.discovery_failed", domain: "ha", component: "ha-users",
       request_id: SYS_REQ, message: `Failed to list HA users: ${err}`,
     });
-    return unverified()
+    return { users: cachedRoster?.fingerprint === fingerprint ? cachedRoster.users : [], verified: false }
   }
 }
 

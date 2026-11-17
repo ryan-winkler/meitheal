@@ -254,7 +254,7 @@ export function initCalendarPage(signal: AbortSignal): void {
         (live.available ? "Some live" : "Live") + " Home Assistant calendars couldn’t refresh. Reopen the day to retry.",
       ))
       else if (persisted && !items.length) drawerEvents!.append(agendaMessage("No calendar events"))
-      if (persisted === null) drawerEvents!.append(agendaMessage("Saved calendar links couldn’t load."))
+      if (persisted === null) drawerEvents!.append(agendaMessage("Saved calendar links couldn’t load. Reopen the day to retry."))
       const restoreId = activeId ?? focusedEvent
       if (restoreId && (activeId || document.activeElement === closeButton)) {
         const restore = items.find(item => item.row.dataset.occurrenceKey === restoreId)?.row ?? closeButton
@@ -297,9 +297,10 @@ export function initCalendarPage(signal: AbortSignal): void {
         if (taskSignal.aborted) return
         if (!offset) {
           drawerTasks!.replaceChildren()
-          persisted = linkedEvents
+          persisted = linkedEvents ?? persisted ?? null
           renderConnectedEvents()
         }
+        if (!rows) throw new Error("Scheduled work unavailable")
         const fresh = rows.filter(row => {
           const id = row.dataset.taskId ?? ""
           if (seen.has(id)) return false
@@ -327,7 +328,7 @@ export function initCalendarPage(signal: AbortSignal): void {
         log.warn("Could not load due tasks", error)
         if (!offset) {
           renderMessage(drawerTasks!, "Couldn’t load this day’s agenda.")
-          persisted = null
+          persisted ??= null
           renderConnectedEvents()
         } else drawerTaskStatus!.textContent = "Couldn’t load more items."
         moreTasks.hidden = false
@@ -580,10 +581,12 @@ async function loadDrawerTasks(
     signal,
   })
   if (!response.ok) throw new Error(`Task query failed: ${response.status}`)
-  const data = await response.json() as { tasks?: Record<string, unknown>[]; total?: number; linkedEvents?: LinkedCalendarEvent[] }
-  if (!Array.isArray(data.tasks)) throw new Error("Invalid task list")
+  const data = await response.json() as {
+    tasks?: Record<string, unknown>[] | null; total?: number | null; linkedEvents?: LinkedCalendarEvent[] | null
+  }
+  if (data.tasks !== null && !Array.isArray(data.tasks)) throw new Error("Invalid task list")
 
-  const rows = data.tasks.map(task => {
+  const rows = data.tasks?.map(task => {
     const status = String(task.status ?? "")
     const definition = getStatusDef(status)
     const deferred = task.deferred_at != null ? ` · ${window.mI18n?.get("deferral.title") ?? "Deferred"}` : ""
@@ -594,7 +597,7 @@ async function loadDrawerTasks(
     const icon = isEvent ? "calendar-event" : definition ? mapEntityEmojiToTabler(definition.icon) ?? "checkbox" : "checkbox"
     return agendaItem(icon, String(task.title ?? "Untitled task"), `${meta}${priority}${deferred}`, String(task.id))
   })
-  return { rows, total: data.total ?? rows.length, linkedEvents: data.linkedEvents ?? [] }
+  return { rows, total: data.total ?? rows?.length ?? 0, linkedEvents: data.linkedEvents === undefined ? [] : data.linkedEvents }
 }
 
 async function loadInlineEventPreviews(

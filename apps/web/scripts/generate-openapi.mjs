@@ -887,7 +887,7 @@ const paths = {
       operationId: "readCalendarAgenda",
       tags: ["Tasks"],
       summary: "Read the Calendar agenda for a household day",
-      description: "Read-only browser operation. Returns due tasks and native events that start on the selected day, applying Calendar filters before pagination. The first page also returns saved linked Home Assistant and CalDAV occurrences when Events is selected. Live Home Assistant events are read separately.",
+      description: "Read-only browser operation. Returns due tasks and native events that start on the selected day, applying Calendar filters before pagination. The first page also returns saved linked Home Assistant and CalDAV occurrences when Events is selected. If one first-page read fails, its fields are null and the other result is returned. Live Home Assistant events are read separately.",
       security: ingressSession,
       requestBody: { required: true, content: { "application/json": { schema: {
         type: "object", required: ["date", "filters", "limit", "offset"], properties: {
@@ -900,15 +900,15 @@ const paths = {
       responses: {
         200: jsonContent({
           type: "object", required: ["tasks", "total", "linkedEvents"], properties: {
-            tasks: { type: "array", items: {
+            tasks: { type: ["array", "null"], items: {
               type: "object", required: ["id", "title", "status", "priority", "task_kind", "start_date", "deferred_at"],
               properties: {
                 id: { type: "string" }, title: { type: "string" }, status: { type: "string" }, priority: { type: "integer" },
                 task_kind: { type: ["string", "null"] }, start_date: { type: ["string", "null"] }, deferred_at: { type: ["integer", "null"] },
               },
             } },
-            total: { type: "integer", minimum: 0 },
-            linkedEvents: { type: "array", items: {
+            total: { type: ["integer", "null"], minimum: 0 },
+            linkedEvents: { type: ["array", "null"], items: {
               type: "object", required: ["id", "title", "start", "entity", "uid", "providerSummary"],
               properties: {
                 id: { type: "string" }, title: { type: "string" }, start: { type: "string" },

@@ -263,6 +263,19 @@ test("pinned types fit narrow desktop top navigation and stay available in the m
   await expect(mobileSidebar).not.toHaveClass(/open/)
   await expect(page.locator("#menu-toggle")).toHaveAttribute("aria-expanded", "false")
   await expect(page.locator("#menu-toggle")).toBeFocused()
+
+  await page.setViewportSize({ width: 320, height: 280 })
+  const touch = await page.context().newCDPSession(page)
+  await touch.send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 1 })
+  await expect.poll(() => page.evaluate(() => matchMedia("(pointer: coarse)").matches)).toBe(true)
+  await page.locator("#menu-toggle").click()
+  await mobileSidebar.locator("#tasks-submenu-toggle").click()
+  await mobileSidebar.locator("#tasks-nav-submenu").getByRole("link", { name: "Calendar", exact: true }).scrollIntoViewIfNeeded()
+  await expect.poll(() => mobileSidebar.locator(".sidebar-main").evaluate(panel => panel.scrollTop)).toBeGreaterThan(0)
+  const close = mobileSidebar.getByRole("button", { name: "Close sidebar", exact: true })
+  await expect(close).toBeInViewport()
+  await close.click()
+  await expect(page.locator("#menu-toggle")).toBeFocused()
 })
 
 test("mobile task type settings dismiss the sidebar and focus the destination", async ({ page }) => {

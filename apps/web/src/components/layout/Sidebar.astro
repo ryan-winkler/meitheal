@@ -290,36 +290,38 @@ const remainingItems = areaPosition < 0 ? [] : navItems.slice(areaPosition + 1)
     </button>
   </div>
 
-  <div class="sidebar-cta-wrap">
-    <TaskCreationMenu id="sidebar-task-types" variant="sidebar">
-      <button
-        type="button"
-        id="sidebar-rail-new-task"
-        class="sidebar-rail-cta"
-        data-tooltip="New task"
-        aria-label="New task"
-      >
-        <span class="sidebar-rail-cta__icon" aria-hidden="true">
-          <Icon name="plus" size={18} />
-        </span>
-        <span class="sidebar-rail-cta__label">New task</span>
-      </button>
-    </TaskCreationMenu>
-  </div>
+  <div class="sidebar-main">
+    <div class="sidebar-cta-wrap">
+      <TaskCreationMenu id="sidebar-task-types" variant="sidebar">
+        <button
+          type="button"
+          id="sidebar-rail-new-task"
+          class="sidebar-rail-cta"
+          data-tooltip="New task"
+          aria-label="New task"
+        >
+          <span class="sidebar-rail-cta__icon" aria-hidden="true">
+            <Icon name="plus" size={18} />
+          </span>
+          <span class="sidebar-rail-cta__label">New task</span>
+        </button>
+      </TaskCreationMenu>
+    </div>
 
-  <div class="sidebar-scroll" data-nav-overflow="sidebar">
-    {primaryItems.length > 0 && <SidebarNavList navItems={primaryItems} taskCounts={taskCounts} />}
-    {areaPosition >= 0 && (
-      <div id="sidebar-hierarchy-panel">
-        <a href="/planning#spaces" class="nav-link sidebar-compact-areas" data-tooltip={areaLabel} aria-label={areaLabel}>
-          <span class="nav-icon"><Icon name="folder" /></span>
-        </a>
-        <SidebarHierarchyTree locale={locale} label={areaLabel} />
-      </div>
-    )}
-    {remainingItems.length > 0 && <SidebarNavList navItems={remainingItems} taskCounts={taskCounts} />}
-    {namedBoardDirectoryExists && <ul class="sidebar-board-shortcuts" data-sidebar-boards hidden aria-label="Visible Boards"></ul>}
-    <NavOverflowMore id="sidebar-more-destinations" list locale={locale} />
+    <div class="sidebar-scroll" data-nav-overflow="sidebar">
+      {primaryItems.length > 0 && <SidebarNavList navItems={primaryItems} taskCounts={taskCounts} />}
+      {areaPosition >= 0 && (
+        <div id="sidebar-hierarchy-panel">
+          <a href="/planning#spaces" class="nav-link sidebar-compact-areas" data-tooltip={areaLabel} aria-label={areaLabel}>
+            <span class="nav-icon"><Icon name="folder" /></span>
+          </a>
+          <SidebarHierarchyTree locale={locale} label={areaLabel} />
+        </div>
+      )}
+      {remainingItems.length > 0 && <SidebarNavList navItems={remainingItems} taskCounts={taskCounts} />}
+      {namedBoardDirectoryExists && <ul class="sidebar-board-shortcuts" data-sidebar-boards hidden aria-label="Visible Boards"></ul>}
+      <NavOverflowMore id="sidebar-more-destinations" list locale={locale} />
+    </div>
   </div>
 
   {gamificationEnabled && (
@@ -425,6 +427,8 @@ const remainingItems = areaPosition < 0 ? [] : navItems.slice(areaPosition + 1)
     }
   }
 
+  .sidebar-main { display: contents; }
+
   .sidebar-cta-wrap {
     padding: 0 0.25rem 0.625rem;
     flex-shrink: 0;
@@ -505,6 +509,17 @@ const remainingItems = areaPosition < 0 ? [] : navItems.slice(areaPosition + 1)
     scrollbar-width: none; /* Hide scrollbar Firefox */
     -webkit-overflow-scrolling: touch;
     overscroll-behavior: contain;
+  }
+
+  @media (max-width: 768px) {
+    .sidebar-main {
+      display: block;
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+    }
+    .sidebar-scroll { overflow: visible; }
   }
 
   /* Hide scrollbar WebKit */

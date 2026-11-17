@@ -354,6 +354,13 @@ test.describe("Calendar Shell", () => {
       await expect(agenda.getByText("Calendar active in the legacy area")).toBeVisible()
       await expect(agenda.getByText("Calendar active outside the legacy area")).toHaveCount(0)
 
+      const allTypes = "standard_action,shopping_item,checklist,routine_instance,calendar_event,quick_capture"
+      await page.goto(`/tasks?view=calendar&year=2031&month=6&area=&types=${allTypes}#calendar`)
+      await expect(page.locator('#calendar-filter-bar [data-type][aria-pressed="true"]')).toHaveCount(6)
+      await expect(page.getByRole("button", { name: "Clear All", exact: true })).toBeHidden()
+      await cell.press("Enter")
+      await expect(agenda.getByText("Calendar completed in the legacy area")).toBeVisible()
+
       await page.goto("/today")
       await page.getByRole("button", { name: "Archive completed", exact: true }).click()
       const submitted = page.waitForResponse(response => new URL(response.url()).pathname === "/api/tasks/clear-completed")
@@ -868,6 +875,7 @@ test.describe("Calendar Shell", () => {
     await page.route("**/api/ha/events?*", route => route.fulfill({
       json: { events: [{ summary: "Household calendar preview", start: day, end: "2031-07-09" }] },
     }))
+    await page.route("**/api/calendar/agenda", route => route.fulfill({ json: { tasks: [], total: 0, linkedEvents: [] } }))
     await page.goto("/tasks?view=calendar&year=2031&month=6#calendar")
     const cell = page.locator(`.cal-cell[data-date="${day}"]`)
     const events = page.locator("#day-drawer-events")

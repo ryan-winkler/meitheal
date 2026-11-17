@@ -113,6 +113,7 @@ test("HA connection, services, users, todo-bridge, and ha-startup work against l
     { id: "ha-user-2", name: "System", is_owner: false, is_active: false, system_generated: true },
   ]
   let rosterResult: unknown = coreUsers
+  let waitForRoster = false
   const wss = new WebSocketServer({ server: httpServer, verifyClient: () => acceptConnections })
   wss.on("connection", (socket: { send(v: string): void; on(e: string, cb: (raw: Buffer) => void): void }) => {
     sockets.add(socket)
@@ -150,6 +151,7 @@ test("HA connection, services, users, todo-bridge, and ha-startup work against l
       }
 
       if (msg.type === "config/auth/list") {
+        if (waitForRoster) return
         send({
           id: msg.id,
           type: "result",
@@ -336,6 +338,35 @@ test("HA connection, services, users, todo-bridge, and ha-startup work against l
     expect(await haUsers.isCurrentActiveHAUser("ha-user-1", { fresh: true })).toBe(false)
     expect(await haUsers.getCurrentHAUserRoster("ha-user-1")).toBeUndefined()
 
+    const nowBeforeStall = Date.now
+    const { UserRepository } = await import("../../apps/web/src/domains/tasks/persistence/user-repository")
+    const { GET: getAssignees } = await import("../../apps/web/src/pages/api/users/index")
+    await new UserRepository(client).createCustomUser("custom-roster-test", "Local assignee", "#6366f1")
+    waitForRoster = true
+    try {
+      Date.now = () => nowBeforeStall() + 61_000
+      const start = performance.now()
+      const [directory, response] = await Promise.all([
+        haUsers.listHAUserDirectory(),
+        getAssignees({} as Parameters<typeof getAssignees>[0]),
+      ])
+      expect(directory).toEqual({ users: initialDirectory.users, verified: false })
+      expect(response.status).toBe(200)
+      expect(await response.json()).toMatchObject({
+        ha_roster_verified: false,
+        users: [
+          expect.objectContaining({ id: "ha_ha-user-1", source: "home_assistant" }),
+          expect.objectContaining({ id: "custom-roster-test", source: "custom" }),
+        ],
+      })
+      expect(performance.now() - start).toBeLessThan(5_000)
+      expect(haConn.getHAConnectionStatus().connected).toBe(true)
+    } finally {
+      Date.now = nowBeforeStall
+      waitForRoster = false
+    }
+    expect(await haUsers.listHAUserDirectory()).toEqual(initialDirectory)
+
     haConn.closeHAConnection()
     rosterResult = [{ id: "ha-user-1", name: "Ryan", system_generated: false }]
     expect(await haUsers.listHAUserDirectory()).toEqual({ users: initialDirectory.users, verified: false })
@@ -358,7 +389,7 @@ test("HA connection, services, users, todo-bridge, and ha-startup work against l
     expect(haConn.getHAConnectionStatus().connected).toBe(false)
     acceptConnections = true
     expect(await haUsers.listHAUserDirectory()).toEqual(initialDirectory)
-    expect(haConn.getHAConnectionStatus().connected).toBe(true)
+    expect((await haConn.getHAConnection())?.connected).toBe(true)
 
     // A new credential cannot fall back to the disconnected source's names.
     process.env.HA_TOKEN = "unit-ha-rotated-token"

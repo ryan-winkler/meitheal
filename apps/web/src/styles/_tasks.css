@@ -374,31 +374,6 @@
   @apply text-sm text-text-muted mb-6;
 }
 
-/* --- Task action buttons --- */
-.task-delete,
-.task-duplicate,
-.task-ask-ai {
-  @apply bg-transparent border-none cursor-pointer text-text-muted text-sm p-1 rounded transition-colors opacity-0;
-}
-
-.task-item:hover .task-delete,
-.task-item:hover .task-duplicate,
-.task-item:hover .task-ask-ai {
-  @apply opacity-100;
-}
-
-.task-delete:hover {
-  @apply text-danger bg-danger/10;
-}
-
-.task-duplicate:hover {
-  @apply text-info bg-info/10;
-}
-
-.task-ask-ai:hover {
-  @apply text-accent bg-accent/10;
-}
-
 .task-custom-fields {
   @apply flex gap-1.5 flex-wrap mt-1;
 }

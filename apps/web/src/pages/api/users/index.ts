@@ -11,8 +11,11 @@ export const GET: APIRoute = async () => {
   await ensureSchema()
   const repo = new UserRepository(getPersistenceClient())
 
-  // Fetch HA users (auto-discovered, cached 60s)
-  const { users: haUsers, verified } = await listHAUserDirectory()
+  const [{ users: haUsers, verified }, customRows, defaultAssignee] = await Promise.all([
+    listHAUserDirectory(),
+    repo.listCustomUsersMinimal(),
+    repo.getDefaultAssigneeSetting(),
+  ])
   const haUserList: MeithealUser[] = haUsers.map((u) => ({
     id: `ha_${u.id}`,
     name: u.name,
@@ -21,8 +24,6 @@ export const GET: APIRoute = async () => {
     is_owner: u.is_owner,
   }))
 
-  // Fetch custom users from SQLite via repository
-  const customRows = await repo.listCustomUsersMinimal()
   const customUserList: MeithealUser[] = customRows.map((row) => {
     const r = row as Record<string, unknown>
     return {
@@ -36,9 +37,6 @@ export const GET: APIRoute = async () => {
 
   // Merge: HA users first, then custom
   const users = [...haUserList, ...customUserList]
-
-  // Fetch default assignee setting via repository
-  const defaultAssignee = await repo.getDefaultAssigneeSetting()
 
   return new Response(JSON.stringify({
     users,
