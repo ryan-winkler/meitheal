@@ -1,6 +1,7 @@
 import type { FilterGroup } from "./filter-engine"
 import { normalizeTableRules, readFilterLabels } from "./filter-state"
 import { readKanbanRules } from "./kanban-query"
+import { normalizeStatus } from "./status-config"
 import { parseTaskView, readTaskAreaParam, type TaskView } from "./task-view-route"
 
 export type TaskNavTypeId = "standard" | "shopping_item" | "checklist" | "calendar_event"
@@ -100,7 +101,8 @@ export function matchingTaskShortcutCriteria(target: URLSearchParams, current: U
   keys.delete("view")
   const matchedLabels = keys.has("label") || keys.has("labels")
   if (matchedLabels) {
-    if (!sameFilterValues(readFilterLabels(target), readFilterLabels(current))) return -1
+    const labels = (params: URLSearchParams) => readFilterLabels(params).map(label => label.toLowerCase())
+    if (!sameFilterValues(labels(target), labels(current))) return -1
     keys.delete("label")
     keys.delete("labels")
   }
@@ -117,7 +119,12 @@ export function matchingTaskShortcutCriteria(target: URLSearchParams, current: U
     for (const alias of ["area", "area_id", "board"]) keys.delete(alias)
   }
   for (const key of keys) {
-    if (!sameFilterValues(target.getAll(key), current.getAll(key))) return -1
+    const read = (params: URLSearchParams) => {
+      const values = params.getAll(key)
+      return key === "status" ? values.map(normalizeStatus)
+        : key === "search" ? values.map(value => value.trim().toLowerCase()) : values
+    }
+    if (!sameFilterValues(read(target), read(current))) return -1
   }
   return keys.size + Number(matchedArea) + Number(matchedLabels) + Number(matchedRules)
 }

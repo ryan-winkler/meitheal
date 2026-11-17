@@ -31,8 +31,10 @@ export function readTaskAreaParam(params: URLSearchParams): string | null {
 export function taskViewUrl(current: URL, view: TaskView, explicitFilters = false): URL {
   const url = new URL(current)
   const previousView = parseTaskView(url.searchParams.get("view")) ?? parseTaskView(url.hash.slice(1))
-  if (previousView !== view && (previousView === "calendar" || previousView === "table")) {
-    const area = readTaskAreaParam(url.searchParams)
+  if (previousView !== view) {
+    const area = previousView === "calendar" || previousView === "table"
+      ? readTaskAreaParam(url.searchParams)
+      : url.searchParams.get("area")
     if (area !== null) url.searchParams.set("area", area)
     url.searchParams.delete("area_id")
     url.searchParams.delete("board")

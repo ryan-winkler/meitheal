@@ -144,12 +144,21 @@ test("pinned types fit narrow desktop top navigation and stay available in the m
 
   const more = page.locator("[data-nav-overflow=sidebar] [data-nav-overflow-more]")
   const taskViewToggle = page.getByRole("button", { name: "Task views", exact: true })
-  if (!(await taskViewToggle.isVisible())) await more.locator("summary").click()
+  await expect(more.locator("#tasks-submenu-toggle")).toBeAttached()
+  await more.locator("summary").click()
   await taskViewToggle.click()
   await expect(page.locator("#tasks-nav-submenu").getByRole("link", { name: "Timeline (Gantt)", exact: true })).toBeVisible()
   await page.keyboard.press("Tab")
   await expect(page.locator("#tasks-nav-submenu").getByRole("link", { name: "Calendar", exact: true })).toBeFocused()
   await page.screenshot({ path: testInfo.outputPath("narrow-navbar-task-views.png"), animations: "disabled" })
+  const tablePin = page.locator("#tasks-nav-submenu").getByRole("button", { name: "Pin Table to navigation" })
+  for (const pressed of ["false", "true"]) {
+    await tablePin.press("Enter")
+    await expect(tablePin).toHaveAttribute("aria-pressed", pressed)
+    await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
+    await expect(tablePin).toBeFocused()
+    await expect(taskViewToggle).toHaveAttribute("aria-expanded", "true")
+  }
   await page.keyboard.press("Escape")
 
   await sidebarMenu.evaluate(menu => { menu.dataset.persistedTaskTypes = "yes" })
@@ -463,10 +472,11 @@ test("Shopping links identify their own Area and follow applied Board filters", 
     }))
     const ruleWithView = (view: string) => "/tasks?" + new URLSearchParams({ ...Object.fromEntries(ruleParams), view })
     const invalidRule = new URLSearchParams({ types: "shopping_item", area: areas[0]!, advancedFilter: "{invalid" })
+    const completedCalendar = new URLSearchParams({ ...Object.fromEntries(calendarParams), status: "done" })
     paths.push("/tasks?" + calendarParams + "#calendar", "/tasks?" + groceryParams, "/tasks?" + ruleParams,
-      ruleWithView("calendar"), ruleWithView("table"), "/tasks?" + invalidRule)
+      ruleWithView("calendar"), ruleWithView("table"), "/tasks?" + invalidRule, "/tasks?" + completedCalendar)
     const shortcuts = ["All Shopping", ...names, "Kitchen shopping calendar", "Grocery shopping", "Grocery rule",
-      "Grocery Calendar rule", "Grocery Table rule", "Invalid Grocery rule"].map((label, index) => ({
+      "Grocery Calendar rule", "Grocery Table rule", "Invalid Grocery rule", "Completed shopping calendar"].map((label, index) => ({
       id: `shopping-route-${index}`,
       label,
       href: paths[index],
@@ -514,6 +524,13 @@ test("Shopping links identify their own Area and follow applied Board filters", 
     await expect(page).toHaveURL(url => url.searchParams.get("area") === areas[0] && url.searchParams.get("search") === "pan")
     await expect(current).toHaveText("Kitchen shopping calendar")
 
+    await sidebar.getByRole("link", { name: "Completed shopping calendar", exact: true }).click()
+    await expect(current).toHaveText("Completed shopping calendar")
+    await expect(calendarFilters).toHaveAttribute("data-initialized", "true")
+    await calendarFilters.getByRole("textbox", { name: "Filter by text" }).fill("groceries")
+    await expect(page).toHaveURL(url => url.searchParams.get("status") === "complete" && url.searchParams.get("search") === "groceries")
+    await expect(current).toHaveText("Completed shopping calendar")
+
     await sidebar.getByRole("link", { name: "Grocery shopping", exact: true }).click()
     await expect(current).toHaveText("Grocery shopping")
     const board = page.locator("#kanban-shell")
@@ -545,6 +562,14 @@ test("Shopping links identify their own Area and follow applied Board filters", 
 
     await sidebar.getByRole("link", { name: "Invalid Grocery rule", exact: true }).click()
     await expect(current).toHaveText(names[0]!)
+
+    const boardParams = new URLSearchParams({ types: "shopping_item", area: areas[0]!, area_id: areas[1]! })
+    await page.goto("/tasks?" + boardParams + "#kanban")
+    await expect(page.locator("#area-selector-trigger")).toContainText(names[0]!)
+    const views = page.getByRole("navigation", { name: "Task views" })
+    await views.getByRole("link", { name: "Calendar", exact: true }).click()
+    await expect(page).toHaveURL(url => url.searchParams.get("area") === areas[0] && !url.searchParams.has("area_id"))
+    await expect(page.locator("#area-selector-trigger")).toContainText(names[0]!)
   } finally {
     await request.put("/api/settings", { headers, data: { key: "sidebar_config", value: previous ?? null } })
     for (const id of areas) await request.delete(`/api/areas/${id}`, { headers })

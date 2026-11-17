@@ -1783,100 +1783,6 @@ try {
     color: var(--accent-text);
   }
 
-  /* Phase 20: Type toolbar */
-  .type-toolbar {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 8px 0; /* horizontal padding handled by global .content */
-    margin-bottom: 8px;
-  }
-  .type-filters {
-    display: flex;
-    gap: 6px;
-    align-items: center;
-    flex-wrap: wrap;
-  }
-  .filter-toolbar__type-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    padding: 5px 12px;
-    border: 1px solid var(--border);
-    border-radius: 20px;
-    background: transparent;
-    color: var(--text-muted);
-    font-size: 12px;
-    font-weight: 500;
-    cursor: pointer;
-    transition:
-      background 200ms,
-      color 200ms,
-      border-color 200ms,
-      opacity 200ms,
-      transform 200ms;
-    white-space: nowrap;
-  }
-  .filter-toolbar__type-btn:hover {
-    border-color: var(--accent);
-    color: var(--text-primary);
-  }
-  .filter-toolbar__type-btn.active {
-    background: var(--accent-light);
-    border-color: var(--accent);
-    color: var(--accent);
-  }
-
-  /* Phase 32: User filter pills */
-  .user-filters {
-    display: flex;
-    gap: 6px;
-    align-items: center;
-    flex-wrap: wrap;
-    border-left: 1px solid var(--border);
-    padding-left: 12px;
-    margin-left: 4px;
-  }
-  @media (max-width: 768px) {
-    .user-filters {
-      border-left: none;
-      padding-left: 0;
-      margin-left: 0;
-      width: 100%;
-      border-top: 1px solid var(--border);
-      padding-top: 8px;
-      margin-top: 4px;
-    }
-  }
-  .filter-toolbar__user-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    padding: 4px 10px;
-    border: 1px solid var(--border);
-    border-radius: 20px;
-    background: transparent;
-    color: var(--text-muted);
-    font-size: 12px;
-    font-weight: 500;
-    cursor: pointer;
-    transition:
-      background 200ms,
-      color 200ms,
-      border-color 200ms,
-      opacity 200ms,
-      transform 200ms;
-    white-space: nowrap;
-  }
-  .filter-toolbar__user-btn:hover {
-    border-color: var(--accent);
-    color: var(--text-primary);
-  }
-  .filter-toolbar__user-btn.active {
-    background: var(--accent-light);
-    border-color: var(--accent);
-    color: var(--accent);
-  }
   .user-avatar-pill {
     display: inline-flex;
     align-items: center;
@@ -2049,21 +1955,8 @@ try {
     transform: rotate(-90deg);
   }
 
-  @media (max-width: 768px) {
-    .type-toolbar {
-      flex-direction: column;
-      gap: 8px;
-      align-items: flex-start;
-    }
-    .type-filters {
-      flex-wrap: wrap;
-    }
-  }
-
   /* Accessibility: suppress transitions for reduced-motion users */
   @media (prefers-reduced-motion: reduce) {
-    .filter-toolbar__type-btn,
-    .filter-toolbar__user-btn,
     .filter-clear-btn,
     .kanban-title-text,
     .kanban-progress-bar,

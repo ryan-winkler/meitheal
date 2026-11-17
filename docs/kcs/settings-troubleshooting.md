@@ -26,7 +26,7 @@ In **Settings → Navigation & Shortcuts → Sidebar Configuration**, Areas has 
 
 Choose **Save Sidebar Config** to save and reload the current Settings section with the updated sidebar. **Reset to Default** restores the default items and ordering after confirmation. Use **New task types** in the same section to choose which creation shortcuts appear under **New task**. Pin a type there or in the New task menu to open its form in one click. Use the chevron beside **Tasks** to open or pin Calendar, Kanban, Timeline (Gantt), and Table. Pins are stored on this browser. Tabbing out closes either menu and preserves the applied filters. A pinned view carries the current filters when opened from Tasks. Opening it from another page drops the previous Tasks filters. The destination can still restore the browser’s remembered Area.
 
-Existing Shopping sidebar links that carry a task filter open Shopping in Kanban. The plain **Tasks** link remembers the last view.
+A Shopping sidebar link with a task filter opens Kanban by default. A link that names Calendar, Table, or Timeline opens that view with the Shopping filter. The plain **Tasks** link remembers the last view.
 
 In the compact sidebar, open either menu from the chevron below its icon. With top navigation enabled, the Tasks toolbar shows creation shortcuts beside **New Task**. Other pages show the same shortcuts in the top navigation. Scroll the shortcut group horizontally if there is little space. On mobile, both menus are in the navigation drawer.
 

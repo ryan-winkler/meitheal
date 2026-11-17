@@ -431,7 +431,8 @@ function isExternal(href: string): boolean {
 
     trigger.addEventListener("click", () => setOpen(Boolean(submenu.hidden)), { signal })
     group.addEventListener("focusout", event => {
-      if (!submenu.hidden && !group.contains(event.relatedTarget as Node | null)) setOpen(false)
+      if (!submenu.hidden && !nav.hasAttribute("data-nav-overflow-reflowing") &&
+          !group.contains(event.relatedTarget as Node | null)) setOpen(false)
     }, { signal })
     group.addEventListener("keydown", event => {
       if (event.key === "Escape" && !submenu.hidden) {

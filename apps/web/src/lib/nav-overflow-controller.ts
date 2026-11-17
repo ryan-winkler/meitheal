@@ -32,6 +32,7 @@ export function initNavOverflow(root: HTMLElement, pageSignal: AbortSignal): voi
   const originalTabs = new Map(links.map(link => [link, link.getAttribute("tabindex")]))
   let frame = 0
   let lastWidth = -1
+  let sourcesChanged = false
 
   function refreshSources() {
     sources = primaries.map(primary => ({ primary, items: [...primary.children] as HTMLElement[] }))
@@ -90,7 +91,12 @@ export function initNavOverflow(root: HTMLElement, pageSignal: AbortSignal): voi
     if (signal.aborted || !root.isConnected) return
     const focused = document.activeElement instanceof HTMLElement && root.contains(document.activeElement) ? document.activeElement : null
     const enabled = getComputedStyle(root).getPropertyValue("--nav-overflow-enabled").trim() === "1" && root.clientWidth > 0
+    root.setAttribute("data-nav-overflow-reflowing", "")
     restoreItems()
+    if (sourcesChanged) {
+      refreshSources()
+      sourcesChanged = false
+    }
     root.toggleAttribute("data-nav-overflow-active", enabled)
     let visible = new Set(items)
     if (enabled && items.length) {
@@ -144,6 +150,7 @@ export function initNavOverflow(root: HTMLElement, pageSignal: AbortSignal): voi
     }
     syncTabStops()
     // Ignore our own synchronous reparenting, while still observing label changes.
+    root.removeAttribute("data-nav-overflow-reflowing")
     content.takeRecords()
   }
   const schedule = () => {
@@ -155,11 +162,11 @@ export function initNavOverflow(root: HTMLElement, pageSignal: AbortSignal): voi
     lastWidth = width
     schedule()
   })
-  const appearance = new MutationObserver(() => {
-    restoreItems()
-    refreshSources()
+  const syncTaskNavDom = () => {
+    sourcesChanged = true
     schedule()
-  })
+  }
+  const appearance = new MutationObserver(syncTaskNavDom)
   const content = new MutationObserver(records => {
     if (records.some(record => record.type !== "childList" || (record.target !== menu && !primaries.includes(record.target as HTMLElement)))) schedule()
   })
@@ -206,11 +213,6 @@ export function initNavOverflow(root: HTMLElement, pageSignal: AbortSignal): voi
     if (event.target instanceof Element && event.target.closest("a[href]")) closeMenu(true)
   }, { signal })
   window.addEventListener("meitheal:view-changed", schedule, { signal })
-  const syncTaskNavDom = () => {
-    restoreItems()
-    refreshSources()
-    schedule()
-  }
   window.addEventListener("meitheal:task-nav-prefs-changed", syncTaskNavDom, { signal })
   window.addEventListener("meitheal:task-nav-dom-synced", syncTaskNavDom, { signal })
   document.fonts?.addEventListener("loadingdone", schedule, { signal })
