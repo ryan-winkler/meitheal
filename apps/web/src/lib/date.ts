@@ -164,24 +164,15 @@ export function normalizeCalendarEventSummary(summary: string): string {
   return summary.trim().toLowerCase().replace(/\s+/g, " ")
 }
 
-/** The last household date covered by an event with an exclusive end. */
-export function calendarEventLastDay(end: string, timezone: string): string | null {
-  const raw = end.trim()
-  const instant = zonedCalendarInstant(raw)
-  if (instant !== null) return calendarDayFromInput(instant - 1, timezone)
-
-  const day = calendarDayFromInput(raw, timezone)
-  if (!day) return null
-  if (DATE_ONLY.test(raw) || /^\d{4}-\d{2}-\d{2}[T ]00:00(?::00(?:\.0+)?)?$/.test(raw)) {
-    return shiftCalendarDay(day, -1)
+/** Project a connected calendar timestamp onto the household day it covers. */
+export function calendarEventDay(value: string, timezone: string, boundary: "start" | "exclusive-end" = "start"): string | null {
+  const raw = value.trim()
+  const exclusive = boundary === "exclusive-end"
+  if (DATE_ONLY.test(raw)) {
+    const day = calendarDayFromInput(raw, timezone)
+    return day && exclusive ? shiftCalendarDay(day, -1) : day
   }
-  return day
-}
-
-function zonedCalendarInstant(raw: string): number | null {
-  if (!/[T ].*(?:Z|[+-]\d{2}:?\d{2})$/i.test(raw)) return null
-  const instant = Date.parse(raw)
-  return Number.isFinite(instant) ? instant : null
+  return calendarDayFromInput(calendarStartInstant(raw, timezone) - Number(exclusive), timezone)
 }
 
 /** Whole calendar days from today to a date-only or timed ISO due date in the given timezone, or null if invalid. */

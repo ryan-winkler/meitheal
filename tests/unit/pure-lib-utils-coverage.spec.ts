@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test"
 
 import { sanitizeTodoTitle } from "../../apps/web/src/lib/cleanup-corrupt-titles"
-import { calendarDaysFromToday, calendarOccurrenceStartKey, calendarToday, compareCalendarStarts, formatCalendarEventTime } from "../../apps/web/src/lib/date"
+import { calendarDaysFromToday, calendarEventDay, calendarOccurrenceStartKey, calendarToday, compareCalendarStarts, formatCalendarEventTime } from "../../apps/web/src/lib/date"
 import { formatRegionalDate } from "../../apps/web/src/lib/regional-date"
 import { evaluateFilterGroup, extractDataFromElement, passesAdvancedFilter, type FilterGroup } from "../../apps/web/src/lib/filter-engine"
 
@@ -49,6 +49,14 @@ test("Calendar orders floating times in the household timezone on both sides of 
       expect(calendarOccurrenceStartKey("2031-07-14", timezone)).not.toBe(
         calendarOccurrenceStartKey("2031-07-14T00:00:00", timezone),
       )
+      const nuuk = "America/Nuuk"
+      for (const start of ["2026-03-28T23:30:00", "2026-03-29T00:30:00-01:00"]) {
+        expect(calendarEventDay(start, nuuk)).toBe("2026-03-29")
+        expect(calendarEventDay(start, nuuk, "exclusive-end")).toBe("2026-03-29")
+        expect(formatCalendarEventTime(start, nuuk)).toBe("00:30")
+      }
+      expect(calendarEventDay("2026-03-29", nuuk)).toBe("2026-03-29")
+      expect(calendarEventDay("2026-03-29", nuuk, "exclusive-end")).toBe("2026-03-28")
     }
   } finally {
     if (original === undefined) delete process.env.TZ

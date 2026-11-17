@@ -2,7 +2,7 @@ import type { TaskKind } from "@meitheal/domain-tasks"
 import { CALENDAR_AREA_APPLIED_EVENT, CALENDAR_AREA_REQUEST_EVENT, getRememberedAreaId } from "@lib/area-selector-controller"
 import { CALENDAR_FILTER_STATE_EVENT, readCalendarTaskFilters } from "@lib/calendar-task-filter"
 import { createClientLogger } from "@lib/client-logger"
-import { calendarDayFromInput, calendarEventLastDay, calendarOccurrenceStartKey, compareCalendarStarts, formatCalendarEventTime, formatTimeInZone, normalizeCalendarEventSummary, shiftCalendarDay } from "@lib/date"
+import { calendarEventDay, calendarOccurrenceStartKey, compareCalendarStarts, formatCalendarEventTime, formatTimeInZone, normalizeCalendarEventSummary, shiftCalendarDay } from "@lib/date"
 import { createFocusTrap } from "@lib/focus-trap"
 import { updateKanbanFilters, type KanbanFilters } from "@lib/kanban-query"
 import { createTablerSvgElement, mapEntityEmojiToTabler, type TablerIconName } from "@lib/tabler-svg"
@@ -478,10 +478,10 @@ async function loadCalendarRange(
     if (!Array.isArray(data.events)) throw new Error("Invalid calendar feed")
     return data.events.filter(event => {
       if (!event || typeof event.start !== "string" || typeof event.summary !== "string") return false
-      const firstDay = calendarDayFromInput(event.start, timezone)
+      const firstDay = calendarEventDay(event.start, timezone)
       if (!firstDay || firstDay >= end) return false
       if (firstDay >= start) return true
-      const lastDay = typeof event.end === "string" ? calendarEventLastDay(event.end, timezone) : null
+      const lastDay = typeof event.end === "string" ? calendarEventDay(event.end, timezone, "exclusive-end") : null
       return lastDay !== null && lastDay >= start
     }).map(event => ({ ...event, entity }))
   }))
@@ -598,7 +598,7 @@ async function loadInlineEventPreviews(
 
     const byDate = new Map<string, CalendarEventRecord[]>()
     for (const event of events) {
-      const date = calendarDayFromInput(event.start, timezone)
+      const date = calendarEventDay(event.start, timezone)
       if (!date) continue
       const group = byDate.get(date) ?? []
       group.push(event)

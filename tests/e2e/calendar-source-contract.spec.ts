@@ -325,6 +325,29 @@ test("Calendar reads configured sources as a household member and filters before
     await expect(page.locator('.cal-cell[data-date="2031-07-27"]')).not.toHaveAccessibleName(/calendar event/)
     await calDAVLastDay.press("Enter")
     await expect(connected.getByRole("button", { name: /Legacy linked CalDAV trip/ })).toBeVisible()
+    await page.keyboard.press("Escape")
+
+    for (const [key, value] of [["timezone", "America/Nuuk"], ["calendar_entities", '["calendar.household"]']]) {
+      const result = await api.put(base + "/api/settings", { headers: headers("admin"), data: { key, value } })
+      expect(result.status(), await result.text()).toBe(200)
+    }
+    const gapId = "linked-midnight-gap"
+    insertLinkedTask.run(gapId, "Saved midnight transition", "pending", gapId, gapId, null)
+    insertConfirmation.run(gapId, gapId, gapId, "midnight-gap-uid", "ha.calendar_sync", JSON.stringify({
+      entity_id: "calendar.household", start: "2026-03-28T23:30:00", end: "2026-03-28T23:45:00",
+    }))
+    await page.route("**/api/ha/events?*", route => route.fulfill({ json: { events: [
+      { uid: "midnight-gap-uid", summary: "Live midnight transition", start: "2026-03-29T01:30:00Z" },
+    ] } }))
+    await page.goto(base + "/tasks?view=calendar&year=2026&month=2#calendar")
+    const prior = page.locator('.cal-cell[data-date="2026-03-28"]')
+    const shifted = page.locator('.cal-cell[data-date="2026-03-29"]')
+    await expect(prior).not.toHaveAccessibleName(/calendar event/)
+    await expect(shifted).toHaveAccessibleName(/\b1 calendar event\b/)
+    await expect(shifted.locator(".cal-inline-ha")).toHaveText("00:30 Live midnight transition")
+    await shifted.press("Enter")
+    await expect(connected.getByRole("button", { name: /Saved midnight transition.*00:30/ })).toBeVisible()
+    await expect(connected.getByText("Live midnight transition")).toHaveCount(0)
   } catch (error) {
     console.log("Calendar browser diagnostics", pageErrors)
     throw error

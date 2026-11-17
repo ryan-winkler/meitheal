@@ -20,7 +20,7 @@ import { getStatusDef, isDoneStatus, normalizeStatus, STATUS } from "../../../li
 import { logApiError, logApiWarn } from "../../../lib/api-logger"
 import { EXACT_TASK_IDENTIFIER_SCORE } from "../../../lib/task-search-score"
 import { readStoredCalendarDay } from "../../../lib/calendar-day"
-import { calendarDayFromInput, calendarEventLastDay, calendarOccurrenceStartKey, calendarToday, compareCalendarStarts, shiftCalendarDay, isDueOverdue } from "../../../lib/date"
+import { calendarDayFromInput, calendarEventDay, calendarOccurrenceStartKey, calendarToday, compareCalendarStarts, shiftCalendarDay, isDueOverdue } from "../../../lib/date"
 import { parseTicketKey } from "../../../lib/ticket-key"
 import { getNextOccurrence, parseRRule } from "../recurrence"
 import { deferralTerminalStatusesSql, isDeferralTerminalStatus } from "./task-deferral-status"
@@ -811,10 +811,10 @@ export class TaskRepository {
       task: Omit<LinkedCalendarEvent, "start">, startRaw: unknown, endRaw?: unknown, effectiveEndRaw?: unknown,
     ) => {
       if (typeof startRaw !== "string" || !startRaw.trim()) return;
-      const startDay = calendarDayFromInput(startRaw, timezone);
+      const startDay = calendarEventDay(startRaw, timezone);
       if (!startDay) return;
 
-      const providerEnd = typeof endRaw === "string" ? calendarEventLastDay(endRaw, timezone) : null
+      const providerEnd = typeof endRaw === "string" ? calendarEventDay(endRaw, timezone, "exclusive-end") : null
       const storedEnd = typeof effectiveEndRaw === "string" && /^\d{4}-\d{2}-\d{2}$/.test(effectiveEndRaw.trim())
         ? calendarDayFromInput(effectiveEndRaw, timezone) : null
       const endDay = providerEnd ?? storedEnd ?? startDay
@@ -870,10 +870,10 @@ export class TaskRepository {
         for (const occurrence of payload.occurrences) {
           addSpan(task, occurrence?.start, occurrence?.end, occurrence?.effective_end)
         }
-      } else if (typeof providerStart === "string" && calendarDayFromInput(providerStart, timezone)) {
+      } else if (typeof providerStart === "string" && calendarEventDay(providerStart, timezone)) {
         addSpan(task, providerStart, payload?.end ?? payload?.dtend, payload?.effective_end)
       } else {
-        const endDay = typeof row.end_date === "string" ? calendarDayFromInput(row.end_date, timezone) : undefined
+        const endDay = typeof row.end_date === "string" ? calendarEventDay(row.end_date, timezone) : undefined
         addSpan(task, row.start_date ?? row.due_date, undefined, endDay)
       }
     }
