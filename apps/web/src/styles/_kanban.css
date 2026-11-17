@@ -407,10 +407,6 @@
   @apply bg-bg-card border border-border rounded-xl shadow-lg w-full max-w-md mx-4 p-6;
 }
 
-.lane-item {
-  @apply flex items-center gap-2 py-1;
-}
-
 .lane-edit,
 .lane-remove {
   @apply bg-transparent border-none cursor-pointer text-text-muted text-sm;
@@ -431,11 +427,6 @@
 
 .cp-item:hover {
   @apply bg-bg-hover;
-}
-
-/* --- Misc --- */
-.n8n-event {
-  @apply flex items-center justify-between py-2 px-3 bg-bg-secondary/50 rounded-md text-sm;
 }
 
 #kanban-board .swimlane-cards[hidden] {

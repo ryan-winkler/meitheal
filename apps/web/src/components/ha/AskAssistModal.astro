@@ -136,6 +136,8 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
   import { renderSpriteIconSvg, type IconName } from "../../generated/icon-registry"
 
   pageLifecycle.onPageLoad((pageSignal) => {
+  const overlay = document.getElementById("ask-ha-overlay");
+  if (!overlay) return
   const runtime = window as unknown as { __meithealAskAssist?: AbortController }
   runtime.__meithealAskAssist?.abort()
   runtime.__meithealAskAssist = new AbortController()
@@ -144,7 +146,6 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
   const log = createClientLogger("ai", "assist-modal");
   // Toast import removed — errors shown inline in chat bubbles
 
-  const overlay = document.getElementById("ask-ha-overlay");
   const closeBtn = document.getElementById("close-ask-ha-modal");
   const form = document.getElementById("ask-ha-form") as HTMLFormElement;
   const input = document.getElementById("ask-ha-input") as HTMLInputElement;

@@ -4,7 +4,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
-import { expect, test, type Browser, type Route } from "@playwright/test"
+import { expect, test, type Browser, type Request, type Route } from "@playwright/test"
 import { launchPinBrowser, pinRequest, startCoreFixture } from "../scripts/task-pins-fixture"
 
 const noStore = "private, no-store"
@@ -69,6 +69,33 @@ test("group admin previews and saves through HTTPS ingress, while revoked reader
       if (route.endsWith(path) || response.status() >= 400) logs.push(`Browser HTTP ${response.status()} ${route}\n`)
     })
     const base = origin + prefix + "/inactivity"
+    await page.goto(origin + prefix + "/tasks?area=default#kanban")
+    const openBoardActions = async () => {
+      const toggle = page.getByRole("button", { name: "Board actions", exact: true })
+      if (await toggle.isVisible()) await toggle.click()
+    }
+    await openBoardActions()
+    await page.getByRole("link", { name: "Deferred", exact: true }).click()
+    const queue = page.locator("[data-deferred-root]")
+    const queueArea = queue.getByRole("combobox", { name: "Area", exact: true })
+    await expect(page).toHaveURL(origin + prefix + "/deferred?area=default")
+    await expect(queueArea).toHaveValue("default")
+    await expect(queue.locator("form")).toHaveAttribute("action", prefix + "/deferred")
+    await queueArea.selectOption({ label: "All areas" })
+    await queue.getByRole("button", { name: "Apply area" }).click()
+    await expect(page).toHaveURL(origin + prefix + "/deferred?area=")
+    await expect(queueArea).toHaveValue("")
+    await queue.getByRole("link", { name: "Back to Tasks" }).click()
+    await expect(page).toHaveURL(origin + prefix + "/tasks?area=#kanban")
+
+    await page.goto(origin + prefix + "/tasks?area=default#kanban")
+    await openBoardActions()
+    await page.getByRole("link", { name: "Inactivity", exact: true }).click()
+    await expect(page).toHaveURL(base + "?area=default")
+    await expect(page.getByRole("combobox", { name: "Area", exact: true })).toHaveValue("default")
+    await expect(page.getByRole("link", { name: "Back to Tasks" })).toHaveAttribute("href", new RegExp(prefix + "/tasks\\?area=default#kanban$"))
+    await page.getByRole("link", { name: "Back to Tasks" }).click()
+    await expect(page).toHaveURL(origin + prefix + "/tasks?area=default#kanban")
     await page.goto(base)
     const content = page.locator("[data-inactivity-content]")
     const rows = page.locator("[data-inactivity-rows]")
@@ -325,14 +352,20 @@ test("group admin previews and saves through HTTPS ingress, while revoked reader
       response.request().method() === "PUT" && response.ok())
     await modal.locator("#td-status").selectOption("complete")
     await completed
+    await expect(page.locator('.kanban-column[data-status="complete"] .kanban-card[data-id="browser-card"]')).toBeAttached()
     await expect(childCues).toHaveCount(0)
     await expect(blockedCues).toHaveText(["Ready to defer", "Stalled"])
     await expect(peerCues).toHaveText(["Ready to defer", "Stalled"])
     await expect(page.locator("html")).toHaveAttribute("data-fixture-board-document", "true")
+    const isPeerRefresh = (request: Request) => {
+      if (request.method() !== "POST" || new URL(request.url()).pathname !== api) return false
+      const body = request.postDataJSON()
+      return body?.action === "board" && body.ids?.length === 1 && body.ids[0] === "stall-peer"
+    }
     const holdDenial = new Promise<void>(resolve => { releaseDenial = resolve })
     let held = false
     const delayOneDenial = async (route: Route) => {
-      if (held) return route.continue()
+      if (!isPeerRefresh(route.request()) || held) return route.continue()
       held = true
       await holdDenial
       await route.fulfill({ status: 403, json: {} })
@@ -345,7 +378,7 @@ test("group admin previews and saves through HTTPS ingress, while revoked reader
     await invalidatePeer()
     await expect(peerCues).toHaveText(["Ready to defer", "Stalled"])
     const olderDenial = page.waitForResponse(response =>
-      new URL(response.url()).pathname === api && response.status() === 403)
+      isPeerRefresh(response.request()) && response.status() === 403, { timeout: 5_000 })
     releaseDenial!()
     await olderDenial
     await expect(peerCues).toHaveCount(0)
@@ -356,6 +389,7 @@ test("group admin previews and saves through HTTPS ingress, while revoked reader
     let capturedSuccess = false
     let staleSuccessFinished = false
     const denyWithSuccessPending = async (route: Route) => {
+      if (!isPeerRefresh(route.request())) return route.continue()
       if (capturedSuccess) {
         await route.fulfill({ status: 403, json: {} })
         return
@@ -373,7 +407,7 @@ test("group admin previews and saves through HTTPS ingress, while revoked reader
     await invalidatePeer()
     await expect.poll(() => capturedSuccess).toBe(true)
     const denialBeforeSuccess = page.waitForResponse(response =>
-      new URL(response.url()).pathname === api && response.status() === 403)
+      isPeerRefresh(response.request()) && response.status() === 403, { timeout: 5_000 })
     await invalidatePeer()
     await denialBeforeSuccess
     await expect(peerCues).toHaveCount(0)
@@ -385,7 +419,7 @@ test("group admin previews and saves through HTTPS ingress, while revoked reader
     await expect(peerCues).toHaveText(["Ready to defer", "Stalled"])
     await setMemberActive(false)
     const rejected = page.waitForResponse(response =>
-      new URL(response.url()).pathname === api && response.status() === 403)
+      new URL(response.url()).pathname === api && response.status() === 403, { timeout: 5_000 })
     await page.evaluate(() => window.dispatchEvent(new Event("focus")))
     await rejected
     await expect(peerCues).toHaveCount(0)

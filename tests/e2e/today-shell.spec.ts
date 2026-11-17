@@ -50,12 +50,12 @@ test.describe("Today Shell", () => {
     await expect(page.locator("#search-hub-input")).toBeFocused()
   })
 
-  test("filters and Clear Done have accessible names", async ({ page }) => {
+  test("filters and Archive completed have accessible names", async ({ page }) => {
     const filters = page.locator("#today-filter-bar")
     for (const name of ["Filter by status", "Filter by priority", "Filter by RICE score", "Sort tasks"]) {
       await expect(filters.getByRole("combobox", { name, exact: true })).toBeVisible()
     }
-    await expect(page.getByRole("button", { name: "Clear Done", exact: true })).toBeVisible()
+    await expect(page.getByRole("button", { name: "Archive completed", exact: true })).toBeVisible()
   })
 
   test("new task button opens the shared task modal", async ({ page }) => {
@@ -65,15 +65,18 @@ test.describe("Today Shell", () => {
     await expect(page.locator("#new-task-title-input")).toBeFocused()
   })
 
-  test("clicking a today task opens the shared task detail surface", async ({ page }) => {
-    const firstTask = page.locator(".tli").first()
-    if (await firstTask.count() === 0) {
-      test.skip(true, "Need at least one today task to verify detail handoff")
-      return
+  test("clicking a today task opens the shared task detail surface", async ({ page, request, baseURL }) => {
+    const headers = { origin: new URL(baseURL!).origin }
+    const due_date = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Dublin", dateStyle: "short" }).format(new Date())
+    const response = await request.post("/api/tasks", { headers, data: { title: "Verify Today details", due_date } })
+    expect(response.status()).toBe(201)
+    const { id } = await response.json()
+    try {
+      await page.reload()
+      await page.locator(`.tli[data-id="${id}"]`).click()
+      await expect(page.locator("#td-title")).toHaveValue("Verify Today details")
+    } finally {
+      await request.delete(`/api/tasks/${id}`, { headers })
     }
-
-    await firstTask.click()
-
-    await expect(page.locator("#task-detail-overlay")).toHaveClass(/active/)
   })
 })

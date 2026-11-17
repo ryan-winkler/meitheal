@@ -471,14 +471,13 @@ for (const due of ["2026-12-13T15:26:32.456+05:30", "2026-12-13"]) {
       const published = await sent
       expect(published.status()).toBe(201)
       const publication = published.request().postDataJSON().task
-      const expectedDue = due.includes("T") ? due : due + "T00:00:00.000Z"
       expect(publication).toMatchObject({
         title: snapshot.title, description: edited.description, priority: 5, recurrence_rule: snapshot.recurrence,
-        due_date: expectedDue, start_date: snapshot.event.start, end_date: snapshot.event.end,
+        due_date: due, start_date: snapshot.event.start, end_date: snapshot.event.end,
       })
       const task = await page.evaluate(async prefix => await (await fetch(prefix + "/api/tasks/MTH-1")).json(), prefix)
       expect(task).toMatchObject({ title: snapshot.title, description: edited.description, priority: 5,
-        recurrence_rule: snapshot.recurrence, due_date: expectedDue, start_date: snapshot.event.start, end_date: snapshot.event.end })
+        recurrence_rule: snapshot.recurrence, due_date: due, start_date: snapshot.event.start, end_date: snapshot.event.end })
     })
   })
 }

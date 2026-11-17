@@ -257,16 +257,18 @@ async function autoStartTodoSync(): Promise<void> {
  */
 async function autoStartCalendarSync(): Promise<void> {
   try {
+    const { CALENDAR_ENTITY_SETTINGS, configuredCalendarEntityIds, startMultiCalendarSync, startCalDAVSync } =
+      await import("@domains/calendar")
     const client = await getDB();
 
     const res = await client.execute({
       sql: `SELECT key, value FROM settings WHERE key IN (
-        'calendar_entities', 'calendar_entity', 'cal_entity', 'calendar-entity',
+        ${CALENDAR_ENTITY_SETTINGS.map(() => "?").join(", ")},
         'calendar_sync_enabled', 'calendar_write_back', 'calendar_sync_interval_ms',
         'calendar_sync_mode', 'calendar_sync_modes',
         'caldav_url'
       )`,
-      args: [],
+      args: [...CALENDAR_ENTITY_SETTINGS],
     });
 
     const settings: Record<string, string> = {};
@@ -284,26 +286,7 @@ async function autoStartCalendarSync(): Promise<void> {
     const writeBack = settings.calendar_write_back === "true";
     const syncIntervalMs = Number(settings.calendar_sync_interval_ms) || 5 * 60 * 1000;
 
-    // Resolve entity list: prefer multi-calendar array, then legacy single key
-    let entityIds: string[] = [];
-
-    // Try calendar_entities (JSON array from multi-select UI)
-    const entitiesRaw = settings.calendar_entities;
-    if (entitiesRaw) {
-      try {
-        const parsed = typeof entitiesRaw === "string" ? JSON.parse(entitiesRaw) : entitiesRaw;
-        if (Array.isArray(parsed)) {
-          entityIds = parsed.filter((id: unknown) => typeof id === "string" && id.length > 0);
-        }
-      } catch { /* invalid JSON — fall through to legacy */ }
-    }
-
-    // Fallback: legacy single entity key
-    if (entityIds.length === 0) {
-      const legacyId =
-        settings.calendar_entity ?? settings.cal_entity ?? settings["calendar-entity"];
-      if (legacyId) entityIds = [legacyId];
-    }
+    const entityIds = configuredCalendarEntityIds(settings)
 
     // Backward-compat migration: copy legacy key to canonical
     if (entityIds.length > 0 && !settings.calendar_entity && (settings.cal_entity || settings["calendar-entity"])) {
@@ -343,8 +326,7 @@ async function autoStartCalendarSync(): Promise<void> {
       return;
     }
 
-    const { startMultiCalendarSync, startCalDAVSync } = await import("@domains/calendar/calendar-bridge");
-    type CalSyncMode = import("@domains/calendar/calendar-bridge").CalendarSyncMode;
+    type CalSyncMode = import("@domains/calendar").CalendarSyncMode;
 
     // Per-entity sync modes from settings (JSON map: {entity_id: mode})
     let perEntityModes: Record<string, CalSyncMode> = {};

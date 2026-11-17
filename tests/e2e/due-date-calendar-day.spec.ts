@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test"
-import { calendarDaysFromToday, calendarToday, formatRegionalDate } from "../../apps/web/src/lib/date"
+import { calendarDaysFromToday, calendarToday } from "../../apps/web/src/lib/date"
+import { formatRegionalDate } from "../../apps/web/src/lib/regional-date"
 
 function shiftDay(day: string, days: number) {
   const date = new Date(day + "T00:00:00Z")

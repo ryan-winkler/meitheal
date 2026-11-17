@@ -1,3 +1,4 @@
+import { lockTodayTaskStatus, syncTodayTaskStatus } from "../today-list"
 import type { ListenerManager } from "../managed-listeners"
 import { taskApi } from "../task-api-client"
 import { showTaskBatchResult } from "../task-batch-feedback"
@@ -119,7 +120,19 @@ export function setupBatchUI(container: HTMLElement, lm: ListenerManager) {
     const tomorrow = new Date()
     tomorrow.setDate(tomorrow.getDate() + 1)
     const patch = action === "complete" ? { status: "complete" } : { due_date: tomorrow.toISOString().slice(0, 10) }
-    const results = await Promise.allSettled(ids.map(id => action === "delete" ? taskApi.deleteTask(id) : taskApi.updateTask(id, patch)))
+    const results = await Promise.allSettled(ids.map(async id => {
+      if (action === "delete") return taskApi.deleteTask(id)
+      if (action !== "complete") return taskApi.updateTask(id, patch)
+      const unlock = lockTodayTaskStatus(container, id)
+      if (!unlock) throw new Error("Task status update already in progress")
+      try {
+        const updated = await taskApi.updateTask(id, patch)
+        if (!lm.disposed) syncTodayTaskStatus(container, id, "complete")
+        return updated
+      } finally {
+        unlock()
+      }
+    }))
     if (lm.disposed) return
 
     for (const [index, result] of results.entries()) {

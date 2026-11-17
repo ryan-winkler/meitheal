@@ -79,6 +79,11 @@ for (const action of ["complete", "snooze", "delete"] as const) {
       await apply()
       await expect.poll(() => isSaved(savedId)).toBe(true)
       await expect.poll(() => attempted.length).toBe(2)
+      if (action === "complete") {
+        await expect(savedRow).toHaveAttribute("data-status", "complete")
+        await expect(savedRow.locator(".tli__checkbox")).toBeChecked()
+        await expect(retryRow.locator(".tli__checkbox")).toHaveAttribute("aria-disabled", "true")
+      }
       await expect(bar.locator('button[value="snooze"]')).toBeDisabled()
       await actionButton.evaluate(button => (button as HTMLButtonElement).click())
       refusal.resolve()
@@ -106,3 +111,89 @@ for (const action of ["complete", "snooze", "delete"] as const) {
     }
   })
 }
+
+test("Today updates the Overdue filter and deadline when work is completed or reopened", async ({ page, request, baseURL }) => {
+  const headers = { origin: new URL(baseURL!).origin }
+  const due_date = new Date(Date.now() - 2 * 86_400_000).toISOString().slice(0, 10)
+  const created = await request.post("/api/tasks", { headers, data: { title: "Carried-forward deadline", due_date } })
+  expect(created.status(), await created.text()).toBe(201)
+  const { id } = await created.json()
+  try {
+    await page.goto("/today?status=overdue#today-work")
+    const row = page.locator(`#section-carried .tli[data-id="${id}"]`)
+    const filter = page.getByRole("combobox", { name: "Filter by status" })
+    const complete = row.locator(".tli__checkbox")
+    const overdue = row.getByText("overdue", { exact: true })
+    await expect(filter).toHaveValue("overdue")
+    await expect(overdue).toBeVisible()
+
+    await complete.press("Space")
+    await expect(row).toHaveAttribute("data-overdue", "false")
+    await expect(row).toBeHidden()
+    await filter.selectOption("")
+    await expect(row).toBeVisible()
+    await expect(row).toContainText(`Due ${due_date}`)
+    await expect(overdue).toBeHidden()
+
+    await complete.press("Space")
+    await expect(row).toHaveAttribute("data-overdue", "true")
+    await expect(overdue).toBeVisible()
+    await filter.selectOption("overdue")
+    await expect(row).toBeVisible()
+  } finally {
+    await request.delete(`/api/tasks/${id}`, { headers, data: {} })
+  }
+})
+
+test("Work reopens Focus cards before and after the cleared state", async ({ page, request, baseURL }) => {
+  const headers = { origin: new URL(baseURL!).origin }
+  const day = new Intl.DateTimeFormat("en-CA", { dateStyle: "short", timeZone: "Europe/Dublin" }).format(new Date())
+  const ids: string[] = []
+  try {
+    for (const title of ["Finish the Work row first", "Finish the Focus card second"]) {
+      const response = await request.post("/api/tasks", { headers, data: {
+        title, due_date: day, status: "active", priority: 1,
+      } })
+      expect(response.status(), await response.text()).toBe(201)
+      ids.push((await response.json()).id)
+    }
+    await page.emulateMedia({ reducedMotion: "no-preference" })
+    await page.clock.install()
+    await page.goto("/today#today-work")
+    await page.clock.pauseAt(new Date(Date.now() + 1000))
+    const stack = page.locator("#section-focus-stack")
+    const visibleCards = stack.locator(".focus-card:not([hidden], [inert])")
+    await expect(visibleCards).toHaveCount(2)
+    const first = page.locator(`#today-due-list .tli[data-id="${ids[0]}"] .tli__checkbox`)
+    const second = page.locator(`#today-due-list .tli[data-id="${ids[1]}"] .tli__checkbox`)
+    const secondFocus = stack.locator(`.focus-card__complete[data-id="${ids[1]}"]`)
+
+    await first.press("Space")
+    await expect(visibleCards).toHaveCount(1)
+    await expect(stack).toContainText("1 to focus on")
+
+    await secondFocus.press("Enter")
+    await expect(second).toBeChecked()
+    await expect(stack.locator(".focus-card--completing")).toHaveCount(1)
+    await second.press("Space")
+    await expect(second).not.toHaveAttribute("aria-disabled", "true")
+    await expect(visibleCards).toHaveCount(1)
+    await page.clock.runFor(400)
+    await expect(secondFocus).toBeVisible()
+    await expect(visibleCards).toHaveCount(1)
+
+    await secondFocus.press("Enter")
+    await expect(second).toBeChecked()
+    await expect(stack.locator(".focus-card--completing")).toHaveCount(1)
+    await page.clock.runFor(400)
+    await expect(stack).toContainText("Focus Stack cleared!")
+    await expect(visibleCards).toHaveCount(0)
+
+    await first.press("Space")
+    await expect(stack.getByText("Focus Stack cleared!")).toHaveCount(0)
+    await expect(stack.getByRole("button", { name: "Complete Finish the Work row first" })).toBeVisible()
+    await expect(visibleCards).toHaveCount(1)
+  } finally {
+    for (const id of ids) await request.delete(`/api/tasks/${id}`, { headers, data: {} })
+  }
+})

@@ -12,6 +12,7 @@ import { validateGrocyBaseUrl } from "@meitheal/integration-core"
 import { parseAiHandoffUrl } from "../../lib/ai-handoff-url"
 import { apiError, apiJson, apiProblem } from "../../lib/api-response"
 import { currentSettingsAccess } from "../../lib/current-settings-access"
+import { isThemeMode } from "../../lib/theme-mode"
 import { isLegacySupervisorIngressUrl, resolveSupervisorGrocyAddon } from "../../lib/grocy-client"
 import { canManageSystemSettings, isSecretSetting, isSystemSetting, requireSystemSettingsAdmin, REDACTED_SETTING_VALUE } from "../../lib/settings-security"
 
@@ -155,9 +156,8 @@ export const PUT: APIRoute = async ({ request, locals }) => {
     }
 
     const secret = isSecretSetting(key)
-    if (key === "theme" && body.value !== "dark" && body.value !== "light" &&
-        body.value !== "auto" && body.value !== "custom") {
-      return apiProblem({ status: 400, detail: "Choose Dark, Light, Auto, or Custom." })
+    if (key === "theme" && !isThemeMode(body.value)) {
+      return apiProblem({ status: 400, detail: "Choose Emerald Isle, Knight Rider, Light, Auto, or Custom." })
     }
     if (isSystemSetting(key) || (key === "theme" && body.value === "custom")) {
       const denied = requireSystemSettingsAdmin(request, locals)

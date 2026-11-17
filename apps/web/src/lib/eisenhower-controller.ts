@@ -20,6 +20,7 @@
  *   Q4 (not-now)    → urgency 1, importance 1
  */
 
+import { hydrateTaskAssignees } from "./task-assignee-display"
 import { STATUS, STATUS_LABELS } from "@lib/status-config"
 import { taskApi, type TaskPatchPayload } from "@lib/task-api-client"
 import { initPageShellNavigation } from "@lib/page-shell-controller"
@@ -84,6 +85,7 @@ export function initEisenhowerPage({ signal }: { signal: AbortSignal }) {
     if (host.__meithealEisenhowerController === owner) delete host.__meithealEisenhowerController
   }, { once: true })
   const lifecycle = controller.signal
+  void hydrateTaskAssignees(page, lifecycle)
 
   initPageShellNavigation({
     barId: "eisenhower-bar",
@@ -397,6 +399,7 @@ async function updateQuadrant(page: HTMLElement, bar: HTMLElement, action: strin
     if (patch.status === STATUS.BACKLOG) {
       for (const task of saved) {
         task.dataset.status = STATUS.BACKLOG
+        task.removeAttribute("data-work-active")
         const badge = task.querySelector<HTMLElement>(".status-badge")
         if (!badge) continue
         badge.dataset.badgeStatus = STATUS.BACKLOG

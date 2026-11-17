@@ -851,10 +851,11 @@ test("a 2,000-task Table keeps its paged results, assets and views inside ingres
   await expect(filters).toHaveAttribute("aria-expanded", "true")
 
   const calendar = page.getByRole("navigation", { name: "Task views" }).getByRole("link", { name: "Calendar" })
-  await expect(calendar).toHaveAttribute("href", prefix + "/tasks?view=calendar#calendar")
+  const calendarUrl = origin + prefix + "/tasks?view=calendar#calendar"
+  await expect.poll(() => calendar.evaluate((link: HTMLAnchorElement) => link.href)).toBe(calendarUrl)
   await calendar.click()
   await expect(page.locator("#tasks-view-calendar")).toBeVisible()
-  expect(new URL(page.url()).pathname).toBe(prefix + "/tasks")
+  await expect(page).toHaveURL(calendarUrl)
   expect(escaped).toEqual([])
 
   await page.goto(origin + prefix + "/tasks?view=table#table")
@@ -863,7 +864,7 @@ test("a 2,000-task Table keeps its paged results, assets and views inside ingres
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
   await page.keyboard.press("3")
   await expect(page.locator("#tasks-view-calendar")).toBeVisible()
-  expect(new URL(page.url()).pathname).toBe(prefix + "/tasks")
+  await expect(page).toHaveURL(calendarUrl)
   expect(escaped).toEqual([])
 })
 
@@ -910,6 +911,42 @@ test("a Settings section chosen after a search jump is remembered inside ingress
   await expect(page).toHaveURL(/\/settings#navigation-settings$/)
   const saved = await page.evaluate(() => JSON.parse(sessionStorage.getItem("meitheal-navigation-state") ?? "null"))
   expect(saved).toMatchObject({ path: "/settings#navigation-settings" })
+})
+
+test("ingress Today keeps refreshed completion links in the App", async ({ page, context }) => {
+  const title = "Complete from the ingress Today fixture"
+  const created = await page.request.post(origin + prefix + "/api/tasks", {
+    headers: { cookie: "feedback-fixture=admin", origin },
+    data: { title, due_date: new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Europe/Dublin", dateStyle: "short",
+    }).format(new Date()) },
+  })
+  expect(created.status()).toBe(201)
+  const { id } = await created.json()
+  await context.setExtraHTTPHeaders({})
+  await context.addCookies([{ name: "feedback-fixture", value: "member", url: origin }])
+  await page.addInitScript(() => localStorage.setItem("meitheal-theme", "knight-rider"))
+  await page.goto(origin + prefix + "/today")
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "knight-rider")
+  const row = page.locator(`#today-due-list .tli[data-id="${id}"]`)
+  await expect(row).toHaveAttribute("draggable", "true")
+  const [saved] = await Promise.all([
+    page.waitForResponse(response => response.url() === origin + prefix + "/api/tasks/" + id &&
+      response.request().method() === "PUT", { timeout: 5000 }),
+    row.getByRole("checkbox", { name: `Complete ${title}` }).check(),
+  ])
+  expect(saved.status(), await saved.text()).toBe(200)
+  const disclosure = page.locator(".today-completed-tasks")
+  await disclosure.locator("summary").click()
+  const link = disclosure.getByRole("link", { name: title })
+  const expected = origin + prefix + "/tickets/" + id
+  await expect(link).toHaveJSProperty("href", expected)
+  const [newTab] = await Promise.all([
+    context.waitForEvent("page", { timeout: 5000 }),
+    link.click({ modifiers: ["ControlOrMeta"] }),
+  ])
+  await expect(newTab).toHaveURL(expected)
+  await newTab.close()
 })
 
 test("ingress Settings keeps readable palettes and resolves Auto from the panel or system", async ({ page, context }) => {
@@ -1162,6 +1199,49 @@ test("member can opt into Home Assistant colors and keep the saved fallback", as
   await expect(root).toHaveCSS("color-scheme", "dark")
   await expect(root).toHaveAttribute("data-theme", "dark")
   await expect.poll(() => token("--personal-accent")).toBe("#8844ee")
+
+  await theme.selectOption("knight-rider")
+  await expect(root).toHaveAttribute("data-theme", "knight-rider")
+  const knightBackground = await token("--bg-primary-rgb")
+  expect(knightBackground).toBe(fallbackBackground)
+  await match.check()
+  await expect(root).toHaveAttribute("data-ha-match", "light")
+  await expect(root).toHaveCSS("color-scheme", "light")
+  await expect(theme).toHaveValue("knight-rider")
+  await expect.poll(() => token("--bg-primary-rgb")).toBe("244 246 250")
+  await content.locator("#accent-reset").click()
+  const accent = content.locator("#accent-color-custom")
+  await expect(accent).toHaveValue("#2453a6")
+  await expect.poll(() => token("--personal-accent")).toBe("#2453a6")
+  await match.uncheck()
+  await expect(root).toHaveAttribute("data-theme", "knight-rider")
+  await expect(accent).toHaveValue("#6495ed")
+  await expect.poll(() => token("--bg-primary-rgb")).toBe(knightBackground)
+})
+
+test("ingress Auto follows Home Assistant when the cached theme is invalid", async ({ page, context }) => {
+  await context.setExtraHTTPHeaders({})
+  await context.addCookies([{ name: "feedback-fixture", value: "member", url: origin }])
+  await page.emulateMedia({ colorScheme: "dark" })
+  await page.addInitScript(() => localStorage.setItem("meitheal-theme", "outdated-theme"))
+  const target = origin + prefix + "/today"
+  const panel = origin + "/invalid-theme-panel-fixture"
+  await page.route(panel, route => route.fulfill({
+    contentType: "text/html",
+    body: `<!doctype html><html lang="en" style="--primary-background-color: #fafafa">
+      <title>Home Assistant theme fixture</title>
+      <iframe src="${target}" title="Meitheal"></iframe></html>`,
+  }))
+  await page.goto(panel)
+  const root = page.frameLocator("iframe").locator("html")
+  const background = () => root.evaluate(element => getComputedStyle(element).getPropertyValue("--bg-secondary").trim().toLowerCase())
+  await expect(root).toHaveAttribute("data-theme", "auto")
+  await expect(root).toHaveAttribute("data-ha-theme", "light")
+  await expect.poll(background).toBe("#ecebe4")
+  await page.evaluate(() => document.documentElement.style.setProperty("--primary-background-color", "#16202a"))
+  await expect(root).toHaveAttribute("data-ha-theme", "dark")
+  await expect(root).toHaveAttribute("data-theme", "auto")
+  await expect.poll(background).toBe("#171a18")
 })
 
 test("ingress Auto follows device preference when its parent is cross-origin", async ({ page, context }) => {

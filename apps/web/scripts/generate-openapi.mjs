@@ -856,7 +856,12 @@ const paths = {
       operationId: "getTodayTaskCounts",
       tags: ["Tasks"],
       summary: "Get the Today page task counters",
-      description: "Returns counts over the full task database using the Today page rules. No task rows are returned.",
+      description: "Returns counts over the full task database using the Today page rules. The optional completed=1 parameter also returns up to 20 completed task summaries for the household day.",
+      parameters: [
+        { name: "completed", in: "query", schema: { type: "string", enum: ["1"] } },
+        { name: "expected_day", in: "query", schema: { type: "string", format: "date" }, description: "Household day shown by the caller. A rollover returns 409." },
+        { name: "expected_timezone", in: "query", schema: { type: "string" }, description: "Household timezone shown by the caller. A timezone change returns 409." },
+      ],
       responses: {
         200: jsonContent({
           type: "object",
@@ -867,9 +872,57 @@ const paths = {
             carriedForward: { type: "integer", minimum: 0 },
             remaining: { type: "integer", minimum: 0 },
             completionPercent: { type: "integer", minimum: 0, maximum: 100 },
+            completedTasks: { type: "array", maxItems: 20, items: {
+              type: "object", required: ["id", "title"], properties: { id: { type: "string" }, title: { type: "string" } },
+            } },
           },
         }, "Today counters"),
+        409: { description: "The household day or timezone changed" },
         503: problemContent("Today counters unavailable"),
+      },
+    },
+  },
+  "/api/calendar/agenda": {
+    post: {
+      operationId: "readCalendarAgenda",
+      tags: ["Tasks"],
+      summary: "Read the Calendar agenda for a household day",
+      description: "Read-only browser operation. Returns due tasks and native events that start on the selected day, applying Calendar filters before pagination. The first page also returns saved linked Home Assistant and CalDAV occurrences when Events is selected. If one first-page read fails, its fields are null and the other result is returned. Live Home Assistant events are read separately.",
+      security: ingressSession,
+      requestBody: { required: true, content: { "application/json": { schema: {
+        type: "object", additionalProperties: true, required: ["date", "filters", "limit", "offset"], properties: {
+          date: { type: "string", format: "date" },
+          filters: { type: "string", maxLength: 20000, description: "Encoded Calendar query without its leading question mark." },
+          limit: { type: "integer", minimum: 1, maximum: 100 },
+          offset: { type: "integer", minimum: 0 },
+        },
+      } } } },
+      responses: {
+        200: jsonContent({
+          type: "object", required: ["tasks", "total", "linkedEvents"], properties: {
+            tasks: { type: ["array", "null"], items: {
+              type: "object", required: ["id", "title", "status", "priority", "task_kind", "start_date", "deferred_at"],
+              properties: {
+                id: { type: "string" }, title: { type: "string" }, status: { type: "string" }, priority: { type: "integer" },
+                task_kind: { type: ["string", "null"] }, start_date: { type: ["string", "null"] }, deferred_at: { type: ["integer", "null"] },
+              },
+            } },
+            total: { type: ["integer", "null"], minimum: 0 },
+            linkedEvents: { type: ["array", "null"], items: {
+              type: "object", required: ["id", "title", "start", "entity", "uid", "providerSummary"],
+              properties: {
+                id: { type: "string" }, title: { type: "string" }, start: { type: "string" },
+                entity: { type: ["string", "null"] }, uid: { type: ["string", "null"] }, providerSummary: { type: ["string", "null"] },
+              },
+            } },
+          },
+        }, "Scheduled work page and matching total"),
+        400: problemContent("Invalid Calendar query"),
+        408: problemContent("Calendar query timed out"),
+        413: problemContent("Calendar query too large"),
+        415: problemContent("Expected JSON"),
+        500: problemContent("Calendar agenda read failed"),
+        503: problemContent("Calendar agenda unavailable"),
       },
     },
   },
@@ -1121,9 +1174,15 @@ const paths = {
     post: {
       operationId: "clearCompletedTasks",
       tags: ["Tasks"],
-      summary: "Archive all completed tasks",
-      description: "Moves all tasks with status 'complete' to 'archived'. Use this in daily/weekly cleanup automations.",
-      responses: { 200: jsonContent({ type: "object", properties: { archived: { type: "integer" } } }, "Count of archived tasks") },
+      summary: "Archive Complete tasks last updated on the household day",
+      description: "Moves every eligible Complete task to the archived status, including tasks outside the Today preview. Returns the number changed.",
+      parameters: [
+        { name: "expected_day", in: "query", schema: { type: "string", format: "date" }, description: "Household day the caller reviewed. A rollover returns 409 without changing any tasks." },
+        { name: "expected_timezone", in: "query", schema: { type: "string" }, description: "Household timezone the caller reviewed. A timezone change returns 409 without changing any tasks." },
+      ],
+      responses: { 409: { description: "The household day or timezone changed" }, 200: jsonContent({ type: "object", required: ["ok", "cleared"], properties: {
+        ok: { type: "boolean" }, cleared: { type: "integer" }, message: { type: "string" },
+      } }, "Count of archived tasks") },
     },
   },
   "/api/tasks/delete-completed": {
@@ -2006,7 +2065,7 @@ const paths = {
 
   // ── Users ──
   "/api/users": {
-    get: { operationId: "listUsers", tags: ["Users"], summary: "List all users (HA + custom)", description: "Returns users from Home Assistant integration combined with any custom-defined users.", responses: { 200: { description: "User list" } } },
+    get: { operationId: "listUsers", tags: ["Users"], summary: "List all users (HA + custom)", description: "Returns Home Assistant and custom users. ha_roster_verified indicates whether the Home Assistant roster is verified and can distinguish an absent user from an unavailable roster.", responses: { 200: { description: "User list" } } },
   },
   "/api/users/custom": {
     post: {
@@ -2142,7 +2201,7 @@ const paths = {
 
   // ── Home Assistant ──
   "/api/ha/connection": { get: { operationId: "getHAConnection", tags: ["HomeAssistant"], summary: "Get HA WebSocket connection status", responses: { 200: { description: "Connection status" } } } },
-  "/api/ha/calendars": { get: { operationId: "getHACalendars", tags: ["HomeAssistant"], summary: "List HA calendar entities", responses: { 200: { description: "Calendars" } } } },
+  "/api/ha/calendars": { get: { operationId: "getHACalendars", tags: ["HomeAssistant"], summary: "List HA calendar entities", parameters: [{ name: "configured", in: "query", schema: { type: "integer", enum: [1] }, description: "Return only configured calendar entity IDs in the entities array." }], responses: { 200: { description: "Calendars" } } } },
   "/api/ha/events": { get: { operationId: "getHAEvents", tags: ["HomeAssistant"], summary: "List recent HA events", responses: { 200: { description: "Events" } } } },
   "/api/ha/services": { get: { operationId: "getHAServices", tags: ["HomeAssistant"], summary: "List HA services", responses: { 200: { description: "Services" } } } },
   "/api/ha/addons": { get: { operationId: "getHAAddons", tags: ["HomeAssistant"], summary: "List HA add-ons", responses: { 200: { description: "Add-ons" } } } },
