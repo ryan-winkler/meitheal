@@ -14,7 +14,9 @@ import { POST as importSettings } from "../../apps/web/src/pages/api/import/sett
 const origin = "http://caldav-fixture.example"
 const xml = (body: string) => `<?xml version="1.0"?><d:multistatus xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">${body}</d:multistatus>`
 const calendar = (name: string) => `<d:response><d:href>/${name}/</d:href><d:propstat><d:prop><d:displayname>${name}</d:displayname><d:resourcetype><c:calendar/></d:resourcetype></d:prop></d:propstat></d:response>`
-const event = (uid: string) => `<d:response><d:href>/${uid}.ics</d:href><d:propstat><d:prop><c:calendar-data>BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nUID:${uid}\r\nSUMMARY:${uid}\r\nDTSTART:20261110T100000Z\r\nDTEND:20261110T110000Z\r\nEND:VEVENT\r\nEND:VCALENDAR</c:calendar-data></d:prop></d:propstat></d:response>`
+const fixtureStart = Date.now() + 24 * 60 * 60 * 1000
+const calendarTimestamp = (timestamp: number) => new Date(timestamp).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z")
+const event = (uid: string) => `<d:response><d:href>/${uid}.ics</d:href><d:propstat><d:prop><c:calendar-data>BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nUID:${uid}\r\nSUMMARY:${uid}\r\nDTSTART:${calendarTimestamp(fixtureStart)}\r\nDTEND:${calendarTimestamp(fixtureStart + 60 * 60 * 1000)}\r\nEND:VEVENT\r\nEND:VCALENDAR</c:calendar-data></d:prop></d:propstat></d:response>`
 type Database = ReturnType<typeof getPersistenceClient>
 type WebDAV = { calendars: string[]; events: Record<string, string[]>; failures: Set<string>; propfindStatus: number; propfinds: number; reports: number }
 const test = base.extend<{ environment: { db: Database; dav: WebDAV } }>({
