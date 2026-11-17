@@ -366,18 +366,6 @@
   @apply text-5xl mb-4 opacity-30;
 }
 
-.empty-text {
-  @apply text-lg font-medium text-text-secondary mb-2;
-}
-
-.empty-sub {
-  @apply text-sm text-text-muted mb-6;
-}
-
-.task-custom-fields {
-  @apply flex gap-1.5 flex-wrap mt-1;
-}
-
 /* Checklist items in task detail */
 /* Checklist items in task detail */
 .checklist-item {

@@ -726,6 +726,10 @@ test("legacy Shopping type filters survive view switches and respect Table searc
       href: "/tasks?" + calendarShopping + "#calendar",
       icon: "shopping-cart",
     })
+    const allCalendarKinds = "/tasks?" + new URLSearchParams({
+      ...query, view: "calendar", types: "standard_action," + nonStandardKinds,
+    }) + "#calendar"
+    shortcuts.push({ id: "all-calendar-kinds", label: "Calendar around the house", href: allCalendarKinds, icon: "calendar-event" })
     const save = await request.put("/api/settings", { headers, data: { key: "sidebar_config", value: {
       order: ["tasks", ...shortcuts.map(shortcut => shortcut.id)], customItems: shortcuts,
     } } })
@@ -897,6 +901,13 @@ test("legacy Shopping type filters survive view switches and respect Table searc
     await views.getByRole("link", { name: "Calendar", exact: true }).click()
     await expect(page).not.toHaveURL(/advancedFilter=/)
     await expect(calendar.locator(`.cal-cell[data-date="${due}"]`)).toHaveAccessibleName(/2 tasks$/)
+
+    await page.goto(allCalendarKinds)
+    const allKindsShortcut = page.locator('#sidebar [data-page="all-calendar-kinds"]')
+    await expect(allKindsShortcut).toHaveAttribute("aria-current", "page")
+    await calendar.getByRole("textbox", { name: "Filter by text" }).fill(suffix)
+    await expect(page).toHaveURL(url => url.searchParams.get("search") === suffix && !url.searchParams.has("types"))
+    await expect(allKindsShortcut).toHaveAttribute("aria-current", "page")
   } finally {
     await request.put("/api/settings", { headers, data: { key: "sidebar_config", value: previous ?? null } })
     for (const id of ids) await request.delete(`/api/tasks/${id}`, { headers })

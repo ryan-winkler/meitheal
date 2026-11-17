@@ -19,10 +19,11 @@ export function setupUnscheduledSection(
 
   let pending: AbortController | undefined
   let timer = 0
-  let requestedPage = 1
   const background = () => taskBackgroundUrl()
   const currentPage = () => Number(list.querySelector<HTMLElement>("#today-unscheduled-page")?.dataset.page ?? 0)
   const isOpen = () => !section.classList.contains("today-section--collapsed")
+  let requestedPage = currentPage() || 1
+  let pageNavigation = false
 
   const syncExpanded = () => {
     toggle.setAttribute("aria-expanded", String(isOpen()))
@@ -36,8 +37,10 @@ export function setupUnscheduledSection(
   }
 
   const loadPage = async (page: number, focus: PageFocus) => {
+    window.clearTimeout(timer)
     pending?.abort()
     requestedPage = page
+    pageNavigation = focus === "range"
     const controller = new AbortController()
     pending = controller
     const url = setUnscheduledPage(background(), page)
@@ -64,10 +67,12 @@ export function setupUnscheduledSection(
       const controlIndex = row && focused ? Array.from(row.querySelectorAll(rowControls)).indexOf(focused) : -1
       previous.replaceWith(replacement)
       addBatchCheckboxes(replacement)
+      requestedPage = currentPage()
+      pageNavigation = false
       const count = html.querySelector("#section-unscheduled .today-section__count")?.textContent
       const total = section.querySelector(".today-section__count")
       if (count && total) total.textContent = count
-      replaceTaskBackgroundUrl(setUnscheduledPage(background(), currentPage()))
+      replaceTaskBackgroundUrl(setUnscheduledPage(background(), requestedPage))
       setStatus("")
       if (focus !== "none" && (inside || retrying && (focused === retry || focused === document.body))) {
         const retainedRow = row?.dataset.id
@@ -112,8 +117,12 @@ export function setupUnscheduledSection(
     if (!isOpen()) return
     pending?.abort()
     window.clearTimeout(timer)
+    if (!keepPage) {
+      requestedPage = 1
+      pageNavigation = false
+    }
     timer = window.setTimeout(() => {
-      if (!lm.disposed && isOpen()) void loadPage(keepPage ? currentPage() || 1 : 1, keepPage ? "row" : "none")
+      if (!lm.disposed && isOpen()) void loadPage(requestedPage, pageNavigation ? "range" : keepPage ? "row" : "none")
     }, 200)
   }
 }

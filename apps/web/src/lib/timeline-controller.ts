@@ -2777,7 +2777,12 @@ export function initTimelineController(signal: AbortSignal) {
   function doRender(zoom: ZoomLevel) {
     const bars = getVisibleBars()
     const undated = getVisibleUndated()
-    if (bars.length === 0 && undated.length === 0) {
+    const available = bars.length + undated.length > 0
+    if (sidebarToggle) {
+      sidebarToggle.disabled = !available
+      sidebarToggle.setAttribute("aria-expanded", String(available && showSidebar))
+    }
+    if (!available) {
       if (skeleton) skeleton.style.display = "none"
       if (emptyState) {
         emptyState.style.display = "flex"
@@ -2825,7 +2830,7 @@ export function initTimelineController(signal: AbortSignal) {
   const validZooms: ZoomLevel[] = ["Day", "Week", "Month"]
   let currentZoom: ZoomLevel = savedZoom && validZooms.includes(savedZoom) ? savedZoom : "Week"
 
-  const sidebarToggle = document.getElementById("timeline-sidebar-toggle")
+  const sidebarToggle = document.querySelector<HTMLButtonElement>("#timeline-sidebar-toggle")
   const phoneViewport = window.matchMedia("(max-width: 640px)")
   let sidebarPreference: boolean | undefined
   try {
@@ -2835,7 +2840,6 @@ export function initTimelineController(signal: AbortSignal) {
 
   function syncSidebar() {
     showSidebar = sidebarPreference ?? !phoneViewport.matches
-    sidebarToggle?.setAttribute("aria-expanded", String(showSidebar))
   }
 
   phoneViewport.addEventListener("change", () => {

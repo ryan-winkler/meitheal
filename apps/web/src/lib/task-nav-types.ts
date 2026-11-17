@@ -1,5 +1,5 @@
 import type { FilterGroup } from "./filter-engine"
-import { readFilterLabels, readTableTaskKindFilter, readTableTaskTypeParam, readTaskAreaParam, readTaskKindFilter, readTaskScalarParam, TASK_SCALAR_FILTER_KEYS } from "./filter-state"
+import { effectiveCalendarKinds, readFilterLabels, readTableTaskKindFilter, readTableTaskTypeParam, readTaskAreaParam, readTaskKindFilter, readTaskScalarParam, TASK_SCALAR_FILTER_KEYS } from "./filter-state"
 import { readKanbanSearch } from "./kanban-query"
 import { normalizeStatus } from "./status-config"
 import { appliedTaskRules, parseTaskView, type TaskView } from "./task-view-route"
@@ -94,10 +94,13 @@ function ruleSignature(params: URLSearchParams, view: TaskView): string | undefi
 
 export function matchingTaskShortcutCriteria(target: URLSearchParams, current: URLSearchParams, view: TaskView): number {
   const keys = new Set(target.keys())
-  const matchedKinds = keys.delete("types")
-  if (matchedKinds) {
-    const kinds = taskKinds(target, view)
-    if (!kinds.length || !sameFilterValues(kinds, taskKinds(current, view))) return -1
+  let matchedKinds = false
+  if (keys.delete("types")) {
+    const explicit = taskKinds(target, view)
+    if (!explicit.length) return -1
+    const kinds = view === "calendar" ? effectiveCalendarKinds(explicit) : explicit
+    matchedKinds = kinds.length > 0
+    if (matchedKinds && !sameFilterValues(kinds, taskKinds(current, view))) return -1
   }
   const matchedTaskType = keys.delete("task_type")
   if (matchedTaskType) {

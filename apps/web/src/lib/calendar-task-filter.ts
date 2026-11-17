@@ -1,8 +1,7 @@
-import { VALID_TASK_KINDS } from "@meitheal/domain-tasks"
 import type { CalendarFilterRow } from "@domains/tasks/persistence/task-repository"
 import { calendarToday, isDueOverdue } from "./date"
 import type { FilterGroup } from "./filter-engine"
-import { isTaskVisible, readTableTaskTypeParam, readTaskAreaParam } from "./filter-state"
+import { effectiveCalendarKinds, isTaskVisible, readTableTaskTypeParam, readTaskAreaParam } from "./filter-state"
 import { readKanbanFilters, type KanbanFilters } from "./kanban-query"
 import { frameworkPayloadObject, readRiceInputs, riceLensScore } from "./rice-lens"
 import { isClosedStatus, isDoneStatus, normalizeStatus } from "./status-config"
@@ -12,7 +11,7 @@ export const CALENDAR_FILTER_STATE_EVENT = "meitheal:calendar-filter-state"
 
 export function readCalendarTaskFilters(params: URLSearchParams): KanbanFilters {
   const filters = readKanbanFilters(params)
-  if (VALID_TASK_KINDS.every(kind => filters.types?.includes(kind))) filters.types = []
+  filters.types = effectiveCalendarKinds(filters.types ?? [])
   const area = readTaskAreaParam(params)
   if (area !== null && area.length <= 500) filters.area = area
   else delete filters.area

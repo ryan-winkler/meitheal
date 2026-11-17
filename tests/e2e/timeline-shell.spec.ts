@@ -180,6 +180,7 @@ test.describe("Tasks Shell (Timeline/GANTT)", () => {
       const milestone = chart.locator(`.gantt-milestone[data-task-id="${id}"] polygon`)
       await expect(disclosure).toHaveAttribute("aria-expanded", "false")
       await expect(toolbar).toBeHidden()
+      await expect(paneToggle).toBeEnabled()
       await expect(paneToggle).toHaveAttribute("aria-expanded", "false")
       await expect(pane).toBeHidden()
       await expect(chart).toBeInViewport()
@@ -212,6 +213,13 @@ test.describe("Tasks Shell (Timeline/GANTT)", () => {
       await page.reload()
       await expect(paneToggle).toHaveAttribute("aria-expanded", "true")
       await expect(pane).toBeVisible()
+      await page.goto("/tasks?view=timeline&search=no_matching_timeline_tasks#timeline")
+      await expect(paneToggle).toBeDisabled()
+      await expect(paneToggle).toHaveAttribute("aria-expanded", "false")
+      await expect(paneToggle).not.toHaveAttribute("aria-controls")
+      await page.goBack()
+      await expect(paneToggle).toBeEnabled()
+      await expect(paneToggle).toHaveAttribute("aria-expanded", "true")
 
       for (const theme of ["light", "dark", "knight-rider", "auto", "custom"]) {
         await page.evaluate(mode => { localStorage.setItem("meitheal-theme", mode) }, theme)

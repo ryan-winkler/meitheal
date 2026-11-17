@@ -79,7 +79,7 @@ On wide screens **New Task**, **Search Meitheal**, and **Ask Home Assistant** si
 
 Use Tab to move between visible task views. If a view moves into **More**, open that control and use the arrow keys to choose it.
 
-Open **Timeline** to narrow the chart by text, status, priority, task type, or area. Use **Group by** to organize dated tasks. The URL keeps these choices when you reload or move between task views. On phones, open **Filters** to adjust the chart. The task pane starts closed unless you saved a preference. Select **Task pane** to open or close it.
+Open **Timeline** to narrow the chart by text, status, priority, task type, or area. Use **Group by** to organize dated tasks. The URL keeps these choices when you reload or move between task views. On phones, open **Filters** to adjust the chart. The task pane starts closed unless you saved a preference. Select **Task pane** to open or close it. The control becomes available when tasks match the filters.
 
 ## Troubleshooting
 

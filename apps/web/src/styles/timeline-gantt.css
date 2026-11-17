@@ -72,6 +72,10 @@
   background: var(--bg-secondary, rgba(255,255,255,0.06));
   color: var(--text-primary);
 }
+.timeline-ctrl-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
 
 @media (max-width: 640px) {
   .timeline-controls-bar {

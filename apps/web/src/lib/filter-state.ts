@@ -183,6 +183,10 @@ export function readTableTaskKindFilter(value: unknown): string[] {
   return readTaskKindFilter(value).filter(kind => VALID_TASK_KINDS.some(valid => valid === kind))
 }
 
+export function effectiveCalendarKinds(kinds: string[]): string[] {
+  return VALID_TASK_KINDS.every(kind => kinds.includes(kind)) ? [] : kinds
+}
+
 export function readTableTaskTypeParam(params: URLSearchParams) {
   const value = readTaskScalarParam(params, "task_type", "table")
   return VALID_TASK_TYPES.find(type => type === value)
