@@ -16,6 +16,8 @@ The Tasks view uses the Household board. A bookmark for an unavailable Board sho
 
 Use **All Areas** above the board to select a specific area. The card and lane counts follow that selection and the task filters. **Add Task** at the bottom of a lane captures a task in the selected area and lane. Press Enter or choose **Add** to save. If the save fails, the form keeps the title available for retry. **Cancel** or Escape closes the form.
 
+Choose **Group → By Area** to group the current page of cards within each lane. Groups sort by the displayed Area name. Tasks that refer to retired Areas stay visible together under **Unavailable Area**. Open a task to move it to an available Area.
+
 ### Move or open a card
 
 - Select the card's task key, such as **MTH-42**, to open the full task. With a task key focused, use Up and Down within a lane, Left and Right between lanes, and Enter or Space to open. Press N to open quick capture in that lane.
