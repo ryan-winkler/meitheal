@@ -1,3 +1,5 @@
+import { HierarchyRepository } from "@domains/tasks/persistence/hierarchy-repository"
+import { parseBoardPlacement } from "@lib/board-workspace"
 import type { APIRoute } from "astro"
 import type { ResultSet } from "@libsql/client"
 import { deriveEisenhowerQuadrant, VALID_TASK_TYPES, type TaskType } from "@meitheal/domain-tasks"
@@ -159,8 +161,29 @@ export const POST: APIRoute = async ({ request, locals }) => {
     : (request.headers.has("X-Automation-Source") ? locals.automationSource : "user")
   const effectiveCreatedBy = locals.agentToken ? locals.agentToken.tokenName : null
 
+  const placement = parseBoardPlacement(body.placement)
+  if (body.placement !== undefined && (!placement || body.project_id !== undefined || body.area_id !== undefined)) {
+    return apiError("Choose a valid Household group and Project.", 400)
+  }
+  const hierarchy = new HierarchyRepository(client)
+  const project = placement?.projectId ? await hierarchy.findProjectById(placement.projectId) : null
+  if (placement?.projectId && (!project || project.status !== "active" || (placement.areaId && placement.areaId !== project.area_id))) {
+    return apiError("Household placement unavailable", 404)
+  }
+  const placementArea = project?.area_id ?? placement?.areaId ?? "default"
+  const guard = placement ? {
+    sql: `(? = 'default' OR EXISTS (
+      SELECT 1 FROM areas WHERE id = ? AND owner_board_id IS NULL AND retired_at IS NULL
+    )) AND (? IS NULL OR EXISTS (
+      SELECT 1 FROM projects WHERE id = ? AND owner_board_id IS NULL AND retired_at IS NULL
+        AND status = 'active' AND COALESCE(area_id, 'default') = ?
+    ))`,
+    args: [placementArea, placementArea, placement.projectId, placement.projectId, placementArea],
+  } : undefined
+
   const taskBody = {
     ...body,
+    ...(placement ? { area_id: placementArea, project_id: placement.projectId } : {}),
     source: effectiveSource,
     created_by: effectiveCreatedBy,
   }
@@ -169,7 +192,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
 
   const now = Date.now()
   const activity = taskAddedActivity(prepared.task.id, resolveRecentActivityActor(locals, request), now)
-  const statements = [taskInsertStatement(prepared.task, now), activity]
+  const statements = [taskInsertStatement(prepared.task, now, guard ? { guard } : {}), activity]
   if (body.new_labels !== undefined) {
     if (locals.agentToken) return apiError("Creating labels with a task requires a browser session.", 403)
     const labels: unknown = body.new_labels
@@ -179,7 +202,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
     )) return apiError("Provide the new labels selected for this task.", 400)
 
     const requestId = crypto.randomUUID()
-    statements[0] = taskInsertStatement(prepared.task, now, { requestId })
+    statements[0] = taskInsertStatement(prepared.task, now, { requestId, ...(guard ? { guard } : {}) })
     statements.push(...[...new Set<string>(labels)].map(name => taskLabelInsert(name, prepared.task.id, requestId)))
   }
   const [inserted] = await runWriteTransaction(
@@ -191,7 +214,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
     { signal: locals.writeAbortSignal },
   )
   const ticket = inserted?.rows[0]
-  if (!ticket) return apiError("Choose available task relationships", 400)
+  if (!ticket) return placement ? apiError("Household placement unavailable", 404) : apiError("Choose available task relationships", 400)
   const ticketNumber = Number(ticket.ticket_number)
   const payload = taskCreationPayload(prepared.task, ticketNumber, now)
   const authority = await taskEventAuthorityHeaders(["task.created"])
