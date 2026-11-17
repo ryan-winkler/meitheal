@@ -20,7 +20,7 @@ The current lockfile includes Picomatch through Astro and its development tools.
 
 Accept this build-time denial-of-service risk until November 24, 2026. CI may exclude only GHSA-fc5q-39xc-vjpf when its recursive production dependency lookup succeeds, returns a JSON array, and contains no Picomatch paths. A failed lookup or malformed result fails the step. A production dependency or the expiry date restores the complete audit.
 
-The exception is written into the disposable CI checkout and followed by an actual `pnpm audit`. The `--ignore` command alone saves the advisory ID without performing the audit. All other advisories and registry errors retain their normal exit status. [pnpm audit](https://pnpm.io/cli/audit)
+The first audit records the exception in the disposable CI checkout and can fail if other advisories remain. The second audit always runs to print the full report for the remaining dependencies. A failure in either command fails the CI step. [pnpm audit](https://pnpm.io/cli/audit)
 
 ## Follow-through
 

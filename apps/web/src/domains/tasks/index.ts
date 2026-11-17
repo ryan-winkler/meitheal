@@ -56,6 +56,7 @@ export {
   taskLabelsJson,
 } from "./task-creation-service"
 export { startInactivityScheduler } from "./task-inactivity-scheduler"
+export { resolveTaskEpics, type TaskEpicLink } from "./task-epic-groups"
 export {
   boardDraftHeader,
   hasBoardSelection,
