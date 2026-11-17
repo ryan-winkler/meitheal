@@ -18,6 +18,14 @@ export const PATCH: APIRoute = async ({ locals, request, params }) => {
   if (!actor || !params.id || !params.ticket) return apiError("Board or task unavailable", 404)
   await ensureSchema()
   const repository = new NamedBoardTaskRepository(getPersistenceClient())
+  if (body.action === "file") {
+    const { areaId, projectId } = body
+    if ((areaId != null && typeof areaId !== "string") || (projectId != null && typeof projectId !== "string")) {
+      return apiError("Choose a valid Board group and Project.", 400)
+    }
+    const result = await repository.file(actor, params.id, params.ticket, body.version, areaId, projectId)
+    return result.ok ? apiJson(result.value) : rejected(result.errorCode)
+  }
   if (typeof body.laneId === "string") {
     const result = await repository.move(actor, params.id, params.ticket, body.laneId, body.version)
     return result.ok ? apiJson(result.value) : rejected(result.errorCode)

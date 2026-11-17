@@ -1084,7 +1084,7 @@ paths:
         "403":
           description: A current Home Assistant session is required
       security: &a7
-        - &a8
+        - &a9
           haIngressSession: []
     head:
       operationId: verifyBoardDirectory
@@ -1102,7 +1102,7 @@ paths:
       tags:
         - Boards
       parameters:
-        - &a12
+        - &a13
           name: X-Meitheal-Board-Session
           in: header
           required: true
@@ -1123,7 +1123,7 @@ paths:
             schema:
               type: object
               properties:
-                name: &a13
+                name: &a8
                   type: string
               additionalProperties: false
   /api/boards/{id}:
@@ -1133,7 +1133,7 @@ paths:
       tags:
         - Boards
       parameters:
-        - &a9
+        - &a10
           name: id
           in: path
           required: true
@@ -1141,15 +1141,43 @@ paths:
             type: string
         - name: offset
           in: query
-          schema: &a10
+          schema: &a11
             type: integer
+        - name: view
+          in: query
+          schema:
+            type: string
+            enum:
+              - groups
+              - tasks
+        - name: after
+          in: query
+          schema: *a8
+        - name: selected
+          in: query
+          schema: *a8
+        - name: area
+          in: query
+          schema: *a8
+        - name: project
+          in: query
+          schema: *a8
+        - name: ticket
+          in: query
+          schema: *a8
+        - name: planning
+          in: query
+          schema:
+            type: string
+            enum:
+              - "1"
       responses:
         "200":
           description: Authorized Board, lanes, tickets and eligible owner settings
-        "404": &a11
+        "404": &a12
           description: Board, ticket, or destination unavailable
       security:
-        - *a8
+        - *a9
         - bearerAuth: []
       description: An agent token needs tasks:read and an explicit service grant on this Board.
     head:
@@ -1158,16 +1186,44 @@ paths:
       tags:
         - Boards
       parameters:
-        - *a9
+        - *a10
         - name: offset
           in: query
-          schema: *a10
+          schema: *a11
+        - name: view
+          in: query
+          schema:
+            type: string
+            enum:
+              - groups
+              - tasks
+        - name: after
+          in: query
+          schema: *a8
+        - name: selected
+          in: query
+          schema: *a8
+        - name: area
+          in: query
+          schema: *a8
+        - name: project
+          in: query
+          schema: *a8
+        - name: ticket
+          in: query
+          schema: *a8
+        - name: planning
+          in: query
+          schema:
+            type: string
+            enum:
+              - "1"
       responses:
         "200":
           description: The current projection hash and session are returned to a Home Assistant browser
-        "404": *a11
+        "404": *a12
       security:
-        - *a8
+        - *a9
         - bearerAuth: []
       description: An agent token needs tasks:read and an explicit service grant on this Board.
     patch:
@@ -1176,12 +1232,12 @@ paths:
       tags:
         - Boards
       parameters:
-        - *a9
-        - *a12
+        - *a10
+        - *a13
       responses:
         "200":
           description: Saved
-        "404": *a11
+        "404": *a12
         "409":
           description: A Board must retain an active owner
       security: *a7
@@ -1201,12 +1257,12 @@ paths:
                     - agent
                 hidden: &a14
                   type: boolean
-                tokenId: *a13
+                tokenId: *a8
                 enabled: *a14
                 denyCompletion: *a14
                 denyDeletion: *a14
                 denyAgentDeletion: *a14
-                memberId: *a13
+                memberId: *a8
                 role:
                   type:
                     - string
@@ -1224,7 +1280,7 @@ paths:
       tags:
         - Boards
       parameters:
-        - *a9
+        - *a10
         - &a16
           name: X-Meitheal-Board-Session
           in: header
@@ -1236,9 +1292,9 @@ paths:
           description: Created ticket identifier, reference and edit version
         "403":
           description: Ticket creation or completion is denied
-        "404": *a11
+        "404": *a12
       security:
-        - *a8
+        - *a9
         - bearerAuth: []
       description: An agent token needs tasks:write and an explicit service grant on this Board.
       requestBody:
@@ -1248,12 +1304,24 @@ paths:
             schema:
               type: object
               properties:
-                title: *a13
-                description: *a13
-                laneId: *a13
-                areaId: *a13
-                projectId: *a13
-                goalId: *a13
+                title: *a8
+                description: *a8
+                laneId: *a8
+                areaId: *a8
+                projectId: *a8
+                goalId: *a8
+                placement:
+                  type: object
+                  properties:
+                    areaId:
+                      type:
+                        - string
+                        - "null"
+                    projectId:
+                      type:
+                        - string
+                        - "null"
+                  additionalProperties: false
               additionalProperties: false
   /api/boards/{id}/tickets/{ticket}:
     patch:
@@ -1262,7 +1330,7 @@ paths:
       tags:
         - Boards
       parameters:
-        - *a9
+        - *a10
         - &a17
           name: ticket
           in: path
@@ -1275,11 +1343,11 @@ paths:
           description: New ticket version
         "403":
           description: A required effect is denied
-        "404": *a11
+        "404": *a12
         "409":
           description: Ticket version is stale
       security:
-        - *a8
+        - *a9
         - bearerAuth: []
       description: An agent token needs tasks:write and an explicit service grant on this Board.
       requestBody:
@@ -1289,10 +1357,22 @@ paths:
             schema:
               type: object
               properties:
-                version: *a10
-                title: *a13
-                description: *a13
-                laneId: *a13
+                version: *a11
+                title: *a8
+                description: *a8
+                laneId: *a8
+                action:
+                  type: string
+                  enum:
+                    - file
+                areaId:
+                  type:
+                    - string
+                    - "null"
+                projectId:
+                  type:
+                    - string
+                    - "null"
               additionalProperties: false
     delete:
       operationId: deletePrivateBoardTicket
@@ -1300,7 +1380,7 @@ paths:
       tags:
         - Boards
       parameters:
-        - *a9
+        - *a10
         - *a17
         - *a16
       responses:
@@ -1308,11 +1388,11 @@ paths:
           description: Deleted
         "403":
           description: Deletion is denied
-        "404": *a11
+        "404": *a12
         "409":
           description: Ticket version or relationship changed
       security:
-        - *a8
+        - *a9
         - bearerAuth: []
       description: An agent token needs tasks:delete and an explicit service grant on this Board.
       requestBody:
@@ -1322,7 +1402,7 @@ paths:
             schema:
               type: object
               properties:
-                version: *a10
+                version: *a11
               additionalProperties: false
   /api/boards/{id}/intakes:
     post:
@@ -1331,12 +1411,12 @@ paths:
       tags:
         - Boards
       parameters:
-        - *a9
-        - *a12
+        - *a10
+        - *a13
       responses:
         "201":
           description: Destination created
-        "404": *a11
+        "404": *a12
       security: *a7
       requestBody:
         required: true
@@ -1345,12 +1425,12 @@ paths:
             schema:
               type: object
               properties:
-                label: *a13
-                laneId: *a13
+                label: *a8
+                laneId: *a8
                 senderIds:
                   type: array
-                  items: *a13
-                recipientId: *a13
+                  items: *a8
+                recipientId: *a8
               additionalProperties: false
     patch:
       operationId: changePrivateBoardIntake
@@ -1358,12 +1438,12 @@ paths:
       tags:
         - Boards
       parameters:
-        - *a9
-        - *a12
+        - *a10
+        - *a13
       responses:
         "200":
           description: Saved
-        "404": *a11
+        "404": *a12
       security: *a7
       requestBody:
         required: true
@@ -1372,7 +1452,7 @@ paths:
             schema:
               type: object
               properties:
-                id: *a13
+                id: *a8
                 enabled: *a14
               additionalProperties: false
   /api/boards/{id}/planning:
@@ -1382,14 +1462,14 @@ paths:
       tags:
         - Boards
       parameters:
-        - *a9
-        - *a12
+        - *a10
+        - *a13
       responses:
         "200":
           description: Saved
         "400":
           description: Invalid planning change
-        "404": *a11
+        "404": *a12
         "409":
           description: A Routine period changed or an Area still has active planning records
       security: *a7
@@ -1416,10 +1496,12 @@ paths:
                     - pillar-link
                     - routine
                     - routine-complete
-                title: *a13
-                description: *a13
-                id: *a13
-                areaId: *a13
+                title: *a8
+                description: *a8
+                icon: *a8
+                color: *a8
+                id: *a8
+                areaId: *a8
                 goalId:
                   type:
                     - string
@@ -1452,7 +1534,7 @@ paths:
                     - goal
                     - routine
                     - task
-                pillarId: *a13
+                pillarId: *a8
                 nonNegotiable: *a14
               additionalProperties: false
   /api/board-intake:
@@ -1474,13 +1556,13 @@ paths:
       tags:
         - Boards
       parameters:
-        - *a12
+        - *a13
       responses:
         "200":
           description: An opaque acknowledgment bound to the sender
         "201":
           description: A sender-bound submission expires after 24 hours
-        "404": *a11
+        "404": *a12
         "409":
           description: The token was used with different content
         "429":
@@ -1499,11 +1581,11 @@ paths:
                     - prepare
                     - send
                     - retry
-                id: *a13
-                token: *a13
-                resumeId: *a13
-                title: *a13
-                description: *a13
+                id: *a8
+                token: *a8
+                resumeId: *a8
+                title: *a8
+                description: *a8
                 assignToRecipient: *a14
               additionalProperties: false
   /api/feedback:
@@ -4126,7 +4208,7 @@ paths:
       description: Returns up to 50 reactions, newest first. Home Assistant ingress requires current membership. Automation
         tokens need tasks:read.
       security: &a48
-        - *a8
+        - *a9
         - bearerAuth: []
       parameters:
         - *a43

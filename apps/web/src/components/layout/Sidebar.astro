@@ -3,11 +3,11 @@ import "../../styles/_sidebar-reorder.css"
 import { t } from "../../i18n/translations";
 import type { Locale } from "../../lib/locale";
 import Icon from "../ui/Icon.astro";
+import SidebarHierarchyTree from "./SidebarHierarchyTree.astro"
 import SidebarNavList from "./SidebarNavList.astro";
 import SidebarReorderHandle from "./SidebarReorderHandle.astro";
 import TaskCreationMenu from "./TaskCreationMenu.astro";
 import NavOverflowMore from "./NavOverflowMore.astro";
-import SidebarHierarchyTree from "./SidebarHierarchyTree.astro";
 import SidebarFooter from "./SidebarFooter.astro";
 import StreakBadge from "../gamification/StreakBadge.astro";
 import {
@@ -15,6 +15,7 @@ import {
   getPersistenceClient,
 } from "@domains/tasks/persistence/store";
 import { getStats as getGamificationStats } from "@domains/gamification";
+import { verifiedIngressUser } from "../../lib/verified-ingress-user"
 import { getFeatureFlags } from "../../lib/feature-flags";
 
 const currentPath = Astro.url.pathname;
@@ -103,8 +104,8 @@ interface SidebarConfig {
   customItems?: CustomNavItem[];
 }
 
-let namedBoardDirectoryExists = false
 
+let showNamedBoardShortcuts = false
 let sidebarConfig: SidebarConfig = {
   dashboard: true,
   today: true,
@@ -135,9 +136,9 @@ if (gamificationEnabled) {
 try {
   await ensureSchema();
   const c = getPersistenceClient();
-  if (Astro.locals.hassUserId && hierarchyEnabled) {
-    const { rows } = await c.execute("SELECT 1 FROM board_access_epoch LIMIT 1")
-    namedBoardDirectoryExists = rows.length > 0
+  if (hierarchyEnabled && verifiedIngressUser(Astro.locals)) {
+    const epoch = await c.execute("SELECT 1 FROM board_access_epoch LIMIT 1")
+    showNamedBoardShortcuts = epoch.rows.length > 0
   }
   const res = await c.execute(
     "SELECT value FROM settings WHERE key = 'sidebar_config'",
@@ -184,7 +185,9 @@ const rawOrder: NavKey[] =
     ? (sidebarConfig.order as string[]).filter((k: string) => k in NAV_ITEMS)
     : [];
 // Fall back to defaults if saved order is empty / invalid, then append any missing defaults
-const order: NavKey[] = rawOrder.length > 0 ? [...new Set(rawOrder)] : [...DEFAULT_ORDER];
+const order: NavKey[] = rawOrder.length > 0
+  ? [...new Set(rawOrder.map(key => key === "areas" && !rawOrder.includes("boards") ? "boards" : key))]
+  : [...DEFAULT_ORDER];
 DEFAULT_ORDER.forEach((k) => {
   if (!order.includes(k)) order.push(k);
 });
@@ -202,8 +205,8 @@ const navItems = order
     if (!(key in NAV_ITEMS)) return false
     // Feature flag: hide progress parent page when all sub-features disabled
     if (key === "progress" && !gamificationEnabled && !habitsEnabled) return false
-    if (key === "boards" && !Astro.locals.hassUserId) return false
-    if ((key === "tasks" || key === "areas" || key === "boards") && !hierarchyEnabled) return false
+    if (key === "areas") return false
+    if (key === "boards" && !hierarchyEnabled) return false
     if ((key === "activity" || key === "mentionInbox") && !Astro.locals.hassUserId) return false
     return true
   })
@@ -222,10 +225,13 @@ navItems.splice(pinIndex, 0, {
   icon: "pin", isActive: currentPath === "/pinned", matchExact: true,
 })
 
-const areaPosition = navItems.findIndex(item => item.key === "areas")
-const areaLabel = labels.areas || t("sidebar.areas_header", locale)
-const primaryItems = areaPosition < 0 ? navItems : navItems.slice(0, areaPosition)
-const remainingItems = areaPosition < 0 ? [] : navItems.slice(areaPosition + 1)
+const boardPosition = navItems.findIndex(item => item.key === "boards")
+const householdGroups = hierarchyEnabled && sidebarConfig.areas !== false
+const householdGroupLabel = labels.areas || (locale === "ga" ? "Grúpaí" : "Groups")
+const primaryItems = !householdGroups || boardPosition < 0 ? navItems : navItems.slice(0, boardPosition + 1)
+const remainingItems = !householdGroups || boardPosition < 0 ? [] : navItems.slice(boardPosition + 1)
+const sidebarDefaultOrder = navItems.map(item => item.key)
+if (householdGroups) sidebarDefaultOrder.splice(boardPosition < 0 ? sidebarDefaultOrder.length : boardPosition + 1, 0, "areas")
 ---
 
 <nav
@@ -310,23 +316,21 @@ const remainingItems = areaPosition < 0 ? [] : navItems.slice(areaPosition + 1)
       </TaskCreationMenu>
     </div>
 
-    <div class="sidebar-scroll" data-nav-overflow="sidebar" data-sidebar-default-order={JSON.stringify(navItems.map(item => item.key))}>
+    <div class="sidebar-scroll" data-nav-overflow="sidebar" data-sidebar-default-order={JSON.stringify(sidebarDefaultOrder)}>
       <SidebarNavList navItems={primaryItems} taskCounts={taskCounts}>
-        {namedBoardDirectoryExists && primaryItems.some(item => item.key === "boards") &&
+        {showNamedBoardShortcuts && primaryItems.some(item => item.key === "boards") &&
           <ul slot="boards" class="sidebar-board-shortcuts" data-sidebar-boards hidden aria-label="Visible Boards"></ul>}
       </SidebarNavList>
-      {areaPosition >= 0 && (
-        <div id="sidebar-hierarchy-panel" data-sidebar-group="areas">
-          <a href="/planning#spaces" class="nav-link sidebar-compact-areas" data-tooltip={areaLabel} aria-label={areaLabel}>
-            <span class="nav-icon"><Icon name="folder" /></span>
-          </a>
-          <SidebarHierarchyTree locale={locale} label={areaLabel} />
-          <SidebarReorderHandle label={areaLabel} locale={locale} />
-        </div>
+      {householdGroups && (
+        <section class="sidebar-household" id="sidebar-hierarchy-panel" data-sidebar-group="areas" aria-label="Household Board">
+          <a class="nav-link sidebar-household-link" href="/boards/household">Household</a>
+          <SidebarHierarchyTree locale={locale} label={householdGroupLabel} />
+          <SidebarReorderHandle label={householdGroupLabel} locale={locale} />
+        </section>
       )}
-      {areaPosition >= 0 && (
+      {householdGroups && (
         <SidebarNavList navItems={remainingItems} taskCounts={taskCounts}>
-          {namedBoardDirectoryExists && remainingItems.some(item => item.key === "boards") &&
+          {showNamedBoardShortcuts && remainingItems.some(item => item.key === "boards") &&
             <ul slot="boards" class="sidebar-board-shortcuts" data-sidebar-boards hidden aria-label="Visible Boards"></ul>}
         </SidebarNavList>
       )}
@@ -391,8 +395,16 @@ const remainingItems = areaPosition < 0 ? [] : navItems.slice(areaPosition + 1)
 </script>
 
 <style>
+  .sidebar-household { margin-inline-start: 1rem; }
+  :global(:root[data-appearance-navigation="navbar"]) .sidebar-household { margin-inline-start: 0; }
+  :global(:root[data-appearance-navigation="navbar"]) .sidebar-household-link { display: none; }
+  :global(body.sidebar-collapsed) .sidebar-household { display: none; }
   .sidebar-board-shortcuts { list-style: none; margin: 0.25rem 0; padding-left: 1.5rem; }
-  .sidebar-board-shortcuts a { display: block; padding: 0.3rem 0; overflow-wrap: anywhere; }
+  .sidebar-board-shortcuts :global(a) { display: block; padding: 0.3rem 0; overflow-wrap: anywhere; }
+  .sidebar-board-shortcuts :global(.sidebar-board-row) { display: flex; align-items: center; }
+  .sidebar-board-shortcuts :global(.sidebar-board-row .nav-link) { flex: 1; min-width: 0; }
+  .sidebar-board-shortcuts :global(.sidebar-board-toggle[aria-expanded="true"]) { transform: rotate(90deg); }
+  .sidebar-board-shortcuts :global([data-board-groups]) { list-style: none; padding-left: 1rem; }
   .sidebar-board-shortcuts[hidden], :global(body.sidebar-collapsed) .sidebar-board-shortcuts { display: none; }
 
   .sidebar {

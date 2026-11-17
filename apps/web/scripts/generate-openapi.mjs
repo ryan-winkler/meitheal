@@ -626,10 +626,28 @@ const paths = {
     }, boardJson({ name: boardString })),
   },
   "/api/boards/{id}": {
-    get: boardOperation("getPrivateBoard", "Read a Board and a page of its tickets", [boardIdParam, { name: "offset", in: "query", schema: boardVersion }], {
+    get: boardOperation("getPrivateBoard", "Read a Board and a page of its tickets", [boardIdParam,
+      { name: "offset", in: "query", schema: boardVersion },
+      { name: "view", in: "query", schema: { type: "string", enum: ["groups", "tasks"] } },
+      { name: "after", in: "query", schema: boardString },
+      { name: "selected", in: "query", schema: boardString },
+      { name: "area", in: "query", schema: boardString },
+      { name: "project", in: "query", schema: boardString },
+      { name: "ticket", in: "query", schema: boardString },
+      { name: "planning", in: "query", schema: { type: "string", enum: ["1"] } },
+    ], {
       200: { description: "Authorized Board, lanes, tickets and eligible owner settings" }, 404: boardUnavailable,
     }, undefined, "tasks:read"),
-    head: boardOperation("verifyPrivateBoard", "Verify the current Board view", [boardIdParam, { name: "offset", in: "query", schema: boardVersion }], {
+    head: boardOperation("verifyPrivateBoard", "Verify the current Board view", [boardIdParam,
+      { name: "offset", in: "query", schema: boardVersion },
+      { name: "view", in: "query", schema: { type: "string", enum: ["groups", "tasks"] } },
+      { name: "after", in: "query", schema: boardString },
+      { name: "selected", in: "query", schema: boardString },
+      { name: "area", in: "query", schema: boardString },
+      { name: "project", in: "query", schema: boardString },
+      { name: "ticket", in: "query", schema: boardString },
+      { name: "planning", in: "query", schema: { type: "string", enum: ["1"] } },
+    ], {
       200: { description: "The current projection hash and session are returned to a Home Assistant browser" }, 404: boardUnavailable,
     }, undefined, "tasks:read"),
     patch: boardOperation("changePrivateBoard", "Change a personal sidebar preference or manage a Board's access", [boardIdParam, boardSessionParam], {
@@ -644,12 +662,16 @@ const paths = {
   "/api/boards/{id}/tickets": {
     post: boardOperation("createPrivateBoardTicket", "Create a ticket in an authorized Board column", [boardIdParam, boardTicketSessionParam], {
       201: { description: "Created ticket identifier, reference and edit version" }, 403: { description: "Ticket creation or completion is denied" }, 404: boardUnavailable,
-    }, boardJson({ title: boardString, description: boardString, laneId: boardString, areaId: boardString, projectId: boardString, goalId: boardString }), "tasks:write"),
+    }, boardJson({ title: boardString, description: boardString, laneId: boardString, areaId: boardString, projectId: boardString, goalId: boardString,
+      placement: { type: "object", properties: { areaId: { type: ["string", "null"] }, projectId: { type: ["string", "null"] } } },
+    }), "tasks:write"),
   },
   "/api/boards/{id}/tickets/{ticket}": {
     patch: boardOperation("changePrivateBoardTicket", "Edit a ticket or move it to a Board column", [boardIdParam, boardTicketParam, boardTicketSessionParam], {
       200: { description: "New ticket version" }, 403: { description: "A required effect is denied" }, 404: boardUnavailable, 409: { description: "Ticket version is stale" },
-    }, boardJson({ version: boardVersion, title: boardString, description: boardString, laneId: boardString }), "tasks:write"),
+    }, boardJson({ version: boardVersion, title: boardString, description: boardString, laneId: boardString,
+      action: { type: "string", enum: ["file"] }, areaId: { type: ["string", "null"] }, projectId: { type: ["string", "null"] },
+    }), "tasks:write"),
     delete: boardOperation("deletePrivateBoardTicket", "Delete a ticket when the current Board and actor allow deletion", [boardIdParam, boardTicketParam, boardTicketSessionParam], {
       200: { description: "Deleted" }, 403: { description: "Deletion is denied" }, 404: boardUnavailable, 409: { description: "Ticket version or relationship changed" },
     }, boardJson({ version: boardVersion }), "tasks:delete"),
@@ -668,7 +690,7 @@ const paths = {
       409: { description: "A Routine period changed or an Area still has active planning records" },
     }, boardJson({
       action: { type: "string", enum: ["area", "goal", "project", "project-edit", "project-goal", "project-status", "goal-share", "retire", "pillar", "pillar-principle", "pillar-link", "routine", "routine-complete"] },
-      title: boardString, description: boardString, id: boardString, areaId: boardString, goalId: { type: ["string", "null"] },
+      title: boardString, description: boardString, icon: boardString, color: boardString, id: boardString, areaId: boardString, goalId: { type: ["string", "null"] },
       status: { type: "string", enum: ["active", "completed", "archived"] }, enabled: boardBoolean,
       cadence: { type: "string", enum: ["daily", "weekly"] }, period: { type: "string", format: "date" },
       entity: { type: "string", enum: ["area", "goal", "project", "routine"] },

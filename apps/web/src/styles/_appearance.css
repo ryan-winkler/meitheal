@@ -319,7 +319,7 @@
     position: relative;
     flex: none;
     min-inline-size: 0;
-    max-inline-size: min(14rem, 45%);
+    max-inline-size: min(12rem, 34%);
   }
   :root[data-appearance-navigation="navbar"] #project-nav {
     --stree-block-padding: 0px;
