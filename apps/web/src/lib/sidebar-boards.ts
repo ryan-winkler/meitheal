@@ -101,7 +101,7 @@ export function bindSidebarBoards(signal: AbortSignal) {
     toggle.className = "btn btn-ghost sidebar-board-toggle"
     toggle.type = "button"
     toggle.textContent = "›"
-    toggle.setAttribute("aria-label", `Groups in ${board.name}`)
+    toggle.setAttribute("aria-label", `${list.dataset.boardGroupLabel ?? "Groups"} in ${board.name}`)
     const groups = document.createElement("ul")
     groups.id = `board-shortcut-groups-${board.id}`
     groups.dataset.boardGroups = board.id
