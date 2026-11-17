@@ -23,7 +23,7 @@ export const GET: APIRoute = async context => {
     if (!task || !(await tx.execute(readHomeAssistantAreaPolicyRevision(areaRevision))).rows.length) {
       return homeAssistantAreaProblem(404, "Task or Home Assistant Area unavailable.")
     }
-    return homeAssistantAreaResponse({ id: await findTaskHomeAssistantArea(tx, id), version: Number(task.version) })
+    return homeAssistantAreaResponse({ ...await findTaskHomeAssistantArea(tx, id), version: Number(task.version) })
   } finally {
     tx.close()
   }
@@ -34,6 +34,7 @@ export const PUT: APIRoute = async context => {
   if (!id || !await homeAssistantAreaAccess(context)) return homeAssistantAreaProblem(404, "Task or Home Assistant Area unavailable.")
   const body = await readBoardRequest(context.request)
   if (!body || typeof body.version !== "number" || !Number.isSafeInteger(body.version) || body.version < 0 ||
+    typeof body.locationRevision !== "number" || !Number.isSafeInteger(body.locationRevision) || body.locationRevision < 0 ||
     body.home_assistant_area_id === undefined) {
     return homeAssistantAreaProblem(400, "Choose a Home Assistant Area and provide the current task version.")
   }
@@ -46,7 +47,7 @@ export const PUT: APIRoute = async context => {
   if (!field.selection) return homeAssistantAreaProblem(400, "Choose a Home Assistant Area.")
   const tx = await acquireWriteTransaction(db, { signal: context.locals.writeAbortSignal })
   try {
-    const result = await editTaskHomeAssistantArea(tx, task.id, null, body.version, field.selection)
+    const result = await editTaskHomeAssistantArea(tx, task.id, null, body.version, body.locationRevision, field.selection)
     if (result.ok) await tx.commit()
     return homeAssistantAreaMutationResponse(result)
   } finally {

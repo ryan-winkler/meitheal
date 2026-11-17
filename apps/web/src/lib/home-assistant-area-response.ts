@@ -6,7 +6,7 @@ export function homeAssistantAreaProblem(status: number, detail: string) {
   return apiProblem({ status, detail, extraHeaders: headers })
 }
 
-export function homeAssistantAreaResponse(value: { id?: string | null; version: number }) {
+export function homeAssistantAreaResponse(value: { id?: string | null; version: number; locationRevision: number }) {
   const response = apiJson(value)
   response.headers.set("cache-control", headers["cache-control"])
   return response
@@ -14,7 +14,7 @@ export function homeAssistantAreaResponse(value: { id?: string | null; version: 
 
 export function homeAssistantAreaMutationResponse(outcome: {
   ok: true
-  value: { version: number }
+  value: { version: number; locationRevision: number }
 } | {
   ok: false
   errorCode: "unavailable" | "denied" | "stale"

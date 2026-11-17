@@ -16,7 +16,7 @@ import {
 } from "../drizzle/migrations/0011_board_access.mjs"
 import {
   applyOrganizationAccessMigration, ORGANIZATION_ACCESS_MIGRATION, readOrganizationAccessMigrationState,
-} from "../drizzle/migrations/0012_organization_access.mjs"
+} from "../drizzle/migrations/0013_organization_access.mjs"
 import { assertNoInboundReferences } from "../drizzle/migrations/board-storage-schema.mjs"
 import { installTaskActivityTriggers, validateTaskActivityTriggers } from "../drizzle/migrations/task-activity-schema.mjs"
 import {
