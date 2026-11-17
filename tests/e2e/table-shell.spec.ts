@@ -68,6 +68,23 @@ test.describe("Table Shell", () => {
     await expect(excluded).toBeHidden()
   })
 
+  test("Table search while Details is docked updates the background route", async ({ page, tableTasks }) => {
+    await page.setViewportSize({ width: 1600, height: 900 })
+    await page.goto("/table")
+    const [matching, other] = tableTasks
+    const table = page.getByRole("table")
+    await table.getByRole("link", { name: `${matching.ticket_key} — ${matching.title}`, exact: true }).click()
+    await expect(page.locator("#td-status")).toBeEnabled()
+    await expect(page).toHaveURL(/\/tickets\//)
+
+    await page.getByRole("textbox", { name: "Filter by text" }).fill(matching.title)
+    await expect(table.getByRole("row").filter({ hasText: other.title })).toBeHidden()
+    await expect(page).toHaveURL(/\/tickets\/[^?]+$/)
+    await page.locator("#td-close").click()
+    await expect(page).toHaveURL(url => url.pathname === "/tasks" && url.searchParams.get("search") === matching.title)
+    await expect(table.getByRole("row").filter({ hasText: matching.title })).toBeVisible()
+  })
+
   test("filtered empty state can clear criteria and return to the task list", async ({ page, tableTasks }) => {
     const missing = randomUUID()
     await page.goto(`/tasks?view=table&search=${missing}#table`)

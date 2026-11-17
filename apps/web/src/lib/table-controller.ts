@@ -168,7 +168,7 @@ function init(signal: AbortSignal) {
     status.hidden = true
     retry.hidden = true
 
-    const url = new URL(location.href)
+    const url = taskBackgroundUrl(new URL(location.href))
     writeTableFilterParams(url.searchParams, nextState)
     for (const key of ["open", "comment"]) url.searchParams.delete(key)
     if (resetPage) url.searchParams.delete("tp")

@@ -225,6 +225,44 @@ test("pinned types fit narrow desktop top navigation and stay available in the m
   await expect(page.locator("#menu-toggle")).toBeFocused()
 })
 
+test("mobile task type settings dismiss the sidebar and focus the destination", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto("/today")
+
+  const toggle = page.locator("#menu-toggle")
+  await toggle.click()
+  const sidebar = page.locator("#sidebar")
+  const menu = sidebar.locator("#sidebar-task-types")
+  await menu.getByRole("button", { name: "Task types", exact: true }).click()
+  await menu.getByRole("link", { name: "Choose visible types" }).click()
+
+  await expect(page).toHaveURL(/\/settings#navigation-settings$/)
+  await expect(sidebar).not.toHaveClass(/open/)
+  await expect(page.locator("body")).not.toHaveClass(/sidebar-open/)
+  const destination = page.locator("#navigation-settings h2[data-settings-destination]")
+  await expect(destination).toBeFocused()
+  await expect(destination).toBeInViewport()
+})
+
+test("pinned Table and Timeline start without stored filters when opened from Dashboard", async ({ page }) => {
+  await page.addInitScript(() => {
+    if (sessionStorage.getItem("clean-entry-seeded")) return
+    sessionStorage.setItem("clean-entry-seeded", "true")
+    localStorage.setItem("meitheal-task-nav-prefs", JSON.stringify({ pinnedViews: ["table", "timeline"] }))
+    localStorage.setItem("meitheal-task-view-filters", JSON.stringify({ search: "previous workspace search" }))
+  })
+  await page.setViewportSize({ width: 1440, height: 950 })
+  await page.goto("/")
+  for (const [view, title] of [["timeline", "Timeline (Gantt)"], ["table", "Table"]] as const) {
+    const link = page.locator(`#sidebar [data-task-view-pinned-item="${view}"]`).getByRole("link", { name: title, exact: true })
+    await link.click()
+    await expect(page).toHaveURL(url => url.pathname === "/tasks" && url.searchParams.get("view") === view)
+    await expect(page.locator(view === "table" ? "#table-shell" : "#tasks-view-timeline").getByRole("textbox", { name: "Filter by text" })).toHaveValue("")
+    await page.locator('#sidebar .nav-link[data-page="dashboard"]').click()
+    await expect(page).toHaveURL(url => url.pathname === "/")
+  }
+})
+
 for (const theme of ["light", "dark", "knight-rider", "auto", "custom"] as const) {
   test(`Shopping shortcuts keep their destination in ${theme}`, async ({ page, request, baseURL }) => {
     const headers = { origin: new URL(baseURL!).origin }

@@ -4,7 +4,7 @@ import { t } from "../../i18n/translations"
 import { TASK_VIEW_ICONS, TASK_VIEW_LABELS, taskViewUrl, type TaskView } from "../../lib/task-view-route"
 
 const views = (["calendar", "kanban", "timeline", "table"] as const satisfies readonly TaskView[]).map(id => {
-  const href = taskViewUrl(new URL("/tasks", Astro.url), id)
+  const href = taskViewUrl(new URL("/tasks", Astro.url), id, true)
   return { id, href: href.pathname + href.search + href.hash, icon: TASK_VIEW_ICONS[id], label: TASK_VIEW_LABELS[id] }
 })
 
@@ -321,10 +321,9 @@ function isExternal(href: string): boolean {
   function refreshTaskViewLink(link: HTMLAnchorElement, background: URL) {
     const view = parseTaskView(link.dataset.taskViewLink ?? null)
     if (!view) return
-    const tasks = appPath(background.pathname) === "/tasks"
-      ? background
-      : new URL(`${window.__ingress_path || ""}/tasks`, background)
-    const href = taskViewUrl(tasks, view).href
+    const fromTasks = appPath(background.pathname) === "/tasks"
+    const tasks = fromTasks ? background : new URL(`${window.__ingress_path || ""}/tasks`, background)
+    const href = taskViewUrl(tasks, view, !fromTasks).href
     if (link.href !== href) link.href = href
   }
 

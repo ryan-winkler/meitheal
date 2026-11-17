@@ -45,6 +45,15 @@ test.describe("Tasks Shell (Kanban)", () => {
       expect((await saved).ok()).toBe(true)
       await page.goto("/tasks#kanban")
       await expect(card.locator(".kanban-card-desc")).toHaveText("Check replacement controller. Read the manual.")
+      for (const [description, preview] of [
+        ["<table><tr><td>Morning</td><td>Meeting</td></tr></table>", "Morning Meeting"],
+        ["- Collect the supplies", "Collect the supplies"],
+      ] as const) {
+        const update = await request.put(`/api/tasks/${id}`, { headers, data: { description } })
+        expect(update.ok()).toBe(true)
+        await page.reload()
+        await expect(card.locator(".kanban-card-desc")).toHaveText(preview)
+      }
     } finally {
       await request.delete(`/api/tasks/${id}`, { headers })
     }

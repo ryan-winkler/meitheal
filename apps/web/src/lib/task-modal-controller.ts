@@ -6,7 +6,7 @@
           buildTaskPermalink, getLegacyTaskId, type SearchDetailDismissal, type SearchDetailHandoff,
         } from "@lib/task-detail-handoff"
         import { buildIngressPagePath } from "@lib/page-shell-links"
-        import { taskDetailPath, ticketIdFromPath, taskBackgroundUrl } from "@lib/task-page-url"
+        import { restoreTaskBackgroundUrl, taskDetailPath, ticketIdFromPath, taskBackgroundUrl } from "@lib/task-page-url"
 
         const log = createClientLogger("tasks", "detail-modal");
         import { saveAttachment } from "@domains/offline/offline-store";
@@ -1843,7 +1843,10 @@
 
         function checkTaskLocation(fromHistory = false) {
           if (waitForDetailWrites(() => checkTaskLocation(fromHistory))) return
-          if (fromHistory) saveNavigationState()
+          if (fromHistory) {
+            restoreTaskBackgroundUrl()
+            saveNavigationState()
+          }
           const url = new URL(window.location.href)
           const taskId = ticketIdFromPath(url.pathname, window.__ingress_path) ?? getLegacyTaskId(url.hash) ?? url.searchParams.get("open")
           const commentTarget = url.searchParams.get("comment")

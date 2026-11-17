@@ -1,5 +1,5 @@
 import { getRememberedAreaId, getSelectedAreaId } from "@lib/area-selector-controller"
-import { TASK_VIEW_LOCATION_EVENT, taskBackgroundUrl, ticketIdFromPath } from "@lib/task-page-url"
+import { TASK_VIEW_LOCATION_EVENT, replaceTaskBackgroundUrl, taskBackgroundUrl } from "@lib/task-page-url"
 import { DEFERRAL_RECONCILED, type DeferralReconciliation } from "@lib/deferral-client"
 import { initKanbanArea } from "@lib/kanban-controller"
 import { hydrateTaskAssignees } from "@lib/task-assignee-display"
@@ -108,18 +108,9 @@ export function initKanbanPage(signal: AbortSignal): void {
         if (list && !reset && lane.dataset.status !== focus?.lane) list.scrollTop = scroll.get(lane.dataset.status) ?? 0
       }
       // A view or task-detail navigation can change the hash while a board request is in flight.
-      const current = new URL(location.href)
-      const background = taskBackgroundUrl(current)
-      for (const key of ["open", "comment"]) {
-        const value = background.searchParams.get(key)
-        if (value === null) url.searchParams.delete(key)
-        else url.searchParams.set(key, value)
-      }
-      url.hash = background.hash
+      url.hash = taskBackgroundUrl(new URL(location.href)).hash
       if (!dataOnly) {
-        if (ticketIdFromPath(current.pathname, window.__ingress_path) !== null) {
-          history.replaceState({ ...history.state, ticketDrawer: { ...history.state?.ticketDrawer, returnTo: url.href } }, "")
-        } else history.replaceState(history.state, "", url)
+        replaceTaskBackgroundUrl(url)
         document.dispatchEvent(new Event(TASK_VIEW_LOCATION_EVENT))
       }
       board.scrollLeft = horizontal

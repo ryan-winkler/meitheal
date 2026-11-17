@@ -1,12 +1,35 @@
-import { expect, test } from "@playwright/test"
+import { expect, test, type Locator } from "@playwright/test"
 
 test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the disposable Meitheal browser fixture")
+
+function badgeContrast(badge: Locator, surfaceSelector: string) {
+  return badge.evaluate((element, surfaceSelector) => {
+    const context = document.createElement("canvas").getContext("2d")!
+    const paint = (color: string) => {
+      context.fillStyle = color
+      context.fillRect(0, 0, 1, 1)
+      const [r, g, b] = Array.from(context.getImageData(0, 0, 1, 1).data, value => {
+        const fraction = value / 255
+        return fraction <= 0.04045 ? fraction / 12.92 : ((fraction + 0.055) / 1.055) ** 2.4
+      })
+      return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!
+    }
+    const style = getComputedStyle(element)
+    paint(getComputedStyle(element.closest(surfaceSelector)!).backgroundColor)
+    const fill = paint(style.backgroundColor)
+    const ink = paint(style.color)
+    return (Math.max(fill, ink) + 0.05) / (Math.min(fill, ink) + 0.05)
+  }, surfaceSelector)
+}
 
 test("Knight Rider persists and fills active work and task colors on Today and Board", async ({ page, request }, testInfo) => {
   await page.emulateMedia({ colorScheme: "light", reducedMotion: "reduce" })
   const dueDate = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Dublin", dateStyle: "short" }).format(new Date())
   async function create(title: string, status: string, color?: string): Promise<string> {
-    const response = await request.post("/api/tasks", { data: { title, due_date: dueDate, status, color, priority: color ? 3 : 1 } })
+    const framework_payload = JSON.stringify({ reach: 2, impact: 2, confidence: 1, effort: 1 })
+    const response = await request.post("/api/tasks", {
+      data: { title, due_date: dueDate, status, color, priority: color ? 3 : 1, framework_payload },
+    })
     expect(response.status()).toBe(201)
     return (await response.json()).id
   }
@@ -56,6 +79,9 @@ test("Knight Rider persists and fills active work and task colors on Today and B
     await expect(active).toBeVisible()
     await expect(active).toHaveCSS("border-bottom-color", "rgb(255, 94, 146)")
     await expect(active).toHaveCSS("background-color", "rgb(89, 53, 65)")
+    const todayBadge = active.getByText("RICE: 4", { exact: true })
+    await expect(todayBadge).toBeVisible()
+    expect(await badgeContrast(todayBadge, ".tli")).toBeGreaterThanOrEqual(4.5)
     await expect(idle).toHaveCSS("background-color", /(?:transparent|0\s*\))/)
     await expect(colored.locator(".tli__color")).toBeHidden()
     expect(await colored.evaluate(el => getComputedStyle(el).backgroundColor))
@@ -114,6 +140,9 @@ test("Knight Rider persists and fills active work and task colors on Today and B
     await page.goto("/tasks#kanban")
     const card = (id: string) => page.locator(`.kanban-card[data-id="${id}"]`)
     await expect(card(activeId)).toHaveCSS("background-color", "rgb(89, 53, 65)")
+    const boardBadge = card(activeId).getByText("RICE: 4", { exact: true })
+    await expect(boardBadge).toBeVisible()
+    expect(await badgeContrast(boardBadge, ".kanban-card")).toBeGreaterThanOrEqual(4.5)
     await expect(card(coloredId)).toHaveCSS("border-inline-start-width", "1px")
     await expect(card(idleId)).toHaveCSS("background-color", "rgb(36, 36, 36)")
     expect(await card(coloredId).evaluate(el => getComputedStyle(el).backgroundColor))

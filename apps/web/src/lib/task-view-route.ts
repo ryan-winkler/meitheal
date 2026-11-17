@@ -23,7 +23,7 @@ export function readTaskAreaParam(params: URLSearchParams): string | null {
   return params.get("area_id") ?? params.get("area") ?? params.get("board")
 }
 
-export function taskViewUrl(current: URL, view: TaskView): URL {
+export function taskViewUrl(current: URL, view: TaskView, fresh = false): URL {
   const url = new URL(current)
   const previousView = parseTaskView(url.searchParams.get("view")) ?? parseTaskView(url.hash.slice(1))
   if (previousView !== view && (previousView === "calendar" || previousView === "table")) {
@@ -35,6 +35,8 @@ export function taskViewUrl(current: URL, view: TaskView): URL {
   if (view === "kanban") url.searchParams.delete("view")
   else url.searchParams.set("view", view)
   if (view !== "table") url.searchParams.delete("tp")
+  // An explicit empty search skips legacy stored filters without overriding the remembered Area.
+  if (fresh && (view === "table" || view === "timeline")) url.searchParams.set("search", "")
   url.hash = view
   return url
 }

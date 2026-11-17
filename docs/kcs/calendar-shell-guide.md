@@ -40,6 +40,8 @@ Assistive technology announces the visible day number first, followed by the mon
 
 Open **Settings → Connected Services → Calendar Sync** and check the selected entity and its last sync error. A failed event import or stale-event reconciliation keeps the entity in an error state. Manual sync returns an incomplete result (HTTP 502), including counts for imports already saved; those saved tasks remain available.
 
+Clearing all selected Home Assistant calendars also stops the App from picking up an older saved calendar after a restart. Choose a current source to resume its sync.
+
 Repair the reported Home Assistant or database problem, then use **Sync now** to retry. Manual sync resets that entity's failure backoff and clears its error only after a successful attempt. Background sync pauses after five consecutive failed attempts; each attempt counts once, even when several events fail. A concurrent or export-only sync is skipped rather than reported as a completed import. Disabling and re-enabling sync also starts a fresh entity session.
 
 The same **Sync now** action includes an active CalDAV import. A failed calendar fetch, database import, credential check or discovery keeps the CalDAV error visible and returns an incomplete result. Completed imports retain their counts. Each imported task and its confirmation commit together. When a sync combines old event links into a series, it releases them only when it saves the new link. Repair the failure and run **Sync now** to retry. Background CalDAV sync pauses after five failed attempts; manual sync retries after repair. Status identifies this source as `caldav` without exposing the server URL or password.

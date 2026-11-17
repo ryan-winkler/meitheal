@@ -348,7 +348,7 @@ export function writeTableFilterParams(params: URLSearchParams, state: Partial<F
 }
 
 export function loadTableFilterState(): Partial<FilterState> {
-  const params = new URLSearchParams(window.location.search)
+  const params = taskBackgroundUrl(new URL(location.href)).searchParams
   if (TABLE_KEYS.some(key => params.has(key))) return readTableFilterParams(params)
   const state = normalizeTableValues({ ...loadFilterState() })
   delete state.area
@@ -362,13 +362,13 @@ export function saveTableFilterState(state: Partial<FilterState>, page?: number)
     const { laneIds: _laneIds, createdFrom: _createdFrom, createdThrough: _createdThrough, ...sharedState } = state
     localStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(sharedState))
   } catch { /* storage unavailable */ }
-  const url = new URL(window.location.href)
+  const url = taskBackgroundUrl(new URL(location.href))
   writeTableFilterParams(url.searchParams, state)
   if (page !== undefined) {
     if (page > 1) url.searchParams.set("tp", String(page))
     else url.searchParams.delete("tp")
   }
-  window.history.replaceState(window.history.state, "", url)
+  replaceTaskBackgroundUrl(url)
 }
 
 /**

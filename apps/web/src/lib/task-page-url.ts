@@ -21,9 +21,20 @@ export function taskBackgroundUrl(current: URL): URL {
     ? url : new URL(fallback, current.origin)
 }
 
+// The prior history entry can only be updated once it becomes active again.
+let pendingBackground: { session: string; href: string } | undefined
+
+export function restoreTaskBackgroundUrl(): void {
+  if (!pendingBackground || history.state?.ticketBackground !== pendingBackground.session) return
+  history.replaceState(history.state, "", pendingBackground.href)
+  pendingBackground = undefined
+}
+
 export function replaceTaskBackgroundUrl(url: URL): void {
   if (ticketIdFromPath(location.pathname, window.__ingress_path) !== null) {
-    history.replaceState({ ...history.state, ticketDrawer: { ...history.state?.ticketDrawer, returnTo: url.href } }, "")
+    const drawer = history.state?.ticketDrawer
+    if (drawer?.pushed) pendingBackground = { session: drawer.session, href: url.href }
+    history.replaceState({ ...history.state, ticketDrawer: { ...drawer, returnTo: url.href } }, "")
     return
   }
   const current = new URLSearchParams(location.search)
