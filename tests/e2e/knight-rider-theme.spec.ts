@@ -273,6 +273,18 @@ test("Details completion clears Knight Rider active work on Dashboard and Board"
   const close = page.getByRole("button", { name: "Close detail" })
   const card = page.locator(`.kanban-card[data-id="${id}"]`)
   const link = card.locator(".card-open-btn")
+  async function reopenTask() {
+    await expect(status).not.toHaveAttribute("aria-disabled", "true")
+    const [response] = await Promise.all([
+      page.waitForResponse(response =>
+        new URL(response.url()).pathname === `/api/tasks/${id}` &&
+        response.request().method() === "PUT" && response.request().postDataJSON()?.status === "active",
+      ),
+      status.selectOption("active"),
+    ])
+    expect(response.status()).toBe(200)
+    await expect(status).toHaveAttribute("data-saved-status", "active")
+  }
   let refreshHeld = false
   let failRefresh = false
   let snapshotRefresh = false
@@ -333,7 +345,7 @@ test("Details completion clears Knight Rider active work on Dashboard and Board"
     await expect(edit).toBeFocused()
     await edit.press("Enter")
     await expect(status).toHaveValue("complete")
-    await status.selectOption("active")
+    await reopenTask()
     await expect(openQueue).toBeVisible()
     await expect(favorite).toBeVisible()
     await expect(openQueue).toHaveAttribute("data-work-active", "")
@@ -347,7 +359,7 @@ test("Details completion clears Knight Rider active work on Dashboard and Board"
     await link.press("Enter")
     await expect(status).toHaveValue("complete")
     failRefresh = true
-    await status.selectOption("active")
+    await reopenTask()
     await expect(status).toHaveValue("active")
     await expect(page.locator("[data-kanban-loading]")).toContainText("Status saved.")
     await expect(card).toHaveAttribute("data-status", "complete")
@@ -377,7 +389,7 @@ test("Details completion clears Knight Rider active work on Dashboard and Board"
     await link.press("Enter")
     await expect(status).toHaveValue("complete")
     holdNextRefresh()
-    await status.selectOption("active")
+    await reopenTask()
     await expect.poll(() => refreshHeld).toBe(true)
     await close.click()
     await page.locator('.kanban-column[data-status="pending"] > .kanban-add-btn').click()
@@ -419,7 +431,7 @@ test("Details completion clears Knight Rider active work on Dashboard and Board"
     await page.goto(`/tasks?status=active&open=${id}#kanban`)
     await expect(status).toHaveValue("complete")
     await expect(card).toHaveCount(0)
-    await status.selectOption("active")
+    await reopenTask()
     await expect(card).toHaveAttribute("data-status", "active")
     await expect(card).toHaveAttribute("data-work-active", "")
 
@@ -428,8 +440,7 @@ test("Details completion clears Knight Rider active work on Dashboard and Board"
     await done.click()
     await expect(status).toHaveValue("complete")
     await expect.poll(() => refreshHeld).toBe(true)
-    await status.selectOption("active")
-    await expect(status).toHaveAttribute("data-saved-status", "active")
+    await reopenTask()
     releaseHeldRefresh()
     await expect.poll(() => boardReads).toBeGreaterThanOrEqual(priorReads + 2)
     await expect(page.locator("#kanban-board")).not.toHaveAttribute("aria-busy", "true")
