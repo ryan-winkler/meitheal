@@ -237,6 +237,7 @@ export function initQuickActions(
       const taskId = btn.dataset.id
       const currentAssigned = btn.dataset.assigned || ""
       if (!taskId) return
+      const taskUrl = buildTaskApiUrl(taskId)
 
       // P1-5: Show popover immediately with loading skeleton
       const content = document.createElement("div")
@@ -269,7 +270,7 @@ export function initQuickActions(
         unassignItem.addEventListener("click", async () => {
           _qa.close(true)
           try {
-            const res = await fetch(buildTaskApiUrl(taskId), { // nosemgrep
+            const res = await fetch(taskUrl, { // nosemgrep
               method: "PUT",
               headers: { "content-type": "application/json" },
               body: JSON.stringify({ assigned_to: null }),
@@ -302,7 +303,7 @@ export function initQuickActions(
           item.addEventListener("click", async () => {
             _qa.close(true)
             try {
-              const res = await fetch(buildTaskApiUrl(taskId), { // nosemgrep
+              const res = await fetch(taskUrl, { // nosemgrep
                 method: "PUT",
                 headers: { "content-type": "application/json" },
                 body: JSON.stringify({ assigned_to: userId }),
