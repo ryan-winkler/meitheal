@@ -578,6 +578,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
     function renderInheritedFilters() {
       if (!summary) return
       const values = { status, priority, rice, user, task_type }
+      const focusedKey = summary.querySelector<HTMLButtonElement>("button:focus")?.dataset.inheritedFilter
       summary.replaceChildren()
       for (const key of Object.keys(inheritedLabels) as Array<keyof typeof inheritedLabels>) {
         const value = values[key]
@@ -593,6 +594,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
         chip.setAttribute("aria-label", `Remove ${inheritedLabels[key]} filter ${display}`)
         summary.append(chip)
       }
+      if (focusedKey) (summary.querySelector<HTMLElement>(`[data-inherited-filter="${CSS.escape(focusedKey)}"]`) ?? search)?.focus()
     }
     summary?.addEventListener("click", event => {
       const button = (event.target as Element).closest<HTMLButtonElement>("[data-inherited-filter]")
@@ -785,7 +787,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
     advClearBtn?.addEventListener("click", () => {
       if (!advContainer) return
       advancedFilterState = null
-      if (prefix === "calendar" && !emitChange()) return
+      if (prefix === "calendar" && !emitChange(false, true)) return
       readOnlyRules = false
       updateRulesMode()
       renderSavedRules()
@@ -813,7 +815,7 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
           conditions
         }
       }
-      if (prefix === "calendar" && !emitChange()) {
+      if (prefix === "calendar" && !emitChange(false, true)) {
         advancedFilterState = previousRules
         updateClearVisibility()
         return
@@ -878,12 +880,12 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
     }
     if (createdDate) document.addEventListener("meitheal:table-filters-applied", updateClearVisibility, { signal })
 
-    function emitChange(clear = false) {
+    function emitChange(clear = false, editRules = false) {
       const state = gatherState()
       const accepted = document.dispatchEvent(
         new CustomEvent("meitheal:filter-change", {
           cancelable: prefix === "calendar",
-          detail: { ...state, view: prefix, clear, ...(clear ? { labels: [] } : {}) },
+          detail: { ...state, view: prefix, clear, editRules, ...(clear ? { labels: [] } : {}) },
         })
       )
       updateLaneCount()

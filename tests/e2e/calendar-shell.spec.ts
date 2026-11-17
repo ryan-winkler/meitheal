@@ -389,7 +389,16 @@ test.describe("Calendar Shell", () => {
     await expect(status).toHaveText("Shorten the Calendar rules or remove a condition.")
     await advanced.press("Enter")
     await expect(page.locator("[data-calendar-rule-error]")).toHaveText("Shorten the Calendar rules or remove a condition.")
-    await expect(page.locator("#calendar-advanced-panel .adv-val")).toHaveValue("word".repeat(2050))
+    const value = page.locator("#calendar-advanced-panel .adv-val")
+    await expect(value).toHaveValue("word".repeat(2050))
+
+    await page.getByRole("button", { name: "Close custom filters" }).click()
+    await page.route(url => url.searchParams.has("calendarRefresh"), route => route.fulfill({ status: 503 }))
+    await page.getByRole("combobox", { name: "Filter by priority" }).selectOption("3")
+    await expect(retry).toBeVisible()
+    await advanced.click()
+    await expect(value).toHaveValue("word".repeat(2050))
+    await expect(page.locator("[data-calendar-rule-error]")).toBeVisible()
   })
 
   test("Calendar Retry leaves focus in an agenda opened during the request", async ({ page }) => {
@@ -413,6 +422,61 @@ test.describe("Calendar Shell", () => {
       release()
       await expect(page).toHaveURL(/search=roof/)
       await expect(close).toBeFocused()
+    } finally {
+      release()
+    }
+  })
+
+  test("a background refresh replacing Calendar Retry preserves its focus on failure", async ({ page }) => {
+    let hold = false
+    let release = () => {}
+    const pending = new Promise<void>(resolve => { release = resolve })
+    await page.route(url => url.searchParams.has("calendarRefresh"), async route => {
+      if (hold) {
+        hold = false
+        await pending
+        return route.abort().catch(() => {})
+      }
+      return route.fulfill({ status: 503, body: "Calendar service unavailable" })
+    })
+    await page.getByRole("textbox", { name: "Filter by text" }).fill("roof")
+    const retry = page.getByRole("button", { name: "Retry calendar" })
+    await expect(retry).toBeVisible()
+    hold = true
+    try {
+      const retryRequest = page.waitForRequest(request => new URL(request.url()).searchParams.has("calendarRefresh"))
+      await retry.press("Enter")
+      await retryRequest
+      await expect(retry).toBeHidden()
+      await page.evaluate(() => document.dispatchEvent(new CustomEvent("meitheal:tasks-changed")))
+      await expect(retry).toBeVisible()
+      await expect(retry).toBeFocused()
+    } finally {
+      release()
+    }
+  })
+
+  test("Calendar Retry retains focus on a filter chip used while loading", async ({ page }) => {
+    let fail = true
+    let release = () => {}
+    const pending = new Promise<void>(resolve => { release = resolve })
+    await page.route(url => url.searchParams.has("calendarRefresh"), async route => {
+      if (fail) return route.fulfill({ status: 503 })
+      await pending
+      await route.continue()
+    })
+    await page.goto("/tasks?view=calendar&rice=high#calendar")
+    await page.getByRole("textbox", { name: "Filter by text" }).fill("roof")
+    const retry = page.getByRole("button", { name: "Retry calendar" })
+    await expect(retry).toBeVisible()
+    fail = false
+    try {
+      await retry.press("Enter")
+      const chip = page.getByRole("button", { name: "Remove RICE filter high" })
+      await chip.focus()
+      release()
+      await expect(page).toHaveURL(/search=roof/)
+      await expect(chip).toBeFocused()
     } finally {
       release()
     }
@@ -477,6 +541,16 @@ test.describe("Calendar Shell", () => {
       await expect(retry).toBeVisible()
       await expect(trigger).toContainText("All Areas")
       await expect(page.locator('.cal-cell[data-date="2031-07-08"] .cal-inline-ha')).toContainText("Available despite Area failure")
+
+      fail = false
+      await trigger.click()
+      await page.locator('#area-selector-dropdown [data-area-id=""]').click()
+      await expect(page).toHaveURL(url => url.searchParams.get("area") === "")
+      await expect(retry).toBeHidden()
+      expect(await page.evaluate(() => JSON.parse(localStorage.getItem("meitheal-selected-area") ?? "{}").areaId)).toBe("")
+      await page.goto("/tasks?view=calendar&year=2031&month=6#calendar", { waitUntil: "networkidle" })
+      await expect(trigger).toContainText("All Areas")
+      await expect(page).not.toHaveURL(/area=/)
     } finally {
       release()
       await request.delete(`/api/areas/${id}`)

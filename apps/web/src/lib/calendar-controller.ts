@@ -59,6 +59,7 @@ export function initCalendarPage(signal: AbortSignal): void {
   let applied = new URL(desired)
   let retryTarget = initialMonth.dataset.calendarAvailable === "false" ? new URL(applied) : undefined
   let refreshRequest: AbortController | undefined
+  let retryFocusUrl = ""
   let previewsRequest: AbortController | undefined
   let drawerRequest: AbortController | undefined
   let drawerDate = ""
@@ -110,7 +111,8 @@ export function initCalendarPage(signal: AbortSignal): void {
     refreshRequest = request
     desired = url
     month.setAttribute("aria-busy", "true")
-    const activeRetry = document.activeElement === retry
+    const activeRetry = document.activeElement === retry || (background && retryFocusUrl === url.href)
+    retryFocusUrl = activeRetry ? url.href : ""
     const canRestoreRetryFocus = () => activeRetry && (document.activeElement === retry || document.activeElement === document.body)
     announce("Loading calendar…", false)
 
@@ -146,9 +148,12 @@ export function initCalendarPage(signal: AbortSignal): void {
         }
         history.replaceState(history.state, "", url)
       }
+      const previousArea = readCalendarTaskFilters(applied.searchParams).area
       applied = new URL(url)
       const area = readCalendarTaskFilters(applied.searchParams).area
-      if (area !== undefined) document.dispatchEvent(new CustomEvent(CALENDAR_AREA_APPLIED_EVENT, { detail: area }))
+      if (area !== undefined && area !== previousArea) {
+        document.dispatchEvent(new CustomEvent(CALENDAR_AREA_APPLIED_EVENT, { detail: area }))
+      }
       if (retryTarget && !preserveRetry) {
         retryTarget = undefined
         restoreFilterControls()
@@ -170,15 +175,16 @@ export function initCalendarPage(signal: AbortSignal): void {
     } finally {
       if (request === refreshRequest) {
         refreshRequest = undefined
+        retryFocusUrl = ""
         month.removeAttribute("aria-busy")
       }
     }
   }
 
-  function rejectFilters(message: string): false {
+  function rejectFilters(message: string, editRules: boolean): false {
     const recovery = month.dataset.calendarAvailable === "false" ? unavailable : "The previous results are still shown."
     rejectedFilterChange = message
-    if (ruleError?.closest(".filter-toolbar__advanced-panel:not(.hidden)")) {
+    if (editRules && ruleError?.closest(".filter-toolbar__advanced-panel:not(.hidden)")) {
       ruleError.hidden = false
       ruleError.textContent = message
     }
@@ -188,8 +194,8 @@ export function initCalendarPage(signal: AbortSignal): void {
     return false
   }
 
-  function applyFilters(values: KanbanFilters): boolean {
-    if (ruleError) ruleError.hidden = true
+  function applyFilters(values: KanbanFilters, editRules = false): boolean {
+    if (editRules && ruleError) ruleError.hidden = true
     const url = new URL(desired)
     const previous = readCalendarTaskFilters(url.searchParams)
     const next = { ...previous, ...values }
@@ -204,11 +210,11 @@ export function initCalendarPage(signal: AbortSignal): void {
     writeCalendarTaskFilters(url, next, sameRules ? url.searchParams.get("advancedFilter") : null)
     const accepted = readCalendarTaskFilters(url.searchParams)
     if (next.advancedFilter?.conditions.length && !accepted.advancedFilter) {
-      return rejectFilters("Shorten the Calendar rules or remove a condition.")
+      return rejectFilters("Shorten the Calendar rules or remove a condition.", editRules)
     }
     if (url.pathname.length + url.search.length > monthTargetLimit ||
       (next.labels?.length ?? 0) !== (accepted.labels?.length ?? 0)) {
-      return rejectFilters("Remove a Calendar filter or shorten its values.")
+      return rejectFilters("Remove a Calendar filter or shorten its values.", editRules)
     }
     rejectedFilterChange = ""
     void refresh(url)
@@ -413,11 +419,11 @@ export function initCalendarPage(signal: AbortSignal): void {
   moreTasks.addEventListener("click", () => loadMoreDueTasks?.(), { signal })
   retry.addEventListener("click", () => void refresh(new URL(retryTarget ?? desired)), { signal })
   document.addEventListener("meitheal:filter-change", event => {
-    const detail = (event as CustomEvent<{ view: string; clear?: boolean } & KanbanFilters>).detail
+    const detail = (event as CustomEvent<{ view: string; clear?: boolean; editRules?: boolean } & KanbanFilters>).detail
     if (detail?.view !== "calendar") return
     const { search, status, priority, rice, user, task_type, types, labels, promoted, advancedFilter } = detail
     const area = detail.clear ? { area: "" } : {}
-    if (!applyFilters({ ...area, search, status, priority, rice, user, task_type, types, labels, promoted, advancedFilter } as KanbanFilters)) {
+    if (!applyFilters({ ...area, search, status, priority, rice, user, task_type, types, labels, promoted, advancedFilter } as KanbanFilters, detail.clear || detail.editRules)) {
       event.preventDefault()
     }
   }, { signal })

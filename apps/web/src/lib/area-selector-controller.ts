@@ -78,7 +78,7 @@ export function initAreaSelector(signal: AbortSignal): void {
       const areaId = (event as CustomEvent<string>).detail
       const option = [...dropdown.querySelectorAll<HTMLElement>("[data-area-id]")]
         .find(item => item.dataset.areaId === areaId)
-      if (option && option.getAttribute("aria-selected") !== "true") {
+      if (option) {
         selectArea(areaId, option.dataset.areaName ?? "All Areas", option.dataset.areaIcon ?? "🗂", "calendar")
       }
     }, { signal })
