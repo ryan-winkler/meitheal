@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test"
 
+import { readKanbanFilters, updateKanbanFilters } from "../../apps/web/src/lib/kanban-query"
 import { hydrateTaskAssignees } from "../../apps/web/src/lib/task-assignee-display"
 import { taskApi, type AssigneeDirectory } from "../../apps/web/src/lib/task-api-client"
 
@@ -81,4 +82,35 @@ test("directory failures, unverified members and normalized duplicate names keep
   const grouped = surface(["custom_a", "custom_b", ""], true)
   await hydrateTaskAssignees(grouped.root, new AbortController().signal)
   expect(grouped.labels.map(label => label.textContent)).toEqual(["Alex (1)", " Alex  (2)", "Unassigned"])
+})
+
+test("a missing assignee in a verified Home Assistant roster is unavailable", async () => {
+  setDirectory(async () => ({ users: [], ha_connected: true, ha_roster_verified: true }))
+  const missing = surface(["ha_missing"])
+  await hydrateTaskAssignees(missing.root, new AbortController().signal)
+  expect(missing.labels[0]!.textContent).toBe("Assignee unavailable")
+})
+
+test("grouping by Assignee keeps lane pages until the filter criteria change", () => {
+  const url = new URL("https://app.example/tasks?view=kanban&area=home&kp.ready=2&kp.active=3")
+  url.searchParams.set("types", "standard_action,shopping_item")
+  url.searchParams.set("labels", "household,weekly")
+  const filters = readKanbanFilters(url.searchParams)
+
+  expect(updateKanbanFilters(url, {
+    ...filters,
+    groupBy: "assignee",
+    types: ["shopping_item", "standard_action"],
+    labels: ["weekly", "household"],
+  }, true)).toBe(false)
+  expect(url.searchParams.get("groupBy")).toBe("assignee")
+  expect(url.searchParams.get("kp.ready")).toBe("2")
+  expect(url.searchParams.get("kp.active")).toBe("3")
+
+  expect(updateKanbanFilters(url, { ...readKanbanFilters(url.searchParams), user: "ha_alex" }, true)).toBe(true)
+  expect(url.searchParams.get("groupBy")).toBe("assignee")
+  expect(url.searchParams.get("user")).toBe("ha_alex")
+  expect(url.searchParams.get("view")).toBe("kanban")
+  expect(url.searchParams.has("kp.ready")).toBe(false)
+  expect(url.searchParams.has("kp.active")).toBe(false)
 })
