@@ -18,8 +18,9 @@ const cases = [
   { name: "only exempts the build-only advisory before expiry", graph: "[]", now: expiry - 1, audit: 0, status: 0, calls: [lookup, exception, "audit"] },
   { name: "audits production Picomatch without an exception", graph: '[{"name":"picomatch"}]', now: expiry - 1, audit: 1, status: 1, calls: [lookup, "audit"] },
   { name: "restores the complete audit at expiry", graph: "[]", now: expiry, audit: 0, status: 0, calls: [lookup, "audit"] },
-  { name: "retains failures from other advisories", graph: "[]", now: expiry - 1, audit: 1, status: 1, calls: [lookup, exception, "audit"] },
-  { name: "retains registry errors", graph: "[]", now: expiry - 1, audit: 70, status: 70, calls: [lookup, exception, "audit"] },
+  { name: "reports other advisories after the first audit fails", graph: "[]", now: expiry - 1, ignoreStatus: 1, audit: 1, status: 1, calls: [lookup, exception, "audit"] },
+  { name: "retains a registry error from the reporting audit", graph: "[]", now: expiry - 1, audit: 70, status: 70, calls: [lookup, exception, "audit"] },
+  { name: "retains a registry error from the first audit", graph: "[]", now: expiry - 1, ignoreStatus: 70, audit: 0, status: 70, calls: [lookup, exception, "audit"] },
   { name: "rejects a failed production lookup", graph: "[]", now: expiry - 1, audit: 0, lookupStatus: 19, status: 19, calls: [lookup] },
   { name: "rejects malformed production lookup JSON", graph: "invalid", now: expiry - 1, audit: 0, status: "failure", calls: [lookup] },
   { name: "rejects a non-array production lookup", graph: "{}", now: expiry - 1, audit: 0, status: 1, calls: [lookup] },
@@ -33,7 +34,7 @@ for (const scenario of cases) {
 printf '%s\\n' "$*" >> "$AUDIT_TEST_CALLS"
 case "$*" in
   "${lookup}") printf '%s\\n' "$AUDIT_TEST_GRAPH"; exit "$AUDIT_TEST_LOOKUP_STATUS" ;;
-  "${exception}") exit 0 ;;
+  "${exception}") exit "$AUDIT_TEST_IGNORE_STATUS" ;;
   "audit") exit "$AUDIT_TEST_EXIT" ;;
   *) exit 92 ;;
 esac
@@ -57,6 +58,7 @@ fi
           AUDIT_TEST_GRAPH: scenario.graph,
           AUDIT_TEST_LOOKUP_STATUS: String(scenario.lookupStatus ?? 0),
           AUDIT_TEST_NOW: String(scenario.now),
+          AUDIT_TEST_IGNORE_STATUS: String(scenario.ignoreStatus ?? 0),
           AUDIT_TEST_EXIT: String(scenario.audit),
         },
       })
