@@ -1,6 +1,8 @@
 import AxeBuilder from "@axe-core/playwright"
 import { test, expect, type APIRequestContext, type Locator } from "@playwright/test"
 
+import { normalizeTaskDetailOrder, taskDetailDefaultOrder } from "../../apps/web/src/lib/task-detail-layout"
+
 const layoutKey = "meitheal:task-detail-layout:v1"
 
 async function createTicket(request: APIRequestContext, title: string): Promise<string> {
@@ -21,6 +23,9 @@ test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the disposable Me
 test.use({ serviceWorkers: "block" })
 
 test("ticket and Settings share a real section and field order, and reset restores defaults", async ({ page, request }) => {
+  const properties = taskDetailDefaultOrder.get("properties")!
+  const previous = properties.filter(id => id !== "home-assistant-area").reverse()
+  expect(normalizeTaskDetailOrder(previous, properties)).toEqual([...previous, "home-assistant-area"])
   const id = await createTicket(request, "Arrange a task")
   await page.addInitScript(key => {
     if (!localStorage.getItem(key)) {

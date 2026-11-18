@@ -75,6 +75,8 @@ Dates due today appear in amber. The light palette uses a darker shade on white 
 2. Use the route-level view pills to move to Calendar, Table, or Timeline.
 3. The route preserves the existing filters. A valid `view` query parameter controls the view even when the fragment changes. When the query omits a view, the browser still honors a legacy fragment such as `#calendar` after loading. Label names with commas or brackets keep their literal spelling when shared from Table to Kanban. Kanban uses the compatible board filters. Apply a full saved Table preset in Table to use Table grouping, columns and nested rules.
 
+Select **No grouping** from a grouped board before copying a link to the flat board. Opening that link shows the flat board even in a browser that has saved a different grouping preference.
+
 On mobile, use the Task views below the toolbar actions. Open **More** if a view does not fit. The bottom app navigation opens Tasks, and the in-page links switch between Kanban, Calendar, Table, and Timeline.
 
 Older Tasks bookmarks and sidebar shortcuts that specify a hierarchy type such as `task_type=story` open directly in Table when they omit both the view query and fragment. Plain Tasks still remembers your last view.
@@ -86,6 +88,12 @@ On wide screens **New Task**, **Search Meitheal**, and **Ask Home Assistant** si
 Use Tab to move between visible task views. If a view moves into **More**, open that control and use the arrow keys to choose it.
 
 Open **Timeline** to narrow the chart by text, status, priority, task type, or area. Use **Group by** to organize dated tasks. The URL keeps these choices when you reload or move between task views. On phones, open **Filters** to adjust the chart. The task pane starts closed unless you saved a preference. Select **Task pane** to open or close it. The control becomes available when tasks match the filters.
+
+### Group cards by assignee
+
+Choose **Group by → By Assignee** to see who owns the cards on each workflow column page. The column total counts the full result. **Unassigned** contains tasks with no assignee. When different people or unavailable assignments share the same label, a number distinguishes their headings. Their cards and collapse preferences stay separate.
+
+If the Home Assistant roster cannot be verified, the board shows a cached name when one is available from the same connection. Otherwise it shows that the assignee could not be verified. Reload the board to check the directory again. Choose **Unassigned** from a card's **Assign User** control to move it into that group in the same workflow column.
 
 ## Troubleshooting
 
@@ -125,3 +133,5 @@ Cards keep their full height in a busy lane. The lane scrolls instead of
 compressing the cards. At widths from 769 to 1024 CSS px the sidebar narrows to
 200 px, and the page content starts at the sidebar edge. Both read
 `--sidebar-width`, so a change to one width moves the other.
+
+An unreadable card assignment no longer interrupts grouping for the board. Check the assignment in Details if its group is unexpected. If an assignee group disappears after a refresh, keyboard focus returns to its workflow lane heading.

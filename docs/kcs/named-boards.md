@@ -20,15 +20,19 @@ A Board owner can create a named destination, choose a triage column, and select
 
 Keep the same submission when retrying unchanged content after a timeout. A submission token remains valid for 24 hours. The sender can retrieve the same acknowledgement through a retry during that period, including after the owner closes intake. Initial limits are 20 outstanding submissions and 60 accepted tasks per sender in a rolling 24-hour period.
 
-## Areas, Projects, Goals, Routines, and Pillars
+## Groups, Projects, Goals, Routines, and Pillars
 
-Under **Planning** on a named Board, create an Area to group Projects, Goals and Routines. Choose an optional Goal when creating a Project, and use the Project status to track completion. Board owners manage planning, retire records and link Projects to Goals. Board Pillars can have Principles and links to the same Board’s Goals, Routines and tickets. People with Board access can read them. Remove an Area’s active Projects, Goals and Routines before removing the Area. Create a Pillar for yourself under **Progress → Pillars → New Pillar → Only me**.
+Open **Groups** on a named Board and create a Group for related Projects, Goals and Routines. Choose an optional Goal when creating a Project, and use the Project status to track completion. Board owners manage planning, retire records and link Projects to Goals. Board Pillars can have Principles and links to the same Board’s Goals, Routines and tickets. Readers need Board access and availability of the corresponding feature. Remove a Group’s active Projects, Goals and Routines before removing the Group. Create a Pillar for yourself under **Progress → Pillars → New Pillar → Only me**.
 
-Sharing a Goal with an Area publishes its title and a Project progress summary to people who can read that Area. Each viewer sees progress from Projects they can access. If a Project is private to Work, its progress is omitted for Home readers. Select **Goal sharing → Stop sharing** to remove the Area audience. The visitor can still see a Goal they already have direct access to.
+Sharing a Goal with a Group publishes its title and a Project progress summary to readers of the receiving Group’s Board. Each viewer sees progress from Projects on Boards they can access. If a Project belongs to Work, its progress is omitted for Home readers who lack Work access. Select **Goal sharing → Stop sharing** to remove the shared view. A person with access through the Goal’s own Board can still read it.
 
-Removing a Household Area, Goal or Project hides it from planning and keeps historical relationships intact. Existing Household tasks are unassigned from a removed Project. Named tickets and their versions stay intact.
+Removing a Household Group, Goal or Project hides it from planning and keeps historical relationships intact. Existing Household tasks are unassigned from a removed Project. Named tickets and their versions stay intact.
 
-A Board Routine is completed at most once per UTC day or week starting Monday. Completing it creates a Done ticket on the same Board and requires permission to mark tickets done. Routine tickets remain on the Board to preserve completion history.
+A Board Routine is completed at most once per UTC day or week starting Monday. Completing it creates a Done ticket on the same Board and requires permission to create and complete tickets. Routine tickets remain on the Board to preserve completion history.
+
+Open a Project’s settings and create a Routine in that context to keep its generated tickets in the same Group and Project. A completed, archived or removed Project prevents new occurrences. A retry for an already completed occurrence returns the same ticket while the caller still has the required Board permissions.
+
+**Routines on your Boards** appears in the Routine library and Today for current Home Assistant members with readable named Boards. Choose **Mark done** to check in. Each row names its Board and frequency and shows **Done** after confirmation. Viewers can read the list. Completion controls follow the Board’s permissions and the Project’s status. The list shows up to 100 Routines; open the Board for the rest.
 
 ## Backups
 
@@ -45,3 +49,17 @@ Open **Boards** and select **Household** or a named Board. The Board opens its t
 Expand a named Board from the sidebar to open one of its groups. Household's group shortcuts still include the existing Project pins and planning actions. The original Area and Project links continue to open existing work.
 
 A named Board member with task edit access can open **File task**, choose a group or Project in that Board and save. It keeps the ticket and workflow column. If the destination or task has changed, refresh the Board before retrying. Owner settings and send-only access continue to use the existing Board rules.
+
+With task edit access, set **Shared due date** when you add a task, or select an existing task’s title to open its edit form. Clear the field and choose **Save changes** to remove the date. People who can read the task can see its due date. A generated Routine ticket keeps the date of its original occurrence and shows it as **Scheduled for** in the edit form.
+
+## Personal names, feature availability and physical location
+
+Use **Settings → Navigation & Shortcuts → Labels** to give organizing features your own singular and plural names. The choices belong to your verified Home Assistant account and display language. Search accepts the default terms and your names. Record names and saved links keep their existing identities.
+
+An administrator uses **Settings → Tasks & Boards → Organization features** to choose **Everyone**, **Selected people**, or **Nobody** for Boards organizer, Groups, Projects, Planning, Goals, Routines, Pillars, Principles, Achievements and Home Assistant Area. Board membership and permissions govern work on a named Board. The feature audience controls which organizing modules a person can use. Groups and Projects also require the Boards organizer; independent Goal and Routine libraries keep their own availability. See [Settings troubleshooting](settings-troubleshooting.md#choose-who-can-use-organization-features).
+
+The optional **Home Assistant Area** field identifies a task’s physical location, such as Kitchen. Groups organize responsibility and Projects organize related tasks. An administrator can offer the location field through Organization features without changing the task’s Board, Group or Project.
+
+Older `/areas/{id}` and `/projects/{id}` bookmarks open the matching Household Board context. Supported section bookmarks, including settings, keep their destination. `/planning#spaces` opens the Boards directory when Planning is available. Task filters use the Group label and support your personal display name from Settings.
+
+Home Assistant Area participates in the task inspector’s reorderable Properties fields. Move it in the ticket layout editor or Settings. Existing saved field orders retain their sequence and add the new field.

@@ -6,6 +6,7 @@ import { SETTINGS_SECTIONS } from "../../lib/settings-registry"
 import { TASK_NAV_TYPES } from "../../lib/task-nav-types"
 import KeyboardShortcutList from "../layout/KeyboardShortcutList.astro"
 import SettingsActionRow from "./SettingsActionRow.astro"
+import SettingsOrganizationLabels from "./SettingsOrganizationLabels.astro"
 import SettingsPanelCard from "./SettingsPanelCard.astro"
 import SettingsSectionIntro from "./SettingsSectionIntro.astro"
 
@@ -32,6 +33,7 @@ const NAV_PREFERENCE_KEYS: readonly AppearancePreferenceName[] = [
 >
   <SettingsSectionIntro section={navigationSection} />
   <div class="settings-grid">
+    <SettingsOrganizationLabels locale={locale} />
     <!-- Navigation Layout & Hover Behavior -->
     <SettingsPanelCard
       title={t("settings.nav_layout_card_title", locale)}

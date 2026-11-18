@@ -409,7 +409,7 @@ coreTest("a superseded foreground check cannot restore Personal Pillars after an
   try {
     await session("member")
     await page.goto(progress)
-    await page.getByRole("button", { name: "Create new Pillar" }).click()
+    await page.getByRole("button", { name: "New Pillar", exact: true }).click()
     const proof = await page.getByLabel("Visible to").getAttribute("data-audience-proof")
     const title = "Synthetic private foreground fixture"
     const created = await context.request.post(endpoint, {
@@ -461,7 +461,7 @@ coreTest("going offline closes the Pillar editor and releases page scrolling", a
     await context.addCookies([{ name: "feedback-fixture", value: "member", url: origin }])
     const page = await context.newPage()
     await page.goto(origin + prefix + "/progress#pillars")
-    await page.getByRole("button", { name: "Create new Pillar" }).click()
+    await page.getByRole("button", { name: "New Pillar", exact: true }).click()
     await expect(page.locator("#pillar-form-overlay.active")).toBeVisible()
     await page.evaluate(() => document.body.style.setProperty("overflow", "hidden"))
     await context.setOffline(true)
@@ -882,7 +882,8 @@ test("the service worker precaches inside ingress without opening inactive board
     await page.waitForFunction(() => navigator.serviceWorker.controller !== null)
 
     expect(workerRequests.some(url => url.pathname === prefix + "/version.json")).toBe(true)
-    expect(workerRequests.some(url => url.pathname === prefix + "/planning")).toBe(true)
+    expect(workerRequests.some(url => url.pathname === prefix + "/offline")).toBe(true)
+    expect(workerRequests.some(url => url.pathname === prefix + "/planning")).toBe(false)
     for (const legacy of ["/areas", "/projects"]) {
       const redirect = await page.request.get(origin + prefix + legacy, { maxRedirects: 0 })
       expect(redirect.status()).toBe(302)

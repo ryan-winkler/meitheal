@@ -83,6 +83,7 @@ export const taskDraftPublication = z.strictObject({
   start_date: publishDate.optional(),
   end_date: publishDate.optional(),
   location: z.string().max(300).optional(),
+  home_assistant_area_id: z.string().min(1).max(150).optional(),
   all_day: z.boolean().optional(),
   is_routine: z.boolean().optional(),
 }).refine(task => task.catalogLabels.every(name => task.labels.includes(name) && !task.newLabels.includes(name))

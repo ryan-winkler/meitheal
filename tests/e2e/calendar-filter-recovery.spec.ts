@@ -306,7 +306,7 @@ test.describe("Calendar filters and recovery", () => {
       await page.goto("/tasks?view=calendar&year=2031&month=6#calendar")
       await expect.poll(() => held).toBe(true)
       const trigger = page.locator("#area-selector-trigger")
-      await expect(trigger).toContainText("All Areas")
+      await expect(trigger).toContainText("All Groups")
       await page.getByRole("combobox", { name: "Filter by priority" }).selectOption("3")
       await expect(page).toHaveURL(url => url.searchParams.get("area") === id && url.searchParams.get("priority") === "3")
       await expect(trigger).toContainText("Remembered workshop")
@@ -339,7 +339,7 @@ test.describe("Calendar filters and recovery", () => {
       ] } }))
       await page.goto("/tasks?view=calendar&year=2031&month=6#calendar")
       await expect(retry).toBeVisible()
-      await expect(trigger).toContainText("All Areas")
+      await expect(trigger).toContainText("All Groups")
       await expect(page.locator('.cal-cell[data-date="2031-07-08"] .cal-inline-ha')).toContainText("Available despite Area failure")
 
       fail = false
@@ -349,7 +349,7 @@ test.describe("Calendar filters and recovery", () => {
       await expect(retry).toBeHidden()
       expect(await page.evaluate(() => JSON.parse(localStorage.getItem("meitheal-selected-area") ?? "{}").areaId)).toBe("")
       await page.goto("/tasks?view=calendar&year=2031&month=6#calendar", { waitUntil: "networkidle" })
-      await expect(trigger).toContainText("All Areas")
+      await expect(trigger).toContainText("All Groups")
       await expect(page).not.toHaveURL(/area=/)
     } finally {
       release()
@@ -372,12 +372,12 @@ test.describe("Calendar filters and recovery", () => {
       await page.goto(route)
       const trigger = page.locator("#area-selector-trigger")
       const all = page.locator('#area-selector-dropdown [data-area-id=""]')
-      await expect(trigger).toContainText("All Areas")
+      await expect(trigger).toContainText("All Groups")
       await trigger.click()
       await page.locator(`#area-selector-dropdown [data-area-id="${id}"]`).click()
       await expect(page.locator("[data-calendar-status]")).toContainText("The previous results are still shown.")
       await expect(page).toHaveURL(url => url.searchParams.get("area") === "")
-      await expect(trigger).toContainText("All Areas")
+      await expect(trigger).toContainText("All Groups")
       await expect(all).toHaveAttribute("aria-selected", "true")
       expect(await page.evaluate(() => JSON.parse(localStorage.getItem("meitheal-selected-area") ?? "{}").areaId)).toBe("")
 
@@ -392,7 +392,7 @@ test.describe("Calendar filters and recovery", () => {
 
       await filters.getByRole("textbox", { name: "Filter by text" }).fill("")
       await expect(page).toHaveURL(url => !url.searchParams.has("search") && url.searchParams.get("area") === "")
-      await expect(trigger).toContainText("All Areas")
+      await expect(trigger).toContainText("All Groups")
       await expect(all).toHaveAttribute("aria-selected", "true")
 
       await page.evaluate(areaId => localStorage.setItem("meitheal-selected-area", JSON.stringify({
@@ -401,7 +401,7 @@ test.describe("Calendar filters and recovery", () => {
       params.delete("area")
       await page.goto("/tasks?" + params + "#calendar")
       await expect(page.locator("[data-calendar-status]")).toContainText("The previous results are still shown.")
-      await expect(trigger).toContainText("All Areas")
+      await expect(trigger).toContainText("All Groups")
       await expect(all).toHaveAttribute("aria-selected", "true")
       expect(await page.evaluate(() => JSON.parse(localStorage.getItem("meitheal-selected-area") ?? "{}").areaId)).toBe(id)
 

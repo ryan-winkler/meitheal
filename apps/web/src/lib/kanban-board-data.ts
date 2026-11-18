@@ -1,4 +1,5 @@
 import type { KanbanIndexRow, KanbanLane, TaskRepository } from "@domains/tasks/persistence/task-repository"
+import type { HomeAssistantAreaFilter } from "./home-assistant-area-access"
 import { isTaskVisible } from "./filter-state"
 import { KANBAN_PAGE_SIZE, readKanbanFilters, readKanbanPage } from "./kanban-query"
 
@@ -8,6 +9,7 @@ export async function loadKanbanBoard(
   cutoff: number,
   params: URLSearchParams,
   timezone?: string | undefined,
+  location?: HomeAssistantAreaFilter,
 ) {
   return repo.withKanbanRead(async reader => {
     const filters = readKanbanFilters(params)
@@ -16,7 +18,7 @@ export async function loadKanbanBoard(
       {
         matchText: Boolean(filters.search || filters.labels?.length || filters.advancedFilter),
         matchOverdue: filters.status === "overdue",
-        timezone,
+        timezone, location,
       },
       reader,
     )

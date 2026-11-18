@@ -1,4 +1,6 @@
 ---
+import { isOrganizationFeatureAvailable as available } from "@lib/organization-request-context"
+import { organizationLabelsFor, newOrganizationLabel, organizationLocale } from "@lib/organization-labels"
 /**
  * /progress — Parent page for Progress & Growth (Pillars, Routines, Goals, Achievements)
  *
@@ -25,6 +27,8 @@ import { HOUSEHOLD_PILLAR_OWNER, getPillars } from "@domains/pillars/pillar-serv
 import { getAllPrinciples } from "@domains/pillars/principle-service"
 import { getAssociationsForPillar } from "@domains/pillars/pillar-association-service"
 
+const label = await organizationLabelsFor(Astro)
+const newLabel = (name: Parameters<typeof label>[0], fallback?: string) => newOrganizationLabel(label(name, false, fallback), organizationLocale(Astro))
 const cookieLocale = Astro.cookies.get("meitheal-locale")?.value
 const locale: Locale = cookieLocale === "ga" ? "ga" : "en"
 
@@ -46,8 +50,8 @@ const personalOwner = await resolvePersonalPillarOwner(Astro.locals, Astro.reque
 const personalForm = personalOwner ? issuePersonalPillarForm(personalOwner) : undefined
 
 try {
-  const pillarsData = await getPillars({ includeInactive: false, personalOwner })
-  const allPrinciplesMap = await getAllPrinciples(personalOwner)
+  const pillarsData = available("pillars") ? await getPillars({ includeInactive: false, personalOwner }) : []
+  const allPrinciplesMap = available("principles") ? await getAllPrinciples(personalOwner) : new Map()
   enrichedPillars = await Promise.all(
     pillarsData.map(async (p) => {
       const personal = p.userId !== HOUSEHOLD_PILLAR_OWNER
@@ -67,24 +71,24 @@ try {
 const routinesEnabled = await isFeatureEnabled("habits")
 ---
 
-<Layout title={`Meitheal — ${t("nav.progress", locale)}`} hideSearchHub={true} hideGlobalSearch={true}>
+<Layout title={`Meitheal — ${label("progress", false, t("nav.progress", locale))}`} hideSearchHub={true} hideGlobalSearch={true}>
   {/* Suppress TopNavigation — ParentPageShell provides its own UnifiedBar */}
   <Fragment slot="custom-header" />
   <ParentPageShell pageId="progress">
 
     {/* ─── Pillars (full inline content) ─── */}
-    <section data-parent-section="pillars" id="progress-section-pillars">
+    {available("pillars") && <section data-parent-section="pillars" id="progress-section-pillars">
       <div class="progress-inline-page" id="pillars-inline">
         <div class="progress-inline-page__header">
-          {personalOwner && <a class="btn btn-ghost" href="/boards">Board Pillars</a>}
+          {personalOwner && <a class="btn btn-ghost" href="/boards">{label("board")} {label("pillar", true)}</a>}
           <button
             type="button"
             class="pillars-page__add-btn"
             id="pillar-add-btn"
-            aria-label="Create new Pillar"
+            aria-label={newLabel("pillar")}
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            New Pillar
+            {newLabel("pillar")}
           </button>
         </div>
 
@@ -134,32 +138,32 @@ const routinesEnabled = await isFeatureEnabled("habits")
       </div>
       <PillarFormModal personalForm={personalForm} />
       <PillarDetailModal />
-    </section>
+    </section>}
 
     {/* ─── Routines (links to full /habits page — too complex for inline embed) ─── */}
-    <section data-parent-section="routines" id="progress-section-routines" hidden>
+    {available("routines") && <section data-parent-section="routines" id="progress-section-routines" hidden>
       <div class="progress-inline-page">
-        <h2>Routines</h2>
+        <h2>{label("routine", true)}</h2>
         <p>Set up repeatable work for each day or week.</p>
         {routinesEnabled ? <div class="flex flex-wrap gap-2">
-          <a class="btn btn-primary" href="/habits?new=1">New Routine</a>
-          <a class="btn btn-ghost" href="/habits" id="progress-routines-link">View Routines</a>
+          <a class="btn btn-primary" href="/habits?new=1">{newLabel("routine")}</a>
+          <a class="btn btn-ghost" href="/habits" id="progress-routines-link">View {label("routine", true)}</a>
         </div> : <a href="/settings#tasks-boards-settings">Enable Routines in Settings</a>}
       </div>
-    </section>
+    </section>}
 
     {/* ─── Goals (inline content — Phase 18) ─── */}
-    <section data-parent-section="goals" id="progress-section-goals" hidden>
+    {available("goals") && <section data-parent-section="goals" id="progress-section-goals" hidden>
       <GoalsTab />
-    </section>
+    </section>}
 
     {/* ─── Achievements (inline content — Phase 18) ─── */}
-    <section data-parent-section="achievements" id="progress-section-achievements" hidden>
+    {available("achievements") && <section data-parent-section="achievements" id="progress-section-achievements" hidden>
       <InlineHelper helperId="progress-achievements-explainer" title="Achievements & Gamification" icon="🏆" variant="tip">
         <p>Complete tasks to earn <strong>XP</strong>, build <strong>streaks</strong>, and unlock achievements. Higher-priority tasks award more points. Routine streaks also contribute to your progress here.</p>
       </InlineHelper>
       <AchievementsTab />
-    </section>
+    </section>}
   </ParentPageShell>
 </Layout>
 
