@@ -7,6 +7,7 @@
         } from "@lib/task-detail-handoff"
         import { buildIngressPagePath } from "@lib/page-shell-links"
         import { restoreTaskBackgroundUrl, taskDetailPath, ticketIdFromPath, taskBackgroundUrl } from "@lib/task-page-url"
+        import { formatTicketKey, parseTicketKey } from "@lib/ticket-key"
 
         const log = createClientLogger("tasks", "detail-modal");
         import { saveAttachment } from "@domains/offline/offline-store";
@@ -420,9 +421,9 @@
             search.onDismiss("history")
             return
           }
-          const requestedTicket = /^MTH-(\d+)$/i.exec(taskId)
+          const requestedTicket = parseTicketKey(taskId)
           const sameTicket = !newSession && (taskId === (sessionTicketId ?? currentTaskId) ||
-            (requestedTicket !== null && Number(requestedTicket[1]) === currentTicketNumber))
+            (requestedTicket !== null && requestedTicket === currentTicketNumber))
           if (!sameTicket && waitForDescriptionWrite(() => {
             void openTaskDetail(taskId, commentTarget, search, updateLocation)
           })) return
@@ -460,7 +461,8 @@
           statusSelect?.removeAttribute("data-saved-status")
           setStatusBusy(false)
           const areaField = document.querySelector<HTMLSelectElement>("#td-area")
-          const areaWriteAtOpen = pendingAreaWrites.get(taskId)
+          const ticketKey = formatTicketKey(requestedTicket)
+          const areaWriteAtOpen = pendingAreaWrites.get(taskId) ?? (ticketKey ? pendingAreaWrites.get(ticketKey) : undefined)
           let areaFieldReady = false
           if (areaField) {
             areaField.disabled = true
@@ -536,7 +538,7 @@
             }
             const t = (await res.json()) as Record<string, unknown>
             if (modalSignal.aborted) return
-            if (!t.id || (requestedTicket && Number(requestedTicket[1]) !== Number(t.ticket_number))) {
+            if (!t.id || (requestedTicket !== null && requestedTicket !== Number(t.ticket_number))) {
               showTaskError(false)
               return
             }
@@ -1537,12 +1539,16 @@
           const areaId = select.value
           const previous = select.dataset.savedArea
           if (!taskId || !modalSignal || select.disabled || !areaId || areaId === previous) return
+          const ticketKey = formatTicketKey(currentTicketNumber)
           const hadFocus = document.activeElement === select
           select.disabled = true
-          const write = saveTaskField("area_id", areaId).then(saved => saved ? areaId : null)
+          const write = saveTaskField("area_id", areaId).then(saved => saved ? areaId : null).finally(() => {
+            if (pendingAreaWrites.get(taskId) === write) pendingAreaWrites.delete(taskId)
+            if (ticketKey && pendingAreaWrites.get(ticketKey) === write) pendingAreaWrites.delete(ticketKey)
+          })
           pendingAreaWrites.set(taskId, write)
+          if (ticketKey) pendingAreaWrites.set(ticketKey, write)
           const savedArea = await write
-          pendingAreaWrites.delete(taskId)
           if (modalSignal.aborted) return
           if (savedArea) select.dataset.savedArea = savedArea
           else select.value = previous ?? ""

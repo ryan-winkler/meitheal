@@ -32,15 +32,19 @@ test("Area changes update the Kanban groups and preserve the board context throu
     async function create(path: string, data: object) {
       const response = await context.request.post(app + path, { headers, data })
       expect(response.status(), await response.text()).toBe(201)
-      return (await response.json() as { id: string }).id
+      return await response.json() as { id: string; ticket_key?: string }
     }
 
-    const original = await create("/api/areas", { name: "Workshop" })
-    const destination = await create("/api/areas", { name: "Utility room" })
-    const task = await create("/api/tasks", { title: "Area edit fixture first task", area_id: original, status: "pending" })
-    const other = await create("/api/tasks", { title: "Area edit fixture second task", area_id: original, status: "pending" })
+    const { id: original } = await create("/api/areas", { name: "Workshop" })
+    const { id: destination } = await create("/api/areas", { name: "Utility room" })
+    const { id: task, ticket_key } = await create("/api/tasks", { title: "Area edit fixture first task", area_id: original, status: "pending" })
+    const { id: other } = await create("/api/tasks", { title: "Area edit fixture second task", area_id: original, status: "pending" })
+    const ticketKey = ticket_key?.toLowerCase() ?? ""
+    expect(ticketKey).toMatch(/^mth-\d+$/)
     const boardUrl = (area: string) => `${app}/tasks?area=${area}&groupBy=area&search=Area+edit+fixture#kanban`
     const api = `${app}/api/tasks/${task}`
+    const ticketApi = `${app}/api/tasks/${ticketKey}`
+    const openByTicketKey = () => page.evaluate(id => { window.openTaskDetail?.(id) }, ticketKey)
     const catalog = app + "/api/areas"
     const board = page.locator("#kanban-board")
     const drawer = page.locator("#task-detail-overlay")
@@ -182,11 +186,22 @@ test("Area changes update the Kanban groups and preserve the board context throu
     const lateReopen = await holdMove(original)
     await close.click()
     await expect(drawer).toBeHidden()
-    const oldAreaRead = page.waitForResponse(res => res.url() === api && res.request().method() === "GET")
-    await card(task).click()
-    await expect(select).toBeDisabled()
+    let saveAcknowledged = false
+    const save = page.waitForResponse(res => res.url() === api && res.request().method() === "PUT")
+      .then(() => { saveAcknowledged = true })
+    const readAfterSave = page.waitForRequest(req => req.url() === ticketApi && req.method() === "GET")
+      .then(() => saveAcknowledged)
+    const reopenedTask = page.waitForResponse(res => res.url() === ticketApi && res.request().method() === "GET")
+    await openByTicketKey()
     await lateReopen()
-    expect((await (await oldAreaRead).json()).area_id).toBe(original)
+    await save
+    expect({
+      afterSave: await readAfterSave,
+      group: (await (await reopenedTask).json()).area_id,
+    }, "the ticket-key read follows the pending UUID save and returns the new Group").toEqual({
+      afterSave: true,
+      group: original,
+    })
     await savedValue(original)
     await expect(select).toBeEnabled()
     await close.click()
@@ -196,10 +211,10 @@ test("Area changes update the Kanban groups and preserve the board context throu
     await expect(page.locator(`#area-selector-dropdown [data-area-id="${destination}"]`)).toHaveAttribute("aria-selected", "true")
     expect(await rememberedArea()).toBe(remembered)
 
-    // A reopened drawer must read after its pending save, then accept a newer external edit.
+    // A save started through the ticket key also precedes a fresh UUID read, which may contain a newer edit.
     await page.goto(boardUrl(""))
     await expect(card(task)).toBeVisible()
-    await card(task).click()
+    await openByTicketKey()
     await savedValue(original)
     const acknowledgeDestination = await holdMove(destination)
     await close.click()

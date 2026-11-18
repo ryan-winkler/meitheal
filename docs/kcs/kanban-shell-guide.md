@@ -138,4 +138,4 @@ compressing the cards. At widths from 769 to 1024 CSS px the sidebar narrows to
 
 An unreadable card assignment no longer interrupts grouping for the board. Check the assignment in Details if its group is unexpected. If an assignee group disappears after a refresh, keyboard focus returns to its workflow lane heading.
 
-When reopening Details while a Board Group save is pending, the drawer waits for that save and then reads the current task. A later edit from another client remains authoritative.
+When reopening Details from a card or ticket link while a Board Group save is pending, the drawer waits for that save and then reads the current task. A later edit from another client remains authoritative.
