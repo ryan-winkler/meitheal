@@ -37,7 +37,7 @@ The URL hash updates as you move, so the current section can be reloaded or shar
 
 ### Create or edit a Household Routine
 
-1. Choose **New Routine** in the shell or **New Habit** in the Household library section.
+1. Choose **New Routine** in the shell or in the Household library section.
 2. Set cadence, priority, description, and optional checklist items.
 3. Save the habit to update the underlying routine template.
 
@@ -63,7 +63,7 @@ The habits shell does not have its own local search implementation. It always ha
 
 ### Understand how habits flow into the rest of the app
 
-1. Go to `Cross-page Flow`.
+1. Go to **Related views**.
 2. Follow the quick links into Today, Kanban, Table, or Upcoming.
 3. Remember that completing a habit still creates or completes a real task in the shared task model.
 
@@ -77,10 +77,14 @@ When you choose Gaeilge in Settings, the last completion label and date use Iris
 2. Refresh the page once.
 3. If the hash changes but the section does not move into view, capture the console and report which section id failed.
 
+### Routine counts could not load
+
+Refresh to retry the Household Routine read. The workload counts and local creation controls become available after a successful read. The named Board check-in area reports its own availability.
+
 ### The new Routine button does nothing
 
 1. Wait a moment and try again; the page controller may still be initializing on first load.
-2. If the inline **New Habit** action works but the shell’s **New Routine** button does not, capture the browser console and check for `habits-controller` errors.
+2. If the library’s **New Routine** action works but the shell action does not, capture the browser console and check for `habits-controller` errors.
 
 ### Habits load but edits drop fields
 

@@ -1,4 +1,5 @@
 import { DASHBOARD_SECTIONS, type DashboardSectionId } from "@lib/dashboard-registry"
+import { initPageShellSectionTracking } from "@lib/page-shell-controller"
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { quickAddPayload } from "@lib/quick-add"
 import { getStatusLabel, isActiveStatus, isClosedStatus, isDoneStatus } from "@lib/status-config"
@@ -46,107 +47,6 @@ function updateActiveSectionState(sectionId: DashboardSectionId): void {
   setUnifiedBarSwitcherActiveState(DASHBOARD_BAR_ID, sectionId)
 }
 
-function scrollToDashboardAnchor(
-  anchorId: string,
-  behavior: ScrollBehavior = "smooth",
-): void {
-  const target = document.getElementById(anchorId)
-  if (!target) return
-
-  target.scrollIntoView({ behavior, block: "start" })
-  history.replaceState(null, "", `#${anchorId}`)
-
-  const sectionId = resolveDashboardSectionId(anchorId)
-  if (sectionId) {
-    updateActiveSectionState(sectionId)
-  }
-
-  target.classList.add("dashboard-section--flash")
-  setTimeout(() => target.classList.remove("dashboard-section--flash"), 1000)
-}
-
-function syncDashboardSectionFromHash(): void {
-  const hash = window.location.hash.replace("#", "")
-  const sectionId = hash ? resolveDashboardSectionId(hash) : null
-  updateActiveSectionState(sectionId ?? "dashboard-overview")
-}
-
-function initDashboardSectionLinks(): void {
-  document
-    .querySelectorAll<HTMLElement>("[data-unified-bar-section-link], [data-dashboard-section-link]")
-    .forEach((link) => {
-      pageLifecycle.on(link, "click", (event) => {
-        event.preventDefault()
-        const targetId = link.getAttribute("href")?.replace("#", "")
-        if (!targetId) return
-        scrollToDashboardAnchor(targetId)
-      })
-    })
-}
-
-function initDashboardIntersectionTracking(): void {
-  const sections = document.querySelectorAll<HTMLElement>("[data-dashboard-section]")
-  if (sections.length === 0) return
-
-  const observer = new IntersectionObserver(
-    (entries) => {
-      const active = entries
-        .filter((entry) => entry.isIntersecting)
-        .sort((left, right) => right.intersectionRatio - left.intersectionRatio)[0]
-
-      if (!active?.target.id) return
-
-      const sectionId = resolveDashboardSectionId(active.target.id)
-      if (sectionId) {
-        updateActiveSectionState(sectionId)
-      }
-    },
-    {
-      rootMargin: "-25% 0px -45% 0px",
-      threshold: [0.2, 0.45, 0.7],
-    },
-  )
-
-  sections.forEach((section) => observer.observe(section))
-  pageLifecycle.signal.addEventListener("abort", () => observer.disconnect(), {
-    once: true,
-  })
-}
-
-function initDashboardGoToTop(): void {
-  const button = document.getElementById("dashboard-go-top")
-  const shell = document.getElementById("dashboard-shell")
-  if (!button || !shell) return
-
-  shell.style.position = "relative"
-
-  const sentinel = document.createElement("div")
-  sentinel.setAttribute("aria-hidden", "true")
-  sentinel.style.cssText =
-    "position:absolute;top:420px;width:1px;height:1px;pointer-events:none;"
-  shell.appendChild(sentinel)
-
-  const observer = new IntersectionObserver(
-    (entries) => {
-      const isAboveFold = entries[0]?.isIntersecting ?? true
-      button.classList.toggle("is-visible", !isAboveFold)
-      button.toggleAttribute("hidden", isAboveFold)
-    },
-    { threshold: 0 },
-  )
-
-  observer.observe(sentinel)
-  pageLifecycle.signal.addEventListener("abort", () => observer.disconnect(), {
-    once: true,
-  })
-
-  pageLifecycle.on(button, "click", () => {
-    history.replaceState(null, "", `${window.location.pathname}${window.location.search}`)
-    window.scrollTo({ top: 0, behavior: "smooth" })
-    updateActiveSectionState("dashboard-overview")
-  })
-}
-
 function initDashboardTabsKeyboard(): void {
   const tabContainer = document.getElementById(`${DASHBOARD_BAR_ID}-tabs`)
   if (!tabContainer) return
@@ -177,8 +77,68 @@ function initDashboardTabsKeyboard(): void {
 }
 
 function initDashboardShell(): void {
+  const trackLinkedSection = initPageShellSectionTracking(
+    document.querySelectorAll<HTMLElement>("[data-dashboard-section]"),
+    resolveDashboardSectionId,
+    updateActiveSectionState,
+  )
+
+  function scrollToDashboardAnchor(anchorId: string): void {
+    const target = document.getElementById(anchorId)
+    if (!target) return
+
+    const sectionId = resolveDashboardSectionId(anchorId)
+    trackLinkedSection(sectionId)
+    target.scrollIntoView({ block: "start" })
+    history.replaceState(history.state, "", `#${anchorId}`)
+
+    if (sectionId) {
+      updateActiveSectionState(sectionId)
+    }
+  }
+
+  function syncDashboardSectionFromHash(): void {
+    const hash = window.location.hash.replace("#", "")
+    const sectionId = hash ? resolveDashboardSectionId(hash) : null
+    trackLinkedSection(sectionId ?? "dashboard-overview", sectionId !== null)
+    updateActiveSectionState(sectionId ?? "dashboard-overview")
+  }
+
+  function initDashboardSectionLinks(): void {
+    document
+      .querySelectorAll<HTMLElement>("[data-unified-bar-section-link]")
+      .forEach((link) => {
+        pageLifecycle.on(link, "click", (event) => {
+          event.preventDefault()
+          const targetId = link.getAttribute("href")?.replace("#", "")
+          if (!targetId) return
+          scrollToDashboardAnchor(targetId)
+        })
+      })
+  }
+
+  function initDashboardGoToTop(): void {
+    const button = document.getElementById("dashboard-go-top")
+    if (!button) return
+
+    const updateVisibility = () => {
+      const visible = window.scrollY > 420
+      if (button.hidden === !visible) return
+      button.classList.toggle("is-visible", visible)
+      button.hidden = !visible
+    }
+
+    updateVisibility()
+    pageLifecycle.on(window, "scroll", updateVisibility, { passive: true })
+    pageLifecycle.on(button, "click", () => {
+      history.replaceState(history.state, "", `${window.location.pathname}${window.location.search}`)
+      trackLinkedSection("dashboard-overview")
+      window.scrollTo({ top: 0 })
+      updateActiveSectionState("dashboard-overview")
+    })
+  }
+
   initDashboardSectionLinks()
-  initDashboardIntersectionTracking()
   initDashboardGoToTop()
   initDashboardTabsKeyboard()
   initUnifiedBarTitleSwitcher({
@@ -203,8 +163,10 @@ function initDashboardShell(): void {
   const hash = window.location.hash.replace("#", "")
   if (!hash) return
 
+  const signal = pageLifecycle.signal
+  const initialUrl = window.location.href
   requestAnimationFrame(() => {
-    scrollToDashboardAnchor(hash, "auto")
+    if (!signal.aborted && window.location.href === initialUrl) scrollToDashboardAnchor(hash)
   })
 }
 
@@ -290,7 +252,8 @@ function initOpenTaskFilter(): (() => void) | undefined {
   const signal = pageLifecycle.signal
   let refreshRequest: AbortController | undefined
   let refreshNumber = 0
-  let loadFailed = false
+  let countsAvailable = list.dataset.available === "true"
+  let loadFailed = !countsAvailable
 
   function applyOpenFilter(): void {
     const value = select.value
@@ -315,6 +278,7 @@ function initOpenTaskFilter(): (() => void) | undefined {
       empty.hidden = !loadFailed && visible !== 0
     }
     if (openCount) {
+      openCount.hidden = !countsAvailable
       openCount.textContent = `${visible} open task${visible !== 1 ? "s" : ""}`
     }
 
@@ -376,7 +340,7 @@ function initOpenTaskFilter(): (() => void) | undefined {
       .then(async response => {
         if (!response.ok) throw new Error("Dashboard request failed")
         const html = new DOMParser().parseFromString(await response.text(), "text/html")
-        const replacement = html.querySelector("#my-open-list")
+        const replacement = html.querySelector('#my-open-list[data-available="true"]')
         if (lifetime.aborted) return
         if (!replacement) throw new Error("Open queue unavailable")
         list.replaceChildren(...replacement.childNodes)
@@ -386,6 +350,7 @@ function initOpenTaskFilter(): (() => void) | undefined {
           favorites.hidden = refreshedFavorites.hidden
           favorites.replaceChildren(...refreshedFavorites.childNodes)
         }
+        countsAvailable = true
         loadFailed = false
         applyOpenFilter()
       })

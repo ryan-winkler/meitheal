@@ -2,6 +2,7 @@
 import Layout from "../layouts/Layout.astro";
 import UnifiedBar from "../components/layout/UnifiedBar.astro";
 import EmptyState from "../components/ui/EmptyState.astro";
+import Icon from "../components/ui/Icon.astro"
 import LabelBadges from "../components/ui/LabelBadges.astro";
 import {
   ensureSchema,
@@ -81,32 +82,25 @@ const typeIcons: Record<string, string> = {
   task: "📌",
 };
 
+const daysLoaded = days.length === 7
+const unavailableMessage = "Upcoming tasks couldn’t load. Refresh the page to try again."
 const totalTasks = days.reduce((sum, d) => sum + d.tasks.length, 0);
 const nextDays = days.slice(0, 2)
 const weekDays = days.slice(2)
 const daySections = [
   {
     id: "upcoming-next",
-    eyebrow: "Next 48h",
-    title: "Prioritize the immediate commitment window",
-    description: "Today and tomorrow stay grouped here for fast completion and fast task-detail handoff.",
+    title: "Today and tomorrow",
     days: nextDays,
   },
   {
     id: "upcoming-week",
-    eyebrow: "Week Ahead",
-    title: "Keep the rest of the week visible but lightweight",
-    description: "The remaining grouped days stay collapsible so future work feels scannable, not overwhelming.",
+    title: "Following five days",
     days: weekDays,
   },
 ]
 const nextWindowCount = nextDays.reduce((sum, day) => sum + day.tasks.length, 0)
 const weekAheadCount = weekDays.reduce((sum, day) => sum + day.tasks.length, 0)
-const upcomingSignal =
-  totalTasks === 0
-    ? "No tasks scheduled in the next 7 days"
-    : `${nextWindowCount} tasks due in the next 48 hours`
-
 function renderDayClass(day: DayGroup): string {
   const classes = ["card"]
   if (day.tasks.length === 0) classes.push("day-empty")
@@ -126,7 +120,7 @@ function dayLabelClass(day: DayGroup): string {
 <Layout title="Meitheal — Upcoming">
   <UnifiedBar
     title="Upcoming"
-    titleIcon="📅"
+    titleIcon="calendar"
     tabs={UPCOMING_SECTIONS.map((section) => ({
       id: section.id,
       label: section.label,
@@ -144,54 +138,24 @@ function dayLabelClass(day: DayGroup): string {
       class="page-shell__section page-shell__section--overview"
       data-upcoming-section
     >
-      <div class="page-hero">
-        <div class="page-hero__eyebrow">Home Assistant Native Planning Horizon</div>
-        <div class="page-hero__title-row">
-          <div class="page-hero__copy">
-            <h1 class="page-hero__title">See the next week without losing today</h1>
-            <p class="page-hero__description">
-              Upcoming keeps the next 48 hours separate from the rest of the week so
-              you can scan, complete, and hand work back to Today or Calendar without
-              rebuilding context.
-            </p>
-          </div>
-
-          <div class="page-hero__chips" aria-label="Upcoming quick jumps">
-            <a href="#upcoming-next" class="page-hero__chip" data-upcoming-section-link>
-              Next 48h
-            </a>
-            <a href="#upcoming-week" class="page-hero__chip" data-upcoming-section-link>
-              Week Ahead
-            </a>
-            <a href="#upcoming-flow" class="page-hero__chip" data-upcoming-section-link>
-              Flow
-            </a>
-          </div>
-        </div>
-
-        <div class="page-hero__status">
-          <span class="page-hero__status-label">Current signal</span>
-          <strong id="upcoming-signal-summary">{upcomingSignal}</strong>
-        </div>
-      </div>
-
-      <div class="page-summary-grid">
+      <h1 class="m-0 text-2xl font-semibold tracking-tight">Upcoming</h1>
+      {daysLoaded ? <div class="page-summary-grid">
         <div class="stat-card">
           <span class="stat-value">{totalTasks}</span>
           <span class="stat-label">Next 7 Days</span>
         </div>
         <div class="stat-card">
           <span class="stat-value">{nextWindowCount}</span>
-          <span class="stat-label">Next 48h</span>
+          <span class="stat-label">Today and tomorrow</span>
         </div>
         <div class="stat-card">
           <span class="stat-value">{weekAheadCount}</span>
-          <span class="stat-label">Week Ahead</span>
+          <span class="stat-label">Following five days</span>
         </div>
-      </div>
+      </div> : <p role="status" class="m-0 text-text-secondary">{unavailableMessage}</p>}
 
       {
-        totalTasks === 0 && (
+        daysLoaded && totalTasks === 0 && (
           <EmptyState
             title="No upcoming tasks"
             description="Your schedule is clear for the next 7 days."
@@ -204,15 +168,9 @@ function dayLabelClass(day: DayGroup): string {
 
     {daySections.map((section) => (
       <section id={section.id} class="page-shell__section" data-upcoming-section>
-        <div class="page-shell__intro">
-          <div>
-            <div class="page-shell__eyebrow">{section.eyebrow}</div>
-            <h2 class="page-shell__title">{section.title}</h2>
-            <p class="page-shell__description">{section.description}</p>
-          </div>
-        </div>
+        <h2 class="m-0 text-lg font-semibold">{section.title}</h2>
 
-        <div class="upcoming-grid">
+        {daysLoaded ? <div class="upcoming-grid">
           {
             section.days.map((day) => (
               <div class={renderDayClass(day)}>
@@ -327,29 +285,18 @@ function dayLabelClass(day: DayGroup): string {
               </div>
             ))
           }
-        </div>
+        </div> : <p role="status" class="m-0 text-text-secondary">{unavailableMessage}</p>}
       </section>
     ))}
 
     <section id="upcoming-flow" class="page-shell__section" data-upcoming-section>
-      <div class="page-shell__intro">
-        <div>
-          <div class="page-shell__eyebrow">Flow</div>
-          <h2 class="page-shell__title">Move back to execution or into planning without reorienting</h2>
-          <p class="page-shell__description">
-            Upcoming is the bridge between the daily cockpit and the calendar horizon.
-          </p>
-        </div>
-      </div>
-
+      <h2 class="m-0 text-lg font-semibold">Related views</h2>
       <div class="page-flow-grid">
         <a class="card page-flow-card" href="/today">
-          <strong>☀️ Back to Today</strong>
-          <p>Return to the focused execution surface when a scheduled task becomes immediate.</p>
+          <strong class="inline-flex items-center gap-2"><Icon name="sun" size={16} sprite /> Today</strong>
         </a>
-        <a class="card page-flow-card" href="/calendar">
-          <strong>🗓️ Open Calendar</strong>
-          <p>Move into month planning and connected event context when the week needs reshaping.</p>
+        <a class="card page-flow-card" href="/tasks?view=calendar#calendar">
+          <strong class="inline-flex items-center gap-2"><Icon name="calendar" size={16} sprite /> Calendar</strong>
         </a>
       </div>
     </section>
@@ -360,6 +307,10 @@ function dayLabelClass(day: DayGroup): string {
   #upcoming-shell,
   [data-upcoming-section] {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  #upcoming-shell {
+    padding: 24px clamp(16px, 2vw, 24px) 52px;
   }
 
   /* ── Day card ── */
@@ -567,7 +518,6 @@ function dayLabelClass(day: DayGroup): string {
     .chevron-icon { transition: none; }
   }
 
-  /* Responsive overrides for shell/hero classes are in _page-shell.css */
 </style>
 
 <script>

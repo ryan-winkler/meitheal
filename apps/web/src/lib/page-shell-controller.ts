@@ -17,6 +17,7 @@ export interface PageShellNavigationOptions<SectionId extends string> {
   defaultSectionId: SectionId
   shellId?: string
   flashClass?: string
+  preserveOverviewOnLoad?: boolean
   sectionLinkSelectors?: string[]
   rootMargin?: string
   threshold?: number[]
@@ -37,6 +38,7 @@ export function initPageShellNavigation<SectionId extends string>({
   defaultSectionId,
   shellId,
   flashClass,
+  preserveOverviewOnLoad = false,
   sectionLinkSelectors = [],
   rootMargin = "-25% 0px -45% 0px",
   threshold = [0.2, 0.45, 0.7],
@@ -56,44 +58,9 @@ export function initPageShellNavigation<SectionId extends string>({
 
   const sectionIdSet = new Set(sectionIds)
   const sections = document.querySelectorAll<HTMLElement>(sectionSelector)
-  let linkedSection: {
-    element: HTMLElement
-    wasVisible: boolean
-  } | null = null
-
-  function resumeSectionTracking(): void {
-    linkedSection = null
-    let mostVisibleSectionId: SectionId | null = null
-    let greatestVisibleHeight = 0
-
-    for (const section of sections) {
-      const { top, bottom } = section.getBoundingClientRect()
-      const visibleHeight = Math.min(window.innerHeight, bottom) - Math.max(0, top)
-      const sectionId = resolveSectionId(section.id)
-      if (sectionId && visibleHeight > greatestVisibleHeight) {
-        greatestVisibleHeight = visibleHeight
-        mostVisibleSectionId = sectionId
-      }
-    }
-
-    if (mostVisibleSectionId) updateActiveState(mostVisibleSectionId)
-  }
-
-  function syncLinkedSectionVisibility(): void {
-    if (!linkedSection) return
-    const { top, bottom } = linkedSection.element.getBoundingClientRect()
-    if (bottom > 0 && top < window.innerHeight) {
-      linkedSection.wasVisible = true
-    } else if (linkedSection.wasVisible) {
-      resumeSectionTracking()
-    }
-  }
-
-  function trackLinkedSection(sectionId: SectionId | null): void {
-    const element = sectionId ? document.getElementById(sectionId) : null
-    linkedSection = element ? { element, wasVisible: false } : null
-    syncLinkedSectionVisibility()
-  }
+  const trackLinkedSection = initPageShellSectionTracking(
+    sections, resolveSectionId, updateActiveState, rootMargin, threshold,
+  )
 
   function resolveSectionId(anchorId: string): SectionId | null {
     const target = document.getElementById(anchorId)
@@ -141,14 +108,15 @@ export function initPageShellNavigation<SectionId extends string>({
 
     const sectionId = resolveSectionId(anchorId)
     trackLinkedSection(sectionId)
-    target.scrollIntoView({ behavior, block: "start" })
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    target.scrollIntoView({ behavior: reduceMotion ? "auto" : behavior, block: "start" })
     if (updateLocation) history.replaceState(history.state, "", `#${anchorId}`)
 
     if (sectionId) {
       updateActiveState(sectionId)
     }
 
-    if (flashClass) {
+    if (flashClass && !reduceMotion) {
       target.classList.add(flashClass)
       setTimeout(() => target.classList.remove(flashClass), 1000)
     }
@@ -157,7 +125,7 @@ export function initPageShellNavigation<SectionId extends string>({
   function syncFromHash(): void {
     const hash = window.location.hash.replace("#", "")
     const sectionId = hash ? resolveSectionId(hash) : null
-    trackLinkedSection(sectionId)
+    trackLinkedSection(sectionId ?? (preserveOverviewOnLoad ? defaultSectionId : null), sectionId !== null)
     updateActiveState(sectionId ?? defaultSectionId)
   }
 
@@ -177,35 +145,6 @@ export function initPageShellNavigation<SectionId extends string>({
       barId,
       sectionSelector,
       shellId: shellId ?? null,
-    })
-  }
-
-  if (sections.length > 0) {
-    pageLifecycle.on(window, "scroll", syncLinkedSectionVisibility, { passive: true })
-    pageLifecycle.on(document, "scrollend", () => {
-      if (linkedSection && !linkedSection.wasVisible) resumeSectionTracking()
-    })
-    const observer = new IntersectionObserver(
-      (entries) => {
-        // Keep the linked section current during the jump and until it leaves view.
-        if (linkedSection) return
-        const active = entries
-          .filter((entry) => entry.isIntersecting)
-          .sort((left, right) => right.intersectionRatio - left.intersectionRatio)[0]
-
-        if (!active?.target.id) return
-
-        const sectionId = resolveSectionId(active.target.id)
-        if (sectionId) {
-          updateActiveState(sectionId)
-        }
-      },
-      { rootMargin, threshold },
-    )
-
-    sections.forEach((section) => observer.observe(section))
-    pageLifecycle.signal.addEventListener("abort", () => observer.disconnect(), {
-      once: true,
     })
   }
 
@@ -241,7 +180,8 @@ export function initPageShellNavigation<SectionId extends string>({
         `${window.location.pathname}${window.location.search}`,
       )
       trackLinkedSection(defaultSectionId)
-      window.scrollTo({ top: 0, behavior: "smooth" })
+      const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+      window.scrollTo({ top: 0, behavior: reduceMotion ? "auto" : "smooth" })
       updateActiveState(defaultSectionId)
     })
   }
@@ -315,4 +255,83 @@ export function initPageShellNavigation<SectionId extends string>({
     syncFromHash,
     updateActiveState,
   }
+}
+
+export function initPageShellSectionTracking<SectionId extends string>(
+  sections: NodeListOf<HTMLElement>,
+  resolveSectionId: (anchorId: string) => SectionId | null,
+  updateActiveState: (sectionId: SectionId) => void,
+  rootMargin = "-25% 0px -45% 0px",
+  threshold = [0.2, 0.45, 0.7],
+): (sectionId: SectionId | null, awaitVisibility?: boolean) => void {
+  let linkedSection: {
+    element: HTMLElement
+    wasVisible: boolean
+  } | null = null
+
+  function resumeSectionTracking(): void {
+    linkedSection = null
+    let mostVisibleSectionId: SectionId | null = null
+    let greatestVisibleHeight = 0
+
+    for (const section of sections) {
+      const { top, bottom } = section.getBoundingClientRect()
+      const visibleHeight = Math.min(window.innerHeight, bottom) - Math.max(0, top)
+      const sectionId = resolveSectionId(section.id)
+      if (sectionId && visibleHeight > greatestVisibleHeight) {
+        greatestVisibleHeight = visibleHeight
+        mostVisibleSectionId = sectionId
+      }
+    }
+
+    if (mostVisibleSectionId) updateActiveState(mostVisibleSectionId)
+  }
+
+  function syncLinkedSectionVisibility(): void {
+    if (!linkedSection) return
+    const { top, bottom } = linkedSection.element.getBoundingClientRect()
+    if (bottom > 0 && top < window.innerHeight) {
+      linkedSection.wasVisible = true
+    } else if (linkedSection.wasVisible) {
+      resumeSectionTracking()
+    }
+  }
+
+  function trackLinkedSection(sectionId: SectionId | null, awaitVisibility = true): void {
+    const element = sectionId ? document.getElementById(sectionId) : null
+    linkedSection = element ? { element, wasVisible: false } : null
+    syncLinkedSectionVisibility()
+    if (!awaitVisibility && !linkedSection?.wasVisible) linkedSection = null
+  }
+
+  if (sections.length > 0) {
+    pageLifecycle.on(window, "scroll", syncLinkedSectionVisibility, { passive: true })
+    pageLifecycle.on(document, "scrollend", () => {
+      if (linkedSection && !linkedSection.wasVisible) resumeSectionTracking()
+    })
+    const observer = new IntersectionObserver(
+      (entries) => {
+        // Keep the linked section current during the jump and until it leaves view.
+        if (linkedSection) return
+        const active = entries
+          .filter((entry) => entry.isIntersecting)
+          .sort((left, right) => right.intersectionRatio - left.intersectionRatio)[0]
+
+        if (!active?.target.id) return
+
+        const sectionId = resolveSectionId(active.target.id)
+        if (sectionId) {
+          updateActiveState(sectionId)
+        }
+      },
+      { rootMargin, threshold },
+    )
+
+    sections.forEach((section) => observer.observe(section))
+    pageLifecycle.signal.addEventListener("abort", () => observer.disconnect(), {
+      once: true,
+    })
+  }
+
+  return trackLinkedSection
 }
