@@ -451,17 +451,17 @@
   display: none;
 }
 
-/* Client-rendered status group controls */
-#kanban-board[data-group-by="status"] .swimlane-header {
+/* Client-rendered Status and Assignee group controls */
+#kanban-board:is([data-group-by="assigned"], [data-group-by="status"]) .swimlane-header {
   width: 100%;
   min-height: 44px;
 }
 
-#kanban-board[data-group-by="status"] .swimlane-header:focus-visible {
+#kanban-board:is([data-group-by="assigned"], [data-group-by="status"]) .swimlane-header:focus-visible {
   outline-color: var(--border-focus);
 }
 
-#kanban-board[data-group-by="status"] .swimlane-label {
+#kanban-board:is([data-group-by="assigned"], [data-group-by="status"]) .swimlane-label {
   flex: 1;
   min-width: 0;
   overflow-wrap: anywhere;

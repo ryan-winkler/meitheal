@@ -32,8 +32,10 @@ function initCollapse(board: HTMLElement, signal: AbortSignal): void {
     header.setAttribute("aria-controls", cards.id)
     const key = collapseKey(board, group)
     try {
-      const stored = localStorage.getItem(key) ?? (board.dataset.groupBy === "status"
-        ? null : localStorage.getItem(`meitheal-swimlane-${group.dataset.swimlaneType}`))
+      const mode = board.dataset.groupBy
+      const legacy = mode === "type" || mode === "area" || mode === "priority"
+        ? `meitheal-swimlane-${group.dataset.swimlaneType}` : null
+      const stored = localStorage.getItem(key) ?? (legacy && localStorage.getItem(legacy))
       setCollapsed(group, stored === "collapsed")
     } catch {
       setCollapsed(group, false)
@@ -75,7 +77,8 @@ export function initKanbanGrouping(board: HTMLElement, signal: AbortSignal): voi
           if (countEl) countEl.textContent = String(cards.length)
         })
     })
-  } else if (mode === "area" || mode === "priority" || mode === "status") {
+  } else if (mode === "area" || mode === "priority" || mode === "status" || mode === "assigned") {
+    const byAssignee = mode === "assigned"
     const icons: Record<string, string> =
       mode === "priority"
         ? {
@@ -114,8 +117,14 @@ export function initKanbanGrouping(board: HTMLElement, signal: AbortSignal): voi
       const groups = new Map<string, HTMLElement[]>()
       flatCards.forEach((card) => {
         const value = card.dataset[mode]
-        const val = mode === "status" ? normalizeStatus(value || STATUS.PENDING)
-          : value || (mode === "priority" ? "3" : "default")
+        let val = mode === "status" ? normalizeStatus(value || STATUS.PENDING)
+          : byAssignee ? value ?? "" : value || (mode === "priority" ? "3" : "default")
+        if (byAssignee && card.dataset.assigneeKey) {
+          try {
+            const key: unknown = JSON.parse(card.dataset.assigneeKey)
+            if (typeof key === "string") val = key
+          } catch { /* Keep the unencoded identity when metadata is malformed. */ }
+        }
         // Empty Area IDs map to Default, leaving the empty key for unavailable Areas.
         const key = mode === "area" && val !== "default" && !card.dataset.areaName ? "" : val
         if (!groups.has(key)) groups.set(key, [])
@@ -129,6 +138,7 @@ export function initKanbanGrouping(board: HTMLElement, signal: AbortSignal): voi
       const sortedKeys = Array.from(groups.keys()).sort((a, b) => {
         if (mode === "priority") return Number(a) - Number(b)
         if (mode === "status") return statusRank(a) - statusRank(b) || a.localeCompare(b)
+        if (byAssignee) return Number(!a) - Number(!b) || a.localeCompare(b)
         const labelA = areaLabel(a, groups.get(a)?.[0])
         const labelB = areaLabel(b, groups.get(b)?.[0])
         return labelA.localeCompare(labelB, document.documentElement.lang || undefined) || a.localeCompare(b)
@@ -148,6 +158,9 @@ export function initKanbanGrouping(board: HTMLElement, signal: AbortSignal): voi
         header.className = "swimlane-header"
         const status = mode === "status" ? getStatusDef(key) : undefined
         const label = mode === "status" ? (status ? window.mI18n?.get(status.i18nKey) ?? status.label : key)
+          : byAssignee
+          ? (key ? window.mI18n?.get("tasks.assignee_loading") ?? "Loading assignee…"
+            : window.mI18n?.get("tasks.unassigned") ?? "Unassigned")
           : mode === "area" ? areaLabel(key, cards[0]) : icons[key] || "🟡 P3 — Medium"
         const toggleSpan = document.createElement("span")
         toggleSpan.className = "swimlane-toggle"
@@ -162,6 +175,11 @@ export function initKanbanGrouping(board: HTMLElement, signal: AbortSignal): voi
         const labelSpan = document.createElement("span")
         labelSpan.className = "swimlane-label"
         labelSpan.textContent = mode === "area" ? `${cards[0]?.dataset.areaIcon || "📋"} ${label}` : label
+        if (byAssignee) {
+          labelSpan.dataset.assigneeGroup = ""
+          labelSpan.dir = "auto"
+          if (key) labelSpan.dataset.taskAssignee = key
+        }
         if (mode === "status") labelSpan.title = label
         const countSpan = document.createElement("span")
         countSpan.className = "swimlane-count"
