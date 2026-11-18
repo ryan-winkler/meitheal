@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test"
 
 import { getGroupDisplay, readTableFilterParams } from "../../apps/web/src/lib/filter-state"
-import { getTablePage } from "../../apps/web/src/lib/table-page"
+import { getTablePage, getTableWorkflowColumns } from "../../apps/web/src/lib/table-page"
 import type { TaskViewItem } from "../../apps/web/src/lib/task-queries"
 
 function task(id: string, fields: Partial<TaskViewItem> = {}): TaskViewItem {
@@ -109,8 +109,8 @@ test("Table uses canonical status for filters, groups and row values and keeps c
 
 test("workflow columns match before Table paging and intersect existing filters", () => {
   const columns = [
-    { id: "lane-todo", label: "Todo", includes: ["todo"] },
-    { id: "lane-active", label: "In Progress", includes: ["active", null, "Waiting"] },
+    { id: "lane-todo", key: "pending", label: "Todo", includes: ["todo"] },
+    { id: "lane-active", key: "active", label: "In Progress", includes: ["active", null, "Waiting"] },
   ]
   const tasks = Array.from({ length: 2_000 }, (_, index) => task(String(index).padStart(4, "0"), {
     status: ["pending", "in_progress", "Waiting", "complete"][index % 4]!,
@@ -129,6 +129,118 @@ test("workflow columns match before Table paging and intersect existing filters"
   expect(getTablePage(tasks, { laneIds: ["removed", "lane-todo"] }, null, columns).stats.total.count).toBe(500)
 })
 
+test("Table gives workflow columns distinct labels while preserving their identity and order", () => {
+  const noWorkflowLabel = "No workflow column"
+  const columns = [
+    { id: "todo", key: "pending", label: " Re\u0301ady  now ", includes: ["pending"] },
+    { id: "working", key: "active", label: "Réady now", includes: ["active"] },
+    { id: "named", key: "waiting", label: "Réady now (pending)", includes: ["Waiting"] },
+    { id: "done", key: "complete", label: noWorkflowLabel, includes: ["complete"] },
+    { id: "queued", key: "backlog", label: "   ", includes: ["backlog"] },
+  ]
+
+  expect(getTableWorkflowColumns(columns, noWorkflowLabel)).toEqual([
+    { ...columns[0], label: "Réady now (pending) ·" },
+    { ...columns[1], label: "Réady now (active)" },
+    columns[2],
+    { ...columns[3], label: "No workflow column (complete)" },
+    { ...columns[4], label: "backlog" },
+  ])
+})
+
+test("workflow grouping projects each status once and prefers a matching exact column key", () => {
+  const columns = [
+    { id: "first", key: "mixed", label: "Zebra", includes: ["todo", "in_progress", "Waiting", null] },
+    { id: "pending", key: "pending", label: "Todo", includes: ["pending"] },
+    { id: "last", key: "other", label: "Alpha", includes: ["active", "Waiting"] },
+    { id: "unrelated", key: "active", label: "Does not include active", includes: [] },
+  ]
+  const tasks = [
+    task("finished", { status: "done" }),
+    task("queued", { status: "todo" }),
+    task("working", { status: "active" }),
+    task("delivery", { status: "Waiting" }),
+  ]
+
+  const page = getTablePage(tasks, { groupBy: "workflow", sort: "title-asc" }, null, columns)
+  expect(page.rows.map(row => [row.task.id, row.workflowColumnId])).toEqual([
+    ["delivery", "first"], ["working", "first"], ["queued", "pending"], ["finished", ""],
+  ])
+  expect(page.stats.groups.map(([key, stats]) => [key, stats.count])).toEqual([
+    ["first", 2], ["pending", 1], ["", 1],
+  ])
+  expect(page.stats.total.count).toBe(tasks.length)
+
+  const selected = getTablePage(tasks, { groupBy: "workflow", laneIds: ["last", "first", "deleted"] }, null, columns)
+  expect(selected.rows.map(row => [row.task.id, row.workflowColumnId])).toEqual([
+    ["queued", "first"], ["working", "first"], ["delivery", "first"],
+  ])
+  expect(selected.stats.groups.map(([key, stats]) => [key, stats.count])).toEqual([["first", 3]])
+  expect(getTablePage(tasks, { groupBy: "workflow", laneIds: ["deleted"] }, null, columns).stats.total.count).toBe(0)
+  expect(getTablePage(tasks, { groupBy: "workflow" }, null).stats.groups).toEqual([
+    ["", { count: tasks.length, riceCount: 0, riceSum: 0 }],
+  ])
+})
+
+test("nested workflow groups sort before paging and retain counts across page boundaries", () => {
+  const columns = [
+    { id: "working", key: "active", label: "Working", includes: ["active"] },
+    { id: "queued", key: "pending", label: "Queued", includes: ["pending"] },
+  ]
+  const tasks = [
+    task("unmatched", { area_id: "area-a", status: "custom" }),
+    task("queued first", { area_id: "area-a", status: "pending" }),
+    ...Array.from({ length: 51 }, (_, index) => task(String(index).padStart(2, "0"), {
+      area_id: "area-a", status: "in_progress", rice: 3,
+    })).reverse(),
+    task("other area", { area_id: "area-b", status: "active" }),
+  ]
+  const filters = { groupBy: "area", subGroupBy: "workflow", sort: "title-asc" }
+  const first = getTablePage(tasks, filters, null, columns)
+  const second = getTablePage(tasks, filters, "2", columns)
+  const areaAWorkingKey = JSON.stringify(["area-a", "working"])
+  const areaAWorkingStats = { count: 51, riceCount: 51, riceSum: 153 }
+
+  expect(first.rows.map(row => row.task.id)).toEqual(
+    Array.from({ length: 50 }, (_, index) => String(index).padStart(2, "0")),
+  )
+  expect(first.stats.subgroups).toEqual([[areaAWorkingKey, areaAWorkingStats]])
+  expect(second.rows.map(row => [row.task.id, row.workflowColumnId])).toEqual([
+    ["50", "working"], ["queued first", "queued"], ["unmatched", ""], ["other area", "working"],
+  ])
+  expect(second.stats.subgroups.map(([key]) => JSON.parse(key))).toEqual([
+    ["area-a", "working"], ["area-a", "queued"], ["area-a", ""], ["area-b", "working"],
+  ])
+  expect(second.stats.subgroups[0]).toEqual([areaAWorkingKey, areaAWorkingStats])
+})
+
+test("Epic and workflow grouping order tasks at either level", () => {
+  const columns = [
+    { id: "ready", key: "pending", label: "Ready", includes: ["pending"] },
+    { id: "blocked", key: "active", label: "Blocked", includes: ["active"] },
+  ]
+  const tasks = [
+    task("loft", { title: "Loft", task_type: "epic" }),
+    task("yard", { title: "Yard", task_type: "epic" }),
+    task("yard-blocked", { title: "fixture yard blocked", parent_id: "yard", status: "active" }),
+    task("loft-blocked", { title: "fixture loft blocked", parent_id: "loft", status: "active" }),
+    task("yard-ready", { title: "fixture yard ready", parent_id: "yard" }),
+    task("loft-ready", { title: "fixture loft ready", parent_id: "loft" }),
+  ]
+  const byEpic = getTablePage(tasks, { search: "fixture", groupBy: "epic", subGroupBy: "workflow" }, null, columns)
+  const byWorkflow = getTablePage(tasks, { search: "fixture", groupBy: "workflow", subGroupBy: "epic" }, null, columns)
+
+  expect(byEpic.rows.map(row => row.task.id)).toEqual(["loft-ready", "loft-blocked", "yard-ready", "yard-blocked"])
+  expect(byWorkflow.rows.map(row => row.task.id)).toEqual(["loft-ready", "yard-ready", "loft-blocked", "yard-blocked"])
+  expect(byEpic.stats.subgroups.map(([key, stats]) => [JSON.parse(key), stats.count])).toEqual([
+    [["epic:loft", "ready"], 1], [["epic:loft", "blocked"], 1],
+    [["epic:yard", "ready"], 1], [["epic:yard", "blocked"], 1],
+  ])
+  expect(byWorkflow.stats.subgroups.map(([key, stats]) => [JSON.parse(key), stats.count])).toEqual([
+    [["ready", "epic:loft"], 1], [["ready", "epic:yard"], 1],
+    [["blocked", "epic:loft"], 1], [["blocked", "epic:yard"], 1],
+  ])
+})
 
 test("Epic grouping resolves the complete Household ancestry before Table filters", () => {
   const tasks = [
@@ -144,7 +256,7 @@ test("Epic grouping resolves the complete Household ancestry before Table filter
     task("unrepresented", { title: "No matching descendant", task_type: "epic", status: "complete", ticket_number: 3 }),
   ]
   const filters = { groupBy: "epic", search: "keep", status: "pending", area: "kitchen", laneIds: ["pending"], sort: "title-asc" }
-  const page = getTablePage(tasks, filters, null, [{ id: "pending", label: "Pending", includes: ["pending"] }])
+  const page = getTablePage(tasks, filters, null, [{ id: "pending", key: "pending", label: "Pending", includes: ["pending"] }])
   expect(page.rows.map(row => [row.task.id, row.epicGroup])).toEqual([
     ["nested-child", "epic:nested"],
     ["root-child", "epic:root"],

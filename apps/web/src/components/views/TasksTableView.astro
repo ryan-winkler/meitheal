@@ -17,8 +17,8 @@ import { buildTaskPath } from "../../lib/task-detail-handoff"
 import { taskDescriptionPreview } from "../../lib/task-description-preview"
 import type { TaskViewItem } from "../../lib/task-queries"
 import { CANONICAL_STATUSES, STATUS_CONFIG } from "../../lib/status-config";
-import { readTableFilterParams } from "../../lib/filter-state"
-import { getTablePage, type TableWorkflowColumn } from "../../lib/table-page"
+import { readTableFilterParams, tableNeedsWorkflowColumns } from "../../lib/filter-state"
+import { getTablePage, getTableWorkflowColumns, type TableWorkflowColumn } from "../../lib/table-page"
 
 interface Props {
   tasks: TaskViewItem[]
@@ -37,13 +37,17 @@ const { timezone, dateFormat } = Astro.locals;
 
 const params = new URLSearchParams(Astro.url.search)
 const filters = readTableFilterParams(params)
-const laneSelectionUnapplied = workflowColumnsUnavailable && Boolean(filters.laneIds?.length)
-const resultsUnavailable = tableReadFailed || laneSelectionUnapplied
+const workflowResultsUnavailable = workflowColumnsUnavailable && tableNeedsWorkflowColumns(filters)
+const resultsUnavailable = tableReadFailed || workflowResultsUnavailable
+const groupByWorkflow = filters.groupBy === "workflow" || filters.subGroupBy === "workflow"
+const noWorkflowLabel = t("table.group_no_workflow", locale)
+const displayedWorkflowColumns = getTableWorkflowColumns(workflowColumns, noWorkflowLabel)
+const workflowLabels = new Map(displayedWorkflowColumns.map(column => [column.id, column.label]))
 const hasTaskCriteria = Boolean(filters.search || filters.area || filters.user || filters.status ||
   filters.priority || filters.rice || filters.task_type || filters.types?.length || filters.labels?.length ||
   filters.laneIds?.length || filters.advancedFilter?.conditions.length || filters.createdFrom || filters.createdThrough)
 const { rows, page, pageCount, offset, stats, active, overdue } = getTablePage(
-  tableReadFailed ? [] : tasks, filters, params.get("tp"), workflowColumns, creationTimezone,
+  resultsUnavailable ? [] : tasks, filters, params.get("tp"), workflowColumns, creationTimezone,
 )
 
 function tableLink(next: number, open?: string) {
@@ -80,7 +84,7 @@ const priorityClasses: Record<number, string> = {
     </SignalBar>
 
     <div class="table-filter-bar">
-      <FilterToolbar view="table" showSearch showGroupBy {workflowColumns} {workflowColumnsUnavailable} />
+      <FilterToolbar view="table" showSearch showGroupBy workflowColumns={displayedWorkflowColumns} {workflowColumnsUnavailable} />
       <div class="table-filter-actions">
         <SavedFilterPresets />
         <ColumnCustomizer />
@@ -198,7 +202,7 @@ const priorityClasses: Record<number, string> = {
               </tr>
             </thead>
             <tbody>
-              {rows.map(({ task, depth, parentId, hasChildren, parentOutsidePage, epicGroup }) => {
+              {rows.map(({ task, depth, parentId, hasChildren, parentOutsidePage, workflowColumnId, epicGroup }) => {
                 const cfEntries = Object.entries(task.custom_fields).filter(
                   ([, v]) => v !== null && v !== undefined && v !== "",
                 );
@@ -217,6 +221,8 @@ const priorityClasses: Record<number, string> = {
                     data-labels={JSON.stringify(task.labels ?? [])}
                     data-title={task.title.toLowerCase()}
                     data-task-type={task.task_type}
+                    data-workflow-column-id={groupByWorkflow ? workflowColumnId || undefined : undefined}
+                    data-workflow-label={groupByWorkflow ? workflowLabels.get(workflowColumnId) ?? noWorkflowLabel : undefined}
                     data-epic-group={epicGroup}
                     data-task-kind={task.task_kind ?? "standard_action"}
                     data-depth={String(depth)}
@@ -433,8 +439,9 @@ const priorityClasses: Record<number, string> = {
 
     <div id="table-refresh-status" class="table-refresh-status" role="status" hidden={!resultsUnavailable}
       data-table-updated={t("table.matching_tasks", locale)}
-      data-table-failure={t("table.refresh_failed", locale)}>
-      <span data-table-refresh-message>{tableReadFailed ? t("table.refresh_failed", locale) : laneSelectionUnapplied ? t("table.filter_columns_load_failed", locale) : ""}</span>
+      data-table-failure={t("table.refresh_failed", locale)}
+      data-table-selection-pending={t("table.refresh_selection_pending", locale)}>
+      <span data-table-refresh-message>{tableReadFailed ? t("table.refresh_failed", locale) : workflowResultsUnavailable ? t("table.filter_columns_load_failed", locale) : ""}</span>
       <button type="button" class="btn" data-table-retry hidden={!resultsUnavailable}>{t("table.retry_page", locale)}</button>
     </div>
   </div>

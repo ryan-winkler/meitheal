@@ -8,8 +8,10 @@ import {
   saveTableFilterState,
   normalizeSavedFilter,
   readTableFilterParams,
+  tableNeedsWorkflowColumns,
   writeTableFilterParams,
 } from "../../apps/web/src/lib/filter-state"
+import { taskViewUrl } from "../../apps/web/src/lib/task-view-route"
 
 test("saved and URL filters preserve literal values, hierarchy and presentation", () => {
   const rules = {
@@ -121,6 +123,34 @@ test("hierarchy and kind intersect and compound rules see real label arrays", ()
 })
 
 
+test("Table workflow grouping round-trips and leaves other task views with compatible groups", () => {
+  const url = new URL("http://localhost/tasks?view=table&area=kitchen#table")
+  const saved = normalizeSavedFilter({ area: "kitchen", groupBy: "workflow", subGroupBy: "status" })!
+  writeTableFilterParams(url.searchParams, saved)
+  expect(readTableFilterParams(url.searchParams)).toEqual(saved)
+  expect(tableNeedsWorkflowColumns(saved)).toBe(true)
+  for (const view of ["kanban", "calendar", "timeline"] as const) {
+    const otherView = taskViewUrl(url, view)
+    expect(otherView.searchParams.get("area")).toBe("kitchen")
+    expect(otherView.searchParams.has("groupBy")).toBe(false)
+    expect(otherView.searchParams.has("subGroupBy")).toBe(false)
+  }
+
+  writeTableFilterParams(url.searchParams, { groupBy: "area", subGroupBy: "workflow" })
+  expect(tableNeedsWorkflowColumns(readTableFilterParams(url.searchParams))).toBe(true)
+  const kanban = taskViewUrl(url, "kanban")
+  expect(kanban.searchParams.get("groupBy")).toBe("area")
+  expect(kanban.searchParams.has("subGroupBy")).toBe(false)
+
+  const repeated = new URL("http://localhost/tasks?view=table&groupBy=area&groupBy=workflow")
+  expect(readTableFilterParams(repeated.searchParams).groupBy).toBe("workflow")
+  expect(taskViewUrl(repeated, "kanban").searchParams.has("groupBy")).toBe(false)
+
+  writeTableFilterParams(url.searchParams, { subGroupBy: "workflow" })
+  expect(tableNeedsWorkflowColumns(readTableFilterParams(url.searchParams))).toBe(false)
+  expect(normalizeSavedFilter({ groupBy: "workflow", subGroupBy: "workflow" })).toEqual({ area: "", groupBy: "workflow" })
+})
+
 test("Epic Table presentation survives saved filters and URL normalization at both levels", () => {
   for (const [groupBy, subGroupBy] of [["epic", "status"], ["priority", "epic"]]) {
     const state = normalizeSavedFilter({ groupBy, subGroupBy, area: "kitchen" })!
@@ -151,7 +181,12 @@ test("Table restores its Epic presentation without leaking it into shared view f
     removeItem: (key: string) => { values.delete(key) },
   })
   try {
-    for (const state of [{ groupBy: "epic", subGroupBy: "status" }, { groupBy: "priority", subGroupBy: "epic" }]) {
+    for (const state of [
+      { groupBy: "epic", subGroupBy: "status" },
+      { groupBy: "priority", subGroupBy: "epic" },
+      { groupBy: "epic", subGroupBy: "workflow" },
+      { groupBy: "workflow", subGroupBy: "epic" },
+    ]) {
       href = "http://localhost/tasks?view=table"
       saveTableFilterState({ ...state, search: "pump" })
       href = "http://localhost/tasks?view=table"
@@ -160,6 +195,8 @@ test("Table restores its Epic presentation without leaking it into shared view f
       const shared = loadFilterState()
       expect(shared.groupBy).not.toBe("epic")
       expect(shared.subGroupBy).not.toBe("epic")
+      expect(shared.groupBy).not.toBe("workflow")
+      expect(shared.subGroupBy).not.toBe("workflow")
       href = "http://localhost/tasks?view=table&groupBy=status"
       expect(loadTableFilterState()).toEqual({ groupBy: "status" })
     }

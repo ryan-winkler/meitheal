@@ -65,7 +65,7 @@ export const DEFAULT_SORT = "created_at-desc"
 /** Valid status filter values including the computed 'overdue' pseudo-status */
 export const STATUS_VALUES = ["pending", "active", "complete", "overdue"] as const
 
-/** Valid group-by dimensions */
+/** Valid Table group-by dimensions */
 export const GROUP_BY_OPTIONS = [
   "none",
   "type",
@@ -74,6 +74,7 @@ export const GROUP_BY_OPTIONS = [
   "area",
   "assignee",
   "status",
+  "workflow",
   "rice",
 ] as const
 
@@ -266,6 +267,10 @@ function tableGroup(value: unknown): string | undefined {
   return GROUP_BY_OPTIONS.find(option => option !== "none" && option === group)
 }
 
+export function tableNeedsWorkflowColumns(filters: Partial<FilterState>): boolean {
+  return Boolean(filters.laneIds?.length || filters.groupBy === "workflow" || filters.subGroupBy === "workflow")
+}
+
 export function normalizeTableCreationRange(from: unknown, through: unknown): Pick<FilterState, typeof TABLE_DATE_KEYS[number]> | null {
   const valid = (value: unknown): value is string | undefined =>
     value === undefined || (typeof value === "string" && (!value || (value >= "0001-01-01" && Boolean(parseCalendarDay(value)))))
@@ -397,10 +402,10 @@ export function loadTableFilterState(): Partial<FilterState> {
 export function saveTableFilterState(state: Partial<FilterState>, page?: number): void {
   try {
     const { laneIds: _laneIds, createdFrom: _createdFrom, createdThrough: _createdThrough, ...sharedState } = state
-    if (sharedState.groupBy === "epic") {
+    if (sharedState.groupBy === "workflow" || sharedState.groupBy === "epic") {
       delete sharedState.groupBy
       delete sharedState.subGroupBy
-    } else if (sharedState.subGroupBy === "epic") {
+    } else if (sharedState.subGroupBy === "workflow" || sharedState.subGroupBy === "epic") {
       delete sharedState.subGroupBy
     }
     localStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(sharedState))
@@ -641,6 +646,8 @@ export function getGroupKey(el: Pick<HTMLElement, "dataset">, groupBy: string): 
   switch (groupBy) {
     case "type":
       return el.dataset.taskType ?? el.dataset.task_type ?? "task"
+    case "workflow":
+      return el.dataset.workflowColumnId ?? ""
     case "epic":
       return el.dataset.epicGroup || "epic:none"
     case "priority":

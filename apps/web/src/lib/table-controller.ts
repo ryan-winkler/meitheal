@@ -235,11 +235,12 @@ function init(signal: AbortSignal) {
         current!.hidden = fresh!.hidden
         if (current!.matches("#task-summary, #table-pagination, #table-empty")) current!.replaceChildren(...fresh!.childNodes)
       }
-      const workflowOptions = shell.querySelector("[data-table-workflow-options]")
+      const workflowOptions = shell.querySelector<HTMLElement>("[data-table-workflow-options]")
       const freshWorkflowOptions = html.querySelector('[data-table-workflow-options="ready"]')
       if (workflowOptions && freshWorkflowOptions) {
         const lane = focused instanceof HTMLInputElement && workflowOptions.contains(focused) ? focused.value : null
         workflowOptions.replaceChildren(...freshWorkflowOptions.childNodes)
+        workflowOptions.dataset.tableWorkflowOptions = "ready"
         if (lane !== null) {
           const control = workflowOptions.querySelector<HTMLInputElement>(`[data-table-lane][value="${CSS.escape(lane)}"]`)
           const summary = workflowOptions.parentElement?.querySelector("summary")
@@ -272,7 +273,9 @@ function init(signal: AbortSignal) {
     } catch {
       if (request.signal.aborted || signal.aborted || pending !== request) return
       status.classList.remove("sr-only")
-      message.textContent = status.dataset.tableFailure ?? ""
+      const groupingChanged = (nextState.groupBy ?? "none") !== (applied.groupBy ?? "none") ||
+        (nextState.subGroupBy ?? "none") !== (applied.subGroupBy ?? "none")
+      message.textContent = (groupingChanged ? status.dataset.tableSelectionPending : status.dataset.tableFailure) ?? ""
       status.hidden = false
       retry.hidden = false
     } finally {
@@ -464,7 +467,7 @@ function applyGrouping(groupBy: string, subGroupBy: string, stats: RenderPageSta
   for (const [index, key] of groupOrder.entries()) {
     const groupId = `table-group-heading-${index}`
     const groupRows = groups.get(key) ?? []
-    const display = getGroupDisplayForKey(groupBy, key, areas, epicLabels)
+    const display = getGroupDisplayForKey(groupBy, key, areas, epicLabels, groupRows[0])
     const isCollapsed = collapsedGroups.includes(key)
 
     // Create group header row
@@ -535,7 +538,7 @@ function applyGrouping(groupBy: string, subGroupBy: string, stats: RenderPageSta
       for (const [subIndex, sk] of subOrder.entries()) {
         const subgroupId = `${groupId}-sub-${subIndex}`
         const subRows = subGroups.get(sk) ?? []
-        const subDisplay = getGroupDisplayForKey(subGroupBy, sk, areas, epicLabels)
+        const subDisplay = getGroupDisplayForKey(subGroupBy, sk, areas, epicLabels, subRows[0])
         const subIsCollapsed = collapsedSubs.includes(sk)
 
         const subHeaderRow = document.createElement("tr")
@@ -607,7 +610,10 @@ function applyGrouping(groupBy: string, subGroupBy: string, stats: RenderPageSta
   renderSummaryRows(tbody, groupTotals, stats.total)
 }
 
-function getGroupDisplayForKey(groupBy: string, key: string, areas: Map<string, AreaDisplay>, epicLabels: Map<string, string>): AreaDisplay {
+function getGroupDisplayForKey(
+  groupBy: string, key: string, areas: Map<string, AreaDisplay>, epicLabels: Map<string, string>, row?: HTMLElement,
+): AreaDisplay {
+  if (groupBy === "workflow") return { label: row?.dataset.workflowLabel ?? "", icon: "📋", color: "var(--accent)" }
   if (groupBy === "epic") return {
     label: epicLabels.get(key) ?? window.mI18n?.get("table.no_epic") ?? "No Epic",
     icon: "🎯", color: "var(--type-epic, #8b5cf6)",
