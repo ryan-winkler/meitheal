@@ -13,7 +13,7 @@ const routes: [RegExp, OrganizationFeature][] = [
 
 export function organizationRouteAvailable(path: string, availability: OrganizationAvailability, params: URLSearchParams): boolean {
   if (/^\/(?:api\/)?boards\//.test(path)) {
-    if (params.has("area") && !availability.includes("groups")) return false
+    if (params.getAll("area").some(area => area !== "") && !availability.includes("groups")) return false
     if (params.has("project") && !availability.includes("projects")) return false
     if ((params.get("view") === "groups" || params.get("planning") === "1") && !availability.includes("organizer")) return false
   }

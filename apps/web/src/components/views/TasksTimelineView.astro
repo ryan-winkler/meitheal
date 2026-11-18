@@ -80,8 +80,11 @@ try {
   fetchError = true;
 }
 
-const timelineTasks = tasks.map(({ project_id, ...task }) => ({
-  ...task, project_group: getHouseholdProjectGroup(project_id, projectMap),
+const timelineTasks = tasks.map(({ area_id, project_id, ...task }) => ({
+  ...task,
+  // Keep unassigned tasks in Default and omit references outside the visible catalog.
+  area_id: area_id && !Object.hasOwn(areaMap, area_id) ? undefined : area_id,
+  project_group: getHouseholdProjectGroup(project_id, projectMap),
 }))
 const datedTasks = tasks.filter(t => t.start_date || t.due_date);
 const taskCount = datedTasks.length;

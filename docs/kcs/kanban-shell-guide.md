@@ -30,6 +30,8 @@ Quick actions sit below the task details and wrap within the card.
 
 Tab and Shift+Tab stay inside task detail while it loads and while you edit. Press Escape to close it and return to the card. When a confirmation is open, Escape dismisses the confirmation first.
 
+Closing Details while a task is still loading also clears its pending launch link. Your Board and Project filters remain in the address, so the next task creation or refresh does not reopen the dismissed task.
+
 ### Promote a card
 
 Open a card’s **Task actions** and choose **Promote to top** to move it above ordinary cards in the same lane. Everyone using the board can see the **Promoted** badge. Use **Promoted cards only** to see just those cards. The count strip confirms the filter is active. Bookmark the resulting URL to reopen that filter. Work-in-progress counts still include all cards in the lane.
@@ -95,7 +97,9 @@ Open **Timeline** to narrow the chart by text, status, priority, task type, or a
 
 When you group by **Project**, each project has its own section. If project names match, the heading adds the project's Area when available. A project with no direct Area inherits its linked Goal's available Area. If a direct Area reference is unavailable, its group uses a stable qualifier until that reference is repaired. **No Project** contains unassigned tasks. **Unknown Project** contains tasks whose assigned project is unavailable. Open **Task pane** to see the groups. Use Tab to reach a group button and Space or Enter to collapse or expand it. Use the Up and Down arrows to move between bars and group buttons. Collapsed groups stay collapsed while you filter the chart.
 
-Timeline loads Project and Group labels according to your organization access.
+When you group by **Area**, different Areas have separate rows even when their names match. A short reference distinguishes matching names. You can collapse each group independently and its state survives filtering. Tasks with unavailable Area information appear under **Unknown Area**.
+
+Timeline loads Project and Group labels according to your organization access. If a task belongs to an unavailable Area, its bar stays visible under **Unknown Area** and Timeline omits the Area reference from its chart data.
 
 ### Group cards by assignee
 

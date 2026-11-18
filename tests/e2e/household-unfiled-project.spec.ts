@@ -2,7 +2,7 @@ import { once } from "node:events"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { expect, test } from "@playwright/test"
+import { expect, test, type Route } from "@playwright/test"
 import { launchPinBrowser, startCoreFixture } from "../scripts/task-pins-fixture"
 import { shouldSkipBrowserSpecs } from "./_helpers"
 
@@ -71,12 +71,42 @@ test("explicit NULL-Area Projects ignore remembered Areas in every view and reta
       const modalTitle = "Modal capture " + project.title
       await page.locator("#kanban-bar-new-task").click()
       await page.locator("#new-task-title-input").fill(modalTitle)
+      const boardBeforeDetail = new URL(page.url())
+      const gateInitialDetail = project === projects[0]
+      const detailRequest = /\/api\/tasks\/[a-f0-9-]+$/
+      let heldDetailRoute: Route | undefined
+      let detailRequestHeld: ((route: Route) => void) | undefined
+      const pendingDetailRequest = gateInitialDetail ? new Promise<Route>(resolve => { detailRequestHeld = resolve }) : undefined
+      if (gateInitialDetail) {
+        // Close must work before loading establishes canonical ticket history.
+        await page.route(detailRequest, async route => {
+          if (route.request().method() === "GET" && !heldDetailRoute) {
+            heldDetailRoute = route
+            detailRequestHeld!(route)
+          } else await route.continue()
+        })
+      }
       const modalSaved = page.waitForResponse(response => response.url().endsWith("/api/tasks") && response.request().method() === "POST")
       await page.locator("#submit-new-task-btn").click()
       expect((await modalSaved).status()).toBe(201)
       const modalTask = await persisted(modalTitle)
       await expect(page.locator(`.kanban-card[data-id="${modalTask.id}"]`)).toBeVisible()
+      const detailOverlay = page.locator("#task-detail-overlay")
+      if (gateInitialDetail) {
+        await expect(detailOverlay).toHaveAttribute("data-open-task-id", modalTask.id)
+        await expect(detailOverlay).toHaveAttribute("aria-label", "Task detail: loading...")
+        expect((await pendingDetailRequest)!.request().url()).toBe(app + "/api/tasks/" + modalTask.id)
+        expect(new URL(page.url()).searchParams.get("open")).toBe(modalTask.id)
+      }
       await page.locator("#task-detail-overlay.active #td-close").click()
+      if (gateInitialDetail) {
+        await expect(page).toHaveURL(url => url.pathname === boardBeforeDetail.pathname && url.search === boardBeforeDetail.search && url.hash === boardBeforeDetail.hash)
+        expect(new URL(page.url()).searchParams.get("project")).toBe(project.id)
+        await expect(detailOverlay).not.toHaveAttribute("data-open-task-id")
+        await expect(detailOverlay).not.toHaveClass(/\bactive\b/)
+        await heldDetailRoute!.continue()
+        await page.unroute(detailRequest)
+      }
       const lane = page.locator('.kanban-column[data-status="pending"]')
       await lane.locator(":scope > .kanban-add-btn").click()
       const laneTitle = "Lane capture " + project.title
@@ -86,6 +116,10 @@ test("explicit NULL-Area Projects ignore remembered Areas in every view and reta
       expect((await laneSaved).status()).toBe(201)
       const laneTask = await persisted(laneTitle)
       await expect(page.locator(`.kanban-card[data-id="${laneTask.id}"]`)).toBeVisible()
+      if (gateInitialDetail) {
+        await expect(detailOverlay).not.toHaveClass(/\bactive\b/)
+        await expect(page).toHaveURL(url => url.pathname === boardBeforeDetail.pathname && url.search === boardBeforeDetail.search && url.hash === boardBeforeDetail.hash)
+      }
       const draftTitle = "Draft capture " + project.title
       await page.locator("#kanban-bar-new-task").click()
       await page.locator("#new-task-title-input").fill(draftTitle)

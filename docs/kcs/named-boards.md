@@ -68,6 +68,8 @@ Use **Settings → Navigation & Shortcuts → Labels** to give organizing featur
 
 An administrator uses **Settings → Tasks & Boards → Organization features** to choose **Everyone**, **Selected people**, or **Nobody** for Boards organizer, Areas, Projects, Planning, Goals, Routines, Pillars, Principles, Achievements and Home Assistant Area. Board membership and permissions govern work on a named Board. The feature audience controls which organizing modules a person can use. Areas and Projects also require the Boards organizer; independent Goal and Routine libraries keep their own availability. See [Settings troubleshooting](settings-troubleshooting.md#choose-who-can-use-organization-features).
 
+When Areas is unavailable to you, an unfiltered Board remains accessible with its existing permissions. Timeline filters can save an empty `area=` for **All Areas**; reloading that link keeps the unfiltered workspace available. A link to a specific Area still requires Areas availability.
+
 The optional **Home Assistant Area** field identifies a task’s physical location, such as Kitchen. Areas organize responsibility and Projects organize related tasks. An administrator can offer the location field through Organization features without changing the task’s Board, Area or Project.
 
 Older `/areas/{id}` and `/projects/{id}` bookmarks open the matching Household Board context. Supported section bookmarks, including settings, keep their destination. `/planning#spaces` opens the Boards directory when Planning is available. Task filters use the Area label and support your personal display name from Settings.
