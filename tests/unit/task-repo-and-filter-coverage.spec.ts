@@ -476,3 +476,60 @@ test("TaskRepository and SettingsRepository AI handoff persistence cover full CR
   await repo.deleteTask("backlog-1")
   expect(await repo.findById("backlog-1")).toBeNull()
 })
+
+test("Kanban groups visible Household descendants under an Epic outside the lane", async () => {
+  const directory = mkdtempSync(path.join(tmpdir(), "meitheal-kanban-epic-repo-"))
+  const previousDb = process.env.MEITHEAL_DB_URL
+  const { ensureSchema, getPersistenceClient, resetPersistenceForTests } =
+    await import("../../apps/web/src/domains/tasks/persistence/store")
+  const { TaskRepository } = await import("../../apps/web/src/domains/tasks/persistence/task-repository")
+  const { loadKanbanBoard } = await import("../../apps/web/src/lib/kanban-board-data")
+  process.env.MEITHEAL_DB_URL = `file:${path.join(directory, "epic.db")}`
+  resetPersistenceForTests()
+
+  try {
+    await ensureSchema()
+    const client = getPersistenceClient()
+    const repo = new TaskRepository(client)
+    const createTask = (id: string, title: string, status: string, taskType: string, parentId: string | null) =>
+      repo.createTask({
+        id, title, status, task_type: taskType, parent_id: parentId,
+        description: "", priority: 3, area_id: "default", labels: "[]",
+        framework_payload: "{}", custom_fields: "{}", progress: 0, is_favorite: 0,
+        due_date: null, start_date: null, end_date: null, color: null, assigned_to: null,
+      })
+
+    const epicTicket = await createTask("outside-epic", "Boiler upgrade", "complete", "epic", null)
+    await createTask("outside-story", "Heating preparation", "active", "story", "outside-epic")
+    await createTask("direct-child", "Order parts", "pending", "task", "outside-epic")
+    await createTask("nested-child", "Measure pipes", "pending", "task", "outside-story")
+    await createTask("standalone-card", "Book inspection", "pending", "task", null)
+    await createTask("cross-board-card", "Look up warranty", "pending", "task", null)
+
+    // A legacy link to an Epic in a different Board must leave the visible card ungrouped.
+    await client.batch([
+      `INSERT INTO task_boards (id, name, visibility, ticket_prefix, ticket_high_water, created_at, updated_at)
+       VALUES ('work-board', 'Work', 'restricted', 'WORKABCD', 1, 1, 1)`,
+      `INSERT INTO kanban_lanes (id, key, label, board_id, created_at, updated_at)
+       VALUES ('work-lane', 'pending', 'Pending', 'work-board', 1, 1)`,
+      `INSERT INTO tasks (id, title, task_type, area_id, task_board_id, board_column_id, ticket_ref,
+        idempotency_key, request_id, status, created_at, updated_at)
+       VALUES ('private-epic', 'Private Epic', 'epic', '__meitheal_no_area__', 'work-board', 'work-lane',
+        'WORKABCD-1', 'private-epic', 'private-epic', 'pending', 1, 1)`,
+      "UPDATE tasks SET parent_id = 'private-epic' WHERE id = 'cross-board-card'",
+    ], "write")
+
+    const pending = { id: "pending", key: "pending", label: "Pending", icon: "clock", includes: ["pending"], builtIn: true, wipLimit: 0 }
+    const board = await loadKanbanBoard(repo, [pending], 0, new URLSearchParams("groupBy=epic"))
+    const lane = board.get("pending")!
+    expect(lane.ids.slice().sort()).toEqual(["cross-board-card", "direct-child", "nested-child", "standalone-card"])
+    expect(lane.cards.map(card => card.id)).toEqual(lane.ids)
+    const epic = { id: "epic:outside-epic", label: `Boiler upgrade (MTH-${epicTicket})` }
+    expect(lane.epicsByCard).toEqual(new Map([["direct-child", epic], ["nested-child", epic]]))
+  } finally {
+    resetPersistenceForTests()
+    if (previousDb === undefined) delete process.env.MEITHEAL_DB_URL
+    else process.env.MEITHEAL_DB_URL = previousDb
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
