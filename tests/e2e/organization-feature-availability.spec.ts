@@ -139,9 +139,18 @@ test("Administrators choose who can use each organization feature", async () => 
     const pillarGoal = { action: "pillar-link", pillarId, entityType: "goal", id: goalId, enabled: true }
     const pillarRoutine = { action: "pillar-link", pillarId, entityType: "routine", id: routine.id, enabled: true }
     for (const data of [linkGoal, pillarGoal, pillarRoutine]) expect((await change(data)).status()).toBe(200)
+    const scoringTask = await member.request.post(app + "/api/tasks", { headers, data: { title: "Today score fixture", priority: 3 } })
+    expect(scoringTask.status()).toBe(201)
+    const scored = await member.request.patch(app + "/api/tasks/" + (await scoringTask.json()).id, { headers, data: { status: "done" } })
+    expect(scored.status()).toBe(200)
+    await page.goto(app + "/today")
+    await expect(page.locator(".stat-xp")).toContainText("+30")
+    await expect(page.locator(".stat-streak")).toBeVisible()
     await setFeature("goals", "nobody")
     await setFeature("routines", "nobody")
     await setFeature("achievements", "nobody")
+    await page.reload()
+    await expect(page.locator(".stat-xp, .stat-streak")).toHaveCount(0)
     for (const data of [linkGoal, pillarGoal, pillarRoutine,
       { action: "project", title: "Hidden goal link", description: "", areaId, goalId },
     ]) expect((await change(data)).status()).toBe(404)

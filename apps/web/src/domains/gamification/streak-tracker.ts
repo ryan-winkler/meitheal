@@ -58,6 +58,39 @@ export interface DailyRecord {
   points: number
 }
 
+type DailyProgress = { currentStreak: number; points: number }
+const progressByRequest = new WeakMap<object, Promise<DailyProgress>>()
+
+/** Today and the sidebar read the same two indexed days for the current request. */
+export function getDailyProgress(scope: object, now = new Date()): Promise<DailyProgress> {
+  const previous = progressByRequest.get(scope)
+  if (previous) return previous
+  const pending = readDailyProgress(now).catch(error => {
+    progressByRequest.delete(scope)
+    throw error
+  })
+  progressByRequest.set(scope, pending)
+  return pending
+}
+
+async function readDailyProgress(now: Date): Promise<DailyProgress> {
+  await ensureGamificationSchema()
+  const today = now.toISOString().slice(0, 10)
+  const previous = new Date(now)
+  previous.setDate(previous.getDate() - 1)
+  const yesterday = previous.toISOString().slice(0, 10)
+  const result = await getPersistenceClient().execute({
+    sql: "SELECT date, streak_count, points FROM gamification_stats WHERE date IN (?, ?)",
+    args: [today, yesterday],
+  })
+  const current = result.rows.find(row => row.date === today)
+  const prior = result.rows.find(row => row.date === yesterday)
+  return {
+    currentStreak: Number(current?.streak_count ?? prior?.streak_count ?? 0),
+    points: Number(current?.points ?? 0),
+  }
+}
+
 let schemaEnsured = false
 
 /**

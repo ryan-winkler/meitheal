@@ -35,6 +35,7 @@ import { getTodayTaskRows, todayCompletionPercent, todayDueSection, type TaskVie
 import { calendarDayFromInput, calendarToday, formatDayHeading, formatRelativeDue, shiftCalendarDay } from "../lib/date"
 import { db503Response } from "../lib/db-fallback"
 import { isFeatureEnabled } from "../lib/feature-flags"
+import { isOrganizationFeatureAvailable } from "../lib/organization-request-context"
 import { TODAY_SECTIONS } from "../lib/today-registry"
 import { verifiedIngressUser } from "../lib/verified-ingress-user"
 import { getUnscheduledPage, requestedUnscheduledPage, setUnscheduledPage } from "../lib/today-list"
@@ -151,15 +152,12 @@ if (verifiedIngressUser(Astro.locals)) {
     showBoardWork = rows.length > 0
   } catch { /* named Boards may be unavailable */ }
 }
-// G36: Fetch gamification stats for streak/XP display
-try {
-  const { getStats, getWeeklyData } = await import("@domains/gamification")
-  const stats = await getStats()
-  currentStreak = stats.currentStreak ?? 0
-  // Get today's points from weekly data
-  const weekly = await getWeeklyData()
-  const todayRecord = weekly[weekly.length - 1]
-  todayXP = todayRecord?.points ?? 0
+// G36: Fetch gamification stats for streak/XP display.
+if (isOrganizationFeatureAvailable("achievements")) try {
+  const { getDailyProgress } = await import("@domains/gamification")
+  const progress = await getDailyProgress(Astro.locals, todayDate)
+  currentStreak = progress.currentStreak
+  todayXP = progress.points
 } catch { /* gamification may not be initialized */ }
 
 // G38: Fetch habits for Today section

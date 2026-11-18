@@ -15,7 +15,7 @@ import {
   ensureSchema,
   getPersistenceClient,
 } from "@domains/tasks/persistence/store";
-import { getStats as getGamificationStats } from "@domains/gamification";
+import { getDailyProgress } from "@domains/gamification";
 import { verifiedIngressUser } from "../../lib/verified-ingress-user"
 import { getFeatureFlags } from "../../lib/feature-flags";
 
@@ -124,7 +124,7 @@ const hierarchyEnabled = ff.hierarchy !== false && ff.organizer !== false;
 let currentStreak = 0;
 if (gamificationEnabled) {
   try {
-    const stats = await getGamificationStats();
+    const stats = await getDailyProgress(Astro.locals);
     currentStreak = stats.currentStreak;
   } catch {
     /* gamification schema may not exist yet */

@@ -10,6 +10,8 @@ description: "Understand the Today view and its task controls."
 
 Today starts with the date, task counts and quick capture. The date follows the selected language and household timezone. The completion indicator exposes its value to assistive technology.
 
+The active streak and XP earned today appear when the Achievements feature is available to your account.
+
 The shared navigation provides:
 
 - a sticky `UnifiedBar`
