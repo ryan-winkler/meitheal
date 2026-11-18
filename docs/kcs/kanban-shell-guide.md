@@ -91,6 +91,10 @@ Use Tab to move between visible task views. If a view moves into **More**, open 
 
 Open **Timeline** to narrow the chart by text, status, priority, task type, or area. Use **Group by** to organize dated tasks. The URL keeps these choices when you reload or move between task views. On phones, open **Filters** to adjust the chart. The task pane starts closed unless you saved a preference. Select **Task pane** to open or close it. The control becomes available when tasks match the filters.
 
+When you group by **Project**, each project has its own section. If project names match, the heading adds the project's Area when available. A project with no direct Area inherits its linked Goal's available Area. If a direct Area reference is unavailable, its group uses a stable qualifier until that reference is repaired. **No Project** contains unassigned tasks. **Unknown Project** contains tasks whose assigned project is unavailable. Open **Task pane** to see the groups. Use Tab to reach a group button and Space or Enter to collapse or expand it. Use the Up and Down arrows to move between bars and group buttons. Collapsed groups stay collapsed while you filter the chart.
+
+Timeline loads Project and Group labels according to your organization access.
+
 ### Group cards by assignee
 
 Choose **Group by → By Assignee** to see who owns the cards on each workflow column page. The column total counts the full result. **Unassigned** contains tasks with no assignee. When different people or unavailable assignments share the same label, a number distinguishes their headings. Their cards and collapse preferences stay separate.
@@ -149,3 +153,5 @@ An unreadable card assignment no longer interrupts grouping for the board. Check
 Kanban Project groups keep their saved collapse state when their names change. Duplicate or reserved names show a short identity token before the Area, so long names cannot hide the distinction. Missing and unavailable assignments use the current language’s labels. If a focused Project disappears after a refresh, focus returns to its workflow lane heading.
 
 When reopening Details from a card or ticket link while a Board Group save is pending, the drawer waits for that save and then reads the current task. A later edit from another client remains authoritative.
+
+Timeline Project headings show a short identity token before the Area for duplicate or reserved names. Missing and unavailable assignments use the current language’s labels. Scrolling away and back keeps Sidebar rows in visual keyboard order.

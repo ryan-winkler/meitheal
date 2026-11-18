@@ -89,48 +89,6 @@
   }
 }
 
-/* ── Column Toggle Dropdown ───────────────────────────────── */
-
-.timeline-col-toggle {
-  position: relative;
-}
-.timeline-col-toggle-panel {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md, 8px);
-  box-shadow: var(--shadow-lg, 0 8px 24px rgba(0,0,0,0.3));
-  padding: 8px 0;
-  min-width: 160px;
-  z-index: 50;
-}
-.timeline-col-toggle-title {
-  padding: 4px 12px 6px;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-.timeline-col-toggle-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 12px;
-  font-size: 13px;
-  color: var(--text-primary);
-  cursor: pointer;
-  transition: background 0.1s;
-}
-.timeline-col-toggle-item:hover {
-  background: var(--bg-secondary, rgba(255,255,255,0.06));
-}
-.timeline-col-toggle-item input[type="checkbox"] {
-  accent-color: var(--accent);
-}
-
 /* ── Zoom Dropdown (ClickUp-style with "Time period" title) ─ */
 
 .timeline-zoom-dropdown {
@@ -198,40 +156,6 @@
 
 .timeline-ctrl-btn::-webkit-details-marker {
   display: none;
-}
-
-/* Legacy .timeline-toolbar — kept for backward compat */
-.timeline-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-left: auto;
-}
-
-.timeline-zoom-select {
-  appearance: none;
-  background: var(--bg-secondary, rgba(255, 255, 255, 0.06));
-  color: var(--text-primary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm, 6px);
-  padding: 4px 24px 4px 8px;
-  font-size: 12px;
-  font-family: inherit;
-  cursor: pointer;
-  outline: none;
-  background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%239ca3af' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 6px center;
-  transition: border-color 0.15s;
-}
-
-.timeline-zoom-select:hover {
-  border-color: var(--accent);
-}
-
-.timeline-zoom-select:focus {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px rgb(var(--accent-rgb) / 0.15);
 }
 
 /* ── T7: Priority Legend ─────────────────────────────────────────────── */
@@ -643,4 +567,25 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+
+.gantt-sidebar-group-label {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.gantt-sidebar-group-label > span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gantt-sidebar-group-qualifier {
+  color: var(--text-secondary);
+  text-transform: none;
 }
