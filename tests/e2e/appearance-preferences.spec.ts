@@ -66,11 +66,14 @@ test.describe("Appearance preferences", () => {
     const sidebar = page.locator("#sidebar")
     await expect(sidebar).not.toHaveCSS("background-color", "rgb(255, 255, 255)")
     if (await page.locator("#sidebar-areas-group").count()) {
+      const boardsToggle = page.locator("[data-sidebar-boards-toggle]")
+      if (await boardsToggle.getAttribute("aria-expanded") === "false") await boardsToggle.press("Enter")
       await expect(page.locator("#sidebar-areas-group")).not.toHaveAttribute("open", "")
       await page.locator("#project-nav-group-toggle").press("Enter")
       await expect(page.locator("#project-nav-content")).toBeVisible()
       await page.locator("#project-nav-group-toggle").press("Escape")
-      await expect(page.locator("#project-nav-group-toggle")).toBeFocused()
+      await expect(boardsToggle).toBeFocused()
+      await expect(page.locator("#sidebar-board-children")).toBeHidden()
       expect(await page.evaluate(() => localStorage.getItem("meitheal_project_nav_group_collapsed"))).toBe("false")
     }
     await page.reload()
@@ -197,5 +200,65 @@ test.describe("Appearance preferences", () => {
       width: "default", header: "sticky", navStyle: "attached", panelStyle: "attached", sidebar: "remember",
       futurePreference: "retained",
     })
+  })
+
+  test("expanded Boards and Areas survive More, wide navbar and phone drawer handoffs", async ({ page, request, baseURL }) => {
+    const headers = { origin: new URL(baseURL!).origin }
+    const areaResponse = await request.post("/api/areas", { headers, data: { name: "Resize Area" } })
+    expect(areaResponse.status()).toBe(201)
+    const { id: areaId } = await areaResponse.json()
+    let projectId: string | undefined
+    try {
+      const created = await request.post("/api/projects", { headers, data: { title: "Resize Project", area_id: areaId } })
+      expect(created.status()).toBe(201)
+      projectId = (await created.json()).id
+      await page.addInitScript(() => {
+        localStorage.setItem("meitheal-appearance", JSON.stringify({ navigation: "navbar" }))
+        localStorage.setItem("meitheal_project_nav_group_collapsed", "true")
+        sessionStorage.setItem("meitheal-boards-collapsed", "true")
+      })
+      await page.setViewportSize({ width: 769, height: 900 })
+      await page.goto("/today")
+      const row = page.locator('[data-nav-overflow="sidebar"]')
+      await expect(row).toHaveAttribute("data-nav-overflow-active", "")
+      await row.evaluate(element => { element.style.maxWidth = "180px" })
+      const more = row.locator("[data-nav-overflow-more]")
+      const boards = row.locator('[data-sidebar-group="boards"]')
+      const boardToggle = boards.locator("[data-sidebar-boards-toggle]")
+      const areas = boards.locator("#sidebar-areas-group")
+      const project = boards.locator(`a[data-project-id="${projectId}"]`)
+      const arrowTo = async () => {
+        for (let step = 0; step < 20; step++) {
+          if (await project.evaluate(element => element === document.activeElement)) break
+          await page.keyboard.press("ArrowDown")
+        }
+        await expect(project).toBeFocused()
+      }
+      await more.locator(":scope > summary").press("ArrowDown")
+      await boardToggle.click()
+      await expect(boardToggle).toHaveAttribute("aria-expanded", "true")
+      await areas.locator(":scope > summary").click()
+      await expect(areas).toHaveAttribute("open", "")
+      await more.locator(":scope > summary").press("ArrowDown")
+      await arrowTo()
+
+      await row.evaluate(element => { element.style.maxWidth = "none" })
+      await page.setViewportSize({ width: 2200, height: 900 })
+      await expect(more).toBeHidden()
+      await expect(project).toBeFocused()
+      await expect(areas).toHaveAttribute("open", "")
+      await page.setViewportSize({ width: 320, height: 900 })
+      await expect(row).not.toHaveAttribute("data-nav-overflow-active", "")
+      await expect(areas).toHaveAttribute("open", "")
+      await expect(boardToggle).toHaveAttribute("aria-expanded", "true")
+      await expect(page.locator("#sidebar")).toHaveClass(/open/)
+      await expect(project).toBeFocused()
+      await expect(boards.locator('[data-sidebar-household] > a')).toBeVisible()
+      await expect(project).toBeVisible()
+      await expect(project).not.toHaveAttribute("tabindex", "-1")
+    } finally {
+      if (projectId) expect((await request.delete(`/api/projects/${projectId}`, { headers, data: {} })).ok()).toBe(true)
+      expect((await request.delete(`/api/areas/${areaId}`, { headers, data: {} })).ok()).toBe(true)
+    }
   })
 })

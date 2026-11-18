@@ -7,6 +7,14 @@ import { expect, test } from "@playwright/test"
 import { todayCompletionFilter } from "../../apps/web/src/lib/task-queries"
 import { startCoreFixture } from "../scripts/task-pins-fixture"
 
+function createCompletionTables(db: DatabaseSync) {
+  db.exec(`
+    CREATE TABLE task_boards (id TEXT PRIMARY KEY, state TEXT NOT NULL CHECK (state IN ('active', 'retired')));
+    INSERT INTO task_boards (id, state) VALUES ('household', 'active');
+    CREATE TABLE tasks (id INTEGER PRIMARY KEY, status TEXT, updated_at, task_board_id TEXT);
+  `)
+}
+
 test("Today completion windows follow the requested day and zone across calls", () => {
   const day = "2031-03-09"
   const zone = "America/Los_Angeles"
@@ -36,7 +44,7 @@ for (const { timezone, day, firstInstant, nextDay, completions } of [
   test(`Today completion predicate follows the midnight transition in ${timezone}`, () => {
     const db = new DatabaseSync(":memory:")
     try {
-      db.exec("CREATE TABLE tasks (id INTEGER PRIMARY KEY, status TEXT, updated_at, task_board_id TEXT)")
+      createCompletionTables(db)
       const insert = db.prepare("INSERT INTO tasks (status, updated_at) VALUES ('complete', ?)")
       insert.run(Date.parse(firstInstant) - 1)
       insert.run(Date.parse(completions[0]!))
@@ -48,6 +56,8 @@ for (const { timezone, day, firstInstant, nextDay, completions } of [
       expect(filter.firstInstant).toBe(Date.parse(firstInstant))
       const eligible = db.prepare(`SELECT id FROM tasks WHERE ${filter.sql} ORDER BY id`).all(...filter.args)
       expect(eligible.map(row => row.id)).toEqual([2, 3, 4])
+      db.exec("UPDATE task_boards SET state = 'retired' WHERE id = 'household'")
+      expect(db.prepare(`SELECT id FROM tasks WHERE ${filter.sql}`).all(...filter.args)).toEqual([])
     } finally {
       db.close()
     }
@@ -57,7 +67,7 @@ for (const { timezone, day, firstInstant, nextDay, completions } of [
 test("Today completion predicate excludes the rollback into yesterday", () => {
   const db = new DatabaseSync(":memory:")
   try {
-    db.exec("CREATE TABLE tasks (id INTEGER PRIMARY KEY, status TEXT, updated_at, task_board_id TEXT)")
+    createCompletionTables(db)
     const insert = db.prepare("INSERT INTO tasks (status, updated_at) VALUES ('complete', ?)")
     insert.run(Date.parse("2010-11-07T02:59:59.999Z"))
     insert.run(Date.parse("2010-11-07T03:00:00Z"))
@@ -72,7 +82,12 @@ test("Today completion predicate excludes the rollback into yesterday", () => {
     insert.run("2010-11-07 junk")
 
     const filter = todayCompletionFilter("2010-11-07", "America/Goose_Bay")
-    const selected = db.prepare(`UPDATE tasks SET status = 'archived' WHERE ${filter.sql} RETURNING id`).all(...filter.args)
+    const archive = db.prepare(`UPDATE tasks SET status = 'archived' WHERE ${filter.sql} RETURNING id`)
+    db.exec("UPDATE task_boards SET state = 'retired' WHERE id = 'household'")
+    expect(archive.all(...filter.args)).toEqual([])
+    expect(db.prepare("SELECT COUNT(*) AS total FROM tasks WHERE status = 'complete'").get()?.total).toBe(11)
+    db.exec("UPDATE task_boards SET state = 'active' WHERE id = 'household'")
+    const selected = archive.all(...filter.args)
     expect(selected.map(row => row.id).sort()).toEqual([2, 3, 6, 7])
   } finally {
     db.close()

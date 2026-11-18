@@ -55,6 +55,11 @@
       box-shadow: 4px 0 24px rgba(0, 0, 0, 0.4);
   }
 
+  /* Retain an active navigation/editor focus until the resize handoff opens the drawer. */
+  .sidebar:focus-within {
+    visibility: visible;
+  }
+
   .main-content {
     width: 100%;
   }

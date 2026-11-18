@@ -145,7 +145,7 @@ test("pinned types fit narrow desktop top navigation and stay available in the m
   const more = page.locator("[data-nav-overflow=sidebar] [data-nav-overflow-more]")
   const taskViewToggle = page.getByRole("button", { name: "Task views", exact: true })
   await expect(more.locator("#tasks-submenu-toggle")).toBeAttached()
-  await more.locator("summary").click()
+  await more.locator(":scope > summary").click()
   await taskViewToggle.click()
   await expect(page.locator("#tasks-nav-submenu").getByRole("link", { name: "Timeline (Gantt)", exact: true })).toBeVisible()
   await page.keyboard.press("Tab")
@@ -163,7 +163,7 @@ test("pinned types fit narrow desktop top navigation and stay available in the m
 
   await sidebarMenu.evaluate(menu => { menu.dataset.persistedTaskTypes = "yes" })
   const today = sidebar.locator('a[data-page="today"]')
-  if (!(await today.isVisible())) await more.locator("summary").click()
+  if (!(await today.isVisible())) await more.locator(":scope > summary").click()
   await today.click()
   await expect(page).toHaveURL(url => url.pathname === "/today")
   await expect(sidebarMenu).toHaveAttribute("data-persisted-task-types", "yes")
@@ -206,7 +206,7 @@ test("pinned types fit narrow desktop top navigation and stay available in the m
   await expect(page).toHaveURL(url => url.pathname === "/settings")
 
   const tasks = sidebar.locator('a[data-page="tasks"]')
-  if (!(await tasks.isVisible())) await more.locator("summary").click()
+  if (!(await tasks.isVisible())) await more.locator(":scope > summary").click()
   await tasks.click()
   await expect(page).toHaveURL(url => url.pathname === "/tasks")
   await expect(sidebarMenu).toBeHidden()

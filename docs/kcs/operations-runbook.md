@@ -128,6 +128,14 @@ Check the plain links back from Deferred, Inactivity and Triage in both themes, 
 
 In disposable Home Assistant ingress, open **Boards → Household → Areas**, then open an Area and Project. Confirm its task view and settings stay inside ingress. Repeat an older Area and Project bookmark, including a supported settings fragment, and verify the matching Household context. Run `e2e/area-management.spec.ts` against a built App to verify the Area editor, contextual Goal creation and a Household Routine that creates work in the selected Area. Explicit personal naming preferences can change the displayed labels.
 
+For navbar navigation, open the Boards dropdown and check the same branch when it overflows into **More**, including a long saved Areas label at 769 px and an Area with more than twenty Projects. Expand Boards and Areas with the keyboard; their links must remain reachable inside the owning menu and Settings must stay visible. Escape first cancels an inline editor, action popup or deletion confirmation immediately and restores its trigger; a subsequent Escape dismisses the owning navigation. On the phone, use Tab and Shift+Tab within an open Area or Project action menu to move between its edit link and Rename without leaving the menu. If focused Boards moves from More into the primary navbar, More must close without covering the Boards dropdown. Check Area and Project Rename cancellation and Project Delete cancellation in both menus.
+
+Resize to a wide navbar and then a phone drawer, checking that the original links and disclosure state survive and keyboard focus stays visible. Opening the phone drawer normally uses its existing focus handoff. A focused sidebar link or editor keeps its context visible by opening the drawer on resize, without saving the editor. Resize an open action popup to the navbar; it must dismiss and restore a visible trigger.
+
+Repeat Project editing with a pinned copy present; the editable row and pinned title/icon must stay consistent. Create a Project from its Area, then open Add task without reloading and cancel with Escape. Confirm focus returns to Add task. With Boards collapsed, N opens the shared New Task modal rather than a hidden Project editor. Check popup dismissal in both phone-to-navbar and navbar-to-phone resizing; the closed phone drawer returns focus to its visible menu opener.
+
+Run `e2e/navigation-overflow-recovery.spec.ts`, `e2e/nav-overflow-hidden-links.spec.ts`, `e2e/navbar-hierarchy-actions.spec.ts` and `e2e/appearance-preferences.spec.ts` for these journeys.
+
 ## Task Link Verification
 
 Open a task and select **Copy task link**. If the browser cannot access the clipboard, copy the selected link from the text field. Links use `/tickets/{id}` with the immutable task ID. Opening the ordinary task drawer updates the address bar. Comment links append `?comment={id}`. Recipients use their existing installation access.

@@ -278,6 +278,7 @@
   }
   :root[data-appearance-navigation="navbar"] #sidebar .sidebar-scroll {
     --nav-overflow-enabled: 1;
+    position: relative;
     display: flex;
     align-items: center;
     gap: 8px;
@@ -294,6 +295,30 @@
     padding-block: 4px;
   }
   :root[data-appearance-navigation="navbar"] #sidebar .nav-list > li { flex: none; }
+  :root[data-appearance-navigation="navbar"] #sidebar .nav-list > [data-sidebar-group="boards"] { position: static; }
+  :root[data-appearance-navigation="navbar"] [data-nav-overflow-primary] > [data-sidebar-group="boards"] > #sidebar-board-children {
+    position: absolute;
+    inset-block-start: calc(100% + 6px);
+    inset-inline-start: 0;
+    z-index: 60;
+    inline-size: min(24rem, 100%, calc(100vw - 16px));
+    min-inline-size: 0;
+    max-block-size: min(32rem, calc(100dvh - 80px));
+    overflow: auto;
+    margin: 0;
+    padding: 6px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md, 8px);
+    background: var(--bg-card);
+    box-shadow: var(--shadow-md);
+  }
+  :root[data-appearance-navigation="navbar"] .nav-overflow__menu #sidebar-board-children {
+    position: static;
+    inset: auto;
+    inline-size: auto;
+    max-block-size: none;
+    overflow: visible;
+  }
   :root[data-appearance-navigation="navbar"] #sidebar .sidebar-scroll:not([data-nav-overflow-active]) .nav-list {
     flex: 1 1 0;
     overflow-x: auto;
@@ -352,6 +377,23 @@
     background: var(--bg-card);
     color: var(--text-primary);
     box-shadow: var(--shadow-lg);
+  }
+  /* The Boards dropdown or More owns scrolling for its complete hierarchy. */
+  :root[data-appearance-navigation="navbar"] #sidebar-board-children #sidebar-hierarchy-panel {
+    max-inline-size: none;
+  }
+  :root[data-appearance-navigation="navbar"] #sidebar-board-children #sidebar-areas-group[open] #project-nav-content {
+    position: static;
+    inset: auto;
+    transform: none;
+    width: auto;
+    max-height: none;
+    overflow: visible;
+  }
+  :root[data-appearance-navigation="navbar"] #sidebar-board-children #project-nav-content .stree__list,
+  :root[data-appearance-navigation="navbar"] #sidebar-board-children #project-nav-content .stree__children:not([data-collapsed="true"]) {
+    max-height: none;
+    overflow: visible;
   }
   :root[data-appearance-navigation="navbar"]:not([data-appearance-header="default"]) :is(.topbar, .unified-bar, #settings-bar) {
     top: var(--appearance-navbar-offset);

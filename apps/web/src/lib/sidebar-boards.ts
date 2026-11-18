@@ -9,12 +9,43 @@ export function bindSidebarBoards(signal: AbortSignal) {
   const children = document.querySelector<HTMLElement>("[data-sidebar-board-children]")
   const parentToggle = document.querySelector<HTMLButtonElement>("[data-sidebar-boards-toggle]")
   if (children && parentToggle) {
-    try { children.hidden = sessionStorage.getItem("meitheal-boards-collapsed") === "true" } catch { /* Optional preference */ }
-    parentToggle.setAttribute("aria-expanded", String(!children.hidden))
-    parentToggle.addEventListener("click", () => {
-      children.hidden = !children.hidden
+    const navbar = () => innerWidth > 768 && document.documentElement.dataset.appearanceNavigation === "navbar"
+    const popup = () => navbar() && !children.closest("[data-nav-overflow-menu]")
+    const setCollapsed = (collapsed: boolean) => {
+      children.hidden = collapsed
       parentToggle.setAttribute("aria-expanded", String(!children.hidden))
       try { sessionStorage.setItem("meitheal-boards-collapsed", String(children.hidden)) } catch { /* Optional preference */ }
+    }
+    try {
+      const remembered = sessionStorage.getItem("meitheal-boards-collapsed")
+      children.hidden = remembered === null ? navbar() : remembered === "true"
+    } catch { children.hidden = navbar() }
+    parentToggle.setAttribute("aria-expanded", String(!children.hidden))
+    parentToggle.addEventListener("click", () => setCollapsed(!children.hidden), { signal })
+    const escapePopup = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.key !== "Escape" || !popup() || children.hidden) return
+      event.preventDefault()
+      event.stopPropagation()
+      setCollapsed(true)
+      parentToggle.focus({ preventScroll: true })
+    }
+    children.addEventListener("keydown", escapePopup, { signal })
+    parentToggle.addEventListener("keydown", escapePopup, { signal })
+    document.addEventListener("click", event => {
+      if (event.target instanceof Element && event.target.closest<HTMLElement>("[data-sidebar-board-owner]")?.dataset.sidebarBoardOwner === children.id) {
+        if (event.target.closest("a[href]")) {
+          setCollapsed(true)
+          parentToggle.focus({ preventScroll: true })
+        }
+        return
+      }
+      if (!popup() || children.hidden || !(event.target instanceof Node)) return
+      if (!children.contains(event.target) && !parentToggle.contains(event.target)) setCollapsed(true)
+    }, { signal })
+    children.addEventListener("click", event => {
+      if (!popup() || !(event.target instanceof Element) || !event.target.closest("a[href]")) return
+      setCollapsed(true)
+      parentToggle.focus({ preventScroll: true })
     }, { signal })
   }
   const root = document.querySelector<HTMLUListElement>("[data-sidebar-boards]")

@@ -151,7 +151,7 @@ export function bindAppearanceNavigation(signal: AbortSignal): void {
     suppressPointer = false
     collapsedFocus = null
     syncSidebarState()
-    if (document.documentElement.dataset.appearanceNavigation === "navbar") syncNavbarAreas()
+    // CSS moves the existing hierarchy between navbar and drawer. Preserve its disclosure state.
   }, { signal })
   window.addEventListener("storage", event => {
     if ([APPEARANCE_STORAGE_KEY, "meitheal_sidebar_collapsed", null].includes(event.key)) applyAppearancePreferences(readAppearancePreferences())
@@ -161,6 +161,7 @@ export function bindAppearanceNavigation(signal: AbortSignal): void {
   const areasNav = group?.parentElement
   if (group && areasNav) {
     document.addEventListener("keydown", event => {
+      if (event.defaultPrevented) return
       if (event.key === "Escape" && group.open && areasNav.contains(event.target as Node) && innerWidth > 768 && document.documentElement.dataset.appearanceNavigation === "navbar") {
         group.open = false
         document.getElementById("project-nav-group-toggle")?.focus()
@@ -168,6 +169,9 @@ export function bindAppearanceNavigation(signal: AbortSignal): void {
       }
     }, { signal })
     document.addEventListener("click", event => {
+      const portal = event.target instanceof Element ? event.target.closest<HTMLElement>("[data-sidebar-board-owner]") : null
+      const owner = portal?.dataset.sidebarBoardOwner
+      if (owner && document.getElementById(owner)?.contains(areasNav)) return
       if (group.open && !areasNav.contains(event.target as Node) && innerWidth > 768 && document.documentElement.dataset.appearanceNavigation === "navbar") group.open = false
     }, { signal })
   }

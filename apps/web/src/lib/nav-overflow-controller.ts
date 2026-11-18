@@ -1,5 +1,6 @@
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { applySidebarOrder, sidebarOrderChanged, SIDEBAR_ORDER_STORAGE_KEY } from "@lib/sidebar-order"
+import { SIDEBAR_FOCUS_REVEAL_EVENT } from "@lib/mobile-sidebar-controller"
 
 interface OverflowBinding {
   pageSignal: AbortSignal
@@ -54,14 +55,22 @@ export function initNavOverflow(root: HTMLElement, pageSignal: AbortSignal): voi
   }
   const currentItem = (item: HTMLElement) => item.matches("[aria-current=page], [aria-selected=true]")
     || Boolean(item.querySelector("[aria-current=page], [aria-selected=true]"))
+  // Keep the inventory intact while disclosures change what can receive focus.
+  // Keep scrollport-offscreen links eligible, but exclude hidden disclosure ancestors.
+  const canFocus = (element: HTMLElement) => {
+    if (!element.getClientRects().length || getComputedStyle(element).visibility !== "visible" || element.closest("[hidden], [inert]")) return false
+    const closed = element.closest("details:not([open])")
+    return !closed || (element.matches("summary") && element.parentElement === closed && !closed.parentElement?.closest("details:not([open])"))
+  }
   const primaryLinks = () => links.filter(link => !menu.contains(link))
-  const menuLinks = () => links.filter(link => menu.contains(link))
+  const menuLinks = () => links.filter(link => menu.contains(link) && canFocus(link))
   function syncTabStops(focused = document.activeElement) {
     // Visible links keep native Tab stops. Only the More menu uses a roving stop.
     for (const link of primaryLinks()) resetTab(link)
     const overflow = menuLinks()
-    const selectedOverflow = overflow.find(link => link === focused) ?? overflow.find(currentItem) ?? overflow[0]
-    for (const link of overflow) link.tabIndex = link === selectedOverflow ? 0 : -1
+    const selectedOverflow = overflow.find(link => link === focused) ?? overflow.find(link => link.tabIndex === 0)
+      ?? overflow.find(currentItem) ?? overflow[0]
+    for (const link of links.filter(link => menu.contains(link))) link.tabIndex = link === selectedOverflow ? 0 : -1
   }
   function restoreItems() {
     for (const source of sources) {
@@ -80,11 +89,17 @@ export function initNavOverflow(root: HTMLElement, pageSignal: AbortSignal): voi
   function focusDestination(target: HTMLElement | undefined) {
     if (!target) return
     target.focus({ preventScroll: true })
-    if (!menu.contains(target)) return
+    if (!menu.contains(target)) {
+      target.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "instant" })
+      return
+    }
     const item = target.getBoundingClientRect()
     const viewport = menu.getBoundingClientRect()
-    if (item.top < viewport.top || item.height > menu.clientHeight) menu.scrollTop += item.top - viewport.top
-    else if (item.bottom > viewport.bottom) menu.scrollTop += item.bottom - viewport.bottom
+    const top = viewport.top + menu.clientTop
+    const bottom = top + menu.clientHeight
+    // Use the scrollport inside its border and round outward to reveal fractional pixels.
+    if (item.top < top || item.height > menu.clientHeight) menu.scrollTop += Math.floor(item.top - top)
+    else if (item.bottom > bottom) menu.scrollTop += Math.ceil(item.bottom - bottom)
   }
   function closeMenu(restoreFocus = false) {
     if (restoreFocus && !more.hidden) toggle.focus({ preventScroll: true })
@@ -93,7 +108,17 @@ export function initNavOverflow(root: HTMLElement, pageSignal: AbortSignal): voi
   function reflow() {
     frame = 0
     if (signal.aborted || !root.isConnected) return
-    const focused = document.activeElement instanceof HTMLElement && root.contains(document.activeElement) ? document.activeElement : null
+    const active = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    if (active && root.contains(active) && innerWidth <= 768) {
+      root.closest("#sidebar")?.dispatchEvent(new Event(SIDEBAR_FOCUS_REVEAL_EVENT))
+    }
+    const portal = active?.closest<HTMLElement>("[data-sidebar-board-owner]")
+    const owner = portal ? document.getElementById(portal.dataset.sidebarBoardOwner ?? "") : null
+    const portalOwner = owner && root.contains(owner) ? owner : null
+    // Body-level action menus retain focus while their owning Board stays reachable.
+    const focused = active && root.contains(active) ? active
+      : portalOwner?.closest<HTMLElement>("[data-sidebar-group]")?.querySelector<HTMLElement>("[data-sidebar-boards-toggle]") ?? null
+    const focusedInMenu = focused !== null && menu.contains(focused)
     const enabled = getComputedStyle(root).getPropertyValue("--nav-overflow-enabled").trim() === "1" && root.clientWidth > 0
     root.setAttribute("data-nav-overflow-reflowing", "")
     restoreItems()
@@ -148,13 +173,14 @@ export function initNavOverflow(root: HTMLElement, pageSignal: AbortSignal): voi
     }
     for (const { primary, items: sourceItems } of sources) primary.toggleAttribute("data-nav-overflow-empty", !sourceItems.some(item => visible.has(item)))
     more.hidden = !enabled || visible.size === availableItems.length
-    if (more.hidden) more.open = false
+    if (more.hidden || (focusedInMenu && !menu.contains(focused))) more.open = false
     if (focused) {
-      if (focused === toggle && more.hidden) {
-        ;(primaryLinks().find(currentItem) ?? primaryLinks()[0])?.focus({ preventScroll: true })
-      } else {
-        if (menu.contains(focused)) more.open = true
-        focusDestination(focused)
+      if (menu.contains(focused)) more.open = true
+      if (!portalOwner) {
+        const context = focused.closest("[data-sidebar-group]")
+        const contextualLink = context ? [...context.querySelectorAll<HTMLElement>("a[href]")].find(canFocus) : undefined
+        const visibleLinks = primaryLinks().filter(canFocus)
+        focusDestination(canFocus(focused) ? focused : contextualLink ?? visibleLinks.find(currentItem) ?? visibleLinks[0])
       }
     }
     syncTabStops()
@@ -177,13 +203,14 @@ export function initNavOverflow(root: HTMLElement, pageSignal: AbortSignal): voi
   }
   const appearance = new MutationObserver(syncTaskNavDom)
   const content = new MutationObserver(records => {
+    if (records.some(record => record.attributeName === "hidden" || record.attributeName === "inert")) syncTabStops()
     if (records.some(record => record.attributeName === "hidden"
       ? (record.target as Element).hasAttribute("data-sidebar-pin-presence")
       : record.type !== "childList" || (record.target !== menu && !primaries.includes(record.target as HTMLElement)))) schedule()
   })
   resize.observe(root)
   appearance.observe(document.documentElement, { attributes: true, attributeFilter: ["data-appearance-navigation", "data-appearance-font", "data-appearance-radius"] })
-  content.observe(root, { subtree: true, characterData: true, childList: true, attributes: true, attributeFilter: ["aria-current", "aria-selected", "hidden"] })
+  content.observe(root, { subtree: true, characterData: true, childList: true, attributes: true, attributeFilter: ["aria-current", "aria-selected", "hidden", "inert"] })
 
   root.addEventListener("keydown", event => {
     if (event.defaultPrevented) return
@@ -203,22 +230,38 @@ export function initNavOverflow(root: HTMLElement, pageSignal: AbortSignal): voi
       return
     }
     const inMenu = menu.contains(target)
-    const candidates = inMenu ? menuLinks() : [...primaryLinks(), ...(!more.hidden ? [toggle] : [])]
+    const candidates = inMenu ? menuLinks() : [...primaryLinks().filter(canFocus), ...(!more.hidden ? [toggle] : [])]
     const keys = inMenu ? ["ArrowDown", "ArrowUp", "Home", "End"] : ["ArrowRight", "ArrowLeft", "Home", "End"]
-    if (!keys.includes(event.key) || !candidates.includes(target) || !root.hasAttribute("data-nav-overflow-active")) return
+    const areaToggle = inMenu && target.matches(".stree__area-toggle") && canFocus(target)
+    if (!keys.includes(event.key) || (!candidates.includes(target) && !areaToggle) || !root.hasAttribute("data-nav-overflow-active")) return
     event.preventDefault()
+    if (areaToggle && ["ArrowDown", "ArrowUp"].includes(event.key)) {
+      const following = candidates.findIndex(candidate => Boolean(target.compareDocumentPosition(candidate) & Node.DOCUMENT_POSITION_FOLLOWING))
+      const next = event.key === "ArrowDown" ? (following === -1 ? 0 : following)
+        : (following === -1 ? candidates.length - 1 : (following - 1 + candidates.length) % candidates.length)
+      focusDestination(candidates[next])
+      return
+    }
     const index = candidates.indexOf(target)
     const next = event.key === "Home" ? 0 : event.key === "End" ? candidates.length - 1
       : (index + (["ArrowDown", "ArrowRight"].includes(event.key) ? 1 : -1) + candidates.length) % candidates.length
     focusDestination(candidates[next])
   }, { signal })
   root.addEventListener("focusin", () => syncTabStops(), { signal })
+  root.addEventListener("toggle", () => syncTabStops(), { capture: true, signal })
   more.addEventListener("toggle", () => {
     if (!more.open && menu.contains(document.activeElement)) toggle.focus({ preventScroll: true })
     syncTabStops()
   }, { signal })
   document.addEventListener("click", event => {
-    if (more.open && event.target instanceof Node && !more.contains(event.target)) closeMenu(menu.contains(document.activeElement))
+    if (!more.open || !(event.target instanceof Node) || more.contains(event.target)) return
+    const portal = event.target instanceof Element ? event.target.closest<HTMLElement>("[data-sidebar-board-owner]") : null
+    const owner = portal?.dataset.sidebarBoardOwner
+    if (owner && menu.contains(document.getElementById(owner))) {
+      if (event.target instanceof Element && event.target.closest("a[href]")) closeMenu(true)
+      return
+    }
+    closeMenu(menu.contains(document.activeElement))
   }, { signal })
   menu.addEventListener("click", event => {
     if (event.target instanceof Element && event.target.closest("a[href]")) closeMenu(true)
