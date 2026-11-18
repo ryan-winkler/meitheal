@@ -238,6 +238,8 @@ export function initQuickActions(
       const currentAssigned = btn.dataset.assigned || ""
       if (!taskId) return
       const taskUrl = buildTaskApiUrl(taskId)
+      const lane = btn.closest<HTMLElement>("#kanban-board")?.dataset.groupBy === "assigned"
+        ? btn.closest<HTMLElement>(".kanban-column")?.dataset.status : undefined
 
       // P1-5: Show popover immediately with loading skeleton
       const content = document.createElement("div")
@@ -277,7 +279,7 @@ export function initQuickActions(
             })
             if (res.ok) {
               _qa.toast("Unassigned", "success")
-              await refreshBoard({ taskId })
+              await refreshBoard({ taskId, lane })
             } else { _qa.toast("Failed to unassign", "error") }
           } catch { _qa.toast("Failed to unassign", "error") }
         })
@@ -310,7 +312,7 @@ export function initQuickActions(
               })
               if (res.ok) {
                 _qa.toast(`Assigned to ${name}`, "success")
-                await refreshBoard({ taskId })
+                await refreshBoard({ taskId, lane })
               } else { _qa.toast("Failed to assign", "error") }
             } catch { _qa.toast("Failed to assign", "error") }
           })

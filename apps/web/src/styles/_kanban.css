@@ -430,17 +430,16 @@
   display: none;
 }
 
-/* Client-rendered project group controls */
-#kanban-board[data-group-by="project"] .swimlane-header {
+#kanban-board:is([data-group-by="assigned"], [data-group-by="project"]) .swimlane-header {
   width: 100%;
   min-height: 44px;
 }
 
-#kanban-board[data-group-by="project"] .swimlane-header:focus-visible {
+#kanban-board:is([data-group-by="assigned"], [data-group-by="project"]) .swimlane-header:focus-visible {
   outline-color: var(--border-focus);
 }
 
-#kanban-board[data-group-by="project"] .swimlane-label {
+#kanban-board:is([data-group-by="assigned"], [data-group-by="project"]) .swimlane-label {
   flex: 1;
   min-width: 0;
   overflow-wrap: anywhere;

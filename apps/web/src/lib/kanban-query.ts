@@ -64,7 +64,9 @@ export function updateKanbanFilters(url: URL, filters: KanbanFilters, keepPageWh
   const previous = keepPageWhenGrouping ? matchCriteria(url.searchParams) : undefined
   for (const key of ["area", "search", "user", "status", "priority", "rice", "groupBy"] as const) {
     const value = filters[key]
-    if (value && (key !== "groupBy" || value !== "none")) url.searchParams.set(key, value)
+    if (value && (key !== "groupBy" || value !== "none" || url.searchParams.has("groupBy"))) {
+      url.searchParams.set(key, value)
+    }
     else if (key === "area") url.searchParams.set(key, "")
     else url.searchParams.delete(key)
   }

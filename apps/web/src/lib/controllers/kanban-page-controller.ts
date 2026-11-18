@@ -19,9 +19,8 @@ function matchBoardFocus(active: HTMLElement, replacement: HTMLElement) {
   const cardId = active.closest<HTMLElement>(".kanban-card")?.dataset.id
   const laneId = active.closest<HTMLElement>(".kanban-column")?.dataset.laneId
   const lane = laneId ? replacement.querySelector<HTMLElement>(`.kanban-column[data-lane-id="${CSS.escape(laneId)}"]`) : null
-  const cardSelector = cardId && `.kanban-card[data-id="${CSS.escape(cardId)}"]`
-  const card = cardSelector && (lane?.querySelector<HTMLElement>(cardSelector) ??
-    replacement.querySelector<HTMLElement>(cardSelector))
+  const selector = cardId && `.kanban-card[data-id="${CSS.escape(cardId)}"]`
+  const card = selector && (lane?.querySelector<HTMLElement>(selector) ?? replacement.querySelector<HTMLElement>(selector))
   const scope = card || lane
   if (!scope) return null
   const matches = Array.from(scope.querySelectorAll<HTMLElement>(active.localName))
@@ -30,14 +29,14 @@ function matchBoardFocus(active: HTMLElement, replacement: HTMLElement) {
     (card ? card.querySelector<HTMLElement>(".card-open-btn") : scope.querySelector<HTMLElement>(".kanban-column-header"))
 }
 
-function findProjectGroupFocus(board: HTMLElement, group: HTMLElement) {
+function findDynamicGroupFocus(board: HTMLElement, group: HTMLElement) {
   const laneId = group.closest<HTMLElement>(".kanban-column")?.dataset.laneId
   const key = group.dataset.swimlaneType
   const lane = laneId && board.querySelector(`.kanban-column[data-lane-id="${CSS.escape(laneId)}"]`)
-  const header = key && lane && lane.querySelector<HTMLElement>(
-    `.dynamic-group[data-swimlane-type="${CSS.escape(key)}"] .swimlane-header`,
-  )
-  return header || (lane || board).querySelector<HTMLElement>(".kanban-column-header")
+  const target = lane && [...lane.querySelectorAll<HTMLElement>(".dynamic-group")]
+    .find(candidate => candidate.dataset.swimlaneType === key)
+  return (target && target.querySelector<HTMLElement>(".swimlane-header")) ||
+    (lane || board).querySelector<HTMLElement>(".kanban-column-header")
 }
 
 export function initKanbanPage(signal: AbortSignal): void {
@@ -135,10 +134,11 @@ export function initKanbanPage(signal: AbortSignal): void {
       }
 
       const active = document.activeElement
-      const projectGroup = board.dataset.groupBy === "project" && board.contains(active) &&
+      const groupMode = board.dataset.groupBy
+      const focusedGroup = (groupMode === "assigned" || groupMode === "project") && board.contains(active) &&
         active?.matches("button.swimlane-header") ? active.closest<HTMLElement>(".swimlane-group") : null
       const shouldFocus = active === retry || board.contains(active) || (Boolean(focus) && active === document.body)
-      const previousControl = (focus?.afterStatusSave || board.dataset.groupBy === "project") &&
+      const previousControl = (focus?.afterStatusSave || groupMode === "project") &&
         active instanceof HTMLElement && board.contains(active) ? active : null
       const scroll = new Map(Array.from(board.querySelectorAll<HTMLElement>(".kanban-column"), lane =>
         [lane.dataset.status, lane.querySelector(".kanban-cards")?.scrollTop ?? 0] as const))
@@ -178,8 +178,8 @@ export function initKanbanPage(signal: AbortSignal): void {
       renderStatus("")
 
       const retainedControl = previousControl && matchBoardFocus(previousControl, board)
-      if (projectGroup && board.dataset.groupBy === "project") {
-        findProjectGroupFocus(board, projectGroup)?.focus({ preventScroll: true })
+      if (focusedGroup && board.dataset.groupBy === groupMode) {
+        findDynamicGroupFocus(board, focusedGroup)?.focus({ preventScroll: true })
       } else if (shouldFocus && (retainedControl || (!dataOnly && (focus || active === retry)))) {
         const lane = focus?.lane ? board.querySelector<HTMLElement>(`.kanban-column[data-status="${CSS.escape(focus.lane)}"]`) : null
         const card = focus?.taskId ? (lane || board).querySelector<HTMLElement>(
