@@ -103,9 +103,10 @@
     "error_update_failed": "Theip ar nuashonrú — bain triail eile as",
     "error_delete_failed": "Theip ar scriosadh — bain triail eile as",
     "task_created": "Tasc cruthaithe",
-    "area_deleted": "Limistéar scriosta",
+    "project_created": "Tionscadal cruthaithe",
+    "area_deleted": "Réimse scriosta",
     "project_deleted": "Tionscadal scriosta",
-    "area_created": "Limistéar cruthaithe",
+    "area_created": "Réimse cruthaithe",
     "updated": "Nuashonraithe"
   },
   "topbar": {

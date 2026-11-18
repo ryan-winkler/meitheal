@@ -340,13 +340,11 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
   .stree__dropdown :is(a[href], button, input),
   .stree__popover :is(a[href], button, input) { scroll-margin: 2px; }
 
-  /* P2-15: Scroll overflow indicator */
+  /* Sidebar, Boards or More owns scrolling for the complete hierarchy. */
   .stree__list {
     position: relative;
-    overflow-y: auto;
-    max-height: calc(100vh - 380px);
-    scrollbar-width: thin;
-    scrollbar-color: rgb(var(--border-rgb) / 0.3) transparent;
+    overflow: visible;
+    max-height: none;
   }
 
   /* ── Header — P2-11: compact & refined ── */
@@ -780,10 +778,18 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
   }
 
   /* ── Shared dropdown (body-level) ── */
+  .stree__dropdown, .stree__popover {
+    box-sizing: border-box;
+    max-inline-size: calc(100vw - 16px);
+    max-block-size: calc(100dvh - 16px);
+    overflow: auto;
+    overscroll-behavior: contain;
+  }
+  .stree__dropdown > *, .stree__popover > * { flex-shrink: 0; }
   .stree__dropdown {
     position: fixed;
     z-index: 10000;
-    min-width: 180px;
+    min-width: min(180px, calc(100vw - 16px));
     background: var(--bg-surface, #1e1e2e);
     border: 1px solid rgb(var(--border-rgb) / 0.5);
     border-radius: var(--radius-md, 8px);
@@ -823,7 +829,7 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
   .stree__popover {
     position: fixed;
     z-index: 10001;
-    min-width: 220px;
+    min-width: min(220px, calc(100vw - 16px));
     background: var(--bg-surface, #1e1e2e);
     border: 1px solid rgb(var(--border-rgb) / 0.5);
     border-radius: var(--radius-md, 8px);
@@ -1503,7 +1509,7 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
               insertProjectNode(children, projId, title, "\ud83d\udccb", "#146C4E", areaId)
               // Remove empty hint if present
               children.querySelector(".stree__empty-hint")?.remove()
-              showToast(i18n("sidebar.task_created", "Project created"), "success")
+              showToast(i18n("sidebar.project_created", "Project created"), "success")
             }
             else showToast(i18n("sidebar.error_create_failed", "Failed to create"), "error")
           } catch { showToast(i18n("sidebar.error_create_failed", "Failed to create"), "error") }
@@ -1766,7 +1772,7 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
       const selectedSwatch = colorIconPopover!.querySelector<HTMLButtonElement>("[data-swatch-color].selected")
       const icon = iconInput?.value?.trim() || "\ud83d\udccb"
       const color = selectedSwatch?.dataset.swatchColor || "#146C4E"
-      ctrl.hideAll()
+      closeTreePopup()
       const endpoint = activeEntityType === "area" ? `/api/areas/${entityId}` : `/api/projects/${entityId}`
       try {
         const res = await fetch(endpoint, {

@@ -46,7 +46,18 @@ function setSidebarCollapsed(collapsed: boolean): void {
   button?.setAttribute("title", label)
 }
 
-function syncSidebarState(): void {
+function hasVisibleSidebarFocus(): boolean {
+  const active = document.activeElement
+  const sidebar = document.getElementById("sidebar")
+  if (!(active instanceof HTMLElement) || !active.getClientRects().length
+    || getComputedStyle(active).visibility !== "visible" || active.closest("[hidden], [inert]")) return false
+  if (sidebar?.contains(active)) return true
+  const portal = active.closest<HTMLElement>("[data-sidebar-board-owner]")
+  const owner = portal && document.getElementById(portal.dataset.sidebarBoardOwner ?? "")
+  return Boolean(owner && sidebar?.contains(owner))
+}
+
+function syncSidebarState(preserveExpanded = hasVisibleSidebarFocus() && !document.body.classList.contains("sidebar-collapsed")): void {
   const root = document.documentElement.dataset
   const desktopSidebar = innerWidth > 768 && root.appearanceNavigation !== "navbar"
   let collapsed = desktopSidebar && ["folded", "hover"].includes(root.appearanceSidebar ?? "")
@@ -56,20 +67,24 @@ function syncSidebarState(): void {
       collapsed = remembered === "true" || (remembered === null && root.theme === "knight-rider")
     } catch { /* Open without storage. */ }
   }
-  setSidebarCollapsed(collapsed)
+  setSidebarCollapsed(collapsed && !preserveExpanded)
 }
 
 export function applyAppearancePreferences(preferences: AppearancePreferences): void {
   const previousNavigation = document.documentElement.dataset.appearanceNavigation
+  // Capture before changing layout attributes so a live preference cannot hide an active draft.
+  const preserveFocus = hasVisibleSidebarFocus()
+  const preserveExpanded = preserveFocus && !document.body.classList.contains("sidebar-collapsed")
   for (const [name, preference] of Object.entries(APPEARANCE_PREFERENCES)) {
     const value = preferences[name as AppearancePreferenceName]
     document.documentElement.setAttribute(appearanceAttribute(name), preference.options.includes(value) ? value : preference.defaultValue)
   }
-  syncSidebarState()
-  if (previousNavigation !== document.documentElement.dataset.appearanceNavigation) syncNavbarAreas()
+  syncSidebarState(preserveExpanded)
+  if (previousNavigation !== document.documentElement.dataset.appearanceNavigation) syncNavbarAreas(preserveFocus)
 }
 
-function syncNavbarAreas(): void {
+function syncNavbarAreas(preserveFocus = hasVisibleSidebarFocus()): void {
+  if (preserveFocus) return
   const group = document.querySelector<HTMLDetailsElement>("#sidebar-areas-group")
   if (!group) return
   if (innerWidth > 768 && document.documentElement.dataset.appearanceNavigation === "navbar") {
@@ -120,7 +135,14 @@ export function bindAppearanceNavigation(signal: AbortSignal): void {
     && document.documentElement.dataset.appearanceNavigation === "sidebar"
     && document.documentElement.dataset.appearanceSidebar === "hover"
   const pointerInside = () => matchMedia("(any-hover: hover)").matches && sidebar?.matches(":hover")
-  const focusInside = () => sidebar?.contains(document.activeElement)
+  const ownedPopup = (target: EventTarget | null, visibleOnly = true) => {
+    const popup = target instanceof Element ? target.closest<HTMLElement>("[data-sidebar-board-owner]") : null
+    const owner = popup && document.getElementById(popup.dataset.sidebarBoardOwner ?? "")
+    if (!popup || !owner || !sidebar?.contains(owner)) return null
+    if (visibleOnly && (popup.hidden || !popup.getClientRects().length || getComputedStyle(popup).visibility !== "visible")) return null
+    return popup
+  }
+  const focusInside = () => sidebar?.contains(document.activeElement) || Boolean(ownedPopup(document.activeElement))
   const closeHover = () => {
     if (hoverEnabled() && !pointerInside() && !focusInside()) setSidebarCollapsed(true)
   }
@@ -137,10 +159,16 @@ export function bindAppearanceNavigation(signal: AbortSignal): void {
   sidebar?.addEventListener("focusin", event => {
     if (hoverEnabled() && event.target !== edgeButton && event.target !== collapsedFocus) setSidebarCollapsed(false)
   }, { signal })
-  sidebar?.addEventListener("focusout", () => queueMicrotask(() => {
-    if (document.activeElement !== collapsedFocus) collapsedFocus = null
-    closeHover()
-  }), { signal })
+  document.addEventListener("focusin", event => {
+    if (hoverEnabled() && ownedPopup(event.target) && event.target !== collapsedFocus) setSidebarCollapsed(false)
+  }, { signal })
+  document.addEventListener("focusout", event => {
+    if (!(event.target instanceof Node) || (!sidebar?.contains(event.target) && !ownedPopup(event.target, false))) return
+    queueMicrotask(() => {
+      if (document.activeElement !== collapsedFocus) collapsedFocus = null
+      closeHover()
+    })
+  }, { signal })
   window.addEventListener("meitheal:theme-changed", () => {
     if (document.documentElement.dataset.appearanceSidebar === "remember") syncSidebarState()
   }, { signal })

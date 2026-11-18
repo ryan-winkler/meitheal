@@ -104,6 +104,7 @@
     "error_update_failed": "Failed to update — please try again",
     "error_delete_failed": "Failed to delete — please try again",
     "task_created": "Task created",
+    "project_created": "Project created",
     "area_deleted": "Area deleted",
     "project_deleted": "Project deleted",
     "area_created": "Area created",

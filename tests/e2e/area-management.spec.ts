@@ -1,5 +1,5 @@
 import { once } from "node:events"
-import { mkdtemp, rm } from "node:fs/promises"
+import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
@@ -9,7 +9,7 @@ import { launchPinBrowser, startCoreFixture } from "../scripts/task-pins-fixture
 
 test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires a disposable built app")
 
-test("Area options open the editor and save within Home Assistant ingress", async () => {
+test("Area options open the editor and save within Home Assistant ingress", async ({}, testInfo) => {
   const work = await mkdtemp(join(tmpdir(), "area-test-"))
   const child = startCoreFixture(work)
   child.stdout?.resume()
@@ -85,6 +85,24 @@ test("Area options open the editor and save within Home Assistant ingress", asyn
     await page.setViewportSize({ width: 1240, height: 780 })
     await page.goto(`${appUrl}/projects/${projectId}`)
     await expect(page.locator("#section-overview")).toBeVisible()
+    const disclosurePath = testInfo.outputPath("project-sidebar-disclosure.json")
+    await writeFile(disclosurePath, JSON.stringify(await page.evaluate(({ areaId, projectId }) => ({
+      savedBoardsCollapsed: sessionStorage.getItem("meitheal-boards-collapsed"),
+      boardsExpanded: document.querySelector("[data-sidebar-boards-toggle]")?.getAttribute("aria-expanded"),
+      areasOpen: (document.querySelector("#sidebar-areas-group") as HTMLDetailsElement | null)?.open,
+      areaExpanded: document.querySelector(`[data-area-toggle="${areaId}"]`)?.getAttribute("aria-expanded"),
+      projectOptionsCount: document.querySelectorAll(`[data-project-menu="${projectId}"]`).length,
+    }), { areaId, projectId }), null, 2))
+    await testInfo.attach("project-sidebar-disclosure.json", { path: disclosurePath, contentType: "application/json" })
+    const boards = page.locator("[data-sidebar-boards-toggle]")
+    if (await boards.getAttribute("aria-expanded") !== "true") await boards.press("Enter")
+    const areas = page.locator("#sidebar-areas-group")
+    if (!(await areas.evaluate(element => (element as HTMLDetailsElement).open))) {
+      await areas.locator(":scope > summary").press("Enter")
+    }
+    const areaToggle = page.locator(`[data-area-toggle="${areaId}"]`)
+    if (await areaToggle.getAttribute("aria-expanded") !== "true") await areaToggle.press("Enter")
+    await page.locator(`#project-nav-list [data-project-id="${projectId}"]`).focus()
     await page.getByRole("button", { name: "Project options - Tool storage" }).press("Enter")
     const editProject = page.getByRole("link", { name: "Edit Project", exact: true })
     await expect(editProject).toHaveAttribute("href", `${prefix}/projects/${projectId}#settings`)

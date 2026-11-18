@@ -3,7 +3,7 @@
  *
  * Handles:
  * - Fixed positioning relative to anchor elements
- * - Viewport boundary clamping (right + bottom overflow)
+ * - Viewport boundary clamping
  * - Outside-click dismissal
  * - Escape key dismissal
  * - Body-level rendering (escapes parent overflow clipping)
@@ -45,13 +45,13 @@ export class DropdownController {
 
     // Clamp to viewport after render
     requestAnimationFrame(() => {
+      if (this.active !== dropdown || dropdown.hidden || !dropdown.isConnected) return
       const dr = dropdown.getBoundingClientRect()
-      if (dr.right > window.innerWidth - 8) {
-        dropdown.style.left = `${window.innerWidth - dr.width - 8}px`
-      }
-      if (dr.bottom > window.innerHeight - 8) {
-        dropdown.style.top = `${rect.top - dr.height - 4}px`
-      }
+      const maxLeft = Math.max(8, window.innerWidth - dr.width - 8)
+      const maxTop = Math.max(8, window.innerHeight - dr.height - 8)
+      const top = rect.bottom + 4 + dr.height > window.innerHeight - 8 ? rect.top - dr.height - 4 : rect.bottom + 4
+      dropdown.style.left = `${Math.min(Math.max(rect.left, 8), maxLeft)}px`
+      dropdown.style.top = `${Math.min(Math.max(top, 8), maxTop)}px`
     })
 
     // Register dismissal listeners

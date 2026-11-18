@@ -91,7 +91,7 @@ test("sidebar can close again in desktop hover mode and on a phone", async ({ pa
   await page.setViewportSize({ width: 390, height: 844 })
   const menu = page.locator("#menu-toggle")
   const close = sidebar.getByRole("button", { name: "Close sidebar" })
-  await menu.click()
+  // Resizing with Sidebar focus now opens the drawer without moving that focus.
   await expect(menu).toHaveAttribute("aria-expanded", "true")
   await close.click()
   await expect(menu).toHaveAttribute("aria-expanded", "false")

@@ -134,7 +134,11 @@ Resize to a wide navbar and then a phone drawer, checking that the original link
 
 Repeat Project editing with a pinned copy present; the editable row and pinned title/icon must stay consistent. Create a Project from its Area, then open Add task without reloading and cancel with Escape. Confirm focus returns to Add task. With Boards collapsed, N opens the shared New Task modal rather than a hidden Project editor. Check popup dismissal in both phone-to-navbar and navbar-to-phone resizing; the closed phone drawer returns focus to its visible menu opener.
 
-Run `e2e/navigation-overflow-recovery.spec.ts`, `e2e/nav-overflow-hidden-links.spec.ts`, `e2e/navbar-hierarchy-actions.spec.ts` and `e2e/appearance-preferences.spec.ts` for these journeys.
+For hover navigation, open Area and Project actions with the pointer outside the sidebar, then cancel Rename and task capture with the keyboard. The owning sidebar must stay expanded. At a short phone viewport, every Color & Icon control and Save must remain reachable by keyboard and pointer.
+
+While a changed Area draft has focus, change font or navigation style from another tab. The same draft must stay visible and focused without sending a save request. Escape must still cancel it; a deliberate outside-click save keeps its normal behavior.
+
+Run `e2e/navigation-overflow-recovery.spec.ts`, `e2e/nav-overflow-hidden-links.spec.ts`, `e2e/navbar-hierarchy-actions.spec.ts`, `e2e/sidebar-popup-layouts.spec.ts`, `e2e/sidebar-appearance-edit.spec.ts` and `e2e/appearance-preferences.spec.ts` for these journeys.
 
 ## Task Link Verification
 
@@ -219,7 +223,7 @@ In a disposable ingress session, open **Planning → Triage**. Confirm the queue
 
 ### Verify sidebar navigation and task pins
 
-In a disposable browser session, select **Expand on hover or focus**, open the rail with the edge arrow, and close it with the arrow. Move the pointer within the rail after closing with **Ctrl+B**, then leave and re-enter to verify hover expansion. Reorder **Tasks** and the Household **Groups** in the sidebar, reload, and check that the task views and project tree move with their groups. On a phone, use **Move up** or **Move down** in the drawer.
+In a disposable browser session, select **Expand on hover or focus**, open the rail with the edge arrow, and close it with the arrow. Move the pointer within the rail after closing with **Ctrl+B**, then leave and re-enter to verify hover expansion. Reorder **Tasks** and **Boards** in the sidebar, reload, and check that task views move with Tasks and Household, Areas and Projects move with Boards. On a phone, use **Move up** or **Move down** in the drawer.
 
 In disposable HTTPS ingress, pin a Household task in Details. Open **Pinned tasks** from the sidebar and use the row’s thumbtack to remove the last pin. The sidebar destination should disappear. Switch to a second Home Assistant user and confirm their navigation uses their own pins. Run `e2e/sidebar-personalization.spec.ts` and `e2e/sidebar-pin-presence.spec.ts` against a built App for browser coverage.
 
@@ -587,12 +591,12 @@ Use [Named Boards](./named-boards.md) to verify owner, member, viewer and send-o
 
 After building the App, run `MEITHEAL_TEST_BROWSER=1 pnpm --filter @meitheal/tests test e2e/board-organizer.spec.ts e2e/named-board-authority.spec.ts`. Use disposable Home Assistant ingress for the complete browser journey.
 
-1. Open a named Board, create a Group and Project, then create a task in that Project. Use **File task** to change placement within the Board and verify the ticket key and column survive.
-2. Give Board and Group personal display names in **Settings → Navigation & Shortcuts → Labels**. Verify navigation, headings and search in the same account and language. Open a second account to check its own terms and repeat the saved links.
+1. Open a named Board, create a Area and Project, then create a task in that Project. Use **File task** to change placement within the Board and verify the ticket key and column survive.
+2. Give Board and Area personal display names in **Settings → Navigation & Shortcuts → Labels**. Verify navigation, headings and search in the same account and language. Open a second account to check its own terms and repeat the saved links.
 3. In **Tasks & Boards → Organization features**, exercise Everyone, Selected people and Nobody for the ten available modules. Verify the selected account’s page and API access. Board membership still governs the work on each named Board. See [Settings troubleshooting](settings-troubleshooting.md#choose-who-can-use-organization-features) for the choices and legacy-switch conflicts.
-4. Offer **Home Assistant Area** to a test account. Set and clear a task’s physical location and confirm its Board, Group and Project placement stays intact.
+4. Offer **Home Assistant Area** to a test account. Set and clear a task’s physical location and confirm its Board, Area and Project placement stays intact.
 5. Open `/planning#spaces`, an existing `/areas/{id}` bookmark and an existing `/projects/{id}` bookmark. Check the canonical Boards destinations, supported section fragments and ingress prefixes.
-6. From an active named Project’s settings, submit **New Routine** through the browser. Verify the saved template and its first completed ticket retain that Project and Group. Check the Routine in both its library and Today, mark it done once and verify the same occurrence is shown as Done. A viewer can read the row and a completion-denied member cannot mark it done.
+6. From an active named Project’s settings, submit **New Routine** through the browser. Verify the saved template and its first completed ticket retain that Project and Area. Check the Routine in both its library and Today, mark it done once and verify the same occurrence is shown as Done. A viewer can read the row and a completion-denied member cannot mark it done.
 7. Close the Project and verify a new occurrence cannot be created. Retry a previously completed period with current Board permissions and confirm it returns the original ticket. Revoke Board access or change the signed-in account and confirm the Routine list clears after revalidation. Reconnect and refresh after a failed check-in before retrying.
 
 
@@ -600,7 +604,7 @@ After building the App, run `MEITHEAL_TEST_BROWSER=1 pnpm --filter @meitheal/tes
 
 Schema 25 retains the reserved Household identity and MTH ticket counter while allowing an active/retired lifecycle. It replaces the Household state guard and installs storage guards that reject writes to retired Household tasks, Areas, Projects, Goals, templates, workflow lanes, drafts, pins, reactions, comments and mention receipts, Home Assistant locations, Calendar/Todo confirmation links and shared Pillars/Principles. Personal Pillars remain available. The migration and web startup share the same transaction and validation; startup does not reseed or repair retired Household work. Activity, mentions, reminders and inactivity views exclude retired Household work. Shared Goal reads and the Routine library continue to show authorized work from active named Boards.
 
-The scoped workspace controls increase total generated client assets by approximately 1.32 percent. The static allowance is 1,765,000 bytes; runtime and physical Green limits are unchanged. Run `pnpm --filter @meitheal/web perf:budget` against a fresh production build. See [the workspace decision](../decisions/0025-board-workspace-lifecycle.md) for the measured baseline and allowance.
+The scoped workspace controls increase total generated client assets by approximately 1.39 percent. The static allowance is 1,765,000 bytes; runtime and physical Green limits are unchanged. Run `pnpm --filter @meitheal/web perf:budget` against a fresh production build. See [the workspace decision](../decisions/0025-board-workspace-lifecycle.md) for the measured baseline and allowance.
 
 In a disposable database, run `tests/e2e/board-lifecycle.spec.ts`. Delete populated and empty named Boards, verify owners can restore them, and confirm a member, deletion-blocked child and agent cannot delete them. Delete Household as the verified browser administrator. Confirm named Boards remain usable, global shared counts disappear, legacy capture returns the explicit paused message, and calendar/Todo import and write-back create no changes. Restart and verify Household stays deleted, then restore it and compare exact task IDs, ticket numbers, planning relationships, draft receipts and sync identifiers. Require `PRAGMA integrity_check` and `PRAGMA foreign_key_check` after restart and recovery.
 

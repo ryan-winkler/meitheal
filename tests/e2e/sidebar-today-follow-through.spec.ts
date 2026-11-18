@@ -91,7 +91,7 @@ test.describe("Sidebar and Today follow-through", () => {
     await page.evaluate(() => localStorage.setItem("meitheal_project_nav_group_collapsed", "true"))
     await page.setViewportSize({ width: 320, height: 812 })
     await expect(page.locator("#menu-toggle")).toBeEnabled()
-    await page.locator("#menu-toggle").click()
+    await expect(page.locator("#menu-toggle")).toHaveAttribute("aria-expanded", "true")
     await expect(toggle).toBeInViewport()
     await expect(group).toHaveAttribute("open", "")
     await toggle.press("Enter")
@@ -134,20 +134,31 @@ test.describe("Sidebar and Today follow-through", () => {
     expect(await page.locator(".sidebar-footer").evaluate(footer => footer.getBoundingClientRect().height)).toBeLessThan(70)
 
     await page.setViewportSize({ width: 320, height: 812 })
+    const mobileMenu = page.locator("#menu-toggle")
+    await expect(mobileMenu).toHaveAttribute("aria-expanded", "true")
+    await page.locator("#sidebar").getByRole("button", { name: "Close sidebar", exact: true }).click()
+    await expect(mobileMenu).toHaveAttribute("aria-expanded", "false")
+    await expect(mobileMenu).toBeFocused()
     await expect(page.getByLabel("Add a task for today", { exact: true })).toBeInViewport()
     const title = `Quick capture ${crypto.randomUUID().slice(0, 8)}`
     await page.getByLabel("Add a task for today", { exact: true }).fill(title)
-    await Promise.all([
-      page.waitForEvent("load"),
-      page.locator("#quick-add-form").getByRole("button", { name: "Add", exact: true }).click(),
-    ])
+    const receipt = page.waitForResponse(response =>
+      new URL(response.url()).pathname === "/api/tasks" && response.request().method() === "POST",
+    )
+    await page.locator("#quick-add-form").getByRole("button", { name: "Add", exact: true }).click()
+    const response = await receipt
+    expect(response.status()).toBe(201)
+    expect(response.request().postDataJSON().title).toBe(title)
     await expect.poll(async () => {
       const response = await request.get(`/api/tasks?q=${encodeURIComponent(title)}`)
       const data = await response.json()
       return data.tasks?.[0]?.title
     }).toBe(title)
     const capture = await (await request.get(`/api/tasks?q=${encodeURIComponent(title)}`)).json()
-    createdTaskIds.push(capture.tasks[0].id)
+    const capturedId = capture.tasks[0].id as string
+    expect(capturedId).toBeTruthy()
+    createdTaskIds.push(capturedId)
+    await expect(page.getByLabel("Add a task for today", { exact: true })).toHaveValue("")
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(321)
     await expect.poll(() => page.evaluate(() => typeof window.openTaskDetail)).toBe("function")
     await page.locator("#today-bar-switcher-btn").click()
@@ -155,5 +166,6 @@ test.describe("Sidebar and Today follow-through", () => {
     await page.getByRole("menuitem", { name: /Work/ }).press("Enter")
     await expect(page).toHaveURL(/#today-work$/)
     await expect(page.locator("#section-today")).toBeVisible()
+    await expect(page.locator(`#today-due-list .tli[data-id="${capturedId}"]`)).toBeVisible()
   })
 })
