@@ -33,3 +33,9 @@ The lifecycle transition checks the expected Board revision and current authorit
 Schema 25 preserves the retired Household state during startup. Restore reactivates its original records and ticket sequence. An upgrade fixture must retain a populated schema 24 database and demonstrate exact-source App backup restoration with integrity checks.
 
 Browser verification covers the common Kanban, Area filtering, keyboard navigation, phone layout, named ticket restrictions, revocation and both lifecycle entry points. Release verification also checks the packaged Home Assistant Supervisor and the installed Green image and discovery manifest. The existing Home Assistant App backup procedure provides the complete recovery archive.
+
+## Alternatives considered
+
+Retaining two renderers would require parallel card, keyboard and error-state fixes. A unified task repository could remove more duplication, but would also migrate legacy Household integrations and references. Shared presentation with authorized scope adapters addresses the current journey with a smaller persistence change.
+
+A separate deletion archive would introduce additional relationship recovery and access-marker rules. Reusing the retired state preserves identity directly. Automatically creating a replacement Household would require transferring integration destinations and audience; pausing shared work until restoration retains the existing destination.

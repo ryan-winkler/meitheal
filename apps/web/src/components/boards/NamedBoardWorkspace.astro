@@ -42,12 +42,13 @@ const grouping = { area: scope?.project ? undefined : scope?.area?.id, project: 
 const title = scope?.project?.title ?? scope?.area?.name ?? view?.board.name ?? "Board"
 const nextAction = view?.summary?.next
 ---
-{taskWorkspace ? <TaskWorkspace namedBoardId={boardId} /> : <Layout title={label("board")}>
+{taskWorkspace ? <TaskWorkspace namedBoardId={boardId} /> : <Layout title={label("board")} suppressHouseholdTaskModals>
   <span slot="page-title">{label("board")}</span>
   <div class="boards-workspace">
     {!view || !boardId || !user ? <p>This Board is unavailable.</p> :
       <div data-board-directory data-board-verify={verifyPath} data-board-key={boardViewKey(view, user.actor.id)}
-        data-board-session={boardSessionProof(user.actor.id)} data-board-id={boardId}>
+        data-board-session={boardSessionProof(user.actor.id)} data-board-id={boardId}
+        data-board-can-create={String(Boolean(canEdit) && (!scope?.project || scope.project.status === "active"))}>
         <nav class="board-back" aria-label="Board navigation">
           <a href="/boards">{label("board", true)}</a>
           <span aria-hidden="true">›</span><a href={boardWorkspaceHref(boardId)}>{view.board.name}</a>
@@ -187,6 +188,10 @@ const nextAction = view?.summary?.next
 
 <script>
   import { pageLifecycle } from "@lib/page-lifecycle"
+  import { bindNamedBoardPlanningCapture } from "@lib/named-board-kanban-controller"
   import { bindBoardPage } from "@lib/boards-page"
-  pageLifecycle.onPageLoad(bindBoardPage)
+  pageLifecycle.onPageLoad(signal => {
+    bindBoardPage(signal)
+    bindNamedBoardPlanningCapture(signal)
+  })
 </script>

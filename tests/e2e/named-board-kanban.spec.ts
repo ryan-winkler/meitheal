@@ -59,6 +59,12 @@ test("named Boards use the common Kanban with paged capture, version conflicts, 
     await page.getByRole("option", { name: "Named only Area", exact: true }).click()
     await expect(page).toHaveURL(new RegExp("area=" + namedArea))
     await expect(page.locator(".kanban-card")).toHaveCount(0)
+    await page.goto(app + path)
+    await expect(page).toHaveURL(url => url.searchParams.get("area") === namedArea)
+    await expect(page.locator(".kanban-card")).toHaveCount(0)
+    await page.locator("#kanban-bar-new-task").click()
+    await expect(page.locator('[data-named-inspector-create] input[name="areaId"]')).toHaveValue(namedArea)
+    await page.locator("#td-close").click()
     await page.locator("#area-selector-trigger").click()
     await page.getByRole("option", { name: "All Areas", exact: true }).click()
     await expect(page.locator(".kanban-card")).toHaveCount(25)
@@ -102,6 +108,29 @@ test("named Boards use the common Kanban with paged capture, version conflicts, 
     await expect(captureCard).toHaveAttribute("data-status", "pending")
     await captureCard.dragTo(activeLane.locator(".kanban-column-header"))
     await expect(captureCard).toHaveAttribute("data-status", "active")
+    expect((await owner.request.post(api + "/planning", { headers, data: {
+      action: "project", title: "Named planning Project", areaId: namedArea, goalId: null,
+    } })).status()).toBe(200)
+    const planning = await (await owner.request.get(api)).json()
+    const namedProject = planning.planning.projects.find((project: { title: string }) => project.title === "Named planning Project").id
+    const householdPosts: string[] = []
+    page.on("request", request => { if (request.method() === "POST" && new URL(request.url()).pathname.endsWith("/api/tasks")) householdPosts.push(request.url()) })
+    for (const scope of ["", `area=${namedArea}&`, `project=${namedProject}&`]) {
+      await page.goto(app + path + "?" + scope + "view=groups")
+      await expect(page.locator("#new-task-overlay")).toHaveCount(0)
+      await page.locator("#sidebar-rail-new-task").click()
+      await expect(page.locator("#task-detail-overlay")).toHaveClass(/active/)
+      await expect(page.locator('[data-named-inspector-create] input[name="projectId"]')).toHaveValue(scope.startsWith("project") ? namedProject : "")
+      if (scope.startsWith("project")) {
+        await page.locator("[data-named-inspector-create]").getByRole("textbox", { name: "Title", exact: true }).fill("Planning scope capture")
+        const savedPlanning = page.waitForResponse(response => response.request().method() === "POST" && response.url() === api + "/tickets").then(response => response.json())
+        await page.locator("[data-named-inspector-create]").getByRole("button", { name: "Create task", exact: true }).click()
+        const ticket = await savedPlanning
+        const placed = await (await owner.request.get(api + "?view=tasks&ticket=" + ticket.id)).json()
+        expect(placed.tasks[0].placement).toMatchObject({ areaId: namedArea, projectId: namedProject })
+      } else await page.locator("#td-close").click()
+    }
+    expect(householdPosts).toEqual([])
     const member = await browser.newContext({ ignoreHTTPSErrors: true, extraHTTPHeaders: {} })
     await member.addCookies([{ name: "feedback-fixture", value: "member-two", url: origin }])
     const childPage = await member.newPage()

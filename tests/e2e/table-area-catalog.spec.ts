@@ -35,6 +35,7 @@ test("Table keeps Area group names and bulk choices in sync with accepted rows",
     expect((await request.delete(`/api/areas/${retiredId}`, { headers })).ok()).toBe(true)
 
     await page.route("**/api/areas", route => route.fulfill({ status: 503, json: {} }))
+    await page.route("**/api/boards/household?view=groups**", route => route.fulfill({ status: 503, json: {} }))
     const query = new URLSearchParams({ view: "table", area: "", search: term, groupBy: "area" })
     await page.route("**/tasks?**", async route => {
       const response = await route.fetch()
@@ -49,7 +50,7 @@ test("Table keeps Area group names and bulk choices in sync with accepted rows",
     const named = header(areaId)
     const bulk = page.locator("#bulk-area")
     const option = bulk.locator(`option[value="${areaId}"]`)
-    const retry = page.getByRole("button", { name: "Retry" })
+    const retry = page.getByRole("button", { name: "Retry", exact: true })
     const selector = page.locator("#area-selector-dropdown")
     const selectorOption = selector.locator(`[data-area-id="${areaId}"]`)
     const selectorLabel = page.locator("[data-area-label]")

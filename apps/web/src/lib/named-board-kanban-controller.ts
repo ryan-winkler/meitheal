@@ -1,9 +1,44 @@
-import { initAreaSelector } from "./area-selector-controller"
+import { getSelectedAreaId, initAreaSelector } from "./area-selector-controller"
 import { safeFetch } from "./safe-fetch"
 import { isDoneStatus } from "./status-config"
 import { safeIngressHref } from "./ingress-navigation"
 import { updateKanbanFilters } from "./kanban-query"
 import { initUnifiedBarSearchLauncher } from "./unified-bar-controller"
+
+function namedCaptureCapabilities(canCreate: boolean, signal: AbortSignal) {
+  const previous = new Map<HTMLButtonElement, boolean>()
+  const primary = document.getElementById("sidebar-rail-new-task") as HTMLButtonElement | null
+  if (primary) { previous.set(primary, primary.disabled); primary.disabled = !canCreate }
+  document.querySelectorAll<HTMLButtonElement>("[data-create-task-kind]").forEach(button => {
+    previous.set(button, button.disabled)
+    button.disabled = !canCreate || button.dataset.createTaskKind !== "standard_action"
+    if (button.disabled) button.title = "This action is unavailable on this Board."
+  })
+  signal.addEventListener("abort", () => previous.forEach((disabled, button) => { button.disabled = disabled }), { once: true })
+}
+
+/** Planning capture opens the existing scoped inspector, keeping the selected Board, Area and Project. */
+export function bindNamedBoardPlanningCapture(signal: AbortSignal) {
+  const root = document.querySelector<HTMLElement>("[data-board-directory][data-board-id]:not([data-task-workspace])")
+  if (!root || root.dataset.namedCaptureBound) return
+  root.dataset.namedCaptureBound = "true"
+  const canCreate = root.dataset.boardCanCreate === "true"
+  namedCaptureCapabilities(canCreate, signal)
+  const create = () => {
+    if (!canCreate || !root.isConnected || !root.childElementCount) return
+    const url = new URL(location.href)
+    for (const key of ["view", "planning", "ticket"]) url.searchParams.delete(key)
+    if (!url.searchParams.has("area") && !url.searchParams.has("project")) url.searchParams.set("area", "")
+    url.searchParams.set("capture", "1")
+    url.hash = "kanban"
+    location.href = safeIngressHref(url.pathname + url.search + url.hash)
+  }
+  window.openNewTaskModal = create
+  signal.addEventListener("abort", () => {
+    delete root.dataset.namedCaptureBound
+    if (window.openNewTaskModal === create) delete window.openNewTaskModal
+  }, { once: true })
+}
 
 /** Named Boards use the common rendered cards, with versioned, grant-fenced Board operations. */
 export function bindNamedBoardKanban(signal: AbortSignal) {
@@ -28,6 +63,18 @@ export function bindNamedBoardKanban(signal: AbortSignal) {
   if (newButton) newButton.disabled = !canCreate
   initUnifiedBarSearchLauncher("kanban-bar")
   initAreaSelector(signal)
+  const entry = new URL(location.href)
+  let restoringArea = !entry.searchParams.has("area") && !entry.searchParams.has("project") && Boolean(getSelectedAreaId())
+  if (restoringArea) { board.style.visibility = "hidden"; if (newButton) newButton.disabled = true }
+  namedCaptureCapabilities(canCreate && !restoringArea, signal)
+  document.addEventListener("meitheal:area-catalog-ready", event => {
+    if (!restoringArea || !root.isConnected) return
+    const areaId = (event as CustomEvent<{ areaId: string }>).detail?.areaId
+    const verified = typeof areaId === "string" && root.querySelector(`[data-area-id="${CSS.escape(areaId)}"]`)
+    const url = new URL(location.href)
+    url.searchParams.set("area", verified && typeof areaId === "string" ? areaId : "")
+    location.href = safeIngressHref(url.pathname + url.search + url.hash)
+  }, { signal })
 
   function close(restoreFocus = true) {
     overlay!.classList.remove("active")
@@ -37,7 +84,7 @@ export function bindNamedBoardKanban(signal: AbortSignal) {
   }
   function open(id?: string, laneId?: string) {
     if (!root!.isConnected || !root!.childElementCount || signal.aborted) return
-    if (!id && !canCreate) return
+    if (restoringArea || (!id && !canCreate)) return
     close(false)
     const section = id ? overlay!.querySelector<HTMLElement>(`[data-named-inspector-ticket="${CSS.escape(id)}"]`)
       : overlay!.querySelector<HTMLElement>("[data-named-inspector-create]")
@@ -149,4 +196,10 @@ export function bindNamedBoardKanban(signal: AbortSignal) {
   }, { once: true })
   const initialTicket = new URL(location.href).searchParams.get("ticket")
   if (initialTicket) open(initialTicket)
+  else if (new URL(location.href).searchParams.get("capture") === "1") {
+    open()
+    const url = new URL(location.href)
+    url.searchParams.delete("capture")
+    history.replaceState(history.state, "", url.pathname + url.search + url.hash)
+  }
 }
