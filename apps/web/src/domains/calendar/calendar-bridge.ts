@@ -436,7 +436,7 @@ async function readSyncedTaskFields(
     const chunk = ids.slice(offset, offset + 200)
     const result = await client.execute({
       sql: `SELECT id, title, due_date, start_date, end_date, status, task_kind, recurrence_rule, idempotency_key
-            FROM tasks WHERE task_board_id IS NULL AND id IN (${chunk.map(() => "?").join(", ")})`,
+            FROM tasks WHERE task_board_id IS NULL AND EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active') AND id IN (${chunk.map(() => "?").join(", ")})`,
       args: chunk,
     })
     for (const row of result.rows) rows.set(String(row.id), row as unknown as SyncedTaskFields)
@@ -992,7 +992,7 @@ async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState |
     for (let offset = 0; offset < linkedTaskIds.length; offset += 200) {
       const chunk = linkedTaskIds.slice(offset, offset + 200)
       const present = await client.execute({
-        sql: `SELECT id FROM tasks WHERE task_board_id IS NULL AND id IN (${chunk.map(() => "?").join(", ")})`,
+        sql: `SELECT id FROM tasks WHERE task_board_id IS NULL AND EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active') AND id IN (${chunk.map(() => "?").join(", ")})`,
         args: chunk,
       })
       for (const row of present.rows) presentTaskIds.add(String(row.id))
@@ -1051,7 +1051,7 @@ async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState |
         // can be matched by title. Any other household task is left alone.
         // Only a task that calendar sync created, or one Meitheal pushed to a calendar, can
         // be matched by title. A task the household created in Meitheal is never linked.
-        sql: `SELECT id, title FROM tasks WHERE task_board_id IS NULL AND status != 'complete' AND title IN (${placeholders})
+        sql: `SELECT id, title FROM tasks WHERE task_board_id IS NULL AND EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active') AND status != 'complete' AND title IN (${placeholders})
                 AND ((idempotency_key LIKE 'cal-sync-%' OR idempotency_key LIKE 'caldav-sync-%')
                   OR id IN (SELECT task_id FROM calendar_confirmations WHERE source = 'ha.write_back'))
                 AND NOT EXISTS (
@@ -1420,7 +1420,7 @@ async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState |
                        t.status AS task_status,
                        (json_valid(c.payload) AND json_type(c.payload, '$.occurrences') IS NOT NULL) AS has_occurrences
                 FROM calendar_confirmations c
-                JOIN tasks t ON t.id = c.task_id AND t.task_board_id IS NULL
+                JOIN tasks t ON t.id = c.task_id AND t.task_board_id IS NULL AND EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active')
                 WHERE c.source = 'ha.calendar_sync'
                   AND CASE WHEN json_valid(c.payload) THEN json_extract(c.payload, '$.entity_id') ELSE NULL END = ?`,
           args: [entityId],
@@ -1447,19 +1447,19 @@ async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState |
             // repeating Event task keeps creating its next occurrence.
             if (touchedTaskIds.has(taskId) || Number(row.created_by_sync ?? 0) === 0) {
               await client.execute({
-                sql: "DELETE FROM calendar_confirmations WHERE confirmation_id = ?",
+                sql: "DELETE FROM calendar_confirmations WHERE confirmation_id = ? AND EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active')",
                 args: [String(row.confirmation_id)],
               })
             } else {
               await client.execute({
-                sql: `UPDATE tasks SET status = ?, updated_at = ? WHERE id = ? AND task_board_id IS NULL AND status != ?`,
+                sql: `UPDATE tasks SET status = ?, updated_at = ? WHERE id = ? AND task_board_id IS NULL AND EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active') AND status != ?`,
                 args: [STATUS.COMPLETE, Date.now(), taskId, STATUS.COMPLETE],
               })
               // The deleted event's occurrence list would otherwise keep showing HA
               // badges on the month grid for every day the series used to cover.
               await client.execute({
                 sql: `UPDATE calendar_confirmations SET payload = json_remove(payload, '$.occurrences')
-                      WHERE confirmation_id = ? AND json_valid(payload)`,
+                      WHERE confirmation_id = ? AND json_valid(payload) AND EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active')`,
                 args: [String(row.confirmation_id)],
               })
               logger.log("info", {
@@ -1689,7 +1689,7 @@ export async function pushTaskToCalendar(
       const client = mod.getPersistenceClient()
       await client.execute({
         sql: `INSERT INTO calendar_confirmations (confirmation_id, task_id, request_id, provider_event_id,
-                source, payload, created_at) VALUES (?, ?, ?, ?, 'ha.write_back', ?, ?)`,
+                source, payload, created_at) SELECT ?, ?, ?, ?, 'ha.write_back', ?, ? WHERE EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active')`,
         args: [
           crypto.randomUUID(),
           taskId,
@@ -1744,7 +1744,7 @@ export async function removeTaskCalendarEvent(taskId: string): Promise<boolean> 
 
     // Clean up confirmation record regardless of HA response
     await client.execute({
-      sql: "DELETE FROM calendar_confirmations WHERE task_id = ? AND source = 'ha.write_back'",
+      sql: "DELETE FROM calendar_confirmations WHERE task_id = ? AND source = 'ha.write_back' AND EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active')",
       args: [taskId],
     })
 

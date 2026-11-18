@@ -2876,6 +2876,9 @@ export class TaskRepository {
           let skipped = 0
           const ticketNumbers: number[] = []
           const errors: SyncChunkItemError[] = []
+          // Recheck inside the pinned writer before releasing links or recording a confirmation-only mutation.
+          const [household] = yield ["SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active'"]
+          if (!household?.rows.length) return { created, updated, linked, skipped: chunk.length, ticketNumbers, errors }
 
           for (let localIdx = 0; localIdx < chunk.length; localIdx++) {
             const globalIdx = offset + localIdx

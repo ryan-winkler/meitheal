@@ -5,10 +5,25 @@ import { NamedBoardTaskRepository } from "@domains/tasks/persistence/named-board
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import type { HomeAssistantAreaFilter } from "./home-assistant-area-access"
 import type { BoardWorkspaceSelection } from "./board-workspace"
+import { ORGANIZATION_FEATURES, type OrganizationFeature } from "./organization-availability"
+import { isOrganizationFeatureAvailable } from "./organization-request-context"
 import { apiJson } from "./api-response"
 
 export function boardViewKey(value: unknown, actorId: string): string {
   return createHash("sha256").update(JSON.stringify([actorId, value])).digest("hex")
+}
+
+/** Bind private DOM to current authority independently of ordinary task-content freshness. */
+export function boardAuthorityKey(view: NonNullable<Awaited<ReturnType<NamedBoardTaskRepository["view"]>>>, actorId: string): string {
+  const board = view.board
+  return boardViewKey({
+    epoch: view.authorityRevision,
+    board: { id: board.id, role: board.role, state: board.state, revision: board.revision,
+      denyCompletion: board.denyCompletion, denyDeletion: board.denyDeletion, policy: board.policy },
+    area: view.context?.area?.id,
+    project: view.context?.project && { id: view.context.project.id, status: view.context.project.status },
+    features: (Object.keys(ORGANIZATION_FEATURES) as OrganizationFeature[]).filter(isOrganizationFeatureAvailable),
+  }, actorId)
 }
 
 export function boardViewResponse(value: unknown, actorId: string, payload = value): Response {

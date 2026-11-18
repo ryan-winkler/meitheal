@@ -29,7 +29,8 @@ const organization = await organizationLabelsFor(Astro)
       if (value !== null) target.searchParams.set(name, value)
     }
     target.hash = fragments[location.hash.slice(1)] ?? ""
-    target.searchParams.set("view", "groups")
+    if (target.hash === "#tasks") { target.searchParams.delete("view"); target.hash = "kanban" }
+    else target.searchParams.set("view", "groups")
     location.replace(safeIngressHref(target.pathname + target.search + target.hash, bridge.dataset.ingressPrefix ?? ""))
   })
 </script>

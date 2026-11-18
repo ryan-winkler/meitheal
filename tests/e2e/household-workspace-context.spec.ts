@@ -49,6 +49,17 @@ test("Household picker and every task view retain context; modal, lane and draft
         await expect(page.locator(`#tasks-view-${view}`)).toBeVisible()
       }
     }
+    for (const scope of [`area=${area.id}`, `project=${project.id}`]) {
+      const planningResponse = await page.goto(app + `/boards/household?${scope}&view=groups`)
+      expect(planningResponse?.status(), scope).toBe(200)
+      await page.getByRole("tab", { name: /Tasks/ }).click()
+      await expect(page.locator("#kanban-shell")).toHaveAttribute("data-kanban-booted", "true")
+      await expect(page.locator(`.kanban-card[data-id="${task.id}"]`)).toBeVisible()
+    }
+    for (const legacy of [`/areas/${area.id}#tasks`, `/projects/${project.id}#tasks`]) {
+      await page.goto(app + legacy)
+      await expect(page.locator("#kanban-shell")).toHaveAttribute("data-kanban-booted", "true")
+    }
     await page.goto(app + `/boards/household?project=${project.id}`)
     await page.locator("#kanban-bar-new-task").click()
     await page.locator("#new-task-title-input").fill("Modal Project capture")

@@ -11,10 +11,15 @@ export function bindBoardPage(signal: AbortSignal) {
   const root = document.querySelector<HTMLElement>("[data-board-directory]")
   const status = document.querySelector<HTMLElement>("[data-board-expired]")
   if (!root || !status || root.dataset.bound) return
-  const { boardKey, boardVerify, boardSession } = root.dataset
+  const { boardKey, boardVerify, boardSession, boardAuthority } = root.dataset
   if (!boardKey || !boardVerify || !boardSession) return
   root.dataset.bound = "true"
 
+  const stale = document.createElement("p")
+  stale.dataset.boardStale = ""
+  stale.setAttribute("role", "status")
+  stale.hidden = true
+  root.prepend(stale)
   let expired = false
   let checking: AbortController | undefined
   const placeholder = document.createComment("")
@@ -42,7 +47,11 @@ export function bindBoardPage(signal: AbortSignal) {
         signal: AbortSignal.any([signal, active.signal, AbortSignal.timeout(4_000)]),
       })
       if (active.signal.aborted || signal.aborted || document.hidden) return
-      if (response.ok && response.headers.get("x-meitheal-board-view") === boardKey) restore()
+      if (response.ok && boardAuthority && response.headers.get("x-meitheal-board-authority") === boardAuthority) {
+        restore()
+        stale.hidden = response.headers.get("x-meitheal-board-view") === boardKey
+        stale.textContent = stale.hidden ? "" : "This Board changed. Your input is kept on this page. Refresh when ready to load the latest versions."
+      } else if (response.ok && !boardAuthority && response.headers.get("x-meitheal-board-view") === boardKey) restore()
       else if (response.ok || response.status === 403 || response.status === 404) expire()
       else detach()
     } catch {

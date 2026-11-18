@@ -1,5 +1,6 @@
 /** Legacy shared-work surfaces. Named Board and recovery routes remain available. */
 export function householdWorkRoute(path: string, method: string): boolean {
+  if (path === "/habits" && (method === "GET" || method === "HEAD")) return false
   if (path === "/api/goals" && (method === "GET" || method === "HEAD")) return false
   if (path === "/api/boards/household") return method === "GET" || method === "HEAD"
   if (/^\/boards\/household(?:\/|$)/.test(path)) return true

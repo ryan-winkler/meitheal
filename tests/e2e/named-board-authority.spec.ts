@@ -3,6 +3,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { expect, test } from "@playwright/test"
 import { createAgentToken, ensureAgentTokenSchema, revokeAgentToken, updateAgentToken } from "../../apps/web/src/domains/auth/agent-token-store"
+import { boardAuthorityKey, boardViewKey } from "../../apps/web/src/lib/board-view"
 import { BoardIntakeRepository } from "../../apps/web/src/domains/tasks/persistence/board-intake-repository"
 import { changeBoardGrants, readBoardGrantRevision } from "../../apps/web/src/domains/tasks/persistence/board-grant-fence"
 import { NamedBoardRepository, permitsBoardTaskAction } from "../../apps/web/src/domains/tasks/persistence/named-board-repository"
@@ -563,6 +564,9 @@ test("named Kanban filters the authorized index before per-lane paging and keeps
   expect(await tasks.delete(child, id, task.id, task.version)).toMatchObject({ ok: false, errorCode: "denied" })
   const moved = await tasks.move(child, id, task.id, active, task.version)
   expect(moved.ok).toBe(true)
+  const refreshed = await tasks.view(child, id, 0, selection, undefined, { params: new URLSearchParams() })
+  expect(boardAuthorityKey(first!, child.id)).toBe(boardAuthorityKey(refreshed!, child.id))
+  expect(boardViewKey(first, child.id)).not.toBe(boardViewKey(refreshed, child.id))
   expect(await tasks.edit(child, id, task.id, task.version, { title: "Stale overwrite" })).toMatchObject({ ok: false, errorCode: "stale" })
   await boards.updateMember(parent.id, id, child.id, null, [parent.id, child.id])
   expect(await tasks.view(child, id, 0, selection, undefined, { params: new URLSearchParams() })).toBeNull()

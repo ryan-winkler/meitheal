@@ -28,11 +28,15 @@ Deleting Household pauses its shared capture, Routine generation and inbound Hom
 
 The lifecycle transition checks the expected Board revision and current authority inside the writer transaction. It advances the existing Board access marker. Storage guards reject writes to retired Household records, including a request admitted before deletion. The API distinguishes stale revisions, denied operations, unavailable storage and a committed state whose access-marker publication remains pending.
 
+Named workspace polling verifies authority separately from content freshness. The authority hash includes the actor, effective rights, lifecycle, selected context, available features and grant epoch. Ordinary task edits can therefore show a stale-content notice while preserving an unsaved form; authority changes and unverifiable access still clear the private workspace.
+
 ## Recovery and validation
 
 Schema 25 preserves the retired Household state during startup. Restore reactivates its original records and ticket sequence. An upgrade fixture must retain a populated schema 24 database and demonstrate exact-source App backup restoration with integrity checks.
 
 Browser verification covers the common Kanban, Area filtering, keyboard navigation, phone layout, named ticket restrictions, revocation and both lifecycle entry points. Release verification also checks the packaged Home Assistant Supervisor and the installed Green image and discovery manifest. The existing Home Assistant App backup procedure provides the complete recovery archive.
+
+The static client asset allowance changes from 1,740,000 to 1,760,000 bytes. The pre-change build measured 1,737,433 bytes; the shared workspace and scoped controls measured 1,750,907 bytes, an increase below one percent across all client assets. Retain the existing compiler and runtime memory, CPU and latency limits. This allowance does not change the physical Green release profile.
 
 ## Alternatives considered
 

@@ -18,6 +18,7 @@ import { newOrganizationLabel, organizationLabelsFor } from "@lib/organization-l
 import UnifiedBar from "../components/layout/UnifiedBar.astro"
 import Layout from "../layouts/Layout.astro"
 
+import { householdBoardIsActive } from "@domains/tasks/persistence/named-board-repository"
 import { TemplateRepository, type RoutineWithStats } from "@domains/tasks/persistence/template-repository"
 import { HierarchyRepository, type AreaRow } from "@domains/tasks/persistence/hierarchy-repository"
 import {
@@ -44,6 +45,7 @@ if (!isEnabled) {
 
 let habits: HabitViewModel[] = []
 let loadFailed = false
+let householdActive = false
 let areas: AreaRow[] = []
 const areaId = Astro.url.searchParams.get("area_id")
 const openNew = Astro.url.searchParams.get("new") === "1"
@@ -94,9 +96,10 @@ function formatLastCompletedDate(value: string | null): string {
 try {
   await ensureSchema()
   const client = getPersistenceClient()
+  householdActive = await householdBoardIsActive(client)
   areas = await new HierarchyRepository(client).findAllAreas()
   area = areaId ? areas.find(candidate => candidate.id === areaId) : undefined
-  if (areaId !== null && !area) return Astro.redirect(`${Astro.locals.ingressPath || ""}/planning#spaces`)
+  if (areaId !== null && !area) return Astro.redirect(`${Astro.locals.ingressPath || ""}/${householdActive ? "planning#spaces" : "boards?notice=household-deleted"}`)
   const routines = await new TemplateRepository(client).getRoutinesWithStats(area?.id)
   habits = routines.map((routine) => ({
     ...routine,
@@ -112,11 +115,11 @@ const longestStreak = Math.max(0, ...habits.map((habit) => habit.longestStreak))
 const totalCompletions = habits.reduce((sum, habit) => sum + habit.totalCompletions, 0)
 const dailyCount = habits.filter((habit) => habit.cadence === "daily").length
 const weeklyCount = habits.filter((habit) => habit.cadence === "weekly").length
-const heroSignalSummary =
+const heroSignalSummary = !householdActive ? "Household Routines are paused" :
   activeCount === 0
     ? "No active habits yet"
     : `${completedTodayCount} completed today across ${activeCount} active habit${activeCount === 1 ? "" : "s"}`
-const cadenceSummary =
+const cadenceSummary = !householdActive ? "Use the Routines on your active Boards below, or restore Household from Boards." :
   activeCount === 0
     ? "Create your first habit to begin a consistent routine."
     : `${dailyCount} daily · ${weeklyCount} weekly routines`
@@ -147,8 +150,8 @@ const habitsBootstrap = serializeForScript({ habits })
       class="unified-bar__new-task-btn habits-shell__create-bar-btn"
       id="habits-bar-new-habit"
       data-open-habit-modal
-      disabled={loadFailed}
-      title={newRoutine}
+      disabled={loadFailed || !householdActive}
+      title={householdActive ? newRoutine : "Restore Household from Boards to create a shared Routine"}
       aria-label={newRoutine}
     >
       <svg
@@ -168,7 +171,7 @@ const habitsBootstrap = serializeForScript({ habits })
     </button>
   </UnifiedBar>
 
-  <div id="habits-shell" class="habits-shell" data-area-id={area?.id} data-open-new={openNew && !loadFailed ? "true" : undefined}>
+  <div id="habits-shell" class="habits-shell" data-area-id={area?.id} data-household-active={String(householdActive)} data-open-new={openNew && !loadFailed && householdActive ? "true" : undefined}>
     {area && <div class="flex flex-wrap gap-2">
       <a class="btn btn-ghost" href={`/areas/${encodeURIComponent(area.id)}#routines`}>{area.name}</a>
       <a class="btn btn-ghost" href="/habits">All Routines</a>
@@ -251,6 +254,10 @@ const habitsBootstrap = serializeForScript({ habits })
       </div>
     </section>
 
+    {!householdActive && !loadFailed && <p class="card card-body" role="status">
+      Household is deleted. Its Routines and shared creation are paused. Routines on your active Boards remain available.
+      <a href="/boards">Open Boards to restore Household</a>
+    </p>}
     <BoardRoutineCheckins />
     <section id="habits-library" class="habits-shell__section" data-habits-section>
       <div class="habits-section__intro">
@@ -263,7 +270,7 @@ const habitsBootstrap = serializeForScript({ habits })
           </p>
         </div>
         <div class="habits-section__actions">
-          <button type="button" class="btn btn-primary" data-open-habit-modal disabled={loadFailed}>
+          <button type="button" class="btn btn-primary" data-open-habit-modal disabled={loadFailed || !householdActive}>
             New Habit
           </button>
         </div>
@@ -291,13 +298,16 @@ const habitsBootstrap = serializeForScript({ habits })
                   warming up.
                 </p>
               </div>
+            ) : !householdActive ? (
+              <div class="habits-empty"><p class="habits-empty__title">Household Routines are paused</p>
+                <p class="habits-empty__detail">Restore Household from Boards to return to its saved Routines.</p></div>
             ) : habits.length === 0 ? (
               <div class="habits-empty">
                 <p class="habits-empty__title">No habits yet. Create your first daily routine.</p>
                 <p class="habits-empty__detail">
                   Habits create real tasks that surface in Today, Kanban, Table, and Upcoming.
                 </p>
-                <button type="button" class="btn btn-primary" data-open-habit-modal disabled={loadFailed}>
+                <button type="button" class="btn btn-primary" data-open-habit-modal disabled={loadFailed || !householdActive}>
                   Create Habit
                 </button>
               </div>
@@ -457,7 +467,7 @@ const habitsBootstrap = serializeForScript({ habits })
     <div class="habit-modal-overlay hidden" id="habit-modal-overlay">
       <div class="habit-modal" role="dialog" aria-modal="true" aria-labelledby="habit-modal-title">
         <div class="habit-modal__header">
-          <h2 id="habit-modal-title" data-create-title={newRoutine} data-edit-title={`Edit ${organization("routine")}`}>{newRoutine}</h2>
+          <h2 id="habit-modal-title" data-create-title={householdActive ? newRoutine : "Restore Household from Boards to create a shared Routine"} data-edit-title={`Edit ${organization("routine")}`}>{newRoutine}</h2>
           <button class="btn-icon" id="habit-modal-close" aria-label="Close">×</button>
         </div>
 

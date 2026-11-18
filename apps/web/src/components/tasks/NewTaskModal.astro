@@ -1405,6 +1405,16 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
       delete (window as any).openNewTaskModal;
     });
   });
+  pageLifecycle.onPageLoad(signal => {
+    const url = new URL(location.href)
+    if (url.searchParams.get("capture") !== "1") return
+    requestAnimationFrame(() => {
+      if (signal.aborted) return
+      url.searchParams.delete("capture")
+      history.replaceState(history.state, "", url.pathname + url.search + url.hash)
+      window.openNewTaskModal?.()
+    })
+  })
 </script>
 
 <style>

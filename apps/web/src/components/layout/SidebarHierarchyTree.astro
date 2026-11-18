@@ -1785,6 +1785,7 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
 
     // ── 11. Quick-capture shortcut (N key) ──
     document.addEventListener("keydown", (e: KeyboardEvent) => {
+      if (e.defaultPrevented || document.querySelector("[data-board-directory][data-board-id]")) return
       // Skip if typing in an input/textarea, or if modifier keys are held
       const tag = (e.target as HTMLElement).tagName
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return

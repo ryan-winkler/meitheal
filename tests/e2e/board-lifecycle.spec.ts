@@ -23,6 +23,12 @@ import { householdWorkRoute } from "../../apps/web/src/lib/household-work-route"
 import { editTaskHomeAssistantArea, setTaskHomeAssistantArea } from "../../apps/web/src/domains/tasks/persistence/home-assistant-task-area"
 import { TaskInactivityRepository } from "../../apps/web/src/domains/tasks/persistence/task-inactivity-repository"
 
+import { startHAWebSocketFixture } from "../scripts/ha-websocket-fixture"
+import { closeHAConnection, getHAConnection } from "../../apps/web/src/domains/ha/ha-connection"
+import { stopEntitySubscription } from "../../apps/web/src/domains/ha/ha-entities"
+import { startCalendarSync, stopCalendarSync, syncFromHA } from "../../apps/web/src/domains/calendar/calendar-bridge"
+import { TemplateRepository } from "../../apps/web/src/domains/tasks/persistence/template-repository"
+
 let directory: string
 let marker: string
 const previous = process.env.MEITHEAL_DB_URL
@@ -332,4 +338,130 @@ test("late Household location edits and inactivity policy changes pause; existin
   await namedTasks.create(parent, id, { title: "Named location remains usable", description: "" }, {})
   const namedId = String((await db.execute({ sql: "SELECT id FROM tasks WHERE task_board_id = ?", args: [id] })).rows[0]!.id)
   expect((await db.execute(setTaskHomeAssistantArea(namedId, "yard"))).rows).toHaveLength(1)
+})
+
+
+test("confirmation-only sync writers and raw metadata changes retain retired Household links and named boundaries", async () => {
+  const db = getPersistenceClient()
+  const { repository, id } = await namedBoard()
+  await db.execute(`INSERT INTO tasks(id, title, idempotency_key, request_id, created_at, updated_at)
+    VALUES ('calendar-retained', 'Hand-made task', 'calendar-retained', 'calendar-retained', 1, 1)`)
+  await db.batch([
+    `INSERT INTO calendar_confirmations(confirmation_id, task_id, request_id, provider_event_id, source, payload, created_at)
+      VALUES ('saved-calendar', 'calendar-retained', 'saved-calendar', 'old-event', 'ha.calendar_sync', '{"entity_id":"calendar.fixture"}', 1)`,
+    `INSERT INTO todo_sync_confirmations(confirmation_id, task_id, request_id, ha_entity_id, ha_todo_uid, payload, created_at, updated_at)
+      VALUES ('saved-todo', 'calendar-retained', 'saved-todo', 'todo.fixture', 'old-todo', '{}', 1, 1)`,
+    `INSERT INTO calendar_confirmations(confirmation_id, task_id, request_id, provider_event_id, source, payload, created_at)
+      VALUES ('orphan-calendar', 'deleted-task', 'orphan-calendar', 'deleted-event', 'ha.calendar_sync', '{}', 1)`,
+  ], "write")
+  const calendar = (await db.execute("SELECT * FROM calendar_confirmations ORDER BY confirmation_id")).rows
+  const todo = (await db.execute("SELECT * FROM todo_sync_confirmations")).rows
+  const delayed = delayWriters(db, 1)
+  const pending = new TaskRepository(delayed.client).commitSyncMutationChunks([{
+    kind: "link", taskId: "calendar-retained",
+    replacedCalendarLinks: [{ confirmationId: "saved-calendar", taskId: "calendar-retained", externalId: "old-event" }],
+    confirmation: { source: "calendar", entityId: "calendar.fixture", externalId: "new-event", payload: "{}" },
+  }, {
+    kind: "link", taskId: "calendar-retained",
+    confirmation: { source: "ha_todo", entityId: "todo.fixture", externalId: "new-todo", payload: "{}" },
+  }])
+  await delayed.ready
+  await repository.changeLifecycle(parent, "household", "retired", 1, true)
+  delayed.release()
+  expect(await pending).toMatchObject({ created: 0, updated: 0, linked: 0, skipped: 2, errors: [] })
+  for (const sql of [
+    "DELETE FROM calendar_confirmations WHERE confirmation_id = 'saved-calendar'",
+    "UPDATE calendar_confirmations SET payload = '{}' WHERE confirmation_id = 'saved-calendar'",
+    "INSERT OR REPLACE INTO calendar_confirmations(confirmation_id, task_id, request_id, created_at) VALUES ('saved-calendar', 'deleted-task', 'replace-saved', 1)",
+    "DELETE FROM todo_sync_confirmations WHERE confirmation_id = 'saved-todo'",
+    "UPDATE todo_sync_confirmations SET payload = 'changed' WHERE confirmation_id = 'saved-todo'",
+    "INSERT OR REPLACE INTO todo_sync_confirmations(confirmation_id, task_id, request_id, ha_entity_id, ha_todo_uid, created_at, updated_at) VALUES ('saved-todo', 'deleted-task', 'replace-todo', 'todo.fixture', 'other', 1, 1)",
+  ]) await expect(db.execute(sql)).rejects.toThrow(/Household Board is deleted/)
+  expect((await db.execute("SELECT * FROM calendar_confirmations ORDER BY confirmation_id")).rows).toEqual(calendar)
+  expect((await db.execute("SELECT * FROM todo_sync_confirmations")).rows).toEqual(todo)
+  // Tombstones have no parent to infer a Board from. Keep that existing schema contract.
+  expect((await db.execute("SELECT task_id FROM calendar_confirmations WHERE confirmation_id = 'orphan-calendar'")).rows).toEqual([{ task_id: "deleted-task" }])
+  const tasks = new NamedBoardTaskRepository(db, marker)
+  await tasks.create(parent, id, { title: "Named relation", description: "" }, {})
+  const namedId = String((await db.execute({ sql: "SELECT id FROM tasks WHERE task_board_id = ?", args: [id] })).rows[0]!.id)
+  await db.execute({ sql: "INSERT INTO calendar_confirmations(confirmation_id, task_id, request_id, created_at) VALUES ('named-confirmation', ?, 'named-receipt', 1)", args: [namedId] })
+  expect((await db.execute("DELETE FROM calendar_confirmations WHERE confirmation_id = 'named-confirmation'")).rowsAffected).toBe(1)
+})
+
+test("a calendar stale-snapshot reconciliation admitted before retirement keeps a manually linked confirmation", async () => {
+  const previous = Object.fromEntries(["SUPERVISOR_TOKEN", "HA_BASE_URL", "HA_TOKEN"].map(key => [key, process.env[key]]))
+  const ha = await startHAWebSocketFixture()
+  const db = getPersistenceClient()
+  const execute = db.execute.bind(db)
+  let admitted!: () => void
+  let release!: () => void
+  const ready = new Promise<void>(resolve => { admitted = resolve })
+  const gate = new Promise<void>(resolve => { release = resolve })
+  try {
+    delete process.env.SUPERVISOR_TOKEN
+    process.env.HA_BASE_URL = ha.url
+    process.env.HA_TOKEN = "calendar-retirement-fixture"
+    closeHAConnection()
+    expect(await getHAConnection()).not.toBeNull()
+    const repository = new NamedBoardRepository(db, marker)
+    await db.batch([
+      `INSERT INTO tasks(id, title, idempotency_key, request_id, created_at, updated_at)
+        VALUES ('manually-linked', 'Unrelated hand-made task', 'manually-linked', 'manually-linked', 1, 1)`,
+      `INSERT INTO calendar_confirmations(confirmation_id, task_id, request_id, provider_event_id, source, payload, created_at)
+        VALUES ('manual-calendar-link', 'manually-linked', 'manual-calendar-link', 'missing-from-feed', 'ha.calendar_sync', '{"entity_id":"calendar.fixture"}', 1)`,
+    ], "write")
+    const before = (await execute("SELECT * FROM calendar_confirmations WHERE confirmation_id = 'manual-calendar-link'")).rows
+    db.execute = async statement => {
+      const result = await execute(statement)
+      const sql = typeof statement === "string" ? statement : statement.sql
+      if (sql.includes("AS created_by_sync") && sql.includes("FROM calendar_confirmations c")) {
+        admitted()
+        await gate
+      }
+      return result
+    }
+    ha.setCalendarEvents([{ uid: "present-event", summary: "Current external event", start: "2026-11-18T12:00:00Z", end: "2026-11-18T13:00:00Z" }])
+    startCalendarSync({ entityId: "calendar.fixture", syncEnabled: true, syncMode: "import", writeBack: false, syncIntervalMs: 0 })
+    const syncing = syncFromHA("calendar.fixture")
+    await ready
+    await repository.changeLifecycle(parent, "household", "retired", 1, true)
+    release()
+    await syncing
+    expect((await execute("SELECT * FROM calendar_confirmations WHERE confirmation_id = 'manual-calendar-link'")).rows).toEqual(before)
+  } finally {
+    release?.()
+    db.execute = execute
+    stopCalendarSync()
+    stopEntitySubscription()
+    closeHAConnection()
+    await ha.close()
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
+  }
+})
+
+test("global Routine library keeps named check-ins when shared Household Routine readers pause", async () => {
+  const db = getPersistenceClient()
+  const { repository, id } = await namedBoard()
+  await db.batch([
+    { sql: "INSERT INTO areas(id, name, owner_board_id, created_at, updated_at) VALUES ('routine-area', 'Named Area', ?, 1, 1)", args: [id] },
+    { sql: `INSERT INTO task_templates(id, name, template_json, is_routine, cadence, owner_board_id, created_at, updated_at)
+        VALUES ('named-routine', 'Named check-in remains', '{"area_id":"routine-area"}', 1, 'daily', ?, 1, 1)`, args: [id] },
+    `INSERT INTO task_templates(id, name, template_json, is_routine, cadence, created_at, updated_at)
+        VALUES ('shared-routine', 'Saved shared Routine', '{"area_id":"default"}', 1, 'daily', 1, 1)`,
+  ], "write")
+  expect(await new TemplateRepository(db).findRoutines()).toHaveLength(1)
+  await repository.changeLifecycle(parent, "household", "retired", 1, true)
+  expect(householdWorkRoute("/habits", "GET")).toBe(false)
+  expect(householdWorkRoute("/habits", "HEAD")).toBe(false)
+  expect(householdWorkRoute("/api/habits", "POST")).toBe(true)
+  expect(await new TemplateRepository(db).findAll()).toEqual([])
+  expect(await new TemplateRepository(db).findRoutines()).toEqual([])
+  expect(await new TemplateRepository(db).getRoutinesWithStats()).toEqual([])
+  expect(await new NamedBoardTaskRepository(db, marker).routineLibrary(parent)).toMatchObject([
+    { id: "named-routine", name: "Named check-in remains" },
+  ])
+  expect(await new NamedBoardTaskRepository(db, marker).routineLibrary({ kind: "ha_user", id: "outsider" })).toEqual([])
 })

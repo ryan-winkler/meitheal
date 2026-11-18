@@ -272,15 +272,9 @@
 
               if (e.ctrlKey || e.metaKey || !singleKeyShortcutsEnabled()) return
 
-              if (e.key === "n") {
-                e.preventDefault();
-                // If on tasks page, click the create button; otherwise navigate
-                const createBtn = document.getElementById("create-task-btn");
-                if (createBtn) {
-                  createBtn.click();
-                } else {
-                  SHORTCUT_NAV.tasks()
-                }
+              if (e.key === "n" || e.key === "N") {
+                e.preventDefault()
+                openNewTaskAction()
               }
               if (e.key === "t" && !(isDockedInspector && document.getElementById("task-detail-panel")?.contains(document.activeElement))) {
                 SHORTCUT_NAV.table()

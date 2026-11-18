@@ -12,6 +12,8 @@ Expand **Boards** to find Household and your other visible Boards. Expand a Boar
 
 Household and named Boards use the same Kanban cards and columns. Select a named Board card to open its details, or focus it and press Enter. You can edit, file, move or remove the ticket when your permissions allow it. Changes use the ticket version, so a concurrent edit requires refreshing before trying again. Creation opens the same detail panel. The named workspace exposes Kanban, and Household also provides Table, Calendar and Timeline.
 
+Open an Area or Project’s **Tasks** tab to use its filtered Kanban. **Add Task** keeps that context. On a named Board, **N** opens capture for that Board. If another person changes its work while you edit, your input stays available with a refresh notice. Lost authority, deleted context and expired verification still clear private content.
+
 ## People and ticket permissions
 
 Board owners manage access from **Board settings**. Viewers can open the Board and read its tickets. Members can add and edit tickets and move them between the columns their permissions allow. Owners can manage access and set ticket restrictions for everyone or for a specific person. The last active owner must add another active owner before handing over access.
@@ -75,6 +77,10 @@ Home Assistant Area participates in the task inspector’s reorderable Propertie
 Open a named Board’s **Board settings → Delete Board**. An owner with deletion permission can delete either an empty or populated Board. Confirm the name in the dialog. The Board leaves active navigation, incoming destinations and Routine check-ins. Its tickets, filing, membership, permissions and ticket numbers stay saved. **Boards → Deleted Boards → Restore Board** resumes it. Only its eligible owners can see this recovery list; other users and agents cannot restore or delete the Board.
 
 For **Household**, a verified Home Assistant administrator uses **Boards → Household Board settings → Delete Board**. Household’s saved work stays in place. Shared capture, Household task screens, Routine generation, calendar import/write-back and Todo syncing pause until an administrator restores it from Deleted Boards. No replacement Board is created and no records are transferred. Named Boards remain available. Global views exclude the saved Household work while it is deleted. Restoring resumes its existing destinations and settings, so review those settings before restoring an old integration configuration.
+
+A synchronization request already sent to Home Assistant may finish there after deletion. Later local writes pause and preserve the saved links. Deletion does not cancel a provider request already in flight.
+
+The Routine library and Today continue to show Routines from your active named Boards. Household Routines and shared creation stay paused. Calendar and Todo confirmation links remain saved for restoration.
 
 Deletion restrictions also apply to Board deletion. A child with deletion blocked cannot remove their Board; blocking completion still blocks marking work done and reopening it. Agent tokens cannot delete or restore Boards. Sidebar hiding remains a personal shortcut choice and does not delete a Board.
 

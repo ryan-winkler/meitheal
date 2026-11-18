@@ -1,3 +1,4 @@
+import { initKanbanNavigation } from "./controllers/kanban-navigation"
 import { getSelectedAreaId, initAreaSelector } from "./area-selector-controller"
 import { safeFetch } from "./safe-fetch"
 import { isDoneStatus } from "./status-config"
@@ -49,6 +50,7 @@ export function bindNamedBoardKanban(signal: AbortSignal) {
   if (!root || !board || !overlay || !panel || root.dataset.namedBound) return
   root.dataset.namedBound = "true"
   board.closest<HTMLElement>("#kanban-shell")!.dataset.kanbanBooted = "true"
+  initKanbanNavigation(board, signal)
   const canCreate = root.dataset.namedCanCreate === "true"
   const canEdit = root.dataset.namedCanEdit === "true"
   const canComplete = root.dataset.namedCanComplete === "true"

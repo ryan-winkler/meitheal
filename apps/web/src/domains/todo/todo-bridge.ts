@@ -537,7 +537,7 @@ export async function pushTaskToTodoList(
 
       if (success) {
         await client.execute({
-          sql: "UPDATE todo_sync_confirmations SET payload = ?, updated_at = ? WHERE task_id = ? AND ha_entity_id = ?",
+          sql: "UPDATE todo_sync_confirmations SET payload = ?, updated_at = ? WHERE task_id = ? AND ha_entity_id = ? AND EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active')",
           args: [
             JSON.stringify({ summary: title, status: haStatus }),
             Date.now(),
@@ -572,7 +572,7 @@ export async function pushTaskToTodoList(
           sql: `INSERT INTO todo_sync_confirmations (
             confirmation_id, task_id, request_id, ha_entity_id, ha_todo_uid,
             source, sync_direction, payload, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, 'meitheal.todo_push', 'outbound', ?, ?, ?)`,
+          ) SELECT ?, ?, ?, ?, ?, 'meitheal.todo_push', 'outbound', ?, ?, ? WHERE EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active')`,
           args: [
             crypto.randomUUID(),
             taskId,
@@ -640,6 +640,7 @@ export async function removeTaskFromTodoList(taskId: string): Promise<number> {
     }
 
     for (const row of rows.rows) {
+      if (!await householdBoardIsActive(client)) return removed
       const entityId = row.ha_entity_id as string;
       const rawPayload = row.payload as string | null;
 
@@ -682,7 +683,7 @@ export async function removeTaskFromTodoList(taskId: string): Promise<number> {
 
     // Clean up all sync confirmation rows for this task
     await client.execute({
-      sql: "DELETE FROM todo_sync_confirmations WHERE task_id = ?",
+      sql: "DELETE FROM todo_sync_confirmations WHERE task_id = ? AND EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active')",
       args: [taskId],
     });
 

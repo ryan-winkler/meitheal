@@ -7,7 +7,7 @@ import { HierarchyRepository } from "@domains/tasks/persistence/hierarchy-reposi
 import { NamedBoardTaskRepository } from "@domains/tasks/persistence/named-board-task-repository"
 import { NamedBoardRepository } from "@domains/tasks/persistence/named-board-repository"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
-import { boardViewResponse, readBoardView } from "@lib/board-view"
+import { boardAuthorityKey, boardViewResponse, readBoardView } from "@lib/board-view"
 import { HOUSEHOLD_BOARD_ID, readBoardWorkspaceSelection } from "@lib/board-workspace"
 import { apiError, apiJson } from "@lib/api-response"
 import { boardGroupCursor, boardSessionProof, currentBoardUser, readBoardGroupCursor, readBoardRequest } from "@lib/named-board-request"
@@ -67,6 +67,7 @@ export const GET: APIRoute = async context => {
     people: view.board.role === "owner" ? [...user.roster].map(([id, name]) => ({ id, name })) : [],
   })
   response.headers.set("x-meitheal-board-session", boardSessionProof(user.actor.id))
+  response.headers.set("x-meitheal-board-authority", boardAuthorityKey(view, user.actor.id))
   return response
 }
 

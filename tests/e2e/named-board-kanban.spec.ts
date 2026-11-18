@@ -31,7 +31,10 @@ test("named Boards use the common Kanban with paged capture, version conflicts, 
     const path = `/boards/${id}`
     const api = app + "/api" + path
     expect((await owner.request.post(api + "/planning", { headers, data: { action: "area", title: "Named only Area" } })).status()).toBe(200)
-    expect((await owner.request.post(app + "/api/areas", { headers, data: { name: "Household only Area" } })).status()).toBe(201)
+    const householdAreaResponse = await owner.request.post(app + "/api/areas", { headers, data: { name: "Household only Area" } })
+    expect(householdAreaResponse.status()).toBe(201)
+    const householdArea = await householdAreaResponse.json()
+    expect((await owner.request.post(app + "/api/projects", { headers, data: { title: "Household shortcut trap", area_id: householdArea.id } })).status()).toBe(201)
     const namedCatalog = await (await owner.request.get(api + "?view=groups")).json()
     const namedArea = namedCatalog.items.find((area: { name: string }) => area.name === "Named only Area").id
     const ids: string[] = []
@@ -53,6 +56,15 @@ test("named Boards use the common Kanban with paged capture, version conflicts, 
     await expect(page.locator("#kanban-shell")).toHaveAttribute("data-kanban-booted", "true")
     await expect(page.locator(".kanban-card")).toHaveCount(25)
     await expect(page.locator(".board-columns")).toHaveCount(0)
+    const entries = page.locator(".kanban-card .card-open-btn")
+    await entries.first().focus()
+    await entries.first().press("ArrowDown")
+    await expect(entries.nth(1)).toBeFocused()
+    await entries.nth(1).press("n")
+    await expect(page.locator("#task-detail-overlay")).toHaveClass(/active/)
+    await expect(page.locator("[data-named-inspector-create]")).toBeVisible()
+    await expect(page).toHaveURL(url => url.pathname.endsWith(path))
+    await page.locator("#td-close").click()
     await page.locator("#area-selector-trigger").click()
     await expect(page.getByRole("option", { name: "Named only Area", exact: true })).toBeVisible()
     await expect(page.getByRole("option", { name: "Household only Area", exact: true })).toHaveCount(0)
@@ -92,6 +104,12 @@ test("named Boards use the common Kanban with paged capture, version conflicts, 
     await expect(edit.getByRole("textbox", { name: "Title", exact: true })).toHaveValue("Retained conflict draft")
     await expect(edit.locator("[data-board-feedback]")).toContainText("changed")
     expect(leaks).toEqual([])
+    // Two ordinary ten-second polls must preserve a safe draft after a version conflict.
+    await page.waitForTimeout(21_000)
+    await expect(inspector).toBeVisible()
+    await expect(edit.getByRole("textbox", { name: "Title", exact: true })).toHaveValue("Retained conflict draft")
+    await expect(page.locator("[data-board-stale]")).toContainText("Your input is kept")
+    await expect(page.locator("[data-board-expired]")).toBeHidden()
     expect(pageErrors).toEqual([])
     await page.goto(app + path)
     await page.locator("#kanban-bar-new-task").click()
@@ -118,7 +136,8 @@ test("named Boards use the common Kanban with paged capture, version conflicts, 
     for (const scope of ["", `area=${namedArea}&`, `project=${namedProject}&`]) {
       await page.goto(app + path + "?" + scope + "view=groups")
       await expect(page.locator("#new-task-overlay")).toHaveCount(0)
-      await page.locator("#sidebar-rail-new-task").click()
+      if (scope.startsWith("project")) await page.keyboard.press("n")
+      else await page.locator("#sidebar-rail-new-task").click()
       await expect(page.locator("#task-detail-overlay")).toHaveClass(/active/)
       await expect(page.locator('[data-named-inspector-create] input[name="projectId"]')).toHaveValue(scope.startsWith("project") ? namedProject : "")
       if (scope.startsWith("project")) {
@@ -159,6 +178,12 @@ test("named Boards use the common Kanban with paged capture, version conflicts, 
     await expect(childPage.locator(".kanban-card, #task-detail-overlay")).toHaveCount(0)
     await expect(childPage.getByText("Private details", { exact: true })).toHaveCount(0)
     expect(await childPage.evaluate(() => document.body.style.overflow)).toBe("")
+    expect((await owner.request.patch(api, { headers, data: { action: "member", memberId: "fixture-member-two", role: "viewer" } })).status()).toBe(200)
+    await childPage.goto(app + path + "?search=Needle")
+    await childPage.locator(".kanban-card .card-open-btn").press("n")
+    await expect(childPage.locator("#task-detail-overlay")).not.toHaveClass(/active/)
+    await expect(childPage.locator("#sidebar-rail-new-task")).toBeDisabled()
+    await expect(childPage).toHaveURL(url => url.pathname.endsWith(path))
     // The extracted Astro component must preserve a failed refresh's HTTP status.
     const db = new DatabaseSync(join(work, "pins.db"))
     try {

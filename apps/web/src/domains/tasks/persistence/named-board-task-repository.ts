@@ -209,6 +209,7 @@ export class NamedBoardTaskRepository {
       if (!await boardGrantStillCurrent(this.db, revision, this.markerPath)) return null
       return {
         board: access,
+        authorityRevision: revision,
         planning,
         ...(context ? { context, summary } : {}),
         lanes: lanes!.rows.map(lane => ({ id: String(lane.id), label: String(lane.label), key: String(lane.key) })),

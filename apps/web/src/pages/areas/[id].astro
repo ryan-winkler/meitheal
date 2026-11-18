@@ -20,19 +20,10 @@ import { TaskRepository } from "@domains/tasks/persistence/task-repository"
 import { TemplateRepository, type RoutineTemplateRow } from "@domains/tasks/persistence/template-repository"
 import GoalsTab from "../../components/progress/GoalsTab.astro"
 import { boardWorkspaceHref, HOUSEHOLD_BOARD_ID } from "@lib/board-workspace"
-import { buildTaskPath } from "@lib/task-detail-handoff"
 import { isFeatureEnabled } from "../../lib/feature-flags"
 
 const workspaceAreaId = Astro.props.workspaceAreaId as string | undefined
 const areaId = workspaceAreaId ?? Astro.params.id
-const rawOffset = Astro.url.searchParams.get("offset") ?? ""
-const taskOffset = /^\d{1,8}$/.test(rawOffset) ? Number(rawOffset) : 0
-const taskPage = (offset: number) => {
-  const query = new URLSearchParams(Astro.url.searchParams)
-  if (offset) query.set("offset", String(offset))
-  else query.delete("offset")
-  return Astro.url.pathname + "?" + query.toString() + "#tasks"
-}
 const areasPath = `${Astro.locals.ingressPath || ""}${workspaceAreaId ? "/boards/household?view=groups" : "/planning#spaces"}`
 if (!areaId) {
   return Astro.redirect(areasPath)
@@ -45,7 +36,6 @@ let sharedGoals: SharedGoalProgress[] = []
 let projects: ProjectRow[]
 let routines: RoutineTemplateRow[] = []
 let routinesEnabled = false
-let workspaceTasks: Awaited<ReturnType<TaskRepository["findAll"]>> | null = null
 let taskCountByProject: Map<string, { total: number; completed: number }>
 
 try {
@@ -70,7 +60,6 @@ try {
   projects = areaProjects
   routinesEnabled = await isFeatureEnabled("habits")
   if (routinesEnabled) routines = await new TemplateRepository(client).findRoutines(areaId)
-  if (workspaceAreaId) workspaceTasks = await taskRepo.findAll({ workspaceAreaId: areaId, limit: 50, offset: taskOffset })
   taskCountByProject = projects.length ? await taskRepo.getProjectTaskCounts() : new Map()
 } catch (error) {
   logApiError("areas", "Could not load Area details", error)
@@ -89,6 +78,7 @@ const routinesPath = `/habits?area_id=${encodeURIComponent(areaId)}`
 
 const settingsTab = workspaceAreaId ? "group-settings" : "settings"
 const organization = await organizationLabelsFor(Astro)
+const tasksHref = boardWorkspaceHref(HOUSEHOLD_BOARD_ID, { area: areaId }) + "#kanban"
 const tabs = [
   { id: "overview", label: "Overview", icon: "📊" },
   ...(workspaceAreaId ? [{ id: "tasks", label: organization("task", true), icon: "✅" }] : []),
@@ -110,17 +100,17 @@ const tabs = [
   </div>
 
   {/* Sub-menu tab bar */}
-  <nav aria-label={`${organization("group")} sections`}>
+  <nav aria-label={`${organization("group")} sections`} data-household-tasks-href={tasksHref}>
     <div class="area-tabs" role="tablist" aria-label={`${organization("group")} sections`}>
     {tabs.map((tab) => (
       <a
-        href={`#${tab.id}`}
+        href={tab.id === "tasks" ? tasksHref : `#${tab.id}`}
         class={`area-tab ${tab.id === "overview" ? "active" : ""}`}
         data-tab={tab.id}
         data-astro-reload
         id={`area-tab-${tab.id}`}
         role="tab"
-        aria-controls={`section-${tab.id}`}
+        aria-controls={tab.id === "tasks" ? undefined : `section-${tab.id}`}
         aria-selected={tab.id === "overview" ? "true" : "false"}
         tabindex={tab.id === "overview" ? 0 : -1}
       >
@@ -147,29 +137,6 @@ const tabs = [
       ))}
     </div>
   </section>
-
-  {workspaceAreaId && <section id="section-tasks" class="area-section" data-section="tasks" role="tabpanel" aria-labelledby="area-tab-tasks" tabindex="0">
-    <div class="section-header">
-      <h2 class="section-title">{organization("task", true)}</h2>
-      <a class="btn btn-ghost" href={`/boards/household?area=${encodeURIComponent(areaId)}&view=kanban#kanban`}>Open Kanban</a>
-      <span class="section-count">{workspaceTasks?.total ?? 0} total</span>
-      <details class="board-add">
-        <summary class="btn btn-primary btn-sm">{newOrganizationLabel(organization("task", false, organizationLocale(Astro) === "en" ? "task" : undefined), organizationLocale(Astro))}</summary>
-        <form class="board-form" data-group-new-task={areaId}>
-          <label>Title <input name="title" maxlength="500" required /></label>
-          <p role="status" data-group-task-feedback></p>
-          <button type="submit" class="btn btn-primary">Create task</button>
-        </form>
-      </details>
-    </div>
-    {workspaceTasks?.tasks.length ? <ul>{workspaceTasks.tasks.map(task => <li>
-      <a href={buildTaskPath(task.id)}>{task.title}</a>
-    </li>)}</ul> : <p class="section-empty">No tasks in this Area yet.</p>}
-    {workspaceTasks && (taskOffset > 0 || taskOffset + 50 < workspaceTasks.total) && <nav aria-label="Area task pages">
-      {taskOffset > 0 && <a class="btn btn-ghost" href={taskPage(Math.max(0, taskOffset - 50))}>Previous tasks</a>}
-      {taskOffset + 50 < workspaceTasks.total && <a class="btn btn-ghost" href={taskPage(taskOffset + 50)}>More tasks</a>}
-    </nav>}
-  </section>}
 
   {available("goals") && <section id="section-goals" class="area-section" data-section="goals" role="tabpanel" aria-labelledby="area-tab-goals" tabindex="0">
     <GoalsTab {areaId} {sharedGoals} />
@@ -492,32 +459,7 @@ const tabs = [
 </style>
 
 <script>
-  pageLifecycle.onPageLoad(signal => {
-    const form = document.querySelector<HTMLFormElement>("[data-group-new-task]")
-    const feedback = form?.querySelector("[data-group-task-feedback]")
-    const submit = form?.querySelector<HTMLButtonElement>('button[type="submit"]')
-    if (!form || !feedback || !submit) return
-    form.addEventListener("submit", async event => {
-      event.preventDefault()
-      if (submit.disabled) return
-      submit.disabled = true
-      const title = String(new FormData(form).get("title") ?? "")
-      try {
-        const response = await fetch("/api/tasks", {
-          method: "POST", headers: { "Content-Type": "application/json" }, signal,
-          body: JSON.stringify({ title, placement: { areaId: form.dataset.groupNewTask } }),
-        })
-        const data = await response.json()
-        if (!response.ok) throw new Error(data.error || "Could not create the task.")
-        window.location.reload()
-      } catch (error) {
-        if (!signal.aborted) feedback.textContent = error instanceof Error ? error.message : "Could not create the task."
-      } finally {
-        submit.disabled = false
-      }
-    }, { signal })
-  })
-
+  import { safeIngressHref } from "@lib/ingress-navigation"
   import { confirmDialog } from "../../lib/confirm-dialog"
   import { pageLifecycle } from "../../lib/page-lifecycle"
   import { promptDialog } from "../../lib/prompt-dialog"
@@ -534,6 +476,11 @@ const tabs = [
     const links = [...document.querySelectorAll<HTMLAnchorElement>(".area-tab")]
     function updateSection() {
       const hash = window.location.hash.slice(1)
+      if (hash === "tasks") {
+        const href = document.querySelector<HTMLElement>("[data-household-tasks-href]")?.dataset.householdTasksHref
+        if (href) location.replace(safeIngressHref(href))
+        return
+      }
       const destination = sections.find(section => section.dataset.section === hash) ?? sections[0]
       const active = destination?.dataset.section
       const focusInLeavingSection = sections.some(section =>

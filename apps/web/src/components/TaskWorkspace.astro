@@ -1,6 +1,6 @@
 ---
 import { verifiedIngressUser } from "@lib/verified-ingress-user"
-import { boardViewKey, readBoardView } from "@lib/board-view"
+import { boardAuthorityKey, boardViewKey, readBoardView } from "@lib/board-view"
 import { boardSessionProof, currentBoardUser } from "@lib/named-board-request"
 import { boardWorkspaceHref, readBoardWorkspaceSelection } from "@lib/board-workspace"
 import { permitsBoardTaskAction } from "@domains/tasks/persistence/named-board-repository"
@@ -332,6 +332,7 @@ if (groupByProject) {
   </UnifiedBar>
   <div data-task-workspace data-board-directory={namedView ? "" : undefined}
     data-board-verify={namedVerify} data-board-key={namedView && namedUser ? boardViewKey(namedView, namedUser.actor.id) : undefined}
+    data-board-authority={namedView && namedUser ? boardAuthorityKey(namedView, namedUser.actor.id) : undefined}
     data-board-session={namedSession} data-board-id={namedBoardId}
     data-named-can-create={String(namedCreate)} data-named-can-edit={String(namedEdit)} data-named-can-complete={String(namedComplete)} data-named-can-delete={String(namedDelete)}>
   {namedView && <h1>{namedView.context?.project?.title ?? namedView.context?.area?.name ?? namedView.board.name}</h1>}
@@ -353,6 +354,10 @@ if (groupByProject) {
       <a class="btn btn-ghost" href={boardWorkspaceHref("household", { area: householdProject.area_id })}>← {areas.find(area => area.id === householdProject.area_id)?.name ?? organization("group")}</a>}
     <a class="btn btn-ghost" href="/boards/household" aria-current="page">Tasks</a>
     <a class="btn btn-ghost" href="/boards/household?view=groups" data-astro-reload>{organization("group", true)}</a>
+    {(householdProjectId || kanbanFilters.area) && <a class="btn btn-ghost" href={boardWorkspaceHref("household", {
+      area: householdProjectId ? undefined : kanbanFilters.area,
+      project: householdProjectId ?? undefined, fromArea: Astro.url.searchParams.get("from") ?? undefined, groups: true,
+    }, householdProjectId ? "project-settings" : "group-settings")}>{householdProjectId ? organization("project") : organization("group")} planning</a>}
     {verifiedIngressUser(Astro.locals)?.isAdmin && <a class="btn btn-ghost" href="/boards#household-settings">{organization("board")} settings</a>}
   </nav>}
 

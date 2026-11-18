@@ -9,7 +9,7 @@ import Layout from "../../layouts/Layout.astro"
 import "../../styles/boards.css"
 import { permitsBoardTaskAction } from "@domains/tasks/persistence/named-board-repository"
 import { boardWorkspaceHref, readBoardWorkspaceSelection } from "@lib/board-workspace"
-import { boardViewKey, readBoardView } from "@lib/board-view"
+import { boardAuthorityKey, boardViewKey, readBoardView } from "@lib/board-view"
 import { boardSessionProof, currentBoardUser } from "@lib/named-board-request"
 import { isFeatureEnabled } from "@lib/feature-flags"
 import { isDoneStatus } from "@lib/status-config"
@@ -47,6 +47,7 @@ const nextAction = view?.summary?.next
   <div class="boards-workspace">
     {!view || !boardId || !user ? <p>This Board is unavailable.</p> :
       <div data-board-directory data-board-verify={verifyPath} data-board-key={boardViewKey(view, user.actor.id)}
+        data-board-authority={boardAuthorityKey(view, user.actor.id)}
         data-board-session={boardSessionProof(user.actor.id)} data-board-id={boardId}
         data-board-can-create={String(Boolean(canEdit) && (!scope?.project || scope.project.status === "active"))}>
         <nav class="board-back" aria-label="Board navigation">

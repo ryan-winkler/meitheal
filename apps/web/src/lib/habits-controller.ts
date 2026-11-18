@@ -481,6 +481,7 @@ function bootHabitsPage(): void {
   habits = parseBootstrapHabits()
 
   initHabitsShellNav()
+  if (shell.dataset.householdActive === "false") return
   initHabitsCrud()
   updateStats(habits)
 }
