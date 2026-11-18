@@ -62,4 +62,6 @@ The optional **Home Assistant Area** field identifies a task’s physical locati
 
 Older `/areas/{id}` and `/projects/{id}` bookmarks open the matching Household Board context. Supported section bookmarks, including settings, keep their destination. `/planning#spaces` opens the Boards directory when Planning is available. Task filters use the Group label and support your personal display name from Settings.
 
+Household Project details use Tabler icons for their tabs and actions. The title and breadcrumb show Tabler equivalents for recognized icons, including the Every Day sun. Custom icons without an equivalent still display as entered. Open **Settings** to see the saved Project icon.
+
 Home Assistant Area participates in the task inspector’s reorderable Properties fields. Move it in the ticket layout editor or Settings. Existing saved field orders retain their sequence and add the new field.
