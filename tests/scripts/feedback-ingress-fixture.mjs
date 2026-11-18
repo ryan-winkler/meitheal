@@ -262,6 +262,10 @@ const server = pinFixture && process.env.MEITHEAL_PIN_FIXTURE_HTTP !== "1" ? htt
   cert: readFileSync(process.env.MEITHEAL_PIN_FIXTURE_TLS_CERT),
 }, handle) : http.createServer(handle)
 
+// Owned ingress journeys can leave API connections idle during browser assertions.
+// Keep those sockets alive across the journey. Teardown closes them explicitly.
+if (pinFixture) server.keepAliveTimeout = 60_000
+
 if (process.env.MEITHEAL_TEST_CORE_USER_LOOKUP === "1") {
   const requireWeb = createRequire(new URL("../../apps/web/package.json", import.meta.url))
   const { WebSocket, WebSocketServer } = requireWeb("ws")
