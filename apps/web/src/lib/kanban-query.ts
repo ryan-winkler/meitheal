@@ -55,7 +55,13 @@ export function readKanbanFilters(params: URLSearchParams): KanbanFilters {
   }
 }
 
-export function updateKanbanFilters(url: URL, filters: KanbanFilters): void {
+function matchCriteria(params: URLSearchParams): string {
+  const { groupBy: _groupBy, types, labels, ...criteria } = readKanbanFilters(params)
+  return JSON.stringify({ ...criteria, types: types?.sort(), labels: labels?.sort() })
+}
+
+export function updateKanbanFilters(url: URL, filters: KanbanFilters, keepPageWhenGrouping = false): boolean {
+  const previous = keepPageWhenGrouping ? matchCriteria(url.searchParams) : undefined
   for (const key of ["area", "search", "user", "status", "priority", "rice", "groupBy"] as const) {
     const value = filters[key]
     if (value && (key !== "groupBy" || value !== "none" || url.searchParams.has("groupBy"))) {
@@ -71,9 +77,11 @@ export function updateKanbanFilters(url: URL, filters: KanbanFilters): void {
   else url.searchParams.delete("promoted")
   if (filters.advancedFilter?.conditions.length) url.searchParams.set("advancedFilter", encodeURIComponent(JSON.stringify(filters.advancedFilter)))
   else url.searchParams.delete("advancedFilter")
+  if (previous !== undefined && previous === matchCriteria(url.searchParams)) return false
   for (const key of Array.from(url.searchParams.keys())) {
     if (key.startsWith(PAGE_PREFIX)) url.searchParams.delete(key)
   }
+  return true
 }
 
 export function readKanbanPage(params: URLSearchParams, key: string): number {
