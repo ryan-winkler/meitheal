@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test"
-import { shouldSkipBrowserSpecs } from "./_helpers"
+import { deferred, shouldSkipBrowserSpecs } from "./_helpers"
 
 test.describe("Sidebar and Today follow-through", () => {
   test.skip(shouldSkipBrowserSpecs(), "Requires a disposable local Meitheal server")
@@ -167,5 +167,118 @@ test.describe("Sidebar and Today follow-through", () => {
     await expect(page).toHaveURL(/#today-work$/)
     await expect(page.locator("#section-today")).toBeVisible()
     await expect(page.locator(`#today-due-list .tli[data-id="${capturedId}"]`)).toBeVisible()
+  })
+
+  test.describe("navigation focus handoff", () => {
+    // The gate must hold the actual module request before service-worker handling.
+    test.use({ serviceWorkers: "block" })
+
+    for (const moveFocusToPage of [false, true]) {
+      test(`phone resize during Today loading ${moveFocusToPage ? "preserves a newly focused page input" : "restores the focused sidebar destination"}`, async ({ page }) => {
+        const releaseModule = deferred<void>()
+        let moduleHeld = false
+        await page.route(url => url.pathname.includes("/today.astro")
+          && (url.pathname.endsWith(".js") || url.searchParams.get("type") === "script"), async route => {
+          moduleHeld = true
+          await releaseModule.promise
+          await route.continue()
+        })
+        try {
+          await page.goto("/")
+          const menu = page.locator("#menu-toggle")
+          await expect(menu).toHaveAttribute("data-drawer-ready", "true")
+          const today = page.locator("#sidebar").getByRole("link", { name: "Today", exact: true })
+          await today.click()
+          await expect.poll(() => moduleHeld, { timeout: 15_000 }).toBe(true)
+          await expect(page).toHaveURL(/\/today(?:#today-overview)?$/)
+          await expect(page.getByRole("heading", { name: "Today", level: 1 })).toBeVisible()
+          await expect(today).toBeFocused()
+          await expect(menu).toBeDisabled()
+          await expect(menu).not.toHaveAttribute("data-drawer-ready", "true")
+          const input = page.getByLabel("Add a task for today", { exact: true })
+          if (moveFocusToPage) {
+            await input.fill("Keep this draft")
+            await expect(input).toBeFocused()
+          }
+          await page.setViewportSize({ width: 320, height: 812 })
+          await expect(menu).toBeDisabled()
+          releaseModule.resolve()
+          await expect(menu).toHaveAttribute("data-drawer-ready", "true")
+          await expect(menu).toBeEnabled()
+          if (moveFocusToPage) {
+            await expect(menu).toHaveAttribute("aria-expanded", "false")
+            await expect(input).toBeFocused()
+            await expect(input).toHaveValue("Keep this draft")
+            await expect(input).toBeInViewport()
+          } else {
+            await expect(menu).toHaveAttribute("aria-expanded", "true")
+            await expect(today).toBeFocused()
+            await expect(today).toBeInViewport()
+            await page.locator("#sidebar").getByRole("button", { name: "Close sidebar", exact: true }).click()
+            await expect(menu).toHaveAttribute("aria-expanded", "false")
+            await expect(menu).toBeFocused()
+          }
+        } finally {
+          releaseModule.resolve()
+        }
+      })
+    }
+
+    for (const intent of ["next sidebar destination", "page input then page heading"]) {
+      test(`phone resize during Today loading respects newer focus on ${intent}`, async ({ page }) => {
+        const releaseModule = deferred<void>()
+        let moduleHeld = false
+        await page.route(url => url.pathname.includes("/today.astro")
+          && (url.pathname.endsWith(".js") || url.searchParams.get("type") === "script"), async route => {
+          moduleHeld = true
+          await releaseModule.promise
+          await route.continue()
+        })
+        try {
+          await page.goto("/")
+          const menu = page.locator("#menu-toggle")
+          await expect(menu).toHaveAttribute("data-drawer-ready", "true")
+          const today = page.locator("#sidebar").getByRole("link", { name: "Today", exact: true })
+          await today.click()
+          await expect.poll(() => moduleHeld, { timeout: 15_000 }).toBe(true)
+          await expect(page).toHaveURL(/\/today(?:#today-overview)?$/)
+          const heading = page.getByRole("heading", { name: "Today", level: 1 })
+          await expect(heading).toBeVisible()
+          await expect(today).toBeFocused()
+          await expect(menu).toBeDisabled()
+          const upcoming = page.locator('#sidebar [data-page="upcoming"]')
+          const input = page.getByLabel("Add a task for today", { exact: true })
+          if (intent === "next sidebar destination") {
+            await page.keyboard.press("Tab")
+            await expect(upcoming).toBeFocused()
+          } else {
+            await input.fill("Keep newer page intent")
+            await expect(input).toBeFocused()
+            await heading.click()
+            await expect(page.locator("body")).toBeFocused()
+          }
+          await page.setViewportSize({ width: 320, height: 812 })
+          await expect(menu).toBeDisabled()
+          releaseModule.resolve()
+          await expect(menu).toHaveAttribute("data-drawer-ready", "true")
+          await expect(menu).toBeEnabled()
+          if (intent === "next sidebar destination") {
+            await expect(menu).toHaveAttribute("aria-expanded", "true")
+            await expect(upcoming).toBeFocused()
+            await expect(upcoming).toBeInViewport()
+            await page.locator("#sidebar").getByRole("button", { name: "Close sidebar", exact: true }).click()
+            await expect(menu).toHaveAttribute("aria-expanded", "false")
+            await expect(menu).toBeFocused()
+          } else {
+            await expect(menu).toHaveAttribute("aria-expanded", "false")
+            await expect(page.locator("body")).toBeFocused()
+            await expect(input).toHaveValue("Keep newer page intent")
+            await expect(input).toBeInViewport()
+          }
+        } finally {
+          releaseModule.resolve()
+        }
+      })
+    }
   })
 })

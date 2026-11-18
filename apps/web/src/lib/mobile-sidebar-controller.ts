@@ -4,10 +4,18 @@ import { containTabFocus } from "./focus-trap"
 
 export const SIDEBAR_FOCUS_REVEAL_EVENT = "meitheal:sidebar-focus-reveal"
 
+const runtime = window as unknown as {
+  __meithealSidebarFocusHandoff?: { sidebar: HTMLElement; target: HTMLElement; controller: AbortController }
+}
+
 pageLifecycle.onPageLoad(signal => {
   const mobileMenu = document.querySelector<HTMLButtonElement>("#menu-toggle")
   const sidebar = document.getElementById("sidebar")
+  const handoff = runtime.__meithealSidebarFocusHandoff
+  delete runtime.__meithealSidebarFocusHandoff
+  handoff?.controller.abort()
   if (!mobileMenu || !sidebar || mobileMenu.dataset.drawerReady === "true") return
+  const previousFocus = handoff?.sidebar === sidebar ? handoff.target : undefined
   mobileMenu.dataset.drawerReady = "true"
   let drawerScroll = 0
   function closeDrawer(restoreFocus = false, restoreScroll = true) {
@@ -69,7 +77,37 @@ pageLifecycle.onPageLoad(signal => {
     }
   }, { signal })
   mobileMenu.disabled = false
+  // A persisted sidebar can cross the phone breakpoint while incoming scripts load.
+  // Its old listeners are already aborted, and display:none can blur the focused link.
+  if (previousFocus && innerWidth <= 768 && previousFocus.isConnected && sidebar.contains(previousFocus)
+    && !previousFocus.closest("[hidden], [inert]") && !hasPriorityOverlay()
+    && !document.querySelector('#search-hub-overlay:not(.hidden), #shortcut-modal:not(.hidden)')
+    && (document.activeElement === document.body || document.activeElement === previousFocus)) {
+    openDrawer(false)
+    if (previousFocus.getClientRects().length && getComputedStyle(previousFocus).visibility === "visible") {
+      previousFocus.focus({ preventScroll: true })
+    } else closeDrawer()
+  }
   signal.addEventListener("abort", () => {
+    runtime.__meithealSidebarFocusHandoff?.controller.abort()
+    delete runtime.__meithealSidebarFocusHandoff
+    const focused = document.activeElement
+    if (innerWidth > 768 && focused instanceof HTMLElement && sidebar.contains(focused)) {
+      const pending = { sidebar, target: focused, controller: new AbortController() }
+      runtime.__meithealSidebarFocusHandoff = pending
+      const cancel = () => {
+        if (runtime.__meithealSidebarFocusHandoff === pending) delete runtime.__meithealSidebarFocusHandoff
+        pending.controller.abort()
+      }
+      // Track new intent during the script-loading gap; CSS blur itself has no focusin.
+      document.addEventListener("focusin", event => {
+        if (event.target instanceof HTMLElement && sidebar.contains(event.target)) pending.target = event.target
+        else cancel()
+      }, { capture: true, signal: pending.controller.signal })
+      document.addEventListener("pointerdown", event => {
+        if (!(event.target instanceof Node) || !sidebar.contains(event.target)) cancel()
+      }, { capture: true, signal: pending.controller.signal })
+    }
     closeDrawer()
     mobileMenu.disabled = true
     delete mobileMenu.dataset.drawerReady
