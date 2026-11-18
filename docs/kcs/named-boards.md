@@ -12,7 +12,7 @@ Expand **Boards** to find Household and your other visible Boards. Expand a Boar
 
 Household and named Boards use the same Kanban cards and columns. Select a named Board card to open its details, or focus it and press Enter. You can edit, file, move or remove the ticket when your permissions allow it. Changes use the ticket version, so a concurrent edit requires refreshing before trying again. Creation opens the same detail panel. The named workspace exposes Kanban, and Household also provides Table, Calendar and Timeline.
 
-Open an Area or Project’s **Tasks** tab to use its filtered Kanban. **Add Task** keeps that context. On a named Board, **N** opens capture for that Board. If another person changes its work while you edit, your input stays available with a refresh notice. Lost authority, deleted context and expired verification still clear private content.
+Open an Area or Project’s **Tasks** tab to use its filtered Kanban. **Add Task** keeps that context. On a named Board, **N** opens capture for that Board. If another person changes its work while you edit, your input stays available with a refresh notice. Lost authority and deleted context clear private content. Backgrounding and temporary connectivity failures hide it while keeping the current draft on that page for revalidation.
 
 If Board verification temporarily fails, the workspace hides its private content and offers **Retry verification**. A successful check restores the same page and retained input. Permanent loss of access clears it and offers a fresh Board view.
 

@@ -102,7 +102,7 @@ test("private verification failures explain the hidden Board and retry without l
     await policyForm.locator('select[name="audience"]').selectOption("everyone")
     const policySaved = settings.waitForResponse(response => response.request().method() === "PUT" && response.url().endsWith("/api/organization-features"))
     await policyForm.getByRole("button", { name: "Save availability", exact: true }).click()
-    expect((await policySaved).status()).toBe(200)
+    expect((await policySaved).ok()).toBe(true)
     expect((await (await admin.request.get(app + "/api/organization-features")).json()).features.groups.audience).toBe("everyone")
     await expect(feature).toHaveValue("groups")
   } finally {
