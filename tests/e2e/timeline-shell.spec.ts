@@ -253,7 +253,8 @@ test.describe("Tasks Shell (Timeline/GANTT)", () => {
       const groupBy = timeline.locator('details[aria-label="Group tasks by"]')
       await groupBy.locator("summary").click()
       await groupBy.getByRole("button", { name: "By Area", exact: true }).click()
-      await expect(secondToggle).toHaveAttribute("aria-expanded", "true")
+      const areaToggle = timeline.locator(`.gantt-sidebar-row[data-task-id="group-area-${gardenId}"]`).getByRole("button")
+      await expect(areaToggle).toHaveAttribute("aria-expanded", "true")
       await expect(bar(secondTask)).toBeVisible()
       await groupBy.locator("summary").click()
       await groupBy.getByRole("button", { name: "By Project", exact: true }).click()
@@ -267,6 +268,164 @@ test.describe("Tasks Shell (Timeline/GANTT)", () => {
       for (const path of cleanup.reverse()) {
         const response = await request.delete(path, { headers, data: {} })
         if (!response.ok()) failures.push(`${path} returned ${response.status()} ${await response.text()}`)
+      }
+      expect(failures).toEqual([])
+    }
+  })
+
+  test("Timeline keeps same-name Areas separate through filtering and renaming", async ({ page, request, baseURL }) => {
+    test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires a disposable built app")
+    const headers = { origin: new URL(baseURL!).origin }
+    const token = crypto.randomUUID().slice(0, 8)
+    const title = `Workshop ${token} with the shared collection of household repairs and workshop equipment`
+    const prefix = `Timeline area ${token}`
+    const dates = {
+      start_date: new Date().toISOString().slice(0, 10),
+      due_date: new Date(Date.now() + 86_400_000).toISOString().slice(0, 10),
+    }
+    const cleanup: string[] = []
+    async function create(path: string, data: object): Promise<string> {
+      const result = await request.post(path, { headers, data })
+      expect(result.status(), await result.text()).toBe(201)
+      const { id } = await result.json() as { id: string }
+      cleanup.push(`${path}/${id}`)
+      return id
+    }
+    async function rename(id: string, name: string) {
+      const result = await request.put(`/api/areas/${id}`, { headers, data: { name } })
+      expect(result.ok(), await result.text()).toBe(true)
+    }
+
+    try {
+      const first = await create("/api/areas", { name: title })
+      const second = await create("/api/areas", { name: `Other workshop ${token}` })
+      await rename(second, title)
+      const reserved = await create("/api/areas", { name: "Unknown Area" })
+      const reservedTask = await create("/api/tasks", { ...dates, title: `${prefix} Tools`, area_id: reserved })
+      const firstTask = await create("/api/tasks", { ...dates, title: `${prefix} Plumbing`, area_id: first })
+      const secondTask = await create("/api/tasks", { ...dates, title: `${prefix} Painting`, area_id: second })
+      const query = new URLSearchParams({ view: "timeline", search: prefix, area: "", groupBy: "area" })
+      await page.setViewportSize({ width: 1440, height: 900 })
+      await page.goto(`/tasks?${query}#timeline`)
+      const chart = page.locator("#tasks-view-timeline")
+      const pane = chart.getByRole("button", { name: "Task pane" })
+      await expect(pane).toBeEnabled()
+      if (await pane.getAttribute("aria-expanded") === "false") await pane.press("Enter")
+      const row = (areaId: string) => chart.locator(`.gantt-sidebar-row[data-task-id="group-area-${areaId}"]`)
+      const bar = (taskId: string) => chart.locator(`.gantt-bar[data-task-id="${taskId}"]`)
+      const firstToggle = row(first).getByRole("button")
+      const secondToggle = row(second).getByRole("button")
+      const search = chart.getByRole("textbox", { name: "Filter by text" })
+      await expect(row(first)).toHaveAccessibleName(`Group: ${title} · #${first.slice(-8)}`)
+      await expect(row(second)).toHaveAccessibleName(`Group: ${title} · #${second.slice(-8)}`)
+      await expect(row(second).locator(".gantt-sidebar-group-qualifier")).toBeInViewport()
+      await expect(bar(firstTask)).toBeVisible()
+      await expect(bar(secondTask)).toBeVisible()
+
+      await firstToggle.press("Enter")
+      await expect(firstToggle).toBeFocused()
+      await expect(firstToggle).toHaveAttribute("aria-expanded", "false")
+      await expect(secondToggle).toHaveAttribute("aria-expanded", "true")
+      await expect(bar(firstTask)).toHaveCount(0)
+      await expect(bar(secondTask)).toBeVisible()
+
+      await search.fill(`${prefix} Painting`)
+      await expect(row(first)).toHaveCount(0)
+      await expect(row(second)).toHaveAccessibleName(`Group: ${title} · #${second.slice(-8)}`)
+      await search.fill(prefix)
+      await expect(firstToggle).toHaveAttribute("aria-expanded", "false")
+      await firstToggle.press("Space")
+      await expect(bar(firstTask)).toBeVisible()
+
+      const unique = `Tool shed ${token}`
+      await rename(second, unique)
+      await page.reload()
+      await expect(row(first)).toHaveAccessibleName(`Group: ${title}`)
+      await expect(row(second)).toHaveAccessibleName(`Group: ${unique}`)
+      await expect(row(first).locator(".gantt-sidebar-group-qualifier")).toHaveCount(0)
+      await expect(row(second).locator(".gantt-sidebar-group-qualifier")).toHaveCount(0)
+      await expect(row(reserved)).toHaveAccessibleName(`Group: Unknown Area · #${reserved.slice(-8)}`)
+
+      const original = await request.get(`/tasks?${query}`)
+      expect(original.ok()).toBe(true)
+      const html = await original.text()
+      const remount = async (catalogText: string | null, assignedAreas: Record<string, string> = {}) => {
+        await page.evaluate(({ html, catalogText, assignedAreas }) => {
+          const incoming = new DOMParser().parseFromString(html, "text/html")
+          const catalog = incoming.getElementById("timeline-areas")
+          if (!catalog) throw new Error("Fixture did not return a Timeline Area catalog")
+          if (catalogText === null) catalog.remove()
+          else catalog.textContent = catalogText
+          if (Object.keys(assignedAreas).length) {
+            const data = incoming.getElementById("timeline-data")
+            if (!data) throw new Error("Fixture did not return Timeline tasks")
+            const tasks = JSON.parse(data.textContent ?? "[]") as { id: string; area_id: string }[]
+            for (const task of tasks) {
+              const area = assignedAreas[task.id]
+              if (area) task.area_id = area
+            }
+            data.textContent = JSON.stringify(tasks)
+          }
+          const replacement = incoming.getElementById("tasks-view-timeline")
+          const current = document.getElementById("tasks-view-timeline")
+          if (!current || !replacement) throw new Error("Fixture Timeline root missing")
+          document.dispatchEvent(Object.assign(new Event("astro:before-swap"), { newDocument: incoming }))
+          current.replaceWith(replacement)
+          document.dispatchEvent(new Event("astro:page-load"))
+        }, { html, catalogText, assignedAreas })
+      }
+
+      const a = "aaaaaaaa-aaaa-4aaa-8aaa-aaa112345678"
+      const b = "aaaaaaaa-aaaa-4aaa-8aaa-aaa212345678"
+      const assignments = { [firstTask]: a, [secondTask]: b, [reservedTask]: "literal" }
+      const labels = { [a]: "İ", [b]: "i\u0307", literal: "İ · #12345678" }
+      const verifyQualifiedLabels = async () => {
+        await expect(row(a)).toHaveAccessibleName("Group: İ · #1-12345678")
+        await expect(row(b)).toHaveAccessibleName("Group: i\u0307 · #2-12345678")
+        await expect(row("literal")).toHaveAccessibleName("Group: İ · #12345678")
+      }
+      await remount(JSON.stringify(Object.fromEntries(Object.entries(labels).reverse())), assignments)
+      await verifyQualifiedLabels()
+      await page.setViewportSize({ width: 375, height: 760 })
+      await expect(pane).toHaveAttribute("aria-expanded", "false")
+      await pane.press("Enter")
+      for (const id of [a, b]) {
+        const qualifier = row(id).locator(".gantt-sidebar-group-qualifier")
+        await expect(qualifier).toBeInViewport()
+        expect(await qualifier.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true)
+      }
+      await page.setViewportSize({ width: 1440, height: 900 })
+
+      await remount(JSON.stringify({ [a]: "Straße", [b]: "STRASSE", literal: "Other place" }), assignments)
+      await expect(row(a)).toHaveAccessibleName("Group: Straße · #12345678")
+      await expect(row(b)).toHaveAccessibleName("Group: STRASSE · #1-12345678")
+
+      await remount(JSON.stringify({ [a]: "Valid Area", [b]: " ", literal: false }), assignments)
+      await expect(row(a)).toHaveAccessibleName("Group: Valid Area")
+      await expect(row(b)).toHaveCount(0)
+      await expect(row("literal")).toHaveCount(0)
+      await expect(chart.getByRole("heading", { name: "Group: Unknown Area", exact: true })).toBeVisible()
+      await expect(bar(secondTask)).toBeVisible()
+      await expect(bar(reservedTask)).toBeVisible()
+
+      for (const malformed of [null, "{", "null", "{}"]) {
+        await remount(JSON.stringify(labels), assignments)
+        await verifyQualifiedLabels()
+        await remount(malformed, assignments)
+        const fallback = chart.getByRole("heading", { name: "Group: Unknown Area", exact: true })
+        await expect(fallback).toBeVisible()
+        await expect(chart.locator(".gantt-sidebar-group-qualifier")).toHaveCount(0)
+        await expect(row(a)).toHaveCount(0)
+        await expect(row(b)).toHaveCount(0)
+        await expect(row("literal")).toHaveCount(0)
+        await expect(bar(reservedTask)).toBeVisible()
+        await expect(bar(secondTask)).toBeVisible()
+      }
+    } finally {
+      const failures: string[] = []
+      for (const path of cleanup.reverse()) {
+        const result = await request.delete(path, { headers, data: {}, maxRetries: 1 })
+        if (!result.ok()) failures.push(`${path} returned ${result.status()}`)
       }
       expect(failures).toEqual([])
     }

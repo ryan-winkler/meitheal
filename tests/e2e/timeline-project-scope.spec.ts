@@ -11,7 +11,7 @@ import { launchPinBrowser, startCoreFixture } from "../scripts/task-pins-fixture
 
 test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires a disposable built app")
 
-test("Timeline shows unavailable projects without revealing their IDs or labels", async () => {
+test("Timeline keeps unavailable Project and Area references out of its grouping data", async () => {
   const work = await mkdtemp(join(tmpdir(), "meitheal-timeline-project-scope-"))
   let child: ChildProcess | undefined
   let browser: Browser | undefined
@@ -35,6 +35,7 @@ test("Timeline shows unavailable projects without revealing their IDs or labels"
     const retiredTitle = "Retired project title"
     const retiredProject = await create("/api/projects", { title: retiredTitle })
     const missingProject = randomUUID()
+    const missingArea = randomUUID()
     const start = Date.now()
     const dates = {
       start_date: new Date(start).toISOString().slice(0, 10),
@@ -47,12 +48,12 @@ test("Timeline shows unavailable projects without revealing their IDs or labels"
     const projectTitle = "Timeline feature access project"
     const group = await create("/api/areas", { name: groupName })
     const project = await create("/api/projects", { title: projectTitle, area_id: group })
-    const assigned = await create("/api/tasks", { ...dates, title: `${prefix} assigned`, project_id: project })
+    const assigned = await create("/api/tasks", { ...dates, title: `${prefix} assigned`, area_id: group, project_id: project })
     const db = new DatabaseSync(join(work, "pins.db"))
     try {
       // The public project lifecycle clears associations. Seed legacy references directly.
       expect(db.prepare("UPDATE projects SET retired_at = ? WHERE id = ?").run(start, retiredProject).changes).toBe(1)
-      expect(db.prepare("UPDATE tasks SET project_id = ? WHERE id = ?").run(missingProject, danglingTask).changes).toBe(1)
+      expect(db.prepare("UPDATE tasks SET project_id = ?, area_id = ? WHERE id = ?").run(missingProject, missingArea, danglingTask).changes).toBe(1)
     } finally {
       db.close()
     }
@@ -64,7 +65,7 @@ test("Timeline shows unavailable projects without revealing their IDs or labels"
     const labels = (await page.locator("#timeline-projects").textContent())!
     expect(labels).toContain(projectTitle)
     expect(await page.locator("#timeline-areas").textContent()).toContain(groupName)
-    for (const value of [retiredProject, retiredTitle, missingProject]) {
+    for (const value of [retiredProject, retiredTitle, missingProject, missingArea]) {
       expect(data).not.toContain(value)
       expect(labels).not.toContain(value)
     }
@@ -83,20 +84,63 @@ test("Timeline shows unavailable projects without revealing their IDs or labels"
     const admin = await browser.newContext({ ignoreHTTPSErrors: true, extraHTTPHeaders: {} })
     await admin.addCookies([{ name: "feedback-fixture", value: "admin", url: origin }])
     const endpoint = app + "/api/organization-features"
-    for (const feature of ["projects", "groups"]) {
+    async function setFeature(feature: string, audience: "everyone" | "selected" | "nobody", users: string[] = []) {
       const current = await admin.request.get(endpoint)
       expect(current.status()).toBe(200)
       const settings = await current.json()
       const saved = await admin.request.put(endpoint, {
         headers: { origin, "x-meitheal-area-admin": current.headers()["x-meitheal-area-admin"]! },
-        data: { feature, audience: "nobody", users: [], revision: settings.features[feature].revision },
+        data: { feature, audience, users, revision: settings.features[feature].revision },
       })
       expect(saved.status(), await saved.text()).toBe(204)
     }
+
+    const areaQuery = new URLSearchParams(query)
+    areaQuery.set("groupBy", "area")
+    const areaUrl = `${app}/tasks?${areaQuery}#timeline`
+    await setFeature("groups", "selected", ["fixture-member"])
+    await page.goto(areaUrl)
+    await expect(page.getByRole("heading", { name: `Group: ${groupName}`, exact: true })).toBeVisible()
+    await expect(page.getByRole("heading", { name: "Group: Default", exact: true })).toBeVisible()
+    await expect(page.getByRole("heading", { name: "Group: Unknown Area", exact: true })).toBeVisible()
+    await expect(page.locator(`.gantt-bar[data-task-id="${danglingTask}"]`)).toBeVisible()
+    expect(await page.locator("#timeline-data").textContent()).toContain(group)
+
+    const visitor = await browser.newContext({ extraHTTPHeaders: {}, serviceWorkers: "block" })
+    await visitor.addCookies([{ name: "feedback-fixture", value: "member-two", url: origin }])
+    try {
+      const fresh = await visitor.newPage()
+      await fresh.goto(areaUrl)
+      const visitorPane = fresh.getByRole("button", { name: "Task pane" })
+      await expect(visitorPane).toBeEnabled()
+      if (await visitorPane.getAttribute("aria-expanded") === "false") await visitorPane.press("Enter")
+      const unavailable = fresh.getByRole("heading", { name: "Group: Unknown Area", exact: true })
+      await expect(unavailable).toBeVisible()
+      await expect(unavailable.locator(".gantt-sidebar-group-qualifier")).toHaveCount(0)
+      await expect(fresh.getByRole("heading", { name: new RegExp(groupName) })).toHaveCount(0)
+      for (const selector of ["#timeline-data", "#timeline-areas", "#timeline-projects"]) {
+        const json = await fresh.locator(selector).textContent()
+        expect(json).not.toContain(group)
+        expect(json).not.toContain(groupName)
+      }
+      await expect(fresh.locator(`.gantt-bar[data-task-id="${assigned}"]`)).toBeVisible()
+      expect(await fresh.locator("#timeline-projects").textContent()).toContain(projectTitle)
+    } finally {
+      await visitor.close()
+    }
+
+    await setFeature("groups", "everyone")
+    await setFeature("projects", "nobody")
+    await page.reload()
+    await expect(page.getByRole("heading", { name: `Group: ${groupName}`, exact: true })).toBeVisible()
+    expect(await page.locator("#timeline-projects").textContent()).not.toContain(projectTitle)
+    await expect(page.locator(`.gantt-bar[data-task-id="${assigned}"]`)).toBeVisible()
+
+    await setFeature("groups", "nobody")
+    await page.goto(`${app}/tasks?${query}#timeline`)
     expect((await context.request.get(app + "/api/projects")).status()).toBe(404)
     expect((await context.request.get(app + "/api/boards/household?view=groups")).status()).toBe(404)
 
-    await page.reload()
     const restrictedProjects = (await page.locator("#timeline-projects").textContent())!
     const restrictedAreas = (await page.locator("#timeline-areas").textContent())!
     const restrictedData = (await page.locator("#timeline-data").textContent())!
@@ -104,8 +148,17 @@ test("Timeline shows unavailable projects without revealing their IDs or labels"
     expect(restrictedProjects).not.toContain(project)
     expect(restrictedAreas).not.toContain(groupName)
     expect(restrictedData).not.toContain(project)
+    expect(restrictedData).not.toContain(group)
     const visibleTask = (JSON.parse(restrictedData) as typeof tasks).find(task => task.id === assigned)
     expect(visibleTask?.project_group).toBe("unavailable-project")
+    await expect(page.locator(`.gantt-bar[data-task-id="${assigned}"]`)).toBeVisible()
+
+    query.set("groupBy", "area")
+    await page.goto(`${app}/tasks?${query}#timeline`)
+    const unknownArea = page.getByRole("heading", { name: "Group: Unknown Area", exact: true })
+    await expect(unknownArea).toHaveCount(1)
+    await expect(unknownArea.locator(".gantt-sidebar-group-qualifier")).toHaveCount(0)
+    await expect(page.getByRole("heading", { name: new RegExp(groupName) })).toHaveCount(0)
     await expect(page.locator(`.gantt-bar[data-task-id="${assigned}"]`)).toBeVisible()
   } finally {
     await browser?.close()
