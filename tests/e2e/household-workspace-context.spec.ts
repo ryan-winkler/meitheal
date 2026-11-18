@@ -57,6 +57,8 @@ test("Household picker and every task view retain context; modal, lane and draft
     const modalTask = await (await saved).json()
     expect(modalTask).toMatchObject({ project_id: project.id, area_id: area.id })
     await expect(page.locator(`.kanban-card[data-id="${modalTask.id}"]`)).toBeVisible()
+    await page.locator("#task-detail-overlay.active #td-close").click()
+    await expect(page.locator("#task-detail-overlay")).not.toHaveClass(/active/)
     const lane = page.locator('.kanban-column[data-status="pending"]')
     await lane.locator(":scope > .kanban-add-btn").click()
     await lane.locator(".kanban-inline-add input").fill("Lane Project capture")

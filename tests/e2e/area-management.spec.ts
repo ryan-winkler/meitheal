@@ -36,7 +36,7 @@ test("Area options open the editor and save within Home Assistant ingress", asyn
     await expect(menu).toBeAttached()
     await page.getByRole("button", { name: /Area options.*Workshop fixture/i }).press("Enter")
     const manage = menu.getByRole("link", { name: "Edit Area" })
-    const editorUrl = `${appUrl}/boards/household?area=${areaId}#group-settings`
+    const editorUrl = `${appUrl}/boards/household?area=${areaId}&view=groups#group-settings`
     await expect(manage).toHaveAttribute("href", prefix + "/areas/" + areaId + "#settings")
     await expect(manage).toBeFocused()
     await manage.press("Enter")
@@ -90,7 +90,7 @@ test("Area options open the editor and save within Home Assistant ingress", asyn
     await expect(editProject).toHaveAttribute("href", `${prefix}/projects/${projectId}#settings`)
     await expect(editProject).toBeFocused()
     await editProject.press("Enter")
-    await expect(page).toHaveURL(`${appUrl}/boards/household?project=${projectId}#project-settings`)
+    await expect(page).toHaveURL(`${appUrl}/boards/household?project=${projectId}&view=groups#project-settings`)
     await expect(page.getByRole("heading", { name: "Project Settings" })).toBeVisible()
 
     const db = new DatabaseSync(join(work, "pins.db"))
@@ -169,7 +169,7 @@ test("Area and Project pages show associated Goals and keep the All Goals view",
     const linkedGoal = await goalReceipt
     expect(linkedGoal.status()).toBe(201)
     expect(linkedGoal.request().postDataJSON().area_id).toBe(work)
-    await expect(page).toHaveURL(new RegExp(`/boards/household\\?area=${work}#goals$`))
+    await expect(page).toHaveURL(new RegExp(`/boards/household\\?area=${work}&view=groups#goals$`))
     const newCard = goalList.locator(".goals-tab__card").filter({ hasText: "Created within Work " + stamp })
     await expect(newCard).toBeVisible()
     goals.push((await newCard.getAttribute("data-goal-id"))!)
@@ -222,7 +222,7 @@ test("Area Routines open the existing editor in context and keep the generated t
     routineId = routines[0]?.id
     const defaultArea = await request.get("/api/habits?area_id=default")
     expect((await defaultArea.json()).habits.map((routine: { id: string }) => routine.id)).not.toContain(routineId)
-    await expect(page).toHaveURL(new RegExp(`/boards/household\\?area=${area}#routines$`))
+    await expect(page).toHaveURL(new RegExp(`/boards/household\\?area=${area}&view=groups#routines$`))
     await expect(page.locator("#section-routines").getByText(name, { exact: false })).toBeVisible()
 
     const destination = await request.post("/api/areas", { data: { name: name + " destination" } })
