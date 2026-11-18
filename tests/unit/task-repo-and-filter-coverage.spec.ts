@@ -27,6 +27,7 @@ test("filter-state and appearance-preferences cover filtering, serialization, gr
   const prevStorage = (globalThis as Record<string, unknown>).localStorage
   const prevMatchMedia = (globalThis as Record<string, unknown>).matchMedia
   const prevInnerWidth = (globalThis as Record<string, unknown>).innerWidth
+  const prevHTMLElement = (globalThis as Record<string, unknown>).HTMLElement
 
   const docDataset: Record<string, string> = {}
   const bodyClasses = new Set<string>()
@@ -98,6 +99,8 @@ test("filter-state and appearance-preferences cover filtering, serialization, gr
     localStorage: fakeStorage,
     matchMedia: () => ({ matches: true }),
     innerWidth: 1280,
+    // The browser-only focus helper checks this constructor even with no active element.
+    HTMLElement: class {},
   })
 
   try {
@@ -222,6 +225,8 @@ test("filter-state and appearance-preferences cover filtering, serialization, gr
       matchMedia: prevMatchMedia,
       innerWidth: prevInnerWidth,
     })
+    if (prevHTMLElement === undefined) delete (globalThis as Record<string, unknown>).HTMLElement
+    else (globalThis as Record<string, unknown>).HTMLElement = prevHTMLElement
   }
 })
 

@@ -239,7 +239,12 @@ test("area disclosure keeps keyboard focus and actions separate", async ({ page,
     await page.keyboard.press("Tab")
     await expect(add).toBeFocused()
 
+    // The URL changes before Astro finishes rebinding the persisted sidebar.
+    const pageLoaded = page.evaluate(() => new Promise<void>(resolve => {
+      document.addEventListener("astro:page-load", () => resolve(), { once: true })
+    }))
     await page.locator('.sidebar .nav-link[href="/tasks"]').click()
+    await pageLoaded
     await expect(page).toHaveURL(/\/tasks(?:#kanban)?$/)
     await expect(toggle).toHaveAttribute("aria-expanded", "false")
     await toggle.press("Space")
@@ -254,8 +259,12 @@ test("area disclosure keeps keyboard focus and actions separate", async ({ page,
     await expect(toggle).toHaveAttribute("aria-expanded", "true")
     await expect(projects.getByRole("textbox")).toBeFocused()
   } finally {
-    if (projectId) await request.delete(`/api/projects/${projectId}`, { headers })
-    await request.delete(`/api/areas/${areaId}`, { headers })
+    if (projectId) {
+      const removeProject = await request.delete(`/api/projects/${projectId}`, { headers, data: {} })
+      expect(removeProject.status()).toBe(200)
+    }
+    const removeArea = await request.delete(`/api/areas/${areaId}`, { headers, data: {} })
+    expect(removeArea.status()).toBe(200)
   }
 })
 
