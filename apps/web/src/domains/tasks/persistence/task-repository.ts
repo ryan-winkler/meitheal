@@ -25,6 +25,7 @@ import { readStoredCalendarDay } from "../../../lib/calendar-day"
 import { calendarDayFromInput, calendarEventDay, calendarEventInterval, calendarIntervalOverlaps, calendarOccurrenceStartKey, calendarToday, compareCalendarStarts, householdDayRanges, shiftCalendarDay, isDueOverdue } from "../../../lib/date"
 import { parseTicketKey } from "../../../lib/ticket-key"
 import { getNextOccurrence, parseRRule } from "../recurrence"
+import type { TaskEpicLink } from "../task-epic-groups"
 import { deferralTerminalStatusesSql, isDeferralTerminalStatus } from "./task-deferral-status"
 import { discardUnappliedTaskActivity, taskChangedActivity, type RecentTaskActor } from "./recent-activity"
 import { canAdvanceTaskTimestampMs, nextTaskTimestampMs, taskTimestampMs } from "./task-timestamp"
@@ -667,6 +668,17 @@ export class TaskRepository {
     } finally {
       snapshot.close()
     }
+  }
+
+  /** Readable Epic ancestry can extend outside the current lane and filters. */
+  async getHouseholdEpicLinks(reader: Pick<Client, "execute">): Promise<TaskEpicLink[]> {
+    const result = await reader.execute(
+      `SELECT id, parent_id, task_type,
+              CASE WHEN task_type = 'epic' THEN title END AS title,
+              CASE WHEN task_type = 'epic' THEN ticket_number END AS ticket_number
+       FROM tasks WHERE task_board_id IS NULL`,
+    )
+    return result.rows as unknown as TaskEpicLink[]
   }
 
   /** Ordered, narrow scan for lane counts and matching before loading card details. */

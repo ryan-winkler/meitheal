@@ -73,7 +73,7 @@ export function taskViewUrl(current: URL, view: TaskView, explicitFilters = fals
     const params = url.searchParams
     const groupBy = params.get("groupBy")
     const subGroupBy = params.get("subGroupBy")
-    if (groupBy === "epic" || groupBy === "workflow") {
+    if (groupBy === "workflow" || (groupBy === "epic" && view !== "kanban")) {
       params.delete("groupBy")
       params.delete("subGroupBy")
     } else if (subGroupBy === "epic" || subGroupBy === "workflow") {

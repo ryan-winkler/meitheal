@@ -13,8 +13,7 @@ export interface KanbanRefreshFocus {
   lane?: string | undefined
   taskId?: string | undefined
   firstPage?: boolean
-  afterStatusSave?: boolean
-  afterAreaSave?: boolean
+  afterSave?: "status" | "epic" | "board-group"
 }
 
 function findGroupFocus(board: HTMLElement, group: HTMLElement) {
@@ -115,7 +114,7 @@ export function initKanbanPage(signal: AbortSignal): void {
         return
       }
       if (!replacement) throw new Error("Board response unavailable")
-      if ((focus?.afterStatusSave || focus?.afterAreaSave || dataOnly) && (queuedBackgroundRead || boardInteractionActive())) {
+      if ((focus?.afterSave || dataOnly) && (queuedBackgroundRead || boardInteractionActive())) {
         if (!queuedBackgroundRead) queueBackgroundRead(focus, dataOnly)
         renderStatus("")
         return
@@ -125,8 +124,9 @@ export function initKanbanPage(signal: AbortSignal): void {
       const grouping = board.dataset.groupBy
       const activeGroup = (grouping === "assigned" || grouping === "status" || grouping === "project") && board.contains(active) &&
         active?.matches("button.swimlane-header") ? active.closest<HTMLElement>(".swimlane-group") : null
-      const shouldFocus = active === retry || board.contains(active) || (focus && !focus.afterAreaSave && active === document.body)
-      const previousControl = (focus?.afterAreaSave || focus?.afterStatusSave || grouping === "project") &&
+      const shouldFocus = active === retry || board.contains(active) ||
+        (focus && (!focus.afterSave || focus.afterSave === "status") && active === document.body)
+      const previousControl = (focus?.afterSave || grouping === "project") &&
         active instanceof HTMLElement && board.contains(active) ? active : null
       const scroll = new Map(Array.from(board.querySelectorAll<HTMLElement>(".kanban-column"), lane =>
         [lane.dataset.status, lane.querySelector(".kanban-cards")?.scrollTop ?? 0] as const))
@@ -184,7 +184,7 @@ export function initKanbanPage(signal: AbortSignal): void {
     } catch {
       if (!request.signal.aborted && !signal.aborted) {
         const message = window.mI18n?.get("kanban.board_load_failed") ?? "Couldn’t load the board."
-        renderStatus(focus?.afterStatusSave ? `Status saved. ${message}` : message, true)
+        renderStatus(focus?.afterSave === "status" ? `Status saved. ${message}` : message, true)
       }
     } finally {
       if (pending === request) {
@@ -253,12 +253,15 @@ export function initKanbanPage(signal: AbortSignal): void {
   window.addEventListener("pageshow", event => {
     if (event.persisted) void refresh()
   }, { signal })
+  document.addEventListener("meitheal:task-hierarchy-changed", () => {
+    if (desired.searchParams.get("groupBy") === "epic") queueBackgroundRead({ afterSave: "epic" })
+  }, { signal })
   document.addEventListener("meitheal:task-status-saved", event => {
     const { id, status } = (event as CustomEvent<{ id: string; status: string }>).detail
-    if (typeof status === "string") queueBackgroundRead({ taskId: id, lane: status, afterStatusSave: true })
+    if (typeof status === "string") queueBackgroundRead({ taskId: id, lane: status, afterSave: "status" })
   }, { signal })
   document.addEventListener("kanban:detail-changed", () => {
-    queueBackgroundRead({ afterAreaSave: true })
+    queueBackgroundRead({ afterSave: "board-group" })
   }, { signal })
   document.addEventListener("meitheal:home-assistant-area-saved", () => {
     if (new URLSearchParams(location.search).has("home_assistant_area_id")) void refresh()

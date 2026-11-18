@@ -111,6 +111,7 @@ const defaultGroupByOptions = view === "table"
   : [
       { value: "none", label: t("kanban.group_none", locale) },
       { value: "type", label: t("kanban.group_type", locale) },
+      ...(view === "kanban" ? [{ value: "epic", label: t("kanban.group_epic", locale) }] : []),
       { value: "area", label: t("kanban.group_area", locale) },
       { value: "project", label: t("kanban.group_project", locale) },
       { value: "priority", label: t("kanban.group_priority", locale) },

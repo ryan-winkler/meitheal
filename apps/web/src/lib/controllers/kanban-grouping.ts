@@ -77,7 +77,7 @@ export function initKanbanGrouping(board: HTMLElement, signal: AbortSignal): voi
           if (countEl) countEl.textContent = String(cards.length)
         })
     })
-  } else if (mode === "area" || mode === "priority" || mode === "status" || mode === "assigned" || mode === "project") {
+  } else if (mode === "area" || mode === "priority" || mode === "epic" || mode === "status" || mode === "assigned" || mode === "project") {
     const byProject = mode === "project"
     const byAssignee = mode === "assigned"
     const icons: Record<string, string> =
@@ -119,7 +119,7 @@ export function initKanbanGrouping(board: HTMLElement, signal: AbortSignal): voi
       flatCards.forEach((card) => {
         const value = card.dataset[mode]
         let val = mode === "status" ? normalizeStatus(value || STATUS.PENDING)
-          : byAssignee ? value ?? "" : value || (mode === "priority" ? "3" : "default")
+          : byAssignee ? value ?? "" : value || (mode === "priority" ? "3" : mode === "epic" ? "epic:none" : "default")
         if (byProject) val = card.dataset.projectGroup || "unavailable-project"
         if (byAssignee && card.dataset.assigneeKey) {
           try {
@@ -140,6 +140,7 @@ export function initKanbanGrouping(board: HTMLElement, signal: AbortSignal): voi
       const groupLabel = (key: string) => {
         const card = groups.get(key)?.[0]
         if (byProject) return card?.dataset.projectLabel ?? window.mI18n?.get("kanban.unknown_project") ?? "Unknown Project"
+        if (mode === "epic") return card?.dataset.epicLabel || board.dataset.noEpicLabel || "No Epic"
         if (byAssignee) return key ? window.mI18n?.get("tasks.assignee_loading") ?? "Loading assignee…"
           : window.mI18n?.get("tasks.unassigned") ?? "Unassigned"
         if (mode === "area") return areaLabel(key, card)

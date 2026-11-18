@@ -45,6 +45,8 @@ export {
   taskInsertStatement,
   TaskRepository,
   type CalendarFilterRow,
+  type KanbanIndexRow,
+  type KanbanLane,
   type ReassignmentReplayState,
   type TaskCatalogRow,
 } from "./persistence/task-repository"

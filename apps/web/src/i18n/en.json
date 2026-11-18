@@ -242,6 +242,8 @@
     "group": "Group",
     "group_none": "No grouping",
     "group_type": "By Type",
+    "group_epic": "By Epic",
+    "group_no_epic": "No Epic",
     "group_board": "Board",
     "group_priority": "By Priority",
     "group_area": "By Area",

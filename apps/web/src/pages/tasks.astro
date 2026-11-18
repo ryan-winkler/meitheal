@@ -443,6 +443,7 @@ if (groupByProject) {
     data-inactivity-upcoming={t("inactivity.upcoming", locale)}
     data-inactivity-stalled={t("inactivity.stalled", locale)}
     data-group-by={kanbanFilters.groupBy}
+    data-no-epic-label={t("kanban.group_no_epic", locale)}
     data-default-area-label={t("kanban.default_area", locale)}
     data-unavailable-area-label={t("kanban.unavailable_area", locale)}
     data-backlog-mode={backlogMode}
@@ -528,6 +529,7 @@ if (groupByProject) {
               })}
               {/* Flat (non-grouped) card rendering */}
               {colTasks.map((task) => {
+                const epicGroup = lane?.epicsByCard.get(task.id)
                 const p = Number(task.priority ?? 3);
                 const ticketKey = formatTicketKey(Number(task.ticket_number));
                 const tt = String(task.task_type ?? "task");
@@ -600,6 +602,8 @@ if (groupByProject) {
                     data-area={areaId}
                     data-area-name={cardArea?.name}
                     data-area-icon={cardArea?.icon}
+                    data-epic={epicGroup?.id}
+                    data-epic-label={epicGroup?.label}
                     data-assigned={String(task.assigned_to ?? "")}
                     data-assignee-key={kanbanFilters.groupBy === "assigned" ? JSON.stringify(String(task.assigned_to ?? "")) : undefined}
                     data-labels={String(task.labels ?? "[]")}
