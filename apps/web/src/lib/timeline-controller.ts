@@ -53,7 +53,7 @@ interface TimelineTask {
   blocked_by: string | null
   effort_minutes: number | null
   labels: string | null
-  area_id: string | null
+  area_id?: string | null
   project_group: string
   assigned_to: string | null
   deferred_at: number | null
@@ -95,7 +95,8 @@ interface ZoomConfig {
 }
 
 // ── Area/Project name lookups (populated from SSR data) ──────────────────
-let areaLookup: Record<string, string> = {}
+const UNKNOWN_AREA_NAME = "Unknown Area"
+let areaLookup = new Map<string, { title: string; qualifier?: string }>()
 let projectLookup: Record<string, HouseholdProjectLabel> = {}
 
 // ── Unscheduled section collapse state ─────────────────────────────────────
@@ -633,6 +634,39 @@ const collapsedParents = new Set<string>()
 const collapsedGroups = new Set<string>()
 const GROUP_ROW_SELECTOR = "[role=heading][data-row-index]"
 
+function readAreaGroupLabels(json: string): typeof areaLookup {
+  const catalog: unknown = JSON.parse(json)
+  if (!catalog || typeof catalog !== "object" || Array.isArray(catalog)) return new Map()
+
+  const entries = Object.entries(catalog)
+    .filter((entry): entry is [string, string] => Boolean(entry[0]) && typeof entry[1] === "string" && Boolean(entry[1].trim()))
+    .sort(([left], [right]) => left.localeCompare(right))
+  // Match the uppercase Timeline headings as users see them.
+  const normalizeTitle = (name: string) => name.trim().replace(/\s+/g, " ").toUpperCase().normalize("NFC")
+  const counts = new Map([[normalizeTitle(UNKNOWN_AREA_NAME), 1]])
+  for (const [, name] of entries) {
+    const title = normalizeTitle(name)
+    counts.set(title, (counts.get(title) ?? 0) + 1)
+  }
+  const used = new Set(counts.keys())
+  const labels: typeof areaLookup = new Map()
+  for (const [id, title] of entries) {
+    const titleKey = normalizeTitle(title)
+    if (counts.get(titleKey) === 1) {
+      labels.set(id, { title })
+      continue
+    }
+
+    const suffix = id.slice(-8)
+    let qualifier = `#${suffix}`
+    let disambiguator = 1
+    while (used.has(normalizeTitle(`${title} · ${qualifier}`))) qualifier = `#${disambiguator++}-${suffix}`
+    used.add(normalizeTitle(`${title} · ${qualifier}`))
+    labels.set(id, { title, qualifier })
+  }
+  return labels
+}
+
 /**
  * Build a flat list sorted parent→children with depth levels.
  * Parents appear before their children. Orphan tasks stay at depth 0.
@@ -659,8 +693,12 @@ function buildHierarchy(bars: GanttBar[], groupByKey: string = "none"): Hierarch
         qualifier = label?.qualifier
       }
       else if (groupKey === "area") {
-        const rawId = bar.original.area_id || "default"
-        val = areaLookup[rawId] || "Unknown Area"
+        const areaId = bar.original.area_id
+        const groupId = areaId === undefined ? "" : (areaId || "default")
+        const label = areaLookup.get(groupId)
+        key = label ? `area-${groupId}` : "unavailable-area"
+        val = label?.title ?? UNKNOWN_AREA_NAME
+        qualifier = label?.qualifier
       }
       else if (groupKey === "assignee") val = bar.original.assigned_to || "Unassigned"
       else if (groupKey === "type") {
@@ -2772,8 +2810,10 @@ export function initTimelineController(signal: AbortSignal) {
 
   // Load area name lookup from SSR data
   const areasEl = document.getElementById("timeline-areas")
-  if (areasEl) {
-    try { areaLookup = JSON.parse(areasEl.textContent || "{}") } catch { /* ignore */ }
+  try {
+    areaLookup = readAreaGroupLabels(areasEl?.textContent ?? "{}")
+  } catch {
+    areaLookup = new Map()
   }
 
   // Load project name lookup from SSR data
