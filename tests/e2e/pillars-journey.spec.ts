@@ -200,52 +200,61 @@ test("both Edit actions update the intended Pillar and return focus on cancel", 
   }
 })
 
-test("Current signal aligns at 320 px and desktop and its links stay in ingress", async ({ browser }) => {
-  const context = await browser.newContext({ viewport: { width: 320, height: 780 }, reducedMotion: "reduce", serviceWorkers: "block", extraHTTPHeaders: {} })
+test("Dashboard workload links fit at 320px and preserve ingress filters", async ({ browser }) => {
+  const context = await browser.newContext({
+    viewport: { width: 320, height: 780 }, reducedMotion: "reduce", serviceWorkers: "block", extraHTTPHeaders: {},
+  })
   try {
     await context.addCookies([{ name: "feedback-fixture", value: "admin", url: origin }])
     const page = await context.newPage()
-    const signal = page.locator(".dashboard-hero__status")
-    await page.goto(ingress + "/#dashboard-overview", { waitUntil: "domcontentloaded" })
-    await expect(signal.getByText("Everything is steady")).toBeVisible()
-    await expect(signal.getByRole("link")).toHaveCount(0)
+    const dashboard = ingress + "/#dashboard-overview"
+    const overview = page.locator("#dashboard-overview")
+    await page.goto(dashboard, { waitUntil: "domcontentloaded" })
+    await expect(overview.locator("#stat-active .stat-value")).toHaveText("0")
+    await expect(overview.locator("#stat-overdue .stat-value")).toHaveText("0")
+
     const active = await request.post(ingress + "/api/tasks", { data: { title: "Active QA task", status: "active" } })
     expect(active.status()).toBe(201)
     const activeTask = await active.json()
-    await page.reload({ waitUntil: "domcontentloaded" })
-    await expect(signal.getByRole("link")).toHaveAttribute("href", /\/tasks\?status=active$/)
     const overdue = await request.post(ingress + "/api/tasks", { data: { title: "Overdue QA task", due_date: "2020-01-01" } })
     expect(overdue.status()).toBe(201)
     const overdueTask = await overdue.json()
     await page.reload({ waitUntil: "domcontentloaded" })
-    const link = signal.getByRole("link")
-    await expect(link).toHaveAttribute("href", /\/tasks\?status=overdue$/)
+
     for (const width of [320, 1440]) {
       await page.setViewportSize({ width, height: 780 })
-      const layout = await signal.evaluate(node => ({
-        heading: node.parentElement!.querySelector(".dashboard-hero__title")!.getBoundingClientRect().left,
-        label: node.querySelector(".dashboard-hero__status-label")!.getBoundingClientRect().left,
-        link: node.querySelector("a")!.getBoundingClientRect().left,
-        alignment: getComputedStyle(node).alignItems,
+      const layout = await overview.evaluate(node => ({
+        heading: node.querySelector("h1")!.getBoundingClientRect().left,
+        metrics: node.querySelector(".stats-grid")!.getBoundingClientRect().left,
         width: document.documentElement.scrollWidth,
       }))
-      expect(Math.abs(layout.label - layout.heading)).toBeLessThan(1)
-      if (width === 320) expect(Math.abs(layout.link - layout.label)).toBeLessThan(1)
-      else expect(layout.alignment).toBe("baseline")
+      expect(Math.abs(layout.metrics - layout.heading)).toBeLessThan(1)
       expect(layout.width).toBe(width)
-      await page.locator(".dashboard-hero__chip").last().focus()
+      const link = overview.locator("#stat-overdue")
+      await link.press("Shift+Tab")
       await page.keyboard.press("Tab")
       await expect(link).toBeFocused()
       await expect(link).toHaveCSS("outline-style", "solid")
     }
-    await link.press("Enter")
-    await expect(page.locator("#kanban-shell")).toHaveAttribute("data-kanban-booted", "true")
-    const destination = new URL(ingress + "/tasks?status=overdue")
-    // Tasks may add its canonical view fragment after navigation.
-    await expect(page).toHaveURL(url => url.origin === destination.origin &&
-      url.pathname === destination.pathname && url.search === destination.search)
-    await expect(page.locator(`.kanban-card[data-id="${overdueTask.id}"]`)).toBeVisible()
-    await expect(page.locator(`.kanban-card[data-id="${activeTask.id}"]`)).toHaveCount(0)
+
+    for (const [status, included, excluded] of [
+      ["overdue", overdueTask.id, activeTask.id],
+      ["active", activeTask.id, overdueTask.id],
+    ]) {
+      // A new tab isolates this ingress deep link from the last route remembered by the first one.
+      const dashboardTab = await context.newPage()
+      await dashboardTab.goto(dashboard, { waitUntil: "domcontentloaded" })
+      const link = dashboardTab.locator("#dashboard-overview #stat-" + status)
+      await expect(link.locator(".stat-value")).toHaveText("1")
+      await link.press("Enter")
+      await expect(dashboardTab.locator("#kanban-shell")).toHaveAttribute("data-kanban-booted", "true")
+      const destination = new URL(ingress + "/tasks?status=" + status)
+      await expect(dashboardTab).toHaveURL(url => url.origin === destination.origin &&
+        url.pathname === destination.pathname && url.search === destination.search)
+      await expect(dashboardTab.locator(`.kanban-card[data-id="${included}"]`)).toBeVisible()
+      await expect(dashboardTab.locator(`.kanban-card[data-id="${excluded}"]`)).toHaveCount(0)
+      await dashboardTab.close()
+    }
   } finally {
     await context.close()
   }

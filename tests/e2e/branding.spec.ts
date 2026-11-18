@@ -219,17 +219,12 @@ test.describe("Branding — Accent Picker", () => {
   })
 })
 
-test.describe("Branding — Greeting Context", () => {
-  test("Dashboard greeting and workload signal are visible", async ({
-    page,
-  }) => {
-    await page.goto("/")
-    await expect(page.getByRole("heading", {
-      level: 1,
-      name: /Good (Morning|Afternoon|Evening)!/,
-    })).toBeVisible()
-    const signal = page.locator(".dashboard-hero__status")
-    await expect(signal.getByText("Current signal")).toBeVisible()
-    await expect(signal).toContainText(/\d+ (overdue|in progress)|Everything is steady/)
-  })
+test("Dashboard shows its heading and workload links without an explainer banner", async ({ page }) => {
+  await page.goto("/")
+  const overview = page.locator("#dashboard-overview")
+  await expect(overview.getByRole("heading", { level: 1, name: "Dashboard" })).toBeVisible()
+  await expect(overview.locator(".dashboard-hero")).toHaveCount(0)
+  await expect(overview.locator("#stat-active")).toHaveAttribute("href", "/tasks?status=active")
+  await expect(overview.locator("#stat-overdue")).toHaveAttribute("href", "/tasks?status=overdue")
+  await expect(page.locator("#quick-title")).not.toBeFocused()
 })

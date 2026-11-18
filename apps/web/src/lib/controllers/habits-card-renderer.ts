@@ -208,20 +208,8 @@ export function renderHabits(habits: HabitData[]): void {
 
     const title = document.createElement("p")
     title.className = "habits-empty__title"
-    title.textContent = "No habits yet. Create your first daily routine."
-
-    const detail = document.createElement("p")
-    detail.className = "habits-empty__detail"
-    detail.textContent =
-      "Habits create real tasks that surface in Today, Kanban, Table, and Upcoming."
-
-    const button = document.createElement("button")
-    button.type = "button"
-    button.className = "btn btn-primary"
-    button.dataset.openHabitModal = "true"
-    button.textContent = "Create Habit"
-
-    emptyState.append(title, detail, button)
+    title.textContent = "No routines yet."
+    emptyState.append(title)
     list.append(emptyState)
     return
   }
@@ -249,7 +237,6 @@ export function updateStats(habits: HabitData[]): void {
   const statCompletedToday = document.getElementById("stat-completed-today")
   const statLongestStreak = document.getElementById("stat-longest-streak")
   const statTotal = document.getElementById("stat-total")
-  const signalSummary = document.getElementById("habits-signal-summary")
   const cadenceSummary = document.getElementById("habits-cadence-summary")
   const libraryCount = document.getElementById("habits-library-count")
 
@@ -257,13 +244,6 @@ export function updateStats(habits: HabitData[]): void {
   if (statCompletedToday) statCompletedToday.textContent = String(completedToday)
   if (statLongestStreak) statLongestStreak.textContent = String(bestStreak)
   if (statTotal) statTotal.textContent = String(totalCompletions)
-
-  if (signalSummary) {
-    signalSummary.textContent =
-      activeCount === 0
-        ? "No active habits yet"
-        : `${completedToday} completed today across ${activeCount} active habit${activeCount === 1 ? "" : "s"}`
-  }
 
   if (cadenceSummary) {
     cadenceSummary.textContent =
@@ -273,8 +253,8 @@ export function updateStats(habits: HabitData[]): void {
   }
 
   if (libraryCount) {
-    libraryCount.textContent =
-      activeCount === 0 ? "No active habits yet" : `${activeCount} active habit${activeCount === 1 ? "" : "s"}`
+    libraryCount.hidden = activeCount === 0
+    libraryCount.textContent = `${activeCount} active routine${activeCount === 1 ? "" : "s"}`
   }
 }
 

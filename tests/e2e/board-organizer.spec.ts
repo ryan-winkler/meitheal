@@ -235,9 +235,10 @@ test("Named Board disclosures follow the selected Area and current Home Assistan
       await expect(page.getByRole("status").filter({ hasText: "Household is deleted. Its Routines and shared creation are paused." })).toBeVisible()
       await expect(routineList.getByRole("link", { name: "Clean workbench" })).toBeVisible()
       await expect(routineList.getByRole("button", { name: "Mark Clean workbench done" })).toBeEnabled()
-      const sharedCreation = page.locator("[data-open-habit-modal]")
+      const sharedCreation = page.locator("#habits-bar-new-habit, #habits-library .habits-section__actions button")
       await expect(sharedCreation).toHaveCount(2)
       for (const button of await sharedCreation.all()) await expect(button).toBeDisabled()
+      await expect(page.locator("[data-open-habit-modal]")).toHaveCount(0)
       expect((await owner.request.get(app + "/api/habits")).status()).toBe(409)
     } finally {
       const pausedDirectory = await administrator.request.get(app + "/api/boards")
