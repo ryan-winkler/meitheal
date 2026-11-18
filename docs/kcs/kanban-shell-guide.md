@@ -101,6 +101,14 @@ Choose **Group by → By Status** to split each workflow column into status grou
 
 Use Enter or Space on a heading to collapse its cards. A status group remembers its collapsed state separately in each column. Sharing the URL includes the grouping and current column page.
 
+### Group cards by project
+
+Choose **Group by → By Project** to split the current column page into project groups. Separate projects with the same name have separate groups. A second heading line shows the project's Area when it helps distinguish the name. Projects with no direct Area can use their Goal's Area.
+
+**No Project** contains tasks with no project. **Unknown Project** contains assignments that are unavailable to the Household. If project names fail to load, the board explains why assigned tasks are in Unknown Project. Reload to check again. Column counts and cards remain available while names are unavailable.
+
+Use Enter or Space on a heading to collapse its cards. Each column remembers its own project groups. Changing only Group by keeps the current page.
+
 ## Troubleshooting
 
 ### Board pages or filters fail to load
@@ -141,3 +149,5 @@ compressing the cards. At widths from 769 to 1024 CSS px the sidebar narrows to
 `--sidebar-width`, so a change to one width moves the other.
 
 An unreadable card assignment no longer interrupts grouping for the board. Check the assignment in Details if its group is unexpected. If an assignee group disappears after a refresh, keyboard focus returns to its workflow lane heading.
+
+Kanban Project groups keep their saved collapse state when their names change. Duplicate or reserved names show a short identity token before the Area, so long names cannot hide the distinction. Missing and unavailable assignments use the current language’s labels. If a focused Project disappears after a refresh, focus returns to its workflow lane heading.

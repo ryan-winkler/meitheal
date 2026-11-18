@@ -210,13 +210,6 @@
   border-radius: 4px;
 }
 
-.search-highlight {
-  background: rgb(var(--accent-rgb) / 0.2);
-  color: var(--accent);
-  border-radius: 2px;
-  padding: 0 2px;
-}
-
 .kanban-ticket-key {
   font-size: 11px;
   font-family: 'JetBrains Mono', monospace;
@@ -350,20 +343,6 @@
   background: linear-gradient(180deg, rgba(255,255,255,0.04) 0%, transparent 100%);
 }
 
-.kanban-add-task {
-  @apply text-sm text-text-muted cursor-pointer px-4 py-2.5 transition-all;
-  border-top: 1px dashed var(--border);
-  text-align: center;
-  font-weight: 500;
-}
-
-.kanban-add-task:hover {
-  @apply text-accent;
-  background: rgb(var(--accent-rgb) / 0.06);
-  border-top-color: var(--accent);
-  border-top-style: solid;
-}
-
 .swimlane-add-btn {
   margin-top: 8px;
   font-size: 13px;
@@ -451,17 +430,16 @@
   display: none;
 }
 
-/* Client-rendered Status and Assignee group controls */
-#kanban-board:is([data-group-by="assigned"], [data-group-by="status"]) .swimlane-header {
+#kanban-board:is([data-group-by="assigned"], [data-group-by="status"], [data-group-by="project"]) .swimlane-header {
   width: 100%;
   min-height: 44px;
 }
 
-#kanban-board:is([data-group-by="assigned"], [data-group-by="status"]) .swimlane-header:focus-visible {
+#kanban-board:is([data-group-by="assigned"], [data-group-by="status"], [data-group-by="project"]) .swimlane-header:focus-visible {
   outline-color: var(--border-focus);
 }
 
-#kanban-board:is([data-group-by="assigned"], [data-group-by="status"]) .swimlane-label {
+#kanban-board:is([data-group-by="assigned"], [data-group-by="status"], [data-group-by="project"]) .swimlane-label {
   flex: 1;
   min-width: 0;
   overflow-wrap: anywhere;
@@ -474,7 +452,6 @@
   .swimlane-cards,
   .swimlane-toggle,
   .swimlane-add-btn,
-  .kanban-add-task,
   .kanban-context-menu,
   .kanban-card::before {
     transition: none !important;
@@ -580,4 +557,21 @@
 /* Card metadata text color default */
 .kanban-card-due {
   color: var(--text-primary);
+}
+
+#kanban-board[data-group-by="project"] .swimlane-heading {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.swimlane-qualifier {
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.kanban-project-notice {
+  margin: 0;
+  color: var(--text-muted);
 }

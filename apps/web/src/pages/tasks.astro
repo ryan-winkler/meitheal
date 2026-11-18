@@ -9,6 +9,7 @@ import UnifiedBar from "../components/layout/UnifiedBar.astro";
 import SignalBar from "../components/layout/SignalBar.astro";
 import { requestedTaskView, taskViewUrl, TASK_VIEWS, TASK_VIEW_LABELS, TASK_VIEW_ICONS } from "../lib/task-view-route"
 import { loadKanbanBoard } from "../lib/kanban-board-data"
+import { getHouseholdProjectGroup, getHouseholdProjectLabels } from "../lib/household-project-grouping"
 import { readKanbanFilters, setKanbanPage } from "../lib/kanban-query"
 import LabelBadges from "../components/ui/LabelBadges.astro";
 import FilterToolbar from "../components/ui/FilterToolbar.astro";
@@ -247,6 +248,22 @@ try {
   /* areas table may not exist yet */
 }
 const kanbanAreas = new Map(areas.map(area => [area.id, area]))
+const groupByProject = renderedView === "kanban" && kanbanFilters.groupBy === "project" && available("projects")
+const projectFallbacks = { none: t("kanban.no_project", locale), unknown: t("kanban.unknown_project", locale) }
+let projectLabels = getHouseholdProjectLabels([], Object.fromEntries(areas.map(area => [area.id, area.name])), undefined, projectFallbacks)
+let projectCatalogUnavailable = false
+if (groupByProject) {
+  try {
+    projectLabels = getHouseholdProjectLabels(
+      await hierarchyRepo.findProjectGroups(),
+      Object.fromEntries(areas.map(area => [area.id, area.name])), undefined, projectFallbacks,
+    )
+  } catch {
+    projectCatalogUnavailable = true
+    Astro.response.headers.set("Cache-Control", "no-store")
+  }
+}
+
 ---
 
 <Layout title={`Meitheal — ${householdWorkspace ? "Household · " : ""}${heading}`}>
@@ -414,6 +431,9 @@ const kanbanAreas = new Map(areas.map(area => [area.id, area]))
     </defs>
   </svg>
 
+  <p class="kanban-project-notice" role="status" data-project-catalog-unavailable hidden={!projectCatalogUnavailable}>
+    {t("kanban.project_catalog_failed", locale)}
+  </p>
   <div
     id="kanban-board"
     class="kanban-board"
@@ -521,6 +541,10 @@ const kanbanAreas = new Map(areas.map(area => [area.id, area]))
                     : {};
                 // Phase 20: Sub-task indicator (ADHD Optimization)
                 const childCount = Number(task.child_count ?? 0);
+                const projectGroup = groupByProject ? getHouseholdProjectGroup(
+                  task.project_id, projectLabels, Boolean(task.project_assigned),
+                ) : undefined
+                const projectLabel = projectGroup ? projectLabels[projectGroup] : undefined
                 const rice =
                   fp.reach && fp.impact && fp.confidence && fp.effort
                     ? Math.round(
@@ -580,6 +604,9 @@ const kanbanAreas = new Map(areas.map(area => [area.id, area]))
                     data-assignee-key={kanbanFilters.groupBy === "assigned" ? JSON.stringify(String(task.assigned_to ?? "")) : undefined}
                     data-labels={String(task.labels ?? "[]")}
                     data-task-id={task.id}
+                    data-project-group={projectGroup}
+                    data-project-label={projectLabel?.title}
+                    data-project-qualifier={projectLabel?.qualifier}
                     data-area-id={task.project_id}
                     style={`--card-accent: ${task.color ? String(task.color) : tc.color};${taskColorStyle ?? ""}`}
                   >

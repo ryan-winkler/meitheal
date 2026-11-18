@@ -22,6 +22,7 @@ function setCollapsed(group: HTMLElement, collapsed: boolean): void {
 }
 
 function initCollapse(board: HTMLElement, signal: AbortSignal): void {
+  const mode = board.dataset.groupBy
   const groups = board.querySelectorAll<HTMLElement>(".swimlane-group:not([hidden])")
   groups.forEach((group, index) => {
     const header = group.querySelector<HTMLButtonElement>(".swimlane-header")
@@ -32,7 +33,6 @@ function initCollapse(board: HTMLElement, signal: AbortSignal): void {
     header.setAttribute("aria-controls", cards.id)
     const key = collapseKey(board, group)
     try {
-      const mode = board.dataset.groupBy
       const legacy = mode === "type" || mode === "area" || mode === "priority"
         ? `meitheal-swimlane-${group.dataset.swimlaneType}` : null
       const stored = localStorage.getItem(key) ?? (legacy && localStorage.getItem(legacy))
@@ -77,7 +77,8 @@ export function initKanbanGrouping(board: HTMLElement, signal: AbortSignal): voi
           if (countEl) countEl.textContent = String(cards.length)
         })
     })
-  } else if (mode === "area" || mode === "priority" || mode === "status" || mode === "assigned") {
+  } else if (mode === "area" || mode === "priority" || mode === "status" || mode === "assigned" || mode === "project") {
+    const byProject = mode === "project"
     const byAssignee = mode === "assigned"
     const icons: Record<string, string> =
       mode === "priority"
@@ -119,6 +120,7 @@ export function initKanbanGrouping(board: HTMLElement, signal: AbortSignal): voi
         const value = card.dataset[mode]
         let val = mode === "status" ? normalizeStatus(value || STATUS.PENDING)
           : byAssignee ? value ?? "" : value || (mode === "priority" ? "3" : "default")
+        if (byProject) val = card.dataset.projectGroup || "unavailable-project"
         if (byAssignee && card.dataset.assigneeKey) {
           try {
             const key: unknown = JSON.parse(card.dataset.assigneeKey)
@@ -135,13 +137,23 @@ export function initKanbanGrouping(board: HTMLElement, signal: AbortSignal): voi
         const index = CANONICAL_STATUSES.indexOf(key)
         return index < 0 ? CANONICAL_STATUSES.length : index
       }
+      const groupLabel = (key: string) => {
+        const card = groups.get(key)?.[0]
+        if (byProject) return card?.dataset.projectLabel ?? window.mI18n?.get("kanban.unknown_project") ?? "Unknown Project"
+        if (byAssignee) return key ? window.mI18n?.get("tasks.assignee_loading") ?? "Loading assignee…"
+          : window.mI18n?.get("tasks.unassigned") ?? "Unassigned"
+        if (mode === "area") return areaLabel(key, card)
+        if (mode === "status") {
+          const status = getStatusDef(key)
+          return status ? window.mI18n?.get(status.i18nKey) ?? status.label : key
+        }
+        return icons[key] || "🟡 P3 — Medium"
+      }
       const sortedKeys = Array.from(groups.keys()).sort((a, b) => {
         if (mode === "priority") return Number(a) - Number(b)
         if (mode === "status") return statusRank(a) - statusRank(b) || a.localeCompare(b)
         if (byAssignee) return Number(!a) - Number(!b) || a.localeCompare(b)
-        const labelA = areaLabel(a, groups.get(a)?.[0])
-        const labelB = areaLabel(b, groups.get(b)?.[0])
-        return labelA.localeCompare(labelB, document.documentElement.lang || undefined) || a.localeCompare(b)
+        return groupLabel(a).localeCompare(groupLabel(b), document.documentElement.lang || undefined) || a.localeCompare(b)
       })
 
       sortedKeys.forEach((key) => {
@@ -156,12 +168,7 @@ export function initKanbanGrouping(board: HTMLElement, signal: AbortSignal): voi
         const header = document.createElement("button")
         header.type = "button"
         header.className = "swimlane-header"
-        const status = mode === "status" ? getStatusDef(key) : undefined
-        const label = mode === "status" ? (status ? window.mI18n?.get(status.i18nKey) ?? status.label : key)
-          : byAssignee
-          ? (key ? window.mI18n?.get("tasks.assignee_loading") ?? "Loading assignee…"
-            : window.mI18n?.get("tasks.unassigned") ?? "Unassigned")
-          : mode === "area" ? areaLabel(key, cards[0]) : icons[key] || "🟡 P3 — Medium"
+        const label = groupLabel(key)
         const toggleSpan = document.createElement("span")
         toggleSpan.className = "swimlane-toggle"
         toggleSpan.setAttribute("aria-hidden", "true")
@@ -175,7 +182,21 @@ export function initKanbanGrouping(board: HTMLElement, signal: AbortSignal): voi
         const labelSpan = document.createElement("span")
         labelSpan.className = "swimlane-label"
         labelSpan.textContent = mode === "area" ? `${cards[0]?.dataset.areaIcon || "📋"} ${label}` : label
-        if (byAssignee) {
+        let heading = labelSpan
+        if (byProject) {
+          heading = document.createElement("span")
+          heading.className = "swimlane-heading"
+          heading.appendChild(labelSpan)
+          const qualifier = cards[0]?.dataset.projectQualifier
+          if (qualifier) {
+            const detail = document.createElement("span")
+            detail.className = "swimlane-qualifier"
+            detail.textContent = qualifier
+            heading.appendChild(detail)
+            header.setAttribute("aria-label", `${label} · ${qualifier}`)
+          }
+          heading.title = qualifier ? `${label} · ${qualifier}` : label
+        } else if (byAssignee) {
           labelSpan.dataset.assigneeGroup = ""
           labelSpan.dir = "auto"
           if (key) labelSpan.dataset.taskAssignee = key
@@ -184,7 +205,7 @@ export function initKanbanGrouping(board: HTMLElement, signal: AbortSignal): voi
         const countSpan = document.createElement("span")
         countSpan.className = "swimlane-count"
         countSpan.textContent = String(cards.length)
-        header.append(toggleSpan, dotSpan, labelSpan, countSpan)
+        header.append(toggleSpan, dotSpan, heading, countSpan)
 
         const swimlaneCards = document.createElement("div")
         swimlaneCards.className = "swimlane-cards"
