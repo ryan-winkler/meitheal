@@ -8,7 +8,7 @@
  * Streak resets on a missed day (no grace period in v1).
  *
  * @kcs The gamification_stats table stores one row per day with:
- * - date: ISO date string (YYYY-MM-DD)
+ * - date: UTC date string (YYYY-MM-DD)
  * - completed_count: tasks completed that day
  * - streak_count: consecutive days streak as of that date
  * - points: XP earned that day (Phase 5)
@@ -61,6 +61,13 @@ export interface DailyRecord {
 type DailyProgress = { currentStreak: number; points: number }
 const progressByRequest = new WeakMap<object, Promise<DailyProgress>>()
 
+function statsDayKey(now: Date, offset = 0): string {
+  if (offset === 0) return now.toISOString().slice(0, 10)
+  const day = new Date(now)
+  day.setUTCDate(day.getUTCDate() + offset)
+  return day.toISOString().slice(0, 10)
+}
+
 /** Today and the sidebar read the same two indexed days for the current request. */
 export function getDailyProgress(scope: object, now = new Date()): Promise<DailyProgress> {
   const previous = progressByRequest.get(scope)
@@ -75,10 +82,8 @@ export function getDailyProgress(scope: object, now = new Date()): Promise<Daily
 
 async function readDailyProgress(now: Date): Promise<DailyProgress> {
   await ensureGamificationSchema()
-  const today = now.toISOString().slice(0, 10)
-  const previous = new Date(now)
-  previous.setDate(previous.getDate() - 1)
-  const yesterday = previous.toISOString().slice(0, 10)
+  const today = statsDayKey(now)
+  const yesterday = statsDayKey(now, -1)
   const result = await getPersistenceClient().execute({
     sql: "SELECT date, streak_count, points FROM gamification_stats WHERE date IN (?, ?)",
     args: [today, yesterday],
@@ -118,19 +123,17 @@ export async function ensureGamificationSchema(): Promise<void> {
  * Record a task completion. Increments today's count and updates streak.
  * @param points - XP points to award (default: 0, Phase 5 adds weighted points)
  */
-export async function recordTaskCompletion(points = 0): Promise<GamificationStats> {
+export async function recordTaskCompletion(points = 0, now = new Date()): Promise<GamificationStats> {
   await ensureGamificationSchema()
   const client = getPersistenceClient()
-  const today = new Date().toISOString().split("T")[0]!
+  const today = statsDayKey(now)
 
   // Get yesterday's streak
-  const yesterday = new Date()
-  yesterday.setDate(yesterday.getDate() - 1)
-  const yesterdayStr = yesterday.toISOString().split("T")[0]!
+  const yesterday = statsDayKey(now, -1)
 
   const prevResult = await client.execute({
     sql: "SELECT streak_count FROM gamification_stats WHERE date = ? LIMIT 1",
-    args: [yesterdayStr],
+    args: [yesterday],
   })
   const prevStreak = prevResult.rows.length > 0
     ? Number((prevResult.rows[0] as Record<string, unknown>).streak_count)
@@ -146,19 +149,17 @@ export async function recordTaskCompletion(points = 0): Promise<GamificationStat
     args: [today, prevStreak > 0 ? prevStreak + 1 : 1, points],
   })
 
-  return getStats()
+  return getStats(now)
 }
 
 /**
  * Get current gamification stats via a single aggregate query.
  */
-export async function getStats(): Promise<GamificationStats> {
+export async function getStats(now = new Date()): Promise<GamificationStats> {
   await ensureGamificationSchema()
   const client = getPersistenceClient()
-  const today = new Date().toISOString().split("T")[0]!
-  const yesterday = new Date()
-  yesterday.setDate(yesterday.getDate() - 1)
-  const yesterdayStr = yesterday.toISOString().split("T")[0]!
+  const today = statsDayKey(now)
+  const yesterday = statsDayKey(now, -1)
 
   const agg = await client.execute({
     sql: `SELECT
@@ -169,7 +170,7 @@ export async function getStats(): Promise<GamificationStats> {
             COALESCE(SUM(completed_count), 0) AS total_completed,
             COALESCE(SUM(points), 0) AS total_points
           FROM gamification_stats`,
-    args: [today, today, yesterdayStr],
+    args: [today, today, yesterday],
   })
 
   const row = (agg.rows[0] ?? {}) as Record<string, unknown>
@@ -193,15 +194,13 @@ export async function getStats(): Promise<GamificationStats> {
 /**
  * Get weekly data for the last 7 days via a single GROUP BY date query.
  */
-export async function getWeeklyData(): Promise<DailyRecord[]> {
+export async function getWeeklyData(now = new Date()): Promise<DailyRecord[]> {
   await ensureGamificationSchema()
   const client = getPersistenceClient()
 
   const dateKeys: string[] = []
   for (let i = 6; i >= 0; i--) {
-    const d = new Date()
-    d.setDate(d.getDate() - i)
-    dateKeys.push(d.toISOString().split("T")[0]!)
+    dateKeys.push(statsDayKey(now, -i))
   }
 
   const startStr = dateKeys[0]!
