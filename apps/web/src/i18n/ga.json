@@ -228,6 +228,7 @@
   "kanban": {
     "no_project": "Gan Tionscadal",
     "unknown_project": "Tionscadal Anaithnid",
+    "project_catalog_failed": "Níorbh fhéidir ainmneacha na dtionscadal a lódáil. Taispeántar tascanna sannta faoi Thionscadal Anaithnid. Athlódáil chun seiceáil arís.",
     "title": "Clár Kanban",
     "manage_lanes": "⚙ Lánaí",
     "new_task": "+ Tasc Nua",

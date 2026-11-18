@@ -42,6 +42,15 @@ test("Administrators choose who can use each organization feature", async () => 
     const group = await member.request.post(app + "/api/areas", { headers, data: { name: "Hidden group fixture" } })
     expect(group.status()).toBe(201)
     const groupId = (await group.json()).id
+    const projectTitle = "Organization policy project fixture"
+    const project = await member.request.post(app + "/api/projects", { headers, data: { title: projectTitle } })
+    expect(project.status(), await project.text()).toBe(201)
+    const householdProjectId = (await project.json()).id
+    const projectTaskTitle = "Project policy task fixture"
+    const assignment = await member.request.post(app + "/api/tasks", {
+      headers, data: { title: projectTaskTitle, project_id: householdProjectId },
+    })
+    expect(assignment.status(), await assignment.text()).toBe(201)
     await setFeature("groups", "nobody")
     expect((await member.request.get(app + "/api/boards/household?view=groups")).status()).toBe(404)
     expect((await member.request.post(app + "/api/tasks", {
@@ -62,6 +71,18 @@ test("Administrators choose who can use each organization feature", async () => 
     expect((await other.request.get(app + "/planning")).status()).toBe(404)
     expect((await member.request.get(app + "/api/projects")).status()).toBe(404)
     expect((await other.request.get(app + "/api/projects")).status()).toBe(200)
+    const groupedPath = app + "/tasks?area=&groupBy=project&search=" + encodeURIComponent(projectTaskTitle)
+    const allowedGrouping = await other.request.get(groupedPath)
+    expect(allowedGrouping.status()).toBe(200)
+    const allowedHtml = await allowedGrouping.text()
+    expect(allowedHtml.includes(`data-project-label="${projectTitle}"`), "enabled Project label").toBe(true)
+    expect(allowedHtml.includes(`data-project-group="project-${householdProjectId}"`), "enabled Project identity").toBe(true)
+    const unavailableGrouping = await member.request.get(groupedPath)
+    expect(unavailableGrouping.status()).toBe(200)
+    const unavailableHtml = await unavailableGrouping.text()
+    expect(unavailableHtml.includes(projectTaskTitle), "Household task remains available").toBe(true)
+    expect(unavailableHtml.includes(projectTitle), "unavailable Project label").toBe(false)
+    expect(unavailableHtml.includes("data-project-group="), "unavailable Project grouping metadata").toBe(false)
     const memberFeatures = await member.request.get(app + "/api/features")
     expect(memberFeatures.status()).toBe(200)
     expect(memberFeatures.headers()["cache-control"]).toContain("no-store")
