@@ -12,6 +12,12 @@ Working-tree image builds exclude local `.keys` signing material, `.data` direct
 
 Passkey sign-in is unavailable. The checked-in auth configuration leaves it disabled; there is no registration or authentication verifier to enable. Use the existing Home Assistant ingress or scoped API credential paths. The offline license signature verifier remains separate from sign-in.
 
+### Standalone Home Assistant startup
+
+When Home Assistant is unconfigured, startup checks retry at most once every five seconds for the same database, settings revision and environment. Normal settings saves, an environment change or a different database admit a new check immediately. An external database edit is discovered on the next request after that pause. Local due-date reminders start independently; configured connection failures retain the existing next-request retry.
+
+For repeated startup logging or delayed activation, check `ha.startup.skipped`, then save complete Home Assistant URL and token settings and confirm connection status. Never copy token values into diagnostics. Run `e2e/ha-standalone-connection.spec.ts` to verify repeated unconfigured requests, configuration changes, database replacement and failed-authentication recovery. Physical Green qualification still uses the unchanged resource and latency limits.
+
 ## Eisenhower scoring saves
 
 Triage reads the task's existing framework values before adding delay impact or interest metadata. A failed or malformed read leaves the wizard and its inputs open, reports the failed update and sends no replacement payload. Retry after the connection recovers. Null and empty objects are valid for an unscored task. Missing fields, arrays, scalar values and responses for another task reject the save.
@@ -120,7 +126,7 @@ When changing translucent theme colors, check dropdown selection, task focus and
 
 Check the plain links back from Deferred, Inactivity and Triage in both themes, including pointer hover. In Planning, Progress and Habits, each visible section link is reachable with Tab. Enter opens the destination, and the current link announces its location. Verify arrow navigation and Planning history with `e2e/parent-page-shell.spec.ts` and `e2e/habits-shell.spec.ts`.
 
-In disposable Home Assistant ingress, open **Boards → Household → Groups**, then open a Group and Project. Confirm its task view and settings stay inside ingress. Repeat an older Area and Project bookmark, including a supported settings fragment, and verify the matching Household context. Run `e2e/area-management.spec.ts` against a built App to verify the Group editor, contextual Goal creation and a Household Routine that creates work in the selected Group.
+In disposable Home Assistant ingress, open **Boards → Household → Areas**, then open an Area and Project. Confirm its task view and settings stay inside ingress. Repeat an older Area and Project bookmark, including a supported settings fragment, and verify the matching Household context. Run `e2e/area-management.spec.ts` against a built App to verify the Area editor, contextual Goal creation and a Household Routine that creates work in the selected Area. Explicit personal naming preferences can change the displayed labels.
 
 ## Task Link Verification
 
