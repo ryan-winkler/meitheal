@@ -28,8 +28,41 @@ test("access policy snapshots fail closed when restored separately from the gran
 
     const feature = { scope: "feature", id: "goals", boardId: "" } as const
     expect(await repository.policies("feature", "")).toEqual({ status: "current", policies: [] })
-    expect(await repository.change(feature, null, { audience: "selected", users: ["alex", "blake", "alex"] }))
-      .toMatchObject({ status: "committed", result: "saved" })
+    const orphanRevision = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    await db.execute({ sql: "INSERT INTO board_access_epoch (singleton, revision) VALUES (1, ?)", args: [orphanRevision] })
+    expect(await repository.policies("feature", "")).toEqual({ status: "locked" })
+    await db.execute("DELETE FROM board_access_epoch")
+
+    await db.execute({
+      sql: `INSERT INTO organization_access_policies (scope, scope_id, board_id, audience, selected_users, revision)
+        VALUES ('feature', 'goals', '', 'nobody', '[]', ?)`,
+      args: [orphanRevision],
+    })
+    expect(await repository.policies("feature", "")).toEqual({ status: "locked" })
+    await db.execute("DELETE FROM organization_access_policies")
+
+    await writeFile(marker, JSON.stringify({ epoch: orphanRevision }))
+    expect(await repository.policies("feature", "")).toEqual({ status: "locked" })
+    await rm(marker)
+    expect(await repository.policies("feature", "")).toEqual({ status: "current", policies: [] })
+
+    const racingClient = new Proxy(db, {
+      get(target, property, receiver) {
+        if (property !== "execute") return Reflect.get(target, property, receiver)
+        return async (...args: Parameters<typeof db.execute>) => {
+          const snapshot = await db.execute(...args)
+          const statement: unknown = args[0]
+          if (statement && typeof statement === "object" && "sql" in statement &&
+              typeof statement.sql === "string" && statement.sql.includes("organization_access_policies")) {
+            expect(await repository.change(feature, null, { audience: "selected", users: ["alex", "blake", "alex"] }))
+              .toMatchObject({ status: "committed", result: "saved" })
+          }
+          return snapshot
+        }
+      },
+    })
+    // Publication after the empty SQLite snapshot must not return inherited access.
+    expect(await new OrganizationAccessRepository(racingClient, marker).policies("feature", "")).toEqual({ status: "locked" })
     const visible = await repository.policies("feature", "")
     expect(visible).toMatchObject({ status: "current", policies: [{ scope: feature, audience: "selected", users: ["alex", "blake"] }] })
     expect(await repository.change(feature, null, { audience: "nobody", users: [] }))
@@ -39,7 +72,7 @@ test("access policy snapshots fail closed when restored separately from the gran
     expect(allowsOrganizationAudience(current, "alex")).toBe(true)
     expect(allowsOrganizationAudience(current, "chris")).toBe(false)
     expect(allowsOrganizationAudience(current, null)).toBe(false)
-    await writeFile(marker, JSON.stringify({ epoch: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee" }))
+    await writeFile(marker, JSON.stringify({ epoch: orphanRevision }))
     expect(await repository.policies("feature", "")).toEqual({ status: "locked" })
     expect(await repository.change(feature, current.revision, null)).toEqual({ status: "locked" })
   } finally {

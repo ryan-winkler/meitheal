@@ -74,29 +74,6 @@ const {
   jsonLd,
 } = Astro.props;
 
-// OA-607: Sidebar task count badges (SSR)
-let taskCounts = { total: 0, active: 0, pending: 0 };
-if (!privatePageShell) try {
-  const { ensureSchema, getPersistenceClient } =
-    await import("@domains/tasks/persistence/store");
-  await ensureSchema();
-  const client = getPersistenceClient();
-  const result = await client.execute(
-    "SELECT status, COUNT(*) AS cnt, COUNT(*) FILTER (WHERE deferred_at IS NULL) AS open_count FROM tasks WHERE task_board_id IS NULL GROUP BY status",
-  );
-  for (const row of result.rows) {
-    const r = row as Record<string, unknown>;
-    const s = String(r.status);
-    const c = Number(r.cnt);
-    const open = Number(r.open_count)
-    taskCounts.total += c;
-    if (s === "active") taskCounts.active += open
-    if (s === "pending" || s === "backlog") taskCounts.pending += open
-  }
-} catch {
-  /* DB not available */
-}
-
 // Security headers are set by middleware.ts — no duplicates here.
 // IMPORTANT: Do NOT set Strict-Transport-Security or upgrade-insecure-requests
 // in HA ingress environments — the addon serves HTTP internally.
@@ -595,7 +572,7 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
       >{t("nav.skip_to_content", locale)}</a
     >
     {!privatePageShell && <div class="layout-navigation" transition:persist="sidebar">
-      <Sidebar locale={locale} taskCounts={taskCounts} />
+      <Sidebar locale={locale} />
     </div>}
 
     <div class="main-content" style={privatePageShell ? "margin-inline-start: 0" : undefined}>

@@ -48,6 +48,8 @@ A verified Home Assistant administrator can open **Settings → Tasks & Boards �
 
 After an audience is explicitly saved for Routines or Achievements, its corresponding legacy **Habit Tracker** or **Gamification** switch reports an HTTP 409 conflict. A Settings import containing that legacy switch also reports a conflict. Use **Organization features** to change the audience.
 
+Before an audience is set, saving either legacy switch takes effect on the next request.
+
 The Boards organizer contains Groups and Projects. The previous `/planning#spaces` bookmark opens Boards when Planning is available to you. Personal display labels are configured under **Navigation & Shortcuts → Labels**. Existing tasks remain reachable through their Boards with the permissions you have there.
 
 Feature audiences also apply to direct API and page links. Governed feature reads require a connection. Activating the service worker update removes older feature responses from its caches.

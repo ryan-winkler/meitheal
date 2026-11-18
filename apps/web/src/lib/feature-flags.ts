@@ -18,7 +18,7 @@
  */
 
 import { effectiveOrganizationFlags } from "./organization-request-context"
-import { SettingsRepository } from "@domains/tasks/persistence/settings-repository"
+import { getSettingsRevision, SettingsRepository } from "@domains/tasks/persistence/settings-repository"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 
 /** Feature definition with metadata for the settings UI */
@@ -91,15 +91,9 @@ export const FEATURE_DEFAULTS: Record<string, FeatureDefinition> = {
 /** Resolved feature flag state */
 export type FeatureFlags = Record<string, boolean>
 
-/**
- * Per-request cache — prevents N+1 DB queries when Layout, Sidebar,
- * and API guards all call getFeatureFlags() during the same SSR render.
- * TTL of 100ms is long enough to cover a single render cycle but short
- * enough to pick up changes between requests.
- */
-let _cachedFlags: FeatureFlags | null = null
-let _cacheTimestamp = 0
-const CACHE_TTL_MS = 100
+// Invalidate immediately on app settings writes and periodically reread the database.
+let cachedFlags: { flags: FeatureFlags; revision: number; expiresAt: number } | undefined
+const CACHE_TTL_MS = 1000
 
 /** Get all feature flags (server-side — reads from DB, cached per request) */
 export async function getFeatureFlags(): Promise<FeatureFlags> {
@@ -107,16 +101,15 @@ export async function getFeatureFlags(): Promise<FeatureFlags> {
 }
 
 export async function getStoredFeatureFlags(): Promise<FeatureFlags> {
-  // Return cached result if within TTL
-  const now = Date.now()
-  if (_cachedFlags && (now - _cacheTimestamp) < CACHE_TTL_MS) {
-    return _cachedFlags
+  const now = performance.now()
+  const revision = getSettingsRevision()
+  if (cachedFlags?.revision === revision && now < cachedFlags.expiresAt) {
+    return cachedFlags.flags
   }
 
   try {
     await ensureSchema()
     const repo = new SettingsRepository(getPersistenceClient())
-    await repo.ensureSettingsTable()
 
     const featureKeys = Object.keys(FEATURE_DEFAULTS).map((k) => `feature_${k}`)
     const stored = await repo.getByKeys(featureKeys)
@@ -130,8 +123,7 @@ export async function getStoredFeatureFlags(): Promise<FeatureFlags> {
         flags[name] = def.default
       }
     }
-    _cachedFlags = flags
-    _cacheTimestamp = now
+    cachedFlags = { flags, revision, expiresAt: now + CACHE_TTL_MS }
     return flags
   } catch {
     // Fallback: all defaults (safe degradation)
