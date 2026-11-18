@@ -28,7 +28,7 @@ const legacyKeys = features.flatMap(feature => {
   const definition = ORGANIZATION_FEATURES[feature]
   return "legacy" in definition ? [definition.legacy] : []
 })
-const defaultFeatures = new Set(features.filter(feature => inheritedOrganizationAvailability(feature, {})))
+const defaultFeatures = enforceFeatureDependencies(new Set(features.filter(feature => inheritedOrganizationAvailability(feature, {}))))
 const byRequest = new WeakMap<App.Locals, Promise<OrganizationAvailability>>()
 
 export interface OrganizationAvailability {
@@ -50,20 +50,24 @@ export function inheritedOrganizationAvailability(feature: OrganizationFeature, 
   return "defaultAvailable" in definition ? definition.defaultAvailable : true
 }
 
-export function resolveOrganizationAvailability(
-  policies: readonly OrganizationPolicy[], flags: FeatureFlags, activeUserId: string | null,
-): OrganizationAvailability {
-  if (policies.length === 0 && legacyKeys.every(key => flags[key] !== false)) return inheritedDefaults
-  const decisions = new Map(policies.map(policy => [policy.scope.id, policy]))
-  const available = new Set(features.filter(feature => {
-    const policy = decisions.get(feature)
-    return policy ? allowsOrganizationAudience(policy, activeUserId) : inheritedOrganizationAvailability(feature, flags)
-  }))
+function enforceFeatureDependencies(available: Set<OrganizationFeature>): Set<OrganizationFeature> {
   if (!available.has("organizer")) {
     available.delete("groups")
     available.delete("projects")
   }
   if (!available.has("pillars")) available.delete("principles")
+  return available
+}
+
+export function resolveOrganizationAvailability(
+  policies: readonly OrganizationPolicy[], flags: FeatureFlags, activeUserId: string | null,
+): OrganizationAvailability {
+  if (policies.length === 0 && legacyKeys.every(key => flags[key] !== false)) return inheritedDefaults
+  const decisions = new Map(policies.map(policy => [policy.scope.id, policy]))
+  const available = enforceFeatureDependencies(new Set(features.filter(feature => {
+    const policy = decisions.get(feature)
+    return policy ? allowsOrganizationAudience(policy, activeUserId) : inheritedOrganizationAvailability(feature, flags)
+  })))
   return {
     locked: false,
     needsVerification: policies.some(policy => policy.audience !== "everyone"),
