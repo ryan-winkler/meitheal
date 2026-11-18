@@ -3,6 +3,8 @@
  * @domain kanban
  */
 
+import { CANONICAL_STATUSES, getStatusDef, normalizeStatus, STATUS } from "../status-config"
+
 function collapseKey(board: HTMLElement, group: HTMLElement): string {
   const column = group.closest<HTMLElement>(".kanban-column")
   return `meitheal-swimlane-v2-${JSON.stringify([board.dataset.groupBy, column?.dataset.laneId, group.dataset.swimlaneType])}`
@@ -31,8 +33,8 @@ function initCollapse(board: HTMLElement, signal: AbortSignal): void {
     header.setAttribute("aria-controls", cards.id)
     const key = collapseKey(board, group)
     try {
-      const legacy = mode === "assigned" || mode === "project"
-        ? null : `meitheal-swimlane-${group.dataset.swimlaneType}`
+      const legacy = mode === "type" || mode === "area" || mode === "priority"
+        ? `meitheal-swimlane-${group.dataset.swimlaneType}` : null
       const stored = localStorage.getItem(key) ?? (legacy && localStorage.getItem(legacy))
       setCollapsed(group, stored === "collapsed")
     } catch {
@@ -75,7 +77,7 @@ export function initKanbanGrouping(board: HTMLElement, signal: AbortSignal): voi
           if (countEl) countEl.textContent = String(cards.length)
         })
     })
-  } else if (mode === "area" || mode === "priority" || mode === "epic" || mode === "assigned" || mode === "project") {
+  } else if (mode === "area" || mode === "priority" || mode === "epic" || mode === "status" || mode === "assigned" || mode === "project") {
     const byProject = mode === "project"
     const byAssignee = mode === "assigned"
     const icons: Record<string, string> =
@@ -116,7 +118,8 @@ export function initKanbanGrouping(board: HTMLElement, signal: AbortSignal): voi
       const groups = new Map<string, HTMLElement[]>()
       flatCards.forEach((card) => {
         const value = card.dataset[mode]
-        let val = byAssignee ? value ?? "" : value || (mode === "priority" ? "3" : mode === "epic" ? "epic:none" : "default")
+        let val = mode === "status" ? normalizeStatus(value || STATUS.PENDING)
+          : byAssignee ? value ?? "" : value || (mode === "priority" ? "3" : mode === "epic" ? "epic:none" : "default")
         if (byProject) val = card.dataset.projectGroup || "unavailable-project"
         if (byAssignee && card.dataset.assigneeKey) {
           try {
@@ -130,6 +133,10 @@ export function initKanbanGrouping(board: HTMLElement, signal: AbortSignal): voi
         groups.get(key)!.push(card)
       })
 
+      const statusRank = (key: string) => {
+        const index = CANONICAL_STATUSES.indexOf(key)
+        return index < 0 ? CANONICAL_STATUSES.length : index
+      }
       const groupLabel = (key: string) => {
         const card = groups.get(key)?.[0]
         if (byProject) return card?.dataset.projectLabel ?? window.mI18n?.get("kanban.unknown_project") ?? "Unknown Project"
@@ -137,10 +144,15 @@ export function initKanbanGrouping(board: HTMLElement, signal: AbortSignal): voi
         if (byAssignee) return key ? window.mI18n?.get("tasks.assignee_loading") ?? "Loading assignee…"
           : window.mI18n?.get("tasks.unassigned") ?? "Unassigned"
         if (mode === "area") return areaLabel(key, card)
+        if (mode === "status") {
+          const status = getStatusDef(key)
+          return status ? window.mI18n?.get(status.i18nKey) ?? status.label : key
+        }
         return icons[key] || "🟡 P3 — Medium"
       }
       const sortedKeys = Array.from(groups.keys()).sort((a, b) => {
         if (mode === "priority") return Number(a) - Number(b)
+        if (mode === "status") return statusRank(a) - statusRank(b) || a.localeCompare(b)
         if (byAssignee) return Number(!a) - Number(!b) || a.localeCompare(b)
         return groupLabel(a).localeCompare(groupLabel(b), document.documentElement.lang || undefined) || a.localeCompare(b)
       })
@@ -190,6 +202,7 @@ export function initKanbanGrouping(board: HTMLElement, signal: AbortSignal): voi
           labelSpan.dir = "auto"
           if (key) labelSpan.dataset.taskAssignee = key
         }
+        if (mode === "status") labelSpan.title = label
         const countSpan = document.createElement("span")
         countSpan.className = "swimlane-count"
         countSpan.textContent = String(cards.length)

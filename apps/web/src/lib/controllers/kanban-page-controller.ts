@@ -13,10 +13,10 @@ export interface KanbanRefreshFocus {
   lane?: string | undefined
   taskId?: string | undefined
   firstPage?: boolean
-  afterSave?: "status" | "area" | "epic"
+  afterSave?: "status" | "epic" | "board-group"
 }
 
-function findDynamicGroupFocus(board: HTMLElement, group: HTMLElement) {
+function findGroupFocus(board: HTMLElement, group: HTMLElement) {
   const laneId = group.closest<HTMLElement>(".kanban-column")?.dataset.laneId
   const key = group.dataset.swimlaneType
   const lane = laneId && board.querySelector(`.kanban-column[data-lane-id="${CSS.escape(laneId)}"]`)
@@ -121,12 +121,12 @@ export function initKanbanPage(signal: AbortSignal): void {
       }
 
       const active = document.activeElement
-      const groupMode = board.dataset.groupBy
-      const focusedGroup = (groupMode === "assigned" || groupMode === "project") && board.contains(active) &&
+      const grouping = board.dataset.groupBy
+      const activeGroup = (grouping === "assigned" || grouping === "status" || grouping === "project") && board.contains(active) &&
         active?.matches("button.swimlane-header") ? active.closest<HTMLElement>(".swimlane-group") : null
       const shouldFocus = active === retry || board.contains(active) ||
         (focus && (!focus.afterSave || focus.afterSave === "status") && active === document.body)
-      const previousControl = (focus?.afterSave || groupMode === "project") &&
+      const previousControl = (focus?.afterSave || grouping === "project") &&
         active instanceof HTMLElement && board.contains(active) ? active : null
       const scroll = new Map(Array.from(board.querySelectorAll<HTMLElement>(".kanban-column"), lane =>
         [lane.dataset.status, lane.querySelector(".kanban-cards")?.scrollTop ?? 0] as const))
@@ -166,8 +166,8 @@ export function initKanbanPage(signal: AbortSignal): void {
       renderStatus("")
 
       const retainedControl = previousControl && findKanbanDetailFocus(board, previousControl)
-      if (focusedGroup && board.dataset.groupBy === groupMode) {
-        findDynamicGroupFocus(board, focusedGroup)?.focus({ preventScroll: true })
+      if (activeGroup && board.dataset.groupBy === grouping) {
+        findGroupFocus(board, activeGroup)?.focus({ preventScroll: true })
       } else if (shouldFocus && (retainedControl || (!dataOnly && (focus || active === retry)))) {
         const lane = focus?.lane ? board.querySelector<HTMLElement>(`.kanban-column[data-status="${CSS.escape(focus.lane)}"]`) : null
         const card = focus?.taskId ? (lane || board).querySelector<HTMLElement>(
@@ -261,7 +261,7 @@ export function initKanbanPage(signal: AbortSignal): void {
     if (typeof status === "string") queueBackgroundRead({ taskId: id, lane: status, afterSave: "status" })
   }, { signal })
   document.addEventListener("kanban:detail-changed", () => {
-    queueBackgroundRead({ afterSave: "area" })
+    queueBackgroundRead({ afterSave: "board-group" })
   }, { signal })
   document.addEventListener("meitheal:home-assistant-area-saved", () => {
     if (new URLSearchParams(location.search).has("home_assistant_area_id")) void refresh()
