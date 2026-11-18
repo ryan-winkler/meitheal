@@ -17,7 +17,7 @@ export interface KanbanRefreshFocus {
   afterAreaSave?: boolean
 }
 
-function findAssigneeGroupFocus(board: HTMLElement, group: HTMLElement) {
+function findDynamicGroupFocus(board: HTMLElement, group: HTMLElement) {
   const laneId = group.closest<HTMLElement>(".kanban-column")?.dataset.laneId
   const key = group.dataset.swimlaneType
   const lane = laneId && board.querySelector(`.kanban-column[data-lane-id="${CSS.escape(laneId)}"]`)
@@ -122,11 +122,12 @@ export function initKanbanPage(signal: AbortSignal): void {
       }
 
       const active = document.activeElement
-      const assigneeGroup = board.dataset.groupBy === "assigned" && board.contains(active) &&
+      const groupMode = board.dataset.groupBy
+      const focusedGroup = (groupMode === "assigned" || groupMode === "project") && board.contains(active) &&
         active?.matches("button.swimlane-header") ? active.closest<HTMLElement>(".swimlane-group") : null
       const shouldFocus = active === retry || board.contains(active) || (focus && !focus.afterAreaSave && active === document.body)
-      const previousDetailFocus = (focus?.afterAreaSave || focus?.afterStatusSave) && active && board.contains(active)
-        ? active : null
+      const previousControl = (focus?.afterAreaSave || focus?.afterStatusSave || groupMode === "project") &&
+        active instanceof HTMLElement && board.contains(active) ? active : null
       const scroll = new Map(Array.from(board.querySelectorAll<HTMLElement>(".kanban-column"), lane =>
         [lane.dataset.status, lane.querySelector(".kanban-cards")?.scrollTop ?? 0] as const))
       const horizontal = board.scrollLeft
@@ -147,6 +148,10 @@ export function initKanbanPage(signal: AbortSignal): void {
       const label = shell?.querySelector("[data-kanban-visible-label]")
       if (total) total.textContent = html.querySelector("[data-kanban-visible-count]")?.textContent ?? ""
       if (label) label.textContent = html.querySelector("[data-kanban-visible-label]")?.textContent ?? ""
+      const projectNotice = shell?.querySelector<HTMLElement>("[data-project-catalog-unavailable]")
+      if (projectNotice) {
+        projectNotice.hidden = html.querySelector("[data-project-catalog-unavailable]")?.hasAttribute("hidden") !== false
+      }
       const promotedNote = shell?.querySelector<HTMLElement>("[data-kanban-promoted-note]")
       if (promotedNote) promotedNote.hidden = html.querySelector("[data-kanban-promoted-note]")?.hasAttribute("hidden") !== false
       for (const lane of board.querySelectorAll<HTMLElement>(".kanban-column")) {
@@ -160,10 +165,10 @@ export function initKanbanPage(signal: AbortSignal): void {
       board.scrollLeft = horizontal
       renderStatus("")
 
-      if (assigneeGroup && board.dataset.groupBy === "assigned") {
-        findAssigneeGroupFocus(board, assigneeGroup)?.focus({ preventScroll: true })
-      } else if (!dataOnly && shouldFocus && (focus || active === retry)) {
-        const retainedControl = previousDetailFocus && findKanbanDetailFocus(board, previousDetailFocus)
+      const retainedControl = previousControl && findKanbanDetailFocus(board, previousControl)
+      if (focusedGroup && board.dataset.groupBy === groupMode) {
+        findDynamicGroupFocus(board, focusedGroup)?.focus({ preventScroll: true })
+      } else if (shouldFocus && (retainedControl || (!dataOnly && (focus || active === retry)))) {
         const lane = focus?.lane ? board.querySelector<HTMLElement>(`.kanban-column[data-status="${CSS.escape(focus.lane)}"]`) : null
         const card = focus?.taskId ? (lane || board).querySelector<HTMLElement>(
           `.kanban-card[data-id="${CSS.escape(focus.taskId)}"] .card-more-btn`,
