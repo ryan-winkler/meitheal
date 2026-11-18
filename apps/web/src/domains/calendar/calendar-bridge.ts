@@ -1,3 +1,4 @@
+import { householdBoardIsActive } from "../tasks/persistence/named-board-repository"
 /**
  * Calendar Bridge — Multi-Calendar Bi-Directional Sync
  *
@@ -913,6 +914,10 @@ function groupHAEventsIntoSeries(
 
 /** Inner sync logic — always called within concurrency guard */
 async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState | null): Promise<CalendarSyncCounts> {
+  await ensureSchemaOnce()
+  if (!await householdBoardIsActive((await getStoreModule()).getPersistenceClient())) {
+    return { created: 0, updated: 0, total: 0, skipped: "Household Board is deleted; restore it to resume sync" }
+  }
 
   // Backoff: skip sync after 5 consecutive failures (reset via stopSingleEntitySync or manual)
   if (state && state.consecutiveFailures >= 5) {
@@ -942,6 +947,7 @@ async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState |
     await ensureSchemaOnce()
     const mod = await getStoreModule()
     const client = mod.getPersistenceClient()
+    if (!await householdBoardIsActive(client)) return { created: 0, updated: 0, total: 0, skipped: "Household Board is deleted" }
     const timezone = await readHouseholdTimezone(client)
     const todayStr = calendarToday(timezone, now)
 
@@ -1591,6 +1597,8 @@ export async function pushTaskToCalendar(
   taskId: string, title: string, dueDate: string, description?: string,
   targetEntityId?: string, meta?: TaskCalendarMeta,
 ): Promise<boolean> {
+  await ensureSchemaOnce()
+  if (!await householdBoardIsActive((await getStoreModule()).getPersistenceClient())) return false
   // Find the first entity with export/bidirectional mode, or use targetEntityId
   let writeBackEntity: CalendarSyncConfig | undefined
   if (targetEntityId) {
@@ -1709,6 +1717,8 @@ export async function pushTaskToCalendar(
  * Safe to call even if no calendar event exists — returns false silently.
  */
 export async function removeTaskCalendarEvent(taskId: string): Promise<boolean> {
+  await ensureSchemaOnce()
+  if (!await householdBoardIsActive((await getStoreModule()).getPersistenceClient())) return false
   try {
     await ensureSchemaOnce()
     const mod = await getStoreModule()
@@ -1964,6 +1974,10 @@ function normalizeCalDAVCalendarKey(baseUrl: string, calendarHref: string): stri
 }
 
 async function importCalDAVEvents(): Promise<CalendarSyncCounts> {
+  await ensureSchemaOnce()
+  if (!await householdBoardIsActive((await getStoreModule()).getPersistenceClient())) {
+    return { created: 0, updated: 0, total: 0, skipped: "Household Board is deleted; restore it to resume sync" }
+  }
   let totalCreated = 0
   let totalUpdated = 0
   let totalEvents = 0

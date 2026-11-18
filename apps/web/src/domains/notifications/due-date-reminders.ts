@@ -1,3 +1,4 @@
+import { householdBoardIsActive } from "../tasks/persistence/named-board-repository"
 /**
  * Due-Date Reminder Scheduler
  *
@@ -256,7 +257,7 @@ export async function checkDueDates(now = Date.now()): Promise<void> {
     const result = await client.execute({
       sql: `SELECT id, title, due_date, priority, ticket_number, assigned_to, status
             FROM tasks
-            WHERE task_board_id IS NULL
+            WHERE task_board_id IS NULL AND EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active')
               AND status NOT IN ('${STATUS.COMPLETE}')
               AND deferred_at IS NULL
               AND due_date IS NOT NULL
@@ -272,7 +273,7 @@ export async function checkDueDates(now = Date.now()): Promise<void> {
     const epochResult = await client.execute({
       sql: `SELECT id, title, due_date, priority, ticket_number, assigned_to, status
             FROM tasks
-            WHERE task_board_id IS NULL
+            WHERE task_board_id IS NULL AND EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active')
               AND status NOT IN ('${STATUS.COMPLETE}')
               AND deferred_at IS NULL
               AND due_date IS NOT NULL
@@ -311,6 +312,7 @@ export async function checkDueDates(now = Date.now()): Promise<void> {
     }
 
     for (const row of allRows) {
+      if (!await householdBoardIsActive(client)) return
       const task = row as Record<string, unknown>;
       const taskId = String(task.id);
       const dueRaw = task.due_date;

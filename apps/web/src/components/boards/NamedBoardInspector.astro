@@ -1,0 +1,81 @@
+---
+import type { readBoardView } from "@lib/board-view"
+import type { BoardWorkspaceSelection } from "@lib/board-workspace"
+import { permitsBoardTaskAction } from "@domains/tasks/persistence/named-board-repository"
+import { isDoneStatus } from "@lib/status-config"
+import { organizationLabelsFor } from "@lib/organization-labels"
+import HomeAssistantAreaField from "../tasks/HomeAssistantAreaField.astro"
+import Icon from "../ui/Icon.astro"
+
+interface Props {
+  boardId: string
+  view: NonNullable<Awaited<ReturnType<typeof readBoardView>>>
+  selection: BoardWorkspaceSelection
+  session: string
+  roster: ReadonlyMap<string, string>
+}
+const { boardId, view, selection, session, roster } = Astro.props
+const label = await organizationLabelsFor(Astro)
+const canEdit = permitsBoardTaskAction(view.board, "edit")
+const canComplete = permitsBoardTaskAction(view.board, "complete")
+const canDelete = permitsBoardTaskAction(view.board, "delete")
+---
+<div class="td-toolbar">
+  <div class="td-toolbar__top">
+    <strong data-named-inspector-heading>Task detail</strong>
+    <button id="td-close" type="button" class="btn btn-ghost" aria-label="Close detail"><Icon name="x" size={20} /></button>
+  </div>
+</div>
+<div class="td-scroller">
+  <div class="td-reading-column">
+    <section data-named-inspector-create hidden>
+      <form data-board-form="task-create" class="board-form">
+        <label>Title <input name="title" class="td-title" maxlength="500" required autocomplete="off" /></label>
+        <label>Details <textarea name="description" maxlength="10000" rows="6"></textarea></label>
+        <label>Column <select name="laneId">{view.lanes.filter(lane => canComplete || !isDoneStatus(lane.key)).map(lane => <option value={lane.id}>{lane.label}</option>)}</select></label>
+        <label>Shared due date <input type="date" name="due_date" /></label>
+        <HomeAssistantAreaField />
+        <input type="hidden" name="areaId" value={selection.areaId ?? view.context?.area?.id ?? ""} />
+        <input type="hidden" name="projectId" value={selection.projectId ?? ""} />
+        <p role="status" data-board-feedback></p>
+        <button type="submit" class="btn btn-primary">Create task</button>
+      </form>
+    </section>
+    {view.tasks.map(task => <section data-named-inspector-ticket={task.id} hidden>
+      <p class="board-note">{task.ticket}</p>
+      <form data-board-form="task-edit" data-ticket-id={task.id} data-version={task.version} class="board-form">
+        <label>Title <input name="title" class="td-title" value={task.title} maxlength="500" required readonly={!canEdit} /></label>
+        <label>Details <textarea name="description" maxlength="10000" rows="6" readonly={!canEdit}>{task.description}</textarea></label>
+        {task.routine ? task.dueDate && <p>Scheduled for {task.dueDate}</p>
+          : <label>Shared due date <input type="date" name="due_date" value={task.dueDate ?? ""} readonly={!canEdit} /></label>}
+        <p role="status" data-board-feedback></p>
+        {canEdit && <button type="submit" class="btn btn-primary">Save changes</button>}
+      </form>
+      <HomeAssistantAreaField mode="edit" endpoint={`/api/boards/${encodeURIComponent(boardId)}/tickets/${encodeURIComponent(task.id)}/home-assistant-area`} boardSession={session} readOnly={!canEdit} />
+      {task.assignedTo && <p>Assigned to {roster.get(task.assignedTo.replace(/^ha_/, "")) || "an unavailable user"}</p>}
+      {canEdit && <form data-board-form="task-move" data-ticket-id={task.id} data-version={task.version} class="board-form">
+        <label>Move to <select name="laneId">
+          {view.lanes.filter(lane => canComplete || isDoneStatus(lane.key) === isDoneStatus(task.status)).map(lane => <option value={lane.id} selected={lane.id === task.laneId}>{lane.label}</option>)}
+        </select></label>
+        <button type="submit" class="btn btn-ghost">Move</button><p role="status" data-board-feedback></p>
+      </form>}
+      {canEdit && !task.routine && <details data-board-filing>
+        <summary>File task</summary>
+        <form data-board-form="task-file" data-ticket-id={task.id} data-version={task.version} class="board-form">
+          <label>{label("group")} <select name="areaId" disabled><option value="">Unfiled</option></select></label>
+          <label>{label("project")} <select name="projectId" disabled><option value="">No Project</option></select></label>
+          <p role="status" data-board-feedback></p>
+          <button type="submit" class="btn btn-ghost" disabled>Save placement</button>
+        </form>
+      </details>}
+      {canDelete && !task.routine && <form data-board-form="task-delete" data-ticket-id={task.id} data-version={task.version} class="board-form">
+        <button type="submit" class="btn btn-ghost board-danger">Delete task</button><p role="status" data-board-feedback></p>
+      </form>}
+    </section>)}
+  </div>
+</div>
+
+<style>
+  section { display: grid; gap: 1rem; }
+  section[hidden] { display: none; }
+</style>

@@ -6,7 +6,7 @@ const inboxSize = 1000
 const pageSize = 25
 const liveInbox = `FROM comment_mentions AS m
   JOIN comments AS c ON c.id = m.comment_id AND c.task_id = m.task_id
-  JOIN tasks AS t ON t.id = m.task_id AND t.task_board_id IS NULL`
+  JOIN tasks AS t ON t.id = m.task_id AND t.task_board_id IS NULL AND EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active')`
 const liveRecipient = "m.recipient_key = ? AND m.withdrawn = 0 AND m.created_at > ?"
 const commentColumns = "id, task_id, content, author, created_at"
 

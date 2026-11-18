@@ -209,7 +209,7 @@ export async function getTasksForView(options: TaskViewOptions = {}): Promise<Ta
       `;
     }
 
-    const whereClauses = ["task_board_id IS NULL"];
+    const whereClauses = ["task_board_id IS NULL AND EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active')"];
     if (Array.isArray(statuses) && statuses.length > 0) {
       whereClauses.push(`status IN (${statuses.map(() => "?").join(", ")})`);
       selectArgs.push(...statuses);
@@ -275,7 +275,7 @@ export async function getTasksForView(options: TaskViewOptions = {}): Promise<Ta
                    COUNT(*) FILTER (WHERE status != 'complete' AND deferred_at IS NULL) AS open,
                    COUNT(*) FILTER (WHERE status = 'active' AND deferred_at IS NULL) AS active,
                    COUNT(*) FILTER (WHERE status != 'complete' AND status != 'active' AND deferred_at IS NULL) AS pending
-            FROM tasks WHERE task_board_id IS NULL
+            FROM tasks WHERE task_board_id IS NULL AND EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active')
           `,
           args: [],
         }),
@@ -283,7 +283,7 @@ export async function getTasksForView(options: TaskViewOptions = {}): Promise<Ta
           sql: `
             SELECT due_date
             FROM tasks
-            WHERE task_board_id IS NULL AND status != 'complete'
+            WHERE task_board_id IS NULL AND EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active') AND status != 'complete'
               AND deferred_at IS NULL
               AND due_date IS NOT NULL
               AND due_date != ''
@@ -432,7 +432,7 @@ export function todayCompletionFilter(today: string, timezone = "Europe/Dublin")
     ranges.map(() => `(${column} >= ? AND ${column} < ?)`).join(" OR ") || "0"
   const bounds = ranges.flat()
   const filter: TodayCompletionFilter = {
-    sql: `task_board_id IS NULL AND status = 'complete'
+    sql: `task_board_id IS NULL AND EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active') AND status = 'complete'
       AND (
         (typeof(updated_at) IN ('integer', 'real') AND (${matchesDay("updated_at")}))
         OR (typeof(updated_at) = 'text' AND (
@@ -493,12 +493,12 @@ export async function getTodayTaskRows(
                COUNT(*) FILTER (
                  WHERE status IS NOT 'complete' AND status IS NOT 'archived' AND deferred_at IS NULL AND (due_date IS NULL OR due_date = '')
                ) AS open_unscheduled
-        FROM tasks WHERE task_board_id IS NULL
+        FROM tasks WHERE task_board_id IS NULL AND EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active')
       )
       SELECT ${TASK_VIEW_COLUMNS}, completed_today, open_unscheduled
       FROM totals
       LEFT JOIN tasks
-        ON tasks.task_board_id IS NULL AND status IS NOT 'complete' AND status IS NOT 'archived'
+        ON tasks.task_board_id IS NULL AND EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active') AND status IS NOT 'complete' AND status IS NOT 'archived'
         AND deferred_at IS NULL
         AND (
           ? = 1
@@ -557,11 +557,11 @@ export async function getTodayTaskCounts(now = new Date(), timezone?: string, in
       SELECT NULL AS due_date, COUNT(*) FILTER (WHERE ${completionFilter.sql}) AS completed_today,
              COUNT(*) FILTER (WHERE status IS NOT 'complete' AND status IS NOT 'archived' AND deferred_at IS NULL AND is_favorite NOT IN (0, '')) AS pinned_count,
              0 AS dated_count
-      FROM tasks WHERE task_board_id IS NULL
+      FROM tasks WHERE task_board_id IS NULL AND EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active')
       UNION ALL
       SELECT due_date, 0, 0, COUNT(*)
       FROM tasks
-      WHERE task_board_id IS NULL AND status IS NOT 'complete' AND status IS NOT 'archived' AND deferred_at IS NULL AND COALESCE(is_favorite, 0) IN (0, '')
+      WHERE task_board_id IS NULL AND EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active') AND status IS NOT 'complete' AND status IS NOT 'archived' AND deferred_at IS NULL AND COALESCE(is_favorite, 0) IN (0, '')
         AND due_date IS NOT NULL AND due_date <> ''
       GROUP BY due_date
     `,

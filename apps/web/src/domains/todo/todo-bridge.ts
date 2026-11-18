@@ -1,3 +1,4 @@
+import { householdBoardIsActive } from "../tasks/persistence/named-board-repository"
 /**
  * Todo Bridge — Bidirectional Sync with HA Todo Entities
  *
@@ -254,6 +255,7 @@ export function startTodoSync(configs: TodoSyncConfig | TodoSyncConfig[]): Promi
  */
 export async function syncTodoFromHA(entityId?: string): Promise<{ synced: number; errors: number }> {
   const totals = { synced: 0, errors: 0 };
+  if (!await householdBoardIsActive(await getClient())) return totals;
   const targets = entityId
     ? [activeSyncs.get(entityId)].filter(Boolean) as TodoSyncState[]
     : Array.from(activeSyncs.values()).filter((s) => s.config.syncDirection !== "outbound");
@@ -292,6 +294,7 @@ async function mergeHATodoItems(entityId: string, items: HATodoItem[]): Promise<
   try {
     const mod = await getStoreModule();
     const client = await getClient();
+    if (!await householdBoardIsActive(client)) return
 
     let created = 0;
     let updated = 0;
@@ -483,6 +486,7 @@ export async function pushTaskToTodoList(
   description?: string,
   labels?: string[],
 ): Promise<boolean> {
+  if (!await householdBoardIsActive(await getClient())) return false
   // Respect 'no-sync' label — user opted this task out of sync
   if (labels?.includes(NO_SYNC_LABEL)) {
     logger.log("debug", {
@@ -615,6 +619,7 @@ export async function pushTaskToTodoList(
  * @returns Number of HA todo items removed
  */
 export async function removeTaskFromTodoList(taskId: string): Promise<number> {
+  if (!await householdBoardIsActive(await getClient())) return 0
   let removed = 0;
   try {
     const client = await getClient();

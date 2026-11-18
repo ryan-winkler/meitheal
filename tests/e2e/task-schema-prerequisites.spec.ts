@@ -1,3 +1,4 @@
+import { BOARD_LIFECYCLE_MIGRATION } from "../../apps/web/drizzle/migrations/0015_board_lifecycle.mjs"
 import { execFile } from "node:child_process"
 import { mkdtemp, readFile, readdir, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -225,7 +226,7 @@ test("CLI check detects missing predecessor prerequisites without writing", asyn
   await migrate(databasePath)
   await migrate(databasePath, "--check")
   withDatabase(databasePath, database => {
-    expect(database.prepare("SELECT name, applied_at FROM __meitheal_migrations WHERE name NOT IN (?, ?, ?, ?, ?, ?) ORDER BY name").all(TASK_BOARD_MIGRATION, PERSONAL_PILLAR_MIGRATION, BOARD_ACCESS_MIGRATION, ORGANIZATION_LABEL_MIGRATION, ORGANIZATION_ACCESS_MIGRATION, ORGANIZATION_FEATURE_MIGRATION))
+    expect(database.prepare("SELECT name, applied_at FROM __meitheal_migrations WHERE name NOT IN (?, ?, ?, ?, ?, ?, ?) ORDER BY name").all(TASK_BOARD_MIGRATION, PERSONAL_PILLAR_MIGRATION, BOARD_ACCESS_MIGRATION, ORGANIZATION_LABEL_MIGRATION, ORGANIZATION_ACCESS_MIGRATION, ORGANIZATION_FEATURE_MIGRATION, BOARD_LIFECYCLE_MIGRATION))
       .toEqual(ledger)
     expect(lanes(database).map(lane => lane.key)).toEqual(["backlog", "pending", "active", "complete"])
   })

@@ -1167,6 +1167,7 @@ paths:
             type: integer
         - name: view
           in: query
+          description: Use groups to page Areas, or Projects within the selected Area; tasks reads the Board workspace.
           schema:
             type: string
             enum:
@@ -1180,6 +1181,7 @@ paths:
           schema: *a8
         - name: area
           in: query
+          description: Board-owned Area ID. With view=groups, returns its paginated Projects.
           schema: *a8
         - name: project
           in: query
@@ -1214,6 +1216,7 @@ paths:
           schema: *a11
         - name: view
           in: query
+          description: Use groups to verify the current Areas or selected Area Project page.
           schema:
             type: string
             enum:
@@ -1227,6 +1230,7 @@ paths:
           schema: *a8
         - name: area
           in: query
+          description: Board-owned Area ID, including the parent for a Project catalog page.
           schema: *a8
         - name: project
           in: query
@@ -1250,7 +1254,7 @@ paths:
       description: An agent token needs tasks:read and an explicit service grant on this Board.
     patch:
       operationId: changePrivateBoard
-      summary: Change a personal sidebar preference or manage a Board's access
+      summary: Change a personal sidebar preference, manage Board access or delete and restore a Board
       tags:
         - Boards
       parameters:
@@ -1277,6 +1281,8 @@ paths:
                     - policy
                     - member
                     - agent
+                    - retire
+                    - restore
                 hidden: &a14
                   type: boolean
                 tokenId: *a8
@@ -1284,6 +1290,11 @@ paths:
                 denyCompletion: *a14
                 denyDeletion: *a14
                 denyAgentDeletion: *a14
+                revision:
+                  type: integer
+                  minimum: 1
+                  description: Required by browser-only retire and restore actions. Household deletion pauses shared capture and syncing
+                    until restored.
                 memberId: *a8
                 role:
                   type:

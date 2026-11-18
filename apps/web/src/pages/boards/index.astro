@@ -11,7 +11,7 @@ import { boardSessionProof, currentBoardUser } from "@lib/named-board-request"
 const label = await organizationLabelsFor(Astro)
 const newLabel = (name: Parameters<typeof label>[0], fallback?: string) => newOrganizationLabel(label(name, false, fallback), organizationLocale(Astro))
 const user = await currentBoardUser(Astro.locals, Astro.request.signal)
-const directory = user ? await readBoardDirectory(user.actor) : null
+const directory = user ? await readBoardDirectory(user.actor, Boolean(user.isAdmin)) : null
 const submissions = user ? await new BoardIntakeRepository(getPersistenceClient()).findSubmissions(user.actor) : []
 const snapshot = user && directory ? boardViewKey(directory, user.actor.id) : undefined
 ---
@@ -22,12 +22,12 @@ const snapshot = user && directory ? boardViewKey(directory, user.actor.id) : un
       <a class="btn btn-ghost" href="/planning">{label("planning")}</a>
     </nav>
 
-    <section class="boards-list" aria-label="Household">
+    {directory?.household.state !== "retired" && <section class="boards-list" aria-label="Household">
       <a class="board-tile" href="/boards/household">
         <span class="board-name">Household</span>
         <span class="board-note">Shared tasks and workflows</span>
       </a>
-    </section>
+    </section>}
 
     {!user && <p>Open Meitheal through Home Assistant to use private Boards.</p>}
     {user && directory && <div data-board-directory data-board-verify="/api/boards" data-board-key={snapshot}
@@ -59,6 +59,34 @@ const snapshot = user && directory ? boardViewKey(directory, user.actor.id) : un
           </article>)}
         </div> : <p class="board-empty">Create a Board for work with a different group of people.</p>}
       </section>
+
+      {directory.household.state === "active" && user.isAdmin && <section id="household-settings" class="named-boards" aria-labelledby="household-settings-heading">
+        <h2 id="household-settings-heading">Household Board settings</h2>
+        <p>Deleting Household pauses shared capture, Routines and Home Assistant task syncing. Existing work stays saved. Named Boards remain available.</p>
+        <form data-board-form="lifecycle" data-board-id="household" class="board-form">
+          <input type="hidden" name="action" value="retire" />
+          <input type="hidden" name="revision" value={directory.household.revision} />
+          <input type="hidden" name="boardName" value="Household" />
+          <p role="status" data-board-feedback></p>
+          <button type="submit" class="btn btn-danger">Delete Board</button>
+        </form>
+      </section>}
+      {directory.household.state === "retired" && <p class="board-empty">Household is deleted. Shared capture and Home Assistant task syncing are paused until an administrator restores it.</p>}
+      {directory.deletedBoards.length > 0 && <section class="named-boards" aria-labelledby="deleted-boards-heading">
+        <h2 id="deleted-boards-heading">Deleted Boards</h2>
+        <p>Restore a Board to resume its saved work and destinations.</p>
+        <div class="boards-list">
+          {directory.deletedBoards.map(board => <article class="board-tile">
+            <span class="board-name">{board.name}</span>
+            <form data-board-form="lifecycle" data-board-id={board.id} class="board-form">
+              <input type="hidden" name="action" value="restore" />
+              <input type="hidden" name="revision" value={board.revision} />
+              <p role="status" data-board-feedback></p>
+              <button type="submit" class="btn btn-primary">Restore Board</button>
+            </form>
+          </article>)}
+        </div>
+      </section>}
 
       {directory.destinations.length > 0 && <section class="named-boards" aria-labelledby="send-heading">
         <h2 id="send-heading">Send a task</h2>

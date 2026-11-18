@@ -48,7 +48,7 @@
           const tdOverlay = document.getElementById(
             "task-detail-overlay",
           ) as HTMLDivElement;
-        if (!tdOverlay || tdOverlay.dataset.detailController === "ready") return
+        if (!tdOverlay || tdOverlay.dataset.namedBoard || tdOverlay.dataset.detailController === "ready") return
         tdOverlay.dataset.detailController = "ready"
         let pinnedSession: {
           reconcile: () => void; dirty: boolean; pending: number; queued?: () => void

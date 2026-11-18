@@ -2,6 +2,7 @@
 import { readHomeAssistantAreaFilter } from "@lib/home-assistant-area-access"
 import HomeAssistantAreaField from "../tasks/HomeAssistantAreaField.astro"
 import { organizationLabelsFor, newOrganizationLabel, organizationLocale } from "@lib/organization-labels"
+import TaskWorkspace from "../TaskWorkspace.astro"
 import BoardPlanning from "./BoardPlanning.astro"
 import { isOrganizationFeatureAvailable as available } from "@lib/organization-request-context"
 import Layout from "../../layouts/Layout.astro"
@@ -21,8 +22,9 @@ const user = await currentBoardUser(Astro.locals, Astro.request.signal)
 const rawOffset = Number(Astro.url.searchParams.get("offset") ?? 0)
 const offset = Number.isSafeInteger(rawOffset) && rawOffset >= 0 ? rawOffset : 0
 const homeFilter = await readHomeAssistantAreaFilter(Astro, Astro.url.searchParams)
-const view = boardId && user ? await readBoardView(user.actor, boardId, offset, selection, homeFilter) : null
-if (!boardId || !user || !view) Astro.response.status = 404
+const taskWorkspace = !selection.planning && Boolean(boardId && user)
+const view = !taskWorkspace && boardId && user ? await readBoardView(user.actor, boardId, offset, selection, homeFilter) : null
+if (!boardId || !user || (!view && !taskWorkspace)) Astro.response.status = 404
 const policy = view?.board.policy
 const canEdit = view && permitsBoardTaskAction(view.board, "edit")
 const canDelete = view && permitsBoardTaskAction(view.board, "delete")
@@ -40,7 +42,7 @@ const grouping = { area: scope?.project ? undefined : scope?.area?.id, project: 
 const title = scope?.project?.title ?? scope?.area?.name ?? view?.board.name ?? "Board"
 const nextAction = view?.summary?.next
 ---
-<Layout title={label("board")}>
+{taskWorkspace ? <TaskWorkspace namedBoardId={boardId} /> : <Layout title={label("board")}>
   <span slot="page-title">{label("board")}</span>
   <div class="boards-workspace">
     {!view || !boardId || !user ? <p>This Board is unavailable.</p> :
@@ -86,66 +88,6 @@ const nextAction = view?.summary?.next
         {scope?.area && !scope.project && !selection.planning && <p>
           <a href={boardWorkspaceHref(boardId, { area: scope.area.id, groups: true }, "projects")}>{label("project", true)} in {scope.area.name}</a>
         </p>}
-        {!selection.planning && !selection.ticketId && <HomeAssistantAreaField mode="filter" initialId={homeFilter?.id ?? ""} />}
-        {!selection.planning && <section class="board-columns" aria-label="Tasks by column">
-          {view.lanes.map(lane => <section class="board-lane">
-            <h2>{lane.label}</h2>
-            {view.tasks.filter(task => task.laneId === lane.id).map(task => <article class="board-tile">
-              <a class="board-note" href={boardWorkspaceHref(boardId, { ticket: task.id })}>{task.ticket}</a>
-              {canEdit ? <details>
-                <summary class="board-name">{task.title}</summary>
-                <form data-board-form="task-edit" data-ticket-id={task.id} data-version={task.version} class="board-form">
-                  <label>Title <input name="title" value={task.title} maxlength="500" required /></label>
-                  <label>Details <textarea name="description" maxlength="10000" rows="3">{task.description}</textarea></label>
-                  {task.routine
-                    ? task.dueDate && <p class="board-note">Scheduled for {task.dueDate}</p>
-                    : <label>Shared due date <input type="date" name="due_date" value={task.dueDate ?? ""} /></label>}
-                  <p role="status" data-board-feedback></p>
-                  <button type="submit" class="btn btn-ghost">Save changes</button>
-                </form>
-                <HomeAssistantAreaField
-                  mode="edit"
-                  endpoint={`/api/boards/${encodeURIComponent(boardId)}/tickets/${encodeURIComponent(task.id)}/home-assistant-area`}
-                  boardSession={boardSessionProof(user.actor.id)}
-                />
-              </details> : <h3 class="board-name">{task.title}</h3>}
-              {!canEdit && task.dueDate && <p class="board-note">Due {task.dueDate}</p>}
-              {!canEdit && <HomeAssistantAreaField
-                mode="edit"
-                endpoint={`/api/boards/${encodeURIComponent(boardId)}/tickets/${encodeURIComponent(task.id)}/home-assistant-area`}
-                readOnly
-              />}
-              {task.assignedTo && <p class="board-note">Assigned to {user.roster.get(task.assignedTo.replace(/^ha_/, "")) || "an unavailable user"}</p>}
-              {task.description && <p>{task.description}</p>}
-              {canEdit && <form data-board-form="task-move" data-ticket-id={task.id} data-version={task.version} class="board-move">
-                <label>Move to <select name="laneId">
-                  {view.lanes.filter(target => canComplete || isDoneStatus(target.key) === isDoneStatus(lane.key))
-                    .map(target => <option value={target.id} selected={target.id === lane.id}>{target.label}</option>)}
-                </select></label>
-                <button type="submit" class="btn btn-ghost">Move</button>
-                <p role="status" data-board-feedback></p>
-              </form>}
-              {canEdit && !task.routine && <details data-board-filing>
-                <summary>File task</summary>
-                <form data-board-form="task-file" data-ticket-id={task.id} data-version={task.version} class="board-form">
-                  <label>{label("group")} <select name="areaId" disabled><option value="">Unfiled</option></select></label>
-                  <label>{label("project")} <select name="projectId" disabled><option value="">No Project</option></select></label>
-                  <p role="status" data-board-feedback></p>
-                  <button type="submit" class="btn btn-ghost" disabled>Save placement</button>
-                </form>
-              </details>}
-              {canDelete && !task.routine && <form data-board-form="task-delete" data-ticket-id={task.id} data-version={task.version}>
-                <button type="submit" class="btn btn-ghost board-danger">Delete task</button>
-                <span role="status" data-board-feedback></span>
-              </form>}
-            </article>)}
-          </section>)}
-        </section>}
-        {!selection.planning && !selection.ticketId && (offset > 0 || view.nextOffset !== null) && <nav class="board-pages" aria-label="Board pages">
-          {offset > 0 && <a href={boardWorkspaceHref(boardId, { ...grouping, offset: Math.max(0, offset - 50), homeArea: homeFilter?.id })}>Previous tasks</a>}
-          {view.nextOffset !== null && <a href={boardWorkspaceHref(boardId, { ...grouping, offset: view.nextOffset, homeArea: homeFilter?.id })}>More tasks</a>}
-        </nav>}
-
         {view.planning && <BoardPlanning boardId={boardId} areaId={scope?.area?.id} projectId={scope?.project?.id} planning={view.planning} canManage={Boolean(policy) && view.board.state === "active"} canComplete={Boolean(canComplete)} routinesEnabled={routinesEnabled} tickets={view.tasks} />}
         {policy && !scope?.area && !scope?.project && !selection.ticketId && <details id="settings" class="named-boards board-settings">
           <summary>{label("board")} settings</summary>
@@ -227,12 +169,21 @@ const nextAction = view?.summary?.next
                 <button type="submit" class="btn btn-ghost">Create destination</button>
               </form>
             </section>
+            {!view.board.denyDeletion && <form data-board-form="lifecycle" class="board-form">
+              <h2>Delete Board</h2>
+              <p>Keep its saved work in Deleted Boards. Incoming work and Routines pause until you restore it.</p>
+              <input type="hidden" name="action" value="retire" />
+              <input type="hidden" name="revision" value={view.board.revision} />
+              <input type="hidden" name="boardName" value={view.board.name} />
+              <p role="status" data-board-feedback></p>
+              <button type="submit" class="btn btn-danger">Delete Board</button>
+            </form>}
           </div>
         </details>}
       </div>}
     <p hidden data-board-expired role="status">Your Board view changed. <button type="button" class="btn btn-ghost" data-board-refresh>Refresh Board</button></p>
   </div>
-</Layout>
+</Layout>}
 
 <script>
   import { pageLifecycle } from "@lib/page-lifecycle"

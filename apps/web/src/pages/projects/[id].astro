@@ -201,6 +201,7 @@ const tabs: { id: string; label: string; icon: IconName }[] = [
   <section id="section-tasks" class="project-section" data-section="tasks">
     <div class="section-header">
       <h2 class="section-title">{organization("task", true)}</h2>
+      <a class="btn btn-ghost" href={`/boards/household?project=${encodeURIComponent(projectId)}&view=kanban#kanban`}>Open Kanban</a>
       <span class="text-sm text-text-muted">{tasks.length} total</span>
     </div>
 
@@ -322,7 +323,7 @@ const tabs: { id: string; label: string; icon: IconName }[] = [
       {available("groups") && <div class="form-group">
         <label for="edit-proj-area">{organization("group")}</label>
         <select id="edit-proj-area" class="form-select">
-          <option value="">Use the Goal’s Group, if set</option>
+          <option value="">{`Use the Goal’s ${organization("group")}, if set`}</option>
           {areas.map(option => (
             <option value={option.id} selected={project?.area_id === option.id}>{option.name}</option>
           ))}

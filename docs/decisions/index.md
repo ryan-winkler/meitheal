@@ -1,5 +1,7 @@
 # Architecture and product decisions
 
+- [Shared Board workspace and recoverable removal](0025-board-workspace-lifecycle.md) - Records the shared Kanban, Area terminology and Board deletion and restoration behavior.
+
 - [ADR 0001: Legal and Naming Strategy](0001-legal-and-naming-strategy.md) - Records the product naming and legal strategy.
 - [ADR 0002: Target Architecture](0002-target-architecture.md) - Describes runtime, domain, persistence, and integration boundaries.
 - [ADR 0003: Clean-Room Protocol](0003-clean-room-protocol.md) - Records rules for independently implementing compatible behavior.

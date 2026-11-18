@@ -18,6 +18,7 @@
  * @domain navigation
  * @phase 15.2 — Sidebar UX Refinements
  */
+import { isOrganizationFeatureAvailable as available } from "@lib/organization-request-context"
 import {
   ensureSchema,
   getPersistenceClient,
@@ -45,7 +46,7 @@ try {
   await ensureSchema()
   const repo = new HierarchyRepository(getPersistenceClient())
   const [allAreas, allProjects, goals] = await Promise.all([
-    repo.findAllAreas(), repo.findAllProjects(), repo.findAllGoals(),
+    repo.findAllAreas(), available("projects") ? repo.findAllProjects() : [], available("goals") && available("projects") ? repo.findAllGoals() : [],
   ])
   areas = allAreas
   projects = allProjects
@@ -101,7 +102,7 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
 ---
 
 {hasContent && (
-  <div class="stree" id="project-nav" role="navigation" aria-label="Area navigation">
+  <div class="stree" id="project-nav" data-projects-enabled={String(available("projects"))} role="navigation" aria-label="Area navigation">
     <details id="sidebar-areas-group" open>
     <summary class="stree__header" id="project-nav-group-toggle" aria-label={areasLabel} title="Collapse Areas">
       <span class="stree__group-heading"><span class="stree__group-chevron" aria-hidden="true"><Icon name="chevron-down" size={12} /></span><span class="stree__label">{areasLabel}</span></span>
@@ -153,13 +154,13 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
                   title={t("sidebar.area_options", locale)}
                   aria-label={`${t("sidebar.area_options", locale)} - ${area.name}`}
                 ><Icon name="adjustments-horizontal" size={13} /></button>
-                <button
+                {available("projects") && <button
                   type="button"
                   class="stree__action-btn stree__action-btn--add"
                   data-area-add={area.id}
                   title={`New project in ${area.name}`}
                   aria-label={`New project in ${area.name}`}
-                ><Icon name="plus" size={13} /></button>
+                ><Icon name="plus" size={13} /></button>}
               </div>
             </div>
 
@@ -210,7 +211,7 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
                 </div>
                 )
               })}
-              {areaProjects.length === 0 && (
+              {available("projects") && areaProjects.length === 0 && (
                 <span class="stree__empty-hint">{t("sidebar.no_projects", locale)}</span>
               )}
             </div>
@@ -1208,7 +1209,8 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
       addBtn.setAttribute("aria-label", `New project in ${name}`)
       addBtn.appendChild(createTablerSvgElement("plus", 13))
 
-      actions.append(menuBtn, addBtn)
+      actions.append(menuBtn)
+      if (navEl.dataset.projectsEnabled === "true") actions.append(addBtn)
       row.append(toggleBtn, actions)
 
       const children = document.createElement("div")
@@ -1218,7 +1220,7 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
       const emptyHint = document.createElement("span")
       emptyHint.className = "stree__empty-hint"
       emptyHint.textContent = i18n("sidebar.no_projects", "No projects")
-      children.appendChild(emptyHint)
+      if (navEl.dataset.projectsEnabled === "true") children.appendChild(emptyHint)
 
       div.append(row, children)
       // Insert before the "New Area" button

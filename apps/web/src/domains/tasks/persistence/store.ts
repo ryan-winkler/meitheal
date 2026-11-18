@@ -1,3 +1,4 @@
+import { taskReactionStorageSql } from "../../../../drizzle/migrations/task-reaction-schema.mjs"
 import { mkdirSync } from "node:fs"
 import path from "node:path";
 import type { Client, Transaction } from "@libsql/client"
@@ -400,21 +401,7 @@ async function initializeRuntimeTables(client: Transaction): Promise<void> {
   await client.execute("CREATE INDEX IF NOT EXISTS activity_log_actor_type_idx ON task_activity_log(actor_type)")
 
   // Reactions belong to either a task or a comment on that same task.
-  await client.batch([
-    `CREATE TABLE IF NOT EXISTS task_reactions (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
-      comment_id INTEGER CHECK (comment_id > 0),
-      owner_key TEXT NOT NULL,
-      content TEXT NOT NULL CHECK (length(content) BETWEEN 1 AND 16),
-      author TEXT NOT NULL,
-      FOREIGN KEY (comment_id, task_id) REFERENCES comments(id, task_id) ON DELETE CASCADE
-    )`,
-    `CREATE UNIQUE INDEX IF NOT EXISTS task_reactions_owner_content_idx
-      ON task_reactions(task_id, COALESCE(comment_id, 0), owner_key, content)`,
-    "CREATE INDEX IF NOT EXISTS task_reactions_task_page_idx ON task_reactions(task_id, comment_id, id)",
-    "CREATE INDEX IF NOT EXISTS task_reactions_comment_idx ON task_reactions(comment_id, task_id) WHERE comment_id IS NOT NULL",
-  ])
+  await client.batch(taskReactionStorageSql)
 
   // Phase 31: Recurring tasks — iCal RRULE format (e.g. "FREQ=WEEKLY;BYDAY=MO")
   if (!(await hasColumn(client, "tasks", "recurrence_rule"))) {

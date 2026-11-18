@@ -1,3 +1,4 @@
+import { householdBoardIsActive } from "./named-board-repository"
 /**
  * TemplateRepository — domain service for task template database queries.
  * @domain Task Management (Templates context)
@@ -181,6 +182,7 @@ export class TemplateRepository {
 
   /** Find all routine templates */
   async findRoutines(areaId?: string): Promise<RoutineTemplateRow[]> {
+    if (!await householdBoardIsActive(this.client)) return []
     const areaFilter = areaId ? "AND COALESCE(CASE WHEN json_valid(template_json) THEN json_extract(template_json, '$.area_id') END, 'default') = ?" : ""
     const result = await this.client.execute({
       sql: `SELECT * FROM task_templates WHERE owner_board_id IS NULL AND is_routine = 1 ${areaFilter} ORDER BY position ASC, created_at ASC`,
@@ -289,6 +291,7 @@ export class TemplateRepository {
    * @returns { taskId, alreadyExisted }
    */
   async instantiateRoutineTask(templateId: string): Promise<{ taskId: string; alreadyExisted: boolean }> {
+    if (!await householdBoardIsActive(this.client)) throw new Error("Household Board is deleted. Restore it from Boards to resume Routines.")
     const today = new Date().toISOString().split("T")[0]!
 
     const findToday = {

@@ -19,7 +19,7 @@ export async function loadKanbanBoard(
       {
         matchText: Boolean(filters.search || filters.labels?.length || filters.advancedFilter),
         matchOverdue: filters.status === "overdue",
-        timezone, location,
+        timezone, location, projectId: params.get("project") || undefined,
       },
       reader,
     )

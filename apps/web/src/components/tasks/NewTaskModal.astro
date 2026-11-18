@@ -245,6 +245,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
   </div>
 </div>
 <script>
+  import { taskCapturePlacement } from "@lib/task-capture-placement"
   import { showToast } from "@lib/toast";
   import { renderSpriteIconSvg, type IconName } from "../../generated/icon-registry";
   import { InlineDatePicker } from "../shared/InlineDatePicker"
@@ -303,6 +304,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
     let preserveAssignee = false
     let isHydrating = false
     let refreshAfterCaptureClose = false
+    let capturePlacement: TaskDraftSnapshot["placement"]
     let drafts: ReturnType<typeof connectTaskDrafts> | undefined
     let draftLoading = false
     let editedWhileLoading = false
@@ -656,6 +658,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
       document.body.classList.remove("has-docked-inspector");
 
       clearCapture()
+      capturePlacement = taskCapturePlacement()
       if (kind && [...kindTabs].some(tab => (tab as HTMLElement).dataset.kind === kind)) selectKind(kind)
       const contextualDate = window.__prefillTaskDate
       delete window.__prefillTaskDate
@@ -928,6 +931,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
     function captureSnapshot(): TaskDraftSnapshot {
       return {
         version: 1,
+        ...(capturePlacement ? { placement: capturePlacement } : {}),
         title: titleInput?.value ?? "",
         description: descInput?.value ?? "",
         taskKind: (kindInput?.value || "standard_action") as TaskDraftSnapshot["taskKind"],
@@ -949,6 +953,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
     }
 
     function restoreCapture(snapshot: TaskDraftSnapshot) {
+      capturePlacement = snapshot.placement
       isHydrating = true
       try {
         form?.reset()
@@ -1263,6 +1268,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
 
           const body: Record<string, unknown> = {
             title: finalTitle,
+            ...(capturePlacement ? { placement: capturePlacement } : {}),
             description: descInputEl?.value.trim() || "",
             task_kind: kindInputEl?.value || "standard_action",
             priority: Number(prioritySelectEl?.value),

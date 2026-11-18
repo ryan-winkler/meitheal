@@ -10,9 +10,10 @@ import { stripHtml } from "@lib/strip-html"
 export const GET: APIRoute = async ({ locals, request }) => {
   const user = await currentBoardUser(locals, request.signal)
   if (!user) return apiError("Open Meitheal through Home Assistant to view your Boards.", 403)
-  const directory = await readBoardDirectory(user.actor)
+  const directory = await readBoardDirectory(user.actor, Boolean(user.isAdmin))
   const response = boardViewResponse(directory, user.actor.id)
   response.headers.set("x-meitheal-board-session", boardSessionProof(user.actor.id))
+  response.headers.set("cache-control", "private, no-store")
   return response
 }
 

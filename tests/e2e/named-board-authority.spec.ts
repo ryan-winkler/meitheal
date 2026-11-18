@@ -528,3 +528,43 @@ test("Project Routine check-ins retain placement, completion identity, and curre
   expect(await boards.updateMember(owner.id, board, outsider.id, null, [owner.id, outsider.id])).toMatchObject({ result: "saved" })
   expect(await tasks.routineLibrary(outsider)).toEqual([])
 })
+
+test("named Kanban filters the authorized index before per-lane paging and keeps versions fenced", async () => {
+  const db = getPersistenceClient()
+  const boards = new NamedBoardRepository(db, marker)
+  const tasks = new NamedBoardTaskRepository(db, marker)
+  const parent = { kind: "ha_user", id: "parent" } as const
+  const child = { kind: "ha_user", id: "child" } as const
+  const created = await boards.create(parent.id, "Paged private work")
+  if (created.status !== "committed") throw new Error("Expected Board")
+  const id = created.result.id
+  await boards.updateMember(parent.id, id, child.id, { role: "member", denyCompletion: true, denyDeletion: true }, [parent.id, child.id])
+  const { rows: lanes } = await db.execute({ sql: "SELECT id, key FROM kanban_lanes WHERE board_id = ?", args: [id] })
+  const pending = String(lanes.find(lane => lane.key === "pending")!.id)
+  const active = String(lanes.find(lane => lane.key === "active")!.id)
+  const done = String(lanes.find(lane => lane.key === "complete")!.id)
+  const ids: string[] = []
+  for (let index = 0; index < 56; index++) {
+    const ticket = await tasks.create(parent, id, { title: `Work ${index}`, description: index === 0 ? "Needle in oldest details" : "Private details" }, { laneId: pending })
+    if (!ticket.ok) throw new Error("Expected ticket")
+    ids.push(ticket.value.id)
+  }
+  const selection = { areaId: null, projectId: null, ticketId: null, planning: false }
+  const first = await tasks.view(child, id, 0, selection, undefined, { params: new URLSearchParams() })
+  expect(first!.kanbanPages!.find(lane => lane.key === "pending")).toMatchObject({ total: 56, matches: 56, page: 1, pageCount: 3 })
+  expect(first!.tasks).toHaveLength(25)
+  const last = await tasks.view(child, id, 0, selection, undefined, { params: new URLSearchParams("kp.pending=3") })
+  expect(last!.tasks).toHaveLength(6)
+  expect(new Set([...first!.tasks, ...last!.tasks].map(task => task.id)).size).toBe(31)
+  const filtered = await tasks.view(child, id, 0, selection, undefined, { params: new URLSearchParams("search=Needle") })
+  expect(filtered!.tasks.map(task => task.id)).toEqual([ids[0]])
+  const task = filtered!.tasks[0]!
+  expect(await tasks.move(child, id, task.id, done, task.version)).toMatchObject({ ok: false, errorCode: "denied" })
+  expect(await tasks.delete(child, id, task.id, task.version)).toMatchObject({ ok: false, errorCode: "denied" })
+  const moved = await tasks.move(child, id, task.id, active, task.version)
+  expect(moved.ok).toBe(true)
+  expect(await tasks.edit(child, id, task.id, task.version, { title: "Stale overwrite" })).toMatchObject({ ok: false, errorCode: "stale" })
+  await boards.updateMember(parent.id, id, child.id, null, [parent.id, child.id])
+  expect(await tasks.view(child, id, 0, selection, undefined, { params: new URLSearchParams() })).toBeNull()
+  expect(await tasks.edit(child, id, task.id, moved.ok ? moved.value.version : task.version, { title: "Revoked overwrite" })).toMatchObject({ ok: false, errorCode: "unavailable" })
+})

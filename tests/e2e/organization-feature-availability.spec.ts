@@ -52,6 +52,12 @@ test("Administrators choose who can use each organization feature", async () => 
     const project = await member.request.post(app + "/api/projects", { headers, data: { title: projectTitle } })
     expect(project.status(), await project.text()).toBe(201)
     const householdProjectId = (await project.json()).id
+    const areaPickerPage = await member.newPage()
+    await areaPickerPage.goto(app + "/boards/household")
+    await areaPickerPage.locator("#area-selector-trigger").click()
+    await expect(areaPickerPage.locator("#area-selector-dropdown").getByRole("option", { name: "Hidden group fixture", exact: true })).toBeVisible()
+    await expect(areaPickerPage.locator("#area-selector-dropdown").getByRole("option", { name: projectTitle, exact: true })).toHaveCount(0)
+    await areaPickerPage.close()
     const projectTaskTitle = "Project policy task fixture"
     const assignment = await member.request.post(app + "/api/tasks", {
       headers, data: { title: projectTaskTitle, project_id: householdProjectId },
@@ -77,6 +83,14 @@ test("Administrators choose who can use each organization feature", async () => 
     expect((await other.request.get(app + "/planning")).status()).toBe(404)
     expect((await member.request.get(app + "/api/projects")).status()).toBe(404)
     expect((await other.request.get(app + "/api/projects")).status()).toBe(200)
+    await setFeature("groups", "everyone")
+    const noProjectsPage = await member.newPage()
+    await noProjectsPage.goto(app + "/boards/household")
+    await expect(noProjectsPage.locator('#sidebar [data-sidebar-household] [data-project-id]')).toHaveCount(0)
+    await expect(noProjectsPage.locator('#sidebar [data-sidebar-household] [data-area-add]')).toHaveCount(0)
+    await expect(noProjectsPage.locator('#sidebar [data-sidebar-household] [data-area-group="' + groupId + '"]')).toBeVisible()
+    await noProjectsPage.close()
+    await setFeature("groups", "nobody")
     const groupedPath = app + "/tasks?area=&groupBy=project&search=" + encodeURIComponent(projectTaskTitle)
     const allowedGrouping = await other.request.get(groupedPath)
     expect(allowedGrouping.status()).toBe(200)

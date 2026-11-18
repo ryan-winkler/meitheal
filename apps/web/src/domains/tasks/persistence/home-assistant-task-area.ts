@@ -4,16 +4,19 @@ import { taskTimestampMs } from "./task-timestamp"
 
 export function setTaskHomeAssistantArea(taskId: string, areaId: string | null) {
   return {
-    sql: `INSERT INTO home_assistant_task_areas (task_id, area_id) VALUES (?, ?)
+    sql: `INSERT INTO home_assistant_task_areas (task_id, area_id)
+      SELECT id, ? FROM tasks WHERE id = ? AND (task_board_id IS NOT NULL OR EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active'))
       ON CONFLICT (task_id) DO UPDATE SET area_id = excluded.area_id, revision = home_assistant_task_areas.revision + 1
       RETURNING revision`,
-    args: [taskId, areaId],
+    args: [areaId, taskId],
   }
 }
 
 export async function findTaskHomeAssistantArea(db: Pick<Client, "execute">, taskId: string) {
   const { rows: [row] } = await db.execute({
-    sql: "SELECT area_id, revision FROM home_assistant_task_areas WHERE task_id = ?",
+    sql: `SELECT area_id, revision FROM home_assistant_task_areas WHERE task_id = ?
+      AND EXISTS (SELECT 1 FROM tasks WHERE tasks.id = home_assistant_task_areas.task_id
+        AND (task_board_id IS NOT NULL OR EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active')))`,
     args: [taskId],
   })
   return { id: typeof row?.area_id === "string" ? row.area_id : null, locationRevision: Number(row?.revision ?? 0) }
@@ -34,7 +37,8 @@ export async function editTaskHomeAssistantArea(
     return { ok: false, errorCode: "denied" } as const
   }
   const { rows: [task] } = await tx.execute({
-    sql: `SELECT ${taskTimestampMs("updated_at")} AS version FROM tasks WHERE id = ? AND task_board_id IS ?`,
+    sql: `SELECT ${taskTimestampMs("updated_at")} AS version FROM tasks WHERE id = ? AND task_board_id IS ?
+      AND (task_board_id IS NOT NULL OR EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active'))`,
     args: [taskId, boardId],
   })
   if (!task) return { ok: false, errorCode: "unavailable" } as const

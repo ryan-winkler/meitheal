@@ -17,17 +17,17 @@ test.describe("Sidebar and Today follow-through", () => {
     }
   })
 
-  test("Household group shortcuts follow their own visibility setting", async ({ page, request, baseURL }) => {
+  test("Hiding Boards also hides its Household shortcuts", async ({ page, request, baseURL }) => {
     const headers = { origin: new URL(baseURL!).origin }
     expect((await request.put("/api/settings", {
       headers, data: { key: "sidebar_config", value: { boards: false, areas: true } },
     })).ok()).toBe(true)
     await page.goto("/tasks")
     await expect(page.locator('#sidebar [data-page="boards"]')).toHaveCount(0)
-    await expect(page.locator("#sidebar-hierarchy-panel")).toBeVisible()
+    await expect(page.locator("#sidebar-hierarchy-panel")).toHaveCount(0)
   })
 
-  test("Household groups remain under Boards with legacy visibility and label settings", async ({ page }) => {
+  test("Household Areas remain under Boards with legacy visibility and label settings", async ({ page }) => {
     await page.goto("/settings#navigation-settings")
     await expect(page.getByRole("checkbox", { name: "Show Areas in sidebar" })).toBeVisible()
     await page.getByRole("textbox", { name: "Custom label for Areas" }).fill("Household areas")
@@ -46,6 +46,8 @@ test.describe("Sidebar and Today follow-through", () => {
       return targets.map(target => target.id === "sidebar-hierarchy-panel" ? "areas" : target.getAttribute("data-page"))
     })
     expect(sidebarOrder.indexOf("areas")).toBe(sidebarOrder.indexOf("boards") + 1)
+    await expect(page.locator('#sidebar [data-sidebar-group="boards"] #sidebar-hierarchy-panel')).toHaveCount(1)
+    await expect(page.locator('#sidebar [data-sidebar-group="areas"]')).toHaveCount(0)
     await expect(page.locator("#sidebar").getByRole("link", { name: "Notes", exact: true })).toBeVisible()
     await expect(page.locator('#sidebar [data-page="system-pinned"]')).toHaveAttribute("href", "/pinned")
     await expect(page.locator('#sidebar [data-page="system-pinned"]')).toHaveCount(1)

@@ -79,7 +79,7 @@ export async function createPrinciple(data: {
     sql: `INSERT INTO principles (id, pillar_id, statement, is_non_negotiable, position, created_at)
           SELECT ?, parent.id, ?, ?,
             (SELECT COALESCE(MAX(position), -1) + 1 FROM principles WHERE pillar_id = parent.id), ?
-          FROM pillars parent WHERE parent.id = ? AND parent.owner_board_id IS NULL AND parent.user_id = ?
+          FROM pillars parent WHERE parent.id = ? AND parent.owner_board_id IS NULL AND (parent.user_id <> 'default' OR EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active')) AND parent.user_id = ?
           RETURNING position`,
     args: [id, data.statement, data.isNonNegotiable ? 1 : 0, now, data.pillarId, owner],
   })
@@ -101,7 +101,7 @@ export async function getPrinciplesForPillar(pillarId: string, owner = HOUSEHOLD
 
   const result = await client.execute({
     sql: `SELECT p.* FROM principles p JOIN pillars parent ON parent.id = p.pillar_id
-          WHERE p.pillar_id = ? AND parent.owner_board_id IS NULL AND parent.user_id = ? ORDER BY p.position ASC`,
+          WHERE p.pillar_id = ? AND parent.owner_board_id IS NULL AND (parent.user_id <> 'default' OR EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active')) AND parent.user_id = ? ORDER BY p.position ASC`,
     args: [pillarId, owner],
   })
 
@@ -120,7 +120,7 @@ export async function getAllPrinciples(personalOwner?: string): Promise<Map<stri
 
   const result = await client.execute({
     sql: `SELECT p.* FROM principles p JOIN pillars pl ON pl.id = p.pillar_id
-          WHERE pl.owner_board_id IS NULL AND pl.user_id IN (?, ?) ORDER BY p.pillar_id, p.position ASC`,
+          WHERE pl.owner_board_id IS NULL AND (pl.user_id <> 'default' OR EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active')) AND pl.user_id IN (?, ?) ORDER BY p.pillar_id, p.position ASC`,
     args: [HOUSEHOLD_PILLAR_OWNER, personalOwner ?? HOUSEHOLD_PILLAR_OWNER],
   })
 
@@ -140,7 +140,7 @@ export async function getNonNegotiablePrinciples(): Promise<Principle[]> {
 
   const result = await client.execute({
     sql: `SELECT p.* FROM principles p JOIN pillars pl ON pl.id = p.pillar_id
-          WHERE p.is_non_negotiable = 1 AND pl.is_active = 1 AND pl.owner_board_id IS NULL AND pl.user_id = ?
+          WHERE p.is_non_negotiable = 1 AND pl.is_active = 1 AND pl.owner_board_id IS NULL AND (pl.user_id <> 'default' OR EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active')) AND pl.user_id = ?
           ORDER BY pl.weight DESC, p.position ASC LIMIT 15`,
     args: [HOUSEHOLD_PILLAR_OWNER],
   })
@@ -175,7 +175,7 @@ export async function updatePrinciple(
   args.push(owner)
   const result = await client.execute({
     sql: `UPDATE principles SET ${sets.join(", ")} WHERE id = ?${pillarId === undefined ? "" : " AND pillar_id = ?"}
-          AND EXISTS (SELECT 1 FROM pillars WHERE pillars.id = principles.pillar_id AND owner_board_id IS NULL AND user_id = ?)`,
+          AND EXISTS (SELECT 1 FROM pillars WHERE pillars.id = principles.pillar_id AND owner_board_id IS NULL AND (user_id <> 'default' OR EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active')) AND user_id = ?)`,
     args,
   })
 
@@ -188,7 +188,7 @@ export async function deletePrinciple(id: string, pillarId?: string, owner = HOU
 
   const result = await client.execute({
     sql: `DELETE FROM principles WHERE id = ?${pillarId === undefined ? "" : " AND pillar_id = ?"}
-          AND EXISTS (SELECT 1 FROM pillars WHERE pillars.id = principles.pillar_id AND owner_board_id IS NULL AND user_id = ?)`,
+          AND EXISTS (SELECT 1 FROM pillars WHERE pillars.id = principles.pillar_id AND owner_board_id IS NULL AND (user_id <> 'default' OR EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active')) AND user_id = ?)`,
     args: pillarId === undefined ? [id, owner] : [id, pillarId, owner],
   })
 

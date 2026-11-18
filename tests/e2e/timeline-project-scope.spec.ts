@@ -78,7 +78,7 @@ test("Timeline shows unavailable projects without revealing their IDs or labels"
     const paneToggle = page.getByRole("button", { name: "Task pane" })
     await expect(paneToggle).toBeEnabled()
     if (await paneToggle.getAttribute("aria-expanded") === "false") await paneToggle.press("Enter")
-    await expect(page.getByRole("heading", { name: "Group: Unknown Project", exact: true })).toBeVisible()
+    await expect(page.getByRole("heading", { name: "Area: Unknown Project", exact: true })).toBeVisible()
 
     const admin = await browser.newContext({ ignoreHTTPSErrors: true, extraHTTPHeaders: {} })
     await admin.addCookies([{ name: "feedback-fixture", value: "admin", url: origin }])

@@ -1,3 +1,5 @@
+import { HierarchyRepository } from "@domains/tasks/persistence/hierarchy-repository"
+import { organizationPlacementAvailable } from "@lib/organization-placement-access"
 import type { APIRoute } from "astro"
 import { resolveHomeAssistantAreaSelection } from "@lib/home-assistant-area-access"
 import { isCurrentActiveHAUser } from "@domains/ha/ha-users"
@@ -135,11 +137,19 @@ export const PUT: APIRoute = async context => {
     const replay = await drafts.replay(ownerId, action)
     if (replay) return json({ receipt: replay })
     const { task } = action
+    if (!organizationPlacementAvailable(task)) return problem(404, "This organizing feature is unavailable.")
+    const hierarchy = new HierarchyRepository(client)
+    const project = task.placement?.projectId ? await hierarchy.findProjectById(task.placement.projectId) : null
+    if (task.placement?.projectId && (!project || project.status !== "active" || (task.placement.areaId && task.placement.areaId !== project.area_id))) {
+      return problem(404, "Household placement unavailable. Keep the draft and choose an available Area or Project.")
+    }
+    const placementArea = project?.area_id ?? task.placement?.areaId ?? "default"
     const area = await resolveHomeAssistantAreaSelection(context, task.home_assistant_area_id)
     if (!area.ok) return problem(area.status, area.detail)
     const repo = new TaskRepository(client)
     const prepared = await prepareTaskCreation(repo, {
       ...task,
+      ...(task.placement ? { area_id: placementArea, project_id: task.placement.projectId } : {}),
       labels: JSON.stringify(task.labels),
       ...(task.checklists ? { checklists: JSON.stringify(task.checklists) } : {}),
       ...(task.custom_fields ? { custom_fields: JSON.stringify(task.custom_fields) } : {}),

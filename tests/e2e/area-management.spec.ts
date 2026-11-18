@@ -58,7 +58,7 @@ test("Area options open the editor and save within Home Assistant ingress", asyn
     await expect(page.getByRole("heading", { name: /Workshop renamed/ })).toBeVisible()
     await expect(page).toHaveURL(editorUrl)
     await expect(name).toHaveValue("Workshop renamed")
-    const tabs = page.getByRole("tablist", { name: "Group sections" })
+    const tabs = page.getByRole("tablist", { name: "Area sections" })
     const settingsTab = tabs.getByRole("tab", { name: /Settings/ })
     await expect(settingsTab).toHaveAttribute("aria-selected", "true")
     await settingsTab.press("Home")
@@ -152,7 +152,7 @@ test("Area and Project pages show associated Goals and keep the All Goals view",
     projectId = await create("/api/projects", { title: "Start Tuesday " + stamp, area_id: work, goal_id: unlinkedGoal })
 
     await page.goto(`/areas/${work}`)
-    await page.getByRole("navigation", { name: "Group sections" }).getByRole("tab", { name: /Goals/ }).click()
+    await page.getByRole("navigation", { name: "Area sections" }).getByRole("tab", { name: /Goals/ }).click()
     const areaGoals = page.locator("#section-goals")
     await expect(areaGoals.getByRole("heading", { name: "Finish the class " + stamp })).toBeVisible()
     await expect(areaGoals.getByRole("heading", { name: "Learn to cycle " + stamp })).toBeVisible()
@@ -178,7 +178,7 @@ test("Area and Project pages show associated Goals and keep the All Goals view",
 
     await page.goto(`/projects/${projectId}#settings`)
     const settings = page.locator("#section-project-settings")
-    const projectArea = settings.getByLabel("Group", { exact: true })
+    const projectArea = settings.getByLabel("Area", { exact: true })
     await expect(projectArea).toHaveValue(work)
     await expect(settings.getByLabel("Goal", { exact: true })).toHaveValue(unlinkedGoal)
     await projectArea.selectOption(home)

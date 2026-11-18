@@ -18,7 +18,10 @@ export function bindBoardPage(signal: AbortSignal) {
   let expired = false
   let checking: AbortController | undefined
   const placeholder = document.createComment("")
-  const detach = () => { if (root.isConnected) root.replaceWith(placeholder) }
+  const detach = () => {
+    root.dispatchEvent(new Event("meitheal:board-hidden"))
+    if (root.isConnected) root.replaceWith(placeholder)
+  }
   const restore = () => { if (placeholder.isConnected) placeholder.replaceWith(root) }
   const expire = () => {
     expired = true
@@ -162,7 +165,10 @@ export function bindBoardPage(signal: AbortSignal) {
     const button = form.querySelector<HTMLButtonElement>('[type="submit"]')
     if (!button || button.disabled) return
     if (boardForm === "task-delete" && !await confirmDialog({ message: "Delete this task?" })) return
-    if (value("action") === "retire" && !await confirmDialog({ message: "Remove this item from active planning?" })) return
+    if (boardForm === "planning" && value("action") === "retire" && !await confirmDialog({ message: "Remove this item from active planning?" })) return
+    if (boardForm === "lifecycle" && value("action") === "retire" && !await confirmDialog({
+      message: `Delete ${value("boardName") || "this Board"}? Its work stays saved in Deleted Boards. Incoming work and Routines pause until you restore it.`,
+    })) return
     button.disabled = true
     if (feedback) feedback.textContent = ""
 
@@ -175,6 +181,15 @@ export function bindBoardPage(signal: AbortSignal) {
             return
           }
           if (feedback) feedback.textContent = "Board saved. Its access is still being verified."
+          return
+        }
+        case "lifecycle": {
+          const result = await jsonRequest(api, "PATCH", { action: value("action"), revision: Number(value("revision")) })
+          if (result.accessPending) {
+            if (feedback) feedback.textContent = "Board saved. Access is still being verified. Refresh Boards to check the result."
+            return
+          }
+          window.location.href = safeIngressHref("/boards")
           return
         }
         case "sidebar":
@@ -280,7 +295,7 @@ export function bindBoardPage(signal: AbortSignal) {
       if (!signal.aborted) window.location.reload()
     } catch (error) {
       if (!signal.aborted && feedback) {
-        feedback.textContent = error instanceof Error && error.name === "Error" ? error.message : "Could not save. Your input is still here."
+        feedback.textContent = error instanceof Error ? error.message : "Could not save. Your input is still here."
       }
     } finally {
       button.disabled = false

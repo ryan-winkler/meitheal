@@ -33,7 +33,7 @@ export async function currentBoardUser(locals: App.Locals, signal: AbortSignal, 
   }
   const roster = await getCurrentHAUserRoster(user.id, signal)
   if (!roster) return null
-  return { actor: { kind: "ha_user", id: user.id } as const, roster }
+  return { isAdmin: user.isAdmin, actor: { kind: "ha_user", id: user.id } as const, roster }
 }
 
 export async function currentBoardTaskActor(locals: App.Locals, request: Request, write = false): Promise<BoardActor | null> {

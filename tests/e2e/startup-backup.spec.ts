@@ -1,3 +1,4 @@
+import { BOARD_LIFECYCLE_MIGRATION } from "../../apps/web/drizzle/migrations/0015_board_lifecycle.mjs"
 import { execFile, fork } from "node:child_process"
 import { createHash } from "node:crypto"
 import { once } from "node:events"
@@ -342,9 +343,9 @@ for (const lock of ["reader", "writer"]) {
     const client = getPersistenceClient()
     expect((await client.execute("SELECT value FROM app_settings WHERE key = 'schema_version'")).rows).toEqual([{ value: String(DATABASE_SCHEMA_VERSION) }])
     const ledger = await client.execute("SELECT name, applied_at FROM __meitheal_migrations ORDER BY name")
-    expect(ledger.rows).toHaveLength(predecessorMigrationNames.length + 6)
-    expect(ledger.rows.slice(-6).map(row => row.name)).toEqual([TASK_BOARD_MIGRATION, PERSONAL_PILLAR_MIGRATION, BOARD_ACCESS_MIGRATION, ORGANIZATION_LABEL_MIGRATION, ORGANIZATION_ACCESS_MIGRATION, ORGANIZATION_FEATURE_MIGRATION])
-    expect(ledger.rows.slice(0, -6).every(row => row.applied_at === 1)).toBe(true)
+    expect(ledger.rows).toHaveLength(predecessorMigrationNames.length + 7)
+    expect(ledger.rows.slice(-7).map(row => row.name)).toEqual([TASK_BOARD_MIGRATION, PERSONAL_PILLAR_MIGRATION, BOARD_ACCESS_MIGRATION, ORGANIZATION_LABEL_MIGRATION, ORGANIZATION_ACCESS_MIGRATION, ORGANIZATION_FEATURE_MIGRATION, BOARD_LIFECYCLE_MIGRATION])
+    expect(ledger.rows.slice(0, -7).every(row => row.applied_at === 1)).toBe(true)
     expect((await client.execute("SELECT title FROM tasks")).rows).toEqual([{ title: "Retained startup task" }])
     await expect(migrate("--check")).resolves.toMatchObject({ stdout: expect.stringContaining("Migration check passed") })
   })

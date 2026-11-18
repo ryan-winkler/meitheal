@@ -330,6 +330,8 @@ function defaultProject(now) {
 
 /** @param {import("@libsql/core/api").Transaction} tx */
 export async function seedHouseholdTaskPrerequisites(tx) {
+  const { rows: [board] } = await tx.execute("SELECT state FROM task_boards WHERE id = 'household'")
+  if (board?.state === "retired") return
   const now = Date.now()
   const [, , { rows: [state] }] = await tx.batch([defaultArea(now), defaultProject(now), laneSummary(householdLanes)])
   await tx.batch(laneRepairs(now, state, householdLanes))

@@ -110,9 +110,10 @@ function isExternal(href: string): boolean {
 
       return (
         <li data-sidebar-group={item.key} data-sidebar-pin-presence={item.key === "system-pinned" || undefined} hidden={item.key === "system-pinned"}>
+          <div class="nav-row flex items-center gap-1 min-w-0">
           <a
             href={item.href}
-            class={`nav-link ${item.isActive ? "active" : ""} ${external ? "nav-link--external" : ""}`}
+            class={`nav-link flex-1 min-w-0 ${item.isActive ? "active" : ""} ${external ? "nav-link--external" : ""}`}
             data-page={item.key}
             title={item.label}
             data-tooltip={item.label}
@@ -131,6 +132,8 @@ function isExternal(href: string): boolean {
               <span class="nav-external-icon" aria-hidden="true">↗</span>
             )}
           </a>
+          {item.key === "boards" && <button type="button" class="task-view-disclosure" data-sidebar-boards-toggle aria-label={item.label} aria-expanded="true" aria-controls="sidebar-board-children"><Icon name="chevron-down" size={13} /></button>}
+          </div>
           {item.key === "boards" && <slot name="boards" />}
           <SidebarReorderHandle label={item.label} locale={locale} />
         </li>

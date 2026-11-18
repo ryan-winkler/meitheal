@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto"
 import { BoardIntakeRepository } from "@domains/tasks/persistence/board-intake-repository"
-import { NamedBoardRepository, type BoardActor } from "@domains/tasks/persistence/named-board-repository"
+import { NamedBoardRepository, readHouseholdBoardState, type BoardActor } from "@domains/tasks/persistence/named-board-repository"
 import { NamedBoardTaskRepository } from "@domains/tasks/persistence/named-board-task-repository"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import type { HomeAssistantAreaFilter } from "./home-assistant-area-access"
@@ -17,17 +17,22 @@ export function boardViewResponse(value: unknown, actorId: string, payload = val
   return response
 }
 
-export async function readBoardDirectory(actor: BoardActor) {
+export async function readBoardDirectory(actor: BoardActor, householdAdmin = false) {
   await ensureSchema()
   const client = getPersistenceClient()
-  const [boards, destinations] = await Promise.all([
-    new NamedBoardRepository(client).findDirectory(actor),
+  const repository = new NamedBoardRepository(client)
+  const [boards, destinations, deletedBoards, householdState] = await Promise.all([
+    repository.findDirectory(actor),
     new BoardIntakeRepository(client).findDestinations(actor),
+    repository.findDeleted(actor),
+    readHouseholdBoardState(client),
   ])
-  return { boards, destinations }
+  const { rows: [household] } = await client.execute("SELECT revision FROM task_boards WHERE id = 'household'")
+  return { boards, destinations, household: { state: householdState, revision: Number(household?.revision) },
+    deletedBoards: [...(householdAdmin && householdState === "retired" ? [{ id: "household", name: "Household", revision: Number(household?.revision) }] : []), ...deletedBoards] }
 }
 
-export async function readBoardView(actor: BoardActor, id: string, offset: number, selection?: BoardWorkspaceSelection, location?: HomeAssistantAreaFilter) {
+export async function readBoardView(actor: BoardActor, id: string, offset: number, selection?: BoardWorkspaceSelection, location?: HomeAssistantAreaFilter, kanban?: { params: URLSearchParams; timezone?: string }) {
   await ensureSchema()
-  return new NamedBoardTaskRepository(getPersistenceClient()).view(actor, id, offset, selection, location)
+  return new NamedBoardTaskRepository(getPersistenceClient()).view(actor, id, offset, selection, location, kanban)
 }

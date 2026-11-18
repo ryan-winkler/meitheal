@@ -24,15 +24,21 @@ export interface AreaOption {
 interface Props {
   areas: AreaOption[]
   catalogReady?: boolean
+  endpoint?: string | undefined
+  storageKey?: string | undefined
+  initialId?: string | undefined
 }
 
-const { areas = [], catalogReady = true } = Astro.props
+const { areas = [], catalogReady = true, endpoint = "/api/boards/household?view=groups", storageKey, initialId } = Astro.props
 const organization = await organizationLabelsFor(Astro)
-const allGroups = organizationLocale(Astro) === "ga" ? `${organization("group", true)} ar fad` : `All ${organization("group", true)}`
-const unavailableGroup = `${organization("group")} unavailable`
+const allAreas = organizationLocale(Astro) === "ga" ? `${organization("group", true)} ar fad` : `All ${organization("group", true)}`
+const unavailableArea = `${organization("group")} unavailable`
 ---
 
-<div class="area-selector" data-area-selector data-all-groups-label={allGroups} data-unavailable-group-label={unavailableGroup}>
+<div class="area-selector" data-area-selector data-all-groups-label={allAreas} data-unavailable-group-label={unavailableArea}
+  data-area-loading-label={`Loading ${organization("group", true)}…`}
+  data-area-failed-label={`${organization("group", true)} unavailable. Your selection is kept.`}
+  data-area-endpoint={endpoint} data-area-storage-key={storageKey} data-initial-area-id={initialId}>
   <button
     type="button"
     class="area-selector__trigger"
@@ -44,7 +50,7 @@ const unavailableGroup = `${organization("group")} unavailable`
     <span class="area-selector__icon inline-flex items-center" data-area-icon aria-hidden="true">
       <Icon name="folder" size={15} />
     </span>
-    <span class="area-selector__label" data-area-label>{allGroups}</span>
+    <span class="area-selector__label" data-area-label>{catalogReady ? allAreas : `${organization("group", true)} unavailable`}</span>
     <svg class="area-selector__chevron" width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
       <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
     </svg>
@@ -63,17 +69,21 @@ const unavailableGroup = `${organization("group")} unavailable`
       role="option"
       aria-selected="true"
       data-area-id=""
-      data-area-name={allGroups}
+      data-area-name={allAreas}
       data-area-icon="folder"
     >
       <span class="area-selector__option-icon inline-flex items-center" aria-hidden="true">
         <Icon name="folder" size={15} />
       </span>
-      <span class="area-selector__option-label">{allGroups}</span>
+      <span class="area-selector__option-label">{allAreas}</span>
       <svg class="area-selector__check" width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
         <path d="M3 7L6 10L11 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
       </svg>
     </button>
+
+    <p data-area-catalog-feedback role="status" hidden={catalogReady}>{organization("group", true)} unavailable. Your selection is kept.</p>
+    <button class="btn btn-ghost" type="button" data-area-catalog-retry hidden={catalogReady}>Retry loading {organization("group", true)}</button>
+    <button class="btn btn-ghost" type="button" data-area-catalog-more hidden>Show more {organization("group", true)}</button>
 
     {areas.map((area) => {
       const areaTabler = mapEntityEmojiToTabler(area.icon)

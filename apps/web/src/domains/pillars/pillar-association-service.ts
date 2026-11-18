@@ -65,12 +65,12 @@ export interface PillarAssociation {
 }
 
 const householdPillar = (id: string) => `SELECT 1 FROM pillars
-  WHERE id = ${id} AND owner_board_id IS NULL AND user_id = '${HOUSEHOLD_PILLAR_OWNER}'`
+  WHERE id = ${id} AND owner_board_id IS NULL AND EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active') AND user_id = '${HOUSEHOLD_PILLAR_OWNER}'`
 
 const householdEntity = (kind: string, id: string) => `(
   (${kind} = 'goal' AND EXISTS (SELECT 1 FROM goals WHERE id = ${id} AND owner_board_id IS NULL AND retired_at IS NULL))
   OR (${kind} = 'routine' AND EXISTS (SELECT 1 FROM task_templates WHERE id = ${id} AND owner_board_id IS NULL AND is_routine = 1))
-  OR (${kind} = 'task' AND EXISTS (SELECT 1 FROM tasks WHERE id = ${id} AND task_board_id IS NULL))
+  OR (${kind} = 'task' AND EXISTS (SELECT 1 FROM tasks WHERE id = ${id} AND task_board_id IS NULL AND EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active')))
 )`
 
 function mapAssociation(row: Row): PillarAssociation {
@@ -160,7 +160,7 @@ export async function getPillarsForEntity(
     sql: `
       SELECT p.* FROM pillars p
       INNER JOIN pillar_associations pa ON pa.pillar_id = p.id
-      WHERE pa.entity_type = ? AND pa.entity_id = ? AND p.is_active = 1 AND p.owner_board_id IS NULL AND p.user_id = ?
+      WHERE pa.entity_type = ? AND pa.entity_id = ? AND p.is_active = 1 AND p.owner_board_id IS NULL AND EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active') AND p.user_id = ?
         AND ${householdEntity("pa.entity_type", "pa.entity_id")}
       ORDER BY p.weight DESC, p.position ASC
     `,
@@ -196,7 +196,7 @@ export async function setEntityPillar(
   await ensureAssociationSchema()
   const client = getPersistenceClient()
 
-  const scope = table === "tasks" ? "task_board_id IS NULL" : table === "goals" ? "owner_board_id IS NULL AND retired_at IS NULL" : "owner_board_id IS NULL AND is_routine = 1"
+  const scope = table === "tasks" ? "task_board_id IS NULL AND EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active')" : table === "goals" ? "owner_board_id IS NULL AND retired_at IS NULL" : "owner_board_id IS NULL AND is_routine = 1"
   const result = await client.execute({
     sql: `UPDATE ${table} SET pillar_id = ? WHERE id = ? AND ${scope}
       AND (pillar_id IS NULL OR EXISTS (${householdPillar(`${table}.pillar_id`)}))
@@ -214,7 +214,7 @@ export async function getEntityPillarId(
   await ensureAssociationSchema()
   const client = getPersistenceClient()
 
-  const scope = table === "tasks" ? "task_board_id IS NULL" : table === "goals" ? "owner_board_id IS NULL AND retired_at IS NULL" : "owner_board_id IS NULL AND is_routine = 1"
+  const scope = table === "tasks" ? "task_board_id IS NULL AND EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active')" : table === "goals" ? "owner_board_id IS NULL AND retired_at IS NULL" : "owner_board_id IS NULL AND is_routine = 1"
   const result = await client.execute({
     sql: `SELECT pillar_id FROM ${table} WHERE id = ? AND ${scope}
       AND EXISTS (${householdPillar(`${table}.pillar_id`)})`,

@@ -6,6 +6,7 @@
  *      Combines keyboard shortcuts (N/C), WIP limit indicators,
  *      inline quick-add, search filter, and arrow-key board navigation.
  */
+import { taskCapturePlacement } from "@lib/task-capture-placement"
 import { getSelectedAreaId } from "@lib/area-selector-controller"
 import { singleKeyShortcutsEnabled } from "@lib/single-key-shortcuts"
 import { createClientLogger } from "@lib/client-logger"
@@ -66,6 +67,7 @@ export function initKeyboardAndSearch(signal: AbortSignal): void {
         return
       }
 
+      const placement = taskCapturePlacement()
       const form = document.createElement("form")
       form.className = "kanban-inline-add"
       form.noValidate = true
@@ -120,14 +122,13 @@ export function initKeyboardAndSearch(signal: AbortSignal): void {
         input.readOnly = true
         addBtn.textContent = window.mI18n?.get("kanban.quick_add_saving") ?? "Adding…"
         error.textContent = ""
-        const areaId = getSelectedAreaId()
 
         let uncertain = false
         try {
           const res = await fetch("/api/tasks", {
             method: "POST",
             headers: { "content-type": "application/json", "idempotency-key": retryKey },
-            body: JSON.stringify({ title, status: btn.dataset.status, task_type: btn.dataset.taskType, area_id: areaId || undefined }),
+            body: JSON.stringify({ title, status: btn.dataset.status, task_type: btn.dataset.taskType, ...(placement ? { placement } : {}) }),
           })
           if (res.ok) {
             form.remove()

@@ -7,7 +7,7 @@ import { verifiedIngressUser } from "./verified-ingress-user"
 
 const terms = {
   board: { en: ["Board", "Boards"], ga: ["Clár", "Cláir"] },
-  group: { en: ["Group", "Groups"], ga: ["Grúpa", "Grúpaí"] },
+  group: { en: ["Area", "Areas"], ga: ["Réimse", "Réimsí"] },
   project: { en: ["Project", "Projects"], ga: ["Tionscadal", "Tionscadail"] },
   task: { en: ["Task", "Tasks"], ga: ["Tasc", "Tascanna"] },
   goal: { en: ["Goal", "Goals"], ga: ["Sprioc", "Spriocanna"] },

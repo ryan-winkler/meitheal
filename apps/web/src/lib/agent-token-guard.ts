@@ -136,7 +136,7 @@ export async function checkAssignedTask(taskIdOrKey: string, agent: ResolvedAgen
     const client = getPersistenceClient()
     const resolved = await new TaskRepository(client).resolveTaskId(taskIdOrKey)
     const result = resolved
-      ? await client.execute({ sql: "SELECT assigned_to FROM tasks WHERE id = ?", args: [resolved.id] })
+      ? await client.execute({ sql: "SELECT assigned_to FROM tasks WHERE id = ? AND task_board_id IS NULL AND EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active')", args: [resolved.id] })
       : { rows: [] }
     // Let the route answer for a missing task so it reports the usual 404.
     if (result.rows.length === 0) return null

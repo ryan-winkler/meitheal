@@ -28,10 +28,12 @@ function rulesUseRice(group: FilterGroup): boolean {
 /** Share month and agenda matching. Connected calendar feeds are a separate source. */
 export function createCalendarTaskFilter(params: URLSearchParams, timezone: string) {
   const filters = readCalendarTaskFilters(params)
+  const projectId = params.get("project")
   const includeCompletedInCounts = Boolean(filters.status || filters.advancedFilter?.conditions.length)
   const matchRice = Boolean(filters.rice || (filters.advancedFilter && rulesUseRice(filters.advancedFilter)))
   const today = calendarToday(timezone)
   const matches = (task: CalendarFilterRow): boolean => {
+    if (projectId && task.project_id !== projectId) return false
     if (filters.promoted && Number(task.is_promoted) !== 1) return false
     const status = normalizeStatus(task.status)
     if (status === "archived" || (!includeCompletedInCounts && isDoneStatus(status))) return false
@@ -59,12 +61,12 @@ export function createCalendarTaskFilter(params: URLSearchParams, timezone: stri
     } }, filters)
   }
 
-  const hasFilters = hasCalendarTaskFilters(filters)
+  const hasFilters = Boolean(projectId) || hasCalendarTaskFilters(filters)
   return {
     matches: hasFilters ? matches : undefined,
     matchesAgenda: hasFilters ? matches : (task: CalendarFilterRow) => normalizeStatus(task.status) !== "archived",
     includeCompletedInCounts,
-    showConnectedEvents: !filters.types?.length || filters.types.includes("calendar_event"),
+    showConnectedEvents: !projectId && (!filters.types?.length || filters.types.includes("calendar_event")),
   }
 }
 
