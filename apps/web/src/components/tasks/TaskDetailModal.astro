@@ -11,8 +11,8 @@ import StrategicEvaluator from "./StrategicEvaluator.astro";
 import Icon from "../ui/Icon.astro";
 import { t } from "../../i18n/translations"
 
-interface Props { suppressUrlOpen?: boolean }
-const { suppressUrlOpen = false } = Astro.props
+interface Props { suppressUrlOpen?: boolean; namedBoard?: boolean }
+const { suppressUrlOpen = false, namedBoard = false } = Astro.props
 
 const organization = await organizationLabelsFor(Astro)
 const locale = Astro.cookies.get("meitheal-locale")?.value === "ga" ? "ga" : "en"
@@ -21,6 +21,7 @@ const mentionUser = verifiedIngressUser(Astro.locals)
     <!-- Task Detail Centered Panel -->
     <div
       id="task-detail-overlay"
+      data-named-board={namedBoard ? "true" : undefined}
       data-suppress-url-open={suppressUrlOpen ? "true" : undefined}
       class="modal-overlay z-200"
       role="presentation"
@@ -33,6 +34,7 @@ const mentionUser = verifiedIngressUser(Astro.locals)
         aria-label="Task detail"
         class="modal-content w-full max-w-[1000px] h-[90vh] max-h-[900px] bg-bg-card border border-border shadow-2xl rounded-2xl flex flex-col overflow-hidden relative m-4 md:m-8"
       >
+        {namedBoard ? <slot /> : <>
         <!-- Sticky Header Bar -->
         <div class="td-toolbar flex-none bg-bg-card z-20">
           <div class="td-toolbar__top">
@@ -597,6 +599,7 @@ const mentionUser = verifiedIngressUser(Astro.locals)
 
           </div>
         </div>
+        </>}
       </div>
     </div>
 

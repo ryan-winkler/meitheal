@@ -59,7 +59,7 @@ const nextYear = month === 11 ? year + 1 : year;
 
 function monthHref(nextYear?: number, nextMonth?: number) {
   const target = taskViewUrl(url, "calendar")
-  target.pathname = "/tasks"
+  target.pathname = Astro.url.pathname.startsWith("/boards/household") ? "/boards/household" : "/tasks"
   target.searchParams.delete("calendarRefresh")
   target.searchParams.delete("open")
   target.searchParams.delete("comment")

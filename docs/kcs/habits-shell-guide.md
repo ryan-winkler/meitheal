@@ -43,11 +43,13 @@ Opening a section from the toolbar updates the URL hash, so you can reload or sh
 
 Editing an existing habit now preserves description and priority instead of flattening them.
 
+When Household is deleted, its library and shared creation controls are paused. Restore it from **Boards → Deleted Boards** to recover its saved Routines. Routines on active named Boards remain available in the check-in area.
+
 ### Check in on a named Board Routine
 
 **Routines on your Boards** lists Routines from active named Boards you can read through Home Assistant. The same list appears on Today. Each row shows its Board, daily or weekly frequency and current completion state. Choose **Mark done** when available, or follow the Routine’s name to open its Board. Viewers can read the rows; marking done requires the Board’s create and completion permissions. The list shows up to 100 Routines and offers a message to open a Board when more are available.
 
-Board owners create and edit these Routines under **Boards → Groups**. To bind a Routine to a Project, open that Project’s settings and create the Routine there. Its completed ticket retains the Group and Project. Closing or removing the Project prevents new occurrences. Retrying an already completed occurrence keeps its existing ticket, subject to current Board permissions.
+Board owners create and edit these Routines under **Boards → Areas**. To bind a Routine to a Project, open that Project’s settings and create the Routine there. Its completed ticket retains the Area and Project. Closing or removing the Project prevents new occurrences. Retrying an already completed occurrence keeps its existing ticket, subject to current Board permissions.
 
 Named Board check-ins use a UTC day or a UTC week starting Monday. A generated ticket keeps that occurrence’s date. If a check-in cannot be confirmed, refresh the list before trying again. Reconnect through Home Assistant when the list disappears after an account or connection change.
 
@@ -80,6 +82,7 @@ When you choose Gaeilge in Settings, the last completion label and date use Iris
 ### Routine counts could not load
 
 Refresh to retry the Household Routine read. The workload counts and local creation controls become available after a successful read. The named Board check-in area reports its own availability.
+The disabled toolbar creation control offers refresh guidance when a read fails. Restoration guidance appears only after Household is confirmed deleted.
 
 ### The new Routine button does nothing
 

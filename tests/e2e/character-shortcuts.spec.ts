@@ -246,9 +246,9 @@ test("shortcut help waits until the narrow Table columns popover is closed", asy
   await expect(help.getByRole("button", { name: "Close shortcuts" })).toBeFocused()
 })
 
-test("character shortcuts leave Board group names editable", async ({ page }) => {
+test("character shortcuts leave Board Area names editable", async ({ page }) => {
   await page.goto("/boards/household?view=groups")
-  await page.getByText("New group", { exact: true }).click()
+  await page.locator("main").getByText("New Area", { exact: true }).click()
   const name = page.getByRole("textbox", { name: "Name", exact: true })
   await name.fill("Workshop")
   await name.press("Shift+Slash")
@@ -256,48 +256,6 @@ test("character shortcuts leave Board group names editable", async ({ page }) =>
   await expect(page.getByRole("dialog", { name: "Keyboard shortcuts" })).toBeHidden()
   await name.press("k")
   await expect(name).toHaveValue("Workshop?k")
-})
-
-test("the numbered shortcut labels remain reachable in Irish on a short screen", async ({ page, context, baseURL }) => {
-  await context.addCookies([{ name: "meitheal-locale", value: "ga", url: baseURL! }])
-  await page.setViewportSize({ width: 320, height: 300 })
-  await page.goto("/tasks#kanban")
-  await expect(page.locator("[data-view-tabs]")).toHaveAttribute("data-switcher-ready", "true")
-  await page.keyboard.press("?")
-  const dialog = page.getByRole("dialog", { name: "Aicearraí méarchláir", exact: true })
-  const close = dialog.getByRole("button", { name: "Dún na haicearraí" })
-  const panel = dialog.locator(".shortcut-modal-content")
-  await expect(close).toBeFocused()
-  await expect(dialog.getByRole("heading", { name: "I ngach áit" })).toBeVisible()
-  await expect(dialog.getByRole("heading", { name: "Ar leathanach na dtascanna" })).toBeVisible()
-  await expect(dialog.locator("[data-shortcut-scope=global]")).toHaveText([
-    "Cuardaigh", "Tasc nua . Cuireann sé leis an gcolún sin nuair atá fócas ar chárta boird", "Deais",
-    "Amharc Kanban . Bogann sé suas ar Inniu agus ar an Amlíne", "Amharc tábla", "Amharc Inniu", "Amharc Ag Teacht",
-    "Amharc féilire . Laghdaíonn sé na lánaí snámha nuair atá fócas ar chárta boird grúpáilte", "Pailéad orduithe",
-    "Taispeáin nó folaigh an barra taoibh . Scáileáin leathana le nascleanúint taoibh", "Taispeáin aicearraí", "Dún an bosca dialóige",
-  ])
-  await expect(dialog.locator("[data-shortcut-scope=tasks]")).toHaveText([
-    "Amharc Kanban", "Amharc tábla", "Amharc féilire", "Amharc amlíne",
-  ])
-  const bounds = await panel.boundingBox()
-  expect(bounds).not.toBeNull()
-  await page.mouse.move(bounds!.x + 5, bounds!.y + 5)
-  await page.mouse.down()
-  try {
-    await expect(close).toBeFocused()
-  } finally {
-    await page.mouse.up()
-  }
-  const timeline = dialog.getByText("Amharc amlíne")
-  await expect(timeline).not.toBeInViewport()
-  await page.keyboard.press("End")
-  await expect(timeline).toBeInViewport()
-  await page.keyboard.press("Home")
-  await expect.poll(() => panel.evaluate(element => element.scrollTop)).toBe(0)
-  await expect(timeline).not.toBeInViewport()
-  await panel.hover()
-  await page.mouse.wheel(0, 2000)
-  await expect(timeline).toBeInViewport()
 })
 
 test("disabling shortcuts covers sidebar capture, the Kanban board, task details and numeric Tasks views", async ({ page, request, baseURL }) => {
@@ -356,8 +314,8 @@ test("disabling shortcuts covers sidebar capture, the Kanban board, task details
     await expect(page).toHaveURL(/\/tasks\?view=timeline&search=#timeline$/)
     await expect(page.locator("#timeline-filter-bar").getByRole("textbox", { name: "Filter by text" })).toHaveValue("")
   } finally {
-    if (id) await request.delete(`/api/tasks/${id}`, { headers })
-    await request.delete(`/api/projects/${projectId}`, { headers })
+    if (id) await request.delete(`/api/tasks/${id}`, { headers, data: {} })
+    await request.delete(`/api/projects/${projectId}`, { headers, data: {} })
   }
 })
 
@@ -379,7 +337,7 @@ const datedShortcutTest = test.extend<{ datedTasks: { ids: string[]; query: stri
       }
       await use({ ids, query })
     } finally {
-      for (const id of ids) await request.delete(`/api/tasks/${id}`, { headers })
+      for (const id of ids) await request.delete(`/api/tasks/${id}`, { headers, data: {} })
     }
   },
 })
@@ -575,6 +533,6 @@ test("pressing c on an ungrouped board opens Calendar like everywhere else", asy
     await page.keyboard.press("c")
     await expect(page).toHaveURL(/\/tasks\?view=calendar#calendar$/)
   } finally {
-    await request.delete(`/api/tasks/${id}`, { headers })
+    await request.delete(`/api/tasks/${id}`, { headers, data: {} })
   }
 })

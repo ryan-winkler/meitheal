@@ -314,13 +314,13 @@ test.describe("Saved Table filters", () => {
 
       await page.goto("/table?" + new URLSearchParams({ search: key, area: "" }))
       await expect(visible).toHaveCount(4)
-      await expect(page.locator("[data-area-label]")).toHaveText("All Groups")
+      await expect(page.locator("[data-area-label]")).toHaveText("All Areas")
       await page.goto("/table?" + new URLSearchParams({ search: key }))
       await expect(visible).toHaveCount(1)
       await expect(visible.first()).toHaveAttribute("data-id", ids[2]!)
       await page.goto("/table?" + new URLSearchParams({ search: key, area: "missing-area" }))
       await expect(visible).toHaveCount(0)
-      await expect(page.locator("[data-area-label]")).toHaveText("Group unavailable")
+      await expect(page.locator("[data-area-label]")).toHaveText("Area unavailable")
     } finally {
       for (const id of ids) await request.delete(`/api/tasks/${id}`, { headers })
       for (const id of areas) await request.delete(`/api/areas/${id}`, { headers })

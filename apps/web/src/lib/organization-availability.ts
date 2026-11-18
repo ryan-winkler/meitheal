@@ -9,7 +9,7 @@ import { verifiedIngressUser } from "./verified-ingress-user"
 
 export const ORGANIZATION_FEATURES = {
   organizer: { label: "Boards organizer" },
-  groups: { label: "Groups" },
+  groups: { label: "Areas" },
   projects: { label: "Projects" },
   planning: { label: "Planning" },
   goals: { label: "Goals" },

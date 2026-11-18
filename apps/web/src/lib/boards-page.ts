@@ -11,19 +11,42 @@ export function bindBoardPage(signal: AbortSignal) {
   const root = document.querySelector<HTMLElement>("[data-board-directory]")
   const status = document.querySelector<HTMLElement>("[data-board-expired]")
   if (!root || !status || root.dataset.bound) return
-  const { boardKey, boardVerify, boardSession } = root.dataset
+  const { boardKey, boardVerify, boardSession, boardAuthority } = root.dataset
   if (!boardKey || !boardVerify || !boardSession) return
   root.dataset.bound = "true"
 
+  const stale = document.createElement("p")
+  stale.dataset.boardStale = ""
+  stale.setAttribute("role", "status")
+  stale.hidden = true
+  root.prepend(stale)
+  const recovery = document.createElement("p")
+  recovery.dataset.boardVerification = ""
+  recovery.setAttribute("role", "status")
+  recovery.hidden = true
+  const retry = document.createElement("button")
+  retry.type = "button"
+  retry.className = "btn btn-ghost"
+  retry.textContent = "Retry verification"
+  recovery.append("This Board is hidden until access can be verified. Your input is kept on this page. ", retry)
+  status.before(recovery)
   let expired = false
   let checking: AbortController | undefined
   const placeholder = document.createComment("")
-  const detach = () => { if (root.isConnected) root.replaceWith(placeholder) }
-  const restore = () => { if (placeholder.isConnected) placeholder.replaceWith(root) }
+  const detach = () => {
+    root.dispatchEvent(new Event("meitheal:board-hidden"))
+    if (root.isConnected) root.replaceWith(placeholder)
+    recovery.hidden = expired
+  }
+  const restore = () => {
+    if (placeholder.isConnected) placeholder.replaceWith(root)
+    recovery.hidden = true
+  }
   const expire = () => {
     expired = true
     detach()
     root.replaceChildren()
+    recovery.hidden = true
     status.hidden = false
   }
   async function recheck(beforeRevealing = false) {
@@ -39,7 +62,11 @@ export function bindBoardPage(signal: AbortSignal) {
         signal: AbortSignal.any([signal, active.signal, AbortSignal.timeout(4_000)]),
       })
       if (active.signal.aborted || signal.aborted || document.hidden) return
-      if (response.ok && response.headers.get("x-meitheal-board-view") === boardKey) restore()
+      if (response.ok && boardAuthority && response.headers.get("x-meitheal-board-authority") === boardAuthority) {
+        restore()
+        stale.hidden = response.headers.get("x-meitheal-board-view") === boardKey
+        stale.textContent = stale.hidden ? "" : "This Board changed. Your input is kept on this page. Refresh when ready to load the latest versions."
+      } else if (response.ok && !boardAuthority && response.headers.get("x-meitheal-board-view") === boardKey) restore()
       else if (response.ok || response.status === 403 || response.status === 404) expire()
       else detach()
     } catch {
@@ -47,8 +74,10 @@ export function bindBoardPage(signal: AbortSignal) {
     }
   }
   const timer = setInterval(() => { void recheck() }, 10_000)
+  retry.addEventListener("click", () => { void recheck(true) }, { signal })
   signal.addEventListener("abort", () => {
     clearInterval(timer)
+    recovery.remove()
     delete root.dataset.bound
   }, { once: true })
   document.addEventListener("visibilitychange", () => { void recheck(true) }, { signal })
@@ -162,7 +191,10 @@ export function bindBoardPage(signal: AbortSignal) {
     const button = form.querySelector<HTMLButtonElement>('[type="submit"]')
     if (!button || button.disabled) return
     if (boardForm === "task-delete" && !await confirmDialog({ message: "Delete this task?" })) return
-    if (value("action") === "retire" && !await confirmDialog({ message: "Remove this item from active planning?" })) return
+    if (boardForm === "planning" && value("action") === "retire" && !await confirmDialog({ message: "Remove this item from active planning?" })) return
+    if (boardForm === "lifecycle" && value("action") === "retire" && !await confirmDialog({
+      message: `Delete ${value("boardName") || "this Board"}? Its work stays saved in Deleted Boards. Incoming work and Routines pause until you restore it.`,
+    })) return
     button.disabled = true
     if (feedback) feedback.textContent = ""
 
@@ -175,6 +207,15 @@ export function bindBoardPage(signal: AbortSignal) {
             return
           }
           if (feedback) feedback.textContent = "Board saved. Its access is still being verified."
+          return
+        }
+        case "lifecycle": {
+          const result = await jsonRequest(api, "PATCH", { action: value("action"), revision: Number(value("revision")) })
+          if (result.accessPending) {
+            if (feedback) feedback.textContent = "Board saved. Access is still being verified. Refresh Boards to check the result."
+            return
+          }
+          window.location.href = safeIngressHref("/boards")
           return
         }
         case "sidebar":
@@ -280,7 +321,7 @@ export function bindBoardPage(signal: AbortSignal) {
       if (!signal.aborted) window.location.reload()
     } catch (error) {
       if (!signal.aborted && feedback) {
-        feedback.textContent = error instanceof Error && error.name === "Error" ? error.message : "Could not save. Your input is still here."
+        feedback.textContent = error instanceof Error ? error.message : "Could not save. Your input is still here."
       }
     } finally {
       button.disabled = false

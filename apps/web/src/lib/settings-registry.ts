@@ -281,7 +281,7 @@ export const SETTINGS_FIELDS: SettingsFieldDescriptor[] = [
     label: "Personal Labels",
     anchorId: "organization-labels-settings",
     sectionId: "navigation-settings",
-    keywords: ["labels", "alias", "relabel", "rename", "terminology", "board", "project", "group"],
+    keywords: ["labels", "alias", "relabel", "rename", "terminology", "board", "project", "area", "group"],
   },
   {
     id: "field-sidebar",

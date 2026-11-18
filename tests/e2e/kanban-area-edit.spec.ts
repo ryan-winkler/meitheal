@@ -48,7 +48,7 @@ test("Area changes update the Kanban groups and preserve the board context throu
     const catalog = app + "/api/areas"
     const board = page.locator("#kanban-board")
     const drawer = page.locator("#task-detail-overlay")
-    const select = drawer.getByLabel("Group", { exact: true })
+    const select = drawer.getByLabel("Area", { exact: true })
     const close = drawer.getByRole("button", { name: "Close detail", exact: true })
     const group = (area: string) => board.locator(`.swimlane-group[data-swimlane-type="${area}"]`)
     const card = (id: string) => board.locator(`.kanban-card[data-id="${id}"] .card-open-btn`)

@@ -190,7 +190,8 @@ test("Ingress Table preserves applied grouping and retries an unavailable workfl
     await expect(row).toHaveAttribute("data-group-value", "lane-pending")
     const appliedUrl = page.url()
 
-    db = new DatabaseSync(join(work, "pins.db"))
+    // The live fixture can still be writing when failure injection changes its schema.
+    db = new DatabaseSync(join(work, "pins.db"), { timeout: 5_000 })
     db.exec("ALTER TABLE kanban_lanes RENAME TO unavailable_workflow_columns")
     const failed = page.waitForResponse(response => new URL(response.url()).searchParams.has("tableRefresh"))
     await page.getByRole("textbox", { name: "Filter by text" }).fill(title)

@@ -10,26 +10,27 @@ import { shouldSkipBrowserSpecs } from "./_helpers"
 
 test.skip(shouldSkipBrowserSpecs(), "Requires a disposable built app")
 
-test("Household Groups organize capture and Projects inside the Board", async ({ page, request, baseURL }) => {
+test("Household Areas organize capture and Projects inside the Board", async ({ page, request, baseURL }) => {
   const headers = { origin: new URL(baseURL!).origin }
   const name = "Workshop " + crypto.randomUUID().slice(0, 6)
 
   await page.goto("/boards/household?view=groups")
-  await expect(page.getByRole("heading", { name: "Groups", exact: true })).toBeVisible()
-  await page.getByText("New group", { exact: true }).click()
+  await expect(page.getByRole("heading", { name: "Areas", exact: true })).toBeVisible()
+  await page.locator("#main-content").getByText("New Area", { exact: true }).click()
   await page.getByRole("textbox", { name: "Name", exact: true }).fill(name)
-  await page.getByRole("button", { name: "Create group", exact: true }).click()
+  await page.getByRole("button", { name: "Create Area", exact: true }).click()
   await expect(page).toHaveURL(/\/boards\/household\?area=/)
   const groupId = new URL(page.url()).searchParams.get("area")!
+  await page.goto(`/boards/household?area=${groupId}&view=groups#group-settings`)
   await page.getByRole("tab", { name: /Tasks/ }).click()
-  const taskPanel = page.getByRole("tabpanel", { name: /Tasks/ })
-  await taskPanel.getByText("New task", { exact: true }).click()
-  await taskPanel.getByRole("textbox", { name: "Title" }).fill("Replace workshop light")
-  await taskPanel.getByRole("button", { name: "Create task" }).click()
-  await expect(taskPanel.getByRole("link", { name: "Replace workshop light" })).toBeVisible()
-  await page.goto(`/boards/household?area=${groupId}&offset=1#tasks`)
-  await taskPanel.getByRole("link", { name: "Previous tasks" }).click()
-  await expect(taskPanel.getByRole("link", { name: "Replace workshop light" })).toBeVisible()
+  await expect(page.locator("#kanban-shell")).toHaveAttribute("data-kanban-booted", "true")
+  await page.locator("#kanban-bar-new-task").click()
+  await page.locator("#new-task-title-input").fill("Replace workshop light")
+  await page.locator("#submit-new-task-btn").click()
+  await expect(page.locator(".kanban-card").filter({ hasText: "Replace workshop light" })).toBeVisible()
+  await page.goto(`/boards/household?area=${groupId}&view=groups&offset=1#tasks`)
+  await expect(page.locator("#kanban-shell")).toHaveAttribute("data-kanban-booted", "true")
+  await expect(page.locator(".kanban-card").filter({ hasText: "Replace workshop light" })).toBeVisible()
 
   const projectResponse = await request.post("/api/projects", {
     headers, data: { title: "Improve lighting", area_id: groupId },
@@ -46,9 +47,9 @@ test("Household Groups organize capture and Projects inside the Board", async ({
     headers, data: { title: "Invalid placement", placement: { areaId: "missing" } },
   })).status()).toBe(404)
 
-  await page.goto(`/boards/household?project=${project.id}#tasks`)
+  await page.goto(`/boards/household?project=${project.id}&view=groups#tasks`)
   await expect(page.getByText("Fit dimmer", { exact: true })).toBeVisible()
-  await page.goto(`/boards/household?project=${project.id}&from=${groupId}#tasks`)
+  await page.goto(`/boards/household?project=${project.id}&from=${groupId}&view=groups#overview`)
   const back = page.getByRole("banner").getByRole("link", { name, exact: true })
   await expect(back).toHaveAttribute("href", `/boards/household?area=${groupId}`)
   await expect(page.locator('#sidebar [data-page="boards"]')).toBeVisible()
@@ -68,10 +69,10 @@ test("Household Project detail uses Tabler icons and keeps custom Project icons"
   const currentProject = breadcrumb.locator(".bc-current")
   const tabs = page.getByRole("tablist", { name: "Project sections" })
   const tab = (name: string) => tabs.getByRole("tab", { name, exact: true })
-  const addTask = banner.getByRole("button", { name: "Add Task", exact: true })
+  const addTask = banner.getByRole("link", { name: "Add Task", exact: true })
 
   await page.goto("/projects/every-day")
-  await expect(page).toHaveURL(new URL("/boards/household?project=every-day", baseURL).href)
+  await expect(page).toHaveURL(new URL("/boards/household?project=every-day&view=groups", baseURL).href)
   await expectIcon(banner.getByRole("heading", { name: "Every Day", exact: true }), "sun")
   await expectIcon(currentProject, "sun")
   await expectIcon(breadcrumb, "chevron-down")
@@ -93,7 +94,7 @@ test("Household Project detail uses Tabler icons and keeps custom Project icons"
   await expect(tab("Fields")).toHaveAttribute("aria-selected", "true")
   await expectIcon(page.locator(".fields-placeholder"), "tag")
   await addTask.click()
-  await expect(page.getByRole("textbox", { name: "New task title", exact: true })).toBeVisible()
+  await expect(page.getByRole("textbox", { name: "Title (required)", exact: true })).toBeVisible()
 
   const goalTitle = "Fixture Goal"
   const goal = await request.post("/api/goals", { data: { title: goalTitle } })
@@ -107,7 +108,7 @@ test("Household Project detail uses Tabler icons and keeps custom Project icons"
   const heading = banner.getByRole("heading", { name: title, exact: true })
   const iconInput = page.getByRole("textbox", { name: "Icon", exact: true })
 
-  await page.goto(`/boards/household?project=${projectId}`)
+  await page.goto(`/boards/household?project=${projectId}&view=groups`)
   await expectIcon(heading, "list-check")
   await expectIcon(currentProject, "list-check")
   await expectIcon(breadcrumb.getByRole("link", { name: goalTitle, exact: true }), "target")
@@ -125,7 +126,7 @@ test("Household Project detail uses Tabler icons and keeps custom Project icons"
     const api = `/api/projects/${projectId}`
     expect((await request.put(api, { data: { icon } })).status()).toBe(200)
     expect(await (await request.get(api)).json()).toMatchObject({ icon })
-    await page.goto(`/boards/household?project=${projectId}`)
+    await page.goto(`/boards/household?project=${projectId}&view=groups`)
     await expect(heading.locator("[aria-hidden=true]")).toHaveText(icon)
     await expect(currentProject.locator("[aria-hidden=true]")).toHaveText(icon)
     await tab("Settings").click()
@@ -133,7 +134,7 @@ test("Household Project detail uses Tabler icons and keeps custom Project icons"
   }
 })
 
-test("Named Board disclosures follow the selected Group and current Home Assistant account", async () => {
+test("Named Board disclosures follow the selected Area and current Home Assistant account", async () => {
   // This ingress journey loads multiple pages and authenticates two household members.
   test.setTimeout(60_000)
   const work = await mkdtemp(join(tmpdir(), "board-sidebar-"))
@@ -164,7 +165,17 @@ test("Named Board disclosures follow the selected Group and current Home Assista
     page.setDefaultTimeout(8_000)
     page.setDefaultNavigationTimeout(10_000)
     await page.goto(app + "/boards")
-    const disclosure = page.getByRole("button", { name: "Groups in Workshop Board" })
+    const boardsParent = page.locator('#sidebar [data-sidebar-group="boards"]')
+    await expect(boardsParent.getByRole("link", { name: "Household", exact: true })).toBeVisible()
+    await expect(boardsParent.getByRole("link", { name: "Workshop Board", exact: true })).toBeVisible()
+    await expect(boardsParent.locator('[data-sidebar-board-children] > [data-sidebar-household]')).toHaveCount(1)
+    await expect(boardsParent.locator('[data-sidebar-board-children] > [data-named-board-shortcut]')).toHaveCount(1)
+    const parentToggle = boardsParent.locator("[data-sidebar-boards-toggle]")
+    await parentToggle.press("Enter")
+    await expect(boardsParent.getByRole("link", { name: "Household", exact: true })).toBeHidden()
+    await parentToggle.press("Space")
+    await expect(boardsParent.getByRole("link", { name: "Household", exact: true })).toBeVisible()
+    const disclosure = page.getByRole("button", { name: "Areas in Workshop Board" })
     await expect(disclosure).toBeVisible()
     await disclosure.press("Enter")
     await expect(disclosure).toHaveAttribute("aria-expanded", "true")
@@ -184,6 +195,15 @@ test("Named Board disclosures follow the selected Group and current Home Assista
     expect(projectCreated.status()).toBe(200)
     const planningView = await (await owner.request.get(app + "/api" + path)).json()
     const routineProject = planningView.planning.projects.find((row: { title: string }) => row.title === "Workbench checks").id
+    await page.setViewportSize({ width: 1240, height: 820 })
+    await page.goto(app + path + "?area=" + selected)
+    const projectsToggle = page.locator("[data-sidebar-boards]").getByRole("button", { name: "Projects in Workbench", exact: true })
+    await projectsToggle.press("Enter")
+    const projectLink = page.locator("[data-sidebar-boards]").getByRole("link", { name: "Workbench checks", exact: true })
+    await expect(projectLink).toBeVisible()
+    await projectLink.press("Enter")
+    await expect(page).toHaveURL(new RegExp(path + "\\?project=" + routineProject + "&from=" + selected))
+    await expect(projectLink).toHaveAttribute("aria-current", "page")
     await page.goto(app + path + "?project=" + routineProject + "&view=groups#routines")
     await page.getByText("New Routine", { exact: true }).click()
     const routineForm = page.locator('form[data-board-form="planning"]').filter({ has: page.locator('input[name="action"][value="routine"]') }).last()
@@ -200,6 +220,38 @@ test("Named Board disclosures follow the selected Group and current Home Assista
     await page.goto(app + "/habits#habits-library")
     const routineList = page.locator("[data-board-routine-checkins]")
     await expect(routineList.getByRole("link", { name: "Clean workbench" })).toBeVisible()
+    const administrator = await browser.newContext({ ignoreHTTPSErrors: true, extraHTTPHeaders: {} })
+    await administrator.addCookies([{ name: "feedback-fixture", value: "admin", url: origin }])
+    const rootDirectory = await administrator.request.get(app + "/api/boards")
+    const rootSnapshot = await rootDirectory.json()
+    const removeHousehold = await administrator.request.patch(app + "/api/boards/household", {
+      headers: { origin, "x-meitheal-board-session": rootDirectory.headers()["x-meitheal-board-session"]! },
+      data: { action: "retire", revision: rootSnapshot.household.revision },
+    })
+    expect(removeHousehold.status(), await removeHousehold.text()).toBe(200)
+    try {
+      expect((await page.reload())?.status()).toBe(200)
+      await expect(page).toHaveURL(app + "/habits#habits-library")
+      await expect(page.getByRole("status").filter({ hasText: "Household is deleted. Its Routines and shared creation are paused." })).toBeVisible()
+      await expect(routineList.getByRole("link", { name: "Clean workbench" })).toBeVisible()
+      await expect(routineList.getByRole("button", { name: "Mark Clean workbench done" })).toBeEnabled()
+      const sharedCreation = page.locator("#habits-bar-new-habit, #habits-library .habits-section__actions button")
+      await expect(sharedCreation).toHaveCount(2)
+      for (const button of await sharedCreation.all()) await expect(button).toBeDisabled()
+      await expect(page.locator("[data-open-habit-modal]")).toHaveCount(0)
+      await expect(page.locator("#habits-bar-new-habit")).toHaveAttribute("title", "Restore Household from Boards to create a shared Routine")
+      expect((await owner.request.get(app + "/api/habits")).status()).toBe(409)
+    } finally {
+      const pausedDirectory = await administrator.request.get(app + "/api/boards")
+      const deleted = (await pausedDirectory.json()).deletedBoards.find((board: { id: string }) => board.id === "household")
+      expect(deleted).toBeTruthy()
+      const restoreHousehold = await administrator.request.patch(app + "/api/boards/household", {
+        headers: { origin, "x-meitheal-board-session": pausedDirectory.headers()["x-meitheal-board-session"]! },
+        data: { action: "restore", revision: deleted.revision },
+      })
+      expect(restoreHousehold.status(), await restoreHousehold.text()).toBe(200)
+      await administrator.close()
+    }
     await page.goto(app + "/today")
     // Lose the acknowledgement after the server commits; refreshing must reconcile the same occurrence.
     await page.route(app + "/api" + path + "/planning", async route => {

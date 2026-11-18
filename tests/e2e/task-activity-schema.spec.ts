@@ -1,3 +1,4 @@
+import { BOARD_LIFECYCLE_MIGRATION } from "../../apps/web/drizzle/migrations/0015_board_lifecycle.mjs"
 import { execFile } from "node:child_process"
 import { createHash } from "node:crypto"
 import { mkdtemp, readFile, readdir, rm } from "node:fs/promises"
@@ -17,7 +18,7 @@ import { DATABASE_SCHEMA_VERSION, openDatabase } from "../../apps/web/scripts/da
 import { ensureSchema, getPersistenceClient, resetPersistenceForTests } from "../../apps/web/src/domains/tasks/persistence/store"
 import { prepareTaskBoardPredecessor } from "../scripts/task-board-predecessor"
 
-const upgradeMigrations = new Set<string>([TASK_BOARD_MIGRATION, PERSONAL_PILLAR_MIGRATION, BOARD_ACCESS_MIGRATION, ORGANIZATION_LABEL_MIGRATION, ORGANIZATION_ACCESS_MIGRATION, ORGANIZATION_FEATURE_MIGRATION])
+const upgradeMigrations = new Set<string>([TASK_BOARD_MIGRATION, PERSONAL_PILLAR_MIGRATION, BOARD_ACCESS_MIGRATION, ORGANIZATION_LABEL_MIGRATION, ORGANIZATION_ACCESS_MIGRATION, ORGANIZATION_FEATURE_MIGRATION, BOARD_LIFECYCLE_MIGRATION])
 
 const execFileAsync = promisify(execFile)
 const webRoot = fileURLToPath(new URL("../../apps/web", import.meta.url))

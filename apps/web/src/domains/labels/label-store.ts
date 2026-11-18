@@ -38,7 +38,7 @@ export function taskLabelInsert(title: string, taskId: string, requestId: string
   return {
     sql: `INSERT INTO vikunja_labels (title, hex_color)
           SELECT ?, '6b7280'
-          WHERE EXISTS (SELECT 1 FROM tasks WHERE id = ? AND request_id = ?)
+          WHERE EXISTS (SELECT 1 FROM tasks WHERE id = ? AND request_id = ? AND task_board_id IS NULL AND EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active'))
             AND NOT EXISTS (SELECT 1 FROM vikunja_labels WHERE lower(title) = lower(?))`,
     args: [title, taskId, requestId, title],
   }

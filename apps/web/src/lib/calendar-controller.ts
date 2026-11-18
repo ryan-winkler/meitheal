@@ -476,7 +476,7 @@ export function initCalendarPage(signal: AbortSignal): void {
   if (rememberedArea) applyFilters({ area: rememberedArea })
 }
 
-const agendaFilterKeys = new Set(["area", "area_id", "board", "search", "user", "status", "priority",
+const agendaFilterKeys = new Set(["project", "area", "area_id", "board", "search", "user", "status", "priority",
   "rice", "types", "task_type", "label", "labels", "promoted", "advancedFilter"])
 
 function writeCalendarTaskFilters(url: URL, filters: KanbanFilters, rawRules: string | null) {

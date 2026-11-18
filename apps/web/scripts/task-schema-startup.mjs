@@ -1,3 +1,4 @@
+import { applyBoardLifecycleMigration, BOARD_LIFECYCLE_MIGRATION, readBoardLifecycleMigrationState } from "../drizzle/migrations/0015_board_lifecycle.mjs"
 import {
   applyOrganizationFeatureMigration, ORGANIZATION_FEATURE_MIGRATION, readOrganizationFeatureMigrationState,
 } from "../drizzle/migrations/0014_organization_features.mjs"
@@ -110,6 +111,7 @@ export async function validateStartupTaskSchema(tx, { allowPending = false } = {
   const labelsReady = await readOrganizationLabelMigrationState(tx)
   const organizationAccessReady = await readOrganizationAccessMigrationState(tx)
   const featuresReady = await readOrganizationFeatureMigrationState(tx)
+  const lifecycleReady = await readBoardLifecycleMigrationState(tx)
   if (!allowPending) {
     const pending = [
       !personalReady && PERSONAL_PILLAR_MIGRATION,
@@ -117,6 +119,7 @@ export async function validateStartupTaskSchema(tx, { allowPending = false } = {
       !labelsReady && ORGANIZATION_LABEL_MIGRATION,
       !organizationAccessReady && ORGANIZATION_ACCESS_MIGRATION,
       !featuresReady && ORGANIZATION_FEATURE_MIGRATION,
+      !lifecycleReady && BOARD_LIFECYCLE_MIGRATION,
     ].filter(Boolean)
     if (pending.length) throw new Error(`Pending migrations: ${pending.join(", ")}`)
   }
@@ -139,6 +142,7 @@ export async function applyStartupTaskSchema(tx, prepareRuntime) {
     if (await applyOrganizationLabelMigration(tx)) applied.push(ORGANIZATION_LABEL_MIGRATION)
     if (await applyOrganizationAccessMigration(tx)) applied.push(ORGANIZATION_ACCESS_MIGRATION)
     if (await applyOrganizationFeatureMigration(tx)) applied.push(ORGANIZATION_FEATURE_MIGRATION)
+    if (await applyBoardLifecycleMigration(tx)) applied.push(BOARD_LIFECYCLE_MIGRATION)
     return applied
   }
 
@@ -182,5 +186,6 @@ export async function applyStartupTaskSchema(tx, prepareRuntime) {
   await applyOrganizationLabelMigration(tx)
   await applyOrganizationAccessMigration(tx)
   await applyOrganizationFeatureMigration(tx)
-  return [...pending, TASK_BOARD_MIGRATION, PERSONAL_PILLAR_MIGRATION, BOARD_ACCESS_MIGRATION, ORGANIZATION_LABEL_MIGRATION, ORGANIZATION_ACCESS_MIGRATION, ORGANIZATION_FEATURE_MIGRATION]
+  await applyBoardLifecycleMigration(tx)
+  return [...pending, TASK_BOARD_MIGRATION, PERSONAL_PILLAR_MIGRATION, BOARD_ACCESS_MIGRATION, ORGANIZATION_LABEL_MIGRATION, ORGANIZATION_ACCESS_MIGRATION, ORGANIZATION_FEATURE_MIGRATION, BOARD_LIFECYCLE_MIGRATION]
 }

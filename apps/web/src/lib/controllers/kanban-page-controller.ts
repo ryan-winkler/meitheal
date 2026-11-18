@@ -52,6 +52,13 @@ export function initKanbanPage(signal: AbortSignal): void {
   }
   const initialArea = desired.searchParams.get("area") ?? (getSelectedAreaId() || getRememberedAreaId())
   syncAreaLinks(initialArea)
+  if (initialArea && !desired.searchParams.has("area") &&
+      document.querySelector<HTMLElement>("#area-selector-dropdown")?.dataset.areaCatalogReady === "false") {
+    // Do not display the unfiltered SSR page while a remembered scope cannot be verified.
+    board.style.visibility = "hidden"
+    const total = shell.querySelector("[data-kanban-visible-count]")
+    if (total) total.textContent = "…"
+  }
 
   const renderStatus = (message: string, failed = false) => {
     status.hidden = !message
@@ -265,6 +272,9 @@ export function initKanbanPage(signal: AbortSignal): void {
   }, { signal })
   document.addEventListener("meitheal:home-assistant-area-saved", () => {
     if (new URLSearchParams(location.search).has("home_assistant_area_id")) void refresh()
+  }, { signal })
+  document.addEventListener("meitheal:area-catalog-ready", () => {
+    if (board.style.visibility === "hidden") void refresh()
   }, { signal })
   document.addEventListener("meitheal:area-changed", () => {
     syncAreaLinks(getSelectedAreaId())

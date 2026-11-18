@@ -1,3 +1,4 @@
+import { householdBoardIsActive } from "../tasks/persistence/named-board-repository"
 /**
  * Todo Bridge — Bidirectional Sync with HA Todo Entities
  *
@@ -254,6 +255,7 @@ export function startTodoSync(configs: TodoSyncConfig | TodoSyncConfig[]): Promi
  */
 export async function syncTodoFromHA(entityId?: string): Promise<{ synced: number; errors: number }> {
   const totals = { synced: 0, errors: 0 };
+  if (!await householdBoardIsActive(await getClient())) return totals;
   const targets = entityId
     ? [activeSyncs.get(entityId)].filter(Boolean) as TodoSyncState[]
     : Array.from(activeSyncs.values()).filter((s) => s.config.syncDirection !== "outbound");
@@ -292,6 +294,7 @@ async function mergeHATodoItems(entityId: string, items: HATodoItem[]): Promise<
   try {
     const mod = await getStoreModule();
     const client = await getClient();
+    if (!await householdBoardIsActive(client)) return
 
     let created = 0;
     let updated = 0;
@@ -483,6 +486,8 @@ export async function pushTaskToTodoList(
   description?: string,
   labels?: string[],
 ): Promise<boolean> {
+  const operationAllowed = async () => householdBoardIsActive(await getClient())
+  if (!await operationAllowed()) return false
   // Respect 'no-sync' label — user opted this task out of sync
   if (labels?.includes(NO_SYNC_LABEL)) {
     logger.log("debug", {
@@ -506,6 +511,7 @@ export async function pushTaskToTodoList(
       args: [taskId, entityId],
     });
 
+    if (!await operationAllowed()) return false
     if (existing.rows.length > 0) {
       // Update existing HA todo item
       const uid = existing.rows[0]!.ha_todo_uid as string;
@@ -529,11 +535,11 @@ export async function pushTaskToTodoList(
         status: haStatus,
         description: descWithAttribution,
         ...dueData,
-      });
+      }, { operationAllowed });
 
       if (success) {
         await client.execute({
-          sql: "UPDATE todo_sync_confirmations SET payload = ?, updated_at = ? WHERE task_id = ? AND ha_entity_id = ?",
+          sql: "UPDATE todo_sync_confirmations SET payload = ?, updated_at = ? WHERE task_id = ? AND ha_entity_id = ? AND EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active')",
           args: [
             JSON.stringify({ summary: title, status: haStatus }),
             Date.now(),
@@ -558,7 +564,7 @@ export async function pushTaskToTodoList(
         summary: title,
         due: dueDate ?? undefined,
         description: descWithAttribution,
-      });
+      }, { operationAllowed });
 
       if (success) {
         const nowMs = Date.now();
@@ -568,7 +574,7 @@ export async function pushTaskToTodoList(
           sql: `INSERT INTO todo_sync_confirmations (
             confirmation_id, task_id, request_id, ha_entity_id, ha_todo_uid,
             source, sync_direction, payload, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, 'meitheal.todo_push', 'outbound', ?, ?, ?)`,
+          ) SELECT ?, ?, ?, ?, ?, 'meitheal.todo_push', 'outbound', ?, ?, ? WHERE EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active')`,
           args: [
             crypto.randomUUID(),
             taskId,
@@ -615,6 +621,8 @@ export async function pushTaskToTodoList(
  * @returns Number of HA todo items removed
  */
 export async function removeTaskFromTodoList(taskId: string): Promise<number> {
+  const operationAllowed = async () => householdBoardIsActive(await getClient())
+  if (!await operationAllowed()) return 0
   let removed = 0;
   try {
     const client = await getClient();
@@ -635,6 +643,7 @@ export async function removeTaskFromTodoList(taskId: string): Promise<number> {
     }
 
     for (const row of rows.rows) {
+      if (!await householdBoardIsActive(client)) return removed
       const entityId = row.ha_entity_id as string;
       const rawPayload = row.payload as string | null;
 
@@ -656,7 +665,7 @@ export async function removeTaskFromTodoList(taskId: string): Promise<number> {
         continue;
       }
 
-      const success = await removeTodoItem(entityId, [summary]);
+      const success = await removeTodoItem(entityId, [summary], { operationAllowed });
       if (success) {
         removed++;
         logger.log("info", {
@@ -677,7 +686,7 @@ export async function removeTaskFromTodoList(taskId: string): Promise<number> {
 
     // Clean up all sync confirmation rows for this task
     await client.execute({
-      sql: "DELETE FROM todo_sync_confirmations WHERE task_id = ?",
+      sql: "DELETE FROM todo_sync_confirmations WHERE task_id = ? AND EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active')",
       args: [taskId],
     });
 

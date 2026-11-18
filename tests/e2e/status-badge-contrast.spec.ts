@@ -16,13 +16,13 @@ async function checkContrast(page: Page, selectors: string[], state: string) {
 }
 
 for (const theme of ["light", "dark"] as const) {
-  test(`task status badges stay readable in ${theme} theme on task routes and on hover`, async ({ page, request, baseURL }) => {
+  test(`task status stays readable in ${theme} theme on task routes and Project Kanban`, async ({ page, request, baseURL }) => {
     test.skip(shouldSkipBrowserSpecs(), "Requires a disposable Meitheal fixture")
     const headers = { origin: new URL(baseURL!).origin }
     const project = await request.post("/api/projects", { headers, data: { title: "Status badge contrast project" } })
     expect(project.status(), await project.text()).toBe(201)
     const { id: projectId } = await project.json()
-    const tasks: Array<{ id: string; label: string; open: boolean }> = []
+    const tasks: Array<{ id: string; status: string; label: string; open: boolean }> = []
 
     try {
       const dueDate = new Date().toISOString().slice(0, 10)
@@ -32,33 +32,28 @@ for (const theme of ["light", "dark"] as const) {
           data: { title: `Status badge contrast: ${label}`, status, due_date: dueDate, urgency: 5, importance: 5, project_id: projectId },
         })
         expect(task.status(), await task.text()).toBe(201)
-        tasks.push({ id: (await task.json()).id, label, open: status !== STATUS.COMPLETE })
+        tasks.push({ id: (await task.json()).id, status, label, open: status !== STATUS.COMPLETE })
       }
 
       await page.emulateMedia({ reducedMotion: "reduce" })
       await page.addInitScript(value => localStorage.setItem("meitheal-theme", value), theme)
-      for (const [path, row, includeDone] of [
-        ["/today", "#today-work .tli", false],
-        ["/eisenhower", "#eisenhower-matrix .tli", false],
-        ["/upcoming", "#upcoming-next .task-item", false],
-        [`/projects/${projectId}#tasks`, ".project-task-item", true],
+      for (const [path, row] of [
+        ["/today", "#today-work .tli"],
+        ["/eisenhower", "#eisenhower-matrix .tli"],
+        ["/upcoming", "#upcoming-next .task-item"],
       ] as const) {
         await page.mouse.move(0, 0)
         await page.goto(path)
         await expect(page.locator("html")).toHaveAttribute("data-theme", theme)
         await page.evaluate(() => document.fonts.ready)
 
-        const badges = tasks.filter(task => includeDone || task.open).map(({ id, label }) => ({
+        const badges = tasks.filter(task => task.open).map(({ id, label }) => ({
           selector: `${row}[data-id="${id}"] .status-badge`,
           label,
         }))
         for (const { selector, label } of badges) {
           await expect(page.locator(selector)).toBeVisible()
           await expect(page.locator(selector)).toHaveText(label)
-        }
-        if (includeDone) {
-          const doneRow = page.locator(row).filter({ has: page.locator(".status-badge", { hasText: "Done" }) })
-          await expect(doneRow.locator(".task-title-text")).toHaveCSS("text-decoration-line", "line-through")
         }
         await checkContrast(page, badges.map(({ selector }) => selector), `${path} normal`)
 
@@ -70,6 +65,23 @@ for (const theme of ["light", "dark"] as const) {
             getComputedStyle(element).backgroundColor !== fill, initialFill)).toBe(true)
           await checkContrast(page, [selector], `${path} ${label} hover`)
         }
+      }
+
+      // Project Tasks now opens the shared Kanban. Its visible status labels are
+      // the swimlane headings rather than the removed Project list's badges.
+      await page.goto(`/projects/${projectId}#tasks`)
+      await expect(page).toHaveURL(url => url.pathname === "/boards/household" && url.searchParams.get("project") === projectId)
+      await expect(page.locator("#kanban-shell")).toHaveAttribute("data-kanban-booted", "true")
+      for (const { id, status, label } of tasks) {
+        const lane = `.kanban-column[data-status="${status}"]`
+        const title = `${lane} .kanban-card[data-id="${id}"] .kanban-title-text`
+        const heading = `${lane} .kanban-column-title`
+        await expect(page.locator(title)).toHaveText(`Status badge contrast: ${label}`)
+        await expect(page.locator(title)).toBeVisible()
+        await expect(page.locator(heading)).toContainText(label)
+        await checkContrast(page, [heading, title], `Project Kanban ${label} normal`)
+        await page.locator(title).hover()
+        await checkContrast(page, [heading, title], `Project Kanban ${label} hover`)
       }
     } finally {
       for (const { id } of tasks) await request.delete(`/api/tasks/${id}`, { headers })

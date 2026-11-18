@@ -15,6 +15,7 @@ interface BoardAccess {
   name: string
   role: BoardRole
   state: "active" | "archived"
+  revision?: number
   denyCompletion: boolean
   denyDeletion: boolean
   policy?: { denyCompletion: boolean; denyDeletion: boolean; denyAgentDeletion: boolean }
@@ -50,7 +51,7 @@ export async function selectNamedBoardAccess(
   id: string,
 ): Promise<BoardAccess | null> {
   const { rows: [row] } = await db.execute({
-    sql: `SELECT board.id, board.name, board.state, access.role,
+    sql: `SELECT board.id, board.name, board.state, board.revision, access.role,
         (policy.deny_completion OR access.deny_completion) AS deny_completion,
         (policy.deny_deletion OR access.deny_deletion OR
           (access.principal_type = 'agent' AND policy.deny_agent_deletion)) AS deny_deletion,
@@ -67,12 +68,21 @@ export async function selectNamedBoardAccess(
   if (!row) return null
   return {
     id: String(row.id), name: String(row.name), state: row.state as BoardAccess["state"],
-    role: row.role as BoardRole, denyCompletion: row.deny_completion === 1, denyDeletion: row.deny_deletion === 1,
+    revision: Number(row.revision), role: row.role as BoardRole, denyCompletion: row.deny_completion === 1, denyDeletion: row.deny_deletion === 1,
     ...(row.role === "owner" ? { policy: {
       denyCompletion: row.board_deny_completion === 1, denyDeletion: row.board_deny_deletion === 1,
       denyAgentDeletion: row.board_deny_agent_deletion === 1,
     } } : {}),
   }
+}
+
+export async function readHouseholdBoardState(db: Pick<Client, "execute">): Promise<"active" | "retired"> {
+  const { rows: [row] } = await db.execute("SELECT state FROM task_boards WHERE id = 'household'")
+  return row?.state === "active" ? "active" : "retired"
+}
+
+export async function householdBoardIsActive(db: Pick<Client, "execute">): Promise<boolean> {
+  return await readHouseholdBoardState(db) === "active"
 }
 
 export class NamedBoardRepository {
@@ -90,7 +100,7 @@ export class NamedBoardRepository {
     const revision = await currentBoardGrantRevision(this.db, this.markerPath)
     if (!revision) return []
     const { rows } = await this.db.execute({
-      sql: `SELECT board.id, board.name, board.state, access.role,
+      sql: `SELECT board.id, board.name, board.state, board.revision, access.role,
           CASE WHEN preference.ha_user_id IS NULL THEN 0 ELSE 1 END AS hidden
         FROM task_boards AS board
         JOIN board_access_grants AS access ON access.board_id = board.id
@@ -139,6 +149,47 @@ export class NamedBoardRepository {
       ])
       return { next: { id: boardId } }
     }, this.markerPath)
+  }
+
+  async findDeleted(actor: BoardActor) {
+    if (actor.kind !== "ha_user") return []
+    const revision = await currentBoardGrantRevision(this.db, this.markerPath)
+    if (!revision) return []
+    const { rows } = await this.db.execute({
+      sql: `SELECT board.id, board.name, board.revision FROM task_boards AS board
+        JOIN board_access_grants AS access ON access.board_id = board.id
+        JOIN board_permissions AS policy ON policy.board_id = board.id
+        WHERE board.state = 'retired' AND board.id <> 'household'
+          AND access.principal_type = 'ha_user' AND access.principal_id = ? AND access.role = 'owner'
+          AND NOT access.deny_deletion AND NOT policy.deny_deletion
+          AND EXISTS (SELECT 1 FROM board_access_epoch WHERE singleton = 1 AND revision = ?)
+        ORDER BY board.name COLLATE NOCASE, board.id`,
+      args: [actor.id, revision],
+    })
+    if (!await boardGrantStillCurrent(this.db, revision, this.markerPath)) return []
+    return rows.map(row => ({ id: String(row.id), name: String(row.name), revision: Number(row.revision) }))
+  }
+
+  async changeLifecycle(actor: BoardActor, id: string, state: "active" | "retired", revision: number, householdAdmin = false) {
+    if (actor.kind !== "ha_user") return { status: "unchanged", result: "unavailable" } as const
+    return changeBoardGrants(this.db, async (tx, epoch) => {
+      if (id !== "household") {
+        const { rows: [owner] } = await tx.execute({
+          sql: `SELECT 1 FROM board_access_grants AS access JOIN board_permissions AS policy ON policy.board_id = access.board_id
+            WHERE access.board_id = ? AND access.principal_type = 'ha_user' AND access.principal_id = ?
+              AND access.role = 'owner' AND NOT access.deny_deletion AND NOT policy.deny_deletion
+              AND EXISTS (SELECT 1 FROM board_access_epoch WHERE singleton = 1 AND revision = ?)`,
+          args: [id, actor.id, epoch],
+        })
+        if (!owner) return { unchanged: "unavailable" as const }
+      } else if (!householdAdmin) return { unchanged: "unavailable" as const }
+      const { rows: [board] } = await tx.execute({ sql: "SELECT state, revision FROM task_boards WHERE id = ?", args: [id] })
+      if (!board) return { unchanged: "unavailable" as const }
+      if (board.state === state) return { unchanged: "saved" as const }
+      if (Number(board.revision) !== revision) return { unchanged: "stale" as const }
+      await tx.execute({ sql: "UPDATE task_boards SET state = ?, revision = revision + 1, updated_at = ? WHERE id = ?", args: [state, Date.now(), id] })
+      return { next: "saved" as const }
+    }, this.markerPath, { keepUninitialized: id === "household" })
   }
 
   async updateRestrictions(ownerId: string, id: string, policy: {

@@ -48,7 +48,7 @@
           const tdOverlay = document.getElementById(
             "task-detail-overlay",
           ) as HTMLDivElement;
-        if (!tdOverlay || tdOverlay.dataset.detailController === "ready") return
+        if (!tdOverlay || tdOverlay.dataset.namedBoard || tdOverlay.dataset.detailController === "ready") return
         tdOverlay.dataset.detailController = "ready"
         let pinnedSession: {
           reconcile: () => void; dirty: boolean; pending: number; queued?: () => void
@@ -272,6 +272,12 @@
               history.replaceState(history.state, "", taskBackgroundUrl(url))
               saveNavigationState()
             }
+          } else if (url.searchParams.has("open") || getLegacyTaskId(url.hash) !== null) {
+            url.searchParams.delete("open")
+            url.searchParams.delete("comment")
+            if (getLegacyTaskId(url.hash) !== null) url.hash = ""
+            history.replaceState(history.state, "", url)
+            saveNavigationState()
           }
         }
 

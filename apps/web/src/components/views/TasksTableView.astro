@@ -56,7 +56,7 @@ function tableLink(next: number, open?: string) {
   query.set("view", "table")
   if (next > 1) query.set("tp", String(next))
   if (open) query.set("open", open)
-  return `/tasks?${query}#table`
+  return `${Astro.url.pathname.startsWith("/boards/household") ? "/boards/household" : "/tasks"}?${query}#table`
 }
 
 const priorityClasses: Record<number, string> = {

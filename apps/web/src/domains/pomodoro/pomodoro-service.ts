@@ -88,7 +88,7 @@ let timerState: PomodoroState = {
 export class PomodoroTaskUnavailableError extends Error {}
 
 const visibleSession = `NOT EXISTS (
-  SELECT 1 FROM tasks WHERE tasks.id = pomodoro_sessions.task_id AND task_board_id IS NOT NULL
+  SELECT 1 FROM tasks WHERE tasks.id = pomodoro_sessions.task_id AND (task_board_id IS NOT NULL OR NOT EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active'))
 )`
 
 let timerInterval: ReturnType<typeof setInterval> | null = null
@@ -138,7 +138,7 @@ async function handlePhaseComplete(): Promise<void> {
         const entryId = generateId()
         await client.execute({
           sql: `INSERT INTO time_entries(id, task_id, started_at, stopped_at, duration_seconds)
-            SELECT ?, id, ?, ?, ? FROM tasks WHERE id = ? AND task_board_id IS NULL`,
+            SELECT ?, id, ?, ?, ? FROM tasks WHERE id = ? AND task_board_id IS NULL AND EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active')`,
           args: [
             entryId,
             new Date(Date.now() - config.focusMinutes * 60 * 1000).toISOString(),
@@ -176,7 +176,7 @@ async function handlePhaseComplete(): Promise<void> {
       const client = getPersistenceClient()
       const { rows: [saved] } = await client.execute({
         sql: `INSERT INTO pomodoro_sessions(id, task_id, phase, started_at, duration_minutes, focus_count)
-          VALUES(?, (SELECT id FROM tasks WHERE id = ? AND task_board_id IS NULL), 'focus', ?, ?, ?) RETURNING task_id`,
+          VALUES(?, (SELECT id FROM tasks WHERE id = ? AND task_board_id IS NULL AND EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active')), 'focus', ?, ?, ?) RETURNING task_id`,
         args: [sessionId, timerState.taskId, new Date().toISOString(), config.focusMinutes, timerState.focusCount],
       })
       if (saved?.task_id === null) timerState.taskId = null
@@ -207,7 +207,7 @@ export async function startFocus(taskId: string | null = null): Promise<Pomodoro
   const result = await getPersistenceClient().execute({
     sql: `INSERT INTO pomodoro_sessions(id, task_id, phase, started_at, duration_minutes, focus_count)
       SELECT ?, ?, 'focus', ?, ?, 0 WHERE ? IS NULL OR EXISTS (
-        SELECT 1 FROM tasks WHERE id = ? AND task_board_id IS NULL
+        SELECT 1 FROM tasks WHERE id = ? AND task_board_id IS NULL AND EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active')
       )`,
     args: [sessionId, taskId, new Date().toISOString(), config.focusMinutes, taskId, taskId],
   })
@@ -343,7 +343,7 @@ async function checkTaskAssigneeTx(
   taskId: string,
   expectedAssignedTo?: string,
 ): Promise<"ok" | "not_found" | "assignee_mismatch"> {
-  const taskRow = await tx.execute({ sql: "SELECT assigned_to FROM tasks WHERE id = ? AND task_board_id IS NULL", args: [taskId] })
+  const taskRow = await tx.execute({ sql: "SELECT assigned_to FROM tasks WHERE id = ? AND task_board_id IS NULL AND EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active')", args: [taskId] })
   const row = taskRow.rows[0] as Record<string, unknown> | undefined
   if (!row) return "not_found"
   return expectedAssignedTo === undefined || row.assigned_to === expectedAssignedTo ? "ok" : "assignee_mismatch"

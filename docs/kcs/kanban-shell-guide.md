@@ -30,6 +30,8 @@ Quick actions sit below the task details and wrap within the card.
 
 Tab and Shift+Tab stay inside task detail while it loads and while you edit. Press Escape to close it and return to the card. When a confirmation is open, Escape dismisses the confirmation first.
 
+Closing Details while a task is still loading also clears its pending launch link. Your Board and Project filters remain in the address, so the next task creation or refresh does not reopen the dismissed task.
+
 ### Promote a card
 
 Open a card’s **Task actions** and choose **Promote to top** to move it above ordinary cards in the same lane. Everyone using the board can see the **Promoted** badge. Use **Promoted cards only** to see just those cards. The count strip confirms the filter is active. Bookmark the resulting URL to reopen that filter. Work-in-progress counts still include all cards in the lane.

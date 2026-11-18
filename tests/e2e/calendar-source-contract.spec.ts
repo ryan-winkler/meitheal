@@ -14,7 +14,8 @@ test("Calendar reads configured sources as a household member and filters before
   child.stdout?.resume()
   child.stderr?.resume()
   const api = await playwright.request.newContext({ ignoreHTTPSErrors: true })
-  const db = new DatabaseSync(join(work, "pins.db"))
+  // The live fixture can still be writing when failure injection changes its schema.
+  const db = new DatabaseSync(join(work, "pins.db"), { timeout: 5_000 })
   const browser = await launchPinBrowser(work)
   const context = await browser.newContext({
     ignoreHTTPSErrors: true, extraHTTPHeaders: {}, serviceWorkers: "block", timezoneId: "America/Los_Angeles",

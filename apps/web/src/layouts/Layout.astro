@@ -60,6 +60,7 @@ export interface Props {
   hideGlobalSearch?: boolean;
   suppressTaskUrlOpen?: boolean;
   privatePageShell?: boolean;
+  suppressHouseholdTaskModals?: boolean;
   /** Optional JSON-LD schema for page-level structured data */
   jsonLd?: Record<string, unknown>;
 }
@@ -71,6 +72,7 @@ const {
   hideGlobalSearch = false,
   suppressTaskUrlOpen = false,
   privatePageShell = false,
+  suppressHouseholdTaskModals = false,
   jsonLd,
 } = Astro.props;
 
@@ -680,8 +682,10 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
     </script>
 
     {!privatePageShell && <>
-      <NewTaskModal />
-      <TaskDetailModal suppressUrlOpen={suppressTaskUrlOpen} />
+      {!suppressHouseholdTaskModals && <>
+        <NewTaskModal />
+        <TaskDetailModal suppressUrlOpen={suppressTaskUrlOpen} />
+      </>}
       <AskAssistModal />
     </>}
     {!hideSearchHub && <SearchHub locale={locale} />}

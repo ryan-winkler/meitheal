@@ -77,6 +77,8 @@ test("canonical transitions award once across concurrent and repeated writes and
   expect(recorded.totalCompleted).toBe(initial.totalCompleted + 1)
   expect(recorded.totalPoints).toBe(initial.totalPoints + 50)
   const another = await createTask(completion, "Optional stats failure")
+  // Bound DDL acquisition in this test; the shared fixture keeps lock tests at timeout zero.
+  db.exec("PRAGMA busy_timeout = 5000")
   db.exec("CREATE TRIGGER reject_completion_stats BEFORE INSERT ON gamification_stats BEGIN SELECT RAISE(ABORT, 'fixture failure'); END")
   const saved = await api.put(path(`/api/tasks/${another.id}`), { data: { status: "complete" } })
   expect(saved.status()).toBe(200)
@@ -158,6 +160,8 @@ test("a failed recurrence insert rolls back guarded completion and an identical 
     expected_checklists: checklists,
   }
 
+  // Bound DDL acquisition in this test; the shared fixture keeps lock tests at timeout zero.
+  db.exec("PRAGMA busy_timeout = 5000")
   db.exec(`CREATE TRIGGER reject_recurrence_successor BEFORE INSERT ON tasks
     WHEN NEW.title = 'Recurring completion with synthetic insert failure' AND NEW.due_date = '2031-02-17'
     BEGIN SELECT RAISE(ABORT, 'fixture rejected next occurrence'); END`)

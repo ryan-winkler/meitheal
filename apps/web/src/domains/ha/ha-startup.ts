@@ -8,12 +8,14 @@
  *   - Grocy connectivity validation
  *   - n8n/Webhook endpoint reachability validation
  *
- * Called once from middleware.ts via a "lazy init" guard.
+ * Called from middleware.ts via a lazy initialization guard. Successful startup
+ * runs once; unconfigured or failed startup remains eligible for retries.
  * Must be idempotent — safe to call multiple times.
  *
  * @domain ha
  * @bounded-context integration
  */
+import { createHash } from "node:crypto"
 import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability"
 import { fetchOutbound } from "@meitheal/integration-core"
 import { getHAConnection, getHAConfiguration } from "./ha-connection"
@@ -32,12 +34,14 @@ const SYS_REQ = "ha-system";
 // Cached DB references — avoids 4x repeated dynamic import + ensureSchema
 let _dbReady = false
 let _getPersistenceClient: (() => ReturnType<typeof import("@domains/tasks")["getPersistenceClient"]>) | null = null
+let _getSettingsRevision: (() => number) | null = null
 
 async function getDB() {
   if (!_dbReady) {
     const mod = await import("@domains/tasks")
     await mod.ensureSchema()
     _getPersistenceClient = mod.getPersistenceClient
+    _getSettingsRevision = mod.getSettingsRevision
     _dbReady = true
   }
   return _getPersistenceClient!()
@@ -45,6 +49,19 @@ async function getDB() {
 
 let initialized = false;
 let initializing = false;
+const UNCONFIGURED_RETRY_MS = 5_000
+let unconfiguredStartup: {
+  client: Awaited<ReturnType<typeof getDB>>
+  settingsRevision: number
+  environmentFingerprint: string
+  retryAfter: number
+} | undefined
+
+function startupEnvironmentFingerprint(): string {
+  return createHash("sha256").update(JSON.stringify([
+    process.env.SUPERVISOR_TOKEN, process.env.HA_BASE_URL, process.env.HA_TOKEN,
+  ])).digest("hex")
+}
 
 function withStartupCap(task: Promise<unknown>, timeoutMs: number): Promise<void> {
   return new Promise<void>((resolve) => {
@@ -78,7 +95,14 @@ export async function initHAIntegrations(): Promise<void> {
 
   try {
     // Ensure schema verification completes once before background schedulers or WS frames run.
-    await getDB();
+    const client = await getDB()
+    const settingsRevision = _getSettingsRevision!()
+    const environmentFingerprint = startupEnvironmentFingerprint()
+    // Unconfigured standalone requests need no repeated settings DDL or startup logs.
+    // Successful settings saves, a different database or changed environment bypass this pause.
+    if (unconfiguredStartup?.client === client && unconfiguredStartup.settingsRevision === settingsRevision &&
+        unconfiguredStartup.environmentFingerprint === environmentFingerprint && performance.now() < unconfiguredStartup.retryAfter) return
+    unconfiguredStartup = undefined
 
     // Task deadlines are local domain transitions, including in standalone
     // mode or while HA is unavailable. The scheduler itself is idempotent.
@@ -86,6 +110,7 @@ export async function initHAIntegrations(): Promise<void> {
 
     // Only initialize when running as HA addon or configured standalone HA
     if (!(await getHAConfiguration())) {
+      unconfiguredStartup = { client, settingsRevision, environmentFingerprint, retryAfter: performance.now() + UNCONFIGURED_RETRY_MS }
       logger.log("info", {
         event: "ha.startup.skipped",
         domain: "ha",
@@ -642,13 +667,6 @@ async function autoStartDueDateReminders(): Promise<void> {
       "@domains/notifications/due-date-reminders"
     );
     await startDueDateReminders();
-    logger.log("info", {
-      event: "ha.startup.due_date_reminders.started",
-      domain: "notifications",
-      component: "ha-startup",
-      request_id: SYS_REQ,
-      message: "Due-date reminder scheduler started",
-    });
   } catch (err) {
     logger.log("error", {
       event: "ha.startup.due_date_reminders.failed",

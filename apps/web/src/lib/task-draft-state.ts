@@ -33,8 +33,11 @@ export const taskDraftVersion = z.strictObject({
   revision: z.number().int().positive(),
 })
 
+const placement = z.strictObject({ areaId: reference.nullable(), projectId: reference.nullable() })
+
 export const taskDraftSnapshot = z.strictObject({
   version: z.literal(1),
+  placement: placement.optional(),
   title: z.string().max(500),
   description: z.string().max(16384),
   taskKind,
@@ -61,6 +64,7 @@ export const taskDraftSnapshot = z.strictObject({
 
 const publishDate = z.union([z.iso.date(), z.iso.datetime({ local: true, offset: true }).max(64)])
 export const taskDraftPublication = z.strictObject({
+  placement: placement.optional(),
   title: z.string().min(1).max(500),
   description: z.string().max(16384),
   task_kind: taskKind,

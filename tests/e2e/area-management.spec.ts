@@ -1,5 +1,5 @@
 import { once } from "node:events"
-import { mkdtemp, rm } from "node:fs/promises"
+import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
@@ -9,7 +9,7 @@ import { launchPinBrowser, startCoreFixture } from "../scripts/task-pins-fixture
 
 test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires a disposable built app")
 
-test("Area options open the editor and save within Home Assistant ingress", async () => {
+test("Area options open the editor and save within Home Assistant ingress", async ({}, testInfo) => {
   const work = await mkdtemp(join(tmpdir(), "area-test-"))
   const child = startCoreFixture(work)
   child.stdout?.resume()
@@ -36,7 +36,7 @@ test("Area options open the editor and save within Home Assistant ingress", asyn
     await expect(menu).toBeAttached()
     await page.getByRole("button", { name: /Area options.*Workshop fixture/i }).press("Enter")
     const manage = menu.getByRole("link", { name: "Edit Area" })
-    const editorUrl = `${appUrl}/boards/household?area=${areaId}#group-settings`
+    const editorUrl = `${appUrl}/boards/household?area=${areaId}&view=groups#group-settings`
     await expect(manage).toHaveAttribute("href", prefix + "/areas/" + areaId + "#settings")
     await expect(manage).toBeFocused()
     await manage.press("Enter")
@@ -58,7 +58,7 @@ test("Area options open the editor and save within Home Assistant ingress", asyn
     await expect(page.getByRole("heading", { name: /Workshop renamed/ })).toBeVisible()
     await expect(page).toHaveURL(editorUrl)
     await expect(name).toHaveValue("Workshop renamed")
-    const tabs = page.getByRole("tablist", { name: "Group sections" })
+    const tabs = page.getByRole("tablist", { name: "Area sections" })
     const settingsTab = tabs.getByRole("tab", { name: /Settings/ })
     await expect(settingsTab).toHaveAttribute("aria-selected", "true")
     await settingsTab.press("Home")
@@ -85,12 +85,30 @@ test("Area options open the editor and save within Home Assistant ingress", asyn
     await page.setViewportSize({ width: 1240, height: 780 })
     await page.goto(`${appUrl}/projects/${projectId}`)
     await expect(page.locator("#section-overview")).toBeVisible()
+    const disclosurePath = testInfo.outputPath("project-sidebar-disclosure.json")
+    await writeFile(disclosurePath, JSON.stringify(await page.evaluate(({ areaId, projectId }) => ({
+      savedBoardsCollapsed: sessionStorage.getItem("meitheal-boards-collapsed"),
+      boardsExpanded: document.querySelector("[data-sidebar-boards-toggle]")?.getAttribute("aria-expanded"),
+      areasOpen: (document.querySelector("#sidebar-areas-group") as HTMLDetailsElement | null)?.open,
+      areaExpanded: document.querySelector(`[data-area-toggle="${areaId}"]`)?.getAttribute("aria-expanded"),
+      projectOptionsCount: document.querySelectorAll(`[data-project-menu="${projectId}"]`).length,
+    }), { areaId, projectId }), null, 2))
+    await testInfo.attach("project-sidebar-disclosure.json", { path: disclosurePath, contentType: "application/json" })
+    const boards = page.locator("[data-sidebar-boards-toggle]")
+    if (await boards.getAttribute("aria-expanded") !== "true") await boards.press("Enter")
+    const areas = page.locator("#sidebar-areas-group")
+    if (!(await areas.evaluate(element => (element as HTMLDetailsElement).open))) {
+      await areas.locator(":scope > summary").press("Enter")
+    }
+    const areaToggle = page.locator(`[data-area-toggle="${areaId}"]`)
+    if (await areaToggle.getAttribute("aria-expanded") !== "true") await areaToggle.press("Enter")
+    await page.locator(`#project-nav-list [data-project-id="${projectId}"]`).focus()
     await page.getByRole("button", { name: "Project options - Tool storage" }).press("Enter")
     const editProject = page.getByRole("link", { name: "Edit Project", exact: true })
     await expect(editProject).toHaveAttribute("href", `${prefix}/projects/${projectId}#settings`)
     await expect(editProject).toBeFocused()
     await editProject.press("Enter")
-    await expect(page).toHaveURL(`${appUrl}/boards/household?project=${projectId}#project-settings`)
+    await expect(page).toHaveURL(`${appUrl}/boards/household?project=${projectId}&view=groups#project-settings`)
     await expect(page.getByRole("heading", { name: "Project Settings" })).toBeVisible()
 
     const db = new DatabaseSync(join(work, "pins.db"))
@@ -152,7 +170,7 @@ test("Area and Project pages show associated Goals and keep the All Goals view",
     projectId = await create("/api/projects", { title: "Start Tuesday " + stamp, area_id: work, goal_id: unlinkedGoal })
 
     await page.goto(`/areas/${work}`)
-    await page.getByRole("navigation", { name: "Group sections" }).getByRole("tab", { name: /Goals/ }).click()
+    await page.getByRole("navigation", { name: "Area sections" }).getByRole("tab", { name: /Goals/ }).click()
     const areaGoals = page.locator("#section-goals")
     await expect(areaGoals.getByRole("heading", { name: "Finish the class " + stamp })).toBeVisible()
     await expect(areaGoals.getByRole("heading", { name: "Learn to cycle " + stamp })).toBeVisible()
@@ -169,7 +187,7 @@ test("Area and Project pages show associated Goals and keep the All Goals view",
     const linkedGoal = await goalReceipt
     expect(linkedGoal.status()).toBe(201)
     expect(linkedGoal.request().postDataJSON().area_id).toBe(work)
-    await expect(page).toHaveURL(new RegExp(`/boards/household\\?area=${work}#goals$`))
+    await expect(page).toHaveURL(new RegExp(`/boards/household\\?area=${work}&view=groups#goals$`))
     const newCard = goalList.locator(".goals-tab__card").filter({ hasText: "Created within Work " + stamp })
     await expect(newCard).toBeVisible()
     goals.push((await newCard.getAttribute("data-goal-id"))!)
@@ -178,7 +196,7 @@ test("Area and Project pages show associated Goals and keep the All Goals view",
 
     await page.goto(`/projects/${projectId}#settings`)
     const settings = page.locator("#section-project-settings")
-    const projectArea = settings.getByLabel("Group", { exact: true })
+    const projectArea = settings.getByLabel("Area", { exact: true })
     await expect(projectArea).toHaveValue(work)
     await expect(settings.getByLabel("Goal", { exact: true })).toHaveValue(unlinkedGoal)
     await projectArea.selectOption(home)
@@ -222,7 +240,7 @@ test("Area Routines open the existing editor in context and keep the generated t
     routineId = routines[0]?.id
     const defaultArea = await request.get("/api/habits?area_id=default")
     expect((await defaultArea.json()).habits.map((routine: { id: string }) => routine.id)).not.toContain(routineId)
-    await expect(page).toHaveURL(new RegExp(`/boards/household\\?area=${area}#routines$`))
+    await expect(page).toHaveURL(new RegExp(`/boards/household\\?area=${area}&view=groups#routines$`))
     await expect(page.locator("#section-routines").getByText(name, { exact: false })).toBeVisible()
 
     const destination = await request.post("/api/areas", { data: { name: name + " destination" } })

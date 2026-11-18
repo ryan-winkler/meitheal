@@ -18,6 +18,7 @@
  * @domain navigation
  * @phase 15.2 — Sidebar UX Refinements
  */
+import { isOrganizationFeatureAvailable as available } from "@lib/organization-request-context"
 import {
   ensureSchema,
   getPersistenceClient,
@@ -45,7 +46,7 @@ try {
   await ensureSchema()
   const repo = new HierarchyRepository(getPersistenceClient())
   const [allAreas, allProjects, goals] = await Promise.all([
-    repo.findAllAreas(), repo.findAllProjects(), repo.findAllGoals(),
+    repo.findAllAreas(), available("projects") ? repo.findAllProjects() : [], available("goals") && available("projects") ? repo.findAllGoals() : [],
   ])
   areas = allAreas
   projects = allProjects
@@ -101,9 +102,9 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
 ---
 
 {hasContent && (
-  <div class="stree" id="project-nav" role="navigation" aria-label="Area navigation">
+  <div class="stree" id="project-nav" data-projects-enabled={String(available("projects"))} role="navigation" aria-label={t("sidebar.navigation_label", locale, { label: areasLabel })}>
     <details id="sidebar-areas-group" open>
-    <summary class="stree__header" id="project-nav-group-toggle" aria-label={areasLabel} title="Collapse Areas">
+    <summary class="stree__header" id="project-nav-group-toggle" aria-label={areasLabel} title={t("sidebar.collapse_navigation", locale, { label: areasLabel })} data-collapse-title={t("sidebar.collapse_navigation", locale, { label: areasLabel })} data-expand-title={t("sidebar.expand_navigation", locale, { label: areasLabel })}>
       <span class="stree__group-heading"><span class="stree__group-chevron" aria-hidden="true"><Icon name="chevron-down" size={12} /></span><span class="stree__label">{areasLabel}</span></span>
     </summary>
     <div id="project-nav-content">
@@ -153,13 +154,13 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
                   title={t("sidebar.area_options", locale)}
                   aria-label={`${t("sidebar.area_options", locale)} - ${area.name}`}
                 ><Icon name="adjustments-horizontal" size={13} /></button>
-                <button
+                {available("projects") && <button
                   type="button"
                   class="stree__action-btn stree__action-btn--add"
                   data-area-add={area.id}
                   title={`New project in ${area.name}`}
                   aria-label={`New project in ${area.name}`}
-                ><Icon name="plus" size={13} /></button>
+                ><Icon name="plus" size={13} /></button>}
               </div>
             </div>
 
@@ -210,7 +211,7 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
                 </div>
                 )
               })}
-              {areaProjects.length === 0 && (
+              {available("projects") && areaProjects.length === 0 && (
                 <span class="stree__empty-hint">{t("sidebar.no_projects", locale)}</span>
               )}
             </div>
@@ -335,14 +336,15 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
     font-size: 13px;
     position: relative;
   }
+  .stree :is(a[href], button, summary, input),
+  .stree__dropdown :is(a[href], button, input),
+  .stree__popover :is(a[href], button, input) { scroll-margin: 2px; }
 
-  /* P2-15: Scroll overflow indicator */
+  /* Sidebar, Boards or More owns scrolling for the complete hierarchy. */
   .stree__list {
     position: relative;
-    overflow-y: auto;
-    max-height: calc(100vh - 380px);
-    scrollbar-width: thin;
-    scrollbar-color: rgb(var(--border-rgb) / 0.3) transparent;
+    overflow: visible;
+    max-height: none;
   }
 
   /* ── Header — P2-11: compact & refined ── */
@@ -516,6 +518,7 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
     opacity: 1;
     overflow: visible;
   }
+  .stree__actions:focus-within { transition: none; }
   .stree__area-row:hover .stree__count,
   .stree__area-row:focus-within .stree__count,
   .stree__project:hover > .stree__count,
@@ -560,7 +563,7 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
     flex-direction: column;
     padding-left: 6px;
     overflow: hidden;
-    max-height: 600px;
+    max-height: none;
     opacity: 1;
     transition: max-height 200ms cubic-bezier(0.23, 1, 0.32, 1), opacity 150ms cubic-bezier(0.23, 1, 0.32, 1);
   }
@@ -676,6 +679,7 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
     margin-bottom: 2px;
   }
   .stree__pinned-list .stree__project-link { padding-left: 6px; }
+  .stree__pinned-row { display: flex; align-items: center; gap: 2px; }
 
   /* ── P2-12: Empty area hint ── */
   .stree__empty-hint {
@@ -774,10 +778,18 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
   }
 
   /* ── Shared dropdown (body-level) ── */
+  .stree__dropdown, .stree__popover {
+    box-sizing: border-box;
+    max-inline-size: calc(100vw - 16px);
+    max-block-size: calc(100dvh - 16px);
+    overflow: auto;
+    overscroll-behavior: contain;
+  }
+  .stree__dropdown > *, .stree__popover > * { flex-shrink: 0; }
   .stree__dropdown {
     position: fixed;
     z-index: 10000;
-    min-width: 180px;
+    min-width: min(180px, calc(100vw - 16px));
     background: var(--bg-surface, #1e1e2e);
     border: 1px solid rgb(var(--border-rgb) / 0.5);
     border-radius: var(--radius-md, 8px);
@@ -817,7 +829,7 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
   .stree__popover {
     position: fixed;
     z-index: 10001;
-    min-width: 220px;
+    min-width: min(220px, calc(100vw - 16px));
     background: var(--bg-surface, #1e1e2e);
     border: 1px solid rgb(var(--border-rgb) / 0.5);
     border-radius: var(--radius-md, 8px);
@@ -978,7 +990,6 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
 </style>
 
 <script>
-  import { singleKeyShortcutsEnabled } from "@lib/single-key-shortcuts"
   import { DropdownController } from "../../lib/dropdown-controller"
   import { safeIngressHref } from "../../lib/ingress-navigation"
   import { sanitizeCssColor } from "../../lib/safe-html"
@@ -988,15 +999,40 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
   import { pageLifecycle } from "../../lib/page-lifecycle"
   import { initSidebarAreasDisclosure } from "../../lib/sidebar-areas-disclosure"
 
-  pageLifecycle.onPageLoad(initSidebarAreasDisclosure)
-
   // ── Sidebar Hierarchy Tree — interactions ──
-  ;(function initSidebarTree() {
+  const runtime = window as typeof window & {
+    __meithealSidebarTree?: { nav: HTMLElement; pageSignal: AbortSignal; controller: AbortController }
+  }
+  let disposed = false
+  let currentController: AbortController | undefined
+  pageLifecycle.onPageLoad(pageSignal => {
+    if (disposed) return
     const projectNav = document.getElementById("project-nav")
-    if (!projectNav) return
+    const previous = runtime.__meithealSidebarTree
+    if (previous?.nav === projectNav && previous.pageSignal === pageSignal && !previous.controller.signal.aborted) return
+    previous?.controller.abort()
+    if (!projectNav || pageSignal.aborted) {
+      delete runtime.__meithealSidebarTree
+      return
+    }
     const nav = projectNav
-
+    const group = nav.querySelector<HTMLDetailsElement>("#sidebar-areas-group")
+    const retainedOpen = previous?.nav === nav ? group?.open : undefined
+    initSidebarAreasDisclosure(pageSignal)
+    if (group && retainedOpen !== undefined) group.open = retainedOpen
     const ctrl = new DropdownController()
+    const areaActions = new AbortController()
+    currentController = areaActions
+    runtime.__meithealSidebarTree = { nav, pageSignal, controller: areaActions }
+    const ownedPortals: HTMLElement[] = []
+    const countTimers = new Set<ReturnType<typeof setTimeout>>()
+    pageSignal.addEventListener("abort", () => areaActions.abort(), { once: true, signal: areaActions.signal })
+    areaActions.signal.addEventListener("abort", () => {
+      ctrl.hide()
+      for (const popup of ownedPortals) popup.remove()
+      for (const timer of countTimers) clearTimeout(timer)
+      nav.querySelectorAll(".stree__inline-input, .stree__confirm-delete").forEach(element => element.remove())
+    }, { once: true })
 
     // ── i18n helper: read from window.mI18n or fallback ──
     function i18n(key: string, fallback: string): string {
@@ -1013,7 +1049,9 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
       placeholder: string,
       currentValue: string,
       onSubmit: (value: string) => void,
+      returnTrigger?: HTMLElement | null,
     ): void {
+      if (areaActions.signal.aborted) return
       // Remove any existing inline input in the same container
       container.querySelectorAll(".stree__inline-input").forEach((el) => el.remove())
       const input = document.createElement("input")
@@ -1026,8 +1064,10 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
       input.select()
 
       let submitted = false
+      let blurTimer: ReturnType<typeof setTimeout> | undefined
       function submit() {
-        if (submitted) return
+        clearTimeout(blurTimer)
+        if (submitted || !input.isConnected || areaActions.signal.aborted) return
         submitted = true
         const val = input.value.trim()
         input.remove()
@@ -1035,9 +1075,23 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
       }
       input.addEventListener("keydown", (e) => {
         if (e.key === "Enter") { e.preventDefault(); submit() }
-        if (e.key === "Escape") { e.preventDefault(); submitted = true; input.remove() }
-      })
-      input.addEventListener("blur", () => setTimeout(submit, 100))
+        if (e.key === "Escape") {
+          e.preventDefault()
+          clearTimeout(blurTimer)
+          submitted = true
+          input.remove()
+          const trigger = returnTrigger ?? container.querySelector<HTMLElement>("button, a[href], summary")
+            ?? container.closest("[data-area-group]")?.querySelector<HTMLElement>("[data-area-toggle]")
+          if (trigger && trigger.offsetParent !== null && !trigger.closest("[hidden], [inert]")) trigger.focus()
+        }
+      }, { signal: areaActions.signal })
+      input.addEventListener("focus", () => clearTimeout(blurTimer), { signal: areaActions.signal })
+      input.addEventListener("blur", () => {
+        clearTimeout(blurTimer)
+        blurTimer = setTimeout(() => {
+          if (input.isConnected && document.activeElement !== input) submit()
+        }, 100)
+      }, { signal: areaActions.signal })
     }
 
     // ── Inline confirm helper (replaces confirm()) ──
@@ -1046,16 +1100,35 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
       label: string,
       onConfirm: () => void,
     ): void {
+      if (areaActions.signal.aborted) return
       container.querySelectorAll(".stree__confirm-delete").forEach((el) => el.remove())
+      const trigger = container.querySelector<HTMLElement>("[data-area-menu], [data-project-menu]")
+      const confirmation = new AbortController()
+      const signal = AbortSignal.any([areaActions.signal, confirmation.signal])
       const btn = document.createElement("button")
       btn.type = "button"
       btn.className = "stree__confirm-delete"
       btn.textContent = label
       container.appendChild(btn)
       btn.focus()
-      btn.addEventListener("click", (e) => { e.stopPropagation(); btn.remove(); onConfirm() })
+      let expiry: ReturnType<typeof setTimeout> | undefined
+      function dismiss(restoreFocus: boolean) {
+        clearTimeout(expiry)
+        btn.remove()
+        confirmation.abort()
+        if (restoreFocus && trigger?.isConnected && trigger.offsetParent !== null
+          && getComputedStyle(trigger).visibility === "visible" && !trigger.closest("[hidden], [inert], details:not([open])")) trigger.focus()
+      }
+      btn.addEventListener("click", (event) => { event.stopPropagation(); dismiss(false); onConfirm() }, { signal })
+      btn.addEventListener("keydown", (event) => {
+        if (event.key !== "Escape") return
+        event.preventDefault()
+        event.stopPropagation()
+        dismiss(true)
+      }, { signal })
+      signal.addEventListener("abort", () => { clearTimeout(expiry); btn.remove() }, { once: true })
       // Auto-dismiss after 3s
-      setTimeout(() => btn.remove(), 3000)
+      expiry = setTimeout(() => dismiss(document.activeElement === btn), 3000)
     }
 
     // ── DOM insertion: add new project row without reload ──
@@ -1208,7 +1281,8 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
       addBtn.setAttribute("aria-label", `New project in ${name}`)
       addBtn.appendChild(createTablerSvgElement("plus", 13))
 
-      actions.append(menuBtn, addBtn)
+      actions.append(menuBtn)
+      if (navEl.dataset.projectsEnabled === "true") actions.append(addBtn)
       row.append(toggleBtn, actions)
 
       const children = document.createElement("div")
@@ -1218,7 +1292,7 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
       const emptyHint = document.createElement("span")
       emptyHint.className = "stree__empty-hint"
       emptyHint.textContent = i18n("sidebar.no_projects", "No projects")
-      children.appendChild(emptyHint)
+      if (navEl.dataset.projectsEnabled === "true") children.appendChild(emptyHint)
 
       div.append(row, children)
       // Insert before the "New Area" button
@@ -1238,7 +1312,10 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
       const clone = tmpl.content.firstElementChild?.cloneNode(true) as HTMLElement
       if (!clone) return null
       clone.hidden = true
+      const owner = nav.closest<HTMLElement>("[data-sidebar-board-children]")
+      if (owner?.id) clone.dataset.sidebarBoardOwner = owner.id
       document.body.appendChild(clone)
+      ownedPortals.push(clone)
       return clone
     }
 
@@ -1253,6 +1330,27 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
     let activeEntityName: string | null = null
     let activeProjectIdForTask: string | null = null
 
+    function closeTreePopup(): boolean {
+      const popups = [areaMenuDropdown, projectMenuDropdown, taskKindDropdown, colorIconPopover]
+      if (!popups.some(popup => popup && ctrl.isShowing(popup))) return false
+      const taskKindOpen = taskKindDropdown && ctrl.isShowing(taskKindDropdown)
+      const trigger = taskKindOpen
+        ? nav.querySelector<HTMLElement>(`[data-task-add-project="${CSS.escape(activeProjectIdForTask ?? "")}"]`)
+        : nav.querySelector<HTMLElement>(`[data-${activeEntityType === "area" ? "area" : "project"}-menu="${CSS.escape(activeEntityId ?? "")}"]`)
+      ctrl.hideAll()
+      const drawer = nav.closest<HTMLElement>("#sidebar")
+      const mobileOpener = innerWidth <= 768 && drawer && !drawer.classList.contains("open")
+        ? document.getElementById("menu-toggle") : null
+      const focusTarget = mobileOpener ?? trigger
+      focusTarget?.focus()
+      return true
+    }
+    function dismissTreePopup(event: KeyboardEvent): boolean {
+      if (event.defaultPrevented || event.key !== "Escape" || !closeTreePopup()) return false
+      event.preventDefault()
+      event.stopPropagation()
+      return true
+    }
     // ── 1. Collapse/Expand ──
     const COLLAPSE_KEY = "meitheal_project_nav_collapsed"
     let collapsed: Set<string>
@@ -1284,27 +1382,58 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
     function savePinned() { try { localStorage.setItem(PIN_KEY, JSON.stringify([...pinnedIds])) } catch { /* localStorage unavailable in private browsing */ } }
 
     function renderPinned() {
+      if (areaActions.signal.aborted) return
       const container = document.getElementById("project-nav-pinned")
       const list = document.getElementById("project-nav-pinned-list")
       if (!container || !list) return
-      if (pinnedIds.size === 0) { container.hidden = true; return }
-      container.hidden = false
+      const active = document.activeElement instanceof HTMLElement ? document.activeElement : null
+      const focusedRow = active?.closest<HTMLElement>("[data-pinned-project]")
+      const focusedId = focusedRow && list.contains(focusedRow) ? focusedRow.dataset.pinnedProject : undefined
+      const restoreFocus = focusedId !== undefined
+      const oldIds = [...list.querySelectorAll<HTMLElement>("[data-pinned-project]")].map(row => row.dataset.pinnedProject!)
+      const index = focusedId ? oldIds.indexOf(focusedId) : -1
+      const preferredId = focusedId && pinnedIds.has(focusedId) ? focusedId
+        : oldIds.slice(index + 1).find(id => pinnedIds.has(id))
+          ?? oldIds.slice(0, index).reverse().find(id => pinnedIds.has(id))
+      const unpinFocused = active?.matches(".stree__unpin-btn")
+      const original = focusedId ? nav.querySelector<HTMLElement>(`.stree__project [data-project-id="${CSS.escape(focusedId)}"]`) : null
+      container.hidden = pinnedIds.size === 0
       list.replaceChildren()
       pinnedIds.forEach((id) => {
-        const src = nav!.querySelector<HTMLAnchorElement>(`[data-project-id="${id}"]`)
+        const src = nav.querySelector<HTMLAnchorElement>(`.stree__project [data-project-id="${CSS.escape(id)}"]`)
         if (!src) return
+        const row = document.createElement("div")
+        row.className = "stree__pinned-row"
+        row.dataset.pinnedProject = id
         const clone = src.cloneNode(true) as HTMLAnchorElement
         clone.classList.add("pinned-item")
         const unpinBtn = document.createElement("button")
         unpinBtn.type = "button"
-        unpinBtn.className = "stree__unpin-btn inline-flex items-center justify-center"
+        unpinBtn.className = "stree__action-btn stree__unpin-btn inline-flex items-center justify-center"
         unpinBtn.title = "Unpin"
         unpinBtn.setAttribute("aria-label", "Unpin project")
         unpinBtn.appendChild(createTablerSvgElement("pinned-off", 12))
-        unpinBtn.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); pinnedIds.delete(id); savePinned(); renderPinned() })
-        clone.appendChild(unpinBtn)
-        list.appendChild(clone)
+        unpinBtn.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); pinnedIds.delete(id); savePinned(); renderPinned() }, { signal: areaActions.signal })
+        row.append(clone, unpinBtn)
+        list.appendChild(row)
       })
+      if (!restoreFocus) return
+      const preferredRow = preferredId ? list.querySelector<HTMLElement>(`[data-pinned-project="${CSS.escape(preferredId)}"]`) : null
+      const candidates = [
+        preferredRow?.querySelector<HTMLElement>(unpinFocused ? ".stree__unpin-btn" : "a[href]"),
+        original,
+        original?.closest("[data-area-group]")?.querySelector<HTMLElement>("[data-area-toggle]"),
+        nav.querySelector<HTMLElement>("#project-nav-group-toggle"),
+        nav.closest("[data-sidebar-group]")?.querySelector<HTMLElement>("[data-sidebar-boards-toggle]"),
+      ]
+      candidates.find(element => {
+        if (!element?.isConnected || !element.getClientRects().length || getComputedStyle(element).visibility !== "visible"
+          || element.closest("[hidden], [inert]")) return false
+        const closed = element.closest("details:not([open])")
+        if (closed && !(element.matches("summary") && element.parentElement === closed && !closed.parentElement?.closest("details:not([open])"))) return false
+        const drawer = element.closest("#sidebar")
+        return !(innerWidth <= 768 && drawer && !drawer.classList.contains("open"))
+      })?.focus()
     }
     renderPinned()
 
@@ -1326,7 +1455,7 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
         const menuBtn = areaRow.querySelector<HTMLButtonElement>("[data-area-menu]")
         if (menuBtn) menuBtn.click()
       }
-    })
+    }, { signal: areaActions.signal })
 
     // Area buttons also work on rows inserted without a page reload.
     function onAreaClick(event: MouseEvent) {
@@ -1339,12 +1468,19 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
       if (button.hasAttribute("data-area-add")) addProjectToArea(button)
       if (button.hasAttribute("data-area-menu")) showAreaMenu(button, event.detail === 0)
       if (button.hasAttribute("data-project-menu")) showProjectMenu(button, event.detail === 0)
+      if (button.hasAttribute("data-task-add-project")) {
+        event.preventDefault()
+        event.stopPropagation()
+        showTaskKind(button)
+      }
     }
 
     // The sidebar element persists across Astro page swaps.
-    const areaActions = new AbortController()
     nav.addEventListener("click", onAreaClick, { signal: areaActions.signal })
-    import.meta.hot?.dispose(() => areaActions.abort())
+    window.addEventListener("resize", () => closeTreePopup(), { signal: areaActions.signal })
+    for (const popup of [areaMenuDropdown, projectMenuDropdown, taskKindDropdown, colorIconPopover]) {
+      popup?.addEventListener("keydown", dismissTreePopup, { signal: areaActions.signal })
+    }
 
     function addProjectToArea(btn: HTMLButtonElement) {
       const areaId = btn.dataset.areaAdd
@@ -1373,11 +1509,12 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
               insertProjectNode(children, projId, title, "\ud83d\udccb", "#146C4E", areaId)
               // Remove empty hint if present
               children.querySelector(".stree__empty-hint")?.remove()
-              showToast(i18n("sidebar.task_created", "Project created"), "success")
+              showToast(i18n("sidebar.project_created", "Project created"), "success")
             }
             else showToast(i18n("sidebar.error_create_failed", "Failed to create"), "error")
           } catch { showToast(i18n("sidebar.error_create_failed", "Failed to create"), "error") }
         },
+        btn,
       )
     }
 
@@ -1396,11 +1533,6 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
       ctrl.show(areaMenuDropdown, btn)
       if (focusManage) manageLink?.focus()
     }
-
-    areaMenuDropdown?.addEventListener("keydown", event => {
-      if (event.key !== "Escape" || !activeEntityId) return
-      nav.querySelector<HTMLButtonElement>(`[data-area-menu="${CSS.escape(activeEntityId)}"]`)?.focus()
-    }, { signal: areaActions.signal })
 
     areaMenuDropdown?.addEventListener("click", async (e) => {
       const target = (e.target as HTMLElement).closest<HTMLElement>("[data-action]")
@@ -1441,6 +1573,7 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
               } else showToast(i18n("sidebar.error_update_failed", "Failed to update"), "error")
             } catch { showToast(i18n("sidebar.error_update_failed", "Failed to update"), "error") }
           },
+          container.querySelector<HTMLElement>("[data-area-menu]"),
         )
       }
       if (action === "color-icon") {
@@ -1459,7 +1592,10 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
         // Reset emoji tab to first
         colorIconPopover.querySelectorAll<HTMLButtonElement>("[data-emoji-tab]").forEach((t, i) => t.classList.toggle("active", i === 0))
         colorIconPopover.querySelectorAll<HTMLElement>("[data-emoji-panel]").forEach((p, i) => p.classList.toggle("hidden", i !== 0))
-        if (triggerBtn) ctrl.show(colorIconPopover, triggerBtn)
+        if (triggerBtn) {
+          ctrl.show(colorIconPopover, triggerBtn)
+          colorIconPopover.querySelector<HTMLElement>(".stree__emoji-tab")?.focus()
+        }
       }
       if (action === "delete") {
         ctrl.hideAll()
@@ -1485,7 +1621,7 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
           },
         )
       }
-    })
+    }, { signal: areaActions.signal })
 
     // ── 5. Project ⋯ menu ──
     function showProjectMenu(btn: HTMLButtonElement, focusEdit: boolean) {
@@ -1501,12 +1637,6 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
       ctrl.show(projectMenuDropdown, btn)
       if (focusEdit) editLink?.focus()
     }
-    projectMenuDropdown?.addEventListener("keydown", event => {
-      if (event.key === "Escape" && activeEntityId) {
-        nav.querySelector<HTMLButtonElement>(`[data-project-menu="${CSS.escape(activeEntityId)}"]`)?.focus()
-      }
-    }, { signal: areaActions.signal })
-
     projectMenuDropdown?.addEventListener("click", async (e) => {
       const target = (e.target as HTMLElement).closest<HTMLElement>("[data-action]")
       if (!target || !activeEntityId || activeEntityType !== "project") return
@@ -1517,7 +1647,7 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
       if (action === "manage") return
       if (action === "rename") {
         ctrl.hideAll()
-        const linkEl = document.querySelector(`[data-project-id="${entityId}"] .stree__project-name`) as HTMLElement | null
+        const linkEl = nav.querySelector<HTMLElement>(`.stree__project [data-project-id="${entityId}"] .stree__project-name`)
         if (!linkEl) return
         const container = linkEl.closest<HTMLElement>(".stree__project")!
         showInlineInput(
@@ -1527,10 +1657,30 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
           async (newTitle) => {
             try {
               const res = await fetch(`/api/projects/${entityId}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ title: newTitle }) })
-              if (res.ok) { linkEl.textContent = newTitle }
+              if (res.ok) {
+                linkEl.textContent = newTitle
+                const link = linkEl.closest<HTMLAnchorElement>("[data-project-id]")
+                if (link) {
+                  link.dataset.projectName = newTitle
+                  link.title = newTitle
+                }
+                const menu = container.querySelector<HTMLButtonElement>("[data-project-menu]")
+                if (menu) {
+                  menu.dataset.projectTitle = newTitle
+                  menu.setAttribute("aria-label", `${menu.title} - ${newTitle}`)
+                }
+                const add = container.querySelector<HTMLButtonElement>("[data-task-add-project]")
+                if (add) {
+                  add.dataset.taskAddName = newTitle
+                  add.setAttribute("aria-label", `Add task to ${newTitle}`)
+                }
+                if (activeEntityType === "project" && activeEntityId === entityId) activeEntityName = newTitle
+                renderPinned()
+              }
               else showToast(i18n("sidebar.error_update_failed", "Failed to update"), "error")
             } catch { showToast(i18n("sidebar.error_update_failed", "Failed to update"), "error") }
           },
+          container.querySelector<HTMLElement>("[data-project-menu]"),
         )
       }
       if (action === "color-icon") {
@@ -1549,11 +1699,14 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
         // Reset emoji tab to first
         colorIconPopover.querySelectorAll<HTMLButtonElement>("[data-emoji-tab]").forEach((t, i) => t.classList.toggle("active", i === 0))
         colorIconPopover.querySelectorAll<HTMLElement>("[data-emoji-panel]").forEach((p, i) => p.classList.toggle("hidden", i !== 0))
-        if (triggerBtn) ctrl.show(colorIconPopover, triggerBtn)
+        if (triggerBtn) {
+          ctrl.show(colorIconPopover, triggerBtn)
+          colorIconPopover.querySelector<HTMLElement>(".stree__emoji-tab")?.focus()
+        }
       }
       if (action === "delete") {
         ctrl.hideAll()
-        const projRow = document.querySelector(`[data-project-id="${entityId}"]`)?.closest(".stree__project") as HTMLElement | null
+        const projRow = nav.querySelector(`.stree__project [data-project-id="${entityId}"]`)?.closest(".stree__project") as HTMLElement | null
         if (!projRow) return
         showInlineConfirm(
           projRow,
@@ -1562,7 +1715,7 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
             try {
               const res = await fetch(`/api/projects/${entityId}`, { method: "DELETE", headers: { "content-type": "application/json" } })
               if (res.ok) {
-                const projRow = document.querySelector(`[data-project-id="${entityId}"]`)?.closest(".stree__project") as HTMLElement | null
+                const projRow = nav.querySelector(`.stree__project [data-project-id="${entityId}"]`)?.closest(".stree__project") as HTMLElement | null
                 if (projRow) {
                   projRow.style.opacity = "0"
                   projRow.style.transition = "opacity 200ms ease"
@@ -1581,14 +1734,14 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
           },
         )
       }
-    })
+    }, { signal: areaActions.signal })
 
     // ── 6. Color swatch + save (shared) ──
     colorIconPopover?.querySelectorAll<HTMLButtonElement>("[data-swatch-color]").forEach((swatch) => {
       swatch.addEventListener("click", () => {
         colorIconPopover!.querySelectorAll<HTMLButtonElement>("[data-swatch-color]").forEach((s) => s.classList.remove("selected"))
         swatch.classList.add("selected")
-      })
+      }, { signal: areaActions.signal })
     })
 
     // ── 6b. Emoji picker tab switching + selection ──
@@ -1599,7 +1752,7 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
         tab.classList.add("active")
         const panel = colorIconPopover!.querySelector(`[data-emoji-panel="${tab.dataset.emojiTab}"]`)
         panel?.classList.remove("hidden")
-      })
+      }, { signal: areaActions.signal })
     })
     colorIconPopover?.querySelectorAll<HTMLButtonElement>("[data-emoji-value]").forEach((btn) => {
       btn.addEventListener("click", () => {
@@ -1609,7 +1762,7 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
         if (input) input.value = btn.dataset.emojiValue!
         colorIconPopover!.querySelectorAll<HTMLButtonElement>("[data-emoji-value]").forEach((b) => b.classList.remove("selected"))
         btn.classList.add("selected")
-      })
+      }, { signal: areaActions.signal })
     })
 
     colorIconPopover?.querySelector<HTMLButtonElement>("#color-icon-save")?.addEventListener("click", async () => {
@@ -1619,7 +1772,7 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
       const selectedSwatch = colorIconPopover!.querySelector<HTMLButtonElement>("[data-swatch-color].selected")
       const icon = iconInput?.value?.trim() || "\ud83d\udccb"
       const color = selectedSwatch?.dataset.swatchColor || "#146C4E"
-      ctrl.hideAll()
+      closeTreePopup()
       const endpoint = activeEntityType === "area" ? `/api/areas/${entityId}` : `/api/projects/${entityId}`
       try {
         const res = await fetch(endpoint, {
@@ -1634,30 +1787,29 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
             if (iconEl) { renderIconOrCustomEmoji(iconEl, icon, "folders", 15); iconEl.style.color = color }
             if (menuBtn) { menuBtn.dataset.areaIcon = icon; menuBtn.dataset.areaColor = color }
           } else {
-            const iconEl = document.querySelector(`[data-project-id="${entityId}"] .stree__project-icon`) as HTMLElement | null
+            const iconEl = nav.querySelector<HTMLElement>(`.stree__project [data-project-id="${entityId}"] .stree__project-icon`)
             const menuBtn = document.querySelector(`[data-project-menu="${entityId}"]`) as HTMLElement | null
             if (iconEl) { renderIconOrCustomEmoji(iconEl, icon, "checklist", 14); iconEl.style.color = color }
             if (menuBtn) { menuBtn.dataset.projectIconValue = icon; menuBtn.dataset.projectColor = color }
+            renderPinned()
           }
           showToast(i18n("sidebar.updated", "Updated"), "success")
         }
         else showToast(i18n("sidebar.error_update_failed", "Failed to update"), "error")
       } catch { showToast(i18n("sidebar.error_update_failed", "Failed to update"), "error") }
-    })
+    }, { signal: areaActions.signal })
 
     // ── 7. Per-project task add (+) with kind picker — inline input ──
-    document.querySelectorAll<HTMLButtonElement>("[data-task-add-project]").forEach((btn) => {
-      btn.addEventListener("click", (e) => {
-        e.stopPropagation()
-        e.preventDefault()
-        if (!taskKindDropdown) return
-        const isVisible = ctrl.isShowing(taskKindDropdown) && activeProjectIdForTask === btn.dataset.taskAddProject
-        ctrl.hideAll()
-        if (isVisible) return
-        activeProjectIdForTask = btn.dataset.taskAddProject!
-        ctrl.show(taskKindDropdown, btn)
-      })
-    })
+    function showTaskKind(btn: HTMLButtonElement) {
+      const projectId = btn.dataset.taskAddProject
+      if (!taskKindDropdown || !projectId) return
+      const isVisible = ctrl.isShowing(taskKindDropdown) && activeProjectIdForTask === projectId
+      ctrl.hideAll()
+      if (isVisible) return
+      activeProjectIdForTask = projectId
+      ctrl.show(taskKindDropdown, btn)
+      taskKindDropdown.querySelector<HTMLButtonElement>("[data-task-kind]")?.focus()
+    }
 
     taskKindDropdown?.addEventListener("click", async (e) => {
       const target = (e.target as HTMLElement).closest<HTMLButtonElement>("[data-task-kind]")
@@ -1666,7 +1818,7 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
       const projId = activeProjectIdForTask
       ctrl.hideAll()
       // Use inline input instead of prompt()
-      const projEl = document.querySelector(`[data-project-id="${projId}"]`)
+      const projEl = nav.querySelector(`.stree__project [data-project-id="${projId}"]`)
       const projRow = projEl?.closest(".stree__project") as HTMLElement | null
       if (!projRow) return
       // Resolve area_id from DOM hierarchy
@@ -1696,8 +1848,9 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
             }
           } catch { showToast(i18n("sidebar.error_create_failed", "Failed to create"), "error") }
         },
+        projRow.querySelector<HTMLElement>("[data-task-add-project]"),
       )
-    })
+    }, { signal: areaActions.signal })
 
     // ── 8. New Area button — inline input ──
     document.getElementById("new-area-btn")?.addEventListener("click", () => {
@@ -1722,8 +1875,9 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
             else showToast(i18n("sidebar.error_create_failed", "Failed to create"), "error")
           } catch { showToast(i18n("sidebar.error_create_failed", "Failed to create"), "error") }
         },
+        newAreaBtn,
       )
-    })
+    }, { signal: areaActions.signal })
 
     // ── 9. Keyboard navigation (enhanced with Escape close) ──
     const focusables = () =>
@@ -1732,10 +1886,13 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
       )).filter((el) => el.offsetParent !== null && !el.closest("[inert]"))
 
     nav.addEventListener("keydown", (e: KeyboardEvent) => {
-      // Escape closes any open dropdown/popover
-      if (e.key === "Escape") { ctrl.hideAll(); return }
+      if (e.defaultPrevented) return
+      // Dismiss this hierarchy's popup before handing Escape to an outer disclosure.
+      if (e.key === "Escape") { dismissTreePopup(e); return }
       const target = e.target as HTMLElement
       if (!target.matches(".stree__project-link, .stree__area-toggle")) return
+      // More owns the continuous vertical sequence across the complete hierarchy.
+      if (target.closest("[data-nav-overflow-menu]") && ["ArrowDown", "ArrowUp", "Home", "End"].includes(e.key)) return
       const items = focusables()
       const idx = items.indexOf(target)
       if (idx === -1) return
@@ -1748,18 +1905,19 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
         case "Home": e.preventDefault(); if (items.length > 0) items[0]!.focus(); break
         case "End": e.preventDefault(); if (items.length > 0) items[items.length - 1]!.focus(); break
       }
-    })
+    }, { signal: areaActions.signal })
 
     // ── 10. Project task counts (batched, non-blocking) ──
-    async function updateProjectTaskCount(projectId: string, signal?: AbortSignal) {
+    async function updateProjectTaskCount(projectId: string, signal: AbortSignal = areaActions.signal) {
+      if (signal.aborted || areaActions.signal.aborted) return
       const badge = nav.querySelector<HTMLSpanElement>(`[data-project-task-count="${CSS.escape(projectId)}"]`)
       if (!badge) return
       try {
-        const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}?task_counts=1`, { signal: signal ?? null })
+        const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}?task_counts=1`, { signal })
         if (!res.ok) return
         const data = await res.json()
         const counts = data?.task_counts
-        if (badge.isConnected && typeof counts?.active_open === "number") {
+        if (!signal.aborted && badge.isConnected && typeof counts?.active_open === "number") {
           badge.textContent = String(counts.active_open)
           badge.dataset.loaded = "true"
           // P3-18: Completion celebration — pulse when all tasks done
@@ -1769,37 +1927,26 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
     }
 
     // Fetch counts with staggered delay to avoid thundering herd
-    const countBadges = Array.from(document.querySelectorAll<HTMLElement>("[data-project-task-count]"))
+    const countBadges = Array.from(nav.querySelectorAll<HTMLElement>("[data-project-task-count]"))
     countBadges.forEach((badge, i) => {
       const projectId = badge.dataset.projectTaskCount
-      if (projectId) setTimeout(() => updateProjectTaskCount(projectId), i * 50)
+      if (!projectId) return
+      const timer = setTimeout(() => {
+        countTimers.delete(timer)
+        void updateProjectTaskCount(projectId)
+      }, i * 50)
+      countTimers.add(timer)
     })
-    pageLifecycle.onPageLoad(signal => {
-      window.addEventListener(TASK_COUNTS_CHANGED, event => {
-        const ids = (event as CustomEvent<{ projectIds?: string[] }>).detail?.projectIds ?? []
-        for (const id of ids) void updateProjectTaskCount(id, signal)
-      }, { signal })
-    })
+    window.addEventListener(TASK_COUNTS_CHANGED, event => {
+      const ids = (event as CustomEvent<{ projectIds?: string[] }>).detail?.projectIds ?? []
+      for (const id of ids) void updateProjectTaskCount(id)
+    }, { signal: areaActions.signal })
 
-    // ── 11. Quick-capture shortcut (N key) ──
-    document.addEventListener("keydown", (e: KeyboardEvent) => {
-      // Skip if typing in an input/textarea, or if modifier keys are held
-      const tag = (e.target as HTMLElement).tagName
-      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return
-      if (e.ctrlKey || e.metaKey || e.altKey) return
-      if ((e.key !== "n" && e.key !== "N") || !singleKeyShortcutsEnabled()) return
+    // Layout owns the global New Task shortcut; these controls retain explicit Project capture.
 
-      e.preventDefault()
-      // Find the active project or first visible project
-      const activeLink = nav.querySelector<HTMLElement>(".stree__project-link[data-active]")
-        || nav.querySelector<HTMLElement>(".stree__project-link")
-      if (!activeLink) return
-      const projId = activeLink.dataset.projectId
-      if (!projId || !taskKindDropdown) return
-
-      // Open the task kind picker on that project's + button
-      const addBtn = document.querySelector<HTMLButtonElement>(`[data-task-add-project="${projId}"]`)
-      if (addBtn) addBtn.click()
-    })
-  })()
+  })
+  import.meta.hot?.dispose(() => {
+    disposed = true
+    currentController?.abort()
+  })
 </script>

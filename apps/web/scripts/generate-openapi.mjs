@@ -614,6 +614,12 @@ const boardOperation = (operationId, summary, parameters, responses, requestBody
 })
 const boardUnavailable = { description: "Board, ticket, or destination unavailable" }
 
+const boardKanbanParams = [
+  { name: "kanban", in: "query", description: "With view=tasks, filter before paging 25 cards per lane and include lane totals and page metadata.", schema: { type: "string", enum: ["1"] } },
+  ...["search", "status", "user", "types", "advancedFilter", "home_assistant_area_id"].map(name => ({ name, in: "query", schema: boardString })),
+  ...["pending", "active", "complete"].map(key => ({ name: `kp.${key}`, in: "query", schema: { type: "integer", minimum: 1 } })),
+]
+
 const paths = {
   "/api/boards": {
     get: boardOperation("listPrivateBoards", "List Boards and send destinations for the current Home Assistant user", [], {
@@ -636,10 +642,11 @@ const paths = {
   "/api/boards/{id}": {
     get: boardOperation("getPrivateBoard", "Read a Board and a page of its tickets", [boardIdParam,
       { name: "offset", in: "query", schema: boardVersion },
-      { name: "view", in: "query", schema: { type: "string", enum: ["groups", "tasks"] } },
+      ...boardKanbanParams,
+      { name: "view", in: "query", description: "Use groups to page Areas, or Projects within the selected Area; tasks reads the Board workspace.", schema: { type: "string", enum: ["groups", "tasks"] } },
       { name: "after", in: "query", schema: boardString },
       { name: "selected", in: "query", schema: boardString },
-      { name: "area", in: "query", schema: boardString },
+      { name: "area", in: "query", description: "Board-owned Area ID. With view=groups, returns its paginated Projects.", schema: boardString },
       { name: "project", in: "query", schema: boardString },
       { name: "ticket", in: "query", schema: boardString },
       { name: "planning", in: "query", schema: { type: "string", enum: ["1"] } },
@@ -648,22 +655,24 @@ const paths = {
     }, undefined, "tasks:read"),
     head: boardOperation("verifyPrivateBoard", "Verify the current Board view", [boardIdParam,
       { name: "offset", in: "query", schema: boardVersion },
-      { name: "view", in: "query", schema: { type: "string", enum: ["groups", "tasks"] } },
+      ...boardKanbanParams,
+      { name: "view", in: "query", description: "Use groups to verify the current Areas or selected Area Project page.", schema: { type: "string", enum: ["groups", "tasks"] } },
       { name: "after", in: "query", schema: boardString },
       { name: "selected", in: "query", schema: boardString },
-      { name: "area", in: "query", schema: boardString },
+      { name: "area", in: "query", description: "Board-owned Area ID, including the parent for a Project catalog page.", schema: boardString },
       { name: "project", in: "query", schema: boardString },
       { name: "ticket", in: "query", schema: boardString },
       { name: "planning", in: "query", schema: { type: "string", enum: ["1"] } },
     ], {
       200: { description: "The current projection hash and session are returned to a Home Assistant browser" }, 404: boardUnavailable,
     }, undefined, "tasks:read"),
-    patch: boardOperation("changePrivateBoard", "Change a personal sidebar preference or manage a Board's access", [boardIdParam, boardSessionParam], {
+    patch: boardOperation("changePrivateBoard", "Change a personal sidebar preference, manage Board access or delete and restore a Board", [boardIdParam, boardSessionParam], {
       200: { description: "Saved" }, 404: boardUnavailable, 409: { description: "A Board must retain an active owner" },
     }, boardJson({
-      action: { type: "string", enum: ["sidebar", "policy", "member", "agent"] }, hidden: boardBoolean,
+      action: { type: "string", enum: ["sidebar", "policy", "member", "agent", "retire", "restore"] }, hidden: boardBoolean,
       tokenId: boardString, enabled: boardBoolean,
       denyCompletion: boardBoolean, denyDeletion: boardBoolean, denyAgentDeletion: boardBoolean,
+      revision: { type: "integer", minimum: 1, description: "Required by browser-only retire and restore actions. Household deletion pauses shared capture and syncing until restored." },
       memberId: boardString, role: { type: ["string", "null"], enum: ["owner", "member", "viewer", null] },
     })),
   },
@@ -1329,7 +1338,7 @@ const paths = {
       operationId: "writeTaskDraft",
       tags: ["Tasks"],
       summary: "Save, discard, publish, or abandon an unresolved publication",
-      description: "Send at most 64 KiB. Expected is the current draftId and revision, or null for the first save. Use a stable attemptId for a save or publication. Retry an unresolved publication with its exact original task data, or advance its revision using abandon-publish.",
+      description: "Send at most 64 KiB. Expected is the current draftId and revision, or null for the first save. Use a stable attemptId for a save or publication. Retry an unresolved publication with its exact original task data, or advance its revision using abandon-publish. Snapshot and task may include optional placement {areaId, projectId} with nullable Household IDs; publication revalidates that placement.",
       parameters: [{ in: "header", name: "X-Meitheal-Draft-Context", required: true, schema: pinContext }],
       requestBody: { required: true, content: { "application/json": { schema: {
         type: "object", required: ["action", "expected"], additionalProperties: false,

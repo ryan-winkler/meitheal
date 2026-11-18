@@ -62,7 +62,7 @@ export async function readSharedGoals(
         JOIN board_permissions AS policy ON policy.board_id = board.id
         WHERE grant.principal_type = 'ha_user' AND grant.principal_id = ?
           AND board.state IN ('active', 'archived')
-        UNION ALL SELECT 'household'
+        UNION ALL SELECT id FROM task_boards WHERE id = 'household' AND state = 'active'
       ), visible_areas AS (
         SELECT area.id FROM areas AS area
         WHERE area.retired_at IS NULL AND COALESCE(area.owner_board_id, 'household') IN (SELECT id FROM visible_boards)

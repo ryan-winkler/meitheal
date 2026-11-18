@@ -26,7 +26,7 @@ export class TaskReactionRepository {
       sql: `SELECT r.id, r.content, r.author, r.owner_key = ? AS can_manage
             FROM tasks AS t
             LEFT JOIN task_reactions AS r ON r.task_id = t.id AND r.comment_id IS ? AND r.id < ?
-            WHERE t.id = ? AND (? IS NULL OR EXISTS (
+            WHERE t.id = ? AND (t.task_board_id IS NOT NULL OR EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active')) AND (? IS NULL OR EXISTS (
               SELECT 1 FROM comments WHERE id = ? AND task_id = t.id
             ))
             ORDER BY r.id DESC LIMIT ?`,
@@ -45,7 +45,7 @@ export class TaskReactionRepository {
     const result = await this.client.execute({
       sql: `INSERT INTO task_reactions (task_id, comment_id, owner_key, content, author)
             SELECT id, ?, ?, ?, ? FROM tasks
-            WHERE id = ? AND (? IS NULL OR EXISTS (
+            WHERE id = ? AND (task_board_id IS NOT NULL OR EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active')) AND (? IS NULL OR EXISTS (
               SELECT 1 FROM comments WHERE id = ? AND task_id = tasks.id
             ))
             ON CONFLICT (task_id, COALESCE(comment_id, 0), owner_key, content)
@@ -59,7 +59,9 @@ export class TaskReactionRepository {
 
   async remove({ taskId, commentId }: ReactionTarget, reactionId: number, owner: string) {
     const result = await this.client.execute({
-      sql: "DELETE FROM task_reactions WHERE id = ? AND task_id = ? AND comment_id IS ? AND owner_key = ?",
+      sql: `DELETE FROM task_reactions WHERE id = ? AND task_id = ? AND comment_id IS ? AND owner_key = ?
+            AND EXISTS (SELECT 1 FROM tasks WHERE tasks.id = task_reactions.task_id
+              AND (task_board_id IS NOT NULL OR EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active')))`,
       args: [reactionId, taskId, commentId, owner],
     })
     return result.rowsAffected > 0
@@ -68,7 +70,8 @@ export class TaskReactionRepository {
   async countCards(taskIds: string[]) {
     const result = await this.client.execute({
       sql: `SELECT task_id, COUNT(*) AS count FROM task_reactions
-            WHERE comment_id IS NULL AND task_id IN (${taskIds.map(() => "?").join(",")})
+            WHERE EXISTS (SELECT 1 FROM tasks WHERE tasks.id = task_reactions.task_id
+              AND (task_board_id IS NOT NULL OR EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active'))) AND comment_id IS NULL AND task_id IN (${taskIds.map(() => "?").join(",")})
             GROUP BY task_id`,
       args: taskIds,
     })

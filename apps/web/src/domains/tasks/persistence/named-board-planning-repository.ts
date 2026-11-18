@@ -29,7 +29,7 @@ function readableBoards(userId: string) {
       JOIN board_permissions AS permission ON permission.board_id = board.id
       WHERE grant.principal_type = 'ha_user' AND grant.principal_id = ?
         AND board.state IN ('active', 'archived')
-      UNION ALL SELECT 'household'`,
+      UNION ALL SELECT id FROM task_boards WHERE id = 'household' AND state = 'active'`,
     args: [userId],
   }
 }

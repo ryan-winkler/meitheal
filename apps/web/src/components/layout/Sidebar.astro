@@ -6,7 +6,7 @@ import type { Locale } from "../../lib/locale";
 import Icon from "../ui/Icon.astro";
 import SidebarHierarchyTree from "./SidebarHierarchyTree.astro"
 import SidebarNavList from "./SidebarNavList.astro";
-import SidebarReorderHandle from "./SidebarReorderHandle.astro";
+import { householdBoardIsActive } from "@domains/tasks/persistence/named-board-repository"
 import TaskCreationMenu from "./TaskCreationMenu.astro";
 import NavOverflowMore from "./NavOverflowMore.astro";
 import SidebarFooter from "./SidebarFooter.astro";
@@ -104,6 +104,7 @@ interface SidebarConfig {
 
 
 let showNamedBoardShortcuts = false
+let householdActive = true
 let sidebarConfig: SidebarConfig = {
   dashboard: true,
   today: true,
@@ -134,6 +135,7 @@ if (gamificationEnabled) {
 try {
   await ensureSchema();
   const c = getPersistenceClient();
+  householdActive = await householdBoardIsActive(c)
   if (hierarchyEnabled && verifiedIngressUser(Astro.locals)) {
     const epoch = await c.execute("SELECT 1 FROM board_access_epoch LIMIT 1")
     showNamedBoardShortcuts = epoch.rows.length > 0
@@ -231,13 +233,10 @@ navItems.splice(pinIndex, 0, {
   icon: "pin", isActive: currentPath === "/pinned", matchExact: true,
 })
 
-const boardPosition = navItems.findIndex(item => item.key === "boards")
-const householdGroups = hierarchyEnabled && sidebarConfig.areas !== false && ff.organizer !== false && ff.groups !== false
-const householdGroupLabel = resolveLabel("group", true, labels.areas || (locale === "ga" ? "Grúpaí" : "Groups"))
-const primaryItems = !householdGroups || boardPosition < 0 ? navItems : navItems.slice(0, boardPosition + 1)
-const remainingItems = !householdGroups || boardPosition < 0 ? [] : navItems.slice(boardPosition + 1)
+const householdGroups = householdActive && hierarchyEnabled && sidebarConfig.areas !== false && ff.groups !== false
+const householdGroupLabel = resolveLabel("group", true, labels.areas)
 const sidebarDefaultOrder = navItems.map(item => item.key)
-if (householdGroups) sidebarDefaultOrder.splice(boardPosition < 0 ? sidebarDefaultOrder.length : boardPosition + 1, 0, "areas")
+
 ---
 
 <nav
@@ -323,23 +322,18 @@ if (householdGroups) sidebarDefaultOrder.splice(boardPosition < 0 ? sidebarDefau
     </div>
 
     <div class="sidebar-scroll" data-nav-overflow="sidebar" data-sidebar-default-order={JSON.stringify(sidebarDefaultOrder)}>
-      <SidebarNavList navItems={primaryItems}>
-        {showNamedBoardShortcuts && primaryItems.some(item => item.key === "boards") &&
-          <ul slot="boards" class="sidebar-board-shortcuts" data-sidebar-boards data-board-group-label={resolveLabel("group", true)} hidden aria-label={resolveLabel("board", true)}></ul>}
+      <SidebarNavList navItems={navItems}>
+        <ul slot="boards" id="sidebar-board-children" class="sidebar-board-children" data-sidebar-board-children
+          data-sidebar-boards={showNamedBoardShortcuts ? "" : undefined} data-board-group-label={resolveLabel("group", true)}
+          data-board-project-label={resolveLabel("project", true)} data-projects-enabled={String(ff.projects !== false)}
+          data-areas-enabled={String(ff.groups !== false)} aria-label={resolveLabel("board", true)}>
+          {householdActive && <li class="sidebar-household" data-sidebar-household>
+            <a class="nav-link sidebar-household-link" href="/boards/household" aria-current={currentPath === "/boards/household" ? "page" : undefined}>Household</a>
+            {householdGroups && <div id="sidebar-hierarchy-panel"><SidebarHierarchyTree locale={locale} label={householdGroupLabel} /></div>}
+          </li>}
+
+        </ul>
       </SidebarNavList>
-      {householdGroups && (
-        <section class="sidebar-household" id="sidebar-hierarchy-panel" data-sidebar-group="areas" aria-label="Household Board">
-          <a class="nav-link sidebar-household-link" href="/boards/household">Household</a>
-          <SidebarHierarchyTree locale={locale} label={householdGroupLabel} />
-          <SidebarReorderHandle label={householdGroupLabel} locale={locale} />
-        </section>
-      )}
-      {householdGroups && (
-        <SidebarNavList navItems={remainingItems}>
-          {showNamedBoardShortcuts && remainingItems.some(item => item.key === "boards") &&
-            <ul slot="boards" class="sidebar-board-shortcuts" data-sidebar-boards data-board-group-label={resolveLabel("group", true)} hidden aria-label={resolveLabel("board", true)}></ul>}
-        </SidebarNavList>
-      )}
       <NavOverflowMore id="sidebar-more-destinations" list locale={locale} />
     </div>
   </div>
@@ -401,17 +395,17 @@ if (householdGroups) sidebarDefaultOrder.splice(boardPosition < 0 ? sidebarDefau
 </script>
 
 <style>
-  .sidebar-household { margin-inline-start: 1rem; }
+  .sidebar-board-children { list-style: none; margin: 0; padding-inline-start: 1rem; }
+  .sidebar-board-children[hidden] { display: none; }
+  .sidebar-household { margin-inline-start: 0; }
   :global(:root[data-appearance-navigation="navbar"]) .sidebar-household { margin-inline-start: 0; }
-  :global(:root[data-appearance-navigation="navbar"]) .sidebar-household-link { display: none; }
-  :global(body.sidebar-collapsed) .sidebar-household { display: none; }
-  .sidebar-board-shortcuts { list-style: none; margin: 0.25rem 0; padding-left: 1.5rem; }
-  .sidebar-board-shortcuts :global(a) { display: block; padding: 0.3rem 0; overflow-wrap: anywhere; }
-  .sidebar-board-shortcuts :global(.sidebar-board-row) { display: flex; align-items: center; }
-  .sidebar-board-shortcuts :global(.sidebar-board-row .nav-link) { flex: 1; min-width: 0; }
-  .sidebar-board-shortcuts :global(.sidebar-board-toggle[aria-expanded="true"]) { transform: rotate(90deg); }
-  .sidebar-board-shortcuts :global([data-board-groups]) { list-style: none; padding-left: 1rem; }
-  .sidebar-board-shortcuts[hidden], :global(body.sidebar-collapsed) .sidebar-board-shortcuts { display: none; }
+  :global(body.sidebar-collapsed) .sidebar-board-children { display: none; }
+  .sidebar-board-children :global([data-named-board-shortcut] a) { display: block; padding: 0.3rem 0; overflow-wrap: anywhere; }
+  .sidebar-board-children :global(.sidebar-board-row) { display: flex; align-items: center; }
+  .sidebar-board-children :global(.sidebar-board-row .nav-link) { flex: 1; min-width: 0; }
+  .sidebar-board-children :global(.sidebar-board-toggle[aria-expanded="true"]) { transform: rotate(90deg); }
+  .sidebar-board-children :global([data-board-groups]), .sidebar-board-children :global([data-board-projects]) { list-style: none; padding-left: 1rem; }
+  .sidebar-household[hidden] { display: none; }
 
   .sidebar {
     display: flex;

@@ -183,7 +183,8 @@ test("Ingress Kanban hides unavailable Project references and recovers its catal
     const unassignedTask = await create("/api/tasks", { title: `${prefix} unassigned` })
     const invalidDirectTask = await create("/api/tasks", { title: `${prefix} invalid direct`, project_id: invalidDirectProject })
     const inheritedTask = await create("/api/tasks", { title: `${prefix} inherited`, project_id: inheritedProject })
-    db = new DatabaseSync(join(work, "pins.db"))
+    // The live fixture can still be writing when failure injection changes its schema.
+    db = new DatabaseSync(join(work, "pins.db"), { timeout: 5_000 })
     expect(db.prepare("UPDATE projects SET retired_at = ? WHERE id = ?").run(Date.now(), retired).changes).toBe(1)
     expect(db.prepare("UPDATE areas SET retired_at = ? WHERE id = ?").run(Date.now(), directArea).changes).toBe(1)
     expect(db.prepare("UPDATE tasks SET project_id = ? WHERE id = ?").run(dangling, danglingTask).changes).toBe(1)

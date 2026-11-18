@@ -66,6 +66,8 @@ const namedPhaseTriggers = {
     BEGIN SELECT RAISE(ABORT, 'Invalid task Board placement or ticket reference'); END`,
 }
 
+export const lifecycleHouseholdIdentitySql = namedPhaseTriggers.task_boards_household_identity_update.replace("NEW.state IS 'active'", "NEW.state IN ('active', 'retired')")
+
 export const namedBoardPhaseTriggerNames = Object.keys(namedPhaseTriggers)
 
 export async function applyNamedBoardStoragePhase(tx) {
@@ -77,9 +79,14 @@ export async function applyNamedBoardStoragePhase(tx) {
 }
 
 export async function validateNamedBoardStoragePhase(db) {
-  await validatePhaseObjects(db, namedPhaseTriggers, taskBoardHouseholdTriggerNames)
+  const { rows: [version] } = await db.execute("SELECT value FROM app_settings WHERE key = 'schema_version'")
+  const lifecycle = Number(version?.value) >= 25
+  await validatePhaseObjects(db, lifecycle ? {
+    ...namedPhaseTriggers, task_boards_household_identity_update: lifecycleHouseholdIdentitySql,
+  } : namedPhaseTriggers, taskBoardHouseholdTriggerNames)
+  const household = lifecycle ? householdBoard.replace("state IS 'active'", "state IN ('active', 'retired')") : householdBoard
   const { rows: invalid } = await db.execute(`SELECT 1 WHERE
-    NOT EXISTS (SELECT 1 FROM main.task_boards WHERE ${householdBoard})
+    NOT EXISTS (SELECT 1 FROM main.task_boards WHERE ${household})
     OR EXISTS (SELECT 1 FROM main.board_members)
     OR EXISTS (SELECT 1 FROM main.tasks AS NEW WHERE NOT ${validPlacement})
     ${boardScopedTables.filter(table => !namedTables.has(table)).map(table =>

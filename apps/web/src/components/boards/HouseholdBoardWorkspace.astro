@@ -21,6 +21,7 @@ let available = true
 if (selection.areaId || selection.projectId || selection.planning) {
   await ensureSchema()
   const hierarchy = new HierarchyRepository(getPersistenceClient())
+  try {
   if (selection.projectId) {
     const project = await hierarchy.findProjectById(selection.projectId)
     available = Boolean(project && (!selection.areaId || selection.areaId === project.area_id))
@@ -34,37 +35,41 @@ if (selection.areaId || selection.projectId || selection.planning) {
     const goalAreas = new Map(goals.map(goal => [goal.id, goal.area_id]))
     unfiled = projects.filter(project => !project.is_default && !areaIds.has(project.area_id ?? goalAreas.get(project.goal_id ?? "") ?? ""))
   }
+  } catch (error) {
+    if (selection.planning) throw error
+    // The task renderer retains the requested scope and offers catalog recovery.
+  }
 }
 if (!available) Astro.response.status = 404
 ---
 {!available ? <Layout title="Board unavailable"><p class="boards-workspace">This Board context is unavailable.</p></Layout>
+  : !selection.planning ? <Tasks householdWorkspace />
   : selection.projectId ? <HouseholdProject workspaceProjectId={selection.projectId} />
   : selection.areaId ? <HouseholdGroup workspaceAreaId={selection.areaId} />
-  : !selection.planning ? <Tasks householdWorkspace />
-  : <Layout title="Household groups">
+  : <Layout title="Household Areas">
     <span slot="page-title">Household</span>
     <div class="boards-workspace">
       <nav class="board-back" aria-label="Board navigation"><a href="/boards">{label("board", true)}</a> › <a href={household}>Household</a></nav>
       <header class="boards-heading">
         <div><h1>{label("group", true)}</h1><p>Organize Projects and related work within Household.</p></div>
         {availableFeature("groups") && <details class="board-add">
-          <summary class="btn btn-primary">{newLabel("group", organizationLocale(Astro) === "en" ? "group" : undefined)}</summary>
+          <summary class="btn btn-primary">{newLabel("group")}</summary>
           <form class="board-form" data-household-group-create>
             <label>Name <input name="name" maxlength="100" required /></label>
             <label>Icon <input name="icon" maxlength="10" value="📁" /></label>
             <label>Color <input type="color" name="color" value={DEFAULT_GROUP_COLOR} /></label>
             <p role="status" data-group-feedback></p>
-            <button type="submit" class="btn btn-primary">Create group</button>
+            <button type="submit" class="btn btn-primary">Create Area</button>
           </form>
         </details>}
       </header>
       <div class="boards-list">
         {areas.map(area => <article class="board-tile">
           <a class="board-name" href={boardWorkspaceHref(HOUSEHOLD_BOARD_ID, { area: area.id })}>{area.icon} {area.name}</a>
-          <a class="board-note" href={boardWorkspaceHref(HOUSEHOLD_BOARD_ID, { area: area.id }, "projects")}>{label("project", true)}</a>
+          {availableFeature("projects") && <a class="board-note" href={boardWorkspaceHref(HOUSEHOLD_BOARD_ID, { area: area.id, groups: true }, "projects")}>{label("project", true)}</a>}
         </article>)}
       </div>
-      {!areas.length && <p class="board-empty">Create your first group to organize related work.</p>}
+      {!areas.length && <p class="board-empty">Create an Area to organize related work.</p>}
       {unfiled.length > 0 && <section class="named-boards" aria-labelledby="unfiled-projects">
         <h2 id="unfiled-projects">Unfiled {label("project", true)}</h2>
         <div class="boards-list">
@@ -99,10 +104,10 @@ if (!available) Astro.response.status = 404
           signal,
         })
         const data = await response.json()
-        if (!response.ok || typeof data.id !== "string") throw new Error(data.error || "Could not create the group.")
+        if (!response.ok || typeof data.id !== "string") throw new Error(data.error || "Could not create the Area.")
         window.location.href = safeIngressHref(boardWorkspaceHref(HOUSEHOLD_BOARD_ID, { area: data.id }))
       } catch (error) {
-        if (!signal.aborted) feedback.textContent = error instanceof Error ? error.message : "Could not create the group."
+        if (!signal.aborted) feedback.textContent = error instanceof Error ? error.message : "Could not create the Area."
       } finally {
         submit.disabled = false
       }

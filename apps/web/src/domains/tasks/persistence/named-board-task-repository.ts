@@ -1,4 +1,5 @@
 import { isOrganizationFeatureAvailable as available } from "../../../lib/organization-request-context"
+import { namedKanbanPages } from "../../../lib/named-board-kanban-data"
 import { randomUUID } from "node:crypto"
 import type { Client, Transaction } from "@libsql/client"
 import { isActiveAgentToken } from "@domains/auth"
@@ -128,7 +129,7 @@ export class NamedBoardTaskRepository {
     }))
   }
 
-  async view(actor: BoardActor, boardId: string, offset = 0, selection?: BoardWorkspaceSelection, location?: HomeAssistantAreaFilter) {
+  async view(actor: BoardActor, boardId: string, offset = 0, selection?: BoardWorkspaceSelection, location?: HomeAssistantAreaFilter, kanban?: { params: URLSearchParams; timezone?: string }) {
     const revision = await currentBoardGrantRevision(this.db, this.markerPath)
     if (!revision) return null
     const tx = await this.db.transaction("read")
@@ -143,6 +144,26 @@ export class NamedBoardTaskRepository {
         : ""
       const locationFilter = location && !selection?.ticketId ? homeAssistantTaskAreaCondition(location) : null
       const filterId = selection?.ticketId ?? context?.project?.id ?? context?.area?.id
+      const kanbanLanes = kanban ? await tx.execute({
+        sql: "SELECT id, key FROM kanban_lanes WHERE board_id = ? ORDER BY position, id", args: [boardId],
+      }) : null
+      const index = kanban ? await tx.execute({
+        sql: `SELECT tasks.id, tasks.title, tasks.status, tasks.board_column_id, tasks.assigned_to,
+            tasks.due_date, tasks.task_kind, tasks.source_template_id,
+            ${kanban.params.get("search") ? "lower(tasks.title || ' ' || COALESCE(tasks.description, ''))" : "lower(tasks.title)"} AS search,
+            CASE WHEN project.id IS NOT NULL THEN project.area_id ELSE placement.area_id END AS area_id
+          FROM tasks ${scopedTaskJoin}
+          WHERE tasks.task_board_id = ? ${taskFilter} ${locationFilter ? "AND " + locationFilter.sql : ""}
+          ORDER BY tasks.created_at DESC, tasks.id DESC`,
+        args: [boardId, ...(taskFilter ? [filterId!] : []), ...(locationFilter?.args ?? [])],
+      }) : null
+      const pages = kanban && index && kanbanLanes ? namedKanbanPages(index.rows.map(row => ({
+        id: String(row.id), laneId: String(row.board_column_id), title: String(row.title), search: String(row.search),
+        status: String(row.status), assignedTo: String(row.assigned_to ?? ""), areaId: String(row.area_id ?? ""),
+        dueDate: typeof row.due_date === "string" ? row.due_date : null,
+        routine: row.task_kind === "routine_instance" && row.source_template_id != null,
+      })), kanban.params, kanbanLanes.rows.map(row => ({ id: String(row.id), key: String(row.key) })), kanban.timezone) : undefined
+      const visibleIds = pages?.flatMap(page => page.ids)
       const [lanes, tasks, members, intakes, agents] = await tx.batch([
         {
           sql: "SELECT id, label, key FROM kanban_lanes WHERE board_id = ? ORDER BY position, id",
@@ -152,15 +173,17 @@ export class NamedBoardTaskRepository {
           sql: `SELECT tasks.id, tasks.title, tasks.description, tasks.status, tasks.ticket_ref,
               tasks.board_column_id AS lane_id, tasks.assigned_to, tasks.due_date,
               (tasks.task_kind = 'routine_instance' AND tasks.source_template_id IS NOT NULL) AS routine,
-              ${selection?.ticketId ? "ticket_area.id AS area_id, project.id AS project_id," : ""}
+              ${selection?.ticketId || kanban ? "ticket_area.id AS area_id, project.id AS project_id," : ""}
               ${taskTimestampMs("tasks.updated_at")} AS version
-            FROM tasks ${taskFilter ? scopedTaskJoin : ""}
-            ${selection?.ticketId ? `LEFT JOIN areas AS ticket_area
+            FROM tasks ${taskFilter || kanban ? scopedTaskJoin : ""}
+            ${selection?.ticketId || kanban ? `LEFT JOIN areas AS ticket_area
               ON ticket_area.id = CASE WHEN project.id IS NOT NULL THEN project.area_id ELSE placement.area_id END
                 AND ticket_area.owner_board_id = tasks.task_board_id AND ticket_area.retired_at IS NULL` : ""}
             WHERE tasks.task_board_id = ? ${taskFilter} ${locationFilter ? "AND " + locationFilter.sql : ""}
-            ORDER BY tasks.created_at DESC, tasks.id DESC LIMIT 51 OFFSET ?`,
-          args: [boardId, ...(taskFilter ? [filterId!] : []), ...(locationFilter?.args ?? []), selection?.ticketId ? 0 : offset],
+            ${visibleIds ? "AND tasks.id IN (SELECT value FROM json_each(?))" : ""}
+            ORDER BY tasks.created_at DESC, tasks.id DESC ${kanban ? "" : "LIMIT 51 OFFSET ?"}`,
+          args: [boardId, ...(taskFilter ? [filterId!] : []), ...(locationFilter?.args ?? []),
+            ...(visibleIds ? [JSON.stringify(visibleIds)] : []), ...(kanban ? [] : [selection?.ticketId ? 0 : offset])],
         },
         {
           sql: `SELECT principal_id, role, deny_completion, deny_deletion
@@ -186,23 +209,25 @@ export class NamedBoardTaskRepository {
       if (!await boardGrantStillCurrent(this.db, revision, this.markerPath)) return null
       return {
         board: access,
+        authorityRevision: revision,
         planning,
         ...(context ? { context, summary } : {}),
         lanes: lanes!.rows.map(lane => ({ id: String(lane.id), label: String(lane.label), key: String(lane.key) })),
-        tasks: tasks!.rows.slice(0, 50).map(task => ({
+        ...(pages ? { kanbanPages: pages } : {}),
+        tasks: (kanban ? tasks!.rows : tasks!.rows.slice(0, 50)).map(task => ({
           id: String(task.id), title: String(task.title), description: String(task.description ?? ""),
           status: String(task.status), ticket: String(task.ticket_ref), laneId: String(task.lane_id),
           assignedTo: typeof task.assigned_to === "string" ? task.assigned_to : null,
           dueDate: typeof task.due_date === "string" ? task.due_date : null,
           routine: task.routine === 1, version: Number(task.version),
-          ...(selection?.ticketId ? {
+          ...(selection?.ticketId || kanban ? {
             placement: {
               areaId: typeof task.area_id === "string" ? task.area_id : null,
               projectId: typeof task.project_id === "string" ? task.project_id : null,
             },
           } : {}),
         })),
-        nextOffset: tasks!.rows.length > 50 ? offset + 50 : null,
+        nextOffset: !kanban && tasks!.rows.length > 50 ? offset + 50 : null,
         agents: agents!.rows.map(agent => String(agent.principal_id)),
         intakes: intakes!.rows.map(intake => ({
           id: String(intake.id), label: String(intake.label), enabled: intake.enabled === 1,
@@ -298,6 +323,47 @@ export class NamedBoardTaskRepository {
     }
   }
 
+  async projects(actor: BoardActor, boardId: string, areaId: string, after: string | null, selectedId: string | null = null) {
+    if (!available("projects") || !available("groups")) return null
+    const revision = await currentBoardGrantRevision(this.db, this.markerPath)
+    if (!revision) return null
+    const tx = await this.db.transaction("read")
+    try {
+      const access = await selectNamedBoardAccess(tx, actor, revision, boardId)
+      if (!access || actor.kind !== "ha_user") return null
+      const { rows: areas } = await tx.execute({
+        sql: "SELECT id FROM areas WHERE id = ? AND owner_board_id = ? AND retired_at IS NULL",
+        args: [areaId, boardId],
+      })
+      if (!areas.length) return null
+      const { rows } = await tx.execute({
+        sql: `WITH marker AS (
+            SELECT position, title, id FROM projects
+            WHERE id = ? AND owner_board_id = ? AND area_id = ? AND retired_at IS NULL
+          )
+          SELECT item.id, item.title FROM projects AS item
+          WHERE item.owner_board_id = ? AND item.area_id = ? AND item.retired_at IS NULL AND (
+            ? IS NULL OR EXISTS (
+              SELECT 1 FROM marker WHERE (item.position, item.title COLLATE NOCASE, item.id) >
+                (marker.position, marker.title COLLATE NOCASE, marker.id)
+            )
+          )
+          ORDER BY item.position, item.title COLLATE NOCASE, item.id LIMIT 31`,
+        args: [after, boardId, areaId, boardId, areaId, after],
+      })
+      const { rows: [selected] } = selectedId ? await tx.execute({
+        sql: "SELECT id, title FROM projects WHERE id = ? AND owner_board_id = ? AND area_id = ? AND retired_at IS NULL",
+        args: [selectedId, boardId, areaId],
+      }) : { rows: [] }
+      if (!await boardGrantStillCurrent(this.db, revision, this.markerPath)) return null
+      const project = (row: typeof rows[number]) => ({ id: String(row.id), name: String(row.title) })
+      const items = rows.slice(0, 30).map(project)
+      return { items, selected: selected ? project(selected) : null, next_cursor: rows.length > 30 ? items.at(-1)!.id : null }
+    } finally {
+      tx.close()
+    }
+  }
+
   async create(actor: BoardActor, boardId: string, content: NamedTaskContent, placement: NamedTaskPlacement) {
     return this.mutate(actor, boardId, "create", async (tx, allows) => {
       const lane = await this.readLane(tx, boardId, placement.laneId)
@@ -319,7 +385,7 @@ export class NamedBoardTaskRepository {
         if (!target) continue
         const { rows } = await tx.execute({
           sql: `SELECT 1 FROM ${table} AS planning
-            WHERE planning.id = ? AND planning.retired_at IS NULL AND (planning.owner_board_id IS NULL OR EXISTS (
+            WHERE planning.id = ? AND planning.retired_at IS NULL AND ((planning.owner_board_id IS NULL AND EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active')) OR EXISTS (
               SELECT 1 FROM board_access_grants AS grant JOIN task_boards AS target_board ON target_board.id = grant.board_id
               JOIN board_permissions AS policy ON policy.board_id = target_board.id
               WHERE grant.board_id = planning.owner_board_id AND target_board.state IN ('active', 'archived')

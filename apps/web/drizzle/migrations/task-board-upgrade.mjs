@@ -1,4 +1,4 @@
-import { ORGANIZATION_FEATURE_SCHEMA_VERSION } from "./0014_organization_features.mjs"
+import { BOARD_LIFECYCLE_SCHEMA_VERSION, householdRetirementTriggers } from "./0015_board_lifecycle.mjs"
 import { applyTaskBoardStorage, taskBoardStorageObjectNames, validateTaskBoardStorage } from "./0009_task_boards.mjs"
 import { assertNoInboundReferences } from "./board-storage-schema.mjs"
 import { applyTaskBoardDraftStorage, taskBoardDraftStagingNames, validateTaskBoardDraftStorage } from "./task-board-drafts.mjs"
@@ -64,8 +64,8 @@ export function* taskBoardMigrationStateSteps() {
         throw new Error("The Meitheal database has an invalid schema version marker")
       }
       version = Number(value)
-      if (version > ORGANIZATION_FEATURE_SCHEMA_VERSION) {
-        throw new Error(`Meitheal database schema ${version} requires a newer App (this App supports ${ORGANIZATION_FEATURE_SCHEMA_VERSION})`)
+      if (version > BOARD_LIFECYCLE_SCHEMA_VERSION) {
+        throw new Error(`Meitheal database schema ${version} requires a newer App (this App supports ${BOARD_LIFECYCLE_SCHEMA_VERSION})`)
       }
       if (version >= TASK_BOARD_SCHEMA_VERSION && value !== String(version)) {
         throw new Error("The Meitheal database has an invalid Board schema version marker")
@@ -109,7 +109,10 @@ export async function readTaskBoardMigrationState(db) {
 export async function validateTaskBoardUpgrade(db, { namedStorage = false } = {}) {
   if (await readTaskBoardMigrationState(db) !== "household-v19") throw new Error("The Household Board upgrade is pending")
   await assertNoInboundReferences(db, tables)
-  const allowedTriggers = namedStorage ? namedBoardPhaseTriggerNames : taskBoardHouseholdTriggerNames
+  const { rows: [version] } = await db.execute("SELECT value FROM app_settings WHERE key = 'schema_version'")
+  const lifecycle = Number(version?.value) >= BOARD_LIFECYCLE_SCHEMA_VERSION
+  const allowedTriggers = [...(namedStorage ? namedBoardPhaseTriggerNames : taskBoardHouseholdTriggerNames),
+    ...(lifecycle ? householdRetirementTriggers.map(([name]) => name) : [])]
   await validateTaskBoardStorage(db, allowedTriggers)
   await validateTaskBoardDraftStorage(db, allowedTriggers)
   await validateTaskBoardTicketAllocator(db)

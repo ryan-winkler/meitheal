@@ -6,7 +6,7 @@
   padding: clamp(0.75rem, 2vw, 1.75rem);
 }
 
-.boards-heading, .boards-list, .board-columns, .board-form-actions, .board-settings-grid {
+.boards-heading, .boards-list, .board-form-actions, .board-settings-grid {
   display: flex;
   flex-wrap: wrap;
   gap: 0.875rem;
@@ -19,9 +19,9 @@
 
 .boards-heading h1 { margin: 0; font-size: clamp(1.4rem, 2vw, 2rem); }
 .boards-heading p { margin: 0.25rem 0 0; color: var(--text-secondary); }
-.named-boards, .board-lane, .board-tile, .board-form { display: grid; gap: 0.625rem; min-width: 0; }
-.named-boards h2, .board-lane h2, .board-member h3 { margin: 0; font-size: 1rem; }
-.board-tile, .board-lane, .board-member {
+.named-boards, .board-tile, .board-form { display: grid; gap: 0.625rem; min-width: 0; }
+.named-boards h2 h2, .board-member h3 { margin: 0; font-size: 1rem; }
+.board-tile, .board-member {
   padding: 0.85rem;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
@@ -31,9 +31,6 @@
 .board-name { margin: 0; font-weight: 650; overflow-wrap: anywhere; }
 .board-note, .board-empty { color: var(--text-secondary); font-size: 0.875rem; }
 .board-note { text-transform: capitalize; }
-.board-columns { align-items: flex-start; }
-.board-lane { flex: 1 1 15rem; background: var(--bg-surface); }
-.board-lane p { overflow-wrap: anywhere; color: var(--text-secondary); }
 .board-back a, .board-pages a { text-decoration: underline; text-underline-offset: 0.18em; }
 .board-pages { display: flex; justify-content: space-between; gap: 1rem; }
 .board-danger { color: var(--danger); }
@@ -61,7 +58,6 @@
 
 @media (max-width: 480px) {
   .boards-list .board-tile { max-width: none; }
-  .board-lane { flex-basis: 100%; }
 }
 
 .board-context-tabs {

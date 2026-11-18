@@ -1,3 +1,5 @@
+import { householdBoardIsActive } from "./domains/tasks/persistence/named-board-repository"
+import { householdWorkRoute } from "./lib/household-work-route"
 import { getOrganizationAvailability } from "./lib/organization-availability"
 import { withOrganizationAvailability } from "./lib/organization-request-context"
 import { organizationRouteAvailable } from "./lib/organization-route-access"
@@ -506,6 +508,17 @@ async function handleRequest({ request, locals, routePattern }: Parameters<Middl
     databaseAvailable = false
   }
 
+  if (databaseAvailable && (householdWorkRoute(url.pathname, method) || householdWorkRoute(routePattern, method)) &&
+      !await householdBoardIsActive(getPersistenceClient())) {
+    const detail = "Household Board is deleted. Restore it from Boards to resume shared work."
+    if (!url.pathname.startsWith("/api/") && (method === "GET" || method === "HEAD")) {
+      return new Response(null, { status: 303, headers: {
+        location: `${ingressPath || ""}/boards?notice=household-deleted`, "cache-control": "private, no-store",
+      } })
+    }
+    return apiProblem({ status: 409, detail, extraHeaders: { "cache-control": "private, no-store" } })
+  }
+
   // Lazy-init only after accepting the caller. Do not block on the HA connection.
   if (databaseAvailable) {
     initHAIntegrations().catch(() => {})
@@ -599,6 +612,14 @@ async function handleRequest({ request, locals, routePattern }: Parameters<Middl
         traceId: requestId,
       })
     }
+  }
+
+  // Retirement may have committed while an already-admitted legacy mutation was running.
+  if (databaseAvailable && response.status >= 400 && url.pathname.startsWith("/api/") &&
+      (householdWorkRoute(url.pathname, method) || householdWorkRoute(routePattern, method)) &&
+      !await householdBoardIsActive(getPersistenceClient())) {
+    response = apiProblem({ status: 409, detail: "Household Board is deleted. Restore it from Boards to resume shared work.",
+      extraHeaders: { "cache-control": "private, no-store" } })
   }
 
   // Rewrite HTML paths when behind HA ingress

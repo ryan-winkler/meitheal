@@ -48,7 +48,7 @@ export async function ensurePillarSchema(): Promise<void> {
   }
 
   // Backfill any pillars missing slugs
-  const nullSlugs = await client.execute("SELECT id, name FROM pillars WHERE owner_board_id IS NULL AND slug IS NULL")
+  const nullSlugs = await client.execute("SELECT id, name FROM pillars WHERE owner_board_id IS NULL AND (user_id <> 'default' OR EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active')) AND slug IS NULL")
   for (const row of nullSlugs.rows) {
     const r = row as Record<string, unknown>
     const slug = await generateUniqueSlug(client, String(r.name), String(r.id))
@@ -167,7 +167,7 @@ export async function createPillar(data: {
   const inserted = await client.execute({
     sql: `INSERT INTO pillars (id, slug, user_id, name, manifesto, icon, color_hex, weight, position, is_active, created_at, updated_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?,
-            (SELECT COALESCE(MAX(position), -1) + 1 FROM pillars WHERE owner_board_id IS NULL AND is_active = 1 AND user_id = ?),
+            (SELECT COALESCE(MAX(position), -1) + 1 FROM pillars WHERE owner_board_id IS NULL AND (user_id <> 'default' OR EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active')) AND is_active = 1 AND user_id = ?),
             1, ?, ?)
           RETURNING position`,
     args: [id, slug, owner, data.name, data.manifesto ?? null, data.icon ?? "🏛️",
@@ -195,7 +195,7 @@ export async function getPillars(opts?: { includeInactive?: boolean, personalOwn
   const client = getPersistenceClient()
   const active = opts?.includeInactive ? "" : " AND is_active = 1"
   const result = await client.execute({
-    sql: `SELECT * FROM pillars WHERE owner_board_id IS NULL AND user_id IN (?, ?)${active} ORDER BY position ASC, id ASC`,
+    sql: `SELECT * FROM pillars WHERE owner_board_id IS NULL AND (user_id <> 'default' OR EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active')) AND user_id IN (?, ?)${active} ORDER BY position ASC, id ASC`,
     args: [HOUSEHOLD_PILLAR_OWNER, opts?.personalOwner ?? HOUSEHOLD_PILLAR_OWNER],
   })
   return result.rows.map(row => toPillar(row as Record<string, unknown>))
@@ -206,7 +206,7 @@ export async function getPillarById(id: string, personalOwner?: string): Promise
   const client = getPersistenceClient()
 
   const result = await client.execute({
-    sql: "SELECT * FROM pillars WHERE id = ? AND owner_board_id IS NULL AND user_id IN (?, ?)",
+    sql: "SELECT * FROM pillars WHERE id = ? AND owner_board_id IS NULL AND (user_id <> 'default' OR EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active')) AND user_id IN (?, ?)",
     args: [id, HOUSEHOLD_PILLAR_OWNER, personalOwner ?? HOUSEHOLD_PILLAR_OWNER],
   })
 
@@ -254,7 +254,7 @@ export async function updatePillar(
   args.push(id, owner)
 
   const result = await client.execute({
-    sql: `UPDATE pillars SET ${sets.join(", ")} WHERE id = ? AND owner_board_id IS NULL AND user_id = ?`,
+    sql: `UPDATE pillars SET ${sets.join(", ")} WHERE id = ? AND owner_board_id IS NULL AND (user_id <> 'default' OR EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active')) AND user_id = ?`,
     args,
   })
 
@@ -266,7 +266,7 @@ export async function getPillarBySlug(slug: string): Promise<Pillar | null> {
   const client = getPersistenceClient()
 
   const result = await client.execute({
-    sql: "SELECT * FROM pillars WHERE slug = ? AND owner_board_id IS NULL AND user_id = ?",
+    sql: "SELECT * FROM pillars WHERE slug = ? AND owner_board_id IS NULL AND (user_id <> 'default' OR EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active')) AND user_id = ?",
     args: [slug, HOUSEHOLD_PILLAR_OWNER],
   })
 
@@ -280,14 +280,14 @@ export async function deletePillar(id: string, hard = false, owner = HOUSEHOLD_P
 
   if (hard) {
     const result = await client.execute({
-      sql: "DELETE FROM pillars WHERE id = ? AND owner_board_id IS NULL AND user_id = ?",
+      sql: "DELETE FROM pillars WHERE id = ? AND owner_board_id IS NULL AND (user_id <> 'default' OR EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active')) AND user_id = ?",
       args: [id, owner],
     })
     return (result.rowsAffected ?? 0) > 0
   }
 
   const result = await client.execute({
-    sql: "UPDATE pillars SET is_active = 0, updated_at = ? WHERE id = ? AND owner_board_id IS NULL AND user_id = ?",
+    sql: "UPDATE pillars SET is_active = 0, updated_at = ? WHERE id = ? AND owner_board_id IS NULL AND (user_id <> 'default' OR EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active')) AND user_id = ?",
     args: [Date.now(), id, owner],
   })
   return (result.rowsAffected ?? 0) > 0
@@ -297,7 +297,7 @@ export async function countActivePillars(owner = HOUSEHOLD_PILLAR_OWNER): Promis
   await ensurePillarSchema()
   const client = getPersistenceClient()
   const result = await client.execute({
-    sql: "SELECT COUNT(*) as cnt FROM pillars WHERE owner_board_id IS NULL AND is_active = 1 AND user_id = ?",
+    sql: "SELECT COUNT(*) as cnt FROM pillars WHERE owner_board_id IS NULL AND (user_id <> 'default' OR EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active')) AND is_active = 1 AND user_id = ?",
     args: [owner],
   })
   return Number((result.rows[0] as Record<string, unknown>).cnt)

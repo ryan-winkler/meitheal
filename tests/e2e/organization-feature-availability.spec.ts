@@ -8,6 +8,114 @@ import { launchPinBrowser, startCoreFixture } from "../scripts/task-pins-fixture
 
 test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires a disposable built app")
 
+test("Timeline All Areas links survive filtering, reload and Back when Areas is unavailable", async ({}, testInfo) => {
+  test.setTimeout(60_000)
+  const work = await mkdtemp(join(tmpdir(), "organization-timeline-scope-"))
+  const child = startCoreFixture(work, false, undefined, undefined, work)
+  child.stdout?.resume()
+  child.stderr?.resume()
+  let browser
+  try {
+    const [fixture] = await once(child, "message", { signal: AbortSignal.timeout(10_000) })
+    const origin = `https://127.0.0.1:${fixture.port}`
+    const app = origin + fixture.configuredPath
+    const headers = { origin }
+    browser = await launchPinBrowser(work)
+    const admin = await browser.newContext({ ignoreHTTPSErrors: true, extraHTTPHeaders: {}, serviceWorkers: "block" })
+    const member = await browser.newContext({ ignoreHTTPSErrors: true, extraHTTPHeaders: {}, serviceWorkers: "block" })
+    const other = await browser.newContext({ ignoreHTTPSErrors: true, extraHTTPHeaders: {}, serviceWorkers: "block" })
+    for (const [context, user] of [[admin, "admin"], [member, "member"], [other, "member-two"]] as const) {
+      await context.addCookies([{ name: "feedback-fixture", value: user, url: origin }])
+    }
+
+    const areaCreated = await member.request.post(app + "/api/areas", { headers, data: { name: "Timeline restricted Area" } })
+    expect(areaCreated.status()).toBe(201)
+    const areaId = (await areaCreated.json()).id
+    const directory = await member.request.get(app + "/api/boards")
+    const boardCreated = await member.request.post(app + "/api/boards", {
+      headers: { ...headers, "x-meitheal-board-session": directory.headers()["x-meitheal-board-session"]! },
+      data: { name: "Timeline restricted Board" },
+    })
+    expect(boardCreated.status()).toBe(201)
+    const boardId = (await boardCreated.json()).id
+    const prefix = "Timeline All Areas access"
+    const ids: string[] = []
+    for (const [suffix, status] of [["Current", "active"], ["Later", "pending"]]) {
+      const created = await member.request.post(app + "/api/tasks", { headers, data: {
+        title: `${prefix} ${suffix}`, status,
+        start_date: new Date().toISOString().slice(0, 10),
+        due_date: new Date(Date.now() + 86_400_000).toISOString().slice(0, 10),
+      } })
+      expect(created.status(), await created.text()).toBe(201)
+      ids.push((await created.json()).id)
+    }
+    const endpoint = app + "/api/organization-features"
+    const current = await admin.request.get(endpoint)
+    const settings = await current.json()
+    const saved = await admin.request.put(endpoint, {
+      headers: { ...headers, "x-meitheal-area-admin": current.headers()["x-meitheal-area-admin"]! },
+      data: { feature: "groups", audience: "selected", users: ["fixture-member-two"], revision: settings.features.groups.revision },
+    })
+    expect(saved.status(), await saved.text()).toBe(204)
+
+    for (const path of ["/boards/household", `/boards/${boardId}`, `/api/boards/${boardId}`]) {
+      for (const query of ["", "?area="]) expect((await member.request.get(app + path + query)).status(), path + query).toBe(200)
+      for (const query of [`?area=${areaId}`, "?area=%20", `?area=&area=${areaId}`]) {
+        expect((await member.request.get(app + path + query)).status(), path + query).toBe(404)
+      }
+    }
+    // Household uses its shared task API; the named-Board API remains unavailable.
+    for (const query of ["", "?area=", `?area=${areaId}`]) {
+      expect((await member.request.get(app + "/api/boards/household" + query)).status()).toBe(404)
+    }
+    expect((await member.request.get(app + "/api/areas")).status()).toBe(404)
+    expect((await other.request.get(app + "/api/areas")).status()).toBe(200)
+    for (const path of [`/boards/${boardId}?area=`, `/api/boards/${boardId}?area=`]) {
+      expect((await other.request.get(app + path)).status(), "Board membership still required").toBe(404)
+    }
+
+    const page = await member.newPage()
+    expect((await page.goto(app + "/boards/household?view=timeline#timeline"))?.status()).toBe(200)
+    await expect(page.locator("#area-selector-trigger")).toHaveCount(0)
+    const timeline = page.locator("#tasks-view-timeline")
+    const toolbar = timeline.getByRole("toolbar", { name: "Filter tasks" })
+    const search = toolbar.getByRole("textbox", { name: "Filter by text" })
+    const groupBy = toolbar.locator('details[aria-label="Group tasks by"]')
+    const currentTask = timeline.locator(`.gantt-bar[data-task-id="${ids[0]}"]`)
+    const laterTask = timeline.locator(`.gantt-bar[data-task-id="${ids[1]}"]`)
+    await search.fill(prefix)
+    await groupBy.locator("summary").click()
+    await groupBy.getByRole("button", { name: "By Status", exact: true }).click()
+    await toolbar.getByRole("combobox", { name: "Filter by status" }).selectOption("active")
+    await expect(page).toHaveURL(url => url.searchParams.get("area") === "" && url.searchParams.get("groupBy") === "status")
+    await expect(currentTask).toBeVisible()
+    await expect(laterTask).toHaveCount(0)
+
+    const timelineUrl = page.url()
+    expect((await page.reload())?.status()).toBe(200)
+    await expect(search).toHaveValue(prefix)
+    await expect(currentTask).toBeVisible()
+    await expect(laterTask).toHaveCount(0)
+    await page.locator('[data-view-tab="table"]').click()
+    await expect(page.locator("#tasks-view-table")).toBeVisible()
+    await page.goBack()
+    await expect(page).toHaveURL(timelineUrl)
+    await expect(search).toHaveValue(prefix)
+    await expect(groupBy.locator("summary")).toContainText("Status")
+    await expect(currentTask).toBeVisible()
+    await expect(laterTask).toHaveCount(0)
+    await page.screenshot({ path: testInfo.outputPath("restricted-timeline.png"), fullPage: true })
+  } finally {
+    await browser?.close()
+    if (child.exitCode === null && child.signalCode === null) {
+      const exited = once(child, "exit", { signal: AbortSignal.timeout(3_000) })
+      child.kill("SIGKILL")
+      await exited
+    }
+    await rm(work, { recursive: true, force: true })
+  }
+})
+
 test("Administrators choose who can use each organization feature", async () => {
   const work = await mkdtemp(join(tmpdir(), "organization-features-"))
   const child = startCoreFixture(work, false, undefined, undefined, work)
@@ -52,6 +160,12 @@ test("Administrators choose who can use each organization feature", async () => 
     const project = await member.request.post(app + "/api/projects", { headers, data: { title: projectTitle } })
     expect(project.status(), await project.text()).toBe(201)
     const householdProjectId = (await project.json()).id
+    const areaPickerPage = await member.newPage()
+    await areaPickerPage.goto(app + "/boards/household")
+    await areaPickerPage.locator("#area-selector-trigger").click()
+    await expect(areaPickerPage.locator("#area-selector-dropdown").getByRole("option", { name: "Hidden group fixture", exact: true })).toBeVisible()
+    await expect(areaPickerPage.locator("#area-selector-dropdown").getByRole("option", { name: projectTitle, exact: true })).toHaveCount(0)
+    await areaPickerPage.close()
     const projectTaskTitle = "Project policy task fixture"
     const assignment = await member.request.post(app + "/api/tasks", {
       headers, data: { title: projectTaskTitle, project_id: householdProjectId },
@@ -77,6 +191,14 @@ test("Administrators choose who can use each organization feature", async () => 
     expect((await other.request.get(app + "/planning")).status()).toBe(404)
     expect((await member.request.get(app + "/api/projects")).status()).toBe(404)
     expect((await other.request.get(app + "/api/projects")).status()).toBe(200)
+    await setFeature("groups", "everyone")
+    const noProjectsPage = await member.newPage()
+    await noProjectsPage.goto(app + "/boards/household")
+    await expect(noProjectsPage.locator('#sidebar [data-sidebar-household] [data-project-id]')).toHaveCount(0)
+    await expect(noProjectsPage.locator('#sidebar [data-sidebar-household] [data-area-add]')).toHaveCount(0)
+    await expect(noProjectsPage.locator('#sidebar [data-sidebar-household] [data-area-group="' + groupId + '"]')).toBeVisible()
+    await noProjectsPage.close()
+    await setFeature("groups", "nobody")
     const groupedPath = app + "/tasks?area=&groupBy=project&search=" + encodeURIComponent(projectTaskTitle)
     const allowedGrouping = await other.request.get(groupedPath)
     expect(allowedGrouping.status()).toBe(200)

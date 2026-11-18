@@ -128,6 +128,11 @@ test("Knight Rider persists and fills active work and task colors on Today and B
     await page.screenshot({ path: testInfo.outputPath("knight-rider-today-desktop.png"), animations: "disabled" })
 
     await page.setViewportSize({ width: 390, height: 844 })
+    const mobileMenu = page.locator("#menu-toggle")
+    await expect(mobileMenu).toHaveAttribute("aria-expanded", "true")
+    await page.locator("#sidebar").getByRole("button", { name: "Close sidebar", exact: true }).click()
+    await expect(mobileMenu).toHaveAttribute("aria-expanded", "false")
+    await expect(mobileMenu).toBeFocused()
     await active.scrollIntoViewIfNeeded()
     await expect(active).toBeVisible()
     await expect(active).toHaveCSS("border-bottom-color", "rgb(255, 94, 146)")

@@ -193,6 +193,8 @@ export class TaskDraftRepository {
                       ELSE 'unavailable' END FROM settings WHERE key = 'backlog_mode'
         ), 'visible') = 'visible')
         AND (? IS NULL OR EXISTS (SELECT 1 FROM goals WHERE id = ? AND owner_board_id IS NULL AND retired_at IS NULL))
+        AND (? IS NULL OR EXISTS (SELECT 1 FROM projects WHERE id = ? AND owner_board_id IS NULL AND retired_at IS NULL
+          AND status = 'active' AND COALESCE(area_id, 'default') = ?))
         AND (? IS NULL OR substr(?, 1, 3) = 'ha_' OR EXISTS (SELECT 1 FROM custom_users WHERE id = ?))
         AND NOT EXISTS (
           SELECT 1 FROM json_each(?) AS wanted
@@ -201,6 +203,7 @@ export class TaskDraftRepository {
       args: [
         ...versionArgs(ownerId, expected), ownerId, attemptId, prepared.status, prepared.status,
         prepared.goal_id ?? null, prepared.goal_id ?? null,
+        prepared.project_id ?? null, prepared.project_id ?? null, prepared.area_id,
         prepared.assigned_to, prepared.assigned_to, prepared.assigned_to, JSON.stringify(task.catalogLabels),
       ],
     }

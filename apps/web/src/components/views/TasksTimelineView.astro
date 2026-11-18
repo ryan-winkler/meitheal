@@ -62,6 +62,8 @@ try {
   const client = getPersistenceClient();
   const repo = new TaskRepository(client);
   tasks = (await repo.getTimelineTasks()) as unknown as TaskRecord[];
+  const projectId = Astro.url.searchParams.get("project")
+  if (projectId) tasks = tasks.filter(task => task.project_id === projectId)
   // Resolve labels from the scoped catalog even when task filters change.
   const hierarchy = new HierarchyRepository(client)
   const [areas, projects] = await Promise.allSettled([
