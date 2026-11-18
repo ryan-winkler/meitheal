@@ -462,6 +462,21 @@
   display: none;
 }
 
+#kanban-board[data-group-by="assigned"] .swimlane-header {
+  width: 100%;
+  min-height: 44px;
+}
+
+#kanban-board[data-group-by="assigned"] .swimlane-header:focus-visible {
+  outline-color: var(--border-focus);
+}
+
+#kanban-board[data-group-by="assigned"] .swimlane-label {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 /* --- Accessibility: respect motion preferences --- */
 @media (prefers-reduced-motion: reduce) {
   .kanban-card,
