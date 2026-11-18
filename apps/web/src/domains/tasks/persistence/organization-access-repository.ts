@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto"
+import { existsSync } from "node:fs"
 import type { Client } from "@libsql/client"
 import {
   boardGrantPath, boardGrantStillCurrent, changeBoardGrants, currentBoardGrantRevision,
@@ -65,7 +66,7 @@ export class OrganizationAccessRepository {
     })
     if (state?.has_epoch === 0 && state.has_policy === 0) {
       // A marker can outlive the database or appear during concurrent initialization.
-      if (await readBoardGrantRevision(this.marker)) return { status: "locked" }
+      if (existsSync(this.marker) && await readBoardGrantRevision(this.marker)) return { status: "locked" }
       return { status: "current", policies: [] }
     }
     const revision = await currentBoardGrantRevision(this.db, this.marker)

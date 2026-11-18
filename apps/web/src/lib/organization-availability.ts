@@ -33,6 +33,12 @@ export interface OrganizationAvailability {
   revision: (feature: OrganizationFeature) => string | null
 }
 
+const inheritedDefaults: OrganizationAvailability = {
+  locked: false, needsVerification: false,
+  includes: feature => feature !== "home_assistant_area" && Object.hasOwn(ORGANIZATION_FEATURES, feature),
+  revision: () => null,
+}
+
 export function inheritedOrganizationAvailability(feature: OrganizationFeature, flags: FeatureFlags): boolean {
   const definition = ORGANIZATION_FEATURES[feature]
   if ("legacy" in definition) return flags[definition.legacy] !== false
@@ -42,6 +48,7 @@ export function inheritedOrganizationAvailability(feature: OrganizationFeature, 
 export function resolveOrganizationAvailability(
   policies: readonly OrganizationPolicy[], flags: FeatureFlags, activeUserId: string | null,
 ): OrganizationAvailability {
+  if (policies.length === 0 && flags.habits !== false && flags.gamification !== false) return inheritedDefaults
   const decisions = new Map(policies.map(policy => [policy.scope.id, policy]))
   const available = new Set(features.filter(feature => {
     const policy = decisions.get(feature)
@@ -75,6 +82,7 @@ async function loadOrganizationAvailability(context: AccessContext): Promise<Org
   const repository = new OrganizationAccessRepository(getPersistenceClient())
   const [policies, flags] = await Promise.all([repository.policies("feature", ""), getStoredFeatureFlags()])
   if (policies.status === "locked") return unavailable
+  if (policies.policies.length === 0) return resolveOrganizationAvailability(policies.policies, flags, null)
   const user = verifiedIngressUser(context.locals)
   const selected = user && policies.policies.some(policy => policy.audience === "selected" && policy.users.includes(user.id))
   const active = selected ? await getCurrentHAUserRoster(user.id, context.request.signal) : null

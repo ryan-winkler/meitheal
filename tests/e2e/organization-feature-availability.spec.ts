@@ -39,6 +39,12 @@ test("Administrators choose who can use each organization feature", async () => 
       expect(saved.status(), await saved.text()).toBe(204)
     }
     expect((await member.request.get(endpoint)).status()).toBe(403)
+    for (const enabled of [false, true]) {
+      const saved = await admin.request.put(app + "/api/features", { headers, data: { feature: "gamification", enabled } })
+      expect(saved.status()).toBe(200)
+      const current = await (await member.request.get(app + "/api/features")).json()
+      expect(current.features.find((feature: { name: string }) => feature.name === "gamification").enabled).toBe(enabled)
+    }
     const group = await member.request.post(app + "/api/areas", { headers, data: { name: "Hidden group fixture" } })
     expect(group.status()).toBe(201)
     const groupId = (await group.json()).id
