@@ -75,6 +75,8 @@ Dates due today appear in amber. The light palette uses a darker shade on white 
 2. Use the route-level view pills to move to Calendar, Table, or Timeline.
 3. The route preserves the existing filters. A valid `view` query parameter controls the view even when the fragment changes. When the query omits a view, the browser still honors a legacy fragment such as `#calendar` after loading. Label names with commas or brackets keep their literal spelling when shared from Table to Kanban. Kanban uses the compatible board filters. Apply a full saved Table preset in Table to use Table grouping, columns and nested rules.
 
+Select **No grouping** from a grouped board before copying a link to the flat board. Opening that link shows the flat board even in a browser that has saved a different grouping preference.
+
 On mobile, use the Task views below the toolbar actions. Open **More** if a view does not fit. The bottom app navigation opens Tasks, and the in-page links switch between Kanban, Calendar, Table, and Timeline.
 
 Older Tasks bookmarks and sidebar shortcuts that specify a hierarchy type such as `task_type=story` open directly in Table when they omit both the view query and fragment. Plain Tasks still remembers your last view.
