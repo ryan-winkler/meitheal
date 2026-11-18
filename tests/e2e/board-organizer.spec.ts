@@ -4,7 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import { expect, test } from "@playwright/test"
+import { expect, test, type Locator } from "@playwright/test"
 import { launchPinBrowser, startCoreFixture } from "../scripts/task-pins-fixture"
 import { shouldSkipBrowserSpecs } from "./_helpers"
 
@@ -49,9 +49,88 @@ test("Household Groups organize capture and Projects inside the Board", async ({
   await page.goto(`/boards/household?project=${project.id}#tasks`)
   await expect(page.getByText("Fit dimmer", { exact: true })).toBeVisible()
   await page.goto(`/boards/household?project=${project.id}&from=${groupId}#tasks`)
-  await expect(page.getByRole("link", { name: "← " + name, exact: true })).toHaveAttribute("href", `/boards/household?area=${groupId}`)
+  const back = page.getByRole("banner").getByRole("link", { name, exact: true })
+  await expect(back).toHaveAttribute("href", `/boards/household?area=${groupId}`)
   await expect(page.locator('#sidebar [data-page="boards"]')).toBeVisible()
   await expect(page.locator('#sidebar [data-page="areas"]')).toHaveCount(0)
+})
+
+test("Household Project detail uses Tabler icons and keeps custom Project icons", async ({ page, request, baseURL }) => {
+  test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the disposable Meitheal fixture")
+  const expectIcon = async (scope: Locator, name: string) => {
+    const icon = scope.locator(`svg:has(use[href="#mt-icon-${name}"])`)
+    await expect(icon).toBeVisible()
+    await expect(icon).toHaveAttribute("aria-hidden", "true")
+    await expect(page.locator(`symbol#mt-icon-${name} path`).first()).toBeAttached()
+  }
+  const banner = page.getByRole("banner")
+  const breadcrumb = page.getByRole("navigation", { name: "Project breadcrumb" })
+  const currentProject = breadcrumb.locator(".bc-current")
+  const tabs = page.getByRole("tablist", { name: "Project sections" })
+  const tab = (name: string) => tabs.getByRole("tab", { name, exact: true })
+  const addTask = banner.getByRole("button", { name: "Add Task", exact: true })
+
+  await page.goto("/projects/every-day")
+  await expect(page).toHaveURL(new URL("/boards/household?project=every-day", baseURL).href)
+  await expectIcon(banner.getByRole("heading", { name: "Every Day", exact: true }), "sun")
+  await expectIcon(currentProject, "sun")
+  await expectIcon(breadcrumb, "chevron-down")
+  const back = banner.getByRole("link", { name: "Household", exact: true })
+  await expect(back).toHaveAttribute("href", "/boards/household")
+  await expectIcon(back, "arrow-down")
+  await expectIcon(addTask, "plus")
+  for (const [label, icon] of [["Overview", "chart-bar"], ["Tasks", "checkbox"], ["Fields", "tag"], ["Settings", "settings"]] as const) {
+    await expectIcon(tab(label), icon)
+  }
+
+  await page.setViewportSize({ width: 375, height: 740 })
+  await tab("Overview").focus()
+  await page.keyboard.press("Tab")
+  await page.keyboard.press("Tab")
+  await expect(tab("Fields")).toBeFocused()
+  await page.keyboard.press("Enter")
+  await expect(page).toHaveURL(/#fields$/)
+  await expect(tab("Fields")).toHaveAttribute("aria-selected", "true")
+  await expectIcon(page.locator(".fields-placeholder"), "tag")
+  await addTask.click()
+  await expect(page.getByRole("textbox", { name: "New task title", exact: true })).toBeVisible()
+
+  const goalTitle = "Fixture Goal"
+  const goal = await request.post("/api/goals", { data: { title: goalTitle } })
+  expect(goal.status()).toBe(201)
+  const { id: goalId } = await goal.json()
+  const title = "A long Project title that still fits beside its icon on a narrow display"
+  const project = await request.post("/api/projects", { data: { title, goal_id: goalId } })
+  expect(project.status()).toBe(201)
+  const { id: projectId } = await project.json()
+  const settings = `/projects/${projectId}#settings`
+  const heading = banner.getByRole("heading", { name: title, exact: true })
+  const iconInput = page.getByRole("textbox", { name: "Icon", exact: true })
+
+  await page.goto(`/boards/household?project=${projectId}`)
+  await expectIcon(heading, "list-check")
+  await expectIcon(currentProject, "list-check")
+  await expectIcon(breadcrumb.getByRole("link", { name: goalTitle, exact: true }), "target")
+  expect(await heading.locator(".truncate").evaluate(label => label.scrollWidth > label.clientWidth)).toBe(true)
+  expect((await heading.locator("svg").boundingBox())?.width).toBe(18)
+
+  await page.goto(settings)
+  await expect(page).toHaveURL(/#project-settings$/)
+  const goalSelect = page.getByRole("combobox", { name: "Goal", exact: true })
+  await expect(goalSelect).toHaveValue(goalId)
+  await expect(goalSelect.locator("option:checked")).toHaveText(goalTitle)
+  await expect(iconInput).toHaveValue("📋")
+
+  for (const icon of ["🧪", "toString"]) {
+    const api = `/api/projects/${projectId}`
+    expect((await request.put(api, { data: { icon } })).status()).toBe(200)
+    expect(await (await request.get(api)).json()).toMatchObject({ icon })
+    await page.goto(`/boards/household?project=${projectId}`)
+    await expect(heading.locator("[aria-hidden=true]")).toHaveText(icon)
+    await expect(currentProject.locator("[aria-hidden=true]")).toHaveText(icon)
+    await tab("Settings").click()
+    await expect(iconInput).toHaveValue(icon)
+  }
 })
 
 test("Named Board disclosures follow the selected Group and current Home Assistant account", async () => {

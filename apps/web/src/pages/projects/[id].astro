@@ -10,6 +10,7 @@ import { organizationLabelsFor } from "@lib/organization-labels"
 import LegacyBoardBridge from "../../components/boards/LegacyBoardBridge.astro"
 import Layout from "../../layouts/Layout.astro";
 import { logApiError } from "../../lib/api-logger"
+import Icon from "../../components/ui/Icon.astro"
 import StatusBadge from "../../components/ui/StatusBadge.astro";
 import BotBadge from "../../components/ui/BotBadge.astro";
 import LabelBadges from "../../components/ui/LabelBadges.astro";
@@ -23,9 +24,11 @@ import {
 } from "@domains/tasks/persistence/store";
 import { HierarchyRepository, type AreaRow, type GoalRow } from "@domains/tasks/persistence/hierarchy-repository"
 import { TaskRepository } from "@domains/tasks/persistence/task-repository";
-import { PRIORITY_ICONS, PRIORITY_COLORS } from "../../lib/priority-config";
+import { PRIORITY_COLORS } from "../../lib/priority-config";
 import { boardWorkspaceHref, HOUSEHOLD_BOARD_ID } from "@lib/board-workspace"
 import { isClosedStatus, STATUS_LABELS } from "../../lib/status-config";
+import { mapEntityEmojiToTabler } from "../../lib/tabler-svg"
+import { isIconName, type IconName } from "../../generated/icon-registry"
 
 const cookieLocale = Astro.cookies.get("meitheal-locale")?.value;
 const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
@@ -77,6 +80,8 @@ try {
 const projTitle = String(project?.title ?? "Project");
 const projDesc = project?.description ? String(project.description) : null;
 const projIcon = String(project?.icon ?? "📋");
+const mappedIcon = mapEntityEmojiToTabler(projIcon)
+const projectIconName = mappedIcon && isIconName(mappedIcon) ? mappedIcon : null
 const projColor = String(project?.color ?? "#146C4E");
 const projStatus = String(project?.status ?? "active");
 const openTasks = workspaceProjectId ? tasks.filter(task => !isClosedStatus(String(task.status))) : []
@@ -91,24 +96,30 @@ const progress = tasks.length > 0 ? Math.round((completedCount / tasks.length) *
 const { timezone, dateFormat } = Astro.locals;
 
 const organization = await organizationLabelsFor(Astro)
-const tabs = [
-  { id: "overview", label: "Overview", icon: "📊" },
-  { id: "tasks", label: organization("task", true), icon: "✅" },
-  { id: "fields", label: "Fields", icon: "🏷️" },
-  { id: settingsTab, label: "Settings", icon: "⚙️" },
-];
+const tabs: { id: string; label: string; icon: IconName }[] = [
+  { id: "overview", label: "Overview", icon: "chart-bar" },
+  { id: "tasks", label: organization("task", true), icon: "checkbox" },
+  { id: "fields", label: "Fields", icon: "tag" },
+  { id: settingsTab, label: "Settings", icon: "settings" },
+]
 ---
 
 {!workspaceProjectId ? <LegacyBoardBridge href={boardWorkspaceHref(HOUSEHOLD_BOARD_ID, { project: projectId })} kind="project"
   fragments={{ overview: "overview", tasks: "tasks", settings: "project-settings", fields: "fields" }} /> : <Layout title={`Meitheal — ${projTitle}`}>
-  <span slot="page-title">
-    <span style={`color: ${projColor}; margin-right: 6px;`}>{projIcon}</span>
-    {projTitle}
+  <span slot="page-title" class="inline-flex max-w-full items-center gap-1.5 align-middle">
+    <span class="shrink-0" aria-hidden="true" style={`color: ${projColor}`}>
+      {projectIconName ? <Icon name={projectIconName} size={18} sprite /> : projIcon}
+    </span>
+    <span class="truncate">{projTitle}</span>
   </span>
   <div slot="actions" class="flex gap-2">
-    <a href={workspaceProjectId ? boardWorkspaceHref(HOUSEHOLD_BOARD_ID, fromArea ? { area: fromArea } : {}) : "/projects"} class="btn btn-ghost">← {workspaceProjectId ? (fromArea ? String(area?.name) : "Household") : "Projects"}</a>
+    <a href={workspaceProjectId ? boardWorkspaceHref(HOUSEHOLD_BOARD_ID, fromArea ? { area: fromArea } : {}) : "/projects"} class="btn btn-ghost">
+      <Icon name="arrow-down" size={16} class="rotate-90 shrink-0" sprite />
+      {workspaceProjectId ? (fromArea ? String(area?.name) : "Household") : "Projects"}
+    </a>
     <button type="button" class="btn btn-primary" id="add-task-to-project-btn">
-      + Add Task
+      <Icon name="plus" size={16} class="shrink-0" sprite />
+      Add Task
     </button>
   </div>
 
@@ -123,7 +134,7 @@ const tabs = [
         data-astro-reload
         aria-selected={tab.id === "overview" ? "true" : "false"}
       >
-        <span class="tab-icon">{tab.icon}</span>
+        <Icon name={tab.icon} size={14} class="shrink-0" sprite />
         {tab.label}
       </a>
     ))}
@@ -134,10 +145,24 @@ const tabs = [
     {/* Breadcrumb */}
     <nav class="project-breadcrumb" aria-label="Project breadcrumb">
       <a href={workspaceProjectId ? boardWorkspaceHref(HOUSEHOLD_BOARD_ID) : "/projects"}>{workspaceProjectId ? "Household" : organization("project", true)}</a>
-      {area && <><span class="bc-sep">›</span><a href={workspaceProjectId ? boardWorkspaceHref(HOUSEHOLD_BOARD_ID, { area: String(area.id) }) : `/areas/${String(area.id)}`}>{String(area.name)}</a></>}
-      {goal && <><span class="bc-sep">›</span><a href={`/progress?project_id=${encodeURIComponent(projectId)}#goals`}>🎯 {String(goal.title)}</a></>}
-      <span class="bc-sep">›</span>
-      <span class="bc-current">{projIcon} {projTitle}</span>
+      {area && <>
+        <Icon name="chevron-down" size={12} class="bc-sep -rotate-90 shrink-0" sprite />
+        <a href={workspaceProjectId ? boardWorkspaceHref(HOUSEHOLD_BOARD_ID, { area: String(area.id) }) : `/areas/${String(area.id)}`}>{String(area.name)}</a>
+      </>}
+      {goal && <>
+        <Icon name="chevron-down" size={12} class="bc-sep -rotate-90 shrink-0" sprite />
+        <a class="inline-flex items-center gap-1" href={`/progress?project_id=${encodeURIComponent(projectId)}#goals`}>
+          <Icon name="target" size={12} class="shrink-0" sprite />
+          {String(goal.title)}
+        </a>
+      </>}
+      <Icon name="chevron-down" size={12} class="bc-sep -rotate-90 shrink-0" sprite />
+      <span class="bc-current inline-flex min-w-0 items-center gap-1">
+        <span class="shrink-0" aria-hidden="true">
+          {projectIconName ? <Icon name={projectIconName} size={12} sprite /> : projIcon}
+        </span>
+        <span class="truncate">{projTitle}</span>
+      </span>
     </nav>
 
     {/* Project header card */}
@@ -252,7 +277,7 @@ const tabs = [
     </div>
 
     <div class="fields-placeholder">
-      <div class="fields-placeholder-icon">🏷️</div>
+      <Icon name="tag" size={40} class="mx-auto mb-3" sprite />
       <h3 class="fields-placeholder-title">Custom Fields</h3>
       <p class="fields-placeholder-desc">
         Project-specific custom field configuration is unavailable. You can add supported custom field values when creating a task.
@@ -312,7 +337,7 @@ const tabs = [
               value={String(g.id)}
               selected={String(project?.goal_id ?? "") === g.id}
             >
-              🎯 {String(g.title)}
+              {String(g.title)}
             </option>
           ))}
         </select>
@@ -370,7 +395,6 @@ const tabs = [
     color: var(--accent);
     border-bottom-color: var(--accent);
   }
-  .tab-icon { font-size: 0.875rem; }
 
   /* Sections */
   .project-section { display: none; }
@@ -517,7 +541,6 @@ const tabs = [
     border: 1px solid var(--border);
     border-radius: var(--radius-md);
   }
-  .fields-placeholder-icon { font-size: 2.5rem; margin-bottom: 0.75rem; }
   .fields-placeholder-title {
     margin: 0 0 0.5rem;
     font-size: 1.125rem;
