@@ -909,8 +909,8 @@ if (groupByProject) {
                   {t("kanban.page_range", locale, { start: String(lane.offset + 1), end: String(lane.offset + colTasks.length), count: String(matches) })}
                 </span>
                 <div class="kanban-page-actions">
-                  {lane.page > 1 && <a class="btn btn-outline" href={lanePageHref(col.key, lane.page - 1)} data-kanban-page-lane={col.key} data-astro-prefetch="false">{t("kanban.previous_page", locale)}</a>}
-                  {lane.page < lane.pageCount && <a class="btn btn-outline" href={lanePageHref(col.key, lane.page + 1)} data-kanban-page-lane={col.key} data-astro-prefetch="false">{t("kanban.next_page", locale)}</a>}
+                  {lane.page > 1 && <a class="btn btn-outline" href={lanePageHref(col.key, lane.page - 1)} rel="prev" data-kanban-page-lane={col.key} data-astro-prefetch="false">{t("kanban.previous_page", locale)}</a>}
+                  {lane.page < lane.pageCount && <a class="btn btn-outline" href={lanePageHref(col.key, lane.page + 1)} rel="next" data-kanban-page-lane={col.key} data-astro-prefetch="false">{t("kanban.next_page", locale)}</a>}
                 </div>
               </nav>
             )}

@@ -61,6 +61,8 @@ The board remains usable when reaction counts are unavailable. A denied request 
 
 Each lane shows up to 25 cards. Its count includes every task matching the current area and filters. The range below the lane shows which cards are loaded. Use **Previous** or **Next** to page within that lane. Use **Filter by text** or the filter builder to find a task anywhere in the board, including other pages. Changing the area or filters returns the lanes to their first page.
 
+To move a task to another Board Group, open its **Details** and choose the destination in **Group**. When the save succeeds, the card appears in its new group after Details closes. If the destination group is collapsed, focus returns to its heading. If the board is filtered to the original group, the card leaves the results and the filter stays selected. A failed save restores the previous selection. Use the **Home Assistant Area** control in Details to edit the task's location when it is available.
+
 Open **Overdue** from Dashboard to filter tasks across every Kanban page. The board matches Dashboard’s due-date and completion rules.
 
 Use a swimlane’s group heading to show or hide its cards with a click, Enter, or Space. The board remembers expanded and collapsed groups on this browser for each grouping choice and workflow lane. With single-key shortcuts enabled, press **C** while the board has focus to toggle all its visible groups.
@@ -147,3 +149,5 @@ compressing the cards. At widths from 769 to 1024 CSS px the sidebar narrows to
 An unreadable card assignment no longer interrupts grouping for the board. Check the assignment in Details if its group is unexpected. If an assignee group disappears after a refresh, keyboard focus returns to its workflow lane heading.
 
 Kanban Project groups keep their saved collapse state when their names change. Duplicate or reserved names show a short identity token before the Area, so long names cannot hide the distinction. Missing and unavailable assignments use the current language’s labels. If a focused Project disappears after a refresh, focus returns to its workflow lane heading.
+
+When reopening Details from a card or ticket link while a Board Group save is pending, the drawer waits for that save and then reads the current task. A later edit from another client remains authoritative.
