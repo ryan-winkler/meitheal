@@ -7,9 +7,11 @@
  * @domain domain-tasks (project association)
  */
 import { execFileSync } from "node:child_process"
-import { test, expect } from "@playwright/test"
+import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+
+import { test, expect } from "@playwright/test"
 
 function createTestDb() {
   const dbUrl = `file:${join(tmpdir(), `task-project-${Date.now()}-${Math.random().toString(36).slice(2)}.db`)}`
@@ -30,6 +32,46 @@ async function getRepos() {
   const client = getPersistenceClient()
   return { client, taskRepo: new TaskRepository(client), hierRepo: new HierarchyRepository(client) }
 }
+
+test("Household Project groups keep visible Areas and exclude unavailable Projects", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "meitheal-project-groups-"))
+  const { resetPersistenceForTests } = await import("../../apps/web/src/domains/tasks/persistence/store")
+  const previous = process.env.MEITHEAL_DB_URL
+  process.env.MEITHEAL_DB_URL = `file:${join(directory, "tasks.db")}`
+  try {
+    await setupDb()
+    const { client, hierRepo } = await getRepos()
+    await client.batch([
+      `INSERT INTO task_boards (id, name, visibility, ticket_prefix, created_at, updated_at)
+        VALUES ('garden-board', 'Garden board', 'restricted', 'GARDENAB', 1, 1)`,
+      `INSERT INTO areas (id, name, owner_board_id, created_at, updated_at) VALUES
+        ('workshop', 'Workshop', NULL, 1, 1),
+        ('utility', 'Utility', NULL, 1, 1),
+        ('garden', 'Garden', 'garden-board', 1, 1)`,
+      `INSERT INTO goals (id, title, area_id, owner_board_id, created_at, updated_at) VALUES
+        ('household-goal', 'Repairs', 'utility', NULL, 1, 1),
+        ('garden-goal', 'Grow', 'garden', 'garden-board', 1, 1)`,
+      `INSERT INTO projects (id, title, area_id, goal_id, owner_board_id, retired_at, position, created_at, updated_at) VALUES
+        ('catalog-direct', 'Direct Area', 'workshop', 'household-goal', NULL, NULL, 2, 1, 1),
+        ('catalog-inherited', 'Inherited Area', NULL, 'household-goal', NULL, NULL, 1, 1, 1),
+        ('catalog-hidden-goal', 'Moved Goal', NULL, 'garden-goal', NULL, NULL, 3, 1, 1),
+        ('catalog-other-board', 'Other Board', 'garden', 'garden-goal', 'garden-board', NULL, 4, 1, 1),
+        ('catalog-retired', 'Retired', NULL, NULL, NULL, 2, 5, 1, 1)`,
+    ], "write")
+
+    const groups = await hierRepo.findProjectGroups()
+    expect(groups.filter(group => group.id.startsWith("catalog-"))).toEqual([
+      { id: "catalog-inherited", title: "Inherited Area", area_id: "utility" },
+      { id: "catalog-direct", title: "Direct Area", area_id: "workshop" },
+      { id: "catalog-hidden-goal", title: "Moved Goal", area_id: null },
+    ])
+  } finally {
+    resetPersistenceForTests()
+    if (previous === undefined) delete process.env.MEITHEAL_DB_URL
+    else process.env.MEITHEAL_DB_URL = previous
+    await rm(directory, { recursive: true, force: true })
+  }
+})
 
 test("createTask persists project_id and findByProjectId returns it", async () => {
   createTestDb()
