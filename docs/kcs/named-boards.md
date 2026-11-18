@@ -14,6 +14,8 @@ Household and named Boards use the same Kanban cards and columns. Select a named
 
 Open an Area or Project’s **Tasks** tab to use its filtered Kanban. **Add Task** keeps that context. On a named Board, **N** opens capture for that Board. If another person changes its work while you edit, your input stays available with a refresh notice. Lost authority and deleted context clear private content. Backgrounding and temporary connectivity failures hide it while keeping the current draft on that page for revalidation.
 
+An older Project without a direct Area assignment does not inherit your last Area filter. Its capture keeps the Project and uses its existing default filing.
+
 If Board verification temporarily fails, the workspace hides its private content and offers **Retry verification**. A successful check restores the same page and retained input. Permanent loss of access clears it and offers a fresh Board view.
 
 ## People and ticket permissions
@@ -81,6 +83,8 @@ Open a named Board’s **Board settings → Delete Board**. An owner with deleti
 For **Household**, a verified Home Assistant administrator uses **Boards → Household Board settings → Delete Board**. Household’s saved work stays in place. Shared capture, Household task screens, Routine generation, calendar import/write-back and Todo syncing pause until an administrator restores it from Deleted Boards. No replacement Board is created and no records are transferred. Named Boards remain available. Global views exclude the saved Household work while it is deleted. Restoring resumes its existing destinations and settings, so review those settings before restoring an old integration configuration.
 
 A synchronization request already sent to Home Assistant may finish there after deletion. Later local writes pause and preserve the saved links. Deletion does not cancel a provider request already in flight.
+
+Task-driven Calendar and Todo calls recheck Household before dispatch. A Calendar update that fails after retirement cannot start its delete/create fallback. Other Home Assistant service callers keep their existing behavior.
 
 The Routine library and Today continue to show Routines from your active named Boards. Household Routines and shared creation stay paused. Calendar and Todo confirmation links remain saved for restoration.
 

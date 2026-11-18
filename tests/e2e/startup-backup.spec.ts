@@ -300,18 +300,20 @@ test("startup recognizes an imported settings table with SQLite's identifier cas
 })
 
 test("writable startup can recover an interrupted SQLite transaction before checking its committed schema", async () => {
-  await execFileAsync(process.execPath, ["--input-type=module", "--eval", `
+  const crashed = await execFileAsync(process.execPath, ["--input-type=module", "--eval", `
     import { DatabaseSync } from "node:sqlite"
     const db = new DatabaseSync(process.argv[1])
     db.exec(\`CREATE TABLE app_settings(key TEXT PRIMARY KEY,value TEXT,updated_at INTEGER);
       INSERT INTO app_settings VALUES('schema_version','${predecessorVersion}',1);
       CREATE TABLE spill(value TEXT);
+      PRAGMA journal_mode=DELETE; PRAGMA synchronous=FULL;
       PRAGMA cache_size=1; PRAGMA cache_spill=ON;
       BEGIN IMMEDIATE; UPDATE app_settings SET value='${futureVersion}';
       WITH RECURSIVE rows(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM rows WHERE n<100)
       INSERT INTO spill SELECT printf('%04000d',n) FROM rows;\`)
-    process.exit(0)
-  `, dbPath], { timeout: 10_000 })
+    process.kill(process.pid, "SIGKILL")
+  `, dbPath], { timeout: 10_000 }).then(() => null, error => error)
+  expect(crashed).toMatchObject({ signal: "SIGKILL" })
   expect((await stat(`${dbPath}-journal`)).size).toBeGreaterThan(512)
   await expect(migrate("--check")).rejects.toThrow(/readonly|read-only/i)
   expect((await stat(`${dbPath}-journal`)).size).toBeGreaterThan(512)

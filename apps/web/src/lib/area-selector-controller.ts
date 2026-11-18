@@ -11,7 +11,7 @@
 
 import { safeIngressHref } from "./ingress-navigation"
 import { taskBackgroundUrl } from "./task-page-url"
-import { readTableFilterParams } from "./filter-state"
+import { readTableFilterParams, readTaskAreaParam } from "./filter-state"
 import { renderIconOrCustomEmoji } from "./tabler-svg"
 
 const STORAGE_KEY = "meitheal-selected-area"
@@ -26,6 +26,10 @@ interface AreaChangedDetail {
 }
 
 export function getRememberedAreaId(): string {
+  const params = taskBackgroundUrl().searchParams
+  if (params.get("project") && readTaskAreaParam(params) === null) {
+    return document.querySelector<HTMLElement>("[data-area-selector]")?.dataset.initialAreaId ?? ""
+  }
   const { areaId } = loadSavedArea()
   const options = document.querySelectorAll<HTMLElement>("#area-selector-dropdown [data-area-id]")
   const ready = document.querySelector<HTMLElement>("#area-selector-dropdown")?.dataset.areaCatalogReady !== "false"
@@ -63,6 +67,7 @@ export function initAreaSelector(signal: AbortSignal): void {
   const calendar = Boolean(document.getElementById("calendar-shell"))
   const requested = (table || calendar ? readTableFilterParams(params).area : params.get("area") ?? undefined)
     ?? container.dataset.initialAreaId
+    ?? (params.get("project") ? "" : undefined)
   if (requested !== undefined) {
     const option = Array.from(dropdown.querySelectorAll<HTMLElement>("[data-area-id]"))
       .find(item => item.dataset.areaId === requested)

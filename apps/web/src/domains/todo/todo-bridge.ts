@@ -486,7 +486,8 @@ export async function pushTaskToTodoList(
   description?: string,
   labels?: string[],
 ): Promise<boolean> {
-  if (!await householdBoardIsActive(await getClient())) return false
+  const operationAllowed = async () => householdBoardIsActive(await getClient())
+  if (!await operationAllowed()) return false
   // Respect 'no-sync' label — user opted this task out of sync
   if (labels?.includes(NO_SYNC_LABEL)) {
     logger.log("debug", {
@@ -510,6 +511,7 @@ export async function pushTaskToTodoList(
       args: [taskId, entityId],
     });
 
+    if (!await operationAllowed()) return false
     if (existing.rows.length > 0) {
       // Update existing HA todo item
       const uid = existing.rows[0]!.ha_todo_uid as string;
@@ -533,7 +535,7 @@ export async function pushTaskToTodoList(
         status: haStatus,
         description: descWithAttribution,
         ...dueData,
-      });
+      }, { operationAllowed });
 
       if (success) {
         await client.execute({
@@ -562,7 +564,7 @@ export async function pushTaskToTodoList(
         summary: title,
         due: dueDate ?? undefined,
         description: descWithAttribution,
-      });
+      }, { operationAllowed });
 
       if (success) {
         const nowMs = Date.now();
@@ -619,7 +621,8 @@ export async function pushTaskToTodoList(
  * @returns Number of HA todo items removed
  */
 export async function removeTaskFromTodoList(taskId: string): Promise<number> {
-  if (!await householdBoardIsActive(await getClient())) return 0
+  const operationAllowed = async () => householdBoardIsActive(await getClient())
+  if (!await operationAllowed()) return 0
   let removed = 0;
   try {
     const client = await getClient();
@@ -662,7 +665,7 @@ export async function removeTaskFromTodoList(taskId: string): Promise<number> {
         continue;
       }
 
-      const success = await removeTodoItem(entityId, [summary]);
+      const success = await removeTodoItem(entityId, [summary], { operationAllowed });
       if (success) {
         removed++;
         logger.log("info", {

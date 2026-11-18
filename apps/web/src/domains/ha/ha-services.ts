@@ -20,6 +20,17 @@ const logger = createLogger({
 });
 const SYS_REQ = "ha-system";
 
+export interface HAServiceOperationOptions {
+  operationAllowed?: () => boolean | Promise<boolean>
+}
+
+/** Optional caller-owned admission policy; generic HA callers keep their existing behavior. */
+async function permitsServiceOperation(options?: HAServiceOperationOptions): Promise<boolean> {
+  try { return options?.operationAllowed ? await options.operationAllowed() : true }
+  catch { return false }
+}
+
+
 // ── Calendar Services ──
 
 export interface CalendarEvent {
@@ -190,7 +201,7 @@ export async function listCalendarEvents(
 }
 
 export async function createCalendarEvent(
-  entityId: string, event: Omit<CalendarEvent, "uid">,
+  entityId: string, event: Omit<CalendarEvent, "uid">, options?: HAServiceOperationOptions,
 ): Promise<boolean> {
   const conn = await getHAConnection();
   if (!conn) return false;
@@ -201,6 +212,7 @@ export async function createCalendarEvent(
       description: event.description,
       location: event.location,
     };
+    if (!await permitsServiceOperation(options)) return false
     await callService(conn, "calendar", "create_event", serviceData, { entity_id: entityId });
     logger.log("info", {
       event: "ha.calendar.event_created", domain: "ha", component: "ha-services",
@@ -225,7 +237,7 @@ export async function createCalendarEvent(
  */
 export async function updateCalendarEvent(
   entityId: string, event: CalendarEvent,
-  options?: { recurrence_id?: string; recurrence_range?: string },
+  options?: { recurrence_id?: string; recurrence_range?: string } & HAServiceOperationOptions,
 ): Promise<boolean> {
   const conn = await getHAConnection();
   if (!conn) return false;
@@ -242,6 +254,7 @@ export async function updateCalendarEvent(
 
   try {
     // Try HA's native calendar.update_event service first
+    if (!await permitsServiceOperation(options)) return false
     await callService(conn, "calendar", "update_event", serviceData, { entity_id: entityId });
     logger.log("info", {
       event: "ha.calendar.event_updated", domain: "ha", component: "ha-services",
@@ -250,6 +263,7 @@ export async function updateCalendarEvent(
     });
     return true;
   } catch (updateErr) {
+    if (!await permitsServiceOperation(options)) return false
     // Fallback: calendar may not support update_event — try delete + create
     logger.log("warn", {
       event: "ha.calendar.update_event.fallback", domain: "ha", component: "ha-services",
@@ -266,6 +280,7 @@ export async function updateCalendarEvent(
         description: event.description,
         location: event.location,
       };
+      if (!await permitsServiceOperation(options)) return false
       await callService(conn, "calendar", "create_event", createData, { entity_id: entityId });
       logger.log("info", {
         event: "ha.calendar.event_updated_via_recreate", domain: "ha", component: "ha-services",
@@ -290,7 +305,7 @@ export async function updateCalendarEvent(
  */
 export async function deleteCalendarEvent(
   entityId: string, uid: string,
-  options?: { recurrence_id?: string; recurrence_range?: "THISANDFUTURE" },
+  options?: { recurrence_id?: string; recurrence_range?: "THISANDFUTURE" } & HAServiceOperationOptions,
 ): Promise<boolean> {
   const conn = await getHAConnection();
   if (!conn) return false;
@@ -299,6 +314,7 @@ export async function deleteCalendarEvent(
     if (options?.recurrence_id) serviceData.recurrence_id = options.recurrence_id;
     if (options?.recurrence_range) serviceData.recurrence_range = options.recurrence_range;
 
+    if (!await permitsServiceOperation(options)) return false
     await callService(conn, "calendar", "delete_event", serviceData, { entity_id: entityId });
     logger.log("info", {
       event: "ha.calendar.event_deleted", domain: "ha", component: "ha-services",
@@ -377,7 +393,7 @@ export async function getTodoItems(
  * Supports both due_date (date-only) and due_datetime (date+time).
  */
 export async function addTodoItem(
-  entityId: string, item: Omit<TodoItem, "uid" | "status">,
+  entityId: string, item: Omit<TodoItem, "uid" | "status">, options?: HAServiceOperationOptions,
 ): Promise<boolean> {
   const conn = await getHAConnection();
   if (!conn) return false;
@@ -394,6 +410,7 @@ export async function addTodoItem(
         serviceData.due_date = item.due;
       }
     }
+    if (!await permitsServiceOperation(options)) return false
     await callService(conn, "todo", "add_item", serviceData, { entity_id: entityId });
     logger.log("info", {
       event: "ha.todo.item_added", domain: "ha", component: "ha-services",
@@ -417,6 +434,7 @@ export async function updateTodoItem(
   entityId: string,
   item: string,
   updates: { summary?: string | undefined; status?: "needs_action" | "completed" | undefined; description?: string | undefined; due_date?: string | undefined; due_datetime?: string | undefined },
+  options?: HAServiceOperationOptions,
 ): Promise<boolean> {
   const conn = await getHAConnection();
   if (!conn) return false;
@@ -428,6 +446,7 @@ export async function updateTodoItem(
     if (updates.due_date) serviceData.due_date = updates.due_date;
     if (updates.due_datetime) serviceData.due_datetime = updates.due_datetime;
 
+    if (!await permitsServiceOperation(options)) return false
     await callService(conn, "todo", "update_item", serviceData, { entity_id: entityId });
     logger.log("info", {
       event: "ha.todo.item_updated", domain: "ha", component: "ha-services",
@@ -448,11 +467,12 @@ export async function updateTodoItem(
  * Items are identified by uid or summary text.
  */
 export async function removeTodoItem(
-  entityId: string, items: string[],
+  entityId: string, items: string[], options?: HAServiceOperationOptions,
 ): Promise<boolean> {
   const conn = await getHAConnection();
   if (!conn) return false;
   try {
+    if (!await permitsServiceOperation(options)) return false
     await callService(conn, "todo", "remove_item", { item: items }, { entity_id: entityId });
     logger.log("info", {
       event: "ha.todo.item_removed", domain: "ha", component: "ha-services",

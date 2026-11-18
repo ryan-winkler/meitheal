@@ -30,6 +30,8 @@ The lifecycle transition checks the expected Board revision and current authorit
 
 Named workspace polling verifies authority separately from content freshness. The authority hash includes the actor, effective rights, lifecycle, selected context, available features and grant epoch. Ordinary task edits can therefore show a stale-content notice while preserving an unsaved form; authority changes and unverifiable access still clear the private workspace.
 
+Task-driven Calendar and Todo operations supply a dispatch guard to the task-agnostic Home Assistant service helpers. It rechecks Household before each new outbound call, including Calendar fallback delete/create. An already-dispatched provider request may finish remotely. No database writer is held across a provider request.
+
 ## Recovery and validation
 
 Schema 25 preserves the retired Household state during startup. Restore reactivates its original records and ticket sequence. An upgrade fixture must retain a populated schema 24 database and demonstrate exact-source App backup restoration with integrity checks.

@@ -326,7 +326,7 @@ if (groupByProject) {
     })}
   >
     <Fragment slot="context">
-      {!namedBoardId && available("groups") && <AreaSelector areas={areas} catalogReady={areaCatalogReady} initialId={householdProject?.area_id ?? undefined} />}
+      {!namedBoardId && available("groups") && <AreaSelector areas={areas} catalogReady={areaCatalogReady} initialId={householdProjectId ? householdProject?.area_id ?? "" : undefined} />}
       {renderedView === "kanban" && <HomeAssistantAreaField mode="filter" initialId={homeAreaFilter?.id ?? ""} />}
     </Fragment>
   </UnifiedBar>

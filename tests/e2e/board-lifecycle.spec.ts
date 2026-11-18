@@ -26,7 +26,9 @@ import { TaskInactivityRepository } from "../../apps/web/src/domains/tasks/persi
 import { startHAWebSocketFixture } from "../scripts/ha-websocket-fixture"
 import { closeHAConnection, getHAConnection } from "../../apps/web/src/domains/ha/ha-connection"
 import { stopEntitySubscription } from "../../apps/web/src/domains/ha/ha-entities"
-import { startCalendarSync, stopCalendarSync, syncFromHA } from "../../apps/web/src/domains/calendar/calendar-bridge"
+import { startCalendarSync, stopCalendarSync, syncFromHA, pushTaskToCalendar, removeTaskCalendarEvent } from "../../apps/web/src/domains/calendar/calendar-bridge"
+import { startTodoSync, stopTodoSync, pushTaskToTodoList, removeTaskFromTodoList } from "../../apps/web/src/domains/todo/todo-bridge"
+import { updateCalendarEvent } from "../../apps/web/src/domains/ha/ha-services"
 import { TemplateRepository } from "../../apps/web/src/domains/tasks/persistence/template-repository"
 
 import { PATCH as patchComment } from "../../apps/web/src/pages/api/tasks/[id]/comments/[commentId]"
@@ -437,6 +439,119 @@ test("a calendar stale-snapshot reconciliation admitted before retirement keeps 
     release?.()
     db.execute = execute
     stopCalendarSync()
+    stopEntitySubscription()
+    closeHAConnection()
+    await ha.close()
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
+  }
+})
+
+test("retiring Household during a failed Calendar update prevents fallback external calls", async () => {
+  const previous = Object.fromEntries(["SUPERVISOR_TOKEN", "HA_BASE_URL", "HA_TOKEN"].map(key => [key, process.env[key]]))
+  const ha = await startHAWebSocketFixture({ holdServices: [{ domain: "calendar", service: "update_event" }] })
+  const db = getPersistenceClient()
+  try {
+    delete process.env.SUPERVISOR_TOKEN
+    process.env.HA_BASE_URL = ha.url
+    process.env.HA_TOKEN = "calendar-dispatch-retirement-fixture"
+    closeHAConnection()
+    expect(await getHAConnection()).not.toBeNull()
+    await db.batch([
+      `INSERT INTO tasks(id, title, idempotency_key, request_id, created_at, updated_at)
+        VALUES ('outbound-calendar', 'Retained outbound task', 'outbound-calendar', 'outbound-calendar', 1, 1)`,
+      `INSERT INTO calendar_confirmations(confirmation_id, task_id, request_id, provider_event_id, source, payload, created_at)
+        VALUES ('outbound-calendar-link', 'outbound-calendar', 'outbound-calendar-link', 'writeback-outbound-calendar', 'ha.write_back', '{"entity_id":"calendar.fixture"}', 1)`,
+    ], "write")
+    const before = (await db.execute("SELECT * FROM calendar_confirmations")).rows
+    startCalendarSync({ entityId: "calendar.fixture", syncEnabled: true, syncMode: "export", writeBack: true, syncIntervalMs: 0 })
+    const pushing = pushTaskToCalendar("outbound-calendar", "Retained outbound task", "2031-07-08", undefined, "calendar.fixture")
+    await expect.poll(() => ha.serviceCalls.filter(call => call.service === "update_event").length).toBe(1)
+    const repository = new NamedBoardRepository(db, marker)
+    expect(await repository.changeLifecycle(parent, "household", "retired", 1, true)).toMatchObject({ result: "saved" })
+    ha.releaseService("calendar", "update_event", false)
+    expect(await pushing).toBe(false)
+    expect(ha.serviceCalls.map(call => call.service)).toEqual(["update_event"])
+    expect((await db.execute("SELECT * FROM calendar_confirmations")).rows).toEqual(before)
+
+    // Existing generic HA callers retain their fallback behavior without a task policy.
+    const generic = updateCalendarEvent("calendar.other", { uid: "independent", summary: "Independent event", start: "2031-07-08", end: "2031-07-09" })
+    await expect.poll(() => ha.serviceCalls.filter(call => call.service === "update_event").length).toBe(2)
+    ha.releaseService("calendar", "update_event", false)
+    expect(await generic).toBe(true)
+    expect(ha.serviceCalls.map(call => call.service)).toEqual(["update_event", "update_event", "delete_event", "create_event"])
+
+    expect(await repository.changeLifecycle(parent, "household", "active", 2, true)).toMatchObject({ result: "saved" })
+    const restored = pushTaskToCalendar("outbound-calendar", "Retained outbound task", "2031-07-08", undefined, "calendar.fixture")
+    await expect.poll(() => ha.serviceCalls.filter(call => call.service === "update_event").length).toBe(3)
+    ha.releaseService("calendar", "update_event", true)
+    expect(await restored).toBe(true)
+  } finally {
+    stopCalendarSync()
+    stopEntitySubscription()
+    closeHAConnection()
+    await ha.close()
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
+  }
+})
+
+test("Calendar and Todo pushes and removals recheck retirement after held confirmation lookups", async () => {
+  const previous = Object.fromEntries(["SUPERVISOR_TOKEN", "HA_BASE_URL", "HA_TOKEN"].map(key => [key, process.env[key]]))
+  const ha = await startHAWebSocketFixture()
+  const db = getPersistenceClient()
+  const execute = db.execute.bind(db)
+  const gates: Array<() => void> = []
+  let lookups = 0
+  try {
+    delete process.env.SUPERVISOR_TOKEN
+    process.env.HA_BASE_URL = ha.url
+    process.env.HA_TOKEN = "held-confirmation-retirement-fixture"
+    closeHAConnection()
+    expect(await getHAConnection()).not.toBeNull()
+    await db.batch([
+      `INSERT INTO tasks(id, title, idempotency_key, request_id, created_at, updated_at)
+        VALUES ('outbound-held', 'Retained task', 'outbound-held', 'outbound-held', 1, 1)`,
+      `INSERT INTO calendar_confirmations(confirmation_id, task_id, request_id, provider_event_id, source, payload, created_at)
+        VALUES ('held-calendar-link', 'outbound-held', 'held-calendar-link', 'writeback-outbound-held', 'ha.write_back', '{"entity_id":"calendar.fixture"}', 1)`,
+      `INSERT INTO todo_sync_confirmations(confirmation_id, task_id, request_id, ha_entity_id, ha_todo_uid, payload, created_at, updated_at)
+        VALUES ('held-todo-link', 'outbound-held', 'held-todo-link', 'todo.fixture', 'retained-uid', '{"summary":"Retained task"}', 1, 1)`,
+    ], "write")
+    const calendarBefore = (await execute("SELECT * FROM calendar_confirmations")).rows
+    const todoBefore = (await execute("SELECT * FROM todo_sync_confirmations")).rows
+    startCalendarSync({ entityId: "calendar.fixture", syncEnabled: true, syncMode: "export", writeBack: true, syncIntervalMs: 0 })
+    await startTodoSync({ entityId: "todo.fixture", syncEnabled: true, syncDirection: "outbound", writeBack: true })
+    db.execute = async statement => {
+      const result = await execute(statement)
+      const sql = typeof statement === "string" ? statement : statement.sql
+      if (sql.startsWith("SELECT ") && /FROM (calendar_confirmations|todo_sync_confirmations) WHERE task_id =/.test(sql)) {
+        lookups++
+        await new Promise<void>(resolve => { gates.push(resolve) })
+      }
+      return result
+    }
+    const operations = [
+      pushTaskToCalendar("outbound-held", "Retained task", "2031-07-08", undefined, "calendar.fixture"),
+      pushTaskToTodoList("outbound-held", "Retained task", "pending", "todo.fixture"),
+      removeTaskCalendarEvent("outbound-held"),
+      removeTaskFromTodoList("outbound-held"),
+    ]
+    await expect.poll(() => lookups).toBe(4)
+    expect(await new NamedBoardRepository(db, marker).changeLifecycle(parent, "household", "retired", 1, true)).toMatchObject({ result: "saved" })
+    for (const release of gates.splice(0)) release()
+    expect(await Promise.all(operations)).toEqual([false, false, false, 0])
+    expect(ha.serviceCalls).toEqual([])
+    expect((await execute("SELECT * FROM calendar_confirmations")).rows).toEqual(calendarBefore)
+    expect((await execute("SELECT * FROM todo_sync_confirmations")).rows).toEqual(todoBefore)
+  } finally {
+    for (const release of gates) release()
+    db.execute = execute
+    stopCalendarSync()
+    stopTodoSync()
     stopEntitySubscription()
     closeHAConnection()
     await ha.close()

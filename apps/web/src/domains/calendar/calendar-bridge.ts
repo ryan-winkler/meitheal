@@ -1598,7 +1598,8 @@ export async function pushTaskToCalendar(
   targetEntityId?: string, meta?: TaskCalendarMeta,
 ): Promise<boolean> {
   await ensureSchemaOnce()
-  if (!await householdBoardIsActive((await getStoreModule()).getPersistenceClient())) return false
+  const operationAllowed = async () => householdBoardIsActive((await getStoreModule()).getPersistenceClient())
+  if (!await operationAllowed()) return false
   // Find the first entity with export/bidirectional mode, or use targetEntityId
   let writeBackEntity: CalendarSyncConfig | undefined
   if (targetEntityId) {
@@ -1662,6 +1663,7 @@ export async function pushTaskToCalendar(
   }
 
   const richDescription = buildCalendarDescription(description, meta)
+  if (!await operationAllowed()) return false
 
   // Use update path when event already exists, create otherwise
   let success: boolean
@@ -1672,14 +1674,14 @@ export async function pushTaskToCalendar(
       end,
       description: richDescription,
       uid: `writeback-${taskId}`,
-    })
+    }, { operationAllowed })
   } else {
     success = await createCalendarEvent(writeBackEntity.entityId, {
       summary: title,
       start,
       end,
       description: richDescription,
-    })
+    }, { operationAllowed })
   }
 
   if (success) {
@@ -1718,7 +1720,8 @@ export async function pushTaskToCalendar(
  */
 export async function removeTaskCalendarEvent(taskId: string): Promise<boolean> {
   await ensureSchemaOnce()
-  if (!await householdBoardIsActive((await getStoreModule()).getPersistenceClient())) return false
+  const operationAllowed = async () => householdBoardIsActive((await getStoreModule()).getPersistenceClient())
+  if (!await operationAllowed()) return false
   try {
     await ensureSchemaOnce()
     const mod = await getStoreModule()
@@ -1740,7 +1743,8 @@ export async function removeTaskCalendarEvent(taskId: string): Promise<boolean> 
 
     // Delete the event from HA calendar
     const uid = `writeback-${taskId}`
-    const deleted = await deleteCalendarEvent(entityId, uid)
+    if (!await operationAllowed()) return false
+    const deleted = await deleteCalendarEvent(entityId, uid, { operationAllowed })
 
     // Clean up confirmation record regardless of HA response
     await client.execute({

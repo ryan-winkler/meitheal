@@ -27,9 +27,12 @@ export async function startHAWebSocketFixture(options: {
   states?: FixtureStateEntry[]
   restStates?: Record<string, FixtureStateEntry>
   filterSubscribeEntities?: boolean
+  holdServices?: Array<{ domain: string; service: string }>
 } = {}) {
   const tokens: string[] = []
   const firedEvents: Array<{ event_type: string; event_data: Record<string, unknown> }> = []
+  const serviceCalls: Array<{ domain: string; service: string; service_data: Record<string, unknown> }> = []
+  const heldServices: Array<{ domain: string; service: string; release(success: boolean): void }> = []
   const subscribeEntitiesCalls: Array<{ token: string; id: number; entity_ids?: string[] | undefined }> = []
   const eventTypesSubscribed: string[] = []
   let getStatesCount = 0
@@ -94,6 +97,20 @@ export async function startHAWebSocketFixture(options: {
         // unanswered. The real ws client's normal closing timeout stays active.
         if (options.pauseAfterPing?.includes(token)) socket.pause()
       } else {
+        if (message.type === "call_service") {
+          serviceCalls.push({ domain: message.domain, service: message.service, service_data: message.service_data })
+          if (options.holdServices?.some(rule => rule.domain === message.domain && rule.service === message.service)) {
+            heldServices.push({
+              domain: message.domain,
+              service: message.service,
+              release(success) {
+                send({ id: message.id, type: "result", success, result: null,
+                  ...(!success ? { error: { code: "not_supported", message: "Fixture update unsupported" } } : {}) })
+              },
+            })
+            return
+          }
+        }
         if (message.type === "fire_event") firedEvents.push({ event_type: message.event_type, event_data: message.event_data })
         if (message.type === "subscribe_events" && typeof message.event_type === "string") {
           eventTypesSubscribed.push(message.event_type)
@@ -157,6 +174,12 @@ export async function startHAWebSocketFixture(options: {
     url: `http://127.0.0.1:${addr.port}`,
     tokens,
     firedEvents,
+    serviceCalls,
+    releaseService(domain: string, service: string, success = true) {
+      const index = heldServices.findIndex(call => call.domain === domain && call.service === service)
+      if (index < 0) throw new Error("No held fixture service call")
+      heldServices.splice(index, 1)[0]!.release(success)
+    },
     pings,
     subscribeEntitiesCalls,
     eventTypesSubscribed,
