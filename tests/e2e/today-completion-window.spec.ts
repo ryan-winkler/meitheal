@@ -7,6 +7,16 @@ import { expect, test } from "@playwright/test"
 import { todayCompletionFilter } from "../../apps/web/src/lib/task-queries"
 import { startCoreFixture } from "../scripts/task-pins-fixture"
 
+test("Today completion windows follow the requested day and zone across calls", () => {
+  const day = "2031-03-09"
+  const zone = "America/Los_Angeles"
+  const pacific = todayCompletionFilter(day, zone)
+  expect(pacific.firstInstant).toBe(Date.parse("2031-03-09T08:00:00Z"))
+  expect(todayCompletionFilter(day, "Europe/Dublin").firstInstant).toBe(Date.parse("2031-03-09T00:00:00Z"))
+  expect(todayCompletionFilter("2031-03-10", zone).firstInstant).toBe(Date.parse("2031-03-10T07:00:00Z"))
+  expect(todayCompletionFilter(day, zone)).toEqual(pacific)
+})
+
 for (const { timezone, day, firstInstant, nextDay, completions } of [
   {
     timezone: "America/Santiago",

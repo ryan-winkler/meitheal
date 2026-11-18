@@ -414,12 +414,24 @@ export function todayScopeProblem(params: URLSearchParams, timezone: string, day
   return null
 }
 
-export function todayCompletionFilter(today: string, timezone = "Europe/Dublin") {
-  const ranges = householdDayRanges(today, resolveTimezone(timezone))
+type TodayCompletionFilter = {
+  readonly sql: string
+  readonly args: readonly (number | string)[]
+  readonly firstInstant: number | null
+}
+
+let lastCompletionFilter: { day: string; timezone: string; filter: TodayCompletionFilter } | undefined
+
+export function todayCompletionFilter(today: string, timezone = "Europe/Dublin"): TodayCompletionFilter {
+  const resolvedTimezone = resolveTimezone(timezone)
+  if (lastCompletionFilter?.day === today && lastCompletionFilter.timezone === resolvedTimezone) {
+    return lastCompletionFilter.filter
+  }
+  const ranges = householdDayRanges(today, resolvedTimezone)
   const matchesDay = (column: string) =>
     ranges.map(() => `(${column} >= ? AND ${column} < ?)`).join(" OR ") || "0"
   const bounds = ranges.flat()
-  return {
+  const filter: TodayCompletionFilter = {
     sql: `task_board_id IS NULL AND status = 'complete'
       AND (
         (typeof(updated_at) IN ('integer', 'real') AND (${matchesDay("updated_at")}))
@@ -432,6 +444,8 @@ export function todayCompletionFilter(today: string, timezone = "Europe/Dublin")
     args: [...bounds, ...bounds, today],
     firstInstant: ranges[0]?.[0] ?? null,
   }
+  lastCompletionFilter = { day: today, timezone: resolvedTimezone, filter }
+  return filter
 }
 
 export function todayDueSection(
@@ -551,7 +565,7 @@ export async function getTodayTaskCounts(now = new Date(), timezone?: string, in
         AND due_date IS NOT NULL AND due_date <> ''
       GROUP BY due_date
     `,
-    args: completionFilter.args,
+    args: [...completionFilter.args],
   }
   const [countResult, completed] = includeCompleted
     ? await client.batch([countsQuery, completedTodayQuery(completionFilter)], "read")
