@@ -21,11 +21,13 @@ The page still keeps direct completion, task-detail handoff, and grouped day acc
 
 ## Common Jobs
 
-### Separate the next 48 hours from the rest of the week
+### Scan the next seven days
 
 1. Open `Upcoming`.
-2. Use the shell tabs or quick-jump chips to switch between `Next 48h` and `Week Ahead`.
-3. Keep the route stable while scanning the same seven-day window.
+2. Use **Today and tomorrow** for the first two local days or **Following five days** for the rest of the seven-day window.
+3. Use **Related views** to open Today or Calendar.
+
+If Upcoming tasks could not load, refresh before relying on the counts.
 
 ### Complete work directly from Upcoming
 
