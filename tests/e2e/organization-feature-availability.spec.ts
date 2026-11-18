@@ -39,6 +39,12 @@ test("Administrators choose who can use each organization feature", async () => 
       expect(saved.status(), await saved.text()).toBe(204)
     }
     expect((await member.request.get(endpoint)).status()).toBe(403)
+    for (const enabled of [false, true]) {
+      const saved = await admin.request.put(app + "/api/features", { headers, data: { feature: "gamification", enabled } })
+      expect(saved.status()).toBe(200)
+      const current = await (await member.request.get(app + "/api/features")).json()
+      expect(current.features.find((feature: { name: string }) => feature.name === "gamification").enabled).toBe(enabled)
+    }
     const group = await member.request.post(app + "/api/areas", { headers, data: { name: "Hidden group fixture" } })
     expect(group.status()).toBe(201)
     const groupId = (await group.json()).id
@@ -160,9 +166,18 @@ test("Administrators choose who can use each organization feature", async () => 
     const pillarGoal = { action: "pillar-link", pillarId, entityType: "goal", id: goalId, enabled: true }
     const pillarRoutine = { action: "pillar-link", pillarId, entityType: "routine", id: routine.id, enabled: true }
     for (const data of [linkGoal, pillarGoal, pillarRoutine]) expect((await change(data)).status()).toBe(200)
+    const scoringTask = await member.request.post(app + "/api/tasks", { headers, data: { title: "Today score fixture", priority: 3 } })
+    expect(scoringTask.status()).toBe(201)
+    const scored = await member.request.patch(app + "/api/tasks/" + (await scoringTask.json()).id, { headers, data: { status: "done" } })
+    expect(scored.status()).toBe(200)
+    await page.goto(app + "/today")
+    await expect(page.locator(".stat-xp")).toContainText("+30")
+    await expect(page.locator(".stat-streak")).toBeVisible()
     await setFeature("goals", "nobody")
     await setFeature("routines", "nobody")
     await setFeature("achievements", "nobody")
+    await page.reload()
+    await expect(page.locator(".stat-xp, .stat-streak")).toHaveCount(0)
     for (const data of [linkGoal, pillarGoal, pillarRoutine,
       { action: "project", title: "Hidden goal link", description: "", areaId, goalId },
     ]) expect((await change(data)).status()).toBe(404)

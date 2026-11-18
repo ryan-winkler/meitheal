@@ -8,6 +8,7 @@
 export {
   recordTaskCompletion,
   getStats,
+  getDailyProgress,
   getWeeklyData,
   getXpForPriority,
   ensureGamificationSchema,

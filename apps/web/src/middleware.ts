@@ -575,7 +575,7 @@ async function handleRequest({ request, locals, routePattern }: Parameters<Middl
       } else {
         const availability = await getOrganizationAvailability({ locals, request })
         response = organizationRouteAvailable(url.pathname, availability, url.searchParams) &&
-          organizationRouteAvailable(routePattern, availability, url.searchParams)
+          (url.pathname === routePattern || organizationRouteAvailable(routePattern, availability, url.searchParams))
           ? await withOrganizationAvailability(availability, () =>
             retryKey ? replayTaskRequest(retryKey, next, locals.writeAbortSignal) : next())
           : apiProblem({ status: 404, detail: "This feature is unavailable.", extraHeaders: { "cache-control": "private, no-store" } })

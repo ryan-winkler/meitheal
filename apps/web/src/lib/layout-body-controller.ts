@@ -9,8 +9,7 @@ import { pageLifecycle } from "./page-lifecycle"
 pageLifecycle.onPageLoad(initIngressNavigation)
 
 // ───── Sidebar Badge Hydration ─────
-// SSR renders the badge with server-side count, but it can be stale or 0
-// if the DB wasn't ready during SSR. This hydrates it client-side.
+// Refresh the active-task count when an integration mounts the optional badge.
 async function refreshSidebarBadge() {
   const badge = document.getElementById("nav-count-tasks")
   if (!badge) return
