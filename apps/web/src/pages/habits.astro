@@ -147,7 +147,7 @@ const habitsBootstrap = serializeForScript({ habits })
       id="habits-bar-new-habit"
       data-open-habit-modal={loadFailed || !householdActive ? undefined : "true"}
       disabled={loadFailed || !householdActive}
-      title={householdActive ? newRoutine : "Restore Household from Boards to create a shared Routine"}
+      title={loadFailed ? "Refresh the page to retry loading Routines" : householdActive ? newRoutine : "Restore Household from Boards to create a shared Routine"}
       aria-label={newRoutine}
     >
       <svg

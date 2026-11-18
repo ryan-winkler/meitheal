@@ -239,6 +239,7 @@ test("Named Board disclosures follow the selected Area and current Home Assistan
       await expect(sharedCreation).toHaveCount(2)
       for (const button of await sharedCreation.all()) await expect(button).toBeDisabled()
       await expect(page.locator("[data-open-habit-modal]")).toHaveCount(0)
+      await expect(page.locator("#habits-bar-new-habit")).toHaveAttribute("title", "Restore Household from Boards to create a shared Routine")
       expect((await owner.request.get(app + "/api/habits")).status()).toBe(409)
     } finally {
       const pausedDirectory = await administrator.request.get(app + "/api/boards")

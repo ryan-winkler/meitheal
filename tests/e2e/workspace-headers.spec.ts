@@ -234,6 +234,7 @@ test("compact workspace headers preserve ingress navigation and distinguish unav
         await expect(failed.locator("#habits-library").getByRole("button", { name: "New " + alias, exact: true })).toBeDisabled()
         const toolbarCreate = failed.locator("#habits-bar-new-habit")
         await expect(toolbarCreate).toBeDisabled()
+        await expect(toolbarCreate).toHaveAttribute("title", "Refresh the page to retry loading Routines")
         const label = toolbarCreate.locator(".unified-bar__new-task-label")
         await expect(label).toBeInViewport()
         const labelBox = await label.boundingBox()

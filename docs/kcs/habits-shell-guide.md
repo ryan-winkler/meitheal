@@ -82,6 +82,7 @@ When you choose Gaeilge in Settings, the last completion label and date use Iris
 ### Routine counts could not load
 
 Refresh to retry the Household Routine read. The workload counts and local creation controls become available after a successful read. The named Board check-in area reports its own availability.
+The disabled toolbar creation control offers refresh guidance when a read fails. Restoration guidance appears only after Household is confirmed deleted.
 
 ### The new Routine button does nothing
 
