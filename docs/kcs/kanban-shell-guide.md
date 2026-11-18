@@ -61,6 +61,8 @@ The board remains usable when reaction counts are unavailable. A denied request 
 
 Each lane shows up to 25 cards. Its count includes every task matching the current area and filters. The range below the lane shows which cards are loaded. Use **Previous** or **Next** to page within that lane. Use **Filter by text** or the filter builder to find a task anywhere in the board, including other pages. Changing the area or filters returns the lanes to their first page.
 
+To move a task to another Board Group, open its **Details** and choose the destination in **Group**. When the save succeeds, the card appears in its new group after Details closes. If the destination group is collapsed, focus returns to its heading. If the board is filtered to the original group, the card leaves the results and the filter stays selected. A failed save restores the previous selection. Use the **Home Assistant Area** control in Details to edit the task's location when it is available.
+
 Open **Overdue** from Dashboard to filter tasks across every Kanban page. The board matches Dashboard’s due-date and completion rules.
 
 Use a swimlane’s group heading to show or hide its cards with a click, Enter, or Space. The board remembers expanded and collapsed groups on this browser for each grouping choice and workflow lane. With single-key shortcuts enabled, press **C** while the board has focus to toggle all its visible groups.
@@ -94,6 +96,14 @@ Open **Timeline** to narrow the chart by text, status, priority, task type, or a
 Choose **Group by → By Assignee** to see who owns the cards on each workflow column page. The column total counts the full result. **Unassigned** contains tasks with no assignee. When different people or unavailable assignments share the same label, a number distinguishes their headings. Their cards and collapse preferences stay separate.
 
 If the Home Assistant roster cannot be verified, the board shows a cached name when one is available from the same connection. Otherwise it shows that the assignee could not be verified. Reload the board to check the directory again. Choose **Unassigned** from a card's **Assign User** control to move it into that group in the same workflow column.
+
+### Group cards by project
+
+Choose **Group by → By Project** to split the current column page into project groups. Separate projects with the same name have separate groups. A second heading line shows the project's Area when it helps distinguish the name. Projects with no direct Area can use their Goal's Area.
+
+**No Project** contains tasks with no project. **Unknown Project** contains assignments that are unavailable to the Household. If project names fail to load, the board explains why assigned tasks are in Unknown Project. Reload to check again. Column counts and cards remain available while names are unavailable.
+
+Use Enter or Space on a heading to collapse its cards. Each column remembers its own project groups. Changing only Group by keeps the current page.
 
 ## Troubleshooting
 
@@ -135,3 +145,7 @@ compressing the cards. At widths from 769 to 1024 CSS px the sidebar narrows to
 `--sidebar-width`, so a change to one width moves the other.
 
 An unreadable card assignment no longer interrupts grouping for the board. Check the assignment in Details if its group is unexpected. If an assignee group disappears after a refresh, keyboard focus returns to its workflow lane heading.
+
+Kanban Project groups keep their saved collapse state when their names change. Duplicate or reserved names show a short identity token before the Area, so long names cannot hide the distinction. Missing and unavailable assignments use the current language’s labels. If a focused Project disappears after a refresh, focus returns to its workflow lane heading.
+
+When reopening Details from a card or ticket link while a Board Group save is pending, the drawer waits for that save and then reads the current task. A later edit from another client remains authoritative.

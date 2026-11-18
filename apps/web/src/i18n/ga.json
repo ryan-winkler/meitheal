@@ -226,6 +226,9 @@
     "clear_filters": "Glan Ar Fad"
   },
   "kanban": {
+    "no_project": "Gan Tionscadal",
+    "unknown_project": "Tionscadal Anaithnid",
+    "project_catalog_failed": "Níorbh fhéidir ainmneacha na dtionscadal a lódáil. Taispeántar tascanna sannta faoi Thionscadal Anaithnid. Athlódáil chun seiceáil arís.",
     "title": "Clár Kanban",
     "manage_lanes": "⚙ Lánaí",
     "new_task": "+ Tasc Nua",
@@ -356,6 +359,8 @@
     "bulk_delete_failed": "Theip ar scriosadh ollmhór"
   },
   "task_detail": {
+    "unavailable_group_selection": "Níl an rogha shábháilte ar fáil",
+    "group_options_load_failed": "Níorbh fhéidir na roghanna a lódáil",
     "description": "Cur Síos",
     "description_placeholder": "Cuir cur síos leis...",
     "linked_tickets": "Ticéid Nasctha",

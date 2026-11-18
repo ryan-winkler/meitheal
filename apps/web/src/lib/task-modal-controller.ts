@@ -3,10 +3,11 @@
         import { copyToClipboard } from "@lib/clipboard"
         import { singleKeyShortcutsEnabled } from "@lib/single-key-shortcuts"
         import {
-          buildTaskPermalink, getLegacyTaskId, type SearchDetailDismissal, type SearchDetailHandoff,
+          buildTaskPermalink, findKanbanDetailFocus, getLegacyTaskId, type SearchDetailDismissal, type SearchDetailHandoff,
         } from "@lib/task-detail-handoff"
         import { buildIngressPagePath } from "@lib/page-shell-links"
         import { restoreTaskBackgroundUrl, taskDetailPath, ticketIdFromPath, taskBackgroundUrl } from "@lib/task-page-url"
+        import { formatTicketKey, parseTicketKey } from "@lib/ticket-key"
 
         const log = createClientLogger("tasks", "detail-modal");
         import { saveAttachment } from "@domains/offline/offline-store";
@@ -274,6 +275,15 @@
           }
         }
 
+        const pendingAreaWrites = new Map<string, Promise<string | null>>()
+        let changedAreaTask: string | null = null
+
+        function reconcileAreaGrouping() {
+          if (!changedAreaTask || __signal.aborted) return
+          changedAreaTask = null
+          document.dispatchEvent(new CustomEvent("kanban:detail-changed", { detail: "area" }))
+        }
+
         let epicGroupingDirty = false
         function reconcileEpicGrouping() {
           if (!epicGroupingDirty || __signal.aborted) return
@@ -335,9 +345,10 @@
             if (layoutPanel && !layoutPanel.hidden) setLayoutPanel(false)
             syncInspectorDockMode();
             // P3-4: Restore focus to the element that triggered the panel
+            const kanban = document.getElementById("kanban-board")
             const origin = _previouslyFocused?.isConnected ? _previouslyFocused
               : _previouslyFocused?.id ? document.getElementById(_previouslyFocused.id)
-              : previousCard ? document.querySelector<HTMLElement>(`.card-open-btn[data-id="${CSS.escape(previousCard.dataset.id ?? "")}"]`)
+              : previousCard && kanban && _previouslyFocused ? findKanbanDetailFocus(kanban, _previouslyFocused)
               : previousDay ? document.querySelector<HTMLElement>(`.cal-cell[data-date="${CSS.escape(previousDay)}"]`) ??
                 document.querySelector<HTMLElement>("#calendar-shell .cal-today-btn")
               : previousCompletion ? Array.from(document.querySelectorAll<HTMLElement>(
@@ -357,6 +368,7 @@
             if (closed && (closed.dirty || deferralChanged)) closed.reconcile()
             if (search?.dirty && !search.pending && !deferralChanged) deferral.reconcileSearch()
             search?.handoff.onDismiss(reason)
+            reconcileAreaGrouping()
             reconcileEpicGrouping()
           };
 
@@ -409,9 +421,9 @@
             search.onDismiss("history")
             return
           }
-          const requestedTicket = /^MTH-(\d+)$/i.exec(taskId)
+          const requestedTicket = parseTicketKey(taskId)
           const sameTicket = !newSession && (taskId === (sessionTicketId ?? currentTaskId) ||
-            (requestedTicket !== null && Number(requestedTicket[1]) === currentTicketNumber))
+            (requestedTicket !== null && requestedTicket === currentTicketNumber))
           if (!sameTicket && waitForDescriptionWrite(() => {
             void openTaskDetail(taskId, commentTarget, search, updateLocation)
           })) return
@@ -448,6 +460,14 @@
           setStatusLoading(true)
           statusSelect?.removeAttribute("data-saved-status")
           setStatusBusy(false)
+          const areaField = document.querySelector<HTMLSelectElement>("#td-area")
+          const ticketKey = formatTicketKey(requestedTicket)
+          const areaWriteAtOpen = pendingAreaWrites.get(taskId) ?? (ticketKey ? pendingAreaWrites.get(ticketKey) : undefined)
+          let areaFieldReady = false
+          if (areaField) {
+            areaField.disabled = true
+            areaField.replaceChildren()
+          }
           const projectField = document.querySelector<HTMLSelectElement>("#td-project")
           let projectFieldReady = false
           if (projectField) projectField.disabled = true
@@ -469,6 +489,7 @@
           tdOverlay.classList.add("active");
           syncInspectorDockMode();
           tdClose?.focus()
+          reconcileAreaGrouping()
           // Set dynamic aria-label for screen readers
           setInspectorAriaLabel(`Task detail: loading...`);
           // Show skeleton, hide loaded content
@@ -502,9 +523,13 @@
               await pendingChecklist
               if (modalSignal.aborted) return
             }
+            if (areaWriteAtOpen) {
+              await areaWriteAtOpen
+              if (modalSignal.aborted) return
+            }
             const res = await fetch(`/api/tasks/${encodeURIComponent(taskId)}`, { // nosemgrep
               signal: modalSignal,
-              ...(pendingChecklist ? { cache: "no-store" } : {}),
+              ...(pendingChecklist || areaWriteAtOpen ? { cache: "no-store" } : {}),
             })
             if (modalSignal.aborted) return
             if (!res.ok) {
@@ -513,7 +538,7 @@
             }
             const t = (await res.json()) as Record<string, unknown>
             if (modalSignal.aborted) return
-            if (!t.id || (requestedTicket && Number(requestedTicket[1]) !== Number(t.ticket_number))) {
+            if (!t.id || (requestedTicket !== null && requestedTicket !== Number(t.ticket_number))) {
               showTaskError(false)
               return
             }
@@ -528,7 +553,7 @@
             const requestOptions = { signal: modalSignal }
             const lanes = fetch("/api/lanes", requestOptions)
             const backlogModeSetting = fetch("/api/settings?key=backlog_mode", requestOptions)
-            const areas = fetch("/api/areas", requestOptions)
+            const areas = areaField ? fetch("/api/areas", requestOptions) : null
             const projectRead = projectField ? fetch("/api/projects", requestOptions) : null
             const pillars = fetch("/api/pillars", requestOptions)
             const assignSelect = document.querySelector<HTMLSelectElement>("#td-assigned-to")
@@ -960,32 +985,31 @@
             endInput.value = String(t.end_date ?? "")
             const trackedInput = document.getElementById("td-time-tracked") as HTMLInputElement
             trackedInput.value = String(t.time_tracked ?? 0)
-            // Populate board dropdown
-            const areaSelect = document.getElementById(
-              "td-area",
-            ) as HTMLSelectElement;
-            const currentAreaId = String(t.area_id ?? "default");
-            try {
-              const boardRes = await areas
-              if (modalSignal.aborted) return
-              if (boardRes.ok && areaSelect) {
-                const areaData = await boardRes.json()
+            if (areaField && areas) {
+              const savedArea = String(t.area_id ?? "default")
+              try {
+                const response = await areas
+                if (!response.ok) throw new Error("Groups unavailable")
+                const { areas: choices } = await response.json() as { areas: { id: string; name: string }[] }
                 if (modalSignal.aborted) return
-                const boards = areaData.areas ?? [];
-                areaSelect.replaceChildren();
-                boards.forEach(
-                  (b: { id: string; name: string; icon: string }) => {
-                    const opt = document.createElement("option");
-                    opt.value = b.id;
-                    opt.textContent = b.name;
-                    areaSelect.appendChild(opt);
-                  },
-                );
-                areaSelect.value = currentAreaId;
+                if (!Array.isArray(choices) || choices.some(area => typeof area?.id !== "string" || !area.id || typeof area.name !== "string")) {
+                  throw new Error("Invalid Groups")
+                }
+                areaField.replaceChildren(...choices.map(({ id, name }) => new Option(name, id)))
+                if (!choices.some(area => area.id === savedArea)) {
+                  const label = savedArea === "default" ? "Default" :
+                    window.mI18n?.get("task_detail.unavailable_group_selection") ?? "Saved selection unavailable"
+                  const unavailable = new Option(label, savedArea)
+                  unavailable.disabled = true
+                  areaField.add(unavailable)
+                }
+                areaFieldReady = choices.length > 0
+              } catch {
+                if (modalSignal.aborted) return
+                areaField.replaceChildren(new Option(window.mI18n?.get("task_detail.group_options_load_failed") ?? "Options could not load", savedArea))
               }
-            } catch {
-              if (modalSignal.aborted) return
-              areaSelect?.replaceChildren(new Option(currentAreaId, currentAreaId));
+              areaField.value = savedArea
+              areaField.dataset.savedArea = savedArea
             }
             if (projectField && projectRead) {
               const savedProject = String(t.project_id ?? "")
@@ -1255,6 +1279,7 @@
               _isPopulating = false
               if (descSaveBtn && !pendingDescriptionSave) descSaveBtn.disabled = false
               setStatusLoading(false)
+              if (areaField) areaField.disabled = !areaFieldReady
               if (unlinkParentButton) unlinkParentButton.disabled = false
               if (projectField) projectField.disabled = !projectFieldReady
               deferral.loaded(taskId, typeof t.project_id === "string" ? t.project_id : null, t.deferred_at != null, modalSignal, Boolean(searchSession))
@@ -1278,18 +1303,24 @@
           const taskId = currentTaskId
           const search = searchSession
           const completeDeferralWrite = deferral.nativeWrite(field, value)
-          const scopedWrite = search || ["title", "status", "project_id", "framework_payload"].includes(field) ? beginScopedWrite() : undefined
+          const scopedWrite = search || ["title", "status", "area_id", "project_id", "framework_payload"].includes(field) ? beginScopedWrite() : undefined
           let saved = false
           try {
             const response = await fetch(`/api/tasks/${taskId}`, {
               method: "PUT",
               headers: { "content-type": "application/json" },
               body: JSON.stringify({ [field]: value, ...(updatedAt === undefined ? {} : { updated_at: updatedAt }) }),
-              ...(scopedWrite ? { signal: scopedWrite.signal } : {}),
+              ...(scopedWrite ? { signal: scopedWrite.signal } : field === "area_id" ? { signal: AbortSignal.timeout(7_000) } : {}),
             })
             saved = response.ok
             if (saved) {
-              if (field === "parent_id" || field === "task_type" || field === "title") {
+              if (field === "area_id") {
+                changedAreaTask = taskId
+                if (!tdOverlay.classList.contains("active") ||
+                    (tdOverlay.dataset.openTaskId && generation !== detailGeneration)) {
+                  reconcileAreaGrouping()
+                }
+              } else if (field === "parent_id" || field === "task_type" || field === "title") {
                 epicGroupingDirty = true
                 if (!tdOverlay.classList.contains("active")) reconcileEpicGrouping()
               }
@@ -1299,7 +1330,7 @@
                 document.dispatchEvent(new CustomEvent("meitheal:task-status-saved", { detail: { id: taskId, status: task.status, deferred: task.deferred_at != null } }))
                 if (value === "complete" && (!search || generation === detailGeneration)) onTaskCompleted(task)
               }
-              return !search || generation === detailGeneration
+              return field === "area_id" || !search || generation === detailGeneration
             }
             log.warn(`Failed to save ${field}:`, response.status)
           } catch (err) {
@@ -1501,10 +1532,29 @@
           ?.addEventListener("change", (e) => {
             saveTD("task_type", (e.target as HTMLSelectElement).value);
           }, { signal: __signal });
-        // Phase 26: board change auto-save
-        document.getElementById("td-area")?.addEventListener("change", (e) => {
-          saveTD("area_id", (e.target as HTMLSelectElement).value);
-        }, { signal: __signal });
+        document.getElementById("td-area")?.addEventListener("change", async event => {
+          const select = event.currentTarget as HTMLSelectElement
+          const modalSignal = _modalAbortController?.signal
+          const taskId = currentTaskId
+          const areaId = select.value
+          const previous = select.dataset.savedArea
+          if (!taskId || !modalSignal || select.disabled || !areaId || areaId === previous) return
+          const ticketKey = formatTicketKey(currentTicketNumber)
+          const hadFocus = document.activeElement === select
+          select.disabled = true
+          const write = saveTaskField("area_id", areaId).then(saved => saved ? areaId : null).finally(() => {
+            if (pendingAreaWrites.get(taskId) === write) pendingAreaWrites.delete(taskId)
+            if (ticketKey && pendingAreaWrites.get(ticketKey) === write) pendingAreaWrites.delete(ticketKey)
+          })
+          pendingAreaWrites.set(taskId, write)
+          if (ticketKey) pendingAreaWrites.set(ticketKey, write)
+          const savedArea = await write
+          if (modalSignal.aborted) return
+          if (savedArea) select.dataset.savedArea = savedArea
+          else select.value = previous ?? ""
+          select.disabled = false
+          if (hadFocus && document.activeElement === document.body) select.focus({ preventScroll: true })
+        }, { signal: __signal })
         // Project change auto-save
         document.getElementById("td-project")?.addEventListener("change", async (event) => {
           const select = event.currentTarget as HTMLSelectElement
