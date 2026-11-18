@@ -735,7 +735,7 @@ export class TaskRepository {
   async getKanbanLanes(): Promise<KanbanLane[]> {
     const result = await this.client.execute(
       `SELECT id, key, label, icon, position, wip_limit, includes, built_in FROM kanban_lanes
-       WHERE board_id = 'household' ORDER BY position ASC`,
+       WHERE board_id = 'household' ORDER BY position ASC, id ASC`,
     );
     return result.rows.map((r: Record<string, unknown>) => ({
       id: String(r.id),
