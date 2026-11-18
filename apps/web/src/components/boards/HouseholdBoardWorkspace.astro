@@ -59,7 +59,7 @@ if (!available) Astro.response.status = 404
             <label>Icon <input name="icon" maxlength="10" value="📁" /></label>
             <label>Color <input type="color" name="color" value={DEFAULT_GROUP_COLOR} /></label>
             <p role="status" data-group-feedback></p>
-            <button type="submit" class="btn btn-primary">Create Area</button>
+            <button type="submit" class="btn btn-primary">{organizationLocale(Astro) === "en" ? `Create ${label("group")}` : newLabel("group")}</button>
           </form>
         </details>}
       </header>
@@ -69,7 +69,7 @@ if (!available) Astro.response.status = 404
           {availableFeature("projects") && <a class="board-note" href={boardWorkspaceHref(HOUSEHOLD_BOARD_ID, { area: area.id, groups: true }, "projects")}>{label("project", true)}</a>}
         </article>)}
       </div>
-      {!areas.length && <p class="board-empty">Create an Area to organize related work.</p>}
+      {availableFeature("groups") && !areas.length && <p class="board-empty">Choose “{newLabel("group")}” to organize related work.</p>}
       {unfiled.length > 0 && <section class="named-boards" aria-labelledby="unfiled-projects">
         <h2 id="unfiled-projects">Unfiled {label("project", true)}</h2>
         <div class="boards-list">

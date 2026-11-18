@@ -95,7 +95,6 @@ const tasksHref = boardWorkspaceHref(HOUSEHOLD_BOARD_ID, { project: projectId, f
 const tasksPath = `${Astro.locals.ingressPath || ""}${tasksHref}#kanban`
 const tabs: { id: string; label: string; icon: IconName }[] = [
   { id: "overview", label: "Overview", icon: "chart-bar" },
-  { id: "tasks", label: organization("task", true), icon: "checkbox" },
   { id: "fields", label: "Fields", icon: "tag" },
   { id: settingsTab, label: "Settings", icon: "settings" },
 ]
@@ -121,24 +120,32 @@ const tabs: { id: string; label: string; icon: IconName }[] = [
   </div>
 
   {/* Sub-menu tab bar */}
-  <nav class="project-tabs" role="tablist" aria-label="Project sections">
+  <nav class="project-tabs" aria-label="Project sections">
+    <a href={tasksHref + "#kanban"} class="project-tab" data-astro-reload>
+      <Icon name="checkbox" size={14} class="shrink-0" sprite />
+      <span>{organization("task", true)}</span>
+    </a>
+    <div class="project-panel-tabs" role="tablist" aria-label="Project sections">
     {tabs.map((tab) => (
       <a
-        href={tab.id === "tasks" ? tasksHref + "#kanban" : `#${tab.id}`}
+        href={`#${tab.id}`}
         class={`project-tab ${tab.id === "overview" ? "active" : ""}`}
         role="tab"
+        id={`project-tab-${tab.id}`}
+        aria-controls={`section-${tab.id}`}
         data-tab={tab.id}
         data-astro-reload
         aria-selected={tab.id === "overview" ? "true" : "false"}
       >
         <Icon name={tab.icon} size={14} class="shrink-0" sprite />
-        {tab.label}
+        <span>{tab.label}</span>
       </a>
     ))}
+    </div>
   </nav>
 
   {/* ── Overview Section ── */}
-  <section id="section-overview" class="project-section active" data-section="overview">
+  <section id="section-overview" class="project-section active" data-section="overview" role="tabpanel" aria-labelledby="project-tab-overview">
     {/* Breadcrumb */}
     <nav class="project-breadcrumb" aria-label="Project breadcrumb">
       <a href={workspaceProjectId ? boardWorkspaceHref(HOUSEHOLD_BOARD_ID) : "/projects"}>{workspaceProjectId ? "Household" : organization("project", true)}</a>
@@ -195,7 +202,7 @@ const tabs: { id: string; label: string; icon: IconName }[] = [
   </section>
 
   {/* ── Fields Section ── */}
-  <section id="section-fields" class="project-section" data-section="fields">
+  <section id="section-fields" class="project-section" data-section="fields" role="tabpanel" aria-labelledby="project-tab-fields">
     <div class="section-header">
       <h2 class="section-title">Custom Fields</h2>
     </div>
@@ -210,7 +217,7 @@ const tabs: { id: string; label: string; icon: IconName }[] = [
   </section>
 
   {/* ── Settings Section ── */}
-  <section id={`section-${settingsTab}`} class="project-section" data-section={settingsTab}>
+  <section id={`section-${settingsTab}`} class="project-section" data-section={settingsTab} role="tabpanel" aria-labelledby={`project-tab-${settingsTab}`}>
     <div class="section-header">
       <h2 class="section-title">{organization("project")} Settings</h2>
     </div>
@@ -296,10 +303,9 @@ const tabs: { id: string; label: string; icon: IconName }[] = [
     gap: 2px;
     border-bottom: 1px solid var(--border);
     margin-bottom: 1.5rem;
-    overflow-x: auto;
-    scrollbar-width: none;
+    flex-wrap: wrap;
   }
-  .project-tabs::-webkit-scrollbar { display: none; }
+  .project-panel-tabs { display: contents; }
 
   .project-tab {
     display: flex;
@@ -311,9 +317,13 @@ const tabs: { id: string; label: string; icon: IconName }[] = [
     color: var(--text-muted);
     text-decoration: none;
     border-bottom: 2px solid transparent;
-    white-space: nowrap;
+    min-width: 0;
+    max-width: 100%;
+    min-height: 44px;
+    overflow-wrap: anywhere;
     transition: color 150ms, border-color 150ms;
   }
+  .project-tab > span { min-width: 0; }
   .project-tab:hover { color: var(--text-primary); }
   .project-tab.active {
     color: var(--accent);
@@ -543,7 +553,7 @@ const tabs: { id: string; label: string; icon: IconName }[] = [
 
 <script define:vars={{ projectId, projectsPath, tasksPath }}>
   // --- Tab switching ---
-  const projTabEls = Array.from(document.querySelectorAll(".project-tab"));
+  const projTabEls = Array.from(document.querySelectorAll('.project-tab[role="tab"]'));
   const projSectionEls = Array.from(document.querySelectorAll(".project-section"));
 
   function switchTab(hash) {

@@ -1,5 +1,5 @@
 import { browserUuid } from "./browser-uuid"
-import { confirmDialog } from "./confirm-dialog"
+import { confirmDialog, type ConfirmOptions } from "./confirm-dialog"
 import { safeIngressHref, syncIngressDestination } from "./ingress-navigation"
 import { safeFetch } from "./safe-fetch"
 
@@ -87,6 +87,17 @@ export function bindBoardPage(signal: AbortSignal) {
   window.addEventListener("pagehide", () => { checking?.abort(); detach() }, { signal })
   window.addEventListener("pageshow", event => { if (event.persisted) void recheck(true) }, { signal })
   status.querySelector("[data-board-refresh]")?.addEventListener("click", () => window.location.reload(), { signal })
+
+  async function confirmBoard(options: ConfirmOptions) {
+    const confirmation = new AbortController()
+    const hide = () => confirmation.abort()
+    root!.addEventListener("meitheal:board-hidden", hide, { signal })
+    try {
+      return await confirmDialog({ ...options, signal: AbortSignal.any([signal, confirmation.signal]) })
+    } finally {
+      root!.removeEventListener("meitheal:board-hidden", hide)
+    }
+  }
 
   const dest = root.querySelector<HTMLSelectElement>('[name="destination"]')
   const recipient = root.querySelector<HTMLElement>("[data-board-recipient]")
@@ -190,11 +201,15 @@ export function bindBoardPage(signal: AbortSignal) {
     const feedback = form.querySelector<HTMLElement>("[data-board-feedback]")
     const button = form.querySelector<HTMLButtonElement>('[type="submit"]')
     if (!button || button.disabled) return
-    if (boardForm === "task-delete" && !await confirmDialog({ message: "Delete this task?" })) return
-    if (boardForm === "planning" && value("action") === "retire" && !await confirmDialog({ message: "Remove this item from active planning?" })) return
-    if (boardForm === "lifecycle" && value("action") === "retire" && !await confirmDialog({
+    if (boardForm === "task-delete" && !await confirmBoard({ message: "Delete this task?" })) return
+    if (boardForm === "planning" && value("action") === "retire" && !await confirmBoard({ message: "Remove this item from active planning?" })) return
+    if (boardForm === "lifecycle" && value("action") === "retire" && !await confirmBoard({
+      title: "Delete Board",
       message: `Delete ${value("boardName") || "this Board"}? Its work stays saved in Deleted Boards. Incoming work and Routines pause until you restore it.`,
+      confirmText: "Delete Board",
+      variant: "danger",
     })) return
+    if (expired || signal.aborted || !root.isConnected || !form.isConnected) return
     button.disabled = true
     if (feedback) feedback.textContent = ""
 

@@ -75,7 +75,16 @@ export function bindSidebarBoards(signal: AbortSignal) {
     const request = new AbortController()
     groupRequests.set(row, request)
     const groups = row.querySelector<HTMLUListElement>(areaId ? "[data-board-projects]" : "[data-board-groups]")!
-    if (!after) groups.replaceChildren()
+    const previousStatus = groups.querySelector<HTMLElement>(":scope > [data-board-group-status]")
+    if (!after) groups.querySelectorAll(":scope > [data-group-choice]").forEach(item => item.remove())
+    groups.querySelector(":scope > [data-board-group-notice]")?.remove()
+    previousStatus?.querySelector("button")?.setAttribute("aria-disabled", "true")
+    const loading = document.createElement("li")
+    loading.dataset.boardGroupNotice = ""
+    loading.setAttribute("role", "status")
+    loading.textContent = `Loading ${areaId ? projectLabel : areaLabel}…`
+    groups.append(loading)
+    groups.setAttribute("aria-busy", "true")
     const query = new URLSearchParams({ view: "groups" })
     if (after) query.set("after", after)
     if (areaId) query.set("area", areaId)
@@ -88,20 +97,27 @@ export function bindSidebarBoards(signal: AbortSignal) {
         cache: "no-store",
         signal: AbortSignal.any([signal, request.signal, AbortSignal.timeout(4_000)]),
       })
+      if (request.signal.aborted || signal.aborted || !row.isConnected || groups.hidden) return
+      if ([401, 403, 404].includes(response.status)) { clear(); return }
       if (!response.ok) throw new Error("Could not load choices.")
       const data = await response.json() as GroupPage
       if (request.signal.aborted || signal.aborted || !row.isConnected || groups.hidden) return
-      groups.querySelector(":scope > [data-board-group-status]")?.remove()
+      const moveFocus = previousStatus?.contains(document.activeElement)
+      previousStatus?.remove()
+      loading.remove()
       const choices = data.selected && !data.items.some(item => item.id === data.selected?.id)
         ? [data.selected, ...data.items] : data.items
       const displayed = new Set([...groups.querySelectorAll<HTMLElement>(":scope > [data-group-choice]")].map(item => item.dataset.groupChoice))
+      let firstNewLink: HTMLAnchorElement | undefined
       for (const group of choices) {
         if (displayed.has(group.id)) continue
+        displayed.add(group.id)
         const child = document.createElement("li")
         const link = document.createElement("a")
         link.className = "nav-link"
         link.href = safeIngressHref(boardWorkspaceHref(boardId, areaId ? { project: group.id, fromArea: areaId } : { area: group.id }))
         link.textContent = group.name
+        firstNewLink ??= link
         child.dataset.groupChoice = group.id
         if (current.pathname.endsWith(boardWorkspaceHref(boardId)) && current.searchParams.get(areaId ? "project" : "area") === group.id) {
           link.setAttribute("aria-current", "page")
@@ -148,13 +164,20 @@ export function bindSidebarBoards(signal: AbortSignal) {
       if (data.next_cursor || !groups.childElementCount) {
         addStatus(data.next_cursor ? `Show more ${areaId ? projectLabel : areaLabel}` : `No ${areaId ? projectLabel : areaLabel} yet`, data.next_cursor)
       }
+      if (moveFocus) (firstNewLink ?? groups.querySelector<HTMLButtonElement>(":scope > [data-board-group-status] button"))?.focus()
     } catch {
       if (!request.signal.aborted && !signal.aborted && row.isConnected && !groups.hidden) {
-        groups.replaceChildren()
-        addStatus(`Try loading ${areaId ? projectLabel : areaLabel} again`, "")
+        const moveFocus = previousStatus?.contains(document.activeElement)
+        previousStatus?.remove()
+        loading.textContent = `Could not load ${areaId ? projectLabel : areaLabel}. Try again.`
+        addStatus(`Try loading ${areaId ? projectLabel : areaLabel} again`, after ?? "")
+        if (moveFocus) groups.querySelector<HTMLButtonElement>(":scope > [data-board-group-status] button")?.focus()
       }
     } finally {
-      if (groupRequests.get(row) === request) groupRequests.delete(row)
+      if (groupRequests.get(row) === request) {
+        groupRequests.delete(row)
+        groups.setAttribute("aria-busy", "false")
+      }
     }
 
     function addStatus(label: string, cursor: string | null) {
@@ -166,7 +189,9 @@ export function bindSidebarBoards(signal: AbortSignal) {
         button.type = "button"
         button.className = "btn btn-ghost"
         button.textContent = label
-        button.addEventListener("click", () => { void loadGroups(row, boardId, cursor || null, areaId) }, { signal })
+        button.addEventListener("click", () => {
+          if (!groupRequests.has(row)) void loadGroups(row, boardId, cursor || null, areaId)
+        }, { signal })
         item.append(button)
       }
       groups.append(item)

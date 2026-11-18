@@ -81,7 +81,6 @@ const organization = await organizationLabelsFor(Astro)
 const tasksHref = boardWorkspaceHref(HOUSEHOLD_BOARD_ID, { area: areaId }) + "#kanban"
 const tabs = [
   { id: "overview", label: "Overview", icon: "📊" },
-  ...(workspaceAreaId ? [{ id: "tasks", label: organization("task", true), icon: "✅" }] : []),
   ...(available("goals") ? [{ id: "goals", label: organization("goal", true), icon: "🎯" }] : []),
   ...(available("projects") ? [{ id: "projects", label: organization("project", true), icon: "📋" }] : []),
   ...(routinesEnabled ? [{ id: "routines", label: organization("routine", true), icon: "🔁" }] : []),
@@ -100,22 +99,26 @@ const tabs = [
   </div>
 
   {/* Sub-menu tab bar */}
-  <nav aria-label={`${organization("group")} sections`} data-household-tasks-href={tasksHref}>
-    <div class="area-tabs" role="tablist" aria-label={`${organization("group")} sections`}>
+  <nav class="area-tabs" aria-label={`${organization("group")} sections`} data-household-tasks-href={tasksHref}>
+    {workspaceAreaId && <a href={tasksHref} class="area-tab" data-astro-reload>
+      <span class="tab-icon" aria-hidden="true">✅</span>
+      <span>{organization("task", true)}</span>
+    </a>}
+    <div class="area-panel-tabs" role="tablist" aria-label={`${organization("group")} sections`}>
     {tabs.map((tab) => (
       <a
-        href={tab.id === "tasks" ? tasksHref : `#${tab.id}`}
+        href={`#${tab.id}`}
         class={`area-tab ${tab.id === "overview" ? "active" : ""}`}
         data-tab={tab.id}
         data-astro-reload
         id={`area-tab-${tab.id}`}
         role="tab"
-        aria-controls={tab.id === "tasks" ? undefined : `section-${tab.id}`}
+        aria-controls={`section-${tab.id}`}
         aria-selected={tab.id === "overview" ? "true" : "false"}
         tabindex={tab.id === "overview" ? 0 : -1}
       >
-        <span class="tab-icon">{tab.icon}</span>
-        {tab.label}
+        <span class="tab-icon" aria-hidden="true">{tab.icon}</span>
+        <span>{tab.label}</span>
       </a>
     ))}
     </div>
@@ -247,10 +250,9 @@ const tabs = [
     gap: 2px;
     border-bottom: 1px solid var(--border);
     margin-bottom: 1.5rem;
-    overflow-x: auto;
-    scrollbar-width: none;
+    flex-wrap: wrap;
   }
-  .area-tabs::-webkit-scrollbar { display: none; }
+  .area-panel-tabs { display: contents; }
 
   .area-tab {
     display: flex;
@@ -262,7 +264,10 @@ const tabs = [
     color: var(--text-muted);
     text-decoration: none;
     border-bottom: 2px solid transparent;
-    white-space: nowrap;
+    min-width: 0;
+    max-width: 100%;
+    min-height: 44px;
+    overflow-wrap: anywhere;
     transition: color 150ms, border-color 150ms;
   }
   .area-tab:hover { color: var(--text-primary); }
@@ -270,7 +275,8 @@ const tabs = [
     color: var(--accent);
     border-bottom-color: var(--accent);
   }
-  .tab-icon { font-size: 0.875rem; }
+  .area-tab > span:last-child { min-width: 0; }
+  .tab-icon { flex-shrink: 0; font-size: 0.875rem; }
 
   /* Sections */
   .area-section { display: none; }
@@ -473,7 +479,7 @@ const tabs = [
     activeSignal = signal
 
     const sections = Array.from(document.querySelectorAll<HTMLElement>(".area-section"))
-    const links = [...document.querySelectorAll<HTMLAnchorElement>(".area-tab")]
+    const links = [...document.querySelectorAll<HTMLAnchorElement>('.area-tab[role="tab"]')]
     function updateSection() {
       const hash = window.location.hash.slice(1)
       if (hash === "tasks") {

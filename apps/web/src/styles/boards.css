@@ -20,7 +20,7 @@
 .boards-heading h1 { margin: 0; font-size: clamp(1.4rem, 2vw, 2rem); }
 .boards-heading p { margin: 0.25rem 0 0; color: var(--text-secondary); }
 .named-boards, .board-tile, .board-form { display: grid; gap: 0.625rem; min-width: 0; }
-.named-boards h2 h2, .board-member h3 { margin: 0; font-size: 1rem; }
+.named-boards h2, .board-member h3 { margin: 0; font-size: 1rem; }
 .board-tile, .board-member {
   padding: 0.85rem;
   border: 1px solid var(--border);
