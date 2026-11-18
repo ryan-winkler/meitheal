@@ -24,6 +24,11 @@ export type OrganizationFeature = keyof typeof ORGANIZATION_FEATURES
 type AccessContext = Pick<APIContext, "locals" | "request">
 
 const features = Object.keys(ORGANIZATION_FEATURES) as OrganizationFeature[]
+const legacyKeys = features.flatMap(feature => {
+  const definition = ORGANIZATION_FEATURES[feature]
+  return "legacy" in definition ? [definition.legacy] : []
+})
+const defaultFeatures = new Set(features.filter(feature => inheritedOrganizationAvailability(feature, {})))
 const byRequest = new WeakMap<App.Locals, Promise<OrganizationAvailability>>()
 
 export interface OrganizationAvailability {
@@ -35,7 +40,7 @@ export interface OrganizationAvailability {
 
 const inheritedDefaults: OrganizationAvailability = {
   locked: false, needsVerification: false,
-  includes: feature => feature !== "home_assistant_area" && Object.hasOwn(ORGANIZATION_FEATURES, feature),
+  includes: feature => defaultFeatures.has(feature),
   revision: () => null,
 }
 
@@ -48,7 +53,7 @@ export function inheritedOrganizationAvailability(feature: OrganizationFeature, 
 export function resolveOrganizationAvailability(
   policies: readonly OrganizationPolicy[], flags: FeatureFlags, activeUserId: string | null,
 ): OrganizationAvailability {
-  if (policies.length === 0 && flags.habits !== false && flags.gamification !== false) return inheritedDefaults
+  if (policies.length === 0 && legacyKeys.every(key => flags[key] !== false)) return inheritedDefaults
   const decisions = new Map(policies.map(policy => [policy.scope.id, policy]))
   const available = new Set(features.filter(feature => {
     const policy = decisions.get(feature)
