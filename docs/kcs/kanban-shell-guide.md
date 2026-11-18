@@ -101,6 +101,12 @@ Choose **Group by → By Assignee** to see who owns the cards on each workflow c
 
 If the Home Assistant roster cannot be verified, the board shows a cached name when one is available from the same connection. Otherwise it shows that the assignee could not be verified. Reload the board to check the directory again. Choose **Unassigned** from a card's **Assign User** control to move it into that group in the same workflow column.
 
+### Group cards by status
+
+Choose **Group by → By Status** to split each workflow column into status groups. Each heading counts the cards on the current page. The column total still counts the full result. Overlapping columns keep their own cards. Changing only the grouping keeps the current page. Changing a filter starts at page one.
+
+Use Enter or Space on a heading to collapse its cards. A status group remembers its collapsed state separately in each column. Sharing the URL includes the grouping and current column page.
+
 ### Group cards by project
 
 Choose **Group by → By Project** to split the current column page into project groups. Separate projects with the same name have separate groups. A second heading line shows the project's Area when it helps distinguish the name. Projects with no direct Area can use their Goal's Area.
