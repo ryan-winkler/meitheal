@@ -28,7 +28,7 @@ Deleting Household pauses its shared capture, Routine generation and inbound Hom
 
 The lifecycle transition checks the expected Board revision and current authority inside the writer transaction. It advances the existing Board access marker. Storage guards reject writes to retired Household records, including a request admitted before deletion. The API distinguishes stale revisions, denied operations, unavailable storage and a committed state whose access-marker publication remains pending.
 
-Named workspace polling verifies authority separately from content freshness. The authority hash includes the actor, effective rights, lifecycle, selected context, available features and grant epoch. Ordinary task edits can therefore show a stale-content notice while preserving an unsaved form; authority changes and unverifiable access still clear the private workspace.
+Named workspace polling verifies authority separately from content freshness. The authority hash includes the actor, effective rights, lifecycle, selected context, available features and grant epoch. Ordinary task edits can therefore show a stale-content notice while preserving an unsaved form. Authority changes clear private content; unverifiable access hides it until revalidation.
 
 Task-driven Calendar and Todo operations supply a dispatch guard to the task-agnostic Home Assistant service helpers. It rechecks Household before each new outbound call, including Calendar fallback delete/create. An already-dispatched provider request may finish remotely. No database writer is held across a provider request.
 
