@@ -16,15 +16,9 @@ export interface Props {
     isActive: boolean
     href: string
     icon: string
-    showBadge?: boolean
   }[]
-  taskCounts: {
-    total: number
-    active: number
-    pending: number
-  }
 }
-const { navItems, taskCounts } = Astro.props
+const { navItems } = Astro.props
 const locale = Astro.cookies.get("meitheal-locale")?.value === "ga" ? "ga" : "en"
 
 /** Check if a URL is external (absolute http/https) */
@@ -57,16 +51,6 @@ function isExternal(href: string): boolean {
                     <Icon name={item.icon as any} />
                   </span>
                   <span class="nav-label">{item.label}</span>
-                  {item.showBadge && (
-                    <span
-                      id={`nav-count-${item.key}`}
-                      class="nav-badge"
-                      hidden={taskCounts.active <= 0 ? true : undefined}
-                      aria-label={`${taskCounts.active} active`}
-                    >
-                      {taskCounts.active}
-                    </span>
-                  )}
                 </a>
                 <button
                   type="button"
@@ -143,11 +127,6 @@ function isExternal(href: string): boolean {
               <Icon name={item.icon as any} />
             </span>
             <span class="nav-label">{item.label}</span>
-            {item.showBadge && item.key === "today" && taskCounts.pending > 0 && (
-              <span class="nav-badge" aria-label={`${taskCounts.pending} pending`}>
-                {taskCounts.pending}
-              </span>
-            )}
             {external && (
               <span class="nav-external-icon" aria-hidden="true">↗</span>
             )}

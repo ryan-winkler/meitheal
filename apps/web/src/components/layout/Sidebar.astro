@@ -22,11 +22,9 @@ import { getFeatureFlags } from "../../lib/feature-flags";
 const currentPath = Astro.url.pathname;
 export interface Props {
   locale?: Locale;
-  taskCounts?: { total: number; active: number; pending: number };
 }
 const {
   locale = Astro.cookies.get("meitheal-locale")?.value === "ga" ? "ga" : "en",
-  taskCounts = { total: 0, active: 0, pending: 0 },
 } = Astro.props;
 
 /** Default nav item definitions */
@@ -35,7 +33,6 @@ interface NavItemDef {
   i18nKey: string;
   icon: string;
   matchExact?: boolean;
-  showBadge?: boolean;
 }
 
 const NAV_ITEMS: Record<string, NavItemDef> = {
@@ -326,7 +323,7 @@ if (householdGroups) sidebarDefaultOrder.splice(boardPosition < 0 ? sidebarDefau
     </div>
 
     <div class="sidebar-scroll" data-nav-overflow="sidebar" data-sidebar-default-order={JSON.stringify(sidebarDefaultOrder)}>
-      <SidebarNavList navItems={primaryItems} taskCounts={taskCounts}>
+      <SidebarNavList navItems={primaryItems}>
         {showNamedBoardShortcuts && primaryItems.some(item => item.key === "boards") &&
           <ul slot="boards" class="sidebar-board-shortcuts" data-sidebar-boards data-board-group-label={resolveLabel("group", true)} hidden aria-label={resolveLabel("board", true)}></ul>}
       </SidebarNavList>
@@ -338,7 +335,7 @@ if (householdGroups) sidebarDefaultOrder.splice(boardPosition < 0 ? sidebarDefau
         </section>
       )}
       {householdGroups && (
-        <SidebarNavList navItems={remainingItems} taskCounts={taskCounts}>
+        <SidebarNavList navItems={remainingItems}>
           {showNamedBoardShortcuts && remainingItems.some(item => item.key === "boards") &&
             <ul slot="boards" class="sidebar-board-shortcuts" data-sidebar-boards data-board-group-label={resolveLabel("group", true)} hidden aria-label={resolveLabel("board", true)}></ul>}
         </SidebarNavList>
