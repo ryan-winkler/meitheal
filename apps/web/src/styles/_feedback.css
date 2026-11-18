@@ -17,21 +17,6 @@
   }
 }
 
-.skeleton-pulse {
-  background: linear-gradient(90deg,
-      rgba(107, 114, 128, 0.08) 25%,
-      rgba(107, 114, 128, 0.18) 50%,
-      rgba(107, 114, 128, 0.08) 75%);
-  background-size: 200% 100%;
-  animation: skeleton-pulse 1.5s ease-in-out infinite;
-  border-radius: var(--radius-xs);
-  color: transparent !important;
-}
-
-.skeleton-pulse * {
-  visibility: hidden;
-}
-
 /* Skeleton fade — opacity pulse for skeleton rows/cards */
 @keyframes skeleton-fade {
 
@@ -43,24 +28,6 @@
   50% {
     opacity: 0.15;
   }
-}
-
-.skeleton-row {
-  @apply rounded-lg bg-bg-card/60 border border-border/30;
-  height: 48px;
-  animation: skeleton-fade 1.5s ease-in-out infinite;
-}
-
-.skeleton-row:nth-child(2) {
-  animation-delay: 0.15s;
-}
-
-.skeleton-row:nth-child(3) {
-  animation-delay: 0.3s;
-}
-
-.skeleton-row:nth-child(4) {
-  animation-delay: 0.45s;
 }
 
 .skeleton-card {
@@ -77,25 +44,6 @@
     @apply text-5xl mb-4 opacity-30;
   }
 
-
-/* Error boundary */
-.error-boundary {
-  padding: 24px;
-  text-align: center;
-  color: var(--text-muted);
-  border: 1px dashed var(--border);
-  border-radius: var(--radius-lg);
-  margin: 16px 0;
-}
-
-.error-boundary h3 {
-  color: var(--danger);
-  margin-bottom: 8px;
-}
-
-.error-boundary .btn {
-  margin-top: 12px;
-}
 
 /* Toast notifications — restored from pre-split global.css */
 .toast-container {

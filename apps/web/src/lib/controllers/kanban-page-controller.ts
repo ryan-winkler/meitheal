@@ -1,5 +1,6 @@
 import { getRememberedAreaId, getSelectedAreaId } from "@lib/area-selector-controller"
 import { replaceTaskBackgroundUrl, taskBackgroundUrl } from "@lib/task-page-url"
+import { findKanbanDetailFocus } from "@lib/task-detail-handoff"
 import { DEFERRAL_RECONCILED, type DeferralReconciliation } from "@lib/deferral-client"
 import { initKanbanArea } from "@lib/kanban-controller"
 import { hydrateTaskAssignees } from "@lib/task-assignee-display"
@@ -13,20 +14,7 @@ export interface KanbanRefreshFocus {
   taskId?: string | undefined
   firstPage?: boolean
   afterStatusSave?: boolean
-}
-
-function matchBoardFocus(active: HTMLElement, replacement: HTMLElement) {
-  const cardId = active.closest<HTMLElement>(".kanban-card")?.dataset.id
-  const laneId = active.closest<HTMLElement>(".kanban-column")?.dataset.laneId
-  const lane = laneId ? replacement.querySelector<HTMLElement>(`.kanban-column[data-lane-id="${CSS.escape(laneId)}"]`) : null
-  const selector = cardId && `.kanban-card[data-id="${CSS.escape(cardId)}"]`
-  const card = selector && (lane?.querySelector<HTMLElement>(selector) ?? replacement.querySelector<HTMLElement>(selector))
-  const scope = card || lane
-  if (!scope) return null
-  const matches = Array.from(scope.querySelectorAll<HTMLElement>(active.localName))
-    .filter(element => element.className === active.className && element.matches("a[href], button, [tabindex]"))
-  return (matches.length === 1 ? matches[0] : null) ||
-    (card ? card.querySelector<HTMLElement>(".card-open-btn") : scope.querySelector<HTMLElement>(".kanban-column-header"))
+  afterAreaSave?: boolean
 }
 
 function findDynamicGroupFocus(board: HTMLElement, group: HTMLElement) {
@@ -94,7 +82,7 @@ export function initKanbanPage(signal: AbortSignal): void {
       childList: true, subtree: true, attributes: true,
       attributeFilter: ["hidden", "inert", "class", "aria-busy", "contenteditable", "data-title-saving"],
     })
-    resumeBackgroundRead()
+    queueMicrotask(resumeBackgroundRead)
   }
 
   async function load(url: URL, focus?: KanbanRefreshFocus, reset = false, dataOnly = false): Promise<void> {
@@ -127,7 +115,7 @@ export function initKanbanPage(signal: AbortSignal): void {
         return
       }
       if (!replacement) throw new Error("Board response unavailable")
-      if ((focus?.afterStatusSave || dataOnly) && (queuedBackgroundRead || boardInteractionActive())) {
+      if ((focus?.afterStatusSave || focus?.afterAreaSave || dataOnly) && (queuedBackgroundRead || boardInteractionActive())) {
         if (!queuedBackgroundRead) queueBackgroundRead(focus, dataOnly)
         renderStatus("")
         return
@@ -137,8 +125,8 @@ export function initKanbanPage(signal: AbortSignal): void {
       const groupMode = board.dataset.groupBy
       const focusedGroup = (groupMode === "assigned" || groupMode === "project") && board.contains(active) &&
         active?.matches("button.swimlane-header") ? active.closest<HTMLElement>(".swimlane-group") : null
-      const shouldFocus = active === retry || board.contains(active) || (Boolean(focus) && active === document.body)
-      const previousControl = (focus?.afterStatusSave || groupMode === "project") &&
+      const shouldFocus = active === retry || board.contains(active) || (focus && !focus.afterAreaSave && active === document.body)
+      const previousControl = (focus?.afterAreaSave || focus?.afterStatusSave || groupMode === "project") &&
         active instanceof HTMLElement && board.contains(active) ? active : null
       const scroll = new Map(Array.from(board.querySelectorAll<HTMLElement>(".kanban-column"), lane =>
         [lane.dataset.status, lane.querySelector(".kanban-cards")?.scrollTop ?? 0] as const))
@@ -177,7 +165,7 @@ export function initKanbanPage(signal: AbortSignal): void {
       board.scrollLeft = horizontal
       renderStatus("")
 
-      const retainedControl = previousControl && matchBoardFocus(previousControl, board)
+      const retainedControl = previousControl && findKanbanDetailFocus(board, previousControl)
       if (focusedGroup && board.dataset.groupBy === groupMode) {
         findDynamicGroupFocus(board, focusedGroup)?.focus({ preventScroll: true })
       } else if (shouldFocus && (retainedControl || (!dataOnly && (focus || active === retry)))) {
@@ -190,7 +178,8 @@ export function initKanbanPage(signal: AbortSignal): void {
         const control = collapsedGroup ? collapsedGroup.querySelector<HTMLButtonElement>(".swimlane-header") : target
         const range = lane && (lane.querySelector<HTMLElement>("[data-kanban-range]") ??
           lane.querySelector<HTMLElement>(".kanban-column-header"))
-        ;(control || range || board.querySelector<HTMLElement>(".kanban-column-header"))?.focus()
+        const destination = control || range || board.querySelector<HTMLElement>(".kanban-column-header")
+        destination?.focus()
       }
     } catch {
       if (!request.signal.aborted && !signal.aborted) {
@@ -267,6 +256,9 @@ export function initKanbanPage(signal: AbortSignal): void {
   document.addEventListener("meitheal:task-status-saved", event => {
     const { id, status } = (event as CustomEvent<{ id: string; status: string }>).detail
     if (typeof status === "string") queueBackgroundRead({ taskId: id, lane: status, afterStatusSave: true })
+  }, { signal })
+  document.addEventListener("kanban:detail-changed", () => {
+    queueBackgroundRead({ afterAreaSave: true })
   }, { signal })
   document.addEventListener("meitheal:home-assistant-area-saved", () => {
     if (new URLSearchParams(location.search).has("home_assistant_area_id")) void refresh()
