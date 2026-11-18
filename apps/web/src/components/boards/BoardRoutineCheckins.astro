@@ -1,9 +1,10 @@
 ---
 import { organizationLabelsFor } from "@lib/organization-labels"
 import { isOrganizationFeatureAvailable as available } from "@lib/organization-request-context"
-const label = await organizationLabelsFor(Astro)
+import { verifiedIngressUser } from "@lib/verified-ingress-user"
+const label = verifiedIngressUser(Astro.locals) && available("routines") ? await organizationLabelsFor(Astro) : null
 ---
-{available("routines") && <section class="card" data-board-routine-checkins hidden aria-labelledby="board-routine-checkins-heading">
+{label && <section class="card" data-board-routine-checkins hidden aria-labelledby="board-routine-checkins-heading">
   <div class="card-header"><h3 id="board-routine-checkins-heading" class="card-title">{label("routine", true)} on your {label("board", true)}</h3></div>
   <ul class="list-group list-group-flush" data-board-routine-list></ul>
   <p class="card-body" data-board-routine-more hidden>Showing 100 routines. Open a Board to see the rest.</p>

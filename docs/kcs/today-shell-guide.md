@@ -8,7 +8,7 @@ description: "Understand the Today view and its task controls."
 
 ## Today overview
 
-Today starts with the date, task counts and quick capture. The completion indicator exposes its value to assistive technology.
+Today starts with the date, task counts and quick capture. The date follows the selected language and household timezone. The completion indicator exposes its value to assistive technology.
 
 The shared navigation provides:
 

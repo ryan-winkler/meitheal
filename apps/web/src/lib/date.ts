@@ -8,14 +8,19 @@ const FLOATING_DATETIME = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}):(\d{2})(?::(\d{2})(?:
 const DAY_MS = 86_400_000;
 export const DEFAULT_TIMEZONE = "Europe/Dublin";
 
+let lastValidatedTimezone: { timeZone: string; valid: boolean } | undefined
+
 export function isValidTimezone(timezone: string): boolean {
   if (!timezone) return false
+  if (lastValidatedTimezone?.timeZone === timezone) return lastValidatedTimezone.valid
+  let valid = true
   try {
     new Intl.DateTimeFormat("en", { timeZone: timezone })
-    return true
   } catch {
-    return false
+    valid = false
   }
+  lastValidatedTimezone = { timeZone: timezone, valid }
+  return valid
 }
 
 export function resolveTimezone(timezone?: string): string {
@@ -26,6 +31,16 @@ export function resolveTimezone(timezone?: string): string {
 let calendarFormatter: { timeZone: string; format: Intl.DateTimeFormat } | undefined
 let clockFormatter: { timeZone: string; format: Intl.DateTimeFormat } | undefined
 let offsetFormatter: { timeZone: string; format: Intl.DateTimeFormat } | undefined
+let dayHeadingFormatter: { locale: string; timeZone: string; format: Intl.DateTimeFormat } | undefined
+
+export function formatDayHeading(date: Date, locale: string, timeZone: string): string {
+  if (dayHeadingFormatter?.locale !== locale || dayHeadingFormatter.timeZone !== timeZone) {
+    dayHeadingFormatter = { locale, timeZone, format: new Intl.DateTimeFormat(locale, {
+      weekday: "long", day: "numeric", month: "long", timeZone,
+    }) }
+  }
+  return dayHeadingFormatter.format.format(date)
+}
 
 /** Today's calendar date in the given timezone, as YYYY-MM-DD. */
 export function calendarToday(timezone = DEFAULT_TIMEZONE, now = new Date()): string {
