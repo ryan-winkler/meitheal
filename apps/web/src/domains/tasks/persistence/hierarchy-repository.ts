@@ -296,6 +296,22 @@ export class HierarchyRepository {
 
   // ── Projects ─────────────────────────────────────────────────────
 
+  /** Household Project identities and their scoped direct or inherited Area. */
+  async findProjectGroups(): Promise<Array<{ id: string; title: string; area_id: string | null }>> {
+    const result = await this.client.execute(
+      `SELECT projects.id, projects.title,
+        CASE WHEN projects.area_id IS NOT NULL THEN (${householdAreaLink("projects.area_id")})
+          ELSE (SELECT (${householdAreaLink("goals.area_id")}) FROM goals
+            WHERE goals.id = projects.goal_id AND goals.owner_board_id IS NULL AND goals.retired_at IS NULL)
+        END AS area_id
+       FROM projects WHERE projects.owner_board_id IS NULL AND projects.retired_at IS NULL
+       ORDER BY projects.position ASC, projects.id ASC`,
+    )
+    return result.rows.map(row => ({
+      id: String(row.id), title: String(row.title), area_id: row.area_id == null ? null : String(row.area_id),
+    }))
+  }
+
   async findAllProjects(filters?: { goal_id?: string; area_id?: string; status?: string }): Promise<ProjectRow[]> {
     let sql = `SELECT ${householdProjectProjection} FROM projects`
     const conditions = ["owner_board_id IS NULL AND retired_at IS NULL"]
