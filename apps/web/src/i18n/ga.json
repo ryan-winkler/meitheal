@@ -355,6 +355,8 @@
     "bulk_delete_failed": "Theip ar scriosadh ollmhór"
   },
   "task_detail": {
+    "unavailable_group_selection": "Níl an rogha shábháilte ar fáil",
+    "group_options_load_failed": "Níorbh fhéidir na roghanna a lódáil",
     "description": "Cur Síos",
     "description_placeholder": "Cuir cur síos leis...",
     "linked_tickets": "Ticéid Nasctha",

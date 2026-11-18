@@ -358,6 +358,8 @@
     "bulk_delete_failed": "Bulk delete failed"
   },
   "task_detail": {
+    "unavailable_group_selection": "Saved selection unavailable",
+    "group_options_load_failed": "Options could not load",
     "description": "Description",
     "description_placeholder": "Add a description...",
     "linked_tickets": "Linked Tickets",
