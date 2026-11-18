@@ -140,7 +140,7 @@ const habitsBootstrap = serializeForScript({ habits })
     <button
       slot="actions"
       type="button"
-      class="unified-bar__new-task-btn habits-shell__create-bar-btn"
+      class="btn btn-ghost habits-shell__create-bar-btn"
       id="habits-bar-new-habit"
       data-open-habit-modal={loadFailed ? undefined : "true"}
       disabled={loadFailed}
@@ -483,7 +483,24 @@ const habitsBootstrap = serializeForScript({ habits })
   }
 
   .habits-shell__create-bar-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 44px;
+    min-height: 44px;
     white-space: nowrap;
+  }
+
+  .habits-shell__create-bar-btn .unified-bar__new-task-label {
+    max-width: 14ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  @media (max-width: 1359px) {
+    .habits-shell__create-bar-btn .unified-bar__new-task-label {
+      display: none;
+    }
   }
 
   .habits-section__intro {

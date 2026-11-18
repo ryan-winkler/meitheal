@@ -12,11 +12,21 @@ test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires an isolated built
 test("compact workspace headers preserve ingress navigation and distinguish unavailable data", async () => {
   test.setTimeout(45_000)
   const work = await mkdtemp(join(tmpdir(), "meitheal-workspace-headers-"))
-  const child = startCoreFixture(work)
-  child.stdout?.resume()
-  child.stderr?.resume()
+  const withFixtureDb = (write: (db: DatabaseSync) => void) => {
+    const db = new DatabaseSync(join(work, "pins.db"))
+    try {
+      db.exec("PRAGMA busy_timeout=3000")
+      write(db)
+    } finally {
+      db.close()
+    }
+  }
   let browser
+  let child: ReturnType<typeof startCoreFixture> | undefined
   try {
+    child = startCoreFixture(work)
+    child.stdout?.resume()
+    child.stderr?.resume()
     const [fixture] = await once(child, "message", { signal: AbortSignal.timeout(10_000) })
     const origin = `https://127.0.0.1:${fixture.port}`
     const app = origin + fixture.configuredPath
@@ -98,14 +108,10 @@ test("compact workspace headers preserve ingress navigation and distinguish unav
       expect(response.status).toBe(201)
       ids.set(status, response.body.id)
     }
-    const progress = new DatabaseSync(join(work, "pins.db"))
-    try {
-      progress.exec("PRAGMA busy_timeout=3000")
-      progress.prepare("INSERT OR REPLACE INTO gamification_stats (date, completed_count, streak_count, points) VALUES (?, 1, 1, 10)")
+    withFixtureDb(db => {
+      db.prepare("INSERT OR REPLACE INTO gamification_stats (date, completed_count, streak_count, points) VALUES (?, 1, 1, 10)")
         .run(new Date().toISOString().slice(0, 10))
-    } finally {
-      progress.close()
-    }
+    })
     const wideDashboard = await context.newPage()
     await wideDashboard.goto(app + "/")
     const tiles = wideDashboard.locator("#dashboard-overview .stat-card")
@@ -138,6 +144,14 @@ test("compact workspace headers preserve ingress navigation and distinguish unav
     })).status, { url: labels, current, alias })
     expect(saved).toBe(204)
     await page.setViewportSize({ width: 320, height: 780 })
+    await page.goto(app + "/habits")
+    const switcher = page.locator("#habits-bar-switcher-btn")
+    await expect(switcher).toHaveAccessibleName(alias + " — switch section")
+    await expect(switcher.locator(".unified-bar__switcher-chevron")).toBeInViewport({ ratio: 1 })
+    await expect(page.locator("#habits-bar-new-habit")).toBeInViewport({ ratio: 1 })
+    await switcher.press("Enter")
+    await expect(page.locator("#habits-bar-switcher-dropdown")).toBeVisible()
+    await page.keyboard.press("Escape")
     await page.goto(app + "/habits#habits-library")
     const create = page.locator("#habits-library").getByRole("button", { name: "New " + alias, exact: true })
     await expect(create).toBeVisible()
@@ -145,6 +159,20 @@ test("compact workspace headers preserve ingress navigation and distinguish unav
     expect(box!.x + box!.width).toBeLessThanOrEqual(320)
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(320)
 
+    const partialCounts = await context.newPage()
+    withFixtureDb(db => db.exec("ALTER TABLE tasks RENAME COLUMN due_date TO fixture_due_date"))
+    try {
+      await partialCounts.goto(app + "/")
+      await expect(partialCounts.getByText("Overdue count couldn’t load.", { exact: false })).toBeVisible()
+      await expect(partialCounts.locator("#stat-active")).toBeVisible()
+      await expect(partialCounts.locator("#stat-overdue")).toHaveCount(0)
+      await expect(partialCounts.locator("#dashboard-recent .card-subtitle")).toHaveText("Total Tasks 2")
+    } finally {
+      await partialCounts.close()
+      withFixtureDb(db => db.exec("ALTER TABLE tasks RENAME COLUMN fixture_due_date TO due_date"))
+    }
+
+    withFixtureDb(db => db.prepare("UPDATE tasks SET is_favorite = 1 WHERE id = ?").run(ids.get("active")!))
     const focus = await context.newPage()
     await focus.goto(app + "/#dashboard-open")
     await expect(focus.locator("#my-open-list").getByText("Active header fixture")).toBeVisible()
@@ -157,15 +185,25 @@ test("compact workspace headers preserve ingress navigation and distinguish unav
       expect((await response).ok()).toBe(true)
     }
 
-    // Break reads only in this test's isolated database, after verifying the successful paths.
-    const db = new DatabaseSync(join(work, "pins.db"))
+    const favorites = focus.locator("#dashboard-favorites")
+    await expect(favorites.getByText("Active header fixture")).toBeVisible()
+    withFixtureDb(db => {
+      db.prepare("UPDATE tasks SET is_favorite = 0 WHERE id = ?").run(ids.get("active")!)
+      db.exec("ALTER TABLE tasks RENAME COLUMN assigned_to TO fixture_assigned_to")
+    })
     try {
-      db.exec("PRAGMA busy_timeout=3000")
+      await refreshFocus()
+      await expect(favorites).toBeHidden()
+      await expect(focus.locator("#my-open-empty")).toContainText("Couldn’t refresh open work.")
+      await expect(focus.locator("#my-open-list").getByText("Active header fixture")).toBeVisible()
+    } finally {
+      withFixtureDb(db => db.exec("ALTER TABLE tasks RENAME COLUMN fixture_assigned_to TO assigned_to"))
+    }
+
+    withFixtureDb(db => {
       db.exec("ALTER TABLE tasks RENAME TO fixture_tasks_unavailable")
       db.exec("ALTER TABLE task_templates RENAME TO fixture_templates_unavailable")
-    } finally {
-      db.close()
-    }
+    })
     await refreshFocus()
     await expect(focus.locator("#my-open-empty")).toContainText("Couldn’t refresh open work.")
     await expect(focus.locator("#my-open-list").getByText("Active header fixture")).toBeVisible()
@@ -206,26 +244,28 @@ test("compact workspace headers preserve ingress navigation and distinguish unav
       await failed.close()
     }
 
-    const recovered = new DatabaseSync(join(work, "pins.db"))
-    try {
-      recovered.exec("PRAGMA busy_timeout=3000")
-      recovered.exec("ALTER TABLE fixture_templates_unavailable RENAME TO task_templates")
-      recovered.exec("ALTER TABLE fixture_tasks_unavailable RENAME TO tasks")
-    } finally {
-      recovered.close()
-    }
+    withFixtureDb(db => {
+      db.exec("ALTER TABLE fixture_templates_unavailable RENAME TO task_templates")
+      db.exec("ALTER TABLE fixture_tasks_unavailable RENAME TO tasks")
+    })
     const savedAfterRecovery = await pinRequest(focus, fixture.configuredPath + "/api/tasks", "POST", { title: "Recovered header fixture" })
     expect(savedAfterRecovery.status).toBe(201)
     await refreshFocus()
     await expect(focus.locator("#my-open-list").getByText("Recovered header fixture")).toBeVisible()
     await expect(focus.locator("#my-open-empty")).toBeHidden()
   } finally {
-    await browser?.close()
-    if (child.exitCode === null && child.signalCode === null) {
-      const exited = once(child, "exit")
-      child.kill()
-      await exited
+    try {
+      await browser?.close()
+    } finally {
+      try {
+        if (child && child.exitCode === null && child.signalCode === null) {
+          const exited = once(child, "exit")
+          child.kill()
+          await exited
+        }
+      } finally {
+        await rm(work, { recursive: true, force: true })
+      }
     }
-    await rm(work, { recursive: true, force: true })
   }
 })

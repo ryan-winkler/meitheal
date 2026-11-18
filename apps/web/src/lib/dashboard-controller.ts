@@ -340,16 +340,16 @@ function initOpenTaskFilter(): (() => void) | undefined {
       .then(async response => {
         if (!response.ok) throw new Error("Dashboard request failed")
         const html = new DOMParser().parseFromString(await response.text(), "text/html")
-        const replacement = html.querySelector('#my-open-list[data-available="true"]')
         if (lifetime.aborted) return
-        if (!replacement) throw new Error("Open queue unavailable")
-        list.replaceChildren(...replacement.childNodes)
         const favorites = document.querySelector<HTMLElement>("#dashboard-favorites")
-        const refreshedFavorites = html.querySelector<HTMLElement>("#dashboard-favorites")
+        const refreshedFavorites = html.querySelector<HTMLElement>('#dashboard-favorites[data-available="true"]')
         if (favorites && refreshedFavorites) {
           favorites.hidden = refreshedFavorites.hidden
           favorites.replaceChildren(...refreshedFavorites.childNodes)
         }
+        const replacement = html.querySelector('#my-open-list[data-available="true"]')
+        if (!replacement) throw new Error("Open queue unavailable")
+        list.replaceChildren(...replacement.childNodes)
         countsAvailable = true
         loadFailed = false
         applyOpenFilter()

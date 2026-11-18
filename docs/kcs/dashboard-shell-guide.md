@@ -121,6 +121,8 @@ not establish that an installed App has the same source or loaded assets.
 
 ## Overdue counts and due labels
 
+A failed Overdue read leaves the other available counts and links visible. Refresh to retry the unavailable count. Favorites can update while the Focus Queue keeps its last available rows during a failed refresh.
+
 A date-only due date is a calendar day in the timezone from Settings. A task
 due today is not overdue. It becomes overdue on the next calendar day. A due
 date with a time becomes overdue when that time passes. The Dashboard counter,

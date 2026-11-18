@@ -33,7 +33,7 @@ These anchors stay on the same route, which keeps them safe for Home Assistant i
 2. Use the section tabs for common jumps.
 3. Use the title dropdown if a tab is clipped or you are on a narrow viewport.
 
-The URL hash updates as you move, so the current section can be reloaded or shared.
+Opening a section from the toolbar updates the URL hash, so you can reload or share that destination. Long names shorten in the toolbar. The workspace heading and accessible control names retain the full name.
 
 ### Create or edit a Household Routine
 

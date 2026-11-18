@@ -34,9 +34,11 @@ let tasks: Record<string, unknown>[] = []
 let favorites: Record<string, unknown>[] = []
 let openTasks: Record<string, unknown>[] = []
 let recentLoaded = false
+let favoritesLoaded = false
 let openLoaded = false
 let stats = { total: 0, open: 0, active: 0, completed: 0, overdue: 0 }
 let statsLoaded = false
+let overdueCount: number | null = null
 let gamificationStats = {
   currentStreak: 0,
   todayCompleted: 0,
@@ -69,21 +71,39 @@ let areaMap: Record<string, { name: string; color: string }> = {
 try {
   await ensureSchema()
   const repo = new TaskRepository(getPersistenceClient())
-  tasks = await repo.getRecentTasks(10)
-  recentLoaded = true
-  favorites = await repo.getFavoriteTasks(5)
-  openTasks = await repo.getOpenTasks(15)
-  openLoaded = true
-  stats = await repo.getStatusCounts()
-  stats.overdue = await repo.getOverdueCount(calendarToday(dashboardTimeZone), dashboardTimeZone)
-  statsLoaded = true
-  const areas = await repo.getAreas()
-  areaMap = Object.fromEntries(
-    Object.entries(areas).map(([key, value]) => [
-      key,
-      { name: value.name, color: value.color },
-    ]),
-  )
+  const [recentRead, favoritesRead, openRead, statsRead, overdueRead, areaRead] = await Promise.allSettled([
+    repo.getRecentTasks(10),
+    repo.getFavoriteTasks(5),
+    repo.getOpenTasks(15),
+    repo.getStatusCounts(),
+    repo.getOverdueCount(calendarToday(dashboardTimeZone), dashboardTimeZone),
+    repo.getAreas(),
+  ])
+  if (recentRead.status === "fulfilled") {
+    tasks = recentRead.value
+    recentLoaded = true
+  }
+  if (favoritesRead.status === "fulfilled") {
+    favorites = favoritesRead.value
+    favoritesLoaded = true
+  }
+  if (openRead.status === "fulfilled") {
+    openTasks = openRead.value
+    openLoaded = true
+  }
+  if (statsRead.status === "fulfilled") {
+    stats = statsRead.value
+    statsLoaded = true
+  }
+  if (overdueRead.status === "fulfilled") overdueCount = overdueRead.value
+  if (areaRead.status === "fulfilled") {
+    areaMap = Object.fromEntries(
+      Object.entries(areaRead.value).map(([key, value]) => [
+        key,
+        { name: value.name, color: value.color },
+      ]),
+    )
+  }
 } catch {
   // Keep any data already loaded and show recovery text for failed reads.
 }
@@ -145,7 +165,8 @@ function relativeTime(dueDate: string): string {
     >
       <h1 class="m-0 text-2xl font-semibold tracking-tight">{t("nav.dashboard", locale)}</h1>
       {!statsLoaded && <p role="status" class="m-0 text-text-secondary">Task counts couldn’t load. Refresh the page to try again.</p>}
-      {(statsLoaded || gamificationStats.currentStreak > 0) && <div class="stats-grid">
+      {statsLoaded && overdueCount === null && <p role="status" class="m-0 text-text-secondary">Overdue count couldn’t load. Refresh the page to try again.</p>}
+      {(statsLoaded || overdueCount !== null || gamificationStats.currentStreak > 0) && <div class="stats-grid">
         {gamificationStats.currentStreak > 0 && (
           <a
             href="/progress#achievements"
@@ -204,11 +225,12 @@ function relativeTime(dueDate: string): string {
               <div class="stat-label">{t("dashboard.completed", locale)}</div>
             </div>
           </a>
-
+        </>}
+        {overdueCount !== null && (
           <a
             href="/tasks?status=overdue"
             id="stat-overdue"
-            class={`stat-card stat-card-link ${stats.overdue > 0 ? "stat-card-danger" : ""}`}
+            class={`stat-card stat-card-link ${overdueCount > 0 ? "stat-card-danger" : ""}`}
             title="Tasks past their due date across all areas"
           >
             <span class="stat-icon" aria-hidden="true">
@@ -217,14 +239,14 @@ function relativeTime(dueDate: string): string {
             <div>
               <div
                 class="stat-value"
-                style={stats.overdue > 0 ? "color: var(--danger)" : undefined}
+                style={overdueCount > 0 ? "color: var(--danger)" : undefined}
               >
-                {stats.overdue}
+                {overdueCount}
               </div>
               <div class="stat-label">{t("dashboard.overdue", locale)}</div>
             </div>
           </a>
-        </>}
+        )}
       </div>}
     </section>
 
@@ -243,7 +265,7 @@ function relativeTime(dueDate: string): string {
           />
         </div>
 
-            <div class="card dashboard-card" id="dashboard-favorites" hidden={favorites.length === 0}>
+            <div class="card dashboard-card" id="dashboard-favorites" data-available={String(favoritesLoaded)} hidden={favorites.length === 0}>
               <div class="card-header">
                 <div>
                   <div class="card-title">{t("dashboard.favorites", locale)}</div>
@@ -405,10 +427,10 @@ function relativeTime(dueDate: string): string {
           <div>
             <h2 class="card-title">{t("dashboard.recent_tasks", locale)}</h2>
             {statsLoaded && <div class="card-subtitle">
-              {t("dashboard.tasks_of_total", locale, {
+              {recentLoaded ? t("dashboard.tasks_of_total", locale, {
                 count: String(tasks.length),
                 total: String(stats.total),
-              })}
+              }) : `${t("dashboard.total_tasks", locale)} ${stats.total}`}
             </div>}
           </div>
           <a href="/tasks" class="btn btn-ghost">{t("dashboard.view_all", locale)}</a>
