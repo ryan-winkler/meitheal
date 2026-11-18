@@ -107,6 +107,7 @@ export function initAreaSelector(signal: AbortSignal): void {
   let catalogRequest: AbortController | undefined
   let nextCursor: string | null = null
   async function loadCatalog(after?: string) {
+    const restoreFocus = container!.contains(document.activeElement)
     catalogRequest?.abort()
     const request = new AbortController()
     catalogRequest = request
@@ -149,6 +150,7 @@ export function initAreaSelector(signal: AbortSignal): void {
       if (status) status.hidden = true
       document.dispatchEvent(new CustomEvent("meitheal:area-catalog-ready", { detail: { areaId: selected } }))
       if (more) { more.hidden = !nextCursor; more.disabled = false }
+      if (restoreFocus) (dropdown!.querySelector<HTMLElement>('[aria-selected="true"]') ?? trigger!).focus()
     } catch {
       if (request.signal.aborted || signal.aborted || !container!.isConnected) return
       if (!after) dropdown!.dataset.areaCatalogReady = "false"
