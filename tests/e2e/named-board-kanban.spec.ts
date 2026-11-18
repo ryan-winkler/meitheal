@@ -142,9 +142,12 @@ test("named Boards use the common Kanban with paged capture, version conflicts, 
       await expect(page.locator('[data-named-inspector-create] input[name="projectId"]')).toHaveValue(scope.startsWith("project") ? namedProject : "")
       if (scope.startsWith("project")) {
         await page.locator("[data-named-inspector-create]").getByRole("textbox", { name: "Title", exact: true }).fill("Planning scope capture")
-        const savedPlanning = page.waitForResponse(response => response.request().method() === "POST" && response.url() === api + "/tickets").then(response => response.json())
+        const savedPlanning = page.waitForResponse(response => response.request().method() === "POST" && response.url() === api + "/tickets")
         await page.locator("[data-named-inspector-create]").getByRole("button", { name: "Create task", exact: true }).click()
-        const ticket = await savedPlanning
+        expect((await savedPlanning).status()).toBe(201)
+        const projectTickets = await (await owner.request.get(api + "?view=tasks&project=" + namedProject)).json()
+        const ticket = projectTickets.tasks.find((task: { title: string }) => task.title === "Planning scope capture")
+        expect(ticket).toBeTruthy()
         const placed = await (await owner.request.get(api + "?view=tasks&ticket=" + ticket.id)).json()
         expect(placed.tasks[0].placement).toMatchObject({ areaId: namedArea, projectId: namedProject })
       } else await page.locator("#td-close").click()

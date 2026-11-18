@@ -14,6 +14,8 @@ Household and named Boards use the same Kanban cards and columns. Select a named
 
 Open an Area or Project’s **Tasks** tab to use its filtered Kanban. **Add Task** keeps that context. On a named Board, **N** opens capture for that Board. If another person changes its work while you edit, your input stays available with a refresh notice. Lost authority, deleted context and expired verification still clear private content.
 
+If Board verification temporarily fails, the workspace hides its private content and offers **Retry verification**. A successful check restores the same page and retained input. Permanent loss of access clears it and offers a fresh Board view.
+
 ## People and ticket permissions
 
 Board owners manage access from **Board settings**. Viewers can open the Board and read its tickets. Members can add and edit tickets and move them between the columns their permissions allow. Owners can manage access and set ticket restrictions for everyone or for a specific person. The last active owner must add another active owner before handing over access.

@@ -29,6 +29,9 @@ import { stopEntitySubscription } from "../../apps/web/src/domains/ha/ha-entitie
 import { startCalendarSync, stopCalendarSync, syncFromHA } from "../../apps/web/src/domains/calendar/calendar-bridge"
 import { TemplateRepository } from "../../apps/web/src/domains/tasks/persistence/template-repository"
 
+import { PATCH as patchComment } from "../../apps/web/src/pages/api/tasks/[id]/comments/[commentId]"
+import { resolveTaskAuthor } from "../../apps/web/src/lib/task-participant"
+
 let directory: string
 let marker: string
 const previous = process.env.MEITHEAL_DB_URL
@@ -316,7 +319,9 @@ test("late Household location edits and inactivity policy changes pause; existin
   // This isolates the retirement guard from unrelated same-connection busy errors.
   for (const [index, pending] of [create, edit, remove].entries()) {
     admissions[index]!.release()
-    expect(await pending).toMatchObject({ error: expect.stringContaining("Household Board is deleted") })
+    expect(await pending).toMatchObject(index === 1
+      ? { value: { state: "not_found" } }
+      : { error: expect.stringContaining("Household Board is deleted") })
   }
   admissions[3]!.release()
   expect(await location).toEqual({ ok: false, errorCode: "unavailable" })
@@ -464,4 +469,86 @@ test("global Routine library keeps named check-ins when shared Household Routine
     { id: "named-routine", name: "Named check-in remains" },
   ])
   expect(await new NamedBoardTaskRepository(db, marker).routineLibrary({ kind: "ha_user", id: "outsider" })).toEqual([])
+})
+
+
+test("already-admitted unchanged-content comment PATCH denies retirement without reconciling saved mentions or receipts", async () => {
+  const db = getPersistenceClient()
+  const { repository, id } = await namedBoard()
+  const locals = { behindIngress: false, agentToken: {
+    tokenId: "comment-fixture", tokenName: "Comment fixture", scopes: ["tasks:read", "tasks:write"],
+  } } as unknown as App.Locals
+  const actor = resolveTaskAuthor(locals)!
+  const content = "Unchanged comment"
+  await db.execute(`INSERT INTO tasks(id, title, idempotency_key, request_id, created_at, updated_at)
+    VALUES ('noop-comment', 'Retained comment parent', 'noop-comment', 'noop-comment', 1, 1)`)
+  const comments = new CommentMentionRepository(db)
+  const created = await comments.create("noop-comment", content, actor.author, actor.owner!, ["a".repeat(32)], {
+    key: "c".repeat(32), issuedAt: 1, rawContent: content, cutoff: 0,
+  })
+  if (created.state !== "created") throw new Error("Expected initial comment")
+  const commentId = Number(created.comment.id)
+  await db.execute({ sql: "INSERT INTO comment_mentions(task_id, comment_id, recipient_key, created_at, withdrawn) VALUES ('noop-comment', ?, ?, 1, 1)", args: [commentId, "b".repeat(32)] })
+  const before = {
+    comments: (await db.execute("SELECT * FROM comments WHERE task_id = 'noop-comment'")).rows,
+    mentions: (await db.execute("SELECT * FROM comment_mentions WHERE task_id = 'noop-comment' ORDER BY id")).rows,
+    attempts: (await db.execute("SELECT * FROM comment_mention_attempts WHERE task_id = 'noop-comment'")).rows,
+    tasks: (await db.execute("SELECT * FROM tasks WHERE id = 'noop-comment'")).rows,
+  }
+  let admitted!: () => void
+  let release!: () => void
+  const ready = new Promise<void>(resolve => { admitted = resolve })
+  const gate = new Promise<void>(resolve => { release = resolve })
+  const transaction = db.transaction.bind(db)
+  let holdNextWriter = true
+  db.transaction = async (mode?: "write" | "read" | "deferred") => {
+    if (mode === "write" && holdNextWriter) {
+      holdNextWriter = false
+      admitted()
+      await gate
+    }
+    return transaction(mode)
+  }
+  let response: Response
+  try {
+    const pending = patchComment({ params: { id: "noop-comment", commentId: String(commentId) }, locals,
+      request: new Request("http://localhost/api/tasks/noop-comment/comments/" + commentId, {
+        method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ content }),
+      }),
+    } as unknown as Parameters<typeof patchComment>[0])
+    await ready
+    await repository.changeLifecycle(parent, "household", "retired", 1, true)
+    release()
+    response = await pending
+  } finally {
+    release?.()
+    db.transaction = transaction
+  }
+  expect(response.status).toBe(404)
+  expect(await response.json()).toMatchObject({ detail: "Comment not found" })
+  expect((await db.execute("SELECT * FROM comments WHERE task_id = 'noop-comment'")).rows).toEqual(before.comments)
+  expect((await db.execute("SELECT * FROM comment_mentions WHERE task_id = 'noop-comment' ORDER BY id")).rows).toEqual(before.mentions)
+  expect((await db.execute("SELECT * FROM comment_mention_attempts WHERE task_id = 'noop-comment'")).rows).toEqual(before.attempts)
+  expect((await db.execute("SELECT * FROM tasks WHERE id = 'noop-comment'")).rows).toEqual(before.tasks)
+  expect(await comments.replay("noop-comment", actor.owner!, "c".repeat(32), content)).toBeUndefined()
+  const named = new NamedBoardTaskRepository(db, marker)
+  await named.create(parent, id, { title: "Named comments retain their existing behavior", description: "" }, {})
+  const namedId = String((await db.execute({ sql: "SELECT id FROM tasks WHERE task_board_id = ?", args: [id] })).rows[0]!.id)
+  for (const statement of [
+    { sql: "UPDATE comments SET content = content WHERE id = ?", args: [commentId] },
+    { sql: "UPDATE comments SET author = author WHERE id = ?", args: [commentId] },
+    { sql: "UPDATE comments SET task_id = ? WHERE id = ?", args: [namedId, commentId] },
+    { sql: "INSERT OR REPLACE INTO comments(id, task_id, content, author) VALUES (?, ?, 'Replacement', 'Other')", args: [commentId, namedId] },
+    { sql: "UPDATE comment_mentions SET withdrawn = 1 WHERE comment_id = ?", args: [commentId] },
+    { sql: "DELETE FROM comment_mention_attempts WHERE task_id = 'noop-comment'" },
+  ]) await expect(db.execute(statement)).rejects.toThrow(/Household Board is deleted/)
+  // A valid named comment may still prune its own old metadata, but must retain Household history.
+  const namedComment = await comments.create(namedId, "Named content", "Parent", "parent", ["a".repeat(32)], {
+    key: "d".repeat(32), issuedAt: Date.now(), rawContent: "Named content", cutoff: Date.now(),
+  })
+  expect(namedComment.state).toBe("created")
+  if (namedComment.state !== "created") throw new Error("Expected named comment")
+  expect((await comments.editChecked(namedId, Number(namedComment.comment.id), "parent", "Named content", [])).state).toBe("ok")
+  expect((await db.execute("SELECT * FROM comment_mentions WHERE task_id = 'noop-comment' ORDER BY id")).rows).toEqual(before.mentions)
+  expect((await db.execute("SELECT * FROM comment_mention_attempts WHERE task_id = 'noop-comment'")).rows).toEqual(before.attempts)
 })

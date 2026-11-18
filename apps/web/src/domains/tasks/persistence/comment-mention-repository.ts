@@ -9,6 +9,11 @@ const liveInbox = `FROM comment_mentions AS m
   JOIN tasks AS t ON t.id = m.task_id AND t.task_board_id IS NULL AND EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active')`
 const liveRecipient = "m.recipient_key = ? AND m.withdrawn = 0 AND m.created_at > ?"
 const commentColumns = "id, task_id, content, author, created_at"
+const availableParent = (reference: string) => `EXISTS (SELECT 1 FROM tasks AS parent_task WHERE parent_task.id = ${reference}
+  AND (parent_task.task_board_id IS NOT NULL OR EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active')))`
+// Retention for another live task must not prune a retired Household's saved mentions or receipts.
+const retainedParent = (reference: string) => `EXISTS (SELECT 1 FROM tasks AS parent_task WHERE parent_task.id = ${reference}
+  AND parent_task.task_board_id IS NULL AND EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'retired'))`
 
 async function reconcile(tx: Transaction, taskId: string, commentId: number, recipients: string[]) {
   const now = Date.now()
@@ -21,7 +26,7 @@ async function reconcile(tx: Transaction, taskId: string, commentId: number, rec
       args: [commentId, selected],
     },
     {
-      sql: `DELETE FROM comment_mentions WHERE created_at <= ?`,
+      sql: `DELETE FROM comment_mentions WHERE created_at <= ? AND NOT ${retainedParent("comment_mentions.task_id")}`,
       args: [now - retentionMs],
     },
     {
@@ -31,8 +36,8 @@ async function reconcile(tx: Transaction, taskId: string, commentId: number, rec
       args: [taskId, commentId, now, selected],
     },
     ...recipients.map(recipient => ({
-      sql: `DELETE FROM comment_mentions WHERE recipient_key = ? AND id IN (
-              SELECT id FROM comment_mentions WHERE recipient_key = ?
+      sql: `DELETE FROM comment_mentions WHERE recipient_key = ? AND NOT ${retainedParent("comment_mentions.task_id")} AND id IN (
+              SELECT id FROM comment_mentions WHERE recipient_key = ? AND NOT ${retainedParent("comment_mentions.task_id")}
               ORDER BY id DESC LIMIT -1 OFFSET ?
             )`,
       args: [recipient, recipient, inboxSize],
@@ -47,7 +52,7 @@ async function readAttempt(db: Pick<Client, "execute">, taskId: string, owner: s
     sql: `SELECT r.body_digest, c.id, c.task_id, c.content, c.author, c.created_at
           FROM comment_mention_attempts AS r
           LEFT JOIN comments AS c ON c.id = r.comment_id AND c.task_id = r.task_id
-          WHERE r.task_id = ? AND r.owner_key = ? AND r.attempt_key = ?`,
+          WHERE r.task_id = ? AND r.owner_key = ? AND r.attempt_key = ? AND ${availableParent("r.task_id")}`,
     args: [taskId, owner, key],
   })).rows[0]
   if (!prior) return
@@ -82,7 +87,7 @@ export class CommentMentionRepository {
       if (!comment) return { state: "missing" } as const
       const commentId = Number(comment.id)
       await tx.batch([
-        { sql: "DELETE FROM comment_mention_attempts WHERE issued_at <= ?", args: [attempt.cutoff] },
+        { sql: `DELETE FROM comment_mention_attempts WHERE issued_at <= ? AND NOT ${retainedParent("comment_mention_attempts.task_id")}`, args: [attempt.cutoff] },
         {
           sql: `INSERT INTO comment_mention_attempts (task_id, owner_key, attempt_key, body_digest, comment_id, issued_at)
                 VALUES (?, ?, ?, ?, ?, ?)`,
@@ -112,14 +117,14 @@ export class CommentMentionRepository {
         : " AND EXISTS (SELECT 1 FROM tasks WHERE id = ? AND assigned_to = ?)"
       const assigneeArgs = expectedAssignedTo === undefined ? [] : [taskId, expectedAssignedTo]
       const result = await tx.execute({
-        sql: `UPDATE comments SET content = ? WHERE task_id = ? AND id = ? AND owner_key = ?${assigneeSql}
+        sql: `UPDATE comments SET content = ? WHERE task_id = ? AND id = ? AND owner_key = ? AND ${availableParent("comments.task_id")}${assigneeSql}
               RETURNING ${commentColumns}`,
         args: [content, taskId, commentId, owner, ...assigneeArgs],
       })
       const comment = result.rows[0] as Record<string, unknown> | undefined
       if (!comment) {
         if (expectedAssignedTo !== undefined) {
-          const taskRow = await tx.execute({ sql: "SELECT assigned_to FROM tasks WHERE id = ?", args: [taskId] })
+          const taskRow = await tx.execute({ sql: `SELECT assigned_to FROM tasks WHERE id = ? AND ${availableParent("tasks.id")}`, args: [taskId] })
           if (taskRow.rows.length > 0 && (taskRow.rows[0] as Record<string, unknown>).assigned_to !== expectedAssignedTo) {
             return { state: "assignee_mismatch" }
           }

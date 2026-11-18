@@ -20,18 +20,33 @@ export function bindBoardPage(signal: AbortSignal) {
   stale.setAttribute("role", "status")
   stale.hidden = true
   root.prepend(stale)
+  const recovery = document.createElement("p")
+  recovery.dataset.boardVerification = ""
+  recovery.setAttribute("role", "status")
+  recovery.hidden = true
+  const retry = document.createElement("button")
+  retry.type = "button"
+  retry.className = "btn btn-ghost"
+  retry.textContent = "Retry verification"
+  recovery.append("This Board is hidden until access can be verified. Your input is kept on this page. ", retry)
+  status.before(recovery)
   let expired = false
   let checking: AbortController | undefined
   const placeholder = document.createComment("")
   const detach = () => {
     root.dispatchEvent(new Event("meitheal:board-hidden"))
     if (root.isConnected) root.replaceWith(placeholder)
+    recovery.hidden = expired
   }
-  const restore = () => { if (placeholder.isConnected) placeholder.replaceWith(root) }
+  const restore = () => {
+    if (placeholder.isConnected) placeholder.replaceWith(root)
+    recovery.hidden = true
+  }
   const expire = () => {
     expired = true
     detach()
     root.replaceChildren()
+    recovery.hidden = true
     status.hidden = false
   }
   async function recheck(beforeRevealing = false) {
@@ -59,8 +74,10 @@ export function bindBoardPage(signal: AbortSignal) {
     }
   }
   const timer = setInterval(() => { void recheck() }, 10_000)
+  retry.addEventListener("click", () => { void recheck(true) }, { signal })
   signal.addEventListener("abort", () => {
     clearInterval(timer)
+    recovery.remove()
     delete root.dataset.bound
   }, { once: true })
   document.addEventListener("visibilitychange", () => { void recheck(true) }, { signal })

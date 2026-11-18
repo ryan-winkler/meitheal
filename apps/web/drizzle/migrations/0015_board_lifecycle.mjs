@@ -39,12 +39,12 @@ export const householdRetirementTriggers = Object.entries(scoped).flatMap(([tabl
     return [name, `CREATE TRIGGER ${name} BEFORE ${event} ON ${table}
       WHEN ${paused} AND (${condition})
       BEGIN SELECT RAISE(ABORT, 'Household Board is deleted. Restore it from Boards to resume shared work.'); END`]
-  }))).concat(["task_pins", "task_reactions", "home_assistant_task_areas", "calendar_confirmations", "todo_sync_confirmations"].flatMap(table => ["INSERT", "UPDATE", "DELETE"].map(event => {
+  }))).concat(["task_pins", "task_reactions", "home_assistant_task_areas", "calendar_confirmations", "todo_sync_confirmations", "comments", "comment_mentions", "comment_mention_attempts"].flatMap(table => ["INSERT", "UPDATE", "DELETE"].map(event => {
     const aliases = event === "INSERT" ? ["NEW"] : event === "DELETE" ? ["OLD"] : ["OLD", "NEW"]
     const conditions = aliases.map(alias => `EXISTS (SELECT 1 FROM tasks
       WHERE tasks.id = ${alias}.task_id AND tasks.task_board_id IS NULL)`)
     // Replacing an existing reaction with a different parent must still respect its saved Board.
-    const replacementKey = table === "task_reactions" ? "id"
+    const replacementKey = ["task_reactions", "comments", "comment_mentions"].includes(table) ? "id"
       : table === "calendar_confirmations" || table === "todo_sync_confirmations" ? "confirmation_id" : null
     if (event === "INSERT" && replacementKey) conditions.push(`EXISTS (
       SELECT 1 FROM ${table} AS existing JOIN tasks ON tasks.id = existing.task_id
