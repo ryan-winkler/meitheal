@@ -145,7 +145,8 @@ test("packaged framework validation and complete imports preserve prior configur
     expect((await api.put(legacyPath, { data: { name: "Retained scoring", description: "Kept for repair" } })).status()).toBe(200)
     expect((await api.put(legacyPath, { data: { formula: "impact" } })).status()).toBe(400)
     expect((await (await api.get(path("/api/frameworks/ice"))).json()).data.formula).toBe("impact ** 2")
-    const db = new DatabaseSync(join(work, "pins.db"))
+    // The live fixture can still be writing when failure injection changes its schema.
+    const db = new DatabaseSync(join(work, "pins.db"), { timeout: 5_000 })
     try {
       db.exec("CREATE TRIGGER reject_framework BEFORE INSERT ON framework_configs BEGIN SELECT RAISE(ABORT, 'fixture failure'); END")
       const failed = await api.post(path("/api/import/settings"), { data: {

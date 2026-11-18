@@ -36,12 +36,21 @@ test("the numbered shortcut labels remain reachable in Irish on a short screen",
   const timeline = dialog.getByText("Amharc amlíne")
   await expect(timeline).not.toBeInViewport()
   await page.evaluate(() => document.fonts.ready)
+  // Reaching the final pixel can precede native scrolling's completion.
+  const endScrollCompleted = panel.evaluate(element => new Promise<void>(resolve => {
+    element.addEventListener("scrollend", () => resolve(), { once: true })
+  }))
   await page.keyboard.press("End")
   await expect(timeline).toBeInViewport()
   await expect.poll(() => panel.evaluate(element => Math.abs(element.scrollHeight - element.clientHeight - element.scrollTop))).toBeLessThan(1)
+  await endScrollCompleted
+  const homeScrollCompleted = panel.evaluate(element => new Promise<void>(resolve => {
+    element.addEventListener("scrollend", () => resolve(), { once: true })
+  }))
   await page.keyboard.press("Home")
   await expect.poll(() => panel.evaluate(element => element.scrollTop)).toBe(0)
   await expect(timeline).not.toBeInViewport()
+  await homeScrollCompleted
   await panel.hover()
   await page.mouse.wheel(0, 2000)
   await expect(timeline).toBeInViewport()

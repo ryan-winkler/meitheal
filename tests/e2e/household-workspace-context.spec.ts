@@ -98,7 +98,8 @@ test("Household picker and every task view retain context; modal, lane and draft
     const persisted = await (await context.request.get(app + "/api/tasks/" + receipt.receipt.taskId)).json()
     expect(persisted).toMatchObject({ project_id: project.id, area_id: area.id })
     await page.evaluate(value => localStorage.setItem("meitheal-selected-area", JSON.stringify({ areaId: value, areaName: "Workshop context", areaIcon: "📁" })), area.id)
-    const db = new DatabaseSync(join(work, "pins.db"))
+    // The live fixture can still be writing when failure injection changes its schema.
+    const db = new DatabaseSync(join(work, "pins.db"), { timeout: 5_000 })
     db.exec("ALTER TABLE areas RENAME TO areas_catalog_unavailable")
     renamed = true
     db.close()
@@ -107,7 +108,7 @@ test("Household picker and every task view retain context; modal, lane and draft
     await expect(page.locator("[data-area-catalog-feedback]")).toContainText("unavailable")
     await expect(page.locator("[data-area-catalog-retry]")).toBeVisible()
     await expect(page.locator("#area-selector-trigger")).toHaveAttribute("data-selected-area-id", area.id)
-    const repaired = new DatabaseSync(join(work, "pins.db"))
+    const repaired = new DatabaseSync(join(work, "pins.db"), { timeout: 5_000 })
     repaired.exec("ALTER TABLE areas_catalog_unavailable RENAME TO areas")
     repaired.close()
     renamed = false
@@ -118,7 +119,7 @@ test("Household picker and every task view retain context; modal, lane and draft
     await expect(page).toHaveURL(url => url.searchParams.get("area") === area.id)
   } finally {
     if (renamed) {
-      const db = new DatabaseSync(join(work, "pins.db"))
+      const db = new DatabaseSync(join(work, "pins.db"), { timeout: 5_000 })
       db.exec("ALTER TABLE areas_catalog_unavailable RENAME TO areas")
       db.close()
     }
