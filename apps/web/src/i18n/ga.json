@@ -51,6 +51,9 @@
     "skip_to_content": "Léim go dtí an t-ábhar"
   },
   "sidebar": {
+    "expand_navigation": "Leathnaigh {label}",
+    "collapse_navigation": "Laghdaigh {label}",
+    "navigation_label": "Nascleanúint {label}",
     "reorder": "Athordaigh an barra taoibh",
     "reorder_done": "Déanta",
     "reorder_item": "Bog {label}",

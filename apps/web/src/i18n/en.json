@@ -52,6 +52,9 @@
     "skip_to_content": "Skip to content"
   },
   "sidebar": {
+    "expand_navigation": "Expand {label}",
+    "collapse_navigation": "Collapse {label}",
+    "navigation_label": "{label} navigation",
     "reorder": "Reorder sidebar",
     "reorder_done": "Done",
     "reorder_item": "Move {label}",

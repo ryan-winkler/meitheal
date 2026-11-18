@@ -38,7 +38,7 @@ Schema 25 preserves the retired Household state during startup. Restore reactiva
 
 Browser verification covers the common Kanban, Area filtering, keyboard navigation, phone layout, named ticket restrictions, revocation and both lifecycle entry points. Release verification also checks the packaged Home Assistant Supervisor and the installed Green image and discovery manifest. The existing Home Assistant App backup procedure provides the complete recovery archive.
 
-The static client asset allowance changes from 1,740,000 to 1,765,000 bytes. The pre-change build measured 1,737,433 bytes; the shared workspace, scoped controls and navbar recovery measured 1,760,230 bytes, an increase of 22,797 bytes, approximately 1.31 percent across all client assets. The allowance includes lifecycle rebinding, accessible pin controls and responsive editor preservation. Retain the existing compiler and runtime memory, CPU and latency limits. This allowance does not change the physical Green release profile.
+The static client asset allowance changes from 1,740,000 to 1,765,000 bytes. The pre-change build measured 1,737,433 bytes; the shared workspace, scoped controls and navbar recovery measured 1,760,322 bytes, an increase of 22,889 bytes, approximately 1.32 percent across all client assets. The allowance includes lifecycle rebinding, accessible pin controls and responsive editor preservation. Retain the existing compiler and runtime memory, CPU and latency limits. This allowance does not change the physical Green release profile.
 
 ## Alternatives considered
 

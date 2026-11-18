@@ -102,9 +102,9 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
 ---
 
 {hasContent && (
-  <div class="stree" id="project-nav" data-projects-enabled={String(available("projects"))} role="navigation" aria-label="Area navigation">
+  <div class="stree" id="project-nav" data-projects-enabled={String(available("projects"))} role="navigation" aria-label={t("sidebar.navigation_label", locale, { label: areasLabel })}>
     <details id="sidebar-areas-group" open>
-    <summary class="stree__header" id="project-nav-group-toggle" aria-label={areasLabel} title="Collapse Areas">
+    <summary class="stree__header" id="project-nav-group-toggle" aria-label={areasLabel} title={t("sidebar.collapse_navigation", locale, { label: areasLabel })} data-collapse-title={t("sidebar.collapse_navigation", locale, { label: areasLabel })} data-expand-title={t("sidebar.expand_navigation", locale, { label: areasLabel })}>
       <span class="stree__group-heading"><span class="stree__group-chevron" aria-hidden="true"><Icon name="chevron-down" size={12} /></span><span class="stree__label">{areasLabel}</span></span>
     </summary>
     <div id="project-nav-content">
