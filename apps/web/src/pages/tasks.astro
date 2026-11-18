@@ -581,6 +581,7 @@ const kanbanAreas = new Map(areas.map(area => [area.id, area]))
                     data-epic={epicGroup?.id}
                     data-epic-label={epicGroup?.label}
                     data-assigned={String(task.assigned_to ?? "")}
+                    data-assignee-key={kanbanFilters.groupBy === "assigned" ? JSON.stringify(String(task.assigned_to ?? "")) : undefined}
                     data-labels={String(task.labels ?? "[]")}
                     data-task-id={task.id}
                     data-area-id={task.project_id}
@@ -721,9 +722,9 @@ const kanbanAreas = new Map(areas.map(area => [area.id, area]))
                         </span>
                       )}
                                       {task.assigned_to && (
-                        <span class="kanban-assignee-badge" title="Loading assignee">
+                        <span class="kanban-assignee-badge" title={t("tasks.assignee_loading", locale)}>
                           <Icon name="user" size={14} />
-                          <span class="kanban-assignee-name" dir="auto" data-task-assignee={String(task.assigned_to)}>Loading assignee…</span>
+                          <span class="kanban-assignee-name" dir="auto" data-task-assignee={String(task.assigned_to)}>{t("tasks.assignee_loading", locale)}</span>
                         </span>
                       )}
                       <BotBadge

@@ -30,8 +30,9 @@ function initCollapse(board: HTMLElement, signal: AbortSignal): void {
     header.setAttribute("aria-controls", cards.id)
     const key = collapseKey(board, group)
     try {
-      const stored = localStorage.getItem(key)
-        ?? localStorage.getItem(`meitheal-swimlane-${group.dataset.swimlaneType}`)
+      const legacy = board.dataset.groupBy === "assigned"
+        ? null : `meitheal-swimlane-${group.dataset.swimlaneType}`
+      const stored = localStorage.getItem(key) ?? (legacy && localStorage.getItem(legacy))
       setCollapsed(group, stored === "collapsed")
     } catch {
       setCollapsed(group, false)
@@ -73,7 +74,8 @@ export function initKanbanGrouping(board: HTMLElement, signal: AbortSignal): voi
           if (countEl) countEl.textContent = String(cards.length)
         })
     })
-  } else if (mode === "area" || mode === "priority" || mode === "epic") {
+  } else if (mode === "area" || mode === "priority" || mode === "epic" || mode === "assigned") {
+    const byAssignee = mode === "assigned"
     const icons: Record<string, string> =
       mode === "priority"
         ? {
@@ -111,9 +113,14 @@ export function initKanbanGrouping(board: HTMLElement, signal: AbortSignal): voi
       // Collect unique values
       const groups = new Map<string, HTMLElement[]>()
       flatCards.forEach((card) => {
-        const val =
-          card.dataset[mode] ||
-          (mode === "priority" ? "3" : mode === "epic" ? "epic:none" : "default")
+        const value = card.dataset[mode]
+        let val = byAssignee ? value ?? "" : value || (mode === "priority" ? "3" : mode === "epic" ? "epic:none" : "default")
+        if (byAssignee && card.dataset.assigneeKey) {
+          try {
+            const key: unknown = JSON.parse(card.dataset.assigneeKey)
+            if (typeof key === "string") val = key
+          } catch { /* Keep the unencoded identity when metadata is malformed. */ }
+        }
         // Empty Area IDs map to Default, leaving the empty key for unavailable Areas.
         const key = mode === "area" && val !== "default" && !card.dataset.areaName ? "" : val
         if (!groups.has(key)) groups.set(key, [])
@@ -124,10 +131,15 @@ export function initKanbanGrouping(board: HTMLElement, signal: AbortSignal): voi
         const card = groups.get(key)?.[0]
         if (mode === "epic") return card?.dataset.epicLabel || board.dataset.noEpicLabel || "No Epic"
         if (mode === "area") return areaLabel(key, card)
+        if (byAssignee) {
+          return key ? window.mI18n?.get("tasks.assignee_loading") ?? "Loading assignee…"
+            : window.mI18n?.get("tasks.unassigned") ?? "Unassigned"
+        }
         return icons[key] || "🟡 P3 — Medium"
       }
       const sortedKeys = Array.from(groups.keys()).sort((a, b) => {
         if (mode === "priority") return Number(a) - Number(b)
+        if (byAssignee) return Number(!a) - Number(!b) || a.localeCompare(b)
         return groupLabel(a).localeCompare(groupLabel(b), document.documentElement.lang || undefined) || a.localeCompare(b)
       })
 
@@ -157,6 +169,11 @@ export function initKanbanGrouping(board: HTMLElement, signal: AbortSignal): voi
         const labelSpan = document.createElement("span")
         labelSpan.className = "swimlane-label"
         labelSpan.textContent = mode === "area" ? `${cards[0]?.dataset.areaIcon || "📋"} ${label}` : label
+        if (byAssignee) {
+          labelSpan.dataset.assigneeGroup = ""
+          labelSpan.dir = "auto"
+          if (key) labelSpan.dataset.taskAssignee = key
+        }
         const countSpan = document.createElement("span")
         countSpan.className = "swimlane-count"
         countSpan.textContent = String(cards.length)
