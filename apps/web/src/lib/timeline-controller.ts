@@ -7,6 +7,7 @@ import { FieldPickerPanel, TASK_FIELD_DEFS, loadVisibleFields } from "./field-pi
 import { loadFilterState } from "./filter-state"
 import { isDoneStatus as isComplete, normalizeStatus } from "./status-config"
 import { replaceTaskBackgroundUrl, taskBackgroundUrl } from "./task-page-url"
+import type { HouseholdProjectLabel } from "./household-project-grouping"
 /**
  * Timeline/GANTT Controller — native SVG GANTT renderer.
  * @domain Task Visualization
@@ -53,7 +54,7 @@ interface TimelineTask {
   effort_minutes: number | null
   labels: string | null
   area_id: string | null
-  project_id: string | null
+  project_group: string
   assigned_to: string | null
   deferred_at: number | null
   is_overdue: boolean
@@ -95,7 +96,7 @@ interface ZoomConfig {
 
 // ── Area/Project name lookups (populated from SSR data) ──────────────────
 let areaLookup: Record<string, string> = {}
-let projectLookup: Record<string, string> = {}
+let projectLookup: Record<string, HouseholdProjectLabel> = {}
 
 // ── Unscheduled section collapse state ─────────────────────────────────────
 const UNSCHEDULED_COLLAPSED_KEY = "meitheal-gantt-unscheduled-collapsed"
@@ -624,22 +625,27 @@ interface HierarchyBar extends GanttBar {
   hasChildren: boolean
   isCollapsed: boolean
   isGroupHeader?: boolean
+  groupQualifier?: string
 }
 
 /** Collapsed parent IDs — persisted in module scope across re-renders */
 const collapsedParents = new Set<string>()
+const collapsedGroups = new Set<string>()
+const GROUP_ROW_SELECTOR = "[role=heading][data-row-index]"
 
 /**
  * Build a flat list sorted parent→children with depth levels.
  * Parents appear before their children. Orphan tasks stay at depth 0.
  */
 function buildHierarchy(bars: GanttBar[], groupByKey: string = "none"): HierarchyBar[] {
-  if (["status", "priority", "project", "area", "assignee", "assigned", "type"].includes(groupByKey)) {
+  if (["status", "priority", "project", "area", "assignee", "type"].includes(groupByKey)) {
     const groupKey = groupByKey
     
     // Group bars
-    const grouped = new Map<string, GanttBar[]>()
+    const grouped = new Map<string, HouseholdProjectLabel & { bars: GanttBar[] }>()
     for (const bar of bars) {
+      let key: string | undefined
+      let qualifier: string | undefined
       let val = "Uncategorized"
       if (groupKey === "status") val = bar.original.status || "Uncategorized"
       else if (groupKey === "priority") {
@@ -647,14 +653,16 @@ function buildHierarchy(bars: GanttBar[], groupByKey: string = "none"): Hierarch
         val = labels[bar.priority] || `Priority ${bar.priority}`
       }
       else if (groupKey === "project") {
-        const rawId = bar.original.project_id || ""
-        val = rawId ? (projectLookup[rawId] || "Unknown Project") : "No Project"
+        key = bar.original.project_group
+        const label = projectLookup[key]
+        val = label?.title ?? "Unknown Project"
+        qualifier = label?.qualifier
       }
       else if (groupKey === "area") {
         const rawId = bar.original.area_id || "default"
         val = areaLookup[rawId] || "Unknown Area"
       }
-      else if (groupKey === "assignee" || groupKey === "assigned") val = bar.original.assigned_to || "Unassigned"
+      else if (groupKey === "assignee") val = bar.original.assigned_to || "Unassigned"
       else if (groupKey === "type") {
         const kind = bar.original.task_kind || bar.original.task_type || "standard_action"
         const kindLabels: Record<string, string> = {
@@ -664,23 +672,24 @@ function buildHierarchy(bars: GanttBar[], groupByKey: string = "none"): Hierarch
         val = kindLabels[kind] || kind
       }
       
-      if (!grouped.has(val)) grouped.set(val, [])
-      grouped.get(val)!.push(bar)
+      key ??= val
+      const group = grouped.get(key)
+      if (group) group.bars.push(bar)
+      else grouped.set(key, { title: val, ...(qualifier && { qualifier }), bars: [bar] })
     }
 
-    // Sort group keys
-    const sortedKeys = Array.from(grouped.keys()).sort((a,b) => a.localeCompare(b))
-    
+    const sortedGroups = [...grouped].sort(([a, left], [b, right]) =>
+      left.title.localeCompare(right.title) || (left.qualifier ?? "").localeCompare(right.qualifier ?? "") || a.localeCompare(b),
+    )
     const result: HierarchyBar[] = []
-    for (const key of sortedKeys) {
-      const gBars = grouped.get(key)!
-      // Add fake header
+    for (const [key, { title, qualifier, bars: groupBars }] of sortedGroups) {
       const headerId = `group-${key}`
-      const collapsed = collapsedParents.has(headerId)
-      
+      const collapsed = collapsedGroups.has(`${groupKey}:${headerId}`)
+
       result.push({
         id: headerId,
-        name: key,
+        name: title,
+        ...(qualifier && { groupQualifier: qualifier }),
         start: new Date(), end: new Date(),
         progress: 0, colour: "transparent", taskType: "group",
         isComplete: false, isOverdue: false, isMilestone: false, priority: 0,
@@ -689,7 +698,7 @@ function buildHierarchy(bars: GanttBar[], groupByKey: string = "none"): Hierarch
       })
       
       if (!collapsed) {
-        gBars.forEach(b => {
+        groupBars.forEach(b => {
           result.push({ ...b, depth: 1, hasChildren: false, isCollapsed: false })
         })
       }
@@ -918,6 +927,11 @@ function renderGantt(
   undatedTasks: TimelineTask[] = [],
   groupByKey: string = "none",
 ) {
+  if (groupByKey === "assigned") groupByKey = "assignee"
+  const focusedGroup = document.activeElement?.closest<HTMLElement>(GROUP_ROW_SELECTOR)
+  const focusGroupId = showSidebar && focusedGroup && outerContainer.contains(focusedGroup) &&
+    outerContainer.dataset.timelineGrouping === groupByKey ? focusedGroup.dataset.taskId : undefined
+  outerContainer.dataset.timelineGrouping = groupByKey
   // Preserve vertical scroll across re-renders (e.g. inline drag/resize completion or collapse)
   const prevScrollWrapper = outerContainer.querySelector<HTMLElement>(".gantt-scroll-wrapper")
   const preservedScrollTop = prevScrollWrapper ? prevScrollWrapper.scrollTop : 0
@@ -959,6 +973,7 @@ function renderGantt(
     const rowIndex = displayRows.length
     if (bar.isGroupHeader) {
       displayRows.push({ kind: "group", rowIndex, bar })
+      if (showSidebar) navigableRowIndices.push(rowIndex)
     } else {
       displayRows.push({ kind: "bar", rowIndex, bar })
       taskRowIndexById.set(bar.id, rowIndex)
@@ -1462,10 +1477,12 @@ function renderGantt(
 
     if (dRow.kind === "group") {
       const bar = dRow.bar
+      const groupName = [bar.name, bar.groupQualifier].filter(Boolean).join(" · ")
       const row = document.createElement("div")
       row.className = "gantt-sidebar-row gantt-sidebar-row--parent"
       row.setAttribute("role", "heading")
-      row.setAttribute("aria-label", `Group: ${bar.name}`)
+      row.setAttribute("aria-label", `Group: ${groupName}`)
+      row.setAttribute("aria-level", "3")
       row.setAttribute("aria-rowindex", String(rowIndex + 1))
       row.dataset.rowIndex = String(rowIndex)
       row.dataset.taskId = bar.id
@@ -1481,8 +1498,8 @@ function renderGantt(
       const toggle = document.createElement("button")
       toggle.className = "gantt-sidebar-toggle"
       toggle.type = "button"
-      toggle.setAttribute("aria-label", bar.isCollapsed ? "Expand group" : "Collapse group")
-      toggle.setAttribute("tabindex", "-1")
+      toggle.setAttribute("aria-label", `${bar.isCollapsed ? "Expand" : "Collapse"} group: ${groupName}`)
+      toggle.setAttribute("aria-expanded", String(!bar.isCollapsed))
       toggle.style.cssText = `
         width:16px;height:16px;display:flex;align-items:center;justify-content:center;
         background:none;border:none;cursor:pointer;color:var(--text-muted);
@@ -1492,19 +1509,29 @@ function renderGantt(
       const onToggle = (e: Event) => {
         e.stopPropagation()
         e.preventDefault()
-        if (collapsedParents.has(bar.id)) collapsedParents.delete(bar.id)
-        else collapsedParents.add(bar.id)
+        const key = `${groupByKey}:${bar.id}`
+        if (bar.isCollapsed) collapsedGroups.delete(key)
+        else collapsedGroups.add(key)
         renderGantt(outerContainer, bars, zoom, _parentSignal, undatedTasks, groupByKey)
       }
       toggle.addEventListener("click", onToggle, { signal: rowSignal })
       row.addEventListener("click", onToggle, { signal: rowSignal })
       row.appendChild(toggle)
 
+      const label = document.createElement("span")
+      label.className = "gantt-sidebar-group-label"
+      label.title = groupName
       const name = document.createElement("span")
       name.className = "gantt-sidebar-row-title"
-      name.style.cssText = "flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;text-transform:uppercase;letter-spacing:0.04em;"
       name.textContent = bar.name
-      row.appendChild(name)
+      label.appendChild(name)
+      if (bar.groupQualifier) {
+        const qualifier = document.createElement("span")
+        qualifier.className = "gantt-sidebar-group-qualifier"
+        qualifier.textContent = bar.groupQualifier
+        label.appendChild(qualifier)
+      }
+      row.appendChild(label)
 
       const groupSvg = svgEl("g", {
         class: "gantt-group-row",
@@ -2059,7 +2086,10 @@ function renderGantt(
     const viewportH = scrollWrapper.clientHeight > 0 ? scrollWrapper.clientHeight : 600
     const startRow = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - 8)
     const endRow = Math.min(totalRowCount - 1, Math.ceil((scrollTop + viewportH) / ROW_HEIGHT) + 8)
-    const focusRow = activeFocusedTaskId !== null ? (taskRowIndexById.get(activeFocusedTaskId) ?? -1) : -1
+    const group = document.activeElement?.closest<HTMLElement>(GROUP_ROW_SELECTOR)
+    const focusRow = group && sidebarTrack.contains(group)
+      ? Number(group.dataset.rowIndex)
+      : taskRowIndexById.get(activeFocusedTaskId ?? "") ?? -1
     const dragRow = activeDragTaskId !== null ? (taskRowIndexById.get(activeDragTaskId) ?? -1) : -1
     const windowKey = `${startRow}:${endRow}:${focusRow}:${dragRow}`
     if (!force && windowKey === lastWindowKey) return
@@ -2084,10 +2114,13 @@ function renderGantt(
     for (const idx of wanted) {
       if (!mountedRows.has(idx)) {
         const mounted = mountDisplayRow(idx, sidebarFrag, svgFrag)
-        if (mounted) mountedRows.set(idx, mounted)
+        if (mounted) {
+          const next = [...mountedRows].filter(([index]) => index > idx).sort(([a], [b]) => a - b)[0]?.[1]
+          sidebarTrack.insertBefore(mounted.sidebarEl, next?.sidebarEl ?? null)
+          mountedRows.set(idx, mounted)
+        }
       }
     }
-    if (sidebarFrag.childNodes.length > 0) sidebarTrack.appendChild(sidebarFrag)
     if (svgFrag.childNodes.length > 0) barsGroup.appendChild(svgFrag)
 
     // Mount dependency <path> connectors whenever at least one endpoint row is mounted
@@ -2116,7 +2149,16 @@ function renderGantt(
   // ── Delegated Row & Bar Interaction Handlers (Zero Per-Row Listeners) ─
 
   sidebarTrack.addEventListener("focusin", (e) => {
-    const rowEl = (e.target as Element | null)?.closest<HTMLElement>(".gantt-vrow")
+    const target = e.target as Element | null
+    const group = target?.closest<HTMLElement>(GROUP_ROW_SELECTOR)
+    if (group) {
+      const rowIndex = Number(group.dataset.rowIndex)
+      focusedNavPos = navigableRowIndices.indexOf(rowIndex)
+      activeFocusedTaskId = null
+      scrollRowIntoView(rowIndex)
+      return
+    }
+    const rowEl = target?.closest<HTMLElement>(".gantt-vrow")
     if (!rowEl) return
     const rIdx = Number(rowEl.dataset.rowIndex ?? -1)
     const dRow = displayRows[rIdx]
@@ -2279,9 +2321,14 @@ function renderGantt(
   if (preservedScrollTop > 0) {
     scrollWrapper.scrollTop = preservedScrollTop
   }
+  const groupFocusRow = focusGroupId === undefined ? -1 : displayRows.findIndex(row =>
+    row.kind === "group" && row.bar.id === focusGroupId,
+  )
+  if (groupFocusRow >= 0) scrollRowIntoView(groupFocusRow)
   sidebarTrack.style.transform = `translateY(-${scrollWrapper.scrollTop}px)`
   headerSvg.style.transform = `translateX(-${scrollWrapper.scrollLeft}px)`
   syncVirtualWindow(true)
+  mountedRows.get(groupFocusRow)?.sidebarEl.querySelector("button")?.focus({ preventScroll: true })
 
   // ── T5: Scroll-to-Today FAB ──────────────────────────────────────────
 
@@ -2354,9 +2401,7 @@ function renderGantt(
     focusedNavPos = Math.max(0, Math.min(nextNavPos, navigableRowIndices.length - 1))
     const targetRowIndex = navigableRowIndices[focusedNavPos]!
     const targetRow = displayRows[targetRowIndex]
-    if (targetRow && targetRow.kind === "bar") {
-      activeFocusedTaskId = targetRow.bar.id
-    }
+    activeFocusedTaskId = targetRow?.kind === "bar" ? targetRow.bar.id : null
     scrollRowIntoView(targetRowIndex)
     syncVirtualWindow(true)
 
@@ -2367,6 +2412,10 @@ function renderGantt(
     sidebarRowEl?.classList.add("gantt-sidebar-row--focused")
     setChartRowHighlight(targetRowIndex)
 
+    if (targetRow?.kind === "group") {
+      sidebarRowEl?.querySelector("button")?.focus({ preventScroll: true })
+      return
+    }
     const barEl = barsGroup.querySelector<SVGGElement>(
       `.gantt-bar[data-row-index="${targetRowIndex}"], .gantt-milestone[data-row-index="${targetRowIndex}"]`,
     )
@@ -2728,6 +2777,7 @@ export function initTimelineController(signal: AbortSignal) {
   }
 
   // Load project name lookup from SSR data
+  projectLookup = {}
   const projectsEl = document.getElementById("timeline-projects")
   if (projectsEl) {
     try { projectLookup = JSON.parse(projectsEl.textContent || "{}") } catch { /* ignore */ }
