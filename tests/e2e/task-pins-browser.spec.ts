@@ -4,6 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { chromium, expect, test } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { launchPinBrowser, pinRequest, startCoreFixture } from "../scripts/task-pins-fixture"
 
 test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Run with MEITHEAL_TEST_BROWSER=1 and a built web app")
@@ -24,7 +25,7 @@ test("personal pins work in the mobile drawer and reconcile Details without chan
     const path = prefix + "/api/task-pins"
     browser = await launchPinBrowser(work)
     const context = await browser.newContext({
-      extraHTTPHeaders: {}, hasTouch: true, isMobile: true, viewport: { width: 320, height: 680 },
+      extraHTTPHeaders: {}, ignoreHTTPSErrors: true, hasTouch: true, isMobile: true, viewport: { width: 320, height: 680 },
       reducedMotion: "reduce",
     })
     await context.setExtraHTTPHeaders({})
@@ -37,13 +38,14 @@ test("personal pins work in the mobile drawer and reconcile Details without chan
     page.setDefaultNavigationTimeout(10_000)
     stage = "seeding 26 pins"
     await page.goto(origin + prefix + "/fixture")
+    const { origin: _origin, ...boardHeaders } = await currentBoardWriteHeaders(context.request, "household", { origin }, origin + prefix)
     const longTitle = "Unbreakable" + "W".repeat(160)
-    const seed = await page.evaluate(async ({ prefix, longTitle }) => {
+    const seed = await page.evaluate(async ({ prefix, longTitle, boardHeaders }) => {
       const post = async (path: string, data: object, method = "POST", context?: string) => {
         const response = await fetch(prefix + path, {
           method, mode: "same-origin", referrerPolicy: "same-origin",
           signal: AbortSignal.timeout(7_000),
-          headers: { "content-type": "application/json", ...(context ? { "X-Meitheal-Pin-Context": context } : {}) },
+          headers: { ...boardHeaders, "content-type": "application/json", ...(context ? { "X-Meitheal-Pin-Context": context } : {}) },
           body: JSON.stringify(data),
         })
         if (!response.ok) throw new Error(`Fixture setup status ${response.status}`)
@@ -58,7 +60,7 @@ test("personal pins work in the mobile drawer and reconcile Details without chan
         records.push({ id, title })
       }
       return records
-    }, { prefix, longTitle })
+    }, { prefix, longTitle, boardHeaders })
     expect(seed).toHaveLength(26)
     stage = "opening mobile drawer"
     let pinRequests = 0
@@ -169,7 +171,15 @@ test("personal pins work in the mobile drawer and reconcile Details without chan
     await expect(queue.locator("li")).toHaveCount(0, { timeout: 11_000 })
     await expect(page.locator("[data-pins-status]")).toContainText("Your pin session changed")
     await expect(page.getByText("Pin removed.", { exact: true })).toHaveCount(0)
-    await page.getByRole("button", { name: "Refresh pins" }).press("Enter")
+    const refresh = page.getByRole("button", { name: "Refresh pins" })
+    const [denied] = await Promise.all([
+      page.waitForResponse(response => response.url() === origin + path && response.request().method() === "POST"),
+      refresh.press("Enter"),
+    ])
+    expect(denied.status()).toBe(403)
+    await expect(queue.locator("li")).toHaveCount(0)
+    // A new navigation loads a Board session for the newly authenticated account.
+    await page.reload()
     await expect(page.locator("[data-pins-status]")).toContainText("No pinned tasks yet")
     expect(await pinRequest(page, path, "POST", { action: "list" })).toMatchObject({ body: { total: 0 } })
   } catch (error) {
