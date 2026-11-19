@@ -34,20 +34,21 @@ Meitheal sits naturally between **Home Assistant automations** and **everyday ho
 | Multi-step seasonal prep | **Winter Boiler and Heating Prep** project | Tracks contractor quotes, radiator bleeding, and pressure checks in **Kanban** or **Table** |
 
 - **Start in Today**: Review due work, recurring routines, carried-forward items, and evening wrap-up in one focused view.
-- **Plan at the right altitude**: Switch between **Kanban**, **Table**, **Calendar**, and **Timeline**, or search everything instantly via [Search Hub](docs/kcs/search-hub-guide.md) (`/` or `Ctrl/Cmd + K`).
+- **Plan at the right altitude**: Organize work across dedicated **Boards**, switch between **Kanban**, **Table**, **Calendar**, and **Timeline**, open distraction-free **Focus Mode** with RICE scoring and **Auto-score with Assist**, or search everything via [Search Hub](docs/kcs/search-hub-guide.md) (`/` or `Ctrl/Cmd + K`).
+- **Look & Feel made for Home Assistant**: Choose **Emerald Isle**, **Knight Rider**, **Light**, or enable **Match Home Assistant theme** so surfaces and accents follow your Home Assistant dashboard.
 - **Stay inside Home Assistant**: Two-way calendar and `todo.meitheal_tasks` sync, Home Assistant sensors and services, Assist voice intents, webhooks, and scoped LLM/MCP agent tokens.
 - **Use on any screen — even offline**: Open through Home Assistant Ingress, launch via Companion deep links, or [install the PWA](docs/kcs/pwa-offline-guide.md) with offline task queuing.
 - **Own your data completely**: Local SQLite database covered by [Home Assistant backups](docs/kcs/home-assistant-backup-and-restore.md), plus one-click JSON, CSV, and raw SQLite exports.
 
 ## Inside Meitheal
 
-| Today — Daily Focus & Routines | Household Dashboard & Focus Queue |
+| Today — Priority Stack & Routines | Dashboard — Household Overview & Momentum |
 |---|---|
-| ![Meitheal Today view showing due tasks, evening review, and priority focus](docs/screenshots/today.png) | ![Meitheal Dashboard showing household stats, favorites, quick capture, and open queue](docs/screenshots/dashboard.png) |
-| **Kanban & Project Board** | **Home Assistant-Native Settings** |
-| ![Meitheal Kanban board showing Backlog, Todo, In Progress, and Done household tasks](docs/screenshots/kanban.png) | ![Meitheal Settings shell showing appearance swatches, regional options, and keyboard shortcuts](docs/screenshots/settings.png) |
+| ![Meitheal Today view showing Priority stack, quick capture, streak stats, and carried-forward triage](docs/screenshots/today.png) | ![Meitheal Dashboard showing task counts, momentum ring, XP streak, and focus queue](docs/screenshots/dashboard.png) |
+| **Kanban & Promoted Cards** | **Look & Feel & Theme Matching** |
+| ![Meitheal Kanban board showing Backlog, Todo, In Progress, and Done columns with color-tinted Promoted cards](docs/screenshots/kanban.png) | ![Meitheal Look and Feel Settings showing Emerald Isle, Match Home Assistant theme toggle, accent swatches, and appearance controls](docs/screenshots/settings.png) |
 
-Additional views include structured [Table planning](docs/screenshots/table.png) and month-grid [Calendar scheduling](docs/screenshots/tasks.png).
+Additional views include structured [Table planning](docs/screenshots/table.png), month-grid [Calendar scheduling with day agenda drawer](docs/screenshots/calendar.png), **Timeline (Gantt)** bars, distraction-free **Focus Mode**, and Urgent-vs-Important **Eisenhower** prioritization. Contributors can regenerate screenshots and local demos via the [screenshot and media capture runbook](docs/kcs/screenshot-and-media-capture.md).
 
 ## Ubiquitous Language
 
@@ -142,6 +143,10 @@ On Home Assistant Core 2026.11 or later, an active administrator can also enable
 - [Community conduct](CODE_OF_CONDUCT.md)
 - [Support](SUPPORT.md)
 - [Report a security problem privately](SECURITY.md)
+
+### How Meitheal Is Built
+
+Meitheal combines human Product Management direction with structured AI-assisted engineering workflows — led by review-loop skills in the [Elephant-Goldfish Model (EGM)](https://github.com/google/elephant-goldfish-model) (including [`egm-review-loop`](https://github.com/google/elephant-goldfish-model/tree/main/skills/egm-review-loop)), [GSD (Get Shit Done)](https://github.com/gsd-build/get-shit-done), and [gstack](https://github.com/garrytan/gstack) — paired with automated Playwright and Home Assistant pytest suites and continuous security scanning. Per-run agent logs stay outside Git, while durable architectural choices live in [ADRs](docs/decisions/index.md).
 
 ## Supporting Meitheal
 

@@ -48,6 +48,7 @@
 - [Releasing Meitheal](releasing.md) - Understand release channels and how to verify builds.
 - [Dependency pinning and code scanning](dependency-pinning.md) - Update pinned build inputs and review security alerts.
 - [Green Canary benchmark](green-canary-benchmark.md) - Qualify the fixed workload, memory limits and driver telemetry.
+- [Screenshot and media capture](screenshot-and-media-capture.md) - Regenerate README screenshots and local feature demos from a clean production build.
 - [Licensing & Distribution — KCS Runbook](licensing.md) - Find the license boundaries for source, integrations, and distribution.
 
 # Task automation and configuration
