@@ -136,6 +136,8 @@ Repeat Project editing with a pinned copy present; the editable row and pinned t
 
 For hover navigation, open Area and Project actions with the pointer outside the sidebar, then cancel Rename and task capture with the keyboard. The owning sidebar must stay expanded. At a short phone viewport, every Color & Icon control and Save must remain reachable by keyboard and pointer.
 
+At phone width, select Project options and verify the menu opens without navigating to the Project. With Boards in the primary desktop navbar, the first Escape from a pointer- or keyboard-opened menu returns focus to its trigger. The next Escape closes the Boards disclosure and focuses its button.
+
 While a changed Area draft has focus, change font or navigation style from another tab. The same draft must stay visible and focused without sending a save request. Escape must still cancel it; a deliberate outside-click save keeps its normal behavior.
 
 In the Board sidebar, a screen reader must distinguish an Area link from its **Projects in [Area name]** disclosure, including after an inline rename. If retrying an empty page removes the focused retry button, return focus to the disclosure. Leave focus where the user moved it if they left the list while the retry was loading.

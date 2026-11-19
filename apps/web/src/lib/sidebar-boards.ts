@@ -9,6 +9,10 @@ interface GroupChoice { id: string; name: string; icon?: string; color?: string 
 interface GroupPage { items: GroupChoice[]; selected?: GroupChoice | null; next_cursor: string | null; actions?: string[] }
 
 export function bindSidebarBoards(signal: AbortSignal) {
+  const list = document.querySelector<HTMLUListElement>("[data-sidebar-boards]")
+  list?.classList.add("stree")
+  // The action popup handles Escape before the enclosing Boards disclosure.
+  const actions = list && bindSidebarHierarchyActions(list, signal)
   const children = document.querySelector<HTMLElement>("[data-sidebar-board-children]")
   const parentToggle = document.querySelector<HTMLButtonElement>("[data-sidebar-boards-toggle]")
   if (children && parentToggle) {
@@ -51,11 +55,7 @@ export function bindSidebarBoards(signal: AbortSignal) {
       parentToggle.focus({ preventScroll: true })
     }, { signal })
   }
-  const root = document.querySelector<HTMLUListElement>("[data-sidebar-boards]")
-  if (!root) return
-  const list = root
-  list.classList.add("stree")
-  const actions = bindSidebarHierarchyActions(list, signal)
+  if (!list) return
   const documentContext = currentTaskApiContext()
   if (!actions) { list.textContent = "Navigation is unavailable. Reload to try again."; return }
   let directoryRequest: AbortController | undefined

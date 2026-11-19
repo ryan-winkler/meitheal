@@ -657,6 +657,12 @@
       overflow: visible;
     }
 
+    /* Keep the action buttons above the adjacent positioned Project link. */
+    .stree__project > .stree__actions {
+      position: relative;
+      z-index: 1;
+    }
+
     .stree__count {
       display: none;
     }

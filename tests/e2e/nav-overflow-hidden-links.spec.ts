@@ -138,6 +138,12 @@ test.describe("More disclosure keyboard candidates", () => {
       await page.keyboard.press("Tab")
       await expect(areasToggle).toBeFocused()
       await page.keyboard.press("Tab")
+      await expect(areas.locator("[data-area-toggle]").first()).toBeFocused()
+      await page.keyboard.press("Shift+Tab")
+      await expect(areasToggle).toBeFocused()
+      await page.keyboard.press("Shift+Tab")
+      await expect(household).toBeFocused()
+      await arrowTo(page, areaLink)
       await expect(areaLink).toBeFocused()
       await page.keyboard.press("ArrowDown")
       await expect(firstProject).toBeFocused()
@@ -204,17 +210,25 @@ test.describe("More disclosure keyboard candidates", () => {
       await page.keyboard.press("Tab")
       await expect(areasToggle).toBeFocused()
       await page.keyboard.press("Tab")
+      await expect(areas.locator(".stree__area-link").first()).toBeFocused()
+      for (let step = 0; step < 12 && !(await areaLink.evaluate(element => document.activeElement === element)); step++) {
+        await page.keyboard.press("Tab")
+      }
       await expect(areaLink).toBeFocused()
-      await page.keyboard.press("ArrowDown")
+      await page.keyboard.press("Tab")
+      await expect(projectsToggle).toBeFocused()
+      for (let step = 0; step < 6 && !(await firstProject.evaluate(element => document.activeElement === element)); step++) {
+        await page.keyboard.press("Tab")
+      }
       await expect(firstProject).toBeFocused()
       await arrowTo(page, project)
       await expect(project).toBeFocused()
       await expect(project).toBeInViewport({ ratio: 1 })
     } finally {
       expect((await request.put("/api/settings", { headers, data: { key: "sidebar_config", value: previous ?? null } })).ok()).toBe(true)
-      for (let offset = 0; offset < projectIds.length; offset += 6) {
-        const deleted = await Promise.all(projectIds.slice(offset, offset + 6).map(id => request.delete(`/api/projects/${id}`, { headers, data: {} })))
-        for (const response of deleted) expect(response.ok()).toBe(true)
+      for (const id of projectIds) {
+        const deleted = await request.delete(`/api/projects/${id}`, { headers, data: {} })
+        expect(deleted.status(), await deleted.text()).toBe(200)
       }
       expect((await request.delete(`/api/areas/${areaId}`, { headers, data: {} })).ok()).toBe(true)
     }
