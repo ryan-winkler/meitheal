@@ -1,10 +1,11 @@
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { expect, test, type APIRequestContext } from "@playwright/test"
 
 test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the disposable Meitheal fixture")
 test.use({ serviceWorkers: "block" })
 
-async function create(request: APIRequestContext, title: string, status = "backlog") {
-  const response = await request.post("/api/tasks", { data: { title, status } })
+async function create(request: APIRequestContext, headers: Record<string, string>, title: string, status = "backlog") {
+  const response = await request.post("/api/tasks", { headers, data: { title, status } })
   expect(response.status()).toBe(201)
   return await response.json() as { id: string; title: string; ticket_key: string }
 }
@@ -21,13 +22,14 @@ test.beforeEach(async ({ request }) => {
 test.afterEach(async ({ request }) => { await setMode(request, previousMode ?? "visible") })
 
 test("Planning opens the bounded queue and keyboard decisions preserve context", async ({ page, request }) => {
+  const boardHeaders = await currentBoardWriteHeaders(request, "household", {})
   const ids: string[] = []
   try {
     await setMode(request, "visible")
     for (let index = 0; index < 26; index++) {
-      ids.push((await create(request, `Triage fixture ${index + 1}`)).id)
+      ids.push((await create(request, boardHeaders, `Triage fixture ${index + 1}`)).id)
     }
-    ids.push((await create(request, "Already accepted", "pending")).id)
+    ids.push((await create(request, boardHeaders, "Already accepted", "pending")).id)
     await page.goto("/planning#triage")
     const cards = page.locator("[data-triage-card]")
     await expect(cards).toHaveCount(25)
@@ -68,12 +70,13 @@ test("Planning opens the bounded queue and keyboard decisions preserve context",
     await expect(cards).toHaveCount(25)
     await expect(page.locator(`[data-triage-card="${accepted}"]`)).toBeVisible()
   } finally {
-    for (const id of ids) expect((await request.delete(`/api/tasks/${id}`, { data: {} })).status()).toBe(204)
+    for (const id of ids) expect((await request.delete(`/api/tasks/${id}`, { headers: boardHeaders, data: {} })).status()).toBe(204)
   }
 })
 
 test("hidden and invalid modes block URL opening and visible mode fits a small Irish viewport", async ({ page, request, context, baseURL }) => {
-  const item = await create(request, "Long household repair " + "socket".repeat(65))
+  const boardHeaders = await currentBoardWriteHeaders(request, "household", {})
+  const item = await create(request, boardHeaders, "Long household repair " + "socket".repeat(65))
   const itemPath = `/api/tasks/${item.id}`
   let detailReads = 0
   page.on("request", http => {
@@ -103,16 +106,17 @@ test("hidden and invalid modes block URL opening and visible mode fits a small I
     expect(await card.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true)
   } finally {
     await setMode(request, "visible")
-    expect((await request.delete(itemPath, { data: {} })).status()).toBe(204)
+    expect((await request.delete(itemPath, { headers: boardHeaders, data: {} })).status()).toBe(204)
   }
 })
 
 test("blocked, stale, and uncertain decisions retain the card and restore focus", async ({ page, request }) => {
-  const item = await create(request, "Fit the replacement radiator")
-  const prerequisite = await create(request, "Receive the radiator", "pending")
+  const boardHeaders = await currentBoardWriteHeaders(request, "household", {})
+  const item = await create(request, boardHeaders, "Fit the replacement radiator")
+  const prerequisite = await create(request, boardHeaders, "Receive the radiator", "pending")
   const path = `/api/tasks/${item.id}`
   try {
-    expect((await request.post(path + "/links", { data: { target_task_id: prerequisite.id, link_type: "blocked_by" } })).status()).toBe(201)
+    expect((await request.post(path + "/links", { headers: boardHeaders, data: { target_task_id: prerequisite.id, link_type: "blocked_by" } })).status()).toBe(201)
     await page.goto("/triage")
     const card = page.locator(`[data-triage-card="${item.id}"]`)
     const start = card.getByRole("button", { name: "Start now" })
@@ -130,14 +134,14 @@ test("blocked, stale, and uncertain decisions retain the card and restore focus"
     await expect(card).toBeVisible()
     await page.unroute(`**${path}`)
 
-    expect((await request.patch(path, { data: { title: "Changed elsewhere" } })).status()).toBe(200)
+    expect((await request.patch(path, { headers: boardHeaders, data: { title: "Changed elsewhere" } })).status()).toBe(200)
     await accept.press("Enter")
     await expect(status).toContainText("This task changed")
     await expect(accept).toBeFocused()
     expect(await (await request.get(path)).json()).toMatchObject({ status: "backlog", title: "Changed elsewhere" })
   } finally {
-    expect((await request.delete(path, { data: {} })).status()).toBe(204)
-    expect((await request.delete(`/api/tasks/${prerequisite.id}`, { data: {} })).status()).toBe(204)
+    expect((await request.delete(path, { headers: boardHeaders, data: {} })).status()).toBe(204)
+    expect((await request.delete(`/api/tasks/${prerequisite.id}`, { headers: boardHeaders, data: {} })).status()).toBe(204)
   }
 })
 
@@ -148,8 +152,9 @@ function gate() {
 }
 
 test("an acknowledgement during Details keeps the dialog and retires the accepted decision", async ({ page, request }) => {
-  const first = await create(request, "Acknowledged intake")
-  const second = await create(request, "Inspect another intake task")
+  const boardHeaders = await currentBoardWriteHeaders(request, "household", {})
+  const first = await create(request, boardHeaders, "Acknowledged intake")
+  const second = await create(request, boardHeaders, "Inspect another intake task")
   const path = `/api/tasks/${first.id}`
   const held = gate()
   const intercepted = gate()
@@ -178,14 +183,15 @@ test("an acknowledgement during Details keeps the dialog and retires the accepte
     await expect(firstCard).toHaveCount(0)
   } finally {
     held.resolve()
-    expect((await request.delete(path, { data: {} })).status()).toBe(204)
-    expect((await request.delete(`/api/tasks/${second.id}`, { data: {} })).status()).toBe(204)
+    expect((await request.delete(path, { headers: boardHeaders, data: {} })).status()).toBe(204)
+    expect((await request.delete(`/api/tasks/${second.id}`, { headers: boardHeaders, data: {} })).status()).toBe(204)
   }
 })
 
 test("a late acknowledgement leaves a changed location alone, and a restored page revalidates its mode", async ({ page, request }) => {
-  const first = await create(request, "Intake before a location change")
-  const second = await create(request, "Intake after a location change")
+  const boardHeaders = await currentBoardWriteHeaders(request, "household", {})
+  const first = await create(request, boardHeaders, "Intake before a location change")
+  const second = await create(request, boardHeaders, "Intake after a location change")
   const path = `/api/tasks/${first.id}`
   const held = gate()
   const intercepted = gate()
@@ -221,7 +227,7 @@ test("a late acknowledgement leaves a changed location alone, and a restored pag
   } finally {
     held.resolve()
     await setMode(request, "visible")
-    expect((await request.delete(path, { data: {} })).status()).toBe(204)
-    expect((await request.delete(`/api/tasks/${second.id}`, { data: {} })).status()).toBe(204)
+    expect((await request.delete(path, { headers: boardHeaders, data: {} })).status()).toBe(204)
+    expect((await request.delete(`/api/tasks/${second.id}`, { headers: boardHeaders, data: {} })).status()).toBe(204)
   }
 })
