@@ -451,6 +451,8 @@ For calibration, the check accepts these overrides.
 - `MEITHEAL_PERF_BUDGET_P95_MS_MAX`
 - `MEITHEAL_PERF_BUDGET_FILE`
 
+Custom budget files can set `budgets.workspaceUiBytesMax`. Files that omit it use the default 50,000-byte ceiling for optional workspace assets.
+
 ## Label storage
 
 The native Labels API and task views use the original label tables. Updates keep existing IDs, names, colours, and task links. After an upgrade, open a task that has a coloured label. Confirm the label still appears in the task and in the label picker.

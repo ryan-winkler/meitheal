@@ -12,7 +12,7 @@ const execFileAsync = promisify(execFile);
 
 const defaultBudgets = {
   clientBytesMax: 100 * 1024,
-  workspaceUiBytesMax: 0,
+  workspaceUiBytesMax: 50_000,
   rssKbMax: 220 * 1024,
   p95MsMax: 250
 };
