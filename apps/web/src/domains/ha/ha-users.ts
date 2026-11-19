@@ -171,11 +171,9 @@ export async function getHAUserById(userId: string): Promise<HAUser | null> {
 }
 
 const activeUserFreshnessMs = 5_000
-const maxMembershipLookups = 16
 type ActiveHARoster = ReadonlyMap<string, string>
 let activeUsers: { roster: ActiveHARoster; expiresAt: number } | undefined
 let checkingActiveUsers: Promise<ActiveHARoster | undefined> | undefined
-let pendingLookups = 0
 let latestLookup = 0
 let latestCompletedLookup = 0
 
@@ -192,20 +190,15 @@ function parseActiveUserRoster(users: unknown): ActiveHARoster | undefined {
 }
 
 async function refreshActiveUsers(signal?: AbortSignal): Promise<ActiveHARoster | undefined> {
-  if (pendingLookups >= maxMembershipLookups || signal?.aborted) return
+  if (signal?.aborted) return
   const generation = ++latestLookup
   const expiresAt = performance.now() + activeUserFreshnessMs
-  pendingLookups++
-  try {
-    const roster = parseActiveUserRoster(await readCurrentHACoreUsers(signal))
-    if (generation > latestCompletedLookup) {
-      latestCompletedLookup = generation
-      activeUsers = roster && { roster, expiresAt }
-    }
-    return roster
-  } finally {
-    pendingLookups--
+  const roster = parseActiveUserRoster(await readCurrentHACoreUsers(signal))
+  if (generation > latestCompletedLookup) {
+    latestCompletedLookup = generation
+    activeUsers = roster && { roster, expiresAt }
   }
+  return roster
 }
 
 async function waitForReadCheck(check: Promise<ActiveHARoster | undefined>, signal?: AbortSignal): Promise<void> {
