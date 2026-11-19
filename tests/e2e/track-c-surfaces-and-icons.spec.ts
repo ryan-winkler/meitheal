@@ -5,6 +5,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { expect, test } from "@playwright/test"
 import { shouldSkipBrowserSpecs } from "./_helpers"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import {
   ensureSchema,
   getPersistenceClient,
@@ -194,7 +195,7 @@ test.describe("Track C — Evergreen Carbon Surfaces, Tabler 1.75px Sprites & 5-
       request,
       baseURL,
     }) => {
-      const headers = { origin: new URL(baseURL!).origin }
+      const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
       const createdIds: string[] = []
       try {
         for (const taskType of ["epic", "story", "bug", "task"]) {
@@ -211,7 +212,7 @@ test.describe("Track C — Evergreen Carbon Surfaces, Tabler 1.75px Sprites & 5-
           createdIds.push((await res.json()).id)
         }
 
-        const routes = ["/", "/tasks", "/eisenhower", "/settings#integrations-settings", "/tasks?view=timeline#timeline"]
+        const routes = ["/", "/boards/household#kanban", "/eisenhower", "/settings#integrations-settings", "/boards/household?view=timeline#timeline"]
         for (const route of routes) {
           await page.goto(route)
           await page.waitForLoadState("networkidle")
@@ -270,7 +271,7 @@ test.describe("Track C — Evergreen Carbon Surfaces, Tabler 1.75px Sprites & 5-
         })
         expect(wizardOptionTexts.some((t) => t.includes("🔴"))).toBe(true)
 
-        await page.goto("/tasks")
+        await page.goto("/boards/household#kanban")
         await page.waitForLoadState("networkidle")
         await page.keyboard.press("/")
         await expect(page.locator("#search-hub-overlay")).toBeVisible()
