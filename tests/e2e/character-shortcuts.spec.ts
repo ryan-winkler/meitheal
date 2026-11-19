@@ -503,11 +503,10 @@ test("pressing lowercase c on a grouped board collapses and expands swimlanes wi
     await expect(visibleLanes).toHaveCount(laneCount)
     expect(new URL(page.url()).pathname).toBe("/tasks")
 
-    // Outside the board the global shortcut still opens Calendar, whose legacy
-    // route redirects to the Tasks Calendar view.
+    // Outside the swimlanes the global shortcut opens the Household Calendar.
     await blurActive(page)
     await page.keyboard.press("c")
-    await expect(page).toHaveURL(/\/tasks\?view=calendar#calendar$/)
+    await expect(page).toHaveURL(/\/boards\/household\?view=calendar#calendar$/)
   } finally {
     if (firstId) await request.delete(`/api/tasks/${firstId}`, { headers })
     if (secondId) await request.delete(`/api/tasks/${secondId}`, { headers })
@@ -532,7 +531,7 @@ test("pressing c on an ungrouped board opens Calendar like everywhere else", asy
     await expect(page.locator(".swimlane-group:not([hidden]) .swimlane-toggle")).toHaveCount(0)
     await page.locator(`[data-task-id="${id}"] .card-open-btn`).focus()
     await page.keyboard.press("c")
-    await expect(page).toHaveURL(/\/tasks\?view=calendar#calendar$/)
+    await expect(page).toHaveURL(/\/boards\/household\?view=calendar#calendar$/)
   } finally {
     await request.delete(`/api/tasks/${id}`, { headers, data: {} })
   }
