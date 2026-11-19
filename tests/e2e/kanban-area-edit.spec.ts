@@ -298,18 +298,33 @@ test("Area changes update the Kanban groups and preserve the board context throu
     await close.click()
     await expect(group("default").locator(`.kanban-card[data-id="${other}"]`)).toBeVisible()
 
+    // Retiring the Areas advanced Board authority. Reload the Board before the next case.
+    await expect(page).toHaveURL(url => url.pathname === new URL(boardUrl("")).pathname && url.searchParams.get("groupBy") === "area")
+    expect((await page.reload())?.status()).toBe(200)
+    await expect(page.locator("#kanban-shell")).toHaveAttribute("data-kanban-booted", "true")
     const defaultHeading = group("default").locator("button.swimlane-header")
     await defaultHeading.press("Enter")
     await expect(defaultHeading).toHaveAttribute("aria-expanded", "false")
-    await card(task).click()
-    await savedValue("")
-    const savedDefault = page.waitForResponse(res => res.url() === api && res.request().method() === "PUT")
-    await select.selectOption("default")
-    expect((await savedDefault).ok()).toBe(true)
+    const [currentAreas] = await Promise.all([
+      page.waitForResponse(res => res.url() === catalog && res.request().method() === "GET", { timeout: 10_000 }),
+      card(task).click(),
+    ])
+    expect(currentAreas.ok(), `Area catalog returned ${currentAreas.status()}: ${await currentAreas.text()}`).toBe(true)
     await expect(select).toBeEnabled()
-    expect((await context.request.put(api, { headers, data: { status: "pending" } })).ok()).toBe(true)
+    await savedValue("")
+    await expect(select).toHaveAttribute("data-saved-area", "")
+    const [assignedDefault] = await Promise.all([
+      page.waitForResponse(res => res.url() === api && res.request().method() === "PUT"),
+      select.selectOption("default"),
+    ])
+    expect(assignedDefault.ok()).toBe(true)
+    expect(await assignedDefault.json()).toMatchObject({ id: task, area_id: "default" })
+    await expect(select).toHaveAttribute("data-saved-area", "default")
+    const statusWrite = await context.request.put(api, { headers, data: { status: "pending" } })
+    expect(statusWrite.ok()).toBe(true)
+    expect(await statusWrite.json()).toMatchObject({ id: task, area_id: "default", status: "pending" })
     await close.click()
-    await expect(group("default").locator(`.kanban-card[data-id="${task}"]`)).toBeAttached()
+    await expect(group("default").locator(`.kanban-card[data-id="${task}"]`)).toBeAttached({ timeout: 10_000 })
     await expect(card(task)).toBeHidden()
     await expect(defaultHeading).toBeFocused()
   } finally {
