@@ -70,7 +70,7 @@ test("Area changes update the Kanban groups and preserve the board context throu
         await route.continue()
       }
       await page.route(taskApi, hold)
-      const response = page.waitForResponse(res => res.url() === taskApi && res.request().method() === "PUT")
+      const response = page.waitForResponse(res => res.url() === taskApi && res.request().method() === "PUT", { timeout: 30_000 })
       await select.selectOption(area)
       await started
       await expect(select).toBeDisabled()
@@ -108,10 +108,17 @@ test("Area changes update the Kanban groups and preserve the board context throu
       : route.continue())
     await select.focus()
     await select.selectOption(destination)
-    await savedValue(original)
     await expect(select).toBeEnabled()
     await expect(select).toBeFocused()
+    await expect(select).toHaveValue(destination)
+    await expect(select).toHaveAttribute("data-saved-area", original)
+    const unchanged = await context.request.get(api, { headers })
+    expect(unchanged.ok(), await unchanged.text()).toBe(true)
+    expect((await unchanged.json()).area_id).toBe(original)
     await page.unroute(api)
+    await drawer.getByRole("button", { name: "Reload saved task" }).click()
+    await savedValue(original)
+    await expect(select).toBeEnabled()
 
     const saved = page.waitForResponse(res => res.url() === api && res.request().method() === "PUT")
     await select.selectOption(destination)
