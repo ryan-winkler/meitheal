@@ -32,7 +32,7 @@ test.beforeAll(async () => {
   origin = `https://127.0.0.1:${fixture.port}`
   app = origin + fixture.configuredPath
   browser = await launchPinBrowser(work)
-  const owner = await browser.newContext({ ignoreHTTPSErrors: true })
+  const owner = await browser.newContext({ ignoreHTTPSErrors: true, extraHTTPHeaders: {} })
   await owner.addCookies([{ name: "feedback-fixture", value: "member", url: origin }])
   const directory = await owner.request.get(app + "/api/boards")
   expect(directory.ok()).toBe(true)
@@ -57,7 +57,7 @@ test.beforeAll(async () => {
 })
 
 test.beforeEach(async () => {
-  context = await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width: 1240, height: 900 }, serviceWorkers: "block" })
+  context = await browser.newContext({ ignoreHTTPSErrors: true, extraHTTPHeaders: {}, viewport: { width: 1240, height: 900 }, serviceWorkers: "block" })
   await context.addCookies([{ name: "feedback-fixture", value: "member", url: origin }])
   page = await context.newPage()
   page.setDefaultTimeout(8_000)
@@ -213,7 +213,7 @@ for (const status of [401, 403, 404]) {
 }
 
 test("a real account revocation removes the loaded private Project projection", async () => {
-  const owner = await browser.newContext({ ignoreHTTPSErrors: true })
+  const owner = await browser.newContext({ ignoreHTTPSErrors: true, extraHTTPHeaders: {} })
   try {
     await owner.addCookies([{ name: "feedback-fixture", value: "member", url: origin }])
     const membership = `${app}/api/boards/${boardId}`
