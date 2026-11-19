@@ -1113,8 +1113,16 @@ test("ingress Auto updates with its parent and restores one observer across ifra
   await root.evaluate(() => window.dispatchEvent(new PageTransitionEvent("pagehide", { persisted: true })))
   await expect.poll(observerCounts).toEqual({ active: 0, registrations: 1 })
   await setParentBackground("")
-  await root.evaluate(() => window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true })))
-  await expect.poll(observerCounts).toEqual({ active: 1, registrations: 2 })
+  // Verified ingress restores through a new document before showing this account’s settings.
+  const restoredFrame = page.waitForEvent("framenavigated", frame => frame.parentFrame() === page.mainFrame())
+  await page.locator("iframe").evaluate((frame: HTMLIFrameElement) => {
+    frame.contentWindow!.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true }))
+  })
+  await restoredFrame
+  await expect(content.locator("#settings-panels")).not.toHaveAttribute("inert", "")
+  await expect.poll(observerCounts).toMatchObject({ active: 1 })
+  const restoredRegistrations = (await observerCounts())!.registrations
+  expect(restoredRegistrations).toBeGreaterThan(1)
   await expect(root).not.toHaveAttribute("data-ha-theme", /.+/)
   await page.emulateMedia({ colorScheme: "light" })
   await expect.poll(palette).toBe("#ecebe4")
@@ -1124,7 +1132,7 @@ test("ingress Auto updates with its parent and restores one observer across ifra
     next.searchParams.set("theme-fixture", "reload")
     frame.src = next.href
   })
-  await expect.poll(observerCounts).toEqual({ active: 1, registrations: 3 })
+  await expect.poll(observerCounts).toEqual({ active: 1, registrations: restoredRegistrations + 1 })
   await setParentBackground("#16202a")
   await expect(root).toHaveAttribute("data-ha-theme", "dark")
   await expect.poll(palette).toBe("#171a18")
