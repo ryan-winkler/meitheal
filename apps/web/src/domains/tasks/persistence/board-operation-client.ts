@@ -137,9 +137,9 @@ export function boardOperationClient(client: Client, scope: BoardScope, operatio
       // A private single read has not exposed rows to any caller. Recheck the
       // full live scope and record placement here before releasing the result.
       // A lost authority after a write stays an uncertain outcome.
-      await check(db)
       const admitted = admittedReads.get(tx)
       if (admitted && isFencedReadSnapshot(admitted.snapshot)) await checkTargets(db)
+      await check(db)
       return result
     } finally { tx.close() }
   }
