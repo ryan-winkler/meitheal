@@ -1,5 +1,6 @@
 import AxeBuilder from "@axe-core/playwright"
 import { expect, test, type Route } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { deferred, shouldSkipBrowserSpecs } from "./_helpers"
 
 test.skip(shouldSkipBrowserSpecs(), "Set E2E_BASE_URL to run browser specs")
@@ -21,15 +22,24 @@ test("standalone status describes the live probe and keeps credential configurat
   await expect(card.getByRole("status")).toContainText("no Supervisor connection")
   await expect(card.locator("#ha-info-panel")).toBeHidden()
   await card.locator("#ha-advanced-section > summary").click()
-  await card.getByLabel("HA URL", { exact: true }).fill("http://ha-fixture.invalid:8123")
+  const savedUrl = "http://ha-fixture.invalid:8123"
+  await card.getByLabel("HA URL", { exact: true }).fill(savedUrl)
   await card.getByLabel("Long-Lived Access Token", { exact: true }).fill("synthetic-settings-credential")
   await card.getByRole("button", { name: /Save/ }).click()
   await expect(page.locator("#toast-container .toast.success")).toBeVisible()
 
+  const headers = await currentBoardWriteHeaders(request, "household", {})
+  for (const proof of [{}, { ...headers, "x-meitheal-board-session": "0".repeat(64) }]) {
+    const denied = await request.put("/api/settings", {
+      headers: proof, data: { key: "ha_url", value: "http://rejected-ha-fixture.invalid:8123" },
+    })
+    expect(denied.status()).toBe(409)
+    expect(denied.headers()["cache-control"]).toBe("private, no-store")
+  }
   const url = await request.get("/api/settings?key=ha_url")
-  expect((await url.json()).value).toBe("http://ha-fixture.invalid:8123")
+  expect((await url.json()).value).toBe(savedUrl)
   const token = await request.get("/api/settings?key=ha_token")
-  expect(await token.json()).toMatchObject({ configured: true, value: "••••••••" })
+  expect(await token.json()).toEqual({ key: "ha_token", configured: true, value: "••••••••" })
   await expect(card.getByRole("status")).toContainText("Running standalone")
 })
 

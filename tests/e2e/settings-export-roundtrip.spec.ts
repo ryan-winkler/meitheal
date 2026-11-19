@@ -3,12 +3,13 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { expect, test } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { startCoreFixture } from "../scripts/task-pins-fixture"
 
 test("native Settings exports and historical exports restore decoded values without extra quoting", async ({ playwright }) => {
   test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires a built App and authenticated ingress")
   const work = await mkdtemp(join(tmpdir(), "meitheal-settings-roundtrip-"))
-  const child = startCoreFixture(work, true)
+  const child = startCoreFixture(work, true, undefined, undefined, work)
   child.stdout?.resume()
   child.stderr?.resume()
   const api = await playwright.request.newContext()
@@ -16,18 +17,23 @@ test("native Settings exports and historical exports restore decoded values with
     const [info] = await once(child, "message", { signal: AbortSignal.timeout(10_000) })
     const origin = `http://127.0.0.1:${info.port}`
     const base = origin + info.configuredPath
-    const headers = { origin, cookie: "feedback-fixture=admin", "content-type": "application/json" }
-    const expected: Record<string, unknown> = {
-      theme: "knight-rider", "ai-provider": "ha", n8n_events: ["task.completed"], n8n_mode: "webhook",
-      notification_preferences: { push: false }, "ha-assist-agent": "conversation.fixture",
-      "calendar-entities": null, completed_auto_hide_days: 21, feature_nfc: false,
+    const headers = await currentBoardWriteHeaders(api, "household", {
+      origin, cookie: "feedback-fixture=admin", "content-type": "application/json",
+    }, base)
+    const preferences: Record<string, unknown> = {
+      theme: "knight-rider", "ai-provider": "ha", "ha-assist-agent": "conversation.fixture",
+      completed_auto_hide_days: 21, feature_nfc: false, custom_theme_name: '"quoted"',
+    }
+    const profiles = {
+      n8n_events: ["task.completed"], n8n_mode: "webhook",
+      notification_preferences: { push: false }, "calendar-entities": null,
       todo_entities: ["todo.household", "todo.shopping"], calendar_sync_mode: "import",
       calendar_sync_modes: { "calendar.family": "bidirectional" },
       grocy_sync_enabled: true, grocy_sync_interval: 300,
-      custom_theme_name: '"quoted"',
     }
+    const expected = { ...preferences, ...profiles }
     const put = async (key: string, value: unknown) => {
-      expect((await api.put(base + "/api/settings", { headers, data: { key, value } })).status()).toBe(200)
+      expect((await api.put(base + "/api/settings", { headers, data: { key, value } })).status(), key).toBe(200)
     }
     const verify = async (values: Record<string, unknown>) => {
       for (const [key, value] of Object.entries(values)) {
@@ -37,14 +43,9 @@ test("native Settings exports and historical exports restore decoded values with
       }
     }
     const changeDestination = async () => {
-      for (const [key, value] of Object.entries(expected)) {
-        const changed = key === "theme" ? "auto"
-          : value === null ? "previous non-null value"
-          : typeof value === "boolean" ? !value
-          : typeof value === "number" ? value + 1
-          : Array.isArray(value) ? ["todo.different"]
-          : typeof value === "object" ? { previous: true }
-          : "different destination value"
+      for (const [key, value] of Object.entries(preferences)) {
+        const changed = key === "theme" ? "auto" : typeof value === "boolean" ? !value
+          : typeof value === "number" ? value + 1 : "different destination value"
         await put(key, changed)
       }
     }
@@ -57,6 +58,13 @@ test("native Settings exports and historical exports restore decoded values with
     expect(bundle).toMatchObject({ _version: 2, _settingsEncoding: "json-values", settings: expected })
     expect(bundle.settings).not.toHaveProperty("ha_token")
     expect(JSON.stringify(bundle)).not.toContain("roundtrip-fixture-secret")
+    await put("calendar_sync_mode", "bidirectional")
+    await put("theme", "auto")
+    const refused = await api.post(base + "/api/import/settings", { headers, data: bundle })
+    expect(refused.status()).toBe(409)
+    expect((await refused.json()).error).toContain("Review and save its Board destinations")
+    await verify({ calendar_sync_mode: "bidirectional", theme: "auto" })
+    await put("calendar_sync_mode", profiles.calendar_sync_mode)
     await changeDestination()
     expect((await api.post(base + "/api/import/settings", { headers, data: bundle })).status()).toBe(200)
     await verify(expected)
