@@ -52,9 +52,31 @@ trap cleanup EXIT
     --json "{\"id\":\"rice\",\"name\":\"RICE\",\"archetype\":\"formula\",\"badgeThresholds\":[],\"formula\":\"reach\",\"fields\":[{\"key\":\"reach\",\"label\":\"Reach\",\"type\":\"number\",\"uiType\":\"number\",\"weight\":1,\"helpText\":\"\"}]}" \
     -H "Origin: http://127.0.0.1:3000" http://127.0.0.1:3000/api/frameworks)"
   test "$collision_status" = 409
-  curl -fsS --json "{\"title\":\"Release smoke fixture\"}" \
-    -H "Origin: http://127.0.0.1:3000" http://127.0.0.1:3000/api/tasks |
-    node -e '\''const task = JSON.parse(require("node:fs").readFileSync(0)); if (!task.id || task.title !== "Release smoke fixture") process.exit(1)'\''
+  node -e '\''
+    const origin = "http://127.0.0.1:3000"
+    async function captureFixture() {
+      const directory = await fetch(origin + "/api/boards", { redirect: "error" })
+      if (!directory.ok) throw new Error("Smoke Board directory was unavailable")
+      const session = directory.headers.get("x-meitheal-board-session")
+      const { boards } = await directory.json()
+      const board = Array.isArray(boards) && boards[0]
+      if (!session || typeof board?.id !== "string") throw new Error("Smoke Board proof was unavailable")
+
+      const response = await fetch(origin + "/api/tasks", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json", Origin: origin,
+          "X-Meitheal-Board-Id": board.id, "X-Meitheal-Board-Session": session,
+        },
+        body: JSON.stringify({ title: "Release smoke fixture" }),
+        redirect: "error",
+      })
+      if (response.status !== 201) throw new Error("Smoke task creation returned HTTP " + response.status)
+      const task = await response.json()
+      if (!task.id || task.title !== "Release smoke fixture") throw new Error("Smoke task receipt did not match")
+    }
+    captureFixture().catch(error => { console.error(error.message); process.exitCode = 1 })
+  '\''
   sleep 6
   after=$(managed_web_process)
   test "$before" = "$after"
