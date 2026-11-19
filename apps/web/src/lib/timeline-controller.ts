@@ -41,22 +41,22 @@ interface TimelineTask {
   title: string
   status: string
   priority: number
-  due_date: string | null
-  start_date: string | null
-  end_date: string | null
-  color: string | null
-  task_type: string | null
-  task_kind: string | null
-  progress: number | null
-  ticket_number: number | null
-  parent_id: string | null
-  blocked_by: string | null
-  effort_minutes: number | null
-  labels: string | null
+  due_date?: string | null
+  start_date?: string | null
+  end_date?: string | null
+  color?: string | null
+  task_type?: string | null
+  task_kind?: string | null
+  progress?: number | null
+  ticket_number?: number | null
+  parent_id?: string | null
+  blocked_by?: string | null
+  effort_minutes?: number | null
+  labels?: string | null
   area_id?: string | null
   project_group: string
-  assigned_to: string | null
-  deferred_at: number | null
+  assigned_to?: string | null
+  deferred_at?: number | null
   is_overdue: boolean
 }
 

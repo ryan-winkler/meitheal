@@ -24,6 +24,7 @@ import { escapeHtml, sanitizeCssColor } from "@lib/safe-html"
 import { openTaskDetailHandoff } from "@lib/task-detail-handoff"
 import { hydrateTaskAssignees } from "@lib/task-assignee-display"
 import { replaceTaskBackgroundUrl, taskBackgroundUrl } from "@lib/task-page-url"
+import { TASK_REFRESH_FRAGMENT_HEADER } from "@lib/task-view-route"
 import { loadTableColumnPreferences, TABLE_COLUMNS, TABLE_SECTIONS } from "@lib/table-registry"
 import { getRememberedAreaId, TABLE_AREA_CATALOG_EVENT } from "@lib/area-selector-controller"
 import {
@@ -193,6 +194,7 @@ function init(signal: AbortSignal) {
 
     try {
       const response = await fetch(url, {
+        headers: { [TASK_REFRESH_FRAGMENT_HEADER]: "1" },
         cache: "no-store", redirect: "error",
         signal: AbortSignal.any([request.signal, signal, AbortSignal.timeout(10_000)]),
       })
