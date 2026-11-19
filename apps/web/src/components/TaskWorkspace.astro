@@ -525,6 +525,7 @@ if (groupByProject) {
     data-default-area-label={t("kanban.default_area", locale)}
     data-unavailable-area-label={t("kanban.unavailable_area", locale)}
     data-backlog-mode={backlogMode}
+    data-kanban-moving={t("kanban.moving_task", locale)}
     data-reaction-count-label={t("reactions.card_count", locale)}
     style={`padding: 0 0 8px; grid-template-columns: repeat(${columns.length}, 1fr);`}
   >
@@ -562,6 +563,7 @@ if (groupByProject) {
                 )}
                 <span class="kanban-count">{matches}</span>
               </span>
+              {!namedBoardId && <span class="kanban-move-status" data-kanban-move-status role="status"></span>}
             </div>
             <div class="kanban-cards">
               {/* Swimlane group containers (hidden by default, JS-driven grouping) */}
@@ -1282,9 +1284,6 @@ if (groupByProject) {
     display: flex;
     flex-direction: column;
     max-height: 100%;
-    transition:
-      background 200ms,
-      border-color 200ms;
     border: 2px solid transparent;
     padding: 12px;
   }
@@ -1297,22 +1296,25 @@ if (groupByProject) {
   }
   .kanban-column.drag-over {
     border-color: var(--accent);
-    background: rgba(99, 102, 241, 0.05);
   }
-  .kanban-column.drag-over .kanban-cards::after {
-    content: "";
-    display: block;
-    height: 80px;
-    border: 2px dashed var(--accent);
-    border-radius: 6px;
-    background: rgba(99, 102, 241, 0.05);
-    margin-top: 8px;
-    transition:
-      background 0.2s,
-      color 0.2s,
-      border-color 0.2s,
-      opacity 0.2s,
-      transform 0.2s;
+  .kanban-column-header {
+    position: relative;
+  }
+  .kanban-move-status {
+    position: absolute;
+    inset-block-start: 100%;
+    inset-inline-end: 0;
+    max-inline-size: 100%;
+    pointer-events: none;
+  }
+  .kanban-move-status:not(:empty) {
+    z-index: 2;
+    padding: 4px 8px;
+    border: 1px solid var(--accent);
+    border-radius: var(--radius-sm);
+    background: var(--bg-card);
+    color: var(--text-primary);
+    font-size: 0.75rem;
   }
   /* kanban-column-header, kanban-count, kanban-header-right, kanban-cards, kanban-card
      are defined in _kanban.css @layer components — removed duplicates here */

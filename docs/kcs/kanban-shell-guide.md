@@ -61,6 +61,8 @@ The board remains usable when reaction counts are unavailable. A denied request 
 
 ### Page through a large board
 
+The destination lane displays **Moving task…** while a move is being saved. Board loading and retry use the existing status line. The drop highlight fits within the lane so it keeps the same scrollable area while you drag.
+
 Each lane shows up to 25 cards. Its count includes every task matching the current area and filters. The range below the lane shows which cards are loaded. Use **Previous** or **Next** to page within that lane. Use **Filter by text** or the filter builder to find a task anywhere in the board, including other pages. Changing the area or filters returns the lanes to their first page.
 
 Household Kanban reloads its results in place. The refresh requests the same scoped page with `boardRefresh` and `X-Meitheal-Task-Fragment: 1`, so the response skips the shared page shell. Ordinary navigation still includes the shell. If a refresh fails, use **Retry board** to retain your last visible results until a new response succeeds.

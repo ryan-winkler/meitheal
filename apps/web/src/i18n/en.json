@@ -272,6 +272,7 @@
     "task_singular": "task across",
     "task_plural": "tasks across",
     "lanes": "lanes",
+    "moving_task": "Moving task…",
     "board_loading": "Loading board…",
     "board_load_failed": "Couldn’t load the board.",
     "retry_board": "Retry board",
