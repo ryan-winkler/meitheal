@@ -71,6 +71,8 @@ test("Area changes update the Kanban groups and preserve the board context throu
       }
       await page.route(taskApi, hold)
       const response = page.waitForResponse(res => res.url() === taskApi && res.request().method() === "PUT", { timeout: 30_000 })
+      // The browser may close before release if an intervening assertion fails.
+      void response.catch(() => undefined)
       await select.selectOption(area)
       await started
       await expect(select).toBeDisabled()
@@ -172,9 +174,12 @@ test("Area changes update the Kanban groups and preserve the board context throu
     await expect(select).toBeEnabled()
     await select.focus()
     const otherApi = app + "/api/tasks/" + other
-    const newerWrite = await holdMove(destination, otherApi)
+    // The second drawer accepts an edit while requests still save in order.
+    const queuedWrite = holdMove(destination, otherApi)
+    await expect(select).toBeDisabled()
     await expect(page.locator("body")).toBeFocused()
     await anotherDrawer()
+    const newerWrite = await queuedWrite
     await expect(group(destination).locator(`.kanban-card[data-id="${task}"]`)).toBeAttached()
     await savedValue(destination)
     await expect(page.locator("body")).toBeFocused()
@@ -277,15 +282,15 @@ test("Area changes update the Kanban groups and preserve the board context throu
 
     expect((await context.request.delete(app + "/api/areas/" + original, { headers })).ok()).toBe(true)
     await card(other).click()
-    await expect(select.locator("option:checked")).toHaveText("Saved selection unavailable")
-    await expect(select.locator("option:checked")).toBeDisabled()
+    await expect(select.locator("option:checked")).toHaveText("Without an Area")
+    await expect(select.locator(`option[value="${original}"]`)).toHaveCount(0)
     await expect(select).toBeEnabled()
 
     expect((await context.request.delete(app + "/api/areas/" + destination, { headers })).ok()).toBe(true)
     const staleDestination = page.waitForResponse(res => res.url() === otherApi && res.request().method() === "PUT")
     await select.selectOption(destination)
     expect((await staleDestination).status()).toBe(404)
-    await savedValue(original)
+    await savedValue("")
     await expect(group(original).locator(`.kanban-card[data-id="${other}"]`)).toBeAttached()
     const repaired = page.waitForResponse(res => res.url() === otherApi && res.request().method() === "PUT")
     await select.selectOption("default")
@@ -297,7 +302,7 @@ test("Area changes update the Kanban groups and preserve the board context throu
     await defaultHeading.press("Enter")
     await expect(defaultHeading).toHaveAttribute("aria-expanded", "false")
     await card(task).click()
-    await savedValue(destination)
+    await savedValue("")
     const savedDefault = page.waitForResponse(res => res.url() === api && res.request().method() === "PUT")
     await select.selectOption("default")
     expect((await savedDefault).ok()).toBe(true)
