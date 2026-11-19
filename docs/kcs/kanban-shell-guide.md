@@ -95,6 +95,8 @@ Use Tab to move between visible task views. If a view moves into **More**, open 
 
 Open **Timeline** to narrow the chart by text, status, priority, task type, or area. Use **Group by** to organize dated tasks. The URL keeps these choices when you reload or move between task views. On phones, open **Filters** to adjust the chart. The task pane starts closed unless you saved a preference. Select **Task pane** to open or close it. The control becomes available when tasks match the filters.
 
+Timeline omits empty optional values from its initial task data to reduce download and parsing work. Missing dates still place the task in the undated work list when applicable. The Area field keeps the distinction between Default and unavailable Areas.
+
 When you group by **Project**, each project has its own section. If project names match, the heading adds the project's Area when available. A project with no direct Area inherits its linked Goal's available Area. If a direct Area reference is unavailable, its group uses a stable qualifier until that reference is repaired. **No Project** contains unassigned tasks. **Unknown Project** contains tasks whose assigned project is unavailable. Open **Task pane** to see the groups. Use Tab to reach a group button and Space or Enter to collapse or expand it. Use the Up and Down arrows to move between bars and group buttons. Collapsed groups stay collapsed while you filter the chart.
 
 When you group by **Area**, different Areas have separate rows even when their names match. A short reference distinguishes matching names. You can collapse each group independently and its state survives filtering. Tasks with unavailable Area information appear under **Unknown Area**.
