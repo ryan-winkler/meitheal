@@ -27,6 +27,26 @@ function findGroupFocus(board: HTMLElement, group: HTMLElement) {
     (lane || board).querySelector<HTMLElement>(".kanban-column-header")
 }
 
+function carryCardBlockSizes(current: HTMLElement, replacement: HTMLElement): void {
+  const cards = current.querySelectorAll<HTMLElement>(".kanban-card[data-id]")
+  const first = cards[0]
+  if (!first || getComputedStyle(first).contentVisibility !== "auto") return
+
+  const sizes = new Map<string, number>()
+  for (const card of cards) {
+    const height = card.offsetHeight
+    if (!height || !card.dataset.id) continue
+    const style = getComputedStyle(card)
+    const blockSize = height - parseFloat(style.paddingBlockStart) - parseFloat(style.paddingBlockEnd)
+      - parseFloat(style.borderBlockStartWidth) - parseFloat(style.borderBlockEndWidth)
+    if (blockSize > 0) sizes.set(card.dataset.id, blockSize)
+  }
+  for (const card of replacement.querySelectorAll<HTMLElement>(".kanban-card[data-id]")) {
+    const blockSize = sizes.get(card.dataset.id ?? "")
+    if (blockSize !== undefined) card.style.setProperty("--kanban-card-block-size", `${blockSize}px`)
+  }
+}
+
 export function initKanbanPage(signal: AbortSignal): void {
   const shell = document.getElementById("kanban-shell")
   const initialBoard = shell?.querySelector<HTMLElement>("#kanban-board")
@@ -101,7 +121,7 @@ export function initKanbanPage(signal: AbortSignal): void {
     resetScroll = reset
     const origin = location.href
     board.setAttribute("aria-busy", "true")
-    renderStatus(window.mI18n?.get("kanban.board_loading") ?? "Loading board…")
+    if (!dataOnly) renderStatus(window.mI18n?.get("kanban.board_loading") ?? "Loading board…")
 
     try {
       const requestUrl = new URL(url)
@@ -144,6 +164,11 @@ export function initKanbanPage(signal: AbortSignal): void {
         if (cssClass.startsWith("density-") || cssClass.startsWith("hide-field-")) replacement.classList.add(cssClass)
       }
 
+      if (!reset && (window.scrollY > 0 || [...scroll.values()].some(top => top > 0))) {
+        // A replacement loses each card's remembered intrinsic height. Seed matching cards
+        // with the current size so they keep their place when results refresh while scrolled.
+        carryCardBlockSizes(board, replacement)
+      }
       boardLifetime.abort()
       board.replaceWith(replacement)
       board = replacement

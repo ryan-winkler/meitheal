@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto"
 import { expect, test } from "@playwright/test"
+import { DEFERRAL_RECONCILED } from "../../apps/web/src/lib/deferral-client"
 import { shouldSkipBrowserSpecs } from "./_helpers"
 
 test.describe("Tasks view loading and Kanban pages", () => {
@@ -78,9 +79,46 @@ test.describe("Tasks view loading and Kanban pages", () => {
       await expect(lane.locator(".kanban-count")).toHaveText("28")
       await expect(range).toHaveText("1–25 of 28")
       await expect(oldest).toHaveCount(0)
-      await expect.poll(() => cards.evaluateAll(elements => elements.every(card =>
-        card.querySelector(".kanban-card-actions")!.getBoundingClientRect().bottom <= card.getBoundingClientRect().bottom,
-      ))).toBe(true)
+
+      const lastCard = cards.last().locator(".card-open-btn")
+      const expectPassiveRefreshToKeepCardInPlace = async () => {
+        await expect(lastCard).toBeInViewport()
+        const beforeRefresh = (await lastCard.boundingBox())!.y
+        const previousBoard = await page.locator("#kanban-board").elementHandle()
+        const passiveResponse = page.waitForResponse(response => new URL(response.url()).searchParams.has("boardRefresh"))
+        await page.evaluate(event => window.dispatchEvent(new CustomEvent(event, { detail: { dataOnly: true } })),
+          DEFERRAL_RECONCILED)
+        expect((await passiveResponse).status()).toBe(200)
+        await page.waitForFunction(board => !board!.isConnected, previousBoard)
+        await expect(lastCard).toBeInViewport()
+        await expect.poll(async () => Math.abs((await lastCard.boundingBox())!.y - beforeRefresh)).toBeLessThan(24)
+      }
+      await expect(page.locator("#kanban-shell")).toHaveAttribute("data-kanban-booted", "true")
+      const desktopViewport = page.viewportSize()!
+      await page.setViewportSize({ width: 412, height: 915 })
+      await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }))
+      await expect.poll(async () => {
+        const rect = await lastCard.boundingBox()
+        if (rect && rect.y >= 0 && rect.y + rect.height < 915) return true
+        await page.evaluate(() => window.scrollBy({ top: 420, behavior: "instant" }))
+        return false
+      }, { intervals: [32], timeout: 5_000 }).toBe(true)
+      await expectPassiveRefreshToKeepCardInPlace()
+
+      await page.setViewportSize(desktopViewport)
+      await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }))
+      const list = lane.locator(".kanban-cards")
+      await list.evaluate(container => { container.scrollTop = container.scrollHeight })
+      expect(await list.evaluate(container => container.scrollTop)).toBeGreaterThan(0)
+      expect(await page.evaluate(() => window.scrollY)).toBe(0)
+      await expectPassiveRefreshToKeepCardInPlace()
+
+      for (const card of await cards.all()) {
+        await card.scrollIntoViewIfNeeded()
+        await expect.poll(() => card.evaluate(element =>
+          element.querySelector(".kanban-card-actions")!.getBoundingClientRect().bottom <= element.getBoundingClientRect().bottom,
+        )).toBe(true)
+      }
 
       await page.goto("/")
       const overdueLink = page.locator("#stat-overdue")

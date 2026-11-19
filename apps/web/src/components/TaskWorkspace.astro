@@ -1348,6 +1348,13 @@ if (groupByProject) {
     overflow: hidden;
   }
 
+  @supports (content-visibility: auto) and (contain-intrinsic-block-size: auto 10rem) {
+    :where([data-task-workspace]:not([data-board-directory])) .kanban-card {
+      content-visibility: auto;
+      contain-intrinsic-block-size: auto var(--kanban-card-block-size, 10rem);
+    }
+  }
+
   :global([data-theme="knight-rider"]) .kanban-card {
     border-inline-start: 1px solid var(--border);
     box-shadow: none;
