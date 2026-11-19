@@ -7,6 +7,8 @@ import { startCoreFixture } from "../scripts/task-pins-fixture"
 
 test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the built App and authenticated Core fixture")
 
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
+
 test("generated scoped MCP updates only the NFC field and then reorders the native tasks", async ({ playwright }) => {
   const work = await mkdtemp(join(tmpdir(), "meitheal-mcp-native-pair-"))
   // The App's native loopback is HTTP even when external HA ingress uses HTTPS.
@@ -19,13 +21,14 @@ test("generated scoped MCP updates only the NFC field and then reorders the nati
     const [info] = await once(child, "message", { signal: AbortSignal.timeout(10_000) })
     const origin = `http://127.0.0.1:${info.port}`
     const path = (value: string) => info.configuredPath + value
-    bootstrap = await playwright.request.newContext({ baseURL: origin, extraHTTPHeaders: { origin } })
-    const enrollment = await bootstrap.post(path("/api/agent-tokens"), { headers: { cookie: "feedback-fixture=admin" }, data: {
+    bootstrap = await playwright.request.newContext({ baseURL: origin, extraHTTPHeaders: {} })
+    const owner = await currentBoardWriteHeaders(bootstrap, "household", { origin, cookie: "feedback-fixture=admin" }, info.configuredPath)
+    const enrollment = await bootstrap.post(path("/api/agent-tokens"), { headers: owner, data: {
       name: "Native MCP pair fixture", scopes: ["mcp:execute", "tasks:read", "tasks:write", "search:read", "projects:read", "projects:write"],
     } })
     expect(enrollment.status()).toBe(201)
     const { token } = await enrollment.json()
-    const deleteEnrollment = await bootstrap.post(path("/api/agent-tokens"), { headers: { cookie: "feedback-fixture=admin" }, data: {
+    const deleteEnrollment = await bootstrap.post(path("/api/agent-tokens"), { headers: owner, data: {
       name: "Native MCP retention fixture", scopes: ["mcp:execute", "tasks:delete"],
     } })
     expect(deleteEnrollment.status()).toBe(201)
@@ -33,10 +36,11 @@ test("generated scoped MCP updates only the NFC field and then reorders the nati
     await bootstrap.dispose()
     bootstrap = undefined
     agent = await playwright.request.newContext({ baseURL: origin,
-      extraHTTPHeaders: { authorization: `Bearer ${token}`, origin, "content-type": "application/json" } })
+      extraHTTPHeaders: { authorization: `Bearer ${token}`, "x-meitheal-board-id": "household", "content-type": "application/json" } })
+    expect((await agent.get(path("/api/tasks"))).status()).toBe(403)
     const api = agent
     const rpc = async (method: string, params?: Record<string, unknown>) => {
-      const response = await api.post(path("/api/mcp"), { data: { jsonrpc: "2.0", id: 1, method, params } })
+      const response = await api.post("/api/mcp", { data: { jsonrpc: "2.0", id: 1, method, params } })
       expect(response.status()).toBe(200)
       const body = await response.json()
       expect(body.error).toBeUndefined()
@@ -44,7 +48,7 @@ test("generated scoped MCP updates only the NFC field and then reorders the nati
     }
     const ids: string[] = []
     for (const title of ["Keep NFC task title", "Second MCP order task"]) {
-      const created = await api.post(path("/api/tasks"), { data: { title } })
+      const created = await api.post("/api/tasks", { data: { title } })
       expect(created.status()).toBe(201)
       ids.push((await created.json()).id)
     }
@@ -79,7 +83,7 @@ test("generated scoped MCP updates only the NFC field and then reorders the nati
     const reordered = await rpc("tools/call", { name: "reorderTasks", arguments: { ordered_ids: order } })
     expect(reordered.isError).toBe(false)
     expect(JSON.parse(reordered.content[0].text)).toMatchObject({ ok: true })
-    const persisted = await api.get(path("/api/tasks?sort=kanban_position&order=asc"))
+    const persisted = await api.get("/api/tasks?sort=kanban_position&order=asc")
     expect(persisted.status()).toBe(200)
     const tasks = (await persisted.json()).tasks
     expect(tasks.map((task: { id: string }) => task.id)).toEqual(order)
@@ -100,7 +104,7 @@ test("generated scoped MCP updates only the NFC field and then reorders the nati
     const missingTitle = await rpc("tools/call", { name: "completeTask", arguments: { title: "No such MCP task" } })
     expect(missingTitle.isError).toBe(true)
     for (const _ of [0, 1]) {
-      expect((await api.post(path("/api/tasks"), { data: { title: "Ambiguous MCP title" } })).status()).toBe(201)
+      expect((await api.post("/api/tasks", { data: { title: "Ambiguous MCP title" } })).status()).toBe(201)
     }
     const ambiguous = await rpc("tools/call", { name: "completeTask", arguments: { title: "  Ambiguous MCP title  " } })
     expect(ambiguous.isError).toBe(true)
@@ -120,9 +124,9 @@ test("generated scoped MCP updates only the NFC field and then reorders the nati
     expect(JSON.parse(previewDelete.content[0].text)).toMatchObject({ count: 0, months: 6 })
 
     const deleteClient = await playwright.request.newContext({ baseURL: origin,
-      extraHTTPHeaders: { authorization: `Bearer ${deleteToken}`, origin, "content-type": "application/json" } })
+      extraHTTPHeaders: { authorization: `Bearer ${deleteToken}`, "x-meitheal-board-id": "household", "content-type": "application/json" } })
     try {
-      const deleteCall = await deleteClient.post(path("/api/mcp"), {
+      const deleteCall = await deleteClient.post("/api/mcp", {
         data: { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "deleteCompletedTasks", arguments: { months: 6, confirm: true } } },
       })
       expect(deleteCall.status()).toBe(200)

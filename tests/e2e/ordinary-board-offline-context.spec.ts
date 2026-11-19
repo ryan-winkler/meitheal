@@ -3,6 +3,9 @@ import { createRequire } from "node:module"
 import { resolve } from "node:path"
 import { expect, test } from "@playwright/test"
 
+// These routed module origins use the browser Origin, not the unrelated App-server fixture Origin.
+test.use({ extraHTTPHeaders: {} })
+
 const require = createRequire(import.meta.url)
 const ts = require("../../apps/web/node_modules/typescript/lib/typescript.js")
 const sourceRoot = resolve(import.meta.dirname, "../../apps/web/src")

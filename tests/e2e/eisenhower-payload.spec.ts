@@ -1,13 +1,14 @@
 import { randomUUID } from "node:crypto"
 import { expect, test, type APIRequestContext } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { shouldSkipBrowserSpecs } from "./_helpers"
 
 test.skip(shouldSkipBrowserSpecs(), "Requires a disposable local Astro server")
 const origin = process.env.E2E_BASE_URL ? new URL(process.env.E2E_BASE_URL).origin : undefined
 test.use({ serviceWorkers: "block", ...(origin ? { extraHTTPHeaders: { origin } } : {}) })
 
-async function removeFixtureTask(request: APIRequestContext, path: string) {
-  const response = await request.delete(path, { headers: { "Content-Type": "application/json", ...(origin ? { origin } : {}) }, data: {} })
+async function removeFixtureTask(request: APIRequestContext, path: string, headers: Record<string, string>) {
+  const response = await request.delete(path, { headers, data: {} })
   expect([204, 404], [204, 404].includes(response.status()) ? undefined : await response.text()).toContain(response.status())
 }
 
@@ -15,7 +16,8 @@ const scoring = { rice: { reach: 9, confidence: 0.8 }, retained: { note: "Keep u
 
 for (const failure of ["unavailable", "network", "invalid-json", "array", "scalar", "missing", "wrong-task"] as const) {
   test(`triage preserves scoring and retry inputs when metadata is ${failure}`, async ({ page, request }) => {
-    const created = await request.post("/api/tasks", { data: {
+    const headers = await currentBoardWriteHeaders(request, "household", origin ? { origin } : {})
+    const created = await request.post("/api/tasks", { headers, data: {
       title: `Eisenhower metadata ${randomUUID()}`, status: "pending", urgency: 0, importance: 0,
       framework_payload: JSON.stringify(scoring),
     } })
@@ -68,12 +70,13 @@ for (const failure of ["unavailable", "network", "invalid-json", "array", "scala
       expect(list.tasks.find((row: { id: string }) => row.id === task.id)).toMatchObject({ urgency: 4, importance: 5 })
       expect(JSON.parse(saved.framework_payload)).toEqual({ ...scoring, delay_impact: "critical", interest_tag: "engaging" })
       expect(writes).toHaveLength(1)
-    } finally { await removeFixtureTask(request, path) }
+    } finally { await removeFixtureTask(request, path, headers) }
   })
 }
 
 test("triage adds metadata when the task has no existing framework values", async ({ page, request }) => {
-  const created = await request.post("/api/tasks", { data: { title: `Empty framework ${randomUUID()}`, status: "pending", urgency: 0, importance: 0 } })
+  const headers = await currentBoardWriteHeaders(request, "household", origin ? { origin } : {})
+  const created = await request.post("/api/tasks", { headers, data: { title: `Empty framework ${randomUUID()}`, status: "pending", urgency: 0, importance: 0 } })
   expect(created.status()).toBe(201)
   const task = await created.json()
   const path = `/api/tasks/${task.id}`
@@ -91,12 +94,13 @@ test("triage adds metadata when the task has no existing framework values", asyn
     expect(response.status(), response.ok() ? undefined : await response.text()).toBe(200)
     await expect(page.locator("#triage-overlay")).toBeHidden()
     expect(JSON.parse((await (await request.get(path)).json()).framework_payload)).toEqual({ delay_impact: "costly" })
-  } finally { await removeFixtureTask(request, path) }
+  } finally { await removeFixtureTask(request, path, headers) }
 })
 
 for (const action of ["promote", "archive", "delete"] as const) {
   test(`review ${action} never replaces scoring when its optional metadata read fails`, async ({ page, request }) => {
-    const created = await request.post("/api/tasks", { data: {
+    const headers = await currentBoardWriteHeaders(request, "household", origin ? { origin } : {})
+    const created = await request.post("/api/tasks", { headers, data: {
       title: `Review metadata ${randomUUID()}`, urgency: 1, importance: 1, framework_payload: JSON.stringify(scoring),
     } })
     expect(created.status()).toBe(201)
@@ -129,12 +133,13 @@ for (const action of ["promote", "archive", "delete"] as const) {
         if (action === "archive") expect(saved.status).toBe("complete")
         else expect(saved).toMatchObject({ urgency: 5, importance: 1 })
       }
-    } finally { await removeFixtureTask(request, path) }
+    } finally { await removeFixtureTask(request, path, headers) }
   })
 }
 
 test("review reports a rejected primary action without trying metadata or advancing", async ({ page, request }) => {
-  const created = await request.post("/api/tasks", { data: {
+  const headers = await currentBoardWriteHeaders(request, "household", origin ? { origin } : {})
+  const created = await request.post("/api/tasks", { headers, data: {
     title: `Rejected review ${randomUUID()}`, urgency: 1, importance: 1, framework_payload: JSON.stringify(scoring),
   } })
   expect(created.status()).toBe(201)
@@ -156,11 +161,12 @@ test("review reports a rejected primary action without trying metadata or advanc
     expect(writes).toBe(1)
     expect(reads).toBe(0)
     expect(JSON.parse((await (await request.get(path)).json()).framework_payload)).toEqual(scoring)
-  } finally { await removeFixtureTask(request, path) }
+  } finally { await removeFixtureTask(request, path, headers) }
 })
 
 test("closing triage while its metadata read is pending prevents a late save", async ({ page, request }) => {
-  const created = await request.post("/api/tasks", { data: {
+  const headers = await currentBoardWriteHeaders(request, "household", origin ? { origin } : {})
+  const created = await request.post("/api/tasks", { headers, data: {
     title: `Retired metadata ${randomUUID()}`, status: "pending", urgency: 0, importance: 0,
     framework_payload: JSON.stringify(scoring),
   } })
@@ -201,6 +207,6 @@ test("closing triage while its metadata read is pending prevents a late save", a
     expect(JSON.parse(saved.framework_payload)).toEqual(scoring)
   } finally {
     release()
-    await removeFixtureTask(request, path)
+    await removeFixtureTask(request, path, headers)
   }
 })

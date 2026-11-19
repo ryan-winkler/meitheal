@@ -7,6 +7,7 @@ import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 
 import { expect, test, type Browser } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 
 import { launchPinBrowser, startCoreFixture } from "../scripts/task-pins-fixture"
 
@@ -17,7 +18,7 @@ test("Household Kanban groups the current column page by status and keeps its co
   page, request, baseURL,
 }) => {
   const origin = new URL(baseURL!).origin
-  const headers = { origin, "content-type": "application/json" }
+  const headers = await currentBoardWriteHeaders(request, "household", { origin, "content-type": "application/json" })
   const label = `Mixed workflow ${randomUUID().slice(0, 8)}`
   const customStatus = "waiting_for_delivery"
   const cleanup: string[] = []
@@ -161,7 +162,7 @@ test("Household Kanban groups the current column page by status and keeps its co
     await expect(cardLink).toBeFocused()
   } finally {
     for (const path of cleanup.reverse()) {
-      const removed = await request.delete(path, { headers })
+      const removed = await request.delete(path, { headers, data: {} })
       expect.soft(removed.ok(), `${path}: ${await removed.text()}`).toBe(true)
     }
   }
@@ -181,8 +182,8 @@ test("Ingress Kanban groups a stored legacy status with its canonical status", a
     browser = await launchPinBrowser(work)
     const context = await browser.newContext({ ignoreHTTPSErrors: true, serviceWorkers: "block" })
     await context.setExtraHTTPHeaders({})
-    await context.addCookies([{ name: "feedback-fixture", value: "member", url: origin }])
-    const headers = { origin, "content-type": "application/json" }
+    await context.addCookies([{ name: "feedback-fixture", value: "admin", url: origin }])
+    const headers = await currentBoardWriteHeaders(context.request, "household", { origin, "content-type": "application/json" }, app)
     async function create(path: string, data: Record<string, string>) {
       const response = await context.request.post(app + path, { headers, data })
       expect(response.status(), await response.text()).toBe(201)
@@ -206,6 +207,7 @@ test("Ingress Kanban groups a stored legacy status with its canonical status", a
       db.close()
     }
 
+    await context.addCookies([{ name: "feedback-fixture", value: "member", url: origin }])
     const page = await context.newPage()
     await page.goto(`${app}/tasks?area=&groupBy=status#kanban`)
     await expect(page.locator("#kanban-shell")).toHaveAttribute("data-kanban-booted", "true")

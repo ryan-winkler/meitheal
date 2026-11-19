@@ -1,12 +1,13 @@
 import { expect, test, type APIRequestContext } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { deferred } from "./_helpers"
 
 test.use({ serviceWorkers: "block" })
 
 test.skip(!process.env.E2E_BASE_URL, "Requires a disposable App server")
 
-async function create(request: APIRequestContext) {
-  const response = await request.post("/api/tasks", { data: { title: "Framework review fixture" } })
+async function create(request: APIRequestContext, headers: Record<string, string>) {
+  const response = await request.post("/api/tasks", { headers, data: { title: "Framework review fixture" } })
   expect(response.status()).toBe(201)
   return (await response.json()).id as string
 }
@@ -25,8 +26,9 @@ test("API rejects unsupported formulas and HTML-shaped numeric bounds", async ({
   expect((await request.get("/api/frameworks/rejected-formula")).status()).toBe(404)
 })
 
-test("malformed Assist scores cannot replace estimates or introduce undeclared payload keys", async ({ page, request }) => {
-  const id = await create(request)
+test("malformed Assist scores cannot replace estimates or introduce undeclared payload keys", async ({ page, request, baseURL }) => {
+  const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
+  const id = await create(request, headers)
   let suggestion: unknown = "unexpected string"
   await page.route("**/api/ha/assist", route => route.fulfill({ json: { speech: JSON.stringify({ scores: { rice: suggestion }, justification: "Fixture response" }) } }))
   try {
@@ -52,12 +54,13 @@ test("malformed Assist scores cannot replace estimates or introduce undeclared p
     expect(stored).toMatchObject({ reach: 10, impact: 4, confidence: 80, effort: 0.5 })
     expect(stored).not.toHaveProperty("0")
     expect(stored).not.toHaveProperty("unexpected")
-  } finally { expect((await request.delete(`/api/tasks/${id}`, { data: {} })).status()).toBe(204) }
+  } finally { expect((await request.delete(`/api/tasks/${id}`, { headers, data: {} })).status()).toBe(204) }
 })
 
-test("switching tickets during Assist resets the reused action and ignores the aborted reply", async ({ page, request }) => {
-  const first = await create(request)
-  const second = await create(request)
+test("switching tickets during Assist resets the reused action and ignores the aborted reply", async ({ page, request, baseURL }) => {
+  const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
+  const first = await create(request, headers)
+  const second = await create(request, headers)
   const started = deferred<void>()
   const release = deferred<void>()
   let calls = 0
@@ -81,6 +84,6 @@ test("switching tickets during Assist resets the reused action and ignores the a
     await expect(page.locator("#se-status")).toHaveText("Fixture ticket 2")
   } finally {
     release.resolve()
-    for (const id of [first, second]) expect((await request.delete(`/api/tasks/${id}`, { data: {} })).status()).toBe(204)
+    for (const id of [first, second]) expect((await request.delete(`/api/tasks/${id}`, { headers, data: {} })).status()).toBe(204)
   }
 })

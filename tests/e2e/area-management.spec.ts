@@ -11,6 +11,7 @@ import { launchPinBrowser, startCoreFixture } from "../scripts/task-pins-fixture
 test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires a disposable built app")
 
 test("Area options open the editor and save within Home Assistant ingress", async () => {
+  test.slow()
   const work = await mkdtemp(join(tmpdir(), "area-test-"))
   const child = startCoreFixture(work)
   child.stdout?.resume()

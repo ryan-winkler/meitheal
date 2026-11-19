@@ -59,3 +59,7 @@
 - [Complete tasks with NFC](nfc-task-completion.md) - Use unique tag assignments and acknowledged task completion.
 - [Task completion results](task-completion-results.md) - Understand committed completion rewards and optional failures.
 - [Overdue task events](overdue-task-events.md) - Observe deadline transitions separately from notification delivery.
+- [Routine check-ins and recurring Tasks](routine-scheduling-and-recurrence.md) - Use and troubleshoot routine check-ins and recurring Tasks.
+- [NFC completion with limited credentials](nfc-completion-authority.md) - Use and troubleshoot nFC completion with limited credentials.
+- [Task references, cancellation and compatibility capture](task-command-privacy-and-retries.md) - Use and troubleshoot task references, cancellation and compatibility capture.
+- [Task activity attribution](task-activity-attribution.md) - Use and troubleshoot task activity attribution.

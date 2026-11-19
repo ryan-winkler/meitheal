@@ -238,7 +238,7 @@ export class NamedBoardRepository {
         const owner = await this.getOwner(tx, actor, id, epoch)
         if (!owner) return { unchanged: "unavailable" as const }
         if (owner.revision !== expected) return { unchanged: "stale" as const }
-        if (value.visibility === "restricted") {
+        if (value.visibility === "restricted" || !value.sharedAdminManagement) {
           const { rows } = await tx.execute({
             sql: `SELECT 1 FROM board_access_grants WHERE board_id = ? AND role = 'owner'
             AND ((principal_type = 'ha_user' AND principal_id IN (SELECT value FROM json_each(?)))

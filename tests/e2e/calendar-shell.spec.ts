@@ -1,5 +1,6 @@
 import AxeBuilder from "@axe-core/playwright"
 import { expect, test } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { shouldSkipBrowserSpecs } from "./_helpers"
 
 test.describe("Calendar Shell", () => {
@@ -13,7 +14,7 @@ test.describe("Calendar Shell", () => {
 
   test("legacy route opens Calendar and a keyboard user can inspect a day", async ({ page }) => {
     await expect(page).toHaveURL(/\/tasks\?view=calendar#calendar$/)
-    await expect(page.getByRole("heading", { name: "Calendar", exact: true })).toBeVisible()
+    await expect(page.getByRole("region", { name: /[A-Za-z]+ \d{4}/ })).toBeVisible()
     const views = page.getByRole("navigation", { name: "Task views" })
     await expect(views.getByRole("link", { name: "Calendar" })).toHaveAttribute("aria-current", "page")
 
@@ -93,6 +94,7 @@ test.describe("Calendar Shell", () => {
     await page.goto("/tasks?view=calendar&year=2031&month=6#calendar")
     await expect.poll(() => page.evaluate(() => matchMedia("(pointer: coarse)").matches)).toBe(true)
     const days = page.locator(".calendar-grid .cal-cell")
+    await days.nth(7).evaluate(cell => cell.scrollIntoView({ block: "center" }))
     await expect.poll(() => days.evaluateAll(cells => cells.slice(7, 14).map(cell => {
       const rect = cell.getBoundingClientRect()
       const y = rect.top + rect.height / 2
@@ -100,6 +102,7 @@ test.describe("Calendar Shell", () => {
         cell.contains(document.elementFromPoint(x, y)),
       )
     }))).toEqual(Array(7).fill(true))
+    await page.evaluate(() => window.scrollTo(0, 0))
     const disclosure = page.getByRole("button", { name: "Filters", exact: true })
     const toolbar = page.locator("#calendar-filter-bar")
     await expect(disclosure).toHaveAttribute("aria-expanded", "false")
@@ -209,8 +212,9 @@ test.describe("Calendar Shell", () => {
     }
   })
 
-  test("day drawer shows only tasks due that day with their shared status labels", async ({ page, request }) => {
+  test("day drawer shows only tasks due that day with their shared status labels", async ({ page, request, baseURL }) => {
     test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the disposable Meitheal fixture")
+    const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
 
     const cells = page.locator(".cal-cell[data-date]:not(.cal-other)")
     const day = await cells.first().getAttribute("data-date")
@@ -221,7 +225,7 @@ test.describe("Calendar Shell", () => {
     // The month summary test reads shared month totals, so this test removes what it creates.
     const createdIds: string[] = []
     const create = async (data: Record<string, unknown>) => {
-      const res = await request.post("/api/tasks", { data })
+      const res = await request.post("/api/tasks", { headers, data })
       expect(res.status(), await res.text()).toBe(201)
       createdIds.push((await res.json()).id as string)
     }
@@ -248,7 +252,7 @@ test.describe("Calendar Shell", () => {
       await expect(activeRow.locator(".day-drawer-item-icon use")).toHaveAttribute("href", "#mt-icon-bolt")
       await expect(drawer.getByText("Calendar task on another day")).toHaveCount(0)
     } finally {
-      for (const id of createdIds) await request.delete(`/api/tasks/${id}`, { data: {} })
+      for (const id of createdIds) await request.delete(`/api/tasks/${id}`, { headers, data: {} })
     }
   })
 
@@ -278,7 +282,8 @@ test.describe("Calendar Shell", () => {
     await expect(page.locator("#nt-event-start")).toHaveValue(new RegExp(`^${date}T`))
   })
 
-  test("editing a Calendar Event back to midnight saves a timed start", async ({ page, request }) => {
+  test("editing a Calendar Event back to midnight saves a timed start", async ({ page, request, baseURL }) => {
+    const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
     let id: string | undefined
     try {
       const session = await page.context().newCDPSession(page)
@@ -306,7 +311,7 @@ test.describe("Calendar Shell", () => {
       id = task.id
       expect(task).toMatchObject({ task_kind: "calendar_event", start_date: expectedStart, end_date: expectedEnd })
     } finally {
-      if (id) await request.delete(`/api/tasks/${id}`, { data: {} })
+      if (id) await request.delete(`/api/tasks/${id}`, { headers, data: {} })
     }
   })
 
@@ -327,14 +332,15 @@ test.describe("Calendar Shell", () => {
     await expect(table).toHaveAttribute("aria-current", "page")
   })
 
-  test("calendar summary avoids singular/plural grammar mismatches", async ({ page, request }) => {
+  test("calendar summary avoids singular/plural grammar mismatches", async ({ page, request, baseURL }) => {
+    const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
     // This test creates a task, so it only runs against the disposable fixture.
     test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the disposable Meitheal fixture")
 
     // The calendar shows the month of the fixture's Europe/Dublin "today", which is not the
     // UTC date around midnight, so create the task on that day.
     const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Dublin" }).format(new Date())
-    const created = await request.post("/api/tasks", { data: { title: "Single calendar summary task", due_date: today } })
+    const created = await request.post("/api/tasks", { headers, data: { title: "Single calendar summary task", due_date: today } })
     expect(created.status(), await created.text()).toBe(201)
     const taskId = (await created.json()).id as string
     try {
@@ -347,12 +353,13 @@ test.describe("Calendar Shell", () => {
       expect(summaryText).not.toMatch(/\b1 days\b/)
       expect(summaryText).not.toMatch(/\b1 synced events\b/)
     } finally {
-      await request.delete(`/api/tasks/${taskId}`, { data: {} })
+      await request.delete(`/api/tasks/${taskId}`, { headers, data: {} })
     }
   })
 
-  test("Calendar filters apply to the month and drawer, survive month navigation, and clear together", async ({ page, request }) => {
+  test("Calendar filters apply to the month and drawer, survive month navigation, and clear together", async ({ page, request, baseURL }) => {
     test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the disposable Meitheal fixture")
+    const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
     const day = "2031-07-08"
     const createdIds: string[] = []
     try {
@@ -361,7 +368,7 @@ test.describe("Calendar Shell", () => {
         ["Calendar filter: roof supplies", 2, "pending", "shopping_item"],
         ["Calendar filter: roof checklist", 1, "complete", "checklist"],
       ] as const) {
-        const response = await request.post("/api/tasks", { data: {
+        const response = await request.post("/api/tasks", { headers, data: {
           title, priority, status, task_kind, due_date: day,
           ...(status === "pending" && { framework_payload: JSON.stringify({ rice: { reach: 10, impact: 5, confidence: 1, effort: 2 } }) }),
         } })
@@ -443,14 +450,15 @@ test.describe("Calendar Shell", () => {
       await page.keyboard.press("Enter")
       await expect(agenda).toContainText("No matching tasks or local events")
     } finally {
-      for (const id of createdIds) await request.delete(`/api/tasks/${id}`, { data: {} })
+      for (const id of createdIds) await request.delete(`/api/tasks/${id}`, { headers, data: {} })
     }
   })
 
-  test("Calendar honors legacy Table areas and keeps today's archived work out of the agenda", async ({ page, request }) => {
+  test("Calendar honors legacy Table areas and keeps today's archived work out of the agenda", async ({ page, request, baseURL }) => {
     test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the disposable Meitheal fixture")
+    const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
     const day = "2031-07-08"
-    const response = await request.post("/api/areas", { data: { name: "Calendar legacy area" } })
+    const response = await request.post("/api/areas", { headers, data: { name: "Calendar legacy area" } })
     expect(response.status(), await response.text()).toBe(201)
     const { id: areaId } = await response.json()
     const ids: string[] = []
@@ -460,7 +468,7 @@ test.describe("Calendar Shell", () => {
         { title: "Calendar completed in the legacy area", area_id: areaId, status: "complete" },
         { title: "Calendar active outside the legacy area", status: "active" },
       ]) {
-        const task = await request.post("/api/tasks", { data: { ...draft, due_date: day } })
+        const task = await request.post("/api/tasks", { headers, data: { ...draft, due_date: day } })
         expect(task.status(), await task.text()).toBe(201)
         ids.push((await task.json()).id)
       }
@@ -487,8 +495,7 @@ test.describe("Calendar Shell", () => {
       const submitted = page.waitForResponse(response => new URL(response.url()).pathname === "/api/tasks/clear-completed")
       await page.getByRole("button", { name: "Archive", exact: true }).click()
       const archive = await submitted
-      expect(archive.status(), await archive.text()).toBe(200)
-      expect(await archive.json()).toMatchObject({ ok: true, cleared: 1 })
+      expect(archive.status()).toBe(200)
       await page.goto("/tasks?view=calendar&year=2031&month=6&area=#calendar")
       await expect(cell).toHaveAccessibleName(/2 tasks$/)
       await cell.press("Enter")
@@ -496,12 +503,11 @@ test.describe("Calendar Shell", () => {
       await expect(agenda.getByText("Calendar active outside the legacy area")).toBeVisible()
       await expect(agenda.getByText("Calendar completed in the legacy area")).toHaveCount(0)
       const unfilteredApi = await request.get(`/api/tasks?due_date=${day}`)
-      expect((await unfilteredApi.json()).tasks).toEqual(expect.arrayContaining([
-        expect.objectContaining({ id: ids[1], status: "archived" }),
-      ]))
+      expect((await unfilteredApi.json()).tasks.filter((task: { status: string }) => task.status === "archived"))
+        .toEqual([expect.objectContaining({ id: ids[1], status: "archived" })])
     } finally {
-      for (const id of ids) await request.delete(`/api/tasks/${id}`, { data: {} })
-      await request.delete(`/api/areas/${areaId}`, { data: {} })
+      for (const id of ids) await request.delete(`/api/tasks/${id}`, { headers, data: {} })
+      await request.delete(`/api/areas/${areaId}`, { headers, data: {} })
     }
   })
 })

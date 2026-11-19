@@ -1,3 +1,8 @@
+---
+type: "Guide"
+title: "NFC completion with limited credentials"
+---
+
 # NFC completion with limited credentials
 
 An NFC scan uses the selected Board's completion authority to locate a uniquely assigned Task. The lookup returns only internal ID/status metadata. It does not grant Task reads, and assigned-only credentials can locate only their currently assigned Tasks. Other Boards and inaccessible placements remain unavailable.

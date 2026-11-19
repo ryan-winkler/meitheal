@@ -4,6 +4,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 import { expect, test } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { launchPinBrowser, startCoreFixture } from "../scripts/task-pins-fixture"
 
 test("Calendar reads configured sources as a household member and filters before pagination", async ({ playwright }, testInfo) => {
@@ -35,10 +36,34 @@ test("Calendar reads configured sources as a household member and filters before
     const origin = `https://127.0.0.1:${info.port}`
     const base = origin + info.configuredPath
     const headers = (role: string) => ({ origin, cookie: `feedback-fixture=${role}`, "sec-fetch-site": "same-origin" })
-    const write = await api.put(base + "/api/settings", { headers: headers("admin"), data: {
+    const adminWriteHeaders = await currentBoardWriteHeaders(api, "household", headers("admin"), base)
+    const destinationPath = base + "/api/integrations/work-destinations"
+    let calendarBindingId = "fixture-calendar-household"
+    const setCalendarDestination = async (enabled: boolean) => {
+      const current = await api.get(destinationPath, { headers: adminWriteHeaders })
+      expect(current.status(), await current.text()).toBe(200)
+      const { revision, bindings } = await current.json()
+      const previous = bindings.find((binding: { id: string }) => binding.id === calendarBindingId)
+      const saved = await api.put(destinationPath, { headers: adminWriteHeaders, data: {
+        revision, binding: {
+          id: calendarBindingId,
+          generation: previous?.generation ?? 1,
+          integration: "calendar",
+          purpose: "calendar.sync",
+          sourceId: "calendar.household",
+          enabled,
+          destination: { boardId: "household" },
+          allowedOperations: [{ resource: "task", action: "read" }],
+        },
+      } })
+      expect(saved.status(), await saved.text()).toBe(200)
+      calendarBindingId = (await saved.json()).binding.id
+    }
+    const write = await api.put(base + "/api/settings", { headers: adminWriteHeaders, data: {
       key: "calendar-entities", value: JSON.stringify(["calendar.household", "calendar.household", "light.hall"]),
     } })
     expect(write.status(), await write.text()).toBe(200)
+    await setCalendarDestination(true)
     const settings = await api.get(base + "/api/settings?key=calendar-entities", { headers: headers("member") })
     expect(settings.status()).toBe(403)
     const sources = await api.get(base + "/api/ha/calendars?configured=1", { headers: headers("member") })
@@ -71,7 +96,7 @@ test("Calendar reads configured sources as a household member and filters before
     expect(secondPage.tasks).toHaveLength(100)
     expect(secondPage.tasks[0].title).toBe("Matching garden task 100")
     const credential = await api.post(base + "/api/agent-tokens", {
-      headers: headers("admin"), data: { name: "Calendar scope fixture", scopes: ["tasks:read"] },
+      headers: adminWriteHeaders, data: { name: "Calendar scope fixture", scopes: ["tasks:read"] },
     })
     expect(credential.status()).toBe(201)
     const { token } = await credential.json()
@@ -200,9 +225,10 @@ test("Calendar reads configured sources as a household member and filters before
     await expect(connected).toBeHidden()
 
     for (const [key, value] of [["timezone", "America/Los_Angeles"], ["calendar_entities", "[]"]]) {
-      const result = await api.put(base + "/api/settings", { headers: headers("admin"), data: { key, value } })
+      const result = await api.put(base + "/api/settings", { headers: adminWriteHeaders, data: { key, value } })
       expect(result.status(), await result.text()).toBe(200)
     }
+    await setCalendarDestination(false)
     const clearedSources = await api.get(base + "/api/ha/calendars?configured=1", { headers: headers("member") })
     expect(await clearedSources.json()).toEqual({ entities: [] })
     await page.goto(unfilteredMonth)
@@ -366,10 +392,11 @@ test("Calendar reads configured sources as a household member and filters before
     const overnightId = "linked-overnight-event"
     insertLinkedTask.run(overnightId, "Saved overnight event", "pending", overnightId, overnightId, overnight.start)
     insertConfirmation.run(overnightId, overnightId, overnightId, "overnight-saved", "caldav", JSON.stringify(overnight))
-    const enableFeed = await api.put(base + "/api/settings", { headers: headers("admin"),
+    const enableFeed = await api.put(base + "/api/settings", { headers: adminWriteHeaders,
       data: { key: "calendar_entities", value: '["calendar.household"]' },
     })
     expect(enableFeed.status(), await enableFeed.text()).toBe(200)
+    await setCalendarDestination(true)
     await page.route("**/api/ha/events?*", route => route.fulfill({ json: {
       events: [{ uid: "overnight-live", summary: "Live overnight event", ...overnight }],
     } }))
@@ -397,7 +424,7 @@ test("Calendar reads configured sources as a household member and filters before
     await page.keyboard.press("Escape")
 
     for (const [key, value] of [["timezone", "America/Nuuk"], ["calendar_entities", '["calendar.household"]']]) {
-      const result = await api.put(base + "/api/settings", { headers: headers("admin"), data: { key, value } })
+      const result = await api.put(base + "/api/settings", { headers: adminWriteHeaders, data: { key, value } })
       expect(result.status(), await result.text()).toBe(200)
     }
     const gapId = "linked-midnight-gap"
@@ -418,7 +445,7 @@ test("Calendar reads configured sources as a household member and filters before
     await expect(connected.getByRole("button", { name: /Saved midnight transition.*00:30/ })).toBeVisible()
     await expect(connected.getByText("Live midnight transition")).toHaveCount(0)
 
-    const rollbackZone = await api.put(base + "/api/settings", { headers: headers("admin"), data: { key: "timezone", value: "America/Goose_Bay" } })
+    const rollbackZone = await api.put(base + "/api/settings", { headers: adminWriteHeaders, data: { key: "timezone", value: "America/Goose_Bay" } })
     expect(rollbackZone.status(), await rollbackZone.text()).toBe(200)
     const rollbackId = "linked-midnight-rollback"
     const rollback = { start: "2010-11-07T03:00:30Z", end: "2010-11-07T03:15:00Z" }
@@ -442,6 +469,17 @@ test("Calendar reads configured sources as a household member and filters before
       await page.keyboard.press("Escape")
     }
 
+    // Keep the scoped read model's columns present and fail only consumers of task descriptions.
+    const columns = (db.prepare("PRAGMA table_info(tasks)").all() as { name: string }[]).map(({ name }) =>
+      name === "description" ? "json_extract('invalid fixture JSON', '$') AS description" : `"${name}"`)
+    const failTaskReads = () => db.exec(`
+      ALTER TABLE tasks RENAME TO fixture_agenda_tasks;
+      CREATE VIEW tasks AS SELECT rowid AS rowid, ${columns.join(", ")} FROM fixture_agenda_tasks;
+    `)
+    const restoreTaskReads = () => db.exec(`
+      DROP VIEW tasks;
+      ALTER TABLE fixture_agenda_tasks RENAME TO tasks;
+    `)
     // Force each query to fail in isolation in this disposable database.
     const localId = "local-agenda-recovery"
     insert.run(localId, "Local agenda recovery task", localId, localId, linkedDay, 100_010, 100_010)
@@ -464,7 +502,7 @@ test("Calendar reads configured sources as a household member and filters before
       db.exec("ALTER TABLE unavailable_calendar_confirmations RENAME TO calendar_confirmations")
     }
 
-    db.exec("ALTER TABLE tasks RENAME COLUMN description TO unavailable_description")
+    failTaskReads()
     try {
       await linkedCell.press("Enter")
       await expect(agenda.getByRole("status")).toHaveText("Couldn’t load this day’s agenda.")
@@ -473,7 +511,7 @@ test("Calendar reads configured sources as a household member and filters before
       await expect(connected.getByText("Saved calendar links couldn’t load", { exact: false })).toHaveCount(0)
       await expect(page.locator("#day-drawer-close")).toBeFocused()
     } finally {
-      db.exec("ALTER TABLE tasks RENAME COLUMN unavailable_description TO description")
+      restoreTaskReads()
     }
     db.exec("ALTER TABLE calendar_confirmations RENAME TO unavailable_calendar_confirmations")
     try {
@@ -491,13 +529,13 @@ test("Calendar reads configured sources as a household member and filters before
     await expect(connected.getByText("Saved calendar links couldn’t load", { exact: false })).toHaveCount(0)
     await page.keyboard.press("Escape")
 
-    db.exec("ALTER TABLE tasks RENAME COLUMN description TO unavailable_description")
+    failTaskReads()
     try {
       await day.press("Enter")
       await expect(agenda.getByText("Couldn’t load this day’s agenda.")).toBeVisible()
       await expect(connected.getByText("No calendar events", { exact: true })).toBeVisible()
     } finally {
-      db.exec("ALTER TABLE tasks RENAME COLUMN unavailable_description TO description")
+      restoreTaskReads()
     }
     db.exec("ALTER TABLE calendar_confirmations RENAME TO unavailable_calendar_confirmations")
     try {

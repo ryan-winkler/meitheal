@@ -1,28 +1,27 @@
-import { execFileSync, fork } from "../helpers/isolated-process"
 import { once } from "node:events"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { fileURLToPath } from "node:url"
 import { expect, test, type APIRequestContext } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
+import { startCoreFixture } from "../scripts/task-pins-fixture"
 
 test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires a built App and disposable ingress fixture")
 
-const web = fileURLToPath(new URL("../../apps/web", import.meta.url))
-const fixture = fileURLToPath(new URL("../scripts/feedback-ingress-fixture.mjs", import.meta.url))
 const admin = { cookie: "feedback-fixture=admin" }
 
 let work: string
-let child: ReturnType<typeof fork>
+let child: ReturnType<typeof startCoreFixture>
 let request: APIRequestContext
 let origin: string
 let ingress: string
+let headers: Record<string, string>
 
 test.beforeAll(async ({ playwright }) => {
   work = await mkdtemp(join(tmpdir(), "meitheal-pillars-journey-"))
-  const env = { PATH: process.env.PATH, NODE_ENV: "production", MEITHEAL_DB_URL: `file:${join(work, "meitheal.db")}` }
-  execFileSync(process.execPath, ["scripts/migrate.mjs"], { cwd: web, env })
-  child = fork(fixture, { cwd: web, env, stdio: ["ignore", "ignore", "inherit", "ipc"] })
+  child = startCoreFixture(work, true)
+  child.stdout?.resume()
+  child.stderr?.resume()
   const [info] = await Promise.race([
     once(child, "message", { signal: AbortSignal.timeout(10_000) }),
     once(child, "exit").then(([code]) => { throw new Error(`Pillar fixture exited with ${code}`) }),
@@ -30,6 +29,7 @@ test.beforeAll(async ({ playwright }) => {
   origin = `http://127.0.0.1:${info.port}`
   ingress = origin + info.configuredPath
   request = await playwright.request.newContext({ extraHTTPHeaders: admin })
+  headers = await currentBoardWriteHeaders(request, "household", { ...admin, origin }, ingress)
 })
 
 test.afterAll(async () => {
@@ -43,7 +43,7 @@ test.afterAll(async () => {
 })
 
 async function createPillar(name: string) {
-  const response = await request.post(ingress + "/api/pillars", { data: { name } })
+  const response = await request.post(ingress + "/api/pillars", { headers, data: { name } })
   expect(response.status()).toBe(201)
   return (await response.json()).pillar.id as string
 }
@@ -52,12 +52,13 @@ test("Principle updates and removal stay within the selected Pillar", async () =
   const id = await createPillar("Principle owner")
   const other = await createPillar("Different owner")
   const path = (pillar: string) => ingress + `/api/pillars/${pillar}/principles`
-  const created = await request.post(path(id), { data: { statement: "Keep the original boundary" } })
+  const created = await request.post(path(id), { headers, data: { statement: "Keep the original boundary" } })
   expect(created.status()).toBe(201)
   const { principle } = await created.json()
 
   for (const action of ["update", "delete"]) {
     const foreign = await request.post(path(other), {
+      headers,
       data: { action, principleId: principle.id, isNonNegotiable: true },
     })
     expect(foreign.status()).toBe(404)
@@ -70,12 +71,13 @@ test("Principle updates and removal stay within the selected Pillar", async () =
   expect(await read()).toEqual([principle])
 
   const updated = await request.post(path(id), {
+    headers,
     data: { action: "update", principleId: principle.id, isNonNegotiable: true },
   })
   expect(updated.status()).toBe(200)
   expect(await read()).toMatchObject([{ id: principle.id, isNonNegotiable: true }])
 
-  const removed = await request.post(path(id), { data: { action: "delete", principleId: principle.id } })
+  const removed = await request.post(path(id), { headers, data: { action: "delete", principleId: principle.id } })
   expect(removed.status()).toBe(200)
   expect(await read()).toEqual([])
 })
@@ -213,10 +215,10 @@ test("Dashboard workload links fit at 320px and preserve ingress filters", async
     await expect(overview.locator("#stat-active .stat-value")).toHaveText("0")
     await expect(overview.locator("#stat-overdue .stat-value")).toHaveText("0")
 
-    const active = await request.post(ingress + "/api/tasks", { data: { title: "Active QA task", status: "active" } })
+    const active = await request.post(ingress + "/api/tasks", { headers, data: { title: "Active QA task", status: "active" } })
     expect(active.status()).toBe(201)
     const activeTask = await active.json()
-    const overdue = await request.post(ingress + "/api/tasks", { data: { title: "Overdue QA task", due_date: "2020-01-01" } })
+    const overdue = await request.post(ingress + "/api/tasks", { headers, data: { title: "Overdue QA task", due_date: "2020-01-01" } })
     expect(overdue.status()).toBe(201)
     const overdueTask = await overdue.json()
     await page.reload({ waitUntil: "domcontentloaded" })
@@ -248,9 +250,9 @@ test("Dashboard workload links fit at 320px and preserve ingress filters", async
       await expect(link.locator(".stat-value")).toHaveText("1")
       await link.press("Enter")
       await expect(dashboardTab.locator("#kanban-shell")).toHaveAttribute("data-kanban-booted", "true")
-      const destination = new URL(ingress + "/tasks?status=" + status)
+      const destination = new URL(ingress + "/boards/household?status=" + status + "#kanban")
       await expect(dashboardTab).toHaveURL(url => url.origin === destination.origin &&
-        url.pathname === destination.pathname && url.search === destination.search)
+        url.pathname === destination.pathname && url.search === destination.search && url.hash === destination.hash)
       await expect(dashboardTab.locator(`.kanban-card[data-id="${included}"]`)).toBeVisible()
       await expect(dashboardTab.locator(`.kanban-card[data-id="${excluded}"]`)).toHaveCount(0)
       await dashboardTab.close()

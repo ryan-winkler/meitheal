@@ -1,11 +1,12 @@
 import { expect, test } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { deferred, shouldSkipBrowserSpecs } from "./_helpers"
 
 test.skip(shouldSkipBrowserSpecs(), "Set E2E_BASE_URL to run browser specs")
 test.use({ serviceWorkers: "block", reducedMotion: "reduce" })
 
 test("lane hover keeps its dimensions and a rejected move clears its pending cue", async ({ page, request, baseURL }) => {
-  const headers = { origin: new URL(baseURL!).origin }
+  const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
   const created = await request.post("/api/tasks", {
     headers, data: { title: "Lane feedback fixture", status: "pending" },
   })
@@ -52,12 +53,12 @@ test("lane hover keeps its dimensions and a rejected move clears its pending cue
     await expect(page.getByText("Finish the blocking tasks before moving this one into progress.")).toBeVisible()
   } finally {
     release.resolve()
-    await request.delete(path, { headers })
+    await request.delete(path, { headers, data: {} })
   }
 })
 
 test("two lane writes settle before the queued Board refresh replaces their cards", async ({ page, request, baseURL }) => {
-  const headers = { origin: new URL(baseURL!).origin }
+  const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
   const ids: string[] = []
   const gates = [deferred<void>(), deferred<void>()] as const
   try {
@@ -100,12 +101,12 @@ test("two lane writes settle before the queued Board refresh replaces their card
     expect(reads).toBe(1)
   } finally {
     for (const gate of gates) gate.resolve()
-    for (const id of ids) await request.delete("/api/tasks/" + id, { headers })
+    for (const id of ids) await request.delete("/api/tasks/" + id, { headers, data: {} })
   }
 })
 
 test("a saved move reconciles the latest filter after its original Board is replaced", async ({ page, request, baseURL }) => {
-  const headers = { origin: new URL(baseURL!).origin }
+  const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
   const title = "Detached lane move fixture"
   const created = await request.post("/api/tasks", { headers, data: { title, status: "pending" } })
   expect(created.status()).toBe(201)
@@ -137,12 +138,12 @@ test("a saved move reconciles the latest filter after its original Board is repl
     await expect(search).toBeFocused()
   } finally {
     release.resolve()
-    await request.delete(path, { headers })
+    await request.delete(path, { headers, data: {} })
   }
 })
 
 test("a saved move holds its WIP slot while the Board refresh is pending", async ({ page, request, baseURL }) => {
-  const headers = { origin: new URL(baseURL!).origin }
+  const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
   const ids: string[] = []
   const release = deferred<void>()
   try {
@@ -176,12 +177,12 @@ test("a saved move holds its WIP slot while the Board refresh is pending", async
     await expect(untouchedControl).toBeFocused()
   } finally {
     release.resolve()
-    for (const id of ids) await request.delete("/api/tasks/" + id, { headers })
+    for (const id of ids) await request.delete("/api/tasks/" + id, { headers, data: {} })
   }
 })
 
 test("a lane menu move preserves focus and scroll on another destination card", async ({ page, request, baseURL }) => {
-  const headers = { origin: new URL(baseURL!).origin }
+  const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
   const ids: string[] = []
   const release = deferred<void>()
   try {
@@ -221,6 +222,6 @@ test("a lane menu move preserves focus and scroll on another destination card", 
     expect(Math.abs(scrollAfter - scrollBefore)).toBeLessThanOrEqual(1)
   } finally {
     release.resolve()
-    for (const id of ids) await request.delete("/api/tasks/" + id, { headers })
+    for (const id of ids) await request.delete("/api/tasks/" + id, { headers, data: {} })
   }
 })

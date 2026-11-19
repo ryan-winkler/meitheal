@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto"
 import { once } from "node:events"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -7,10 +6,13 @@ import { DatabaseSync } from "node:sqlite"
 
 import AxeBuilder from "@axe-core/playwright"
 import { expect, test, type Browser, type Page } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { recentActivityPersonKey } from "../../apps/web/src/domains/tasks/persistence/recent-activity"
 import { launchPinBrowser, startCoreFixture } from "../scripts/task-pins-fixture"
 
 test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the built App and disposable HTTPS ingress")
+
+const mutationProof = new WeakMap<Page, Record<string, string>>()
 
 async function mutate(
   page: Page,
@@ -20,19 +22,21 @@ async function mutate(
   token?: string,
   extraHeaders?: Record<string, string>,
 ) {
-  return page.evaluate(async ({ path, method, body, token, extraHeaders }) => {
+  const headers = mutationProof.get(page)
+  return page.evaluate(async ({ path, method, body, token, headers, extraHeaders }) => {
     const response = await fetch(path, {
       method,
       headers: {
         "content-type": "application/json",
         "x-agent-id": "spoofed-person-name",
+        ...headers,
         ...extraHeaders,
         ...(token ? { authorization: `Bearer ${token}` } : {}),
       },
       body: JSON.stringify(body),
     })
     return { status: response.status, body: await response.json().catch(() => ({})) }
-  }, { path, method, body, token, extraHeaders })
+  }, { path, method, body, token, headers, extraHeaders })
 }
 
 test("verified members see committed task activity and can filter it by current area and person", async () => {
@@ -51,11 +55,15 @@ test("verified members see committed task activity and can filter it by current 
     const bKey = recentActivityPersonKey("fixture-member-two")
     browser = await launchPinBrowser(work)
     async function open(user: string) {
-      const context = await browser!.newContext({ serviceWorkers: "block", extraHTTPHeaders: {} })
+      const context = await browser!.newContext({ serviceWorkers: "block", ignoreHTTPSErrors: true, extraHTTPHeaders: {} })
       await context.addCookies([{ name: "feedback-fixture", value: user, url: origin }])
       return context.newPage()
     }
     const [a, b, old] = await Promise.all([open("member"), open("member-two"), open("old")])
+    const app = origin + prefix
+    for (const page of [a, b]) {
+      mutationProof.set(page, await currentBoardWriteHeaders(page.request, "household", { origin }, app))
+    }
     const background: string[] = []
     a.on("request", request => {
       if (new URL(request.url()).pathname.endsWith("/activity")) background.push(request.url())
@@ -95,7 +103,7 @@ test("verified members see committed task activity and can filter it by current 
     db.exec("PRAGMA busy_timeout = 2000")
     // Unauthenticated X-Agent-Id, body created_by/source, and X-Meitheal-Origin-* headers must not become stored attribution.
     expect({ ...db.prepare("SELECT source, created_by FROM tasks WHERE id = ?").get(first.body.id) })
-      .toEqual({ source: "user", created_by: null })
+      .toEqual({ source: "user", created_by: "fixture-member" })
     db.prepare(`INSERT INTO task_activity_log (task_id, field, old_value, new_value, actor, created_at)
       VALUES (?, 'description', 'legacy-old-sentinel', 'legacy-new-sentinel', 'legacy-actor-sentinel', ?)`)
       .run(first.body.id, Date.now())
@@ -129,13 +137,15 @@ test("verified members see committed task activity and can filter it by current 
       "Rolled back edit", "Ignored write"]) {
       expect(markup).not.toContain(sentinel)
     }
-    const token = "mth_" + "b".repeat(64)
-    expect((await mutate(b, prefix + "/api/tasks", "POST", { title: "Denied automation" }, token)).status).toBe(401)
-    db.prepare(`INSERT INTO agent_tokens (id, name, token_hash, token_prefix, scopes, created_at)
-      VALUES (?, ?, ?, ?, '["tasks:write"]', ?)`).run(
-      "synthetic-token-id", "synthetic-token-name", createHash("sha256").update(token).digest("hex"),
-      token.slice(0, 8), new Date().toISOString(),
-    )
+    const unknownToken = "mth_" + "b".repeat(64)
+    expect((await mutate(b, prefix + "/api/tasks", "POST", { title: "Denied automation" }, unknownToken)).status).toBe(401)
+    const administrator = await open("admin")
+    const tokenHeaders = await currentBoardWriteHeaders(administrator.request, "household", { origin }, app)
+    const issued = await administrator.request.post(app + "/api/agent-tokens", {
+      headers: tokenHeaders, data: { name: "synthetic-token-name", scopes: ["tasks:write"] },
+    })
+    expect(issued.status()).toBe(201)
+    const { token, id: tokenId } = await issued.json() as { token: string; id: string }
     expect((await mutate(b, prefix + "/api/tasks", "POST", { title: "Automated capture", actor: "spoofed actor" }, token)).status).toBe(201)
     const geminiTask = await mutate(b, prefix + "/api/tasks", "POST", {
       title: "Gemini capture", actor: "spoofed actor",
@@ -197,7 +207,8 @@ test("verified members see committed task activity and can filter it by current 
     await expect(phishingTargetEvent.locator('a[href$="/settings#agent-tokens-card"]')).toHaveCount(1)
 
     const feedText = await automation?.text()
-    expect(feedText).not.toMatch(/synthetic-token-id|spoofed actor|spoofed-person-name/)
+    expect(feedText).not.toContain(tokenId)
+    expect(feedText).not.toMatch(/spoofed actor|spoofed-person-name/)
     const taskActivityRes = await a.evaluate(async path => (await fetch(path)).json(), prefix + "/api/tasks/" + bedtimeTask.body.id + "/activity")
     const taskActivityJson = JSON.stringify(taskActivityRes)
     const statusChange = taskActivityRes.activity.find((item: { event_type?: string }) => item.event_type === "status_change")
@@ -205,7 +216,8 @@ test("verified members see committed task activity and can filter it by current 
     // Provenance JSON stays internal; the public activity API keeps a readable summary.
     const created = taskActivityRes.activity.find((item: { field?: string }) => item.field === "created")
     expect(created?.summary).toBe("Task added")
-    expect(taskActivityJson).not.toMatch(/synthetic-token-id|spoofed/)
+    expect(taskActivityJson).not.toContain(tokenId)
+    expect(taskActivityJson).not.toMatch(/spoofed/)
     await a.setViewportSize({ width: 320, height: 740 })
     await expect.poll(() => a.locator(".recent-activity").evaluate(element =>
       element.scrollWidth <= element.clientWidth)).toBe(true)

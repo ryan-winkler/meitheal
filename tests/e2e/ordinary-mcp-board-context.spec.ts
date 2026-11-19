@@ -20,6 +20,9 @@ import { PUT as updateTask, GET as getTask } from "../../apps/web/src/pages/api/
 
 type APIContext = Parameters<typeof rpc>[0]
 
+// This routed module origin uses the browser Origin, not the unrelated App-server fixture Origin.
+test.use({ extraHTTPHeaders: {} })
+
 const transport = { peer: "127.0.0.1", fromSupervisor: false, identityHeadersSafe: true, configuredPath: undefined }
 let directory: string, board: string, session: string, token: string, server: Server
 let previousUrl: string | undefined, previousPort: string | undefined, previousCwd: string

@@ -1,7 +1,7 @@
 ---
 import { readBoardPagePlacement } from "@lib/board-page-placement"
 import { createHash } from "node:crypto"
-import { getPersistenceClient, scopeBoardAccess } from "@domains/tasks"
+import { getPersistenceClient, scopeBoardAccess, taskActionHints } from "@domains/tasks"
 import { resolveBoardRequestScope } from "@lib/board-request-context"
 import { boardScopeAuthorityKey, retainBoardResponseScope } from "@lib/board-view"
 import { boardSessionProof } from "@lib/named-board-request"
@@ -96,6 +96,7 @@ const {
 
 let boardContext = Astro.props.boardContext
 let layoutAuthority: string | undefined
+let layoutTaskActions: ReturnType<typeof taskActionHints> | undefined
 let mobilePlacement: Awaited<ReturnType<typeof readBoardPagePlacement>> | undefined
 if (!privatePageShell) {
   const boardMatch = /^\/boards\/([^/]+)\/?$/.exec(Astro.url.pathname)
@@ -110,6 +111,7 @@ if (!privatePageShell) {
     retainBoardResponseScope(Astro.request, result.scope)
     mobilePlacement = await readBoardPagePlacement(result.scope, Astro.url)
     layoutAuthority = boardScopeAuthorityKey(result.scope)
+    layoutTaskActions = taskActionHints(result.scope)
     const { rows: [installation] } = await getPersistenceClient().execute({ sql: "SELECT value FROM app_settings WHERE key = 'work_installation_id'", args: [] })
     const actorKey = typeof installation?.value === "string" && installation.value
       ? createHash("sha256").update(JSON.stringify(["offline-v1", installation.value, result.scope.principal.kind, result.scope.principal.id])).digest("hex") : undefined
@@ -138,7 +140,7 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
 <!doctype html>
 <html lang={locale} dir="ltr" data-workspace-scope={workspaceScope} data-custom-theme-admin={canManageSystemSettings(Astro.request, Astro.locals) ? "" : undefined}>
   <head>
-    {boardContext && <><meta name="meitheal-work-board" content={boardContext.boardId} /><meta name="meitheal-work-session" content={boardContext.session} /><meta name="meitheal-work-actor" content={boardContext.actorKey} /><meta name="meitheal-work-board-name" content={boardContext.boardName} /></>}
+    {boardContext && <><meta name="meitheal-work-board" content={boardContext.boardId} /><meta name="meitheal-work-session" content={boardContext.session} /><meta name="meitheal-work-actor" content={boardContext.actorKey} /><meta name="meitheal-work-board-name" content={boardContext.boardName} />{layoutTaskActions && <meta name="meitheal-task-actions" content={JSON.stringify(layoutTaskActions)} />}</>}
     <!-- Scroll-lock guard: prevent external tools from locking body scroll (P0) -->
     <script is:inline>
       (function () {

@@ -14,6 +14,8 @@ When creating a Board, you can choose workflow labels. Presets change labels on 
 
 The selected Board stays with Dashboard, Today, Upcoming, Tasks, planning and progress. Sidebar task-view shortcuts always open the task workspace; Upcoming empty actions, Triage pagination and achievement links keep the same Board and selected Area or Project. Calendar day details are reads, so a Viewer can open permitted work without task creation rights. Use Kanban, Table, Calendar or Timeline for the same work. Task capture, including Quick Add, keeps the selected Area or Project. With no selected Area or Project, new work stays unfiled; no Area is invented. Keyboard shortcuts and the Dashboard queue keep the same Board and placement. Check the visible Board name before saving. An unfiled Project can hold tasks without an Area.
 
+Hierarchy controls use the current Board and record permissions. Before restricting a Board or disabling shared administrator management, retain an active explicit owner so it stays manageable.
+
 ## Organize and connect work
 
 Use **Areas & Projects** to group related work. Group labels use only visible associations; unfiled or unavailable Area metadata uses the same neutral “No area” label. An Area can be Kitchen, Yard or any name you choose. A Project can associate with an Area. Organizing Areas and Home Assistant physical locations are separate fields: changing a physical location does not refile work or change its audience.

@@ -1,3 +1,8 @@
+---
+type: "Architecture Decision"
+title: "ADR 0027: One Board model"
+---
+
 # ADR 0027: One Board model
 
 Status: accepted; release qualification pending.

@@ -688,7 +688,7 @@ const paths = {
       { name: "ticket", in: "query", schema: boardString },
       { name: "planning", in: "query", schema: { type: "string", enum: ["1"] } },
     ], {
-      200: { description: "Authorized Board, lanes, tickets and eligible owner settings" }, 404: boardUnavailable,
+      200: { description: "Authorized Board work or paged hierarchy. Hierarchy pages include current resource/action hints, clamped by effective actor and feature permissions; these hints never grant command authority." }, 404: boardUnavailable,
     }, undefined, "tasks:read"),
     head: boardOperation("verifyPrivateBoard", "Verify the current Board view", [boardIdParam,
       { name: "offset", in: "query", schema: boardVersion },
@@ -1067,7 +1067,11 @@ const paths = {
   "/api/nfc/complete": {
     post: { operationId: "completeTaskByNfcTag", tags: ["Tasks"], summary: "Complete the uniquely assigned incomplete task for an NFC tag",
       requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["tag_id"], properties: { tag_id: { type: "string" } } } } } },
-      responses: { 200: { description: "Task completed (or already complete on retry)" }, 400: err400, 404: { description: "No matching task" }, 409: { description: "Tag is assigned ambiguously" }, 500: err500 },
+      description: "Uses the selected Board's current completion permission. A caller without Task read permission receives only {ok:true}, including retries, without the Task identity or state. Readable callers retain the detailed completion or already-complete response.",
+      responses: { 200: { description: "Completion accepted; details require current Task read permission", content: { "application/json": { schema: { oneOf: [
+        { type: "object", additionalProperties: false, required: ["ok"], properties: { ok: { const: true } } },
+        { type: "object", additionalProperties: false, required: ["ok", "task_id"], properties: { ok: { const: true }, task_id: { type: "string" }, task: { $ref: "#/components/schemas/Task" }, already_complete: { const: true } }, oneOf: [{ required: ["task"] }, { required: ["already_complete"] }] },
+      ] } } } }, 400: err400, 403: { description: "Current completion permission is required" }, 404: { description: "No eligible matching task" }, 409: { description: "Tag is assigned ambiguously or current work changed" }, 500: err500 },
     },
   },
   "/api/tasks/{id}/handoff": {

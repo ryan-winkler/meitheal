@@ -20,6 +20,9 @@ import { readBoardPagePlacement } from "../../apps/web/src/lib/board-page-placem
 import { boardNavigationLinks } from "../../apps/web/src/lib/board-workspace"
 
 type APIContext = Parameters<typeof createTask>[0]
+// These routed module origins use the browser Origin, not the unrelated App-server fixture Origin.
+test.use({ extraHTTPHeaders: {} })
+
 const transport = { peer: "127.0.0.1", fromSupervisor: false, identityHeadersSafe: true, configuredPath: undefined }
 const origin = "http://127.0.0.1:8930"
 const source = resolve(import.meta.dirname, "../../apps/web/src")

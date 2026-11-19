@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { shouldSkipBrowserSpecs } from "./_helpers"
 
 test.describe("Connected Calendar and paged agenda", () => {
@@ -259,9 +260,10 @@ test.describe("Connected Calendar and paged agenda", () => {
     expect(filtersByPage).toEqual(["roof", "roof"])
   })
 
-  test("calendar task counts bucket timed UTC due dates in household timezone", async ({ page, request }) => {
+  test("calendar task counts bucket timed UTC due dates in household timezone", async ({ page, request, baseURL }) => {
     test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the disposable Meitheal fixture")
 
+    const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
     const beforeSettings = await (await request.get("/api/settings")).json()
     const prevTz = typeof beforeSettings.timezone === "string" ? beforeSettings.timezone : "Europe/Dublin"
     let taskId: string | undefined
@@ -271,6 +273,7 @@ test.describe("Connected Calendar and paged agenda", () => {
       })).status()).toBe(200)
 
       const created = await request.post("/api/tasks", {
+        headers,
         data: { title: "LA Evening Timed Task", status: "pending", due_date: "2027-06-16T02:00:00Z" },
       })
       expect(created.status(), await created.text()).toBe(201)
@@ -294,7 +297,7 @@ test.describe("Connected Calendar and paged agenda", () => {
     } finally {
       await request.put("/api/settings", { data: { key: "timezone", value: prevTz } })
       if (taskId) {
-        await request.delete(`/api/tasks/${taskId}`, { data: {} })
+        await request.delete(`/api/tasks/${taskId}`, { headers, data: {} })
       }
     }
   })

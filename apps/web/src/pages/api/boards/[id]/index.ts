@@ -1,5 +1,5 @@
 import { boardScopeErrorResponse, withBoardScope } from "@lib/board-http"
-import { scopeBoardAccess } from "@domains/tasks/board-scope"
+import { scopeBoardAccess, scopePermits } from "@domains/tasks/board-scope"
 import { isOrganizationFeatureAvailable as availableFeature } from "@lib/organization-request-context"
 import { readHomeAssistantAreaFilter } from "@lib/home-assistant-area-access"
 import type { APIRoute } from "astro"
@@ -76,8 +76,14 @@ export const GET: APIRoute = withBoardScope(
             : {})
         }
       }
-      const response = boardViewResponse(projection, actor.id, {
-        ...projection,
+      const actions = [...new Set(scope.capabilities.operations
+        .filter(operation => ["area", "project", "task"].includes(operation.resource) && ["create", "edit", "delete"].includes(operation.action))
+        .filter(operation => scopePermits(scope, operation))
+        .filter(operation => operation.resource === "task" || (availableFeature("organizer") && availableFeature(operation.resource === "area" ? "groups" : "projects")))
+        .map(operation => `${operation.resource}/${operation.action}`))].sort()
+      const hierarchyProjection = { ...projection, actions }
+      const response = boardViewResponse(hierarchyProjection, actor.id, {
+        ...hierarchyProjection,
         next_cursor: projection.next_cursor
           ? boardGroupCursor(actor.id, cursorScope, projection.next_cursor)
           : null
@@ -160,7 +166,7 @@ const patchBoard: APIRoute = async (context) => {
     if (result.result === "stale")
       return apiError("This Board changed. Refresh it before trying again.", 409)
     if (result.result === "last-owner")
-      return apiError("Add an active owner before restricting this Board.", 409)
+      return apiError("Keep an active owner before restricting this Board or disabling shared administrator management.", 409)
     return apiJson(
       { ok: true, accessPending: result.status === "committed-locked" },
       result.status === "committed-locked" ? 202 : 200

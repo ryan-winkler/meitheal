@@ -173,7 +173,7 @@
     },
     {
       "name": "completeTaskByNfcTag",
-      "description": "Complete the uniquely assigned incomplete task for an NFC tag",
+      "description": "Uses the selected Board's current completion permission. A caller without Task read permission receives only {ok:true}, including retries, without the Task identity or state. Readable callers retain the detailed completion or already-complete response.",
       "inputSchema": {
         "type": "object",
         "properties": {

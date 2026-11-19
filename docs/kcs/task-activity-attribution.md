@@ -1,3 +1,8 @@
+---
+type: "Guide"
+title: "Task activity attribution"
+---
+
 # Task activity attribution
 
 The Task history records status changes as `status_change` and other field edits as `field_change`. Each entry keeps its committed old/new values and a readable diff summary. A no-op retry does not add another change entry.

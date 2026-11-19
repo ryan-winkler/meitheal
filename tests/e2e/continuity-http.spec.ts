@@ -61,7 +61,9 @@ async function server(work: string, playwright: PlaywrightWorkerArgs["playwright
     const base = origin + info.configuredPath
     const api = await playwright.request.newContext({ ignoreHTTPSErrors: true, baseURL: base + "/", timeout: 8_000,
       extraHTTPHeaders: { origin, cookie: "feedback-fixture=admin" } })
-    return { child, api, base, origin, close: async () => {
+    const directApi = await playwright.request.newContext({ ignoreHTTPSErrors: true, timeout: 8_000, extraHTTPHeaders: {} })
+    return { child, api, directApi, base, origin, close: async () => {
+      await directApi.dispose()
       await api.dispose()
       gateway!.closeAllConnections()
       await new Promise<void>((done, reject) => gateway!.close(error => error ? reject(error) : done()))
@@ -84,10 +86,10 @@ async function currentCapture(app: Server, label: string) {
   const directory = await app.api.get(app.base + "/api/boards")
   expect(directory.status()).toBe(200)
   const headers = { "x-meitheal-board-session": directory.headers()["x-meitheal-board-session"]! }
-  const made = await app.api.post(app.base + "/api/tasks", { data: { title: `${label} Household secret` } })
+  const made = await app.api.post(app.base + "/api/tasks", { headers, data: { title: `${label} Household secret` } })
   expect(made.status()).toBe(201)
   const task = await made.json()
-  const project = await app.api.post(app.base + "/api/projects", { data: { title: `${label} Project secret` } })
+  const project = await app.api.post(app.base + "/api/projects", { headers, data: { title: `${label} Project secret` } })
   expect(project.status()).toBe(201)
   const projectId = (await project.json()).id as string
   const board = await app.api.post(app.base + "/api/boards", { headers, data: { name: `${label} Board` } })
@@ -99,22 +101,23 @@ async function currentCapture(app: Server, label: string) {
   const namedRead = await app.api.get(app.base + `/api/boards/${boardId}?view=tasks`)
   expect(namedRead.status()).toBe(200)
   expect(await namedRead.text()).toContain(`${label} Named secret`)
-  const enrolled = await app.api.post(app.base + "/api/agent-tokens", { data: {
+  const enrolled = await app.api.post(app.base + "/api/agent-tokens", { headers, data: {
     name: "Continuity HTTP custody", scopes: ["tasks:read", "projects:read", "search:read", "mcp:execute"],
   } })
   expect(enrolled.status()).toBe(201)
   // Keep the signed bearer only in memory; assertions must never print it.
   const token: string = (await enrolled.json()).token
-  const agent = { authorization: `Bearer ${token}`, cookie: "" }
-  const taskRead = await app.api.get(app.base + `/api/tasks/${task.id}`, { headers: agent })
+  const agent = { authorization: `Bearer ${token}`, cookie: "", "x-meitheal-board-id": "household" }
+  expect((await app.api.get(app.base + `/api/tasks/${task.id}`, { headers: agent })).status()).toBe(403)
+  const taskRead = await app.directApi.get(app.origin + `/api/tasks/${task.id}`, { headers: agent })
   expect(taskRead.status()).toBe(200)
   expect((await taskRead.json()).id).toBe(task.id)
-  const projectRead = await app.api.get(app.base + `/api/projects/${projectId}`, { headers: agent })
+  const projectRead = await app.directApi.get(app.origin + `/api/projects/${projectId}`, { headers: agent })
   expect(projectRead.status()).toBe(200)
   for (const [name, id] of [["getTask", task.id], ["getProject", projectId]]) {
-    const response = await app.api.post(app.base + "/api/mcp", { headers: agent,
+    const response = await app.directApi.post(app.origin + "/api/mcp", { headers: agent,
       data: { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: { id } } } })
-    expect(response.status()).toBe(200)
+    expect(response.status(), (await response.text()).slice(0, 600)).toBe(200)
     const body = await response.json()
     expect(body.error).toBeUndefined()
     expect(body.result.isError).not.toBe(true)
@@ -150,13 +153,13 @@ async function locked(app: Server, work: string, capture?: Capture, extraSecrets
   expect(exported.status()).toBe(503)
   if (capture) {
     for (const path of [`/api/tasks/${capture.taskId}`, `/api/projects/${capture.projectId}`, "/api/tasks", "/api/tasks/today-counts", "/api/search?q=secret"]) {
-      const response = await app.api.get(app.base + path, { headers: capture.agent })
+      const response = await app.directApi.get(app.origin + path, { headers: capture.agent })
       expect(response.status(), `authenticated agent ${path}`).toBe(503)
       for (const secret of secrets) expect(await response.text()).not.toContain(secret)
     }
     for (const [name, id] of [["getTask", capture.taskId], ["getProject", capture.projectId]]) {
       for (const modern of [false, true]) {
-        const response = await app.api.post(app.base + "/api/mcp", {
+        const response = await app.directApi.post(app.origin + "/api/mcp", {
           headers: { ...capture.agent, ...(modern ? { "mcp-protocol-version": "2026-07-28", "mcp-method": "tools/call", "mcp-name": name } : {}) },
           data: { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name, arguments: { id } } },
         })
@@ -193,7 +196,7 @@ test("fresh actual startup and matching-current restart retain native and named 
     const before = governedRecords(work)
     app = await server(work, playwright)
     expect(await readFile(markerPath(work), "utf8")).toBe(current)
-    const read = await app.api.get(app.base + `/api/tasks/${capture.taskId}`, { headers: capture.agent })
+    const read = await app.directApi.get(app.origin + `/api/tasks/${capture.taskId}`, { headers: capture.agent })
     expect(read.status()).toBe(200)
     expect((await read.json()).id).toBe(capture.taskId)
     expect(governedRecords(work)).toEqual(before)
@@ -274,12 +277,18 @@ for (const retainCurrentMarker of [false, true]) {
       expect((await app.api.get(app.base + "/api/goals")).status()).toBe(404)
       const household = await app.api.get(app.base + "/api/boards")
       expect(household.status()).toBe(200)
-      const revision = (await household.json()).household.revision
+      const exampleBoard = (await household.json()).boards.find((board: { id: string }) => board.id === "household")
+      expect(exampleBoard).toBeDefined()
+      const revision = exampleBoard.revision
       const retired = await app.api.patch(app.base + "/api/boards/household", {
         headers: { "x-meitheal-board-session": household.headers()["x-meitheal-board-session"]! }, data: { action: "retire", revision },
       })
       expect(retired.status()).toBe(200)
-      expect((await app.api.get(app.base + "/api/tasks/cold-household-secret")).status()).toBe(409)
+      const retiredRead = await app.api.get(app.base + "/api/tasks/cold-household-secret")
+      expect(retiredRead.status()).toBe(403)
+      const unavailable = await retiredRead.text()
+      expect(unavailable).not.toContain("Cold pregrant Household secret")
+      expect(unavailable).not.toContain("cold-household-secret")
       const current = await readFile(marker)
       await app.close(); app = undefined
       const restricted = governedRecords(work)

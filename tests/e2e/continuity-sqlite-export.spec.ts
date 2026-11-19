@@ -6,6 +6,7 @@ import { DatabaseSync } from "node:sqlite"
 import { expect, test } from "@playwright/test"
 import { POST as downloadDatabase } from "../../apps/web/src/pages/api/export/database.sqlite"
 import { issueDatabaseDownloadToken } from "../../apps/web/src/lib/database-download-token"
+import { verifiedBoardRequestPrincipal } from "../../apps/web/src/lib/board-request-context"
 import { runWithIngressTransport } from "../../apps/web/scripts/ingress-transport.mjs"
 import { NamedBoardRepository } from "../../apps/web/src/domains/tasks/persistence/named-board-repository"
 import { ensureSchema, getPersistenceClient, resetPersistenceForTests } from "../helpers/persistence-fixture"
@@ -83,6 +84,18 @@ function download(signal = new AbortController().signal) {
   } as Parameters<typeof downloadDatabase>[0]))
 }
 
+async function changeLifecycle(state: "retired" | "active", revision: number) {
+  return runWithIngressTransport({ peer: "172.30.32.2", fromSupervisor: true,
+    identityHeadersSafe: true, configuredPath: "/ingress" }, async () => {
+    const principal = await verifiedBoardRequestPrincipal({
+      request: new Request("http://export.test/api/boards/household"),
+      locals: { behindIngress: true, hassUserId: "export-owner", hassIsAdmin: true } as App.Locals,
+    })
+    if (!principal) throw new Error("Current Core owner fixture was not verified")
+    return new NamedBoardRepository(getPersistenceClient()).changeLifecycle(principal, "household", state, revision, true)
+  })
+}
+
 const snapshots = async () => (await readdir(work)).filter(name => name.startsWith(".meitheal-export-"))
 
 async function validDownload() {
@@ -120,7 +133,7 @@ for (const change of ["marker-loss", "new-revision"] as const) {
     try {
       expect((await reader.read()).value!.byteLength).toBeGreaterThan(0)
       if (change === "marker-loss") await rm(marker)
-      else expect(await new NamedBoardRepository(getPersistenceClient()).changeLifecycle({ kind: "ha_user", id: "export-owner" }, "household", "retired", 1, true))
+      else expect(await changeLifecycle("retired", 1))
         .toMatchObject({ status: "committed", result: "saved" })
       await expect(reader.read()).rejects.toThrow(/continuity|authority/i)
       await expect.poll(snapshots).toEqual([])
@@ -129,7 +142,7 @@ for (const change of ["marker-loss", "new-revision"] as const) {
       expect((await download()).status).toBe(503)
       // Synthetic control restores bytes retained before the loss, never derived from SQLite.
       await writeFile(marker, knownCurrentMarker)
-    } else expect(await new NamedBoardRepository(getPersistenceClient()).changeLifecycle({ kind: "ha_user", id: "export-owner" }, "household", "active", 2, true))
+    } else expect(await changeLifecycle("active", 2))
       .toMatchObject({ status: "committed", result: "saved" })
     await validDownload()
   })
@@ -157,7 +170,7 @@ for (const change of ["marker-loss", "new-revision"] as const) {
     try {
       await Promise.race([entered.promise, pending.then(() => { throw new Error("Route published its body before the authority gate") })])
       if (change === "marker-loss") await rm(marker)
-      else expect(await new NamedBoardRepository(getPersistenceClient()).changeLifecycle({ kind: "ha_user", id: "export-owner" }, "household", "retired", 1, true))
+      else expect(await changeLifecycle("retired", 1))
         .toMatchObject({ status: "committed", result: "saved" })
       release.resolve()
       const response = await pending
@@ -167,7 +180,7 @@ for (const change of ["marker-loss", "new-revision"] as const) {
       await expect.poll(snapshots).toEqual([])
     } finally { release.resolve(); await pending.then(response => response.body?.cancel()).catch(() => {}); raw.execute = execute }
     if (change === "marker-loss") await writeFile(marker, knownCurrentMarker)
-    else expect(await new NamedBoardRepository(getPersistenceClient()).changeLifecycle({ kind: "ha_user", id: "export-owner" }, "household", "active", 2, true))
+    else expect(await changeLifecycle("active", 2))
       .toMatchObject({ status: "committed", result: "saved" })
     await validDownload()
   })

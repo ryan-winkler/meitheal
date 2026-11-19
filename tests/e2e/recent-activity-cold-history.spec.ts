@@ -4,6 +4,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 
 import { expect, test, type Browser } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { recentActivityPersonKey } from "../../apps/web/src/domains/tasks/persistence/recent-activity"
 import { launchPinBrowser, startCoreFixture } from "../scripts/task-pins-fixture"
 
@@ -51,13 +52,10 @@ for (const revoked of [false, true]) {
         })
       }, prefixMessage)
       expect((await page.goto(origin + prefix + "/fixture"))?.status()).toBe(200)
-      const seeded = await page.evaluate(async ({ path, title }) => {
-        const response = await fetch(path, {
-          method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ title }),
-        })
-        return response.status
-      }, { path: prefix + "/api/tasks", title: sentinel })
-      expect(seeded).toBe(201)
+      const app = origin + prefix
+      const headers = await currentBoardWriteHeaders(context.request, "household", { origin }, app)
+      const seeded = await context.request.post(app + "/api/tasks", { headers, data: { title: sentinel, area_id: "default" } })
+      expect(seeded.status(), await seeded.text()).toBe(201)
       expect((await page.goto(url))?.headers()["cache-control"]).toBe("private, no-store")
       const section = page.locator("[data-recent-activity]")
       await expect(section).toHaveAttribute("data-history-guard", "true")

@@ -58,7 +58,8 @@ test.describe("Search Hub", () => {
 
     await calendarResult.click()
 
-    await expect(page).toHaveURL(/\/tasks\?view=calendar#calendar$/)
+    await expect(page).toHaveURL(url => url.pathname === "/tasks" && url.searchParams.get("view") === "calendar" &&
+      url.searchParams.get("board_id") === "household" && url.hash === "#calendar")
     await expect(page.locator("#tasks-view-calendar")).toBeVisible()
   })
 

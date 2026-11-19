@@ -1,11 +1,12 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { deferred, shouldSkipBrowserSpecs } from "./_helpers"
 
 test.skip(shouldSkipBrowserSpecs(), "Set E2E_BASE_URL to run browser specs")
 test.use({ serviceWorkers: "block" })
 
 async function seedGoal(request: APIRequestContext, origin: string, title: string) {
-  const headers = { origin }
+  const headers = await currentBoardWriteHeaders(request, "household", { origin })
   const goal = await request.post("/api/goals", { headers, data: { title } })
   expect(goal.status()).toBe(201)
   const { id }: { id: string } = await goal.json()
@@ -105,7 +106,7 @@ test("reopening retries failed and cancelled reads while keeping the task form u
   let goalsAttempts = 0
   const delayed = deferred<void>()
   const staleResponse = deferred<void>()
-  await page.route(url => url.pathname === "/api/goals" && url.searchParams.get("projection") === "household", async route => {
+  await page.route(url => url.pathname === "/api/goals", async route => {
     if (++goalsAttempts !== 1) return route.continue()
     await delayed.promise
     await route.fulfill({ json: { goals: [{ id: "stale", title: "Stale goal" }] } }).catch(() => {})
