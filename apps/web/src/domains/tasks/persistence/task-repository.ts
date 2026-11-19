@@ -105,6 +105,11 @@ export type TaskCatalogRow = Pick<TaskRow, "id" | "ticket_number" | "title" | "s
  * @see store.ts ensureSchema() for the canonical column definitions.
  */
 export interface TaskRow {
+  /** Internal public-projection metadata; physical planning references remain authoritative. */
+  readonly public_area_id?: string | null
+  readonly public_project_id?: string | null
+  readonly public_goal_id?: string | null
+
   [key: string]: unknown
   // ── Core (CREATE TABLE) ──
   id: string

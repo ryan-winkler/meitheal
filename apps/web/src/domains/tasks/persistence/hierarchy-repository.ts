@@ -169,6 +169,28 @@ export class HierarchyRepository {
     const { rows } = await this.db("project").execute(sql`SELECT ${this.projectProjection()} FROM projects WHERE ${joinSql(predicates, " AND ")} ORDER BY position, created_at DESC`)
     return rows.map(row => this.mapProject(row))
   }
+  /** Bounded sidebar options. Cursor and selected lookup share one admitted snapshot. */
+  async findProjectPage(areaId: string, after: string | null, selectedId: string | null = null): Promise<{
+    items: Array<{ id: string, name: string }>, selected: { id: string, name: string } | null, next_cursor: string | null
+  } | null> {
+    const tx = await this.db("project").transaction("read")
+    try {
+      const eligible = sql`${ownedPlanning(this.scope, "projects")} AND ${planningVisible(this.scope, "projects")}
+        AND projects.retired_at IS NULL AND projects.area_id = ${areaId} AND EXISTS (${this.target("areas", sql`${areaId}`)})`
+      const { rows: [marker] } = after === null ? { rows: [] } : await tx.execute(sql`SELECT projects.position, projects.title, projects.id
+        FROM projects WHERE projects.id = ${after} AND ${eligible}`)
+      if (after !== null && !marker) return null
+      const { rows } = await tx.execute(sql`SELECT projects.id, projects.title FROM projects WHERE ${eligible}
+        ${marker ? sql`AND (projects.position, projects.title COLLATE NOCASE, projects.id) > (${Number(marker.position)}, ${String(marker.title)} COLLATE NOCASE, ${String(marker.id)})` : sourceSql("")}
+        ORDER BY projects.position, projects.title COLLATE NOCASE, projects.id LIMIT 31`)
+      const { rows: [selected] } = selectedId === null ? { rows: [] } : await tx.execute(sql`SELECT projects.id, projects.title
+        FROM projects WHERE projects.id = ${selectedId} AND ${eligible} LIMIT 1`)
+      const items = rows.slice(0, 30).map(row => ({ id: String(row.id), name: String(row.title) }))
+      await tx.commit()
+      return { items, selected: selected ? { id: String(selected.id), name: String(selected.title) } : null,
+        next_cursor: rows.length > 30 ? items.at(-1)!.id : null }
+    } finally { tx.close() }
+  }
   async findProjectsByArea(areaId: string): Promise<ProjectRow[]> { return this.findAllProjects({ area_id: areaId }) }
   async findProjectById(id: string): Promise<ProjectRow | null> {
     const { rows } = await this.db("project").execute(sql`SELECT ${this.projectProjection()} FROM projects WHERE id = ${id} AND ${ownedPlanning(this.scope, "projects")} AND ${planningVisible(this.scope, "projects")} AND retired_at IS NULL`)

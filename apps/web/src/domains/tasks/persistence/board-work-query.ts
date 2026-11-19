@@ -1,6 +1,7 @@
 import type { BoardScope } from "../board-scope"
 import { ownedPlanning, storageBoardId, taskField, taskOwnedBy, taskPlacementJoin, taskProjection } from "./board-storage"
 import { sql, sourceSql, type SqlFragment } from "./sql-fragment"
+import { goalEligibility } from "./shared-goal-repository"
 
 function visiblePlacement(scope: BoardScope): SqlFragment {
   const human = scope.principal.kind === "ha_user"
@@ -24,6 +25,24 @@ export function planningVisible(scope: BoardScope, resource: "areas" | "projects
       (planning_policy.scope = 'project' AND planning_policy.scope_id = ${project}))
     AND NOT (planning_policy.audience = 'everyone' OR (${scope.principal.kind === "ha_user" ? 1 : 0} = 1 AND planning_policy.audience = 'selected'
       AND EXISTS (SELECT 1 FROM json_each(CASE WHEN json_valid(planning_policy.selected_users) THEN planning_policy.selected_users ELSE '[]' END) WHERE value = ${scope.principal.id}))))`
+}
+
+/** Public relation identifiers are separate from physical historical placement.
+ * Never substitute these into ownership, policy, assignment or provider guards. */
+function publicPlanningReferences(scope: BoardScope): SqlFragment {
+  const area = taskField(scope, "area_id", "work_task")
+  const project = taskField(scope, "project_id", "work_task")
+  const goal = taskField(scope, "goal_id", "work_task")
+  const effectiveArea = sql`COALESCE((SELECT relation_project.area_id FROM projects AS relation_project
+    WHERE relation_project.id = ${project} AND ${ownedPlanning(scope, "relation_project")}), ${area})`
+  return sql`CASE WHEN ${area} IS NOT NULL AND EXISTS(SELECT 1 FROM areas WHERE areas.id = ${area}
+      AND ${ownedPlanning(scope, "areas")} AND ${planningVisible(scope, "areas")} AND areas.retired_at IS NULL)
+      THEN ${area} ELSE NULL END AS public_area_id,
+    CASE WHEN ${project} IS NOT NULL AND EXISTS(SELECT 1 FROM projects WHERE projects.id = ${project}
+      AND ${ownedPlanning(scope, "projects")} AND ${planningVisible(scope, "projects")} AND projects.retired_at IS NULL)
+      THEN ${project} ELSE NULL END AS public_project_id,
+    CASE WHEN ${goal} IS NOT NULL AND ${goalEligibility(scope, goal, { areaId: effectiveArea, projectId: project })}
+      THEN ${goal} ELSE NULL END AS public_goal_id`
 }
 
 // Internal persistence projection. Public response adapters use their own explicit
@@ -50,7 +69,7 @@ export function scopedTaskRead(scope: BoardScope, query: SqlFragment, continuati
   return sql`${sourceSql(continuation === "recursive" ? "WITH RECURSIVE" : "WITH")} scoped_storage AS (
     SELECT ${scope.boardId} AS board_id, ${storageBoardId(scope)} AS owner_board_id
   ), scoped_tasks AS (
-    SELECT work_task.rowid AS rowid, (work_task.task_kind = 'routine_instance' AND work_task.source_template_id IS NOT NULL) AS routine_occurrence, ${taskProjection(scope, taskColumns, "work_task", "work_placement")}
+    SELECT work_task.rowid AS rowid, (work_task.task_kind = 'routine_instance' AND work_task.source_template_id IS NOT NULL) AS routine_occurrence, ${taskProjection(scope, taskColumns, "work_task", "work_placement")}, ${publicPlanningReferences(scope)}
     FROM tasks AS work_task ${taskPlacementJoin(scope, "work_task", "work_placement")}
     WHERE ${taskOwnedBy(scope, "work_task")} AND ${visiblePlacement(scope)}
   ), scoped_areas AS (SELECT * FROM areas WHERE ${ownedPlanning(scope, "areas")} AND ${planningVisible(scope, "areas")}),

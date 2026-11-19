@@ -14,6 +14,7 @@ import { readNamedBoardPlanning, namedRoutinePeriod } from "./named-board-planni
 import { editTaskHomeAssistantArea, findTaskHomeAssistantArea, readHomeAssistantAreaPolicyRevision } from "./home-assistant-task-area"
 import type { BoardActor } from "./named-board-repository"
 import { sql } from "./sql-fragment"
+import { isOrganizationFeatureAvailable as available } from "../../../lib/organization-request-context"
 
 type Outcome<T> = { ok: true, value: T } | { ok: false, errorCode: "unavailable" | "denied" | "stale", reason?: "routine-date" }
 type NamedTaskContent = { title: string, description: string, dueDate?: string | null }
@@ -119,7 +120,7 @@ export class NamedBoardTaskRepository {
   }
 
   async groups(actor: BoardActor, boardId: string, after: string | null, selectedId: string | null = null) {
-    if (!this.matches(actor, boardId)) return null
+    if (!this.matches(actor, boardId) || !available("groups")) return null
     const areas = await new HierarchyRepository(this.db, this.scope).findAllAreas()
     const start = after ? areas.findIndex(area => area.id === after) + 1 : 0
     if (after && start === 0) return null
@@ -130,13 +131,8 @@ export class NamedBoardTaskRepository {
   }
 
   async projects(actor: BoardActor, boardId: string, areaId: string, after: string | null, selectedId: string | null = null) {
-    if (!this.matches(actor, boardId)) return null
-    const projects = await new HierarchyRepository(this.db, this.scope).findAllProjects({ area_id: areaId })
-    const start = after ? projects.findIndex(project => project.id === after) + 1 : 0
-    if (after && start === 0) return null
-    const items = projects.slice(start, start + 30).map(project => ({ id: project.id, name: project.title }))
-    const selected = projects.find(project => project.id === selectedId)
-    return { items, selected: selected ? { id: selected.id, name: selected.title } : null, next_cursor: projects.length > start + 30 ? items.at(-1)!.id : null }
+    if (!this.matches(actor, boardId) || !available("groups") || !available("projects")) return null
+    return new HierarchyRepository(this.db, this.scope).findProjectPage(areaId, after, selectedId)
   }
 
   async create(actor: BoardActor, boardId: string, content: NamedTaskContent, placement: NamedTaskPlacement) {

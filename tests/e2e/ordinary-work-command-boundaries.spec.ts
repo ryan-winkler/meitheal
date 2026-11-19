@@ -269,7 +269,12 @@ test("assigned-only replay reuses exact commit proof and denies corrupt, legacy 
   const tokenId = crypto.randomUUID()
   await createAgentToken({ id: tokenId, name: "Receipt agent", tokenHash: crypto.randomUUID(), tokenPrefix: "test", scopes: ["tasks:write:assigned"], assigneeId: "custom_receipt_agent" })
   expect((await new NamedBoardRepository(db).updateAgent(owner(), board, tokenId, true)).status).toBe("committed")
-  const work = await scope(board), task = await create(work, { title: "Private receipt body", assigned_to: "custom_receipt_agent" })
+  let work = await scope(board)
+  const projectId = crypto.randomUUID(), hierarchy = new HierarchyRepository(db, work)
+  expect(await hierarchy.createProject({ id: projectId, title: "Retired association remains private provenance" })).toBe(true)
+  const task = await create(work, { title: "Private receipt body", assigned_to: "custom_receipt_agent", project_id: projectId })
+  expect(await hierarchy.deleteProject(projectId)).toBe(true)
+  work = await scope(board)
   const agent = registerVerifiedPrincipal({ kind: "agent", id: tokenId, tokenId }, { administrator: false, expiresAt: Date.now() + 60_000,
     tokenScopes: ["tasks:write:assigned"], assignedTo: "custom_receipt_agent" })
   const resolved = await new BoardAccessService(db).resolve(agent, board, { resource: "task", action: "assign" })
@@ -283,6 +288,8 @@ test("assigned-only replay reuses exact commit proof and denies corrupt, legacy 
   await expect(repo.findById(task.id)).rejects.toBeTruthy()
   const row = (await db.execute("SELECT attempt_id,response_payload FROM integration_attempts WHERE integration='task.reassignment' AND task_id=?", [task.id])).rows[0]!
   const saved = JSON.parse(String(row.response_payload))
+  expect(saved.task.project_id).toBeNull()
+  expect(saved._authority.placement.projectId).toBe(projectId)
   const corruptions = [
     { ...saved, _authority: undefined },
     { ...saved, _authority: { ...saved._authority, principalId: "another-agent" } },

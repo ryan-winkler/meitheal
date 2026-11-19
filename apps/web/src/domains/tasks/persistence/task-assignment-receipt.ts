@@ -43,7 +43,7 @@ export async function readTaskAssignmentReceipt(db: Client, scope: BoardScope, e
         if (typeof project.area_id === "string") effectiveArea = project.area_id
       }
       return task && effectiveArea === placement.areaId && (task.project_id ?? null) === placement.projectId && task.assigned_to === saved.assigned_to && Number(task.version) === proof.taskVersion &&
-        task.area_id === snapshot.area_id && task.project_id === snapshot.project_id && await validateBoardPlacement(scope, reader, {
+        await validateBoardPlacement(scope, reader, {
           areaId: typeof task.area_id === "string" ? task.area_id : null, projectId: typeof task.project_id === "string" ? task.project_id : null,
         })
     }

@@ -39,13 +39,9 @@ export const GET: APIRoute = withBoardScope({ resource: "task", action: "read" }
     const selectedId = url.searchParams.get("selected")
     let projection
     if (areaId) {
-      const projects = (await hierarchy.findProjectsByArea(areaId)).sort((a, b) => a.id.localeCompare(b.id))
-      const remaining = projects.filter(project => !after || project.id.localeCompare(after) > 0)
-      const page = remaining.slice(0, 50)
-      const selected = selectedId ? projects.find(project => project.id === selectedId) : null
-      const choice = (project: typeof projects[number]) => ({ id: project.id, name: project.title, icon: project.icon, color: project.color })
-      projection = { items: page.map(choice), next_cursor: remaining.length > 50 ? page.at(-1)!.id : null,
-        ...(selectedId ? { selected: selected ? choice(selected) : null } : {}) }
+      const page = await hierarchy.findProjectPage(areaId, after, selectedId)
+      if (!page) return apiError("Project page unavailable", 404)
+      projection = page
     } else {
       const page = await hierarchy.findAreaPage(after)
       const selected = selectedId ? await hierarchy.findAreaById(selectedId) : null
