@@ -39,4 +39,4 @@ okf_version: "0.2"
 
 - [Documentation bundle](knowledge-bundle.md) - Scope and maintenance of the Meitheal documentation bundle.
 - [Runbooks and guides](kcs/index.md) - Browse user help, integration guides, and operational procedures.
-- [Decision records](decisions/index.md) - Browse architecture and product decisions.
+- [Architecture decision records (ADRs)](decisions/index.md) - Browse durable architectural, product, security, and policy decisions.
