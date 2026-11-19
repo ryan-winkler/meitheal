@@ -85,6 +85,50 @@ async function namedWorkspace(fixture: Fixture) {
   return { board, area, goal, project }
 }
 
+test("a named Board preserves its own Epic ticket, Project Area and keyboard swimlanes", async ({ boards }) => {
+  test.setTimeout(45_000)
+  const { page, app } = boards
+  const { board, area, project } = await namedWorkspace(boards)
+  const scoped = { ...boards, headers: { ...boards.headers, "x-meitheal-board-id": String(board.id) } }
+  const otherArea = await post(scoped, "/areas", { name: "Garden" })
+  const epic = await post(scoped, "/tasks", { title: "Restore the study", task_type: "epic", status: "complete" })
+  const child = await post(scoped, "/tasks", { title: "Grouping fixture study", parent_id: epic.id, project_id: project.id })
+  const other = await post(scoped, "/tasks", { title: "Grouping fixture garden", area_id: otherArea.id })
+  expect(epic.ticket_key).toMatch(/^[A-Z0-9]+-\d+$/)
+  expect(epic.ticket_key).not.toMatch(/^MTH-/)
+
+  const search = "Grouping fixture"
+  await page.goto(`${app}/boards/${board.id}?${new URLSearchParams({ search, groupBy: "epic" })}#kanban`)
+  await expect(page.locator("#kanban-shell")).toHaveAttribute("data-kanban-booted", "true")
+  const group = (key: string) => page.locator(`.swimlane-group[data-swimlane-type="${key}"]`).filter({ has: page.locator(".kanban-card") })
+  const epicGroup = group(`epic:${epic.id}`)
+  const childCard = page.locator(`.kanban-card[data-id="${child.id}"]`)
+  const otherCard = page.locator(`.kanban-card[data-id="${other.id}"]`)
+  const epicLabel = `${epic.title} (${epic.ticket_key})`
+  const heading = epicGroup.locator(".swimlane-header")
+  await expect(epicGroup.locator(".swimlane-label")).toHaveText(epicLabel)
+  await expect(epicGroup.locator(`.kanban-card[data-id="${child.id}"]`)).toBeVisible()
+  await heading.press("Enter")
+  await expect(heading).toBeFocused()
+  await expect(childCard).toBeHidden()
+  await expect(otherCard).toBeVisible()
+  await page.reload()
+  await expect(heading).toHaveAttribute("aria-expanded", "false")
+  await heading.press("Space")
+  await expect(childCard).toBeVisible()
+
+  const views = page.getByRole("navigation", { name: "Task views" })
+  await views.getByRole("link", { name: "Table", exact: true }).click()
+  await expect(page).toHaveURL(url => url.pathname.endsWith(`/boards/${board.id}`) && url.searchParams.get("search") === search)
+  await expect(page.locator(`.group-header-row[data-group-key="epic:${epic.id}"] .group-label`)).toHaveText(epicLabel)
+  await views.getByRole("link", { name: "Kanban", exact: true }).click()
+  await expect(childCard).toBeVisible()
+  await page.locator("#kanban-group-by-dropdown summary").click()
+  await page.getByRole("button", { name: "By Area", exact: true }).click()
+  await expect(group(area.id).locator(`.kanban-card[data-id="${child.id}"]`)).toBeVisible()
+  await expect(group(otherArea.id).locator(`.kanban-card[data-id="${other.id}"]`)).toBeVisible()
+})
+
 test("Household is a peer Board and every scoped workspace destination retains the selected Board and Project", async ({ boards }, info) => {
   test.setTimeout(90_000)
   const { page, app } = boards

@@ -63,7 +63,7 @@ export async function loadKanbanBoard(
     const cards = new Map((await repo.getKanbanCards(visibleIds, cutoff, reader)).map(task => [task.id, task]))
     const epicsByCard = new Map<string, { id: string; label: string }>()
     if (filters.groupBy === "epic" && visibleIds.length) {
-      const links = resolveTaskEpics(await repo.getHouseholdEpicLinks(reader))
+      const links = resolveTaskEpics(await repo.getBoardEpicLinks(reader))
       const labels = new Map<string, string>()
       for (const id of visibleIds) {
         const epic = links.get(id)

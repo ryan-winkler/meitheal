@@ -4,6 +4,7 @@ export interface TaskEpicLink {
   task_type: string | null
   title: string | null
   ticket_number: number | null
+  ticket_key?: string | null
 }
 
 /** Resolve the nearest Epic using only tasks available to the current Board read. */

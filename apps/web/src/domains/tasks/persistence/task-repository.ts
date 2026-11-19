@@ -716,9 +716,13 @@ export class TaskRepository {
   }
 
   /** Readable Epic ancestry can extend outside the current lane and filters. */
-  async getHouseholdEpicLinks(reader: Pick<Client, "execute">): Promise<TaskEpicLink[]> {
+  async getBoardEpicLinks(reader: Pick<Client, "execute">): Promise<TaskEpicLink[]> {
     const result = await this.readFromSnapshot(reader,
-      scopedTaskRead(this.scope, sourceSql("SELECT id, public_parent_id AS parent_id, task_type,\n              CASE WHEN task_type = 'epic' THEN title END AS title,\n              CASE WHEN task_type = 'epic' THEN ticket_number END AS ticket_number\n       FROM scoped_tasks AS tasks WHERE 1"), "select"),
+      scopedTaskRead(this.scope, sql`SELECT id, public_parent_id AS parent_id, task_type,
+              CASE WHEN task_type = 'epic' THEN title END AS title,
+              CASE WHEN task_type = 'epic' THEN ticket_number END AS ticket_number,
+              CASE WHEN task_type = 'epic' THEN ticket_ref END AS ticket_key
+       FROM scoped_tasks AS tasks WHERE 1`, "select"),
     )
     return result.rows as unknown as TaskEpicLink[]
   }
