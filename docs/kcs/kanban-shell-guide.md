@@ -63,8 +63,6 @@ The board remains usable when reaction counts are unavailable. A denied request 
 
 Each lane shows up to 25 cards. Its count includes every task matching the current area and filters. The range below the lane shows which cards are loaded. Use **Previous** or **Next** to page within that lane. Use **Filter by text** or the filter builder to find a task anywhere in the board, including other pages. Changing the area or filters returns the lanes to their first page.
 
-The browser can skip laying out Household cards outside the viewport and reuse measured card sizes during an in-place refresh.
-
 To move a task to another Board Group, open its **Details** and choose the destination in **Group**. When the save succeeds, the card appears in its new group after Details closes. If the destination group is collapsed, focus returns to its heading. If the board is filtered to the original group, the card leaves the results and the filter stays selected. A failed save restores the previous selection. Use the **Home Assistant Area** control in Details to edit the task's location when it is available.
 
 Open **Overdue** from Dashboard to filter tasks across every Kanban page. The board matches Dashboard’s due-date and completion rules.
@@ -161,6 +159,8 @@ Cards keep their full height in a busy lane. The lane scrolls instead of
 compressing the cards. At widths from 769 to 1024 CSS px the sidebar narrows to
 200 px, and the page content starts at the sidebar edge. Both read
 `--sidebar-width`, so a change to one width moves the other.
+
+The browser can skip laying out Household cards outside the viewport and reuse measured card sizes during an in-place refresh.
 
 An unreadable card assignment no longer interrupts grouping for the board. Check the assignment in Details if its group is unexpected. If an assignee group disappears after a refresh, keyboard focus returns to its workflow lane heading.
 
