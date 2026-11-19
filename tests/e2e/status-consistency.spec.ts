@@ -62,6 +62,18 @@ function allowsNoncanonicalStatus(filePath: string): boolean {
     SUPPORT_STATUS_FILES.has(path.relative(SRC_DIR, filePath))
 }
 
+// These exact references select the Home Assistant To-do integration and its confirmation storage.
+function isTodoIntegrationReference(relativePath: string, lines: string[], index: number): boolean {
+  const line = lines[index]?.trim()
+  if (relativePath === "domains/tasks/persistence/task-repository.ts") {
+    return line === 'const table = kind === "calendar" ? "calendar_confirmations" : kind === "todo" ? "todo_sync_confirmations" : "grocy_sync_confirmations"' ||
+      line === 'const column = kind === "calendar" ? "provider_event_id" : kind === "todo" ? "ha_todo_uid" : "grocy_entity_id"'
+  }
+  return relativePath === "domains/tasks/work-integration-settings.ts" && line === '"todo",' &&
+    lines[index - 3]?.trim() === "const coreIntegrations = new Set([" && lines[index - 2]?.trim() === '"calendar",' &&
+    lines[index - 1]?.trim() === '"calendar_reminder",' && lines[index + 1]?.trim() === '"ha_events",'
+}
+
 // Lines that are allowed to reference legacy statuses (comments, alias maps)
 const ALLOWED_LINE_PATTERNS = [
   /^\s*\/\//, // Comments
@@ -108,6 +120,7 @@ test.describe("Status Consistency — No Legacy Leaks", () => {
     for (const filePath of files) {
       if (allowsNoncanonicalStatus(filePath)) continue
 
+      const relPath = path.relative(SRC_DIR, filePath).split(path.sep).join("/")
       const content = fs.readFileSync(filePath, "utf-8");
       const lines = content.split("\n");
 
@@ -118,8 +131,7 @@ test.describe("Status Consistency — No Legacy Leaks", () => {
         if (ALLOWED_LINE_PATTERNS.some((p) => p.test(line))) continue;
 
         for (const [pattern, desc] of LEGACY_PATTERNS) {
-          if (pattern.test(line)) {
-            const relPath = path.relative(SRC_DIR, filePath);
+          if (pattern.test(line) && !isTodoIntegrationReference(relPath, lines, i)) {
             violations.push(`${relPath}:${i + 1} — ${desc}: ${line.trim().slice(0, 80)}`);
           }
         }
