@@ -1,22 +1,25 @@
-import { expect, test } from "@playwright/test"
-import { currentBoardWriteHeaders } from "../helpers/current-board-http"
+import { expect } from "@playwright/test"
+import { test } from "../helpers/stored-assignee-fixture"
 import { deferred } from "./_helpers"
 
 test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the disposable Meitheal fixture")
 test.use({ serviceWorkers: "block" })
 
-test("a slow assignee directory leaves the ticket editable and ignores a superseded response", async ({ page, request }) => {
+test("a slow assignee directory leaves the ticket editable and ignores a superseded response", async ({
+  assigneeFixture: { page, request, headers, setStoredAssignee },
+}) => {
   const firstAssignee = "ha_11111111111111111111111111111111"
   const secondAssignee = "ha_22222222222222222222222222222222"
-  const headers = await currentBoardWriteHeaders(request, "household", {})
   const first = await request.post("/api/tasks", {
-    headers, data: { title: "First assigned ticket", description: "Existing description", assigned_to: firstAssignee },
+    headers, data: { title: "First assigned ticket", description: "Existing description" },
   })
-  const second = await request.post("/api/tasks", { headers, data: { title: "Second assigned ticket", assigned_to: secondAssignee } })
+  const second = await request.post("/api/tasks", { headers, data: { title: "Second assigned ticket" } })
   expect(first.status()).toBe(201)
   expect(second.status()).toBe(201)
   const { id } = await first.json()
   const { id: other } = await second.json()
+  setStoredAssignee(id, firstAssignee)
+  setStoredAssignee(other, secondAssignee)
 
   const heldDirectory = deferred<void>()
   const staleResponse = deferred<void>()

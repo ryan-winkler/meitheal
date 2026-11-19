@@ -208,10 +208,18 @@ for (const [action, quadrantName, urgency, importance, field, value] of [
   ["assign-q3", "delegate", 5, 1, "assigned_to", "Eisenhower fixture assignee"],
 ] as const) {
   test(`${action} distinguishes a failed batch from a mixed result`, async ({ page, request, baseURL }) => {
+    test.skip(action === "assign-q3" && process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires a disposable custom assignee")
     const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
     const ids: string[] = []
     let rejectAll = true
+    let assigneeId: string | undefined
     try {
+      if (action === "assign-q3") {
+        const response = await request.post("/api/users/custom", { data: { name: value } })
+        expect(response.status(), await response.text()).toBe(201)
+        assigneeId = (await response.json()).id
+        expect(assigneeId).toMatch(/^custom_/)
+      }
       for (const result of ["accepted", "rejected"]) {
         const response = await request.post("/api/tasks", { headers, data: {
           title: `${action} ${result}`, urgency, importance,
@@ -247,12 +255,16 @@ for (const [action, quadrantName, urgency, importance, field, value] of [
       await expect(page.getByText("Saved changes for 1 of 2 tasks. Check the remaining tasks before retrying.")).toBeVisible()
       await expect(quadrant.locator(`.tli[data-id="${accepted}"]`)).toBeVisible()
       await expect(quadrant.locator(`.tli[data-id="${rejected}"]`)).toBeVisible()
-      expect(await (await request.get(`/api/tasks/${accepted}`)).json()).toMatchObject({ [field]: value })
+      expect(await (await request.get(`/api/tasks/${accepted}`)).json()).toMatchObject({ [field]: assigneeId ?? value })
       expect(await (await request.get(`/api/tasks/${rejected}`)).json()).toMatchObject({ [field]: null })
     } finally {
       for (const id of ids) {
         const removed = await request.delete(`/api/tasks/${id}`, { headers, data: {} })
         expect(removed.status()).toBe(204)
+      }
+      if (assigneeId) {
+        const removed = await request.delete("/api/users/custom", { headers, params: { id: assigneeId }, data: {} })
+        expect(removed.status(), await removed.text()).toBe(200)
       }
     }
   })

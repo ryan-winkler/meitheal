@@ -1,5 +1,6 @@
 import { currentBoardWriteHeaders } from "../helpers/current-board-http"
-import { expect, test } from "@playwright/test"
+import { expect } from "@playwright/test"
+import { test } from "../helpers/stored-assignee-fixture"
 import { shouldSkipBrowserSpecs } from "./_helpers"
 
 test.describe("Tasks Shell (Kanban)", () => {
@@ -87,18 +88,21 @@ test.describe("Tasks Shell (Kanban)", () => {
     }
   })
 
-  test("retains the assigned Home Assistant identity when its directory cannot verify it", async ({ page, request, baseURL }) => {
+  test("retains the assigned Home Assistant identity when its directory cannot verify it", async ({
+    assigneeFixture: { page, request, headers, setStoredAssignee },
+  }) => {
+    test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the disposable Meitheal fixture")
     const idFromHa = "ha_0123456789abcdef0123456789abcdef"
     await page.addInitScript(() => {
       localStorage.setItem("meitheal-theme", "knight-rider")
       localStorage.setItem("meitheal-accent-color", "#000000")
     })
-    const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
     const response = await request.post("/api/tasks", { headers, data: {
-      title: "Check assignee availability", assigned_to: idFromHa,
+      title: "Check assignee availability",
     } })
     expect(response.status()).toBe(201)
     const { id } = await response.json()
+    setStoredAssignee(id, idFromHa)
     const olderUser = { id: "ha_old_account", name: "A cached Home Assistant user" }
     const currentUser = { id: idFromHa, name: "Home Assistant housemate" }
     const localUser = { id: "local_account", name: "Custom assignee" }
@@ -117,7 +121,7 @@ test.describe("Tasks Shell (Kanban)", () => {
     const card = page.locator(`.kanban-card[data-id="${id}"]`)
     const selected = page.locator("#td-assigned-to option:checked")
     try {
-      await page.reload()
+      await page.goto("/tasks")
       await expect(card.locator("[data-task-assignee]")).toHaveText("Home Assistant assignee not verified")
       await card.locator(".card-open-btn").click()
       await expect(selected).toHaveText("Home Assistant assignee not verified")
