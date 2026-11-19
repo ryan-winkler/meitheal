@@ -48,7 +48,24 @@ Meitheal sits naturally between **Home Assistant automations** and **everyday ho
 | **Kanban & Promoted Cards** | **Look & Feel & Theme Matching** |
 | ![Meitheal Kanban board showing Backlog, Todo, In Progress, and Done columns with color-tinted Promoted cards](docs/screenshots/kanban.png) | ![Meitheal Look and Feel Settings showing Emerald Isle, Match Home Assistant theme toggle, accent swatches, and appearance controls](docs/screenshots/settings.png) |
 
-Additional views include structured [Table planning](docs/screenshots/table.png), month-grid [Calendar scheduling with day agenda drawer](docs/screenshots/calendar.png), **Timeline (Gantt)** bars, distraction-free **Focus Mode**, and Urgent-vs-Important **Eisenhower** prioritization.
+| **Table Planning** | **Calendar & Day Agenda** |
+| ![Meitheal Table view with sortable columns for status, priority, due date, and assignee](docs/screenshots/table.png) | ![Meitheal Calendar month grid with the day agenda drawer open](docs/screenshots/calendar.png) |
+| **Timeline (Gantt)** | **Focus Mode** |
+| ![Meitheal Timeline view showing multi-day tasks as Gantt bars](docs/screenshots/timeline.png) | ![Meitheal task detail in Focus Mode with checklist and RICE scoring](docs/screenshots/focus-mode.png) |
+| **Eisenhower Matrix** | **Today on Mobile** |
+| ![Meitheal Eisenhower matrix sorting tasks into Do First, Schedule, Delegate, and Eliminate](docs/screenshots/eisenhower.png) | <img src="docs/screenshots/mobile-today.png" alt="Meitheal Today view on a phone-sized screen" width="260"> |
+
+## See It in Action
+
+| Quick add and check off in Today | One list, every view |
+|---|---|
+| ![Typing a task with natural-language date and priority in Today, checking off a task, then opening the Board](docs/screenshots/demo-today-quick-add.gif) | ![Dragging a Kanban card, then switching to Table, Calendar, and Timeline views](docs/screenshots/demo-board-views.gif) |
+| **Search to Focus Mode** | **Home Assistant creates a task** |
+| ![Opening Search Hub with Ctrl+K, finding a task, and expanding it into Focus Mode](docs/screenshots/demo-search-focus.gif) | ![A Home Assistant automation creates a task that appears on the Board and moves into Do First on the Eisenhower matrix](docs/screenshots/demo-home-assistant.gif) |
+| **Look & Feel themes** | |
+| ![Switching between Emerald Isle, Knight Rider, and Light themes and changing the accent color](docs/screenshots/demo-look-and-feel.gif) | |
+
+All screenshots and animations use invented household data.
 
 ## Ubiquitous Language
 
