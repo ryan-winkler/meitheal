@@ -132,33 +132,42 @@ test.describe("Responsive Navigation", () => {
     expect(await bottomNav.locator(".shortcut-badge").count()).toBe(0);
   });
 
-  test("Mobile: Calendar tab targets the consolidated task calendar view", async ({ page }) => {
-    await page.setViewportSize({ width: 375, height: 812 });
+  test("Mobile: Calendar and Tasks tabs identify the active view on the Household Board", async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 812 })
     await page.goto("/", { waitUntil: "domcontentloaded" })
 
-    const calendarTab = page.locator('#mobile-tab-bar [data-page="calendar"]');
-    await expect(calendarTab).toHaveAttribute("href", "/boards/household?view=calendar#calendar");
-
-    await calendarTab.click();
-    await expect(page).toHaveURL(/\/boards\/household\?view=calendar#calendar$/);
-    await expect(calendarTab).toHaveClass(/active/);
-    await expect(calendarTab).toHaveAttribute("aria-current", "page");
-  });
-
-  test("Mobile: direct Calendar view is current before hash normalization", async ({ page }) => {
-    await page.setViewportSize({ width: 375, height: 812 })
-    // Block deferred scripts so the document keeps its incoming query URL.
-    await page.route("**/*", route =>
-      route.request().resourceType() === "script" ? route.abort() : route.continue(),
-    )
-    await page.goto("/tasks?view=calendar")
-
     const bottomNav = page.getByRole("navigation", { name: "Mobile navigation" })
-    await expect(page).toHaveURL(/\/tasks\?view=calendar$/)
-    await expect(page.locator("#tasks-view-calendar")).toBeVisible()
+    const calendarTab = bottomNav.locator('[data-page="calendar"]')
+    await expect(calendarTab).toHaveAttribute("href", "/boards/household?view=calendar#calendar")
+    await calendarTab.click()
+    await expect(page).toHaveURL("/boards/household?view=calendar#calendar")
+    await expect(calendarTab).toHaveClass(/active/)
+    await expect(calendarTab).toHaveAttribute("aria-current", "page")
     await expect(bottomNav.locator('[aria-current="page"]')).toHaveCount(1)
-    await expect(bottomNav.locator('[data-page="calendar"]')).toHaveAttribute("aria-current", "page")
+
+    const tasksTab = bottomNav.locator('[data-page="tasks"]')
+    await tasksTab.click()
+    await expect(page).toHaveURL("/boards/household#kanban")
+    await expect(tasksTab).toHaveAttribute("aria-current", "page")
+    await expect(calendarTab).not.toHaveAttribute("aria-current", "page")
   })
+
+  for (const calendarPath of ["/tasks?view=calendar", "/boards/household?view=calendar"]) {
+    test(`Mobile: ${calendarPath} is current before hash normalization`, async ({ page }) => {
+      await page.setViewportSize({ width: 375, height: 812 })
+      // Block deferred scripts so the document keeps its incoming query URL.
+      await page.route("**/*", route =>
+        route.request().resourceType() === "script" ? route.abort() : route.continue(),
+      )
+      await page.goto(calendarPath)
+
+      const bottomNav = page.getByRole("navigation", { name: "Mobile navigation" })
+      await expect(page).toHaveURL(calendarPath)
+      await expect(page.locator("#tasks-view-calendar")).toBeVisible()
+      await expect(bottomNav.locator('[aria-current="page"]')).toHaveCount(1)
+      await expect(bottomNav.locator('[data-page="calendar"]')).toHaveAttribute("aria-current", "page")
+    })
+  }
 
   test("Tasks view links use native keyboard order and identify the current page", async ({ page }) => {
     await page.goto("/tasks?status=active#kanban")
