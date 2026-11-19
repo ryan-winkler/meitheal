@@ -25,10 +25,13 @@ test.describe("Connected Calendar and paged agenda", () => {
     await during.press("Enter")
     await expect(page.getByRole("heading", { name: "Connected Calendar Events" })).toBeVisible()
     await expect(page.locator("#day-drawer-events")).toContainText("Household calendar preview")
-    const event = page.locator("#day-drawer-events .day-drawer-item")
-    const heading = await event.locator(".day-drawer-item-title").boundingBox()
-    const caption = await event.locator(".day-drawer-item-meta").boundingBox()
-    expect(caption!.y).toBeGreaterThanOrEqual(heading!.y + heading!.height)
+    const event = page.locator("#day-drawer-events .day-drawer-item").filter({ hasText: "Household calendar preview" })
+    await expect.poll(() => event.evaluate(item => {
+      const heading = item.querySelector(".day-drawer-item-title")
+      const caption = item.querySelector(".day-drawer-item-meta")
+      return Boolean(heading?.getClientRects().length && caption?.getClientRects().length &&
+        caption.getBoundingClientRect().top >= heading.getBoundingClientRect().bottom)
+    })).toBe(true)
     await page.keyboard.press("Escape")
     await types.getByRole("button", { name: "Events", exact: true }).click()
     await expect(during.getByText("Household calendar preview")).toHaveCount(0)

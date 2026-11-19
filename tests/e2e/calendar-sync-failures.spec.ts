@@ -112,9 +112,22 @@ test("five actual failed background merges reach backoff once each, and manual r
   await new Promise((resolve) => setTimeout(resolve, 100))
   expect((await db.execute("SELECT COUNT(*) AS count FROM tasks")).rows[0]?.count).toBe(0)
   expect((await getCalendarSyncStatus(fixture.scope)).lastSyncError).toMatch(/incomplete|failed/)
-  const response = await requestSync()
-  expect(response.status).toBe(200)
-  expect(await response.json()).toMatchObject({ ok: true, created: 1, total: 1, failures: [] })
+  expect(await attempts()).toBe(5)
+  // A 40 ms fixture tick can still hold the binding lock while checking backoff.
+  await expect.poll(async () => {
+    const response = await requestSync()
+    const result = await response.json()
+    if (response.status === 502 && result.failures?.[0]?.error === "sync already running") {
+      expect(result).toMatchObject({
+        ok: false, partial: false, created: 0, updated: 0, total: 0,
+        failures: [{ entity_id: fixture.binding.id, error: "sync already running" }]
+      })
+      return "busy"
+    }
+    expect(response.status, JSON.stringify(result)).toBe(200)
+    expect(result).toMatchObject({ ok: true, created: 1, total: 1, failures: [] })
+    return "recovered"
+  }).toBe("recovered")
   expect((await getCalendarSyncStatus(fixture.scope)).lastSyncError).toBeNull()
   expect((await db.execute("SELECT title, ticket_number FROM tasks")).rows).toEqual([
     { title: "blocked-import", ticket_number: 1 }

@@ -49,15 +49,28 @@ test("due date filters rows and total before pagination", async ({ request }) =>
   }
 })
 
-test("native task statuses normalize aliases and preserve custom names", async ({ request }) => {
+test("native task statuses normalize aliases and preserve configured workflow names", async ({ request }) => {
   const headers = await currentBoardWriteHeaders(request, "household", {})
+  const customStatuses = ["awaiting_parts", "constructor", "__proto__"]
+  for (const status of customStatuses) {
+    const unconfigured = await request.post("/api/tasks", { headers, data: { title: `Unconfigured ${status}`, status } })
+    expect(unconfigured.status(), await unconfigured.text()).toBe(400)
+    expect(await unconfigured.json()).toMatchObject({ errorCode: "invalid" })
+  }
+
+  const lane = await request.post("/api/lanes", { headers, data: { label: "Custom workflow" } })
+  expect(lane.status(), await lane.text()).toBe(201)
+  const { id } = await lane.json() as { id: string }
+  const configured = await request.put(`/api/lanes/${id}`, {
+    headers, data: { includes: JSON.stringify(customStatuses) },
+  })
+  expect(configured.status(), await configured.text()).toBe(200)
+
   const statuses = [
     { input: "todo", expected: "pending" },
     { input: "in_progress", expected: "active" },
     { input: "done", expected: "complete" },
-    { input: "awaiting_parts", expected: "awaiting_parts" },
-    { input: "constructor", expected: "constructor" },
-    { input: "__proto__", expected: "__proto__" },
+    ...customStatuses.map(status => ({ input: status, expected: status })),
   ]
 
   for (const { input, expected } of statuses) {
