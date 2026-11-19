@@ -231,3 +231,25 @@ test("a real account revocation removes the loaded private Project projection", 
     await expect(page.locator(`[data-named-board-shortcut="${boardId}"]`)).toHaveCount(0)
   } finally { await owner.close() }
 })
+
+
+test("an empty successful retry returns focus to the existing disclosure", async () => {
+  await openProjects()
+  await expect(links()).toHaveCount(30)
+  let fail = true
+  await page.route(url => projectRequest(url.href) && url.searchParams.has("after"), async route => {
+    if (fail) {
+      fail = false
+      await route.fulfill({ status: 503, contentType: "application/json", body: "{}" })
+    } else {
+      await route.fulfill({ contentType: "application/json", body: JSON.stringify({ items: [], next_cursor: null }) })
+    }
+  })
+  await pager().press("Enter")
+  const retry = projects().getByRole("button", { name: "Try loading Projects again", exact: true })
+  await expect(retry).toBeFocused()
+  await retry.press("Enter")
+  await expect(retry).toHaveCount(0)
+  await expect(links()).toHaveCount(30)
+  await expect(page.getByRole("button", { name: "Projects in Workbench", exact: true })).toBeFocused()
+})

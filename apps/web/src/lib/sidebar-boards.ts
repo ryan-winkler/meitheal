@@ -164,7 +164,7 @@ export function bindSidebarBoards(signal: AbortSignal) {
       if (data.next_cursor || !groups.childElementCount) {
         addStatus(data.next_cursor ? `Show more ${areaId ? projectLabel : areaLabel}` : `No ${areaId ? projectLabel : areaLabel} yet`, data.next_cursor)
       }
-      if (moveFocus) (firstNewLink ?? groups.querySelector<HTMLButtonElement>(":scope > [data-board-group-status] button"))?.focus()
+      if (moveFocus) (firstNewLink ?? groups.querySelector<HTMLButtonElement>(":scope > [data-board-group-status] button") ?? row.querySelector<HTMLButtonElement>(`button[aria-controls="${groups.id}"]`))?.focus()
     } catch {
       if (!request.signal.aborted && !signal.aborted && row.isConnected && !groups.hidden) {
         const moveFocus = previousStatus?.contains(document.activeElement)

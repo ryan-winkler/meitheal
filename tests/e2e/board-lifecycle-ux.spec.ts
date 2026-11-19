@@ -18,13 +18,13 @@ const test = base.extend<{ boards: { page: Page; member: BrowserContext; admin: 
       const [fixture] = await once(child, "message", { signal: AbortSignal.timeout(10_000) })
       const origin = `https://127.0.0.1:${fixture.port}`
       browser = await launchPinBrowser(work)
-      const contexts = await Promise.all(["member", "admin"].map(async user => {
+      const createContext = async (user: "member" | "admin") => {
         const context = await browser!.newContext({ ignoreHTTPSErrors: true, extraHTTPHeaders: {}, serviceWorkers: "block" })
         context.setDefaultTimeout(6_000)
         await context.addCookies([{ name: "feedback-fixture", value: user, url: origin }])
         return context
-      }))
-      const [member, admin] = contexts
+      }
+      const [member, admin] = await Promise.all([createContext("member"), createContext("admin")])
       await use({ page: await member.newPage(), member, admin, app: origin + fixture.configuredPath, origin, work })
     } finally {
       await browser?.close()
@@ -263,3 +263,18 @@ for (const mode of ["offline", "revoked"] as const) {
     if (target !== owner) await target.close()
   })
 }
+
+test("a markerless pre-grant restore cannot inherit feature access or bootstrap grants", async ({ boards }) => {
+  const { member, admin, app, origin, work } = boards
+  const directory = await member.request.get(app + "/api/boards")
+  const database = new DatabaseSync(join(work, "pins.db"))
+  try { database.exec("DELETE FROM board_access_epoch") } finally { database.close() }
+  await rm(join(work, "meitheal-board-grants.json"))
+  expect((await admin.request.get(app + "/api/organization-features")).status()).toBe(503)
+  // Areas normally inherit Everyone when no explicit policy exists.
+  expect((await member.request.get(app + "/api/areas")).status()).toBe(404)
+  expect((await member.request.post(app + "/api/boards", {
+    headers: { origin, "x-meitheal-board-session": directory.headers()["x-meitheal-board-session"]! },
+    data: { name: "Cannot reopen restored permissions" },
+  })).status()).toBe(404)
+})

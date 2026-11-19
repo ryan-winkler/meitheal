@@ -117,8 +117,9 @@ export async function changeBoardGrants<T>(
     if (revision) {
       if (!await publishCommittedMarker(path, revision)) return { status: "locked" }
     } else {
-      const { rows } = await transaction.execute("SELECT 1 FROM task_boards WHERE id <> 'household' LIMIT 1")
-      if (rows.length || await readBoardGrantRevision(path)) return { status: "locked" }
+      // Absence of both epoch and marker also describes a pre-grant restore.
+      // Only independently established current custody can authorize a mutation.
+      return { status: "locked" }
     }
     const result = await change(transaction, revision)
     if ("unchanged" in result) return { status: "unchanged", result: result.unchanged }

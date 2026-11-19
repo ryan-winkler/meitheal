@@ -614,4 +614,14 @@ Use Supervisor App backups with the separately retained [current operator checkp
 
 Verify `planning-navigation.spec.ts`, `board-project-pagination.spec.ts`, `board-lifecycle-ux.spec.ts` and `board-organizer.spec.ts` against a fresh build. Area arrow keys must select only local panels; the separate Tasks link opens the scoped Kanban. Check Settings at 320 and 375 pixels with default and long personal labels. For Project pagination, hold a real request, fail the next page, retry the same cursor and preserve loaded choices. Confirm loading/error announcements, current-pager focus handoff, no duplicate request and no focus theft after leaving the pager. A 401, 403, 404 or actual membership revocation must clear named shortcuts.
 
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:053970440045c0db2ecf17c8aeb4f43158cb5010394ed35672509fb827c87af4 -->
+
 Delete Board must use the danger confirmation with initial Cancel focus. Native keyboard cancellation must send no lifecycle mutation and return focus to its trigger. While that dialog is open, go offline and revoke a real test owner in a separate session. Require immediate private-dialog removal, no resumed write from its retained old button, preserved public recovery focus, and a fresh working confirmation after revalidation. Retire two disposable Boards and identify each restore action by its Board name. Verify personalized and Irish Area creation labels, and an account without Areas must retain Unfiled Projects without instructions to create an unavailable Area.
+
+### Ambiguous enrollment custody
+
+An epoch-free, markerless database cannot distinguish fresh enrollment from a pre-grant restore. Organization policy reads (including inherited feature defaults) and grant-fenced mutations, including Household lifecycle and planning retirement, stay locked. Trusted runtime evidence is a valid UUID revision in `board_access_epoch` matching the private excluded published marker, or its exact committed pending journal. Checkpoint recovery additionally requires independent current continuity, checksums, the same installation and App slug. Database contents, absent files, timestamps and administrator identity alone are not enrollment evidence. There is currently no supported first-enrollment procedure for an epoch-free database; a named owner-approved procedure must establish current custody before access can open. This intentionally removes implicit empty-database enrollment; valid current custody continues to work. Do not create a Board or change a policy to bypass the lock.
+
+<!-- /coderabbit-ai-generated:v1 -->

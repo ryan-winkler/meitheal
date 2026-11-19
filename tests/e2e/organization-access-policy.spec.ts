@@ -27,7 +27,7 @@ test("access policy snapshots fail closed when restored separately from the gran
       .toEqual([{ due_date: "2026-11-17" }])
 
     const feature = { scope: "feature", id: "goals", boardId: "" } as const
-    expect(await repository.policies("feature", "")).toEqual({ status: "current", policies: [] })
+    expect(await repository.policies("feature", "")).toEqual({ status: "locked" })
     const orphanRevision = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
     await db.execute({ sql: "INSERT INTO board_access_epoch (singleton, revision) VALUES (1, ?)", args: [orphanRevision] })
     expect(await repository.policies("feature", "")).toEqual({ status: "locked" })
@@ -44,25 +44,27 @@ test("access policy snapshots fail closed when restored separately from the gran
     await writeFile(marker, JSON.stringify({ epoch: orphanRevision }))
     expect(await repository.policies("feature", "")).toEqual({ status: "locked" })
     await rm(marker)
-    expect(await repository.policies("feature", "")).toEqual({ status: "current", policies: [] })
+    expect(await repository.policies("feature", "")).toEqual({ status: "locked" })
 
-    const racingClient = new Proxy(db, {
-      get(target, property, receiver) {
-        if (property !== "execute") return Reflect.get(target, property, receiver)
-        return async (...args: Parameters<typeof db.execute>) => {
-          const snapshot = await db.execute(...args)
-          const statement: unknown = args[0]
-          if (statement && typeof statement === "object" && "sql" in statement &&
-              typeof statement.sql === "string" && statement.sql.includes("organization_access_policies")) {
-            expect(await repository.change(feature, null, { audience: "selected", users: ["alex", "blake", "alex"] }))
-              .toMatchObject({ status: "committed", result: "saved" })
-          }
-          return snapshot
-        }
-      },
-    })
-    // Publication after the empty SQLite snapshot must not return inherited access.
-    expect(await new OrganizationAccessRepository(racingClient, marker).policies("feature", "")).toEqual({ status: "locked" })
+    // A markerless pre-grant restore cannot authorize a first policy or Household mutation.
+    expect(await repository.change(feature, null, { audience: "nobody", users: [] }))
+      .toEqual({ status: "locked" })
+    const { NamedBoardRepository } = await import("../../apps/web/src/domains/tasks/persistence/named-board-repository")
+    expect(await new NamedBoardRepository(db, marker).changeLifecycle({ kind: "ha_user", id: "owner" }, "household", "retired", 1, true))
+      .toEqual({ status: "locked" })
+
+    expect(await new NamedBoardRepository(db, marker).create("owner", "Cannot bootstrap"))
+      .toEqual({ status: "locked" })
+    const { HierarchyRepository } = await import("../../apps/web/src/domains/tasks/persistence/hierarchy-repository")
+    await expect(new HierarchyRepository(db, marker).deleteArea("restored-area"))
+      .rejects.toThrow("Named Board access is temporarily locked")
+
+    // Synthetic independently current custody; never derive production evidence from a restore.
+    await db.execute({ sql: "INSERT INTO board_access_epoch (singleton, revision) VALUES (1, ?)", args: [orphanRevision] })
+    await writeFile(marker, JSON.stringify({ epoch: orphanRevision }))
+    expect(await repository.policies("feature", "")).toEqual({ status: "current", policies: [] })
+    expect(await repository.change(feature, null, { audience: "selected", users: ["alex", "blake", "alex"] }))
+      .toMatchObject({ status: "committed", result: "saved" })
     const visible = await repository.policies("feature", "")
     expect(visible).toMatchObject({ status: "current", policies: [{ scope: feature, audience: "selected", users: ["alex", "blake"] }] })
     expect(await repository.change(feature, null, { audience: "nobody", users: [] }))

@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises"
+import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { expect, test } from "@playwright/test"
@@ -27,6 +27,9 @@ test("named sidebar Project pages stay inside their Board and Area, include sele
     await ensureSchema()
     const db = getPersistenceClient()
     const marker = join(folder, "grants.json")
+    const revision = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    await db.execute({ sql: "INSERT INTO board_access_epoch (singleton, revision) VALUES (1, ?)", args: [revision] })
+    await writeFile(marker, JSON.stringify({ epoch: revision }), { mode: 0o600 })
     const boards = new NamedBoardRepository(db, marker)
     const created = await boards.create("owner", "Workshop")
     if (created.status !== "committed") throw new Error("Expected a new Board")
