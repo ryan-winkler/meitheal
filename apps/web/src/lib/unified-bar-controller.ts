@@ -136,7 +136,7 @@ export function initUnifiedBarNewTaskButton({
   if (!button) return
 
   pageLifecycle.on(button, "click", () => {
-    if (barId === "dashboard-bar" && openWorkspaceQuickAdd(button)) return
+    if (openWorkspaceQuickAdd(button)) return
     if (typeof window.openNewTaskModal === "function") {
       window.openNewTaskModal()
       return

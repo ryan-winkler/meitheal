@@ -15,6 +15,10 @@ test.describe("workspace setup", () => {
     await page.keyboard.press("Escape")
     await expect(dialog).toBeHidden()
     await expect(skip).toBeFocused()
+    await skip.click()
+    await dialog.click({ position: { x: 4, y: 4 } })
+    await expect(dialog).toBeHidden()
+    await expect(skip).toBeFocused()
 
     await page.getByRole("combobox", { name: "Theme" }).selectOption("dark")
     await skip.click()
@@ -37,6 +41,14 @@ test.describe("workspace setup", () => {
 
     await page.locator("#dashboard-bar-new-task").click()
     const quick = page.getByRole("dialog", { name: "Quick Add" })
+    await expect(quick.getByRole("textbox")).toBeFocused()
+    const title = "First setup task " + Date.now()
+    await quick.getByRole("textbox").fill(title)
+    await quick.getByRole("button", { name: "Add task", exact: true }).click()
+    await expect(page.locator("#task-list")).toContainText(title)
+
+    await page.goto("/tasks?view=kanban")
+    await page.locator("#kanban-bar-new-task").click()
     await expect(quick.getByRole("textbox")).toBeFocused()
     await quick.getByRole("textbox").fill("Remember the groceries")
     await quick.getByRole("button", { name: "Open full task form" }).click()
