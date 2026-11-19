@@ -10,6 +10,7 @@ import { setTimeout as sleep } from "node:timers/promises"
 import { fileURLToPath } from "node:url"
 import AxeBuilder from "@axe-core/playwright"
 import { expect, test as base, type APIRequestContext } from "@playwright/test"
+import { readScopedNavigation } from "./_helpers"
 
 const web = fileURLToPath(new URL("../../apps/web", import.meta.url))
 const fixture = fileURLToPath(new URL("../scripts/feedback-ingress-fixture.mjs", import.meta.url))
@@ -910,8 +911,7 @@ test("a Settings section chosen after a search jump is remembered inside ingress
   await expect(page.locator("#theme-select")).toBeFocused()
   await page.locator('[data-settings-nav="navigation-settings"]').click()
   await expect(page).toHaveURL(/\/settings#navigation-settings$/)
-  const saved = await page.evaluate(() => JSON.parse(sessionStorage.getItem("meitheal-navigation-state") ?? "null"))
-  expect(saved).toMatchObject({ path: "/settings#navigation-settings" })
+  expect(await readScopedNavigation(page)).toMatchObject({ path: "/settings#navigation-settings" })
 })
 
 test("ingress Today keeps refreshed completion links in the App", async ({ page, context }) => {

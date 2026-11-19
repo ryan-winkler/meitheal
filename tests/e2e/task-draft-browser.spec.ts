@@ -258,23 +258,14 @@ test("shopping, custom fields and files respect the saved snapshot boundary", as
   })
 })
 
-test("a bound draft is withdrawn during real history restoration until the account is verified", async () => {
+test("history opens a fresh composer and verifies the account before exposing its saved draft", async () => {
   test.skip(!existsSync(process.env.MEITHEAL_BFCACHE_CHROMIUM ?? chromium.executablePath()), "Requires full Chromium with history cache support")
   await withBrowser(async (browser, origin, prefix) => {
     const page = await ownerPage(browser, origin, "member")
     const draftPath = origin + prefix + "/api/task-drafts"
-    const cdp = await page.context().newCDPSession(page)
-    await cdp.send("Page.enable")
-    let historyDiagnostic: unknown
-    cdp.on("Page.backForwardCacheNotUsed", event => { historyDiagnostic = event.notRestoredExplanationsTree })
     await page.route(/\/api\/sse(?:[/?]|$)/, route => route.fulfill({ status: 204 }))
-    await page.addInitScript(() => {
-      window.addEventListener("pageshow", event => {
-        if (event.persisted) document.documentElement.dataset.draftHistoryRestored = "true"
-      })
-    })
-    // Today is served with no-store. Exercise restoration from a cache-eligible composer host.
-    await page.goto(origin + prefix + "/tasks")
+    const response = await page.goto(origin + prefix + "/tasks")
+    expect(response?.headers()["cache-control"]).toBe("private, no-store")
     await openCapture(page)
     const title = page.locator("#new-task-title-input")
     await title.fill("History private sentinel")
@@ -282,6 +273,7 @@ test("a bound draft is withdrawn during real history restoration until the accou
     await draftAction(page, "Save draft").click()
     await expect(page.locator("#nt-draft-status")).toHaveText("Draft saved.")
     await title.fill("Unsaved private edit")
+    await page.locator("html").evaluate(root => { root.dataset.previousCapture = "true" })
     await page.goto(origin + prefix + "/fixture")
 
     let releaseHead = () => {}
@@ -296,22 +288,21 @@ test("a bound draft is withdrawn during real history restoration until the accou
     })
     try {
       await page.goBack({ waitUntil: "commit" })
-      try {
-        await expect(page.locator("html")).toHaveAttribute("data-draft-history-restored", "true")
-      } catch (error) {
-        console.error(JSON.stringify({ historyDiagnostic, navigation: await page.evaluate(() =>
-          performance.getEntriesByType("navigation").map(entry => entry.toJSON())) }))
-        throw error
-      }
+      await expect(page).toHaveURL(/\/tasks(?:#kanban)?$/)
+      await expect(page.locator("html")).not.toHaveAttribute("data-previous-capture", "true")
+      await expect(title).toBeHidden()
+      await openCapture(page)
+      await expect(title).toHaveValue("")
+      await draftAction(page, "Draft").click()
       await expect.poll(() => headStarted).toBe(true)
       await expect(title).toHaveValue("")
-      await expect(draftAction(page, "Publish draft")).toBeDisabled()
+      await expect(draftAction(page, "Resume draft")).toBeHidden()
+      await expect(draftAction(page, "Publish draft")).toBeHidden()
     } finally {
       releaseHead()
     }
-    await expect(draftAction(page, "Reload saved draft")).toBeVisible()
-    await draftAction(page, "Reload saved draft").click()
-    await draftAction(page, "Confirm").click()
+    await expect(draftAction(page, "Resume draft")).toBeVisible()
+    await draftAction(page, "Resume draft").click()
     await expect(title).toHaveValue("History private sentinel")
     await expect(draftAction(page, "Publish draft")).toBeEnabled()
   }, true)

@@ -75,7 +75,7 @@ export function startServer() {
         }, (error, stdout, stderr) => resolve({ code: error ? error.code : 0, stdout, stderr }))
       })
       expect(result.code, result.stderr).toBe(failure ? 1 : 0)
-      if (failure) expect(result.stderr).toContain("Generated client assets too large: 2 bytes > 1")
+      if (failure) expect(result.stderr).toContain("Common generated client assets too large: 2 bytes > 1")
       pid = Number(await readFile(pidFile, "utf8"))
       expect(JSON.parse(result.stdout).observed.clientBytes).toBe(2)
       expect(await readFile(countFile, "utf8")).toBe("105")

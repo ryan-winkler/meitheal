@@ -9,6 +9,9 @@ import { expect, test } from "@playwright/test";
 
 // Minimal sessionStorage mock for Node.js
 const storageMap = new Map<string, string>();
+const scope = "fixture-account";
+const navigationKey = "meitheal-navigation-state:" + scope;
+const dataset = { workspaceScope: scope };
 const mockSessionStorage = {
   getItem: (key: string) => storageMap.get(key) ?? null,
   setItem: (key: string, value: string) => storageMap.set(key, value),
@@ -18,6 +21,19 @@ const mockSessionStorage = {
 
 // Inject sessionStorage mock globally before importing module
 (globalThis as any).sessionStorage = mockSessionStorage;
+const originalDocumentDescriptor = Object.getOwnPropertyDescriptor(globalThis, "document");
+const originalWindowDescriptor = Object.getOwnPropertyDescriptor(globalThis, "window");
+test.beforeEach(() => {
+  Object.defineProperty(globalThis, "document", { value: { documentElement: { dataset } }, configurable: true });
+  Object.defineProperty(globalThis, "window", { value: { __ingress_path: "/api/hassio_ingress/test-token" }, configurable: true });
+});
+test.afterEach(() => {
+  dataset.workspaceScope = scope;
+  if (originalDocumentDescriptor) Object.defineProperty(globalThis, "document", originalDocumentDescriptor);
+  else Reflect.deleteProperty(globalThis, "document");
+  if (originalWindowDescriptor) Object.defineProperty(globalThis, "window", originalWindowDescriptor);
+  else Reflect.deleteProperty(globalThis, "window");
+});
 
 // Import the module under test
 import {
@@ -31,7 +47,7 @@ import {
 test("saveNavigationState writes correct JSON to sessionStorage", () => {
   storageMap.clear();
   saveNavigationState("/kanban", 150);
-  const raw = storageMap.get("meitheal-navigation-state");
+  const raw = storageMap.get(navigationKey);
   expect(raw).toBeTruthy();
 
   const state = JSON.parse(raw!);
@@ -53,7 +69,7 @@ test("getNavigationState returns state when fresh (< 60s)", () => {
 test("getNavigationState returns null when expired (> 60s)", () => {
   storageMap.clear();
   storageMap.set(
-    "meitheal-navigation-state",
+    navigationKey,
     JSON.stringify({
       path: "/settings",
       scrollY: 0,
@@ -62,12 +78,12 @@ test("getNavigationState returns null when expired (> 60s)", () => {
   );
   const state = getNavigationState();
   expect(state).toBeNull();
-  expect(storageMap.has("meitheal-navigation-state")).toBe(false);
+  expect(storageMap.has(navigationKey)).toBe(false);
 });
 
 test("getNavigationState returns null for malformed data", () => {
   storageMap.clear();
-  storageMap.set("meitheal-navigation-state", '{"path": 123}');
+  storageMap.set(navigationKey, '{"path": 123}');
   expect(getNavigationState()).toBeNull();
 });
 
@@ -100,13 +116,23 @@ test("shouldRestore returns false when no saved state exists", () => {
   expect(shouldRestore("/", "/api/hassio_ingress/test-token")).toBe(false);
 });
 
+test("a new account does not restore the previous or legacy navigation state", () => {
+  storageMap.clear()
+  saveNavigationState("/kanban", 0)
+  const previous = storageMap.get(navigationKey)!
+  storageMap.set("meitheal-navigation-state", previous)
+  dataset.workspaceScope = "other-account"
+  expect(getNavigationState()).toBeNull()
+  expect(shouldRestore("/", "/api/hassio_ingress/test-token")).toBe(false)
+})
+
 
 test("the old document cannot overwrite an intended ingress route on unload", () => {
   storageMap.clear()
   const prefix = "/api/hassio_ingress/fixture"
   const location = { pathname: prefix + "/settings", search: "", hash: "" }
   const windowFixture = Object.assign(new EventTarget(), { __ingress_path: prefix, location, scrollY: 18 })
-  const documentFixture = Object.assign(new EventTarget(), { visibilityState: "visible" })
+  const documentFixture = Object.assign(new EventTarget(), { visibilityState: "visible", documentElement: { dataset } })
   const originalWindow = Object.getOwnPropertyDescriptor(globalThis, "window")
   const originalDocument = Object.getOwnPropertyDescriptor(globalThis, "document")
   try {

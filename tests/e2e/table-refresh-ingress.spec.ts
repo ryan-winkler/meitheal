@@ -45,7 +45,7 @@ test("Table refresh uses one ingress prefix and ignores a worker-cached response
       const response = await fetch(route, { cache: "no-store", redirect: "error" })
       return { cacheControl: response.headers.get("cache-control"), hasTask: (await response.text()).includes(title) }
     }, { prefix, title })
-    expect(evidence).toEqual({ cacheControl: "no-store", hasTask: true })
+    expect(evidence).toEqual({ cacheControl: "private, no-store", hasTask: true })
 
     const escaped: string[] = []
     page.on("request", request => {
@@ -57,7 +57,7 @@ test("Table refresh uses one ingress prefix and ignores a worker-cached response
     await page.getByRole("textbox", { name: "Filter by text" }).fill("does not match")
     const receipt = await response
     expect(new URL(receipt.url()).pathname).toBe(prefix + "/tasks")
-    expect(receipt.headers()["cache-control"]).toBe("no-store")
+    expect(receipt.headers()["cache-control"]).toBe("private, no-store")
     await expect(page.locator("#task-table .no-results-row")).toBeVisible()
     await expect(page).toHaveURL(url => url.pathname === prefix + "/tasks" &&
       url.searchParams.get("search") === "does not match" && !url.searchParams.has("tableRefresh"))
