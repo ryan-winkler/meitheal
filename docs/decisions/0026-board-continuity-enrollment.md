@@ -38,6 +38,8 @@ Prove a genuine first installation and restart, an existing valid-epoch upgrade,
 
 Rehearse the stopped operator path with current evidence and deny the identical historical data without that evidence. An older binary that cannot enforce the new recovery rule stays stopped during rollback; use the policy-aware package for historical-data denial tests. Exact source CI, fresh independent review, Supervisor qualification, physical Green performance and installed acceptance remain separate release gates.
 
+Hosted Linux CI measured 1,846,980 aggregate and 1,797,724 common generated client bytes with the shared Board controls and browser authority checks enabled. The asset ceilings are 1,855,000 and 1,805,000 bytes respectively. The optional workspace assets retain the 50,000-byte ceiling. Linux RSS and write-latency limits and the physical Green profile still apply.
+
 ## Alternatives
 
 Backing up the marker together with the database lets an older pair restore obsolete permissions. Inferring enrollment from absent policies, an empty database or a migration ledger has the same replay problem. A writable Share mount could retain a marker through App-only restore but expands filesystem authority; the owner rejected that option. Explicit creation provenance and operator-held current custody preserve the chosen permissions.

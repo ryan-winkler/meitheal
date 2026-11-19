@@ -47,28 +47,21 @@ export function bindSidebarHierarchyActions(nav: HTMLElement, pageSignal: AbortS
       return value.split(" ").includes(`${kind}/${action}`)
     }
     const live = (owner: HTMLElement, context: TaskApiContext) => !areaActions.signal.aborted && owner.isConnected && sameTaskApiContext(documentContext, currentTaskApiContext()) && Boolean(context.boardId)
-    async function fetch(input: string, init: RequestInit = {}): Promise<Response> {
-      const target = new URL(input, location.href)
-      const match = /^\/api\/(areas|projects)\/([^/]+)$/.exec(target.pathname)
-      let owner: HTMLElement | null = null
-      if (match) owner = ownerFor(match[1] === "areas" ? "area" : "project", decodeURIComponent(match[2]!))
-      else if (typeof init.body === "string") {
-        const body = JSON.parse(init.body) as Record<string, unknown>
-        if (typeof body.project_id === "string") owner = ownerFor("project", body.project_id)
-        else if (typeof body.area_id === "string") owner = ownerFor("area", body.area_id)
-      }
-      if (!owner) throw new Error("Original work context is unavailable")
-      return command(owner, input, init)
+    async function entityCommand(kind: "area" | "project", id: string, init: RequestInit = {}, taskCounts = false) {
+      if (!id || id === "." || id === "..") throw new Error("Original work context is unavailable")
+      const resource = kind === "area" ? "areas" : "projects"
+      const endpoint = `/api/${resource}/${encodeURIComponent(id)}${taskCounts ? "?task_counts=1" : ""}`
+      return command(ownerFor(kind, id), endpoint, init)
     }
-    async function command(owner: HTMLElement, input: string, init: RequestInit): Promise<Response> {
-      const boardId = owner.closest<HTMLElement>("[data-work-board]")?.dataset.workBoard
-      if (!boardId || !documentContext) throw new Error("Original work context is unavailable")
+    async function command(owner: HTMLElement | null, endpoint: string, init: RequestInit): Promise<Response> {
+      const boardId = owner?.closest<HTMLElement>("[data-work-board]")?.dataset.workBoard
+      if (!owner || !boardId || !documentContext) throw new Error("Original work context is unavailable")
       const context = { ...documentContext, boardId }
       if (!live(owner, context)) throw new Error("Original work context changed")
       const request = new AbortController()
       pending.set(request, owner)
       try {
-        const response = await window.fetch(input, { ...init, headers: taskApiHeaders(context, init.headers),
+        const response = await window.fetch(endpoint, { ...init, mode: "same-origin", redirect: "error", headers: taskApiHeaders(context, init.headers),
           signal: AbortSignal.any([areaActions.signal, request.signal, ...(init.signal ? [init.signal] : []), AbortSignal.timeout(7_000)]) })
         if (!live(owner, context)) throw new Error("Original work context changed")
         return response
@@ -571,7 +564,7 @@ export function bindSidebarHierarchyActions(nav: HTMLElement, pageSignal: AbortS
         "",
         async (title) => {
           try {
-            const res = await fetch("/api/projects", {
+            const res = await command(ownerFor("area", areaId), "/api/projects", {
               method: "POST", headers: { "content-type": "application/json" },
               body: JSON.stringify({ title, area_id: areaId, icon: "\ud83d\udccb", color: "#146C4E" }),
             })
@@ -593,7 +586,7 @@ export function bindSidebarHierarchyActions(nav: HTMLElement, pageSignal: AbortS
     async function showAreaMenu(btn: HTMLButtonElement, focusManage: boolean) {
       if (!areaMenuDropdown) return
       try {
-        const response = await fetch(`/api/areas/${encodeURIComponent(btn.dataset.areaMenu ?? "")}`)
+        const response = await entityCommand("area", btn.dataset.areaMenu ?? "")
         if (!response.ok) throw new Error("Unavailable")
         const record = await response.json() as { icon?: string; color?: string }
         if (!btn.isConnected || areaActions.signal.aborted) return
@@ -640,7 +633,7 @@ export function bindSidebarHierarchyActions(nav: HTMLElement, pageSignal: AbortS
           entityName,
           async (newName) => {
             try {
-              const res = await fetch(`/api/areas/${entityId}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: newName }) })
+              const res = await entityCommand("area", entityId, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: newName }) })
               if (res.ok) {
                 nameEl.textContent = newName
                 toggle.dataset.areaNameLabel = newName
@@ -692,7 +685,7 @@ export function bindSidebarHierarchyActions(nav: HTMLElement, pageSignal: AbortS
           i18n("sidebar.delete_confirm_btn", "Confirm Delete"),
           async () => {
             try {
-              const res = await fetch(`/api/areas/${entityId}`, { method: "DELETE", headers: { "content-type": "application/json" } })
+              const res = await entityCommand("area", entityId, { method: "DELETE", headers: { "content-type": "application/json" } })
               if (res.ok) {
                 const areaGroup = nav.querySelector(`[data-area-group="${entityId}"]`) as HTMLElement | null
                 if (areaGroup) {
@@ -713,7 +706,7 @@ export function bindSidebarHierarchyActions(nav: HTMLElement, pageSignal: AbortS
     async function showProjectMenu(btn: HTMLButtonElement, focusEdit: boolean) {
       if (!projectMenuDropdown) return
       try {
-        const response = await fetch(`/api/projects/${encodeURIComponent(btn.dataset.projectMenu ?? "")}`)
+        const response = await entityCommand("project", btn.dataset.projectMenu ?? "")
         if (!response.ok) throw new Error("Unavailable")
         const record = await response.json() as { icon?: string; color?: string }
         if (!btn.isConnected || areaActions.signal.aborted) return
@@ -756,7 +749,7 @@ export function bindSidebarHierarchyActions(nav: HTMLElement, pageSignal: AbortS
           entityName,
           async (newTitle) => {
             try {
-              const res = await fetch(`/api/projects/${entityId}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ title: newTitle }) })
+              const res = await entityCommand("project", entityId, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ title: newTitle }) })
               if (res.ok) {
                 linkEl.textContent = newTitle
                 const link = linkEl.closest<HTMLAnchorElement>("[data-project-id]")
@@ -813,7 +806,7 @@ export function bindSidebarHierarchyActions(nav: HTMLElement, pageSignal: AbortS
           i18n("sidebar.delete_confirm_btn", "Confirm Delete"),
           async () => {
             try {
-              const res = await fetch(`/api/projects/${entityId}`, { method: "DELETE", headers: { "content-type": "application/json" } })
+              const res = await entityCommand("project", entityId, { method: "DELETE", headers: { "content-type": "application/json" } })
               if (res.ok) {
                 const projRow = nav.querySelector(`.stree__project [data-project-id="${entityId}"]`)?.closest(".stree__project") as HTMLElement | null
                 if (projRow) {
@@ -872,16 +865,16 @@ export function bindSidebarHierarchyActions(nav: HTMLElement, pageSignal: AbortS
       const selectedSwatch = colorIconPopover!.querySelector<HTMLButtonElement>("[data-swatch-color].selected")
       const icon = iconInput?.value?.trim() || "\ud83d\udccb"
       const color = selectedSwatch?.dataset.swatchColor || "#146C4E"
+      const entityType = activeEntityType
       closeTreePopup()
-      const endpoint = activeEntityType === "area" ? `/api/areas/${entityId}` : `/api/projects/${entityId}`
       try {
-        const res = await fetch(endpoint, {
+        const res = await entityCommand(entityType, entityId, {
           method: "PUT", headers: { "content-type": "application/json" },
           body: JSON.stringify({ icon, color }),
         })
         if (res.ok) {
           // Update icon and color in sidebar DOM directly
-          if (activeEntityType === "area") {
+          if (entityType === "area") {
             const iconEl = nav.querySelector(`[data-area-toggle="${entityId}"] .stree__area-icon`) as HTMLElement | null
             const menuBtn = document.querySelector(`[data-area-menu="${entityId}"]`) as HTMLElement | null
             if (iconEl) { renderIconOrCustomEmoji(iconEl, icon, "folders", 15); iconEl.style.color = color }
@@ -932,7 +925,7 @@ export function bindSidebarHierarchyActions(nav: HTMLElement, pageSignal: AbortS
         "",
         async (title) => {
           try {
-            const res = await fetch("/api/tasks", {
+            const res = await command(ownerFor("project", projId), "/api/tasks", {
               method: "POST", headers: { "content-type": "application/json" },
               body: JSON.stringify({
                 title,
@@ -988,7 +981,7 @@ export function bindSidebarHierarchyActions(nav: HTMLElement, pageSignal: AbortS
       const badge = nav.querySelector<HTMLSpanElement>(`[data-project-task-count="${CSS.escape(projectId)}"]`)
       if (!badge) return
       try {
-        const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}?task_counts=1`, { signal })
+        const res = await entityCommand("project", projectId, { signal }, true)
         if (!res.ok) return
         const data = await res.json()
         const counts = data?.task_counts

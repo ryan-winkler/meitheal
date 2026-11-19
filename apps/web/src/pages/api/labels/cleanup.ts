@@ -1,4 +1,4 @@
-import { requireLabelBoardManager } from "@lib/label-mutation-access"
+import { labelMutationContextFailure, requireLabelBoardManager } from "@lib/label-mutation-access"
 import { withBoardScope } from "@lib/board-http"
 import type { APIRoute } from "astro"
 import { z } from "zod"
@@ -36,7 +36,7 @@ function sameOrigin(request: Request, ingress: string | undefined): boolean {
 export const ALL: APIRoute = () => failure(405, "method", "Review label cleanup with a POST request.", { allow: "POST" })
 
 export const POST: APIRoute = withBoardScope({ resource: "label", action: "manage" }, async ({ request, locals }, scope) => {
-  const denied = await requireLabelBoardManager(request, locals, scope)
+  const denied = labelMutationContextFailure(request, locals, scope)
   if (denied) return denied
   if (!sameOrigin(request, locals.ingressPath)) return failure(403, "denied", "Open Labels in this Board before reviewing cleanup.")
   if (request.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() !== "application/json") {
@@ -60,6 +60,8 @@ export const POST: APIRoute = withBoardScope({ resource: "label", action: "manag
   try {
     await ensureSchema()
     if (request.signal.aborted) return failure(499, "cancelled", "The cleanup request was cancelled.")
+    const current = await requireLabelBoardManager(request, locals, scope)
+    if (current) return current
     const repository = new UnusedLabelRepository(getPersistenceClient(), scope)
     const action = parsed.data
     const result = action.action === "preview" ? await repository.preview(action.afterId) : await repository.remove(action.labels)
