@@ -1,3 +1,4 @@
+import { currentTaskApiContext } from "./task-api"
 import { browserUuid } from "./browser-uuid"
 import { confirmDialog, type ConfirmOptions } from "./confirm-dialog"
 import { safeIngressHref, syncIngressDestination } from "./ingress-navigation"
@@ -35,6 +36,17 @@ export function bindBoardPage(signal: AbortSignal, host?: HTMLElement) {
   let navigating = false
   let checking: AbortController | undefined
   const placeholder = document.createComment("")
+  let retainedFocus: { element: HTMLElement; boardId: string; actorKey: string | undefined; moved: boolean } | undefined
+  let movingToRecovery = false
+  const markFocusMoved = (event: Event) => {
+    if (!retainedFocus || !placeholder.isConnected || movingToRecovery) return
+    const target = event.target
+    if (target instanceof Node && recovery.contains(target)) return
+    retainedFocus.moved = true
+  }
+  document.addEventListener("focusin", markFocusMoved, { signal })
+  document.addEventListener("pointerdown", markFocusMoved, { signal })
+  document.addEventListener("keydown", markFocusMoved, { signal })
   const holdsFocus = () => {
     const active = document.activeElement
     return !!active && active !== document.body &&
@@ -44,9 +56,16 @@ export function bindBoardPage(signal: AbortSignal, host?: HTMLElement) {
     const active = document.activeElement
     if (!owned || (active && active !== document.body && active.isConnected && !(expired && recovery.contains(active)))) return
     const target = expired ? status.querySelector<HTMLElement>("[data-board-refresh]") : retry
+    movingToRecovery = true
     target?.focus({ preventScroll: true })
+    movingToRecovery = false
   }
   const detach = (owned = holdsFocus()) => {
+    const active = document.activeElement
+    const context = currentTaskApiContext()
+    if (root.isConnected && owned && active instanceof HTMLElement && context && !recovery.contains(active)) {
+      retainedFocus = { element: active, boardId: context.boardId, actorKey: context.actorKey, moved: false }
+    }
     root.dispatchEvent(new Event("meitheal:board-hidden", { bubbles: true }))
     if (root.isConnected) root.replaceWith(placeholder)
     recovery.hidden = expired
@@ -56,10 +75,17 @@ export function bindBoardPage(signal: AbortSignal, host?: HTMLElement) {
     if (placeholder.isConnected) placeholder.replaceWith(root)
     recovery.hidden = true
     root.dispatchEvent(new Event("meitheal:board-verified", { bubbles: true }))
+    const saved = retainedFocus
+    retainedFocus = undefined
+    const context = currentTaskApiContext(), active = document.activeElement
+    if (saved && !saved.moved && context?.boardId === saved.boardId && context.actorKey === saved.actorKey &&
+      saved.element.isConnected && !saved.element.matches(":disabled") && !saved.element.closest("[hidden], [inert]") &&
+      saved.element.getClientRects().length && (active === document.body || active === retry || (active && recovery.contains(active)))) saved.element.focus({ preventScroll: true })
   }
   const expire = () => {
     const owned = holdsFocus()
     expired = true
+    retainedFocus = undefined
     root.dataset.boardExpired = "true"
     // Verification may already have detached root, so publication must not rely on bubbling.
     document.dispatchEvent(new CustomEvent("meitheal:board-revoked", { detail: { boardId: root.dataset.boardId } }))

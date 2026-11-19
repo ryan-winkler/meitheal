@@ -125,6 +125,16 @@ export function initKanbanPage(signal: AbortSignal): void {
     lastFocus = focus
     resetScroll = reset
     const origin = location.href
+    const requestedFocus = document.activeElement
+    let focusMoved = false
+    const focusLifetime = new AbortController()
+    const markFocusMoved = (event: Event) => {
+      const target = event.target
+      if (target instanceof Element && target.closest("[data-board-verification]")) return
+      if (target !== requestedFocus && target !== document.body) focusMoved = true
+    }
+    document.addEventListener("focusin", markFocusMoved, { signal: focusLifetime.signal })
+    document.addEventListener("pointerdown", markFocusMoved, { signal: focusLifetime.signal })
     const statusSaved = focus?.afterSave === "status" || focus?.afterSave === "lane-move"
     board.setAttribute("aria-busy", "true")
     if (!dataOnly) renderStatus(window.mI18n?.get("kanban.board_loading") ?? "Loading board…")
@@ -155,7 +165,8 @@ export function initKanbanPage(signal: AbortSignal): void {
         return
       }
 
-      const active = document.activeElement
+      const nowFocused = document.activeElement
+      const active = !focusMoved && (nowFocused === document.body || (nowFocused instanceof Element && nowFocused.closest("[data-board-verification]"))) ? requestedFocus : nowFocused
       const grouping = board.dataset.groupBy
       const activeGroup = (grouping === "assigned" || grouping === "status" || grouping === "project") && board.contains(active) &&
         active?.matches("button.swimlane-header") ? active.closest<HTMLElement>(".swimlane-group") : null
@@ -233,6 +244,7 @@ export function initKanbanPage(signal: AbortSignal): void {
         renderStatus(statusSaved ? `Status saved. ${message}` : message, true)
       }
     } finally {
+      focusLifetime.abort()
       if (pending === request) {
         pending = undefined
         board.removeAttribute("aria-busy")

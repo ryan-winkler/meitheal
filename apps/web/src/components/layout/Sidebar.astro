@@ -4,6 +4,7 @@ import "../../styles/_sidebar-reorder.css"
 import { t } from "../../i18n/translations";
 import type { Locale } from "../../lib/locale";
 import Icon from "../ui/Icon.astro";
+import SidebarHierarchyActions from "./SidebarHierarchyActions.astro"
 import SidebarNavList from "./SidebarNavList.astro";
 import { currentBoardContext } from "@lib/named-board-request"
 import { resolveBoardPageScope } from "@lib/board-http"
@@ -321,14 +322,13 @@ const sidebarDefaultOrder = navItems.map(item => item.key)
     <div class="sidebar-scroll" data-nav-overflow="sidebar" data-sidebar-default-order={JSON.stringify(sidebarDefaultOrder)}>
       <SidebarNavList navItems={navItems}>
         <ul slot="boards" id="sidebar-board-children" class="sidebar-board-children" data-sidebar-board-children
-          data-sidebar-boards={showNamedBoardShortcuts ? "" : undefined} data-board-group-label={resolveLabel("group", true)}
+          data-sidebar-boards={showNamedBoardShortcuts ? "" : undefined} data-board-group-label={resolveLabel("group", true, labels.areas || undefined)}
           data-board-project-label={resolveLabel("project", true)} data-projects-enabled={String(ff.projects !== false)}
-          data-areas-enabled={String(ff.groups !== false)} aria-label={resolveLabel("board", true)}>
-
-
+          data-areas-enabled={String(ff.groups !== false && sidebarConfig.areas !== false)} aria-label={resolveLabel("board", true)}>
         </ul>
       </SidebarNavList>
       <NavOverflowMore id="sidebar-more-destinations" list locale={locale} />
+      <SidebarHierarchyActions />
     </div>
   </div>
 
