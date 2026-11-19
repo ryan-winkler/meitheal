@@ -5,7 +5,7 @@ import { tmpdir } from "node:os"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { expect, test } from "@playwright/test"
-import { shouldSkipBrowserSpecs } from "./_helpers"
+import { readScopedNavigation, shouldSkipBrowserSpecs } from "./_helpers"
 
 const webDir = fileURLToPath(new URL("../../apps/web", import.meta.url))
 const ingressFixturePath = fileURLToPath(new URL("../scripts/feedback-ingress-fixture.mjs", import.meta.url))
@@ -192,6 +192,7 @@ test.describe("Track D — @container Docked Task Inspector, Ingress Reload Pers
       const prefix: string = info.configuredPath
 
       await page.context().setExtraHTTPHeaders({})
+      await page.context().addCookies([{ name: "feedback-fixture", value: "admin", url: origin }])
       const seedRes = await page.request.post(`${origin}${prefix}/api/tasks`, {
         headers: { origin },
         data: { title: "Ingress reload MTH-1 fixture" },
@@ -205,10 +206,7 @@ test.describe("Track D — @container Docked Task Inspector, Ingress Reload Pers
       await page.waitForLoadState("networkidle")
       await expect(page.locator("#task-detail-overlay")).toHaveClass(/active/)
 
-      const storedState = await page.evaluate(() => {
-        const raw = sessionStorage.getItem("meitheal-navigation-state")
-        return raw ? JSON.parse(raw) : null
-      })
+      const storedState = await readScopedNavigation(page)
       expect(storedState).not.toBeNull()
       expect(storedState.path).toBe(`/tickets/${seeded.id}`)
       expect(storedState.path).not.toContain(prefix)

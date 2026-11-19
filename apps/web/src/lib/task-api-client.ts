@@ -187,6 +187,12 @@ const JSON_HEADERS: HeadersInit = {
   "Content-Type": "application/json",
 }
 
+export class TaskApiError extends Error {
+  constructor(readonly status: number, detail: string) {
+    super(`API ${status}: ${detail}`)
+  }
+}
+
 /**
  * Parse a JSON response, throwing on non-ok status.
  * Returns undefined for 204 No Content.
@@ -195,7 +201,7 @@ async function parseResponse<T>(res: Response): Promise<T | undefined> {
   if (res.status === 204) return undefined
   if (!res.ok) {
     const body = await res.text().catch(() => "")
-    throw new Error(`API ${res.status}: ${body || res.statusText}`)
+    throw new TaskApiError(res.status, body || res.statusText)
   }
   return res.json() as Promise<T>
 }
@@ -236,11 +242,12 @@ export const taskApi = {
   },
 
   /** POST /api/tasks — create a task */
-  async createTask(payload: TaskCreatePayload): Promise<any> {
+  async createTask(payload: TaskCreatePayload, signal?: AbortSignal): Promise<any> {
     const res = await safeFetch("/api/tasks", {
       method: "POST",
       headers: JSON_HEADERS,
       body: JSON.stringify(payload),
+      ...(signal ? { signal } : {}),
     })
     return parseResponse<any>(res)
   },

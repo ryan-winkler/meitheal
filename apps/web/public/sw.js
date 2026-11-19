@@ -259,7 +259,7 @@ function privateResourcePath(url) {
 }
 
 function isNetworkOnlyPage(path, params) {
-  return path === "/triage" || path === "/deferred" || path === "/review" ||
+  return path === "/setup" || path === "/triage" || path === "/deferred" || path === "/review" ||
     path === "/.well-known/mcp.json" ||
     path === "/.well-known/agent.json" || path === "/.well-known/agent-card.json" || path.startsWith("/api/a2a/") ||
     (/^\/api\/tasks\/[^/]+$/.test(path) && params.has("deferralRead")) ||
@@ -446,6 +446,15 @@ async function navigationHandler(request) {
     // Try precache (app shell pages)
     const precached = await matchCacheable(request, CACHES.precache);
     if (precached) return precached;
+
+    const launch = new URL(request.url)
+    if (!ingressPath && (
+      (launch.pathname === "/" && launch.search === "?view=dashboard") ||
+      (launch.pathname === "/tasks" && launch.search === "?view=kanban")
+    )) {
+      const launchPage = await matchCacheable(launch.origin + launch.pathname, CACHES.precache)
+      if (launchPage) return launchPage
+    }
 
     // Offline fallback page
     const offlinePage = await matchCacheable(`${ingressPath}/offline.html`, CACHES.precache);

@@ -41,7 +41,7 @@ interface NavItemDef {
 
 const NAV_ITEMS: Record<string, NavItemDef> = {
   dashboard: {
-    href: "/",
+    href: "/?view=dashboard",
     i18nKey: "nav.dashboard",
     icon: "dashboard",
     matchExact: true,
@@ -221,7 +221,7 @@ const navItems = order
     const defaultLabel = labels[key] || (key === "boards" ? (locale === "ga" ? "Cláir" : "Boards") : t(def.i18nKey, locale));
     const label = term ? resolveLabel(term, true, defaultLabel) : defaultLabel;
     const isActive = def.matchExact
-      ? currentPath === def.href
+      ? currentPath === def.href.split("?", 1)[0]
       : currentPath.startsWith(def.href);
     return { key, label, isActive, ...def, defaultHref: def.href, href: boardLinks && key in boardLinks ? boardLinks[key as keyof typeof boardLinks] : def.href };
   });
@@ -261,7 +261,7 @@ const sidebarDefaultOrder = navItems.map(item => item.key)
   <div class="sidebar-header flex items-center gap-2 pb-4 mb-0 px-2">
     <div class="sidebar-brand-group flex flex-col flex-1 min-w-0">
       <a
-        href="/"
+        href="/?view=dashboard"
         data-astro-prefetch="viewport"
         class="sidebar-brand text-xl font-medium tracking-[-0.05em] text-text-primary hover:text-accent transition-colors flex items-center gap-2 no-underline overflow-hidden shrink min-w-0"
         aria-label="Meitheal Home"

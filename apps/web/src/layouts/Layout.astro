@@ -25,6 +25,7 @@ import Icon from "../components/ui/Icon.astro";
 import IconSpriteDefs from "../components/ui/IconSpriteDefs.astro";
 
 import NewTaskModal from "../components/tasks/NewTaskModal.astro";
+import QuickAddDialog from "../components/tasks/QuickAddDialog.astro"
 import TaskDetailModal from "../components/tasks/TaskDetailModal.astro";
 import AskAssistModal from "../components/ha/AskAssistModal.astro";
 import PwaInstallBanner from "../components/pwa/PwaInstallBanner.astro";
@@ -34,6 +35,8 @@ import { applyPersonalAccent } from "../lib/accent-colors"
 import { applyHAThemePalette, HA_THEME_MATCH_KEY, readHAThemePalette } from "../lib/ha-theme-palette"
 import { canManageSystemSettings } from "../lib/settings-security"
 import { THEME_MODES } from "../lib/theme-mode"
+import { parseWorkspacePreferences, WORKSPACE_PREFERENCES_PREFIX } from "../lib/workspace-preferences"
+import { readIngressPanelRoute } from "../lib/ingress-navigation"
 
 import geistWoff2 from '@fontsource-variable/geist/files/geist-latin-wght-normal.woff2?url';
 
@@ -45,11 +48,15 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
 const featureFlags = await getFeatureFlags();
 const organizationState = await readRequestOrganizationLabels(Astro)
 const organizationUser = verifiedIngressUser(Astro.locals)
+const workspaceScope = organizationUser
+  ? createHash("sha256").update("meitheal-workspace\0").update(organizationUser.id).digest("hex")
+  : !Astro.locals.behindIngress && !Astro.locals.agentToken ? "browser" : undefined
+const dashboardEntry = Astro.url.pathname === "/"
+const workspaceReaderSource = parseWorkspacePreferences.toString()
 const organizationSettings = Astro.url.pathname === "/settings"
 const organizationProof = organizationUser && organizationState &&
   (organizationSettings || Object.keys(organizationState.forms).length > 0 || organizationNeedsVerification()) ? renderedLabelsProof(organizationUser.id, locale, organizationState, organizationSettings) : null
-if (organizationProof) Astro.response.headers.set("Cache-Control", "private, no-store")
-
+if (organizationProof || organizationUser) Astro.response.headers.set("Cache-Control", "private, no-store")
 const featureFlagsJson = JSON.stringify(featureFlags);
 const showConfetti = !!featureFlags.confetti;
 const showPomodoro = !!featureFlags.pomodoro;
@@ -128,7 +135,7 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
 ---
 
 <!doctype html>
-<html lang={locale} dir="ltr" data-custom-theme-admin={canManageSystemSettings(Astro.request, Astro.locals) ? "" : undefined}>
+<html lang={locale} dir="ltr" data-workspace-scope={workspaceScope} data-custom-theme-admin={canManageSystemSettings(Astro.request, Astro.locals) ? "" : undefined}>
   <head>
     {boardContext && <><meta name="meitheal-work-board" content={boardContext.boardId} /><meta name="meitheal-work-session" content={boardContext.session} /><meta name="meitheal-work-actor" content={boardContext.actorKey} /><meta name="meitheal-work-board-name" content={boardContext.boardName} /></>}
     <!-- Scroll-lock guard: prevent external tools from locking body scroll (P0) -->
@@ -149,7 +156,7 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
           if (confirmOverlay && !confirmOverlay.classList.contains("hidden")) return true;
           // Mobile sidebar open is legitimate
           if (document.body.classList.contains("sidebar-open") && window.innerWidth <= 768) return true;
-          return false;
+          return Boolean(document.querySelector("[data-meitheal-tabler-modal].show"));
         }
         // MutationObserver: undo external overflow:hidden on body when no modal is open
         var observer = new MutationObserver(function (mutations) {
@@ -266,6 +273,7 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
 
     <!-- Ingress state persistence: restore last route only on initial cold/standalone boot -->
     <!-- Runs pre-paint so the user never sees a flash of the wrong page -->
+    <script is:inline set:html={`window.__meithealReadPanelRoute = ${readIngressPanelRoute.toString()};`} />
     <script is:inline>
       (function () {
         if (!window.__ingress_path) return;
@@ -276,9 +284,15 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
           pathname === prefix
             ? "/"
             : pathname.startsWith(prefix + "/")
-              ? pathname.slice(prefix.length) || "/"
+              ? pathname.slice(prefix.length).replace(/^\/+/, "/")
               : pathname;
-        if (current !== "/") return;
+        if (current !== "/" || location.search || location.hash ||
+          performance.getEntriesByType("navigation").some(entry => entry.type === "back_forward")) return;
+        if (window.__meithealReadPanelRoute()) return;
+        var scope = document.documentElement.dataset.workspaceScope;
+        if (!scope) return;
+        var stateKey = "meitheal-navigation-state:" + scope;
+        var scrollKey = "meitheal-restore-scroll:" + scope;
         try {
           var explicitHomeNavigation = false;
           if (document.referrer) {
@@ -289,25 +303,14 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
               }
             } catch {}
           }
-          if (!explicitHomeNavigation && window.parent !== window) {
-            try {
-              if (
-                window.parent.location.origin === window.location.origin &&
-                window.parent.document.querySelector("home-assistant") &&
-                new URL(window.parent.location.href).searchParams.get("meitheal") === "/"
-              ) {
-                explicitHomeNavigation = true;
-              }
-            } catch {}
-          }
           if (explicitHomeNavigation) {
             sessionStorage.setItem(
-              "meitheal-navigation-state",
+              stateKey,
               JSON.stringify({ path: "/", scrollY: 0, timestamp: Date.now() }),
             );
             return;
           }
-          var raw = sessionStorage.getItem("meitheal-navigation-state");
+          var raw = sessionStorage.getItem(stateKey);
           if (!raw) return;
           var state = JSON.parse(raw);
           if (
@@ -317,7 +320,7 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
             return;
           // Only restore if saved within the last 60 seconds
           if (Date.now() - state.timestamp > 60000) {
-            sessionStorage.removeItem("meitheal-navigation-state");
+            sessionStorage.removeItem(stateKey);
             return;
           }
           var cleanPath =
@@ -335,10 +338,11 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
           // Save scroll position to restore after redirect
           if (state.scrollY) {
             sessionStorage.setItem(
-              "meitheal-restore-scroll",
+              scrollKey,
               String(state.scrollY),
             );
           }
+          document.documentElement.dataset.workspaceRestoring = "true";
           window.location.replace(resolvedTarget.pathname + resolvedTarget.search + resolvedTarget.hash);
         } catch (e) {
           // sessionStorage unavailable or parse error — silently continue
@@ -351,14 +355,17 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
     <script is:inline set:html={`window.__meithealApplyAccent = ${applyPersonalAccent.toString()};
       window.__meithealReadHATheme = ${readHAThemePalette.toString()};
       window.__meithealApplyHATheme = ${applyHAThemePalette.toString()};`} />
-    <script is:inline define:vars={{ APPEARANCE_PREFERENCES, APPEARANCE_STORAGE_KEY, HA_THEME_MATCH_KEY, THEME_MODES }}>
+    <script is:inline set:html={`window.__meithealParseWorkspace = ${workspaceReaderSource};`} />
+    <script is:inline define:vars={{ APPEARANCE_PREFERENCES, APPEARANCE_STORAGE_KEY, HA_THEME_MATCH_KEY, THEME_MODES, WORKSPACE_PREFERENCES_PREFIX }}>
       (function () {
         function restoreAppearance(doc) {
           function stored(key) {
             try { return localStorage.getItem(key); } catch { return null; }
           }
-          var theme = stored("meitheal-theme");
           var root = doc.documentElement;
+          var scope = root.dataset.workspaceScope;
+          var preferred = scope ? window.__meithealParseWorkspace(stored(WORKSPACE_PREFERENCES_PREFIX + scope)).theme : null;
+          var theme = preferred === "auto" ? (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light") : preferred || stored("meitheal-theme");
           root.dataset.theme = theme === "custom" ? "dark" : THEME_MODES.includes(theme) ? theme : "auto";
           if (theme === "knight-rider") {
             root.classList.add("dark");
@@ -534,6 +541,7 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
         },
       };
     </script>
+    <slot name="head" />
   </head>
   <body>
     <!-- Page transition loading indicator -->
@@ -644,6 +652,11 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
         id="main-content"
         style="padding: 0 24px 24px;"
       >
+        {dashboardEntry && workspaceScope && (
+          <aside data-setup-invite hidden class="setup-invite" aria-label={t("setup.title", locale)}>
+            <a href="/setup" class="btn btn-secondary"><Icon name="settings" size={16} /> {t("setup.open", locale)}</a>
+          </aside>
+        )}
         <slot />
       </main>
       {protectWorkMain && <p data-layout-board-expired hidden role="status">Board access changed. <button type="button" class="btn btn-ghost" data-board-refresh>Refresh Board</button></p>}
@@ -651,7 +664,7 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
 
     <!-- PRA-16: Mobile bottom tab bar — thumb-zone navigation for HA Companion App -->
     <nav class="mobile-tab-bar" id="mobile-tab-bar" aria-label="Mobile navigation">
-      <a href={mobileLinks?.dashboard ?? "/"} class="mobile-tab-bar__item" data-page="dashboard">
+      <a href={mobileLinks?.dashboard ?? "/?view=dashboard"} class="mobile-tab-bar__item" data-page="dashboard">
         <span class="mobile-tab-bar__icon" aria-hidden="true"><Icon name="home" size={20} sprite={true} /></span>
         <span class="mobile-tab-bar__label">Home</span>
       </a>
@@ -763,6 +776,7 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
     {!privatePageShell && <>
       {!suppressHouseholdTaskModals && <>
         <NewTaskModal />
+        <QuickAddDialog locale={locale} />
         <TaskDetailModal suppressUrlOpen={suppressTaskUrlOpen} />
       </>}
       <AskAssistModal />

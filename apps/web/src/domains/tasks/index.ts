@@ -28,6 +28,7 @@ export {
 export { projectPublicTaskFields, TASK_PUBLIC_FIELDS } from "./task-projection"
 export { boardOperationClient, BoardOperationError, canReadBoardAggregate, validateTaskOperation } from "./persistence/board-operation-client"
 export { AreaRepository } from "./persistence/area-repository"
+export { isNamedBoardPreset, NAMED_BOARD_PRESETS, type NamedBoardPreset } from "./named-board-presets"
 export {
   commitSyncMutationChunks,
   ensureSchema,

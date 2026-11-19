@@ -349,6 +349,7 @@ test("switch and Close wait for the Description draft and retain it after failur
   } finally {
     finish()
   }
+  await expect(page.locator("#td-desc-save-btn")).toBeEnabled()
   await expect(editor).toBeFocused()
   await expect(editor).toHaveValue("Retain this draft when switching")
   await page.evaluate(id => { void window.openTaskDetail?.(id) }, other)

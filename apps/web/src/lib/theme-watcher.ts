@@ -8,6 +8,7 @@
  */
 
 import { isThemeMode, type ThemeMode } from "./theme-mode"
+import { readWorkspacePreferences } from "./workspace-preferences"
 
 const STORAGE_KEY = "meitheal-theme"
 const CUSTOM_CSS_KEY = "meitheal-custom-theme-css"
@@ -22,17 +23,19 @@ export function readAppearanceValue(key: string): string | null {
 }
 
 export function readStoredThemeMode(): ThemeMode {
+  const preferred = readWorkspacePreferences().theme
+  if (preferred) return preferred
   const value = readAppearanceValue(STORAGE_KEY)
   return isThemeMode(value) ? value : "auto"
 }
 
-export function getEffectiveTheme(stored = readStoredThemeMode()): "light" | "dark" {
+export function getEffectiveTheme(stored = readStoredThemeMode(), followSystem = readWorkspacePreferences().theme === "auto"): "light" | "dark" {
   const matched = document.documentElement.dataset.haMatch
   if (matched === "light" || matched === "dark") return matched
   if (stored === "light" || stored === "dark") return stored
   // Custom themes layer on top of dark base
   if (stored === "custom" || stored === "knight-rider") return "dark"
-  if (stored === "auto") {
+  if (stored === "auto" && !followSystem) {
     const appearance = document.documentElement.dataset.haTheme
     if (appearance === "light" || appearance === "dark") return appearance
   }
@@ -44,12 +47,11 @@ export function setTheme(mode: ThemeMode): void {
   applyTheme()
 }
 
-export function applyTheme(): void {
-  const stored = readStoredThemeMode()
+export function applyTheme(stored = readStoredThemeMode(), followSystem = readWorkspacePreferences().theme === "auto"): void {
   const root = document.documentElement
   const matched = root.dataset.haMatch === "light" || root.dataset.haMatch === "dark"
-  const theme = getEffectiveTheme(stored)
-  root.dataset.theme = !matched && (stored === "auto" || stored === "knight-rider") ? stored : theme
+  const theme = getEffectiveTheme(stored, followSystem)
+  root.dataset.theme = !matched && (stored === "knight-rider" || (stored === "auto" && !followSystem)) ? stored : theme
   root.classList.toggle("dark", theme === "dark")
   root.classList.toggle("light", theme === "light")
   applyCustomTheme(!matched && stored === "custom" && root.hasAttribute("data-custom-theme-admin")

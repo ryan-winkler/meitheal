@@ -1,4 +1,5 @@
 import { execFileSync, fork } from "../helpers/isolated-process"
+import { createHash } from "node:crypto"
 import { once } from "node:events"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -17,7 +18,10 @@ let prefix: string
 
 test.beforeAll(async ({ playwright }) => {
   fixtureDir = await mkdtemp(join(tmpdir(), "meitheal-work-surfaces-"))
-  const env = { PATH: process.env.PATH, NODE_ENV: "production", MEITHEAL_DB_URL: `file:${join(fixtureDir, "meitheal.db")}` }
+  const env = {
+    PATH: process.env.PATH, NODE_ENV: "production", MEITHEAL_DB_URL: `file:${join(fixtureDir, "meitheal.db")}`,
+    MEITHEAL_ACTIVE_MEMBER_FIXTURE: "1",
+  }
   execFileSync(process.execPath, ["scripts/migrate.mjs"], { cwd: web, env })
   server = fork(fileURLToPath(new URL("../scripts/feedback-ingress-fixture.mjs", import.meta.url)), {
     cwd: web, env, stdio: ["ignore", "ignore", "inherit", "ipc"],
@@ -127,6 +131,112 @@ test("Home Assistant panel address follows embedded routes, bookmarks and Back",
     await expect.poll(() => new URL(page.url()).searchParams.get("meitheal")).toBe("/today")
     await app.getByRole("link", { name: "Meitheal Home", exact: true }).click()
     await expect(app.locator("#dashboard-shell")).toBeVisible()
-    await expect.poll(() => new URL(page.url()).searchParams.get("meitheal")).toBe("/")
+    await expect.poll(() => new URL(page.url()).searchParams.get("meitheal")).toBe("/?view=dashboard")
+  } finally { await context.close() }
+})
+
+test("an explicit Home Assistant panel bookmark wins over setup and same-account ingress state", async ({ browser }) => {
+  const context = await browser.newContext({ serviceWorkers: "block", extraHTTPHeaders: {} })
+  try {
+    await context.addCookies([{ name: "feedback-fixture", value: "admin", url: origin }])
+    const page = await context.newPage()
+    const scope = createHash("sha256").update("meitheal-workspace\0").update("fixture-admin").digest("hex")
+    await page.addInitScript(({ key, ingress }) => {
+      if (location.pathname !== ingress + "/") return
+      sessionStorage.setItem("meitheal-navigation-state:" + key, JSON.stringify({ path: "/today", scrollY: 0, timestamp: Date.now() }))
+      localStorage.setItem("meitheal-workspace-v1:" + key, JSON.stringify({ firstPage: "tasks", acknowledged: true }))
+    }, { key: scope, ingress: prefix })
+    const hostPath = origin + "/fixture-ha-priority"
+    await page.route(hostPath + "**", route => route.fulfill({
+      contentType: "text/html",
+      body: `<home-assistant></home-assistant><iframe title="Meitheal" src="${origin}${prefix}/" style="width:100%;height:900px;border:0"></iframe>`,
+    }))
+    await page.goto(hostPath + "?meitheal=" + encodeURIComponent("/?view=dashboard"))
+    const frame = page.frameLocator("iframe")
+    await expect(frame.locator("#dashboard-shell")).toBeVisible()
+    await expect(frame.locator("html")).toHaveAttribute("data-workspace-scope", scope)
+    await expect.poll(() => new URL(page.url()).searchParams.get("meitheal")).toBe("/?view=dashboard")
+  } finally { await context.close() }
+})
+
+test("setup preferences remain separate for two Home Assistant accounts in one browser", async ({ browser }) => {
+  const context = await browser.newContext({ serviceWorkers: "block", extraHTTPHeaders: {} })
+  const url = origin + prefix + "/setup"
+  try {
+    await context.addCookies([{ name: "feedback-fixture", value: "admin", url: origin }])
+    const page = await context.newPage()
+    const response = await page.goto(url)
+    expect(response?.headers()["cache-control"]).toContain("no-store")
+    const firstScope = await page.locator("html").getAttribute("data-workspace-scope")
+    expect(firstScope).toMatch(/^[a-f0-9]{64}$/)
+    await page.getByRole("combobox", { name: "Theme" }).selectOption("dark")
+    await page.getByRole("button", { name: "Use Simple" }).click()
+    await expect(page).toHaveURL(new RegExp(prefix + "/\\?view=dashboard"))
+
+    await context.addCookies([{ name: "feedback-fixture", value: "member", url: origin }])
+    await page.goto(url)
+    const otherScope = await page.locator("html").getAttribute("data-workspace-scope")
+    expect(otherScope).toMatch(/^[a-f0-9]{64}$/)
+    expect(otherScope).not.toBe(firstScope)
+    await page.getByRole("combobox", { name: "Theme" }).selectOption("light")
+    await page.getByRole("button", { name: "Use Simple" }).click()
+    await expect(page).toHaveURL(new RegExp(prefix + "/\\?view=dashboard"))
+    const values = await page.evaluate(keys => keys.map(key =>
+      JSON.parse(localStorage.getItem("meitheal-workspace-v1:" + key) ?? "null")?.theme), [firstScope, otherScope])
+    expect(values).toEqual(["dark", "light"])
+  } finally { await context.close() }
+})
+
+test("a reflected panel route expires on account change but an opened bookmark still wins", async ({ browser }) => {
+  const context = await browser.newContext({ serviceWorkers: "block", extraHTTPHeaders: {} })
+  try {
+    const page = await context.newPage()
+    await context.addCookies([{ name: "feedback-fixture", value: "admin", url: origin }])
+    const hostPath = origin + "/fixture-ha-account"
+    const bookmark = hostPath + "?meitheal=" + encodeURIComponent("/today")
+    await page.route(hostPath + "**", route => route.fulfill({
+      contentType: "text/html",
+      body: `<home-assistant></home-assistant><iframe title="Meitheal" src="${prefix}//" style="width:100%;height:900px;border:0"></iframe>`,
+    }))
+    await page.goto(hostPath)
+    const app = page.frameLocator("iframe")
+    await expect(app.getByRole("link", { name: "Set up Meitheal" })).toBeVisible()
+    await app.locator("#sidebar").getByRole("link", { name: "Today", exact: true }).click()
+    await expect(app.locator("#today-overview")).toBeVisible()
+    await expect(page).toHaveURL(bookmark)
+    const memberScope = createHash("sha256").update("meitheal-workspace\0").update("fixture-member").digest("hex")
+    await page.evaluate(scope => {
+      localStorage.setItem("meitheal-workspace-v1:" + scope, JSON.stringify({ firstPage: "tasks" }))
+    }, memberScope)
+    await context.addCookies([{ name: "feedback-fixture", value: "member", url: origin }])
+    await page.reload()
+    await expect(app.locator("html")).toHaveAttribute("data-workspace-scope", memberScope)
+    await expect(app.locator("#tasks-view-kanban")).toBeVisible()
+    await expect.poll(() => new URL(page.url()).searchParams.get("meitheal")).toBe("/tasks?view=kanban#kanban")
+    await page.goto(bookmark)
+    await expect(app.locator("#today-overview")).toBeVisible()
+  } finally { await context.close() }
+})
+
+test("Board creation distinguishes access pending from an unconfirmed response", async ({ browser }) => {
+  const context = await browser.newContext({ serviceWorkers: "block", extraHTTPHeaders: {} })
+  try {
+    await context.addCookies([{ name: "feedback-fixture", value: "admin", url: origin }])
+    const page = await context.newPage()
+    const form = page.locator('form[data-board-form="create"]')
+    let outcome = { status: 201, contentType: "text/plain", body: "unreadable" }
+    await page.route("**/api/boards", route => route.request().method() === "POST"
+      ? route.fulfill(outcome) : route.continue())
+    for (const pending of [false, true]) {
+      if (pending) outcome = { status: 202, contentType: "application/json", body: JSON.stringify({ accessPending: true }) }
+      await page.goto(origin + prefix + "/boards")
+      await page.locator(".board-add summary").click()
+      await form.locator('input[name="name"]').fill("Weekend plans")
+      await form.getByRole("combobox").selectOption("chores")
+      await form.getByRole("button", { name: "Create Board" }).click()
+      await expect(form.getByRole("status")).toContainText(pending
+        ? "Its access is still being verified" : "Could not confirm whether the Board was created")
+      await expect(form.getByRole("button", { name: "Create Board" })).toBeHidden()
+    }
   } finally { await context.close() }
 })

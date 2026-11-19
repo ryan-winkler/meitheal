@@ -17,6 +17,7 @@ import {
   currentBoardGrantRevision,
   readBoardGrantRevision
 } from "./board-grant-fence"
+import { NAMED_BOARD_PRESETS, isNamedBoardPreset, type NamedBoardPreset } from "../named-board-presets"
 
 export type BoardActor = { kind: VerifiedPrincipal["kind"]; id: string }
 export type BoardRole = "owner" | "member" | "viewer" | "service"
@@ -110,7 +111,9 @@ export class NamedBoardRepository {
   }
 
   /** The caller verifies that the creator is the current active Home Assistant user. */
-  async create(owner: VerifiedPrincipal, name: string) {
+  async create(owner: VerifiedPrincipal, name: string, preset?: NamedBoardPreset) {
+    if (preset !== undefined && !isNamedBoardPreset(preset)) throw new Error("Choose an available Board preset.")
+    const labels = preset === undefined ? undefined : NAMED_BOARD_PRESETS[preset]
     if (!["ha_user", "local_operator"].includes(owner.kind) || !principalProof(owner))
       return { status: "locked" } as const
     const boardId = randomUUID()
@@ -142,7 +145,7 @@ export class NamedBoardRepository {
             args: [
               randomUUID(),
               status.defaultLane,
-              status.label,
+              labels?.[position] ?? status.label,
               position,
               JSON.stringify([status.canonical]),
               now,

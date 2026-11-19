@@ -61,6 +61,29 @@ test("household Calendar and Deferred queues exclude named Board tickets", async
   expect(await repo.findDeferredPage(1)).toEqual({ page: 1, total: 0, tasks: [] })
 })
 
+test("new Board presets change only labels on the common four status keys", async () => {
+  const db = getPersistenceClient()
+  const repo = new NamedBoardRepository(db, marker)
+  const cases = [
+    { preset: undefined, labels: ["Backlog", "Todo", "In Progress", "Done"] },
+    { preset: "standard", labels: ["Backlog", "To Do", "In Progress", "Done"] },
+    { preset: "project", labels: ["Backlog", "To Do", "In Progress", "Delivered"] },
+    { preset: "chores", labels: ["Backlog", "To Do", "Doing", "Checked Off"] },
+  ] as const
+  for (const { preset, labels } of cases) {
+    const board = await repo.create(fixturePrincipal("parent"), "Preset fixture", preset)
+    if (board.status !== "committed") throw new Error("Expected a newly created Board")
+    const { rows } = await db.execute({
+      sql: "SELECT key, label, includes FROM kanban_lanes WHERE board_id = ? ORDER BY position",
+      args: [board.result.id],
+    })
+    expect(rows.map(row => row.label)).toEqual(labels)
+    expect(rows.map(row => row.key)).toEqual(["backlog", "pending", "active", "complete"])
+    expect(rows.map(row => JSON.parse(String(row.includes)))).toEqual([["backlog"], ["pending"], ["active"], ["complete"]])
+    expect(await repo.findAccess({ kind: "ha_user", id: "other" }, board.result.id)).toBeNull()
+  }
+})
+
 test("named grants are scoped to their Board, apply denials, and cannot remove the last active owner", async () => {
   const db = getPersistenceClient()
   const repo = new NamedBoardRepository(db, marker)

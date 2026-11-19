@@ -1,0 +1,190 @@
+---
+import Layout from "../layouts/Layout.astro"
+import Icon from "../components/ui/Icon.astro"
+import TablerModal from "../components/ui/TablerModal.astro"
+import { t } from "../i18n/translations"
+import { organizationLocale } from "../lib/organization-labels"
+import { isOrganizationFeatureAvailable } from "../lib/organization-request-context"
+import { verifiedIngressUser } from "../lib/verified-ingress-user"
+import { boardSessionProof } from "../lib/named-board-request"
+import tablerStylesHref from "../styles/tabler-surface.scss?url"
+
+const locale = organizationLocale(Astro)
+const copy = (key: string) => t(`setup.${key}`, locale)
+const canViewBoards = isOrganizationFeatureAvailable("organizer")
+const user = verifiedIngressUser(Astro.locals)
+const destinations = [
+  { label: "achievements", text: "achievements_help", href: "/settings#tasks-boards-settings", icon: "trophy" },
+  { label: "ai", text: "ai_help", href: "/settings#ai-agents-settings", icon: "message-chatbot" },
+  { label: "scoring", text: "scoring_help", href: "/settings#scoring-settings", icon: "calculator" },
+] as const
+const community = [
+  { label: "star", icon: "star", href: "https://github.com/ryan-winkler/meitheal" },
+  { label: "sponsor", icon: "heart", href: "https://github.com/sponsors/ryan-winkler" },
+  { label: "issues", icon: "bug", href: "https://github.com/ryan-winkler/meitheal-ha-addon/issues" },
+  { label: "discuss", icon: "message-circle", href: "https://github.com/ryan-winkler/meitheal/discussions" },
+  { label: "follow", icon: "user", href: "https://github.com/ryan-winkler" },
+] as const
+
+Astro.response.headers.set("Cache-Control", "private, no-store")
+---
+<Layout title={copy("title")} hideGlobalSearch privatePageShell>
+  <link slot="head" id="meitheal-tabler-styles" rel="stylesheet" href={tablerStylesHref} />
+  <div class="tabler-surface workspace-setup" data-workspace-setup>
+    <section class="card" aria-labelledby="workspace-setup-title">
+      <div class="card-body">
+        <h1 id="workspace-setup-title">{copy("title")}</h1>
+        <p>{copy("intro")}</p>
+        <form data-setup-form inert>
+          <fieldset>
+            <legend>{copy("mode")}</legend>
+            <div class="form-selectgroup form-selectgroup-boxes">
+              <label class="form-selectgroup-item">
+                <input class="form-selectgroup-input" type="radio" name="mode" value="simple" checked />
+                <span class="form-selectgroup-label">
+                  <strong>{copy("simple")}</strong><span>{copy("simple_help")}</span>
+                </span>
+              </label>
+              <label class="form-selectgroup-item">
+                <input class="form-selectgroup-input" type="radio" name="mode" value="advanced" />
+                <span class="form-selectgroup-label">
+                  <strong>{copy("advanced")}</strong><span>{copy("advanced_help")}</span>
+                </span>
+              </label>
+            </div>
+          </fieldset>
+          <ul class="setup-preset" data-setup-simple>
+            <li><Icon name="layout-dashboard" size={19} /> {copy("dashboard")}</li>
+            <li><Icon name="layout-kanban" size={19} /> {copy("kanban")}</li>
+            <li><Icon name="list-check" size={19} /> {copy("task_list")}</li>
+            <li><Icon name="bolt" size={19} /> {copy("quick")}</li>
+          </ul>
+          <div class="setup-choice">
+            <label for="setup-theme">{copy("theme")}</label>
+            <select class="form-select" id="setup-theme" name="theme">
+              <option value="auto">{copy("theme_auto")}</option>
+              <option value="light">{copy("theme_light")}</option>
+              <option value="dark">{copy("theme_dark")}</option>
+              <option id="keep-workspace-theme" value="keep" hidden>{copy("theme_keep")}</option>
+            </select>
+          </div>
+          <div class="setup-actions">
+            <button class="btn btn-primary" type="submit" data-setup-finish
+              data-simple={copy("use_simple")} data-advanced={copy("finish")}>{copy("use_simple")}</button>
+            <button class="btn btn-ghost" type="button" data-setup-skip>{copy("skip")}</button>
+          </div>
+          <div class="progress progress-sm" data-setup-progress hidden>
+            <div class="progress-bar" role="progressbar" aria-label={copy("saving")}
+              aria-valuemin="0" aria-valuemax="1" aria-valuenow="1"></div>
+          </div>
+          <p role="alert" data-setup-error hidden>{copy("storage_error")}
+            <a href="/?view=dashboard">{copy("continue")}</a>
+          </p>
+          <div class="setup-advanced" data-setup-advanced hidden>
+            <details open>
+              <summary>{copy("views")}</summary>
+              <div class="setup-choice">
+                <label for="setup-first">{copy("first_page")}</label>
+                <select class="form-select" id="setup-first" name="firstPage">
+                  <option value="dashboard">{copy("dashboard")}</option>
+                  <option value="tasks">{copy("tasks")}</option>
+                </select>
+              </div>
+              <div class="setup-choice">
+                <label for="setup-capture">{copy("new_task_opens")}</label>
+                <select class="form-select" id="setup-capture" name="capture">
+                  <option value="form">{copy("task_form")}</option>
+                  <option value="quick">{copy("quick")}</option>
+                </select>
+              </div>
+              <a href="/settings#look-and-feel-settings">{copy("more_themes")}</a>
+            </details>
+            <details>
+              <summary>{copy("boards")}</summary>
+              <p>{copy("board_example")}</p>
+              <p>{copy("routine_example")}</p>
+              <div class="setup-links">
+                {canViewBoards && <a href="/boards">{copy("view_boards")}</a>}
+                {isOrganizationFeatureAvailable("routines") && <a href="/progress#routines">{copy("open_routines")}</a>}
+              </div>
+            </details>
+            <details data-setup-permissions data-board-session={user ? boardSessionProof(user.id) : undefined}>
+              <summary>{copy("permissions")}</summary>
+              <p>{copy("permissions_help")}</p>
+              {canViewBoards && user && (
+                <div>
+                  <p data-setup-access-status role="status" data-loading={copy("access_loading")}
+                    data-empty={copy("access_empty")} data-unavailable={copy("access_unavailable")}></p>
+                  <ul data-setup-board-roles data-owner={copy("owner")} data-member={copy("member")} data-viewer={copy("viewer")}></ul>
+                </div>
+              )}
+              {canViewBoards && <a href="/boards">{copy("view_boards")}</a>}
+            </details>
+            {destinations.map(({ label, text, href, icon }) => (
+              <details>
+                <summary><Icon name={icon} size={17} /> {copy(label)}</summary>
+                <p>{copy(text)}</p>
+                <a href={href}>{copy("open_settings")}</a>
+              </details>
+            ))}
+          </div>
+        </form>
+        <noscript><p>{copy("javascript")} <a href="/?view=dashboard">{copy("continue")}</a></p></noscript>
+      </div>
+    </section>
+    <nav class="setup-community" aria-label={copy("community")}>
+      {community.map(({ label, icon, href }) => (
+        <a class="btn btn-secondary" href={href} target="_blank" rel="noopener noreferrer">
+          <Icon name={icon} size={16} /> {copy(label)}
+        </a>
+      ))}
+    </nav>
+    <TablerModal id="setup-skip-modal" title={copy("skip_title")} descriptionId="setup-skip-description" size="sm">
+      <p id="setup-skip-description">{copy("skip_help")}</p>
+      <Fragment slot="footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" data-tabler-initial-focus>{copy("keep_setting_up")}</button>
+        <button type="button" class="btn btn-primary" data-setup-confirm-skip>{copy("skip")}</button>
+      </Fragment>
+    </TablerModal>
+  </div>
+</Layout>
+
+<script>
+  import { pageLifecycle } from "@lib/page-lifecycle"
+  import { bindSetup } from "@lib/setup-controller"
+  pageLifecycle.onPageLoad(bindSetup)
+</script>
+
+<style>
+  .workspace-setup { max-width: 46rem; margin-inline: auto; padding-block: 1rem 2rem; }
+  .workspace-setup .card { border: 1px solid var(--border); border-radius: .9rem; background: var(--bg-card); }
+  .card-body { padding: clamp(1rem, 4vw, 2rem); }
+  h1 { margin: 0 0 .4rem; font-size: clamp(1.6rem, 4vw, 2.35rem); line-height: 1.12; letter-spacing: -.035em; }
+  p, .form-selectgroup-label span { color: var(--text-secondary); }
+  fieldset { border: 0; padding: 0; margin-block: 1.15rem .75rem; min-inline-size: 0; }
+  legend { font-weight: 650; margin-block-end: .4rem; }
+  .form-selectgroup { gap: .5rem; margin: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr)); }
+  .form-selectgroup-item { margin: 0; min-width: 0; }
+  .form-selectgroup-label { display: grid; gap: .15rem; text-align: start; height: 100%; }
+  .setup-preset { list-style: none; margin: .75rem 0 0; padding: .75rem; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: .5rem; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 8.5rem), 1fr)); gap: .55rem; }
+  .setup-preset li, summary, .setup-community a { display: flex; align-items: center; gap: .4rem; }
+  .setup-preset :global(svg), .setup-community :global(svg), summary :global(svg) { color: var(--accent-text, var(--accent)); flex: none; }
+  .setup-choice, .setup-actions, .setup-links, .setup-community { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; margin-block-start: .75rem; }
+  .setup-choice select { inline-size: auto; min-block-size: 44px; max-inline-size: 100%; }
+  .setup-actions { margin-block-start: .9rem; }
+  .setup-actions .btn, .setup-community .btn { min-block-size: 44px; }
+  .setup-advanced { margin-block-start: 1rem; }
+  .setup-advanced details { border-block-start: 1px solid var(--border); padding-block: .15rem .4rem; }
+  .setup-advanced summary { display: list-item; font-weight: 650; cursor: pointer; min-block-size: 44px; align-content: center; }
+  .setup-advanced summary :global(svg) { display: inline; vertical-align: -.22em; margin-inline-start: .25rem; }
+  .setup-advanced p, .setup-advanced details a { margin-block: .35rem; }
+  .setup-advanced [data-setup-board-roles]:empty, .setup-advanced [data-setup-access-status]:empty { display: none; }
+  .setup-community { gap: .4rem; }
+  .setup-community .btn { padding: .35rem .4375rem; border-radius: .35rem; font-size: .875rem; }
+  [data-setup-progress] { margin-block-start: .75rem; }
+  [data-setup-progress] .progress-bar { width: 100%; }
+  [data-setup-error] { margin-block-start: .75rem; }
+  @media (max-width: 34rem) {
+    .setup-preset { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+</style>

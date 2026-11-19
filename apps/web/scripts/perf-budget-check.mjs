@@ -12,6 +12,8 @@ const execFileAsync = promisify(execFile);
 
 const defaultBudgets = {
   clientBytesMax: 100 * 1024,
+  commonClientBytesMax: undefined,
+  workspaceUiBytesMax: 50_000,
   rssKbMax: 220 * 1024,
   p95MsMax: 250
 };
@@ -49,6 +51,8 @@ async function loadBudgets(scriptDir) {
       if (fromFile) {
         budgets = {
           clientBytesMax: parsePositiveInteger(String(fromFile.clientBytesMax)) ?? budgets.clientBytesMax,
+          commonClientBytesMax: parsePositiveInteger(String(fromFile.commonClientBytesMax)),
+          workspaceUiBytesMax: parsePositiveInteger(String(fromFile.workspaceUiBytesMax)) ?? budgets.workspaceUiBytesMax,
           rssKbMax: parsePositiveInteger(String(fromFile.rssKbMax)) ?? budgets.rssKbMax,
           p95MsMax: parsePositiveNumber(String(fromFile.p95MsMax)) ?? budgets.p95MsMax
         };
@@ -59,6 +63,7 @@ async function loadBudgets(scriptDir) {
   }
 
   budgets = {
+    ...budgets,
     clientBytesMax: parsePositiveInteger(process.env.MEITHEAL_PERF_BUDGET_CLIENT_BYTES_MAX) ?? budgets.clientBytesMax,
     rssKbMax: parsePositiveInteger(process.env.MEITHEAL_PERF_BUDGET_RSS_KB_MAX) ?? budgets.rssKbMax,
     p95MsMax: parsePositiveNumber(process.env.MEITHEAL_PERF_BUDGET_P95_MS_MAX) ?? budgets.p95MsMax
@@ -80,6 +85,14 @@ async function sizeOfDirectoryBytes(dir) {
     total += stat.size;
   }
   return total;
+}
+
+// Setup, Quick Add and Dashboard customization load these assets on demand.
+async function workspaceUiBytes(dir) {
+  const optional = /^(?:dashboard-layout(?:-editor)?|dashboard-widget-controller|modal|tabler-modal|tabler-styles|tabler-surface|preferred-quick-add|setup(?:\.astro_astro_type_script_index_0_lang)?)\.[\w-]+\.(?:js|css)$/
+  const files = (await fs.readdir(dir)).filter(filename => optional.test(filename))
+  const sizes = await Promise.all(files.map(filename => fs.stat(path.join(dir, filename))))
+  return sizes.reduce((bytes, file) => bytes + file.size, 0)
 }
 
 async function waitForHealth(url, version, maxAttempts = 30, delayMs = 500) {
@@ -161,7 +174,10 @@ async function main() {
 
   const clientDir = path.join(appRoot, "dist/client");
   const serviceWorker = await fs.stat(path.join(clientDir, "sw.js")); // nosemgrep
-  const clientBytes = await sizeOfDirectoryBytes(path.join(clientDir, "_astro")) + serviceWorker.size;
+  const generatedDir = path.join(clientDir, "_astro");
+  const clientBytes = await sizeOfDirectoryBytes(generatedDir) + serviceWorker.size;
+  const optionalBytes = await workspaceUiBytes(generatedDir);
+  const commonBytes = clientBytes - optionalBytes;
   const distClientBytes = await sizeOfDirectoryBytes(clientDir);
 
   const scratchDir = await fs.mkdtemp(path.join(os.tmpdir(), "meitheal-perf-"));
@@ -279,7 +295,13 @@ async function main() {
     const p95Ms = percentile(latenciesMs, 0.95);
     const failures = [];
     if (clientBytes > budgets.clientBytesMax) {
-      failures.push(`Generated client assets too large: ${clientBytes} bytes > ${budgets.clientBytesMax}`);
+      failures.push(`Client assets too large: ${clientBytes} bytes > ${budgets.clientBytesMax}`);
+    }
+    if (budgets.commonClientBytesMax !== undefined && commonBytes > budgets.commonClientBytesMax) {
+      failures.push(`Common generated client assets too large: ${commonBytes} bytes > ${budgets.commonClientBytesMax}`);
+    }
+    if (optionalBytes > budgets.workspaceUiBytesMax) {
+      failures.push(`Optional workspace assets too large: ${optionalBytes} bytes > ${budgets.workspaceUiBytesMax}`);
     }
     if (rssKb > budgets.rssKbMax) {
       failures.push(`RSS too high: ${rssKb} KB > ${budgets.rssKbMax} KB`);
@@ -302,6 +324,8 @@ async function main() {
           },
           observed: {
             clientBytes,
+            commonClientBytes: commonBytes,
+            workspaceUiBytes: optionalBytes,
             distClientBytes,
             rssKb,
             warmups,

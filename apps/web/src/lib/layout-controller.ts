@@ -6,7 +6,9 @@
         import { createClientLogger, registerGlobalLogger } from "@lib/client-logger";
         import { containTabFocus } from "@lib/focus-trap"
         import { applyAppearancePreferences, bindAppearanceNavigation, readAppearancePreferences } from "@lib/appearance-preferences"
-        import { initIngressNavigation, safeIngressHref, syncIngressDestination } from "@lib/ingress-navigation"
+        import { safeIngressHref, syncIngressDestination } from "@lib/ingress-navigation"
+        import { bindWorkspaceEntry, DASHBOARD_PATH } from "@lib/workspace-entry"
+        import { openWorkspaceQuickAdd } from "@lib/open-workspace-capture"
         import { hasPriorityOverlay, initShortcutModal } from "@lib/layout-shortcuts-controller"
         import { currentTaskApiContext } from "@lib/task-api"
         import { boardNavigationLinks, readBoardNavigationContext } from "@lib/board-workspace"
@@ -82,6 +84,7 @@
         // ============================================================
         let keyboardSignal: AbortSignal | undefined
         pageLifecycle.onPageLoad((signal) => {
+          bindWorkspaceEntry(signal)
           // The fallback and initial Astro event can arrive with the same signal.
           const bindKeyboard = keyboardSignal !== signal
           keyboardSignal = signal
@@ -141,8 +144,8 @@
 
           const SHORTCUT_NAV = {
             dashboard: () => {
-              syncIngressDestination("/")
-              window.location.assign(safeIngressHref("/"))
+              syncIngressDestination(DASHBOARD_PATH)
+              window.location.assign(safeIngressHref(DASHBOARD_PATH))
             },
             tasks: () => openTasks(),
             kanban: () => openTasks("kanban"),
@@ -162,13 +165,17 @@
 
           // The New Task modal ships in Layout, so open it directly. Clicking a page
           // button by id pattern used to match the modal's own Cancel button instead.
-          function openNewTaskAction() {
+          function openTaskFormOrTasks() {
             const modalFn = (window as { openNewTaskModal?: () => void }).openNewTaskModal
             if (typeof modalFn === "function") {
               modalFn()
               return
             }
             SHORTCUT_NAV.tasks()
+          }
+          function openNewTaskAction() {
+            const trigger = document.activeElement
+            if (!openWorkspaceQuickAdd(trigger instanceof HTMLElement ? trigger : undefined, openTaskFormOrTasks)) openTaskFormOrTasks()
           }
 
           // Collapsed-rail quick action + floating tooltips

@@ -16,6 +16,7 @@
 - [Hierarchy Glossary — Meitheal Ubiquitous Language](hierarchy-glossary.md) - Find definitions for areas, goals, projects, and other planning terms.
 - [Named Boards](named-boards.md) - Set up private Boards, send-only access and scoped planning.
 - [Settings Shell Troubleshooting](settings-troubleshooting.md) - Find settings and diagnose navigation problems.
+- [First-time setup](first-time-setup.md) - Choose workspace views, capture and theme and recover failed setup saves.
 - [Save and restore rules and framework settings](settings-persistence.md) - Finish pending edits and recover from rejected saves or imports.
 - [New ticket form](new-ticket-form.md) - Create tickets and preserve checklist and private draft values.
 - [Settings outline icons](settings-outline-icons.md) - Maintain the build-extracted Tabler icon catalog, SVG sprites, 5-Bucket Emoji Policy, and MIT attribution.

@@ -6,6 +6,7 @@ packages:
 pmOnFail: error
 
 allowBuilds:
+  "@parcel/watcher@2.6.0": false
   esbuild: false
 
 overrides:

@@ -1,0 +1,109 @@
+.dashboard-layout-list {
+  list-style: none;
+  padding: 0;
+  margin: 16px 0;
+  display: grid;
+  gap: 12px;
+}
+
+.dashboard-layout-row {
+  margin: 0;
+  padding: 12px;
+  animation: none;
+  transition: none;
+}
+
+.dashboard-layout-row:hover {
+  transform: none;
+}
+
+.dashboard-layout-row__heading,
+.dashboard-layout-row__moves,
+.dashboard-layout-row__options,
+.dashboard-layout-row__options label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dashboard-layout-row__moves {
+  margin-inline-start: auto;
+  flex: none;
+}
+
+.dashboard-layout-row__heading strong {
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+
+.dashboard-layout-row__heading > svg,
+.dashboard-layout-grip {
+  flex: none;
+}
+
+.dashboard-layout-row__moves button {
+  min-inline-size: 44px;
+  min-block-size: 44px;
+  padding: 0;
+  justify-content: center;
+}
+
+.dashboard-layout-grip {
+  visibility: hidden;
+  display: grid;
+  place-items: center;
+  min-inline-size: 28px;
+  min-block-size: 44px;
+  cursor: grab;
+  touch-action: none;
+}
+
+[data-dashboard-drag-ready] .dashboard-layout-grip {
+  visibility: visible;
+}
+
+.dashboard-layout-row__options {
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+
+.dashboard-layout-row__options label {
+  min-block-size: 44px;
+}
+
+.dashboard-layout-row__options select {
+  inline-size: auto;
+  max-inline-size: 100%;
+  min-block-size: 44px;
+}
+
+.dashboard-layout-row__options input {
+  accent-color: var(--accent);
+}
+
+.dashboard-layout-row__moves button[aria-disabled="true"] {
+  opacity: 0.55;
+}
+
+.dashboard-layout-row.dashboard-widget-drag-ghost {
+  outline: 2px dashed var(--accent);
+}
+
+@media (pointer: coarse) {
+  .dashboard-layout-grip { min-inline-size: 44px; }
+}
+
+@media (max-width: 30rem) {
+  .dashboard-layout-row {
+    padding: 8px;
+  }
+
+  .dashboard-layout-row__heading,
+  .dashboard-layout-row__moves {
+    gap: 4px;
+  }
+
+  .dashboard-layout-row__heading > svg {
+    display: none;
+  }
+}

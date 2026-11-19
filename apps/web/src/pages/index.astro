@@ -4,10 +4,13 @@ import { boardContextHref } from "@lib/board-workspace"
 import { readBoardPagePlacement } from "@lib/board-page-placement"
 import { resolveBoardPageScope, boardScopeResponse } from "@lib/board-http"
 
+import DashboardLayoutEditor from "../components/dashboard/DashboardLayoutEditor.astro"
+import DashboardWidget from "../components/dashboard/DashboardWidget.astro"
 import GamificationWidget from "../components/gamification/GamificationWidget.astro"
 import StreakBadge from "../components/gamification/StreakBadge.astro"
 import UnifiedBar from "../components/layout/UnifiedBar.astro"
 import EmptyState from "../components/ui/EmptyState.astro"
+import Icon from "../components/ui/Icon.astro"
 import LabelBadges from "../components/ui/LabelBadges.astro"
 import Layout from "../layouts/Layout.astro"
 import {
@@ -29,6 +32,7 @@ import { taskSurface } from "../lib/task-surface"
 import { STATUS_LABELS as statusLabels } from "../lib/status-config"
 import { DASHBOARD_SECTIONS } from "../lib/dashboard-registry"
 import { calendarDaysFromToday, calendarToday } from "../lib/date"
+import dashboardStyles from "../styles/dashboard.css?url"
 const workScopeResult = await resolveBoardPageScope(Astro, { boardId: Astro.props.boardId })
 if (!workScopeResult.ok) return boardScopeResponse(workScopeResult.errorCode)
 const workScope = workScopeResult.scope
@@ -65,6 +69,7 @@ let gamificationWeekly: Array<{
   streakCount: number
   points: number
 }> = []
+let gamificationLoaded = false
 let achievementData: {
   achievements: Array<{
     id: string
@@ -125,6 +130,7 @@ try {
   gamificationStats = await getGamificationStats(workScope)
   gamificationWeekly = await getGamificationWeekly(workScope)
   achievementData = await getAllAchievements(workScope)
+  gamificationLoaded = true
 } catch {
   // Gamification is optional - keep the dashboard available without it.
 }
@@ -156,6 +162,7 @@ function relativeTime(dueDate: string): string {
 ---
 
 <Layout title={`Meitheal — ${t("nav.dashboard", locale)}`}>
+  <Fragment slot="head"><link rel="stylesheet" href={dashboardStyles} /></Fragment>
   <UnifiedBar
     title={t("nav.dashboard", locale)}
     titleIcon="dashboard"
@@ -168,14 +175,17 @@ function relativeTime(dueDate: string): string {
     searchScope="all"
     barId="dashboard-bar"
     slot="custom-header"
-  />
+  >
+    <button slot="actions" type="button" class="btn btn-ghost dashboard-edit-button"
+      data-dashboard-edit aria-label="Customize dashboard" title="Customize dashboard" hidden>
+      <Icon name="adjustments-horizontal" size={20} sprite />
+    </button>
+  </UnifiedBar>
 
+  <div class="dashboard-layout">
+  <h1 class="sr-only" id="dashboard-accessible-title" hidden>{t("nav.dashboard", locale)}</h1>
   <div id="dashboard-shell" class="dashboard-shell">
-    <section
-      id="dashboard-overview"
-      class="dashboard-shell__section dashboard-shell__section--overview"
-      data-dashboard-section
-    >
+    <DashboardWidget id="dashboard-overview">
       <h1 class="m-0 text-2xl font-semibold tracking-tight">{t("nav.dashboard", locale)}</h1>
       {!statsLoaded && <p role="status" class="m-0 text-text-secondary">Task counts couldn’t load. Refresh the page to try again.</p>}
       {statsLoaded && overdueCount === null && <p role="status" class="m-0 text-text-secondary">Overdue count couldn’t load. Refresh the page to try again.</p>}
@@ -261,13 +271,13 @@ function relativeTime(dueDate: string): string {
           </a>
         )}
       </div>}
-    </section>
+    </DashboardWidget>
 
-    <section id="dashboard-momentum" class="dashboard-shell__section" data-dashboard-section>
+    <DashboardWidget id="dashboard-momentum">
       <h2 class="dashboard-section__title">Momentum</h2>
 
       <div class="dashboard-shell__stack">
-        <div class="card dashboard-card dashboard-card--flush">
+        {gamificationLoaded ? <div class="card dashboard-card dashboard-card--flush">
           <GamificationWidget
             stats={gamificationStats}
             weekly={gamificationWeekly}
@@ -276,7 +286,7 @@ function relativeTime(dueDate: string): string {
             achievements={achievementData.achievements}
             timezone={dashboardTimeZone}
           />
-        </div>
+        </div> : <p class="text-text-secondary" role="status">Achievements couldn’t load. Refresh the page to try again.</p>}
 
             <div class="card dashboard-card" id="dashboard-favorites" data-available={String(favoritesLoaded)} hidden={favorites.length === 0}>
               <div class="card-header">
@@ -332,9 +342,9 @@ function relativeTime(dueDate: string): string {
               </div>
             </div>
       </div>
-    </section>
+    </DashboardWidget>
 
-    <section id="dashboard-capture" class="dashboard-shell__section" data-dashboard-section>
+    <DashboardWidget id="dashboard-capture">
       <div class="card dashboard-card dashboard-card--capture">
         <div class="card-header dashboard-card__header">
           <div>
@@ -360,9 +370,9 @@ function relativeTime(dueDate: string): string {
           </button>
         </form>
       </div>
-    </section>
+    </DashboardWidget>
 
-    <section id="dashboard-open" class="dashboard-shell__section" data-dashboard-section>
+    <DashboardWidget id="dashboard-open">
       <div class="card dashboard-card" id="my-open-tasks-card">
         <div class="card-header">
           <div>
@@ -432,9 +442,9 @@ function relativeTime(dueDate: string): string {
           {openLoaded ? "No open tasks for this selection." : "Couldn’t refresh open work. Reload to try again."}
         </div>
       </div>
-    </section>
+    </DashboardWidget>
 
-    <section id="dashboard-recent" class="dashboard-shell__section" data-dashboard-section>
+    <DashboardWidget id="dashboard-recent">
       <div class="card dashboard-card">
         <div class="card-header">
           <div>
@@ -456,9 +466,7 @@ function relativeTime(dueDate: string): string {
                 <EmptyState
                   title={t("dashboard.no_tasks_yet", locale)}
                   description={t("dashboard.create_first_task", locale)}
-                >
-                  <span slot="icon" style="font-size: 48px; line-height: 1;">✦</span>
-                </EmptyState>
+                />
               </div>
             ) : (
               tasks.map((task) => {
@@ -556,8 +564,22 @@ function relativeTime(dueDate: string): string {
           }
         </div>
       </div>
-    </section>
+    </DashboardWidget>
   </div>
+  <div id="dashboard-empty" class="dashboard-empty tabler-surface" hidden>
+    <div class="empty">
+      <div class="empty-icon"><Icon name="layout-dashboard" size={32} sprite /></div>
+      <h1 class="empty-title">Your dashboard is empty</h1>
+      <p class="empty-subtitle">Add widgets to see tasks, capture work, and track progress here.</p>
+      <div class="empty-action">
+        <button type="button" class="btn btn-primary" data-dashboard-edit>Add widgets</button>
+        <a href="/tasks" class="btn btn-ghost">Open Tasks</a>
+      </div>
+    </div>
+  </div>
+  </div>
+
+  <DashboardLayoutEditor />
 
   <button
     id="dashboard-go-top"
@@ -582,158 +604,3 @@ function relativeTime(dueDate: string): string {
     import "@lib/dashboard-controller"
   </script>
 </Layout>
-
-<style>
-  .task-badge {
-    color: var(--text-secondary);
-  }
-
-  .dashboard-shell {
-    display: flex;
-    flex-direction: column;
-    gap: 28px;
-    padding: 24px clamp(16px, 2vw, 24px) 52px;
-  }
-
-  .dashboard-shell__section {
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-    scroll-margin-top: calc(var(--unified-bar-height, 56px) + 20px);
-  }
-
-  .dashboard-shell__stack {
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-  }
-
-  .dashboard-shell .stats-grid {
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr));
-    margin-bottom: 0;
-  }
-
-  .dashboard-shell .stat-card {
-    min-width: 0;
-    overflow-wrap: anywhere;
-  }
-
-  .dashboard-shell .stat-card-danger {
-    border-color: var(--danger);
-  }
-
-  .dashboard-section__title {
-    margin: 4px 0 0;
-    font-size: 1.35rem;
-    line-height: 1.2;
-    letter-spacing: -0.03em;
-  }
-
-  .dashboard-card__actions,
-  .dashboard-task-meta {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-wrap: wrap;
-  }
-
-  .dashboard-card {
-    margin: 0;
-  }
-
-  .dashboard-card--flush {
-    padding: 0;
-    overflow: hidden;
-  }
-
-  .dashboard-card--capture {
-    padding: 20px;
-  }
-
-  .dashboard-card__header {
-    margin-bottom: 14px;
-  }
-
-  .dashboard-quick-add-form {
-    display: flex;
-    gap: 12px;
-    align-items: stretch;
-    width: 100%;
-  }
-
-  .dashboard-quick-add-input {
-    flex: 1 1 auto;
-  }
-
-  .dashboard-ticket-key {
-    margin-right: 6px;
-    font-size: 11px;
-    color: var(--text-muted);
-  }
-
-  .dashboard-empty-note {
-    padding: 20px;
-    text-align: center;
-    color: var(--text-muted);
-    font-size: 13px;
-  }
-
-  .dashboard-go-top {
-    position: fixed;
-    right: 24px;
-    bottom: var(--floating-action-bottom, calc(24px + env(safe-area-inset-bottom, 0px)));
-    width: 44px;
-    height: 44px;
-    border: 1px solid color-mix(in srgb, var(--accent) 36%, var(--border));
-    border-radius: 14px;
-    background: var(--bg-card);
-    color: var(--text-primary);
-    box-shadow: 0 16px 40px rgba(7, 11, 24, 0.24);
-    cursor: pointer;
-    opacity: 0;
-    transform: translateY(8px);
-    transition: opacity 160ms ease, transform 160ms ease;
-    z-index: 40;
-  }
-
-  .dashboard-go-top.is-visible {
-    opacity: 1;
-    transform: translateY(0);
-  }
-
-  .dashboard-go-top:focus-visible {
-    outline: none;
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 24%, transparent);
-  }
-
-  @media (max-width: 900px) {
-    .dashboard-shell {
-      gap: 24px;
-      padding: 20px 16px 48px;
-    }
-  }
-
-  @media (max-width: 768px) {
-    .dashboard-quick-add-form {
-      flex-direction: column;
-    }
-
-    .dashboard-card__actions {
-      width: 100%;
-      justify-content: flex-start;
-    }
-  }
-
-  @media (max-width: 640px) {
-    .dashboard-go-top {
-      right: 16px;
-    }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .dashboard-go-top {
-      animation: none;
-      transition: none;
-    }
-  }
-</style>
