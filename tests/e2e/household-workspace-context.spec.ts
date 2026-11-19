@@ -53,7 +53,7 @@ test("Household picker and every task view retain context; modal, lane and draft
       const planningResponse = await page.goto(app + `/boards/household?${scope}&view=groups`)
       expect(planningResponse?.status(), scope).toBe(200)
       const sections = scope.startsWith("area=") ? "Area sections" : "Project sections"
-      await page.getByRole("navigation", { name: sections }).getByRole("link", { name: "Tasks", exact: true }).click()
+      await page.getByRole("navigation", { name: sections, exact: true }).getByRole("link", { name: "Tasks", exact: true }).click()
       await expect(page.locator("#kanban-shell")).toHaveAttribute("data-kanban-booted", "true")
       await expect(page.locator(`.kanban-card[data-id="${task.id}"]`)).toBeVisible()
     }
