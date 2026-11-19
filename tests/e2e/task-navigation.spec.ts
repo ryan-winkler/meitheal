@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { shouldSkipBrowserSpecs } from "./_helpers"
 
 test.skip(shouldSkipBrowserSpecs(), "Set E2E_BASE_URL to run browser specs")
@@ -65,7 +66,7 @@ test("old task pins and visibility move to New task while view pins navigate and
   await expect(pinnedLink).toHaveAttribute("data-persisted-task-view", "yes")
   await expect.poll(() => pinnedLink.evaluate(link => new URL((link as HTMLAnchorElement).href).searchParams.get("types"))).toBeNull()
   await pinnedLink.click()
-  await expect(page).toHaveURL(url => url.pathname === "/tasks" && url.searchParams.get("view") === "table")
+  await expect(page).toHaveURL(url => url.pathname === "/boards/household" && url.searchParams.get("view") === "table")
   expect(new URL(page.url()).searchParams.get("types")).toBeNull()
 
   await page.reload()
@@ -310,7 +311,7 @@ test("short landscape sidebar keeps pinned types and view menus reachable", asyn
 test("docked task Details retains Today as the active navigation and syncs a custom status", async ({ page, request, baseURL }) => {
   await page.setViewportSize({ width: 1600, height: 900 })
   await page.addInitScript(() => localStorage.setItem("meitheal-task-nav-prefs", JSON.stringify({ pinnedViews: ["kanban"] })))
-  const headers = { origin: new URL(baseURL!).origin }
+  const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
   const title = "Docked Today navigation fixture"
   const due_date = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Dublin", dateStyle: "short" }).format(new Date())
   const created = await request.post("/api/tasks", { headers, data: { title, due_date } })
@@ -401,14 +402,19 @@ test("pinned Table and Timeline keep the current workspace filters", async ({ pa
     localStorage.setItem("meitheal-task-view-filters", JSON.stringify({ search: "previous workspace search" }))
   })
   await page.setViewportSize({ width: 1440, height: 950 })
-  for (const from of ["/", "/tasks#kanban"]) {
+  const entries = [
+    { from: "/", path: "/boards/household", search: "" },
+    { from: "/boards/household?search=Board+search#kanban", path: "/boards/household", search: "Board search" },
+    { from: "/tasks?search=Legacy+search#kanban", path: "/tasks", search: "Legacy search" },
+  ]
+  for (const { from, path, search } of entries) {
     for (const [view, title] of [["timeline", "Timeline (Gantt)"], ["table", "Table"]] as const) {
       await page.goto(from)
       const link = page.locator(`#sidebar [data-task-view-pinned-item="${view}"]`).getByRole("link", { name: title, exact: true })
       await link.click()
-      await expect(page).toHaveURL(url => url.pathname === "/tasks" && url.searchParams.get("view") === view)
+      await expect(page).toHaveURL(url => url.pathname === path && url.searchParams.get("view") === view)
       await expect(page.locator(view === "table" ? "#table-shell" : "#tasks-view-timeline")
-        .getByRole("textbox", { name: "Filter by text" })).toHaveValue("")
+        .getByRole("textbox", { name: "Filter by text" })).toHaveValue(search)
     }
   }
 })
@@ -525,7 +531,7 @@ for (const theme of ["light", "dark", "knight-rider", "auto", "custom"] as const
 }
 
 test("Shopping links identify their own Area and follow applied Board filters", async ({ page, request, baseURL }) => {
-  const headers = { origin: new URL(baseURL!).origin }
+  const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
   const previous = (await (await request.get("/api/settings")).json()).sidebar_config
   const names = ["Kitchen supplies", "Workshop supplies"] as const
   const areas: string[] = []
