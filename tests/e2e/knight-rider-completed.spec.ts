@@ -66,9 +66,14 @@ test("Knight Rider keeps the completed Today state and saved theme truthful", as
   await page.goto("/today#today-work")
   await disclosure.locator("summary").click()
   await disclosure.getByRole("button", { name: "Archive completed", exact: true }).click()
-  const archived = page.waitForResponse(response => new URL(response.url()).pathname === "/api/tasks/clear-completed")
+  const archived = page.waitForResponse(response =>
+    new URL(response.url()).pathname === "/api/tasks/clear-completed" && response.request().method() === "POST")
   await page.getByRole("button", { name: "Archive", exact: true }).click()
-  expect(await (await archived).json()).toMatchObject({ ok: true, cleared: 1 })
+  expect((await archived).status()).toBe(200)
+  // The page can refresh immediately. Read the committed archive from its own request.
+  const archivedTask = await request.get(`/api/tasks/${id}`)
+  expect(archivedTask.status()).toBe(200)
+  expect(await archivedTask.json()).toMatchObject({ id, status: "archived" })
   await expect(disclosure).toBeHidden()
   await expect(page.locator("#clear-completed-btn")).toBeVisible()
   await page.goto("/")

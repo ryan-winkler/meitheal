@@ -2,6 +2,8 @@ import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { expect, test } from "@playwright/test"
 
 test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the disposable Meitheal browser fixture")
+// The injected Board refresh failures and delays need to reach Playwright's routes.
+test.use({ serviceWorkers: "block" })
 
 test("Details completion clears Knight Rider active work on Dashboard and Board", async ({ page, request }) => {
   const boardHeaders = await currentBoardWriteHeaders(request, "household", {})
