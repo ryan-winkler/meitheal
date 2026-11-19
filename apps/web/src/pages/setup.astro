@@ -35,7 +35,7 @@ Astro.response.headers.set("Cache-Control", "private, no-store")
       <div class="card-body">
         <h1 id="workspace-setup-title">{copy("title")}</h1>
         <p>{copy("intro")}</p>
-        <form data-setup-form>
+        <form data-setup-form inert>
           <fieldset>
             <legend>{copy("mode")}</legend>
             <div class="form-selectgroup form-selectgroup-boxes">

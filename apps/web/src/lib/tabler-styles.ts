@@ -7,7 +7,7 @@ export function ensureTablerStyles(): Promise<void> {
   const existing = document.querySelector<HTMLLinkElement>("#meitheal-tabler-styles")
   if (existing?.sheet) return Promise.resolve()
   const link = existing ?? document.createElement("link")
-  loadingStyles = new Promise((resolve, reject) => {
+  loadingStyles = new Promise<void>((resolve, reject) => {
     link.addEventListener("load", () => resolve(), { once: true })
     link.addEventListener("error", () => {
       link.remove()

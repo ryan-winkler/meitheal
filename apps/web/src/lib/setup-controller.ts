@@ -134,4 +134,5 @@ export function bindSetup(signal: AbortSignal): void {
     closeTablerModal(dialog)
     if (await saveChoices({ acknowledged: true })) goToWorkspace(preferenceDestination())
   }, { signal })
+  form.inert = false
 }
