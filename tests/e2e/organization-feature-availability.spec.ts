@@ -4,6 +4,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 
 import { expect, test } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { launchPinBrowser, startCoreFixture } from "../scripts/task-pins-fixture"
 
 test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires a disposable built app")
@@ -28,7 +29,8 @@ test("Timeline All Areas links survive filtering, reload and Back when Areas is 
       await context.addCookies([{ name: "feedback-fixture", value: user, url: origin }])
     }
 
-    const areaCreated = await member.request.post(app + "/api/areas", { headers, data: { name: "Timeline restricted Area" } })
+    const household = await currentBoardWriteHeaders(member.request, "household", headers, app)
+    const areaCreated = await member.request.post(app + "/api/areas", { headers: household, data: { name: "Timeline restricted Area" } })
     expect(areaCreated.status()).toBe(201)
     const areaId = (await areaCreated.json()).id
     const directory = await member.request.get(app + "/api/boards")
@@ -41,7 +43,7 @@ test("Timeline All Areas links survive filtering, reload and Back when Areas is 
     const prefix = "Timeline All Areas access"
     const ids: string[] = []
     for (const [suffix, status] of [["Current", "active"], ["Later", "pending"]]) {
-      const created = await member.request.post(app + "/api/tasks", { headers, data: {
+      const created = await member.request.post(app + "/api/tasks", { headers: household, data: {
         title: `${prefix} ${suffix}`, status,
         start_date: new Date().toISOString().slice(0, 10),
         due_date: new Date(Date.now() + 86_400_000).toISOString().slice(0, 10),
@@ -58,16 +60,13 @@ test("Timeline All Areas links survive filtering, reload and Back when Areas is 
     })
     expect(saved.status(), await saved.text()).toBe(204)
 
-    for (const path of ["/boards/household", `/boards/${boardId}`, `/api/boards/${boardId}`]) {
+    for (const path of ["/boards/household", "/api/boards/household", `/boards/${boardId}`, `/api/boards/${boardId}`]) {
       for (const query of ["", "?area="]) expect((await member.request.get(app + path + query)).status(), path + query).toBe(200)
       for (const query of [`?area=${areaId}`, "?area=%20", `?area=&area=${areaId}`]) {
         expect((await member.request.get(app + path + query)).status(), path + query).toBe(404)
       }
     }
-    // Household uses its shared task API; the named-Board API remains unavailable.
-    for (const query of ["", "?area=", `?area=${areaId}`]) {
-      expect((await member.request.get(app + "/api/boards/household" + query)).status()).toBe(404)
-    }
+    expect((await member.request.get(app + "/api/boards/household?view=groups")).status()).toBe(404)
     expect((await member.request.get(app + "/api/areas")).status()).toBe(404)
     expect((await other.request.get(app + "/api/areas")).status()).toBe(200)
     for (const path of [`/boards/${boardId}?area=`, `/api/boards/${boardId}?area=`]) {

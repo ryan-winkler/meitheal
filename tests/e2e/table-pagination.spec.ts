@@ -1,10 +1,11 @@
 import { randomUUID } from "node:crypto"
 import { expect, test } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 
 test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires a disposable built app")
 
 test("Table filters, sorts, groups and counts before slicing and keeps selection page-scoped", async ({ page, request, baseURL }) => {
-  const headers = { origin: new URL(baseURL!).origin }
+  const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
   const name = `Table paging ${randomUUID()}`
   const area = await request.post("/api/areas", { headers, data: { name } })
   expect(area.status(), await area.text()).toBe(201)
@@ -99,12 +100,13 @@ test("Table filters, sorts, groups and counts before slicing and keeps selection
     await expect(group).toHaveAttribute("aria-expanded", "false")
     await expect(table.locator(".row-check:checked")).toHaveCount(0)
   } finally {
-    for (const id of tasks) await request.delete(`/api/tasks/${id}`, { headers })
-    await request.delete(`/api/areas/${areaId}`, { headers })
+    for (const id of tasks) await request.delete(`/api/tasks/${id}`, { headers, data: {} })
+    await request.delete(`/api/areas/${areaId}`, { headers, data: {} })
   }
 })
 
 test("Table refresh keeps the last applied rows after failure and ignores superseded responses", async ({ browser, request, baseURL }) => {
+  const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
   const context = await browser.newContext({ baseURL: baseURL!, serviceWorkers: "block" })
   const page = await context.newPage()
   const key = randomUUID()
@@ -113,7 +115,7 @@ test("Table refresh keeps the last applied rows after failure and ignores supers
   const ids: string[] = []
   try {
     for (const title of [first, second]) {
-      const response = await request.post("/api/tasks", { data: { title } })
+      const response = await request.post("/api/tasks", { headers, data: { title } })
       expect(response.status(), await response.text()).toBe(201)
       ids.push((await response.json()).id)
     }
@@ -160,6 +162,6 @@ test("Table refresh keeps the last applied rows after failure and ignores supers
     expect(new Set(markers).size).toBe(3)
   } finally {
     await context.close()
-    for (const id of ids) await request.delete(`/api/tasks/${id}`)
+    for (const id of ids) await request.delete(`/api/tasks/${id}`, { headers, data: {} })
   }
 })

@@ -628,7 +628,9 @@ function getGroupDisplayForKey(
     const area = areas.get(key)
     if (area) return area
     if (key !== "default") return {
-      label: window.mI18n?.get("table.unavailable_area") ?? "Unavailable Area", icon: "📋", color: "var(--accent)",
+      label: key ? window.mI18n?.get("table.unavailable_area") ?? "Unavailable Area"
+        : window.mI18n?.get("recent_activity.no_area") ?? "No area",
+      icon: "📋", color: "var(--accent)",
     }
   }
   return getGroupDisplay(groupBy, key)

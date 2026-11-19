@@ -2,18 +2,20 @@ import { randomUUID } from "node:crypto"
 
 import AxeBuilder from "@axe-core/playwright"
 import { expect, test } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 
 test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the disposable Meitheal fixture")
 
-test("Table groups and pager expose keyboard controls and pass scoped accessibility rules", async ({ page, request }) => {
+test("Table groups and pager expose keyboard controls and pass scoped accessibility rules", async ({ page, request, baseURL }) => {
+  const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
   const tasks: string[] = []
   const prefix = `Table accessibility ${randomUUID()}`
-  const custom = "waiting_on_delivery"
   try {
     for (let index = 0; index < 51; index++) {
       const response = await request.post("/api/tasks", {
+        headers,
         data: {
-          title: `${prefix} ${index}`, status: index === 0 ? custom : "pending",
+          title: `${prefix} ${index}`, status: index === 0 ? "active" : "pending",
           priority: index % 2 + 2,
         },
       })
@@ -61,7 +63,7 @@ test("Table groups and pager expose keyboard controls and pass scoped accessibil
     const previous = pager.getByRole("link", { name: "Previous" })
     await expect(previous).toBeFocused()
     await expect(previous).toHaveAccessibleDescription("51–51 of 51 matching tasks")
-    await expect(table.getByRole("rowheader", { name: custom, exact: true })).toBeVisible()
+    await expect(table.getByRole("rowheader", { name: "In Progress", exact: true })).toBeVisible()
     await previous.press("Enter")
     await expect(next).toBeFocused()
 
@@ -78,6 +80,6 @@ test("Table groups and pager expose keyboard controls and pass scoped accessibil
       expect(result.violations, theme).toEqual([])
     }
   } finally {
-    for (const id of tasks) await request.delete(`/api/tasks/${id}`)
+    for (const id of tasks) await request.delete(`/api/tasks/${id}`, { headers, data: {} })
   }
 })
