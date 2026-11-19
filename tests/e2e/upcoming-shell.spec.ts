@@ -1,3 +1,4 @@
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import AxeBuilder from "@axe-core/playwright"
 import { expect, test } from "@playwright/test"
 import { deferred, shouldSkipBrowserSpecs } from "./_helpers"
@@ -39,7 +40,7 @@ test.describe("Upcoming Shell", () => {
 
   test("task detail and completion work independently across both date windows", async ({ page, request, baseURL, browser }) => {
     const origin = new URL(baseURL!).origin
-    const headers = { origin }
+    const headers = await currentBoardWriteHeaders(request, "household", { origin })
     const dayMs = 86_400_000
     const now = Date.now()
     const fixtures = [
@@ -184,7 +185,7 @@ test.describe("Upcoming Shell", () => {
   })
 
   test("a dense day exposes its final row after keyboard collapse and reopen", async ({ page, request, baseURL }) => {
-    const headers = { origin: new URL(baseURL!).origin }
+    const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
     const dueDate = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10)
     const taskCount = 36
     const titlePrefix = "Upcoming dense day fixture"
@@ -241,9 +242,12 @@ test.describe("Upcoming Shell", () => {
   })
 
   test("task controls meet minimum target size with long titles in both themes", async ({ page, request, baseURL }) => {
-    const headers = { origin: new URL(baseURL!).origin }
+    const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
     const title = "Upcoming accessibility fixture " + "W".repeat(160)
-    const assignee = "custom_household-member"
+    const assigneeName = "Household Member"
+    const enrolled = await request.post("/api/users/custom", { headers, data: { name: assigneeName } })
+    expect(enrolled.status()).toBe(201)
+    const { id: assignee } = await enrolled.json()
     const tomorrow = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10)
     const created = await request.post("/api/tasks", {
       headers,
@@ -302,12 +306,16 @@ test.describe("Upcoming Shell", () => {
       }
     } finally {
       await request.delete(`/api/tasks/${id}`, { headers })
+      await request.delete("/api/users/custom", { headers, params: { id: assignee } })
     }
   })
   test("day labels and assignee initials keep AA contrast in both themes", async ({ page, request, baseURL }) => {
-    const headers = { origin: new URL(baseURL!).origin }
+    const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
     const tomorrow = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10)
-    const created = await request.post("/api/tasks", { headers, data: { title: "Upcoming contrast fixture", due_date: tomorrow, assigned_to: "ha_household" } })
+    const enrolled = await request.post("/api/users/custom", { headers, data: { name: "Household Helper" } })
+    expect(enrolled.status()).toBe(201)
+    const { id: assignee } = await enrolled.json()
+    const created = await request.post("/api/tasks", { headers, data: { title: "Upcoming contrast fixture", due_date: tomorrow, assigned_to: assignee } })
     expect(created.status(), await created.text()).toBe(201)
     const { id } = await created.json()
     try {
@@ -331,6 +339,7 @@ test.describe("Upcoming Shell", () => {
       }
     } finally {
       await request.delete(`/api/tasks/${id}`, { headers })
+      await request.delete("/api/users/custom", { headers, params: { id: assignee } })
     }
   })
 })
