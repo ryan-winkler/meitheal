@@ -644,6 +644,8 @@ Use the same journey on a renamed example Board and a newly created Board. Verif
 
 With a remembered Household Area and an unavailable Area list, Kanban must keep the unfiltered cards hidden while waiting for verification. When **Retry** succeeds, the active Area appears in the URL and only its cards are shown. An Area or Project in the original URL takes precedence over the remembered Area.
 
+An explicit Board bookmark with both a Project and its Area opens normally. A mismatched Area and Project return the standard unavailable response. Verify both on Household and on a named Board. The `from` query parameter tracks the previous Area for navigation.
+
 Restart through the actual runtime startup path, including runtime table/trigger validation. Migration-only read checks are a separate gate. Schema26 expects the exact version-aware trigger definitions and must preserve Board IDs, revisions and existing tasks. Do not replace a failed definition or publish a journal from database contents to make startup pass.
 
 Review integrations in Board settings. A denied or retired destination pauses its job. Never retarget it to another Board as a repair. Changing a global provider profile requires management of every affected Board. Verify an old in-flight request cannot send or commit after the binding generation changes.

@@ -1,6 +1,7 @@
 ---
+import { getPersistenceClient, HierarchyRepository } from "@domains/tasks"
 import BoardWorkspace from "../../components/boards/NamedBoardWorkspace.astro"
-import { boardScopeResponse, resolveBoardPageScope } from "../../lib/board-http"
+import { boardScopeErrorResponse, boardScopeResponse, resolveBoardPageScope } from "../../lib/board-http"
 import { readBoardWorkspaceSelection, readBoardPlanningSection } from "../../lib/board-workspace"
 
 Astro.response.headers.set("Cache-Control", "private, no-store")
@@ -10,6 +11,16 @@ const record = selection.projectId ? { resource: "project" as const, id: selecti
   : selection.areaId ? { resource: "area" as const, id: selection.areaId } : undefined
 const resolved = await resolveBoardPageScope(Astro, { boardId, ...(record ? { record } : {}) })
 if (!resolved.ok) return boardScopeResponse(resolved.errorCode)
+if (selection.projectId && selection.areaId) {
+  try {
+    const project = await new HierarchyRepository(getPersistenceClient(), resolved.scope).findProjectById(selection.projectId)
+    if (project?.area_id !== selection.areaId) return boardScopeResponse("unavailable")
+  } catch (error) {
+    const failure = boardScopeErrorResponse(error)
+    if (failure) return failure
+    throw error
+  }
+}
 const section = readBoardPlanningSection(Astro.url.searchParams)
 if (selection.planning && section !== "planning") {
   const query = new URLSearchParams({ board_id: boardId })

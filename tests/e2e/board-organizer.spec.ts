@@ -205,8 +205,18 @@ test("Named Board disclosures follow the selected Area and current Home Assistan
       headers, data: { action: "project", title: "Workbench checks", description: "", areaId: selected, goalId: null },
     })
     expect(projectCreated.status()).toBe(200)
+    const otherArea = await owner.request.post(app + "/api" + path + "/planning", {
+      headers, data: { action: "area", title: "Garden" },
+    })
+    expect(otherArea.ok(), await otherArea.text()).toBe(true)
     const planningView = await (await owner.request.get(app + "/api" + path)).json()
     const routineProject = planningView.planning.projects.find((row: { title: string }) => row.title === "Workbench checks").id
+    const gardenId = planningView.planning.areas.find((row: { name: string }) => row.name === "Garden").id
+    const bookmark = app + path + "?project=" + routineProject
+    expect((await owner.request.get(bookmark + "&area=" + selected, { maxRedirects: 0 })).status()).toBe(200)
+    const conflict = await owner.request.get(bookmark + "&area=" + gardenId, { maxRedirects: 0 })
+    expect(conflict.status()).toBe(404)
+    expect(conflict.headers()["cache-control"]).toContain("no-store")
     await page.setViewportSize({ width: 1240, height: 820 })
     await page.goto(app + path + "?area=" + selected)
     const projectsToggle = page.locator("[data-sidebar-boards]").getByRole("button", { name: "Projects in Workbench", exact: true })
