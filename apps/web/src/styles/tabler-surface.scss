@@ -1,8 +1,7 @@
 @use "sass:meta";
 @use "@tabler/core/scss/config" as tabler;
 
-// Scope official Tabler partials to their owning UI. Keep Meitheal's shell,
-// existing styles and appearance tokens authoritative elsewhere.
+/* Scope official Tabler partials to their owning UI. */
 .tabler-surface {
   --primary: var(--accent);
   --primary-fg: var(--personal-accent-foreground, var(--palette-on-accent));
@@ -33,7 +32,7 @@
   @include meta.load-css("@tabler/core/scss/ui/modals");
 }
 
-// Tabler mounts the backdrop under body rather than under the modal.
+/* Tabler mounts its backdrop under body. */
 body:has([data-meitheal-tabler-modal].show) > .modal-backdrop {
   @include tabler.overlay-backdrop(10000, #000, 0.62);
 }

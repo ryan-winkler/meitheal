@@ -100,4 +100,28 @@ test.describe("workspace setup", () => {
     await expect(quick.getByRole("button", { name: "Open full task form" })).toBeDisabled()
     expect(submits).toBe(1)
   })
+
+  test("setup keeps the selected theme when browser storage rejects the save", async ({ page }) => {
+    await page.addInitScript(() => {
+      const save = Storage.prototype.setItem
+      let blocked = true
+      Storage.prototype.setItem = function (key, value) {
+        if (blocked && key === "meitheal-workspace-v1:browser") {
+          blocked = false
+          throw new DOMException("Storage blocked", "QuotaExceededError")
+        }
+        save.call(this, key, value)
+      }
+    })
+    await page.goto("/setup")
+    const selector = page.getByRole("combobox", { name: "Theme" })
+    const finish = page.getByRole("button", { name: "Use Simple" })
+    await selector.selectOption("dark")
+    await finish.click()
+    await expect(page.getByRole("alert")).toContainText("This browser couldn’t save your choices")
+    await expect(selector).toHaveValue("dark")
+    await finish.click()
+    await expect(page).toHaveURL(/view=dashboard/)
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark")
+  })
 })
