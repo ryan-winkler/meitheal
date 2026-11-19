@@ -1,6 +1,6 @@
 import { currentBoardGrantRevision } from "../../domains/tasks/persistence/board-grant-fence"
 import { resolveBoardRequestScope } from "../../lib/board-request-context"
-import { boardScopeResponse } from "../../lib/board-http"
+import { boardScopeErrorResponse, boardScopeResponse } from "../../lib/board-http"
 import { bindingAllows, readWorkDestinations } from "../../domains/tasks/integration-destinations"
 import { validateBoardScope } from "../../domains/tasks/board-scope"
 import { validateBoardFeature } from "../../domains/tasks/board-access-service"
@@ -14,7 +14,7 @@ import { getPersistenceClient } from "../../domains/tasks/persistence/store"
  * @bounded-context integration
  */
 import type { APIRoute } from "astro"
-import { getIngressTransport } from "../../../scripts/ingress-transport.mjs"
+import { getIngressTransport, runWithIngressTransport } from "../../../scripts/ingress-transport.mjs"
 import {
   recordSseBackpressureDrop,
   recordSseClientConnected,
@@ -165,9 +165,20 @@ function refreshEntitySubscriptions(): void {
   }
 }
 
+async function openAuthority(context: Parameters<APIRoute>[0]) {
+  try {
+    const selected = await resolveBoardRequestScope(context, { operation: { resource: "task", action: "read" }, write: false })
+    return selected.ok ? selected.scope : boardScopeResponse(selected.errorCode)
+  } catch (error) {
+    const failure = boardScopeErrorResponse(error)
+    if (failure) return failure
+    throw error
+  }
+}
+
 export const HEAD: APIRoute = async context => {
-  const selected = await resolveBoardRequestScope(context, { operation: { resource: "task", action: "read" }, write: false })
-  return selected.ok ? new Response(null, { headers: SSE_HEADERS }) : boardScopeResponse(selected.errorCode)
+  const authority = await openAuthority(context)
+  return authority instanceof Response ? authority : new Response(null, { headers: SSE_HEADERS })
 }
 
 export const GET: APIRoute = async context => {
@@ -177,9 +188,16 @@ export const GET: APIRoute = async context => {
   // Encoded aliases that Astro resolves to this route lack the wrapper's socket guard.
   if (transport && !socket) return new Response(null, { status: 404 })
 
-  const selected = await resolveBoardRequestScope(context, { operation: { resource: "task", action: "read" }, write: false })
-  if (!selected.ok) return boardScopeResponse(selected.errorCode)
-  const boardId = selected.scope.boardId
+  const authority = await openAuthority(context)
+  if (authority instanceof Response) return authority
+  const boardId = authority.boardId
+  // Background emitters may be running outside the subscriber's request.
+  const opener = {
+    peer: transport?.peer ?? "",
+    fromSupervisor: Boolean(transport?.fromSupervisor),
+    identityHeadersSafe: Boolean(transport?.identityHeadersSafe),
+    configuredPath: transport?.configuredPath,
+  }
 
   const lifetime = new AbortController()
   let cleanup = () => {}
@@ -221,7 +239,7 @@ export const GET: APIRoute = async context => {
       }
 
       clients.add(send)
-      clientAuthorities.set(send, async (event, data) => {
+      clientAuthorities.set(send, (event, data) => runWithIngressTransport(opener, async () => {
         // Reverify identity with a fresh request proof; the original stream may
         // outlive the short-lived roster/token proof held by its opening GET.
         const currentContext = { request: new Request(request, { signal: AbortSignal.any([request.signal, lifetime.signal]) }), locals: context.locals }
@@ -248,7 +266,7 @@ export const GET: APIRoute = async context => {
           record: { resource: "task", id }, write: false,
         })
         return task.ok
-      })
+      }))
       overloadDisconnects.set(send, () => {
         recordSseBackpressureDrop()
         disconnect()
