@@ -13,6 +13,7 @@ import {
   getPersistenceClient,
   hasBoardSelection,
   rejectBoardSelectionInJson,
+  taskActionHints,
   taskLabelsJson,
   TaskRepository,
   unavailableBoardResponse,
@@ -73,6 +74,7 @@ export const GET: APIRoute = withBoardScope({ resource: "task", action: "read" }
   const parentTicketNum = row.parent_ticket_number != null ? Number(row.parent_ticket_number) : null
   const enriched = {
     ...taskDetailHttpProjection(row, scope.boardId, scope.principal.kind === "ha_user" && await readCurrentHARole(scope.principal.id, request.signal) === "admin"),
+    actions: taskActionHints(scope, row),
     is_promoted: Boolean(row.is_promoted),
     ticket_key: row.ticket_key ?? row.ticket_ref ?? formatTicketKey(ticketNum),
     parent_ticket_key: formatTicketKey(parentTicketNum),

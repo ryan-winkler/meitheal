@@ -39,6 +39,7 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
         import { lockTaskStatusWrite, taskApi, type AssigneeDirectory } from "@lib/task-api-client"
         import { initTaskDetailLayoutEditor, initTicketSectionOrder } from "@lib/task-detail-layout-controller"
         import { assigneeFallback } from "@lib/task-assignee-display"
+        import { isDoneStatus, normalizeStatus } from "@lib/status-config"
 
         // Use lifecycle signal for all global listeners in this module
         pageLifecycle.onPageLoad(() => {
@@ -75,8 +76,43 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
           boardRevoked = true
           boardWithheld = true
           _modalAbortController?.abort()
+          detailGeneration++
+          descriptionRenderSequence++
+          searchSession?.lifetime.abort()
+          searchSession?.handoff.onDismiss("history")
+          searchSession = undefined
+          pinnedSession = undefined
+          currentTaskId = null
+          currentTaskVersion = null
+          currentTaskActions.clear()
+          currentTicketKey = null
+          currentTicketNumber = null
+          sessionTicketId = null
+          currentCommentTarget = null
+          taskLoaded = false
+          resumeLoadedTask = undefined
+          pendingDescriptionSave = undefined
+          queuedDescriptionTransition = undefined
+          fieldSaveQueue = Promise.resolve(false)
+          pendingAreaWrites.clear()
+          commentAttempt = undefined
+          _descOriginalValue = ""
+          _settingsFields = []
+          _previouslyFocused = null
+          if (_descSavedTimer !== null) clearTimeout(_descSavedTimer)
+          clearTimeout(parentSearchTimer)
+          closeTaskReferences()
+          deferral.opening(false)
+          pins.opening()
+          for (const field of tdOverlay.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>("input, textarea, select")) field.value = ""
           tdOverlay.hidden = true
           tdOverlay.inert = true
+          tdOverlay.classList.remove("active", "closing")
+          delete tdOverlay.dataset.openTaskId
+          tdOverlay.replaceChildren()
+          tdOverlay.remove()
+          document.body.style.overflow = ""
+          document.body.classList.remove("has-docked-inspector")
         }, { signal: __signal })
         document.addEventListener("meitheal:board-verified", () => {
           if (boardRevoked) return
@@ -100,6 +136,7 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
         const tdActions = document.getElementById("td-task-actions")
         const statusSelect = document.querySelector<HTMLSelectElement>("#td-status")
         const doneButton = document.querySelector<HTMLButtonElement>("#td-toggle-done")
+        const deleteButton = document.querySelector<HTMLButtonElement>("#td-delete")
         const tdError = document.getElementById("td-load-error")
         const copyFallback = document.getElementById("td-copy-link-fallback")
         const copyValue = document.querySelector<HTMLInputElement>("#td-copy-link-value")
@@ -108,6 +145,7 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
         const commentError = document.getElementById("td-comment-error")
         let currentTaskId: string | null = null;
         let currentTaskVersion: number | null = null
+        const currentTaskActions = new Set<string>()
         let taskSaveConflict = false
         let fieldSaveQueue: Promise<boolean> = Promise.resolve(false)
         let sessionTicketId: string | null = null
@@ -169,7 +207,7 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
           document.body.style.overflow = isOpen && !docked ? "hidden" : ""
           if (loadedActions) loadedActions.hidden = !taskLoaded && !focusMode
           if (layoutToggle) layoutToggle.hidden = !taskLoaded
-          if (doneButton) doneButton.hidden = !taskLoaded
+          syncTaskActionControls()
           const label = focusToggle?.querySelector("span")
           if (label && focusToggle) {
             label.textContent = (focusMode ? focusToggle.dataset.exitLabel : focusToggle.dataset.enterLabel) ?? ""
@@ -434,9 +472,28 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
           }
         }
 
-        function setStatusLoading(locked: boolean) {
-          if (statusSelect) statusSelect.disabled = locked
-          if (doneButton) doneButton.disabled = locked
+        function statusAllowed(next: string): boolean {
+          const previous = statusSelect?.dataset.savedStatus ?? "pending"
+          const laneStatus = statusSelect?.querySelector<HTMLOptionElement>(`option[value="${CSS.escape(next)}"]`)?.dataset.statusMeaning ?? next
+          return currentTaskActions.has("edit") &&
+            (!(isDoneStatus(laneStatus) || isDoneStatus(previous)) || currentTaskActions.has("complete")) &&
+            (normalizeStatus(laneStatus) !== "archived" || currentTaskActions.has("delete"))
+        }
+
+        function syncTaskActionControls() {
+          const editable = taskLoaded && !_isPopulating && currentTaskActions.has("edit")
+          if (statusSelect) {
+            statusSelect.disabled = !editable
+            for (const option of statusSelect.options) option.disabled = !statusAllowed(option.value)
+          }
+          if (doneButton) {
+            doneButton.hidden = !taskLoaded || !currentTaskActions.has("complete")
+            doneButton.disabled = !editable || !currentTaskActions.has("complete")
+          }
+          if (deleteButton) {
+            deleteButton.hidden = !taskLoaded || !currentTaskActions.has("delete")
+            deleteButton.disabled = _isPopulating || deleteButton.hidden
+          }
         }
 
         function setStatusBusy(busy: boolean) {
@@ -451,7 +508,8 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
             statusSelect.value = status
             statusSelect.dataset.savedStatus = status
           }
-          if (doneButton) doneButton.textContent = status === "complete" ? "Mark as Undone" : "Mark as Done"
+          if (doneButton) doneButton.textContent = isDoneStatus(status) ? "Mark as Undone" : "Mark as Done"
+          syncTaskActionControls()
         }
 
         document.addEventListener("meitheal:today-status-committed", event => {
@@ -492,6 +550,7 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
           document.dispatchEvent(new CustomEvent("meitheal:ha-location-task"))
           currentTaskId = taskId
           currentTaskVersion = null
+          currentTaskActions.clear()
           if (!sameTicket) {
             sessionTicketId = null
             currentTicketKey = null
@@ -507,7 +566,7 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
           const modalSignal = _modalAbortController.signal
           document.getElementById("td-ai-response")?.remove()
           _isPopulating = true;
-          setStatusLoading(true)
+          syncTaskActionControls()
           statusSelect?.removeAttribute("data-saved-status")
           setStatusBusy(false)
           const areaField = document.querySelector<HTMLSelectElement>("#td-area")
@@ -595,6 +654,11 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
               showTaskError(false)
               return
             }
+            if (Array.isArray(t.actions)) {
+              for (const action of t.actions) {
+                if (action === "edit" || action === "complete" || action === "delete") currentTaskActions.add(action)
+              }
+            }
             taskId = String(t.id)
             currentTaskId = taskId
             currentTaskVersion = taskRecordVersion(t)
@@ -664,6 +728,9 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
                   // Add the main key as an option
                   const opt = document.createElement("option");
                   opt.value = lane.key;
+                  if (Array.isArray(lane.includes) && lane.includes.some((status: unknown) => typeof status === "string" && isDoneStatus(status))) {
+                    opt.dataset.statusMeaning = "complete"
+                  }
                   opt.textContent = lane.label;
                   statusSelect.appendChild(opt);
                 }
@@ -1330,7 +1397,7 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
               if (!liveSignal || liveSignal.aborted || currentTaskId !== taskId || detailGeneration !== loadedGeneration) return
               _isPopulating = false
               if (descSaveBtn && !pendingDescriptionSave) descSaveBtn.disabled = false
-              setStatusLoading(false)
+              syncTaskActionControls()
               if (areaField) areaField.disabled = !areaFieldReady
               if (unlinkParentButton) unlinkParentButton.disabled = false
               if (projectField) projectField.disabled = !projectFieldReady
@@ -1369,7 +1436,7 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
         }
 
         function saveTaskField(field: string, value: unknown, updatedAt?: number): Promise<boolean> {
-          if (!currentTaskId || _isPopulating) return Promise.resolve(false)
+          if (!currentTaskId || _isPopulating || boardWithheld || !currentTaskActions.has("edit")) return Promise.resolve(false)
           const generation = detailGeneration
           const queued = fieldSaveQueue.then(() => generation === detailGeneration ? saveTaskFieldNow(field, value, updatedAt) : false)
           fieldSaveQueue = queued.catch(() => false)
@@ -1377,7 +1444,7 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
         }
 
         async function saveTaskFieldNow(field: string, value: unknown, updatedAt?: number): Promise<boolean> {
-          if (!currentTaskId || _isPopulating) return false
+          if (!currentTaskId || _isPopulating || boardWithheld || !currentTaskActions.has("edit") || (field === "status" && !statusAllowed(String(value)))) return false
           if (taskSaveConflict) { showTaskWriteConflict(); return false }
           const generation = detailGeneration
           const taskId = currentTaskId
@@ -1600,6 +1667,10 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
           const id = currentTaskId
           if (!id || !statusSelect || statusSelect.disabled) return
           const previous = statusSelect.dataset.savedStatus ?? statusSelect.value
+          if (!statusAllowed(next)) {
+            statusSelect.value = previous
+            return
+          }
           const unlock = lockTaskStatusWrite(id)
           if (!unlock) {
             statusSelect.value = previous
@@ -1904,7 +1975,7 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
 
 
         doneButton?.addEventListener("click", () => {
-          if (statusSelect) void saveDetailStatus(statusSelect.value === "complete" ? "pending" : "complete")
+          if (statusSelect) void saveDetailStatus(isDoneStatus(statusSelect.value) ? "pending" : "complete")
         }, { signal: __signal })
 
         // Toggle favorite
@@ -2060,7 +2131,7 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
           .getElementById("td-delete")
           ?.addEventListener("click", async () => {
             const taskId = currentTaskId
-            if (!taskId || boardWithheld || !_modalAbortController || _modalAbortController.signal.aborted) return
+            if (!taskId || !currentTaskActions.has("delete") || boardWithheld || !_modalAbortController || _modalAbortController.signal.aborted) return
             if (taskSaveConflict) { showTaskWriteConflict(); return }
             const version = currentTaskVersion
             const context = currentTaskApiContext()

@@ -175,6 +175,7 @@ const schemas = {
       status: { type: "string", description: "Current workflow status. Also supports custom workflow statuses.", example: "pending" },
       priority: { type: "integer", minimum: 0, maximum: 5, description: "Priority level: 0=none, 1=lowest, 5=critical" },
       is_promoted: { type: "boolean", description: "Shared Kanban promotion, returned for task detail and updates." },
+      actions: { type: "array", items: { type: "string", enum: ["edit", "complete", "delete"] }, description: "Detail-only hints for the current caller. Each write verifies current permission separately." },
       due_date: { type: "string", format: "date-time", nullable: true },
       assigned_to: { type: "string", nullable: true, description: "User ID prefixed with 'ha_' or 'custom_'" },
       kanban_position: { type: "number", nullable: true, description: "Persisted shared board position; unranked tasks have null." },
