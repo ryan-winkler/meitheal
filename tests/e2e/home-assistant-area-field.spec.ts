@@ -48,8 +48,17 @@ test("Home Assistant Area is optional, versioned and available only to the selec
     expect((await other.request.get(registry)).status()).toBe(404)
     expect((await admin.request.get(registry)).status()).toBe(404)
 
+    const boardHeaders = async (context: typeof member) => {
+      const directory = await context.request.get(app + "/api/boards")
+      expect(directory.status(), await directory.text()).toBe(200)
+      const proof = directory.headers()["x-meitheal-board-session"]
+      expect(proof).toBeTruthy()
+      return { ...headers, "x-meitheal-board-session": proof! }
+    }
+    const memberHeaders = await boardHeaders(member)
+    const otherHeaders = await boardHeaders(other)
     const created = await member.request.post(app + "/api/tasks", {
-      headers, data: { title: "Location test", home_assistant_area_id: "fixture_kitchen", custom_fields: JSON.stringify({ Area: "Imported value" }) },
+      headers: memberHeaders, data: { title: "Location test", home_assistant_area_id: "fixture_kitchen", custom_fields: JSON.stringify({ Area: "Imported value" }) },
     })
     expect(created.status(), await created.text()).toBe(201)
     const item = await created.json()
@@ -62,9 +71,9 @@ test("Home Assistant Area is optional, versioned and available only to the selec
     const stored = await (await member.request.get(endpoint)).json()
     expect(stored.id).toBe("fixture_kitchen")
     expect((await other.request.get(endpoint)).status()).toBe(404)
-    expect((await other.request.put(endpoint, { headers, data: { version: stored.version, locationRevision: stored.locationRevision, home_assistant_area_id: null } })).status()).toBe(404)
+    expect((await other.request.put(endpoint, { headers: otherHeaders, data: { version: stored.version, locationRevision: stored.locationRevision, home_assistant_area_id: null } })).status()).toBe(404)
     expect((await member.request.put(endpoint, {
-      headers, data: { version: stored.version - 1, locationRevision: stored.locationRevision, home_assistant_area_id: "fixture_yard" },
+      headers: memberHeaders, data: { version: stored.version - 1, locationRevision: stored.locationRevision, home_assistant_area_id: "fixture_yard" },
     })).status()).toBe(409)
 
     const page = await member.newPage()
@@ -84,17 +93,15 @@ test("Home Assistant Area is optional, versioned and available only to the selec
     expect(current.version).toEqual(stored.version)
     expect(current.locationRevision).toBeGreaterThan(stored.locationRevision)
     expect((await member.request.put(endpoint, {
-      headers, data: { version: current.version, locationRevision: stored.locationRevision, home_assistant_area_id: "fixture_kitchen" },
+      headers: memberHeaders, data: { version: current.version, locationRevision: stored.locationRevision, home_assistant_area_id: "fixture_kitchen" },
     })).status()).toBe(409)
 
-    const boardDirectory = await member.request.get(app + "/api/boards")
-    const namedHeaders = { ...headers, "x-meitheal-board-session": boardDirectory.headers()["x-meitheal-board-session"]! }
-    const board = await member.request.post(app + "/api/boards", { headers: namedHeaders, data: { name: "Location Board" } })
+    const board = await member.request.post(app + "/api/boards", { headers: memberHeaders, data: { name: "Location Board" } })
     expect(board.status(), await board.text()).toBe(201)
     const { id: boardId } = await board.json()
     const namedBase = app + "/api/boards/" + boardId
     const namedTask = await member.request.post(namedBase + "/tickets", {
-      headers: namedHeaders, data: { title: "Yard fixture", home_assistant_area_id: "fixture_yard" },
+      headers: memberHeaders, data: { title: "Yard fixture", home_assistant_area_id: "fixture_yard" },
     })
     expect(namedTask.status(), await namedTask.text()).toBe(201)
     const { id: namedId } = await namedTask.json()
@@ -113,7 +120,7 @@ test("Home Assistant Area is optional, versioned and available only to the selec
     await changed
     expect((await member.request.get(registry)).status()).toBe(503)
     expect((await member.request.put(endpoint, {
-      headers, data: { version: current.version, locationRevision: current.locationRevision, home_assistant_area_id: "fixture_kitchen" },
+      headers: memberHeaders, data: { version: current.version, locationRevision: current.locationRevision, home_assistant_area_id: "fixture_kitchen" },
     })).status()).toBe(503)
     await page.reload()
     await expect(location.getByLabel("Home Assistant Area").locator("option:checked")).toHaveText("Saved location unavailable")
