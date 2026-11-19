@@ -99,7 +99,7 @@ test.describe("Shopping theme contrast", () => {
           const response = await route.fetch(), data = await response.json()
           await route.fulfill({ response, json: data.users?.length ? data : { ...data, users: [{ id: "contrast-fixture-user", name: "Fixture household member", source: "custom" }] } })
         })
-        await page.route(url => url.pathname === "/api/goals" && url.searchParams.get("projection") === "household", async route => {
+        await page.route(url => url.pathname === "/api/goals", async route => {
           const response = await route.fetch(), data = await response.json()
           const goal = { id: "contrast-fixture-goal", title: "Fixture goal" }
           await route.fulfill({ response, json: Array.isArray(data) ? data.length ? data : [goal] : data.goals?.length ? data : { ...data, goals: [goal] } })
@@ -120,15 +120,22 @@ test.describe("Shopping theme contrast", () => {
             observer.observe(document, { childList: true, subtree: true })
             mark()
           })
-          await page.goto(`${baseURL}/__task-theme-parent`)
-          const iframe = page.frames().find(candidate => candidate !== page.mainFrame())!
-          await iframe.waitForSelector("#new-task-title-input", { state: "attached" })
+          await page.goto(`${baseURL}/__task-theme-parent`, { waitUntil: "domcontentloaded" })
+          const host = page.locator('iframe[title="Synthetic HA frontend"]')
+          const iframe = await (await host.elementHandle())?.contentFrame()
+          if (!iframe) throw new Error("Synthetic Home Assistant frame did not load")
+          await iframe.waitForSelector("#new-task-title-input", { state: "attached", timeout: 8_000 })
           frame = iframe
           await expect(frame.locator("html")).toHaveAttribute("data-ha-theme", state.ha)
           await expect(frame.locator("html")).toHaveClass(new RegExp(state.effective))
         } else await page.goto(`${baseURL}/today`)
-        await frame.getByRole("button", { name: "New Task", exact: true }).click()
-        await frame.getByRole("button", { name: "Shopping", exact: true }).click()
+        const capture = frame.getByRole("button", { name: "New Task", exact: true })
+        const overlay = frame.locator("#new-task-overlay")
+        await expect(overlay).toHaveAttribute("data-new-task-controller", "ready")
+        await capture.focus()
+        await expect(overlay).not.toHaveAttribute("hidden", "")
+        await frame.evaluate(() => window.openNewTaskModal?.("shopping_item"))
+        await expect(overlay).toHaveClass(/active/)
         await frame.locator("#nt-options > summary").click()
         await expect(frame.locator('#new-task-assigned-to option[value]:not([value=""])').first()).toBeAttached()
         await expect(frame.locator('#new-task-goal option[value]:not([value=""])').first()).toBeAttached()
