@@ -1,8 +1,6 @@
 import { execFileSync, fork, type ChildProcess } from "node:child_process"
-import { createHash, randomUUID, X509Certificate } from "node:crypto"
+import { createHash, X509Certificate } from "node:crypto"
 import { readFile } from "node:fs/promises"
-import { existsSync, writeFileSync } from "node:fs"
-import { DatabaseSync } from "node:sqlite"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { chromium, type Page } from "@playwright/test"
@@ -40,17 +38,7 @@ export function startCoreFixture(work: string, plainHttp = false, restartPort?: 
     MEITHEAL_PIN_FIXTURE_TLS_CERT: cert,
     MEITHEAL_PIN_FIXTURE_TLS_KEY: key,
   }
-  const freshDatabase = !existsSync(join(work, "pins.db"))
   execFileSync(process.execPath, ["scripts/migrate.mjs"], { cwd: web, env })
-  if (boardDataDirectory && freshDatabase) {
-    // Synthetic current custody for isolated browser fixtures, never production enrollment.
-    const revision = randomUUID()
-    const database = new DatabaseSync(join(work, "pins.db"))
-    try {
-      database.prepare("INSERT INTO board_access_epoch (singleton, revision) VALUES (1, ?)").run(revision)
-      writeFileSync(join(boardDataDirectory, "meitheal-board-grants.json"), JSON.stringify({ epoch: revision }), { mode: 0o600 })
-    } finally { database.close() }
-  }
   return fork(fixture, { cwd: web, env, stdio: ["ignore", "pipe", "pipe", "ipc"] })
 }
 

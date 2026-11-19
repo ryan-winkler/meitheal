@@ -511,7 +511,6 @@ Label removal confirmations render the count and each selected name as plain tex
 
 MCP tool inputs resolve local OpenAPI component references with bounded expansion. Search uses native `q`, keeps `query` as an alias and remains task-scoped. Native operation responses must contain a valid JSON object without a rejection flag; HTTP204/205 are acknowledged empty success. A malformed or rejected completion response must produce a tool error, including completion by title. Human-only rule and framework settings mutations are not advertised as token tools. Use scoped disposable credentials when checking these paths.
 
-
 ## Application logging and optional Loki forwarding
 
 The App's `log_level` and `log_categories` options (defaulting to `auth`,
@@ -599,7 +598,6 @@ After building the App, run `MEITHEAL_TEST_BROWSER=1 pnpm --filter @meitheal/tes
 6. From an active named Project’s settings, submit **New Routine** through the browser. Verify the saved template and its first completed ticket retain that Project and Area. Check the Routine in both its library and Today, mark it done once and verify the same occurrence is shown as Done. A viewer can read the row and a completion-denied member cannot mark it done.
 7. Close the Project and verify a new occurrence cannot be created. Retry a previously completed period with current Board permissions and confirm it returns the original ticket. Revoke Board access or change the signed-in account and confirm the Routine list clears after revalidation. Reconnect and refresh after a failed check-in before retrying.
 
-
 ### Board deletion and paused Household recovery (schema 25)
 
 Schema 25 retains the reserved Household identity and MTH ticket counter while allowing an active/retired lifecycle. It replaces the Household state guard and installs storage guards that reject writes to retired Household tasks, Areas, Projects, Goals, templates, workflow lanes, drafts, pins, reactions, comments and mention receipts, Home Assistant locations, Calendar/Todo confirmation links and shared Pillars/Principles. Personal Pillars remain available. The migration and web startup share the same transaction and validation; startup does not reseed or repair retired Household work. Activity, mentions, reminders and inactivity views exclude retired Household work. Shared Goal reads and the Routine library continue to show authorized work from active named Boards.
@@ -614,14 +612,8 @@ Use Supervisor App backups with the separately retained [current operator checkp
 
 Verify `planning-navigation.spec.ts`, `board-project-pagination.spec.ts`, `board-lifecycle-ux.spec.ts` and `board-organizer.spec.ts` against a fresh build. Area arrow keys must select only local panels; the separate Tasks link opens the scoped Kanban. Check Settings at 320 and 375 pixels with default and long personal labels. For Project pagination, hold a real request, fail the next page, retry the same cursor and preserve loaded choices. Confirm loading/error announcements, current-pager focus handoff, no duplicate request and no focus theft after leaving the pager. A 401, 403, 404 or actual membership revocation must clear named shortcuts.
 
-<!-- coderabbit-ai-generated:v1 -->
-
-<!-- coderabbit-ai-generated-section:v1:053970440045c0db2ecf17c8aeb4f43158cb5010394ed35672509fb827c87af4 -->
-
 Delete Board must use the danger confirmation with initial Cancel focus. Native keyboard cancellation must send no lifecycle mutation and return focus to its trigger. While that dialog is open, go offline and revoke a real test owner in a separate session. Require immediate private-dialog removal, no resumed write from its retained old button, preserved public recovery focus, and a fresh working confirmation after revalidation. Retire two disposable Boards and identify each restore action by its Board name. Verify personalized and Irish Area creation labels, and an account without Areas must retain Unfiled Projects without instructions to create an unavailable Area.
 
 ### Ambiguous enrollment custody
 
-An epoch-free, markerless database cannot distinguish fresh enrollment from a pre-grant restore. Organization policy reads (including inherited feature defaults) and grant-fenced mutations, including Household lifecycle and planning retirement, stay locked. Trusted runtime evidence is a valid UUID revision in `board_access_epoch` matching the private excluded published marker, or its exact committed pending journal. Checkpoint recovery additionally requires independent current continuity, checksums, the same installation and App slug. Database contents, absent files, timestamps and administrator identity alone are not enrollment evidence. There is currently no supported first-enrollment procedure for an epoch-free database; a named owner-approved procedure must establish current custody before access can open. This intentionally removes implicit empty-database enrollment; valid current custody continues to work. Do not create a Board or change a policy to bypass the lock.
-
-<!-- /coderabbit-ai-generated:v1 -->
+An epoch-free, markerless database with no named Boards is treated as a fresh installation: the first owner grant or policy change creates the access epoch and publishes its marker. A restored snapshot taken before the first grant change has the same shape, so restrictions made after that snapshot are not carried by the database alone. Policy reads lock when a marker is present without a matching database epoch, first grant changes lock when a named Board or a marker already exists, and every later grant mutation requires the published marker to match the database revision. Before restoring a pre-grant snapshot over an installation that has since changed grants, follow the [current operator checkpoint](./home-assistant-backup-and-restore.md#recover-governed-access-from-a-current-operator-checkpoint) procedure and keep the App stopped until current custody is re-established. Database contents, absent files, timestamps and administrator identity alone are not proof of current custody.

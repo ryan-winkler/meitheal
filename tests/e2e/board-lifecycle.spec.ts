@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises"
+import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { expect, test } from "@playwright/test"
@@ -44,9 +44,6 @@ test.beforeEach(async () => {
   marker = join(directory, "grants.json")
   process.env.MEITHEAL_DB_URL = `file:${join(directory, "meitheal.db")}`
   await ensureSchema()
-  const revision = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
-  await getPersistenceClient().execute({ sql: "INSERT INTO board_access_epoch (singleton, revision) VALUES (1, ?)", args: [revision] })
-  await writeFile(marker, JSON.stringify({ epoch: revision }), { mode: 0o600 })
 })
 
 test.afterEach(async () => {
@@ -160,7 +157,7 @@ test("Household retirement pauses storage and aggregates without losing work or 
   expect((await restoredDb.execute("PRAGMA foreign_key_check")).rows).toEqual([])
 })
 
-test("empty Household with current custody can be deleted and restored", async () => {
+test("empty Household can be deleted and restored before named grants initialize", async () => {
   const repository = new NamedBoardRepository(getPersistenceClient(), marker)
   expect(await repository.changeLifecycle(parent, "household", "retired", 1, true)).toMatchObject({ status: "committed", result: "saved" })
   expect(await repository.changeLifecycle(parent, "household", "active", 2, true)).toMatchObject({ status: "committed", result: "saved" })

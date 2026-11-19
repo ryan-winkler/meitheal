@@ -23,10 +23,6 @@ test.beforeEach(async () => {
   marker = join(directory, "meitheal-board-grants.json")
   process.env.MEITHEAL_DB_URL = `file:${join(directory, "meitheal.db")}`
   await ensureSchema()
-  // These authority checks start with independently current synthetic custody.
-  const revision = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
-  await getPersistenceClient().execute({ sql: "INSERT INTO board_access_epoch (singleton, revision) VALUES (1, ?)", args: [revision] })
-  await writeFile(marker, JSON.stringify({ epoch: revision }), { mode: 0o600 })
 })
 
 test.afterEach(async () => {
@@ -150,26 +146,8 @@ test("a restored, absent, or replaced grant marker fails closed", async () => {
 test("failed grant-marker publication can recover the one committed change", async () => {
   const db = getPersistenceClient()
   const repo = new NamedBoardRepository(db, marker)
-  // Replace the published marker only after the current-custody check.
-  const client = new Proxy(db, {
-    get(target, property, receiver) {
-      if (property !== "transaction") return Reflect.get(target, property, receiver)
-      return async (...args: Parameters<typeof db.transaction>) => {
-        const tx = await db.transaction(...args)
-        return new Proxy(tx, {
-          get(target, property, receiver) {
-            if (property !== "commit") return Reflect.get(target, property, receiver)
-            return async () => {
-              await rm(marker)
-              await mkdir(marker)
-              await tx.commit()
-            }
-          },
-        })
-      }
-    },
-  })
-  const creation = await new NamedBoardRepository(client, marker).create("owner", "Work")
+  await mkdir(marker)
+  const creation = await repo.create("owner", "Work")
   expect(creation.status).toBe("committed-locked")
   if (creation.status !== "committed-locked") throw new Error("Expected a durable Board with work still locked")
   const { id } = creation.result
