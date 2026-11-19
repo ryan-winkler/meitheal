@@ -459,8 +459,11 @@ export const PUT: APIRoute = withBoardScope({ resource: "task", action: "edit" }
     })
   }
 
-  // Fetch old values for activity log diffing
-  const oldTask = await repo.getFieldsForDiff(resolvedId)
+  // The writer records activity from its own snapshot. Only priority and
+  // assignment notifications need old fields from this request.
+  const oldTask = sanitized.priority === 1 || sanitized.assigned_to !== undefined
+    ? await repo.getFieldsForDiff(resolvedId)
+    : null
 
   // Perform the update via repository
   const version = clientVersion === undefined ? undefined : {

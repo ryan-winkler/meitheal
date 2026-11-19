@@ -2,6 +2,7 @@
 import { readBoardPagePlacement } from "@lib/board-page-placement"
 import { createHash } from "node:crypto"
 import { getPersistenceClient, scopeBoardAccess, scopePermits, taskActionHints } from "@domains/tasks"
+import type { BoardScope } from "@domains/tasks"
 import { resolveBoardRequestScope } from "@lib/board-request-context"
 import { boardScopeAuthorityKey, retainBoardResponseScope } from "@lib/board-view"
 import { boardSessionProof } from "@lib/named-board-request"
@@ -70,6 +71,11 @@ const {
 } = Astro.locals;
 
 export interface Props {
+  workNavigation?: {
+    scope: BoardScope
+    placement: Extract<Awaited<ReturnType<typeof readBoardPagePlacement>>, { ok: true }>
+    dailyStreak?: number
+  }
   boardContext?: { boardId: string; session: string; boardName?: string; actorKey?: string };
   scopeGuard?: boolean;
   title?: string;
@@ -94,6 +100,7 @@ const {
   jsonLd,
 } = Astro.props;
 
+const workNavigation = Astro.props.workNavigation
 let boardContext = Astro.props.boardContext
 let layoutAuthority: string | undefined
 let layoutTaskCreate: boolean | undefined
@@ -103,14 +110,14 @@ if (!privatePageShell) {
   const boardMatch = /^\/boards\/([^/]+)\/?$/.exec(Astro.url.pathname)
   const recordMatch = /^\/(areas|projects|goals|task|tickets)\/([^/]+)\/?$/.exec(Astro.url.pathname)
   const resources = { areas: "area", projects: "project", goals: "goal", task: "task", tickets: "task" } as const
-  const result = await resolveBoardRequestScope(Astro, {
+  const result = workNavigation ? { ok: true as const, scope: workNavigation.scope } : await resolveBoardRequestScope(Astro, {
     operation: { resource: "task", action: "read" },
     ...(boardContext?.boardId || boardMatch ? { boardId: boardContext?.boardId ?? decodeURIComponent(boardMatch![1]!) } : {}),
     ...(recordMatch ? { record: { resource: resources[recordMatch[1] as keyof typeof resources], id: decodeURIComponent(recordMatch[2]!) } } : {}),
   }).catch(() => null)
   if (result?.ok) {
     retainBoardResponseScope(Astro.request, result.scope)
-    mobilePlacement = await readBoardPagePlacement(result.scope, Astro.url)
+    mobilePlacement = workNavigation?.placement ?? await readBoardPagePlacement(result.scope, Astro.url)
     layoutAuthority = boardScopeAuthorityKey(result.scope)
     layoutTaskCreate = scopePermits(result.scope, { resource: "task", action: "create" })
     layoutTaskActions = taskActionHints(result.scope)
@@ -633,7 +640,7 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
       >{t("nav.skip_to_content", locale)}</a
     >
     {!privatePageShell && <div class="layout-navigation" transition:persist="sidebar">
-      <Sidebar locale={locale} />
+      <Sidebar locale={locale} workNavigation={workNavigation} />
     </div>}
 
     <div class="main-content" style={privatePageShell ? "margin-inline-start: 0" : undefined}>

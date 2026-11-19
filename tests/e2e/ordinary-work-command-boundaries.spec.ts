@@ -116,6 +116,23 @@ test("read loans reject publication after a real Board authority change", async 
   await expect(tx.commit()).rejects.toBeTruthy()
   tx.close()
 })
+test("an admitted SQLite read snapshot expires with the original actor", async () => {
+  const db = getPersistenceClient()
+  const clock = Date.now
+  const expiry = clock() + 60_000
+  const actor = registerVerifiedPrincipal({ kind: "ha_user", id: "parent" }, { administrator: true, expiresAt: expiry })
+  const work = await scope("household", actor)
+  const tx = await boardOperationClient(db, work, { resource: "task", action: "read" }).transaction("read")
+  try {
+    expect((await tx.execute("SELECT 1 AS available")).rows[0]?.available).toBe(1)
+    Date.now = () => expiry
+    await expect(tx.execute("SELECT 1")).rejects.toMatchObject({ errorCode: "stale" })
+    await expect(tx.commit()).rejects.toMatchObject({ errorCode: "stale" })
+  } finally {
+    Date.now = clock
+    tx.close()
+  }
+})
 test("write-authorized task selectors use a read snapshot while another connection holds the writer", async () => {
   const db = getPersistenceClient(), work = await scope("household"), repo = new TaskRepository(db, work)
   const task = await create(work, { title: "Read a command target without taking a writer" })

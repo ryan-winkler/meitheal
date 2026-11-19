@@ -7,7 +7,7 @@ description: "Understand committed completion rewards and optional failures."
 
 Complete a task through `PUT` or `PATCH /api/tasks/{id}`. The server reads the prior status and saves the mutation in the same writer transaction. Only an actual transition into a completed status earns completion statistics, emits the completion event and starts recurrence processing. Concurrent requests or repeated writes to an already-complete task do not earn additional points. Existing version, checklist and dependency guards still apply.
 
-The acknowledged task response may include `gamification` with the earned XP, current statistics and optional celebrations. Browser callers use that result; they do not record another completion. `POST /api/gamification` is retired and returns HTTP 410. Habit check-ins and other non-task actions do not manufacture a task completion reward.
+The acknowledged task response may include `gamification` with the earned XP, current statistics and optional celebrations. The Board writer increments the daily total and resolves its streak together. Achievement checks award new unlocks from a single writer snapshot. Browser callers use the saved result. `POST /api/gamification` is retired and returns HTTP 410. Habit check-ins and other non-task actions do not manufacture a task completion reward.
 
 If optional statistics cannot be saved, the task still returns a successful acknowledgement with `gamification.error: "Task saved; completion statistics unavailable"`. The saved status remains authoritative. Refresh the task to resolve a lost response before retrying another action. Reopening and later completing a task is a new transition. Event dispatch is best-effort; successful persistence does not prove external subscriber receipt.
 

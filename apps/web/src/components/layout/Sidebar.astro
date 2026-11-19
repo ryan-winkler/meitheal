@@ -8,7 +8,7 @@ import SidebarHierarchyActions from "./SidebarHierarchyActions.astro"
 import SidebarNavList from "./SidebarNavList.astro";
 import { currentBoardContext } from "@lib/named-board-request"
 import { resolveBoardPageScope } from "@lib/board-http"
-import { scopePermits } from "@domains/tasks"
+import { scopePermits, type BoardScope } from "@domains/tasks"
 import TaskCreationMenu from "./TaskCreationMenu.astro";
 import NavOverflowMore from "./NavOverflowMore.astro";
 import SidebarFooter from "./SidebarFooter.astro";
@@ -23,11 +23,13 @@ import { boardNavigationLinks, readBoardNavigationContext } from "@lib/board-wor
 import { getFeatureFlags } from "../../lib/feature-flags";
 
 const currentPath = Astro.url.pathname;
-const selectedScope = await resolveBoardPageScope(Astro).catch(() => null)
+const workNavigation = Astro.props.workNavigation
+const selectedScope = workNavigation ? { ok: true as const, scope: workNavigation.scope } : await resolveBoardPageScope(Astro).catch(() => null)
 const captureDenied = selectedScope?.ok === true && !scopePermits(selectedScope.scope, { resource: "task", action: "create" })
 const boardContext = readBoardNavigationContext(Astro.url) ?? (selectedScope?.ok ? { boardId: selectedScope.scope.boardId } : undefined)
 const boardLinks = boardContext ? boardNavigationLinks(boardContext) : undefined
 export interface Props {
+  workNavigation?: { scope: BoardScope, dailyStreak?: number } | undefined
   locale?: Locale;
 }
 const {
@@ -131,8 +133,7 @@ const hierarchyEnabled = ff.hierarchy !== false && ff.organizer !== false;
 let currentStreak = 0;
 if (gamificationEnabled && selectedScope?.ok) {
   try {
-    const stats = await getDailyProgress(selectedScope.scope);
-    currentStreak = stats.currentStreak;
+    currentStreak = workNavigation?.dailyStreak ?? (await getDailyProgress(selectedScope.scope)).currentStreak;
   } catch {
     /* gamification schema may not exist yet */
   }

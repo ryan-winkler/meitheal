@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto"
-import { constants, lstatSync } from "node:fs"
+import { closeSync, constants, fstatSync, lstatSync, openSync, readSync } from "node:fs"
 import { mkdir, open, readdir, rename, rm } from "node:fs/promises"
 import { dirname, join, resolve } from "node:path"
 import { acquireWriteTransaction, retryStartupLock } from "./database-client.mjs"
-import { boardGrantPath, consumeDatabaseCreation, getBoardGrantPath, unwrapBoardGrantClient } from "./board-grant-context.mjs"
+import { boardGrantPath, boardGrantRevisionQuery, consumeDatabaseCreation, getBoardGrantPath, unwrapBoardGrantClient } from "./board-grant-context.mjs"
 import { consumeOperatorAdmission, registerStartupBoardAdmission } from "./startup-board-admission.mjs"
 
 export { boardGrantPath, getBoardGrantPath }
@@ -20,22 +20,24 @@ function rejectSymlinkPath(path) {
 
 export async function readBoardGrantRevision(path = boardGrantPath) {
   try {
-    const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK)
+    // The marker is a bounded local file. Read the opened descriptor without
+    // queueing each stat, read and close separately on the I/O worker pool.
+    const file = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK)
     try {
-      const stats = await file.stat()
+      const stats = fstatSync(file)
       if (!stats.isFile() || stats.size > 160) return null
       const bytes = Buffer.alloc(161)
-      const { bytesRead } = await file.read(bytes, 0, bytes.length, 0)
+      const bytesRead = readSync(file, bytes, 0, bytes.length, 0)
       if (bytesRead !== stats.size) return null
       const revision = JSON.parse(bytes.toString("utf8", 0, bytesRead))?.epoch
       return typeof revision === "string" && revisionPattern.test(revision) ? revision : null
-    } finally { await file.close() }
+    } finally { closeSync(file) }
   } catch { return null }
 }
 
 export async function databaseRevision(db) {
   db = unwrapBoardGrantClient(db)
-  const { rows: [current] } = await db.execute("SELECT revision FROM board_access_epoch WHERE singleton = 1")
+  const { rows: [current] } = await db.execute(boardGrantRevisionQuery)
   return typeof current?.revision === "string" && revisionPattern.test(current.revision) ? current.revision : null
 }
 

@@ -1,7 +1,7 @@
 import type { Client, InArgs, InStatement, Transaction } from "@libsql/client"
-import { requireBoardScope, scopeAssignedTo, validateBoardScope, type BoardScope, type WorkOperation } from "../board-scope"
+import { principalProof, requireBoardScope, scopeAssignedTo, scopeLimits, validateBoardScope, type BoardScope, type WorkOperation } from "../board-scope"
 import { boardGrantStillCurrent, currentBoardGrantRevision } from "./board-grant-fence"
-import { guardClientContinuity } from "./continuity-client"
+import { guardClientContinuity, isFencedReadSnapshot, validateFencedBoardScope } from "./continuity-client"
 import { validateBoardPlacement } from "../board-access-service"
 import { ownedPlanning, taskField, taskOwnedBy } from "./board-storage"
 import { sql, joinSql, sourceSql } from "./sql-fragment"
@@ -46,7 +46,7 @@ export function boardOperationClient(client: Client, scope: BoardScope, operatio
   const targets = [...new Set([...(prior?.targets ?? []), ...taskIds])]
   const check = async (reader: Pick<Client, "execute">, requestedOperations: readonly WorkOperation[] = operations) => {
     for (const requested of requestedOperations) {
-      const result = await validateBoardScope(scope, reader, requested)
+      const result = await validateFencedBoardScope(scope, reader, requested)
       if (!result.ok) throw new BoardOperationError(result.errorCode)
     }
   }
@@ -69,7 +69,10 @@ export function boardOperationClient(client: Client, scope: BoardScope, operatio
     }
   }
 
-  async function transaction(mode: "read" | "write" | "deferred" = write ? "write" : "read"): Promise<Transaction> {
+  async function transaction(
+    mode: "read" | "write" | "deferred" = write ? "write" : "read",
+    holdReadResult = false,
+  ): Promise<Transaction> {
     // A read entitlement cannot be used to acquire a writable transaction.
     if (!write && mode !== "read") throw new BoardOperationError("denied")
     await check(db)
@@ -77,7 +80,7 @@ export function boardOperationClient(client: Client, scope: BoardScope, operatio
     const requiredIntents = [...operations]
     const requiredChecks: Array<() => Promise<void>> = []
     const requireIntent = async (intent: WorkOperation) => {
-      const allowed = await validateBoardScope(scope, tx, intent)
+      const allowed = await validateFencedBoardScope(scope, tx, intent)
       if (!allowed.ok) throw new BoardOperationError(allowed.errorCode)
       if (!requiredIntents.some(item => item.resource === intent.resource && item.action === intent.action)) requiredIntents.push(intent)
     }
@@ -89,21 +92,31 @@ export function boardOperationClient(client: Client, scope: BoardScope, operatio
       }
       if (mode !== "read") for (const validate of checks) await validate(tx)
     } catch (error) { tx.close(); throw error }
+    // Admission already proved every operation on this immutable SQLite snapshot.
+    // Its own guard still checks snapshot and live continuity at each operation.
+    const reuseSnapshotAuthority = mode === "read" && isFencedReadSnapshot(tx)
+    const withholdUntilCommit = reuseSnapshotAuthority && holdReadResult
+    async function checkSnapshot(requested: readonly WorkOperation[] = operations) {
+      if (!reuseSnapshotAuthority) return check(tx, requested)
+      if (!principalProof(scope.principal) || scopeLimits(scope).some(limit => !principalProof(limit.principal))) {
+        throw new BoardOperationError("stale")
+      }
+    }
     const guarded = new Proxy(tx, {
       get(target, property) {
         if (property === "execute" || property === "batch") return async (...args: unknown[]) => {
-          await check(tx)
+          await checkSnapshot()
           const method = Reflect.get(target, property) as (...args: unknown[]) => Promise<unknown>
           const result = await method.apply(target, args)
-          await check(tx)
-          if (mode === "read" || mode === "deferred") { await check(db); await checkTargets(db) }
+          await checkSnapshot()
+          if (!withholdUntilCommit && (mode === "read" || mode === "deferred")) { await check(db); await checkTargets(db) }
           return result
         }
         if (property === "commit") return async () => {
-          await check(tx, requiredIntents)
+          await checkSnapshot(requiredIntents)
           if (mode !== "read") for (const validate of checks) await validate(tx)
           for (const validate of requiredChecks) await validate()
-          if (mode === "read" || mode === "deferred") { await check(db); await checkTargets(db) }
+          if (!withholdUntilCommit && (mode === "read" || mode === "deferred")) { await check(db); await checkTargets(db) }
           await tx.commit()
         }
         if (property === "executeMultiple" || property === "migrate") throw new BoardOperationError("denied")
@@ -117,20 +130,23 @@ export function boardOperationClient(client: Client, scope: BoardScope, operatio
   }
 
   async function single<T>(run: (tx: Transaction) => Promise<T>, mode?: "read" | "write" | "deferred"): Promise<T> {
-    const tx = await transaction(mode)
+    const tx = await transaction(mode, true)
     try {
       const result = await run(tx)
       await tx.commit()
-      // Never publish a task projection under an obsolete live scope. A lost
-      // authority after commit is an uncertain outcome, not permission to retry.
+      // A private single read has not exposed rows to any caller. Recheck the
+      // full live scope and record placement here before releasing the result.
+      // A lost authority after a write stays an uncertain outcome.
       await check(db)
+      const admitted = admittedReads.get(tx)
+      if (admitted && isFencedReadSnapshot(admitted.snapshot)) await checkTargets(db)
       return result
     } finally { tx.close() }
   }
 
   const guarded = new Proxy(db, {
     get(target, property) {
-      if (property === "transaction") return transaction
+      if (property === "transaction") return (mode?: "read" | "write" | "deferred") => transaction(mode)
       if (property === "execute") return (statement: InStatement, args?: InArgs) =>
         single(tx => tx.execute(typeof statement === "string" && args !== undefined ? { sql: statement, args } : statement))
       if (property === "batch") return (statements: InStatement[], mode?: "read" | "write" | "deferred") =>

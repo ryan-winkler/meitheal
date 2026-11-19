@@ -99,26 +99,16 @@ export async function recordTaskCompletion(scope: BoardScope, points = 0, now = 
   await ensureGamificationSchema()
   const client = await gamificationClient(scope, true)
   const today = statsDayKey(now)
-
-  // Get yesterday's streak
   const yesterday = statsDayKey(now, -1)
-
-  const prevResult = await client.execute(gamificationRead(scope, {
-    sql: "SELECT streak_count FROM board_stats WHERE date = ? LIMIT 1",
-    args: [yesterday],
-  }))
-  const prevStreak = prevResult.rows.length > 0
-    ? Number((prevResult.rows[0] as Record<string, unknown>).streak_count)
-    : 0
-
-  // Atomic increments avoid losing simultaneous completions from different callers.
+  // Resolve the streak and increment today's totals in the same Board writer.
   await client.execute({
     sql: `INSERT INTO gamification_stats(board_id, date, completed_count, streak_count, points)
-          VALUES(?, ?, 1, ?, ?)
+          VALUES(?, ?, 1, 1 + MAX(0, COALESCE((SELECT streak_count FROM gamification_stats
+            WHERE board_id = ? AND date = ?), 0)), ?)
           ON CONFLICT(board_id,date) DO UPDATE SET
             completed_count = completed_count + 1,
             points = points + excluded.points`,
-    args: [scope.boardId, today, prevStreak > 0 ? prevStreak + 1 : 1, points],
+    args: [scope.boardId, today, scope.boardId, yesterday, points],
   })
 
   return scopePermits(scope, { resource: "task", action: "read" }) ? getStats(scope, now) : null

@@ -19,6 +19,7 @@ export function databaseSchemaCheckSteps(): Generator<[string], void, ResultSet[
 export function assertSupportedDatabaseSchema(client: Pick<Client, "execute">): Promise<void>
 export function openDatabase(url: string, options?: { readOnly?: boolean }): Client
 export function isMemoryDatabase(url: string): boolean
+export function isLocalReadSnapshot(transaction: Transaction): boolean
 export interface DatabaseStartupOptions {
   readOnly?: boolean
   markerPath?: string | undefined

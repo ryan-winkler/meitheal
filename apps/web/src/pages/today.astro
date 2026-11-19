@@ -64,6 +64,7 @@ let completedTaskSummaries: Awaited<ReturnType<typeof getTodayTaskRows>>["comple
 let unscheduledCount = 0
 let totalOpenCount = 0
 let currentStreak = 0
+let dailyStreak: number | undefined
 let todayXP = 0
 let habits: HabitWithStats[] = []
 let habitsEnabled = false
@@ -161,7 +162,7 @@ try {
 if (isOrganizationFeatureAvailable("achievements")) try {
   const { getDailyProgress } = await import("@domains/gamification")
   const progress = await getDailyProgress(workScope, todayDate)
-  currentStreak = progress.currentStreak
+  dailyStreak = currentStreak = progress.currentStreak
   todayXP = progress.points
 } catch { /* gamification may not be initialized */ }
 
@@ -194,7 +195,9 @@ const todayDateLabel = formatDayHeading(todayDate, locale, todayTimeZone)
 const completionPercent = todayCompletionPercent(completedTodayCount, remainingCount)
 ---
 
-<Layout title="Meitheal — Today">
+<Layout title="Meitheal — Today" workNavigation={{ scope: workScope, placement: pagePlacement,
+  ...(dailyStreak !== undefined ? { dailyStreak } : {}),
+}}>
   <UnifiedBar
     title="Today"
     titleIcon="today"

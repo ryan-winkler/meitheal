@@ -1,6 +1,7 @@
 import type { Client, InArgs, InStatement, Transaction } from "@libsql/client"
-import { acquireWriteTransaction } from "../../../../scripts/database-client.mjs"
+import { acquireWriteTransaction, isLocalReadSnapshot } from "../../../../scripts/database-client.mjs"
 import { databaseRevision, getBoardGrantPath, readBoardGrantRevision } from "../../../../scripts/board-grant-journal.mjs"
+import { principalProof, validateBoardScope, type BoardScope, type ScopeResult, type WorkOperation } from "../board-scope"
 import { boardGrantStillCurrent, currentBoardGrantRevision } from "./board-grant-fence"
 
 export class ContinuityLockedError extends Error {
@@ -15,6 +16,21 @@ export class ContinuityLockedError extends Error {
 const guardedClients = new WeakSet<Client>()
 const clientGuards = new WeakMap<Client, Client>()
 const guardSources = new WeakMap<object, Client>()
+const authorityChecks = new WeakMap<object, (scope: BoardScope, operation: WorkOperation) => Promise<ScopeResult>>()
+const fencedReadSnapshots = new WeakSet<Transaction>()
+
+export function isFencedReadSnapshot(transaction: Transaction): boolean {
+  return fencedReadSnapshots.has(transaction)
+}
+
+/** Keep registered authority metadata reads inside one continuity check.
+ * The underlying client stays private. Unknown wrappers retain normal checks. */
+export function validateFencedBoardScope(
+  scope: BoardScope, reader: Pick<Client, "execute">, operation: WorkOperation,
+): Promise<ScopeResult> {
+  const validate = authorityChecks.get(reader)
+  return validate ? validate(scope, operation) : validateBoardScope(scope, reader, operation)
+}
 
 /** Only controlled journal writers and synthetic fixtures may bypass an actual guard.
  * Do not unwrap transparent/adversarial proxies: their transaction barriers remain authoritative. */
@@ -50,13 +66,18 @@ export function guardClientContinuity(client: Client): Client {
       if (!revision) throw new ContinuityLockedError()
       raw = mode === "write" || mode === undefined ? await acquireWriteTransaction(client) : await (client.transaction as (mode?: "read" | "write" | "deferred") => Promise<Transaction>)(mode)
     } catch (error) { settle(); throw error }
+    const pinnedLocalRead = mode === "read" && isLocalReadSnapshot(raw)
     const check = async () => {
       // A read/deferred transaction can retain an old WAL snapshot after an
       // authority writer commits. Its old epoch plus an unpublished old marker
       // is not evidence that the live installation still admits this result.
       const live = mode === "read" || mode === "deferred" ? client : raw
-      if (await boardGrantStillCurrent(raw, revision!, marker) &&
-        (live === raw || await boardGrantStillCurrent(live, revision!, marker))) return
+      // For an immutable local snapshot, compare its stored epoch before the
+      // fresh live marker and epoch check.
+      const snapshotCurrent = pinnedLocalRead
+        ? await databaseRevision(raw) === revision
+        : await boardGrantStillCurrent(raw, revision!, marker)
+      if (snapshotCurrent && (live === raw || await boardGrantStillCurrent(live, revision!, marker))) return
       const current = await databaseRevision(live)
       if (current && await readBoardGrantRevision(marker) === current) {
         const error = new Error("Current permissions changed. Retry the operation with current authority.")
@@ -66,7 +87,7 @@ export function guardClientContinuity(client: Client): Client {
       throw new ContinuityLockedError()
     }
     try { await check() } catch (error) { raw.close(); settle(); throw error }
-    return new Proxy(raw, {
+    const guarded = new Proxy(raw, {
       get(target, property) {
         // An already guarded transaction may expose this non-configurable
         // descriptor through another authorization proxy. Preserve its actual
@@ -93,6 +114,15 @@ export function guardClientContinuity(client: Client): Client {
         return typeof value === "function" ? value.bind(target) : value
       },
     })
+    authorityChecks.set(guarded, async (scope, operation) => {
+      await check()
+      const result = await validateBoardScope(scope, raw, operation)
+      if (!result.ok) return result
+      await check()
+      return principalProof(scope.principal) ? result : { ok: false, errorCode: "stale" }
+    })
+    if (pinnedLocalRead) fencedReadSnapshots.add(guarded)
+    return guarded
   }
 
   async function single<T>(operation: (tx: Transaction) => Promise<T>, mode: "read" | "write" | "deferred" = "write"): Promise<T> {
@@ -131,5 +161,14 @@ export function guardClientContinuity(client: Client): Client {
   guardedClients.add(guarded)
   clientGuards.set(client, guarded)
   guardSources.set(guarded, client)
+  authorityChecks.set(guarded, async (scope, operation) => {
+    // BoardAccessService binds the initial authority read to the scoped epoch.
+    const result = await validateBoardScope(scope, client, operation)
+    if (!result.ok) return result
+    if (!await boardGrantStillCurrent(client, scope.authorityRevision, marker) || !principalProof(scope.principal)) {
+      return { ok: false, errorCode: "stale" }
+    }
+    return result
+  })
   return guarded
 }

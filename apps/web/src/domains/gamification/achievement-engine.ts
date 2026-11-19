@@ -200,42 +200,25 @@ export async function checkAchievements(
 ): Promise<AchievementCheckResult> {
   await ensureAchievementSchema()
   const client = await gamificationClient(scope, true)
-
-  // Get already-unlocked IDs
-  const existing = await client.execute(
-    gamificationRead(scope, "SELECT id, unlocked_at FROM board_achievements"),
-  )
-  const unlockedMap = new Map<string, string>()
-  for (const row of existing.rows) {
-    const r = row as Record<string, unknown>
-    unlockedMap.set(String(r.id), String(r.unlocked_at))
-  }
-
-  const newlyUnlocked: UnlockedAchievement[] = []
-  const now = new Date().toISOString()
-
-  for (const achievement of ACHIEVEMENTS) {
-    // Skip if already unlocked
-    if (unlockedMap.has(achievement.id)) continue
-
-    // Check condition
-    const condition = CONDITIONS[achievement.id]
-    if (!condition || !condition(stats)) continue
-
-    // Unlock!
-    await client.execute({
-      sql: "INSERT OR IGNORE INTO gamification_achievements(board_id, id, unlocked_at) VALUES(?, ?, ?)",
-      args: [scope.boardId, achievement.id, now],
-    })
-
-    newlyUnlocked.push({ ...achievement, unlockedAt: now })
-  }
-
-  return {
-    newlyUnlocked,
-    total: ACHIEVEMENTS.length,
-    unlocked: unlockedMap.size + newlyUnlocked.length,
-  }
+  const tx = await client.transaction("write")
+  try {
+    const existing = await tx.execute(gamificationRead(scope, "SELECT id FROM board_achievements"))
+    const unlocked = new Set(existing.rows.map(row => String(row.id)))
+    const candidates = ACHIEVEMENTS.filter(achievement => !unlocked.has(achievement.id) && CONDITIONS[achievement.id]?.(stats))
+    const unlockedAt = new Date().toISOString()
+    if (candidates.length) {
+      await tx.batch(candidates.map(achievement => ({
+        sql: "INSERT INTO gamification_achievements(board_id, id, unlocked_at) VALUES(?, ?, ?)",
+        args: [scope.boardId, achievement.id, unlockedAt],
+      })))
+    }
+    await tx.commit()
+    return {
+      newlyUnlocked: candidates.map(achievement => ({ ...achievement, unlockedAt })),
+      total: ACHIEVEMENTS.length,
+      unlocked: unlocked.size + candidates.length,
+    }
+  } finally { tx.close() }
 }
 
 /**

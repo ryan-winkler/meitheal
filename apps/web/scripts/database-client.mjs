@@ -7,7 +7,7 @@ import { setTimeout as sleepMs } from "node:timers/promises"
 import { LibsqlBatchError, LibsqlError } from "@libsql/core/api"
 import { expandConfig, isInMemoryConfig } from "@libsql/core/config"
 import { ResultSetImpl } from "@libsql/core/util"
-import { getBoardGrantPath, registerBoardGrantContext } from "./board-grant-context.mjs"
+import { boardGrantRevisionQuery, getBoardGrantPath, registerBoardGrantContext } from "./board-grant-context.mjs"
 import { ORDINARY_BOARD_SCHEMA_VERSION } from "../drizzle/migrations/0016_ordinary_boards.mjs"
 import {
   readTaskBoardMigrationState, taskBoardMigrationStateSteps,
@@ -24,8 +24,16 @@ import {
 
 const localWriters = new WeakMap()
 const localExecutors = new WeakMap()
+const localReadSnapshots = new WeakSet()
 /** @type {WeakMap<DatabaseSync, import("node:sqlite").StatementSync>} */
 const totalChangesStatements = new WeakMap()
+/** @type {WeakMap<DatabaseSync, import("node:sqlite").StatementSync>} */
+const grantRevisionStatements = new WeakMap()
+
+/** Only transactions using a physically read-only local SQLite handle. */
+export function isLocalReadSnapshot(transaction) {
+  return localReadSnapshots.has(transaction)
+}
 
 const DB_DIAGNOSTICS_SYMBOL = Symbol.for("meitheal.sqlite.diagnostics")
 const WRITE_BACKOFF_DELAYS_MS = [5, 15, 30, 60, 120]
@@ -178,8 +186,14 @@ function execute(db, input, args = []) {
   const bindings = Array.isArray(values)
     ? values.map(bind)
     : Object.fromEntries(Object.entries(values).map(([key, value]) => [key.replace(/^[@$:]/, ""), bind(value)]))
-  const statement = db.prepare(sql)
-  statement.setReadBigInts(true)
+  // Reuse the fixed statement per connection. The result is read from SQLite
+  // on every continuity check, including after another connection commits.
+  let statement = sql === boardGrantRevisionQuery ? grantRevisionStatements.get(db) : undefined
+  if (!statement) {
+    statement = db.prepare(sql)
+    statement.setReadBigInts(true)
+    if (sql === boardGrantRevisionQuery) grantRevisionStatements.set(db, statement)
+  }
   if (statement.columns().length) {
     statement.setReturnArrays(true)
     const rawRows = Array.isArray(bindings) ? statement.all(...bindings) : statement.all(bindings)
@@ -767,6 +781,7 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
       },
     }
     registerBoardGrantContext(result, { markerPath: getBoardGrantPath(client) })
+    if (useReadPool) localReadSnapshots.add(result)
     return result
   }
 

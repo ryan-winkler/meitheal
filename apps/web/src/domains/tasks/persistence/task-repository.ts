@@ -1409,9 +1409,11 @@ export class TaskRepository {
   /** Look up the default assignee from app_settings (nullable) */
   async getDefaultAssignee(): Promise<string | null> {
     try {
-      const result = await this.forOperation("create").execute(
-        scopedTaskRead(this.scope, sourceSql("SELECT value FROM app_settings WHERE key = ? LIMIT 1", [`default_assignee:${this.scope.boardId}`]))
-      );
+      const intent = { resource: "task", action: "create" } as const
+      if (!(await validateBoardScope(this.scope, this.client, intent)).ok) return null
+      const result = await this.client.execute(sql`SELECT value FROM app_settings
+        WHERE key = ${`default_assignee:${this.scope.boardId}`} LIMIT 1`)
+      if (!(await validateBoardScope(this.scope, this.client, intent)).ok) return null
       if (result.rows.length > 0) {
         return String((result.rows[0] as Record<string, unknown>).value);
       }
@@ -2569,8 +2571,10 @@ export class TaskRepository {
    */
   async cascadeCompleteIds(parentId: string, assignedTo?: string): Promise<string[]> {
     const assigned = scopeAssignedTo(this.scope) ?? assignedTo
-    const rows = await this.forOperation("complete", [parentId]).execute(scopedTaskRead(this.scope, sql`SELECT * FROM scoped_tasks
-      WHERE parent_id = ${parentId} AND status != ${STATUS.COMPLETE} ${assigned === undefined ? sourceSql("") : sql`AND assigned_to = ${assigned}`}`))
+    const rows = await this.readCommandStatement("complete", scopedTaskRead(this.scope, sql`SELECT id, recurrence_rule, assigned_to
+      FROM scoped_tasks WHERE parent_id = ${parentId} AND status != ${STATUS.COMPLETE}
+      ${assigned === undefined ? sourceSql("") : sql`AND assigned_to = ${assigned}`}`), [parentId])
+    if (rows.rows.length === 0) return []
     const inherit = new Map<string, { assigneeId: string | null, proof?: AssignmentProof | undefined }>()
     for (const row of rows.rows) if (row.recurrence_rule) {
       const assignee = typeof row.assigned_to === "string" ? row.assigned_to : null

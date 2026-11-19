@@ -1,6 +1,7 @@
 /** Process-local startup capabilities: never serialized into the database or environment. */
 const contexts = new WeakMap()
 export const boardGrantPath = "/data/meitheal-board-grants.json"
+export const boardGrantRevisionQuery = "SELECT revision FROM board_access_epoch WHERE singleton = 1"
 
 export function registerBoardGrantContext(client, { markerPath = boardGrantPath, created = false } = {}) {
   if (!client[Symbol.for("meitheal.boardGrantClient")]) Object.defineProperty(client, Symbol.for("meitheal.boardGrantClient"), { value: client })
