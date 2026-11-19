@@ -85,48 +85,77 @@ async function namedWorkspace(fixture: Fixture) {
   return { board, area, goal, project }
 }
 
-test("a named Board preserves its own Epic ticket, Project Area and keyboard swimlanes", async ({ boards }) => {
-  test.setTimeout(45_000)
-  const { page, app } = boards
-  const { board, area, project } = await namedWorkspace(boards)
-  const scoped = { ...boards, headers: { ...boards.headers, "x-meitheal-board-id": String(board.id) } }
-  const otherArea = await post(scoped, "/areas", { name: "Garden" })
-  const epic = await post(scoped, "/tasks", { title: "Restore the study", task_type: "epic", status: "complete" })
-  const child = await post(scoped, "/tasks", { title: "Grouping fixture study", parent_id: epic.id, project_id: project.id })
-  const other = await post(scoped, "/tasks", { title: "Grouping fixture garden", area_id: otherArea.id })
-  expect(epic.ticket_key).toMatch(/^[A-Z0-9]+-\d+$/)
-  expect(epic.ticket_key).not.toMatch(/^MTH-/)
+for (const kind of ["Household", "named"] as const) {
+  test(`${kind} Board preserves its own Epic ticket, Project Area and keyboard swimlanes`, async ({ boards }) => {
+    test.setTimeout(45_000)
+    const { page, app } = boards
+    const workspace = kind === "named" ? await namedWorkspace(boards) : null
+    const boardId: string = workspace?.board.id ?? "household"
+    const scoped = { ...boards, headers: { ...boards.headers, "x-meitheal-board-id": boardId } }
+    const area = workspace?.area ?? await post(scoped, "/areas", { name: "Study" })
+    const project = workspace?.project ?? await post(scoped, "/projects", { title: "Desk light", area_id: area.id })
+    const otherArea = await post(scoped, "/areas", { name: "Garden" })
+    const epic = await post(scoped, "/tasks", { title: "Restore the study", task_type: "epic", status: "complete" })
+    const child = await post(scoped, "/tasks", { title: "Grouping fixture study", parent_id: epic.id, project_id: project.id })
+    const other = await post(scoped, "/tasks", { title: "Grouping fixture garden", area_id: otherArea.id })
+    expect(epic.ticket_key).toMatch(/^[A-Z0-9]+-\d+$/)
+    if (kind === "Household") expect(epic.ticket_key).toMatch(/^MTH-/)
+    else expect(epic.ticket_key).not.toMatch(/^MTH-/)
 
-  const search = "Grouping fixture"
-  await page.goto(`${app}/boards/${board.id}?${new URLSearchParams({ search, groupBy: "epic" })}#kanban`)
-  await expect(page.locator("#kanban-shell")).toHaveAttribute("data-kanban-booted", "true")
-  const group = (key: string) => page.locator(`.swimlane-group[data-swimlane-type="${key}"]`).filter({ has: page.locator(".kanban-card") })
-  const epicGroup = group(`epic:${epic.id}`)
-  const childCard = page.locator(`.kanban-card[data-id="${child.id}"]`)
-  const otherCard = page.locator(`.kanban-card[data-id="${other.id}"]`)
-  const epicLabel = `${epic.title} (${epic.ticket_key})`
-  const heading = epicGroup.locator(".swimlane-header")
-  await expect(epicGroup.locator(".swimlane-label")).toHaveText(epicLabel)
-  await expect(epicGroup.locator(`.kanban-card[data-id="${child.id}"]`)).toBeVisible()
-  await heading.press("Enter")
-  await expect(heading).toBeFocused()
-  await expect(childCard).toBeHidden()
-  await expect(otherCard).toBeVisible()
-  await page.reload()
-  await expect(heading).toHaveAttribute("aria-expanded", "false")
-  await heading.press("Space")
-  await expect(childCard).toBeVisible()
+    const search = "Grouping fixture"
+    await page.goto(`${app}/boards/${boardId}?${new URLSearchParams({ search, groupBy: "none" })}#kanban`)
+    await expect(page.locator("#kanban-shell")).toHaveAttribute("data-kanban-booted", "true")
+    await page.locator("#kanban-group-by-dropdown summary").click()
+    await page.getByRole("button", { name: "By Epic", exact: true }).click()
+    await expect(page).toHaveURL(url => url.searchParams.get("groupBy") === "epic")
+    const group = (key: string) => page.locator(`.swimlane-group[data-swimlane-type="${key}"]`).filter({ has: page.locator(".kanban-card") })
+    const epicGroup = group(`epic:${epic.id}`)
+    const childCard = page.locator(`.kanban-card[data-id="${child.id}"]`)
+    const otherCard = page.locator(`.kanban-card[data-id="${other.id}"]`)
+    const epicLabel = `${epic.title} (${epic.ticket_key})`
+    const heading = epicGroup.locator(".swimlane-header")
+    await expect(epicGroup.locator(".swimlane-label")).toHaveText(epicLabel)
+    await expect(epicGroup.locator(`.kanban-card[data-id="${child.id}"]`)).toBeVisible()
+    await heading.press("Enter")
+    await expect(heading).toBeFocused()
+    await expect(childCard).toBeHidden()
+    await expect(otherCard).toBeVisible()
+    await page.reload()
+    await expect(heading).toHaveAttribute("aria-expanded", "false")
+    await heading.press("Space")
+    await expect(childCard).toBeVisible()
 
-  const views = page.getByRole("navigation", { name: "Task views" })
-  await views.getByRole("link", { name: "Table", exact: true }).click()
-  await expect(page).toHaveURL(url => url.pathname.endsWith(`/boards/${board.id}`) && url.searchParams.get("search") === search)
-  await expect(page.locator(`.group-header-row[data-group-key="epic:${epic.id}"] .group-label`)).toHaveText(epicLabel)
-  await views.getByRole("link", { name: "Kanban", exact: true }).click()
-  await expect(childCard).toBeVisible()
-  await page.locator("#kanban-group-by-dropdown summary").click()
-  await page.getByRole("button", { name: "By Area", exact: true }).click()
-  await expect(group(area.id).locator(`.kanban-card[data-id="${child.id}"]`)).toBeVisible()
-  await expect(group(otherArea.id).locator(`.kanban-card[data-id="${other.id}"]`)).toBeVisible()
+    const views = page.getByRole("navigation", { name: "Task views" })
+    await views.getByRole("link", { name: "Table", exact: true }).click()
+    await expect(page).toHaveURL(url => url.pathname.endsWith(`/boards/${boardId}`) && url.searchParams.get("search") === search)
+    await expect(page.locator(`.group-header-row[data-group-key="epic:${epic.id}"] .group-label`)).toHaveText(epicLabel)
+    await views.getByRole("link", { name: "Kanban", exact: true }).click()
+    await expect(page).toHaveURL(url => url.pathname.endsWith(`/boards/${boardId}`) && url.searchParams.get("groupBy") === "epic" && url.searchParams.get("search") === search)
+    await expect(epicGroup.locator(".swimlane-label")).toHaveText(epicLabel)
+    await expect(epicGroup.locator(`.kanban-card[data-id="${child.id}"]`)).toBeVisible()
+    await page.locator("#kanban-group-by-dropdown summary").click()
+    await page.getByRole("button", { name: "By Area", exact: true }).click()
+    await expect(group(area.id).locator(`.kanban-card[data-id="${child.id}"]`)).toBeVisible()
+    await expect(group(otherArea.id).locator(`.kanban-card[data-id="${other.id}"]`)).toBeVisible()
+  })
+}
+
+test("a committed Goal share returns a receipt and appears in the receiving Board", async ({ boards }) => {
+  const source = await post(boards, "/boards", { name: "Sharing source" })
+  const target = await post(boards, "/boards", { name: "Sharing destination" })
+  const scoped = (id: string) => ({ ...boards, headers: { ...boards.headers, "x-meitheal-board-id": id } })
+  const area = await post(scoped(target.id), "/areas", { name: "Receiving study" })
+  const title = "Cross-Board fixture Goal"
+  const goal = await post(scoped(source.id), "/goals", { title })
+  const change = { action: "goal-share", id: goal.id, enabled: true,
+    target: { kind: "area", boardId: target.id, areaId: area.id } }
+  const receipt = await post(boards, `/boards/${source.id}/planning`, change)
+  expect(receipt).toEqual({ ok: true, accessPending: false })
+  const repeated = await post(boards, `/boards/${source.id}/planning`, change)
+  expect(repeated).toEqual(receipt)
+  const receiving = await boards.member.request.get(`${boards.app}/api/goals?board_id=${target.id}&area_id=${area.id}`)
+  expect(receiving.ok()).toBe(true)
+  expect((await receiving.json()).goals).toEqual([expect.objectContaining({ id: goal.id, title, shared: true })])
 })
 
 test("Household is a peer Board and every scoped workspace destination retains the selected Board and Project", async ({ boards }, info) => {

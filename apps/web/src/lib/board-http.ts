@@ -9,8 +9,10 @@ import { db503Response, isDbUnavailable } from "./db-fallback"
 const journaledAcknowledgements = new WeakMap<Response, { scope: BoardScope, operation: WorkOperation }>()
 
 /** A successful journaled command may acknowledge its own change, never publish old work data. */
-export function journaledBoardCommandAck(scope: BoardScope, operation: WorkOperation): Response {
-  const response = Response.json({ ok: true }, { headers: { "Cache-Control": "private, no-store" } })
+export function journaledBoardCommandAck(scope: BoardScope, operation: WorkOperation, reportAccessPublished = false): Response {
+  const response = Response.json(reportAccessPublished ? { ok: true, accessPending: false } : { ok: true }, {
+    headers: { "Cache-Control": "private, no-store" },
+  })
   journaledAcknowledgements.set(response, { scope, operation })
   return response
 }

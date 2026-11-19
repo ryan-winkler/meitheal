@@ -120,7 +120,7 @@ function isExternal(href: string): boolean {
             href={item.href}
             class={`nav-link flex-1 min-w-0 ${item.isActive ? "active" : ""} ${external ? "nav-link--external" : ""}`}
             data-page={item.key}
-            data-board-nav-default={item.defaultHref ?? item.href}
+            data-board-nav-default={external ? undefined : item.defaultHref ?? item.href}
             title={item.label}
             data-tooltip={item.label}
             data-astro-prefetch={item.key === "system-pinned" || item.key === "activity" || item.key === "mentionInbox" ? "false" : external ? undefined : "viewport"}

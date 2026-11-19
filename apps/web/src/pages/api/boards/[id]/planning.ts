@@ -1,4 +1,4 @@
-import { withBoardScope } from "@lib/board-http"
+import { journaledBoardCommandAck, withBoardScope } from "@lib/board-http"
 import type { GoalShareTarget } from "@domains/tasks/persistence/shared-goal-repository"
 import { isOrganizationFeatureAvailable as available } from "@lib/organization-request-context"
 import type { APIRoute } from "astro"
@@ -70,7 +70,9 @@ function parseChange(body: Record<string, unknown> | null): Parameters<NamedBoar
   return null
 }
 
-export const POST: APIRoute = withBoardScope({ resource: "board", action: "read" }, async (context, scope) => {
+const planningOperation = { resource: "board", action: "read" } as const
+
+export const POST: APIRoute = withBoardScope(planningOperation, async (context, scope) => {
   const { locals, params, request } = context
   const user = await currentBoardContext(context, true)
   if (!user || !params.id) return apiError("Board unavailable", 404)
@@ -107,6 +109,7 @@ export const POST: APIRoute = withBoardScope({ resource: "board", action: "read"
     const outcome = await repository.saveVisibility(user.actor.id, params.id, change)
     if (outcome.status === "locked") return apiError("Named Board access is temporarily locked.", 503)
     if (outcome.result !== "saved") return apiError("Board or planning selection unavailable", 404)
+    if (outcome.status === "committed") return journaledBoardCommandAck(scope, planningOperation, true)
     return apiJson({ ok: true, accessPending: outcome.status === "committed-locked" })
   }
   if (!await repository.save(user.actor.id, params.id, change)) return apiError("Board or planning selection unavailable", 404)
