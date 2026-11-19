@@ -177,6 +177,13 @@ test.describe("Track D — @container Docked Task Inspector, Ingress Reload Pers
       await expect(overlay).toHaveClass(/active/)
       await expect(checklistInput).toHaveValue(checklistDraft)
 
+      // The failed save has finished. Close and Escape must still keep the draft available for Retry.
+      await page.getByRole("button", { name: "Close detail", exact: true }).click()
+      await expect(retry).toBeFocused()
+      await page.keyboard.press("Escape")
+      await expect(overlay).toHaveClass(/active/)
+      await expect(checklistInput).toHaveValue(checklistDraft)
+
       await retry.click()
       await expect.poll(() => renameAttempts).toBe(2)
       await commentsDisclosure.focus()

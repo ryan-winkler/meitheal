@@ -5,17 +5,11 @@ import { formatTicketKey, parseTicketKey } from "@lib/ticket-key"
 
 type Item = { id?: string; text: string; done: boolean }
 
-type ChecklistSave = { done: Promise<boolean>; textEdit: boolean }
-const pendingChecklistSaves = new Map<string, ChecklistSave>()
+const pendingChecklistSaves = new Map<string, Promise<boolean>>()
 
 export function pendingChecklistSave(taskId: string): Promise<boolean> | undefined {
   const ticketKey = formatTicketKey(parseTicketKey(taskId))
-  return (pendingChecklistSaves.get(taskId) ?? (ticketKey ? pendingChecklistSaves.get(ticketKey) : undefined))?.done
-}
-
-export function pendingChecklistTextSave(taskId: string): Promise<boolean> | undefined {
-  const pending = pendingChecklistSaves.get(taskId)
-  return pending?.textEdit ? pending.done : undefined
+  return pendingChecklistSaves.get(taskId) ?? (ticketKey ? pendingChecklistSaves.get(ticketKey) : undefined)
 }
 
 function parseChecklist(raw: string | null): Item[] | null {
@@ -210,24 +204,18 @@ export function showTaskChecklist(
   }
 
   function save() {
-    if (problem) return
-    const existing = pendingChecklistSaves.get(taskId)
-    if (existing) {
-      existing.textEdit ||= textEditPending
-      return
-    }
+    if (problem || pendingChecklistSaves.has(taskId)) return
     if (equal(saved, items)) {
       textEditPending = false
       return
     }
-    const done = persist().then(saved => {
+    const pending = persist().then(saved => {
       if (saved) textEditPending = false
       return saved
     }).finally(() => {
       pendingChecklistSaves.delete(taskId)
       if (ticketKey && pendingChecklistSaves.get(ticketKey) === pending) pendingChecklistSaves.delete(ticketKey)
     })
-    const pending = { done, textEdit: textEditPending }
     pendingChecklistSaves.set(taskId, pending)
     if (ticketKey) pendingChecklistSaves.set(ticketKey, pending)
   }
@@ -354,4 +342,5 @@ export function showTaskChecklist(
     }
   }, { signal })
   render()
+  return () => !signal.aborted && textEditPending
 }

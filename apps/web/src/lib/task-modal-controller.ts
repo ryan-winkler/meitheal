@@ -24,7 +24,7 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
         import { initCustomFields } from "@lib/controllers/modal-custom-fields";
         import { initRelatedLinks } from "@lib/controllers/modal-related-links";
         import { initCommandPalette } from "@lib/controllers/modal-command-palette";
-        import { pendingChecklistSave, pendingChecklistTextSave, showTaskChecklist } from "@lib/controllers/modal-checklist"
+        import { pendingChecklistSave, showTaskChecklist } from "@lib/controllers/modal-checklist"
         import { notifyInactivityTaskChanged } from "@lib/inactivity-client"
         import { isActiveParticipantProblem } from "@lib/task-participant-problem"
         import { mountReactions } from "@lib/controllers/modal-reactions"
@@ -93,6 +93,7 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
           resumeLoadedTask = undefined
           pendingDescriptionSave = undefined
           queuedDescriptionTransition = undefined
+          hasChecklistTextDraft = undefined
           taskSaveQueues.clear()
           pendingAreaWrites.clear()
           commentAttempt = undefined
@@ -152,6 +153,7 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
         let currentTicketKey: string | null = null
         let currentTicketNumber: number | null = null
         let pendingDescriptionSave: Promise<boolean> | undefined
+        let hasChecklistTextDraft: (() => boolean) | undefined
         let queuedDescriptionTransition: (() => void) | undefined
         let currentCommentTarget: string | null = null
         let commentsReady: Promise<void> = Promise.resolve()
@@ -392,8 +394,12 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
           if (!currentTaskId) return false
           const active = document.activeElement
           if (active instanceof HTMLTextAreaElement && active.closest("#td-checklists")) active.blur()
-          const write = pendingChecklistTextSave(currentTaskId)
-          if (!write) return false
+          if (!hasChecklistTextDraft?.()) return false
+          const write = pendingChecklistSave(currentTaskId)
+          if (!write) {
+            document.getElementById("td-checklist-recover")?.focus()
+            return true
+          }
           const generation = detailGeneration
           void write.then(saved => {
             if (saved && !__signal.aborted && !boardWithheld && generation === detailGeneration) next()
@@ -420,6 +426,7 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
           // Abort any in-flight fetches
           if (_modalAbortController) { _modalAbortController.abort(); _modalAbortController = null; }
           currentTaskId = null;
+          hasChecklistTextDraft = undefined
           document.dispatchEvent(new CustomEvent("meitheal:ha-location-task"))
           sessionTicketId = null
           currentTicketKey = null
@@ -564,6 +571,7 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
           if (newSession) _previouslyFocused = search ? null : document.activeElement
           document.dispatchEvent(new CustomEvent("meitheal:ha-location-task"))
           currentTaskId = taskId
+          hasChecklistTextDraft = undefined
           currentTaskVersion = null
           currentTaskActions.clear()
           if (!sameTicket) {
@@ -1374,7 +1382,7 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
               tdUpdated.textContent =
                 "Last updated " +
                 new Date(Number(t.updated_at)).toLocaleString();
-            showTaskChecklist(taskId, t.checklists, modalSignal, send => saveTaskChecklist(taskId, send),
+            hasChecklistTextDraft = showTaskChecklist(taskId, t.checklists, modalSignal, send => saveTaskChecklist(taskId, send),
               typeof t.ticket_key === "string" ? t.ticket_key : undefined)
             const taskReactions = document.getElementById("td-task-reactions")
             if (taskReactions) {
@@ -2198,6 +2206,7 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
               if (stale()) return
               if (result.ok) {
                 const deferred = deferral.removing(taskId)
+                hasChecklistTextDraft = undefined
                 closeTD("discard")
                 if (!deferred && !scopedWrite) document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "task-deleted" } }))
               } else {
