@@ -753,6 +753,7 @@ if (groupByProject) {
                           <Icon
                             name={dueStatus === "overdue" ? "alert-triangle" : "calendar-event"}
                             size={12}
+                            sprite
                           />{" "}
                           {formatRegionalDate(String(task.due_date), {
                             format: dateFormat,
@@ -776,7 +777,7 @@ if (groupByProject) {
                           class="kanban-sync-badge"
                           title={t("kanban.calendar_synced", locale)}
                         >
-                          <Icon name="calendar-event" size={13} />
+                          <Icon name="calendar-event" size={13} sprite />
                         </span>
                       )}
                       {task.recurrence_rule && (
@@ -784,7 +785,7 @@ if (groupByProject) {
                           class="kanban-meta-recurrence"
                           title="Recurring task"
                         >
-                          <Icon name="repeat" size={13} />
+                          <Icon name="repeat" size={13} sprite />
                         </span>
                       )}
                       {(() => {
@@ -817,12 +818,12 @@ if (groupByProject) {
                           class="kanban-meta-comments"
                           title={`${Number(task.comment_count ?? 0)} comments`}
                         >
-                          <Icon name="message-circle" size={12} /> {Number(task.comment_count ?? 0)}
+                          <Icon name="message-circle" size={12} sprite /> {Number(task.comment_count ?? 0)}
                         </span>
                       )}
                                       {task.assigned_to && (
                         <span class="kanban-assignee-badge" title={t("tasks.assignee_loading", locale)}>
-                          <Icon name="user" size={14} />
+                          <Icon name="user" size={14} sprite />
                           <span class="kanban-assignee-name" dir="auto" data-task-assignee={String(task.assigned_to)}>{namedUser ? namedUser.roster.get(String(task.assigned_to).replace(/^ha_/, "")) || "Assignee unavailable" : t("tasks.assignee_loading", locale)}</span>
                         </span>
                       )}
@@ -905,7 +906,7 @@ if (groupByProject) {
                         title={namedBoardId && !namedEdit ? "View task" : t("kanban.edit_task", locale)}
                         aria-label={`${namedBoardId && !namedEdit ? "View" : "Edit"} task: ${String(task.title ?? "").slice(0, 50)}`}
                       >
-                        <Icon name="pencil" size={14} />
+                        <Icon name="pencil" size={14} sprite />
                       </button>
                       {!namedBoardId && <><button
                         class="card-action-btn card-ai-btn"
@@ -918,7 +919,7 @@ if (groupByProject) {
                         title={t("tasks.ask_ai", locale)}
                         aria-label={`AI assist for: ${String(task.title ?? "").slice(0, 50)}`}
                       >
-                        <Icon name="sparkles" size={14} />
+                        <Icon name="sparkles" size={14} sprite />
                       </button>
                       <button
                         class="card-action-btn card-dup-btn"
@@ -926,7 +927,7 @@ if (groupByProject) {
                         title={t("kanban.duplicate", locale)}
                         aria-label={`Duplicate task: ${String(task.title ?? "").slice(0, 50)}`}
                       >
-                        <Icon name="clipboard-list" size={14} />
+                        <Icon name="clipboard-list" size={14} sprite />
                       </button>
                       <button
                         class="card-action-btn card-child-btn"
