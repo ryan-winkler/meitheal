@@ -68,8 +68,16 @@ export MEITHEAL_LOG_CATEGORIES="$(bashio::config 'log_categories | join(",")')"
 export MEITHEAL_LOG_LEVEL="$(bashio::config 'log_level')"
 export MEITHEAL_LOG_REDACTION="$(bashio::config 'log_redaction')"
 export MEITHEAL_AUDIT_ENABLED="$(bashio::config 'audit_enabled')"
-export LOKI_URL="$(bashio::config 'loki_url')"
-export MEITHEAL_LICENSE_KEY="$(bashio::config 'license_key' '')"
+if bashio::config.has_value 'loki_url'; then
+  export LOKI_URL="$(bashio::config 'loki_url')"
+else
+  export LOKI_URL=""
+fi
+if bashio::config.has_value 'license_key'; then
+  export MEITHEAL_LICENSE_KEY="$(bashio::config 'license_key')"
+else
+  export MEITHEAL_LICENSE_KEY=""
+fi
 
 # Transfer App files in fresh and restored Supervisor volumes before dropping
 # privileges. Retry any remaining entries on the next start after a failure.
@@ -91,7 +99,8 @@ if [ -n "${SUPERVISOR_TOKEN:-}" ]; then
   # We cache the full JSON response here and reuse it for:
   #   1. Ingress path discovery
   #   2. Addon hostname for integration discovery
-  ADDON_SELF_INFO=$(curl -fsS -H "Authorization: Bearer ${SUPERVISOR_TOKEN}" \
+  ADDON_SELF_INFO=$(curl -fsS --connect-timeout 2 --max-time 5 \
+    -H "Authorization: Bearer ${SUPERVISOR_TOKEN}" \
     http://supervisor/addons/self/info 2>/dev/null || true)
 
   # ── Discover ingress path ──
@@ -164,7 +173,7 @@ stop_child() {
   trap '' SIGTERM SIGINT
   if signal_child TERM; then
     local forced=false
-    for _ in 1 2; do
+    for _ in 1 2 3 4 5; do
       signal_child 0 || break
       sleep 1
     done

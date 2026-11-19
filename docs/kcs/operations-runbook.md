@@ -549,17 +549,37 @@ To verify email redaction in a disposable environment, use a synthetic address
 with a plus tag. The address is redacted and surrounding punctuation remains visible.
 
 An optional `loki_url` must be an HTTP(S) push endpoint without embedded
-credentials. The native sender does not follow redirects. It forwards the same
+credentials. Both add-on manifests set `loki_url` to `""` with optional schema
+`"str?"`. `meitheal-hub/run.sh` checks `bashio::config.has_value` for optional
+`loki_url` and `license_key` and exports empty strings instead of `"null"` when
+unset. The native sender does not follow redirects. It forwards the same
 redacted lines under the five fixed low-cardinality labels (`addon`, `service`,
-`env`, `level`, `domain`). It queues at most
-200 waiting lines, sends batches of 50, omits remote lines larger than 16 KiB,
-and uses a 250 ms flush delay with a one-second request timeout. Overflow,
-invalid endpoints, non-success responses and timeouts drop remote logs with a
-generic stderr warning at most once per process per 60 seconds. Changing the
-trimmed `LOKI_URL` clears pending lines on the next enqueue. There are no
-retries, durable queues or guaranteed
-shutdown drains. Stdout continues; remote loss does not imply successful Loki
-ingestion. Check receiver ingestion separately using synthetic data.
+`env`, `level`, `domain`). It queues at most 200 waiting lines, sends batches
+of 50, omits remote lines larger than 16 KiB, and uses a 250 ms flush delay
+with a one-second request timeout. After a delivery failure, the sender applies
+exponential backoff from 2 seconds to 60 seconds with a monotonic clock. Each
+consecutive failure doubles the delay up to 60 seconds. The backoff resets
+after a successful push or on the next enqueue after a trimmed `LOKI_URL`
+change. Late responses or timeouts from a previous URL do not cause backoff or
+warnings for the new URL. Overflow, invalid endpoints, non-success responses
+and timeouts drop remote logs with a generic stderr warning at most once per
+process per 60 seconds. Changing the trimmed `LOKI_URL` clears queued lines and
+cancels any active backoff timer on the next enqueue. There are no retries,
+durable queues or guaranteed shutdown drains. Stdout continues; remote loss
+does not imply successful Loki ingestion. Check receiver ingestion separately
+using synthetic data.
+
+On startup failure, `apps/web/scripts/serve.mjs` writes a `web.startup_error`
+JSON record to stderr and exits with code `1`. On a bind `error` event, it
+writes a `web.listen_error` JSON record to stderr and exits with code `1`. On a
+server `error` event after listening, it writes a `web.server_error` JSON
+record to stderr and starts shutdown with exit code `1`. On `SIGTERM` or
+`SIGINT`, `serve.mjs` writes a `web.stopping` JSON record synchronously to
+stdout. It stops accepting new connections, signals active SSE streams to
+close, closes idle sockets, and exits with code `0`. If connections remain
+after 3 seconds, it closes all connections and exits before
+`meitheal-hub/run.sh` sends `SIGKILL` at 5 seconds (`S6_SERVICES_GRACETIME` is
+8 seconds in `meitheal-hub/Dockerfile`).
 
 ## Local image builds
 

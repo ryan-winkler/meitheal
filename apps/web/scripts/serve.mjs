@@ -1,4 +1,6 @@
 /** Normalize Supervisor ingress requests before passing them to Astro. */
+import { setMaxListeners } from "node:events"
+import { writeSync } from "node:fs"
 import { mkdir } from "node:fs/promises"
 import http from "node:http"
 import path from "node:path"
@@ -26,6 +28,53 @@ const inactivityApiPath = "/api/task-inactivity"
 const labelCleanupPath = "/api/labels/cleanup"
 const inactivityPagePath = "/inactivity"
 const pinnedPagePath = "/pinned"
+
+function writeJsonLine(fd, payload) {
+  try {
+    writeSync(fd, `${JSON.stringify(payload)}\n`)
+  } catch {
+    // Ignore closed or full stdio pipe during teardown.
+  }
+}
+
+let server
+let hasListened = false
+let shuttingDown = false
+let inStartupDatabase = false
+const shutdownController = new AbortController()
+setMaxListeners(0, shutdownController.signal)
+
+function shutdown(signal, exitCode = 0) {
+  if (shuttingDown) return
+  shuttingDown = true
+  process.exitCode = exitCode
+  writeJsonLine(1, {
+    level: "info",
+    event: "web.stopping",
+    signal,
+    time: new Date().toISOString(),
+  })
+  if (!server) {
+    if (!inStartupDatabase) process.exit(exitCode)
+    return
+  }
+  // Force exit after 3s, before run.sh stop_child sends SIGKILL at 5s.
+  const forceTimer = setTimeout(() => {
+    server.closeAllConnections?.()
+    // Wait 50 ms so stream close cleanup hooks run before exit.
+    setTimeout(() => process.exit(exitCode), 50).unref()
+  }, 3_000)
+  forceTimer.unref()
+  server.close(() => {
+    clearTimeout(forceTimer)
+    process.exit(exitCode)
+  })
+  shutdownController.abort()
+  server.closeIdleConnections?.()
+}
+
+process.on("SIGTERM", () => shutdown("SIGTERM"))
+process.on("SIGINT", () => shutdown("SIGINT"))
 
 async function prepareDatabase() {
   const url = process.env.MEITHEAL_DB_URL ?? "file:./.data/meitheal.db"
@@ -105,14 +154,33 @@ if (supervisorToken && !identityHeadersSafe) {
   console.warn("Supervisor identity headers disabled. Check Supervisor connectivity and version (2026.10.4 or later).")
 }
 
-// Prevent Astro standalone from auto-starting its own HTTP server.
-await prepareDatabase()
-process.env.ASTRO_NODE_AUTOSTART = "disabled"
-const { handler } = await import("../dist/server/entry.mjs")
+if (shuttingDown) process.exit(0)
+
+let handler
+try {
+  inStartupDatabase = true
+  await prepareDatabase()
+  inStartupDatabase = false
+  if (shuttingDown) process.exit(0)
+  // Prevent Astro standalone from auto-starting its own HTTP server.
+  process.env.ASTRO_NODE_AUTOSTART = "disabled"
+  ;({ handler } = await import("../dist/server/entry.mjs"))
+} catch (err) {
+  inStartupDatabase = false
+  writeJsonLine(2, {
+    level: "error",
+    event: "web.startup_error",
+    code: err?.code ?? "UNKNOWN",
+    message: err?.message ?? String(err),
+    time: new Date().toISOString(),
+  })
+  process.exit(1)
+}
+if (shuttingDown) process.exit(0)
 
 const port = Number(process.env.PORT ?? 3000)
 const host = process.env.HOST ?? "0.0.0.0"
-const server = http.createServer((req, res) => {
+server = http.createServer((req, res) => {
   // An IPv4 connection to an IPv6 listener may have a mapped address.
   const peer = req.socket.remoteAddress?.replace(/^::ffff:/, "") ?? ""
   const fromSupervisor = Boolean(supervisorToken) && peer === SUPERVISOR_ADDRESS
@@ -197,6 +265,7 @@ const server = http.createServer((req, res) => {
     identityHeadersSafe,
     configuredPath,
     sseSocket,
+    shutdownSignal: shutdownController.signal,
     waitForDatabaseDownloadDrain,
     waitForHtmlDrain,
     behindIngress: false,
@@ -204,6 +273,9 @@ const server = http.createServer((req, res) => {
     abortRecorded: false,
     rawPath,
   }
+  res.once("finish", () => {
+    if (shuttingDown) server.closeIdleConnections?.()
+  })
   res.once("close", () => {
     if (
       Boolean(transportContext.behindIngress) &&
@@ -222,6 +294,25 @@ const server = http.createServer((req, res) => {
   runWithIngressTransport(transportContext, () => handler(req, res))
 })
 
+server.on("error", (err) => {
+  const isBindError = !hasListened
+  writeJsonLine(2, {
+    level: "error",
+    event: isBindError ? "web.listen_error" : "web.server_error",
+    code: err?.code ?? "UNKNOWN",
+    host,
+    port,
+    message: err?.message ?? String(err),
+    time: new Date().toISOString(),
+  })
+  if (isBindError) {
+    process.exit(1)
+    return
+  }
+  if (!shuttingDown) shutdown("SERVER_ERROR", 1)
+})
+
 server.listen(port, host, () => {
+  hasListened = true
   console.log(`Meitheal server listening on http://${host}:${port}`)
 })

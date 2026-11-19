@@ -56,5 +56,5 @@ schema:
     - str
   log_redaction: bool
   audit_enabled: bool
-  loki_url: str
+  loki_url: "str?"
   license_key: "str?"

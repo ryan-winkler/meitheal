@@ -1,20 +1,22 @@
 import { once } from "node:events"
 import { createServer, type ServerResponse } from "node:http"
 import { expect, test } from "@playwright/test"
-import { createLogger } from "../../packages/domain-observability/src/index"
+import { computeLokiBackoffMs, createLogger } from "../../packages/domain-observability/src/index"
 
 test.describe.configure({ mode: "serial" })
 
 type Push = { streams: Array<{ stream: Record<string, string>; values: string[][] }> }
 async function receiver(reply: (response: ServerResponse) => void = response => { response.writeHead(204).end() }) {
   const pushes: Push[] = []
+  const receivedAt: number[] = []
   const closed: number[] = []
   const server = createServer(async (request, response) => {
-    response.on("close", () => closed.push(Date.now()))
+    response.on("close", () => closed.push(performance.now()))
     let body = ""
     for await (const chunk of request) body += chunk
     expect(request.url).toBe("/loki/api/v1/push")
     expect(request.headers["content-type"]).toBe("application/json")
+    receivedAt.push(performance.now())
     pushes.push(JSON.parse(body))
     reply(response)
   })
@@ -23,7 +25,7 @@ async function receiver(reply: (response: ServerResponse) => void = response => 
   const address = server.address()
   if (!address || typeof address === "string") throw new Error("Missing local fixture address")
   return {
-    pushes, closed, url: `http://127.0.0.1:${address.port}/loki/api/v1/push`,
+    pushes, receivedAt, closed, url: `http://127.0.0.1:${address.port}/loki/api/v1/push`,
     async close() {
       server.closeAllConnections()
       await new Promise<void>(resolve => server.close(() => resolve()))
@@ -111,7 +113,7 @@ test("non-2xx and timeout drop one batch without retries while stdout continues"
     try {
       await capture(async stdout => {
         process.env.LOKI_URL = local.url
-        const started = Date.now()
+        const started = performance.now()
         logger().log("info", event)
         await expect.poll(() => local.pushes.length).toBe(1)
         delete process.env.LOKI_URL
@@ -147,4 +149,79 @@ test("a burst is bounded to 200 waiting lines and 50-line batches across loggers
       expect(stdout).toHaveLength(301)
     })
   } finally { await local.close() }
+})
+
+test("computeLokiBackoffMs doubles from 2s to 60s and clamps invalid or large failure counts", () => {
+  const inputs = [0, -1, 0.5, Number.NaN, Number.POSITIVE_INFINITY, 1, 2, 3, 4, 5, 6, 7, 2000]
+  const expected = [0, 0, 0, 0, 0, 2_000, 4_000, 8_000, 16_000, 32_000, 60_000, 60_000, 60_000]
+  expect(inputs.map(computeLokiBackoffMs)).toEqual(expected)
+})
+
+test("delivery failure applies backoff and resets on same-URL recovery, URL change, and stale timeout", async () => {
+  let failFirst = true
+  const flaky = await receiver(response => {
+    if (failFirst) {
+      failFirst = false
+      response.writeHead(503).end("temporary failure")
+      return
+    }
+    response.writeHead(204).end()
+  })
+  const alwaysFail = await receiver(response => { response.writeHead(503).end("receiver down") })
+  const healthy = await receiver()
+  const slow = await receiver(() => {})
+  const healthyAfterSlow = await receiver()
+  try {
+    await capture(async () => {
+      // 1. Same-URL failure triggers 2s backoff, then successful push resets backoff.
+      process.env.LOKI_URL = flaky.url
+      logger().log("info", { ...event, message: "Trigger 503 failure" })
+      await expect.poll(() => flaky.closed.length, { intervals: [50], timeout: 2500 }).toBe(1)
+
+      logger().log("info", { ...event, message: "Delayed by backoff" })
+      await expect.poll(() => flaky.closed.length, { intervals: [50], timeout: 4000 }).toBe(2)
+      expect(flaky.receivedAt[1]! - flaky.closed[0]!).toBeGreaterThanOrEqual(1_800)
+
+      const afterRecovery = performance.now()
+      logger().log("info", { ...event, message: "Fast after recovery" })
+      await expect.poll(() => flaky.pushes.length, { intervals: [50], timeout: 1500 }).toBe(3)
+      expect(performance.now() - afterRecovery).toBeLessThan(1_500)
+
+      // 2. Changing LOKI_URL clears active backoff and pending timer on the next enqueue.
+      process.env.LOKI_URL = alwaysFail.url
+      logger().log("info", { ...event, message: "Trigger failure before switch" })
+      await expect.poll(() => alwaysFail.closed.length, { intervals: [50], timeout: 2500 }).toBe(1)
+      await new Promise(resolve => setTimeout(resolve, 25))
+
+      // Schedule an active 2s backoff timer and queued line for the failing URL.
+      logger().log("info", { ...event, message: "Queued during backoff before URL change" })
+
+      const switchedAt = performance.now()
+      process.env.LOKI_URL = healthy.url
+      logger().log("info", { ...event, message: "Fast after URL switch" })
+      await expect.poll(() => healthy.pushes.length, { intervals: [50], timeout: 1500 }).toBe(1)
+      expect(performance.now() - switchedAt).toBeLessThan(1_500)
+      expect(JSON.stringify(healthy.pushes[0])).toContain("Fast after URL switch")
+      expect(JSON.stringify(healthy.pushes[0])).not.toContain("Queued during backoff")
+      expect(alwaysFail.pushes).toHaveLength(1)
+
+      // 3. Late timeout from the previous URL does not cause backoff for the new URL.
+      process.env.LOKI_URL = slow.url
+      logger().log("info", { ...event, message: "Trigger slow in-flight push" })
+      await expect.poll(() => slow.pushes.length, { intervals: [50], timeout: 1500 }).toBe(1)
+
+      process.env.LOKI_URL = healthyAfterSlow.url
+      logger().log("info", { ...event, message: "Queued while prior push times out" })
+      await expect.poll(() => slow.closed.length, { intervals: [50], timeout: 2500 }).toBe(1)
+      const slowClosedAt = performance.now()
+      await expect.poll(() => healthyAfterSlow.pushes.length, { intervals: [50], timeout: 1500 }).toBe(1)
+      expect(performance.now() - slowClosedAt).toBeLessThan(1_500)
+    })
+  } finally {
+    await flaky.close()
+    await alwaysFail.close()
+    await healthy.close()
+    await slow.close()
+    await healthyAfterSlow.close()
+  }
 })
