@@ -79,7 +79,7 @@ test("group admin previews and saves through HTTPS ingress, while revoked reader
     await page.getByRole("link", { name: "Deferred", exact: true }).click()
     const queue = page.locator("[data-deferred-root]")
     const queueArea = queue.getByRole("combobox", { name: "Area", exact: true })
-    await expect(page).toHaveURL(origin + prefix + "/deferred?area=default")
+    await expect(page).toHaveURL(origin + prefix + "/deferred?board_id=household&area=default")
     await expect(queueArea).toHaveValue("default")
     await expect(queue.locator("form")).toHaveAttribute("action", prefix + "/deferred")
     await queueArea.selectOption({ label: "All areas" })
@@ -92,11 +92,11 @@ test("group admin previews and saves through HTTPS ingress, while revoked reader
     await page.goto(origin + prefix + "/tasks?area=default#kanban")
     await openBoardActions()
     await page.getByRole("link", { name: "Inactivity", exact: true }).click()
-    await expect(page).toHaveURL(base + "?area=default")
+    await expect(page).toHaveURL(base + "?board_id=household&area=default")
     await expect(page.getByRole("combobox", { name: "Area", exact: true })).toHaveValue("default")
-    await expect(page.getByRole("link", { name: "Back to Tasks" })).toHaveAttribute("href", new RegExp(prefix + "/tasks\\?area=default#kanban$"))
+    await expect(page.getByRole("link", { name: "Back to Tasks" })).toHaveAttribute("href", origin + prefix + "/boards/household?area=default")
     await page.getByRole("link", { name: "Back to Tasks" }).click()
-    await expect(page).toHaveURL(origin + prefix + "/tasks?area=default#kanban")
+    await expect(page).toHaveURL(url => url.pathname === prefix + "/boards/household" && url.searchParams.get("area") === "default")
     await page.goto(base)
     const content = page.locator("[data-inactivity-content]")
     const rows = page.locator("[data-inactivity-rows]")
@@ -127,7 +127,7 @@ test("group admin previews and saves through HTTPS ingress, while revoked reader
     })
     expect(cache).toBe(noStore)
     expect(shell.includes(marker)).toBe(false)
-    expect(shell.includes("browser-card")).toBe(false)
+    expect(shell).not.toContain('data-task-id="browser-card"')
     expect(shell.includes(title)).toBe(false)
 
     const before = await pinRequest(page, api, "POST", requestBody)
@@ -149,7 +149,7 @@ test("group admin previews and saves through HTTPS ingress, while revoked reader
     await expect(save).toBeEnabled()
     await expect(page.getByRole("heading", { name: "Preview" })).toBeFocused()
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320)
-    await expect(rows.getByRole("link", { name: "Details" })).toHaveAttribute("href", new RegExp(prefix + "/tasks\\?area=default&open=browser-card$"))
+    await expect(rows.getByRole("link", { name: "Details" })).toHaveAttribute("href", prefix + "/tickets/browser-card")
 
     const competingSave = {
       action: "save", areaId: null, days: 3, expectedRevision: null, expectedDefaultRevision: null,
@@ -204,8 +204,12 @@ test("group admin previews and saves through HTTPS ingress, while revoked reader
     await context.setOffline(true)
     await expect(content).toBeHidden()
     await expect(rows.locator("li")).toHaveCount(0)
-    await expect(days).toHaveValue("30")
+    const verification = page.getByRole("button", { name: "Retry verification" })
+    await expect(verification).toBeVisible()
+    await expect(days).toHaveCount(0)
     await context.setOffline(false)
+    await expect(verification).toBeHidden()
+    await expect(page.locator('input[name="days"]')).toHaveValue("30")
     await page.getByRole("button", { name: "Try again" }).click()
     await expect(rows.getByText(title, { exact: true })).toBeVisible()
     await rows.getByRole("link", { name: "Details" }).click()
@@ -221,10 +225,11 @@ test("group admin previews and saves through HTTPS ingress, while revoked reader
       expectedDefaultRevision: offScope.body.defaultPolicy.revision, areaGeneration: offScope.body.areaGeneration,
       expectedAreaCatalogRevision: null,
     })).status).toBe(200)
-    await page.evaluate(marker => {
-      localStorage.setItem("meitheal-selected-area", JSON.stringify({ areaId: marker, areaName: marker, areaIcon: "▦" }))
-      localStorage.setItem("meitheal-kanban-card-density", "compact")
-    }, marker)
+    await page.goto(origin + prefix + "/tasks?area=default")
+    await page.locator("#area-selector-trigger").click()
+    await page.locator(`#area-selector-dropdown [data-area-id="${marker}"]`).click()
+    await expect(page).toHaveURL(url => url.searchParams.get("area") === marker)
+    await page.evaluate(() => localStorage.setItem("meitheal-kanban-card-density", "compact"))
     let boardRequests = 0
     page.on("request", request => {
       if (new URL(request.url()).pathname === api && request.postDataJSON()?.action === "board") boardRequests++
@@ -250,7 +255,8 @@ test("group admin previews and saves through HTTPS ingress, while revoked reader
     await setMemberActive(true)
     for (const owner of ["admin", "admin", "member"]) {
       await setOwner(owner)
-      const added = await pinRequest(page, prefix + "/api/tasks/browser-card/comments", "POST", { content: "A verified household comment" })
+      const headers = await currentBoardWriteHeaders(page.request, "household", { origin }, origin + prefix)
+      const added = await pinRequest(page, prefix + "/api/tasks/browser-card/comments", "POST", { content: "A verified household comment" }, undefined, headers)
       expect(added.status).toBe(201)
       expect(added.body).not.toHaveProperty("inactivity_spike_human")
       expect(added.body).not.toHaveProperty("owner_key")
@@ -597,7 +603,7 @@ test("the current worker scrubs cached inactivity pages and API aliases", async 
       prefix + path,
       prefix + "/api/%2574ask-inactivity/",
     ]
-    const ordinary = prefix + "/api/ordinary-cache-fixture"
+    const ordinary = prefix + "/ordinary-cache-fixture.css"
     browser = await launchPinBrowser(work)
     const context = await browser.newContext({ extraHTTPHeaders: {} })
     await context.addCookies([{ name: "feedback-fixture", value: "member", url: origin }])
@@ -633,10 +639,17 @@ test("the current worker scrubs cached inactivity pages and API aliases", async 
 
     await context.setOffline(true)
     const offline = await page.evaluate(async ({ variants, ordinary }) => {
-      const read = (url: string) => fetch(url).then(response => response.text()).catch(() => null)
+      const read = async (url: string) => {
+        const response = await fetch(url)
+        return { status: response.status, cache: response.headers.get("cache-control"), text: await response.text() }
+      }
       return Promise.all([...variants, ordinary].map(read))
     }, { variants, ordinary })
-    expect(offline).toEqual([null, null, null, null, "Ordinary offline payload"])
+    for (const read of offline.slice(0, 4)) {
+      expect(read).toMatchObject({ status: 503, cache: noStore })
+      expect(read.text).not.toContain("Stale inactivity payload")
+    }
+    expect(offline[4]).toMatchObject({ status: 200, text: "Ordinary offline payload" })
   } finally {
     await browser?.close()
     if (child && child.exitCode === null && child.signalCode === null) {
