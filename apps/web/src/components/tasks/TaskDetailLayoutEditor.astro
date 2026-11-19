@@ -15,12 +15,21 @@ const fieldFeatures: Partial<Record<string, OrganizationFeature>> = { area: "gro
 const fieldLabel = (id: string, fallback: string) => id === "area" ? organization("group")
   : id === "project" ? organization("project") : id === "pillar" ? organization("pillar")
   : id === "principle" ? organization("principle") : fallback
-const moveControls = (label: string) => ({
-  up: `${t("task_layout.move_up", locale)} · ${label}`,
-  down: `${t("task_layout.move_down", locale)} · ${label}`,
-})
+const sections = taskDetailSections.map(section => ({
+  id: section.id,
+  label: section.label,
+  ...("fields" in section && {
+    fields: section.fields
+      .filter(([id]) => !fieldFeatures[id] || available(fieldFeatures[id]!))
+      .map(([id, fallback]) => [id, fieldLabel(id, fallback)]),
+  }),
+}))
 ---
 <div class="td-layout-editor" data-task-layout-editor
+  data-layout-sections={JSON.stringify(sections)}
+  data-layout-fields-label={t("task_layout.fields", locale)}
+  data-layout-move-up={t("task_layout.move_up", locale)}
+  data-layout-move-down={t("task_layout.move_down", locale)}
   data-moved={t("task_layout.moved", locale)}
   data-reset={t("task_layout.reset_done", locale)}
   data-save-failed={t("task_layout.save_failed", locale)}
@@ -32,51 +41,27 @@ const moveControls = (label: string) => ({
   </div>
   <p class="td-layout-editor__error" data-layout-error hidden></p>
   <p class="sr-only" role="status" data-layout-status></p>
-  <ol class="td-layout-editor__list" data-layout-order="sections" aria-label={t("task_layout.sections", locale)}>
-    {taskDetailSections.map(section => (
-      <li data-layout-item={section.id} class="td-layout-editor__item">
-        <div class="td-layout-editor__row">
-          <span class="td-layout-editor__handle" data-layout-handle aria-hidden="true">
-            <Icon name="grip-vertical" size={20} />
-          </span>
-          <span class="td-layout-editor__label" data-layout-label>{section.label}</span>
-          <button type="button" class="td-layout-icon-btn" data-layout-move="up"
-            title={moveControls(section.label).up} aria-label={moveControls(section.label).up}>
-            <Icon name="arrow-up" size={18} />
-          </button>
-          <button type="button" class="td-layout-icon-btn" data-layout-move="down"
-            title={moveControls(section.label).down} aria-label={moveControls(section.label).down}>
-            <Icon name="arrow-down" size={18} />
-          </button>
-        </div>
-        {"fields" in section && (
-          <details class="td-layout-editor__fields">
-            <summary>{t("task_layout.fields", locale)} · {section.label}</summary>
-            <ol class="td-layout-editor__list" data-layout-order={section.id} aria-label={section.label}>
-              {section.fields.filter(([id]) => !fieldFeatures[id] || available(fieldFeatures[id]!)).map(([id, fallback]) => {
-                const label = fieldLabel(id, fallback)
-                return (
-                <li data-layout-item={id} class="td-layout-editor__item">
-                  <div class="td-layout-editor__row">
-                    <span class="td-layout-editor__handle" data-layout-handle aria-hidden="true">
-                      <Icon name="grip-vertical" size={20} />
-                    </span>
-                    <span class="td-layout-editor__label" data-layout-label>{label}</span>
-                    <button type="button" class="td-layout-icon-btn" data-layout-move="up"
-                      title={moveControls(label).up} aria-label={moveControls(label).up}>
-                      <Icon name="arrow-up" size={18} />
-                    </button>
-                    <button type="button" class="td-layout-icon-btn" data-layout-move="down"
-                      title={moveControls(label).down} aria-label={moveControls(label).down}>
-                      <Icon name="arrow-down" size={18} />
-                    </button>
-                  </div>
-                </li>
-              )})}
-            </ol>
-          </details>
-        )}
-      </li>
-    ))}
-  </ol>
+  <ol class="td-layout-editor__list" data-layout-order="sections" aria-label={t("task_layout.sections", locale)}></ol>
+  <template data-layout-row>
+    <li class="td-layout-editor__item" data-layout-item>
+      <div class="td-layout-editor__row">
+        <span class="td-layout-editor__handle" data-layout-handle aria-hidden="true">
+          <Icon name="grip-vertical" size={20} sprite />
+        </span>
+        <span class="td-layout-editor__label" data-layout-label></span>
+        <button type="button" class="td-layout-icon-btn" data-layout-move="up">
+          <Icon name="arrow-up" size={18} sprite />
+        </button>
+        <button type="button" class="td-layout-icon-btn" data-layout-move="down">
+          <Icon name="arrow-down" size={18} sprite />
+        </button>
+      </div>
+    </li>
+  </template>
+  <template data-layout-fields>
+    <details class="td-layout-editor__fields">
+      <summary></summary>
+      <ol class="td-layout-editor__list" data-layout-order></ol>
+    </details>
+  </template>
 </div>

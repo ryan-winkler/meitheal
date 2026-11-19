@@ -58,7 +58,50 @@ export function initTicketSectionOrder(sections: HTMLElement, signal: AbortSigna
   return apply
 }
 
+type LayoutSection = {
+  id: string
+  label: string
+  fields?: [id: string, label: string][]
+}
+
+function populateLayoutEditor(root: HTMLElement): void {
+  const list = root.querySelector<HTMLOListElement>('[data-layout-order="sections"]')
+  const row = root.querySelector<HTMLTemplateElement>("template[data-layout-row]")?.content.firstElementChild
+  const fields = root.querySelector<HTMLTemplateElement>("template[data-layout-fields]")?.content.firstElementChild
+  if (!list || !row || !fields || list.childElementCount) return
+
+  const sections: LayoutSection[] = JSON.parse(root.dataset.layoutSections ?? "[]")
+  function createRow(id: string, label: string): HTMLLIElement {
+    const item = row!.cloneNode(true) as HTMLLIElement
+    item.dataset.layoutItem = id
+    item.querySelector("[data-layout-label]")!.textContent = label
+    for (const [direction, action] of [["up", root.dataset.layoutMoveUp], ["down", root.dataset.layoutMoveDown]]) {
+      const button = item.querySelector<HTMLButtonElement>(`[data-layout-move="${direction}"]`)!
+      button.title = `${action} · ${label}`
+      button.setAttribute("aria-label", button.title)
+    }
+    return item
+  }
+
+  const items = document.createDocumentFragment()
+  for (const section of sections) {
+    const item = createRow(section.id, section.label)
+    if (section.fields) {
+      const disclosure = fields.cloneNode(true) as HTMLDetailsElement
+      disclosure.querySelector("summary")!.textContent = `${root.dataset.layoutFieldsLabel} · ${section.label}`
+      const fieldList = disclosure.querySelector("ol")!
+      fieldList.dataset.layoutOrder = section.id
+      fieldList.setAttribute("aria-label", section.label)
+      fieldList.append(...section.fields.map(([id, label]) => createRow(id, label)))
+      item.append(disclosure)
+    }
+    items.append(item)
+  }
+  list.append(items)
+}
+
 export function initTaskDetailLayoutEditor(root: HTMLElement, signal: AbortSignal): void {
+  populateLayoutEditor(root)
   const lists = Array.from(root.querySelectorAll<HTMLElement>("[data-layout-order]"))
   const status = root.querySelector<HTMLElement>("[data-layout-status]")
   const error = root.querySelector<HTMLElement>("[data-layout-error]")
