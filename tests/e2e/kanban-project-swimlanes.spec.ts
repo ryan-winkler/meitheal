@@ -137,7 +137,12 @@ test("Household Kanban keeps Project identity, qualifiers and the current column
     await expect(page.locator("#kanban-board")).toHaveCount(0)
     await refresh.click()
     await expect(header(direct)).toHaveCount(0)
-    await expect(group(pending, "").locator(`.kanban-card[data-id="${directTask}"]`)).toBeVisible()
+    const unavailable = pending.locator(".dynamic-group").filter({
+      has: page.getByRole("button", { name: /^Unknown Project/ }),
+    })
+    await expect(unavailable.locator(`.kanban-card[data-id="${directTask}"]`)).toBeVisible()
+    await expect(pending).not.toContainText(renamedTitle)
+    await expect(range).toHaveText("26–29 of 29")
   } finally {
     const failures: string[] = []
     for (const path of cleanup.reverse()) {
