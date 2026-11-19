@@ -6,26 +6,28 @@ import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 
 import { expect, test, type APIRequestContext } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { launchPinBrowser, startCoreFixture } from "../scripts/task-pins-fixture"
 
 test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires a disposable built app")
 test.use({ actionTimeout: 5_000, serviceWorkers: "block" })
 
-async function create(request: APIRequestContext, url: string, data: object, origin?: string) {
-  const response = await request.post(url, { headers: origin ? { origin } : {}, data })
+async function create(request: APIRequestContext, url: string, data: object, headers: Record<string, string>) {
+  const response = await request.post(url, { headers, data })
   expect(response.status(), await response.text()).toBe(201)
   return (await response.json() as { id: string }).id
 }
 
-async function updateColumn(request: APIRequestContext, id: string, data: object) {
-  const response = await request.put(`/api/lanes/${id}`, { data })
+async function updateColumn(request: APIRequestContext, id: string, data: object, headers: Record<string, string>) {
+  const response = await request.put(`/api/lanes/${id}`, { headers, data })
   expect(response.ok(), await response.text()).toBe(true)
 }
 
 test("Table assigns each task once and restores workflow subgroups under Area", async ({ page, request, baseURL }) => {
+  const headers = await currentBoardWriteHeaders(request, "household", { origin: baseURL! })
   const cleanup: string[] = []
   const fixture = async (path: string, data: object) => {
-    const id = await create(request, path, data)
+    const id = await create(request, path, data, headers)
     cleanup.push(`${path}/${id}`)
     return id
   }
@@ -40,18 +42,21 @@ test("Table assigns each task once and restores workflow subgroups under Area", 
     const secondName = `${sharedLabel} (${secondKey})`
     const first = await fixture("/api/lanes", { key: firstKey, label: sharedLabel, position: 40 })
     const second = await fixture("/api/lanes", { key: secondKey, label: sharedLabel, position: 41 })
-    await updateColumn(request, first, { includes: JSON.stringify([firstKey, secondKey, "todo"]) })
-    await updateColumn(request, second, { includes: JSON.stringify([secondKey, "pending"]) })
+    await updateColumn(request, first, { includes: JSON.stringify([firstKey, secondKey, "todo"]) }, headers)
+    await updateColumn(request, second, { includes: JSON.stringify([secondKey, "pending"]) }, headers)
 
     const areaId = await fixture("/api/areas", { name: `Workshop ${token}` })
     const task = (status: string) => fixture("/api/tasks", { title: `${term} ${status}`, status, area_id: areaId })
     const todo = await task("pending")
     const staging = await task(firstKey)
     const ready = await task(secondKey)
-    const unmatched = await task(`unmatched_${token}`)
+    const unmatchedStatus = `unmatched_${token}`
+    const formerColumn = await fixture("/api/lanes", { key: unmatchedStatus, label: "Former workflow", position: 42 })
+    const unmatched = await task(unmatchedStatus)
+    await updateColumn(request, formerColumn, { includes: JSON.stringify([firstKey]) }, headers)
 
     const search = new URLSearchParams({ view: "table", area: "", search: term })
-    await page.goto(`/tasks?${search}#table`)
+    await page.goto(`/boards/household?${search}#table`)
     const table = page.locator("#task-table")
     const rows = table.locator(".table-row")
     const row = (id: string) => rows.and(table.locator(`[data-id="${id}"]`))
@@ -94,7 +99,7 @@ test("Table assigns each task once and restores workflow subgroups under Area", 
     await expect(rows).toHaveCount(2)
     await readyChoice.press("Escape")
 
-    await updateColumn(request, second, { label: renamedLabel, position: 39 })
+    await updateColumn(request, second, { label: renamedLabel, position: 39 }, headers)
     await columns.locator("summary").press("Enter")
     await columns.getByRole("checkbox", { name: firstName }).check()
     await expect(groups.locator(".group-label")).toHaveText([renamedLabel, sharedLabel])
@@ -154,10 +159,9 @@ test("Table assigns each task once and restores workflow subgroups under Area", 
     await expect(page).toHaveURL(groupedUrl)
     await expect(subgroups.locator(".group-label")).toHaveText([renamedLabel, sharedLabel])
   } finally {
-    const headers = { origin: baseURL!, "content-type": "application/json" }
     const failed: string[] = []
     for (const path of cleanup.reverse()) {
-      const response = await request.delete(path, { headers })
+      const response = await request.delete(path, { headers: { ...headers, "content-type": "application/json" } })
       if (!response.ok()) failed.push(`${path}: ${response.status()} ${await response.text()}`)
     }
     expect(failed).toEqual([])
@@ -181,10 +185,11 @@ test("Ingress Table preserves applied grouping and retries an unavailable workfl
     await context.setExtraHTTPHeaders({})
     await context.addCookies([{ name: "feedback-fixture", value: "member", url: origin }])
     const title = "Household ingress workflow receipt"
-    const id = await create(context.request, app + "/api/tasks", { title, status: "pending" }, origin)
+    const headers = await currentBoardWriteHeaders(context.request, "household", { origin }, app)
+    const id = await create(context.request, app + "/api/tasks", { title, status: "pending" }, headers)
     const page = await context.newPage()
     const query = new URLSearchParams({ view: "table", area: "", groupBy: "workflow" })
-    const initial = `${app}/tasks?${query}#table`
+    const initial = `${app}/boards/household?${query}#table`
     const row = page.locator(`#task-table .table-row[data-id="${id}"]`)
     await page.goto(initial)
     await expect(row).toHaveAttribute("data-group-value", "lane-pending")
@@ -197,7 +202,7 @@ test("Ingress Table preserves applied grouping and retries an unavailable workfl
     await page.getByRole("textbox", { name: "Filter by text" }).fill(title)
     const receipt = await failed
     expect(receipt.status()).toBe(503)
-    expect(new URL(receipt.url()).pathname).toBe(prefix + "/tasks")
+    expect(new URL(receipt.url()).pathname).toBe(prefix + "/boards/household")
     const retry = page.getByRole("button", { name: "Retry", exact: true })
     await expect(retry).toBeVisible()
     await expect(page).toHaveURL(appliedUrl)
@@ -219,7 +224,7 @@ test("Ingress Table preserves applied grouping and retries an unavailable workfl
 
     db.exec("ALTER TABLE unavailable_workflow_columns RENAME TO kanban_lanes")
     await retry.click()
-    await expect(page).toHaveURL(url => url.pathname === prefix + "/tasks" &&
+    await expect(page).toHaveURL(url => url.pathname === prefix + "/boards/household" &&
       url.searchParams.get("search") === title && url.searchParams.get("subGroupBy") === "status")
     await expect(row).toHaveAttribute("data-group-value", "lane-pending")
     await freshRetry.click()
