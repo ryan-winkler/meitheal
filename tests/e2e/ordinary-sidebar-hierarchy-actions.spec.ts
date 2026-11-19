@@ -29,6 +29,9 @@ import { POST as planning } from "../../apps/web/src/pages/api/boards/[id]/plann
 import { readBoardPagePlacement } from "../../apps/web/src/lib/board-page-placement"
 import { boardNavigationLinks } from "../../apps/web/src/lib/board-workspace"
 
+// The routed source fixture owns its own origin independently of the packaged App.
+test.use({ extraHTTPHeaders: {}, serviceWorkers: "block" })
+
 type APIContext = Parameters<typeof createTask>[0]
 const transport = { peer: "127.0.0.1", fromSupervisor: false, identityHeadersSafe: true, configuredPath: undefined }
 const origin = "http://127.0.0.1:8930"
@@ -340,7 +343,7 @@ test("Temporary inspector verification preserves drafts while terminal Board rev
   await expect(page.locator("#td-description")).toHaveValue("Private retained description")
   await page.evaluate(boardId => document.dispatchEvent(new CustomEvent("meitheal:board-revoked", { detail: { boardId } })), work)
   await expect(page.locator("#task-detail-overlay")).toHaveCount(0)
-  expect(await page.locator("textarea").evaluateAll(nodes => nodes.some(node => node.value.includes("Private retained")))).toBe(false)
+  expect(await page.locator("textarea").evaluateAll(nodes => nodes.some(node => node instanceof HTMLTextAreaElement && node.value.includes("Private retained")))).toBe(false)
   const before = calls.filter(call => call.path.startsWith("/api/tasks/")).length
   await page.evaluate(async id => { document.dispatchEvent(new Event("meitheal:board-verified")); await window.openTaskDetail?.(id) }, created.id)
   await expect(page.locator("#task-detail-overlay")).toHaveCount(0)

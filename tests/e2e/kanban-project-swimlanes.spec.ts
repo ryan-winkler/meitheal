@@ -132,8 +132,11 @@ test("Household Kanban keeps Project identity, qualifiers and the current column
     expect((await request.delete(`/api/projects/${direct}`, { headers, data: {} })).ok()).toBe(true)
     cleanup.splice(cleanup.indexOf(`/api/projects/${direct}`), 1)
     await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true })))
+    const refresh = page.getByRole("button", { name: "Refresh Board" })
+    await expect(refresh).toBeFocused()
+    await expect(page.locator("#kanban-board")).toHaveCount(0)
+    await refresh.click()
     await expect(header(direct)).toHaveCount(0)
-    await expect(pending.locator(".kanban-column-header")).toBeFocused()
     await expect(group(pending, "").locator(`.kanban-card[data-id="${directTask}"]`)).toBeVisible()
   } finally {
     const failures: string[] = []

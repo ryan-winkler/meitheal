@@ -388,7 +388,7 @@ const sidebarDefaultOrder = navItems.map(item => item.key)
     if (capture && capturePermission) capture.disabled = capturePermission.content !== "true"
     if (capture) {
       document.addEventListener("meitheal:board-revoked", event => {
-        const boardId = (event as CustomEvent<{ boardId?: string }>).detail.boardId
+        const boardId = (event as CustomEvent<{ boardId?: string }>).detail?.boardId
         if (boardId && boardId === document.querySelector<HTMLMetaElement>('meta[name="meitheal-work-board"]')?.content) capture.disabled = true
       }, { signal })
     }
